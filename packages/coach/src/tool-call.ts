@@ -50,17 +50,23 @@ export function semanticArgs(call: CoachToolCall): unknown {
       return { ...call.args, targets: call.args.targets.map((t) => ({ exerciseId: t.exerciseId, target: t.target, sets: t.sets })) };
     case 'propose_next_workout_change':
       return { sourceSessionId: call.args.sourceSessionId, sourceVersion: call.args.sourceVersion, changes: call.args.changes };
+    case 'log_set':
+    case 'correct_set':
+      return call.args;
     case 'set_pain_flag':
       return { exerciseIds: [...new Set(call.args.exerciseIds)].sort(), area: call.args.area };
     case 'save_memory':
+    case 'suggest_memory':
       return { text: normaliseContentText(call.args.text) };
     case 'add_playbook_candidate':
       return { text: normaliseContentText(call.args.text), statedBy: call.args.statedBy };
     case 'forget_memory':
     case 'get_active_session':
     case 'get_recent_training':
+    case 'get_training_overview':
     case 'get_gym_equipment':
     case 'get_progression_targets':
+    case 'get_substitutions':
     case 'get_recent_actions':
       return call.args;
   }
@@ -74,22 +80,37 @@ export function semanticArgs(call: CoachToolCall): unknown {
  * memory text, the same playbook candidate text. Other tools return [] (they
  * are protected by their base version instead).
  */
+/** The content key of a memory's text: the same words (case, spacing, punctuation aside) are the same memory. */
+export function memoryContentKey(text: string): string {
+  return `memory:${deriveId(normaliseContentText(text))}`;
+}
+
+/** The content key of a playbook candidate's text. */
+export function playbookContentKey(text: string): string {
+  return `playbook_candidate:${deriveId(normaliseContentText(text))}`;
+}
+
 export function appendContentKeys(call: CoachToolCall): string[] {
   switch (call.tool) {
     case 'set_pain_flag':
       return [...new Set(call.args.exerciseIds)].sort().map((id) => `pain_flag:${id}`);
     case 'save_memory':
-      return [`memory:${deriveId(normaliseContentText(call.args.text))}`];
+    case 'suggest_memory':
+      return [memoryContentKey(call.args.text)];
     case 'add_playbook_candidate':
-      return [`playbook_candidate:${deriveId(normaliseContentText(call.args.text))}`];
+      return [playbookContentKey(call.args.text)];
     case 'forget_memory':
     case 'adjust_pending_sets':
+    case 'log_set':
+    case 'correct_set':
     case 'set_next_session_targets':
     case 'propose_next_workout_change':
     case 'get_active_session':
     case 'get_recent_training':
+    case 'get_training_overview':
     case 'get_gym_equipment':
     case 'get_progression_targets':
+    case 'get_substitutions':
     case 'get_recent_actions':
       return [];
   }
@@ -164,10 +185,102 @@ const OWNER_NOUN = /\b(?:owner|owner's|user|user's|client|client's)\b/;
 const BARE_THIRD_PERSON_VERB =
   /^(?:(?:usually|always|often|never|sometimes|normally|mostly|generally|typically|still|also|now|only|rarely) )?(?:trains|prefers|likes|loves|hates|dislikes|enjoys|avoids|has|had|works|lifts|gets|struggles|runs|finds|wants|needs|does|doesn't|doesnt|feels|sleeps|eats|lives|uses|tends|can't|cant|cannot|is|was|isn't|isnt|wasn't|wasnt|goes|walks|cycles|swims|plays|rides|wakes|commutes|sits|stands|travels|fasts|drinks|takes|tolerates|responds|recovers|reacts|gets|misses|skips|manages|suffers|injured|tore|broke|had|reports|says|said|mentioned|wanted|asked|prefers)\b/;
 
+/**
+ * "Until the shoulder settles", "till the knee heals": one person's joint
+ * recovering, so a personal constraint (review coach-tools r3 S1).
+ */
+const BODY_UNTIL_SETTLED = new RegExp(
+  `\\b(?:until|till|til|while) (?:the |my |his |her |it |that )?(?:(?:left|right|lower|upper) )?(?:${BODY_WORD} )?(?:settles?|heals?|calms? down|recovers?|(?:is|feels|gets) better|improves?|is sorted|clears? up)\\b`,
+);
+
 export function personalPlaybookText(text: string): boolean {
   const t = text.toLowerCase().replace(/[‘’]/g, "'").trim();
-  return OWNER_WORDS.test(t) || OWNED_BODY.test(t) || PARTICULAR_BODY.test(t) || THIRD_PERSON.test(t) || OWNER_NOUN.test(t) || BARE_THIRD_PERSON_VERB.test(t);
+  return OWNER_WORDS.test(t) || OWNED_BODY.test(t) || PARTICULAR_BODY.test(t) || THIRD_PERSON.test(t) || OWNER_NOUN.test(t) || BARE_THIRD_PERSON_VERB.test(t) || BODY_UNTIL_SETTLED.test(t);
 }
+
+/** An instruction: starts with an imperative training verb ("Deload every 5th week", "Always rest 3 minutes on squats"). */
+const IMPERATIVE_RULE =
+  /^(?:(?:always|never|don't|dont|do not|try to|make sure to|remember to) )?(?:deload|train|lift|rest(?! days?\b)|use|add|increase|decrease|drop|reduce|progress|keep|avoid|take|stop|start|push|aim|warm|stretch|superset|program|programme|cycle|swap|pick|choose|prioriti[sz]e|focus|include|limit|cap|finish|perform|do|repeat|switch|rotate|retest|bump|alternate)\b/;
+/** Advice wording that is a rule whoever reads it: "should", "it's best to", "rule of thumb". */
+const ADVICE_WORDS = /\b(?:should|shouldn't|ought to|it's best to|best to|it's better to|is best|works best|rule of thumb|as a rule)\b/;
+/** "must", "need to", "always", "never": a rule, or one person's constraint ("Sessions must be under 45 minutes"). */
+const SOFT_ADVICE = /\b(?:must|mustn't|need to|needs to|have to|has to)\b|^(?:always|never)\b/;
+/** A period: "every 5th week", "every 4-6 weeks", "every other session". */
+const EVERY_PERIOD = /\bevery (?:\d+(?:st|nd|rd|th)?|\d+ ?[-–] ?\d+|other|few|couple of) (?:weeks?|sessions?|workouts?|cycles?|blocks?|months?)\b/;
+/** "Always/never … every N weeks", or a deload on a period: a rule (review coach-tools r2 S2). */
+const PERIODIC_RULE = new RegExp(`(?:^(?:always|never)\\b|\\bdeloads?\\b).*${EVERY_PERIOD.source}`);
+/** A claim about what works for anyone: "helps recovery", "builds strength". */
+const GENERAL_CLAIM =
+  /\b(?:helps?|builds?|improves?|increases?|reduces?|drives?|prevents?|boosts?|speeds? up|maximi[sz]es?)\b(?: \w+)? (?:recovery|strength|hypertrophy|muscle|growth|gains|injur(?:y|ies)|fatigue|progress|performance|power|endurance|technique)\b/;
+/** A whole class of lifts or lifters, not one exercise Ben does: "heavy compounds", "lifters". */
+const CLASS_WORDS =
+  /\b(?:compounds?|compound (?:lifts?|movements?|exercises?)|isolation (?:work|lifts?|exercises?)|accessor(?:y|ies)(?: work| lifts?)?|heavy sets|big lifts|main lifts|each muscle|every muscle|muscle groups?|lifters|athletes|beginners|trainees|everyone|anyone|people)\b/;
+/**
+ * One person's week, day or time: a schedule constraint is Ben's, not a
+ * training rule ("Keep sessions under 45 minutes on weekdays", "Finish by
+ * 7:30 to get to work", "Train before work").
+ */
+const SCHEDULE_CONTEXT =
+  /\b(?:weekdays?|weekends?|mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|work|shifts?|commute|school|kids|lunch(?:time)?|mornings?|evenings?|tonight|today|tomorrow|home)\b|\b\d{1,2}[:.]\d{2}\b|\b\d{1,2} ?(?:am|pm)\b|\b(?:sessions?|workouts?|training) (?:\w+ ){0,2}(?:under|over|less than|at most|no longer than|within) \d+/;
+
+/**
+ * Where a memory's words belong (CLAUDE.md rule 10, coach-memory CM9;
+ * review coach-tools r2 S1, S2):
+ * - `personal`: about Ben (first person, a dropped-subject fact, his
+ *   schedule, or no rule wording at all): a memory.
+ * - `rule`: clear rule wording with no one in particular ("Always deload
+ *   every 5th week", "You should never train to failure", "Compound lifts
+ *   first", "A deload every 4-6 weeks helps recovery"): the playbook.
+ * - `unclear`: an instruction that could be either ("Avoid lunges", "Use
+ *   straps for deadlifts"): Ben picks on the card (CM9's split).
+ */
+export type MemoryTextKind = 'personal' | 'rule' | 'unclear';
+
+/**
+ * Who asked: `coach` for the coach's own `suggest_memory` (clear rule
+ * wording is refused there), `ben` for Ben's "remember …" (`save_memory`).
+ * Ben's words go to the playbook without a card only on the strongest
+ * signals (review coach-tools r3 S1); anything weaker gets the CM9 split.
+ */
+export type MemoryAsker = 'coach' | 'ben';
+
+/** A dropped subject before "should": "Should keep sessions short" is about Ben, like "Prefers dumbbells" (r3 S1). */
+const LEADING_SHOULD = /^(?:(?:probably|really|definitely|still|also) )?(?:should(?:n't| not)?|ought(?:n't)? to)\b/;
+/** Class words that name lifters or a class of lifts, not a kind of set Ben might do ("heavy sets"). */
+const STRONG_CLASS_WORDS =
+  /\b(?:compounds?|compound (?:lifts?|movements?|exercises?)|isolation (?:work|lifts?|exercises?)|accessor(?:y|ies)(?: work| lifts?)?|big lifts|main lifts|each muscle|every muscle|muscle groups?|lifters|athletes|beginners|trainees|everyone|anyone|people)\b/;
+/** Wording that only a general rule uses. */
+const RULE_PHRASE = /\b(?:works best|rule of thumb|as a rule)\b/;
+
+/** Unmistakably general: a periodic rule, a claim about what works, a class of lifts or lifters, rule phrasing. */
+function strongRuleSignal(t: string): boolean {
+  return PERIODIC_RULE.test(t) || GENERAL_CLAIM.test(t) || STRONG_CLASS_WORDS.test(t) || RULE_PHRASE.test(t);
+}
+
+export function memoryTextKind(text: string, asker: MemoryAsker = 'coach'): MemoryTextKind {
+  const t = text
+    .toLowerCase()
+    .replace(/[‘’]/g, "'")
+    .trim()
+    .replace(/^remember (?:that |to )?/, '');
+  if (personalPlaybookText(t)) return 'personal';
+  const strong = strongRuleSignal(t);
+  if (LEADING_SHOULD.test(t)) return strong ? 'unclear' : 'personal';
+  const clear = ADVICE_WORDS.test(t) || PERIODIC_RULE.test(t) || GENERAL_CLAIM.test(t) || ((IMPERATIVE_RULE.test(t) || SOFT_ADVICE.test(t) || /^(?:\w+ )?(?:lifts?|movements?|exercises?|work) (?:first|last)\b/.test(t)) && CLASS_WORDS.test(t));
+  const schedule = SCHEDULE_CONTEXT.test(t);
+  if (clear) return schedule || (asker === 'ben' && !strong) ? 'unclear' : 'rule';
+  if (schedule) return 'personal';
+  if (IMPERATIVE_RULE.test(t) || SOFT_ADVICE.test(t) || EVERY_PERIOD.test(t)) return 'unclear';
+  return 'personal';
+}
+
+/** Clear rule wording only (see `memoryTextKind`); unclear text is not a rule here. */
+export function generalRuleMemoryText(text: string): boolean {
+  return memoryTextKind(text) === 'rule';
+}
+
+/** The app line when the coach suggests a general rule as a memory (minimal copy). */
+export const RULE_NOT_MEMORY_LINE = 'Rule, not a memory. Nothing changed.';
 
 export function parseToolCall(turnId: string, name: string, rawArguments: string, registry: TurnRegistry): ParsedToolCall {
   const decl = registry.tools.find((t) => t.name === name);
@@ -191,6 +304,12 @@ export function parseToolCall(turnId: string, name: string, rawArguments: string
       line: "That's about you, not a general rule, so it wasn't added to the playbook. Nothing changed.",
       issues: ['text: personal fact, not a general rule (rule 10)'],
     };
+  }
+  // A coach suggestion in clear rule wording is refused: the coach can't add to the playbook unasked
+  // (add_playbook_candidate needs Ben's request). Ben's own "remember …" of a rule goes to the playbook
+  // instead (the save_memory executor). Unclear text becomes a card with both choices (CM9).
+  if (call.tool === 'suggest_memory' && memoryTextKind(call.args.text) === 'rule') {
+    return { ok: false, error: 'invalid_args', line: RULE_NOT_MEMORY_LINE, issues: ['text: general training rule, not a personal fact (rule 10)'] };
   }
   return { ok: true, call, opId: toolOpId(turnId, decl.name, semanticArgs(call)), dropped: parsed.dropped };
 }

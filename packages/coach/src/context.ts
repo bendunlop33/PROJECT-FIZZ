@@ -1,5 +1,5 @@
 import { buildExecutionOrder, deriveId, stableStringify, targetRpeOf } from '@fizz/domain';
-import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, SessionAggregate, SetValues } from '@fizz/schemas';
+import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetValues } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
 
@@ -62,6 +62,12 @@ export interface CoachContextInput {
   /** This thread so far, oldest first (stored messages; this turn's input is sent separately). */
   thread: readonly CoachMessage[];
   catalogue: readonly CatalogueCue[];
+  /**
+   * (11 Oct) Playbook candidates. Only `approved` ones are sent, as general
+   * rules Ben approved (Coaching knowledge, not evidence-graded); the rest are
+   * never sent (CM9, rule 10).
+   */
+  playbookCandidates?: readonly PlaybookCandidate[];
   /**
    * The summary turn (D21): the built-in rule's next targets per exercise,
    * the comparison and fallback for the coach's own (computed from Ben's
@@ -135,7 +141,20 @@ export interface YourData {
 
 export interface CoachingKnowledge {
   playbook: { version: string; rules: { id: string; rule: string; appliesWhen: string; grade: string; status: string }[] };
+  /** (11 Oct) General rules from chat that Ben approved. Absent when there are none. */
+  approvedChatRules?: { id: string; rule: string; from: 'Ben' | 'the coach'; grade: 'not evidence-graded'; approved: string }[];
   exercises: { name: string; cues: readonly string[] }[];
+}
+
+/**
+ * `Chat rule 1`, `Chat rule 2`, … in the order they were suggested
+ * (coaching-playbook §2.1). Withdrawn ones (an undone add) get no number, so
+ * the Playbook screen and the coach context always use the same numbers
+ * (review coach-tools S2).
+ */
+export function chatRuleNumbers(candidates: readonly PlaybookCandidate[]): Map<string, number> {
+  const ordered = candidates.filter((c) => c.status !== 'withdrawn').sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : a.id.localeCompare(b.id)));
+  return new Map(ordered.map((c, i) => [c.id, i + 1]));
 }
 
 export interface CoachContext {
@@ -223,8 +242,14 @@ function copyOpenedFrom(o: OpenedFrom): OpenedFrom {
 }
 
 /** Coaching knowledge only: approved rules and catalogue cues. Nothing personal is read here. */
-export function buildCoachingKnowledge(catalogue: readonly CatalogueCue[]): CoachingKnowledge {
+export function buildCoachingKnowledge(catalogue: readonly CatalogueCue[], candidates: readonly PlaybookCandidate[] = []): CoachingKnowledge {
+  const numbers = chatRuleNumbers(candidates);
+  const approved = candidates
+    .filter((c) => c.status === 'approved')
+    .sort((a, b) => (numbers.get(a.id) ?? 0) - (numbers.get(b.id) ?? 0))
+    .map((c) => ({ id: `Chat rule ${String(numbers.get(c.id) ?? 0)}`, rule: c.text, from: c.statedBy === 'ben' ? ('Ben' as const) : ('the coach' as const), grade: 'not evidence-graded' as const, approved: (c.decidedAtUtc ?? c.updatedAtUtc).slice(0, 10) }));
   return {
+    ...(approved.length > 0 ? { approvedChatRules: approved } : {}),
     playbook: {
       version: `v1 (${PLAYBOOK_V1.approved})`,
       rules: PLAYBOOK_V1.rules
@@ -281,7 +306,7 @@ function messageText(m: CoachMessage): string | null {
 
 export function buildCoachContext(input: CoachContextInput): CoachContext {
   const yourData = buildYourData(input);
-  const coachingKnowledge = buildCoachingKnowledge(input.catalogue);
+  const coachingKnowledge = buildCoachingKnowledge(input.catalogue, input.playbookCandidates ?? []);
   const notAvailable = input.trainingHistoryAvailable === true ? [...NOT_AVAILABLE] : [NO_TRAINING_HISTORY, ...NOT_AVAILABLE];
   const history = historyItems(input.thread, input.historyBudgetChars ?? 6000);
   const contextHash = deriveId(stableStringify({ v: CONTEXT_FORMAT_VERSION, yourData, coachingKnowledge, notAvailable, history }));
@@ -334,11 +359,14 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
     yourData.push({ label: 'Opened from', detail: o.screen === 'progress' ? `Progress · last ${String(o.window.days)} days` : `Progress · ${o.exercise} · ${o.series}` });
   }
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });
+  // Read through tools when a question needs them (minimal by default), still Your data.
+  if (!ctx.notAvailable.includes(NO_TRAINING_HISTORY)) yourData.push({ label: 'Past workouts and gym equipment', detail: 'read when needed' });
   const k = ctx.coachingKnowledge;
   const notInUse = k.playbook.rules.filter((r) => r.status !== 'in use').length;
   const coachingKnowledge: DomainLabel[] = [
     { label: `Playbook ${k.playbook.version}`, detail: `${plural(k.playbook.rules.length, 'rule')}${notInUse > 0 ? `, ${String(notInUse)} not in use` : ''}` },
   ];
+  if ((k.approvedChatRules?.length ?? 0) > 0) coachingKnowledge.push({ label: 'Rules you approved', detail: plural(k.approvedChatRules?.length ?? 0, 'rule') });
   if (k.exercises.length > 0) coachingKnowledge.push({ label: 'Exercise cues', detail: k.exercises.map((e) => e.name).join(', ') });
   return { yourData, coachingKnowledge, notAvailable: [...ctx.notAvailable] };
 }

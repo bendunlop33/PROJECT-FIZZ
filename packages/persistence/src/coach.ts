@@ -13,13 +13,14 @@ import {
   type CoachUndoResult,
   type CoachWrite,
   type CoachWriteResult,
+  type DraftBasis,
   type ExerciseTargetChanges,
   type Memory,
   type NextSessionTargetRecord,
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { isInHistory, nextTargetSourceBasis, reduceSession } from '@fizz/domain';
+import { chatSetUndoCommand, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -61,16 +62,25 @@ export const NEXT_TARGET_SPEC: DocumentSpec<NextSessionTargetRecord> = {
   columns: (r) => ({ owner_id: r.ownerId, source_session_id: r.sourceSessionId, exercise_id: r.exerciseId, action_id: r.actionId, status: r.status }),
 };
 
+/** Ben's review of a playbook candidate. */
+export type CandidateWrite = { status: 'written'; candidate: PlaybookCandidate } | { status: 'stale'; candidate: PlaybookCandidate } | { status: 'missing' };
+
+/** A Ben write on a memory (Save, Not now, edit). */
+export type MemoryWrite = { status: 'written'; memory: Memory } | { status: 'stale' | 'duplicate'; memory: Memory } | { status: 'missing' };
+
 /** The session an action is about, for `get_recent_actions` and the workout's Undo. */
 function sessionOf(record: ActionRecord): string | null {
   switch (record.detail.kind) {
     case 'adjust_pending_sets':
+    case 'log_set':
+    case 'correct_set':
       return record.detail.sessionId;
     case 'set_next_session_targets':
     case 'propose_next_workout_change':
       return record.detail.sourceSessionId;
     case 'set_pain_flag':
     case 'save_memory':
+    case 'suggest_memory':
     case 'forget_memory':
     case 'add_playbook_candidate':
     case 'update_routine':
@@ -201,6 +211,24 @@ async function startedFrom(q: SqlExecutor, ownerId: string, sourceSessionId: str
     [ownerId, sourceSessionId, sourceSessionId],
   );
   return row?.id ?? null;
+}
+
+/**
+ * Has a workout started from this basis since `sinceUtc` (and still exists,
+ * not discarded)? A routine: a session of that routine. The next session of a
+ * workout: a start noted against it (`next_target_uses`). Live or in
+ * history (`inHistorySql`): a deleted workout doesn't count. Structural
+ * proposals and their Apply end there (ADR 0020 §3).
+ */
+export async function basisStartedSince(q: SqlExecutor, ownerId: string, basis: DraftBasis, sinceUtc: string): Promise<boolean> {
+  const row =
+    basis.kind === 'routine'
+      ? await q.getFirst<{ id: string }>(`SELECT id FROM sessions WHERE owner_id = ? AND routine_id = ? AND started_at_utc >= ? AND (status = 'active' OR ${inHistorySql()}) LIMIT 1`, [ownerId, basis.routineId, sinceUtc])
+      : await q.getFirst<{ id: string }>(
+          `SELECT s.id AS id FROM next_target_uses u JOIN sessions s ON s.owner_id = u.owner_id AND s.start_operation_id = u.start_op_id WHERE u.owner_id = ? AND u.source_session_id = ? AND s.id != ? AND u.created_at_utc >= ? AND (s.status = 'active' OR ${inHistorySql('s')}) LIMIT 1`,
+          [ownerId, basis.sourceSessionId, basis.sourceSessionId, sinceUtc],
+        );
+  return row !== null;
 }
 
 /** A row as read: `usedBySessionId` is the live workout started from its source, worked out at read time. */
@@ -396,6 +424,19 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback('already_exists');
         return null;
       }
+      case 'suggest_memory': {
+        // CM1/CM2: a suggestion waits for Ben; one already saved or waiting with the same text isn't suggested again.
+        // One that dropped off after SUGGESTION_DAYS without an answer isn't waiting any more (review S6): the
+        // same words may be suggested again. The old row stays as it was (CM3).
+        if (write.memory.ownerId !== ownerId) throw new Error('Memory owner differs from the store owner');
+        const saved = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'active'", [ownerId, write.memory.contentKey]);
+        if (saved !== null) throw new Rollback('already_exists');
+        const waiting = await tx.getAll("SELECT * FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'suggested'", [ownerId, write.memory.contentKey]);
+        if (waiting.some((row) => suggestionInDate(decodeDocument(MEMORY_SPEC, row), write.memory.createdAtUtc))) throw new Rollback('already_exists');
+        const r = await saveDocumentIn(tx, MEMORY_SPEC, write.memory, null);
+        if (!r.ok) throw new Rollback('already_exists');
+        return null;
+      }
       case 'forget_memory': {
         const m = await getDoc(tx, MEMORY_SPEC, write.memoryId);
         if (m === null || m.ownerId !== ownerId) throw new Rollback('missing');
@@ -436,6 +477,7 @@ export class SqliteCoachStore {
       case 'session_command': {
         const agg = await readAggregate(tx, write.sessionId);
         if (agg === null || agg.session.ownerId !== ownerId) throw new Rollback('missing');
+        if (write.expectedSessionVersion !== undefined && agg.session.version !== write.expectedSessionVersion) throw new Rollback('stale_version');
         const r = reduceSession(agg, write.command);
         if (!r.ok) throw new Rollback(r.error.code === 'stale_version' ? 'stale_version' : 'missing');
         if (r.state !== agg) await writeAggregate(tx, r.state);
@@ -444,6 +486,9 @@ export class SqliteCoachStore {
       case 'playbook_candidate': {
         const open = await tx.getFirst("SELECT * FROM playbook_candidates WHERE content_key = ? AND status = 'to_review'", [write.candidate.contentKey]);
         if (open !== null) return this.creatorOf(tx, decodeDocument(PLAYBOOK_CANDIDATE_SPEC, open).createdByActionId);
+        // (11 Oct) Already approved or rejected in the same words: not offered again (coaching-playbook §3.1).
+        const decided = await tx.getFirst("SELECT id FROM playbook_candidates WHERE content_key = ? AND status IN ('approved', 'rejected')", [write.candidate.contentKey]);
+        if (decided !== null) throw new Rollback('already_exists');
         const r = await saveDocumentIn(tx, PLAYBOOK_CANDIDATE_SPEC, write.candidate, null);
         if (!r.ok) throw new Rollback('already_exists');
         return null;
@@ -552,6 +597,19 @@ export class SqliteCoachStore {
         const alreadyLogged = changes.filter((c) => now.get(c.setId)?.status === 'completed').map((c) => c.setNumber);
         return { restored, alreadyLogged };
       }
+      case 'log_set':
+      case 'correct_set': {
+        // The workout's own guards (11 Oct, coach tools): a log comes back with `undo_log` (the set's version, still the
+        // latest commit); a correction with one more `correct_set` to the values before. Only in the workout it was made in.
+        const agg = await readAggregate(tx, d.sessionId);
+        if (agg === null || agg.session.ownerId !== ownerId || agg.session.status !== 'active') return 'changed_since';
+        const command = chatSetUndoCommand(d, { opId: `undo:${target.actionId}`, at: { utc: atUtc, tz: target.createdAt.tz } });
+        if (command === null) return 'unsupported';
+        const r = reduceSession(agg, command);
+        if (!r.ok || r.duplicate) return 'changed_since';
+        await writeAggregate(tx, r.state);
+        return 'ok';
+      }
       case 'set_next_session_targets': {
         const rows = await listDocuments(tx, NEXT_TARGET_SPEC, 'action_id = ?', [target.actionId]);
         let undone = 0;
@@ -563,8 +621,14 @@ export class SqliteCoachStore {
         }
         return undone > 0 ? 'ok' : 'changed_since';
       }
-      // Ben's routine change from today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
-      case 'propose_next_workout_change':
+      case 'propose_next_workout_change': {
+        // Only Ben's Apply is undoable (a proposal itself was never applied), until a workout starts from its basis.
+        if (d.proposalId === undefined || d.basis === undefined) return 'unsupported';
+        return (await basisStartedSince(tx, ownerId, d.basis, target.createdAt.utc)) ? 'changed_since' : 'ok';
+      }
+      // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
+      // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
+      case 'suggest_memory':
       case 'update_routine':
       case 'undo':
         return 'unsupported';
@@ -681,6 +745,54 @@ export class SqliteCoachStore {
     });
   }
 
+  // ---------- Structural proposals (ADR 0020 §3) ----------
+
+  /** Every structural proposal and Ben's taps on them (Apply, Not now), oldest first. A small list. */
+  listStructural(ownerId: string): Promise<ActionRecord[]> {
+    return this.db.read(async (q) => (await q.getAll("SELECT * FROM coach_actions WHERE owner_id = ? AND kind = 'propose_next_workout_change' ORDER BY created_at_utc, id", [ownerId])).map(decodeAction));
+  }
+
+  /**
+   * Ben's Apply or Not now on a structural proposal, checked and saved in one
+   * transaction (rule 5): the proposal must still be a live suggestion (no
+   * earlier tap), no workout may have started from its basis since it was
+   * made, and a routine must still be at the version it was proposed
+   * against. Idempotent on the tap's opId. A refusal writes nothing.
+   */
+  commitStructuralTap(ownerId: string, tap: ActionRecord): Promise<CoachWriteResult> {
+    const d = tap.detail;
+    if (d.kind !== 'propose_next_workout_change' || d.proposalId === undefined || d.basis === undefined) throw new TypeError('commitStructuralTap takes a tap on a structural proposal');
+    const proposalId = d.proposalId;
+    const basis = d.basis;
+    return this.db
+      .write(async (tx): Promise<CoachWriteResult> => {
+        const prior = await actionByOp(tx, ownerId, tap.opId);
+        if (prior !== null) return { status: 'replayed', action: prior };
+        const proposal = await actionById(tx, proposalId);
+        if (proposal === null || proposal.ownerId !== ownerId || proposal.record.status !== 'proposed') throw new Rollback('missing');
+        const earlier = (await tx.getAll("SELECT * FROM coach_actions WHERE owner_id = ? AND kind = 'propose_next_workout_change'", [ownerId]))
+          .map(decodeAction)
+          .filter((r) => r.detail.kind === 'propose_next_workout_change' && r.detail.proposalId === proposalId);
+        if (earlier.length > 0) throw new Rollback('already_exists');
+        if (await basisStartedSince(tx, ownerId, basis, proposal.record.createdAt.utc)) throw new Rollback('stale_version');
+        const pd = proposal.record.detail;
+        if (basis.kind === 'routine' && pd.kind === 'propose_next_workout_change' && pd.basisVersion !== undefined) {
+          const routine = await tx.getFirst<{ version: number }>('SELECT version FROM routines WHERE id = ?', [basis.routineId]);
+          if (routine === null || routine.version !== pd.basisVersion) throw new Rollback('stale_version');
+        }
+        await insertAction(tx, ownerId, tap);
+        return { status: 'written', action: tap };
+      })
+      .catch((e: unknown) => {
+        if (e instanceof Rollback) return { status: 'conflict', reason: e.reason };
+        throw e;
+      });
+  }
+
+  basisStartedSince(ownerId: string, basis: DraftBasis, sinceUtc: string): Promise<boolean> {
+    return this.db.read((q) => basisStartedSince(q, ownerId, basis, sinceUtc));
+  }
+
   // ---------- Memories and playbook candidates ----------
 
   listMemories(ownerId: string, status: Memory['status'] | 'all' = 'active'): Promise<Memory[]> {
@@ -693,8 +805,76 @@ export class SqliteCoachStore {
     return this.db.read((q) => getDoc(q, MEMORY_SPEC, id));
   }
 
-  /** Coaching knowledge, read-only in v1; never sent to the coach until approved. */
+  /**
+   * Ben's Save or Not now on a coach suggestion (coach-memory §2.4, CM2):
+   * versioned (rule 5). Save makes it a confirmed memory, refused when the
+   * same text is already saved; Not now keeps it as `not_saved`. `closedAs:
+   * 'playbook'` records that Ben sent it to the playbook instead (CM9).
+   */
+  decideMemory(ownerId: string, req: { memoryId: string; expectedVersion: number; decision: 'save' | 'not_now'; atUtc: string; closedAs?: 'playbook' }): Promise<MemoryWrite> {
+    return this.db.write(async (tx): Promise<MemoryWrite> => {
+      const m = await getDoc(tx, MEMORY_SPEC, req.memoryId);
+      if (m === null || m.ownerId !== ownerId) return { status: 'missing' };
+      const target = req.decision === 'save' ? ('active' as const) : ('not_saved' as const);
+      // A double tap: already where it was asked to go.
+      if (m.status === target && m.version === req.expectedVersion + 1) return { status: 'written', memory: m };
+      if (m.version !== req.expectedVersion || m.status !== 'suggested') return { status: 'stale', memory: m };
+      if (target === 'active') {
+        const clash = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'active'", [ownerId, m.contentKey]);
+        if (clash !== null) return { status: 'duplicate', memory: m };
+      }
+      const next: Memory = { ...m, status: target, version: m.version + 1, updatedAtUtc: req.atUtc, ...(target === 'not_saved' && req.closedAs !== undefined ? { closedAs: req.closedAs } : {}) };
+      await saveDocumentIn(tx, MEMORY_SPEC, next, m.version);
+      return { status: 'written', memory: next };
+    });
+  }
+
+  /**
+   * Ben's edit of a confirmed memory (coach-memory §2.2): new text and key,
+   * the earlier text kept in `edits`. Versioned; refused when another saved
+   * memory already says the same.
+   */
+  editMemory(ownerId: string, req: { memoryId: string; expectedVersion: number; text: string; contentKey: string; atUtc: string }): Promise<MemoryWrite> {
+    return this.db.write(async (tx): Promise<MemoryWrite> => {
+      const m = await getDoc(tx, MEMORY_SPEC, req.memoryId);
+      if (m === null || m.ownerId !== ownerId) return { status: 'missing' };
+      if (m.version === req.expectedVersion + 1 && m.text === req.text) return { status: 'written', memory: m };
+      if (m.version !== req.expectedVersion || m.status !== 'active') return { status: 'stale', memory: m };
+      if (m.text === req.text) return { status: 'written', memory: m };
+      const clash = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'active' AND id != ?", [ownerId, req.contentKey, m.id]);
+      if (clash !== null) return { status: 'duplicate', memory: m };
+      const next: Memory = { ...m, text: req.text, contentKey: req.contentKey, edits: [...(m.edits ?? []), { before: m.text, atUtc: req.atUtc }].slice(-20), version: m.version + 1, updatedAtUtc: req.atUtc };
+      await saveDocumentIn(tx, MEMORY_SPEC, next, m.version);
+      return { status: 'written', memory: next };
+    });
+  }
+
+  /** Coaching knowledge; never sent to the coach until approved. */
   listPlaybookCandidates(): Promise<PlaybookCandidate[]> {
     return this.db.read((q) => listDocuments(q, PLAYBOOK_CANDIDATE_SPEC));
+  }
+
+  /**
+   * Ben's review of a chat rule (coaching-playbook §4.1, B8): Approve or
+   * Reject a rule to review, or put an approved or rejected one back to
+   * review (the toast's Undo, `Remove from playbook`, `Review again`).
+   * Versioned (rule 5); a double tap is one write. Coaching knowledge: no owner.
+   */
+  decidePlaybookCandidate(req: { candidateId: string; expectedVersion: number; decision: 'approve' | 'reject' | 'reopen'; atUtc: string }): Promise<CandidateWrite> {
+    return this.db.write(async (tx): Promise<CandidateWrite> => {
+      const c = await getDoc(tx, PLAYBOOK_CANDIDATE_SPEC, req.candidateId);
+      if (c === null || c.status === 'withdrawn') return { status: 'missing' };
+      const target = req.decision === 'approve' ? ('approved' as const) : req.decision === 'reject' ? ('rejected' as const) : ('to_review' as const);
+      if (c.status === target && c.version === req.expectedVersion + 1) return { status: 'written', candidate: c };
+      const from = req.decision === 'reopen' ? c.status === 'approved' || c.status === 'rejected' : c.status === 'to_review';
+      if (c.version !== req.expectedVersion || !from) return { status: 'stale', candidate: c };
+      if (target === 'to_review') {
+        const clash = await tx.getFirst("SELECT id FROM playbook_candidates WHERE content_key = ? AND status = 'to_review'", [c.contentKey]);
+        if (clash !== null) return { status: 'stale', candidate: c };
+      }
+      const next: PlaybookCandidate = { ...c, status: target, version: c.version + 1, updatedAtUtc: req.atUtc, ...(target === 'to_review' ? {} : { decidedAtUtc: req.atUtc }) };
+      await saveDocumentIn(tx, PLAYBOOK_CANDIDATE_SPEC, next, c.version);
+      return { status: 'written', candidate: next };
+    });
   }
 }

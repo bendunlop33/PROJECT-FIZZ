@@ -53,6 +53,11 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
     return rows[0] ?? null;
   }
 
+  /** Every draft for one basis, open or closed (a coach Apply reads which of its edits Ben took back, review S5). */
+  listForBasis(ownerId: string, basis: DraftBasis): Promise<PreStartDraft[]> {
+    return this.listWhere('owner_id = ? AND basis_key = ?', [ownerId, draftBasisKey(basis)]);
+  }
+
   listByOwner(ownerId: string): Promise<PreStartDraft[]> {
     return this.listWhere('owner_id = ?', [ownerId]);
   }

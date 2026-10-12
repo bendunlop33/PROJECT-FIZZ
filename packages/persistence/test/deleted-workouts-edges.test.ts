@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSessionService, newCheckIn, newPainFlag, reduceSession, startWorkout } from '@fizz/domain';
 import { at, dumbbells, exercise, GYM, gym, HISTORY_EXERCISES, id, idGen, largeHistory, OWNER, profile, richFinishedSession, SPLIT_SQUAT } from '@fizz/domain/testing';
-import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
+import { ActionRecordSchema, type ActionDetail, type ActionRecord, type SessionAggregate, type ZonedTimestamp } from '@fizz/schemas';
 import {
   checkIntegrity,
   DatabaseManager,
@@ -165,7 +165,7 @@ describe('migration 9 on main’s schema 8 (review progress-merge S2)', () => {
     const old = memoryDriver();
     await copyInto(driver, old, 8);
     expect(await readUserVersion(old)).toBe(8);
-    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9, 10] });
+    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9, 10, 11] });
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -207,8 +207,8 @@ describe('migration 10 (workout gaps) on main’s schema 9', () => {
     await copyInto(driver, old, 9);
     expect(await readUserVersion(old)).toBe(9);
     expect(await old.getAll("SELECT duration_confirmed_at_utc AS u FROM sessions WHERE duration_confirmed_at_utc IS NOT NULL")).toEqual([{ u: NOW.utc }]);
-    expect(await migrate(old)).toMatchObject({ from: 9, to: latestVersion(), applied: [10] });
-    expect(latestVersion()).toBe(10);
+    expect(await migrate(old)).toMatchObject({ from: 9, to: latestVersion(), applied: [10, 11] });
+    expect(latestVersion()).toBe(11);
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -236,6 +236,92 @@ describe('migration 10 (workout gaps) on main’s schema 9', () => {
     expect(noted.ok).toBe(true);
     expect(await old.getAll('SELECT note FROM session_exercises WHERE id = ?', [row.id])).toEqual([{ note: 'Bench at 3' }]);
     expect((await migrated.repos.sessions.get(before.session.id))?.exercises[0]?.note).toBe('Bench at 3');
+  });
+});
+
+describe('migration 11 (coach set actions) on main’s schema 10', () => {
+  let n = 0;
+  const coachAction = (detail: ActionDetail): ActionRecord => {
+    n += 1;
+    return ActionRecordSchema.parse({
+      actionId: id(950_000 + n),
+      turnId: null,
+      opId: `m11-op-${String(n)}`,
+      status: 'committed',
+      author: 'coach',
+      detail,
+      failure: null,
+      reason: null,
+      evidenceRefs: [],
+      guardNotes: [],
+      entityVersions: [],
+      undoneBy: null,
+      createdAt: NOW,
+    });
+  };
+
+  it('a populated schema-10 database (deleted, purged, a workout-gaps note, memories, a forgotten one, playbook candidates, coach actions): only 11 applied, in place, every row kept, the same schema as a fresh database, and the new statuses take writes', async () => {
+    const { store, driver } = await mixedStore();
+    cleanups.push(() => store.close());
+    const finished = (await driver.getAll<{ id: string }>("SELECT id FROM sessions WHERE status = 'finished' ORDER BY started_at_utc, id")).map((r) => r.id);
+    const [kept, purged, noted] = await Promise.all(finished.slice(0, 3).map((sid) => store.repos.sessions.get(sid)));
+    if (!kept || !purged || !noted) throw new Error('fixture');
+    expect((await store.repos.sessions.deleteWorkouts({ ownerId: OWNER, items: [item(kept), item(purged)], opId: 'del-m11', at: NOW })).ok).toBe(true);
+    expect(await store.repos.sessions.purgeDeleted({ ownerId: OWNER, opId: 'purge-m11', at: NOW, sessionIds: [purged.session.id] })).toMatchObject({ ok: true, purged: [purged.session.id] });
+    // Schema 10's own column: a note on a finished workout's exercise.
+    const row = noted.exercises[0];
+    if (!row) throw new Error('fixture');
+    const note = await createSessionService(store.repos, () => 'unused').dispatch(noted.session.id, { type: 'set_note', at: NOW, opId: 'note-m11', target: { kind: 'exercise', sessionExerciseId: row.id }, note: 'Bench at 3', expectedVersion: noted.session.version });
+    expect(note.ok).toBe(true);
+    // Your data and Coaching knowledge as schema 10 allowed them.
+    const mem = (k: number, text: string, actionId: string) => ({ id: id(960_000 + k), ownerId: OWNER, version: 1, createdAtUtc: NOW.utc, updatedAtUtc: NOW.utc, text, contentKey: `memory:${text}`, status: 'active' as const, quote: text, createdByActionId: actionId });
+    const m1 = coachAction({ kind: 'save_memory', memoryId: id(960_001), text: 'Trains before work' });
+    expect((await store.repos.coach.commit(OWNER, { kind: 'save_memory', action: m1, memory: mem(1, 'Trains before work', m1.actionId) })).status).toBe('written');
+    const m2 = coachAction({ kind: 'save_memory', memoryId: id(960_002), text: 'Hates lunges' });
+    expect((await store.repos.coach.commit(OWNER, { kind: 'save_memory', action: m2, memory: mem(2, 'Hates lunges', m2.actionId) })).status).toBe('written');
+    const f2 = coachAction({ kind: 'forget_memory', memoryId: id(960_002), text: 'Hates lunges' });
+    expect((await store.repos.coach.commit(OWNER, { kind: 'forget_memory', action: f2, memoryId: id(960_002), expectedVersion: 1, atUtc: NOW.utc })).status).toBe('written');
+    const cand = (k: number, text: string, actionId: string) => ({ id: id(970_000 + k), version: 1, createdAtUtc: NOW.utc, updatedAtUtc: NOW.utc, text, contentKey: `playbook:${text}`, statedBy: 'ben' as const, status: 'to_review' as const, createdByActionId: actionId });
+    const c1 = coachAction({ kind: 'add_playbook_candidate', candidateId: id(970_001), text: 'Deload every 6 weeks' });
+    expect((await store.repos.coach.commit(OWNER, { kind: 'playbook_candidate', action: c1, candidate: cand(1, 'Deload every 6 weeks', c1.actionId) })).status).toBe('written');
+    const source = await exportTables(driver);
+    expect((source.coach_actions ?? []).length).toBe(4);
+
+    const old = memoryDriver();
+    await copyInto(driver, old, 10);
+    expect(await readUserVersion(old)).toBe(10);
+    // Schema 10 refuses what 11 adds.
+    await expect(old.run("UPDATE playbook_candidates SET status = 'approved'")).rejects.toThrow();
+    expect(await migrate(old)).toMatchObject({ from: 10, to: latestVersion(), applied: [11] });
+    expect(latestVersion()).toBe(11);
+
+    const fresh = memoryDriver();
+    cleanups.push(() => fresh.close());
+    await migrate(fresh);
+    expect(await schemaDump(old)).toEqual(await schemaDump(fresh));
+    expect(await old.getAll('PRAGMA foreign_key_check')).toEqual([]);
+    expect(await old.getAll('PRAGMA integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+    expect(await exportTables(old)).toEqual(source);
+
+    const migrated = await openStore(old);
+    cleanups.push(() => migrated.close());
+    expect(migrated.migration).toMatchObject({ from: 11, to: 11, applied: [] });
+    expect((await checkIntegrity(migrated.db)).ok).toBe(true);
+    expect(await migrated.countRecords()).toEqual(await store.countRecords());
+    expect((await migrated.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).sessions.map((x) => x.session.id)).toEqual([kept.session.id]);
+    expect(await migrated.repos.sessions.isPurged(purged.session.id)).toBe(true);
+    expect((await migrated.repos.sessions.get(noted.session.id))?.exercises[0]?.note).toBe('Bench at 3');
+    expect((await migrated.repos.coach.listMemories(OWNER, 'all')).map((m) => [m.text, m.status]).sort()).toEqual([
+      ['Hates lunges', 'forgotten'],
+      ['Trains before work', 'active'],
+    ]);
+    expect(await migrated.repos.coach.getAction(f2.actionId)).toEqual(await store.repos.coach.getAction(f2.actionId));
+    // The new statuses and kinds take writes, through the repository and the table.
+    const [candidate] = await migrated.repos.coach.listPlaybookCandidates();
+    if (!candidate) throw new Error('fixture');
+    expect(await migrated.repos.coach.decidePlaybookCandidate({ candidateId: candidate.id, expectedVersion: candidate.version, decision: 'approve', atUtc: NOW.utc })).toMatchObject({ status: 'written', candidate: { status: 'approved' } });
+    await old.run("INSERT INTO coach_actions (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('m11-x', 'o', 'm11-x', NULL, NULL, 'log_set', 'committed', 1, 't', 't', '{}')");
+    await expect(old.run("DELETE FROM coach_actions WHERE id = 'm11-x'")).rejects.toThrow(/never deleted/);
   });
 });
 

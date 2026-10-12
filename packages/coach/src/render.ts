@@ -39,6 +39,14 @@ function loadPart(load: Load | null): string | null {
   return loadText(load, load.convention);
 }
 
+/** A logged set's values: `100 kg × 8 · RPE 8`, `Bodyweight × 12`. */
+function chatValues(v: { load: Load | null; reps: number | null; rpe: number | null }): string {
+  const load = loadPart(v.load);
+  const reps = v.reps === null ? null : String(v.reps);
+  const main = load !== null && reps !== null ? `${load}${TIMES}${reps}` : load !== null ? load : reps !== null ? `${reps} reps` : '—';
+  return v.rpe === null ? main : `${main} · RPE ${formatNumber(v.rpe)}`;
+}
+
 /** ` @ RPE 8` when the target names one (CHANGELOG 2026-10-11), else empty. */
 function rpePart(t: CoachTarget): string {
   return t.rpe == null ? '' : ` @${NBSP}RPE${NBSP}${formatNumber(t.rpe)}`;
@@ -319,6 +327,24 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Couldn't change ${where}: ${why}. Nothing changed.`;
       return make(status, text, st === 'stale' ? 'Your workout moved on. Nothing changed.' : speakable(text));
     }
+    case 'log_set': {
+      if (st === 'committed') {
+        const text = `Logged set ${String(d.setNumber)} · ${d.exerciseName}: ${chatValues(d.values)} (actual).`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not logged: your workout moved on.', 'Not logged. Your workout moved on.');
+      const text = `Not logged: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
+    case 'correct_set': {
+      if (st === 'committed') {
+        const text = `Set ${String(d.setNumber)} corrected · ${d.exerciseName}: ${chatValues(d.before)} → ${chatValues(d.after)} (actual).`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not corrected: your workout moved on.', 'Not corrected. Your workout moved on.');
+      const text = `Not corrected: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
     case 'set_next_session_targets': {
       if (st === 'committed' || st === 'proposed') {
         const text = nextLine(d.workoutLabel, d.rows, st);
@@ -337,8 +363,14 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
         const text = `Applied for your next ${d.workoutLabel}: ${what}.`;
         return make(status, text, speakable(text));
       }
-      const text = `Out of date: ${failureOr(record, 'your workout changed')}. Nothing changed.`;
-      return make(status, text, text);
+      // Ben's Not now on a proposal card.
+      if (d.proposalId !== undefined && st === 'rejected') {
+        const text = `Not applied: ${what}.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
+      const text = `Couldn't suggest that: ${failureOr(record, 'it was refused')}. Nothing changed.`;
+      return make(status, text, speakable(text));
     }
     case 'update_routine': {
       // Ben's own change from today's edits (ADR 0022): the routine, from now on.
@@ -362,6 +394,10 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       if (st === 'committed') return make(status, `Saved to memory: ${quoteText(d.text)}.`, `Saved to memory: ${d.text}.`);
       if (st === 'proposed') return make(status, `Suggested memory: ${quoteText(d.text)}. Not saved.`, `Suggested memory: ${d.text}. Not saved.`);
       return make(status, "Couldn't save that memory.", "Couldn't save that memory.");
+    }
+    case 'suggest_memory': {
+      if (st === 'proposed') return make(status, `Save to memory? ${quoteText(d.text)}`, `Save to memory? ${d.text}.`);
+      return make(status, `Not suggested: ${failureOr(record, 'it was refused')}.`, `Not suggested: ${failureOr(record, 'it was refused')}.`);
     }
     case 'forget_memory': {
       if (st === 'committed') return make(status, `Forgot: ${quoteText(d.text)}`, `Forgot: ${d.text}.`);

@@ -270,7 +270,7 @@ All loads are **targets** except `LAST` and the Swap sheet's `last …` line, wh
 | Swap sheet | `Swap Bench press` · `Main gym · today` · `TARGET` · `Bench press · planned` · `last 32.5 × 8 · 17 Sep` · `No history` · `⚠ May hurt` · `No swaps at Main gym.` · `Close` |
 | Pain confirm | `DB bench press may hurt` · `Shoulder pain flagged 6 Oct.` · `Add anyway` · `Choose another` |
 | Change-review card | `Change Push A too ›` · `Change Push A` · `Push A from now on` · `Changed` · `Not now` · `Apply` · `✓ Applied · Push A from now on` · `Undo` · `Was suggested:` · `Dismiss` |
-| Toasts | `Bench press → DB bench press · today` [Undo] · `Cable fly skipped today` [Undo] · `Incline DB press first` [Undo] · `Order reset` [Undo] · `Today's edits reset` [Undo] · `Push A changed` [Undo] · `Plan changed · 1 edit removed` · `Earlier edits cleared` · `Couldn't save that edit.` · `Can't undo: Push A changed since.` · `Targets updated` (existing) |
+| Toasts | `Bench press → DB bench press · today` [Undo] · `Cable fly skipped today` [Undo] · `Incline DB press first` [Undo] · `Order reset` [Undo] · `Today's edits reset` [Undo] · `Push A changed` [Undo] · `Plan changed · 1 edit removed` · `Earlier edits cleared` · `Coach change didn't fit here` (an applied coach change the gym can't do; card reads `Couldn't apply here`, coach-tools review S1) · `Couldn't save that edit.` · `Can't undo: Push A changed since.` · `Targets updated` (existing) |
 | `Why?` (swapped row) | `Swapped before start · Bench press` (then the usual target explanation) |
 
 No reassurance lines, no rule names, no explanations outside `Why?`.

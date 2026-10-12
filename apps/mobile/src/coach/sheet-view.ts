@@ -8,11 +8,11 @@
  * (`renderActionResult`), never from the model's words (PM decision 10 Oct).
  */
 
-import { renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
+import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
 import { isInHistory } from '@fizz/domain';
 import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
-import type { CoachAvailability, CoachEntry, ThreadData } from './coach-service';
+import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
 import type { WorkoutPresence } from '../services/history-services';
 
 export type ViewIcon = 'checkmark.circle.fill' | 'arrow.uturn.backward' | 'minus.circle' | 'exclamationmark.triangle' | 'clock.badge.xmark' | 'xmark.octagon' | 'info.circle' | 'wifi.slash' | 'pause.circle' | 'ellipsis';
@@ -84,9 +84,12 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
     case 'summary':
       return ready ? [words('What should I change next time?')] : [];
     case 'today':
+      // The coach reads past workouts through `get_training_overview` (backlog §4.3). `Build a workout` and `Plan my week` aren't built.
+      return ready ? [words('How am I doing?')] : [];
     case 'progress':
     case 'progress_exercise':
-      // No `How am I doing?` until the coach can read past workouts (review S4, rule 6).
+      // Progress keeps no starter chip at the merge with coach tools (main's review S4 behaviour); whether it
+      // offers `How am I doing?` now that the coach reads past workouts is Ben's call.
       return [];
   }
 }
@@ -94,7 +97,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
 // ---------------------------------------------------------------------------
 // Cards (coach-sheet §2.6): status word and icon, never colour alone
 
-export type CardStatusWord = 'Applied' | 'Saved' | 'Undone' | 'Not applied' | 'Out of date' | 'Couldn’t apply' | 'Suggested';
+export type CardStatusWord = 'Applied' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested';
 
 export interface CardView {
   actionId: string;
@@ -104,14 +107,101 @@ export interface CardView {
   /** VoiceOver prefix so app lines are never read as coach text. */
   accessibilityPrefix: string;
   canUndo: boolean;
+  /** A structural proposal (ADR 0020 §3): before/after and its own buttons. */
+  proposal?: ProposalView;
+  /**
+   * A memory suggestion that can still be saved (coach-memory §2.4): `Not now` · `Save`. When its words could
+   * be a general rule (CM9 split): `Save as a memory about me` · `Add to playbook` instead of `Save`.
+   */
+  memoryChoice?: { memoryId: string; version: number; split: boolean };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
+/**
+ * A memory suggestion's card (coach-memory §2.4, CM1–CM3): `Save to memory?`
+ * with the words, `Not now` · `Save` while it waits; `Saved` or `Not saved`
+ * after (14 days without an answer also reads `Not saved`).
+ */
+export function memoryCardView(r: ActionRecord, s: MemoryCardState): CardView | null {
+  if (r.detail.kind !== 'suggest_memory' || r.status !== 'proposed') return null;
+  const words = `“${s.memory.text}”`;
+  if (s.memory.status === 'active') return { actionId: r.actionId, status: { word: 'Saved', icon: 'checkmark.circle.fill' }, text: `Saved to memory: ${words}`, accessibilityPrefix: 'Memory.', canUndo: false };
+  if (s.playbook === 'to_review' || s.playbook === 'approved') {
+    return { actionId: r.actionId, status: { word: 'Saved', icon: 'checkmark.circle.fill' }, text: s.playbook === 'approved' ? `Playbook: ${words}` : `Playbook, to review: ${words}`, accessibilityPrefix: 'Playbook.', canUndo: false };
+  }
+  if (s.playbook === 'rejected') return { actionId: r.actionId, status: { word: 'Not saved', icon: 'minus.circle' }, text: `Rejected before. ${words}`, accessibilityPrefix: 'Playbook.', canUndo: false };
+  if (s.memory.status === 'suggested' && s.canSave) {
+    // CM9: words that could be a general rule offer both homes; Ben's choice wins.
+    const split = memoryTextKind(s.memory.text) !== 'personal';
+    return {
+      actionId: r.actionId,
+      status: { word: 'Suggested', icon: 'minus.circle' },
+      text: split ? `Memory or playbook? ${words}` : `Save to memory? ${words}`,
+      accessibilityPrefix: 'Coach suggestion, not saved.',
+      canUndo: false,
+      memoryChoice: { memoryId: s.memory.id, version: s.memory.version, split },
+    };
+  }
+  return { actionId: r.actionId, status: { word: 'Not saved', icon: 'minus.circle' }, text: words, accessibilityPrefix: 'Coach suggestion, not saved.', canUndo: false };
+}
+
+/**
+ * A structural proposal card (coach-sheet §2.6 `ChangeReviewCard`, ADR 0020
+ * §3): one line per change, the plan before and after, `Not now` · `Apply`
+ * while it is a live suggestion, `Undo` (of Ben's Apply) until the next
+ * workout starts. App text only; the coach's reason is behind `Why?`.
+ */
+export interface ProposalView {
+  proposalId: string;
+  title: string;
+  lines: string[];
+  before: string;
+  after: string;
+  canApply: boolean;
+  /** Ben's Apply record, when `Undo` is offered. */
+  undoActionId: string | null;
+}
+
+const PROPOSAL_STATUS: Record<ProposalCardState['state'], CardView['status']> = {
+  suggested: { word: 'Suggested', icon: 'minus.circle' },
+  applied: { word: 'Applied', icon: 'checkmark.circle.fill' },
+  used: { word: 'Applied', icon: 'checkmark.circle.fill' },
+  not_here: { word: 'Couldn’t apply here', icon: 'exclamationmark.triangle' },
+  undone: { word: 'Undone', icon: 'arrow.uturn.backward' },
+  not_applied: { word: 'Not applied', icon: 'minus.circle' },
+  out_of_date: { word: 'Out of date', icon: 'clock.badge.xmark' },
+};
+
+/** The card for a structural proposal in a given state; null when the record isn't one (or predates before/after). */
+export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardView | null {
+  const d = r.detail;
+  if (d.kind !== 'propose_next_workout_change' || r.status !== 'proposed' || d.before === undefined || d.after === undefined) return null;
+  const lines = d.changes.map((c) => c.text);
+  const live = (s.state === 'applied' || s.state === 'not_here') && s.apply !== null;
+  return {
+    actionId: r.actionId,
+    status: PROPOSAL_STATUS[s.state],
+    text: lines.join('\n'),
+    accessibilityPrefix: 'Coach suggestion.',
+    canUndo: false,
+    proposal: {
+      proposalId: r.actionId,
+      title: `Next ${d.workoutLabel}`,
+      lines,
+      before: d.before.join(' · '),
+      after: d.after.join(' · '),
+      canApply: s.state === 'suggested',
+      undoActionId: live ? (s.apply?.actionId ?? null) : null,
+    },
+  };
+}
+
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
   switch (r.status) {
     case 'committed':
+      if (r.detail.kind === 'log_set') return { word: 'Logged', icon: 'checkmark.circle.fill' };
       return r.detail.kind === 'save_memory' || r.detail.kind === 'add_playbook_candidate' ? { word: 'Saved', icon: 'checkmark.circle.fill' } : { word: 'Applied', icon: 'checkmark.circle.fill' };
     case 'proposed':
       return { word: 'Suggested', icon: 'minus.circle' };
@@ -241,7 +331,12 @@ export function threadRows(data: ThreadData): ThreadRow[] {
     }
     const tools = toolLines(turn?.toolLog ?? []);
     if (tools.length > 0) rows.push({ kind: 'tools', key: `${turnId}:tools`, lines: tools });
-    for (const a of actions) rows.push({ kind: 'card', key: a.actionId, card: cardView(a) });
+    for (const a of actions) {
+      const state = data.proposals?.get(a.actionId);
+      const memory = data.memories?.get(a.actionId);
+      const special = state !== undefined ? proposalCardView(a, state) : memory !== undefined ? memoryCardView(a, memory) : null;
+      rows.push({ kind: 'card', key: a.actionId, card: special ?? cardView(a) });
+    }
     const coach = msgs.find((m) => m.body.role === 'coach');
     if (coach !== undefined && coach.body.role === 'coach') {
       const sentences = coach.body.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []));

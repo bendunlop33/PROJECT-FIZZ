@@ -86,6 +86,10 @@ jobs:
         run: npx vitest run packages/persistence/test/release-migrations.test.ts
         env:
           FIZZ_RELEASE_CHECK: '1'
+      # No .ipa may ship a reserved or empty migration (review coach-tools B1): a phone that ran a
+      # placeholder would never run the real one.
+      - name: Migrations releasable
+        run: npm run check:migrations
       - name: Expo prebuild (config only)
         working-directory: apps/mobile
         run: npx expo prebuild --platform ios --no-install --clean

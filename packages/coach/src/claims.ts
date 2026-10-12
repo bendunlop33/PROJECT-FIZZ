@@ -1027,9 +1027,24 @@ function factsOf(record: ActionRecord): RecordFacts {
     case 'set_pain_flag':
       for (const n of d.exerciseNames) f.names.add(n.toLowerCase());
       break;
+    case 'log_set':
+    case 'correct_set': {
+      // A logged set's actual values, as targets for the number check (11 Oct, coach tools).
+      const asTarget = (v: { load: CoachTarget['load']; reps: number | null }): CoachTarget => ({ load: v.load, reps: v.reps === null ? null : { min: v.reps, max: v.reps } });
+      const after = d.kind === 'log_set' ? d.values : d.after;
+      f.names.add(d.exerciseName.toLowerCase());
+      f.numbers.add(String(d.setNumber));
+      f.changedSets.add(d.setNumber);
+      addAfter(f, asTarget(after));
+      if (after.rpe !== null) f.numbers.add(formatNumber(after.rpe));
+      if (d.kind === 'correct_set') addBefore(f, asTarget(d.before), asTarget(d.after));
+      if (after.load !== null) f.primaryLoad = after.load;
+      break;
+    }
     case 'propose_next_workout_change':
     case 'update_routine':
     case 'save_memory':
+    case 'suggest_memory':
     case 'forget_memory':
     case 'add_playbook_candidate':
       break;

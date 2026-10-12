@@ -166,6 +166,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
       listFinishedBetween: ids(await s.listFinishedBetween(OWNER, '2000-01-01T00:00:00.000Z', '2100-01-01T00:00:00.000Z')),
       listFinishedBetweenReadable: ids((await s.listFinishedBetweenReadable(OWNER, '2000-01-01T00:00:00.000Z', '2100-01-01T00:00:00.000Z')).sessions),
       latestFinished: (await s.latestFinished(OWNER))?.session.id ?? null,
+      earliestFinishedStartUtc: await s.earliestFinishedStartUtc(OWNER),
       listRepeatableIds: await s.listRepeatableIds(OWNER, 100),
       listPastWorkoutIds: await s.listPastWorkoutIds(OWNER, 100),
       listFinishedRefs: (await s.listFinishedRefs(OWNER, 100)).map((r) => r.sessionId),

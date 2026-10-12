@@ -359,7 +359,7 @@ describe('a populated schema-6 database migrates in place to 7', () => {
     await expect(phone.run("INSERT INTO coach_actions (id, owner_id, op_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('x', 'o', 'p', 'update_routine', 'committed', 1, 't', 't', '{}')")).rejects.toThrow();
 
     const v7 = await openStore(phone);
-    // Migration 7, then every later one (8: deleted workouts, 9: Progress, 10: workout gaps).
+    // Migration 7, then every later one (8: deleted workouts, 9: Progress, 10: workout gaps, 11: coach set actions).
     expect(v7.migration).toMatchObject({ from: 6, to: latestVersion(), applied: MIGRATIONS.slice(6).map((m) => m.version) });
     expect(await v7.repos.sessions.get(a.session.id)).toEqual(a);
     expect(await v7.repos.coach.getAction(coachRecord.actionId)).toEqual(coachRecord);

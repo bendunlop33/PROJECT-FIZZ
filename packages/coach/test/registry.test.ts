@@ -7,6 +7,9 @@ import {
   functionToolDefinitions,
   listCoachCapabilities,
   parseToolCall,
+  generalRuleMemoryText,
+  memoryTextKind,
+  RULE_NOT_MEMORY_LINE,
   personalPlaybookText,
   toolOpId,
   appendContentKeys,
@@ -71,16 +74,21 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
     }).toThrow(/Duplicate/);
   });
 
-  it('no versioned update can write a finished session or a done set', () => {
+  it('no versioned update can write a finished session; a logged set only on Ben’s request, in the workout (11 Oct)', () => {
     for (const t of COACH_TOOLS.filter((x) => x.effect === 'versioned_update')) {
-      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory']).toContain(w);
+      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set']).toContain(w);
+      if (t.writes.includes('logged_set')) {
+        expect(['log_set', 'correct_set']).toContain(t.name);
+        expect(t.needs).toBe('ben_request');
+        expect(t.turnKinds).toEqual(['workout']);
+      }
     }
   });
 });
 
 describe('buildTurnRegistry (CC10, summary closed list)', () => {
-  it('a plain question gets the reads only', () => {
-    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_gym_equipment', 'get_progression_targets', 'get_recent_actions']);
+  it('a plain question gets the reads only, plus memory suggestions (which change nothing until Ben taps Save)', () => {
+    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_progression_targets', 'get_substitutions', 'get_recent_actions', 'suggest_memory']);
   });
 
   it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {
@@ -94,7 +102,7 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
 
   it('the summary turn is a closed list: reads, next-session targets, structural only when gated (check 17)', () => {
     const summary = names(gate({ kind: 'summary' }));
-    expect(summary).toEqual(['get_active_session', 'get_recent_training', 'get_gym_equipment', 'get_progression_targets', 'get_recent_actions', 'set_next_session_targets']);
+    expect(summary).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_progression_targets', 'get_substitutions', 'get_recent_actions', 'set_next_session_targets']);
     const withSignal = names(gate({ kind: 'summary', structuralSignals: ['pain_flag'] }));
     expect(withSignal).toContain('propose_next_workout_change');
     // Even a request in the summary turn can't reach memory, pain or today's sets.
@@ -157,7 +165,8 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
   it('a remark during a workout opens no write tool, so the coach can only offer (rule 3, review r2 B2)', () => {
     for (const remark of ['set 2 felt good', 'Set 3 was fine', 'Plan looks good', 'Remember when I did 100 for 8?']) {
       const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(remark) }));
-      expect(r.tools.filter((t) => t.effect !== 'read').map((t) => t.name)).toEqual([]);
+      // A memory suggestion is only a card with Save (CM2); nothing else that writes is offered.
+      expect(r.tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory').map((t) => t.name)).toEqual([]);
       expect(r.withheld).toContainEqual({ name: 'adjust_pending_sets', reason: 'needs_request' });
     }
     expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('remember that I train before work') }))).not.toContain('adjust_pending_sets');
@@ -232,6 +241,88 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     }
   });
 
+  it('a memory suggestion in clear rule wording is refused with a short line; facts about Ben pass (review coach-tools S4, r2 S2, rule 10)', () => {
+    const reg = buildTurnRegistry(gate());
+    for (const text of [
+      'Always deload every 5th week',
+      'remember to always deload every 5th week',
+      'Deload every 6 weeks',
+      'Rest 3 minutes between heavy sets',
+      'You should never train to failure on squats',
+      'Lifters must warm up before heavy sets',
+      'Never superset heavy compounds',
+      // Missed in round 2 (r2 S2).
+      'Progressive overload works best with small jumps',
+      'A deload every 4-6 weeks helps recovery',
+      'Compound lifts first',
+    ]) {
+      expect(memoryTextKind(text), text).toBe('rule');
+      expect(generalRuleMemoryText(text), text).toBe(true);
+      const r = parseToolCall('t1', 'suggest_memory', JSON.stringify({ text, quote: text }), reg);
+      expect(r.ok, text).toBe(false);
+      if (!r.ok) expect(r.line).toBe(RULE_NOT_MEMORY_LINE);
+    }
+    expect(RULE_NOT_MEMORY_LINE.length).toBeLessThan(40);
+    for (const text of [
+      'Trains before work',
+      'Prefers dumbbells to barbells',
+      'I always train fasted',
+      'Left knee is dodgy on lunges',
+      'Lower back gets tight on deadlifts',
+      'Rest day on Sundays',
+      'Gym closes at 9 on Sundays',
+      'Night shifts on Tuesdays',
+      'Home dumbbells stop at 24 kg',
+      // Round 2's false positives: his schedule, not a training rule (r2 S2).
+      'Keep sessions under 45 minutes on weekdays',
+      'Sessions must be under 45 minutes on weekdays',
+      'Train before work',
+      'Finish by 7:30 to get to work',
+    ]) {
+      expect(memoryTextKind(text), text).toBe('personal');
+      expect(parseToolCall('t1', 'suggest_memory', JSON.stringify({ text, quote: text }), reg).ok, text).toBe(true);
+    }
+  });
+
+  it('an instruction that could be a rule or about Ben is unclear: suggested, never refused (CM9 split, review coach-tools r2 S2)', () => {
+    const reg = buildTurnRegistry(gate());
+    for (const text of ['Avoid lunges', 'Use straps for deadlifts', 'Always rest 3 minutes on squats', 'Sessions should be under 45 minutes on weekdays']) {
+      expect(memoryTextKind(text), text).toBe('unclear');
+      expect(generalRuleMemoryText(text), text).toBe(false);
+      expect(parseToolCall('t1', 'suggest_memory', JSON.stringify({ text, quote: text }), reg).ok, text).toBe(true);
+    }
+    // save_memory is never refused at parse: its executor routes rules to the playbook (r2 S1).
+    const mem = buildTurnRegistry(gate({ benRequest: MEMORY }));
+    expect(parseToolCall('t1', 'save_memory', JSON.stringify({ text: 'Always deload every 5th week', quote: 'remember to always deload every 5th week' }), mem).ok).toBe(true);
+  });
+
+  it("Ben-asked words go to the playbook only on strong signals; a leading 'should' is his (review coach-tools r3 S1)", () => {
+    // His own constraints with a dropped subject: personal, whoever asked.
+    for (const text of ['Should not bench heavy until the shoulder settles', 'Should keep sessions short', "Shouldn't squat deep until the knee heals"]) {
+      expect(memoryTextKind(text, 'ben'), text).toBe('personal');
+      expect(memoryTextKind(text), text).toBe('personal');
+    }
+    // A plain imperative or "should" with no strong signal: Ben picks on the split card.
+    for (const text of ['Rest 3 minutes between heavy sets', 'You should never train to failure on squats']) {
+      expect(memoryTextKind(text, 'ben'), text).toBe('unclear');
+      expect(memoryTextKind(text), text).toBe('rule');
+    }
+    // A leading "should" with a strong rule signal could be either.
+    expect(memoryTextKind('Should deload every 5th week', 'ben')).toBe('unclear');
+    // Unmistakably general: straight to the playbook (CM9).
+    for (const text of [
+      'Always deload every 5th week',
+      'remember to always deload every 5th week',
+      'A deload every 4-6 weeks helps recovery',
+      'Progressive overload works best with small jumps',
+      'Compound lifts first',
+      'Lifters must warm up before heavy sets',
+      'Never superset heavy compounds',
+    ]) {
+      expect(memoryTextKind(text, 'ben'), text).toBe('rule');
+    }
+  });
+
   it('a bare third-person verb or "owner" is a personal fact (review r5 S3, rule 10)', () => {
     for (const text of ['Trains fasted before work', 'Owner prefers machines', 'User likes high reps', 'Usually lifts at 6am', 'Prefers dumbbells', 'Hates lunges', 'Has a dodgy knee']) {
       expect(personalPlaybookText(text), text).toBe(true);
@@ -288,6 +379,8 @@ describe('listCoachCapabilities (check 11)', () => {
           {
             "rows": [
               "Change today's remaining sets",
+              "Log a set you tell it ("log 100 for 8"), with Undo",
+              "Correct a logged set you name ("set 2 was 95"), with Undo",
               "Turn a pain flag on",
               "Save a memory",
               "Forget a memory",
@@ -306,6 +399,7 @@ describe('listCoachCapabilities (check 11)', () => {
           {
             "rows": [
               "Swapping, adding, removing or reordering exercises in your next workout",
+              "Suggest something to remember (saved only if you tap Save)",
             ],
             "section": "suggest_only",
             "title": "Only as a suggestion you apply",

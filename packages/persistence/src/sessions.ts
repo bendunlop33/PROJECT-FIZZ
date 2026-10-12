@@ -721,6 +721,14 @@ export class SqliteSessions implements SessionRepository {
     });
   }
 
+  /** When the first finished session started (any source), or null: how far back the history goes (review N4). */
+  earliestFinishedStartUtc(ownerId: string): Promise<string | null> {
+    return this.db.read(async (q) => {
+      const row = await q.getFirst<{ t: string | null }>(`SELECT min(started_at_utc) AS t FROM sessions WHERE owner_id = ? AND ${inHistorySql()}`, [ownerId]);
+      return row?.t ?? null;
+    });
+  }
+
   /** The most recently started finished session, if any. */
   latestFinished(ownerId: string): Promise<SessionAggregate | null> {
     return this.db.read(async (q) => {

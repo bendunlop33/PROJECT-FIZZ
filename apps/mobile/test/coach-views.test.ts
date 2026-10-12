@@ -64,8 +64,9 @@ describe('starter chips (CS6): ours, by context; Pain works without the coach', 
     expect(starterChips({ kind: 'workout', sessionId: ID(9) }, avail('not_connected'), true).map((c) => c.label)).toEqual(['Pain']);
     expect(starterChips({ kind: 'summary', sessionId: ID(9) }, avail('ok'), false).map((c) => c.label)).toEqual(['What should I change next time?']);
     expect(starterChips({ kind: 'today' }, avail('limit'), false)).toEqual([]);
-    // No `How am I doing?` while the coach can't read past workouts (review S4).
-    expect(starterChips({ kind: 'today' }, avail('ok'), false)).toEqual([]);
+    // The coach reads past workouts now (backlog §4.3): Today offers `How am I doing?` as Ben's own words.
+    expect(starterChips({ kind: 'today' }, avail('ok'), false)).toEqual([{ label: 'How am I doing?', input: { kind: 'words', text: 'How am I doing?', spoken: false } }]);
+    expect(starterChips({ kind: 'today' }, avail('not_connected'), false)).toEqual([]);
   });
 });
 

@@ -248,7 +248,8 @@ Partly built items are marked *(partly)*, with what exists. Sources are under `d
 | Item | Size | Waiting on | Source |
 |---|---|---|---|
 | Coach reads past training, gym equipment and built-in targets (tools declared, no executors), plus a "How am I doing?" chip | M | nothing | ADR 0020 §10; coach-contract §6.1 |
-| Coach proposes structural changes (swap/add/remove/reorder) as Apply cards. *(partly: tool and UI exist, withheld)* | L | Ben (ADR 0020 §3) | CLAUDE.md rule 3; coach-adjustments CA9 |
+| Coach proposes structural changes (swap/add/remove/reorder) as Apply cards. *(partly: swap, remove and reorder built on claude/coach-tools; add not offered, see next row)* | L | Ben (ADR 0020 §3) | CLAUDE.md rule 3; coach-adjustments CA9 |
+| Coach proposes adding an exercise to the next workout (Apply card with Undo). The pre-start draft (ADR 0022) has no slot for an added exercise yet | M | After workout-library (or a draft model that can hold an add) | ADR 0020 §3; reviews/coach-tools S8, SP1 |
 | Variety requests become a change-review card on a routine | M | After structural changes | workout-builder WB14 |
 | Generic change review: stored proposals with scopes (today / one date / from now on / programme), review list, change history, "Ask for changes". *(partly: gym-switch and "Change routine too" cards)* | L | Ben (CR1) | change-review.md |
 | Memory screen: list, edit, forget, suggestions needing Save, expiry. *(partly: save/forget through chat)* | L | nothing | coach-memory §2.1–2.4 |

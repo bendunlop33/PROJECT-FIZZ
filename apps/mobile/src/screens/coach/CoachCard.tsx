@@ -12,11 +12,24 @@ import { AppText, Icon, TextButton } from '../../ui';
  * saved record, `Why?` (the coach's reason in quotes, the rest from the
  * record) and `Undo`. Never the model's words as a change.
  */
-export function CoachCard({ card, onUndo }: { card: CardView; onUndo: (actionId: string) => void }) {
+export function CoachCard({
+  card,
+  onUndo,
+  onProposal,
+  onMemory,
+}: {
+  card: CardView;
+  onUndo: (actionId: string) => void;
+  onProposal?: (proposalId: string, tap: 'apply' | 'not_now') => void;
+  onMemory?: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
+}) {
   const theme = useTheme();
   const services = useServices();
   const [why, setWhy] = useState<WhyView | null>(null);
-  const toneColor = card.status.word === 'Applied' || card.status.word === 'Saved' ? 'status.done' : card.status.word === 'Out of date' || card.status.word === 'Couldn’t apply' ? 'status.warning' : 'text.secondary';
+  // Apply is disabled for a second after a tap (coach-sheet §4: no double apply; the write is idempotent anyway).
+  const [busy, setBusy] = useState(false);
+  const p = card.proposal;
+  const toneColor = card.status.word === 'Applied' || card.status.word === 'Saved' || card.status.word === 'Logged' ? 'status.done' : card.status.word === 'Out of date' || card.status.word === 'Couldn’t apply' || card.status.word === 'Couldn’t apply here' ? 'status.warning' : 'text.secondary';
   return (
     <View
       style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, borderWidth: theme.components.cardBorderWidth, borderColor: theme.colors['border.control'], padding: theme.space['3'], gap: theme.space['2'] }}
@@ -28,9 +41,22 @@ export function CoachCard({ card, onUndo }: { card: CardView; onUndo: (actionId:
           {card.status.word}
         </AppText>
       </View>
-      <AppText variant="callout" numeric>
-        {card.text}
-      </AppText>
+      {p === undefined ? (
+        <AppText variant="callout" numeric>
+          {card.text}
+        </AppText>
+      ) : (
+        <View style={{ gap: theme.space['1'] }}>
+          <AppText variant="headline">{p.title}</AppText>
+          {p.lines.map((l) => (
+            <AppText key={l} variant="callout">
+              {l}
+            </AppText>
+          ))}
+          <AppText variant="callout" color="text.secondary">{`Before: ${p.before}`}</AppText>
+          <AppText variant="callout" color="text.secondary">{`After: ${p.after}`}</AppText>
+        </View>
+      )}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <TextButton
           label={why === null ? 'Why?' : 'Hide'}
@@ -53,7 +79,86 @@ export function CoachCard({ card, onUndo }: { card: CardView; onUndo: (actionId:
             }}
           />
         ) : null}
+        {p?.canApply === true && onProposal !== undefined ? (
+          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+            <TextButton
+              label="Not now"
+              tone="secondary"
+              onPress={() => {
+                onProposal(p.proposalId, 'not_now');
+              }}
+            />
+            <TextButton
+              label="Apply"
+              disabled={busy}
+              onPress={() => {
+                setBusy(true);
+                setTimeout(() => {
+                  setBusy(false);
+                }, 1000);
+                onProposal(p.proposalId, 'apply');
+              }}
+            />
+          </View>
+        ) : null}
+        {card.memoryChoice !== undefined && !card.memoryChoice.split && onMemory !== undefined ? (
+          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+            <TextButton
+              label="Not now"
+              tone="secondary"
+              onPress={() => {
+                if (card.memoryChoice) onMemory(card.memoryChoice.memoryId, card.memoryChoice.version, 'not_now');
+              }}
+            />
+            <TextButton
+              label="Save"
+              disabled={busy}
+              onPress={() => {
+                setBusy(true);
+                setTimeout(() => {
+                  setBusy(false);
+                }, 1000);
+                if (card.memoryChoice) onMemory(card.memoryChoice.memoryId, card.memoryChoice.version, 'save');
+              }}
+            />
+          </View>
+        ) : null}
+        {p?.undoActionId != null ? (
+          <TextButton
+            label="Undo"
+            onPress={() => {
+              if (p.undoActionId !== null) onUndo(p.undoActionId);
+            }}
+          />
+        ) : null}
       </View>
+      {card.memoryChoice?.split === true && onMemory !== undefined ? (
+        <View style={{ gap: theme.space['1'], alignItems: 'flex-start' }}>
+          {(
+            [
+              ['Save as a memory about me', 'save'],
+              ['Add to playbook', 'playbook'],
+              ['Not now', 'not_now'],
+            ] as const
+          ).map(([label, decision]) => (
+            <TextButton
+              key={decision}
+              label={label}
+              tone={decision === 'not_now' ? 'secondary' : 'accent'}
+              disabled={busy && decision !== 'not_now'}
+              onPress={() => {
+                if (decision !== 'not_now') {
+                  setBusy(true);
+                  setTimeout(() => {
+                    setBusy(false);
+                  }, 1000);
+                }
+                if (card.memoryChoice) onMemory(card.memoryChoice.memoryId, card.memoryChoice.version, decision);
+              }}
+            />
+          ))}
+        </View>
+      ) : null}
       {why !== null ? <WhyPanel why={why} /> : null}
     </View>
   );
