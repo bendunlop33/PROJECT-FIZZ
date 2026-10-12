@@ -207,7 +207,8 @@ export async function selectRowFlow(i: SelectRowInput): Promise<{ ok: true } | {
   }
   const r = await i.select(selectCommand(i.setId, version, i.at, i.opId));
   if (r.ok) return { ok: true };
-  return { ok: false, quiet: r.error.code === 'stale_version' || r.error.code === 'write_conflict', code: r.error.code, message: r.error.message };
+  // Only a stale version is a double tap; `write_conflict` and the rest are real failures Ben must see (review r2 S4).
+  return { ok: false, quiet: r.error.code === 'stale_version', code: r.error.code, message: r.error.message };
 }
 
 // ---------------------------------------------------------------------------

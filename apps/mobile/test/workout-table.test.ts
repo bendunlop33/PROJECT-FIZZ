@@ -148,6 +148,8 @@ describe('selectRowFlow: save the open row’s draft, then select (review S6, N9
     const refuse = (code: string) => selectRowFlow({ setId: 's', version: 4, draft: null, at, opId: 'o', save: () => Promise.resolve(ok(4)), select: () => Promise.resolve({ ok: false, error: { code, message: `refused: ${code}` } }) });
     expect(await refuse('stale_version')).toMatchObject({ ok: false, quiet: true });
     expect(await refuse('set_not_pending')).toEqual({ ok: false, quiet: false, code: 'set_not_pending', message: 'refused: set_not_pending' });
+    // A write conflict is a real failure, never a silent dead tap (review r2 S4).
+    expect(await refuse('write_conflict')).toMatchObject({ ok: false, quiet: false, code: 'write_conflict' });
   });
 });
 
