@@ -73,11 +73,16 @@ export const CorrectSetCommandSchema = z.object({
   /**
    * `exclusions` replaces the set's whole list (§2.13): `[]` clears it. A
    * patch that only changes exclusions doesn't mark the values `Edited`.
+   * `targetRpe` is Ben's own target RPE for this set (`planned.rpeOverride`,
+   * CHANGELOG 2026-10-11 (b) "Edit set"): the plan he meant, so an offer
+   * judged against the wrong target clears. `null` clears it. It never
+   * touches the logged values and doesn't mark them `Edited`.
    */
   patch: SetValuesSchema.partial().extend({
     setType: SetTypeSchema.optional(),
     side: SetSideSchema.optional(),
     exclusions: SetExclusionsSchema.optional(),
+    targetRpe: RpeSchema.nullable().optional(),
   }),
 });
 

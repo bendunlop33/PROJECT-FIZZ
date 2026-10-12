@@ -568,6 +568,39 @@ describe('S3: the screen wiring for F4 and F7, through the same functions the sc
     expect(correctedSetToCheck({ setId: work[2]?.id ?? '' }, reloaded)).toBeNull();
   });
 
+  it('B2 (review target-rpe): Edit set → Target RPE 10 on a just-logged RPE 10 set clears the "too hard" offer through F4', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const s1 = work[0];
+    if (!s1) throw new Error('fixture');
+    const logged = await log(s, sessionId, s1.id, 6, 'log-1', 10);
+    const first = planOfferCheck(NO_HELD_SETS, logged, s1.id);
+    const shown = (await findOffer(s.coach, { aggregate: logged, check: first.check, resting: first.resting, pending: false })).offer;
+    expect(shown).toMatchObject({ by: 'rule', kind: 'rpe_high' });
+    // EditSetScreen: the sheet's view, then Save with Ben's target.
+    const data = await s.workout.load(sessionId);
+    if (!data) throw new Error('fixture');
+    const view = s.workout.editView(data, s1.id, null, null, 10);
+    expect(view?.targetRpe).toMatchObject({ override: 10, changed: true });
+    expect(view?.changed).toBe(true);
+    const set = logged.sets.find((x) => x.id === s1.id);
+    const fixed = await s.workout.correctSet({ sessionId, setId: s1.id, expectedSetVersion: set?.version ?? 0, patch: { targetRpe: 10 }, opId: 'fix-rpe' });
+    if (!fixed.ok) throw new Error(fixed.message);
+    expect(fixed.aggregate.sets.find((x) => x.id === s1.id)?.actual).toEqual(set?.actual);
+    // WorkoutScreen's F4 effect: the corrected set is checked again; the shown offer goes.
+    const reloaded = (await s.workout.load(sessionId))?.aggregate;
+    const id = correctedSetToCheck({ setId: s1.id }, reloaded);
+    if (reloaded === undefined || id === null) throw new Error('fixture');
+    const plan = planOfferCheck(first.held, reloaded, id);
+    expect((await findOffer(s.coach, { aggregate: reloaded, check: plan.check, resting: plan.resting, pending: false, shown })).offer).toBeNull();
+    // A replay of the same save applies once; a stale set version is refused.
+    const again = await s.workout.correctSet({ sessionId, setId: s1.id, expectedSetVersion: set?.version ?? 0, patch: { targetRpe: 10 }, opId: 'fix-rpe' });
+    expect(again.ok).toBe(true);
+    expect((await s.workout.load(sessionId))?.aggregate.session.version).toBe(reloaded.session.version);
+    const stale = await s.workout.correctSet({ sessionId, setId: s1.id, expectedSetVersion: set?.version ?? 0, patch: { targetRpe: 9 }, opId: 'fix-rpe-2' });
+    expect(stale).toMatchObject({ ok: false, stale: true });
+  });
+
   it('F7: a superset’s A1 missed with no rest running, then B1 starts the round’s rest: the offer for A, by the rule, offline', async () => {
     const { services: s0 } = await h.launch();
     const gymId = await setUpGym(h, s0);

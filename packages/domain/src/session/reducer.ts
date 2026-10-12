@@ -181,6 +181,7 @@ function snapshot(set: WorkoutSet): SetSnapshot {
     side: set.side,
     actual: set.actual,
     ...(exclusions.length > 0 ? { exclusions } : {}),
+    ...(set.planned.rpeOverride !== undefined ? { targetRpe: set.planned.rpeOverride } : {}),
     version: set.version,
   };
 }
@@ -510,9 +511,12 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
   }
   const ex = exerciseOf(state, set);
   if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
-  const { setType, side, exclusions, ...valuePatch } = cmd.patch;
+  const { setType, side, exclusions, targetRpe, ...valuePatch } = cmd.patch;
   const badSide = checkSide(side, ex);
   if (badSide) return { ok: false, error: badSide };
+  // Ben's own target RPE for the logged set (CHANGELOG 2026-10-11 (b) "Edit set"): only a working set has one.
+  const finalType = setType ?? set.setType;
+  if (targetRpe != null && (finalType === 'warmup' || finalType === 'drop')) return fail('invalid_values', 'Warm-up and drop sets have no target effort.');
   const actual: SetValues = { ...set.actual };
   let valuesTouched = setType !== undefined || side !== undefined;
   for (const key of Object.keys(valuePatch) as (keyof SetValues)[]) {
@@ -530,6 +534,7 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
     {
       ...set,
       actual,
+      ...(targetRpe === undefined ? {} : { planned: withRpeOverride(set.planned, targetRpe ?? undefined) }),
       setType: setType ?? set.setType,
       side: side ?? set.side,
       flags: flagsFor(actual, state, ex),

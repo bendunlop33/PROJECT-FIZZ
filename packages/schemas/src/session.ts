@@ -575,6 +575,8 @@ export const SetSnapshotSchema = z.object({
   actual: SetValuesSchema.nullable(),
   /** Absent on entries written before exclusions existed, and when none were set (`Set 2 marked: spotted`). */
   exclusions: SetExclusionsSchema.optional(),
+  /** Ben's own target RPE for the set (`planned.rpeOverride`); absent when none, and on entries written before it existed. */
+  targetRpe: RpeSchema.optional(),
   version: z.int().min(1),
 });
 export type SetSnapshot = z.infer<typeof SetSnapshotSchema>;

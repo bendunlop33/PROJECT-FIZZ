@@ -109,6 +109,7 @@ import {
   recentPaceSamples,
   timeLeftSheet,
   type ActiveSetView,
+  type SetEditView,
   type SetRecord,
   type SetRecordInput,
   type CheckInGate,
@@ -1600,6 +1601,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe });
     },
 
+    /** `buildSetEditView` over loaded data: the correction sheet, with the built-in target RPE as the default (CHANGELOG 2026-10-11 (b)). */
+    editView(data: ActiveWorkoutData, setId: string, values: SetValues | null, exclusions: readonly SetExclusion[] | null, targetRpe: number | null | undefined): SetEditView | null {
+      const info = data.exerciseInfo ?? {};
+      const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
+      return buildSetEditView(data.aggregate, setId, values, exclusions, { targetRpe, ruleTargetRpe });
+    },
+
     /**
      * `TimeLeftLine` and the `Time left` sheet (§2.15). The screen calls this
      * with a clock that moves only on events and once a minute, so the line
@@ -1635,7 +1643,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       sessionId: string;
       setId: string;
       expectedSetVersion: number;
-      patch: Partial<SetValues> & { exclusions?: SetExclusion[] };
+      patch: Partial<SetValues> & { exclusions?: SetExclusion[]; targetRpe?: number | null };
       opId: string;
     }): Promise<SetCorrectionWrite> {
       const failed = { ok: false as const, stale: false, message: 'The change wasn’t saved. Try again.' };

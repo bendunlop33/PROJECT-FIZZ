@@ -732,8 +732,22 @@ export interface SetEditView {
   exclusions: SetExclusion[];
   /** `This also puts a pain flag on Bench press: …` while `Pain` is ticked and wasn't before (AW7). */
   painLine: string | null;
-  /** Values or exclusions differ from the stored set: `Save changes` is enabled. */
+  /**
+   * Ben's own target RPE for the set (CHANGELOG 2026-10-11 (b) "Edit set"),
+   * in an active workout's working set; null otherwise. `target` is the set's
+   * target as edited (`targetRpeOf`); `override` is Ben's value as edited
+   * (null: none, the coach's, plan's or rule's applies).
+   */
+  targetRpe: { target: TargetRpe | null; override: number | null; changed: boolean } | null;
+  /** Values, exclusions or the target RPE differ from the stored set: `Save changes` is enabled. */
   changed: boolean;
+}
+
+export interface SetEditOptions {
+  /** Ben's target RPE as edited: a value, null to clear it, undefined untouched. */
+  targetRpe?: number | null | undefined;
+  /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), the default shown. */
+  ruleTargetRpe?: Readonly<Record<string, number>> | undefined;
 }
 
 /**
@@ -741,7 +755,7 @@ export interface SetEditView {
  * equipment-aware steppers as the set card. `correct_set` saves it; the rest
  * timer is never touched (invariant 5).
  */
-export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null): SetEditView | null {
+export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null, options: SetEditOptions = {}): SetEditView | null {
   const set = state.sets.find((s) => s.id === setId);
   if (!set || set.status !== 'completed' || !set.actual) return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
@@ -752,6 +766,14 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
   const exclusions = exclusionEdits === null ? stored : normaliseExclusions(exclusionEdits);
   const label = loadFieldLabel(ex.loadConvention, eq);
   const loadValue = values.load === null || values.load.convention === 'bodyweight' ? null : values.load.value;
+  const storedOverride = set.planned.rpeOverride ?? null;
+  const override = options.targetRpe === undefined ? storedOverride : options.targetRpe;
+  const working = set.setType !== 'warmup' && set.setType !== 'drop';
+  const plannedAsEdited = { ...set.planned, rpeOverride: override ?? undefined };
+  const targetRpe =
+    state.session.status === 'active' && working
+      ? { target: targetRpeOf({ setType: set.setType, planned: plannedAsEdited }, options.ruleTargetRpe?.[ex.id] ?? null), override, changed: override !== storedOverride }
+      : null;
   return {
     setId: set.id,
     setVersion: set.version,
@@ -767,7 +789,8 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
     text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
     exclusions,
     painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,
-    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join(),
+    targetRpe,
+    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join() || (targetRpe?.changed ?? false),
   };
 }
 

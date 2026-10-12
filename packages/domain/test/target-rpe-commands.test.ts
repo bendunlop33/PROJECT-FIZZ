@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
-import { buildActiveSetView, classifyNextSessionChange, evaluateCoachTrigger, isIncrease, reduceSession, sameTarget, targetRpeOf } from '../src/index';
+import { buildActiveSetView, buildSetEditView, classifyNextSessionChange, evaluateCoachTrigger, isIncrease, nextSessionBases, reduceSession, sameTarget, targetRpeOf, validateNextSessionTargets } from '../src/index';
 import { at, barbell, id, kg, values } from './fixtures';
 import { apply, BENCH, expectError, expectOk, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -126,5 +126,128 @@ describe('the coach’s target RPE', () => {
     expect(classifyNextSessionChange(last, 3, { ...last, rpe: 8 }, 3, bar, { benAskedForMoreSets: false }).size).toBe('small');
     const changed = classifyNextSessionChange(last, 3, { ...last, rpe: 9 }, 3, bar, { benAskedForMoreSets: false });
     expect(changed).toMatchObject({ size: 'bigger', reasons: ['The effort target changes.'] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review target-rpe B1: next-session targets compare with the target the coach saw
+
+describe('next-session target RPE against the resolved target (review target-rpe B1)', () => {
+  const ctx = { benAskedForMoreSets: false };
+  /** Bench logged 100 kg × 6 twice; `plan` edits the working sets' plan first. */
+  function finished(plan: (p: SessionAggregate['sets'][number]['planned']) => SessionAggregate['sets'][number]['planned'] = (p) => p) {
+    let s = startFixture().state;
+    s = { ...s, sets: s.sets.map((x) => (x.setType === 'working' ? { ...x, planned: plan(x.planned) } : x)) };
+    const { w, b1, b2 } = bench(s);
+    s = apply(s, logCmd(w.id, values(kg(60), 10), 10));
+    s = apply(s, logCmd(b1.id, values(kg(100), 6), 200));
+    s = apply(s, logCmd(b2.id, values(kg(100), 6), 400));
+    return { s, benchRow: b1.sessionExerciseId };
+  }
+
+  it('built-in plan (no stored RPE): last.rpe is the rule’s 8.5; a one-step load change at RPE 8.5 is small, and isn’t stored as a new RPE', () => {
+    const { s, benchRow } = finished();
+    expect(bench(s).b1.planned.rpe).toBeNull();
+    const bases = nextSessionBases(s, new Map(), { [benchRow]: 8.5 });
+    const b = bases.find((x) => x.exercise.id === benchRow);
+    expect(b?.last.rpe).toBe(8.5);
+    expect(b?.lastRpeSource).toBe('rule');
+    if (b === undefined) throw new Error('fixture');
+    expect(classifyNextSessionChange(b.last, b.lastSets, { ...b.last, load: kg(102.5) }, b.lastSets, b.equipment, ctx).size).toBe('small');
+    const v = validateNextSessionTargets({ source: s, bases, targets: [{ exerciseId: BENCH, target: { load: kg(102.5), reps: { min: 6, max: 8 }, rpe: 8.5 }, sets: null, reason: 'Moved well.' }], painFlags: [], gymName: null, ctx });
+    expect(v.rows[0]).toMatchObject({ size: 'small', reasons: [], after: { load: kg(102.5), reps: { min: 6, max: 8 } } });
+    expect(v.rows[0]?.after.rpe).toBeUndefined();
+    // A different target RPE is still bigger (CA8).
+    const nine = validateNextSessionTargets({ source: s, bases, targets: [{ exerciseId: BENCH, target: { load: kg(102.5), reps: { min: 6, max: 8 }, rpe: 9.5 }, sets: null, reason: 'Push.' }], painFlags: [], gymName: null, ctx });
+    expect(nine.rows[0]).toMatchObject({ size: 'bigger', reasons: ['The effort target changes.'] });
+  });
+
+  it('routine RIR 2: last.rpe is 8; the coach’s rpe 8 with one step more load is small', () => {
+    const { s, benchRow } = finished((p) => ({ ...p, rir: 2 }));
+    const bases = nextSessionBases(s, new Map(), { [benchRow]: 8.5 });
+    const b = bases.find((x) => x.exercise.id === benchRow);
+    expect(b).toMatchObject({ last: { rpe: 8 }, lastRpeSource: 'plan' });
+    const v = validateNextSessionTargets({ source: s, bases, targets: [{ exerciseId: BENCH, target: { load: kg(102.5), reps: { min: 6, max: 8 }, rpe: 8 }, sets: null, reason: 'Moved well.' }], painFlags: [], gymName: null, ctx });
+    expect(v.rows[0]).toMatchObject({ size: 'small', reasons: [] });
+  });
+
+  it('a pain flag blocks a next-session RPE raise above the built-in target (rule 9)', () => {
+    const { s, benchRow } = finished();
+    const bases = nextSessionBases(s, new Map(), { [benchRow]: 8.5 });
+    const flag = { id: id(7777), ownerId: 'o', version: 1, createdAtUtc: at(0).utc, updatedAtUtc: at(0).utc, exerciseId: BENCH, exerciseName: 'Bench press', area: null, source: 'workout', checkInId: null, reportedAt: at(0), status: 'active', clearedAtUtc: null, createdByOpId: 'p' } as const;
+    const v = validateNextSessionTargets({ source: s, bases, targets: [{ exerciseId: BENCH, target: { load: kg(100), reps: { min: 6, max: 8 }, rpe: 10 }, sets: null, reason: 'Push.' }], painFlags: [flag], gymName: null, ctx });
+    expect(v.rows).toEqual([]);
+    expect(v.dropped[0]?.kind).toBe('pain_blocked');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review target-rpe B2: Ben's target RPE on a logged set, from Edit set (`correct_set`)
+
+describe('Edit set → Target RPE on a logged set (CHANGELOG 2026-10-11 (b); review target-rpe B2)', () => {
+  type Correct = Extract<SessionCommand, { type: 'correct_set' }>;
+  const correct = (setId: string, setVersion: number, targetRpe: number | null, opId = 'fix:1', at$ = 600): Correct => ({ type: 'correct_set', at: at(at$), opId, setId, expectedSetVersion: setVersion, patch: { targetRpe } });
+  function loggedAt10() {
+    let s = startFixture().state;
+    const { w, b1 } = bench(s);
+    s = apply(s, logCmd(w.id, values(kg(60), 10), 10));
+    s = apply(s, logCmd(b1.id, values(kg(100), 6, { rpe: 10 }), 200));
+    const set = s.sets.find((x) => x.id === b1.id);
+    if (set === undefined) throw new Error('fixture');
+    return { s, set };
+  }
+
+  it('Ben marks a just-logged RPE 10 set as planned at 10: the offer clears; actual values and Edited stay; audited', () => {
+    const { s, set } = loggedAt10();
+    expect(evaluateCoachTrigger(set, 1, undefined, targetRpeOf(set, 8.5)?.rpe ?? null)?.kind).toBe('rpe_high');
+    const r = expectOk(reduceSession(s, correct(set.id, set.version, 10)));
+    const after = r.state.sets.find((x) => x.id === set.id);
+    if (after === undefined) throw new Error('fixture');
+    expect(after.planned.rpeOverride).toBe(10);
+    expect(after.actual).toEqual(set.actual);
+    expect(after.edited).toBe(false);
+    expect(after.version).toBe(set.version + 1);
+    expect(r.state.session.version).toBe(s.session.version + 1);
+    // F4: the offer check on the corrected set finds nothing.
+    expect(evaluateCoachTrigger(after, 1, undefined, targetRpeOf(after, 8.5)?.rpe ?? null)).toBeNull();
+    const entry = r.state.audit.at(-1);
+    expect(entry).toMatchObject({ kind: 'corrected', setId: set.id, opId: 'fix:1' });
+    expect(entry?.before?.targetRpe).toBeUndefined();
+    expect(entry?.after?.targetRpe).toBe(10);
+    expect(SessionAggregateSchema.safeParse(r.state).success).toBe(true);
+  });
+
+  it('rule 5: a stale set version is refused; a replay applies once; null clears it back to the rule’s', () => {
+    const { s, set } = loggedAt10();
+    expectError(reduceSession(s, correct(set.id, set.version - 1 || 99, 10)), 'stale_version');
+    const once = expectOk(reduceSession(s, correct(set.id, set.version, 10)));
+    const dup = reduceSession(once.state, correct(set.id, set.version, 10));
+    expect(dup).toMatchObject({ ok: true, duplicate: true });
+    expect(dup.state).toBe(once.state);
+    const v2 = once.state.sets.find((x) => x.id === set.id)?.version ?? 0;
+    const cleared = expectOk(reduceSession(once.state, correct(set.id, v2, null, 'fix:2', 700)));
+    const c = cleared.state.sets.find((x) => x.id === set.id);
+    expect(c && 'rpeOverride' in c.planned).toBe(false);
+    expect(c && targetRpeOf(c, 8.5)).toEqual({ rpe: 8.5, source: 'rule' });
+  });
+
+  it('a warm-up has no target effort', () => {
+    const { s } = loggedAt10();
+    const w = bench(s).w;
+    const logged = s.sets.find((x) => x.id === w.id);
+    expectError(reduceSession(s, correct(w.id, logged?.version ?? 1, 9)), 'invalid_values');
+  });
+
+  it('the sheet shows the target in force and Ben’s value as edited; only in an active workout', () => {
+    const { s, set } = loggedAt10();
+    const plain = buildSetEditView(s, set.id, null, null, { ruleTargetRpe: { [set.sessionExerciseId]: 8.5 } });
+    expect(plain?.targetRpe).toEqual({ target: { rpe: 8.5, source: 'rule' }, override: null, changed: false });
+    expect(plain?.changed).toBe(false);
+    const edited = buildSetEditView(s, set.id, null, null, { targetRpe: 10, ruleTargetRpe: { [set.sessionExerciseId]: 8.5 } });
+    expect(edited?.targetRpe).toEqual({ target: { rpe: 10, source: 'ben' }, override: 10, changed: true });
+    expect(edited?.changed).toBe(true);
+    const done = { ...s, session: { ...s.session, status: 'finished' as const } };
+    expect(buildSetEditView(done, set.id, null)?.targetRpe).toBeNull();
+    expect(buildSetEditView(s, bench(s).w.id, null)?.targetRpe).toBeNull();
   });
 });

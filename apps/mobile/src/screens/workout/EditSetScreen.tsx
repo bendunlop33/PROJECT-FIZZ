@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { buildSetEditView, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
-import type { SessionAggregate, SetExclusion, SetValues } from '@fizz/schemas';
+import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, formatNumber, TARGET_RPE_CHOICES, toMs } from '@fizz/domain';
+import type { SetExclusion, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
+import type { ActiveWorkoutData } from '../../services/workout-services';
 import { formatTime } from '../../format/dates';
 import { returnToWorkout } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
@@ -19,7 +20,9 @@ import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberSteppe
  * guarded on the set's own version; the rest timer is never touched.
  * `Delete set` always confirms and keeps an audited record (no Undo yet).
  * The exclusion chips (§2.13) save in the same `correct_set`; the toast with
- * Undo is handed back to the workout screen.
+ * Undo is handed back to the workout screen. In an active workout, `Target
+ * RPE` sets Ben's own target for this set in the same `correct_set`
+ * (CHANGELOG 2026-10-11 (b) "Edit set"); the offer check runs on it again (F4).
  */
 export function EditSetScreen() {
   const theme = useTheme();
@@ -28,9 +31,12 @@ export function EditSetScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { sessionId, setId } = useRoute<RouteProp<RootStackParams, 'EditSet'>>().params;
-  const [aggregate, setAggregate] = useState<SessionAggregate | null>(null);
+  const [data, setData] = useState<ActiveWorkoutData | null>(null);
+  const aggregate = data?.aggregate ?? null;
   const [values, setValues] = useState<SetValues | null>(null);
   const [exclusions, setExclusions] = useState<SetExclusion[] | null>(null);
+  /** Ben's target RPE as edited: a value, null cleared, undefined untouched. */
+  const [targetRpe, setTargetRpe] = useState<number | null | undefined>(undefined);
   const [effortScale, setEffortScale] = useState<'rpe' | 'rir' | 'off'>('rpe');
   const [error, setError] = useState<string | null>(null);
   const [saveOp] = useState(newUuid);
@@ -39,14 +45,14 @@ export function EditSetScreen() {
   async function load() {
     const d = await services.workout.load(sessionId);
     if (!d) return;
-    setAggregate(d.aggregate);
+    setData(d);
     setEffortScale(d.effortScale);
   }
   useEffect(() => {
     void load();
   }, [sessionId, setId]);
 
-  const view = aggregate ? buildSetEditView(aggregate, setId, values, exclusions) : null;
+  const view = data ? services.workout.editView(data, setId, values, exclusions, targetRpe) : null;
   if (!aggregate || !view) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'] }}>
@@ -63,22 +69,24 @@ export function EditSetScreen() {
     if (!view) return;
     const actual = aggregate?.sets.find((s) => s.id === setId)?.actual;
     if (!actual) return;
-    const patch: Partial<SetValues> & { exclusions?: SetExclusion[] } = {};
+    const patch: Partial<SetValues> & { exclusions?: SetExclusion[]; targetRpe?: number | null } = {};
     for (const k of ['load', 'reps', 'rpe', 'rir'] as const) {
       if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
     }
     if (exclusions !== null) patch.exclusions = view.exclusions;
+    if (view.targetRpe?.changed === true) patch.targetRpe = view.targetRpe.override;
     const r = await services.workout.correctSet({ sessionId, setId, expectedSetVersion: view.setVersion, patch, opId: saveOp });
     if (!r.ok) {
       setError(r.message);
       setValues(null);
       setExclusions(null);
+      setTargetRpe(undefined);
       void load();
       return;
     }
     changed();
-    // F4: a corrected rep or effort count runs the same offer check as a log (rule T: every logged working set).
-    const effortOrReps = patch.reps !== undefined || patch.rpe !== undefined || patch.rir !== undefined;
+    // F4: a corrected rep or effort count, or the set's target RPE, runs the same offer check as a log (rule T: every logged working set).
+    const effortOrReps = patch.reps !== undefined || patch.rpe !== undefined || patch.rir !== undefined || patch.targetRpe !== undefined;
     const corrected = effortOrReps ? { corrected: { setId, key: saveOp } } : {};
     if (r.toast !== null && r.undo !== null) {
       navigation.dispatch(returnToWorkout({ toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } }, ...corrected }));
@@ -172,6 +180,30 @@ export function EditSetScreen() {
                     selected={selected}
                     onPress={() => {
                       setValues(effortScale === 'rir' ? { ...current, rir: selected ? null : n } : { ...current, rpe: selected ? null : n });
+                    }}
+                  />
+                );
+              })}
+            </ChipRow>
+          </View>
+        ) : null}
+        {view.targetRpe ? (
+          <View style={{ gap: theme.space['1'] }}>
+            <AppText variant="label" color="text.secondary">
+              Target RPE
+            </AppText>
+            <ChipRow>
+              {TARGET_RPE_CHOICES.map((n) => {
+                const t = view.targetRpe;
+                const selected = t?.target?.rpe === n;
+                return (
+                  <Chip
+                    key={n}
+                    label={formatNumber(n)}
+                    selected={selected}
+                    onPress={() => {
+                      // Tapping Ben's own value again clears it back to the coach's, the plan's or the rule's.
+                      setTargetRpe(t?.override === n ? null : n);
                     }}
                   />
                 );
