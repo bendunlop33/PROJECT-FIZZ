@@ -1,5 +1,16 @@
 import {
   addDays,
+  coachDraftIsOpen,
+  currentDraftVersion,
+  discardWorkoutDraft,
+  draftAsRoutine,
+  draftCardState,
+  draftName,
+  linkDraftRoutine,
+  restoreWorkoutDraft,
+  undoDraftVersion,
+  type DraftCardState,
+  type DraftLifeChange,
   withoutTodayOnlySets,
   liveExercises,
   buildSwapExerciseCommand,
@@ -200,6 +211,7 @@ import {
   type SessionTypeKind,
   type NotCopied,
   isInHistory,
+  leftOutCount,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
@@ -230,6 +242,7 @@ import type {
   SetType,
   SetValues,
   UserProfile,
+  WorkoutDraft,
   ZonedTimestamp,
 } from '@fizz/schemas';
 
@@ -529,7 +542,18 @@ export type RoutineWrite = { ok: true; routine: Routine; duplicate: boolean } | 
  * routine, or (session picker §7) a session type picked from its history:
  * the next session of `sourceSessionId`, its most recent workout.
  */
-export type OverviewTarget = { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string };
+export type OverviewTarget = { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string };
+
+/** A coach-built draft in the picker's `FROM COACH` and Today's `SESSIONS` (workout-builder §4.4). Actuals only. */
+export interface CoachDraftRow {
+  draftId: string;
+  /** `Push · 45 min` (code-made). */
+  name: string;
+  /** When the coach built it (`Today 18:02`). */
+  createdAt: ZonedTimestamp;
+  exerciseCount: number;
+  target: OverviewTarget;
+}
 
 /** One session picker row (session-picker §2.2): actuals only, no targets and no coach content. */
 export interface SessionPickerRow {
@@ -559,6 +583,8 @@ export interface SessionList {
   /** `OLDER`: not done in 42 days, saved workouts first. */
   older: SessionPickerRow[];
   recommendedKey: string | null;
+  /** `FROM COACH` (workout-builder §4.4): open coach drafts, newest first. Started, saved, discarded and expired ones aren't here. */
+  fromCoach?: CoachDraftRow[];
 }
 
 /** The Workouts list (routines.md §A2.1): the rows, and the workout in progress (`StatusBanner`, Resume). */
@@ -629,7 +655,53 @@ export const LIBRARY_COPY = {
 } as const;
 
 /** What a Start from the overview starts: the routine, or the last workout's next session. */
-export type OverviewStartOf = { routineOf: string; nextOf?: undefined } | { nextOf: string; routineOf?: undefined };
+export type OverviewStartOf =
+  | { routineOf: string; nextOf?: undefined; coachDraftOf?: undefined }
+  | { nextOf: string; routineOf?: undefined; coachDraftOf?: undefined }
+  /** A coach-built draft (workout-builder §6.3). */
+  | { coachDraftOf: string; routineOf?: undefined; nextOf?: undefined };
+
+/** The draft basis a Start names (ADR 0022, workout-builder BD2). */
+export function startBasisOf(startOf: OverviewStartOf): DraftBasis {
+  if (startOf.routineOf !== undefined) return { kind: 'routine', routineId: startOf.routineOf };
+  if (startOf.coachDraftOf !== undefined) return { kind: 'coach_draft', draftId: startOf.coachDraftOf };
+  return { kind: 'next', sourceSessionId: startOf.nextOf };
+}
+
+/** A Ben write on a coach draft (§5.3, §6.2). `stale`: the draft moved since the page read it; `closed`: started, discarded or expired. */
+export type CoachDraftWrite = { ok: true; draft: WorkoutDraft; duplicate: boolean } | { ok: false; reason: 'stale' | 'closed' | 'missing' | 'failed'; draft: WorkoutDraft | null };
+
+/** The draft card in the coach sheet (§4.2): every value from the stored draft and the overview's own dry run. */
+export interface CoachDraftCard {
+  draftId: string;
+  versionN: number;
+  name: string;
+  exerciseCount: number;
+  /** `≈ 44 min`: the fitted plan's estimate; null when it can't be worked out here. */
+  estimateMinutes: number | null;
+  gymName: string | null;
+  leftOut: number;
+  state: DraftCardState;
+  /** The coach's checked message, shown under the card. */
+  rationale: string | null;
+}
+
+/** What the overview shows of a coach draft (workout-builder §4.3, §4.5): code-made values and checks, never model numbers. */
+export interface CoachDraftInfo {
+  id: string;
+  version: number;
+  versionN: number;
+  name: string;
+  /** `⚠ 1 left out`. */
+  leftOut: number;
+  /** `Why this workout` (§4.5): Ben's words (quoted data), the checked rationale and the code's check lines. */
+  request: string;
+  rationale: string | null;
+  checks: string[];
+  fitMinutes: number;
+  /** The library workout it was saved as (still open, Ben may start it); null when not saved. */
+  routineId: string | null;
+}
 
 /**
  * Everything the Workout overview shows (workout-overview §3, §7). Local
@@ -673,6 +745,8 @@ export interface OverviewData {
   pace: ResolvedPace;
   /** The live coach fit's record, when the fit is the coach's (fit-to-time §3.3). */
   coachFit: CoachFitInfo | null;
+  /** A coach-built draft's page (workout-builder §4.3); null on every other basis. */
+  coachDraft: CoachDraftInfo | null;
 }
 
 /** The Add exercise list (§11.4): rows with this gym's targets; `Nothing else here at Main gym.` when empty. */
@@ -741,6 +815,8 @@ export interface WorkoutStartRequest {
   repeatOf?: string | null;
   nextOf?: string | null;
   routineOf?: string | null;
+  /** A coach-built draft (workout-builder §6.3): planned with `planCoachDraft`, the session names the draft. */
+  coachDraftOf?: string | null;
   /**
    * From the Workout overview (§7): the key of the page Ben saw. Checked
    * against the inputs as stored now; a mismatch creates nothing and
@@ -1327,6 +1403,46 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return { r, ref, source, routine, targeted: targets !== null && targets.size > 0, targetsFailed: source !== null && targets === null };
   }
 
+  /**
+   * A coach draft's start at this gym (workout-builder §6.3): `planCoachDraft`
+   * through the session service, with each exercise's own history (BD6) and
+   * the selected gym's items. A real start first saves catalogue exercises as
+   * Ben's rows (as `Add exercise` does); a preview only reads them.
+   */
+  async function coachDraftStart(
+    p: UserProfile,
+    draft: WorkoutDraft,
+    req: { gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; gymEquipment?: readonly EquipmentInstance[]; newId?: () => string; fence?: WriteFence; todayEdits?: TodayEditsInput },
+  ) {
+    const v = currentDraftVersion(draft);
+    const exercises = new Map<string, Exercise>();
+    for (const s of v.plan.slots) {
+      const e = req.preview ? await exerciseById(s.exerciseId) : await ensureExercise(s.exerciseId);
+      if (e !== null) exercises.set(s.exerciseId, e);
+    }
+    const histories = new Map<string, HistorySession[]>();
+    for (const id of exercises.keys()) histories.set(id, await historyFor(p.id, id).catch(() => [] as HistorySession[]));
+    const substitute = await substituteCtx(p, req.gymId, req.gymEquipment, req.today ?? null, exercises.keys());
+    const lastUsedHere = await lastUsedFor(p.id, [...exercises.keys(), ...swapExerciseIds(req.todayEdits)], req.gymId);
+    const service = req.newId ? createSessionService(repos(), req.newId) : domain();
+    return service.startCoachDraft({
+      ownerId: p.id,
+      gymId: req.gymId,
+      opId: req.opId,
+      at: ctx.now(),
+      draft,
+      exercises,
+      histories,
+      substitute,
+      preview: req.preview,
+      lastUsedHere,
+      ...(req.checkIn !== undefined ? { checkIn: req.checkIn } : {}),
+      ...(req.gymEquipment ? { gymEquipment: req.gymEquipment } : {}),
+      ...(req.fence ? { fence: req.fence } : {}),
+      ...(req.todayEdits ? { today: req.todayEdits } : {}),
+    });
+  }
+
   /** Save one routine change; a conflict re-reads once so a retry after a lost acknowledgement reads as done. */
   async function writeRoutine(routineId: string, make: (current: Routine) => RoutineChange): Promise<RoutineWrite> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1424,6 +1540,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     if (plan === null || plan === 'stale') return plan;
     const isCompound = await compoundOf(plan.aggregate.exercises.map((e) => e.exerciseId));
     notSaved?.push(...notSavedFromPlan(plan.aggregate));
+    if (plan.resolved.kind === 'coach_draft') {
+      // workout-builder BD12: exactly what the page shows (today's edits and the fit; skipped rows left out), loads `Auto`,
+      // the coach's target RPE kept, `source: 'coach'` until Ben's first edit in the editor.
+      const d = plan.resolved.draft;
+      const made = routineFromPlan({
+        id: req.id,
+        ownerId: p.id,
+        name: req.name,
+        opId: req.opId,
+        plan: plan.aggregate,
+        at,
+        newId: ctx.newId,
+        isCompound,
+        inRotation: req.inRotation,
+        createdFromSessionId: null,
+        keepTargetRpe: true,
+        ...(plan.today?.setTemplateIds ? { fromRoutine: planSettingsOfRoutine(plan.resolved.routine, plan.aggregate, plan.today.slotOf, plan.today.setTemplateIds) } : {}),
+      });
+      return made === null ? null : { ...made, source: 'coach', createdFromDraft: { draftId: d.id, version: d.currentVersion } };
+    }
     return routineFromPlan({
       id: req.id,
       ownerId: p.id,
@@ -1437,7 +1573,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       // A next session's source keeps its history (WL5); a routine's plan is a new workout.
       createdFromSessionId: plan.resolved.kind === 'next' ? plan.resolved.source.session.id : null,
       // A saved workout's own Fixed pins, Main and items are kept (review S2).
-      ...(plan.resolved.kind === 'routine' && plan.today?.setTemplateIds ? { fromRoutine: planSettingsOfRoutine(plan.resolved.routine, plan.aggregate, plan.today.slotOf, plan.today.setTemplateIds) } : {}),
+      ...(plan.resolved.kind !== 'next' && plan.today?.setTemplateIds ? { fromRoutine: planSettingsOfRoutine(plan.resolved.routine, plan.aggregate, plan.today.slotOf, plan.today.setTemplateIds) } : {}),
     });
   }
 
@@ -1450,7 +1586,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   /** What an overview previews, resolved: a routine (and its last workout), or the last workout's next session. */
   type ResolvedOverview =
     | { kind: 'routine'; routine: Routine; ref: FinishedRef | null; basis: OverviewBasis }
-    | { kind: 'next'; source: SessionAggregate; basis: OverviewBasis };
+    | { kind: 'next'; source: SessionAggregate; basis: OverviewBasis }
+    /** A coach-built draft (workout-builder BD2): planned as its transient routine-shaped plan, never stored as a routine. */
+    | { kind: 'coach_draft'; draft: WorkoutDraft; routine: Routine; basis: OverviewBasis };
+
+  /** The overview's view of a coach draft (§4.3, §4.5): values and check lines from the stored version. */
+  function coachDraftInfoOf(d: WorkoutDraft): CoachDraftInfo {
+    const v = currentDraftVersion(d);
+    return { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: v.rationale, checks: v.checks.map((c) => c.text), fitMinutes: v.fitMinutes, routineId: d.routineId };
+  }
+
+  /** An open coach draft (14 days, not started or discarded), as the overview plans it. Null: gone (`Draft deleted`). */
+  async function resolveCoachDraft(p: UserProfile, draftId: string): Promise<ResolvedOverview | null> {
+    const now = ctx.now();
+    const drafts = ctx.store().repos.workoutDrafts;
+    await drafts.expire(p.id, now.utc).catch(() => [] as WorkoutDraft[]);
+    const d = await drafts.get(draftId).catch(() => null);
+    if (d === null || d.ownerId !== p.id || !coachDraftIsOpen(d, now.utc)) return null;
+    const v = currentDraftVersion(d);
+    return { kind: 'coach_draft', draft: d, routine: draftAsRoutine(d, v), basis: { kind: 'coach_draft', at: v.createdAt, versionN: v.n } };
+  }
 
   async function resolveRoutine(p: UserProfile, routineId: string, basis: OverviewBasis | null): Promise<ResolvedOverview | null> {
     const routine = await repos().routines.get(routineId);
@@ -1487,6 +1642,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   async function resolveOverview(p: UserProfile, target: OverviewTarget | OverviewStartOf, gym?: { gymId: string; gymEquipment?: readonly EquipmentInstance[] | undefined }): Promise<ResolvedOverview | null> {
     if ('kind' in target) {
       if (target.kind === 'routine') return resolveRoutine(p, target.routineId, null);
+      if (target.kind === 'coach_draft') return resolveCoachDraft(p, target.draftId);
       if (target.kind === 'session') {
         // A picked session type (session-picker §2.3): `Last done Wed 7 Oct`. Start, drafts and the key are the `nextOf` ones.
         const picked = await resolveNext(p, target.sourceSessionId);
@@ -1499,12 +1655,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return resolveRoutine(p, up.routine.id, basis);
     }
     if (target.routineOf !== undefined) return resolveRoutine(p, target.routineOf, null);
+    if (target.coachDraftOf !== undefined) return resolveCoachDraft(p, target.coachDraftOf);
     return resolveNext(p, target.nextOf);
   }
 
   /** The finished workout an overview's targets come from: the next session's source, or the routine's last workout. */
   async function overviewSource(resolved: ResolvedOverview): Promise<SessionAggregate | null> {
     if (resolved.kind === 'next') return resolved.source;
+    // A coach draft's targets come from each exercise's own history (BD6), never from one source workout.
+    if (resolved.kind === 'coach_draft') return null;
     return resolved.ref === null ? null : repos().sessions.get(resolved.ref.sessionId).catch(() => null);
   }
 
@@ -1535,8 +1694,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** The draft basis a resolved overview edits. */
-  const basisOf = (resolved: ResolvedOverview): DraftBasis => (resolved.kind === 'routine' ? { kind: 'routine', routineId: resolved.routine.id } : { kind: 'next', sourceSessionId: resolved.source.session.id });
-  const slotBasisOf = (resolved: ResolvedOverview) => (resolved.kind === 'routine' ? { kind: 'routine' as const, routine: resolved.routine } : { kind: 'next' as const, source: resolved.source });
+  const basisOf = (resolved: ResolvedOverview): DraftBasis =>
+    resolved.kind === 'routine' ? { kind: 'routine', routineId: resolved.routine.id } : resolved.kind === 'coach_draft' ? { kind: 'coach_draft', draftId: resolved.draft.id } : { kind: 'next', sourceSessionId: resolved.source.session.id };
+  const slotBasisOf = (resolved: ResolvedOverview) => (resolved.kind === 'next' ? { kind: 'next' as const, source: resolved.source } : { kind: 'routine' as const, routine: resolved.routine });
 
   /** The open draft for a basis; one past its local midnight reads as none (TE5). Reads only. */
   async function liveDraft(ownerId: string, basis: DraftBasis): Promise<PreStartDraft | null> {
@@ -1616,7 +1776,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   /** `todayFor` with a given draft (the coach's fit plans the draft it is about to write). */
   async function todayForDraft(p: UserProfile, resolved: ResolvedOverview, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, today: CheckIn | null, draft: PreStartDraft | null): Promise<{ draft: PreStartDraft | null; input: TodayEditsInput }> {
-    if (draft === null) return { draft: null, input: NO_TODAY };
+    // A coach draft always has a fit (its `fitMinutes`, BD11): the same pace and pain holds as the TIME tile.
+    if (draft === null) return { draft: null, input: resolved.kind === 'coach_draft' ? { ...NO_TODAY, fit: await fitContext(p) } : NO_TODAY };
     const edits = liveEdits(draft.edits);
     const swaps = new Map<string, SwapPlan>();
     const sb = slotBasisOf(resolved);
@@ -1639,7 +1800,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       adds.set(e.slotKey, addTargets(exercise, history, await substituteCtx(p, gymId, gymEquipment, today, [exercise.id])));
     }
     // Fit to time (FT4): the pace the TIME tile uses and which movements a pain flag holds; read only with a live fit.
-    const fit = edits.some((e) => e.kind === 'fit') ? await fitContext(p) : undefined;
+    const fit = edits.some((e) => e.kind === 'fit') || resolved.kind === 'coach_draft' ? await fitContext(p) : undefined;
     return { draft, input: { draft: { id: draft.id, version: draft.version }, edits, swaps, adds, ...(fit ? { fit } : {}) } };
   }
 
@@ -1699,8 +1860,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const flags = await repos().painFlags.listActive(p.id);
     const coachRows = await storedCoachTargets(p.id, source);
     return {
-      target: resolved.kind === 'routine' ? { kind: 'routine', routineId: resolved.routine.id } : { kind: 'next', sourceSessionId: resolved.source.session.id },
+      target:
+        resolved.kind === 'routine'
+          ? { kind: 'routine', routineId: resolved.routine.id }
+          : resolved.kind === 'coach_draft'
+            ? { kind: 'coach_draft', draftId: resolved.draft.id }
+            : { kind: 'next', sourceSessionId: resolved.source.session.id },
       routine: resolved.kind === 'routine' ? { id: resolved.routine.id, version: resolved.routine.version } : null,
+      // A coach draft's version: a new version, a discard or a start since the page loaded makes Start create nothing (§6.3).
+      ...(resolved.kind === 'coach_draft' ? { coachDraft: { id: resolved.draft.id, version: resolved.draft.version } } : {}),
       gym: gymId === null || equipment === null ? { typical: true } : { id: gymId, equipment: equipment.map((e) => ({ id: e.id, version: e.version })) },
       source: source === null ? null : { id: source.session.id, revision: source.revision },
       painFlags: flags.map((f) => ({ id: f.id, version: f.version })),
@@ -1725,6 +1893,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     todayEdits: TodayEditsInput = NO_TODAY,
   ): Promise<{ aggregate: SessionAggregate; fits: Record<string, SetFit>; today: TodayPlanInfo | null } | null> {
     const newId = previewIds();
+    if (resolved.kind === 'coach_draft') {
+      const r = await coachDraftStart(p, resolved.draft, { gymId, opId: 'overview-preview', preview: true, today, newId, todayEdits, ...(gymEquipment ? { gymEquipment } : {}) });
+      return r.ok ? { aggregate: r.aggregate, fits: r.fits, today: r.today } : null;
+    }
     if (resolved.kind === 'routine') {
       const { r } = await routineStart(p, { routineId: resolved.routine.id, gymId, opId: 'overview-preview', preview: true, today, newId, todayEdits, ...(gymEquipment ? { gymEquipment } : {}) });
       return r.ok ? { aggregate: r.aggregate, fits: r.fits, today: r.today } : null;
@@ -1794,15 +1966,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       let fence = req.fence;
-      if (req.expectedPreviewKey !== undefined && (req.routineOf || req.nextOf)) {
+      if (req.expectedPreviewKey !== undefined && (req.routineOf || req.nextOf || req.coachDraftOf)) {
         const check = await workout.previewCheck(p, {
-          startOf: req.routineOf ? { routineOf: req.routineOf } : { nextOf: req.nextOf ?? '' },
+          startOf: req.routineOf ? { routineOf: req.routineOf } : req.coachDraftOf ? { coachDraftOf: req.coachDraftOf } : { nextOf: req.nextOf ?? '' },
           gymId: req.gymId,
           opId: req.opId,
           checkIn: req.checkIn,
           expectedPreviewKey: req.expectedPreviewKey,
         });
-        if (check.kind === 'stale') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+        if (check.kind === 'stale') {
+          // A racing tap with the same opId may have just landed (it moved the inputs): that is this tap's duplicate (OV5).
+          const landed = await repos().sessions.findByStartOperation(p.id, req.opId).catch(() => null);
+          return landed ? { ok: true, aggregate: landed, warnings: [], duplicate: true } : { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+        }
         if (check.kind === 'fresh') fence = check.fence;
       }
       let checkIn = req.checkIn;
@@ -1811,6 +1987,29 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const linked = await repos().checkIns.linkedIds([checkIn.checkInId]);
         // Linked to another workout (not this start's retry): start without it rather than block.
         if (linked.has(checkIn.checkInId) && already?.session.checkIn?.kind !== 'answered') checkIn = { kind: 'skipped', atUtc: ctx.now().utc };
+      }
+      if (req.coachDraftOf) {
+        // A coach-built draft (workout-builder §6.3): the same planner path the page showed; the session names the draft.
+        const already = await repos().sessions.findByStartOperation(p.id, req.opId);
+        if (already) return { ok: true, aggregate: already, warnings: [], duplicate: true };
+        const today = checkIn?.kind === 'answered' ? await repos().checkIns.get(checkIn.checkInId) : null;
+        const resolvedD = await resolveCoachDraft(p, req.coachDraftOf);
+        // Discarded, started or past its 14 days since the page loaded: nothing is created (§5.2).
+        if (resolvedD === null || resolvedD.kind !== 'coach_draft') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+        const t = await todayFor(p, resolvedD, req.gymId, undefined, today);
+        if (draftMismatch(req.draft, t.draft)) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+        const fenced = withDraftFence(fence, t.draft);
+        const r = await coachDraftStart(p, resolvedD.draft, { gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, todayEdits: t.input, ...(fenced ? { fence: fenced } : {}) });
+        if (!r.ok) {
+          // Two taps raced and the other one's start landed (OV5): this tap is its duplicate.
+          const landed = await repos().sessions.findByStartOperation(p.id, req.opId).catch(() => null);
+          if (landed) return { ok: true, aggregate: landed, warnings: [], duplicate: true };
+          const e = r.error;
+          if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
+          return { ok: false, error: e };
+        }
+        return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
       }
       if (req.routineOf) {
         // A routine (premium-feel §2.6): its structure, with next targets from its last workout, fitted to this gym.
@@ -2904,7 +3103,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (existing) return existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed };
         const made = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
         if (made === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
-        return await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing);
+        const saved = await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing);
+        // A coach draft names the workout it was saved as (BD12); it stays open, so Ben may still start it.
+        if (saved.ok && req.from.kind === 'preview' && req.from.target.kind === 'coach_draft') {
+          const draftId = req.from.target.draftId;
+          await ctx
+            .store()
+            .repos.workoutDrafts.write(p.id, draftId, (c) => linkDraftRoutine(c, { routineId: saved.routine.id, opId: `save:${req.opId}`, at: ctx.now() }))
+            .catch(() => null);
+        }
+        return saved;
       } catch {
         return { ok: false, message: LIBRARY_COPY.saveFailed };
       }
@@ -3253,7 +3461,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           edited: isEdited(targetOf(t)),
         });
         const ordered = orderSessionTypes(startable, recommendedKey);
-        return { upNext: ordered.upNext === null ? null : row(ordered.upNext), workouts: ordered.workouts.map(row), fromHistory: ordered.fromHistory.map(row), older: ordered.older.map(row), recommendedKey };
+        const fromCoach = await coachDraftRows(p, live).catch(() => [] as CoachDraftRow[]);
+        return { upNext: ordered.upNext === null ? null : row(ordered.upNext), workouts: ordered.workouts.map(row), fromHistory: ordered.fromHistory.map(row), older: ordered.older.map(row), recommendedKey, fromCoach };
       } catch {
         return null;
       }
@@ -3529,7 +3738,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (req.gymId !== null && gym === null) return null;
         const at = ctx.now();
         const title =
-          resolved.kind === 'routine' ? resolved.routine.name : (storedName(resolved.source) ?? (await titleFor(liveExercises(resolved.source.exercises).map((e) => e.exerciseId))).title);
+          resolved.kind === 'next' ? (storedName(resolved.source) ?? (await titleFor(liveExercises(resolved.source.exercises).map((e) => e.exerciseId))).title) : resolved.kind === 'coach_draft' ? resolved.draft.name : resolved.routine.name;
         const source = await overviewSource(resolved);
         // A failed read shows no coach rows; the key below reads them again, so a Start planned without them is refused.
         const coachTargets = await storedCoachTargets(p.id, source).catch(() => [] as NextSessionTargetRecord[]);
@@ -3551,11 +3760,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           gym: gym === null ? null : { id: gym.id, name: gym.name },
           key: await previewKeyParts(p, resolved, req.gymId, planCheckIn, t.draft),
           today: await overviewToday(resolved, run.today, t.draft),
+          ...(resolved.kind === 'coach_draft' ? { targetRpe: true } : {}),
         });
         const rows = resolved.kind === 'routine' ? (await routineRows(p.id)).rows : [];
         return {
           view,
-          startOf: resolved.kind === 'routine' ? { routineOf: resolved.routine.id } : { nextOf: resolved.source.session.id },
+          startOf: resolved.kind === 'routine' ? { routineOf: resolved.routine.id } : resolved.kind === 'coach_draft' ? { coachDraftOf: resolved.draft.id } : { nextOf: resolved.source.session.id },
           routine: resolved.kind === 'routine' ? (rows.find((r) => r.id === resolved.routine.id) ?? null) : null,
           gyms: [...allGyms].sort((a, b) => Number(b.id === req.gymId) - Number(a.id === req.gymId) || a.name.localeCompare(b.name)).map((g) => ({ id: g.id, name: g.name, isDefault: g.isDefault })),
           checkIn: gate.kind === 'reuse' ? (reused ? { kind: 'reuse', checkIn: reused } : { kind: 'ask' }) : gate.kind === 'ask' ? { kind: 'ask' } : { kind: 'skip', reason: gate.reason },
@@ -3569,6 +3779,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           templateCard: await templateCardOf(resolved, run, t.draft),
           pace: planPace(recent),
           coachFit: await coachFitInfo(run.today),
+          coachDraft: resolved.kind === 'coach_draft' ? coachDraftInfoOf(resolved.draft) : null,
         };
       } catch {
         return null;
@@ -3823,6 +4034,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * a built-in fit it replaced comes back, as with the card's Undo.
      */
     async clearFit(req: DraftTarget): Promise<DraftWrite> {
+      // A coach draft's own length is a fit too (BD11): `Clear fit` is "no fit today", which also replaces any other fit.
+      if (req.target.kind === 'coach_draft') return writeDraft(req, () => ({ type: 'edit', edit: { kind: 'fit', minutes: null } }));
       try {
         const p = await owner();
         const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
@@ -4046,7 +4259,130 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes };
+  /**
+   * `FROM COACH` (workout-builder §4.4): open coach drafts, newest first. A
+   * draft saved to Workouts is listed under its workout instead (unless that
+   * workout was deleted again). Expired drafts are closed on this read (BD4).
+   */
+  async function coachDraftRows(p: UserProfile, live: readonly Routine[]): Promise<CoachDraftRow[]> {
+    const now = ctx.now();
+    const drafts = ctx.store().repos.workoutDrafts;
+    await drafts.expire(p.id, now.utc).catch(() => [] as WorkoutDraft[]);
+    const liveIds = new Set(live.map((r) => r.id));
+    return (await drafts.listByOwner(p.id))
+      .filter((d) => coachDraftIsOpen(d, now.utc) && (d.routineId === null || !liveIds.has(d.routineId)))
+      .sort((a, b) => toMs(b.createdAt.utc) - toMs(a.createdAt.utc) || (a.id < b.id ? -1 : 1))
+      .map((d) => ({ draftId: d.id, name: d.name, createdAt: d.createdAt, exerciseCount: currentDraftVersion(d).plan.slots.length, target: { kind: 'coach_draft', draftId: d.id } }));
+  }
+
+  /** A Ben write on a coach draft (versioned, idempotent on the opId). */
+  async function draftWrite(draftId: string, change: (current: WorkoutDraft) => DraftLifeChange): Promise<CoachDraftWrite> {
+    try {
+      const p = await owner();
+      const r = await ctx.store().repos.workoutDrafts.write(p.id, draftId, change);
+      switch (r.status) {
+        case 'written':
+        case 'replayed':
+          return { ok: true, draft: r.draft, duplicate: r.status === 'replayed' };
+        case 'stale':
+        case 'closed':
+          return { ok: false, reason: r.status, draft: r.draft };
+        case 'missing':
+          return { ok: false, reason: 'missing', draft: null };
+        case 'invalid':
+          return { ok: false, reason: 'stale', draft: null };
+      }
+    } catch {
+      return { ok: false, reason: 'failed', draft: null };
+    }
+  }
+
+  /**
+   * Coach-built drafts (workout-builder §4.2, §5.3, §6.2): the card's values
+   * from the stored draft, and Ben's writes (Undo a version, Discard and its
+   * Undo). Local only; never an AI call. Opening, starting and saving go
+   * through the overview (one page, one Start, one save).
+   */
+  const coachDrafts = {
+    async list(): Promise<CoachDraftRow[]> {
+      try {
+        const p = await owner();
+        return await coachDraftRows(p, liveRoutines(await repos().routines.listByOwner(p.id)));
+      } catch {
+        return [];
+      }
+    },
+
+    async get(draftId: string): Promise<WorkoutDraft | null> {
+      const p = await ctx.profile();
+      if (!p) return null;
+      const d = await ctx.store().repos.workoutDrafts.get(draftId).catch(() => null);
+      return d !== null && d.ownerId === p.id ? d : null;
+    },
+
+    /**
+     * The draft card (§4.2): name, counts and `≈` minutes from the stored
+     * draft and the same dry run the overview shows (`estimateRemainingDuration`
+     * of the fitted plan), and its end state. Null when it can't be read.
+     */
+    async card(req: { draftId: string; versionN: number; gymId: string | null; typicalEquipment?: readonly EquipmentInstance[] }): Promise<CoachDraftCard | null> {
+      try {
+        const p = await owner();
+        const now = ctx.now();
+        await ctx.store().repos.workoutDrafts.expire(p.id, now.utc).catch(() => [] as WorkoutDraft[]);
+        const d = await coachDrafts.get(req.draftId);
+        const routine = d?.routineId == null ? null : await repos().routines.get(d.routineId).catch(() => null);
+        const savedName = routine !== null && !isDeleted(routine) ? routine.name : null;
+        const active = await repos().sessions.getActive(p.id).catch(() => null);
+        const state = draftCardState({ draft: d, versionN: req.versionN, nowUtc: now.utc, workoutActive: active !== null, savedName });
+        const version = d?.versions.find((v) => v.n === req.versionN) ?? null;
+        let estimateMinutes: number | null = null;
+        let exerciseCount = version?.plan.slots.length ?? 0;
+        const gym = req.gymId === null ? null : await repos().gyms.get(req.gymId).catch(() => null);
+        if (d !== null && (state.kind === 'open' || state.kind === 'after_workout')) {
+          const resolved = await resolveCoachDraft(p, d.id);
+          if (resolved !== null) {
+            const gymId = req.gymId ?? 'typical-gym-preview';
+            const typical = req.gymId === null ? req.typicalEquipment : undefined;
+            const t = await todayFor(p, resolved, gymId, typical, null);
+            const run = await overviewDryRun(p, resolved, gymId, null, typical, t.input);
+            if (run !== null) {
+              estimateMinutes = estimateRemainingDuration(run.aggregate, { pace: planPace(await recentFinished(p)) }).minutes;
+              exerciseCount = new Set(run.aggregate.exercises.filter((e) => run.aggregate.sets.some((x) => x.sessionExerciseId === e.id && x.status === 'pending')).map((e) => run.today?.slotOf[e.id] ?? e.id)).size;
+            }
+          }
+        }
+        const leftOut = version === null ? 0 : leftOutCount(version.checks);
+        const name = version === null ? (d?.name ?? 'Workout') : draftName(version.request.focus, version.fitMinutes);
+        return { draftId: req.draftId, versionN: req.versionN, name, exerciseCount, estimateMinutes, gymName: gym?.name ?? null, leftOut, state, rationale: version?.rationale ?? null };
+      } catch {
+        return null;
+      }
+    },
+
+    /** `Undo` on a `DraftChangeCard` (§5.3): the previous version is current again; the newer stays as `replaced`. */
+    undoVersion(req: { draftId: string; versionN: number; expectedVersion: number; opId: string }): Promise<CoachDraftWrite> {
+      return draftWrite(req.draftId, (c) => undoDraftVersion(c, { versionN: req.versionN, expectedVersion: req.expectedVersion, opId: req.opId, at: ctx.now() }));
+    },
+
+    /** `Discard draft` (§6.2): at once, no confirm; the toast's Undo is `restore`. */
+    discard(req: { draftId: string; expectedVersion: number; opId: string }): Promise<CoachDraftWrite> {
+      return draftWrite(req.draftId, (c) => discardWorkoutDraft(c, { expectedVersion: req.expectedVersion, opId: req.opId, at: ctx.now() }));
+    },
+
+    restore(req: { draftId: string; expectedVersion: number; opId: string }): Promise<CoachDraftWrite> {
+      return draftWrite(req.draftId, (c) => restoreWorkoutDraft(c, { expectedVersion: req.expectedVersion, opId: req.opId, at: ctx.now() }));
+    },
+
+    /** The 14-day expiry (BD4), on launch and on read. */
+    async expire(): Promise<number> {
+      const p = await ctx.profile();
+      if (!p) return 0;
+      return (await ctx.store().repos.workoutDrafts.expire(p.id, ctx.now().utc).catch(() => [] as WorkoutDraft[])).length;
+    },
+  };
+
+  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes, coachDrafts };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;

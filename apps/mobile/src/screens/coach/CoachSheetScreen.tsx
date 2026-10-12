@@ -48,7 +48,7 @@ import { CoachCard } from './CoachCard';
 /** Typed text per entry, kept while the app runs (closing the sheet keeps it; CS4). */
 const drafts = new Map<string, string>();
 const entryKey = (e: CoachEntry): string =>
-  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${String(e.days)}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : `${e.kind}:${e.sessionId}`;
+  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${String(e.days)}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : e.kind === 'draft' ? `draft:${e.draftId}` : `${e.kind}:${e.sessionId}`;
 
 export function CoachSheetScreen() {
   const theme = useTheme();

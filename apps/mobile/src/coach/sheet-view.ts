@@ -68,7 +68,11 @@ export function routeLine(a: CoachAvailability): { text: string; link: { label: 
 // ---------------------------------------------------------------------------
 // Starter chips (CS6): fixed by context, written by us, never by the model
 
-export type StarterChip = { label: string; input: BenInput } | { label: 'Pain'; input: null };
+export type StarterChip =
+  | { label: string; input: BenInput }
+  | { label: 'Pain'; input: null }
+  /** workout-builder §3: opens the Build card in the thread; disabled with `Needs the coach` when the coach can't answer (§5.4). */
+  | { label: 'Build a workout'; input: null; build: { enabled: boolean } };
 
 export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutActive: boolean): StarterChip[] {
   const pain: StarterChip = { label: 'Pain', input: null };
@@ -84,8 +88,12 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
     case 'summary':
       return ready ? [words('What should I change next time?')] : [];
     case 'today':
-      // The coach reads past workouts through `get_training_overview` (backlog §4.3). `Build a workout` and `Plan my week` aren't built.
-      return ready ? [words('How am I doing?')] : [];
+      // The coach reads past workouts through `get_training_overview` (backlog §4.3). `Build a workout` (workout-builder §3) shows
+      // disabled when the coach can't answer (§5.4); `Plan my week` isn't built.
+      return [{ label: 'Build a workout', input: null, build: { enabled: a.status === 'ok' } }, ...(ready ? [words('How am I doing?')] : [])];
+    case 'draft':
+      // `Ask coach` on a coach draft (BD16): Ben says what to change; no chips.
+      return [];
     case 'progress':
     case 'progress_exercise':
       // Progress keeps no starter chip at the merge with coach tools (main's review S4 behaviour); whether it
@@ -432,6 +440,8 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
       return `Sees: ${workoutTitle ?? 'this workout'}`;
     case 'workout':
       return `Sees: ${workoutTitle ?? 'Workout'}${active ? ' (live)' : ''}`;
+    case 'draft':
+      return `Sees: ${entry.name} (draft)`;
   }
 }
 

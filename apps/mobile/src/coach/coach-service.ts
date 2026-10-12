@@ -34,6 +34,11 @@ import {
   undoOpId,
   createTrainingReadExecutors,
   createStructuralExecutors,
+  createBuildExecutor,
+  classifyBenRequest,
+  requestHas,
+  revisesDraft,
+  type BuildContextView,
   structuralTapRecord,
   memoryContentKey,
   newActionRecord,
@@ -50,6 +55,23 @@ import {
 } from '@fizz/coach';
 import {
   basisSlots,
+  buildRequestText,
+  buildSetBudget,
+  coachDraftIsOpen,
+  currentDraftVersion,
+  draftWorkingSets,
+  liveRoutines,
+  nextInRotation,
+  painFlagCovering,
+  parseRequestedFocus,
+  parseRequestedMinutes,
+  rankSubstitutions,
+  resolveBuildMinutes,
+  rotationRoutines,
+  stableStringify,
+  substituteTargets,
+  type SnapGym,
+  type SubstituteContext,
   doableHere,
   draftBasisKey,
   getStructuralChangeSignals,
@@ -99,6 +121,12 @@ import { summaryNoteSentences } from './next-time-view';
 import type { TextCoachState } from '@fizz/providers';
 import type {
   ActionDetail,
+  BuildFocus,
+  EquipmentInstance,
+  PainFlag,
+  RepRange,
+  Routine,
+  WorkoutDraft,
   Memory,
   ActionRecord,
   BenInput,
@@ -128,13 +156,40 @@ export type CoachEntry =
   /** Exercise detail (progress.md slice B): a general thread framed by the exercise, its series and the chart's dates. */
   | { kind: 'progress_exercise'; exerciseName: string; seriesLabel: string; from: string; to: string }
   | { kind: 'workout'; sessionId: string }
-  | { kind: 'summary'; sessionId: string };
+  | { kind: 'summary'; sessionId: string }
+  /** `⋯ → Ask coach` on a coach draft's overview (workout-builder §6.2): a general thread with the draft in context (BD16). */
+  | { kind: 'draft'; draftId: string; name: string };
 
-/** Today and Progress: no workout attached; the general thread. */
-export type GeneralEntry = Extract<CoachEntry, { kind: 'today' | 'progress' | 'progress_exercise' }>;
+/** Today, Progress and a coach draft: no workout attached; the general thread. */
+export type GeneralEntry = Extract<CoachEntry, { kind: 'today' | 'progress' | 'progress_exercise' | 'draft' }>;
 
 export function isGeneralEntry(entry: CoachEntry): entry is GeneralEntry {
-  return entry.kind === 'today' || entry.kind === 'progress' || entry.kind === 'progress_exercise';
+  return entry.kind === 'today' || entry.kind === 'progress' || entry.kind === 'progress_exercise' || entry.kind === 'draft';
+}
+
+/** Why a build can't start (workout-builder §5.4): the one reason word shown, never a stand-in plan. */
+export type BuildBlock = 'offline' | 'not_connected' | 'signed_out' | 'usage_limit' | 'choose_model';
+
+/** The status word for a coach that can't build (§5.4, §7). */
+export function buildBlockOf(status: CoachStatus): BuildBlock | null {
+  switch (status) {
+    case 'ok':
+      return null;
+    case 'offline':
+      return 'offline';
+    case 'expired':
+      return 'signed_out';
+    case 'limit':
+      return 'usage_limit';
+    case 'model_gone':
+    case 'no_model':
+      return 'choose_model';
+    case 'not_connected':
+    case 'not_eligible':
+    case 'no_scope':
+    case 'region':
+      return 'not_connected';
+  }
 }
 
 /** Connection state as the coach UI needs it: the stored status, plus `offline` after a request failed for lack of network. */
@@ -214,6 +269,8 @@ export interface CoachServiceDeps {
   /** The bundled exercise catalogue (Coaching knowledge), for swap options and names. */
   catalogueExercises?: () => readonly Exercise[];
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
+  /** The typical gym's items when Ben has no gym yet (workout-builder §4.1 `⚠ No gym`): what Start would save. */
+  typicalEquipment?: () => Promise<EquipmentInstance[] | null>;
 }
 
 /** A structural proposal card's state (ADR 0020 §3), from the proposal and Ben's taps on it. */
@@ -671,6 +728,126 @@ export function createCoachService(deps: CoachServiceDeps) {
     onProgress?: (p: CoachTurnProgress) => void;
     /** The post-workout summary turn (D21). */
     summary?: boolean;
+    /** How a build request was made (§8.2 `origin`): the Build card or the chip; words typed or spoken otherwise. */
+    buildOrigin?: 'chip' | 'card';
+    /** The Build card's chips (code, never the model): its length and focus win over what the words say. */
+    buildChips?: { minutes: number | null; focus: BuildFocus } | null;
+  }
+
+  /** A coach draft of Ben's, open or not (the turn reads it; the executor refuses a closed one). */
+  async function draftOf(p: UserProfile, draftId: string): Promise<WorkoutDraft | null> {
+    const d = await repos().workoutDrafts.get(draftId).catch(() => null);
+    return d !== null && d.ownerId === p.id && coachDraftIsOpen(d, deps.now().utc) ? d : null;
+  }
+
+  /** The selected gym for a build (§4.1): the default gym, else the typical gym's items (`⚠ No gym`). */
+  async function buildGym(p: UserProfile): Promise<{ gym: SnapGym; typical: boolean } | null> {
+    const g = await gymInContext(p, null);
+    if (g !== null) return { gym: { id: g.id, name: g.name, equipment: await repos().equipment.listByGym(g.id).catch(() => []) }, typical: false };
+    const typical = (await deps.typicalEquipment?.().catch(() => null)) ?? null;
+    return typical === null ? null : { gym: { id: 'typical-gym-preview', name: 'Typical gym', equipment: typical }, typical: true };
+  }
+
+  /** Ben's exercises and the catalogue's (Coaching knowledge), by ID: what a catalogue key can resolve to. */
+  async function exercisePool(): Promise<Exercise[]> {
+    const pool = new Map<string, Exercise>();
+    for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) pool.set(e.id, e);
+    for (const e of deps.catalogueExercises?.() ?? []) if (!pool.has(e.id)) pool.set(e.id, e);
+    return [...pool.values()];
+  }
+
+  /**
+   * A build turn (workout-builder §8.2, §8.4): code reads the length and
+   * focus (Ben's chips, else his words, else the draft being changed, else
+   * 60); the context lists only exercises usable at the selected gym (BD5);
+   * the executor checks the call against the same gym, pain flags and
+   * limits. Null when Ben didn't ask for a workout (or there's no gym at all).
+   */
+  async function buildTurn(p: UserProfile, text: string, origin: 'chip' | 'card' | 'text' | 'voice', draft: WorkoutDraft | null, chips: { minutes: number | null; focus: BuildFocus } | null): Promise<{ view: BuildContextView; executors: CoachExecutors } | null> {
+    const asked = requestHas(classifyBenRequest(text), 'build') || (draft !== null && revisesDraft(text));
+    if (!asked) return null;
+    const place = await buildGym(p);
+    if (place === null) return null;
+    const { gym } = place;
+    const parent = draft === null ? null : currentDraftVersion(draft);
+    const minutes = chips?.minutes ?? parseRequestedMinutes(text) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
+    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (parseRequestedFocus(text) ?? parent?.request.focus ?? 'coach_picks');
+    const pool = await exercisePool();
+    const byId = new Map(pool.map((e) => [e.id, e]));
+    const byKey = new Map(pool.flatMap((e) => (e.catalogueKey ? [[e.catalogueKey, e] as const] : [])));
+    const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
+    const at = deps.now();
+    const nowMs = toMs(at.utc);
+    const flagged = (id: string) => painFlagCovering(flags, id, nowMs, at.tz) !== null;
+    const usable = pool
+      .filter((e) => (e.measurement === 'reps' || e.measurement === 'duration') && !flagged(e.id) && doableHere(e, gym))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
+    const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]));
+    const refs = await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []);
+    const pick = nextInRotation(rotationRoutines(live), refs[0] ?? null);
+    const view: BuildContextView = {
+      request: { quote: text, minutes, focus, origin },
+      gym: { name: gym.name, typicalEquipment: place.typical },
+      usable,
+      busyToday: [],
+      setBudget: buildSetBudget(minutes),
+      upNext: pick.kind === 'routine' ? pick.routine.name : null,
+      draft:
+        parent === null || draft === null
+          ? null
+          : {
+              name: draft.name,
+              version: parent.n,
+              exercises: parent.plan.slots.map((sl) => {
+                const w = sl.setTemplates.find((t) => t.setType !== 'warmup' && t.setType !== 'top');
+                return { catalogueId: sl.catalogueId, name: byId.get(sl.exerciseId)?.name ?? 'Exercise', workingSets: draftWorkingSets(sl), reps: w?.reps === null || w === undefined ? `${String(w?.durationS ?? 0)} s` : `${String(w.reps.min)}–${String(w.reps.max)}`, targetRpe: w?.targetRpe ?? null };
+              }),
+            },
+    };
+    const subCtx = (): SubstituteContext => ({ ownerId: p.id, unit: p.preferredUnit, gym, knownEquipment: new Map(gym.equipment.map((e) => [e.id, e])), painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, at });
+    const executors = createBuildExecutor({
+      store: coachStore(),
+      request: { text, minutes, focus, gymId: place.typical ? null : gym.id, gymName: place.typical ? null : gym.name, origin },
+      draft,
+      checkContext: async (previous, opId, catalogueIds) => {
+        // The rule's reps on each named exercise's own history (BD8), read before the checks run.
+        const reps = new Map<string, RepRange | null>();
+        for (const key of new Set(catalogueIds)) {
+          const e = byKey.get(key) ?? byId.get(key);
+          if (e === undefined) continue;
+          const history = await deps.store().listExerciseHistory(p.id, e.id).catch(() => []);
+          const plan = substituteTargets({ workingSets: 3, templates: [] }, e, history, subCtx()).plan;
+          reps.set(e.id, plan?.find((x) => x.setType !== 'warmup')?.planned.reps ?? null);
+        }
+        return {
+          exerciseFor: (key) => byKey.get(key) ?? byId.get(key) ?? null,
+          usable: (e) => doableHere(e, gym),
+          substituteFor: (e) =>
+            rankSubstitutions({
+              ...subCtx(),
+              slotExercise: e,
+              slot: { workingSets: 3, templates: [] },
+              exercises: pool,
+              catalogueSubstitutions: e.catalogueKey ? (deps.catalogueSubstitutions?.(e.catalogueKey) ?? []) : [],
+              excludeExerciseIds: new Set(),
+              histories: new Map(),
+              nowMs,
+            }).find((r) => r.mayHurt === null)?.plan.exercise ?? null,
+          painFlags: flags,
+          nowMs,
+          tz: at.tz,
+          restPresetsS: p.restPresets.map((r) => r.seconds),
+          ruleReps: (e) => reps.get(e.id) ?? null,
+          previous,
+          newSlotKey: (exerciseId, i) => deriveId(`coach-draft-slot:${opId}:${exerciseId}:${String(i)}`),
+        };
+      },
+      nameOf: (exerciseId) => byId.get(exerciseId)?.name ?? 'Exercise',
+      contextHash: deriveId(stableStringify(view)),
+      equipmentVersion: deriveId(stableStringify(gym.equipment.map((e) => [e.id, e.version]))),
+    });
+    return { view, executors };
   }
 
   async function send(req: SendRequest): Promise<CoachTurnResult> {
@@ -684,6 +861,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     const ctx = await contextInput(p, kind, session, req.entry);
     const offerScope = req.input.kind === 'chip' ? (req.input.sessionExerciseId ?? null) : null;
     const executors = await executorsFor(p, req.entry, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
+    // workout-builder §8.2: a build turn (Ben asked for a workout, or to change the draft in context) gets its context and its one tool.
+    const draftInContext = req.entry.kind === 'draft' ? await draftOf(p, req.entry.draftId) : null;
+    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null) : null;
+    if (build !== null) Object.assign(executors, build.executors);
     const stop = new AbortController();
     running.set(req.turnId, stop);
     try {
@@ -696,9 +877,10 @@ export function createCoachService(deps: CoachServiceDeps) {
           input: req.input,
           model: a.model,
           surface: 'sheet',
-          context: ctx.input,
+          context: build === null ? ctx.input : { ...ctx.input, build: build.view },
           structuralSignals: await structuralSignalsFor(p, session).catch(() => []),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
+          ...(draftInContext !== null ? { draftInContext: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },
@@ -722,6 +904,37 @@ export function createCoachService(deps: CoachServiceDeps) {
     loadThread,
     listThreads: async (): Promise<CoachThread[]> => coachStore().listThreads((await owner()).id),
     send,
+
+    /**
+     * Whether a build can start now (workout-builder §5.4): null when it can;
+     * else the reason word for `Needs the coach`. No provider call.
+     */
+    async buildBlock(): Promise<BuildBlock | null> {
+      return buildBlockOf((await availability()).status);
+    },
+
+    /**
+     * The Build card's `Build` (§4.1): one Ben message made from the chips
+     * (`Build a 45 min push workout`) plus anything typed, and one build
+     * turn. Nothing is sent when the coach can't build (`Needs the coach`).
+     */
+    async buildWorkout(req: { entry: CoachEntry; threadId: string | null; turnId: string; minutes: number | null; focus: BuildFocus; extra?: string; origin: 'chip' | 'card'; onProgress?: (p: CoachTurnProgress) => void }): Promise<{ ok: true; result: CoachTurnResult } | { ok: false; block: BuildBlock }> {
+      const block = buildBlockOf((await availability()).status);
+      if (block !== null) return { ok: false, block };
+      const words = buildRequestText({ minutes: req.minutes, focus: req.focus });
+      const extra = req.extra?.trim() ?? '';
+      const text = extra === '' ? words : `${words}. ${extra}`;
+      const result = await send({
+        entry: req.entry,
+        threadId: req.threadId,
+        turnId: req.turnId,
+        input: { kind: 'words', text, spoken: false },
+        buildOrigin: req.origin,
+        buildChips: { minutes: req.minutes, focus: req.focus },
+        ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
+      });
+      return { ok: true, result };
+    },
 
     /**
      * The coach's fit of today's plan (fit-to-time §5): one model request with

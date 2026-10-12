@@ -118,7 +118,7 @@ export type RootStackParams = {
    * routine from the list. Creates nothing until Start.
    */
   /** Up next, a routine, or a session type picked from its history (session-picker §7). */
-  WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string }; toast?: LibraryToastParam };
+  WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string }; toast?: LibraryToastParam };
   /** The Workouts library (routines.md §A2.1). `toast`: back from the editor (`Saved Push A` [Undo]). */
   Workouts: { toast?: LibraryToastParam } | undefined;
   /**
