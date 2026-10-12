@@ -593,12 +593,44 @@ describe('S3: the screen wiring for F4 and F7, through the same functions the sc
     if (reloaded === undefined || id === null) throw new Error('fixture');
     const plan = planOfferCheck(first.held, reloaded, id);
     expect((await findOffer(s.coach, { aggregate: reloaded, check: plan.check, resting: plan.resting, pending: false, shown })).offer).toBeNull();
+    // Adjust tapped before F4 clears the card: the set no longer triggers it, so it is refused and nothing changes (review r3 S1).
+    if (!shown) throw new Error('fixture');
+    expect(await s.coach.ruleOfferFor(shown)).toBeNull();
+    expect(await s.coach.applyRuleOffer(shown)).toEqual({ status: 'stale' });
+    const after = (await s.workout.load(sessionId))?.aggregate;
+    expect(after?.session.version).toBe(reloaded.session.version);
+    expect(after?.sets.map((x) => x.planned)).toEqual(reloaded.sets.map((x) => x.planned));
     // A replay of the same save applies once; a stale set version is refused.
     const again = await s.workout.correctSet({ sessionId, setId: s1.id, expectedSetVersion: set?.version ?? 0, patch: { targetRpe: 10 }, opId: 'fix-rpe' });
     expect(again.ok).toBe(true);
     expect((await s.workout.load(sessionId))?.aggregate.session.version).toBe(reloaded.session.version);
     const stale = await s.workout.correctSet({ sessionId, setId: s1.id, expectedSetVersion: set?.version ?? 0, patch: { targetRpe: 9 }, opId: 'fix-rpe-2' });
     expect(stale).toMatchObject({ ok: false, stale: true });
+  });
+
+  it('review target-rpe r3 S1: logged RPE corrected 10 → 8 after the "too hard" offer shows; Adjust is refused', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const s1 = work[0];
+    if (!s1) throw new Error('fixture');
+    const logged = await log(s, sessionId, s1.id, 6, 'log-1', 10);
+    const first = planOfferCheck(NO_HELD_SETS, logged, s1.id);
+    const shown = (await findOffer(s.coach, { aggregate: logged, check: first.check, resting: first.resting, pending: false })).offer;
+    expect(shown).toMatchObject({ by: 'rule', kind: 'rpe_high' });
+    if (!shown) throw new Error('fixture');
+    const set = logged.sets.find((x) => x.id === s1.id);
+    const fixed = await s.workout.correctSet({ sessionId, setId: s1.id, expectedSetVersion: set?.version ?? 0, patch: { rpe: 8 }, opId: 'fix-rpe-8' });
+    if (!fixed.ok) throw new Error(fixed.message);
+    const before = (await s.workout.load(sessionId))?.aggregate;
+    if (!before) throw new Error('fixture');
+    expect(await s.coach.triggerKindOf(before, s1.id)).toBeNull();
+    expect(await s.coach.ruleOfferFor(shown)).toBeNull();
+    expect(await s.coach.applyRuleOffer(shown)).toEqual({ status: 'stale' });
+    // A double tap is refused too, and nothing changed.
+    expect(await s.coach.applyRuleOffer(shown)).toEqual({ status: 'stale' });
+    const after = (await s.workout.load(sessionId))?.aggregate;
+    expect(after?.session.version).toBe(before.session.version);
+    expect(after?.sets.map((x) => x.planned)).toEqual(before.sets.map((x) => x.planned));
   });
 
   it('F7: a superset’s A1 missed with no rest running, then B1 starts the round’s rest: the offer for A, by the rule, offline', async () => {

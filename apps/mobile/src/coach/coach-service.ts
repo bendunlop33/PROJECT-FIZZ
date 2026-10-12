@@ -608,6 +608,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     async ruleOfferFor(offer: Pick<WorkoutOffer, 'triggerId' | 'kind' | 'setId' | 'fact' | 'prompt' | 'sessionExerciseId' | 'targetRpe' | 'loggedRpe'>): Promise<WorkoutOffer | null> {
       const session = await sessionOfSet(offer.setId);
       if (session === null) return null;
+      // The logged set must still trigger this offer (review target-rpe r3 S1).
+      if (!(await stillTriggers(session, offer))) return null;
       const adjustment = await ruleAdjustment(session, offer).catch(() => null);
       return adjustment === null ? null : { ...offer, by: 'rule', change: adjustment.change, basis: basisOf(adjustment) };
     },
@@ -627,6 +629,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (earlier !== null) return earlier.status === 'committed' ? { status: 'applied', record: earlier } : { status: 'stale' };
       const session = await sessionOfSet(offer.setId);
       if (session === null || session.session.status !== 'active') return { status: 'stale' };
+      // A correction (logged RPE, reps, target RPE) since the offer was shown can remove its reason (review target-rpe r3 S1).
+      if (!(await stillTriggers(session, offer))) return { status: 'stale' };
       const adjustment = await ruleAdjustment(session, offer);
       if (adjustment === null) return { status: 'unchanged' };
       // Same sets, same targets, same words as shown (review S2); else it is a different change.
@@ -698,6 +702,12 @@ export function createCoachService(deps: CoachServiceDeps) {
     const live = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status !== 'deleted').sort((x, y) => x.index - y.index);
     const ruleRpe = (await ruleRpesOf(a))[set.sessionExerciseId] ?? null;
     return evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS, targetRpeOf(set, ruleRpe)?.rpe ?? null);
+  }
+
+  /** Whether the offer's logged set, as it is now, still triggers the offer's kind. */
+  async function stillTriggers(a: SessionAggregate, offer: Pick<WorkoutOffer, 'setId' | 'kind'>): Promise<boolean> {
+    const now = await triggerOf(a, offer.setId).catch(() => null);
+    return now !== null && now.kind === offer.kind;
   }
 
   async function checkOffer(input: OfferCheckInput): Promise<WorkoutOffer | null> {
