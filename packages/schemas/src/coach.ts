@@ -256,6 +256,8 @@ export const GuardNoteKindSchema = z.enum([
   'invalid_reps',
   'too_many_sets',
   'structural_dropped',
+  /** The coach's target RPE wasn't used: Ben set his own for the set (review target-rpe S2). */
+  'rpe_overridden',
 ]);
 export type GuardNoteKind = z.infer<typeof GuardNoteKindSchema>;
 

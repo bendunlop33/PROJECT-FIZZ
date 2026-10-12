@@ -284,13 +284,13 @@ export function createCoachService(deps: CoachServiceDeps) {
     const painFlags = () => repos().painFlags.listActive(p.id);
     const out: CoachExecutors = { ...base, get_active_session: createSessionReadExecutor({ loadSession: load, gymName, ruleTargetRpe: ruleRpesOf }) };
     if (kind === 'workout') {
-      out.adjust_pending_sets = createAdjustExecutor({ store, targets: storeTodayTargets(store), loadSession: load, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, onlySessionExerciseId });
+      out.adjust_pending_sets = createAdjustExecutor({ store, targets: storeTodayTargets(store), loadSession: load, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, onlySessionExerciseId, ruleTargetRpe: ruleRpesOf });
     }
     if (kind === 'summary') {
       out.set_next_session_targets = createNextTargetsExecutor({
         store,
         source: session,
-        bases: nextSessionBases(session, await builtInNext(session)),
+        bases: nextSessionBases(session, await builtInNext(session), await ruleRpesOf(session).catch(() => ({}))),
         painFlags,
         gymName,
         workoutLabel: session.session.routineName ?? 'workout',

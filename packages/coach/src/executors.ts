@@ -259,6 +259,8 @@ export interface AdjustDeps {
    * (review S1).
    */
   onlySessionExerciseId?: string | null;
+  /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), so a raise above it counts as an increase (review target-rpe S1). */
+  ruleTargetRpe?: (s: SessionAggregate) => Promise<Readonly<Record<string, number>>>;
 }
 
 function requestedSets(agg: SessionAggregate | null, args: AdjustPendingSetsArgs): ExerciseTargetChanges[] {
@@ -304,6 +306,7 @@ export function createAdjustExecutor(deps: AdjustDeps): ToolExecutor {
       sessionPainUnspecified: deps.sessionPainUnspecified,
       gymName: deps.gymName,
       messagePain: ctx.messagePain,
+      ruleTargetRpe: deps.ruleTargetRpe ? await deps.ruleTargetRpe(agg).catch(() => undefined) : undefined,
     });
     if (result.status === 'stale') return refuse('stale', result.outcome, result.guardNotes);
     if (result.status === 'unchanged') return refuse('rejected', result.outcome, result.guardNotes);

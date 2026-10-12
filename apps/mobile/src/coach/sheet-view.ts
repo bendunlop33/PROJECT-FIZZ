@@ -144,7 +144,7 @@ export interface WhyView {
   notKnown: string[];
 }
 
-const NOT_CHANGED_KINDS = new Set<GuardNote['kind']>(['completed_set_dropped', 'not_pending', 'unknown_target', 'structural_dropped']);
+const NOT_CHANGED_KINDS = new Set<GuardNote['kind']>(['completed_set_dropped', 'not_pending', 'unknown_target', 'structural_dropped', 'rpe_overridden']);
 
 export function whyView(r: ActionRecord, notAvailable: readonly string[] = []): WhyView {
   const proposed = r.status === 'proposed';

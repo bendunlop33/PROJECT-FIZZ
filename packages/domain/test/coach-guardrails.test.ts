@@ -592,6 +592,9 @@ describe('evaluateCoachTrigger (rule T, deviation from the target RPE; CHANGELOG
       loggedRpe: 10,
     });
     expect(evaluateCoachTrigger(trig({ plannedRir: 2, actual: e(null, 8, 0) }), 3)?.fact).toBe('RIR 0 on set 3 (target RIR 2)');
+    // Review target-rpe S3: RIR is whole reps; a half-step target reads as RPE, never `target RIR 1.5`.
+    expect(evaluateCoachTrigger(trig({ actual: e(null, 8, 0) }), 1, undefined, 8.5)?.fact).toBe('RIR 0 on set 1 (target RPE 8.5)');
+    expect(evaluateCoachTrigger(trig({ actual: e(null, 8, 0) }), 1, undefined, 8)?.fact).toBe('RIR 0 on set 1 (target RIR 2)');
     expect(evaluateCoachTrigger(trig({ actual: e(null, 6) }), 2, undefined, 8.5)?.fact).toBe('6 reps on set 2 (target 8–10)');
     expect(evaluateCoachTrigger(trig({ actual: e(9.5) }), 1, undefined, null)?.fact).toBe('RPE 9.5 on set 1');
   });
@@ -1089,5 +1092,53 @@ describe('lastAdjustedAtVersion for CA4 (coach-sourced targets aren’t adjustme
     expect(ids).toEqual(['a1', 'a2']);
     expect(lastAdjustedVersion(ids, new Map([['a1', 4], ['a2', 7], ['a3', 9]]))).toBe(7);
     expect(lastAdjustedVersion(ids, new Map([['a3', 9]]))).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review target-rpe S1, S2: the coach's target RPE against the set's target in force
+
+describe('validateTodayAdjustment: the coach’s target RPE against the resolved target', () => {
+  const benchAsk = (rpe: number, load = 100) => [adj(exId(1), { sets: [{ setId: setId(1, 3), target: { load: kg(load), reps: { min: 6, max: 8 }, rpe } }] })];
+  const builtIn = { [exId(1)]: 8.5 };
+
+  it('S1: a raise to RPE 10 above the built-in 8.5 is an increase: a pain flag blocks it (rule 9)', () => {
+    const r = validateTodayAdjustment({ ...input(benchAsk(10), { intent: 'general', painFlags: [painFlag(1, 'Bench press')] }), ruleTargetRpe: builtIn });
+    expect(r.status).toBe('unchanged');
+    expect(r.guardNotes.map((n) => n.kind)).toContain('pain_blocked');
+  });
+
+  it('S1: and in a lighter session', () => {
+    const r = validateTodayAdjustment({ ...input(benchAsk(10), { intent: 'lighter_session' }), ruleTargetRpe: builtIn });
+    expect(r.status).toBe('unchanged');
+    expect(r.guardNotes.map((n) => n.kind)).toContain('lighter_no_increase');
+  });
+
+  it('S1: a routine RIR 2 target reads as RPE 8: a raise to 9 is blocked by pain; a lower load at RPE 8 is kept', () => {
+    const agg = workout();
+    const sets = agg.sets.map((x) => (x.sessionExerciseId === exId(1) ? { ...x, planned: { ...x.planned, rir: 2 } } : x));
+    const w = { ...agg, sets };
+    const up = validateTodayAdjustment({ ...input(benchAsk(9), { aggregate: w, intent: 'general', painFlags: [painFlag(1, 'Bench press')] }), ruleTargetRpe: builtIn });
+    expect(up.status).toBe('unchanged');
+    const down = applied(validateTodayAdjustment({ ...input(benchAsk(8, 95), { aggregate: w, intent: 'too_hard', painFlags: [painFlag(1, 'Bench press')] }), ruleTargetRpe: builtIn }));
+    // RPE 8 restates the RIR 2 target: no new target RPE is stored, the lighter load is.
+    expect(down.exercises[0]?.changes[0]?.after).toEqual({ load: kg(95), reps: { min: 6, max: 8 } });
+  });
+
+  it('S1: restating the built-in target is no change', () => {
+    const r = validateTodayAdjustment({ ...input(benchAsk(8.5), { intent: 'general' }), ruleTargetRpe: builtIn });
+    expect(r.status).toBe('unchanged');
+  });
+
+  it('S2: on a set with Ben’s own target the coach’s RPE isn’t used or shown; the load change is', () => {
+    const agg = workout();
+    const sets = agg.sets.map((x) => (x.id === setId(1, 3) ? { ...x, planned: { ...x.planned, rpeOverride: 7 } } : x));
+    const r = applied(validateTodayAdjustment({ ...input(benchAsk(9, 95), { aggregate: { ...agg, sets }, intent: 'too_hard' }), ruleTargetRpe: builtIn }));
+    const change = r.exercises[0]?.changes[0];
+    expect(change?.after).toEqual({ load: kg(95), reps: { min: 6, max: 8 } });
+    expect(r.guardNotes).toContainEqual({ kind: 'rpe_overridden', setIds: [setId(1, 3)], text: 'Your target RPE stays.' });
+    // Only an RPE change on that set: nothing to apply.
+    const only = validateTodayAdjustment({ ...input(benchAsk(9), { aggregate: { ...agg, sets }, intent: 'general' }), ruleTargetRpe: builtIn });
+    expect(only).toMatchObject({ status: 'unchanged', outcome: 'Your target RPE stays. Nothing changed.' });
   });
 });
