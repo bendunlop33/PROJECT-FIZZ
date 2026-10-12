@@ -9,10 +9,13 @@ import type { AppServices } from '../src/services/app-services';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
- * Workouts library review B1: a coach target for next time (D21) never
- * replaces a library workout's structure. Ben's later edit wins; the
- * coach's load and reps go on the matching Auto sets. The overview and
- * Start show the same thing. Scripted model; nothing here proves the route.
+ * Workouts library review B1 (rounds 1 and 2) and r2 S1: a coach target for
+ * next time (D21) never replaces a library workout's structure. Ben's later
+ * edit to a slot wins on set count and reps; the coach's load is used only
+ * where its reps fit his range, else the built-in rule's. A rename, rotation
+ * toggle or saving the workout after the target is not an edit. The
+ * overview and Start show the same thing. Scripted model; nothing here
+ * proves the route.
  */
 
 class StepModel implements CoachModelPort {
@@ -50,12 +53,20 @@ afterEach(async () => {
   await h.cleanup();
 });
 
-/** Bench 3 × 60 × 8 at RPE 10, saved as Push A; the coach saves 57.5 kg × 5 (`sets` sets) for next time. */
-async function withCoachTarget(s: AppServices, sets: number | null): Promise<{ gymId: string; routine: Routine; first: string }> {
+/**
+ * Bench 3 × 60 × 8 at RPE 10, saved as Push A; the coach saves 57.5 kg × 5
+ * (`sets` sets) for next time. `order: 'target_first'` is the Summary order
+ * (the coach turn runs, then Ben taps `Save to Workouts`; review r2 S1).
+ */
+async function withCoachTarget(s: AppServices, sets: number | null, order: 'save_first' | 'target_first' = 'save_first'): Promise<{ gymId: string; routine: Routine; first: string }> {
   const gymId = await setUpGym(h, s);
   const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 8, rpe: 10 }, { load: 60, reps: 8, rpe: 10 }] }]);
-  const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1', addToRotation: true });
-  if (!saved.ok) throw new Error(saved.message);
+  const save = async (): Promise<Routine> => {
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-1', addToRotation: true });
+    if (!saved.ok) throw new Error(saved.message);
+    return saved.routine;
+  };
+  const before = order === 'save_first' ? await save() : null;
   model = new StepModel([
     (req) => {
       const w = yourData(req).workout;
@@ -65,7 +76,20 @@ async function withCoachTarget(s: AppServices, sets: number | null): Promise<{ g
   ]);
   await s.coach.runSummaryTurn(first);
   expect((await s.coach.nextTargets(first))[0]).toMatchObject({ status: 'saved', sets });
-  return { gymId, routine: saved.routine, first };
+  if (before !== null) return { gymId, routine: before, first };
+  h.clockMs += 60 * 1000;
+  return { gymId, routine: await save(), first };
+}
+
+/** The editor's Bench slot with its working sets replaced by `make(base)`; warm-ups kept. */
+async function editBench(s: AppServices, gymId: string, routine: Routine, opId: string, make: (base: SetTemplate) => SetTemplate[]): Promise<void> {
+  const ed = await s.routines.editor({ routineId: routine.id, gymId });
+  const slot = ed?.exercises[0];
+  const base = slot?.setTemplates.find((t) => t.setType !== 'warmup');
+  if (!slot || !base) throw new Error('no slot');
+  const sets = [...slot.setTemplates.filter((t) => t.setType === 'warmup'), ...make(base)];
+  const u = await s.routines.update({ routineId: routine.id, edit: { name: 'Push A', exercises: [{ ...slot, setTemplates: sets }] }, expectedVersion: routine.version, opId });
+  if (!u.ok) throw new Error(u.message);
 }
 
 async function overviewAndStart(s: AppServices, gymId: string, routineId: string): Promise<{ detail: string | undefined; load: string | undefined; workingSets: number; started: SessionAggregate }> {
@@ -102,30 +126,72 @@ describe('B1: a coach target and a later editor change', () => {
     const { detail, load, workingSets, started } = await overviewAndStart(s, gymId, routine.id);
     const work = working(started);
     expect(work.map((x) => x.setType)).toEqual(['top', 'backoff', 'backoff', 'backoff']);
-    expect(work[0]?.planned).toMatchObject({ load: { value: 57.5 }, reps: { min: 5, max: 5 }, source: 'coach' });
+    // His 4–6 stays (B1 r2); the coach's 5 reps fit it, so the coach's 57.5 kg is used.
+    expect(work[0]?.planned).toMatchObject({ load: { value: 57.5 }, reps: { min: 4, max: 6 }, source: 'coach' });
     expect(work.slice(1).every((x) => x.planned.reps?.min === 6 && x.planned.reps.max === 8 && x.planned.source !== 'coach')).toBe(true);
     // Overview == Start.
     expect(workingSets).toBe(4);
     expect(load).toBe('57.5');
-    expect(detail).toBe('1 × 5 + 3 × 6–8');
+    expect(detail).toBe('1 × 4–6 + 3 × 6–8');
   });
 
-  it('a one-type workout edited to 4 sets after a coach 3-set target keeps 4 sets, at the coach’s load and reps', async () => {
+  it('WL-A4: Ben changes Bench to 6–8 after the coach’s 57.5 × 5: overview and Start show 6–8 at the built-in rule’s load', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routine } = await withCoachTarget(s, null);
+    h.clockMs += 60 * 60 * 1000;
+    await editBench(s, gymId, routine, 'reps-6-8', (base) => [1, 2, 3].map(() => ({ ...base, id: h.ids(), targetLoad: null, targetReps: { min: 6, max: 8 } })));
+    h.clockMs += 2 * DAY;
+    const { detail, load, workingSets, started } = await overviewAndStart(s, gymId, routine.id);
+    const work = working(started);
+    expect(work).toHaveLength(3);
+    expect(work.every((x) => x.planned.reps?.min === 6 && x.planned.reps.max === 8 && x.planned.source === 'built_in_rule')).toBe(true);
+    expect(work.every((x) => x.planned.load?.value !== 57.5)).toBe(true);
+    expect(work[0]?.planned.provenance?.guardNotes).toContain('Kept your edit: 6–8 reps');
+    // Overview == Start.
+    expect(workingSets).toBe(3);
+    expect(detail).toBe('3 × 6–8');
+    expect(load).toBe(String(work[0]?.planned.load?.value));
+  });
+
+  it('a one-type workout edited to 4 sets after a coach 3-set target keeps 4 sets and its own reps; Why? says so', async () => {
     const { services: s } = await h.launch();
     const { gymId, routine } = await withCoachTarget(s, 3);
     h.clockMs += 60 * 60 * 1000;
-    const ed = await s.routines.editor({ routineId: routine.id, gymId });
-    const slot = ed?.exercises[0];
-    const base = slot?.setTemplates.find((t) => t.setType !== 'warmup');
-    if (!slot || !base) throw new Error('no slot');
-    const four = [...slot.setTemplates.filter((t) => t.setType === 'warmup'), ...[1, 2, 3, 4].map(() => ({ ...base, id: h.ids(), targetLoad: null }))];
-    const u = await s.routines.update({ routineId: routine.id, edit: { name: 'Push A', exercises: [{ ...slot, setTemplates: four }] }, expectedVersion: routine.version, opId: 'four' });
-    if (!u.ok) throw new Error(u.message);
+    let reps: SetTemplate['targetReps'] = null;
+    await editBench(s, gymId, routine, 'four', (base) => {
+      reps = base.targetReps;
+      return [1, 2, 3, 4].map(() => ({ ...base, id: h.ids(), targetLoad: null }));
+    });
     h.clockMs += 2 * DAY;
     const { workingSets, started } = await overviewAndStart(s, gymId, routine.id);
     expect(working(started)).toHaveLength(4);
     expect(workingSets).toBe(4);
-    expect(working(started).every((x) => x.planned.load?.value === 57.5 && x.planned.reps?.min === 5)).toBe(true);
+    expect(working(started).every((x) => JSON.stringify(x.planned.reps) === JSON.stringify(reps))).toBe(true);
+    expect(working(started)[0]?.planned.provenance?.guardNotes.some((n) => n.startsWith('Kept your edit: 4 sets'))).toBe(true);
+  });
+
+  it('S1: the coach target on Summary, then Save to Workouts on the same Summary: the next Start uses the coach’s 2 sets', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routine } = await withCoachTarget(s, 2, 'target_first');
+    h.clockMs += 2 * DAY;
+    const { workingSets, started } = await overviewAndStart(s, gymId, routine.id);
+    expect(working(started)).toHaveLength(2);
+    expect(workingSets).toBe(2);
+    expect(working(started).every((x) => x.planned.load?.value === 57.5 && x.planned.reps?.min === 5 && x.planned.source === 'coach')).toBe(true);
+  });
+
+  it('S1: a rename and a rotation toggle after the target are not edits: the coach’s 2 sets stay', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routine } = await withCoachTarget(s, 2);
+    h.clockMs += 60 * 60 * 1000;
+    const off = await s.routines.setRotation({ routineId: routine.id, on: false, expectedVersion: routine.version, opId: 'rot-off' });
+    if (!off.ok) throw new Error('rotation');
+    const renamed = await s.routines.rename({ routineId: routine.id, name: 'Push B', expectedVersion: off.routine.version, opId: 'ren' });
+    if (!renamed.ok) throw new Error('rename');
+    h.clockMs += 2 * DAY;
+    const { workingSets, started } = await overviewAndStart(s, gymId, routine.id);
+    expect(working(started)).toHaveLength(2);
+    expect(workingSets).toBe(2);
   });
 
   it('not edited since the target: the coach’s set count is used (D21)', async () => {

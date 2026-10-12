@@ -493,7 +493,7 @@ export type RoutineEditWrite =
 
 /** What `Save to Workouts` saves (§A4.2): a finished workout, or exactly what an overview shows. */
 export type SaveFrom =
-  | { kind: 'session'; sessionId: string; keepLoads?: boolean }
+  | { kind: 'session'; sessionId: string }
   /** Repeat's `Save to Workouts` (§A2.6): the Repeat preview at this gym, its fitted loads as Fixed (review S4). */
   | { kind: 'repeat'; sessionId: string; gymId: string }
   | { kind: 'preview'; target: OverviewTarget; gymId: string | null; checkInId?: string | null; typicalEquipment?: readonly EquipmentInstance[]; previewKey: string };
@@ -1256,7 +1256,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const source = await repos().sessions.get(from.sessionId).catch(() => null);
       if (!source || source.session.ownerId !== p.id) return null;
       const isCompound = await compoundOf(source.exercises.map((e) => e.exerciseId));
-      return routineFromSession({ id: req.id, ownerId: p.id, name: req.name, opId: req.opId, source, at, newId: ctx.newId, keepLoads: from.keepLoads === true, inRotation: req.inRotation, isCompound });
+      return routineFromSession({ id: req.id, ownerId: p.id, name: req.name, opId: req.opId, source, at, newId: ctx.newId, inRotation: req.inRotation, isCompound });
     }
     if (from.kind === 'repeat') {
       const r = await repeatPlan(p, from.sessionId, from.gymId);
@@ -2542,9 +2542,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
     },
 
-    /** Older entry point: `Save to Workouts` from a finished workout (Auto loads; `keepLoads` for Repeat). */
-    saveFromSession(req: { sessionId: string; name: string; opId: string; keepLoads?: boolean; addToRotation?: boolean }): Promise<LibrarySaveWrite> {
-      return routines.saveFrom({ from: { kind: 'session', sessionId: req.sessionId, ...(req.keepLoads ? { keepLoads: true } : {}) }, name: req.name, addToRotation: req.addToRotation === true, opId: req.opId });
+    /** Older entry point: `Save to Workouts` from a finished workout (Auto loads; Repeat saves through `kind: 'repeat'`). */
+    saveFromSession(req: { sessionId: string; name: string; opId: string; addToRotation?: boolean }): Promise<LibrarySaveWrite> {
+      return routines.saveFrom({ from: { kind: 'session', sessionId: req.sessionId }, name: req.name, addToRotation: req.addToRotation === true, opId: req.opId });
     },
 
     rename(req: { routineId: string; name: string; expectedVersion: number; opId: string }): Promise<RoutineWrite> {
