@@ -185,6 +185,25 @@ export function personalPlaybookText(text: string): boolean {
   return OWNER_WORDS.test(t) || OWNED_BODY.test(t) || PARTICULAR_BODY.test(t) || THIRD_PERSON.test(t) || OWNER_NOUN.test(t) || BARE_THIRD_PERSON_VERB.test(t);
 }
 
+/** An instruction: starts with an imperative training verb ("Deload every 5th week", "Always rest 3 minutes on squats"). */
+const IMPERATIVE_RULE =
+  /^(?:(?:always|never|don't|dont|do not|try to|make sure to|remember to) )?(?:deload|train|lift|rest(?! days?\b)|use|add|increase|decrease|drop|reduce|progress|keep|avoid|take|stop|start|push|aim|warm|stretch|superset|program|programme|cycle|swap|pick|choose|prioriti[sz]e|focus|include|limit|cap|finish|perform|do|repeat|switch|rotate|retest|bump|alternate)\b/;
+/** Advice wording: "should", "must", "it's best to", "every N weeks" with no one in particular. */
+const ADVICE_WORDS = /\b(?:should|shouldn't|must|ought to|it's best to|best to|it's better to|is best|rule of thumb|as a rule)\b|^(?:always|never)\b|\bevery \d+(?:st|nd|rd|th)? (?:week|weeks|session|sessions|workout|workouts|cycle|cycles)\b/;
+
+/**
+ * Is this memory suggestion really a general training rule? (CLAUDE.md
+ * rule 10, CM9, review coach-tools S4.) A suggestion is only for facts about
+ * Ben; "Always deload every 5th week" belongs in the playbook, so the call is
+ * refused whatever the model meant. Text that is clearly about Ben ("I
+ * always train fasted", "Prefers machines") is never refused here.
+ */
+export function generalRuleMemoryText(text: string): boolean {
+  const t = text.toLowerCase().replace(/[‘’]/g, "'").trim();
+  if (personalPlaybookText(t)) return false;
+  return IMPERATIVE_RULE.test(t) || ADVICE_WORDS.test(t);
+}
+
 export function parseToolCall(turnId: string, name: string, rawArguments: string, registry: TurnRegistry): ParsedToolCall {
   const decl = registry.tools.find((t) => t.name === name);
   if (decl === undefined) return { ok: false, error: 'not_allowed', line: `Not allowed: ${name}` };
@@ -206,6 +225,14 @@ export function parseToolCall(turnId: string, name: string, rawArguments: string
       error: 'invalid_args',
       line: "That's about you, not a general rule, so it wasn't added to the playbook. Nothing changed.",
       issues: ['text: personal fact, not a general rule (rule 10)'],
+    };
+  }
+  if (call.tool === 'suggest_memory' && generalRuleMemoryText(call.args.text)) {
+    return {
+      ok: false,
+      error: 'invalid_args',
+      line: "That's a general rule, not about you, so it wasn't suggested as a memory. Nothing changed.",
+      issues: ['text: general training rule, not a personal fact (rule 10)'],
     };
   }
   return { ok: true, call, opId: toolOpId(turnId, decl.name, semanticArgs(call)), dropped: parsed.dropped };

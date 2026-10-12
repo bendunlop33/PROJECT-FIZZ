@@ -7,6 +7,7 @@ import {
   functionToolDefinitions,
   listCoachCapabilities,
   parseToolCall,
+  generalRuleMemoryText,
   personalPlaybookText,
   toolOpId,
   appendContentKeys,
@@ -235,6 +236,20 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     }
     for (const text of ['Deload every 6 weeks', 'Pause reps build strength off the chest', 'Stop progressing a movement when it causes pain', 'Add a set when RPE is below 7 for two sessions']) {
       expect(parseToolCall('t1', 'add_playbook_candidate', JSON.stringify({ text, statedBy: 'coach' }), reg).ok).toBe(true);
+    }
+  });
+
+  it('a memory suggestion that is a general training rule is refused; facts about Ben pass (review coach-tools S4, rule 10)', () => {
+    const reg = buildTurnRegistry(gate());
+    for (const text of ['Always deload every 5th week', 'Deload every 6 weeks', 'Rest 3 minutes between heavy sets', 'You should never train to failure on squats', 'Lifters must warm up before heavy sets', 'Never superset heavy compounds']) {
+      expect(generalRuleMemoryText(text), text).toBe(true);
+      const r = parseToolCall('t1', 'suggest_memory', JSON.stringify({ text, quote: text }), reg);
+      expect(r.ok, text).toBe(false);
+      if (!r.ok) expect(r.line).toMatch(/general rule/);
+    }
+    for (const text of ['Trains before work', 'Prefers dumbbells to barbells', 'I always train fasted', 'Left knee is dodgy on lunges', 'Lower back gets tight on deadlifts', 'Rest day on Sundays', 'Gym closes at 9 on Sundays', 'Night shifts on Tuesdays']) {
+      expect(generalRuleMemoryText(text), text).toBe(false);
+      expect(parseToolCall('t1', 'suggest_memory', JSON.stringify({ text, quote: text }), reg).ok, text).toBe(true);
     }
   });
 
