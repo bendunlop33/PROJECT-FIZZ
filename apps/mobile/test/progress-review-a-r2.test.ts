@@ -22,7 +22,7 @@ describe('S3: Ask on the Muscles screen carries the Progress window', () => {
   it('Muscles floats the Ask pill with a progress entry for the shared window', () => {
     const src = read('screens/progress/MusclesScreen.tsx');
     expect(src).toContain('<AskPill');
-    expect(src).toContain("{ kind: 'progress', days }");
+    expect(src).toContain("{ kind: 'progress', days, ");
     // On both the normal and the "Nothing to show yet" page.
     expect(src.match(/<Screen floating=\{ask\}>/g)).toHaveLength(2);
   });

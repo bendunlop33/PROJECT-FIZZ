@@ -180,7 +180,7 @@ describe('S1, S2: Ask floats above the ResumeBar and carries the Progress window
     expect(ask).toBeLessThan(areaClose);
     expect(toast).toBeLessThan(areaClose);
     expect(resume).toBeGreaterThan(areaClose);
-    expect(src).toContain("{ kind: 'progress', days }");
+    expect(src).toContain("{ kind: 'progress', days, ");
   });
 
   it('the coach sheet reads the window; the context frames it without inventing numbers', () => {

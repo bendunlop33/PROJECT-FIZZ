@@ -1,10 +1,11 @@
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 
-import type { ActivityView, TimeSheetRow } from '@fizz/domain';
+import { presetProgressRange, PROGRESS_PERIOD_PRESETS, shortDateText, stepPeriodDate, type ActivityView, type DateRange, type TimeSheetRow } from '@fizz/domain';
 
 import { E1RM_SHEET_LINES, HOW_COUNTED_LINES, TIME_SHEET_COPY } from '../../progress/copy';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, OutlinePill, TextButton } from '../../ui';
+import { AppText, BottomCard, Chip, ChipRow, OutlinePill, PrimaryButton, TextButton } from '../../ui';
 
 /**
  * The two Progress sheets (progress.md §2.3, §2.4): `Time in gym` lists only
@@ -126,6 +127,119 @@ export function E1rmSheet({ visible, onClose }: { visible: boolean; onClose: () 
             {l}
           </AppText>
         ))}
+      </View>
+    </BottomCard>
+  );
+}
+
+const STEPS = [
+  { unit: 'month', by: -1, label: '−1 mo', words: 'one month earlier' },
+  { unit: 'week', by: -1, label: '−1 wk', words: 'one week earlier' },
+  { unit: 'week', by: 1, label: '+1 wk', words: 'one week later' },
+  { unit: 'month', by: 1, label: '+1 mo', words: 'one month later' },
+] as const;
+
+function DateStepper({ label, date, bounds, onChange }: { label: string; date: string; bounds: DateRange; onChange: (d: string) => void }) {
+  const theme = useTheme();
+  return (
+    <View style={{ gap: theme.space['2'] }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <AppText variant="sectionLabel" color="text.tertiary">
+          {label}
+        </AppText>
+        <AppText variant="headline" numeric>
+          {shortDateText(date, true)}
+        </AppText>
+      </View>
+      <ChipRow>
+        {STEPS.map((st) => (
+          <Chip
+            key={st.label}
+            label={st.label}
+            selected={false}
+            accessibilityLabel={`${label}, ${st.words}`}
+            onPress={() => {
+              onChange(stepPeriodDate(date, { unit: st.unit, by: st.by }, bounds));
+            }}
+          />
+        ))}
+      </ChipRow>
+    </View>
+  );
+}
+
+/**
+ * Choose the dates (Ben, 12 Oct 2026): `3 months`, `6 months`, `1 year`, or
+ * a `From` and `To` moved a week or a month at a time, between the first
+ * workout and today. `Show` applies it; `Clear` goes back to the preset.
+ */
+export function PeriodSheet({
+  visible,
+  today,
+  earliest,
+  current,
+  onShow,
+  onClear,
+  onClose,
+}: {
+  visible: boolean;
+  today: string;
+  earliest: string;
+  /** The period showing now (custom or the preset's dates). */
+  current: DateRange;
+  onShow: (range: DateRange) => void;
+  /** Null when a preset is showing (nothing to clear). */
+  onClear: (() => void) | null;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const [from, setFrom] = useState(current.from);
+  const [to, setTo] = useState(current.to);
+  useEffect(() => {
+    if (!visible) return;
+    setFrom(current.from);
+    setTo(current.to);
+  }, [visible, current.from, current.to]);
+  const bounds = { from: earliest < today ? earliest : today, to: today };
+  return (
+    <BottomCard visible={visible} onClose={onClose}>
+      <Heading title="Dates" onDone={onClose} />
+      <ChipRow>
+        {PROGRESS_PERIOD_PRESETS.map((p) => {
+          const r = presetProgressRange(today, p.key);
+          return (
+            <Chip
+              key={p.key}
+              label={p.label}
+              selected={r.from === from && r.to === to}
+              onPress={() => {
+                setFrom(r.from);
+                setTo(r.to);
+              }}
+            />
+          );
+        })}
+      </ChipRow>
+      <DateStepper
+        label="FROM"
+        date={from}
+        bounds={{ from: bounds.from, to }}
+        onChange={setFrom}
+      />
+      <DateStepper
+        label="TO"
+        date={to}
+        bounds={{ from, to: bounds.to }}
+        onChange={setTo}
+      />
+      <View style={{ gap: theme.space['2'] }}>
+        <PrimaryButton
+          label="Show"
+          onPress={() => {
+            onShow({ from, to });
+          }}
+        />
+        {onClear ? <TextButton label="Clear" onPress={onClear} /> : null}
       </View>
     </BottomCard>
   );

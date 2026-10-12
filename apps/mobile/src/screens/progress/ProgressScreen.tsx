@@ -16,7 +16,7 @@ import { useTheme } from '../../theme';
 import { AppText, Card, Icon, PrimaryButton, SecondaryButton, StatStrip, StatusLine, TextButton, Toast } from '../../ui';
 import { AskPill } from '../coach/AskPill';
 import { CalendarView } from './CalendarView';
-import { HowCountedSheet, TimeSheet } from './sheets';
+import { HowCountedSheet, PeriodSheet, TimeSheet } from './sheets';
 
 /**
  * Progress home (progress.md v1.0 slice A, §2.2): one window drives every
@@ -40,6 +40,7 @@ export function ProgressScreen() {
   const [data, reload] = useScreenData((s) => s.progress.home());
   const [timeOpen, setTimeOpen] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
+  const [periodOpen, setPeriodOpen] = useState(false);
   const [toast, setToast] = useState<Toasted>(null);
   const [placeholder, setPlaceholder] = useState(false);
   const [toastHeight, setToastHeight] = useState(0);
@@ -171,6 +172,9 @@ export function ProgressScreen() {
         onWindow={(days) => {
           change({ days });
         }}
+        onPeriod={() => {
+          setPeriodOpen(true);
+        }}
         onGrouping={(grouping) => {
           change({ grouping });
         }}
@@ -205,6 +209,7 @@ export function ProgressScreen() {
   }
 
   const days = home?.days ?? null;
+  const range = home?.range ?? null;
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       {/* Everything that floats (Ask, toast) lives in this area, which ends above the ResumeBar, so the bar never covers them (review S1). */}
@@ -219,7 +224,7 @@ export function ProgressScreen() {
         <AskPill
           bottom={theme.space['4'] + (toastShown ? toastHeight : 0)}
           onPress={() => {
-            navigation.navigate('Coach', { entry: days === null ? { kind: 'today' } : { kind: 'progress', days } });
+            navigation.navigate('Coach', { entry: days === null ? { kind: 'today' } : { kind: 'progress', days, ...(range === null ? {} : { range }) } });
           }}
         />
         {toastShown ? (
@@ -262,6 +267,31 @@ export function ProgressScreen() {
           }}
         />
       ) : null}
+      {home?.view.dataState === 'normal' ? (
+        <PeriodSheet
+          visible={periodOpen}
+          today={home.today}
+          earliest={home.earliest}
+          current={{ from: home.view.window.from, to: home.view.window.to }}
+          onShow={(r) => {
+            setPeriodOpen(false);
+            services.progress.choosePeriod(r);
+            reload();
+          }}
+          onClear={
+            home.range === null
+              ? null
+              : () => {
+                  setPeriodOpen(false);
+                  services.progress.choosePeriod(null);
+                  reload();
+                }
+          }
+          onClose={() => {
+            setPeriodOpen(false);
+          }}
+        />
+      ) : null}
       <HowCountedSheet
         visible={howOpen}
         onClose={() => {
@@ -277,6 +307,7 @@ function Overview({
   view,
   ax,
   onWindow,
+  onPeriod,
   onGrouping,
   onCalendar,
   onTime,
@@ -289,6 +320,7 @@ function Overview({
   view: Extract<ProgressHomeView, { dataState: 'normal' }>;
   ax: boolean;
   onWindow: (d: ProgressWindowDays) => void;
+  onPeriod: () => void;
   onGrouping: (g: ProgressGrouping) => void;
   onCalendar: () => void;
   onTime: () => void;
@@ -301,12 +333,13 @@ function Overview({
   const { activity, muscles, records } = view;
   // `All records (n) ›` lists the rest in place (§2.2 region 5).
   // Expanded for one window only: a window change shows 3 again (review progress-B r2 N3).
-  const [recordsAllFor, setRecordsAllFor] = useState<ProgressHome['days'] | null>(null);
-  const recordsAll = recordsAllFor === home.days;
+  const windowKey = `${view.window.from}:${view.window.to}`;
+  const [recordsAllFor, setRecordsAllFor] = useState<string | null>(null);
+  const recordsAll = recordsAllFor === windowKey;
   const recordRows = recordsAll ? records.items : records.items.slice(0, records.initial);
   return (
     <View style={{ gap: theme.space['5'] }}>
-      <WindowPicker days={home.days} datesLine={view.datesLine} datesWords={view.datesWords} onChange={onWindow} />
+      <WindowPicker days={home.days} custom={home.range !== null} datesLine={view.datesLine} datesWords={view.datesWords} onChange={onWindow} onPeriod={onPeriod} />
 
       <View style={{ gap: theme.space['2'] }}>
         <Pressable accessibilityRole="button" accessibilityLabel={activity.cardWords} onPress={onCalendar}>
@@ -426,7 +459,7 @@ function Overview({
             accessibilityLabel={records.more.words}
             accessibilityHint="Lists every record"
             onPress={() => {
-              setRecordsAllFor(home.days);
+              setRecordsAllFor(windowKey);
             }}
             style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
           >
