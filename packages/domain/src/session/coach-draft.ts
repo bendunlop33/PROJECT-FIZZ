@@ -91,9 +91,11 @@ const NOT_LENGTH_BEFORE = /\b(?:rest|resting|rests|after|between|every|break|bre
  * Review r2 B1: "in N" is a start time only straight after a leave/train/start
  * verb ("I train in 2 hours", "leaving in 40 min", "be there in 30"). Any other
  * "in N" ("a workout I can do in 45 minutes", "fits in an hour", "in less than
- * 40 minutes") is the length.
+ * 40 minutes") is the length. Review r3 S2: so is "gym in N" ("I'm at the gym
+ * in 20", "I get to the gym in 40 minutes", ", gym in 40 min"), but not "a push
+ * for this gym in 45 minutes".
  */
-const START_TIME_BEFORE = /\b(?:train|training|leave|leaving|start|starting|be there|get there|getting there|arrive|arriving|(?:go|going|head|heading)(?: out| off| over)?(?: to the gym)?)\s+in\s*(?:about |around |roughly )?$/;
+const START_TIME_BEFORE = /(?:(?:^|[,;.:!?]\s*|\band |\bthen )gym|\b(?:train|training|leave|leaving|start|starting|be there|get there|getting there|arrive|arriving|(?:go|going|head|heading)(?: out| off| over)?(?: to the gym)?|(?:i['’]m|im|i am|i['’]ll be|ill be|i will be|we['’]re|we['’]ll be|be|being) (?:at|in) the gym|(?:get|gets|getting|got) to the gym))\s+in\s*(?:about |around |roughly )?$/;
 const NOT_LENGTH_AFTER = /^\s*(?:of )?(?:rest|resting|between|break|breaks|off|from now|later|ago|before|after|each|per)\b/;
 /** A length that names the workout: "45 min push workout", "an hour session", "60 minutes long". */
 const LENGTH_NAMES_WORKOUT = /^\s*(?:long\b|(?:[a-z]+[ -]){0,3}?(?:workout|work-out|session|routine|circuit)s?\b)/;
@@ -766,6 +768,18 @@ export function linkDraftRoutine(current: WorkoutDraft, input: { routineId: stri
   if (input.routineId !== null && !coachDraftIsOpen(current, input.at.utc)) return { kind: 'closed', current };
   if (input.versionN !== undefined && current.currentVersion !== input.versionN) return { kind: 'stale', current };
   return { kind: 'write', next: bump(current, input.opId, input.at.utc, { routineId: input.routineId }), expectedVersion: current.version };
+}
+
+/**
+ * Review r3 S1: the live workout the draft's current version was saved as, or
+ * null. A workout saved from an earlier version (Ben revised the draft after
+ * Save) doesn't count: `Save to Workouts` shows again and a new save moves the
+ * link (ADR 0025). `routine` is the linked workout, null when it's gone or deleted.
+ */
+export function draftSavedRoutineId(draft: WorkoutDraft, routine: { id: string; createdFromDraft?: { draftId: string; version: number } | undefined } | null): string | null {
+  if (draft.routineId === null || routine === null || routine.id !== draft.routineId) return null;
+  const from = routine.createdFromDraft;
+  return from !== undefined && from.draftId === draft.id && from.version === draft.currentVersion ? routine.id : null;
 }
 
 /** The 14-day expiry (BD4): open (or discarded) drafts past `expiresAtUtc` become `expired`. */

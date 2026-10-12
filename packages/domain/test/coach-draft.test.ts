@@ -23,6 +23,7 @@ import {
   expireWorkoutDraft,
   getAchievableLoads,
   linkDraftRoutine,
+  draftSavedRoutineId,
   newWorkoutDraft,
   parseRequestedFocus,
   parseRequestedMinutes,
@@ -257,6 +258,15 @@ describe('request parsing: code reads minutes and focus from Ben’s words (BD11
     expect(parseRequestedMinutes('heading to the gym in an hour, 45 min pull session')).toBe(45);
     expect(parseRequestedMinutes('a 45 min workout, rest less than 2 min')).toBe(45);
     expect(parseRequestedMinutes('push day, rest no more than 3 minutes')).toBeNull();
+    // Review r3 S2: "at/to the gym in N" and a bare "gym in N" are a start time; "for this gym in N" is still the length.
+    expect(parseRequestedMinutes("I'm at the gym in 20 minutes, give me a push workout")).toBeNull();
+    expect(parseRequestedMinutes('I’m at the gym in 20 minutes, give me a push workout')).toBeNull();
+    expect(parseRequestedMinutes("I'll be at the gym in 30 minutes, build me a workout")).toBeNull();
+    expect(parseRequestedMinutes('build me a workout, I get to the gym in 40 minutes')).toBeNull();
+    expect(parseRequestedMinutes('build me a workout, gym in 40 min')).toBeNull();
+    expect(parseRequestedMinutes('gym in 40 min, push please')).toBeNull();
+    expect(parseRequestedMinutes("I'm at the gym in 20 minutes, build me a 45 min session")).toBe(45);
+    expect(parseRequestedMinutes('a push workout for this gym in 45 minutes')).toBe(45);
   });
 
   it('reads the focus; none means the coach picks', () => {
@@ -581,6 +591,25 @@ describe('lifecycle: 14 days, discard with Undo, saved and started (BD4, BD12, r
     expect(linkDraftRoutine(gone.next, { routineId: id(981), opId: 'save-2', at: at(35) }).kind).toBe('closed');
     expect(linkDraftRoutine(d, { routineId: id(981), opId: 'save-3', at: at(35), versionN: 2 }).kind).toBe('stale');
     expect(linkDraftRoutine(d, { routineId: id(981), opId: 'save-4', at: at(35), versionN: 1 }).kind).toBe('write');
+  });
+
+  it('review r3 S1: the draft is saved only while its current version is the one the workout was saved from', () => {
+    const d = draftOf();
+    const saved = linkDraftRoutine(d, { routineId: id(980), opId: 'save', at: at(30), versionN: 1 });
+    if (saved.kind !== 'write') throw new Error(saved.kind);
+    const routine = { id: id(980), createdFromDraft: { draftId: d.id, version: 1 } };
+    expect(draftSavedRoutineId(saved.next, routine)).toBe(id(980));
+    expect(draftSavedRoutineId(d, routine)).toBeNull();
+    expect(draftSavedRoutineId(saved.next, null)).toBeNull();
+    expect(draftSavedRoutineId(saved.next, { id: id(980) })).toBeNull();
+    expect(draftSavedRoutineId(saved.next, { id: id(980), createdFromDraft: { draftId: id(1), version: 1 } })).toBeNull();
+    const v2plan = checked(args([pex('dumbbell-incline-press'), pex('cable-fly')]), ctx({ previous: currentDraftVersion(d).plan })).plan;
+    const revised = addDraftVersion(saved.next, { version: versionOf(v2plan), expectedVersion: saved.next.version, opId: 'v2', at: at(40) });
+    if (revised.kind !== 'write') throw new Error(revised.kind);
+    // v2 keeps the link to the v1 workout but isn't saved; a v2 save may link.
+    expect(revised.next.routineId).toBe(id(980));
+    expect(draftSavedRoutineId(revised.next, routine)).toBeNull();
+    expect(linkDraftRoutine(revised.next, { routineId: id(981), opId: 'save-v2', at: at(41), versionN: 2 }).kind).toBe('write');
   });
 
   it('the card’s end states come from the stored draft (§4.2)', () => {
