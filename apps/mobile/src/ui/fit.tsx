@@ -207,13 +207,25 @@ export function FitCard({ fit, collapsed, onExpand, onUndo, onChange, onWhy }: F
  * `No answer from the coach`, `Couldn’t use the coach’s version` or `Plan
  * changed` with their buttons.
  */
-export function CoachFitStatusCard({ text, actions, onAction }: { text: string; actions: readonly ('cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again')[]; onAction: (a: 'cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again') => void }) {
+export function CoachFitStatusCard({
+  text,
+  offline = false,
+  actions,
+  onAction,
+}: {
+  text: string;
+  /** `Coach offline`: icon + word (FT-C18). */
+  offline?: boolean;
+  actions: readonly ('cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again')[];
+  onAction: (a: 'cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again') => void;
+}) {
   const theme = useTheme();
   const label = { cancel: FIT_COPY.cancel, trim: FIT_COPY.trimInstead, why: FIT_COPY.why, dismiss: FIT_COPY.dismiss, ask_again: FIT_COPY.askAgain } as const;
   return (
     <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, marginTop: theme.space['3'], padding: theme.space['3'], gap: theme.space['2'] }}>
       <View accessible accessibilityLiveRegion="polite" accessibilityLabel={`Coach. ${text}`} style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space['2'] }}>
         <CoachTag />
+        {offline ? <Icon name="wifi.slash" color="text.secondary" size={14} /> : null}
         <AppText variant="headline" numeric>
           {text}
         </AppText>

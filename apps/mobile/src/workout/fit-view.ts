@@ -25,6 +25,7 @@ export const FIT_COPY = {
   fitting: (minutes: number) => `Fitting to ${String(minutes)} min…`,
   cancel: 'Cancel',
   noAnswer: 'No answer from the coach',
+  offline: 'Coach offline',
   couldntUse: 'Couldn’t use the coach’s version',
   planChanged: 'Plan changed',
   trimInstead: 'Trim instead',
@@ -41,20 +42,24 @@ export const FIT_COPY = {
 export type CoachFitCard =
   | { kind: 'pending'; minutes: number }
   | { kind: 'no_answer'; minutes: number }
+  /** The coach couldn't be reached (not connected, or no network): `Coach offline` with its icon (FT-C9; review C S5). */
+  | { kind: 'offline'; minutes: number }
   | { kind: 'rejected'; minutes: number; reasons: string[] }
   | { kind: 'plan_changed'; minutes: number };
 
 /** The card's line and buttons (§6 states): `Trim instead` only where a trim to that length would cut something. */
-export function coachFitCardView(card: CoachFitCard, trimWouldCut: boolean): { text: string; actions: ('cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again')[] } {
+export function coachFitCardView(card: CoachFitCard, trimWouldCut: boolean): { text: string; offline: boolean; actions: ('cancel' | 'trim' | 'why' | 'dismiss' | 'ask_again')[] } {
   switch (card.kind) {
     case 'pending':
-      return { text: FIT_COPY.fitting(card.minutes), actions: ['cancel'] };
+      return { text: FIT_COPY.fitting(card.minutes), offline: false, actions: ['cancel'] };
     case 'no_answer':
-      return { text: FIT_COPY.noAnswer, actions: [...(trimWouldCut ? (['trim'] as const) : []), 'dismiss'] };
+      return { text: FIT_COPY.noAnswer, offline: false, actions: [...(trimWouldCut ? (['trim'] as const) : []), 'dismiss'] };
+    case 'offline':
+      return { text: FIT_COPY.offline, offline: true, actions: [...(trimWouldCut ? (['trim'] as const) : []), 'dismiss'] };
     case 'rejected':
-      return { text: FIT_COPY.couldntUse, actions: ['why', ...(trimWouldCut ? (['trim'] as const) : []), 'dismiss'] };
+      return { text: FIT_COPY.couldntUse, offline: false, actions: ['why', ...(trimWouldCut ? (['trim'] as const) : []), 'dismiss'] };
     case 'plan_changed':
-      return { text: FIT_COPY.planChanged, actions: ['ask_again', 'dismiss'] };
+      return { text: FIT_COPY.planChanged, offline: false, actions: ['ask_again', 'dismiss'] };
   }
 }
 
@@ -68,8 +73,9 @@ export function coachFitCardOf(outcome: { kind: 'applied' | 'rejected' | 'timeou
       return { kind: 'rejected', minutes, reasons: outcome.reasons ?? [] };
     case 'plan_changed':
       return { kind: 'plan_changed', minutes };
-    case 'timeout':
     case 'unavailable':
+      return { kind: 'offline', minutes };
+    case 'timeout':
     case 'failed':
       return { kind: 'no_answer', minutes };
   }

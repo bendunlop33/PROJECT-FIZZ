@@ -87,8 +87,8 @@ import {
   fitPlanOf,
   FIT_REFUSAL_WORDS,
   PACE_SOURCE_LABEL,
-  roundEstimateMinutes,
   validateTodayFit,
+  fitShortens,
   validFitMinutes,
   type AddCheck,
   type SwapCheck,
@@ -3235,7 +3235,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const context: TodayFitContext = {
       workout: page.view.title,
       minutes: req.minutes,
-      estimateMinutes: roundEstimateMinutes(unfittedSeconds),
+      // Unrounded (one decimal) and the validator's own direction, so `Fill` is never sent for a shorten (review C S1).
+      estimateMinutes: Math.round(unfittedSeconds / 6) / 10,
+      shorten: fitShortens(req.minutes, unfittedSeconds),
       paceSource: PACE_SOURCE_LABEL[page.pace.source],
       goal: null,
       priorityGroups: [],
@@ -3431,12 +3433,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const p = await owner();
         const prior = await ctx.store().repos.coach.findActionByOpId(p.id, req.opId).catch(() => null);
         if (prior !== null && prior.detail.kind === 'fit_today') return { kind: 'applied', actionId: prior.actionId, draft: await ctx.store().repos.drafts.get(prior.detail.draftId).catch(() => null), duplicate: true };
+        // Cancel, Start or leaving the page stops it at every step after this, and a Start moves the fence (§3.4, FT-C13; review C B1).
+        const aborted = () => req.signal?.aborted === true;
+        const startFence = await ctx.store().repos.drafts.startFence(p.id);
         const typical = req.gymId === null ? req.typicalEquipment : undefined;
         const page = await overview.load({ target: req.target, gymId: req.gymId, checkInId: req.checkInId ?? null, ...(typical ? { typicalEquipment: typical } : {}) });
         if (page === null || page.view.previewKey !== req.previewKey || (page.draft?.version ?? null) !== req.expectedDraftVersion) return { kind: 'plan_changed' };
         const plan = await coachFitPlan(p, req, page);
         if (plan === null) return { kind: 'plan_changed' };
+        if (aborted()) return { kind: 'cancelled' };
         const answer = await ctx.coachFit(plan.context, req.signal);
+        if (aborted()) return { kind: 'cancelled' };
         if (answer === null) return { kind: 'unavailable' };
         if (!answer.ok) {
           if (answer.error === 'timeout') return { kind: 'timeout' };
@@ -3446,6 +3453,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         // The page as it is now: anything that moved while the coach worked discards the answer (§6 `Plan changed`).
         const now = await overview.load({ target: req.target, gymId: req.gymId, checkInId: req.checkInId ?? null, ...(typical ? { typicalEquipment: typical } : {}) });
+        if (aborted()) return { kind: 'cancelled' };
         if (now === null || now.view.previewKey !== req.previewKey) return { kind: 'plan_changed' };
         const v = validateTodayFit({ minutes: req.minutes, unfittedSeconds: plan.unfittedSeconds, slots: plan.slots, args: answer.args, canAdd: plan.canAdd, canSwap: plan.canSwap });
         const rejectedText = v.rejected.map((r) => `${r.slotKey === null ? r.kind : (plan.nameOf.get(r.slotKey) ?? r.kind)} · ${FIT_REFUSAL_WORDS[r.why]}`);
@@ -3454,6 +3462,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const actionId = deriveId(`coach-fit:${req.opId}`);
         const drafts = ctx.store().repos.drafts;
         const current = await liveDraft(p.id, plan.basis);
+        if (aborted()) return { kind: 'cancelled' };
         if ((current?.version ?? null) !== req.expectedDraftVersion) return { kind: 'plan_changed' };
         const change = applyDraftCommand({
           current,
@@ -3470,6 +3479,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // Before → after from the estimate (FT7): the draft this write leaves, planned now.
         const t = await todayForDraft(p, plan.resolved, plan.gymId, typical, plan.checkIn, change.next);
         const run = await overviewDryRun(p, plan.resolved, plan.gymId, plan.checkIn, typical, t.input);
+        if (aborted()) return { kind: 'cancelled' };
         const fit = run?.today?.fit ?? null;
         if (run === null || fit === null) return { kind: 'failed' };
         const beforeMinutes = fitMinutesOf(fit.beforeSeconds, 'fitted', req.minutes);
@@ -3508,8 +3518,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           undoneBy: null,
           createdAt: at,
         };
-        const r = await drafts.applyCoachFit({ ownerId: p.id, next: change.next, expectedVersion: req.expectedDraftVersion, action });
-        if (r.status === 'stale') return { kind: 'plan_changed' };
+        if (aborted()) return { kind: 'cancelled' };
+        const r = await drafts.applyCoachFit({ ownerId: p.id, next: change.next, expectedVersion: req.expectedDraftVersion, action, startFence, cancelled: aborted });
+        if (r.status === 'cancelled') return { kind: 'cancelled' };
+        if (r.status === 'stale' || r.status === 'started') return { kind: 'plan_changed' };
         return { kind: 'applied', actionId: r.action.actionId, draft: r.draft, duplicate: r.status === 'replayed' };
       } catch {
         return { kind: 'failed' };
@@ -3546,8 +3558,27 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
     },
 
-    /** `Clear fit` (fit-to-time §3.2): the live fit, and a coach fit's own edits, removed; `removed` is what the toast's Undo restores. */
-    clearFit(req: DraftTarget): Promise<DraftWrite> {
+    /**
+     * `Clear fit` (fit-to-time §3.2, §5.3): the live fit removed. A coach fit
+     * goes through its Undo (`undoCoachFit`), so its edits are removed in one
+     * write and the `undo` is in the coach action log (FT-C15; review C S2);
+     * a built-in fit it replaced comes back, as with the card's Undo.
+     */
+    async clearFit(req: DraftTarget): Promise<DraftWrite> {
+      try {
+        const p = await owner();
+        const resolved = await resolveOverview(p, req.target, { gymId: req.gymId ?? 'typical-gym-preview', gymEquipment: req.gymId === null ? req.typicalEquipment : undefined });
+        const current = resolved === null ? null : await liveDraft(p.id, basisOf(resolved));
+        const fit = current === null ? undefined : liveEdits(current.edits).find((e) => e.kind === 'fit');
+        if (current !== null && fit !== undefined && fit.author === 'coach' && fit.actionId !== undefined) {
+          if (current.version !== req.expectedDraftVersion) return { ok: false, reason: 'stale', message: DRAFT_COPY.failed };
+          const u = await overview.undoCoachFit({ actionId: fit.actionId, opId: req.opId });
+          if (!u.ok) return { ok: false, reason: u.reason === 'failed' ? 'failed' : 'stale', message: DRAFT_COPY.failed };
+          return { ok: true, draft: u.draft, duplicate: false, added: [], removed: [] };
+        }
+      } catch {
+        return { ok: false, reason: 'failed', message: DRAFT_COPY.failed };
+      }
       return writeDraft(req, () => ({ type: 'clear_fit' }));
     },
 

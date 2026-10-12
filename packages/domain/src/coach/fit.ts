@@ -94,8 +94,17 @@ export interface TodayFitValidation {
 /** Most added exercises and extra sets per exercise when the coach fills a longer session (§5.2). */
 export const FIT_LENGTHEN_LIMITS = { maxAdded: 2, maxExtraSets: 2, muscleCap: 8 } as const;
 
+/**
+ * Whether a fit to `minutes` shortens today's plan: the one comparison, on
+ * unrounded seconds, that the validator, the sheet and the request's
+ * `Fit`/`Fill` wording all use (review C S1).
+ */
+export function fitShortens(minutes: number, unfittedSeconds: number): boolean {
+  return minutes * 60 < unfittedSeconds;
+}
+
 export function validateTodayFit(input: TodayFitInput): TodayFitValidation {
-  const shorten = input.minutes * 60 < input.unfittedSeconds;
+  const shorten = fitShortens(input.minutes, input.unfittedSeconds);
   const bySlot = new Map(input.slots.map((s) => [s.slotKey, s]));
   const accepted: CoachFitEdit[] = [];
   const suggestions: FitSuggestion[] = [];

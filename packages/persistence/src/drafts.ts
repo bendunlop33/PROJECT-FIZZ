@@ -7,7 +7,8 @@ import type { SqlExecutor } from './driver';
 
 /**
  * Pre-start drafts (ADR 0022, migration 7): today's edits before a workout
- * exists. Your data, owner-scoped; never in coach context (rule 10). Every
+ * exists. Your data, owner-scoped; never in coach context (rule 10) except
+ * today's plan when Ben taps `Ask coach` (ADR 0022 note). Every
  * write is versioned; the domain (`applyDraftCommand`) makes the change and
  * this stores it. A session created by any path closes them (`sessions.ts`).
  */
@@ -32,7 +33,11 @@ export type RoutineChangeResult =
 export type CoachFitResult =
   | { status: 'written' | 'replayed'; action: ActionRecord; draft: PreStartDraft | null }
   /** The draft moved since the request was sent (rule 5): nothing is written (`Plan changed`). */
-  | { status: 'stale'; draft: PreStartDraft | null };
+  | { status: 'stale'; draft: PreStartDraft | null }
+  /** A workout was started since the request was sent (its `startFence` moved): nothing is written. */
+  | { status: 'started' }
+  /** The request was cancelled before the write: nothing is written. */
+  | { status: 'cancelled' };
 
 export type CoachFitUndo =
   | { status: 'written' | 'replayed'; undo: ActionRecord; draft: PreStartDraft | null }
@@ -41,6 +46,18 @@ export type CoachFitUndo =
 export type RoutineChangeUndo =
   | { status: 'written' | 'replayed'; undo: ActionRecord; routine: Routine; draft: PreStartDraft | null }
   | { status: 'not_possible'; reason: 'missing' | 'already_undone' | 'changed_since' };
+
+/**
+ * How many workouts Ben has started on this phone (manual sessions, any
+ * status; sessions are never deleted). A coach fit reads it when it is
+ * asked for and its write refuses if it moved: a Start in between, even one
+ * with no draft to close, cancels the fit (fit-to-time §3.4, review C B1).
+ * A count, not a time, so a clock change can't open the fence.
+ */
+async function startFenceIn(q: SqlExecutor, ownerId: string): Promise<number> {
+  const row = await q.getFirst<{ n: number }>("SELECT COUNT(*) AS n FROM sessions WHERE owner_id = ? AND source = 'manual'", [ownerId]);
+  return row?.n ?? 0;
+}
 
 async function getDraft(q: SqlExecutor, id: string): Promise<PreStartDraft | null> {
   const row = await q.getFirst('SELECT * FROM pre_start_drafts WHERE id = ?', [id]);
@@ -83,6 +100,11 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
   async open(ownerId: string, basis: DraftBasis): Promise<PreStartDraft | null> {
     const rows = await this.listWhere("owner_id = ? AND basis_key = ? AND status = 'open'", [ownerId, draftBasisKey(basis)]);
     return rows[0] ?? null;
+  }
+
+  /** The start fence a coach fit is asked with (`startFenceIn`). Reads only. */
+  startFence(ownerId: string): Promise<number> {
+    return this.db.read((q) => startFenceIn(q, ownerId));
   }
 
   listByOwner(ownerId: string): Promise<PreStartDraft[]> {
@@ -167,13 +189,16 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
    * that moved since the request was sent is `stale` and nothing is written.
    * `expectedVersion` null: there was no draft (this write creates it).
    */
-  applyCoachFit(req: { ownerId: string; next: PreStartDraft; expectedVersion: number | null; action: ActionRecord }): Promise<CoachFitResult> {
+  applyCoachFit(req: { ownerId: string; next: PreStartDraft; expectedVersion: number | null; action: ActionRecord; startFence: number; cancelled?: () => boolean }): Promise<CoachFitResult> {
     return this.db.write(async (tx): Promise<CoachFitResult> => {
       const prior = await actionByOp(tx, req.ownerId, req.action.opId);
       if (prior !== null) {
         const d = prior.detail.kind === 'fit_today' ? prior.detail.draftId : null;
         return { status: 'replayed', action: prior, draft: d === null ? null : await getDraft(tx, d) };
       }
+      // Cancelled, or a workout started since the request was sent (§3.4, FT-C13): nothing is written (review C B1).
+      if (req.cancelled?.() === true) return { status: 'cancelled' };
+      if ((await startFenceIn(tx, req.ownerId)) !== req.startFence) return { status: 'started' };
       if (req.expectedVersion === null) {
         const clash = await tx.getFirst<{ version: number }>("SELECT version FROM pre_start_drafts WHERE owner_id = ? AND basis_key = ? AND status = 'open'", [req.ownerId, draftBasisKey(req.next.basis)]);
         if (clash !== null) return { status: 'stale', draft: await getDraft(tx, req.next.id) };

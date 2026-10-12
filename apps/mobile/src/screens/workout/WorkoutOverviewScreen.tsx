@@ -101,6 +101,14 @@ const FADE_STEPS = 7;
 /** The Add list searches once typing pauses this long (each search reads up to 40 histories). */
 const ADD_SEARCH_PAUSE_MS = 250;
 
+/**
+ * Coach swap suggestions Ben tapped `Not now` on, by fit: kept for the app's
+ * run so the card stays gone when the page remounts (review C N2). A
+ * relaunch shows them again (not stored).
+ */
+const dismissedCoachSwaps = new Set<string>();
+const swapKey = (actionId: string, sg: { slotKey: string; toExerciseId: string }) => `${actionId}:${sg.slotKey}:${sg.toExerciseId}`;
+
 export function WorkoutOverviewScreen() {
   const theme = useTheme();
   const services = useServices();
@@ -186,7 +194,7 @@ export function WorkoutOverviewScreen() {
   const coachRun = useRef<AbortController | null>(null);
   const [coachCard, setCoachCard] = useState<CoachFitCard | null>(null);
   const [fitWhy, setFitWhy] = useState<{ reason: string | null; checks: string[]; notUsed: string[] } | null>(null);
-  const [dismissedSwaps, setDismissedSwaps] = useState<ReadonlySet<string>>(new Set());
+  const [dismissedSwaps, setDismissedSwaps] = useState<ReadonlySet<string>>(() => new Set(dismissedCoachSwaps));
   const shownToasts = useRef(new Set<string>());
 
   const [data, reload] = useScreenData(async (s) => {
@@ -714,8 +722,11 @@ export function WorkoutOverviewScreen() {
         setToast({ text: w.reason === 'stale' ? w.message : TODAY_EDITS_COPY.editFailed });
         return null;
       }
-      if (w.draft !== null) wroteDraft.current = { id: w.draft.id, version: w.draft.version, seq: writeSeq.current };
-      haptic('step');
+      // `Fits already` writes nothing (no draft): no haptic for it (review C N5).
+      if (w.draft !== null) {
+        wroteDraft.current = { id: w.draft.id, version: w.draft.version, seq: writeSeq.current };
+        haptic('step');
+      }
       return w;
     }, opts);
     return result ?? null;
@@ -850,10 +861,16 @@ export function WorkoutOverviewScreen() {
         signal: run.signal,
       })
       .catch(() => ({ kind: 'failed' as const }));
-    // Cancelled (or Start) while it worked: nothing to show.
-    if (coachRun.current !== run) return;
+    // Cancelled (or Start) while it worked: nothing to show. The service refuses the write once cancelled; a fit whose write was
+    // already under way when Cancel landed is taken back with its Undo, so nothing Ben cancelled stays (review C B1).
+    if (coachRun.current !== run) {
+      if (r.kind === 'applied' && !r.duplicate) void services.overview.undoCoachFit({ actionId: r.actionId, opId: `cancelled-coach-fit:${r.actionId}` }).catch(() => null);
+      return;
+    }
     coachRun.current = null;
     if (r.kind !== 'failed' && r.kind !== 'cancelled') ops.done(intent);
+    // The coach couldn't be reached: the sheet shows `Ask coach` disabled with `Coach offline` next time (FT-C9; review C S5).
+    if (r.kind === 'unavailable') setCoachAvailable(false);
     if (r.kind === 'applied') {
       setFitFolded(false);
       writeSeq.current += 1;
@@ -1520,6 +1537,7 @@ export function WorkoutOverviewScreen() {
           return (
             <CoachFitStatusCard
               text={v.text}
+              offline={v.offline}
               actions={v.actions}
               onAction={(a) => {
                 if (a === 'cancel') cancelCoachFit();
@@ -1563,7 +1581,7 @@ export function WorkoutOverviewScreen() {
         />
       ) : null}
       {(page.coachFit?.suggestions ?? [])
-        .filter((sg) => !dismissedSwaps.has(`${sg.slotKey}:${sg.toExerciseId}`))
+        .filter((sg) => !dismissedSwaps.has(swapKey(page.coachFit?.actionId ?? '', sg)))
         .map((sg) => (
           <FitSuggestionCard
             key={`${sg.slotKey}:${sg.toExerciseId}`}
@@ -1571,7 +1589,9 @@ export function WorkoutOverviewScreen() {
             busy={false}
             onApply={() => void applySuggestion(sg)}
             onNotNow={() => {
-              setDismissedSwaps((d) => new Set([...d, `${sg.slotKey}:${sg.toExerciseId}`]));
+              const k = swapKey(page.coachFit?.actionId ?? '', sg);
+              dismissedCoachSwaps.add(k);
+              setDismissedSwaps((d) => new Set([...d, k]));
             }}
           />
         ))}

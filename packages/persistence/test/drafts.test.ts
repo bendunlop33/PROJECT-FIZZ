@@ -591,12 +591,18 @@ describe('migration 8: coach actions take `fit_today` (fit-to-time §8)', () => 
     const draft = change(null, { type: 'coach_fit', minutes: 45, actionId: id(7709), edits: [{ kind: 'skip', slotKey: SLOT_BENCH }] }, 'coach-fit-op');
     const fitEdit = draft.edits.find((e) => e.kind === 'fit');
     const record = { ...fitRecord('coach-fit-op', draft, fitEdit?.editId ?? '', draft.edits.map((e) => e.editId)), actionId: id(7709) };
-    const w = await v8.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record });
+    const startFence = await v8.repos.drafts.startFence(OWNER);
+    // A workout started since the request was sent (the fence moved), or a cancelled request: nothing written (review C B1).
+    expect(await v8.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record, startFence: startFence - 1 })).toEqual({ status: 'started' });
+    expect(await v8.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record, startFence, cancelled: () => true })).toEqual({ status: 'cancelled' });
+    expect(await v8.repos.coach.getAction(record.actionId)).toBeNull();
+    expect(await v8.repos.drafts.open(OWNER, draft.basis)).toBeNull();
+    const w = await v8.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record, startFence });
     expect(w).toMatchObject({ status: 'written' });
-    expect(await v8.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record })).toMatchObject({ status: 'replayed' });
+    expect(await v8.repos.drafts.applyCoachFit({ ownerId: OWNER, next: draft, expectedVersion: null, action: record, startFence })).toMatchObject({ status: 'replayed' });
     // A second fit against the version before: stale, nothing written.
     const other = { ...fitRecord('coach-fit-2', draft, fitEdit?.editId ?? '', [fitEdit?.editId ?? '']), actionId: id(7710) };
-    expect(await v8.repos.drafts.applyCoachFit({ ownerId: OWNER, next: { ...draft, version: 2 }, expectedVersion: null, action: other })).toMatchObject({ status: 'stale' });
+    expect(await v8.repos.drafts.applyCoachFit({ ownerId: OWNER, next: { ...draft, version: 2 }, expectedVersion: null, action: other, startFence })).toMatchObject({ status: 'stale' });
     expect(await v8.repos.coach.getAction(id(7710))).toBeNull();
 
     // Undo: every coach edit removed in one versioned write, with its `undo` record.

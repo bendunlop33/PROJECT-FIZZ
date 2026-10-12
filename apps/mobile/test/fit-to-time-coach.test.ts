@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
-import type { TodayFitArgs } from '@fizz/schemas';
+import { fitShortens } from '@fizz/domain';
+import type { SessionAggregate, TodayFitArgs } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
+import { startFromOverview } from '../src/workout/overview-start';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -110,6 +112,51 @@ async function load(s: AppServices, gymId: string, routineId: string): Promise<O
 }
 const ask = (s: AppServices, page: OverviewData, gymId: string, routineId: string, minutes: number, opId: string) =>
   s.overview.requestCoachFit({ target: targetOf(routineId), gymId, expectedDraftVersion: page.draft?.version ?? null, opId, minutes, previewKey: page.view.previewKey });
+
+/** The open pre-start drafts, read from the database file. */
+function openDrafts(s: AppServices): number {
+  const db = new DatabaseSync(join(h.dir, s.developer.databaseNames().current), { readOnly: true });
+  try {
+    const row = db.prepare("SELECT COUNT(*) AS n FROM pre_start_drafts WHERE status = 'open'").get() as { n: number } | undefined;
+    return row?.n ?? 0;
+  } finally {
+    db.close();
+  }
+}
+
+/** A signal that reads as aborted once `cancel()` is called; the model step never sees it (Cancel after the answer arrived). */
+function lateCancel(): { signal: AbortSignal; cancel: () => void } {
+  let aborted = false;
+  const signal = {
+    get aborted() {
+      return aborted;
+    },
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  } as unknown as AbortSignal;
+  return {
+    signal,
+    cancel: () => {
+      aborted = true;
+    },
+  };
+}
+
+/** The rows the page showed are what Start created (FT-C5). */
+function sameAsStart(page: OverviewData, agg: SessionAggregate): void {
+  const ordered = [...agg.exercises].sort((a, b) => a.order - b.order);
+  expect(ordered.map((x) => x.exerciseName)).toEqual(page.view.rows.map((r) => r.name));
+  for (const [i, row] of page.view.rows.entries()) {
+    const ex = ordered[i];
+    const sets = agg.sets.filter((x) => x.sessionExerciseId === ex?.id && x.setType !== 'warmup' && x.pairedWithSetId === null);
+    if (row.edit?.kind === 'skipped') {
+      expect(sets.every((x) => x.status === 'skipped' && x.skippedBy === 'before_start')).toBe(true);
+      continue;
+    }
+    expect(sets.filter((x) => x.status === 'pending')).toHaveLength(row.editRow.workingSets);
+  }
+  expect(agg.sets.filter((x) => x.status === 'pending' && x.setType !== 'warmup' && x.pairedWithSetId === null)).toHaveLength(page.view.workingSets);
+}
 
 /** `coach_actions` rows of a kind, read from the database file. */
 function actionsOf(s: AppServices, kind: string): Promise<number> {
@@ -305,5 +352,140 @@ describe('Ask coach: longer, swaps, failures (FT-C9, FT-C11, FT-C12, FT-C13, FT-
     expect(model.requests).toHaveLength(1);
     expect(await ask(s, page, gymId, routineId, minutes, 'stale-1')).toEqual({ kind: 'plan_changed' });
     expect(await actionsOf(s, 'fit_today')).toBe(1);
+  });
+});
+
+describe('Cancel and Start after the answer arrived (review C B1, S2, S4)', () => {
+  it('Start with no draft while the coach works: the session starts plain, and no draft or `fit_today` is written afterwards', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    const page = await load(s, gymId, routineId);
+    expect(page.draft).toBeNull();
+    setModel(
+      new FitModel(
+        (req) => fitCall({ reason: 'Skip face pull.', edits: [e({ kind: 'skip', slotKey: slotOf(req, 'Face pull') })] }),
+        async () => {
+          const started = await s.overview.start({ startOf: page.startOf, gymId, opId: 'start-no-draft', checkIn: { kind: 'skipped', atUtc: h.now().utc }, expectedPreviewKey: page.view.previewKey, draft: null });
+          if (!started.ok) throw new Error(started.error.message);
+        },
+      ),
+    );
+    const minutes = Math.max(15, 5 * Math.floor(((page.view.estimate?.seconds ?? 0) / 60 - 6) / 5));
+    const r = await ask(s, page, gymId, routineId, minutes, 'nd-1');
+    expect(r.kind === 'plan_changed' || r.kind === 'cancelled').toBe(true);
+    expect(await actionsOf(s, 'fit_today')).toBe(0);
+    expect(openDrafts(s)).toBe(0);
+    const active = await s.workout.load();
+    expect(active?.aggregate.session.status).toBe('active');
+    expect(active?.aggregate.session.todayEdits?.fitted).toBeUndefined();
+    expect(active?.aggregate.sets.every((x) => x.status === 'pending')).toBe(true);
+  });
+
+  it('Cancel after the answer arrived writes nothing, with or without a draft', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    for (const withDraft of [false, true]) {
+      let page = await load(s, gymId, routineId);
+      if (withDraft) {
+        const raise = page.view.rows.find((x) => x.name === 'Lateral raise');
+        expect((await s.overview.edit({ target: targetOf(routineId), gymId, expectedDraftVersion: null, opId: 'ben-sets', edit: { kind: 'sets', slotKey: raise?.slotKey ?? '', workingSets: 3 } })).ok).toBe(true);
+        page = await load(s, gymId, routineId);
+      }
+      const c = lateCancel();
+      setModel(
+        new FitModel((req) => {
+          c.cancel();
+          return fitCall({ reason: 'Skip face pull.', edits: [e({ kind: 'skip', slotKey: slotOf(req, 'Face pull') })] });
+        }),
+      );
+      const minutes = Math.max(15, 5 * Math.floor(((page.view.estimate?.seconds ?? 0) / 60 - 6) / 5));
+      const r = await s.overview.requestCoachFit({ target: targetOf(routineId), gymId, expectedDraftVersion: page.draft?.version ?? null, opId: `late-${String(withDraft)}`, minutes, previewKey: page.view.previewKey, signal: c.signal });
+      expect(r).toEqual({ kind: 'cancelled' });
+      expect(model.requests).toHaveLength(1);
+      expect(await actionsOf(s, 'fit_today')).toBe(0);
+      const after = await load(s, gymId, routineId);
+      expect(after.view.fit).toBeNull();
+      expect(after.draft?.version ?? null).toBe(page.draft?.version ?? null);
+    }
+  });
+
+  it('Clear fit on a coach fit is its Undo: edits gone, one `undo` row, the record marked undone (FT-C15)', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    const page = await load(s, gymId, routineId);
+    setModel(new FitModel((req) => fitCall({ reason: 'Skip face pull.', edits: [e({ kind: 'skip', slotKey: slotOf(req, 'Face pull') })] })));
+    const minutes = Math.max(15, 5 * Math.floor(((page.view.estimate?.seconds ?? 0) / 60 - 6) / 5));
+    const r = await ask(s, page, gymId, routineId, minutes, 'cf-1');
+    if (r.kind !== 'applied') throw new Error(r.kind);
+    const fitted = await load(s, gymId, routineId);
+    expect(fitted.view.fit?.by).toBe('coach');
+    const base = { target: targetOf(routineId), gymId, expectedDraftVersion: fitted.draft?.version ?? null, opId: 'clear-coach-fit' };
+    // An older version is stale and changes nothing.
+    expect(await s.overview.clearFit({ ...base, expectedDraftVersion: (fitted.draft?.version ?? 1) - 1, opId: 'clear-old' })).toMatchObject({ ok: false, reason: 'stale' });
+    expect((await s.overview.clearFit(base)).ok).toBe(true);
+    const cleared = await load(s, gymId, routineId);
+    expect(cleared.view.fit).toBeNull();
+    expect(cleared.view.workingSets).toBe(page.view.workingSets);
+    expect(cleared.view.rows.map((x) => x.marker.kind)).toEqual(page.view.rows.map((x) => x.marker.kind));
+    expect(await actionsOf(s, 'undo')).toBe(1);
+    expect((await s.overview.undoCoachFit({ actionId: r.actionId, opId: 'undo-after-clear' })).ok).toBe(false);
+    // A retry of the same Clear is the same write.
+    expect((await s.overview.clearFit(base)).ok).toBe(true);
+    expect(await actionsOf(s, 'undo')).toBe(1);
+  });
+
+  it('Start with a coach fit (an add and more sets): rows equal the preview, `fitted.by` is coach with the add, Finish by from the fit (FT-C5)', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    setModel(
+      new FitModel((req) => {
+        const curl = sent(req).ownExercises.find((o) => o.name === 'Dumbbell curl')?.exerciseId ?? 'none';
+        return fitCall({ reason: 'Curls and a raise set fill it.', edits: [e({ kind: 'add', exerciseId: curl }), e({ kind: 'sets', slotKey: slotOf(req, 'Lateral raise'), workingSets: 5 })] });
+      }),
+    );
+    const page = await load(s, gymId, routineId);
+    const minutes = 120;
+    const r = await ask(s, page, gymId, routineId, minutes, 'coach-start');
+    if (r.kind !== 'applied') throw new Error(r.kind);
+    const fitted = await load(s, gymId, routineId);
+    expect(fitted.view.fit?.by).toBe('coach');
+    expect(fitted.view.rows.map((x) => x.name)).toContain('Dumbbell curl');
+    h.clockMs += 41_000;
+    const started = await startFromOverview({ start: (q) => s.overview.start(q), reload: () => s.overview.load({ target: targetOf(routineId), gymId }) }, { page: fitted, opId: 'start-coach-fit', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (started.kind !== 'started') throw new Error(started.kind);
+    const agg = started.outcome.aggregate;
+    sameAsStart(fitted, agg);
+    expect(agg.session.todayEdits?.fitted).toMatchObject({ minutes, by: 'coach' });
+    expect(agg.session.todayEdits?.fitted?.cuts.map((c) => c.kind)).toContain('add');
+    const startMs = Date.parse(agg.session.startedAt.utc);
+    expect(agg.session.finishBy?.utc).toBe(new Date(Math.ceil((startMs + minutes * 60_000) / 300_000) * 300_000).toISOString());
+    // The added curl's targets come from Ben's own history (12.5 kg each), never the model.
+    const curl = agg.exercises.find((x) => x.exerciseName === 'Dumbbell curl');
+    const curlSets = agg.sets.filter((x) => x.sessionExerciseId === curl?.id && x.setType !== 'warmup');
+    expect(curlSets.length).toBeGreaterThan(0);
+    expect(curlSets.every((x) => x.planned.load?.value === 12.5)).toBe(true);
+    // The draft is consumed: no open draft, and the coach's record stands for what was started.
+    expect(openDrafts(s)).toBe(0);
+  });
+});
+
+describe('Fit or Fill from the unrounded estimate (review C S1)', () => {
+  it('a length just under the plan is sent as a shorten with the unrounded estimate, and its skip is used', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    const page = await load(s, gymId, routineId);
+    const seconds = page.view.estimate?.seconds ?? 0;
+    // The largest chip under the plan's unrounded length: the sheet's default `Trim to N` (a shorten).
+    const minutes = Math.max(15, 5 * Math.floor((seconds - 1) / 300));
+    expect(fitShortens(minutes, seconds)).toBe(true);
+    setModel(new FitModel((req) => fitCall({ reason: 'Skip face pull.', edits: [e({ kind: 'skip', slotKey: slotOf(req, 'Face pull') })] })));
+    const r = await ask(s, page, gymId, routineId, minutes, 'round-1');
+    expect(r.kind).toBe('applied');
+    const req = model.requests[0];
+    if (!req) throw new Error('no request');
+    const ctx = sent(req) as unknown as { estimateMinutes: number };
+    expect(ctx.estimateMinutes).toBe(Math.round(seconds / 6) / 10);
+    const ask0 = req.input.find((i) => i.type === 'message' && i.role === 'user');
+    expect(ask0?.type === 'message' ? ask0.content : '').toBe(`Fit today to ${String(minutes)} minutes.`);
   });
 });

@@ -89,18 +89,21 @@ describe('the list and the rows with a fit (§3.3)', () => {
 
 describe('the coach fit’s own card (§3.4, §6)', () => {
   it('pending reads `Fitting to 45 min…` with Cancel; failures offer Trim instead only where a trim would cut', () => {
-    expect(coachFitCardView({ kind: 'pending', minutes: 45 }, true)).toEqual({ text: 'Fitting to 45 min…', actions: ['cancel'] });
-    expect(coachFitCardView({ kind: 'no_answer', minutes: 45 }, true)).toEqual({ text: 'No answer from the coach', actions: ['trim', 'dismiss'] });
-    expect(coachFitCardView({ kind: 'no_answer', minutes: 90 }, false)).toEqual({ text: 'No answer from the coach', actions: ['dismiss'] });
-    expect(coachFitCardView({ kind: 'rejected', minutes: 45, reasons: ['Bench press · rest stays as planned'] }, true)).toEqual({ text: 'Couldn’t use the coach’s version', actions: ['why', 'trim', 'dismiss'] });
-    expect(coachFitCardView({ kind: 'plan_changed', minutes: 45 }, true)).toEqual({ text: 'Plan changed', actions: ['ask_again', 'dismiss'] });
+    expect(coachFitCardView({ kind: 'pending', minutes: 45 }, true)).toEqual({ text: 'Fitting to 45 min…', offline: false, actions: ['cancel'] });
+    expect(coachFitCardView({ kind: 'no_answer', minutes: 45 }, true)).toEqual({ text: 'No answer from the coach', offline: false, actions: ['trim', 'dismiss'] });
+    expect(coachFitCardView({ kind: 'no_answer', minutes: 90 }, false)).toEqual({ text: 'No answer from the coach', offline: false, actions: ['dismiss'] });
+    // Not reachable (airplane mode's first tap): `Coach offline` with its icon, never `No answer` (FT-C9; review C S5).
+    expect(coachFitCardView({ kind: 'offline', minutes: 45 }, true)).toEqual({ text: 'Coach offline', offline: true, actions: ['trim', 'dismiss'] });
+    expect(coachFitCardView({ kind: 'rejected', minutes: 45, reasons: ['Bench press · rest stays as planned'] }, true)).toEqual({ text: 'Couldn’t use the coach’s version', offline: false, actions: ['why', 'trim', 'dismiss'] });
+    expect(coachFitCardView({ kind: 'plan_changed', minutes: 45 }, true)).toEqual({ text: 'Plan changed', offline: false, actions: ['ask_again', 'dismiss'] });
   });
 
-  it('applied and cancelled leave no card; a timeout, offline or failure reads as no answer', () => {
+  it('applied and cancelled leave no card; a timeout or failure reads as no answer; unreachable reads `Coach offline`', () => {
     expect(coachFitCardOf({ kind: 'applied' }, 45)).toBeNull();
     expect(coachFitCardOf({ kind: 'cancelled' }, 45)).toBeNull();
     expect(coachFitCardOf({ kind: 'timeout' }, 45)).toEqual({ kind: 'no_answer', minutes: 45 });
-    expect(coachFitCardOf({ kind: 'unavailable' }, 45)).toEqual({ kind: 'no_answer', minutes: 45 });
+    expect(coachFitCardOf({ kind: 'unavailable' }, 45)).toEqual({ kind: 'offline', minutes: 45 });
+    expect(coachFitCardOf({ kind: 'failed' }, 45)).toEqual({ kind: 'no_answer', minutes: 45 });
     expect(coachFitCardOf({ kind: 'rejected', reasons: ['x'] }, 45)).toEqual({ kind: 'rejected', minutes: 45, reasons: ['x'] });
     expect(coachFitCardOf({ kind: 'plan_changed' }, 45)).toEqual({ kind: 'plan_changed', minutes: 45 });
   });
@@ -149,8 +152,11 @@ describe('source checks', () => {
     expect(c).toMatch(/services\.overview\s*\.requestCoachFit\(\{/);
     expect(c).toMatch(/async function start\(\) \{\s*if \(!page\) return;\s*cancelCoachFit\(\);/);
     expect(c).toMatch(/if \(fit\.by === 'coach' && fit\.actionId !== null\) void undoCoachFit\(fit\.actionId\);/);
-    // Availability is read from settings when the sheet opens; never assumed.
+    // Availability is read from settings when the sheet opens; never assumed. An unreachable coach disables it for next time.
     expect(c).toMatch(/services\.overview\s*\.coachFitAvailable\(\)/);
+    expect(c).toMatch(/if \(r\.kind === 'unavailable'\) setCoachAvailable\(false\);/);
+    // A fit whose write landed after Cancel is taken back with its Undo (review C B1).
+    expect(c).toMatch(/if \(r\.kind === 'applied' && !r\.duplicate\) void services\.overview\.undoCoachFit\(/);
     // The coach's answer is never computed or checked on the screen.
     expect(c).not.toMatch(/validateTodayFit|fitToday\(|buildTodayFitRequest/);
   });
