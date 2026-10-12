@@ -56,3 +56,21 @@ export function effortChoices(scale: 'rpe' | 'rir'): { label: string; value: num
 export function countAccessibility(label: string, value: number): { label: string; value: string } {
   return { label, value: String(value) };
 }
+
+/**
+ * A card stepper's limits from the domain's next values (`slotShapeOf`): a
+ * button the domain says is at its limit (1–10, 0–5, the 30-set cap, or a
+ * slot already above 10) is dimmed.
+ */
+export function stepperLimits(value: number, down: number | null, up: number | null): { min: number; max: number } {
+  return { min: down ?? value, max: up ?? value };
+}
+
+/** The editor card's Reps sheet start: the slot's plain working reps (or the first non-warm-up set's when they differ), or its work time. */
+export function slotRepsDraft(templates: readonly { setType: string; targetReps: { min: number; max: number } | null; targetDurationS: number | null }[]): { kind: 'reps'; exact: boolean; min: number; max: number } | { kind: 'time'; seconds: number } {
+  const plain = templates.filter((t) => t.setType === 'working');
+  const first = (plain.length > 0 ? plain : templates.filter((t) => t.setType !== 'warmup'))[0];
+  if (first?.targetReps == null && first?.targetDurationS != null) return { kind: 'time', seconds: first.targetDurationS };
+  const r = first?.targetReps ?? { min: 8, max: 10 };
+  return { kind: 'reps', exact: r.min === r.max, min: r.min, max: r.max };
+}
