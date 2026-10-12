@@ -261,6 +261,16 @@ const ADVICE_QUESTION =
   /^(?:why|what|whats|what's|how|hows|how's|when|where|which|who|whose|is|are|was|were|do(?= (?:you|i|we|they|it|these|those|people|u|ya)\b)|does|did|should|shall i|shall we|am i|have i|has|any idea|wonder|i wonder|do you think|would it|would that|is it worth)\b/;
 /** "Would you lower it if you were me?", "what would you change?": asking for the coach's view (review r3 B1). */
 const OPINION_QUESTION = /\bwould (?:you|we|it)\b.*\bif\b|\bwhat would (?:you|we)\b|\bif you were me\b|\bin my (?:shoes|position)\b|\byour (?:view|opinion|take)\b/;
+/**
+ * "Remember to always deload every 5th week", "Remember to avoid lunges"
+ * (coach-memory CM9, review coach-tools r3 S2): "remember to" followed by a
+ * training instruction, or with a rule signal (a period, a deload), is a
+ * memory request; `memoryTextKind` then routes the words to Your data, the
+ * playbook or the split card. "Remember to bring chalk" and "Remember to log
+ * 100" stay reminders, not requests.
+ */
+const REMEMBER_RULE =
+  /^(?:please )?remember to (?:(?:always|never|not|try to|keep to) )?(?:deload|avoid|train|rest|progress|limit|cap|superset|prioriti[sz]e|include|rotate|alternate|skip)\b|^(?:please )?remember to\b.*(?:\bdeloads?\b|\bevery (?:\d+(?:st|nd|rd|th)?|\d+ ?[-–] ?\d+|other|few|couple of) (?:weeks?|sessions?|workouts?|cycles?|blocks?|months?)\b)/;
 /** Ben asks for a general rule for the playbook (rule 10, review r3 S1, r4 S2). */
 const PLAYBOOK =
   /\b(?:add|put|save|make|write|note) (?:(?:a|this|that|it|another|one more) (?:new )?(?:general )?(?:rule|principle)\b|(?:that|this|it) (?:in|into|to|as) (?:the |my )?(?:playbook|a (?:general )?rule)|(?:a )?(?:general )?(?:rule|principle) (?:to|in|into) (?:the |my )?playbook)|\bas a (?:general )?rule\b|\b(?:to|in|into) (?:the |my )?playbook\b|^(?:new|general) rule\b/;
@@ -565,7 +575,7 @@ export function classifyBenRequest(text: string): BenRequest | null {
   const kinds: BenRequestKind[] = [];
   const clauses = all.map((c) => c.text);
   // "Remember that time I hit 100?" is a question (review r3 S1); "Remember to bring chalk" is a reminder (r4 S2).
-  if (all.some((c) => (c.label === 'memory' || (MEMORY.test(c.text) && !REMINDER.test(c.text))) && !c.question)) kinds.push('memory');
+  if (all.some((c) => (c.label === 'memory' || (MEMORY.test(c.text) && !REMINDER.test(c.text)) || REMEMBER_RULE.test(c.text)) && !c.question)) kinds.push('memory');
   if (
     all.some((c) => {
       if (c.label === 'playbook') return true;
@@ -607,7 +617,7 @@ export function classifyBenRequest(text: string): BenRequest | null {
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
+    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

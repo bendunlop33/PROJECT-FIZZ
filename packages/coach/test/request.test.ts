@@ -100,6 +100,10 @@ describe('classifyBenRequest (the ben_request gate; review S3)', () => {
     ["I'm sick of cable fly", 'structural'],
     ['Can we do something other than cable fly?', 'structural'],
     ['Remember: no lunges', 'memory'],
+    // CM9's own sentence and its unclear sibling open a memory request (review coach-tools r3 S2).
+    ['Remember to always deload every 5th week', 'memory'],
+    ['remember to avoid lunges', 'memory'],
+    ['Please remember to deload every 4-6 weeks', 'memory'],
     // Review r4 S2: the spec's own playbook example; the content after the label is data.
     ['Add a rule: never squat after deadlifts', 'playbook'],
     ['Add a rule: drop the weight when RPE 10', 'playbook'],
