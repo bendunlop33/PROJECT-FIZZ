@@ -696,6 +696,25 @@ describe('review B1: Ben’s typed load belongs to the exercise it was typed for
   });
 });
 
+describe('review r2 S1: a swap that can no longer be planned gives the slot back with Ben’s own load', () => {
+  it('102.5 kg on Bench press, swap to DB bench press, then no plan for the substitute (no dumbbells here): Bench press plans 102.5 kg with the [Ben] tag, and preview equals Start', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'load', slotKey: SLOT_BENCH, load: kg(102.5) } }, 'r2s1-load'));
+    d = written(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 'r2s1-swap'));
+    d = written(write(d, { type: 'edit', edit: { kind: 'load', slotKey: SLOT_BENCH, load: kg(37.5, 'per_hand') } }, 'r2s1-dbload'));
+    // The caller couldn't build the substitute's plan: no swap plan.
+    const out = plan(d.edits, { swaps: new Map() });
+    expect(workingOf(out, SLOT_BENCH).map((s) => s.planned.load)).toEqual([kg(102.5), kg(102.5), kg(102.5)]);
+    expect(out.resolved.loads.get(SLOT_BENCH)).toMatchObject({ load: kg(102.5), exerciseId: BENCH });
+    expect(overview(out).rows.find((r) => r.slotKey === SLOT_BENCH)?.editRow).toMatchObject({ benLoad: true, keypad: { convention: 'total', value: 102.5 } });
+    // The swap is pruned on the next write; the substitute's load waits (not pruned), Ben's bench load is applied.
+    const loadIds = liveEdits(d.edits).flatMap((e) => (e.kind === 'load' ? [[e.exerciseId, e.editId]] : []));
+    const prune = pruneOf(out.outcomes).map((p) => p.editId);
+    expect(prune).toEqual([liveEdits(d.edits).find((e) => e.kind === 'swap')?.editId]);
+    expect(out.outcomes.filter((o) => o.kind === 'load')).toEqual([{ editId: loadIds.find(([x]) => x === BENCH)?.[1], kind: 'load', result: 'applied' }]);
+    // Without the fix: the routine's planned load and no [Ben] tag.
+  });
+});
+
 describe('review B2: the keypad never relabels Ben’s number with another unit or convention', () => {
   it('37.5 kg each at an lb rack opens at the fitted 80 lb each, never 37.5 lb', () => {
     const r = pushA({ exercises: [routineExercise(601, { exerciseId: INCLINE, equipmentId: rack.id, order: 0, setTemplates: [6011, 6012].map((n) => template(n, { targetLoad: kg(30, 'per_hand'), targetReps: { min: 8, max: 10 } })) })] });

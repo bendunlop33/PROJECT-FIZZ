@@ -798,7 +798,7 @@ export interface AppliedEdits {
  * Swaps and adds whose plan the caller couldn't build (the exercise is gone)
  * are stale, and so is anything on an added slot that went with it.
  */
-function dropUnplanned(resolved: ResolvedEdits, swaps: ReadonlyMap<string, SwapPlan>, adds: ReadonlyMap<string, SwapPlan>): void {
+function dropUnplanned(resolved: ResolvedEdits, swaps: ReadonlyMap<string, SwapPlan>, adds: ReadonlyMap<string, SwapPlan>, slots: readonly TodaySlot[], edits: readonly TodayEdit[]): void {
   const stale = (editId: string) => {
     const o = resolved.outcomes.find((x) => x.editId === editId);
     if (o) o.result = 'stale';
@@ -813,6 +813,13 @@ function dropUnplanned(resolved: ResolvedEdits, swaps: ReadonlyMap<string, SwapP
       resolved.loads.delete(slotKey);
       const at = resolved.outcomes.findIndex((o) => o.editId === l.editId);
       if (at >= 0) resolved.outcomes.splice(at, 1);
+    }
+    // ...and Ben's load for the slot's own exercise, which waited while the swap held, applies again (review r2 S1).
+    const base = slots.find((x) => x.slotKey === slotKey)?.exerciseId ?? null;
+    const own = liveEdits(edits).filter((e): e is Extract<TodayEdit, { kind: 'load' }> => e.kind === 'load' && e.slotKey === slotKey && (e.exerciseId ?? base) === base).at(-1);
+    if (base !== null && own !== undefined) {
+      resolved.loads.set(slotKey, { editId: own.editId, load: own.load, exerciseId: base });
+      if (!resolved.outcomes.some((o) => o.editId === own.editId)) resolved.outcomes.push({ editId: own.editId, kind: 'load', result: 'applied' });
     }
   }
   for (const [slotKey, a] of [...resolved.added]) {
@@ -857,7 +864,7 @@ export function applyTodayEditsToRoutine(
 ): { input: RoutineStartInput; applied: AppliedEdits } {
   const slots = basisSlots({ kind: 'routine', routine: input.routine });
   const resolved = resolveTodayEdits(slots, edits);
-  dropUnplanned(resolved, swaps, adds);
+  dropUnplanned(resolved, swaps, adds, slots, edits);
   const keep = keptGroups(slots, resolved.skipped);
   const byKey = new Map(input.routine.exercises.map((r) => [r.id, r]));
   const order = resolved.order ?? [...slots.map((s) => s.slotKey), ...resolved.added.keys()];
@@ -908,7 +915,7 @@ export function applyTodayEditsToNext(
 ): { input: RepeatInput; applied: AppliedEdits } {
   const slots = basisSlots({ kind: 'next', source: input.source });
   const resolved = resolveTodayEdits(slots, edits);
-  dropUnplanned(resolved, swaps, adds);
+  dropUnplanned(resolved, swaps, adds, slots, edits);
   const keep = keptGroups(slots, resolved.skipped);
   const order = resolved.order ?? [...slots.map((s) => s.slotKey), ...resolved.added.keys()];
   const rank = new Map(order.map((k, i) => [k, i]));
