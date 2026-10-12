@@ -913,6 +913,11 @@ export function createCoachService(deps: CoachServiceDeps) {
      * ones in `refused` couldn't be written into the draft there; the rest
      * of `checked` were (or already had been).
      */
+    /** Whether the last overview load refused this apply (its card reads `Couldn't apply here`). */
+    wasStructuralRefused(applyActionId: string): boolean {
+      return refusedApplies.has(applyActionId);
+    },
+
     noteStructuralRefused(checked: readonly string[], refused: readonly string[]): void {
       for (const id of checked) refusedApplies.delete(id);
       for (const id of refused) refusedApplies.add(id);

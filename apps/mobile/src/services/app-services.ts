@@ -533,10 +533,13 @@ export function createAppServices(deps: AppServicesDeps) {
    * draft's own checks refuse here (not doable at this gym, or no place for
    * it in the plan) is left out and reported (review S1): the card reads
    * `Couldn't apply here` and the overview says so once. An Apply's changes
-   * are written together or not at all (review B2).
+   * are written together or not at all (review B2). A refused Apply is
+   * tried again on later loads (at a gym that can do it, or once the plan
+   * has room); when one lands like that, the overview says so once
+   * (`Coach change applied`, merge r2 S2), so it never appears unannounced.
    */
-  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number }> {
-    const none = { wrote: false, refused: 0 };
+  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number; landedLate: number }> {
+    const none = { wrote: false, refused: 0, landedLate: 0 };
     const basis: DraftBasis = startOf.routineOf !== undefined ? { kind: 'routine', routineId: startOf.routineOf } : { kind: 'next', sourceSessionId: startOf.nextOf };
     const applies = await coach.appliedStructural(basis);
     if (applies.length === 0) return none;
@@ -545,6 +548,7 @@ export function createAppServices(deps: AppServicesDeps) {
     const earlier = p === null ? [] : await repos().drafts.listForBasis(p.id, basis).catch(() => []);
     const plan = structuralDraftPlan({ applies, draftOpIds: draft?.opIds ?? null, liveEdits: draft === null ? [] : liveEdits(draft.edits), dismissedOpIds: dismissedCoachEditOpIds(earlier) });
     const refusedApplies = new Set<string>();
+    const landedLate = new Set<string>();
     let version = draftVersion;
     let wrote = false;
     // One draft write per Apply (review B2): all of its changes are written, or none, so a card never stands half-applied.
@@ -558,6 +562,7 @@ export function createAppServices(deps: AppServicesDeps) {
       if (r.ok) {
         version = r.draft?.version ?? version;
         wrote = wrote || !r.duplicate;
+        if (!r.duplicate && coach.wasStructuralRefused(applyId)) landedLate.add(applyId);
       } else if (r.reason === 'invalid') refusedApplies.add(applyId);
     }
     for (const editId of plan.remove) {
@@ -571,7 +576,7 @@ export function createAppServices(deps: AppServicesDeps) {
       applies.map((a) => a.applyActionId),
       [...refusedApplies],
     );
-    return { wrote, refused: refusedApplies.size };
+    return { wrote, refused: refusedApplies.size, landedLate: landedLate.size };
   }
 
   /**
@@ -587,10 +592,10 @@ export function createAppServices(deps: AppServicesDeps) {
       const data = await read();
       if (data === null) return null;
       // Coach changes Ben applied for this workout (ADR 0020 §3) become today's edits, once; an undone one is taken back.
-      const coachChanges = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => ({ wrote: false, refused: 0 }));
+      const coachChanges = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => ({ wrote: false, refused: 0, landedLate: 0 }));
       const page = coachChanges.wrote ? await read() : data;
-      // A coach change the overview's own checks refused here (review S1): the page says so once.
-      return page === null ? null : { ...page, coachRefused: coachChanges.refused };
+      // A coach change the overview's own checks refused here (review S1), or one refused earlier that landed now (merge r2 S2): the page says so once.
+      return page === null ? null : { ...page, coachRefused: coachChanges.refused, coachLanded: coachChanges.landedLate };
     },
     async explain(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; sessionExerciseId: string }) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
+import { pageToast } from '../src/workout/overview-edits';
 
 /**
  * Merge of coach tools with the Workouts library: a structural proposal Ben
@@ -204,5 +205,61 @@ describe('coach structural Apply on a library workout → the library change-rev
       ['Lateral raise', null],
       ['Triceps pushdown', 'skipped'],
     ]);
+    // It landed later than the tap, so the page says so once (merge r2 S2); a further load has nothing to say.
+    expect(after?.coachLanded).toBe(1);
+    expect(after === null ? null : pageToast(after, new Set())?.text).toBe('Coach change applied');
+    const later = await s.overview.load({ target, gymId });
+    expect(later?.coachLanded).toBe(0);
+    expect(later?.draft?.version).toBe(after?.draft?.version);
+  });
+
+  it('an Apply that lands first time is not announced as late (merge r2 S2)', async () => {
+    const { s, gymId, target, agg, idOf } = await pushAWithAdd();
+    model = new StepModel([
+      () =>
+        toolCall('propose_next_workout_change', {
+          sourceSessionId: agg.session.id,
+          sourceVersion: agg.session.version,
+          changes: [{ change: 'remove', exerciseId: idOf('Triceps pushdown') }],
+          reason: 'Shorter.',
+        }),
+      () => replyWith('Try that.'),
+    ]);
+    const r = await ask(s, 'Drop the pushdown next time');
+    const card = r.cards[0]?.record;
+    if (card?.detail.kind !== 'propose_next_workout_change') throw new Error('no card');
+    if (!(await s.coach.tapProposal(card.actionId, 'apply')).ok) throw new Error('not applied');
+    const page = await s.overview.load({ target, gymId });
+    expect(page?.view.rows.find((x) => x.name === 'Triceps pushdown')?.edit?.kind).toBe('skipped');
+    expect(page?.coachLanded).toBe(0);
+  });
+
+  it('a coach reorder keeps the exercise Ben added where he placed it (merge r2 S1)', async () => {
+    const { s, gymId, target, agg, idOf } = await pushAWithAdd();
+    // Ben moves his added Dumbbell bench press to the top.
+    const page = await s.overview.load({ target, gymId });
+    const keys = page?.view.rows.map((x) => x.slotKey) ?? [];
+    const addedKey = page?.view.rows.find((x) => x.name === 'Dumbbell bench press')?.slotKey;
+    if (addedKey === undefined) throw new Error('no add');
+    const moved = await s.overview.edit({ target, gymId, expectedDraftVersion: page?.draft?.version ?? null, opId: 'ben-order', edit: { kind: 'order', slotKeys: [addedKey, ...keys.filter((k) => k !== addedKey)] } });
+    if (!moved.ok) throw new Error('not moved');
+    model = new StepModel([
+      () =>
+        toolCall('propose_next_workout_change', {
+          sourceSessionId: agg.session.id,
+          sourceVersion: agg.session.version,
+          changes: [{ change: 'reorder', exerciseIds: [idOf('Lateral raise'), idOf('Bench press'), idOf('Triceps pushdown')] }],
+          reason: 'Shoulders fresh.',
+        }),
+      () => replyWith('Try that.'),
+    ]);
+    const r = await ask(s, 'Do laterals first next time');
+    const card = r.cards[0]?.record;
+    if (card?.detail.kind !== 'propose_next_workout_change') throw new Error('no card');
+    if (!(await s.coach.tapProposal(card.actionId, 'apply')).ok) throw new Error('not applied');
+    const after = await s.overview.load({ target, gymId });
+    expect(after?.coachRefused).toBe(0);
+    // Still ahead of Bench press, the slot it preceded; not moved to the end.
+    expect(after?.view.rows.map((x) => x.name)).toEqual(['Lateral raise', 'Dumbbell bench press', 'Bench press', 'Triceps pushdown']);
   });
 });

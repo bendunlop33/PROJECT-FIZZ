@@ -112,6 +112,11 @@ describe('change-review card, opIds and page toasts', () => {
     // A coach change refused at this gym (review S1): said once.
     expect(pageToast({ cleared: false, removedEdits: 0, draft: null, coachRefused: 1 }, new Set())).toEqual({ key: 'coach-refused', text: 'Coach change didn’t fit here' });
     expect(pageToast({ cleared: false, removedEdits: 0, draft: null, coachRefused: 1 }, new Set(['coach-refused']))).toBeNull();
+    // A refused coach change that landed on a later load (merge r2 S2): once per draft version.
+    const landed = { cleared: false, removedEdits: 0, draft: { id: 'd1', version: 4 }, coachLanded: 1 };
+    expect(pageToast(landed, new Set())).toEqual({ key: 'coach-landed:d1:4', text: 'Coach change applied' });
+    expect(pageToast(landed, new Set(['coach-landed:d1:4']))).toBeNull();
+    expect(pageToast({ ...landed, coachLanded: 0 }, new Set())).toBeNull();
     expect(pageToast({ cleared: false, removedEdits: 2, draft: { id: 'd', version: 3 } }, new Set([t?.key ?? '']))?.text).toBe('Plan changed · 2 edits removed');
     expect(pageToast({ cleared: false, removedEdits: 0, draft: null }, new Set())).toBeNull();
   });
