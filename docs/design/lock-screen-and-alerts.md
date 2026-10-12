@@ -430,7 +430,7 @@ No new colours. The widget can't import `theme.ts` (it's serialised alone), so i
 | Addition | Spec |
 |---|---|
 | Live Activity colour mirror | `accent` `#5AA9FF` (dark) / `#0A63C9` (light) for the `timer` icon; `status.warning` `#F2B84B` / `#8A5A00` for the paused icon; text in system primary/secondary label colours on the system material. Re-check contrast when tokens change |
-| `type.liveCountdown` | Banner 28pt semibold, expanded trailing 24pt semibold, compact trailing system size; monospaced digits; regular weight when luminance is reduced |
+| `type.liveCountdown` | Banner 28pt semibold, expanded trailing 24pt semibold, compact trailing system size; monospaced digits; regular weight when luminance is reduced **Pending designer:** the build ships 56pt banner / 44pt expanded with `minimumScaleFactor(0.6)` (Ben asked for "a bit bigger"); size to be set from device test L10 (progress.md build note, review ben-bugs r3 S2). |
 | `sound.restEnd` asset | `rest-end.caf`, ≤ 2 s, used by the in-app chime and the notification sound |
 | `timing.lateCueDrop` | 5 s. A spoken cue later than this is not spoken (currently written as prose in rest-state.md §4.7) |
 | `timing.loudModeMinRest` | 2:00. The threshold for `Long rests only` |

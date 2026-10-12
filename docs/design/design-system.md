@@ -235,7 +235,7 @@ The typeface is the system font (SF Pro). React Native gives you this by default
 | `type.callout` | 16 / 22 | Regular | When numeric | Callout | 3× | Secondary text, set rows, "Last" line |
 | `type.label` | 16 / 20 | Medium | When numeric | Callout | 3× | Chips, table headers, status labels, keypad hints |
 | `type.keypad` | 28 / 34 | Regular | Yes | Title 1 | 1.5× | Custom keypad digits |
-| `type.liveCountdown` | Banner 28 semibold; Dynamic Island expanded trailing 24 semibold; compact trailing system size | Semibold (regular when luminance is reduced) | Monospaced digits (`.monospacedDigit()`) | System-rendered | — | Live Activity countdown only (lock-screen-and-alerts.md). Widget-only; not used in the app |
+| `type.liveCountdown` | Banner 28 semibold; Dynamic Island expanded trailing 24 semibold; compact trailing system size | Semibold (regular when luminance is reduced) | Monospaced digits (`.monospacedDigit()`) | System-rendered | — | Live Activity countdown only (lock-screen-and-alerts.md). Widget-only; not used in the app **Pending designer:** the build ships 56pt banner / 44pt expanded with `minimumScaleFactor(0.6)` (Ben asked for "a bit bigger"); size to be set from device test L10 (progress.md build note, review ben-bugs r3 S2). |
 
 Rules:
 - **The minimum size is 16pt.** No token goes below 16pt at the default text size. System tab bar labels follow iOS and are exempt.

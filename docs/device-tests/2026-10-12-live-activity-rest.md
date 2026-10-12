@@ -2,7 +2,14 @@
 
 **About 10 minutes on the iPhone, with a real (short) workout.** Needs the SideStore build with the App Group fix and the Live Activity extension (`FIZZ_LIVE_ACTIVITY` not `0`). Nothing in this list has run on a phone yet: the Capability probe's countdown passed, but the real rest flow is new in this build, and so is the bigger layout. Put **P**, **F** (with one line) or **–** in each row and paste the table back.
 
-**Status: open.** Ben's "countdown doesn't show in workout mode" report stays open until this table is filled in (review ben-bugs r2 S1). Every Live Activity test so far runs against a fake ActivityKit.
+**Status: open, not run.** Ben's "countdown doesn't show in workout mode" report stays open until this table is filled in (review ben-bugs r2 S1, r3 S1). Every Live Activity test so far runs against a fake ActivityKit.
+
+This build changes real-device behaviour in three ways that only a phone can confirm:
+- a start iOS refuses is tried again on the next Log, foreground or rest-end recheck (L14, L17);
+- the Capability probe ends only its own activity, so its countdown can show next to the workout's (L16);
+- a launch or foreground read that finishes after a newer change is dropped (L4, L8).
+
+If time is short, run **L8, L12, L14, L16, L17** first, then the rest.
 
 Before you start: Settings › GymSmarter › Live Activities **on**; notifications allowed. Close the Capability probe's test countdown if it's still showing.
 
