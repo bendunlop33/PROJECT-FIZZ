@@ -230,20 +230,23 @@ function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | 
   if (!set || !ex) return { row: built, unitCells: built.cells };
   const source = set.status === 'completed' && set.actual ? set.actual.load : set.planned.load;
   const unitCells = {
-    load: built.cells.load === null ? null : withUnit(built.cells.load, source, ex),
+    load: built.cells.load === null ? null : withUnit(built.cells.load, source, ex, equipmentOf(state, ex)),
     value: ex.measurement === 'reps' && built.cells.value !== '—' && built.cells.value !== 'Skipped' ? `${built.cells.value}${NBSP}reps` : built.cells.value,
   };
   return { row: built, unitCells };
 }
 
-/** A load cell with its unit (`25 lb each`, `+10 kg`, `20 kg assist`); `BW` and `—` stay as they are. */
-function withUnit(cell: string, load: Load | null, ex: Pick<SessionExercise, 'loadConvention' | 'unit'>): string {
+/**
+ * A load cell with its unit (`25 lb each`, `+10 kg`, `20 kg assist`); `BW` and `—` stay as they are.
+ * A plate-loaded machine's `added` load is a plain load, as in `tableColumns` and `loadCell` (review r2 S3).
+ */
+function withUnit(cell: string, load: Load | null, ex: Pick<SessionExercise, 'loadConvention' | 'unit'>, eq: Pick<EquipmentInstance, 'kind'> | null): string {
   if (cell === 'BW' || cell === '—') return cell;
   const unit = load?.unit ?? ex.unit;
   const convention = load?.convention ?? ex.loadConvention;
   switch (convention) {
     case 'added':
-      return `+${cell}${NBSP}${unit}`;
+      return eq?.kind === 'plate_loaded_machine' ? `${cell}${NBSP}${unit}` : `+${cell}${NBSP}${unit}`;
     case 'assistance':
       return `${cell}${NBSP}${unit} assist`;
     case 'per_hand':

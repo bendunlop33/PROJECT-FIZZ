@@ -452,6 +452,22 @@ describe('mixed supersets: every row has its own columns (review B2)', () => {
     ]);
   });
 
+  it('a plate-loaded `added` member reads as a plain load, matching its KG column (review r2 S3)', () => {
+    const LEG = exercise(244, 'Leg press', { compatibleEquipment: ['plate_loaded_machine'], defaultLoadConvention: 'added' });
+    const DIP = exercise(245, 'Weighted dip', { compatibleEquipment: [], defaultLoadConvention: 'added' });
+    const s = supersetOf([
+      { ex: LEG, eq: plateMachine(), load: kg(100, 'added'), reps: 10 },
+      { ex: DIP, eq: null, load: kg(10, 'added'), reps: 8 },
+    ]);
+    const ss = superset(table(s));
+    expect(ss.columns).toBeNull();
+    const rows = ss.rounds[0]?.rows ?? [];
+    expect(rows.map((r) => [r.columns.loadLabel, plain(r.cells.load)])).toEqual([
+      ['KG', '100 kg'],
+      ['+KG', '+10 kg'],
+    ]);
+  });
+
   it('members that agree keep one shared header and number-only cells', () => {
     const { state } = startFixture();
     const t = table(state);
