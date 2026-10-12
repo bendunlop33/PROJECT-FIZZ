@@ -22,8 +22,9 @@ function writeTools(text: string, kind: 'workout' | 'general' = 'workout'): stri
     .sort();
 }
 
-// Review r2 B1: every add also opens the proposal tool, so a future scope always has a tool that only proposes.
-const ADD = ['add_exercise_today', 'adjust_pending_sets', 'propose_next_workout_change'];
+// Review r3 S1: a plain today add doesn't open the proposal tool; an add with an unclear scope opens both.
+const ADD = ['add_exercise_today', 'adjust_pending_sets'];
+const BOTH = ['add_exercise_today', 'adjust_pending_sets', 'propose_next_workout_change'];
 const FUTURE = ['propose_next_workout_change'];
 const SETS = ['adjust_pending_sets'];
 const NONE: string[] = [];
@@ -132,8 +133,19 @@ describe('the gate for adding to today’s workout (table)', () => {
     ['add curls to the plan for today', ADD],
     ['add curls to my plan today', ADD],
     ['add curls to the plan for this workout', ADD],
-    ['add curls in the plan', ADD],
-    ['add curls to the plan', ADD],
+    ['add curls in the plan', BOTH],
+    ['add curls to the plan', BOTH],
+    // Review r3 S1/N5: a routine or template with a today word is unclear, so both open; N3: one push day is today.
+    ['add curls to my routine now', BOTH],
+    ['add curls to the push template today', BOTH],
+    ['add curls to push day', ADD],
+    ['add curls today and next time', BOTH],
+    ['add curls today, and to my routine', BOTH],
+    ['add curls today and to my routine too', BOTH],
+    ['add curls now and every push day as well', BOTH],
+    ['add some curls, we always do them on fridays', ADD],
+    ['put in some curls, I always forget them', ADD],
+    ['add lateral raises, my shoulders need work every week', ADD],
     ['add curls to my plan', FUTURE],
     ['add curls to my push plan', FUTURE],
     // Review r2 S2: other ask forms.

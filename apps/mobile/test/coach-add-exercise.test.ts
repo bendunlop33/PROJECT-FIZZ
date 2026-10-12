@@ -241,6 +241,26 @@ describe('add an exercise from chat', () => {
       expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
     }
   });
+  it('a plain today add (review r3 S1) never offers the proposal tool: a proposal-only reply is refused, nothing changes, and Ben sees "No change made."', async () => {
+    const { s, sessionId } = await benchWorkout();
+    model = new StepModel([
+      (req) => toolCall('propose_next_workout_change', { sourceSessionId: sessionId, sourceVersion: contextWorkout(req).version, changes: [{ change: 'remove', exerciseId: 'bench' }], reason: 'Make room for curls.' }),
+      () => replyWith('Curls would fit at the end.'),
+    ]);
+    const r = await say(s, sessionId, 'put in some curls');
+    const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
+    expect(tools).toContain('add_exercise_today');
+    expect(tools).not.toContain('propose_next_workout_change');
+    expect(r.cards).toEqual([]);
+    expect(r.note).toBe('No change made.');
+    expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
+
+    // An unclear scope ("to the plan") offers both; the model picks.
+    model = new StepModel([() => replyWith('Ok.')]);
+    await say(s, sessionId, 'add curls to the plan');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['add_exercise_today', 'propose_next_workout_change']));
+  });
+
   it('a refused or stale add saves no exercise row (review S3); the committed add saves it with the add', async () => {
     const { s, sessionId } = await benchWorkout();
     const savedCurl = async () => (await s.coachingKnowledge.exercises()).some((e) => e.name === 'Cable curl');

@@ -106,7 +106,12 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
 
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add';
+/**
+ * `add_plan` (review r3 S1): an add today whose scope is unclear because it names a plan without a clear
+ * future: a bare "the plan" ("add curls to the plan") or a routine/template/programme/split together with a
+ * today word ("add curls to my routine now"). Always alongside `add`; it also opens the proposal tool.
+ */
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add' | 'add_plan';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -654,8 +659,9 @@ const ADD_NOT_EXERCISE = /^(?:top ?sets?|back ?-?off(?: sets?)?|drop ?sets?|warm
 /**
  * Review B2, r2 B1: an add with a future scope ("add curls next time", "to my routine", "from now on",
  * "to every push day", "permanently") changes the plan, not today: a structural proposal (rule 3),
- * never `add_exercise_today`. The list can't be complete, so every add also opens
- * `propose_next_workout_change`, and the today tool's description says it is today only.
+ * never `add_exercise_today`. The list can't be complete, so the today tool's description says it is
+ * today only. An add whose scope is unclear (`unclearAddScope`) also opens `propose_next_workout_change`;
+ * a plain today add doesn't (review r3 S1).
  */
 const ADD_FUTURE_TIME =
   /\b(?:next (?:time|sessions?|weeks?|workouts?|push|pull|legs|leg day|upper|lower|block|cycle|month)|tomorrow|from (?:now|today|here) on(?:wards?)?|from now|going forward|for good|permanently|always|in (?:the )?future|future (?:sessions?|workouts?|weeks?)|every (?:\w+ )?(?:week|time|session|workout|day)s?|each (?:\w+ )?(?:week|session|workout|day)|(?:push|pull|leg|legs|upper|lower|upper body|lower body|chest|back|arm|arms|shoulder|full body) days|for the rest of the (?:block|month|cycle|programme|program|phase|meso|mesocycle|year)|(?:rest of|for) the (?:block|programme|program|mesocycle))\b/;
@@ -671,6 +677,30 @@ function futureScope(clause: string): boolean {
   // "add curls in the plan" is ambiguous: an add today, and the proposal tool is open too.
   if (ADD_BARE_PLAN.test(plan[0])) return false;
   return !ADD_TODAY.test(clause);
+}
+
+/**
+ * Review r3 S1: an add today whose scope is unclear, so the proposal tool opens as well. A bare "the plan"
+ * with no today word, or a routine/template/programme/split named with a today word. "today's plan" and "my plan today" are today.
+ */
+function unclearAddScope(clause: string): boolean {
+  const plan = ADD_FUTURE_PLAN.exec(clause);
+  if (plan === null) return false;
+  if (ADD_BARE_PLAN.test(plan[0])) return !ADD_TODAY.test(clause);
+  return ADD_TODAY.test(clause) && !/\bplans?$/.test(plan[0]);
+}
+
+/**
+ * A clause that is only a future scope, split off an add: "add curls today and next time", "add curls
+ * today, and to my routine too". The add stays today's; the proposal tool opens for the future part.
+ */
+function scopeOnly(clause: string): boolean {
+  if (!futureScope(clause)) return false;
+  const rest = clause
+    .replace(new RegExp(ADD_FUTURE_TIME.source, 'g'), ' ')
+    .replace(new RegExp(ADD_FUTURE_PLAN.source, 'g'), ' ')
+    .replace(/\b(?:and|also|plus|too|as well|then|but|same|again|please|for|to|in|on|the|my|our)\b/g, ' ');
+  return rest.trim() === '';
 }
 
 /** The add phrasing itself, anchored after polite words and an ask; no scope or structural check. */
@@ -767,7 +797,9 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
   const building = open.filter((c) => buildIn(c.text)).map((c) => c.text);
   if (building.length > 0) kinds.push('build');
   // (12 Oct) An exercise added today; a question only counts when it asks ("can you add curls?").
-  if (open.some((c) => addIn(c.text) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('add');
+  const adds = open.filter((c) => addIn(c.text) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))));
+  if (adds.length > 0) kinds.push('add');
+  if (adds.length > 0 && (adds.some((c) => unclearAddScope(c.text)) || open.some((c) => scopeOnly(c.text)))) kinds.push('add_plan');
   // A clause that is only a swap ("swap cable fly") isn't also a load change; nor is a build, in a general turn.
   const buildOnly = turnKind === 'general' ? building : [];
   if (askingClauses.some((c) => !structuralIn(c) && !buildOnly.includes(c))) kinds.push('change');

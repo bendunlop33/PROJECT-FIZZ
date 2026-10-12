@@ -187,7 +187,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Swapping, adding, removing or reordering exercises in your next workout',
     capabilitySection: 'suggest_only',
     description:
-      'Suggest swapping, removing or reordering exercises in the next workout built from a finished one (its routine, or the next session from it). Use exercise IDs from the workout or get_substitutions. Adding exercises is not possible yet. Nothing changes until Ben taps Apply.',
+      'Suggest swapping, removing or reordering exercises in the next workout built from a finished one (its routine, or the next session from it). Use exercise IDs from the workout or get_substitutions. Adding exercises is not possible yet. Not for adding an exercise to the current workout unless Ben named a future scope. Nothing changes until Ben taps Apply.',
   },
   {
     name: 'set_pain_flag',
@@ -362,9 +362,11 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   adjust_pending_sets: ['change', 'difficulty', 'add'],
   // (12 Oct) "Add 3 sets of lateral raises", "put in some curls", "can we do some face pulls".
   add_exercise_today: ['add'],
-  // Review r2 B1: every add also opens the proposal tool, so a future scope Ben names ("to every push
-  // day", "permanently") always has a tool that only proposes, and today's add is never the only choice.
-  propose_next_workout_change: ['add'],
+  // A future add ("next time", "to every push day") is `structural` and opens only this tool. Review r3 S1:
+  // a plain today add ("put in some curls") doesn't open it (it can't add, and a swap Ben didn't ask for
+  // would be an unrequested structural change, rule 3); an add with an unclear scope ("to the plan",
+  // "to my routine now") opens it alongside today's add.
+  propose_next_workout_change: ['add_plan'],
   log_set: ['log'],
   correct_set: ['correct'],
   save_memory: ['memory'],
