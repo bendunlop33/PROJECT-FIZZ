@@ -45,8 +45,9 @@ import type { EditorExerciseInfo, RoutineEditorData } from '../../services/worko
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, Eyebrow, Icon, InfoLine, NumberAccessory, NumberStepper, PrimaryButton, Row, SetCountBar, SetShapeControl, ShapeRepsSheet, StatusLine, TextButton, TextField } from '../../ui';
-import { conflictLines, conflictText, EDITOR_COPY, editorPrimary, exerciseMenu, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
+import { conflictLines, conflictText, EDITOR_COPY, editorPrimary, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
 import { handOffLibraryToast } from '../../workout/library-toast';
+import { saveEditRequest, settleSaveEdit } from '../../workout/save-edit-handoff';
 import { SET_BAR, SET_SHAPE_COPY, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../../workout/set-shape-view';
 
 type Stale = { current: NonNullable<RoutineEditorData['routine']>; lines: string[]; changedAtUtc: string };
@@ -80,7 +81,7 @@ export function WorkoutEditorScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { routineId, from, selectName, copyToast, draft } = useRoute<RouteProp<RootStackParams, 'WorkoutEditor'>>().params;
+  const { routineId, from, selectName, copyToast, draft, saveAs } = useRoute<RouteProp<RootStackParams, 'WorkoutEditor'>>().params;
   const [data, setData] = useState<RoutineEditorData | null | 'loading'>('loading');
   const [name, setName] = useState('');
   const [list, setList] = useState<RoutineExercise[]>([]);
@@ -118,6 +119,8 @@ export function WorkoutEditorScreen() {
         if (d.routine === null && draft !== undefined) {
           setName(draft.name);
           setList(draft.exercises);
+          // The Save sheet's unsaved copy (WL-A18): unchanged, Cancel goes straight back to the sheet.
+          if (saveAs !== undefined) base.current = { name: draft.name, exercises: draft.exercises };
           void services.routines
             .exerciseInfo(draft.exercises.map((e) => e.exerciseId))
             .then((more) => {
@@ -131,6 +134,13 @@ export function WorkoutEditorScreen() {
       });
   }
   useEffect(load, [services, routineId]);
+  // The Save sheet's `Edit ›`: whatever closes the editor without a Save (Cancel, Discard, swipe-down) shows the sheet again.
+  useEffect(
+    () => () => {
+      if (saveAs !== undefined) settleSaveEdit(saveAs, { kind: 'cancelled' });
+    },
+    [saveAs],
+  );
 
   // `≈ N min at Main gym` while editing (debounced; local).
   const gymId = data !== 'loading' && data !== null ? (data.gym?.id ?? null) : null;
@@ -202,6 +212,23 @@ export function WorkoutEditorScreen() {
     setBusy(true);
     setError(null);
     try {
+      if (isNew && saveAs !== undefined) {
+        // `Save to Workouts` → `Edit ›` (§A2.5, WL-A18): the sheet's own save, with its opId and rotation choice; its host shows the toast.
+        const req = saveEditRequest(saveAs);
+        if (req === null) {
+          setError(LIBRARY_COPY_UI.saveFailed);
+          return;
+        }
+        const r = await services.routines.saveFrom({ from: req.from, name: next.name.trim(), addToRotation: req.addToRotation, opId: req.opId, edit: next });
+        if (!r.ok) {
+          setError(r.message);
+          return;
+        }
+        changed();
+        settleSaveEdit(saveAs, { kind: 'saved', routine: r.routine });
+        navigation.goBack();
+        return;
+      }
       if (isNew) {
         const r = await services.routines.create({ edit: next, opId: opId.current });
         if (!r.ok) {

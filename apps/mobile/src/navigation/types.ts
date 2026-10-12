@@ -140,8 +140,6 @@ export type RootStackParams = {
    */
   /** Up next, a routine, or a session type picked from its history (session-picker §7). */
   WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string }; toast?: LibraryToastParam };
-  /** The Workouts library (routines.md §A2.1). `toast`: back from the editor (`Saved Push A` [Undo]). */
-  Workouts: { toast?: LibraryToastParam } | undefined;
   /**
    * The workout editor (§A2.3): a stored workout, or `New workout` (null).
    * `from`: where `Save` returns with its toast. `selectName`: a fresh copy
@@ -153,8 +151,11 @@ export type RootStackParams = {
    * workout` → `New workout` on Exercise detail (Save goes back there).
    * `draft`: a new workout's starting exercises (that exercise with the
    * sheet's shape); nothing is saved until `Save`.
+   * `saveAs`: the Save sheet's `Edit ›` (routines.md §A2.5, WL-A18): `draft`
+   * is the unsaved copy and `Save` creates the workout with the sheet's opId
+   * (`save-edit-handoff.ts` holds the request and takes the result back).
    */
-  WorkoutEditor: { routineId: string | null; from: EditorFrom; selectName?: boolean; copyToast?: LibraryToastParam; draft?: { name: string; exercises: RoutineExercise[] } };
+  WorkoutEditor: { routineId: string | null; from: EditorFrom; selectName?: boolean; copyToast?: LibraryToastParam; draft?: { name: string; exercises: RoutineExercise[] }; saveAs?: string };
   /** Exercise detail over the workout editor (`⋯` → `Exercise info`), read-only. */
   ExerciseInfo: ExerciseInfoParams;
   ExercisePicker: { sessionId: string };
@@ -188,8 +189,11 @@ export type RootStackParams = {
   ExerciseProgress: ExerciseDetailParams;
 };
 
-/** Where the workout editor returns to. */
-export type EditorFrom = 'Workouts' | 'WorkoutOverview' | 'Library' | 'ExerciseInfo';
+/**
+ * Where the workout editor returns to. `SaveSheet`: the Save sheet's `Edit ›`
+ * (routines.md §A2.5): back to the screen under the sheet, which shows the result.
+ */
+export type EditorFrom = 'WorkoutOverview' | 'Library' | 'ExerciseInfo' | 'SaveSheet';
 
 /** A library toast handed back to the screen below (`key`: shown once). */
 export interface LibraryToastParam {

@@ -1,10 +1,12 @@
+import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Switch, View } from 'react-native';
 
 import type { RoutineNameCheck } from '@fizz/domain';
-import type { Routine } from '@fizz/schemas';
+import type { Routine, RoutineExercise } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
+import { beginSaveEdit } from '../../workout/save-edit-handoff';
 import type { SaveFrom } from '../../services/workout-services';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -18,6 +20,11 @@ import { LIBRARY_COPY_UI } from '../../workout/library-view';
  * duplicate name is a note, never a block. One opId per opening, so two
  * quick taps save one workout; a failed save keeps the sheet and retries
  * with the same opId. Local only: never waits on network or AI.
+ *
+ * `Edit ›` on the summary line (2026-10-12, WL-A18) hands the name, the
+ * rotation choice and this opening's opId to `onEdit`; the sheet keeps them
+ * while it is hidden, so it shows again unchanged after the editor's Cancel.
+ * A new opening (`openKey`) starts afresh.
  */
 export function SaveWorkoutSheet({
   visible,
@@ -25,6 +32,8 @@ export function SaveWorkoutSheet({
   initialName,
   detail,
   notSaved = null,
+  openKey = 0,
+  onEdit,
   onSaved,
   onClose,
   onDismissed,
@@ -36,6 +45,10 @@ export function SaveWorkoutSheet({
   detail: string;
   /** `Not copied: 3 distance sets (Sled push)` (review S1); null when nothing is left out. */
   notSaved?: string | null;
+  /** Changes on each new opening: name, rotation and opId start afresh. Hiding and showing again keeps them. */
+  openKey?: number;
+  /** `Edit ›`: open the editor on the unsaved copy with what the sheet holds now. */
+  onEdit?: (held: { name: string; addToRotation: boolean; opId: string }) => void;
   onSaved: (routine: Routine) => void;
   onClose: () => void;
   onDismissed?: () => void;
@@ -50,13 +63,12 @@ export function SaveWorkoutSheet({
   const opId = useRef(newUuid());
 
   useEffect(() => {
-    if (!visible) return;
     setName(initialName);
     setRotation(false);
     setError(null);
     setBusy(false);
     opId.current = newUuid();
-  }, [visible, initialName]);
+  }, [openKey, initialName]);
 
   useEffect(() => {
     let live = true;
@@ -108,9 +120,21 @@ export function SaveWorkoutSheet({
           </AppText>
         ) : null}
       </View>
-      <AppText variant="callout" color="text.secondary" numeric>
-        {detail}
-      </AppText>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>
+        <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
+          {detail}
+        </AppText>
+        {onEdit ? (
+          <TextButton
+            label={`${LIBRARY_COPY_UI.edit} ›`}
+            accessibilityLabel={LIBRARY_COPY_UI.editBeforeSaving}
+            disabled={busy || from === null}
+            onPress={() => {
+              onEdit({ name: name.trim(), addToRotation: rotation, opId: opId.current });
+            }}
+          />
+        ) : null}
+      </View>
       {notSaved !== null ? (
         <AppText variant="callout" color="text.secondary" numeric>
           {notSaved}
@@ -135,15 +159,27 @@ function SwitchRow({ label, value, onChange }: { label: string; value: boolean; 
   );
 }
 
+/** The editor's modal dismissal, before the sheet slides back in. */
+const REOPEN_AFTER_EDITOR_MS = 450;
+
 /**
  * Open the save sheet for a source (§A2.5): reads what would be saved
  * first; with nothing to save the sheet doesn't open and the caller shows
  * `Nothing to save` (an out-of-date overview: `Targets updated`).
+ *
+ * `Edit ›` (WL-A18): the sheet hides, and once it is gone the workout
+ * editor opens on the unsaved copy. The editor's `Save` creates the workout
+ * with this sheet's opId and comes back through `onSaved` (one toast, one
+ * Undo); its `Cancel` shows the sheet again, unchanged, with nothing saved.
  */
 export function useSaveToWorkouts(onSaved: (routine: Routine) => void, onNothing: () => void, onStale: () => void = onNothing) {
   const services = useServices();
-  const [state, setState] = useState<{ from: SaveFrom; name: string; detail: string; notSaved: string | null } | null>(null);
+  const navigation = useNavigation();
+  const [state, setState] = useState<{ from: SaveFrom; name: string; detail: string; notSaved: string | null; exercises: RoutineExercise[] } | null>(null);
   const [visible, setVisible] = useState(false);
+  const [openKey, setOpenKey] = useState(0);
+  // `Edit ›` tapped: the editor opens when the sheet has gone (iOS presents one modal at a time).
+  const editing = useRef<{ key: string; name: string } | null>(null);
   async function open(from: SaveFrom, fallbackName: string | null = null): Promise<void> {
     const src = await services.routines.saveSource(from, fallbackName).catch(() => null);
     if (src === 'stale') {
@@ -154,8 +190,15 @@ export function useSaveToWorkouts(onSaved: (routine: Routine) => void, onNothing
       onNothing();
       return;
     }
-    setState({ from, name: src.name, detail: src.detail, notSaved: src.notSaved });
+    setState({ from, name: src.name, detail: src.detail, notSaved: src.notSaved, exercises: src.exercises });
+    setOpenKey((k) => k + 1);
     setVisible(true);
+  }
+  function openEditor() {
+    const e = editing.current;
+    editing.current = null;
+    if (e === null || state === null) return;
+    navigation.navigate('WorkoutEditor', { routineId: null, from: 'SaveSheet', draft: { name: e.name, exercises: state.exercises }, saveAs: e.key });
   }
   const sheet = (
     <SaveWorkoutSheet
@@ -164,6 +207,21 @@ export function useSaveToWorkouts(onSaved: (routine: Routine) => void, onNothing
       initialName={state?.name ?? ''}
       detail={state?.detail ?? ''}
       notSaved={state?.notSaved ?? null}
+      openKey={openKey}
+      onEdit={(held) => {
+        if (state === null) return;
+        beginSaveEdit(held.opId, { from: state.from, addToRotation: held.addToRotation, opId: held.opId }, (o) => {
+          if (o.kind === 'saved') onSaved(o.routine);
+          // Shown again once the editor has gone (one modal at a time on iOS). Needs a real-device check.
+          else
+            setTimeout(() => {
+              setVisible(true);
+            }, REOPEN_AFTER_EDITOR_MS);
+        });
+        editing.current = { key: held.opId, name: held.name };
+        setVisible(false);
+      }}
+      onDismissed={openEditor}
       onSaved={(r) => {
         setVisible(false);
         onSaved(r);

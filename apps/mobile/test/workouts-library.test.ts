@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { NBSP } from '@fizz/domain';
+import { NBSP, setWorkingSetCount } from '@fizz/domain';
 import type { Routine } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
@@ -489,5 +489,55 @@ describe('create (New workout) and offline (WL-A14)', () => {
     expect(await s.routines.estimate({ exercises: a.routine.exercises, gymId })).toBeGreaterThan(0);
     const l = await library(s, gymId);
     expect(l.view.all.map((r) => r.name)).toEqual(['Upper']);
+  });
+});
+
+describe('Save to Workouts → Edit › (routines.md §A2.5, WL-A18, exercise-library EL-B23)', () => {
+  it('the sheet’s copy opens in the editor; a changed set count saves one workout under the sheet’s opId, keeping its history link', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const sid = await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }] },
+      { exercise: 'Barbell row', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] },
+    ]);
+    const from = { kind: 'session' as const, sessionId: sid };
+    const src = await s.routines.saveSource(from);
+    if (src === 'stale' || src === null) throw new Error('no source');
+    // The editor opens on exactly what the sheet would save.
+    expect(src.detail).toBe('2 exercises · 4 sets');
+    expect(src.exercises.map((e) => e.setTemplates.length)).toEqual([2, 2]);
+    const row = src.exercises[1];
+    if (!row) throw new Error('no row');
+    const edit = { name: 'Push A', exercises: setWorkingSetCount(src.exercises, row.id, 4, h.ids) };
+    const r = await s.routines.saveFrom({ from, name: edit.name, addToRotation: true, opId: 'sheet-op', edit });
+    if (!r.ok) throw new Error(r.message);
+    expect(r.routine.exercises.map((e) => e.setTemplates.length)).toEqual([2, 4]);
+    expect(r.routine).toMatchObject({ name: 'Push A', version: 1, lastOpId: 'sheet-op', createdFromSessionId: sid, inRotation: true, source: 'ben' });
+    // A retry, and the sheet’s own Save with the same opId, are the same save: one workout (rule 5).
+    const again = await s.routines.saveFrom({ from, name: edit.name, addToRotation: true, opId: 'sheet-op', edit });
+    const sheet = await s.routines.saveFrom({ from, name: 'Push A', addToRotation: true, opId: 'sheet-op' });
+    expect(again.ok && again.routine.id).toBe(r.routine.id);
+    expect(sheet.ok && sheet.routine.exercises.map((e) => e.setTemplates.length)).toEqual([2, 4]);
+    expect((await library(s, gymId)).view.rotation.map((x) => x.name)).toEqual(['Push A']);
+    // Undo (the toast's delete) removes it.
+    const undo = await s.routines.remove({ routineId: r.routine.id, expectedVersion: 1, opId: 'undo-save' });
+    expect(undo.ok).toBe(true);
+    // The finished workout is untouched.
+    expect((await s.workout.load(sid))?.aggregate.exercises).toHaveLength(2);
+  });
+
+  it('Cancel writes nothing; an invalid edit saves nothing and says why', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const sid = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const from = { kind: 'session' as const, sessionId: sid };
+    const src = await s.routines.saveSource(from);
+    if (src === 'stale' || src === null) throw new Error('no source');
+    const before = await library(s, gymId);
+    // Cancel: no call at all, so nothing beyond the read.
+    expect((await library(s, gymId)).view).toEqual(before.view);
+    const bad = await s.routines.saveFrom({ from, name: 'X', addToRotation: false, opId: 'bad-edit', edit: { name: 'X', exercises: [] } });
+    expect(bad).toMatchObject({ ok: false, message: 'Add an exercise' });
+    expect((await library(s, gymId)).view.all).toEqual([]);
   });
 });

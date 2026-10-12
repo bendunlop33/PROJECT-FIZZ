@@ -123,6 +123,22 @@ export function createRoutine(input: {
 }
 
 /**
+ * `Save to Workouts` → `Edit ›` → `Save` (routines.md §A2.5, WL-A18): the
+ * unsaved copy `made` (from a finished workout, Repeat, an overview or a coach
+ * draft) with the editor's name and exercises. Everything else `made` carries
+ * stays: its ID, version 1, opId, rotation choice, history link and coach
+ * draft link. Saving from the editor makes it Ben's (as `editRoutine`).
+ */
+export function withSaveEdit(made: Routine, edit: RoutineEdit, isCompound: (exerciseId: string) => boolean): RoutineCreate {
+  const issue = routineIssues(edit)[0];
+  if (issue !== undefined) return { kind: 'invalid', message: issue };
+  return {
+    kind: 'write',
+    next: { ...made, name: edit.name.trim(), exercises: withDefaultMain(normaliseRoutineExercises(edit.exercises), isCompound), source: 'ben' },
+  };
+}
+
+/**
  * The editor's `Save` on a stored workout (§A4.2): name and exercises, with
  * `Main` written down. Saving makes a coach workout Ben's (WB8). The
  * rotation, history link and tombstone are untouched. A retry of the same

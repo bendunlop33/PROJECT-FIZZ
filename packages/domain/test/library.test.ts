@@ -30,6 +30,7 @@ import {
   routineIssues,
   saveSheetDetail,
   unnamedWorkoutName,
+  withSaveEdit,
   setRoutineRotation,
   NBSP,
   type LibraryRoutineInput,
@@ -459,5 +460,22 @@ describe('structureChangedAtUtc (review r2 S1, WL7): only a change to a slot’s
     expect(off.kind === 'write' && times(off.next)).toEqual([at(500).utc, null, null]);
     const copy = duplicateRoutine(a, { id: id(951), opId: 'dup-s1', at: at(700), newId: idGen(96_000), isCompound: compound });
     expect(times(copy)).toEqual([null, null, null]);
+  });
+});
+
+describe('withSaveEdit (routines.md §A2.5, WL-A18)', () => {
+  it('the unsaved copy takes the editor’s name and sets; ID, opId, version, rotation and links stay; it becomes Ben’s', () => {
+    const copy: Routine = { ...made('Workout · Mon 5 Oct', { inRotation: true, opId: 'sheet-op' }), source: 'coach', createdFromSessionId: id(950), createdFromDraft: { draftId: id(951), version: 2 } };
+    const more = exs().map((e, i) => (i === 1 ? { ...e, setTemplates: [...e.setTemplates, template(113), template(114)] } : e));
+    const r = withSaveEdit(copy, { name: '  Push A ', exercises: more }, compound);
+    if (r.kind !== 'write') throw new Error(r.message);
+    expect(r.next).toMatchObject({ id: copy.id, version: 1, lastOpId: 'sheet-op', inRotation: true, createdFromSessionId: id(950), createdFromDraft: { draftId: id(951), version: 2 }, name: 'Push A', source: 'ben' });
+    expect(r.next.exercises.map((e) => e.setTemplates.length)).toEqual([3, 4, 1]);
+    expect(r.next.exercises.map((e) => e.main)).toEqual([true, true, false]);
+    expect(RoutineSchema.parse(r.next)).toEqual(r.next);
+  });
+
+  it('refuses an edit that can’t be saved', () => {
+    expect(withSaveEdit(made(), { name: 'X', exercises: [] }, compound)).toEqual({ kind: 'invalid', message: 'Add an exercise' });
   });
 });

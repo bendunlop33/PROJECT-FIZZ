@@ -195,6 +195,7 @@ import {
   routineTypeKey,
   buildLibraryView,
   createRoutine,
+  withSaveEdit,
   duplicateRoutine,
   editableExercises,
   editableEdit,
@@ -657,6 +658,8 @@ export interface SaveSource {
   detail: string;
   /** What isn't saved (`Not copied: 3 distance sets (Sled push)`, review S1); null when nothing is left out. */
   notSaved: string | null;
+  /** The unsaved copy's exercises, for the sheet's `Edit ›` (routines.md §A2.5, WL-A18): the editor opens on them. */
+  exercises: RoutineExercise[];
 }
 
 export type LibrarySaveWrite = RoutineWrite | { ok: false; message: string; reason: 'nothing' | 'stale_preview' | 'already_saved' };
@@ -3171,7 +3174,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const source = await repos().sessions.get(from.sessionId).catch(() => null);
           name = source === null ? null : (source.session.routineName ?? storedName(source) ?? unnamedWorkoutName(source.session.startedAt));
         }
-        return { name: name ?? unnamedWorkoutName(ctx.now()), detail: saveSheetDetail(r), notSaved: notCopiedText(left) };
+        return { name: name ?? unnamedWorkoutName(ctx.now()), detail: saveSheetDetail(r), notSaved: notCopiedText(left), exercises: editableExercises(r) };
       } catch {
         return null;
       }
@@ -3182,9 +3185,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * finished one (imported too) or from what an overview shows. Loads are
      * `Auto` (Repeat's save keeps them Fixed). Idempotent by `opId`; the
      * source is never changed. A preview save with an out-of-date key saves
-     * nothing (`Targets updated`).
+     * nothing (`Targets updated`). `edit`: the Save sheet's `Edit ›` →
+     * editor `Save` (§A2.5, WL-A18): the same copy with the editor's name
+     * and exercises (set counts), still one write under the sheet's opId.
      */
-    async saveFrom(req: { from: SaveFrom; name: string; addToRotation: boolean; opId: string }): Promise<LibrarySaveWrite> {
+    async saveFrom(req: { from: SaveFrom; name: string; addToRotation: boolean; opId: string; edit?: RoutineEdit }): Promise<LibrarySaveWrite> {
       try {
         const p = await owner();
         const name = checkRoutineName(req.name, []);
@@ -3212,8 +3217,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           return { ok: false, message: LIBRARY_COPY.alreadySaved, reason: 'already_saved' };
         }
         if (existing) return await linked(existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed });
-        const made = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
-        if (made === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
+        const source = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
+        if (source === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
+        let made = source;
+        if (req.edit !== undefined && source !== null) {
+          for (const e of req.edit.exercises) if ((await ensureExercise(e.exerciseId)) === null) return { ok: false, message: LIBRARY_COPY.notFound };
+          const edited = withSaveEdit(source, req.edit, await compoundOf(req.edit.exercises.map((e) => e.exerciseId)));
+          if (edited.kind === 'invalid') return { ok: false, message: edited.message };
+          made = edited.next;
+        }
         return await linked(await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing));
       } catch {
         return { ok: false, message: LIBRARY_COPY.saveFailed };

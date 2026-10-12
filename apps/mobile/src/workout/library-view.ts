@@ -35,6 +35,9 @@ export const LIBRARY_COPY_UI = {
   restore: 'Restore from backup',
   more: 'More',
   saveToWorkouts: 'Save to Workouts',
+  /** The Save sheet's summary-line `Edit ›` (§A2.5, WL-A18) and its VoiceOver label. */
+  edit: 'Edit',
+  editBeforeSaving: 'Edit sets before saving',
   savedToWorkouts: 'Saved to Workouts',
   savedLink: (name: string) => `Saved · ${name} ›`,
   nothingToSave: 'Nothing to save',

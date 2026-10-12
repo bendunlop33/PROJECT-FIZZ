@@ -11,6 +11,7 @@ import { addEffortRow, addPrimary, addRepsRow, initialAddShape, posterSize, reps
 import { filterChipLabel, filterOptions, toggled, withFilter } from '../src/workout/library-browse-view';
 import { countSteps, effortChoices, SET_BAR, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../src/workout/set-shape-view';
 import { handOffLibraryToast, takeLibraryToast } from '../src/workout/library-toast';
+import { beginSaveEdit, saveEditRequest, settleSaveEdit, type SaveEditOutcome } from '../src/workout/save-edit-handoff';
 
 /**
  * The Library tab and the one sets control on the screen side
@@ -112,7 +113,7 @@ describe('Add to a workout sheet (§9.5)', () => {
 });
 
 describe('navigation (EL10)', () => {
-  const routeNames = ['Tabs', 'WorkoutOverview', 'Workouts', 'WorkoutEditor', 'Workout', 'ExerciseInfo'];
+  const routeNames = ['Tabs', 'WorkoutOverview', 'WorkoutEditor', 'Workout', 'ExerciseInfo'];
   const router = StackRouter({});
   const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
   type State = StackNavigationState<ParamListBase>;
@@ -190,5 +191,50 @@ describe('source checks (EL-B16, EL-B24, rules 1 and 2)', () => {
     expect(ui).toMatch(/minHeight: 52/);
     expect(ui).toMatch(/minHeight: 64/);
     expect(ui).toMatch(/variant="headline" numeric/);
+  });
+});
+
+describe('review library-browse B1: New workout from Library › Workouts', () => {
+  it('the header’s ＋ opens New workout on the Workouts segment whatever the list holds; the old root Workouts route is gone', () => {
+    const lib = code(read('screens/library/LibraryScreen.tsx'));
+    // Shown on the segment, not tied to the list being empty.
+    expect(lib).toMatch(/segment === 'workouts' \? <NewWorkoutButton from="Library" \/> : null/);
+    const list = code(read('screens/routines/WorkoutsScreen.tsx'));
+    expect(list).toMatch(/navigation\.navigate\('WorkoutEditor', \{ routineId: null, from \}\)/);
+    expect(list).toMatch(/accessibilityLabel=\{LIBRARY_COPY_UI\.newWorkout\}/);
+    const nav = code(read('navigation/AppNavigator.tsx'));
+    expect(nav).not.toMatch(/name="Workouts"/);
+    expect(code(read('navigation/actions.ts'))).not.toMatch(/replaceWithWorkouts/);
+  });
+});
+
+describe('review library-browse B2: Save to Workouts → Edit ›', () => {
+  it('the handoff settles once: saved, or cancelled when the editor closes without a Save', () => {
+    const got: SaveEditOutcome[] = [];
+    const req = { from: { kind: 'session' as const, sessionId: 's' }, addToRotation: true, opId: 'op-1' };
+    beginSaveEdit('op-1', req, (o) => got.push(o));
+    expect(saveEditRequest('op-1')).toEqual(req);
+    const routine = { id: 'r' } as never;
+    expect(settleSaveEdit('op-1', { kind: 'saved', routine })).toBe(true);
+    // The editor's unmount after a Save: nothing more.
+    expect(settleSaveEdit('op-1', { kind: 'cancelled' })).toBe(false);
+    expect(saveEditRequest('op-1')).toBeNull();
+    beginSaveEdit('op-2', { ...req, opId: 'op-2' }, (o) => got.push(o));
+    expect(settleSaveEdit('op-2', { kind: 'cancelled' })).toBe(true);
+    expect(got).toEqual([{ kind: 'saved', routine }, { kind: 'cancelled' }]);
+  });
+
+  it('the sheet offers Edit › and hands its opId and rotation over; the editor saves through saveFrom with the edit, and Cancel or unmount re-shows the sheet', () => {
+    const sheet = code(read('screens/routines/SaveWorkoutSheet.tsx'));
+    expect(sheet).toMatch(/label=\{`\$\{LIBRARY_COPY_UI\.edit\} ›`\}/);
+    expect(sheet).toMatch(/onEdit\(\{ name: name\.trim\(\), addToRotation: rotation, opId: opId\.current \}\)/);
+    expect(sheet).toMatch(/beginSaveEdit\(held\.opId, \{ from: state\.from, addToRotation: held\.addToRotation, opId: held\.opId \}/);
+    expect(sheet).toMatch(/navigation\.navigate\('WorkoutEditor', \{ routineId: null, from: 'SaveSheet', draft: \{ name: e\.name, exercises: state\.exercises \}, saveAs: e\.key \}\)/);
+    // Re-showing keeps the sheet's opId: it only starts afresh on a new opening.
+    expect(sheet).toMatch(/\}, \[openKey, initialName\]\);/);
+    const editor = code(read('screens/routines/WorkoutEditorScreen.tsx'));
+    expect(editor).toMatch(/services\.routines\.saveFrom\(\{ from: req\.from, name: next\.name\.trim\(\), addToRotation: req\.addToRotation, opId: req\.opId, edit: next \}\)/);
+    expect(editor).toMatch(/settleSaveEdit\(saveAs, \{ kind: 'cancelled' \}\)/);
+    expect(editor).toMatch(/settleSaveEdit\(saveAs, \{ kind: 'saved', routine: r\.routine \}\)/);
   });
 });

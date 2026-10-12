@@ -68,7 +68,8 @@ export function replaceWithSummary(sessionId: string) {
 export function popToFromEditor(from: EditorFrom, toast: LibraryToastParam) {
   if (from === 'Library') return openLibrary('workouts', toast);
   // Exercise detail sits right under the editor: back to it (its toast is handed off in memory, `library-toast.ts`).
-  if (from === 'ExerciseInfo') return { type: 'GO_BACK' } as const;
+  // The Save sheet's `Edit ›`: back to the screen under the sheet, which takes the result (`save-edit-handoff.ts`).
+  if (from === 'ExerciseInfo' || from === 'SaveSheet') return { type: 'GO_BACK' } as const;
   return { type: 'POP_TO', payload: { name: from, params: { toast }, merge: true } } as const;
 }
 
@@ -88,16 +89,6 @@ export function openLibrary(segment: LibrarySegment, toast?: LibraryToastParam):
  */
 export function backFromEditor(from: EditorFrom, copyToast: LibraryToastParam | undefined) {
   return copyToast === undefined ? ({ type: 'GO_BACK' } as const) : popToFromEditor(from, copyToast);
-}
-
-/**
- * `Edit workouts` from the overview's picker (§A2.4): the list takes the
- * overview's place, so a row's overview is a fresh page (never a stale one
- * found under the list). Superseded by `openLibrary('workouts')` once the
- * Library tab holds the list (EL10); kept for the root `Workouts` route.
- */
-export function replaceWithWorkouts() {
-  return { type: 'REPLACE', payload: { name: 'Workouts', params: {} } } as const;
 }
 
 /**
