@@ -449,7 +449,13 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
   /** (11 Oct) A memory the coach suggested: `proposed`; Ben's Save or Not now changes the memory, not this record. */
   z.object({ kind: z.literal('suggest_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
   z.object({ kind: z.literal('forget_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
-  z.object({ kind: z.literal('add_playbook_candidate'), candidateId: IdSchema, text: z.string().min(1).max(400) }),
+  z.object({
+    kind: z.literal('add_playbook_candidate'),
+    candidateId: IdSchema,
+    text: z.string().min(1).max(400),
+    /** (12 Oct) The memory suggestion Ben sent here with `Add to playbook` (CM9 split). */
+    fromMemoryId: IdSchema.optional(),
+  }),
   z.object({
     kind: z.literal('undo'),
     undoneActionId: IdSchema,
@@ -651,6 +657,8 @@ export const MemorySchema = RecordMetaSchema.extend({
   source: z.enum(['ben_asked', 'coach_suggested', 'ben_added']).optional(),
   /** (11 Oct) Ben's edits, oldest first: the text before each edit. */
   edits: z.array(z.object({ before: z.string().min(1).max(200), atUtc: UtcTimestampSchema })).max(20).optional(),
+  /** (12 Oct) A `not_saved` suggestion Ben sent to the playbook (CM9 `Add to playbook`), not `Not now`. */
+  closedAs: z.literal('playbook').optional(),
 });
 export type Memory = z.infer<typeof MemorySchema>;
 

@@ -255,7 +255,7 @@ export function CoachSheetScreen() {
   async function decideMemory(memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') {
     if (decision === 'playbook') {
       const p = await services.coach.memoryToPlaybook(memoryId, version, newUuid()).catch(() => null);
-      setNotice(p === null || (!p.ok && p.reason === 'missing') ? 'Couldn’t save.' : p.ok ? null : 'Out of date.');
+      setNotice(p === null || (!p.ok && p.reason === 'missing') ? 'Couldn’t save.' : p.ok ? (p.rejectedBefore ? 'Rejected before.' : null) : 'Out of date.');
       await loadRows(threadId ?? null);
       changed();
       return;

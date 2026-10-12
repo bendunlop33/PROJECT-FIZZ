@@ -1,3 +1,7 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelRequest } from '@fizz/coach';
@@ -105,8 +109,8 @@ describe('general rules vs memories (CM9, review coach-tools r2 S1, S2)', () => 
   it('"remember to always deload every 5th week" is never a memory: it waits in the playbook, from Ben, unused', async () => {
     const s = await ready();
     model = new StepModel([() => toolCall('save_memory', { text: 'Always deload every 5th week', quote: 'remember to always deload every 5th week' }), () => replyWith('Put that in your playbook.')]);
-    // "Remember to …" alone reads as a reminder and opens no memory tool (request.ts REMINDER); the label form opens save_memory.
-    const r = await ask(s, 'Remember: always deload every 5th week');
+    // CM9's own sentence opens the memory tool (review coach-tools r3 S2).
+    const r = await ask(s, 'Remember to always deload every 5th week');
     expect(r.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'add_playbook_candidate', text: 'Always deload every 5th week' } });
     expect(await s.coach.memories()).toMatchObject({ saved: [], waiting: [] });
     expect((await s.coach.playbookRules()).toReview).toMatchObject([{ text: 'Always deload every 5th week', line: 'From you · not graded' }]);
@@ -161,6 +165,86 @@ describe('general rules vs memories (CM9, review coach-tools r2 S1, S2)', () => 
     const id2 = r2.cards[0]?.record.detail.kind === 'suggest_memory' ? r2.cards[0].record.detail.memoryId : '';
     expect(await s.coach.memoryToPlaybook(id2, 1, h.ids())).toMatchObject({ ok: true });
     expect((await s.coach.playbookRules()).toReview).toMatchObject([{ text: 'Use straps for deadlifts', line: 'From you · not graded' }]);
+  });
+});
+
+describe('Add to playbook: where the card says the words went (review coach-tools r3 N1–N5)', () => {
+  const suggest = async (s: AppServices, text: string) => {
+    model = new StepModel([() => toolCall('suggest_memory', { text, quote: text }), () => replyWith('Ok.')]);
+    const r = await ask(s, text);
+    const memoryId = r.cards[0]?.record.detail.kind === 'suggest_memory' ? r.cards[0].record.detail.memoryId : '';
+    const cardOf = async () => {
+      const row = threadRows((await s.coach.loadThread(r.threadId)) ?? (null as never)).find((x) => x.kind === 'card');
+      return row?.kind === 'card' ? row.card : null;
+    };
+    return { memoryId, cardOf };
+  };
+
+  it('Not now reads Not saved even when the same words are in the playbook from elsewhere; approved reads Playbook (N1)', async () => {
+    const s = await ready();
+    const a = await suggest(s, 'Use straps for deadlifts');
+    expect(await s.coach.memoryToPlaybook(a.memoryId, 1, h.ids())).toMatchObject({ ok: true, rejectedBefore: false });
+    const b = await suggest(s, 'Use straps for deadlifts');
+    expect(await s.coach.decideMemory(b.memoryId, 1, 'not_now')).toMatchObject({ status: 'written' });
+    expect(await b.cardOf()).toMatchObject({ status: { word: 'Not saved' }, text: '“Use straps for deadlifts”' });
+    expect(await a.cardOf()).toMatchObject({ status: { word: 'Saved' }, text: 'Playbook, to review: “Use straps for deadlifts”' });
+    const [rule] = (await s.coach.playbookRules()).toReview;
+    if (rule === undefined) throw new Error('no rule');
+    expect(await s.coach.decidePlaybookRule(rule.id, rule.version, 'approve')).toMatchObject({ status: 'written' });
+    expect(await a.cardOf()).toMatchObject({ status: { word: 'Saved' }, text: 'Playbook: “Use straps for deadlifts”' });
+  });
+
+  it('words Ben rejected before: closed, and the card says Rejected before (N2)', async () => {
+    const s = await ready();
+    const a = await suggest(s, 'Use straps for deadlifts');
+    await s.coach.memoryToPlaybook(a.memoryId, 1, h.ids());
+    const [rule] = (await s.coach.playbookRules()).toReview;
+    if (rule === undefined) throw new Error('no rule');
+    await s.coach.decidePlaybookRule(rule.id, rule.version, 'reject');
+    const b = await suggest(s, 'Use straps for deadlifts');
+    expect(await s.coach.memoryToPlaybook(b.memoryId, 1, h.ids())).toMatchObject({ ok: true, record: null, rejectedBefore: true });
+    expect(await b.cardOf()).toMatchObject({ status: { word: 'Not saved' }, text: 'Rejected before. “Use straps for deadlifts”' });
+  });
+
+  it('a second tap that lost the race reads ok, not Out of date (N4)', async () => {
+    const s = await ready();
+    const a = await suggest(s, 'Use straps for deadlifts');
+    const [one, two] = await Promise.all([s.coach.memoryToPlaybook(a.memoryId, 1, h.ids()), s.coach.memoryToPlaybook(a.memoryId, 1, h.ids())]);
+    expect(one).toMatchObject({ ok: true });
+    expect(two).toMatchObject({ ok: true });
+    expect((await s.coach.playbookRules()).toReview).toHaveLength(1);
+  });
+
+  it('force-closed between the candidate and the close: Save finishes the playbook choice instead of a second home (N3)', async () => {
+    const s = await ready();
+    const a = await suggest(s, 'Use straps for deadlifts');
+    await s.coach.memoryToPlaybook(a.memoryId, 1, h.ids());
+    await h.forceClose();
+    // The close never reached the disk: put the memory back as it was before it.
+    const file = readdirSync(h.dir).find((n) => /^training-\d+\.db$/.test(n)) ?? '';
+    const raw = new DatabaseSync(join(h.dir, file));
+    const row = raw.prepare('SELECT data FROM memories WHERE id = ?').get(a.memoryId) as { data: string };
+    const before: Record<string, unknown> = { ...(JSON.parse(row.data) as Record<string, unknown>), status: 'suggested', version: 1 };
+    delete before.closedAs;
+    raw.prepare("UPDATE memories SET status = 'suggested', version = 1, data = ? WHERE id = ?").run(JSON.stringify(before), a.memoryId);
+    raw.close();
+    const { services: again } = await h.launch();
+    expect(await again.coach.decideMemory(a.memoryId, 1, 'save')).toMatchObject({ status: 'stale', memory: { status: 'not_saved', closedAs: 'playbook' } });
+    expect(await again.coach.memories()).toMatchObject({ saved: [], waiting: [] });
+    expect((await again.coach.playbookRules()).toReview).toHaveLength(1);
+  });
+
+  it('the Memory screen offers the same split as the chat card for words that could be a rule (N5)', async () => {
+    const s = await ready();
+    await suggest(s, 'Use straps for deadlifts');
+    await suggest(s, 'Trains before work');
+    const view = memoryScreenView(await s.coach.memories(), 'Europe/London');
+    expect(view.waiting.map((m) => [m.text, m.split])).toEqual(
+      expect.arrayContaining([
+        ['Use straps for deadlifts', true],
+        ['Trains before work', false],
+      ]),
+    );
   });
 });
 

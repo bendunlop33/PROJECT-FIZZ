@@ -791,9 +791,10 @@ export class SqliteCoachStore {
   /**
    * Ben's Save or Not now on a coach suggestion (coach-memory §2.4, CM2):
    * versioned (rule 5). Save makes it a confirmed memory, refused when the
-   * same text is already saved; Not now keeps it as `not_saved`.
+   * same text is already saved; Not now keeps it as `not_saved`. `closedAs:
+   * 'playbook'` records that Ben sent it to the playbook instead (CM9).
    */
-  decideMemory(ownerId: string, req: { memoryId: string; expectedVersion: number; decision: 'save' | 'not_now'; atUtc: string }): Promise<MemoryWrite> {
+  decideMemory(ownerId: string, req: { memoryId: string; expectedVersion: number; decision: 'save' | 'not_now'; atUtc: string; closedAs?: 'playbook' }): Promise<MemoryWrite> {
     return this.db.write(async (tx): Promise<MemoryWrite> => {
       const m = await getDoc(tx, MEMORY_SPEC, req.memoryId);
       if (m === null || m.ownerId !== ownerId) return { status: 'missing' };
@@ -805,7 +806,7 @@ export class SqliteCoachStore {
         const clash = await tx.getFirst("SELECT id FROM memories WHERE owner_id = ? AND content_key = ? AND status = 'active'", [ownerId, m.contentKey]);
         if (clash !== null) return { status: 'duplicate', memory: m };
       }
-      const next: Memory = { ...m, status: target, version: m.version + 1, updatedAtUtc: req.atUtc };
+      const next: Memory = { ...m, status: target, version: m.version + 1, updatedAtUtc: req.atUtc, ...(target === 'not_saved' && req.closedAs !== undefined ? { closedAs: req.closedAs } : {}) };
       await saveDocumentIn(tx, MEMORY_SPEC, next, m.version);
       return { status: 'written', memory: next };
     });

@@ -87,6 +87,7 @@ import type {
   Memory,
   ActionRecord,
   BenInput,
+  PlaybookCandidate,
   DraftBasis,
   Exercise,
   StructuralSignalKind,
@@ -146,8 +147,18 @@ export interface ProposalCardState {
 export interface MemoryCardState {
   memory: Memory;
   canSave: boolean;
-  /** Ben chose `Add to playbook` on it (CM9): its words are a playbook candidate to review or approved. */
-  inPlaybook?: boolean;
+  /**
+   * Ben chose `Add to playbook` on it (CM9; review coach-tools r3 N1, N2): where its words stand in the
+   * playbook. `rejected`: he had rejected the same words before, so they weren't added again.
+   */
+  playbook?: 'to_review' | 'approved' | 'rejected';
+}
+
+/** Where words stand in the playbook: approved wins, then to review, then rejected (withdrawn is gone). */
+function playbookStateOf(candidates: readonly PlaybookCandidate[], key: string): MemoryCardState['playbook'] {
+  const same = candidates.filter((c) => c.contentKey === key);
+  for (const status of ['approved', 'to_review', 'rejected'] as const) if (same.some((c) => c.status === status)) return status;
+  return undefined;
 }
 
 /** A thread as stored, with every action its messages and turns refer to. */
@@ -200,6 +211,17 @@ export function createCoachService(deps: CoachServiceDeps) {
     return p;
   }
 
+  /** Ben already tapped `Add to playbook` on this suggestion: a live candidate in its words, made from it. */
+  async function sentToPlaybook(m: Memory): Promise<boolean> {
+    const key = playbookContentKey(m.text);
+    for (const c of await coachStore().listPlaybookCandidates()) {
+      if (c.contentKey !== key || c.status === 'withdrawn') continue;
+      const a = await coachStore().getAction(c.createdByActionId);
+      if (a?.detail.kind === 'add_playbook_candidate' && a.detail.fromMemoryId === m.id) return true;
+    }
+    return false;
+  }
+
   async function availability(): Promise<CoachAvailability> {
     if (deps.connection === undefined || deps.model === undefined) return { status: 'not_connected', model: null };
     const s = await deps.connection().catch((): TextCoachState => ({ status: 'not_connected', route: null, email: null, model: null }));
@@ -248,9 +270,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         const id = a.detail.memoryId;
         const m = all.find((x) => x.id === id);
         if (m === undefined) continue;
-        const key = playbookContentKey(m.text);
-        const inPlaybook = m.status === 'not_saved' && playbook.some((c) => c.contentKey === key && (c.status === 'to_review' || c.status === 'approved'));
-        memories.set(a.actionId, { memory: m, canSave: memoryCanBeSaved(m, all, nowUtc), inPlaybook });
+        const state = m.status === 'not_saved' && m.closedAs === 'playbook' ? playbookStateOf(playbook, playbookContentKey(m.text)) : undefined;
+        memories.set(a.actionId, { memory: m, canSave: memoryCanBeSaved(m, all, nowUtc), ...(state !== undefined ? { playbook: state } : {}) });
       }
     }
     return { thread, messages, turns, actionsByTurn, proposals, memories };
@@ -643,6 +664,12 @@ export function createCoachService(deps: CoachServiceDeps) {
       const m = await coachStore().getMemory(memoryId);
       // 14 days without an answer: it can't be saved any more (CM3).
       if (decision === 'save' && m !== null && m.status === 'suggested' && !memoryCanBeSaved(m, await coachStore().listMemories(p.id, 'all'), deps.now().utc)) return { status: 'stale', memory: m };
+      // A force-close between `Add to playbook`'s two writes (review coach-tools r3 N3): its candidate is
+      // already there, so finish that choice rather than keep the same words in both homes.
+      if (m !== null && m.ownerId === p.id && m.status === 'suggested' && m.version === expectedVersion && (await sentToPlaybook(m))) {
+        const closed = await coachStore().decideMemory(p.id, { memoryId, expectedVersion, decision: 'not_now', atUtc: deps.now().utc, closedAs: 'playbook' });
+        return closed.status === 'written' ? { status: 'stale', memory: closed.memory } : closed;
+      }
       return coachStore().decideMemory(p.id, { memoryId, expectedVersion, decision, atUtc: deps.now().utc });
     },
 
@@ -654,18 +681,23 @@ export function createCoachService(deps: CoachServiceDeps) {
      * idempotent: the candidate by its words, the close by version, so a
      * retry after a force-close between them finishes the job.
      */
-    async memoryToPlaybook(memoryId: string, expectedVersion: number, opId: string): Promise<{ ok: true; record: ActionRecord | null } | { ok: false; reason: 'missing' | 'stale' }> {
+    async memoryToPlaybook(
+      memoryId: string,
+      expectedVersion: number,
+      opId: string,
+    ): Promise<{ ok: true; record: ActionRecord | null; rejectedBefore: boolean } | { ok: false; reason: 'missing' | 'stale' }> {
       const p = await owner();
       const m = await coachStore().getMemory(memoryId);
       if (m === null || m.ownerId !== p.id) return { ok: false, reason: 'missing' };
       const key = playbookContentKey(m.text);
-      // A double tap: already closed, with its candidate in the playbook.
-      if (m.status === 'not_saved' && m.version === expectedVersion + 1 && (await coachStore().listPlaybookCandidates()).some((c) => c.contentKey === key && c.status !== 'withdrawn')) return { ok: true, record: null };
+      const done = async () => ({ ok: true as const, record: null, rejectedBefore: playbookStateOf(await coachStore().listPlaybookCandidates(), key) === 'rejected' });
+      // A double tap, or a second tap that raced the first (review coach-tools r3 N4): already sent to the playbook.
+      if (m.status === 'not_saved' && m.closedAs === 'playbook' && m.version > expectedVersion) return done();
       if (m.status !== 'suggested' || m.version !== expectedVersion) return { ok: false, reason: 'stale' };
       if (!memoryCanBeSaved(m, await coachStore().listMemories(p.id, 'all'), deps.now().utc)) return { ok: false, reason: 'stale' };
       const now = deps.now();
       const candidateId = deriveId(`ben-playbook:${opId}`);
-      const detail: ActionDetail = { kind: 'add_playbook_candidate', candidateId, text: m.text };
+      const detail: ActionDetail = { kind: 'add_playbook_candidate', candidateId, text: m.text, fromMemoryId: memoryId };
       const record = { ...newActionRecord({ turnId: '', opId, now }, detail, { author: 'ben' }), turnId: null };
       const statedBy = m.source === 'ben_asked' ? ('ben' as const) : ('coach' as const);
       const r = await coachStore().commit(p.id, {
@@ -675,9 +707,11 @@ export function createCoachService(deps: CoachServiceDeps) {
       });
       // Already approved or rejected in the same words: it is in the playbook's hands either way.
       if (r.status === 'conflict' && r.reason !== 'already_exists') return { ok: false, reason: 'stale' };
-      const closed = await coachStore().decideMemory(p.id, { memoryId, expectedVersion, decision: 'not_now', atUtc: now.utc });
+      const closed = await coachStore().decideMemory(p.id, { memoryId, expectedVersion, decision: 'not_now', atUtc: now.utc, closedAs: 'playbook' });
+      if (closed.status === 'stale' && closed.memory.status === 'not_saved' && closed.memory.closedAs === 'playbook') return done();
       if (closed.status !== 'written') return { ok: false, reason: closed.status === 'missing' ? 'missing' : 'stale' };
-      return { ok: true, record: r.status === 'conflict' ? null : r.action };
+      // Rejected before in the same words (review coach-tools r3 N2): closed, and not offered again (coaching-playbook §3.1).
+      return { ok: true, record: r.status === 'conflict' ? null : r.action, rejectedBefore: r.status === 'conflict' && playbookStateOf(await coachStore().listPlaybookCandidates(), key) === 'rejected' };
     },
 
     /** Edit a saved memory's words; the earlier words are kept with the memory. */

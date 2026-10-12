@@ -118,7 +118,10 @@ export function memoryCardView(r: ActionRecord, s: MemoryCardState): CardView | 
   if (r.detail.kind !== 'suggest_memory' || r.status !== 'proposed') return null;
   const words = `“${s.memory.text}”`;
   if (s.memory.status === 'active') return { actionId: r.actionId, status: { word: 'Saved', icon: 'checkmark.circle.fill' }, text: `Saved to memory: ${words}`, accessibilityPrefix: 'Memory.', canUndo: false };
-  if (s.inPlaybook === true) return { actionId: r.actionId, status: { word: 'Saved', icon: 'checkmark.circle.fill' }, text: `Playbook, to review: ${words}`, accessibilityPrefix: 'Playbook.', canUndo: false };
+  if (s.playbook === 'to_review' || s.playbook === 'approved') {
+    return { actionId: r.actionId, status: { word: 'Saved', icon: 'checkmark.circle.fill' }, text: s.playbook === 'approved' ? `Playbook: ${words}` : `Playbook, to review: ${words}`, accessibilityPrefix: 'Playbook.', canUndo: false };
+  }
+  if (s.playbook === 'rejected') return { actionId: r.actionId, status: { word: 'Not saved', icon: 'minus.circle' }, text: `Rejected before. ${words}`, accessibilityPrefix: 'Playbook.', canUndo: false };
   if (s.memory.status === 'suggested' && s.canSave) {
     // CM9: words that could be a general rule offer both homes; Ben's choice wins.
     const split = memoryTextKind(s.memory.text) !== 'personal';

@@ -45,6 +45,12 @@ export function MemoryScreen() {
     done(r === null || r.status === 'missing' ? { text: 'Couldn’t save.', undoActionId: null } : r.status === 'duplicate' ? { text: 'Already saved.', undoActionId: null } : r.status === 'stale' ? { text: 'Out of date.', undoActionId: null } : null);
   }
 
+  /** `Playbook` on a waiting row whose words could be a rule (CM9 split, same as the chat card). */
+  async function toPlaybook(row: MemoryRowView) {
+    const r = await services.coach.memoryToPlaybook(row.id, row.version, newUuid()).catch(() => null);
+    done(r === null || (!r.ok && r.reason === 'missing') ? { text: 'Couldn’t save.', undoActionId: null } : !r.ok ? { text: 'Out of date.', undoActionId: null } : r.rejectedBefore ? { text: 'Rejected before.', undoActionId: null } : { text: 'Playbook, to review.', undoActionId: null });
+  }
+
   async function submit() {
     if (sheet === null) return;
     setBusy(true);
@@ -87,7 +93,14 @@ export function MemoryScreen() {
                 trailing={
                   <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
                     <TextButton label="Not now" tone="secondary" onPress={() => void decide(m, 'not_now')} />
-                    <TextButton label="Save" onPress={() => void decide(m, 'save')} />
+                    {m.split ? (
+                      <>
+                        <TextButton label="Memory" accessibilityLabel="Save as a memory about me" onPress={() => void decide(m, 'save')} />
+                        <TextButton label="Playbook" accessibilityLabel="Add to playbook" onPress={() => void toPlaybook(m)} />
+                      </>
+                    ) : (
+                      <TextButton label="Save" onPress={() => void decide(m, 'save')} />
+                    )}
                   </View>
                 }
               />
