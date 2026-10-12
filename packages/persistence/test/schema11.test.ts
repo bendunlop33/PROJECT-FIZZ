@@ -3,26 +3,26 @@ import { latestVersion, migrate, MIGRATIONS, readUserVersion } from '../src/inde
 import { memoryDriver } from './helpers';
 
 /**
- * Migration 10 (coach tools, 11 Oct): `coach_actions` takes `log_set`,
+ * Migration 11 (coach tools, 11 Oct): `coach_actions` takes `log_set`,
  * `correct_set` and `suggest_memory`; `memories` takes `suggested` and
  * `not_saved`; `playbook_candidates` takes `approved` and `rejected`. Each
  * table is rebuilt, so rows, unique indexes and no-delete triggers are
- * checked after it. 8 and 9 are reserved no-ops on this branch
- * (delete-workouts and workout-library replace them at merge, in that order;
- * `scripts/check-migrations.ts` blocks a release until then).
+ * checked after it. Numbered 11 at the merge with main (8 deleted-workouts,
+ * 9 progress, 10 workout-gaps).
  */
 const row = (id: string, kind: string) =>
   `INSERT INTO coach_actions (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('${id}', 'o', 'op-${id}', NULL, NULL, '${kind}', 'committed', 1, 't', 't', '{}')`;
 
-describe('migration 10: coach set actions', () => {
-  it('a schema-7 database keeps its coach actions, then takes log_set and correct_set and still refuses deletes', async () => {
+describe('migration 11: coach set actions', () => {
+  it('a schema-10 database keeps its coach actions, then takes log_set and correct_set and still refuses deletes', async () => {
     const db = memoryDriver();
-    await migrate(db, MIGRATIONS, 7);
+    await migrate(db, MIGRATIONS, 10);
     await db.run(row('a1', 'update_routine'));
     await expect(db.run(row('a2', 'log_set'))).rejects.toThrow();
     const report = await migrate(db);
-    expect(report).toEqual({ from: 7, to: latestVersion(), applied: [8, 9, 10] });
-    expect(await readUserVersion(db)).toBe(10);
+    expect(report).toEqual({ from: 10, to: latestVersion(), applied: [11] });
+    expect(latestVersion()).toBe(11);
+    expect(await readUserVersion(db)).toBe(11);
     expect(await db.getFirst('SELECT kind FROM coach_actions WHERE id = ?', ['a1'])).toEqual({ kind: 'update_routine' });
     await db.run(row('a2', 'log_set'));
     await db.run(row('a3', 'correct_set'));
@@ -34,7 +34,7 @@ describe('migration 10: coach set actions', () => {
 
   it('coach_actions takes suggest_memory', async () => {
     const db = memoryDriver();
-    await migrate(db, MIGRATIONS, 7);
+    await migrate(db, MIGRATIONS, 10);
     await expect(db.run(row('s0', 'suggest_memory'))).rejects.toThrow();
     await migrate(db);
     await db.run(row('s1', 'suggest_memory'));
@@ -43,7 +43,7 @@ describe('migration 10: coach set actions', () => {
 
   it('memories: rows survive, suggested and not_saved are accepted, one active per key, never deleted', async () => {
     const db = memoryDriver();
-    await migrate(db, MIGRATIONS, 7);
+    await migrate(db, MIGRATIONS, 10);
     const mem = (id: string, key: string, status: string) =>
       `INSERT INTO memories (id, owner_id, content_key, status, version, updated_at_utc, data) VALUES ('${id}', 'o', '${key}', '${status}', 1, 't', '{"x":1}')`;
     await db.run(mem('m1', 'k1', 'active'));
@@ -66,7 +66,7 @@ describe('migration 10: coach set actions', () => {
 
   it('playbook_candidates: rows survive, approved and rejected are accepted, one open per key, never deleted', async () => {
     const db = memoryDriver();
-    await migrate(db, MIGRATIONS, 7);
+    await migrate(db, MIGRATIONS, 10);
     const pc = (id: string, key: string, status: string) =>
       `INSERT INTO playbook_candidates (id, content_key, status, version, updated_at_utc, data) VALUES ('${id}', '${key}', '${status}', 1, 't', '{"y":2}')`;
     await db.run(pc('p1', 'k1', 'to_review'));

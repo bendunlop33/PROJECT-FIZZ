@@ -6,7 +6,9 @@ import { equipmentForExercise, needsNoEquipment } from '../exercise-equipment';
 import { EXCLUSION_WORD, isSetCountable, normaliseExclusions } from '../exclusions';
 import { toHistorySessions } from '../history';
 import type { HistorySession, HistorySet } from '../progression';
+import { isInHistory } from '../session/deletion';
 import { toMs } from '../time';
+import { usualTargetRpeOf } from './target-rpe';
 
 /**
  * What the coach's read tools return about Ben's training (ADR 0020 §2,
@@ -254,7 +256,7 @@ export interface TrainingOverviewInput {
 export function trainingOverviewView(input: TrainingOverviewInput): TrainingOverviewView {
   const fromMs = toMs(input.nowUtc) - input.weeks * 7 * 86_400_000;
   const inWindow = input.sessions
-    .filter((a) => a.session.status === 'finished' && toMs(a.session.startedAt.utc) >= fromMs && toMs(a.session.startedAt.utc) <= toMs(input.nowUtc))
+    .filter((a) => isInHistory(a.session) && toMs(a.session.startedAt.utc) >= fromMs && toMs(a.session.startedAt.utc) <= toMs(input.nowUtc))
     .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
   const perExercise = new Map<string, { name: string; tops: { date: string; ms: number; top: TopSet | null }[] }>();
   const sessions: OverviewSessionLine[] = [];
@@ -410,7 +412,8 @@ export interface BuiltInTargetsView {
   /** What these are: the labelled fallback (ADR 0006), for comparison; never advice. */
   label: 'built-in rule (fallback), for comparison';
   basedOn: { date: string; title: string | null } | null;
-  sets: { type: SetType; target: string; load: Load | null; reps: { min: number; max: number } | null }[];
+  /** `rpe`: the set's target RPE as the next workout would plan it (the plan's, else the built-in rule's; none on warm-up and drop sets). */
+  sets: { type: SetType; target: string; load: Load | null; reps: { min: number; max: number } | null; rpe: number | null }[];
   /** `pain flag on: no increases` when the movement is flagged (rule 9). */
   painFlag: string | null;
 }
@@ -421,6 +424,8 @@ export function builtInTargetsView(input: {
   planned: readonly { setType: SetType; planned: PlannedSet }[];
   basedOn: { utc: string; tz: string; title: string | null } | null;
   painFlag: PainFlag | null;
+  /** The built-in rule's target RPE for the exercise (`ruleTargetRpes`), or null when unknown (CHANGELOG 2026-10-11). */
+  ruleRpe?: number | null;
 }): BuiltInTargetsView {
   return {
     domain: YOUR_DATA,
@@ -432,7 +437,10 @@ export function builtInTargetsView(input: {
       const load = p.planned.load;
       const reps = p.planned.reps;
       const parts = [load === null ? null : loadText(load, load.convention), reps === null ? null : `${repRangeText(reps)} reps`].filter((x): x is string => x !== null);
-      return { type: p.setType, target: parts.length === 0 ? '—' : parts.join(' × '), load, reps };
+      // Ben's one-day override never carries into a next-session target (review target-rpe r2 S1).
+      const rpe = usualTargetRpeOf({ setType: p.setType, planned: p.planned }, input.ruleRpe ?? null)?.rpe ?? null;
+      const target = parts.length === 0 ? '—' : parts.join(' × ');
+      return { type: p.setType, target: rpe === null || target === '—' ? target : `${target} @ RPE ${formatNumber(rpe)}`, load, reps, rpe };
     }),
     painFlag: input.painFlag?.status === 'active' ? 'pain flag on: no increases' : null,
   };

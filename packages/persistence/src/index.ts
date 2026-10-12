@@ -18,3 +18,4 @@ export * from './backup/backup';
 export * from './backup/replace';
 export * from './manager';
 export * from './data-domains';
+export { SESSIONS_V7_COLUMNS, UnexpectedSessionsColumnsError } from './schema/0008-deleted-workouts';

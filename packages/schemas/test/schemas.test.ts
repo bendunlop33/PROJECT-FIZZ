@@ -225,10 +225,11 @@ describe('Exercise (ADR 0010 additive fields)', () => {
     expect(ez.ok).toBe(false);
   });
 
-  it('keeps distance out of loggable measurements until distance logging exists', () => {
+  it('distance is loggable now that sets record metres (ADR 0011, merged 11 Oct)', () => {
     expect(validate(CatalogueMeasurementSchema, 'distance').ok).toBe(true);
-    expect(validate(MeasurementSchema, 'distance').ok).toBe(false);
-    expect(validate(ExerciseSchema, { ...base, measurement: 'distance' }).ok).toBe(false);
+    expect(validate(MeasurementSchema, 'distance').ok).toBe(true);
+    expect(validate(ExerciseSchema, { ...base, measurement: 'distance' }).ok).toBe(true);
+    expect(validate(MeasurementSchema, 'laps').ok).toBe(false);
   });
 
   it('catalogue keys are kebab-case', () => {

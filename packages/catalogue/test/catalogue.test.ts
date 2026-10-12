@@ -237,8 +237,9 @@ describe('loader', () => {
     }
   });
 
-  it('does not create a loggable row for a distance exercise', () => {
-    const sled = entry('sled-push');
-    expect(toExerciseRow(sled, T)).toMatchObject({ ok: false, reason: 'distance_not_loggable' });
+  it('creates a loggable row for a distance exercise (ADR 0011: sets record metres)', () => {
+    const sled = toExerciseRow(entry('sled-push'), T);
+    expect(sled).toMatchObject({ ok: true, exercise: { measurement: 'distance', defaultLoadConvention: 'added' } });
+    expect(sled.ok && validate(ExerciseSchema, sled.exercise).ok).toBe(true);
   });
 });

@@ -182,7 +182,9 @@ export function openErrorView(r: OpenResult, locale?: string): OpenErrorView | n
         };
       }
       return {
-        text: `You imported this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)} (${plural(r.job.counts.workouts, 'workout', 'workouts')}). Nothing new to import.`,
+        text: `You imported this file on ${shortDateOf(r.job.startedAt.utc, r.job.startedAt.tz, locale)} (${plural(r.job.counts.workouts, 'workout', 'workouts')}). Nothing new to import.${
+          r.inRecentlyDeleted > 0 ? ` ${inRecentlyDeletedLine(r.inRecentlyDeleted)}` : ''
+        }`,
         firstLine: null,
         sameFileJobId: r.job.id,
       };
@@ -228,6 +230,8 @@ export interface PreviewView {
   kept: Line[];
   effortReview: string | null;
   datesRow: string | null;
+  /** `3 are in Recently deleted.` → Recently deleted (DW26); null when none. */
+  recentlyDeletedRow: string | null;
   gymRow: string;
   workoutsTitle: string;
   primary: { label: string; enabled: boolean };
@@ -325,6 +329,11 @@ export function assistedText(m: MachineExercise): string {
   return parts.length === 0 ? m.name : `${m.name} (${parts.join('; ')})`;
 }
 
+/** `3 are in Recently deleted.` (delete-workouts §6.2, §7, DW26). */
+export function inRecentlyDeletedLine(n: number): string {
+  return `${formatCount(n)} ${n === 1 ? 'is' : 'are'} in Recently deleted.`;
+}
+
 export function previewView(d: ImportDraft, locale?: string): PreviewView {
   const a = d.analysis;
   const r = a.counts.byResult;
@@ -398,6 +407,7 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
     kept,
     effortReview,
     datesRow,
+    recentlyDeletedRow: d.inRecentlyDeleted > 0 ? inRecentlyDeletedLine(d.inRecentlyDeleted) : null,
     gymRow: `Gym: ${gym ? `All at ${gym.name}` : 'Not recorded'}`,
     workoutsTitle: `Workouts (${formatCount(a.workouts.length)})`,
     primary,
@@ -530,8 +540,15 @@ export function nameRowView(n: NameRow, candidateName: (id: string) => string | 
     case 'check':
       return { ...base, status: { icon: 'questionmark.circle', tone: 'warning', word: 'Check', text: candidateName(n.match.exerciseId ?? '') ?? '' }, actions: ['use', 'choose', 'new'], suggestionId: n.match.exerciseId };
     case 'no_match':
-      return { ...base, status: { icon: 'xmark.circle', tone: 'info', word: 'No match', text: 'No match' }, actions: ['choose', 'new', 'skip'], suggestionId: null };
+      // The FitNotes category, as written, helps Ben choose.
+      return { ...base, status: { icon: 'xmark.circle', tone: 'info', word: 'No match', text: n.category === null ? 'No match' : `No match · ${clipCategory(n.category)}` }, actions: ['choose', 'new', 'skip'], suggestionId: null };
   }
+}
+
+/** A category cell is data of any length: one line, clipped (review import-names N3). */
+function clipCategory(category: string): string {
+  const one = category.replace(/\s+/g, ' ').trim();
+  return one.length <= 24 ? one : `${one.slice(0, 23).trimEnd()}…`;
 }
 
 /** Names needing Ben first, then answered ones; plain name matches collapsed into one line. */
@@ -925,7 +942,12 @@ export function progressView(written: number, total: number): { text: string; fr
 export function stateLine(p: PastImport, locale?: string): Line {
   switch (p.state) {
     case 'finished':
-      return { icon: 'checkmark.circle.fill', tone: 'done', text: `Finished · ${plural(p.written, 'workout', 'workouts')}` };
+      return {
+        icon: 'checkmark.circle.fill',
+        tone: 'done',
+        // delete-workouts §5: `412 workouts · 3 deleted` while some are in Recently deleted.
+        text: `Finished · ${plural(p.written, 'workout', 'workouts')}${p.deleted > 0 ? ` · ${formatCount(p.deleted)} deleted` : ''}`,
+      };
     case 'running':
       return { icon: 'info.circle', tone: 'info', text: `Importing… ${progressView(p.written, p.total).text}` };
     case 'paused':
@@ -990,7 +1012,9 @@ export function resultsView(p: PastImport & { rows: readonly ImportRow[] }, loca
 export function undoAlert(p: PastImport): { title: string; message: string } {
   return {
     title: 'Undo this import?',
-    message: `${plural(p.written, 'workout', 'workouts')} from ${p.job.fileName} will be hidden from history, Progress and targets. Your other workouts aren’t touched.`,
+    message: `${plural(p.written, 'workout', 'workouts')} from ${p.job.fileName} will be hidden from history, Progress and targets. Your other workouts aren’t touched.${
+      p.deleted > 0 ? `\nIncludes ${formatCount(p.deleted)} in Recently deleted.` : ''
+    }`,
   };
 }
 

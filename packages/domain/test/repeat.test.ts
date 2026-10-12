@@ -42,9 +42,9 @@ describe('Repeat last workout (routines.md RT4, check 13)', () => {
     expect(bench.every((x) => x.planned.rpe === null)).toBe(true);
     expect(setsFor(s, ROW).map((x) => x.planned.load?.value)).toEqual([50]);
     expect(out.notCopied).toEqual([
-      { exerciseName: 'Cable row', skipped: 1 },
-      { exerciseName: 'Face pull', skipped: 2 },
-      { exerciseName: 'Dead hang', skipped: 1 },
+      { kind: 'skipped', exerciseName: 'Cable row', skipped: 1 },
+      { kind: 'skipped', exerciseName: 'Face pull', skipped: 2 },
+      { kind: 'skipped', exerciseName: 'Dead hang', skipped: 1 },
     ]);
     expect(s.exercises.map((e) => e.exerciseName)).toEqual(['Bench press', 'Cable row']);
     expect(repeatPreviewLines(s).map((l) => [l.exerciseName, plain(l.line)])).toEqual([

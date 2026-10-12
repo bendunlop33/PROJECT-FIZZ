@@ -94,6 +94,15 @@ describe('past training, equipment and built-in targets for one exercise', () =>
     expect(items.length).toBeGreaterThan(0);
     expect(items.every((i) => i.max !== null)).toBe(true);
     expect(targets?.data).toMatchObject({ domain: 'Your data', label: 'built-in rule (fallback), for comparison', exercise: 'Bench press' });
+    // Target RPE as the next workout would plan it (merge with target RPE): the built-in rule's for each working set, none on warm-ups.
+    const targetSets = (targets?.data.sets ?? []) as { type: string; target: string; rpe: number | null }[];
+    const working = targetSets.filter((x) => x.type === 'working');
+    expect(working.length).toBeGreaterThan(0);
+    for (const x of working) {
+      expect(typeof x.rpe).toBe('number');
+      expect(x.target).toMatch(new RegExp(`@ RPE ${String(x.rpe)}$`));
+    }
+    for (const x of targetSets.filter((t) => t.type === 'warmup' || t.type === 'drop')) expect(x.rpe).toBeNull();
     expect(r.toolLog.map((l) => l.text)).toEqual(['Read your history', 'Read your gym’s equipment', 'Read next targets']);
   });
 

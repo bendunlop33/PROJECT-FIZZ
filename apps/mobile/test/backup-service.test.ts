@@ -19,7 +19,7 @@ import type { ImportJob, ZonedTimestamp } from '@fizz/schemas';
 
 import { createBackupService, type BackupFileStore, type CopyDestination, type TextFile } from '../src/backup/backup-service';
 import { backupFileName, emptyManifest, parseManifest, planRotation, type BackupRecord } from '../src/backup/manifest';
-import { onPhoneState } from '../src/backup/status';
+import { backupKeepView, buildBackupStatus, onPhoneState } from '../src/backup/status';
 
 const TZ = 'Europe/London';
 const APP = { name: 'GymSmarter', version: '0.1.0', build: '9' };
@@ -241,6 +241,43 @@ describe('backup service', () => {
     expect(files.files.has('my-own-copy.json')).toBe(true);
     expect(manual.ok && files.files.has(manual.record.fileName)).toBe(true);
     expect(parseManifest(manifest.text).manifest.onPhone.files).toHaveLength(15);
+  });
+
+  it('Keep 7 / All copies (DX9): applies at the next backup, never deletes on its own, All keeps every copy', async () => {
+    const svc = service();
+    for (let i = 0; i < 10; i += 1) {
+      clockMs += 60_000;
+      await svc.backUpOnPhone('workout_finished');
+    }
+    const autos = () => [...files.files.keys()].filter((n) => n.endsWith('-auto.json'));
+    expect(autos()).toHaveLength(10);
+    expect(await svc.setKeep(7)).toBe(true);
+    // Changing the setting deletes nothing by itself.
+    expect(autos()).toHaveLength(10);
+    expect((await svc.getStatus()).keep).toBe(7);
+    clockMs += 60_000;
+    await svc.backUpOnPhone('workout_finished');
+    expect(autos()).toHaveLength(7);
+    expect(await svc.setKeep(null)).toBe(true);
+    for (let i = 0; i < 20; i += 1) {
+      clockMs += 60_000;
+      await svc.backUpOnPhone('workout_finished');
+    }
+    expect(autos()).toHaveLength(27);
+    expect(parseManifest(manifest.text).manifest.keep).toBeNull();
+    expect(await svc.setKeep(0)).toBe(false);
+  });
+
+  it('says every workout is kept and each copy is a full backup (Ben, 11 Oct)', () => {
+    const v = backupKeepView(14);
+    expect(v.subtitle).toBe('On · keeps the last 14 copies');
+    expect(v.line).toBe('Every workout is kept. Each copy is a full backup of all of them.');
+    expect(v.choices.map((c) => [c.label, c.selected])).toEqual([['7', false], ['14', true], ['30', false], ['All', false]]);
+    expect(backupKeepView(null).subtitle).toBe('On · keeps every copy');
+    // A manifest saved before the setting existed (keep 14) still reads; the default is 14.
+    expect(parseManifest(JSON.stringify({ ...emptyManifest(), keep: 14 })).manifest.keep).toBe(14);
+    expect(buildBackupStatus(emptyManifest(), { finishedWorkouts: 0, backingUp: false, nowMs: 0, tz: TZ }).keep).toBe(14);
+    expect(planRotation([], null, 'x')).toEqual([]);
   });
 
   it('never deletes a file whose content no longer matches what Fizz wrote', async () => {

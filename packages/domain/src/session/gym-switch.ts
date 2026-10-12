@@ -114,6 +114,19 @@ export interface NextTargetBlock {
   otherPartsDone: number;
   /** More than one part has done working sets. */
   split: boolean;
+  /**
+   * How many gyms the parts with done working sets were at (review
+   * gym-switch-r3 M1): a same-gym `Use changes today` makes a second part
+   * at the same gym, which must not read as `Done at more than one gym`.
+   */
+  gyms: number;
+}
+
+/** The gym a part was at: its item's gym, else where its targets were fitted, else unknown. */
+function partGym(state: Pick<SessionAggregate, 'session' | 'sets'>, part: SessionExercise): string | null {
+  const eq = equipmentOfRow(state.session.equipmentSnapshot, part);
+  if (eq) return eq.gymId;
+  return state.sets.find((s) => s.sessionExerciseId === part.id && s.planned.snap?.gymId)?.planned.snap?.gymId ?? null;
 }
 
 /** Every exercise block with at least one done working set, in workout order. */
@@ -139,6 +152,7 @@ export function nextTargetBlocks(state: Pick<SessionAggregate, 'session' | 'exer
       // History groups a workout's sets by item, so parts on the decider's item are the decider's.
       otherPartsDone: done.filter((x) => x.part.equipmentId !== decider.equipmentId).reduce((n, x) => n + x.n, 0),
       split: done.length > 1,
+      gyms: new Set(done.map((x) => partGym(state, x.part)).filter((g): g is string => g !== null)).size,
     });
   }
   return out;
@@ -185,6 +199,11 @@ export function nextTargetsForBlock(block: NextTargetBlock, req: NextTargetBlock
 export function splitDeciderFact(block: NextTargetBlock, gymName: string | null): string | null {
   if (!block.split) return null;
   const all = `all ${String(block.workingSets)} sets`;
+  if (block.gyms <= 1) {
+    // One gym: the same item updated mid-workout says nothing; another item here names the deciding one.
+    if (block.otherPartsDone === 0) return null;
+    return block.equipment ? `Done on more than one item: target from your ${block.equipment.name} sets, for ${all}.` : null;
+  }
   return gymName ? `Done at more than one gym: target from your ${gymName} sets, for ${all}.` : `Done at more than one gym: target from the last gym's sets, for ${all}.`;
 }
 

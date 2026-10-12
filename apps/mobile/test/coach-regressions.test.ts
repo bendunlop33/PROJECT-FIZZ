@@ -54,13 +54,13 @@ describe('CA4 with coach-sourced targets (rule 3)', () => {
       if (!r.ok) throw new Error(r.error.message);
       return (await s.coach.offerAfterLog({ aggregate: r.aggregate, setId: set.id, resting: true, coachReachable: true, pending: false }))?.fact ?? null;
     };
-    expect(await logHard(0)).toBe('RPE 10 on set 1');
+    expect(await logHard(0)).toBe('RPE 10 on set 1 (target 8.5)');
     expect(await logHard(1)).toBeNull();
     // Ben accepts an adjustment: one more offer may follow, then none.
     model = new StepModel([lowerPending(), () => replyWith('Lighter.')]);
     const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
     expect(r.cards.some((c) => c.record.detail.kind === 'adjust_pending_sets' && c.record.status === 'committed')).toBe(true);
-    expect(await logHard(2)).toBe('RPE 10 on set 3');
+    expect(await logHard(2)).toBe('RPE 10 on set 3 (target 8.5)');
     expect(await logHard(3)).toBeNull();
   });
 });

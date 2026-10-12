@@ -424,6 +424,21 @@ export function createBackupService(deps: BackupServiceDeps) {
       return { ...status, manifestProblem };
     },
 
+    /**
+     * `Keep 7 / 14 / 30 / All copies` (DX9). Takes effect at the next
+     * automatic backup: changing it never deletes a copy by itself.
+     */
+    setKeep(keep: number | null): Promise<boolean> {
+      return queued(async () => {
+        if (keep !== null && (!Number.isInteger(keep) || keep < 1 || keep > 1000)) return false;
+        const loaded = await loadManifest();
+        if (!loaded.writable) return false;
+        const ok = await saveManifest(loaded, { ...loaded.manifest, keep });
+        notify();
+        return ok;
+      });
+    },
+
     markTrialRunDone(): Promise<void> {
       return queued(async () => {
         const loaded = await loadManifest();

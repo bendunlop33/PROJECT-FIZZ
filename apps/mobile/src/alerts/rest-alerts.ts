@@ -1,4 +1,4 @@
-import { loadText, NBSP, repRangeText, toMs, valuesText } from '@fizz/domain';
+import { formatDuration, loadText, NBSP, repRangeText, toMs, valuesText } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 /**
@@ -42,9 +42,30 @@ export function nextSetLine(state: SessionAggregate): string {
   return `Next: ${ex.exerciseName}`;
 }
 
-/** The alert that should be pending now, or null (no running rest, paused, finished, deadline passed). */
+/**
+ * The alert that should be pending now, or null (nothing running, paused,
+ * finished, deadline passed). A running work timer on a timed set (§2.7)
+ * gets the same single alert at its 0 (`Time`), so a phone that locked
+ * during a plank still says so (review gaps S3). Starting a work timer ends
+ * any rest, so the two never compete; the identifier is the same, so one
+ * replaces the other.
+ */
 export function planRestAlert(state: SessionAggregate | null, nowMs: number): PlannedRestAlert | null {
   if (state === null || state.session.status !== 'active' || state.session.pause !== null) return null;
+  const wi = state.workInterval;
+  if (wi?.status === 'running') {
+    const fireAtMs = toMs(wi.deadlineUtc);
+    if (fireAtMs <= nowMs) return null;
+    const set = state.sets.find((x) => x.id === wi.setId);
+    const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+    return {
+      identifier: restAlertIdentifier(state.session.id),
+      key: `work:${wi.setId}:${wi.deadlineUtc}`,
+      fireAtMs,
+      title: 'Time',
+      body: ex ? `${ex.exerciseName} · ${formatDuration(wi.durationS)}` : formatDuration(wi.durationS),
+    };
+  }
   const t = state.restTimer;
   if (t?.status !== 'running') return null;
   const fireAtMs = toMs(t.deadlineUtc);

@@ -2,17 +2,19 @@ import { z } from 'zod';
 import {
   DurationSecondsSchema,
   IdSchema,
+  NoteSchema,
   LoadConventionSchema,
   LoadSchema,
   OperationIdSchema,
   RepRangeSchema,
+  RpeSchema,
   WeightUnitSchema,
   ZonedTimestampSchema,
 } from './common';
 import { EquipmentInstanceSchema } from './equipment';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
+import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, RuleDecisionSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -72,11 +74,16 @@ export const CorrectSetCommandSchema = z.object({
   /**
    * `exclusions` replaces the set's whole list (§2.13): `[]` clears it. A
    * patch that only changes exclusions doesn't mark the values `Edited`.
+   * `targetRpe` is Ben's own target RPE for this set (`planned.rpeOverride`,
+   * CHANGELOG 2026-10-11 (b) "Edit set"): the plan he meant, so an offer
+   * judged against the wrong target clears. `null` clears it. It never
+   * touches the logged values and doesn't mark them `Edited`.
    */
   patch: SetValuesSchema.partial().extend({
     setType: SetTypeSchema.optional(),
     side: SetSideSchema.optional(),
     exclusions: SetExclusionsSchema.optional(),
+    targetRpe: RpeSchema.nullable().optional(),
   }),
 });
 
@@ -335,8 +342,22 @@ export const RenameSessionCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
-/** A pending set's new load and reps target (both explicit; unit and convention in the load). */
-const TargetValuesSchema = z.object({ load: LoadSchema.nullable(), reps: RepRangeSchema.nullable() });
+/**
+ * `Count it` on Progress's Time sheet (progress.md PG25a), and its Undo
+ * (`confirmed: false`): a finished workout over the 4 h cap counts in `Time
+ * in gym`. Changes no set and no time; versioned and idempotent like every
+ * correction.
+ */
+export const ConfirmSessionDurationCommandSchema = z.object({
+  type: z.literal('confirm_session_duration'),
+  ...base,
+  opId: OperationIdSchema,
+  confirmed: z.boolean(),
+  expectedVersion: z.int().min(1),
+});
+
+/** A pending set's new load and reps target (both explicit; unit and convention in the load), and the coach's target RPE if it set one. */
+const TargetValuesSchema = z.object({ load: LoadSchema.nullable(), reps: RepRangeSchema.nullable(), rpe: RpeSchema.nullable().optional() });
 
 /**
  * A coach adjustment of today's pending sets (ADR 0020 §4, coach-adjustments
@@ -353,6 +374,19 @@ export const AdjustPendingTargetsCommandSchema = z.object({
   actionId: IdSchema,
   /** The coach's reason from the action record, kept on each changed target's `Why?` (in quotes). */
   reason: z.string().max(600).nullable().optional(),
+  /**
+   * Set when the built-in rule made the change, not the coach (CA6 revised,
+   * build 108 F2): each changed target gets `source: 'built_in_rule'` and a
+   * `rule` provenance with these words. Absent: the coach's change.
+   */
+  rule: z
+    .object({
+      name: z.string().min(1).max(300),
+      decision: RuleDecisionSchema,
+      summary: z.string().max(600),
+      facts: z.array(z.string().max(600)).max(20),
+    })
+    .optional(),
   changes: z.array(z.object({ setId: IdSchema, target: TargetValuesSchema })).max(40),
   removeSetIds: z.array(IdSchema).max(12),
   /** New pending sets, copying type and rest from `copyFromSetId`. IDs derive from the opId, so a replay adds the same rows. */
@@ -425,6 +459,101 @@ export const UndoChangeGymCommandSchema = z.object({
   expectedFingerprint: z.string().min(1).max(64),
 });
 
+/**
+ * Swap an exercise mid-workout, picked by Ben (exercise-library EL4, B3:
+ * applies at once with Undo). Only the row's **pending** sets move: each is
+ * deleted (an audited tombstone) and a new pending set is made on a new row
+ * for the substitute, with the same set type and rest and a target fitted by
+ * the shared fit (`fitSwap`, rule 4). Done and skipped sets stay on the
+ * original row. A row left with no live set is marked removed. Built by the
+ * session service; generated IDs are excluded from the fingerprint.
+ * Undo is `undo_op` on this command's opId.
+ */
+export const SwapExerciseCommandSchema = z.object({
+  type: z.literal('swap_exercise'),
+  ...base,
+  opId: OperationIdSchema,
+  sessionExerciseId: IdSchema,
+  expectedVersion: z.int().min(1),
+  newSessionExerciseId: IdSchema,
+  exercise: ExerciseSnapshotSchema,
+  /** At the current gym; null = no equipment (bodyweight, or nothing here). */
+  equipmentId: IdSchema.nullable(),
+  unit: WeightUnitSchema,
+  loadConvention: LoadConventionSchema,
+  /** One per pending set of the row, in its order: the new set's ID, the set it replaces and its target. */
+  sets: z.array(z.object({ newSetId: IdSchema, fromSetId: IdSchema, planned: PlannedSetSchema })).min(1).max(60),
+});
+
+/**
+ * Remove an exercise added by mistake (exercise-library §4.6): allowed only
+ * while none of its sets is logged. Its sets become deleted tombstones and
+ * the row is marked removed, so it leaves every view. No confirm; Undo is
+ * `undo_op` on this opId.
+ */
+export const RemoveExerciseCommandSchema = z.object({
+  type: z.literal('remove_exercise'),
+  ...base,
+  opId: OperationIdSchema,
+  sessionExerciseId: IdSchema,
+  expectedVersion: z.int().min(1),
+});
+
+/**
+ * Undo of an earlier operation, from its toast (copy D4, ADR 0003 Open):
+ * `delete_set`, `skip_exercise`, `correct_set`, `remove_exercise` and
+ * `swap_exercise`. Puts back exactly what that operation changed, from the
+ * audit and the rows it touched, and only while none of them has changed
+ * since (each set's version must still be the one the operation left):
+ * otherwise it's refused as `stale_version` and nothing changes (rule 5).
+ * A set logged since a swap stays (it's real).
+ */
+export const UndoOpCommandSchema = z.object({
+  type: z.literal('undo_op'),
+  ...base,
+  opId: OperationIdSchema,
+  targetOpId: OperationIdSchema,
+});
+
+/**
+ * A note on an exercise or a set (active-workout §4.4 `Notes`; Your data).
+ * Null clears it. Allowed during and after the workout; changes no value,
+ * target or rest. Versioned on the session.
+ */
+export const SetNoteCommandSchema = z.object({
+  type: z.literal('set_note'),
+  ...base,
+  opId: OperationIdSchema,
+  target: z.discriminatedUnion('kind', [z.object({ kind: z.literal('exercise'), sessionExerciseId: IdSchema }), z.object({ kind: z.literal('set'), setId: IdSchema })]),
+  note: NoteSchema.nullable(),
+  expectedVersion: z.int().min(1),
+});
+
+/**
+ * Ben's own target RPE (CHANGELOG 2026-10-11 "Offers follow the target RPE"):
+ * for the focused set, its exercise (every part after a gym switch) or
+ * today's whole workout. Only pending working sets change (never a logged
+ * set, a warm-up or a drop set); it is stored on each set as
+ * `planned.rpeOverride` and wins over the coach's and the built-in rule's
+ * target. `rpe: null` clears Ben's override. Versioned (`expectedVersion`)
+ * and idempotent (`opId`).
+ */
+export const TargetRpeScopeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('set'), setId: IdSchema }),
+  z.object({ kind: z.literal('exercise'), sessionExerciseId: IdSchema }),
+  z.object({ kind: z.literal('today') }),
+]);
+export type TargetRpeScope = z.infer<typeof TargetRpeScopeSchema>;
+
+export const SetTargetRpeCommandSchema = z.object({
+  type: z.literal('set_target_rpe'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  scope: TargetRpeScopeSchema,
+  rpe: RpeSchema.nullable(),
+});
+
 export const SessionCommandSchema = z.discriminatedUnion('type', [
   LogSetCommandSchema,
   SaveDraftCommandSchema,
@@ -447,11 +576,17 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   DiscardCommandSchema,
   SetRestAfterCommandSchema,
   RenameSessionCommandSchema,
+  ConfirmSessionDurationCommandSchema,
   SetFinishByCommandSchema,
   AdjustPendingTargetsCommandSchema,
   RevertTargetAdjustmentCommandSchema,
   ChangeGymCommandSchema,
   UndoChangeGymCommandSchema,
+  SwapExerciseCommandSchema,
+  RemoveExerciseCommandSchema,
+  UndoOpCommandSchema,
+  SetNoteCommandSchema,
+  SetTargetRpeCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

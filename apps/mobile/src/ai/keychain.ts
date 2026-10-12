@@ -31,12 +31,26 @@ export const keychainVault: ChatGptVault = {
  */
 export const KEYCHAIN_KEYS: readonly string[] = [REGISTRATION_KEY, TOKENS_KEY];
 
-/** Delete every item in `KEYCHAIN_KEYS`, then read each back. Throws if any is still there. */
+/**
+ * Delete every item in `KEYCHAIN_KEYS`, then read each back. Every item is
+ * tried even when an earlier one fails (review your-data-r6 N1); throws
+ * afterwards if any is still there or couldn't be checked.
+ */
 export async function wipeKeychain(): Promise<void> {
-  for (const key of KEYCHAIN_KEYS) await SecureStore.deleteItemAsync(key, KEYCHAIN_OPTIONS);
-  const left: string[] = [];
   for (const key of KEYCHAIN_KEYS) {
-    if ((await SecureStore.getItemAsync(key, KEYCHAIN_OPTIONS)) !== null) left.push(key);
+    try {
+      await SecureStore.deleteItemAsync(key, KEYCHAIN_OPTIONS);
+    } catch {
+      // Checked below: an item that couldn't be deleted is still there.
+    }
   }
-  if (left.length > 0) throw new Error(`${String(left.length)} coach sign-in item(s) are still in the Keychain`);
+  let left = 0;
+  for (const key of KEYCHAIN_KEYS) {
+    try {
+      if ((await SecureStore.getItemAsync(key, KEYCHAIN_OPTIONS)) !== null) left += 1;
+    } catch {
+      left += 1;
+    }
+  }
+  if (left > 0) throw new Error(`${String(left)} coach sign-in item(s) are still in the Keychain`);
 }

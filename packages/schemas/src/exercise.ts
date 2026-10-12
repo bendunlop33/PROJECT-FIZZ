@@ -31,20 +31,17 @@ export const EquipmentKindSchema = z.enum([
 ]);
 export type ExerciseEquipmentKind = z.infer<typeof EquipmentKindSchema>;
 
-/** `reps` sets log a count; `duration` sets log a work time (timed exercises). */
-export const MeasurementSchema = z.enum(['reps', 'duration']);
+/**
+ * `reps` sets log a count; `duration` sets log a work time (timed exercises:
+ * planks, hangs); `distance` sets log metres (sled push, carries; ADR 0011,
+ * merged 2026-10-11 once sets could record a distance).
+ */
+export const MeasurementSchema = z.enum(['reps', 'duration', 'distance']);
 export type Measurement = z.infer<typeof MeasurementSchema>;
 
-/**
- * Measurement as described by the exercise catalogue. Adds `distance` (sled
- * 50 m, farmer's carry, ski/row 1000 m). It is deliberately separate from
- * `MeasurementSchema`: sets can't record a distance yet (no `SetValues`
- * field, reducer check or progression rule), so a distance exercise is not
- * loggable and the catalogue loader doesn't turn it into an `Exercise` row
- * (ADR 0010). Merge the two once distance logging is built.
- */
-export const CatalogueMeasurementSchema = z.enum(['reps', 'duration', 'distance']);
-export type CatalogueMeasurement = z.infer<typeof CatalogueMeasurementSchema>;
+/** Measurement as described by the exercise catalogue: the same three since distance sets exist (ADR 0011). */
+export const CatalogueMeasurementSchema = MeasurementSchema;
+export type CatalogueMeasurement = Measurement;
 
 export const LateralitySchema = z.enum(['bilateral', 'unilateral']);
 export type Laterality = z.infer<typeof LateralitySchema>;
@@ -72,6 +69,10 @@ export const CatalogueKeySchema = z
   .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, { message: 'Catalogue keys are lower-case kebab-case' });
 export type CatalogueKey = z.infer<typeof CatalogueKeySchema>;
 
+/** Progress's Push/Pull/Legs grouping (progress.md PG27). */
+export const ExerciseSplitSchema = z.enum(['push', 'pull', 'legs', 'core', 'other']);
+export type ExerciseSplit = z.infer<typeof ExerciseSplitSchema>;
+
 export const ExerciseSchema = z.object({
   id: IdSchema,
   /** Null for catalogue entries; set for custom exercises. */
@@ -98,6 +99,12 @@ export const ExerciseSchema = z.object({
   defaultLoadConvention: LoadConventionSchema,
   /** Exercise default rest (resolution step 3). */
   defaultRestS: DurationSecondsSchema.optional(),
+  /**
+   * Progress's Push/Pull/Legs group (progress.md PG27), only where the
+   * primary-muscle rule gets it wrong. Absent = worked out from the muscles
+   * and movement pattern. Coaching knowledge.
+   */
+  split: ExerciseSplitSchema.optional(),
   version: z.int().min(1),
   createdAtUtc: UtcTimestampSchema,
   updatedAtUtc: UtcTimestampSchema,

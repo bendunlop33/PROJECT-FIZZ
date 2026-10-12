@@ -1,5 +1,5 @@
 /**
- * Schema version 10: the coach can log or correct a set when Ben tells it to
+ * Schema version 11: the coach can log or correct a set when Ben tells it to
  * in chat (backlog §4.3, accepted 11 Oct). Frozen once released.
  *
  * Coach actions:
@@ -20,12 +20,13 @@
  *   the record of which rules he approved). Rebuilt the same way; the
  *   one-open-per-key index stays.
  *
- * Merge note: versions 8 (delete-workouts) and 9 (workout-library) are being
- * built on other branches. If either rebuilds `coach_actions` with new kinds,
- * this CHECK list must include them too.
+ * Numbered 11 at the merge with main, after 8 (deleted-workouts), 9
+ * (progress) and 10 (workout-gaps); none of those rebuild these tables.
+ * Any later migration that rebuilds `coach_actions` with new kinds must keep
+ * this CHECK list.
  */
-export const MIGRATION_0010 = `
-CREATE TABLE coach_actions_v10 (
+export const MIGRATION_0011 = `
+CREATE TABLE coach_actions_v11 (
   id TEXT PRIMARY KEY NOT NULL,
   owner_id TEXT NOT NULL,
   op_id TEXT NOT NULL,
@@ -38,17 +39,17 @@ CREATE TABLE coach_actions_v10 (
   updated_at_utc TEXT NOT NULL,
   data TEXT NOT NULL CHECK (json_valid(data))
 ) STRICT;
-INSERT INTO coach_actions_v10 (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data)
+INSERT INTO coach_actions_v11 (id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data)
   SELECT id, owner_id, op_id, turn_id, session_id, kind, status, version, created_at_utc, updated_at_utc, data FROM coach_actions;
 DROP TABLE coach_actions;
-ALTER TABLE coach_actions_v10 RENAME TO coach_actions;
+ALTER TABLE coach_actions_v11 RENAME TO coach_actions;
 CREATE UNIQUE INDEX coach_actions_op ON coach_actions (owner_id, op_id);
 CREATE INDEX coach_actions_turn ON coach_actions (turn_id) WHERE turn_id IS NOT NULL;
 CREATE INDEX coach_actions_session ON coach_actions (session_id, created_at_utc) WHERE session_id IS NOT NULL;
 CREATE INDEX coach_actions_owner ON coach_actions (owner_id, created_at_utc);
 CREATE TRIGGER coach_actions_no_delete BEFORE DELETE ON coach_actions BEGIN SELECT RAISE(ABORT, 'coach actions are never deleted'); END;
 
-CREATE TABLE memories_v10 (
+CREATE TABLE memories_v11 (
   id TEXT PRIMARY KEY NOT NULL,
   owner_id TEXT NOT NULL,
   content_key TEXT NOT NULL,
@@ -57,14 +58,14 @@ CREATE TABLE memories_v10 (
   updated_at_utc TEXT NOT NULL,
   data TEXT NOT NULL CHECK (json_valid(data))
 ) STRICT;
-INSERT INTO memories_v10 (id, owner_id, content_key, status, version, updated_at_utc, data)
+INSERT INTO memories_v11 (id, owner_id, content_key, status, version, updated_at_utc, data)
   SELECT id, owner_id, content_key, status, version, updated_at_utc, data FROM memories;
 DROP TABLE memories;
-ALTER TABLE memories_v10 RENAME TO memories;
+ALTER TABLE memories_v11 RENAME TO memories;
 CREATE UNIQUE INDEX memories_one_active ON memories (owner_id, content_key) WHERE status = 'active';
 CREATE TRIGGER memories_no_delete BEFORE DELETE ON memories BEGIN SELECT RAISE(ABORT, 'memories are tombstoned, not deleted'); END;
 
-CREATE TABLE playbook_candidates_v10 (
+CREATE TABLE playbook_candidates_v11 (
   id TEXT PRIMARY KEY NOT NULL,
   content_key TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('to_review', 'withdrawn', 'approved', 'rejected')),
@@ -72,10 +73,10 @@ CREATE TABLE playbook_candidates_v10 (
   updated_at_utc TEXT NOT NULL,
   data TEXT NOT NULL CHECK (json_valid(data))
 ) STRICT;
-INSERT INTO playbook_candidates_v10 (id, content_key, status, version, updated_at_utc, data)
+INSERT INTO playbook_candidates_v11 (id, content_key, status, version, updated_at_utc, data)
   SELECT id, content_key, status, version, updated_at_utc, data FROM playbook_candidates;
 DROP TABLE playbook_candidates;
-ALTER TABLE playbook_candidates_v10 RENAME TO playbook_candidates;
+ALTER TABLE playbook_candidates_v11 RENAME TO playbook_candidates;
 CREATE UNIQUE INDEX playbook_candidates_one_open ON playbook_candidates (content_key) WHERE status = 'to_review';
 CREATE TRIGGER playbook_candidates_no_delete BEFORE DELETE ON playbook_candidates BEGIN SELECT RAISE(ABORT, 'playbook candidates are withdrawn, not deleted'); END;
 `;

@@ -406,6 +406,20 @@ describe('substituteTargets and rankSubstitutions (TE6, TE-A4, TE-A5)', () => {
     expect(rank({ exercises: [...EXERCISES.values(), ...many] })).toHaveLength(8);
   });
 
+  it('B5: pain on the exercise being swapped holds the substitute today; without it the same history goes up', () => {
+    // 30 kg each × 10, 10, 10: the top of 6–10, so the rule would go up.
+    const ready = [history(905, 7, rack, kg(30, 'per_hand'), [10, 10, 10])];
+    const free = substituteTargets(benchSlot, exOf(DB_BENCH), ready, ctxAt(MAIN_GYM));
+    expect(free.plan?.[0]?.planned.load).toEqual(kg(32.5, 'per_hand'));
+    const held = substituteTargets(benchSlot, exOf(DB_BENCH), ready, ctxAt(MAIN_GYM, { sessionPain: { active: true, reportedAtUtc: at(-60).utc } }));
+    expect(held.plan?.map((x) => x.planned.load)).toEqual([kg(30, 'per_hand'), kg(30, 'per_hand'), kg(30, 'per_hand')]);
+    // Reps aren't pushed past last time either: the range stays, nothing is added.
+    expect(held.plan?.[0]?.planned.reps?.max).toBeLessThanOrEqual(10);
+    expect(held.plan).toHaveLength(3);
+    const rows = rank({ histories: new Map([...histories, [DB_BENCH, ready]]), sessionPain: { active: true, reportedAtUtc: at(-60).utc } });
+    expect(plain(rows.find((r) => r.exerciseId === DB_BENCH)?.targetText)).toBe('30 kg each × 6–10');
+  });
+
   it('Swap again lists the planned exercise first as `planned`, with the plan’s own target', () => {
     const rows = rank({ excludeExerciseIds: new Set([DB_BENCH, RAISE, PUSHDOWN, FLY, INCLINE]), planned: { targetText: `102.5${NB}kg × 6–8`, spoken: 'target 102.5 kilograms, 6 to 8 reps' } });
     expect(rows[0]).toMatchObject({ name: 'Bench press', planned: true, targetText: `102.5${NB}kg × 6–8` });

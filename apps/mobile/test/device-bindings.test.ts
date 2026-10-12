@@ -13,6 +13,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const keychain = new Map<string, string>();
 let stuck: string | null = null;
+/** `deleteItemAsync` rejects for this key (e.g. a Keychain error on one item). */
+let throwing: string | null = null;
 vi.mock('expo-secure-store', () => ({
   WHEN_UNLOCKED_THIS_DEVICE_ONLY: 1,
   getItemAsync: (key: string) => Promise.resolve(keychain.get(key) ?? null),
@@ -21,6 +23,7 @@ vi.mock('expo-secure-store', () => ({
     return Promise.resolve();
   },
   deleteItemAsync: (key: string) => {
+    if (key === throwing) return Promise.reject(new Error('keychain error'));
     if (key !== stuck) keychain.delete(key);
     return Promise.resolve();
   },
@@ -109,6 +112,7 @@ beforeEach(() => {
   keychain.clear();
   disk.clear();
   stuck = null;
+  throwing = null;
   picked = null;
   failRead = false;
   failDelete = false;
@@ -128,6 +132,15 @@ describe('wipeKeychain', () => {
     await keychainVault.saveTokens('{"v":1}');
     stuck = 'fizz.chatgpt.tokens';
     await expect(wipeKeychain()).rejects.toThrow(/still in the Keychain/);
+  });
+
+  it('keeps going past an item that fails to delete, then reports it (review your-data-r6 N1)', async () => {
+    await keychainVault.saveRegistration('{"v":1}');
+    await keychainVault.saveTokens('{"v":1}');
+    throwing = KEYCHAIN_KEYS[0] ?? null;
+    await expect(wipeKeychain()).rejects.toThrow(/1 coach sign-in item\(s\) are still in the Keychain/);
+    // Every later item was still deleted.
+    for (const key of KEYCHAIN_KEYS.slice(1)) expect(keychain.has(key)).toBe(false);
   });
 });
 

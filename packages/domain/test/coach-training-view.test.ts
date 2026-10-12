@@ -193,4 +193,23 @@ describe('builtInTargetsView (get_progression_targets)', () => {
     expect(v).toMatchObject({ domain: 'Your data', label: 'built-in rule (fallback), for comparison', basedOn: { date: '2026-10-08', title: 'Push A' }, painFlag: 'pain flag on: no increases' });
     expect(v.sets[0]?.target.replace(/\u00a0/g, ' ')).toBe('100 kg × 6–8 reps');
   });
+
+  it('each working set names its target RPE as the next workout would plan it: the plan’s, else the rule’s; none on warm-ups; Ben’s one-day override never carries (merge with target RPE)', () => {
+    const set = (setType: 'warmup' | 'working' | 'drop', rpe: number | null, rpeOverride?: number) => ({
+      setType,
+      planned: { load: kg(100), reps: { min: 6, max: 8 }, durationS: null, rpe, rir: null, ...(rpeOverride === undefined ? {} : { rpeOverride }) },
+    });
+    const v = builtInTargetsView({
+      exerciseName: 'Bench press',
+      convention: 'total',
+      planned: [set('warmup', null), set('working', null), set('working', 7.5), set('working', null, 9.5), set('drop', null)],
+      basedOn: null,
+      painFlag: null,
+      ruleRpe: 8.5,
+    });
+    expect(v.sets.map((x) => x.rpe)).toEqual([null, 8.5, 7.5, 8.5, null]);
+    expect(v.sets.map((x) => x.target.replace(/\u00a0/g, ' '))).toEqual(['100 kg × 6–8 reps', '100 kg × 6–8 reps @ RPE 8.5', '100 kg × 6–8 reps @ RPE 7.5', '100 kg × 6–8 reps @ RPE 8.5', '100 kg × 6–8 reps']);
+    // Rule target unknown: no RPE invented (rule 6).
+    expect(builtInTargetsView({ exerciseName: 'Bench press', convention: 'total', planned: [set('working', null)], basedOn: null, painFlag: null }).sets[0]?.rpe).toBeNull();
+  });
 });

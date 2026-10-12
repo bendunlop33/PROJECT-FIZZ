@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { timingBudget } from './large-history';
 import {
   buildPlateSetup,
   convertMass,
@@ -295,7 +296,7 @@ describe('memoised achievable loads (review M8)', () => {
       isLoadAchievable(kg(100 + (i % 50)), eq);
     }
     // Generous bound so slow CI machines don't flake; without the cache this takes seconds.
-    expect(performance.now() - t0).toBeLessThan(500);
+    expect(performance.now() - t0).toBeLessThan(timingBudget(500));
   });
 });
 

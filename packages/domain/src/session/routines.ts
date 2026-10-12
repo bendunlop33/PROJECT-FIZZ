@@ -21,6 +21,7 @@ import { blockSets, partRootOf, partsOf } from './gym-switch';
 import { boundWords, convertedWords, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { RepeatNote } from './repeat';
 import type { SnapResult } from './snap';
+import { isInHistory } from './deletion';
 
 /**
  * Routines (premium-feel §2.6, routines.md). Pure rules: building a routine
@@ -81,7 +82,7 @@ export interface RoutineFromSessionInput {
  */
 export function routineFromSession(input: RoutineFromSessionInput): Routine | null {
   const src = input.source;
-  if (src.session.status !== 'finished' || src.session.source !== 'manual') return null;
+  if (!isInHistory(src.session) || src.session.source !== 'manual') return null;
   const exercises: RoutineExercise[] = [];
   // An exercise split across gyms (GS6) is one block of rows: one entry, its parts' done sets in execution order.
   const roots = [...src.exercises].sort((a, b) => a.order - b.order).filter((sx) => partRootOf(src.exercises, sx.id) === sx.id);

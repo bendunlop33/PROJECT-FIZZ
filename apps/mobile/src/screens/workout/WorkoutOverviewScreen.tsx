@@ -17,7 +17,7 @@ import type { RootStackParams } from '../../navigation/types';
 import type { DraftWrite, OverviewData, OverviewTarget, SessionList, SessionPickerRow, SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, Icon, OverviewRow, PrimaryButton, ReorderRow, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast } from '../../ui';
+import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, Icon, OverviewRow, PrimaryButton, ReorderRow, StatStrip, StatusLine, SubstituteRowView, SupersetBracket, TextButton, Toast } from '../../ui';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
   checkInRow,
@@ -47,6 +47,7 @@ import {
   reorderUnits,
   rowCustomActions,
   showsWhy,
+  swapPainLine,
   swapSubtitle,
   swapTap,
   TODAY_EDITS_COPY,
@@ -931,6 +932,14 @@ export function WorkoutOverviewScreen() {
               }
             : undefined
         }
+        onHistory={
+          r.hasHistory
+            ? () => {
+                // This gym's equipment for the row, else a series at this gym, else the most used (review progress-B S4).
+                navigation.navigate('ExerciseProgress', { exerciseId: r.exerciseId, name: r.name, ...(r.equipmentId === null ? {} : { equipmentId: r.equipmentId }), ...(gymId ? { gymId } : {}) });
+              }
+            : undefined
+        }
         onStillHurts={
           flagId
             ? () => {
@@ -1116,6 +1125,7 @@ export function WorkoutOverviewScreen() {
             }}
           />
         </View>
+        {swap?.sheet && swapPainLine(swap.sheet.painHeld) !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={swapPainLine(swap.sheet.painHeld) ?? ''} /> : null}
         {swap?.sheet && swap.sheet.rows.length > 0 ? (
           <ScrollView>
             <View style={{ alignItems: 'flex-end', paddingBottom: theme.space['1'] }}>

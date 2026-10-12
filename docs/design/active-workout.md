@@ -258,6 +258,14 @@ With the opt-in `Auto-save timed sets` setting (off by default), the result is s
 
 While the work timer runs or is paused, Finish, Delete set and Skip exercise (for this exercise) are refused by the domain (`work_interval_running`). The UI shows why and offers [Stop] (see §4.8). A Stop tapped just after the timer reached 0 simply shows `Log 0:45`; it is never an error.
 
+**As built (developer, 11 Oct).** Decided conservatively where this section left details open:
+- Timed exercises are in the exercise picker (they were hidden). The set card has a `Time` field (seconds, ±5 s, from 0:05) instead of reps. Before Start, the time in the field is what the timer runs (else the target, else 0:30); the primary reads `Start 0:45`.
+- Before Start, a `Log 0:45` text button under the fields logs the time in the field without running the timer (timed on the gym clock, or Start forgotten; review gaps S2). `Start` stays the primary. With nothing typed it logs the planned time, so a stray tap logs a set that wasn't done; `Undo` on the saved toast reverses it. Worth a device check (review gaps r2 N4).
+- While the timer runs, the field is replaced by the countdown (`Work 0:38`) and the primary reads `Stop`. At 0 there is one haptic while the app is on screen and the planned time fills the field; the primary becomes `Log 0:45`. A Stop leaves the time worked (`Log 0:38`).
+- At 0 while the app is in the background or the phone is locked, the workout's one local notification fires: `Time` / `Plank · 0:45` (the same identifier as the rest alert, which a work timer replaces; review gaps S3). Needs a device check like the rest alert.
+- Not built yet: the `Time.` spoken cue (needs the audio-session module), a Live Activity for the work timer, and the opt-in `Auto-save timed sets` setting (backlog §4.1).
+- Next-time targets: the built-in rule has no rule for timed or distance sets, so an added timed exercise starts with one set prefilled from last time (`Add set` copies it). No progression is suggested for them.
+
 ### 2.8 Paused
 
 ```
@@ -507,6 +515,8 @@ A flag is a versioned correction (`correctSet`, audited in `Edit history` as `Se
 
 Pain flags are deterministic guards (coach-memory.md; rule 9). Everything in this section works offline with no AI. Nothing here diagnoses, says a movement is safe, or clears a flag on Ben's behalf.
 
+A mid-workout swap carries the pain: after a flag or a set marked `Pain` on the swapped exercise, the substitute's targets are held for today (B5; exercise-library §2.5).
+
 #### 2.14.1 `May hurt` in the exercise picker
 
 In `Add exercise` (Pick one) and the Swap sheet, an exercise with an active pain flag is tagged `⚠ May hurt`. This replaces `⚠ Pain flagged`. Only exercises the flag covers are tagged; similar movements aren't (coach-memory CM5). The row is never hidden. Tapping it asks first (system action sheet):
@@ -637,6 +647,7 @@ Opened from the `PainFlagNote`, the `Pain` row in `Why?`, or Today's check row. 
 - **Range:** low and high from the 25th and 75th percentiles of the pace samples (±25% on defaults). Only the sheet shows it.
 - **Never used:** check-ins, coach output, or any readiness-style guess.
 - **Returns** `{minutes, lowMinutes, highMinutes, endsAt, finishBy?, overByMinutes?, pace: {source: 'this_workout' | 'recent_workouts' | 'default', secondsPerSet, changeoverSeconds, samples}, plannedRestSeconds, pendingSets, pendingExercises}`. Unit-tested.
+- **One estimator (2026-10-11, backlog §4.1).** `about N min` before Start (Up next, the routine sheet, the overview) and the workout's `Time left` both run `estimatePendingWork` (`time-left.ts`); `duration.ts` only adds the rounding (never `about 0 min` while sets are left).
 
 #### 2.15.3 Time left sheet
 
@@ -825,8 +836,8 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
   - `Add set` calls `addSet` (`add_set`). The new set copies the last set's planned values and rest. Toast `Set 4 added`. If nothing else is active, it becomes the active set.
   - `Swap exercise` (→ the Swap sheet in exercise-library.md §2.5 → `ChangeReviewCard` with scope `Today only`). If Ben approves exercise-library EL4, a swap he picks himself applies at once with Undo (`SwapSlotLine`) instead; coach-suggested swaps keep the card either way.
   - `Machine busy` (calls `setTemporaryAvailability`).
-  - `Notes`.
-  - `Skip exercise` (`skip_exercise`) marks the pending sets skipped; logged sets are untouched. It confirms first because there is no Undo yet: `Skip the 2 remaining sets of Bench press?` [Skip] [Cancel]. Toast `Bench press skipped` (no Undo). Skipped rows stay visible with the Skipped style; `Add set` brings the exercise back.
+  - `Notes` (built 11 Oct, decided conservatively): a sheet with one text field (≤ 500 characters; empty clears) for this exercise in this workout. The note shows as typed under the exercise header (tap to edit). A logged set's note is a `Note` field in Edit set and shows as the set row's caption. Notes are Your data, saved with `set_note` (versioned on the workout, also after Finish); they never change a value, target, rest or the set's version, and nothing reads them as instructions (rule 8). Pending sets have no note field. Showing notes on the Summary and keeping FitNotes comments as notes are not built yet.
+  - `Skip exercise` (`skip_exercise`) marks the pending sets skipped; logged sets are untouched. No confirm (copy D4, accepted 11 Oct): toast `Bench press skipped` [Undo] (`undo_op`). Skipped rows stay visible with the Skipped style; `Add set` also brings the exercise back.
 - **Add exercise:** `+ Add exercise` at the end of the Overview list, and on the All-done and Empty cards. Opens the exercise picker → `addExercise`.
 - **Tap a pending set** (mini list or Overview) to make it the active set (`setActiveSet`). The draft and the Log label update.
 - **Tap a done set** to open the correction sheet:
@@ -848,8 +859,9 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 └────────────────────────────────────────┘
 ```
   - `Save changes` calls `correctSet(setId, patch, expectedVersion)`. The row gets an `Edited` tag. Rest is not touched. A correction never calls the coach and never changes other targets by itself. If the corrected effort or reps meet a trigger, the deterministic check may show a coach **offer** (no AI call until Ben taps `Adjust`).
-  - `Delete set` calls `deleteSet` (`delete_set`, guarded on the set's version). It always confirms: `Delete set 1? It's removed from this workout's totals and history. The edit log keeps a record.` [Delete] [Cancel]. Toast `Set 1 deleted` (no Undo yet; ADR 0003 Open). The set is kept as an audited deleted record and disappears from the mini list, Overview and volume. Pending sets can be deleted the same way from their row's `⋯` in Overview.
+  - `Delete set` calls `deleteSet` (`delete_set`, guarded on the set's version). No confirm (copy D4, accepted 11 Oct): toast `Set 1 deleted` [Undo] (`undo_op`). The set is kept as an audited deleted record and disappears from the mini list, Overview and volume. Pending sets can be deleted the same way from their row's `⋯` in Overview.
   - The sheet also shows the Side control for unilateral exercises (§2.9).
+  - (11 Oct, built) `Set type` is a single-select chip row (`Warm-up` `Working` `Top set` `Back-off` `Drop set`, the stored type selected) instead of the `▾` picker in the sketch: one tap, no extra sheet. It saves with `Save changes` in the same `correct_set` (`setType`), marks the row `Edited`, and has the correction's Undo. Changing a set to `Warm-up` takes it out of progression and records like any warm-up.
   - (2026-10-09) **Exclusion chips** (§2.13): `Spotted`, `Pain`, `Form broke`, `Other equipment`, multi-select, none selected by default. They save with `Save changes` as part of the same `correctSet` patch (`exclusions`). Selecting `Pain` adds the line `⚠ This also puts a pain flag on Bench press: no increases until you clear it.`; when there's no active flag on the movement, the same commit sets one (`setPainFlag`, source `workout`) and the pain card appears with its Undo (AW7). Unticking `Pain` later doesn't clear the movement flag; that stays an explicit `Clear flag` (§2.14.3). At AX1+ the chips wrap two per row.
 
 ### 4.5 View toggle
@@ -920,9 +932,11 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
 | Action | Undo |
 |---|---|
 | Log set | Toast `Undo` (8 s). Guarded on the set's own version (`expectedSetVersion`) and on it still being the latest commit by commit order, so an effort-chip tap during rest doesn't block it. For a single-side log it also removes the pending other-side set (§2.9). After that: the done row → Delete set |
-| Correction | Not yet (ADR 0003 Open). Correct it again; the edit history keeps every version |
-| Delete set | Not yet (ADR 0003 Open), so it always confirms. The deleted record is kept, so Undo can be added later |
-| Skip exercise | Not yet (ADR 0003 Open), so it confirms. `Add set` brings the exercise back |
+| Correction | Toast `Set 2 updated` [Undo] (`undo_op`, 11 Oct). Refused once the set changed again (`Can't undo: it changed since`); the edit history keeps every version. A save that changed exclusion chips shows the chips' toast and Undo instead (§2.13) |
+| Delete set | No confirm (copy D4). Toast `Set 2 deleted` [Undo] (`undo_op`): the audited record goes back to what it was. Refused once it changed since |
+| Skip exercise | No confirm (copy D4). Toast `Bench press skipped` [Undo] (`undo_op`): the skipped sets go back to pending. `Add set` also brings the exercise back |
+| Remove exercise (nothing logged) | Toast `Face pull removed` [Undo] (`undo_op`) |
+| Swap exercise (mid-workout) | Toast `Bench press → Dumbbell press` [Undo] (`undo_op`): pending sets go back; a set already logged on the substitute stays |
 | Applied proposal (swap, gym) | Toast `Undo` → `undoAction` (or a compensating proposal if it isn't safe) |
 | Gym switch (2026-10-09) | Toast `Undo` (8 s) restores the gym, exercise rows, pending targets and drafts exactly. If anything changed since, it shows `Can't undo: your workout changed since the switch.` and a `Switch back to Main Gym` card, which restores the planned loads. Undoing a coach change or a swap after a switch fits the restored target to the current gym (gym-switch §4.5) |
 | Coach adjustment | `Undo` on the banner; later, `Why?` on a coach-marked set → `Undo this change`, or exercise `⋯` → `Undo coach change`. `undoAction` restores only sets still pending (coach-adjustments §4.4) |

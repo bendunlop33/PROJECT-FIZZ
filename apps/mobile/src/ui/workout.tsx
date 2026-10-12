@@ -398,12 +398,29 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
 }
 
 /** `UndoToast` (§9.10): above the action bar, never over it. */
-export function Toast({ icon = 'checkmark.circle.fill', text, action, onAction }: { icon?: SymbolName; text: string; action?: string; onAction?: () => void }) {
+export function Toast({
+  icon = 'checkmark.circle.fill',
+  text,
+  action,
+  onAction,
+  onDismiss,
+  showClose = false,
+}: {
+  icon?: SymbolName;
+  text: string;
+  action?: string;
+  onAction?: () => void;
+  /** Dismisses the toast: the VoiceOver escape gesture, and the close button when `showClose`. */
+  onDismiss?: () => void;
+  /** A close button (an Undo toast that stays until dismissed while VoiceOver is on; delete-workouts review S3). */
+  showClose?: boolean;
+}) {
   const theme = useTheme();
   return (
     // Toast in: timing.fast with a small rise; at once under Reduce Motion.
     <FadeIn motion={theme.a11y.reduceMotion ? null : { durationMs: theme.timing.fast, delayMs: 0, risePt: 6 }}>
     <View
+      {...(onDismiss ? { onAccessibilityEscape: onDismiss } : {})}
       accessibilityLiveRegion="polite"
       style={{
         marginHorizontal: theme.space['4'],
@@ -429,6 +446,11 @@ export function Toast({ icon = 'checkmark.circle.fill', text, action, onAction }
           <AppText variant="headline" color="accent">
             {action}
           </AppText>
+        </Pressable>
+      ) : null}
+      {onDismiss && showClose ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDismiss} style={{ minHeight: theme.target.min.height, minWidth: theme.target.min.width, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="xmark" color="text.secondary" />
         </Pressable>
       ) : null}
     </View>

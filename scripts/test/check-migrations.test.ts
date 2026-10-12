@@ -23,7 +23,7 @@ describe('releaseBlockers', () => {
     ]);
     const r = migrationReport(releaseBlockers(list));
     expect(r.ok).toBe(false);
-    expect(r.lines.join('\n')).toMatch(/8, then 9, then 10/);
+    expect(r.lines.join('\n')).toMatch(/No \.ipa may ship a placeholder migration/);
   });
 
   it('a reserved name blocks even with SQL in it', () => {
@@ -41,7 +41,7 @@ describe('releaseBlockers', () => {
 
 describe('scripts/check-migrations.ts', () => {
   it('exits non-zero exactly when the list has a blocker', () => {
-    const r = spawnSync(process.execPath, ['--import', './packages/catalogue/scripts/ts-hooks.ts', 'scripts/check-migrations.ts'], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, ['--experimental-transform-types', '--import', './packages/catalogue/scripts/ts-hooks.ts', 'scripts/check-migrations.ts'], { encoding: 'utf8' });
     expect(r.status).toBe(releaseBlockers(MIGRATIONS).length === 0 ? 0 : 1);
   });
 

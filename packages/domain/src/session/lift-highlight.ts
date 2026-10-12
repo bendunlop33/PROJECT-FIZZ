@@ -2,6 +2,7 @@ import type { SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schema
 import { formatNumber, valuesText } from '../display';
 import { isSetCountable } from '../exclusions';
 import { toMs } from '../time';
+import { isInHistory } from './deletion';
 
 /**
  * Today's lift highlight (D-Today: `BENCH PRESS`, `100 kg × 8`,
@@ -55,7 +56,7 @@ function eligible(ex: SessionExercise): boolean {
 
 export function buildLiftHighlight(sessions: readonly SessionAggregate[], maxPoints = LIFT_HIGHLIGHT_MAX_POINTS): LiftHighlight | null {
   const logged = sessions
-    .filter((a) => a.session.status === 'finished' && a.session.source !== 'import')
+    .filter((a) => isInHistory(a.session) && a.session.source !== 'import')
     .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
   // The newest workout with a counted weighted set: one whose sets were all marked as not counting is passed over.
   const liftOf = (a: SessionAggregate) => [...a.exercises].sort((x, y) => x.order - y.order).find((ex) => eligible(ex) && weightedTop(a, ex) !== null);

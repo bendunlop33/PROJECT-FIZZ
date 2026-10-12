@@ -160,6 +160,14 @@ export function noSwapsText(gymName: string): string {
   return `No swaps at ${gymName}.`;
 }
 
+/**
+ * Pain on the exercise being swapped: every substitute's target is held
+ * today (B5, rule 9). The existing pain wording; null otherwise.
+ */
+export function swapPainLine(painHeld: boolean): string | null {
+  return painHeld ? 'Pain flag · no increases' : null;
+}
+
 /** The sheet's subtitle: `Main gym · today`. */
 export function swapSubtitle(gymName: string): string {
   return `${gymName} · today`;

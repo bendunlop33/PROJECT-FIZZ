@@ -152,14 +152,17 @@ export function prefillDraft(
   const fallback = lastHere ?? lastThere;
 
   const p = set.planned;
-  if (p.load !== null || p.reps !== null || p.durationS !== null) {
+  const plannedDistance = p.distanceM ?? null;
+  if (p.load !== null || p.reps !== null || p.durationS !== null || plannedDistance !== null) {
     // Target fields win; any field the target leaves open falls back to history.
+    const distanceM = plannedDistance ?? fallback?.distanceM ?? null;
     return {
       values: {
         ...EMPTY,
         load: p.load ?? fallback?.load ?? null,
         reps: p.reps?.max ?? fallback?.reps ?? null,
         durationS: p.durationS ?? fallback?.durationS ?? null,
+        ...(distanceM !== null ? { distanceM } : {}),
       },
       source: 'target',
     };

@@ -482,7 +482,8 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
     delete tables.import_rows;
     delete tables.exercise_aliases;
     // …and nothing from schema 4 (coach).
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts', 'purged_sessions']) Reflect.deleteProperty(tables, t);
+    for (const row of tables.sessions ?? []) for (const c of ['deleted_at_utc', 'deleted_at_tz', 'deleted_by_op_id', 'purge_after_utc']) Reflect.deleteProperty(row, c);
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.check_in;
@@ -496,18 +497,28 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.gym_changes;
       // …or schema 7 (today's edits).
       delete copy.today_edits;
+      // …or schema 8 (Progress's Count it).
+      delete copy.duration_confirmed_at_utc;
+      delete copy.duration_confirmed_at_tz;
       return copy;
     });
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
       const copy = { ...row };
       delete copy.continues_from_id;
       delete copy.equipment_version;
+      // …or schema 10 (workout gaps).
+      delete copy.note;
+      delete copy.removed;
+      delete copy.swapped_from;
+      delete copy.measures_distance;
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {
       const copy = { ...row };
       delete copy.exclusions;
       delete copy.skipped_by;
+      delete copy.note;
+      delete copy.actual_distance_m;
       return copy;
     });
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
@@ -601,21 +612,32 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
       delete copy.gym_changes;
       // …or schema 7 (today's edits).
       delete copy.today_edits;
+      // …or schema 8 (Progress's Count it).
+      delete copy.duration_confirmed_at_utc;
+      delete copy.duration_confirmed_at_tz;
       return copy;
     });
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
       const copy = { ...row };
       delete copy.continues_from_id;
       delete copy.equipment_version;
+      // …or schema 10 (workout gaps).
+      delete copy.note;
+      delete copy.removed;
+      delete copy.swapped_from;
+      delete copy.measures_distance;
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {
       const copy = { ...row };
       delete copy.skipped_by;
+      delete copy.note;
+      delete copy.actual_distance_m;
       return copy;
     });
     // Nor coach tables (schema 6).
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts', 'purged_sessions']) Reflect.deleteProperty(tables, t);
+    for (const row of tables.sessions) for (const c of ['deleted_at_utc', 'deleted_at_tz', 'deleted_by_op_id', 'purge_after_utc']) Reflect.deleteProperty(row, c);
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const v4 = resign({ ...file, schemaVersion: 4, tables, counts });
 

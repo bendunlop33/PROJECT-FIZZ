@@ -128,21 +128,16 @@ export function lazyBundledCatalogue(): LazyCatalogue {
 
 export type ExerciseRowResult =
   | { ok: true; exercise: Exercise }
-  | { ok: false; reason: 'distance_not_loggable'; message: string };
+  /** Kept for callers: no catalogue measurement is unloggable since distance sets exist (ADR 0011, 11 Oct). */
+  | { ok: false; reason: 'not_loggable'; message: string };
 
 /**
  * The `Exercise` row for a catalogue entry. `at` is the catalogue release
  * time used for both audit timestamps, so reseeding the same release is a
- * no-op. Distance exercises have no row until sets can record a distance.
+ * no-op. Distance exercises get a row since sets can record metres (ADR 0011,
+ * 11 Oct).
  */
 export function toExerciseRow(entry: CatalogueEntry, at: UtcTimestamp): ExerciseRowResult {
-  if (entry.measurement === 'distance') {
-    return {
-      ok: false,
-      reason: 'distance_not_loggable',
-      message: `${entry.name} is measured by distance, which sets can't record yet.`,
-    };
-  }
   const exercise: Exercise = {
     id: catalogueExerciseId(entry.key),
     ownerId: null,

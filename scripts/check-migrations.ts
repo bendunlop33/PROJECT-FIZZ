@@ -7,7 +7,10 @@
  * the real migration for good. The iOS build workflow runs this before
  * spending macOS minutes.
  *
- *   node --import ./packages/catalogue/scripts/ts-hooks.ts scripts/check-migrations.ts
+ *   node --experimental-transform-types --import ./packages/catalogue/scripts/ts-hooks.ts scripts/check-migrations.ts
+ *
+ * (`--experimental-transform-types`: migration 8 declares a class with
+ * parameter properties, which plain type stripping refuses.)
  */
 import { pathToFileURL } from 'node:url';
 
@@ -19,7 +22,7 @@ export function migrationReport(blockers: ReturnType<typeof releaseBlockers>): {
     ok: false,
     lines: [
       ...blockers.map((b) => `Migration ${String(b.version)} (${b.name}) is ${b.why === 'reserved' ? 'a reserved placeholder' : 'empty'}.`),
-      'Merge the branches that own these versions first (8, then 9, then 10). No .ipa may ship a placeholder migration.',
+      'Merge the branches that own these versions first. No .ipa may ship a placeholder migration.',
     ],
   };
 }

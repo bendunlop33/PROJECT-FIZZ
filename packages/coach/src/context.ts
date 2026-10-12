@@ -1,4 +1,4 @@
-import { buildExecutionOrder, deriveId, stableStringify } from '@fizz/domain';
+import { buildExecutionOrder, deriveId, stableStringify, targetRpeOf } from '@fizz/domain';
 import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetValues } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
@@ -49,6 +49,12 @@ export interface CoachContextInput {
   /** The workout in context: the active one, or the finished one for a summary turn. */
   session: SessionAggregate | null;
   gymName: string | null;
+  /**
+   * The built-in rule's target RPE per session exercise (`ruleTargetRpes`),
+   * so each set's target RPE in context is the one offers are judged
+   * against. Absent: Ben's, the coach's or the plan's only.
+   */
+  ruleTargetRpe?: Readonly<Record<string, number>>;
   painFlags: readonly PainFlag[];
   /** The session's check-in, when Ben answered one. */
   checkIn: CheckIn | null;
@@ -76,16 +82,31 @@ export interface CoachContextInput {
    * available, so the coach never invents trends (rule 6; review S4).
    */
   trainingHistoryAvailable?: boolean;
+  /**
+   * The screen Ben opened the coach from, when it frames his question
+   * (progress.md §2.1, §4.4): Progress and its window, so "how many times did
+   * I train legs this month?" has the right dates. A frame only: it carries
+   * no numbers, and history stays `not available` until the read tools exist.
+   */
+  openedFrom?: OpenedFrom;
 }
+
+export type OpenedFrom =
+  | { screen: 'progress'; window: { days: number; from: string; to: string } }
+  /** Exercise detail (progress.md slice B): the exercise, its series and the chart's range. A frame only, no numbers. */
+  | { screen: 'progress_exercise'; exercise: string; series: string; range: { from: string; to: string } };
 
 export interface SessionSetView {
   setId: string;
   number: number;
   type: string;
   status: string;
-  target: CoachTarget & { rpe: number | null };
-  actual: (CoachTarget & { rpe: number | null }) | null;
+  target: SetValuesView;
+  actual: SetValuesView | null;
 }
+
+/** A set's values as the coach sees them; time and distance only when the set has them (timed and distance sets). */
+export type SetValuesView = CoachTarget & { rpe: number | null; durationS?: number; distanceM?: number };
 
 export interface SessionExerciseView {
   sessionExerciseId: string;
@@ -112,6 +133,8 @@ export interface YourData {
   /** Ben's words, quoted; never an instruction. */
   checkIn: { score: number; reasons: readonly string[]; quote: string | null } | null;
   memories: { text: string; savedOn: string }[];
+  /** Where the sheet was opened (a frame for the question, not data). */
+  openedFrom?: OpenedFrom;
   /** Summary turn only: the built-in rule's next targets (playbook 7-F), for comparison. */
   builtInNext?: { exerciseId: string; name: string; target: CoachTarget; sets: number }[];
 }
@@ -145,20 +168,28 @@ export interface CoachContext {
   messagesSent: number;
 }
 
-function targetOf(v: { load: CoachTarget['load']; reps: CoachTarget['reps']; rpe: number | null }): CoachTarget & { rpe: number | null } {
-  return { load: v.load, reps: v.reps, rpe: v.rpe };
+const timeAndDistance = (v: { durationS: number | null; distanceM?: number | null | undefined }) => ({
+  ...(v.durationS !== null ? { durationS: v.durationS } : {}),
+  ...(v.distanceM !== undefined && v.distanceM !== null ? { distanceM: v.distanceM } : {}),
+});
+
+function targetOf(v: { load: CoachTarget['load']; reps: CoachTarget['reps']; rpe: number | null; durationS: number | null; distanceM?: number | null | undefined }): SetValuesView {
+  return { load: v.load, reps: v.reps, rpe: v.rpe, ...timeAndDistance(v) };
 }
 
-function actualOf(a: SetValues | null): (CoachTarget & { rpe: number | null }) | null {
+/** A sled push reads `40 kg × 20 m`, a plank `0:45`, never `40 kg × —` (review gaps N2). */
+function actualOf(a: SetValues | null): SetValuesView | null {
   if (a === null) return null;
-  return { load: a.load, reps: a.reps === null ? null : { min: a.reps, max: a.reps }, rpe: a.rpe };
+  return { load: a.load, reps: a.reps === null ? null : { min: a.reps, max: a.reps }, rpe: a.rpe, ...timeAndDistance(a) };
 }
 
 /** `get_active_session` data: the workout as the model sees it, read fresh (versions move as sets are logged). */
-export function workoutView(session: SessionAggregate, gymName: string | null): NonNullable<YourData['workout']> {
+export function workoutView(session: SessionAggregate, gymName: string | null, ruleTargetRpe?: Readonly<Record<string, number>>): NonNullable<YourData['workout']> {
   const order = buildExecutionOrder(session.exercises, session.sets);
   const pos = new Map(order.map((id, i) => [id, i]));
+  // A row removed from the workout (added by mistake, or emptied by a swap) isn't part of it.
   const exercises = [...session.exercises]
+    .filter((ex) => ex.removed === undefined)
     .sort((a, b) => a.order - b.order)
     .map((ex) => {
       const sets = session.sets
@@ -177,7 +208,8 @@ export function workoutView(session: SessionAggregate, gymName: string | null): 
           number: i + 1,
           type: s.setType,
           status: s.status,
-          target: targetOf(s.planned),
+          // The target RPE the set is judged against (Ben's, the coach's, the plan's, else the built-in rule's).
+          target: targetOf({ ...s.planned, rpe: targetRpeOf(s, ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null }),
           actual: actualOf(s.actual),
         })),
       };
@@ -196,12 +228,17 @@ export function workoutView(session: SessionAggregate, gymName: string | null): 
 export function buildYourData(input: CoachContextInput): YourData {
   return {
     turnKind: input.turnKind,
-    workout: input.session === null ? null : workoutView(input.session, input.gymName),
+    workout: input.session === null ? null : workoutView(input.session, input.gymName, input.ruleTargetRpe),
     painFlags: input.painFlags.filter((f) => f.status === 'active').map((f) => ({ exercise: f.exerciseName, area: f.area, since: f.reportedAt.utc.slice(0, 10) })),
     checkIn: input.checkIn === null ? null : { score: input.checkIn.score, reasons: input.checkIn.reasons, quote: input.checkIn.note ?? null },
     memories: input.memories.filter((m) => m.status === 'active').map((m) => ({ text: m.text, savedOn: m.createdAtUtc.slice(0, 10) })),
     ...(input.builtInNext === undefined ? {} : { builtInNext: input.builtInNext.map((b) => ({ ...b })) }),
+    ...(input.openedFrom === undefined ? {} : { openedFrom: copyOpenedFrom(input.openedFrom) }),
   };
+}
+
+function copyOpenedFrom(o: OpenedFrom): OpenedFrom {
+  return o.screen === 'progress' ? { screen: 'progress', window: { ...o.window } } : { screen: 'progress_exercise', exercise: o.exercise, series: o.series, range: { ...o.range } };
 }
 
 /** Coaching knowledge only: approved rules and catalogue cues. Nothing personal is read here. */
@@ -317,6 +354,10 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
   if (y.painFlags.length > 0) yourData.push({ label: 'Pain flags', detail: y.painFlags.map((f) => f.exercise).join(', ') });
   if (y.checkIn !== null) yourData.push({ label: 'Check-in', detail: y.checkIn.quote === null ? `${String(y.checkIn.score)}/5` : `${String(y.checkIn.score)}/5, “${y.checkIn.quote}”` });
   if (y.memories.length > 0) yourData.push({ label: 'Memories', detail: plural(y.memories.length, 'memory', 'memories') });
+  if (y.openedFrom !== undefined) {
+    const o = y.openedFrom;
+    yourData.push({ label: 'Opened from', detail: o.screen === 'progress' ? `Progress · last ${String(o.window.days)} days` : `Progress · ${o.exercise} · ${o.series}` });
+  }
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });
   // Read through tools when a question needs them (minimal by default), still Your data.
   if (!ctx.notAvailable.includes(NO_TRAINING_HISTORY)) yourData.push({ label: 'Past workouts and gym equipment', detail: 'read when needed' });

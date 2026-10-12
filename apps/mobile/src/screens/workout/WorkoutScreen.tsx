@@ -17,7 +17,7 @@ import { formatDayMonth, formatTime } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openGymFromWorkout, popToToday, replaceWithSummary } from '../../navigation/actions';
 import type { RootStackParams, WorkoutToastParam } from '../../navigation/types';
-import type { ActiveWorkoutData, GymChoice, RecordContext } from '../../services/workout-services';
+import type { ActiveWorkoutData, GymChoice, RecordContext, SwapSheet } from '../../services/workout-services';
 import { NameSheet } from '../routines/NameSheet';
 import { firstTime, useDataChanged, useLaunchInfo, useServices } from '../../shell/context';
 import { logHaptic, swapMotion, TIMING, useTheme } from '../../theme';
@@ -46,10 +46,13 @@ import {
   type SymbolName,
 } from '../../ui';
 import { CoachSlot } from './CoachSlot';
+import { MidSwapSheet } from './MidSwapSheet';
+import { NoteSheet } from './NoteSheet';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
+import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
-import { exerciseMenu } from '../../workout/exercise-menu';
-import { shouldCueRestEnd } from '../../workout/cues';
+import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu } from '../../workout/exercise-menu';
+import { shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
 import { logRefusal, reloadsAfterRefusal } from '../../workout/log-refusal';
@@ -60,6 +63,8 @@ import { TargetWhyLink, TargetWhyPanel } from './TargetWhyPanel';
 import { TimeLeftLine, TimeLeftSheet } from './TimeLeftSheet';
 import { answerStillHurts, confirmClearFlag, type PainToast } from '../../workout/pain-actions';
 import { editorSlot, enterAction, readyHoldUntil, type EntryField } from '../../workout/rest-fold';
+import { UNDO_TOAST } from '../../workout/undo-op';
+import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 
 /**
@@ -107,6 +112,10 @@ export function WorkoutScreen() {
   const renameOp = useRef(newUuid());
   const [renameAfter] = useState(() => createAfterDismiss());
   const [restEditor, setRestEditor] = useState(false);
+  /** `Notes` on the focused exercise (§4.4). */
+  const [noteFor, setNoteFor] = useState<{ sessionExerciseId: string; exerciseName: string; note: string | null } | null>(null);
+  /** The mid-workout Swap sheet (EL4): the row it swaps and its candidates. */
+  const [swap, setSwap] = useState<{ sessionExerciseId: string; exerciseName: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
   const { prefs } = useDevicePrefs();
@@ -127,11 +136,19 @@ export function WorkoutScreen() {
   const whyEvent = useCallback((e: WhyEvent) => {
     setWhy((cur) => whyPanelReducer(cur, e));
   }, []);
+  // The workout as it is now, for action sheets that dispatch after Ben picks: their version is read
+  // when the command is sent, not when the sheet opened (review target-rpe N4 / r2 N6).
+  const latestData = useRef(data);
+  useEffect(() => {
+    latestData.current = data;
+  }, [data]);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
   const loadRef = useRef<TextInput>(null);
   const repsRef = useRef<TextInput>(null);
+  const timeRef = useRef<TextInput>(null);
+  const distanceRef = useRef<TextInput>(null);
   /** During rest the next set is folded away (D-Rest); this opens it. Reset when the set changes. */
   const [showNextSet, setShowNextSet] = useState(false);
   /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
@@ -139,7 +156,7 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (focusRequest === null) return;
     const id = requestAnimationFrame(() => {
-      (focusRequest.field === 'load' ? loadRef : repsRef).current?.focus();
+      (focusRequest.field === 'load' ? loadRef : focusRequest.field === 'time' ? timeRef : focusRequest.field === 'distance' ? distanceRef : repsRef).current?.focus();
       setFocusRequest(null);
     });
     return () => {
@@ -246,7 +263,7 @@ export function WorkoutScreen() {
       }, 4000);
     }
     const handed = route.params?.toast;
-    if (handed && handed.kind !== 'exclusion' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
+    if (handed && handed.kind !== 'exclusion' && handed.kind !== 'undo_op' && firstTime(`toast:${sid}:${handed.kind}:${handed.text}`)) showHanded(handed);
   }, [data === 'loading' || data === null ? null : data.aggregate.session.id]);
 
   // The correction sheet hands its exclusion toast back on return (§2.13); each save shows once.
@@ -254,6 +271,33 @@ export function WorkoutScreen() {
   useEffect(() => {
     if (handedExclusion && firstTime(`toast:exclusion:${handedExclusion.key}`)) showHanded(handedExclusion);
   }, [handedExclusion?.key]);
+  // …and its `Set 2 deleted` / `Set 2 updated` [Undo] (copy D4), once per operation.
+  const handedUndo = route.params?.toast?.kind === 'undo_op' ? route.params.toast : null;
+  useEffect(() => {
+    if (handedUndo && firstTime(`toast:undo_op:${handedUndo.targetOpId}`)) showHanded(handedUndo);
+  }, [handedUndo?.targetOpId]);
+
+  /**
+   * A toast with `Undo` for an operation that applied at once (copy D4):
+   * delete set, skip, a correction, remove or swap. Undo is `undo_op`,
+   * refused when anything it touched changed since (rule 5).
+   */
+  function toastUndoOp(text: string, targetOpId: string, sessionId: string) {
+    showToast({
+      icon: 'info.circle',
+      text,
+      action: 'Undo',
+      onAction: () => {
+        setToast(null);
+        void services.workout.undoOp({ sessionId, targetOpId }).then((r) => {
+          changed();
+          void reload();
+          if (r.ok) haptic('undo');
+          else showToast({ icon: 'info.circle', text: r.message });
+        });
+      },
+    });
+  }
 
   function showHanded(t: WorkoutToastParam) {
     switch (t.kind) {
@@ -283,6 +327,9 @@ export function WorkoutScreen() {
         break;
       case 'info':
         showToast({ icon: 'info.circle', text: t.text });
+        break;
+      case 'undo_op':
+        if (data !== 'loading' && data !== null) toastUndoOp(t.text, t.targetOpId, data.aggregate.session.id);
         break;
       case 'exclusion':
         showToast({
@@ -414,6 +461,23 @@ export function WorkoutScreen() {
     };
   }, [edits, data, services]);
 
+  // Work timer end in the foreground (§2.7): one haptic at 0, then a tick saves the planned time as the draft.
+  useEffect(() => {
+    if (data === 'loading' || data === null) return;
+    const wi = data.aggregate.workInterval;
+    if (wi?.status !== 'running' || data.aggregate.session.pause !== null) return;
+    const deadline = toMs(wi.deadlineUtc);
+    if (now < deadline) return;
+    const key = `work:${wi.setId}:${wi.deadlineUtc}`;
+    if (shouldCueRestEnd(key, deadline, now, played.current)) haptic('restEnd');
+    played.current.add(key);
+    if (tickedFor.current === key) return;
+    tickedFor.current = key;
+    void services.workout.dispatch(data.aggregate.session.id, { type: 'tick', at: services.now() }).then((r) => {
+      if (r.ok) setData((cur) => (cur === 'loading' || cur === null ? cur : withCommandResult(cur, cur, r.aggregate)));
+    });
+  }, [now, data, services]);
+
   // Rest end in the foreground: persist the expiry (tick), one haptic, never late (rest-state §4.7).
   useEffect(() => {
     if (data === 'loading' || data === null) return;
@@ -460,6 +524,16 @@ export function WorkoutScreen() {
     },
     data === 'loading' || data === null ? null : data.aggregate,
   );
+  // F4: back from correcting a logged set's reps or effort: the offer check runs on the saved correction.
+  const corrected = route.params?.corrected;
+  const afterLog = coach.afterLog;
+  useEffect(() => {
+    if (corrected === undefined || !firstTime(`corrected:${corrected.key}`)) return;
+    void reload().then((d) => {
+      const id = correctedSetToCheck(corrected, d?.aggregate);
+      if (d && id !== null) afterLog(d.aggregate, id);
+    });
+  }, [corrected?.key]);
   // An unanswered offer goes when the rest ends (§3.2).
   const restRunning = data !== 'loading' && data !== null && data.aggregate.restTimer?.status === 'running';
   const clearOffer = coach.clearOffer;
@@ -493,6 +567,11 @@ export function WorkoutScreen() {
   function close() {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.dispatch(popToToday());
+  }
+
+  /** A refused menu action: the shortest honest line (the screen reloads on a stale version). */
+  function refusalText(code: string, message: string): string {
+    return code === 'stale_version' || code === 'write_conflict' ? 'The workout changed. Try again.' : message;
   }
 
   /** Run one command; adopt the committed state; never throw. */
@@ -656,42 +735,104 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null);
+    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
       if (action === 'undo_coach' && f.coachActionId !== null) coach.undo(f.coachActionId);
+      if (action === 'target_rpe') pickTargetRpe(f);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
+      if (action === 'swap') void openSwap(f);
+      if (action === 'notes') setNoteFor({ sessionExerciseId: f.sessionExerciseId, exerciseName: f.exerciseName, note: f.note });
+      if (action === 'undo_swap' && f.swappedFrom !== null) {
+        const targetOpId = f.swappedFrom.opId;
+        void services.workout.undoOp({ sessionId: session.id, targetOpId }).then((r) => {
+          changed();
+          void reload();
+          if (r.ok) haptic('undo');
+          else showToast({ icon: 'info.circle', text: r.message });
+        });
+      }
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'delete_set') {
-        Alert.alert(`Delete set ${String(f.setNumber)}?`, 'It’s removed from this workout. The edit log keeps a record.', [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => {
-              void run({ type: 'delete_set', at: services.now(), opId: newUuid(), setId: f.setId, expectedSetVersion: f.setVersion }).then((r) => {
-                if (r.ok) showToast({ icon: 'info.circle', text: `Set ${String(f.setNumber)} deleted` });
-              });
-            },
-          },
-        ]);
+        // No confirm (copy D4): it applies at once with Undo.
+        const opId = newUuid();
+        void run({ type: 'delete_set', at: services.now(), opId, setId: f.setId, expectedSetVersion: f.setVersion }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(f.setNumber), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+        });
+      }
+      if (action === 'remove_exercise') {
+        // Added by mistake, nothing logged (exercise-library §4.6): no confirm, Undo on the toast.
+        const opId = newUuid();
+        void run({ type: 'remove_exercise', at: services.now(), opId, sessionExerciseId: f.sessionExerciseId, expectedVersion: session.version }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.removed(f.exerciseName), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+        });
       }
       if (action === 'skip_exercise') {
-        const pending = view?.exercises.find((e) => e.sessionExerciseId === f.sessionExerciseId)?.pendingSets ?? 0;
-        Alert.alert(`Skip the ${String(pending)} remaining ${pending === 1 ? 'set' : 'sets'} of ${f.exerciseName}?`, undefined, [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Skip',
-            style: 'destructive',
-            onPress: () => {
-              void run({ type: 'skip_exercise', at: services.now(), opId: newUuid(), sessionExerciseId: f.sessionExerciseId }).then((r) => {
-                if (r.ok) showToast({ icon: 'info.circle', text: `${f.exerciseName} skipped` });
-              });
-            },
-          },
-        ]);
+        const opId = newUuid();
+        void run({ type: 'skip_exercise', at: services.now(), opId, sessionExerciseId: f.sessionExerciseId }).then((r) => {
+          if (r.ok) toastUndoOp(UNDO_TOAST.skipped(f.exerciseName), opId, session.id);
+          else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
+        });
       }
+    });
+  }
+
+  async function openSwap(f: FocusView) {
+    setSwap({ sessionExerciseId: f.sessionExerciseId, exerciseName: f.exerciseName, sheet: null, loading: true });
+    const sheet = await services.workout.swapCandidates(session.id, f.sessionExerciseId).catch(() => null);
+    setSwap((cur) => (cur?.sessionExerciseId === f.sessionExerciseId ? { ...cur, sheet, loading: false } : cur));
+  }
+
+  /** A pick applies at once with Undo (B3); a flagged one asks first (EL9). */
+  function pickSwap(row: SwapSheet['rows'][number]) {
+    const target = swap;
+    if (target === null) return;
+    const go = async () => {
+      setSwap(null);
+      const opId = newUuid();
+      const r = await services.workout.swapExercise({ sessionId: session.id, sessionExerciseId: target.sessionExerciseId, exerciseId: row.exerciseId, opId });
+      if (!r.ok) {
+        showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : `Not swapped: ${r.error.message}` });
+        void reload();
+        return;
+      }
+      setData((cur) => withCommandResult(cur, loaded, r.aggregate));
+      changed();
+      haptic('step');
+      toastUndoOp(UNDO_TOAST.swapped(r.fromName ?? target.exerciseName, r.toName ?? row.name), opId, session.id);
+      // `Last` lines are per exercise: read the new row's history.
+      void reload();
+    };
+    if (row.mayHurt !== null) {
+      const c = row.mayHurt.confirm;
+      Alert.alert(c.title, c.message, [
+        { text: c.cancel, style: 'cancel' },
+        { text: c.confirm, onPress: () => void go() },
+      ]);
+      return;
+    }
+    void go();
+  }
+
+  /** Ben's own target RPE (CHANGELOG 2026-10-11): a value, then this set, this exercise or today. Saved on the workout (versioned). */
+  function pickTargetRpe(f: FocusView) {
+    const values = targetRpeMenu(f.targetRpe);
+    ActionSheetIOS.showActionSheetWithOptions({ title: 'Target RPE', options: values.options, cancelButtonIndex: values.cancelButtonIndex }, (i) => {
+      const rpe = values.valueAt(i);
+      if (rpe === undefined) return;
+      const scopes = targetRpeScopeMenu(f.setId, f.sessionExerciseId);
+      ActionSheetIOS.showActionSheetWithOptions({ options: scopes.options, cancelButtonIndex: scopes.cancelButtonIndex }, (j) => {
+        const scope = scopes.scopeAt(j);
+        if (scope === null) return;
+        const current = latestData.current;
+        const expectedVersion = current !== null && current !== 'loading' && current.aggregate.session.id === session.id ? current.aggregate.session.version : session.version;
+        void run({ type: 'set_target_rpe', at: services.now(), opId: newUuid(), expectedVersion, scope, rpe }).then((r) => {
+          if (!r.ok) showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message });
+        });
+      });
     });
   }
 
@@ -974,6 +1115,26 @@ export function WorkoutScreen() {
       }
       case 'resume':
         return { label: 'Resume', onPress: () => void pauseOrResume() };
+      case 'start_work': {
+        // A timed set (§2.7): the work timer runs; its end fills the time to log.
+        const durationS = view.primary.durationS;
+        return {
+          label: view.primary.label,
+          onPress: () => {
+            if (!focus) return;
+            haptic('step');
+            void run({ type: 'start_work_interval', at: services.now(), opId: newUuid(), setId: focus.setId, durationS });
+          },
+        };
+      }
+      case 'stop_work':
+        return {
+          label: 'Stop',
+          onPress: () => {
+            if (!focus) return;
+            void run({ type: 'stop_work_interval', at: services.now(), opId: newUuid(), setId: focus.setId });
+          },
+        };
       case 'add_exercise':
         return {
           label: 'Add exercise',
@@ -1160,7 +1321,7 @@ export function WorkoutScreen() {
         />
       </View>
 
-      <AdjustRow coach={coach} sessionId={session.id} onPain={() => void painFromAdjust(focus)} />
+      <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} />
       {/* In Ready the slot sits under the header; offers only ever show during rest (§2.3). */}
       {!resting && coach.slot !== null && coach.slot.kind !== 'offer' ? <CoachSlot>{<CoachSlotContent coach={coach} />}</CoachSlot> : null}
 
@@ -1171,6 +1332,20 @@ export function WorkoutScreen() {
           text={rest.skipped ? 'Ready' : `Rest over · rested ${formatDuration(rest.restedMs / 1000)}`}
           detail={rest.skipped || rest.endedAtUtc === null ? null : `Ended ${formatTime(toMs(rest.endedAtUtc), tz)}`}
         />
+      ) : null}
+
+      {focus.note !== null ? (
+        // Ben's own note on this exercise today: shown as typed; tap to edit.
+        <LinkLine
+          accessibilityLabel={`Note: ${focus.note}. Tap to edit.`}
+          onPress={() => {
+            setNoteFor({ sessionExerciseId: focus.sessionExerciseId, exerciseName: focus.exerciseName, note: focus.note });
+          }}
+        >
+          <AppText variant="callout" color="text.secondary" numberOfLines={3}>
+            {focus.note}
+          </AppText>
+        </LinkLine>
       ) : null}
 
       {focus.warmUp && !hiddenWarmUps.includes(focus.sessionExerciseId) ? (
@@ -1207,6 +1382,41 @@ export function WorkoutScreen() {
               }}
             />
           ) : null}
+          {focus.workTimer && (focus.workTimer.state === 'running' || focus.workTimer.state === 'paused') ? (
+            <View style={{ flex: 1, alignItems: 'flex-start', gap: theme.space['1'] }}>
+              <Eyebrow>Work</Eyebrow>
+              <TimerNumeral text={workTimerText(focus.workTimer.remainingMs)} accessibilityLabel={`Work time left ${workTimerText(focus.workTimer.remainingMs)}`} />
+            </View>
+          ) : focus.duration ? (
+            <NumberStepper
+              inputRef={timeRef}
+              flex={1}
+              label="Time"
+              unit="s"
+              value={focus.duration.value}
+              decimals={false}
+              down={focus.duration.down}
+              up={focus.duration.up}
+              onChange={(v) => {
+                setValues({ ...focus.draft, durationS: v === null ? null : Math.max(0, Math.round(v)) });
+              }}
+            />
+          ) : null}
+          {focus.distance ? (
+            <NumberStepper
+              inputRef={distanceRef}
+              flex={1}
+              label="Distance"
+              unit="m"
+              value={focus.distance.value}
+              decimals
+              down={focus.distance.down}
+              up={focus.distance.up}
+              onChange={(v) => {
+                setValues({ ...focus.draft, distanceM: v === null ? null : Math.max(0, v) });
+              }}
+            />
+          ) : null}
           {focus.reps ? (
             <NumberStepper
               inputRef={repsRef}
@@ -1223,6 +1433,12 @@ export function WorkoutScreen() {
             />
           ) : null}
         </View>
+        {/* A timed set before Start: the time in the field can be logged without the timer (review gaps S2). */}
+        {view.primary.kind === 'start_work' && view.primary.logLabel !== null ? (
+          <View style={{ alignItems: 'flex-start' }}>
+            <TextButton label={view.primary.logLabel} onPress={() => void log()} />
+          </View>
+        ) : null}
         {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. `Why?` ends the line (§2.12). */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
           <View style={{ flex: 1 }}>
@@ -1346,7 +1562,7 @@ export function WorkoutScreen() {
               number={r.number}
               badges={r.badges}
               text={r.text}
-              caption={r.gymCaption}
+              caption={setRowCaption(r.gymCaption, r.note)}
               edited={r.edited}
               last={i === focus.rows.length - 1}
               exclusionTag={r.exclusionTag}
@@ -1499,6 +1715,36 @@ export function WorkoutScreen() {
       {/* No Talk button until voice exists (critic T3): no dead control in the best thumb spot. */}
       <ActionBar primary={primary} guard={guard || logBlockedBySwitch(switchCard)} />
 
+      <NoteSheet
+        visible={noteFor !== null}
+        title={`Notes · ${noteFor?.exerciseName ?? ''}`}
+        initial={noteFor?.note ?? null}
+        onClose={() => {
+          setNoteFor(null);
+        }}
+        onSave={async (note) => {
+          if (noteFor === null) return null;
+          const r = await services.workout.setNote({ sessionId: session.id, target: { kind: 'exercise', sessionExerciseId: noteFor.sessionExerciseId }, note, expectedVersion: session.version, opId: newUuid() });
+          if (!r.ok) {
+            void reload();
+            return refusalText(r.error.code, r.error.message);
+          }
+          setData((cur) => withCommandResult(cur, loaded, r.aggregate));
+          changed();
+          setNoteFor(null);
+          return null;
+        }}
+      />
+      <MidSwapSheet
+        visible={swap !== null}
+        exerciseName={swap?.exerciseName ?? ''}
+        sheet={swap?.sheet ?? null}
+        loading={swap?.loading ?? false}
+        onPick={pickSwap}
+        onClose={() => {
+          setSwap(null);
+        }}
+      />
       <FinishSheet
         aggregate={loaded.aggregate}
         visible={finishOpen}

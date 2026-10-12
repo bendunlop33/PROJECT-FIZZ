@@ -1,24 +1,33 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { buildSetEditView, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
-import type { SessionAggregate, SetExclusion, SetValues } from '@fizz/schemas';
+import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
+import type { SetExclusion, SetType, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
+import type { ActiveWorkoutData } from '../../services/workout-services';
 import { formatTime } from '../../format/dates';
+import { returnToWorkout } from '../../navigation/actions';
+import { targetRpeChips } from '../../workout/exercise-menu';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
+import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton } from '../../ui';
+import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
 
 /**
  * Correction sheet for a logged set (active-workout §4.4): `correct_set`
  * guarded on the set's own version; the rest timer is never touched.
- * `Delete set` always confirms and keeps an audited record (no Undo yet).
- * The exclusion chips (§2.13) save in the same `correct_set`; the toast with
- * Undo is handed back to the workout screen.
+ * `Delete set` deletes at once and keeps an audited record; the workout
+ * screen shows `Set 2 deleted` [Undo] (copy D4). A value change hands back
+ * `Set 2 updated` [Undo]. The exclusion chips (§2.13) save in the same
+ * `correct_set`; their toast (with its own Undo) wins when they changed.
+ * In an active workout, `Target RPE` sets Ben's own target for this set in
+ * the same `correct_set` (CHANGELOG 2026-10-11 (b) "Edit set"); the offer
+ * check runs on it again (F4).
  */
 export function EditSetScreen() {
   const theme = useTheme();
@@ -27,25 +36,32 @@ export function EditSetScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { sessionId, setId } = useRoute<RouteProp<RootStackParams, 'EditSet'>>().params;
-  const [aggregate, setAggregate] = useState<SessionAggregate | null>(null);
+  const [data, setData] = useState<ActiveWorkoutData | null>(null);
+  const aggregate = data?.aggregate ?? null;
   const [values, setValues] = useState<SetValues | null>(null);
   const [exclusions, setExclusions] = useState<SetExclusion[] | null>(null);
+  const [setType, setSetType] = useState<SetType | null>(null);
+  /** Ben's target RPE as edited: a value, null cleared, undefined untouched. */
+  const [targetRpe, setTargetRpe] = useState<number | null | undefined>(undefined);
   const [effortScale, setEffortScale] = useState<'rpe' | 'rir' | 'off'>('rpe');
   const [error, setError] = useState<string | null>(null);
   const [saveOp] = useState(newUuid);
   const [deleteOp] = useState(newUuid);
+  const [noteOp] = useState(newUuid);
+  /** The note field as typed; null = untouched (shows the stored note). */
+  const [noteText, setNoteText] = useState<string | null>(null);
 
   async function load() {
     const d = await services.workout.load(sessionId);
     if (!d) return;
-    setAggregate(d.aggregate);
+    setData(d);
     setEffortScale(d.effortScale);
   }
   useEffect(() => {
     void load();
   }, [sessionId, setId]);
 
-  const view = aggregate ? buildSetEditView(aggregate, setId, values, exclusions) : null;
+  const view = data ? services.workout.editView(data, setId, values, exclusions, targetRpe, setType) : null;
   if (!aggregate || !view) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'] }}>
@@ -58,26 +74,65 @@ export function EditSetScreen() {
   const tz = aggregate.session.startedAt.tz;
   const current = view.values;
 
+  const storedNote = aggregate.sets.find((s) => s.id === setId)?.note ?? null;
+  const noteEdited = noteText !== null && noteChanged(storedNote, noteText);
+
   async function save() {
-    if (!view) return;
-    const actual = aggregate?.sets.find((s) => s.id === setId)?.actual;
+    if (!view || !aggregate) return;
+    const actual = aggregate.sets.find((s) => s.id === setId)?.actual;
     if (!actual) return;
-    const patch: Partial<SetValues> & { exclusions?: SetExclusion[] } = {};
-    for (const k of ['load', 'reps', 'rpe', 'rir'] as const) {
-      if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
+    let sessionVersion = aggregate.session.version;
+    let corrected: Extract<Awaited<ReturnType<typeof services.workout.correctSet>>, { ok: true }> | null = null;
+    const patch: Parameters<typeof services.workout.correctSet>[0]['patch'] = {};
+    if (view.changed) {
+      for (const k of ['load', 'reps', 'durationS', 'distanceM', 'rpe', 'rir'] as const) {
+        if (JSON.stringify(current[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: current[k] });
+      }
+      if (exclusions !== null) patch.exclusions = view.exclusions;
+      if (view.setType.changed) patch.setType = view.setType.value;
+      if (view.targetRpe?.changed === true) patch.targetRpe = view.targetRpe.override;
+      const r = await services.workout.correctSet({ sessionId, setId, expectedSetVersion: view.setVersion, patch, opId: saveOp });
+      if (!r.ok) {
+        setError(r.message);
+        setValues(null);
+        setExclusions(null);
+        setSetType(null);
+        setTargetRpe(undefined);
+        void load();
+        return;
+      }
+      corrected = r;
+      sessionVersion = r.aggregate.session.version;
     }
-    if (exclusions !== null) patch.exclusions = view.exclusions;
-    const r = await services.workout.correctSet({ sessionId, setId, expectedSetVersion: view.setVersion, patch, opId: saveOp });
-    if (!r.ok) {
-      setError(r.message);
-      setValues(null);
-      setExclusions(null);
-      void load();
-      return;
+    // The set's note (Your data) is its own versioned write; it never changes a value.
+    let noteFailed = false;
+    if (noteEdited) {
+      const n = await services.workout.setNote({ sessionId, target: { kind: 'set', setId }, note: noteValue(noteText), expectedVersion: sessionVersion, opId: noteOp });
+      if (!n.ok) {
+        // No correction saved: stay and say so. A correction saved: hand over its Undo toast anyway (review gaps N7).
+        if (corrected === null || corrected.duplicate) {
+          setError(n.error.code === 'stale_version' ? 'The workout changed. Try again.' : n.error.message);
+          void load();
+          return;
+        }
+        noteFailed = true;
+      }
     }
     changed();
-    if (r.toast !== null && r.undo !== null) {
-      navigation.navigate('Workout', { toast: { kind: 'exclusion', key: saveOp, text: r.toast, undo: { sessionId, ...r.undo } } });
+    const withNote = (text: string) => correctionToastText(text, noteFailed);
+    // F4: a corrected rep or effort count, the set's target RPE or its type, runs the same offer check as a log (rule T: every logged working set).
+    const effortOrReps = corrected !== null && (patch.reps !== undefined || patch.rpe !== undefined || patch.rir !== undefined || patch.targetRpe !== undefined || patch.setType !== undefined);
+    const check = effortOrReps ? { corrected: { setId, key: saveOp } } : {};
+    if (corrected !== null && corrected.toast !== null && corrected.undo !== null) {
+      navigation.dispatch(returnToWorkout({ toast: { kind: 'exclusion', key: saveOp, text: withNote(corrected.toast), undo: { sessionId, ...corrected.undo } }, ...check }));
+      return;
+    }
+    if (corrected !== null && !corrected.duplicate) {
+      navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: withNote(UNDO_TOAST.corrected(view.setNumber)), targetOpId: saveOp }, ...check }));
+      return;
+    }
+    if (effortOrReps) {
+      navigation.dispatch(returnToWorkout(check));
       return;
     }
     navigation.goBack();
@@ -88,26 +143,17 @@ export function EditSetScreen() {
     setExclusions(now.includes(x) ? now.filter((y) => y !== x) : [...now, x]);
   }
 
-  function remove() {
+  async function remove() {
     if (!view) return;
-    Alert.alert(`Delete set ${String(view.setNumber)}?`, 'It’s removed from this workout’s totals and history. The edit log keeps a record.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void services.workout.dispatch(sessionId, { type: 'delete_set', at: services.now(), opId: deleteOp, setId, expectedSetVersion: view.setVersion }).then((r) => {
-            if (!r.ok) {
-              setError(r.error.message);
-              void load();
-              return;
-            }
-            changed();
-            navigation.goBack();
-          });
-        },
-      },
-    ]);
+    // No confirm (copy D4): the workout screen offers Undo.
+    const r = await services.workout.dispatch(sessionId, { type: 'delete_set', at: services.now(), opId: deleteOp, setId, expectedSetVersion: view.setVersion });
+    if (!r.ok) {
+      setError(r.error.message);
+      void load();
+      return;
+    }
+    changed();
+    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.deleted(view.setNumber), targetOpId: deleteOp } }));
   }
 
   return (
@@ -131,6 +177,34 @@ export function EditSetScreen() {
               up={view.loadField.up}
               onChange={(v) => {
                 setValues({ ...current, load: v === null ? null : { value: v, unit: ex.unit, convention: ex.loadConvention } });
+              }}
+            />
+          ) : null}
+          {view.duration ? (
+            <NumberStepper
+              onSurface
+              label="Time"
+              unit="s"
+              value={view.duration.value}
+              decimals={false}
+              down={view.duration.down}
+              up={view.duration.up}
+              onChange={(v) => {
+                setValues({ ...current, durationS: v === null ? null : Math.max(0, Math.round(v)) });
+              }}
+            />
+          ) : null}
+          {view.distance ? (
+            <NumberStepper
+              onSurface
+              label="Distance"
+              unit="m"
+              value={view.distance.value}
+              decimals
+              down={view.distance.down}
+              up={view.distance.up}
+              onChange={(v) => {
+                setValues({ ...current, distanceM: v === null ? null : Math.max(0, v) });
               }}
             />
           ) : null}
@@ -171,6 +245,42 @@ export function EditSetScreen() {
             </ChipRow>
           </View>
         ) : null}
+        {view.targetRpe ? (
+          <View style={{ gap: theme.space['1'] }}>
+            <AppText variant="label" color="text.secondary">
+              Target RPE
+            </AppText>
+            <ChipRow>
+              {targetRpeChips(view.targetRpe).map((c) => (
+                <Chip
+                  key={c.key}
+                  label={c.label}
+                  selected={c.selected}
+                  onPress={() => {
+                    setTargetRpe(c.value);
+                  }}
+                />
+              ))}
+            </ChipRow>
+          </View>
+        ) : null}
+        <View style={{ gap: theme.space['2'] }}>
+          <AppText variant="label" color="text.secondary">
+            Set type
+          </AppText>
+          <ChipRow>
+            {view.setType.choices.map((c) => (
+              <Chip
+                key={c.type}
+                label={c.label}
+                selected={c.selected}
+                onPress={() => {
+                  setSetType(c.type);
+                }}
+              />
+            ))}
+          </ChipRow>
+        </View>
         <View style={{ gap: theme.space['2'] }}>
           <AppText variant="label" color="text.secondary" accessibilityRole="header">
             {EXCLUSION_HEADING}
@@ -182,11 +292,23 @@ export function EditSetScreen() {
           </ChipRow>
           {view.painLine ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={view.painLine} /> : null}
         </View>
+        <View style={{ gap: theme.space['2'] }}>
+          <AppText variant="label" color="text.secondary">
+            Note
+          </AppText>
+          <TextField
+            accessibilityLabel="Note"
+            value={noteText ?? storedNote ?? ''}
+            onChangeText={setNoteText}
+            multiline
+            maxLength={NOTE_MAX}
+          />
+        </View>
         <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText>
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
-        <PrimaryButton label="Save changes" disabled={!view.changed} onPress={() => void save()} />
+        <PrimaryButton label="Save changes" disabled={!view.changed && !noteEdited} onPress={() => void save()} />
         <View style={{ height: theme.space['8'] }} />
-        <DangerTextButton label="Delete set" onPress={remove} />
+        <DangerTextButton label="Delete set" onPress={() => void remove()} />
       </ScrollView>
     </View>
   );

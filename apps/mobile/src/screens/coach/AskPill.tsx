@@ -6,9 +6,10 @@ import { AppText, Icon } from '../../ui';
 /**
  * `Ask` (design-system §9.8, coach-sheet §1): bottom-trailing, opens the
  * coach sheet with this page's context. Always one word; the sheet says
- * whether the coach can answer.
+ * whether the coach can answer. `bottom`: distance from the bottom of its
+ * container (default `space4`); raise it above a toast drawn there.
  */
-export function AskPill({ onPress }: { onPress: () => void }) {
+export function AskPill({ onPress, bottom }: { onPress: () => void; bottom?: number }) {
   const theme = useTheme();
   return (
     <Pressable
@@ -18,7 +19,7 @@ export function AskPill({ onPress }: { onPress: () => void }) {
       style={({ pressed }) => ({
         position: 'absolute',
         right: theme.components.screenMargin,
-        bottom: theme.space['4'],
+        bottom: bottom ?? theme.space['4'],
         minHeight: 44,
         flexDirection: 'row',
         alignItems: 'center',

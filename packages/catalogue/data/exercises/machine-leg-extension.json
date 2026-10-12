@@ -3,7 +3,7 @@
   "key": "machine-leg-extension",
   "tier": "basic",
   "name": "Leg extension",
-  "aliases": ["Machine leg extension", "Leg extensions", "Quad extension", "Seated leg extension", "Knee extension machine"],
+  "aliases": ["Machine leg extension", "Leg extensions", "Quad extension", "Seated leg extension", "Knee extension machine", "Leg extension machine"],
   "family": "leg_extension",
   "movementPattern": "squat",
   "mechanic": "isolation",

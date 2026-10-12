@@ -38,6 +38,7 @@ Ben hasn't answered D1, D2 or D4. The PM asked for these defaults so the copy wo
 | D2 | **Pain safety text vs minimal copy.** The check-in pain step shows two paragraphs. | **Keep a short professional line and the red-flag line, both visible; drop `The coach can't diagnose`.** Rule 9 governs coach behaviour, so the UI doesn't need to say it. See C5 and C6. *Ben may still overrule this.* |
 | D3 | **Data-loss warning (SideStore re-sign).** `Copies on this phone are lost if GymSmarter is deleted or re-signed…` explains how things work, but losing data is a real risk on free signing. | Keep it as one line, once on Setup step 3 and once on Data & backup: `Lost if the app is deleted or signed with another Apple ID. Save a copy to Files.` Keep "another Apple ID": the weekly SideStore refresh also re-signs the app and loses nothing, so a bare "re-signed" would be false and alarming. |
 | D4 | **Deleting a logged set has no Undo.** | **Leave the delete-set alerts as they are in this pass** (A8). No Undo work now. The `The edit log keeps a record.` line stays because it is the only sign the set is recoverable (rule 2). Revisit if `Set N deleted` gets an Undo. |
+| D4 (11 Oct) | **Answered: Undo instead of a confirm.** | Built: delete set, skip exercise and corrections apply at once with `Set N deleted` / `Bench press skipped` / `Set N updated` [Undo]. The alerts and the `edit log` line are gone (A8 done). |
 
 ## 3. Today (priority)
 
