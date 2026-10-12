@@ -56,7 +56,12 @@ export interface CoachTiming {
   firstEventMs: number;
   /** `timing.coachStreamStall`: between events. */
   stallMs: number;
+  /** The whole turn, every step included (workout-builder BD13, `timing.coachBuildTimeout`: 60 s). Absent: no cap. */
+  totalMs?: number;
 }
+
+/** `timing.coachBuildTimeout` (workout-builder BD13): a whole workout is a bigger answer than a reply. */
+export const COACH_BUILD_TIMEOUT_MS = 60_000;
 
 export const DEFAULT_COACH_TIMING: CoachTiming = { firstEventMs: 20_000, stallMs: 20_000 };
 
@@ -261,6 +266,8 @@ export async function runModelStep(
   timing: CoachTiming,
   outer: AbortSignal | undefined,
   hooks: { onFirstEvent?: () => void; onReplyDelta?: (delta: string) => void } = {},
+  /** Wall-clock deadline for the whole turn (ms since epoch); past it the step times out. */
+  deadlineMs: number | null = null,
 ): Promise<StepOutcome> {
   const controller = new AbortController();
   const onOuter = (): void => {
@@ -276,7 +283,8 @@ export async function runModelStep(
   try {
     for (;;) {
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const limit = first ? timing.firstEventMs : timing.stallMs;
+      const step = first ? timing.firstEventMs : timing.stallMs;
+      const limit = deadlineMs === null ? step : Math.max(0, Math.min(step, deadlineMs - Date.now()));
       const timeout = new Promise<'timeout'>((resolve) => {
         timer = setTimeout(() => {
           resolve('timeout');
@@ -437,6 +445,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     req.onProgress?.({ kind: 'tool', line });
   };
   let replyStream = new ReplyMessageStream();
+  const deadlineMs = timing.totalMs === undefined ? null : Date.now() + timing.totalMs;
 
   for (let step = 0; ; step += 1) {
     if (step >= MAX_MODEL_STEPS) {
@@ -451,7 +460,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
         const fresh = stream.push(delta);
         if (fresh !== '') emit(filter.push(fresh));
       },
-    });
+    }, deadlineMs);
     if (out.kind === 'error') {
       error = out.error;
       break;

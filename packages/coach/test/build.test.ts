@@ -248,6 +248,28 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
     await store.close();
   });
 
+  it('BD13 / WB23: a build that keeps streaming past the whole-build cap times out; nothing is stored', async () => {
+    const store = await memoryStore();
+    const model = {
+      requests: 0,
+      async *stream(request: { signal?: AbortSignal }) {
+        this.requests += 1;
+        for (;;) {
+          if (request.signal?.aborted === true) return;
+          await new Promise((r) => setTimeout(r, 30));
+          yield { type: 'heartbeat' as const };
+        }
+      },
+    };
+    const p = { ...ports(store, model as never, executors(store)), timing: { firstEventMs: 200, stallMs: 200, totalMs: 300 } };
+    const started = Date.now();
+    const result = await runCoachTurn(request({ input: words('build me a push workout'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }), p);
+    expect(result).toMatchObject({ status: 'failed', error: 'timeout', cards: [] });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(await store.repos.workoutDrafts.listByOwner(OWNER)).toEqual([]);
+    await store.close();
+  });
+
   it('WB20 / BD15: "start it" and "save it" get the fixed line and no model call', async () => {
     const store = await memoryStore();
     const model = new ScriptedCoachModel([]);

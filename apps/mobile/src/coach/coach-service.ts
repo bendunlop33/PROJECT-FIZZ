@@ -35,6 +35,8 @@ import {
   createTrainingReadExecutors,
   createStructuralExecutors,
   createBuildExecutor,
+  COACH_BUILD_TIMEOUT_MS,
+  DEFAULT_COACH_TIMING,
   classifyBenRequest,
   requestHas,
   revisesDraft,
@@ -884,7 +886,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },
-        { model, store: coachStore(), executors, now: deps.now, newId: deps.newId },
+        // A build turn has the whole-build cap (BD13) on top of the first-event and stall timeouts.
+        { model, store: coachStore(), executors, now: deps.now, newId: deps.newId, ...(build !== null ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : {}) },
       );
       if (result.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
       else if (result.status === 'completed') lastNetworkFailureMs = null;
