@@ -38,6 +38,8 @@ export interface Harness {
   tmp: Map<string, string>;
   /** `Library/Caches/`. */
   cache: Map<string, string>;
+  /** The latest launch's rest alerts (and Live Activity), so a test can reconcile as Root does on launch and foreground. */
+  restAlerts: ReturnType<typeof createRestAlertController> | null;
   now: () => ZonedTimestamp;
   launch: () => Promise<Extract<StartupOutcome, { kind: 'ready' }>>;
   /** Launch and return whatever startup returned (`interruptedDelete` as Root passes it). */
@@ -106,6 +108,7 @@ export function createHarness(
     documents: new Map(),
     tmp: new Map(),
     cache: new Map(),
+    restAlerts: null,
     now: () => ({ utc: toIso(h.clockMs), tz: TZ }),
     async launch() {
       const o = await h.start();
@@ -170,7 +173,7 @@ export function createHarness(
         newId: h.ids,
         app: { name: 'GymSmarter', version: '0.1.0', build: 'test' },
         locale: 'en-GB',
-        restAlerts: createRestAlertController(notifier, opts.liveActivity ? { liveActivity: createLiveActivityController(opts.liveActivity, { tz: () => TZ }) } : {}),
+        restAlerts: (h.restAlerts = createRestAlertController(notifier, opts.liveActivity ? { liveActivity: createLiveActivityController(opts.liveActivity, { tz: () => TZ }) } : {})),
         ...(opts.coach === undefined ? {} : { coach: opts.coach }),
         dataLedger: opts.ledger ?? {
           read: () => Promise.resolve(ledgerText),

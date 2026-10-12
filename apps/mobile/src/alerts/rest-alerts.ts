@@ -118,9 +118,19 @@ export function createRestAlertController(notifier: NotifierPort, layers: { live
   let current: ScheduledAlert | null = null;
   let lastError: string | null = null;
   let chain: Promise<void> = Promise.resolve();
+  /**
+   * The newest workout state planned from. Reconciles can arrive out of order
+   * (a coach turn's re-read, or the launch/foreground read, landing after a
+   * Log); an older version of the same workout is ignored so it can't cancel
+   * the rest that is running (review ben-bugs S2). A null (restore, no
+   * workout) clears it.
+   */
+  let applied: { sessionId: string; version: number } | null = null;
   return {
     reconcile(state: SessionAggregate | null, nowMs: number): Promise<void> {
       chain = chain.then(async () => {
+        if (state !== null && applied !== null && applied.sessionId === state.session.id && state.session.version < applied.version) return;
+        applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
         const planned = planRestAlert(state, nowMs);
         // After a relaunch nothing is known: cancel by identifier first so a stale alert can't survive.
         const known = current ?? (state ? { identifier: restAlertIdentifier(state.session.id), key: '' } : null);

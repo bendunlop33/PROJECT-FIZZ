@@ -19,6 +19,10 @@ import type { SessionAggregate } from '@fizz/schemas';
  *   activity for the workout in progress (updated to its true state) and ends
  *   any others.
  * - Swiped away by Ben: not started again for that workout this run (§4.2).
+ * - Reconciles can be queued out of order (a coach turn's re-read lands after
+ *   a Log). The last applied (workout, version) is kept and an older version
+ *   of the same workout is ignored, so the Lock Screen never steps back from
+ *   Resting to Ready. A null (restore, no workout) clears it.
  * - It is a capability: missing from the build, refused by iOS or failing,
  *   it is skipped silently and the rest-done notification (always scheduled)
  *   is the alert. Nothing here ever throws into logging (rule 1).
@@ -81,6 +85,8 @@ export function createLiveActivityController(port: LiveActivityPort, opts: { tz:
   let chain: Promise<void> = Promise.resolve();
   let recheck: unknown = null;
   let lastState: SessionAggregate | null = null;
+  /** The newest workout state applied, so an older one arriving late is ignored (review ben-bugs S2). */
+  let applied: { sessionId: string; version: number } | null = null;
 
   const note = (e: unknown) => {
     lastError = e instanceof Error ? e.message : String(e);
@@ -120,6 +126,8 @@ export function createLiveActivityController(port: LiveActivityPort, opts: { tz:
 
   async function apply(state: SessionAggregate | null, nowMs: number): Promise<void> {
     if (!port.available()) return;
+    if (state !== null && applied !== null && applied.sessionId === state.session.id && state.session.version < applied.version) return;
+    applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
     lastState = state;
     const content = state === null ? null : buildLockScreenContent(state, nowMs, opts.tz(state));
     const running = listIds();

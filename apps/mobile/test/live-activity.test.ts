@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { clockText, NBSP, toMs } from '@fizz/domain';
 import { apply, at, BENCH, kg, logCmd, ms, setsFor, startFixture, values } from '@fizz/domain/testing';
+import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { createRestAlertController, type NotifierPort } from '../src/alerts/rest-alerts';
 import { createLiveActivityController, DEADLINE_RECHECK_MS, type ActivityClock, type LiveActivityPort, type WorkoutActivityProps } from '../src/live-activity/controller';
+import type { AppServices } from '../src/services/app-services';
 import { createHarness, logWorkout, setUpGym, TZ, type Harness } from './harness';
 
 /**
@@ -137,6 +139,23 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
     expect(fake.calls).toEqual(['start la-1 resting']);
   });
 
+  it('an older version of the workout arriving late is ignored (review ben-bugs S2); after a null an older one is taken again', async () => {
+    const fake = fakeActivities();
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    const { state: ready } = startFixture();
+    const resting = loggedWarmup();
+    expect(resting.session.version).toBeGreaterThan(ready.session.version);
+    await la.reconcile(resting, ms(31));
+    // A coach turn's re-read (or the launch read) of the earlier version lands after the Log.
+    await la.reconcile(ready, ms(32));
+    expect(fake.only().props).toMatchObject({ state: 'resting', endMs: toMs(resting.restTimer?.deadlineUtc ?? '') });
+    expect(fake.calls).toEqual(['start la-1 resting']);
+    // A restore (null) clears it: the restored data's workout may be an older version of the same one.
+    await la.reconcile(null, ms(40));
+    await la.reconcile(ready, ms(41));
+    expect(fake.only().props.state).toBe('ready');
+  });
+
   it('Skip, +30 s, Pause and Resume replace the content in place; Finish ends it', async () => {
     const fake = fakeActivities();
     const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
@@ -178,7 +197,7 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
     await la.reconcile(discarded, ms(41));
     expect(fake.running.size).toBe(0);
     // A different workout's state arriving while one is shown ends the old one first.
-    await la.reconcile(s, ms(42));
+    await la.reconcile({ ...s, session: { ...s.session, id: 'third-workout' } }, ms(42));
     const other = { ...s, session: { ...s.session, id: 'another-workout' } };
     await la.reconcile(other, ms(43));
     expect(fake.running.size).toBe(1);
@@ -350,5 +369,175 @@ describe('Live Activity through the app services (real SQLite, force-close)', ()
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }] }]);
     expect(fake.running.size).toBe(0);
     expect(fake.calls.filter((c) => c.startsWith('start'))).toHaveLength(1);
+  });
+});
+
+/**
+ * The rest of a workout's life at the services level (review ben-bugs S4):
+ * an older state arriving late, Undo of the last set, a coach change during
+ * rest, and a restore while the activity is showing.
+ */
+describe('Live Activity through the app services: late reads, Undo, coach changes, restore', () => {
+  let h: Harness | null = null;
+  afterEach(async () => {
+    await h?.cleanup();
+    h = null;
+  });
+
+  async function benchWorkout(harness: Harness, s: AppServices, gymId: string) {
+    const started = await s.workout.start({ gymId, opId: 'start-la', checkIn: { kind: 'skipped', atUtc: harness.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    const picks = await s.workout.pickerExercises(sessionId, 'Bench press');
+    const pick = picks.find((p) => p.exercise.name === 'Bench press');
+    if (!pick) throw new Error('no bench');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: harness.ids() });
+    if (!added.ok) throw new Error(added.error.message);
+    await harness.settle(s);
+    return { sessionId, ready: added.aggregate };
+  }
+
+  async function logFirst(harness: Harness, s: AppServices, a: SessionAggregate) {
+    const set = a.sets.filter((x) => x.status === 'pending').sort((x, y) => x.index - y.index)[0];
+    const ex = a.exercises[0];
+    if (!set || !ex) throw new Error('no set');
+    harness.clockMs += 60_000;
+    const logged = await s.workout.dispatch(a.session.id, {
+      type: 'log_set',
+      at: harness.now(),
+      opId: `log:${set.id}:0`,
+      setId: set.id,
+      values: { load: { value: 60, unit: 'kg', convention: ex.loadConvention }, reps: 8, durationS: null, rpe: null, rir: null },
+      restTimerId: harness.ids(),
+    });
+    if (!logged.ok) throw new Error(logged.error.message);
+    await harness.settle(s);
+    return { logged: logged.aggregate, setId: set.id };
+  }
+
+  it('a launch/foreground read or coach re-read of the earlier version, landing after a Log, leaves Resting showing', async () => {
+    const fake = fakeActivities();
+    h = createHarness('2026-10-12T17:00:00.000Z', { liveActivity: fake.port });
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { sessionId } = await benchWorkout(h, s, gymId);
+    const before = (await s.workout.load(sessionId))?.aggregate ?? null; // read at version n (Ready)
+    const { logged } = await logFirst(h, s, before ?? (() => { throw new Error('none'); })());
+    const deadline = toMs(logged.restTimer?.deadlineUtc ?? '');
+    expect(fake.only().props).toMatchObject({ state: 'resting', endMs: deadline });
+
+    await h.restAlerts?.reconcile(before, h.clockMs);
+    expect(fake.only().props).toMatchObject({ state: 'resting', endMs: deadline });
+    expect([...h.pending.values()].map((a) => a.fireAtMs)).toEqual([deadline]);
+  });
+
+  it('Undo of the last set puts the same activity back to Ready with no countdown', async () => {
+    const fake = fakeActivities();
+    h = createHarness('2026-10-12T17:00:00.000Z', { liveActivity: fake.port });
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const { ready } = await benchWorkout(h, s, gymId);
+    const readyLine2 = fake.only().props.line2;
+    const { logged, setId } = await logFirst(h, s, ready);
+    expect(fake.only().props.state).toBe('resting');
+    const setVersion = logged.sets.find((x) => x.id === setId)?.version ?? 0;
+    h.clockMs += 5_000;
+    const undone = await s.workout.dispatch(logged.session.id, { type: 'undo_log', at: h.now(), opId: `undo:${setId}`, setId, expectedSetVersion: setVersion });
+    if (!undone.ok) throw new Error(undone.error.message);
+    await h.settle(s);
+    expect(fake.only().props).toMatchObject({ state: 'ready', startMs: 0, endMs: 0, line2: readyLine2 });
+    expect(fake.calls.filter((c) => c.startsWith('start'))).toHaveLength(1);
+    expect(h.pending.size).toBe(0);
+  });
+
+  it('a restore while the activity shows ends it; the restored workout (an older version) is shown again on the next foreground', async () => {
+    const fake = fakeActivities();
+    h = createHarness('2026-10-12T17:00:00.000Z', { liveActivity: fake.port });
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    h.clockMs += 86_400_000;
+    const { sessionId } = await benchWorkout(h, s, gymId);
+    const made = await s.backups.backUpOnPhone('manual');
+    if (!made.ok) throw new Error(made.error);
+    const text = await s.restore.readOnPhone(made.record.fileName);
+    if (text === null) throw new Error('no backup');
+    h.clockMs += 600_000;
+    const active = await s.sessions.active();
+    if (!active) throw new Error('no workout');
+    expect(await s.sessions.finish(active, 'finish-la')).toMatchObject({ ok: true });
+    await h.settle(s);
+    expect(fake.running.size).toBe(0);
+
+    h.clockMs += 600_000;
+    const p = await s.restore.prepare(text);
+    if (!p.ok) throw new Error('preview failed');
+    expect(await s.restore.restore(text, p.preview.stamp)).toMatchObject({ ok: true, status: 'restored' });
+    // Root's foreground reconcile: the backup's unfinished workout, at a lower version than the one finished above.
+    const restored = await s.sessions.active();
+    expect(restored?.session.id).toBe(sessionId);
+    await h.restAlerts?.reconcile(restored ?? null, h.clockMs);
+    expect(fake.only().props.state).toBe('ready');
+
+    // Undo restore while it shows: ended, nothing left on the Lock Screen.
+    h.clockMs += 60_000;
+    expect(await s.restore.undo()).toEqual({ ok: true });
+    await h.settle(s);
+    expect(fake.running.size).toBe(0);
+    expect(h.pending.size).toBe(0);
+  });
+
+  it('a coach change during rest updates the next target in place; the countdown is unchanged', async () => {
+    const fake = fakeActivities();
+    let model: CoachModelPort = { stream: () => (async function* () {})() };
+    h = createHarness('2026-10-12T17:00:00.000Z', {
+      liveActivity: fake.port,
+      coach: { model: () => model, connection: () => Promise.resolve({ status: 'ok', route: 'chatgpt_plan', email: 'ben@example.com', model: { slug: 'gpt-6.1-sol', displayName: 'GPT-6.1-Sol' } }) },
+    });
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }, { load: 60, reps: 8 }] }]);
+    h.clockMs += 2 * 86_400_000;
+    const started = await s.workout.start({ gymId, opId: 'start-2', checkIn: null, nextOf: first });
+    if (!started.ok) throw new Error(started.error.message);
+    await h.settle(s);
+    const { logged } = await logFirst(h, s, started.aggregate);
+    const before = fake.only().props;
+    expect(before.state).toBe('resting');
+    const callsBefore = fake.calls.length;
+
+    const steps: ((req: ModelRequest) => ModelEvent[])[] = [
+      (req) => {
+        const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+        if (block?.type !== 'message') throw new Error('no context');
+        const w = (JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { workout: { version: number; exercises: { sessionExerciseId: string; sets: { setId: string; status: string }[] }[] } }).workout;
+        const ex = w.exercises[0];
+        const pending = ex?.sets.filter((x) => x.status === 'pending') ?? [];
+        const args = { baseVersion: w.version, exercises: [{ sessionExerciseId: ex?.sessionExerciseId, sets: pending.map((x) => ({ setId: x.setId, target: { load: { value: 52.5, unit: 'kg', convention: 'total' }, reps: null } })), addSet: null, removeSetId: null }], reason: 'Lighter.' };
+        return [{ type: 'tool_call', callId: 'c-adjust', name: 'adjust_pending_sets', arguments: JSON.stringify(args) }, { type: 'completed' }];
+      },
+      () => [{ type: 'tool_call', callId: 'c-reply', name: 'reply', arguments: JSON.stringify({ message: 'Lighter for the rest.', offer: null }) }, { type: 'completed' }],
+    ];
+    let n = 0;
+    model = {
+      async *stream(req: ModelRequest) {
+        const events = steps[n]?.(req) ?? [{ type: 'error' as const, error: 'unavailable' as const }];
+        n += 1;
+        for (const e of events) {
+          await Promise.resolve();
+          yield e;
+        }
+      },
+    };
+    h.clockMs += 10_000;
+    const r = await s.coach.send({ entry: { kind: 'workout', sessionId: logged.session.id }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
+    expect(r.status).toBe('completed');
+    await h.settle(s);
+    const after = fake.only().props;
+    expect(after).toMatchObject({ state: 'resting', startMs: before.startMs, endMs: before.endMs });
+    expect(plain(after.line2)).toContain('52.5 kg');
+    expect(after.line2).not.toBe(before.line2);
+    // Updated in place: no new activity for the coach's change.
+    expect(fake.calls.slice(callsBefore).every((c) => c.startsWith('update la-'))).toBe(true);
   });
 });
