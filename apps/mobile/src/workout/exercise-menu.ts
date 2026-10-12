@@ -84,3 +84,21 @@ export function targetRpeScopeMenu(setId: string, sessionExerciseId: string): { 
     scopeAt: (i) => scopes[i] ?? null,
   };
 }
+
+export interface TargetRpeChip {
+  key: string;
+  label: string;
+  /** The value to pick; null clears Ben's own (back to the coach's, the plan's or the rule's). */
+  value: number | null;
+  selected: boolean;
+}
+
+/**
+ * Edit set's `Target RPE` chips: the same choices as the `⋯` sheet, with
+ * `Default` when Ben has set his own (review target-rpe r2 N3).
+ */
+export function targetRpeChips(current: { target: TargetRpe | null; override: number | null } | null): TargetRpeChip[] {
+  if (current === null) return [];
+  const chips: TargetRpeChip[] = TARGET_RPE_CHOICES.map((n) => ({ key: String(n), label: formatNumber(n), value: n, selected: current.target?.rpe === n }));
+  return current.override === null ? chips : [...chips, { key: 'default', label: 'Default', value: null, selected: false }];
+}

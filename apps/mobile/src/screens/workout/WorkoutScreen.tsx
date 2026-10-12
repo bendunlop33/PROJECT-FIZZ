@@ -128,6 +128,12 @@ export function WorkoutScreen() {
   const whyEvent = useCallback((e: WhyEvent) => {
     setWhy((cur) => whyPanelReducer(cur, e));
   }, []);
+  // The workout as it is now, for action sheets that dispatch after Ben picks: their version is read
+  // when the command is sent, not when the sheet opened (review target-rpe N4 / r2 N6).
+  const latestData = useRef(data);
+  useEffect(() => {
+    latestData.current = data;
+  }, [data]);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
@@ -717,7 +723,9 @@ export function WorkoutScreen() {
       ActionSheetIOS.showActionSheetWithOptions({ options: scopes.options, cancelButtonIndex: scopes.cancelButtonIndex }, (j) => {
         const scope = scopes.scopeAt(j);
         if (scope === null) return;
-        void run({ type: 'set_target_rpe', at: services.now(), opId: newUuid(), expectedVersion: loaded.aggregate.session.version, scope, rpe }).then((r) => {
+        const current = latestData.current;
+        const expectedVersion = current !== null && current !== 'loading' && current.aggregate.session.id === session.id ? current.aggregate.session.version : session.version;
+        void run({ type: 'set_target_rpe', at: services.now(), opId: newUuid(), expectedVersion, scope, rpe }).then((r) => {
           if (!r.ok) showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message });
         });
       });

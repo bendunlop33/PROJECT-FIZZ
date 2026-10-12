@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu } from '../src/workout/exercise-menu';
+import { exerciseMenu, targetRpeChips, targetRpeMenu, targetRpeScopeMenu } from '../src/workout/exercise-menu';
 
 /** Review S3: a tap must run the action written on the row, in both menu shapes. */
 describe('exercise ⋯ menu', () => {
@@ -62,6 +62,17 @@ describe('Target RPE', () => {
     const ben = targetRpeMenu({ rpe: 10, source: 'ben' });
     expect(ben.options.at(-2)).toBe('Default');
     expect(ben.valueAt(ben.options.length - 2)).toBeNull();
+  });
+
+  it('Edit set chips match the sheet: the target in force selected; Default only when Ben set his own (review r2 N3)', () => {
+    expect(targetRpeChips(null)).toEqual([]);
+    const rule = targetRpeChips({ target: { rpe: 8.5, source: 'rule' }, override: null });
+    expect(rule.map((c) => c.label)).toEqual(['6', '6.5', '7', '7.5', '8', '8.5', '9', '9.5', '10']);
+    expect(rule.filter((c) => c.selected).map((c) => c.value)).toEqual([8.5]);
+    const ben = targetRpeChips({ target: { rpe: 10, source: 'ben' }, override: 10 });
+    expect(ben.at(-1)).toEqual({ key: 'default', label: 'Default', value: null, selected: false });
+    // Tapping Ben's value again keeps it (as in the sheet); Default clears it.
+    expect(ben.find((c) => c.value === 10)).toMatchObject({ selected: true, value: 10 });
   });
 
   it('then this set, this exercise or today', () => {

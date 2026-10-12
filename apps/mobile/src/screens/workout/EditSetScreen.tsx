@@ -3,13 +3,14 @@ import { useEffect, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, formatNumber, TARGET_RPE_CHOICES, toMs } from '@fizz/domain';
+import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
 import type { SetExclusion, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import type { ActiveWorkoutData } from '../../services/workout-services';
 import { formatTime } from '../../format/dates';
 import { returnToWorkout } from '../../navigation/actions';
+import { targetRpeChips } from '../../workout/exercise-menu';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -193,21 +194,16 @@ export function EditSetScreen() {
               Target RPE
             </AppText>
             <ChipRow>
-              {TARGET_RPE_CHOICES.map((n) => {
-                const t = view.targetRpe;
-                const selected = t?.target?.rpe === n;
-                return (
-                  <Chip
-                    key={n}
-                    label={formatNumber(n)}
-                    selected={selected}
-                    onPress={() => {
-                      // Tapping Ben's own value again clears it back to the coach's, the plan's or the rule's.
-                      setTargetRpe(t?.override === n ? null : n);
-                    }}
-                  />
-                );
-              })}
+              {targetRpeChips(view.targetRpe).map((c) => (
+                <Chip
+                  key={c.key}
+                  label={c.label}
+                  selected={c.selected}
+                  onPress={() => {
+                    setTargetRpe(c.value);
+                  }}
+                />
+              ))}
             </ChipRow>
           </View>
         ) : null}
