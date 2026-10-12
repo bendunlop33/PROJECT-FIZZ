@@ -216,6 +216,8 @@ export function isIncrease(before: CoachTarget | null, after: CoachTarget, conve
     if (b.reps === null) return true;
     if (after.reps.min > b.reps.min || after.reps.max > b.reps.max) return true;
   }
+  // A harder target RPE than the set had (CHANGELOG 2026-10-11): blocked by pain and in a lighter session too.
+  if (after.rpe != null && b.rpe != null && after.rpe > b.rpe) return true;
   return false;
 }
 
@@ -225,11 +227,13 @@ export function sameTarget(a: CoachTarget | null, b: CoachTarget): boolean {
     (x.load === null && b.load === null) ||
     (x.load !== null && b.load !== null && x.load.unit === b.load.unit && x.load.convention === b.load.convention && formatNumber(x.load.value) === formatNumber(b.load.value));
   const repsSame = (x.reps === null && b.reps === null) || (x.reps !== null && b.reps !== null && x.reps.min === b.reps.min && x.reps.max === b.reps.max);
-  return loadSame && repsSame;
+  // A target RPE only counts when `b` names one (null/absent = keep the current one).
+  const rpeSame = b.rpe == null || b.rpe === (x.rpe ?? null);
+  return loadSame && repsSame && rpeSame;
 }
 
 function targetOf(set: WorkoutSet): CoachTarget {
-  return { load: set.planned.load, reps: set.planned.reps };
+  return { load: set.planned.load, reps: set.planned.reps, ...(set.planned.rpe !== null ? { rpe: set.planned.rpe } : {}) };
 }
 
 export const AREA_WORD: Record<PainArea, string> = {
@@ -342,7 +346,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
         }
         reps = ask.reps;
       }
-      const after: CoachTarget = { load, reps };
+      const after: CoachTarget = { load, reps, ...(ask.rpe != null ? { rpe: ask.rpe } : {}) };
       if (increaseBlock !== null && isIncrease(before, after, ex.loadConvention)) {
         // Keep the part that isn't an increase (review S1): "100 × 6–8 → 95 × 8" under a pain flag keeps the
         // lighter load and the planned reps, rather than losing the lighter load too.

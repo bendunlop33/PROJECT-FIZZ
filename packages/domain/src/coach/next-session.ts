@@ -47,8 +47,10 @@ export interface NextChangeClass {
 
 /**
  * CA8: small = the load stays or moves exactly one achievable step on this
- * equipment, the rep range moves by at most 2 at either end, and the set
- * count changes by at most one (+1 only when Ben asked). Anything else is
+ * equipment, the rep range moves by at most 2 at either end, the set
+ * count changes by at most one (+1 only when Ben asked), and the target RPE
+ * stays (a coach `rpe` that differs from the last target's is bigger, as CA8
+ * says "effort targets … don't change"). Anything else is
  * bigger. With no equipment, any load change is bigger: a step can't be
  * measured (rule 4).
  */
@@ -77,6 +79,8 @@ export function classifyNextSessionChange(
     if (last.reps === null) reasons.push('A rep target is new.');
     else if (Math.abs(after.reps.min - last.reps.min) > 2 || Math.abs(after.reps.max - last.reps.max) > 2) reasons.push('Reps move by more than 2.');
   }
+  // CA8: effort targets don't change by default; a new target RPE is Ben's to apply.
+  if (after.rpe != null && after.rpe !== (last.rpe ?? null)) reasons.push('The effort target changes.');
   let setsAfter = afterSets;
   let droppedExtraSet = false;
   const delta = afterSets - lastSets;
@@ -170,7 +174,7 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
       }
       reps = t.target.reps;
     }
-    const after: CoachTarget = { load, reps };
+    const after: CoachTarget = { load, reps, ...(t.target.rpe != null ? { rpe: t.target.rpe } : {}) };
     const wantSets = t.sets ?? basis.lastSets;
     const flag = activeFlag(input.painFlags, ex.exerciseId);
     if (flag !== null && (isIncrease(basis.last, after, ex.loadConvention) || wantSets > basis.lastSets)) {
@@ -219,9 +223,12 @@ export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<
     const planned = working.find((s) => s.planned.load !== null || s.planned.reps !== null)?.planned ?? null;
     const top = [...working].sort((a, b) => (b.actual?.load?.value ?? 0) - (a.actual?.load?.value ?? 0))[0] ?? first;
     // Field by field: today's plan where it had one, else what the top set did.
+    const lastRpe = planned?.rpeOverride ?? planned?.rpe ?? null;
     const last: CoachTarget = {
       load: planned?.load ?? top.actual?.load ?? null,
       reps: planned?.reps ?? (top.actual?.reps == null ? null : { min: top.actual.reps, max: top.actual.reps }),
+      // The target RPE it was planned at (Ben's own, else the coach's or the routine's).
+      ...(lastRpe !== null ? { rpe: lastRpe } : {}),
     };
     const plan = builtIn.get(ex.exerciseId) ?? null;
     const workingPlan = plan?.filter((p) => p.setType !== 'warmup') ?? [];
@@ -299,7 +306,7 @@ export function withCoachTargets(
       coach: { actionId: row.actionId, scope: 'next_session', reason: row.reason },
       guardNotes: row.guardNotes.map((n) => n.text).slice(0, 10),
     };
-    const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: template?.rpe ?? null, rir: template?.rir ?? null, source: 'coach', provenance };
+    const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: row.target.rpe ?? template?.rpe ?? null, rir: row.target.rpe != null ? null : (template?.rir ?? null), source: 'coach', provenance };
     out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned }))]);
   }
   return out;

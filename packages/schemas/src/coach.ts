@@ -5,6 +5,7 @@ import {
   OperationIdSchema,
   RecordMetaSchema,
   RepRangeSchema,
+  RpeSchema,
   UtcTimestampSchema,
   ZonedTimestampSchema,
 } from './common';
@@ -76,6 +77,12 @@ const quote = z.string().min(1).max(400);
 export const CoachTargetSchema = z.strictObject({
   load: LoadSchema.nullable(),
   reps: RepRangeSchema.nullable(),
+  /**
+   * Target RPE for the set (CHANGELOG 2026-10-11 "Offers follow the target
+   * RPE"): the coach's recommendation. Null or absent = keep the set's
+   * current target (Ben's own override always stays).
+   */
+  rpe: RpeSchema.nullable().optional(),
 });
 export type CoachTarget = z.infer<typeof CoachTargetSchema>;
 

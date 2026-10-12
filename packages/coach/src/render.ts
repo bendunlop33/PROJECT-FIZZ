@@ -39,14 +39,20 @@ function loadPart(load: Load | null): string | null {
   return loadText(load, load.convention);
 }
 
-/** `95 kg × 8`, `95 kg × 6–8`, `10–15 reps`, `22.5 kg each`. */
+/** ` @ RPE 8` when the target names one (CHANGELOG 2026-10-11), else empty. */
+function rpePart(t: CoachTarget): string {
+  return t.rpe == null ? '' : ` @${NBSP}RPE${NBSP}${formatNumber(t.rpe)}`;
+}
+
+/** `95 kg × 8`, `95 kg × 6–8`, `10–15 reps`, `22.5 kg each`, `95 kg × 8 @ RPE 8`. */
 export function targetPhrase(t: CoachTarget | null): string {
   if (t === null) return '—';
   const load = loadPart(t.load);
   const reps = t.reps === null ? null : repRangeText(t.reps);
-  if (load !== null && reps !== null) return `${load}${TIMES}${reps}`;
-  if (load !== null) return load;
-  if (reps !== null) return `${reps}${NBSP}reps`;
+  const rpe = rpePart(t);
+  if (load !== null && reps !== null) return `${load}${TIMES}${reps}${rpe}`;
+  if (load !== null) return `${load}${rpe}`;
+  if (reps !== null) return `${reps}${NBSP}reps${rpe}`;
   return '—';
 }
 
@@ -64,10 +70,11 @@ export function beforeAfterPhrase(before: CoachTarget | null, after: CoachTarget
   // The spec's banner form (coach-adjustments §2.5): `100 → 95 kg × 8`, the after's reps.
   if (!sameLoad && bl !== null && al !== null && bl.unit === al.unit && bl.convention === al.convention && al.convention !== 'bodyweight') {
     const reps = after.reps === null ? '' : `${TIMES}${repRangeText(after.reps)}`;
-    return `${formatNumber(bl.value)} → ${loadPart(al) ?? ''}${reps}`;
+    const rpe = after.rpe != null && after.rpe !== (before.rpe ?? null) ? rpePart(after) : '';
+    return `${formatNumber(bl.value)} → ${loadPart(al) ?? ''}${reps}${rpe}`;
   }
-  if (sameLoad && !sameReps && after.reps !== null && before.reps !== null) {
-    return `${targetPhrase(before)} → ${repRangeText(after.reps)}`;
+  if (sameLoad && !sameReps && after.reps !== null && before.reps !== null && (after.rpe ?? null) === (before.rpe ?? null)) {
+    return `${targetPhrase({ ...before, rpe: null })} → ${repRangeText(after.reps)}`;
   }
   return `${targetPhrase(before)} → ${targetPhrase(after)}`;
 }

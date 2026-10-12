@@ -6,6 +6,7 @@ import {
   LoadSchema,
   OperationIdSchema,
   RepRangeSchema,
+  RpeSchema,
   WeightUnitSchema,
   ZonedTimestampSchema,
 } from './common';
@@ -335,8 +336,8 @@ export const RenameSessionCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
-/** A pending set's new load and reps target (both explicit; unit and convention in the load). */
-const TargetValuesSchema = z.object({ load: LoadSchema.nullable(), reps: RepRangeSchema.nullable() });
+/** A pending set's new load and reps target (both explicit; unit and convention in the load), and the coach's target RPE if it set one. */
+const TargetValuesSchema = z.object({ load: LoadSchema.nullable(), reps: RepRangeSchema.nullable(), rpe: RpeSchema.nullable().optional() });
 
 /**
  * A coach adjustment of today's pending sets (ADR 0020 §4, coach-adjustments
@@ -438,6 +439,31 @@ export const UndoChangeGymCommandSchema = z.object({
   expectedFingerprint: z.string().min(1).max(64),
 });
 
+/**
+ * Ben's own target RPE (CHANGELOG 2026-10-11 "Offers follow the target RPE"):
+ * for the focused set, its exercise (every part after a gym switch) or
+ * today's whole workout. Only pending working sets change (never a logged
+ * set, a warm-up or a drop set); it is stored on each set as
+ * `planned.rpeOverride` and wins over the coach's and the built-in rule's
+ * target. `rpe: null` clears Ben's override. Versioned (`expectedVersion`)
+ * and idempotent (`opId`).
+ */
+export const TargetRpeScopeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('set'), setId: IdSchema }),
+  z.object({ kind: z.literal('exercise'), sessionExerciseId: IdSchema }),
+  z.object({ kind: z.literal('today') }),
+]);
+export type TargetRpeScope = z.infer<typeof TargetRpeScopeSchema>;
+
+export const SetTargetRpeCommandSchema = z.object({
+  type: z.literal('set_target_rpe'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  scope: TargetRpeScopeSchema,
+  rpe: RpeSchema.nullable(),
+});
+
 export const SessionCommandSchema = z.discriminatedUnion('type', [
   LogSetCommandSchema,
   SaveDraftCommandSchema,
@@ -465,6 +491,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   RevertTargetAdjustmentCommandSchema,
   ChangeGymCommandSchema,
   UndoChangeGymCommandSchema,
+  SetTargetRpeCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];
