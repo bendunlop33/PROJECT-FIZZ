@@ -9,6 +9,7 @@ import {
   basisSlots,
   buildWorkoutOverview,
   estimateRemainingDuration,
+  estimateTimeLeft,
   finishByFromFit,
   fitMinutesOf,
   fitTier,
@@ -367,6 +368,9 @@ describe('the fit is intent, planned on every read (FT4, FT-C5, FT-C6)', () => {
     expect(a.aggregate.session.todayEdits?.fitted).toEqual({ minutes: 45, by: 'built_in', cuts: a.fit?.lines });
     expect(a.aggregate.session.todayEdits?.edited).toEqual([{ sessionExerciseId: rowOf(a, SLOT_BENCH)?.id, slotKey: SLOT_BENCH, kinds: ['sets'] }]);
     expect(SessionAggregateSchema.safeParse(a.aggregate).success).toBe(true);
+    // The workout's Time left line reads it (FT8): `on track` or `about N min past`.
+    const started = { ...a.aggregate, session: { ...a.aggregate.session, status: 'active' as const } };
+    expect(estimateTimeLeft(started, { nowMs: ms(0) })?.finishBy).toBe(finishByFromFit(at(0), 45).utc);
   });
 
   it('Finish by rounds up to the next 5 minutes in the start’s time zone', () => {
