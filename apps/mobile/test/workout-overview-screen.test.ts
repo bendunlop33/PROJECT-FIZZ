@@ -346,7 +346,7 @@ describe('source checks', () => {
     expect(body).toContain('const done = await switchSession(');
     expect(body).toContain('load: (t) => services.overview.load({ target: t, gymId, checkInId: tappedRef.current?.id ?? null }),');
     const show = body.slice(body.indexOf('show: (t) => {'), body.indexOf('next,\n'));
-    for (const reset of ['startOp.current = null;', 'setOpen(null);', 'setCard(null);', 'setSwap(null);', 'setReordering(false);', 'setStartError(null);', 'setTarget(t);', 'reload();']) expect(show).toContain(reset);
+    for (const reset of ['startOp.current = null;', 'setOpen(null);', 'setCard(null);', 'setSwap(null);', 'setEditing(false);', 'setUpdate(null);', 'setRepsSlot(null);', 'setLoadEdit(null);', 'setAdding(null);', 'setStartError(null);', 'setTarget(t);', 'reload();']) expect(show).toContain(reset);
     // Kept: the tapped score and the gym are never touched by a switch.
     expect(body).not.toMatch(/setTapped|tappedRef\.current =|gyms\.select|selectGym/);
     expect(body).toContain('const gymId = page?.view.gym?.id ??');

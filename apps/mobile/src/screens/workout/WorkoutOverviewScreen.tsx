@@ -561,6 +561,9 @@ export function WorkoutOverviewScreen() {
           setSwap(null);
           setEditing(false);
           setUpdate(null);
+          setRepsSlot(null);
+          setLoadEdit(null);
+          setAdding(null);
           setStartError(null);
           setTarget(t);
           scrollRef.current?.scrollTo({ y: 0, animated: false });
