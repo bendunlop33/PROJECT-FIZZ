@@ -85,26 +85,46 @@ function clampMinutes(m: number): number | null {
   return Math.min(FIT_MINUTES.max, Math.max(FIT_MINUTES.min, stepped));
 }
 
+/** A time not meant as the workout's length: "rest 2 min", "in 2 hours", "between sets", "every 3 minutes". */
+const NOT_LENGTH_BEFORE = /\b(?:rest|resting|rests|in|after|between|within|every|than|break|breaks)\s*(?:of |for |about |around |roughly |like )?$/;
+const NOT_LENGTH_AFTER = /^\s*(?:of )?(?:rest|resting|between|break|breaks|off|from now|later|ago|before|after|each|per)\b/;
+/** A length that names the workout: "45 min push workout", "an hour session", "60 minutes long". */
+const LENGTH_NAMES_WORKOUT = /^\s*(?:long\b|(?:[a-z]+[ -]){0,3}?(?:workout|work-out|session|routine|circuit)s?\b)/;
+
 /**
  * The length Ben asked for, in minutes (stepped to 5, 15–180), or null when
  * his words name none. Only a number with a time word counts: "45-minute
  * push", "45 min", "an hour", "half an hour", "hour and a half", "1.5
- * hours". A number for a load or reps ("bench at 200 kg", "3 sets") is
- * never read as minutes (rule 8: the words are data).
+ * hours". A number for a load, reps or distance ("bench at 200 kg", "3
+ * sets", "400m") is never read as minutes (rule 8: the words are data).
+ * Review S3: a time for rest or for when ("rest 2 min between sets", "I train
+ * in 2 hours") isn't the length; a length next to workout, session or long
+ * wins, else the longest one named.
  */
 export function parseRequestedMinutes(text: string): number | null {
-  const t = text.toLowerCase().replace(/[‐-―]/g, '-');
-  if (/\b(?:an?|one) hour and a half\b|\bhour and a half\b|\b1\.5 ?(?:hours?|hrs?|h)\b|\bninety minutes?\b/.test(t)) return 90;
-  if (/\bhalf (?:an )?hour\b/.test(t)) return 30;
-  const hours = /\b(\d+(?:\.\d+)?) ?(?:hours?|hrs?|h)\b/.exec(t);
-  if (hours !== null) return clampMinutes(Number(hours[1]) * 60);
-  if (/\b(?:an|one) hour\b/.test(t)) return 60;
-  const mins = /\b(\d{1,3}) ?-? ?(?:minutes?|mins?|m)\b/.exec(t);
-  if (mins !== null) return clampMinutes(Number(mins[1]));
+  const t = text.toLowerCase().replace(/[‐-―]/g, '-').replace(/\s+/g, ' ');
+  const found: { minutes: number; start: number; end: number }[] = [];
+  const take = (re: RegExp, minutes: (m: RegExpExecArray) => number): void => {
+    for (const m of t.matchAll(new RegExp(re.source, 'g'))) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (found.some((f) => start < f.end && end > f.start)) continue;
+      found.push({ minutes: minutes(m), start, end });
+    }
+  };
+  take(/\b(?:(?:an?|one) )?hour and a half\b|\bninety minutes?\b/, () => 90);
+  take(/\bhalf (?:an )?hour\b/, () => 30);
+  take(/\b(\d+(?:\.\d+)?) ?-? ?(?:hours?|hrs?|hr)\b/, (m) => Number(m[1]) * 60);
+  take(/\b(?:an|one) hour\b/, () => 60);
+  take(/\b(\d{1,3}) ?-? ?(?:minutes?|mins?|min)\b/, (m) => Number(m[1]));
   for (const [word, n] of Object.entries(WORD_NUMBERS).sort((a, b) => b[0].length - a[0].length)) {
-    if (new RegExp(`\\b${word.replace(' ', '[ -]')} ?-? ?(?:minutes?|mins?)\\b`).test(t)) return n;
+    take(new RegExp(`\\b${word.replace(' ', '[ -]')} ?-? ?(?:minutes?|mins?|min)\\b`), () => n);
   }
-  return null;
+  const lengths = found.filter((f) => !NOT_LENGTH_BEFORE.test(t.slice(0, f.start)) && !NOT_LENGTH_AFTER.test(t.slice(f.end)));
+  if (lengths.length === 0) return null;
+  const named = lengths.filter((f) => LENGTH_NAMES_WORKOUT.test(t.slice(f.end)));
+  const pool = named.length > 0 ? named : lengths;
+  return clampMinutes(Math.max(...pool.map((f) => f.minutes)));
 }
 
 /** The focus Ben asked for, or null (the coach picks). */
@@ -373,8 +393,10 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   let restS: number | null = null;
   if (p.restSeconds !== null) {
     const clamped = clampInt(p.restSeconds, L.minRestS, L.maxRestS);
-    restS = ctx.restPresetsS.length > 0 ? nearestPreset(clamped, ctx.restPresetsS) : clamped;
-    if (restS !== p.restSeconds) note('rest_snapped', `Rest ${formatDuration(p.restSeconds)} → ${formatDuration(restS)}${ctx.restPresetsS.length > 0 ? ' (your presets)' : ''}`);
+    // Review S1: only presets inside the draft's rest limits (a 6:00 preset would fail the schema).
+    const presets = ctx.restPresetsS.filter((s) => s >= L.minRestS && s <= L.maxRestS);
+    restS = presets.length > 0 ? nearestPreset(clamped, presets) : clamped;
+    if (restS !== p.restSeconds) note('rest_snapped', `Rest ${formatDuration(p.restSeconds)} → ${formatDuration(restS)}${presets.length > 0 ? ' (your presets)' : ''}`);
   }
 
   // BD8: reps differ from what the history plans; the load isn't re-scaled.
@@ -385,14 +407,19 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
 
   const templates: DraftSetTemplate[] = [];
   for (let i = 0; i < warmups; i += 1) templates.push({ setType: 'warmup', reps: timed ? null : { min: 5, max: 5 }, durationS: timed ? (durationS ?? 45) : null, targetRpe: null, restS });
+  if (p.topSet !== null && timed) note('shape', `${ex.name} · top set left out (timed)`);
   if (p.topSet !== null && !timed) {
     const lo = Math.min(p.topSet.reps.min, p.topSet.reps.max);
     const hi = Math.max(p.topSet.reps.min, p.topSet.reps.max);
     const topReps = { min: clampInt(lo, L.minReps, L.maxReps), max: clampInt(hi, L.minReps, L.maxReps) };
+    // Review S9: every clamp has its line (WB13), and the top set counts against the set limit.
+    if (topReps.min !== p.topSet.reps.min || topReps.max !== p.topSet.reps.max) note('clamped', `${ex.name} · top set reps ${repRangeText(p.topSet.reps)} → ${repRangeText(topReps)}`);
     const topRpe = p.topSet.targetRpe === null ? rpe : clampRpe(p.topSet.targetRpe);
     if (p.topSet.targetRpe !== null && topRpe !== p.topSet.targetRpe) note('clamped', `${ex.name} · top set RPE ${String(p.topSet.targetRpe)} → ${String(topRpe)}`);
+    const backoffs = Math.min(working, L.maxWorkingSets - 1);
+    if (backoffs !== working) note('clamped', `${ex.name} · sets ${String(working + 1)} → ${String(backoffs + 1)} with the top set (most allowed)`);
     templates.push({ setType: 'top', reps: topReps, durationS: null, targetRpe: topRpe, restS });
-    for (let i = 0; i < working; i += 1) templates.push({ setType: 'backoff', reps, durationS: null, targetRpe: rpe, restS });
+    for (let i = 0; i < backoffs; i += 1) templates.push({ setType: 'backoff', reps, durationS: null, targetRpe: rpe, restS });
   } else {
     for (let i = 0; i < working; i += 1) templates.push({ setType: 'working', reps, durationS, targetRpe: rpe, restS });
   }

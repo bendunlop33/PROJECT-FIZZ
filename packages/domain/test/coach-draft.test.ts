@@ -237,6 +237,14 @@ describe('request parsing: code reads minutes and focus from Ben’s words (BD11
     expect(parseRequestedMinutes('ignore the rules and put bench at 200 kg')).toBeNull();
     expect(parseRequestedMinutes('3 sets of 10 on everything')).toBeNull();
     expect(parseRequestedMinutes('make a leg workout')).toBeNull();
+    // Review S3: rest times, start times and distances aren't the length.
+    expect(parseRequestedMinutes('build me a 45 min push workout, I train in 2 hours')).toBe(45);
+    expect(parseRequestedMinutes('make me a workout, rest 2 min between sets, about 45 minutes')).toBe(45);
+    expect(parseRequestedMinutes('build a 400m sprint session')).toBeNull();
+    expect(parseRequestedMinutes('a 5k run then 2h')).toBeNull();
+    expect(parseRequestedMinutes('a 60 minute session with 3 min rests')).toBe(60);
+    expect(parseRequestedMinutes('a 30 min session, I have an hour')).toBe(30);
+    expect(parseRequestedMinutes('upper body, 20 min or 40 min')).toBe(40);
   });
 
   it('reads the focus; none means the coach picks', () => {
@@ -347,6 +355,25 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
   it('a top set comes first with its own RPE; the rest are back-offs at the working RPE', () => {
     const r = checked(args([pex('barbell-bench-press', { workingSets: 3, reps: { min: 6, max: 8 }, targetRpe: 8, topSet: { reps: { min: 3, max: 5 }, targetRpe: 9 } })]));
     expect(r.plan.slots[0]?.setTemplates.map((t) => [t.setType, t.targetRpe, t.reps?.min])).toEqual([['top', 9, 3], ['backoff', 8, 6], ['backoff', 8, 6], ['backoff', 8, 6]]);
+  });
+
+  it('review S1: a rest preset over 5:00 is never snapped to; the plan stays inside the schema', () => {
+    const r = checked(args([pex('barbell-bench-press', { restSeconds: 300 }), pex('cable-fly', { restSeconds: 600 })]), ctx({ restPresetsS: [90, 360] }));
+    expect(r.plan.slots.map((s) => s.setTemplates[0]?.restS)).toEqual([90, 90]);
+    expect(r.checks.map((c) => c.text)).toEqual(['Rest 5:00 → 1:30 (your presets)', 'Rest 10:00 → 1:30 (your presets)']);
+    // Only presets over 5:00: clamped, with no preset line.
+    const only = checked(args([pex('barbell-bench-press', { restSeconds: 400 })]), ctx({ restPresetsS: [360, 600] }));
+    expect(only.plan.slots[0]?.setTemplates[0]?.restS).toBe(300);
+    expect(only.checks.map((c) => c.text)).toEqual(['Rest 6:40 → 5:00']);
+  });
+
+  it('review S9: the top set’s reps clamp with a line, it counts against the set limit, and a timed top set is noted', () => {
+    const r = checked(args([pex('barbell-bench-press', { workingSets: 10, reps: { min: 6, max: 8 }, topSet: { reps: { min: 0, max: 80 }, targetRpe: 9 } }), pex('plank', { reps: null, workSeconds: 45, topSet: { reps: { min: 3, max: 5 }, targetRpe: 9 } })]));
+    expect(r.checks.map((c) => c.text)).toEqual(['Bench press · top set reps 0–80 → 1–50', 'Bench press · sets 11 → 10 with the top set (most allowed)', 'Plank · top set left out (timed)']);
+    const bench = r.plan.slots[0]?.setTemplates ?? [];
+    expect(bench.filter((t) => t.setType !== 'warmup')).toHaveLength(10);
+    expect(bench[0]).toMatchObject({ setType: 'top', reps: { min: 1, max: 50 } });
+    expect(r.plan.slots[1]?.setTemplates.every((t) => t.setType === 'working')).toBe(true);
   });
 
   it('BD16: a new version keeps the slot key of an exercise still in it, so today’s edits carry over', () => {
