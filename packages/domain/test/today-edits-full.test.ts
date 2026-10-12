@@ -822,3 +822,30 @@ describe('review N2: a Sets or Reps line on a swapped slot names the workout’s
     ]);
   });
 });
+
+describe('add with a Sets count (exercise-library §10.2, TE-B15, EL-B21)', () => {
+  it('an add carries the bar’s count: 4 working sets with history targets, untouched it is 3; a count outside 1–10 is refused', () => {
+    const d = written(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: 4 } }, 'b1'));
+    expect(liveEdits(d.edits)).toMatchObject([{ kind: 'add', workingSets: 4 }]);
+    const four = plan([edit({ kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: 4 })], { adds: facePullPlan() });
+    expect(workingOf(four, NEW_SLOT)).toHaveLength(4);
+    // Its own history's target on every set, the copies included (never another exercise's load).
+    expect(workingOf(four, NEW_SLOT).every((s) => s.planned.load?.convention === 'stack' && s.status === 'pending')).toBe(true);
+    const three = plan([edit({ kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL })], { adds: facePullPlan() });
+    expect(workingOf(three, NEW_SLOT)).toHaveLength(3);
+    const two = plan([edit({ kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: 2 })], { adds: facePullPlan() });
+    expect(workingOf(two, NEW_SLOT)).toHaveLength(2);
+    for (const n of [0, 11, 2.5]) expect(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: n } }, `bad-${String(n)}`)).toEqual({ kind: 'invalid', reason: 'out_of_range' });
+  });
+
+  it('with no history the default shape is resized (no load invented), and a later `sets` edit on the added row wins', () => {
+    const none = new Map([[NEW_SLOT, addTargets(exOf(FACE_PULL), [], ctxAt(MAIN_GYM))]]);
+    const five = plan([edit({ kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: 5 })], { adds: none });
+    expect(workingOf(five, NEW_SLOT)).toHaveLength(5);
+    expect(workingOf(five, NEW_SLOT).every((s) => s.planned.load === null)).toBe(true);
+    const later = plan([edit({ kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: 5 }), edit({ kind: 'sets', slotKey: NEW_SLOT, workingSets: 2 })], { adds: none });
+    expect(workingOf(later, NEW_SLOT)).toHaveLength(2);
+    // The plan's own exercises are untouched by an add's count.
+    expect(workingOf(five, SLOT_INCLINE)).toHaveLength(3);
+  });
+});

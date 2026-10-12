@@ -56,7 +56,8 @@ export const TodayEditSchema = z.discriminatedUnion('kind', [
   z.object({ ...editBase, kind: z.literal('skip'), slotKey: IdSchema }),
   z.object({ ...editBase, kind: z.literal('order'), slotKeys: z.array(IdSchema).min(1).max(40) }),
   /** §11 (TE12): an exercise added at the end for today; `slotKey` is the new row's own key. */
-  z.object({ ...editBase, kind: z.literal('add'), slotKey: IdSchema, exerciseId: IdSchema }),
+  /** `workingSets` (2026-10-12, exercise-library §10.2): the Pick one sheet's `Sets` count; absent = the default shape's (TE16). */
+  z.object({ ...editBase, kind: z.literal('add'), slotKey: IdSchema, exerciseId: IdSchema, workingSets: z.int().min(TODAY_EDIT_LIMITS.minSets).max(TODAY_EDIT_LIMITS.maxSets).optional() }),
   /** The slot's working-set count today (warm-ups follow the exercise). */
   z.object({ ...editBase, kind: z.literal('sets'), slotKey: IdSchema, workingSets: z.int().min(TODAY_EDIT_LIMITS.minSets).max(TODAY_EDIT_LIMITS.maxSets) }),
   /** Every working set's reps (a range or exact), or work time, today: exactly one of the two. */
