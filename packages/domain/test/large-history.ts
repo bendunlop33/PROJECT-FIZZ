@@ -136,9 +136,15 @@ export async function measureBlocking<T>(fn: () => Promise<T>): Promise<{ result
  * still fails, contention alone doesn't. `FIZZ_PERF_STRICT=1` (CI, or the
  * quiet-machine pre-merge run) always uses the plain budget.
  */
-export function timingBudget(ms: number): number {
+export function timingBudget(ms: number, startLoad = 0): number {
   if (process.env['FIZZ_PERF_STRICT'] === '1') return ms;
-  const [oneMinute = 0] = loadavg();
-  const factor = Math.min(4, Math.max(1, oneMinute / availableParallelism()));
+  // The 1-minute average lags bursts: a test can pass the larger of a sample taken when it started and the one now (review progress-B r2 N1).
+  const factor = Math.min(4, Math.max(1, Math.max(startLoad, loadSample()) / availableParallelism()));
   return ms * factor;
+}
+
+/** The 1-minute load average now, for `timingBudget(ms, startLoad)`. */
+export function loadSample(): number {
+  const [oneMinute = 0] = loadavg();
+  return oneMinute;
 }

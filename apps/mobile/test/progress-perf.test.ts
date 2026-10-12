@@ -10,6 +10,7 @@ import {
   measureBlocking,
   profile,
   stack,
+  loadSample,
   timingBudget,
   UNILATERAL_HISTORY_EXERCISE,
 } from '@fizz/domain/testing';
@@ -60,6 +61,8 @@ describe('Progress on a 4-year, ~600-workout history', () => {
       catalogueExercises: () => [],
       dispatch: () => Promise.reject(new Error('not used')),
     });
+    const startLoad = loadSample();
+    const budget = (ms: number) => timingBudget(ms, startLoad);
     const cold = await measureBlocking(() => svc.prewarm());
     const first = await measureBlocking(() => svc.home({ days: 30 }));
     const view = first.result?.view;
@@ -78,17 +81,17 @@ describe('Progress on a 4-year, ~600-workout history', () => {
     const worstSwitch = Math.max(...switches.map((m) => m.totalMs));
     const fmt = (m: { totalMs: number; maxBlockMs: number }) => `${String(Math.round(m.totalMs))}ms/${String(Math.round(m.maxBlockMs))}ms`;
     console.log(
-      `[Progress]${process.execArgv.includes('--jitless') ? ' (--jitless)' : ''} total/longest block: cold pass ${fmt(cold)}, first open ${fmt(first)}, window switches worst ${String(Math.round(worstSwitch))}ms, calendar ${fmt(calendar)}, budget ${String(Math.round(timingBudget(SWITCH_BUDGET_MS)))}ms`,
+      `[Progress]${process.execArgv.includes('--jitless') ? ' (--jitless)' : ''} total/longest block: cold pass ${fmt(cold)}, first open ${fmt(first)}, window switches worst ${String(Math.round(worstSwitch))}ms, calendar ${fmt(calendar)}, budget ${String(Math.round(budget(SWITCH_BUDGET_MS)))}ms`,
     );
     // Longest block under 1 s, as the backup tests (margin for CPU contention from parallel files).
-    expect(cold.maxBlockMs).toBeLessThan(timingBudget(1000));
-    for (const m of [first, ...switches, calendar]) expect(m.maxBlockMs).toBeLessThan(timingBudget(1000));
+    expect(cold.maxBlockMs).toBeLessThan(budget(1000));
+    for (const m of [first, ...switches, calendar]) expect(m.maxBlockMs).toBeLessThan(budget(1000));
     // The unilateral row is on the timed path: 4 left/right pairs a workout count as 4 Back sets, not 8.
     const back = view.muscles.rows.find((r) => r.label === 'Back');
     expect(back?.sessions).toBeGreaterThanOrEqual(12);
     expect(back?.sets).toBe(4 * (back?.sessions ?? 0));
     // After the cold pass: opening Progress and every switch within the check-25 budget.
-    expect(first.totalMs).toBeLessThan(timingBudget(SWITCH_BUDGET_MS));
-    expect(worstSwitch).toBeLessThan(timingBudget(SWITCH_BUDGET_MS));
+    expect(first.totalMs).toBeLessThan(budget(SWITCH_BUDGET_MS));
+    expect(worstSwitch).toBeLessThan(budget(SWITCH_BUDGET_MS));
   }, 600_000);
 });
