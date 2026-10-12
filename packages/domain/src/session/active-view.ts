@@ -614,28 +614,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     restSourceLabel: set.rest.sourceLabel,
     plateLine: plateBreakdownLine(logValues.load, eq),
     warmUp: eq !== null && showsWarmUp(state, set.id) ? warmUpText(warmUpRamp(logValues.load ?? set.planned.load, eq), eq) : null,
-    rows: own.map((s, i) => {
-      const partRow = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
-      const { status, text } = rowText(s, partRow, equipmentOf(state, partRow), s.id === set.id);
-      const gymId = partGymId(state, partRow);
-      const prevRowId = own[i - 1]?.sessionExerciseId;
-      const prevRow = prevRowId === undefined ? undefined : state.exercises.find((e) => e.id === prevRowId);
-      const startsPart = prevRow !== undefined && prevRow.id !== partRow.id && gymId !== null && partGymId(state, prevRow) !== gymId;
-      const gymName = gymId === null ? undefined : input.gymNames?.[gymId];
-      return {
-        setId: s.id,
-        number: i + 1,
-        badges: [SET_TYPE_BADGE[s.setType], sideBadge(s)].filter((b): b is string => b !== null),
-        note: s.note ?? null,
-        status,
-        text,
-        edited: s.edited,
-        ...exclusionFields(s),
-        version: s.version,
-        gymCaption: status === 'done' && gymId !== null && gymId !== state.session.gymId ? (gymName ?? null) : null,
-        partStart: startsPart && gymName !== undefined ? `At ${gymName}` : null,
-      };
-    }),
+    rows: buildSetRows(input, ex.id, set.id),
     next,
     logLabel,
     missing,
@@ -643,6 +622,41 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     logValues,
     logSide: unilateral && fixedSide === null ? (chosenSide ?? 'both') : undefined,
   };
+}
+
+/**
+ * The rows of one exercise's whole block (all gym parts, set numbers running
+ * across them), as the Focus mini list and the Table view show them. One
+ * source for both views, so they can't disagree on status, badges,
+ * exclusions or gym captions.
+ */
+export function buildSetRows(input: Pick<ActiveViewInput, 'aggregate' | 'gymNames'>, sessionExerciseId: string, activeSetId: string | null): SetRowView[] {
+  const state = input.aggregate;
+  const ex = state.exercises.find((e) => e.id === sessionExerciseId);
+  if (!ex) return [];
+  const own = exerciseSets(state, ex.id);
+  return own.map((s, i) => {
+    const partRow = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
+    const { status, text } = rowText(s, partRow, equipmentOf(state, partRow), s.id === activeSetId);
+    const gymId = partGymId(state, partRow);
+    const prevRowId = own[i - 1]?.sessionExerciseId;
+    const prevRow = prevRowId === undefined ? undefined : state.exercises.find((e) => e.id === prevRowId);
+    const startsPart = prevRow !== undefined && prevRow.id !== partRow.id && gymId !== null && partGymId(state, prevRow) !== gymId;
+    const gymName = gymId === null ? undefined : input.gymNames?.[gymId];
+    return {
+      setId: s.id,
+      number: i + 1,
+      badges: [SET_TYPE_BADGE[s.setType], sideBadge(s)].filter((b): b is string => b !== null),
+      note: s.note ?? null,
+      status,
+      text,
+      edited: s.edited,
+      ...exclusionFields(s),
+      version: s.version,
+      gymCaption: status === 'done' && gymId !== null && gymId !== state.session.gymId ? (gymName ?? null) : null,
+      partStart: startsPart && gymName !== undefined ? `At ${gymName}` : null,
+    };
+  });
 }
 
 /** `Swapped from Bench press` while the swap can still be undone (any of its sets pending). */

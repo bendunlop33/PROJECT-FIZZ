@@ -12,6 +12,7 @@ export * from './session/create';
 export * from './session/reducer';
 export * from './session/view';
 export * from './session/active-view';
+export * from './session/table-view';
 export * from './session/summary';
 export * from './session/today';
 export * from './session/records';
