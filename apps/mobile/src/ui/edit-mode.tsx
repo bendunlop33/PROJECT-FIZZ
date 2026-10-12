@@ -77,7 +77,7 @@ export function EditRow({ row, moves, stacked, last, customActions, onSets, onRe
   const theme = useTheme();
   const e = row.editRow;
   const skipped = row.edit?.kind === 'skipped';
-  const marker = row.marker.kind === 'added' || row.marker.kind === 'edited' || row.marker.kind === 'skipped' || row.marker.kind === 'swapped' || row.marker.kind === 'held' || row.marker.kind === 'no_load' ? row.marker : null;
+  const marker = row.marker.kind === 'added' || row.marker.kind === 'edited' || row.marker.kind === 'trimmed' || row.marker.kind === 'skipped' || row.marker.kind === 'swapped' || row.marker.kind === 'held' || row.marker.kind === 'no_load' ? row.marker : null;
   const pills = editRowPills(row);
   const moveButtons =
     moves === null ? null : (

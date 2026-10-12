@@ -2,7 +2,9 @@ import type { SessionAggregate, WorkoutSet, ZonedTimestamp } from '@fizz/schemas
 import { FIT_MINUTES } from '@fizz/schemas';
 import { toIso, toMs } from '../time';
 import { estimateRemainingDuration, roundEstimateMinutes, type ResolvedPace } from './duration';
+import { formatDuration } from '../display';
 import { nextPendingSet } from './order';
+import { PACE_SOURCE_LABEL } from './time-left';
 
 /**
  * Fit to time (fit-to-time.md §4): the built-in trim. Pure and offline.
@@ -248,6 +250,8 @@ export interface HowLongInput {
   chosen: number | null;
   /** The coach can be asked (connected and online). */
   coachAvailable: boolean;
+  /** The pace the estimate uses, for `ⓘ` (`Your pace`, its source). */
+  pace?: ResolvedPace;
 }
 
 export interface HowLongSheetView {
@@ -263,6 +267,8 @@ export interface HowLongSheetView {
   ask: { text: string; enabled: boolean; caption: string | null; lengthen: boolean };
   /** `Clear fit`: only with a live fit. */
   clear: boolean;
+  /** Behind `ⓘ` (active-workout §2.15.3): `0:50 a set · 0:45 between exercises`, and where it comes from. */
+  pace: { text: string; source: string } | null;
 }
 
 /**
@@ -284,5 +290,11 @@ export function howLongSheet(i: HowLongInput): HowLongSheetView {
     trim: fitsAlready ? { text: 'Fits already', enabled: false, minutes: selected } : { text: `Trim to ${String(selected)} min`, enabled: true, minutes: selected },
     ask: { text: lengthen ? `Ask coach to fill ${String(selected)} min` : 'Ask coach', enabled: i.coachAvailable, caption: i.coachAvailable ? null : 'Coach offline', lengthen },
     clear: i.fitMinutes !== null,
+    pace: i.pace === undefined ? null : { text: `${formatDuration(Math.round(i.pace.secondsPerSet))} a set · ${formatDuration(Math.round(i.pace.changeoverSeconds))} between exercises`, source: PACE_SOURCE_LABEL[i.pace.source] },
   };
+}
+
+/** One step of the `Other` length (± 5 min), kept within 15–180. */
+export function stepFitMinutes(current: number, delta: 5 | -5): number {
+  return Math.min(FIT_MINUTES.max, Math.max(FIT_MINUTES.min, current + delta));
 }

@@ -26,6 +26,15 @@ export interface StatItem {
   /** `min` after the value. */
   suffix?: string;
   label: string;
+  /** A `clock` icon before the label (`TIME · FIT 45`). */
+  clock?: boolean;
+  /**
+   * The column is a button (fit-to-time FT1: the TIME tile opens `How long?`):
+   * a caret after the value, ≥ 44 pt, its own VoiceOver element.
+   */
+  button?: { onPress: () => void; accessibilityLabel: string };
+  /** This column's words for VoiceOver when the strip isn't read as one element (a column is a button). */
+  spoken?: string;
 }
 
 /**
@@ -40,11 +49,16 @@ export function StatStrip({ items, accessibilityLabel, ax }: { items: readonly S
   const [wrappedAt, setWrappedAt] = useState<StripWrap | null>(null);
   const stacked = statStripStacked({ ax, width, fontScale, wrappedAt });
   const hair = { borderColor: theme.colors['border.divider'], borderTopWidth: theme.dividerWidth, borderBottomWidth: theme.dividerWidth };
+  // With a button column, each column is its own VoiceOver element; else the strip reads as one.
+  const split = items.some((it) => it.button !== undefined);
   return (
-    <View accessible accessibilityLabel={accessibilityLabel} style={[hair, { flexDirection: stacked ? 'column' : 'row' }]}>
-      {items.map((it, i) => (
+    <View accessible={!split} {...(split ? {} : { accessibilityLabel })} style={[hair, { flexDirection: stacked ? 'column' : 'row' }]}>
+      {items.map((it, i) => {
+        const column = (
         <View
           key={it.label}
+          accessible={split && it.button === undefined}
+          {...(split && it.button === undefined && it.spoken !== undefined ? { accessibilityLabel: it.spoken } : {})}
           style={{
             flex: stacked ? undefined : 1,
             paddingVertical: theme.space['2'] + 2,
@@ -74,12 +88,28 @@ export function StatStrip({ items, accessibilityLabel, ax }: { items: readonly S
                 {` ${it.suffix}`}
               </AppText>
             ) : null}
+            {it.button ? (
+              <AppText variant="callout" color="text.secondary">
+                {' ▾'}
+              </AppText>
+            ) : null}
           </AppText>
-          <AppText variant="sectionLabel" color="text.tertiary" style={{ marginTop: 2 }}>
-            {it.label}
-          </AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+            {it.clock ? <Icon name="clock" color="text.secondary" size={12} /> : null}
+            <AppText variant="sectionLabel" color="text.tertiary">
+              {it.label}
+            </AppText>
+          </View>
         </View>
-      ))}
+        );
+        const b = it.button;
+        if (b === undefined) return column;
+        return (
+          <Pressable key={it.label} accessibilityRole="button" accessibilityLabel={b.accessibilityLabel} onPress={b.onPress} style={({ pressed }) => ({ flex: stacked ? undefined : 1, minHeight: 44, opacity: pressed ? 0.6 : 1 })}>
+            {column}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -102,7 +132,9 @@ export function ChangeMarker({ marker }: { marker: MarkerWords }) {
                 ? 'plus.circle'
                 : marker.glyph === 'edit'
                   ? 'pencil'
-                  : null;
+                  : marker.glyph === 'clock'
+                    ? 'clock'
+                    : null;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
       {glyph ? <Icon name={glyph} color={color} size={marker.glyph === 'warning' ? 13 : 11} weight="semibold" /> : null}

@@ -45,6 +45,7 @@ const actions = (over: Partial<RowActions> = {}): RowActions => ({ swap: true, u
 const editRow = (over: Partial<OverviewRow['editRow']> = {}): OverviewRow['editRow'] => ({
   workingSets: 3,
   plannedSets: 3,
+  clearsAt: 3,
   setsText: '3 sets',
   setsDown: { workingSets: 2, clear: false },
   setsUp: { workingSets: 4, clear: false },

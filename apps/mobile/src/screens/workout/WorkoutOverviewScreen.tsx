@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, LayoutAnimation, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { overviewDoneBy, setsStepFrom, statStripSpoken, type SetsStep, type StepTarget, type TargetExplanation, type TemplateLine } from '@fizz/domain';
+import { howLongSheet, overviewDoneBy, stepFitMinutes, setsStepFrom, statStripSpoken, type SetsStep, type StepTarget, type TargetExplanation, type TemplateLine } from '@fizz/domain';
 import type { CheckIn, CheckInScore } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
@@ -17,7 +17,8 @@ import type { LibraryToastParam, RootStackParams } from '../../navigation/types'
 import { STALE_PREVIEW, type AddSheet, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, EditLink, EditRow, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
+import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, EditLink, EditRow, FitCard, HowLongSheet, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
+import { bringBackOf, FIT_COPY, fitCardCollapsed, howLongOpen, timeTile } from '../../workout/fit-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
   checkInRow,
@@ -177,6 +178,9 @@ export function WorkoutOverviewScreen() {
   const [swap, setSwap] = useState<{ slotKey: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [card, setCard] = useState<ChangeCard | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
+  // Fit to time (fit-to-time.md): the `How long?` sheet's own state, and the card folded after the first scroll.
+  const [howLong, setHowLong] = useState<{ chosen: number | null; other: boolean; info: boolean } | null>(null);
+  const [fitFolded, setFitFolded] = useState(false);
   const shownToasts = useRef(new Set<string>());
 
   const [data, reload] = useScreenData(async (s) => {
@@ -766,16 +770,51 @@ export function WorkoutOverviewScreen() {
     if (key === 'skip') void skipRow(r);
     if (key === 'do_first') void moveRow(r, 'first');
     if (key === 'undo_swap') void clearSwap(r.slotKey);
-    if (key === 'bring_back' && r.edit !== null) void undoEdit(r.edit.editId);
+    if (key === 'bring_back') void bringBack(r);
   }
 
   function customAction(r: OverviewData['view']['rows'][number], name: RowCustomAction['name']) {
     if (name === 'swap') void openSwap(r.slotKey);
     if (name === 'skip') void skipRow(r);
-    if (name === 'bring_back' && r.edit !== null) void undoEdit(r.edit.editId);
+    if (name === 'bring_back') void bringBack(r);
     if (name === 'do_first') void moveRow(r, 'first');
     if (name === 'move_up') void moveRow(r, 'up');
     if (name === 'move_down') void moveRow(r, 'down');
+  }
+
+  /** `Bring back` (§2.2): Undo of the skip; on a row the fit skipped, Ben's own sets edit, so the trim leaves it alone (fit-to-time FT5). */
+  async function bringBack(r: OverviewData['view']['rows'][number]) {
+    const b = bringBackOf(r);
+    if (b === null) return;
+    if (b.kind === 'undo') {
+      await undoEdit(b.editId);
+      return;
+    }
+    await writeEdit(`keep:${b.slotKey}`, (x) => services.overview.edit({ ...x, edit: { kind: 'sets', slotKey: b.slotKey, workingSets: b.workingSets } }));
+  }
+
+  // -------------------------------------------------------------------------
+  // Fit to time (fit-to-time.md): `How long?` on the TIME tile, the built-in trim, the card's Undo and Change.
+
+  function openHowLong() {
+    if (!page || switching.current) return;
+    setHowLong(howLongOpen(page.view.fit));
+  }
+
+  /** `Trim to 45 min`: the fit applies at once to the draft (offline, FT2); the toast's Undo takes it back. */
+  async function trimTo(minutes: number) {
+    setHowLong(null);
+    const w = await writeEdit(`fit:${String(minutes)}`, (b) => services.overview.trimToFit({ ...b, minutes }));
+    const added = w?.added[0];
+    if (w && added !== undefined) {
+      setFitFolded(false);
+      toastWithUndo(FIT_COPY.toast(minutes), (v) => undoEdit(added, v), w.draft?.version ?? null);
+    }
+  }
+
+  async function clearFit() {
+    setHowLong(null);
+    await writeEdit('clear-fit', (b) => services.overview.clearFit(b));
   }
 
   async function resetEdits() {
@@ -794,7 +833,7 @@ export function WorkoutOverviewScreen() {
     const chosen: { step: SetsStep } = { step: null };
     const intent = (): string | null => {
       const from = stepperCount(r.editRow.workingSets, page?.draft?.version ?? null, pendingSets.current.get(r.slotKey));
-      const step = setsStepFrom(from, delta, r.editRow.plannedSets);
+      const step = setsStepFrom(from, delta, r.editRow.clearsAt);
       chosen.step = step;
       if (step === null) return null;
       return step.clear ? `sets:${r.slotKey}` : `sets:${r.slotKey}:${String(step.workingSets)}`;
@@ -908,7 +947,7 @@ export function WorkoutOverviewScreen() {
   function editRowPill(r: Row, key: EditRowPillKey) {
     if (key === 'swap') void openSwap(r.slotKey);
     if (key === 'skip') void skipRow(r);
-    if (key === 'bring_back' && r.edit !== null) void undoEdit(r.edit.editId);
+    if (key === 'bring_back') void bringBack(r);
     if (key === 'remove') void removeAdded(r);
   }
 
@@ -1185,15 +1224,30 @@ export function WorkoutOverviewScreen() {
 
   const { view } = page;
   const done = view.estimate === null ? null : overviewDoneBy(now, view.estimate.seconds, services.now().tz);
+  // The TIME tile is the `How long?` button (fit-to-time FT1), in normal and Edit mode.
+  const tile = timeTile(view, OVERVIEW_COPY.time);
   const stats = [
-    ...(view.estimate !== null && done !== null
+    ...(view.estimate !== null && done !== null && tile !== null
       ? [
-          { value: String(view.estimate.minutes), approx: true, suffix: 'min', label: OVERVIEW_COPY.time },
-          { value: done.text, approx: true, label: OVERVIEW_COPY.doneBy },
+          { value: String(view.estimate.minutes), approx: true, suffix: 'min', label: tile.label, clock: tile.clock, button: { onPress: openHowLong, accessibilityLabel: tile.accessibilityLabel } },
+          { value: done.text, approx: true, label: OVERVIEW_COPY.doneBy, spoken: `Done about ${done.text}` },
         ]
       : []),
-    { value: String(view.workingSets), label: OVERVIEW_COPY.sets },
+    { value: String(view.workingSets), label: OVERVIEW_COPY.sets, spoken: `${String(view.workingSets)} working ${view.workingSets === 1 ? 'set' : 'sets'}` },
   ];
+  const sheet =
+    howLong === null
+      ? null
+      : howLongSheet({
+          nowSeconds: view.estimate?.seconds ?? null,
+          nowMinutes: view.estimate?.minutes ?? null,
+          unfittedSeconds: view.fit?.beforeSeconds ?? view.estimate?.seconds ?? null,
+          fitMinutes: view.fit?.minutes ?? null,
+          chosen: howLong.chosen,
+          // The coach fit isn't wired yet in this build: `Ask coach` is honest about it.
+          coachAvailable: false,
+          pace: page.pace,
+        });
   const lastRowId = view.rows.at(-1)?.slotKey;
   const routineName = page.routine?.name ?? null;
 
@@ -1325,7 +1379,16 @@ export function WorkoutOverviewScreen() {
   const loadRow = loadEdit === null ? null : (view.rows.find((r) => r.slotKey === loadEdit.slotKey) ?? null);
 
   const body = (
-    <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}>
+    <ScrollView
+      ref={scrollRef}
+      keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={100}
+      onScroll={(e) => {
+        const y = e.nativeEvent.contentOffset.y;
+        if (view.fit !== null && !fitFolded && fitCardCollapsed(fitFolded, y)) setFitFolded(true);
+      }}
+      contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}
+    >
       <AppText variant="sectionLabel" color="text.tertiary" style={{ marginTop: 10 }}>
         {eyebrowText(view.basis, (ms, tz) => formatShortDate(ms, tz))}
       </AppText>
@@ -1361,6 +1424,20 @@ export function WorkoutOverviewScreen() {
           </AppText>
           {view.muscles.slice(1).map((m) => ` · ${m}`).join('')}
         </AppText>
+      ) : null}
+      {view.fit !== null ? (
+        <FitCard
+          fit={view.fit}
+          collapsed={fitFolded}
+          onExpand={() => {
+            setFitFolded(false);
+          }}
+          onUndo={() => {
+            const id = view.fit?.editId;
+            if (id !== undefined) void undoEdit(id);
+          }}
+          onChange={openHowLong}
+        />
       ) : null}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 18, paddingBottom: theme.space['2'] }}>
         <AppText variant="sectionLabel" color="text.tertiary">
@@ -1586,6 +1663,33 @@ export function WorkoutOverviewScreen() {
         onPick={(r) => void pickAdd(r)}
         onClose={() => {
           closeAdd();
+        }}
+      />
+      <HowLongSheet
+        visible={howLong !== null}
+        sheet={sheet}
+        otherOpen={howLong?.other ?? false}
+        infoOpen={howLong?.info ?? false}
+        busy={false}
+        onChip={(m) => {
+          setHowLong((h) => (h === null ? h : { ...h, chosen: m, other: false }));
+        }}
+        onOther={() => {
+          setHowLong((h) => (h === null ? h : { ...h, other: true, chosen: h.chosen ?? sheet?.selected ?? null }));
+        }}
+        onStep={(d) => {
+          setHowLong((h) => (h === null || sheet === null ? h : { ...h, chosen: stepFitMinutes(h.chosen ?? sheet.selected, d) }));
+        }}
+        onInfo={() => {
+          setHowLong((h) => (h === null ? h : { ...h, info: !h.info }));
+        }}
+        onTrim={() => {
+          if (sheet?.trim.enabled === true) void trimTo(sheet.trim.minutes);
+        }}
+        onAsk={() => undefined}
+        onClear={() => void clearFit()}
+        onClose={() => {
+          setHowLong(null);
         }}
       />
       <NumberAccessory />

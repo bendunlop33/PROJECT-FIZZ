@@ -38,10 +38,10 @@ export const TODAY_EDITS_COPY = {
   editFailed: 'Couldn’t save that edit.',
 } as const;
 
-/** `5 exercises · 3 edited` (§2.1; the label style sets the caps). */
-export function listHeaderText(view: Pick<WorkoutOverview, 'exerciseCount' | 'editCount'>): string {
+/** `5 exercises · 3 edited`, and `· fitted` with a live fit (§2.1, fit-to-time §3.3; the label style sets the caps). */
+export function listHeaderText(view: Pick<WorkoutOverview, 'exerciseCount' | 'editCount'> & Partial<Pick<WorkoutOverview, 'fit'>>): string {
   const n = `${String(view.exerciseCount)} ${view.exerciseCount === 1 ? 'exercise' : 'exercises'}`;
-  return view.editCount > 0 ? `${n} · ${String(view.editCount)} edited` : n;
+  return [n, view.editCount > 0 ? `${String(view.editCount)} edited` : null, view.fit ? 'fitted' : null].filter((x): x is string => x !== null).join(' · ');
 }
 
 /** The toasts (§5). Each edit's toast carries `Undo`; the screen holds what Undo sends. */

@@ -450,7 +450,7 @@ export type SetsStep = { workingSets: number; clear: boolean } | null;
  * TE17's limits. The screen steps a quick second tap from the count its
  * previous write left, not the page it tapped on (review S2).
  */
-export function setsStepFrom(count: number, delta: 1 | -1, plannedCount: number): SetsStep {
+export function setsStepFrom(count: number, delta: 1 | -1, plannedCount: number | null): SetsStep {
   const to = count + delta;
   return to < TODAY_EDIT_LIMITS.minSets || to > TODAY_EDIT_LIMITS.maxSets ? null : { workingSets: to, clear: to === plannedCount };
 }
@@ -463,6 +463,12 @@ export interface EditRowView {
   workingSets: number;
   /** The plan's own working-set count (what a step back to clears the edit at). */
   plannedSets: number;
+  /**
+   * What a step clears at: the plan's own count, or null on a row the fit
+   * trimmed (fit-to-time FT5: `[+]` back to the plan's count is Ben's own
+   * edit, never a clear that the trim would take again).
+   */
+  clearsAt: number | null;
   /** `3 sets`. */
   setsText: string;
   setsDown: SetsStep;
@@ -1104,7 +1110,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       timed: ex.measurement !== 'reps',
     });
     // A trimmed row's stepper writes Ben's count (FT5: `[+]` takes the slot out of the fit), never a clear back to the trim.
-    const editRow: EditRowView = trimmed && shapeEdit === null ? { ...editRowBase, setsDown: keepStep(editRowBase.setsDown), setsUp: keepStep(editRowBase.setsUp) } : editRowBase;
+    const editRow: EditRowView = trimmed && shapeEdit === null ? { ...editRowBase, clearsAt: null, setsDown: keepStep(editRowBase.setsDown), setsUp: keepStep(editRowBase.setsUp) } : editRowBase;
     const accessibilityLabel = (edit?.kind === 'skipped' ? [String(i + 1), ex.exerciseName, 'skipped today'] : [
       String(i + 1),
       ex.exerciseName,
@@ -1257,6 +1263,7 @@ export function editRowView(i: {
   return {
     workingSets: n,
     plannedSets: plannedCount,
+    clearsAt: plannedCount,
     setsText,
     setsDown: setsStepFrom(n, -1, plannedCount),
     setsUp: setsStepFrom(n, 1, plannedCount),

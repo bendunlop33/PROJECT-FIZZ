@@ -122,6 +122,7 @@ import {
   type SetFit,
   type WorkoutOverview,
   type WriteFence,
+  type ResolvedPace,
   recentPaceSamples,
   timeLeftSheet,
   type ActiveSetView,
@@ -576,6 +577,8 @@ export interface OverviewData {
    */
   /** `draftVersion`: the draft the lines were built from; Apply sends it, so a draft that moved since is refused (review B3). */
   templateCard: { routineId: string; routineName: string; routineVersion: number; draftId: string; draftVersion: number; lines: TemplateLine[] } | null;
+  /** The pace the TIME tile and a fit use (`How long?` → `ⓘ`, fit-to-time §3.2). */
+  pace: ResolvedPace;
 }
 
 /** The Add exercise list (§11.4): rows with this gym's targets; `Nothing else here at Main gym.` when empty. */
@@ -3161,6 +3164,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           removedEdits: (run.today?.outcomes ?? []).filter((o: EditOutcome) => o.result === 'stale').length,
           reordered: (run.today?.resolved.order ?? null) !== null,
           templateCard: await templateCardOf(resolved, run, t.draft),
+          pace: planPace(recent),
         };
       } catch {
         return null;
