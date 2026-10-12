@@ -1,5 +1,6 @@
 import {
   addDays,
+  withoutTodayOnlySets,
   applyCheckInPatch,
   buildActiveSetView,
   buildLiftHighlight,
@@ -172,6 +173,7 @@ import {
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
+  Load,
   LoadConvention,
   WeightUnit,
   ActionRecord,
@@ -572,7 +574,8 @@ export interface OverviewData {
    * today's edits, against the workout as this page read it. Null on a next
    * session (that link reads `Save to Workouts ›`) or with nothing to list.
    */
-  templateCard: { routineId: string; routineName: string; routineVersion: number; lines: TemplateLine[] } | null;
+  /** `draftVersion`: the draft the lines were built from; Apply sends it, so a draft that moved since is refused (review B3). */
+  templateCard: { routineId: string; routineName: string; routineVersion: number; draftId: string; draftVersion: number; lines: TemplateLine[] } | null;
 }
 
 /** The Add exercise list (§11.4): rows with this gym's targets; `Nothing else here at Main gym.` when empty. */
@@ -1200,7 +1203,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const routine = await repos().routines.get(req.routineId);
     const ref = routine ? (await finishedRefs(p.id)).find((f) => isFromRoutine(f, routine)) ?? null : null;
     const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
-    const targets = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
+    const fromSource = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
+    // A routine from before the library: last time's today-only set counts stay last time's (TE-B13, review S1).
+    const targets = fromSource !== null && routine && source ? withoutTodayOnlySets(fromSource, routine, source.session.todayEdits) : fromSource;
     // Swapped slots' substitutes too, so the dry run, the Swap sheet and Start map the same item (GS3 step 2, review S3).
     const lastUsedHere = routine ? await lastUsedFor(p.id, [...routine.exercises.map((e) => e.exerciseId), ...swapExerciseIds(req.todayEdits)], req.gymId) : undefined;
     if (req.noteSource === true && ref !== null && !req.preview) await noteStartFrom(p.id, ref.sessionId, req.opId);
@@ -1535,14 +1540,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** `Update Push A ›` (§11.5): today's template-able edits as lines, against the workout as read. */
-  async function templateCardOf(resolved: ResolvedOverview, run: { aggregate: SessionAggregate; today: TodayPlanInfo | null }): Promise<OverviewData['templateCard']> {
-    if (resolved.kind !== 'routine' || run.today === null) return null;
+  async function templateCardOf(resolved: ResolvedOverview, run: { aggregate: SessionAggregate; today: TodayPlanInfo | null }, draft: Pick<PreStartDraft, 'id' | 'version'> | null): Promise<OverviewData['templateCard']> {
+    if (resolved.kind !== 'routine' || run.today === null || draft === null) return null;
     const names = new Map<string, string>();
     for (const id of new Set([...resolved.routine.exercises.map((e) => e.exerciseId), ...[...run.today.resolved.swaps.values()].map((x) => x.toExerciseId), ...[...run.today.resolved.added.values()].map((x) => x.exerciseId)])) {
       names.set(id, (await exerciseById(id))?.name ?? 'Exercise');
     }
     const lines = templateLinesFromEdits({ routine: resolved.routine, resolved: run.today.resolved, today: todayShapes(run.aggregate, run.today.slotOf), nameOf: (id) => names.get(id) ?? 'Exercise' });
-    return lines.length === 0 ? null : { routineId: resolved.routine.id, routineName: resolved.routine.name, routineVersion: resolved.routine.version, lines };
+    return lines.length === 0 ? null : { routineId: resolved.routine.id, routineName: resolved.routine.name, routineVersion: resolved.routine.version, draftId: draft.id, draftVersion: draft.version, lines };
   }
 
   /** `previewKey` inputs as stored now (workout-overview §7). `gymId` null: the typical gym Start will save. */
@@ -2724,7 +2729,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (draftMismatch(req.draft, t.draft)) return { ok: false, reason: 'stale', message: STALE_PREVIEW };
         const run = await overviewDryRun(p, resolved, gymId, planCheckIn, gymEquipment, t.input);
         if (run === null || run.today === null || t.draft === null) return { ok: false, reason: 'stale', message: STALE_PREVIEW };
-        const card = await templateCardOf(resolved, run);
+        const card = await templateCardOf(resolved, run, t.draft);
         const chosen = (card?.lines ?? []).filter((l) => req.lineKeys.includes(l.key));
         if (chosen.length === 0) return { ok: false, reason: 'invalid', message: LIBRARY_COPY.nothing };
         for (const id of [...run.today.resolved.swaps.values()].map((x) => x.toExerciseId).concat([...run.today.resolved.added.values()].map((x) => x.exerciseId))) {
@@ -3031,7 +3036,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         case 'unchanged':
           return { ok: true, draft: c.current, duplicate: false, added: [], removed: [] };
         case 'stale':
-          return { ok: false, reason: 'stale', message: STALE_PREVIEW };
+          // Only the draft moved (a quick second tap on an older version): nothing about the plan to announce (review S2).
+          return { ok: false, reason: 'stale', message: DRAFT_COPY.failed };
         case 'invalid':
           return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
         case 'write': {
@@ -3040,13 +3046,29 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             // A retry whose first write landed reads as done; anything else moved under the page.
             const now = await drafts.open(p.id, basis);
             if (now?.opIds.includes(req.opId) === true) return { ok: true, draft: now, duplicate: true, added: [], removed: [] };
-            return { ok: false, reason: 'stale', message: STALE_PREVIEW };
+            return { ok: false, reason: 'stale', message: DRAFT_COPY.failed };
           }
           return { ok: true, draft: c.next, duplicate: false, added: c.added, removed: c.removed };
         }
       }
     } catch {
       return { ok: false, reason: 'failed', message: DRAFT_COPY.failed };
+    }
+  }
+
+  /**
+   * Whether a typed load is in the row's keypad frame as the page shows it
+   * now: the same unit and convention (a `total` load on a dumbbell row, or
+   * kg at an lb rack, is refused; review S3). A row with no keypad
+   * (bodyweight) takes no load.
+   */
+  async function loadInFrame(req: DraftTarget, slotKey: string, load: Load): Promise<boolean> {
+    try {
+      const page = await overview.load({ target: req.target, gymId: req.gymId, ...(req.typicalEquipment ? { typicalEquipment: req.typicalEquipment } : {}) });
+      const frame = page?.view.rows.find((r) => r.slotKey === slotKey)?.editRow.keypad ?? null;
+      return frame !== null && frame.unit === load.unit && frame.convention === load.convention;
+    } catch {
+      return false;
     }
   }
 
@@ -3143,7 +3165,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           cleared,
           removedEdits: (run.today?.outcomes ?? []).filter((o: EditOutcome) => o.result === 'stale').length,
           reordered: (run.today?.resolved.order ?? null) !== null,
-          templateCard: await templateCardOf(resolved, run),
+          templateCard: await templateCardOf(resolved, run, t.draft),
         };
       } catch {
         return null;
@@ -3197,6 +3219,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      */
     async edit(req: DraftTarget & { edit: OverviewEdit }): Promise<DraftWrite> {
       const e = req.edit;
+      // A typed load is in the row's own keypad frame (its item's unit and convention), else refused (review S3).
+      if (e.kind === 'load' && !(await loadInFrame(req, e.slotKey, e.load))) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
       return writeDraft(req, async ({ base }) => {
         if (e.kind === 'swap') {
           // The Swap sheet's own checks, again here (review S5): the same measurement, doable at this gym. Not in today's plan: `applyDraftCommand`.
@@ -3233,7 +3257,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const { planCheckIn } = await overviewCheckIn(req.checkInId ?? null);
         const t = await todayFor(p, resolved, gymId, gymEquipment, planCheckIn);
         const base = basisSlots(slotBasisOf(resolved));
-        const inPlan = new Set([...base.map((b) => b.exerciseId), ...editedSlots(base, resolveTodayEdits(base, t.input.edits)).map((x) => x.exerciseId)]);
+        // Today's exercises (after swaps): one swapped away today can be added back (review N3).
+        const inPlan = new Set(editedSlots(base, resolveTodayEdits(base, t.input.edits)).map((x) => x.exerciseId));
         const all = new Map<string, Exercise>();
         for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) all.set(e.id, e);
         for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);

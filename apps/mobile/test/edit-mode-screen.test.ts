@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 import type { OverviewGroup, OverviewRow, RowActions } from '@fizz/domain';
 
 import {
+  createEditLane,
   defaultChecked,
+  nextDraftVersion,
+  stepperCount,
   EDIT_MODE_COPY,
   editModeToast,
   editMoves,
@@ -38,6 +41,7 @@ const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/
 const actions = (over: Partial<RowActions> = {}): RowActions => ({ swap: true, undoSwap: false, skip: true, bringBack: false, doFirst: true, up: true, down: true, changeRoutine: false, remove: false, ...over });
 const editRow = (over: Partial<OverviewRow['editRow']> = {}): OverviewRow['editRow'] => ({
   workingSets: 3,
+  plannedSets: 3,
   setsText: '3 sets',
   setsDown: { workingSets: 2, clear: false },
   setsUp: { workingSets: 4, clear: false },
@@ -105,10 +109,17 @@ describe('Update Push A and Save to Workouts (§11.5, TE15)', () => {
   it('skips start unticked; Apply needs a tick; out of date once Push A moved; applied shows Undo', () => {
     const checked = defaultChecked(lines);
     expect([...checked]).toEqual(['swap:a']);
-    expect(updateCardState({ routineVersion: 3, applied: null }, 3, checked)).toEqual({ state: 'ready', applyEnabled: true });
-    expect(updateCardState({ routineVersion: 3, applied: null }, 3, new Set())).toEqual({ state: 'ready', applyEnabled: false });
-    expect(updateCardState({ routineVersion: 3, applied: null }, 4, checked)).toEqual({ state: 'out_of_date', applyEnabled: false });
-    expect(updateCardState({ routineVersion: 3, applied: 'act' }, 4, checked).state).toBe('applied');
+    const card = { routineVersion: 3, draftVersion: 7, applied: null };
+    expect(updateCardState(card, { routineVersion: 3, draftVersion: 7 }, checked)).toEqual({ state: 'ready', applyEnabled: true });
+    expect(updateCardState(card, { routineVersion: 3, draftVersion: 7 }, new Set())).toEqual({ state: 'ready', applyEnabled: false });
+    expect(updateCardState(card, { routineVersion: 4, draftVersion: 7 }, checked)).toEqual({ state: 'out_of_date', applyEnabled: false });
+    expect(updateCardState({ ...card, applied: 'act' }, { routineVersion: 4, draftVersion: 8 }, checked).state).toBe('applied');
+  });
+  it('review B3: a draft edit while the card is open (Ben taps + again) makes it out of date: no Apply of values he never saw', () => {
+    const checked = defaultChecked(lines);
+    const card = { routineVersion: 3, draftVersion: 7, applied: null };
+    expect(updateCardState(card, { routineVersion: 3, draftVersion: 8 }, checked)).toEqual({ state: 'out_of_date', applyEnabled: false });
+    expect(updateCardState(card, { routineVersion: 3, draftVersion: null }, checked).state).toBe('out_of_date');
   });
 });
 
@@ -216,5 +227,47 @@ describe('source checks', () => {
   it('⋯ → Reorder opens Edit mode (TE11 retires the v0.2 Reorder mode)', () => {
     expect(screen).not.toContain('ReorderRow');
     expect(code(screen)).toMatch(/picked === TODAY_EDITS_COPY\.reorder\) \{\s*setOpen\(null\);\s*setEditing\(true\);/);
+  });
+});
+
+describe('review S2: quick stepper taps all land', () => {
+  it('the next write builds on the newer of the page’s draft and the last write’s', () => {
+    expect(nextDraftVersion(null, null)).toBeNull();
+    expect(nextDraftVersion({ id: 'd', version: 3 }, null)).toBe(3);
+    // The first write landed; the page hasn't re-read yet (it still shows v3, or no draft at all).
+    expect(nextDraftVersion({ id: 'd', version: 3 }, { id: 'd', version: 4 })).toBe(4);
+    expect(nextDraftVersion(null, { id: 'd', version: 1 })).toBe(1);
+    // The page caught up (or something else moved it further).
+    expect(nextDraftVersion({ id: 'd', version: 6 }, { id: 'd', version: 4 })).toBe(6);
+    // A new draft (a new day): the page's.
+    expect(nextDraftVersion({ id: 'e', version: 1 }, { id: 'd', version: 9 })).toBe(1);
+  });
+
+  it('a second + steps from the count the first write left until the page shows it', () => {
+    expect(stepperCount(3, 7, undefined)).toBe(3);
+    expect(stepperCount(3, 7, { count: 4, version: 8 })).toBe(4);
+    expect(stepperCount(4, 8, { count: 4, version: 8 })).toBe(4);
+    // The page is newer than the pending write: the page wins.
+    expect(stepperCount(5, 9, { count: 4, version: 8 })).toBe(5);
+    expect(stepperCount(3, null, { count: 4, version: 1 })).toBe(4);
+  });
+
+  it('the lane queues stepper taps behind a running write and drops other taps', async () => {
+    const lane = createEditLane();
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    const first = lane.run(() => new Promise<string>((r) => { release = () => { order.push('first'); r('first'); }; }));
+    expect(lane.busy()).toBe(true);
+    const queued = lane.run(() => { order.push('queued'); return Promise.resolve('queued'); }, { queue: true });
+    const dropped = lane.run(() => { order.push('dropped'); return Promise.resolve('dropped'); });
+    expect(await dropped).toBeNull();
+    release();
+    expect(await first).toBe('first');
+    expect(await queued).toBe('queued');
+    expect(order).toEqual(['first', 'queued']);
+    expect(lane.busy()).toBe(false);
+    // A failed write doesn't block the lane.
+    await expect(lane.run(() => Promise.reject(new Error('x')))).rejects.toThrow('x');
+    expect(await lane.run(() => Promise.resolve('after'))).toBe('after');
   });
 });

@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { CoachModelPort, ModelEvent, ModelRequest } from '@fizz/coach';
@@ -70,6 +73,28 @@ const rowNamed = (page: OverviewData, name: string): OverviewRow => {
   return r;
 };
 const base = (page: OverviewData, gymId: string, routineId: string, opId: string) => ({ target: targetOf(routineId), gymId, expectedDraftVersion: page.draft?.version ?? null, opId });
+
+/** Log every pending set of the workout (its planned values, or `own` for an exercise by name) and finish it. */
+async function finishAll(s: AppServices, sessionId: string, own: (exerciseName: string) => { load: number; reps: number } | null): Promise<void> {
+  const data = await s.workout.load(sessionId);
+  if (!data) throw new Error('no workout');
+  const agg = data.aggregate;
+  for (const ex of [...agg.exercises].sort((a, b) => a.order - b.order)) {
+    for (const set of agg.sets.filter((x) => x.sessionExerciseId === ex.id && x.status === 'pending').sort((a, b) => a.index - b.index)) {
+      h.clockMs += 60_000;
+      const mine = own(ex.exerciseName);
+      const load = mine !== null ? { value: mine.load, unit: ex.unit, convention: ex.loadConvention } : set.planned.load;
+      const reps = mine !== null ? mine.reps : (set.planned.reps?.max ?? 8);
+      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load, reps, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+      if (!r.ok) throw new Error(r.error.message);
+    }
+  }
+  h.clockMs += 60_000;
+  const now = await s.workout.load(sessionId);
+  const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: `finish:${sessionId}`, expectedVersion: now?.aggregate.session.version ?? 0, endedAt: null });
+  if (!fin.ok) throw new Error(fin.error.message);
+  await h.settle(s);
+}
 
 /** The page's rows against the session Start created (TE-B2). */
 function sameAsStart(page: OverviewData, agg: SessionAggregate): void {
@@ -244,24 +269,139 @@ describe('Update Push A (TE-B7 to TE-B9, TE-B13)', () => {
     expect(model.requests).toHaveLength(0);
   });
 
-  it('TE-B13: after a workout with an added exercise and an extra set (no Apply), the next Push A overview has the planned sets and no added exercise', async () => {
+  for (const kind of ['library', 'legacy'] as const) {
+    it(`TE-B13 (${kind} Push A, review S1): after finishing a workout with an added exercise and an extra set (no Apply), the next Push A has the planned sets and no added exercise; the added exercise's own history is updated`, async () => {
+      let { services: s } = await h.launch();
+      const { gymId, routineId } = await withPushA(s);
+      if (kind === 'legacy') {
+        // A routine from before the library: no `source`, planned set for set from its last workout.
+        const name = s.developer.databaseNames().current;
+        await h.forceClose();
+        const db = new DatabaseSync(join(h.dir, name));
+        db.prepare("UPDATE routines SET data = json_remove(data, '$.source') WHERE id = ?").run(routineId);
+        db.close();
+        ({ services: s } = await h.launch());
+        expect((await s.routines.list()).find((r) => r.id === routineId)).toBeDefined();
+      }
+      const page = await load(s, gymId, routineId);
+      const raise = rowNamed(page, 'Lateral raise');
+      await s.overview.edit({ ...base(page, gymId, routineId, 'e1'), edit: { kind: 'sets', slotKey: raise.slotKey, workingSets: 3 } });
+      let p = await load(s, gymId, routineId);
+      const pick = (await s.overview.addCandidates({ target: targetOf(routineId), gymId, query: 'dumbbell bench', showAll: false }))?.rows[0];
+      expect(plain(pick?.lastText)).toMatch(/^last 32\.5 /);
+      await s.overview.edit({ ...base(p, gymId, routineId, 'e2'), edit: { kind: 'add', exerciseId: pick?.exerciseId ?? '' } });
+      p = await load(s, gymId, routineId);
+      const r = await startFromOverview({ start: (q) => s.overview.start(q), reload: () => s.overview.load({ target: targetOf(routineId), gymId }) }, { page: p, opId: 'start-1', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+      if (r.kind !== 'started') throw new Error(r.kind);
+      await finishAll(s, r.outcome.aggregate.session.id, (name) => (name === pick?.name ? { load: 35, reps: 9 } : null));
+      h.clockMs += 2 * DAY;
+      const next = await load(s, gymId, routineId);
+      expect(next.view.rows.map((x) => x.name)).toEqual(['Bench press', 'Lateral raise', 'Triceps pushdown']);
+      // Without the fix, a legacy Push A plans the 3 lateral raises done today.
+      expect(rowNamed(next, 'Lateral raise').editRow.workingSets).toBe(2);
+      expect(next.draft).toBeNull();
+      // The added exercise progressed on its own history: today's 35 kg × 9 is its last.
+      const again = (await s.overview.addCandidates({ target: targetOf(routineId), gymId, query: 'dumbbell bench', showAll: false }))?.rows.find((x) => x.exerciseId === pick?.exerciseId);
+      expect(plain(again?.lastText)).toMatch(/^last 35 × 9/);
+    });
+  }
+});
+
+describe('review B1, B3, S2, S3 through the services', () => {
+  it('B1: Ben’s 62.5 kg on Bench press, then a swap to DB bench press: the row and Start plan DB bench’s own target with no [Ben] tag; Undo swap brings 62.5 kg back', async () => {
     const { services: s } = await h.launch();
     const { gymId, routineId } = await withPushA(s);
     const page = await load(s, gymId, routineId);
-    const raise = rowNamed(page, 'Lateral raise');
-    await s.overview.edit({ ...base(page, gymId, routineId, 'e1'), edit: { kind: 'sets', slotKey: raise.slotKey, workingSets: 3 } });
+    const bench = rowNamed(page, 'Bench press');
+    expect((await s.overview.edit({ ...base(page, gymId, routineId, 'l1'), edit: { kind: 'load', slotKey: bench.slotKey, load: { value: 62.5, unit: 'kg', convention: 'total' } } })).ok).toBe(true);
     let p = await load(s, gymId, routineId);
-    const pick = (await s.overview.addCandidates({ target: targetOf(routineId), gymId, query: 'dumbbell bench', showAll: false }))?.rows[0];
-    await s.overview.edit({ ...base(p, gymId, routineId, 'e2'), edit: { kind: 'add', exerciseId: pick?.exerciseId ?? '' } });
+    const sheet = await s.overview.swapCandidates({ target: targetOf(routineId), gymId, slotKey: bench.slotKey });
+    const db = sheet?.rows.find((r) => r.name === 'Dumbbell bench press');
+    if (!db) throw new Error('no DB bench');
+    const swapped = await s.overview.edit({ ...base(p, gymId, routineId, 'sw1'), edit: { kind: 'swap', slotKey: bench.slotKey, toExerciseId: db.exerciseId } });
+    if (!swapped.ok) throw new Error(swapped.message);
     p = await load(s, gymId, routineId);
-    const r = await startFromOverview({ start: (q) => s.overview.start(q), reload: () => s.overview.load({ target: targetOf(routineId), gymId }) }, { page: p, opId: 'start-1', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
-    if (r.kind !== 'started') throw new Error(r.kind);
-    const loaded = await s.workout.load(r.outcome.aggregate.session.id);
-    const fin = await s.workout.dispatch(r.outcome.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'discard-1', expectedVersion: loaded?.aggregate.session.version ?? 0, confirmedLoggedSets: 0 });
-    expect(fin.ok).toBe(true);
-    const next = await load(s, gymId, routineId);
-    expect(next.view.rows.map((x) => x.name)).toEqual(['Bench press', 'Lateral raise', 'Triceps pushdown']);
-    expect(rowNamed(next, 'Lateral raise').editRow.workingSets).toBe(2);
-    expect(next.draft).toBeNull();
+    const row = p.view.rows.find((r) => r.slotKey === bench.slotKey);
+    expect(row?.name).toBe('Dumbbell bench press');
+    expect(row?.editRow.benLoad).toBe(false);
+    expect(plain(row?.editRow.loadText)).toMatch(/^3[25](\.5)? kg each$/);
+    expect(row?.editRow.keypad).toMatchObject({ convention: 'per_hand' });
+    expect(plain(db.targetText)).toContain(plain(row?.editRow.loadText));
+    // Start plans what the row shows, with loads.
+    const started = await startFromOverview({ start: (q) => s.overview.start(q), reload: () => s.overview.load({ target: targetOf(routineId), gymId }) }, { page: p, opId: 'start-b1', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (started.kind !== 'started') throw new Error(started.kind);
+    sameAsStart(p, started.outcome.aggregate);
+    const sx = started.outcome.aggregate.exercises.find((e) => e.exerciseName === 'Dumbbell bench press');
+    expect(started.outcome.aggregate.sets.filter((x) => x.sessionExerciseId === sx?.id && x.setType !== 'warmup').every((x) => x.planned.load?.convention === 'per_hand')).toBe(true);
+    const loaded = await s.workout.load(started.outcome.aggregate.session.id);
+    await s.workout.dispatch(started.outcome.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'discard-b1', expectedVersion: loaded?.aggregate.session.version ?? 0, confirmedLoggedSets: 0 });
+  });
+
+  it('B1: Undo swap brings Ben’s load back on the planned exercise', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    let p = await load(s, gymId, routineId);
+    const bench = rowNamed(p, 'Bench press');
+    await s.overview.edit({ ...base(p, gymId, routineId, 'l1'), edit: { kind: 'load', slotKey: bench.slotKey, load: { value: 62.5, unit: 'kg', convention: 'total' } } });
+    p = await load(s, gymId, routineId);
+    const db = (await s.overview.swapCandidates({ target: targetOf(routineId), gymId, slotKey: bench.slotKey }))?.rows.find((r) => r.name === 'Dumbbell bench press');
+    await s.overview.edit({ ...base(p, gymId, routineId, 'sw1'), edit: { kind: 'swap', slotKey: bench.slotKey, toExerciseId: db?.exerciseId ?? '' } });
+    p = await load(s, gymId, routineId);
+    expect((await s.overview.clearSwap({ ...base(p, gymId, routineId, 'unswap'), slotKey: bench.slotKey })).ok).toBe(true);
+    p = await load(s, gymId, routineId);
+    expect(rowNamed(p, 'Bench press').editRow).toMatchObject({ benLoad: true, keypad: { convention: 'total', value: 62.5 } });
+    expect(plain(rowNamed(p, 'Bench press').editRow.loadText)).toBe('62.5 kg');
+  });
+
+  it('S3: a load in another convention or unit than the row’s keypad is refused; nothing is written', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    const p = await load(s, gymId, routineId);
+    const raise = rowNamed(p, 'Lateral raise');
+    expect(raise.editRow.keypad).toMatchObject({ unit: 'kg', convention: 'per_hand' });
+    expect(await s.overview.edit({ ...base(p, gymId, routineId, 's3-total'), edit: { kind: 'load', slotKey: raise.slotKey, load: { value: 20, unit: 'kg', convention: 'total' } } })).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(await s.overview.edit({ ...base(p, gymId, routineId, 's3-lb'), edit: { kind: 'load', slotKey: raise.slotKey, load: { value: 20, unit: 'lb', convention: 'per_hand' } } })).toMatchObject({ ok: false, reason: 'invalid' });
+    expect((await load(s, gymId, routineId)).draft).toBeNull();
+    expect((await s.overview.edit({ ...base(p, gymId, routineId, 's3-ok'), edit: { kind: 'load', slotKey: raise.slotKey, load: { value: 12.5, unit: 'kg', convention: 'per_hand' } } })).ok).toBe(true);
+  });
+
+  it('S2: a write on an older draft version is refused as a draft conflict (`Couldn’t save that edit.`), never `Targets updated`', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    const p = await load(s, gymId, routineId);
+    const raise = rowNamed(p, 'Lateral raise');
+    const first = await s.overview.edit({ ...base(p, gymId, routineId, 'tap-1'), edit: { kind: 'sets', slotKey: raise.slotKey, workingSets: 3 } });
+    if (!first.ok) throw new Error(first.message);
+    // The second tap, sent before the page re-read, on the page's version: refused, nothing about targets.
+    expect(await s.overview.edit({ ...base(p, gymId, routineId, 'tap-2'), edit: { kind: 'sets', slotKey: raise.slotKey, workingSets: 4 } })).toEqual({ ok: false, reason: 'stale', message: 'Couldn’t save that edit.' });
+    // Built on the version the first write returned (what the screen now sends): it lands.
+    expect(await s.overview.edit({ ...base(p, gymId, routineId, 'tap-2'), expectedDraftVersion: first.draft?.version ?? null, edit: { kind: 'sets', slotKey: raise.slotKey, workingSets: 4 } })).toMatchObject({ ok: true });
+    expect(rowNamed(await load(s, gymId, routineId), 'Lateral raise').editRow.workingSets).toBe(4);
+  });
+
+  it('B3: Apply with the card built at an older draft version is refused (stale); nothing is written; the card from the fresh page applies what it shows', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    let p = await load(s, gymId, routineId);
+    const raise = rowNamed(p, 'Lateral raise');
+    await s.overview.edit({ ...base(p, gymId, routineId, 'c1'), edit: { kind: 'sets', slotKey: raise.slotKey, workingSets: 3 } });
+    p = await load(s, gymId, routineId);
+    const card = p.templateCard;
+    if (card === null) throw new Error('no card');
+    expect(card.draftVersion).toBe(p.draft?.version);
+    expect(card.lines.map((l) => plain(l.text))).toEqual(['Lateral raise 2 → 3']);
+    // Ben taps [+] again while the card is open: the draft moves on.
+    await s.overview.edit({ ...base(p, gymId, routineId, 'c2'), edit: { kind: 'sets', slotKey: raise.slotKey, workingSets: 4 } });
+    const req = { target: targetOf(routineId), gymId, routineId, expectedRoutineVersion: card.routineVersion, draft: { id: card.draftId, expectedVersion: card.draftVersion }, lineKeys: card.lines.map((l) => l.key), opId: 'apply-old' };
+    expect(await s.routines.applyTodayEdits(req)).toMatchObject({ ok: false, reason: 'stale' });
+    // Without the fix (the page's latest version sent): Push A saved with 4 lateral raises Ben never saw on the card.
+    expect((await s.routines.list()).find((r) => r.id === routineId)?.version).toBe(card.routineVersion);
+    const fresh = await load(s, gymId, routineId);
+    const now = fresh.templateCard;
+    if (now === null) throw new Error('no card');
+    expect(now.lines.map((l) => plain(l.text))).toEqual(['Lateral raise 2 → 4']);
+    const applied = await s.routines.applyTodayEdits({ ...req, draft: { id: now.draftId, expectedVersion: now.draftVersion }, lineKeys: now.lines.map((l) => l.key), opId: 'apply-new' });
+    if (!applied.ok) throw new Error(applied.message);
+    expect(applied.routine.exercises.find((e) => e.id === raise.slotKey)?.setTemplates.filter((t) => t.setType !== 'warmup')).toHaveLength(4);
   });
 });

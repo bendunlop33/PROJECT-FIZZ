@@ -530,4 +530,15 @@ describe('Update Push A: Apply and Undo over several draft edits (§11.5, TE-B7)
     expect((await checkIntegrity(store.db)).ok).toBe(true);
     await store.close();
   });
+
+  it('review N6: a card with more than six lines parses (the cap was raised to 40 for it); 41 is refused', () => {
+    const r1 = routine();
+    const bench = r1.exercises[0];
+    if (!bench) throw new Error('fixture');
+    const changes = (n: number) => Array.from({ length: n }, (_, i) => ({ change: 'edit' as const, text: `Sets: Exercise ${String(i)} 3 → 4` }));
+    const detail = (n: number) => ({ kind: 'update_routine', routineId: ROUTINE, routineName: 'Push A', changes: changes(n), before: r1, versionBefore: 1, versionAfter: 2, draft: null });
+    expect(ActionRecordSchema.safeParse({ ...updateAction('upd-n6', bench, bench, null), detail: detail(12) }).success).toBe(true);
+    expect(ActionRecordSchema.safeParse({ ...updateAction('upd-n6', bench, bench, null), detail: detail(40) }).success).toBe(true);
+    expect(ActionRecordSchema.safeParse({ ...updateAction('upd-n6', bench, bench, null), detail: detail(41) }).success).toBe(false);
+  });
 });

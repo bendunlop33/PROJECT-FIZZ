@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, LayoutAnimation, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { overviewDoneBy, statStripSpoken, type StepTarget, type TargetExplanation, type TemplateLine } from '@fizz/domain';
+import { overviewDoneBy, setsStepFrom, statStripSpoken, type SetsStep, type StepTarget, type TargetExplanation, type TemplateLine } from '@fizz/domain';
 import type { CheckIn, CheckInScore } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
@@ -37,7 +37,10 @@ import {
 import { checkInAtStart, createGuard, saveScore, scoreStepOf, staleStartToast, startEmptyFromOverview, startFromOverview, undoGymSwitch, type ScoreStep } from '../../workout/overview-start';
 import {
   changeCardState,
+  createEditLane,
   createOpIds,
+  nextDraftVersion,
+  stepperCount,
   editMenuItems,
   editPills,
   editToast,
@@ -91,6 +94,8 @@ import { TargetWhyPanel } from './TargetWhyPanel';
 type Toasting = { text: string; action?: string; onAction?: () => void } | null;
 
 const FADE_STEPS = 7;
+/** The Add list searches once typing pauses this long (each search reads up to 40 histories). */
+const ADD_SEARCH_PAUSE_MS = 250;
 
 export function WorkoutOverviewScreen() {
   const theme = useTheme();
@@ -146,15 +151,21 @@ export function WorkoutOverviewScreen() {
   // After a gym switch: the rows before, to count what changed once the page reloads (OV12).
   const gymSwitch = useRef<{ name: string; before: OverviewData['view']['rows']; previousGymId: string | null } | null>(null);
   // Today's edits: one draft write at a time, one opId per intent until it lands (§4.2, §3).
-  const [editGuard] = useState(createGuard);
+  // Stepper taps queue behind a running write; other taps during one are dropped (review S2).
+  const [editGuard] = useState(createEditLane);
+  // The draft the last write left: the next write builds on it before the page re-reads (review S2).
+  const wroteDraft = useRef<{ id: string; version: number } | null>(null);
+  // Each row's working-set count as its last stepper write left it, with that write's draft version.
+  const pendingSets = useRef(new Map<string, { count: number; version: number }>());
   const [ops] = useState(() => createOpIds(newUuid));
   // Edit mode (§11.3, TE11): every row's controls at once; `⋯ → Reorder` opens it too.
   const [editing, setEditing] = useState(false);
   const [repsSlot, setRepsSlot] = useState<string | null>(null);
   const [loadEdit, setLoadEdit] = useState<{ slotKey: string; value: number | null; down: StepTarget; up: StepTarget; note: string | null } | null>(null);
+  const addSearch = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [adding, setAdding] = useState<{ query: string; showAll: boolean; sheet: AddSheet | null; loading: boolean } | null>(null);
   // `Update Push A` (§11.5): the lines as the card opened, Ben's ticks, and the record once applied.
-  const [update, setUpdate] = useState<{ routineId: string; routineName: string; routineVersion: number; lines: TemplateLine[]; checked: Set<string>; applied: string | null } | null>(null);
+  const [update, setUpdate] = useState<{ routineId: string; routineName: string; routineVersion: number; draftId: string; draftVersion: number; lines: TemplateLine[]; checked: Set<string>; applied: string | null } | null>(null);
   const [swap, setSwap] = useState<{ slotKey: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [card, setCard] = useState<ChangeCard | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
@@ -563,7 +574,9 @@ export function WorkoutOverviewScreen() {
           setUpdate(null);
           setRepsSlot(null);
           setLoadEdit(null);
-          setAdding(null);
+          closeAdd();
+          wroteDraft.current = null;
+          pendingSets.current.clear();
           setStartError(null);
           setTarget(t);
           scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -633,24 +646,38 @@ export function WorkoutOverviewScreen() {
    * version, idempotent on the intent's opId (a failed write's retry reuses
    * it). A stale version re-reads the page (rule 5).
    */
-  async function writeEdit(intent: string, call: (base: { target: typeof target; gymId: string | null; expectedDraftVersion: number | null; opId: string }) => Promise<DraftWrite>, version?: number | null): Promise<Extract<DraftWrite, { ok: true }> | null> {
+  async function writeEdit(
+    intent: string | (() => string | null),
+    call: (base: { target: typeof target; gymId: string | null; expectedDraftVersion: number | null; opId: string }) => Promise<DraftWrite>,
+    version?: number | null,
+    opts: { queue?: boolean } = {},
+  ): Promise<Extract<DraftWrite, { ok: true }> | null> {
     if (!page || switching.current) return null;
     const result = await editGuard.run(async () => {
-      const base = { target, gymId: page.view.gym?.id ?? null, expectedDraftVersion: version === undefined ? (page.draft?.version ?? null) : version, opId: ops.of(intent) };
+      // A queued tap names its intent when its turn comes (a stepper steps from the count the last write left).
+      const named = typeof intent === 'string' ? intent : intent();
+      if (named === null) return null;
+      const base = { target, gymId: page.view.gym?.id ?? null, expectedDraftVersion: version === undefined ? nextDraftVersion(page.draft, wroteDraft.current) : version, opId: ops.of(named) };
       const w = await call(base).catch(() => null);
       if (w === null || (!w.ok && w.reason === 'failed')) {
         setToast({ text: TODAY_EDITS_COPY.editFailed });
         return null;
       }
-      ops.done(intent);
+      ops.done(named);
       changed();
       if (!w.ok) {
-        setToast({ text: w.reason === 'stale' ? OVERVIEW_COPY.stale : TODAY_EDITS_COPY.editFailed });
+        // The service says which: the plan moved (`Targets updated`), or only the draft did (`Couldn't save that edit.`).
+        if (w.reason === 'stale') {
+          wroteDraft.current = null;
+          pendingSets.current.clear();
+        }
+        setToast({ text: w.reason === 'stale' ? w.message : TODAY_EDITS_COPY.editFailed });
         return null;
       }
+      if (w.draft !== null) wroteDraft.current = { id: w.draft.id, version: w.draft.version };
       haptic('step');
       return w;
-    });
+    }, opts);
     return result ?? null;
   }
 
@@ -745,10 +772,30 @@ export function WorkoutOverviewScreen() {
 
   type Row = OverviewData['view']['rows'][number];
 
-  async function stepSets(r: Row, step: NonNullable<Row['editRow']['setsUp']>) {
-    // Back at the plan's count clears the edit (`−` undoes `+` in place).
-    if (step.clear) await writeEdit(`sets:${r.slotKey}`, (b) => services.overview.clearEdit({ ...b, kind: 'sets', slotKey: r.slotKey }));
-    else await writeEdit(`sets:${r.slotKey}:${String(step.workingSets)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'sets', slotKey: r.slotKey, workingSets: step.workingSets } }));
+  async function stepSets(r: Row, tapped: NonNullable<Row['editRow']['setsUp']>) {
+    const delta = tapped.workingSets > r.editRow.workingSets ? 1 : -1;
+    // Worked out when its turn comes, from the count the previous tap's write left (review S2).
+    const chosen: { step: SetsStep } = { step: null };
+    const intent = (): string | null => {
+      const from = stepperCount(r.editRow.workingSets, page?.draft?.version ?? null, pendingSets.current.get(r.slotKey));
+      const step = setsStepFrom(from, delta, r.editRow.plannedSets);
+      chosen.step = step;
+      if (step === null) return null;
+      return step.clear ? `sets:${r.slotKey}` : `sets:${r.slotKey}:${String(step.workingSets)}`;
+    };
+    const w = await writeEdit(
+      intent,
+      (b) => {
+        const s = chosen.step;
+        if (s === null) return Promise.resolve<DraftWrite>({ ok: false, reason: 'invalid', message: TODAY_EDITS_COPY.editFailed });
+        // Back at the plan's count clears the edit (`−` undoes `+` in place).
+        return s.clear ? services.overview.clearEdit({ ...b, kind: 'sets', slotKey: r.slotKey }) : services.overview.edit({ ...b, edit: { kind: 'sets', slotKey: r.slotKey, workingSets: s.workingSets } });
+      },
+      undefined,
+      { queue: true },
+    );
+    const done = chosen.step;
+    if (w !== null && w.draft !== null && done !== null) pendingSets.current.set(r.slotKey, { count: done.workingSets, version: w.draft.version });
   }
 
   async function doneReps(r: Row, payload: { kind: 'clear' } | { kind: 'reps'; reps: { min: number; max: number } | null; durationS: number | null }) {
@@ -798,6 +845,23 @@ export function WorkoutOverviewScreen() {
     if (w && w.removed.length > 0) toastWithUndo(editModeToast.removed(r.name), (v) => restoreEdits(w.removed, v), w.draft?.version ?? null);
   }
 
+  function closeAdd() {
+    if (addSearch.current !== null) clearTimeout(addSearch.current);
+    addSearch.current = null;
+    setAdding(null);
+  }
+
+  /** Typing in the Add list: the field updates at once; the search runs once typing pauses (review N4). */
+  function typeAdd(query: string) {
+    const showAll = adding?.showAll ?? false;
+    setAdding((cur) => (cur === null ? cur : { ...cur, query, loading: true }));
+    if (addSearch.current !== null) clearTimeout(addSearch.current);
+    addSearch.current = setTimeout(() => {
+      addSearch.current = null;
+      void loadAdd(query, showAll);
+    }, ADD_SEARCH_PAUSE_MS);
+  }
+
   async function loadAdd(query: string, showAll: boolean) {
     if (!page) return;
     setAdding((cur) => ({ query, showAll, sheet: cur?.sheet ?? null, loading: true }));
@@ -808,7 +872,7 @@ export function WorkoutOverviewScreen() {
 
   async function pickAdd(row: AddSheet['rows'][number]) {
     const go = async () => {
-      setAdding(null);
+      closeAdd();
       const w = await writeEdit(`add:${row.exerciseId}`, (b) => services.overview.edit({ ...b, edit: { kind: 'add', exerciseId: row.exerciseId } }));
       const added = w?.added[0];
       if (w && added !== undefined) toastWithUndo(editModeToast.added(row.name), (v) => undoEdit(added, v), w.draft?.version ?? null);
@@ -852,14 +916,14 @@ export function WorkoutOverviewScreen() {
     }
     const c = page.templateCard;
     if (c === null) return;
-    setUpdate({ routineId: c.routineId, routineName: c.routineName, routineVersion: c.routineVersion, lines: c.lines, checked: defaultChecked(c.lines), applied: null });
+    setUpdate({ routineId: c.routineId, routineName: c.routineName, routineVersion: c.routineVersion, draftId: c.draftId, draftVersion: c.draftVersion, lines: c.lines, checked: defaultChecked(c.lines), applied: null });
   }
 
-  /** Apply (§11.5): the checked lines, versioned on the workout the card opened on and on today's draft (rule 5). */
+  /** Apply (§11.5): the checked lines, versioned on the workout and on the draft the card was built from (rule 5, review B3). */
   async function applyUpdate() {
     const u = update;
-    if (!page || u === null || page.draft === null) return;
-    const draft = page.draft;
+    if (!page || u === null) return;
+    const draft = { id: u.draftId, version: u.draftVersion };
     await editGuard.run(async () => {
       setCardBusy(true);
       try {
@@ -998,6 +1062,8 @@ export function WorkoutOverviewScreen() {
         label={EDIT_MODE_COPY.done}
         onPress={() => {
           setEditing(false);
+          // An unapplied card closes with Edit mode: reopened, it is built from the draft as it is then (review B3).
+          setUpdate((u) => (u === null || u.applied === null ? null : u));
         }}
       />
     </View>
@@ -1302,7 +1368,7 @@ export function WorkoutOverviewScreen() {
             ...(update !== null
               ? [
                   (() => {
-                    const st = updateCardState(update, page.routine?.version ?? null, update.checked);
+                    const st = updateCardState(update, { routineVersion: page.routine?.version ?? null, draftVersion: page.draft?.version ?? null }, update.checked);
                     return (
                       <UpdateCard
                         key="update-card"
@@ -1499,11 +1565,11 @@ export function WorkoutOverviewScreen() {
         loading={adding?.loading ?? false}
         query={adding?.query ?? ''}
         stacked={stacked}
-        onQuery={(q) => void loadAdd(q, adding?.showAll ?? false)}
+        onQuery={typeAdd}
         onShowAll={() => void loadAdd(adding?.query ?? '', true)}
         onPick={(r) => void pickAdd(r)}
         onClose={() => {
-          setAdding(null);
+          closeAdd();
         }}
       />
       <NumberAccessory />

@@ -308,11 +308,68 @@ export function updateLink(page: { templateCard: { routineName: string } | null;
   return null;
 }
 
-/** The Update card's state (§11.5): ready while Push A is at the card's version; `Was suggested:` once it moved; Apply needs a tick. */
-export function updateCardState(card: { routineVersion: number; applied: string | null }, routineVersion: number | null, checked: ReadonlySet<string>): { state: 'ready' | 'applied' | 'out_of_date'; applyEnabled: boolean } {
+/**
+ * The Update card's state (§11.5): ready while Push A and today's draft are
+ * both at the card's versions; `Was suggested:` once either moved (a `+`
+ * tapped while the card is open changes what Apply would write, review B3);
+ * Apply needs a tick.
+ */
+export function updateCardState(
+  card: { routineVersion: number; draftVersion: number; applied: string | null },
+  now: { routineVersion: number | null; draftVersion: number | null },
+  checked: ReadonlySet<string>,
+): { state: 'ready' | 'applied' | 'out_of_date'; applyEnabled: boolean } {
   if (card.applied !== null) return { state: 'applied', applyEnabled: false };
-  if (routineVersion !== card.routineVersion) return { state: 'out_of_date', applyEnabled: false };
+  if (now.routineVersion !== card.routineVersion || now.draftVersion !== card.draftVersion) return { state: 'out_of_date', applyEnabled: false };
   return { state: 'ready', applyEnabled: checked.size > 0 };
+}
+
+type DraftRef = { id: string; version: number };
+
+/**
+ * The draft version the next write sends (review S2): the newer of the page's
+ * and the last write's. A write lands before the page re-reads, so a quick
+ * second tap must build on what the first one left, never on the page it was
+ * tapped on. A page read from before the first write (no draft yet) doesn't
+ * undo it; a different draft (a new day) is the page's.
+ */
+export function nextDraftVersion(page: DraftRef | null, wrote: DraftRef | null): number | null {
+  if (wrote === null) return page?.version ?? null;
+  if (page === null) return wrote.version;
+  if (page.id !== wrote.id) return page.version;
+  return Math.max(page.version, wrote.version);
+}
+
+/**
+ * A row's working-set count to step from (review S2): the count the last
+ * stepper write on it left, until the page shows that write (its draft
+ * version or later), else the page's.
+ */
+export function stepperCount(pageCount: number, pageDraftVersion: number | null, pending: { count: number; version: number } | undefined): number {
+  if (pending === undefined) return pageCount;
+  return pageDraftVersion === null || pending.version > pageDraftVersion ? pending.count : pageCount;
+}
+
+/**
+ * One lane for today's draft writes: a stepper tap waits its turn (`queue`)
+ * so quick taps all land; any other edit tapped while a write runs is
+ * dropped (a double tap sends one).
+ */
+export function createEditLane(): { run: <R>(fn: () => Promise<R>, opts?: { queue?: boolean }) => Promise<R | null>; busy: () => boolean } {
+  let tail: Promise<unknown> = Promise.resolve();
+  let waiting = 0;
+  return {
+    busy: () => waiting > 0,
+    run<R>(fn: () => Promise<R>, opts: { queue?: boolean } = {}): Promise<R | null> {
+      if (waiting > 0 && opts.queue !== true) return Promise.resolve(null);
+      waiting += 1;
+      const next = tail.then(fn).finally(() => {
+        waiting -= 1;
+      });
+      tail = next.catch(() => undefined);
+      return next;
+    },
+  };
 }
 
 /** The lines checked when the card opens (TE15: skips unchecked). */
