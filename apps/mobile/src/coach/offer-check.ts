@@ -34,13 +34,20 @@ export function planOfferCheck(held: HeldSets, aggregate: SessionAggregate, setI
  * the built-in rule offers (CA6 revised). No AI call.
  */
 export async function findOffer(
-  coach: Pick<CoachService, 'availability' | 'offerAfterLog'>,
-  input: { aggregate: SessionAggregate; check: readonly string[]; resting: boolean; pending: boolean },
+  coach: Pick<CoachService, 'availability' | 'offerAfterLog' | 'triggerKindOf'>,
+  input: { aggregate: SessionAggregate; check: readonly string[]; resting: boolean; pending: boolean; shown?: WorkoutOffer | null },
 ): Promise<{ availability: CoachAvailability; offer: WorkoutOffer | null }> {
   const availability = await coach.availability();
   for (const setId of input.check) {
     const offer = await coach.offerAfterLog({ aggregate: input.aggregate, setId, resting: input.resting, coachReachable: availability.status === 'ok', pending: input.pending });
     if (offer !== null) return { availability, offer };
+  }
+  // r3 N3: an effort chip (or a correction) re-checks the set whose offer is showing. CA4 won't offer the same
+  // kind twice, so keep the one on screen while that set still triggers it; drop it once it doesn't.
+  const shown = input.shown ?? null;
+  if (shown !== null && input.resting && input.check.includes(shown.setId)) {
+    const kind = await coach.triggerKindOf(input.aggregate, shown.setId).catch(() => null);
+    if (kind === shown.kind) return { availability, offer: shown };
   }
   return { availability, offer: null };
 }
@@ -60,6 +67,42 @@ export interface RuleRequest {
 /** Ben's chip: the coach when it reads `ok` now; otherwise the built-in rule applies at once (no AI call). */
 export function chipRoute(availability: CoachAvailability | null): 'coach' | 'rule' {
   return availability?.status === 'ok' ? 'coach' : 'rule';
+}
+
+/** One chip at a time (r3 N5): held from the tap until the chip has been sent to the coach or the rule's write is done. */
+export interface ChipGate {
+  busy: boolean;
+}
+
+/**
+ * A `Too hard` / `Too easy` tap. Not `ok` as last read: read again first
+ * (`Offline` lapses once the network is back). A second tap while the first
+ * is still being read or written does nothing (r3 N5: it applied a second
+ * reduction with its own opId).
+ */
+export async function routeChip(
+  coach: Pick<CoachService, 'availability'>,
+  gate: ChipGate,
+  known: CoachAvailability | null,
+  go: { coach: () => void; rule: () => Promise<void>; availability?: (now: CoachAvailability) => void },
+): Promise<'coach' | 'rule' | 'busy'> {
+  if (gate.busy) return 'busy';
+  gate.busy = true;
+  try {
+    let now = known;
+    if (chipRoute(now) !== 'coach') {
+      now = await coach.availability().catch(() => known);
+      if (now !== null) go.availability?.(now);
+    }
+    if (chipRoute(now) === 'coach') {
+      go.coach();
+      return 'coach';
+    }
+    await go.rule();
+    return 'rule';
+  } finally {
+    gate.busy = false;
+  }
 }
 
 type SlotOutcome = { text: string; retry: boolean } | null;

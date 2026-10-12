@@ -12,7 +12,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { WorkoutOffer } from '../src/coach/coach-service';
 import { nextTimeView } from '../src/coach/next-time-view';
-import { chipRoute, correctedSetToCheck, findOffer, NO_HELD_SETS, planOfferCheck, settleTurn, type RuleRequest } from '../src/coach/offer-check';
+import { chipRoute, correctedSetToCheck, findOffer, NO_HELD_SETS, planOfferCheck, routeChip, settleTurn, type ChipGate, type RuleRequest } from '../src/coach/offer-check';
 import { returnToWorkout } from '../src/navigation/actions';
 import { whyView } from '../src/coach/sheet-view';
 import { coachCouldNotAnswer, offerCandidates, ruleOfferOutcome, slotAfterTurn, slotView } from '../src/coach/slot-view';
@@ -477,6 +477,11 @@ describe('r2 S1: the chip routing the hook uses (chipRoute, then settleTurn afte
     expect(r.adjustment).toMatchObject({ author: 'checks', status: 'committed' });
     expect(r.outcome).toBeNull();
     expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([57.5, 57.5]);
+    // r3 N7: and its Undo puts the plan back.
+    if (r.adjustment === null) throw new Error('no adjustment');
+    const undone = await s.coach.undo(r.adjustment.actionId, `undo:${r.adjustment.actionId}`);
+    expect(undone.result.status).toBe('written');
+    expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([62.5, 62.5]);
   });
 
   it('Ben cancelled the coach turn: nothing changes, the rule does not step in', async () => {
@@ -624,3 +629,132 @@ describe('F7: a miss logged with no rest running is checked when the next rest s
     expect(offerCandidates(['1', '2', '3', '4', '5', '6'], '7', false).held).toHaveLength(6);
   });
 });
+
+describe('r3 nits: N6 settleTurn’s F3 branch, N3 an effort chip keeps a shown offer, N5 two quick chip taps', () => {
+  it('N6: Adjust on the coach’s offer, then the turn fails on the network: settleTurn swaps in the rule’s offer, no outcome line', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    const s1 = work[0];
+    if (!s1) throw new Error('fixture');
+    const agg = await log(s, sessionId, s1.id, 2, 'log-1');
+    const offered = await offerFor(s, agg, s1.id);
+    expect(offered).toMatchObject({ by: 'coach', kind: 'reps_short' });
+    if (offered === null) throw new Error('no offer');
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    const turnId = h.ids();
+    const threadId = await s.coach.resolveThread({ kind: 'workout', sessionId });
+    const result = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId, input: { kind: 'chip', chip: 'too_hard', sessionExerciseId: offered.sessionExerciseId }, turnId });
+    const settled = await settleTurn(s.coach, { sessionId, turnId, result, after: slotAfterTurn(result), offered, request: null });
+    expect(settled.offer).toMatchObject({ by: 'rule', triggerId: offered.triggerId, kind: 'reps_short' });
+    expect(plain(settled.offer?.change)).toBe('Next sets: 57.5 kg × 3–6');
+    expect(settled.outcome).toBeNull();
+    expect(settled.adjustment).toBeNull();
+  });
+
+  it('N3: an effort chip on the same set keeps the shown offer while it still holds, and drops it once it doesn’t', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const s1 = work[0];
+    if (!s1) throw new Error('fixture');
+    const agg = await log(s, sessionId, s1.id, 2, 'log-1');
+    const shown = await offerFor(s, agg, s1.id);
+    expect(shown).toMatchObject({ by: 'rule', kind: 'reps_short' });
+    const effort = async (rpe: number, opId: string) => {
+      const cur = (await s.workout.load(sessionId))?.aggregate.sets.find((x) => x.id === s1.id);
+      const r = await s.workout.dispatch(sessionId, { type: 'correct_set', at: h.now(), opId, setId: s1.id, expectedSetVersion: cur?.version ?? 0, patch: { rpe } });
+      if (!r.ok) throw new Error(r.error.message);
+      return r.aggregate;
+    };
+    // RPE 9 against the 8.5 target: still a miss (CA4 alone would have hidden it for good).
+    const at9 = await effort(9, 'rpe-9');
+    const plan = planOfferCheck(NO_HELD_SETS, at9, s1.id);
+    expect((await findOffer(s.coach, { aggregate: at9, check: plan.check, resting: plan.resting, pending: false, shown })).offer).toBe(shown);
+    // RPE 7 is clearly below target: he stopped with reps in the tank, so no miss.
+    const at7 = await effort(7, 'rpe-7');
+    expect((await findOffer(s.coach, { aggregate: at7, check: plan.check, resting: true, pending: false, shown })).offer).toBeNull();
+    // Without the shown offer (another set's log), nothing is kept.
+    expect((await findOffer(s.coach, { aggregate: at9, check: plan.check, resting: true, pending: false, shown: null })).offer).toBeNull();
+  });
+
+  it('N5: two quick taps while the availability read is in flight apply one reduction', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    await log(s, sessionId, s1.id, 6, 'log-1');
+    const gate: ChipGate = { busy: false };
+    let release: () => void = () => undefined;
+    const slow = { availability: () => new Promise<Awaited<ReturnType<S['coach']['availability']>>>((resolve) => { release = () => { void s.coach.availability().then(resolve); }; }) };
+    let writes = 0;
+    const tap = () =>
+      routeChip(slow, gate, null, {
+        coach: () => { throw new Error('not reachable'); },
+        rule: async () => {
+          writes += 1;
+          await s.coach.applyRuleRequest({ sessionId, sessionExerciseId: s1.sessionExerciseId, intent: 'too_hard', opId: h.ids() });
+        },
+      });
+    const first = tap();
+    const second = tap();
+    release();
+    expect(await second).toBe('busy');
+    expect(await first).toBe('rule');
+    expect(writes).toBe(1);
+    expect(await plannedLoadsOf(s, sessionId, [s2.id, s3.id])).toEqual([57.5, 57.5]);
+    // Once done, the next tap goes through.
+    expect(gate.busy).toBe(false);
+  });
+});
+
+describe('CHANGELOG 2026-10-11: offers follow the target RPE, on real SQLite', () => {
+  it('every working set shows its target RPE; the built-in rule’s 8.5 for a main barbell lift', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    const s1 = work[0];
+    if (!s1) throw new Error('fixture');
+    const data = await s.workout.load(sessionId);
+    if (!data) throw new Error('fixture');
+    const v = s.workout.view(data, h.clockMs, null);
+    expect(plain(v.focus?.target)).toMatch(/@ RPE 8\.5$/);
+    expect(v.focus?.targetRpe).toEqual({ rpe: 8.5, source: 'rule' });
+  });
+
+  it('RPE 10 on an RPE-10 plan (Ben’s override): no offer; RPE 10 on an RPE-8 plan: offer', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    const exId = s1.sessionExerciseId;
+    const setTarget = async (rpe: number, opId: string) => {
+      const a = (await s.workout.load(sessionId))?.aggregate;
+      const r = await s.workout.dispatch(sessionId, { type: 'set_target_rpe', at: h.now(), opId, expectedVersion: a?.session.version ?? 0, scope: { kind: 'exercise', sessionExerciseId: exId }, rpe });
+      if (!r.ok) throw new Error(r.error.message);
+    };
+    await setTarget(10, 'rpe-10');
+    const allOut = await log(s, sessionId, s1.id, 6, 'log-1', 10);
+    expect(await offerFor(s, allOut, s1.id)).toBeNull();
+    await setTarget(8, 'rpe-8');
+    const hard = await log(s, sessionId, s2.id, 6, 'log-2', 10);
+    const offer = await offerFor(s, hard, s2.id);
+    expect(offer).toMatchObject({ by: 'rule', kind: 'rpe_high', fact: 'RPE 10 on set 2 (target 8)', targetRpe: 8, loggedRpe: 10 });
+    expect(plain(offer?.change)).toBe('Next set: 57.5 kg × 3–6');
+    // Ben's target survives: the remaining set still reads 8 after the rule's change.
+    if (offer === null) throw new Error('no offer');
+    expect((await s.coach.applyRuleOffer(offer)).status).toBe('applied');
+    const left = (await s.workout.load(sessionId))?.aggregate.sets.find((x) => x.id === s3.id);
+    expect(left?.planned).toMatchObject({ load: { value: 57.5 }, rpeOverride: 8 });
+  });
+
+  it('Ben’s case: 2 reps against 3–6 with no RPE still offers (built-in target 8.5)', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    connection = NOT_CONNECTED;
+    const s1 = work[0];
+    if (!s1) throw new Error('fixture');
+    const agg = await log(s, sessionId, s1.id, 2, 'log-1');
+    expect(await offerFor(s, agg, s1.id)).toMatchObject({ kind: 'reps_short', targetRpe: 8.5, loggedRpe: null });
+  });
+});
+
+async function plannedLoadsOf(s: S, sessionId: string, ids: string[]) {
+  const a = (await s.workout.load(sessionId))?.aggregate;
+  return ids.map((id) => a?.sets.find((x) => x.id === id)?.planned.load?.value);
+}
+

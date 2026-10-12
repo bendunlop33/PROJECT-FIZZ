@@ -7,7 +7,7 @@ import type { ActionRecord, BenInput, SessionAggregate } from '@fizz/schemas';
 
 import type { CoachAvailability, WorkoutOffer } from '../../coach/coach-service';
 import { whyView, type WhyView } from '../../coach/sheet-view';
-import { chipRoute, findOffer, NO_HELD_SETS, planOfferCheck, settleTurn, type HeldSets, type RuleRequest } from '../../coach/offer-check';
+import { findOffer, NO_HELD_SETS, routeChip, type ChipGate, planOfferCheck, settleTurn, type HeldSets, type RuleRequest } from '../../coach/offer-check';
 import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, ruleOfferOutcome, slotAfterFailure, slotAfterTurn, slotView, syncAdjustment, type SlotView } from '../../coach/slot-view';
 import { newUuid } from '../../device/runtime';
 import { useServices } from '../../shell/context';
@@ -68,6 +68,10 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
   const lastRequest = useRef<RuleRequest | null>(null);
   /** A rule change being written (a local write; guards a double tap). */
   const writing = useRef(false);
+  /** r3 N5: a chip tap held from the tap until it is sent or written. */
+  const chipGate = useRef<ChipGate>({ busy: false });
+  /** The turn in flight, read synchronously (the `pending` state lags a render behind a second quick tap). */
+  const asking = useRef<string | null>(null);
   /** Only the latest log's offer check may set the offer. */
   const offerCheck = useRef(0);
   /** Sets logged with no rest running, checked when the next rest starts (F7). Per workout. */
@@ -96,8 +100,9 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
 
   const ask = useCallback(
     (input: BenInput, fromOffer: Offer | null = null, request: RuleRequest | null = null) => {
-      if (sessionId === null || pending !== null || writing.current) return;
+      if (sessionId === null || pending !== null || asking.current !== null || writing.current) return;
       const turnId = newUuid();
+      asking.current = turnId;
       lastAsk.current = input;
       lastRequest.current = request;
       askedOffer.current = fromOffer;
@@ -133,7 +138,9 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
         if (applied !== null) appliedRef.current();
         setPending(null);
         setAvailability(await services.coach.availability());
-      })();
+      })().finally(() => {
+        if (asking.current === turnId) asking.current = null;
+      });
     },
     [services, sessionId, pending],
   );
@@ -161,14 +168,14 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
 
   /** S1: the coach can't answer now, so Ben's chip goes straight to the built-in rule (no AI call). */
   const applyRequest = useCallback(
-    (request: RuleRequest) => {
+    async (request: RuleRequest): Promise<void> => {
       if (sessionId === null || pending !== null || writing.current) return;
       writing.current = true;
       setOffer(null);
       setOutcome(null);
       setWhy(null);
       setAdjustOpen(false);
-      void services.coach
+      await services.coach
         .applyRuleRequest({ sessionId, ...request, opId: newUuid() })
         .catch(() => ({ status: 'failed' as const }))
         .then((r) => {
@@ -199,12 +206,14 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
       if (pending === null) setOutcome(null);
       if (adjustment !== null && adjustment.undoneBy === null) setAdjustment(null);
       const check = ++offerCheck.current;
-      setOffer(null);
+      // r3 N3: an effort chip re-checks the same set; its offer stays on screen while the check runs (and after, if it still holds).
+      const shown = offer !== null && offer.setId === setId ? offer : null;
+      if (shown === null) setOffer(null);
       // F7: a set logged with no rest running is held until the next rest (held in memory only; a force-close in
       // between loses that one check, review N3). Not reachable: the built-in rule offers instead (CA6 revised).
       const plan = planOfferCheck(heldSets.current, aggregate, setId);
       heldSets.current = plan.held;
-      void findOffer(services.coach, { aggregate, check: plan.check, resting: plan.resting, pending: pending !== null })
+      void findOffer(services.coach, { aggregate, check: plan.check, resting: plan.resting, pending: pending !== null, shown })
         .then(({ availability: now, offer: next }) => {
           setAvailability(now);
           return next;
@@ -220,17 +229,14 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
     ask,
     askChip: (chip, sessionExerciseId) => {
       const request: RuleRequest = { sessionExerciseId, intent: chip };
-      if (chipRoute(availability) === 'coach') ask({ kind: 'chip', chip }, null, request);
-      else
-        // Re-read first: `Offline` lapses once the network is back, and then the coach answers.
-        void services.coach
-          .availability()
-          .catch(() => availability)
-          .then((now) => {
-            if (now !== null) setAvailability(now);
-            if (chipRoute(now) === 'coach') ask({ kind: 'chip', chip }, null, request);
-            else applyRequest(request);
-          });
+      // One tap at a time (r3 N5); not `ok` as last read: read again first (`Offline` lapses once the network is back).
+      void routeChip(services.coach, chipGate.current, availability, {
+        coach: () => {
+          ask({ kind: 'chip', chip }, null, request);
+        },
+        rule: () => applyRequest(request),
+        availability: setAvailability,
+      });
     },
     retry: () => {
       if (lastAsk.current !== null) ask(lastAsk.current, null, lastRequest.current);
