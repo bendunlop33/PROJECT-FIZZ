@@ -103,15 +103,52 @@ export function perWeekText(n: number): string {
   return n.toFixed(1);
 }
 
-/** `Week from 14 Sep · 2` style lists and the VoiceOver sentence for `WeekBars`. */
+/**
+ * A bar's dates for lists and VoiceOver: a whole week is `week from 14
+ * September`; a part week the window cut says exactly which days it holds
+ * (`12 October only`, `14 to 16 August`), so a one-day bar is never read as a
+ * week with nothing in it.
+ */
+export function weekBarDates(w: Pick<WeekCount, 'from' | 'to' | 'partial'>): string {
+  if (!w.partial) return `week from ${dayMonthLong(w.from)}`;
+  if (w.from === w.to) return `${dayMonthLong(w.from)} only`;
+  const left = w.from.slice(0, 7) === w.to.slice(0, 7) ? String(Number(w.from.slice(8, 10))) : dayMonthLong(w.from);
+  return `${left} to ${dayMonthLong(w.to)}`;
+}
+
+/** The AX list row: `Week from 14 Sep · 2`, `12 Oct only · 1`, `14–16 Aug · 1`. */
+export function weekBarListText(w: Pick<WeekCount, 'from' | 'to' | 'partial' | 'count'>): string {
+  if (!w.partial) return `Week from ${localDateText(w.from)} · ${String(w.count)}`;
+  if (w.from === w.to) return `${localDateText(w.from)} only · ${String(w.count)}`;
+  const sameMonth = w.from.slice(0, 7) === w.to.slice(0, 7);
+  const left = sameMonth ? String(Number(w.from.slice(8, 10))) : localDateText(w.from);
+  return `${left}–${localDateText(w.to)} · ${String(w.count)}`;
+}
+
+/** The VoiceOver sentence for `WeekBars`. */
 export function weekBarsWords(weeks: readonly WeekCount[]): string {
-  return `Sessions per week: ${weeks.map((w) => `from ${dayMonthLong(w.from)}, ${String(w.count)}`).join('; ')}.`;
+  return `Sessions per week: ${weeks.map((w) => `${weekBarDates(w)}, ${String(w.count)}`).join('; ')}.`;
+}
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/** A month bar's label: `Sep`, or `Sep 25` when the period crosses a year. */
+export function monthBarLabel(from: string, withYear: boolean): string {
+  const m = MONTH_SHORT[Number(from.slice(5, 7)) - 1] ?? '';
+  return withYear ? `${m} ${from.slice(2, 4)}` : m;
+}
+
+/** The VoiceOver sentence for month bars: `Sessions per month: September 2025, 12; 1 to 12 October 2026, 3.` */
+export function monthBarsWords(months: readonly { from: string; to: string; count: number; partial: boolean }[]): string {
+  const name = (d: string) => `${MONTH_LONG[Number(d.slice(5, 7)) - 1] ?? ''} ${d.slice(0, 4)}`;
+  const one = (m: { from: string; to: string; count: number; partial: boolean }) =>
+    m.partial ? `${String(Number(m.from.slice(8, 10)))} to ${String(Number(m.to.slice(8, 10)))} ${name(m.from)}, ${String(m.count)}` : `${name(m.from)}, ${String(m.count)}`;
+  return `Sessions per month: ${months.map(one).join('; ')}.`;
 }
 
 /** "Last 7 days: Tuesday 6 October, 1 workout; Thursday 8 October, 1 workout. Other days none." */
-export function dayStripWords(days: readonly DayCount[]): string {
+export function dayStripWords(days: readonly DayCount[], head = `Last ${String(days.length)} days`): string {
   const done = days.filter((d) => d.count > 0);
-  const head = `Last ${String(days.length)} days`;
   if (done.length === 0) return `${head}: no workouts.`;
   const list = done.map((d) => `${weekdayDayMonthLong(d.date)}, ${countNoun(d.count, 'workout', 'workouts')}`).join('; ');
   return done.length === days.length ? `${head}: ${list}.` : `${head}: ${list}. Other days none.`;
