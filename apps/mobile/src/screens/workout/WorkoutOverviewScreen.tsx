@@ -515,7 +515,7 @@ export function WorkoutOverviewScreen() {
     const library = routine ? [LIBRARY_COPY_UI.editWorkout, LIBRARY_COPY_UI.duplicate, routine.inRotation ? LIBRARY_COPY_UI.removeFromRotation : LIBRARY_COPY_UI.addToRotation] : [];
     // A coach draft (workout-builder §6.2): Ask coach, Why this workout and Discard draft (no confirm; the toast has Undo).
     const draftItems = page?.coachDraft ? [BUILD_COPY.askCoach, BUILD_COPY.whyThisWorkout, BUILD_COPY.discard] : [];
-    const options = [...edits, ...library, ...(page !== null ? [LIBRARY_COPY_UI.saveToWorkouts] : []), ...draftItems, OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
+    const options = [...edits, ...library, ...(page !== null && (page.coachDraft?.routineId ?? null) === null ? [LIBRARY_COPY_UI.saveToWorkouts] : []), ...draftItems, OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, ...(routine ? { destructiveButtonIndex: options.indexOf(OVERVIEW_COPY.delete) } : {}) }, (i) => {
       const picked = options[i];
       if (picked === TODAY_EDITS_COPY.reorder) {

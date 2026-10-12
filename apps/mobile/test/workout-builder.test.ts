@@ -332,6 +332,31 @@ describe('Save to Workouts is the library’s save (WB15, BD12)', () => {
     expect((await s.routines.remove({ routineId: a.routine.id, expectedVersion: a.routine.version, opId: 'undo-save' })).ok).toBe(true);
     expect((await s.sessions.list(gymId))?.fromCoach?.map((r) => r.draftId)).toEqual([draftId]);
   });
+
+  it('review r2 S2: one save per draft; the page drops Save once saved; a second Save is refused and the link stays on the first; after Undo it saves again', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s);
+    const p = await page(s, draftId, gymId);
+    expect(p.coachDraft?.routineId).toBeNull();
+    const from = { kind: 'preview' as const, target: { kind: 'coach_draft' as const, draftId }, gymId, previewKey: p.view.previewKey };
+    const a = await s.routines.saveFrom({ from, name: 'Push · 45 min', addToRotation: false, opId: 'save-1' });
+    if (!a.ok) throw new Error('not saved');
+    const after = await page(s, draftId, gymId);
+    expect(after.coachDraft?.routineId).toBe(a.routine.id);
+    const b = await s.routines.saveFrom({ from: { ...from, previewKey: after.view.previewKey }, name: 'Push copy', addToRotation: false, opId: 'save-2' });
+    expect(b).toMatchObject({ ok: false, reason: 'already_saved' });
+    expect((await s.routines.list()).filter((r) => r.name === 'Push copy')).toHaveLength(0);
+    expect(await s.coachDrafts.get(draftId)).toMatchObject({ routineId: a.routine.id });
+    // The first save's retry is still a duplicate, not refused.
+    expect(await s.routines.saveFrom({ from, name: 'Push · 45 min', addToRotation: false, opId: 'save-1' })).toMatchObject({ ok: true, duplicate: true });
+    // Undo deletes the first: the draft may be saved again, and the link moves to the new one.
+    expect((await s.routines.remove({ routineId: a.routine.id, expectedVersion: a.routine.version, opId: 'undo-1' })).ok).toBe(true);
+    const undone = await page(s, draftId, gymId);
+    expect(undone.coachDraft?.routineId).toBeNull();
+    const c = await s.routines.saveFrom({ from: { ...from, previewKey: undone.view.previewKey }, name: 'Push again', addToRotation: false, opId: 'save-3' });
+    if (!c.ok) throw new Error('not saved again');
+    expect(await s.coachDrafts.get(draftId)).toMatchObject({ routineId: c.routine.id });
+  });
 });
 
 describe('Save’s draft link (review S8)', () => {

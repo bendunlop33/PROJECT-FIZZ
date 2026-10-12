@@ -644,13 +644,14 @@ export interface SaveSource {
   notSaved: string | null;
 }
 
-export type LibrarySaveWrite = RoutineWrite | { ok: false; message: string; reason: 'nothing' | 'stale_preview' };
+export type LibrarySaveWrite = RoutineWrite | { ok: false; message: string; reason: 'nothing' | 'stale_preview' | 'already_saved' };
 
 /** User-facing words for library writes (minimal copy; the UI says "workout", never "routine", WL1). */
 export const LIBRARY_COPY = {
   notFound: 'That workout wasn’t found.',
   changed: (name: string) => `${name} changed. Check it and try again.`,
   saveFailed: 'Couldn’t save. Try again.',
+  alreadySaved: 'Already saved.',
   editFailed: (name: string) => `Couldn’t save ${name}. Your edits are still here.`,
   nothing: 'Nothing to save',
 } as const;
@@ -700,7 +701,7 @@ export interface CoachDraftInfo {
   rationale: string | null;
   checks: string[];
   fitMinutes: number;
-  /** The library workout it was saved as (still open, Ben may start it); null when not saved. */
+  /** The live library workout it was saved as (still open, Ben may start it); null when not saved or that workout was deleted. Review r2 S2: set, the page offers no second Save. */
   routineId: string | null;
 }
 
@@ -1592,9 +1593,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     | { kind: 'coach_draft'; draft: WorkoutDraft; routine: Routine; basis: OverviewBasis };
 
   /** The overview's view of a coach draft (§4.3, §4.5): values and check lines from the stored version. */
-  function coachDraftInfoOf(d: WorkoutDraft): CoachDraftInfo {
+  /** The live workout a coach draft was saved as, or null (not saved, or that workout was deleted). */
+  async function liveRoutineOf(d: WorkoutDraft): Promise<string | null> {
+    if (d.routineId === null) return null;
+    const r = await ctx.store().repos.routines.get(d.routineId).catch(() => null);
+    return r !== null && !isDeleted(r) ? r.id : null;
+  }
+
+  async function liveDraftRoutineId(draftId: string): Promise<string | null> {
+    const d = await ctx.store().repos.workoutDrafts.get(draftId).catch(() => null);
+    return d === null ? null : liveRoutineOf(d);
+  }
+
+  async function coachDraftInfoOf(d: WorkoutDraft): Promise<CoachDraftInfo> {
     const v = currentDraftVersion(d);
-    return { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: v.rationale, checks: v.checks.map((c) => c.text), fitMinutes: v.fitMinutes, routineId: d.routineId };
+    return { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: v.rationale, checks: v.checks.map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
   }
 
   /** An open coach draft (14 days, not started or discarded), as the overview plans it. Null: gone (`Draft deleted`). */
@@ -3109,6 +3122,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           if (saved.ok && req.from.kind === 'preview' && req.from.target.kind === 'coach_draft' && saved.routine.createdFromDraft?.draftId === req.from.target.draftId) {
             const versionN = saved.routine.createdFromDraft.version;
             const routineId = saved.routine.id;
+            const live = await liveDraftRoutineId(req.from.target.draftId);
+            if (live !== null && live !== routineId) return saved;
             await ctx
               .store()
               .repos.workoutDrafts.write(p.id, req.from.target.draftId, (c) => linkDraftRoutine(c, { routineId, opId: `save:${req.opId}`, at: ctx.now(), versionN }))
@@ -3117,6 +3132,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           return saved;
         };
         const existing = await repos().routines.get(id).catch(() => null);
+        // Review r2 S2: one save per draft. A draft already linked to a live workout isn't saved again (the link stays on the first).
+        if (!existing && req.from.kind === 'preview' && req.from.target.kind === 'coach_draft' && (await liveDraftRoutineId(req.from.target.draftId)) !== null) {
+          return { ok: false, message: LIBRARY_COPY.alreadySaved, reason: 'already_saved' };
+        }
         if (existing) return await linked(existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed });
         const made = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
         if (made === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
@@ -3787,7 +3806,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           templateCard: await templateCardOf(resolved, run, t.draft),
           pace: planPace(recent),
           coachFit: await coachFitInfo(run.today),
-          coachDraft: resolved.kind === 'coach_draft' ? coachDraftInfoOf(resolved.draft) : null,
+          coachDraft: resolved.kind === 'coach_draft' ? await coachDraftInfoOf(resolved.draft) : null,
         };
       } catch {
         return null;
