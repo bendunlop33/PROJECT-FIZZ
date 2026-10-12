@@ -202,6 +202,7 @@ import {
   routineChangeLines,
   routineFromPlan,
   routineGymIssues,
+  sameMovementIds,
   saveSheetDetail,
   setRoutineRotation,
   unnamedWorkoutName,
@@ -1957,23 +1958,30 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /**
      * (12 Oct) What the coach's `add_exercise_today` check needs at the
      * workout's current gym (local reads only, no AI): the exercise by ID or
-     * catalogue key (Ben's own, else the catalogue's, saved as a row like
-     * `Add exercise` does), its history, the gym's items with the workout's
-     * check-in pain, and Ben's profile. Null when there's no profile.
+     * catalogue key (Ben's own, else the catalogue's), its history, the gym's
+     * items with the workout's check-in pain, the other IDs of the same
+     * movement (review S2) and Ben's profile. Nothing is saved here (review
+     * S3): a catalogue exercise not yet in Ben's exercises comes back with
+     * `exerciseUnsaved` and is saved in the add's own write. Null when there's
+     * no profile.
      */
-    async coachAddInputs(exerciseId: string, aggregate: SessionAggregate): Promise<{ exercise: Exercise | null; history: HistorySession[]; substitute: SubstituteContext; owner: UserProfile } | null> {
+    async coachAddInputs(exerciseId: string, aggregate: SessionAggregate): Promise<{ exercise: Exercise | null; history: HistorySession[]; substitute: SubstituteContext; owner: UserProfile; sameMovementIds: string[]; exerciseUnsaved: boolean } | null> {
       const p = await ctx.profile();
       if (!p) return null;
       const mine = (e: Exercise | null | undefined): Exercise | null => (e !== null && e !== undefined && (e.ownerId === null || e.ownerId === p.id) ? e : null);
-      const saved = await repos().exercises.list().catch(() => [] as Exercise[]);
-      const catalogue = ctx.catalogueExercises?.() ?? [];
-      const found = mine(saved.find((e) => e.id === exerciseId)) ?? mine(saved.find((e) => e.catalogueKey === exerciseId)) ?? mine(catalogue.find((e) => e.id === exerciseId || e.catalogueKey === exerciseId));
-      const exercise = found === null ? null : await ensureExercise(found.id);
+      const saved = (await repos().exercises.list().catch(() => [] as Exercise[])).filter((e) => mine(e) !== null);
+      const catalogue = (ctx.catalogueExercises?.() ?? []).filter((e) => mine(e) !== null);
+      const fromSaved = saved.find((e) => e.id === exerciseId) ?? saved.find((e) => e.catalogueKey === exerciseId) ?? null;
+      const fromCatalogue = fromSaved === null ? (catalogue.find((e) => e.id === exerciseId || e.catalogueKey === exerciseId) ?? null) : null;
+      // A catalogue entry already saved under its own ID is Ben's row.
+      const exercise = fromSaved ?? (fromCatalogue === null ? null : (saved.find((e) => e.id === fromCatalogue.id) ?? fromCatalogue));
+      const exerciseUnsaved = exercise !== null && !saved.some((e) => e.id === exercise.id);
       const ci = await sessionCheckIn(aggregate).catch(() => null);
       const gymId = aggregate.session.gymId ?? 'no-gym';
       const substitute = await substituteCtx(p, gymId, currentGymEquipment(aggregate.session), ci, exercise === null ? [] : [exercise.id]);
       const history = exercise === null ? [] : await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
-      return { exercise, history, substitute, owner: p };
+      const sameMovement = exercise === null ? [] : sameMovementIds(exercise, [...saved, ...catalogue]).filter((id) => id !== exercise.id);
+      return { exercise, history, substitute, owner: p, sameMovementIds: [...new Set(sameMovement)], exerciseUnsaved };
     },
 
     /**

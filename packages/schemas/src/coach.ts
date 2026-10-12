@@ -12,6 +12,7 @@ import {
 import { PainAreaSchema, type PainFlag } from './checkin';
 import { DraftBasisSchema } from './draft';
 import type { SessionCommand } from './commands';
+import type { Exercise } from './exercise';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
 import { ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 
@@ -915,8 +916,12 @@ export type CoachWrite =
    * through the reducer inside the same transaction as the record, so the
    * targets and their record are saved together or not at all (rule 5).
    */
-  /** `expectedSessionVersion`: refused as stale when the workout moved on since the caller read it (checked inside the write, review N3). */
-  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number }
+  /**
+   * `expectedSessionVersion`: refused as stale when the workout moved on since the caller read it (checked inside the write, review N3).
+   * `saveExercise` (coach add, review S3): a catalogue exercise not yet in Ben's exercises, saved in the same
+   * transaction as the command, so a refused or stale add leaves no exercise row behind (audit F4).
+   */
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise }
   /**
    * (12 Oct, workout builder) A coach draft and its record, in one write.
    * `expectedVersion`: null creates the draft; otherwise the draft's version

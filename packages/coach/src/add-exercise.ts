@@ -22,9 +22,11 @@ export interface AddExerciseDeps {
   /**
    * Local reads for one `exerciseId` (a catalogue ID or Ben's exercise's ID)
    * at the workout's current gym: the exercise, its history, the substitute
-   * context (items, pain flags, check-in pain) and Ben's profile.
+   * context (items, pain flags, check-in pain) and Ben's profile. Reads
+   * only: a catalogue exercise not yet in Ben's exercises comes back with
+   * `exerciseUnsaved` and is saved with the add's own write (review S3).
    */
-  inputs(exerciseId: string, aggregate: SessionAggregate): Promise<Pick<CoachAddInput, 'exercise' | 'history' | 'substitute' | 'owner'>>;
+  inputs(exerciseId: string, aggregate: SessionAggregate): Promise<Pick<CoachAddInput, 'exercise' | 'history' | 'substitute' | 'owner' | 'sameMovementIds'> & { exerciseUnsaved?: boolean }>;
   /** After a write: the workout screen and rest alerts follow the new state. */
   onSessionChanged?: (aggregate: SessionAggregate) => void;
 }
@@ -57,7 +59,8 @@ export function createAddExerciseExecutor(deps: AddExerciseDeps): CoachExecutors
         return { kind: 'action', record: r.action, replayed: r.status === 'replayed' };
       };
       if (aggregate === null || got === null) return record('stale', null, refusedDetail(null));
-      const check = checkCoachAdd({ aggregate, args: call.args, ...got, opId: ctx.opId, at: ctx.now });
+      const { exerciseUnsaved, ...checkInputs } = got;
+      const check = checkCoachAdd({ aggregate, args: call.args, ...checkInputs, opId: ctx.opId, at: ctx.now });
       if (check.status !== 'ok') return record(check.status, check.status === 'rejected' ? check.failure : null, refusedDetail(check.exerciseName), ctx.opId, check.guardNotes);
       const s = check.summary;
       const detail: ActionDetail = {
@@ -78,7 +81,7 @@ export function createAddExerciseExecutor(deps: AddExerciseDeps): CoachExecutors
         guardNotes: check.guardNotes,
         entityVersions: [{ entity: 'session', id: sessionId, before: call.args.baseVersion, after: call.args.baseVersion + 1 }],
       });
-      const w = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action, sessionId, command: check.command, expectedSessionVersion: call.args.baseVersion });
+      const w = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action, sessionId, command: check.command, expectedSessionVersion: call.args.baseVersion, ...(exerciseUnsaved === true && got.exercise !== null ? { saveExercise: got.exercise } : {}) });
       if (w.status === 'conflict') {
         // Nothing was written: the workout moved on between the check and the write (a Log tap), or the workout refused it.
         const stale = w.reason === 'stale_version';

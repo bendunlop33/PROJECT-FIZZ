@@ -241,4 +241,71 @@ describe('add an exercise from chat', () => {
       expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
     }
   });
+  it('a refused or stale add saves no exercise row (review S3); the committed add saves it with the add', async () => {
+    const { s, sessionId } = await benchWorkout();
+    const savedCurl = async () => (await s.coachingKnowledge.exercises()).some((e) => e.name === 'Cable curl');
+    expect(await savedCurl()).toBe(false);
+    model = new StepModel([(req) => addFromContext('Cable curl', { baseVersion: contextWorkout(req).version - 1 })(req), () => replyWith('Ok.')]);
+    expect((await say(s, sessionId, 'put in some cable curls')).cards[0]?.record.status).toBe('stale');
+    expect(await savedCurl()).toBe(false);
+    model = new StepModel([addFromContext('Cable curl', { afterSessionExerciseId: '00000000-0000-4000-8000-0000000000aa' }), () => replyWith('Ok.')]);
+    expect((await say(s, sessionId, 'put in some cable curls')).cards[0]?.record.status).toBe('rejected');
+    expect(await savedCurl()).toBe(false);
+    model = new StepModel([addFromContext('Cable curl'), () => replyWith('Ok.')]);
+    expect((await say(s, sessionId, 'put in some cable curls')).cards[0]?.record.status).toBe('committed');
+    expect(await savedCurl()).toBe(true);
+    const rows = await rowsOf(s, sessionId);
+    expect(rows.map((x) => x.row.exerciseName)).toContain('Cable curl');
+  });
+
+  it('a FitNotes custom "Lateral Raise" in today’s workout (review S2): the catalogue lateral raise is not addable, and adding it is refused', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    // FitNotes history with Ben's own "Lateral Raise", answered as a new exercise (a custom row, its own ID).
+    const csv = ['Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time', '2026-09-20,Lateral Raise,Shoulders,10.0,12,,,'].join('\n');
+    const opened = await s.imports.open({ name: 'FitNotes_Export_synthetic.csv', text: csv });
+    if (opened.kind !== 'preview') throw new Error(opened.kind);
+    let draft = opened.draft;
+    for (const n of draft.analysis.names) {
+      const r = await s.imports.answer(draft.draftId, draft.mappingVersion, { kind: 'name', key: n.key, answer: { kind: 'new', equipment: 'dumbbells' } });
+      if (!r.ok) throw new Error(r.reason);
+      draft = r.draft;
+    }
+    for (const e of draft.analysis.perHand?.exercises ?? []) {
+      if (e.reading !== null) continue;
+      const r = await s.imports.answer(draft.draftId, draft.mappingVersion, { kind: 'per_hand_override', key: e.key, answer: 'one' });
+      if (!r.ok) throw new Error(r.reason);
+      draft = r.draft;
+    }
+    if (draft.analysis.total?.open) {
+      const r = await s.imports.answer(draft.draftId, draft.mappingVersion, { kind: 'total', answer: 'total' });
+      if (!r.ok) throw new Error(r.reason);
+      draft = r.draft;
+    }
+    const committed = await s.imports.commit(draft.draftId, draft.mappingVersion, 'import-1');
+    if (!committed.ok) throw new Error(committed.reason);
+    const custom = (await s.coachingKnowledge.exercises()).find((e) => e.name === 'Lateral Raise' && e.source === 'custom');
+    if (!custom) throw new Error('no custom exercise');
+
+    const started = await s.workout.start({ gymId, opId: 'start-custom', checkIn: null });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    const picks = await s.workout.pickerExercises(sessionId, 'Lateral Raise');
+    const pick = picks.find((p) => p.exercise.id === custom.id);
+    const added = await s.workout.addExercise({ sessionId, exerciseId: custom.id, equipmentId: pick?.equipment[0]?.id ?? null, opId: 'add-custom' });
+    if (!added.ok) throw new Error(added.error.message);
+
+    model = new StepModel([
+      (req) => {
+        const w = contextWorkout(req);
+        return toolCall('add_exercise_today', { baseVersion: w.version, exerciseId: 'dumbbell-lateral-raise', workingSets: 3, reps: { min: 10, max: 15 }, workSeconds: null, targetRpe: 8, afterSessionExerciseId: null, supersetWithSessionExerciseId: null, reason: 'Ben asked.' });
+      },
+      () => replyWith('Ok.'),
+    ]);
+    const r = await say(s, sessionId, 'add 3 sets of lateral raises');
+    const addable = contextAddable(model.requests[0] as ModelRequest) ?? [];
+    expect(addable.some((a) => /lateral raise/i.test(a.name) && !/cable/i.test(a.name))).toBe(false);
+    expect(r.cards[0]?.record).toMatchObject({ status: 'rejected', failure: 'it’s already in today’s workout' });
+    expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Lateral Raise']);
+  });
 });

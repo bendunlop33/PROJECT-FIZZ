@@ -23,7 +23,7 @@ import {
 import { chatSetUndoCommand, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
-import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
+import { decodeDocument, erase, EXERCISE_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId } from './sql';
 import { getWorkoutDraftIn, WORKOUT_DRAFT_SPEC } from './workout-drafts';
@@ -486,6 +486,13 @@ export class SqliteCoachStore {
         const agg = await readAggregate(tx, write.sessionId);
         if (agg === null || agg.session.ownerId !== ownerId) throw new Rollback('missing');
         if (write.expectedSessionVersion !== undefined && agg.session.version !== write.expectedSessionVersion) throw new Rollback('stale_version');
+        // Review coach-add S3: the catalogue exercise is saved only with the add itself, never on a refusal.
+        if (write.saveExercise !== undefined && (await tx.getFirst('SELECT id FROM exercises WHERE id = ?', [write.saveExercise.id])) === null) {
+          const e = write.saveExercise;
+          if (e.ownerId !== null && e.ownerId !== ownerId) throw new Error('Exercise owner differs from the store owner');
+          const saved = await saveDocumentIn(tx, EXERCISE_SPEC, e, null);
+          if (!saved.ok) throw new Rollback('missing');
+        }
         const r = reduceSession(agg, write.command);
         if (!r.ok) throw new Rollback(r.error.code === 'stale_version' ? 'stale_version' : 'missing');
         if (r.state !== agg) await writeAggregate(tx, r.state);
