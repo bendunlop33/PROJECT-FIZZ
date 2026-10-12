@@ -259,6 +259,38 @@ function validOrder(order: readonly string[], slots: readonly TodaySlot[]): bool
 }
 
 /**
+ * An order missing some of today's added slots, with each put back (merge r2
+ * S1): before the next slot it preceded in `previous` (Ben's earlier order)
+ * that the new order still has; one that was last there, or never placed,
+ * goes at the end. Never splits a superset group: a placement that would goes at the
+ * end instead. Pure.
+ */
+export function withAddedPlaced(order: readonly string[], added: readonly string[], previous: readonly string[] | null, slots: readonly TodaySlot[]): string[] {
+  const missing = added.filter((k) => !order.includes(k));
+  const out = [...order];
+  const unplaced: string[] = [];
+  const prev = previous ?? [];
+  // Right to left, so a run of added slots keeps its own order (each goes before the one after it).
+  for (const k of [...missing].reverse()) {
+    const at = prev.indexOf(k);
+    if (at < 0) {
+      unplaced.unshift(k);
+      continue;
+    }
+    const after = prev.slice(at + 1).find((x) => out.includes(x));
+    const i = after === undefined ? -1 : out.indexOf(after);
+    if (i < 0) {
+      unplaced.unshift(k);
+      continue;
+    }
+    const tried = [...out.slice(0, i), k, ...out.slice(i)];
+    if (keepsGroupsTogether(tried, slots)) out.splice(i, 0, k);
+    else unplaced.unshift(k);
+  }
+  return [...out, ...unplaced];
+}
+
+/**
  * One versioned, idempotent draft write (ADR 0022 §3). A repeated `opId`
  * returns the draft as it is; a version that moved writes nothing. The first
  * edit creates the draft (`expectedVersion: null`). Every write moves the
@@ -326,11 +358,13 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         const skippedNow = new Map(live().flatMap((x) => (x.kind === 'skip' ? [[x.slotKey, x.editId] as const] : [])));
         const keepNow = keptGroups(slotsNow, skippedNow);
         const todayGroups = slotsNow.map((x) => ({ ...x, supersetGroup: x.supersetGroup !== null && keepNow.has(x.supersetGroup) ? x.supersetGroup : null }));
-        // An order that lists the plan's own slots but not today's added ones (a coach Apply's, review B2) keeps them at the end, as `resolveTodayEdits` reads it.
-        const addedNow = addedSlotsOf(live()).map((x) => x.slotKey);
-        const slotKeys = [...e.slotKeys, ...addedNow.filter((k) => !e.slotKeys.includes(k))];
-        if (!validOrder(slotKeys, todayGroups)) return { kind: 'invalid', reason: 'bad_order' };
+        // An order that lists the plan's own slots but not today's added ones (a coach Apply's, review B2) keeps
+        // each added one where Ben placed it, before the same slot as in the order it replaces (merge r2 S1).
+        // One he never placed goes at the end, as `resolveTodayEdits` reads it.
         const prev = live().find((x) => x.kind === 'order');
+        const addedNow = addedSlotsOf(live()).map((x) => x.slotKey);
+        const slotKeys = withAddedPlaced(e.slotKeys, addedNow, prev?.kind === 'order' ? prev.slotKeys : null, todayGroups);
+        if (!validOrder(slotKeys, todayGroups)) return { kind: 'invalid', reason: 'bad_order' };
         const base = slotsNow.map((s) => s.slotKey);
         if (prev?.kind === 'order' && sameOrder(prev.slotKeys, slotKeys)) return { kind: 'unchanged', current };
         if (prev === undefined && sameOrder(base, slotKeys)) return { kind: 'unchanged', current };

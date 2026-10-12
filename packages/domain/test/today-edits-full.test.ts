@@ -20,6 +20,7 @@ import {
   shapeTemplates,
   substituteTargets,
   templateLinesFromEdits,
+  withAddedPlaced,
   withoutTodayOnlySets,
   todayLoadNote,
   todayShapes,
@@ -251,6 +252,37 @@ describe('the draft takes the §11 kinds: versioned, idempotent, within limits (
     expect(write(r, { type: 'edit', edit: { kind: 'order', slotKeys: [...planned, NEW_SLOT] } }, 'o3')).toMatchObject({ kind: 'unchanged' });
     expect(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: planned.slice(1) } }, 'o4')).toEqual({ kind: 'invalid', reason: 'bad_order' });
     expect(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: [...planned, id(998)] } }, 'o5')).toEqual({ kind: 'invalid', reason: 'bad_order' });
+  });
+
+  it('a coach order keeps an added exercise where Ben placed it: ahead of the slot it preceded, not moved to the end (merge r2 S1)', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL } }, 'p0'));
+    // Ben moves Face pull to the top.
+    d = written(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: [NEW_SLOT, SLOT_BENCH, SLOT_INCLINE, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY] } }, 'p1'));
+    // The coach's order lists the plan's own slots only: incline first.
+    const coach = [SLOT_INCLINE, SLOT_BENCH, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY];
+    const r = written(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: coach } }, 'p2'));
+    expect(liveEdits(r.edits).find((e) => e.kind === 'order')).toMatchObject({ slotKeys: [SLOT_INCLINE, NEW_SLOT, SLOT_BENCH, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY] });
+    expect(resolveTodayEdits(SLOTS, liveEdits(r.edits)).order?.indexOf(NEW_SLOT)).toBe(1);
+    // Undo of the coach's order brings Ben's back.
+    const coachOrder = liveEdits(r.edits).find((e) => e.kind === 'order');
+    const undone = written(write(r, { type: 'undo', editId: coachOrder?.editId ?? '' }, 'p3'));
+    expect(liveEdits(undone.edits).find((e) => e.kind === 'order')).toMatchObject({ slotKeys: [NEW_SLOT, SLOT_BENCH, SLOT_INCLINE, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY] });
+    // Duplicate op ID: nothing more written.
+    expect(write(r, { type: 'edit', edit: { kind: 'order', slotKeys: coach } }, 'p2')).toMatchObject({ kind: 'duplicate' });
+  });
+
+  it('placing an added exercise back: last in Ben’s order stays last, never placed goes last, and one that would split a superset goes last (merge r2 S1)', () => {
+    const coach = [SLOT_INCLINE, SLOT_BENCH, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY];
+    const NEW_2 = id(651);
+    expect(withAddedPlaced(coach, [NEW_SLOT], [SLOT_BENCH, SLOT_INCLINE, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY, NEW_SLOT], SLOTS)).toEqual([...coach, NEW_SLOT]);
+    expect(withAddedPlaced(coach, [NEW_SLOT], null, SLOTS)).toEqual([...coach, NEW_SLOT]);
+    // Two added, placed together ahead of Fly: they stay together, in Ben's order.
+    expect(withAddedPlaced(coach, [NEW_SLOT, NEW_2], [SLOT_BENCH, SLOT_INCLINE, SLOT_RAISE, SLOT_PUSHDOWN, NEW_2, NEW_SLOT, SLOT_FLY], SLOTS)).toEqual([SLOT_INCLINE, SLOT_BENCH, SLOT_RAISE, SLOT_PUSHDOWN, NEW_2, NEW_SLOT, SLOT_FLY]);
+    // Ahead of the superset in Ben's order; the coach turns the pair round, so "before Raise" would split it.
+    const flipped = [SLOT_BENCH, SLOT_INCLINE, SLOT_PUSHDOWN, SLOT_RAISE, SLOT_FLY];
+    expect(withAddedPlaced(flipped, [NEW_SLOT], [SLOT_BENCH, SLOT_INCLINE, NEW_SLOT, SLOT_RAISE, SLOT_PUSHDOWN, SLOT_FLY], SLOTS)).toEqual([...flipped, NEW_SLOT]);
+    // Already listed: left where the order puts it.
+    expect(withAddedPlaced([NEW_SLOT, ...coach], [NEW_SLOT], [SLOT_BENCH, NEW_SLOT], SLOTS)).toEqual([NEW_SLOT, ...coach]);
   });
 
   it('the last exercise left counts an added one: with every planned exercise skipped and one added, the skip is allowed', () => {
