@@ -30,6 +30,10 @@ import { estimateRemainingDuration } from './duration';
 import { muscleWords } from './first-run';
 import { droppedWords } from './fit-words';
 import { slotMoves, type TodaySlot } from './today-edits';
+import type { ShapeBefore } from './today-shape';
+import { TODAY_EDIT_LIMITS } from '@fizz/schemas';
+import { roundToAvailableLoad } from '../equipment';
+import { loadText } from '../display';
 
 /**
  * The Workout overview (workout-overview.md): the one page before the first
@@ -170,7 +174,7 @@ export interface PlannedFirst {
   convention: LoadConvention;
 }
 
-export type ChangeMarkerKind = 'held' | 'new' | 'no_load' | 'up' | 'down' | 'reps_up' | 'reps_down' | 'sets_up' | 'sets_down' | 'same' | 'swapped' | 'skipped';
+export type ChangeMarkerKind = 'held' | 'new' | 'no_load' | 'up' | 'down' | 'reps_up' | 'reps_down' | 'sets_up' | 'sets_down' | 'same' | 'swapped' | 'skipped' | 'added' | 'edited';
 
 export type ChangeDelta =
   /** `from` is last time's load in today's unit (converted when it was in another unit). */
@@ -250,7 +254,7 @@ export function targetChangeMarker(planned: PlannedFirst, comparable: PastExerci
 export interface MarkerWords {
   /** Shown in tracked caps: `Up`, `Reps`, `No load`. */
   word: string;
-  glyph: 'up' | 'down' | 'warning' | 'swap' | 'skip' | null;
+  glyph: 'up' | 'down' | 'warning' | 'swap' | 'skip' | 'add' | 'edit' | null;
   /** `warning`: `status.warning` with its icon (HELD, NO LOAD). Never `status.done`, `status.danger` or the accent. */
   tone: 'warning' | 'secondary';
 }
@@ -281,6 +285,10 @@ export function markerWords(kind: ChangeMarkerKind): MarkerWords {
       return { word: 'Swapped', glyph: 'swap', tone: 'secondary' };
     case 'skipped':
       return { word: 'Skipped', glyph: 'skip', tone: 'secondary' };
+    case 'added':
+      return { word: 'Added', glyph: 'add', tone: 'secondary' };
+    case 'edited':
+      return { word: 'Edited', glyph: 'edit', tone: 'secondary' };
   }
 }
 
@@ -323,6 +331,10 @@ export function markerSpoken(m: ChangeMarker): string {
       return 'swapped today';
     case 'skipped':
       return 'skipped today';
+    case 'added':
+      return 'added today';
+    case 'edited':
+      return 'edited today';
     case 'up':
     case 'down':
     case 'reps_up':
@@ -402,14 +414,55 @@ export function setsDetail(working: readonly Pick<WorkoutSet, 'planned'>[], unil
 }
 
 export interface PanelLine {
-  key: 'swapped' | 'skipped' | 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
+  key: 'added' | 'swapped' | 'skipped' | 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
   label: string;
   value: string;
   tone: 'normal' | 'warning';
 }
 
-/** Today's edit on a row (overview-today-edits §2): swapped for another exercise, or skipped. */
-export type RowEdit = { kind: 'swapped'; editId: string; fromExerciseId: string; fromName: string } | { kind: 'skipped'; editId: string } | null;
+/** Today's edit on a row (overview-today-edits §2, §11): swapped for another exercise, skipped, or added today. */
+export type RowEdit = { kind: 'swapped'; editId: string; fromExerciseId: string; fromName: string } | { kind: 'skipped'; editId: string } | { kind: 'added'; editId: string } | null;
+
+/** Ben's §11 edits on a row's sets, reps and load (their edit IDs), or null with none. */
+export interface RowShapeEdit {
+  sets: string | null;
+  reps: string | null;
+  load: string | null;
+}
+
+/** One `SetCountStepper` step: the count it writes, and whether that is the plan's own (the edit is then cleared). Null: disabled. */
+export type SetsStep = { workingSets: number; clear: boolean } | null;
+
+/**
+ * A row in Edit mode (§11.3): the values its controls show and what each
+ * step writes. The screen lays it out and sends these values; it computes nothing.
+ */
+export interface EditRowView {
+  workingSets: number;
+  /** `3 sets`. */
+  setsText: string;
+  setsDown: SetsStep;
+  setsUp: SetsStep;
+  /** `6–8 reps`, `0:45`. */
+  repsText: string;
+  reps: RepRange | null;
+  durationS: number | null;
+  timed: boolean;
+  repsEdited: boolean;
+  /** The RepsSheet's `Use planned` values (what the plan gives without the reps edit). */
+  plannedReps: { reps: RepRange | null; durationS: number | null };
+  /** `100 kg`, `30 kg each` (a target, fitted); null: no load target (`—`). */
+  loadText: string | null;
+  /** `—  No history`: no load target and no comparable history. */
+  noHistory: boolean;
+  /** The load is Ben's own for today (`[Ben]` tag). */
+  benLoad: boolean;
+  /** Ben's intended load (before the fit), when he typed one. */
+  intendedLoad: Load | null;
+  /** The keypad's frame (unit, convention, the item it is checked on); null where there is no load to set (bodyweight). */
+  keypad: { unit: WeightUnit; convention: LoadConvention; equipmentId: string | null; value: number | null } | null;
+  accessibilityLabel: string;
+}
 
 /**
  * Which of today's edits a row offers (§2.2), decided here so the screen
@@ -426,6 +479,8 @@ export interface RowActions {
   down: boolean;
   /** `Change Push A too ›` (routine basis, swapped rows). */
   changeRoutine: boolean;
+  /** `Remove` (§11.3): an exercise added today. */
+  remove: boolean;
 }
 
 export interface OverviewRow {
@@ -434,6 +489,10 @@ export interface OverviewRow {
   /** The plan slot this row is (routine: `RoutineExercise.id`; next: the source part-root row). Today's edits are keyed by it. */
   slotKey: string;
   edit: RowEdit;
+  /** §11: Ben's sets, reps and load edits on this row. */
+  shapeEdit: RowShapeEdit | null;
+  /** §11: the row's Edit mode controls. */
+  editRow: EditRowView;
   actions: RowActions;
   /** 1-based position on the page. */
   index: number;
@@ -588,6 +647,14 @@ export interface OverviewToday {
   draft: { id: string; version: number } | null;
   /** The routine Change … too › would change; null for a next session. */
   routineName: string | null;
+  /** §11: exercises added today (slot key → edit ID). */
+  added?: ReadonlyMap<string, string>;
+  /** §11: Ben's sets, reps and load edits per slot. */
+  shapeEdits?: ReadonlyMap<string, RowShapeEdit>;
+  /** §11: each slot as planned before those edits (`planWithTodayEdits().plannedShape`). */
+  plannedShape?: Readonly<Record<string, ShapeBefore>>;
+  /** §11: Ben's intended loads today, per slot. */
+  benLoads?: ReadonlyMap<string, Load>;
 }
 
 /**
@@ -794,11 +861,31 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     const slotKey = slotOf(ex.id);
     const swappedFrom = today?.swapped.get(slotKey);
     const skipEdit = today?.skipped.get(slotKey);
-    const edit: RowEdit = skipEdit !== undefined ? { kind: 'skipped', editId: skipEdit } : swappedFrom !== undefined ? { kind: 'swapped', editId: swappedFrom.editId, fromExerciseId: swappedFrom.fromExerciseId, fromName: swappedFrom.fromName } : null;
+    const addEdit = today?.added?.get(slotKey);
+    const shapeEdit = today?.shapeEdits?.get(slotKey) ?? null;
+    const edit: RowEdit =
+      skipEdit !== undefined
+        ? { kind: 'skipped', editId: skipEdit }
+        : addEdit !== undefined
+          ? { kind: 'added', editId: addEdit }
+          : swappedFrom !== undefined
+            ? { kind: 'swapped', editId: swappedFrom.editId, fromExerciseId: swappedFrom.fromExerciseId, fromName: swappedFrom.fromName }
+            : null;
     const base = targetChangeMarker(planned, comparable, covering?.flag ?? null, firstFit);
-    // Precedence (§2.1): SKIPPED > HELD > NO LOAD > SWAPPED > the §4 markers.
+    // Precedence (§2.1, §11.3): SKIPPED > HELD > NO LOAD > ADDED > SWAPPED > EDITED > the §4 markers.
+    const warned = base.kind === 'held' || base.kind === 'no_load';
     const marker: ChangeMarker =
-      edit?.kind === 'skipped' ? { kind: 'skipped', delta: null, basis: null } : edit?.kind === 'swapped' && base.kind !== 'held' && base.kind !== 'no_load' ? { kind: 'swapped', delta: base.delta, basis: base.basis } : base;
+      edit?.kind === 'skipped'
+        ? { kind: 'skipped', delta: null, basis: null }
+        : warned
+          ? base
+          : edit?.kind === 'added'
+            ? { kind: 'added', delta: null, basis: null }
+            : edit?.kind === 'swapped'
+              ? { kind: 'swapped', delta: base.delta, basis: base.basis }
+              : shapeEdit !== null
+                ? { kind: 'edited', delta: base.delta, basis: base.basis }
+                : base;
     const words = markerWords(marker.kind);
     const load = edit?.kind === 'skipped' ? { value: '—', unit: null, spoken: 'skipped', none: true } : loadCell(planned.load, ex.loadConvention, eq?.kind ?? null, firstFit?.kind === 'dropped');
 
@@ -807,6 +894,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     const detail = [setsText, warmups].filter((x): x is string => x !== null && x !== '').join(' · ');
 
     const panel: PanelLine[] = [];
+    if (edit?.kind === 'added') panel.push({ key: 'added', label: 'Added', value: 'Today', tone: 'normal' });
     if (edit?.kind === 'swapped') panel.push({ key: 'swapped', label: 'Swapped', value: `For ${edit.fromName} · today`, tone: 'normal' });
     if (edit?.kind === 'skipped') panel.push({ key: 'skipped', label: 'Skipped', value: 'Today', tone: 'normal' });
     const change = edit?.kind === 'skipped' ? null : changeText(marker);
@@ -849,25 +937,43 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     })();
     const moves = slotMoves(todaySlots, slotKey);
     const actions: RowActions = {
-      swap: edit?.kind !== 'skipped',
+      swap: edit?.kind !== 'skipped' && edit?.kind !== 'added',
       undoSwap: edit?.kind === 'swapped',
-      skip: edit?.kind !== 'skipped' && unskipped > 1,
+      skip: edit?.kind !== 'skipped' && edit?.kind !== 'added' && unskipped > 1,
       bringBack: edit?.kind === 'skipped',
       doFirst: edit?.kind !== 'skipped' && moves.first,
       up: moves.up,
       down: moves.down,
       changeRoutine: edit?.kind === 'swapped' && today?.routineName !== null && today?.routineName !== undefined,
+      remove: edit?.kind === 'added',
     };
+    const editRow = editRowView({
+      index: i + 1,
+      name: ex.exerciseName,
+      working,
+      edit,
+      shapeEdit,
+      plannedShape: today?.plannedShape?.[slotKey] ?? null,
+      load,
+      noHistory: planned.load === null && comparable === null && load.none,
+      benLoad: today?.benLoads?.get(slotKey) ?? null,
+      eq,
+      convention: ex.loadConvention,
+      unit: input.key.unit,
+      timed: ex.measurement !== 'reps',
+    });
     const accessibilityLabel = (edit?.kind === 'skipped' ? [String(i + 1), ex.exerciseName, 'skipped today'] : [
       String(i + 1),
       ex.exerciseName,
+      edit?.kind === 'added' ? 'added today' : null,
       edit?.kind === 'swapped' ? `swapped for ${edit.fromName} today` : null,
+      edit?.kind !== 'added' && shapeEdit !== null ? 'edited today' : null,
       supersetWith.length > 0 ? `superset with ${supersetWith.join(' and ')}` : null,
       spokenSets,
       warmups,
       load.spoken,
       rounded !== null && !dropped ? 'rounded to this gym' : null,
-      marker.kind === 'swapped' ? markerSpoken(base) : markerSpoken(marker),
+      marker.kind === 'swapped' || marker.kind === 'added' || marker.kind === 'edited' ? markerSpoken(base) : markerSpoken(marker),
       coach?.state === 'coach' ? 'coach target' : null,
     ])
       .filter((x): x is string => x !== null && x !== '')
@@ -878,6 +984,8 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       exerciseId: ex.exerciseId,
       slotKey,
       edit,
+      shapeEdit,
+      editRow,
       actions,
       index: i + 1,
       indexText: String(i + 1).padStart(2, '0'),
@@ -950,4 +1058,86 @@ export function statStripSpoken(estimateMinutes: number | null, doneByText: stri
   const sets = `${String(workingSets)} working ${workingSets === 1 ? 'set' : 'sets'}`;
   if (estimateMinutes === null || doneByText === null) return sets;
   return `About ${String(estimateMinutes)} ${estimateMinutes === 1 ? 'minute' : 'minutes'}, done about ${doneByText}, ${sets}`;
+}
+
+// ---------------------------------------------------------------------------
+// Edit mode (overview-today-edits §11)
+
+const spokenReps = (r: RepRange): string => (r.min === r.max ? `${String(r.min)} reps` : `${String(r.min)} to ${String(r.max)} reps`);
+
+/** One row's Edit mode controls: the stepper's steps, reps, the fitted load and the keypad's frame. */
+export function editRowView(i: {
+  index: number;
+  name: string;
+  working: readonly Pick<WorkoutSet, 'planned'>[];
+  edit: RowEdit;
+  shapeEdit: RowShapeEdit | null;
+  plannedShape: ShapeBefore | null;
+  load: LoadCell;
+  noHistory: boolean;
+  benLoad: Load | null;
+  eq: EquipmentInstance | null;
+  convention: LoadConvention;
+  unit: WeightUnit;
+  timed: boolean;
+}): EditRowView {
+  const n = i.working.length;
+  const first = i.working[0];
+  const plannedCount = i.plannedShape?.workingSets ?? n;
+  const step = (to: number): SetsStep => (to < TODAY_EDIT_LIMITS.minSets || to > TODAY_EDIT_LIMITS.maxSets ? null : { workingSets: to, clear: to === plannedCount });
+  const reps = first?.planned.reps ?? null;
+  const durationS = first?.planned.durationS ?? null;
+  const repsText = reps !== null ? `${repRangeText(reps)}${NBSP}reps` : durationS !== null ? formatDuration(durationS) : '—';
+  const loadText = i.load.none ? null : i.load.unit === null ? i.load.value : `${i.load.value}${NBSP}${i.load.unit}`;
+  const bodyweight = i.convention === 'bodyweight';
+  const frameUnit = i.eq !== null && i.eq.kind !== 'bodyweight_station' ? i.eq.unit : (first?.planned.load?.unit ?? i.unit);
+  const frameConvention = i.eq !== null && i.eq.kind !== 'bodyweight_station' ? i.eq.loadConvention : i.convention;
+  const setsText = `${String(n)}${NBSP}${n === 1 ? 'set' : 'sets'}`;
+  const edited = i.edit?.kind !== 'added' && i.shapeEdit !== null;
+  const accessibilityLabel = [
+    String(i.index),
+    i.name,
+    i.edit?.kind === 'added' ? 'added' : edited ? 'edited' : null,
+    `${String(n)} ${n === 1 ? 'set' : 'sets'}`,
+    reps !== null ? spokenReps(reps) : durationS !== null ? formatDuration(durationS) : null,
+    i.noHistory ? 'no history' : i.load.spoken,
+    i.benLoad !== null ? 'your target today' : null,
+  ]
+    .filter((x): x is string => x !== null)
+    .join(', ');
+  return {
+    workingSets: n,
+    setsText,
+    setsDown: step(n - 1),
+    setsUp: step(n + 1),
+    repsText,
+    reps,
+    durationS,
+    timed: i.timed,
+    repsEdited: i.shapeEdit?.reps != null,
+    plannedReps: { reps: i.plannedShape?.reps ?? reps, durationS: i.plannedShape?.durationS ?? durationS },
+    loadText,
+    noHistory: i.noHistory,
+    benLoad: i.benLoad !== null,
+    intendedLoad: i.benLoad,
+    keypad: bodyweight ? null : { unit: frameUnit, convention: frameConvention, equipmentId: i.eq?.id ?? null, value: i.benLoad?.value ?? first?.planned.load?.value ?? null },
+    accessibilityLabel,
+  };
+}
+
+/**
+ * The keypad's note before `Set target` (§11.4): `Rounds to 97.5 kg here`,
+ * `Most here: 30 kg each`, or why it can't be made. Null: makeable as typed
+ * (or nothing to check it on; the fit at Start still applies).
+ */
+export function todayLoadNote(load: Load, eq: EquipmentInstance | null): string | null {
+  if (eq === null || eq.kind === 'bodyweight_station') return null;
+  const r = roundToAvailableLoad(load, eq, 'easier');
+  if (!r.ok) return droppedWords(r.reason, { unit: load.unit });
+  if (r.exact && r.convertedRequest === null) return null;
+  const words = loadText(r.load, r.load.convention, eq).replaceAll(NBSP, ' ');
+  const assisted = loadDirection(eq.loadConvention) === 'assistance';
+  if (r.bounded === 'max') return assisted ? `Most assistance here: ${words}` : `Most here: ${words}`;
+  if (r.bounded === 'min') return assisted ? `Least assistance here: ${words}` : `Least here: ${words}`;
+  return `Rounds to ${words} here`;
 }

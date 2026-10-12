@@ -22,6 +22,7 @@ import { boundWords, convertedWords, noLoadWords, roundedWords, withWas } from '
 import type { NextTargetEntry } from '../coach/next-session';
 import type { RepeatNote } from './repeat';
 import type { SnapResult } from './snap';
+import { shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
 
 /**
  * Routines (premium-feel §2.6, routines.md). Pure rules: building a routine
@@ -314,10 +315,17 @@ export interface RoutineStartInput {
   gymName?: string;
   /** GS3 step 2: the item an exercise last used at this gym. */
   lastUsedHere?: StartWorkoutInput['lastUsedHere'];
+  /**
+   * Today's shape per slot (`RoutineExercise.id`; overview-today-edits §11):
+   * Ben's sets, reps and load for today, applied after the targets.
+   */
+  shape?: ReadonlyMap<string, SlotShape>;
 }
 
 export interface RoutineStartOutput extends StartWorkoutOutput {
   notes: RepeatNote[];
+  /** Each slot as planned before today's shape (`shape` given only), by `RoutineExercise.id`. */
+  shapedFrom?: Record<string, ShapeBefore>;
 }
 
 /**
@@ -344,11 +352,26 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
   // A routine from before the library (no `source`) stored last time's actuals as its loads: next targets
   // replace them, set for set, as they always have. A library workout's non-null load is Ben's Fixed pin.
   const legacy = input.routine.source === undefined;
+  const shapedFrom: Record<string, ShapeBefore> = {};
   for (const rex of [...input.routine.exercises].sort((a, b) => a.order - b.order)) {
     const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
-    const source: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc }) : rex.setTemplates;
+    const targetedTemplates: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc }) : rex.setTemplates;
+    // Ben's today-only shape (§11) comes last: his choice for today wins over any target.
+    const shape = input.shape?.get(rex.id);
+    if (input.shape !== undefined) shapedFrom[rex.id] = shapeOfTemplates(targetedTemplates);
+    const source =
+      shape === undefined
+        ? targetedTemplates
+        : shapeTemplates(targetedTemplates, shape, {
+            newId: input.newId,
+            copied: (from, to) => {
+              const rule = ruleOf.get(from);
+              if (rule !== undefined) ruleOf.set(to, rule);
+            },
+            ownLoad: (id) => ruleOf.delete(id),
+          });
     const templates = source.filter((t) => t.targetReps !== null || t.targetDurationS !== null);
     if (templates.length === 0) continue;
     // The routine's own item and unfitted loads: the shared fit does the mapping and fitting (S1, ADR 0019).
@@ -407,7 +430,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       return { ...s, planned: plannedSet };
     }),
   };
-  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes };
+  return { aggregate, warnings: out.warnings, snap: out.snap, setTemplateIds: out.setTemplateIds, fits: out.fits, notes, ...(input.shape !== undefined ? { shapedFrom } : {}) };
 }
 
 /**

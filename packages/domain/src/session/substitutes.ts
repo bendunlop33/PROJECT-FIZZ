@@ -10,6 +10,7 @@ import { toMs } from '../time';
 import { loadCell } from './overview';
 import { mapEquipment, snapPlanToGym, type SnapGym, type SnapMapping } from './snap';
 import { swapSource, type SwapPlan } from './swap-plan';
+import { addedSlotShape } from './today-shape';
 
 /**
  * Swap today (overview-today-edits TE6, exercise-library EL4/EL9). Pure.
@@ -114,6 +115,18 @@ export function substituteTargets(slot: SubstituteSlot, exercise: Exercise, hist
   });
   const plan = plannedSetsFromTargets(result, { history, equipment: eq, at: ctx.at });
   return plan === null ? { exercise, pin: null, plan: null } : { exercise, pin: eq, plan };
+}
+
+/**
+ * `addTargets` (overview-today-edits §11.9, TE16): an added exercise's
+ * targets through the same path as a swap substitute: its own comparable
+ * history and the built-in rule with 3 working sets, else the default shape
+ * (3 × its rule range, or 0:45) with no load (`No history`). Never derived
+ * from another exercise's load.
+ */
+export function addTargets(exercise: Exercise, history: readonly HistorySession[], ctx: SubstituteContext): SwapPlan {
+  const kind = equipmentHere(exercise, ctx).equipment?.kind ?? null;
+  return substituteTargets(addedSlotShape(exercise, kind), exercise, history, ctx);
 }
 
 /** The sets a swap plans before the fit: the substitute's own, or the slot's sets and reps with no load. */
@@ -332,3 +345,42 @@ export function rankSubstitutions(input: RankInput): SubstituteRow[] {
   return [{ ...own, targetText: input.planned.targetText, accessibilityLabel: label }, ...out];
 }
 
+
+/** Most rows the Add exercise list builds targets for at once (search narrows it). */
+export const MAX_ADD_CANDIDATES = 30;
+
+/**
+ * The Add exercise list (overview-today-edits §11.4, TE16): exercises not in
+ * today's plan (skipped ones included), only what this gym can do unless
+ * `showAll`, matching the search; Ben's recently done first, then by name.
+ * Pain-flagged ones stay, marked by their row (`substituteRow`), and go last.
+ * Returns the exercises to build rows for; no scores and no AI.
+ */
+export function rankAddCandidates(input: {
+  exercises: readonly Exercise[];
+  excludeExerciseIds: ReadonlySet<string>;
+  query: string;
+  gym: SnapGym;
+  showAll: boolean;
+  histories: ReadonlyMap<string, readonly HistorySession[]>;
+  painFlags: readonly PainFlag[];
+  nowMs: number;
+  tz: string;
+  limit?: number;
+}): Exercise[] {
+  const q = input.query.trim().toLowerCase();
+  const seen = new Set<string>();
+  const lastDone = (id: string): number => (input.histories.get(id) ?? []).reduce((m, h) => (h.imported ? m : Math.max(m, toMs(h.performedAtUtc))), -Infinity);
+  const pool = input.exercises.filter((e) => {
+    if (seen.has(e.id) || input.excludeExerciseIds.has(e.id)) return false;
+    seen.add(e.id);
+    if (q !== '' && !e.name.toLowerCase().includes(q)) return false;
+    return input.showAll || doableHere(e, input.gym);
+  });
+  const flagged = (e: Exercise) => painFlagCovering([...input.painFlags], e.id, input.nowMs, input.tz) !== null;
+  return pool
+    .map((e) => ({ e, last: lastDone(e.id), hurt: flagged(e) }))
+    .sort((a, b) => Number(a.hurt) - Number(b.hurt) || b.last - a.last || a.e.name.localeCompare(b.e.name))
+    .slice(0, input.limit ?? MAX_ADD_CANDIDATES)
+    .map((x) => x.e);
+}

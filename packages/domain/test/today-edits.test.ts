@@ -581,7 +581,7 @@ describe('the overview with today’s edits (§2.1, §2.2, TE-A3)', () => {
     const swapped = view.rows[1];
     expect(swapped?.marker).toMatchObject({ word: 'Swapped', glyph: 'swap', tone: 'secondary' });
     expect(swapped?.panel[0]).toEqual({ key: 'swapped', label: 'Swapped', value: 'For Bench press · today', tone: 'normal' });
-    expect(swapped?.actions).toEqual({ swap: true, undoSwap: true, skip: true, bringBack: false, doFirst: true, up: true, down: true, changeRoutine: true });
+    expect(swapped?.actions).toEqual({ swap: true, undoSwap: true, skip: true, bringBack: false, doFirst: true, up: true, down: true, changeRoutine: true, remove: false });
     expect(swapped?.accessibilityLabel).toBe('2, DB bench press, swapped for Bench press today, 3 sets of 6 to 10, target 32.5 kilograms each, new');
     const skipped = view.rows[4];
     expect(skipped?.load).toMatchObject({ value: '—', none: true });
