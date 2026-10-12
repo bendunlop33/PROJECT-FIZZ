@@ -89,12 +89,31 @@ export function roundEstimateMinutes(seconds: number): number {
   return m >= 10 ? Math.round(m / 5) * 5 : Math.max(1, Math.round(m));
 }
 
-/** `recent`: Ben's last few finished workouts (5 in the spec), newest first; their pace is used when this one has too little. */
-export function estimateRemainingDuration(state: SessionAggregate, opts: { recent?: readonly SessionAggregate[] } = {}): DurationEstimate {
-  const own = paceSamples(state);
-  const recent = (opts.recent ?? []).map(paceSamples);
-  const set = pick(own.perSet, recent.flatMap((r) => r.perSet), PACE_DEFAULT_SET_S);
-  const change = pick(own.changeover, recent.flatMap((r) => r.changeover), PACE_DEFAULT_CHANGEOVER_S);
+/** A pace already worked out (`planPace`), so a caller that re-estimates many times reads the history once. */
+export type ResolvedPace = DurationEstimate['pace'];
+
+/**
+ * The pace for a plan nothing of which is done yet (the overview, a fit
+ * before Start): Ben's recent workouts, else the defaults. Equal to what
+ * `estimateRemainingDuration` picks for an unstarted plan.
+ */
+export function planPace(recent: readonly SessionAggregate[] = []): ResolvedPace {
+  const samples = recent.map(paceSamples);
+  const set = pick([], samples.flatMap((r) => r.perSet), PACE_DEFAULT_SET_S);
+  const change = pick([], samples.flatMap((r) => r.changeover), PACE_DEFAULT_CHANGEOVER_S);
+  return { source: set.source === 'default' && change.source !== 'default' ? change.source : set.source, secondsPerSet: set.value, changeoverSeconds: change.value, samples: set.samples + change.samples };
+}
+
+/**
+ * `recent`: Ben's last few finished workouts (5 in the spec), newest first; their pace is used when this one has too little.
+ * `pace`: a pace already resolved (`planPace`); it replaces both this workout's and the recent samples.
+ */
+export function estimateRemainingDuration(state: SessionAggregate, opts: { recent?: readonly SessionAggregate[]; pace?: ResolvedPace } = {}): DurationEstimate {
+  const fixed = opts.pace;
+  const own = fixed ? { perSet: [], changeover: [] } : paceSamples(state);
+  const recent = fixed ? [] : (opts.recent ?? []).map(paceSamples);
+  const set = fixed ? { value: fixed.secondsPerSet, source: fixed.source, samples: fixed.samples } : pick(own.perSet, recent.flatMap((r) => r.perSet), PACE_DEFAULT_SET_S);
+  const change = fixed ? { value: fixed.changeoverSeconds, source: fixed.source, samples: 0 } : pick(own.changeover, recent.flatMap((r) => r.changeover), PACE_DEFAULT_CHANGEOVER_S);
   const byId = new Map(state.sets.map((s) => [s.id, s]));
   const pending = buildExecutionOrder(state.exercises, state.sets)
     .map((id) => byId.get(id))
@@ -115,7 +134,7 @@ export function estimateRemainingDuration(state: SessionAggregate, opts: { recen
   return {
     minutes: roundEstimateMinutes(seconds),
     seconds,
-    pace: { source: set.source === 'default' && change.source !== 'default' ? change.source : set.source, secondsPerSet: set.value, changeoverSeconds: change.value, samples: set.samples + change.samples },
+    pace: fixed ?? { source: set.source === 'default' && change.source !== 'default' ? change.source : set.source, secondsPerSet: set.value, changeoverSeconds: change.value, samples: set.samples + change.samples },
     plannedRestSeconds: rest,
     pendingSets: pending.length,
     pendingExercises: new Set(pending.map((s) => s.sessionExerciseId)).size,

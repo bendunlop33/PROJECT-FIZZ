@@ -16,10 +16,12 @@ import { MAX_DRAFT_EDITS, MAX_DRAFT_OPS, TODAY_EDIT_LIMITS } from '@fizz/schemas
 import { addDays, localDateOf, localMidnightUtcMs } from '../calendar';
 import { deriveId } from '../stable';
 import { toIso, toMs } from '../time';
+import { estimateRemainingDuration, planPace, type ResolvedPace } from './duration';
+import { finishByFromFit, fitPlanToMinutes, fitTier, validFitMinutes, withSkipped, type FitCut, type FitSlot, type FitStatus } from './fit-time';
 import { blockSets, partRootOf } from './gym-switch';
 import { nextPendingSet } from './order';
 import { startWorkoutFromSession, type RepeatInput, type RepeatOutput } from './repeat';
-import { planRoutineStart, type RoutineStartInput, type RoutineStartOutput } from './routines';
+import { defaultMain, mainFlags, planRoutineStart, type RoutineStartInput, type RoutineStartOutput } from './routines';
 import { addedSlotShape, type ShapeBefore, type SlotShape } from './today-shape';
 import { swapEquipmentId, type SwapPlan } from './swap-plan';
 
@@ -81,7 +83,12 @@ export type TodayEditBody =
   | { kind: 'sets'; slotKey: string; workingSets: number }
   | { kind: 'reps'; slotKey: string; reps: RepRange | null; durationS: number | null }
   /** `exerciseId`: set by `applyDraftCommand` to the slot's exercise when the load is typed (review B1); a caller's value is ignored. */
-  | { kind: 'load'; slotKey: string; load: Load; exerciseId?: string };
+  | { kind: 'load'; slotKey: string; load: Load; exerciseId?: string }
+  /** Fit to time (fit-to-time FT4): Ben's `Trim to 45 min`. */
+  | { kind: 'fit'; minutes: number };
+
+/** Who made a stored edit, kept when an edit is copied back (Undo, restore). Ben's taps never set it. */
+type Authorship = { author?: 'ben' | 'coach'; actionId?: string };
 
 /** The §11 edits on one slot that a newer one of the same kind replaces, and `Use planned` clears. */
 export type ShapeEditKind = 'sets' | 'reps' | 'load';
@@ -103,6 +110,8 @@ export type DraftCommand =
   | { type: 'reset' }
   /** `Reset order`. */
   | { type: 'clear_order' }
+  /** `Clear fit` (fit-to-time §3.2): the live fit removed, and a coach fit's own edits with it. */
+  | { type: 'clear_fit' }
   /**
    * Bring back removed edits as new copies (Undo of a Reset, an Undo, or a
    * template change's Undo). `keepLive`: an edit whose slot (or the order)
@@ -164,7 +173,7 @@ const editIdOf = (opId: string, n: number): string => deriveId(`today-edit:${opI
  */
 function sameTarget(a: TodayEdit, b: Pick<TodayEdit, 'kind'> & { slotKey?: string; exerciseId?: string | undefined }, exerciseOf: (e: TodayEdit) => string | null): boolean {
   if (a.kind !== b.kind) return false;
-  if (a.kind === 'order') return true;
+  if (a.kind === 'order' || a.kind === 'fit') return true;
   if (a.slotKey !== b.slotKey) return false;
   return a.kind !== 'load' || exerciseOf(a) === (b.exerciseId ?? null);
 }
@@ -191,12 +200,20 @@ function inRange(e: TodayEditBody): boolean {
       return e.durationS !== null && Number.isInteger(e.durationS) && e.durationS >= L.minWorkS && e.durationS <= L.maxWorkS;
     case 'load':
       return Number.isFinite(e.load.value) && e.load.value >= 0 && e.load.value <= 2000;
+    case 'fit':
+      return validFitMinutes(e.minutes);
     case 'swap':
     case 'skip':
     case 'order':
     case 'add':
       return true;
   }
+}
+
+/** The live edits a coach fit made (same `actionId`), the fit edit itself included. */
+function fitCompanions(live: readonly TodayEdit[], fit: TodayEdit): TodayEdit[] {
+  if (fit.kind !== 'fit' || fit.author !== 'coach' || fit.actionId === undefined) return [fit];
+  return live.filter((x) => x.editId === fit.editId || (x.author === 'coach' && x.actionId === fit.actionId));
 }
 
 /** Two §11 edits on one slot ask for the same thing. */
@@ -255,11 +272,15 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
   let n = 0;
   const live = () => liveEdits(edits);
   /** Append a new edit (or a copy of an earlier one), replacing any live edit of the same target. */
-  const append = (body: TodayEditBody, replaces: string | null) => {
+  const append = (body: TodayEditBody, replaces: string | null, by: Authorship = {}) => {
     const editId = editIdOf(opId, n);
     n += 1;
-    edits.push(withBase(body, { editId, opId, atUtc: at.utc, replacesEditId: replaces, removed: null }));
+    edits.push(withBase(body, { editId, opId, atUtc: at.utc, replacesEditId: replaces, removed: null }, by));
     added.push(editId);
+  };
+  /** Bring back an earlier edit as a new copy (who made it is kept). */
+  const appendCopy = (e: TodayEdit, replaces: string | null) => {
+    append(bodyOf(e), replaces, authorshipOf(e));
   };
   // Today's slots: the plan's own, then the exercises added today (§11).
   const plannedKeys = new Set(input.slots.map((s) => s.slotKey));
@@ -277,8 +298,17 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
   const cmd = input.command;
   switch (cmd.type) {
     case 'edit': {
-      const e = cmd.edit;
+      // Ben's tap: whatever the caller sent, the edit is his (a coach fit is written by `applyCoachFit`).
+      const e = bodyOf(withBase(cmd.edit, { editId: '', opId, atUtc: at.utc, replacesEditId: null, removed: null }));
       if (!inRange(e)) return { kind: 'invalid', reason: 'out_of_range' };
+      if (e.kind === 'fit') {
+        const prev = live().find((x) => x.kind === 'fit');
+        if (prev?.kind === 'fit' && prev.author !== 'coach' && prev.minutes === e.minutes) return { kind: 'unchanged', current };
+        // One fit at a time (FT2): a coach fit goes with all its edits; Undo brings it back.
+        if (prev !== undefined) for (const x of fitCompanions(live(), prev)) remove(x.editId, 'replaced');
+        append({ kind: 'fit', minutes: e.minutes }, prev?.editId ?? null);
+        break;
+      }
       if (e.kind === 'order') {
         // Today's superset groups: a group left with one member after skips is no longer kept together.
         const slotsNow = allSlots();
@@ -334,6 +364,12 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
       const target = edits.find((x) => x.editId === cmd.editId);
       if (target === undefined) return { kind: 'invalid', reason: 'not_found' };
       if (target.removed !== null) return { kind: 'unchanged', current };
+      // A coach fit's Undo takes every edit it made (fit-to-time §5.3).
+      for (const x of fitCompanions(live(), target)) {
+        if (x.editId === target.editId) continue;
+        remove(x.editId, 'undo');
+        removed.push(x.editId);
+      }
       remove(target.editId, 'undo');
       removed.push(target.editId);
       // `Remove` on an added exercise takes its sets, reps and load with it, so the toast's Undo (a restore of `removed`) brings them all back.
@@ -347,7 +383,14 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
       }
       const was = target.replacesEditId === null ? undefined : edits.find((x) => x.editId === target.replacesEditId);
       // The edit it replaced comes back as a copy, still pointing at the one before it (a chain of swaps undoes one step at a time).
-      if (was !== undefined && was.removed?.why === 'replaced') append(bodyOf(was), was.replacesEditId);
+      if (was !== undefined && was.removed?.why === 'replaced') {
+        appendCopy(was, was.replacesEditId);
+        // A coach fit comes back with the edits that went with it (FT2).
+        if (was.kind === 'fit' && was.author === 'coach' && was.actionId !== undefined) {
+          const opOf = was.removed.opId;
+          for (const x of edits.filter((y) => y.editId !== was.editId && y.author === 'coach' && y.actionId === was.actionId && y.removed?.why === 'replaced' && y.removed.opId === opOf)) appendCopy(x, x.replacesEditId);
+        }
+      }
       break;
     }
     case 'clear': {
@@ -376,6 +419,15 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
       }
       break;
     }
+    case 'clear_fit': {
+      const f = live().find((x) => x.kind === 'fit');
+      if (f === undefined) return { kind: 'unchanged', current };
+      for (const x of fitCompanions(live(), f)) {
+        remove(x.editId, 'undo');
+        removed.push(x.editId);
+      }
+      break;
+    }
     case 'clear_order': {
       const o = live().find((x) => x.kind === 'order');
       if (o === undefined) return { kind: 'unchanged', current };
@@ -388,10 +440,10 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         const e = edits.find((x) => x.editId === id);
         if (e === undefined) return { kind: 'invalid', reason: 'not_found' };
         if (e.removed === null) continue;
-        const clash = live().find((x) => sameTarget(x, e.kind === 'order' ? { kind: 'order' } : { kind: e.kind, slotKey: e.slotKey, exerciseId: exerciseOf(e) ?? undefined }, exerciseOf));
+        const clash = live().find((x) => sameTarget(x, e.kind === 'order' || e.kind === 'fit' ? { kind: e.kind } : { kind: e.kind, slotKey: e.slotKey, exerciseId: exerciseOf(e) ?? undefined }, exerciseOf));
         if (clash !== undefined && (clash.kind === 'skip' || clash.kind === 'add' || cmd.keepLive === true)) continue;
-        if (clash !== undefined) remove(clash.editId, 'replaced');
-        append(bodyOf(e), clash?.editId ?? null);
+        if (clash !== undefined) for (const x of fitCompanions(live(), clash)) remove(x.editId, 'replaced');
+        appendCopy(e, clash?.editId ?? null);
       }
       if (added.length === 0) return { kind: 'unchanged', current };
       break;
@@ -450,6 +502,8 @@ function exerciseInOtherSlot(slots: readonly TodaySlot[], live: readonly TodayEd
 
 function bodyOf(e: TodayEdit): TodayEditBody {
   switch (e.kind) {
+    case 'fit':
+      return { kind: 'fit', minutes: e.minutes };
     case 'swap':
       return { kind: 'swap', slotKey: e.slotKey, toExerciseId: e.toExerciseId };
     case 'skip':
@@ -471,18 +525,31 @@ const stampOf = (exerciseId: string | null): { exerciseId?: string } => (exercis
 
 type EditBase = Pick<TodayEdit, 'editId' | 'opId' | 'atUtc' | 'replacesEditId' | 'removed'>;
 
-/** A stored edit from its fields and bookkeeping (always Ben's: the coach's fit is slice C). */
-function withBase(body: TodayEditBody, base: EditBase): TodayEdit {
+/** A coach edit's author and action (absent on Ben's). */
+function authorshipOf(e: TodayEdit): Authorship {
+  return e.author === 'coach' && e.actionId !== undefined ? { author: 'coach', actionId: e.actionId } : {};
+}
+
+/** A stored edit from its fields and bookkeeping. Ben's unless `by` names the coach (a coach fit, fit-to-time §5.2). */
+function withBase(body: TodayEditBody, base: EditBase, by: Authorship = {}): TodayEdit {
+  const who = by.author === 'coach' && by.actionId !== undefined ? { author: 'coach' as const, actionId: by.actionId } : {};
   switch (body.kind) {
     case 'order':
-      return { ...base, kind: 'order', slotKeys: [...body.slotKeys] };
+      return { ...base, ...who, kind: 'order', slotKeys: [...body.slotKeys] };
+    case 'fit':
+      return { ...base, ...who, kind: 'fit', minutes: body.minutes };
     case 'swap':
+      return { ...base, ...who, kind: 'swap', slotKey: body.slotKey, toExerciseId: body.toExerciseId };
     case 'skip':
+      return { ...base, ...who, kind: 'skip', slotKey: body.slotKey };
     case 'add':
+      return { ...base, ...who, kind: 'add', slotKey: body.slotKey, exerciseId: body.exerciseId };
     case 'sets':
+      return { ...base, ...who, kind: 'sets', slotKey: body.slotKey, workingSets: body.workingSets };
     case 'reps':
+      return { ...base, ...who, kind: 'reps', slotKey: body.slotKey, reps: body.reps === null ? null : { ...body.reps }, durationS: body.durationS };
     case 'load':
-      return { ...base, ...body };
+      return { ...base, ...who, kind: 'load', slotKey: body.slotKey, load: { ...body.load }, ...(body.exerciseId !== undefined ? { exerciseId: body.exerciseId } : {}) };
   }
 }
 
@@ -549,12 +616,16 @@ export interface ResolvedEdits {
   reps: Map<string, { editId: string; reps: RepRange | null; durationS: number | null }>;
   /** Ben's load on a slot while it holds the exercise the load was typed for (`exerciseId`, review B1). */
   loads: Map<string, { editId: string; load: Load; exerciseId: string | null }>;
+  /** The live fit (fit-to-time FT4): Ben's built-in trim, or the coach's fit (`actionId`). Null: none. */
+  fit: { editId: string; minutes: number; by: 'built_in' | 'coach'; actionId: string | null } | null;
+  /** Edits the coach made (a coach fit's), by edit ID: they are the fit, not Ben's edits (`N EDITED`, FT5, the template card). */
+  coachEdits: Set<string>;
   outcomes: EditOutcome[];
 }
 
 /** No edits at all. */
 export function noResolvedEdits(): ResolvedEdits {
-  return { swaps: new Map(), skipped: new Map(), order: null, orderEditId: null, added: new Map(), sets: new Map(), reps: new Map(), loads: new Map(), outcomes: [] };
+  return { swaps: new Map(), skipped: new Map(), order: null, orderEditId: null, added: new Map(), sets: new Map(), reps: new Map(), loads: new Map(), fit: null, coachEdits: new Set(), outcomes: [] };
 }
 
 /**
@@ -584,7 +655,18 @@ function normaliseOrder(order: readonly string[], planned: readonly string[], ad
 export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly TodayEdit[], knownExercise: (exerciseId: string) => boolean = () => true): ResolvedEdits {
   const bySlot = new Map(slots.map((s) => [s.slotKey, s]));
   const out: ResolvedEdits = noResolvedEdits();
-  const open = liveEdits(edits);
+  // The fit first (FT4): the newest live one. A coach edit whose coach fit isn't the live one is left over: stale.
+  const fits = liveEdits(edits).filter((e): e is Extract<TodayEdit, { kind: 'fit' }> => e.kind === 'fit');
+  const liveFit = fits.at(-1);
+  if (liveFit !== undefined) {
+    const coach = liveFit.author === 'coach' && liveFit.actionId !== undefined;
+    out.fit = { editId: liveFit.editId, minutes: liveFit.minutes, by: coach ? 'coach' : 'built_in', actionId: coach ? (liveFit.actionId ?? null) : null };
+  }
+  for (const f of fits) out.outcomes.push({ editId: f.editId, kind: 'fit', result: f === liveFit ? 'applied' : 'redundant' });
+  const orphan = (e: TodayEdit): boolean => e.kind !== 'fit' && e.author === 'coach' && (out.fit?.by !== 'coach' || e.actionId !== out.fit.actionId);
+  for (const e of liveEdits(edits)) if (orphan(e)) out.outcomes.push({ editId: e.editId, kind: e.kind, result: 'stale' });
+  const open = liveEdits(edits).filter((e) => e.kind !== 'fit' && !orphan(e));
+  for (const e of open) if (e.author === 'coach') out.coachEdits.add(e.editId);
   // Slots swapped away today (their own exercise isn't in today's plan), from every swap that could apply.
   const swappedAway = new Set(open.flatMap((e) => (e.kind === 'swap' && bySlot.has(e.slotKey) && bySlot.get(e.slotKey)?.exerciseId !== e.toExerciseId && knownExercise(e.toExerciseId) ? [e.slotKey] : [])));
   const taken = (slotKey: string, exerciseId: string): boolean =>
@@ -701,10 +783,20 @@ export function pruneOf(outcomes: readonly EditOutcome[]): { editId: string; why
   return outcomes.flatMap((o) => (o.result === 'applied' ? [] : [{ editId: o.editId, why: o.result }]));
 }
 
-/** `N EDITED` (§2.1, §11.3): each slot with any live edit counts once; an order change counts once. */
-export function editCountOf(r: Pick<ResolvedEdits, 'swaps' | 'skipped' | 'order'> & Partial<Pick<ResolvedEdits, 'added' | 'sets' | 'reps' | 'loads'>>): number {
-  const slots = new Set<string>([...r.swaps.keys(), ...r.skipped.keys(), ...(r.added?.keys() ?? []), ...(r.sets?.keys() ?? []), ...(r.reps?.keys() ?? []), ...(r.loads?.keys() ?? [])]);
+/** `N EDITED` (§2.1, §11.3): each slot with any live edit of Ben's counts once; an order change counts once. A fit (Ben's or the coach's) reads `FITTED` instead. */
+export function editCountOf(r: Pick<ResolvedEdits, 'swaps' | 'skipped' | 'order'> & Partial<Pick<ResolvedEdits, 'added' | 'sets' | 'reps' | 'loads' | 'coachEdits'>>): number {
+  const coach = r.coachEdits ?? new Set<string>();
+  const keys = <V extends { editId: string } | string>(m: ReadonlyMap<string, V> | undefined): string[] =>
+    [...(m ?? new Map<string, V>())].flatMap(([k, v]) => (coach.has(typeof v === 'string' ? v : v.editId) ? [] : [k]));
+  const slots = new Set<string>([...keys(r.swaps), ...keys(r.skipped), ...keys(r.added), ...keys(r.sets), ...keys(r.reps), ...keys(r.loads)]);
   return slots.size + (r.order === null ? 0 : 1);
+}
+
+/** Slots Ben himself edited today (FT5: the built-in trim leaves them alone): added, or sets, reps or load changed. */
+export function benEditedSlots(r: Pick<ResolvedEdits, 'added' | 'sets' | 'reps' | 'loads' | 'coachEdits'>): Set<string> {
+  const out = new Set<string>();
+  for (const m of [r.added, r.sets, r.reps, r.loads] as ReadonlyMap<string, { editId: string }>[]) for (const [k, v] of m) if (!r.coachEdits.has(v.editId)) out.add(k);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -962,6 +1054,32 @@ export interface TodayEditsInput {
   swaps: ReadonlyMap<string, SwapPlan>;
   /** Plans for added exercises, by their slot key (`addTargets`, §11). */
   adds?: ReadonlyMap<string, SwapPlan>;
+  /**
+   * What a fit needs besides the plan (fit-to-time §4.1): the pace the TIME
+   * tile uses (`planPace` of Ben's recent workouts; absent: the defaults) and
+   * which exercises a pain flag holds (left as they are). Read only when the
+   * draft has a live fit.
+   */
+  fit?: { pace?: ResolvedPace; held?: (exerciseId: string) => boolean };
+}
+
+/** One line of a fit (fit-to-time §3.3): a slot trimmed, skipped, or (coach, longer) added. */
+export type FitLine = FitCut | { slotKey: string; kind: 'add' };
+
+/** The live fit as planned (fit-to-time §3.3, §6). Minutes are `estimateRemainingDuration`'s, unrounded. */
+export interface FitOutcome {
+  editId: string;
+  minutes: number;
+  by: 'built_in' | 'coach';
+  actionId: string | null;
+  status: FitStatus;
+  beforeSeconds: number;
+  afterSeconds: number;
+  lines: FitLine[];
+  /** The planned sets the built-in trim marked skipped (empty for a coach fit, whose edits are planned). */
+  skipSetIds: string[];
+  /** A slot Ben edited (or brought back) stays out of the trim: the card reads `≈ 52 min · 7 over 45`. */
+  benKept: boolean;
 }
 
 export type TodayPlanOutput = (({ kind: 'routine' } & RoutineStartOutput) | ({ kind: 'next' } & RepeatOutput)) & {
@@ -975,6 +1093,8 @@ export type TodayPlanOutput = (({ kind: 'routine' } & RoutineStartOutput) | ({ k
   baseSlots: TodaySlot[];
   /** Each slot as planned before today's sets, reps and load (§11), by slot key: what the steppers step from. */
   plannedShape: Record<string, ShapeBefore>;
+  /** The live fit, applied (fit-to-time FT4); null with none. */
+  fit: FitOutcome | null;
 };
 
 /**
@@ -998,8 +1118,12 @@ export function planWithTodayEdits(plan: TodayPlanInput, edits: TodayEditsInput)
       if (slotId !== undefined) slotOf[ex.id] = slotId;
     });
     const names = plan.input.exercises;
-    const aggregate = finish(out.aggregate, slotOf, applied, edits.draft, (_slot, from) => names.get(from)?.name ?? 'Exercise');
-    return { kind: 'routine', ...out, aggregate, slotOf, outcomes: applied.resolved.outcomes, resolved: applied.resolved, slots: editedSlots(baseSlots, applied.resolved), baseSlots, plannedShape: out.shapedFrom ?? {} };
+    const finished = finish(out.aggregate, slotOf, applied, edits.draft, (_slot, from) => names.get(from)?.name ?? 'Exercise');
+    const plannedShape = out.shapedFrom ?? {};
+    const mains = mainFlags([...plan.input.routine.exercises].sort((a, b) => a.order - b.order), (x) => compoundOf(x, input.exercises, edits));
+    const mainOf = new Map(baseSlots.map((b, i) => [b.slotKey, mains[i] ?? false]));
+    const fitted = applyFit(plan, edits, { aggregate: finished, slotOf, resolved: applied.resolved, plannedShape, mainOf, exercises: input.exercises, at: plan.input.at });
+    return { kind: 'routine', ...out, aggregate: fitted.aggregate, slotOf, outcomes: applied.resolved.outcomes, resolved: applied.resolved, slots: editedSlots(baseSlots, applied.resolved), baseSlots, plannedShape, fit: fitted.fit };
   }
   const baseSlots = basisSlots({ kind: 'next', source: plan.input.source });
   const { input, applied } = applyTodayEditsToNext(plan.input, edits.edits, edits.swaps, edits.adds);
@@ -1011,8 +1135,92 @@ export function planWithTodayEdits(plan: TodayPlanInput, edits: TodayEditsInput)
     if (root !== undefined) slotOf[ex.id] = root;
   });
   const names = new Map(plan.input.source.exercises.map((sx) => [sx.id, sx.exerciseName]));
-  const aggregate = finish(out.aggregate, slotOf, applied, edits.draft, (slot, from) => names.get(slot) ?? plan.input.exercises.get(from)?.name ?? 'Exercise');
-  return { kind: 'next', ...out, aggregate, slotOf, outcomes: applied.resolved.outcomes, resolved: applied.resolved, slots: editedSlots(baseSlots, applied.resolved), baseSlots, plannedShape: out.shapedFrom ?? {} };
+  const finished = finish(out.aggregate, slotOf, applied, edits.draft, (slot, from) => names.get(slot) ?? plan.input.exercises.get(from)?.name ?? 'Exercise');
+  const plannedShape = out.shapedFrom ?? {};
+  // A history basis has no stored `Main`: the WL9 rule at read (fit-to-time §4.2).
+  const mains = defaultMain(baseSlots, (x) => compoundOf(x, plan.input.exercises, edits));
+  const mainOf = new Map(baseSlots.map((b, i) => [b.slotKey, mains[i] ?? false]));
+  const fitted = applyFit(plan, edits, { aggregate: finished, slotOf, resolved: applied.resolved, plannedShape, mainOf, exercises: plan.input.exercises, at: plan.input.at });
+  return { kind: 'next', ...out, aggregate: fitted.aggregate, slotOf, outcomes: applied.resolved.outcomes, resolved: applied.resolved, slots: editedSlots(baseSlots, applied.resolved), baseSlots, plannedShape, fit: fitted.fit };
+}
+
+/** Catalogue `mechanic` (Coaching knowledge), from the plan's exercises or a swap's or add's own. Unknown: not compound. */
+function compoundOf(exerciseId: string, exercises: ReadonlyMap<string, { mechanic?: string | undefined }>, edits: TodayEditsInput): boolean {
+  const ex = exercises.get(exerciseId) ?? [...edits.swaps.values(), ...(edits.adds?.values() ?? [])].find((p) => p.exercise.id === exerciseId)?.exercise;
+  return ex?.mechanic === 'compound';
+}
+
+/**
+ * The live fit on the planned preview (fit-to-time FT4, §4, §5): Ben's runs
+ * the built-in trim after the planner (cut sets marked `skipped`,
+ * `before_start`); the coach's is already in the plan as its own edits, and
+ * its `before` is the same plan without them. Either sets `Finish by` (FT8)
+ * and goes on the session's `todayEdits.fitted`.
+ */
+function applyFit(
+  plan: TodayPlanInput,
+  edits: TodayEditsInput,
+  p: {
+    aggregate: SessionAggregate;
+    slotOf: Readonly<Record<string, string>>;
+    resolved: ResolvedEdits;
+    plannedShape: Readonly<Record<string, ShapeBefore>>;
+    mainOf: ReadonlyMap<string, boolean>;
+    exercises: ReadonlyMap<string, { mechanic?: string | undefined }>;
+    at: ZonedTimestamp;
+  },
+): { aggregate: SessionAggregate; fit: FitOutcome | null } {
+  const live = p.resolved.fit;
+  if (live === null) return { aggregate: p.aggregate, fit: null };
+  const pace = edits.fit?.pace ?? planPace([]);
+  const target = live.minutes * 60;
+  const rowsBySlot = new Map<string, string[]>();
+  for (const ex of [...p.aggregate.exercises].sort((a, b) => a.order - b.order)) {
+    const key = p.slotOf[ex.id] ?? ex.id;
+    rowsBySlot.set(key, [...(rowsBySlot.get(key) ?? []), ex.id]);
+  }
+  const benEdited = benEditedSlots(p.resolved);
+  let aggregate = p.aggregate;
+  let fit: FitOutcome;
+  if (live.by === 'built_in') {
+    const slots: FitSlot[] = [...rowsBySlot].map(([slotKey, rows]) => {
+      const row = p.aggregate.exercises.find((e) => e.id === rows[0]);
+      const exerciseId = row?.exerciseId ?? '';
+      return {
+        slotKey,
+        sessionExerciseIds: rows,
+        // An added exercise is never a main lift.
+        tier: fitTier({ main: !p.resolved.added.has(slotKey) && (p.mainOf.get(slotKey) ?? false), compound: compoundOf(exerciseId, p.exercises, edits) }),
+        benEdited: benEdited.has(slotKey),
+        held: edits.fit?.held?.(exerciseId) ?? false,
+        supersetGroup: row?.supersetGroup ?? null,
+      };
+    });
+    const r = fitPlanToMinutes({ preview: p.aggregate, slots, minutes: live.minutes, pace });
+    aggregate = withSkipped(p.aggregate, new Set(r.skipSetIds), 'before_start');
+    fit = { editId: live.editId, minutes: live.minutes, by: 'built_in', actionId: null, status: r.status, beforeSeconds: r.beforeSeconds, afterSeconds: r.afterSeconds, lines: r.cuts, skipSetIds: r.skipSetIds, benKept: r.status === 'over' && benEdited.size > 0 };
+  } else {
+    // Before: the same plan without the coach's edits (FT7: both numbers from the estimate).
+    const without = { ...edits, edits: edits.edits.filter((e) => e.kind !== 'fit' && !(e.author === 'coach' && e.actionId === live.actionId)) };
+    const before = estimateRemainingDuration(planWithTodayEdits(plan, without).aggregate, { pace }).seconds;
+    const after = estimateRemainingDuration(p.aggregate, { pace }).seconds;
+    const lines: FitLine[] = [];
+    for (const key of rowsBySlot.keys()) {
+      const sk = p.resolved.skipped.get(key);
+      const st = p.resolved.sets.get(key);
+      const ad = p.resolved.added.get(key);
+      if (sk !== undefined && p.resolved.coachEdits.has(sk)) lines.push({ slotKey: key, kind: 'skip' });
+      else if (ad !== undefined && p.resolved.coachEdits.has(ad.editId)) lines.push({ slotKey: key, kind: 'add' });
+      else if (st !== undefined && p.resolved.coachEdits.has(st.editId)) lines.push({ slotKey: key, kind: 'sets', from: p.plannedShape[key]?.workingSets ?? st.workingSets, to: st.workingSets });
+    }
+    fit = { editId: live.editId, minutes: live.minutes, by: 'coach', actionId: live.actionId, status: after <= target ? 'fitted' : 'over', beforeSeconds: before, afterSeconds: after, lines, skipSetIds: [], benKept: false };
+  }
+  const todayEdits = aggregate.session.todayEdits;
+  const fitted = { minutes: live.minutes, by: live.by, cuts: fit.lines.map((l) => ({ ...l })) };
+  return {
+    aggregate: { ...aggregate, session: { ...aggregate.session, finishBy: finishByFromFit(p.at, live.minutes), ...(todayEdits !== undefined ? { todayEdits: { ...todayEdits, fitted } } : {}) } },
+    fit,
+  };
 }
 
 /** Skipped slots' sets become `skipped` before start; the session records the draft's applied edits. */
