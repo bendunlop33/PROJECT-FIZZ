@@ -172,7 +172,13 @@ export function commandFingerprint(command: SessionCommand): string {
   if (command.type === 'add_exercise') {
     // Re-review minor 5: the snapshot, unit and resolved rest are derived by the
     // service and may change between a failed attempt and its retry.
-    return stableStringify({ type: command.type, exerciseId: command.exercise.exerciseId, equipmentId: command.equipmentId });
+    return stableStringify({
+      type: command.type,
+      exerciseId: command.exercise.exerciseId,
+      equipmentId: command.equipmentId,
+      ...(command.afterSessionExerciseId === undefined ? {} : { after: command.afterSessionExerciseId }),
+      ...(command.supersetWithSessionExerciseId === undefined ? {} : { supersetWith: command.supersetWithSessionExerciseId }),
+    });
   }
   if (command.type === 'change_gym') {
     // Generated IDs (the action and continuation rows) are not part of the intent.
@@ -1079,6 +1085,8 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
       return fail('equipment_incompatible', `${cmd.exercise.name} can't be done on ${equipment.name}.`);
     }
   }
+  const place = placeAddedRow(state, cmd);
+  if (!place.ok) return place.handled;
   const order = Math.max(-1, ...state.exercises.map((e) => e.order)) + 1;
   const ex: SessionExercise = {
     id: cmd.newSessionExerciseId,
@@ -1091,7 +1099,7 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     loadConvention: equipment?.loadConvention ?? cmd.exercise.defaultLoadConvention,
     unit: equipment?.unit ?? cmd.unit,
     order,
-    supersetGroup: null,
+    supersetGroup: place.group,
     transitionRestS: null,
     progressionRuleId: null,
   };
@@ -1130,8 +1138,44 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     ...added.map((s): SessionEvent => ({ type: 'SetAdded', setId: s.id, sessionExerciseId: ex.id })),
   ];
   const activeSetId = activateIfIdle(state, cmd.newSetId, events);
-  const next = { ...state, exercises: [...state.exercises, ex], sets: [...state.sets, ...added] };
+  const grouped = place.partnerId === null || place.group === null ? state.exercises : state.exercises.map((e) => (e.id === place.partnerId && e.supersetGroup === null ? { ...e, supersetGroup: place.group } : e));
+  const exercises = place.afterId === null ? [...grouped, ex] : insertRowAfter(grouped, place.afterId, ex);
+  const next = { ...state, exercises, sets: [...state.sets, ...added] };
   return { ok: true, state: bumpVersion(next, activeSetId), events };
+}
+
+const GROUP_LETTERS: readonly string[] = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+/**
+ * Where an added row goes (12 Oct, coach `add_exercise_today`): at the end,
+ * straight after a live row (after its whole superset when it has one), or
+ * in a superset with a live row that still has a pending set (its group, or
+ * a new letter for both), after the group's last member.
+ */
+function placeAddedRow(
+  state: SessionAggregate,
+  cmd: CommandOf<'add_exercise'>,
+): { ok: true; afterId: string | null; group: string | null; partnerId: string | null } | { ok: false; handled: Handled } {
+  const live = state.exercises.filter((e) => e.removed === undefined).sort((a, b) => a.order - b.order);
+  const lastOfGroup = (row: SessionExercise): string => (row.supersetGroup === null ? row.id : (live.filter((e) => e.supersetGroup === row.supersetGroup).at(-1)?.id ?? row.id));
+  if (cmd.supersetWithSessionExerciseId !== undefined) {
+    const partner = live.find((e) => e.id === cmd.supersetWithSessionExerciseId);
+    if (!partner) return { ok: false, handled: fail('exercise_not_found', 'Exercise not found in this workout.') };
+    if (!state.sets.some((s) => s.sessionExerciseId === partner.id && s.status === 'pending')) {
+      return { ok: false, handled: fail('invalid_values', `${partner.exerciseName} is done, so it can't be in a superset now.`) };
+    }
+    if (partner.supersetGroup !== null) return { ok: true, afterId: lastOfGroup(partner), group: partner.supersetGroup, partnerId: partner.id };
+    const used = new Set(state.exercises.map((e) => e.supersetGroup));
+    const letter = GROUP_LETTERS.find((l) => !used.has(l));
+    if (letter === undefined) return { ok: false, handled: fail('invalid_values', 'No superset letter left in this workout.') };
+    return { ok: true, afterId: partner.id, group: letter, partnerId: partner.id };
+  }
+  if (cmd.afterSessionExerciseId !== undefined) {
+    const row = live.find((e) => e.id === cmd.afterSessionExerciseId);
+    if (!row) return { ok: false, handled: fail('exercise_not_found', 'Exercise not found in this workout.') };
+    return { ok: true, afterId: lastOfGroup(row), group: null, partnerId: null };
+  }
+  return { ok: true, afterId: null, group: null, partnerId: null };
 }
 
 function handleDeleteSet(state: SessionAggregate, cmd: CommandOf<'delete_set'>): Handled {
@@ -1740,6 +1784,34 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handl
       const activeSetId = activeAfterRestore({ ...state, exercises }, sets, ids, events);
       return { ok: true, state: bumpVersion({ ...state, exercises, sets, audit: [...state.audit, ...(r?.audit ?? [])] }, activeSetId), events };
     }
+    case 'add_exercise': {
+      // 12 Oct (coach `add_exercise_today`): the added row comes out again, only while nothing on it was
+      // logged or skipped (rule 2: a done set is never touched). A member left alone in its superset is ungrouped.
+      const ex = state.exercises.find((e) => e.id === prior.createdIds?.[0]);
+      if (!ex || ex.removed !== undefined) return fail('stale_version', STALE_UNDO);
+      if (state.exercises.some((e) => e.continuesFromId === ex.id && e.removed === undefined)) return fail('stale_version', STALE_UNDO);
+      const own = state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status !== 'deleted');
+      if (own.some((s) => s.status !== 'pending')) return fail('stale_version', `Can’t undo: ${ex.exerciseName} has a set done.`);
+      if (isWorkLive(state, own.map((s) => s.id))) return fail('work_interval_running', 'Stop the work timer first.');
+      const audit = [...state.audit];
+      const gone = new Map<string, WorkoutSet>();
+      for (const p of own) {
+        const deleted: WorkoutSet = { ...p, status: 'deleted', version: p.version + 1 };
+        gone.set(p.id, deleted);
+        audit.push(auditEntry(state, cmd, 'deleted', p, deleted, 'deleted'));
+        events.push({ type: 'SetDeleted', setId: p.id });
+      }
+      const sets = state.sets.map((s) => gone.get(s.id) ?? s);
+      const alone = ex.supersetGroup === null ? [] : state.exercises.filter((e) => e.id !== ex.id && e.removed === undefined && e.supersetGroup === ex.supersetGroup);
+      const exercises = state.exercises.map((e) => {
+        if (e.id === ex.id) return { ...e, removed: { opId: cmd.opId, at: cmd.at, by: 'remove' as const } };
+        if (alone.length === 1 && e.id === alone[0]?.id) return { ...e, supersetGroup: null };
+        return e;
+      });
+      events.push({ type: 'ExerciseRemoved', sessionExerciseId: ex.id, undo: false });
+      const activeSetId = repointActive(state, sets, events);
+      return { ok: true, state: bumpVersion({ ...state, exercises, sets, audit }, activeSetId), events };
+    }
     case 'swap_exercise': {
       const row = state.exercises.find((e) => e.swappedFrom?.opId === cmd.targetOpId);
       const original = row ? state.exercises.find((e) => e.id === row.swappedFrom?.sessionExerciseId) : undefined;
@@ -1927,7 +1999,6 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
  *
  * Not tracked, by design (always false):
  * - `finish`, `discard`: terminal; nothing can revert them.
- * - `add_exercise`: an exercise can't be removed, so the addition stays in place.
  * - `set_active_set`, `adjust_rest`, `skip_rest`, `start_work_interval`,
  *   `stop_work_interval`, `pause`, `resume`: transient navigation and timer
  *   state that moves on by itself (the next log changes the active set, a rest
@@ -1985,6 +2056,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
       return state.exercises.find((e) => e.swappedFrom?.opId === command.opId)?.removed !== undefined;
     case 'remove_exercise':
       return state.exercises.find((e) => e.id === command.sessionExerciseId)?.removed?.opId !== command.opId;
+    case 'add_exercise':
+      // Taken out since (its Undo, or Remove).
+      return state.exercises.find((e) => e.id === command.newSessionExerciseId)?.removed !== undefined;
     case 'set_note': {
       const now = command.target.kind === 'exercise' ? state.exercises.find((e) => e.id === (command.target.kind === 'exercise' ? command.target.sessionExerciseId : ''))?.note : state.sets.find((x) => x.id === (command.target.kind === 'set' ? command.target.setId : ''))?.note;
       return (now ?? null) !== (command.note === null ? null : command.note.trim());
@@ -1997,7 +2071,6 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'undo_change_gym':
     case 'finish':
     case 'discard':
-    case 'add_exercise':
     case 'set_active_set':
     case 'adjust_rest':
     case 'skip_rest':
@@ -2091,7 +2164,7 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
       commandType: command.type,
       fingerprint: commandFingerprint(command),
       atUtc: command.at.utc,
-      ...(command.type === 'add_set' ? { createdIds: [command.newSetId] } : {}),
+      ...(command.type === 'add_set' ? { createdIds: [command.newSetId] } : command.type === 'add_exercise' ? { createdIds: [command.newSessionExerciseId] } : {}),
     };
     next = { ...next, processedOps: { ...next.processedOps, [command.opId]: record } };
   }
