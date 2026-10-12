@@ -548,8 +548,10 @@ export function routineTemplatesWithTargets(
     if (!unedited && (coachReps === null || !fitsRange(coachReps, t.targetReps))) return t;
     const id = o.newId();
     o.ruleOf.set(id, coachHere);
-    // The coach's target RPE goes with its load (target RPE, ADR 0006 amendment 3): its load was chosen for that effort.
-    const effort = coachPlan.rpe !== null ? { targetRpe: coachPlan.rpe, targetRir: null } : {};
+    // The coach's own target RPE goes with its load (target RPE, ADR 0006 amendment 3; WL7): its load was chosen for that effort.
+    // Not `coachPlan.rpe`, which falls back to the built-in plan's (review S2): with none from the coach the template keeps its own.
+    const coachRpe = meta?.rpe ?? null;
+    const effort = coachRpe !== null ? { targetRpe: coachRpe, targetRir: null } : {};
     return unedited ? { ...t, id, targetLoad: coachPlan.load, targetReps: coachReps ?? t.targetReps, ...effort } : { ...t, id, targetLoad: coachPlan.load, ...effort };
   });
   // The workout's other set types (a back-off after a top set), its timed sets and, after Ben's edit,

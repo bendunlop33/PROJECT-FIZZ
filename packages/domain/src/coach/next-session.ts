@@ -280,7 +280,12 @@ type PlanEntry = { setType: SetType; planned: PlannedSet };
  * built-in rule's plan for the same exercise (for the workout's other set
  * types). Not stored anywhere.
  */
-export type NextTargetEntry = PlanEntry & { coach?: { sets: number | null; setAtUtc: string; builtIn: readonly PlanEntry[] } | undefined };
+/**
+ * `coach.rpe`: the coach's own target RPE (null: it set none). `planned.rpe`
+ * falls back to the built-in plan's, so it can't tell them apart; only the
+ * coach's own goes with its load on a saved workout (WL7, review S2).
+ */
+export type NextTargetEntry = PlanEntry & { coach?: { sets: number | null; setAtUtc: string; builtIn: readonly PlanEntry[]; rpe?: number | null | undefined } | undefined };
 
 /**
  * What the coach's next-session targets were worked out from: the source
@@ -345,7 +350,7 @@ export function withCoachTargets(
     };
     const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: row.target.rpe ?? template?.rpe ?? null, rir: row.target.rpe != null ? null : (template?.rir ?? null), source: 'coach', provenance };
     // When the target became active (saved, or Applied later by Ben): a slot changed before that is not "since" (review S1).
-    const coach = { sets: row.sets, setAtUtc: row.updatedAtUtc, builtIn: plan };
+    const coach = { sets: row.sets, setAtUtc: row.updatedAtUtc, builtIn: plan, rpe: row.target.rpe ?? null };
     out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned, coach }))]);
   }
   return out;

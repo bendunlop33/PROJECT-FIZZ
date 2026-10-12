@@ -250,7 +250,7 @@ describe('Start of a library workout edited after a coach target (B1, WL-A4, WL7
  * Start carry the same target as the set they copy.
  */
 describe('target RPE on a library workout (merge with target RPE)', () => {
-  const withRpe = (o: { sets?: number | null; count?: number }, rpe: number): NextTargetEntry[] => coachEntries(o).map((e) => ({ ...e, planned: { ...e.planned, rpe } }));
+  const withRpe = (o: { sets?: number | null; count?: number }, rpe: number): NextTargetEntry[] => coachEntries(o).map((e) => ({ ...e, planned: { ...e.planned, rpe }, ...(e.coach ? { coach: { ...e.coach, rpe } } : {}) }));
 
   it('unedited since the coach target: its load, reps and target RPE are used', () => {
     const ts = [1, 2, 3].map((n) => template(n, { targetReps: { min: 6, max: 8 }, targetRpe: 9 }));
@@ -268,6 +268,24 @@ describe('target RPE on a library workout (merge with target RPE)', () => {
     const ts = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 6, max: 8 }, targetRpe: 9 }));
     const out = routineTemplatesWithTargets(ts, withRpe({ sets: 3 }, 7), { legacy: false, newId: idGen(51_200), ruleOf: new Map(), editedAtUtc: at(2000).utc });
     expect(out.map((t) => [t.targetLoad?.value ?? null, t.targetRpe])).toEqual(Array(4).fill([97.5, 9]));
+  });
+
+  it('review S2: a coach load with no coach RPE keeps the template’s own target RPE, even when the built-in plan has one', () => {
+    const source = finishedSource();
+    // The built-in plan for the source workout carries RPE 8; `withCoachTargets` fills the coach entry's `planned.rpe` from it.
+    const builtIn = new Map([[INCLINE, [1, 2, 3].map(() => entry('working', { ...rule(32.5), load: kg(32.5, 'per_hand'), rpe: 8 }))]]);
+    const opts = { flaggedExerciseIds: new Set<string>(), painToday: false };
+    const noRpe = withCoachTargets(builtIn, [coachRow(source, 3)], source, opts).get(INCLINE) ?? [];
+    const coached = noRpe.find((e) => e.coach !== undefined);
+    expect(coached?.planned.rpe).toBe(8);
+    expect(coached?.coach?.rpe).toBeNull();
+    const ts = [1, 2, 3].map((n) => template(n, { targetReps: { min: 8, max: 10 }, targetRpe: 7 }));
+    const out = routineTemplatesWithTargets(ts, noRpe, { legacy: false, newId: idGen(51_350), ruleOf: new Map(), editedAtUtc: at(0).utc });
+    expect(out.map((t) => [t.targetLoad?.value ?? null, t.targetRpe])).toEqual(Array(3).fill([35, 7]));
+    // The coach's own RPE 9 does go with its load.
+    const withOwn = withCoachTargets(builtIn, [{ ...coachRow(source, 3), target: { ...coachRow(source, 3).target, rpe: 9 } }], source, opts).get(INCLINE) ?? [];
+    const out9 = routineTemplatesWithTargets(ts, withOwn, { legacy: false, newId: idGen(51_380), ruleOf: new Map(), editedAtUtc: at(0).utc });
+    expect(out9.map((t) => [t.targetLoad?.value ?? null, t.targetRpe, t.targetRir])).toEqual(Array(3).fill([35, 9, null]));
   });
 
   it('a coach target with no RPE leaves the template’s own RPE/RIR alone', () => {
