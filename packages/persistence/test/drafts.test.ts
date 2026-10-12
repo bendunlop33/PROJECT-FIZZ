@@ -495,3 +495,39 @@ describe('review fixes: the template Undo keeps a newer swap (S4), rollback disc
     await dst.close();
   });
 });
+
+describe('Update Push A: Apply and Undo over several draft edits (§11.5, TE-B7)', () => {
+  it('Apply marks every listed edit redundant with routine v2 in one transaction; Undo restores the whole workout and brings those edits back', async () => {
+    const store = await openStore(memoryDriver());
+    await seeded(store);
+    let draft = change(null, { type: 'edit', edit: { kind: 'sets', slotKey: SLOT_BENCH, workingSets: 4 } }, 'u-1');
+    draft = change(draft, { type: 'edit', edit: { kind: 'reps', slotKey: SLOT_BENCH, reps: { min: 3, max: 5 }, durationS: null } }, 'u-2');
+    draft = change(draft, { type: 'edit', edit: { kind: 'load', slotKey: SLOT_BENCH, load: { value: 105, unit: 'kg', convention: 'total' } } }, 'u-3');
+    await store.repos.drafts.save(draft, null);
+    const [setsEdit, repsEdit, loadEdit] = draft.edits.map((e) => e.editId);
+    const r1 = routine();
+    const bench = r1.exercises[0];
+    const lastSet = bench?.setTemplates.at(-1);
+    if (!bench || !lastSet || setsEdit === undefined || repsEdit === undefined || loadEdit === undefined) throw new Error('fixture');
+    const r2: Routine = { ...r1, version: 2, updatedAtUtc: at(30).utc, lastOpId: 'upd-1', source: 'ben', exercises: r1.exercises.map((x, i) => (i === 0 ? { ...x, setTemplates: [...x.setTemplates, { ...lastSet, id: id(9999), targetLoad: null }] } : x)) };
+    const action = ActionRecordSchema.parse({
+      ...updateAction('upd-1', bench, bench, null),
+      detail: { kind: 'update_routine', routineId: ROUTINE, routineName: 'Push A', changes: [{ change: 'edit', text: 'Sets: Bench press 3 → 4' }, { change: 'edit', text: 'Reps: Bench press 6–8 → 3–5' }], before: r1, versionBefore: 1, versionAfter: 2, draft: { id: draft.id, editId: setsEdit, editIds: [setsEdit, repsEdit] } },
+    });
+    expect(await store.repos.drafts.applyRoutineChange({ ownerId: OWNER, routine: r2, expectedRoutineVersion: 1, action, at: at(30) })).toMatchObject({ status: 'written' });
+    const d2 = await store.repos.drafts.get(draft.id);
+    expect(d2?.edits.map((e) => [e.kind, e.removed?.why ?? null])).toEqual([
+      ['sets', 'redundant'],
+      ['reps', 'redundant'],
+      // Today's load is never part of the template change (TE-B8).
+      ['load', null],
+    ]);
+    const undo = ActionRecordSchema.parse({ ...action, actionId: id(6200), opId: 'undo-upd', detail: { kind: 'undo', undoneActionId: action.actionId, what: 'the change to Push A', restored: [], alreadyLogged: [] }, createdAt: at(40) });
+    expect(await store.repos.drafts.undoRoutineChange({ ownerId: OWNER, undo, at: at(40), newRoutineAtUtc: at(40).utc })).toMatchObject({ status: 'written', routine: { version: 3 } });
+    expect((await store.repos.routines.get(ROUTINE))?.exercises).toEqual(r1.exercises);
+    const d3 = await store.repos.drafts.get(draft.id);
+    expect(d3?.edits.filter((e) => e.removed === null).map((e) => e.kind).sort()).toEqual(['load', 'reps', 'sets']);
+    expect((await checkIntegrity(store.db)).ok).toBe(true);
+    await store.close();
+  });
+});

@@ -113,9 +113,10 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
   }
 
   /**
-   * `Change Push A too ›` → Apply (TE4, ADR 0022): in one transaction, the
-   * routine at its next version, Ben's `ActionRecord` (`update_routine`), and
-   * the draft's swap edit marked `redundant` (the template now matches).
+   * `Change Push A too ›` / `Update Push A` → Apply (TE4, TE15, ADR 0022): in
+   * one transaction, the routine at its next version, Ben's `ActionRecord`
+   * (`update_routine`), and the draft edits it covers marked `redundant`
+   * (the template now matches).
    * Idempotent on the record's `opId`; a routine that moved since the card
    * was shown is `stale` and nothing is written (rule 5).
    */
@@ -138,7 +139,7 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
       const link = req.action.detail.kind === 'update_routine' ? req.action.detail.draft : null;
       if (link !== null) {
         const d = await getDraft(tx, link.id);
-        const next = d === null || d.status !== 'open' ? null : markDraftEdits(d, [link.editId], 'redundant', req.action.opId, req.at);
+        const next = d === null || d.status !== 'open' ? null : markDraftEdits(d, link.editIds ?? [link.editId], 'redundant', req.action.opId, req.at);
         if (d !== null && next !== null) {
           const r = await saveDocumentIn(tx, DRAFT_SPEC, next, d.version);
           if (!r.ok) throw new Error('The draft changed while the routine was being changed');
@@ -193,7 +194,7 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
             newDraftId: current.id,
             slots: [],
             // A newer swap Ben made on that slot since stays: his later choice is never replaced without a word (review S4).
-            command: { type: 'restore', editIds: [d.draft.editId], keepLive: true },
+            command: { type: 'restore', editIds: d.draft.editIds ?? [d.draft.editId], keepLive: true },
           });
           if (change.kind === 'write') {
             const r = await saveDocumentIn(tx, DRAFT_SPEC, change.next, current.version);
