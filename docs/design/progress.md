@@ -121,7 +121,7 @@ Regions, top to bottom:
    - Push/Pull/Legs: `Push`, `Pull`, `Legs`, `Core`, then `Other` only if > 0.
    - Each row is a button → Muscles screen with that group expanded.
    - Under the rows, only when some exercises have no muscles: `2 exercises have no muscles set ›` (→ Muscles screen, `Not counted`).
-5. **Records.** Section label `RECORDS`. Up to 3 rows, newest first, then `All records (5) ›` when there are more (slice B; in slice A the extra rows simply list inline up to 5). None: one line, `No new records in the last 30 days.`
+5. **Records.** Section label `RECORDS`. Up to 3 rows, newest first, then `All records (5) ›` when there are more (slice B; in slice A the extra rows simply list inline up to 5). (Build: `All records (n) ›` lists the rest in place on the home, as exercise detail's `Show all`; designer to confirm or name a destination.) None: one line, `No new records in the last 30 days.`
 6. **Exercises ›** (slice B). One row → Exercises list.
 7. **ResumeBar** (conditional, fixed above the tab bar).
 
@@ -473,7 +473,7 @@ Rows stop at the highest rep count actually done (up to 12). `—` rows are show
 | None in range | 0 in range, older exist | `None between 9 Apr and 8 Oct. Last: 2 Feb.` + `Show all` button |
 | Est. 1RM: no eligible sets | Every set in range has > 10 reps | Chart area: `No sets of 10 reps or fewer in this range.` Chip stays (other ranges may have some) |
 | Convention without Est. 1RM | assisted, bodyweight, bodyweight + added, timed | Chip hidden; default metric per PG29 |
-| Long history | > 150 points in range | One point per week (the week's best); heading adds `· weekly best`. Table and history list every session |
+| Long history | > 150 points in range | One point per week (the week's best); heading adds `· weekly best`. Table and history list every session. The range summary's `Latest`, `Best` and `Change` still describe sessions (the last and first session in range), not weeks (build, review progress-B B1/SP3; designer to confirm) |
 | Only FitNotes history | The exercise has no logged sessions | Series `FitNotes · kg`; everything works; records section `Records start after 3 logged sessions.` (PG30) |
 | FitNotes history added (PG32) | `SeriesLink` exists | Hollow points, legend, `FitNotes` tags |
 | Marked sets (PG21) | A session has marked sets | Value from the best unmarked set; history `100×8 (spotted)`; all marked → no point, marker `Not counted` |
@@ -635,7 +635,7 @@ Every number uses tabular numerals and design-system §3 formats. Estimates alwa
 | Too few / none | `2 sessions in this range.` · `Try 1 yr` · `None between 9 Apr and 8 Oct. Last: 2 Feb.` · `Show all` · `No sets of 10 reps or fewer in this range.` | — |
 | Table toggle | `Show as table` / `Show chart` | — |
 | Rep table | `BEST REPS` · `By weight` · `By reps` · headers `Weight` `Reps` `Date` / `Reps` `Heaviest` `Date` · `from 6 reps` · `—` · `Show all (9)` | Actual |
-| Records | `RECORDS` · `Heaviest set  105 kg × 3 · 1 Oct` · `Most reps at 100 kg  8 · 24 Sep` · `Best Est. 1RM  ≈126.5 kg · 24 Sep` · assisted `Least assistance for 8+ reps  15 kg · 2 Oct` · bodyweight `Most reps  14 · 3 Oct` · `Records start after 3 logged sessions.` | Actual; estimate labelled |
+| Records | `RECORDS` · `Heaviest set  105 kg × 3 · 1 Oct` · `Most reps at 100 kg  8 · 24 Sep` · `Best Est. 1RM  ≈126.5 kg · 24 Sep` · assisted `Least assistance for 8+ reps  15 kg · 2 Oct` · bodyweight `Most reps  14 · 3 Oct` · `Records start after 3 logged sessions.` (Build: timed series have no records section until a record is defined, review progress-B SP2) | Actual; estimate labelled |
 | History | `HISTORY` · month `October` · `Thu 8 Oct · Push A` · `102.5×6 · 100×8` · tags `Edited` · `FitNotes` · `(spotted)` · `Load September` | Actual |
 | Pain line | `Pain flag since 2 Oct` | — |
 | ⓘ sheet | Text in §2.7 | — |
@@ -778,7 +778,7 @@ Checks:
 
 ### Slice B: Exercises list and exercise detail
 
-Builds: Exercises list, exercise detail (series menu, `StatStrip`, Est. 1RM / Top set / Volume charts with table view, selection panel, rep table both ways, records, history), the Est. 1RM `ⓘ` sheet, `Add FitNotes history` (PG32, once Ben confirms O-PG1), `Best Est. 1RM` in home records, record rows opening exercise detail.
+Builds: Exercises list, exercise detail (series menu, `StatStrip`, Est. 1RM / Top set / Volume charts with table view, selection panel, rep table both ways, records, history), the Est. 1RM `ⓘ` sheet, `Add FitNotes history` (PG32, deferred until Ben confirms O-PG1; see check 37), `Best Est. 1RM` in home records, record rows opening exercise detail.
 
 Checks:
 
@@ -793,7 +793,7 @@ Checks:
 34. **Selection.** Tapping a point changes the panel in place (nothing covers the chart); `Open workout ›` opens that exact workout. The selected point is visible in Direction D by size, ring and guide line.
 35. **Table and VoiceOver.** `Show as table` lists the same values as the chart; with VoiceOver, the chart reads its summary and swipe up/down moves point by point.
 36. **Long history.** `All` with years of FitNotes history draws weekly bests with `· weekly best` in the heading; the table lists every session.
-37. **FitNotes history (PG32).** `Add FitNotes history` on Main Gym barbell shows FitNotes sessions as hollow points with the legend, tags FitNotes rows, and changes nothing in the workout (the `Last` line, targets and the in-workout record line are the same before and after). Undo removes it. It's refused for a different convention or unit.
+37. **FitNotes history (PG32).** `Add FitNotes history` on Main Gym barbell shows FitNotes sessions as hollow points with the legend, tags FitNotes rows, and changes nothing in the workout (the `Last` line, targets and the in-workout record line are the same before and after). Undo removes it. It's refused for a different convention or unit. **Deferred (O-PG1, review progress-B S6/SP1):** slice B ships without `Add FitNotes history`, `SeriesLink` or hollow points; FitNotes history stays its own `FitNotes · kg` series in the series menu. This check is unmet until Ben answers O-PG1 and the slice that builds it is chosen.
 38. **Volume** shows bars of Σ load × reps per session, with marked sets included, and isn't offered for assisted, bodyweight or timed exercises.
 39. **Records** list every record of the series, newest first, with `Best Est. 1RM` labelled as an estimate; a series with fewer than 3 logged sessions shows `Records start after 3 logged sessions.`
 40. **No new chart library** is added to `apps/mobile/package.json`; charts draw with Skia, and no chart animates.
@@ -823,7 +823,7 @@ Checks:
 
 | # | Question | Default until answered |
 |---|---|---|
-| O-PG1 | **PG32:** may FitNotes history be shown on one equipment's chart when you choose it? | Built in slice B behind the menu item; not added to anything automatically |
+| O-PG1 | **PG32:** may FitNotes history be shown on one equipment's chart when you choose it? | Not built in slice B (check 37 deferred, review progress-B S6/SP1); when built, behind the menu item and not added to anything automatically |
 | O-PG2 | Default window: 30 days? | `30 days` |
 | O-PG3 | Time `AVG`: mean (what you asked for, with the 4 h cap) or median (research)? | Mean |
 | O-PG4 | Is Push/Pull/Legs/Core the right second grouping, or do you want Upper/Lower too? | PPL + Core only |
