@@ -80,6 +80,10 @@ jobs:
             exit 1
           fi
       - run: npm run check
+      # No .ipa may ship a reserved or empty migration (review coach-tools B1): a phone that ran a
+      # placeholder would never run the real one. Fails until the owning branches are merged (8, 9, 10).
+      - name: Migrations releasable
+        run: npm run check:migrations
       - name: Expo prebuild (config only)
         working-directory: apps/mobile
         run: npx expo prebuild --platform ios --no-install --clean

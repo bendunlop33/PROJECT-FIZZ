@@ -1,49 +1,8 @@
 import type { SqlDriver, SqlExecutor } from './driver';
 import { SchemaTooNewError } from './errors';
-import { MIGRATION_0001 } from './schema/0001-initial';
-import { MIGRATION_0002 } from './schema/0002-check-ins';
-import { MIGRATION_0003 } from './schema/0003-imports';
-import { MIGRATION_0004 } from './schema/0004-active-set';
-import { MIGRATION_0005 } from './schema/0005-gym-switch';
-import { MIGRATION_0006 } from './schema/0006-coach';
-import { MIGRATION_0007 } from './schema/0007-pre-start-drafts';
-import { MIGRATION_0010 } from './schema/0010-coach-set-actions';
+import { latestVersion, MIGRATIONS, type Migration } from './migration-list';
 
-/**
- * A forward-only schema step. `up` runs inside the same exclusive transaction
- * that sets `PRAGMA user_version = version`, so a failed migration leaves the
- * database exactly as it was. Never edit a released migration; add a new one.
- */
-export interface Migration {
-  version: number;
-  name: string;
-  up(tx: SqlExecutor): Promise<void>;
-}
-
-export function sqlMigration(version: number, name: string, sql: string): Migration {
-  return { version, name, up: (tx) => tx.exec(sql) };
-}
-
-/** The app's migrations, in order. The last one's `version` is the current schema version. */
-export const MIGRATIONS: readonly Migration[] = [
-  sqlMigration(1, 'initial', MIGRATION_0001),
-  sqlMigration(2, 'check-ins', MIGRATION_0002),
-  sqlMigration(3, 'imports', MIGRATION_0003),
-  sqlMigration(4, 'active-set', MIGRATION_0004),
-  sqlMigration(5, 'gym-switch', MIGRATION_0005),
-  sqlMigration(6, 'coach', MIGRATION_0006),
-  sqlMigration(7, 'pre-start-drafts', MIGRATION_0007),
-  // RESERVED, branch claude/coach-tools only: 8 (delete-workouts) and 9 (workout-library) are built on
-  // other branches and replace these no-ops at merge. Never ship an [ios-build] from this branch before
-  // that merge: a phone at version 10 would never run the real 8 and 9.
-  sqlMigration(8, 'reserved-delete-workouts', ''),
-  sqlMigration(9, 'reserved-workout-library', ''),
-  sqlMigration(10, 'coach-set-actions', MIGRATION_0010),
-];
-
-export function latestVersion(migrations: readonly Migration[] = MIGRATIONS): number {
-  return migrations.at(-1)?.version ?? 0;
-}
+export * from './migration-list';
 
 function assertWellFormed(migrations: readonly Migration[]): void {
   migrations.forEach((m, i) => {
