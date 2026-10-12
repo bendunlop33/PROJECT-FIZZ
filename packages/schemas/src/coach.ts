@@ -13,6 +13,7 @@ import { PainAreaSchema, type PainFlag } from './checkin';
 import { DraftBasisSchema } from './draft';
 import type { SessionCommand } from './commands';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
+import { ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 
 /**
  * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
@@ -59,6 +60,8 @@ export const CoachEntityKindSchema = z.enum([
   'playbook_candidate',
   /** (11 Oct) A set Ben told the coach to log, or a logged set he told it to correct: values only, never deleted. */
   'logged_set',
+  /** (12 Oct, workout builder) A coach-built workout draft: a new draft or a new version of one; never a template or a session. */
+  'workout_draft',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -258,6 +261,8 @@ export const CoachToolNameSchema = z.enum([
   'suggest_memory',
   'forget_memory',
   'add_playbook_candidate',
+  /** (12 Oct) The workout builder's only tool (workout-builder BD1): structure only, no loads or minutes. */
+  'propose_workout',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -280,6 +285,7 @@ export const COACH_TOOL_ARGS = {
   suggest_memory: SaveMemoryArgsSchema,
   forget_memory: ForgetMemoryArgsSchema,
   add_playbook_candidate: AddPlaybookCandidateArgsSchema,
+  propose_workout: ProposeWorkoutArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -344,6 +350,8 @@ export const GuardNoteKindSchema = z.enum([
   'structural_dropped',
   /** The coach's target RPE wasn't used: Ben set his own for the set (review target-rpe S2). */
   'rpe_overridden',
+  /** (12 Oct) A workout-builder check (`checkWorkoutProposal`, BD9): left out, swapped, clamped or filled in. */
+  'build_check',
 ]);
 export type GuardNoteKind = z.infer<typeof GuardNoteKindSchema>;
 
@@ -532,6 +540,23 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     lines: z.array(z.string().min(1).max(200)).max(40),
     rejected: z.array(z.object({ text: z.string().min(1).max(200), why: z.string().min(1).max(40) })).max(40),
     suggestions: z.array(z.object({ slotKey: IdSchema, toExerciseId: IdSchema, text: z.string().min(1).max(200) })).max(6),
+  }),
+  /**
+   * (12 Oct, workout builder) The coach built a workout draft, or a new
+   * version of one (BD16), because Ben asked. App text and counts only; the
+   * card reads the draft itself. `lines`: the `diffDraftVersions` lines
+   * against the parent version (empty for a first version).
+   */
+  z.object({
+    kind: z.literal('build_workout'),
+    draftId: IdSchema,
+    versionN: z.int().min(1),
+    parentN: z.int().min(1).nullable(),
+    name: z.string().min(1).max(120),
+    exerciseCount: z.int().min(0).max(40),
+    leftOut: z.int().min(0).max(40),
+    gymName: z.string().min(1).max(120).nullable(),
+    lines: z.array(StructuralChangeLineSchema).max(40),
   }),
   z.object({
     kind: z.literal('undo'),
@@ -836,7 +861,13 @@ export type CoachWrite =
    * targets and their record are saved together or not at all (rule 5).
    */
   /** `expectedSessionVersion`: refused as stale when the workout moved on since the caller read it (checked inside the write, review N3). */
-  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number };
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number }
+  /**
+   * (12 Oct, workout builder) A coach draft and its record, in one write.
+   * `expectedVersion`: null creates the draft; otherwise the draft's version
+   * the new version was built on (a newer one refuses it as stale, rule 5).
+   */
+  | { kind: 'workout_draft'; action: ActionRecord; draft: WorkoutDraft; expectedVersion: number | null };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }
