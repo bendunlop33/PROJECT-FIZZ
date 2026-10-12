@@ -1,5 +1,7 @@
 # Workout builder (coach-made workouts and, later, programmes)
 
+> **Revision 2026-10-12 (sets when saving a draft; Ben on build 126).** The draft card keeps no steppers: it's the coach's proposal, and changing it by voice or text stays a coach request. To set the number of sets himself, Ben taps `Save to Workouts`, then `Edit ›` on the Save sheet's summary line, which opens the Workouts editor on the unsaved copy with `Sets [−] N [+]` per exercise ([routines.md](routines.md) §A2.5, [exercise-library.md](exercise-library.md) §10.4).
+
 > **Revision 2026-10-09 evening (Ben's decisions D19 and D21; competitor follow-up 7).**
 > - **Rotation (D19).** Programmes (§8) no longer put workouts on weekdays. A programme is a **rotation per week**: weeks follow the calendar from its start date (deloads, phases and tapers stay dated), and within a week the next workout is the one after the last one Ben did ([weekly-plan.md](weekly-plan.md) WP14, WP18). The preview lists each week's workouts in order, with dated endurance sessions shown separately. `Gym days per week` becomes `Workouts a week`. `Schedule 6 weeks` becomes `Use this programme`. The request context names what's next in Ben's rotation.
 > - **Coach targets by default (D21).** After Ben does a workout built here, its next-session targets follow the same rule as any other workout: the coach's small changes are saved by default with Undo (coach-adjustments CA8). WB3's note now says so. Week 2+ of a programme shows `Set after the previous workout`.

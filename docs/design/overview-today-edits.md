@@ -452,6 +452,8 @@ Applies to every working set of that exercise today. Timed exercises show `Work 
 
 **Add exercise.** The exercise library in pick-one mode ([exercise-library.md](exercise-library.md)), `At Main gym` filter on, exercises already in today's plan hidden, `⚠ May hurt` marked and confirmed. Pick → row appended with toast `Face pull added` [Undo].
 
+(2026-10-12, Ben on build 126.) The sheet has the shared `Sets [−] 3 [+]` bar above the keyboard (exercise-library §10.2). A row tap still adds in one tap, with that many working sets (`add` edit with `workingSets`; TE16's 3 when untouched). The new row then shows its `SetCountStepper` at that count and its reps button, so the count can change again at once. Warm-ups stay out of Edit mode (§11.3); target RPE is set in the workout or the editor. `Update Push A ›` lists the added exercise as `Added  Face pull · 4 × 12–15`.
+
 ### 11.5 `Update Push A ›` card (inline, at the list end)
 
 ```
@@ -517,7 +519,7 @@ Commands (all `opId` + `expectedDraftVersion`, through `services.overview.edit`)
 
 | Edit | Payload | Undo |
 |---|---|---|
-| Add | `{kind: 'add', slotKey: <new id>, exerciseId}` (the `order` edit, if any, gets the new key at the end) | Toast, or `Remove` |
+| Add | `{kind: 'add', slotKey: <new id>, exerciseId, workingSets?}` (the `order` edit, if any, gets the new key at the end; `workingSets` from the sheet's bar, 2026-10-12) | Toast, or `Remove` |
 | Sets | `{kind: 'sets', slotKey, workingSets}` (replaces the slot's previous `sets` edit) | `−` / `+`, or `Reset` |
 | Reps | `{kind: 'reps', slotKey, reps: {min, max} \| null, durationS: number \| null}` | `Use planned`, or `Reset` |
 | Load | `{kind: 'load', slotKey, load: Load}` (convention explicit) | Toast, or `Use planned` |
@@ -565,4 +567,5 @@ Fixture as §7, plus Face pull (cable, last 20 kg × 15 on 1 Oct) and Hotel gym.
 - **TE-B11. Force-close and expiry.** Edits survive a force-close and clear at local midnight as v0.2 (TE-A14, TE-A15).
 - **TE-B12. Offline.** Airplane mode, no AI: every §11 action works; no provider call.
 - **TE-B13. Next time.** After a workout with an added exercise and 4 incline sets, the next Push A overview (no Apply) has 3 incline sets and no face pull; face pull's own history is updated.
+- **TE-B15. (2026-10-12) Sets when adding.** In Edit mode, `Add exercise` → bar `[+]` to 4 → tap Face pull adds it with 4 working sets (`＋ ADDED`, stepper reads `4 sets`); untouched, it adds 3. SETS and TIME update; Start creates that many. Same as exercise-library EL-B21.
 - **TE-B14. Visual.** Steppers and pills ≥ 44pt; markers icon + word; numbers tabular; Start the only filled pill (Apply is secondary); light and dark.
