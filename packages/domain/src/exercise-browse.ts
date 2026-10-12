@@ -398,7 +398,17 @@ export interface AddDestinationsInput {
   session: { id: string; name: string; version: number; exerciseIds: readonly string[]; routineId: string | null } | null;
   /** Live saved workouts. `rotationIndex`: place in the rotation (null = not in it). `lastDoneMs`: null = never. */
   routines: readonly { id: string; name: string; version: number; exerciseIds: readonly string[]; rotationIndex: number | null; lastDoneMs: number | null }[];
+  /**
+   * The exercise's measurement. A distance exercise can go into the workout
+   * in progress (distance sets log), but a saved workout's set template has
+   * no distance target, so saved and new workouts are shown disabled
+   * (review library-browse S1; routines.md: distance is never saved as reps).
+   */
+  measurement?: 'reps' | 'duration' | 'distance';
 }
+
+/** Why a saved or new workout can't take a distance exercise (§9.6). */
+export const NO_DISTANCE_IN_WORKOUTS = 'Can’t save distance yet';
 
 export interface AddDestinations {
   now: AddDestination | null;
@@ -428,6 +438,7 @@ export function buildAddDestinations(input: AddDestinationsInput): AddDestinatio
     if (b.rotationIndex !== null) return 1;
     return (b.lastDoneMs ?? -1) - (a.lastDoneMs ?? -1) || a.name.localeCompare(b.name);
   });
+  const distance = input.measurement === 'distance';
   const workouts = ordered.map((r): AddDestination => {
     const already = r.exerciseIds.includes(input.exerciseId);
     return {
@@ -435,11 +446,15 @@ export function buildAddDestinations(input: AddDestinationsInput): AddDestinatio
       id: r.id,
       label: r.name,
       detail: s !== null && s.routineId === r.id ? 'In progress · applies next time' : null,
-      disabled: already,
-      disabledText: already ? 'Already in it' : null,
+      disabled: already || distance,
+      disabledText: already ? 'Already in it' : distance ? NO_DISTANCE_IN_WORKOUTS : null,
       version: r.version,
       primary: `Add to ${r.name}`,
     };
   });
-  return { now, workouts, newWorkout: { kind: 'new', id: null, label: 'New workout', detail: null, disabled: false, disabledText: null, version: null, primary: 'Add to new workout' } };
+  return {
+    now,
+    workouts,
+    newWorkout: { kind: 'new', id: null, label: 'New workout', detail: null, disabled: distance, disabledText: distance ? NO_DISTANCE_IN_WORKOUTS : null, version: null, primary: 'Add to new workout' },
+  };
 }

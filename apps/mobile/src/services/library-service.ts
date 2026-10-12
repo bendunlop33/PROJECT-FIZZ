@@ -12,6 +12,7 @@ import {
   isInRotation,
   lastActualByExercise,
   liveRoutines,
+  NO_DISTANCE_IN_WORKOUTS,
   localDateOf,
   mayHurtAccessibility,
   mayHurtConfirm,
@@ -119,7 +120,7 @@ export type LibraryAddTarget = { kind: 'session'; sessionId: string } | { kind: 
 
 export type LibraryUndo = { kind: 'session'; sessionId: string; sessionExerciseId: string } | { kind: 'routine'; actionId: string };
 
-export type LibraryAddWrite = { ok: true; toast: string; undo: LibraryUndo | null } | { ok: false; reason: 'stale' | 'already' | 'failed' | 'missing'; message: string };
+export type LibraryAddWrite = { ok: true; toast: string; undo: LibraryUndo | null } | { ok: false; reason: 'stale' | 'already' | 'failed' | 'missing' | 'distance'; message: string };
 
 export const LIBRARY_ADD_COPY = {
   added: (name: string) => `Added to ${name}`,
@@ -290,6 +291,7 @@ export function createLibraryService(deps: LibraryServiceDeps) {
         for (const r of await deps.routineRows().catch(() => [])) if (r.lastDone !== null) lastDone.set(r.id, toMs(r.lastDone.atUtc));
         const destinations = buildAddDestinations({
           exerciseId,
+          measurement: exercise.measurement,
           session:
             active === null
               ? null
@@ -344,6 +346,8 @@ export function createLibraryService(deps: LibraryServiceDeps) {
           const row = mine(r.aggregate).find((e) => !had.has(e.id)) ?? mine(r.aggregate).at(-1);
           return { ok: true, toast: LIBRARY_ADD_COPY.added(name), undo: row === undefined ? null : { kind: 'session', sessionId: before.session.id, sessionExerciseId: row.id } };
         }
+        // A saved workout has no distance target: never saved as reps (review library-browse S1).
+        if (exercise.measurement === 'distance') return { ok: false, reason: 'distance', message: NO_DISTANCE_IN_WORKOUTS };
         const routine = await repos().routines.get(req.to.routineId);
         if (routine === null || routine.ownerId !== p.id || isDeleted(routine)) return { ok: false, reason: 'missing', message: LIBRARY_ADD_COPY.failed };
         // A retried opId that landed is the same save (the update replays it).

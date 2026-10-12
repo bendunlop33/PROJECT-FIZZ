@@ -168,6 +168,26 @@ describe('Add to a workout (EL-B9–EL-B11, EL14)', () => {
     expect(back?.exercises.some((e) => e.exerciseId === facePull)).toBe(false);
   });
 
+  it('review S1: a distance exercise can’t go into a saved or new workout (never saved as reps); the workout in progress still takes it', async () => {
+    const { services: s } = await h.launch();
+    const { routine, gymId } = await withSaved(s);
+    const sled = await idOf(s, 'Sled push');
+    const dest = await s.library.destinations(sled);
+    expect(dest?.destinations.workouts.find((w) => w.label === 'Pull B')).toMatchObject({ disabled: true, disabledText: 'Can’t save distance yet' });
+    expect(dest?.destinations.newWorkout).toMatchObject({ disabled: true, disabledText: 'Can’t save distance yet' });
+    expect(dest?.destinations.now).toBeNull();
+    // The service refuses too, and writes nothing.
+    const r = await s.library.addToWorkout({ exerciseId: sled, shape: shape(), to: { kind: 'routine', routineId: routine.id, expectedVersion: routine.version }, opId: 'sled-1' });
+    expect(r).toEqual({ ok: false, reason: 'distance', message: 'Can’t save distance yet' });
+    expect((await s.routines.editor({ routineId: routine.id, gymId: null }))?.routine?.version).toBe(routine.version);
+    // With a workout running, NOW is offered and enabled.
+    const started = await s.workout.start({ gymId, opId: 'start-sled', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const live = await s.library.destinations(sled);
+    expect(live?.destinations.now).toMatchObject({ disabled: false });
+    expect(live?.destinations.workouts.every((w) => w.disabled)).toBe(true);
+  });
+
   it('a stale version writes nothing and says so (rule 5)', async () => {
     const { services: s } = await h.launch();
     const { routine } = await withSaved(s);

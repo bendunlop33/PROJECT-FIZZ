@@ -5,6 +5,7 @@ import type { Exercise, Load } from '@fizz/schemas';
 import {
   actualSetText,
   buildAddDestinations,
+  NO_DISTANCE_IN_WORKOUTS,
   buildExerciseBrowseView,
   buildExerciseInfoView,
   editDistance,
@@ -287,6 +288,25 @@ describe('buildAddDestinations (§9.5)', () => {
     ]);
     expect(d.workouts[1]).toMatchObject({ version: 4, primary: 'Add to Pull B' });
     expect(d.newWorkout.primary).toBe('Add to new workout');
+  });
+
+  it('a distance exercise (review S1): saved and new workouts disabled with the reason; NOW stays open', () => {
+    const d = buildAddDestinations({
+      exerciseId: FLY.id,
+      measurement: 'distance',
+      session: { id: id(800), name: 'Push A', version: 1, exerciseIds: [], routineId: null },
+      routines: [
+        { id: id(301), name: 'Legs A', version: 2, exerciseIds: [], rotationIndex: 0, lastDoneMs: 1 },
+        { id: id(302), name: 'Arms', version: 1, exerciseIds: [FLY.id], rotationIndex: null, lastDoneMs: null },
+      ],
+    });
+    expect(d.now).toMatchObject({ disabled: false });
+    expect(d.workouts.map((w) => [w.label, w.disabled, w.disabledText])).toEqual([
+      ['Legs A', true, NO_DISTANCE_IN_WORKOUTS],
+      ['Arms', true, 'Already in it'],
+    ]);
+    expect(d.newWorkout).toMatchObject({ disabled: true, disabledText: NO_DISTANCE_IN_WORKOUTS });
+    expect(buildAddDestinations({ exerciseId: FLY.id, measurement: 'duration', session: null, routines: [] }).newWorkout.disabled).toBe(false);
   });
 
   it('no workout running: no NOW row; an exercise already in the running workout is disabled there', () => {
