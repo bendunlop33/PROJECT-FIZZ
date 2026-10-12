@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode, type Ref } from 'react';
-import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View } from 'react-native';
+import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { StepTarget } from '@fizz/domain';
@@ -39,7 +39,7 @@ export function NumberAccessory() {
 }
 
 /** D tile − / +: a light glyph with a full 44 × 52 pt target. */
-function TileStep({ glyph, target, onStep, describe }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string }) {
+function TileStep({ glyph, target, onStep, describe, size }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined }) {
   const theme = useTheme();
   const enabled = target.enabled;
   return (
@@ -57,8 +57,8 @@ function TileStep({ glyph, target, onStep, describe }: { glyph: string; target: 
         }
       }}
       style={({ pressed }) => ({
-        width: theme.target.min.width,
-        height: theme.target.workout.height,
+        width: size ?? theme.target.min.width,
+        height: size ?? theme.target.workout.height,
         borderRadius: theme.radius.pill,
         alignItems: 'center',
         justifyContent: 'center',
@@ -73,7 +73,7 @@ function TileStep({ glyph, target, onStep, describe }: { glyph: string; target: 
   );
 }
 
-function StepButton({ icon, target, onStep, describe }: { icon: SymbolName; target: StepTarget; onStep: (v: number) => void; describe: string }) {
+function StepButton({ icon, target, onStep, describe, size }: { icon: SymbolName; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined }) {
   const theme = useTheme();
   const enabled = target.enabled;
   return (
@@ -90,8 +90,8 @@ function StepButton({ icon, target, onStep, describe }: { icon: SymbolName; targ
         }
       }}
       style={({ pressed }) => ({
-        width: theme.target.workout.width,
-        minHeight: theme.target.workout.height,
+        width: size ?? theme.target.workout.width,
+        minHeight: size ?? theme.target.workout.height,
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: theme.radius.sm,
@@ -122,6 +122,10 @@ export function NumberStepper({
   inputRef,
   flex = 1,
   onSurface = false,
+  stepSize,
+  numeralSize,
+  onFocus,
+  onLayout,
 }: {
   label: string;
   unit: string | null;
@@ -134,10 +138,22 @@ export function NumberStepper({
   hint?: string | null;
   /** So `Enter load` can focus the empty field (audit F2). */
   inputRef?: Ref<TextInput>;
-  /** Share of the row (D-ActiveSet: LOAD 1.4, REPS 1). */
-  flex?: number;
+  /** Share of the row (D-ActiveSet: LOAD 1.4, REPS 1); null when stacked full width (no flex in a column). */
+  flex?: number | null;
   /** Shown on `bg.surface` (a sheet): the D tile uses `bg.raised` so it still reads as a tile. */
   onSurface?: boolean;
+  /** − / + button size (Table open row: 52 pt, 60 pt at AX1+; design-system §9.75). Default 44 × 52. */
+  stepSize?: number;
+  /**
+   * The numeral's rendered size (pt), Dynamic Type already applied, from
+   * `tileFit` (WT-D13: shrinks to fit, never clipped). Rendered with font
+   * scaling off so the measured fit holds. Default: `type.loadDisplay`.
+   */
+  numeralSize?: number;
+  /** The field took focus (the keypad is opening or moving to it): the Table anchors this tile (WT39). */
+  onFocus?: () => void;
+  /** The tile's frame in its parent, so the Table knows where the focused tile ends. */
+  onLayout?: (e: LayoutChangeEvent) => void;
 }) {
   const theme = useTheme();
   const [text, setText] = useState(value === null ? '' : String(value));
@@ -158,6 +174,7 @@ export function NumberStepper({
       }}
       onFocus={() => {
         setFocused(true);
+        onFocus?.();
       }}
       onBlur={() => {
         setFocused(false);
@@ -169,11 +186,11 @@ export function NumberStepper({
       {...(hint ? { accessibilityHint: hint } : {})}
       placeholder="—"
       placeholderTextColor={theme.colors['text.tertiary']}
-      maxFontSizeMultiplier={theme.type.loadDisplay.maxFontSizeMultiplier}
+      {...(numeralSize !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}
       style={{
         minWidth: 36,
         textAlign: 'center',
-        fontSize: theme.type.loadDisplay.fontSize,
+        fontSize: numeralSize ?? theme.type.loadDisplay.fontSize,
         fontWeight: theme.type.loadDisplay.fontWeight,
         letterSpacing: theme.type.loadDisplay.letterSpacing,
         fontVariant: ['tabular-nums'],
@@ -185,7 +202,7 @@ export function NumberStepper({
   if (theme.components.cardBorderWidth === 0) {
     // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
     return (
-      <View style={{ flex, minWidth: 0, gap: theme.space['1'] }}>
+      <View onLayout={onLayout} style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
         <View
           style={{
             backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
@@ -201,7 +218,7 @@ export function NumberStepper({
             {label}
           </AppText>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} />
+            <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
             <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
               {input}
               {unit ? (
@@ -210,7 +227,7 @@ export function NumberStepper({
                 </AppText>
               ) : null}
             </View>
-            <TileStep glyph="+" target={up} onStep={onChange} describe={increase} />
+            <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
           </View>
         </View>
         {!up.enabled && value !== null ? (
@@ -222,12 +239,12 @@ export function NumberStepper({
     );
   }
   return (
-    <View style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
+    <View onLayout={onLayout} style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
       <AppText variant="label" color="text.secondary">
         {label}
       </AppText>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <StepButton icon="minus" target={down} onStep={onChange} describe={decrease} />
+        <StepButton icon="minus" target={down} onStep={onChange} describe={decrease} size={stepSize} />
         <View
           style={{
             flex: 1,
@@ -249,7 +266,7 @@ export function NumberStepper({
             </AppText>
           ) : null}
         </View>
-        <StepButton icon="plus" target={up} onStep={onChange} describe={increase} />
+        <StepButton icon="plus" target={up} onStep={onChange} describe={increase} size={stepSize} />
       </View>
       {!up.enabled && value !== null ? (
         <AppText variant="callout" color="text.secondary" numeric>
@@ -352,7 +369,7 @@ export function TalkButton({ onPress }: { onPress: () => void }) {
  * keyboard when open. Talk is passed only once voice exists; until then the
  * bar has no dead control (critic T3).
  */
-export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean }; guard?: boolean }) {
+export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean; lead?: string | null }; guard?: boolean }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -390,7 +407,7 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
             <AppText variant="headline">Saved</AppText>
           </View>
         ) : (
-          <PrimaryButton label={primary.label} onPress={primary.onPress} disabled={primary.disabled ?? false} busy={primary.busy ?? false} />
+          <PrimaryButton label={primary.label} lead={primary.lead ?? null} onPress={primary.onPress} disabled={primary.disabled ?? false} busy={primary.busy ?? false} />
         )}
       </View>
     </View>

@@ -614,34 +614,108 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     restSourceLabel: set.rest.sourceLabel,
     plateLine: plateBreakdownLine(logValues.load, eq),
     warmUp: eq !== null && showsWarmUp(state, set.id) ? warmUpText(warmUpRamp(logValues.load ?? set.planned.load, eq), eq) : null,
-    rows: own.map((s, i) => {
-      const partRow = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
-      const { status, text } = rowText(s, partRow, equipmentOf(state, partRow), s.id === set.id);
-      const gymId = partGymId(state, partRow);
-      const prevRowId = own[i - 1]?.sessionExerciseId;
-      const prevRow = prevRowId === undefined ? undefined : state.exercises.find((e) => e.id === prevRowId);
-      const startsPart = prevRow !== undefined && prevRow.id !== partRow.id && gymId !== null && partGymId(state, prevRow) !== gymId;
-      const gymName = gymId === null ? undefined : input.gymNames?.[gymId];
-      return {
-        setId: s.id,
-        number: i + 1,
-        badges: [SET_TYPE_BADGE[s.setType], sideBadge(s)].filter((b): b is string => b !== null),
-        note: s.note ?? null,
-        status,
-        text,
-        edited: s.edited,
-        ...exclusionFields(s),
-        version: s.version,
-        gymCaption: status === 'done' && gymId !== null && gymId !== state.session.gymId ? (gymName ?? null) : null,
-        partStart: startsPart && gymName !== undefined ? `At ${gymName}` : null,
-      };
-    }),
+    rows: buildSetRows(input, ex.id, set.id),
     next,
     logLabel,
     missing,
     opId: draftOperationId(set),
     logValues,
     logSide: unilateral && fixedSide === null ? (chosenSide ?? 'both') : undefined,
+  };
+}
+
+/**
+ * The rows of one exercise's whole block (all gym parts, set numbers running
+ * across them), as the Focus mini list and the Table view show them. One
+ * source for both views, so they can't disagree on status, badges,
+ * exclusions or gym captions.
+ */
+export function buildSetRows(input: Pick<ActiveViewInput, 'aggregate' | 'gymNames'>, sessionExerciseId: string, activeSetId: string | null): SetRowView[] {
+  const state = input.aggregate;
+  const ex = state.exercises.find((e) => e.id === sessionExerciseId);
+  if (!ex) return [];
+  const own = exerciseSets(state, ex.id);
+  return own.map((s, i) => {
+    const partRow = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
+    const { status, text } = rowText(s, partRow, equipmentOf(state, partRow), s.id === activeSetId);
+    const gymId = partGymId(state, partRow);
+    const prevRowId = own[i - 1]?.sessionExerciseId;
+    const prevRow = prevRowId === undefined ? undefined : state.exercises.find((e) => e.id === prevRowId);
+    const startsPart = prevRow !== undefined && prevRow.id !== partRow.id && gymId !== null && partGymId(state, prevRow) !== gymId;
+    const gymName = gymId === null ? undefined : input.gymNames?.[gymId];
+    return {
+      setId: s.id,
+      number: i + 1,
+      badges: [SET_TYPE_BADGE[s.setType], sideBadge(s)].filter((b): b is string => b !== null),
+      note: s.note ?? null,
+      status,
+      text,
+      edited: s.edited,
+      ...exclusionFields(s),
+      version: s.version,
+      gymCaption: status === 'done' && gymId !== null && gymId !== state.session.gymId ? (gymName ?? null) : null,
+      partStart: startsPart && gymName !== undefined ? `At ${gymName}` : null,
+    };
+  });
+}
+
+/**
+ * What an exercise's `⋯` menu and name sheet need for any card, current or
+ * not (active-workout §2A.7): its next pending set (for `Target RPE` and
+ * `Delete this set`), that set's undoable coach change, today's swap, and
+ * the plate breakdown of every load in today's targets (barbell and
+ * plate-loaded). Read from the stored state; nothing is computed anew.
+ */
+export interface ExerciseCardFacts {
+  sessionExerciseId: string;
+  exerciseId: string;
+  exerciseName: string;
+  note: string | null;
+  /** Its next pending set (lowest index), or null when it has none. */
+  nextSet: { id: string; version: number; number: number } | null;
+  targetRpe: TargetRpe | null;
+  coachActionId: string | null;
+  adjustedBy: 'coach' | 'rule' | null;
+  swappedFrom: { name: string; opId: string } | null;
+  swappable: boolean;
+  removable: boolean;
+  /** `100 kg: 20 bar + 25 + 15 / side`, one per distinct target load in session order; empty when not plate-loaded. */
+  plates: string[];
+}
+
+export function exerciseCardFacts(input: Pick<ActiveViewInput, 'aggregate' | 'ruleTargetRpe'>, sessionExerciseId: string): ExerciseCardFacts | null {
+  const state = input.aggregate;
+  const ex = state.exercises.find((e) => e.id === sessionExerciseId);
+  if (!ex) return null;
+  const own = exerciseSets(state, ex.id);
+  const next = own.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending').sort((a, b) => a.index - b.index)[0];
+  const today = next !== undefined && carriesTodayAdjustment(next.planned);
+  const plates: string[] = [];
+  const seen = new Set<string>();
+  for (const s of own) {
+    if (s.status === 'skipped' || s.planned.load === null) continue;
+    const row = state.exercises.find((e) => e.id === s.sessionExerciseId) ?? ex;
+    const eq = equipmentOf(state, row);
+    const line = plateBreakdownLine(s.planned.load, eq);
+    if (line === null) continue;
+    const text = `${loadText(s.planned.load, row.loadConvention, eq)}: ${line}`;
+    if (seen.has(text)) continue;
+    seen.add(text);
+    plates.push(text);
+  }
+  return {
+    sessionExerciseId: ex.id,
+    exerciseId: ex.exerciseId,
+    exerciseName: ex.exerciseName,
+    note: ex.note ?? null,
+    nextSet: next === undefined ? null : { id: next.id, version: next.version, number: own.findIndex((s) => s.id === next.id) + 1 },
+    targetRpe: next === undefined ? null : targetRpeOf(next, input.ruleTargetRpe?.[ex.id] ?? null),
+    coachActionId: today && next.planned.coach !== undefined && coachUndoRefusal(state, next.planned.coach.actionId) === null ? next.planned.coach.actionId : null,
+    adjustedBy: today ? (next.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null,
+    swappedFrom: swappedFromOf(state, ex),
+    swappable: midSwapSlot(state, ex.id) !== null,
+    removable: isRemovable(state, ex),
+    plates,
   };
 }
 
