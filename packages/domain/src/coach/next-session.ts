@@ -242,7 +242,8 @@ type PlanEntry = { setType: SetType; planned: PlannedSet };
 /**
  * A next-session plan entry. A coach entry (D21) also carries what a library
  * workout needs to keep its own structure (review B1): the set count the
- * coach chose (null: it kept the count), when the target was saved, and the
+ * coach chose (null: it kept the count), when the target became active
+ * (saved, or Applied by Ben; its `updatedAtUtc`), and the
  * built-in rule's plan for the same exercise (for the workout's other set
  * types). Not stored anywhere.
  */
@@ -309,7 +310,8 @@ export function withCoachTargets(
       guardNotes: row.guardNotes.map((n) => n.text).slice(0, 10),
     };
     const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: template?.rpe ?? null, rir: template?.rir ?? null, source: 'coach', provenance };
-    const coach = { sets: row.sets, setAtUtc: row.createdAtUtc, builtIn: plan };
+    // When the target became active (saved, or Applied later by Ben): a slot changed before that is not "since" (review S1).
+    const coach = { sets: row.sets, setAtUtc: row.updatedAtUtc, builtIn: plan };
     out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned, coach }))]);
   }
   return out;

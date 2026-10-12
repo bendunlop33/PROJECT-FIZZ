@@ -12,7 +12,7 @@ import type {
   TargetProvenance,
   ZonedTimestamp,
 } from '@fizz/schemas';
-import { formatNumber, loadText, NBSP } from '../display';
+import { formatNumber, loadText, NBSP, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
 import { toMs } from '../time';
@@ -348,7 +348,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
-    const source: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: input.routine.updatedAtUtc }) : rex.setTemplates;
+    const source: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc }) : rex.setTemplates;
     const templates = source.filter((t) => t.targetReps !== null || t.targetDurationS !== null);
     if (templates.length === 0) continue;
     // The routine's own item and unfitted loads: the shared fit does the mapping and fitting (S1, ADR 0019).
@@ -420,13 +420,17 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
  *   target for the same set (the k-th of its type, else the last of its
  *   type, else the same place overall). A Fixed set keeps its load; an Auto
  *   set with no target keeps no load.
- * - A library workout with a coach target (review B1): the coach's load and
- *   reps go on the Auto sets of the target's set type (or, when the workout
- *   has none of that type, its first working type); its other types take the
- *   built-in rule's loads as above. Set types are never merged. The coach's
- *   set count is used only when it chose one, the workout's working sets are
- *   all one type, and the workout hasn't been changed since the target was
- *   saved (`editedAtUtc` ≤ the target's time): Ben's later edit wins.
+ * - A library workout with a coach target (review B1): the target goes on
+ *   the Auto rep sets of its set type (or, when the workout has none of that
+ *   type, its first working type); its other types, and timed sets, take the
+ *   built-in rule's loads as above. Set types are never merged.
+ *   - Slot not changed since the target became active (`editedAtUtc`, the
+ *     slot's `structureChangedAtUtc`, absent or ≤ the target's time): the
+ *     coach's load and reps, and its set count when it chose one and the
+ *     working sets are all one type.
+ *   - Changed since (Ben's later edit wins, WL7): the slot's own count and
+ *     reps. The coach's load is used only where its reps fit the set's range;
+ *     otherwise the built-in rule's load. `Why?` says what was kept.
  * `ruleOf` collects the templates whose load came from a target.
  */
 export function routineTemplatesWithTargets(
@@ -442,18 +446,50 @@ export function routineTemplatesWithTargets(
   if (matchType === undefined) return [...templates];
   const meta = coachEntry.coach;
   const uniform = working.every((t) => t.setType === matchType);
-  const unedited = meta !== undefined && o.editedAtUtc !== undefined && toMs(o.editedAtUtc) <= toMs(meta.setAtUtc);
-  const shaped = meta !== undefined && meta.sets !== null && uniform && unedited ? withSetCount(templates, matchType, meta.sets, o.newId) : [...templates];
+  const unedited = o.editedAtUtc === undefined || (meta !== undefined && toMs(o.editedAtUtc) <= toMs(meta.setAtUtc));
+  const shaped = unedited && meta !== undefined && meta.sets !== null && uniform ? withSetCount(templates, matchType, meta.sets, o.newId) : [...templates];
   const coachPlan = coachEntry.planned;
+  const coachReps = coachPlan.reps;
+  // Ben's later edit: one short `Why?` line for what of the coach's target wasn't used.
+  const ofType = working.filter((t) => t.setType === matchType);
+  const kept: string[] = [];
+  if (!unedited && meta !== undefined && meta.sets !== null && uniform && meta.sets !== ofType.length) kept.push(`${String(ofType.length)} ${ofType.length === 1 ? 'set' : 'sets'}`);
+  if (!unedited && coachReps !== null) {
+    const ranges = [...new Set(ofType.flatMap((t) => (t.targetLoad === null && t.targetReps !== null && !sameRange(t.targetReps, coachReps) ? [repRangeText(t.targetReps)] : [])))];
+    if (ranges.length > 0) kept.push(`${ranges.join(', ')} reps`);
+  }
+  const note = kept.length > 0 ? `Kept your edit: ${kept.join(', ')}` : null;
+  const coachHere = note === null ? coachPlan : withGuardNote(coachPlan, note);
   const coached = shaped.map((t) => {
-    if (t.setType !== matchType || t.targetLoad !== null) return t;
+    if (t.setType !== matchType || t.targetLoad !== null || t.targetReps === null) return t;
+    // Changed since: the coach's load only where its reps fit Ben's range (else the built-in rule's, below).
+    if (!unedited && (coachReps === null || !fitsRange(coachReps, t.targetReps))) return t;
     const id = o.newId();
-    o.ruleOf.set(id, coachPlan);
-    return { ...t, id, targetLoad: coachPlan.load, targetReps: coachPlan.reps ?? t.targetReps };
+    o.ruleOf.set(id, coachHere);
+    return unedited ? { ...t, id, targetLoad: coachPlan.load, targetReps: coachReps ?? t.targetReps } : { ...t, id, targetLoad: coachPlan.load };
   });
-  // The workout's other set types (a back-off after a top set) keep the built-in rule's loads.
+  // The workout's other set types (a back-off after a top set), its timed sets and, after Ben's edit,
+  // sets the coach's reps don't fit keep the built-in rule's loads.
   const builtIn = meta?.builtIn ?? planned.filter((p) => p.planned.source !== 'coach');
-  return withRuleLoads(coached, builtIn, o, (t) => t.setType !== matchType);
+  const fromCoach = new Set(coached.filter((t) => o.ruleOf.get(t.id)?.source === 'coach').map((t) => t.id));
+  const before = new Set(coached.map((t) => t.id));
+  const out = withRuleLoads(coached, builtIn, o, (t) => !fromCoach.has(t.id));
+  if (note !== null) {
+    for (const t of out) {
+      const rule = t.setType === matchType && !before.has(t.id) ? o.ruleOf.get(t.id) : undefined;
+      if (rule !== undefined) o.ruleOf.set(t.id, withGuardNote(rule, note));
+    }
+  }
+  return out;
+}
+
+const sameRange = (a: { min: number; max: number }, b: { min: number; max: number }): boolean => a.min === b.min && a.max === b.max;
+/** The coach's reps sit inside Ben's range (so the load it chose for them suits his sets). */
+const fitsRange = (coach: { min: number; max: number }, range: { min: number; max: number }): boolean => coach.min >= range.min && coach.max <= range.max;
+
+function withGuardNote(p: PlannedSet, note: string): PlannedSet {
+  if (p.provenance === undefined) return p;
+  return { ...p, provenance: { ...p.provenance, guardNotes: [...p.provenance.guardNotes, note].slice(-10) } };
 }
 
 /** A routine from before the library: the targets are the working sets (a stored load can't be told from a pin, so none is kept). */
@@ -612,6 +648,7 @@ export function swapRoutineSlot(
     equipmentId: null,
     progressionRuleId: null,
     setTemplates: slot.setTemplates.map((t) => ({ ...t, targetLoad: null })),
+    structureChangedAtUtc: at.utc,
   };
   return change(current, expectedVersion, opId, at, { exercises: current.exercises.map((e) => (e.id === slotKey ? replaced : e)) });
 }

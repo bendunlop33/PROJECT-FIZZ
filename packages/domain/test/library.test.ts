@@ -368,3 +368,52 @@ describe('workout-library review A: what a save keeps (S2, S5, S3, N4)', () => {
     expect(routineChangeLines(editableEdit(legacy), after, () => 'X').map((l) => l.text)).toEqual(['Renamed to Push B']);
   });
 });
+
+describe('structureChangedAtUtc (review r2 S1, WL7): only a change to a slot’s structure counts', () => {
+  const r = made('Push A', { inRotation: true });
+  const write = (c: ReturnType<typeof editRoutine>): Routine => {
+    if (c.kind !== 'write') throw new Error(c.kind);
+    return c.next;
+  };
+  const times = (x: Routine) => x.exercises.map((e) => e.structureChangedAtUtc ?? null);
+
+  it('a new workout has none; a rename, Main toggle, rest or order change sets none', () => {
+    expect(times(r)).toEqual([null, null, null]);
+    const list = editableExercises(r);
+    const renamed = write(editRoutine(r, { name: 'Push B', exercises: list.map((e, i) => (i === 2 ? { ...e, main: true, restBySetType: { working: { seconds: 75 } } } : e)) }, 1, 's1-a', at(100), compound));
+    expect(times(renamed)).toEqual([null, null, null]);
+    const moved = write(editRoutine(renamed, { name: 'Push B', exercises: [list[1], list[0], list[2]].filter((x): x is RoutineExercise => x !== undefined) }, 2, 's1-b', at(110), compound));
+    expect(times(moved)).toEqual([null, null, null]);
+    expect(RoutineSchema.parse(moved)).toEqual(moved);
+  });
+
+  it('a rep change marks that slot only, at the save’s time; a later unrelated save keeps it', () => {
+    const list = editableExercises(r);
+    const reps = list.map((e, i) => (i === 1 ? { ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetReps: { min: 10, max: 12 } })) } : e));
+    const a = write(editRoutine(r, { name: r.name, exercises: reps }, 1, 's1-c', at(200), compound));
+    expect(times(a)).toEqual([null, at(200).utc, null]);
+    const b = write(editRoutine(a, { name: 'Renamed', exercises: editableExercises(a) }, 2, 's1-d', at(300), compound));
+    expect(times(b)).toEqual([null, at(200).utc, null]);
+    expect(RoutineSchema.parse(b)).toEqual(b);
+  });
+
+  it('a set added, a set type changed, a Fixed pin or a new exercise counts', () => {
+    const [a, b, c] = editableExercises(r);
+    if (a === undefined || b === undefined || c === undefined) throw new Error('fixture');
+    const changed = [
+      { ...a, setTemplates: [...a.setTemplates, template(104)] },
+      { ...b, setTemplates: b.setTemplates.map((t, i) => (i === 0 ? { ...t, setType: 'top' as const } : t)) },
+      { ...c, setTemplates: c.setTemplates.map((t) => ({ ...t, targetLoad: kg(20) })) },
+      routineExercise(13, { exerciseId: HANG, order: 3 }),
+    ];
+    expect(times(write(editRoutine(r, { name: r.name, exercises: changed }, 1, 's1-e', at(400), compound)))).toEqual(Array(4).fill(at(400).utc));
+  });
+
+  it('rotation toggles, renames and delete/restore never touch it; Duplicate starts without one', () => {
+    const a = write(editRoutine(r, { name: r.name, exercises: editableExercises(r).map((e, i) => (i === 0 ? { ...e, setTemplates: e.setTemplates.slice(0, 2) } : e)) }, 1, 's1-f', at(500), compound));
+    const off = setRoutineRotation(a, false, 2, 's1-g', at(600));
+    expect(off.kind === 'write' && times(off.next)).toEqual([at(500).utc, null, null]);
+    const copy = duplicateRoutine(a, { id: id(951), opId: 'dup-s1', at: at(700), newId: idGen(96_000), isCompound: compound });
+    expect(times(copy)).toEqual([null, null, null]);
+  });
+});

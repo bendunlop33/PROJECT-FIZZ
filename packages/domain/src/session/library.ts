@@ -135,8 +135,35 @@ export function editRoutine(current: Routine, edit: RoutineEdit, expectedVersion
   if (issue !== undefined) return { kind: 'invalid', message: issue };
   return routineWrite(current, expectedVersion, opId, at, {
     name: edit.name.trim(),
-    exercises: withDefaultMain(normaliseRoutineExercises(edit.exercises), isCompound),
+    exercises: withStructureTimes(editableExercises(current), withDefaultMain(normaliseRoutineExercises(edit.exercises), isCompound), at.utc),
     source: 'ben',
+  });
+}
+
+function withoutStructureTime(e: RoutineExercise): RoutineExercise {
+  const out = { ...e };
+  delete out.structureChangedAtUtc;
+  return out;
+}
+
+/** What makes a slot's structure for a coach target (WL7): its exercise and its sets' types, reps, work time and Fixed loads. */
+function structureShape(e: RoutineExercise): string {
+  return JSON.stringify([e.exerciseId, e.setTemplates.map((t) => [t.setType, t.targetLoad, t.targetReps, t.targetDurationS])]);
+}
+
+/**
+ * Each slot's `structureChangedAtUtc` after an editor save (review S1): now
+ * for a new slot or one whose structure changed, else as it was. Rest,
+ * `Main`, supersets, order and the name don't count. `before`: the stored
+ * workout as the editor opened it (`editableExercises`).
+ */
+export function withStructureTimes(before: readonly RoutineExercise[], after: readonly RoutineExercise[], atUtc: string): RoutineExercise[] {
+  const was = new Map(before.map((e) => [e.id, e]));
+  return after.map((e) => {
+    const prior = was.get(e.id);
+    const changed = prior === undefined || structureShape(prior) !== structureShape(e);
+    const keep = changed ? atUtc : prior.structureChangedAtUtc;
+    return keep === undefined ? withoutStructureTime(e) : { ...e, structureChangedAtUtc: keep };
   });
 }
 
@@ -147,7 +174,8 @@ export function editRoutine(current: Routine, edit: RoutineEdit, expectedVersion
  */
 export function duplicateRoutine(current: Routine, input: { id: string; opId: string; at: ZonedTimestamp; newId: () => string; isCompound: (exerciseId: string) => boolean }): Routine {
   const name = `${current.name.trim()} copy`.slice(0, ROUTINE_NAME_MAX).trim();
-  const exercises = current.exercises.map((e) => ({ ...e, id: input.newId(), setTemplates: e.setTemplates.map((t) => ({ ...t, id: input.newId() })) }));
+  // A copy has no history of its own, so no structure time either.
+  const exercises = current.exercises.map(withoutStructureTime).map((e) => ({ ...e, id: input.newId(), setTemplates: e.setTemplates.map((t) => ({ ...t, id: input.newId() })) }));
   // A copy of a routine from before the library keeps no loads: they were last time's actuals, not Fixed pins.
   const plain = current.source === undefined ? exercises.map((e) => ({ ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetLoad: null })) })) : exercises;
   return {

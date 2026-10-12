@@ -6,11 +6,13 @@ import { EXERCISES, exerciseSets, INCLINE, MAIN, MAIN_EQ, mainRack, pushA } from
 import { expectOk, logCmd } from './session-fixture';
 
 /**
- * Review B1 (workout-library A): a coach target for next time (D21) never
- * replaces a library workout's structure. The workout's set types, counts
- * and reps stay; the coach's load and reps go on the matching Auto sets; its
- * set count is used only on a one-type workout not edited since the target
- * was saved. A routine from before the library keeps the old behaviour.
+ * Review B1 (workout-library A, rounds 1 and 2): a coach target for next time
+ * (D21) never replaces a library workout's structure. Its set types always
+ * stay. A slot not changed since the target became active takes the coach's
+ * load and reps (and its set count on a one-type slot). A slot Ben changed
+ * since keeps his count and reps; the coach's load is used only where its
+ * reps fit his range, else the built-in rule's. A routine from before the
+ * library keeps the old behaviour.
  */
 
 const ACTION = id(4000);
@@ -52,7 +54,8 @@ describe('routineTemplatesWithTargets: a coach target on a library workout', () 
 
   it('a coach target of a type the workout no longer has goes on its first working type; types are never merged', () => {
     const out = routineTemplatesWithTargets(topBackoff(), coachEntries({ setType: 'working', sets: 3 }), { legacy: false, newId: idGen(50_100), ruleOf: new Map(), editedAtUtc: at(2000).utc });
-    expect(shape(out)).toEqual(['warmup 60×8–8', 'top 100×5–5', 'backoff 97.5×6–8', 'backoff 97.5×6–8', 'backoff 97.5×6–8']);
+    // Edited since (at 2000 > 1300): the top set keeps its 4–6; the coach's 5 reps fit, so its load is used.
+    expect(shape(out)).toEqual(['warmup 60×8–8', 'top 100×4–6', 'backoff 97.5×6–8', 'backoff 97.5×6–8', 'backoff 97.5×6–8']);
   });
 
   it('a one-type workout not edited since the target: the coach’s set count is used', () => {
@@ -61,10 +64,41 @@ describe('routineTemplatesWithTargets: a coach target on a library workout', () 
     expect(shape(out)).toEqual(Array(4).fill('working 100×5–5'));
   });
 
-  it('edited after the target was saved: the workout’s set count wins; the coach’s load and reps still apply', () => {
+  it('edited after the target: Ben’s count and reps win; the coach’s 5-rep load doesn’t fit 6–8, so the built-in rule’s load is used (B1 r2)', () => {
     const ts = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 6, max: 8 } }));
-    const out = routineTemplatesWithTargets(ts, coachEntries({ sets: 3 }), { legacy: false, newId: idGen(50_300), ruleOf: new Map(), editedAtUtc: at(2000).utc });
-    expect(shape(out)).toEqual(Array(4).fill('working 100×5–5'));
+    const ruleOf = new Map<string, PlannedSet>();
+    const out = routineTemplatesWithTargets(ts, coachEntries({ sets: 3 }), { legacy: false, newId: idGen(50_300), ruleOf, editedAtUtc: at(2000).utc });
+    expect(shape(out)).toEqual(Array(4).fill('working 97.5×6–8'));
+    expect(out.every((t) => ruleOf.get(t.id)?.source === 'built_in_rule')).toBe(true);
+  });
+
+  it('edited after the target, coach reps inside Ben’s range: his reps stay and the coach’s load is used', () => {
+    const ts = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 4, max: 6 } }));
+    const ruleOf = new Map<string, PlannedSet>();
+    const out = routineTemplatesWithTargets(ts, coachEntries({ sets: 3 }), { legacy: false, newId: idGen(50_350), ruleOf, editedAtUtc: at(2000).utc });
+    expect(shape(out)).toEqual(Array(4).fill('working 100×4–6'));
+    expect(out.every((t) => ruleOf.get(t.id)?.source === 'coach')).toBe(true);
+  });
+
+  it('a target that became active after the edit (Applied later) counts as unedited', () => {
+    const ts = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 6, max: 8 } }));
+    const out = routineTemplatesWithTargets(ts, coachEntries({ sets: 3 }), { legacy: false, newId: idGen(50_380), ruleOf: new Map(), editedAtUtc: at(1000).utc });
+    expect(shape(out)).toEqual(Array(3).fill('working 100×5–5'));
+  });
+
+  it('a slot never changed (no structure time) takes the coach’s count and reps', () => {
+    const ts = [1, 2, 3].map((n) => template(n, { targetReps: { min: 6, max: 8 } }));
+    const out = routineTemplatesWithTargets(ts, coachEntries({ sets: 2, count: 2 }), { legacy: false, newId: idGen(50_390), ruleOf: new Map() });
+    expect(shape(out)).toEqual(Array(2).fill('working 100×5–5'));
+  });
+
+  it('a timed set never gets the coach’s reps (S2): it keeps its time and takes the built-in rule’s load', () => {
+    const ts = [template(1, { targetReps: null, targetDurationS: 40 }), template(2, { targetReps: null, targetDurationS: 40 })];
+    const out = routineTemplatesWithTargets(ts, coachEntries({ sets: null, count: 2 }), { legacy: false, newId: idGen(50_395), ruleOf: new Map(), editedAtUtc: at(0).utc });
+    expect(out.map((t) => [t.targetReps, t.targetDurationS, t.targetLoad?.value ?? null])).toEqual([
+      [null, 40, 97.5],
+      [null, 40, 97.5],
+    ]);
   });
 
   it('the coach kept the count (sets null): the workout’s count stays even when the built-in plan has another', () => {
@@ -123,12 +157,14 @@ function coachRow(source: SessionAggregate, sets: number | null): NextSessionTar
 
 describe('Start of a library workout edited after a coach target (B1, WL-A4, WL7)', () => {
   const source = finishedSource();
-  const builtIn = new Map([[INCLINE, [1, 2, 3].map(() => entry('working', { ...rule(32.5), load: kg(32.5, 'per_hand') }))]]);
+  const ruleWhy = { source: 'rule' as const, setAt: at(1200), routineName: null, requestedLoad: kg(32.5, 'per_hand'), basis: null, guardNotes: [] };
+  const builtIn = new Map([[INCLINE, [1, 2, 3].map(() => entry('working', { ...rule(32.5), load: kg(32.5, 'per_hand'), provenance: ruleWhy }))]]);
 
-  const library = (updatedAtUtc: string, setTemplates: SetTemplate[]): Routine => ({
-    ...routine([routineExercise(901, { exerciseId: INCLINE, equipmentId: mainRack.id, order: 0, setTemplates })]),
+  // `changedAtUtc`: when Ben last changed the slot's structure (S1); the workout's own `updatedAtUtc` (a rename, a rotation toggle) is later and doesn't count.
+  const library = (changedAtUtc: string | undefined, setTemplates: SetTemplate[]): Routine => ({
+    ...routine([routineExercise(901, { exerciseId: INCLINE, equipmentId: mainRack.id, order: 0, setTemplates, ...(changedAtUtc === undefined ? {} : { structureChangedAtUtc: changedAtUtc }) })]),
     source: 'ben',
-    updatedAtUtc,
+    updatedAtUtc: at(9000).utc,
   });
   const start = (r: Routine, sets: number | null) =>
     planRoutineStart({
@@ -152,13 +188,55 @@ describe('Start of a library workout edited after a coach target (B1, WL-A4, WL7
     ]);
     const sets = exerciseSets(start(edited, 4).aggregate, INCLINE);
     expect(sets.map((s) => s.setType)).toEqual(['top', 'backoff', 'backoff']);
-    expect(sets[0]?.planned).toMatchObject({ load: kg(35, 'per_hand'), reps: { min: 8, max: 10 }, source: 'coach' });
+    // His 4–6 stays; the coach's 35 kg was for 8–10, so the top set takes the built-in rule's load (B1 r2).
+    expect(sets[0]?.planned).toMatchObject({ load: kg(32.5, 'per_hand'), reps: { min: 4, max: 6 }, source: 'built_in_rule' });
     expect(sets[1]?.planned).toMatchObject({ load: kg(32.5, 'per_hand'), reps: { min: 6, max: 8 }, source: 'built_in_rule' });
   });
 
-  it('a one-type workout edited to 4 sets after a coach 3-set target keeps 4; unedited it takes the coach’s 3', () => {
-    const four = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 6, max: 8 } }));
-    expect(exerciseSets(start(library(at(5000).utc, four), 3).aggregate, INCLINE)).toHaveLength(4);
+  it('WL-A4: Ben changes Incline to 6–8 after a coach 35 kg × 8–10 target: Start shows 6–8 at the rule’s load, with one Why? line', () => {
+    const edited = library(at(5000).utc, [1, 2, 3].map((n) => template(n, { targetReps: { min: 6, max: 8 } })));
+    const sets = exerciseSets(start(edited, null).aggregate, INCLINE);
+    expect(sets.map((s) => [s.planned.reps, s.planned.load?.value, s.planned.source])).toEqual(Array(3).fill([{ min: 6, max: 8 }, 32.5, 'built_in_rule']));
+    expect(sets[0]?.planned.provenance?.guardNotes).toContain('Kept your edit: 6–8 reps');
+  });
+
+  it('Ben widens Incline to 8–12 after the target: his reps stay and the coach’s 35 kg (for 8–10, inside 8–12) is used', () => {
+    const edited = library(at(5000).utc, [1, 2, 3].map((n) => template(n, { targetReps: { min: 8, max: 12 } })));
+    const sets = exerciseSets(start(edited, null).aggregate, INCLINE);
+    expect(sets.map((s) => [s.planned.reps, s.planned.load?.value, s.planned.source])).toEqual(Array(3).fill([{ min: 8, max: 12 }, 35, 'coach']));
+  });
+
+  it('a rename or rotation toggle after the target (workout updatedAtUtc later, slot unchanged) keeps the coach’s count and reps (S1)', () => {
+    const three = [1, 2, 3].map((n) => template(n, { targetReps: { min: 6, max: 8 } }));
+    const sets = exerciseSets(start(library(undefined, three), 2).aggregate, INCLINE);
+    expect(sets.map((s) => [s.planned.reps, s.planned.load?.value, s.planned.source])).toEqual(Array(2).fill([{ min: 8, max: 10 }, 35, 'coach']));
+  });
+
+  it('a target Ben Applies after his edit counts from when it was applied (S1): the coach’s count is used', () => {
+    const four = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 8, max: 10 } }));
+    const applied = { ...coachRow(source, 3), status: 'applied' as const, version: 2, updatedAtUtc: at(6000).utc };
+    const targets = withCoachTargets(builtIn, [applied], source, { flaggedExerciseIds: new Set(), painToday: false });
+    expect(targets.get(INCLINE)?.find((e) => e.coach !== undefined)?.coach?.setAtUtc).toBe(at(6000).utc);
+    const out = planRoutineStart({
+      opId: 'b1-applied',
+      owner: profile(),
+      gymId: MAIN,
+      routine: library(at(5000).utc, four),
+      exercises: EXERCISES,
+      gymEquipment: MAIN_EQ,
+      knownEquipment: new Map(MAIN_EQ.map((e) => [e.id, e])),
+      at: at(86_400),
+      newId: idGen(61_000),
+      targets,
+    });
+    expect(exerciseSets(out.aggregate, INCLINE)).toHaveLength(3);
+  });
+
+  it('a one-type workout edited to 4 sets after a coach 3-set target keeps 4, and Why? says so; unedited it takes the coach’s 3', () => {
+    const four = [1, 2, 3, 4].map((n) => template(n, { targetReps: { min: 8, max: 10 } }));
+    const edited = exerciseSets(start(library(at(5000).utc, four), 3).aggregate, INCLINE);
+    expect(edited).toHaveLength(4);
+    expect(edited[0]?.planned.provenance?.guardNotes).toContain('Kept your edit: 4 sets');
     expect(exerciseSets(start(library(at(0).utc, four), 3).aggregate, INCLINE)).toHaveLength(3);
   });
 });

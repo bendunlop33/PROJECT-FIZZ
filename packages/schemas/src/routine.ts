@@ -62,6 +62,14 @@ export const RoutineExerciseSchema = z.object({
    * workouts): `defaultMain` decides at read time.
    */
   main: z.boolean().optional(),
+  /**
+   * When Ben last changed this slot's structure in the editor (its exercise,
+   * set types, count, reps, work time or Fixed loads; routines.md WL7). A
+   * rename or a rotation toggle doesn't count. A coach next-session target
+   * set before it supplies loads only (Ben's later edit wins). Absent: not
+   * changed since the workout was made.
+   */
+  structureChangedAtUtc: UtcTimestampSchema.optional(),
 });
 export type RoutineExercise = z.infer<typeof RoutineExerciseSchema>;
 
