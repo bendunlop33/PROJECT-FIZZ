@@ -240,6 +240,15 @@ export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<
 type PlanEntry = { setType: SetType; planned: PlannedSet };
 
 /**
+ * A next-session plan entry. A coach entry (D21) also carries what a library
+ * workout needs to keep its own structure (review B1): the set count the
+ * coach chose (null: it kept the count), when the target was saved, and the
+ * built-in rule's plan for the same exercise (for the workout's other set
+ * types). Not stored anywhere.
+ */
+export type NextTargetEntry = PlanEntry & { coach?: { sets: number | null; setAtUtc: string; builtIn: readonly PlanEntry[] } | undefined };
+
+/**
  * What the coach's next-session targets were worked out from: the source
  * workout's sets as they stand (each set's ID, status and version). A rename
  * or a time edit on the Summary leaves it as it is; a corrected set changes
@@ -273,8 +282,8 @@ export function withCoachTargets(
   rows: readonly NextSessionTargetRecord[],
   source: SessionAggregate,
   ctx: { flaggedExerciseIds: ReadonlySet<string>; painToday: boolean },
-): Map<string, PlanEntry[]> {
-  const out = new Map<string, PlanEntry[]>([...builtIn].map(([k, v]) => [k, [...v]]));
+): Map<string, NextTargetEntry[]> {
+  const out = new Map<string, NextTargetEntry[]>([...builtIn].map(([k, v]) => [k, [...v]]));
   if (ctx.painToday) return out;
   const fits = { version: source.session.version, basis: nextTargetSourceBasis(source) };
   for (const row of rows) {
@@ -300,7 +309,8 @@ export function withCoachTargets(
       guardNotes: row.guardNotes.map((n) => n.text).slice(0, 10),
     };
     const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: template?.rpe ?? null, rir: template?.rir ?? null, source: 'coach', provenance };
-    out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned }))]);
+    const coach = { sets: row.sets, setAtUtc: row.createdAtUtc, builtIn: plan };
+    out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned, coach }))]);
   }
   return out;
 }

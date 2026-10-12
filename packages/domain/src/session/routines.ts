@@ -19,6 +19,7 @@ import { toMs } from '../time';
 import { startWorkout, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { blockSets, partRootOf, partsOf } from './gym-switch';
 import { boundWords, convertedWords, noLoadWords, roundedWords, withWas } from './fit-words';
+import type { NextTargetEntry } from '../coach/next-session';
 import type { RepeatNote } from './repeat';
 import type { SnapResult } from './snap';
 
@@ -305,7 +306,7 @@ export interface RoutineStartInput {
    * entry, or in more than one slot of the routine, use the routine's own
    * templates.
    */
-  targets?: ReadonlyMap<string, readonly { setType: SetType; planned: PlannedSet }[]>;
+  targets?: ReadonlyMap<string, readonly NextTargetEntry[]>;
   at: ZonedTimestamp;
   newId: () => string;
   checkIn?: StartWorkoutInput['checkIn'];
@@ -347,7 +348,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
-    const source: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf }) : rex.setTemplates;
+    const source: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: input.routine.updatedAtUtc }) : rex.setTemplates;
     const templates = source.filter((t) => t.targetReps !== null || t.targetDurationS !== null);
     if (templates.length === 0) continue;
     // The routine's own item and unfitted loads: the shared fit does the mapping and fitting (S1, ADR 0019).
@@ -411,52 +412,83 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
 
 /**
  * One routine exercise's templates with next targets (routines.md RT3, D21).
- * - The coach's targets (D21: its small changes can add or drop a set), and
- *   a routine from before the library: the targets carry the working sets,
- *   after the routine's warm-ups, as they always have. A library workout's
- *   Fixed pin still wins for the same set (the k-th of its type).
- * - Otherwise (the built-in rule) the workout is the structure: its set
- *   types, counts, reps and rest. Each `Auto` set takes the load of the
+ * - A routine from before the library: the targets carry the working sets,
+ *   after the routine's warm-ups, as they always have (coach targets too: D21
+ *   lets its small changes add or drop a set).
+ * - A library workout is the structure: its set types, counts, reps and rest
+ *   (WL7). With the built-in rule, each `Auto` set takes the load of the
  *   target for the same set (the k-th of its type, else the last of its
- *   type, else the same place overall); a Fixed set keeps its load; an Auto
+ *   type, else the same place overall). A Fixed set keeps its load; an Auto
  *   set with no target keeps no load.
+ * - A library workout with a coach target (review B1): the coach's load and
+ *   reps go on the Auto sets of the target's set type (or, when the workout
+ *   has none of that type, its first working type); its other types take the
+ *   built-in rule's loads as above. Set types are never merged. The coach's
+ *   set count is used only when it chose one, the workout's working sets are
+ *   all one type, and the workout hasn't been changed since the target was
+ *   saved (`editedAtUtc` ≤ the target's time): Ben's later edit wins.
  * `ruleOf` collects the templates whose load came from a target.
  */
 export function routineTemplatesWithTargets(
   templates: readonly SetTemplate[],
-  planned: readonly { setType: SetType; planned: PlannedSet }[],
-  o: { legacy: boolean; newId: () => string; ruleOf: Map<string, PlannedSet> },
+  planned: readonly NextTargetEntry[],
+  o: { legacy: boolean; newId: () => string; ruleOf: Map<string, PlannedSet>; editedAtUtc?: string | undefined },
 ): SetTemplate[] {
-  const fixed = new Map<SetType, (Load | null)[]>();
-  for (const t of templates) {
-    if (t.setType === 'warmup') continue;
-    fixed.set(t.setType, [...(fixed.get(t.setType) ?? []), o.legacy ? null : t.targetLoad]);
-  }
-  const fromCoach = planned.some((p) => p.planned.source === 'coach');
-  if (o.legacy || fromCoach) {
-    const seen = new Map<SetType, number>();
-    return [
-      ...templates.filter((t) => t.setType === 'warmup'),
-      ...planned.map((p) => {
-        const k = seen.get(p.setType) ?? 0;
-        seen.set(p.setType, k + 1);
-        const pin = fixed.get(p.setType)?.[k] ?? null;
-        const id = o.newId();
-        if (pin === null) o.ruleOf.set(id, p.planned);
-        return {
-          id,
-          setType: p.setType,
-          targetLoad: pin ?? p.planned.load,
-          targetReps: p.planned.reps,
-          targetDurationS: p.planned.durationS,
-          targetRpe: p.planned.rpe,
-          targetRir: p.planned.rir,
-          restOverrideS: null,
-        };
-      }),
-    ];
-  }
-  const work = planned.filter((p) => p.setType !== 'warmup');
+  const coachEntry = planned.find((p) => p.planned.source === 'coach' && p.setType !== 'warmup');
+  if (o.legacy) return legacyTemplates(templates, planned, o);
+  if (coachEntry === undefined) return withRuleLoads(templates, planned, o);
+  const working = templates.filter((t) => t.setType !== 'warmup');
+  const matchType = working.some((t) => t.setType === coachEntry.setType) ? coachEntry.setType : working[0]?.setType;
+  if (matchType === undefined) return [...templates];
+  const meta = coachEntry.coach;
+  const uniform = working.every((t) => t.setType === matchType);
+  const unedited = meta !== undefined && o.editedAtUtc !== undefined && toMs(o.editedAtUtc) <= toMs(meta.setAtUtc);
+  const shaped = meta !== undefined && meta.sets !== null && uniform && unedited ? withSetCount(templates, matchType, meta.sets, o.newId) : [...templates];
+  const coachPlan = coachEntry.planned;
+  const coached = shaped.map((t) => {
+    if (t.setType !== matchType || t.targetLoad !== null) return t;
+    const id = o.newId();
+    o.ruleOf.set(id, coachPlan);
+    return { ...t, id, targetLoad: coachPlan.load, targetReps: coachPlan.reps ?? t.targetReps };
+  });
+  // The workout's other set types (a back-off after a top set) keep the built-in rule's loads.
+  const builtIn = meta?.builtIn ?? planned.filter((p) => p.planned.source !== 'coach');
+  return withRuleLoads(coached, builtIn, o, (t) => t.setType !== matchType);
+}
+
+/** A routine from before the library: the targets are the working sets (a stored load can't be told from a pin, so none is kept). */
+function legacyTemplates(templates: readonly SetTemplate[], planned: readonly NextTargetEntry[], o: { newId: () => string; ruleOf: Map<string, PlannedSet> }): SetTemplate[] {
+  return [
+    ...templates.filter((t) => t.setType === 'warmup'),
+    ...planned.map((p) => {
+      const id = o.newId();
+      o.ruleOf.set(id, p.planned);
+      return {
+        id,
+        setType: p.setType,
+        targetLoad: p.planned.load,
+        targetReps: p.planned.reps,
+        targetDurationS: p.planned.durationS,
+        targetRpe: p.planned.rpe,
+        targetRir: p.planned.rir,
+        restOverrideS: null,
+      };
+    }),
+  ];
+}
+
+/**
+ * The workout's templates with the built-in rule's loads on its Auto sets
+ * (only those `include` picks; all by default). Fixed sets and warm-ups
+ * stay as they are.
+ */
+function withRuleLoads(
+  templates: readonly SetTemplate[],
+  planned: readonly { setType: SetType; planned: PlannedSet }[],
+  o: { newId: () => string; ruleOf: Map<string, PlannedSet> },
+  include: (t: SetTemplate) => boolean = () => true,
+): SetTemplate[] {
+  const work = planned.filter((p) => p.setType !== 'warmup' && p.planned.source !== 'coach');
   const seen = new Map<SetType, number>();
   let overall = 0;
   return templates.map((t) => {
@@ -465,7 +497,7 @@ export function routineTemplatesWithTargets(
     seen.set(t.setType, k + 1);
     const place = overall;
     overall += 1;
-    if (t.targetLoad !== null) return t;
+    if (t.targetLoad !== null || !include(t)) return t;
     const sameType = work.filter((p) => p.setType === t.setType);
     const target = sameType[k] ?? sameType[sameType.length - 1] ?? work[place] ?? work[work.length - 1];
     if (target === undefined || target.planned.load === null) return t;
@@ -473,6 +505,28 @@ export function routineTemplatesWithTargets(
     o.ruleOf.set(id, target.planned);
     return { ...t, id, targetLoad: target.planned.load };
   });
+}
+
+/**
+ * The coach's set count on a one-type workout: extra sets copy the last set
+ * of that type (as Auto), placed after it; fewer sets drop Auto sets from
+ * the end. Fixed sets are Ben's and never dropped; at least one set stays.
+ */
+function withSetCount(templates: readonly SetTemplate[], setType: SetType, count: number, newId: () => string): SetTemplate[] {
+  const ofType = templates.filter((t) => t.setType === setType);
+  const last = ofType[ofType.length - 1];
+  if (last === undefined || count === ofType.length) return [...templates];
+  if (count > ofType.length) {
+    const at = templates.indexOf(last) + 1;
+    const extra = Array.from({ length: count - ofType.length }, () => ({ ...last, id: newId(), targetLoad: null }));
+    return [...templates.slice(0, at), ...extra, ...templates.slice(at)];
+  }
+  const drop = new Set<string>();
+  for (const t of [...ofType].reverse()) {
+    if (ofType.length - drop.size <= Math.max(1, count)) break;
+    if (t.targetLoad === null) drop.add(t.id);
+  }
+  return templates.filter((t) => !drop.has(t.id));
 }
 
 /** A load as plain text (`32.5 kg each`, `Assist 30 kg`). */
