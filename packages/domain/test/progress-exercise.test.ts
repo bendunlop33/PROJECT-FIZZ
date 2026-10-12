@@ -482,7 +482,7 @@ describe('records (PG10, PG30, check 39)', () => {
     // Imported provenance travels to every point and row.
     expect(v?.points.every((p) => p.notes.includes('FitNotes'))).toBe(true);
     expect(v?.history.months[0]?.rows.every((r) => r.tags.includes('FitNotes'))).toBe(true);
-    expect(v?.history.months[0]?.rows[0]?.title).toMatch(/· Imported$/);
+    expect(v?.history.months[0]?.rows[0]?.title).toMatch(/· Workout$/);
   });
 
   it('Best Est. 1RM on the home: labelled, only when the row has no actual record', () => {

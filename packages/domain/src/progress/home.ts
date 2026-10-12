@@ -179,7 +179,6 @@ export const HOME_RECORDS_INITIAL = 3;
 
 function sessionTitle(s: ProgressSession, exercises: ReadonlyMap<string, MuscleInfo>): string {
   if (s.name !== null && s.name.trim() !== '') return s.name;
-  if (s.source === 'import') return 'Imported';
   const infos = s.exercises.flatMap((e) => {
     const i = exercises.get(e.exerciseId);
     return i ? [{ movementPattern: i.movementPattern, primaryMuscles: [...i.primaryMuscles] }] : [];

@@ -75,10 +75,6 @@ function workingSets(s: ProgressSession): number {
 
 export function calendarSessionRow(s: ProgressSession, exercises: ReadonlyMap<string, MuscleInfo>, gymNames: Readonly<Record<string, string>>): CalendarSessionRow {
   const sets = countNoun(workingSets(s), 'set', 'sets');
-  if (s.source === 'import') {
-    const gym = s.gymId === null ? null : (gymNames[s.gymId] ?? null);
-    return { sessionId: s.sessionId, kind: 'finished', title: gym === null ? 'Imported' : `Imported · ${gym}`, detail: sets, imported: true, words: `Imported workout, ${sets}. Opens the workout.` };
-  }
   const name =
     s.name !== null && s.name.trim() !== ''
       ? s.name
@@ -86,6 +82,11 @@ export function calendarSessionRow(s: ProgressSession, exercises: ReadonlyMap<st
           const i = exercises.get(e.exerciseId);
           return i ? [{ movementPattern: i.movementPattern, primaryMuscles: [...i.primaryMuscles] }] : [];
         }));
+  // Imported workouts read like any other (Ben, 12 Oct): named from their exercises; date only, so no times.
+  if (s.source === 'import') {
+    const gym = s.gymId === null ? null : (gymNames[s.gymId] ?? null);
+    return { sessionId: s.sessionId, kind: 'finished', title: gym === null ? name : `${name} · ${gym}`, detail: sets, imported: true, words: `${name}${gym === null ? '' : `, ${gym}`}. ${sets}. Opens the workout.` };
+  }
   const gym = s.gymId === null ? null : (gymNames[s.gymId] ?? null);
   const parts: string[] = [];
   if (s.endedAtUtc !== null) parts.push(`${clockText(s.startedMs, s.tz)}–${clockText(toMs(s.endedAtUtc), s.tz)}`);

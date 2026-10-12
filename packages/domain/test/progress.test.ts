@@ -446,7 +446,7 @@ describe('calendar month (check 18)', () => {
     expect(v.weeks[0]?.[3]).toMatchObject({ date: '2026-10-01', day: 1 });
     expect(v.weeks.flat().find((d) => d?.date === '2026-10-08')?.count).toBe(2);
     expect(v.days['2026-10-08']?.[0]).toMatchObject({ title: 'Push A · Main Gym', detail: '19:00–20:00 · 54 min · 1 set' });
-    expect(v.days['2026-10-02']?.[0]).toMatchObject({ title: 'Imported', detail: '2 sets', imported: true });
+    expect(v.days['2026-10-02']?.[0]).toMatchObject({ title: 'Push', detail: '2 sets', imported: true });
     expect(v.defaultSelected).toBe(TODAY);
     expect(v.previousMonth).toBe('2026-09');
     const sep = buildCalendarMonthView({ sessions: [session('2026-09-30')], exercises: INFO, month: '2026-09', today: TODAY });

@@ -547,7 +547,7 @@ function pickSeries(all: readonly ExerciseSeries[], input: ExerciseDetailInput):
 }
 
 function pointTitle(p: { date: string; name: string | null; source: 'app' | 'import' }, today: string): string {
-  const name = p.name !== null && p.name.trim() !== '' ? p.name : p.source === 'import' ? 'Imported' : 'Workout';
+  const name = p.name !== null && p.name.trim() !== '' ? p.name : 'Workout';
   return `${weekdayShortDate(p.date, today)} · ${name}`;
 }
 
