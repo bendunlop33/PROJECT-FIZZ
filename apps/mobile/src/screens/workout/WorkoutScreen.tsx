@@ -890,9 +890,15 @@ export function WorkoutScreen() {
   }
 
   /** A non-current row (or its ring) only becomes the open row: `set_active_set`, never a log (Ben, decision 4). */
-  function selectRow(setId: string) {
+  async function selectRow(setId: string) {
     setAfterSetFor(null);
-    void run(selectCommand(setId, session.version, services.now(), newUuid()));
+    // The open row keeps its unsaved edit: saved now, not left to the 300 ms debounce the select would cancel.
+    let version = session.version;
+    if (edits !== null) {
+      const saved = await services.workout.dispatch(session.id, saveDraftCommand(edits, services.now()));
+      if (saved.ok) version = saved.aggregate.session.version;
+    }
+    await run(selectCommand(setId, version, services.now(), newUuid()));
   }
 
   async function openSwap(f: Pick<FocusView, 'sessionExerciseId' | 'exerciseName'>) {
@@ -1951,7 +1957,7 @@ export function WorkoutScreen() {
             onEditSet={(setId) => {
               navigation.navigate('EditSet', { sessionId: session.id, setId });
             }}
-            onSelectSet={selectRow}
+            onSelectSet={(id) => void selectRow(id)}
             onAddSet={(id) => void addSet(id)}
             onMenu={openCardMenu}
             onName={openExerciseSheet}
