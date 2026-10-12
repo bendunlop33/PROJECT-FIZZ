@@ -1,5 +1,5 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
-import { Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
+import { AccessibilityInfo, Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
 import { formatDuration, NBSP, type FocusView, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
@@ -47,6 +47,10 @@ export interface WorkoutTableProps {
   adjust: ReactNode;
   /** The inline `AdjustRow` under the current header. */
   adjustRow: ReactNode;
+  /** The warm-up ramp suggestion with `Hide` (§2A.3), in the current card's header; null when none. */
+  warmUp: ReactNode;
+  /** The open row's header, where VoiceOver focus goes once an anchor with `focus` is applied (§2A.7). */
+  focusRef: RefObject<View | null>;
   /** After the cards: `All planned sets done.`, `+ Add exercise`, `TimeLeftLine`. */
   footer: ReactNode;
   /** The pending scroll to the anchor, if any; `onAnchorApplied` clears it. */
@@ -136,8 +140,10 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
       const body = bodies.current.get(anchorKey);
       const o = open.current;
       if (!header || !body || o?.setId !== anchorSetId) return;
-      const a = props.afterSetKey !== null ? after.current : null;
-      if (props.afterSetKey !== null && a?.key !== props.afterSetKey) return;
+      // The keypad anchors the open row itself (its tiles above the keypad); otherwise the after-set block leads.
+      const useAfter = req.target === 'anchor' && props.afterSetKey !== null;
+      const a = useAfter ? after.current : null;
+      if (useAfter && a?.key !== props.afterSetKey) return;
       const y = anchorScrollY({ cardTop: header.y, headerHeight: header.h, anchorTop: body.y + (a !== null ? a.layout.y : o.layout.y) });
       if (spacerAt.current !== null && viewport.current > 0) {
         const needed = bottomSpacerHeight({ viewportHeight: viewport.current, contentEnd: spacerAt.current, anchorY: y });
@@ -151,6 +157,16 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
       scrollY.current = y;
       props.onAnchorApplied();
       reportChips();
+      if (req.focus) {
+        // VoiceOver: the new open row after a Log or on open, not wherever focus was (review S5).
+        const target = props.focusRef;
+        setTimeout(
+          () => {
+            if (target.current !== null) AccessibilityInfo.sendAccessibilityEvent(target.current, 'focus');
+          },
+          req.animated ? 400 : 50,
+        );
+      }
     });
   }, [props, anchorKey, anchorSetId, spacer, reportChips]);
 
@@ -214,9 +230,9 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
       >
         <View style={{ backgroundColor: theme.colors['bg.surface'], borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'] }}>
           {block.kind === 'exercise' ? (
-            <CardHeader card={block.card} current={current} ax={props.ax} adjust={current ? props.adjust : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} />
+            <CardHeader card={block.card} current={current} ax={props.ax} adjust={current ? props.adjust : null} warmUp={current ? props.warmUp : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} />
           ) : (
-            <SupersetHeader superset={block.superset} ax={props.ax} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} onPainBadge={props.onPainBadge} />
+            <SupersetHeader superset={block.superset} ax={props.ax} adjust={current ? props.adjust : null} warmUp={current ? props.warmUp : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} />
           )}
         </View>
       </View>,
@@ -401,7 +417,7 @@ function FoldButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function CardHeader({ card, current, ax, adjust, onFold, onMenu, onName, onNote, onPainBadge }: { card: TableCard; current: boolean; ax: boolean; adjust: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
+function CardHeader({ card, current, ax, adjust, warmUp, onFold, onMenu, onName, onNote, onPainBadge }: { card: TableCard; current: boolean; ax: boolean; adjust: ReactNode; warmUp: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
   const theme = useTheme();
   return (
     <View>
@@ -456,14 +472,21 @@ function CardHeader({ card, current, ax, adjust, onFold, onMenu, onName, onNote,
           </AppText>
         </LinkLine>
       ) : null}
+      {warmUp}
       {!ax && card.columns !== null ? <ColumnLabels columns={card.columns} /> : <View style={{ height: theme.space['2'] }} />}
     </View>
   );
 }
 
-function SupersetHeader({ superset, ax, onFold, onMenu, onPainBadge }: { superset: SupersetCard; ax: boolean; onFold: (() => void) | null; onMenu: (sessionExerciseId: string) => void; onPainBadge: (exerciseId: string) => void }) {
+/**
+ * The superset header (§2A.8): `Superset A` · `Round 2 of 3`, `Adjust` while
+ * the group is current (acting on the open member), and `⋯` for the open
+ * member (else the one whose set is next). Each member line opens that
+ * member's exercise sheet, has its own `⋯`, pain badge and note (review B3).
+ */
+function SupersetHeader({ superset, ax, adjust, warmUp, onFold, onMenu, onName, onNote, onPainBadge }: { superset: SupersetCard; ax: boolean; adjust: ReactNode; warmUp: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
   const theme = useTheme();
-  const menuFor = superset.members[0]?.sessionExerciseId ?? '';
+  const target = superset.members.find((m) => m.sessionExerciseId === superset.menuTarget);
   return (
     <View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: theme.target.workout.height }}>
@@ -473,28 +496,61 @@ function SupersetHeader({ superset, ax, onFold, onMenu, onPainBadge }: { superse
         <AppText variant="callout" color="text.tertiary" numeric style={{ flex: 1 }}>
           {superset.roundText}
         </AppText>
+        {adjust}
         {onFold !== null ? <FoldButton onPress={onFold} /> : null}
         <MenuButton
-          label={`${superset.label} menu`}
+          label={target !== undefined ? `${target.tag} ${target.name} menu` : `${superset.label} menu`}
           onPress={() => {
-            onMenu(menuFor);
+            onMenu(superset.menuTarget);
           }}
         />
       </View>
-      <View style={{ borderLeftWidth: 2, borderLeftColor: theme.colors['border.control'], paddingLeft: theme.space['2'], gap: theme.space['1'] }}>
+      <View style={{ borderLeftWidth: 2, borderLeftColor: theme.colors['border.control'], paddingLeft: theme.space['2'] }}>
         {superset.members.map((m) => (
-          <View key={m.tag} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], flexWrap: 'wrap' }}>
-            <AppText variant="callout" color="text.secondary">{`${m.tag} ${m.name} · ${plainSpaces(m.unitCaption)}`}</AppText>
-            {m.painBadge ? (
-              <PainBadge
+          <View key={m.tag}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${m.tag}, ${m.name}, ${plainSpaces(m.unitCaption)}${m.painBadge ? ', pain flag' : ''}`}
+                accessibilityHint="Opens the exercise"
                 onPress={() => {
-                  onPainBadge(m.exerciseId);
+                  onName({ sessionExerciseId: m.sessionExerciseId, exerciseId: m.exerciseId, name: m.name, isCurrent: m.isCurrent });
+                }}
+                style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: theme.target.workout.height, opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+              >
+                <AppText variant="callout" color={m.isCurrent ? 'text.primary' : 'text.secondary'} style={{ flexShrink: 1 }} numberOfLines={ax ? 3 : 2}>{`${m.tag} ${m.name} · ${plainSpaces(m.unitCaption)}`}</AppText>
+                <Icon name="chevron.right" size={12} color="text.tertiary" />
+              </Pressable>
+              {m.painBadge ? (
+                <PainBadge
+                  onPress={() => {
+                    onPainBadge(m.exerciseId);
+                  }}
+                />
+              ) : null}
+              <MenuButton
+                label={`${m.tag} ${m.name} menu`}
+                onPress={() => {
+                  onMenu(m.sessionExerciseId);
                 }}
               />
+            </View>
+            {m.note !== null ? (
+              <LinkLine
+                accessibilityLabel={`${m.tag} note: ${m.note}. Tap to edit.`}
+                onPress={() => {
+                  onNote(m.sessionExerciseId, m.name, m.note);
+                }}
+              >
+                <AppText variant="callout" color="text.secondary" numberOfLines={3}>
+                  {m.note}
+                </AppText>
+              </LinkLine>
             ) : null}
           </View>
         ))}
       </View>
+      {warmUp}
       {!ax && superset.columns !== null ? <ColumnLabels columns={superset.columns} /> : <View style={{ height: theme.space['2'] }} />}
     </View>
   );
@@ -678,6 +734,8 @@ export interface OpenSetRowProps {
   repsRef: Ref<TextInput>;
   timeRef: Ref<TextInput>;
   distanceRef: Ref<TextInput>;
+  /** The `Set 2 · NOW` header (VoiceOver focus after a Log). */
+  headerRef?: Ref<View>;
   onCopyLast: () => void;
   onLoad: (v: number | null) => void;
   onReps: (v: number | null) => void;
@@ -751,15 +809,16 @@ export function OpenSetRow(p: OpenSetRowProps) {
   const lastText = f.previous ? plainSpaces(f.previous.text) : null;
   return (
     <View
-      accessibilityLabel={`Set ${String(f.setNumber)}, current`}
       style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, marginHorizontal: -theme.space['1'], marginVertical: theme.space['1'], paddingVertical: theme.space['2'], paddingLeft: theme.space['3'] + 3, paddingRight: theme.space['3'], gap: theme.space['2'] }}
     >
       <View style={{ position: 'absolute', left: 0, top: theme.space['3'], bottom: theme.space['3'], width: 3, borderRadius: 2, backgroundColor: theme.colors.accent }} />
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: theme.space['2'] }}>
-        <AppText variant="headline" numeric accessibilityRole="header">{`${String(f.setNumber)}${f.side?.kind === 'fixed' ? (f.side.value === 'left' ? ' L' : ' R') : ''}`}</AppText>
-        <AppText variant="label" color="accent">
-          {p.resting ? 'NEXT' : 'NOW'}
-        </AppText>
+        <View ref={p.headerRef} accessible accessibilityRole="header" accessibilityLabel={`${f.exerciseName}, set ${String(f.setNumber)}${f.side?.kind === 'fixed' ? (f.side.value === 'left' ? ', left side' : ', right side') : ''}, ${p.resting ? 'next' : 'current'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <AppText variant="headline" numeric>{`${String(f.setNumber)}${f.side?.kind === 'fixed' ? (f.side.value === 'left' ? ' L' : ' R') : ''}`}</AppText>
+          <AppText variant="label" color="accent">
+            {p.resting ? 'NEXT' : 'NOW'}
+          </AppText>
+        </View>
         <View style={{ flex: 1 }} />
         {lastText !== null && !p.keypadOpen && !p.ax ? (
           <Pressable accessibilityRole="button" accessibilityLabel={`Last time ${lastText}. Copies it.`} onPress={p.onCopyLast} style={({ pressed }) => ({ minHeight: theme.target.workout.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>

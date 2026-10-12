@@ -4,9 +4,10 @@ import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NBSP, tableLogLabel, type TableRow } from '@fizz/domain';
+import type { SessionCommand } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { anchorReducer, anchorScrollY, bottomSpacerHeight, chipsFor, rowTap, selectCommand, showsFolded, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest } from '../src/workout/table';
+import { anchorReducer, anchorScrollY, bottomSpacerHeight, chipsFor, isTileFocused, rowTap, selectCommand, selectRowFlow, showsFolded, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type SelectOutcome } from '../src/workout/table';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
@@ -37,14 +38,32 @@ describe('anchor requests: what may move the list (WT3, WT7)', () => {
   const step = (events: AnchorEvent[], reduceMotion = false): AnchorRequest | null => events.reduce<AnchorRequest | null>((cur, e) => anchorReducer(cur, e, { reduceMotion }), null);
 
   it('opening (Start, Resume, relaunch) and switching back from Focus jump without animation', () => {
-    expect(step([{ kind: 'opened' }])).toEqual({ animated: false });
-    expect(step([{ kind: 'view_switched' }])).toEqual({ animated: false });
+    expect(step([])).toBeNull();
+    expect(step([{ kind: 'opened' }])).toEqual({ animated: false, target: 'anchor', focus: true });
+    expect(step([{ kind: 'view_switched' }])).toEqual({ animated: false, target: 'anchor', focus: true });
   });
 
   it('each Log auto-advances with motion; under Reduce Motion it jumps to the same place', () => {
-    expect(step([{ kind: 'logged' }])).toEqual({ animated: true });
-    expect(step([{ kind: 'logged' }], true)).toEqual({ animated: false });
-    expect(step([{ kind: 'now_chip' }], true)).toEqual({ animated: false });
+    // VoiceOver focus moves to the new open row after a Log (S5).
+    expect(step([{ kind: 'logged' }])).toEqual({ animated: true, target: 'anchor', focus: true });
+    expect(step([{ kind: 'logged' }], true)).toEqual({ animated: false, target: 'anchor', focus: true });
+    expect(step([{ kind: 'now_chip' }], true)).toEqual({ animated: false, target: 'anchor', focus: false });
+  });
+
+  it('only the open row’s own tiles move the list when the keypad opens; a note or rename keyboard doesn’t', () => {
+    const load = { tile: 'load' };
+    const reps = { tile: 'reps' };
+    const note = { field: 'note' };
+    expect(isTileFocused(reps, [load, reps, null, null])).toBe(true);
+    expect(isTileFocused(note, [load, reps, null, null])).toBe(false);
+    expect(isTileFocused(null, [load, reps, null, null])).toBe(false);
+    expect(isTileFocused(null, [null, null])).toBe(false);
+  });
+
+  it('the keypad anchors the open row itself, not the after-set block above it (WT39, review S3)', () => {
+    expect(step([{ kind: 'keypad_opened' }])).toEqual({ animated: true, target: 'open_row', focus: false });
+    // A Log after it lands on the after-set block again.
+    expect(step([{ kind: 'keypad_opened' }, { kind: 'applied' }, { kind: 'logged' }])).toMatchObject({ target: 'anchor' });
   });
 
   it('timers, toasts, effort taps, offers and reloads never move the list; Ben scrolling cancels a pending move', () => {
@@ -56,7 +75,7 @@ describe('anchor requests: what may move the list (WT3, WT7)', () => {
 
   it('selecting a row on screen moves nothing; from off-screen (voice, a menu) it re-anchors', () => {
     expect(step([{ kind: 'selected', onScreen: true }])).toBeNull();
-    expect(step([{ kind: 'selected', onScreen: false }])).toEqual({ animated: true });
+    expect(step([{ kind: 'selected', onScreen: false }])).toEqual({ animated: true, target: 'anchor', focus: false });
   });
 });
 
@@ -90,6 +109,48 @@ describe('row taps (WT10, WT11, WT12; Ben decision 4)', () => {
   });
 });
 
+describe('selectRowFlow: save the open row’s draft, then select (review S6, N9)', () => {
+  const at = { utc: '2026-10-10T07:00:00.000Z', tz: 'Europe/London' };
+  const draft = { type: 'save_draft' as const, at, setId: 'open', values: { load: null, reps: 5, durationS: null, rpe: null, rir: null } };
+  const ok = (version: number): SelectOutcome => ({ ok: true, aggregate: { session: { version } } });
+
+  it('saves the draft first and selects with the version the save returned; never logs', async () => {
+    const calls: SessionCommand[] = [];
+    const r = await selectRowFlow({
+      setId: 'third',
+      version: 7,
+      draft,
+      at,
+      opId: 'sel-1',
+      save: (cmd) => {
+        calls.push(cmd);
+        return Promise.resolve(ok(7));
+      },
+      select: (cmd) => {
+        calls.push(cmd);
+        return Promise.resolve(ok(8));
+      },
+    });
+    expect(r).toEqual({ ok: true });
+    expect(calls.map((c) => c.type)).toEqual(['save_draft', 'set_active_set']);
+    expect(calls[1]).toMatchObject({ setId: 'third', expectedVersion: 7, opId: 'sel-1' });
+    expect(calls.some((c) => c.type === 'log_set')).toBe(false);
+  });
+
+  it('no draft: selects straight away on the screen’s version; a failed save still selects', async () => {
+    const seen: number[] = [];
+    await selectRowFlow({ setId: 's', version: 4, draft: null, at, opId: 'o', save: () => Promise.reject(new Error('not called')), select: (cmd) => (seen.push(cmd.expectedVersion), Promise.resolve(ok(5))) });
+    await selectRowFlow({ setId: 's', version: 4, draft, at, opId: 'o2', save: () => Promise.resolve({ ok: false, error: { code: 'write_failed', message: 'disk' } }), select: (cmd) => (seen.push(cmd.expectedVersion), Promise.resolve(ok(5))) });
+    expect(seen).toEqual([4, 4]);
+  });
+
+  it('a refused select is reported: stale (a double tap) quietly, anything else with its reason', async () => {
+    const refuse = (code: string) => selectRowFlow({ setId: 's', version: 4, draft: null, at, opId: 'o', save: () => Promise.resolve(ok(4)), select: () => Promise.resolve({ ok: false, error: { code, message: `refused: ${code}` } }) });
+    expect(await refuse('stale_version')).toMatchObject({ ok: false, quiet: true });
+    expect(await refuse('set_not_pending')).toEqual({ ok: false, quiet: false, code: 'set_not_pending', message: 'refused: set_not_pending' });
+  });
+});
+
 describe('folding (§2A.3)', () => {
   const folded = { key: 'bench', folded: { name: 'Bench press', summary: '100 × 8', skipped: false, accessibilityLabel: '' } };
   it('a finished block folds; expanded, it stays open until the open row moves to another block', () => {
@@ -118,6 +179,16 @@ describe('Finish placement and the top bar menu (WT27, WT28, check 14)', () => {
   it('Table is the default view', () => {
     expect(workoutViewOf(undefined)).toBe('table');
     expect(workoutViewOf('focus')).toBe('focus');
+  });
+
+  it('a superset keeps Adjust and acts on the open member: the group ⋯ uses the domain’s menu target, never A1 by position (review B3)', () => {
+    const list = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutTable.tsx'), 'utf8');
+    expect(list).toMatch(/onMenu\(superset\.menuTarget\)/);
+    expect(list).not.toMatch(/members\[0\]/);
+    expect(list).toMatch(/<SupersetHeader[^>]*adjust=\{current \? props\.adjust : null\}/);
+    // Each member line opens its own sheet and menu.
+    expect(list).toMatch(/onMenu\(m\.sessionExerciseId\)/);
+    expect(list).toMatch(/onName\(\{ sessionExerciseId: m\.sessionExerciseId/);
   });
 
   it('the Table code has one Log path and no Finish in the list, and never computes progression or loads', () => {
@@ -199,12 +270,23 @@ describe('the Table loop end to end, offline (WT1, WT6, WT10, WT13, WT42)', () =
     const [open, , third] = rows;
     if (!open || !third) throw new Error('rows');
     expect(rowTap(third)).toEqual({ kind: 'select', setId: third.setId });
-    // The screen's debounced draft save for the open row, then the select.
-    const draft = await s.workout.dispatch(sessionId, { type: 'save_draft', at: h.now(), setId: open.setId, values: { load: load60, reps: 5, durationS: null, rpe: null, rir: null } });
-    if (!draft.ok) throw new Error(draft.error.message);
-    const sel = await s.workout.dispatch(sessionId, selectCommand(third.setId, draft.aggregate.session.version, h.now(), 'sel-1'));
-    if (!sel.ok) throw new Error(sel.error.message);
+    // The screen's own flow: the open row's unsaved edit is saved, then the select, on the version the save returned.
+    const selected = await selectRowFlow({
+      setId: third.setId,
+      version: data.aggregate.session.version,
+      draft: { type: 'save_draft', at: h.now(), setId: open.setId, values: { load: load60, reps: 5, durationS: null, rpe: null, rir: null } },
+      at: h.now(),
+      opId: 'sel-1',
+      save: (cmd) => s.workout.dispatch(sessionId, cmd),
+      select: (cmd) => s.workout.dispatch(sessionId, cmd),
+    });
+    expect(selected).toEqual({ ok: true });
+    const sel = await s.workout.load();
+    if (!sel) throw new Error('no workout');
     expect(sel.aggregate.sets.filter((x) => x.status === 'completed')).toHaveLength(0);
+    // A second tap on the same row with the old version is refused as stale, quietly, and changes nothing.
+    const again = await selectRowFlow({ setId: third.setId, version: data.aggregate.session.version, draft: null, at: h.now(), opId: 'sel-dup', save: (cmd) => s.workout.dispatch(sessionId, cmd), select: (cmd) => s.workout.dispatch(sessionId, cmd) });
+    expect(again).toMatchObject({ ok: false, quiet: true });
     data = await s.workout.load();
     if (!data) throw new Error('no workout');
     expect(s.workout.tableView(data, h.clockMs, null).anchor?.setId).toBe(third.setId);
@@ -246,7 +328,7 @@ describe('the Table loop end to end, offline (WT1, WT6, WT10, WT13, WT42)', () =
     expect(t.anchor?.setId).toBe(openId);
     expect(t.doneCount).toBe(1);
     // The screen opens anchored on it, without animation.
-    expect(anchorReducer(null, { kind: 'opened' }, { reduceMotion: false })).toEqual({ animated: false });
+    expect(anchorReducer(null, { kind: 'opened' }, { reduceMotion: false })).toEqual({ animated: false, target: 'anchor', focus: true });
     const v = s.workout.view(data, h.clockMs, null);
     expect(v.focus?.setId).toBe(openId);
     expect(v.focus?.draft).toMatchObject({ load: { value: 62.5 }, reps: 5 });

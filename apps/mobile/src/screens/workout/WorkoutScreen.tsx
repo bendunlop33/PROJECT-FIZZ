@@ -1,9 +1,9 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, isRemovable, midSwapSlot, saveDraftCommand, tableLogLabel, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -67,7 +67,7 @@ import { UNDO_TOAST } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
-import { anchorReducer, selectCommand, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type ChipState } from '../../workout/table';
+import { anchorReducer, isTileFocused, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type ChipState } from '../../workout/table';
 import { ChatButton, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
 
 /**
@@ -173,6 +173,8 @@ export function WorkoutScreen() {
   const repsRef = useRef<TextInput>(null);
   const timeRef = useRef<TextInput>(null);
   const distanceRef = useRef<TextInput>(null);
+  /** The open row's `Set 2 · NOW` header: VoiceOver focus lands here after a Log or on open (§2A.7). */
+  const openHeaderRef = useRef<View>(null);
   /** During rest the next set is folded away (D-Rest); this opens it. Reset when the set changes. */
   const [showNextSet, setShowNextSet] = useState(false);
   /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
@@ -238,8 +240,10 @@ export function WorkoutScreen() {
     const shown = Keyboard.addListener('keyboardWillShow', () => {
       setKeypadOpen(true);
       whyEvent({ kind: 'keypad_opened' });
-      // Table: the open row stays visible above the keypad.
-      if (modeRef.current === 'table') anchorEvent({ kind: 'keypad_opened' });
+      // Table: the open row stays visible above the keypad. Only for its own tiles: a note, rename or
+      // coach keyboard never moves the list behind it (review S3).
+      const tile = isTileFocused(TextInput.State.currentlyFocusedInput(), [loadRef.current, repsRef.current, timeRef.current, distanceRef.current]);
+      if (modeRef.current === 'table' && tile) anchorEvent({ kind: 'keypad_opened' });
     });
     const hidden = Keyboard.addListener('keyboardWillHide', () => {
       setKeypadOpen(false);
@@ -631,6 +635,13 @@ export function WorkoutScreen() {
     setRestoredDraft(null);
   }
 
+  /** `Last …`: copies last time's values into the open row (its effort is never copied). */
+  function copyLast(f: FocusView) {
+    const prev = f.previous;
+    if (!prev) return;
+    setEdits({ setId: f.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+  }
+
   function editLoad(f: FocusView, v: number | null) {
     const unit = loaded.aggregate.exercises.find((e) => e.id === f.sessionExerciseId)?.unit ?? 'kg';
     const convention = loaded.aggregate.exercises.find((e) => e.id === f.sessionExerciseId)?.loadConvention ?? 'total';
@@ -780,15 +791,7 @@ export function WorkoutScreen() {
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'swap') void openSwap(f);
       if (action === 'notes') setNoteFor({ sessionExerciseId: f.sessionExerciseId, exerciseName: f.exerciseName, note: f.note });
-      if (action === 'undo_swap' && f.swappedFrom !== null) {
-        const targetOpId = f.swappedFrom.opId;
-        void services.workout.undoOp({ sessionId: session.id, targetOpId }).then((r) => {
-          changed();
-          void reload();
-          if (r.ok) haptic('undo');
-          else showToast({ icon: 'info.circle', text: r.message });
-        });
-      }
+      if (action === 'undo_swap' && f.swappedFrom !== null) undoSwap(f.swappedFrom.opId);
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'delete_set') {
         // No confirm (copy D4): it applies at once with Undo.
@@ -816,65 +819,86 @@ export function WorkoutScreen() {
     });
   }
 
+  function undoSwap(targetOpId: string) {
+    void services.workout.undoOp({ sessionId: session.id, targetOpId }).then((r) => {
+      changed();
+      void reload();
+      if (r.ok) haptic('undo');
+      else showToast({ icon: 'info.circle', text: r.message });
+    });
+  }
+
   /**
    * `⋯` on a Table card that isn't the current one (§2A.7): the same menu,
-   * acting on that exercise; `Delete this set` acts on its next pending set.
-   * The current card uses `openExerciseMenu` (its open row's set).
+   * acting on that exercise; `Target RPE`, `Undo coach change` and `Delete
+   * this set` act on its next pending set (review S4). The current card
+   * uses `openExerciseMenu` (its open row's set).
    */
   function openCardMenu(sessionExerciseId: string) {
     if (focus !== null && sessionExerciseId === focus.sessionExerciseId) {
       openExerciseMenu(focus);
       return;
     }
-    const ex = loaded.aggregate.exercises.find((e) => e.id === sessionExerciseId);
-    if (!ex) return;
-    const card = { sessionExerciseId, exerciseId: ex.exerciseId, exerciseName: ex.exerciseName };
-    const next = loaded.aggregate.sets.filter((x) => x.sessionExerciseId === sessionExerciseId && x.status === 'pending').sort((a, b) => a.index - b.index)[0];
-    const howTo = howToRouteFor(card, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, false, { canSwap: midSwapSlot(loaded.aggregate, sessionExerciseId) !== null, canRemove: isRemovable(loaded.aggregate, ex) });
-    ActionSheetIOS.showActionSheetWithOptions({ title: ex.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
+    const facts = services.workout.cardFacts(loaded, sessionExerciseId);
+    if (facts === null) return;
+    const ex = { sessionExerciseId, exerciseId: facts.exerciseId, exerciseName: facts.exerciseName };
+    const next = facts.nextSet;
+    const howTo = howToRouteFor(ex, bundledHowToSources());
+    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null });
+    ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
+      if (action === 'undo_coach' && facts.coachActionId !== null) coach.undo(facts.coachActionId);
+      if (action === 'undo_swap' && facts.swappedFrom !== null) undoSwap(facts.swappedFrom.opId);
+      if (action === 'target_rpe' && next !== null) pickTargetRpe({ targetRpe: facts.targetRpe, setId: next.id, sessionExerciseId });
       if (action === 'add_set') void addSet(sessionExerciseId);
-      if (action === 'swap') void openSwap(card);
-      if (action === 'notes') setNoteFor({ sessionExerciseId, exerciseName: ex.exerciseName, note: ex.note ?? null });
+      if (action === 'swap') void openSwap(ex);
+      if (action === 'notes') setNoteFor({ sessionExerciseId, exerciseName: facts.exerciseName, note: facts.note });
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'delete_set') {
-        if (!next) {
+        if (next === null) {
           showToast({ icon: 'info.circle', text: 'No set left to delete' });
           return;
         }
         const opId = newUuid();
-        const n = table?.blocks.flatMap((b) => (b.kind === 'exercise' ? b.card.rows : b.superset.rounds.flatMap((r) => r.rows))).find((r) => r.setId === next.id)?.number ?? 1;
         void run({ type: 'delete_set', at: services.now(), opId, setId: next.id, expectedSetVersion: next.version }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(n), opId, session.id);
+          if (r.ok) toastUndoOp(UNDO_TOAST.deleted(next.number), opId, session.id);
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
       if (action === 'remove_exercise') {
         const opId = newUuid();
         void run({ type: 'remove_exercise', at: services.now(), opId, sessionExerciseId, expectedVersion: session.version }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.removed(ex.exerciseName), opId, session.id);
+          if (r.ok) toastUndoOp(UNDO_TOAST.removed(facts.exerciseName), opId, session.id);
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
       if (action === 'skip_exercise') {
         const opId = newUuid();
         void run({ type: 'skip_exercise', at: services.now(), opId, sessionExerciseId }).then((r) => {
-          if (r.ok) toastUndoOp(UNDO_TOAST.skipped(ex.exerciseName), opId, session.id);
+          if (r.ok) toastUndoOp(UNDO_TOAST.skipped(facts.exerciseName), opId, session.id);
           else showToast({ icon: 'info.circle', text: refusalText(r.error.code, r.error.message) });
         });
       }
     });
   }
 
-  /** The exercise name `›` (§2A.7): How to, History, Rest after (the open row's), Notes. */
+  /**
+   * The exercise name `›` (§2A.7): How to, History, Plates (every load in
+   * today's targets), Rest after (the open row's), Notes. At AX1+ the open
+   * row's plate line and `Last` move here too (§2A.10, review S2).
+   */
   function openExerciseSheet(card: { sessionExerciseId: string; exerciseId: string; name: string; isCurrent: boolean }) {
     const howTo = howToRouteFor({ exerciseId: card.exerciseId, exerciseName: card.name }, bundledHowToSources());
     const ex = loaded.aggregate.exercises.find((e) => e.id === card.sessionExerciseId);
+    const facts = services.workout.cardFacts(loaded, card.sessionExerciseId);
+    const open = card.isCurrent && focus !== null && focus.sessionExerciseId === card.sessionExerciseId ? focus : null;
+    const plates = [...(open !== null && ax && open.plateLine !== null ? [`Now: ${open.plateLine}`] : []), ...(facts?.plates ?? [])].map((x) => x.replaceAll('\u00a0', ' '));
     const items: { label: string; run: () => void }[] = [
       ...(howTo !== null ? [{ label: 'How to', run: () => { navigation.navigate('HowTo', howTo); } }] : []),
       { label: 'History', run: () => { navigation.navigate('ExerciseProgress', { exerciseId: card.exerciseId, name: card.name, ...(ex?.equipmentId ? { equipmentId: ex.equipmentId } : {}) }); } },
+      ...(open !== null && ax && open.previous !== null ? [{ label: `Last ${open.previous.text.replaceAll('\u00a0', ' ')}`, run: () => { copyLast(open); } }] : []),
+      ...(plates.length > 0 ? [{ label: 'Plates', run: () => { Alert.alert('Plates', plates.join('\n')); } }] : []),
       ...(card.isCurrent && focus !== null ? [{ label: `Rest after ${formatDuration(focus.restAfterS)}`, run: () => { setRestEditor(true); } }] : []),
       { label: 'Notes', run: () => { setNoteFor({ sessionExerciseId: card.sessionExerciseId, exerciseName: card.name, note: ex?.note ?? null }); } },
     ];
@@ -893,12 +917,16 @@ export function WorkoutScreen() {
   async function selectRow(setId: string) {
     setAfterSetFor(null);
     // The open row keeps its unsaved edit: saved now, not left to the 300 ms debounce the select would cancel.
-    let version = session.version;
-    if (edits !== null) {
-      const saved = await services.workout.dispatch(session.id, saveDraftCommand(edits, services.now()));
-      if (saved.ok) version = saved.aggregate.session.version;
-    }
-    await run(selectCommand(setId, version, services.now(), newUuid()));
+    const r = await selectRowFlow({
+      setId,
+      version: session.version,
+      draft: edits !== null ? saveDraftCommand(edits, services.now()) : null,
+      at: services.now(),
+      opId: newUuid(),
+      save: (cmd) => services.workout.dispatch(session.id, cmd),
+      select: run,
+    });
+    if (!r.ok && !r.quiet) showToast({ icon: 'info.circle', text: refusalText(r.code, r.message) });
   }
 
   async function openSwap(f: Pick<FocusView, 'sessionExerciseId' | 'exerciseName'>) {
@@ -939,7 +967,7 @@ export function WorkoutScreen() {
   }
 
   /** Ben's own target RPE (CHANGELOG 2026-10-11): a value, then this set, this exercise or today. Saved on the workout (versioned). */
-  function pickTargetRpe(f: FocusView) {
+  function pickTargetRpe(f: Pick<FocusView, 'targetRpe' | 'setId' | 'sessionExerciseId'>) {
     const values = targetRpeMenu(f.targetRpe);
     ActionSheetIOS.showActionSheetWithOptions({ title: 'Target RPE', options: values.options, cancelButtonIndex: values.cancelButtonIndex }, (i) => {
       const rpe = values.valueAt(i);
@@ -1798,6 +1826,22 @@ export function WorkoutScreen() {
       </View>
     ) : null;
   const afterSetKey = afterSetNode === null ? null : (afterSetSaved?.setId ?? 'slot');
+  // The warm-up ramp suggestion in the current card's header (§2A.3), as in Focus, with `Hide`.
+  const warmUpNode =
+    focus?.warmUp && !hiddenWarmUps.includes(focus.sessionExerciseId) ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
+          {`Warm-up · ${focus.warmUp}`}
+        </AppText>
+        <TextButton
+          label="Hide"
+          tone="secondary"
+          onPress={() => {
+            setHiddenWarmUps((h) => [...h, focus.sessionExerciseId]);
+          }}
+        />
+      </View>
+    ) : null;
   const openRowNode = focus ? (
     <OpenSetRow
       focus={focus}
@@ -1821,10 +1865,9 @@ export function WorkoutScreen() {
       repsRef={repsRef}
       timeRef={timeRef}
       distanceRef={distanceRef}
+      headerRef={openHeaderRef}
       onCopyLast={() => {
-        const prev = focus.previous;
-        if (!prev) return;
-        setEdits({ setId: focus.setId, values: { ...prev.values, rpe: null, rir: null }, copied: true, ...(edits?.side !== undefined ? { side: edits.side } : {}) });
+        copyLast(focus);
       }}
       onLoad={(v) => {
         editLoad(focus, v);
@@ -1944,6 +1987,8 @@ export function WorkoutScreen() {
             afterSet={table.anchor !== null ? afterSetNode : null}
             afterSetKey={table.anchor !== null ? afterSetKey : null}
             adjust={<AdjustButton coach={coach} />}
+            warmUp={warmUpNode}
+            focusRef={openHeaderRef}
             adjustRow={focus ? <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} /> : null}
             footer={tableFooter}
             anchorRequest={anchorRequest}

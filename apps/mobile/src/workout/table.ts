@@ -64,6 +64,14 @@ export type AnchorEvent =
 export interface AnchorRequest {
   /** False: a jump (on open, restore, or Reduce Motion). */
   animated: boolean;
+  /**
+   * Where it lands under the pinned header: the after-set block when there
+   * is one, else the open row (`anchor`); or the open row itself, so its
+   * tiles sit above the keypad (`open_row`, WT39).
+   */
+  target: 'anchor' | 'open_row';
+  /** Move VoiceOver focus to the anchor once it's applied (§2A.7): on open, a view switch and after a Log. */
+  focus: boolean;
 }
 
 export function anchorReducer(cur: AnchorRequest | null, e: AnchorEvent, o: { reduceMotion: boolean }): AnchorRequest | null {
@@ -71,14 +79,17 @@ export function anchorReducer(cur: AnchorRequest | null, e: AnchorEvent, o: { re
     case 'opened':
     case 'view_switched':
       // Applied without animation on open, restore and a switch back from Focus.
-      return { animated: false };
+      return { animated: false, target: 'anchor', focus: true };
     case 'logged':
+      return { animated: !o.reduceMotion, target: 'anchor', focus: true };
     case 'now_chip':
+      return { animated: !o.reduceMotion, target: 'anchor', focus: false };
     case 'keypad_opened':
-      return { animated: !o.reduceMotion };
+      // The open row, not the after-set block above it: its tiles stay above the keypad (review S3).
+      return { animated: !o.reduceMotion, target: 'open_row', focus: false };
     case 'selected':
       // A row Ben tapped is on screen already: nothing moves under his thumb.
-      return e.onScreen ? cur : { animated: !o.reduceMotion };
+      return e.onScreen ? cur : { animated: !o.reduceMotion, target: 'anchor', focus: false };
     case 'user_scrolled':
     case 'applied':
       return null;
@@ -89,6 +100,15 @@ export function anchorReducer(cur: AnchorRequest | null, e: AnchorEvent, o: { re
     case 'toast':
       return cur;
   }
+}
+
+/**
+ * The keypad moves the list only when one of the open row's own tiles has
+ * focus (`TextInput.State.currentlyFocusedInput()`, null at runtime when
+ * nothing has focus), never for a note, rename or coach keyboard (review S3).
+ */
+export function isTileFocused(focused: unknown, tiles: readonly unknown[]): boolean {
+  return focused !== null && focused !== undefined && tiles.some((t) => t !== null && t !== undefined && t === focused);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +171,43 @@ export function rowTap(row: Pick<TableRow, 'state' | 'setId'>): RowTap {
 /** The one command a select sends: `set_active_set`, versioned. Never `log_set`. */
 export function selectCommand(setId: string, expectedVersion: number, at: ZonedTimestamp, opId: string): Extract<SessionCommand, { type: 'set_active_set' }> {
   return { type: 'set_active_set', at, opId, setId, expectedVersion };
+}
+
+/** The part of a command outcome a select needs. */
+export type SelectOutcome = { ok: true; aggregate: { session: { version: number } } } | { ok: false; error: { code: string; message: string } };
+
+export interface SelectRowInput {
+  setId: string;
+  /** The session version the screen holds. */
+  version: number;
+  /** The open row's unsaved edit as a `save_draft`, or null when there is none. */
+  draft: Extract<SessionCommand, { type: 'save_draft' }> | null;
+  at: ZonedTimestamp;
+  opId: string;
+  /** Saves the draft (a plain dispatch). */
+  save: (cmd: SessionCommand) => Promise<SelectOutcome>;
+  /** Sends the select (the screen's `run`, which updates the screen and reloads after a refusal). */
+  select: (cmd: Extract<SessionCommand, { type: 'set_active_set' }>) => Promise<SelectOutcome>;
+}
+
+/**
+ * Selecting a pending row (§2A.7, Ben decision 4): the open row's unsaved
+ * edit is saved first (the 300 ms debounce would otherwise be cancelled by
+ * the select), then `set_active_set` goes with the version that save
+ * returned, so it isn't refused as stale. A failed save still selects on
+ * the screen's version. Never logs. Returns what to tell Ben: nothing, or
+ * the refusal (a stale version is quiet: the screen reloads and a double
+ * tap needs no message).
+ */
+export async function selectRowFlow(i: SelectRowInput): Promise<{ ok: true } | { ok: false; quiet: boolean; code: string; message: string }> {
+  let version = i.version;
+  if (i.draft !== null) {
+    const saved = await i.save(i.draft);
+    if (saved.ok) version = saved.aggregate.session.version;
+  }
+  const r = await i.select(selectCommand(i.setId, version, i.at, i.opId));
+  if (r.ok) return { ok: true };
+  return { ok: false, quiet: r.error.code === 'stale_version' || r.error.code === 'write_conflict', code: r.error.code, message: r.error.message };
 }
 
 // ---------------------------------------------------------------------------

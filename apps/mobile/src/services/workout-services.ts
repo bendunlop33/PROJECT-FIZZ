@@ -7,6 +7,7 @@ import {
   applyCheckInPatch,
   buildActiveSetView,
   buildWorkoutTableView,
+  exerciseCardFacts,
   buildLiftHighlight,
   buildAddSetContinuation,
   buildGymSwitchProposal,
@@ -75,6 +76,7 @@ import {
   routineLastDone,
   ruleTargetRpes,
   type RuleExerciseInfo,
+  type ExerciseCardFacts,
   type FinishedRef,
   type RoutineChange,
   type RoutineNameCheck,
@@ -1647,6 +1649,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const info = data.exerciseInfo ?? {};
       const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
       return buildWorkoutTableView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe });
+    },
+
+    /** `exerciseCardFacts` for any card's `⋯` and name sheet, with the built-in target RPE as the default (§2A.7). */
+    cardFacts(data: ActiveWorkoutData, sessionExerciseId: string): ExerciseCardFacts | null {
+      const info = data.exerciseInfo ?? {};
+      const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
+      return exerciseCardFacts({ aggregate: data.aggregate, ruleTargetRpe }, sessionExerciseId);
     },
 
     /** `buildSetEditView` over loaded data: the correction sheet, with the built-in target RPE as the default (CHANGELOG 2026-10-11 (b)). */
