@@ -91,6 +91,8 @@ import {
   swapRoutineSlot,
   addTargets,
   NBSP,
+  fixedLoadSteps,
+  type StepTarget,
   addedSlotShape,
   applyEditsToRoutine,
   equipmentHere,
@@ -170,7 +172,8 @@ import {
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type {
-  Load,
+  LoadConvention,
+  WeightUnit,
   ActionRecord,
   DraftBasis,
   PreStartDraft,
@@ -3250,14 +3253,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
     },
 
-    /** The keypad's note for a typed load (§11.4): `Rounds to 97.5 kg here`, `Most here: 30 kg each`; null when makeable. Reads only. */
-    async loadNote(req: { equipmentId: string | null; load: Load }): Promise<string | null> {
-      try {
-        const eq = req.equipmentId === null ? null : await repos().equipment.get(req.equipmentId);
-        return todayLoadNote(req.load, eq ?? null);
-      } catch {
-        return null;
-      }
+    /**
+     * Today's load keypad (§11.4) for a value in the row's frame: the
+     * stepper's next achievable loads on this item (as the editor's Fixed
+     * load), and the note before `Set target` (`Rounds to 97.5 kg here`,
+     * `Most here: 30 kg each`; null when makeable). Reads only.
+     */
+    async loadKeypad(req: { equipmentId: string | null; unit: WeightUnit; convention: LoadConvention; value: number | null }): Promise<{ down: StepTarget; up: StepTarget; note: string | null }> {
+      const eq = req.equipmentId === null ? null : await repos().equipment.get(req.equipmentId).catch(() => null);
+      const steps = fixedLoadSteps(req.value, { unit: req.unit, convention: req.convention }, eq ?? null);
+      const note = req.value === null ? null : todayLoadNote({ value: req.value, unit: req.unit, convention: req.convention }, eq ?? null);
+      return { ...steps, note };
     },
 
     /**

@@ -112,7 +112,10 @@ describe('Edit mode: sets, reps, load and add (TE-B1 to TE-B6, TE-B10, TE-B11)',
     const p3 = await load(s, gymId, routineId);
     const bench = rowNamed(p3, 'Bench press');
     expect(bench.editRow.keypad).toMatchObject({ unit: 'kg', convention: 'total' });
-    expect(await s.overview.loadNote({ equipmentId: bench.editRow.keypad?.equipmentId ?? null, load: { value: 62.5, unit: 'kg', convention: 'total' } })).toBeNull();
+    const keypad = await s.overview.loadKeypad({ equipmentId: bench.editRow.keypad?.equipmentId ?? null, unit: 'kg', convention: 'total', value: 62.5 });
+    expect(keypad.note).toBeNull();
+    expect(keypad.up).toMatchObject({ enabled: true });
+    expect((await s.overview.loadKeypad({ equipmentId: bench.editRow.keypad?.equipmentId ?? null, unit: 'kg', convention: 'total', value: 61 })).note).toMatch(/^Rounds to 60 kg here$/);
     expect((await s.overview.edit({ ...base(p3, gymId, routineId, 'load-1'), edit: { kind: 'load', slotKey: bench.slotKey, load: { value: 62.5, unit: 'kg', convention: 'total' } } })).ok).toBe(true);
 
     // Add an exercise: candidates are this gym's, not in today's plan; the pick goes at the end.

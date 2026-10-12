@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, LayoutAnimation, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { overviewDoneBy, statStripSpoken, type TargetExplanation } from '@fizz/domain';
+import { overviewDoneBy, statStripSpoken, type StepTarget, type TargetExplanation, type TemplateLine } from '@fizz/domain';
 import type { CheckIn, CheckInScore } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
@@ -14,10 +14,10 @@ import { formatShortDate } from '../../format/dates';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openStartedWorkout, popToTabs, popToToday, replaceWithWorkouts } from '../../navigation/actions';
 import type { LibraryToastParam, RootStackParams } from '../../navigation/types';
-import { STALE_PREVIEW, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
+import { STALE_PREVIEW, type AddSheet, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, Icon, OverviewRow, PrimaryButton, ReorderRow, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast } from '../../ui';
+import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, EditLink, EditRow, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
   checkInRow,
@@ -44,8 +44,19 @@ import {
   listHeaderText,
   noSwapsText,
   pageToast,
-  reorderUnits,
   rowCustomActions,
+  defaultChecked,
+  EDIT_MODE_COPY,
+  editModeToast,
+  editMoves,
+  editRowCustomActions,
+  editTopBar,
+  loadPayload,
+  typedLoadText,
+  updateCardState,
+  updateLink,
+  type EditRowAction,
+  type EditRowPillKey,
   showsWhy,
   swapSubtitle,
   swapTap,
@@ -59,6 +70,7 @@ import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { LIBRARY_COPY_UI, LIBRARY_TOASTS } from '../../workout/library-view';
 import { isShownRow, SESSION_PICKER_COPY, switchSession } from '../../workout/session-picker';
 import { SessionPickerSheet } from './SessionPickerSheet';
+import { AddExerciseSheet, LoadSheet, RepsSheet } from './OverviewEditSheets';
 import { TargetWhyPanel } from './TargetWhyPanel';
 
 /**
@@ -136,7 +148,13 @@ export function WorkoutOverviewScreen() {
   // Today's edits: one draft write at a time, one opId per intent until it lands (§4.2, §3).
   const [editGuard] = useState(createGuard);
   const [ops] = useState(() => createOpIds(newUuid));
-  const [reordering, setReordering] = useState(false);
+  // Edit mode (§11.3, TE11): every row's controls at once; `⋯ → Reorder` opens it too.
+  const [editing, setEditing] = useState(false);
+  const [repsSlot, setRepsSlot] = useState<string | null>(null);
+  const [loadEdit, setLoadEdit] = useState<{ slotKey: string; value: number | null; down: StepTarget; up: StepTarget; note: string | null } | null>(null);
+  const [adding, setAdding] = useState<{ query: string; showAll: boolean; sheet: AddSheet | null; loading: boolean } | null>(null);
+  // `Update Push A` (§11.5): the lines as the card opened, Ben's ticks, and the record once applied.
+  const [update, setUpdate] = useState<{ routineId: string; routineName: string; routineVersion: number; lines: TemplateLine[]; checked: Set<string>; applied: string | null } | null>(null);
   const [swap, setSwap] = useState<{ slotKey: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [card, setCard] = useState<ChangeCard | null>(null);
   const [cardBusy, setCardBusy] = useState(false);
@@ -434,7 +452,7 @@ export function WorkoutOverviewScreen() {
       const picked = options[i];
       if (picked === TODAY_EDITS_COPY.reorder) {
         setOpen(null);
-        setReordering(true);
+        setEditing(true);
       }
       if (picked === TODAY_EDITS_COPY.resetEdits) void resetEdits();
       if (picked === LIBRARY_COPY_UI.saveToWorkouts && page !== null) {
@@ -541,7 +559,8 @@ export function WorkoutOverviewScreen() {
           setOpen(null);
           setCard(null);
           setSwap(null);
-          setReordering(false);
+          setEditing(false);
+          setUpdate(null);
           setStartError(null);
           setTarget(t);
           scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -718,9 +737,177 @@ export function WorkoutOverviewScreen() {
     if (w && w.removed.length > 0) toastWithUndo(editToast.editsReset, (v) => restoreEdits(w.removed, v), w.draft?.version ?? null);
   }
 
-  async function resetOrder() {
-    const w = await writeEdit('reset-order', (b) => services.overview.resetOrder(b));
-    if (w && w.removed.length > 0) toastWithUndo(editToast.orderReset, (v) => restoreEdits(w.removed, v), w.draft?.version ?? null);
+  // -------------------------------------------------------------------------
+  // Edit mode (§11): sets, reps, today's load, add, remove. Each applies at once; steppers show no toast (TE14).
+
+  type Row = OverviewData['view']['rows'][number];
+
+  async function stepSets(r: Row, step: NonNullable<Row['editRow']['setsUp']>) {
+    // Back at the plan's count clears the edit (`−` undoes `+` in place).
+    if (step.clear) await writeEdit(`sets:${r.slotKey}`, (b) => services.overview.clearEdit({ ...b, kind: 'sets', slotKey: r.slotKey }));
+    else await writeEdit(`sets:${r.slotKey}:${String(step.workingSets)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'sets', slotKey: r.slotKey, workingSets: step.workingSets } }));
+  }
+
+  async function doneReps(r: Row, payload: { kind: 'clear' } | { kind: 'reps'; reps: { min: number; max: number } | null; durationS: number | null }) {
+    setRepsSlot(null);
+    if (payload.kind === 'clear') {
+      if (r.editRow.repsEdited) await writeEdit(`reps-clear:${r.slotKey}`, (b) => services.overview.clearEdit({ ...b, kind: 'reps', slotKey: r.slotKey }));
+      return;
+    }
+    await writeEdit(`reps:${r.slotKey}:${JSON.stringify(payload)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'reps', slotKey: r.slotKey, reps: payload.reps, durationS: payload.durationS } }));
+  }
+
+  async function openLoad(r: Row) {
+    const k = r.editRow.keypad;
+    if (k === null || switching.current) return;
+    const steps = await services.overview.loadKeypad({ equipmentId: k.equipmentId, unit: k.unit, convention: k.convention, value: k.value }).catch(() => null);
+    setLoadEdit({ slotKey: r.slotKey, value: k.value, down: steps?.down ?? { enabled: false, reason: '' }, up: steps?.up ?? { enabled: false, reason: '' }, note: steps?.note ?? null });
+  }
+
+  async function typeLoad(r: Row, value: number | null) {
+    const k = r.editRow.keypad;
+    if (k === null) return;
+    setLoadEdit((cur) => (cur?.slotKey === r.slotKey ? { ...cur, value } : cur));
+    const steps = await services.overview.loadKeypad({ equipmentId: k.equipmentId, unit: k.unit, convention: k.convention, value }).catch(() => null);
+    if (steps !== null) setLoadEdit((cur) => (cur?.slotKey === r.slotKey && cur.value === value ? { ...cur, ...steps } : cur));
+  }
+
+  async function setLoad(r: Row) {
+    const k = r.editRow.keypad;
+    const value = loadEdit?.value ?? null;
+    setLoadEdit(null);
+    if (k === null || value === null) return;
+    const load = loadPayload(value, k);
+    if (load === null) return;
+    const w = await writeEdit(`load:${r.slotKey}:${String(value)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'load', slotKey: r.slotKey, load } }));
+    const added = w?.added[0];
+    if (w && added !== undefined) toastWithUndo(editModeToast.target(typedLoadText(load)), (v) => undoEdit(added, v), w.draft?.version ?? null);
+  }
+
+  async function usePlannedLoad(r: Row) {
+    setLoadEdit(null);
+    await writeEdit(`load-clear:${r.slotKey}`, (b) => services.overview.clearEdit({ ...b, kind: 'load', slotKey: r.slotKey }));
+  }
+
+  async function removeAdded(r: Row) {
+    if (r.edit?.kind !== 'added') return;
+    const w = await undoEdit(r.edit.editId);
+    if (w && w.removed.length > 0) toastWithUndo(editModeToast.removed(r.name), (v) => restoreEdits(w.removed, v), w.draft?.version ?? null);
+  }
+
+  async function loadAdd(query: string, showAll: boolean) {
+    if (!page) return;
+    setAdding((cur) => ({ query, showAll, sheet: cur?.sheet ?? null, loading: true }));
+    const sheet = await services.overview.addCandidates({ target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page.planCheckIn?.id ?? null, query, showAll }).catch(() => null);
+    // Only the latest search lands.
+    setAdding((cur) => (cur !== null && cur.query === query && cur.showAll === showAll ? { query, showAll, sheet, loading: false } : cur));
+  }
+
+  async function pickAdd(row: AddSheet['rows'][number]) {
+    const go = async () => {
+      setAdding(null);
+      const w = await writeEdit(`add:${row.exerciseId}`, (b) => services.overview.edit({ ...b, edit: { kind: 'add', exerciseId: row.exerciseId } }));
+      const added = w?.added[0];
+      if (w && added !== undefined) toastWithUndo(editModeToast.added(row.name), (v) => undoEdit(added, v), w.draft?.version ?? null);
+    };
+    if (row.mayHurt !== null) {
+      // EL9: a flagged exercise asks first; `Choose another` keeps the list open.
+      const c = row.mayHurt.confirm;
+      Alert.alert(c.title, c.message, [
+        { text: c.cancel, style: 'cancel' },
+        { text: c.confirm, onPress: () => void go() },
+      ]);
+      return;
+    }
+    await go();
+  }
+
+  function editRowPill(r: Row, key: EditRowPillKey) {
+    if (key === 'swap') void openSwap(r.slotKey);
+    if (key === 'skip') void skipRow(r);
+    if (key === 'bring_back' && r.edit !== null) void undoEdit(r.edit.editId);
+    if (key === 'remove') void removeAdded(r);
+  }
+
+  function editRowAction(r: Row, name: EditRowAction['name']) {
+    if (name === 'add_set' && r.editRow.setsUp) void stepSets(r, r.editRow.setsUp);
+    if (name === 'remove_set' && r.editRow.setsDown) void stepSets(r, r.editRow.setsDown);
+    if (name === 'change_reps') setRepsSlot(r.slotKey);
+    if (name === 'change_target') void openLoad(r);
+    if (name === 'move_up') void moveRow(r, 'up');
+    if (name === 'move_down') void moveRow(r, 'down');
+    if (name === 'swap' || name === 'skip' || name === 'bring_back' || name === 'remove') editRowPill(r, name);
+  }
+
+  /** `Update Push A ›` → the card, with skips unticked (TE15). `Save to Workouts ›` on a next session. */
+  function openUpdate() {
+    if (!page) return;
+    const link = updateLink(page);
+    if (link?.kind === 'save') {
+      void saveSheet.open({ kind: 'preview', target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? null, previewKey: page.view.previewKey }, page.view.title);
+      return;
+    }
+    const c = page.templateCard;
+    if (c === null) return;
+    setUpdate({ routineId: c.routineId, routineName: c.routineName, routineVersion: c.routineVersion, lines: c.lines, checked: defaultChecked(c.lines), applied: null });
+  }
+
+  /** Apply (§11.5): the checked lines, versioned on the workout the card opened on and on today's draft (rule 5). */
+  async function applyUpdate() {
+    const u = update;
+    if (!page || u === null || page.draft === null) return;
+    const draft = page.draft;
+    await editGuard.run(async () => {
+      setCardBusy(true);
+      try {
+        const intent = `update:${u.routineId}:${String(u.routineVersion)}`;
+        const r = await services.routines
+          .applyTodayEdits({ target, gymId: page.view.gym?.id ?? null, checkInId: tappedRef.current?.id ?? page.planCheckIn?.id ?? null, routineId: u.routineId, expectedRoutineVersion: u.routineVersion, draft: { id: draft.id, expectedVersion: draft.version }, lineKeys: [...u.checked], opId: ops.of(intent) })
+          .catch(() => null);
+        if (r === null) {
+          setToast({ text: TODAY_EDITS_COPY.editFailed });
+          return;
+        }
+        ops.done(intent);
+        changed();
+        if (!r.ok) {
+          // Out of date: the card turns `Was suggested:` once the page re-reads; anything else says so.
+          if (r.reason !== 'stale') setToast({ text: r.message });
+          else if (page.routine?.version === u.routineVersion) setToast({ text: STALE_PREVIEW });
+          return;
+        }
+        const actionId = r.action.actionId;
+        setUpdate({ ...u, applied: actionId });
+        haptic('step');
+        setToast({
+          text: editModeToast.updated(u.routineName),
+          action: TODAY_EDITS_COPY.undo,
+          onAction: () => {
+            setToast(null);
+            void undoUpdate(actionId, u.routineName);
+          },
+        });
+      } finally {
+        setCardBusy(false);
+      }
+    });
+  }
+
+  async function undoUpdate(actionId: string, routineName: string) {
+    await editGuard.run(async () => {
+      const r = await services.routines.revert({ actionId, opId: ops.of(`undo-update:${actionId}`) }).catch(() => null);
+      if (r === null) {
+        setToast({ text: TODAY_EDITS_COPY.editFailed });
+        return;
+      }
+      ops.done(`undo-update:${actionId}`);
+      changed();
+      if (!r.ok) {
+        setToast({ text: r.reason === 'changed_since' ? editToast.cantUndo(routineName) : r.message });
+        return;
+      }
+      setUpdate(null);
+    });
   }
 
   /** `Change Push A too ›` → Apply (TE4): the routine from now on, with its own Undo. Versioned on the routine the card was opened on. */
@@ -800,21 +987,21 @@ export function WorkoutOverviewScreen() {
     </Pressable>
   ) : null;
 
-  // Reorder mode (§2.3): `Reset order` (only when the order changed) and `Done`; Start stays live below.
-  const reorderBar = (
+  // Edit mode's bar (§11.3): `Reset` (only with edits) and `Done`; Start stays live below.
+  const editBar = (
     <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.components.screenMargin }}>
-      {page?.reordered === true ? <TextButton label={TODAY_EDITS_COPY.resetOrder} tone="secondary" onPress={() => void resetOrder()} /> : <View />}
+      {page !== null && editTopBar(page.view).reset ? <TextButton label={EDIT_MODE_COPY.reset} tone="secondary" accessibilityLabel={TODAY_EDITS_COPY.resetEdits} onPress={() => void resetEdits()} /> : <View />}
       <TextButton
-        label={TODAY_EDITS_COPY.done}
+        label={EDIT_MODE_COPY.done}
         onPress={() => {
-          setReordering(false);
+          setEditing(false);
         }}
       />
     </View>
   );
 
-  const topBar = reordering && page ? (
-    reorderBar
+  const topBar = editing && page ? (
+    editBar
   ) : (
     <>
       <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: theme.space['2'], paddingRight: theme.space['3'] }}>
@@ -824,6 +1011,14 @@ export function WorkoutOverviewScreen() {
         {page ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], flexShrink: 1 }}>
             {stacked ? null : gymChip}
+            <TextButton
+              label={EDIT_MODE_COPY.edit}
+              accessibilityLabel="Edit today’s workout"
+              onPress={() => {
+                setOpen(null);
+                setEditing(true);
+              }}
+            />
             <Pressable accessibilityRole="button" accessibilityLabel="More" onPress={menu} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="ellipsis" color="text.primary" size={20} />
             </Pressable>
@@ -1014,8 +1209,38 @@ export function WorkoutOverviewScreen() {
     );
   };
 
+  const moves = editMoves(view.groups);
+  const link = updateLink(page);
+  const renderEditRow = (r: (typeof view.rows)[number]) => {
+    const m = moves.get(r.slotKey) ?? null;
+    return (
+      <EditRow
+        key={r.slotKey}
+        row={r}
+        moves={m}
+        stacked={stacked}
+        last={r.slotKey === lastRowId}
+        customActions={editRowCustomActions(r, m)}
+        onSets={(step) => void stepSets(r, step)}
+        onReps={() => {
+          setRepsSlot(r.slotKey);
+        }}
+        onLoad={() => void openLoad(r)}
+        onPill={(key) => {
+          editRowPill(r, key);
+        }}
+        onMove={(how) => void moveRow(r, how)}
+        onCustomAction={(name) => {
+          editRowAction(r, name);
+        }}
+      />
+    );
+  };
+  const repsRow = repsSlot === null ? null : (view.rows.find((r) => r.slotKey === repsSlot) ?? null);
+  const loadRow = loadEdit === null ? null : (view.rows.find((r) => r.slotKey === loadEdit.slotKey) ?? null);
+
   const body = (
-    <ScrollView ref={scrollRef} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}>
+    <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}>
       <AppText variant="sectionLabel" color="text.tertiary" style={{ marginTop: 10 }}>
         {eyebrowText(view.basis, (ms, tz) => formatShortDate(ms, tz))}
       </AppText>
@@ -1060,23 +1285,55 @@ export function WorkoutOverviewScreen() {
           {OVERVIEW_COPY.target}
         </AppText>
       </View>
-      {reordering
-        ? reorderUnits(view.groups).map((u) => {
-            const r = view.rows.find((x) => x.slotKey === u.slotKey);
-            return (
-              <ReorderRow
-                key={u.slotKey}
-                unit={u}
-                stacked={stacked}
-                onUp={() => {
-                  if (r) void moveRow(r, 'up');
-                }}
-                onDown={() => {
-                  if (r) void moveRow(r, 'down');
-                }}
-              />
-            );
-          })
+      {editing
+        ? [
+            ...view.groups.map((g) =>
+              g.kind === 'single' ? (
+                renderEditRow(g.row)
+              ) : (
+                <SupersetBracket key={g.rows.map((r) => r.slotKey).join('+')}>{g.rows.map((r) => renderEditRow(r))}</SupersetBracket>
+              ),
+            ),
+            <EditLink key="add" text={EDIT_MODE_COPY.addExercise} icon="plus" onPress={() => void loadAdd('', false)} />,
+            ...(link !== null && update === null ? [<EditLink key="update" text={link.text} onPress={openUpdate} />] : []),
+            ...(update !== null
+              ? [
+                  (() => {
+                    const st = updateCardState(update, page.routine?.version ?? null, update.checked);
+                    return (
+                      <UpdateCard
+                        key="update-card"
+                        state={st.state}
+                        routineName={update.routineName}
+                        lines={update.lines}
+                        checked={update.checked}
+                        applyEnabled={st.applyEnabled}
+                        busy={cardBusy}
+                        onToggle={(key) => {
+                          setUpdate((u) => {
+                            if (u === null) return u;
+                            const next = new Set(u.checked);
+                            if (next.has(key)) next.delete(key);
+                            else next.add(key);
+                            return { ...u, checked: next };
+                          });
+                        }}
+                        onApply={() => void applyUpdate()}
+                        onNotNow={() => {
+                          setUpdate(null);
+                        }}
+                        onUndo={() => {
+                          if (update.applied !== null) void undoUpdate(update.applied, update.routineName);
+                        }}
+                        onDismiss={() => {
+                          setUpdate(null);
+                        }}
+                      />
+                    );
+                  })(),
+                ]
+              : []),
+          ]
         : view.groups.map((g) =>
             g.kind === 'single' ? (
               renderRow(g.row, false)
@@ -1205,6 +1462,48 @@ export function WorkoutOverviewScreen() {
         </AppText>
         {why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}
       </BottomCard>
+      <RepsSheet
+        row={repsRow}
+        onDone={(payload) => {
+          if (repsRow) void doneReps(repsRow, payload);
+        }}
+        onUsePlanned={() => {
+          if (repsRow) void doneReps(repsRow, { kind: 'clear' });
+        }}
+        onClose={() => {
+          setRepsSlot(null);
+        }}
+      />
+      <LoadSheet
+        row={loadRow}
+        keypad={loadEdit}
+        onValue={(v) => {
+          if (loadRow) void typeLoad(loadRow, v);
+        }}
+        onSet={() => {
+          if (loadRow) void setLoad(loadRow);
+        }}
+        onUsePlanned={() => {
+          if (loadRow) void usePlannedLoad(loadRow);
+        }}
+        onClose={() => {
+          setLoadEdit(null);
+        }}
+      />
+      <AddExerciseSheet
+        visible={adding !== null}
+        sheet={adding?.sheet ?? null}
+        loading={adding?.loading ?? false}
+        query={adding?.query ?? ''}
+        stacked={stacked}
+        onQuery={(q) => void loadAdd(q, adding?.showAll ?? false)}
+        onShowAll={() => void loadAdd(adding?.query ?? '', true)}
+        onPick={(r) => void pickAdd(r)}
+        onClose={() => {
+          setAdding(null);
+        }}
+      />
+      <NumberAccessory />
       {pickerSheet}
       {saveSheet.sheet}
       {page.routine ? (

@@ -98,7 +98,11 @@ export function ChangeMarker({ marker }: { marker: MarkerWords }) {
             ? 'arrow.left.arrow.right'
             : marker.glyph === 'skip'
               ? 'minus.circle'
-              : null;
+              : marker.glyph === 'add'
+                ? 'plus.circle'
+                : marker.glyph === 'edit'
+                  ? 'pencil'
+                  : null;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
       {glyph ? <Icon name={glyph} color={color} size={marker.glyph === 'warning' ? 13 : 11} weight="semibold" /> : null}

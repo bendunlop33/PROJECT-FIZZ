@@ -565,7 +565,7 @@ export function createAppServices(deps: AppServicesDeps) {
     async addCandidates(req: Omit<Parameters<typeof loop.overview.addCandidates>[0], 'typicalEquipment'>) {
       return loop.overview.addCandidates({ ...req, ...(await typicalFor(req.gymId)) });
     },
-    loadNote: (req: Parameters<typeof loop.overview.loadNote>[0]) => loop.overview.loadNote(req),
+    loadKeypad: (req: Parameters<typeof loop.overview.loadKeypad>[0]) => loop.overview.loadKeypad(req),
   };
 
   /** Workouts: `Update Push A` plans from the same page, so with no gym it is checked against the typical gym's items too. */

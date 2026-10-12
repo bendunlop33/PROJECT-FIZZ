@@ -1,4 +1,4 @@
-import type { OverviewGroup, OverviewRow, SubstituteRow, WorkoutOverview } from '@fizz/domain';
+import type { OverviewGroup, OverviewRow, StepTarget, SubstituteRow, WorkoutOverview } from '@fizz/domain';
 
 /**
  * Screen-side rules for today's edits on the Workout overview
@@ -200,4 +200,185 @@ export function pageToast(page: { cleared: boolean; removedEdits: number; draft:
     return shown.has(key) ? null : { key, text: editToast.planChanged(page.removedEdits) };
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Edit mode (overview-today-edits §11): what the page shows and sends. Pure.
+
+export const EDIT_MODE_COPY = {
+  edit: 'Edit',
+  done: 'Done',
+  reset: 'Reset',
+  swap: 'Swap',
+  skip: 'Skip',
+  bringBack: 'Bring back',
+  remove: 'Remove',
+  addExercise: 'Add exercise',
+  updateLink: (routineName: string) => `Update ${routineName} ›`,
+  saveLink: 'Save to Workouts ›',
+  updateTitle: (routineName: string) => `Update ${routineName}`,
+  scope: (routineName: string) => `${routineName} from now on`,
+  applied: (routineName: string) => `✓ Applied · ${routineName} from now on`,
+  notNow: 'Not now',
+  apply: 'Apply',
+  wasSuggested: 'Was suggested:',
+  dismiss: 'Dismiss',
+  undo: 'Undo',
+  repsTitle: (name: string) => `Reps · ${name}`,
+  range: 'Range',
+  exact: 'Exact',
+  workTime: 'Work time',
+  usePlanned: 'Use planned',
+  setTarget: 'Set target',
+  ben: 'Ben',
+  noHistory: 'No history',
+  nothingHere: (gymName: string) => `Nothing else here at ${gymName}.`,
+  showAll: 'Show all',
+  search: 'Search',
+} as const;
+
+/** Edit mode's toasts (§11.8). Steppers show none (`−` undoes `+` in place, TE14). */
+export const editModeToast = {
+  added: (name: string) => `${name} added`,
+  removed: (name: string) => `${name} removed`,
+  target: (loadText: string) => `Target ${loadText} today`,
+  updated: (routineName: string) => `${routineName} updated`,
+} as const;
+
+/** The Edit mode top bar (§11.3): `Reset` only with edits; `Done` always. */
+export function editTopBar(view: Pick<WorkoutOverview, 'editCount'>): { reset: boolean } {
+  return { reset: view.editCount > 0 };
+}
+
+export type EditRowPillKey = 'swap' | 'skip' | 'bring_back' | 'remove';
+
+/** An Edit mode row's outline pills (§11.3): `Swap` · `Skip`; a skipped row `Bring back`; an added one `Remove`. */
+export function editRowPills(row: Pick<OverviewRow, 'name' | 'actions'>): { key: EditRowPillKey; label: string; accessibilityLabel: string }[] {
+  const a = row.actions;
+  const out: { key: EditRowPillKey; label: string; accessibilityLabel: string }[] = [];
+  const pill = (key: EditRowPillKey, label: string) => out.push({ key, label, accessibilityLabel: `${label}: ${row.name}` });
+  if (a.bringBack) {
+    pill('bring_back', EDIT_MODE_COPY.bringBack);
+    return out;
+  }
+  if (a.remove) {
+    pill('remove', EDIT_MODE_COPY.remove);
+    return out;
+  }
+  if (a.swap) pill('swap', EDIT_MODE_COPY.swap);
+  if (a.skip) pill('skip', EDIT_MODE_COPY.skip);
+  return out;
+}
+
+export type EditRowAction = { name: 'add_set' | 'remove_set' | 'change_reps' | 'change_target' | EditRowPillKey | 'move_up' | 'move_down'; label: string };
+
+/** VoiceOver custom actions on an Edit mode row (§11.7): Add set, Remove set, Change reps, Change target, Swap, Skip, Move up, Move down. */
+export function editRowCustomActions(row: Pick<OverviewRow, 'name' | 'actions' | 'editRow' | 'edit'>, moves: { up: boolean; down: boolean } | null): EditRowAction[] {
+  if (row.edit?.kind === 'skipped') return [{ name: 'bring_back', label: EDIT_MODE_COPY.bringBack }, ...moveActions(moves)];
+  const out: EditRowAction[] = [];
+  if (row.editRow.setsUp !== null) out.push({ name: 'add_set', label: 'Add set' });
+  if (row.editRow.setsDown !== null) out.push({ name: 'remove_set', label: 'Remove set' });
+  out.push({ name: 'change_reps', label: 'Change reps' });
+  if (row.editRow.keypad !== null) out.push({ name: 'change_target', label: 'Change target' });
+  for (const p of editRowPills(row)) out.push({ name: p.key, label: p.label });
+  return [...out, ...moveActions(moves)];
+}
+
+function moveActions(moves: { up: boolean; down: boolean } | null): EditRowAction[] {
+  if (moves === null) return [];
+  return [...(moves.up ? [{ name: 'move_up' as const, label: 'Move up' }] : []), ...(moves.down ? [{ name: 'move_down' as const, label: 'Move down' }] : [])];
+}
+
+/**
+ * Which rows carry `↑` `↓` in Edit mode (§11.3): every single row, and the
+ * first member of a superset (the group moves as one). Keyed by slot.
+ */
+export function editMoves(groups: readonly OverviewGroup[]): Map<string, ReorderUnit> {
+  return new Map(reorderUnits(groups).map((u) => [u.slotKey, u]));
+}
+
+/**
+ * The link under the list (§11.3, TE15): `Update Push A ›` on a saved
+ * workout with something to list; `Save to Workouts ›` on a next session
+ * with edits; nothing otherwise.
+ */
+export function updateLink(page: { templateCard: { routineName: string } | null; routine: { name: string } | null; view: Pick<WorkoutOverview, 'editCount'> }): { kind: 'update'; text: string } | { kind: 'save'; text: string } | null {
+  if (page.templateCard !== null) return { kind: 'update', text: EDIT_MODE_COPY.updateLink(page.templateCard.routineName) };
+  if (page.routine === null && page.view.editCount > 0) return { kind: 'save', text: EDIT_MODE_COPY.saveLink };
+  return null;
+}
+
+/** The Update card's state (§11.5): ready while Push A is at the card's version; `Was suggested:` once it moved; Apply needs a tick. */
+export function updateCardState(card: { routineVersion: number; applied: string | null }, routineVersion: number | null, checked: ReadonlySet<string>): { state: 'ready' | 'applied' | 'out_of_date'; applyEnabled: boolean } {
+  if (card.applied !== null) return { state: 'applied', applyEnabled: false };
+  if (routineVersion !== card.routineVersion) return { state: 'out_of_date', applyEnabled: false };
+  return { state: 'ready', applyEnabled: checked.size > 0 };
+}
+
+/** The lines checked when the card opens (TE15: skips unchecked). */
+export function defaultChecked(lines: readonly { key: string; checked: boolean }[]): Set<string> {
+  return new Set(lines.filter((l) => l.checked).map((l) => l.key));
+}
+
+// RepsSheet (§11.4)
+
+export const REPS_LIMITS = { min: 1, max: 50, minWorkS: 5, maxWorkS: 600, workStepS: 5 } as const;
+
+export type RepsDraft = { kind: 'reps'; exact: boolean; min: number; max: number } | { kind: 'time'; seconds: number };
+
+/** The sheet as it opens: the row's reps (or work time) today. */
+export function repsDraftOf(row: Pick<OverviewRow['editRow'], 'reps' | 'durationS' | 'timed'>): RepsDraft {
+  if (row.timed || (row.reps === null && row.durationS !== null)) return { kind: 'time', seconds: row.durationS ?? 45 };
+  const r = row.reps ?? { min: 8, max: 12 };
+  return { kind: 'reps', exact: r.min === r.max, min: r.min, max: r.max };
+}
+
+type Step = StepTarget;
+const step = (to: number, lo: number, hi: number, label: (n: number) => string): Step => (to < lo || to > hi ? { enabled: false, reason: to < lo ? `Min ${label(lo)}` : `Max ${label(hi)}` } : { enabled: true, value: to, label: label(to) });
+
+/** The sheet's steppers: ±1 rep within 1–50 (`To` never under `From`); ±5 s within 0:05–10:00. */
+export function repsSteps(d: RepsDraft): { from?: { down: Step; up: Step }; to?: { down: Step; up: Step }; time?: { down: Step; up: Step } } {
+  const n = (x: number) => String(x);
+  if (d.kind === 'time') {
+    const s = (x: number) => `${String(x)} s`;
+    return { time: { down: step(d.seconds - REPS_LIMITS.workStepS, REPS_LIMITS.minWorkS, REPS_LIMITS.maxWorkS, s), up: step(d.seconds + REPS_LIMITS.workStepS, REPS_LIMITS.minWorkS, REPS_LIMITS.maxWorkS, s) } };
+  }
+  const from = { down: step(d.min - 1, REPS_LIMITS.min, REPS_LIMITS.max, n), up: step(d.min + 1, REPS_LIMITS.min, d.exact ? REPS_LIMITS.max : d.max, n) };
+  return d.exact ? { from } : { from, to: { down: step(d.max - 1, d.min, REPS_LIMITS.max, n), up: step(d.max + 1, d.min, REPS_LIMITS.max, n) } };
+}
+
+/** A typed or stepped value, kept inside the limits (and `To` ≥ `From`). */
+export function repsDraftWith(d: RepsDraft, field: 'from' | 'to' | 'time' | 'exact' | 'range', value = 0): RepsDraft {
+  const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(Number.isFinite(x) ? x : lo)));
+  if (d.kind === 'time') return field === 'time' ? { kind: 'time', seconds: clamp(value, REPS_LIMITS.minWorkS, REPS_LIMITS.maxWorkS) } : d;
+  if (field === 'exact') return { ...d, exact: true, max: d.min };
+  if (field === 'range') return { ...d, exact: false, max: Math.min(REPS_LIMITS.max, Math.max(d.max, d.min + 2)) };
+  if (field === 'from') {
+    const min = clamp(value, REPS_LIMITS.min, REPS_LIMITS.max);
+    return { ...d, min, max: d.exact ? min : Math.max(min, d.max) };
+  }
+  if (field === 'to') return { ...d, max: clamp(value, d.min, REPS_LIMITS.max) };
+  return d;
+}
+
+/** `Done` (§11.4): one `reps` edit, or a clear when the sheet is back at the plan's own. */
+export function repsPayload(d: RepsDraft, planned: OverviewRow['editRow']['plannedReps']): { kind: 'clear' } | { kind: 'reps'; reps: { min: number; max: number } | null; durationS: number | null } {
+  if (d.kind === 'time') return planned.reps === null && planned.durationS === d.seconds ? { kind: 'clear' } : { kind: 'reps', reps: null, durationS: d.seconds };
+  const same = planned.reps !== null && planned.reps.min === d.min && planned.reps.max === d.max;
+  return same ? { kind: 'clear' } : { kind: 'reps', reps: { min: d.min, max: d.max }, durationS: null };
+}
+
+/** The load the keypad's `Set target` sends, in the row's frame (convention explicit, rule 4). */
+export function loadPayload(value: number, keypad: NonNullable<OverviewRow['editRow']['keypad']>): { value: number; unit: 'kg' | 'lb'; convention: NonNullable<OverviewRow['editRow']['keypad']>['convention'] } | null {
+  if (!Number.isFinite(value) || value < 0 || value > 2000) return null;
+  return { value: Math.round(value * 100) / 100, unit: keypad.unit, convention: keypad.convention };
+}
+
+/** A typed load for the toast: `27.5 kg`, `20 kg each`, `−30 kg` (assisted). */
+export function typedLoadText(load: { value: number; unit: 'kg' | 'lb'; convention: string }): string {
+  const n = `${String(Math.round(load.value * 100) / 100)} ${load.unit}`;
+  if (load.convention === 'per_hand') return `${n} each`;
+  if (load.convention === 'assistance') return `−${n}`;
+  if (load.convention === 'added') return `+${n}`;
+  return n;
 }
