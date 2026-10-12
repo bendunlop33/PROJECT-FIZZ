@@ -21,8 +21,8 @@ function testFiles(dir: string): string[] {
 }
 
 const ALL = ['packages', 'apps/mobile/test', 'scripts/test'].flatMap((d) => testFiles(join(ROOT, d)));
-// A wall-clock read in a test: `performance.now()` or the load-scaled `timingBudget`.
-const TIMED = /performance\.now\(\)|timingBudget\(|process\.hrtime/;
+// A wall-clock read in a test: `performance.now()`, `Date.now() -`, `process.hrtime`, the load-scaled `timingBudget` or `measureBlocking`.
+const TIMED = /performance\.now\(\)|timingBudget\(|measureBlocking\(|process\.hrtime|Date\.now\(\)\s*-/;
 
 describe('perf lane', () => {
   it('the default run excludes *.perf.test.ts; the perf config runs only them, one file at a time', () => {
@@ -34,7 +34,17 @@ describe('perf lane', () => {
   it('every test file that times itself is a perf test', () => {
     const timed = ALL.filter((f) => !f.endsWith('.perf.test.ts') && f !== 'scripts/test/perf-lane.test.ts' && TIMED.test(readFileSync(join(ROOT, f), 'utf8')));
     expect(timed).toEqual([]);
-    expect(ALL.filter((f) => f.endsWith('.perf.test.ts')).length).toBeGreaterThanOrEqual(8);
+    expect(ALL.filter((f) => f.endsWith('.perf.test.ts')).length).toBeGreaterThanOrEqual(7);
+  });
+
+  it('every perf test times itself: correctness checks stay in the blocking default suite', () => {
+    const untimed = ALL.filter((f) => f.endsWith('.perf.test.ts') && !TIMED.test(readFileSync(join(ROOT, f), 'utf8')));
+    expect(untimed).toEqual([]);
+  });
+
+  it('the guide D6 raster check runs in the default suite', () => {
+    expect(ALL).toContain('packages/catalogue/test/definition-raster.test.ts');
+    expect(ALL.some((f) => f.includes('definition') && f.endsWith('.perf.test.ts'))).toBe(false);
   });
 
   it('npm test runs the default config; test:perf the perf one', () => {

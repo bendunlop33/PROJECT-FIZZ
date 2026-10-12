@@ -1,7 +1,8 @@
 /**
  * Muscle definition D6 (exercise-guides-v2.md §4.11.11), the heavy part: rasterises
- * every guide at every key frame. Moved to the perf lane (`npm run test:perf`) so
- * machine load can't fail `npm test`; the cheap D6 checks stay in definition.test.ts.
+ * every guide at every key frame. A correctness check, so it stays in the blocking
+ * default suite (`npm test`, `npm run check`, CI `check`); its own file only so the
+ * long hang timeout is local. No wall-clock budget, so it is not a perf test.
  */
 import { Resvg } from '@resvg/resvg-js';
 import { describe, expect, it } from 'vitest';
@@ -26,7 +27,7 @@ function musclesOf(key: string) {
 }
 
 describe('drawing (§4.11.6–4.11.7)', () => {
-  // Rasterises every guide: 3× the old 60 s for a loaded machine (review progress-A r3 S1).
+  // Rasterises every guide. The timeout is a hang guard, not a budget: 3× the old 60 s for a loaded machine (review progress-A r3 S1).
   it('D6: one paint per pixel: coloured pixels are the same whether the faint shapes show or not (steady and at the pulse low)', { timeout: 180_000 }, () => {
     const PX = 240;
     for (const key of GUIDE_KEYS) {
