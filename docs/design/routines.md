@@ -310,7 +310,6 @@ Fixture: saved Push A, Pull A, Legs A (rotation, Legs A next), Arms (never done)
 - **WL-A7.** Duplicate makes `Push A copy` (not in the rotation) and opens it in the editor; toast Undo removes it.
 - **WL-A8.** Delete Push A confirms, removes it from the rotation, and Undo puts it back at the same place. Finished Push A workouts still open with their exercises.
 - **WL-A9.** Summary of an Empty workout shows `Save to Workouts`; saving creates a workout with the done exercises, set counts and rep ranges, loads `Auto`; the next overview for it shows targets from the built-in rule (or a D21 coach target) using that workout as history. The finished workout's version doesn't change.
-- **Open (N6, Ben to decide):** saving a `FROM HISTORY` row under another name (`Shoulders A`) links only the newest session; older `Shoulders` sessions stay as a `FROM HISTORY` row. Options: leave as is, or hide a history type once any of its sessions is saved.
 - **WL-A10.** (Uses a **named** imported type until session-picker Decision 1 enables FitNotes Category groups: `groupImportsByCategory` is off.) `Save` on the `Shoulders` history row creates `Shoulders` from the latest imported Shoulders session (no equipment pins, loads `Auto`). The row moves to `ALL WORKOUTS` with last done `4 days ago` (history kept, WL5).
 - **WL-A11.** Overview `⋯` → `Save to Workouts` with a swap and a skip saves the swapped exercise and leaves the skipped one out. With an out-of-date preview it saves nothing and shows `Targets updated`.
 - **WL-A12.** `Main` defaults: compound exercises in places 1–2 are on; an all-isolation workout has only the first on. Ben's toggle is stored and survives Save, Duplicate and backup/restore.
@@ -318,6 +317,12 @@ Fixture: saved Push A, Pull A, Legs A (rotation, Legs A next), Arms (never done)
 - **WL-A14.** Airplane mode, no AI: list, editor, Save, Duplicate, Delete, Undo, picker and overview all work; only `New with coach` reads `Coach offline`. No provider call is made by any library action.
 - **WL-A15.** Library data is Your data: in export, delete and backup with routines; never in Coaching knowledge; never in coach context except a workout Ben asks the coach about.
 - **WL-A16.** Every row, chip and button ≥ 44pt (rows ≥ 64pt); `UP NEXT`, `Main`, `⚠` and source tags carry an icon or word; tabular numbers; Dynamic Type to AX3 at 375pt with no sideways scroll; `Save` stays above the keyboard. No string in the library says "routine".
+
+### A7.1 Open questions (Ben to decide)
+
+1. **WL7, coach target vs Ben's later edit.** Implemented and tested as written in WL7 (his later slot edit wins on set count and reps; the coach's load applies only where its reps fit his range, else the built-in rule's). Confirm or amend. If it amends D21, log it in `docs/brief/CHANGELOG.md`. A different answer means changing `routineTemplatesWithTargets` and its tests.
+2. **N6, `FROM HISTORY` saved under another name.** Saving the `Shoulders` row as `Shoulders A` links only the newest session; older `Shoulders` sessions stay as a `FROM HISTORY` row. Options: leave as is (current), or hide a history type once any of its sessions is saved.
+3. **N13, rep-range-aware fallback load (backlog candidate).** When the coach's reps don't fit Ben's edited range, the fallback is the built-in rule's load, planned from the source session's reps (e.g. 8–10), not his new range (6–8). A start with no coach does the same today, so this isn't a regression. Candidate built-in rule improvement if Ben wants loads that follow an edited rep range.
 
 ## A8. Build slices (this change)
 
