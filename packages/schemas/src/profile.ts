@@ -2,6 +2,14 @@ import { z } from 'zod';
 import { RecordMetaSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema } from './common';
 import { RestSettingSchema } from './routine';
 
+/** Progress windows, in days, each ending today (progress.md PG24). */
+export const ProgressWindowDaysSchema = z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60)]);
+export type ProgressWindowDays = z.infer<typeof ProgressWindowDaysSchema>;
+
+/** Progress's muscle grouping (PG26, PG27). */
+export const ProgressGroupingSchema = z.enum(['body_part', 'ppl']);
+export type ProgressGrouping = z.infer<typeof ProgressGroupingSchema>;
+
 /**
  * Minimal single-owner profile for logging. `id` doubles as the stable owner ID;
  * goals, availability and coaching style are added in later slices.
@@ -31,6 +39,16 @@ export const UserProfileSchema = RecordMetaSchema.extend({
       gymStep: z.enum(['saved', 'skipped']).optional(),
       /** `Go to Today` on Ready. */
       completedAtUtc: UtcTimestampSchema.optional(),
+    })
+    .optional(),
+  /**
+   * Progress's last window and muscle grouping (progress.md PG24, §6.4), so
+   * the tab opens as Ben left it. Absent = `30 days`, `Body parts`.
+   */
+  progress: z
+    .object({
+      window: ProgressWindowDaysSchema.optional(),
+      grouping: ProgressGroupingSchema.optional(),
     })
     .optional(),
 });

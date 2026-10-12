@@ -243,7 +243,7 @@ No rule names, no "built-in" label on the trim, no lead text. Honesty is the `�
 
 **Schema:** `TodayEdit` gains `{kind: 'fit', minutes}`; `editBase` gains `author` and `actionId?` (shared with §11 of overview-today-edits); `SessionTodayEdits.fitted?`; `WorkoutSession.finishBy` (exists, AW12). All JSON or existing columns.
 
-**Migration 9 (`0009-today-fit`, coach fit only):** rebuild `coach_actions` so its `kind` CHECK also accepts `fit_today` (same rebuild pattern as migration 7: rows, indexes and the no-delete trigger kept). Nothing else. The built-in trim needs no migration; skipped sets reuse `skipped_by = 'before_start'` / `'in_workout'`. Main is at 7 and another branch takes 8, so this is 9; if 8 doesn't land first, renumber at merge.
+**Migration 12 (`0012-today-fit`, coach fit only):** rebuild `coach_actions` so its `kind` CHECK also accepts `fit_today`, keeping migration 11's kinds (`log_set`, `correct_set`, `suggest_memory`); same rebuild pattern as migrations 7 and 11 (rows, indexes and the no-delete trigger kept). Nothing else. The built-in trim needs no migration; skipped sets reuse `skipped_by = 'before_start'` / `'in_workout'`. Built as 8 on the library branch; numbered 12 at the merge with main (8 deleted-workouts, 9 progress, 10 workout-gaps, 11 coach-set-actions).
 
 **Services:** `services.overview.edit({kind: 'fit', minutes})`, `services.overview.clearFit`, `services.coach.requestTodayFit`, `services.coach.undoAction` (fit_today), `services.workout.trimToFit({sessionId, minutes, expectedRevision, opId})` (C2), `getAiCapabilities`.
 
@@ -265,7 +265,7 @@ Fixture: §4.5 Push A; Ben's pace from 5 recent workouts; coach connected unless
 - **FT-C12. Coach swap.** A coach swap comes back as a `Today only` change card; nothing is swapped until `Apply`.
 - **FT-C13. Coach failures.** Timeout shows `No answer from the coach` with `Trim instead`; a plan change while waiting discards the result (`Plan changed`); Start while pending creates the session without any coach edit.
 - **FT-C14. Context.** The coach request contains only today's shown plan, goal, priority groups, pain flags and equipment kinds (request log). No other draft, no memories beyond those.
-- **FT-C15. Audit.** A coach fit writes one `coach_actions` row (`fit_today`, migration 9) and its Undo one `undo` row. The built-in trim writes none.
+- **FT-C15. Audit.** A coach fit writes one `coach_actions` row (`fit_today`, migration 12) and its Undo one `undo` row. The built-in trim writes none.
 - **FT-C16. Mid-workout (C2).** With 11 pending sets and `Fit into 20 min`, `Trim` skips pending sets by the same order, leaves done sets untouched, shows `Trimmed to fit · ≈ 35 → 20 min` with Undo, and works offline.
 - **FT-C17. Idempotent and versioned.** Repeated `opId`s give one fit; a stale `expectedDraftVersion` or `previewKey` writes nothing.
 - **FT-C18. Visual.** Chips and buttons ≥ 44pt; `◷ TRIMMED`, `⊘ SKIPPED`, `Coach offline` carry icon + word; minutes tabular with `≈`; Start the only filled pill on the page; AX3 at 375pt with no sideways scroll; light and dark.

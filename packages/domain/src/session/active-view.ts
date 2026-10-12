@@ -1,8 +1,10 @@
-import type { CommandOf, EquipmentInstance, Load, PainFlag, ZonedTimestamp, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { CommandOf, EquipmentInstance, Load, Measurement, PainFlag, ZonedTimestamp, SessionAggregate, SessionExercise, SetExclusion, SetSide, SetType, SetValues, WorkoutSet } from '@fizz/schemas';
 import {
   EQUIPMENT_WORD,
   SET_TYPE_BADGE,
   SET_TYPE_WORD,
+  formatDistance,
+  formatDuration,
   formatNumber,
   loadFieldLabel,
   loadFieldUnit,
@@ -17,15 +19,17 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
-import { coachUndoRefusal } from './coach-undo';
+import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
 import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
+import { midSwapSlot } from './mid-swap';
 import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
+import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -65,7 +69,7 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
       gymId: h.gymId,
       sets: sets.map((s, index) => ({
         index,
-        values: { load: s.load, reps: s.reps, durationS: null, rpe: s.rpe, rir: s.rir },
+        values: { load: s.load, reps: s.reps, durationS: s.durationS ?? null, rpe: s.rpe, rir: s.rir, ...(s.distanceM !== undefined ? { distanceM: s.distanceM } : {}) },
         ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
       })),
     };
@@ -95,6 +99,12 @@ export interface ActiveViewInput {
   previous: Readonly<Record<string, PreviousSession | null>>;
   /** Exercise IDs with an active pain flag. */
   painFlagged: ReadonlySet<string>;
+  /**
+   * The built-in rule's target RPE per session exercise (`ruleTargetRpes`),
+   * the last fallback of each set's target RPE (`targetRpeOf`). Omitted: only
+   * Ben's, the coach's or the plan's target shows.
+   */
+  ruleTargetRpe?: Readonly<Record<string, number>>;
   /**
    * Ben's pain flags (active ones are enough), for the note's `check due`
    * and the rest card's `Still hurts?` line (active-workout §2.14.2). Dates
@@ -170,6 +180,8 @@ export interface SetRowView {
   number: number;
   /** `W`, `T`, `B`, `D`, `L`, `R` text badges (never colour alone). */
   badges: string[];
+  /** Ben's note on this set, or null. */
+  note: string | null;
   status: SetRowStatus;
   text: string;
   edited: boolean;
@@ -196,8 +208,16 @@ export interface FocusView {
   sessionExerciseId: string;
   exerciseId: string;
   exerciseName: string;
-  measurement: 'reps' | 'duration';
+  measurement: Measurement;
   unilateral: boolean;
+  /** Ben's note on this exercise today (Notes), or null. */
+  note: string | null;
+  /** `Swapped from Bench press` while this row is today's swap (EL4); null otherwise. */
+  swappedFrom: { name: string; opId: string } | null;
+  /** `Remove exercise` is offered: nothing on it is logged and it has no parts at another gym (exercise-library §4.6). */
+  removable: boolean;
+  /** `Swap exercise` is offered: the row has pending sets a swap would move (`midSwapSlot`; not only a half-logged pair's other side, review gaps r2 S1). */
+  swappable: boolean;
   /** `Barbell · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
   headerLine: string;
   setNumber: number;
@@ -207,12 +227,25 @@ export interface FocusView {
   draftSource: DraftSource | 'edited' | 'copied';
   loadField: LoadField | null;
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
-  duration: { value: number | null } | null;
+  /** Timed sets: the work time in seconds, stepping 5 s. */
+  duration: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  /** Distance sets: metres, stepping 5 m (sled push, carries). */
+  distance: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  /**
+   * The work timer of a timed set (active-workout §2.7): `idle` shows
+   * `Start 0:45`; `running`/`paused` count down; `ended` (reached 0 or
+   * stopped) leaves the time in the field to log. Null for other sets.
+   */
+  workTimer: WorkTimerView | null;
   target: string | null;
+  /** The set's target RPE and who set it (`@ RPE 8` on the target line); null on warm-up and drop sets. */
+  targetRpe: TargetRpe | null;
   /** `Plan was 100 kg × 6–8` when a coach adjustment set this target (coach-adjustments §2.7); else null. */
   planWas: string | null;
   /** The coach action behind this set's target, for `Undo coach change`; null when the target isn't the coach's or can't be undone (gym changed since). */
   coachActionId: string | null;
+  /** Who made that today-change: the coach, or the built-in rule when the coach couldn't answer (CA6 revised). */
+  adjustedBy: 'coach' | 'rule' | null;
   /**
    * `SnapNote` under the target (gym-switch §2.5): only for a capped,
    * converted or dropped fit, read from `planned.snap` so it survives a relaunch.
@@ -238,7 +271,7 @@ export interface FocusView {
   next: { kind: 'exercise'; name: string; target: string | null; setId: string } | { kind: 'last_set' } | null;
   /** Null when a value is missing. */
   logLabel: string | null;
-  missing: 'load' | 'reps' | 'time' | null;
+  missing: 'load' | 'reps' | 'time' | 'distance' | null;
   /** Deterministic per draft, so a retry after a crash commits once. */
   opId: string;
   /** Values `log_set` will save (effort is never prefilled). */
@@ -270,8 +303,17 @@ export type RestView =
 export type PrimaryAction =
   | { kind: 'log'; label: string }
   /** A value is missing: the button focuses that field (audit F2), it never logs. */
-  | { kind: 'enter'; label: string; field: 'load' | 'reps' | 'time' }
+  | { kind: 'enter'; label: string; field: 'load' | 'reps' | 'time' | 'distance' }
   | { kind: 'resume'; label: 'Resume' }
+  /**
+   * A timed set before its work timer runs (§2.7): `Start 0:45` runs
+   * `start_work_interval`. `logLabel` (`Log 0:45`): the time in the field
+   * can be logged without the timer (timed on the gym clock, or Start
+   * forgotten; review gaps S2). Null when the set can't be logged yet.
+   */
+  | { kind: 'start_work'; label: string; durationS: number; logLabel: string | null }
+  /** The work timer is running or paused: `Stop` runs `stop_work_interval`; the time so far becomes the draft. */
+  | { kind: 'stop_work'; label: 'Stop' }
   | { kind: 'add_exercise'; label: 'Add exercise' }
   | { kind: 'finish'; label: 'Finish workout' }
   | { kind: 'none'; label: '' };
@@ -409,7 +451,51 @@ function missingFor(values: SetValues, ex: SessionExercise): FocusView['missing'
   if (ex.loadConvention !== 'bodyweight' && values.load === null && ex.loadConvention !== 'added') return 'load';
   if (ex.measurement === 'reps' && values.reps === null) return 'reps';
   if (ex.measurement === 'duration' && values.durationS === null) return 'time';
+  if (ex.measurement === 'distance' && (values.distanceM === null || values.distanceM === undefined)) return 'distance';
   return null;
+}
+
+export interface WorkTimerView {
+  state: 'idle' | 'running' | 'paused' | 'ended';
+  /** What `Start` runs: the planned time, else the draft's, else 30 s. */
+  plannedS: number;
+  /** Counting down (running/paused); null otherwise. */
+  remainingMs: number | null;
+  /** `Start 0:45` / `Stop`. */
+  label: string;
+}
+
+/** Default work time when a timed set has no target or draft (active-workout §2.7). */
+export const DEFAULT_WORK_S = 30;
+
+function workTimerView(state: SessionAggregate, set: WorkoutSet, values: SetValues, nowMs: number): WorkTimerView {
+  // The time in the field (Ben may change it before Start), else the target, else 30 s.
+  const plannedS = values.durationS !== null && values.durationS > 0 ? values.durationS : (set.planned.durationS ?? DEFAULT_WORK_S);
+  const wi = state.workInterval?.setId === set.id ? state.workInterval : null;
+  if (wi?.status === 'running') return { state: 'running', plannedS: wi.durationS, remainingMs: Math.max(0, toMs(wi.deadlineUtc) - nowMs), label: 'Stop' };
+  if (wi?.status === 'paused') return { state: 'paused', plannedS: wi.durationS, remainingMs: wi.remainingMsAtPause ?? 0, label: 'Stop' };
+  if (wi?.status === 'completed' || wi?.status === 'stopped') return { state: 'ended', plannedS: wi.durationS, remainingMs: null, label: `Start ${formatDuration(plannedS)}` };
+  return { state: 'idle', plannedS, remainingMs: null, label: `Start ${formatDuration(plannedS)}` };
+}
+
+/** Work-time steps: 5 s, from 5 s up to 4 h (no equipment involved). */
+function durationSteps(value: number | null): { down: StepTarget; up: StepTarget } {
+  const v = value ?? 0;
+  const up = Math.min(4 * 3600, v + 5);
+  return {
+    up: v >= 4 * 3600 ? { enabled: false, reason: 'Maximum 4:00:00' } : { enabled: true, value: up, label: formatDuration(up) },
+    down: value === null || v - 5 < 5 ? { enabled: false, reason: 'Minimum 0:05' } : { enabled: true, value: v - 5, label: formatDuration(v - 5) },
+  };
+}
+
+/** Distance steps: 5 m, never below 0 (no equipment involved). */
+function distanceSteps(value: number | null): { down: StepTarget; up: StepTarget } {
+  const v = value ?? 0;
+  const up = v + 5;
+  return {
+    up: { enabled: true, value: up, label: formatDistance(up) },
+    down: value === null || v - 5 < 0 ? { enabled: false, reason: 'Minimum 0' } : { enabled: true, value: v - 5, label: formatDistance(v - 5) },
+  };
 }
 
 function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
@@ -489,6 +575,10 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     exerciseName: ex.exerciseName,
     measurement: ex.measurement,
     unilateral,
+    note: ex.note ?? null,
+    swappedFrom: swappedFromOf(state, ex),
+    removable: isRemovable(state, ex),
+    swappable: midSwapSlot(state, ex.id) !== null,
     headerLine: headerParts.filter((p): p is string => p !== null).join(' · '),
     setNumber,
     setCount: own.length,
@@ -505,10 +595,14 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     draftSource,
     loadField,
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
-    duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
-    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
-    planWas: set.planned.source === 'coach' && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
-    coachActionId: set.planned.source === 'coach' && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
+    duration: ex.measurement === 'duration' ? { value: values.durationS, ...durationSteps(values.durationS) } : null,
+    distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
+    workTimer: ex.measurement === 'duration' ? workTimerView(state, set, values, input.nowMs) : null,
+    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral, rpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null }),
+    targetRpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null),
+    planWas: carriesTodayAdjustment(set.planned) && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
+    coachActionId: carriesTodayAdjustment(set.planned) && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
+    adjustedBy: carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null,
     snapNote: setSnapNote(set.planned.snap, set.planned.load, { gymName: input.gymName, equipment: eq, unit: ex.unit }),
     hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null,
     painFlagged: input.painFlagged.has(ex.exerciseId) || painNote !== null,
@@ -532,6 +626,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
         setId: s.id,
         number: i + 1,
         badges: [SET_TYPE_BADGE[s.setType], sideBadge(s)].filter((b): b is string => b !== null),
+        note: s.note ?? null,
         status,
         text,
         edited: s.edited,
@@ -548,6 +643,22 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     logValues,
     logSide: unilateral && fixedSide === null ? (chosenSide ?? 'both') : undefined,
   };
+}
+
+/** `Swapped from Bench press` while the swap can still be undone (any of its sets pending). */
+function swappedFromOf(state: SessionAggregate, ex: SessionExercise): FocusView['swappedFrom'] {
+  const from = ex.swappedFrom;
+  if (from === undefined || !state.sets.some((s) => s.sessionExerciseId === ex.id && s.status === 'pending')) return null;
+  const original = state.exercises.find((e) => e.id === from.sessionExerciseId);
+  if (!original) return null;
+  return { name: original.exerciseName, opId: from.opId };
+}
+
+/** Nothing logged on it and no part at another gym (the reducer refuses the rest). */
+export function isRemovable(state: SessionAggregate, ex: SessionExercise): boolean {
+  if (ex.removed !== undefined || ex.continuesFromId !== undefined) return false;
+  if (state.exercises.some((e) => e.continuesFromId === ex.id && e.removed === undefined)) return false;
+  return !state.sets.some((s) => s.sessionExerciseId === ex.id && s.status === 'completed');
 }
 
 function buildJustSaved(state: SessionAggregate): JustSavedView | null {
@@ -624,11 +735,13 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   else if (phase.kind === 'paused') primary = { kind: 'resume', label: 'Resume' };
   else if (phase.kind === 'empty') primary = { kind: 'add_exercise', label: 'Add exercise' };
   else if (focus === null) primary = isOpenEndedWorkout(state) ? { kind: 'add_exercise', label: 'Add exercise' } : { kind: 'finish', label: 'Finish workout' };
+  // A timed set (§2.7): `Start 0:45` until its work timer runs, `Stop` while it runs, then `Log 0:38`.
+  else if (focus.workTimer?.state === 'running' || focus.workTimer?.state === 'paused') primary = { kind: 'stop_work', label: 'Stop' };
+  else if (focus.workTimer?.state === 'idle') primary = { kind: 'start_work', label: focus.workTimer.label, durationS: focus.workTimer.plannedS, logLabel: focus.logLabel };
   else if (focus.logLabel === null) {
     const field = focus.missing ?? 'reps';
-    primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : 'Enter reps' };
-  }
-  else primary = { kind: 'log', label: focus.logLabel };
+    primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : field === 'distance' ? 'Enter distance' : 'Enter reps' };
+  } else primary = { kind: 'log', label: focus.logLabel };
 
   const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
   const justSaved = buildJustSaved(state);
@@ -683,7 +796,7 @@ function exerciseEntries(state: SessionAggregate, liveSets: readonly WorkoutSet[
   const out: ActiveSetView['exercises'] = [];
   const index = new Map<string, number>();
   for (const e of [...state.exercises].sort((a, b) => a.order - b.order)) {
-    if (isEmptyPart(state, e)) continue;
+    if (isEmptyPart(state, e) || e.removed !== undefined) continue;
     const root = partRootOf(state.exercises, e.id);
     const pending = liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'pending').length;
     const done = liveSets.filter((s) => s.sessionExerciseId === e.id && s.status === 'completed').length;
@@ -713,14 +826,43 @@ export interface SetEditView {
   values: SetValues;
   loadField: LoadField | null;
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  /** Timed sets: seconds, ±5 s. */
+  duration: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  /** Distance sets: metres, ±5 m. */
+  distance: { value: number | null; down: StepTarget; up: StepTarget } | null;
   /** `100 kg × 8` for the values as edited. */
   text: string;
   /** Exclusion chips as edited (§2.13, canonical order); the stored ones when untouched. */
   exclusions: SetExclusion[];
   /** `This also puts a pain flag on Bench press: …` while `Pain` is ticked and wasn't before (AW7). */
   painLine: string | null;
-  /** Values or exclusions differ from the stored set: `Save changes` is enabled. */
+  /**
+   * Set type control (brief §1; backlog 4.1): one choice per type, in
+   * workout order. `changed` says the type differs from the stored one, so
+   * `correct_set` carries `setType` only then.
+   */
+  setType: { value: SetType; changed: boolean; choices: { type: SetType; label: string; selected: boolean }[] };
+  /**
+   * Ben's own target RPE for the set (CHANGELOG 2026-10-11 (b) "Edit set"),
+   * in an active workout's working set; null otherwise. `target` is the set's
+   * target as edited (`targetRpeOf`); `override` is Ben's value as edited
+   * (null: none, the coach's, plan's or rule's applies).
+   */
+  targetRpe: { target: TargetRpe | null; override: number | null; changed: boolean } | null;
+  /** Values, exclusions, the set type or the target RPE differ from the stored set: `Save changes` is enabled. */
   changed: boolean;
+}
+
+/** The set types in the order a workout uses them (Edit set's control). */
+export const SET_TYPE_ORDER: readonly SetType[] = ['warmup', 'working', 'top', 'backoff', 'drop'];
+
+export interface SetEditOptions {
+  /** The set type as edited; null or undefined: the stored one. */
+  setType?: SetType | null | undefined;
+  /** Ben's target RPE as edited: a value, null to clear it, undefined untouched. */
+  targetRpe?: number | null | undefined;
+  /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), the default shown. */
+  ruleTargetRpe?: Readonly<Record<string, number>> | undefined;
 }
 
 /**
@@ -728,17 +870,27 @@ export interface SetEditView {
  * equipment-aware steppers as the set card. `correct_set` saves it; the rest
  * timer is never touched (invariant 5).
  */
-export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null): SetEditView | null {
+export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null, options: SetEditOptions = {}): SetEditView | null {
   const set = state.sets.find((s) => s.id === setId);
   if (!set || set.status !== 'completed' || !set.actual) return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
   if (!ex) return null;
   const eq = equipmentOf(state, ex);
   const values = edits ?? set.actual;
+  const setType = options.setType ?? set.setType;
   const stored = normaliseExclusions(set.exclusions);
   const exclusions = exclusionEdits === null ? stored : normaliseExclusions(exclusionEdits);
   const label = loadFieldLabel(ex.loadConvention, eq);
   const loadValue = values.load === null || values.load.convention === 'bodyweight' ? null : values.load.value;
+  const storedOverride = set.planned.rpeOverride ?? null;
+  const override = options.targetRpe === undefined ? storedOverride : options.targetRpe;
+  // The type as edited: a set changed to a warm-up or drop has no target (its override is cleared with the correction).
+  const working = setType !== 'warmup' && setType !== 'drop';
+  const plannedAsEdited = { ...set.planned, rpeOverride: override ?? undefined };
+  const targetRpe =
+    state.session.status === 'active' && working
+      ? { target: targetRpeOf({ setType, planned: plannedAsEdited }, options.ruleTargetRpe?.[ex.id] ?? null), override, changed: override !== storedOverride }
+      : null;
   return {
     setId: set.id,
     setVersion: set.version,
@@ -751,10 +903,14 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
         ? null
         : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) },
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
+    duration: ex.measurement === 'duration' ? { value: values.durationS, ...durationSteps(values.durationS) } : null,
+    distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
     text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
     exclusions,
     painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,
-    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join(),
+    setType: { value: setType, changed: setType !== set.setType, choices: SET_TYPE_ORDER.map((t) => ({ type: t, label: SET_TYPE_WORD[t], selected: t === setType })) },
+    targetRpe,
+    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join() || setType !== set.setType || (targetRpe?.changed ?? false),
   };
 }
 

@@ -5,10 +5,12 @@ import {
   OperationIdSchema,
   RecordMetaSchema,
   RepRangeSchema,
+  RpeSchema,
   UtcTimestampSchema,
   ZonedTimestampSchema,
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
+import { DraftBasisSchema } from './draft';
 import type { SessionCommand } from './commands';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
 
@@ -55,6 +57,8 @@ export const CoachEntityKindSchema = z.enum([
   'pain_flag',
   'memory',
   'playbook_candidate',
+  /** (11 Oct) A set Ben told the coach to log, or a logged set he told it to correct: values only, never deleted. */
+  'logged_set',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -76,6 +80,12 @@ const quote = z.string().min(1).max(400);
 export const CoachTargetSchema = z.strictObject({
   load: LoadSchema.nullable(),
   reps: RepRangeSchema.nullable(),
+  /**
+   * Target RPE for the set (CHANGELOG 2026-10-11 "Offers follow the target
+   * RPE"): the coach's recommendation. Null or absent = keep the set's
+   * current target (Ben's own override always stays).
+   */
+  rpe: RpeSchema.nullable().optional(),
 });
 export type CoachTarget = z.infer<typeof CoachTargetSchema>;
 
@@ -86,6 +96,11 @@ export const GetRecentTrainingArgsSchema = z.strictObject({
   sessions: z.int().min(1).max(10),
 });
 
+/** "How am I doing?": workouts, what was done and whether the main lifts moved, over the last `weeks`. */
+export const GetTrainingOverviewArgsSchema = z.strictObject({
+  weeks: z.int().min(1).max(12),
+});
+
 export const GetGymEquipmentArgsSchema = z.strictObject({
   /** Null = everything used in the current or last workout. */
   exerciseId: IdSchema.nullable(),
@@ -94,6 +109,40 @@ export const GetGymEquipmentArgsSchema = z.strictObject({
 export const GetProgressionTargetsArgsSchema = z.strictObject({
   exerciseId: IdSchema,
 });
+
+/** Exercises that could replace one in the plan at this gym (for a swap proposal). */
+export const GetSubstitutionsArgsSchema = z.strictObject({
+  exerciseId: IdSchema,
+});
+
+/**
+ * (11 Oct, coach tools) Log a pending set with the values Ben said in this
+ * turn ("log 100 for 8"). Unit and convention are the exercise's own; the
+ * numbers must be in Ben's words. Same `log_set` command as the Log button.
+ */
+export const LogSetArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  setId: IdSchema,
+  load: LoadSchema.nullable(),
+  reps: z.int().min(0).max(100),
+  rpe: z.number().min(1).max(10).multipleOf(0.5).nullable(),
+});
+export type LogSetArgs = z.infer<typeof LogSetArgsSchema>;
+
+/**
+ * (11 Oct, coach tools) Correct a logged set's values when Ben says which set
+ * and what it was ("set 2 was 95"). Null keeps a value. Same `correct_set`
+ * command as the correction sheet; never a mark or a delete.
+ */
+export const CorrectSetArgsSchema = z.strictObject({
+  baseVersion: z.int().min(1),
+  setId: IdSchema,
+  load: LoadSchema.nullable(),
+  reps: z.int().min(0).max(100).nullable(),
+  rpe: z.number().min(1).max(10).multipleOf(0.5).nullable(),
+});
+export type CorrectSetArgs = z.infer<typeof CorrectSetArgsSchema>;
 
 export const GetRecentActionsArgsSchema = z.strictObject({
   limit: z.int().min(1).max(10),
@@ -194,14 +243,19 @@ export type AddPlaybookCandidateArgs = z.infer<typeof AddPlaybookCandidateArgsSc
 export const CoachToolNameSchema = z.enum([
   'get_active_session',
   'get_recent_training',
+  'get_training_overview',
   'get_gym_equipment',
   'get_progression_targets',
+  'get_substitutions',
   'get_recent_actions',
   'adjust_pending_sets',
+  'log_set',
+  'correct_set',
   'set_next_session_targets',
   'propose_next_workout_change',
   'set_pain_flag',
   'save_memory',
+  'suggest_memory',
   'forget_memory',
   'add_playbook_candidate',
 ]);
@@ -211,14 +265,19 @@ export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 export const COACH_TOOL_ARGS = {
   get_active_session: EmptyArgsSchema,
   get_recent_training: GetRecentTrainingArgsSchema,
+  get_training_overview: GetTrainingOverviewArgsSchema,
   get_gym_equipment: GetGymEquipmentArgsSchema,
   get_progression_targets: GetProgressionTargetsArgsSchema,
+  get_substitutions: GetSubstitutionsArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
+  log_set: LogSetArgsSchema,
+  correct_set: CorrectSetArgsSchema,
   set_next_session_targets: SetNextSessionTargetsArgsSchema,
   propose_next_workout_change: ProposeNextWorkoutChangeArgsSchema,
   set_pain_flag: SetPainFlagArgsSchema,
   save_memory: SaveMemoryArgsSchema,
+  suggest_memory: SaveMemoryArgsSchema,
   forget_memory: ForgetMemoryArgsSchema,
   add_playbook_candidate: AddPlaybookCandidateArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
@@ -283,6 +342,8 @@ export const GuardNoteKindSchema = z.enum([
   'invalid_reps',
   'too_many_sets',
   'structural_dropped',
+  /** The coach's target RPE wasn't used: Ben set his own for the set (review target-rpe S2). */
+  'rpe_overridden',
 ]);
 export type GuardNoteKind = z.infer<typeof GuardNoteKindSchema>;
 
@@ -335,11 +396,40 @@ export const StructuralChangeLineSchema = z.object({
   text: z.string().min(1).max(200),
 });
 
+/** One checked structural change, by plan slot (routine slot or the source workout's part root). */
+export const StructuralOpSchema = z.discriminatedUnion('change', [
+  z.object({ change: z.literal('swap'), slotKey: IdSchema, fromExerciseId: IdSchema, fromName: z.string().min(1).max(120), toExerciseId: IdSchema, toName: z.string().min(1).max(120) }),
+  z.object({ change: z.literal('remove'), slotKey: IdSchema, exerciseId: IdSchema, name: z.string().min(1).max(120) }),
+  z.object({ change: z.literal('reorder'), slotKeys: z.array(IdSchema).min(2).max(40), names: z.array(z.string().max(120)).max(40) }),
+]);
+export type StructuralOpRecord = z.infer<typeof StructuralOpSchema>;
+
 export const ActionDetailSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('adjust_pending_sets'),
     sessionId: IdSchema,
     exercises: z.array(ExerciseTargetChangesSchema).max(12),
+  }),
+  /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
+  z.object({
+    kind: z.literal('log_set'),
+    sessionId: IdSchema,
+    setId: IdSchema,
+    exerciseName: z.string().min(1).max(120),
+    setNumber: z.int().min(1),
+    values: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    setVersionAfter: z.int().min(1).nullable(),
+  }),
+  /** (11 Oct) A logged set corrected from chat: before and after values, and the set's version after, for Undo. */
+  z.object({
+    kind: z.literal('correct_set'),
+    sessionId: IdSchema,
+    setId: IdSchema,
+    exerciseName: z.string().min(1).max(120),
+    setNumber: z.int().min(1),
+    before: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    after: z.object({ load: LoadSchema.nullable(), reps: z.int().min(0).max(100).nullable(), rpe: z.number().min(1).max(10).nullable() }),
+    setVersionAfter: z.int().min(1).nullable(),
   }),
   z.object({
     kind: z.literal('set_next_session_targets'),
@@ -355,6 +445,25 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     changes: z.array(StructuralChangeLineSchema).min(1).max(6),
     /** App text after `Because:`. */
     because: z.string().min(1).max(200),
+    /**
+     * (11 Oct, coach tools) What the next workout starts from: the routine, or
+     * the next session built from `sourceSessionId`. Absent on records made
+     * before structural proposals were built.
+     */
+    basis: DraftBasisSchema.optional(),
+    /** The basis's version when proposed: the routine's version, or the source workout's. A later version makes the card `Out of date`. */
+    basisVersion: z.int().min(1).optional(),
+    /** The checked changes, by plan slot (`structuralDraftEdits` turns them into draft edits on Apply). */
+    ops: z.array(StructuralOpSchema).max(6).optional(),
+    /** Exercise names before and after, in order. */
+    before: z.array(z.string().min(1).max(120)).max(40).optional(),
+    after: z.array(z.string().min(1).max(120)).max(40).optional(),
+    /**
+     * On Ben's own records about a proposal (author `ben`): the proposal's
+     * action ID. `committed` = Apply (undoable until the next workout
+     * starts), `rejected` = Not now.
+     */
+    proposalId: IdSchema.optional(),
   }),
   /**
    * Ben changed a routine from today's edits (`Change Push A too ›`, ADR 0022;
@@ -393,8 +502,16 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     area: PainAreaSchema.nullable(),
   }),
   z.object({ kind: z.literal('save_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
+  /** (11 Oct) A memory the coach suggested: `proposed`; Ben's Save or Not now changes the memory, not this record. */
+  z.object({ kind: z.literal('suggest_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
   z.object({ kind: z.literal('forget_memory'), memoryId: IdSchema, text: z.string().min(1).max(200) }),
-  z.object({ kind: z.literal('add_playbook_candidate'), candidateId: IdSchema, text: z.string().min(1).max(400) }),
+  z.object({
+    kind: z.literal('add_playbook_candidate'),
+    candidateId: IdSchema,
+    text: z.string().min(1).max(400),
+    /** (12 Oct) The memory suggestion Ben sent here with `Add to playbook` (CM9 split). */
+    fromMemoryId: IdSchema.optional(),
+  }),
   /**
    * Fit to time (fit-to-time §5): the coach's fit of today's plan, applied at
    * once because Ben asked (rule 3), today only. `editIds`: the draft edits
@@ -604,10 +721,21 @@ export const MemorySchema = RecordMetaSchema.extend({
   text: z.string().min(1).max(200),
   /** `appendContentKeys`: a live memory with the same key is the same memory. */
   contentKey: z.string().min(1).max(160),
-  status: z.enum(['active', 'forgotten']),
+  /**
+   * `active`: confirmed, sent to the coach. `forgotten`: tombstone.
+   * (11 Oct, coach tools) `suggested`: the coach suggested it; waits for Ben's
+   * Save and is never sent to the coach (CM1). `not_saved`: Ben tapped Not now.
+   */
+  status: z.enum(['active', 'forgotten', 'suggested', 'not_saved']),
   /** Ben's words that asked for it (quoted data). */
   quote: z.string().min(1).max(400),
   createdByActionId: IdSchema,
+  /** (11 Oct) Where it came from: Ben asked the coach (absent on older rows), the coach suggested it, or Ben added it in Memory. */
+  source: z.enum(['ben_asked', 'coach_suggested', 'ben_added']).optional(),
+  /** (11 Oct) Ben's edits, oldest first: the text before each edit. */
+  edits: z.array(z.object({ before: z.string().min(1).max(200), atUtc: UtcTimestampSchema })).max(20).optional(),
+  /** (12 Oct) A `not_saved` suggestion Ben sent to the playbook (CM9 `Add to playbook`), not `Not now`. */
+  closedAs: z.literal('playbook').optional(),
 });
 export type Memory = z.infer<typeof MemorySchema>;
 
@@ -623,8 +751,16 @@ export const PlaybookCandidateSchema = z.object({
   text: z.string().min(1).max(400),
   contentKey: z.string().min(1).max(160),
   statedBy: z.enum(['ben', 'coach']),
-  status: z.enum(['to_review', 'withdrawn']),
+  /**
+   * `to_review`: waiting for Ben, never used. `withdrawn`: undone.
+   * (11 Oct, coach tools; B8: the app records which rules Ben approved)
+   * `approved`: sent to the coach as Coaching knowledge, labelled not
+   * evidence-graded. `rejected`: not used and not offered again in the same words.
+   */
+  status: z.enum(['to_review', 'withdrawn', 'approved', 'rejected']),
   createdByActionId: IdSchema,
+  /** (11 Oct) When Ben last approved or rejected it. */
+  decidedAtUtc: UtcTimestampSchema.optional(),
 });
 export type PlaybookCandidate = z.infer<typeof PlaybookCandidateSchema>;
 
@@ -683,6 +819,8 @@ export type CoachWrite =
   /** A record with no other change: a proposal, or a rejected / stale / failed outcome. */
   | { kind: 'record'; action: ActionRecord }
   | { kind: 'save_memory'; action: ActionRecord; memory: Memory }
+  /** (11 Oct) A coach suggestion: a `suggested` memory, refused when the same text is already saved or waiting. */
+  | { kind: 'suggest_memory'; action: ActionRecord; memory: Memory }
   | { kind: 'forget_memory'; action: ActionRecord; memoryId: string; expectedVersion: number; atUtc: string }
   | { kind: 'pain_flags'; action: ActionRecord; flags: readonly PainFlag[] }
   | { kind: 'playbook_candidate'; action: ActionRecord; candidate: PlaybookCandidate }
@@ -697,7 +835,8 @@ export type CoachWrite =
    * through the reducer inside the same transaction as the record, so the
    * targets and their record are saved together or not at all (rule 5).
    */
-  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand };
+  /** `expectedSessionVersion`: refused as stale when the workout moved on since the caller read it (checked inside the write, review N3). */
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

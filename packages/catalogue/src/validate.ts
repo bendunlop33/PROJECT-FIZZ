@@ -6,7 +6,7 @@
  * name, duplicate keys. Warnings are printed but don't fail: dangling
  * variation keys (entries not written yet), a load convention unusual for the
  * equipment, an alias shared with another entry. Notes are informational
- * (e.g. distance entries that can't be logged yet).
+ * (none are raised at present).
  */
 import type { ExerciseEquipmentKind } from '@fizz/schemas';
 import { CatalogueEntrySchema, type CatalogueEntry } from './entry-schema';
@@ -92,9 +92,6 @@ export function validateCatalogueFiles(files: readonly CatalogueFile[]): Catalog
         path: 'defaultLoadConvention',
         message: `${e.defaultLoadConvention} is unusual for ${e.compatibleEquipment.join(', ')}`,
       });
-    }
-    if (e.measurement === 'distance') {
-      report.notes.push({ file, path: 'measurement', message: 'Distance exercises aren’t loggable yet; the loader skips the Exercise row' });
     }
   }
   return report;

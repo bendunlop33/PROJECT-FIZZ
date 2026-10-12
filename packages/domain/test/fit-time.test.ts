@@ -122,7 +122,7 @@ function pushA(over: Partial<Routine> = {}): Routine {
 }
 
 /** Ben's pace from his last 5 workouts (§4.5): 50 s a set, 45 s between exercises. */
-const PACE: ResolvedPace = { source: 'recent_workouts', secondsPerSet: 50, changeoverSeconds: 45, samples: 20 };
+const PACE: ResolvedPace = { source: 'recent_workouts', changeoverSource: 'recent_workouts', secondsPerSet: 50, changeoverSeconds: 45, samples: 20, low: { secondsPerSet: 50, changeoverSeconds: 45 }, high: { secondsPerSet: 50, changeoverSeconds: 45 } };
 
 let editN = 0;
 type Body = Parameters<typeof applyDraftCommand>[0]['command'] extends infer C ? (C extends { type: 'edit'; edit: infer E } ? E : never) : never;
@@ -203,9 +203,9 @@ describe('fitTier (§4.2)', () => {
 });
 
 describe('fitPlanToMinutes reproduces §4.5 (FT-C2, FT-C4)', () => {
-  it('Push A is about 56 min with Ben’s pace', () => {
+  it('Push A is about 55 min with Ben’s pace (the one estimator, `estimatePendingWork`)', () => {
     const none = plan([]);
-    expect(minutes(none.aggregate)).toBeCloseTo(55.67, 1);
+    expect(minutes(none.aggregate)).toBeCloseTo(54.42, 1);
     expect(none.fit).toBeNull();
     expect(none.aggregate.session.finishBy).toBeUndefined();
   });
@@ -214,7 +214,7 @@ describe('fitPlanToMinutes reproduces §4.5 (FT-C2, FT-C4)', () => {
     const out = plan([edit({ kind: 'fit', minutes: 45 })]);
     expect(out.fit).toMatchObject({ status: 'fitted', by: 'built_in', minutes: 45 });
     expect(linesOf(out)).toEqual(['Lateral raise 3→2', 'Triceps pushdown 3→2', 'Cable fly skip']);
-    expect((out.fit?.beforeSeconds ?? 0) / 60).toBeCloseTo(55.67, 1);
+    expect((out.fit?.beforeSeconds ?? 0) / 60).toBeCloseTo(54.42, 1);
     expect((out.fit?.afterSeconds ?? 0) / 60).toBeCloseTo(44.5, 1);
     expect(minutes(out.aggregate)).toBeCloseTo(44.5, 1);
     expect(pendingWorking(out, SLOT_BENCH)).toBe(3);
@@ -524,7 +524,7 @@ describe('the overview with a fit (§3.1, §3.3, FT-C18)', () => {
     expect(sheet.ask).toEqual({ text: 'Ask coach', enabled: false, caption: 'Coach offline', lengthen: false });
     expect(sheet.clear).toBe(false);
     expect(sheet.chips.map((c) => c.text)).toEqual(['30', '45', '60', '75', '90']);
-    const live = howLongSheet({ nowSeconds: 44.5 * 60, nowMinutes: 45, unfittedSeconds: 55.67 * 60, fitMinutes: 30, chosen: null, coachAvailable: true });
+    const live = howLongSheet({ nowSeconds: 44.5 * 60, nowMinutes: 45, unfittedSeconds: 54.42 * 60, fitMinutes: 30, chosen: null, coachAvailable: true });
     expect(live).toMatchObject({ selected: 30, clear: true, trim: { text: 'Trim to 30 min', enabled: true } });
     const other = howLongSheet({ nowSeconds: 3000, nowMinutes: 50, unfittedSeconds: 3000, fitMinutes: null, chosen: 35, coachAvailable: true });
     expect(other.other).toEqual({ selected: true, text: '35' });
@@ -656,7 +656,7 @@ describe('the coach fit in the draft (§5.2, §5.3, FT2, FT-C8, FT-C10)', () => 
     const out = plan(liveEdits(d.edits));
     expect(out.fit).toMatchObject({ by: 'coach', actionId: ACTION, minutes: 45, status: 'fitted' });
     expect(linesOf(out)).toEqual(['Lateral raise 3→2', 'Triceps pushdown 3→2', 'Cable fly skip']);
-    expect((out.fit?.beforeSeconds ?? 0) / 60).toBeCloseTo(55.67, 1);
+    expect((out.fit?.beforeSeconds ?? 0) / 60).toBeCloseTo(54.42, 1);
     expect(out.fit?.afterSeconds).toBeLessThanOrEqual(45 * 60);
     const view = overview(out);
     expect(view.fit?.title).toBe('Coach fitted to 45 min');

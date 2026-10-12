@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { newPainFlag, stableStringify } from '@fizz/domain';
-import { at, id, OWNER, profile } from '@fizz/domain/testing';
+import { at, id, idGen, logCmd, OWNER, profile, unilateralSession } from '@fizz/domain/testing';
 import {
   ActionRecordSchema,
   type ActionDetail,
@@ -323,7 +323,8 @@ describe('integrity, backup and restore with coach data', () => {
     await src.close();
     const file = JSON.parse(made.text) as BackupFile;
     const tables = { ...file.tables };
-    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts']) Reflect.deleteProperty(tables, t);
+    for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts', 'purged_sessions']) Reflect.deleteProperty(tables, t);
+    for (const row of tables.sessions ?? []) for (const c of ['deleted_at_utc', 'deleted_at_tz', 'deleted_by_op_id', 'purge_after_utc']) Reflect.deleteProperty(row, c);
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
     const body: Omit<BackupFile, 'checksum'> = { ...file, schemaVersion: 3, tables, counts };
     Reflect.deleteProperty(body, 'checksum');
@@ -336,3 +337,25 @@ describe('integrity, backup and restore with coach data', () => {
     await dst.close();
   });
 });
+
+describe('a set written from chat (review coach-tools N3)', () => {
+  it('the workout version the coach read is checked inside the write: a Log tap on any set in between makes it stale', async () => {
+    const s = await store();
+    await s.repos.profiles.save(profile(), null);
+    const agg = unilateralSession('start-chat', idGen(97_000));
+    await s.repos.sessions.save(agg, null);
+    const pending = agg.sets.filter((x) => x.status === 'pending');
+    const [first, second] = pending;
+    if (!first || !second) throw new Error('no pending sets');
+    const detail = (setId: string): ActionDetail => ({ kind: 'log_set', sessionId: agg.session.id, setId, exerciseName: 'Split squat', setNumber: 1, setVersionAfter: first.version + 1, values: { load: null, reps: 8, rpe: null } });
+    const command = logCmd(first.id, { load: first.planned.load, reps: 8, durationS: null, rpe: null, rir: null }, 30, 'chat-op-1');
+    // Read at an older version (the Log button logged something since): refused, nothing written.
+    const stale = await s.repos.coach.commit(OWNER, { kind: 'session_command', action: action(detail(first.id), { opId: 'chat-op-1' }), sessionId: agg.session.id, command, expectedSessionVersion: agg.session.version - 1 });
+    expect(stale).toEqual({ status: 'conflict', reason: 'stale_version' });
+    expect((await s.repos.sessions.get(agg.session.id))?.sets.find((x) => x.id === first.id)?.status).toBe('pending');
+    // At the version it read: written.
+    const ok = await s.repos.coach.commit(OWNER, { kind: 'session_command', action: action(detail(first.id), { opId: 'chat-op-2' }), sessionId: agg.session.id, command: logCmd(first.id, { load: first.planned.load, reps: 8, durationS: null, rpe: null, rir: null }, 30, 'chat-op-2'), expectedSessionVersion: agg.session.version });
+    expect(ok.status).toBe('written');
+  });
+});
+

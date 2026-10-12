@@ -109,6 +109,9 @@ describe('change-review card, opIds and page toasts', () => {
     const t = pageToast({ cleared: false, removedEdits: 1, draft: { id: 'd', version: 2 } }, new Set());
     expect(t?.text).toBe('Plan changed · 1 edit removed');
     expect(pageToast({ cleared: false, removedEdits: 1, draft: { id: 'd', version: 2 } }, new Set([t?.key ?? '']))).toBeNull();
+    // A coach change refused at this gym (review S1): said once.
+    expect(pageToast({ cleared: false, removedEdits: 0, draft: null, coachRefused: 1 }, new Set())).toEqual({ key: 'coach-refused', text: 'Coach change didn’t fit here' });
+    expect(pageToast({ cleared: false, removedEdits: 0, draft: null, coachRefused: 1 }, new Set(['coach-refused']))).toBeNull();
     expect(pageToast({ cleared: false, removedEdits: 2, draft: { id: 'd', version: 3 } }, new Set([t?.key ?? '']))?.text).toBe('Plan changed · 2 edits removed');
     expect(pageToast({ cleared: false, removedEdits: 0, draft: null }, new Set())).toBeNull();
   });

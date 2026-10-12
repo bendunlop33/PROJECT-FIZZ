@@ -9,9 +9,11 @@ import type { BenInput, CoachThread } from '@fizz/schemas';
 
 import { MANAGE_USAGE_URL } from '../../ai/coach-connection-view';
 import { nowMs as clockNow } from '../../clock';
-import type { CoachAvailability, CoachEntry } from '../../coach/coach-service';
+import { isGeneralEntry, type CoachAvailability, type CoachEntry } from '../../coach/coach-service';
 import {
   applyProgress,
+  loadedOutOfContext,
+  missingOutOfContext,
   routeLine,
   seesLabel,
   starterChips,
@@ -24,6 +26,7 @@ import {
   type StarterChip,
   type StatusAction,
   type ThreadRow,
+  type WorkoutOutOfContext,
 } from '../../coach/sheet-view';
 import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
@@ -44,7 +47,8 @@ import { CoachCard } from './CoachCard';
 
 /** Typed text per entry, kept while the app runs (closing the sheet keeps it; CS4). */
 const drafts = new Map<string, string>();
-const entryKey = (e: CoachEntry): string => (e.kind === 'today' ? 'today' : `${e.kind}:${e.sessionId}`);
+const entryKey = (e: CoachEntry): string =>
+  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${String(e.days)}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : `${e.kind}:${e.sessionId}`;
 
 export function CoachSheetScreen() {
   const theme = useTheme();
@@ -65,7 +69,7 @@ export function CoachSheetScreen() {
   const [statusWhy, setStatusWhy] = useState(false);
   const [sees, setSees] = useState<ContextDescription | null>(null);
   const [threads, setThreads] = useState<CoachThread[] | null>(null);
-  const [workout, setWorkout] = useState<{ title: string | null; active: boolean; bar: string; exercise: { id: string; name: string } | null } | null>(null);
+  const [workout, setWorkout] = useState<{ title: string | null; active: boolean; out: WorkoutOutOfContext | null; bar: string; exercise: { id: string; name: string } | null } | null>(null);
   const [askPain, setAskPain] = useState(false);
   /** The movements `Pain` can flag (named, else the focus row, else all); `picking` shows them as chips. */
   const [painChoices, setPainChoices] = useState<{ exerciseId: string; name: string }[]>([]);
@@ -94,10 +98,14 @@ export function CoachSheetScreen() {
 
   /** The workout as last read; the bar is worked out from it each second without reading SQLite (review N3). */
   const loadedWorkout = useRef<Awaited<ReturnType<typeof services.workout.load>>>(null);
+  /** Set when the thread's workout couldn't be loaded: purged (`deleted`) or not readable (`unavailable`). */
+  const missingWorkout = useRef<WorkoutOutOfContext | null>(null);
   const showWorkout = useCallback(() => {
     const d = loadedWorkout.current;
     if (d === null) {
-      setWorkout(null);
+      // The coach gets nothing of it; the chip never says `Sees: this workout` then (review r2 N3).
+      const out = missingWorkout.current;
+      setWorkout(out === null ? null : { title: null, active: false, out, bar: '', exercise: null });
       return;
     }
     const active = d.aggregate.session.status === 'active';
@@ -106,14 +114,18 @@ export function CoachSheetScreen() {
     setWorkout({
       title: d.aggregate.session.routineName ?? d.title,
       active,
+      // Out of the coach's context; the chip says so (delete-workouts §5, DW16): deleted, or discarded/reverted (review r2 N3).
+      out: loadedOutOfContext(d.aggregate.session),
       bar: workoutBarText(rest === null ? null : rest.kind === 'ended' ? { kind: 'ended' } : { kind: rest.kind, remainingMs: rest.remainingMs }, d.aggregate.session.pause !== null),
       exercise: v?.focus ? { id: v.focus.exerciseId, name: v.focus.exerciseName } : null,
     });
   }, [services]);
 
   const loadWorkout = useCallback(async () => {
-    if (entry.kind === 'today') return;
+    if (isGeneralEntry(entry)) return;
     loadedWorkout.current = await services.workout.load(entry.sessionId).catch(() => null);
+    missingWorkout.current =
+      loadedWorkout.current !== null ? null : missingOutOfContext((await services.history.presence(entry.sessionId).catch(() => ({ kind: 'missing' as const }))).kind);
     showWorkout();
   }, [entry, services, showWorkout]);
 
@@ -216,7 +228,7 @@ export function CoachSheetScreen() {
   /** `Try again` on a turn's row: that turn's own words as a new turn; a cut-off summary review runs again. */
   async function retry(input: BenInput) {
     if (input.kind !== 'summary') return send(input);
-    if (entry.kind === 'today' || live !== null) return;
+    if (isGeneralEntry(entry) || live !== null) return;
     setNotice(null);
     setLive(startLiveTurn(newUuid(), input, clockNow()));
     try {
@@ -241,6 +253,29 @@ export function CoachSheetScreen() {
     await loadRows(threadId ?? null);
     changed();
     void loadWorkout();
+  }
+
+  /** Apply or Not now on a structural proposal (ADR 0020 §3): saved at once; a stale card comes back `Out of date`. */
+  async function tapProposal(proposalId: string, tap: 'apply' | 'not_now') {
+    const r = await services.coach.tapProposal(proposalId, tap).catch(() => null);
+    setNotice(r === null ? 'Couldn’t apply.' : r.ok ? null : r.state === 'out_of_date' || r.state === 'used' ? 'Out of date. Nothing changed.' : 'Couldn’t apply.');
+    await loadRows(threadId ?? null);
+    changed();
+  }
+
+  /** Save, Not now or (CM9 split) Add to playbook on a memory suggestion (coach-memory §2.4, §2.4a). */
+  async function decideMemory(memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') {
+    if (decision === 'playbook') {
+      const p = await services.coach.memoryToPlaybook(memoryId, version, newUuid()).catch(() => null);
+      setNotice(p === null || (!p.ok && p.reason === 'missing') ? 'Couldn’t save.' : p.ok ? (p.rejectedBefore ? 'Rejected before.' : null) : 'Out of date.');
+      await loadRows(threadId ?? null);
+      changed();
+      return;
+    }
+    const r = await services.coach.decideMemory(memoryId, version, decision).catch(() => null);
+    setNotice(r === null || r.status === 'missing' ? 'Couldn’t save.' : r.status === 'duplicate' ? 'Already saved.' : r.status === 'stale' ? 'Out of date.' : null);
+    await loadRows(threadId ?? null);
+    changed();
   }
 
   async function flag(ex: { id: string; name: string }) {
@@ -389,7 +424,7 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
         {rows.map((r) => (
-          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)} />
+          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onProposal={(id, tap) => void tapProposal(id, tap)} onMemory={(id, v, d) => void decideMemory(id, v, d)} onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)} />
         ))}
         {live !== null ? <LiveRows live={live} now={now} /> : null}
         {askPain ? (
@@ -429,7 +464,7 @@ export function CoachSheetScreen() {
           style={{ alignSelf: 'flex-start', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], backgroundColor: theme.colors['bg.raised'] }}
         >
           <Icon name="eye" size={16} />
-          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true)}</AppText>
+          <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.out ?? null)}</AppText>
         </Pressable>
         {sees !== null ? <SeesPanel sees={sees} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>
@@ -483,7 +518,21 @@ function SendButton({ icon, label, enabled, onPress }: { icon: 'arrow.up' | 'sto
   );
 }
 
-function Row({ row, undoBlocked, onUndo, onRetry }: { row: ThreadRow; undoBlocked: (actionId: string) => boolean; onUndo: (actionId: string) => void; onRetry: () => void }) {
+function Row({
+  row,
+  undoBlocked,
+  onUndo,
+  onProposal,
+  onMemory,
+  onRetry,
+}: {
+  row: ThreadRow;
+  undoBlocked: (actionId: string) => boolean;
+  onUndo: (actionId: string) => void;
+  onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
+  onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
+  onRetry: () => void;
+}) {
   const theme = useTheme();
   switch (row.kind) {
     case 'ben':
@@ -511,7 +560,7 @@ function Row({ row, undoBlocked, onUndo, onRetry }: { row: ThreadRow; undoBlocke
         </AppText>
       );
     case 'card':
-      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} />;
+      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} />;
     case 'note':
       return (
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>

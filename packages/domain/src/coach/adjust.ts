@@ -22,6 +22,7 @@ import { equipmentOfRow } from '../session/equipment-snapshot';
 import { deriveId } from '../stable';
 import { convertMass } from '../units';
 import type { PainMention } from './pain-words';
+import { targetRpeOf } from './target-rpe';
 
 /**
  * `validateTodayAdjustment` (ADR 0020 §4, coach-adjustments §2.6): the
@@ -60,6 +61,13 @@ export interface TodayAdjustmentInput {
    * Null when the turn has no words from Ben (a chip or an accepted offer).
    */
   messagePain: MessagePain | null;
+  /**
+   * The built-in rule's target RPE per session exercise (`ruleTargetRpes`):
+   * the fallback of each set's resolved target RPE (`targetRpeOf`), so a
+   * raise above a built-in or RIR target counts as an increase (review
+   * target-rpe S1). Omitted: only stored RPE/RIR targets count.
+   */
+  ruleTargetRpe?: Readonly<Record<string, number>> | undefined;
 }
 
 export interface MessagePain {
@@ -216,6 +224,8 @@ export function isIncrease(before: CoachTarget | null, after: CoachTarget, conve
     if (b.reps === null) return true;
     if (after.reps.min > b.reps.min || after.reps.max > b.reps.max) return true;
   }
+  // A harder target RPE than the set had (CHANGELOG 2026-10-11): blocked by pain and in a lighter session too.
+  if (after.rpe != null && b.rpe != null && after.rpe > b.rpe) return true;
   return false;
 }
 
@@ -225,11 +235,13 @@ export function sameTarget(a: CoachTarget | null, b: CoachTarget): boolean {
     (x.load === null && b.load === null) ||
     (x.load !== null && b.load !== null && x.load.unit === b.load.unit && x.load.convention === b.load.convention && formatNumber(x.load.value) === formatNumber(b.load.value));
   const repsSame = (x.reps === null && b.reps === null) || (x.reps !== null && b.reps !== null && x.reps.min === b.reps.min && x.reps.max === b.reps.max);
-  return loadSame && repsSame;
+  // A target RPE only counts when `b` names one (null/absent = keep the current one).
+  const rpeSame = b.rpe == null || b.rpe === (x.rpe ?? null);
+  return loadSame && repsSame && rpeSame;
 }
 
 function targetOf(set: WorkoutSet): CoachTarget {
-  return { load: set.planned.load, reps: set.planned.reps };
+  return { load: set.planned.load, reps: set.planned.reps, ...(set.planned.rpe !== null ? { rpe: set.planned.rpe } : {}) };
 }
 
 export const AREA_WORD: Record<PainArea, string> = {
@@ -318,8 +330,12 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
     const removeId = req.removeSetId;
     const seenSets = new Set<string>();
 
-    /** Resolve one requested target against the set's current target. Null = drop. */
-    const resolve = (before: CoachTarget | null, ask: CoachTarget, setIds: string[]): CoachTarget | null => {
+    /**
+     * Resolve one requested target against the set's current target. Null = drop.
+     * `set`: the set it changes (or copies, for an added set), whose resolved
+     * target RPE is what a coach `rpe` is compared with.
+     */
+    const resolve = (before: CoachTarget | null, ask: CoachTarget, setIds: string[], set: WorkoutSet): CoachTarget | null => {
       let load = before?.load ?? null;
       // Snap notes only count when the change is kept.
       const pending: { kind: GuardNoteKind; text: string }[] = [];
@@ -342,8 +358,19 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
         }
         reps = ask.reps;
       }
-      const after: CoachTarget = { load, reps };
-      if (increaseBlock !== null && isIncrease(before, after, ex.loadConvention)) {
+      // The set's target RPE as it is now (Ben's, the coach's, the plan's or the rule's; review target-rpe S1).
+      const nowRpe = targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null);
+      let rpe = ask.rpe ?? null;
+      if (rpe !== null && set.planned.rpeOverride !== undefined && rpe !== set.planned.rpeOverride) {
+        // Ben's own target RPE wins: the coach's isn't stored or shown (review target-rpe S2).
+        notes.add('rpe_overridden', 'Your target RPE stays.', setIds);
+        rpe = null;
+      }
+      // Restating the target in force is no change.
+      if (rpe !== null && nowRpe !== null && rpe === nowRpe.rpe) rpe = null;
+      const after: CoachTarget = { load, reps, ...(rpe !== null ? { rpe } : {}) };
+      const beforeEffective: CoachTarget | null = before === null ? null : { ...before, ...(nowRpe !== null ? { rpe: nowRpe.rpe } : {}) };
+      if (increaseBlock !== null && isIncrease(beforeEffective, after, ex.loadConvention)) {
         // Keep the part that isn't an increase (review S1): "100 × 6–8 → 95 × 8" under a pain flag keeps the
         // lighter load and the planned reps, rather than losing the lighter load too.
         const loadOnly: CoachTarget = { load, reps: before?.reps ?? null };
@@ -384,7 +411,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       }
       if (set.id === removeId) continue;
       const before = targetOf(set);
-      const after = resolve(before, change.target, [set.id]);
+      const after = resolve(before, change.target, [set.id], set);
       if (after === null || sameTarget(before, after)) continue;
       changes.push({ setId: set.id, setNumber: n, before, after });
       touched.push(set.id);
@@ -419,7 +446,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
           notes.add(blocked.kind, blocked.text, []);
           blockedOutcomes.push(blocked.outcome);
         } else {
-          const after = resolve(targetOf(template), req.addSet, []);
+          const after = resolve(targetOf(template), req.addSet, [], template);
           if (after !== null) {
             const liveCount = sets.length - (removed === null ? 0 : 1);
             added = {

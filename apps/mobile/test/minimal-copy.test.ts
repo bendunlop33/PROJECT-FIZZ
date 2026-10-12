@@ -39,6 +39,9 @@ const EXCLUDED_FILES = new Set([
   'packages/coach/src/request.ts',
   // Refusal lines the sheet filters out (model-only).
   'packages/coach/src/tool-call.ts',
+  // Read-tool results: labels sent only to the model as data (backlog §4.3).
+  'packages/domain/src/coach/training-view.ts',
+  'packages/coach/src/training-read.ts',
 ]);
 const EXCLUDED_DIRS = ['apps/mobile/src/probe/'];
 

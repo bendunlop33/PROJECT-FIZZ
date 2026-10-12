@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { backFromEditor, openGymFromWorkout, openStartedWorkout, openWorkoutToCheckGym, popToFromEditor, popToTabs, popToToday, replaceWithSummary, replaceWithWorkouts } from '../src/navigation/actions';
+import { backFromEditor, openGymFromWorkout, openStartedWorkout, openWorkoutToCheckGym, popToFromEditor, popToTabs, popToToday, replaceWithSummary, replaceWithWorkouts, returnToWorkout } from '../src/navigation/actions';
 import { initialRootState } from '../src/navigation/initial-state';
 
 describe('root stack at launch (review S5)', () => {
@@ -107,6 +107,50 @@ describe('root stack after Finish, Done and Discard (review B1)', () => {
     const fn = src.slice(src.indexOf('function openOffProfileEquipment'), src.indexOf('function painOutcome'));
     expect(fn).toMatch(/openGymFromWorkout\(eq\.gymId\)/);
     expect(fn).not.toMatch(/EquipmentEditor/);
+  });
+});
+
+describe('correction sheet back to the workout (review coach-fallback B1)', () => {
+  const routeNames = ['Tabs', 'Workout', 'EditSet', 'Summary'];
+  const router = StackRouter({});
+  const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
+  type State = StackNavigationState<ParamListBase>;
+  const apply = (state: State, action: Parameters<typeof router.getStateForAction>[1]): State => {
+    const next = router.getStateForAction(state, action, options);
+    if (next === null || next.stale) throw new Error(`action not handled: ${action.type}`);
+    return next as State;
+  };
+  const navigate = (name: string, params: object = {}) => ({ type: 'NAVIGATE', payload: { name, params } }) as const;
+  const names = (s: State) => s.routes.map((r) => r.name);
+  const openSheet = () => apply(apply(router.getInitialState(options), navigate('Workout', { checkGym: { gymId: 'g', nonce: 'n' } })), navigate('EditSet', { sessionId: 's', setId: 'set-1' }));
+
+  it('[Tabs, Workout, EditSet] becomes [Tabs, Workout] with the corrected key merged, same Workout route', () => {
+    const s0 = openSheet();
+    const workoutKey = s0.routes[1]?.key;
+    const s = apply(s0, returnToWorkout({ corrected: { setId: 'set-1', key: 'op-1' } }));
+    expect(names(s)).toEqual(['Tabs', 'Workout']);
+    expect(s.index).toBe(1);
+    expect(s.routes[1]?.key).toBe(workoutKey);
+    expect(s.routes[1]?.params).toEqual({ checkGym: { gymId: 'g', nonce: 'n' }, corrected: { setId: 'set-1', key: 'op-1' } });
+  });
+
+  it('repeated corrections never grow the stack; the exclusion toast branch too', () => {
+    let s = openSheet();
+    s = apply(s, returnToWorkout({ corrected: { setId: 'set-1', key: 'op-1' } }));
+    s = apply(s, navigate('EditSet', { sessionId: 's', setId: 'set-2' }));
+    const toast = { kind: 'exclusion', key: 'op-2', text: 'Excluded', undo: { sessionId: 's' } } as unknown as NonNullable<Parameters<typeof returnToWorkout>[0]['toast']>;
+    s = apply(s, returnToWorkout({ toast, corrected: { setId: 'set-2', key: 'op-2' } }));
+    expect(names(s)).toEqual(['Tabs', 'Workout']);
+    expect((s.routes[1]?.params as { corrected?: unknown }).corrected).toEqual({ setId: 'set-2', key: 'op-2' });
+    // What the old code did: navigate from EditSet pushes a second Workout.
+    expect(names(apply(openSheet(), navigate('Workout', { corrected: { setId: 'set-1', key: 'op-1' } })))).toEqual(['Tabs', 'Workout', 'EditSet', 'Workout']);
+  });
+
+  it('EditSetScreen returns with that action, never navigate(\'Workout\')', () => {
+    const src = readFileSync(join(import.meta.dirname, '../src/screens/workout/EditSetScreen.tsx'), 'utf8');
+    expect(src).not.toMatch(/navigate\(\s*'Workout'/);
+    // Exclusion toast, `Set 2 updated` [Undo], the offer re-check alone, and `Set 2 deleted` [Undo] (workout gaps).
+    expect(src.match(/dispatch\(returnToWorkout\(/g)?.length).toBe(4);
   });
 });
 

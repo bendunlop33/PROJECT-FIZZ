@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { at, barbell, exercise, gym, HISTORY_EXERCISES, largeHistory, measureBlocking, profile, stack } from '@fizz/domain/testing';
+import { at, barbell, exercise, gym, HISTORY_EXERCISES, largeHistory, measureBlocking, profile, stack, timingBudget } from '@fizz/domain/testing';
 import { DatabaseManager, stringifyPretty, timeSlicer } from '../src/index';
 import { nodeDatabaseHost } from '../src/node/index';
 import { tempDir } from './helpers';
@@ -67,7 +67,7 @@ describe('Your data on a 2-year history (your-data-merge S1, S2)', () => {
     );
     // Before the fix Export blocked ~440 ms and Reset ~310 ms in one go (JIT). The margin absorbs CPU
     // contention from parallel test files, as the backup B1 test's does. Not yet measured on the phone.
-    for (const step of [counts, summary, exported, reset, undo, del]) expect(step.maxBlockMs).toBeLessThan(1000);
+    for (const step of [counts, summary, exported, reset, undo, del]) expect(step.maxBlockMs).toBeLessThan(timingBudget(1000));
     // Counts-only is SQL: no full read, no hash (S3).
     expect(counts.totalMs).toBeLessThan(summary.totalMs);
   }, 1_200_000);

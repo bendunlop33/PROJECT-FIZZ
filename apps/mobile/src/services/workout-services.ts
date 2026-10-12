@@ -1,6 +1,10 @@
 import {
   addDays,
   withoutTodayOnlySets,
+  liveExercises,
+  buildSwapExerciseCommand,
+  midSwapSlot,
+  swapPainCarry,
   applyCheckInPatch,
   buildActiveSetView,
   buildLiftHighlight,
@@ -48,6 +52,7 @@ import {
   repeatPreviewLines,
   targetSummaryLines,
   unspecifiedPain,
+  painStatusFor,
   withCoachTargets,
   type NextTargetEntry,
   equipmentForExercise,
@@ -69,6 +74,8 @@ import {
   routineCounts,
   routineFromSession,
   routineLastDone,
+  ruleTargetRpes,
+  type RuleExerciseInfo,
   type FinishedRef,
   type RoutineChange,
   type RoutineNameCheck,
@@ -137,6 +144,7 @@ import {
   recentPaceSamples,
   timeLeftSheet,
   type ActiveSetView,
+  type SetEditView,
   type SetRecord,
   type SetRecordInput,
   type CheckInGate,
@@ -182,6 +190,8 @@ import {
   SESSION_PICKER_DECISIONS,
   type SessionType,
   type SessionTypeKind,
+  type NotCopied,
+  isInHistory,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
@@ -215,13 +225,17 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 
+import { undoOpId, undoRefusalText } from '../workout/undo-op';
+
+/** A past workout's title when it has no exercise (`Finish anyway` with nothing added). */
+export const EMPTY_WORKOUT_TITLE = 'Empty workout';
+
 /**
  * Services for the workout loop (Today → check-in → Active set → Rest →
  * Summary). In-process, local, no AI and no network. Screens call these; the
  * rules live in `@fizz/domain`. Every write is idempotent by an operation ID
  * chosen by the screen once per intent, and versioned where it edits.
  */
-
 export interface WorkoutServicesContext {
   repos: () => SqliteRepositories;
   store: () => Store;
@@ -279,6 +293,9 @@ export interface CoachFitInfo {
 }
 
 export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
+
+/** What the exercise picker offers: rep, timed (active-workout §2.7) and distance exercises (ADR 0011). */
+export const PICKER_MEASUREMENTS: ReadonlySet<Exercise['measurement']> = new Set(['reps', 'duration', 'distance']);
 
 const CHECK_IN_WRITE_FAILED = 'Check-in not saved';
 const RECENT_WINDOW_MS = 3 * 60 * 60 * 1000;
@@ -373,9 +390,14 @@ export type PainClearWrite = { ok: true; cleared: { id: string; version: number 
 
 export interface RepeatCandidate {
   sessionId: string;
+  /** The session version the row was read at: what Delete sends as `expectedVersion` (rule 5). */
+  version: number;
   title: string;
   startedAtUtc: string;
   tz: string;
+  /** Imported (FitNotes) workouts have a date only. */
+  localDate: string | null;
+  source: 'manual' | 'import';
   gymId: string | null;
   gymName: string;
   exerciseNames: string[];
@@ -398,7 +420,7 @@ export interface RepeatPreview {
   title: string;
   exercises: { exerciseName: string; equipmentName: string | null; line: string }[];
   notes: { exerciseName: string; text: string; tone: 'info' | 'warning' }[];
-  notCopied: { exerciseName: string; skipped: number }[];
+  notCopied: NotCopied[];
   sourceGymId: string | null;
   sourceStartedAtUtc: string;
   tz: string;
@@ -419,6 +441,12 @@ export interface ActiveWorkoutData {
   title: string | null;
   /** Pace samples from Ben's last finished workouts, for `Time left` (active-workout §2.15.2). */
   recentPace: PaceSamples;
+  /**
+   * Catalogue info per exercise ID (null: none), for the built-in rule's
+   * target RPE on the target line (`ruleTargetRpes`). An exercise added
+   * since the load is missing and shows no built-in value until the next load.
+   */
+  exerciseInfo?: Readonly<Record<string, RuleExerciseInfo | null>>;
 }
 
 /**
@@ -670,6 +698,8 @@ export interface SwapSheet {
   plannedName: string;
   gymName: string;
   rows: SubstituteRow[];
+  /** Pain on the exercise being swapped: the substitute's targets are held today (B5, rule 9). */
+  painHeld: boolean;
 }
 
 /** `Change Push A too ›` → Apply / Undo (TE4). */
@@ -678,7 +708,8 @@ export type TemplateSwapWrite =
   | { ok: false; reason: 'stale' | 'missing' | 'invalid' | 'failed' | 'changed_since'; message: string };
 
 /** One of today's edits as the page sends it (§4.2, §11.7). `add` names only the exercise: the new row's key comes from the opId. */
-export type OverviewEdit = Exclude<TodayEditBody, { kind: 'order' } | { kind: 'add' }> | { kind: 'add'; exerciseId: string };
+/** `order` is the coach's Applied reorder (structural proposals) as well as `move`. */
+export type OverviewEdit = Exclude<TodayEditBody, { kind: 'add' }> | { kind: 'add'; exerciseId: string };
 
 /** The slot key an added exercise gets: from the write's opId, so a retry names the same row. */
 export function addSlotKey(opId: string): string {
@@ -1415,7 +1446,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   async function resolveNext(p: UserProfile, sourceSessionId: string): Promise<ResolvedOverview | null> {
     const source = await repos().sessions.get(sourceSessionId);
-    if (!source || source.session.ownerId !== p.id || source.session.status !== 'finished' || source.session.source === 'import') return null;
+    if (!source || source.session.ownerId !== p.id || !isInHistory(source.session) || source.session.source === 'import') return null;
     return { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } };
   }
 
@@ -1521,20 +1552,42 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** What `substituteTargets` and `rankSubstitutions` need at a gym (local reads only). */
-  async function substituteCtx(p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, today: CheckIn | null, exerciseIds: Iterable<string>) {
+  /**
+   * `carryFrom`: the exercise being swapped. An active pain flag on it holds
+   * the substitute today (B5, rule 9): it is planned as if pain was reported.
+   */
+  async function substituteCtx(p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, today: CheckIn | null, exerciseIds: Iterable<string>, carryFrom?: string) {
     const at = ctx.now();
     const gym = await repos().gyms.get(gymId).catch(() => null);
+    const painFlags = await repos().painFlags.listActive(p.id);
+    const checkInPain = unspecifiedPain(today);
+    const carried = carryFrom === undefined ? { active: false, reportedAtUtc: null } : painStatusFor(painFlags, carryFrom);
     return {
       ownerId: p.id,
       unit: p.preferredUnit,
       gym: { id: gymId, name: gym?.name ?? 'this gym', equipment: gymEquipment ?? (await repos().equipment.listByGym(gymId)) },
       knownEquipment: await allEquipment(p.id),
       lastUsedHere: await lastUsedFor(p.id, exerciseIds, gymId),
-      painFlags: await repos().painFlags.listActive(p.id),
-      sessionPain: unspecifiedPain(today),
+      painFlags,
+      sessionPain: checkInPain.active ? checkInPain : carried,
+      painCarried: carried.active,
       at,
       nowMs: toMs(at.utc),
     };
+  }
+
+  /**
+   * `substituteCtx` for a running workout: its current gym's items as the
+   * workout has them, and its check-in. Pain on the row being swapped (a
+   * flag, or a set marked `pain`) holds the substitute today (B5, rule 9):
+   * it is planned as if pain was reported in this workout.
+   */
+  async function midSwapCtx(p: UserProfile, aggregate: SessionAggregate, exerciseIds: Iterable<string>, fromSessionExerciseId: string) {
+    const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId).catch(() => null) : null;
+    const gymId = aggregate.session.gymId ?? 'no-gym';
+    const base = await substituteCtx(p, gymId, currentGymEquipment(aggregate.session), ci ?? null, exerciseIds);
+    const carried = swapPainCarry(aggregate, fromSessionExerciseId, base.painFlags);
+    return { ...base, sessionPain: base.sessionPain.active ? base.sessionPain : carried, painCarried: carried.active };
   }
 
   /**
@@ -1558,7 +1611,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const exercise = await exerciseById(e.toExerciseId);
       if (slot === null || exercise === null) continue;
       const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
-      swaps.set(e.slotKey, substituteTargets(slot, exercise, history, await substituteCtx(p, gymId, gymEquipment, today, [exercise.id])));
+      const from = basisSlots(sb).find((b) => b.slotKey === e.slotKey)?.exerciseId;
+      swaps.set(e.slotKey, substituteTargets(slot, exercise, history, await substituteCtx(p, gymId, gymEquipment, today, [exercise.id], from)));
     }
     // Added exercises (§11, TE16): each from its own history through the same path as a swap, never another exercise's load.
     const adds = new Map<string, SwapPlan>();
@@ -1908,9 +1962,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       }
       const flags = await repos().painFlags.listActive(p.id);
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
-      const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(aggregate.exercises.map((e) => e.exerciseId))).title : null;
+      const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(liveExercises(aggregate.exercises).map((e) => e.exerciseId))).title : null;
       const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
+      const exerciseInfo: Record<string, RuleExerciseInfo | null> = {};
+      for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) exerciseInfo[id] = await exerciseById(id).catch(() => null);
       return {
+        exerciseInfo,
         aggregate,
         gymName: gym?.name ?? null,
         gymNames: await gymNamesOf(p.id),
@@ -1927,7 +1984,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */
     view(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): ActiveSetView {
       // `Time left` has one source on this screen: `timeLeft` below, on its own minute clock (review N4).
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false });
+      const info = data.exerciseInfo ?? {};
+      const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe });
+    },
+
+    /** `buildSetEditView` over loaded data: the correction sheet, with the built-in target RPE as the default (CHANGELOG 2026-10-11 (b)). */
+    editView(data: ActiveWorkoutData, setId: string, values: SetValues | null, exclusions: readonly SetExclusion[] | null, targetRpe: number | null | undefined, setType: SetType | null = null): SetEditView | null {
+      const info = data.exerciseInfo ?? {};
+      const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
+      return buildSetEditView(data.aggregate, setId, values, exclusions, { targetRpe, ruleTargetRpe, setType });
     },
 
     /**
@@ -1955,6 +2021,21 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     dispatch: async (sessionId: string, command: SessionCommand): Promise<CommandOutcome> => ctx.afterCommand(await domain().dispatch(sessionId, command)),
 
     /**
+     * `Undo` on a delete-set, skip, correction, remove or swap toast (copy D4):
+     * `undo_op` puts back exactly what that operation changed, or is refused
+     * when anything it touched changed since (rule 5). The opId is derived
+     * from the target, so a retry or a double tap undoes once.
+     */
+    async undoOp(req: { sessionId: string; targetOpId: string }): Promise<{ ok: true; aggregate: SessionAggregate } | { ok: false; message: string }> {
+      try {
+        const r = ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'undo_op', at: ctx.now(), opId: undoOpId(req.targetOpId), targetOpId: req.targetOpId }));
+        return r.ok ? { ok: true, aggregate: r.aggregate } : { ok: false, message: undoRefusalText(r.error.code) };
+      } catch {
+        return { ok: false, message: undoRefusalText('failed') };
+      }
+    },
+
+    /**
      * `Save changes` in the correction sheet: values and exclusion chips in
      * one versioned `correct_set` (§2.13, AW6). Ticking `Pain` when no flag
      * covers the movement sets one first (AW7, source `workout`, ID derived
@@ -1965,7 +2046,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       sessionId: string;
       setId: string;
       expectedSetVersion: number;
-      patch: Partial<SetValues> & { exclusions?: SetExclusion[] };
+      patch: Partial<SetValues> & { exclusions?: SetExclusion[]; setType?: SetType; targetRpe?: number | null };
       opId: string;
     }): Promise<SetCorrectionWrite> {
       const failed = { ok: false as const, stale: false, message: 'The change wasn’t saved. Try again.' };
@@ -2116,9 +2197,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async pickerExercises(sessionId: string, query: string, opts: { withCatalogue?: boolean } = {}): Promise<PickerExercise[]> {
       const aggregate = await repos().sessions.get(sessionId);
       const p = await ctx.profile();
-      const saved = (await repos().exercises.list()).filter((e) => e.measurement === 'reps' && (e.ownerId === null || e.ownerId === p?.id));
+      // Timed exercises (planks, hangs) are loggable with a work timer (§2.7).
+      const saved = (await repos().exercises.list()).filter((e) => PICKER_MEASUREMENTS.has(e.measurement) && (e.ownerId === null || e.ownerId === p?.id));
       const have = new Set(saved.map((e) => e.id));
-      const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [];
+      const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id) && PICKER_MEASUREMENTS.has(e.measurement)) : [];
       const all = [...saved, ...extra];
       // Only the current gym's items, also after a switch (gym-switch §4.3).
       const snapshot = aggregate ? currentGymEquipment(aggregate.session) : [];
@@ -2178,6 +2260,90 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           exerciseRestS: p.exerciseRestS?.[req.exerciseId] ?? null,
         }),
       );
+    },
+
+    /**
+     * A note on an exercise or a logged set (active-workout §4.4; Your data),
+     * during or after the workout. Null clears it. Changes no value, target
+     * or rest; versioned on the workout.
+     */
+    async setNote(req: { sessionId: string; target: { kind: 'exercise'; sessionExerciseId: string } | { kind: 'set'; setId: string }; note: string | null; expectedVersion: number; opId: string }): Promise<CommandOutcome> {
+      return ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'set_note', at: ctx.now(), opId: req.opId, target: req.target, note: req.note, expectedVersion: req.expectedVersion }));
+    },
+
+    /**
+     * The Swap sheet mid-workout (exercise-library EL4, B3): the same rows as
+     * before Start (`rankSubstitutions`, this gym's items as the workout has
+     * them, never an exercise already in the workout, flagged ones last),
+     * ranked for the row's **pending** sets. Null when nothing is left to
+     * swap. Reads only; never an AI call.
+     */
+    async swapCandidates(sessionId: string, sessionExerciseId: string): Promise<SwapSheet | null> {
+      try {
+        const p = await owner();
+        const aggregate = await repos().sessions.get(sessionId);
+        if (!aggregate) return null;
+        const slot = midSwapSlot(aggregate, sessionExerciseId);
+        const row = aggregate.exercises.find((e) => e.id === sessionExerciseId);
+        const planned = row ? await exerciseById(row.exerciseId) : null;
+        if (slot === null || !row || planned === null) return null;
+        const inWorkout = new Set(aggregate.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId));
+        const all = new Map<string, Exercise>();
+        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) all.set(e.id, e);
+        for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);
+        const subs = planned.catalogueKey ? (ctx.catalogueSubstitutions?.(planned.catalogueKey) ?? []) : [];
+        const keys = new Set(subs.filter((k): k is string => k !== null));
+        const pool = [...all.values()].filter((e) => (e.ownerId === null || e.ownerId === p.id) && ((e.catalogueKey !== undefined && e.catalogueKey !== null && keys.has(e.catalogueKey)) || (planned.family !== undefined && e.family === planned.family)));
+        const histories = new Map<string, HistorySession[]>();
+        for (const e of pool) histories.set(e.id, await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));
+        const sctx = await midSwapCtx(p, aggregate, pool.map((e) => e.id), sessionExerciseId);
+        const rows = rankSubstitutions({ ...sctx, slotExercise: planned, slot, exercises: pool, catalogueSubstitutions: subs, excludeExerciseIds: inWorkout, histories, planned: null });
+        return { slotKey: sessionExerciseId, plannedName: row.exerciseName, gymName: sctx.gym.name, rows, painHeld: sctx.painCarried };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Ben's pick on the mid-workout Swap sheet applies at once (B3): only the
+     * row's pending sets move, each target from the substitute's own history
+     * fitted to this gym (rule 4); logged sets stay. Undo is `undoOp` on the
+     * same opId. A retry with the same opId is a duplicate.
+     */
+    async swapExercise(req: { sessionId: string; sessionExerciseId: string; exerciseId: string; opId: string }): Promise<CommandOutcome & { fromName?: string; toName?: string }> {
+      const failed = (message: string): CommandOutcome => ({ ok: false, error: { code: 'set_not_pending', message } });
+      const p = await ctx.profile();
+      const aggregate = await repos().sessions.get(req.sessionId);
+      if (!p || !aggregate) return { ok: false, error: { code: 'not_found', message: 'Workout not found.' } };
+      // Already applied (a retry after a crash): the same result, nothing new.
+      const row = aggregate.exercises.find((e) => e.id === req.sessionExerciseId);
+      if (aggregate.processedOps[req.opId] !== undefined) {
+        const to = aggregate.exercises.find((e) => e.swappedFrom?.opId === req.opId);
+        return { ok: true, aggregate, events: [], duplicate: true, superseded: false, fromName: row?.exerciseName ?? '', toName: to?.exerciseName ?? '' };
+      }
+      const slot = midSwapSlot(aggregate, req.sessionExerciseId);
+      const exercise = await ensureExercise(req.exerciseId);
+      if (!row || slot === null) return failed('Nothing left to swap.');
+      if (exercise === null) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
+      const history = await historyFor(p.id, exercise.id).catch(() => [] as HistorySession[]);
+      const sctx = await midSwapCtx(p, aggregate, [exercise.id], row.id);
+      const plan = substituteTargets(slot, exercise, history, sctx);
+      const built = buildSwapExerciseCommand({
+        aggregate,
+        sessionExerciseId: row.id,
+        plan,
+        gymName: sctx.gym.name,
+        ownerUnit: p.preferredUnit,
+        // The flags never name the substitute; when the original's pain carries (B5), its loads are held too (review gaps r2 N3).
+        painFlagged: new Set([...sctx.painFlags.map((f) => f.exerciseId), ...(sctx.painCarried ? [exercise.id] : [])]),
+        lastUsedHere: sctx.lastUsedHere,
+        opId: req.opId,
+        at: ctx.now(),
+        newId: ctx.newId,
+      });
+      if (!built.ok) return failed(built.reason === 'measurement' ? `${exercise.name} is measured differently.` : 'Nothing left to swap.');
+      const r = ctx.afterCommand(await domain().dispatch(req.sessionId, built.command));
+      return r.ok ? { ...r, fromName: row.exerciseName, toName: exercise.name } : r;
     },
 
     /**
@@ -2353,29 +2519,46 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             continue;
           }
           if (!a || a.session.source === 'import') continue;
-          const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
-          if (done.length === 0) continue;
-          const gymId = a.session.gymId;
-          // A workout that switched gym is listed as `Main Gym → Hotel · Lisbon` (gym-switch check 24).
-          const route = gymRouteIds(a.session);
-          for (const g of route) if (!gyms.has(g)) gyms.set(g, (await repos().gyms.get(g).catch(() => null))?.name ?? 'Gym');
-          // An exercise done at two gyms is listed once (review B1).
-          const names = doneExerciseNames(a);
-          rows.push({
-            sessionId: a.session.id,
-            title: storedName(a) ?? (await titleFor(a.exercises.map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title,
-            startedAtUtc: a.session.startedAt.utc,
-            tz: a.session.startedAt.tz,
-            gymId,
-            gymName: route.length === 0 ? 'Gym not recorded' : route.map((g) => gyms.get(g) ?? 'Gym').join(' → '),
-            exerciseNames: names,
-            sets: done.length,
-          });
+          const row = await repeat.describe(a, gyms);
+          if (row.sets === 0) continue;
+          rows.push(row);
         }
       }
       // Only `Start from a past workout` shows this count; Today's row doesn't read it (review r3 N4).
       const importedNotListed = opts.countImported === false ? 0 : await repos().sessions.countImportedFinished(p.id).catch(() => 0);
       return { rows, unreadable, importedNotListed };
+    },
+
+    /**
+     * One past workout as a list row (Past workouts, Recently deleted):
+     * title, gym route, done exercises and set count. `gyms` caches names.
+     */
+    async describe(a: SessionAggregate, gyms: Map<string, string> = new Map()): Promise<RepeatCandidate> {
+      const done = a.sets.filter((s) => s.status === 'completed' && s.pairedWithSetId === null);
+      // A workout that switched gym is listed as `Main Gym → Hotel · Lisbon` (gym-switch check 24).
+      const route = gymRouteIds(a.session);
+      for (const g of route) if (!gyms.has(g)) gyms.set(g, (await repos().gyms.get(g).catch(() => null))?.name ?? 'Gym');
+      return {
+        sessionId: a.session.id,
+        version: a.session.version,
+        // A test session with no exercise at all is recognisable in Past workouts' delete list (delete-workouts §2.3).
+        title: storedName(a) ?? (liveExercises(a.exercises).length === 0 ? EMPTY_WORKOUT_TITLE : (await titleFor(liveExercises(a.exercises).map((e) => e.exerciseId)).catch(() => ({ title: 'Workout' }))).title),
+        startedAtUtc: a.session.startedAt.utc,
+        tz: a.session.startedAt.tz,
+        localDate: a.session.localDate ?? null,
+        source: a.session.source,
+        gymId: a.session.gymId,
+        gymName: route.length === 0 ? 'Gym not recorded' : route.map((g) => gyms.get(g) ?? 'Gym').join(' → '),
+        // An exercise done at two gyms is listed once (review B1).
+        exerciseNames: doneExerciseNames(a),
+        sets: done.length,
+      };
+    },
+
+    /** `describe` by ID (an imported workout's view, delete-workouts §2.1); null if it isn't stored or can't be read. */
+    async describeById(sessionId: string): Promise<RepeatCandidate | null> {
+      const a = await repos().sessions.get(sessionId).catch(() => null);
+      return a === null ? null : repeat.describe(a);
     },
 
     /** Today's `Repeat last workout` row: the newest readable candidate, or null. Never throws (review S1). */
@@ -2394,7 +2577,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const planned = await repeatPlan(p, sourceSessionId, gymId);
       if (planned === null) return null;
       const { source, out: r } = planned;
-      const title = storedName(source) ?? (await titleFor(source.exercises.map((e) => e.exerciseId)).catch(() => ({ title: GENERIC_WORKOUT_NAME }))).title;
+      const title = storedName(source) ?? (await titleFor(liveExercises(source.exercises).map((e) => e.exerciseId)).catch(() => ({ title: GENERIC_WORKOUT_NAME }))).title;
       return { title, exercises: repeatPreviewLines(r.aggregate), notes: r.notes, notCopied: r.notCopied, sourceGymId: source.session.gymId, sourceStartedAtUtc: source.session.startedAt.utc, tz: source.session.startedAt.tz };
     },
   };
@@ -2928,7 +3111,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const t = await todayFor(p, resolvedR, gymId, undefined, null);
           const edited = t.draft === null ? null : await routineStart(p, { routineId: up.routine.id, gymId, opId: `preview-next-routine:${up.routine.id}`, preview: true, todayEdits: t.input });
           const { r, ref } = edited !== null && edited.r.ok ? { r: edited.r, ref: edited.ref } : up.run;
-          const derived = await titleFor(r.aggregate.exercises.map((e) => e.exerciseId));
+          const derived = await titleFor(liveExercises(r.aggregate.exercises).map((e) => e.exerciseId));
           return {
             routine: { id: up.routine.id, basis: up.basis },
             sourceSessionId: ref?.sessionId ?? null,
@@ -2950,7 +3133,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const lastUsedHere = await lastUsedFor(p.id, [...source.exercises.map((e) => e.exerciseId), ...swapExerciseIds(t.input)], gymId);
         const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview-next:${last.sessionId}`, at: ctx.now(), sourceSessionId: last.sessionId, preview: true, targets, lastUsedHere, today: t.input });
         if (!r.ok) return null;
-        const derived = await titleFor(source.exercises.map((e) => e.exerciseId));
+        const derived = await titleFor(liveExercises(source.exercises).map((e) => e.exerciseId));
         return {
           routine: null,
           sourceSessionId: last.sessionId,
@@ -3292,7 +3475,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (req.gymId !== null && gym === null) return null;
         const at = ctx.now();
         const title =
-          resolved.kind === 'routine' ? resolved.routine.name : (storedName(resolved.source) ?? (await titleFor(resolved.source.exercises.map((e) => e.exerciseId))).title);
+          resolved.kind === 'routine' ? resolved.routine.name : (storedName(resolved.source) ?? (await titleFor(liveExercises(resolved.source.exercises).map((e) => e.exerciseId))).title);
         const source = await overviewSource(resolved);
         // A failed read shows no coach rows; the key below reads them again, so a Start planned without them is refused.
         const coachTargets = await storedCoachTargets(p.id, source).catch(() => [] as NextSessionTargetRecord[]);
@@ -3707,7 +3890,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const pool = [...all.values()].filter((e) => (e.catalogueKey !== undefined && e.catalogueKey !== null && keys.has(e.catalogueKey)) || (planned.family !== undefined && e.family === planned.family) || e.id === planned.id);
         const histories = new Map<string, HistorySession[]>();
         for (const e of pool) histories.set(e.id, await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));
-        const sctx = await substituteCtx(p, gymId, gymEquipment, planCheckIn, pool.map((e) => e.id));
+        const sctx = await substituteCtx(p, gymId, gymEquipment, planCheckIn, pool.map((e) => e.id), planned.id);
         // `Swap again`: the planned exercise first, with the target the plan gives it without this swap (what Undo restores).
         let plannedRow: { targetText: string; spoken: string } | null = null;
         if (resolvedEdits.swaps.has(req.slotKey)) {
@@ -3732,7 +3915,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           histories,
           planned: plannedRow,
         });
-        return { slotKey: req.slotKey, plannedName: planned.name, gymName: sctx.gym.name, rows };
+        return { slotKey: req.slotKey, plannedName: planned.name, gymName: sctx.gym.name, rows, painHeld: sctx.painCarried };
       } catch {
         return null;
       }
@@ -3757,7 +3940,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       // Names for workouts without one (`Push`), from their exercises (audit F5).
       const titles: Record<string, string> = {};
       for (const a of [...(active ? [active] : []), ...finished]) {
-        if (storedName(a) === null && a.exercises.length > 0) titles[a.session.id] = (await titleFor(a.exercises.map((e) => e.exerciseId))).title;
+        if (storedName(a) === null && a.exercises.length > 0) titles[a.session.id] = (await titleFor(liveExercises(a.exercises).map((e) => e.exerciseId))).title;
       }
       return buildTodayView({
         nowMs,

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
+  DistanceMetresSchema,
   DurationSecondsSchema,
   IdSchema,
+  NoteSchema,
   LoadConventionSchema,
   LoadSchema,
   OperationIdSchema,
@@ -26,6 +28,12 @@ export const SetValuesSchema = z.object({
   durationS: DurationSecondsSchema.nullable(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
+  /**
+   * Metres, for distance exercises (sled push, carries). Absent on every
+   * other set, and on sets saved before distance existed; writers omit it
+   * rather than store null (`withoutEmptyDistance`).
+   */
+  distanceM: DistanceMetresSchema.nullable().optional(),
 });
 export type SetValues = z.infer<typeof SetValuesSchema>;
 
@@ -260,8 +268,17 @@ export interface PlannedSet {
   load: z.infer<typeof LoadSchema> | null;
   reps: z.infer<typeof RepRangeSchema> | null;
   durationS: number | null;
+  /** Distance target in metres (distance exercises only); absent otherwise. */
+  distanceM?: number | null | undefined;
   rpe: number | null;
   rir: number | null;
+  /**
+   * Ben's own target RPE for this set (CHANGELOG 2026-10-11 "Offers follow
+   * the target RPE"), set for the set, its exercise or today with
+   * `set_target_rpe`. Wins over `rpe` (the coach's or the routine's) and the
+   * built-in rule's value. Absent = not overridden.
+   */
+  rpeOverride?: number | undefined;
   source?: PlannedSource | undefined;
   /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
   provenance?: TargetProvenance | undefined;
@@ -274,8 +291,10 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   load: LoadSchema.nullable(),
   reps: RepRangeSchema.nullable(),
   durationS: DurationSecondsSchema.nullable(),
+  distanceM: DistanceMetresSchema.nullable().optional(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
+  rpeOverride: RpeSchema.optional(),
   source: PlannedSourceSchema.optional(),
   provenance: TargetProvenanceSchema.optional(),
   /** How the load was fitted to the gym's equipment (GS-S1); absent = as intended. */
@@ -321,6 +340,8 @@ export const WorkoutSetSchema = z.object({
    * written before this field existed).
    */
   skippedBy: z.enum(['before_start', 'in_workout']).optional(),
+  /** Ben's note on this set (Your data). Changed only by `set_note`; never a result, never counted. */
+  note: NoteSchema.optional(),
   edited: z.boolean(),
   version: z.int().min(1),
 }).refine(
@@ -361,6 +382,21 @@ export const SessionExerciseSchema = z.object({
    * row (gym-switch GS6). Shown as one exercise in parts. Absent = not a continuation.
    */
   continuesFromId: IdSchema.optional(),
+  /** Ben's note on this exercise in this workout (Your data). Changed only by `set_note`. */
+  note: NoteSchema.optional(),
+  /**
+   * Removed from the workout because it was added by mistake (nothing was
+   * logged on it; exercise-library §4.6), or emptied by a swap. Its sets are
+   * deleted tombstones; the row stays for the audit and Undo, and every view
+   * leaves it out. Absent = in the workout.
+   */
+  removed: z.object({ opId: OperationIdSchema, at: ZonedTimestampSchema, by: z.enum(['remove', 'swap']) }).optional(),
+  /**
+   * Mid-workout swap (EL4, B3): this row took over the pending sets of
+   * `sessionExerciseId`'s exercise for today, by operation `opId` (its
+   * Undo). Done sets stayed on that row.
+   */
+  swappedFrom: z.object({ sessionExerciseId: IdSchema, opId: OperationIdSchema }).optional(),
 });
 export type SessionExercise = z.infer<typeof SessionExerciseSchema>;
 
@@ -436,6 +472,19 @@ export const PauseIntervalSchema = z.object({
 });
 export type PauseInterval = z.infer<typeof PauseIntervalSchema>;
 
+/**
+ * Why a finished workout is in Recently deleted (delete-workouts §6.1, DW-D1).
+ * Set only while `status` is `deleted`; cleared by Restore. `purgeAfterUtc`
+ * is the end of the local day 30 days after `at` (in `at.tz`): from then the
+ * workout is no longer listed or restorable, whether or not the purge has run.
+ */
+export const SessionDeletionSchema = z.object({
+  at: ZonedTimestampSchema,
+  opId: OperationIdSchema,
+  purgeAfterUtc: UtcTimestampSchema,
+});
+export type SessionDeletion = z.infer<typeof SessionDeletionSchema>;
+
 export const WorkoutSessionSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
@@ -455,8 +504,12 @@ export const WorkoutSessionSchema = z.object({
    * `reverted`: an imported workout hidden by `Undo this import` (DX7). Like
    * `discarded`, it is excluded from history, Progress, "Last" values and
    * targets; the rows are kept.
+   * `deleted`: a finished workout Ben deleted (delete-workouts DW-D1). Out of
+   * every derived view like `reverted`, restorable for 30 days (`deletion`).
    */
-  status: z.enum(['active', 'finished', 'discarded', 'reverted']),
+  status: z.enum(['active', 'finished', 'discarded', 'reverted', 'deleted']),
+  /** Present exactly when `status` is `deleted`. */
+  deletion: SessionDeletionSchema.optional(),
   source: z.enum(['manual', 'import']),
   /** The import job this workout came in with (imported workouts only). */
   importJobId: IdSchema.optional(),
@@ -500,6 +553,12 @@ export const WorkoutSessionSchema = z.object({
   finishBy: ZonedTimestampSchema.optional(),
   /** The pre-start draft's edits this workout was started with (ADR 0022 §4). Absent = none. */
   todayEdits: SessionTodayEditsSchema.optional(),
+  /**
+   * Ben confirmed a long workout's time with `Count it` (progress.md PG25a),
+   * Your data. A workout over Progress's 4 h cap counts in `Time in gym` only
+   * once this is set. Absent = not confirmed. Changes no set and no time.
+   */
+  durationConfirmedAt: ZonedTimestampSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 
@@ -550,6 +609,8 @@ export const SetSnapshotSchema = z.object({
   actual: SetValuesSchema.nullable(),
   /** Absent on entries written before exclusions existed, and when none were set (`Set 2 marked: spotted`). */
   exclusions: SetExclusionsSchema.optional(),
+  /** Ben's own target RPE for the set (`planned.rpeOverride`); absent when none, and on entries written before it existed. */
+  targetRpe: RpeSchema.optional(),
   version: z.int().min(1),
 });
 export type SetSnapshot = z.infer<typeof SetSnapshotSchema>;

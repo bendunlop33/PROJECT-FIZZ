@@ -104,6 +104,6 @@ export function logHaptic(record: boolean): Extract<HapticToken, 'commit' | 'rec
  * for a workout that really finished (never on discard, never on a later
  * visit to the same Summary from Today).
  */
-export function shouldPlayFinish(o: { sessionStatus: 'active' | 'finished' | 'discarded' | 'reverted'; justFinished: boolean; played: ReadonlySet<string>; sessionId: string }): boolean {
+export function shouldPlayFinish(o: { sessionStatus: 'active' | 'finished' | 'discarded' | 'reverted' | 'deleted'; justFinished: boolean; played: ReadonlySet<string>; sessionId: string }): boolean {
   return o.sessionStatus === 'finished' && o.justFinished && !o.played.has(o.sessionId);
 }

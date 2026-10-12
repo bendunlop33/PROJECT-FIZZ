@@ -4,6 +4,10 @@ import {
   deriveId,
   discardCommand,
   LEGACY_STARTER_IDS,
+  liveEdits,
+  dismissedCoachEditOpIds,
+  structuralApplyOf,
+  structuralDraftPlan,
   listGymPresets,
   materialiseGymDraft,
   starterExercises,
@@ -29,7 +33,7 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { DraftBasis, EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachModelPort } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
@@ -41,6 +45,8 @@ import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
+import { createProgressService } from './progress-service';
+import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 
@@ -131,14 +137,29 @@ export function createAppServices(deps: AppServicesDeps) {
     return [...all].sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : 1))[0] ?? null;
   }
 
-  async function updateProfile(patch: Parameters<typeof bumpProfile>[1]): Promise<SetupWriteResult> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const current = await getProfile();
-      if (!current) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
-      const saved = await repos().profiles.save(bumpProfile(current, patch, deps.now().utc), current.version);
-      if (saved.ok) return { ok: true };
-    }
-    return { ok: false, message: WRITE_FAILED };
+  /**
+   * Versioned profile write. `patch` may be a function of the current profile,
+   * so a retry after a version clash merges onto the fresh row instead of
+   * writing a stale copy (review progress-A S3); it returns null for "no
+   * change". Writes run one at a time, so two quick taps can't race.
+   */
+  type ProfilePatch = Parameters<typeof bumpProfile>[1];
+  let profileWrites: Promise<unknown> = Promise.resolve();
+  function updateProfile(patch: ProfilePatch | ((current: UserProfile) => ProfilePatch | null)): Promise<SetupWriteResult> {
+    const run = async (): Promise<SetupWriteResult> => {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const current = await getProfile();
+        if (!current) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
+        const next = typeof patch === 'function' ? patch(current) : patch;
+        if (next === null) return { ok: true };
+        const saved = await repos().profiles.save(bumpProfile(current, next, deps.now().utc), current.version);
+        if (saved.ok) return { ok: true };
+      }
+      return { ok: false, message: WRITE_FAILED };
+    };
+    const out = profileWrites.then(run, run);
+    profileWrites = out.catch(() => undefined);
+    return out;
   }
 
   const yourData = {
@@ -351,6 +372,7 @@ export function createAppServices(deps: AppServicesDeps) {
   function afterCommand(outcome: CommandOutcome): CommandOutcome {
     if (outcome.ok && !outcome.duplicate && outcome.events.some((e) => e.type === 'SessionFinished')) {
       void backups.backUpOnPhone('workout_finished');
+      void progress.prewarm().catch(() => undefined);
     }
     if (outcome.ok && deps.restAlerts) void deps.restAlerts.reconcile(outcome.aggregate, toMs(deps.now().utc));
     return outcome;
@@ -432,7 +454,8 @@ export function createAppServices(deps: AppServicesDeps) {
       const at = '2026-10-10T00:00:00.000Z';
       catalogueRows = (deps.catalogue ? deps.catalogue() : bundledCatalogue().catalogue.entries).flatMap((entry) => {
         const row = toExerciseRow(entry, at);
-        return row.ok && row.exercise.measurement === 'reps' ? [row.exercise] : [];
+        // Every measurement: the picker chooses what it offers (`PICKER_MEASUREMENTS`); swaps match the slot's.
+        return row.ok ? [row.exercise] : [];
       });
     }
     return catalogueRows;
@@ -474,6 +497,8 @@ export function createAppServices(deps: AppServicesDeps) {
     onSessionChanged: (a) => {
       if (deps.restAlerts) void deps.restAlerts.reconcile(a, toMs(deps.now().utc));
     },
+    catalogueExercises,
+    catalogueSubstitutions,
   });
 
   /** Gyms and equipment (Your data): the minimal gym editor. */
@@ -498,6 +523,54 @@ export function createAppServices(deps: AppServicesDeps) {
   }
 
   /**
+   * Structural changes Ben applied from a coach card (ADR 0020 §3) are
+   * written into the next workout's pre-start draft as his own `Swap today`,
+   * `Skip today` and order edits (ADR 0022), so the overview shows them with
+   * its own Undo and `Change Push A too ›` (the only route to a template
+   * change), and Start uses them like any edit. One op ID per apply and
+   * change: a second load writes nothing, and an edit Ben took back on an
+   * earlier day's overview isn't written again (review S5). An edit the
+   * draft's own checks refuse here (not doable at this gym, or no place for
+   * it in the plan) is left out and reported (review S1): the card reads
+   * `Couldn't apply here` and the overview says so once.
+   */
+  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number }> {
+    const none = { wrote: false, refused: 0 };
+    const basis: DraftBasis = startOf.routineOf !== undefined ? { kind: 'routine', routineId: startOf.routineOf } : { kind: 'next', sourceSessionId: startOf.nextOf };
+    const applies = await coach.appliedStructural(basis);
+    if (applies.length === 0) return none;
+    const p = await getProfile();
+    const draft = p === null ? null : await repos().drafts.open(p.id, basis).catch(() => null);
+    const earlier = p === null ? [] : await repos().drafts.listForBasis(p.id, basis).catch(() => []);
+    const plan = structuralDraftPlan({ applies, draftOpIds: draft?.opIds ?? null, liveEdits: draft === null ? [] : liveEdits(draft.edits), dismissedOpIds: dismissedCoachEditOpIds(earlier) });
+    const refusedApplies = new Set<string>();
+    let version = draftVersion;
+    let wrote = false;
+    for (const w of plan.write) {
+      const r = await overview.edit({ target, gymId, expectedDraftVersion: version, opId: w.opId, edit: w.edit });
+      if (r.ok) {
+        version = r.draft?.version ?? version;
+        wrote = wrote || !r.duplicate;
+      } else if (r.reason === 'invalid') {
+        const applyId = structuralApplyOf(w.opId);
+        if (applyId !== null) refusedApplies.add(applyId);
+      }
+    }
+    for (const editId of plan.remove) {
+      const r = await overview.undoEdit({ target, gymId, expectedDraftVersion: version, opId: `coach-undo:${editId}`, editId });
+      if (r.ok) {
+        version = r.draft?.version ?? version;
+        wrote = true;
+      }
+    }
+    coach.noteStructuralRefused(
+      applies.map((a) => a.applyActionId),
+      [...refusedApplies],
+    );
+    return { wrote, refused: refusedApplies.size };
+  }
+
+  /**
    * The Workout overview (workout-overview.md): load, Why?, and Start. With no
    * gym, the rows are fitted to the typical gym, and Start saves it (after the
    * stale check) before starting, as Today's Start always has.
@@ -506,7 +579,14 @@ export function createAppServices(deps: AppServicesDeps) {
     async load(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null }) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;
       if (req.gymId === null && typical === null) return null;
-      return loop.overview.load({ ...req, ...(typical ? { typicalEquipment: typical } : {}) });
+      const read = () => loop.overview.load({ ...req, ...(typical ? { typicalEquipment: typical } : {}) });
+      const data = await read();
+      if (data === null) return null;
+      // Coach changes Ben applied for this workout (ADR 0020 §3) become today's edits, once; an undone one is taken back.
+      const coachChanges = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => ({ wrote: false, refused: 0 }));
+      const page = coachChanges.wrote ? await read() : data;
+      // A coach change the overview's own checks refused here (review S1): the page says so once.
+      return page === null ? null : { ...page, coachRefused: coachChanges.refused };
     },
     async explain(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; sessionExerciseId: string }) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;
@@ -613,6 +693,30 @@ export function createAppServices(deps: AppServicesDeps) {
     },
   });
 
+  /** Progress (progress.md slice A): windows, sessions, time, muscles, records, calendar, `Count it`. Local only. */
+  const progress = createProgressService({
+    store: () => deps.manager.store,
+    now: deps.now,
+    profile: getProfile,
+    saveSettings: (merge) =>
+      updateProfile((current) => {
+        const progress = merge(current.progress);
+        return progress === null ? null : { progress };
+      }),
+    catalogueExercises,
+    dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
+    ...(deps.idle === undefined ? {} : { idle: deps.idle }),
+  });
+
+  /** Deleting past workouts: delete, Undo, Recently deleted, Restore, purge (delete-workouts.md). */
+  const history = createHistoryServices({
+    repos,
+    now: deps.now,
+    profile: getProfile,
+    describe: (a, gyms) => loop.repeat.describe(a, gyms),
+    activeWorkout: () => sessions.active(),
+  });
+
   /** Export, Delete my data and Reset coaching knowledge, by data domain (rule 10). */
   const data = createDataDomainService({
     manager: deps.manager,
@@ -630,8 +734,10 @@ export function createAppServices(deps: AppServicesDeps) {
 
   return {
     ...loop,
+    history,
     overview,
     routines,
+    progress,
     data,
     coach,
     gyms,

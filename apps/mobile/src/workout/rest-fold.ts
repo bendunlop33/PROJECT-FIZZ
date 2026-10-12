@@ -7,7 +7,7 @@ import { toMs } from '@fizz/domain';
  */
 
 /** `time` (a timed set) is entered in the reps field's place. */
-export type EntryField = 'load' | 'reps' | 'time';
+export type EntryField = 'load' | 'reps' | 'time' | 'distance';
 
 export interface FoldInput {
   /** The rest timer is running or paused. */

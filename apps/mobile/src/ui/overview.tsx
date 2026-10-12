@@ -255,6 +255,8 @@ export interface OverviewRowProps {
   first: boolean;
   onToggle: () => void;
   onHowTo?: (() => void) | undefined;
+  /** `History` (workout-overview §2.2 region 8): the exercise's Progress detail (progress.md §2.7). */
+  onHistory?: (() => void) | undefined;
   onWhy: () => void;
   onStillHurts?: (() => void) | undefined;
   onEditGym?: (() => void) | undefined;
@@ -290,7 +292,7 @@ function CoachTag() {
  * the snap changed the target here; the reason is in the panel. At AX sizes
  * the load stacks under the name.
  */
-export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onWhy, onStillHurts, onEditGym, onCoach, editPills = [], onEditPill, showWhy = true, customActions = [], onCustomAction, footer }: OverviewRowProps) {
+export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onHistory, onWhy, onStillHurts, onEditGym, onCoach, editPills = [], onEditPill, showWhy = true, customActions = [], onCustomAction, footer }: OverviewRowProps) {
   const theme = useTheme();
   const coachLabel = row.coach === null ? null : coachPill(row.coach).label;
   // Skipped variant (design-system §9.66): name and detail in text.tertiary, load `—`.
@@ -360,6 +362,7 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
               />
             ))}
             {onHowTo ? <OutlinePill label="How to" onPress={onHowTo} accessibilityLabel={`How to: ${row.name}`} /> : null}
+            {onHistory ? <OutlinePill label="History" onPress={onHistory} accessibilityLabel={`History: ${row.name}`} /> : null}
             {showWhy ? <OutlinePill label="Why?" onPress={onWhy} accessibilityLabel={`Why this target for ${row.name}?`} /> : null}
             {coachLabel !== null && onCoach ? <OutlinePill label={coachLabel} onPress={onCoach} accessibilityLabel={`${coachLabel}: ${row.name}`} /> : null}
           </View>

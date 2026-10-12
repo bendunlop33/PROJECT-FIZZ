@@ -116,7 +116,8 @@ Partly built items are marked *(partly)*, with what exists. Sources are under `d
 |---|---|---|---|
 | Swap an exercise mid-workout (applies at once with Undo). Today it's only possible before Start | M | Ben (B3) | design/active-workout.md §4.4; exercise-library EL4 |
 | Undo for delete set, skip exercise and corrections (these only confirm today) | M | Ben (copy D4) | ADR 0003; minimal-copy-audit D4 |
-| Timed exercises (planks, hangs, carries) with a work timer and an "Auto-save timed sets" setting. *(partly: domain commands only; the picker hides timed exercises)* | M | nothing | active-workout §2.7; ADR 0010 |
+| Timed exercises (planks, hangs, carries) with a work timer. *(built on claude/gaps: picker, Start/Stop, `Log 0:45` without the timer, a `Time` notification at 0 when locked; needs a device check)* | M | nothing | active-workout §2.7; ADR 0010 |
+| "Auto-save timed sets" setting (save the planned time at 0 with Undo), and the spoken `Time.` cue | S | Audio-session module (cue) | active-workout §2.7 |
 | Distance sets (sled push, carries), so the sled-push guide can be reached | M | nothing | ADR 0011; exercise-library §8.2 |
 | Supersets during the workout: create them, A1/A2 rounds, rest at the end of a round. *(partly: domain grouping, bracket on the overview)* | M | After the routine editor | active-workout §2.6 |
 | In-workout "All" overview table (FitNotes style) | L | nothing | active-workout §2.4 |
@@ -247,7 +248,8 @@ Partly built items are marked *(partly)*, with what exists. Sources are under `d
 | Item | Size | Waiting on | Source |
 |---|---|---|---|
 | Coach reads past training, gym equipment and built-in targets (tools declared, no executors), plus a "How am I doing?" chip | M | nothing | ADR 0020 §10; coach-contract §6.1 |
-| Coach proposes structural changes (swap/add/remove/reorder) as Apply cards. *(partly: tool and UI exist, withheld)* | L | Ben (ADR 0020 §3) | CLAUDE.md rule 3; coach-adjustments CA9 |
+| Coach proposes structural changes (swap/add/remove/reorder) as Apply cards. *(partly: swap, remove and reorder built on claude/coach-tools; add not offered, see next row)* | L | Ben (ADR 0020 §3) | CLAUDE.md rule 3; coach-adjustments CA9 |
+| Coach proposes adding an exercise to the next workout (Apply card with Undo). The pre-start draft (ADR 0022) has no slot for an added exercise yet | M | After workout-library (or a draft model that can hold an add) | ADR 0020 §3; reviews/coach-tools S8, SP1 |
 | Variety requests become a change-review card on a routine | M | After structural changes | workout-builder WB14 |
 | Generic change review: stored proposals with scopes (today / one date / from now on / programme), review list, change history, "Ask for changes". *(partly: gym-switch and "Change routine too" cards)* | L | Ben (CR1) | change-review.md |
 | Memory screen: list, edit, forget, suggestions needing Save, expiry. *(partly: save/forget through chat)* | L | nothing | coach-memory §2.1–2.4 |

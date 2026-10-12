@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { NBSP, toMs } from '@fizz/domain';
-import { apply, at, logCmd, ms, setsFor, startFixture, values, kg, BENCH } from '@fizz/domain/testing';
+import { apply, at, logCmd, ms, setsFor, startFixture, values, kg, BENCH, HANG } from '@fizz/domain/testing';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { createRestAlertController, decideAlertActions, planRestAlert, type NotifierPort, type PlannedRestAlert } from '../src/alerts/rest-alerts';
@@ -50,6 +50,18 @@ describe('planRestAlert (lock-screen-and-alerts §2.2, §4.1)', () => {
     const fin = apply(logged, { type: 'finish', at: at(20), opId: 'f', expectedVersion: logged.session.version, endedAt: null });
     expect(planRestAlert(fin, ms(21))).toBeNull();
     expect(planRestAlert(null, ms(21))).toBeNull();
+  });
+
+  it('a running work timer gets one alert at its 0 (review gaps S3); Stop, pause or the deadline passing cancel it', () => {
+    const hang = setsFor(logged, HANG)[0]?.id ?? '';
+    const working = apply(logged, { type: 'start_work_interval', at: at(20), opId: 'w', setId: hang, durationS: 45 });
+    const a = planRestAlert(working, ms(21));
+    expect(a).toMatchObject({ identifier: `fizz.rest.${state.session.id}`, title: 'Time', body: 'Dead hang · 0:45', fireAtMs: ms(65) });
+    // Same identifier as the rest alert it replaces: never two at once.
+    expect(a?.identifier).toBe(planRestAlert(logged, ms(10))?.identifier);
+    expect(planRestAlert(working, ms(65))).toBeNull();
+    expect(planRestAlert(apply(working, { type: 'stop_work_interval', at: at(30), opId: 's', setId: hang }), ms(31))).toBeNull();
+    expect(planRestAlert(apply(working, { type: 'pause', at: at(30), opId: 'p' }), ms(31))).toBeNull();
   });
 
   it('decides cancel / replace / nothing', () => {

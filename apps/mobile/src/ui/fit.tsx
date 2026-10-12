@@ -12,7 +12,7 @@ import { AppText } from './Text';
 import { Chip, ChipRow } from './workout';
 
 /**
- * Fit to time (fit-to-time.md §3; design-system §9.73, §9.74):
+ * Fit to time (fit-to-time.md §3; design-system §9.78, §9.79):
  * `HowLongSheet` and `FitCard`. Direction D tokens only, no new values.
  * They show what the domain worked out (`howLongSheet`, `fitView`) and
  * compute nothing. Static: no spinner or progress animation anywhere.

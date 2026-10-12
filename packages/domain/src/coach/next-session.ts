@@ -4,6 +4,7 @@ import { stepLoad } from '../equipment';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { deriveId } from '../stable';
+import { usualTargetRpeOf, type TargetRpeSource } from './target-rpe';
 import { nextTargetBlocks } from '../session/gym-switch';
 
 /**
@@ -21,8 +22,18 @@ export interface NextSessionBasis {
   /** The exercise as it was in the finished workout. */
   exercise: SessionExercise;
   equipment: EquipmentInstance | null;
-  /** The last working target (today's plan; today's top set when there was none). */
+  /**
+   * The last working target (today's plan; today's top set when there was
+   * none). Its `rpe` is the set's usual target RPE (`usualTargetRpeOf`: the
+   * coach's, the routine's RPE or 10 − RIR, else the built-in rule's; review
+   * target-rpe B1). Ben's own override is left out: it is for that workout
+   * only (§4.8), so it is never the baseline for next time (r2 S1).
+   */
   last: CoachTarget;
+  /** Where `last.rpe` came from; absent when it has none. Never `ben`. */
+  lastRpeSource?: TargetRpeSource | undefined;
+  /** Ben's own target RPE for that workout, when he set one (not carried forward). */
+  benRpe?: number | undefined;
   lastSets: number;
   /** The built-in rule's target for next time, for comparison; null when it plans nothing. */
   builtIn: { target: CoachTarget; sets: number } | null;
@@ -47,8 +58,10 @@ export interface NextChangeClass {
 
 /**
  * CA8: small = the load stays or moves exactly one achievable step on this
- * equipment, the rep range moves by at most 2 at either end, and the set
- * count changes by at most one (+1 only when Ben asked). Anything else is
+ * equipment, the rep range moves by at most 2 at either end, the set
+ * count changes by at most one (+1 only when Ben asked), and the target RPE
+ * stays (a coach `rpe` that differs from the last target's is bigger, as CA8
+ * says "effort targets … don't change"). Anything else is
  * bigger. With no equipment, any load change is bigger: a step can't be
  * measured (rule 4).
  */
@@ -77,6 +90,8 @@ export function classifyNextSessionChange(
     if (last.reps === null) reasons.push('A rep target is new.');
     else if (Math.abs(after.reps.min - last.reps.min) > 2 || Math.abs(after.reps.max - last.reps.max) > 2) reasons.push('Reps move by more than 2.');
   }
+  // CA8: effort targets don't change by default; a new target RPE is Ben's to apply.
+  if (after.rpe != null && after.rpe !== (last.rpe ?? null)) reasons.push('The effort target changes.');
   let setsAfter = afterSets;
   let droppedExtraSet = false;
   const delta = afterSets - lastSets;
@@ -170,7 +185,11 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
       }
       reps = t.target.reps;
     }
-    const after: CoachTarget = { load, reps };
+    // A target RPE that restates the plan's or the built-in rule's is no change: next time's plan
+    // gives the same value again, so it isn't stored as the coach's (review target-rpe B1). Ben's
+    // own value for the day isn't the baseline (r2 S1): repeating it is a change Ben applies.
+    const restated = t.target.rpe != null && t.target.rpe === basis.last.rpe && (basis.lastRpeSource === 'rule' || basis.lastRpeSource === 'plan');
+    const after: CoachTarget = { load, reps, ...(t.target.rpe != null && !restated ? { rpe: t.target.rpe } : {}) };
     const wantSets = t.sets ?? basis.lastSets;
     const flag = activeFlag(input.painFlags, ex.exerciseId);
     if (flag !== null && (isIncrease(basis.last, after, ex.loadConvention) || wantSets > basis.lastSets)) {
@@ -206,7 +225,12 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
  * plan) and the built-in rule's plan for comparison. Exercises with no
  * completed working set have no basis (nothing to progress from).
  */
-export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<string, readonly { setType: string; planned: { load: CoachTarget['load']; reps: CoachTarget['reps'] } }[]>): NextSessionBasis[] {
+export function nextSessionBases(
+  source: SessionAggregate,
+  builtIn: ReadonlyMap<string, readonly { setType: string; planned: { load: CoachTarget['load']; reps: CoachTarget['reps'] } }[]>,
+  /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), the last fallback of `last.rpe`. */
+  ruleTargetRpe: Readonly<Record<string, number>> = {},
+): NextSessionBasis[] {
   const out: NextSessionBasis[] = [];
   // One basis per exercise block: an exercise split across gyms (gym-switch GS6) reads its
   // deciding part, on that part's item, the same as the built-in rule's `Next time`.
@@ -216,12 +240,19 @@ export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<
     const working = source.sets.filter((s) => s.sessionExerciseId === ex.id && s.setType !== 'warmup' && s.pairedWithSetId === null && s.status === 'completed');
     const first = working[0];
     if (first === undefined) continue;
-    const planned = working.find((s) => s.planned.load !== null || s.planned.reps !== null)?.planned ?? null;
+    const plannedSet = working.find((s) => s.planned.load !== null || s.planned.reps !== null) ?? null;
+    const planned = plannedSet?.planned ?? null;
     const top = [...working].sort((a, b) => (b.actual?.load?.value ?? 0) - (a.actual?.load?.value ?? 0))[0] ?? first;
     // Field by field: today's plan where it had one, else what the top set did.
+    // The target RPE it was planned at: the coach's, the routine's (RIR as 10 − RIR), else the built-in
+    // rule's (review target-rpe B1). Ben's override is for that workout only, so it isn't the baseline (r2 S1).
+    const basisSet = plannedSet ?? first;
+    const lastRpe = usualTargetRpeOf(basisSet, ruleTargetRpe[ex.id] ?? null);
+    const benRpe = basisSet.setType === 'warmup' || basisSet.setType === 'drop' ? undefined : basisSet.planned.rpeOverride;
     const last: CoachTarget = {
       load: planned?.load ?? top.actual?.load ?? null,
       reps: planned?.reps ?? (top.actual?.reps == null ? null : { min: top.actual.reps, max: top.actual.reps }),
+      ...(lastRpe !== null ? { rpe: lastRpe.rpe } : {}),
     };
     const plan = builtIn.get(ex.exerciseId) ?? null;
     const workingPlan = plan?.filter((p) => p.setType !== 'warmup') ?? [];
@@ -230,6 +261,8 @@ export function nextSessionBases(source: SessionAggregate, builtIn: ReadonlyMap<
       exercise: ex,
       equipment: block.equipment ?? equipmentOfRow(source.session.equipmentSnapshot, ex),
       last,
+      ...(lastRpe !== null ? { lastRpeSource: lastRpe.source } : {}),
+      ...(benRpe !== undefined ? { benRpe } : {}),
       lastSets: block.workingSets,
       builtIn: firstPlan === undefined ? null : { target: { load: firstPlan.planned.load, reps: firstPlan.planned.reps }, sets: workingPlan.length },
     });
@@ -310,7 +343,7 @@ export function withCoachTargets(
       coach: { actionId: row.actionId, scope: 'next_session', reason: row.reason },
       guardNotes: row.guardNotes.map((n) => n.text).slice(0, 10),
     };
-    const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: template?.rpe ?? null, rir: template?.rir ?? null, source: 'coach', provenance };
+    const planned: PlannedSet = { load: row.target.load, reps: row.target.reps, durationS: null, rpe: row.target.rpe ?? template?.rpe ?? null, rir: row.target.rpe != null ? null : (template?.rir ?? null), source: 'coach', provenance };
     // When the target became active (saved, or Applied later by Ben): a slot changed before that is not "since" (review S1).
     const coach = { sets: row.sets, setAtUtc: row.updatedAtUtc, builtIn: plan };
     out.set(row.exerciseId, [...warmups, ...Array.from({ length: count }, () => ({ setType, planned, coach }))]);

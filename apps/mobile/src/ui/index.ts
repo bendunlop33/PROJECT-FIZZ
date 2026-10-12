@@ -9,3 +9,4 @@ export * from './overview';
 export * from './today-edits';
 export * from './edit-mode';
 export * from './fit';
+export * from './selection';

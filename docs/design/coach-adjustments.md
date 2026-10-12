@@ -14,6 +14,8 @@
 > - Every change line (banner, card, row, spoken cue) is app text from the saved action, and coach text that claims an unsaved change is hidden: [coach-contract.md](coach-contract.md).
 > - Changed: §1 table and decisions (CA8–CA10), §4.6, §5.3, §6, checks 26–33.
 
+> **Revision 2026-10-11 (Ben: "Offers follow the target RPE"; CHANGELOG 2026-10-11, ADR 0006 amendment 3).** CA6's built-in fallback for today's remaining sets is **approved** (offer only, applies on `Adjust`, `Rule` tag, Undo). Every working set now carries a **target RPE** (Ben's override, else the coach's, else the plan's, else the built-in rule's profile value), shown on the target line as `@ RPE 8`; Ben sets his own from the exercise `⋯` → `Target RPE` (this set, this exercise, today), or on a logged set from `Edit set`. **Triggers are deviation-based** against that target (CA5), and the too-hard drop is sized per RPE point over target (§4.8). Changed: §1 path B row, CA5, CA6, §4.2, §4.7, §4.8, checks 34–40 (the 11 Oct checks renumbered from 31–34, review r3 N2).
+
 Status: v0.1 draft, 8 Oct 2026. This is the **single spec** for coach-led progression ([ADR 0006](../decisions/0006-coach-led-progression.md), CLAUDE.md rule 3, brief CHANGELOG v0.4). Other specs link here instead of repeating it:
 - [active-workout.md](active-workout.md): where Adjust sits on the set card, coach target markers, Log guard
 - [rest-state.md](rest-state.md): the offer line and adjustment banner in the rest card, cues
@@ -34,7 +36,7 @@ There are three ways in:
 | Path | Who starts it | What happens | Taps |
 |---|---|---|---|
 | **A. Ben asks** | Voice ("that was a grind", "too easy"), text in the coach sheet, or the `Adjust` control | The coach answers briefly. Today's remaining sets change **at once**. A banner shows the change with one-tap Undo | Voice: 0 (Talk + speech). Control: 2 (`Adjust` → a reason chip) |
-| **B. Coach offers** | A deterministic trigger in `packages/domain` (RPE ≥ 9.5, reps short by ≥ 2, RPE ≤ 6 on a working set) | One line in the rest card: `That looked hard. Adjust remaining sets?` [No thanks] [Adjust]. **Nothing changes, and no AI call is made, until Ben taps Adjust.** Then it continues as path A | 1 (`Adjust`), or 0 if ignored |
+| **B. Coach offers** | A deterministic trigger in `packages/domain`, against the set's target RPE (CA5): effort ≥ target + 1.5 or reps below the range minimum, or effort ≤ target − 2, on a working set | One line in the rest card: `That looked hard. Adjust remaining sets?` [No thanks] [Adjust]. **Nothing changes, and no AI call is made, until Ben taps Adjust.** Then it continues as path A | 1 (`Adjust`), or 0 if ignored |
 | **B′. Check-in offer** (2026-10-09) | A low pre-workout check-in ([check-in.md](check-in.md) §4.4), checked by `evaluateCheckInOffer` in `packages/domain` | One line in the first set card's coach slot before any set is logged: `Want a lighter session today?` [No thanks] [Adjust]. **No AI call until Adjust**; then path A for all of today's pending sets, with no increases allowed | 1 (`Adjust`), or 0 if ignored |
 | **C. Next session** (revised 9 Oct, D21) | Finishing the workout (one coach call per workout, together with the coach note) | The coach's **small** changes (CA8) are saved for the next session of that routine without a tap. `Next time` shows each with its reason, `Rule: …`, `Why?` and `Undo`. Bigger changes are proposals with Apply. Structural changes appear only with a request or signal (CA9) | 0 (1 to Undo) |
 
@@ -48,8 +50,8 @@ The single primary action on the workout screen stays **`Log …`**. Every contr
 | CA2 | Path A covers **targets of pending sets**: load, reps, and adding or removing pending sets, in this exercise or later ones today. **Swapping an exercise or changing the gym** still goes through the `ChangeReviewCard` (Apply) | Swaps change equipment and history comparability, so they're bigger than a number change. Rule 2 still wants a review for broad plan changes |
 | CA3 | **Rest durations are not changed by adjustments** in this version | Keeps the rest timer rules simple (rest-state §4.5). Ben can still change rest himself |
 | CA4 | **"At most once per exercise unless a new trigger fires"** is read as: after one offer for an exercise, another offer for that exercise only appears for a **different trigger kind** (`rpe_high`, `reps_short`, `rpe_low`), or after an adjustment was applied to that exercise (the plan changed, so a trigger means something new) | Otherwise a run of hard sets would raise an offer after every set, which is the "constant" coaching ADR 0006 rules out |
-| CA5 | Triggers never fire on **warm-up or drop sets**. "Reps short" is counted from the **bottom** of a rep range (target 6–8, did 4 → short by 2) | A short warm-up or drop set is normal. The bottom of the range is the least the plan asked for |
-| CA6 | With the coach offline, **no in-session adjustment is offered** (the brief's deterministic `evaluateSessionAdjustment` isn't used). Ben edits the next set's numbers directly. | ADR 0006 defines the built-in fallback only for next-session targets. Ben may want an offline in-session rule later; that would need a brief change |
+| CA5 | Triggers never fire on **warm-up or drop sets**, or on a set planned all-out (target RPE 10). They compare the logged set with its **target RPE** (revised 11 Oct, Ben; `targetRpeOf`: Ben's override, else the coach's, else the routine's RPE/RIR, else the built-in rule's profile value, main barbell 8.5, compound 9, isolation 9). **Harder than planned:** logged effort ≥ target + 1.5, or reps below the range minimum (any rep below a **range's** floor: 3–6, did 2 → short, did 3 → not; a **single-number** target short by ≥ 2: 8, did 6), unless logged effort was clearly below target (≤ target − 1). A rep miss with no effort logged still fires. **Easier than planned:** logged effort ≤ target − 2, on ≤ 12 reps that weren't short. A set with no target at all uses the fixed D20 thresholds. Thresholds stay editable | Ben (11 Oct): "Hitting 10 RPE is not bad if that was the plan." Build 108: the Log button shows the top of the range (`× 6`), so 2 reps against `3–6` was a big miss Ben saw. Ben's cases: 3–6, 2 reps, no RPE → offer; RPE 10 on an RPE-10 plan → no offer; RPE 10 on an RPE-8 plan → offer |
+| CA6 | (Revised 11 Oct, build 108 fix F2. **Approved by Ben 11 Oct**: CHANGELOG 2026-10-11, ADR 0006 amendment 3, playbook rule 5/6 notes.) With the coach **not reachable** (not signed in, unavailable, or `Offline` after a failed request), the **same triggers** show the **built-in rule's offer** on the rest card: the same prompt and fact, plus the concrete change and a `Rule` tag (`Next sets: 57.5 kg × 3–6  [Rule]`), `No thanks` / `Adjust`. `Adjust` applies it at once to **today's remaining sets of that exercise only**, through the same versioned, idempotent write as the coach's, with the banner `Adjusted sets 2–3 [Rule]`, `Why?` and one-tap Undo. Nothing changes until Ben taps `Adjust` (CLAUDE.md rule 3). If the rule has nothing it may change (no lighter load or fewer reps that fit; a raise blocked by pain; no pending set), no offer is shown and nothing extra appears. If the coach looked reachable but the `Adjust` turn fails (no network, unavailable, timeout), the rule's offer for the same trigger replaces the failure line (F3). **Ben's own `Too hard` / `Too easy`** (review coach-fallback S1): with the coach not reachable the two chips stay in the `Adjust` row (`Type…` is hidden when not connected or unavailable; it stays when `Offline`, which lapses once the network is back), and a tap applies the rule's change to the focused exercise's remaining sets at once (Ben asked, so no offer step), with the same banner, `Why?` and Undo; no AI call. If the coach looked reachable but the chip's turn can't answer, the rule's change applies the same way. Nothing it may change: `Nothing to change.` **Size of the change** (`evaluateSessionAdjustment`, `BUILT_IN_SESSION_RULE`), rule 5/6 sized by RPE points over the target: see §4.8 | CLAUDE.md rule 3: "With no AI available, the simple built-in progression rules are the labelled fallback." The earlier CA6 left Ben with nothing after a big miss whenever the coach couldn't answer (build 108). The diagnosis flagged the CLAUDE.md vs ADR 0006 scope disagreement; Ben resolved it in CLAUDE.md's favour (ADR 0006 amendment 3) |
 | CA7 | If Ben logs while the coach is still working, the request is **re-sent once** with the new state (if any set it covers is still pending), otherwise dropped | "Recompute or discard" from the brief; a single retry keeps cost and confusion bounded |
 | CA8 | (9 Oct, D21) **What counts as a "small" next-session change** is decided by code: `classifyNextSessionChange(before, after, stepCard, context)`. A coach target is `small` only if it keeps the same routine, exercises and order, and: the load stays or moves **one achievable step** up or down from the last target on that equipment (`buildStepCard`); the rep target moves by **at most 2** at either end; the set count changes by **at most 1**, and **+1 only when Ben has asked** for more sets or volume (playbook D1); effort targets and rest don't change. Anything else is `bigger` and comes as a `CoachTargetProposal` with Apply, except an added set Ben didn't ask for, which is dropped and listed in `Why?` (D1: extra sets only when he asks). Stall resets (rule 8) and deloads (rule 10) are always `bigger`, which keeps those approved rules' "propose" wording true. A set whose load Ben pinned as `Fixed` in the routine (routines RT3) is never changed by default; a coach change to it is `bigger`. A pain flag still blocks every increase | D21 says "small adjustments only". A definition the reviewer can test stops "small" drifting with the model. One step can be large on coarse dumbbells (10 → 12 kg, +20%); every row shows its %, so Ben sees it. **Alternative for Ben:** any load, rep or set change on the same exercises applies by default |
 | CA9 | (9 Oct, D21) **Structural changes need a request or a signal.** `getStructuralChangeSignals(ownerId, routineId, sessionId)` (pure) returns any of: `variety_request` (Ben asked for variety or new exercises for this routine, in chat or by voice, not yet answered), `goal_changed` (goal version differs from the routine's), `schedule_changed` (days a week or session length changed), `equipment_changed` (the routine's gym equipment version changed, or this workout switched gym), `pain_flag` (a flag set on one of its movements since the routine's version). Without a request or signal the coach doesn't receive the structural proposal tools (coach-contract CC10) and the validator drops any structural item. With one, the Summary shows at most one `ChangeReviewCard` (`Because: …`, scope `Push A from now on`, Apply, Undo) | CLAUDE.md rule 3: structural changes are raised only when Ben asks or something changed. A gate makes "only" testable |
@@ -197,7 +199,7 @@ Wherever a pending set's target came from a coach adjustment:
 | Stale, dropped | `Out of date` [Ask again] | `Log …` | `Ask again` re-sends the same request on the current state |
 | Timed out | `The coach didn't answer in time. Nothing changed.` [Try again] | `Log …` | Never a canned answer |
 | Failed (limit/error) | `Couldn't reach the coach (limit reached). Nothing changed.` | `Log …` | Never switches to a paid route (rule 7) |
-| Coach offline / not connected | `Adjust` shows the `Coach offline` caption; tapping it shows the offline line (§5) and only the `Pain` chip | `Log …` | No offers are shown at all |
+| Coach offline / not connected | `Adjust` shows the caption `Offline` / `Not connected` / `Unavailable`; tapping it shows `Too hard` · `Too easy` · `Pain` (+ `Type…` when `Offline`), no line; the two chips apply the built-in rule's change (CA6) | `Log …` | Offers are the built-in rule's, tagged `Rule` (CA6 revised) |
 | Paused | Slot content is kept; a pending request continues; Undo and Adjust still work | `Resume` | An applied result changes targets only, not timers |
 | Restored after force-close | Applied adjustments are in SQLite and show their markers. A pending request is **dropped** (`Coach request was interrupted. Nothing changed.` [Ask again]). An unanswered offer is not shown again | per state | Nothing applies after a relaunch without Ben seeing it |
 
@@ -238,14 +240,17 @@ Wherever a pending set's target came from a coach adjustment:
 
 ### 4.2 Path B: coach offers
 
-1. On `SetCommitted` (reps short) or `SetCorrected` with a new effort value (RPE high or low), the UI calls `evaluateCoachTrigger(set, target, thresholds)`. This is a pure domain check: **no AI call**, no network.
-2. The offer shows only if **all** hold: the session is Resting; `getAiCapabilities` reports a usable route now; the set isn't a warm-up or drop set; CA4 allows it for this exercise; nothing is pending.
+1. On `SetCommitted` (reps short) or `SetCorrected` with a new effort value (RPE high or low), the UI calls `evaluateCoachTrigger(set, setNumber, thresholds, targetRpe)` with the set's target RPE (`targetRpeOf`, CA5). This is a pure domain check: **no AI call**, no network.
+   - (11 Oct, r3 N3) An effort chip after logging re-checks the same set. If its offer is showing and the set still triggers the same kind, the offer stays (CA4 would not show it again); if the effort now clears it (e.g. RPE 7 against 8.5 after a rep miss), it goes; a different kind replaces it.
+2. The offer shows only if **all** hold: the session is Resting; the set isn't a warm-up or drop set; a pending set is left on that exercise; CA4 allows it for this exercise; nothing is pending. Whether it is the **coach's** offer or the **built-in rule's** (CA6 revised) depends on `getAiCapabilities` now: a usable route → the coach's; otherwise the rule's, shown only if the rule has a change to offer. CA4 counts both kinds.
+   - (11 Oct, F7) A set logged with **no rest running** (a superset's 0 s transition, an exercise with rest 0) is held and checked when the next rest starts, newest first. The last set of an exercise never offers (nothing to adjust).
+   - (11 Oct, F4) Correcting a logged set's reps or effort in the correction sheet runs the same check on the corrected set when Ben returns to the workout (new set version, so a new trigger).
 3. `No thanks` → `recordTriggerResponse(triggerId, 'dismissed')`. The line disappears. Nothing else happens.
 4. `Adjust` → `recordTriggerResponse(triggerId, 'accepted')`, then step 2 of path A with `origin: 'trigger_offer'` and the trigger's facts attached (CA1).
 5. Ignoring it is fine: the next Log removes it (`'expired'`).
 6. **Spoken offer** (Conversation mode only): spoken once, only while Resting with at least 20 s left, never over the rest-end cue, and never in Ready (Ben may be lifting). Ben replies by Talk: "yes" / "adjust" = Adjust; "no" = No thanks.
 
-RIR mode: the triggers use the equivalent effort entries (`RIR 0` for RPE ≥ 9.5, `RIR 4+` for RPE ≤ 6). The fact line quotes what Ben entered (`RIR 0 on set 2`), never a converted RPE.
+RIR mode: RIR counts as RPE 10 − RIR, logged and planned. The fact line quotes what Ben entered, with the target in the same scale (`RIR 0 on set 2 (target RIR 2)`, `RPE 10 on set 2 (target 8)`), never a converted RPE.
 
 ### 4.3 Logging while a request is pending or just applied
 
@@ -294,12 +299,35 @@ The full screen, including RIR equivalents and `Reset to defaults` with Undo, is
 │ Coach offers                           │
 │ [x] Offer to adjust after a hard or    │
 │     easy set                           │
-│ Offer when effort is at least  [ 9.5 ] │
+│ Harder than target by at least [ 1.5 ] │
+│ Easier than target by at least [ 2   ] │
 │ Offer when reps are short by   [ 2   ] │
-│ Offer when effort is at most   [ 6   ] │
 │ Reset to defaults                      │
 ```
-Thresholds are stored as data and read by `evaluateCoachTrigger`. The switch turns path B off completely; path A and C are unaffected.
+Thresholds are stored as data and read by `evaluateCoachTrigger` (`harderBy`, `easierBy`, `clearlyBelowBy`; the fixed `rpeHigh` 9.5 / `rpeLow` 6 only for a set with no target, D20). The switch turns path B off completely; path A and C are unaffected. (Not built yet: the code uses the defaults; the settings screen is a follow-up.)
+
+**Target RPE (11 Oct).** Not a setting: Ben sets it in the workout from the exercise `⋯` → `Target RPE` → `RPE 6` … `RPE 10` (current one ticked; `Default` clears his own) → `This set` / `This exercise` / `Today`. Pending working sets only; stored on the workout (`planned.rpeOverride`, `set_target_rpe`, versioned and idempotent; Your data). `Today` applies to the working sets in the workout at that moment; an exercise added afterwards keeps its coach, plan or rule target. A **logged** working set's target is set from its `Edit set` sheet (`Target RPE` chips, active workout only; `Default` clears his own, as in the `⋯` sheet; changing the set to a warm-up or drop set clears it in the same correction), saved in the same `correct_set` as any other correction: guarded on the set's version, idempotent, audited (`targetRpe` in the edit log's before/after), never touching the logged values or the `Edited` tag. The offer check then runs on the set again (F4), so a set Ben meant as all-out loses a wrong `That looked hard.` offer. It survives a coach change and that change's Undo. The coach may set a target RPE on today's pending sets (a raise above the set's target in force, built-in or RIR targets included, counts as an increase: blocked by pain and in a lighter session; restating it is no change; on a set with Ben's own target the coach's isn't used, guard note `Your target RPE stays.` under `Why?`) and on next-session targets (compared with the set's target without Ben's own override, which is for that workout only: the coach's, the plan's (10 − RIR) or the built-in rule's; a changed target RPE is `bigger` under CA8: a proposal; restating it is no change).
+
+### 4.8 Built-in in-session rule (CA6 revised, 11 Oct)
+
+`evaluateSessionAdjustment(aggregate, trigger, painFlags, sessionPainUnspecified)` in `packages/domain/src/coach/session-adjust.ts`. Pure; no AI, no network. Its result goes through `validateTodayAdjustment` (snap, cap, pain, completed sets) before it is shown, so the offer shows exactly what `Adjust` writes.
+
+Size per rule 5/6 and D22 (Ben, 11 Oct: "≈ 2–4% per RPE point over target, rounded to an achievable load"). The rule asks the low end, **2% per RPE point over the target RPE, at least 5% and at most 10%**, then rounds down (`tooHardDropPct`). A rep miss logged **without RPE** (Ben's case), or Ben's own `Too hard`, has no points to count, so 5%:
+
+| Trigger | Change to each remaining working set of that exercise | Source |
+|---|---|---|
+| Too hard (`reps_short`, `rpe_high`) | The next achievable load at least **max(5%, 2% × points over target)** lighter, at most 10% asked (rounded down to what the equipment makes), same reps. Target 8, logged 10: 5%; target 7, logged 10: 6% (100 kg → 92.5 kg on the bar) | Rule 5 (2–4% per point), D22 (5–10%) |
+| …if that load is > 10% lighter, or there is none (equipment min, bodyweight) | **Same load, fewer reps**: the reps Ben just managed (`reps_short`, at least 1), or one fewer than he managed (`rpe_high`) | Rule 5 guardrail; equipment-aware progression §9 |
+| Assisted machine, too hard | **One assistance step more** (no % without bodyweight) | Playbook rule 7 step 6, D5 |
+| Too easy (`rpe_low`) | The next achievable load if it is **≤ 5% heavier**, else **+1 rep**; assisted: one step less assistance. Never past the equipment max | Rule 6 (+2–5% or +1–2 reps) |
+| Ben's own `Too hard` / `Too easy` chip, coach not reachable (S1) | As the rows above, with `Too hard` as the fact. Fewer reps, when used: one fewer than the planned top (no logged set to go by) | Rule 5 guardrail; same as `rpe_high` |
+| Pain flag on the movement, or pain at check-in | No raise, so no too-easy offer. A too-hard change still applies | Rule 9 |
+
+Never after a miss: an increase, a removed or added set, a change to a done or warm-up set, or a change to another exercise. kg/lb and the load convention (total, per hand, stack, assisted) follow the row's own equipment.
+
+Recorded: an `ActionRecord` with author `checks` (app code, not the coach), turn `null`, opId `built-in-adjust:<triggerId>` (a double tap applies once), the session version before/after, the guard notes, and the reason as app text (`2 reps on set 1 (target 3–6). Lighter load for the remaining sets (8%).`). Each changed target gets `source: built_in_rule` and a `rule` provenance, so `Why?` reads `Set by  Built-in rule · 10 Oct` and the rule's words, never `Coach`. `Adjust` re-works the change on the workout as it is now and applies it only if it touches the **same sets with the same targets** Ben was shown (the offer carries the version it was computed on, the set IDs and targets; review S2); otherwise `Out of date. Nothing changed.` (rule 5). The version alone isn't the test: a draft or rest edit during the rest moves it on without changing the offer. Ben's own chip (S1) is worked out and applied on the current version in one step, opId per tap.
+
+At Summary (F5) a session with a set below the rule's range floor is always listed under `Next time` (`hold_after_miss`, tag `Rule`): `Same target: 62.5 kg × 3–6`, or `Target 57.5 kg × 3–6` when the rule held a lighter load used today. Two such sessions in a row at the same load reduce (7-F).
 
 ## 5. Copy
 
@@ -309,10 +337,13 @@ Values are labelled as **target** or **actual** every time. `→` reads "to" in 
 
 | Element | Text | Target / actual |
 |---|---|---|
-| Adjust control | `Adjust` · offline caption `Coach offline` | — |
+| Adjust control | `Adjust` · caption `Offline` / `Not connected` / `Unavailable` | — |
 | Chip row | `What should change?` · `Too hard` · `Too easy` · `Pain` · `Type…` | — |
 | Offer (hard) | `That looked hard. Adjust remaining sets?` + fact `RPE 10 on set 2` or `6 reps on set 2 (target 8–10)` | Fact = actual; range = target |
 | Offer (easy) | `That looked easy. Adjust remaining sets?` + fact `RPE 6 on set 2` | Actual |
+| Offer, built-in rule (CA6) | Same prompt and fact, then `Next sets: 57.5 kg × 3–6` + tag `Rule` (one set: `Next set: …`; different targets: `Set 2: 95 kg × 6–8 · Set 3: 75 kg × 6–8`) | Targets |
+| Banner, built-in rule | `Adjusted sets 2–3` + tag `Rule` · `62.5 → 57.5 kg × 3–6` · `Why? ›` (heading `Rule`) · `Undo` · after Undo `Change undone.` · `⋯` menu `Undo change` | Targets |
+| Rule offer refused | `Out of date. Nothing changed.` · `Nothing to change.` | — |
 | Offer buttons | `No thanks` · `Adjust` | — |
 | Pending | `Coach is working on sets 3–4` · `Nothing has changed yet.` · `Cancel` | — |
 | Re-sending | `Updating for the set you just logged…` | — |
@@ -328,8 +359,8 @@ Values are labelled as **target** or **actual** every time. `→` reads "to" in 
 | Timed out | `The coach didn't answer in time. Nothing changed.` [Try again] | — |
 | Failed | `Couldn't reach the coach (limit reached). Nothing changed.` | — |
 | Interrupted | `Coach request was interrupted. Nothing changed.` [Ask again] | — |
-| Offline (Adjust tapped) | `Coach offline. Your sets are unchanged. Change the next set's numbers directly.` (+ `Pain` chip only) | — |
-| Not connected (Adjust tapped) | `Coach not connected. Your sets are unchanged.` [Connect in Profile] | — |
+| Offline (Adjust tapped) | No line. Chips `Too hard` · `Too easy` · `Pain` · `Type…` (CA6 revised) | — |
+| Not connected / unavailable (Adjust tapped) | No line. Chips `Too hard` · `Too easy` · `Pain` (CA6 revised) | — |
 | Target line | `Coach target 95 kg × 8` + `Plan was 100 kg × 6–8` | Targets |
 | Edited draft kept | `Your edit kept · Coach target 95 kg × 8` | Target |
 | Source tags | `Coach` · `Rule` · `Suggested` | — |
@@ -389,7 +420,7 @@ Existing (brief §7–8, ADR 0006):
 ## 7. Acceptance checks
 
 1. **No added taps.** Run the 3 × 3 matching-set workout from flow check 1 with the coach connected and no triggers firing: the tap count is identical to the coach-off run, and no coach UI appears except the `Adjust` control.
-2. With airplane mode on, no AI call is made after any set, and no offer appears even when RPE 10 is entered.
+2. With airplane mode on, no AI call is made after any set. (Revised 11 Oct, CA6) RPE 10 or a rep miss shows the **built-in rule's** offer with its concrete change and `Rule` tag; nothing changes until `Adjust`.
 3. With the coach connected, logging 10 sets with RPE 7–8 and reps on target makes **zero** AI calls (check the provider log).
 4. Log bench set 2 at RPE 10: the rest card shows `That looked hard. Adjust remaining sets?` with `RPE 10 on set 2`. Targets for sets 3–4 are unchanged until `Adjust` is tapped. No modal or sheet opens, and nothing is spoken (Set cues mode).
 5. Tap `No thanks`, then log set 3 at RPE 10: no new offer. Log set 3 at RPE 6 instead: an easy offer appears (different kind, CA4).
@@ -406,7 +437,7 @@ Existing (brief §7–8, ADR 0006):
 16. With a draft Ben edited by hand, an adjustment keeps his edit and shows `Your edit kept · Coach target …`.
 17. Force-quit during pending and reopen: `Coach request was interrupted. Nothing changed.`; nothing was applied.
 18. A timeout or quota error shows the honest message, never a made-up reply, and never uses a paid route.
-19. With the coach offline, tapping `Adjust` shows `Coach offline. Your sets are unchanged…` and only `Pain`; `Pain` still records the flag.
+19. (Revised 11 Oct, CA6) With the coach offline, tapping `Adjust` shows the `Offline` caption and `Too hard` · `Too easy` · `Pain` · `Type…` with no extra line (not connected / unavailable: the same without `Type…`). `Too hard` applies the built-in rule's change to the remaining sets at once with the `Rule` banner and Undo, no AI call; `Pain` still records the flag.
 20. Every applied adjustment has a stored reason, evidence refs and guard notes, visible in `Why?` (`getDecisionEvidence`).
 21. Coach UI is never colour-only: the `Coach` tag has text, the banner has an icon and text, the offer is text.
 22. (2026-10-09) A check-in of 2 shows the check-in offer before the first set; no AI call is made until `Adjust`; nothing is spoken.
@@ -421,3 +452,10 @@ Existing (brief §7–8, ADR 0006):
 31. (9 Oct, CA10) Tap `Done` while the coach is still working: the answer's small changes are saved when it arrives, appear in that summary in history with Undo, and are dropped if Push A has started again first.
 32. (9 Oct) `Undo` on one row restores the built-in rule's target for that exercise only; the other coach targets stay. `Use coach target` restores the coach's. After the next Push A starts, neither button is offered on the summary.
 33. (9 Oct, coach-contract) Every number in a saved row, banner or spoken cue equals the saved `ActionRecord`'s value; the model's raw numbers appear only in `Why?`.
+34. (11 Oct, build 108) Built-in rule 62.5 kg × 3–6, log 2 reps: an offer appears in every connection state: the coach's when reachable, the rule's (`Next sets: 57.5 kg × 3–6`, `Rule`) when not signed in or offline. `Adjust` on the rule's offer changes sets 2–3 only, set 1 keeps its actual 2 reps, Undo restores 62.5 kg, a double tap applies once, and the change survives a force-close.
+35. (11 Oct) The rule's change is refused as `Out of date` if the workout moved on so that the change no longer matches what was shown; nothing is applied to newer state.
+36. (11 Oct) Correcting a logged set from 6 to 2 reps offers on return to the workout (F4).
+37. (11 Oct) After a session below the range floor, the Summary lists the hold (`Same target: …`, `Rule`); a second such session at the same load lists `Target 55 kg × 3–6` (7-F).
+38. (11 Oct, target RPE) Every working set's target line ends `@ RPE n`: 8.5 on a main barbell lift with the built-in plan, the routine's or coach's value when set, Ben's when he set one. Warm-ups and drop sets show none.
+39. (11 Oct, target RPE) `⋯` → `Target RPE` → `RPE 10` → `This exercise`, then log RPE 10 with full reps: no offer. Set `RPE 8`, log RPE 10: `RPE 10 on set 2 (target 8)` offers; with the coach unreachable the rule's change is 5% lighter, rounded down. A stale version is refused; a double tap applies once.
+40. (11 Oct, r3 N3/N5) An effort chip after a rep miss keeps the showing offer while it still holds and removes it once effort is ≤ target − 1. Two quick `Too hard` taps with no coach apply one change.

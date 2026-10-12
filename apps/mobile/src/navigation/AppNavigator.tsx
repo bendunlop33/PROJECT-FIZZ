@@ -35,10 +35,16 @@ import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScr
 import { CoachConnectionScreen } from '../screens/profile/CoachConnectionScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
+import { MemoryScreen } from '../screens/profile/MemoryScreen';
+import { PlaybookScreen } from '../screens/profile/PlaybookScreen';
 import { PainFlagSheet } from '../screens/workout/PainFlagSheet';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
-import { ProgressScreen } from '../screens/ProgressScreen';
+import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
+import { ExercisesScreen } from '../screens/progress/ExercisesScreen';
+import { MusclesScreen } from '../screens/progress/MusclesScreen';
+import { ProgressScreen } from '../screens/progress/ProgressScreen';
 import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
+import { RecentlyDeletedScreen } from '../screens/repeat/RecentlyDeletedScreen';
 import { RepeatScreen } from '../screens/repeat/RepeatScreen';
 import { WorkoutEditorScreen } from '../screens/routines/WorkoutEditorScreen';
 import { WorkoutsScreen } from '../screens/routines/WorkoutsScreen';
@@ -56,7 +62,7 @@ import type { SetupStep } from '../services/setup';
 import { screenAnimation, useTheme } from '../theme';
 import { AppText, MessageScreen, PrimaryButton, type SymbolName } from '../ui';
 import { initialRootState } from './initial-state';
-import type { ImportQuestionKind, ProfileStackParams, RootStackParams, TabParams } from './types';
+import type { ImportQuestionKind, ProfileStackParams, ProgressStackParams, RootStackParams, TabParams } from './types';
 
 /**
  * How to is required on first open, not at launch (review S1): it keeps the
@@ -94,6 +100,7 @@ function loadHowToScreen(): typeof HowToScreen {
 const RootStack = createNativeStackNavigator<RootStackParams>();
 const TabNav = createBottomTabNavigator<TabParams>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParams>();
+const ProgressStack = createNativeStackNavigator<ProgressStackParams>();
 
 function useStackOptions() {
   const theme = useTheme();
@@ -115,6 +122,18 @@ function ProbeRoute({ navigation }: { navigation: { goBack: () => void } }) {
   );
 }
 
+function ProgressNavigator() {
+  const options = useStackOptions();
+  return (
+    <ProgressStack.Navigator screenOptions={options}>
+      <ProgressStack.Screen name="ProgressHome" component={ProgressScreen} options={{ headerShown: false }} />
+      <ProgressStack.Screen name="ProgressMuscles" component={MusclesScreen} options={{ title: 'Muscles' }} />
+      <ProgressStack.Screen name="ProgressExercises" component={ExercisesScreen} options={{ title: 'Exercises' }} />
+      <ProgressStack.Screen name="ProgressExercise" component={ExerciseDetailScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
+    </ProgressStack.Navigator>
+  );
+}
+
 function ProfileNavigator() {
   const options = useStackOptions();
   return (
@@ -123,6 +142,8 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="DataBackup" component={DataBackupScreen} options={{ title: 'Data & backup' }} />
       <ProfileStack.Screen name="AppStatus" component={AppStatusScreen} options={{ title: 'App status' }} />
       <ProfileStack.Screen name="PainFlags" component={PainFlagsScreen} options={{ title: 'Pain flags' }} />
+      <ProfileStack.Screen name="Memory" component={MemoryScreen} options={{ title: 'Memory' }} />
+      <ProfileStack.Screen name="Playbook" component={PlaybookScreen} options={{ title: 'Playbook' }} />
       <ProfileStack.Screen name="CoachConnection" component={CoachConnectionScreen} options={{ title: 'Coach connection' }} />
       <ProfileStack.Screen name="GymDetail" component={GymDetailScreen} options={{ title: 'Gym' }} />
       <ProfileStack.Screen name="EquipmentEditor" component={EquipmentEditorScreen} options={{ title: 'Equipment' }} />
@@ -200,7 +221,7 @@ function TabsNavigator() {
       }
     >
       <TabNav.Screen name="Today" component={TodayScreen} />
-      <TabNav.Screen name="Progress" component={ProgressScreen} />
+      <TabNav.Screen name="Progress" component={ProgressNavigator} />
       <TabNav.Screen name="Profile" component={ProfileNavigator} />
     </TabNav.Navigator>
   );
@@ -280,6 +301,7 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="Summary" component={SummaryScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, ...screenAnimation('Summary', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="AddGym" component={AddGymScreen} options={{ presentation: 'modal' }} />
               <RootStack.Screen name="PastWorkouts" component={PastWorkoutsScreen} options={{ headerShown: true, title: 'Past workouts' }} />
+              <RootStack.Screen name="RecentlyDeleted" component={RecentlyDeletedScreen} options={{ headerShown: true, title: 'Recently deleted' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
               {/* The Workouts library (routines.md §A2.1); its editor is a sheet over the list or the overview (Cancel / Save). */}
               <RootStack.Screen name="Workouts" component={WorkoutsScreen} options={{ headerShown: true, title: 'Workouts', ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
@@ -289,6 +311,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
                 options={{ presentation: 'modal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }}
               />
               {/* A side door, not a step: swipe down closes it and nothing in the workout waits for it (coach-sheet §1). */}
+              {/* Exercise detail over a past workout's Summary or the Workout overview (`History`); swipe down or Done closes it. */}
+              <RootStack.Screen name="ExerciseProgress" component={ExerciseDetailScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />
               <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>
           ) : (

@@ -58,7 +58,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ALL,
     plainLabel: null,
     capabilitySection: 'read',
-    description: 'The last comparable sessions of one exercise (actual values, effort, notes as quoted data).',
+    description:
+      "One exercise's last workouts (sets as logged, units and conventions explicit, sets Ben left out labelled) and its heaviest logged sets per equipment item. Imported workouts are labelled and never compared with app sets.",
+  },
+  {
+    name: 'get_training_overview',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description:
+      'Ben’s training over the last weeks: how many workouts, what was done, and per exercise the first and latest comparable top set (like for like only). Use it for "How am I doing?". No estimates.',
   },
   {
     name: 'get_gym_equipment',
@@ -83,6 +96,17 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: "The built-in rule's next targets for an exercise and why. A comparison, not advice.",
   },
   {
+    name: 'get_substitutions',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: 'Exercises that could replace one at Ben’s gym (the catalogue’s substitutes and the same movement family), with exercise IDs to use in a swap. Only doable here, never pain-flagged.',
+  },
+  {
     name: 'get_recent_actions',
     effect: 'read',
     writes: [],
@@ -103,7 +127,30 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: "Change today's remaining sets",
     capabilitySection: 'when_you_ask',
     description:
-      "Change targets of today's pending sets (load, reps), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment.",
+      "Change targets of today's pending sets (load, reps, target RPE; rpe null keeps it), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment. Ben's own target RPE always stays.",
+  },
+  {
+    name: 'log_set',
+    effect: 'versioned_update',
+    writes: ['logged_set'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: 'Log a set you tell it ("log 100 for 8"), with Undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Log the set the Log button would log (the next pending set of the exercise in focus, or of the one exercise Ben names) with the weight, reps and RPE Ben just said, in the exercise’s own unit and convention. Only numbers Ben said are accepted. Starts rest like the Log button.',
+  },
+  {
+    name: 'correct_set',
+    effect: 'versioned_update',
+    writes: ['logged_set'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: 'Correct a logged set you name ("set 2 was 95"), with Undo',
+    capabilitySection: 'when_you_ask',
+    description: 'Correct the weight, reps or RPE of a logged set Ben named, with the numbers he said (null keeps a value). Never marks, deletes or changes set types.',
   },
   {
     name: 'set_next_session_targets',
@@ -114,7 +161,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ['summary'],
     plainLabel: "Small changes to next time's load, reps and sets, shown on the summary with Undo",
     capabilitySection: 'after_workout',
-    description: 'Next-session targets for exercises in this workout. Small changes are saved with Undo; bigger ones become suggestions Ben applies.',
+    description: 'Next-session targets for exercises in this workout (rpe null keeps the target RPE). Small changes are saved with Undo; bigger ones, including a changed target RPE, become suggestions Ben applies.',
   },
   {
     name: 'propose_next_workout_change',
@@ -125,7 +172,8 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ['general', 'workout', 'summary'],
     plainLabel: 'Swapping, adding, removing or reordering exercises in your next workout',
     capabilitySection: 'suggest_only',
-    description: 'Suggest swapping, adding, removing or reordering exercises in the next workout built from this one. Nothing changes until Ben taps Apply.',
+    description:
+      'Suggest swapping, removing or reordering exercises in the next workout built from a finished one (its routine, or the next session from it). Use exercise IDs from the workout or get_substitutions. Adding exercises is not possible yet. Nothing changes until Ben taps Apply.',
   },
   {
     name: 'set_pain_flag',
@@ -148,6 +196,18 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Save a memory',
     capabilitySection: 'when_you_ask',
     description: 'Save a short personal fact Ben asked you to remember. Not for general training rules.',
+  },
+  {
+    name: 'suggest_memory',
+    effect: 'propose',
+    writes: ['memory'],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Suggest something to remember (saved only if you tap Save)',
+    capabilitySection: 'suggest_only',
+    description:
+      'Suggest a short personal fact or preference about Ben worth remembering, when he states one without asking you to remember it. Never a general training rule. Not used until Ben taps Save.',
   },
   {
     name: 'forget_memory',
@@ -183,7 +243,8 @@ export const COACH_NEVER: readonly string[] = [
 ];
 
 /** Entity kinds a versioned update may write; all keep the previous version (CC6, check 1). */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory']);
+/** (11 Oct) `logged_set`: a set Ben told the coach to log or correct, through the workout's own versioned commands; never a delete. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -209,7 +270,7 @@ export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
     if (t.effect === 'read' && t.writes.length > 0) throw new UnsafeRegistryError(`${t.name}: a read tool can't write`);
     if (t.effect !== 'read' && t.writes.length === 0) throw new UnsafeRegistryError(`${t.name}: a write tool must declare what it writes`);
     if (t.effect === 'versioned_update' && t.writes.some((w) => !VERSIONED_WRITABLE.has(w))) {
-      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets or memories`);
+      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories or a set Ben named`);
     }
     if (t.effect !== 'read' && (t.plainLabel === null || t.plainLabel.trim() === '')) {
       throw new UnsafeRegistryError(`${t.name}: a write tool needs a plainLabel for What the coach can do`);
@@ -269,6 +330,8 @@ export interface TurnRegistry {
  */
 export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRequestKind[]>> = {
   adjust_pending_sets: ['change', 'difficulty'],
+  log_set: ['log'],
+  correct_set: ['correct'],
   save_memory: ['memory'],
   forget_memory: ['memory'],
   add_playbook_candidate: ['playbook'],

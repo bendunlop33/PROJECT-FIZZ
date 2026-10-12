@@ -3,7 +3,7 @@
   "key": "dumbbell-lateral-raise",
   "tier": "basic",
   "name": "Lateral raise",
-  "aliases": ["Dumbbell lateral raise", "DB lateral raise", "Side raise", "Side lateral raise", "Lat raise", "Dumbbell side raise"],
+  "aliases": ["Dumbbell lateral raise", "DB lateral raise", "Side raise", "Side lateral raise", "Lat raise", "Dumbbell side raise", "Lateral dumbbell raise"],
   "family": "lateral_raise",
   "movementPattern": "vertical_push",
   "mechanic": "isolation",

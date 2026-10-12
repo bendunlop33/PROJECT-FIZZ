@@ -16,6 +16,7 @@ import { newUuid } from '../../device/runtime';
 import { formatCalendarDate, formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
 import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
+import type { WorkoutPresence } from '../../services/history-services';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
 import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, Chip, ChecklistRow, ChipRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
@@ -24,6 +25,9 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { LIBRARY_COPY_UI } from '../../workout/library-view';
+import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } from '../../history/delete-view';
+import { handOffDeleteToast } from '../../history/toast-handoff';
+import { DeletedWorkoutView } from './DeletedWorkoutView';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
 /**
@@ -39,8 +43,9 @@ export function SummaryScreen() {
   const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { sessionId, back = false, justFinished: finishedNow = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
-  const [times, setTimes] = useState(false);
+  const { sessionId, back = false, justFinished: finishedNow = false, editTimes = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
+  // Opened from Progress `Edit times`: the time correction shows at once, and closing it returns there (progress.md §2.3).
+  const [times, setTimes] = useState(editTimes);
   const [choosePain, setChoosePain] = useState(false);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
   useEffect(() => {
@@ -63,7 +68,10 @@ export function SummaryScreen() {
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
     const [coachRows, stale, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
     const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
-    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime };
+    // A deleted (or purged) workout opens read-only with Restore (delete-workouts §3.2).
+    // A presence read that fails offers no delete rather than one that would be refused (review r2 N2).
+    const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
   // its small changes are saved when it answers, until a workout starts from this one (CA10).
@@ -84,6 +92,8 @@ export function SummaryScreen() {
   const [nameVisible, setNameVisible] = useState(false);
   const nameOp = useRef(newUuid());
   const [nameAfter] = useState(() => createAfterDismiss());
+  /** One op ID per Delete intent on this screen (a retry after a failure reuses it). */
+  const deleteOp = useRef(newUuid());
   const openName = (kind: 'workout') => {
     nameOp.current = newUuid();
     setNameSheet(kind);
@@ -141,6 +151,10 @@ export function SummaryScreen() {
   };
 
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
+  if (data.state === 'ready' && (data.value.presence.kind === 'deleted' || data.value.presence.kind === 'gone')) {
+    const p = data.value.presence;
+    return <DeletedWorkoutView summary={p.kind === 'deleted' ? data.value.summary : null} goneOn={p.kind === 'deleted' ? p.goneOn : null} version={p.kind === 'deleted' ? p.version : null} onDone={done} />;
+  }
   if (data.state === 'error' || data.value.summary === null) {
     // Never a blank full-screen modal (review S2): say so, offer a retry and a way out.
     return (
@@ -156,7 +170,38 @@ export function SummaryScreen() {
       </View>
     );
   }
-  const { summary: sum, backup, painFlags, savedAs, coachNote, nextTime } = data.value;
+  const { summary: sum, backup, painFlags, savedAs, coachNote, nextTime, presence } = data.value;
+  const canDelete = summaryCanDelete(presence);
+
+  // From a saved workout, the save lives in `⋯` so it doesn't read as a prompt (§A2.6).
+  const fromSaved = sum.routineId !== null;
+  const openSave = () => void saveSheet.open({ kind: 'session', sessionId }, sum.storedName ?? null);
+  /** `⋯`: `Save to Workouts` (from a saved workout not saved again, §A2.6) and `Delete workout` (delete-workouts §2.2). */
+  const moreItems: { label: string; run: () => void; destructive?: boolean }[] = [
+    ...(fromSaved && savedAs === null ? [{ label: LIBRARY_COPY_UI.saveToWorkouts, run: openSave }] : []),
+    ...(canDelete ? [{ label: DELETE_COPY.menuItem, run: () => void deleteThis(), destructive: true }] : []),
+  ];
+  /** `⋯` → `Delete workout` (§2.2, DW1, DW2): the tap is the confirmation; Undo comes as a toast where Ben lands. */
+  function openMenu() {
+    const options = [...moreItems.map((m) => m.label), DELETE_COPY.cancel];
+    const destructive = moreItems.findIndex((m) => m.destructive === true);
+    ActionSheetIOS.showActionSheetWithOptions({ options, ...(destructive >= 0 ? { destructiveButtonIndex: destructive } : {}), cancelButtonIndex: moreItems.length }, (i) => {
+      moreItems[i]?.run();
+    });
+  }
+  async function deleteThis() {
+    const r = await services.history.deleteWorkouts([{ sessionId, expectedVersion: sum.sessionVersion }], deleteOp.current, { from: 'opened' });
+    if (!r.ok) {
+      if (r.kind === 'stale') deleteOp.current = newUuid();
+      setToast({ text: r.message });
+      reload();
+      return;
+    }
+    const row = { title: sum.title, startedAtUtc: sum.startedAtUtc, tz: sum.tz, localDate: sum.dateOnly, source: sum.source, sessionId, version: sum.sessionVersion, gymName: sum.gymName ?? '', sets: sum.facts.workingSets };
+    handOffDeleteToast({ text: deletedToastText([row], services.now().tz), undo: r.refs.map((x) => ({ sessionId: x.sessionId, expectedVersion: x.version })), restoredText: restoredToastText([row], services.now().tz) });
+    changed();
+    done();
+  }
 
   async function tapNext(row: NextTimeRowView, tap: NextTimeTap) {
     if (row.row === null) return;
@@ -167,10 +212,6 @@ export function SummaryScreen() {
     reload();
     changed();
   }
-  // From a saved workout, the save lives in `⋯` so it doesn't read as a prompt (§A2.6).
-  const fromSaved = sum.routineId !== null;
-  const openSave = () => void saveSheet.open({ kind: 'session', sessionId }, sum.storedName ?? null);
-
   async function renameWorkout(name: string): Promise<string | null> {
     const before = sum.storedName;
     const r = await services.workout.dispatch(sessionId, { type: 'rename_session', at: services.now(), opId: nameOp.current, name, expectedVersion: sum.sessionVersion });
@@ -260,18 +301,15 @@ export function SummaryScreen() {
               >
                 <Icon name="pencil" color="text.secondary" size={18} />
               </Pressable>
-              {fromSaved && savedAs === null ? (
+              {(fromSaved && savedAs === null) || canDelete ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="More"
-                  accessibilityActions={[{ name: LIBRARY_COPY_UI.saveToWorkouts, label: LIBRARY_COPY_UI.saveToWorkouts }]}
-                  onAccessibilityAction={openSave}
-                  onPress={() => {
-                    const options = [LIBRARY_COPY_UI.saveToWorkouts, LIBRARY_COPY_UI.cancel];
-                    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 1 }, (i) => {
-                      if (i === 0) openSave();
-                    });
+                  accessibilityActions={moreItems.map((m) => ({ name: m.label, label: m.label }))}
+                  onAccessibilityAction={(e) => {
+                    moreItems.find((m) => m.label === e.nativeEvent.actionName)?.run();
                   }}
+                  onPress={openMenu}
                   style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
                 >
                   <Icon name="ellipsis" color="text.secondary" size={18} />
@@ -439,14 +477,24 @@ export function SummaryScreen() {
                   marginTop: i === 0 ? theme.space['2'] : 0,
                 }}
               >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['2'] }}>
+                {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${e.name}, ${e.setsText}`}
+                  accessibilityHint="Opens this exercise’s history"
+                  onPress={() => {
+                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+                >
                   <AppText variant="headline" style={{ flex: 1 }}>
                     {e.name}
                   </AppText>
                   <AppText variant="callout" color="text.secondary" numeric>
                     {e.setsText}
                   </AppText>
-                </View>
+                  <Icon name="chevron.right" color="text.tertiary" size={14} />
+                </Pressable>
                 {e.results !== '' ? (
                   <AppText variant="callout" numeric>
                     {e.results}
@@ -558,11 +606,13 @@ export function SummaryScreen() {
         visible={times}
         onClose={() => {
           setTimes(false);
+          if (editTimes) done();
         }}
         onSaved={() => {
           setTimes(false);
           changed();
-          reload();
+          if (editTimes) done();
+          else reload();
         }}
       />
       <PainChooseSheet

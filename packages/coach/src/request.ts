@@ -98,7 +98,7 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
 
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold';
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -213,6 +213,40 @@ const FED_UP = new RegExp(`\\b(?:bored|sick|tired|fed up) (?:of|with) (?:(?:the|
 /** "Do dumbbells instead", "use the machine instead" (review r5 S1). */
 const DO_INSTEAD = new RegExp(`^(?:do|use|go with|try|let me do|give me) (?:the |some |a |an )?(?:\\w+ ){0,2}${EXERCISE_WORD} instead\\b`);
 const INSTEAD_OF = new RegExp(`\\binstead of (?:the |my )?(?:\\w+ ){0,2}${EX}\\b`);
+/** A number as Ben says it: digits or a number word (the domain checks the values against his words again). */
+const NUM = String.raw`(?:\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|(?:a |one )?hundred)`;
+/**
+ * (11 Oct, coach tools) An explicit log command with a value: "log 100 for 8",
+ * "can you record 60 kg for 10". A report ("I did 100 for 8") isn't one: Ben
+ * logs with the Log button or says "log" (coach-sheet CS5).
+ */
+const LOG = new RegExp(`^(?:log|record|enter|put down|mark down|save)(?: (?:it|that|this|the set|this set|set ${NUM}|the last (?:set|one)))?(?: as| at)? ${NUM}\\b`);
+/**
+ * (11 Oct, coach tools) A correction of a named logged set: "set 2 was 95",
+ * "the last set was 7 reps", "correct set 3 to 100 for 6", "fix set 2: 95".
+ */
+const SET_REF = String.raw`(?:set ${NUM}|(?:the |my |that )?last (?:set|one)|that set|the (?:first|second|third|fourth|fifth) set)`;
+const CORRECT = new RegExp(`^(?:${SET_REF} (?:was|were) (?:actually |really |only )?${NUM}\\b|(?:correct|fix|change|update|edit|amend) ${SET_REF}(?: to| as)? ${NUM}\\b)`);
+
+/** The future plan, not today: a removal or reorder only counts with one (11 Oct, coach tools; conservative). */
+const FUTURE_SCOPE = /\b(?:next (?:time|session|week|workout)|from now on|going forward|for good|from (?:the |my )?(?:routine|workout|plan|session|programme|program))\b/;
+/**
+ * Taking an exercise out of the plan (11 Oct, coach tools): an imperative
+ * with an exercise object and a future scope. "Drop bench to 95" is a load
+ * change; "drop the pushdown" with no scope could mean today, so it isn't one.
+ */
+const REMOVE = new RegExp(`^(?:drop|remove|cut|ditch|lose|bin|take out|get rid of|leave out|scrap)(?: out)? (?:the |my |all )?(?:\\w+ ){0,2}${EX}s?\\b(?! (?:to|by|down|back|off) \\d)`);
+/** Changing the order (11 Oct, coach tools): "do laterals first next time", "move squats to the end from now on", "reorder push day". */
+const REORDER = new RegExp(`^(?:(?:do|put|move|start with|have) (?:the |my )?(?:\\w+ ){0,2}${EX}s?(?: (?:to|at))? (?:first|last|before|after|earlier|later|(?:the )?(?:start|end|beginning))\\b|reorder\\b|re-order\\b|(?:change|swap|switch) (?:the|my) order\\b)`);
+
+/** A remove or reorder imperative (bare or after "can you" / "let's"), with a future scope where it needs one. */
+function removeOrReorder(clause: string): boolean {
+  const c = clause.replace(POLITE, '');
+  const body = ASK_PREFIX.exec(c)?.[1] ?? c;
+  if (REMOVE.test(body) && FUTURE_SCOPE.test(body)) return true;
+  if (/^(?:reorder|re-order|(?:change|swap|switch) (?:the|my) order)\b/.test(body)) return true;
+  return REORDER.test(body) && FUTURE_SCOPE.test(body);
+}
 /**
  * Ben wants something remembered or forgotten. "Remember when …?" is a
  * question; "Remember to bring chalk" and "Don't forget to stretch" are
@@ -227,6 +261,16 @@ const ADVICE_QUESTION =
   /^(?:why|what|whats|what's|how|hows|how's|when|where|which|who|whose|is|are|was|were|do(?= (?:you|i|we|they|it|these|those|people|u|ya)\b)|does|did|should|shall i|shall we|am i|have i|has|any idea|wonder|i wonder|do you think|would it|would that|is it worth)\b/;
 /** "Would you lower it if you were me?", "what would you change?": asking for the coach's view (review r3 B1). */
 const OPINION_QUESTION = /\bwould (?:you|we|it)\b.*\bif\b|\bwhat would (?:you|we)\b|\bif you were me\b|\bin my (?:shoes|position)\b|\byour (?:view|opinion|take)\b/;
+/**
+ * "Remember to always deload every 5th week", "Remember to avoid lunges"
+ * (coach-memory CM9, review coach-tools r3 S2): "remember to" followed by a
+ * training instruction, or with a rule signal (a period, a deload), is a
+ * memory request; `memoryTextKind` then routes the words to Your data, the
+ * playbook or the split card. "Remember to bring chalk" and "Remember to log
+ * 100" stay reminders, not requests.
+ */
+const REMEMBER_RULE =
+  /^(?:please )?remember to (?:(?:always|never|not|try to|keep to) )?(?:deload|avoid|train|rest|progress|limit|cap|superset|prioriti[sz]e|include|rotate|alternate|skip)\b|^(?:please )?remember to\b.*(?:\bdeloads?\b|\bevery (?:\d+(?:st|nd|rd|th)?|\d+ ?[-–] ?\d+|other|few|couple of) (?:weeks?|sessions?|workouts?|cycles?|blocks?|months?)\b)/;
 /** Ben asks for a general rule for the playbook (rule 10, review r3 S1, r4 S2). */
 const PLAYBOOK =
   /\b(?:add|put|save|make|write|note) (?:(?:a|this|that|it|another|one more) (?:new )?(?:general )?(?:rule|principle)\b|(?:that|this|it) (?:in|into|to|as) (?:the |my )?(?:playbook|a (?:general )?rule)|(?:a )?(?:general )?(?:rule|principle) (?:to|in|into) (?:the |my )?playbook)|\bas a (?:general )?rule\b|\b(?:to|in|into) (?:the |my )?playbook\b|^(?:new|general) rule\b/;
@@ -498,7 +542,7 @@ function structuralIn(clause: string): boolean {
     const m = re.exec(clause);
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
-  return false;
+  return removeOrReorder(clause);
 }
 
 /** Variety on its own ("I'm bored of incline press", "mix it up") is a request; a swap needs to be asked. */
@@ -507,7 +551,8 @@ function selfStandingStructural(clause: string): boolean {
     const m = re.exec(clause);
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
-  return false;
+  // Anchored imperatives, so a negator can only come before them as a prefix ("don't drop …" doesn't match).
+  return removeOrReorder(clause);
 }
 
 /**
@@ -530,7 +575,7 @@ export function classifyBenRequest(text: string): BenRequest | null {
   const kinds: BenRequestKind[] = [];
   const clauses = all.map((c) => c.text);
   // "Remember that time I hit 100?" is a question (review r3 S1); "Remember to bring chalk" is a reminder (r4 S2).
-  if (all.some((c) => (c.label === 'memory' || (MEMORY.test(c.text) && !REMINDER.test(c.text))) && !c.question)) kinds.push('memory');
+  if (all.some((c) => (c.label === 'memory' || (MEMORY.test(c.text) && !REMINDER.test(c.text)) || REMEMBER_RULE.test(c.text)) && !c.question)) kinds.push('memory');
   if (
     all.some((c) => {
       if (c.label === 'playbook') return true;
@@ -559,13 +604,20 @@ export function classifyBenRequest(text: string): BenRequest | null {
   // "Is 95 too light?" asks for a view; "too easy, what next?" reports how it went.
   if (!isOpinionQuestion(clauses[0] ?? '') && open.some(difficultyIn)) kinds.push('difficulty');
   if (open.some((c) => !c.question && HOLD.some((re) => re.test(c.text.replace(POLITE, ''))))) kinds.push('hold');
+  const bodyOf = (c: string) => {
+    const t = c.replace(POLITE, '');
+    return ASK_PREFIX.exec(t)?.[1] ?? t;
+  };
+  // A question only counts when it asks ("can you log 100 for 8?"), never "set 2 was 95?".
+  if (open.some((c) => LOG.test(bodyOf(c.text)) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('log');
+  if (open.some((c) => CORRECT.test(bodyOf(c.text)) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('correct');
   if (kinds.length === 0) return null;
   // Review r5 B3: a retraction in any clause after the last request takes it back ("I want it lighter
   // but leave it", "Lower it. Never mind, keep it", "Lower it. Don't"). A new request after a
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, '')))) lastRequest = i;
+    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

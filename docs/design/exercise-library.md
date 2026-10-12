@@ -229,6 +229,16 @@ The sheet closes. The coach slot shows the swap, collapsed (no Apply step):
 - Completed sets stay under Bench press. Pending sets move to the new exercise with the same set types, reps, effort and rest. Loads come from the substitute's own history (`calculateNextTargets`), or none (`No history: start light, enter your load.`). Never converted.
 - `Change Push A too ›` opens [change-review.md](change-review.md) with a `Future sessions` scope, author `Ben`.
 - If EL4 is **not** approved: the same content shows as the existing `ChangeReviewCard` (`Today only`) with [Not now] [Apply].
+- **As built (developer, 11 Oct; B3 accepted).** Decided conservatively where this section left details open:
+  - The result shows as the standard toast `Bench press → DB bench press` [Undo] (8 s), not a coach-slot card: the slot belongs to the coach, and the focused card already shows the new name and target (minimal copy). After the toast, exercise `⋯` → `Undo swap` while any of the moved sets is pending.
+  - `Change Push A too ›` isn't offered mid-workout yet: it needs the routine editor (workout-library branch). Before Start it stays as built (TE4).
+  - `Swap exercise` is in the `⋯` menu only while the exercise has a pending set. The sheet is the same `rankSubstitutions` list as before Start, at the workout's current gym (its equipment as the workout has it), leaving out every exercise already in the workout.
+  - One new set per pending set, in order, with the same set type and rest. Its target is the substitute's plan for that set type (its own history through the built-in rule), fitted by `snapPlanToGym` (mode `start`); a load that can't be made here is left blank (`—`), never converted from the original. With no history the reps (or time) of the pending set stay and the load is blank.
+  - The original row keeps its done and skipped sets. With nothing left on it, it leaves the workout (`removed: swap`) and comes back on Undo.
+  - The pending other side of a half-logged left/right pair stays on the original row and finishes that pair there (as a gym switch leaves it); only untouched sets move.
+  - Pain (B5, accepted 11 Oct; rule 9): when the row being swapped (or the row it was swapped from today) has an active pain flag, or a logged set on it is marked `Pain`, every substitute's targets are held for today: the plan runs as if pain was reported in this workout, so no load or reps increase. The sheet shows `⚠ Pain flag · no increases` under its title. Before Start, an active flag on the planned exercise does the same.
+  - Undo (`undo_op`) puts the moved pending sets back; a set already logged on the substitute stays (it's real); refused once a moved original set changed (rule 5).
+  - Command: `swap_exercise {sessionExerciseId, expectedVersion, newSessionExerciseId, exercise, equipmentId, unit, loadConvention, sets[{newSetId, fromSetId, planned}]}`, built by `buildSwapExerciseCommand` (pure, `packages/domain`). Author is Ben; a coach swap still goes through an Apply card (CA2).
 
 ### 2.6 Custom exercise (create / edit; pushed screen)
 
@@ -358,7 +368,7 @@ A row whose equipment isn't at this gym (with `At <gym>` off) asks before adding
 ### 4.6 Undo paths
 | What | Undo |
 |---|---|
-| Added an exercise in a workout by mistake | While none of its sets are logged: exercise `⋯` → `Remove exercise` (no confirm, toast [Undo]) |
+| Added an exercise in a workout by mistake | While none of its sets are logged: exercise `⋯` → `Remove exercise` (no confirm, toast `Face pull removed` [Undo]). Built 11 Oct (`remove_exercise`, Undo by `undo_op`): the row stays as an audited record marked removed and leaves every view, the coach's view and the derived title. Not offered for an exercise with parts at another gym (skip it instead) |
 | Swap in a workout | `Undo` in the slot; later, exercise `⋯` → `Undo swap` while its sets are still pending. Logged sets of the new exercise stay (they're real) |
 | Replace in the editor | Editor `Cancel` (until Save), then routine Undo |
 | New custom exercise | Delete it (no history) |
@@ -416,7 +426,7 @@ Existing (brief §4, §7; schemas; active-workout §6):
 | `createCustomExercise(input, opId)` / `updateCustomExercise(id, patch, expectedVersion)` | Validates convention vs equipment (table §2.6); rejects changes to locked fields with `field_locked` (EL3) |
 | `addExerciseAlias(exerciseId, alias)` / `removeExerciseAlias` | Ben's own aliases; also used by the FitNotes import mapping |
 | `hideExercise(id)` / `unhideExercise(id)` / `deleteCustomExercise(id)` | Delete only with no logged sets |
-| Command `swap_exercise {sessionExerciseId, newExerciseId, equipmentId, opId}` with `undo_swap` | Moves **pending** sets only, bumps `session.version`, records `author: 'ben' \| 'coach'` (EL4). Not in the command union yet |
+| Command `swap_exercise` with Undo by `undo_op` (built 11 Oct, see §2.5 "As built") | Moves **pending** sets only, bumps `session.version`. Ben-only for now; a coach swap is a proposal (CA2) |
 | `getMovementPatterns()` / `getMuscleGroups()` | Fixed lists for filters and the custom form |
 
 ## 7. Acceptance checks

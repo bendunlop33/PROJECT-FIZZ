@@ -24,6 +24,7 @@ import type { NextTargetEntry } from '../coach/next-session';
 import type { RepeatNote } from './repeat';
 import type { SnapResult } from './snap';
 import { shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
+import { isInHistory } from './deletion';
 
 /**
  * Routines (premium-feel §2.6, routines.md). Pure rules: building a routine
@@ -113,7 +114,7 @@ export interface RoutineFromSessionInput {
  */
 export function routineFromSession(input: RoutineFromSessionInput): Routine | null {
   const src = input.source;
-  if (src.session.status !== 'finished') return null;
+  if (!isInHistory(src.session)) return null;
   const imported = src.session.source === 'import';
   const keepLoads = input.keepLoads === true && !imported;
   const exercises: RoutineExercise[] = [];

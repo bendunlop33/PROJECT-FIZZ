@@ -100,12 +100,59 @@ describe('classifyBenRequest (the ben_request gate; review S3)', () => {
     ["I'm sick of cable fly", 'structural'],
     ['Can we do something other than cable fly?', 'structural'],
     ['Remember: no lunges', 'memory'],
+    // CM9's own sentence and its unclear sibling open a memory request (review coach-tools r3 S2).
+    ['Remember to always deload every 5th week', 'memory'],
+    ['remember to avoid lunges', 'memory'],
+    ['Please remember to deload every 4-6 weeks', 'memory'],
     // Review r4 S2: the spec's own playbook example; the content after the label is data.
     ['Add a rule: never squat after deadlifts', 'playbook'],
     ['Add a rule: drop the weight when RPE 10', 'playbook'],
     ['New rule: deload every fifth week', 'playbook'],
   ] as const)('%s → %s', (text, kind) => {
     expect(classifyBenRequest(text)).toEqual({ source: 'words', kinds: [kind] });
+  });
+
+  // 11 Oct, coach tools: removing or reordering exercises in the plan opens the structural tool only with a future scope.
+  it.each([
+    ['Drop the triceps pushdown next time', ['structural']],
+    ['Drop the triceps pushdown next time and do laterals first', ['structural']],
+    ['Do laterals first next time', ['structural']],
+    ['can you remove lateral raises from my routine?', ['structural']],
+    ['Move squats to the end from now on', ['structural']],
+    ['Reorder push day', ['structural']],
+    ['drop bench to 95', ['change']],
+    ['drop bench by 5 next time', ['change']],
+    ['Drop the weight next time', ['change']],
+    ['drop the pushdown', ['change']],
+    ["don't drop bench next time", null],
+    ['should I drop bench next time?', null],
+    ['I dropped the pushdown last time', null],
+    ['I do squats first', null],
+    ['Do squats first?', null],
+  ] as const)('remove/reorder: %s', (text, kinds) => {
+    expect(classifyBenRequest(text)).toEqual(kinds === null ? null : { source: 'words', kinds: [...kinds] });
+  });
+
+  // 11 Oct, coach tools: logging or correcting a set from chat needs an explicit command with a number.
+  it.each([
+    ['Log 100 for 8', ['log']],
+    ['Can you log 60 kg for 10?', ['log']],
+    ['log it as 95 x 6', ['log']],
+    ['Log a hundred for eight', ['log']],
+    ['Set 2 was 95', ['correct']],
+    ['Actually, set 2 was 95, not 100', ['correct']],
+    ['the last set was 7 reps', ['correct']],
+    ['set two was ninety five', ['correct']],
+    ['correct set 3 to 100 for 6', ['change', 'correct']],
+    ['I did 100 for 8', null],
+    ['set 2 was fine', null],
+    ['set 2 was 95?', null],
+    ['was set 2 95?', null],
+    ['log my workout', null],
+    ["don't log that", null],
+    ['remember to log 100', null],
+  ] as const)('log/correct: %s', (text, kinds) => {
+    expect(classifyBenRequest(text)).toEqual(kinds === null ? null : { source: 'words', kinds: [...kinds] });
   });
 
   it('a message can carry more than one kind', () => {

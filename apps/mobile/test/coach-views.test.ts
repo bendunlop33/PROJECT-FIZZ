@@ -64,8 +64,9 @@ describe('starter chips (CS6): ours, by context; Pain works without the coach', 
     expect(starterChips({ kind: 'workout', sessionId: ID(9) }, avail('not_connected'), true).map((c) => c.label)).toEqual(['Pain']);
     expect(starterChips({ kind: 'summary', sessionId: ID(9) }, avail('ok'), false).map((c) => c.label)).toEqual(['What should I change next time?']);
     expect(starterChips({ kind: 'today' }, avail('limit'), false)).toEqual([]);
-    // No `How am I doing?` while the coach can't read past workouts (review S4).
-    expect(starterChips({ kind: 'today' }, avail('ok'), false)).toEqual([]);
+    // The coach reads past workouts now (backlog §4.3): Today offers `How am I doing?` as Ben's own words.
+    expect(starterChips({ kind: 'today' }, avail('ok'), false)).toEqual([{ label: 'How am I doing?', input: { kind: 'words', text: 'How am I doing?', spoken: false } }]);
+    expect(starterChips({ kind: 'today' }, avail('not_connected'), false)).toEqual([]);
   });
 });
 
@@ -115,7 +116,7 @@ describe('turn lines: honest, short, Try again where it helps', () => {
 });
 
 describe('the workout coach slot (one item: pending > banner > outcome > offer)', () => {
-  const offer = { triggerId: ID(5), kind: 'rpe_high' as const, setId: ID(102), fact: 'RPE 10 on set 2', prompt: 'That looked hard. Adjust remaining sets?', sessionExerciseId: ID(10) };
+  const offer = { triggerId: ID(5), kind: 'rpe_high' as const, setId: ID(102), fact: 'RPE 10 on set 2', prompt: 'That looked hard. Adjust remaining sets?', sessionExerciseId: ID(10), targetRpe: 8, loggedRpe: 10, by: 'coach' as const, change: null, basis: null };
   it('priority', () => {
     expect(slotView({ pending: true, adjustment: adjust, outcome: null, offer })).toMatchObject({ kind: 'pending' });
     const banner = slotView({ pending: false, adjustment: adjust, outcome: { text: 'x', retry: false }, offer });
@@ -137,9 +138,9 @@ describe('the workout coach slot (one item: pending > banner > outcome > offer)'
     expect(slotView({ pending: false, adjustment: adjust, outcome: null, offer: null, workout: workout(1, [change]) })).toMatchObject({ kind: 'banner', canUndo: true });
   });
 
-  it('Adjust offline or not connected offers only Pain; an offer’s Adjust is Ben’s chip in the trigger’s direction (CA1)', () => {
+  it('Adjust not connected offers Too hard / Too easy (the built-in rule, review coach-fallback S1) and Pain, never Type; an offer’s Adjust is Ben’s chip in the trigger’s direction (CA1)', () => {
     expect(adjustControlView(avail('ok')).chips).toEqual(['too_hard', 'too_easy', 'pain', 'type']);
-    expect(adjustControlView(avail('not_connected'))).toMatchObject({ caption: 'Not connected', chips: ['pain'] });
+    expect(adjustControlView(avail('not_connected'))).toMatchObject({ caption: 'Not connected', chips: ['too_hard', 'too_easy', 'pain'] });
     expect(chipForTrigger('rpe_high')).toBe('too_hard');
     expect(chipForTrigger('reps_short')).toBe('too_hard');
     expect(chipForTrigger('rpe_low')).toBe('too_easy');

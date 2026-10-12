@@ -1,4 +1,4 @@
-import { deriveId, nextTargetSourceBasis, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis } from '@fizz/domain';
+import { deriveId, nextTargetSourceBasis, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis, type SessionAdjustment } from '@fizz/domain';
 import type {
   ActionDetail,
   ActionRecord,
@@ -20,7 +20,7 @@ import type {
 import { isChangeClaim } from './claims';
 import { workoutView } from './context';
 import { renderActionResult } from './render';
-import { appendContentKeys } from './tool-call';
+import { appendContentKeys, memoryContentKey, memoryTextKind, playbookContentKey } from './tool-call';
 
 /**
  * Tool executors (ADR 0020 §2, §5; slice C4). Each one turns a parsed,
@@ -114,6 +114,55 @@ export interface ExerciseLookup {
 
 export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: ExerciseLookup; sessionId: string | null }): CoachExecutors {
   const { store } = deps;
+
+  /** A memory that waits for Ben's choice (CM1, CM2; CM9's split card when the words could be a rule). Never sent to the coach until saved. */
+  function suggestMemory(text: string, quote: string, source: 'coach_suggested' | 'ben_asked', ctx: ToolCallContext): Promise<ToolResult> {
+    const memoryId = deriveId(`coach-memory:${ctx.opId}`);
+    const memory: Memory = {
+      id: memoryId,
+      ownerId: ctx.ownerId,
+      version: 1,
+      createdAtUtc: ctx.now.utc,
+      updatedAtUtc: ctx.now.utc,
+      text,
+      contentKey: memoryContentKey(text),
+      status: 'suggested',
+      quote,
+      createdByActionId: actionIdFor(ctx.opId),
+      source,
+    };
+    const detail: ActionDetail = { kind: 'suggest_memory', memoryId, text };
+    return commitOr(store, ctx.ownerId, { kind: 'suggest_memory', action: newActionRecord(ctx, detail, { status: 'proposed' }), memory }, () =>
+      newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it is already saved or waiting' }),
+    );
+  }
+
+  /** A `To review` playbook candidate (Coaching knowledge): not used until Ben approves it. */
+  function addCandidate(text: string, statedBy: 'ben' | 'coach', ctx: ToolCallContext): Promise<ToolResult> {
+    const candidateId = deriveId(`coach-playbook:${ctx.opId}`);
+    const detail: ActionDetail = { kind: 'add_playbook_candidate', candidateId, text };
+    return commitOr(
+      store,
+      ctx.ownerId,
+      {
+        kind: 'playbook_candidate',
+        action: newActionRecord(ctx, detail),
+        candidate: {
+          id: candidateId,
+          version: 1,
+          createdAtUtc: ctx.now.utc,
+          updatedAtUtc: ctx.now.utc,
+          text,
+          contentKey: playbookContentKey(text),
+          statedBy,
+          status: 'to_review',
+          createdByActionId: actionIdFor(ctx.opId),
+        },
+      },
+      () => newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it was already reviewed' }),
+    );
+  }
+
   return {
     get_recent_actions: async (call, ctx) => {
       if (call.tool !== 'get_recent_actions') throw new TypeError(call.tool);
@@ -161,6 +210,13 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
 
     save_memory: async (call, ctx) => {
       if (call.tool !== 'save_memory') throw new TypeError(call.tool);
+      // CM9 (review coach-tools r2 S1): even when Ben says "remember …", a general rule is never a memory. Only
+      // unmistakably general wording (review r3 S1) goes to the playbook as a `To review` candidate from Ben
+      // (inert until he approves it, with Undo); anything that could be his own constraint waits as a card
+      // with both choices.
+      const kind = memoryTextKind(call.args.text, 'ben');
+      if (kind === 'rule') return addCandidate(call.args.text, 'ben', ctx);
+      if (kind === 'unclear') return suggestMemory(call.args.text, call.args.quote, 'ben_asked', ctx);
       const memoryId = deriveId(`coach-memory:${ctx.opId}`);
       const contentKey = appendContentKeys(call)[0] ?? `memory:${memoryId}`;
       const memory: Memory = {
@@ -181,6 +237,11 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
       );
     },
 
+    suggest_memory: async (call, ctx) => {
+      if (call.tool !== 'suggest_memory') throw new TypeError(call.tool);
+      return suggestMemory(call.args.text, call.args.quote, 'coach_suggested', ctx);
+    },
+
     forget_memory: async (call, ctx) => {
       if (call.tool !== 'forget_memory') throw new TypeError(call.tool);
       const m = await store.getMemory(call.args.memoryId);
@@ -199,29 +260,7 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
 
     add_playbook_candidate: async (call, ctx) => {
       if (call.tool !== 'add_playbook_candidate') throw new TypeError(call.tool);
-      const candidateId = deriveId(`coach-playbook:${ctx.opId}`);
-      const contentKey = appendContentKeys(call)[0] ?? `playbook_candidate:${candidateId}`;
-      const detail: ActionDetail = { kind: 'add_playbook_candidate', candidateId, text: call.args.text };
-      return commitOr(
-        store,
-        ctx.ownerId,
-        {
-          kind: 'playbook_candidate',
-          action: newActionRecord(ctx, detail),
-          candidate: {
-            id: candidateId,
-            version: 1,
-            createdAtUtc: ctx.now.utc,
-            updatedAtUtc: ctx.now.utc,
-            text: call.args.text,
-            contentKey,
-            statedBy: call.args.statedBy,
-            status: 'to_review',
-            createdByActionId: actionIdFor(ctx.opId),
-          },
-        },
-        () => newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it is already waiting for review' }),
-      );
+      return addCandidate(call.args.text, call.args.statedBy, ctx);
     },
   };
 }
@@ -259,6 +298,8 @@ export interface AdjustDeps {
    * (review S1).
    */
   onlySessionExerciseId?: string | null;
+  /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), so a raise above it counts as an increase (review target-rpe S1). */
+  ruleTargetRpe?: (s: SessionAggregate) => Promise<Readonly<Record<string, number>>>;
 }
 
 function requestedSets(agg: SessionAggregate | null, args: AdjustPendingSetsArgs): ExerciseTargetChanges[] {
@@ -304,6 +345,7 @@ export function createAdjustExecutor(deps: AdjustDeps): ToolExecutor {
       sessionPainUnspecified: deps.sessionPainUnspecified,
       gymName: deps.gymName,
       messagePain: ctx.messagePain,
+      ruleTargetRpe: deps.ruleTargetRpe ? await deps.ruleTargetRpe(agg).catch(() => undefined) : undefined,
     });
     if (result.status === 'stale') return refuse('stale', result.outcome, result.guardNotes);
     if (result.status === 'unchanged') return refuse('rejected', result.outcome, result.guardNotes);
@@ -333,12 +375,18 @@ function undoWhat(target: ActionRecord): string {
   switch (d.kind) {
     case 'save_memory':
       return `the memory “${d.text}”`;
+    case 'suggest_memory':
+      return `the suggestion “${d.text}”`;
     case 'forget_memory':
       return `forgetting “${d.text}”`;
     case 'set_pain_flag':
       return `the pain flag on ${d.exerciseNames.join(' and ')}`;
     case 'add_playbook_candidate':
       return 'the playbook suggestion';
+    case 'log_set':
+      return `logging set ${String(d.setNumber)} of ${d.exerciseName}`;
+    case 'correct_set':
+      return `the correction to set ${String(d.setNumber)} of ${d.exerciseName}`;
     case 'adjust_pending_sets':
     case 'set_next_session_targets':
     case 'propose_next_workout_change':
@@ -419,12 +467,55 @@ export function storeTodayTargets(store: Pick<CoachWriteStore, 'commit'>): Today
   };
 }
 
+/** The operation ID of Ben's `Adjust` on the built-in rule's offer: one per trigger, so a double tap applies once. */
+export function builtInAdjustOpId(triggerId: string): string {
+  return `built-in-adjust:${triggerId}`;
+}
+
+/**
+ * The built-in rule's change to today's remaining sets (CA6 revised, build
+ * 108 F2), applied on Ben's `Adjust` when the coach can't answer. The same
+ * write as the coach's (`adjust_pending_targets`, version-gated, idempotent
+ * on the opId, one transaction with its record), so the same Undo works.
+ * The record's author is `checks` (app code, not the coach) and its reason
+ * is the rule's own app text; each changed target is `source: 'built_in_rule'`.
+ */
+export async function applyBuiltInAdjustment(
+  store: Pick<CoachWriteStore, 'commit'>,
+  input: { ownerId: string; sessionId: string; adjustment: SessionAdjustment; opId: string; now: ZonedTimestamp },
+): Promise<TodayTargetsWriteResult> {
+  const a = input.adjustment;
+  const exercises: ExerciseTargetChanges[] = a.plan.map((e) => ({ sessionExerciseId: e.sessionExerciseId, exerciseName: e.exerciseName, changes: e.changes }));
+  const base = newActionRecord({ turnId: '', opId: input.opId, now: input.now }, { kind: 'adjust_pending_sets', sessionId: input.sessionId, exercises }, {
+    author: 'checks',
+    guardNotes: a.guardNotes,
+    entityVersions: [{ entity: 'session', id: input.sessionId, before: a.args.baseVersion, after: a.args.baseVersion + 1 }],
+  });
+  // The rule's reason is app text, not a coach sentence, so the claim check (CC3) doesn't apply to it.
+  const record: ActionRecord = { ...base, turnId: null, reason: a.reason };
+  const command = {
+    type: 'adjust_pending_targets' as const,
+    at: input.now,
+    opId: input.opId,
+    expectedVersion: a.args.baseVersion,
+    actionId: record.actionId,
+    reason: a.reason,
+    rule: a.rule,
+    changes: a.plan.flatMap((e) => e.changes.flatMap((c) => (c.before !== null && c.after !== null ? [{ setId: c.setId, target: c.after }] : []))),
+    removeSetIds: [],
+    addSets: [],
+  };
+  const r = await store.commit(input.ownerId, { kind: 'session_command', action: record, sessionId: input.sessionId, command });
+  if (r.status === 'conflict') return { status: 'stale' };
+  return { status: r.status, record: r.action };
+}
+
 /** `get_active_session`: the workout read fresh, with set IDs and the version a change must name. */
-export function createSessionReadExecutor(deps: { loadSession(): Promise<SessionAggregate | null>; gymName: string | null }): ToolExecutor {
+export function createSessionReadExecutor(deps: { loadSession(): Promise<SessionAggregate | null>; gymName: string | null; ruleTargetRpe?: (s: SessionAggregate) => Promise<Readonly<Record<string, number>>> }): ToolExecutor {
   return async (call) => {
     if (call.tool !== 'get_active_session') throw new TypeError(call.tool);
     const s = await deps.loadSession();
-    return { kind: 'read', data: s === null ? { workout: null } : { workout: workoutView(s, deps.gymName) } };
+    return { kind: 'read', data: s === null ? { workout: null } : { workout: workoutView(s, deps.gymName, deps.ruleTargetRpe ? await deps.ruleTargetRpe(s).catch(() => undefined) : undefined) } };
   };
 }
 

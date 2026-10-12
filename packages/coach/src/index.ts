@@ -14,4 +14,7 @@ export * from './reply-stream';
 export * from './context';
 export * from './executors';
 export * from './turn';
+export * from './training-read';
+export * from './structural';
+export * from './chat-set';
 export * from './fit';

@@ -3,6 +3,7 @@ import type { SqlExecutor, SqlRow } from './driver';
 import { exportTables } from './backup/backup';
 import { noYield, type Slicer } from './backup/slice';
 import { readUserVersion } from './migrations';
+import { inHistorySql, rowInHistory } from './sql';
 
 /**
  * The two data domains (CLAUDE.md rule 10, design-system §7.2,
@@ -54,6 +55,8 @@ export const YOUR_DATA_TABLES = [
   'coach_offers',
   // Today's edits before a workout starts (main's ADR 0022, migration 7): owner-scoped, Ben's choices.
   'pre_start_drafts',
+  // Tombstones of purged workouts (delete-workouts §6.3, migration 8): Your data, removed by Delete my data.
+  'purged_sessions',
 ] as const;
 
 /** Tables whose every row is Coaching knowledge. */
@@ -103,6 +106,8 @@ export interface DomainCounts {
   coachingKnowledge: {
     exercises: number;
     playbookCandidates: number;
+    /** (11 Oct) Chat rules Ben approved: sent to the coach as Coaching knowledge. */
+    playbookRules: number;
     records: number;
   };
 }
@@ -113,14 +118,16 @@ export function countDomains(tables: Record<string, readonly SqlRow[]>): DomainC
   const n = (t: Record<string, SqlRow[]>, name: string) => t[name]?.length ?? 0;
   const total = (t: Record<string, SqlRow[]>) => Object.values(t).reduce((s, rows) => s + rows.length, 0);
   const sessions = mine.sessions ?? [];
-  const finished = new Set(sessions.filter((s) => s.status === 'finished').map((s) => s.id));
+  const finished = new Set(sessions.filter(rowInHistory).map((s) => s.id));
+  const hiddenCheckIns = hiddenCheckInIds(sessions);
   return {
     yourData: {
       workouts: finished.size,
       sets: (mine.session_sets ?? []).filter((s) => s.status === 'completed' && finished.has(s.session_id ?? null)).length,
       gyms: n(mine, 'gyms'),
       routines: n(mine, 'routines'),
-      checkIns: n(mine, 'check_ins'),
+      // A check-in hidden with a deleted workout isn't counted (§5; review r2 S1).
+      checkIns: (mine.check_ins ?? []).filter((c) => !hiddenCheckIns.has(c.id ?? null)).length,
       painFlags: n(mine, 'pain_flags'),
       memories: (mine.memories ?? []).filter((m) => m.status === 'active').length,
       coachThreads: n(mine, 'coach_threads'),
@@ -130,6 +137,7 @@ export function countDomains(tables: Record<string, readonly SqlRow[]>): DomainC
     coachingKnowledge: {
       exercises: n(known, 'exercises'),
       playbookCandidates: (known.playbook_candidates ?? []).filter((c) => c.status === 'to_review').length,
+      playbookRules: (known.playbook_candidates ?? []).filter((c) => c.status === 'approved').length,
       records: total(known),
     },
   };
@@ -171,11 +179,11 @@ export async function countDomainsIn(q: SqlExecutor): Promise<DomainCounts> {
   const sum = (t: Record<string, number>) => Object.values(t).reduce((a, b) => a + b, 0);
   return {
     yourData: {
-      workouts: await count("SELECT COUNT(*) AS n FROM sessions WHERE status = 'finished'"),
-      sets: await count("SELECT COUNT(*) AS n FROM session_sets s JOIN sessions x ON x.id = s.session_id WHERE s.status = 'completed' AND x.status = 'finished'"),
+      workouts: await count(`SELECT COUNT(*) AS n FROM sessions WHERE ${inHistorySql()}`),
+      sets: await count(`SELECT COUNT(*) AS n FROM session_sets s JOIN sessions x ON x.id = s.session_id WHERE s.status = 'completed' AND ${inHistorySql('x')}`),
       gyms: mine.gyms ?? 0,
       routines: mine.routines ?? 0,
-      checkIns: mine.check_ins ?? 0,
+      checkIns: await count(`SELECT COUNT(*) AS n FROM check_ins c WHERE NOT (${HIDDEN_CHECK_IN_SQL})`),
       painFlags: mine.pain_flags ?? 0,
       memories: await count("SELECT COUNT(*) AS n FROM memories WHERE status = 'active'"),
       coachThreads: mine.coach_threads ?? 0,
@@ -185,6 +193,7 @@ export async function countDomainsIn(q: SqlExecutor): Promise<DomainCounts> {
     coachingKnowledge: {
       exercises: known.exercises ?? 0,
       playbookCandidates: await count("SELECT COUNT(*) AS n FROM playbook_candidates WHERE status = 'to_review'"),
+      playbookRules: await count("SELECT COUNT(*) AS n FROM playbook_candidates WHERE status = 'approved'"),
       records: sum(known),
     },
   };
@@ -202,7 +211,7 @@ export async function countDomainsIn(q: SqlExecutor): Promise<DomainCounts> {
  */
 export async function exportDomain(db: Pick<Database, 'read'>, domain: DataDomain, slice: Slicer = noYield): Promise<DomainExport> {
   const { schemaVersion, all, json } = await db.read(async (q) => {
-    const all = await exportTables(q, slice);
+    const all = withoutDeletedWorkouts(await exportTables(q, slice));
     const json = new Map<string, Set<string>>();
     for (const table of Object.keys(all)) json.set(table, await jsonColumns(q, table));
     return { schemaVersion: await readUserVersion(q), all, json };
@@ -232,6 +241,73 @@ export async function exportDomain(db: Pick<Database, 'read'>, domain: DataDomai
     if (out.length > 0) tables[table] = out;
   }
   return { schemaVersion, tables };
+}
+
+/** Tables whose rows belong to one session by `session_id`. */
+const SESSION_CHILD_TABLES = [
+  'session_pauses',
+  'session_exercises',
+  'session_sets',
+  'rest_timers',
+  'work_intervals',
+  'set_audit',
+  'timing_audit',
+  'processed_operations',
+  'import_rows',
+  'coach_offers',
+] as const;
+
+/** Check-ins hidden with deleted workouts (delete-workouts §5): a check-in belongs to at most one workout (`check_in_id` is unique). */
+function hiddenCheckInIds(sessions: readonly SqlRow[]): Set<SqlRow[string]> {
+  return new Set(sessions.filter((s) => s.status === 'deleted' && s.check_in_id !== null && s.check_in_id !== undefined).map((s) => s.check_in_id ?? null));
+}
+
+/** The same rule in SQL, for `countDomainsIn`. */
+const HIDDEN_CHECK_IN_SQL = `EXISTS (SELECT 1 FROM sessions d WHERE d.check_in_id = c.id AND d.status = 'deleted')`;
+
+/** The action an Undo record undid (`data.detail.undoneActionId`), or null when unreadable. */
+function undoneActionOf(row: SqlRow): string | null {
+  if (typeof row.data !== 'string') return null;
+  try {
+    const detail = (JSON.parse(row.data) as { detail?: { undoneActionId?: unknown } }).detail;
+    return typeof detail?.undoneActionId === 'string' ? detail.undoneActionId : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An export leaves out deleted workouts (Recently deleted and purge-due),
+ * their rows, the tombstones of purged ones, the check-in hidden with each,
+ * and the coach's records derived from them (next-session targets, their
+ * uses, coach actions on that workout) (delete-workouts §5, §6.3, DW18;
+ * review r2 S1): what Ben deleted isn't in a file he shares. Conversations
+ * stay (DW-D6). Backups keep everything (§6.5); they go through
+ * `exportTables` directly.
+ */
+export function withoutDeletedWorkouts<T extends Record<string, SqlRow[]>>(tables: T): T {
+  const sessions = tables.sessions ?? [];
+  const deleted = new Set(sessions.filter((s) => s.status === 'deleted').map((s) => s.id));
+  const out: Record<string, SqlRow[]> = { ...tables };
+  if (out.purged_sessions) out.purged_sessions = [];
+  if (deleted.size === 0) return out as T;
+  if (out.sessions) out.sessions = out.sessions.filter((s) => !deleted.has(s.id));
+  for (const t of SESSION_CHILD_TABLES) {
+    const rows = out[t];
+    if (rows) out[t] = rows.filter((r) => !deleted.has(r.session_id ?? null));
+  }
+  const checkIns = hiddenCheckInIds(sessions);
+  if (out.check_ins) out.check_ins = out.check_ins.filter((r) => !checkIns.has(r.id ?? null));
+  if (out.coach_actions) {
+    const dropped = new Set(out.coach_actions.filter((r) => deleted.has(r.session_id ?? null)).map((r) => r.id ?? null));
+    // An Undo of a dropped action goes with it: no Undo in the file whose target isn't (review r3 N1).
+    out.coach_actions = out.coach_actions.filter((r) => !dropped.has(r.id ?? null) && !(r.kind === 'undo' && dropped.has(undoneActionOf(r))));
+  }
+  for (const t of ['next_session_targets', 'next_target_uses'] as const) {
+    const rows = out[t];
+    if (rows) out[t] = rows.filter((r) => !deleted.has(r.source_session_id ?? null));
+  }
+  return out as T;
 }
 
 /** Every string in a row, JSON columns opened (to find which exercise IDs Your data uses). */

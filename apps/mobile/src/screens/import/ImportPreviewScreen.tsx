@@ -17,6 +17,7 @@ import { AppText, Card, Group, PrimaryButton, Row, Screen, SectionHeader, Status
 export function ImportPreviewScreen() {
   const services = useServices();
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
+  const root = useNavigation();
   const { draftId } = useRoute<RouteProp<ProfileStackParams, 'ImportPreview'>>().params;
   const [pages, setPages] = useState(1);
   const [data] = useScreenData((s) => s.imports.draft(draftId));
@@ -135,10 +136,19 @@ export function ImportPreviewScreen() {
         </>
       ) : null}
 
-      {v.skipped.length > 0 || v.datesRow ? (
+      {v.skipped.length > 0 || v.datesRow || v.recentlyDeletedRow ? (
         <>
           <SectionHeader title="Will be skipped" />
           <Group>
+            {v.recentlyDeletedRow ? (
+              <Row
+                title={v.recentlyDeletedRow}
+                icon="trash"
+                onPress={() => {
+                  root.navigate('RecentlyDeleted');
+                }}
+              />
+            ) : null}
             {v.skipped.map((x) => (
               <Row
                 key={x.key + x.line.text}

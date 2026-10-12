@@ -6,8 +6,15 @@ import { useTheme, type ColorToken } from '../theme';
 import { Icon, type SymbolName } from './Icon';
 import { AppText } from './Text';
 
-/** A scrolling screen on `bg.canvas` with the look's side margin. */
-export function Screen({ children, footer, testID }: { children: ReactNode; footer?: ReactNode; testID?: string }) {
+/** Room left under the content for a floating pill (44 pt target + its gap). */
+const FLOATING_ROOM = 56;
+
+/**
+ * A scrolling screen on `bg.canvas` with the look's side margin. `floating`:
+ * something drawn over the bottom of the scroll area (the `Ask` pill); the
+ * content gets room below it so nothing ends up hidden underneath.
+ */
+export function Screen({ children, footer, floating, testID }: { children: ReactNode; footer?: ReactNode; floating?: ReactNode; testID?: string }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -17,12 +24,13 @@ export function Screen({ children, footer, testID }: { children: ReactNode; foot
         contentContainerStyle={{
           paddingHorizontal: theme.components.screenMargin,
           paddingTop: theme.space['4'],
-          paddingBottom: footer ? theme.space['6'] : theme.space['8'] + insets.bottom,
+          paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + insets.bottom) + (floating ? FLOATING_ROOM : 0),
           gap: theme.space['5'],
         }}
       >
         {children}
       </ScrollView>
+      {floating}
       {footer ? <BottomBar>{footer}</BottomBar> : null}
     </View>
   );
@@ -117,10 +125,13 @@ interface RowProps {
   accessibilityHint?: string;
   /** A row tag, icon + text (e.g. `⚠ May hurt`, exercise-library §2.1), read after the title. */
   tag?: { icon: SymbolName; color: ColorToken; text: string; accessibilityLabel: string };
+  /** VoiceOver custom actions (e.g. `Delete` on a past workout, delete-workouts §4). */
+  actions?: readonly { name: string; label: string }[];
+  onAction?: (name: string) => void;
 }
 
 /** `SettingsRow` (§9.31): ≥ 52pt, whole row is the target, chevron when it opens something. */
-export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag }: RowProps) {
+export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag, actions, onAction }: RowProps) {
   const theme = useTheme();
   const content = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], minHeight: 52, paddingVertical: theme.space['3'], paddingHorizontal: theme.space['4'] }}>
@@ -159,6 +170,14 @@ export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secon
       accessibilityLabel={[title, tag?.accessibilityLabel, subtitle, secondLine].filter(Boolean).join(', ')}
       accessibilityState={{ disabled }}
       {...(accessibilityHint ? { accessibilityHint } : {})}
+      {...(actions && onAction
+        ? {
+            accessibilityActions: actions.map((a) => ({ name: a.name, label: a.label })),
+            onAccessibilityAction: (e: { nativeEvent: { actionName: string } }) => {
+              onAction(e.nativeEvent.actionName);
+            },
+          }
+        : {})}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({ backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}

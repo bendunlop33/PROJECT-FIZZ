@@ -579,6 +579,27 @@ describe('Summary and history after a switch (check 24)', () => {
     expect(bench?.split).toBe(false);
   });
 
+  it('a same-gym equipment update mid-exercise is not "Done at more than one gym" (review gym-switch-r3 M1)', () => {
+    const done = finishedAcrossGyms(12, 12);
+    const part = rowOf(done, INCLINE, 1);
+    if (!part) throw new Error('no part');
+    // The second part on the same rack at the same gym (as `Use changes today` leaves it): one gym, one item.
+    const sameItem: SessionAggregate = { ...done, exercises: done.exercises.map((e) => (e.id === part.id ? { ...e, equipmentId: mainRack.id } : e)) };
+    const b1 = nextTargetBlocks(sameItem).find((b) => b.root.exerciseId === INCLINE);
+    expect(b1).toMatchObject({ split: true, gyms: 1, otherPartsDone: 0 });
+    if (!b1) throw new Error('no block');
+    const req = { ownerId: 'o', sessionId: sameItem.session.id, exercise: null, rule: null, history: toHistorySessions(sameItem, INCLINE), painFlags: [], sessionPain: { active: false, reportedAtUtc: null }, count: 'done' as const };
+    expect(nextTargetsForBlock(b1, req, 'Main Gym').result.explanation.facts.some((f) => f.includes('more than one gym'))).toBe(false);
+    // Another item at the same gym: named, never "more than one gym".
+    const otherItem: SessionAggregate = { ...done, session: { ...done.session, equipmentSnapshot: done.session.equipmentSnapshot.map((e) => (e.id === hotelRack.id ? { ...e, gymId: MAIN } : e)) } };
+    const b2 = nextTargetBlocks(otherItem).find((b) => b.root.exerciseId === INCLINE);
+    expect(b2).toMatchObject({ gyms: 1, otherPartsDone: 1 });
+    if (!b2) throw new Error('no block');
+    expect(nextTargetsForBlock(b2, { ...req, history: toHistorySessions(otherItem, INCLINE) }, 'Main Gym').result.explanation.facts[0]).toBe(`Done on more than one item: target from your ${hotelRack.name} sets, for all 3 sets.`);
+    // Two gyms still say so.
+    expect(nextTargetBlocks(done).find((b) => b.root.exerciseId === INCLINE)?.gyms).toBe(2);
+  });
+
   it('Start next session of a switched workout applies the targets once per exercise (review B1)', () => {
     const done = finishedAcrossGyms();
     const t = { setType: 'working' as const, planned: { load: kg(35, 'per_hand'), reps: { min: 8, max: 10 }, durationS: null, rpe: null, rir: null } };

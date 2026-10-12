@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { newCheckIn, newPainFlag } from '@fizz/domain';
 import type { CoachMessage, Memory } from '@fizz/schemas';
 import { buildPlaybookBundle, PLAYBOOK_JSON, PLAYBOOK_MD } from '../scripts/playbook-bundle';
-import { buildCoachContext, contextInputItems, describeCoachContext, PLAYBOOK_V1, type CoachContextInput } from '../src/context';
+import { buildCoachContext, chatRuleNumbers, contextInputItems, describeCoachContext, PLAYBOOK_V1, type CoachContextInput } from '../src/context';
 import { at, id, OWNER, workout } from './turn-fixtures';
 
 const memory: Memory = {
@@ -148,5 +148,60 @@ describe('describeCoachContext (What the coach can see)', () => {
       { label: 'Exercise cues', detail: 'Bench press' },
     ]);
     expect(d.notAvailable).toHaveLength(4);
+  });
+});
+
+describe('approved chat rules (11 Oct, coaching-playbook §3.1, B8)', () => {
+  const rule = (n: number, status: 'to_review' | 'approved' | 'rejected' | 'withdrawn', text: string) => ({
+    id: id(700 + n),
+    version: 2,
+    createdAtUtc: at(n).utc,
+    updatedAtUtc: at(n + 10).utc,
+    text,
+    contentKey: `playbook_candidate:${String(n)}`,
+    statedBy: n % 2 === 0 ? ('ben' as const) : ('coach' as const),
+    status,
+    createdByActionId: id(800 + n),
+    ...(status === 'approved' ? { decidedAtUtc: at(n + 10).utc } : {}),
+  });
+  it('only approved rules are sent, as Coaching knowledge, not evidence-graded, numbered as on the screen; a suggested memory never is', () => {
+    const ctx = buildCoachContext(
+      input({
+        playbookCandidates: [rule(1, 'to_review', 'Deload every 5th week'), rule(2, 'approved', 'Never superset heavy compounds'), rule(3, 'rejected', 'Train to failure always'), rule(4, 'withdrawn', 'Gone')],
+        memories: [memory, { ...memory, id: id(6), text: 'Waiting suggestion', status: 'suggested' }],
+      }),
+    );
+    expect(ctx.coachingKnowledge.approvedChatRules).toEqual([{ id: 'Chat rule 2', rule: 'Never superset heavy compounds', from: 'Ben', grade: 'not evidence-graded', approved: at(12).utc.slice(0, 10) }]);
+    const yours = JSON.stringify(ctx.yourData);
+    expect(yours).not.toContain('superset');
+    expect(yours).not.toContain('Waiting suggestion');
+    const sent = contextInputItems(ctx).map((i) => (i.type === 'message' ? i.content : '')).join('\n');
+    for (const t of ['Deload every 5th week', 'Train to failure always', 'Gone']) expect(sent).not.toContain(t);
+    expect(describeCoachContext(ctx).coachingKnowledge.map((d) => d.label)).toContain('Rules you approved');
+    expect(buildCoachContext(input()).coachingKnowledge.approvedChatRules).toBeUndefined();
+  });
+  it('a withdrawn rule ahead of an approved one takes no number (the Playbook screen numbers the same way, review S2)', () => {
+    const candidates = [rule(1, 'withdrawn', 'Gone'), rule(2, 'approved', 'Never superset heavy compounds')];
+    expect(chatRuleNumbers(candidates).get(id(701))).toBeUndefined();
+    expect(chatRuleNumbers(candidates).get(id(702))).toBe(1);
+    const ctx = buildCoachContext(input({ playbookCandidates: candidates }));
+    expect(ctx.coachingKnowledge.approvedChatRules?.map((r) => r.id)).toEqual(['Chat rule 1']);
+  });
+});
+
+describe('timed and distance sets in the workout view (review gaps N2)', () => {
+  it('a sled push shows its distance and a hang its time; a reps set gains no extra fields', async () => {
+    const { workoutView } = await import('../src/context');
+    const { startFixture, apply, logCmd, setsFor, values, kg, HANG, BENCH } = await import('@fizz/domain/testing');
+    let s = startFixture().state;
+    const [hang] = setsFor(s, HANG);
+    const [warm] = setsFor(s, BENCH);
+    s = apply(s, logCmd(hang?.id ?? '', values(null, null, { durationS: 40 }), 30));
+    s = apply(s, logCmd(warm?.id ?? '', values(kg(60), 10), 300));
+    const sets = workoutView(s, 'Main').exercises.flatMap((e) => e.sets);
+    expect(sets.find((x) => x.setId === hang?.id)?.actual).toMatchObject({ durationS: 40 });
+    expect(sets.find((x) => x.setId === warm?.id)?.actual).toEqual({ load: kg(60), reps: { min: 10, max: 10 }, rpe: null });
+    const sled = { ...s, sets: s.sets.map((x) => (x.id === warm?.id && x.actual ? { ...x, actual: { ...x.actual, reps: null, distanceM: 20 } } : x)) };
+    expect(workoutView(sled, 'Main').exercises.flatMap((e) => e.sets).find((x) => x.setId === warm?.id)?.actual).toMatchObject({ load: kg(60), reps: null, distanceM: 20 });
   });
 });

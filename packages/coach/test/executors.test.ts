@@ -32,6 +32,45 @@ describe('store executors', () => {
     expect(await s.repos.coach.getMemory(memoryId)).toMatchObject({ status: 'active' });
   });
 
+  it("Ben's \"remember\" of a general rule goes to the playbook, never memory; unclear words wait for his choice (CM9, review coach-tools r2 S1)", async () => {
+    const s = await store();
+    const ex = createStoreExecutors({ store: s.repos.coach, exercises: { exerciseName: () => Promise.resolve(null) }, sessionId: null });
+    const rule: CoachToolCall = { tool: 'save_memory', args: { text: 'Always deload every 5th week', quote: 'remember to always deload every 5th week' } };
+    const r = await ex.save_memory?.(rule, ctx('t:rule'));
+    expect(r).toMatchObject({ kind: 'action', replayed: false, record: { status: 'committed', detail: { kind: 'add_playbook_candidate', text: 'Always deload every 5th week' } } });
+    expect(await s.repos.coach.listMemories(OWNER, 'all')).toEqual([]);
+    expect(await s.repos.coach.listPlaybookCandidates()).toMatchObject([{ text: 'Always deload every 5th week', statedBy: 'ben', status: 'to_review' }]);
+    // A replay (the same opId) is the same record; nothing is written twice.
+    expect(await ex.save_memory?.(rule, ctx('t:rule'))).toMatchObject({ kind: 'action', replayed: true });
+    expect(await s.repos.coach.listPlaybookCandidates()).toHaveLength(1);
+
+    const unclear = await ex.save_memory?.({ tool: 'save_memory', args: { text: 'Avoid lunges', quote: 'remember to avoid lunges' } }, ctx('t:unclear'));
+    expect(unclear).toMatchObject({ kind: 'action', record: { status: 'proposed', detail: { kind: 'suggest_memory', text: 'Avoid lunges' } } });
+    expect(await s.repos.coach.listMemories(OWNER, 'all')).toMatchObject([{ text: 'Avoid lunges', status: 'suggested', source: 'ben_asked' }]);
+
+    const personal = await ex.save_memory?.({ tool: 'save_memory', args: { text: 'Keep sessions under 45 minutes on weekdays', quote: 'remember my weekday sessions are 45 minutes max' } }, ctx('t:personal'));
+    expect(personal).toMatchObject({ kind: 'action', record: { status: 'committed', detail: { kind: 'save_memory' } } });
+  });
+
+  it("Ben's \"remember\" of his own constraint without a subject never lands in the playbook (review coach-tools r3 S1, rule 10)", async () => {
+    const s = await store();
+    const ex = createStoreExecutors({ store: s.repos.coach, exercises: { exerciseName: () => Promise.resolve(null) }, sessionId: null });
+    const health = await ex.save_memory?.({ tool: 'save_memory', args: { text: 'Should not bench heavy until the shoulder settles', quote: "remember I shouldn't bench heavy until my shoulder settles" } }, ctx('t:health'));
+    expect(health).toMatchObject({ kind: 'action', record: { status: 'committed', detail: { kind: 'save_memory' } } });
+    const short = await ex.save_memory?.({ tool: 'save_memory', args: { text: 'Should keep sessions short', quote: 'remember I should keep sessions short' } }, ctx('t:short'));
+    expect(short).toMatchObject({ kind: 'action', record: { status: 'committed', detail: { kind: 'save_memory' } } });
+    const rest = await ex.save_memory?.({ tool: 'save_memory', args: { text: 'Rest 3 minutes between heavy sets', quote: 'remember to rest 3 minutes between heavy sets' } }, ctx('t:rest'));
+    expect(rest).toMatchObject({ kind: 'action', record: { status: 'proposed', detail: { kind: 'suggest_memory' } } });
+    expect(await s.repos.coach.listPlaybookCandidates()).toEqual([]);
+    expect(await s.repos.coach.listMemories(OWNER, 'all')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'Should not bench heavy until the shoulder settles', status: 'active' }),
+        expect.objectContaining({ text: 'Should keep sessions short', status: 'active' }),
+        expect.objectContaining({ text: 'Rest 3 minutes between heavy sets', status: 'suggested', source: 'ben_asked' }),
+      ]),
+    );
+  });
+
   it('pain flags: an unknown exercise is refused (never guessed); an exercise already flagged is refused with why', async () => {
     const s = await store();
     const ex = createStoreExecutors({ store: s.repos.coach, exercises: { exerciseName: (x) => Promise.resolve(x === SQUAT ? 'Back squat' : null) }, sessionId: null });

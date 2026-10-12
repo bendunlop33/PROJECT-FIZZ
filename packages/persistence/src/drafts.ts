@@ -53,9 +53,18 @@ export type RoutineChangeUndo =
  * asked for and its write refuses if it moved: a Start in between, even one
  * with no draft to close, cancels the fit (fit-to-time §3.4, review C B1).
  * A count, not a time, so a clock change can't open the fence.
+ *
+ * Not a history read, so not `inHistorySql`: an active, deleted or
+ * discarded workout was still a Start. A purge removes the row (migration 8),
+ * so purged manual workouts are counted from their tombstones and the count
+ * never goes down (a Start plus a purge in between must still move it).
  */
 async function startFenceIn(q: SqlExecutor, ownerId: string): Promise<number> {
-  const row = await q.getFirst<{ n: number }>("SELECT COUNT(*) AS n FROM sessions WHERE owner_id = ? AND source = 'manual'", [ownerId]);
+  const row = await q.getFirst<{ n: number }>(
+    `SELECT (SELECT COUNT(*) FROM sessions WHERE owner_id = ? AND source = 'manual')
+          + (SELECT COUNT(*) FROM purged_sessions WHERE owner_id = ? AND import_job_id IS NULL) AS n`,
+    [ownerId, ownerId],
+  );
   return row?.n ?? 0;
 }
 
@@ -105,6 +114,11 @@ export class SqliteDrafts extends DocumentRepository<PreStartDraft> {
   /** The start fence a coach fit is asked with (`startFenceIn`). Reads only. */
   startFence(ownerId: string): Promise<number> {
     return this.db.read((q) => startFenceIn(q, ownerId));
+  }
+
+  /** Every draft for one basis, open or closed (a coach Apply reads which of its edits Ben took back, review S5). */
+  listForBasis(ownerId: string, basis: DraftBasis): Promise<PreStartDraft[]> {
+    return this.listWhere('owner_id = ? AND basis_key = ?', [ownerId, draftBasisKey(basis)]);
   }
 
   listByOwner(ownerId: string): Promise<PreStartDraft[]> {

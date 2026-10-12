@@ -38,8 +38,20 @@ export function newerWorkoutData<T extends { aggregate: SessionAggregate }>(curr
   const b = incoming.aggregate;
   if (a.session.id !== b.session.id) return incoming;
   const startedLast = order.startedLast ?? true;
-  if (b.revision < a.revision) return startedLast ? { ...current, ...independentOf(incoming) } : current;
-  return startedLast ? incoming : { ...incoming, ...independentOf(current) };
+  if (b.revision < a.revision) return withExerciseInfo(startedLast ? { ...current, ...independentOf(incoming) } : current, incoming);
+  return withExerciseInfo(startedLast ? incoming : { ...incoming, ...independentOf(current) }, current);
+}
+
+/**
+ * Catalogue info per exercise ID (`exerciseInfo`) doesn't depend on the
+ * workout's revision: keep what either read found, so an exercise added
+ * since one of them still shows its built-in target RPE (review target-rpe N2).
+ */
+function withExerciseInfo<T extends object>(kept: T, other: T): T {
+  const k = (kept as { exerciseInfo?: Record<string, unknown> }).exerciseInfo;
+  const o = (other as { exerciseInfo?: Record<string, unknown> }).exerciseInfo;
+  if (k === undefined || o === undefined || Object.keys(o).every((id) => id in k)) return kept;
+  return { ...kept, exerciseInfo: { ...o, ...k } };
 }
 
 /**

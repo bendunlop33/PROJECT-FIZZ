@@ -2,6 +2,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 import type { HistorySession, HistorySet } from './progression';
 import { equipmentOfRow } from './session/equipment-snapshot';
 import { setDisplayNumbers } from './session/order';
+import { isInHistory } from './session/deletion';
 
 /**
  * Progression history for one exercise from a stored session (third-review
@@ -26,7 +27,7 @@ import { setDisplayNumbers } from './session/order';
  */
 export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string, opts: { identity?: boolean } = {}): HistorySession[] {
   const { session } = aggregate;
-  if (session.status !== 'finished') return [];
+  if (!isInHistory(session)) return [];
   const exercises = aggregate.exercises
     .filter((e) => e.exerciseId === exerciseId)
     .sort((a, b) => a.order - b.order);
@@ -47,6 +48,9 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
         reps: s.actual.reps,
         rpe: s.actual.rpe,
         rir: s.actual.rir,
+        // Timed and distance sets carry their time or metres (for `Last`); absent on others.
+        ...(s.actual.durationS !== null ? { durationS: s.actual.durationS } : {}),
+        ...(s.actual.distanceM !== null && s.actual.distanceM !== undefined ? { distanceM: s.actual.distanceM } : {}),
         // §2.13: flags travel with the set; consumers decide with `isSetCountable`.
         ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),
         ...(opts.identity ? { setId: s.id, version: s.version } : {}),

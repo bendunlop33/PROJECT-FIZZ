@@ -17,7 +17,7 @@ import type { LibraryToastParam, RootStackParams } from '../../navigation/types'
 import { STALE_PREVIEW, type AddSheet, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, CoachFitStatusCard, EditLink, EditRow, FitCard, FitSuggestionCard, FitWhySheet, HowLongSheet, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
+import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, CoachFitStatusCard, EditLink, EditRow, FitCard, FitSuggestionCard, FitWhySheet, HowLongSheet, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, StatusLine, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
 import { bringBackOf, coachFitCardOf, coachFitCardView, FIT_COPY, fitCardCollapsed, howLongOpen, timeTile, type CoachFitCard } from '../../workout/fit-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
@@ -65,6 +65,7 @@ import {
   type EditRowAction,
   type EditRowPillKey,
   showsWhy,
+  swapPainLine,
   swapSubtitle,
   swapTap,
   TODAY_EDITS_COPY,
@@ -1426,6 +1427,14 @@ export function WorkoutOverviewScreen() {
               }
             : undefined
         }
+        onHistory={
+          r.hasHistory
+            ? () => {
+                // This gym's equipment for the row, else a series at this gym, else the most used (review progress-B S4).
+                navigation.navigate('ExerciseProgress', { exerciseId: r.exerciseId, name: r.name, ...(r.equipmentId === null ? {} : { equipmentId: r.equipmentId }), ...(gymId ? { gymId } : {}) });
+              }
+            : undefined
+        }
         onStillHurts={
           flagId
             ? () => {
@@ -1748,6 +1757,7 @@ export function WorkoutOverviewScreen() {
             }}
           />
         </View>
+        {swap?.sheet && swapPainLine(swap.sheet.painHeld) !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={swapPainLine(swap.sheet.painHeld) ?? ''} /> : null}
         {swap?.sheet && swap.sheet.rows.length > 0 ? (
           <ScrollView>
             <View style={{ alignItems: 'flex-end', paddingBottom: theme.space['1'] }}>

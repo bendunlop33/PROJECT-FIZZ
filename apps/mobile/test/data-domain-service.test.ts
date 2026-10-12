@@ -14,7 +14,7 @@ import { createDataDomainService } from '../src/backup/data-domain-service';
 
 const counts = (records: number): DomainCounts => ({
   yourData: { workouts: 0, sets: 0, gyms: 0, routines: 0, checkIns: 0, painFlags: 0, memories: 0, coachThreads: 0, imports: 0, records },
-  coachingKnowledge: { exercises: 1, playbookCandidates: 0, records: 1 },
+  coachingKnowledge: { exercises: 1, playbookCandidates: 0, playbookRules: 0, records: 1 },
 });
 
 function world(opts: { swap: () => Promise<DomainSwitchOutcome>; records: () => number }) {

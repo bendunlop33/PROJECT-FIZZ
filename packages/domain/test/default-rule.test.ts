@@ -59,8 +59,9 @@ describe('built-in default rule by category', () => {
 describe('next targets for an added exercise (review S3)', () => {
   const pulldown = starterExercises('x').find((e) => e.name === 'Lat pulldown');
   if (!pulldown) throw new Error('fixture');
-  const st = stack();
-  const hist: HistorySession = { sessionId: id(710), performedAtUtc: at(-86_400).utc, equipmentId: st.id, gymId: null, imported: false, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(40, 'stack'), reps: 10, rpe: 8, rir: null })) };
+  // 50 → 55 kg is a 10% step: inside 7-F's limit.
+  const st = stack({ stackLoads: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] });
+  const hist: HistorySession = { sessionId: id(710), performedAtUtc: at(-86_400).utc, equipmentId: st.id, gymId: null, imported: false, sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load: kg(50, 'stack'), reps: 10, rpe: 8, rir: null })) };
   const req = {
     ownerId: OWNER,
     exerciseId: pulldown.id,
@@ -83,13 +84,13 @@ describe('next targets for an added exercise (review S3)', () => {
     expect(result.decision).toBe('increase_load');
     const plan = plannedSetsFromTargets(result);
     expect(plan).toHaveLength(3);
-    expect(plan?.[0]).toEqual({ setType: 'working', planned: { load: kg(45, 'stack'), reps: { min: 6, max: 10 }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' } });
+    expect(plan?.[0]).toEqual({ setType: 'working', planned: { load: kg(55, 'stack'), reps: { min: 6, max: 10 }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' } });
   });
 
   it('pain mentioned without a movement holds targets; no history plans nothing', () => {
     const held = nextTargetsFor({ ...req, sessionPain: { active: true, reportedAtUtc: at(0).utc } });
     expect(held.result.decision).toBe('halted_pain');
-    expect(plannedSetsFromTargets(held.result)?.[0]?.planned.load).toEqual(kg(40, 'stack'));
+    expect(plannedSetsFromTargets(held.result)?.[0]?.planned.load).toEqual(kg(50, 'stack'));
     expect(plannedSetsFromTargets(nextTargetsFor({ ...req, history: [] }).result)).toBeNull();
   });
 
@@ -100,5 +101,49 @@ describe('next targets for an added exercise (review S3)', () => {
     const h2: HistorySession = { sessionId: id(711), performedAtUtc: at(-86_400).utc, equipmentId: db.id, gymId: null, imported: false, sets: [1, 2].map(() => ({ setType: 'working' as const, side: null, load: kg(top, 'per_hand'), reps: 10, rpe: 7, rir: null })) };
     const plan = plannedSetsFromTargets(nextTargetsFor({ ...req, exerciseId: press?.id ?? '', exerciseName: 'Dumbbell bench press', convention: 'per_hand', equipment: db, exercise: press ?? null, history: [h2] }).result);
     expect(plan?.every((p) => (p.planned.load?.value ?? 0) <= top)).toBe(true);
+  });
+});
+
+/** Playbook 7-F (backlog §4.1 loose end): a next load more than ~10% heavier progresses reps instead. */
+describe('built-in rule: no jump over 10% (7-F)', () => {
+  const pain = { active: false, reportedAtUtc: null };
+  const history = (load: ReturnType<typeof kg>, reps: number, equipmentId: string): HistorySession[] => [
+    {
+      sessionId: id(800),
+      performedAtUtc: at(-7 * 86_400).utc,
+      equipmentId,
+      gymId: null,
+      imported: false,
+      sets: [1, 2, 3].map(() => ({ setType: 'working' as const, side: null, load, reps, rpe: 8, rir: null })),
+    },
+  ];
+
+  it('10 kg dumbbells at the top of the range: 12.5 kg (+25%) is too big, so reps go up', () => {
+    const db = dumbbells();
+    const r = calculateNextTargets({ exerciseName: 'Lateral raise', measurement: 'reps', history: history(kg(10, 'per_hand'), 12, db.id), equipment: db, unit: 'kg', convention: 'per_hand', pain, rule: builtInDefaultRule(OWNER, 'kg', 3, 'isolation') });
+    expect(r.decision).toBe('increase_reps');
+    expect(r.sets[0]?.load).toEqual(kg(10, 'per_hand'));
+    expect(r.sets[0]?.reps).toEqual({ min: 13, max: 13 });
+    expect(r.explanation.summary).toContain('10%');
+  });
+
+  it('100 kg bench (+2.5 kg = 2.5%) still goes up in load', () => {
+    const bar = barbell();
+    const r = calculateNextTargets({ exerciseName: 'Bench press', measurement: 'reps', history: history(kg(100), 6, bar.id), equipment: bar, unit: 'kg', convention: 'total', pain, rule: builtInDefaultRule(OWNER, 'kg', 3, 'main_barbell') });
+    expect(r.decision).toBe('increase_load');
+    expect(r.sets[0]?.load).toEqual(kg(102.5));
+  });
+
+  it('at the rep cap it holds rather than taking the big jump', () => {
+    const db = dumbbells();
+    const r = calculateNextTargets({ exerciseName: 'Lateral raise', measurement: 'reps', history: history(kg(10, 'per_hand'), 15, db.id), equipment: db, unit: 'kg', convention: 'per_hand', pain, rule: builtInDefaultRule(OWNER, 'kg', 3, 'isolation') });
+    expect(r.decision).toBe('ceiling_reached');
+    expect(r.sets[0]?.load).toEqual(kg(10, 'per_hand'));
+  });
+
+  it('assisted machines are not measured by percent (their real load is unknown)', () => {
+    const rule = builtInDefaultRule(OWNER, 'kg', 3, 'compound');
+    expect(rule.maxLoadJumpPercent).toBe(10);
+    expect(ProgressionRuleSchema.safeParse(rule).success).toBe(true);
   });
 });

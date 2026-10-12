@@ -86,3 +86,13 @@ export function backFromEditor(from: 'Workouts' | 'WorkoutOverview', copyToast: 
 export function replaceWithWorkouts() {
   return { type: 'REPLACE', payload: { name: 'Workouts', params: {} } } as const;
 }
+
+/**
+ * Back from the correction sheet to the Workout under it (review
+ * coach-fallback B1). A plain `navigate('Workout', …)` from `EditSet` PUSHES a
+ * second Workout (with its own timers and coach state); `POP_TO` with `merge`
+ * pops the sheet and hands the toast or `corrected` key to the existing one.
+ */
+export function returnToWorkout(params: NonNullable<RootStackParams['Workout']>) {
+  return { type: 'POP_TO', payload: { name: 'Workout', params, merge: true } } as const;
+}
