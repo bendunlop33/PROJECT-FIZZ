@@ -39,7 +39,9 @@ import { appendContentKeys, memoryContentKey, memoryTextKind, playbookContentKey
 
 export type ToolResult =
   | { kind: 'read'; data: unknown; earlier?: readonly ActionRecord[] }
-  | { kind: 'action'; record: ActionRecord; replayed: boolean };
+  | { kind: 'action'; record: ActionRecord; replayed: boolean }
+  /** Nothing ran and nothing was written (e.g. a second build in one turn); `line` goes back to the model. */
+  | { kind: 'refused'; line: string };
 
 export interface ToolCallContext {
   ownerId: string;
@@ -383,6 +385,8 @@ function undoWhat(target: ActionRecord): string {
       return `the pain flag on ${d.exerciseNames.join(' and ')}`;
     case 'add_playbook_candidate':
       return 'the playbook suggestion';
+    case 'add_exercise_today':
+      return `adding ${d.exerciseName}`;
     case 'log_set':
       return `logging set ${String(d.setNumber)} of ${d.exerciseName}`;
     case 'correct_set':
@@ -395,6 +399,8 @@ function undoWhat(target: ActionRecord): string {
       return renderActionResult(target, 'sheet').text.replace(/\.$/, '').slice(0, 200);
     case 'fit_today':
       return `the fit to ${String(d.minutes)} min`;
+    case 'build_workout':
+      return `version ${String(d.versionN)} of ${d.name}`;
   }
 }
 

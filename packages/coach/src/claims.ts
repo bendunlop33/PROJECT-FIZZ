@@ -96,6 +96,8 @@ const PAST = new Set([
   'frozen', 'held', 'parked', 'benched', 'shelved',
   // Review r4 B3.
   'reversed', 'retired', 'scratched', 'rewound',
+  // workout-builder WB28: a workout started from chat (no tool can).
+  'started', 'launched',
 ]);
 /** Same form as the base verb: only a claim after a subject or auxiliary, never sentence-initial (imperatives). */
 const AMBIGUOUS_PAST = new Set(['cut', 'put', 'set', 'reset', 'sorted', 'fixed', 'made', 'planned', 'built', 'marked', 'locked']);
@@ -164,7 +166,8 @@ const GENERIC_NAME_WORDS = new Set([
 
 // ---------------------------------------------------------------------------
 
-type ClaimKind = ActionKind | 'log_set' | 'any';
+/** `workout_saved`: a workout saved, scheduled or started. No tool does that (BD15), so nothing can back it. */
+type ClaimKind = ActionKind | 'log_set' | 'any' | 'workout_saved';
 /**
  * An exercise the claim names. `all`: a generic or plural word ("presses",
  * "dumbbells") claims every exercise it could mean, so each must have
@@ -859,7 +862,19 @@ function numbersIn(clause: string): { loads: Claim['loads']; bare: Claim['bareNu
   return { loads, bare, unverifiable };
 }
 
+/**
+ * workout-builder BD1, BD15, WB28: "I've built you a push workout" is backed
+ * only by a committed `build_workout` this turn; "I've saved it to your
+ * workouts" or "I've started the workout" by nothing (Ben taps Save and Start).
+ */
+const BUILT_WORKOUT =
+  /\b(?:built|made|created|drafted|designed|put together|written|wrote|set up|planned|prepared|whipped up)(?: you| for you)?(?: (?:a|an|your|the|this|that|today's|you a|you an))?(?: (?:new|quick|short|\d+[- ]?min(?:ute)?s?|push|pull|legs?|upper|lower|full[- ]body|body))* (?:workout|draft)\b/;
+const SAVED_WORKOUT =
+  /\b(?:saved|stored|added|scheduled|booked|filed|put)(?: it| this| that| the workout| your workout| the draft| this workout)? (?:to|in|into|as|on) (?:your |the )?(?:workouts|library|routines|rotation|calendar|schedule)\b|\b(?:started|kicked off|launched|begun) (?:it|the workout|your workout|this workout|the draft|that workout)\b|\b(?:workout|draft) (?:is|has been|was|got) (?:now )?(?:saved|started|scheduled|booked)\b/;
+
 function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op: SetOp } {
+  if (SAVED_WORKOUT.test(clause)) return { kinds: new Set<ClaimKind>(['workout_saved']), op: 'change' };
+  if (BUILT_WORKOUT.test(clause)) return { kinds: new Set<ClaimKind>(['build_workout']), op: 'change' };
   const kinds = new Set<ClaimKind>();
   const hasSetWord = /\b(?:sets?|a set|another set|one more set|extra set)\b/.test(clause);
   let op: SetOp = 'change';
@@ -886,6 +901,8 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
     STRUCT_R4.some((re) => re.test(clause)) ||
     STRUCT_R5.some((re) => re.test(clause));
   if (structural) kinds.add('propose_next_workout_change');
+  // (12 Oct) "Added lateral raises [[a1]]": an exercise added to today's workout is backed by its own record.
+  if (structural && !next) kinds.add('add_exercise_today');
   // "Pec deck next time" may be a swap or a target for an exercise already there.
   if (EX_NEXT.test(clause) && !hasSetWord) kinds.add('propose_next_workout_change');
   if (PAIN_HOLD_R4.test(clause) || PAIN_HOLD_EX.test(clause)) kinds.add('set_pain_flag');
@@ -1041,9 +1058,19 @@ function factsOf(record: ActionRecord): RecordFacts {
       if (after.load !== null) f.primaryLoad = after.load;
       break;
     }
+    case 'add_exercise_today':
+      // (12 Oct) The added exercise, its set count and its first set's target as saved.
+      f.names.add(d.exerciseName.toLowerCase());
+      f.numbers.add(String(d.sets));
+      addAfter(f, d.target);
+      if (d.target?.rpe != null) f.numbers.add(formatNumber(d.target.rpe));
+      if (d.durationS !== null) f.numbers.add(String(d.durationS));
+      if (d.target?.load) f.primaryLoad = d.target.load;
+      break;
     case 'propose_next_workout_change':
     case 'update_routine':
     case 'fit_today':
+    case 'build_workout':
     case 'save_memory':
     case 'suggest_memory':
     case 'forget_memory':

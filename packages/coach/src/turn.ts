@@ -1,4 +1,4 @@
-import { classifyPainMention, painBodyPart, type AdjustIntent, type MessagePain } from '@fizz/domain';
+import { asksToStartOrSave, classifyPainMention, painBodyPart, START_BY_TAP_LINE, type AdjustIntent, type MessagePain } from '@fizz/domain';
 import {
   COACH_REPLY_TOOL_NAME,
   type ActionRecord,
@@ -25,8 +25,9 @@ import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { chipRequest, classifyBenRequest, requestHas, type BenRequest } from './request';
+import { chipRequest, classifyBenRequest, requestHas, revisesDraft, type BenRequest } from './request';
 import { parseToolCall } from './tool-call';
+import { BUILD_INSTRUCTIONS } from './build';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -55,7 +56,12 @@ export interface CoachTiming {
   firstEventMs: number;
   /** `timing.coachStreamStall`: between events. */
   stallMs: number;
+  /** The whole turn, every step included (workout-builder BD13, `timing.coachBuildTimeout`: 60 s). Absent: no cap. */
+  totalMs?: number;
 }
+
+/** `timing.coachBuildTimeout` (workout-builder BD13): a whole workout is a bigger answer than a reply. */
+export const COACH_BUILD_TIMEOUT_MS = 60_000;
 
 export const DEFAULT_COACH_TIMING: CoachTiming = { firstEventMs: 20_000, stallMs: 20_000 };
 
@@ -93,6 +99,14 @@ export interface CoachTurnRequest {
   structuralSignals: readonly StructuralSignalKind[];
   /** Exercise IDs Ben named in his words (for `messagePain`); the caller matches names to the session. */
   namedExerciseIds?: readonly string[];
+  /** A coach draft is in context (workout-builder BD16): Ben's change words make its next version. */
+  draftInContext?: boolean;
+  /**
+   * The thread has a coach draft (or one is in context): "start it" / "save it"
+   * then gets the fixed `Tap Start workout when you're ready.` with no model
+   * call (BD15). Elsewhere those words go to the coach as usual.
+   */
+  draftInThread?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -153,6 +167,8 @@ export interface GateInput {
   /** The offer on the coach's last message in this thread, if any. */
   previousOffer: CoachOfferKind | null;
   structuralSignals: readonly StructuralSignalKind[];
+  /** A coach draft is in context (`Ask coach` on its overview): Ben's change words make a new version (workout-builder BD16). */
+  draftInContext?: boolean;
 }
 
 /** The turn gate from Ben's own input only (registry.ts `TurnGate`). */
@@ -164,7 +180,11 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
   switch (g.input.kind) {
     case 'words':
       if (g.previousOffer === 'adjust_today' && isBareAccept(g.input.text)) acceptedOffer = true;
-      else benRequest = classifyBenRequest(g.input.text);
+      else benRequest = classifyBenRequest(g.input.text, g.kind);
+      // BD16: with a draft in context, "make it shorter" / "no barbell" is a build request for that draft.
+      if (g.draftInContext === true && revisesDraft(g.input.text) && !requestHas(benRequest, 'build')) {
+        benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds : []), 'build'] };
+      }
       benPainWords = classifyPainMention(g.input.text) === 'pain';
       break;
     case 'chip':
@@ -178,7 +198,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     case 'summary':
       break;
   }
-  const benAskedForChange = acceptedOffer || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook')));
+  const benAskedForChange = acceptedOffer || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'add')));
   return { kind: g.kind, benRequest, acceptedOffer, benPainWords, structuralSignals: g.structuralSignals, benAskedForChange, intent };
 }
 
@@ -323,11 +343,34 @@ function toolOutput(result: ToolResult, ref: string | null): string {
         : {}),
     });
   }
+  if (result.kind === 'refused') return JSON.stringify({ status: 'not_allowed', line: result.line });
   const rendered = renderActionResult(result.record, 'sheet');
-  return JSON.stringify({ status: result.record.status, ref, line: rendered.text, guardNotes: result.record.guardNotes.map((n) => n.text), shownToBen: 'as a card' });
+  return JSON.stringify({ status: result.record.status, ref, line: rendered.text, guardNotes: result.record.guardNotes.map((n) => n.text), ...afterWrite(result.record), shownToBen: 'as a card' });
+}
+
+/**
+ * Review coach-add S1: after a committed change to today's workout, the session version it left
+ * (the next versioned call's `baseVersion`) and, for an added exercise, the new row's ID. Without
+ * them a second add in the same turn names the version the coach first read and is refused as stale.
+ */
+function afterWrite(record: ActionRecord): { sessionVersion?: number; sessionExerciseId?: string } {
+  if (record.status !== 'committed') return {};
+  const session = record.entityVersions.find((v) => v.entity === 'session');
+  const after = session?.after ?? null;
+  const version = after === null || after === session?.before ? {} : { sessionVersion: after };
+  return record.detail.kind === 'add_exercise_today' ? { ...version, sessionExerciseId: record.detail.sessionExerciseId } : version;
 }
 
 const INTERRUPTED_NOTE = 'Stopped.';
+
+/** Whether the coach's last message is waiting on Ben: an offer, or a card he can accept (a memory suggestion, a proposal). */
+async function lastCoachAsked(store: CoachTurnStore, lastCoach: CoachMessage | undefined): Promise<boolean> {
+  if (lastCoach === undefined || lastCoach.body.role !== 'coach') return false;
+  if (lastCoach.body.offer !== null) return true;
+  if (lastCoach.body.actionIds.length === 0) return false;
+  const actions = await store.listTurnActions(lastCoach.turnId);
+  return actions.some((a) => lastCoach.body.role === 'coach' && lastCoach.body.actionIds.includes(a.actionId) && a.status === 'proposed' && a.detail.kind !== 'build_workout');
+}
 
 /**
  * Run one coach turn. Never throws for a model failure: the result says
@@ -353,7 +396,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const lastCoach = [...history].reverse().find((m) => m.body.role === 'coach');
   const previousOffer = lastCoach !== undefined && lastCoach.body.role === 'coach' ? lastCoach.body.offer : null;
 
-  const gate = gateFor({ kind: req.kind, input: req.input, previousOffer, structuralSignals: req.structuralSignals });
+  const gate = gateFor({ kind: req.kind, input: req.input, previousOffer, structuralSignals: req.structuralSignals, ...(req.draftInContext === true ? { draftInContext: true } : {}) });
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
   const turn: CoachTurn = {
@@ -381,11 +424,17 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   if (started.replayed) return replayedResult(started.turn, ports, req.surface);
 
   const words = req.input.kind === 'words' ? req.input.text : null;
+  // workout-builder BD15: "start it" / "save it" gets the fixed line and no model call; Start and Save are Ben's taps.
+  // Review S4: not when the coach's last message asked something of its own (an offer, a memory suggestion, a proposal).
+  if (words !== null && req.kind === 'general' && (req.draftInThread === true || req.draftInContext === true) && asksToStartOrSave(words) && !(await lastCoachAsked(ports.store, lastCoach))) {
+    return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
+  }
   const mention = words === null ? 'none' : classifyPainMention(words);
   const messagePain: MessagePain | null = words === null ? null : { mention, exerciseIds: req.namedExerciseIds ?? [], bodyPart: painBodyPart(words) };
 
   const registry = runnable(buildTurnRegistry(gate), ports.executors);
   const tools = [...functionToolDefinitions(registry.tools), replyToolDefinition()];
+  const instructions = registry.tools.some((t) => t.name === 'propose_workout') ? `${COACH_INSTRUCTIONS}\n${BUILD_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
   if (said !== null) input.push({ type: 'message', role: 'user', content: said });
@@ -425,6 +474,21 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     req.onProgress?.({ kind: 'tool', line });
   };
   let replyStream = new ReplyMessageStream();
+  // The whole-turn cap (BD13): when it fires the running step is stopped and the turn ends as a timeout.
+  const cap = new AbortController();
+  const capped = { fired: false };
+  const capTimer =
+    timing.totalMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          capped.fired = true;
+          cap.abort();
+        }, timing.totalMs);
+  const onStop = (): void => {
+    cap.abort();
+  };
+  if (req.signal?.aborted === true) cap.abort();
+  req.signal?.addEventListener('abort', onStop);
 
   for (let step = 0; ; step += 1) {
     if (step >= MAX_MODEL_STEPS) {
@@ -433,7 +497,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     }
     replyStream = new ReplyMessageStream();
     const stream = replyStream;
-    const out = await runModelStep(ports.model, { model: req.model, instructions: COACH_INSTRUCTIONS, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, req.signal, {
+    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, cap.signal, {
       onFirstEvent,
       onReplyDelta: (delta) => {
         const fresh = stream.push(delta);
@@ -441,7 +505,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       },
     });
     if (out.kind === 'error') {
-      error = out.error;
+      error = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
       break;
     }
     if (out.kind === 'text') {
@@ -482,6 +546,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       for (const [i, r] of (result.earlier ?? []).entries()) {
         if (!entries.some((e) => e.record.actionId === r.actionId)) entries.push({ ref: `e${String(i + 1)}`, record: r, origin: 'earlier' });
       }
+    } else if (result.kind === 'refused') {
+      logLine({ tool: parsed.call.tool, outcome: 'not_allowed', text: result.line, actionId: null });
     } else {
       const already = entries.find((e) => e.record.actionId === result.record.actionId && e.origin === 'this_turn');
       if (already === undefined) {
@@ -500,6 +566,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, ref) });
   }
 
+  clearTimeout(capTimer);
+  req.signal?.removeEventListener('abort', onStop);
   // The rest of the reply, through the same backstop. What already streamed is never sent twice.
   if (message !== null) {
     const streamed = replyStream.streamed;
@@ -553,6 +621,21 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     contextHash: context.contextHash,
     replayed: false,
   };
+}
+
+/** A turn answered by code with a fixed line (BD15): Ben's message and the line are saved; the model isn't called. */
+async function fixedReply(req: CoachTurnRequest, ports: CoachTurnPorts, thread: CoachThread, line: string, contextHash: string): Promise<CoachTurnResult> {
+  const endedAt = ports.now();
+  await ports.store.appendMessage({
+    id: ports.newId(),
+    ownerId: req.ownerId,
+    threadId: thread.id,
+    turnId: req.turnId,
+    createdAt: endedAt,
+    body: { role: 'coach', items: [{ kind: 'sentence', text: line }], actionIds: [], note: null, offer: null, hiddenLines: [], complete: true },
+  });
+  await ports.store.updateTurn(req.turnId, { status: 'completed', error: null, endedAtUtc: endedAt.utc, toolLog: [] }, endedAt.utc);
+  return { turnId: req.turnId, threadId: thread.id, status: 'completed', error: null, items: [{ kind: 'sentence', text: line }], cards: [], note: null, offer: null, askPain: null, hiddenLines: [], toolLog: [], contextHash, replayed: false };
 }
 
 /** A turn ID that was already used: show what was saved, send nothing. */

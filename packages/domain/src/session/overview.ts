@@ -420,7 +420,7 @@ export function setsDetail(working: readonly Pick<WorkoutSet, 'planned'>[], unil
 }
 
 export interface PanelLine {
-  key: 'added' | 'swapped' | 'skipped' | 'fit' | 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule';
+  key: 'added' | 'swapped' | 'skipped' | 'fit' | 'change' | 'last' | 'warmup' | 'plates' | 'best' | 'rounded' | 'gym' | 'flag' | 'coach' | 'rule' | 'load' | 'rpe';
   label: string;
   value: string;
   tone: 'normal' | 'warning';
@@ -564,14 +564,16 @@ export type OverviewBasis =
   | { kind: 'rotation_start' }
   | { kind: 'last_done'; at: ZonedTimestamp }
   | { kind: 'next_from'; at: ZonedTimestamp }
-  | { kind: 'new_routine' };
+  | { kind: 'new_routine' }
+  /** A coach-built draft (workout-builder §4.3): `COACH DRAFT · TODAY 18:02`, `COACH DRAFT · V2 · 18:20`. */
+  | { kind: 'coach_draft'; at: ZonedTimestamp; versionN: number };
 
 // ---------------------------------------------------------------------------
 // previewKey (§7)
 
 export interface PreviewKeyParts {
   /** What the page previews: Up next (the routine or the last workout's next session) or a routine from the list. */
-  target: { kind: 'routine'; routineId: string } | { kind: 'next'; sourceSessionId: string };
+  target: { kind: 'routine'; routineId: string } | { kind: 'next'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string };
   routine: { id: string; version: number } | null;
   /** The gym and its equipment; `typical` when there is no gym yet (Start saves the typical gym). */
   gym: { id: string; equipment: readonly { id: string; version: number }[] } | { typical: true };
@@ -585,6 +587,8 @@ export interface PreviewKeyParts {
   checkIn: { id: string; version: number } | null;
   /** Today's pre-start draft (ADR 0022): any edit, Undo or Reset changes the key. Null: none. */
   draft?: { id: string; version: number } | null;
+  /** A coach draft (workout-builder §6.3): a new version, a discard or a start changes the key. */
+  coachDraft?: { id: string; version: number } | null;
 }
 
 const byId = <T extends { id: string }>(xs: readonly T[]): T[] => [...xs].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -604,6 +608,7 @@ export function previewKey(parts: PreviewKeyParts): string {
       checkIn: parts.checkIn,
       // Absent and null hash alike, so a page with no draft keeps the key it had before drafts existed.
       ...(parts.draft ? { draft: parts.draft } : {}),
+      ...(parts.coachDraft ? { coachDraft: parts.coachDraft } : {}),
     }),
   );
 }
@@ -623,6 +628,7 @@ export function previewFence(parts: PreviewKeyParts, ownerId: string, profile: {
       ...(parts.checkIn ? [{ table: 'check_ins' as const, id: parts.checkIn.id, version: parts.checkIn.version }] : []),
       ...(profile ? [{ table: 'profiles' as const, id: profile.id, version: profile.version }] : []),
       ...(parts.draft ? [{ table: 'pre_start_drafts' as const, id: parts.draft.id, version: parts.draft.version }] : []),
+      ...(parts.coachDraft ? [{ table: 'workout_drafts' as const, id: parts.coachDraft.id, version: parts.coachDraft.version }] : []),
     ],
     sets: [
       ...('typical' in parts.gym ? [] : [{ kind: 'gym_equipment' as const, gymId: parts.gym.id, members: parts.gym.equipment }]),
@@ -671,6 +677,12 @@ export interface OverviewInput {
    * is its session exercise ID).
    */
   today?: OverviewToday | null;
+  /**
+   * A coach draft's page (workout-builder §4.3): the detail line names the
+   * target RPE (`4 × 6–8 @ RPE 8`), a row with no history says `start
+   * light`, and a top set's own RPE is in the panel. Absent: as before.
+   */
+  targetRpe?: boolean;
 }
 
 export interface OverviewToday {
@@ -1042,7 +1054,10 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
 
     const warmups = warm.length === 0 ? null : `${String(warm.length)} ${warm.length === 1 ? 'warm-up' : 'warm-ups'}`;
     const setsText = setsDetail(working, ex.laterality === 'unilateral');
-    const detail = [setsText, warmups].filter((x): x is string => x !== null && x !== '').join(' · ');
+    // A coach draft's target RPE (BD7): the working sets' value after the reps; `@` marks it as a target.
+    const workRpe = input.targetRpe === true ? (working.at(-1)?.planned.rpe ?? null) : null;
+    const topRpe = input.targetRpe === true ? (working.find((s) => s.setType === 'top')?.planned.rpe ?? null) : null;
+    const detail = [workRpe === null || setsText === '' ? setsText : `${setsText} @ RPE ${formatNumber(workRpe)}`, warmups].filter((x): x is string => x !== null && x !== '').join(' · ');
 
     const panel: PanelLine[] = [];
     if (edit?.kind === 'added') panel.push({ key: 'added', label: 'Added', value: 'Today', tone: 'normal' });
@@ -1074,6 +1089,9 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       panel.push({ key: 'gym', label: 'Gym', value: what, tone: 'warning' });
     }
     if (covering !== null) panel.push({ key: 'flag', label: 'Flag', value: flagText(covering.flag), tone: 'warning' });
+    // B6 (workout-builder BD6): no comparable history, so no load; the first set card asks for it.
+    if (input.targetRpe === true && edit?.kind !== 'skipped' && planned.load === null && comparable === null && dropped === null && ex.loadConvention !== 'bodyweight') panel.push({ key: 'load', label: 'Load', value: '— · start light', tone: 'normal' });
+    if (topRpe !== null && workRpe !== null && topRpe !== workRpe) panel.push({ key: 'rpe', label: 'RPE', value: `Top ${formatNumber(topRpe)} · back-off ${formatNumber(workRpe)}`, tone: 'normal' });
     const coach = overviewCoachOf(first, coachByExercise.get(ex.exerciseId), { sourceVersion, sourceBasis, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
     // D1 (minimal copy): a built-in rule target says so in one word, as a coach target does; the rule in full is behind `Why?`.
     if (coach?.state !== 'coach' && first?.planned.source === 'built_in_rule') panel.push({ key: 'rule', label: 'Rule', value: first.planned.provenance?.rule?.name ?? 'Built-in', tone: 'normal' });

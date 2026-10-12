@@ -27,6 +27,9 @@ import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { LIBRARY_TOASTS } from '../workout/library-view';
+import { BUILD_COPY } from '../coach/build-view';
+import type { BuildBlock } from '../coach/coach-service';
+import { NeedsCoachSheet } from './coach/NeedsCoachSheet';
 
 /**
  * Today (today.md, D-Today mockup): date and gym, banners, one hero (Resume,
@@ -83,6 +86,8 @@ export function TodayScreen() {
   const [allRoutines, setAllRoutines] = useState(false);
   // The session picker (session-picker §2.2); a pick opens the overview once the sheet has gone.
   const [pickerVisible, setPickerVisible] = useState(false);
+  /** `Needs the coach` (workout-builder §5.4) when `Build with coach` can't start. */
+  const [needsCoach, setNeedsCoach] = useState<BuildBlock | null>(null);
   const [pickerAfter] = useState(() => createAfterDismiss());
   // One opId per rename intent (sheet open), so a double tap saves once.
   const renameOp = useRef<string>(newUuid());
@@ -120,12 +125,24 @@ export function TodayScreen() {
 
   const handed = route.params?.toast;
   const undoRoutine = route.params?.undoRoutine;
+  const undoDraft = route.params?.undoDraft;
   useEffect(() => {
     if (!handed) return;
     // A routine deleted from the Workout overview: the toast keeps its Undo (a restore, versioned).
+    // A coach draft discarded there (workout-builder §6.2): its Undo restores the draft.
     setToast({
       text: handed,
-      ...(undoRoutine
+      ...(undoDraft
+        ? {
+            action: 'Undo',
+            onAction: () => {
+              void services.coachDrafts.restore({ draftId: undoDraft.id, expectedVersion: undoDraft.version, opId: `restore:${undoDraft.id}:${String(undoDraft.version)}` }).then(() => {
+                changed();
+                setToast(null);
+              });
+            },
+          }
+        : undoRoutine
         ? {
             action: 'Undo',
             onAction: () => {
@@ -138,8 +155,8 @@ export function TodayScreen() {
           }
         : {}),
     });
-    navigation.setParams({ toast: undefined, undoRoutine: undefined } as never);
-  }, [handed, undoRoutine, navigation, services, changed]);
+    navigation.setParams({ toast: undefined, undoRoutine: undefined, undoDraft: undefined } as never);
+  }, [handed, undoRoutine, undoDraft, navigation, services, changed]);
 
   // `Empty workout` on the Workouts list: Today's own start (gym, alerts question, check-in gate), once per nonce.
   const startEmpty = route.params?.startEmpty;
@@ -172,6 +189,20 @@ export function TodayScreen() {
       clearTimeout(t);
     };
   }, [toast]);
+
+  /**
+   * `Build with coach` (workout-builder §3, §5.4): the coach sheet on a new
+   * thread with the Build card; `Needs the coach` (no provider call) when
+   * the coach can't answer.
+   */
+  async function buildWithCoach() {
+    const block = await services.coach.buildBlock().catch(() => 'not_connected' as const);
+    if (block !== null) {
+      setNeedsCoach(block);
+      return;
+    }
+    navigation.navigate('Coach', { entry: { kind: 'today' }, build: true });
+  }
 
   /** Start an empty workout (First workout, `Empty workout`). Never leaves a dead button (audit F9). */
   async function start(intent: StartIntent) {
@@ -512,6 +543,8 @@ export function TodayScreen() {
                     navigation.navigate('PastWorkouts');
                   }}
                 />
+                {/* workout-builder §3: a text link, never a filled pill, so Today keeps one primary. */}
+                <TextButton label={BUILD_COPY.link} onPress={() => void buildWithCoach()} />
               </View>
             </Hero>
           );
@@ -724,6 +757,10 @@ export function TodayScreen() {
           pickerAfter.arm(() => void start({ kind: 'empty' }));
           setPickerVisible(false);
         }}
+        onBuildWithCoach={() => {
+          pickerAfter.arm(() => void buildWithCoach());
+          setPickerVisible(false);
+        }}
         onEditWorkouts={() => {
           pickerAfter.arm(() => {
             navigation.navigate('Workouts');
@@ -737,6 +774,24 @@ export function TodayScreen() {
           setPickerVisible(false);
         }}
         onDismissed={pickerAfter.dismissed}
+      />
+      <NeedsCoachSheet
+        block={needsCoach}
+        onClose={() => {
+          setNeedsCoach(null);
+        }}
+        onConnect={() => {
+          setNeedsCoach(null);
+          navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'CoachConnection' } });
+        }}
+        onEmptyWorkout={() => {
+          setNeedsCoach(null);
+          void start({ kind: 'empty' });
+        }}
+        onChooseSession={() => {
+          setNeedsCoach(null);
+          setPickerVisible(true);
+        }}
       />
       {renameRow ? (
         <NameSheet

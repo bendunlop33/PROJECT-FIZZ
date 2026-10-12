@@ -10,7 +10,8 @@ import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../../clock';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
-import { formatShortDate } from '../../format/dates';
+import { formatShortDate, localDateKey } from '../../format/dates';
+import { BUILD_COPY, draftWhyView, needsCoachView } from '../../coach/build-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
 import { openStartedWorkout, popToTabs, popToToday, replaceWithWorkouts } from '../../navigation/actions';
 import type { LibraryToastParam, RootStackParams } from '../../navigation/types';
@@ -195,6 +196,8 @@ export function WorkoutOverviewScreen() {
   const coachRun = useRef<AbortController | null>(null);
   const [coachCard, setCoachCard] = useState<CoachFitCard | null>(null);
   const [fitWhy, setFitWhy] = useState<{ reason: string | null; checks: string[]; notUsed: string[] } | null>(null);
+  /** `Why this workout` (workout-builder §4.5). */
+  const [draftWhy, setDraftWhy] = useState(false);
   const [dismissedSwaps, setDismissedSwaps] = useState<ReadonlySet<string>>(() => new Set(dismissedCoachSwaps));
   const shownToasts = useRef(new Set<string>());
   // The page toasts still to show, one after another (merge r3 S1).
@@ -213,6 +216,8 @@ export function WorkoutOverviewScreen() {
     (r) => {
       changed();
       showLibraryToast({ key: r.id, text: LIBRARY_COPY_UI.savedToWorkouts, undo: { kind: 'delete', routineId: r.id, version: r.version } });
+      // A coach draft saved (BD12): the page stays on the draft (review S6). Switching to the new workout would plan it
+      // as never done and blank its loads while WB16 / §11 item 1 (the never-done `Auto` rule) is unapproved.
     },
     () => {
       setToast({ text: LIBRARY_COPY_UI.nothingToSave });
@@ -508,7 +513,9 @@ export function WorkoutOverviewScreen() {
     const edits = page ? editMenuItems(page.view) : [];
     // `Save to Workouts` (routines.md WL6): exactly what the page shows, today's edits included.
     const library = routine ? [LIBRARY_COPY_UI.editWorkout, LIBRARY_COPY_UI.duplicate, routine.inRotation ? LIBRARY_COPY_UI.removeFromRotation : LIBRARY_COPY_UI.addToRotation] : [];
-    const options = [...edits, ...library, ...(page !== null ? [LIBRARY_COPY_UI.saveToWorkouts] : []), OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
+    // A coach draft (workout-builder §6.2): Ask coach, Why this workout and Discard draft (no confirm; the toast has Undo).
+    const draftItems = page?.coachDraft ? [BUILD_COPY.askCoach, BUILD_COPY.whyThisWorkout, BUILD_COPY.discard] : [];
+    const options = [...edits, ...library, ...(page !== null && (page.coachDraft?.routineId ?? null) === null ? [LIBRARY_COPY_UI.saveToWorkouts] : []), ...draftItems, OVERVIEW_COPY.emptyWorkout, ...(routine ? [OVERVIEW_COPY.rename, OVERVIEW_COPY.delete] : []), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, ...(routine ? { destructiveButtonIndex: options.indexOf(OVERVIEW_COPY.delete) } : {}) }, (i) => {
       const picked = options[i];
       if (picked === TODAY_EDITS_COPY.reorder) {
@@ -523,12 +530,33 @@ export function WorkoutOverviewScreen() {
       if (picked === LIBRARY_COPY_UI.duplicate && routine) void duplicateRoutine(routine.id);
       if ((picked === LIBRARY_COPY_UI.addToRotation || picked === LIBRARY_COPY_UI.removeFromRotation) && routine) void toggleRotation(routine);
       if (picked === OVERVIEW_COPY.emptyWorkout) void startEmpty();
+      const cd = page?.coachDraft ?? null;
+      if (picked === BUILD_COPY.askCoach && cd !== null) {
+        void services.coachDrafts.buildBlock().then((block) => {
+          if (block !== null) setToast({ text: needsCoachView(block).line });
+          else navigation.navigate('Coach', { entry: { kind: 'draft', draftId: cd.id, name: cd.name }, focus: true });
+        });
+      }
+      if (picked === BUILD_COPY.whyThisWorkout && cd !== null) setDraftWhy(true);
+      if (picked === BUILD_COPY.discard && cd !== null) void discardDraft(cd.id, cd.version);
       if (picked === OVERVIEW_COPY.rename) {
         setRenameOp(newUuid());
         setRenameVisible(true);
       }
       if (picked === OVERVIEW_COPY.delete) deleteRoutine();
     });
+  }
+
+  /** `Discard draft` (workout-builder §6.2): at once; the page closes to Today with `Draft discarded` [Undo]. */
+  async function discardDraft(draftId: string, version: number) {
+    const r = await services.coachDrafts.discard({ draftId, expectedVersion: version, opId: newUuid() });
+    if (!r.ok) {
+      setToast({ text: STALE_PREVIEW });
+      reload();
+      return;
+    }
+    changed();
+    navigation.dispatch(popToTabs({ screen: 'Today', params: { toast: BUILD_COPY.discarded, undoDraft: { id: draftId, version: r.draft.version } } }));
   }
 
   /** `Duplicate` (§4.4): the copy opens in the editor (name selected); the toast's Undo deletes it. */
@@ -1286,6 +1314,16 @@ export function WorkoutOverviewScreen() {
         pickerAfter.arm(() => void startEmpty());
         setPickerVisible(false);
       }}
+      onBuildWithCoach={() => {
+        // workout-builder §3: the coach sheet with the Build card; `Needs the coach` as a short toast here when it can't answer.
+        pickerAfter.arm(() => {
+          void services.coachDrafts.buildBlock().then((block) => {
+            if (block !== null) setToast({ text: needsCoachView(block).line });
+            else navigation.navigate('Coach', { entry: { kind: 'today' }, build: true });
+          });
+        });
+        setPickerVisible(false);
+      }}
       onPastWorkouts={() => {
         pickerAfter.arm(() => {
           navigation.navigate('PastWorkouts');
@@ -1514,7 +1552,7 @@ export function WorkoutOverviewScreen() {
       contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: theme.space['8'] }}
     >
       <AppText variant="sectionLabel" color="text.tertiary" style={{ marginTop: 10 }}>
-        {eyebrowText(view.basis, (ms, tz) => formatShortDate(ms, tz))}
+        {eyebrowText(view.basis, (ms, tz) => formatShortDate(ms, tz), (ms, tz) => localDateKey(ms, tz) === localDateKey(clockNow(), tz))}
       </AppText>
       {/* The title is a button (session-picker §2.3): `Shoulders ▾` opens the picker; VoiceOver "Shoulders. Change session." */}
       <Pressable
@@ -1548,6 +1586,12 @@ export function WorkoutOverviewScreen() {
           </AppText>
           {view.muscles.slice(1).map((m) => ` · ${m}`).join('')}
         </AppText>
+      ) : null}
+      {page.coachDraft !== null && page.coachDraft.leftOut > 0 ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={`${String(page.coachDraft.leftOut)} left out. Why?`} onPress={() => { setDraftWhy(true); }} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+          <Icon name="exclamationmark.triangle" color="status.warning" size={14} />
+          <AppText variant="callout">{`${BUILD_COPY.leftOut(page.coachDraft.leftOut).replace('⚠ ', '')} · Why?`}</AppText>
+        </Pressable>
       ) : null}
       {coachCard !== null ? (
         (() => {
@@ -1871,6 +1915,32 @@ export function WorkoutOverviewScreen() {
           setHowLong(null);
         }}
       />
+      <BottomCard
+        visible={draftWhy}
+        onClose={() => {
+          setDraftWhy(false);
+        }}
+      >
+        <AppText variant="title2" accessibilityRole="header">
+          {BUILD_COPY.whyThisWorkout}
+        </AppText>
+        {page.coachDraft !== null ? (
+          <ScrollView>
+            {draftWhyView(page.coachDraft).map((sec) => (
+              <View key={sec.heading} style={{ gap: theme.space['1'], marginBottom: theme.space['3'] }}>
+                <AppText variant="sectionLabel" color="text.tertiary">
+                  {sec.heading}
+                </AppText>
+                {sec.lines.map((l) => (
+                  <AppText key={l} variant="callout">
+                    {l}
+                  </AppText>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
+      </BottomCard>
       <FitWhySheet
         visible={fitWhy !== null}
         reason={fitWhy?.reason ?? null}

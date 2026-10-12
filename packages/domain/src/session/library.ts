@@ -322,6 +322,11 @@ export interface RoutineFromPlanInput {
   createdFromSessionId?: string | null;
   /** The saved workout's own settings, when the plan is a saved workout's (`planSettingsOfRoutine`; review S2). */
   fromRoutine?: PlanRoutineSettings;
+  /**
+   * Keep each working set's planned target RPE (workout-builder BD12: a coach
+   * draft's RPE is part of its structure). Warm-ups and drop sets keep none.
+   */
+  keepTargetRpe?: boolean;
 }
 
 /**
@@ -397,7 +402,7 @@ export function routineFromPlan(input: RoutineFromPlanInput): Routine | null {
         targetLoad: fixed.has(s.id) ? p.load : pin,
         targetReps: p.reps === null ? null : { ...p.reps },
         targetDurationS: p.reps === null ? p.durationS : null,
-        targetRpe: null,
+        targetRpe: input.keepTargetRpe === true && s.setType !== 'warmup' && s.setType !== 'drop' ? p.rpe : null,
         targetRir: null,
         restOverrideS: s.rest.source === 'set_override' ? s.rest.seconds : null,
       });

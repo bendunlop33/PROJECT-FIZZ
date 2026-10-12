@@ -1,3 +1,4 @@
+import type { CoachTurnKind } from '@fizz/schemas';
 import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 /**
@@ -89,6 +90,13 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
  * only in the summary turn, which has `set_next_session_targets` anyway.
  * "Rule: …" and "Remember, …" are labelled lines.
  *
+ * (12 Oct) `add`: an exercise added to today's workout ("add 3 sets of
+ * lateral raises", "put in some curls", "stick some dips in", "can we do
+ * some face pulls?"). The object must be an exercise, not a set, a load or
+ * a set type: "add a set to bench", "add another set", "add 5 kg", "add a
+ * drop set" aren't adds (the first two are `change`). Questions asking for a
+ * view ("should I add curls?", "why can't you add curls?") aren't requests.
+ *
  * Which kinds open which tools is `REQUEST_KINDS_BY_TOOL` in `registry.ts`.
  *
  * A bare "yes" / "do it" is not classified here: accepting a coach offer is
@@ -98,7 +106,12 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
 
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct';
+/**
+ * `add_plan` (review r3 S1): an add today whose scope is unclear because it names a plan without a clear
+ * future: a bare "the plan" ("add curls to the plan") or a routine/template/programme/split together with a
+ * today word ("add curls to my routine now"). Always alongside `add`; it also opens the proposal tool.
+ */
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add' | 'add_plan';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -414,6 +427,8 @@ function lower(text: string): string {
     text
       .toLowerCase()
       .replace(/[‘’]/g, "'")
+      // Review r2 S2: "I'd like to add curls" (straight or curly apostrophe) reads like "I would like to".
+      .replace(/\bi'd like\b/g, 'i would like')
       .replace(/\bgimme\b/g, 'give me')
       .replace(/\bwanna\b/g, 'want to')
       .replace(/\blemme\b/g, 'let me'),
@@ -542,7 +557,7 @@ function structuralIn(clause: string): boolean {
     const m = re.exec(clause);
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
-  return removeOrReorder(clause);
+  return removeOrReorder(clause) || futureAdd(clause);
 }
 
 /** Variety on its own ("I'm bored of incline press", "mix it up") is a request; a swap needs to be asked. */
@@ -552,7 +567,7 @@ function selfStandingStructural(clause: string): boolean {
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
   // Anchored imperatives, so a negator can only come before them as a prefix ("don't drop …" doesn't match).
-  return removeOrReorder(clause);
+  return removeOrReorder(clause) || futureAdd(clause);
 }
 
 /**
@@ -568,8 +583,187 @@ const HOLD: readonly RegExp[] = [
   new RegExp(`^(?:stop|pause|hold off) (?:progressing|increasing|adding weight to|bumping|on progressing) (?:the |my )?(?:it|them|this|that|(?:\\w+ )?${EXERCISE_WORD})\\b`),
 ];
 
-/** Classify Ben's own words (typed or spoken). Returns null when they don't ask for a change. */
-export function classifyBenRequest(text: string): BenRequest | null {
+/**
+ * (12 Oct, workout builder) Ben asks for a whole workout: "build me a
+ * 45-minute push session for this gym", "make a leg workout", "Build a 45
+ * min push workout" (the Build card's own words), "I want a quick upper
+ * body session". The noun must be a workout, session or day; a programme
+ * or a week is later (workout-builder §10) and isn't this kind. Only this
+ * kind opens `propose_workout`.
+ */
+const BUILD_NOUN = '(?:workout|work-?out|session|routine|day|circuit|training session)';
+// Review B1: only verbs that ask for something new. "get" and "sort (out)" read Ben's own records
+// ("get my last session numbers", "sort out my session from yesterday"); they never build.
+const BUILD_VERB_STRONG = '(?:build|plan|create|design|write|put together|throw together|whip up|come up with|draft)';
+const BUILD_VERB_WEAK = '(?:make|give|set up)';
+// A new workout has an article or adjective; "the", "my" and "this" point at one that exists ("make the session easier").
+const NEW_DET = '(?:a|an|another|one|new|quick|short|fresh)';
+const BUILD_DIRECT = new RegExp(
+  `^(?:${BUILD_VERB_STRONG}(?: me| us| out)?(?: (?:${NEW_DET}|today'?s|tonight'?s))+|${BUILD_VERB_WEAK}(?: me| us)?(?: ${NEW_DET})+)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`,
+);
+const BUILD_WANT = new RegExp(`^i (?:want|need|would like|'d like|fancy)(?: to do)? (?:a|an|another|one)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
+const BUILD_LATER = /\b(?:programme|program|programs|programmes|mesocycle|block|weeks?|month|plan for the week|weekly plan|split)\b/;
+/**
+ * Not a new workout (review B1): a change to the one in hand ("a lighter session", "the rest of
+ * the session"), a read of Ben's records ("a summary of my last session") or advice ("some tips
+ * for leg day"), or a day without training ("a rest day").
+ */
+const BUILD_NOT = /\b(?:easier|lighter|harder|heavier|less intense|more intense|rest of|summary|recap|review|numbers|stats|tips|advice|ideas?|feedback|breakdown|rest day|off day|day off|recovery day)\b/;
+
+function buildIn(clause: string): boolean {
+  const c = clause.replace(POLITE, '');
+  if (BUILD_LATER.test(c) || BUILD_NOT.test(c) || isOpinionQuestion(c)) return false;
+  const body = ASK_PREFIX.exec(c)?.[1] ?? c;
+  return BUILD_DIRECT.test(body) || BUILD_WANT.test(c);
+}
+
+/**
+ * (12 Oct) Adding an exercise to today's workout. A verb that adds ("add",
+ * "put in", "throw in", "stick … in") with an exercise as its object, after
+ * an optional amount ("some", "3 sets of", "3 sets of 12"). "Do / try some
+ * curls" only counts after an ask ("let's", "can we", "I want to").
+ */
+/** A rep count or range after "N sets of" (review B1): "3 sets of 12", "3 sets of 10-12 reps of". */
+// Review r2 S2: "on" only after a set count ("add 3 sets of 12 on lateral raises").
+const ADD_REPS = '(?:\\d+(?: ?(?:-|–|to) ?\\d+)?(?: reps?)?(?: of| on)? )?';
+const SET_COUNT = '(?:\\d+|one|two|three|four|five|six|a|some|a few|a couple(?: of)?|more)';
+/** An amount of sets: "3 sets of 12", "some sets of", "sets for", "3x12". */
+const ADD_SETS = `(?:(?:${SET_COUNT} )?(?:sets?|rounds?) (?:of|for) ${ADD_REPS}|\\d+ ?x ?\\d+(?: of| on)? )`;
+const ADD_AMOUNT = `(?:${ADD_SETS}|(?:some|a few|a couple(?: of)?|a bit of|more|(?:another|an extra|extra|one more) (?:round|set|exercise) of) )?`;
+const ADD_DET = '(?:(?:the|my|a|an|some) )?';
+/** Words between the amount and the exercise word: never a preposition or a load, set or time word ("add weight to bench"). */
+const ADD_FILLER = '(?:(?!(?:to|on|for|at|in|onto|into|with|weight|weights|load|loads|kg|kgs|kilos?|lbs?|pounds?|reps?|sets?|plates?|rest|time|seconds?|minutes?|something|anything|other|than|else|instead|different)\\b)[a-z-]+ ){0,3}';
+const ADD_OBJECT = `(${ADD_FILLER}${EXERCISE_WORD})`;
+const ADD_VERB = '(?:add(?: in| on)?|include|put in|throw in|chuck in|stick in|pop in|slot in|squeeze in|fit in|bang in|whack in|tack on|tag on|work in)';
+const ADD_DIRECT = new RegExp(`^${ADD_VERB} ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT}\\b`);
+const ADD_SPLIT = new RegExp(`^(?:put|throw|chuck|stick|pop|slot|squeeze|fit|bang|whack|work) ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT} (?:in|on)\\b`);
+/**
+ * Review B1: "create 3 sets of lateral raises" (Ben's own verb), "give me 3 sets of curls", "make 3
+ * sets of curls". These verbs need an amount, so "make bench lighter" and "give me bench at 100"
+ * stay set changes.
+ */
+const ADD_MAKE = new RegExp(`^(?:create|make|give me|do me|set up) (?:me )?(?:${ADD_SETS}|(?:some|a few|a couple(?: of)?) )${ADD_DET}${ADD_OBJECT}\\b`);
+/** Review B1: "superset curls with bench". The coach adds the exercise; one already there is refused by the domain. */
+const ADD_SUPERSET = new RegExp(`^superset (?:it |them )?(?:with )?${ADD_DET}${ADD_OBJECT}\\b`);
+/** Review r2 S2: "pair curls with bench", "do curls as a superset with bench". */
+const ADD_PAIR = new RegExp(`^pair (?:up )?${ADD_DET}${ADD_OBJECT} (?:with|and)\\b`);
+const ADD_DO_SUPERSET = new RegExp(`^do ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT} (?:as|in) a superset\\b`);
+/** Review r2 S2: an amount Ben wants or asks to get: "I'd like some curls", "can I get 3 sets of curls". */
+const ADD_WANT = new RegExp(`^i (?:want|need|would like) (?:${ADD_SETS}|(?:some|a few|a couple(?: of)?) )${ADD_DET}${ADD_OBJECT}\\b`);
+const ADD_GET = new RegExp(`^(?:get|have) (?:me )?(?:${ADD_SETS}|(?:some|a few|a couple(?: of)?) )${ADD_DET}${ADD_OBJECT}\\b`);
+/** Review r2 S2: suggestion prefixes that ask for an add only ("we should add curls", "maybe add some curls"). */
+const ADD_SUGGEST_PREFIX = /^(?:we should|maybe|always|perhaps|i think we should|we need to|we could|might as well) (.*)$/;
+const ADD_DO = new RegExp(`^(?:do|hit|try|have) ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT}\\b`);
+/** Set types and other things that are sets, not exercises: "add a drop set", "add a warm-up". */
+const ADD_NOT_EXERCISE = /^(?:top ?sets?|back ?-?off(?: sets?)?|drop ?sets?|warm ?-?ups?|amrap|finisher)\b/;
+/**
+ * Review B2, r2 B1: an add with a future scope ("add curls next time", "to my routine", "from now on",
+ * "to every push day", "permanently") changes the plan, not today: a structural proposal (rule 3),
+ * never `add_exercise_today`. The list can't be complete, so the today tool's description says it is
+ * today only. An add whose scope is unclear (`unclearAddScope`) also opens `propose_next_workout_change`;
+ * a plain today add doesn't (review r3 S1).
+ */
+const ADD_FUTURE_TIME =
+  /\b(?:next (?:time|sessions?|weeks?|workouts?|push|pull|legs|leg day|upper|lower|block|cycle|month)|tomorrow|from (?:now|today|here) on(?:wards?)?|from now|going forward|for good|permanently|always|in (?:the )?future|future (?:sessions?|workouts?|weeks?)|every (?:\w+ )?(?:week|time|session|workout|day)s?|each (?:\w+ )?(?:week|session|workout|day)|(?:push|pull|leg|legs|upper|lower|upper body|lower body|chest|back|arm|arms|shoulder|full body) days|for the rest of the (?:block|month|cycle|programme|program|phase|meso|mesocycle|year)|(?:rest of|for) the (?:block|programme|program|mesocycle))\b/;
+/** "to my routine", "in the push template": future unless today is named ("to today's plan") or it is a bare "the plan" (review r2 S1). */
+const ADD_FUTURE_PLAN = /\b(?:to|in|into|for|on|from) (?:the |my |our )?(?:[a-z]+ ){0,2}(?:routine|template|plan|programme|program|split)s?\b/;
+const ADD_TODAY = /\b(?:today|tonight|this (?:workout|session)|now)\b/;
+const ADD_BARE_PLAN = /^(?:to|in|into|for|on) (?:the )?plans?$/;
+
+function futureScope(clause: string): boolean {
+  if (ADD_FUTURE_TIME.test(clause)) return true;
+  const plan = ADD_FUTURE_PLAN.exec(clause);
+  if (plan === null) return false;
+  // "add curls in the plan" is ambiguous: an add today, and the proposal tool is open too.
+  if (ADD_BARE_PLAN.test(plan[0])) return false;
+  return !ADD_TODAY.test(clause);
+}
+
+/**
+ * Review r3 S1: an add today whose scope is unclear, so the proposal tool opens as well. A bare "the plan"
+ * with no today word, or a routine/template/programme/split named with a today word. "today's plan" and "my plan today" are today.
+ */
+function unclearAddScope(clause: string): boolean {
+  const plan = ADD_FUTURE_PLAN.exec(clause);
+  if (plan === null) return false;
+  if (ADD_BARE_PLAN.test(plan[0])) return !ADD_TODAY.test(clause);
+  return ADD_TODAY.test(clause) && !/\bplans?$/.test(plan[0]);
+}
+
+/**
+ * A clause that is only a future scope, split off an add: "add curls today and next time", "add curls
+ * today, and to my routine too". The add stays today's; the proposal tool opens for the future part.
+ */
+function scopeOnly(clause: string): boolean {
+  if (!futureScope(clause)) return false;
+  const rest = clause
+    .replace(new RegExp(ADD_FUTURE_TIME.source, 'g'), ' ')
+    .replace(new RegExp(ADD_FUTURE_PLAN.source, 'g'), ' ')
+    .replace(/\b(?:and|also|plus|too|as well|then|but|same|again|please|for|to|in|on|the|my|our)\b/g, ' ');
+  return rest.trim() === '';
+}
+
+/** The add phrasing itself, anchored after polite words and an ask; no scope or structural check. */
+function addMatch(clause: string): boolean {
+  const c = clause.replace(POLITE, '');
+  if (c.length === 0 || isOpinionQuestion(c)) return false;
+  const asked = ASK_PREFIX.exec(c) ?? ADD_SUGGEST_PREFIX.exec(c);
+  const body = (asked?.[1] ?? c).replace(POLITE, '');
+  const m =
+    ADD_DIRECT.exec(body) ??
+    ADD_SPLIT.exec(body) ??
+    ADD_MAKE.exec(body) ??
+    ADD_SUPERSET.exec(body) ??
+    ADD_PAIR.exec(body) ??
+    ADD_DO_SUPERSET.exec(body) ??
+    ADD_WANT.exec(c) ??
+    (asked !== null ? (ADD_DO.exec(body) ?? ADD_GET.exec(body)) : null);
+  return m !== null && !ADD_NOT_EXERCISE.test((m[1] ?? '').trim());
+}
+
+/** An add for the future plan (review B2): structural. */
+function futureAdd(clause: string): boolean {
+  return addMatch(clause) && futureScope(clause);
+}
+
+function addIn(clause: string): boolean {
+  // A swap or variety request ("something other than cable fly") or a future add is structural, not an add today.
+  return addMatch(clause) && !structuralIn(clause);
+}
+
+/**
+ * With a coach draft in context (`Ask coach` on its overview, workout-builder
+ * BD16), "make it shorter", "no barbell", "swap the pec deck", "drop the
+ * dips", "add some core" change the draft: a new version, never today's sets.
+ */
+// Review S5: "no" and "without" count only with a thing to leave out: equipment, a body part or an exercise.
+const DRAFT_THING = `(?:(?:the |any |more )?(?:barbells?|bars?|dumbbells?|dbs?|cables?|machines?|kettlebells?|kbs?|bands?|smith(?: machine)?|racks?|benches|bodyweight|free weights?|legs?|chest|back|shoulders?|arms?|biceps|triceps|core|abs|glutes|hamstrings?|hams|quads?|calves|cardio|${EXERCISE_WORD}|(?:\\w+ )?${EXERCISE_WORD}))\\b`;
+const DRAFT_REVISION: readonly RegExp[] = [
+  /^(?:make|keep) (?:it|this|that|the (?:workout|session|draft))\b.*\b(?:shorter|longer|harder|easier|lighter|heavier|quicker|simpler|different)\b/,
+  new RegExp(`^(?:no|without) ${DRAFT_THING}`),
+  /^(?:skip|drop|lose|ditch|remove|cut|swap|switch|replace|sub|add|include|use)\b/,
+  /^change (?!nothing\b|anything\b|a thing\b|it\b)\w+/,
+  /^(?:more|less|fewer) (?!thanks\b|than\b)\w+/,
+  /^only (?!if\b|when\b|just\b|asking\b|joking\b|kidding\b)\w+/,
+  /^(?:can|could) (?:you|we) (?:make|swap|switch|replace|drop|remove|add|change|use)\b/,
+];
+
+/** Whether Ben's words change the coach draft in context (BD16). Code, never the model's reading. */
+export function revisesDraft(text: string): boolean {
+  return normalise(text).some((c) => {
+    const t = c.text.replace(POLITE, '');
+    const asks = !c.question || /^(?:can|could|would|will) (?:you|we)\b/.test(t);
+    return c.label === null && asks && !isOpinionQuestion(t) && DRAFT_REVISION.some((re) => re.test(t));
+  });
+}
+
+/**
+ * Classify Ben's own words (typed or spoken). Returns null when they don't ask for a change.
+ * `turnKind`: a build clause drops its `change` reading only in a general turn, where
+ * `propose_workout` lives; in a workout turn "make the session easier" stays a change to
+ * today's sets (review B1, rule 3).
+ */
+export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenRequest | null {
   const whole = lower(text).trim();
   const all = normalise(text);
   const kinds: BenRequestKind[] = [];
@@ -599,8 +793,16 @@ export function classifyBenRequest(text: string): BenRequest | null {
         (askingClauses.includes(c.text) || selfStandingStructural(c.text) || ASK_PREFIX.test(c.text.replace(POLITE, '')) || (!c.question && SWAP_VERB.test(c.text.replace(POLITE, '').split(' ')[0] ?? ''))),
     );
   if (structural) kinds.push('structural');
-  // A clause that is only a swap ("swap cable fly") isn't also a load change.
-  if (askingClauses.some((c) => !structuralIn(c))) kinds.push('change');
+  // A whole workout (workout builder): its own kind, never a change to today's sets.
+  const building = open.filter((c) => buildIn(c.text)).map((c) => c.text);
+  if (building.length > 0) kinds.push('build');
+  // (12 Oct) An exercise added today; a question only counts when it asks ("can you add curls?").
+  const adds = open.filter((c) => addIn(c.text) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))));
+  if (adds.length > 0) kinds.push('add');
+  if (adds.length > 0 && (adds.some((c) => unclearAddScope(c.text)) || open.some((c) => scopeOnly(c.text)))) kinds.push('add_plan');
+  // A clause that is only a swap ("swap cable fly") isn't also a load change; nor is a build, in a general turn.
+  const buildOnly = turnKind === 'general' ? building : [];
+  if (askingClauses.some((c) => !structuralIn(c) && !buildOnly.includes(c))) kinds.push('change');
   // "Is 95 too light?" asks for a view; "too easy, what next?" reports how it went.
   if (!isOpinionQuestion(clauses[0] ?? '') && open.some(difficultyIn)) kinds.push('difficulty');
   if (open.some((c) => !c.question && HOLD.some((re) => re.test(c.text.replace(POLITE, ''))))) kinds.push('hold');
@@ -617,7 +819,7 @@ export function classifyBenRequest(text: string): BenRequest | null {
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
+    if (c.label !== null || buildIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

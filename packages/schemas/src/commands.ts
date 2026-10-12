@@ -258,6 +258,19 @@ export const AddExerciseCommandSchema = z.object({
     .min(1)
     .max(20)
     .optional(),
+  /**
+   * (12 Oct, coach `add_exercise_today`) Where the new row goes: straight
+   * after this live row. Absent = at the end.
+   */
+  afterSessionExerciseId: IdSchema.optional(),
+  /**
+   * (12 Oct, coach `add_exercise_today`) Superset the new row with this live
+   * row (which must still have a pending set): it joins that row's group, or
+   * both get a new group letter, and it goes after the group's last member.
+   * Wins over `afterSessionExerciseId`. Undo (`undo_op`) takes the row out
+   * and ungroups a member left on its own.
+   */
+  supersetWithSessionExerciseId: IdSchema.optional(),
 });
 
 /**
@@ -501,8 +514,9 @@ export const RemoveExerciseCommandSchema = z.object({
 
 /**
  * Undo of an earlier operation, from its toast (copy D4, ADR 0003 Open):
- * `delete_set`, `skip_exercise`, `correct_set`, `remove_exercise` and
- * `swap_exercise`. Puts back exactly what that operation changed, from the
+ * `delete_set`, `skip_exercise`, `correct_set`, `remove_exercise`,
+ * `swap_exercise` and `add_exercise` (12 Oct: takes the added row out, only
+ * while none of its sets is logged or skipped). Puts back exactly what that operation changed, from the
  * audit and the rows it touched, and only while none of them has changed
  * since (each set's version must still be the one the operation left):
  * otherwise it's refused as `stale_version` and nothing changes (rule 5).

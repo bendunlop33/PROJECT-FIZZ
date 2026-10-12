@@ -24,6 +24,7 @@ export function SessionPickerSheet({
   onEmptyWorkout,
   onPastWorkouts,
   onEditWorkouts,
+  onBuildWithCoach,
   onDismissed,
 }: {
   visible: boolean;
@@ -39,6 +40,8 @@ export function SessionPickerSheet({
   onPastWorkouts: () => void;
   /** `Edit workouts` → the Workouts list (routines.md §A2.4). */
   onEditWorkouts?: () => void;
+  /** `Build with coach` (workout-builder §3): a text link under `Empty workout`, never a filled pill. */
+  onBuildWithCoach?: () => void;
   onDismissed?: () => void;
 }) {
   const theme = useTheme();
@@ -106,6 +109,7 @@ export function SessionPickerSheet({
         {body}
         <View style={{ marginTop: theme.space['4'], alignItems: 'flex-start' }}>
           <TextButton label={SESSION_PICKER_COPY.emptyWorkout} tone="secondary" onPress={onEmptyWorkout} />
+          {onBuildWithCoach ? <TextButton label={SESSION_PICKER_COPY.buildWithCoach} tone="secondary" onPress={onBuildWithCoach} /> : null}
           <TextButton label={SESSION_PICKER_COPY.pastWorkouts} tone="secondary" onPress={onPastWorkouts} />
           {onEditWorkouts ? <TextButton label={SESSION_PICKER_COPY.editWorkouts} tone="secondary" onPress={onEditWorkouts} /> : null}
         </View>
@@ -146,6 +150,7 @@ export function SessionPickerRow({ row, now, selected, first, onPress }: { row: 
             {row.label}
           </AppText>
           {row.recommended ? <Tag icon="arrow.clockwise" text={SESSION_PICKER_COPY.upNext.toUpperCase()} /> : null}
+          {row.coachDraft !== undefined ? <Tag icon="sparkles" text={SESSION_PICKER_COPY.coachTag} /> : null}
         </View>
         <AppText variant="callout" color="text.secondary" numeric>
           {pickerRowDetail(row, now)}

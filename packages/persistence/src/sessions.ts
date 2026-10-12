@@ -23,6 +23,7 @@ import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
 import { CorruptDataError, HistoryRewriteError } from './errors';
 import { bool, checkRead, checkWrite, inHistorySql, insert, int, mismatch, parseJson, parseJsonOrNull, rowId, upsert } from './sql';
+import { startWorkoutDraftIn } from './workout-drafts';
 
 const T = 'sessions';
 
@@ -74,6 +75,7 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     finish_by_tz: s.finishBy?.tz ?? null,
     gym_changes: s.gymChanges === undefined ? null : JSON.stringify(s.gymChanges),
     today_edits: s.todayEdits === undefined ? null : JSON.stringify(s.todayEdits),
+    coach_draft: s.coachDraft === undefined ? null : JSON.stringify(s.coachDraft),
     duration_confirmed_at_utc: s.durationConfirmedAt?.utc ?? null,
     duration_confirmed_at_tz: s.durationConfirmedAt?.tz ?? null,
     deleted_at_utc: s.deletion?.at.utc ?? null,
@@ -239,6 +241,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       checkIn: parseJsonOrNull(T, id, 'check_in', s.check_in ?? null),
       ...(s.finish_by_utc === null || s.finish_by_utc === undefined ? {} : { finishBy: { utc: s.finish_by_utc, tz: s.finish_by_tz } }),
       ...(s.today_edits === null || s.today_edits === undefined ? {} : { todayEdits: parseJson(T, id, 'today_edits', s.today_edits) }),
+      ...(s.coach_draft === null || s.coach_draft === undefined ? {} : { coachDraft: parseJson(T, id, 'coach_draft', s.coach_draft) }),
       ...(s.duration_confirmed_at_utc === null || s.duration_confirmed_at_utc === undefined
         ? {}
         : { durationConfirmedAt: { utc: s.duration_confirmed_at_utc, tz: s.duration_confirmed_at_tz } }),
@@ -456,6 +459,8 @@ const FENCE_SQL: Record<WriteFence['rows'][number]['table'], string> = {
   sessions: 'SELECT revision AS v FROM sessions WHERE id = ?',
   // Only an open draft can be consumed: a discarded, consumed or expired one reads as changed.
   pre_start_drafts: "SELECT version AS v FROM pre_start_drafts WHERE id = ? AND status = 'open'",
+  // A coach draft (workout-builder §6.3): a new version, a discard or a start since the page loaded moves it.
+  workout_drafts: "SELECT version AS v FROM workout_drafts WHERE id = ? AND status = 'open'",
 };
 
 /**
@@ -497,6 +502,9 @@ async function closeDraftsOnStart(tx: SqlExecutor, a: SessionAggregate): Promise
   const owner = a.session.ownerId;
   const startedAt = a.session.startedAt.utc;
   const at = a.session.lastActivityAtUtc;
+  // A coach draft it starts from becomes `started` with this session (workout-builder §6.3); one closed since: stale.
+  const coach = a.session.coachDraft;
+  if (coach !== undefined && !(await startWorkoutDraftIn(tx, coach.draftId, owner, a.session.id, startedAt))) return false;
   const from = a.session.todayEdits?.draftId ?? null;
   if (from !== null) {
     const row = await tx.getFirst<{ status: string; owner_id: string; expires_at_utc: string; version: number }>('SELECT status, owner_id, expires_at_utc, version FROM pre_start_drafts WHERE id = ?', [from]);

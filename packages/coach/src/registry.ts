@@ -130,6 +130,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       "Change targets of today's pending sets (load, reps, target RPE; rpe null keeps it), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment. Ben's own target RPE always stays.",
   },
   {
+    // (12 Oct) Today only, because Ben asked (rule 3): applies at once with Undo. Not CC10's structural
+    // kind: that is the plan he trains from next time, which stays a proposal (`propose_next_workout_change`).
+    name: 'add_exercise_today',
+    effect: 'versioned_update',
+    writes: ['session_exercise'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: "Add an exercise to today's workout, with Undo",
+    capabilitySection: 'when_you_ask',
+    description:
+      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. Today only: if Ben names a future scope (next time, future sessions, his routine or template, every push day, permanently), use propose_next_workout_change instead and never this tool. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn.",
+  },
+  {
     name: 'log_set',
     effect: 'versioned_update',
     writes: ['logged_set'],
@@ -173,7 +187,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Swapping, adding, removing or reordering exercises in your next workout',
     capabilitySection: 'suggest_only',
     description:
-      'Suggest swapping, removing or reordering exercises in the next workout built from a finished one (its routine, or the next session from it). Use exercise IDs from the workout or get_substitutions. Adding exercises is not possible yet. Nothing changes until Ben taps Apply.',
+      'Suggest swapping, removing or reordering exercises in the next workout built from a finished one (its routine, or the next session from it). Use exercise IDs from the workout or get_substitutions. Adding exercises is not possible yet. Not for adding an exercise to the current workout unless Ben named a future scope. Nothing changes until Ben taps Apply.',
   },
   {
     name: 'set_pain_flag',
@@ -221,6 +235,19 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Forget a saved memory Ben asked you to forget. It can be undone.',
   },
   {
+    // workout-builder BD1, §8.2: structure only (no load, no minutes); a draft Ben opens, starts or saves himself.
+    name: 'propose_workout',
+    effect: 'propose',
+    writes: ['workout_draft'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['general'],
+    plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Build the workout Ben asked for, or a new version of the coach draft in context: exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. No loads or minutes: the app plans loads from his history and fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+  },
+  {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
     // spec (the stricter one) wins until Ben decides.
     name: 'add_playbook_candidate',
@@ -244,7 +271,8 @@ export const COACH_NEVER: readonly string[] = [
 
 /** Entity kinds a versioned update may write; all keep the previous version (CC6, check 1). */
 /** (11 Oct) `logged_set`: a set Ben told the coach to log or correct, through the workout's own versioned commands; never a delete. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set']);
+/** (12 Oct) `session_exercise`: an exercise added to today's workout with pending sets only; Undo takes it out. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -270,7 +298,7 @@ export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
     if (t.effect === 'read' && t.writes.length > 0) throw new UnsafeRegistryError(`${t.name}: a read tool can't write`);
     if (t.effect !== 'read' && t.writes.length === 0) throw new UnsafeRegistryError(`${t.name}: a write tool must declare what it writes`);
     if (t.effect === 'versioned_update' && t.writes.some((w) => !VERSIONED_WRITABLE.has(w))) {
-      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories or a set Ben named`);
+      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories, a set Ben named or an exercise added today`);
     }
     if (t.effect !== 'read' && (t.plainLabel === null || t.plainLabel.trim() === '')) {
       throw new UnsafeRegistryError(`${t.name}: a write tool needs a plainLabel for What the coach can do`);
@@ -329,12 +357,23 @@ export interface TurnRegistry {
  * Its `needs` is still unsettled in ADR 0020 (Ben/PM decision).
  */
 export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRequestKind[]>> = {
-  adjust_pending_sets: ['change', 'difficulty'],
+  // "Add a set to bench", "another set" are `change`; "put in some curls" is `add`, which also opens this
+  // tool so the coach can add one more set when the exercise is already in today's workout.
+  adjust_pending_sets: ['change', 'difficulty', 'add'],
+  // (12 Oct) "Add 3 sets of lateral raises", "put in some curls", "can we do some face pulls".
+  add_exercise_today: ['add'],
+  // A future add ("next time", "to every push day") is `structural` and opens only this tool. Review r3 S1:
+  // a plain today add ("put in some curls") doesn't open it (it can't add, and a swap Ben didn't ask for
+  // would be an unrequested structural change, rule 3); an add with an unclear scope ("to the plan",
+  // "to my routine now") opens it alongside today's add.
+  propose_next_workout_change: ['add_plan'],
   log_set: ['log'],
   correct_set: ['correct'],
   save_memory: ['memory'],
   forget_memory: ['memory'],
   add_playbook_candidate: ['playbook'],
+  // workout-builder §8.2: a build request ("build me a 45-minute push session"), or a change to the draft in context (BD16).
+  propose_workout: ['build'],
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {
@@ -357,7 +396,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'summary_turn':
       return g.kind === 'summary' ? null : 'needs_summary_turn';
     case 'structural_signal':
-      return isStructuralRequest(g.benRequest) || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
+      return isStructuralRequest(g.benRequest) || requestOpens(t, g.benRequest) || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
   }
 }
 

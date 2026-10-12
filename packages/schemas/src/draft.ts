@@ -17,6 +17,8 @@ import { IdSchema, LoadSchema, OperationIdSchema, RepRangeSchema, TimeZoneSchema
 export const DraftBasisSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('routine'), routineId: IdSchema }),
   z.object({ kind: z.literal('next'), sourceSessionId: IdSchema }),
+  /** (12 Oct, workout-builder BD2) A coach-built workout draft: today's edits on it follow the same rules; the coach draft itself lasts 14 days. */
+  z.object({ kind: z.literal('coach_draft'), draftId: IdSchema }),
 ]);
 export type DraftBasis = z.infer<typeof DraftBasisSchema>;
 
@@ -83,8 +85,10 @@ export const TodayEditSchema = z.discriminatedUnion('kind', [
    * after the planner. The coach's (`author: 'coach'`, with `actionId`): the
    * coach's own `skip` / `sets` / `add` edits with the same `actionId` are
    * the fit, and the built-in trim doesn't run. One live at a time.
+   * `minutes: null` (12 Oct, workout-builder BD11): "no fit today", so
+   * `Clear fit` can override the length a coach draft was built for.
    */
-  z.object({ ...editBase, kind: z.literal('fit'), minutes: z.int().min(FIT_MINUTES.min).max(FIT_MINUTES.max) }),
+  z.object({ ...editBase, kind: z.literal('fit'), minutes: z.int().min(FIT_MINUTES.min).max(FIT_MINUTES.max).nullable() }),
 ]).superRefine((e, ctx) => {
   if (e.author === 'coach' && e.actionId === undefined) ctx.addIssue({ code: 'custom', message: 'A coach edit names its action', path: ['actionId'] });
   if (e.kind !== 'reps') return;

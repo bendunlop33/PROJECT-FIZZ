@@ -68,7 +68,7 @@ export interface SessionRepository {
 }
 
 /** Tables a `WriteFence` can pin a row of. `sessions` pins the aggregate `revision`; `pre_start_drafts` pins an open draft (ADR 0022). */
-export type FenceTable = 'routines' | 'sessions' | 'check_ins' | 'profiles' | 'pre_start_drafts';
+export type FenceTable = 'routines' | 'sessions' | 'check_ins' | 'profiles' | 'pre_start_drafts' | 'workout_drafts';
 
 /**
  * What a planned write was planned from (workout-overview §7: the stale check

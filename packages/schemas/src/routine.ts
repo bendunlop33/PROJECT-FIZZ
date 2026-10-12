@@ -97,6 +97,8 @@ export const RoutineSchema = RecordMetaSchema.extend({
   source: z.enum(['ben', 'coach', 'imported']).optional(),
   /** `Duplicate` (routines.md §4.4): the workout it was copied from. */
   createdFromRoutineId: IdSchema.nullable().optional(),
+  /** (12 Oct, workout-builder BD12) The coach draft it was saved from: `Based on a coach workout ›`. */
+  createdFromDraft: z.object({ draftId: IdSchema, version: z.int().min(1) }).optional(),
   /**
    * In Ben's rotation (D19, RT9). Absent = in it (every routine was, before
    * the library); a workout saved or made since joins only when Ben says so.

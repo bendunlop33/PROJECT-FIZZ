@@ -8,6 +8,7 @@ export * from './sessions';
 export * from './imports';
 export * from './coach';
 export * from './drafts';
+export * from './workout-drafts';
 export * from './store';
 export * from './integrity';
 export * from './backup/sha256';

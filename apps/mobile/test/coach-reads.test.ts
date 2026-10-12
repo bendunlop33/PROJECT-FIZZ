@@ -51,7 +51,7 @@ async function twoBenchWorkouts() {
 describe('How am I doing? (Today)', () => {
   it('the chip is Ben’s own words; the coach reads the overview from local workouts; nothing is written', async () => {
     const { s } = await twoBenchWorkouts();
-    const chip = starterChips({ kind: 'today' }, await s.coach.availability(), false)[0];
+    const chip = starterChips({ kind: 'today' }, await s.coach.availability(), false).find((c) => c.label === 'How am I doing?');
     expect(chip?.label).toBe('How am I doing?');
     if (!chip?.input) throw new Error('no chip');
     model = new StepModel([() => toolCall('get_training_overview', { weeks: 4 }), () => replyWith('Two bench sessions; 60 to 62.5 kg.')]);
