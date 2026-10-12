@@ -39,7 +39,9 @@ import { appendContentKeys, memoryContentKey, memoryTextKind, playbookContentKey
 
 export type ToolResult =
   | { kind: 'read'; data: unknown; earlier?: readonly ActionRecord[] }
-  | { kind: 'action'; record: ActionRecord; replayed: boolean };
+  | { kind: 'action'; record: ActionRecord; replayed: boolean }
+  /** Nothing ran and nothing was written (e.g. a second build in one turn); `line` goes back to the model. */
+  | { kind: 'refused'; line: string };
 
 export interface ToolCallContext {
   ownerId: string;

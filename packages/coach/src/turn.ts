@@ -343,6 +343,7 @@ function toolOutput(result: ToolResult, ref: string | null): string {
         : {}),
     });
   }
+  if (result.kind === 'refused') return JSON.stringify({ status: 'not_allowed', line: result.line });
   const rendered = renderActionResult(result.record, 'sheet');
   return JSON.stringify({ status: result.record.status, ref, line: rendered.text, guardNotes: result.record.guardNotes.map((n) => n.text), shownToBen: 'as a card' });
 }
@@ -520,6 +521,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       for (const [i, r] of (result.earlier ?? []).entries()) {
         if (!entries.some((e) => e.record.actionId === r.actionId)) entries.push({ ref: `e${String(i + 1)}`, record: r, origin: 'earlier' });
       }
+    } else if (result.kind === 'refused') {
+      logLine({ tool: parsed.call.tool, outcome: 'not_allowed', text: result.line, actionId: null });
     } else {
       const already = entries.find((e) => e.record.actionId === result.record.actionId && e.origin === 'this_turn');
       if (already === undefined) {

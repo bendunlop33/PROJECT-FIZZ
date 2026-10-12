@@ -268,6 +268,27 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
     await store.close();
   });
 
+  it('review S2: a second `propose_workout` in one turn is refused; one request makes one draft (or one version)', async () => {
+    const store = await memoryStore();
+    const other = proposal({ exercises: [proposal().exercises[1]] });
+    const m1 = new ScriptedCoachModel([[call('propose_workout', proposal()), { type: 'completed' }], [call('propose_workout', other), { type: 'completed' }], reply('Here.')]);
+    const first = await runCoachTurn(request({ input: words(REQ.text), context: { session: null, gymName: null, painFlags: [FLAG], checkIn: null, memories: [], catalogue: [], build: buildView() } }), ports(store, m1, executors(store)));
+    expect(first.cards).toHaveLength(1);
+    expect(await store.repos.workoutDrafts.listByOwner(OWNER)).toHaveLength(1);
+    expect(JSON.stringify(m1.requests[2]?.input)).toContain('Already built this turn. Reply now.');
+    // A revision: the second call doesn't record a misleading `stale` under the version that landed.
+    const draft = (await store.repos.workoutDrafts.listByOwner(OWNER))[0];
+    if (draft === undefined) throw new Error('no draft');
+    const m2 = new ScriptedCoachModel([[call('propose_workout', other), { type: 'completed' }], [call('propose_workout', proposal()), { type: 'completed' }], reply('Shorter.')]);
+    const second = await runCoachTurn(
+      request({ input: words('no barbell'), draftInContext: true, context: { session: null, gymName: null, painFlags: [FLAG], checkIn: null, memories: [], catalogue: [], build: buildView() } }),
+      ports(store, m2, executors(store, draft)),
+    );
+    expect(second.cards.map((c) => c.record.status)).toEqual(['committed']);
+    expect(await store.repos.workoutDrafts.get(draft.id)).toMatchObject({ currentVersion: 2, version: 2 });
+    await store.close();
+  });
+
   it('BD13 / WB23: a build that keeps streaming past the whole-build cap times out; nothing is stored', async () => {
     const store = await memoryStore();
     const model = {

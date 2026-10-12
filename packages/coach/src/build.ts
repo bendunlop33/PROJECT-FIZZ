@@ -101,9 +101,15 @@ export function checkedRationale(message: string): string | null {
   return kept.length === 0 ? null : kept.join(' ');
 }
 
+/** The tool output for a second build in one turn (review S2). */
+export const BUILD_ALREADY_LINE = 'Already built this turn. Reply now.';
+
 export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
+  // Review S2: one request builds one draft (or one version). The executor lives for one turn.
+  let landedOpId: string | null = null;
   const propose: ToolExecutor = async (call, ctx): Promise<ToolResult> => {
     if (call.tool !== 'propose_workout') throw new TypeError(call.tool);
+    if (landedOpId !== null && landedOpId !== ctx.opId) return { kind: 'refused', line: BUILD_ALREADY_LINE };
     const args = call.args;
     const previous = deps.draft === null ? null : currentDraftVersion(deps.draft).plan;
     const draftId = deps.draft?.id ?? coachDraftIdFor(ctx.opId);
@@ -160,6 +166,7 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
     const action = newActionRecord(ctx, detail, { status: 'committed', reason: rationale, guardNotes: guardNotesOf(check.checks) });
     const r = await deps.store.commit(ctx.ownerId, { kind: 'workout_draft', action, draft: next, expectedVersion });
     if (r.status === 'conflict') return record('stale', 'the draft changed since');
+    landedOpId = ctx.opId;
     return { kind: 'action', record: r.action, replayed: r.status === 'replayed' };
   };
   return { propose_workout: propose };
