@@ -9,7 +9,7 @@ import type { BenInput, CoachThread } from '@fizz/schemas';
 
 import { MANAGE_USAGE_URL } from '../../ai/coach-connection-view';
 import { nowMs as clockNow } from '../../clock';
-import type { CoachAvailability, CoachEntry } from '../../coach/coach-service';
+import { isGeneralEntry, type CoachAvailability, type CoachEntry } from '../../coach/coach-service';
 import {
   applyProgress,
   loadedOutOfContext,
@@ -47,7 +47,8 @@ import { CoachCard } from './CoachCard';
 
 /** Typed text per entry, kept while the app runs (closing the sheet keeps it; CS4). */
 const drafts = new Map<string, string>();
-const entryKey = (e: CoachEntry): string => (e.kind === 'today' ? 'today' : `${e.kind}:${e.sessionId}`);
+const entryKey = (e: CoachEntry): string =>
+  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${String(e.days)}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : `${e.kind}:${e.sessionId}`;
 
 export function CoachSheetScreen() {
   const theme = useTheme();
@@ -121,7 +122,7 @@ export function CoachSheetScreen() {
   }, [services]);
 
   const loadWorkout = useCallback(async () => {
-    if (entry.kind === 'today') return;
+    if (isGeneralEntry(entry)) return;
     loadedWorkout.current = await services.workout.load(entry.sessionId).catch(() => null);
     missingWorkout.current =
       loadedWorkout.current !== null ? null : missingOutOfContext((await services.history.presence(entry.sessionId).catch(() => ({ kind: 'missing' as const }))).kind);
@@ -227,7 +228,7 @@ export function CoachSheetScreen() {
   /** `Try again` on a turn's row: that turn's own words as a new turn; a cut-off summary review runs again. */
   async function retry(input: BenInput) {
     if (input.kind !== 'summary') return send(input);
-    if (entry.kind === 'today' || live !== null) return;
+    if (isGeneralEntry(entry) || live !== null) return;
     setNotice(null);
     setLive(startLiveTurn(newUuid(), input, clockNow()));
     try {

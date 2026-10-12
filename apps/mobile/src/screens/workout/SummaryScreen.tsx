@@ -41,8 +41,9 @@ export function SummaryScreen() {
   const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { sessionId, back = false, justFinished: finishedNow = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
-  const [times, setTimes] = useState(false);
+  const { sessionId, back = false, justFinished: finishedNow = false, editTimes = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
+  // Opened from Progress `Edit times`: the time correction shows at once, and closing it returns there (progress.md §2.3).
+  const [times, setTimes] = useState(editTimes);
   const [choosePain, setChoosePain] = useState(false);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
   useEffect(() => {
@@ -458,14 +459,24 @@ export function SummaryScreen() {
                   marginTop: i === 0 ? theme.space['2'] : 0,
                 }}
               >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['2'] }}>
+                {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${e.name}, ${e.setsText}`}
+                  accessibilityHint="Opens this exercise’s history"
+                  onPress={() => {
+                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
+                  }}
+                  style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+                >
                   <AppText variant="headline" style={{ flex: 1 }}>
                     {e.name}
                   </AppText>
                   <AppText variant="callout" color="text.secondary" numeric>
                     {e.setsText}
                   </AppText>
-                </View>
+                  <Icon name="chevron.right" color="text.tertiary" size={14} />
+                </Pressable>
                 {e.results !== '' ? (
                   <AppText variant="callout" numeric>
                     {e.results}
@@ -581,11 +592,13 @@ export function SummaryScreen() {
         visible={times}
         onClose={() => {
           setTimes(false);
+          if (editTimes) done();
         }}
         onSaved={() => {
           setTimes(false);
           changed();
-          reload();
+          if (editTimes) done();
+          else reload();
         }}
       />
       <PainChooseSheet

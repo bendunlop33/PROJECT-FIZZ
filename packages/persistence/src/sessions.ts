@@ -74,6 +74,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     finish_by_tz: s.finishBy?.tz ?? null,
     gym_changes: s.gymChanges === undefined ? null : JSON.stringify(s.gymChanges),
     today_edits: s.todayEdits === undefined ? null : JSON.stringify(s.todayEdits),
+    duration_confirmed_at_utc: s.durationConfirmedAt?.utc ?? null,
+    duration_confirmed_at_tz: s.durationConfirmedAt?.tz ?? null,
     deleted_at_utc: s.deletion?.at.utc ?? null,
     deleted_at_tz: s.deletion?.at.tz ?? null,
     deleted_by_op_id: s.deletion?.opId ?? null,
@@ -230,6 +232,9 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       checkIn: parseJsonOrNull(T, id, 'check_in', s.check_in ?? null),
       ...(s.finish_by_utc === null || s.finish_by_utc === undefined ? {} : { finishBy: { utc: s.finish_by_utc, tz: s.finish_by_tz } }),
       ...(s.today_edits === null || s.today_edits === undefined ? {} : { todayEdits: parseJson(T, id, 'today_edits', s.today_edits) }),
+      ...(s.duration_confirmed_at_utc === null || s.duration_confirmed_at_utc === undefined
+        ? {}
+        : { durationConfirmedAt: { utc: s.duration_confirmed_at_utc, tz: s.duration_confirmed_at_tz } }),
       ...(s.deleted_at_utc === null || s.deleted_at_utc === undefined
         ? {}
         : { deletion: { at: { utc: s.deleted_at_utc, tz: s.deleted_at_tz }, opId: s.deleted_by_op_id, purgeAfterUtc: s.purge_after_utc } }),
@@ -819,6 +824,15 @@ export class SqliteSessions implements SessionRepository {
       );
       return row?.n ?? 0;
     });
+  }
+
+  /**
+   * Every finished session in history (not deleted) of `ownerId` as `(id, revision)`, no decode
+   * (Progress, progress.md §6): the service re-reads only sessions whose
+   * revision changed since it last projected them.
+   */
+  listFinishedRevisions(ownerId: string): Promise<{ id: string; revision: number }[]> {
+    return this.db.read((q) => q.getAll<{ id: string; revision: number }>(`SELECT id, revision FROM sessions WHERE owner_id = ? AND ${inHistorySql()} ORDER BY started_at_utc, id`, [ownerId]));
   }
 
   /**

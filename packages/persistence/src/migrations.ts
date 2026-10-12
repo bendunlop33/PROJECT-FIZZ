@@ -8,6 +8,7 @@ import { MIGRATION_0005 } from './schema/0005-gym-switch';
 import { MIGRATION_0006 } from './schema/0006-coach';
 import { MIGRATION_0007 } from './schema/0007-pre-start-drafts';
 import { upMigration0008 } from './schema/0008-deleted-workouts';
+import { MIGRATION_0009 } from './schema/0009-progress';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -34,6 +35,7 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(6, 'coach', MIGRATION_0006),
   sqlMigration(7, 'pre-start-drafts', MIGRATION_0007),
   { version: 8, name: 'deleted-workouts', up: upMigration0008 },
+  sqlMigration(9, 'progress', MIGRATION_0009),
 ];
 
 export function latestVersion(migrations: readonly Migration[] = MIGRATIONS): number {

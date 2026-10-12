@@ -456,6 +456,10 @@ export interface OverviewRow {
   missingEquipment: string | null;
   /** The first pending working set: `Why?` explains it. */
   firstSetId: string | null;
+  /** The equipment this row uses at this gym (null: none, or not here): `History` opens its series. */
+  equipmentId: string | null;
+  /** A finished workout has this exercise: `History` is offered. */
+  hasHistory: boolean;
   /** The coach's stored target for this row (§5): the `Coach` tag, its reason, Undo / `Use coach target`. */
   coach: OverviewCoach | null;
   /** Superset partners' names, for VoiceOver (`Superset with Triceps pushdown`). */
@@ -892,6 +896,8 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       painFlag: covering === null ? null : { id: covering.flag.id, version: covering.flag.version, checkDue: covering.checkDue },
       missingEquipment: missing,
       firstSetId: first?.id ?? null,
+      equipmentId: notHere ? null : ex.equipmentId,
+      hasHistory: pasts.some((p) => p.actuals.length > 0),
       coach,
       supersetWith,
       accessibilityLabel,

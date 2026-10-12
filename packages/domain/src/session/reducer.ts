@@ -111,6 +111,8 @@ export type SessionEvent =
   /** A gym switch (or `[Use changes today]`) or its Undo. `changedSetIds`: targets that changed. */
   | { type: 'GymChanged'; actionId: string; fromGymId: string | null; toGymId: string; changedSetIds: string[]; undo: boolean }
   | { type: 'SessionRenamed'; name: string | null }
+  /** `Count it` (or its Undo) on Progress's Time sheet (progress.md PG25a). */
+  | { type: 'SessionDurationConfirmed'; confirmed: boolean }
   | { type: 'FinishByChanged'; finishByUtc: string | null }
   /** A coach adjustment changed (or its Undo restored) pending targets. Cue layers rebuild the rest-end line. */
   | { type: 'TargetsAdjusted'; actionId: string; setIds: string[]; reverted: boolean }
@@ -1238,6 +1240,19 @@ function handleRenameSession(state: SessionAggregate, cmd: CommandOf<'rename_ses
     events: [{ type: 'SessionRenamed', name }],  };
 }
 
+/** `Count it` on Progress (progress.md PG25a): only a finished workout with real times; no set or time changes. */
+function handleConfirmDuration(state: SessionAggregate, cmd: CommandOf<'confirm_session_duration'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed; reload.');
+  if (state.session.status !== 'finished') return fail('session_not_finished', 'Only a finished workout’s time can be counted.');
+  if (state.session.localDate !== undefined) return fail('invalid_time', 'This imported workout has a date only, so there is no time to count.');
+  const confirmed = state.session.durationConfirmedAt !== undefined;
+  if (confirmed === cmd.confirmed) return { ok: true, state, events: [] };
+  const session = { ...state.session, version: state.session.version + 1 };
+  if (cmd.confirmed) session.durationConfirmedAt = cmd.at;
+  else delete session.durationConfirmedAt;
+  return { ok: true, state: { ...state, session }, events: [{ type: 'SessionDurationConfirmed', confirmed: cmd.confirmed }] };
+}
+
 /** Latest `Finish by` the wheel offers (now + 3 h, §2.15.3). */
 const FINISH_BY_MAX_MS = 3 * 3600_000;
 
@@ -1547,6 +1562,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleUndoChangeGym(state, command);
     case 'rename_session':
       return handleRenameSession(state, command);
+    case 'confirm_session_duration':
+      return handleConfirmDuration(state, command);
     case 'set_finish_by':
       return handleSetFinishBy(state, command, nowMs);
     case 'adjust_pending_targets':
@@ -1639,6 +1656,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'set_rest_after':
     case 'tick':
       return false;
+    case 'confirm_session_duration':
+      // A later Count it or Undo replaced this one.
+      return (state.session.durationConfirmedAt !== undefined) !== command.confirmed;
     case 'set_finish_by':
       // A later Finish by (or Not set) replaced this one.
       return (state.session.finishBy?.utc ?? null) !== (command.finishBy?.utc ?? null);
@@ -1679,7 +1699,8 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
     if (command.type === 'tick') return { ok: true, state, events: [], duplicate: false, superseded: false };
     // A finished workout accepts only corrections and timing edits; a discarded one accepts nothing.
     const allowed =
-      state.session.status === 'finished' && (command.type === 'correct_set' || command.type === 'update_session_timing' || command.type === 'rename_session');
+      state.session.status === 'finished' &&
+      (command.type === 'correct_set' || command.type === 'update_session_timing' || command.type === 'rename_session' || command.type === 'confirm_session_duration');
     if (!allowed) {
       const message =
         state.session.status === 'finished'

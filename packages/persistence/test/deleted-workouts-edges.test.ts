@@ -84,7 +84,7 @@ describe('migration 8 (review B1, S6)', () => {
     const db = memoryDriver();
     cleanups.push(() => db.close());
     await migrate(db, MIGRATIONS, 7);
-    // What claude/progress's 0008 does, as if it had merged first and taken an earlier number.
+    // What Progress's migration (now 9) adds, as if it had merged first and taken number 8.
     await db.exec('ALTER TABLE sessions ADD COLUMN duration_confirmed_at_utc TEXT; ALTER TABLE sessions ADD COLUMN duration_confirmed_at_tz TEXT');
     const before = await schemaDump(db);
     await expect(migrate(db)).rejects.toThrow(UnexpectedSessionsColumnsError);
@@ -124,7 +124,8 @@ describe('migration 8 (review B1, S6)', () => {
     const old = memoryDriver();
     await copyInto(driver, old, 7);
     expect(await readUserVersion(old)).toBe(7);
-    expect(await migrate(old)).toMatchObject({ from: 7, to: latestVersion(), applied: [8] });
+    // 8, then every later migration (9: Progress's Count it).
+    expect(await migrate(old)).toMatchObject({ from: 7, to: latestVersion(), applied: MIGRATIONS.slice(7).map((m) => m.version) });
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -138,6 +139,52 @@ describe('migration 8 (review B1, S6)', () => {
     cleanups.push(() => migrated.close());
     expect((await checkIntegrity(migrated.db)).ok).toBe(true);
     expect(await migrated.countRecords()).toEqual(await store.countRecords());
+  });
+});
+
+describe('migration 9 on main’s schema 8 (review progress-merge S2)', () => {
+  it('a populated schema-8 database with deleted and purged workouts: only 9 applied, the same schema as a fresh database, every row kept, deleted workouts out of Progress', async () => {
+    const { store, driver } = await mixedStore();
+    cleanups.push(() => store.close());
+    const finished = (await driver.getAll<{ id: string }>("SELECT id FROM sessions WHERE status = 'finished' ORDER BY started_at_utc, id")).map((r) => r.id);
+    const [kept, purged] = await Promise.all(finished.slice(0, 2).map((sid) => store.repos.sessions.get(sid)));
+    if (!kept || !purged) throw new Error('fixture');
+    expect((await store.repos.sessions.deleteWorkouts({ ownerId: OWNER, items: [item(kept), item(purged)], opId: 'del-m9', at: NOW })).ok).toBe(true);
+    expect(await store.repos.sessions.purgeDeleted({ ownerId: OWNER, opId: 'purge-m9', at: NOW, sessionIds: [purged.session.id] })).toMatchObject({ ok: true, purged: [purged.session.id] });
+    const statuses = (await driver.getAll<{ status: string; n: number }>('SELECT status, count(*) AS n FROM sessions GROUP BY status ORDER BY status')).map((r) => [r.status, r.n]);
+    expect(statuses).toEqual([
+      ['active', 1],
+      ['deleted', 1],
+      ['discarded', 1],
+      ['finished', 6],
+      ['reverted', 1],
+    ]);
+    expect(await driver.getAll('SELECT session_id FROM purged_sessions')).toEqual([{ session_id: purged.session.id }]);
+    const source = await exportTables(driver);
+
+    const old = memoryDriver();
+    await copyInto(driver, old, 8);
+    expect(await readUserVersion(old)).toBe(8);
+    expect(await migrate(old)).toMatchObject({ from: 8, to: latestVersion(), applied: [9] });
+
+    const fresh = memoryDriver();
+    cleanups.push(() => fresh.close());
+    await migrate(fresh);
+    expect(await schemaDump(old)).toEqual(await schemaDump(fresh));
+    expect(await old.getAll('PRAGMA foreign_key_check')).toEqual([]);
+    expect(await old.getAll('PRAGMA integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+    expect(await exportTables(old)).toEqual(source);
+    const migrated = await openStore(old);
+    cleanups.push(() => migrated.close());
+    expect((await checkIntegrity(migrated.db)).ok).toBe(true);
+    expect(await migrated.countRecords()).toEqual(await store.countRecords());
+    // Progress reads finished workouts only: the deleted one and the purged one are out.
+    const listed = (await migrated.repos.sessions.listFinishedRevisions(OWNER)).map((r) => r.id);
+    expect(listed).toHaveLength(6);
+    expect(listed).not.toContain(kept.session.id);
+    expect(listed).not.toContain(purged.session.id);
+    expect((await migrated.repos.sessions.listRecentlyDeleted(OWNER, NOW.utc)).sessions.map((x) => x.session.id)).toEqual([kept.session.id]);
+    expect(await migrated.repos.sessions.isPurged(purged.session.id)).toBe(true);
   });
 });
 

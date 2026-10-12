@@ -6,8 +6,15 @@ import { useTheme, type ColorToken } from '../theme';
 import { Icon, type SymbolName } from './Icon';
 import { AppText } from './Text';
 
-/** A scrolling screen on `bg.canvas` with the look's side margin. */
-export function Screen({ children, footer, testID }: { children: ReactNode; footer?: ReactNode; testID?: string }) {
+/** Room left under the content for a floating pill (44 pt target + its gap). */
+const FLOATING_ROOM = 56;
+
+/**
+ * A scrolling screen on `bg.canvas` with the look's side margin. `floating`:
+ * something drawn over the bottom of the scroll area (the `Ask` pill); the
+ * content gets room below it so nothing ends up hidden underneath.
+ */
+export function Screen({ children, footer, floating, testID }: { children: ReactNode; footer?: ReactNode; floating?: ReactNode; testID?: string }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -17,12 +24,13 @@ export function Screen({ children, footer, testID }: { children: ReactNode; foot
         contentContainerStyle={{
           paddingHorizontal: theme.components.screenMargin,
           paddingTop: theme.space['4'],
-          paddingBottom: footer ? theme.space['6'] : theme.space['8'] + insets.bottom,
+          paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + insets.bottom) + (floating ? FLOATING_ROOM : 0),
           gap: theme.space['5'],
         }}
       >
         {children}
       </ScrollView>
+      {floating}
       {footer ? <BottomBar>{footer}</BottomBar> : null}
     </View>
   );

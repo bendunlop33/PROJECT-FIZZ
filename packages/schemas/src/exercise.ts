@@ -72,6 +72,10 @@ export const CatalogueKeySchema = z
   .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, { message: 'Catalogue keys are lower-case kebab-case' });
 export type CatalogueKey = z.infer<typeof CatalogueKeySchema>;
 
+/** Progress's Push/Pull/Legs grouping (progress.md PG27). */
+export const ExerciseSplitSchema = z.enum(['push', 'pull', 'legs', 'core', 'other']);
+export type ExerciseSplit = z.infer<typeof ExerciseSplitSchema>;
+
 export const ExerciseSchema = z.object({
   id: IdSchema,
   /** Null for catalogue entries; set for custom exercises. */
@@ -98,6 +102,12 @@ export const ExerciseSchema = z.object({
   defaultLoadConvention: LoadConventionSchema,
   /** Exercise default rest (resolution step 3). */
   defaultRestS: DurationSecondsSchema.optional(),
+  /**
+   * Progress's Push/Pull/Legs group (progress.md PG27), only where the
+   * primary-muscle rule gets it wrong. Absent = worked out from the muscles
+   * and movement pattern. Coaching knowledge.
+   */
+  split: ExerciseSplitSchema.optional(),
   version: z.int().min(1),
   createdAtUtc: UtcTimestampSchema,
   updatedAtUtc: UtcTimestampSchema,

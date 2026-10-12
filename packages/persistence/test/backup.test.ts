@@ -497,6 +497,9 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
       delete copy.gym_changes;
       // …or schema 7 (today's edits).
       delete copy.today_edits;
+      // …or schema 8 (Progress's Count it).
+      delete copy.duration_confirmed_at_utc;
+      delete copy.duration_confirmed_at_tz;
       return copy;
     });
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
@@ -602,6 +605,9 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
       delete copy.gym_changes;
       // …or schema 7 (today's edits).
       delete copy.today_edits;
+      // …or schema 8 (Progress's Count it).
+      delete copy.duration_confirmed_at_utc;
+      delete copy.duration_confirmed_at_tz;
       return copy;
     });
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {

@@ -41,6 +41,7 @@ import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
+import { createProgressService } from './progress-service';
 import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
@@ -132,14 +133,29 @@ export function createAppServices(deps: AppServicesDeps) {
     return [...all].sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : 1))[0] ?? null;
   }
 
-  async function updateProfile(patch: Parameters<typeof bumpProfile>[1]): Promise<SetupWriteResult> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const current = await getProfile();
-      if (!current) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
-      const saved = await repos().profiles.save(bumpProfile(current, patch, deps.now().utc), current.version);
-      if (saved.ok) return { ok: true };
-    }
-    return { ok: false, message: WRITE_FAILED };
+  /**
+   * Versioned profile write. `patch` may be a function of the current profile,
+   * so a retry after a version clash merges onto the fresh row instead of
+   * writing a stale copy (review progress-A S3); it returns null for "no
+   * change". Writes run one at a time, so two quick taps can't race.
+   */
+  type ProfilePatch = Parameters<typeof bumpProfile>[1];
+  let profileWrites: Promise<unknown> = Promise.resolve();
+  function updateProfile(patch: ProfilePatch | ((current: UserProfile) => ProfilePatch | null)): Promise<SetupWriteResult> {
+    const run = async (): Promise<SetupWriteResult> => {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const current = await getProfile();
+        if (!current) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
+        const next = typeof patch === 'function' ? patch(current) : patch;
+        if (next === null) return { ok: true };
+        const saved = await repos().profiles.save(bumpProfile(current, next, deps.now().utc), current.version);
+        if (saved.ok) return { ok: true };
+      }
+      return { ok: false, message: WRITE_FAILED };
+    };
+    const out = profileWrites.then(run, run);
+    profileWrites = out.catch(() => undefined);
+    return out;
   }
 
   const yourData = {
@@ -352,6 +368,7 @@ export function createAppServices(deps: AppServicesDeps) {
   function afterCommand(outcome: CommandOutcome): CommandOutcome {
     if (outcome.ok && !outcome.duplicate && outcome.events.some((e) => e.type === 'SessionFinished')) {
       void backups.backUpOnPhone('workout_finished');
+      void progress.prewarm().catch(() => undefined);
     }
     if (outcome.ok && deps.restAlerts) void deps.restAlerts.reconcile(outcome.aggregate, toMs(deps.now().utc));
     return outcome;
@@ -580,6 +597,21 @@ export function createAppServices(deps: AppServicesDeps) {
     },
   });
 
+  /** Progress (progress.md slice A): windows, sessions, time, muscles, records, calendar, `Count it`. Local only. */
+  const progress = createProgressService({
+    store: () => deps.manager.store,
+    now: deps.now,
+    profile: getProfile,
+    saveSettings: (merge) =>
+      updateProfile((current) => {
+        const progress = merge(current.progress);
+        return progress === null ? null : { progress };
+      }),
+    catalogueExercises,
+    dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
+    ...(deps.idle === undefined ? {} : { idle: deps.idle }),
+  });
+
   /** Deleting past workouts: delete, Undo, Recently deleted, Restore, purge (delete-workouts.md). */
   const history = createHistoryServices({
     repos,
@@ -608,6 +640,7 @@ export function createAppServices(deps: AppServicesDeps) {
     ...loop,
     history,
     overview,
+    progress,
     data,
     coach,
     gyms,
