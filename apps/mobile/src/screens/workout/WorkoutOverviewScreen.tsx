@@ -41,6 +41,9 @@ import {
   createOpIds,
   nextDraftVersion,
   stepperCount,
+  loadUnchanged,
+  queuedWriteLive,
+  wroteAfterRead,
   editMenuItems,
   editPills,
   editToast,
@@ -154,7 +157,12 @@ export function WorkoutOverviewScreen() {
   // Stepper taps queue behind a running write; other taps during one are dropped (review S2).
   const [editGuard] = useState(createEditLane);
   // The draft the last write left: the next write builds on it before the page re-reads (review S2).
-  const wroteDraft = useRef<{ id: string; version: number } | null>(null);
+  // `seq`: the write count when it landed; a page read records the count it started at (review r2 N2).
+  const wroteDraft = useRef<{ id: string; version: number; seq: number } | null>(null);
+  const writeSeq = useRef(0);
+  const readSeq = useRef(new WeakMap<object, number>());
+  // Bumped each time a session switch shows a new page: a queued write tapped on the old one is dropped (review r2 N1).
+  const shownPage = useRef(0);
   // Each row's working-set count as its last stepper write left it, with that write's draft version.
   const pendingSets = useRef(new Map<string, { count: number; version: number }>());
   const [ops] = useState(() => createOpIds(newUuid));
@@ -173,7 +181,9 @@ export function WorkoutOverviewScreen() {
 
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym();
+    const seq = writeSeq.current;
     const page = await s.overview.load({ target, gymId: gym?.id ?? null, checkInId: tappedRef.current?.id ?? null });
+    if (page !== null) readSeq.current.set(page, seq);
     return page;
   });
   const page = data.state === 'ready' ? data.value : null;
@@ -203,6 +213,7 @@ export function WorkoutOverviewScreen() {
   const switching = useRef(false);
   useEffect(() => {
     switching.current = false;
+    if (data.state === 'ready' && data.value !== null) wroteDraft.current = wroteAfterRead(data.value.draft, wroteDraft.current, readSeq.current.get(data.value));
   }, [data]);
 
   // `DONE BY` moves at most once a minute (timing.timeLeftRefresh, OV16).
@@ -577,6 +588,7 @@ export function WorkoutOverviewScreen() {
           closeAdd();
           wroteDraft.current = null;
           pendingSets.current.clear();
+          shownPage.current += 1;
           setStartError(null);
           setTarget(t);
           scrollRef.current?.scrollTo({ y: 0, animated: false });
@@ -653,7 +665,9 @@ export function WorkoutOverviewScreen() {
     opts: { queue?: boolean } = {},
   ): Promise<Extract<DraftWrite, { ok: true }> | null> {
     if (!page || switching.current) return null;
+    const tappedOn = shownPage.current;
     const result = await editGuard.run(async () => {
+      if (!queuedWriteLive(tappedOn, shownPage.current, switching.current)) return null;
       // A queued tap names its intent when its turn comes (a stepper steps from the count the last write left).
       const named = typeof intent === 'string' ? intent : intent();
       if (named === null) return null;
@@ -664,6 +678,8 @@ export function WorkoutOverviewScreen() {
         return null;
       }
       ops.done(named);
+      // Before `changed()`: the re-read it starts counts as after this write.
+      writeSeq.current += 1;
       changed();
       if (!w.ok) {
         // The service says which: the plan moved (`Targets updated`), or only the draft did (`Couldn't save that edit.`).
@@ -674,7 +690,7 @@ export function WorkoutOverviewScreen() {
         setToast({ text: w.reason === 'stale' ? w.message : TODAY_EDITS_COPY.editFailed });
         return null;
       }
-      if (w.draft !== null) wroteDraft.current = { id: w.draft.id, version: w.draft.version };
+      if (w.draft !== null) wroteDraft.current = { id: w.draft.id, version: w.draft.version, seq: writeSeq.current };
       haptic('step');
       return w;
     }, opts);
@@ -826,7 +842,7 @@ export function WorkoutOverviewScreen() {
     const k = r.editRow.keypad;
     const value = loadEdit?.value ?? null;
     setLoadEdit(null);
-    if (k === null || value === null) return;
+    if (k === null || value === null || loadUnchanged(r.editRow, value)) return;
     const load = loadPayload(value, k);
     if (load === null) return;
     const w = await writeEdit(`load:${r.slotKey}:${String(value)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'load', slotKey: r.slotKey, load } }));

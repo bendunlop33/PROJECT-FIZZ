@@ -341,6 +341,34 @@ export function nextDraftVersion(page: DraftRef | null, wrote: DraftRef | null):
 }
 
 /**
+ * The last write's draft after a page read (review r2 N2): a read that
+ * started after that write and shows no draft, or another one (it expired at
+ * midnight), retires it, so the next write sends the page's version, never
+ * the gone draft's. A read from before the write leaves it as is.
+ */
+export function wroteAfterRead<W extends DraftRef & { seq: number }>(page: DraftRef | null, wrote: W | null, readSeq: number | undefined): W | null {
+  if (wrote === null || readSeq === undefined || readSeq < wrote.seq) return wrote;
+  return page !== null && page.id === wrote.id ? wrote : null;
+}
+
+/**
+ * A queued draft write still belongs to the page it was tapped on (review r2
+ * N1): not while a session switch runs, and not once another page is shown.
+ */
+export function queuedWriteLive(tappedOnPage: number, shownPage: number, switching: boolean): boolean {
+  return !switching && tappedOnPage === shownPage;
+}
+
+/**
+ * `Set target` with the keypad's opening value on a row that already has
+ * Ben's load is no change (review r2 N5): at an lb gym it opens at the fitted
+ * `80 lb each`, and writing that back would replace his `37.5 kg each`.
+ */
+export function loadUnchanged(row: { benLoad: boolean; keypad: { value: number | null } | null }, value: number | null): boolean {
+  return row.benLoad && row.keypad !== null && value !== null && row.keypad.value === value;
+}
+
+/**
  * A row's working-set count to step from (review S2): the count the last
  * stepper write on it left, until the page shows that write (its draft
  * version or later), else the page's.

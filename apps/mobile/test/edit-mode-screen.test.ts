@@ -10,6 +10,9 @@ import {
   defaultChecked,
   nextDraftVersion,
   stepperCount,
+  loadUnchanged,
+  queuedWriteLive,
+  wroteAfterRead,
   EDIT_MODE_COPY,
   editModeToast,
   editMoves,
@@ -269,5 +272,42 @@ describe('review S2: quick stepper taps all land', () => {
     // A failed write doesn't block the lane.
     await expect(lane.run(() => Promise.reject(new Error('x')))).rejects.toThrow('x');
     expect(await lane.run(() => Promise.resolve('after'))).toBe('after');
+  });
+});
+
+describe('review r2 N1, N2, N5: queued writes, a gone draft, an unchanged load', () => {
+  const screen = readFileSync(join(__dirname, '../src/screens/workout/WorkoutOverviewScreen.tsx'), 'utf8');
+
+  it('N1: a queued write runs only on the page it was tapped on, never during a switch', () => {
+    expect(queuedWriteLive(2, 2, false)).toBe(true);
+    expect(queuedWriteLive(2, 2, true)).toBe(false);
+    expect(queuedWriteLive(2, 3, false)).toBe(false);
+    // The screen checks when the queued write's turn comes, inside the lane, and a switch moves the page count.
+    expect(screen).toMatch(/editGuard\.run\(async \(\) => \{\s*if \(!queuedWriteLive\(tappedOn, shownPage\.current, switching\.current\)\) return null;/);
+    expect(screen).toMatch(/shownPage\.current \+= 1;/);
+  });
+
+  it('N2: a read after the write that shows no draft, or another one, retires the last write’s draft', () => {
+    const wrote = { id: 'd', version: 4, seq: 2 };
+    // Read started after the write: the draft expired at midnight.
+    expect(wroteAfterRead(null, wrote, 2)).toBeNull();
+    expect(wroteAfterRead({ id: 'e', version: 1 }, wrote, 3)).toBeNull();
+    // Same draft: kept (nextDraftVersion takes the newer).
+    expect(wroteAfterRead({ id: 'd', version: 4 }, wrote, 2)).toBe(wrote);
+    // A read from before the write: kept, its page can't know the write yet.
+    expect(wroteAfterRead(null, wrote, 1)).toBe(wrote);
+    expect(wroteAfterRead(null, wrote, undefined)).toBe(wrote);
+    expect(wroteAfterRead(null, null, 5)).toBeNull();
+    // So the next write sends the page's version (none), not the gone draft's 4.
+    expect(nextDraftVersion(null, wroteAfterRead(null, wrote, 2))).toBeNull();
+  });
+
+  it('N5: Set target with the opening value on a row that has Ben’s load writes nothing', () => {
+    expect(loadUnchanged({ benLoad: true, keypad: { value: 80 } }, 80)).toBe(true);
+    expect(loadUnchanged({ benLoad: true, keypad: { value: 80 } }, 82.5)).toBe(false);
+    // No load of his yet: confirming the planned value is his choice, and is written.
+    expect(loadUnchanged({ benLoad: false, keypad: { value: 80 } }, 80)).toBe(false);
+    expect(loadUnchanged({ benLoad: true, keypad: null }, 80)).toBe(false);
+    expect(screen).toMatch(/value === null \|\| loadUnchanged\(r\.editRow, value\)\) return;/);
   });
 });
