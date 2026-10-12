@@ -48,6 +48,27 @@ describe('the gate for adding to today’s workout (table)', () => {
     ['add an exercise', ADD],
     ['add the leg press', ADD],
     ['add a superset of curls', ADD],
+    // Review B1: a rep count after the sets, other verbs, a superset, "a set of" an exercise.
+    ['add 3 sets of 12 lateral raises', ADD],
+    ['add 3 sets of 12 reps of lateral raises', ADD],
+    ['can you add 3 sets of 12 curls after bench', ADD],
+    ['add 3 sets of 10-12 curls', ADD],
+    ['add 3 sets of 10 to 12 curls', ADD],
+    ['add 3x12 curls', ADD],
+    ['add some sets of curls', ADD],
+    ['give me 3 sets of curls', ADD],
+    ['give me some curls', ADD],
+    ['add a set of lateral raises', ADD],
+    ['create 3 sets of lateral raises', ADD],
+    ['can you create sets for lateral raises', ADD],
+    ['can you create 3 sets of 12 lateral raises?', ADD],
+    ['make 3 sets of curls', ADD],
+    ['add in some curls', ADD],
+    ['add on some curls', ADD],
+    ['add on face pulls at the end', ADD],
+    ['superset curls with bench', ADD],
+    ['can you superset lateral raises with bench?', ADD],
+    ["let's superset curls and pushdowns", ADD],
     // One more set of an exercise already there: today's sets only.
     ['add another set', SETS],
     ['add a set to bench', SETS],
@@ -68,6 +89,24 @@ describe('the gate for adding to today’s workout (table)', () => {
     ['I added curls last week', NONE],
     ['curls were good', NONE],
     ['do some curls', NONE],
+    // Never an add: a load, a set type, a change to today's sets.
+    ['make bench lighter', NONE],
+    ['give me bench at 100', SETS],
+    ['create a rule', NONE],
+    ['make it 3 sets', SETS],
+    ['give me 3 sets', SETS],
+    ['superset sounds fun', NONE],
+    // Review B2: an add with a future scope is a proposal, never today's add.
+    ['add curls next time', ['propose_next_workout_change']],
+    ['add curls to next session', ['propose_next_workout_change']],
+    ['add curls for next week', ['propose_next_workout_change']],
+    ['can you add curls to my routine', ['propose_next_workout_change']],
+    ['add 3 sets of lateral raises to my push day template', ['propose_next_workout_change']],
+    ['add face pulls from now on', ['propose_next_workout_change']],
+    ['put in some curls every week', ['propose_next_workout_change']],
+    ['create 3 sets of curls next time', ['propose_next_workout_change']],
+    ['add curls going forward', ['propose_next_workout_change']],
+    ['superset curls with bench next time', ['propose_next_workout_change']],
     // A swap or variety request is structural, not an add.
     ['Can we do something other than cable fly?', ['propose_next_workout_change']],
   ] as const)('%s → %j', (text, expected) => {
@@ -82,7 +121,7 @@ describe('the gate for adding to today’s workout (table)', () => {
   });
 
   it('an add request counts as asking for a change, so a reply with no card gets "No change made."', () => {
-    for (const t of ['put in some curls', 'stick some dips in', 'add 3 sets of lateral raises', 'add another set', 'add a set to bench']) {
+    for (const t of ['put in some curls', 'stick some dips in', 'add 3 sets of lateral raises', 'add another set', 'add a set to bench', 'create 3 sets of lateral raises', 'add in some curls', 'superset curls with bench', 'add curls next time']) {
       expect(gateFor({ kind: 'workout', input: words(t), previousOffer: null, structuralSignals: [] }).benAskedForChange).toBe(true);
     }
     expect(gateFor({ kind: 'workout', input: words('should I add curls?'), previousOffer: null, structuralSignals: [] }).benAskedForChange).toBe(false);

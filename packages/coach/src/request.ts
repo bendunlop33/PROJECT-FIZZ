@@ -550,7 +550,7 @@ function structuralIn(clause: string): boolean {
     const m = re.exec(clause);
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
-  return removeOrReorder(clause);
+  return removeOrReorder(clause) || futureAdd(clause);
 }
 
 /** Variety on its own ("I'm bored of incline press", "mix it up") is a request; a swap needs to be asked. */
@@ -560,7 +560,7 @@ function selfStandingStructural(clause: string): boolean {
     if (m !== null && !negatedBefore(clause, m.index)) return true;
   }
   // Anchored imperatives, so a negator can only come before them as a prefix ("don't drop …" doesn't match).
-  return removeOrReorder(clause);
+  return removeOrReorder(clause) || futureAdd(clause);
 }
 
 /**
@@ -613,28 +613,58 @@ function buildIn(clause: string): boolean {
 /**
  * (12 Oct) Adding an exercise to today's workout. A verb that adds ("add",
  * "put in", "throw in", "stick … in") with an exercise as its object, after
- * an optional amount ("some", "3 sets of"). "Do / try some curls" only counts
- * after an ask ("let's", "can we", "I want to").
+ * an optional amount ("some", "3 sets of", "3 sets of 12"). "Do / try some
+ * curls" only counts after an ask ("let's", "can we", "I want to").
  */
-const ADD_AMOUNT = '(?:(?:some|a few|a couple(?: of)?|a bit of|more|(?:another|an extra|extra|one more) (?:round|set|exercise) of|(?:\\d+|one|two|three|four|five|six) (?:sets?|rounds?) of|\\d+ ?x ?\\d+(?: of)?) )?';
+/** A rep count or range after "N sets of" (review B1): "3 sets of 12", "3 sets of 10-12 reps of". */
+const ADD_REPS = '(?:\\d+(?: ?(?:-|–|to) ?\\d+)?(?: reps?)?(?: of)? )?';
+const SET_COUNT = '(?:\\d+|one|two|three|four|five|six|a|some|a few|a couple(?: of)?|more)';
+/** An amount of sets: "3 sets of 12", "some sets of", "sets for", "3x12". */
+const ADD_SETS = `(?:(?:${SET_COUNT} )?(?:sets?|rounds?) (?:of|for) ${ADD_REPS}|\\d+ ?x ?\\d+(?: of)? )`;
+const ADD_AMOUNT = `(?:${ADD_SETS}|(?:some|a few|a couple(?: of)?|a bit of|more|(?:another|an extra|extra|one more) (?:round|set|exercise) of) )?`;
 const ADD_DET = '(?:(?:the|my|a|an|some) )?';
 /** Words between the amount and the exercise word: never a preposition or a load, set or time word ("add weight to bench"). */
 const ADD_FILLER = '(?:(?!(?:to|on|for|at|in|onto|into|with|weight|weights|load|loads|kg|kgs|kilos?|lbs?|pounds?|reps?|sets?|plates?|rest|time|seconds?|minutes?|something|anything|other|than|else|instead|different)\\b)[a-z-]+ ){0,3}';
-const ADD_VERB = '(?:add|include|put in|throw in|chuck in|stick in|pop in|slot in|squeeze in|fit in|bang in|whack in|tack on|tag on|work in)';
-const ADD_DIRECT = new RegExp(`^${ADD_VERB} ${ADD_AMOUNT}${ADD_DET}(${ADD_FILLER}${EXERCISE_WORD})\\b`);
-const ADD_SPLIT = new RegExp(`^(?:put|throw|chuck|stick|pop|slot|squeeze|fit|bang|whack|work) ${ADD_AMOUNT}${ADD_DET}(${ADD_FILLER}${EXERCISE_WORD}) (?:in|on)\\b`);
-const ADD_DO = new RegExp(`^(?:do|hit|try|have) ${ADD_AMOUNT}${ADD_DET}(${ADD_FILLER}${EXERCISE_WORD})\\b`);
+const ADD_OBJECT = `(${ADD_FILLER}${EXERCISE_WORD})`;
+const ADD_VERB = '(?:add(?: in| on)?|include|put in|throw in|chuck in|stick in|pop in|slot in|squeeze in|fit in|bang in|whack in|tack on|tag on|work in)';
+const ADD_DIRECT = new RegExp(`^${ADD_VERB} ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT}\\b`);
+const ADD_SPLIT = new RegExp(`^(?:put|throw|chuck|stick|pop|slot|squeeze|fit|bang|whack|work) ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT} (?:in|on)\\b`);
+/**
+ * Review B1: "create 3 sets of lateral raises" (Ben's own verb), "give me 3 sets of curls", "make 3
+ * sets of curls". These verbs need an amount, so "make bench lighter" and "give me bench at 100"
+ * stay set changes.
+ */
+const ADD_MAKE = new RegExp(`^(?:create|make|give me|do me|set up) (?:me )?(?:${ADD_SETS}|(?:some|a few|a couple(?: of)?) )${ADD_DET}${ADD_OBJECT}\\b`);
+/** Review B1: "superset curls with bench". The coach adds the exercise; one already there is refused by the domain. */
+const ADD_SUPERSET = new RegExp(`^superset (?:it |them )?(?:with )?${ADD_DET}${ADD_OBJECT}\\b`);
+const ADD_DO = new RegExp(`^(?:do|hit|try|have) ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT}\\b`);
 /** Set types and other things that are sets, not exercises: "add a drop set", "add a warm-up". */
 const ADD_NOT_EXERCISE = /^(?:top ?sets?|back ?-?off(?: sets?)?|drop ?sets?|warm ?-?ups?|amrap|finisher)\b/;
+/**
+ * Review B2: an add with a future scope ("add curls next time", "to my routine", "from now on")
+ * changes the plan, not today: a structural proposal (rule 3), never `add_exercise_today`.
+ */
+const ADD_FUTURE =
+  /\b(?:next (?:time|session|week|workout|push|pull|legs|leg day|upper|lower)|tomorrow|from now on|going forward|for good|every (?:week|time|session|workout)|(?:to|in|into|for|on|from) (?:the |my |our )?(?:[a-z]+ ){0,2}(?:routine|template|plan|programme|program|split)s?)\b/;
 
-function addIn(clause: string): boolean {
+/** The add phrasing itself, anchored after polite words and an ask; no scope or structural check. */
+function addMatch(clause: string): boolean {
   const c = clause.replace(POLITE, '');
-  // A swap or variety request ("something other than cable fly") is structural, not an add.
-  if (c.length === 0 || isOpinionQuestion(c) || structuralIn(c)) return false;
+  if (c.length === 0 || isOpinionQuestion(c)) return false;
   const asked = ASK_PREFIX.exec(c);
   const body = asked?.[1] ?? c;
-  const m = ADD_DIRECT.exec(body) ?? ADD_SPLIT.exec(body) ?? (asked !== null ? ADD_DO.exec(body) : null);
+  const m = ADD_DIRECT.exec(body) ?? ADD_SPLIT.exec(body) ?? ADD_MAKE.exec(body) ?? ADD_SUPERSET.exec(body) ?? (asked !== null ? ADD_DO.exec(body) : null);
   return m !== null && !ADD_NOT_EXERCISE.test((m[1] ?? '').trim());
+}
+
+/** An add for the future plan (review B2): structural. */
+function futureAdd(clause: string): boolean {
+  return addMatch(clause) && ADD_FUTURE.test(clause);
+}
+
+function addIn(clause: string): boolean {
+  // A swap or variety request ("something other than cable fly") or a future add is structural, not an add today.
+  return addMatch(clause) && !structuralIn(clause);
 }
 
 /**
