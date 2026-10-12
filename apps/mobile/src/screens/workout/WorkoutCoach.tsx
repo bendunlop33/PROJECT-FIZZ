@@ -7,8 +7,8 @@ import type { ActionRecord, BenInput, SessionAggregate } from '@fizz/schemas';
 
 import type { CoachAvailability, WorkoutOffer } from '../../coach/coach-service';
 import { whyView, type WhyView } from '../../coach/sheet-view';
-import { findOffer, NO_HELD_SETS, planOfferCheck, type HeldSets } from '../../coach/offer-check';
-import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, coachCouldNotAnswer, ruleOfferOutcome, slotAfterFailure, slotAfterTurn, slotView, syncAdjustment, type SlotView } from '../../coach/slot-view';
+import { chipRoute, findOffer, NO_HELD_SETS, planOfferCheck, settleTurn, type HeldSets, type RuleRequest } from '../../coach/offer-check';
+import { ADJUST_CHIP_LABEL, adjustControlView, chipForTrigger, ruleOfferOutcome, slotAfterFailure, slotAfterTurn, slotView, syncAdjustment, type SlotView } from '../../coach/slot-view';
 import { newUuid } from '../../device/runtime';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -24,8 +24,6 @@ import { WhyPanel } from '../coach/CoachCard';
  */
 
 type Offer = WorkoutOffer;
-type RuleIntent = 'too_hard' | 'too_easy';
-type RuleRequest = { sessionExerciseId: string; intent: RuleIntent };
 
 export interface WorkoutCoach {
   availability: CoachAvailability | null;
@@ -42,7 +40,7 @@ export interface WorkoutCoach {
    * reachable, or when its turn can't answer, the built-in rule's change
    * applies at once with Undo (review coach-fallback S1, CLAUDE.md rule 3).
    */
-  askChip: (chip: RuleIntent, sessionExerciseId: string) => void;
+  askChip: (chip: RuleRequest['intent'], sessionExerciseId: string) => void;
   /** `Ask again` / `Try again`: the same request on the current state. */
   retry: () => void;
   cancel: () => void;
@@ -122,21 +120,16 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
           const data = threadId === null ? null : await services.coach.loadThread(threadId).catch(() => null);
           after = slotAfterFailure(data?.actionsByTurn.get(turnId) ?? []);
         }
-        // F3: Adjust on an offer, and the coach couldn't answer: the built-in rule's offer for the same trigger instead.
+        // F3 / S1: the coach couldn't answer, so the built-in rule's offer (Adjust on an offer) or change (Ben's chip).
         const offered = askedOffer.current;
-        askedOffer.current = null;
-        const fallback = offered !== null && after.adjustment === null && coachCouldNotAnswer(result) ? await services.coach.ruleOfferFor(offered).catch(() => null) : null;
-        // S1: Ben's own chip, and the coach couldn't answer: the built-in rule's change applies now.
         const request = askedRequest.current;
+        askedOffer.current = null;
         askedRequest.current = null;
-        const ruled =
-          request !== null && after.adjustment === null && coachCouldNotAnswer(result)
-            ? await services.coach.applyRuleRequest({ sessionId, ...request, opId: turnId }).catch(() => ({ status: 'failed' as const }))
-            : null;
-        const applied = ruled?.status === 'applied' ? ruled.record : after.adjustment;
+        const settled = await settleTurn(services.coach, { sessionId, turnId, result, after, offered, request });
+        const applied = settled.adjustment;
         setAdjustment(applied);
-        setOutcome(fallback !== null || applied !== null ? null : ruled !== null && ruled.status !== 'applied' ? ruleOfferOutcome(ruled.status) : after.outcome);
-        if (fallback !== null) setOffer(fallback);
+        setOutcome(settled.outcome);
+        if (settled.offer !== null) setOffer(settled.offer);
         if (applied !== null) appliedRef.current();
         setPending(null);
         setAvailability(await services.coach.availability());
@@ -226,8 +219,8 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
     },
     ask,
     askChip: (chip, sessionExerciseId) => {
-      const request = { sessionExerciseId, intent: chip };
-      if (availability !== null && availability.status === 'ok') ask({ kind: 'chip', chip }, null, request);
+      const request: RuleRequest = { sessionExerciseId, intent: chip };
+      if (chipRoute(availability) === 'coach') ask({ kind: 'chip', chip }, null, request);
       else
         // Re-read first: `Offline` lapses once the network is back, and then the coach answers.
         void services.coach
@@ -235,7 +228,7 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
           .catch(() => availability)
           .then((now) => {
             if (now !== null) setAvailability(now);
-            if (now?.status === 'ok') ask({ kind: 'chip', chip }, null, request);
+            if (chipRoute(now) === 'coach') ask({ kind: 'chip', chip }, null, request);
             else applyRequest(request);
           });
     },

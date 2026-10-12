@@ -12,10 +12,10 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { WorkoutOffer } from '../src/coach/coach-service';
 import { nextTimeView } from '../src/coach/next-time-view';
-import { correctedSetToCheck, findOffer, NO_HELD_SETS, planOfferCheck } from '../src/coach/offer-check';
+import { chipRoute, correctedSetToCheck, findOffer, NO_HELD_SETS, planOfferCheck, settleTurn, type RuleRequest } from '../src/coach/offer-check';
 import { returnToWorkout } from '../src/navigation/actions';
 import { whyView } from '../src/coach/sheet-view';
-import { coachCouldNotAnswer, offerCandidates, ruleOfferOutcome, slotView } from '../src/coach/slot-view';
+import { coachCouldNotAnswer, offerCandidates, ruleOfferOutcome, slotAfterTurn, slotView } from '../src/coach/slot-view';
 import { exerciseMenu } from '../src/workout/exercise-menu';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -419,6 +419,103 @@ describe('S1: Ben’s own Too hard / Too easy with no coach: the built-in rule a
     expect(ruleOfferOutcome('unchanged').text).toBe('Nothing to change.');
     // Another workout's row, or none: nothing changes.
     expect(await s.coach.applyRuleRequest({ sessionId, sessionExerciseId: 'nope', intent: 'too_hard', opId: 'tap-4' })).toEqual({ status: 'stale' });
+  });
+});
+
+/** A model that waits until the turn is stopped (Ben's Cancel). */
+class HangingModel implements CoachModelPort {
+  readonly requests: ModelRequest[] = [];
+  async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
+    this.requests.push(request);
+    await new Promise<void>((resolve) => request.signal?.addEventListener('abort', () => { resolve(); }));
+    yield* [];
+  }
+}
+
+describe('r2 S1: the chip routing the hook uses (chipRoute, then settleTurn after the coach turn)', () => {
+  /** What `useWorkoutCoach.askChip` and `ask` do for a chip, on the real services. */
+  async function tapChip(s: S, sessionId: string, request: RuleRequest, during?: (turnId: string) => Promise<void>) {
+    const route = chipRoute(await s.coach.availability());
+    if (route === 'rule') {
+      const r = await s.coach.applyRuleRequest({ sessionId, ...request, opId: h.ids() });
+      return { route, adjustment: r.status === 'applied' ? r.record : null, outcome: r.status === 'applied' ? null : ruleOfferOutcome(r.status), offer: null };
+    }
+    const turnId = h.ids();
+    const threadId = await s.coach.resolveThread({ kind: 'workout', sessionId });
+    const sending = s.coach.send({ entry: { kind: 'workout', sessionId }, threadId, input: { kind: 'chip', chip: request.intent }, turnId });
+    if (during !== undefined) await during(turnId);
+    const result = await sending;
+    return { route, ...(await settleTurn(s.coach, { sessionId, turnId, result, after: slotAfterTurn(result), offered: null, request })) };
+  }
+
+  async function plannedLoads(s: S, sessionId: string, ids: string[]) {
+    const a = (await s.workout.load(sessionId))?.aggregate;
+    return ids.map((id) => a?.sets.find((x) => x.id === id)?.planned.load?.value);
+  }
+
+  it('the coach answered with no change: its answer stands, the rule changes nothing', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    await log(s, sessionId, s1.id, 6, 'log-1');
+    model = new StepModel([() => [{ type: 'tool_call', callId: 'c-reply', name: 'reply', arguments: JSON.stringify({ message: 'Keep the load.', offer: null }) }, { type: 'completed' }]]);
+    const r = await tapChip(s, sessionId, { sessionExerciseId: s1.sessionExerciseId, intent: 'too_hard' });
+    expect(r.route).toBe('coach');
+    expect(model.requests).toHaveLength(1);
+    expect(r).toMatchObject({ adjustment: null, offer: null, outcome: { text: 'No change made.' } });
+    expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([62.5, 62.5]);
+  });
+
+  it('the coach turn failed on the network: the rule’s change applies now, with Undo', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    await log(s, sessionId, s1.id, 6, 'log-1');
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    const r = await tapChip(s, sessionId, { sessionExerciseId: s1.sessionExerciseId, intent: 'too_hard' });
+    expect(r.route).toBe('coach');
+    expect(r.adjustment).toMatchObject({ author: 'checks', status: 'committed' });
+    expect(r.outcome).toBeNull();
+    expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([57.5, 57.5]);
+  });
+
+  it('Ben cancelled the coach turn: nothing changes, the rule does not step in', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    await log(s, sessionId, s1.id, 6, 'log-1');
+    const hanging = new HangingModel();
+    model = hanging as unknown as StepModel;
+    const r = await tapChip(s, sessionId, { sessionExerciseId: s1.sessionExerciseId, intent: 'too_hard' }, async (turnId) => {
+      for (let i = 0; i < 200 && hanging.requests.length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+      s.coach.stop(turnId);
+    });
+    expect(r.route).toBe('coach');
+    expect(hanging.requests).toHaveLength(1);
+    expect(r).toMatchObject({ adjustment: null, offer: null });
+    expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([62.5, 62.5]);
+  });
+
+  it('Offline: the chip goes to the rule at once, no AI call', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    await log(s, sessionId, s1.id, 6, 'log-1');
+    // A request failed just now: `Offline` for the next 60 s.
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Hi', spoken: false }, turnId: h.ids() });
+    expect((await s.coach.availability()).status).toBe('offline');
+    const r = await tapChip(s, sessionId, { sessionExerciseId: s1.sessionExerciseId, intent: 'too_hard' });
+    expect(r.route).toBe('rule');
+    expect(model.requests).toHaveLength(1);
+    expect(r.adjustment).toMatchObject({ author: 'checks' });
+    expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([57.5, 57.5]);
+  });
+
+  it('chipRoute: only `ok` asks the coach', () => {
+    expect(chipRoute({ status: 'ok', model: null })).toBe('coach');
+    expect(chipRoute({ status: 'offline', model: null })).toBe('rule');
+    expect(chipRoute(null)).toBe('rule');
   });
 });
 
