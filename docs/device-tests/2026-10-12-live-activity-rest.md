@@ -18,8 +18,8 @@ L5. Log the next set, then tap **+30 s** (or −30 s) on the rest screen and loc
 L6. **Skip rest**, lock: **Ready** for the next set, no countdown.
 L7. Log a set, then **Pause** the workout, lock: **Paused · <workout>**, `Rest m:ss left when you resume`, not counting. Resume, lock: the countdown is back with the right time left.
 L8. **Force-close mid-rest.** Log a set, swipe GymSmarter away in the app switcher, lock: the countdown keeps going and the notification arrives at the end. Open GymSmarter again: still one activity, now showing the true state.
-L9. **Dynamic Island** (iPhone 14 Pro or later): during a rest, in another app, the pill shows the timer icon and the countdown; long-press shows the large countdown, the next set and the target.
-L10. **Legibility.** At arm's length in gym light, the countdown numerals are easy to read; nothing is cut off; long exercise names end in `…` without hiding the target numbers.
+L9. **Dynamic Island** (iPhone 14 Pro or later): during a rest, in another app, the pill shows the timer icon and the countdown; long-press shows the large countdown, the next set and the target. Repeat with a long rest (set the rest to 10:00 or more, e.g. with `+30 s` a few times on a 9:30 rest): the expanded countdown shows every digit (`10:00`, not `1…` or `10:…`); it may shrink a little.
+L10. **Legibility.** At arm's length in gym light, the countdown numerals are easy to read; nothing is cut off; long exercise names end in `…` without hiding the target numbers. Check a short rest (`1:30`) and a long one (`10:00` or more) on the banner: all digits show, and Ben says whether the size is right (he asked for "a bit bigger"; the build has 56pt on the banner, 44pt expanded, against the spec's 28/24pt, waiting for the designer).
 L11. **Always-On** (iPhone 14 Pro or later): with the phone face-up and locked, the activity dims but stays readable.
 L12. **Swipe the activity away** during a rest: it stays gone for this workout (the notification still arrives). The next workout gets one again.
 L13. **Finish** the workout: the activity disappears at once. **Discard** another test workout: same.
@@ -38,8 +38,8 @@ L15. **VoiceOver** on the Lock Screen activity reads `Rest, until hh:mm. Next: <
 | L6 Skip → Ready | | |
 | L7 Pause / resume | | |
 | L8 force-close mid-rest | | |
-| L9 Dynamic Island compact / expanded | | |
-| L10 big numerals readable, nothing cut off | | |
+| L9 Dynamic Island compact / expanded (incl. a 10:00+ rest) | | |
+| L10 big numerals readable, nothing cut off (1:30 and 10:00+); size right for Ben | | |
 | L11 Always-On | | |
 | L12 swiped away stays gone this workout | | |
 | L13 Finish / Discard end it | | |

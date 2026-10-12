@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-globals -- the widget builds Dates from props (not a clock read);
    widget code is serialised alone and can't import the clock helpers. Comments stay outside it. */
 import { HStack, Image, Spacer, Text, VStack } from '@expo/ui/swift-ui';
-import { accessibilityElement, accessibilityLabel, activityBackgroundTint, font, foregroundStyle, frame, lineLimit, monospacedDigit, padding } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityElement, accessibilityLabel, activityBackgroundTint, font, foregroundStyle, frame, lineLimit, minimumScaleFactor, monospacedDigit, padding } from '@expo/ui/swift-ui/modifiers';
 import { createLiveActivity, type LiveActivityEnvironment, type LiveActivityFactory } from 'expo-widgets';
 
 import type { WorkoutActivityProps } from './controller';
@@ -22,6 +22,12 @@ import type { WorkoutActivityProps } from './controller';
  * Device-checked: the probe's countdown (build with the App Group fix). Not
  * yet device-checked: this layout (Spacer, sizes) and the update path; see
  * docs/device-tests/2026-10-12-live-activity-rest.md.
+ *
+ * Sizes: 56pt banner / 44pt expanded is the build's answer to Ben's "a bit
+ * bigger"; the spec's `type.liveCountdown` still says 28/24pt and waits for
+ * the designer (review ben-bugs S3). The large numerals shrink to fit (down to
+ * 60%) rather than truncate on a long rest (`10:00`, `1:02:30`); not yet
+ * checked on the phone (L9, L10).
  */
 const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityEnvironment) => {
   'widget';
@@ -32,7 +38,7 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
   const icon = props.state === 'paused' ? 'pause.circle.fill' : props.state === 'ready' ? 'figure.strengthtraining.traditional' : 'timer';
   const iconColour = props.state === 'paused' ? '#F2B84B' : '#EDE5DA';
   const big = counting ? (
-    <Text timerInterval={range} countsDown modifiers={[font({ size: 56, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]} />
+    <Text timerInterval={range} countsDown modifiers={[font({ size: 56, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1), minimumScaleFactor(0.6)]} />
   ) : props.side !== '' ? (
     <Text modifiers={[font({ size: 40, weight: numeralWeight }), monospacedDigit(), foregroundStyle('#F3EEE8'), lineLimit(1)]}>{props.side}</Text>
   ) : null;
@@ -65,7 +71,7 @@ const WorkoutActivity = (props: WorkoutActivityProps, environment: LiveActivityE
       </HStack>
     ),
     expandedTrailing: counting ? (
-      <Text timerInterval={range} countsDown modifiers={[font({ size: 44, weight: numeralWeight }), monospacedDigit(), lineLimit(1), padding({ trailing: 8 })]} />
+      <Text timerInterval={range} countsDown modifiers={[font({ size: 44, weight: numeralWeight }), monospacedDigit(), lineLimit(1), minimumScaleFactor(0.6), padding({ trailing: 8 })]} />
     ) : (
       <Text modifiers={[font({ size: 34, weight: numeralWeight }), monospacedDigit(), padding({ trailing: 8 })]}>{props.side}</Text>
     ),
