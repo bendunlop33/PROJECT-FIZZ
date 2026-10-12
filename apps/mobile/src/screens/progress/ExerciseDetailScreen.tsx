@@ -116,23 +116,41 @@ export function ExerciseDetailScreen() {
     navigation.navigate('Summary', { sessionId, back: true });
   };
 
+  // The delete Undo toast floats over every state: deleting the exercise's only workout leaves no chart, but the Undo must still show (review progress-merge S1).
+  const deleteToast = deleted.toast ? (
+    <View
+      style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
+      onLayout={(e) => {
+        setToastHeight(e.nativeEvent.layout.height);
+      }}
+    >
+      <DeleteToastView state={deleted} />
+    </View>
+  ) : null;
+
   if (data.state === 'error') {
     return (
-      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.components.screenMargin }}>
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open your training data." info={data.message} infoLabel="Error details" action={<TextButton label="Try again" onPress={reload} />} />
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
+        <View style={{ padding: theme.components.screenMargin }}>
+          <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open your training data." info={data.message} infoLabel="Error details" action={<TextButton label="Try again" onPress={reload} />} />
+        </View>
+        {deleteToast}
       </View>
     );
   }
   if (data.state === 'ready' && view === null) {
     return (
-      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.components.screenMargin }}>
-        <AppText variant="body" color="text.secondary">
-          No finished workouts with this exercise yet.
-        </AppText>
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
+        <View style={{ padding: theme.components.screenMargin }}>
+          <AppText variant="body" color="text.secondary">
+            No finished workouts with this exercise yet.
+          </AppText>
+        </View>
+        {deleteToast}
       </View>
     );
   }
-  if (view === null) return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
+  if (view === null) return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>{deleteToast}</View>;
 
   // The opened workout may sit inside a weekly-best point: the service says which point and what the panel shows.
   const picked = chartSelection(view.points, view.selection, selectedId);
@@ -488,16 +506,7 @@ export function ExerciseDetailScreen() {
           navigation.navigate('Coach', { entry: { kind: 'progress_exercise', exerciseName: view.title, seriesLabel: view.seriesLabel, from: view.bounds.from, to: view.bounds.to } });
         }}
       />
-      {deleted.toast ? (
-        <View
-          style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
-          onLayout={(e) => {
-            setToastHeight(e.nativeEvent.layout.height);
-          }}
-        >
-          <DeleteToastView state={deleted} />
-        </View>
-      ) : null}
+      {deleteToast}
       <E1rmSheet
         visible={infoOpen}
         onClose={() => {

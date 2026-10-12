@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { AppServices } from '../src/services/app-services';
@@ -102,5 +105,37 @@ describe('Progress leaves a deleted workout out, and has it back on Restore', ()
     expect((await s.progress.exercises())?.view.empty).toBe(true);
     expect((await s.history.restoreWorkouts(undo, 'restore-only')).ok).toBe(true);
     expect(await counted(s)).toEqual(before);
+  });
+});
+
+describe('Exercise detail keeps the delete Undo when the exercise has no workouts left (review progress-merge S1)', () => {
+  it('deleting the exercise’s only workout leaves no detail view; Undo brings the same view back', async () => {
+    const { s, gymId } = await setUp();
+    await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 50, reps: 10 }] }]);
+    h.clockMs += 3 * HOUR;
+    const only = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const row = (await s.progress.exercises())?.view.rows.find((r) => r.name === 'Bench press');
+    if (!row) throw new Error('no Bench press row');
+    const before = (await s.progress.exerciseDetail({ exerciseId: row.exerciseId }))?.view;
+    expect(before).toBeTruthy();
+    const undo = await deleteOne(s, only, 'del-bench-only');
+    // The screen's `No finished workouts with this exercise yet.` branch.
+    expect((await s.progress.exerciseDetail({ exerciseId: row.exerciseId }))?.view ?? null).toBeNull();
+    expect((await s.history.restoreWorkouts(undo, 'restore-bench-only')).ok).toBe(true);
+    expect((await s.progress.exerciseDetail({ exerciseId: row.exerciseId }))?.view).toEqual(before);
+  });
+
+  it('the screen renders the toast overlay in its error, empty, loading and normal states', () => {
+    const src = readFileSync(join(import.meta.dirname, '../src/screens/progress/ExerciseDetailScreen.tsx'), 'utf8');
+    // One overlay, built once, before the first early return.
+    expect(src.match(/<DeleteToastView /g)).toHaveLength(1);
+    const overlayAt = src.indexOf('const deleteToast =');
+    const firstReturn = src.indexOf("if (data.state === 'error')");
+    expect(overlayAt).toBeGreaterThan(0);
+    expect(overlayAt).toBeLessThan(firstReturn);
+    // Every render branch after it places `{deleteToast}`: error, empty, loading, and the chart.
+    const branches = src.slice(firstReturn).split(/\n {2}(?:if \(|return \()/).filter((b) => b.includes('<View'));
+    expect(branches.length).toBeGreaterThanOrEqual(4);
+    for (const b of branches) expect(b).toContain('{deleteToast}');
   });
 });
