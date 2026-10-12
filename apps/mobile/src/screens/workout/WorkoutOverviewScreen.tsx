@@ -216,8 +216,8 @@ export function WorkoutOverviewScreen() {
     (r) => {
       changed();
       showLibraryToast({ key: r.id, text: LIBRARY_COPY_UI.savedToWorkouts, undo: { kind: 'delete', routineId: r.id, version: r.version } });
-      // A coach draft saved (workout-builder BD12): the page is the new workout now, in place; the rows don't change.
-      if (target.kind === 'coach_draft') setTarget({ kind: 'routine', routineId: r.id });
+      // A coach draft saved (BD12): the page stays on the draft (review S6). Switching to the new workout would plan it
+      // as never done and blank its loads while WB16 / §11 item 1 (the never-done `Auto` rule) is unapproved.
     },
     () => {
       setToast({ text: LIBRARY_COPY_UI.nothingToSave });

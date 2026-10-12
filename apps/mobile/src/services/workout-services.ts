@@ -1,6 +1,7 @@
 import {
   addDays,
   coachDraftIsOpen,
+  coachDraftListed,
   currentDraftVersion,
   discardWorkoutDraft,
   draftAsRoutine,
@@ -3099,20 +3100,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const name = checkRoutineName(req.name, []);
         if (!name.ok) return { ok: false, message: name.message };
         const id = deriveId(`routine:${req.opId}`);
+        // A coach draft names the workout it was saved as (BD12); it stays open, so Ben may still start it.
+        // Review S8: the link runs on a replay too, so a link lost to a failure or a force-close is made by the retry.
+        const linked = async (saved: LibrarySaveWrite): Promise<LibrarySaveWrite> => {
+          if (saved.ok && req.from.kind === 'preview' && req.from.target.kind === 'coach_draft' && saved.routine.createdFromDraft?.draftId === req.from.target.draftId) {
+            const versionN = saved.routine.createdFromDraft.version;
+            const routineId = saved.routine.id;
+            await ctx
+              .store()
+              .repos.workoutDrafts.write(p.id, req.from.target.draftId, (c) => linkDraftRoutine(c, { routineId, opId: `save:${req.opId}`, at: ctx.now(), versionN }))
+              .catch(() => null);
+          }
+          return saved;
+        };
         const existing = await repos().routines.get(id).catch(() => null);
-        if (existing) return existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed };
+        if (existing) return linked(existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed });
         const made = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
         if (made === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
-        const saved = await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing);
-        // A coach draft names the workout it was saved as (BD12); it stays open, so Ben may still start it.
-        if (saved.ok && req.from.kind === 'preview' && req.from.target.kind === 'coach_draft') {
-          const draftId = req.from.target.draftId;
-          await ctx
-            .store()
-            .repos.workoutDrafts.write(p.id, draftId, (c) => linkDraftRoutine(c, { routineId: saved.routine.id, opId: `save:${req.opId}`, at: ctx.now() }))
-            .catch(() => null);
-        }
-        return saved;
+        return linked(await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing));
       } catch {
         return { ok: false, message: LIBRARY_COPY.saveFailed };
       }
@@ -3461,7 +3466,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           edited: isEdited(targetOf(t)),
         });
         const ordered = orderSessionTypes(startable, recommendedKey);
-        const fromCoach = await coachDraftRows(p, live).catch(() => [] as CoachDraftRow[]);
+        const fromCoach = await coachDraftRows(p).catch(() => [] as CoachDraftRow[]);
         return { upNext: ordered.upNext === null ? null : row(ordered.upNext), workouts: ordered.workouts.map(row), fromHistory: ordered.fromHistory.map(row), older: ordered.older.map(row), recommendedKey, fromCoach };
       } catch {
         return null;
@@ -4261,16 +4266,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   /**
    * `FROM COACH` (workout-builder §4.4): open coach drafts, newest first. A
-   * draft saved to Workouts is listed under its workout instead (unless that
-   * workout was deleted again). Expired drafts are closed on this read (BD4).
+   * draft saved to Workouts stays listed until it is started (review S6:
+   * the never-done `Auto` rule, §11 item 1, isn't approved). Expired drafts
+   * are closed on this read (BD4).
    */
-  async function coachDraftRows(p: UserProfile, live: readonly Routine[]): Promise<CoachDraftRow[]> {
+  async function coachDraftRows(p: UserProfile): Promise<CoachDraftRow[]> {
     const now = ctx.now();
     const drafts = ctx.store().repos.workoutDrafts;
     await drafts.expire(p.id, now.utc).catch(() => [] as WorkoutDraft[]);
-    const liveIds = new Set(live.map((r) => r.id));
     return (await drafts.listByOwner(p.id))
-      .filter((d) => coachDraftIsOpen(d, now.utc) && (d.routineId === null || !liveIds.has(d.routineId)))
+      .filter((d) => coachDraftListed(d, now.utc))
       .sort((a, b) => toMs(b.createdAt.utc) - toMs(a.createdAt.utc) || (a.id < b.id ? -1 : 1))
       .map((d) => ({
         key: `coach_draft:${d.id}`,
@@ -4322,7 +4327,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async list(): Promise<CoachDraftRow[]> {
       try {
         const p = await owner();
-        return await coachDraftRows(p, liveRoutines(await repos().routines.listByOwner(p.id)));
+        return await coachDraftRows(p);
       } catch {
         return [];
       }

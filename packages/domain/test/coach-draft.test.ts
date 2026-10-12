@@ -553,11 +553,18 @@ describe('lifecycle: 14 days, discard with Undo, saved and started (BD4, BD12, r
     const saved = linkDraftRoutine(d, { routineId: id(980), opId: 'save', at: at(30) });
     if (saved.kind !== 'write') throw new Error(saved.kind);
     expect(saved.next).toMatchObject({ status: 'open', routineId: id(980) });
-    expect(coachDraftListed(saved.next, at(31).utc)).toBe(false);
+    // Review S6: still listed until started (WB16 / §11 item 1 unapproved).
+    expect(coachDraftListed(saved.next, at(31).utc)).toBe(true);
     expect(linkDraftRoutine(saved.next, { routineId: id(980), opId: 'save', at: at(31) }).kind).toBe('duplicate');
     const unsaved = linkDraftRoutine(saved.next, { routineId: null, opId: 'unsave', at: at(32) });
     if (unsaved.kind !== 'write') throw new Error(unsaved.kind);
     expect(coachDraftListed(unsaved.next, at(33).utc)).toBe(true);
+    // Review S8: a closed draft isn't linked; nor one that moved past the version the workout was saved from.
+    const gone = discardWorkoutDraft(d, { expectedVersion: d.version, opId: 'gone', at: at(34) });
+    if (gone.kind !== 'write') throw new Error(gone.kind);
+    expect(linkDraftRoutine(gone.next, { routineId: id(981), opId: 'save-2', at: at(35) }).kind).toBe('closed');
+    expect(linkDraftRoutine(d, { routineId: id(981), opId: 'save-3', at: at(35), versionN: 2 }).kind).toBe('stale');
+    expect(linkDraftRoutine(d, { routineId: id(981), opId: 'save-4', at: at(35), versionN: 1 }).kind).toBe('write');
   });
 
   it('the card’s end states come from the stored draft (§4.2)', () => {

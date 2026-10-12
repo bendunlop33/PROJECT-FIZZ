@@ -653,9 +653,12 @@ export function coachDraftIsOpen(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc'
   return d.status === 'open' && toMs(nowUtc) < toMs(d.expiresAtUtc);
 }
 
-/** Listed under `FROM COACH` (§4.4): open, not expired, not started. A saved draft is listed under its workout instead. */
-export function coachDraftListed(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc' | 'routineId'>, nowUtc: string): boolean {
-  return coachDraftIsOpen(d, nowUtc) && d.routineId === null;
+/**
+ * Listed under `FROM COACH` (§4.4): open, not expired, not started. Review S6: a saved draft stays
+ * listed until it is started, while the never-done `Auto` rule (§11 item 1, WB16) is unapproved.
+ */
+export function coachDraftListed(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc'>, nowUtc: string): boolean {
+  return coachDraftIsOpen(d, nowUtc);
 }
 
 export type DraftLifeChange =
@@ -744,10 +747,15 @@ export function restoreWorkoutDraft(current: WorkoutDraft, input: { expectedVers
   return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'open', discardedAtUtc: null }), expectedVersion: current.version };
 }
 
-/** `Save to Workouts` (BD12): the draft names the workout it was saved as (still open: Ben may start it). `routineId` null: the save's Undo. */
-export function linkDraftRoutine(current: WorkoutDraft, input: { routineId: string | null; opId: string; at: ZonedTimestamp }): DraftLifeChange {
+/**
+ * `Save to Workouts` (BD12): the draft names the workout it was saved as (still open: Ben may start it). `routineId` null: the save's Undo.
+ * Review S8: a link needs the draft open, and (with `versionN`) still on the version the workout was saved from.
+ */
+export function linkDraftRoutine(current: WorkoutDraft, input: { routineId: string | null; opId: string; at: ZonedTimestamp; versionN?: number }): DraftLifeChange {
   if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
   if (current.routineId === input.routineId) return { kind: 'duplicate', current };
+  if (input.routineId !== null && !coachDraftIsOpen(current, input.at.utc)) return { kind: 'closed', current };
+  if (input.versionN !== undefined && current.currentVersion !== input.versionN) return { kind: 'stale', current };
   return { kind: 'write', next: bump(current, input.opId, input.at.utc, { routineId: input.routineId }), expectedVersion: current.version };
 }
 

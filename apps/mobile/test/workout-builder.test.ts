@@ -311,12 +311,54 @@ describe('Save to Workouts is the library’s save (WB15, BD12)', () => {
     const benchSlot = a.routine.exercises[0];
     expect(benchSlot?.setTemplates.filter((t) => t.setType === 'working').every((t) => t.targetRpe === 8)).toBe(true);
     expect((await s.routines.list()).filter((r) => r.name === 'Push · 45 min')).toHaveLength(1);
-    // The draft names it and leaves `FROM COACH`; it is still open (Ben may start it).
+    // The draft names it and stays in `FROM COACH` until started (review S6: WB16 / §11 item 1 unapproved); it is still open.
     expect(await s.coachDrafts.get(draftId)).toMatchObject({ status: 'open', routineId: a.routine.id });
-    expect((await s.sessions.list(gymId))?.fromCoach).toEqual([]);
+    expect((await s.sessions.list(gymId))?.fromCoach?.map((r) => r.draftId)).toEqual([draftId]);
+    // The page after Save still reads the draft, with its loads.
+    const after = await page(s, draftId, gymId);
+    expect(after.view.basis).toMatchObject({ kind: 'coach_draft' });
+    expect(after.view.rows.find((r) => r.name === 'Bench press')?.load.value).toBe(p.view.rows.find((r) => r.name === 'Bench press')?.load.value);
     // Undo (toast): the workout is tombstoned, and the draft is back in `FROM COACH`.
     expect((await s.routines.remove({ routineId: a.routine.id, expectedVersion: a.routine.version, opId: 'undo-save' })).ok).toBe(true);
     expect((await s.sessions.list(gymId))?.fromCoach?.map((r) => r.draftId)).toEqual([draftId]);
+  });
+});
+
+describe('Save’s draft link (review S8)', () => {
+  it('a link lost between the two writes (force-close) is made by the retry with the same opId', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s);
+    const p = await page(s, draftId, gymId);
+    const from = { kind: 'preview' as const, target: { kind: 'coach_draft' as const, draftId }, gymId, previewKey: p.view.previewKey };
+    const a = await s.routines.saveFrom({ from, name: 'Push · 45 min', addToRotation: false, opId: 'save-lost' });
+    if (!a.ok) throw new Error('not saved');
+    await h.forceClose();
+    // As if the app closed after the workout was written and before the draft was linked.
+    const { DatabaseSync } = await import('node:sqlite');
+    const { readdirSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    let undone = 0;
+    for (const f of readdirSync(h.dir).filter((n) => !/-(?:wal|shm)$/.test(n))) {
+      const db = new DatabaseSync(join(h.dir, f));
+      try {
+        const row = db.prepare('SELECT data FROM workout_drafts WHERE id = ?').get(draftId) as { data: string } | undefined;
+        if (row !== undefined) {
+          const d = JSON.parse(row.data) as { routineId: string | null; opIds: string[] };
+          db.prepare('UPDATE workout_drafts SET data = ? WHERE id = ?').run(JSON.stringify({ ...d, routineId: null, opIds: d.opIds.filter((o) => o !== 'save:save-lost') }), draftId);
+          undone += 1;
+        }
+      } catch {
+        // Not the training database.
+      } finally {
+        db.close();
+      }
+    }
+    expect(undone).toBe(1);
+    const { services: s2 } = await h.launch();
+    expect(await s2.coachDrafts.get(draftId)).toMatchObject({ routineId: null });
+    const again = await s2.routines.saveFrom({ from, name: 'Push · 45 min', addToRotation: false, opId: 'save-lost' });
+    expect(again).toMatchObject({ ok: true, duplicate: true });
+    expect(await s2.coachDrafts.get(draftId)).toMatchObject({ status: 'open', routineId: a.routine.id });
   });
 });
 
