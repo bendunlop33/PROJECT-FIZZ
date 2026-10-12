@@ -20,6 +20,7 @@ import { EquipmentInstanceSchema } from './equipment';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
 import { SessionTodayEditsSchema } from './draft';
+import { SessionCoachDraftSchema } from './workout-draft';
 
 /** Values a set can hold: used for actual results and drafts alike. */
 export const SetValuesSchema = z.object({
@@ -553,6 +554,8 @@ export const WorkoutSessionSchema = z.object({
   finishBy: ZonedTimestampSchema.optional(),
   /** The pre-start draft's edits this workout was started with (ADR 0022 §4). Absent = none. */
   todayEdits: SessionTodayEditsSchema.optional(),
+  /** (12 Oct, workout builder §6.3) The coach draft this workout was started from: provenance for `Why?`. Absent = none. */
+  coachDraft: SessionCoachDraftSchema.optional(),
   /**
    * Ben confirmed a long workout's time with `Count it` (progress.md PG25a),
    * Your data. A workout over Progress's 4 h cap counts in `Time in gym` only

@@ -60,7 +60,7 @@ Credentials (ChatGPT sign-in, API keys) are in the Keychain, in neither domain, 
 | `fit-to-time.md` | `How long?` on the overview TIME tile: built-in trim (priority order, limits), coach fit with before → after and Undo, Finish by at Start, trim mid-workout (slice C) |
 | `weekly-plan.md` | Plan hub `Week` segment: weekly pattern, move/skip/replace, missed sessions, endurance entries, approved trade-off warnings, programme blocks |
 | `exercise-library.md` | One exercise picker in four modes (pick one, pick several, swap, browse), custom exercises, history shortcut, substitutions |
-| `workout-builder.md` | Coach-built workouts: Build sheet, generating and offline states, checked review with versions, Start now / Save as routine; programmes later |
+| `workout-builder.md` | Coach-built workouts (v1.0): Build card and draft card in the coach sheet, typed `propose_workout` tool (structure only), drafts opened on the Workout overview with the shared Start, fit and Save to Workouts, `Needs the coach` offline; programmes later |
 
 ### Coach
 

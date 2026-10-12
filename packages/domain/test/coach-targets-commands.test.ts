@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
-import { buildActiveSetView, explainTarget, reduceSession } from '../src/index';
+import { buildActiveSetView, dayMonthText, explainTarget, reduceSession } from '../src/index';
 import { at, id, kg, lb, values } from './fixtures';
 import { apply, BENCH, expectError, expectOk, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -127,5 +127,16 @@ describe('Why? on a coach target (active-workout §2.12, ADR 0020 §4)', () => {
     const why = explainTarget({ aggregate: r.state, setId: b2.id, nowMs: 400_000, basisNow: null, gymNames: {}, painFlags: [], history: [] });
     expect(why?.rows.some((x) => x.key === 'reason')).toBe(false);
     expect(why?.recorded).toBe(true);
+  });
+
+  it('review S7 (workout-builder §6.3): a workout from a coach draft says `From a coach workout · date` first; the draft gone, its start date; the overview dry run, nothing', () => {
+    const s0 = startFixture().state;
+    const s = { ...s0, session: { ...s0.session, coachDraft: { draftId: id(88_001), version: 1, name: 'Push · 45 min' } } };
+    const { b2 } = bench(s);
+    const base = { aggregate: s, setId: b2.id, nowMs: 400_000, basisNow: null, gymNames: {}, painFlags: [], history: [] };
+    expect(explainTarget({ ...base, coachDraftBuiltAt: { utc: '2026-10-12T08:00:00.000Z', tz: 'Europe/London' } })?.rows[0]).toEqual({ key: 'coach_workout', label: null, lines: [`From a coach workout · ${dayMonthText('2026-10-12T08:00:00.000Z', 'Europe/London')}`], kind: 'app' });
+    expect(explainTarget({ ...base, coachDraftBuiltAt: null })?.rows[0]?.key).toBe('coach_workout');
+    expect(explainTarget(base)?.rows.some((x) => x.key === 'coach_workout')).toBe(false);
+    expect(explainTarget({ ...base, aggregate: s0, coachDraftBuiltAt: null })?.rows.some((x) => x.key === 'coach_workout')).toBe(false);
   });
 });

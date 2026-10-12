@@ -30,6 +30,9 @@ export const SESSION_PICKER_COPY = {
   pastWorkouts: 'Past workouts',
   saveAsRoutine: 'Save to Workouts',
   savedAsRoutine: 'Saved to Workouts',
+  fromCoach: 'From coach',
+  coachTag: 'Coach',
+  buildWithCoach: 'Build with coach',
 } as const;
 
 const exercisesText = (n: number): string => `${String(n)} ${n === 1 ? 'exercise' : 'exercises'}`;
@@ -39,17 +42,18 @@ export function lastDoneText(row: Pick<SessionPickerRow, 'lastDone'>, now: Zoned
   return row.lastDone === null ? SESSION_PICKER_COPY.new : formatLastDone(row.lastDone, now);
 }
 
-/** `6 days ago · 5 exercises · Edited`, or `New · 4 exercises` for a routine never done. Actuals only. */
-export function pickerRowDetail(row: Pick<SessionPickerRow, 'lastDone' | 'exerciseCount' | 'edited'>, now: ZonedTimestamp): string {
-  return [lastDoneText(row, now), exercisesText(row.exerciseCount), ...(row.edited ? [SESSION_PICKER_COPY.edited] : [])].join(' · ');
+/** `6 days ago · 5 exercises · Edited`, or `New · 4 exercises` for a routine never done; a coach draft: when it was made. Actuals only. */
+export function pickerRowDetail(row: Pick<SessionPickerRow, 'lastDone' | 'exerciseCount' | 'edited' | 'coachDraft'>, now: ZonedTimestamp): string {
+  const when = row.coachDraft !== undefined ? formatLastDone(row.coachDraft.createdAt, now) : lastDoneText(row, now);
+  return [when, exercisesText(row.exerciseCount), ...(row.edited ? [SESSION_PICKER_COPY.edited] : [])].join(' · ');
 }
 
 /** VoiceOver (§4.5): "Legs, up next, last done 6 days ago, 5 exercises, edited today, selected." */
-export function pickerRowLabel(row: Pick<SessionPickerRow, 'label' | 'lastDone' | 'exerciseCount' | 'edited' | 'recommended'>, now: ZonedTimestamp, selected: boolean): string {
+export function pickerRowLabel(row: Pick<SessionPickerRow, 'label' | 'lastDone' | 'exerciseCount' | 'edited' | 'recommended' | 'coachDraft'>, now: ZonedTimestamp, selected: boolean): string {
   const parts = [
     row.label,
     ...(row.recommended ? ['up next'] : []),
-    row.lastDone === null ? 'new, not done yet' : `last done ${formatLastDone(row.lastDone, now)}`,
+    row.coachDraft !== undefined ? `coach draft, made ${formatLastDone(row.coachDraft.createdAt, now)}` : row.lastDone === null ? 'new, not done yet' : `last done ${formatLastDone(row.lastDone, now)}`,
     exercisesText(row.exerciseCount),
     ...(row.edited ? ['edited today'] : []),
     ...(selected ? ['selected'] : []),
@@ -58,15 +62,16 @@ export function pickerRowLabel(row: Pick<SessionPickerRow, 'label' | 'lastDone' 
 }
 
 /** The row the overview is showing (its `✓`): the same routine, or the same source workout. */
-export function isShownRow(row: Pick<SessionPickerRow, 'routineId' | 'sourceSessionId'>, startOf: OverviewStartOf | null): boolean {
+export function isShownRow(row: Pick<SessionPickerRow, 'routineId' | 'sourceSessionId'> & { target?: OverviewTarget }, startOf: OverviewStartOf | null): boolean {
   if (startOf === null) return false;
   if (startOf.routineOf !== undefined) return row.routineId === startOf.routineOf;
+  if (startOf.coachDraftOf !== undefined) return row.target?.kind === 'coach_draft' && row.target.draftId === startOf.coachDraftOf;
   return row.routineId === null && row.sourceSessionId === startOf.nextOf;
 }
 
 /** Every row, in picker order (routines.md WL4): Up next, `YOUR WORKOUTS`, `FROM HISTORY`, `OLDER`. */
 export function allRows(list: SessionList): SessionPickerRow[] {
-  return [...(list.upNext ? [list.upNext] : []), ...list.workouts, ...list.fromHistory, ...list.older];
+  return [...(list.upNext ? [list.upNext] : []), ...(list.fromCoach ?? []), ...list.workouts, ...list.fromHistory, ...list.older];
 }
 
 export interface PickerSection {
@@ -82,6 +87,8 @@ export interface PickerSection {
  */
 export function pickerSections(list: SessionList): PickerSection[] {
   const labelled = [
+    // workout-builder §4.4: open coach drafts between Up next and `YOUR WORKOUTS`, newest first.
+    { title: SESSION_PICKER_COPY.fromCoach, rows: list.fromCoach ?? [] },
     { title: SESSION_PICKER_COPY.yourWorkouts, rows: list.workouts },
     { title: SESSION_PICKER_COPY.fromHistory, rows: list.fromHistory },
     { title: SESSION_PICKER_COPY.older, rows: list.older },

@@ -16,6 +16,8 @@ import { MIGRATION_0009 } from './schema/0009-progress';
 import { MIGRATION_0010 } from './schema/0010-workout-gaps';
 import { MIGRATION_0011 } from './schema/0011-coach-set-actions';
 import { MIGRATION_0012 } from './schema/0012-today-fit';
+import { MIGRATION_0013 } from './schema/0013-workout-drafts';
+import { MIGRATION_0014 } from './schema/0014-coach-add-exercise';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -48,6 +50,8 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(10, 'workout-gaps', MIGRATION_0010),
   sqlMigration(11, 'coach-set-actions', MIGRATION_0011),
   sqlMigration(12, 'today-fit', MIGRATION_0012),
+  sqlMigration(13, 'workout-drafts', MIGRATION_0013),
+  sqlMigration(14, 'coach-add-exercise', MIGRATION_0014),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */

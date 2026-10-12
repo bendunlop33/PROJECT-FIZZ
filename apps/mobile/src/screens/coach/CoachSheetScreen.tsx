@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { undoOpId, type ContextDescription } from '@fizz/coach';
 import { coachUndoRefusal, toMs } from '@fizz/domain';
-import type { BenInput, CoachThread } from '@fizz/schemas';
+import type { BenInput, BuildFocus, CoachThread } from '@fizz/schemas';
 
 import { MANAGE_USAGE_URL } from '../../ai/coach-connection-view';
 import { nowMs as clockNow } from '../../clock';
@@ -35,6 +35,8 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, TextButton, TextField } from '../../ui';
 import { CoachCard } from './CoachCard';
+import { BuildRequestCard, PendingBuildCard, WorkoutDraftCard } from './BuildCards';
+import { BUILD_COPY, buildCardView, needsCoachView } from '../../coach/build-view';
 
 /**
  * The coach sheet (coach-sheet.md, ADR 0020 C6). A side door: it never opens
@@ -48,7 +50,7 @@ import { CoachCard } from './CoachCard';
 /** Typed text per entry, kept while the app runs (closing the sheet keeps it; CS4). */
 const drafts = new Map<string, string>();
 const entryKey = (e: CoachEntry): string =>
-  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${String(e.days)}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : `${e.kind}:${e.sessionId}`;
+  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${String(e.days)}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : e.kind === 'draft' ? `draft:${e.draftId}` : `${e.kind}:${e.sessionId}`;
 
 export function CoachSheetScreen() {
   const theme = useTheme();
@@ -56,7 +58,7 @@ export function CoachSheetScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { entry, focus = false } = useRoute<RouteProp<RootStackParams, 'Coach'>>().params;
+  const { entry, focus = false, build: buildParam } = useRoute<RouteProp<RootStackParams, 'Coach'>>().params;
   const key = entryKey(entry);
 
   const [availability, setAvailability] = useState<CoachAvailability | null>(null);
@@ -77,6 +79,12 @@ export function CoachSheetScreen() {
   /** Show the choices as chips even when there is one (a short name, say "bench"; never flagged on a guess). */
   const [painPick, setPainPick] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** The Build card (workout-builder §4.1), shown by the chip or an entry from `Build with coach`. */
+  const [showBuild, setShowBuild] = useState(buildParam === true);
+  /** A build turn running (the pending card, §4.2). */
+  const [building, setBuilding] = useState<{ focus: BuildFocus; minutes: number; startedAtMs: number } | null>(null);
+  /** The selected gym a build uses (§4.1 gym line). */
+  const [buildGym, setBuildGym] = useState<{ id: string; name: string } | null>(null);
   const sendGuard = useRef(0);
   const scroll = useRef<ScrollView>(null);
   const field = useRef<TextInput>(null);
@@ -137,6 +145,8 @@ export function CoachSheetScreen() {
         const a = await services.coach.availability();
         if (!alive()) return;
         setAvailability(a);
+        const g = await services.yourData.currentGym().catch(() => null);
+        if (alive()) setBuildGym(g === null ? null : { id: g.id, name: g.name });
         const id = threadId === undefined ? await services.coach.resolveThread(entry).catch(() => null) : threadId;
         if (!alive()) return;
         if (threadId === undefined) setThreadId(id);
@@ -223,6 +233,57 @@ export function CoachSheetScreen() {
       setLive(null);
       setAvailability(await services.coach.availability());
     }
+  }
+
+  /** `Build` on the Build card (§4.1): one message from the chips and one build turn; the pending card until it ends. */
+  async function build(minutes: number | null, f: BuildFocus) {
+    if (live !== null || clockNow() - sendGuard.current < TIMING.commitGuard) return;
+    sendGuard.current = clockNow();
+    const turnId = newUuid();
+    const message = buildCardView({ minutes, focus: f, gymName: buildGym?.name ?? null }).message;
+    setShowBuild(false);
+    setNotice(null);
+    setBuilding({ focus: f, minutes: minutes ?? 60, startedAtMs: clockNow() });
+    setLive(startLiveTurn(turnId, { kind: 'words', text: message, spoken: false }, clockNow()));
+    try {
+      const r = await services.coach.buildWorkout({
+        entry,
+        threadId: threadId ?? null,
+        turnId,
+        minutes,
+        focus: f,
+        extra: text,
+        origin: 'card',
+        onProgress: (p) => {
+          setLive((l) => (l === null || l.turnId !== turnId ? l : applyProgress(l, p)));
+        },
+      });
+      if (!r.ok) {
+        setNotice(needsCoachView(r.block).line);
+        return;
+      }
+      setDraft('');
+      setThreadId(r.result.threadId);
+      await loadRows(r.result.threadId);
+      if (r.result.cards.length > 0) changed();
+    } catch {
+      setNotice('Not sent.');
+    } finally {
+      setBuilding(null);
+      setLive(null);
+      setAvailability(await services.coach.availability());
+    }
+  }
+
+  /** `Open ›` (§4.2): close the sheet, then present the draft's overview. */
+  function openDraft(draftId: string) {
+    navigation.goBack();
+    navigation.navigate('WorkoutOverview', { target: { kind: 'coach_draft', draftId } });
+  }
+
+  function openRoutine(routineId: string) {
+    navigation.goBack();
+    navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId } });
   }
 
   /** `Try again` on a turn's row: that turn's own words as a new turn; a cut-off summary review runs again. */
@@ -408,14 +469,19 @@ export function CoachSheetScreen() {
       ) : null}
 
       <ScrollView ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })} contentContainerStyle={{ padding: theme.components.screenMargin, gap: theme.space['4'], flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-        {empty && chips.length > 0 ? (
+        {empty && chips.length > 0 && !showBuild ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {chips.map((c) => (
               <Chip
                 key={c.label}
-                label={c.label}
+                label={'build' in c && !c.build.enabled ? `${c.label} · ${BUILD_COPY.needsCoach}` : c.label}
                 selected={false}
                 onPress={() => {
+                  // `Build a workout` (workout-builder §3): the Build card; disabled with `Needs the coach` (§5.4).
+                  if ('build' in c) {
+                    if (c.build.enabled) setShowBuild(true);
+                    return;
+                  }
                   if (c.input === null) void pain();
                   else void send(c.input);
                 }}
@@ -423,8 +489,21 @@ export function CoachSheetScreen() {
             ))}
           </View>
         ) : null}
+        {showBuild && live === null ? (
+          <BuildRequestCard gymName={buildGym?.name ?? null} defaultMinutes={null} disabled={status?.canSend !== true} onBuild={(minutes, f) => void build(minutes, f)} />
+        ) : null}
+        {building !== null ? <PendingBuildCard focus={building.focus} minutes={building.minutes} startedAtMs={building.startedAtMs} nowMs={now} onCancel={() => { if (live !== null) services.coach.stop(live.turnId); }} /> : null}
         {rows.map((r) => (
-          <Row key={r.key} row={r} undoBlocked={undoBlocked} onUndo={(id) => void undo(id)} onProposal={(id, tap) => void tapProposal(id, tap)} onMemory={(id, v, d) => void decideMemory(id, v, d)} onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)} />
+          <Row
+            key={r.key}
+            row={r}
+            undoBlocked={undoBlocked}
+            onUndo={(id) => void undo(id)}
+            onProposal={(id, tap) => void tapProposal(id, tap)}
+            onMemory={(id, v, d) => void decideMemory(id, v, d)}
+            onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)}
+            onDraft={{ gymId: buildGym?.id ?? null, open: openDraft, openRoutine: openRoutine, changed: () => { changed(); void loadRows(threadId ?? null); } }}
+          />
         ))}
         {live !== null ? <LiveRows live={live} now={now} /> : null}
         {askPain ? (
@@ -525,6 +604,7 @@ function Row({
   onProposal,
   onMemory,
   onRetry,
+  onDraft,
 }: {
   row: ThreadRow;
   undoBlocked: (actionId: string) => boolean;
@@ -532,6 +612,8 @@ function Row({
   onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
   onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
   onRetry: () => void;
+  /** A coach draft's card (workout-builder §4.2): `Open ›` closes the sheet and opens its overview; the sheet never opens it by itself. */
+  onDraft?: { gymId: string | null; open: (draftId: string) => void; openRoutine: (routineId: string) => void; changed: () => void };
 }) {
   const theme = useTheme();
   switch (row.kind) {
@@ -560,6 +642,7 @@ function Row({
         </AppText>
       );
     case 'card':
+      if (row.card.draft !== undefined && onDraft !== undefined) return <WorkoutDraftCard record={row.card.draft} gymId={onDraft.gymId} onOpen={onDraft.open} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} />;
     case 'note':
       return (

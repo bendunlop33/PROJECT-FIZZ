@@ -68,7 +68,11 @@ export function routeLine(a: CoachAvailability): { text: string; link: { label: 
 // ---------------------------------------------------------------------------
 // Starter chips (CS6): fixed by context, written by us, never by the model
 
-export type StarterChip = { label: string; input: BenInput } | { label: 'Pain'; input: null };
+export type StarterChip =
+  | { label: string; input: BenInput }
+  | { label: 'Pain'; input: null }
+  /** workout-builder §3: opens the Build card in the thread; disabled with `Needs the coach` when the coach can't answer (§5.4). */
+  | { label: 'Build a workout'; input: null; build: { enabled: boolean } };
 
 export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutActive: boolean): StarterChip[] {
   const pain: StarterChip = { label: 'Pain', input: null };
@@ -84,8 +88,12 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
     case 'summary':
       return ready ? [words('What should I change next time?')] : [];
     case 'today':
-      // The coach reads past workouts through `get_training_overview` (backlog §4.3). `Build a workout` and `Plan my week` aren't built.
-      return ready ? [words('How am I doing?')] : [];
+      // The coach reads past workouts through `get_training_overview` (backlog §4.3). `Build a workout` (workout-builder §3) shows
+      // disabled when the coach can't answer (§5.4); `Plan my week` isn't built.
+      return [{ label: 'Build a workout', input: null, build: { enabled: a.status === 'ok' } }, ...(ready ? [words('How am I doing?')] : [])];
+    case 'draft':
+      // `Ask coach` on a coach draft (BD16): Ben says what to change; no chips.
+      return [];
     case 'progress':
     case 'progress_exercise':
       // Progress keeps no starter chip at the merge with coach tools (main's review S4 behaviour); whether it
@@ -97,7 +105,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
 // ---------------------------------------------------------------------------
 // Cards (coach-sheet §2.6): status word and icon, never colour alone
 
-export type CardStatusWord = 'Applied' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested';
+export type CardStatusWord = 'Applied' | 'Added' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested';
 
 export interface CardView {
   actionId: string;
@@ -114,6 +122,8 @@ export interface CardView {
    * be a general rule (CM9 split): `Save as a memory about me` · `Add to playbook` instead of `Save`.
    */
   memoryChoice?: { memoryId: string; version: number; split: boolean };
+  /** A committed coach draft (workout-builder §4.2): the sheet shows the draft card (and, for a new version, the version card) from it. */
+  draft?: ActionRecord;
 }
 
 /**
@@ -195,13 +205,14 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
   switch (r.status) {
     case 'committed':
       if (r.detail.kind === 'log_set') return { word: 'Logged', icon: 'checkmark.circle.fill' };
+      if (r.detail.kind === 'add_exercise_today') return { word: 'Added', icon: 'checkmark.circle.fill' };
       return r.detail.kind === 'save_memory' || r.detail.kind === 'add_playbook_candidate' ? { word: 'Saved', icon: 'checkmark.circle.fill' } : { word: 'Applied', icon: 'checkmark.circle.fill' };
     case 'proposed':
       return { word: 'Suggested', icon: 'minus.circle' };
@@ -221,6 +232,7 @@ export function cardView(r: ActionRecord): CardView {
     text: rendered.text,
     accessibilityPrefix: rendered.accessibilityPrefix,
     canUndo: r.status === 'committed' && r.undoneBy === null && r.detail.kind !== 'undo' && UNDOABLE.has(r.detail.kind),
+    ...(r.detail.kind === 'build_workout' && r.status === 'committed' ? { draft: r } : {}),
   };
 }
 
@@ -432,6 +444,8 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
       return `Sees: ${workoutTitle ?? 'this workout'}`;
     case 'workout':
       return `Sees: ${workoutTitle ?? 'Workout'}${active ? ' (live)' : ''}`;
+    case 'draft':
+      return `Sees: ${entry.name} (draft)`;
   }
 }
 

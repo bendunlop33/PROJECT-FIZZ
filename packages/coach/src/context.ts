@@ -2,6 +2,7 @@ import { buildExecutionOrder, deriveId, stableStringify, targetRpeOf } from '@fi
 import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetValues } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
+import type { BuildContextView } from './build';
 
 /**
  * `buildCoachContext` and `describeCoachContext` (ADR 0020 §6, slice C4).
@@ -89,6 +90,27 @@ export interface CoachContextInput {
    * no numbers, and history stays `not available` until the read tools exist.
    */
   openedFrom?: OpenedFrom;
+  /**
+   * (12 Oct) A build turn (workout-builder §8.4): Ben's request (quoted),
+   * the selected gym's usable exercises, the set budget, the rotation's next
+   * workout and the draft being changed. Your data. Absent on other turns.
+   */
+  build?: BuildContextView;
+  /**
+   * (12 Oct) A workout turn where Ben asked to add an exercise: the
+   * exercises he can do at the workout's gym, not pain-flagged and not
+   * already in it, by the ID `add_exercise_today` takes. Your data (his
+   * exercises and the catalogue's, filtered by his gym). Absent otherwise.
+   */
+  addable?: readonly AddableExercise[];
+}
+
+/** One exercise `add_exercise_today` may add (its ID, as the tool takes it). */
+export interface AddableExercise {
+  exerciseId: string;
+  name: string;
+  equipment: string;
+  measured: 'reps' | 'time';
 }
 
 export type OpenedFrom =
@@ -137,6 +159,10 @@ export interface YourData {
   openedFrom?: OpenedFrom;
   /** Summary turn only: the built-in rule's next targets (playbook 7-F), for comparison. */
   builtInNext?: { exerciseId: string; name: string; target: CoachTarget; sets: number }[];
+  /** Build turns only (workout-builder §8.4). */
+  build?: BuildContextView;
+  /** (12 Oct) Workout turns where Ben asked to add an exercise: what `add_exercise_today` may add. */
+  addable?: AddableExercise[];
 }
 
 export interface CoachingKnowledge {
@@ -234,6 +260,8 @@ export function buildYourData(input: CoachContextInput): YourData {
     memories: input.memories.filter((m) => m.status === 'active').map((m) => ({ text: m.text, savedOn: m.createdAtUtc.slice(0, 10) })),
     ...(input.builtInNext === undefined ? {} : { builtInNext: input.builtInNext.map((b) => ({ ...b })) }),
     ...(input.openedFrom === undefined ? {} : { openedFrom: copyOpenedFrom(input.openedFrom) }),
+    ...(input.build === undefined ? {} : { build: JSON.parse(JSON.stringify(input.build)) as BuildContextView }),
+    ...(input.addable === undefined ? {} : { addable: input.addable.map((a) => ({ ...a })) }),
   };
 }
 
@@ -358,6 +386,14 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
     const o = y.openedFrom;
     yourData.push({ label: 'Opened from', detail: o.screen === 'progress' ? `Progress · last ${String(o.window.days)} days` : `Progress · ${o.exercise} · ${o.series}` });
   }
+  if (y.build !== undefined) {
+    const b = y.build;
+    yourData.push({ label: 'Your request', detail: `“${b.request.quote.slice(0, 80)}”` });
+    if (b.gym !== null) yourData.push({ label: 'Gym', detail: `${b.gym.name}${b.gym.typicalEquipment ? ' · typical equipment' : ''} · ${plural(b.usable.length, 'exercise')} you can do here` });
+    if (b.upNext !== null) yourData.push({ label: 'Up next', detail: b.upNext });
+    if (b.draft !== null) yourData.push({ label: 'Coach draft', detail: `${b.draft.name} · version ${String(b.draft.version)}` });
+  }
+  if (y.addable !== undefined) yourData.push({ label: 'Exercises you can add here', detail: plural(y.addable.length, 'exercise') });
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });
   // Read through tools when a question needs them (minimal by default), still Your data.
   if (!ctx.notAvailable.includes(NO_TRAINING_HISTORY)) yourData.push({ label: 'Past workouts and gym equipment', detail: 'read when needed' });

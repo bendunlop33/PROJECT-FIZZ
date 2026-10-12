@@ -18,3 +18,5 @@ export * from './training-read';
 export * from './structural';
 export * from './chat-set';
 export * from './fit';
+export * from './build';
+export * from './add-exercise';

@@ -12,7 +12,9 @@ import {
 import { PainAreaSchema, type PainFlag } from './checkin';
 import { DraftBasisSchema } from './draft';
 import type { SessionCommand } from './commands';
+import type { Exercise } from './exercise';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
+import { ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 
 /**
  * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
@@ -59,6 +61,14 @@ export const CoachEntityKindSchema = z.enum([
   'playbook_candidate',
   /** (11 Oct) A set Ben told the coach to log, or a logged set he told it to correct: values only, never deleted. */
   'logged_set',
+  /** (12 Oct, workout builder) A coach-built workout draft: a new draft or a new version of one; never a template or a session. */
+  'workout_draft',
+  /**
+   * (12 Oct) An exercise the coach added to today's workout because Ben asked
+   * (`add_exercise_today`): a new row with pending sets only, through the
+   * workout's own `add_exercise` command; Undo takes it out while nothing on it is done.
+   */
+  'session_exercise',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -143,6 +153,33 @@ export const CorrectSetArgsSchema = z.strictObject({
   rpe: z.number().min(1).max(10).multipleOf(0.5).nullable(),
 });
 export type CorrectSetArgs = z.infer<typeof CorrectSetArgsSchema>;
+
+/**
+ * (12 Oct) Add an exercise to today's workout when Ben asks ("add 3 sets of
+ * lateral raises", "put in some curls"). Structure only: the app plans the
+ * loads from Ben's history on this gym's equipment (no history: blank, B6),
+ * through the workout's own `add_exercise` command. Wide bounds here; the
+ * domain check clamps with a note, like `propose_workout`.
+ */
+export const AddExerciseTodayArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  /** From `addable` in the context: a catalogue ID or Ben's own exercise's ID. */
+  exerciseId: z.string().min(1).max(80),
+  workingSets: z.int().min(0).max(100),
+  /** Rep range for a reps exercise; null = the built-in rule's range. */
+  reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
+  /** Work time for a timed exercise. */
+  workSeconds: z.int().min(0).max(36_000).nullable(),
+  /** Working sets' target RPE, 5–10 in half steps; null = the usual target. */
+  targetRpe: z.number().min(0).max(20).nullable(),
+  /** Straight after this exercise of today's workout; null = at the end. */
+  afterSessionExerciseId: IdSchema.nullable(),
+  /** In a superset with this exercise of today's workout (it must have a set left); null = none. */
+  supersetWithSessionExerciseId: IdSchema.nullable(),
+  reason,
+});
+export type AddExerciseTodayArgs = z.infer<typeof AddExerciseTodayArgsSchema>;
 
 export const GetRecentActionsArgsSchema = z.strictObject({
   limit: z.int().min(1).max(10),
@@ -249,6 +286,8 @@ export const CoachToolNameSchema = z.enum([
   'get_substitutions',
   'get_recent_actions',
   'adjust_pending_sets',
+  /** (12 Oct) Add an exercise to today's workout when Ben asks; applied at once with Undo. */
+  'add_exercise_today',
   'log_set',
   'correct_set',
   'set_next_session_targets',
@@ -258,6 +297,8 @@ export const CoachToolNameSchema = z.enum([
   'suggest_memory',
   'forget_memory',
   'add_playbook_candidate',
+  /** (12 Oct) The workout builder's only tool (workout-builder BD1): structure only, no loads or minutes. */
+  'propose_workout',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -271,6 +312,7 @@ export const COACH_TOOL_ARGS = {
   get_substitutions: GetSubstitutionsArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
+  add_exercise_today: AddExerciseTodayArgsSchema,
   log_set: LogSetArgsSchema,
   correct_set: CorrectSetArgsSchema,
   set_next_session_targets: SetNextSessionTargetsArgsSchema,
@@ -280,6 +322,7 @@ export const COACH_TOOL_ARGS = {
   suggest_memory: SaveMemoryArgsSchema,
   forget_memory: ForgetMemoryArgsSchema,
   add_playbook_candidate: AddPlaybookCandidateArgsSchema,
+  propose_workout: ProposeWorkoutArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -344,6 +387,8 @@ export const GuardNoteKindSchema = z.enum([
   'structural_dropped',
   /** The coach's target RPE wasn't used: Ben set his own for the set (review target-rpe S2). */
   'rpe_overridden',
+  /** (12 Oct) A workout-builder check (`checkWorkoutProposal`, BD9): left out, swapped, clamped or filled in. */
+  'build_check',
 ]);
 export type GuardNoteKind = z.infer<typeof GuardNoteKindSchema>;
 
@@ -409,6 +454,25 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     kind: z.literal('adjust_pending_sets'),
     sessionId: IdSchema,
     exercises: z.array(ExerciseTargetChangesSchema).max(12),
+  }),
+  /**
+   * (12 Oct) An exercise added to today's workout from chat. `sessionExerciseId`:
+   * the new row (Undo takes it out with `undo_op` while none of its sets is done).
+   * `target`: the first working set's target as saved (load null = blank, no history
+   * on that equipment, B6). App text names only, never model words.
+   */
+  z.object({
+    kind: z.literal('add_exercise_today'),
+    sessionId: IdSchema,
+    sessionExerciseId: IdSchema,
+    exerciseId: IdSchema.nullable(),
+    exerciseName: z.string().min(1).max(120),
+    sets: z.int().min(0).max(20),
+    target: CoachTargetSchema.nullable(),
+    durationS: z.int().min(0).max(36_000).nullable(),
+    equipmentName: z.string().min(1).max(120).nullable(),
+    afterName: z.string().min(1).max(120).nullable(),
+    supersetWithName: z.string().min(1).max(120).nullable(),
   }),
   /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
   z.object({
@@ -532,6 +596,23 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     lines: z.array(z.string().min(1).max(200)).max(40),
     rejected: z.array(z.object({ text: z.string().min(1).max(200), why: z.string().min(1).max(40) })).max(40),
     suggestions: z.array(z.object({ slotKey: IdSchema, toExerciseId: IdSchema, text: z.string().min(1).max(200) })).max(6),
+  }),
+  /**
+   * (12 Oct, workout builder) The coach built a workout draft, or a new
+   * version of one (BD16), because Ben asked. App text and counts only; the
+   * card reads the draft itself. `lines`: the `diffDraftVersions` lines
+   * against the parent version (empty for a first version).
+   */
+  z.object({
+    kind: z.literal('build_workout'),
+    draftId: IdSchema,
+    versionN: z.int().min(1),
+    parentN: z.int().min(1).nullable(),
+    name: z.string().min(1).max(120),
+    exerciseCount: z.int().min(0).max(40),
+    leftOut: z.int().min(0).max(40),
+    gymName: z.string().min(1).max(120).nullable(),
+    lines: z.array(StructuralChangeLineSchema).max(40),
   }),
   z.object({
     kind: z.literal('undo'),
@@ -835,8 +916,18 @@ export type CoachWrite =
    * through the reducer inside the same transaction as the record, so the
    * targets and their record are saved together or not at all (rule 5).
    */
-  /** `expectedSessionVersion`: refused as stale when the workout moved on since the caller read it (checked inside the write, review N3). */
-  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number };
+  /**
+   * `expectedSessionVersion`: refused as stale when the workout moved on since the caller read it (checked inside the write, review N3).
+   * `saveExercise` (coach add, review S3): a catalogue exercise not yet in Ben's exercises, saved in the same
+   * transaction as the command, so a refused or stale add leaves no exercise row behind (audit F4).
+   */
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise }
+  /**
+   * (12 Oct, workout builder) A coach draft and its record, in one write.
+   * `expectedVersion`: null creates the draft; otherwise the draft's version
+   * the new version was built on (a newer one refuses it as stale, rule 5).
+   */
+  | { kind: 'workout_draft'; action: ActionRecord; draft: WorkoutDraft; expectedVersion: number | null };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

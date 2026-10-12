@@ -10,6 +10,7 @@ import type {
   SetValues,
   TargetBasis,
   TargetProvenance,
+  ZonedTimestamp,
 } from '@fizz/schemas';
 import { dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText } from '../display';
 import type { HistorySession } from '../progression';
@@ -30,7 +31,7 @@ import { equipmentOfRow } from './equipment-snapshot';
  * coach's words; `Last time` and `Before flag` hold actual results.
  */
 
-export type WhyRowKey = 'set_by' | 'last_time' | 'reason' | 'equipment' | 'pain' | 'before_flag' | 'not_used' | 'swapped';
+export type WhyRowKey = 'coach_workout' | 'set_by' | 'last_time' | 'reason' | 'equipment' | 'pain' | 'before_flag' | 'not_used' | 'swapped';
 
 export interface WhyRow {
   key: WhyRowKey;
@@ -66,6 +67,12 @@ export interface ExplainTargetInput {
   painFlags: readonly PainFlag[];
   /** This exercise's finished history, without this workout (`Last time` when nothing was stored, `Before flag`). */
   history: readonly HistorySession[];
+  /**
+   * A started workout's set `Why?` (workout-builder §6.3): when the coach built the draft it started
+   * from (null: the draft is gone, the workout's start date is used). Absent (the overview's dry run):
+   * no `From a coach workout` line.
+   */
+  coachDraftBuiltAt?: ZonedTimestamp | null;
 }
 
 /** `timing.painReferenceWindow`: `Before flag` stays this long after a flag is cleared (active-workout §9). */
@@ -310,6 +317,11 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   const tz = state.session.startedAt.tz;
 
   const rows: WhyRow[] = [];
+  // workout-builder §6.3, WB25: a workout started from a coach draft says so first (review S7).
+  if (state.session.coachDraft !== undefined && input.coachDraftBuiltAt !== undefined) {
+    const built = input.coachDraftBuiltAt ?? state.session.startedAt;
+    rows.push({ key: 'coach_workout', label: null, lines: [`From a coach workout · ${dayMonthText(built.utc, built.tz)}`], kind: 'app' });
+  }
   // Swapped on the Workout overview before Start (ADR 0022 §4): said first, then the usual explanation of the substitute's target.
   const swapped = state.session.todayEdits?.swapped.find((x) => x.sessionExerciseId === ex.id);
   if (swapped !== undefined) rows.push({ key: 'swapped', label: null, lines: [`Swapped before start · ${swapped.fromExerciseName}`], kind: 'app' });

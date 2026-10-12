@@ -48,7 +48,7 @@ import { createGymServices } from './gym-services';
 import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
 import { createHistoryServices } from './history-services';
-import { createWorkoutServices, STALE_PREVIEW, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
+import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 
 /**
@@ -506,11 +506,14 @@ export function createAppServices(deps: AppServicesDeps) {
     newId: deps.newId,
     ...(deps.coach === undefined ? {} : { model: deps.coach.model, connection: deps.coach.connection }),
     builtInNextTargets: (sessionId) => loop.workout.builtInNextTargets(sessionId),
+    coachAddInputs: (exerciseId, aggregate) => loop.workout.coachAddInputs(exerciseId, aggregate),
     onSessionChanged: (a) => {
       if (deps.restAlerts) void deps.restAlerts.reconcile(a, toMs(deps.now().utc));
     },
     catalogueExercises,
     catalogueSubstitutions,
+    // A build with no gym yet plans on the typical gym's items (workout-builder §4.1 `⚠ No gym`).
+    typicalEquipment: () => typicalEquipment(),
   });
 
   /** Gyms and equipment (Your data): the minimal gym editor. */
@@ -552,7 +555,7 @@ export function createAppServices(deps: AppServicesDeps) {
    */
   async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number; landedLate: number }> {
     const none = { wrote: false, refused: 0, landedLate: 0 };
-    const basis: DraftBasis = startOf.routineOf !== undefined ? { kind: 'routine', routineId: startOf.routineOf } : { kind: 'next', sourceSessionId: startOf.nextOf };
+    const basis: DraftBasis = startBasisOf(startOf);
     const applies = await coach.appliedStructural(basis);
     if (applies.length === 0) return none;
     const p = await getProfile();
@@ -622,7 +625,7 @@ export function createAppServices(deps: AppServicesDeps) {
       const base = {
         opId: req.opId,
         checkIn: req.checkIn,
-        ...(req.startOf.routineOf !== undefined ? { routineOf: req.startOf.routineOf } : { nextOf: req.startOf.nextOf }),
+        ...(req.startOf.routineOf !== undefined ? { routineOf: req.startOf.routineOf } : req.startOf.coachDraftOf !== undefined ? { coachDraftOf: req.startOf.coachDraftOf } : { nextOf: req.startOf.nextOf }),
         ...(req.draft !== undefined ? { draft: req.draft } : {}),
       };
       if (req.gymId !== null) return loop.workout.start({ ...base, gymId: req.gymId, expectedPreviewKey: req.expectedPreviewKey });
@@ -696,6 +699,16 @@ export function createAppServices(deps: AppServicesDeps) {
     async applyTodayEdits(req: Omit<Parameters<typeof loop.routines.applyTodayEdits>[0], 'typicalEquipment'>) {
       return loop.routines.applyTodayEdits({ ...req, ...(await typicalFor(req.gymId)) });
     },
+  };
+
+  /** Coach-built drafts (workout-builder §4.2): the card plans on the typical gym too when there is none yet. */
+  const coachDrafts = {
+    ...loop.coachDrafts,
+    async card(req: Omit<Parameters<typeof loop.coachDrafts.card>[0], 'typicalEquipment'>) {
+      return loop.coachDrafts.card({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    /** Whether a build can start (§5.4): reads the connection settings only, never the network or the model. */
+    buildBlock: () => coach.buildBlock(),
   };
 
   async function typicalFor(gymId: string | null): Promise<{ typicalEquipment?: EquipmentInstance[] }> {
@@ -786,6 +799,7 @@ export function createAppServices(deps: AppServicesDeps) {
     history,
     overview,
     routines,
+    coachDrafts,
     progress,
     data,
     coach,

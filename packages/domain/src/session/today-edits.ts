@@ -48,9 +48,16 @@ import { swapEquipmentId, type SwapPlan } from './swap-plan';
 // ---------------------------------------------------------------------------
 // Lifecycle
 
-/** `routine:<id>` / `next:<id>`: the key of the one open draft per basis. */
+/** `routine:<id>` / `next:<id>` / `coach_draft:<id>`: the key of the one open draft per basis. */
 export function draftBasisKey(basis: DraftBasis): string {
-  return basis.kind === 'routine' ? `routine:${basis.routineId}` : `next:${basis.sourceSessionId}`;
+  switch (basis.kind) {
+    case 'routine':
+      return `routine:${basis.routineId}`;
+    case 'next':
+      return `next:${basis.sourceSessionId}`;
+    case 'coach_draft':
+      return `coach_draft:${basis.draftId}`;
+  }
 }
 
 export function sameBasis(a: DraftBasis, b: DraftBasis): boolean {
@@ -84,8 +91,8 @@ export type TodayEditBody =
   | { kind: 'reps'; slotKey: string; reps: RepRange | null; durationS: number | null }
   /** `exerciseId`: set by `applyDraftCommand` to the slot's exercise when the load is typed (review B1); a caller's value is ignored. */
   | { kind: 'load'; slotKey: string; load: Load; exerciseId?: string }
-  /** Fit to time (fit-to-time FT4): Ben's `Trim to 45 min`. */
-  | { kind: 'fit'; minutes: number };
+  /** Fit to time (fit-to-time FT4): Ben's `Trim to 45 min`. `null`: no fit today (a coach draft's `Clear fit`, workout-builder BD11). */
+  | { kind: 'fit'; minutes: number | null };
 
 /** Who made a stored edit, kept when an edit is copied back (Undo, restore). Ben's taps never set it. */
 type Authorship = { author?: 'ben' | 'coach'; actionId?: string };
@@ -212,7 +219,7 @@ function inRange(e: TodayEditBody): boolean {
     case 'load':
       return Number.isFinite(e.load.value) && e.load.value >= 0 && e.load.value <= 2000;
     case 'fit':
-      return validFitMinutes(e.minutes);
+      return e.minutes === null || validFitMinutes(e.minutes);
     case 'add':
       return e.workingSets === undefined || (Number.isInteger(e.workingSets) && e.workingSets >= L.minSets && e.workingSets <= L.maxSets);
     case 'swap':
@@ -731,7 +738,8 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
   // The fit first (FT4): the newest live one. A coach edit whose coach fit isn't the live one is left over: stale.
   const fits = liveEdits(edits).filter((e): e is Extract<TodayEdit, { kind: 'fit' }> => e.kind === 'fit');
   const liveFit = fits.at(-1);
-  if (liveFit !== undefined) {
+  // A live `minutes: null` fit means "no fit today" (workout-builder BD11): nothing is trimmed.
+  if (liveFit !== undefined && liveFit.minutes !== null) {
     const coach = liveFit.author === 'coach' && liveFit.actionId !== undefined;
     out.fit = { editId: liveFit.editId, minutes: liveFit.minutes, by: coach ? 'coach' : 'built_in', actionId: coach ? (liveFit.actionId ?? null) : null };
   }

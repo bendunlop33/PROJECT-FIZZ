@@ -43,6 +43,7 @@ const TABLES = [
   'set_audit',
   'timing_audit',
   'work_intervals',
+  'workout_drafts',
 ];
 
 describe('migrations', () => {

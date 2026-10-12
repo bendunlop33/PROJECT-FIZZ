@@ -63,10 +63,13 @@ describe('starter chips (CS6): ours, by context; Pain works without the coach', 
     expect(starterChips({ kind: 'workout', sessionId: ID(9) }, avail('ok'), true).map((c) => c.label)).toEqual(['Too hard', 'Too easy', 'Short on time', 'Machine busy', 'Pain']);
     expect(starterChips({ kind: 'workout', sessionId: ID(9) }, avail('not_connected'), true).map((c) => c.label)).toEqual(['Pain']);
     expect(starterChips({ kind: 'summary', sessionId: ID(9) }, avail('ok'), false).map((c) => c.label)).toEqual(['What should I change next time?']);
-    expect(starterChips({ kind: 'today' }, avail('limit'), false)).toEqual([]);
+    // workout-builder §3, §5.4: `Build a workout` is on Today's empty thread, disabled (`Needs the coach`) when the coach can't answer.
+    const build = (enabled: boolean) => ({ label: 'Build a workout', input: null, build: { enabled } });
+    expect(starterChips({ kind: 'today' }, avail('limit'), false)).toEqual([build(false)]);
     // The coach reads past workouts now (backlog §4.3): Today offers `How am I doing?` as Ben's own words.
-    expect(starterChips({ kind: 'today' }, avail('ok'), false)).toEqual([{ label: 'How am I doing?', input: { kind: 'words', text: 'How am I doing?', spoken: false } }]);
-    expect(starterChips({ kind: 'today' }, avail('not_connected'), false)).toEqual([]);
+    expect(starterChips({ kind: 'today' }, avail('ok'), false)).toEqual([build(true), { label: 'How am I doing?', input: { kind: 'words', text: 'How am I doing?', spoken: false } }]);
+    expect(starterChips({ kind: 'today' }, avail('not_connected'), false)).toEqual([build(false)]);
+    expect(starterChips({ kind: 'draft', draftId: ID(9), name: 'Push · 45 min' }, avail('ok'), false)).toEqual([]);
   });
 });
 

@@ -1,5 +1,6 @@
 import { toMs, type CheckInGate, type OverviewBasis, type OverviewCoach, type OverviewRow } from '@fizz/domain';
 import type { CheckIn, CheckInScore, NextSessionTargetRecord, SessionCheckIn } from '@fizz/schemas';
+import { formatTime } from '../format/dates';
 
 import type { NextTimeTap } from '../coach/next-time-view';
 
@@ -87,7 +88,7 @@ export function tileLabel(n: CheckInScore): string {
 }
 
 /** The eyebrow (§3.2), before tracked caps: `After Pull A · Thu 8 Oct`. `day` formats a date (`Thu 8 Oct`). */
-export function eyebrowText(basis: OverviewBasis, day: (ms: number, tz: string) => string): string {
+export function eyebrowText(basis: OverviewBasis, day: (ms: number, tz: string) => string, isToday: (ms: number, tz: string) => boolean = () => false): string {
   switch (basis.kind) {
     case 'after':
       return `After ${basis.routineName} · ${day(toMs(basis.at.utc), basis.at.tz)}`;
@@ -101,6 +102,10 @@ export function eyebrowText(basis: OverviewBasis, day: (ms: number, tz: string) 
       return `Next session · from ${day(toMs(basis.at.utc), basis.at.tz)}`;
     case 'new_routine':
       return 'New workout';
+    case 'coach_draft':
+      // workout-builder §4.3: an actual (when the coach built it); a newer version names itself.
+      if (basis.versionN > 1) return `Coach draft · V${String(basis.versionN)} · ${formatTime(toMs(basis.at.utc), basis.at.tz)}`;
+      return isToday(toMs(basis.at.utc), basis.at.tz) ? `Coach draft · Today ${formatTime(toMs(basis.at.utc), basis.at.tz)}` : `Coach draft · ${day(toMs(basis.at.utc), basis.at.tz)}`;
   }
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { checkReplyClaims } from '../src/claims';
 import { renderActionResult } from '../src/render';
-import { benchAdjust, id, kg, lb, record, tgt } from './records';
+import { benchAdjust, id, kg, lb, ledger, record, tgt } from './records';
 
 const nb = (s: string): string => s.replace(/\u00a0/g, ' ');
 
@@ -123,5 +124,68 @@ describe('renderActionResult (coach-contract §5.1)', () => {
       ],
     });
     expect(renderActionResult(r, 'voice').spoken).toBe('Bench press. Set 3: 95 kilos for 8. Incline DB press. Set 2: 20 kilos each for 10.');
+  });
+});
+
+describe('renderActionResult: an exercise added today (12 Oct)', () => {
+  const added = (over: Partial<Extract<Parameters<typeof record>[0], { kind: 'add_exercise_today' }>> = {}, status: 'committed' | 'stale' | 'rejected' = 'committed', failure: string | null = null) =>
+    record(
+      {
+        kind: 'add_exercise_today',
+        sessionId: id(1),
+        sessionExerciseId: id(20),
+        exerciseId: id(30),
+        exerciseName: 'Lateral raise',
+        sets: 3,
+        target: { load: kg(10, 'per_hand'), reps: { min: 10, max: 15 }, rpe: 8 },
+        durationS: null,
+        equipmentName: 'Main dumbbells',
+        afterName: null,
+        supersetWithName: null,
+        ...over,
+      },
+      { status, failure },
+    );
+
+  it('values only, with where it went', () => {
+    expect(nb(renderActionResult(added(), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8.');
+    expect(nb(renderActionResult(added({ afterName: 'Bench press' }), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8 · after Bench press.');
+    expect(nb(renderActionResult(added({ supersetWithName: 'Bench press' }), 'sheet').text)).toBe('Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8 · superset with Bench press.');
+  });
+
+  it('a blank load (no history, B6), a timed exercise, an assisted machine and lb', () => {
+    expect(nb(renderActionResult(added({ target: { load: null, reps: { min: 12, max: 15 }, rpe: null } }), 'sheet').text)).toBe('Added Lateral raise: 3 × 12–15 reps.');
+    expect(nb(renderActionResult(added({ exerciseName: 'Plank', target: { load: null, reps: null, rpe: null }, durationS: 45 }), 'sheet').text)).toBe('Added Plank: 3 × 0:45.');
+    expect(nb(renderActionResult(added({ exerciseName: 'Assisted pull-up', target: { load: kg(30, 'assistance'), reps: { min: 6, max: 8 }, rpe: null } }), 'sheet').text)).toBe('Added Assisted pull-up: 3 × Assist 30 kg × 6–8.');
+    expect(nb(renderActionResult(added({ target: { load: lb(20, 'per_hand'), reps: { min: 10, max: 15 }, rpe: null } }), 'sheet').text)).toBe('Added Lateral raise: 3 × 20 lb each × 10–15.');
+  });
+
+  it('not added: stale and refused', () => {
+    expect(renderActionResult(added({}, 'stale'), 'sheet').text).toBe('Not added: your workout moved on.');
+    expect(renderActionResult(added({}, 'rejected', 'shoulder flagged 6 Oct'), 'sheet').text).toBe("Couldn't add Lateral raise: shoulder flagged 6 Oct. Nothing changed.");
+  });
+});
+
+describe('claim check: an exercise added today (12 Oct)', () => {
+  const raise = record({
+    kind: 'add_exercise_today',
+    sessionId: id(1),
+    sessionExerciseId: id(20),
+    exerciseId: id(30),
+    exerciseName: 'Lateral raise',
+    sets: 3,
+    target: { load: kg(10, 'per_hand'), reps: { min: 10, max: 15 }, rpe: 8 },
+    durationS: null,
+    equipmentName: 'Main dumbbells',
+    afterName: null,
+    supersetWithName: null,
+  });
+
+  it('"Added lateral raises" is backed only by the add itself; nothing backs it with no card', () => {
+    expect(checkReplyClaims("I've added lateral raises.", ledger([raise]), new Set([raise.actionId])).keep).toBe(true);
+    expect(checkReplyClaims("I've added lateral raises.", ledger([]), new Set()).keep).toBe(false);
+    // Another exercise named, or the add claimed for next time, isn't backed by it.
+    expect(checkReplyClaims("I've added face pulls.", ledger([raise]), new Set([raise.actionId])).keep).toBe(false);
+    expect(checkReplyClaims("I've added lateral raises to next time's workout.", ledger([raise]), new Set([raise.actionId])).keep).toBe(false);
   });
 });
