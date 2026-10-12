@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { exerciseMenu } from '../src/workout/exercise-menu';
+import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu } from '../src/workout/exercise-menu';
 
 /** Review S3: a tap must run the action written on the row, in both menu shapes. */
 describe('exercise ⋯ menu', () => {
@@ -41,5 +41,32 @@ describe('exercise ⋯ menu', () => {
       expect(m.actionAt(m.cancelButtonIndex)).toBeNull();
       expect(m.actionAt(Number.NaN)).toBeNull();
     }
+  });
+});
+
+/** CHANGELOG 2026-10-11 (b): Ben overrides the target RPE for a set, an exercise or today. */
+describe('Target RPE', () => {
+  it('sits above Add set when the set carries a target; the rows below keep their actions', () => {
+    const m = exerciseMenu(true, 'rule', true);
+    expect(m.options).toEqual(['How to', 'Undo change', 'Target RPE', 'Add set', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.options.map((_, i) => m.actionAt(i))).toEqual(['how_to', 'undo_coach', 'target_rpe', 'add_set', 'add_exercise', 'delete_set', 'skip_exercise', null]);
+    expect(exerciseMenu(false, false, false).options).not.toContain('Target RPE');
+  });
+
+  it('values 6–10 in half steps, the current one ticked; Default only when Ben set his own', () => {
+    const rule = targetRpeMenu({ rpe: 8.5, source: 'rule' });
+    expect(rule.options).toEqual(['RPE 6', 'RPE 6.5', 'RPE 7', 'RPE 7.5', 'RPE 8', 'RPE 8.5 ✓', 'RPE 9', 'RPE 9.5', 'RPE 10', 'Cancel']);
+    expect(rule.valueAt(4)).toBe(8);
+    expect(rule.valueAt(rule.cancelButtonIndex)).toBeUndefined();
+    expect(rule.valueAt(-1)).toBeUndefined();
+    const ben = targetRpeMenu({ rpe: 10, source: 'ben' });
+    expect(ben.options.at(-2)).toBe('Default');
+    expect(ben.valueAt(ben.options.length - 2)).toBeNull();
+  });
+
+  it('then this set, this exercise or today', () => {
+    const m = targetRpeScopeMenu('set-1', 'ex-1');
+    expect(m.options).toEqual(['This set', 'This exercise', 'Today', 'Cancel']);
+    expect([0, 1, 2, 3].map((i) => m.scopeAt(i))).toEqual([{ kind: 'set', setId: 'set-1' }, { kind: 'exercise', sessionExerciseId: 'ex-1' }, { kind: 'today' }, null]);
   });
 });
