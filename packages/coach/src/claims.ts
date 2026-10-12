@@ -901,6 +901,8 @@ function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op:
     STRUCT_R4.some((re) => re.test(clause)) ||
     STRUCT_R5.some((re) => re.test(clause));
   if (structural) kinds.add('propose_next_workout_change');
+  // (12 Oct) "Added lateral raises [[a1]]": an exercise added to today's workout is backed by its own record.
+  if (structural && !next) kinds.add('add_exercise_today');
   // "Pec deck next time" may be a swap or a target for an exercise already there.
   if (EX_NEXT.test(clause) && !hasSetWord) kinds.add('propose_next_workout_change');
   if (PAIN_HOLD_R4.test(clause) || PAIN_HOLD_EX.test(clause)) kinds.add('set_pain_flag');
@@ -1056,6 +1058,15 @@ function factsOf(record: ActionRecord): RecordFacts {
       if (after.load !== null) f.primaryLoad = after.load;
       break;
     }
+    case 'add_exercise_today':
+      // (12 Oct) The added exercise, its set count and its first set's target as saved.
+      f.names.add(d.exerciseName.toLowerCase());
+      f.numbers.add(String(d.sets));
+      addAfter(f, d.target);
+      if (d.target?.rpe != null) f.numbers.add(formatNumber(d.target.rpe));
+      if (d.durationS !== null) f.numbers.add(String(d.durationS));
+      if (d.target?.load) f.primaryLoad = d.target.load;
+      break;
     case 'propose_next_workout_change':
     case 'update_routine':
     case 'fit_today':

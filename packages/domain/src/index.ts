@@ -61,6 +61,7 @@ export * from './session/swap-plan';
 export * from './session/coach-draft';
 export * from './session/substitutes';
 export * from './session/mid-swap';
+export * from './session/coach-add';
 export * from './session/today-shape';
 export * from './session/today-template';
 export * from './coach/trigger';

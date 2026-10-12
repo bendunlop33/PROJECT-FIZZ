@@ -1,4 +1,4 @@
-import { formatNumber, loadText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
+import { formatDuration, formatNumber, loadText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
 import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
@@ -328,6 +328,18 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const why = st === 'stale' ? 'your workout moved on' : failureOr(record, 'the change was refused');
       const text = `Couldn't change ${where}: ${why}. Nothing changed.`;
       return make(status, text, st === 'stale' ? 'Your workout moved on. Nothing changed.' : speakable(text));
+    }
+    case 'add_exercise_today': {
+      // (12 Oct) An exercise added to today's workout because Ben asked: values only, with Undo on the card.
+      if (st === 'committed') {
+        const each = d.durationS !== null ? formatDuration(d.durationS) : targetPhrase(d.target);
+        const where = d.supersetWithName !== null ? ` · superset with ${d.supersetWithName}` : d.afterName !== null ? ` · after ${d.afterName}` : '';
+        const text = `Added ${d.exerciseName}: ${String(d.sets)}${TIMES}${each}${where}.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not added: your workout moved on.', 'Not added. Your workout moved on.');
+      const text = `Couldn't add ${d.exerciseName}: ${failureOr(record, 'it was refused')}. Nothing changed.`;
+      return make(status, text, speakable(text));
     }
     case 'log_set': {
       if (st === 'committed') {

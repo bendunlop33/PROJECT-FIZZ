@@ -73,6 +73,7 @@ export type MemoryWrite = { status: 'written'; memory: Memory } | { status: 'sta
 function sessionOf(record: ActionRecord): string | null {
   switch (record.detail.kind) {
     case 'adjust_pending_sets':
+    case 'add_exercise_today':
     case 'log_set':
     case 'correct_set':
       return record.detail.sessionId;
@@ -625,6 +626,16 @@ export class SqliteCoachStore {
         const command = chatSetUndoCommand(d, { opId: `undo:${target.actionId}`, at: { utc: atUtc, tz: target.createdAt.tz } });
         if (command === null) return 'unsupported';
         const r = reduceSession(agg, command);
+        if (!r.ok || r.duplicate) return 'changed_since';
+        await writeAggregate(tx, r.state);
+        return 'ok';
+      }
+      case 'add_exercise_today': {
+        // (12 Oct) The added row comes out with the workout's own `undo_op` on the add, only in the workout it was
+        // added to and while none of its sets is logged or skipped (rule 2); the reducer refuses it otherwise.
+        const agg = await readAggregate(tx, d.sessionId);
+        if (agg === null || agg.session.ownerId !== ownerId || agg.session.status !== 'active') return 'changed_since';
+        const r = reduceSession(agg, { type: 'undo_op', at: { utc: atUtc, tz: target.createdAt.tz }, opId: `undo:${target.actionId}`, targetOpId: target.opId });
         if (!r.ok || r.duplicate) return 'changed_since';
         await writeAggregate(tx, r.state);
         return 'ok';

@@ -56,6 +56,9 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'log_set':
     case 'correct_set':
       return call.args;
+    case 'add_exercise_today':
+      // The reason is explanation: a retry that only rewords it adds the same exercise.
+      return { ...call.args, reason: undefined };
     case 'set_pain_flag':
       return { exerciseIds: [...new Set(call.args.exerciseIds)].sort(), area: call.args.area };
     case 'save_memory':
@@ -104,6 +107,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
       return [playbookContentKey(call.args.text)];
     case 'forget_memory':
     case 'adjust_pending_sets':
+    case 'add_exercise_today':
     case 'log_set':
     case 'correct_set':
     case 'set_next_session_targets':

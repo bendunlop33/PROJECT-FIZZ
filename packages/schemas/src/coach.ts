@@ -62,6 +62,12 @@ export const CoachEntityKindSchema = z.enum([
   'logged_set',
   /** (12 Oct, workout builder) A coach-built workout draft: a new draft or a new version of one; never a template or a session. */
   'workout_draft',
+  /**
+   * (12 Oct) An exercise the coach added to today's workout because Ben asked
+   * (`add_exercise_today`): a new row with pending sets only, through the
+   * workout's own `add_exercise` command; Undo takes it out while nothing on it is done.
+   */
+  'session_exercise',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -146,6 +152,33 @@ export const CorrectSetArgsSchema = z.strictObject({
   rpe: z.number().min(1).max(10).multipleOf(0.5).nullable(),
 });
 export type CorrectSetArgs = z.infer<typeof CorrectSetArgsSchema>;
+
+/**
+ * (12 Oct) Add an exercise to today's workout when Ben asks ("add 3 sets of
+ * lateral raises", "put in some curls"). Structure only: the app plans the
+ * loads from Ben's history on this gym's equipment (no history: blank, B6),
+ * through the workout's own `add_exercise` command. Wide bounds here; the
+ * domain check clamps with a note, like `propose_workout`.
+ */
+export const AddExerciseTodayArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  /** From `addable` in the context: a catalogue ID or Ben's own exercise's ID. */
+  exerciseId: z.string().min(1).max(80),
+  workingSets: z.int().min(0).max(100),
+  /** Rep range for a reps exercise; null = the built-in rule's range. */
+  reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
+  /** Work time for a timed exercise. */
+  workSeconds: z.int().min(0).max(36_000).nullable(),
+  /** Working sets' target RPE, 5–10 in half steps; null = the usual target. */
+  targetRpe: z.number().min(0).max(20).nullable(),
+  /** Straight after this exercise of today's workout; null = at the end. */
+  afterSessionExerciseId: IdSchema.nullable(),
+  /** In a superset with this exercise of today's workout (it must have a set left); null = none. */
+  supersetWithSessionExerciseId: IdSchema.nullable(),
+  reason,
+});
+export type AddExerciseTodayArgs = z.infer<typeof AddExerciseTodayArgsSchema>;
 
 export const GetRecentActionsArgsSchema = z.strictObject({
   limit: z.int().min(1).max(10),
@@ -252,6 +285,8 @@ export const CoachToolNameSchema = z.enum([
   'get_substitutions',
   'get_recent_actions',
   'adjust_pending_sets',
+  /** (12 Oct) Add an exercise to today's workout when Ben asks; applied at once with Undo. */
+  'add_exercise_today',
   'log_set',
   'correct_set',
   'set_next_session_targets',
@@ -276,6 +311,7 @@ export const COACH_TOOL_ARGS = {
   get_substitutions: GetSubstitutionsArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
+  add_exercise_today: AddExerciseTodayArgsSchema,
   log_set: LogSetArgsSchema,
   correct_set: CorrectSetArgsSchema,
   set_next_session_targets: SetNextSessionTargetsArgsSchema,
@@ -417,6 +453,25 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     kind: z.literal('adjust_pending_sets'),
     sessionId: IdSchema,
     exercises: z.array(ExerciseTargetChangesSchema).max(12),
+  }),
+  /**
+   * (12 Oct) An exercise added to today's workout from chat. `sessionExerciseId`:
+   * the new row (Undo takes it out with `undo_op` while none of its sets is done).
+   * `target`: the first working set's target as saved (load null = blank, no history
+   * on that equipment, B6). App text names only, never model words.
+   */
+  z.object({
+    kind: z.literal('add_exercise_today'),
+    sessionId: IdSchema,
+    sessionExerciseId: IdSchema,
+    exerciseId: IdSchema.nullable(),
+    exerciseName: z.string().min(1).max(120),
+    sets: z.int().min(0).max(20),
+    target: CoachTargetSchema.nullable(),
+    durationS: z.int().min(0).max(36_000).nullable(),
+    equipmentName: z.string().min(1).max(120).nullable(),
+    afterName: z.string().min(1).max(120).nullable(),
+    supersetWithName: z.string().min(1).max(120).nullable(),
   }),
   /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
   z.object({

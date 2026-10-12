@@ -385,6 +385,8 @@ function undoWhat(target: ActionRecord): string {
       return `the pain flag on ${d.exerciseNames.join(' and ')}`;
     case 'add_playbook_candidate':
       return 'the playbook suggestion';
+    case 'add_exercise_today':
+      return `adding ${d.exerciseName}`;
     case 'log_set':
       return `logging set ${String(d.setNumber)} of ${d.exerciseName}`;
     case 'correct_set':
