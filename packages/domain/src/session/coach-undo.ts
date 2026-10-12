@@ -1,4 +1,15 @@
-import type { SessionAggregate } from '@fizz/schemas';
+import type { PlannedSet, SessionAggregate } from '@fizz/schemas';
+
+/**
+ * Whether a target is still the one a today-adjustment set (the coach's, or
+ * the built-in rule's when the coach couldn't answer): it names the action
+ * and its source is still that adjustment's. With `actionId`, only that one.
+ */
+export function carriesTodayAdjustment(planned: PlannedSet, actionId?: string): boolean {
+  if (planned.coach === undefined) return false;
+  if (actionId !== undefined && planned.coach.actionId !== actionId) return false;
+  return planned.source === 'coach' || planned.source === 'built_in_rule';
+}
 
 /**
  * Whether the workout's gym (or its equipment) changed after a point in its

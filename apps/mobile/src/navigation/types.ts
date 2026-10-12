@@ -64,7 +64,8 @@ export type RootStackParams = {
   Tabs: NavigatorScreenParams<TabParams> | undefined;
   /** Active workout (set, rest). `toast` after a start with a check-in (check-in.md §2.6). */
   /** `checkGym`: open the gym card for that gym (`[Use changes today]`, gym-editor §4.9); `nonce` makes it one-off. */
-  Workout: { toast?: WorkoutToastParam; checkGym?: { gymId: string; nonce: string } } | undefined;
+  /** `corrected`: a logged set's numbers were corrected; the coach offer check runs on it again (build 108 F4). */
+  Workout: { toast?: WorkoutToastParam; checkGym?: { gymId: string; nonce: string }; corrected?: { setId: string; key: string } } | undefined;
   /** Pre-workout check-in sheet: before a start, or editing a saved one. */
   /**
    * `repeatOf`: start by repeating that finished workout (routines.md RT4). `nextOf`: its next session, with next targets (audit B2).

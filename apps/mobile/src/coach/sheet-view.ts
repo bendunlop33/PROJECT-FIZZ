@@ -144,13 +144,15 @@ export interface WhyView {
   notKnown: string[];
 }
 
-const NOT_CHANGED_KINDS = new Set<GuardNote['kind']>(['completed_set_dropped', 'not_pending', 'unknown_target', 'structural_dropped']);
+const NOT_CHANGED_KINDS = new Set<GuardNote['kind']>(['completed_set_dropped', 'not_pending', 'unknown_target', 'structural_dropped', 'rpe_overridden']);
 
 export function whyView(r: ActionRecord, notAvailable: readonly string[] = []): WhyView {
   const proposed = r.status === 'proposed';
+  // The built-in rule's change (author `checks`, CA6 revised): its reason is app text, not the coach's words.
+  const byRule = r.author === 'checks';
   return {
-    heading: proposed ? 'Why the coach suggested this' : 'Why the coach changed this',
-    reason: r.reason === null || r.reason.trim() === '' ? null : `“${r.reason}”`,
+    heading: byRule ? 'Rule' : proposed ? 'Why the coach suggested this' : 'Why the coach changed this',
+    reason: r.reason === null || r.reason.trim() === '' ? null : byRule ? r.reason : `“${r.reason}”`,
     checks: [
       ...r.guardNotes.filter((n) => !NOT_CHANGED_KINDS.has(n.kind)).map((n) => n.text),
       // W11: the card says `Playbook, to review`; how review works is here.

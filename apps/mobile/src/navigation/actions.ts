@@ -59,3 +59,13 @@ export function openGymFromWorkout(gymId: string): PopToTabsAction {
 export function replaceWithSummary(sessionId: string) {
   return { type: 'REPLACE', payload: { name: 'Summary', params: { sessionId, justFinished: true } } } as const;
 }
+
+/**
+ * Back from the correction sheet to the Workout under it (review
+ * coach-fallback B1). A plain `navigate('Workout', …)` from `EditSet` PUSHES a
+ * second Workout (with its own timers and coach state); `POP_TO` with `merge`
+ * pops the sheet and hands the toast or `corrected` key to the existing one.
+ */
+export function returnToWorkout(params: NonNullable<RootStackParams['Workout']>) {
+  return { type: 'POP_TO', payload: { name: 'Workout', params, merge: true } } as const;
+}

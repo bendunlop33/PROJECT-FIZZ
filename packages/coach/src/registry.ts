@@ -103,7 +103,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: "Change today's remaining sets",
     capabilitySection: 'when_you_ask',
     description:
-      "Change targets of today's pending sets (load, reps), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment.",
+      "Change targets of today's pending sets (load, reps, target RPE; rpe null keeps it), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment. Ben's own target RPE always stays.",
   },
   {
     name: 'set_next_session_targets',
@@ -114,7 +114,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ['summary'],
     plainLabel: "Small changes to next time's load, reps and sets, shown on the summary with Undo",
     capabilitySection: 'after_workout',
-    description: 'Next-session targets for exercises in this workout. Small changes are saved with Undo; bigger ones become suggestions Ben applies.',
+    description: 'Next-session targets for exercises in this workout (rpe null keeps the target RPE). Small changes are saved with Undo; bigger ones, including a changed target RPE, become suggestions Ben applies.',
   },
   {
     name: 'propose_next_workout_change',

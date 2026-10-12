@@ -67,6 +67,22 @@ export function builtInRepRange(category: RuleCategory): { min: number; max: num
   return { min: RULES[category].min, max: RULES[category].max };
 }
 
+/**
+ * Playbook rule 3: working sets default to RPE 7–9. The built-in target is
+ * never above this, whatever a category's progression limit says.
+ */
+export const PLAYBOOK_DEFAULT_MAX_RPE = 9;
+
+/**
+ * The built-in rule's target RPE for a working set (CHANGELOG 2026-10-11
+ * "Offers follow the target RPE"): the category's rep-range profile value
+ * (main barbell 8.5, compound 9, isolation 9), or the playbook's default
+ * ceiling if that is lower. Used when neither Ben nor the coach set one.
+ */
+export function builtInTargetRpe(category: RuleCategory): number {
+  return Math.min(RULES[category].rpe, PLAYBOOK_DEFAULT_MAX_RPE);
+}
+
 /** `3–6 reps, up to RPE 8.5` (the `Rule:` line behind `Why?`). */
 export function builtInRuleName(category: RuleCategory): string {
   const r = RULES[category];

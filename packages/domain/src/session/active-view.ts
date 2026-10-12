@@ -17,7 +17,7 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import type { HistorySession } from '../progression';
 import { toMs } from '../time';
-import { coachUndoRefusal } from './coach-undo';
+import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
@@ -26,6 +26,7 @@ import { latestCommittedSetId } from './reducer';
 import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
+import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -95,6 +96,12 @@ export interface ActiveViewInput {
   previous: Readonly<Record<string, PreviousSession | null>>;
   /** Exercise IDs with an active pain flag. */
   painFlagged: ReadonlySet<string>;
+  /**
+   * The built-in rule's target RPE per session exercise (`ruleTargetRpes`),
+   * the last fallback of each set's target RPE (`targetRpeOf`). Omitted: only
+   * Ben's, the coach's or the plan's target shows.
+   */
+  ruleTargetRpe?: Readonly<Record<string, number>>;
   /**
    * Ben's pain flags (active ones are enough), for the note's `check due`
    * and the rest card's `Still hurts?` line (active-workout §2.14.2). Dates
@@ -209,10 +216,14 @@ export interface FocusView {
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   duration: { value: number | null } | null;
   target: string | null;
+  /** The set's target RPE and who set it (`@ RPE 8` on the target line); null on warm-up and drop sets. */
+  targetRpe: TargetRpe | null;
   /** `Plan was 100 kg × 6–8` when a coach adjustment set this target (coach-adjustments §2.7); else null. */
   planWas: string | null;
   /** The coach action behind this set's target, for `Undo coach change`; null when the target isn't the coach's or can't be undone (gym changed since). */
   coachActionId: string | null;
+  /** Who made that today-change: the coach, or the built-in rule when the coach couldn't answer (CA6 revised). */
+  adjustedBy: 'coach' | 'rule' | null;
   /**
    * `SnapNote` under the target (gym-switch §2.5): only for a capped,
    * converted or dropped fit, read from `planned.snap` so it survives a relaunch.
@@ -506,9 +517,11 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     loadField,
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
-    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
-    planWas: set.planned.source === 'coach' && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
-    coachActionId: set.planned.source === 'coach' && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
+    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral, rpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null }),
+    targetRpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null),
+    planWas: carriesTodayAdjustment(set.planned) && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
+    coachActionId: carriesTodayAdjustment(set.planned) && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
+    adjustedBy: carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null,
     snapNote: setSnapNote(set.planned.snap, set.planned.load, { gymName: input.gymName, equipment: eq, unit: ex.unit }),
     hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null,
     painFlagged: input.painFlagged.has(ex.exerciseId) || painNote !== null,
@@ -719,8 +732,22 @@ export interface SetEditView {
   exclusions: SetExclusion[];
   /** `This also puts a pain flag on Bench press: …` while `Pain` is ticked and wasn't before (AW7). */
   painLine: string | null;
-  /** Values or exclusions differ from the stored set: `Save changes` is enabled. */
+  /**
+   * Ben's own target RPE for the set (CHANGELOG 2026-10-11 (b) "Edit set"),
+   * in an active workout's working set; null otherwise. `target` is the set's
+   * target as edited (`targetRpeOf`); `override` is Ben's value as edited
+   * (null: none, the coach's, plan's or rule's applies).
+   */
+  targetRpe: { target: TargetRpe | null; override: number | null; changed: boolean } | null;
+  /** Values, exclusions or the target RPE differ from the stored set: `Save changes` is enabled. */
   changed: boolean;
+}
+
+export interface SetEditOptions {
+  /** Ben's target RPE as edited: a value, null to clear it, undefined untouched. */
+  targetRpe?: number | null | undefined;
+  /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), the default shown. */
+  ruleTargetRpe?: Readonly<Record<string, number>> | undefined;
 }
 
 /**
@@ -728,7 +755,7 @@ export interface SetEditView {
  * equipment-aware steppers as the set card. `correct_set` saves it; the rest
  * timer is never touched (invariant 5).
  */
-export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null): SetEditView | null {
+export function buildSetEditView(state: SessionAggregate, setId: string, edits: SetValues | null, exclusionEdits: readonly SetExclusion[] | null = null, options: SetEditOptions = {}): SetEditView | null {
   const set = state.sets.find((s) => s.id === setId);
   if (!set || set.status !== 'completed' || !set.actual) return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
@@ -739,6 +766,14 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
   const exclusions = exclusionEdits === null ? stored : normaliseExclusions(exclusionEdits);
   const label = loadFieldLabel(ex.loadConvention, eq);
   const loadValue = values.load === null || values.load.convention === 'bodyweight' ? null : values.load.value;
+  const storedOverride = set.planned.rpeOverride ?? null;
+  const override = options.targetRpe === undefined ? storedOverride : options.targetRpe;
+  const working = set.setType !== 'warmup' && set.setType !== 'drop';
+  const plannedAsEdited = { ...set.planned, rpeOverride: override ?? undefined };
+  const targetRpe =
+    state.session.status === 'active' && working
+      ? { target: targetRpeOf({ setType: set.setType, planned: plannedAsEdited }, options.ruleTargetRpe?.[ex.id] ?? null), override, changed: override !== storedOverride }
+      : null;
   return {
     setId: set.id,
     setVersion: set.version,
@@ -754,7 +789,8 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
     text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
     exclusions,
     painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,
-    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join(),
+    targetRpe,
+    changed: JSON.stringify(values) !== JSON.stringify(set.actual) || exclusions.join() !== stored.join() || (targetRpe?.changed ?? false),
   };
 }
 

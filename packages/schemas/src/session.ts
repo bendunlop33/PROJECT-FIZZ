@@ -262,6 +262,13 @@ export interface PlannedSet {
   durationS: number | null;
   rpe: number | null;
   rir: number | null;
+  /**
+   * Ben's own target RPE for this set (CHANGELOG 2026-10-11 "Offers follow
+   * the target RPE"), set for the set, its exercise or today with
+   * `set_target_rpe`. Wins over `rpe` (the coach's or the routine's) and the
+   * built-in rule's value. Absent = not overridden.
+   */
+  rpeOverride?: number | undefined;
   source?: PlannedSource | undefined;
   /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
   provenance?: TargetProvenance | undefined;
@@ -276,6 +283,7 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   durationS: DurationSecondsSchema.nullable(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
+  rpeOverride: RpeSchema.optional(),
   source: PlannedSourceSchema.optional(),
   provenance: TargetProvenanceSchema.optional(),
   /** How the load was fitted to the gym's equipment (GS-S1); absent = as intended. */
@@ -567,6 +575,8 @@ export const SetSnapshotSchema = z.object({
   actual: SetValuesSchema.nullable(),
   /** Absent on entries written before exclusions existed, and when none were set (`Set 2 marked: spotted`). */
   exclusions: SetExclusionsSchema.optional(),
+  /** Ben's own target RPE for the set (`planned.rpeOverride`); absent when none, and on entries written before it existed. */
+  targetRpe: RpeSchema.optional(),
   version: z.int().min(1),
 });
 export type SetSnapshot = z.infer<typeof SetSnapshotSchema>;
