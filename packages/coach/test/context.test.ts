@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { newCheckIn, newPainFlag } from '@fizz/domain';
 import type { CoachMessage, Memory } from '@fizz/schemas';
 import { buildPlaybookBundle, PLAYBOOK_JSON, PLAYBOOK_MD } from '../scripts/playbook-bundle';
-import { buildCoachContext, contextInputItems, describeCoachContext, PLAYBOOK_V1, type CoachContextInput } from '../src/context';
+import { buildCoachContext, chatRuleNumbers, contextInputItems, describeCoachContext, PLAYBOOK_V1, type CoachContextInput } from '../src/context';
 import { at, id, OWNER, workout } from './turn-fixtures';
 
 const memory: Memory = {
@@ -179,5 +179,12 @@ describe('approved chat rules (11 Oct, coaching-playbook §3.1, B8)', () => {
     for (const t of ['Deload every 5th week', 'Train to failure always', 'Gone']) expect(sent).not.toContain(t);
     expect(describeCoachContext(ctx).coachingKnowledge.map((d) => d.label)).toContain('Rules you approved');
     expect(buildCoachContext(input()).coachingKnowledge.approvedChatRules).toBeUndefined();
+  });
+  it('a withdrawn rule ahead of an approved one takes no number (the Playbook screen numbers the same way, review S2)', () => {
+    const candidates = [rule(1, 'withdrawn', 'Gone'), rule(2, 'approved', 'Never superset heavy compounds')];
+    expect(chatRuleNumbers(candidates).get(id(701))).toBeUndefined();
+    expect(chatRuleNumbers(candidates).get(id(702))).toBe(1);
+    const ctx = buildCoachContext(input({ playbookCandidates: candidates }));
+    expect(ctx.coachingKnowledge.approvedChatRules?.map((r) => r.id)).toEqual(['Chat rule 1']);
   });
 });

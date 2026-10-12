@@ -27,7 +27,8 @@ export interface PlaybookRuleList {
 
 export function playbookRuleList(candidates: readonly PlaybookCandidate[]): PlaybookRuleList {
   const live = candidates.filter((c) => c.status !== 'withdrawn');
-  const numbers = chatRuleNumbers(live);
+  // The same numbers the coach is sent (`buildCoachingKnowledge`): withdrawn rules are never numbered.
+  const numbers = chatRuleNumbers(candidates);
   const row = (c: PlaybookCandidate): PlaybookRuleRow => ({
     id: c.id,
     version: c.version,

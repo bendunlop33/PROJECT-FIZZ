@@ -123,9 +123,14 @@ export interface CoachingKnowledge {
   exercises: { name: string; cues: readonly string[] }[];
 }
 
-/** `Chat rule 1`, `Chat rule 2`, … in the order they were suggested (coaching-playbook §2.1). */
+/**
+ * `Chat rule 1`, `Chat rule 2`, … in the order they were suggested
+ * (coaching-playbook §2.1). Withdrawn ones (an undone add) get no number, so
+ * the Playbook screen and the coach context always use the same numbers
+ * (review coach-tools S2).
+ */
 export function chatRuleNumbers(candidates: readonly PlaybookCandidate[]): Map<string, number> {
-  const ordered = [...candidates].sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : a.id.localeCompare(b.id)));
+  const ordered = candidates.filter((c) => c.status !== 'withdrawn').sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : a.id.localeCompare(b.id)));
   return new Map(ordered.map((c, i) => [c.id, i + 1]));
 }
 
