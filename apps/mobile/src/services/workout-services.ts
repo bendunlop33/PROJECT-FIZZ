@@ -59,6 +59,10 @@ import {
   type NextTargetEntry,
   equipmentForExercise,
   searchExercises,
+  defaultSlotShape,
+  shapeAddPlan,
+  type AddShape,
+  type SlotShapeInput,
   shouldAskCheckIn,
   toIso,
   toMs,
@@ -256,6 +260,8 @@ export interface WorkoutServicesContext {
   catalogueExercises?: () => readonly Exercise[];
   /** A catalogue entry's substitutions (`variations.substitutions[].key`), in catalogue order (Coaching knowledge). Absent: none. */
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
+  /** A catalogue entry's other names (Coaching knowledge), for search (EL1). Absent: none. */
+  catalogueAliases?: (catalogueKey: string) => readonly string[];
   /**
    * The coach's fit request (fit-to-time §5; `coach.fitToday`): one model
    * call with the context given, nothing written. Null: the coach can't be
@@ -340,6 +346,8 @@ const RECENT_PACE_WINDOW_MS = 90 * 86_400_000;
 
 export interface PickerExercise {
   exercise: Exercise;
+  /** Catalogue aliases and Ben's own (FitNotes) names, for search (EL1). */
+  aliases: readonly string[];
   /** Compatible equipment at this workout's gym. Empty = none needed (bodyweight) or none there (loads not checked). */
   equipment: Pick<EquipmentInstance, 'id' | 'name' | 'kind'>[];
   /**
@@ -578,6 +586,8 @@ export interface EditorExerciseInfo {
   /** Rest resolution step 3: Ben's own default for it, else the catalogue's. */
   defaultRestS: number | null;
   compound: boolean;
+  /** The §10.1 default shape (3 working sets, the built-in rule's reps, `0:45` timed); the add sheet's `Sets` bar sets the count. */
+  defaultShape: SlotShapeInput;
 }
 
 /** The workout editor's data (routines.md §A2.3). Local reads only. */
@@ -719,7 +729,7 @@ export type TemplateSwapWrite =
 
 /** One of today's edits as the page sends it (§4.2, §11.7). `add` names only the exercise: the new row's key comes from the opId. */
 /** `order` is the coach's Applied reorder (structural proposals) as well as `move`. */
-export type OverviewEdit = Exclude<TodayEditBody, { kind: 'add' }> | { kind: 'add'; exerciseId: string };
+export type OverviewEdit = Exclude<TodayEditBody, { kind: 'add' }> | { kind: 'add'; exerciseId: string; workingSets?: number };
 
 /** The slot key an added exercise gets: from the write's opId, so a retry names the same row. */
 export function addSlotKey(opId: string): string {
@@ -1550,6 +1560,22 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** A picked catalogue exercise is saved as a row before a workout can use it (as `Add exercise` does). */
+  /**
+   * Other names each exercise is searched by (EL1): the catalogue's aliases
+   * and Ben's own FitNotes names that map to it. A name that can't be read
+   * just isn't searched; nothing is hidden or blocked.
+   */
+  async function aliasIndex(p: UserProfile | null): Promise<(e: Pick<Exercise, 'id' | 'name' | 'catalogueKey'>) => string[]> {
+    const own = new Map<string, string[]>();
+    const saved = p === null ? [] : await repos().imports.aliases(p.id).catch(() => []);
+    for (const a of saved) if (a.target.kind === 'exercise') own.set(a.target.exerciseId, [...(own.get(a.target.exerciseId) ?? []), a.name]);
+    return (e) => {
+      const names = [...(e.catalogueKey ? (ctx.catalogueAliases?.(e.catalogueKey) ?? []) : []), ...(own.get(e.id) ?? [])];
+      const self = e.name.trim().toLowerCase();
+      return [...new Set(names)].filter((n) => n.trim().toLowerCase() !== self);
+    };
+  }
+
   async function ensureExercise(exerciseId: string): Promise<Exercise | null> {
     const stored = await repos().exercises.get(exerciseId).catch(() => null);
     if (stored) return stored;
@@ -2240,11 +2266,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const flags = p ? await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]) : [];
       const at = ctx.now();
       const nowMs = toMs(at.utc);
+      const aliasesOf = await aliasIndex(p);
       // Bodyweight exercises never need (or get) a gym item: there's no load to check.
-      return searchExercises(all, query).map((exercise) => {
+      return searchExercises(
+        all.map((exercise) => ({ name: exercise.name, aliases: aliasesOf(exercise), exercise })),
+        query,
+      ).map(({ exercise, aliases }) => {
         const covering = painFlagCovering(flags, exercise.id, nowMs, at.tz);
         return {
           exercise,
+          aliases,
           equipment: equipmentForExercise(exercise, snapshot).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
           mayHurt: covering ? { flagId: covering.flag.id, accessibilityLabel: mayHurtAccessibility(covering.flag), confirm: mayHurtConfirm({ ...covering.flag, exerciseName: exercise.name }) } : null,
         };
@@ -2269,7 +2300,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * Summary showed, shown as `Target`, its source behind `Why?`; review S3, minimal-copy D1), or one
      * empty set when there's no comparable history.
      */
-    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string }): Promise<CommandOutcome> {
+    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; shape?: AddShape }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       // A catalogue exercise is saved (Coaching knowledge, no owner) the first time it's added.
@@ -2280,7 +2311,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           if (!saved?.ok && !(await repos().exercises.get(req.exerciseId))) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
         }
       }
-      const plan = await planFor(p, req).catch(() => null);
+      const planned = await planFor(p, req).catch(() => null);
+      // The picker's `Sets` count (exercise-library §10.2): only this exercise's new pending sets are shaped (rule 2).
+      const plan = req.shape === undefined ? planned : shapeAddPlan(planned, req.shape);
       return ctx.afterCommand(
         await domain().addExercise(req.sessionId, {
           ownerId: p.id,
@@ -2715,20 +2748,25 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           compatibleEquipment: x.compatibleEquipment,
           defaultRestS: p?.exerciseRestS?.[id] ?? x.defaultRestS ?? null,
           compound: x.mechanic === 'compound',
+          defaultShape: defaultSlotShape(x),
         };
       }
       return out;
     },
 
-    /** The editor's `Add exercise` list: Ben's exercises and the catalogue's, searched by name. */
+    /** The editor's `Add exercise` list: Ben's exercises and the catalogue's, searched by name, aliases and Ben's own names (EL1). */
     async searchExercises(query: string): Promise<EditorExerciseInfo[]> {
       const p = await ctx.profile();
       const saved = (await repos().exercises.list()).filter((e) => e.ownerId === null || e.ownerId === p?.id);
       const have = new Set(saved.map((e) => e.id));
       const all = [...saved, ...(ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [])];
-      return searchExercises(all, query)
+      const aliasesOf = await aliasIndex(p);
+      return searchExercises(
+        all.map((x) => ({ name: x.name, aliases: aliasesOf(x), x })),
+        query,
+      )
         .slice(0, 60)
-        .map((x) => ({ id: x.id, name: x.name, measurement: x.measurement, laterality: x.laterality, defaultLoadConvention: x.defaultLoadConvention, compatibleEquipment: x.compatibleEquipment, defaultRestS: p?.exerciseRestS?.[x.id] ?? x.defaultRestS ?? null, compound: x.mechanic === 'compound' }));
+        .map(({ x }) => ({ id: x.id, name: x.name, measurement: x.measurement, laterality: x.laterality, defaultLoadConvention: x.defaultLoadConvention, compatibleEquipment: x.compatibleEquipment, defaultRestS: p?.exerciseRestS?.[x.id] ?? x.defaultRestS ?? null, compound: x.mechanic === 'compound', defaultShape: defaultSlotShape(x) }));
     },
 
     /** `≈ N min` while editing (§A2.3): the workout as edited, planned at this gym with no targets. Null when it can't be estimated. */
@@ -3633,7 +3671,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (e.kind === 'add') {
           // A picked catalogue exercise is saved as a row first (as the workout's `Add exercise` does). The new row's key comes from the opId, so a retry is the same row.
           if ((await ensureExercise(e.exerciseId)) === null) return null;
-          return { type: 'edit', edit: { kind: 'add', slotKey: addSlotKey(req.opId), exerciseId: e.exerciseId } };
+          return { type: 'edit', edit: { kind: 'add', slotKey: addSlotKey(req.opId), exerciseId: e.exerciseId, ...(e.workingSets === undefined ? {} : { workingSets: e.workingSets }) } };
         }
         return { type: 'edit', edit: e };
       });
@@ -3869,7 +3907,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const sctx = await substituteCtx(p, gymId, gymEquipment, planCheckIn, []);
         const histories = new Map<string, HistorySession[]>();
         for (const id of await workout.recentExerciseIds(40).catch(() => [] as string[])) histories.set(id, await historyFor(p.id, id).catch(() => [] as HistorySession[]));
-        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: inPlan, query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz });
+        const aliasesOf = await aliasIndex(p);
+        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: inPlan, query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz, aliasesOf });
         const rows: SubstituteRow[] = [];
         for (const e of picked) {
           const history = histories.get(e.id) ?? (await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));

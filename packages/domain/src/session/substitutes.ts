@@ -1,6 +1,7 @@
 import type { EquipmentInstance, Exercise, Load, PainFlag, RepRange, SetType, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 import { dayMonthText, formatDuration, formatNumber, NBSP, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
+import { matchExercise } from '../exercise-search';
 import { needsNoEquipment } from '../exercise-equipment';
 import { nextTargetsFor, plannedSetsFromTargets } from '../next-target';
 import { mayHurtAccessibility, mayHurtConfirm, painFlagCovering } from '../pain-flags';
@@ -367,20 +368,31 @@ export function rankAddCandidates(input: {
   nowMs: number;
   tz: string;
   limit?: number;
+  /** Other names to search by (catalogue aliases, Ben's own; exercise-library EL1). */
+  aliasesOf?: (e: Exercise) => readonly string[];
 }): Exercise[] {
   const q = input.query.trim().toLowerCase();
   const seen = new Set<string>();
   const lastDone = (id: string): number => (input.histories.get(id) ?? []).reduce((m, h) => (h.imported ? m : Math.max(m, toMs(h.performedAtUtc))), -Infinity);
+  // The shared search (EL1: aliases, one typo per long word), plus any part of the name as before.
+  const rankOf = (e: Exercise): number | null => {
+    if (q === '') return 0;
+    const m = matchExercise(q, e.name, input.aliasesOf?.(e) ?? []);
+    return m !== null ? m.rank : e.name.toLowerCase().includes(q) ? 7 : null;
+  };
+  const ranks = new Map<string, number>();
   const pool = input.exercises.filter((e) => {
     if (seen.has(e.id) || input.excludeExerciseIds.has(e.id)) return false;
     seen.add(e.id);
-    if (q !== '' && !e.name.toLowerCase().includes(q)) return false;
+    const rank = rankOf(e);
+    if (rank === null) return false;
+    ranks.set(e.id, rank);
     return input.showAll || doableHere(e, input.gym);
   });
   const flagged = (e: Exercise) => painFlagCovering([...input.painFlags], e.id, input.nowMs, input.tz) !== null;
   return pool
-    .map((e) => ({ e, last: lastDone(e.id), hurt: flagged(e) }))
-    .sort((a, b) => Number(a.hurt) - Number(b.hurt) || b.last - a.last || a.e.name.localeCompare(b.e.name))
+    .map((e) => ({ e, last: lastDone(e.id), hurt: flagged(e), rank: ranks.get(e.id) ?? 0 }))
+    .sort((a, b) => Number(a.hurt) - Number(b.hurt) || a.rank - b.rank || b.last - a.last || a.e.name.localeCompare(b.e.name))
     .slice(0, input.limit ?? MAX_ADD_CANDIDATES)
     .map((x) => x.e);
 }
