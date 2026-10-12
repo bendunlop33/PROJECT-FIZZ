@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LAYOUT_ANSWERS } from '@fizz/schemas';
-import { detectLayoutFile, readTable, requiredHeaders } from '../src';
+import { detectLayoutFile, readTable, remapLayout, requiredHeaders } from '../src';
 import { fixture } from './import-fixtures';
 import { layoutText, profileFor } from './layout-fixtures';
 
@@ -92,5 +92,38 @@ describe('saved layouts (AI12; checks 55, 56)', () => {
     const p = profileFor('strong-new-kg', answers);
     const commas = layoutText('strong-new-kg.synthetic.csv').replace(/;/g, ',');
     expect(detectLayoutFile(commas, [p]).kind).toBe('new_table');
+  });
+});
+
+describe('remapLayout (Changed columns, check 56)', () => {
+  const answers = { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' as const, roles: { '8': 'rpe' as const }, notation: {} };
+  const p = profileFor('strong-new-kg', answers);
+  const oldHeader = p.fingerprint.header;
+
+  it('an added column moves nothing it doesn’t have to and is listed as new', () => {
+    const r = remapLayout(p.spec, p.answers, oldHeader, [...oldHeader, 'Rest Timer (sec)']);
+    expect(r?.added).toEqual([13]);
+    expect(r?.missing).toEqual([]);
+    expect(r?.spec).toEqual(p.spec);
+  });
+
+  it('a removed optional column is dropped and the others move to their new places', () => {
+    const header = oldHeader.filter((h) => h !== 'Workout Name');
+    const r = remapLayout(p.spec, { ...answers, roles: {} }, oldHeader, header);
+    expect(r?.missing).toEqual(['Workout Name']);
+    expect(r?.spec.exercise).toEqual({ header: 'Exercise Name', index: 3 });
+    expect(r?.spec.load?.column).toEqual({ header: 'Weight (kg)', index: 5 });
+    expect(r?.spec.unmapped.map((c) => c.header)).toEqual(['Duration (sec)', 'Distance (meters)', 'Seconds']);
+  });
+
+  it('Ben’s roles move with their columns; an optional one on a removed column is dropped, a needed one makes a new layout', () => {
+    const header = ['Extra', ...oldHeader];
+    expect(remapLayout(p.spec, p.answers, oldHeader, header)?.answers.roles).toEqual({ '9': 'rpe' });
+    expect(remapLayout(p.spec, p.answers, oldHeader, oldHeader.filter((h) => h !== 'RPE'))?.answers.roles).toEqual({});
+    expect(remapLayout(p.spec, { ...p.answers, roles: { '2': 'reps' } }, oldHeader, oldHeader.filter((h) => h !== 'Workout Name'))).toBeNull();
+  });
+
+  it('a removed load or reps column makes a new layout', () => {
+    expect(remapLayout(p.spec, p.answers, oldHeader, oldHeader.filter((h) => h !== 'Reps'))).toBeNull();
   });
 });

@@ -77,7 +77,7 @@ export interface ExerciseDetailParams {
 }
 
 export type ImportQuestionKind = 'per_hand' | 'total' | 'bodyweight' | 'unit' | 'effort' | 'dates' | 'gym';
-export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
+export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise' | 'not_a_set' | 'value_to_check';
 
 export type TabParams = {
   /**

@@ -9,3 +9,4 @@ export * from './validate-spec';
 export * from './apply-spec';
 export * from './review';
 export * from './value-checks';
+export * from './remap';

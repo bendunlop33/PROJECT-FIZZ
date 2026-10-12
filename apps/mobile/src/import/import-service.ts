@@ -20,6 +20,7 @@ import {
   type AnswerChange,
   type FitNotesRow,
   type ImportAnalysis,
+  type SourceSetRow,
   type ImportContext,
   type MatchCandidate,
 } from '@fizz/domain';
@@ -33,7 +34,12 @@ import {
   type ImportAnswers,
   type ImportJob,
   type ImportJobLayout,
+  type ImportMappingSpecV1,
+  type ImportProfile,
   type ImportRow,
+  type LayoutAnswers,
+  type LayoutFingerprint,
+  type LayoutSeen,
   type SessionAggregate,
   type UserProfile,
   type WeightUnit,
@@ -81,10 +87,27 @@ export interface ImportBlock {
   tz: string;
 }
 
+/**
+ * A layout import's preview (data-import-export §9.2.6, ADR 0026): what the
+ * preview's source lines say, and `Save layout`.
+ */
+export interface DraftLayoutView {
+  kind: 'coach' | 'saved';
+  /** The saved layout's name (`Layout: strong_workouts · offline`), for a saved layout. */
+  profileName: string | null;
+  unit: WeightUnit | null;
+  unitSource: 'header' | 'unit_column' | 'answer' | null;
+  /** `Save layout` (new layouts): on by default; its name defaults to the file name without its extension. */
+  save: { on: boolean; name: string } | null;
+}
+
 export interface ImportDraft {
   draftId: string;
   fileName: string;
-  variant: FitNotesVariant;
+  /** FitNotes only; null for any other app's file. */
+  variant: FitNotesVariant | null;
+  /** A layout import (any other app); null for FitNotes. */
+  layout: DraftLayoutView | null;
   firstLine: string;
   mappingVersion: number;
   answers: ImportAnswers;
@@ -149,6 +172,8 @@ export type CommitResult =
    */
   | { ok: false; reason: 'outdated_answers'; jobId: string; written: number; total: number }
   | { ok: false; reason: 'stale'; draft: ImportDraft }
+  /** The saved layout changed or was deleted since the preview: open the file again (rule 5). */
+  | { ok: false; reason: 'layout_changed' }
   | { ok: false; reason: 'not_found' | 'not_ready' }
   | { ok: false; reason: 'workout_unfinished'; block: ImportBlock }
   | { ok: false; reason: 'another_import'; job: ImportJob }
@@ -244,14 +269,42 @@ export function buildCandidates(
   return { candidates, catalogueRows, exercises };
 }
 
+/**
+ * What a layout draft commits with (ADR 0026 §5–§6): the layout as Ben
+ * confirmed it, its request's provenance, and `Save layout`.
+ */
+export interface DraftLayout {
+  kind: 'coach' | 'saved';
+  /** The layout session it came from (`layout-service.ts`). */
+  layoutId: string;
+  /** The saved layout used (saved), or none (a coach layout). */
+  profile: ImportProfile | null;
+  fingerprint: LayoutFingerprint;
+  spec: ImportMappingSpecV1;
+  specHash: string;
+  layoutVersion: number;
+  answers: LayoutAnswers;
+  sampleHash: string | null;
+  instructionsHash: string | null;
+  model: string | null;
+  requestsSent: number;
+  charsSent: number;
+  unit: WeightUnit | null;
+  unitSource: 'header' | 'unit_column' | 'answer' | null;
+  seen: LayoutSeen;
+  save: { on: boolean; name: string } | null;
+  confirmedAt: ZonedTimestamp;
+}
+
 interface Draft {
   id: string;
   ownerId: string;
   fileName: string;
   checksum: string;
-  variant: FitNotesVariant;
+  variant: FitNotesVariant | null;
+  layout: DraftLayout | null;
   firstLine: string;
-  rows: FitNotesRow[];
+  rows: SourceSetRow[];
   tz: string;
   defaultUnit: WeightUnit;
   /** The finished import of this same file, when the file has dates to offer again (review r3 S2). */
@@ -306,7 +359,7 @@ export function createImportService(deps: ImportServiceDeps) {
    * The data the preview depends on, re-read (exercise list, remembered
    * names, dates in the app, earlier imports, gyms, the profile's unit).
    */
-  async function loadContext(ownerId: string, defaultUnit: WeightUnit, rows: readonly FitNotesRow[]) {
+  async function loadContext(ownerId: string, defaultUnit: WeightUnit, rows: readonly SourceSetRow[]) {
     const at = deps.now();
     const built = buildCandidates(await repos().exercises.list(), entries(), ownerId, at.utc);
     // Ben's names, dumbbell and barbell answers from earlier imports still in effect: an undone import's are ignored (review r4 S2, r5 S2).
@@ -338,7 +391,7 @@ export function createImportService(deps: ImportServiceDeps) {
    * because the data changed, so an answer from an import undone in the
    * meantime is never kept (review r6 S1).
    */
-  function startFrom(input: { variant: FitNotesVariant; rows: readonly FitNotesRow[] }, loaded: { ctx: ImportContext; gymIds: ReadonlySet<string> }, earlier: ImportJob | null): ImportAnswers {
+  function startFrom(input: { variant: FitNotesVariant | null; rows: readonly SourceSetRow[] }, loaded: { ctx: ImportContext; gymIds: ReadonlySet<string> }, earlier: ImportJob | null): ImportAnswers {
     return startingAnswers(input, loaded.ctx, earlier ? { answers: earlier.answers, gymIds: loaded.gymIds } : null);
   }
 
@@ -347,6 +400,9 @@ export function createImportService(deps: ImportServiceDeps) {
       draftId: d.id,
       fileName: d.fileName,
       variant: d.variant,
+      layout: d.layout
+        ? { kind: d.layout.kind, profileName: d.layout.profile?.name ?? null, unit: d.layout.unit, unitSource: d.layout.unitSource, save: d.layout.save }
+        : null,
       firstLine: d.firstLine,
       mappingVersion: d.mappingVersion,
       answers: d.answers,
@@ -359,7 +415,7 @@ export function createImportService(deps: ImportServiceDeps) {
   }
 
   /** How many of the file's dates have an imported workout in Recently deleted (§6.2, DW26). */
-  async function inRecentlyDeleted(ownerId: string, rows: readonly FitNotesRow[]): Promise<number> {
+  async function inRecentlyDeleted(ownerId: string, rows: readonly SourceSetRow[]): Promise<number> {
     const deleted = await repos().imports.deletedImportDates(ownerId, deps.now().utc).catch(() => new Set<string>());
     if (deleted.size === 0) return 0;
     const dates = new Set(rows.map((r) => r.date).filter((d): d is string => d !== null));
@@ -367,7 +423,7 @@ export function createImportService(deps: ImportServiceDeps) {
   }
 
   async function writtenCount(jobId: string): Promise<number> {
-    return (await repos().imports.writtenDates(jobId)).size;
+    return (await repos().imports.writtenSessions(jobId)).size;
   }
 
   /** Only `committed` is finished: a `committing` job that isn't being written is unfinished, however many workouts are in (review B1). */
@@ -418,13 +474,20 @@ export function createImportService(deps: ImportServiceDeps) {
 
   async function runWrites(job: ImportJob, hooks: CommitHooks): Promise<WriteResult> {
     const rows = await repos().imports.rows(job.id);
-    const dates = [...new Set(rows.filter((r) => r.result === 'imported').map((r) => r.localDate ?? ''))].filter((d) => d !== '').sort();
-    const total = dates.length;
-    const done = await repos().imports.writtenDates(job.id);
-    let written = dates.filter((d) => done.has(d)).length;
+    // One workout per session: per date for FitNotes, per workout key for a layout (two Strong workouts on a date are two). Oldest first.
+    const bySession = new Map<string, { sessionId: string; date: string; workoutKey: string | undefined; startLocal: string | null }>();
+    for (const r of rows) {
+      if (r.result !== 'imported' || r.sessionId === null || r.localDate === null || bySession.has(r.sessionId)) continue;
+      bySession.set(r.sessionId, { sessionId: r.sessionId, date: r.localDate, workoutKey: r.workoutKey, startLocal: r.startLocal ?? null });
+    }
+    const workouts = [...bySession.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.workoutKey ?? '') < (b.workoutKey ?? '') ? -1 : (a.workoutKey ?? '') > (b.workoutKey ?? '') ? 1 : 0));
+    const total = workouts.length;
+    const done = await repos().imports.writtenSessions(job.id);
+    let written = workouts.filter((w) => done.has(w.sessionId)).length;
     hooks.onProgress?.(written, total);
-    for (const date of dates) {
-      if (done.has(date)) continue;
+    for (const w of workouts) {
+      const date = w.date;
+      if (done.has(w.sessionId)) continue;
       if (hooks.shouldStop?.()) return { ok: true, jobId: job.id, status: 'stopped', written, total };
       // A workout started meanwhile (another tab): pause rather than change the history it reads (DX4).
       if (await block()) return { ok: true, jobId: job.id, status: 'stopped', written, total };
@@ -436,6 +499,8 @@ export function createImportService(deps: ImportServiceDeps) {
         gymId: job.answers.gymId,
         importedAtUtc: job.startedAt.utc,
         date,
+        // FitNotes reads exactly as before (one workout per date); a layout row carries its workout and start time.
+        ...(w.workoutKey === undefined ? {} : { workoutKey: w.workoutKey, startLocal: w.startLocal }),
         rows,
       });
       let outcome: Awaited<ReturnType<Store['repos']['imports']['commitWorkout']>>;
@@ -469,7 +534,7 @@ export function createImportService(deps: ImportServiceDeps) {
     return failed(current ? 'The import changed while it was finishing' : 'The import record is missing');
   }
 
-  const service = {
+  const head = {
     /** Import and Undo import are unavailable while a workout is unfinished (DX4). */
     blockedBy: block,
 
@@ -508,6 +573,38 @@ export function createImportService(deps: ImportServiceDeps) {
             return { kind: f.kind, firstLine: f.firstLine };
         }
       }
+      return openParsed(p, file, { variant: parsed.variant, firstLine: parsed.firstLine, rows: parsed.rows }, null);
+    },
+
+    /**
+     * A layout import's preview (ADR 0026): rows from `applyImportSpec` (the
+     * only producer), with the layout they were read with. Everything from
+     * here is the FitNotes preview, commit and Undo. Called by the layout
+     * service after `Use this layout`, or for a saved layout, offline.
+     */
+    async openLayout(file: { name: string; text: string }, rows: SourceSetRow[], firstLine: string, layout: DraftLayout): Promise<OpenResult> {
+      const p = await deps.profile();
+      if (!p) return { kind: 'no_profile' };
+      return openParsed(p, file, { variant: null, firstLine, rows }, layout);
+    },
+
+    /** `Save layout` and its name, until commit (§9.2.6). */
+    async setSaveLayout(draftId: string, save: { on: boolean; name: string }): Promise<ImportDraft | null> {
+      const d = drafts.get(draftId);
+      if (!d?.layout?.save) return null;
+      const name = save.name.trim().slice(0, 80);
+      d.layout = { ...d.layout, save: { on: save.on, name: name === '' ? d.layout.save.name : name } };
+      return view(d);
+    },
+
+    /** Values to check (AI13) on the preview, with the rows they cover (`Skip these 5 sets`). */
+    valueChecks(draftId: string): ImportAnalysis['valueChecks'] {
+      return drafts.get(draftId)?.analysis.valueChecks ?? [];
+    },
+  };
+
+  async function openParsed(p: UserProfile, file: { name: string; text: string }, parsed: { variant: FitNotesVariant | null; firstLine: string; rows: SourceSetRow[] }, layout: DraftLayout | null): Promise<OpenResult> {
+      const at = deps.now();
       const checksum = sha256Hex(file.text);
       const found = (await repos().imports.listJobs(p.id)).find((j) => j.checksum === checksum && j.status !== 'reverted');
       const earlier = found ? await pastImport(await settle(found)) : null;
@@ -526,9 +623,10 @@ export function createImportService(deps: ImportServiceDeps) {
       const d: Draft = {
         id,
         ownerId: p.id,
-        fileName: file.name.slice(0, 255) || 'FitNotes export.csv',
+        fileName: file.name.slice(0, 255) || (parsed.variant === null ? 'Import.csv' : 'FitNotes export.csv'),
         checksum,
         variant: parsed.variant,
+        layout,
         firstLine: parsed.firstLine,
         rows: parsed.rows,
         tz: at.tz,
@@ -546,8 +644,9 @@ export function createImportService(deps: ImportServiceDeps) {
       };
       drafts.set(id, d);
       return { kind: 'preview', draft: await view(d) };
-    },
+  }
 
+  const more = {
     async draft(draftId: string): Promise<ImportDraft | null> {
       const d = drafts.get(draftId);
       return d ? view(d) : null;
@@ -740,6 +839,67 @@ export function createImportService(deps: ImportServiceDeps) {
       return provenanceOf(p.job, p.row);
     },
   };
+  const service = { ...head, ...more };
+
+  /** What the job records about its layout (§9.6.4). */
+  function jobLayoutOf(l: DraftLayout, savedProfileId: string | null): ImportJobLayout {
+    return {
+      kind: l.kind,
+      profileId: l.profile?.id ?? null,
+      profileName: l.profile?.name ?? (l.save?.on === true ? l.save.name : null),
+      layoutVersion: l.layoutVersion,
+      specHash: l.specHash,
+      sampleHash: l.sampleHash,
+      instructionsHash: l.instructionsHash,
+      route: l.kind === 'coach' ? 'chatgpt_plan' : null,
+      model: l.model,
+      requestsSent: l.requestsSent,
+      charsSent: l.charsSent,
+      savedProfileId,
+      unit: l.unit,
+      unitSource: l.unitSource,
+    };
+  }
+
+  /**
+   * The saved layout this commit writes (AI12): a new one for a coach layout
+   * with `Save layout` on; the saved one again, with this import added to its
+   * uses and Ben's answers now, when a saved layout was used. Never one Ben
+   * switched off. The values seen (markers, names with negative weights) are
+   * kept so a later file's new ones are asked, never absorbed.
+   */
+  function layoutToSave(l: DraftLayout, jobId: string, ownerId: string, a: ImportAnalysis, at: ZonedTimestamp): { record: ImportProfile; expectedVersion: number | null } | undefined {
+    const negative = new Set(l.seen.negativeNames);
+    for (const q of a.bodyweight) if (q.min < 0) negative.add(q.key);
+    for (const m of a.machines) if (m.mixed || (m.sample?.value ?? 0) < 0) negative.add(m.key);
+    const seen: LayoutSeen = { markers: [...new Set(l.seen.markers)].slice(0, 40), negativeNames: [...negative].slice(0, 2000) };
+    if (l.profile) {
+      return {
+        record: { ...l.profile, answers: l.answers, seen, uses: [...l.profile.uses.filter((u) => u !== jobId), jobId].slice(-200), version: l.profile.version + 1, updatedAtUtc: at.utc },
+        expectedVersion: l.profile.version,
+      };
+    }
+    if (l.save?.on !== true) return undefined;
+    return {
+      record: {
+        id: deps.newId(),
+        ownerId,
+        version: 1,
+        createdAtUtc: at.utc,
+        updatedAtUtc: at.utc,
+        name: l.save.name,
+        kind: 'table',
+        fingerprint: l.fingerprint,
+        spec: l.spec,
+        answers: l.answers,
+        seen,
+        uses: [jobId],
+        provenance: { proposedBy: 'coach', route: 'chatgpt_plan', model: l.model, specHash: l.specHash, createdAt: l.confirmedAt, confirmedAt: l.confirmedAt },
+        deletedAt: null,
+      },
+      expectedVersion: null,
+    };
+  }
 
   async function commitDraft(d: Draft, mappingVersion: number, operationId: string, hooks: CommitHooks): Promise<CommitResult> {
     if (d.mappingVersion !== mappingVersion) return { ok: false, reason: 'stale', draft: await view(d) };
@@ -778,6 +938,11 @@ export function createImportService(deps: ImportServiceDeps) {
       return { ok: false, reason: 'stale', draft: await view(d) };
     }
     if (!d.analysis.ready) return { ok: false, reason: 'not_ready' };
+    // A saved layout that changed (another import, a deleted layout, a restore) since the preview: nothing is written (rule 5).
+    if (d.layout?.profile) {
+      const now = await repos().importProfiles.get(d.layout.profile.id);
+      if (now?.version !== d.layout.profile.version || now.deletedAt !== null) return { ok: false, reason: 'layout_changed' };
+    }
 
     const backup = await deps.backUpOnPhone('before_import');
     if (!backup.ok) return { ok: false, reason: 'backup_failed', message: backup.error };
@@ -785,6 +950,8 @@ export function createImportService(deps: ImportServiceDeps) {
     const at = deps.now();
     const rows = planImportRows({ rows: d.rows }, d.analysis, { jobId: d.id, defaultUnit: d.defaultUnit });
     const a = d.analysis;
+    // The layout this import saves or versions, written with the job (AI12, ADR 0026 §5).
+    const profileWrite = d.layout === null ? undefined : layoutToSave(d.layout, d.id, d.ownerId, a, at);
     const dates = rows.map((r) => r.localDate).filter((x): x is string => x !== null).sort();
     const job: ImportJob = {
       id: d.id,
@@ -792,10 +959,11 @@ export function createImportService(deps: ImportServiceDeps) {
       version: 1,
       createdAtUtc: at.utc,
       updatedAtUtc: at.utc,
-      source: 'fitnotes',
+      source: d.layout === null ? 'fitnotes' : 'layout',
       fileName: d.fileName,
       checksum: d.checksum,
       variant: d.variant,
+      ...(d.layout === null ? {} : { layout: jobLayoutOf(d.layout, profileWrite?.record.id ?? null) }),
       header: d.firstLine.slice(0, 4000),
       timezone: d.tz,
       startedAt: at,
@@ -815,6 +983,9 @@ export function createImportService(deps: ImportServiceDeps) {
           skipped_date_exists: a.counts.byResult.skipped_date_exists,
           skipped_exercise: a.counts.byResult.skipped_exercise,
           unreadable: a.counts.byResult.unreadable,
+          ...(d.layout === null
+            ? {}
+            : { skipped_value_to_check: a.counts.byResult.skipped_value_to_check, skipped_not_a_set: a.counts.byResult.skipped_not_a_set, not_read: a.counts.byResult.not_read }),
         },
       },
       dateRange: dates.length === 0 ? null : { first: dates[0] ?? '', last: dates.at(-1) ?? '' },
@@ -852,7 +1023,13 @@ export function createImportService(deps: ImportServiceDeps) {
       ...(x.perHand === undefined ? {} : { perHand: x.perHand }),
       ...(x.total === undefined ? {} : { total: x.total }),
     }));
-    const created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId });
+    let created: Awaited<ReturnType<Store['repos']['imports']['createJob']>>;
+    try {
+      created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId, ...(profileWrite ? { profile: profileWrite } : {}) });
+    } catch (e) {
+      if (profileWrite && e instanceof Error && /saved layout changed/.test(e.message)) return { ok: false, reason: 'layout_changed' };
+      throw e;
+    }
     if (!created.ok) {
       const running = await repos().imports.committingJob(d.ownerId);
       if (created.error === 'another_import_running' && running) return { ok: false, reason: 'another_import', job: running };

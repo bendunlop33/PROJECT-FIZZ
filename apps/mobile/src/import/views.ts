@@ -213,7 +213,7 @@ export function unitsLabel(units: { kg: number; lb: number }): string {
   return 'no weights';
 }
 
-export type QuestionKey = { kind: 'names' } | { kind: 'per_hand' } | { kind: 'total' } | { kind: 'bodyweight'; key: string } | { kind: 'unit' };
+export type QuestionKey = { kind: 'names' } | { kind: 'per_hand' } | { kind: 'total' } | { kind: 'bodyweight'; key: string } | { kind: 'unit' } | { kind: 'value_checks' };
 
 export interface QuestionRow {
   key: QuestionKey;
@@ -221,13 +221,17 @@ export interface QuestionRow {
   line: Line;
 }
 
-export type SkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
+export type SkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise' | 'not_a_set' | 'value_to_check';
 
 export interface PreviewView {
   fileName: string;
   /** This file was imported before, but some of its dates aren't in the app now (review r3 S2). */
   notice: Line | null;
   detection: string;
+  /** Layout imports (§9.2.6): the unit and where it came from (`kg · from the column name`). */
+  unitLine: string | null;
+  /** Layout imports (§9.2.6): `Save layout`, its name, and the `Why?` text. Null for FitNotes and saved layouts. */
+  saveLayout: { on: boolean; name: string; why: string } | null;
   rowsLine: string;
   willImport: { line1: string; line2: string };
   questionsTitle: string;
@@ -297,6 +301,14 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
           },
     );
   }
+  if (a.valueChecks.length > 0) {
+    const open = a.valueChecks.filter((v) => v.answer === null).length;
+    out.push(
+      open > 0
+        ? { key: { kind: 'value_checks' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text: `${plural(open, 'value', 'values')} to check` } }
+        : { key: { kind: 'value_checks' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Values to check: ${formatCount(a.valueChecks.length)} answered` } },
+    );
+  }
   if (a.unit) {
     out.push(
       a.unit.answer === null
@@ -340,6 +352,9 @@ export function inRecentlyDeletedLine(n: number): string {
   return `${formatCount(n)} ${n === 1 ? 'is' : 'are'} in Recently deleted.`;
 }
 
+/** Where a layout import's unit came from (§9.5 `kg · from the column name` / `kg · your answer`). */
+const UNIT_SOURCE_WORD = { header: 'from the column name', unit_column: 'from the unit column', answer: 'your answer' } as const;
+
 export function previewView(d: ImportDraft, locale?: string): PreviewView {
   const a = d.analysis;
   const r = a.counts.byResult;
@@ -364,18 +379,21 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
     skipped.push({ key: 'duplicate', line: info(`${plural(e.dates, 'workout', 'workouts')} came in with your import on ${shortDateOf(e.startedAtUtc, e.tz, locale)}. They’ll be skipped.`) });
   }
   if (skippedExerciseSets(a) > 0) skipped.push({ key: 'exercise', line: info(`${plural(skippedExerciseSets(a), 'set', 'sets')} of exercises you chose to skip`) });
+  if (r.skipped_not_a_set > 0) skipped.push({ key: 'not_a_set', line: info(`${plural(r.skipped_not_a_set, 'row', 'rows')} not a set`) });
+  if (r.skipped_value_to_check > 0) skipped.push({ key: 'value_to_check', line: info(`${plural(r.skipped_value_to_check, 'set', 'sets')} skipped as values to check`) });
 
   const kept: Line[] = [];
   if (a.comments > 0) kept.push(info(`${plural(a.comments, 'comment', 'comments')}, kept with each set as written`));
-  else if (!variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
-  kept.push(info('Date only (no times)'));
+  else if (d.variant !== null && !variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
+  // AI6: times with no zone are kept as written; a file with none is date only.
+  kept.push(info(a.workouts.some((w) => w.startLocal !== undefined && w.startLocal !== null) ? 'Times as in the file (no time zone)' : 'Date only (no times)'));
   if (a.machines.length > 0) {
     // Assistance reads the number the other way round (more is easier): name those exercises (review r5 S3), each with what it imports as (review r6 N2).
     const assisted = a.machines.filter((m) => m.convention === 'assistance').map(assistedText);
     kept.push(info('Machines: by exercise', assisted.length === 0 ? undefined : `Read as assistance (more weight is easier): ${assisted.join(', ')}`));
   }
   if (a.barless.length > 0) kept.push(info(`Kettlebell and other no-bar weights imported as written (${a.barless.map((b) => b.name).join(', ')})`));
-  kept.push(info('All sets as working sets'));
+  if (d.variant !== null) kept.push(info('All sets as working sets'));
 
   const effortReview =
     a.effort.candidates.length === 0
@@ -404,7 +422,9 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
           text: `Imported before on ${shortDateOf(before.startedAt.utc, before.startedAt.tz, locale)} · new dates only`,
         }
       : null,
-    detection: `${appLabel(d.variant)} · ${unitsLabel(a.units)}`,
+    detection: d.variant !== null ? `${appLabel(d.variant)} · ${unitsLabel(a.units)}` : d.layout?.kind === 'saved' ? `Layout: ${d.layout.profileName ?? ''} · offline` : 'Coach layout · checked by you',
+    unitLine: d.layout === null || d.layout.unit === null ? null : `${d.layout.unit} · ${UNIT_SOURCE_WORD[d.layout.unitSource ?? 'answer']}`,
+    saveLayout: d.layout?.save ? { on: d.layout.save.on, name: d.layout.save.name, why: 'Files with these columns import offline next time.' } : null,
     rowsLine: `${plural(a.rowCount, 'row', 'rows')}${range}`,
     willImport: { line1: `${plural(a.counts.workouts, 'workout', 'workouts')} · ${plural(a.counts.sets, 'set', 'sets')}`, line2: plural(a.counts.exercises, 'exercise', 'exercises') },
     questionsTitle: open > 0 ? `Needs your answer (${formatCount(open)})` : 'Your answers',

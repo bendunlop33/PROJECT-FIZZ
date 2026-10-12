@@ -141,6 +141,15 @@ export class SqliteImportProfiles {
     });
   }
 
+  /** The newest request for this exact sample, whatever its state (a `sent` one with nothing in flight was interrupted). */
+  latestFor(ownerId: string, sampleHash: string): Promise<ImportLayoutRequest | null> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll('SELECT * FROM import_layout_requests WHERE owner_id = ? AND sample_hash = ? ORDER BY updated_at_utc DESC, id DESC', [ownerId, sampleHash]);
+      const first = rows[0];
+      return first ? decodeDocument(IMPORT_LAYOUT_REQUEST_SPEC, first) : null;
+    });
+  }
+
   /** Save a request: `null` creates it (refused when its operation ID is taken), else a versioned update. */
   saveRequest(record: ImportLayoutRequest, expectedVersion: number | null): Promise<{ ok: true } | { ok: false; error: 'duplicate' | 'stale' }> {
     return this.db.write(async (tx) => {
