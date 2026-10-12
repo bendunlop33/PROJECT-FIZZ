@@ -60,3 +60,12 @@ Calmer rest screen, richer Today with routines (Save as routine on Summary, Up n
 - **Coach-miss fix:** a set below the rep range (or effort well above target) now brings an offer on the rest screen even without the coach (tagged Rule); Adjust changes today's remaining sets, with Undo.
 - **Target RPE** on every set ("@ RPE 8"); override it in Edit set or the exercise ⋯. RPE 10 on an RPE 10 target never triggers an offer.
 - **FitNotes import:** 34 of your 45 exercise names match automatically; new library exercises (barbell shrug, barbell calf raise, seal row, lat prayer).
+
+## Update (12 Oct, later): workout table, library, coach tools
+- **New workout screen:** the whole session as one table, opening on your current set (finished sets above: scroll up; "↑ N done"). One Log button names the set; Chat + Log at the bottom; Pause and Finish in ⋯ (Finish takes Log's place after the last set). The old single-exercise view: ⋯ › Focus. Check at large text on a small screen that the keypad doesn't cover the current set.
+- **Workouts library:** create, edit, duplicate, delete saved workouts; save any finished workout into it (Summary or Past workouts). Library workouts come first in "Change" session.
+- **Edit before you start** (overview): add exercises, change sets/reps/weights for today; "Also update Push A" goes through a before/after card.
+- **How long?** on the overview: pick a time; the workout is fitted at once (built-in, or Ask coach), with Undo.
+- **Workout gaps:** swap mid-workout, Undo instead of confirms, timed sets (plank timer) and distance sets (sled push), remove an exercise added by mistake, notes, set types (warm-up/top/back-off/drop).
+- **Coach tools:** reads your history and gym; "How am I doing?"; proposes swaps/adds/removes as cards (Apply/Undo) when you ask; "log 100 for 8" from chat; Profile › Memory; rule suggestions to approve.
+- Backups: "Keep 7/14/30/All copies"; every workout is always kept.
