@@ -140,6 +140,10 @@ describe('the `build` request kind (code, never the model, rule 3)', () => {
   it('with a coach draft in context, change words make a new version (BD16); without one they don’t', () => {
     for (const t of ['make it shorter', 'no barbell', 'swap the pec deck', 'drop the dips', 'can you add some core?']) expect(revisesDraft(t)).toBe(true);
     for (const t of ['why bench first?', 'looks good', 'start it']) expect(revisesDraft(t)).toBe(false);
+    // Review S5: refusals aren't revisions; "no" needs a thing to leave out.
+    for (const t of ['no', 'no thanks', 'No, thanks.', 'no thank you', 'change nothing', 'nothing', 'no worries', 'no, that’s fine', 'only if you think so']) expect(revisesDraft(t), t).toBe(false);
+    for (const t of ['no dumbbells', 'without the cable', 'no leg press', 'no more squats', 'no legs', 'more core', 'only dumbbells', 'change the bench']) expect(revisesDraft(t), t).toBe(true);
+    expect(requestHas(gateFor({ kind: 'general', input: words('no thanks'), previousOffer: null, structuralSignals: [], draftInContext: true }).benRequest, 'build')).toBe(false);
     const g = (draftInContext: boolean) => gateFor({ kind: 'general', input: words('no barbell'), previousOffer: null, structuralSignals: [], draftInContext });
     expect(requestHas(g(true).benRequest, 'build')).toBe(true);
     expect(requestHas(g(false).benRequest, 'build')).toBe(false);

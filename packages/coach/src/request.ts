@@ -608,9 +608,15 @@ function buildIn(clause: string): boolean {
  * BD16), "make it shorter", "no barbell", "swap the pec deck", "drop the
  * dips", "add some core" change the draft: a new version, never today's sets.
  */
+// Review S5: "no" and "without" count only with a thing to leave out: equipment, a body part or an exercise.
+const DRAFT_THING = `(?:(?:the |any |more )?(?:barbells?|bars?|dumbbells?|dbs?|cables?|machines?|kettlebells?|kbs?|bands?|smith(?: machine)?|racks?|benches|bodyweight|free weights?|legs?|chest|back|shoulders?|arms?|biceps|triceps|core|abs|glutes|hamstrings?|hams|quads?|calves|cardio|${EXERCISE_WORD}|(?:\\w+ )?${EXERCISE_WORD}))\\b`;
 const DRAFT_REVISION: readonly RegExp[] = [
   /^(?:make|keep) (?:it|this|that|the (?:workout|session|draft))\b.*\b(?:shorter|longer|harder|easier|lighter|heavier|quicker|simpler|different)\b/,
-  /^(?:no|without|skip|drop|lose|ditch|remove|cut|swap|switch|replace|sub|change|add|include|more|less|fewer|use|only)\b/,
+  new RegExp(`^(?:no|without) ${DRAFT_THING}`),
+  /^(?:skip|drop|lose|ditch|remove|cut|swap|switch|replace|sub|add|include|use)\b/,
+  /^change (?!nothing\b|anything\b|a thing\b|it\b)\w+/,
+  /^(?:more|less|fewer) (?!thanks\b|than\b)\w+/,
+  /^only (?!if\b|when\b|just\b|asking\b|joking\b|kidding\b)\w+/,
   /^(?:can|could) (?:you|we) (?:make|swap|switch|replace|drop|remove|add|change|use)\b/,
 ];
 
