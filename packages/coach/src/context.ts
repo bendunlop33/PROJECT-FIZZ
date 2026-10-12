@@ -1,4 +1,4 @@
-import { buildExecutionOrder, deriveId, stableStringify } from '@fizz/domain';
+import { buildExecutionOrder, deriveId, stableStringify, targetRpeOf } from '@fizz/domain';
 import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, SessionAggregate, SetValues } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
@@ -49,6 +49,12 @@ export interface CoachContextInput {
   /** The workout in context: the active one, or the finished one for a summary turn. */
   session: SessionAggregate | null;
   gymName: string | null;
+  /**
+   * The built-in rule's target RPE per session exercise (`ruleTargetRpes`),
+   * so each set's target RPE in context is the one offers are judged
+   * against. Absent: Ben's, the coach's or the plan's only.
+   */
+  ruleTargetRpe?: Readonly<Record<string, number>>;
   painFlags: readonly PainFlag[];
   /** The session's check-in, when Ben answered one. */
   checkIn: CheckIn | null;
@@ -136,7 +142,7 @@ function actualOf(a: SetValues | null): (CoachTarget & { rpe: number | null }) |
 }
 
 /** `get_active_session` data: the workout as the model sees it, read fresh (versions move as sets are logged). */
-export function workoutView(session: SessionAggregate, gymName: string | null): NonNullable<YourData['workout']> {
+export function workoutView(session: SessionAggregate, gymName: string | null, ruleTargetRpe?: Readonly<Record<string, number>>): NonNullable<YourData['workout']> {
   const order = buildExecutionOrder(session.exercises, session.sets);
   const pos = new Map(order.map((id, i) => [id, i]));
   const exercises = [...session.exercises]
@@ -158,7 +164,8 @@ export function workoutView(session: SessionAggregate, gymName: string | null): 
           number: i + 1,
           type: s.setType,
           status: s.status,
-          target: targetOf(s.planned),
+          // The target RPE the set is judged against (Ben's, the coach's, the plan's, else the built-in rule's).
+          target: targetOf({ ...s.planned, rpe: targetRpeOf(s, ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null }),
           actual: actualOf(s.actual),
         })),
       };
@@ -177,7 +184,7 @@ export function workoutView(session: SessionAggregate, gymName: string | null): 
 export function buildYourData(input: CoachContextInput): YourData {
   return {
     turnKind: input.turnKind,
-    workout: input.session === null ? null : workoutView(input.session, input.gymName),
+    workout: input.session === null ? null : workoutView(input.session, input.gymName, input.ruleTargetRpe),
     painFlags: input.painFlags.filter((f) => f.status === 'active').map((f) => ({ exercise: f.exerciseName, area: f.area, since: f.reportedAt.utc.slice(0, 10) })),
     checkIn: input.checkIn === null ? null : { score: input.checkIn.score, reasons: input.checkIn.reasons, quote: input.checkIn.note ?? null },
     memories: input.memories.filter((m) => m.status === 'active').map((m) => ({ text: m.text, savedOn: m.createdAtUtc.slice(0, 10) })),

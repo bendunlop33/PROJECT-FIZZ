@@ -461,11 +461,11 @@ export async function applyBuiltInAdjustment(
 }
 
 /** `get_active_session`: the workout read fresh, with set IDs and the version a change must name. */
-export function createSessionReadExecutor(deps: { loadSession(): Promise<SessionAggregate | null>; gymName: string | null }): ToolExecutor {
+export function createSessionReadExecutor(deps: { loadSession(): Promise<SessionAggregate | null>; gymName: string | null; ruleTargetRpe?: (s: SessionAggregate) => Promise<Readonly<Record<string, number>>> }): ToolExecutor {
   return async (call) => {
     if (call.tool !== 'get_active_session') throw new TypeError(call.tool);
     const s = await deps.loadSession();
-    return { kind: 'read', data: s === null ? { workout: null } : { workout: workoutView(s, deps.gymName) } };
+    return { kind: 'read', data: s === null ? { workout: null } : { workout: workoutView(s, deps.gymName, deps.ruleTargetRpe ? await deps.ruleTargetRpe(s).catch(() => undefined) : undefined) } };
   };
 }
 

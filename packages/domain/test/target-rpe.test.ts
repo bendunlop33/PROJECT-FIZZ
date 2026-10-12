@@ -55,6 +55,8 @@ describe('ruleTargetRpes', () => {
       exercises: [row('a', bench.id, bar.id, 'total'), row('b', curl.id, db.id, 'per_hand'), row('c', 'unknown', null, 'total')],
     };
     expect(ruleTargetRpes(agg, (id) => starters.get(id) ?? null)).toEqual({ a: 8.5, b: 9, c: 9 });
+    // Not read yet: left out, never guessed.
+    expect(ruleTargetRpes(agg, (id) => starters.get(id))).toEqual({ a: 8.5, b: 9 });
   });
 });
 

@@ -37,14 +37,17 @@ export function targetRpeOf(set: { setType: SetType; planned: Pick<PlannedSet, '
 
 /**
  * The built-in target RPE of each exercise row in a workout, keyed by
- * session exercise ID. `info` looks up the catalogue entry (null when unknown:
- * the accessory profile, as the default rule does).
+ * session exercise ID. `info` looks up the catalogue entry: null when the
+ * exercise has none (the accessory profile, as the default rule does),
+ * undefined when it hasn't been read (the row is left out rather than guessed).
  */
-export function ruleTargetRpes(aggregate: Pick<SessionAggregate, 'exercises' | 'session'>, info: (exerciseId: string) => RuleExerciseInfo | null): Record<string, number> {
+export function ruleTargetRpes(aggregate: Pick<SessionAggregate, 'exercises' | 'session'>, info: (exerciseId: string) => RuleExerciseInfo | null | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   for (const ex of aggregate.exercises) {
+    const known = info(ex.exerciseId);
+    if (known === undefined) continue;
     const eq = equipmentOfRow(aggregate.session.equipmentSnapshot, ex);
-    out[ex.id] = builtInTargetRpe(ruleCategory(info(ex.exerciseId), eq?.kind ?? null, ex.loadConvention));
+    out[ex.id] = builtInTargetRpe(ruleCategory(known, eq?.kind ?? null, ex.loadConvention));
   }
   return out;
 }

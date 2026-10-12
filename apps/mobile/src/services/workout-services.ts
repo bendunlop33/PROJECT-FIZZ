@@ -67,6 +67,8 @@ import {
   routineCounts,
   routineFromSession,
   routineLastDone,
+  ruleTargetRpes,
+  type RuleExerciseInfo,
   type FinishedRef,
   type RoutineChange,
   type RoutineNameCheck,
@@ -330,6 +332,12 @@ export interface ActiveWorkoutData {
   title: string | null;
   /** Pace samples from Ben's last finished workouts, for `Time left` (active-workout §2.15.2). */
   recentPace: PaceSamples;
+  /**
+   * Catalogue info per exercise ID (null: none), for the built-in rule's
+   * target RPE on the target line (`ruleTargetRpes`). An exercise added
+   * since the load is missing and shows no built-in value until the next load.
+   */
+  exerciseInfo?: Readonly<Record<string, RuleExerciseInfo | null>>;
 }
 
 /**
@@ -1567,7 +1575,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const ci = aggregate.session.checkIn?.kind === 'answered' ? await repos().checkIns.get(aggregate.session.checkIn.checkInId) : null;
       const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(aggregate.exercises.map((e) => e.exerciseId))).title : null;
       const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
+      const exerciseInfo: Record<string, RuleExerciseInfo | null> = {};
+      for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) exerciseInfo[id] = await exerciseById(id).catch(() => null);
       return {
+        exerciseInfo,
         aggregate,
         gymName: gym?.name ?? null,
         gymNames: await gymNamesOf(p.id),
@@ -1584,7 +1595,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /** `buildActiveSetView` over loaded data plus the screen's unsaved edits. */
     view(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): ActiveSetView {
       // `Time left` has one source on this screen: `timeLeft` below, on its own minute clock (review N4).
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false });
+      const info = data.exerciseInfo ?? {};
+      const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe });
     },
 
     /**

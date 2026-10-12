@@ -46,7 +46,9 @@ import {
   nextTargetFitsSource,
   nextTargetSourceBasis,
   painFlagChoices,
+  ruleTargetRpes,
   shouldShowCoachOffer,
+  targetRpeOf,
   todayAdjustmentIds,
   toMs,
   unspecifiedPain,
@@ -280,7 +282,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (session === null) return base;
     const load = () => repos().sessions.get(session.session.id);
     const painFlags = () => repos().painFlags.listActive(p.id);
-    const out: CoachExecutors = { ...base, get_active_session: createSessionReadExecutor({ loadSession: load, gymName }) };
+    const out: CoachExecutors = { ...base, get_active_session: createSessionReadExecutor({ loadSession: load, gymName, ruleTargetRpe: ruleRpesOf }) };
     if (kind === 'workout') {
       out.adjust_pending_sets = createAdjustExecutor({ store, targets: storeTodayTargets(store), loadSession: load, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, onlySessionExerciseId });
     }
@@ -314,6 +316,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       input: {
         session,
         gymName,
+        ...(session === null ? {} : { ruleTargetRpe: await ruleRpesOf(session).catch(() => ({})) }),
         painFlags: await repos().painFlags.listActive(p.id),
         checkIn,
         memories: await coachStore().listMemories(p.id),
@@ -588,12 +591,21 @@ export function createCoachService(deps: CoachServiceDeps) {
     },
 
     /**
+     * What a logged set triggers now (rule T against its target RPE), with no
+     * offer gate and nothing recorded: whether an offer already showing for
+     * it still holds after an effort chip or a correction (review r3 N3).
+     */
+    async triggerKindOf(aggregate: SessionAggregate, setId: string): Promise<CoachTrigger['kind'] | null> {
+      return (await triggerOf(aggregate, setId))?.kind ?? null;
+    },
+
+    /**
      * F3: the coach was asked through an offer and couldn't answer. The
      * built-in rule's offer for the same trigger, on the workout as it is
      * now (not logged again for CA4: it is the same offer). Null when the
      * rule has nothing to change.
      */
-    async ruleOfferFor(offer: Pick<WorkoutOffer, 'triggerId' | 'kind' | 'setId' | 'fact' | 'prompt' | 'sessionExerciseId'>): Promise<WorkoutOffer | null> {
+    async ruleOfferFor(offer: Pick<WorkoutOffer, 'triggerId' | 'kind' | 'setId' | 'fact' | 'prompt' | 'sessionExerciseId' | 'targetRpe' | 'loggedRpe'>): Promise<WorkoutOffer | null> {
       const session = await sessionOfSet(offer.setId);
       if (session === null) return null;
       const adjustment = await ruleAdjustment(session, offer).catch(() => null);
@@ -646,6 +658,15 @@ export function createCoachService(deps: CoachServiceDeps) {
     },
   };
 
+  /** The built-in rule's target RPE per session exercise, from each exercise's catalogue entry (unknown: the accessory profile). */
+  async function ruleRpesOf(a: SessionAggregate): Promise<Record<string, number>> {
+    const info = new Map<string, Awaited<ReturnType<ReturnType<typeof repos>['exercises']['get']>>>();
+    for (const id of new Set(a.exercises.map((e) => e.exerciseId))) {
+      info.set(id, await repos().exercises.get(id).catch(() => null));
+    }
+    return ruleTargetRpes(a, (id) => info.get(id) ?? null);
+  }
+
   /** The active workout a logged set belongs to. */
   async function sessionOfSet(setId: string): Promise<SessionAggregate | null> {
     const p = await owner();
@@ -670,12 +691,21 @@ export function createCoachService(deps: CoachServiceDeps) {
     return evaluateSessionAdjustment({ aggregate: a, trigger, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName });
   }
 
+  /** Rule T on a logged set, judged against its target RPE: Ben's, the coach's, the plan's, else the built-in rule's (CHANGELOG 2026-10-11). */
+  async function triggerOf(a: SessionAggregate, setId: string): Promise<CoachTrigger | null> {
+    const set = a.sets.find((s) => s.id === setId);
+    if (set === undefined) return null;
+    const live = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status !== 'deleted').sort((x, y) => x.index - y.index);
+    const ruleRpe = (await ruleRpesOf(a))[set.sessionExerciseId] ?? null;
+    return evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS, targetRpeOf(set, ruleRpe)?.rpe ?? null);
+  }
+
   async function checkOffer(input: OfferCheckInput): Promise<WorkoutOffer | null> {
     const a = input.aggregate;
     const set = a.sets.find((s) => s.id === input.setId);
     if (set === undefined) return null;
     const live = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status !== 'deleted').sort((x, y) => x.index - y.index);
-    const trigger = evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS);
+    const trigger = await triggerOf(a, set.id);
     if (trigger === null) return null;
     // Nothing to adjust when this exercise has no pending set left (review S1).
     if (!live.some((s) => s.status === 'pending')) return null;
