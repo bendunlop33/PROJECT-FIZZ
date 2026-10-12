@@ -122,6 +122,8 @@ export interface RestorePreview {
    * copy is kept.
    */
   keptForUndo: (ReplaceCounts & { keptSinceUtc: string | null; unreadable: boolean }) | null;
+  /** Workouts deleted on this phone since the backup was made, which the restore brings back to history (delete-workouts §6.5, DW28). */
+  deletedSinceBackup: number;
   /**
    * The state this preview was made against (current data and the database
    * slots). `restore` with a different stamp is refused as stale (review S5).
@@ -801,6 +803,7 @@ export class DatabaseManager {
         onlyOnPhone: replace.onlyOnPhone,
         changedOnPhone: replace.changedOnPhone,
         keptForUndo,
+        deletedSinceBackup: replace.deletedSinceBackup,
         stamp: this.stampOf(currentHash),
       },
     };

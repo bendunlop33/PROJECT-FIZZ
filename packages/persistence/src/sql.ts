@@ -1,6 +1,7 @@
+import { HISTORY_STATUS } from '@fizz/domain';
 import { validate, type ValidationIssue } from '@fizz/schemas';
 import type { z } from 'zod';
-import type { SqlExecutor, SqlRunResult, SqlValue } from './driver';
+import type { SqlExecutor, SqlRow, SqlRunResult, SqlValue } from './driver';
 import { CorruptDataError, InvalidRecordError } from './errors';
 
 /** Quote an identifier. Only ever used with names from this package or from `sqlite_master`. */
@@ -83,4 +84,18 @@ export function mismatch(table: string, id: string, column: string, message: str
 /** Id of a row for error messages, without trusting its type. */
 export function rowId(value: SqlValue | undefined): string {
   return typeof value === 'string' ? value : String(value);
+}
+
+/**
+ * The SQL form of `isInHistory` (delete-workouts §5, DW19): every reader of
+ * finished workouts filters with this, so deleted, reverted and discarded
+ * sessions stay out. `alias` is the sessions table's alias in the query.
+ */
+export function inHistorySql(alias?: string): string {
+  return `${alias === undefined ? '' : `${alias}.`}status = '${HISTORY_STATUS}'`;
+}
+
+/** `isInHistory` for a raw `sessions` row (backups, exports, counts). */
+export function rowInHistory(row: SqlRow): boolean {
+  return row.status === HISTORY_STATUS;
 }

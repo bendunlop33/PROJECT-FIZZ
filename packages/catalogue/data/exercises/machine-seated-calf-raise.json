@@ -3,7 +3,7 @@
   "key": "machine-seated-calf-raise",
   "tier": "basic",
   "name": "Seated calf raise",
-  "aliases": ["Machine seated calf raise", "Seated calf machine", "Seated calf raises", "Bent-knee calf raise"],
+  "aliases": ["Machine seated calf raise", "Seated calf machine", "Seated calf raises", "Bent-knee calf raise", "Seated calf raise machine"],
   "family": "calf_raise",
   "movementPattern": "calves",
   "mechanic": "isolation",

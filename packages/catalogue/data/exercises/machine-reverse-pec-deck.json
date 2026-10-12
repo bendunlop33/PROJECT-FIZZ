@@ -3,7 +3,7 @@
   "key": "machine-reverse-pec-deck",
   "tier": "basic",
   "name": "Reverse pec deck",
-  "aliases": ["Rear delt machine", "Reverse fly machine", "Rear delt fly machine", "Machine reverse fly", "Reverse pec dec"],
+  "aliases": ["Rear delt machine", "Reverse fly machine", "Rear delt fly machine", "Machine reverse fly", "Reverse pec dec", "Rear delt machine fly"],
   "family": "rear_delt_fly",
   "movementPattern": "horizontal_pull",
   "mechanic": "isolation",

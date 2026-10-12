@@ -15,6 +15,7 @@ import type { RepeatInput, RepeatNote, RepeatOutput } from './session/repeat';
 import { isDeleted, type RoutineStartInput } from './session/routines';
 import { planWithTodayEdits, type EditOutcome, type ResolvedEdits, type TodayEditsInput, type TodaySlot } from './session/today-edits';
 import { reduceSession, type SessionError, type SessionEvent } from './session/reducer';
+import { isInHistory } from './session/deletion';
 
 export type ServiceError =
   | SessionError
@@ -174,7 +175,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const owner = await repos.profiles.get(req.ownerId);
     const source = await repos.sessions.get(req.sourceSessionId);
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
-    if (!source || source.session.ownerId !== req.ownerId || source.session.status !== 'finished') {
+    if (!source || source.session.ownerId !== req.ownerId || !isInHistory(source.session)) {
       return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
     }
     // An imported (FitNotes) workout has no equipment to check its loads on, and P-I3 is open:

@@ -101,6 +101,8 @@ export type RootStackParams = {
   AddGym: undefined;
   /** `Start from a past workout` list. */
   PastWorkouts: undefined;
+  /** Recently deleted (delete-workouts §2.5): from Past workouts' footer and Data & backup. */
+  RecentlyDeleted: undefined;
   /** Repeat a finished workout (routines.md §2.4). */
   Repeat: { sessionId: string };
   /**

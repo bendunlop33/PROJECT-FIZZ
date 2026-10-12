@@ -162,3 +162,9 @@ Ben, on docs/backlog.md: "Seems there is a lot of stuff that u need to action. U
 - AI import: Ben's sources are FitNotes Android and FitNotes 2 (iPhone) only (Q1, files provided, not committed); no API-key fallback (Q3). The any-app AI import is therefore deferred.
 - Not now: own OpenAI API key (B10), body-weight log, weekly-plan, Realtime voice, unofficial Garmin connector, long-press Start, countdown ring, display serif.
 Backups: Ben confirmed every logged workout must be kept forever; "keeps 14" refers to backup file copies (each a full snapshot), which the app must word clearly, and a keep 7/14/30/All setting is added (DX9).
+
+## 2026-10-11: Offers follow the target RPE (Ben)
+Ben: "The recommendation rule to adjust should be based on what target RPE was, which should be driven by AI coach recommendation to optimise sets or override from human. Hitting 10 RPE is not bad if that was the plan."
+- Every working set carries a **target RPE**: set by the coach's recommendation (D21), else the built-in rule's rep-range profile value (default-rule.ts), and **Ben can override** it (set, exercise or today). Shown on the target line ("@ RPE 8").
+- **Rule T becomes deviation-based:** "harder than planned" = logged effort ≥ target + 1.5 RPE, or reps short of the range minimum by ≥ 2 while effort ≥ target; "easier than planned" = logged ≤ target − 2. A set planned at RPE 10 never triggers "too hard". The fixed no-target thresholds (D20) apply only if a set somehow has no target.
+- Size of the offered change unchanged (playbook rule 5/6: ≈ 2–4% per RPE point over target, rounded to an achievable load). Offers still only apply on Adjust, with Undo (rule 3). Playbook rule T and D20 to be updated to match.

@@ -14,6 +14,7 @@ import { formatShortDate, formatWhen } from '../../format/dates';
 import { formatCount, plural } from '../../format/numbers';
 import { pausedLine } from '../../import/views';
 import { useTheme } from '../../theme';
+import { recentlyDeletedDataRow } from '../../history/delete-view';
 import { AppText, Card, DangerTextButton, DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
 import { BlockingCover } from './BlockingCover';
 import { SaveCopyToFiles } from './SaveCopyToFiles';
@@ -38,6 +39,7 @@ export function DataBackupScreen() {
   const [undoing, setUndoing] = useState(false);
   const [undoError, setUndoError] = useState<string | null>(null);
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
+  const root = useNavigation();
   const relaunch = useRelaunch();
   const prefs = useDevicePrefs();
   const [finishing, setFinishing] = useState(false);
@@ -51,7 +53,8 @@ export function DataBackupScreen() {
       s.imports.list(),
       s.data.leftover(),
     ]);
-    return { status, counts, blocked, undoBlocked, imports, leftover, rollback: s.restore.rollbackTarget() };
+    const recentlyDeleted = await s.history.recentlyDeletedCount();
+    return { status, counts, blocked, undoBlocked, imports, leftover, recentlyDeleted, rollback: s.restore.rollbackTarget() };
   });
   const now = services.now();
 
@@ -66,7 +69,8 @@ export function DataBackupScreen() {
   }
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
-  const { status, counts, blocked, undoBlocked, imports, leftover, rollback } = data.value;
+  const { status, counts, blocked, undoBlocked, imports, leftover, recentlyDeleted, rollback } = data.value;
+  const deletedRow = recentlyDeletedDataRow(recentlyDeleted);
   const leftoverView = leftover ? deleteLeftoverView(leftover) : null;
 
   function finishDeleting() {
@@ -157,6 +161,22 @@ export function DataBackupScreen() {
           <AppText variant="callout" numeric>
             {`${plural(counts.finishedWorkouts, 'workout', 'workouts')} · ${plural(counts.loggedSets, 'set', 'sets')} · ${plural(counts.gyms, 'gym', 'gyms')}`}
           </AppText>
+          {/* Recently deleted (delete-workouts §2.5): always present; `None` isn't tappable. */}
+          <Row
+            title={deletedRow.title}
+            trailing={
+              <AppText variant="callout" color="text.secondary" numeric>
+                {deletedRow.value}
+              </AppText>
+            }
+            {...(deletedRow.opens
+              ? {
+                  onPress: () => {
+                    root.navigate('RecentlyDeleted');
+                  },
+                }
+              : {})}
+          />
           <DomainLabel domain="coachingKnowledge" />
           <AppText variant="callout" numeric>
             {counts.exercises === 0 ? 'Exercise list: not in this build yet · gym presets built in' : `${plural(counts.exercises, 'exercise', 'exercises')} · gym presets built in`}

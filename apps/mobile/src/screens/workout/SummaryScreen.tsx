@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
+import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { checkRoutineName, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
@@ -16,12 +16,16 @@ import { newUuid } from '../../device/runtime';
 import { formatCalendarDate, formatDayMonth, formatShortDate, formatTime } from '../../format/dates';
 import { popToTabs, popToToday } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
+import type { WorkoutPresence } from '../../services/history-services';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
 import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, Chip, ChecklistRow, ChipRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
 import { stepTime } from '../../workout/finish';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
+import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } from '../../history/delete-view';
+import { handOffDeleteToast } from '../../history/toast-handoff';
+import { DeletedWorkoutView } from './DeletedWorkoutView';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
 /**
@@ -61,7 +65,10 @@ export function SummaryScreen() {
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
     const [coachRows, stale, availability, turnNote] = await Promise.all([s.coach.nextTargets(sessionId).catch(() => []), s.coach.staleNextTargets(sessionId).catch(() => new Set<string>()), s.coach.availability(), s.coach.summaryNote(sessionId).catch(() => null)]);
     const nextTime = summary === null ? null : nextTimeView({ title: summary.title, builtIn: summary.nextTime, coachRows, stale, availability, reviewing: s.coach.summaryRunning(sessionId) !== null && reviewing.current });
-    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime };
+    // A deleted (or purged) workout opens read-only with Restore (delete-workouts §3.2).
+    // A presence read that fails offers no delete rather than one that would be refused (review r2 N2).
+    const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
   // its small changes are saved when it answers, until a workout starts from this one (CA10).
@@ -82,6 +89,8 @@ export function SummaryScreen() {
   const [nameVisible, setNameVisible] = useState(false);
   const nameOp = useRef(newUuid());
   const [nameAfter] = useState(() => createAfterDismiss());
+  /** One op ID per Delete intent on this screen (a retry after a failure reuses it). */
+  const deleteOp = useRef(newUuid());
   const openName = (kind: 'routine' | 'workout') => {
     nameOp.current = newUuid();
     setNameSheet(kind);
@@ -116,6 +125,10 @@ export function SummaryScreen() {
   };
 
   if (data.state === 'loading') return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
+  if (data.state === 'ready' && (data.value.presence.kind === 'deleted' || data.value.presence.kind === 'gone')) {
+    const p = data.value.presence;
+    return <DeletedWorkoutView summary={p.kind === 'deleted' ? data.value.summary : null} goneOn={p.kind === 'deleted' ? p.goneOn : null} version={p.kind === 'deleted' ? p.version : null} onDone={done} />;
+  }
   if (data.state === 'error' || data.value.summary === null) {
     // Never a blank full-screen modal (review S2): say so, offer a retry and a way out.
     return (
@@ -131,7 +144,28 @@ export function SummaryScreen() {
       </View>
     );
   }
-  const { summary: sum, backup, painFlags, savedAs, coachNote, nextTime } = data.value;
+  const { summary: sum, backup, painFlags, savedAs, coachNote, nextTime, presence } = data.value;
+  const canDelete = summaryCanDelete(presence);
+
+  /** `⋯` → `Delete workout` (§2.2, DW1, DW2): the tap is the confirmation; Undo comes as a toast where Ben lands. */
+  function openMenu() {
+    ActionSheetIOS.showActionSheetWithOptions({ options: [DELETE_COPY.menuItem, DELETE_COPY.cancel], destructiveButtonIndex: 0, cancelButtonIndex: 1 }, (i) => {
+      if (i === 0) void deleteThis();
+    });
+  }
+  async function deleteThis() {
+    const r = await services.history.deleteWorkouts([{ sessionId, expectedVersion: sum.sessionVersion }], deleteOp.current, { from: 'opened' });
+    if (!r.ok) {
+      if (r.kind === 'stale') deleteOp.current = newUuid();
+      setToast({ text: r.message });
+      reload();
+      return;
+    }
+    const row = { title: sum.title, startedAtUtc: sum.startedAtUtc, tz: sum.tz, localDate: sum.dateOnly, source: sum.source, sessionId, version: sum.sessionVersion, gymName: sum.gymName ?? '', sets: sum.facts.workingSets };
+    handOffDeleteToast({ text: deletedToastText([row], services.now().tz), undo: r.refs.map((x) => ({ sessionId: x.sessionId, expectedVersion: x.version })), restoredText: restoredToastText([row], services.now().tz) });
+    changed();
+    done();
+  }
 
   async function tapNext(row: NextTimeRowView, tap: NextTimeTap) {
     if (row.row === null) return;
@@ -258,6 +292,16 @@ export function SummaryScreen() {
               >
                 <Icon name="pencil" color="text.secondary" size={18} />
               </Pressable>
+              {canDelete ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="More"
+                  onPress={openMenu}
+                  style={({ pressed }) => ({ minWidth: theme.target.min.width, minHeight: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+                >
+                  <Icon name="ellipsis.circle" color="text.secondary" size={20} />
+                </Pressable>
+              ) : null}
             </View>
             {canSaveRoutine ? (
               <View style={{ alignSelf: 'flex-start' }}>

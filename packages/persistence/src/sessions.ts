@@ -7,11 +7,22 @@ import {
   type WorkoutSet,
   type ZonedTimestamp,
 } from '@fizz/schemas';
-import type { FencedResult, SaveResult, SessionRepository, WriteFence } from '@fizz/domain';
+import {
+  planDeleteWorkouts,
+  planRestoreWorkouts,
+  type DeletionError,
+  type DeletionPlan,
+  type FencedResult,
+  type SaveResult,
+  type SessionRef,
+  type SessionRepository,
+  type WorkoutsRequest,
+  type WriteFence,
+} from '@fizz/domain';
 import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
 import { CorruptDataError, HistoryRewriteError } from './errors';
-import { bool, checkRead, checkWrite, insert, int, mismatch, parseJson, parseJsonOrNull, rowId, upsert } from './sql';
+import { bool, checkRead, checkWrite, inHistorySql, insert, int, mismatch, parseJson, parseJsonOrNull, rowId, upsert } from './sql';
 
 const T = 'sessions';
 
@@ -63,6 +74,10 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     finish_by_tz: s.finishBy?.tz ?? null,
     gym_changes: s.gymChanges === undefined ? null : JSON.stringify(s.gymChanges),
     today_edits: s.todayEdits === undefined ? null : JSON.stringify(s.todayEdits),
+    deleted_at_utc: s.deletion?.at.utc ?? null,
+    deleted_at_tz: s.deletion?.at.tz ?? null,
+    deleted_by_op_id: s.deletion?.opId ?? null,
+    purge_after_utc: s.deletion?.purgeAfterUtc ?? null,
   };
 }
 
@@ -215,6 +230,9 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       checkIn: parseJsonOrNull(T, id, 'check_in', s.check_in ?? null),
       ...(s.finish_by_utc === null || s.finish_by_utc === undefined ? {} : { finishBy: { utc: s.finish_by_utc, tz: s.finish_by_tz } }),
       ...(s.today_edits === null || s.today_edits === undefined ? {} : { todayEdits: parseJson(T, id, 'today_edits', s.today_edits) }),
+      ...(s.deleted_at_utc === null || s.deleted_at_utc === undefined
+        ? {}
+        : { deletion: { at: { utc: s.deleted_at_utc, tz: s.deleted_at_tz }, opId: s.deleted_by_op_id, purgeAfterUtc: s.purge_after_utc } }),
     },
     exercises: exercises.map((e) => ({
       id: e.id,
@@ -343,6 +361,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
   const aggregate = checkRead(SessionAggregateSchema, raw, T, id);
   const linked = aggregate.session.checkIn?.kind === 'answered' ? aggregate.session.checkIn.checkInId : null;
   if ((s.check_in_id ?? null) !== linked) throw mismatch(T, id, 'check_in_id', `Column says ${String(s.check_in_id)}, check_in says ${String(linked)}`);
+  if ((aggregate.session.status === 'deleted') !== (aggregate.session.deletion !== undefined)) throw mismatch(T, id, 'deleted_at_utc', 'A deleted workout must have its deletion record, and only a deleted one');
   assertReferences(aggregate);
   return aggregate;
 }
@@ -566,6 +585,31 @@ export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Prom
   }
 }
 
+export type DeletionOutcome = { ok: true; duplicate: boolean; refs: SessionRef[] } | { ok: false; error: DeletionError };
+export type PurgeOutcome = { ok: true; duplicate: boolean; purged: string[] } | { ok: false; error: { code: 'stale'; sessionIds: string[] } };
+
+/** Rows of a session outside its aggregate tables that the purge removes with it. */
+const PURGED_CHILD_TABLES = ['set_audit', 'timing_audit', 'processed_operations', 'session_pauses', 'rest_timers', 'work_intervals', 'session_sets', 'session_exercises', 'import_rows', 'coach_offers'] as const;
+
+/**
+ * One workout's purge, inside the caller's transaction: the tombstone first
+ * (the delete triggers allow a session's rows to go only once it exists),
+ * then its rows, its linked check-in and its import rows. Pain flags,
+ * memories, coach conversations and next-session targets stay (DW-D6).
+ */
+async function purgeOne(tx: SqlExecutor, sessionId: string, opId: string, atUtc: string): Promise<void> {
+  const s = await tx.getFirst<{ check_in_id: string | null }>("SELECT check_in_id FROM sessions WHERE id = ? AND status = 'deleted'", [sessionId]);
+  if (!s) throw new Error(`Session ${sessionId} isn't deleted`);
+  await tx.run(
+    `INSERT INTO purged_sessions (session_id, owner_id, deleted_at_utc, purged_at_utc, purge_op_id, import_job_id, local_date)
+     SELECT id, owner_id, deleted_at_utc, ?, ?, import_job_id, CASE WHEN import_job_id IS NULL THEN NULL ELSE local_date END FROM sessions WHERE id = ?`,
+    [atUtc, opId, sessionId],
+  );
+  for (const table of PURGED_CHILD_TABLES) await tx.run(`DELETE FROM ${table} WHERE session_id = ?`, [sessionId]);
+  await tx.run('DELETE FROM sessions WHERE id = ?', [sessionId]);
+  if (s.check_in_id !== null) await tx.run('DELETE FROM check_ins WHERE id = ?', [s.check_in_id]);
+}
+
 export class SqliteSessions implements SessionRepository {
   constructor(private readonly db: Database) {}
 
@@ -605,7 +649,7 @@ export class SqliteSessions implements SessionRepository {
     return this.db.read(async (q) => {
       const rows = await q.getAll<{ id: string }>(
         `SELECT DISTINCT s.id AS id, s.started_at_utc FROM sessions s JOIN session_exercises e ON e.session_id = s.id
-         WHERE s.owner_id = ? AND s.status = 'finished' AND e.exercise_id = ? ORDER BY s.started_at_utc, s.id`,
+         WHERE s.owner_id = ? AND ${inHistorySql('s')} AND e.exercise_id = ? ORDER BY s.started_at_utc, s.id`,
         [ownerId, exerciseId],
       );
       const out: SessionAggregate[] = [];
@@ -621,7 +665,7 @@ export class SqliteSessions implements SessionRepository {
   listFinishedBetween(ownerId: string, fromUtc: string, toUtc: string): Promise<SessionAggregate[]> {
     return this.db.read(async (q) => {
       const rows = await q.getAll<{ id: string }>(
-        `SELECT id FROM sessions WHERE owner_id = ? AND status = 'finished' AND started_at_utc >= ? AND started_at_utc < ?
+        `SELECT id FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND started_at_utc >= ? AND started_at_utc < ?
          ORDER BY started_at_utc, id`,
         [ownerId, fromUtc, toUtc],
       );
@@ -641,7 +685,7 @@ export class SqliteSessions implements SessionRepository {
   listFinishedBetweenReadable(ownerId: string, fromUtc: string, toUtc: string): Promise<{ sessions: SessionAggregate[]; unreadable: number }> {
     return this.db.read(async (q) => {
       const rows = await q.getAll<{ id: string }>(
-        `SELECT id FROM sessions WHERE owner_id = ? AND status = 'finished' AND started_at_utc >= ? AND started_at_utc < ?
+        `SELECT id FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND started_at_utc >= ? AND started_at_utc < ?
          ORDER BY started_at_utc, id`,
         [ownerId, fromUtc, toUtc],
       );
@@ -664,7 +708,7 @@ export class SqliteSessions implements SessionRepository {
   latestFinished(ownerId: string): Promise<SessionAggregate | null> {
     return this.db.read(async (q) => {
       const row = await q.getFirst<{ id: string }>(
-        "SELECT id FROM sessions WHERE owner_id = ? AND status = 'finished' ORDER BY started_at_utc DESC, id DESC LIMIT 1",
+        `SELECT id FROM sessions WHERE owner_id = ? AND ${inHistorySql()} ORDER BY started_at_utc DESC, id DESC LIMIT 1`,
         [ownerId],
       );
       return row ? readAggregate(q, row.id) : null;
@@ -683,9 +727,27 @@ export class SqliteSessions implements SessionRepository {
       (
         await q.getAll<{ id: string }>(
           `SELECT s.id AS id FROM sessions s
-           WHERE s.owner_id = ? AND s.status = 'finished' AND s.source = 'manual'
+           WHERE s.owner_id = ? AND ${inHistorySql('s')} AND s.source = 'manual'
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ? OFFSET ?`,
+          [ownerId, limit, offset],
+        )
+      ).map((r) => r.id),
+    );
+  }
+
+  /**
+   * IDs of every workout in history done in the app, with or without
+   * completed sets, newest first: Past workouts' list, where test sessions
+   * (`Finish anyway` with nothing logged) must be reachable to delete them
+   * (delete-workouts §2.3; review r2 B1). Paged by `offset` (B2).
+   */
+  listPastWorkoutIds(ownerId: string, limit: number, offset = 0): Promise<string[]> {
+    return this.db.read(async (q) =>
+      (
+        await q.getAll<{ id: string }>(
+          `SELECT id FROM sessions WHERE owner_id = ? AND ${inHistorySql()} AND source = 'manual'
+           ORDER BY started_at_utc DESC, id DESC LIMIT ? OFFSET ?`,
           [ownerId, limit, offset],
         )
       ).map((r) => r.id),
@@ -702,7 +764,7 @@ export class SqliteSessions implements SessionRepository {
       (
         await q.getAll<{ id: string; routine_id: string | null; started_at_utc: string; started_at_tz: string }>(
           `SELECT s.id, s.routine_id, s.started_at_utc, s.started_at_tz FROM sessions s
-           WHERE s.owner_id = ? AND s.status = 'finished' AND s.source = 'manual'
+           WHERE s.owner_id = ? AND ${inHistorySql('s')} AND s.source = 'manual'
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ?`,
           [ownerId, limit],
@@ -729,7 +791,7 @@ export class SqliteSessions implements SessionRepository {
                   (SELECT count(DISTINCT e.exercise_id) FROM session_exercises e WHERE e.session_id = s.id
                     AND EXISTS (SELECT 1 FROM session_sets y WHERE y.session_exercise_id = e.id AND y.status = 'completed')) AS n
            FROM sessions s
-           WHERE s.owner_id = ? AND s.status = 'finished'
+           WHERE s.owner_id = ? AND ${inHistorySql('s')}
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ?`,
           [ownerId, limit],
@@ -751,12 +813,140 @@ export class SqliteSessions implements SessionRepository {
     return this.db.read(async (q) => {
       const row = await q.getFirst<{ n: number }>(
         `SELECT count(*) AS n FROM sessions s
-         WHERE s.owner_id = ? AND s.status = 'finished' AND s.source = 'import'
+         WHERE s.owner_id = ? AND ${inHistorySql('s')} AND s.source = 'import'
            AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')`,
         [ownerId],
       );
       return row?.n ?? 0;
     });
+  }
+
+  /**
+   * `deleteWorkouts` (delete-workouts §8): one transaction, all-or-nothing
+   * (DW-D1, DW7, DW8). Only `finished` workouts at the shown version.
+   */
+  deleteWorkouts(req: WorkoutsRequest): Promise<DeletionOutcome> {
+    return this.applyPlan(req, planDeleteWorkouts);
+  }
+
+  /** `restoreWorkouts` (§8; the toast's Undo too): deleted, still restorable, at the shown version. */
+  restoreWorkouts(req: WorkoutsRequest): Promise<DeletionOutcome> {
+    return this.applyPlan(req, planRestoreWorkouts);
+  }
+
+  private applyPlan(req: WorkoutsRequest, planner: (found: ReadonlyMap<string, SessionAggregate | null>, req: WorkoutsRequest) => DeletionPlan): Promise<DeletionOutcome> {
+    return this.db.write(async (tx): Promise<DeletionOutcome> => {
+      const found = new Map<string, SessionAggregate | null>();
+      for (const item of req.items) found.set(item.sessionId, await readAggregate(tx, item.sessionId));
+      const plan = planner(found, req);
+      if (!plan.ok) return plan;
+      for (const w of plan.writes) {
+        const valid = checkWrite(SessionAggregateSchema, w.aggregate, T, w.aggregate.session.id);
+        const current = await tx.getFirst<{ revision: number }>('SELECT revision FROM sessions WHERE id = ?', [valid.session.id]);
+        if (current?.revision !== w.expectedRevision) throw new HistoryRewriteError(valid.session.id, 'revision changed inside the transaction');
+        await writeAggregate(tx, valid);
+      }
+      return { ok: true, duplicate: plan.duplicate, refs: plan.refs };
+    });
+  }
+
+  /**
+   * One import's workouts in history, oldest first (Select in an import's
+   * workout list, delete-workouts §2.1, DW24). A row that can't be read is
+   * skipped and counted.
+   */
+  listImportJobInHistory(ownerId: string, jobId: string): Promise<{ sessions: SessionAggregate[]; unreadable: number }> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ id: string }>(
+        `SELECT id FROM sessions WHERE owner_id = ? AND import_job_id = ? AND ${inHistorySql()} ORDER BY local_date, started_at_utc, id`,
+        [ownerId, jobId],
+      );
+      const sessions: SessionAggregate[] = [];
+      let unreadable = 0;
+      for (const r of rows) {
+        try {
+          const agg = await readAggregate(q, r.id);
+          if (agg) sessions.push(agg);
+        } catch {
+          unreadable += 1;
+        }
+      }
+      return { sessions, unreadable };
+    });
+  }
+
+  /**
+   * Recently deleted (§2.5): deleted workouts still restorable at `nowUtc`,
+   * newest deletion first. Past their 30 days they are never listed, whether
+   * or not the purge has run (DW21).
+   */
+  listRecentlyDeleted(ownerId: string, nowUtc: string): Promise<{ sessions: SessionAggregate[]; unreadable: number }> {
+    return this.db.read(async (q) => {
+      const rows = await q.getAll<{ id: string }>(
+        `SELECT id FROM sessions WHERE owner_id = ? AND status = 'deleted' AND purge_after_utc > ?
+         ORDER BY deleted_at_utc DESC, id DESC`,
+        [ownerId, nowUtc],
+      );
+      // One row that can't be read is skipped and counted; the rest stay restorable (review r2 S2).
+      const sessions: SessionAggregate[] = [];
+      let unreadable = 0;
+      for (const r of rows) {
+        try {
+          const agg = await readAggregate(q, r.id);
+          if (agg) sessions.push(agg);
+        } catch {
+          unreadable += 1;
+        }
+      }
+      return { sessions, unreadable };
+    });
+  }
+
+  /** How many workouts Recently deleted lists at `nowUtc` (Past workouts footer, Data & backup row). */
+  countRecentlyDeleted(ownerId: string, nowUtc: string): Promise<number> {
+    return this.db.read(async (q) => (await q.getFirst<{ n: number }>("SELECT count(*) AS n FROM sessions WHERE owner_id = ? AND status = 'deleted' AND purge_after_utc > ?", [ownerId, nowUtc]))?.n ?? 0);
+  }
+
+  /**
+   * The purge (§6.4, ADR 0024). Removes every row of each workout and leaves
+   * a tombstone (ID, owner, deleted-at, purged-at, import job; no training
+   * values). By default the workouts past their 30 days; `sessionIds` for
+   * `Delete now` (any deleted workout of the owner). One transaction: a
+   * force-close leaves either all of it or none (DW22). Repeating an
+   * operation ID returns what it purged and writes nothing.
+   */
+  purgeDeleted(req: { ownerId: string; opId: string; at: ZonedTimestamp; sessionIds?: readonly string[] }): Promise<PurgeOutcome> {
+    return this.db.write(async (tx): Promise<PurgeOutcome> => {
+      const done = await tx.getAll<{ session_id: string }>('SELECT session_id FROM purged_sessions WHERE owner_id = ? AND purge_op_id = ? ORDER BY session_id', [req.ownerId, req.opId]);
+      let ids: string[];
+      if (req.sessionIds === undefined) {
+        ids = (
+          await tx.getAll<{ id: string }>("SELECT id FROM sessions WHERE owner_id = ? AND status = 'deleted' AND purge_after_utc <= ? ORDER BY id", [req.ownerId, req.at.utc])
+        ).map((r) => r.id);
+        // The due purge under an op ID already used (a second launch the same day) still purges what has become due since (review N1).
+        if (done.length > 0 && ids.length === 0) return { ok: true, duplicate: true, purged: done.map((r) => r.session_id) };
+      } else if (done.length > 0) {
+        return { ok: true, duplicate: true, purged: done.map((r) => r.session_id) };
+      } else {
+        ids = [...new Set(req.sessionIds)].sort();
+        for (const id of ids) {
+          const row = await tx.getFirst<{ status: string; owner_id: string }>('SELECT status, owner_id FROM sessions WHERE id = ?', [id]);
+          if (row?.status !== 'deleted' || row.owner_id !== req.ownerId) return { ok: false, error: { code: 'stale', sessionIds: [id] } };
+        }
+      }
+      for (const id of ids) await purgeOne(tx, id, req.opId, req.at.utc);
+      return { ok: true, duplicate: false, purged: ids };
+    });
+  }
+
+  /** Whether an import's workout on `localDate` was purged (its import rows went with it; review N4). */
+  isPurgedImportDate(jobId: string, localDate: string): Promise<boolean> {
+    return this.db.read(async (q) => (await q.getFirst('SELECT 1 AS x FROM purged_sessions WHERE import_job_id = ? AND local_date = ?', [jobId, localDate])) !== null);
+  }
+
+  /** Whether `sessionId` was purged (an old link opens `This workout was deleted.`, §3.2). */
+  isPurged(sessionId: string): Promise<boolean> {
+    return this.db.read(async (q) => (await q.getFirst('SELECT 1 AS x FROM purged_sessions WHERE session_id = ?', [sessionId])) !== null);
   }
 
   /** IDs of every stored session (for integrity checks). */
