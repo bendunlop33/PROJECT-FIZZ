@@ -1,5 +1,5 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useNavigation } from '@react-navigation/native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,7 +8,7 @@ import type { Routine } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { popToTabs } from '../../navigation/actions';
-import type { EditorFrom, LibraryToastParam, RootStackParams } from '../../navigation/types';
+import type { EditorFrom, LibraryToastParam } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Banner, Eyebrow, Icon, SecondaryButton, StatusLine, Tag, TextButton, Toast } from '../../ui';
@@ -22,31 +22,10 @@ type Toasting = { text: string; action?: string; onAction?: () => void } | null;
  * Up next, `ALL WORKOUTS`, `FROM HISTORY` with `Save`. A row opens its
  * overview (where Start is); `⋯` (and long-press, and VoiceOver actions)
  * has Edit, Duplicate, rotation and Delete, each with Undo. Local only:
- * nothing here waits on network or AI.
- *
- * The root `Workouts` route (header `＋`); the same list is the Library
- * tab's `Workouts` segment (`WorkoutsList`, exercise-library EL10).
+ * nothing here waits on network or AI. It is the Library tab's `Workouts`
+ * segment (exercise-library EL10); the Library header's `＋` is
+ * `NewWorkoutButton` (review library-browse B1).
  */
-export function WorkoutsScreen() {
-  const navigation = useNavigation();
-  const route = useRoute<RouteProp<RootStackParams, 'Workouts'>>();
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: LIBRARY_COPY_UI.title,
-      headerRight: () => <NewWorkoutButton from="Workouts" />,
-    });
-  }, [navigation]);
-  return (
-    <WorkoutsList
-      from="Workouts"
-      handedToast={route.params?.toast}
-      onHandedToast={() => {
-        navigation.setParams({ toast: undefined } as never);
-      }}
-    />
-  );
-}
-
 /** `＋` → `New workout` (44pt). */
 export function NewWorkoutButton({ from }: { from: EditorFrom }) {
   const navigation = useNavigation();

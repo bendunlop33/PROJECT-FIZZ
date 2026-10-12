@@ -13,12 +13,12 @@ import { useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, BottomCard, Chip, ChipRow, Icon, StatusLine, TextButton, TextField } from '../../ui';
 import { filterChipLabel, filterOptions, filterValues, LIBRARY_BROWSE_COPY, toggled, withFilter, type FilterKind } from '../../workout/library-browse-view';
-import { WorkoutsList } from '../routines/WorkoutsScreen';
+import { NewWorkoutButton, WorkoutsList } from '../routines/WorkoutsScreen';
 
 /**
  * The Library tab (exercise-library §9, EL10): `Exercises` (every exercise,
  * search with aliases and typos, filters; a row opens Exercise detail) and
- * `Workouts` (the Workouts list, unchanged). Remembers its last segment on
+ * `Workouts` (the Workouts list; the header's `＋` is `New workout`). Remembers its last segment on
  * this phone. Nothing here needs a network or the coach (rule 1); it never
  * animates. The `ResumeBar` shows while a workout is unfinished.
  */
@@ -40,9 +40,13 @@ export function LibraryScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top }}>
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], gap: theme.space['3'] }}>
-        <AppText variant="title1" accessibilityRole="header">
-          {LIBRARY_BROWSE_COPY.title}
-        </AppText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
+          <AppText variant="title1" accessibilityRole="header" style={{ flex: 1 }}>
+            {LIBRARY_BROWSE_COPY.title}
+          </AppText>
+          {/* `＋` (§9.3, review B1): `New workout` on Workouts. `New exercise` on Exercises is deferred (§9.11). */}
+          {segment === 'workouts' ? <NewWorkoutButton from="Library" /> : null}
+        </View>
         <Segmented
           options={LIBRARY_BROWSE_COPY.segments}
           selected={segment}
