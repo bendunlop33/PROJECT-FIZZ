@@ -85,8 +85,15 @@ function clampMinutes(m: number): number | null {
   return Math.min(FIT_MINUTES.max, Math.max(FIT_MINUTES.min, stepped));
 }
 
-/** A time not meant as the workout's length: "rest 2 min", "in 2 hours", "between sets", "every 3 minutes". */
-const NOT_LENGTH_BEFORE = /\b(?:rest|resting|rests|in|after|between|within|every|than|break|breaks)\s*(?:of |for |about |around |roughly |like )?$/;
+/** A time not meant as the workout's length: "rest 2 min", "rest less than 2 min", "between sets", "every 3 minutes". */
+const NOT_LENGTH_BEFORE = /\b(?:rest|resting|rests|after|between|every|break|breaks)\s*(?:of |for |about |around |roughly |like |under |over |up to |(?:no )?(?:less|more|longer|shorter) than )?$/;
+/**
+ * Review r2 B1: "in N" is a start time only straight after a leave/train/start
+ * verb ("I train in 2 hours", "leaving in 40 min", "be there in 30"). Any other
+ * "in N" ("a workout I can do in 45 minutes", "fits in an hour", "in less than
+ * 40 minutes") is the length.
+ */
+const START_TIME_BEFORE = /\b(?:train|training|leave|leaving|start|starting|be there|get there|getting there|arrive|arriving|(?:go|going|head|heading)(?: out| off| over)?(?: to the gym)?)\s+in\s*(?:about |around |roughly )?$/;
 const NOT_LENGTH_AFTER = /^\s*(?:of )?(?:rest|resting|between|break|breaks|off|from now|later|ago|before|after|each|per)\b/;
 /** A length that names the workout: "45 min push workout", "an hour session", "60 minutes long". */
 const LENGTH_NAMES_WORKOUT = /^\s*(?:long\b|(?:[a-z]+[ -]){0,3}?(?:workout|work-out|session|routine|circuit)s?\b)/;
@@ -98,7 +105,7 @@ const LENGTH_NAMES_WORKOUT = /^\s*(?:long\b|(?:[a-z]+[ -]){0,3}?(?:workout|work-
  * hours". A number for a load, reps or distance ("bench at 200 kg", "3
  * sets", "400m") is never read as minutes (rule 8: the words are data).
  * Review S3: a time for rest or for when ("rest 2 min between sets", "I train
- * in 2 hours") isn't the length; a length next to workout, session or long
+ * in 2 hours") isn't the length, but "in 45 minutes" after anything else is; a length next to workout, session or long
  * wins, else the longest one named.
  */
 export function parseRequestedMinutes(text: string): number | null {
@@ -120,7 +127,10 @@ export function parseRequestedMinutes(text: string): number | null {
   for (const [word, n] of Object.entries(WORD_NUMBERS).sort((a, b) => b[0].length - a[0].length)) {
     take(new RegExp(`\\b${word.replace(' ', '[ -]')} ?-? ?(?:minutes?|mins?|min)\\b`), () => n);
   }
-  const lengths = found.filter((f) => !NOT_LENGTH_BEFORE.test(t.slice(0, f.start)) && !NOT_LENGTH_AFTER.test(t.slice(f.end)));
+  const lengths = found.filter((f) => {
+    const before = t.slice(0, f.start);
+    return !NOT_LENGTH_BEFORE.test(before) && !START_TIME_BEFORE.test(before) && !NOT_LENGTH_AFTER.test(t.slice(f.end));
+  });
   if (lengths.length === 0) return null;
   const named = lengths.filter((f) => LENGTH_NAMES_WORKOUT.test(t.slice(f.end)));
   const pool = named.length > 0 ? named : lengths;
@@ -389,14 +399,13 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
     if (rpe !== p.targetRpe) note('clamped', `${ex.name} · RPE ${String(p.targetRpe)} → ${String(rpe)}`);
   }
 
-  // Rest: clamped, then Ben's nearest preset.
+  // Rest: Ben's nearest preset, then clamped to the draft's limits.
+  // Review r2 S1: snap first so an out-of-range preset (6:00) can't drag 5:00 down to 1:30.
   let restS: number | null = null;
   if (p.restSeconds !== null) {
-    const clamped = clampInt(p.restSeconds, L.minRestS, L.maxRestS);
-    // Review S1: only presets inside the draft's rest limits (a 6:00 preset would fail the schema).
-    const presets = ctx.restPresetsS.filter((s) => s >= L.minRestS && s <= L.maxRestS);
-    restS = presets.length > 0 ? nearestPreset(clamped, presets) : clamped;
-    if (restS !== p.restSeconds) note('rest_snapped', `Rest ${formatDuration(p.restSeconds)} → ${formatDuration(restS)}${presets.length > 0 ? ' (your presets)' : ''}`);
+    const snapped = ctx.restPresetsS.length > 0 ? nearestPreset(p.restSeconds, ctx.restPresetsS) : p.restSeconds;
+    restS = clampInt(snapped, L.minRestS, L.maxRestS);
+    if (restS !== p.restSeconds) note('rest_snapped', `Rest ${formatDuration(p.restSeconds)} → ${formatDuration(restS)}${ctx.restPresetsS.includes(restS) ? ' (your presets)' : ''}`);
   }
 
   // BD8: reps differ from what the history plans; the load isn't re-scaled.
