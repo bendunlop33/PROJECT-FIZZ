@@ -8,7 +8,7 @@ import type { Routine } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { popToTabs } from '../../navigation/actions';
-import type { LibraryToastParam, RootStackParams } from '../../navigation/types';
+import type { EditorFrom, LibraryToastParam, RootStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Banner, Eyebrow, Icon, SecondaryButton, StatusLine, Tag, TextButton, Toast } from '../../ui';
@@ -23,14 +23,54 @@ type Toasting = { text: string; action?: string; onAction?: () => void } | null;
  * overview (where Start is); `⋯` (and long-press, and VoiceOver actions)
  * has Edit, Duplicate, rotation and Delete, each with Undo. Local only:
  * nothing here waits on network or AI.
+ *
+ * The root `Workouts` route (header `＋`); the same list is the Library
+ * tab's `Workouts` segment (`WorkoutsList`, exercise-library EL10).
  */
 export function WorkoutsScreen() {
+  const navigation = useNavigation();
+  const route = useRoute<RouteProp<RootStackParams, 'Workouts'>>();
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: LIBRARY_COPY_UI.title,
+      headerRight: () => <NewWorkoutButton from="Workouts" />,
+    });
+  }, [navigation]);
+  return (
+    <WorkoutsList
+      from="Workouts"
+      handedToast={route.params?.toast}
+      onHandedToast={() => {
+        navigation.setParams({ toast: undefined } as never);
+      }}
+    />
+  );
+}
+
+/** `＋` → `New workout` (44pt). */
+export function NewWorkoutButton({ from }: { from: EditorFrom }) {
+  const navigation = useNavigation();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={LIBRARY_COPY_UI.newWorkout}
+      onPress={() => {
+        navigation.navigate('WorkoutEditor', { routineId: null, from });
+      }}
+      style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <Icon name="plus" color="text.primary" size={22} />
+    </Pressable>
+  );
+}
+
+/** The Workouts list's body: `from` is where the editor returns; `handedToast` is the editor's `Saved Push A` [Undo]. */
+export function WorkoutsList({ from, handedToast, onHandedToast }: { from: EditorFrom; handedToast: LibraryToastParam | undefined; onHandedToast: () => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const route = useRoute<RouteProp<RootStackParams, 'Workouts'>>();
   const [sort, setSort] = useState<LibrarySort>('recent');
   const [showAll, setShowAll] = useState(false);
   const [toast, setToast] = useState<Toasting>(null);
@@ -43,24 +83,6 @@ export function WorkoutsScreen() {
   useEffect(() => {
     reload();
   }, [sort, showAll, reload]);
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: LIBRARY_COPY_UI.title,
-      headerRight: () => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={LIBRARY_COPY_UI.newWorkout}
-          onPress={() => {
-            navigation.navigate('WorkoutEditor', { routineId: null, from: 'Workouts' });
-          }}
-          style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Icon name="plus" color="text.primary" size={22} />
-        </Pressable>
-      ),
-    });
-  }, [navigation]);
 
   // Loading: nothing for 300 ms, then static rows (no shimmer).
   useEffect(() => {
@@ -82,11 +104,11 @@ export function WorkoutsScreen() {
   }, [toast]);
 
   // A toast handed back by the editor (`Saved Push A` [Undo]).
-  const handed = route.params?.toast;
+  const handed = handedToast;
   useEffect(() => {
     if (!handed) return;
     showLibraryToast(handed);
-    navigation.setParams({ toast: undefined } as never);
+    onHandedToast();
   }, [handed?.key]);
 
   function showLibraryToast(t: LibraryToastParam) {
@@ -128,7 +150,7 @@ export function WorkoutsScreen() {
     busy.current = true;
     try {
       if (action === LIBRARY_COPY_UI.editWorkout) {
-        navigation.navigate('WorkoutEditor', { routineId: row.routineId, from: 'Workouts' });
+        navigation.navigate('WorkoutEditor', { routineId: row.routineId, from });
       } else if (action === LIBRARY_COPY_UI.duplicate) {
         const r = await services.routines.duplicate({ routineId: row.routineId, opId: newUuid() });
         if (!r.ok) {
@@ -138,7 +160,7 @@ export function WorkoutsScreen() {
         changed();
         // The toast comes back with Cancel, so its Undo is reachable (review S1).
         const copyToast = { key: r.routine.id, text: LIBRARY_TOASTS.saved(r.routine.name), undo: { kind: 'delete' as const, routineId: r.routine.id, version: r.routine.version } };
-        navigation.navigate('WorkoutEditor', { routineId: r.routine.id, from: 'Workouts', selectName: true, copyToast });
+        navigation.navigate('WorkoutEditor', { routineId: r.routine.id, from, selectName: true, copyToast });
       } else if (action === LIBRARY_COPY_UI.addToRotation || action === LIBRARY_COPY_UI.removeFromRotation) {
         const on = action === LIBRARY_COPY_UI.addToRotation;
         const before = await services.routines.editor({ routineId: row.routineId, gymId: null });
@@ -269,7 +291,7 @@ export function WorkoutsScreen() {
             <TextButton
               label={LIBRARY_COPY_UI.newWorkout}
               onPress={() => {
-                navigation.navigate('WorkoutEditor', { routineId: null, from: 'Workouts' });
+                navigation.navigate('WorkoutEditor', { routineId: null, from });
               }}
             />
           </View>

@@ -680,19 +680,7 @@ export function TodayScreen() {
           </RuledSection>
         ) : null}
 
-        {/* The Workouts library (routines.md §A2.1): always one tap from Today. */}
-        {main.kind !== 'resume' && main.kind !== 'stale' ? (
-          <View style={{ alignSelf: 'flex-start' }}>
-            <TextButton
-              label="Workouts"
-              icon="chevron.right"
-              tone="secondary"
-              onPress={() => {
-                navigation.navigate('Workouts');
-              }}
-            />
-          </View>
-        ) : null}
+        {/* The Workouts list is in the Library tab now (exercise-library EL10): Today gets nothing new and its `Workouts` link retired. */}
 
         <RuledSection title="This week">
           {view && view.week.days.length === 7 ? <WeekStrip days={view.week.days} /> : null}
@@ -726,7 +714,7 @@ export function TodayScreen() {
         }}
         onEditWorkouts={() => {
           pickerAfter.arm(() => {
-            navigation.navigate('Workouts');
+            navigation.navigate('Tabs', { screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts' } } });
           });
           setPickerVisible(false);
         }}

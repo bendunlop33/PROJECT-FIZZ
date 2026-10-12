@@ -604,6 +604,8 @@ export interface RoutineEditorData {
   restPresets: RestSetting[];
   /** This workout is the one in progress (`In progress · changes apply next time`). */
   inProgress: boolean;
+  /** `Target RPE` / `Target RIR` on the cards (WL11); null hides the row (effort scale off). */
+  effortScale: 'rpe' | 'rir' | null;
 }
 
 /** An editor save (WL10): the new version and the record its Undo reads. */
@@ -2725,6 +2727,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           unit: p.preferredUnit,
           globalDefault: p.defaultRest,
           restPresets: p.restPresets,
+          effortScale: p.effortScale === 'off' ? null : p.effortScale,
           inProgress: routine !== null && active?.session.routineId === routine.id,
         };
       } catch {

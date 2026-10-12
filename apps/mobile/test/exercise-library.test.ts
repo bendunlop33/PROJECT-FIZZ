@@ -193,7 +193,8 @@ describe('Add to a workout (EL-B9–EL-B11, EL14)', () => {
     if (!first) throw new Error('no set');
     const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-1', setId: first.id, values: { load: { value: 60, unit: 'kg', convention: 'total' }, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
     if (!logged.ok) throw new Error(logged.error.message);
-    const doneBefore = logged.aggregate.sets.filter((x) => x.status === 'done');
+    const doneBefore = logged.aggregate.sets.filter((x) => x.status === 'completed');
+    expect(doneBefore).toHaveLength(1);
 
     const facePull = await idOf(s, 'Face pull');
     const dest = await s.library.destinations(facePull);
@@ -205,7 +206,7 @@ describe('Add to a workout (EL-B9–EL-B11, EL14)', () => {
     expect(row?.order).toBe(Math.max(...(now?.exercises.map((e) => e.order) ?? [])));
     const sets = now?.sets.filter((x) => x.sessionExerciseId === row?.id) ?? [];
     expect(sets.map((x) => [x.setType, x.status])).toEqual([['working', 'pending'], ['working', 'pending'], ['working', 'pending']]);
-    expect(now?.sets.filter((x) => x.status === 'done')).toEqual(doneBefore);
+    expect(now?.sets.filter((x) => x.status === 'completed')).toEqual(doneBefore);
     // The saved workout isn't touched by an add to the running one.
     expect((await s.routines.editor({ routineId: routine.id, gymId: null }))?.routine?.version).toBe(routine.version);
 
@@ -213,7 +214,7 @@ describe('Add to a workout (EL-B9–EL-B11, EL14)', () => {
     expect(await s.library.undoAdd({ undo: r.undo, opId: 'lib-session-undo' })).toEqual({ ok: true });
     const undone = (await s.workout.load(sessionId))?.aggregate;
     expect(undone?.exercises.find((e) => e.id === row?.id)?.removed).toBeDefined();
-    expect(undone?.sets.filter((x) => x.status === 'done')).toEqual(doneBefore);
+    expect(undone?.sets.filter((x) => x.status === 'completed')).toEqual(doneBefore);
   });
 });
 

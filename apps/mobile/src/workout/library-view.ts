@@ -57,6 +57,7 @@ export const EDITOR_COPY = {
   dropSet: 'Drop set',
   restByType: 'Rest by set type',
   replace: 'Replace',
+  exerciseInfo: 'Exercise info',
   supersetWithNext: 'Superset with next',
   ungroup: 'Ungroup',
   moveUp: 'Move up',
@@ -127,7 +128,7 @@ export function editorPrimary(input: { issues: readonly RoutineIssue[]; dirty: b
   return { label: EDITOR_COPY.save, disabled: false };
 }
 
-/** An exercise card's `⋯` (§A2.3): Replace, Superset with next / Ungroup, Move up, Move down, Remove. */
+/** An exercise card's `⋯` (§A2.3, revised 2026-10-12): Replace, Exercise info, Superset with next / Ungroup, Move up, Move down, Remove. */
 export function exerciseMenu(list: readonly Pick<RoutineExercise, 'id' | 'supersetGroup'>[], slotId: string): string[] {
   const i = list.findIndex((e) => e.id === slotId);
   const slot = list[i];
@@ -136,6 +137,7 @@ export function exerciseMenu(list: readonly Pick<RoutineExercise, 'id' | 'supers
   const canGroup = next !== undefined && !(slot.supersetGroup !== null && slot.supersetGroup === next.supersetGroup);
   return [
     EDITOR_COPY.replace,
+    EDITOR_COPY.exerciseInfo,
     ...(canGroup ? [EDITOR_COPY.supersetWithNext] : []),
     ...(slot.supersetGroup !== null ? [EDITOR_COPY.ungroup] : []),
     ...(i > 0 ? [EDITOR_COPY.moveUp] : []),

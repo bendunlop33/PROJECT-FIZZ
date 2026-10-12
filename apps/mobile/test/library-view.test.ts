@@ -41,9 +41,9 @@ describe('editor primary (§3.3)', () => {
   it('exercise ⋯: Superset with next only with a next one outside its group; Move up/down at the ends', () => {
     const e = (id: string, g: string | null) => ({ id, supersetGroup: g }) as Pick<RoutineExercise, 'id' | 'supersetGroup'>;
     const list = [e('a', null), e('b', 'A'), e('c', 'A')];
-    expect(exerciseMenu(list, 'a')).toEqual(['Replace', 'Superset with next', 'Move down', 'Remove']);
-    expect(exerciseMenu(list, 'b')).toEqual(['Replace', 'Ungroup', 'Move up', 'Move down', 'Remove']);
-    expect(exerciseMenu(list, 'c')).toEqual(['Replace', 'Ungroup', 'Move up', 'Remove']);
+    expect(exerciseMenu(list, 'a')).toEqual(['Replace', 'Exercise info', 'Superset with next', 'Move down', 'Remove']);
+    expect(exerciseMenu(list, 'b')).toEqual(['Replace', 'Exercise info', 'Ungroup', 'Move up', 'Move down', 'Remove']);
+    expect(exerciseMenu(list, 'c')).toEqual(['Replace', 'Exercise info', 'Ungroup', 'Move up', 'Remove']);
     expect(exerciseMenu(list, 'x')).toEqual([]);
   });
 
