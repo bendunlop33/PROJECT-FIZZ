@@ -42,7 +42,7 @@ export interface ProgressHomeInput {
   days: ProgressWindowDays;
   grouping: ProgressGrouping;
   gymNames?: Readonly<Record<string, string>>;
-  /** How many records to list (slice A lists up to 5 inline). */
+  /** At most this many records in `items` (default: all of them). */
   recordLimit?: number;
 }
 
@@ -135,6 +135,8 @@ export interface RecordView {
   /** Unique per row (`sessionExerciseId:kind`): the same exercise can appear twice in one workout. */
   key: string;
   sessionId: string;
+  /** The workout row: exercise detail opens on its series. */
+  sessionExerciseId: string;
   exerciseId: string;
   /** Exercise detail opens on this equipment's series (slice B). */
   equipmentId: string | null;
@@ -159,8 +161,16 @@ export type ProgressHomeView =
       datesWords: string;
       activity: ActivityView;
       muscles: MusclesView;
-      records: { items: RecordView[]; total: number; empty: string | null };
+      /**
+       * Every record in the window, newest first. The home shows the first
+       * `initial` and then `more` (`All records (5) ›`, §2.2 region 5), which
+       * lists the rest in place.
+       */
+      records: { items: RecordView[]; total: number; initial: number; more: { label: string; words: string } | null; empty: string | null };
     };
+
+/** §2.2 region 5: up to 3 record rows, then `All records (n) ›`. */
+export const HOME_RECORDS_INITIAL = 3;
 
 function sessionTitle(s: ProgressSession, exercises: ReadonlyMap<string, MuscleInfo>): string {
   if (s.name !== null && s.name.trim() !== '') return s.name;
@@ -185,6 +195,7 @@ function recordView(r: ProgressRecord, gymNames: Readonly<Record<string, string>
   return {
     key: `${r.sessionExerciseId}:${r.kind}`,
     sessionId: r.sessionId,
+    sessionExerciseId: r.sessionExerciseId,
     exerciseId: r.exerciseId,
     equipmentId: r.equipmentId,
     isEstimate: r.isEstimate,
@@ -323,7 +334,8 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   };
 
   // Records (PG10, PG30)
-  const rec = recordsInWindow(input.sessions, window, { limit: input.recordLimit ?? 5, estimates: true });
+  const rec = recordsInWindow(input.sessions, window, { limit: input.recordLimit ?? Number.POSITIVE_INFINITY, estimates: true });
+  const listed = rec.items.length;
   return {
     dataState: 'normal',
     window,
@@ -335,6 +347,8 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
     records: {
       items: rec.items.map((r) => recordView(r, gymNames)),
       total: rec.total,
+      initial: HOME_RECORDS_INITIAL,
+      more: listed > HOME_RECORDS_INITIAL ? { label: `All records (${String(listed)})`, words: `All records, ${String(listed)}.` } : null,
       empty: rec.total === 0 ? `No new records in the last ${label}.` : null,
     },
   };

@@ -361,6 +361,19 @@ function painFlag(exerciseId: string): PainFlag {
 }
 
 describe('buildWorkoutOverview over the shared dry run', () => {
+  it('progress-B S4/N8: each row carries this gym’s equipment for `History`, and whether it has history', () => {
+    const out = dryRun(pushA(), [bar, rack, cable]);
+    const fresh = overviewOf(out, []);
+    for (const row of fresh.rows) {
+      const ex = out.aggregate.exercises.find((e) => e.id === row.sessionExerciseId);
+      expect(row.equipmentId).toBe(row.missingEquipment === null ? (ex?.equipmentId ?? null) : null);
+      expect(row.hasHistory).toBe(false);
+    }
+    expect(fresh.rows[0]?.equipmentId).toBe(bar.id);
+    const done = overviewOf(out, [finishedFrom(out.aggregate, id(900), -86_400)]);
+    expect(done.rows.every((r) => r.hasHistory)).toBe(true);
+  });
+
   it('OV3: every row’s sets, reps and load equal the pending targets Start would create', () => {
     const out = dryRun(pushA(), [bar, rack, cable]);
     const view = overviewOf(out, []);

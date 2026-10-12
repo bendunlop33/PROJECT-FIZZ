@@ -1,8 +1,10 @@
 import type { EquipmentKind, Load } from '@fizz/schemas';
 import { formatDuration, formatNumber, loadText, NBSP } from '../display';
-import { exclusionWords } from '../exclusions';
+import { exclusionWords, isSetCountable } from '../exclusions';
+import { E1RM_MAX_REPS } from './e1rm';
 import { RECORD_MIN_SESSIONS } from '../session/records';
 import {
+  ASSIST_RECORD_MIN_REPS,
   collectExerciseSeries,
   defaultSeries,
   DEFAULT_TREND_RANGE,
@@ -15,6 +17,7 @@ import {
   repTableByReps,
   repTableByWeight,
   TREND_RANGES,
+  trendRangeBounds,
   type ExerciseMetric,
   type ExerciseSeries,
   type ProgressExerciseEntry,
@@ -235,14 +238,28 @@ export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readon
     const eq = s.key.equipmentId === null ? 'No equipment' : (s.equipmentName ?? 'Equipment');
     base.set(s.id, gym === null ? eq : `${gym} · ${eq}`);
   }
-  const counts = new Map<string, number>();
-  for (const l of base.values()) counts.set(l, (counts.get(l) ?? 0) + 1);
-  const out = new Map<string, string>();
+  // Two series that would read the same: say what differs (unit and convention, or timed), then the unit as a last resort.
+  const detail = (s: ExerciseSeries) => (s.key.measurement === 'duration' ? 'timed' : seriesUnitText(s));
+  const step1 = new Map<string, string>();
+  const baseCounts = countLabels(base);
   for (const s of series) {
     const l = base.get(s.id) ?? '';
-    out.set(s.id, (counts.get(l) ?? 0) > 1 && s.key.source === 'app' ? `${l} · ${seriesUnitText(s)}` : l);
+    if ((baseCounts.get(l) ?? 0) <= 1) step1.set(s.id, l);
+    else step1.set(s.id, s.key.source === 'import' ? `FitNotes · ${detail(s)}` : `${l} · ${detail(s)}`);
+  }
+  const step1Counts = countLabels(step1);
+  const out = new Map<string, string>();
+  for (const s of series) {
+    const l = step1.get(s.id) ?? '';
+    out.set(s.id, (step1Counts.get(l) ?? 0) > 1 ? `${l} · ${s.key.unit}` : l);
   }
   return out;
+}
+
+function countLabels(labels: ReadonlyMap<string, string>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const l of labels.values()) counts.set(l, (counts.get(l) ?? 0) + 1);
+  return counts;
 }
 
 // ---------------------------------------------------------------------------
@@ -360,7 +377,8 @@ export interface ExerciseDetailView {
   panel: TrendPanelLine[];
   table: { headers: [string, string, string]; rows: TableRowView[] };
   repTable: RepTableView | null;
-  records: { items: RecordRowView[]; empty: string | null };
+  /** Null for series with no defined record (timed holds, SP2): the section is hidden. */
+  records: { items: RecordRowView[]; empty: string | null } | null;
   history: { unit: string; months: { month: string; title: string; rows: HistoryRowView[] }[]; more: { label: string; months: number } | null };
   pain: { flagId: string; text: string; words: string } | null;
   /** The point to select on open (a home record or a past workout), when it has one. */
@@ -375,10 +393,14 @@ export interface ExerciseDetailInput {
   /** The catalogue or custom name, used when the logged names are missing. */
   name?: string;
   seriesId?: string | null;
-  /** Prefer a series on this equipment (Workout overview). */
+  /** Prefer a series on this equipment (Workout overview `History`). */
   equipmentId?: string | null;
+  /** Else prefer a series at this gym (Workout overview `History` on equipment with no history yet). */
+  gymId?: string | null;
   /** Open on the series containing this workout, with its point selected (home record, past workout). */
   sessionId?: string | null;
+  /** With `sessionId`: the workout row tapped (Summary), so the series is that row's even when the exercise is on two rows. */
+  sessionExerciseId?: string | null;
   metric?: ExerciseMetric | null;
   range?: TrendRange | null;
   repBy?: 'weight' | 'reps';
@@ -388,12 +410,30 @@ export interface ExerciseDetailInput {
   painFlag?: { flagId: string; date: string } | null;
 }
 
+/**
+ * The chart range. Opening on a workout older than the range (an old or
+ * imported Summary) widens it to the narrowest range that holds that
+ * workout, so its point is shown and selected (review progress-B S2).
+ */
+function openingRange(series: ExerciseSeries, input: ExerciseDetailInput, today: string): TrendRange {
+  const asked = input.range ?? DEFAULT_TREND_RANGE;
+  if (!input.sessionId) return asked;
+  const date = series.sessions.find((x) => x.sessionId === input.sessionId)?.date;
+  if (date === undefined) return asked;
+  const firstDate = series.sessions[0]?.date ?? null;
+  const holds = (r: TrendRange) => date >= trendRangeBounds(r, today, firstDate).from;
+  if (holds(asked)) return asked;
+  return TREND_RANGES.slice(TREND_RANGES.indexOf(asked) + 1).find(holds) ?? 'all';
+}
+
 const lastMs = (s: ExerciseSeries) => s.sessions[s.sessions.length - 1]?.startedMs ?? 0;
 
 function pickSeries(all: readonly ExerciseSeries[], input: ExerciseDetailInput): ExerciseSeries | null {
   if (input.sessionId) {
     const hit = all.filter((s) => s.sessions.some((x) => x.sessionId === input.sessionId));
-    const onEq = hit.find((s) => input.equipmentId !== undefined && s.key.equipmentId === input.equipmentId);
+    const onRow = input.sessionExerciseId == null ? undefined : hit.find((s) => s.sessions.some((x) => x.sessionId === input.sessionId && x.rows.some((r) => r.sessionExerciseId === input.sessionExerciseId)));
+    if (onRow) return onRow;
+    const onEq = input.equipmentId == null ? undefined : hit.find((s) => s.key.equipmentId === input.equipmentId);
     if (onEq ?? hit[0]) return onEq ?? hit[0] ?? null;
   }
   if (input.seriesId) {
@@ -401,8 +441,13 @@ function pickSeries(all: readonly ExerciseSeries[], input: ExerciseDetailInput):
     if (s) return s;
   }
   if (input.equipmentId) {
-    const onEq = all.filter((s) => s.key.equipmentId === input.equipmentId);
+    const onEq = all.filter((s) => s.key.source === 'app' && s.key.equipmentId === input.equipmentId);
     const d = defaultSeries(onEq, input.today);
+    if (d) return d;
+  }
+  if (input.gymId) {
+    const atGym = all.filter((s) => s.key.source === 'app' && s.gymId === input.gymId);
+    const d = defaultSeries(atGym, input.today);
     if (d) return d;
   }
   return defaultSeries(all, input.today);
@@ -436,6 +481,24 @@ function pointView(p: TrendPoint, series: ExerciseSeries, metric: ExerciseMetric
     breakBefore: p.breakBefore,
     words: `${weekdayLongDate(p.date, today)}, ${metricName} ${valueWords(p, series, metric)}${fromWords}.${notes.length > 0 ? ` ${notes.join('. ')}.` : ''}`,
   };
+}
+
+/** A set of 10 reps or fewer exists in range but Ben marked it (so `No sets of 10 reps or fewer` would be false, N1). */
+function hasMarkedE1rmSet(series: ExerciseSeries, bounds: DateRange): boolean {
+  return series.sessions.some(
+    (ss) =>
+      ss.date >= bounds.from &&
+      ss.date <= bounds.to &&
+      ss.sets.some((x) => x.setType !== 'warmup' && x.load !== null && x.load.unit === series.key.unit && x.load.convention === series.key.convention && x.reps !== null && x.reps >= 1 && x.reps <= E1RM_MAX_REPS && !isSetCountable(x, 'e1rm')),
+  );
+}
+
+/** `2 sessions edited, 1 session not counted.` for the chart summary (the marker lane is hidden from VoiceOver, N4). */
+function markerWords(markers: readonly TrendMarker[]): string {
+  const edited = markers.filter((m) => m.kind === 'edited').length;
+  const notCounted = markers.filter((m) => m.kind === 'not_counted').length;
+  const parts = [edited > 0 ? `${countNoun(edited, 'session', 'sessions')} edited` : null, notCounted > 0 ? `${countNoun(notCounted, 'session', 'sessions')} not counted` : null].filter((x): x is string => x !== null);
+  return parts.length === 0 ? '' : `${parts.join(', ')}.`;
 }
 
 function markerView(m: TrendMarker, today: string): MarkerView {
@@ -510,6 +573,11 @@ function recordView(r: ExerciseRecord, series: ExerciseSeries, today: string): R
       label = 'Most reps';
       value = String(r.value);
       words = `Most reps, ${String(r.value)}, ${dateW}.`;
+      break;
+    case 'least_assist':
+      label = `Least assistance for ${String(ASSIST_RECORD_MIN_REPS)}+ reps`;
+      value = `${formatNumber(r.value)}${NBSP}${series.key.unit}`;
+      words = `Least assistance for ${String(ASSIST_RECORD_MIN_REPS)} or more reps, ${r.load ? massWords(r.load, series.equipmentKind) : `${formatNumber(r.value)} ${unitWords(series)}`}${r.reps === null ? '' : `, ${countNoun(r.reps, 'rep', 'reps')}`}, ${dateW}.`;
       break;
   }
   return { key: `${r.sessionExerciseId}:${r.kind}`, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, label, value, date, isEstimate: r.isEstimate, words };
@@ -619,7 +687,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   const labels = seriesLabels(all, gymNames);
   const metrics = metricsFor(series.kind);
   const metric = input.metric && metrics.includes(input.metric) ? input.metric : (metrics[0] as ExerciseMetric);
-  const range = input.range ?? DEFAULT_TREND_RANGE;
+  const range = openingRange(series, input, today);
   const trend = exerciseTrend(series, metric, range, today);
   const label = labels.get(series.id) ?? '';
   const title = series.exerciseName || input.name || 'Exercise';
@@ -635,7 +703,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   if (trend.sessionsInRange === 0) {
     const last = trend.lastBefore;
     chart = { kind: 'none_in_range', message: `None between ${shortDate(trend.bounds.from, today)} and ${shortDate(trend.bounds.to, today)}.${last === null ? '' : ` Last: ${shortDate(last, today)}.`}`, action: { label: 'Show all', range: 'all' } };
-  } else if (trend.points.length === 0 && metric === 'e1rm') {
+  } else if (trend.points.length === 0 && metric === 'e1rm' && !hasMarkedE1rmSet(series, trend.bounds)) {
     chart = { kind: 'no_eligible', message: 'No sets of 10 reps or fewer in this range.' };
   } else if (trend.points.length < 3) {
     chart = {
@@ -672,6 +740,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
       `${countNoun(trend.points.length, trend.aggregation === 'weekly_best' ? 'week' : 'session', trend.aggregation === 'weekly_best' ? 'weeks' : 'sessions')}.`,
       `Lowest ${valueWords(lo, series, metric)} on ${longDate(lo.date, today)}, highest ${valueWords(hi, series, metric)} on ${longDate(hi.date, today)}, latest ${valueWords(latest ?? hi, series, metric)} on ${longDate((latest ?? hi).date, today)}.`,
       gaps.length === 0 ? '' : `${gaps.length === 1 ? 'One' : String(gaps.length)} ${gaps.length === 1 ? 'gap' : 'gaps'}: ${gaps.join(', ')}.`,
+      markerWords(trend.markers),
       'Swipe up or down to move between sessions.',
     ]
       .filter((x) => x !== '')
@@ -702,10 +771,13 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
 
   // Records (PG10, PG30)
   const rec = exerciseRecords(input.sessions, series);
-  const records = {
-    items: rec.items.map((r) => recordView(r, series, today)),
-    empty: rec.items.length > 0 ? null : series.key.source === 'import' || rec.loggedSessions <= RECORD_MIN_SESSIONS ? `Records start after ${String(RECORD_MIN_SESSIONS)} logged sessions.` : 'No records yet.',
-  };
+  const records =
+    series.kind === 'timed'
+      ? null
+      : {
+          items: rec.items.map((r) => recordView(r, series, today)),
+          empty: rec.items.length > 0 ? null : series.key.source === 'import' || rec.loggedSessions <= RECORD_MIN_SESSIONS ? `Records start after ${String(RECORD_MIN_SESSIONS)} logged sessions.` : 'No records yet.',
+        };
 
   // History
   const historyMonths = Math.max(1, input.historyMonths ?? 2);

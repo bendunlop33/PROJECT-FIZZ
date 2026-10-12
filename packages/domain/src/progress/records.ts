@@ -4,7 +4,7 @@ import { loadUnitText } from './text';
 import { isSetCountable } from '../exclusions';
 import { RECORD_MIN_SESSIONS } from '../session/records';
 import { convertMass } from '../units';
-import { chronological, keyOfRow, seriesIdOf, seriesKind, sessionBestSet, sessionE1rm, type ExerciseSeries, type SeriesSession } from './exercise';
+import { chronological, keyOfRow, seriesIdOf, seriesKind, sessionBestSet, sessionE1rm, sessionLeastAssist, type ExerciseSeries, type SeriesSession } from './exercise';
 import type { ProgressExercise, ProgressSession, ProgressSet } from './projection';
 import { inRange, type DateRange } from './window';
 
@@ -263,7 +263,7 @@ export function recordsInWindow(sessions: readonly ProgressSession[], window: Da
 // ---------------------------------------------------------------------------
 // Records (PG10, PG30)
 
-export type ExerciseRecordKind = 'heaviest' | 'most_reps_at_load' | 'best_e1rm' | 'most_reps';
+export type ExerciseRecordKind = 'heaviest' | 'most_reps_at_load' | 'best_e1rm' | 'most_reps' | 'least_assist';
 
 export interface ExerciseRecord {
   kind: ExerciseRecordKind;
@@ -295,8 +295,26 @@ export function bodyweightRepRecords(sessions: readonly ProgressSession[], exerc
   return sequentialRecords(sessions, exerciseIds, 'reps');
 }
 
-function sequentialRecords(sessions: readonly ProgressSession[], exerciseIds: ReadonlySet<string> | undefined, what: 'e1rm' | 'reps'): ExerciseRecord[] {
-  const running = new Map<string, { sessions: number; max: number }>();
+/**
+ * Assisted `Least assistance for 8+ reps` records (§5.5): less assistance than
+ * every earlier logged session of the series at ≥ 8 reps, with the same
+ * history rules. An imported set of the exercise with as little assistance
+ * or less (any unit, converted) suppresses the claim.
+ */
+export function leastAssistRecords(sessions: readonly ProgressSession[], exerciseIds?: ReadonlySet<string>): ExerciseRecord[] {
+  return sequentialRecords(sessions, exerciseIds, 'assist');
+}
+
+type Sequential = 'e1rm' | 'reps' | 'assist';
+
+const SEQUENTIAL_KIND: Record<Sequential, ExerciseRecordKind> = { e1rm: 'best_e1rm', reps: 'most_reps', assist: 'least_assist' };
+
+function sequentialRecords(sessions: readonly ProgressSession[], exerciseIds: ReadonlySet<string> | undefined, what: Sequential): ExerciseRecord[] {
+  const lower = what === 'assist';
+  const mass = what !== 'reps';
+  /** Strictly better (higher, or lower for assistance). */
+  const beats = (a: number, b: number) => (lower ? a < b - 1e-9 : a > b + 1e-9);
+  const running = new Map<string, { sessions: number; best: number }>();
   const imported = new Map<string, number>();
   const out: ExerciseRecord[] = [];
   const ordered = [...sessions].sort(chronological);
@@ -311,21 +329,23 @@ function sequentialRecords(sessions: readonly ProgressSession[], exerciseIds: Re
       const rows = s.exercises.filter((r) => r.exerciseId === ex.exerciseId && seriesIdOf(keyOfRow(s, r)) === id);
       const ss: SeriesSession = { sessionId: s.sessionId, date: s.date, startedMs: s.startedMs, source: key.source, name: s.name, rows, sets: rows.flatMap((r) => r.sets), edited: false };
       const kind = seriesKind(key.convention, ex.equipmentKind, key.measurement);
-      const v = what === 'e1rm' ? sessionE1rm(ss, { key, kind, equipmentKind: ex.equipmentKind }) : kind === 'bodyweight' ? sessionBestSet(ss) : null;
+      const shape = { key, kind, equipmentKind: ex.equipmentKind };
+      const v = what === 'e1rm' ? sessionE1rm(ss, shape) : what === 'assist' ? sessionLeastAssist(ss, shape) : kind === 'bodyweight' ? sessionBestSet(ss) : null;
       if (v === null) continue;
       const impKey = `${ex.exerciseId}|${key.convention}`;
+      const comparable = mass ? convertMass({ value: v.value, unit: key.unit }, 'kg').value : v.value;
       if (key.source === 'import') {
-        const asKg = what === 'e1rm' ? convertMass({ value: v.value, unit: key.unit }, 'kg').value : v.value;
-        imported.set(impKey, Math.max(imported.get(impKey) ?? -Infinity, asKg));
+        const prev = imported.get(impKey);
+        imported.set(impKey, prev === undefined ? comparable : lower ? Math.min(prev, comparable) : Math.max(prev, comparable));
         continue;
       }
       const before = running.get(id);
-      if (before !== undefined && before.sessions >= RECORD_MIN_SESSIONS && v.value > before.max) {
+      if (before !== undefined && before.sessions >= RECORD_MIN_SESSIONS && beats(v.value, before.best)) {
         const imp = imported.get(impKey);
-        const mine = what === 'e1rm' ? convertMass({ value: v.value, unit: key.unit }, 'kg').value : v.value;
-        if (imp === undefined || imp < mine - 1e-9) {
+        // An imported value as good or better suppresses the claim.
+        if (imp === undefined || beats(comparable, imp)) {
           out.push({
-            kind: what === 'e1rm' ? 'best_e1rm' : 'most_reps',
+            kind: SEQUENTIAL_KIND[what],
             sessionId: s.sessionId,
             sessionExerciseId: (rows[0] as ProgressExercise).sessionExerciseId,
             date: s.date,
@@ -337,7 +357,8 @@ function sequentialRecords(sessions: readonly ProgressSession[], exerciseIds: Re
           });
         }
       }
-      running.set(id, { sessions: (before?.sessions ?? 0) + 1, max: Math.max(before?.max ?? -Infinity, v.value) });
+      const best = before === undefined ? v.value : lower ? Math.min(before.best, v.value) : Math.max(before.best, v.value);
+      running.set(id, { sessions: (before?.sessions ?? 0) + 1, best });
     }
   }
   return out;
@@ -349,7 +370,8 @@ const ALL_TIME: DateRange = { from: '0000-01-01', to: '9999-12-31' };
  * `exerciseRecords` (§6.2): every record of the series, newest first:
  * `Heaviest set` and `Most reps at <load>` exactly as the home and the
  * Summary judge them (`recordsInWindow`, `findSetRecord`), `Best Est. 1RM`
- * (an estimate) and, for bodyweight, `Most reps`. Imported series never have
+ * (an estimate), for bodyweight `Most reps` and for assisted `Least
+ * assistance for 8+ reps`. Timed series have none (not specified, SP2). Imported series never have
  * records (they can only suppress one). `sessions` may be every workout or
  * only those with this exercise.
  */
@@ -374,7 +396,8 @@ export function exerciseRecords(sessions: readonly ProgressSession[], series: Ex
   const inSeries = (r: ExerciseRecord) => series.sessions.some((s) => s.sessionId === r.sessionId && s.rows.some((row) => row.sessionExerciseId === r.sessionExerciseId));
   if (series.kind === 'load') items.push(...e1rmRecords(mine, ids).filter(inSeries));
   if (series.kind === 'bodyweight') items.push(...bodyweightRepRecords(mine, ids).filter(inSeries));
-  const rank: Record<ExerciseRecordKind, number> = { heaviest: 0, most_reps_at_load: 1, most_reps: 2, best_e1rm: 3 };
+  if (series.kind === 'assisted') items.push(...leastAssistRecords(mine, ids).filter(inSeries));
+  const rank: Record<ExerciseRecordKind, number> = { heaviest: 0, most_reps_at_load: 1, least_assist: 2, most_reps: 3, best_e1rm: 4 };
   items.sort((a, b) => b.date.localeCompare(a.date) || b.startedMs - a.startedMs || rank[a.kind] - rank[b.kind]);
   return { items, loggedSessions };
 }

@@ -234,6 +234,20 @@ export function sessionTopSet(ss: SeriesSession, series: Pick<ExerciseSeries, 'k
   return best === null ? null : { value: best.load.value, kind: 'actual', fromSet: best };
 }
 
+/** §5.5 assisted record: `Least assistance for 8+ reps`. */
+export const ASSIST_RECORD_MIN_REPS = 8;
+
+/**
+ * Assisted `Least assistance for 8+ reps`: the lightest assistance in one
+ * countable set of at least `ASSIST_RECORD_MIN_REPS` reps (then most reps).
+ */
+export function sessionLeastAssist(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind'>): MetricValue | null {
+  if (series.kind !== 'assisted') return null;
+  let best: Loaded | null = null;
+  for (const s of ss.sets) if (loadedSet(s, series.key) && counts(s) && s.reps >= ASSIST_RECORD_MIN_REPS && betterTop(s, best, true)) best = s;
+  return best === null ? null : { value: best.load.value, kind: 'actual', fromSet: best };
+}
+
 /** Bodyweight `Best set`: the most reps in one countable set. */
 export function sessionBestSet(ss: SeriesSession): MetricValue | null {
   let best: ProgressSet | null = null;
@@ -459,8 +473,9 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
   points = withBreaks(points);
   const sessionRows = withBreaks(sessionPoints);
 
+  // Latest, first and best always describe sessions, even when the chart shows weekly bests (B1).
   let best: TrendPoint | null = null;
-  for (const p of points) if (better(p, best, higher)) best = p;
+  for (const p of sessionRows) if (better(p, best, higher)) best = p;
   const before = series.sessions.filter((s) => s.date < bounds.from);
   const pointsByRange = Object.fromEntries(
     TREND_RANGES.map((r) => {
@@ -480,7 +495,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
     aggregation,
     sessionsInRange: inside.length,
     lastBefore: inside.length === 0 ? (before[before.length - 1]?.date ?? null) : null,
-    summary: { latest: points[points.length - 1] ?? null, best, first: points[0] ?? null },
+    summary: { latest: sessionRows[sessionRows.length - 1] ?? null, best, first: sessionRows[0] ?? null },
     higherIsBetter: higher,
     pointsByRange,
   };

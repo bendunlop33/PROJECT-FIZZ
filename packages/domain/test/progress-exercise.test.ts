@@ -181,7 +181,7 @@ describe('Est. 1RM (PG11, checks 27–29)', () => {
     expect(v.chartWords).toMatch(/^Estimated one-rep max, an estimate, Bench press on Main Gym · Barbell/);
     expect(v.table.headers[1]).toBe('Est. 1RM (estimate)');
     expect(v.table.rows.every((r) => r.value.startsWith('≈'))).toBe(true);
-    const rec = v.records.items.find((r) => r.label === 'Best Est. 1RM');
+    const rec = v.records?.items.find((r) => r.label === 'Best Est. 1RM');
     expect(rec?.isEstimate).toBe(true);
     expect(sp(rec?.value)).toBe('≈125.5 kg');
     expect(rec?.words).toMatch(/an estimate/);
@@ -298,7 +298,7 @@ describe('marked sets (PG21, check 32)', () => {
     if (!v) throw new Error('view');
     expect(v.points.map((p) => sp(p.display))).not.toContain('105 kg × 3');
     expect(v.repTable?.rows.map((r) => sp(r.cells[0]))).toEqual(['100 kg']);
-    expect(v.records.items.some((r) => r.value.includes('105'))).toBe(false);
+    expect(v.records?.items.some((r) => r.value.includes('105'))).toBe(false);
     expect(v.stats.some((s) => s.value.includes('105'))).toBe(false);
     expect(v.history.months[0]?.rows[0]?.sets).toBe('105×3 (spotted) · 100×6');
     expect(v.points[3]?.notes).toContain('1 set not counted');
@@ -455,7 +455,7 @@ describe('records (PG10, PG30, check 39)', () => {
       ['2026-08-10', 'best_e1rm'],
     ]);
     const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY });
-    expect(v?.records.items.map((x) => sp(`${x.label}  ${x.value} · ${x.date}`))).toEqual(['Heaviest set  105 kg × 3 · 13 Aug', 'Most reps at 100 kg  7 · 10 Aug', 'Best Est. 1RM  ≈123.5 kg · 10 Aug']);
+    expect(v?.records?.items.map((x) => sp(`${x.label}  ${x.value} · ${x.date}`))).toEqual(['Heaviest set  105 kg × 3 · 13 Aug', 'Most reps at 100 kg  7 · 10 Aug', 'Best Est. 1RM  ≈123.5 kg · 10 Aug']);
   });
 
   it('fewer than 3 earlier logged sessions: none, and `Records start after 3 logged sessions.`', () => {
