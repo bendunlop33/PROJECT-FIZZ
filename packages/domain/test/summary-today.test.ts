@@ -338,7 +338,7 @@ describe('date-only (imported) workouts on Today and the summary (review B2, N3)
   });
 });
 
-describe('imported history is never comparable while P-I3 is open (review r2 B1)', () => {
+describe('imported history is comparable, labelled FitNotes (B7; was P-I3 option (a), review r2 B1)', () => {
   /** FitNotes `Lat pulldown 40 × 10` on 1 Oct, imported with the gym not recorded and no equipment. */
   function importedPulldown(): SessionAggregate {
     const p = parseFitNotesCsv('Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time\n2026-10-01,Lat pulldown,Back,40,10,,,\n', '2026-10-31');
@@ -349,7 +349,7 @@ describe('imported history is never comparable while P-I3 is open (review r2 B1)
     return buildImportedSession({ ownerId: OWNER, jobId, operationId: 'op-2', tz: 'Europe/London', gymId: null, importedAtUtc: '2026-10-02T17:00:00.000Z', date: '2026-10-01', rows });
   }
 
-  it('an exercise with no equipment either side: no Last, no comparison, no highlight from FitNotes', () => {
+  it('an exercise with no equipment either side: Last, comparison and highlight from FitNotes, labelled', () => {
     const imp = importedPulldown();
     const impEx = imp.exercises[0];
     if (!impEx) throw new Error('no exercise');
@@ -363,11 +363,12 @@ describe('imported history is never comparable while P-I3 is open (review r2 B1)
 
     const ex = s.exercises[0];
     if (!ex) throw new Error('no exercise');
-    expect(lastComparableSession(history, ex)).toBeNull();
+    expect(lastComparableSession(history, ex)).toMatchObject({ imported: true, gymId: null, sets: [{ values: { load: kg(40, 'stack'), reps: 10 } }] });
     const sum = buildWorkoutSummary(input(s, history));
-    expect(sum.comparison).toEqual({ kind: 'not_comparable', text: 'Not compared · imported' });
-    // 45 > 40 would be "Heaviest" against FitNotes; it isn't compared.
-    expect(sum.highlight).toBeNull();
+    expect(sum.comparison).toMatchObject({ kind: 'compared', why: 'FitNotes, working sets', lastAtUtc: history[0]?.performedAtUtc });
+    // 45 > 40: heaviest, against FitNotes too.
+    expect(sum.highlight).toMatch(/^Heaviest Lat pulldown set/);
+    // Never claims the FitNotes workout was at today's gym.
     expect(JSON.stringify(sum)).not.toContain('Main Gym, working sets');
   });
 

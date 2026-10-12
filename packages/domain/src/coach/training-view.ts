@@ -54,7 +54,7 @@ export interface ReadSessionLine {
   date: string;
   gym: string | null;
   equipment: string | null;
-  /** `app` or `FitNotes import` (imported: equipment not recorded, never compared). */
+  /** `app` or `FitNotes import` (imported: equipment not recorded; compared on unit and convention, B7). */
   source: 'app' | 'FitNotes import';
   sets: ReadSetLine[];
 }

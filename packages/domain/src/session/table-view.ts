@@ -72,7 +72,7 @@ export interface TableCard {
   name: string;
   /** `Barbell`, `Dumbbells · kg each`, `Cable / stack · kg stack · per side`. */
   headerLine: string;
-  /** `Last 1 Oct: 100 × 8, 8, 7` (actual) or `No previous result`. */
+  /** `Last 1 Oct: 100 × 8, 8, 7` (actual), `Last (FitNotes, 1 Oct): …` (B7) or `No previous result`. */
   lastLine: string;
   /** Header line 2: `Barbell · Last 1 Oct: 100 × 8, 8, 7`. */
   subtitle: string;
@@ -372,7 +372,8 @@ function headerLineOf(ex: SessionExercise, eq: EquipmentInstance | null): string
 function lastLineOf(prev: PreviousSession | null, ex: SessionExercise, eq: EquipmentInstance | null, tz: string): string {
   if (prev === null || prev.sets.length === 0) return 'No previous result';
   const values = prev.sets.map((s) => s.values);
-  return `Last ${dayMonthText(prev.performedAtUtc, tz)}: ${resultsSummary(values, ex, eq)}`;
+  const when = dayMonthText(prev.performedAtUtc, tz);
+  return `${prev.imported ? `Last (FitNotes, ${when})` : `Last ${when}`}: ${resultsSummary(values, ex, eq)}`;
 }
 
 function painBadgeOf(input: ActiveViewInput, ex: SessionExercise): boolean {

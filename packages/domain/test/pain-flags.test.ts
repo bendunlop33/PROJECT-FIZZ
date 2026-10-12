@@ -406,10 +406,11 @@ describe('buildPainFlagSheet (§2.14.4)', () => {
     expect(sheet.sinceFlag).toBeNull();
   });
 
-  it('no history: no rows invented; imported workouts are never the reference', () => {
+  it('no history: no rows invented; a FitNotes workout can be the reference (B7)', () => {
     expect(buildPainFlagSheet({ flag: f, history: [], nowMs: ms(9 * DAY), tz: TZ, exercise: press })).toMatchObject({ before: null, sinceFlag: null });
-    const imported = [hs(-3, [[60, 5]], { imported: true })];
-    expect(buildPainFlagSheet({ flag: f, history: imported, nowMs: ms(9 * DAY), tz: TZ, exercise: press })).toMatchObject({ before: null, sinceFlag: null });
+    const imported = [hs(-3, [[60, 5]], { imported: true, equipmentId: null })];
+    const sheet = buildPainFlagSheet({ flag: f, history: imported, nowMs: ms(9 * DAY), tz: TZ, exercise: press });
+    expect([plain(sheet.before), sheet.sinceFlag]).toEqual(['5 Oct · 60 kg × 5', null]);
   });
 
   it('a flag cleared elsewhere says so and asks nothing', () => {

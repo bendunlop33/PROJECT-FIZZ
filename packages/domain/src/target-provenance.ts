@@ -12,7 +12,7 @@ import type {
 import { formatNumber, loadText, NBSP } from './display';
 import { isSetCountable } from './exclusions';
 import { loadDirection } from './equipment';
-import type { HistorySession, NextTargets, TargetSet } from './progression';
+import { comparableSetsOf, matchesEquipment, type HistorySession, type NextTargets, type TargetSet } from './progression';
 import type { StartWarning } from './session/create';
 import { buildStepCard, pctChange } from './step-card';
 import { toScaled } from './units';
@@ -73,7 +73,7 @@ const loadWord = (l: Load, eq: EquipmentInstance | null): string => loadText(l, 
 
 /** The basis sets as they are now (actual results), warm-ups left out. */
 function basisSets(h: HistorySession): TargetBasisSet[] {
-  return h.sets
+  return comparableSetsOf(h)
     .filter((s) => s.setType !== 'warmup')
     .map((s) => ({
       ...(s.setId !== undefined ? { setId: s.setId } : {}),
@@ -95,7 +95,7 @@ function basisSets(h: HistorySession): TargetBasisSet[] {
  */
 export function ruleBasis(result: NextTargets, history: readonly HistorySession[], equipmentId: string | null, fallbackTz: string): TargetBasis | null {
   for (const id of result.basedOnSessionIds) {
-    const h = history.find((x) => x.sessionId === id && x.equipmentId === equipmentId && !x.imported);
+    const h = history.find((x) => x.sessionId === id && matchesEquipment(x, equipmentId));
     if (!h) continue;
     const sets = basisSets(h);
     if (!sets.some((s) => isSetCountable(s, 'progression'))) continue;
@@ -106,6 +106,7 @@ export function ruleBasis(result: NextTargets, history: readonly HistorySession[
       gymId: h.gymId,
       equipmentId: h.equipmentId,
       sets,
+      ...(h.imported ? { imported: true as const } : {}),
     };
   }
   return null;

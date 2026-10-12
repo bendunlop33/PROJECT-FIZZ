@@ -170,13 +170,22 @@ describe('built-in rule provenance (plannedSetsFromTargets with why)', () => {
     expect(p.guardNotes).toEqual(['Not checked against equipment: this exercise has no equipment set up at this gym.']);
   });
 
-  it('skips a basis workout with nothing logged and imported history', () => {
+  it('skips a basis workout with nothing logged', () => {
     const empty = { ...history(bar, [], 1), sets: [] };
-    const imported = { ...history(bar, [{ load: kg(120), reps: 8 }], 2), imported: true };
     const real = history(bar, [{ load: kg(100), reps: 8, rpe: 8 }, { load: kg(100), reps: 8, rpe: 8 }], 0);
-    const h = [imported, empty, real];
-    const result = { ...rule(bar, h), basedOnSessionIds: [imported.sessionId, empty.sessionId, real.sessionId] };
+    const h = [empty, real];
+    const result = { ...rule(bar, h), basedOnSessionIds: [empty.sessionId, real.sessionId] };
     expect(provenanceOf(plannedSetsFromTargets(result, { history: h, equipment: bar, at: at(3 * DAY) })).basis?.sessionId).toBe(real.sessionId);
+  });
+
+  it('a FitNotes basis (no equipment recorded) is recorded as imported, with its working sets only (B7)', () => {
+    const real = history(bar, [{ load: kg(100), reps: 8, rpe: 8 }, { load: kg(100), reps: 8, rpe: 8 }], 0);
+    const imported = { ...history(null, [{ load: kg(60), reps: 10 }, { load: kg(120), reps: 8 }, { load: kg(120), reps: 8 }], 2), imported: true, gymId: null };
+    const h = [imported, real];
+    const result = { ...rule(bar, h), basedOnSessionIds: [imported.sessionId, real.sessionId] };
+    const basis = provenanceOf(plannedSetsFromTargets(result, { history: h, equipment: bar, at: at(3 * DAY) })).basis;
+    expect(basis).toMatchObject({ sessionId: imported.sessionId, imported: true, gymId: null });
+    expect(basis?.sets.map((x) => x.values.load?.value)).toEqual([120, 120]);
   });
 
   it('fitProvenance keeps an extreme explanation inside the schema, so the write never fails', () => {

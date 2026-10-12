@@ -17,7 +17,7 @@ import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclu
 import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
-import type { HistorySession } from '../progression';
+import { comparableSetsOf, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
@@ -44,6 +44,8 @@ export interface PreviousSession {
   performedAtUtc: string;
   /** The compared workout's own gym (null: not recorded), so nothing claims it was at today's gym. */
   gymId: string | null;
+  /** From FitNotes (B7): shown as `Last (FitNotes, 1 Oct)`, never as an app session. */
+  imported: boolean;
   /** Working-order sets as logged, for prefill and the `Last (…)` line. */
   sets: ComparableSet[];
 }
@@ -52,14 +54,15 @@ export interface PreviousSession {
  * Pick the most recent history session that is like-for-like with this
  * session exercise: same equipment instance, and every load in the same unit
  * and convention (history in another unit or convention is never offered).
- * Imported (FitNotes) history is never offered while P-I3 is open, even when
- * neither side has equipment (review r2 B1).
+ * Imported (FitNotes) history has no equipment recorded, so it matches on
+ * unit and convention alone and is marked `imported` (B7, approved 11 Oct
+ * 2026); only its working sets are offered (`comparableSetsOf`).
  */
 export function lastComparableSession(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): PreviousSession | null {
   const sorted = [...history].sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
   for (const h of sorted) {
-    if (h.imported || h.equipmentId !== ex.equipmentId) continue;
-    const sets = h.sets.filter((s) => s.setType !== 'warmup');
+    if (!matchesEquipment(h, ex.equipmentId)) continue;
+    const sets = comparableSetsOf(h).filter((s) => s.setType !== 'warmup');
     if (sets.length === 0) continue;
     const alike = sets.every((s) => s.load === null || s.load.convention === 'bodyweight' || (s.load.unit === ex.unit && s.load.convention === ex.loadConvention));
     if (!alike) continue;
@@ -67,6 +70,7 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
       sessionId: h.sessionId,
       performedAtUtc: h.performedAtUtc,
       gymId: h.gymId,
+      imported: h.imported,
       sets: sets.map((s, index) => ({
         index,
         values: { load: s.load, reps: s.reps, durationS: s.durationS ?? null, rpe: s.rpe, rir: s.rir, ...(s.distanceM !== undefined ? { distanceM: s.distanceM } : {}) },
@@ -222,7 +226,8 @@ export interface FocusView {
   headerLine: string;
   setNumber: number;
   setCount: number;
-  previous: { performedAtUtc: string; text: string; values: SetValues } | null;
+  /** `imported`: from FitNotes, shown as `Last (FitNotes, 1 Oct)` (B7). */
+  previous: { performedAtUtc: string; text: string; values: SetValues; imported: boolean } | null;
   draft: SetValues;
   draftSource: DraftSource | 'edited' | 'copied';
   loadField: LoadField | null;
@@ -589,6 +594,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
             // §2.13: a flagged set still shows (and copies) what happened, with its words.
             text: withExclusionWords(valuesText(prevFirst.values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }), prevFirst.exclusions),
             values: prevFirst.values,
+            imported: prev.imported,
           }
         : null,
     draft: values,

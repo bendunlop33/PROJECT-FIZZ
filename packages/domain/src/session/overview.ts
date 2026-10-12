@@ -36,6 +36,7 @@ import { TODAY_EDIT_LIMITS } from '@fizz/schemas';
 import { roundToAvailableLoad } from '../equipment';
 import { loadText } from '../display';
 import { isInHistory } from './deletion';
+import { comparableSetsOf } from '../progression';
 
 /**
  * The Workout overview (workout-overview.md): the one page before the first
@@ -46,8 +47,8 @@ import { isInHistory } from './deletion';
  * grouping or duration (CLAUDE.md conventions).
  *
  * - Change markers (§4): one word per row against the last comparable
- *   session (same equipment kind, bar and load convention; never an imported
- *   workout, ADR 0016), kg/lb normalised.
+ *   session (same equipment kind, bar and load convention; an imported
+ *   FitNotes workout matches on convention alone, B7), kg/lb normalised.
  * - `previewKey` (§7): a stable hash of every input that can change a
  *   target, so a Start against a page that went out of date creates nothing.
  * - Actual sets (`LAST`, `BEST`) are what Ben did, never an estimate (rule 6);
@@ -133,11 +134,15 @@ export function pastExercisesOf(sessions: readonly SessionAggregate[], exerciseI
         convention: ex.loadConvention,
         unit: ex.unit,
         targets: own.filter(hasTarget).map((s) => ({ setType: s.setType, load: s.planned.load, reps: s.planned.reps, durationS: s.planned.durationS })),
-        actuals: own.flatMap((s) =>
-          s.status === 'completed' && s.actual !== null
-            ? [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps, durationS: s.actual.durationS, ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}) }]
-            : [],
-        ),
+        // B7: an imported workout's lighter ramp sets read as warm-ups (`comparableSetsOf`).
+        actuals: comparableSetsOf({
+          imported: a.session.source === 'import',
+          sets: own.flatMap((s) =>
+            s.status === 'completed' && s.actual !== null
+              ? [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps, durationS: s.actual.durationS, ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}) }]
+              : [],
+          ),
+        }),
       });
     }
   }
@@ -153,10 +158,14 @@ export interface PlannedKey {
   convention: LoadConvention;
 }
 
-/** Comparable (§4, ADR 0016): not imported, same equipment kind and bar, same load convention, and something was planned or done. */
+/**
+ * Comparable (§4): same equipment kind and bar, same load convention, and
+ * something was planned or done. An imported FitNotes workout has no
+ * equipment recorded, so it matches on convention alone (B7, ADR 0016).
+ */
 export function isComparable(planned: PlannedKey, past: PastExercise): boolean {
-  const kindOk = planned.equipment === 'any' || sameEquipmentKind(planned.equipment, past.equipment);
-  return !past.imported && past.convention === planned.convention && kindOk && (past.targets.length > 0 || past.actuals.length > 0);
+  const kindOk = planned.equipment === 'any' || past.imported || sameEquipmentKind(planned.equipment, past.equipment);
+  return past.convention === planned.convention && kindOk && (past.targets.length > 0 || past.actuals.length > 0);
 }
 
 /** The newest comparable appearance, or null. `pasts`: newest first. */
@@ -913,8 +922,8 @@ export function lastText(past: PastExercise): string | null {
 }
 
 /** The heaviest counted working set over comparable history (never an estimate). Ties: more reps, then the newest. */
-export function bestSet(planned: PlannedKey, pasts: readonly PastExercise[]): { load: Load; reps: number; at: ZonedTimestamp } | null {
-  let best: { load: Load; reps: number; at: ZonedTimestamp; kg: number } | null = null;
+export function bestSet(planned: PlannedKey, pasts: readonly PastExercise[]): { load: Load; reps: number; at: ZonedTimestamp; imported: boolean } | null {
+  let best: { load: Load; reps: number; at: ZonedTimestamp; kg: number; imported: boolean } | null = null;
   // Harder is heavier, except on an assisted machine, where less assistance is harder (N5).
   const sign = loadDirection(planned.convention) === 'assistance' ? -1 : 1;
   for (const p of pasts) {
@@ -922,10 +931,10 @@ export function bestSet(planned: PlannedKey, pasts: readonly PastExercise[]): { 
     for (const s of p.actuals) {
       if (s.load === null || s.reps === null || s.reps <= 0 || s.load.convention === 'bodyweight' || s.setType === 'drop' || !isSetCountable(s, 'record')) continue;
       const kg = sign * convertMass(s.load, 'kg').value;
-      if (best === null || kg > best.kg || (kg === best.kg && s.reps > best.reps)) best = { load: s.load, reps: s.reps, at: p.performedAt, kg };
+      if (best === null || kg > best.kg || (kg === best.kg && s.reps > best.reps)) best = { load: s.load, reps: s.reps, at: p.performedAt, kg, imported: p.imported };
     }
   }
-  return best === null ? null : { load: best.load, reps: best.reps, at: best.at };
+  return best === null ? null : { load: best.load, reps: best.reps, at: best.at, imported: best.imported };
 }
 
 const EQUIPMENT_NOUN: Record<EquipmentInstance['kind'], string> = {
@@ -1067,14 +1076,14 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     const change = edit?.kind === 'skipped' ? null : changeText(marker);
     if (change !== null) panel.push({ key: 'change', label: 'Change', value: change, tone: 'normal' });
     const last = comparable === null ? null : lastText(comparable);
-    if (comparable !== null && last !== null) panel.push({ key: 'last', label: 'Last', value: `${last} · ${dayMonthText(comparable.performedAt.utc, comparable.performedAt.tz)}`, tone: 'normal' });
+    if (comparable !== null && last !== null) panel.push({ key: 'last', label: 'Last', value: `${last} · ${comparable.imported ? 'FitNotes, ' : ''}${dayMonthText(comparable.performedAt.utc, comparable.performedAt.tz)}`, tone: 'normal' });
     if (barbellEx?.id === ex.id) {
       const w = warmupText(warm);
       if (w !== null) panel.push({ key: 'warmup', label: 'Warm-up', value: w, tone: 'normal' });
       const plates = planned.load !== null && eq !== null ? platesText(planned.load, eq) : null;
       if (plates !== null) panel.push({ key: 'plates', label: 'Plates', value: plates, tone: 'normal' });
       const best = bestSet(key, pasts);
-      if (best !== null) panel.push({ key: 'best', label: 'Best', value: `${loadWord(best.load)}${NBSP}×${NBSP}${String(best.reps)} · ${dayMonthText(best.at.utc, best.at.tz)}`, tone: 'normal' });
+      if (best !== null) panel.push({ key: 'best', label: 'Best', value: `${loadWord(best.load)}${NBSP}×${NBSP}${String(best.reps)} · ${best.imported ? 'FitNotes, ' : ''}${dayMonthText(best.at.utc, best.at.tz)}`, tone: 'normal' });
     }
     if (rounded !== null && !dropped) panel.push({ key: 'rounded', label: 'Rounded', value: roundedText(rounded, eq), tone: 'normal' });
     const missing = dropped?.reason === 'equipment_not_in_gym' ? dropped.missing : null;

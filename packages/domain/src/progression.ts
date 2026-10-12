@@ -63,17 +63,54 @@ export interface HistorySession {
   /** The workout's gym; null when it wasn't recorded (an imported workout). */
   gymId: string | null;
   /**
-   * Imported from FitNotes. Until P-I3 is decided (ADR 0016), imported
-   * history is never comparable: it doesn't feed `Last`, targets, the summary
-   * comparison or a highlight, whatever its equipment (review r2 B1). It
-   * isn't enough that it has no equipment: an exercise with no equipment on
-   * either side would otherwise match it.
+   * Imported from FitNotes (B7, approved 11 Oct 2026; ADR 0016 P-I3 option
+   * (b)). Imported history has no equipment instance, so it matches on
+   * exercise, unit and load convention alone (`matchesEquipment`), and only
+   * its working sets count (`comparableSetsOf`). It is always labelled
+   * FitNotes where it shows (`Last (FitNotes, 1 Oct)`), and every target made
+   * from it is still fitted to today's real equipment (rule 4).
    */
   imported: boolean;
   sets: readonly HistorySet[];
   /** The workout's time zone and routine name, for `Why?` (`after Push A, 1 Oct`). */
   tz?: string;
   routineName?: string | null;
+}
+
+/**
+ * B7: whether a history session can be compared with an exercise done on
+ * `equipmentId`. Logged history needs the same equipment instance; imported
+ * (FitNotes) history has none recorded, so it matches any (unit and
+ * convention are still checked by each caller).
+ */
+export function matchesEquipment(h: Pick<HistorySession, 'imported' | 'equipmentId'>, equipmentId: string | null): boolean {
+  return h.imported || h.equipmentId === equipmentId;
+}
+
+/**
+ * The sets of a history session that a comparison or target reads. Logged
+ * history: every set, as logged (warm-ups are flagged). Imported history:
+ * FitNotes has no warm-up flag, so a ramp (`60 × 10, 80 × 5, 100 × 5,
+ * 100 × 5`) arrives as all working sets. Only the sets at the session's
+ * hardest load are read as working sets (heaviest for resistance, least
+ * assistance for assisted), per unit and convention; lighter ones are read
+ * as warm-ups. Sets with no load (or bodyweight) are kept when nothing in the
+ * session has a load. Nothing stored changes: this is how history is read.
+ */
+export function comparableSetsOf<T extends Pick<HistorySet, 'setType' | 'load'>>(h: { imported: boolean; sets: readonly T[] }): T[] {
+  if (!h.imported) return [...h.sets];
+  const loaded = h.sets.filter((x) => x.load !== null && x.load.convention !== 'bodyweight');
+  if (loaded.length === 0) return h.sets.filter((x) => x.setType !== 'warmup');
+  const hardest = new Map<string, number>();
+  for (const x of loaded) {
+    if (x.load === null) continue;
+    const key = `${x.load.unit}|${x.load.convention}`;
+    const v = toScaled(x.load.value);
+    const prev = hardest.get(key);
+    const resist = loadDirection(x.load.convention) === 'resistance';
+    if (prev === undefined || (resist ? v > prev : v < prev)) hardest.set(key, v);
+  }
+  return loaded.filter((x) => x.setType !== 'warmup' && x.load !== null && hardest.get(`${x.load.unit}|${x.load.convention}`) === toScaled(x.load.value));
 }
 
 /** Active pain flag for this movement. Set and cleared explicitly by the user. */
@@ -94,6 +131,14 @@ export interface NextTargetsInput {
   unit: WeightUnit;
   convention: LoadConvention;
   pain: PainStatus;
+  /**
+   * The caller fits these loads to a gym's equipment afterwards (Start next
+   * session from a FitNotes workout: `snapPlanToGym` maps an item by kind,
+   * rounds toward easier and never above a max, or drops the load). Without
+   * it, a load built on FitNotes history with no equipment here to check it
+   * is not prescribed (B7, ADR 0016 P-I3; rule 4).
+   */
+  fitLater?: boolean;
 }
 
 export type ProgressionDecision =
@@ -145,6 +190,8 @@ interface SideEval {
 }
 
 interface SessionEval {
+  /** From a FitNotes import (B7). */
+  imported: boolean;
   sessionId: string;
   performedAtUtc: string;
   /** Completed sets of the counted type (working, or top for top-set rules), as logged rows. */
@@ -276,9 +323,11 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
   const out: SessionEval[] = [];
   let excluded = 0;
 
-  // Imported history isn't comparable (P-I3 open; review r2 B1): left out before anything is counted.
-  for (const s of input.history.filter((h) => !h.imported).sort(byRecency)) {
-    const typed = s.sets.filter((x) => types.includes(x.setType) && x.reps !== null);
+  // B7: imported (FitNotes) history counts on any equipment, read from its working sets only.
+  /** The latest comparable session, when it came from FitNotes: whether lighter sets were read as warm-ups. */
+  let latestFitNotes: { rampDropped: boolean } | null = null;
+  for (const s of [...input.history].sort(byRecency)) {
+    const typed = comparableSetsOf(s).filter((x) => types.includes(x.setType) && x.reps !== null);
     // §2.13: a set Ben marked (spotted, pain, form broke, other equipment) is
     // left out here, including the unit check (a flagged set on other
     // equipment doesn't make the session incomparable).
@@ -289,10 +338,11 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
         x.load.convention !== 'bodyweight' &&
         (x.load.unit !== ctx.unit || x.load.convention !== ctx.convention),
     );
-    if (s.equipmentId !== wantedEquipment || mismatched) {
+    if (!matchesEquipment(s, wantedEquipment) || mismatched || (s.imported && typed.length === 0)) {
       excluded += 1;
       continue;
     }
+    if (s.imported && out.length === 0) latestFitNotes = { rampDropped: comparableSetsOf(s).length < s.sets.length };
     const loads = counted.map((x) => (x.load === null || x.load.convention === 'bodyweight' ? null : x.load.value));
     const numeric = loads.filter((l): l is number => l !== null);
     const easiest =
@@ -311,9 +361,10 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
     const unpairable = sided && counted.some((x) => x.side === null);
     out.push({
       sessionId: s.sessionId,
+      imported: s.imported,
       performedAtUtc: s.performedAtUtc,
       loggedSets: counted.length,
-      otherSets: s.sets.length - typed.length,
+      otherSets: (s.imported ? comparableSetsOf(s).length : s.sets.length) - typed.length,
       leftOut: typed.length - counted.length,
       prescribedDone: sided ? both.length + Math.min(left.length, right.length) : counted.length,
       sides: sided ? { left: evalSide([...both, ...left], criteria), right: evalSide([...both, ...right], criteria) } : null,
@@ -325,6 +376,9 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       effortOk: effortWithin(counted, criteria),
       missingEffort,
     });
+  }
+  if (latestFitNotes !== null) {
+    pushFact(ctx, `Last session is from FitNotes (equipment not recorded)${latestFitNotes.rampDropped ? '; its lighter sets were read as warm-ups' : ''}.`);
   }
   if (excluded > 0) {
     pushFact(
@@ -704,7 +758,12 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
 
   const criteria = criteriaOf(rule);
   const sessions = comparableSessions(ctx);
-  const primary = decidePrimary(ctx, sessions, criteria);
+  const decided = decidePrimary(ctx, sessions, criteria);
+  // B7 (P-I3): a load built on FitNotes history needs equipment here to be checked on; with none, none is prescribed.
+  const fromFitNotes = sessions.find((s) => s.loggedSets > 0)?.imported === true;
+  const unchecked = fromFitNotes && input.equipment === null && input.fitLater !== true && convention !== 'bodyweight' && decided.load !== null;
+  if (unchecked) pushFact(ctx, `No equipment here to check the FitNotes load (${fmt(ctx, decided.load)}) on, so no load is prescribed; enter your load.`);
+  const primary = unchecked ? { ...decided, load: null, summary: `Pick a load you can do for ${range(criteria.repRange)} reps.` } : decided;
   const primaryLoad = asLoad(ctx, primary.load);
 
   const sets: TargetSet[] = [];

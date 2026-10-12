@@ -68,10 +68,10 @@ export interface PainFlagSheetInput {
   anchor?: PainSheetAnchor | null;
 }
 
-/** The latest non-imported workout of the exercise decides comparability when no workout is open. */
+/** The latest workout of the exercise (FitNotes too, B7) decides comparability when no workout is open. */
 function anchorFromHistory(history: readonly HistorySession[], fallback: LoadConvention): Omit<PainSheetAnchor, 'equipment'> | null {
   const latest = [...history]
-    .filter((h) => !h.imported && h.sets.some((s) => s.setType !== 'warmup'))
+    .filter((h) => h.sets.some((s) => s.setType !== 'warmup'))
     .sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc))[0];
   if (!latest) return null;
   const loaded = latest.sets.find((s) => s.setType !== 'warmup' && s.load !== null && s.load.convention !== 'bodyweight')?.load ?? null;
