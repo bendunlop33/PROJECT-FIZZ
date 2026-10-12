@@ -21,7 +21,7 @@ export function CoachCard({
   card: CardView;
   onUndo: (actionId: string) => void;
   onProposal?: (proposalId: string, tap: 'apply' | 'not_now') => void;
-  onMemory?: (memoryId: string, version: number, decision: 'save' | 'not_now') => void;
+  onMemory?: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
 }) {
   const theme = useTheme();
   const services = useServices();
@@ -101,7 +101,7 @@ export function CoachCard({
             />
           </View>
         ) : null}
-        {card.memoryChoice !== undefined && onMemory !== undefined ? (
+        {card.memoryChoice !== undefined && !card.memoryChoice.split && onMemory !== undefined ? (
           <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
             <TextButton
               label="Not now"
@@ -132,6 +132,33 @@ export function CoachCard({
           />
         ) : null}
       </View>
+      {card.memoryChoice?.split === true && onMemory !== undefined ? (
+        <View style={{ gap: theme.space['1'], alignItems: 'flex-start' }}>
+          {(
+            [
+              ['Save as a memory about me', 'save'],
+              ['Add to playbook', 'playbook'],
+              ['Not now', 'not_now'],
+            ] as const
+          ).map(([label, decision]) => (
+            <TextButton
+              key={decision}
+              label={label}
+              tone={decision === 'not_now' ? 'secondary' : 'accent'}
+              disabled={busy && decision !== 'not_now'}
+              onPress={() => {
+                if (decision !== 'not_now') {
+                  setBusy(true);
+                  setTimeout(() => {
+                    setBusy(false);
+                  }, 1000);
+                }
+                if (card.memoryChoice) onMemory(card.memoryChoice.memoryId, card.memoryChoice.version, decision);
+              }}
+            />
+          ))}
+        </View>
+      ) : null}
       {why !== null ? <WhyPanel why={why} /> : null}
     </View>
   );

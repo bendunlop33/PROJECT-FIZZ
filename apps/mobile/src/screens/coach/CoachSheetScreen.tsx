@@ -251,8 +251,15 @@ export function CoachSheetScreen() {
     changed();
   }
 
-  /** Save or Not now on a memory suggestion (coach-memory §2.4). */
-  async function decideMemory(memoryId: string, version: number, decision: 'save' | 'not_now') {
+  /** Save, Not now or (CM9 split) Add to playbook on a memory suggestion (coach-memory §2.4, §2.4a). */
+  async function decideMemory(memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') {
+    if (decision === 'playbook') {
+      const p = await services.coach.memoryToPlaybook(memoryId, version, newUuid()).catch(() => null);
+      setNotice(p === null || (!p.ok && p.reason === 'missing') ? 'Couldn’t save.' : p.ok ? null : 'Out of date.');
+      await loadRows(threadId ?? null);
+      changed();
+      return;
+    }
     const r = await services.coach.decideMemory(memoryId, version, decision).catch(() => null);
     setNotice(r === null || r.status === 'missing' ? 'Couldn’t save.' : r.status === 'duplicate' ? 'Already saved.' : r.status === 'stale' ? 'Out of date.' : null);
     await loadRows(threadId ?? null);
@@ -511,7 +518,7 @@ function Row({
   undoBlocked: (actionId: string) => boolean;
   onUndo: (actionId: string) => void;
   onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
-  onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now') => void;
+  onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
   onRetry: () => void;
 }) {
   const theme = useTheme();

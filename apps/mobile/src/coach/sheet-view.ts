@@ -8,7 +8,7 @@
  * (`renderActionResult`), never from the model's words (PM decision 10 Oct).
  */
 
-import { renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
+import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
 import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
@@ -102,8 +102,11 @@ export interface CardView {
   canUndo: boolean;
   /** A structural proposal (ADR 0020 §3): before/after and its own buttons. */
   proposal?: ProposalView;
-  /** A memory suggestion that can still be saved (coach-memory §2.4): `Not now` · `Save`. */
-  memoryChoice?: { memoryId: string; version: number };
+  /**
+   * A memory suggestion that can still be saved (coach-memory §2.4): `Not now` · `Save`. When its words could
+   * be a general rule (CM9 split): `Save as a memory about me` · `Add to playbook` instead of `Save`.
+   */
+  memoryChoice?: { memoryId: string; version: number; split: boolean };
 }
 
 /**
@@ -115,8 +118,18 @@ export function memoryCardView(r: ActionRecord, s: MemoryCardState): CardView | 
   if (r.detail.kind !== 'suggest_memory' || r.status !== 'proposed') return null;
   const words = `“${s.memory.text}”`;
   if (s.memory.status === 'active') return { actionId: r.actionId, status: { word: 'Saved', icon: 'checkmark.circle.fill' }, text: `Saved to memory: ${words}`, accessibilityPrefix: 'Memory.', canUndo: false };
+  if (s.inPlaybook === true) return { actionId: r.actionId, status: { word: 'Saved', icon: 'checkmark.circle.fill' }, text: `Playbook, to review: ${words}`, accessibilityPrefix: 'Playbook.', canUndo: false };
   if (s.memory.status === 'suggested' && s.canSave) {
-    return { actionId: r.actionId, status: { word: 'Suggested', icon: 'minus.circle' }, text: `Save to memory? ${words}`, accessibilityPrefix: 'Coach suggestion, not saved.', canUndo: false, memoryChoice: { memoryId: s.memory.id, version: s.memory.version } };
+    // CM9: words that could be a general rule offer both homes; Ben's choice wins.
+    const split = memoryTextKind(s.memory.text) !== 'personal';
+    return {
+      actionId: r.actionId,
+      status: { word: 'Suggested', icon: 'minus.circle' },
+      text: split ? `Memory or playbook? ${words}` : `Save to memory? ${words}`,
+      accessibilityPrefix: 'Coach suggestion, not saved.',
+      canUndo: false,
+      memoryChoice: { memoryId: s.memory.id, version: s.memory.version, split },
+    };
   }
   return { actionId: r.actionId, status: { word: 'Not saved', icon: 'minus.circle' }, text: words, accessibilityPrefix: 'Coach suggestion, not saved.', canUndo: false };
 }

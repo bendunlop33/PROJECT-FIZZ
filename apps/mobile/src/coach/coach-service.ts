@@ -30,6 +30,7 @@ import {
   structuralTapRecord,
   memoryContentKey,
   newActionRecord,
+  playbookContentKey,
   type CoachExecutors,
   type StructuralDeps,
   type TrainingReadPort,
@@ -145,6 +146,8 @@ export interface ProposalCardState {
 export interface MemoryCardState {
   memory: Memory;
   canSave: boolean;
+  /** Ben chose `Add to playbook` on it (CM9): its words are a playbook candidate to review or approved. */
+  inPlaybook?: boolean;
 }
 
 /** A thread as stored, with every action its messages and turns refer to. */
@@ -239,11 +242,15 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (suggested.length > 0) {
       const all = await coachStore().listMemories(thread.ownerId, 'all');
       const nowUtc = deps.now().utc;
+      const playbook = await coachStore().listPlaybookCandidates();
       for (const a of suggested) {
         if (a.detail.kind !== 'suggest_memory') continue;
         const id = a.detail.memoryId;
         const m = all.find((x) => x.id === id);
-        if (m !== undefined) memories.set(a.actionId, { memory: m, canSave: memoryCanBeSaved(m, all, nowUtc) });
+        if (m === undefined) continue;
+        const key = playbookContentKey(m.text);
+        const inPlaybook = m.status === 'not_saved' && playbook.some((c) => c.contentKey === key && (c.status === 'to_review' || c.status === 'approved'));
+        memories.set(a.actionId, { memory: m, canSave: memoryCanBeSaved(m, all, nowUtc), inPlaybook });
       }
     }
     return { thread, messages, turns, actionsByTurn, proposals, memories };
@@ -253,7 +260,9 @@ export function createCoachService(deps: CoachServiceDeps) {
    * Applies the next workout's overview couldn't write into its draft on its
    * last load (review S1): not doable at that gym, or the plan has no place
    * for them. Kept for this app run only: every overview load works it out
-   * again (another gym may take it), so nothing about it is stored.
+   * again (another gym may take it), so nothing about it is stored. After a
+   * force-close the card is optimistic: it reads `Applied` until the next
+   * workout's overview loads again (review coach-tools r2 N1).
    */
   const refusedApplies = new Set<string>();
 
@@ -635,6 +644,40 @@ export function createCoachService(deps: CoachServiceDeps) {
       // 14 days without an answer: it can't be saved any more (CM3).
       if (decision === 'save' && m !== null && m.status === 'suggested' && !memoryCanBeSaved(m, await coachStore().listMemories(p.id, 'all'), deps.now().utc)) return { status: 'stale', memory: m };
       return coachStore().decideMemory(p.id, { memoryId, expectedVersion, decision, atUtc: deps.now().utc });
+    },
+
+    /**
+     * `Add to playbook` on a memory card whose words could be a rule (CM9's
+     * split; review coach-tools r2 S2): a `To review` candidate (Coaching
+     * knowledge, unused until approved) and the suggestion closed as not
+     * saved, so nothing about it stays waiting in Your data. Two writes, each
+     * idempotent: the candidate by its words, the close by version, so a
+     * retry after a force-close between them finishes the job.
+     */
+    async memoryToPlaybook(memoryId: string, expectedVersion: number, opId: string): Promise<{ ok: true; record: ActionRecord | null } | { ok: false; reason: 'missing' | 'stale' }> {
+      const p = await owner();
+      const m = await coachStore().getMemory(memoryId);
+      if (m === null || m.ownerId !== p.id) return { ok: false, reason: 'missing' };
+      const key = playbookContentKey(m.text);
+      // A double tap: already closed, with its candidate in the playbook.
+      if (m.status === 'not_saved' && m.version === expectedVersion + 1 && (await coachStore().listPlaybookCandidates()).some((c) => c.contentKey === key && c.status !== 'withdrawn')) return { ok: true, record: null };
+      if (m.status !== 'suggested' || m.version !== expectedVersion) return { ok: false, reason: 'stale' };
+      if (!memoryCanBeSaved(m, await coachStore().listMemories(p.id, 'all'), deps.now().utc)) return { ok: false, reason: 'stale' };
+      const now = deps.now();
+      const candidateId = deriveId(`ben-playbook:${opId}`);
+      const detail: ActionDetail = { kind: 'add_playbook_candidate', candidateId, text: m.text };
+      const record = { ...newActionRecord({ turnId: '', opId, now }, detail, { author: 'ben' }), turnId: null };
+      const statedBy = m.source === 'ben_asked' ? ('ben' as const) : ('coach' as const);
+      const r = await coachStore().commit(p.id, {
+        kind: 'playbook_candidate',
+        action: record,
+        candidate: { id: candidateId, version: 1, createdAtUtc: now.utc, updatedAtUtc: now.utc, text: m.text, contentKey: key, statedBy, status: 'to_review', createdByActionId: record.actionId },
+      });
+      // Already approved or rejected in the same words: it is in the playbook's hands either way.
+      if (r.status === 'conflict' && r.reason !== 'already_exists') return { ok: false, reason: 'stale' };
+      const closed = await coachStore().decideMemory(p.id, { memoryId, expectedVersion, decision: 'not_now', atUtc: now.utc });
+      if (closed.status !== 'written') return { ok: false, reason: closed.status === 'missing' ? 'missing' : 'stale' };
+      return { ok: true, record: r.status === 'conflict' ? null : r.action };
     },
 
     /** Edit a saved memory's words; the earlier words are kept with the memory. */

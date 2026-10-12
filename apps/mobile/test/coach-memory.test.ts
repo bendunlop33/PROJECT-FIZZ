@@ -101,6 +101,69 @@ describe('memory suggestions (CM1–CM3)', () => {
   });
 });
 
+describe('general rules vs memories (CM9, review coach-tools r2 S1, S2)', () => {
+  it('"remember to always deload every 5th week" is never a memory: it waits in the playbook, from Ben, unused', async () => {
+    const s = await ready();
+    model = new StepModel([() => toolCall('save_memory', { text: 'Always deload every 5th week', quote: 'remember to always deload every 5th week' }), () => replyWith('Put that in your playbook.')]);
+    // "Remember to …" alone reads as a reminder and opens no memory tool (request.ts REMINDER); the label form opens save_memory.
+    const r = await ask(s, 'Remember: always deload every 5th week');
+    expect(r.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'add_playbook_candidate', text: 'Always deload every 5th week' } });
+    expect(await s.coach.memories()).toMatchObject({ saved: [], waiting: [] });
+    expect((await s.coach.playbookRules()).toReview).toMatchObject([{ text: 'Always deload every 5th week', line: 'From you · not graded' }]);
+    model = new StepModel([() => replyWith('Hi.')]);
+    await ask(s, 'Hello');
+    expect(yourData(model.requests[0]).memories).toEqual([]);
+    expect(knowledge(model.requests[0])).not.toContain('deload every 5th week');
+  });
+
+  it('a schedule constraint is an ordinary suggestion: Save, no rule line (r2 S2)', async () => {
+    const s = await ready();
+    model = new StepModel([() => toolCall('suggest_memory', { text: 'Keep sessions under 45 minutes on weekdays', quote: 'weekdays I only have 45 minutes' }), () => replyWith('Ok.')]);
+    const r = await ask(s, 'Weekdays I only have 45 minutes');
+    expect(r.cards[0]?.record).toMatchObject({ status: 'proposed', detail: { kind: 'suggest_memory' } });
+    const card = threadRows((await s.coach.loadThread(r.threadId)) ?? (null as never)).find((x) => x.kind === 'card');
+    expect(card?.kind === 'card' ? card.card : null).toMatchObject({ text: 'Save to memory? “Keep sessions under 45 minutes on weekdays”', memoryChoice: { split: false } });
+  });
+
+  it('unclear words offer both; Add to playbook closes the suggestion and adds a candidate (double tap is one write)', async () => {
+    const s = await ready();
+    model = new StepModel([() => toolCall('suggest_memory', { text: 'Use straps for deadlifts', quote: 'straps help my grip' }), () => replyWith('Ok.')]);
+    const r = await ask(s, 'Straps help my grip on deadlifts');
+    const memoryId = r.cards[0]?.record.detail.kind === 'suggest_memory' ? r.cards[0].record.detail.memoryId : '';
+    const cardOf = async () => {
+      const row = threadRows((await s.coach.loadThread(r.threadId)) ?? (null as never)).find((x) => x.kind === 'card');
+      return row?.kind === 'card' ? row.card : null;
+    };
+    expect(await cardOf()).toMatchObject({ status: { word: 'Suggested' }, text: 'Memory or playbook? “Use straps for deadlifts”', memoryChoice: { memoryId, version: 1, split: true } });
+
+    const first = await s.coach.memoryToPlaybook(memoryId, 1, h.ids());
+    expect(first).toMatchObject({ ok: true, record: { author: 'ben', detail: { kind: 'add_playbook_candidate' } } });
+    expect(await s.coach.memoryToPlaybook(memoryId, 1, h.ids())).toMatchObject({ ok: true, record: null });
+    expect((await s.coach.playbookRules()).toReview).toMatchObject([{ text: 'Use straps for deadlifts', line: 'From the coach · not graded' }]);
+    expect(await s.coach.memories()).toMatchObject({ saved: [], waiting: [] });
+    expect(await cardOf()).toMatchObject({ status: { word: 'Saved' }, text: 'Playbook, to review: “Use straps for deadlifts”' });
+    // A stale card can't save it as a memory afterwards (rule 5).
+    expect(await s.coach.decideMemory(memoryId, 1, 'save')).toMatchObject({ status: 'stale' });
+  });
+
+  it('unclear words from Ben\'s "remember …" wait for his choice; Save as a memory about me wins', async () => {
+    const s = await ready();
+    model = new StepModel([() => toolCall('save_memory', { text: 'Avoid lunges', quote: 'remember to avoid lunges' }), () => replyWith('Ok.')]);
+    const r = await ask(s, 'Remember: avoid lunges');
+    expect(r.cards[0]?.record).toMatchObject({ status: 'proposed', detail: { kind: 'suggest_memory', text: 'Avoid lunges' } });
+    const memoryId = r.cards[0]?.record.detail.kind === 'suggest_memory' ? r.cards[0].record.detail.memoryId : '';
+    expect(await s.coach.decideMemory(memoryId, 1, 'save')).toMatchObject({ status: 'written', memory: { status: 'active' } });
+    expect((await s.coach.memories()).saved.map((m) => m.text)).toEqual(['Avoid lunges']);
+    expect((await s.coach.playbookRules()).toReview).toEqual([]);
+    // Chosen Add to playbook instead, the candidate would be Ben's own words.
+    model = new StepModel([() => toolCall('save_memory', { text: 'Use straps for deadlifts', quote: 'remember to use straps for deadlifts' }), () => replyWith('Ok.')]);
+    const r2 = await ask(s, 'Remember: use straps for deadlifts');
+    const id2 = r2.cards[0]?.record.detail.kind === 'suggest_memory' ? r2.cards[0].record.detail.memoryId : '';
+    expect(await s.coach.memoryToPlaybook(id2, 1, h.ids())).toMatchObject({ ok: true });
+    expect((await s.coach.playbookRules()).toReview).toMatchObject([{ text: 'Use straps for deadlifts', line: 'From you · not graded' }]);
+  });
+});
+
 describe('Memory screen: add, edit, forget with Undo', () => {
   it('add saves at once (the same words are one memory); edit keeps the earlier words; forget has Undo', async () => {
     const s = await ready();
