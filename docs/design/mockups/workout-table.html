@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GymSmarter · Workout table (build-ready, 12 Oct)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Direction D "Premium", dark. Values copied from apps/mobile/src/theme/tokens.ts PREMIUM_DIRECTION. Mockup only; spec: active-workout.md §2A. */
+:root{
+  --canvas:#0D0C0B; --surface:#181615; --raised:#23201E; --divider:#302C29; --control:#75706A;
+  --t1:#F3EEE8; --t2:#B5ADA5; --t3:#948C84;
+  --accent:#EDE5DA; --accent-sub:#2B2724; --on-accent:#0D0C0B;
+  --done:#5CC98A; --warn:#F2B84B; --warn-sub:#3A2C10;
+  --r-md:14px; --r-lg:20px;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050404;color:var(--t1);font-family:var(--font);padding:40px 32px 80px;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+h1{font-size:30px;font-weight:600;letter-spacing:-.4px}
+.lede{color:var(--t2);font-size:16px;line-height:23px;max-width:1100px;margin-top:10px}
+.lede b{color:var(--t1)}
+.frames{display:flex;flex-wrap:wrap;gap:44px;margin-top:32px;align-items:flex-start}
+.fig{width:390px}
+.fig h2{font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:var(--t3);font-weight:600;margin-bottom:12px}
+.notes{margin-top:16px;color:var(--t2);font-size:14px;line-height:20px}
+.notes li{margin:0 0 6px 18px}
+.notes b{color:var(--t1);font-weight:600}
+
+.phone{width:390px;height:844px;background:var(--canvas);border-radius:52px;position:relative;overflow:hidden;
+  box-shadow:0 0 0 10px #1b1a19,0 0 0 11px #3a3735,0 30px 60px rgba(0,0,0,.6)}
+.sb{height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 34px 0 44px;font-size:17px;font-weight:600}
+.island{position:absolute;left:50%;top:11px;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000}
+.batt{width:26px;height:12px;border:1.5px solid var(--t2);border-radius:4px;position:relative}
+.batt:after{content:"";position:absolute;left:2px;top:2px;bottom:2px;width:9px;background:var(--t1);border-radius:1px}
+
+/* top bar: ⌄ [title | ↑ N done] [gym ▾] elapsed ⋯ */
+.hdr{height:52px;display:flex;align-items:center;padding:0 8px 0 4px;gap:4px}
+.ib{width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--t1);flex:none}
+.ib svg{width:22px;height:22px}
+.title{font-size:16px;letter-spacing:1.2px;font-weight:600;color:var(--t2);text-transform:uppercase}
+.donechip{height:36px;padding:0 12px;border-radius:999px;background:var(--raised);border:1px solid var(--control);display:flex;align-items:center;gap:4px;font-size:16px;color:var(--t1)}
+.gym{margin-left:auto;height:34px;padding:0 10px;border:1px solid var(--divider);border-radius:999px;display:flex;align-items:center;gap:4px;font-size:16px;color:var(--t2)}
+.gym svg{width:12px;height:12px}
+.el{font-size:16px;color:var(--t2);padding:0 4px}
+
+.scroll{position:absolute;left:0;right:0;top:106px;bottom:110px;overflow:hidden;padding:0 16px}
+.scroll.rest{bottom:190px}
+
+/* card + pinned header */
+.card{background:var(--surface);border-radius:var(--r-lg);padding:0 12px 4px;margin-bottom:12px}
+.pin{padding-top:10px}
+.pin.pinned{border-bottom:1px solid var(--divider)}
+.xh{display:flex;align-items:flex-start;gap:2px;padding-left:4px}
+.xname{flex:1;min-height:44px}
+.xname .n{font-size:22px;line-height:28px;font-weight:600;letter-spacing:-.2px;display:inline-flex;align-items:center;gap:6px}
+.xname .n svg{width:13px;height:13px;color:var(--t3)}
+.xname .s{font-size:16px;line-height:21px;color:var(--t2);margin-top:2px}
+.prog{font-size:16px;color:var(--t3);height:44px;display:flex;align-items:center;padding:0 4px}
+.adj{font-size:16px;color:var(--t1);height:44px;display:flex;align-items:center;padding:0 6px;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--control)}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:16px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--warn-sub);color:var(--warn);vertical-align:middle}
+.badge svg{width:12px;height:12px}
+.cols{display:grid;grid-template-columns:52px 1fr 1fr 52px;padding:8px 0 6px;font-size:16px;letter-spacing:1px;font-weight:500;color:var(--t3)}
+.cols span:first-child{padding-left:8px}
+.cols span:last-child{text-align:center}
+
+.set{display:grid;grid-template-columns:52px 1fr 1fr 52px;min-height:52px;align-items:center;border-top:1px solid var(--divider);font-size:19px}
+.set .k{padding-left:8px;font-size:17px;color:var(--t2)}
+.set .v{font-weight:500;color:var(--t1)}
+.set .sub{font-size:16px;color:var(--t2);font-weight:400;margin-left:6px}
+.set.pend .v{color:var(--t3);font-weight:400}
+.set .tick{display:flex;justify-content:center}
+.set2{grid-column:2/5;font-size:16px;color:var(--t2);padding:0 0 8px;margin-top:-10px}
+.wb{display:inline-flex;align-items:center;justify-content:center;width:26px;height:22px;border-radius:6px;border:1px solid var(--control);font-size:13px;font-weight:600;color:var(--t2)}
+.tag{display:inline-block;font-size:13px;font-weight:600;color:var(--t2);background:var(--raised);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+.circ{width:28px;height:28px;border-radius:50%;border:2px solid var(--control)}
+.circ.done{border:none;background:var(--done);display:flex;align-items:center;justify-content:center}
+.circ.done svg{width:16px;height:16px;color:#0D0C0B}
+
+/* open row */
+.act{background:var(--raised);border-radius:var(--r-md);margin:4px -6px 6px;padding:4px 10px 10px;position:relative}
+.act:before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:2px;background:var(--accent)}
+.act .top{display:flex;align-items:center;min-height:44px;padding-left:8px}
+.act .top .no{font-size:17px;font-weight:600;width:30px}
+.act .top .now{font-size:16px;letter-spacing:1.2px;font-weight:600;color:var(--accent)}
+.act .top .last{margin-left:auto;font-size:16px;color:var(--t3);min-height:44px;display:flex;align-items:center}
+.act .top .last b{color:var(--t2);font-weight:500;margin-left:4px;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--control)}
+.plate{font-size:16px;color:var(--t3);padding:0 6px 6px 8px}
+.steps{display:flex;gap:8px}
+.tile{background:var(--surface);border-radius:var(--r-md);padding:6px 6px 4px;flex:1}
+.tile.load{flex:1.35}
+.tile .lab{font-size:14px;letter-spacing:1.2px;font-weight:600;color:var(--t3);padding-left:8px}
+.tile .ctl{display:flex;align-items:center;justify-content:space-between;height:56px}
+.sbtn{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--t1);background:var(--raised);flex:none;font-size:24px;font-weight:300}
+.val{font-size:40px;font-weight:600;letter-spacing:-.5px;line-height:48px}
+.tline{display:flex;align-items:center;margin-top:8px;padding:0 6px;font-size:16px;color:var(--t2);min-height:22px}
+.tline .why{margin-left:auto;color:var(--t1);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--control);min-height:44px;display:flex;align-items:center}
+.rline{padding:0 6px;font-size:16px;color:var(--t2);min-height:36px;display:flex;align-items:center}
+.rline u{text-decoration-color:var(--control);text-underline-offset:3px}
+
+.addset{height:52px;display:flex;align-items:center;padding-left:8px;font-size:16px;color:var(--t2);border-top:1px solid var(--divider)}
+.addset span{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--control)}
+
+.fold{background:var(--surface);border-radius:var(--r-lg);min-height:52px;display:flex;align-items:center;gap:10px;padding:0 14px;margin-bottom:8px;font-size:17px}
+.fold .circ{width:24px;height:24px}
+.fold .circ svg{width:14px;height:14px}
+.fold .fv{margin-left:auto;color:var(--t2);font-size:16px}
+.fold .fn{font-weight:600}
+
+/* after-set block */
+.after{padding:8px 2px 4px 4px}
+.after .ey{font-size:16px;letter-spacing:1px;font-weight:500;color:var(--t3);margin:2px 0 6px}
+.chips{display:flex;gap:8px}
+.chip{flex:1;height:52px;border-radius:999px;border:1px solid var(--control);display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--t1)}
+.chip.sel{background:var(--accent-sub);gap:4px}
+.offer{margin-top:12px}
+.offer .q{font-size:17px;line-height:22px;color:var(--t1)}
+.offer .f{font-size:16px;line-height:22px;color:var(--t2);margin-top:2px}
+.offer .c{font-size:16px;line-height:22px;color:var(--t1);margin-top:2px}
+.offer .btns{display:flex;justify-content:space-between;margin-top:8px}
+.pill2{width:150px;height:52px;border-radius:999px;border:1px solid var(--control);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;color:var(--t1)}
+.pillS{width:150px;height:52px;border-radius:999px;border:1px solid var(--control);background:var(--raised);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;color:var(--accent)}
+
+/* superset */
+.ssh{display:flex;align-items:center;padding:10px 4px 6px}
+.ssh .n{font-size:22px;font-weight:600}
+.ssh .r{margin-left:auto;font-size:16px;color:var(--t3)}
+.mem{display:flex;align-items:center;gap:8px;min-height:40px;padding-left:4px;font-size:17px}
+.mem .mt{font-size:13px;font-weight:700;color:var(--t2);border:1px solid var(--control);border-radius:6px;padding:1px 6px}
+.mem .u{color:var(--t3);font-size:16px}
+.bracket{border-left:2px solid var(--control);margin-left:6px;padding-left:6px}
+.round{font-size:16px;letter-spacing:1px;font-weight:500;color:var(--t3);padding:10px 0 4px 8px;border-top:1px solid var(--divider)}
+
+/* bottom stack */
+.restbar{position:absolute;left:12px;right:12px;bottom:114px;height:64px;background:var(--surface);border-radius:var(--r-md);display:flex;align-items:center;padding:0 6px 0 14px;gap:8px;overflow:hidden}
+.restbar .drain{position:absolute;left:0;bottom:0;height:3px;background:var(--accent);opacity:.7}
+.restbar .lab{font-size:14px;letter-spacing:1.2px;font-weight:600;color:var(--t3)}
+.restbar .t{font-size:26px;font-weight:600;letter-spacing:-.3px;min-width:66px}
+.restbar .p{height:52px;padding:0 14px;border-radius:999px;border:1px solid var(--control);display:flex;align-items:center;font-size:16px;color:var(--t1)}
+.restbar .sp{flex:1}
+.toast{position:absolute;left:16px;right:16px;bottom:186px;height:48px;background:var(--raised);border-radius:999px;display:flex;align-items:center;padding:0 8px 0 18px;font-size:16px;color:var(--t1);box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.toast svg{width:16px;height:16px;color:var(--done);margin-right:8px}
+.toast .u{margin-left:auto;height:44px;display:flex;align-items:center;padding:0 12px;font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.bar{position:absolute;left:0;right:0;bottom:34px;height:76px;display:flex;align-items:center;gap:10px;padding:8px 16px}
+.chat{width:60px;height:60px;border-radius:50%;border:1px solid var(--control);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:16px;color:var(--t2);gap:0;flex:none}
+.chat svg{width:22px;height:22px;color:var(--t1)}
+.log{flex:1;height:60px;border-radius:999px;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;gap:6px;white-space:nowrap}
+.log .pre{font-weight:500;opacity:.7}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--t1);opacity:.85}
+.nowchip{position:absolute;right:20px;bottom:194px;height:36px;padding:0 14px;border-radius:999px;background:var(--raised);border:1px solid var(--control);display:flex;align-items:center;font-size:16px;color:var(--t1)}
+
+/* AX frame */
+.ax .xname .n{font-size:34px;line-height:40px}
+.ax .xname .s{font-size:24px;line-height:30px}
+.ax .blk{border-top:1px solid var(--divider);padding:10px 8px;display:flex;gap:12px;align-items:flex-start}
+.ax .blk .circ{margin-top:6px;flex:none;width:32px;height:32px}
+.ax .blk .l1{font-size:26px;line-height:32px;font-weight:600}
+.ax .blk .l2{font-size:26px;line-height:32px;color:var(--t3)}
+.ax .blk .l2.d{color:var(--t1)}
+.ax .tileF{background:var(--surface);border-radius:var(--r-md);padding:8px;margin-top:8px}
+.ax .tileF .lab{font-size:19px;letter-spacing:1.2px;font-weight:600;color:var(--t3);padding-left:6px}
+.ax .tileF .ctl{display:flex;align-items:center;justify-content:space-between;height:72px}
+.ax .tileF .sbtn{width:60px;height:60px;font-size:30px}
+.ax .tileF .val{font-size:56px;line-height:64px}
+.ax .tl2{font-size:26px;line-height:32px;color:var(--t2);padding:10px 6px 4px}
+.ax .log{font-size:26px;height:auto;min-height:76px;padding:8px 18px;text-align:center;line-height:30px;border-radius:38px;white-space:normal}
+.ax .bar{height:96px}
+
+.cmp{margin-top:56px;max-width:1100px}
+.cmp h2{font-size:22px;font-weight:600;margin-bottom:12px}
+.cmp table{border-collapse:collapse;width:100%;font-size:15px;line-height:21px}
+.cmp th,.cmp td{text-align:left;vertical-align:top;padding:10px 12px;border-top:1px solid var(--divider);color:var(--t2)}
+.cmp th{color:var(--t3);font-size:12px;letter-spacing:1.4px;text-transform:uppercase}
+.cmp td:first-child{color:var(--t1);font-weight:600;width:240px}
+.choice{background:var(--surface);border-radius:var(--r-lg);padding:16px 18px;margin-top:12px;color:var(--t2);font-size:15px;line-height:21px}
+.choice b{color:var(--t1)}
+</style>
+</head>
+<body>
+
+<h1>Workout table: whole session, anchored on the current set, one Log</h1>
+<p class="lede">
+<b>Build-ready, 12 Oct 2026.</b> Spec: <code>docs/design/active-workout.md</code> §2A, with Ben's decisions of 11 Oct applied.
+The screen opens <b>anchored on the current set</b>. Finished sets and exercises sit above the viewport, and a <b>↑ N done</b> chip in the top bar says they're there. After each Log the list <b>auto-advances</b>. Done rows are bright with a green tick (<b>actual</b>), and pending rows are dim with an open ring (<b>target</b>). Only the current row opens. The bottom bar is <b>Chat + Log</b>, and Pause and Finish are in <b>⋯</b>. Tapping a row that isn't current selects it and <b>never logs</b>. Build 108's single card stays as <b>⋯ → Focus view</b>.
+Frames use realistic Push numbers. This is a mockup only: it hasn't been rendered on a device.
+</p>
+
+<div class="frames">
+
+<!-- ============ FRAME 1: READY, ANCHORED ============ -->
+<div class="fig">
+<h2>1 · Ready · anchored on Bench set 2</h2>
+<div class="phone">
+  <div class="island"></div>
+  <div class="sb"><span>18:42</span><span class="batt"></span></div>
+  <div class="hdr">
+    <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg></div>
+    <span class="donechip">↑ 3 done</span>
+    <span class="gym">Main Gym <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></span>
+    <span class="el">12:08</span>
+    <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg></div>
+  </div>
+
+  <div class="scroll">
+    <div class="card">
+      <div class="pin pinned">
+        <div class="xh">
+          <div class="xname">
+            <div class="n">Bench press <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 2.5L7.5 6 4 9.5"/></svg></div>
+            <div class="s">Barbell · Last 1 Oct: 100 × 8, 8, 7</div>
+          </div>
+          <span class="prog">1/3</span><span class="adj">Adjust</span>
+          <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg></div>
+        </div>
+        <div class="cols"><span>SET</span><span>KG</span><span>REPS</span><span>✓</span></div>
+      </div>
+      <div class="act">
+        <div class="top"><span class="no">2</span><span class="now">NOW</span><span class="last">Last <b>100 × 8</b></span></div>
+        <div class="plate">20 bar + 25 + 15 / side</div>
+        <div class="steps">
+          <div class="tile load"><div class="lab">LOAD KG</div><div class="ctl"><span class="sbtn">−</span><span class="val">100</span><span class="sbtn">+</span></div></div>
+          <div class="tile"><div class="lab">REPS</div><div class="ctl"><span class="sbtn">−</span><span class="val">8</span><span class="sbtn">+</span></div></div>
+        </div>
+        <div class="tline">Target 100 kg · 6–8 reps @ RPE 8<span class="why">Why?</span></div>
+        <div class="rline">Rest after&nbsp;<u>3:00</u>&nbsp;›</div>
+      </div>
+      <div class="set pend"><span class="k">3</span><span class="v">100</span><span class="v">6–8</span><span class="tick"><span class="circ"></span></span></div>
+      <div class="addset"><span>+ Add set</span></div>
+    </div>
+    <div class="card">
+      <div class="pin">
+        <div class="xh"><div class="xname"><div class="n">Incline DB press</div><div class="s">Dumbbells · kg each · Last 1 Oct: 32 × 10, 9, 8</div></div><span class="prog">0/3</span></div>
+        <div class="cols"><span>SET</span><span>KG</span><span>REPS</span><span>✓</span></div>
+      </div>
+      <div class="set pend"><span class="k">1</span><span class="v">32</span><span class="v">8–10</span><span class="tick"><span class="circ"></span></span></div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</div>
+    <div class="log"><span class="pre">Set 2 ·</span> Log 100 kg × 8</div>
+  </div>
+  <div class="home"></div>
+</div>
+<ul class="notes">
+  <li><b>Anchored.</b> The warm-up and set 1 are done. They sit above the viewport under the pinned header, so <code>↑ 3 done</code> replaces <code>PUSH A</code> in the title slot.</li>
+  <li><b>One tap logs a matching set.</b> The pill repeats exactly what will be saved.</li>
+  <li><b>Target vs actual:</b> <code>@ RPE 8</code> (with @) is always a target. A range only ever appears on a target.</li>
+  <li><b>The open row has no tick.</b> Log is the only save. Tapping set 3 (or its ring) selects it and never logs.</li>
+</ul>
+</div>
+
+<!-- ============ FRAME 2: RESTING ============ -->
+<div class="fig">
+<h2>2 · Resting after set 2 (auto-advanced)</h2>
+<div class="phone">
+  <div class="island"></div>
+  <div class="sb"><span>18:44</span><span class="batt"></span></div>
+  <div class="hdr">
+    <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg></div>
+    <span class="donechip">↑ 4 done</span>
+    <span class="gym">Main Gym <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></span>
+    <span class="el">14:21</span>
+    <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg></div>
+  </div>
+
+  <div class="scroll rest">
+    <div class="card">
+      <div class="pin pinned">
+        <div class="xh">
+          <div class="xname"><div class="n">Bench press <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 2.5L7.5 6 4 9.5"/></svg></div><div class="s">Barbell · Last 1 Oct: 100 × 8, 8, 7</div></div>
+          <span class="prog">2/3</span><span class="adj">Adjust</span>
+          <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg></div>
+        </div>
+        <div class="cols"><span>SET</span><span>KG</span><span>REPS</span><span>✓</span></div>
+      </div>
+      <div class="after">
+        <div class="ey">SET 2 EFFORT</div>
+        <div class="chips"><span class="chip">6</span><span class="chip">7</span><span class="chip">8</span><span class="chip">9</span><span class="chip">10</span></div>
+      </div>
+      <div class="act">
+        <div class="top"><span class="no">3</span><span class="now">NEXT</span><span class="last">Last <b>100 × 7</b></span></div>
+        <div class="plate">20 bar + 25 + 15 / side</div>
+        <div class="steps">
+          <div class="tile load"><div class="lab">LOAD KG</div><div class="ctl"><span class="sbtn">−</span><span class="val">100</span><span class="sbtn">+</span></div></div>
+          <div class="tile"><div class="lab">REPS</div><div class="ctl"><span class="sbtn">−</span><span class="val">8</span><span class="sbtn">+</span></div></div>
+        </div>
+        <div class="tline">Target 100 kg · 6–8 reps @ RPE 8<span class="why">Why?</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3.5 8.5l3 3 6-7"/></svg>Set 2 saved · 100 kg × 8<span class="u">Undo</span></div>
+  <div class="restbar"><span class="drain" style="width:72%"></span><span class="lab">REST</span><span class="t">2:09</span><span class="sp"></span><span class="p">−30</span><span class="p">+30</span><span class="p">Skip</span></div>
+  <div class="bar">
+    <div class="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</div>
+    <div class="log"><span class="pre">Set 3 ·</span> Log 100 kg × 8</div>
+  </div>
+  <div class="home"></div>
+</div>
+<ul class="notes">
+  <li><b>Auto-advance:</b> set 2 slid up under the pinned header, and set 3 is already open in the same spot.</li>
+  <li><b>After-set block</b> above the open row: the optional effort chips (and any offer). A tap saves RPE on set 2. The block stays until the next Log, so nothing jumps when rest ends.</li>
+  <li><b>Rest bar</b> 64 pt with 52 pt pills. The countdown comes from the stored deadline. Tap the numeral for the full rest view.</li>
+  <li><b>Logging during rest is still 1 tap</b>, and it ends rest early.</li>
+</ul>
+</div>
+
+<!-- ============ FRAME 3: SCROLLED UP ============ -->
+<div class="fig">
+<h2>3 · Scrolled up to check / edit</h2>
+<div class="phone">
+  <div class="island"></div>
+  <div class="sb"><span>18:45</span><span class="batt"></span></div>
+  <div class="hdr">
+    <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg></div>
+    <span class="title">Push A</span>
+    <span class="gym">Main Gym <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></span>
+    <span class="el">14:30</span>
+    <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg></div>
+  </div>
+
+  <div class="scroll rest">
+    <div class="fold"><span class="circ done"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="fn">Overhead press</span><span class="fv">50 × 8, 8, 7</span></div>
+    <div class="card">
+      <div class="pin">
+        <div class="xh">
+          <div class="xname"><div class="n">Bench press <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 2.5L7.5 6 4 9.5"/></svg></div><div class="s">Barbell · Last 1 Oct: 100 × 8, 8, 7</div></div>
+          <span class="prog">2/3</span><span class="adj">Adjust</span>
+          <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg></div>
+        </div>
+        <div class="cols"><span>SET</span><span>KG</span><span>REPS</span><span>✓</span></div>
+      </div>
+      <div class="set"><span class="k"><span class="wb">W</span></span><span class="v">60</span><span class="v">5</span><span class="tick"><span class="circ done"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span></span></div>
+      <div class="set"><span class="k">1</span><span class="v">100</span><span class="v">8<span class="sub">RPE 8</span></span><span class="tick"><span class="circ done"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span></span></div>
+      <div class="set"><span class="k">2</span><span class="v">100</span><span class="v">8</span><span class="tick"><span class="circ done"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span></span><span class="set2">Spotted · not counted</span></div>
+      <div class="after">
+        <div class="ey">SET 2 EFFORT</div>
+        <div class="chips"><span class="chip">6</span><span class="chip">7</span><span class="chip">8</span><span class="chip">9</span><span class="chip">10</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nowchip">Now ↓</div>
+  <div class="restbar"><span class="drain" style="width:64%"></span><span class="lab">REST</span><span class="t">1:58</span><span class="sp"></span><span class="p">−30</span><span class="p">+30</span><span class="p">Skip</span></div>
+  <div class="bar">
+    <div class="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</div>
+    <div class="log"><span class="pre">Bench · Set 3 ·</span> Log 100 kg × 8</div>
+  </div>
+  <div class="home"></div>
+</div>
+<ul class="notes">
+  <li><b>Everything done is one scroll (or one tap on ↑ N done) away.</b> Tapping a done row opens the correction sheet. A tick never toggles off.</li>
+  <li><b>Open row off-screen:</b> the <code>Now ↓</code> chip appears, the done chip gives way to the title, and Log names the exercise.</li>
+  <li><b>Folded exercise</b> shows actual results. Tap it to expand.</li>
+  <li>The list never scrolls itself while Ben is scrolling.</li>
+</ul>
+</div>
+
+<!-- ============ FRAME 4: RULE OFFER ============ -->
+<div class="fig">
+<h2>4 · Offer after RPE 10 vs target 8 (coach unreachable)</h2>
+<div class="phone">
+  <div class="island"></div>
+  <div class="sb"><span>18:44</span><span class="batt"></span></div>
+  <div class="hdr">
+    <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg></div>
+    <span class="donechip">↑ 4 done</span>
+    <span class="gym">Main Gym <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></span>
+    <span class="el">14:40</span>
+    <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg></div>
+  </div>
+
+  <div class="scroll rest">
+    <div class="card">
+      <div class="pin pinned">
+        <div class="xh">
+          <div class="xname"><div class="n">Bench press <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 2.5L7.5 6 4 9.5"/></svg></div><div class="s">Barbell · Last 1 Oct: 100 × 8, 8, 7</div></div>
+          <span class="prog">2/3</span><span class="adj">Adjust</span>
+          <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg></div>
+        </div>
+        <div class="cols"><span>SET</span><span>KG</span><span>REPS</span><span>✓</span></div>
+      </div>
+      <div class="after">
+        <div class="ey">SET 2 EFFORT</div>
+        <div class="chips"><span class="chip">6</span><span class="chip">7</span><span class="chip">8</span><span class="chip">9</span><span class="chip sel">✓ 10</span></div>
+        <div class="offer">
+          <div class="q">That looked hard. Adjust remaining sets?</div>
+          <div class="f">RPE 10 on set 2 (target 8)</div>
+          <div class="c">Next set: 95 kg × 6–8 <span class="tag">Rule</span></div>
+          <div class="btns"><span class="pill2">No thanks</span><span class="pillS">Adjust</span></div>
+        </div>
+      </div>
+      <div class="act">
+        <div class="top"><span class="no">3</span><span class="now">NEXT</span><span class="last">Last <b>100 × 7</b></span></div>
+        <div class="steps">
+          <div class="tile load"><div class="lab">LOAD KG</div><div class="ctl"><span class="sbtn">−</span><span class="val">100</span><span class="sbtn">+</span></div></div>
+          <div class="tile"><div class="lab">REPS</div><div class="ctl"><span class="sbtn">−</span><span class="val">8</span><span class="sbtn">+</span></div></div>
+        </div>
+        <div class="tline">Target 100 kg · 6–8 reps @ RPE 8<span class="why">Why?</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="restbar"><span class="drain" style="width:88%"></span><span class="lab">REST</span><span class="t">2:38</span><span class="sp"></span><span class="p">−30</span><span class="p">+30</span><span class="p">Skip</span></div>
+  <div class="bar">
+    <div class="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</div>
+    <div class="log"><span class="pre">Set 3 ·</span> Log 100 kg × 8</div>
+  </div>
+  <div class="home"></div>
+</div>
+<ul class="notes">
+  <li><b>An offer, not a change (rule 3).</b> Set 3 and Log stay at 100 kg until <b>Adjust</b>. Then set 3 shows <code>Plan was 100 kg × 6–8</code> and the <code>Rule</code> tag, a banner gives Undo, and Log is guarded for 1 s.</li>
+  <li><b>Coach reachable:</b> the same prompt and fact, but <b>no numbers</b>. The coach is only asked once Ben taps Adjust (CA1).</li>
+  <li>The trigger is measured against the <b>target RPE</b>, so RPE 10 on a set planned at 10 raises nothing.</li>
+  <li>95 kg is snapped to Main Gym's plates (rule 4).</li>
+</ul>
+</div>
+
+<!-- ============ FRAME 5: SUPERSET ============ -->
+<div class="fig">
+<h2>5 · Superset A · round 2 (earlier exercises folded above)</h2>
+<div class="phone">
+  <div class="island"></div>
+  <div class="sb"><span>18:58</span><span class="batt"></span></div>
+  <div class="hdr">
+    <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg></div>
+    <span class="donechip">↑ 9 done</span>
+    <span class="gym">Main Gym <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5l3 3 3-3"/></svg></span>
+    <span class="el">28:40</span>
+    <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg></div>
+  </div>
+
+  <div class="scroll">
+    <div class="card">
+      <div class="pin pinned">
+        <div class="ssh"><span class="n">Superset A</span><span class="r">Round 2 of 3</span><div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg></div></div>
+        <div class="bracket">
+          <div class="mem"><span class="mt">A1</span>Cable fly <span class="u">· kg stack</span></div>
+          <div class="mem"><span class="mt">A2</span>Lateral raise <span class="u">· kg each</span> <span class="badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l7 12.5H1z"/></svg>Pain</span></div>
+        </div>
+        <div class="cols"><span>SET</span><span>KG</span><span>REPS</span><span>✓</span></div>
+      </div>
+      <div class="round">ROUND 2</div>
+      <div class="act">
+        <div class="top"><span class="no">A1</span><span class="now">&nbsp;NOW</span><span class="last">Last <b>25 × 14</b></span></div>
+        <div class="steps">
+          <div class="tile load"><div class="lab">STACK KG</div><div class="ctl"><span class="sbtn">−</span><span class="val">25</span><span class="sbtn">+</span></div></div>
+          <div class="tile"><div class="lab">REPS</div><div class="ctl"><span class="sbtn">−</span><span class="val">14</span><span class="sbtn">+</span></div></div>
+        </div>
+        <div class="tline">Target 25 kg stack · 12–15 reps @ RPE 9</div>
+        <div class="tline" style="margin-top:0">then A2, no rest<span class="why">Why?</span></div>
+      </div>
+      <div class="set pend"><span class="k">A2</span><span class="v">10</span><span class="v">12–15</span><span class="tick"><span class="circ"></span></span></div>
+      <div class="round">ROUND 3</div>
+      <div class="set pend"><span class="k">A1</span><span class="v">25</span><span class="v">12–15</span><span class="tick"><span class="circ"></span></span></div>
+      <div class="set pend"><span class="k">A2</span><span class="v">10</span><span class="v">12–15</span><span class="tick"><span class="circ"></span></span></div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</div>
+    <div class="log"><span class="pre">A1 ·</span> Log 25 kg × 14 → A2</div>
+  </div>
+  <div class="home"></div>
+</div>
+<ul class="notes">
+  <li><b>Rows are in lifting order</b> under <code>ROUND n</code>. Round 1 is done and above the viewport. Logging A1 opens A2 with no rest, and logging A2 starts the round rest.</li>
+  <li><b>Pain:</b> icon + word on the member. When A2 is open, its row shows <code>⚠ Pain flag: no increases</code>. Log is never blocked.</li>
+  <li>The group folds only when every member is finished.</li>
+</ul>
+</div>
+
+<!-- ============ FRAME 6: AX3 ============ -->
+<div class="fig">
+<h2>6 · Large text (AX3): rows become blocks</h2>
+<div class="phone ax">
+  <div class="island"></div>
+  <div class="sb"><span>18:42</span><span class="batt"></span></div>
+  <div class="hdr">
+    <div class="ib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg></div>
+    <span class="title" style="font-size:20px">Push A</span>
+    <span class="el" style="margin-left:auto;font-size:20px">12:08</span>
+    <div class="ib"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/></svg></div>
+  </div>
+
+  <div class="scroll" style="bottom:130px">
+    <div class="card">
+      <div class="xh" style="padding-top:10px"><div class="xname"><div class="n">Bench press ›</div><div class="s">Barbell</div></div></div>
+      <div class="act">
+        <div class="top"><span class="now" style="font-size:20px">SET 2 · NOW</span></div>
+        <div class="tileF"><div class="lab">LOAD KG</div><div class="ctl"><span class="sbtn">−</span><span class="val">100</span><span class="sbtn">+</span></div></div>
+        <div class="tileF"><div class="lab">REPS</div><div class="ctl"><span class="sbtn">−</span><span class="val">8</span><span class="sbtn">+</span></div></div>
+        <div class="tl2">Target 100 kg · 6–8 reps @ RPE 8</div>
+      </div>
+      <div class="blk"><span class="circ"></span><div><div class="l1">Set 3</div><div class="l2">Target 100 kg · 6–8 reps</div></div></div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg></div>
+    <div class="log">Set 2 · Log<br>100 kg × 8</div>
+  </div>
+  <div class="home"></div>
+</div>
+<ul class="notes">
+  <li><b>AX1+:</b> each set is a block, the column labels go, and the tiles stack at full width with 60 pt buttons.</li>
+  <li><b>What moves:</b> the gym chip goes into ⋯, the Chat label drops (VoiceOver still says "Chat"), and the plate line and Last move into the exercise sheet. Log wraps and never truncates the load.</li>
+  <li>The done chip still replaces the title when anything done is above.</li>
+</ul>
+</div>
+
+</div>
+
+<section class="cmp">
+<h2>What changes from build 108</h2>
+<table>
+<tr><th>Item</th><th>Build 108 (now Focus, in ⋯)</th><th>Table (default)</th></tr>
+<tr><td>Default view</td><td>One exercise card; the session hidden</td><td>The whole session as one list, anchored on the current set; done content above the viewport behind <code>↑ N done</code></td></tr>
+<tr><td>After Log</td><td>The card swaps to the rest view</td><td>Auto-advance: the next row opens in the same spot; effort and offers sit right above it</td></tr>
+<tr><td>Last time</td><td>Header line</td><td>Card header <code>Last 1 Oct: 100 × 8, 8, 7</code>, plus a per-row <code>Last 100 × 8 ›</code> copy link in the open row</td></tr>
+<tr><td>Target</td><td><code>Target … @ RPE 8 · Rest after 3:00</code></td><td>The same target text in the open row; pending rows dim with a ring; <code>Coach</code> / <code>Rule</code> tags replace <code>C</code></td></tr>
+<tr><td>Rest</td><td>Full rest card</td><td>64 pt bar above Log; tap the numeral for the full view</td></tr>
+<tr><td>Pause / Finish / voice pill / Focus|All</td><td>Header pause, status row</td><td>All in ⋯. Finish takes the Log slot after the last set. No Finish in the list</td></tr>
+<tr><td>Kept as is</td><td colspan="2">Gym chip (now in the top bar), Adjust on the current header, Why? on the target, coach and Rule offers, pain flags, exclusions, notes, set types, swap/remove/skip, unilateral L/R + Side control, timed (<code>Start 0:45</code>) and distance sets, correction sheet, 8 s Undo, force-close restore</td></tr>
+</table>
+
+<h2 style="margin-top:36px">Ben's decisions (11 Oct 2026)</h2>
+<div class="choice"><b>1. Declutter by default.</b> Opens anchored on the current set, with done sets and exercises above the viewport, a <code>↑ N done</code> chip, auto-advance after each Log (Reduce Motion: no animation, same position), and restore landing on the same set.</div>
+<div class="choice"><b>2. Focus stays</b> as an option in ⋯ (<code>Focus view</code>).</div>
+<div class="choice"><b>3. Bottom bar = Chat + Log.</b> Pause and Finish are in ⋯, and Finish takes the Log slot after the last set.</div>
+<div class="choice"><b>4. A non-current row's tick selects it</b> and moves Log to it. It never logs.</div>
+</section>
+
+</body>
+</html>

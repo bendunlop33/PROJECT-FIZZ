@@ -1,4 +1,4 @@
-# Active workout (focused set card and Overview table)
+# Active workout (Table view, default; Focus card in ⋯)
 
 > **Revision 2026-10-08.** Aligned with [ADR 0003](../decisions/0003-domain-review-decisions.md): Finish refused while a work timer runs (§4.8, S4); end time passed to `finishWorkout(…, endedAt)` (S5); Undo guarded on the set's version and commit order (S1); new empty-workout state (§2.10); homes and copy for add set, add exercise, delete set, skip exercise and discard (§4.4, §4.9); per-side entry for unilateral exercises (§2.9); dropped planned load (`target_dropped`) on the set card (§2.11).
 >
@@ -31,6 +31,8 @@
 >
 > Changed: §2.11, §2.16 (new), §3, §4.2, §4.7, §4.9, §5, §6, checks 17 and 63–70. The Log loop gains no taps; a switch is 3 taps (chip, gym, `Switch`).
 
+> **Revision 2026-10-12 (Table view; Ben's decisions of 11 Oct 2026).** The workout screen now opens in the **Table view** (new §2A): the whole session as one list, anchored on the current set, with finished sets and exercises above the viewport, a `↑ N done` chip, auto-advance after Log, a bottom bar of `Chat` + `Log`, Pause and Finish in `⋯`, Finish taking the Log slot after the last set, and taps on a non-current row that select it and never log it. Build 108's single-exercise card stays as **Focus** (`⋯` → `Focus view`); §2.1–§2.3 and §2.5–§2.16 now describe Focus plus the behaviour both views share. The in-workout Overview (§2.4, never built) is replaced by Table. The shared top bar loses `Pause` and the status row (`VoiceModePill` and the `Focus | All` control go; the `GymChip` moves into the top bar). Reconciled with main as of 12 Oct: target RPE (`@ RPE 8`, Ben's override), the coach/`Rule` offer slot, mid-workout swap, remove, notes and set types, timed and distance sets, gym switch, pain flags, exclusions, supersets, unilateral sides and time left. Changed: §1, §2, §2.4, new §2A, §3, §4.4–§4.6, §7 checks 10 and 14, new checks WT1–WT42, new §8.4, §9. Mockup: [mockups/workout-table.html](mockups/workout-table.html). Tokens and components: design-system.md §3, §5, §9.3, §9.6 and §9.74–§9.80. This replaces the draft `workout-table.md`, and corrects it in four places (§8.4 WT-D4 to WT-D7).
+
 Status: v0.1 draft, 8 Oct 2026. Flow and state machine: [flow-first-milestone.md](flow-first-milestone.md). Rest behaviour: [rest-state.md](rest-state.md). Tokens: [design-system.md](design-system.md).
 
 ## 1. Purpose
@@ -42,29 +44,400 @@ This screen answers three questions at a glance:
 
 Its single primary action is **`Log <load> × <reps>`**. One tap saves the displayed values as the actual result and starts rest. This screen is where the app either delivers its value or doesn't, so everything else is secondary to that button.
 
+(2026-10-12) The default view is the **Table** (§2A). It adds a fourth question, **"Where am I in today's session?"**, and answers it without hiding the first three: the open row shows the set, its target and `Last`, and the rows below it show what comes next.
+
 ## 2. Layout
 
-The screen is full-screen and pushed from Today. It has no tab bar. It has two views, **Focus** (default) and **Overview**. Both views edit the same data and share the same top bar, rest timer and action bar.
+The screen is full-screen and pushed from Today. It has no tab bar. It has two views: **Table** (default, §2A) and **Focus** (build 108's single-exercise card, §2.1–§2.3, chosen in `⋯` → `Focus view`). Both views edit the same data and share the same top bar, banner slot, rest state, toast slot and action bar. Switching keeps the active set, the drafts and the timer.
 
-Regions, top to bottom:
+Regions, top to bottom (revision 2026-10-12):
 
-1. **Top bar (44pt).**
+1. **Top bar (52pt).**
    - `chevron.down` minimises the workout to Today (the workout keeps running).
-   - The title, e.g. `Push A`.
-   - Elapsed active time, e.g. `24:31` (tabular; paused time excluded).
-   - `Pause`.
-   - `⋯` menu: Finish workout, Discard workout, Voice & alerts, Rest presets, Edit workout times.
-2. **Status row (44pt).**
-   - `GymChip`.
-   - `VoiceModePill`.
-   - The Focus/Overview segmented control, right-aligned and 44pt tall.
-3. **Banner slot (0–2 banners).** Restored, offline-and-coach, equipment warnings, paused. Coach adjustments never use this slot.
-4. **Content (scrolls).** The focused card or the Overview table. The exercise header carries the `Adjust` control (left of `⋯`). The card has one **coach slot** for an offer, a pending request, an adjustment banner or an outcome line ([coach-adjustments.md](coach-adjustments.md) §2.1). (2026-10-09) The target line carries `Why?` (§2.12), and the card's last line is the `TimeLeftLine` (§2.15).
+   - The title slot: the routine name, e.g. `PUSH A` (`type.label`, caps, `text.secondary`). In Table it gives way to the `DoneChip` (§2A.4).
+   - `GymChip` (moved here from the old status row). At AX1+ it moves into `⋯` as `Gym: Main Gym ›`.
+   - Elapsed active time, e.g. `24:31` (tabular; paused time excluded). Paused: the `StatusPill` `⏸ Paused · 3:56`. Alerts off: the `bell.slash` glyph beside it (premium-feel §3.5).
+   - `⋯` menu (§4.6): `Focus view` / `Table view` · `Pause workout` / `Resume workout` · `Rename workout` · `Voice & alerts` · `Rest presets` · `Finish workout` · `Edit workout times` · `Discard workout` · `Cancel`.
+   - Removed: the `Pause` button, the status row, the `VoiceModePill` (cue mode lives in `Voice & alerts`) and the `Focus | All` control.
+2. **Banner slot (0–2 banners).** Restored, offline-and-coach, equipment warnings. Paused isn't a banner (premium-feel §3.2). Coach adjustments never use this slot.
+3. **Content (scrolls).** The Table list (§2A) or the focused card (§2.1). The current exercise's header carries the `Adjust` control (left of `⋯`). There is one **coach slot** for an offer, a pending request, an adjustment banner or an outcome line ([coach-adjustments.md](coach-adjustments.md) §2.1). In Table it sits directly above the open row (§2A.5). (2026-10-09) The target line carries `Why?` (§2.12). The `TimeLeftLine` (§2.15) is the card's last line in Focus and the end of the list in Table.
+4. **Now chip** (Table only, while the open row is off-screen, §2A.4).
 5. **Voice strip (only while voice is in use).** Above the action bar.
 6. **Undo toast slot.** Above the action bar.
-7. **Action bar (fixed).** `TalkButton` (60 × 60) and `PrimaryButton`. It moves up with the keypad.
+7. **Rest bar** (Table only, while resting, §2A.6). Focus keeps the rest card inside the card (§2.3).
+8. **Action bar (fixed).** `Chat` (60 × 60, round) and `PrimaryButton`. It moves up with the keypad. Once voice ships, `TalkButton` takes the left slot (voice.md decides whether Chat stays beside it).
 
-Finish is in the `⋯` menu, and it is the primary only after the final set. It is never placed next to Log.
+Finish is in the `⋯` menu, and it is the primary only after the final set (§2A.9). It is never placed next to Log. Pause is in the `⋯` menu, and `Resume` is the primary while paused.
+
+> **Reading the Focus wireframes (§2.1–§2.16).** They were drawn with the old top bar (`⏸` button) and status row. Since 12 Oct, read their top two lines as the top bar above. Their `🎙 Talk` button is `Chat` until voice ships.
+
+## 2A. Table view (default; revision 2026-10-12)
+
+Source: the `workout-table.md` draft and Ben's decisions of 11 Oct 2026, reconciled with main. Mockup: [mockups/workout-table.html](mockups/workout-table.html) (not yet rendered on a device).
+
+### 2A.1 Purpose
+
+The Table answers **"Where am I in today's session, and what do I lift now?"** on one screen. Its single primary action is still **`Log …`** for the **open row**, and the label always names the set: `Set 2 · Log 100 kg × 8`.
+
+Ben's decisions (11 Oct 2026), all binding here:
+1. **Declutter by default.** The screen opens anchored on the current set. Finished sets and finished exercises sit *above* the viewport, and a `↑ N done` chip shows they're there. After each Log the list auto-advances, so the set just done slides up out of view. Force-close restore lands on the same anchored set.
+2. **Focus stays** as an option in `⋯`.
+3. **Bottom bar = `Chat` + `Log`.** Pause and Finish are in `⋯`, and Finish takes the Log slot after the last set.
+4. **Tapping a non-current row (or its tick ring) selects it** and moves Log to it. It never logs.
+
+### 2A.2 Regions (390pt wide, Direction D dark)
+
+1. **Top bar** (§2, 52pt). The title slot shows the routine name, or the `DoneChip` `↑ 7 done` (§2A.4).
+2. **Banner slot** (§2).
+3. **List** (scrolls, anchored, §2A.4). In session order:
+   1. **Finished exercises**, each folded to one 52pt `FoldedExercise` line: `✓ Bench press   100 × 8, 8, 7` (actual results).
+   2. **Exercise cards** (`ExerciseCard`, `bg.surface`, `radius.lg`, `space.3` apart) for every exercise that isn't finished. Each card has a header that pins while its card is in view (§2A.3), rows (§2A.4 table), and `+ Add set`.
+   3. In the current card only, the **after-set block** (§2A.5) sits directly above the open row.
+   4. `+ Add exercise` (52pt text button).
+   5. `TimeLeftLine` (§2.15, an estimate).
+   6. A **bottom spacer**, so the anchor can reach the top even on the last set (§2A.4).
+4. **Now chip** (`NowChip`, only while the open row is off-screen).
+5. **Voice strip** (Phase 5, §2.5).
+6. **Undo toast slot.**
+7. **Rest bar** (`RestBar`, 64pt, only while resting, and in its `Ready` form until the next Log).
+8. **Action bar** (fixed; rides the keypad): `Chat` · Log pill.
+
+There is no `Finish workout` button in the list: Finish is in `⋯`, and in the Log slot after the last set (Ben, choice 2).
+
+**Wireframe A: Ready, mid-session (anchored)**
+
+```
+┌────────────────────────────────────────┐
+│ ⌄  (↑ 3 done)  (Main Gym ▾)  12:08  ⋯  │ chip replaces PUSH A
+├────────────────────────────────────────┤
+│ Bench press ›          1/3  Adjust  ⋯  │ pinned card header
+│ Barbell · Last 1 Oct: 100 × 8, 8, 7    │ actual (last session)
+│ SET     KG          REPS          ✓    │ column labels pin too
+│┃2  NOW                  Last 100 × 8 › ││ open row: bg.raised, accent bar
+│┃20 bar + 25 + 15 / side               ││ barbell / plate-loaded only
+│┃┌LOAD KG───────────┐ ┌REPS──────────┐ ││
+│┃│ (−)   100    (+) │ │ (−)  8   (+) │ ││ 52pt buttons, tabular
+│┃└──────────────────┘ └──────────────┘ ││
+│┃Target 100 kg · 6–8 reps @ RPE 8 Why? ││ target, always labelled
+│┃Rest after 3:00 ›                     ││
+│ 3       100         6–8           ○    │ pending = target: dim + ring
+│ + Add set                              │
+│ Incline DB press ›             0/3  ⋯  │ next card
+│ Dumbbells · kg each · Last 1 Oct:      │
+│ 32 × 10, 9, 8                          │
+│ SET     KG          REPS          ✓    │
+│ 1       32          8–10          ○    │
+├────────────────────────────────────────┤
+│ (Chat)  ( Set 2 · Log 100 kg × 8     ) │ 60pt
+└────────────────────────────────────────┘
+```
+
+The warm-up and set 1 are done, and they sit above the viewport under the pinned header. `↑ 3 done` counts them plus one set from an earlier exercise.
+
+**Wireframe B: Resting after set 2 (auto-advanced)**
+
+```
+┌────────────────────────────────────────┐
+│ ⌄  (↑ 4 done)  (Main Gym ▾)  14:21  ⋯  │
+├────────────────────────────────────────┤
+│ Bench press ›          2/3  Adjust  ⋯  │
+│ Barbell · Last 1 Oct: 100 × 8, 8, 7    │
+│ SET     KG          REPS          ✓    │
+│ SET 2 EFFORT                           │ after-set block (optional chips)
+│ ( 6 ) ( 7 ) ( 8 ) ( 9 ) ( 10 )         │ 52pt
+│┃3  NEXT                 Last 100 × 7 › ││ the next row is already open
+│┃20 bar + 25 + 15 / side               ││
+│┃┌LOAD KG───────────┐ ┌REPS──────────┐ ││
+│┃│ (−)   100    (+) │ │ (−)  8   (+) │ ││
+│┃└──────────────────┘ └──────────────┘ ││
+│┃Target 100 kg · 6–8 reps @ RPE 8 Why? ││
+│┃Rest after 3:00 ›                     ││
+│ + Add set                              │
+├────────────────────────────────────────┤
+│ ✓ Set 2 saved · 100 kg × 8      Undo   │ toast, 8 s
+│ REST  2:09 ▁▁▁▁▁▁  (−30) (+30) (Skip)  │ rest bar, 52pt pills
+│ (Chat)  ( Set 3 · Log 100 kg × 8     ) │ Log also ends rest (P2)
+└────────────────────────────────────────┘
+```
+
+**Wireframe C: Ben scrolled up to check or edit**
+
+```
+┌────────────────────────────────────────┐
+│ ⌄  PUSH A      (Main Gym ▾)  14:30  ⋯  │ chip hidden: open row off-screen
+├────────────────────────────────────────┤
+│ ✓ Overhead press         50 × 8, 8, 7  │ folded (actual); tap = expand
+│ Bench press ›          2/3  Adjust  ⋯  │
+│ Barbell · Last 1 Oct: 100 × 8, 8, 7    │
+│ SET     KG          REPS          ✓    │
+│ W       60          5             ✓    │ done: bright + filled green tick
+│ 1       100         8  RPE 8      ✓    │ RPE without @ = actual
+│ 2       100         8             ✓    │
+│         Spotted · not counted          │ exclusion (§2.13)
+│ SET 2 EFFORT                           │
+│ ( 6 ) ( 7 ) ( 8 ) ( 9 ) ( 10 )         │
+├────────────────────────────────────────┤
+│                               (Now ↓)  │ NowChip
+│ REST  1:58 ▁▁▁▁▁   (−30) (+30) (Skip)  │
+│ (Chat) (Bench · Set 3 · Log 100 kg × 8)│ label names the exercise
+└────────────────────────────────────────┘
+```
+
+**Wireframe D: Offer after a hard set, coach unreachable (`Rule`)**
+
+```
+│ SET 2 EFFORT                           │
+│ ( 6 ) ( 7 ) ( 8 ) ( 9 ) (✓10)          │
+│ That looked hard. Adjust remaining     │ CoachOfferLine in the coach slot
+│ sets?                                  │
+│ RPE 10 on set 2 (target 8)             │ fact: actual vs target
+│ Next set: 95 kg × 6–8  [Rule]          │ the rule's offer names the change
+│ ( No thanks )            ( Adjust )    │ 52pt, ≥ space.8 apart
+│┃3  NEXT                 Last 100 × 7 › ││ unchanged until Adjust
+```
+
+With the coach reachable, the same offer has no `Next set` line, because the coach is only asked on `Adjust` (CA1). Nothing changes until `Adjust` in either case (rule 3).
+
+**Wireframe E: Superset (round order)**
+
+```
+│ Superset A           Round 2 of 3   ⋯  │ pinned group header
+│ ▏A1 Cable fly · kg stack               │ members, bracket
+│ ▏A2 Lateral raise · kg each  [⚠ Pain]  │ icon + word
+│ SET     KG          REPS          ✓    │
+│ ROUND 1                                │
+│ A1      25          14            ✓    │
+│ A2      10          15            ✓    │
+│ ROUND 2                                │
+│┃A1 NOW                  Last 25 × 14 › ││
+│┃ ...steppers 25 kg / 14 ...           ││
+│┃Target 25 kg stack · 12–15 reps       ││
+│┃@ RPE 9 · then A2, no rest      Why?  ││
+│ A2      10          12–15         ○    │
+│ ROUND 3                                │
+│ A1      25          12–15         ○    │
+│ (Chat)  ( A1 · Log 25 kg × 14 → A2   ) │
+```
+
+**Wireframe F: Timed and distance sets**
+
+```
+│ Plank ›                        1/3  ⋯  │ duration, bodyweight
+│ Bodyweight · Last 1 Oct: 0:45, 0:40    │
+│ SET          TIME                 ✓    │
+│┃2  NOW                  Last 0:40 ›   ││
+│┃┌TIME──────────────────────────────┐ ││
+│┃│ (−)          0:45            (+) │ ││ ±5 s
+│┃└──────────────────────────────────┘ ││
+│┃Target 0:45                     Why? ││
+│┃Log 0:45                             ││ logs without the timer
+│ (Chat)  ( Set 2 · Start 0:45         ) │ then Stop, then Log 0:38
+
+│ Sled push ›                    0/3  ⋯  │ distance
+│ Sled · Last 1 Oct: 40 × 20 m, 20 m     │
+│ SET     KG          DIST          ✓    │
+│┃1  NOW                                ││
+│┃┌LOAD KG───────────┐ ┌DIST M────────┐ ││ ±5 m
+│┃│ (−)    40    (+) │ │ (−)  20  (+) │ ││
+│┃└──────────────────┘ └──────────────┘ ││
+│┃Target 40 kg · 20 m             Why? ││
+│ (Chat)  ( Set 1 · Log 40 kg × 20 m   ) │
+```
+
+While a work timer runs, the TIME tile shows `WORK 0:38` as a large numeral, and Log reads `Stop` (§2.7).
+
+**Wireframe G: AX3**
+
+```
+│ ⌄  PUSH A          12:08          ⋯   │ GymChip moves into ⋯
+├────────────────────────────────────────┤
+│ Bench press ›                    ⋯    │
+│ Barbell                                │
+│ ✓ Set 1 · done                         │ block rows: no columns
+│   100 kg × 8 · RPE 8                   │
+│┃SET 2 · NOW                           ││
+│┃LOAD KG                               ││ tiles stack, full width
+│┃(−)            100              (+)   ││ 60pt buttons
+│┃REPS                                  ││
+│┃(−)             8               (+)   ││
+│┃Target 100 kg · 6–8 reps              ││
+│┃@ RPE 8                         Why?  ││
+│ ○ Set 3                                │
+│   Target 100 kg · 6–8 reps             │
+│ (💬)  ( Set 2 · Log                   )│ Log wraps, never truncates
+│       ( 100 kg × 8                    )│
+```
+
+### 2A.3 Exercise cards
+
+- **Header** (pins at the top of the list while its card is in view, as iOS plain-list section headers do; ≥ 52pt):
+  - Line 1: name (`type.title2`) with a trailing `chevron.right`. Tapping it opens the **exercise sheet** (§2A.7). After it come the `⚠ Pain` badge when a flag covers the exercise (`exclamationmark.triangle` + word, `status.warning`), the progress `1/3` (done / live sets, tabular, `text.tertiary`), then `Adjust` (current exercise only, `AdjustControl`, 52pt hit area), then `⋯`.
+  - Line 2 (`type.callout`, `text.secondary`, tabular): equipment word, the convention when it isn't total load, and the last comparable session as actual results: `Barbell · Last 1 Oct: 100 × 8, 8, 7`, `Dumbbells · kg each · Last 1 Oct: 32 × 10, 9, 8`, `Cable · kg stack · per side`. With no history: `Barbell · No previous result`. FitNotes history: `Last (FitNotes, 1 Oct): …` (B7).
+  - Line 3, only when Ben wrote one: the exercise note as typed (`type.callout`, `text.secondary`, ≤ 3 lines; tap to edit, §4.4 `Notes`).
+  - Warm-up ramp suggestion (first barbell exercise, before its first working set): `Warm-up · 20 × 10 · 60 × 5 · 80 × 3` with a `Hide` text button (as built).
+  - Column labels, which pin with the header: `type.label` (16pt) caps in `text.tertiary`. They are hidden at AX1+.
+- **Columns** follow the exercise's measurement and convention. The unit is written once, in the label. Cells hold numbers only.
+
+| Exercise | Labels | Cell example |
+|---|---|---|
+| Reps, loaded (total, per hand, stack, plates) | `SET` `KG` `REPS` `✓` (`LB` for lb) | `100` · `6–8` |
+| Reps, assisted | `SET` `ASSIST KG` `REPS` `✓` | `20` · `6–8` |
+| Reps, bodyweight + added | `SET` `+KG` `REPS` `✓` | `10` · `8` (`BW` when nothing is added) |
+| Reps, bodyweight | `SET` `REPS` `✓` | `12` |
+| Duration (with or without load) | `SET` (`KG`) `TIME` `✓` | `0:45` |
+| Distance (with or without load) | `SET` (`KG`) `DIST` `✓` | `20 m` · `1.5 km` |
+
+- **`+ Add set`** (52pt text button) calls `addSet`, which copies the last set's planned values and rest. `+ Add exercise` sits once, at the end of the list.
+- **Gym parts.** A `GymPartDivider` (`At Hotel · Lisbon`) sits between the parts of an exercise done at two gyms. A done row from another gym carries that gym's name on its second line (§2.16).
+- **Folded exercise.** An exercise with no pending set folds to `FoldedExercise`: `checkmark.circle.fill` + name + the actual results in session order (`100 × 8, 8, 7`; timed `0:45, 0:40`; per side `25 × 10 per side`). A skipped exercise reads `⊘ Face pull · Skipped`. Tapping it expands the card in place (for checking or editing). It folds again when the open row moves to another exercise. An exercise with a pending set never folds, even if it comes before the current one.
+
+### 2A.4 Rows, anchoring and the two chips
+
+**Rows.** Every row is ≥ 52pt and has the columns above. A range (`6–8`) only ever appears on a target. A done row always shows one actual value.
+
+| Row | Shows | Style | VoiceOver |
+|---|---|---|---|
+| Done | Actual values. The effort sits in the last value cell as `RPE 8` / `RIR 2` (no `@`, so it reads as actual). A second line appears only when needed: the exclusion (`Spotted · not counted`), the set's note, the gym it was done at, or `Edited` | `type.rowValue` in `text.primary`, Medium; `checkmark.circle.fill` in `status.done` | "Set 1, done, 100 kilograms, 8 reps, RPE 8" (+ "Spotted: not counted for records or progress") |
+| Pending | The target (load, rep range, time or distance). When it was changed today, the word tag `Coach` or `Rule` (`SourceTag`) follows the value | `type.rowValue` in `text.tertiary`, Regular; `circle` ring in `border.control` | "Set 3, target 100 kilograms, 6 to 8 reps, RPE 8" · "Set 3, coach target 95 kilograms… Plan was 100 kilograms, 6 to 8" · "Set 3, adjusted target …" for `Rule` |
+| Open (current) | §2A.5 | `bg.raised`, `radius.md`, 3pt `accent` bar on the left | "Set 2, current. Load 100 kilograms, adjustable…" |
+| Skipped | `Skipped` in place of the values (`Skipped · to save time` after a coach shorten) | `text.tertiary`; `slash.circle` | "Set 4, skipped" |
+| Set-type and side badges | `W` `T` `B` `D` `L` `R` in the SET cell (design-system §7) | Text badges | "Warm-up set", "left side" |
+
+**Anchoring (Ben, decision 1).**
+- **The anchor** is the open row, or the after-set block above it when there is one. The list is positioned so that the anchor's exercise header is at the top of the list (pinned, or in its natural place on the exercise's first set), with the anchor directly under it. Everything finished (folded exercises, done rows, done warm-ups) is above the viewport. Pending rows and future exercises are below.
+- **When the anchor is applied:** on open (Start, Resume, P6 auto-open, relaunch after a force-close), after every Log, on `NowChip`, and after `setActiveSet` from outside the viewport (voice, the exercise menu). It is applied without animation on open. The anchor is derived from the stored active set and draft, so restore needs no saved scroll offset and lands on the same set.
+- **Auto-advance after Log:** the saved row turns done, the domain picks the next open row, and the list scrolls so the new anchor comes to the top. The set just done slides up under the pinned header. This uses `motion.swap` (180 ms); under Reduce Motion there's no animation, and the end position is the same. When the next set is in another exercise, the finished exercise folds above the viewport and the next card's header comes to the top.
+- **Bottom spacer.** The list ends with empty canvas: list viewport height minus the content below the anchor, with a floor of 0. This means the anchor can reach the top on the last sets too, so the declutter holds to the end.
+- **Ben's own scrolling always wins.** Nothing else scrolls the list. That includes timers ending, toasts, effort taps, offers arriving and data reloads.
+- **Effort chips** live in the after-set block above the open row (§2A.5), not under the done row. The done row above shows `RPE n` once a chip is tapped. The block stays until the next Log, so nothing jumps when rest ends.
+
+**`DoneChip` `↑ N done`.**
+- N = sets logged in this workout, warm-ups included. Skipped and deleted sets aren't counted.
+- It replaces the routine name in the top bar's title slot while (a) at least one done row or folded exercise is above the viewport, and (b) the open row is on screen. Otherwise the title shows.
+- Tap: the list scrolls to its top, which shows the folded exercises and then the current card's done rows. It changes no data. Under Reduce Motion it jumps.
+- 36pt visual, 52pt hit area, `bg.raised`, `border.control`, `type.label`, tabular. VoiceOver: "7 sets done above. Shows them."
+
+**`NowChip` `Now ↓` / `Now ↑`.**
+- Shown while the open row is entirely off-screen, trailing, above the toast and rest bar. The arrow points to where the open row is.
+- Tap: re-applies the anchor (Reduce Motion: jump).
+- While it shows, the Log label also names the exercise: `Bench · Set 3 · Log 100 kg × 8`. The name is the catalogue short name, else the full name. If space runs out, the name truncates with an ellipsis, and the values never do.
+- 36pt visual, 52pt hit area. VoiceOver: "Current set, below. Scrolls to it."
+
+### 2A.5 The open row and the after-set block
+
+**Open row** (`OpenSetRow`; the `FocusView` from `buildActiveSetView`, so Table and Focus can't disagree). Top to bottom, each line only when it applies:
+1. **Top line (44pt):** the set number and badges, then `NOW` (Ready) or `NEXT` (Resting) in `accent` `type.label` caps. Trailing: `Last 100 × 8 ›` (the matching set from the last comparable session, actual). Tapping it copies those values into the draft, and the caption reads `Copied from 1 Oct`. It never logs.
+2. **Plate line** (barbell and plate-loaded only, `type.callout`, `text.tertiary`): `20 bar + 25 + 15 / side`, for the load in the draft.
+3. **Value tiles** (`NumberStepper` §9.4 inside a `bg.surface` tile, side by side): `LOAD KG` + `REPS`, `LOAD KG` + `TIME`, `TIME`, `LOAD KG` + `DIST M`, `DIST M`, or `REPS`. The tile label carries the unit (`LOAD KG EACH`, `STACK KG`, `ASSIST KG`, `ADDED KG`, `PLATES KG`), so the numeral area holds digits only. Numerals use `type.loadDisplay`, shrinking to fit down to 28pt and never truncating. If even 28pt won't fit (measured), the tiles stack full width, as at AX1+. While the work timer runs or is paused, the TIME tile shows `WORK` and the countdown instead of the stepper.
+4. **Side control** (unilateral only, §2.9): `Both sides | Left | Right` (segmented, 52pt), or the fixed `Right side` on an other-side set.
+5. **Target line:** the same text as Focus (`targetText`): `Target 100 kg · 6–8 reps @ RPE 8`. A change made today reads `Coach target 95 kg · 6–8 reps @ RPE 8` with the `Coach` tag, plus a second line `Plan was 100 kg × 6–8` (a rule change today: `Target …` with the `Rule` tag and the same `Plan was` line). With no target: `No target`. The trailing `Why?` opens the `TargetWhyPanel` inline under this line (§2.12, AW1). `@ RPE n` is always a target and appears on working sets only.
+6. **`Rest after 3:00 ›`**, which opens the rest editor (rest-state §2.4; P9).
+7. **Notes, each only when it applies:** the draft caption (`From 1 Oct` · `Copied from 1 Oct` · `Unsaved edit restored`), the `PainFlagNote` (`⚠ Pain flag: no increases`, `· check due`), the `SnapNote` (§2.16), the dropped or `not_here` warning with `Swap ›` (§2.11), the off-profile warning (§4.3), and, for a timed set before Start, the `Log 0:45` text button (§2.7).
+
+**After-set block** (`AfterSetBlock`). It sits directly above the open row (above the next card's header when the next set is in another exercise). It takes no space when empty. Top to bottom:
+1. **Effort** (while resting, after a commit, when the effort scale isn't off): the eyebrow `SET 2 EFFORT` (another exercise: `BENCH PRESS · SET 3 EFFORT`; RIR scale: `SET 2 REPS IN RESERVE` with chips `4+ 3 2 1 0`), then chips `6 7 8 9 10` (52pt, `ParamChip`; the selected chip is `✓` + fill). A tap calls `correctSet(setId, {rpe}, expectedVersion)` on the saved set.
+2. **Record line** (`★ Heaviest bench press: 102.5 kg × 5`, premium-feel §5.1), when the commit set one.
+3. **`PainReviewLine`** (§2.14.2), once per due flag per workout.
+4. **Coach slot**, with at most one item, in coach-adjustments' priority: gym switch card (GS8) · `ChangeReviewCard` · coach working (`Coach is working on sets 3–4` [Cancel]) · `CoachAdjustmentBanner` (coach or `Rule`, with `Why? ›` and `Undo`) · outcome line · `CoachOfferLine` (coach, or the rule's offer with `Next sets: …` and the `Rule` tag, CA6; Resting only) · check-in offer (Ready, before the first set, CI5).
+
+The block lasts until the next Log, until another row is selected, or until that Log is undone. The end of rest doesn't remove it. An offer the next Log leaves unanswered is recorded as ignored (`recordTriggerResponse`).
+
+**`AdjustRow`.** `Adjust` on the current exercise's header opens the inline chip row (`What should change?` `Too hard` `Too easy` `Pain` `Type…`) under the pinned header (coach-adjustments §2.2, CA6 for the offline chips).
+
+### 2A.6 Rest in Table
+
+- **`RestBar`** (64pt; `bg.surface`, `radius.md`; above the action bar, under the toast): `REST` eyebrow · countdown `2:09` (`type.headline` scaled to 26pt, tabular) · `−30` `+30` `Skip` as outline pills with 52pt hit areas (`target.workout`) · a 3pt `accent` drain along the bottom edge (static under Reduce Motion: the drain is drawn at its current length each second and never animated between seconds).
+- **Rest ended:** `✓ Ready · rested 3:12` (count-up, tabular), with `Skip` hidden. The bar stays until the next Log.
+- **Paused:** `REST · PAUSED` in `status.warning` with the frozen time in `text.tertiary`. The pills are disabled.
+- **Tapping the countdown** opens the **full rest view** (premium-feel §3.1: 88/300 numeral, Next line, controls, effort, coach slot) as a full-screen cover over Table. `⌄` or a swipe down returns. Log in it works the same and returns to Table, anchored. Tapping the numeral inside the full view opens the duration editor (rest-state §2.4).
+- **Transition rest in a superset:** `MOVE TO A2 · 0:15` in the bar.
+- The countdown always comes from the stored deadline. The lock screen, notification and Live Activity are unchanged (rest-state.md, lock-screen-and-alerts.md).
+
+### 2A.7 Interactions
+
+| Control | Tap | Notes |
+|---|---|---|
+| Log pill | `commitSetAndBeginRest` with the view's op ID (§4.1). `timing.commitGuard`, `haptic.commit`, toast `✓ Set 2 saved · 100 kg × 8` [Undo] (8 s), cue if on. Then auto-advance (§2A.4) | Resting: saves the open row and ends rest early (P2) |
+| Pending row (not current), anywhere including its ring | `setActiveSet(setId)`. The row opens with its draft, the previous open row keeps its draft (`saveSetDraft`), and Log retargets. **It never logs** (Ben, decision 4) | Rest keeps running. No toast: nothing changed |
+| Open row | No tick or ring. Log is the only way to save it (plus voice in Phase 5) | Keeps one primary action and stops a stray thumb from logging |
+| Done row | The correction sheet (§4.4): values, effort, `Set type` chips, Side, exclusion chips, target RPE chips (CHANGELOG 11 Oct), `Note`, `Delete set` | A tick never toggles off. Undo comes from the toast or the sheet |
+| Skipped row | Not a button. `Undo` on the skip toast, or `Add set`, brings the exercise back | — |
+| Stepper `−` / `+` | Next achievable neighbour (`getAchievableLoads`), reps ±1, time ±5 s, distance ±5 m. Never past the equipment max/min (§4.3) | `haptic.step` |
+| Tile numeral | Opens the keypad: as built, the system number pad with a Done bar; later `WorkoutKeypad` §9.5. Typed loads snap via `roundToAvailableLoad`, with the off-profile warning when they don't fit (§4.3) | Log rides the keypad. The open row is scrolled into view above it. `Why?`, the panel, the `TimeLeftLine`, the plate line, `Last` and the toast hide |
+| Exercise name `›` | The exercise sheet (medium detent): `How to` (when there's a guide), `History`, `Plates` (barbell: every load in today's targets), `Rest after 3:00 ›`, `Notes` | The workout keeps running underneath. Swiping down returns to the same anchor |
+| `Adjust` (current header) | Inline `AdjustRow` (§2A.5) | coach-adjustments §2.2 |
+| Exercise `⋯` | The built menu (`exerciseMenu`): `How to` · `Undo coach change` / `Undo change` · `Undo swap` · `Target RPE` · `Add set` · `Swap exercise` · `Notes` · `Add exercise` · `Delete this set` · `Skip exercise` · `Remove exercise` · `Cancel`. On a non-current card it acts on that exercise. `Target RPE` and `Delete this set` act on its next pending set (hidden when it has none) | `Target RPE` → `RPE 6`…`RPE 10` (`✓` on the current one, `Default` when Ben set his own) → `This set` / `This exercise` / `Today` → `set_target_rpe` |
+| Top bar `⋯` | §2 list. `Focus view` switches views (§4.5) | Pause: `pauseSession`; Resume is then the primary |
+| `DoneChip` / `NowChip` | Scroll (§2A.4) | No data change |
+| `FoldedExercise` | Expands or collapses in place | Done rows inside go to the correction sheet |
+| Rest bar | `adjust_rest` (±30 s), `skip_rest`; countdown → full rest view | — |
+| `GymChip` | gym-switch.md (3 taps). The card shows in the after-set block's coach slot; snapped rows update only after `Switch` | — |
+| Voice (Phase 5) | "Log it", "100 for 8", "skip rest", "that was spotted", "why this weight?" map to the same commands. The strip sits above the bar (§2.5) | voice.md owns phrases |
+| Keyboard | Return on reps = `Done`. Cmd+Return logs | §4.1 |
+
+**VoiceOver order:** top bar → the current card's header → the after-set block → the open row → `Log`, then the rest of the list. Headings for each exercise. Done rows have the custom action `Edit`, and pending rows `Select`.
+
+**Undo paths** are §4.9, unchanged. Selecting a row and scrolling change no data and need no Undo. To leave Focus, use `⋯` → `Table view`.
+
+### 2A.8 Supersets, unilateral and gym parts
+
+- **Superset** (§2.6): one card with the group header (`Superset A` · `Round 2 of 3` · `⋯`), a bracketed member list (`A1 Cable fly · kg stack`, `A2 Lateral raise · kg each`, each with its own `⚠ Pain` badge), and rows grouped under `ROUND n` in lifting order. Logging A1 opens A2 with no rest (`A1 · Log 25 kg × 14 → A2`). Logging A2 starts the round rest. The member's target line ends `· then A2, no rest`. The group folds only when every member is finished.
+- **Unilateral** (§2.9): rows carry `L` / `R`. The header line says `per side` once. The open row has the Side control. After a Left log, the domain adds the pending right-side row, which becomes the next open row by auto-advance. `Log right side ›` isn't needed in Table, because the row is already open.
+- **Gym parts** (§2.16): divider and gym caption as §2A.3. Steppers use only the current gym's equipment. A done row from another gym is corrected against that gym's equipment.
+
+### 2A.9 Last set, Finish and empty
+
+- **After the last pending set is logged** (routine or planned workout): no rest starts (§3). The current card folds, and the list shows `All planned sets done.` with `+ Add set` and `+ Add exercise` at the anchor. The Log slot becomes `Finish workout`, which always opens the finish sheet (§4.8). The `TimeLeftLine` hides.
+- **Open-ended workout** (built as Ben goes; audit B1): the primary after the last set stays `Add exercise`, and Finish stays in `⋯` (WT-D11, Ben to confirm).
+- **Empty workout** (§2.10): `Add an exercise to start`, primary `Add exercise`. No columns or chips.
+- Finish never sits in the list and never beside Log. The finish sheet keeps `Stop the timer first` (§4.8).
+
+### 2A.10 Dynamic Type
+
+- **AX1+:** rows become blocks (line 1 `✓ Set 1 · done` / `○ Set 3` / `Set 2 · NOW`; line 2 the value, with `Target …` on pending blocks), and the column labels go. The open row's tiles stack full width with 60pt buttons. The `GymChip` moves into `⋯`. The Chat label drops (VoiceOver still says "Chat"). The plate line and `Last` move into the exercise sheet. Log wraps to two lines and grows, and never truncates the load.
+- **xLarge–xxxLarge:** the side-by-side tiles stack when the measured numeral won't fit at 28pt (§2A.5).
+- Folded exercises stay one block each: the name, then the actual results.
+- Nothing scrolls sideways at AX3 on a 375pt screen.
+
+### 2A.11 Copy (Table-only strings; shared strings in §5)
+
+| Element | Text |
+|---|---|
+| Top bar | Title `PUSH A` · chip `↑ 7 done` · menu `Focus view` / `Table view` · `Pause workout` / `Resume workout` · `Gym: Main Gym ›` (AX) |
+| Column labels | `SET` `KG` `LB` `ASSIST KG` `+KG` `REPS` `TIME` `DIST` `✓` |
+| Card header line 2 | `Barbell · Last 1 Oct: 100 × 8, 8, 7` (**actual**) · `Dumbbells · kg each · Last 1 Oct: 32 × 10, 9, 8` · `Barbell · No previous result` |
+| Folded | `Bench press   100 × 8, 8, 7` (**actual**) · `Face pull · Skipped` |
+| Open row | `2 NOW` · `3 NEXT` · `Last 100 × 8 ›` (**actual**) · `20 bar + 25 + 15 / side` · tile labels `LOAD KG` `LOAD KG EACH` `STACK KG` `ASSIST KG` `ADDED KG` `PLATES KG` `REPS` `TIME` `DIST M` `WORK` · `Target 100 kg · 6–8 reps @ RPE 8` (**target**) · `Rest after 3:00 ›` |
+| Done row | `100   8  RPE 8` (**actual**; `RPE` without `@`) · `Spotted · not counted` · `Edited` |
+| Pending row | `100   6–8` (**target**) · tag `Coach` / `Rule` |
+| After-set block | `SET 2 EFFORT` · `BENCH PRESS · SET 3 EFFORT` · `SET 2 REPS IN RESERVE` |
+| Offer (coach) | `That looked hard. Adjust remaining sets?` / `That looked easy. Adjust remaining sets?` · `RPE 10 on set 2 (target 8)` · [No thanks] [Adjust] |
+| Offer (rule, CA6) | Same + `Next set: 95 kg × 6–8` / `Next sets: 95 kg × 6–8` (**target**) + tag `Rule` |
+| Log | `Set 2 · Log 100 kg × 8` · off-screen `Bench · Set 2 · Log 100 kg × 8` · superset `A1 · Log 25 kg × 14 → A2` · unilateral `Set 2 · Log Left · 25 kg stack × 10` · distance `Set 1 · Log 40 kg × 20 m` · timed `Set 2 · Start 0:45` / `Stop` / `Set 2 · Log 0:38` · `Enter load` / `Enter reps` / `Enter time` / `Enter distance` · `Resume` · `Finish workout` · `Add exercise` |
+| Rest bar | `REST 2:09` · `−30` · `+30` · `Skip` · `✓ Ready · rested 3:12` · `REST · PAUSED` · `MOVE TO A2 · 0:15` |
+| Chips | `↑ 7 done` · `Now ↓` · `Now ↑` |
+| End of list | `+ Add exercise` · `All planned sets done.` · `TimeLeftLine` (§2.15, **estimate**) |
+| VoiceOver | "7 sets done above. Shows them." · "Current set, below. Scrolls to it." · "Set 3, target 100 kilograms, 6 to 8 reps, RPE 8" · "Set 1, done, 100 kilograms, 8 reps, RPE 8" |
+| Spoken cues | Unchanged (§5): "Logged 100 kilos for 8. Rest 3 minutes." |
+
+No explanation lines are added (CLAUDE.md minimal copy). Why a target is what it is stays behind `Why?`.
+
+### 2A.12 Data
+
+- **`buildWorkoutTableView(input)`** (new, pure, `packages/domain/src/session/table-view.ts`, unit-tested). It takes the same `ActiveViewInput` as `buildActiveSetView` and returns:
+  - `doneCount` (for `↑ N done`) and `anchor: {sessionExerciseId, setId} | null` (the open row).
+  - `blocks[]` in session order:
+    - `{kind: 'folded', sessionExerciseId, name, summary, skipped}`
+    - `{kind: 'exercise', card}`
+    - `{kind: 'superset', label, round: {n, of}, members[{tag, name, unitCaption, painBadge}], rounds[{n, rows}]}`
+  - `card`: `{sessionExerciseId, name, headerLine, lastLine, note, warmUp, progress: {done, total}, painBadge, columns: {kind: 'load_reps' | 'reps' | 'load_time' | 'time' | 'load_distance' | 'distance', loadLabel}, rows: TableRow[], isCurrent}`.
+  - `TableRow` = `SetRowView` (existing: badges, note, exclusions, `gymCaption`, `partStart`, version) + `state: 'done' | 'pending' | 'open' | 'skipped'`, `cells: {load: string | null, value: string}`, `effort: string | null`, `todayChange: 'coach' | 'rule' | null`, `accessibilityLabel`.
+  - It reuses `rowText`, `exclusionFields`, `valuesText({compact: true})`, `targetShort`, `lastText` and `targetRpeOf`. It never computes a target or a load itself.
+- **The open row and the after-set block** come from `buildActiveSetView(...)`: `focus` (draft, target, `targetRpe`, `planWas`, `adjustedBy`, `plateLine`, `painFlag`, `snapNote`, `side`, `duration`, `distance`, `workTimer`, `restAfterS`, `logLabel`), `justSaved`, `painReview`, `rest`, `primary`, `timeLeft`. There is one source for both views.
+- **Commands (unchanged):** `commitSetAndBeginRest` (`log_set`), `setActiveSet`, `saveSetDraft` (`save_draft`), `correctSet` (`correct_set`), `undoAction` / `undo_op`, `adjust_rest`, `skip_rest`, `pauseSession` / `resumeSession`, `start_work_interval` / `stop_work_interval`, `addSet`, `addExercise`, `deleteSet`, `skipExercise`, `remove_exercise`, `swapExercise`, `set_note`, `set_target_rpe`, `setActiveGym`, `recordTriggerResponse`, `requestCoachAdjustment`, `applyCoachProposal`, `explainTarget`, `finishWorkout`.
+- **Loads:** `getAchievableLoads`, `roundToAvailableLoad`.
+- **UI state:** `workoutView: 'table' | 'focus'`, a device setting (default `table`), so Ben's choice sticks. The scroll offset is never persisted, because the anchor is derived. Folded-card expansion isn't persisted.
+- `buildWorkoutOverview` (overview.ts) is the **pre-start** Workout overview (workout-overview.md). Table doesn't use it; the draft named it in error.
 
 ### 2.1 Focus view, Ready (normal)
 
@@ -165,45 +538,20 @@ The rest timer takes the place of the previous-result line at the top of the car
 └────────────────────────────────────────┘
 ```
 
-### 2.4 Overview view (table)
+### 2.4 Overview view: replaced by Table (2026-10-12)
 
-```
-┌────────────────────────────────────────┐
-│ ⌄  Push A          24:31     ⏸    ⋯   │
-│ [⌂ Main Gym ▾] [🔈 Cues ▾] [Focus|All] │
-├────────────────────────────────────────┤
-│ Bench press · Barbell              ⋯   │
-│  Set   Last        Target     Done     │
-│ ✓ 1    100×8       100×6–8    100×8 ·8 │
-│        Spotted · not counted           │ exclusion line (§2.13), only if set
-│ ▶ 2    100×8       100×6–8   [100][ 8] │ active row: inline fields; Target
-│                                        │ cell = Why? button (§2.12)
-│ ○ 3    100×7       100×6–8      —      │
-│ ○ 4    95×8        97.5×8 C     —      │ C = coach target (text badge)
-│  + Add set                             │
-│                                        │
-│ Incline DB press · kg each         ⋯   │
-│ ○ W1   20×10       20×10        —      │
-│ ○ 1    30×9        30×8–10      —      │
-│ ○ 2    30×8        30×8–10      —      │
-│  + Add set                             │
-│ …                                      │
-│                                        │
-│ ◷ About 35 min left · ends about 19:40 │ TimeLeftLine §2.15
-│          Finish workout                │ text button at end of list
-├────────────────────────────────────────┤
-│ ⏱ Rest 2:47     [−30] [+30] [Skip]    │ compact RestTimer (only resting)
-│ [ 🎙 ] [  Log set 2 · 100 kg × 8     ] │
-└────────────────────────────────────────┘
-```
+The in-workout Overview (`Focus | All`) was never built. It is replaced by the **Table view** (§2A), which is now the default. What carries over:
+- The unit is written once (now in the column label and the header line), and VoiceOver reads full values.
+- The Log label names the set (`Set 2 · Log …`), and it adds the exercise while the open row is off-screen.
+- Exclusions keep their second line (`Spotted · not counted`).
+- `TimeLeftLine` sits at the end of the list.
 
-- Column headers show the unit once per exercise header (`kg`, `kg each`). Inside cells, `×` is used without spaces to save width. VoiceOver reads full values.
-- At AX1 and larger, each set becomes a stacked block: line 1 is status and set number, line 2 is `Last 100 kg × 8`, line 3 is `Target 100 kg × 6–8`, and line 4 is `Done 100 kg × 8` or the fields.
-- The Log label in Overview includes the set number (`Log set 2 · …`), because the active row may be off screen.
-- A coach-changed target shows the `C` text badge after the value. VoiceOver: "Coach target, 97.5 kilograms, 8 reps. Plan was 95 kilograms, 8 to 10 reps." The exercise header row gets `Adjust` left of `⋯`, and the coach slot sits directly under the active exercise's header. (2026-10-09) `C` marks only changes made today (AW2).
-- (2026-10-09) **`Why?` in Overview:** the active row's Target cell is a 52pt button that opens the `TargetWhyPanel` full width under that row. For any other exercise, its `⋯` menu has `Why these targets?`, which opens the panel under the exercise header for its next pending set. Pending rows keep tap = make active.
-- (2026-10-09) **Exclusions in Overview:** a flagged done row gets a second line in `type.label`, `text.secondary`: `Spotted · not counted` (several reasons: `Spotted, form broke · not counted`). VoiceOver reads it after the actual values.
-- (2026-10-09) **Time left in Overview:** the `TimeLeftLine` sits at the end of the list, above `Finish workout` (more than `space.8` from it); tap opens the `Time left` sheet.
+What changed:
+- The `Last` / `Target` / `Done` columns become one state-styled value per row: bright with a filled tick = actual, dim with a ring = target.
+- `Last` moves to the card header (the session) and the open row (the set).
+- `C` becomes the word tag `Coach` (or `Rule`).
+- `Why?` stays on the open row's target line. `Why these targets?` in a non-current exercise's `⋯` isn't carried over: selecting any pending row gives it a `Why?`.
+- There is no `Finish workout` at the end of the list (Ben, 11 Oct).
 
 ### 2.5 Voice strip (optional layer; `DEP-STT` / `DEP-AI`)
 
@@ -793,6 +1141,34 @@ The switch itself (entry, card, states, Undo) is specified in [gym-switch.md](gy
 | Shorten offer (step 4) | Rest card `CoachOfferLine`: `About 10 min past 19:30. Shorten the rest of today?` [No thanks] [Shorten] | unchanged | Only with `Finish by`, coach reachable; once per workout |
 | Coach shortened (step 4) | `CoachAdjustmentBanner` `Coach shortened today` · `About 50 → 20 min · …` [Undo]; removed sets show `Skipped · to save time` | `Log <next remaining set>` | Loads and rest unchanged |
 
+### 3.1 Table view states (revision 2026-10-12)
+
+The table above holds for both views; "card" means the open row and the after-set block in Table. These rows add what is specific to Table.
+
+| State | Table shows | Primary | Transition out |
+|---|---|---|---|
+| Loading | The top bar and nothing else for `timing.placeholderDelay`, then static grey rows (no shimmer) | Disabled `Log set` | Data arrives: anchored, no animation |
+| Ready (normal) | Anchored: the pinned header, the open row `n NOW`, pending rows below; `↑ N done` when something is done | `Set 2 · Log 100 kg × 8` | Log → Resting; tap a pending row → Ready on that row |
+| Ready, first set ever | No done content: title `PUSH A`, no chip; the card's header and column labels in their natural place | `Set 1 · Log …` | Log → Resting |
+| Ready, value missing | The empty tile gets focus and the keypad | `Enter reps` / `Enter load` / `Enter time` / `Enter distance` (focuses the field, never logs) | Value typed → Ready |
+| Resting | The rest bar; the after-set block (effort chips, any offer) above the open row `n NEXT`; the toast for 8 s | `Set 3 · Log …` (also ends rest) | Log → Resting on the next row; rest ends → Rest ended |
+| Rest ended | The rest bar reads `✓ Ready · rested 3:12`; the after-set block stays | `Set 3 · Log …` | Log |
+| Offer (coach or `Rule`) | `CoachOfferLine` in the after-set block. Pending rows and Log are unchanged | unchanged | `Adjust` → applied: rows show `Coach` / `Rule` tags, banner with Undo, Log guarded 1 s if its label changed; `No thanks` or the next Log → gone |
+| Check-in offer | In the after-set block above set 1, in Ready, before any commit | unchanged | Answered, or replaced by a set offer |
+| Gym switch card | In the after-set block's coach slot (GS8) | unchanged, usable | `Switch` → rows re-snap, toast with Undo |
+| Working (timed) | `WORK 0:38` in the open row | `Stop` | At 0 or Stop → `Set 2 · Log 0:45` |
+| Paused | Top bar `⏸ Paused · 3:56`; rest bar `REST · PAUSED`; rows and tiles stay editable | `Resume` | Resume → the previous state, timers continue from the stored deadline |
+| Open row off-screen | `NowChip`; the title replaces `↑ N done` | `Bench · Set 3 · Log …` | `Now ↓` or scrolling back → chip gone |
+| Keypad open | The open row above the keypad; Log on the keypad; `Why?`, the panel, plate, `Last`, toast and `TimeLeftLine` hidden | `Set 2 · Log <typed values>` | `Done` / `Hide` → Ready |
+| `Why?` open | The panel inline in the open row | unchanged | `Hide`, Log, another row selected, or the keypad |
+| Folded exercise expanded | Its card with done rows, in place | unchanged | Open row moves to another exercise → folds |
+| All planned sets done | `All planned sets done.` + `+ Add set` / `+ Add exercise`; all cards folded | `Finish workout` (finish sheet) | Add set/exercise → Ready; Finish → Summary |
+| All done, open-ended workout | As above | `Add exercise` (WT-D11) | Picker → Ready |
+| Empty workout | §2.10 | `Add exercise` | `addExercise` → Ready |
+| Restored after force-close | Anchored on the same open row and draft; the rest bar from the stored deadline; banner `Workout restored` (4 s) | per state | — |
+| Offline / AI unavailable | Logging unchanged. Offers come from the built-in rule (`Rule`, CA6); `Adjust` shows its caption; `Chat` opens the coach sheet with its honest status | per state | — |
+| Write error | `Set not saved. Try again.` [Try again]; the row stays open | `Log …` (same op ID) | Retry |
+
 ## 4. Interactions
 
 ### 4.1 Logging (the core loop)
@@ -839,7 +1215,7 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
   - `Notes` (built 11 Oct, decided conservatively): a sheet with one text field (≤ 500 characters; empty clears) for this exercise in this workout. The note shows as typed under the exercise header (tap to edit). A logged set's note is a `Note` field in Edit set and shows as the set row's caption. Notes are Your data, saved with `set_note` (versioned on the workout, also after Finish); they never change a value, target, rest or the set's version, and nothing reads them as instructions (rule 8). Pending sets have no note field. Showing notes on the Summary and keeping FitNotes comments as notes are not built yet.
   - `Skip exercise` (`skip_exercise`) marks the pending sets skipped; logged sets are untouched. No confirm (copy D4, accepted 11 Oct): toast `Bench press skipped` [Undo] (`undo_op`). Skipped rows stay visible with the Skipped style; `Add set` also brings the exercise back.
 - **Add exercise:** `+ Add exercise` at the end of the Overview list, and on the All-done and Empty cards. Opens the exercise picker → `addExercise`.
-- **Tap a pending set** (mini list or Overview) to make it the active set (`setActiveSet`). The draft and the Log label update.
+- **Tap a pending set** (Focus mini list, or any pending row or its ring in Table) to make it the active set (`setActiveSet`). The draft and the Log label update. It never logs (Ben, 11 Oct).
 - **Tap a done set** to open the correction sheet:
 
 ```
@@ -864,17 +1240,21 @@ The view returns `draftSource` (`draft | target | this_session | last_session | 
   - (11 Oct, built) `Set type` is a single-select chip row (`Warm-up` `Working` `Top set` `Back-off` `Drop set`, the stored type selected) instead of the `▾` picker in the sketch: one tap, no extra sheet. It saves with `Save changes` in the same `correct_set` (`setType`), marks the row `Edited`, and has the correction's Undo. Changing a set to `Warm-up` takes it out of progression and records like any warm-up.
   - (2026-10-09) **Exclusion chips** (§2.13): `Spotted`, `Pain`, `Form broke`, `Other equipment`, multi-select, none selected by default. They save with `Save changes` as part of the same `correctSet` patch (`exclusions`). Selecting `Pain` adds the line `⚠ This also puts a pain flag on Bench press: no increases until you clear it.`; when there's no active flag on the movement, the same commit sets one (`setPainFlag`, source `workout`) and the pain card appears with its Undo (AW7). Unticking `Pain` later doesn't clear the movement flag; that stays an explicit `Clear flag` (§2.14.3). At AX1+ the chips wrap two per row.
 
-### 4.5 View toggle
-- `Focus | All` segmented control. The choice is remembered per device. Switching keeps the active set, the drafts and the timer.
+### 4.5 View choice (revision 2026-10-12)
+- `⋯` → `Focus view` (in Table) or `Table view` (in Focus). Table is the default. The choice is remembered per device (`workoutView`). Switching keeps the active set, the drafts, the timer and any open `Why?` panel. Table re-anchors on the open row.
 - Swipe gestures aren't used to switch views, so they can't be triggered by accident with sweaty hands.
 
 ### 4.6 Top bar
-- `⌄` minimises to Today. The workout keeps running, and a mini bar on Today (the Resume card) shows its state.
-- `⏸` calls `pauseSession`. The `Resume` primary calls `resumeSession`.
-- `⋯` menu items:
-  - `Finish workout`
-  - `Rest presets`
+- `⌄` minimises to Today. The workout keeps running, and a mini bar on Today (the Resume card) shows its state. Resume opens the workout in the remembered view, anchored (§2A.4).
+- (2026-10-12) `⋯` → `Pause workout` calls `pauseSession` (premium-feel §3.2). The `Resume` primary, or `⋯` → `Resume workout`, calls `resumeSession`.
+- `⋯` menu items, in this order:
+  - `Focus view` / `Table view` (§4.5)
+  - `Pause workout` / `Resume workout`
+  - `Rename workout`
+  - `Gym: Main Gym ›` (AX1+ only, where the `GymChip` leaves the top bar)
   - `Voice & alerts`
+  - `Rest presets`
+  - `Finish workout`
   - `Edit workout times` opens a small sheet: `Started at [18:02 ▾]` [Save]. It calls `updateSessionTiming(sessionId, expectedVersion, {startedAt})`. The end time can only be changed after Finish (finish sheet or summary Edit). The start can't move later than the first logged set or into the future; the picker limits it.
   - `Discard workout` (destructive; red text) calls `discardWorkout` (`discard`). It also cancels a running rest or work timer. With ≥1 logged set it confirms first (§4.9).
 
@@ -1087,11 +1467,11 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 7. Targets are always labelled `Target`, and previous results `Last (date)`. No pending set displays values without the `Target` label or pending style.
 8. Each set status (done, active, pending, skipped) can be told apart in greyscale (check icon, triangle, hollow circle, slashed circle, plus text).
 9. Correcting a done set doesn't restart or change rest, adds the `Edited` tag, and doesn't trigger any AI call (at most a deterministic offer line appears).
-10. Switching Focus ↔ Overview while resting keeps the same timer, draft values and active set.
+10. (Revised 2026-10-12) Switching Table ↔ Focus (`⋯`) while resting keeps the same timer, draft values and active set. Table comes back anchored on the open row.
 11. In a superset, logging A1 doesn't start rest, and logging A2 does.
 12. A timed exercise's work timer runs separately from rest. Its end doesn't save the set unless `Auto-save timed sets` is on.
 13. While paused, the elapsed clock and any timer are frozen, the primary reads `Resume`, and Log can't be triggered.
-14. Finish is never next to Log. It is only in the `⋯` menu, at the end of the Overview list, or the primary once all sets are done.
+14. (Revised 2026-10-12) Finish is never next to Log. It is only in the `⋯` menu, or the primary once all planned sets are done. It is never in the Table list.
 15. With AI disconnected, tapping Talk shows an honest status sheet with no fake coach reply, and the workout is unaffected.
 16. A coach swap or gym proposal never opens a sheet by itself. It appears inline with scope, before/after targets, Apply and an Undo path, and it can't change completed sets.
 17. Switching gym mid-session shows a review card for pending sets only. Completed sets keep their original gym and equipment. (2026-10-09) The full switch checks are gym-switch.md §7; this screen's share is checks 63–70.
@@ -1107,9 +1487,9 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 27. `Adjust` sits in the exercise header in both Ready and Resting, has a 52pt hit area, opens an inline chip row (no sheet), and with the coach offline stays visible with `Coach offline`.
 28. Saying "that was a grind" during rest changes sets 3–4 at once, shows `Coach adjusted sets 3–4: 100 → 95 kg × 8 · <reason>` with Undo, updates the Log label, and leaves the rest countdown unchanged. Undo restores `Target 100 kg · 6–8 reps`.
 29. A coach offer appears only in the rest card, after RPE ≥ 9.5, reps short by ≥ 2, or RPE ≤ 6 on a working set, and changes nothing until `Adjust` is tapped.
-30. Coach-changed pending sets show `Coach target` + `Plan was …` (Focus) and `C` (Overview); done sets show only actual values; VoiceOver reads both target values.
+30. Coach-changed pending sets show `Coach target` + `Plan was …` (Focus and the Table open row) and the `Coach` tag on Table rows (was `C`, 2026-10-12); done sets show only actual values; VoiceOver reads both target values.
 31. When an adjustment changes the active set's Log label, a Log tap within 1 s is ignored; at all other times Log responds at once.
-32. With a pain flag on Bench press, its set card shows `⚠ Pain flag: no increases` under the target in Ready and Resting, Overview shows `⚠ Pain` on the header, tapping it opens that flag, and Log behaves exactly as without it. Setting the flag with `Adjust` → `Pain` makes the note appear at once; clearing it removes the note.
+32. With a pain flag on Bench press, its set card shows `⚠ Pain flag: no increases` under the target in Ready and Resting, the Table card shows `⚠ Pain` on the header, tapping it opens that flag, and Log behaves exactly as without it. Setting the flag with `Adjust` → `Pain` makes the note appear at once; clearing it removes the note.
 33. (2026-10-09) After a check-in of 2 with the coach connected, the first set card shows the check-in offer in its coach slot; `Log` is visible and logs in one tap with the offer still on screen. No AI call is made until `Adjust`.
 34. (2026-10-09) Once any set has been committed in a session, nothing on this screen (Resume, relaunch, voice) shows the check-in sheet.
 35. (2026-10-09) Note for check 29: the only coach offer outside the rest card is the check-in offer before the first set; it is never spoken.
@@ -1154,6 +1534,68 @@ Spoken cues (cue mode `Set cues` or `Conversation`; full table in rest-state.md 
 68. With the switch card open, an offer or coach banner is hidden and comes back after `Not now` only if still valid. Choosing a gym while `Coach is working…` cancels that request, and the card says so.
 69. When `Switch` changes the active set's Log label, a Log tap within 1 s is ignored. Rest, pause state and the elapsed clock are unchanged by the switch.
 70. After a force-close, the `not_here` and dropped-target warnings show the same text as before, because they're read from `planned.snap`.
+
+**Table view (2026-10-12, §2A; Ben's decisions of 11 Oct).** Check on Ben's iPhone at 390pt and 375pt, default text size and AX3, unless the check names a unit test. Every check also passes in airplane mode with no AI connected (WT42).
+
+*Opening, anchor and auto-advance*
+- **WT1.** A fresh workout opens in Table with set 1 of the first exercise open, its card header at the top, no `↑ N done` chip, and the title `PUSH A`. One tap on Log saves exactly the values on the pill (compare the label with the saved row).
+- **WT2.** With 3 sets done, opening the workout from Today's Resume card shows the open row directly under its exercise's pinned header. No done row and no folded exercise is visible, and the title slot reads `↑ 3 done`.
+- **WT3.** After each Log, the list advances on its own: the set just saved is no longer visible, and the next open row sits in the same position under the pinned header. With Reduce Motion on, the end position is the same and there is no animation.
+- **WT4.** Logging the last set of an exercise folds it to one line above the viewport (`✓ Bench press  100 × 8, 8, 7`, the actual values) and brings the next exercise's header to the top with its set 1 open.
+- **WT5.** On the last exercise's last two sets, the anchor still reaches the top (the bottom spacer works). Nothing done is visible without scrolling up.
+- **WT6.** Force-close mid-rest on set 3 of 4, then relaunch: the same open row, the same draft values (including an unsaved edit, with `Unsaved edit restored`), the anchored position, and the rest countdown from the stored deadline.
+- **WT7.** While Ben scrolls, nothing moves the list by itself: not rest ending, an offer arriving, a toast, an effort tap or a reload (watch for 3 min of rest while scrolled up).
+
+*Chips and the off-screen label*
+- **WT8.** Tapping `↑ N done` scrolls to the top of the list (folded exercises, then this card's done rows) and changes no data. N equals the logged sets, warm-ups included, skipped and deleted not counted (unit test on `doneCount`).
+- **WT9.** Scrolling the open row fully off-screen shows `Now ↓` (or `Now ↑`), hides `↑ N done`, and changes Log to `Bench · Set 3 · Log 100 kg × 8`. Tapping the chip re-anchors. On a long name, the name truncates and the load never does.
+
+*Selecting, logging, correcting*
+- **WT10.** Tapping a non-current pending row, or its ring, never creates a set (the count of completed sets is unchanged in the store). It only opens that row and moves Log to it. The previous open row keeps its draft.
+- **WT11.** The open row has no tick or ring. Log (and voice in Phase 5) is the only way to save it.
+- **WT12.** Tapping a done row opens the correction sheet. No inline edit or tick-off changes a completed set. The sheet has `Set type` chips, Side (unilateral), exclusion chips, target RPE chips (working sets), `Note` and `Delete set`, and every save is a versioned `correct_set` with Undo.
+- **WT13.** While resting, one tap on Log saves the open row and ends rest early. The rest notification for the old deadline is cancelled.
+- **WT14.** A one-rep miss is two taps (reps `−`, Log). Stepping load never produces a value that isn't in `getAchievableLoads` for the selected gym, and never passes a machine's max (the disabled `+` says why).
+
+*Target vs actual*
+- **WT15.** Every pending value is dim with an open ring, and VoiceOver says "target". Every done value is bright with a filled green tick, and VoiceOver says "done". A range never appears on a done row. Status can be told apart in greyscale.
+- **WT16.** The open row's target line reads `Target 100 kg · 6–8 reps @ RPE 8` for a working set, and has no `@ RPE` on a warm-up or drop set. A done row shows effort as `RPE 8` with no `@`.
+- **WT17.** `⋯` → `Target RPE` → `RPE 10` → `This exercise` updates the open row's `@ RPE 10` and every pending set of that exercise. Logging RPE 10 with full reps then raises no offer. A stale version is refused.
+
+*Offers, adjustments and the coach slot*
+- **WT18.** After RPE 10 against a target of 8 with the coach reachable, the after-set block shows `That looked hard. Adjust remaining sets?` / `RPE 10 on set 2 (target 8)` with no numbers, and no AI call has been made (provider log) until `Adjust`.
+- **WT19.** The same with the coach unreachable shows the rule's offer with `Next set: 95 kg × 6–8` and the `Rule` tag. `Adjust` applies it to today's remaining sets of that exercise only. The changed rows show `Rule`, the open row shows `Plan was 100 kg × 6–8`, and Undo restores 100 kg. A double tap applies once.
+- **WT20.** An offer leaves pending rows and the Log label unchanged until `Adjust`. When `Adjust` changes the Log label, a Log tap within 1 s is ignored. The next Log dismisses an unanswered offer and records it as ignored.
+- **WT21.** Coach-changed pending rows show the `Coach` tag (never `C`), and VoiceOver reads both values ("Coach target … Plan was …").
+- **WT22.** `Adjust` sits on the current exercise's header only, with a 52pt hit area. It opens the inline chip row under the pinned header, and with the coach offline it shows its caption and `Too hard` · `Too easy` · `Pain`.
+- **WT23.** The gym switch card, check-in offer, pain review line and coach banners all appear in the after-set block directly above the open row, one at a time. None opens a sheet by itself, and Log stays visible and works.
+
+*Rest*
+- **WT24.** While resting, the rest bar shows `REST m:ss` from the stored deadline, with `−30`, `+30` and `Skip` hit areas ≥ 52pt. When rest ends it reads `✓ Ready · rested m:ss`, without `Skip`.
+- **WT25.** Tapping the countdown opens the full rest view. Log there saves the same set and returns to Table, anchored. The lock screen and Live Activity behave as before.
+- **WT26.** The effort chips sit above the open row. Tapping `8` saves RPE 8 on the set just logged (a versioned correction), and the open row's on-screen position doesn't change. Log → effort → Undo within 8 s still removes the set (check 18).
+
+*Bottom bar, Pause and Finish*
+- **WT27.** The bottom bar holds only `Chat` and the Log pill in every state. Pause is only in `⋯`, and while paused the Log slot reads `Resume`, the top bar `⏸ Paused · m:ss`, and the rest bar `REST · PAUSED`.
+- **WT28.** `Finish workout` is reachable only from `⋯` until the last pending set is logged. Then it takes the Log slot and always opens the finish sheet. There is no Finish in the list. An open-ended workout keeps `Add exercise` as the primary.
+- **WT29.** `Chat` opens the coach sheet at medium detent. With the coach not connected it shows the honest status and nothing else, and the workout is unaffected.
+
+*Measurement types and special exercises*
+- **WT30.** A timed set shows `TIME` (±5 s), and Log reads `Set 2 · Start 0:45`, then `Stop`, then `Set 2 · Log 0:38`. `Log 0:45` under the tiles logs without the timer. Finish while the timer runs shows `Stop the timer first`.
+- **WT31.** A distance set shows `DIST M` (±5 m) and rows like `40  20 m`, and logs `40 kg × 20 m`. Bodyweight distance shows only `DIST`.
+- **WT32.** A unilateral set shows the Side control in the open row. A Left log auto-advances to the pending right-side row, which only accepts Right. Rows carry `L`/`R`, and Undo of the Left log removes both.
+- **WT33.** A superset card lists rows under `ROUND n` in lifting order. Logging A1 opens A2 with no rest (`A1 · Log … → A2`), and logging A2 starts the round rest.
+- **WT34.** A pain-flagged exercise shows `⚠ Pain` (icon + word) on its header and `⚠ Pain flag: no increases` in its open row, and Log behaves exactly as without it.
+- **WT35.** After a gym switch, an exercise done at two gyms shows the `At Hotel · Lisbon` divider and the earlier gym's name on its done rows. Steppers use only the new gym's equipment.
+- **WT36.** A set marked `Spotted` shows `Spotted · not counted` as its second line. Notes show under the exercise header and as the set row's second line, as typed.
+- **WT37.** `Swap exercise`, `Remove exercise` and `Skip exercise` from a card's `⋯` apply at once with a toast and Undo. A skipped exercise folds to `⊘ Face pull · Skipped`, and Undo brings its rows back.
+
+*Layout and accessibility*
+- **WT38.** Every logging control is ≥ 52pt (stepper buttons, rows, effort chips, offer buttons, rest pills, chips' hit areas), Log is 60pt, and no two hit areas overlap.
+- **WT39.** With the keypad open on any tile, the open row and Log are fully visible above it at 375pt and AX3, and `Why?`, the plate line, `Last`, the toast and the `TimeLeftLine` are hidden.
+- **WT40.** At AX3, rows render as blocks, the tiles stack with 60pt buttons, the `GymChip` is in `⋯`, and Log wraps without truncating the load. Nothing scrolls sideways and nothing overlaps the action bar. At xxxLarge, `142.5` fits or the tiles stack: it's never clipped.
+- **WT41.** Unit test: `buildWorkoutTableView` and `buildActiveSetView` agree on the open row's set, draft, target and Log values for every measurement and convention (reps, timed, distance, total, per hand, stack, assisted, bodyweight + added). Table never computes a target or a load.
+- **WT42.** In airplane mode with no AI, WT1–WT41 pass (offers come from the rule), no coach text appears, and the provider log shows no call.
 
 The full coach-adjustment checks are in [coach-adjustments.md](coach-adjustments.md) §7.
 
@@ -1216,9 +1658,42 @@ Implemented differently from this spec, for the designer and Ben to confirm:
 
 Open question for Ben (review S3): a pain flag set mid-workout leaves today's already-planned targets as they are (`Flagged after this target was set`). Rule 9 says a pain mention stops progression for that movement. Should setting a flag offer (or apply, with Undo) "hold today's remaining sets at the last done load"? Not built until Ben decides.
 
+### 8.4 Table view decisions (revision 2026-10-12)
+
+**Ben's decisions (11 Oct 2026), binding:** anchored open with `↑ N done` and auto-advance (WT-D1 to WT-D3 implement this); Focus kept in `⋯`; `Chat` + `Log`, with Pause and Finish in `⋯` and Finish in the Log slot after the last set; a tap on a non-current row selects it and never logs.
+
+**Design calls inside them** (WT-D4 to WT-D7 correct the draft):
+
+| # | Decision | Reason | Alternative |
+|---|---|---|---|
+| WT-D1 | Effort chips, the record line, the pain check and the coach slot move into an **after-set block directly above the open row**, not under the done row | Ben's decision 1 slides the done row out of view after Log. Effort (P3, approved) and offers must stay on screen without undoing that, and right above the next set is where the eye already is | Put them in the rest bar (too tall above Log) or under the done row (off-screen) |
+| WT-D2 | **Exercise headers pin** (iOS plain-list section headers), with their column labels | With done rows above the viewport, the pending rows below the open row would otherwise have no exercise name or column labels | Repeat labels in every row |
+| WT-D3 | `↑ N done` sits in the **top bar's title slot**, replacing the routine name while something done is above the viewport | Adds no chrome. It's a rarely used control, so the top fits the thumb-zone rule. The routine name is low value mid-workout | A floating pill over the list (covers the pinned header) |
+| WT-D4 | The **coach offer shows no numbers** before `Adjust` (`That looked hard. Adjust remaining sets?` + the fact). Only the rule's offer (CA6) names its change | The draft's `Set 3: 100 kg → 95 kg` before `Adjust` would need a coach call before Ben accepts, which breaks CA1 and rule 3. The rule's numbers are local | — |
+| WT-D5 | With no AI, **offers still appear**, as the built-in rule's (`Rule`) | CA6 was approved on 11 Oct. The draft's "no offer card appears" predates it | — |
+| WT-D6 | `Adjust` stays **visible on the current exercise's header** (draft: in `⋯`), and **`Why?`** stays on the open row's target line (draft: behind the name) | Keeps checks 27 and 37 and coach-adjustments §2.2. Ben's 2-tap "too hard" path and one-tap `Why?` survive | Move both behind the name sheet (cleaner, one more tap each) |
+| WT-D7 | **Rest bar is 64pt with 52pt pills** (draft: 56pt with 44pt) | `target.workout` requires 52pt for rest ±30 and Skip (design-system §5) | — |
+| WT-D8 | The open row has **no tick**; Log is its only save | One primary action. A second save target in the list invites sweaty mis-taps and makes "a tick never logs" simpler to test | A tick that logs the open row (the draft) |
+| WT-D9 | `Coach` / `Rule` **word tags** replace the `C` badge on rows | `R` already means Right side. Words are clearer and follow minimal-copy D1 | `C` and a new letter for the rule |
+| WT-D10 | `Rest after 3:00 ›` stays on the open row | P9 (approved v0.2): rest shown on every set | Only in the exercise sheet |
+| WT-D11 | An **open-ended workout** (no routine or plan) keeps `Add exercise` as the primary after its last set; Finish stays in `⋯` | Audit B1 as built: Ben is building as he goes, so "last set" isn't the end. **Ben to confirm**, because his decision 2 names Finish | Finish in the Log slot here too |
+| WT-D12 | The view choice is **per device**, defaulting to Table. No scroll offset is stored; the anchor is derived | Ben's choice sticks across workouts, and restore can't land somewhere stale | Per session |
+| WT-D13 | Tile numerals shrink to fit (down to 28pt), with the unit in the tile label. Below that, the tiles stack | `102.5` at 40pt doesn't fit beside 52pt buttons at 390pt. Never truncate a number | Always stacked tiles (taller open row) |
+| WT-D14 | Column labels use `type.label` (16pt), not a 12pt section label | The 16pt floor (design-system §3) | — |
+
+**Follow-ups for other specs (not edited here):**
+- **rest-state.md §2.3 / premium-feel.md §3:** in Table, rest is the 64pt `RestBar` (§2A.6), and the full rest view opens from its countdown. Focus keeps the rest card.
+- **coach-adjustments.md §2.1:** add Table placement (the coach slot in the after-set block, `Adjust` on the pinned header). §2.7: the `Coach` / `Rule` tags replace `C`.
+- **today.md / flow-first-milestone.md:** Resume opens anchored in the remembered view. Tap counts are unchanged (Log stays one tap).
+- **voice.md:** whether `Talk` replaces `Chat` or sits beside it.
+- **premium-feel.md §3.2:** the `⋯` list gains `Focus view` / `Table view`, `Voice & alerts` and `Rest presets`.
+- **Device pass before the first real workout:** WT3 (motion), WT6 (restore), WT39–WT40 (keypad and AX3), and whether the pinned header plus the after-set block leave enough of the list visible at 375pt.
+
 ## 9. Tokens and components to merge into design-system.md (revision 2026-10-09)
 
 design-system.md is being edited by another agent, so these are specified here. **No new colour values; one accent kept.** All of them use existing tokens.
+
+(2026-10-12) The Table view's tokens and components (`type.rowValue`, `ExerciseCard`, `TableSetRow`, `OpenSetRow`, `AfterSetBlock`, `FoldedExercise`, `DoneChip`, `NowChip`, `RestBar`) are in design-system.md directly (§3, §9.3, §9.6, §9.74–§9.80), not here.
 
 **Timing and domain constants**
 

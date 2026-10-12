@@ -38,7 +38,7 @@ Credentials (ChatGPT sign-in, API keys) are in the Keychain, in neither domain, 
 | `flow-first-milestone.md` | End-to-end state machine (Today → set → rest → summary), persistence and force-close recovery, how optional layers attach, brief proposals P1–P12, dependency status (`DEP-*`) |
 | `today.md` | Today tab: what to train now and where; Start or Resume as the single primary |
 | `check-in.md` | Pre-workout check-in on Start (1–5, Skip): "What's up?" reasons, pain-flag and feeling-ill steps, the coach's lighter-session offer, how check-ins are shown, settings, voice (added 9 Oct; replaces the Today readiness chips) |
-| `active-workout.md` | Focused set card and Overview table: one-tap Log, keypad, supersets, timed and unilateral sets, pain flag note, finish sheet |
+| `active-workout.md` | Table view (default since 12 Oct: whole session anchored on the current set, `↑ N done`, auto-advance) and the Focus card (`⋯`): one-tap Log, keypad, supersets, timed, distance and unilateral sets, pain flag note, finish sheet. Mockup `mockups/workout-table.html` |
 | `gym-switch.md` | Mid-workout gym switch (card, Undo, switch back) and `snapPlanToGym`, the one function that fits any plan to a gym's equipment: routine Start, Repeat, the switch and `[Use changes today]` (added 9 Oct; closes review B1 by design) |
 | `rest-state.md` | Rest timer inside the workout: presets, adjust/skip, background behaviour, spoken cue modes and scripts |
 | `workout-summary.md` | Post-workout facts, comparisons, `Next time` targets (coach or built-in rule), backup line |
