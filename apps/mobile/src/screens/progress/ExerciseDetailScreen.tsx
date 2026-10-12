@@ -7,6 +7,7 @@ import type { ExerciseDetailView, ExerciseMetric, TrendRange } from '@fizz/domai
 import type { ExerciseDetailParams } from '../../navigation/types';
 import { Segmented, useAx } from '../../progress/components';
 import { ChartTable, RepTable, TrendChart } from '../../progress/trend-chart';
+import { chartSelection } from '../../progress/trend-select';
 import { useScreenData } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Icon, StatStrip, StatusLine, Tag, TextButton } from '../../ui';
@@ -129,9 +130,8 @@ export function ExerciseDetailScreen() {
   if (view === null) return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
 
   // The opened workout may sit inside a weekly-best point: the service says which point and what the panel shows.
-  const opened = view.selection !== null && selectedId === view.selection.point.sessionId ? view.selection : null;
-  const selIndex = opened !== null ? opened.index : selectedId === null ? -1 : view.points.findIndex((p) => p.sessionId === selectedId);
-  const sel = opened !== null ? opened.point : selIndex >= 0 ? (view.points[selIndex] ?? null) : null;
+  const picked = chartSelection(view.points, view.selection, selectedId);
+  const sel = picked?.panel ?? null;
   const chartAction = view.chart.kind === 'too_few' || view.chart.kind === 'none_in_range' ? view.chart.action : null;
   const records = view.records;
   const recordRows = records === null ? [] : recordsAll ? records.items : records.items.slice(0, 5);
@@ -280,7 +280,7 @@ export function ExerciseDetailScreen() {
               axisUnit={view.axisUnit}
               axisFormat={view.axisFormat}
               words={view.chartWords}
-              selected={selIndex >= 0 ? selIndex : null}
+              selected={picked?.focus ?? null}
               onSelect={(i) => {
                 setSelectedId(i === null ? null : (view.points[i]?.sessionId ?? null));
               }}
@@ -299,8 +299,9 @@ export function ExerciseDetailScreen() {
                   <AppText variant="body" numeric>
                     {sel.detail}
                   </AppText>
-                  {sel.notes.length > 0 ? (
+                  {sel.notes.length > 0 || picked?.weekBest ? (
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+                      {picked?.weekBest ? <Tag text={picked.weekBest} /> : null}
                       {sel.notes.map((n) => (
                         <Tag key={n} text={n} />
                       ))}

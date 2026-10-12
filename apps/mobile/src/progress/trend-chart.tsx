@@ -9,6 +9,7 @@ import { AppText, Icon, Tag, type SymbolName } from '../ui';
 import { useAx } from './components';
 import { loadTrendCanvas } from './load-charts';
 import { markerX, nearestPointIndex, trendLayout } from './trend-layout';
+import { chartAccessibilityAction, isPointSelected, type ChartFocus } from './trend-select';
 
 /**
  * Exercise detail's chart pieces (progress.md §2.7, §7; design-system §9.23,
@@ -30,13 +31,14 @@ export interface TrendChartProps {
   axisUnit: string;
   axisFormat: 'number' | 'duration';
   words: string;
-  selected: number | null;
+  /** The highlighted point and the workout VoiceOver reads and double-tap opens (the panel's, review progress-B r3 S1). */
+  selected: ChartFocus | null;
   onSelect: (index: number | null) => void;
   onOpen: (sessionId: string) => void;
 }
 
 /** `TrendChart` (§9.23): one series, y labels and unit, month ticks, marker lane; the whole plot is the hit area; VoiceOver adjustable. */
-export function TrendChart({ points, markers, from, to, bars, axisUnit, axisFormat, words, selected, onSelect, onOpen }: TrendChartProps) {
+export function TrendChart({ points, markers, from, to, bars, axisUnit, axisFormat, words, selected: focus, onSelect, onOpen }: TrendChartProps) {
   const theme = useTheme();
   const ax = useAx();
   const [width, setWidth] = useState(0);
@@ -47,23 +49,24 @@ export function TrendChart({ points, markers, from, to, bars, axisUnit, axisForm
 
   const pick = (e: GestureResponderEvent): number => nearestPointIndex(layout.xs, e.nativeEvent.locationX);
   const onAction = (e: AccessibilityActionEvent) => {
-    const n = points.length;
-    if (n === 0) return;
-    if (e.nativeEvent.actionName === 'increment') onSelect(selected === null ? 0 : Math.min(n - 1, selected + 1));
-    else if (e.nativeEvent.actionName === 'decrement') onSelect(selected === null ? n - 1 : Math.max(0, selected - 1));
-    else if (e.nativeEvent.actionName === 'activate' && selected !== null) {
-      const p = points[selected];
-      if (p) onOpen(p.sessionId);
+    const out = chartAccessibilityAction(e.nativeEvent.actionName, points.length, focus);
+    if (out?.kind === 'select') onSelect(out.index);
+    else if (out?.kind === 'open') onOpen(out.sessionId);
+  };
+  const selected = focus === null ? null : focus.index;
+  const touch = (i: number) => {
+    if (i >= 0 && !isPointSelected(i, points, focus)) {
+      haptic('step');
+      onSelect(i);
     }
   };
-  const sel = selected === null ? null : (points[selected] ?? null);
 
   return (
     <View
       accessible
       accessibilityRole="adjustable"
       accessibilityLabel={words}
-      {...(sel ? { accessibilityValue: { text: `${sel.words} Double-tap to open the workout.` } } : {})}
+      {...(focus ? { accessibilityValue: { text: `${focus.words} Double-tap to open the workout.` } } : {})}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }, { name: 'activate' }]}
       onAccessibilityAction={onAction}
     >
@@ -79,19 +82,13 @@ export function TrendChart({ points, markers, from, to, bars, axisUnit, axisForm
         onMoveShouldSetResponder={() => points.length > 0}
         onResponderGrant={(e) => {
           const i = pick(e);
-          grant.current = { index: i, moved: false, wasSelected: i === selected };
-          if (i >= 0 && i !== selected) {
-            haptic('step');
-            onSelect(i);
-          }
+          grant.current = { index: i, moved: false, wasSelected: isPointSelected(i, points, focus) };
+          touch(i);
         }}
         onResponderMove={(e) => {
           const i = pick(e);
           if (grant.current && i !== grant.current.index) grant.current = { ...grant.current, index: i, moved: true };
-          if (i >= 0 && i !== selected) {
-            haptic('step');
-            onSelect(i);
-          }
+          touch(i);
         }}
         onResponderRelease={() => {
           // Tapping the selected point again clears it (§4.2).
