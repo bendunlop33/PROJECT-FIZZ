@@ -5,6 +5,8 @@ import {
   discardCommand,
   LEGACY_STARTER_IDS,
   liveEdits,
+  dismissedCoachEditOpIds,
+  structuralApplyOf,
   structuralDraftPlan,
   listGymPresets,
   materialiseGymDraft,
@@ -505,17 +507,22 @@ export function createAppServices(deps: AppServicesDeps) {
    * `Skip today` and order edits (ADR 0022), so the overview shows them with
    * its own Undo and `Change Push A too ›` (the only route to a template
    * change), and Start uses them like any edit. One op ID per apply and
-   * change: a second load writes nothing. An edit the plan has no place for
-   * any more is refused by the draft's own checks and left out.
+   * change: a second load writes nothing, and an edit Ben took back on an
+   * earlier day's overview isn't written again (review S5). An edit the
+   * draft's own checks refuse here (not doable at this gym, or no place for
+   * it in the plan) is left out and reported (review S1): the card reads
+   * `Couldn't apply here` and the overview says so once.
    */
-  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<boolean> {
+  async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number }> {
+    const none = { wrote: false, refused: 0 };
     const basis: DraftBasis = startOf.routineOf !== undefined ? { kind: 'routine', routineId: startOf.routineOf } : { kind: 'next', sourceSessionId: startOf.nextOf };
     const applies = await coach.appliedStructural(basis);
-    if (applies.length === 0) return false;
+    if (applies.length === 0) return none;
     const p = await getProfile();
     const draft = p === null ? null : await repos().drafts.open(p.id, basis).catch(() => null);
-    const plan = structuralDraftPlan({ applies, draftOpIds: draft?.opIds ?? null, liveEdits: draft === null ? [] : liveEdits(draft.edits) });
-    if (plan.write.length === 0 && plan.remove.length === 0) return false;
+    const earlier = p === null ? [] : await repos().drafts.listForBasis(p.id, basis).catch(() => []);
+    const plan = structuralDraftPlan({ applies, draftOpIds: draft?.opIds ?? null, liveEdits: draft === null ? [] : liveEdits(draft.edits), dismissedOpIds: dismissedCoachEditOpIds(earlier) });
+    const refusedApplies = new Set<string>();
     let version = draftVersion;
     let wrote = false;
     for (const w of plan.write) {
@@ -523,6 +530,9 @@ export function createAppServices(deps: AppServicesDeps) {
       if (r.ok) {
         version = r.draft?.version ?? version;
         wrote = wrote || !r.duplicate;
+      } else if (r.reason === 'invalid') {
+        const applyId = structuralApplyOf(w.opId);
+        if (applyId !== null) refusedApplies.add(applyId);
       }
     }
     for (const editId of plan.remove) {
@@ -532,7 +542,11 @@ export function createAppServices(deps: AppServicesDeps) {
         wrote = true;
       }
     }
-    return wrote;
+    coach.noteStructuralRefused(
+      applies.map((a) => a.applyActionId),
+      [...refusedApplies],
+    );
+    return { wrote, refused: refusedApplies.size };
   }
 
   /**
@@ -548,8 +562,10 @@ export function createAppServices(deps: AppServicesDeps) {
       const data = await read();
       if (data === null) return null;
       // Coach changes Ben applied for this workout (ADR 0020 §3) become today's edits, once; an undone one is taken back.
-      const wrote = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => false);
-      return wrote ? read() : data;
+      const coachChanges = await applyCoachChanges(req.target, req.gymId, data.startOf, data.draft?.version ?? null).catch(() => ({ wrote: false, refused: 0 }));
+      const page = coachChanges.wrote ? await read() : data;
+      // A coach change the overview's own checks refused here (review S1): the page says so once.
+      return page === null ? null : { ...page, coachRefused: coachChanges.refused };
     },
     async explain(req: { target: OverviewTarget; gymId: string | null; checkInId?: string | null; sessionExerciseId: string }) {
       const typical = req.gymId === null ? await typicalEquipment().catch(() => null) : null;

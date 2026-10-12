@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StructuralChange } from '@fizz/schemas';
-import { checkStructuralProposal, structuralApplyOf, structuralDraftPlan, structuralDraftEdits, structuralEditOpId, structuralProposalState, type StructuralExerciseInfo, type StructuralSlot } from '../src/index';
+import { checkStructuralProposal, dismissedCoachEditOpIds, structuralApplyOf, structuralDraftPlan, structuralDraftEdits, structuralEditOpId, structuralProposalState, type StructuralExerciseInfo, type StructuralSlot } from '../src/index';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const BENCH = id(1);
@@ -110,6 +110,10 @@ describe('structuralProposalState', () => {
     expect(structuralProposalState({ apply: null, dismissed: true, startedSince: false, basisChanged: false })).toBe('not_applied');
     expect(structuralProposalState({ apply: null, dismissed: false, startedSince: true, basisChanged: false })).toBe('out_of_date');
     expect(structuralProposalState({ apply: null, dismissed: false, startedSince: false, basisChanged: true })).toBe('out_of_date');
+    // Review S1: refused at the overview's gym; a started workout still wins.
+    expect(structuralProposalState({ apply: { undone: false }, dismissed: false, startedSince: false, basisChanged: false, refusedHere: true })).toBe('not_here');
+    expect(structuralProposalState({ apply: { undone: false }, dismissed: false, startedSince: true, basisChanged: false, refusedHere: true })).toBe('used');
+    expect(structuralProposalState({ apply: { undone: true }, dismissed: false, startedSince: false, basisChanged: false, refusedHere: true })).toBe('undone');
   });
 });
 
@@ -139,6 +143,33 @@ describe('structuralDraftPlan (Apply → the next workout’s draft)', () => {
       ],
     });
     expect(plan).toEqual({ write: [], remove: ['e1'] });
+  });
+});
+
+describe('dismissedCoachEditOpIds (review S5: a coach edit Ben undid stays undone after midnight)', () => {
+  const swap = (opId: string, removedBy: string | null, to = 'x') => ({ kind: 'swap' as const, slotKey: 's1', toExerciseId: to, opId, removed: removedBy === null ? null : { opId: removedBy } });
+  it('lists coach edits Ben removed on a closed draft, not live ones, not the Apply’s own Undo, not open drafts', () => {
+    const a = structuralEditOpId('apply-1', 0);
+    const b = structuralEditOpId('apply-2', 0);
+    const c = structuralEditOpId('apply-3', 0);
+    expect(
+      dismissedCoachEditOpIds([
+        { status: 'expired', edits: [swap(a, 'ben-undo'), swap(b, null, 'y'), { ...swap(c, 'coach-undo:e3'), toExerciseId: 'z' }] },
+        { status: 'open', edits: [swap(structuralEditOpId('apply-4', 0), 'ben-undo', 'w')] },
+      ]),
+    ).toEqual([a]);
+  });
+
+  it('an edit Ben brought back with the toast’s Undo (a live copy) is still wanted', () => {
+    const a = structuralEditOpId('apply-1', 0);
+    expect(dismissedCoachEditOpIds([{ status: 'expired', edits: [swap(a, 'ben-undo'), swap('restore-op', null)] }])).toEqual([]);
+  });
+
+  it('structuralDraftPlan skips dismissed op IDs in a new draft', () => {
+    const ops = [{ change: 'swap' as const, slotKey: 's1', fromExerciseId: 'a', fromName: 'A', toExerciseId: 'b', toName: 'B' }];
+    const applies = [{ applyActionId: 'apply-1', ops, undone: false, used: false }];
+    expect(structuralDraftPlan({ applies, draftOpIds: null, liveEdits: [] }).write).toHaveLength(1);
+    expect(structuralDraftPlan({ applies, draftOpIds: null, liveEdits: [], dismissedOpIds: [structuralEditOpId('apply-1', 0)] }).write).toEqual([]);
   });
 });
 

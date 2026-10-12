@@ -48,8 +48,8 @@ async function pushDay(): Promise<{ s: AppServices; gymId: string; sessionId: st
   return { s, gymId, sessionId };
 }
 
-/** The model reads the overview, then swap options for the pushdown, then proposes the first option. */
-function swapPushdownSteps(over: { version?: (v: number) => number } = {}): ((req: ModelRequest) => ModelEvent[])[] {
+/** The model reads the overview, then swap options for the pushdown, then proposes the first option (or the first `pick` takes). */
+function swapPushdownSteps(over: { version?: (v: number) => number; pick?: (o: { exerciseId: string; equipment: string | null }) => boolean } = {}): ((req: ModelRequest) => ModelEvent[])[] {
   return [
     () => toolCall('get_training_overview', { weeks: 4 }),
     (req) => {
@@ -62,11 +62,12 @@ function swapPushdownSteps(over: { version?: (v: number) => number } = {}): ((re
       const ov = ovOut?.data as OverviewOut;
       const w = ov.sessions[0];
       const push = w?.exercises.find((e) => e.name === 'Triceps pushdown');
-      const options = (subsOut?.data as { options: { exerciseId: string }[] }).options;
+      const options = (subsOut?.data as { options: { exerciseId: string; equipment: string | null }[] }).options;
+      const chosen = over.pick === undefined ? options[0] : options.find(over.pick);
       return toolCall('propose_next_workout_change', {
         sourceSessionId: w?.sessionId,
         sourceVersion: (over.version ?? ((v) => v))(w?.version ?? 1),
-        changes: [{ change: 'swap', fromExerciseId: push?.exerciseId, toExerciseId: options[0]?.exerciseId }],
+        changes: [{ change: 'swap', fromExerciseId: push?.exerciseId, toExerciseId: chosen?.exerciseId }],
         reason: 'Some variety.',
       });
     },
@@ -93,7 +94,7 @@ describe('structural proposals: Apply card, before/after, Undo', () => {
     // The model was offered the tool because Ben asked (rule 3).
     expect(model.requests[0]?.tools.map((t) => t.name)).toContain('propose_next_workout_change');
     const subs = outputsOf(model.requests[2] as ModelRequest)[1]?.data as { domain: string; options: { name: string }[] };
-    expect(subs.domain).toBe('Your data');
+    expect(subs.domain).toBe('Coaching knowledge (exercise list), checked against Your data (gym, pain flags)');
     expect(subs.options.length).toBeGreaterThan(0);
     expect(subs.options.map((o) => o.name)).not.toContain('Triceps pushdown');
     const card = r.cards[0]?.record;
@@ -240,5 +241,65 @@ describe('structural proposals: Apply card, before/after, Undo', () => {
     const swapped = await s.routines.applyTemplateSwap({ routineId: saved.routine.id, expectedRoutineVersion: saved.routine.version, slotKey, toExerciseId: rope?.exercise.id ?? '', draft: null, opId: 'tmpl-1' });
     expect(swapped).toMatchObject({ ok: true });
     expect(await s.coach.tapProposal(card.actionId, 'apply')).toEqual({ ok: false, state: 'out_of_date' });
+  });
+});
+
+describe('applied changes on the overview (review coach-tools S1, S5)', () => {
+  const target = (sessionId: string) => ({ kind: 'session' as const, sourceSessionId: sessionId });
+  const cardWord = async (s: AppServices, threadId: string) => {
+    const row = threadRows((await s.coach.loadThread(threadId)) ?? { thread: null as never, messages: [], turns: new Map(), actionsByTurn: new Map() }).find((x) => x.kind === 'card');
+    return row?.kind === 'card' ? { word: row.card.status.word, undo: row.card.proposal?.undoActionId ?? null } : null;
+  };
+
+  it('Ben undoes the coach swap on the overview: after midnight it doesn’t come back', async () => {
+    const { s, gymId, sessionId } = await pushDay();
+    model = new StepModel(swapPushdownSteps());
+    const r = await ask(s, 'Swap the triceps pushdown for something else next time');
+    const applied = await s.coach.tapProposal(r.cards[0]?.record.actionId ?? '', 'apply');
+    if (!applied.ok) throw new Error('not applied');
+    const page = await s.overview.load({ target: target(sessionId), gymId });
+    const swapped = page?.view.rows.find((x) => x.edit?.kind === 'swapped');
+    if (!page?.draft || swapped?.edit?.kind !== 'swapped') throw new Error('no coach swap on the overview');
+    // The overview's own Undo on that row.
+    const undo = await s.overview.undoEdit({ target: target(sessionId), gymId, expectedDraftVersion: page.draft.version, opId: 'ben-undo-1', editId: swapped.edit.editId });
+    expect(undo.ok).toBe(true);
+    expect(await rowNames(s, gymId, sessionId)).toEqual(['Bench press', 'Lateral raise', 'Triceps pushdown']);
+    // The next day the draft has expired (TE5); the swap Ben undid stays undone.
+    h.clockMs += DAY;
+    expect(await rowNames(s, gymId, sessionId)).toEqual(['Bench press', 'Lateral raise', 'Triceps pushdown']);
+    h.clockMs += DAY;
+    expect(await rowNames(s, gymId, sessionId)).toEqual(['Bench press', 'Lateral raise', 'Triceps pushdown']);
+  });
+
+  it('a coach swap Ben kept is written again into the next day’s draft', async () => {
+    const { s, gymId, sessionId } = await pushDay();
+    model = new StepModel(swapPushdownSteps());
+    const r = await ask(s, 'Swap the triceps pushdown for something else next time');
+    const applied = await s.coach.tapProposal(r.cards[0]?.record.actionId ?? '', 'apply');
+    if (!applied.ok) throw new Error('not applied');
+    const day1 = await rowNames(s, gymId, sessionId);
+    expect(day1[2]).not.toBe('Triceps pushdown');
+    h.clockMs += DAY;
+    expect(await rowNames(s, gymId, sessionId)).toEqual(day1);
+  });
+
+  it('a swap the overview’s gym can’t do: the card reads Couldn’t apply here, the page says so; back at a gym that can, it lands', async () => {
+    const { s, gymId, sessionId } = await pushDay();
+    model = new StepModel(swapPushdownSteps({ pick: (o) => o.equipment !== null }));
+    const r = await ask(s, 'Swap the triceps pushdown for something else next time');
+    const applied = await s.coach.tapProposal(r.cards[0]?.record.actionId ?? '', 'apply');
+    if (!applied.ok) throw new Error('not applied');
+    // A gym with no equipment at all.
+    const hotel = h.ids();
+    expect(await s.setup.saveGym({ gymId: hotel, name: 'Hotel', draft: null })).toMatchObject({ ok: true });
+    const there = await s.overview.load({ target: target(sessionId), gymId: hotel });
+    expect(there?.coachRefused).toBe(1);
+    expect(there?.view.rows.some((x) => x.edit?.kind === 'swapped')).toBe(false);
+    expect(await cardWord(s, r.threadId)).toEqual({ word: 'Couldn’t apply here', undo: applied.record.actionId });
+    // Back at the Main gym the same Apply lands, and the card reads Applied again.
+    const home = await s.overview.load({ target: target(sessionId), gymId });
+    expect(home?.coachRefused).toBe(0);
+    expect(home?.view.rows.some((x) => x.edit?.kind === 'swapped')).toBe(true);
+    expect(await cardWord(s, r.threadId)).toEqual({ word: 'Applied', undo: applied.record.actionId });
   });
 });

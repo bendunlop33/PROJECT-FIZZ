@@ -108,10 +108,14 @@ export function createStructuralExecutors(deps: StructuralDeps): CoachExecutors 
     get_substitutions: async (call) => {
       if (call.tool !== 'get_substitutions') throw new TypeError(call.tool);
       const options = await deps.substitutions(call.args.exerciseId);
-      return { kind: 'read', data: options === null ? { domain: 'Your data', not_available: 'no such exercise or no gym' } : { domain: 'Your data', options } };
+      // Review N1: the options are exercises from the list (Coaching knowledge) checked against Ben's gym and pain flags (Your data).
+      return { kind: 'read', data: options === null ? { domain: SUBSTITUTIONS_DOMAIN, not_available: 'no such exercise or no gym' } : { domain: SUBSTITUTIONS_DOMAIN, options } };
     },
   };
 }
+
+/** Where `get_substitutions` options come from: neither domain alone (review N1). */
+export const SUBSTITUTIONS_DOMAIN = 'Coaching knowledge (exercise list), checked against Your data (gym, pain flags)';
 
 /** The op ID of Ben's tap on a proposal card: one Apply and one Not now per proposal, so a double tap is one write. */
 export function proposalTapOpId(proposalId: string, tap: 'apply' | 'not_now'): string {

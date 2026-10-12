@@ -29,7 +29,7 @@ export function CoachCard({
   // Apply is disabled for a second after a tap (coach-sheet §4: no double apply; the write is idempotent anyway).
   const [busy, setBusy] = useState(false);
   const p = card.proposal;
-  const toneColor = card.status.word === 'Applied' || card.status.word === 'Saved' || card.status.word === 'Logged' ? 'status.done' : card.status.word === 'Out of date' || card.status.word === 'Couldn’t apply' ? 'status.warning' : 'text.secondary';
+  const toneColor = card.status.word === 'Applied' || card.status.word === 'Saved' || card.status.word === 'Logged' ? 'status.done' : card.status.word === 'Out of date' || card.status.word === 'Couldn’t apply' || card.status.word === 'Couldn’t apply here' ? 'status.warning' : 'text.secondary';
   return (
     <View
       style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, borderWidth: theme.components.cardBorderWidth, borderColor: theme.colors['border.control'], padding: theme.space['3'], gap: theme.space['2'] }}

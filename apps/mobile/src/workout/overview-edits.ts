@@ -35,6 +35,8 @@ export const TODAY_EDITS_COPY = {
   wasSuggested: 'Was suggested:',
   dismiss: 'Dismiss',
   earlierCleared: 'Earlier edits cleared',
+  /** A coach change Ben applied that the overview's checks refused at this gym (review S1). */
+  coachRefused: 'Coach change didn’t fit here',
   editFailed: 'Couldn’t save that edit.',
 } as const;
 
@@ -193,8 +195,9 @@ export function createOpIds(newId: () => string): { of: (intent: string) => stri
 }
 
 /** The toasts a fresh page asks for, once per draft version: `Earlier edits cleared`, `Plan changed · N edits removed`. */
-export function pageToast(page: { cleared: boolean; removedEdits: number; draft: { id: string; version: number } | null }, shown: ReadonlySet<string>): { key: string; text: string } | null {
+export function pageToast(page: { cleared: boolean; removedEdits: number; draft: { id: string; version: number } | null; coachRefused?: number }, shown: ReadonlySet<string>): { key: string; text: string } | null {
   if (page.cleared) return { key: 'cleared', text: TODAY_EDITS_COPY.earlierCleared };
+  if ((page.coachRefused ?? 0) > 0 && !shown.has('coach-refused')) return { key: 'coach-refused', text: TODAY_EDITS_COPY.coachRefused };
   if (page.removedEdits > 0 && page.draft !== null) {
     const key = `removed:${page.draft.id}:${String(page.draft.version)}`;
     return shown.has(key) ? null : { key, text: editToast.planChanged(page.removedEdits) };

@@ -90,7 +90,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
 // ---------------------------------------------------------------------------
 // Cards (coach-sheet §2.6): status word and icon, never colour alone
 
-export type CardStatusWord = 'Applied' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Suggested';
+export type CardStatusWord = 'Applied' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested';
 
 export interface CardView {
   actionId: string;
@@ -142,6 +142,7 @@ const PROPOSAL_STATUS: Record<ProposalCardState['state'], CardView['status']> = 
   suggested: { word: 'Suggested', icon: 'minus.circle' },
   applied: { word: 'Applied', icon: 'checkmark.circle.fill' },
   used: { word: 'Applied', icon: 'checkmark.circle.fill' },
+  not_here: { word: 'Couldn’t apply here', icon: 'exclamationmark.triangle' },
   undone: { word: 'Undone', icon: 'arrow.uturn.backward' },
   not_applied: { word: 'Not applied', icon: 'minus.circle' },
   out_of_date: { word: 'Out of date', icon: 'clock.badge.xmark' },
@@ -152,7 +153,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   const d = r.detail;
   if (d.kind !== 'propose_next_workout_change' || r.status !== 'proposed' || d.before === undefined || d.after === undefined) return null;
   const lines = d.changes.map((c) => c.text);
-  const live = s.state === 'applied' && s.apply !== null;
+  const live = (s.state === 'applied' || s.state === 'not_here') && s.apply !== null;
   return {
     actionId: r.actionId,
     status: PROPOSAL_STATUS[s.state],

@@ -249,6 +249,14 @@ export function createCoachService(deps: CoachServiceDeps) {
     return { thread, messages, turns, actionsByTurn, proposals, memories };
   }
 
+  /**
+   * Applies the next workout's overview couldn't write into its draft on its
+   * last load (review S1): not doable at that gym, or the plan has no place
+   * for them. Kept for this app run only: every overview load works it out
+   * again (another gym may take it), so nothing about it is stored.
+   */
+  const refusedApplies = new Set<string>();
+
   /** Each proposal's card state: Ben's Apply or Not now, and whether a workout started from its basis since (or the routine moved on). */
   async function proposalStates(proposalIds: readonly string[]): Promise<Map<string, ProposalCardState>> {
     const p = await owner();
@@ -270,7 +278,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         const routine = await repos().routines.get(basis.routineId).catch(() => null);
         basisChanged = routine === null || routine.version !== d.basisVersion;
       }
-      out.set(id, { state: structuralProposalState({ apply: apply === null ? null : { undone: apply.undoneBy !== null }, dismissed, startedSince, basisChanged }), apply });
+      const refusedHere = apply !== null && refusedApplies.has(apply.actionId);
+      out.set(id, { state: structuralProposalState({ apply: apply === null ? null : { undone: apply.undoneBy !== null }, dismissed, startedSince, basisChanged, refusedHere }), apply });
     }
     return out;
   }
@@ -694,6 +703,16 @@ export function createCoachService(deps: CoachServiceDeps) {
         out.push({ applyActionId: a.actionId, ops: a.detail.ops ?? [], undone: a.undoneBy !== null, used });
       }
       return out;
+    },
+
+    /**
+     * What the last overview load did with these applies (review S1): the
+     * ones in `refused` couldn't be written into the draft there; the rest
+     * of `checked` were (or already had been).
+     */
+    noteStructuralRefused(checked: readonly string[], refused: readonly string[]): void {
+      for (const id of checked) refusedApplies.delete(id);
+      for (const id of refused) refusedApplies.add(id);
     },
 
     /** `What the coach can see` for this entry, from the same builder the request uses. */

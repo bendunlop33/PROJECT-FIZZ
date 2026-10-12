@@ -230,8 +230,10 @@ export function structuralDraftPlan(input: {
   draftOpIds: readonly string[] | null;
   /** The open draft's live edits. */
   liveEdits: readonly { editId: string; opId: string }[];
+  /** Coach edits Ben took back on an earlier (expired) draft's overview: never written again (`dismissedCoachEditOpIds`). */
+  dismissedOpIds?: readonly string[];
 }): { write: { opId: string; edit: StructuralDraftEdit }[]; remove: string[] } {
-  const done = new Set(input.draftOpIds ?? []);
+  const done = new Set([...(input.draftOpIds ?? []), ...(input.dismissedOpIds ?? [])]);
   const write: { opId: string; edit: StructuralDraftEdit }[] = [];
   for (const a of input.applies) {
     if (a.undone || a.used) continue;
@@ -245,11 +247,44 @@ export function structuralDraftPlan(input: {
   return { write, remove };
 }
 
+/**
+ * Coach edits Ben took back on an earlier draft's overview (review
+ * coach-tools S5): edits written from an Apply (`coach-apply:` op IDs) that a
+ * closed draft (expired at midnight, TE5) holds as removed by anything other
+ * than the Apply's own Undo (`coach-undo:`). Ben's overview Undo, Reset or a
+ * later swap of his own counts; so does a plan change that made the edit
+ * stale or redundant. A new draft the next day skips them, so an edit he
+ * undid never comes back. A coach edit still live when the draft expired (or
+ * brought back by his toast Undo) is not listed: it is written again into
+ * the new draft, as before. Pure.
+ */
+type DraftEditLike = { opId: string; removed: { opId: string } | null } & ({ kind: 'swap'; slotKey: string; toExerciseId: string } | { kind: 'skip'; slotKey: string } | { kind: 'order'; slotKeys: readonly string[] });
+
+const editBody = (e: DraftEditLike): string => (e.kind === 'swap' ? `swap:${e.slotKey}:${e.toExerciseId}` : e.kind === 'skip' ? `skip:${e.slotKey}` : `order:${e.slotKeys.join(',')}`);
+
+export function dismissedCoachEditOpIds(drafts: readonly { status: string; edits: readonly DraftEditLike[] }[]): string[] {
+  const out = new Set<string>();
+  for (const d of drafts) {
+    if (d.status === 'open') continue;
+    const live = new Set(d.edits.filter((e) => e.removed === null).map((e) => e.opId));
+    // An Undo of Ben's Undo brings the edit back as a copy under his own op ID: still wanted.
+    const liveBodies = new Set(d.edits.filter((e) => e.removed === null).map(editBody));
+    for (const e of d.edits) {
+      if (e.removed === null || structuralApplyOf(e.opId) === null || live.has(e.opId) || liveBodies.has(editBody(e))) continue;
+      if (e.removed.opId.startsWith('coach-undo:')) continue;
+      out.add(e.opId);
+    }
+  }
+  return [...out];
+}
+
 export type StructuralProposalState =
   /** Waiting for Ben: `Not now` · `Apply`. */
   | 'suggested'
   /** Applied for the next workout, with Undo until it starts. */
   | 'applied'
+  /** Applied, but the next workout's overview refused it at its gym (review S1): not in the plan there. Undo stays. */
+  | 'not_here'
   /** Applied, then undone. */
   | 'undone'
   /** Ben tapped Not now. */
@@ -270,10 +305,13 @@ export function structuralProposalState(input: {
   /** A workout has started from the basis since the proposal (or the apply), or the basis changed. */
   startedSince: boolean;
   basisChanged: boolean;
+  /** The last overview load couldn't write it into the draft (not doable at that gym, or the plan has no place for it). */
+  refusedHere?: boolean;
 }): StructuralProposalState {
   if (input.apply !== null) {
     if (input.apply.undone) return 'undone';
-    return input.startedSince ? 'used' : 'applied';
+    if (input.startedSince) return 'used';
+    return input.refusedHere === true ? 'not_here' : 'applied';
   }
   if (input.dismissed) return 'not_applied';
   if (input.startedSince || input.basisChanged) return 'out_of_date';
