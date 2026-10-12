@@ -1953,7 +1953,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         plan,
         gymName: sctx.gym.name,
         ownerUnit: p.preferredUnit,
-        painFlagged: new Set(sctx.painFlags.map((f) => f.exerciseId)),
+        // The flags never name the substitute; when the original's pain carries (B5), its loads are held too (review gaps r2 N3).
+        painFlagged: new Set([...sctx.painFlags.map((f) => f.exerciseId), ...(sctx.painCarried ? [exercise.id] : [])]),
         lastUsedHere: sctx.lastUsedHere,
         opId: req.opId,
         at: ctx.now(),

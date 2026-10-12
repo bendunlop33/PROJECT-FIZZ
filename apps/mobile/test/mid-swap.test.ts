@@ -80,8 +80,8 @@ describe('mid-workout swap', () => {
 });
 
 describe('swap after pain (B5, rule 9; review gaps B1)', () => {
-  /** DB bench last done 30 kg each × 10 on every set (the rule would go up); today's Bench set 1 logged, maybe marked pain. */
-  async function benchThenSwap(pain: boolean) {
+  /** DB bench last done 30 kg each × 10 on every set (the rule would go up); today's Bench set 1 logged, then maybe marked pain or flagged. */
+  async function benchThenSwap(pain: boolean | 'flag') {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const db = 'Dumbbell bench press';
@@ -104,7 +104,11 @@ describe('swap after pain (B5, rule 9; review gaps B1)', () => {
     h.clockMs += 60_000;
     const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-1', setId: first?.id ?? '', values: { load: { value: 60, unit: 'kg', convention: 'total' }, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
     if (!logged.ok) throw new Error(logged.error.message);
-    if (pain) {
+    if (pain === 'flag') {
+      // An active flag on Bench through the pain-flag service (review gaps r2 N2); nothing on DB bench.
+      const flagged = await s.pain.flagMovement({ exerciseId: row.exerciseId, exerciseName: 'Bench press', opId: 'flag-1' });
+      if (!flagged.ok) throw new Error('flag');
+    } else if (pain) {
       const set = logged.aggregate.sets.find((x) => x.id === first?.id);
       const r = await s.workout.correctSet({ sessionId, setId: set?.id ?? '', expectedSetVersion: set?.version ?? 0, patch: { exclusions: ['pain'] }, opId: 'pain-1' });
       if (!r.ok) throw new Error('pain');
@@ -128,6 +132,14 @@ describe('swap after pain (B5, rule 9; review gaps B1)', () => {
       expect(m.planned.load).toEqual({ value: 30, unit: 'kg', convention: 'per_hand' });
       expect(m.planned.reps?.max ?? 0).toBeLessThanOrEqual(10);
     }
+  });
+
+  it('an active flag on Bench (not a marked set) carries the same way through the service', async () => {
+    const { sheet, choice, moved } = await benchThenSwap('flag');
+    expect(sheet.painHeld).toBe(true);
+    expect(choice.targetText.replace(/\s/g, ' ')).toMatch(/^30 kg each × /);
+    expect(moved.length).toBeGreaterThan(0);
+    for (const m of moved) expect(m.planned.load).toEqual({ value: 30, unit: 'kg', convention: 'per_hand' });
   });
 
   it('with no pain the same history goes up', async () => {

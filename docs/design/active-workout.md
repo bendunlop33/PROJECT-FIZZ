@@ -260,7 +260,7 @@ While the work timer runs or is paused, Finish, Delete set and Skip exercise (fo
 
 **As built (developer, 11 Oct).** Decided conservatively where this section left details open:
 - Timed exercises are in the exercise picker (they were hidden). The set card has a `Time` field (seconds, ±5 s, from 0:05) instead of reps. Before Start, the time in the field is what the timer runs (else the target, else 0:30); the primary reads `Start 0:45`.
-- Before Start, a `Log 0:45` text button under the fields logs the time in the field without running the timer (timed on the gym clock, or Start forgotten; review gaps S2). `Start` stays the primary.
+- Before Start, a `Log 0:45` text button under the fields logs the time in the field without running the timer (timed on the gym clock, or Start forgotten; review gaps S2). `Start` stays the primary. With nothing typed it logs the planned time, so a stray tap logs a set that wasn't done; `Undo` on the saved toast reverses it. Worth a device check (review gaps r2 N4).
 - While the timer runs, the field is replaced by the countdown (`Work 0:38`) and the primary reads `Stop`. At 0 there is one haptic while the app is on screen and the planned time fills the field; the primary becomes `Log 0:45`. A Stop leaves the time worked (`Log 0:38`).
 - At 0 while the app is in the background or the phone is locked, the workout's one local notification fires: `Time` / `Plank · 0:45` (the same identifier as the rest alert, which a work timer replaces; review gaps S3). Needs a device check like the rest alert.
 - Not built yet: the `Time.` spoken cue (needs the audio-session module), a Live Activity for the work timer, and the opt-in `Auto-save timed sets` setting (backlog §4.1).
@@ -514,6 +514,8 @@ A flag is a versioned correction (`correctSet`, audited in `Edit history` as `Se
 ### 2.14 Pain flags without the coach (revision 2026-10-09, competitor follow-up 8)
 
 Pain flags are deterministic guards (coach-memory.md; rule 9). Everything in this section works offline with no AI. Nothing here diagnoses, says a movement is safe, or clears a flag on Ben's behalf.
+
+A mid-workout swap carries the pain: after a flag or a set marked `Pain` on the swapped exercise, the substitute's targets are held for today (B5; exercise-library §2.5).
 
 #### 2.14.1 `May hurt` in the exercise picker
 
