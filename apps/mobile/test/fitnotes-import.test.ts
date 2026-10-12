@@ -19,8 +19,9 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 const A1 = 'Date,Exercise,Category,Weight (kgs),Reps,Distance,Distance Unit,Time';
 const FILE_1 = [
   A1,
-  '2026-09-01,Flat Barbell Bench Press,Chest,60.0,10,,,',
-  '2026-09-01,Flat Barbell Bench Press,Chest,80.0,6,,,',
+  // Not a FitNotes default name (`Flat Barbell Bench Press` is a catalogue alias, so Matched): this one is a Check.
+  '2026-09-01,Bench Press (Barbell),Chest,60.0,10,,,',
+  '2026-09-01,Bench Press (Barbell),Chest,80.0,6,,,',
   '2026-09-01,Incline DB Press,Chest,22.5,10,,,',
   '2026-09-03,Lat Pulldown,Back,45.0,10,,,',
   '2026-09-03,Hammer Strength Row,Back,40.0,10,,,',
@@ -86,7 +87,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(draft.analysis.ready).toBe(false);
     // Names needing Ben first; the catalogue's other names match exactly (`Incline DB press`).
     expect(draft.analysis.names.map((n) => [n.name, n.match.status])).toEqual([
-      ['Flat Barbell Bench Press', 'check'],
+      ['Bench Press (Barbell)', 'check'],
       ['Hammer Strength Row', 'no_match'],
       ['Lat Pulldown', 'matched'],
       ['Hammer Curl', 'matched'],
@@ -319,7 +320,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     // What the undone import taught isn't: its `Use this` and `Add new` names are asked again (suggested, never
     // Matched), and the custom exercise it made is only a suggestion (review r5 S2).
     expect(reopened.draft.analysis.names.map((n) => [n.name, n.match.status, n.match.via, n.needsAnswer])).toEqual([
-      ['Flat Barbell Bench Press', 'check', 'words', true],
+      ['Bench Press (Barbell)', 'check', 'words', true],
       ['Hammer Strength Row', 'check', 'words', true],
       ['Lat Pulldown', 'matched', 'name', false],
       ['Hammer Curl', 'matched', 'name', false],

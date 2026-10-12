@@ -6,6 +6,7 @@ import { toIso, toMs } from '../time';
 import { isRoundEnd, nextPendingSet } from './order';
 import type { PaceSource } from './duration';
 import { dateOnlyOf, getActiveDurationMs, getSessionPhase, pausedMsWithin } from './view';
+import { isInHistory } from './deletion';
 
 /**
  * "About N min left" (active-workout §2.15). An estimate worked out by code
@@ -134,7 +135,7 @@ export function paceSamplesOf(state: SessionAggregate, nowMs: number): PaceSampl
  */
 export function recentPaceSamples(finished: readonly SessionAggregate[], limit: number = TIME_LEFT.recentSessions): PaceSamples {
   const timed = finished
-    .filter((a) => a.session.status === 'finished' && dateOnlyOf(a.session) === null)
+    .filter((a) => isInHistory(a.session) && dateOnlyOf(a.session) === null)
     .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc))
     .slice(0, limit);
   const out: PaceSamples = { set: [], changeover: [] };

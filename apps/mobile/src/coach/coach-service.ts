@@ -36,6 +36,7 @@ import {
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
   evaluateCoachTrigger,
   exercisesNamedForPain,
+  isInHistory,
   isTriggerKind,
   lastAdjustedVersion,
   nextSessionBases,
@@ -129,6 +130,15 @@ export function namedExercises(text: string, session: SessionAggregate | null): 
   return session === null ? [] : exercisesNamedForPain(text, session.exercises);
 }
 
+/**
+ * Whose actions `get_recent_actions` reads: a workout's or summary's thread reads that workout's only,
+ * whether or not it's still in context (a deleted one then reads none); Today and the Progress entries
+ * (general threads) read the owner's (review r3 S1). The store leaves out actions on workouts out of context either way.
+ */
+export function recentActionsScope(entry: CoachEntry): string | null {
+  return isGeneralEntry(entry) ? null : entry.sessionId;
+}
+
 export function createCoachService(deps: CoachServiceDeps) {
   const repos = (): SqliteRepositories => deps.store().repos;
   const coachStore = () => repos().coach;
@@ -167,7 +177,10 @@ export function createCoachService(deps: CoachServiceDeps) {
 
   async function sessionOf(entry: CoachEntry): Promise<SessionAggregate | null> {
     if (isGeneralEntry(entry)) return null;
-    return repos().sessions.get(entry.sessionId).catch(() => null);
+    const a = await repos().sessions.get(entry.sessionId).catch(() => null);
+    // Only the live workout or one in history is in the coach's context (delete-workouts §5): a deleted,
+    // discarded or reverted one isn't; its thread keeps its text.
+    return a !== null && (a.session.status === 'active' || isInHistory(a.session)) ? a : null;
   }
 
   /** CS1: a workout's own thread; outside a workout the last general thread if used in the last 6 hours. */
@@ -210,12 +223,14 @@ export function createCoachService(deps: CoachServiceDeps) {
     return (await deps.builtInNextTargets(session.session.id).catch(() => null)) ?? new Map();
   }
 
-  async function executorsFor(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null, gymName: string | null, checkIn: CheckIn | null, benAskedForMoreSets: boolean, onlySessionExerciseId: string | null = null): Promise<CoachExecutors> {
+  async function executorsFor(p: UserProfile, entry: CoachEntry, kind: CoachTurnKind, session: SessionAggregate | null, gymName: string | null, checkIn: CheckIn | null, benAskedForMoreSets: boolean, onlySessionExerciseId: string | null = null): Promise<CoachExecutors> {
     const store = coachStore();
     const base: CoachExecutors = createStoreExecutors({
       store,
       exercises: { exerciseName: async (id) => (await repos().exercises.get(id).catch(() => null))?.name ?? session?.exercises.find((e) => e.exerciseId === id)?.exerciseName ?? null },
-      sessionId: session?.session.id ?? null,
+      // A workout's thread reads only that workout's actions, even when the workout is out of context
+      // (deleted): the store then returns none, rather than every action Ben has (review r3 S1).
+      sessionId: recentActionsScope(entry),
     });
     if (session === null) return base;
     const load = () => repos().sessions.get(session.session.id);
@@ -307,7 +322,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const kind = kindFor(req.entry, session, req.summary === true);
     const ctx = await contextInput(p, kind, session, req.entry);
     const offerScope = req.input.kind === 'chip' ? (req.input.sessionExerciseId ?? null) : null;
-    const executors = await executorsFor(p, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
+    const executors = await executorsFor(p, req.entry, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
     const stop = new AbortController();
     running.set(req.turnId, stop);
     try {

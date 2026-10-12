@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-shrug",
+  "tier": "rich",
+  "name": "Barbell shrug",
+  "aliases": ["Barbell shrugs", "Barbell shoulder shrug", "Standing barbell shrug"],
+  "family": "shrug",
+  "movementPattern": "vertical_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["traps"],
+  "secondaryMuscles": ["grip", "forearms", "spinal_erectors"],
+  "compatibleEquipment": ["barbell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-11"
+  },
+  "cues": {
+    "setup": [
+      "Set the bar in the rack at mid-thigh height",
+      "Overhand grip just outside your thighs",
+      "Stand tall, bar hanging on straight arms",
+      "Feet about hip to shoulder width"
+    ],
+    "execution": [
+      "Lift your shoulders straight up to your ears",
+      "Keep your arms long; no elbow bend",
+      "Hold the top for a moment",
+      "Lower slowly to a full stretch"
+    ],
+    "faults": [
+      "Don't roll your shoulders in circles",
+      "Don't bend your elbows to curl the bar",
+      "Don't poke your head forward",
+      "Don't bounce or jerk the weight up"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Take the bar from a rack set at mid-thigh height and put it back there, rather than lifting a heavy bar from the floor.",
+      "For heavy sets, set the rack's safety arms just below where the bar hangs so you can set it down if your grip fails.",
+      "Lifting straps can help when grip gives out before the shoulders do.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "dumbbell-shrug", "name": "Dumbbell shrug", "reason": "Lighter loads and the hands can sit at your sides, so the bar can't brush your thighs." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Paused barbell shrug", "reason": "A longer hold at the top makes a lighter load harder without more weight." }
+    ],
+    "substitutions": [
+      { "key": "dumbbell-shrug", "name": "Dumbbell shrug", "reason": "Same movement; load is each dumbbell." },
+      { "key": null, "name": "Trap-bar shrug", "reason": "Same movement with the hands at your sides; the trap bar's own weight differs from an Olympic bar." },
+      { "key": null, "name": "Machine shrug", "reason": "Guided path and stack or plate loading; no bar to balance." },
+      { "key": "farmers-carry", "name": "Farmer's carry", "reason": "Heavy loads held at the sides also work the traps and grip." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at shoulder height so the shoulder's straight up-and-down path is clear. Bar seen end-on in front of the thighs. Rack optional in the background.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Standing tall, knees soft, arms straight, bar hanging against the front of the thighs. Shoulders relaxed down; neck in line with the spine.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "elbowFlexion": 0, "kneeFlexion": 5 }
+      },
+      {
+        "label": "Top",
+        "describe": "Shoulders lifted straight up toward the ears, arms still straight, bar a few centimetres higher on the thighs. Head stays level and back; no forward poke.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "elbowFlexion": 0, "kneeFlexion": 5 }
+      }
+    ],
+    "barPath": "Short and vertical, close to the thighs",
+    "tempo": { "downMs": 1600, "holdMs": 600, "upMs": 900 },
+    "props": ["barbell_loaded", "rack_optional"],
+    "emphasise": [
+      "The shoulders, not the arms, raise the bar",
+      "Straight up and down, no rolling",
+      "Pause at the top"
+    ],
+    "doNotShow": ["Shoulders rolled in circles", "Elbows bent", "Head jutting forward"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/barbell-shrug/",
+      "title": "StrengthLog: Barbell Shrug",
+      "checkedOn": "2026-10-11",
+      "supports": "primaryMuscles; secondaryMuscles (forearms); cues.setup[2]; cues.execution[0,3]"
+    },
+    {
+      "url": "https://motra.com/exercises/barbellShrug",
+      "title": "Motra exercise library: Barbell Shrug",
+      "checkedOn": "2026-10-11",
+      "supports": "cues.setup[0-1,3]; cues.execution[0-3]; cues.faults[0-3]; safety.notes[1-2]; secondaryMuscles (spinal_erectors)"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    },
+    {
+      "field": "cues.setup[1]",
+      "note": "Sources differ slightly on grip width (just outside the thighs vs slightly wider than shoulders). Both are common; the entry uses the narrower, more usual one."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

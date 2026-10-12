@@ -23,7 +23,8 @@ import type {
 import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
-import type { FitNotesRow } from './fitnotes';
+import { FITNOTES_HEADERS, type FitNotesRow } from './fitnotes';
+import { categoryHint } from './category';
 import { equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 import type { RememberedTotal } from './remembered';
 
@@ -166,6 +167,8 @@ export interface NameRow {
   resolution: NameResolution;
   /** Not mapped yet: `Check` or `No match` with no answer (or an answer whose exercise is gone). */
   needsAnswer: boolean;
+  /** The FitNotes `Category` as first written for this name (trimmed), or null when blank. Data only; a ranking hint for `match`. */
+  category: string | null;
 }
 
 export interface ExampleSet {
@@ -808,18 +811,26 @@ function totalQuestion(
  */
 const MATCHES = new WeakMap<ImportContext, Map<string, NameMatch>>();
 
-function matchIn(ctx: ImportContext, key: string, name: string): NameMatch {
+function matchIn(ctx: ImportContext, key: string, name: string, categories: readonly string[]): NameMatch {
   let kept = MATCHES.get(ctx);
   if (!kept) {
     kept = new Map();
     MATCHES.set(ctx, kept);
   }
-  let m = kept.get(key);
+  // The category hint is part of the match, so it is part of the kept key.
+  const keptKey = `${key}\u0000${categories.join('\u0000')}`;
+  let m = kept.get(keptKey);
   if (!m) {
-    m = matchName(name, ctx.candidates, ctx.aliases);
-    kept.set(key, m);
+    m = matchName(name, ctx.candidates, ctx.aliases, categoryHint(categories));
+    kept.set(keptKey, m);
   }
   return m;
+}
+
+/** The FitNotes `Category` cell (third column in every layout), trimmed. */
+/** The row's `Category` cell, by the variant's header (review import-names N2); blank when the layout has none. */
+function categoryOf(r: FitNotesRow, at: number): string {
+  return at < 0 ? '' : (r.cells[at] ?? '').trim();
 }
 
 /**
@@ -833,17 +844,28 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   // Names: only rows that could be imported need a mapping.
   const strength = rows.filter((r) => r.rowClass === 'strength' && r.date !== null);
   const dateSkipped = (date: string): boolean => ctx.importedDates.has(date) || (ctx.appDates.has(date) && answers.existingDates === 'skip');
+  // Every category each name was filed under, first seen first: the matcher's ranking hint.
+  const categories = new Map<string, string[]>();
+  const categoryAt = FITNOTES_HEADERS[input.variant].indexOf('Category');
+  for (const r of strength) {
+    const key = nameKey(r.exercise);
+    const list = categories.get(key) ?? [];
+    const c = categoryOf(r, categoryAt);
+    if (c !== '' && !list.includes(c)) list.push(c);
+    categories.set(key, list);
+  }
   const nameRows = new Map<string, NameRow>();
   for (const r of strength) {
     const key = nameKey(r.exercise);
     let n = nameRows.get(key);
     if (!n) {
-      const match = matchIn(ctx, key, r.exercise);
+      const filed = categories.get(key) ?? [];
+      const match = matchIn(ctx, key, r.exercise, filed);
       const answer = answers.names[key] ?? null;
       // The bar Ben chose shapes the exercise `Add new` makes only when he answered it "plates only" (review r8 S2).
       const chosenBar = answers.totalOverrides[key] === 'plates_only' ? (answers.totalBars?.[key] ?? null) : null;
       const resolution = resolveName(key, r.exercise, match, answer, ctx, byId, chosenBar);
-      n = { key, name: r.exercise, sets: 0, match, answer, resolution, needsAnswer: resolution.kind === 'open' };
+      n = { key, name: r.exercise, sets: 0, match, answer, resolution, needsAnswer: resolution.kind === 'open', category: filed[0] ?? null };
       nameRows.set(key, n);
     }
     if (r.date !== null && !dateSkipped(r.date)) n.sets += 1;

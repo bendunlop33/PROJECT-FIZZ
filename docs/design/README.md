@@ -79,6 +79,7 @@ Credentials (ChatGPT sign-in, API keys) are in the Keychain, in neither domain, 
 |---|---|
 | `progress.md` | Progress tab (v1.0, 11 Oct): sessions and time in gym over 7/14/30/60 days, muscle frequency (body parts or push/pull/legs), records, calendar; exercise detail with Est. 1RM, top set, volume, rep table and records. Two build slices. Mockup: `mockups/progress.html` |
 | `data-import-export.md` | Data & backup: automatic backups on this phone, optional copies to Files, check, restore by domain, FitNotes import, export (`My data` / `Coaching knowledge only`), `Delete my data` / `Reset coaching knowledge` |
+| `delete-workouts.md` | Deleting past workouts (one, several, imported) and single sets in finished workouts; Undo toast, Recently deleted (30 days, Restore, purge); effect on every derived view, imports, backups and restore (added 11 Oct) |
 
 ## How specs relate
 

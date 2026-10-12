@@ -359,7 +359,7 @@ describe('a populated schema-6 database migrates in place to 7', () => {
     await expect(phone.run("INSERT INTO coach_actions (id, owner_id, op_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('x', 'o', 'p', 'update_routine', 'committed', 1, 't', 't', '{}')")).rejects.toThrow();
 
     const v7 = await openStore(phone);
-    // Migration 7, then every later one (8: Progress).
+    // Migration 7, then every later one (8: deleted workouts, 9: Progress).
     expect(v7.migration).toMatchObject({ from: 6, to: latestVersion(), applied: MIGRATIONS.slice(6).map((m) => m.version) });
     expect(await v7.repos.sessions.get(a.session.id)).toEqual(a);
     expect(await v7.repos.coach.getAction(coachRecord.actionId)).toEqual(coachRecord);
@@ -462,12 +462,15 @@ describe('review fixes: the template Undo keeps a newer swap (S4), rollback disc
     const file = JSON.parse(made.text) as BackupFile;
     const tables = { ...file.tables };
     Reflect.deleteProperty(tables, 'pre_start_drafts');
+    // …nor schema 8 (deleted workouts).
+    Reflect.deleteProperty(tables, 'purged_sessions');
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.today_edits;
-      // …or schema 8 (Progress's Count it).
+      // …or schema 9 (Progress's Count it).
       delete copy.duration_confirmed_at_utc;
       delete copy.duration_confirmed_at_tz;
+      for (const c of ['deleted_at_utc', 'deleted_at_tz', 'deleted_by_op_id', 'purge_after_utc']) Reflect.deleteProperty(copy, c);
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {

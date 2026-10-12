@@ -3,7 +3,7 @@
   "key": "cable-rope-triceps-pushdown",
   "tier": "basic",
   "name": "Rope triceps pushdown",
-  "aliases": ["Rope pushdown", "Tricep rope pushdown", "Triceps rope pushdown", "Rope pressdown", "Cable rope pushdown"],
+  "aliases": ["Rope pushdown", "Tricep rope pushdown", "Triceps rope pushdown", "Rope pressdown", "Cable rope pushdown", "Rope push down"],
   "family": "triceps_pushdown",
   "movementPattern": "arms",
   "mechanic": "isolation",

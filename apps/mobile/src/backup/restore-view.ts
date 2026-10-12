@@ -65,6 +65,8 @@ export function buildRestorePreviewView(p: RestorePreview, ctx: WhenContext): Re
     { label: 'Exercises', backup: n(b.exercises), phone: n(c.exercises) },
   ];
   if (b.unfinishedWorkouts + c.unfinishedWorkouts > 0) rows.push({ label: 'Unfinished workouts', backup: n(b.unfinishedWorkouts), phone: n(c.unfinishedWorkouts) });
+  // Deleted workouts on their own line, never in Workouts (delete-workouts §5, §6.5).
+  if (b.deletedWorkouts + c.deletedWorkouts > 0) rows.push({ label: 'Recently deleted', backup: n(b.deletedWorkouts), phone: n(c.deletedWorkouts) });
 
   const made = formatWhen(toMs(p.backup.createdAt.utc), ctx.nowMs, ctx.tz, ctx.locale);
   const lines = replaceLines(p, ctx);
@@ -122,6 +124,11 @@ function replaceLines(p: RestorePreview, ctx: WhenContext): { long: string; shor
   if (changed.otherRecords > 0) {
     const text = `${records(changed.otherRecords)} on this phone ${changed.otherRecords === 1 ? 'differs' : 'differ'} from the backup’s copy (a gym, an exercise or similar was changed since).`;
     out.push({ long: `${text} The backup’s version replaces ${changed.otherRecords === 1 ? 'it' : 'them'}.`, short: text });
+  }
+  if (p.deletedSinceBackup > 0) {
+    // DW28's `Keep deleted` / `Bring back` choice isn't built (DW-Q4, ADR 0024): say what happens.
+    const text = `${workouts(p.deletedSinceBackup)} you deleted since this backup ${p.deletedSinceBackup === 1 ? 'comes' : 'come'} back.`;
+    out.push({ long: text, short: text });
   }
   const kept = p.keptForUndo;
   if (kept !== null) {
@@ -182,8 +189,10 @@ export function buildCheckResultView(
   const b = r.preview.backup.counts;
   const made = `Made ${formatWhen(toMs(r.preview.backup.createdAt.utc), ctx.nowMs, ctx.tz, ctx.locale)}`;
   const counts = `${plural(b.finishedWorkouts, 'workout', 'workouts', ctx.locale)} · ${plural(b.loggedSets, 'set', 'sets', ctx.locale)} · ${plural(b.gyms, 'gym', 'gyms', ctx.locale)}`;
+  // Deleted workouts on their own line, not in the workout total (delete-workouts §6.5).
+  const deleted = b.deletedWorkouts > 0 ? plural(b.deletedWorkouts, 'deleted workout', 'deleted workouts', ctx.locale) : null;
   if (r.restorable) {
-    return { ok: true, title: 'This backup restores', lines: [made, counts, r.preview.needsMigration ? 'It’s from an older GymSmarter and is updated when restored.' : null, 'Nothing on this phone was changed.'].filter((l): l is string => l !== null) };
+    return { ok: true, title: 'This backup restores', lines: [made, counts, deleted, r.preview.needsMigration ? 'It’s from an older GymSmarter and is updated when restored.' : null, 'Nothing on this phone was changed.'].filter((l): l is string => l !== null) };
   }
   return {
     ok: false,

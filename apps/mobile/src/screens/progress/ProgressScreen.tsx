@@ -6,6 +6,8 @@ import { toMs, type ProgressHomeView, type RecordView } from '@fizz/domain';
 import type { ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
+import { DeleteToastView } from '../../history/DeleteToastView';
+import { useDeleteToast } from '../../history/useDeleteToast';
 import { runCountIt, type CountItToast } from '../../progress/count-it';
 import { ActivityBars, FrequencyHeader, FrequencyRow, ResumeBar, Segmented, useAx, WindowPicker } from '../../progress/components';
 import type { ProgressHome } from '../../services/progress-service';
@@ -43,6 +45,9 @@ export function ProgressScreen() {
   const [toastHeight, setToastHeight] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef(new Set<string>());
+  // A workout deleted from a Summary opened here comes back with Undo (delete-workouts DW1).
+  const deleted = useDeleteToast();
+  const toastShown = toast !== null || deleted.toast !== null;
 
   useEffect(() => {
     // Loading: nothing for `timing.placeholderDelay`, then still grey blocks (no shimmer).
@@ -206,25 +211,29 @@ export function ProgressScreen() {
       <View style={{ flex: 1 }}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + 56 + (toast ? toastHeight : 0), gap: theme.space['5'] }}
+          contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + 56 + (toastShown ? toastHeight : 0), gap: theme.space['5'] }}
         >
           {header}
           {body}
         </ScrollView>
         <AskPill
-          bottom={theme.space['4'] + (toast ? toastHeight : 0)}
+          bottom={theme.space['4'] + (toastShown ? toastHeight : 0)}
           onPress={() => {
             navigation.navigate('Coach', { entry: days === null ? { kind: 'today' } : { kind: 'progress', days } });
           }}
         />
-        {toast ? (
+        {toastShown ? (
           <View
             style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
             onLayout={(e) => {
               setToastHeight(e.nativeEvent.layout.height);
             }}
           >
-            <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
+            {deleted.toast ? (
+              <DeleteToastView state={deleted} />
+            ) : toast ? (
+              <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
+            ) : null}
           </View>
         ) : null}
       </View>

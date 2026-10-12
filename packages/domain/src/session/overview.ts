@@ -30,6 +30,7 @@ import { estimateRemainingDuration } from './duration';
 import { muscleWords } from './first-run';
 import { droppedWords } from './fit-words';
 import { slotMoves, type TodaySlot } from './today-edits';
+import { isInHistory } from './deletion';
 
 /**
  * The Workout overview (workout-overview.md): the one page before the first
@@ -114,7 +115,7 @@ const hasTarget = (s: WorkoutSet): boolean => s.planned.load !== null || s.plann
 export function pastExercisesOf(sessions: readonly SessionAggregate[], exerciseId: string): PastExercise[] {
   const out: PastExercise[] = [];
   for (const a of sessions) {
-    if (a.session.status !== 'finished') continue;
+    if (!isInHistory(a.session)) continue;
     for (const ex of [...a.exercises].sort((x, y) => y.order - x.order)) {
       if (ex.exerciseId !== exerciseId) continue;
       const own = a.sets.filter((s) => s.sessionExerciseId === ex.id && live(s) && s.pairedWithSetId === null && isWorking(s.setType)).sort((x, y) => x.index - y.index);

@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-standing-calf-raise",
+  "tier": "rich",
+  "name": "Standing barbell calf raise",
+  "aliases": ["Barbell standing calf raise", "Standing calf raise (barbell)"],
+  "family": "calf_raise",
+  "movementPattern": "calves",
+  "mechanic": "isolation",
+  "primaryMuscles": ["calves"],
+  "secondaryMuscles": ["spinal_erectors", "core"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-11"
+  },
+  "cues": {
+    "setup": [
+      "Set the bar in the rack at upper-chest height",
+      "Bar on your upper back, not your neck",
+      "Balls of your feet on a plate or block",
+      "Set the safety arms just below the bar"
+    ],
+    "execution": [
+      "Let your heels sink for a stretch",
+      "Push through the balls of your feet",
+      "Rise as high as you can and pause",
+      "Lower slowly; no bounce at the bottom"
+    ],
+    "faults": [
+      "Don't lock your knees hard",
+      "Don't bounce out of the bottom",
+      "Don't lean forward over your toes",
+      "Don't cut the range short"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Work inside a rack with the safety arms set just below the lowest point the bar reaches, so you can set it down if you lose balance.",
+      "Use a stable, non-slip block or plate under the feet, and start light until your balance is steady.",
+      "If balance limits the load, a calf-raise machine or Smith machine takes it away.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": null, "name": "Bodyweight calf raise", "reason": "Same movement with no bar; learn the full range and balance first." },
+      { "key": "machine-standing-calf-raise", "name": "Standing calf raise (machine)", "reason": "The machine takes away balance, so the calves are the only limit." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Single-leg calf raise", "reason": "One leg at a time with a dumbbell or a hand on the rack; much harder at the same load." }
+    ],
+    "substitutions": [
+      { "key": "machine-standing-calf-raise", "name": "Standing calf raise (machine)", "reason": "Same straight-knee movement; stack or plate loading." },
+      { "key": "machine-seated-calf-raise", "name": "Seated calf raise", "reason": "Bent knees shift more work to the lower calf (soleus); weight added on the machine." },
+      { "key": null, "name": "Smith machine calf raise", "reason": "Same movement with the bar on a guided track, so balance is easier." },
+      { "key": null, "name": "Leg-press calf raise", "reason": "Calves only, with the back supported." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at knee-to-hip height so the ankle and the heel's travel below the block are clear. Bar seen end-on on the upper back. Rack uprights optional.",
+    "keyPositions": [
+      {
+        "label": "Bottom",
+        "describe": "Standing tall with the bar on the upper back, knees soft. Balls of the feet on the edge of a block, heels dropped below it for a calf stretch.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "kneeFlexion": 5, "ankleDorsiflexion": 15 }
+      },
+      {
+        "label": "Top",
+        "describe": "Heels raised as high as possible, weight over the balls of the feet. Body rises straight up as one piece; no forward lean.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 0, "kneeFlexion": 5, "ankleDorsiflexion": -30 }
+      }
+    ],
+    "barPath": "Straight up and down over the middle of the foot",
+    "tempo": { "downMs": 1600, "holdMs": 800, "upMs": 900 },
+    "props": ["barbell_loaded", "rack_optional", "calf_block"],
+    "emphasise": [
+      "Heels drop below the block, then rise high",
+      "Only the ankles move; knees stay soft",
+      "Pauses at the top and at the stretch"
+    ],
+    "doNotShow": ["Bouncing at the bottom", "Hard locked knees", "Bar on the neck"]
+  },
+  "sources": [
+    {
+      "url": "https://www.strengthlog.com/barbell-standing-calf-raise/",
+      "title": "StrengthLog: Barbell Standing Calf Raise",
+      "checkedOn": "2026-10-11",
+      "supports": "primaryMuscles; cues.setup[1-2]; cues.execution[0-1,3]"
+    },
+    {
+      "url": "https://motra.com/exercises/barbellStandingCalfRaise",
+      "title": "Motra exercise library: Barbell Standing Calf Raise",
+      "checkedOn": "2026-10-11",
+      "supports": "cues.setup[0-3]; cues.execution[0-3]; cues.faults[0-3]; safety.notes[0-1]; secondaryMuscles (spinal_erectors)"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data. Negative ankleDorsiflexion means the ankle is pointed (plantarflexed)."
+    },
+    {
+      "field": "aliases",
+      "note": "\"Barbell calf raise\" (FitNotes' default name) is deliberately not an alias: it doesn't say standing or seated. An import suggests this entry as a Check and Ben confirms (review import-names S3)."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

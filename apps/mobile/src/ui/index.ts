@@ -7,3 +7,4 @@ export * from './motion';
 export * from './sheet';
 export * from './overview';
 export * from './today-edits';
+export * from './selection';

@@ -125,10 +125,13 @@ interface RowProps {
   accessibilityHint?: string;
   /** A row tag, icon + text (e.g. `⚠ May hurt`, exercise-library §2.1), read after the title. */
   tag?: { icon: SymbolName; color: ColorToken; text: string; accessibilityLabel: string };
+  /** VoiceOver custom actions (e.g. `Delete` on a past workout, delete-workouts §4). */
+  actions?: readonly { name: string; label: string }[];
+  onAction?: (name: string) => void;
 }
 
 /** `SettingsRow` (§9.31): ≥ 52pt, whole row is the target, chevron when it opens something. */
-export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag }: RowProps) {
+export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag, actions, onAction }: RowProps) {
   const theme = useTheme();
   const content = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], minHeight: 52, paddingVertical: theme.space['3'], paddingHorizontal: theme.space['4'] }}>
@@ -167,6 +170,14 @@ export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secon
       accessibilityLabel={[title, tag?.accessibilityLabel, subtitle, secondLine].filter(Boolean).join(', ')}
       accessibilityState={{ disabled }}
       {...(accessibilityHint ? { accessibilityHint } : {})}
+      {...(actions && onAction
+        ? {
+            accessibilityActions: actions.map((a) => ({ name: a.name, label: a.label })),
+            onAccessibilityAction: (e: { nativeEvent: { actionName: string } }) => {
+              onAction(e.nativeEvent.actionName);
+            },
+          }
+        : {})}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({ backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}

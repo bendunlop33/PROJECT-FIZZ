@@ -1,5 +1,6 @@
 import type { EquipmentKind, Laterality, Load, LoadConvention, Measurement, SessionAggregate, SetExclusion, SetSide, SetType, WeightUnit } from '@fizz/schemas';
 import { localDateOf } from '../calendar';
+import { isInHistory } from '../session/deletion';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { workoutDurationMs } from '../session/view';
 import { toMs } from '../time';
@@ -80,13 +81,13 @@ export interface ProgressSession {
 }
 
 /**
- * Project one stored workout for Progress. Returns null for anything that
- * isn't `finished` (active, discarded, reverted): an unfinished workout is
- * never counted (PG33).
+ * Project one stored workout for Progress. Returns null for anything not in
+ * history (`isInHistory`: active, discarded, reverted, deleted): an
+ * unfinished or deleted workout is never counted (PG33, delete-workouts §5).
  */
 export function toProgressSession(aggregate: SessionAggregate, ownerTz: string, nowMs: number): ProgressSession | null {
   const { session } = aggregate;
-  if (session.status !== 'finished') return null;
+  if (!isInHistory(session)) return null;
   const switched = (session.gymChanges ?? []).length > 0;
   const byExercise = new Map<string, ProgressSet[]>();
   for (const s of aggregate.sets) {

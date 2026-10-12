@@ -4,6 +4,8 @@ import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 
 import type { ExerciseDetailView, ExerciseMetric, TrendRange } from '@fizz/domain';
 
+import { DeleteToastView } from '../../history/DeleteToastView';
+import { useDeleteToast } from '../../history/useDeleteToast';
 import type { ExerciseDetailParams } from '../../navigation/types';
 import { Segmented, useAx } from '../../progress/components';
 import { ChartTable, RepTable, TrendChart } from '../../progress/trend-chart';
@@ -30,6 +32,9 @@ export function ExerciseDetailScreen() {
   const ax = useAx();
   const navigation = useNavigation();
   const route = useRoute<Route>();
+  // A workout deleted from a Summary opened here comes back with Undo (delete-workouts DW1).
+  const deleted = useDeleteToast();
+  const [toastHeight, setToastHeight] = useState(0);
   const { exerciseId } = route.params;
   // `sessionId` / `equipmentId` pick the series on the first load only; afterwards Ben's choices rule.
   const [opening, setOpening] = useState<{ sessionId?: string; sessionExerciseId?: string; equipmentId?: string; gymId?: string } | null>(() => ({
@@ -478,10 +483,21 @@ export function ExerciseDetailScreen() {
         </View>
       </ScrollView>
       <AskPill
+        bottom={theme.space['4'] + (deleted.toast ? toastHeight : 0)}
         onPress={() => {
           navigation.navigate('Coach', { entry: { kind: 'progress_exercise', exerciseName: view.title, seriesLabel: view.seriesLabel, from: view.bounds.from, to: view.bounds.to } });
         }}
       />
+      {deleted.toast ? (
+        <View
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
+          onLayout={(e) => {
+            setToastHeight(e.nativeEvent.layout.height);
+          }}
+        >
+          <DeleteToastView state={deleted} />
+        </View>
+      ) : null}
       <E1rmSheet
         visible={infoOpen}
         onClose={() => {

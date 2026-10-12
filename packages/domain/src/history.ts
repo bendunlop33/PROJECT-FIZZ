@@ -2,6 +2,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 import type { HistorySession, HistorySet } from './progression';
 import { equipmentOfRow } from './session/equipment-snapshot';
 import { setDisplayNumbers } from './session/order';
+import { isInHistory } from './session/deletion';
 
 /**
  * Progression history for one exercise from a stored session (third-review
@@ -26,7 +27,7 @@ import { setDisplayNumbers } from './session/order';
  */
 export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string, opts: { identity?: boolean } = {}): HistorySession[] {
   const { session } = aggregate;
-  if (session.status !== 'finished') return [];
+  if (!isInHistory(session)) return [];
   const exercises = aggregate.exercises
     .filter((e) => e.exerciseId === exerciseId)
     .sort((a, b) => a.order - b.order);

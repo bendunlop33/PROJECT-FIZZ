@@ -3,7 +3,7 @@
   "key": "barbell-bench-press",
   "tier": "rich",
   "name": "Bench press",
-  "aliases": ["Barbell bench press", "Flat bench press", "Flat bench", "BB bench", "BB bench press"],
+  "aliases": ["Barbell bench press", "Flat bench press", "Flat bench", "BB bench", "BB bench press", "Flat barbell bench press"],
   "family": "bench_press",
   "movementPattern": "horizontal_push",
   "mechanic": "compound",
