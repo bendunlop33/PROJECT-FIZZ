@@ -80,6 +80,16 @@ export interface ExerciseDetailRequest {
   sessionExerciseId?: string | null;
   metric?: ExerciseMetric | null;
   range?: TrendRange | null;
+  /**
+   * The series and range an opening chose (`sessionId`, `equipmentId`), kept
+   * by the screen on later fetches until Ben picks his own. Used when no
+   * explicit `seriesId` / `range` is given, and never remembered (review
+   * progress-B r2 S2).
+   */
+  openedSeriesId?: string | null;
+  openedRange?: TrendRange | null;
+  /** The workout selected on screen, so a refetch keeps it selected (its week's point under weekly bests). */
+  selectSessionId?: string | null;
   repBy?: 'weight' | 'reps';
   historyMonths?: number;
 }
@@ -221,7 +231,9 @@ export function createProgressService(deps: ProgressServiceDeps) {
      * chart, panel, table, rep table, records and history for one series,
      * metric and range. Local only; no AI. Explicit choices in the request
      * are remembered for the exercise; opening on a workout (`sessionId`) or
-     * equipment picks that series without overwriting the remembered one.
+     * equipment picks that series (and, for an older workout, a wider range)
+     * without overwriting the remembered ones, and so do `openedSeriesId` /
+     * `openedRange` on the fetches after it.
      */
     async exerciseDetail(req: ExerciseDetailRequest): Promise<{ view: ExerciseDetailView | null; unreadable: number } | null> {
       const profile = await deps.profile();
@@ -248,13 +260,14 @@ export function createProgressService(deps: ProgressServiceDeps) {
         today,
         gymNames: ctx.gymNames,
         name: ctx.exercises.get(req.exerciseId)?.name ?? '',
-        seriesId: req.seriesId ?? (opening ? null : (next.seriesId ?? null)),
+        seriesId: req.seriesId ?? (opening ? null : (req.openedSeriesId ?? next.seriesId ?? null)),
         equipmentId: req.equipmentId ?? null,
         gymId: req.gymId ?? null,
         sessionId: req.sessionId ?? null,
         sessionExerciseId: req.sessionExerciseId ?? null,
+        selectSessionId: req.selectSessionId ?? null,
         metric: next.metric ?? null,
-        range: next.range ?? null,
+        range: req.range ?? req.openedRange ?? next.range ?? null,
         repBy: next.repBy ?? 'weight',
         historyMonths: req.historyMonths ?? 2,
         painFlag: pain === null ? null : { flagId: pain.flag.id, date: localDateOf(toMs(pain.flag.reportedAt.utc), pain.flag.reportedAt.tz) },

@@ -291,7 +291,9 @@ function Overview({
   const theme = useTheme();
   const { activity, muscles, records } = view;
   // `All records (n) ›` lists the rest in place (§2.2 region 5).
-  const [recordsAll, setRecordsAll] = useState(false);
+  // Expanded for one window only: a window change shows 3 again (review progress-B r2 N3).
+  const [recordsAllFor, setRecordsAllFor] = useState<ProgressHome['days'] | null>(null);
+  const recordsAll = recordsAllFor === home.days;
   const recordRows = recordsAll ? records.items : records.items.slice(0, records.initial);
   return (
     <View style={{ gap: theme.space['5'] }}>
@@ -415,7 +417,7 @@ function Overview({
             accessibilityLabel={records.more.words}
             accessibilityHint="Lists every record"
             onPress={() => {
-              setRecordsAll(true);
+              setRecordsAllFor(home.days);
             }}
             style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
           >

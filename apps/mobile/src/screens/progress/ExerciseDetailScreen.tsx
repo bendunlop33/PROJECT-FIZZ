@@ -37,6 +37,8 @@ export function ExerciseDetailScreen() {
     ...(route.params.equipmentId ? { equipmentId: route.params.equipmentId } : {}),
     ...(route.params.gymId ? { gymId: route.params.gymId } : {}),
   }));
+  // What the opening chose, sent on later fetches as non-remembered fields until Ben picks his own series or range (review progress-B r2 S2).
+  const [held, setHeld] = useState<{ seriesId: string; range: TrendRange | null } | null>(null);
   const [seriesId, setSeriesId] = useState<string | null>(null);
   const [metric, setMetric] = useState<ExerciseMetric | null>(null);
   const [range, setRange] = useState<TrendRange | null>(null);
@@ -53,7 +55,9 @@ export function ExerciseDetailScreen() {
     s.progress.exerciseDetail({
       exerciseId,
       ...(opening ?? {}),
+      ...(held ? { openedSeriesId: held.seriesId, ...(held.range ? { openedRange: held.range } : {}) } : {}),
       ...(seriesId ? { seriesId } : {}),
+      ...(selectedId ? { selectSessionId: selectedId } : {}),
       ...(metric ? { metric } : {}),
       ...(range ? { range } : {}),
       ...(repBy ? { repBy } : {}),
@@ -75,8 +79,7 @@ export function ExerciseDetailScreen() {
   useEffect(() => {
     // Once the series (and, for an older workout, the wider range) is chosen from the opening workout, keep it (and stop forcing it).
     if (view && opening !== null) {
-      setSeriesId(view.seriesId);
-      if (opening.sessionId) setRange(view.range);
+      setHeld({ seriesId: view.seriesId, range: opening.sessionId ? view.range : null });
       setOpening(null);
     }
   }, [view, opening]);
@@ -125,8 +128,10 @@ export function ExerciseDetailScreen() {
   }
   if (view === null) return <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} />;
 
-  const selIndex = selectedId === null ? -1 : view.points.findIndex((p) => p.sessionId === selectedId);
-  const sel = selIndex >= 0 ? (view.points[selIndex] ?? null) : null;
+  // The opened workout may sit inside a weekly-best point: the service says which point and what the panel shows.
+  const opened = view.selection !== null && selectedId === view.selection.point.sessionId ? view.selection : null;
+  const selIndex = opened !== null ? opened.index : selectedId === null ? -1 : view.points.findIndex((p) => p.sessionId === selectedId);
+  const sel = opened !== null ? opened.point : selIndex >= 0 ? (view.points[selIndex] ?? null) : null;
   const chartAction = view.chart.kind === 'too_few' || view.chart.kind === 'none_in_range' ? view.chart.action : null;
   const records = view.records;
   const recordRows = records === null ? [] : recordsAll ? records.items : records.items.slice(0, 5);
@@ -181,6 +186,7 @@ export function ExerciseDetailScreen() {
                     if (s.id === view.seriesId) return;
                     change(() => {
                       setSeriesId(s.id);
+                      setHeld(null);
                       setSelectedId(null);
                       setHistoryMonths(2);
                     });

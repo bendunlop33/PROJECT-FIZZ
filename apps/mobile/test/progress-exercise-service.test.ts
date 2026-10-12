@@ -93,6 +93,37 @@ describe('Exercises list and exercise detail through the services', () => {
   });
 });
 
+describe('Opening on an old workout is not remembered (review progress-B r2 S2)', () => {
+  it('the widened range and opened series hold across refetches, then the exercise opens from home on the remembered range', async () => {
+    const { s, gymId } = await setUp();
+    const old = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 5 }] }]);
+    h.clockMs += 400 * DAY;
+    for (let i = 0; i < 3; i += 1) {
+      await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 70 + i * 2.5, reps: 5 }] }]);
+      h.clockMs += 2 * DAY;
+    }
+    const exerciseId = (await s.progress.exercises())?.view.rows[0]?.exerciseId ?? '';
+
+    // Opened from that workout's Summary: widened to `All`, its point selected.
+    const opened = (await s.progress.exerciseDetail({ exerciseId, sessionId: old }))?.view;
+    if (!opened) throw new Error('view');
+    expect([opened.range, opened.selectedSessionId]).toEqual(['all', old]);
+
+    // The screen's refetch (back from `Open workout ›`): the opening's choices as non-remembered fields.
+    const refocus = (await s.progress.exerciseDetail({ exerciseId, openedSeriesId: opened.seriesId, openedRange: opened.range, selectSessionId: old }))?.view;
+    expect([refocus?.range, refocus?.seriesId, refocus?.selectedSessionId]).toEqual(['all', opened.seriesId, old]);
+
+    // Opened again from home or the Exercises list: the default range, not `All`.
+    expect((await s.progress.exerciseDetail({ exerciseId }))?.view?.range).toBe('6m');
+
+    // Ben's own range choice is still remembered, and an opening doesn't overwrite it.
+    await s.progress.exerciseDetail({ exerciseId, range: '3m' });
+    await s.progress.exerciseDetail({ exerciseId, sessionId: old });
+    await s.progress.exerciseDetail({ exerciseId, openedSeriesId: opened.seriesId, openedRange: 'all' });
+    expect((await s.progress.exerciseDetail({ exerciseId }))?.view?.range).toBe('3m');
+  });
+});
+
 describe('Ask from exercise detail (§2.1, §4.4)', () => {
   const entry = { kind: 'progress_exercise' as const, exerciseName: 'Bench press', seriesLabel: 'Main Gym · Barbell', from: '2026-04-09', to: '2026-10-08' };
 
