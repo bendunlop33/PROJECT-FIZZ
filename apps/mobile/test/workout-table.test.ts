@@ -7,7 +7,7 @@ import { NBSP, tableLogLabel, type TableRow } from '@fizz/domain';
 import type { SessionCommand } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { anchorReducer, anchorScrollY, bottomSpacerHeight, chipsFor, isTileFocused, rowTap, selectCommand, selectRowFlow, showsFolded, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type SelectOutcome } from '../src/workout/table';
+import { anchorReducer, anchorScrollY, anchorTargetY, bottomSpacerHeight, chipsFor, keypadScrollY, rowTap, TILE_CLEARANCE, selectCommand, selectRowFlow, showsFolded, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type SelectOutcome, type TileId } from '../src/workout/table';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
@@ -34,36 +34,150 @@ describe('anchor position (§2A.4)', () => {
   });
 });
 
+/**
+ * Phone geometry for the keypad and rest anchors, from this branch's tokens
+ * (review r2 B1, S2). Window space: status bar, 52 pt top bar, then the
+ * list; at the bottom the 76 pt Log bar, the 64 pt rest bar above it while
+ * resting. The keypad (number pad + 44 pt Done bar) lifts both bars.
+ * Content space: the card's header at 600, two done rows (2 × 52) in the
+ * body, then the open row: 8 pt padding, a 44 pt top line, 8 pt gap, then
+ * stacked 108 pt tiles 8 pt apart.
+ */
+interface Phone {
+  name: string;
+  height: number;
+  status: number;
+  keypad: number;
+}
+const PHONES: Phone[] = [
+  { name: '375 × 667', height: 667, status: 20, keypad: 216 + 44 },
+  { name: '390 × 844', height: 844, status: 47, keypad: 291 + 44 },
+];
+const TOP_BAR = 52;
+const LOG_BAR = 76;
+const REST_BAR = 64;
+const HEADER = 124;
+const CARD_TOP = 600;
+const TILE = 108;
+const OPEN_TOP = CARD_TOP + HEADER + 2 * 52;
+const tileTop = (i: number) => OPEN_TOP + 8 + 44 + 8 + i * (TILE + 8);
+/** The tiles in order for each field the test focuses: LOAD + REPS, or LOAD + TIME. */
+const LAYOUTS: { focused: TileId; index: number; count: number }[] = [
+  { focused: 'load', index: 0, count: 2 },
+  { focused: 'reps', index: 1, count: 2 },
+  { focused: 'time', index: 1, count: 2 },
+  { focused: 'time', index: 0, count: 1 },
+];
+const listTop = (p: Phone) => p.status + TOP_BAR;
+const viewport = (p: Phone, resting: boolean) => p.height - listTop(p) - LOG_BAR - (resting ? REST_BAR : 0);
+
+describe('keypad anchor: the focused tile clears the keypad (WT39, review r2 B1)', () => {
+  for (const phone of PHONES) {
+    for (const resting of [false, true]) {
+      for (const l of LAYOUTS) {
+        it(`${phone.name}${resting ? ', resting' : ''}: ${l.focused.toUpperCase()} (tile ${String(l.index + 1)} of ${String(l.count)})`, () => {
+          const top = tileTop(l.index);
+          const bottom = top + TILE;
+          const y = keypadScrollY({ cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: viewport(phone, resting), openTop: OPEN_TOP, keyboardHeight: phone.keypad, tileBottom: bottom });
+          // Window positions once scrolled. The bars sit on the keypad; the tile's bottom clears them.
+          const keypadTop = phone.height - phone.keypad;
+          const barsTop = keypadTop - LOG_BAR - (resting ? REST_BAR : 0);
+          const tileBottomOnScreen = listTop(phone) + (bottom - y);
+          expect(tileBottomOnScreen).toBeLessThanOrEqual(barsTop - TILE_CLEARANCE);
+          expect(barsTop + LOG_BAR + (resting ? REST_BAR : 0)).toBe(keypadTop);
+          // The tile is below the pinned header whenever the space allows it.
+          const room = barsTop - listTop(phone) - HEADER;
+          if (room >= TILE + TILE_CLEARANCE) expect(listTop(phone) + (top - y)).toBeGreaterThanOrEqual(listTop(phone) + HEADER);
+          // Never further than needed: the open row's top stays under the header when that's enough.
+          expect(y).toBeGreaterThanOrEqual(OPEN_TOP - HEADER);
+        });
+      }
+    }
+  }
+
+  it('the old anchor (open row under the header) hid REPS behind the keypad at both sizes', () => {
+    for (const phone of PHONES) {
+      const openY = anchorScrollY({ cardTop: CARD_TOP, headerHeight: HEADER, anchorTop: OPEN_TOP });
+      const visibleBottom = openY + viewport(phone, false) - phone.keypad;
+      expect(tileTop(1) + TILE, phone.name).toBeGreaterThan(visibleBottom);
+    }
+  });
+
+  it('a short tile already in view keeps the open row under its header; no keypad height is no shift', () => {
+    const big = keypadScrollY({ cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: 2000, openTop: OPEN_TOP, keyboardHeight: 335, tileBottom: tileTop(1) + TILE });
+    expect(big).toBe(OPEN_TOP - HEADER);
+    expect(keypadScrollY({ cardTop: 0, headerHeight: HEADER, viewportHeight: 600, openTop: HEADER, keyboardHeight: 0, tileBottom: 300 })).toBe(0);
+  });
+});
+
+describe('rest anchor: the after-set block gives way to the open row’s tiles (review r2 S2)', () => {
+  const phone = PHONES[1] ?? PHONES[0];
+  if (!phone) throw new Error('phone');
+  const AFTER_TOP = OPEN_TOP;
+  const geometry = (afterHeight: number) => {
+    const open = AFTER_TOP + afterHeight;
+    const tilesBottom = open + 8 + 44 + 8 + 2 * TILE + 8;
+    return { cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: viewport(phone, true), openTop: open, afterTop: AFTER_TOP, tilesBottom };
+  };
+
+  it('effort chips alone: the block sits under the header and REPS is still above the rest bar', () => {
+    const g = geometry(100);
+    const y = anchorTargetY(g);
+    expect(y).toBe(AFTER_TOP - HEADER);
+    expect(g.tilesBottom).toBeLessThanOrEqual(y + g.viewportHeight - TILE_CLEARANCE);
+  });
+
+  it('chips plus an offer: the list goes just far enough for REPS to clear the rest bar; the block stays partly above', () => {
+    const g = geometry(250);
+    const y = anchorTargetY(g);
+    expect(y).toBeGreaterThan(AFTER_TOP - HEADER);
+    expect(g.tilesBottom + TILE_CLEARANCE).toBe(y + g.viewportHeight);
+    expect(y).toBeLessThanOrEqual(g.openTop - HEADER);
+  });
+
+  it('when even the open row can’t fit, its top goes under the header (never past it)', () => {
+    const g = { ...geometry(250), viewportHeight: 300 };
+    expect(anchorTargetY(g)).toBe(g.openTop - HEADER);
+  });
+
+  it('no after-set block: the open row; tiles not measured yet: the block', () => {
+    expect(anchorTargetY({ ...geometry(250), afterTop: null })).toBe(AFTER_TOP + 250 - HEADER);
+    expect(anchorTargetY({ ...geometry(250), tilesBottom: null })).toBe(AFTER_TOP - HEADER);
+  });
+});
+
 describe('anchor requests: what may move the list (WT3, WT7)', () => {
   const step = (events: AnchorEvent[], reduceMotion = false): AnchorRequest | null => events.reduce<AnchorRequest | null>((cur, e) => anchorReducer(cur, e, { reduceMotion }), null);
 
   it('opening (Start, Resume, relaunch) and switching back from Focus jump without animation', () => {
     expect(step([])).toBeNull();
-    expect(step([{ kind: 'opened' }])).toEqual({ animated: false, target: 'anchor', focus: true });
-    expect(step([{ kind: 'view_switched' }])).toEqual({ animated: false, target: 'anchor', focus: true });
+    expect(step([{ kind: 'opened' }])).toEqual({ animated: false, target: { kind: 'anchor' }, focus: true });
+    expect(step([{ kind: 'view_switched' }])).toEqual({ animated: false, target: { kind: 'anchor' }, focus: true });
   });
 
   it('each Log auto-advances with motion; under Reduce Motion it jumps to the same place', () => {
     // VoiceOver focus moves to the new open row after a Log (S5).
-    expect(step([{ kind: 'logged' }])).toEqual({ animated: true, target: 'anchor', focus: true });
-    expect(step([{ kind: 'logged' }], true)).toEqual({ animated: false, target: 'anchor', focus: true });
-    expect(step([{ kind: 'now_chip' }], true)).toEqual({ animated: false, target: 'anchor', focus: false });
+    expect(step([{ kind: 'logged' }])).toEqual({ animated: true, target: { kind: 'anchor' }, focus: true });
+    expect(step([{ kind: 'logged' }], true)).toEqual({ animated: false, target: { kind: 'anchor' }, focus: true });
+    expect(step([{ kind: 'now_chip' }], true)).toEqual({ animated: false, target: { kind: 'anchor' }, focus: false });
   });
 
-  it('only the open row’s own tiles move the list when the keypad opens; a note or rename keyboard doesn’t', () => {
-    const load = { tile: 'load' };
-    const reps = { tile: 'reps' };
-    const note = { field: 'note' };
-    expect(isTileFocused(reps, [load, reps, null, null])).toBe(true);
-    expect(isTileFocused(note, [load, reps, null, null])).toBe(false);
-    expect(isTileFocused(null, [load, reps, null, null])).toBe(false);
-    expect(isTileFocused(null, [null, null])).toBe(false);
+  it('the keypad anchors the tile Ben focused, named by the tile itself (WT39, review r2 B1)', () => {
+    expect(step([{ kind: 'keypad_opened', tile: 'reps' }])).toEqual({ animated: true, target: { kind: 'tile', tile: 'reps' }, focus: false });
+    expect(step([{ kind: 'keypad_opened', tile: 'load' }], true)).toEqual({ animated: false, target: { kind: 'tile', tile: 'load' }, focus: false });
+    // Moving to another tile retargets; a Log after it lands on the after-set block again.
+    expect(step([{ kind: 'keypad_opened', tile: 'load' }, { kind: 'keypad_opened', tile: 'time' }])).toMatchObject({ target: { kind: 'tile', tile: 'time' } });
+    expect(step([{ kind: 'keypad_opened', tile: 'reps' }, { kind: 'applied' }, { kind: 'logged' }])).toMatchObject({ target: { kind: 'anchor' } });
   });
 
-  it('the keypad anchors the open row itself, not the after-set block above it (WT39, review S3)', () => {
-    expect(step([{ kind: 'keypad_opened' }])).toEqual({ animated: true, target: 'open_row', focus: false });
-    // A Log after it lands on the after-set block again.
-    expect(step([{ kind: 'keypad_opened' }, { kind: 'applied' }, { kind: 'logged' }])).toMatchObject({ target: 'anchor' });
+  it('only a tile sends keypad_opened: the screen no longer guesses from the focused input (review r2 B1)', () => {
+    const src = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutScreen.tsx'), 'utf8');
+    expect(src).not.toContain('currentlyFocusedInput');
+    expect(src.match(/anchorEvent\(\{ kind: 'keypad_opened'/g)).toHaveLength(1);
+    expect(src).toMatch(/onTileFocus=\{\(tile\) => \{\s*if \(modeRef\.current === 'table'\) anchorEvent\(\{ kind: 'keypad_opened', tile \}\)/);
+    const row = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutTable.tsx'), 'utf8');
+    for (const tile of ['load', 'time', 'distance', 'reps']) expect(row).toContain(`onFocus={tileFocus('${tile}')}`);
+    expect(readFileSync(join(import.meta.dirname, '..', 'src', 'ui/workout.tsx'), 'utf8')).toMatch(/setFocused\(true\);\s*onFocus\?\.\(\);/);
   });
 
   it('timers, toasts, effort taps, offers and reloads never move the list; Ben scrolling cancels a pending move', () => {
@@ -75,7 +189,7 @@ describe('anchor requests: what may move the list (WT3, WT7)', () => {
 
   it('selecting a row on screen moves nothing; from off-screen (voice, a menu) it re-anchors', () => {
     expect(step([{ kind: 'selected', onScreen: true }])).toBeNull();
-    expect(step([{ kind: 'selected', onScreen: false }])).toEqual({ animated: true, target: 'anchor', focus: false });
+    expect(step([{ kind: 'selected', onScreen: false }])).toEqual({ animated: true, target: { kind: 'anchor' }, focus: false });
   });
 });
 
@@ -330,7 +444,7 @@ describe('the Table loop end to end, offline (WT1, WT6, WT10, WT13, WT42)', () =
     expect(t.anchor?.setId).toBe(openId);
     expect(t.doneCount).toBe(1);
     // The screen opens anchored on it, without animation.
-    expect(anchorReducer(null, { kind: 'opened' }, { reduceMotion: false })).toEqual({ animated: false, target: 'anchor', focus: true });
+    expect(anchorReducer(null, { kind: 'opened' }, { reduceMotion: false })).toEqual({ animated: false, target: { kind: 'anchor' }, focus: true });
     const v = s.workout.view(data, h.clockMs, null);
     expect(v.focus?.setId).toBe(openId);
     expect(v.focus?.draft).toMatchObject({ load: { value: 62.5 }, reps: 5 });

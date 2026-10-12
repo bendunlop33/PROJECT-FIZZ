@@ -31,6 +31,63 @@ export function anchorScrollY(g: AnchorGeometry): number {
   return Math.max(0, Math.max(g.cardTop, g.anchorTop - g.headerHeight));
 }
 
+/** The open row's number tiles (`OpenSetRow`); the keypad anchors the one that has focus (WT39). */
+export type TileId = 'load' | 'time' | 'distance' | 'reps';
+
+/** Clearance (pt) kept between a tile's bottom and whatever edge it must clear (the keypad, the rest or Log bar). */
+export const TILE_CLEARANCE = 8;
+
+/** Content-space positions for the open row's anchor, measured from the list's layout. */
+export interface OpenRowGeometry {
+  /** Top of the anchor card's pinned header (its natural place) and its height. */
+  cardTop: number;
+  headerHeight: number;
+  /**
+   * The list's viewport with the keypad closed: the space between the top
+   * bar and the rest / Log bars. The pinned header sits inside it.
+   */
+  viewportHeight: number;
+  /** Top of the open row. */
+  openTop: number;
+}
+
+/**
+ * Where the list goes on open, a Log, `Now` or an off-screen select
+ * (§2A.4): the after-set block directly under the pinned header, so the
+ * effort chips and any offer read first. When the block and the open row's
+ * tiles can't both fit (stacked tiles, an offer), the tiles win: the list
+ * scrolls just far enough for the last tile to clear the bottom bars, up to
+ * putting the open row itself under the header, and the block stays as much
+ * as fits above it (review r2 S2). With no after-set block, the open row.
+ */
+export function anchorTargetY(g: OpenRowGeometry & { afterTop: number | null; tilesBottom: number | null }): number {
+  const openY = anchorScrollY({ cardTop: g.cardTop, headerHeight: g.headerHeight, anchorTop: g.openTop });
+  if (g.afterTop === null) return openY;
+  const afterY = anchorScrollY({ cardTop: g.cardTop, headerHeight: g.headerHeight, anchorTop: g.afterTop });
+  if (g.tilesBottom === null) return afterY;
+  const needed = g.tilesBottom + TILE_CLEARANCE - g.viewportHeight;
+  if (needed <= afterY) return afterY;
+  return Math.max(afterY, Math.min(openY, needed));
+}
+
+/**
+ * Where the list goes when one of the open row's tiles takes the keypad
+ * (WT39, review r2 B1). The keypad (`keyboardWillShow`'s
+ * `endCoordinates.height`, its Done bar included) lifts the rest and Log
+ * bars with it, so the list's visible part shrinks by that much. The open
+ * row goes under the pinned header when the focused tile then still clears
+ * the bars above the keypad; otherwise the list scrolls further, until the
+ * focused tile's bottom does. Its numeral and − / + are at that bottom edge,
+ * so they're what stays in view when even the tile can't fit under the
+ * header (a 375 × 667 phone during rest).
+ */
+export function keypadScrollY(g: OpenRowGeometry & { keyboardHeight: number; tileBottom: number }): number {
+  const openY = anchorScrollY({ cardTop: g.cardTop, headerHeight: g.headerHeight, anchorTop: g.openTop });
+  const visible = g.viewportHeight - Math.max(0, g.keyboardHeight);
+  const needed = g.tileBottom + TILE_CLEARANCE - visible;
+  return Math.max(0, openY, Math.ceil(needed));
+}
+
 /**
  * The bottom spacer (§2A.4): the list viewport minus the content below the
  * anchor's scroll position, floor 0, so the anchor can reach the top on the
@@ -51,7 +108,8 @@ export type AnchorEvent =
   | { kind: 'logged' }
   | { kind: 'now_chip' }
   | { kind: 'selected'; onScreen: boolean }
-  | { kind: 'keypad_opened' }
+  /** Sent by the tile's own `onFocus`: a note, rename or coach keyboard never moves the list (review r2 B1). */
+  | { kind: 'keypad_opened'; tile: TileId }
   | { kind: 'user_scrolled' }
   | { kind: 'applied' }
   // Never move the list (WT7):
@@ -65,31 +123,34 @@ export interface AnchorRequest {
   /** False: a jump (on open, restore, or Reduce Motion). */
   animated: boolean;
   /**
-   * Where it lands under the pinned header: the after-set block when there
-   * is one, else the open row (`anchor`); or the open row itself, so its
-   * tiles sit above the keypad (`open_row`, WT39).
+   * `anchor`: the after-set block under the pinned header when it fits with
+   * the open row's tiles, else the tiles (`anchorTargetY`). `tile`: the
+   * focused tile clears the keypad (`keypadScrollY`, WT39); applied once the
+   * keypad's height is known.
    */
-  target: 'anchor' | 'open_row';
+  target: { kind: 'anchor' } | { kind: 'tile'; tile: TileId };
   /** Move VoiceOver focus to the anchor once it's applied (§2A.7): on open, a view switch and after a Log. */
   focus: boolean;
 }
+
+const ANCHOR = { kind: 'anchor' } as const;
 
 export function anchorReducer(cur: AnchorRequest | null, e: AnchorEvent, o: { reduceMotion: boolean }): AnchorRequest | null {
   switch (e.kind) {
     case 'opened':
     case 'view_switched':
       // Applied without animation on open, restore and a switch back from Focus.
-      return { animated: false, target: 'anchor', focus: true };
+      return { animated: false, target: ANCHOR, focus: true };
     case 'logged':
-      return { animated: !o.reduceMotion, target: 'anchor', focus: true };
+      return { animated: !o.reduceMotion, target: ANCHOR, focus: true };
     case 'now_chip':
-      return { animated: !o.reduceMotion, target: 'anchor', focus: false };
+      return { animated: !o.reduceMotion, target: ANCHOR, focus: false };
     case 'keypad_opened':
-      // The open row, not the after-set block above it: its tiles stay above the keypad (review S3).
-      return { animated: !o.reduceMotion, target: 'open_row', focus: false };
+      // The tile Ben is typing into, not the after-set block or the open row's top (review r2 B1).
+      return { animated: !o.reduceMotion, target: { kind: 'tile', tile: e.tile }, focus: false };
     case 'selected':
       // A row Ben tapped is on screen already: nothing moves under his thumb.
-      return e.onScreen ? cur : { animated: !o.reduceMotion, target: 'anchor', focus: false };
+      return e.onScreen ? cur : { animated: !o.reduceMotion, target: ANCHOR, focus: false };
     case 'user_scrolled':
     case 'applied':
       return null;
@@ -100,15 +161,6 @@ export function anchorReducer(cur: AnchorRequest | null, e: AnchorEvent, o: { re
     case 'toast':
       return cur;
   }
-}
-
-/**
- * The keypad moves the list only when one of the open row's own tiles has
- * focus (`TextInput.State.currentlyFocusedInput()`, null at runtime when
- * nothing has focus), never for a note, rename or coach keyboard (review S3).
- */
-export function isTileFocused(focused: unknown, tiles: readonly unknown[]): boolean {
-  return focused !== null && focused !== undefined && tiles.some((t) => t !== null && t !== undefined && t === focused);
 }
 
 // ---------------------------------------------------------------------------

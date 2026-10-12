@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
@@ -67,7 +67,7 @@ import { UNDO_TOAST } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
-import { anchorReducer, isTileFocused, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type ChipState } from '../../workout/table';
+import { anchorReducer, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type ChipState } from '../../workout/table';
 import { ChatButton, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
 
 /**
@@ -154,6 +154,8 @@ export function WorkoutScreen() {
   // `Why?` on the target line (active-workout §2.12): one panel at most, hidden while the keypad is open.
   const [why, setWhy] = useState<WhyPanel>(null);
   const [keypadOpen, setKeypadOpen] = useState(false);
+  /** The keypad's height with its Done bar (`endCoordinates.height`); 0 while it's closed. */
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   // `Time left` (§2.15.1): its own clock moves on events (any new data) and once a minute, never every second.
   const [timeLeftNow, setTimeLeftNow] = useState(clockNow);
   const [timeLeftOpen, setTimeLeftOpen] = useState(false);
@@ -237,22 +239,22 @@ export function WorkoutScreen() {
   }, [reload]);
 
   useEffect(() => {
-    const shown = Keyboard.addListener('keyboardWillShow', () => {
+    // The Table's keypad anchor is sent by the tile's own onFocus (`onTileFocus`), never guessed here: the
+    // focus event and this one have no guaranteed order (review r2 B1). This only says how tall the keypad is.
+    const shown = Keyboard.addListener('keyboardWillShow', (e) => {
       setKeypadOpen(true);
+      setKeyboardHeight(e.endCoordinates.height);
       whyEvent({ kind: 'keypad_opened' });
-      // Table: the open row stays visible above the keypad. Only for its own tiles: a note, rename or
-      // coach keyboard never moves the list behind it (review S3).
-      const tile = isTileFocused(TextInput.State.currentlyFocusedInput(), [loadRef.current, repsRef.current, timeRef.current, distanceRef.current]);
-      if (modeRef.current === 'table' && tile) anchorEvent({ kind: 'keypad_opened' });
     });
     const hidden = Keyboard.addListener('keyboardWillHide', () => {
       setKeypadOpen(false);
+      setKeyboardHeight(0);
     });
     return () => {
       shown.remove();
       hidden.remove();
     };
-  }, [whyEvent, anchorEvent]);
+  }, [whyEvent]);
 
   useEffect(() => {
     void getAlertPermission()
@@ -1897,6 +1899,9 @@ export function WorkoutScreen() {
         openOffProfileEquipment(focus.offProfileEquipment);
       }}
       onTimedLog={() => void log()}
+      onTileFocus={(tile) => {
+        if (modeRef.current === 'table') anchorEvent({ kind: 'keypad_opened', tile });
+      }}
     />
   ) : null;
   const tableFooter = tableMode ? (
@@ -1992,6 +1997,7 @@ export function WorkoutScreen() {
             adjustRow={focus ? <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} /> : null}
             footer={tableFooter}
             anchorRequest={anchorRequest}
+            keyboardHeight={keyboardHeight}
             onAnchorApplied={() => {
               anchorEvent({ kind: 'applied' });
             }}

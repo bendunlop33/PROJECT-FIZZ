@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
+import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
 import { formatDuration, NBSP, type FocusView, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
@@ -7,7 +7,7 @@ import type { SetSide } from '@fizz/schemas';
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, TextButton, TEXT_PRESSED_OPACITY, TimerNumeral, type SymbolName } from '../../ui';
-import { anchorScrollY, bottomSpacerHeight, chipsFor, rowTap, showsFolded, type AnchorRequest, type ChipState, type Expansions } from '../../workout/table';
+import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadScrollY, rowTap, showsFolded, type AnchorRequest, type ChipState, type Expansions, type TileId } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
 import { openRowWidth, stepperTexts, tileFit, type TileSpec } from '../../workout/tile-fit';
 import { GymPartDivider, SnapNote } from './GymSwitch';
@@ -33,6 +33,15 @@ interface Layout {
   h: number;
 }
 
+/** The open row's tiles, relative to the open row's own top, for the set they belong to. */
+interface TileBoxes {
+  setId: string;
+  boxes: ReadonlyMap<TileId, Layout>;
+}
+
+/** `OpenSetRow` reports where its tiles are, so the keypad and rest anchors know where they end (review r2 B1, S2). */
+const TileLayoutContext = createContext<((t: TileBoxes) => void) | null>(null);
+
 export interface WorkoutTableProps {
   table: WorkoutTableView;
   ax: boolean;
@@ -55,6 +64,8 @@ export interface WorkoutTableProps {
   footer: ReactNode;
   /** The pending scroll to the anchor, if any; `onAnchorApplied` clears it. */
   anchorRequest: AnchorRequest | null;
+  /** The keypad's height (`keyboardWillShow` `endCoordinates.height`, its Done bar included); 0 while it's closed. */
+  keyboardHeight: number;
   onAnchorApplied: () => void;
   onUserScroll: () => void;
   onChips: (c: ChipState) => void;
@@ -82,8 +93,11 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
   const folded = useRef(new Map<string, Layout>());
   const open = useRef<{ setId: string; layout: Layout } | null>(null);
   const after = useRef<{ key: string; layout: Layout } | null>(null);
+  const tiles = useRef<TileBoxes | null>(null);
   const spacerAt = useRef<number | null>(null);
   const viewport = useRef(0);
+  /** The viewport with the keypad closed (the keypad lifts the bottom bars and shrinks it by its height). */
+  const viewportClosed = useRef(0);
   const scrollY = useRef(0);
   const lastChips = useRef<ChipState>({ done: false, now: null });
 
@@ -140,13 +154,27 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
       const body = bodies.current.get(anchorKey);
       const o = open.current;
       if (!header || !body || o?.setId !== anchorSetId) return;
-      // The keypad anchors the open row itself (its tiles above the keypad); otherwise the after-set block leads.
-      const useAfter = req.target === 'anchor' && props.afterSetKey !== null;
-      const a = useAfter ? after.current : null;
-      if (useAfter && a?.key !== props.afterSetKey) return;
-      const y = anchorScrollY({ cardTop: header.y, headerHeight: header.h, anchorTop: body.y + (a !== null ? a.layout.y : o.layout.y) });
-      if (spacerAt.current !== null && viewport.current > 0) {
-        const needed = bottomSpacerHeight({ viewportHeight: viewport.current, contentEnd: spacerAt.current, anchorY: y });
+      const openTop = body.y + o.layout.y;
+      const t = tiles.current?.setId === anchorSetId ? tiles.current.boxes : null;
+      const closed = viewportClosed.current > 0 ? viewportClosed.current : viewport.current;
+      const geometry = { cardTop: header.y, headerHeight: header.h, viewportHeight: closed, openTop };
+      let y: number;
+      if (req.target.kind === 'tile') {
+        // The focused tile clears the keypad: wait for its height and the tile's layout (review r2 B1).
+        const box = t?.get(req.target.tile);
+        if (box === undefined || props.keyboardHeight <= 0) return;
+        y = keypadScrollY({ ...geometry, keyboardHeight: props.keyboardHeight, tileBottom: openTop + box.y + box.h });
+      } else {
+        // The after-set block leads, unless it and the open row's tiles can't both fit (review r2 S2).
+        const a = props.afterSetKey !== null ? after.current : null;
+        if (props.afterSetKey !== null && a?.key !== props.afterSetKey) return;
+        let tilesBottom: number | null = null;
+        if (t !== null) for (const b of t.values()) tilesBottom = Math.max(tilesBottom ?? 0, openTop + b.y + b.h);
+        y = anchorTargetY({ ...geometry, viewportHeight: Math.max(0, closed - props.keyboardHeight), afterTop: a !== null ? body.y + a.layout.y : null, tilesBottom });
+      }
+      if (spacerAt.current !== null && closed > 0) {
+        // The closed viewport: enough room whether or not the keypad has shrunk the list yet.
+        const needed = bottomSpacerHeight({ viewportHeight: closed, contentEnd: spacerAt.current, anchorY: y });
         if (needed !== spacer) {
           // The spacer grows or shrinks first, then the scroll (it would clamp otherwise).
           setSpacer(needed);
@@ -181,6 +209,13 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
   );
 
   const layoutOf = (e: LayoutChangeEvent): Layout => ({ y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height });
+
+  const latestApply = useRef(tryApply);
+  latestApply.current = tryApply;
+  const reportTiles = useCallback((t: TileBoxes) => {
+    tiles.current = t;
+    latestApply.current();
+  }, []);
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollY.current = e.nativeEvent.contentOffset.y;
@@ -230,9 +265,9 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
       >
         <View style={{ backgroundColor: theme.colors['bg.surface'], borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, paddingHorizontal: theme.space['3'], paddingTop: theme.space['2'] }}>
           {block.kind === 'exercise' ? (
-            <CardHeader card={block.card} current={current} ax={props.ax} adjust={current ? props.adjust : null} warmUp={current ? props.warmUp : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} />
+            <CardHeader card={block.card} current={current} ax={props.ax} adjust={current ? props.adjust : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} />
           ) : (
-            <SupersetHeader superset={block.superset} ax={props.ax} adjust={current ? props.adjust : null} warmUp={current ? props.warmUp : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} />
+            <SupersetHeader superset={block.superset} ax={props.ax} adjust={current ? props.adjust : null} onFold={block.folded !== null ? () => { toggleFold(block.key, false); } : null} onMenu={props.onMenu} />
           )}
         </View>
       </View>,
@@ -246,6 +281,9 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
         }}
         style={{ backgroundColor: theme.colors['bg.surface'], borderBottomLeftRadius: theme.radius.lg, borderBottomRightRadius: theme.radius.lg, paddingHorizontal: theme.space['3'], paddingBottom: theme.space['1'] }}
       >
+        {/* Scrolls with the body, never pinned: the pinned header is the group line and column labels only (review r2 S1). */}
+        {block.kind === 'superset' ? <SupersetMembers superset={block.superset} ax={props.ax} onMenu={props.onMenu} onName={props.onName} onNote={props.onNote} onPainBadge={props.onPainBadge} /> : null}
+        {current ? props.warmUp : null}
         {current ? props.adjustRow : null}
         {blockRows(block).flatMap((item) => {
           if (item.kind === 'round') {
@@ -341,22 +379,26 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
     />,
   );
 
+  // Outside the ScrollView: its children must stay direct for `stickyHeaderIndices`.
   return (
-    <ScrollView
-      ref={scroll}
-      stickyHeaderIndices={sticky}
-      onLayout={(e) => {
-        viewport.current = e.nativeEvent.layout.height;
-        tryApply();
-      }}
-      onScroll={onScroll}
-      scrollEventThrottle={32}
-      onScrollBeginDrag={props.onUserScroll}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['3'] }}
-    >
-      {children}
-    </ScrollView>
+    <TileLayoutContext.Provider value={reportTiles}>
+      <ScrollView
+        ref={scroll}
+        stickyHeaderIndices={sticky}
+        onLayout={(e) => {
+          viewport.current = e.nativeEvent.layout.height;
+          if (props.keyboardHeight <= 0) viewportClosed.current = e.nativeEvent.layout.height;
+          tryApply();
+        }}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
+        onScrollBeginDrag={props.onUserScroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['3'] }}
+      >
+        {children}
+      </ScrollView>
+    </TileLayoutContext.Provider>
   );
 });
 
@@ -417,7 +459,7 @@ function FoldButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function CardHeader({ card, current, ax, adjust, warmUp, onFold, onMenu, onName, onNote, onPainBadge }: { card: TableCard; current: boolean; ax: boolean; adjust: ReactNode; warmUp: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
+function CardHeader({ card, current, ax, adjust, onFold, onMenu, onName, onNote, onPainBadge }: { card: TableCard; current: boolean; ax: boolean; adjust: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
   const theme = useTheme();
   return (
     <View>
@@ -472,19 +514,19 @@ function CardHeader({ card, current, ax, adjust, warmUp, onFold, onMenu, onName,
           </AppText>
         </LinkLine>
       ) : null}
-      {warmUp}
       {!ax && card.columns !== null ? <ColumnLabels columns={card.columns} /> : <View style={{ height: theme.space['2'] }} />}
     </View>
   );
 }
 
 /**
- * The superset header (§2A.8): `Superset A` · `Round 2 of 3`, `Adjust` while
- * the group is current (acting on the open member), and `⋯` for the open
- * member (else the one whose set is next). Each member line opens that
- * member's exercise sheet, has its own `⋯`, pain badge and note (review B3).
+ * The superset header (§2A.8), the part that pins: `Superset A` ·
+ * `Round 2 of 3`, `Adjust` while the group is current (acting on the open
+ * member), `⋯` for the open member (else the one whose set is next), and the
+ * shared column labels. The member lines scroll with the body
+ * (`SupersetMembers`) so the pinned part stays short (review r2 S1).
  */
-function SupersetHeader({ superset, ax, adjust, warmUp, onFold, onMenu, onName, onNote, onPainBadge }: { superset: SupersetCard; ax: boolean; adjust: ReactNode; warmUp: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
+function SupersetHeader({ superset, ax, adjust, onFold, onMenu }: { superset: SupersetCard; ax: boolean; adjust: ReactNode; onFold: (() => void) | null } & Pick<WorkoutTableProps, 'onMenu'>) {
   const theme = useTheme();
   const target = superset.members.find((m) => m.sessionExerciseId === superset.menuTarget);
   return (
@@ -505,53 +547,62 @@ function SupersetHeader({ superset, ax, adjust, warmUp, onFold, onMenu, onName, 
           }}
         />
       </View>
-      <View style={{ borderLeftWidth: 2, borderLeftColor: theme.colors['border.control'], paddingLeft: theme.space['2'] }}>
-        {superset.members.map((m) => (
-          <View key={m.tag}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${m.tag}, ${m.name}, ${plainSpaces(m.unitCaption)}${m.painBadge ? ', pain flag' : ''}`}
-                accessibilityHint="Opens the exercise"
+      {!ax && superset.columns !== null ? <ColumnLabels columns={superset.columns} /> : <View style={{ height: theme.space['2'] }} />}
+    </View>
+  );
+}
+
+/**
+ * The superset's member lines (review B3), at the top of its body: each opens
+ * that member's exercise sheet and has its own `⋯`, pain badge and note.
+ */
+function SupersetMembers({ superset, ax, onMenu, onName, onNote, onPainBadge }: { superset: SupersetCard; ax: boolean } & Pick<WorkoutTableProps, 'onMenu' | 'onName' | 'onNote' | 'onPainBadge'>) {
+  const theme = useTheme();
+  return (
+    <View style={{ borderLeftWidth: 2, marginBottom: theme.space['2'], borderLeftColor: theme.colors['border.control'], paddingLeft: theme.space['2'] }}>
+      {superset.members.map((m) => (
+        <View key={m.tag}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${m.tag}, ${m.name}, ${plainSpaces(m.unitCaption)}${m.painBadge ? ', pain flag' : ''}`}
+              accessibilityHint="Opens the exercise"
+              onPress={() => {
+                onName({ sessionExerciseId: m.sessionExerciseId, exerciseId: m.exerciseId, name: m.name, isCurrent: m.isCurrent });
+              }}
+              style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: theme.target.workout.height, opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+            >
+              <AppText variant="callout" color={m.isCurrent ? 'text.primary' : 'text.secondary'} style={{ flexShrink: 1 }} numberOfLines={ax ? 3 : 2}>{`${m.tag} ${m.name} · ${plainSpaces(m.unitCaption)}`}</AppText>
+              <Icon name="chevron.right" size={12} color="text.tertiary" />
+            </Pressable>
+            {m.painBadge ? (
+              <PainBadge
                 onPress={() => {
-                  onName({ sessionExerciseId: m.sessionExerciseId, exerciseId: m.exerciseId, name: m.name, isCurrent: m.isCurrent });
-                }}
-                style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], minHeight: theme.target.workout.height, opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
-              >
-                <AppText variant="callout" color={m.isCurrent ? 'text.primary' : 'text.secondary'} style={{ flexShrink: 1 }} numberOfLines={ax ? 3 : 2}>{`${m.tag} ${m.name} · ${plainSpaces(m.unitCaption)}`}</AppText>
-                <Icon name="chevron.right" size={12} color="text.tertiary" />
-              </Pressable>
-              {m.painBadge ? (
-                <PainBadge
-                  onPress={() => {
-                    onPainBadge(m.exerciseId);
-                  }}
-                />
-              ) : null}
-              <MenuButton
-                label={`${m.tag} ${m.name} menu`}
-                onPress={() => {
-                  onMenu(m.sessionExerciseId);
+                  onPainBadge(m.exerciseId);
                 }}
               />
-            </View>
-            {m.note !== null ? (
-              <LinkLine
-                accessibilityLabel={`${m.tag} note: ${m.note}. Tap to edit.`}
-                onPress={() => {
-                  onNote(m.sessionExerciseId, m.name, m.note);
-                }}
-              >
-                <AppText variant="callout" color="text.secondary" numberOfLines={3}>
-                  {m.note}
-                </AppText>
-              </LinkLine>
             ) : null}
+            <MenuButton
+              label={`${m.tag} ${m.name} menu`}
+              onPress={() => {
+                onMenu(m.sessionExerciseId);
+              }}
+            />
           </View>
-        ))}
-      </View>
-      {warmUp}
-      {!ax && superset.columns !== null ? <ColumnLabels columns={superset.columns} /> : <View style={{ height: theme.space['2'] }} />}
+          {m.note !== null ? (
+            <LinkLine
+              accessibilityLabel={`${m.tag} note: ${m.note}. Tap to edit.`}
+              onPress={() => {
+                onNote(m.sessionExerciseId, m.name, m.note);
+              }}
+            >
+              <AppText variant="callout" color="text.secondary" numberOfLines={3}>
+                {m.note}
+              </AppText>
+            </LinkLine>
+          ) : null}
+        </View>
+      ))}
     </View>
   );
 }
@@ -747,6 +798,8 @@ export interface OpenSetRowProps {
   onPainFlag: () => void;
   onOffProfile: () => void;
   onTimedLog: () => void;
+  /** A tile's field took focus (the keypad is opening on it): the Table anchors that tile (WT39, review r2 B1). */
+  onTileFocus: (tile: TileId) => void;
 }
 
 /**
@@ -770,12 +823,33 @@ export function OpenSetRow(p: OpenSetRowProps) {
   if (f.reps) specs.push({ flex: 1, texts: stepperTexts(f.reps.value, f.reps.down, f.reps.up, 2), unit: null });
   const fit = tileFit({ rowWidth: measured ?? openRowWidth(window.width), tiles: specs, stepSize: step, fontScale: window.fontScale, ax: p.ax });
   const flexOf = (n: number): number | null => (fit.stacked ? null : n);
+  // Where each tile is, relative to the open row's own top (its wrapper in the list): row → tile container → tile.
+  const report = useContext(TileLayoutContext);
+  const rowY = useRef(0);
+  const containerY = useRef(0);
+  const tileLayouts = useRef(new Map<TileId, Layout>());
+  const send = () => {
+    if (report === null) return;
+    const boxes = new Map<TileId, Layout>();
+    for (const [id, l] of tileLayouts.current) if (shown.has(id)) boxes.set(id, { y: rowY.current + containerY.current + l.y, h: l.h });
+    report({ setId: f.setId, boxes });
+  };
+  const tileLayout = (id: TileId) => (e: LayoutChangeEvent) => {
+    tileLayouts.current.set(id, { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height });
+    send();
+  };
+  const tileFocus = (id: TileId) => () => {
+    p.onTileFocus(id);
+  };
+  const shown = new Set<TileId>([...(f.loadField ? ['load' as const] : []), ...(f.duration && !working ? ['time' as const] : []), ...(f.distance ? ['distance' as const] : []), ...(f.reps ? ['reps' as const] : [])]);
   const tiles: ReactNode[] = [];
   if (f.loadField) {
     tiles.push(
       <NumberStepper
         key="load"
         inputRef={p.loadRef}
+        onFocus={tileFocus('load')}
+        onLayout={tileLayout('load')}
         flex={flexOf(1.35)}
         stepSize={step}
         numeralSize={fit.numeralSize}
@@ -801,14 +875,37 @@ export function OpenSetRow(p: OpenSetRowProps) {
       </View>,
     );
   } else if (f.duration) {
-    tiles.push(<NumberStepper key="time" inputRef={p.timeRef} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />);
+    tiles.push(<NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />);
   }
-  if (f.distance) tiles.push(<NumberStepper key="dist" inputRef={p.distanceRef} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />);
-  if (f.reps) tiles.push(<NumberStepper key="reps" inputRef={p.repsRef} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="REPS" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />);
+  if (f.distance) tiles.push(<NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />);
+  if (f.reps) {
+    tiles.push(
+      <NumberStepper
+        key="reps"
+        inputRef={p.repsRef}
+        onFocus={tileFocus('reps')}
+        onLayout={tileLayout('reps')}
+        flex={flexOf(1)}
+        stepSize={step}
+        numeralSize={fit.numeralSize}
+        label="REPS"
+        unit={null}
+        value={f.reps.value}
+        decimals={false}
+        down={f.reps.down}
+        up={f.reps.up}
+        onChange={p.onReps}
+      />,
+    );
+  }
 
   const lastText = f.previous ? plainSpaces(f.previous.text) : null;
   return (
     <View
+      onLayout={(e) => {
+        rowY.current = e.nativeEvent.layout.y;
+        send();
+      }}
       style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, marginHorizontal: -theme.space['1'], marginVertical: theme.space['1'], paddingVertical: theme.space['2'], paddingLeft: theme.space['3'] + 3, paddingRight: theme.space['3'], gap: theme.space['2'] }}
     >
       <View style={{ position: 'absolute', left: 0, top: theme.space['3'], bottom: theme.space['3'], width: 3, borderRadius: 2, backgroundColor: theme.colors.accent }} />
@@ -841,6 +938,8 @@ export function OpenSetRow(p: OpenSetRowProps) {
         onLayout={(e) => {
           const w = e.nativeEvent.layout.width;
           if (measured === null || Math.abs(w - measured) >= 1) setMeasured(w);
+          containerY.current = e.nativeEvent.layout.y;
+          send();
         }}
         style={{ flexDirection: fit.stacked ? 'column' : 'row', gap: theme.space['2'] }}
       >

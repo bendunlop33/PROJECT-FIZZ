@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode, type Ref } from 'react';
-import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View } from 'react-native';
+import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { StepTarget } from '@fizz/domain';
@@ -124,6 +124,8 @@ export function NumberStepper({
   onSurface = false,
   stepSize,
   numeralSize,
+  onFocus,
+  onLayout,
 }: {
   label: string;
   unit: string | null;
@@ -148,6 +150,10 @@ export function NumberStepper({
    * scaling off so the measured fit holds. Default: `type.loadDisplay`.
    */
   numeralSize?: number;
+  /** The field took focus (the keypad is opening or moving to it): the Table anchors this tile (WT39). */
+  onFocus?: () => void;
+  /** The tile's frame in its parent, so the Table knows where the focused tile ends. */
+  onLayout?: (e: LayoutChangeEvent) => void;
 }) {
   const theme = useTheme();
   const [text, setText] = useState(value === null ? '' : String(value));
@@ -168,6 +174,7 @@ export function NumberStepper({
       }}
       onFocus={() => {
         setFocused(true);
+        onFocus?.();
       }}
       onBlur={() => {
         setFocused(false);
@@ -195,7 +202,7 @@ export function NumberStepper({
   if (theme.components.cardBorderWidth === 0) {
     // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
     return (
-      <View style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
+      <View onLayout={onLayout} style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
         <View
           style={{
             backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
@@ -232,7 +239,7 @@ export function NumberStepper({
     );
   }
   return (
-    <View style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
+    <View onLayout={onLayout} style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
       <AppText variant="label" color="text.secondary">
         {label}
       </AppText>
