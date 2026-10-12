@@ -91,7 +91,18 @@ describe('Progress on a 4-year, ~600-workout history', () => {
     expect(back?.sessions).toBeGreaterThanOrEqual(12);
     expect(back?.sets).toBe(4 * (back?.sessions ?? 0));
     // After the cold pass: opening Progress and every switch within the check-25 budget.
-    expect(first.totalMs).toBeLessThan(budget(SWITCH_BUDGET_MS));
-    expect(worstSwitch).toBeLessThan(budget(SWITCH_BUDGET_MS));
+    // A burst from parallel suites can stretch one pass; a real regression fails the repeat too (review progress-B r2 N1).
+    let timed = { first: first.totalMs, worst: worstSwitch };
+    if (timed.first >= budget(SWITCH_BUDGET_MS) || timed.worst >= budget(SWITCH_BUDGET_MS)) {
+      const again = await measureBlocking(() => svc.home({ days: 30 }));
+      let worst = 0;
+      for (const days of [7, 14, 60, 30] as const) {
+        for (const grouping of ['body_part', 'ppl'] as const) worst = Math.max(worst, (await measureBlocking(() => svc.home({ days, grouping }))).totalMs);
+      }
+      console.log(`[Progress] repeat after a slow pass: first open ${String(Math.round(again.totalMs))}ms, window switches worst ${String(Math.round(worst))}ms`);
+      timed = { first: again.totalMs, worst };
+    }
+    expect(timed.first).toBeLessThan(budget(SWITCH_BUDGET_MS));
+    expect(timed.worst).toBeLessThan(budget(SWITCH_BUDGET_MS));
   }, 600_000);
 });
