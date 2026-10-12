@@ -109,11 +109,31 @@ const proposal = (over: Record<string, unknown> = {}) => ({
 describe('the `build` request kind (code, never the model, rule 3)', () => {
   it('Ben’s build words, and the Build card’s own message, are `build` and never a change to today’s sets', () => {
     for (const t of ['build me a 45-minute push session for this gym', 'make a leg workout', 'Build a 60 min workout', 'Build a 45 min push workout', 'can you put together a quick upper body session?', 'I want a 30 minute full body workout']) {
-      const r = classifyBenRequest(t);
+      const r = classifyBenRequest(t, 'general');
       expect(requestHas(r, 'build')).toBe(true);
       expect(requestHas(r, 'change')).toBe(false);
     }
     for (const t of ['what workout should I do today?', 'plan my training for the week', 'build me a 6 week programme', 'that workout was hard', 'start it']) expect(requestHas(classifyBenRequest(t), 'build')).toBe(false);
+  });
+
+  it('review B1: mid-workout, asking to make the session easier stays a change to today’s sets (base classification)', () => {
+    const phrases = ['make the session easier', 'can you make the session lighter?', 'make the rest of the session lighter', 'make the workout easier', 'give me a lighter session'];
+    for (const t of phrases) {
+      const r = classifyBenRequest(t, 'workout');
+      expect(r, t).toEqual({ source: 'words', kinds: ['change'] });
+      const g = gateFor({ kind: 'workout', input: words(t), previousOffer: null, structuralSignals: [] });
+      expect(buildTurnRegistry(g).tools.map((x) => x.name), t).toContain('adjust_pending_sets');
+      // Not a new workout in a general turn either.
+      expect(requestHas(classifyBenRequest(t, 'general'), 'build'), t).toBe(false);
+    }
+  });
+
+  it('review B1: reading records, advice and rest days are not a build, and offer no `propose_workout`', () => {
+    for (const t of ['give me a summary of my last session', 'can you get my last session numbers?', 'I want a rest day', 'give me some tips for leg day', 'sort out my session from yesterday, I logged it wrong', 'get me a workout', 'make my session shorter', 'plan my session']) {
+      expect(requestHas(classifyBenRequest(t, 'general'), 'build'), t).toBe(false);
+      const g = gateFor({ kind: 'general', input: words(t), previousOffer: null, structuralSignals: [] });
+      expect(buildTurnRegistry(g).tools.map((x) => x.name), t).not.toContain('propose_workout');
+    }
   });
 
   it('with a coach draft in context, change words make a new version (BD16); without one they don’t', () => {

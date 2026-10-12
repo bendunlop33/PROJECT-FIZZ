@@ -776,7 +776,7 @@ export function createCoachService(deps: CoachServiceDeps) {
    * limits. Null when Ben didn't ask for a workout (or there's no gym at all).
    */
   async function buildTurn(p: UserProfile, text: string, origin: 'chip' | 'card' | 'text' | 'voice', draft: WorkoutDraft | null, chips: { minutes: number | null; focus: BuildFocus } | null): Promise<{ view: BuildContextView; executors: CoachExecutors } | null> {
-    const asked = requestHas(classifyBenRequest(text), 'build') || (draft !== null && revisesDraft(text));
+    const asked = requestHas(classifyBenRequest(text, 'general'), 'build') || (draft !== null && revisesDraft(text));
     if (!asked) return null;
     const place = await buildGym(p);
     if (place === null) return null;

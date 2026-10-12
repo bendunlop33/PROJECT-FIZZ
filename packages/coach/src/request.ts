@@ -1,3 +1,4 @@
+import type { CoachTurnKind } from '@fizz/schemas';
 import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 /**
@@ -577,14 +578,27 @@ const HOLD: readonly RegExp[] = [
  * kind opens `propose_workout`.
  */
 const BUILD_NOUN = '(?:workout|work-?out|session|routine|day|circuit|training session)';
-const BUILD_VERB = '(?:build|make|plan|create|design|write|put together|throw together|whip up|sort out|sort|come up with|give|get|set up|draft)';
-const BUILD_DIRECT = new RegExp(`^${BUILD_VERB}(?: me| us| out)?(?: (?:a|an|another|my|the|some|today'?s|tonight'?s|one|new|quick|short|fresh))+\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
-const BUILD_WANT = new RegExp(`^i (?:want|need|would like|'d like|fancy)(?: to do)? (?:a|an|another|some|one)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
+// Review B1: only verbs that ask for something new. "get" and "sort (out)" read Ben's own records
+// ("get my last session numbers", "sort out my session from yesterday"); they never build.
+const BUILD_VERB_STRONG = '(?:build|plan|create|design|write|put together|throw together|whip up|come up with|draft)';
+const BUILD_VERB_WEAK = '(?:make|give|set up)';
+// A new workout has an article or adjective; "the", "my" and "this" point at one that exists ("make the session easier").
+const NEW_DET = '(?:a|an|another|one|new|quick|short|fresh)';
+const BUILD_DIRECT = new RegExp(
+  `^(?:${BUILD_VERB_STRONG}(?: me| us| out)?(?: (?:${NEW_DET}|today'?s|tonight'?s))+|${BUILD_VERB_WEAK}(?: me| us)?(?: ${NEW_DET})+)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`,
+);
+const BUILD_WANT = new RegExp(`^i (?:want|need|would like|'d like|fancy)(?: to do)? (?:a|an|another|one)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
 const BUILD_LATER = /\b(?:programme|program|programs|programmes|mesocycle|block|weeks?|month|plan for the week|weekly plan|split)\b/;
+/**
+ * Not a new workout (review B1): a change to the one in hand ("a lighter session", "the rest of
+ * the session"), a read of Ben's records ("a summary of my last session") or advice ("some tips
+ * for leg day"), or a day without training ("a rest day").
+ */
+const BUILD_NOT = /\b(?:easier|lighter|harder|heavier|less intense|more intense|rest of|summary|recap|review|numbers|stats|tips|advice|ideas?|feedback|breakdown|rest day|off day|day off|recovery day)\b/;
 
 function buildIn(clause: string): boolean {
   const c = clause.replace(POLITE, '');
-  if (BUILD_LATER.test(c) || isOpinionQuestion(c)) return false;
+  if (BUILD_LATER.test(c) || BUILD_NOT.test(c) || isOpinionQuestion(c)) return false;
   const body = ASK_PREFIX.exec(c)?.[1] ?? c;
   return BUILD_DIRECT.test(body) || BUILD_WANT.test(c);
 }
@@ -609,8 +623,13 @@ export function revisesDraft(text: string): boolean {
   });
 }
 
-/** Classify Ben's own words (typed or spoken). Returns null when they don't ask for a change. */
-export function classifyBenRequest(text: string): BenRequest | null {
+/**
+ * Classify Ben's own words (typed or spoken). Returns null when they don't ask for a change.
+ * `turnKind`: a build clause drops its `change` reading only in a general turn, where
+ * `propose_workout` lives; in a workout turn "make the session easier" stays a change to
+ * today's sets (review B1, rule 3).
+ */
+export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenRequest | null {
   const whole = lower(text).trim();
   const all = normalise(text);
   const kinds: BenRequestKind[] = [];
@@ -643,8 +662,9 @@ export function classifyBenRequest(text: string): BenRequest | null {
   // A whole workout (workout builder): its own kind, never a change to today's sets.
   const building = open.filter((c) => buildIn(c.text)).map((c) => c.text);
   if (building.length > 0) kinds.push('build');
-  // A clause that is only a swap ("swap cable fly") or a build isn't also a load change.
-  if (askingClauses.some((c) => !structuralIn(c) && !building.includes(c))) kinds.push('change');
+  // A clause that is only a swap ("swap cable fly") isn't also a load change; nor is a build, in a general turn.
+  const buildOnly = turnKind === 'general' ? building : [];
+  if (askingClauses.some((c) => !structuralIn(c) && !buildOnly.includes(c))) kinds.push('change');
   // "Is 95 too light?" asks for a view; "too easy, what next?" reports how it went.
   if (!isOpinionQuestion(clauses[0] ?? '') && open.some(difficultyIn)) kinds.push('difficulty');
   if (open.some((c) => !c.question && HOLD.some((re) => re.test(c.text.replace(POLITE, ''))))) kinds.push('hold');

@@ -180,7 +180,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
   switch (g.input.kind) {
     case 'words':
       if (g.previousOffer === 'adjust_today' && isBareAccept(g.input.text)) acceptedOffer = true;
-      else benRequest = classifyBenRequest(g.input.text);
+      else benRequest = classifyBenRequest(g.input.text, g.kind);
       // BD16: with a draft in context, "make it shorter" / "no barbell" is a build request for that draft.
       if (g.draftInContext === true && revisesDraft(g.input.text) && !requestHas(benRequest, 'build')) {
         benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds : []), 'build'] };
