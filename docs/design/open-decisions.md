@@ -135,6 +135,14 @@ These can't be decided on paper. Each has a fallback that already works.
 | Live Activity timer at `0:00`; quiet notification visibility; 10,000-row import preview within 5 s | Small layout choices | Documented fallbacks in each spec | lock-screen-and-alerts; data-import-export |
 | `DEP-UPDATE-FEED` (only if wanted later) | A "new build available" notice | Only the "Updated to build N" notice after installing | system-states P-S3 (recommend: not now) |
 
+### D. Target RPE (from the target-rpe review, 11 Oct)
+
+Implementation choices and spec issues not stated in Ben's words (moved from the CHANGELOG, which lists approved changes only). Built as described until he answers; his answers go in `docs/brief/CHANGELOG.md`. Spec: [coach-adjustments.md](coach-adjustments.md) CA5, CA8, §4.8.
+
+- **SP3:** a planned RPE 10 set never triggers "too easy" either (approved rule T: planned all-out sets never trigger); "too easy" doesn't fire when reps were short.
+- **SP2:** a coach next-session target RPE that differs from the set's target (as the coach saw it) is a "bigger" change, a proposal, because CA8 keeps effort targets unchanged for small changes. Does a ±0.5–1 RPE change count as small instead?
+- **SP1:** the built-in target of RPE 9 for compound and isolation lifts (`builtInTargetRpe`) means RPE alone never fires "too hard" there (it needs 10.5), while "too easy" fires at RPE 7. `default-rule`'s RPE 9 is a progression ceiling, not a prescribed effort; playbook rule 3 says working sets default to RPE 7–9. Suggested: a built-in target of RPE 8 for compound and isolation lifts (harder at ≥ 9.5, easier at ≤ 6).
+
 ---
 
 ## Part 2: Technical detail
