@@ -871,7 +871,8 @@ Rules:
 | Detail | Guide unreadable | No poster; cues as normal. `Full how-to ›` shows the §8.4 notice |
 | Detail | Rich cues, no guide | No poster; muscles, cues, `Full how-to ›` |
 | Detail | Basic entry | Header, muscles (if known), `Alternatives ›`, Your data |
-| Detail | Can't be logged yet (catalogue entry with no exercise row, e.g. Sled push: distance) | Everything above, but `Add to a workout` is replaced by the line `Can't log distance yet.` and `Your data` is absent. This makes all 10 guides reachable (§8.2 "Reach") |
+| Detail | Can't be logged yet (catalogue entry with no exercise row) | Everything above, but `Add to a workout` is replaced by the line `Can't log this yet.` and `Your data` is absent. This makes all 10 guides reachable (§8.2 "Reach") |
+| Add sheet | Distance exercise, e.g. Sled push (revised 2026-10-12, review library-browse S1 and spec issue 1) | Distance sets log since 2026-10-11, so `NOW` is offered. A saved workout's set template has no distance target yet, so every `YOUR WORKOUTS` row and `New workout` are disabled with `Can't save distance yet` (a distance exercise is never saved as reps) |
 | Detail | Pain flag | `⚠ May hurt · flagged 6 Oct ›` (opens the pain flag view, active-workout §2.14.4) |
 | Detail | No history | `No history yet.` |
 | Detail | History only at another gym | Caption names that gym (`Hotel Gym · Smith machine`) |
@@ -934,7 +935,7 @@ Progress exercise detail ─Exercise info ›─► Detail (in the Progress stac
 | Tab, segments | `Library` · `Exercises` · `Workouts` |
 | Library | `Search exercises` · `RECENT` · `ALL EXERCISES · 142` · `MATCHES` · `HIDDEN` · `Matches "RDL"` · `Last 100 kg × 8 · 6 Oct` · `at Hotel Gym` · `New exercise` · `Show hidden exercises` · `Unhide` · `No match for "…".` · `Create "…" as a new exercise` · `Clear filters` |
 | Detail header | `Hinge · Barbell` · `Also called RDL` · `Add to a workout` · `Custom` · `Hidden` |
-| Detail, knowledge | `Coaching knowledge` · `Draft guide` · `Play` · `Feel it most:` · `Also works:` · `Muscles:` · `HOW TO DO IT` · `WHAT NOT TO DO` · `Full how-to` · `Alternatives at Main Gym` · `Can't log distance yet.` |
+| Detail, knowledge | `Coaching knowledge` · `Draft guide` · `Play` · `Feel it most:` · `Also works:` · `Muscles:` · `HOW TO DO IT` · `WHAT NOT TO DO` · `Full how-to` · `Alternatives at Main Gym` · `Can't log this yet.` (no exercise row; not built) · Add sheet: `Can't save distance yet` |
 | Detail, your data | `Your data` · `May hurt · flagged 6 Oct` · `Main Gym · barbell` · `Last` · `Best set` · `Est. 1RM` `≈146 kg` · `14 workouts since 2 Jul` · `Progress and records` · `Used in` · `Notes` · `No history yet.` |
 | `⋯` | `Other names` · `Default rest` · `Notes` · `Edit` · `Hide from lists` · `Delete` · `Unhide` |
 | Elsewhere | `Exercise info` (Progress row, editor `⋯`) |
@@ -973,12 +974,24 @@ New (pure in `packages/domain` unless noted; unit-tested):
 - **EL-B10. Add to the workout in progress.** With Push A resting, adding Face pull from the Library appends it with 3 pending working sets and history targets; the rest timer and alerts are unaffected; Undo removes it; no done set changes.
 - **EL-B11. Running workout's template.** Adding to Legs A while Legs A runs shows `In progress · applies next time`; the running workout doesn't change.
 - **EL-B12. Pain.** A flagged exercise shows `⚠ May hurt` on its row and detail; `Add to …` asks `… may hurt` first; `Choose another` writes nothing.
-- **EL-B13. Not loggable.** Sled push opens from the Library with its guide; it shows `Can't log distance yet.` and no Add button.
+- **EL-B13. Distance (revised 2026-10-12).** Sled push opens from the Library with its guide. `Add to a workout` offers the workout in progress; saved workouts and `New workout` are disabled with `Can't save distance yet`, and the service refuses a saved-workout add, so nothing is saved as reps.
 - **EL-B14. Resume.** With a workout unfinished, the `ResumeBar` shows on Library and detail with live rest time; `Resume` is the only filled button; one tap returns to the workout.
 - **EL-B15. Offline.** Airplane mode, no AI: search, filters, detail, How to, Add and Undo all work; no provider call.
 - **EL-B16. Visual and access.** Rows ≥ 52pt, buttons and steppers ≥ 44pt; tabular numbers; `▷`, `⚠`, `Custom` carry icon or word; AX3 at 375pt with no sideways scroll and `Add to a workout` on the first screen; light and dark; no animation outside How to.
 
 ---
+
+### 9.12 Specified, not built (2026-10-12, review library-browse S2)
+
+Built in the first Library slice: Browse (search with aliases and typos, filters, `At <gym>`, `RECENT`), Exercise detail (poster, muscles, cues, `Full how-to`, Your data from Progress's series, `Used in`), `Add to a workout` with the sets control, and the header `＋` → `New workout` on the Workouts segment. These parts of §9.3–§9.8 are deferred, so their acceptance checks don't apply yet:
+
+| Part | Why deferred | Checks affected |
+|---|---|---|
+| `＋ New exercise` (header on Exercises, end-of-list link) and `Create "<query>" as a new exercise` | No custom-exercise create flow or service exists yet; it is its own slice (catalogue + persistence) | EL-B3 (the `Create …` row; `No match…` is built), EL-B2 (custom rows only once created) |
+| `⋯` on Library (`Show hidden exercises`, `HIDDEN`, `Unhide`) | Needs hide/unhide writes | EL-B2 (hidden part) |
+| `Alternatives at Main Gym ›` on detail | Needs a read-only swap list screen over `rankSubstitutions`; the view model already computes `alternativesLabel` | — |
+| Detail `⋯` (Other names, Default rest, Notes, custom Edit, Hide / Delete), the `Notes` row, and long-press on browse rows | Each needs its own write path and undo | — |
+| `New with coach` in the Library header `＋` | The builder's entry needs the `Needs the coach` state that Today owns; Today and the session picker keep `Build with coach` | routines.md §A2.1 `＋` row |
 
 ## 10. Sets when adding an exercise (every entry point, 2026-10-12)
 
@@ -1021,7 +1034,7 @@ The add sheet (Pick several, or the build's single-pick sheet) gets the same `Se
 
 | Where a workout is created or an exercise is added | Sets control | Reps / RPE |
 |---|---|---|
-| Workouts `＋` → `New workout` (editor) | Card `SetShapeControl`; add-sheet bar | Card rows |
+| Library › Workouts `＋` → `New workout` (editor) | Card `SetShapeControl`; add-sheet bar | Card rows |
 | `⋯` → `Edit workout`, `Duplicate` (editor) | Card `SetShapeControl` | Card rows |
 | Editor `⋯` → `Replace` | Keeps the slot's sets, reps and RPE | — |
 | Overview `Edit` → `Add exercise` | Pick one bar, then the row's `SetCountStepper` | Row reps button (RPE is set in the workout) |
@@ -1031,6 +1044,7 @@ The add sheet (Pick several, or the build's single-pick sheet) gets the same `Se
 | Library detail → `Add to a workout` | Sheet `SetShapeControl` (§9.5) | Sheet rows |
 | `Save to Workouts` (Summary, past workout, overview `⋯`, `FROM HISTORY`, Repeat) | Save sheet row `5 exercises · 15 sets  Edit ›` opens the editor on the unsaved copy (routines.md §A2.5) | Editor |
 | Coach draft (workout builder) | `Save to Workouts` → same `Edit ›`; or ask the coach. The draft card itself has no steppers (it's the coach's proposal) | Editor |
+| Coach `add_exercise_today` (Ben asks the coach to add one) | The coach chooses the sets (CLAUDE.md rule 3), bounded by the domain; Ben changes the count afterwards as for any exercise in the workout. Not a Ben stepper path (checked 2026-10-12 after the merge) | Coach, then in the workout |
 
 ### 10.5 `SetShapeControl` (design-system §9.88)
 
