@@ -52,3 +52,11 @@ Calmer rest screen, richer Today with routines (Save as routine on Summary, Up n
 - **Data & backup:** Export `My data` / `Coaching knowledge only`; `Delete my data (keep coaching knowledge)` (backs up first, signs out of ChatGPT); `Reset coaching knowledge`.
 - **14 bug fixes** from a full bug hunt: units locked once the gym is saved in setup; check-in changes after Back are kept; Save as routine after a gym switch; a slow reload can't overwrite a just-logged set; Left/Right side kept; coach offers once (not every hard set), Offline clears after 60 s, rename keeps next-time targets, Try again / Undo / Undo all fixed; no backup freeze on a long history; "Backed up" accurate after Undo import or restore.
 - Copy pass: screens show values and actions; explanations behind Why? / ⓘ.
+
+## Update (12 Oct): picker, delete, Progress, coach fix, target RPE
+- **Choose your session:** "Change" next to Up next on Today, or tap the session name on the overview. Routines and sessions from your history (FitNotes categories: Back, Chest, Legs, Shoulders), recommended one first with a reason.
+- **Delete workouts:** swipe in Past workouts, Select for several, or Delete on a workout's Summary; Undo; Recently deleted keeps them 30 days.
+- **Progress:** sessions over 7/14/30/60 days, time in gym, muscle groups (body part or Push/Pull/Legs), records; tap a lift for estimated 1RM chart, best reps at each weight, PRs.
+- **Coach-miss fix:** a set below the rep range (or effort well above target) now brings an offer on the rest screen even without the coach (tagged Rule); Adjust changes today's remaining sets, with Undo.
+- **Target RPE** on every set ("@ RPE 8"); override it in Edit set or the exercise ⋯. RPE 10 on an RPE 10 target never triggers an offer.
+- **FitNotes import:** 34 of your 45 exercise names match automatically; new library exercises (barbell shrug, barbell calf raise, seal row, lat prayer).
