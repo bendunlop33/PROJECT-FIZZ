@@ -475,6 +475,7 @@ Applies to every working set of that exercise today. Timed exercises show `Work 
 - *As built after review B r1 B3 and S2; pending PM/Ben approval.*
 - `Apply` is disabled with no line checked.
 - Not listed: loads typed for today, and anything the time fit did.
+- **Coach structural proposals (merge with coach tools, 12 Oct 2026).** A swap, removal or reorder Ben applies from a coach card (ADR 0020 §3) is written into the next workout's draft as his own `Swap today` / `Skip today` / order edits, so it shows on the overview with the page's own Undo, and on a saved workout it reaches the workout itself only through this card's lines and `Apply`. There is no second planning or template path for the coach. (`apps/mobile/test/coach-structural-library.test.ts`.)
 
 ### 11.6 States
 
