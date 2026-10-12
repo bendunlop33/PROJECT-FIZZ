@@ -300,9 +300,10 @@ export function withCoachTargets(
     const template = working[0]?.planned ?? lastWorking[0]?.planned ?? null;
     const setType: SetType = working[0]?.setType ?? lastWorking[0]?.setType ?? 'working';
     // `Why?` (§2.12): set by the coach after that workout, its reason in quotes, the rule's `Last time` kept.
+    // `setAt` is when the target became active (saved, or Applied later by Ben), the same time the WL7 comparison uses (review N14).
     const provenance: TargetProvenance = {
       source: 'coach',
-      setAt: { utc: row.createdAtUtc, tz: source.session.startedAt.tz },
+      setAt: { utc: row.updatedAtUtc, tz: source.session.startedAt.tz },
       routineName: source.session.routineName,
       requestedLoad: row.target.load,
       basis: working[0]?.planned.provenance?.basis ?? null,

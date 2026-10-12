@@ -217,6 +217,8 @@ describe('Start of a library workout edited after a coach target (B1, WL-A4, WL7
     const applied = { ...coachRow(source, 3), status: 'applied' as const, version: 2, updatedAtUtc: at(6000).utc };
     const targets = withCoachTargets(builtIn, [applied], source, { flaggedExerciseIds: new Set(), painToday: false });
     expect(targets.get(INCLINE)?.find((e) => e.coach !== undefined)?.coach?.setAtUtc).toBe(at(6000).utc);
+    // `Why?` shows the same time the comparison uses, not when the coach first raised it (review N14).
+    expect(targets.get(INCLINE)?.find((e) => e.coach !== undefined)?.planned.provenance?.setAt.utc).toBe(at(6000).utc);
     const out = planRoutineStart({
       opId: 'b1-applied',
       owner: profile(),
