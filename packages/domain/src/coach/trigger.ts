@@ -15,13 +15,24 @@ export function isTriggerKind(value: string): value is CoachTriggerKind {
   return value === 'rpe_high' || value === 'reps_short' || value === 'rpe_low';
 }
 
-/** Stored as data and editable (profile-and-settings §2.7). Defaults are rule T. */
+/** Editable thresholds (profile-and-settings §2.7). Defaults: rule T as amended 11 Oct 2026. */
 export interface CoachTriggerThresholds {
   enabled: boolean;
-  /** "Too hard" when logged effort is at least this RPE (RIR equivalent: 10 − value). */
+  /**
+   * Deviation from the set's target RPE (CHANGELOG 2026-10-11, Ben):
+   * "harder than planned" when logged effort ≥ target + this.
+   */
+  harderBy: number;
+  /** "Easier than planned" when logged effort ≤ target − this. */
+  easierBy: number;
+  /**
+   * Reps below the range minimum don't count as a miss when logged effort is
+   * clearly below target (≤ target − this): Ben stopped short with reps in
+   * the tank, for a reason of his own.
+   */
+  clearlyBelowBy: number;
+  /** D20, sets with no target only: "too hard" when logged effort is at least this RPE (RIR equivalent: 10 − value). */
   rpeHigh: number;
-  /** …and the plan's effort was at most this (rule T). */
-  plannedAtMostForHigh: number;
   /**
    * "Too hard" on a single-number target (8) when reps fall short of it by at
    * least this. A range target (3–6) fires on any rep below its floor
@@ -29,21 +40,20 @@ export interface CoachTriggerThresholds {
    * `× 6` is a big miss even though it is only 1 below the floor).
    */
   repsShortBy: number;
-  /** "Too easy" when logged effort is at most this RPE. */
+  /** D20, sets with no target only: "too easy" when logged effort is at most this RPE. */
   rpeLow: number;
-  /** …and the plan's effort was at least this (rule T). */
-  plannedAtLeastForLow: number;
-  /** "Too easy" never fires on sets above this many reps (rule T). */
+  /** "Too easy" never fires on sets above this many reps (rule T, rule 4: ratings above 12 reps are unreliable). */
   easyMaxReps: number;
 }
 
 export const DEFAULT_COACH_TRIGGER_THRESHOLDS: CoachTriggerThresholds = {
   enabled: true,
+  harderBy: 1.5,
+  easierBy: 2,
+  clearlyBelowBy: 1,
   rpeHigh: 9.5,
-  plannedAtMostForHigh: 8.5,
   repsShortBy: 2,
   rpeLow: 6,
-  plannedAtLeastForLow: 8,
   easyMaxReps: 12,
 };
 
@@ -52,10 +62,14 @@ export interface CoachTrigger {
   triggerId: string;
   kind: CoachTriggerKind;
   setId: string;
-  /** App text: `RPE 10 on set 2`, `RIR 0 on set 2`, `6 reps on set 2 (target 8–10)`. Quotes what Ben entered. */
+  /** App text: `RPE 10 on set 2 (target 8)`, `RIR 0 on set 2 (target RIR 2)`, `6 reps on set 2 (target 8–10)`. Quotes what Ben entered. */
   fact: string;
   /** `That looked hard. Adjust remaining sets?` / `That looked easy. Adjust remaining sets?` */
   prompt: string;
+  /** The target RPE the set was judged against; null when it had none (D20 thresholds). */
+  targetRpe: number | null;
+  /** Logged effort as RPE (RIR read as 10 − RIR); null when none was logged. */
+  loggedRpe: number | null;
 }
 
 export interface TriggerSetInput {
@@ -63,7 +77,7 @@ export interface TriggerSetInput {
   version: number;
   setType: SetType;
   status: 'pending' | 'completed' | 'skipped' | 'deleted';
-  planned: Pick<PlannedSet, 'reps' | 'rpe' | 'rir'>;
+  planned: Pick<PlannedSet, 'reps' | 'rpe' | 'rir'> & Partial<Pick<PlannedSet, 'rpeOverride' | 'source'>>;
   actual: Pick<SetValues, 'reps' | 'rpe' | 'rir'> | null;
 }
 
@@ -78,12 +92,9 @@ function effortWords(e: { rpe: number | null; rir: number | null }): string {
   return e.rpe !== null ? `RPE ${formatNumber(e.rpe)}` : `RIR ${String(e.rir ?? 0)}`;
 }
 
-/**
- * Planned all-out work never triggers (rule T). The schema has no AMRAP flag
- * yet, so a plan of RPE 10 or RIR 0 is read as all-out.
- */
-function plannedAllOut(planned: TriggerSetInput['planned']): boolean {
-  return (planned.rpe !== null && planned.rpe >= 10) || (planned.rir !== null && planned.rir <= 0);
+/** The target in the scale Ben logged with: `target 8`, or `target RIR 2` when he logged RIR. */
+function targetWords(actual: { rpe: number | null; rir: number | null }, target: number): string {
+  return actual.rpe === null && actual.rir !== null ? `target RIR ${formatNumber(Math.max(0, 10 - target))}` : `target ${formatNumber(target)}`;
 }
 
 /**
@@ -99,47 +110,68 @@ export function repsShort(range: { min: number; max: number }, reps: number, thr
 const NEVER_TRIGGERS: ReadonlySet<SetType> = new Set<SetType>(['warmup', 'drop']);
 
 /**
- * Rule T: compare what was logged with the set's planned effort. With no
- * planned effort, the original ADR 0006 thresholds apply (D20). Priority when
- * several hold: `rpe_high`, then `reps_short`, then `rpe_low`.
+ * Rule T, deviation-based (CHANGELOG 2026-10-11 "Offers follow the target
+ * RPE"): compare what was logged with the set's **target RPE**
+ * (`targetRpeOf`: Ben's, the coach's, the plan's, else the built-in rule's).
+ * - `rpe_high`: logged effort ≥ target + `harderBy` (1.5).
+ * - `reps_short`: reps below the range minimum (single number: short by
+ *   `repsShortBy`), unless logged effort is clearly below target
+ *   (≤ target − `clearlyBelowBy`). No effort logged still counts.
+ * - `rpe_low`: logged effort ≤ target − `easierBy` (2), on a set of at most
+ *   `easyMaxReps` reps whose reps weren't short.
+ * A target of RPE 10 (planned all-out) never fires "too hard".
+ *
+ * `targetRpe`: the resolved target (`targetRpeOf(…)?.rpe`); omitted, the
+ * set's own planned RPE/RIR is used. With no target at all, the fixed D20
+ * thresholds apply (RPE ≥ 9.5 / reps short / RPE ≤ 6). Priority when several
+ * hold: `rpe_high`, then `reps_short`, then `rpe_low`.
  */
 export function evaluateCoachTrigger(
   set: TriggerSetInput,
   setNumber: number,
   thresholds: CoachTriggerThresholds = DEFAULT_COACH_TRIGGER_THRESHOLDS,
+  targetRpe?: number | null,
 ): CoachTrigger | null {
   if (!thresholds.enabled) return null;
   if (set.status !== 'completed' || set.actual === null) return null;
-  if (NEVER_TRIGGERS.has(set.setType) || plannedAllOut(set.planned)) return null;
+  if (NEVER_TRIGGERS.has(set.setType)) return null;
 
-  const logged = effortAsRpe(set.actual);
-  const planned = effortAsRpe(set.planned);
+  const actual = set.actual;
+  const logged = effortAsRpe(actual);
+  const target = targetRpe !== undefined ? targetRpe : set.planned.rpeOverride !== undefined ? set.planned.rpeOverride : effortAsRpe(set.planned);
   const make = (kind: CoachTriggerKind, fact: string): CoachTrigger => ({
     triggerId: deriveId(`coach-trigger:${set.id}:${String(set.version)}:${kind}`),
     kind,
     setId: set.id,
     fact,
     prompt: kind === 'rpe_low' ? 'That looked easy. Adjust remaining sets?' : 'That looked hard. Adjust remaining sets?',
+    targetRpe: target,
+    loggedRpe: logged,
   });
   const where = `on set ${String(setNumber)}`;
+  const effortFact = (): string => `${effortWords(actual)} ${where}${target === null ? '' : ` (${targetWords(actual, target)})`}`;
 
-  if (logged !== null && logged >= thresholds.rpeHigh && (planned === null || planned <= thresholds.plannedAtMostForHigh)) {
-    return make('rpe_high', `${effortWords(set.actual)} ${where}`);
-  }
   const range = set.planned.reps;
-  const reps = set.actual.reps;
-  if (range !== null && reps !== null && repsShort(range, reps, thresholds)) {
-    const target = range.min === range.max ? String(range.min) : `${String(range.min)}–${String(range.max)}`;
-    return make('reps_short', `${String(reps)} ${reps === 1 ? 'rep' : 'reps'} ${where} (target ${target})`);
+  const reps = actual.reps;
+  const short = range !== null && reps !== null && repsShort(range, reps, thresholds);
+  const shortFact = (): string => {
+    const r = range ?? { min: 0, max: 0 };
+    const t = r.min === r.max ? String(r.min) : `${String(r.min)}–${String(r.max)}`;
+    return `${String(reps ?? 0)} ${reps === 1 ? 'rep' : 'reps'} ${where} (target ${t})`;
+  };
+
+  if (target === null) {
+    // D20: no target on the set (shouldn't happen once every working set carries one).
+    if (logged !== null && logged >= thresholds.rpeHigh) return make('rpe_high', effortFact());
+    if (short) return make('reps_short', shortFact());
+    if (logged !== null && logged <= thresholds.rpeLow && (reps === null || reps <= thresholds.easyMaxReps)) return make('rpe_low', effortFact());
+    return null;
   }
-  if (
-    logged !== null &&
-    logged <= thresholds.rpeLow &&
-    (planned === null || planned >= thresholds.plannedAtLeastForLow) &&
-    (reps === null || reps <= thresholds.easyMaxReps)
-  ) {
-    return make('rpe_low', `${effortWords(set.actual)} ${where}`);
-  }
+
+  const allOut = target >= 10;
+  if (!allOut && logged !== null && logged >= target + thresholds.harderBy) return make('rpe_high', effortFact());
+  if (!allOut && short && !(logged !== null && logged <= target - thresholds.clearlyBelowBy)) return make('reps_short', shortFact());
+  if (logged !== null && !short && logged <= target - thresholds.easierBy && (reps === null || reps <= thresholds.easyMaxReps)) return make('rpe_low', effortFact());
   return null;
 }
 

@@ -17,6 +17,7 @@ import {
   classifyPainMention,
   painBodyPart,
   exercisesNamedForPain,
+  DEFAULT_COACH_TRIGGER_THRESHOLDS,
   evaluateCoachTrigger,
   getAchievableLoads,
   getStructuralChangeSignals,
@@ -538,56 +539,83 @@ function trig(over: Partial<TriggerSetInput> & { plannedRpe?: number | null; pla
   };
 }
 
-describe('evaluateCoachTrigger (rule T, D20)', () => {
-  it('RPE 10 on a set planned at 8 offers "too hard" with the fact as entered (check 4)', () => {
-    const t = evaluateCoachTrigger(trig({ plannedRpe: 8, actual: { reps: 8, rpe: 10, rir: null } }), 2);
-    expect(t).toMatchObject({ kind: 'rpe_high', fact: 'RPE 10 on set 2', prompt: 'That looked hard. Adjust remaining sets?' });
+describe('evaluateCoachTrigger (rule T, deviation from the target RPE; CHANGELOG 2026-10-11)', () => {
+  const e = (rpe: number | null, reps = 8, rir: number | null = null): TriggerSetInput['actual'] => ({ reps, rpe, rir });
+  // [case, set, target passed by the caller (undefined: the set's own plan), expected kind or null]
+  const table: [string, TriggerSetInput, number | null | undefined, 'rpe_high' | 'reps_short' | 'rpe_low' | null][] = [
+    // Ben's cases (11 Oct)
+    ['3–6, logged 2 reps, no RPE (built-in target 8.5): offer', trig({ reps: [3, 6], actual: e(null, 2) }), 8.5, 'reps_short'],
+    ['RPE 10 on an RPE-10 plan: no offer', trig({ plannedRpe: 10, actual: e(10) }), undefined, null],
+    ['RPE 10 on an RPE-8 plan: offer', trig({ plannedRpe: 8, actual: e(10) }), undefined, 'rpe_high'],
+    // harder than planned: ≥ target + 1.5
+    ['RPE 9.5 at target 8: offer', trig({ actual: e(9.5) }), 8, 'rpe_high'],
+    ['RPE 9 at target 8: none', trig({ actual: e(9) }), 8, null],
+    ['RPE 10 at target 9: none', trig({ actual: e(10) }), 9, null],
+    ['RPE 10 at target 8.5: offer', trig({ actual: e(10) }), 8.5, 'rpe_high'],
+    ['RIR 0 at a planned RIR 2: offer', trig({ plannedRir: 2, actual: e(null, 8, 0) }), undefined, 'rpe_high'],
+    ['Ben’s override wins over the plan', trig({ plannedRpe: 7, actual: e(9) }), 9, null],
+    ['planned RIR 0 (all-out) never "too hard"', trig({ plannedRir: 0, actual: e(10, 4) }), undefined, null],
+    // reps below the range minimum
+    ['8–10, 7 reps, no RPE: offer', trig({ actual: e(null, 7) }), 9, 'reps_short'],
+    ['8–10, 7 reps at target effort: offer', trig({ actual: e(9, 7) }), 9, 'reps_short'],
+    ['8–10, 7 reps at target − 0.5: offer', trig({ actual: e(8.5, 7) }), 9, 'reps_short'],
+    ['8–10, 7 reps at target − 1 (clearly below): none', trig({ actual: e(8, 7) }), 9, null],
+    ['8–10, 8 reps, no RPE: none', trig({ actual: e(null, 8) }), 9, null],
+    ['single number 8, 7 reps: none', trig({ reps: [8, 8], actual: e(null, 7) }), 9, null],
+    ['single number 8, 6 reps: offer', trig({ reps: [8, 8], actual: e(null, 6) }), 9, 'reps_short'],
+    ['3–6, 2 reps on an all-out plan: none', trig({ reps: [3, 6], plannedRpe: 10, actual: e(null, 2) }), undefined, null],
+    // easier than planned: ≤ target − 2, reps ≤ 12
+    ['RPE 6 at target 8: offer', trig({ actual: e(6) }), 8, 'rpe_low'],
+    ['RPE 6.5 at target 8: none', trig({ actual: e(6.5) }), 8, null],
+    ['RPE 7 at target 9: offer', trig({ actual: e(7) }), 9, 'rpe_low'],
+    ['RPE 6 at target 7: none', trig({ actual: e(6) }), 7, null],
+    ['RIR 4 at a planned RIR 2: offer', trig({ plannedRir: 2, actual: e(null, 8, 4) }), undefined, 'rpe_low'],
+    ['13 reps at RPE 5 (target 8): none', trig({ reps: [12, 15], actual: e(5, 13) }), 8, null],
+    ['RPE 8 on an all-out plan: easier than planned', trig({ plannedRpe: 10, actual: e(8) }), undefined, 'rpe_low'],
+    ['short reps at a low RPE is never "too easy"', trig({ actual: e(5, 6) }), 9, null],
+    // no target at all: D20 thresholds
+    ['no target, RPE 9.5: offer', trig({ actual: e(9.5) }), null, 'rpe_high'],
+    ['no target, RPE 9: none', trig({ actual: e(9) }), null, null],
+    ['no target, RPE 6: offer', trig({ actual: e(6) }), null, 'rpe_low'],
+    ['no target, 7 of 8–10: offer', trig({ actual: e(null, 7) }), null, 'reps_short'],
+  ];
+  it.each(table)('%s', (_name, set, target, kind) => {
+    expect(evaluateCoachTrigger(set, 1, undefined, target)?.kind ?? null).toBe(kind);
   });
 
-  it('a set planned at RPE 9 that came out at 10 doesn’t trigger (rule T compares with the plan)', () => {
-    expect(evaluateCoachTrigger(trig({ plannedRpe: 9, actual: { reps: 8, rpe: 10, rir: null } }), 2)).toBeNull();
+  it('quotes what Ben entered, with the target in the same scale', () => {
+    expect(evaluateCoachTrigger(trig({ plannedRpe: 8, actual: e(10) }), 2)).toMatchObject({
+      kind: 'rpe_high',
+      fact: 'RPE 10 on set 2 (target 8)',
+      prompt: 'That looked hard. Adjust remaining sets?',
+      targetRpe: 8,
+      loggedRpe: 10,
+    });
+    expect(evaluateCoachTrigger(trig({ plannedRir: 2, actual: e(null, 8, 0) }), 3)?.fact).toBe('RIR 0 on set 3 (target RIR 2)');
+    expect(evaluateCoachTrigger(trig({ actual: e(null, 6) }), 2, undefined, 8.5)?.fact).toBe('6 reps on set 2 (target 8–10)');
+    expect(evaluateCoachTrigger(trig({ actual: e(9.5) }), 1, undefined, null)?.fact).toBe('RPE 9.5 on set 1');
   });
 
-  it('no planned effort falls back to the ADR 0006 thresholds (D20)', () => {
-    expect(evaluateCoachTrigger(trig({ actual: { reps: 8, rpe: 9.5, rir: null } }), 1)?.kind).toBe('rpe_high');
-    expect(evaluateCoachTrigger(trig({ actual: { reps: 8, rpe: 6, rir: null } }), 1)?.kind).toBe('rpe_low');
-    expect(evaluateCoachTrigger(trig({ actual: { reps: 8, rpe: 9, rir: null } }), 1)).toBeNull();
+  it('Ben’s override on the set is read when the caller passes no target', () => {
+    const set = trig({ plannedRpe: 8, actual: e(10) });
+    expect(evaluateCoachTrigger({ ...set, planned: { ...set.planned, rpeOverride: 10 } }, 1)).toBeNull();
   });
 
-  it('a range fires on any rep below its floor (CA5 revised, build 108 F1)', () => {
-    expect(evaluateCoachTrigger(trig({ actual: { reps: 6, rpe: null, rir: null } }), 2)?.fact).toBe('6 reps on set 2 (target 8–10)');
-    expect(evaluateCoachTrigger(trig({ actual: { reps: 7, rpe: null, rir: null } }), 2)?.fact).toBe('7 reps on set 2 (target 8–10)');
-    expect(evaluateCoachTrigger(trig({ actual: { reps: 8, rpe: null, rir: null } }), 2)).toBeNull();
-  });
-
-  it('"too easy" needs a plan of 8+ and never fires above 12 reps', () => {
-    expect(evaluateCoachTrigger(trig({ plannedRpe: 7, actual: { reps: 8, rpe: 6, rir: null } }), 1)).toBeNull();
-    expect(evaluateCoachTrigger(trig({ plannedRpe: 8, actual: { reps: 8, rpe: 6, rir: null } }), 1)?.kind).toBe('rpe_low');
-    expect(evaluateCoachTrigger(trig({ plannedRpe: 8, reps: [12, 15], actual: { reps: 13, rpe: 5, rir: null } }), 1)).toBeNull();
-  });
-
-  it('RIR entries use their equivalents and quote RIR (§4.2)', () => {
-    expect(evaluateCoachTrigger(trig({ plannedRir: 2, actual: { reps: 8, rpe: null, rir: 0 } }), 3)?.fact).toBe('RIR 0 on set 3');
-    expect(evaluateCoachTrigger(trig({ plannedRir: 2, actual: { reps: 8, rpe: null, rir: 4 } }), 3)?.kind).toBe('rpe_low');
-  });
-
-  it('never on warm-ups, drop sets, planned all-out sets, pending sets, or when switched off (check 6)', () => {
-    const hard = { reps: 4, rpe: 10, rir: null };
-    expect(evaluateCoachTrigger(trig({ setType: 'warmup', actual: hard }), 1)).toBeNull();
-    expect(evaluateCoachTrigger(trig({ setType: 'drop', actual: hard }), 1)).toBeNull();
-    expect(evaluateCoachTrigger(trig({ plannedRpe: 10, actual: hard }), 1)).toBeNull();
-    expect(evaluateCoachTrigger(trig({ plannedRir: 0, actual: hard }), 1)).toBeNull();
-    expect(evaluateCoachTrigger(trig({ status: 'pending', actual: null }), 1)).toBeNull();
-    expect(evaluateCoachTrigger(trig({ actual: hard }), 1, { ...{ enabled: false, rpeHigh: 9.5, plannedAtMostForHigh: 8.5, repsShortBy: 2, rpeLow: 6, plannedAtLeastForLow: 8, easyMaxReps: 12 } })).toBeNull();
+  it('never on warm-ups, drop sets, pending sets, or when switched off (check 6)', () => {
+    const hard = e(10, 4);
+    expect(evaluateCoachTrigger(trig({ setType: 'warmup', actual: hard }), 1, undefined, 8)).toBeNull();
+    expect(evaluateCoachTrigger(trig({ setType: 'drop', actual: hard }), 1, undefined, 8)).toBeNull();
+    expect(evaluateCoachTrigger(trig({ status: 'pending', actual: null }), 1, undefined, 8)).toBeNull();
+    expect(evaluateCoachTrigger(trig({ actual: hard }), 1, { ...DEFAULT_COACH_TRIGGER_THRESHOLDS, enabled: false }, 8)).toBeNull();
   });
 
   it('10 on-target sets at RPE 7–8 never trigger (check 3: zero AI calls)', () => {
-    const fired = [7, 7.5, 8, 7, 8, 7.5, 7, 8, 8, 7].map((rpe, i) => evaluateCoachTrigger(trig({ plannedRpe: 8, actual: { reps: 8, rpe, rir: null } }), i + 1));
+    const fired = [7, 7.5, 8, 7, 8, 7.5, 7, 8, 8, 7].map((rpe, i) => evaluateCoachTrigger(trig({ plannedRpe: 8, actual: e(rpe) }), i + 1));
     expect(fired.every((t) => t === null)).toBe(true);
   });
 
   it('the trigger ID is stable for the same set version', () => {
-    const s = trig({ actual: { reps: 8, rpe: 10, rir: null } });
+    const s = trig({ actual: e(10) });
     expect(evaluateCoachTrigger(s, 1)?.triggerId).toBe(evaluateCoachTrigger(s, 1)?.triggerId);
     expect(evaluateCoachTrigger({ ...s, version: 3 }, 1)?.triggerId).not.toBe(evaluateCoachTrigger(s, 1)?.triggerId);
   });

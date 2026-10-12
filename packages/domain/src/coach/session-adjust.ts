@@ -17,11 +17,12 @@ import type { CoachTriggerKind } from './trigger';
  * rule 3), and the change goes through the same `validateTodayAdjustment`
  * guardrail and versioned, idempotent write as the coach's, with Undo.
  *
- * The size of the change is the most conservative step of the approved
- * playbook rules (rule 5 "too hard", rule 6 "too easy", D22, equipment-aware
- * progression §9):
- * - Too hard: the next achievable load at least 5% lighter (rule 5's
- *   minimum, rounded down to what the equipment makes), same reps. If that
+ * The size of the change follows the approved playbook rules (rule 5 "too
+ * hard", rule 6 "too easy", D22, equipment-aware progression §9):
+ * - Too hard: ≈ 2% per RPE point over the set's target (the low end of rule
+ *   5's 2–4%), at least 5% and at most 10% (D22), rounded down to an
+ *   achievable load, same reps. With no effort logged (a rep miss), or Ben's
+ *   own `Too hard`, the 5% minimum. If that
  *   load is more than 10% lighter, or there is none, the same load with
  *   fewer reps instead: the reps Ben just managed (`reps_short`), or one
  *   fewer than he managed (`rpe_high`). Never an increase, never a removed
@@ -36,6 +37,8 @@ import type { CoachTriggerKind } from './trigger';
 export const BUILT_IN_SESSION_RULE = {
   /** Rule 5 / D22 minimum drop (%), rounded down to an achievable load. */
   loadDropPct: 5,
+  /** Rule 5: % lighter per RPE point over the target (the low end of 2–4%). */
+  loadDropPctPerRpePoint: 2,
   /** Rule 5 guardrail: a bigger drop than this switches to fewer reps (%). */
   maxLoadDropPct: 10,
   /** Rule 6 lower bound for the step up (%); a bigger next step switches to reps. */
@@ -64,7 +67,8 @@ export interface SessionAdjustmentInput {
 }
 
 export type SessionAdjustmentTrigger =
-  | { kind: CoachTriggerKind; setId: string; fact: string }
+  /** `targetRpe` / `loggedRpe`: from the trigger (`CoachTrigger`), for the size of a too-hard drop. */
+  | { kind: CoachTriggerKind; setId: string; fact: string; targetRpe?: number | null; loggedRpe?: number | null }
   /** `fact`: app text for the request (`Too hard`). Fewer reps, when used, is one fewer than the planned top. */
   | { kind: 'ben_asked'; intent: 'too_hard' | 'too_easy'; sessionExerciseId: string; fact: string };
 
@@ -101,8 +105,18 @@ function inUnit(load: Load, eq: EquipmentInstance): number {
 
 type Lever = 'load' | 'reps';
 
+/**
+ * Rule 5 / D22: the % to ask for, from how far logged effort was over the
+ * target (2% per point, at least 5%, at most 10%). No effort to go by: 5%.
+ */
+export function tooHardDropPct(targetRpe: number | null | undefined, loggedRpe: number | null | undefined): number {
+  const r = BUILT_IN_SESSION_RULE;
+  const over = targetRpe == null || loggedRpe == null ? 0 : loggedRpe - targetRpe;
+  return Math.min(r.maxLoadDropPct, Math.max(r.loadDropPct, over * r.loadDropPctPerRpePoint));
+}
+
 /** Too hard: the load step, or null when rule 5 says fewer reps instead. */
-function easierLoad(cur: Load, eq: EquipmentInstance): Load | null {
+function easierLoad(cur: Load, eq: EquipmentInstance, dropPct: number): Load | null {
   const direction = loadDirection(eq.loadConvention);
   const now = inUnit(cur, eq);
   if (direction === 'assistance') {
@@ -110,7 +124,7 @@ function easierLoad(cur: Load, eq: EquipmentInstance): Load | null {
     return step.ok ? { value: step.value, unit: eq.unit, convention: eq.loadConvention } : null;
   }
   if (now <= 0) return null;
-  const asked: Load = { value: now * (1 - BUILT_IN_SESSION_RULE.loadDropPct / 100), unit: eq.unit, convention: eq.loadConvention };
+  const asked: Load = { value: now * (1 - dropPct / 100), unit: eq.unit, convention: eq.loadConvention };
   const r = roundToAvailableLoad(asked, eq, 'easier');
   if (!r.ok || compareDifficulty(r.load.value, now, direction) >= 0) return null;
   const drop = (now - r.load.value) / now;
@@ -167,6 +181,7 @@ export function evaluateSessionAdjustment(input: SessionAdjustmentInput): Sessio
   if (intent === 'too_easy' && (activeFlag(input.painFlags, ex.exerciseId) !== null || input.sessionPainUnspecified)) return null;
 
   const achieved = logged?.actual?.reps ?? null;
+  const dropPct = t.kind === 'ben_asked' ? BUILT_IN_SESSION_RULE.loadDropPct : tooHardDropPct(t.targetRpe, t.loggedRpe);
   const pending = liveInOrder(state, ex.id).filter((s) => s.status === 'pending' && s.setType !== 'warmup');
   const changes: PendingSetChange[] = [];
   const levers = new Set<Lever>();
@@ -176,7 +191,7 @@ export function evaluateSessionAdjustment(input: SessionAdjustmentInput): Sessio
     const reps = set.planned.reps;
     let after: CoachTarget | null = null;
     const loaded = cur !== null && cur.convention !== 'bodyweight' && ex.loadConvention !== 'bodyweight' && eq !== null && cur.convention === eq.loadConvention;
-    const step = loaded ? (intent === 'too_hard' ? easierLoad(cur, eq) : harderLoad(cur, eq)) : null;
+    const step = loaded ? (intent === 'too_hard' ? easierLoad(cur, eq, dropPct) : harderLoad(cur, eq)) : null;
     if (step !== null && cur !== null) {
       after = { load: step, reps };
       levers.add('load');

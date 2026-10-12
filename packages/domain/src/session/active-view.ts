@@ -26,6 +26,7 @@ import { latestCommittedSetId } from './reducer';
 import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
+import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -95,6 +96,12 @@ export interface ActiveViewInput {
   previous: Readonly<Record<string, PreviousSession | null>>;
   /** Exercise IDs with an active pain flag. */
   painFlagged: ReadonlySet<string>;
+  /**
+   * The built-in rule's target RPE per session exercise (`ruleTargetRpes`),
+   * the last fallback of each set's target RPE (`targetRpeOf`). Omitted: only
+   * Ben's, the coach's or the plan's target shows.
+   */
+  ruleTargetRpe?: Readonly<Record<string, number>>;
   /**
    * Ben's pain flags (active ones are enough), for the note's `check due`
    * and the rest card's `Still hurts?` line (active-workout §2.14.2). Dates
@@ -209,6 +216,8 @@ export interface FocusView {
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   duration: { value: number | null } | null;
   target: string | null;
+  /** The set's target RPE and who set it (`@ RPE 8` on the target line); null on warm-up and drop sets. */
+  targetRpe: TargetRpe | null;
   /** `Plan was 100 kg × 6–8` when a coach adjustment set this target (coach-adjustments §2.7); else null. */
   planWas: string | null;
   /** The coach action behind this set's target, for `Undo coach change`; null when the target isn't the coach's or can't be undone (gym changed since). */
@@ -508,7 +517,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     loadField,
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS } : null,
-    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral }),
+    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral, rpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null }),
+    targetRpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null),
     planWas: carriesTodayAdjustment(set.planned) && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
     coachActionId: carriesTodayAdjustment(set.planned) && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
     adjustedBy: carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null,

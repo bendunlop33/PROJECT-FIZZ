@@ -8,6 +8,7 @@ import {
   isIncrease,
   reduceSession,
   repsShort,
+  tooHardDropPct,
   type CoachTriggerKind,
   type SessionAdjustment,
 } from '../src/index';
@@ -406,5 +407,44 @@ describe('Ben’s own Too hard / Too easy with no coach (review coach-fallback S
   it('an unknown exercise row: nothing', () => {
     const a = evaluateSessionAdjustment({ aggregate: workout({ eq: BAR, convention: 'total', load: kg(60), reps: [8, 10], logged: { reps: 10 } }), trigger: { kind: 'ben_asked', intent: 'too_hard', sessionExerciseId: id(999), fact: 'Too hard' }, painFlags: [], sessionPainUnspecified: false, gymName: null });
     expect(a).toBeNull();
+  });
+});
+
+describe('Rule 5 / D22: a too-hard drop sized by RPE points over the target (CHANGELOG 2026-10-11 (d))', () => {
+  it.each([
+    [8, 9.5, 5],
+    [8, 10, 5],
+    [7, 10, 6],
+    [6, 10, 8],
+    [5, 10, 10],
+    [4, 10, 10],
+    [null, 10, 5],
+    [8, null, 5],
+    [undefined, undefined, 5],
+  ])('target %s, logged %s: ask %s%% lighter', (target, logged, pct) => {
+    expect(tooHardDropPct(target, logged)).toBe(pct);
+  });
+
+  it('3 points over asks 6%, rounded down to an achievable load (100 → 92.5 kg on the bar)', () => {
+    const agg = workout({ eq: BAR, convention: 'total', load: kg(100), reps: [5, 5], logged: { reps: 5, rpe: 10 } });
+    const set = agg.sets[0];
+    if (set === undefined) throw new Error('fixture');
+    const a = evaluateSessionAdjustment({ aggregate: agg, trigger: { kind: 'rpe_high', setId: set.id, fact: 'RPE 10 on set 1 (target 7)', targetRpe: 7, loggedRpe: 10 }, painFlags: [], sessionPainUnspecified: false, gymName: null });
+    expect(targets(a).map((t) => t.load)).toEqual([92.5, 92.5]);
+    const fivePct = evaluateSessionAdjustment({ aggregate: agg, trigger: { kind: 'rpe_high', setId: set.id, fact: 'RPE 10 on set 1 (target 8)', targetRpe: 8, loggedRpe: 10 }, painFlags: [], sessionPainUnspecified: false, gymName: null });
+    expect(targets(fivePct).map((t) => t.load)).toEqual([95, 95]);
+  });
+
+  it('per-hand dumbbells and lb bars still round down to what the equipment makes', () => {
+    const db = workout({ eq: DB, convention: 'per_hand', load: kg(30, 'per_hand'), reps: [8, 10], logged: { reps: 8, rpe: 10 } });
+    const s1 = db.sets[0];
+    if (s1 === undefined) throw new Error('fixture');
+    const a = evaluateSessionAdjustment({ aggregate: db, trigger: { kind: 'rpe_high', setId: s1.id, fact: 'f', targetRpe: 7, loggedRpe: 10 }, painFlags: [], sessionPainUnspecified: false, gymName: null });
+    expect(targets(a).map((t) => t.load)).toEqual([27.5, 27.5]);
+    const lbw = workout({ eq: LB_BAR, convention: 'total', unit: 'lb', load: lb(225), reps: [5, 5], logged: { reps: 5, rpe: 10 } });
+    const s2 = lbw.sets[0];
+    if (s2 === undefined) throw new Error('fixture');
+    const b = evaluateSessionAdjustment({ aggregate: lbw, trigger: { kind: 'rpe_high', setId: s2.id, fact: 'f', targetRpe: 7, loggedRpe: 10 }, painFlags: [], sessionPainUnspecified: false, gymName: null });
+    expect(targets(b).map((t) => [t.load, t.unit])).toEqual([[210, 'lb'], [210, 'lb']]);
   });
 });

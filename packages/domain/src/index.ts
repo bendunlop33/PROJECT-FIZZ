@@ -57,6 +57,7 @@ export * from './session/today-edits';
 export * from './session/swap-plan';
 export * from './session/substitutes';
 export * from './coach/trigger';
+export * from './coach/target-rpe';
 export * from './coach/adjust';
 export * from './coach/session-adjust';
 export * from './coach/signals';
