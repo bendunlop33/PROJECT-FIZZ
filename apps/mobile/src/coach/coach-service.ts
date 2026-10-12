@@ -12,6 +12,10 @@
 import {
   asksForMoreSets,
   buildCoachContext,
+  buildTodayFitRequest,
+  requestTodayFit,
+  type TodayFitAnswer,
+  type TodayFitContext,
   createAdjustExecutor,
   createNextTargetsExecutor,
   createSessionReadExecutor,
@@ -322,6 +326,23 @@ export function createCoachService(deps: CoachServiceDeps) {
     loadThread,
     listThreads: async (): Promise<CoachThread[]> => coachStore().listThreads((await owner()).id),
     send,
+
+    /**
+     * The coach's fit of today's plan (fit-to-time §5): one model request with
+     * exactly the context it is given, and nothing written here (the overview
+     * validates and writes what passes). Null when the coach can't be reached
+     * (not connected, paused, or offline after a failed request): no provider
+     * call (FT-C9). A network failure marks the coach offline for a while.
+     */
+    async fitToday(context: TodayFitContext, signal?: AbortSignal): Promise<TodayFitAnswer | null> {
+      const a = await availability();
+      const model = deps.model?.();
+      if (a.status !== 'ok' || a.model === null || model === undefined) return null;
+      const r = await requestTodayFit(model, buildTodayFitRequest(context, a.model), signal === undefined ? {} : { signal });
+      if (!r.ok && r.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
+      else if (r.ok) lastNetworkFailureMs = null;
+      return r;
+    },
 
     /** Stop (coach-sheet §3): cancels the request; anything already committed stays with its card. */
     stop(turnId: string): void {

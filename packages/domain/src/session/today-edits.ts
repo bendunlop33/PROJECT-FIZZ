@@ -17,7 +17,7 @@ import { addDays, localDateOf, localMidnightUtcMs } from '../calendar';
 import { deriveId } from '../stable';
 import { toIso, toMs } from '../time';
 import { estimateRemainingDuration, planPace, type ResolvedPace } from './duration';
-import { finishByFromFit, fitPlanToMinutes, fitTier, validFitMinutes, withSkipped, type FitCut, type FitSlot, type FitStatus } from './fit-time';
+import { finishByFromFit, fitPlanToMinutes, fitTier, validFitMinutes, withSkipped, type FitCut, type FitSlot, type FitStatus, type FitTier } from './fit-time';
 import { blockSets, partRootOf } from './gym-switch';
 import { nextPendingSet } from './order';
 import { startWorkoutFromSession, type RepeatInput, type RepeatOutput } from './repeat';
@@ -93,7 +93,11 @@ type Authorship = { author?: 'ben' | 'coach'; actionId?: string };
 /** The §11 edits on one slot that a newer one of the same kind replaces, and `Use planned` clears. */
 export type ShapeEditKind = 'sets' | 'reps' | 'load';
 
-/** What one draft write asks for. Ben's taps only; nothing here is ever proposed by the coach. */
+/**
+ * What one draft write asks for. Ben's taps, and one coach write: the coach's
+ * fit of today's plan (`coach_fit`, fit-to-time §5), which Ben asked for and
+ * whose edits `validateTodayFit` has already checked.
+ */
 export type DraftCommand =
   | { type: 'edit'; edit: TodayEditBody }
   /** `Use planned` (reps, load), or a stepper back at the planned count: the slot's edit of that kind is removed. */
@@ -112,6 +116,13 @@ export type DraftCommand =
   | { type: 'clear_order' }
   /** `Clear fit` (fit-to-time §3.2): the live fit removed, and a coach fit's own edits with it. */
   | { type: 'clear_fit' }
+  /**
+   * The coach's fit (fit-to-time §5.2): one write, every edit authored by the
+   * coach under `actionId`. It replaces the live fit (Undo of it brings that
+   * one back). Never over a slot Ben edited (FT5): such an edit makes the
+   * whole write invalid. `slotKey` of an add: its new row's key.
+   */
+  | { type: 'coach_fit'; minutes: number; actionId: string; edits: readonly ({ kind: 'skip'; slotKey: string } | { kind: 'sets'; slotKey: string; workingSets: number } | { kind: 'add'; slotKey: string; exerciseId: string })[] }
   /**
    * Bring back removed edits as new copies (Undo of a Reset, an Undo, or a
    * template change's Undo). `keepLive`: an edit whose slot (or the order)
@@ -417,6 +428,30 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         remove(e.editId, 'reset');
         removed.push(e.editId);
       }
+      break;
+    }
+    case 'coach_fit': {
+      if (!validFitMinutes(cmd.minutes)) return { kind: 'invalid', reason: 'out_of_range' };
+      const by: Authorship = { author: 'coach', actionId: cmd.actionId };
+      const prev = live().find((x) => x.kind === 'fit');
+      if (prev !== undefined) for (const x of fitCompanions(live(), prev)) remove(x.editId, 'replaced');
+      // Slots Ben edited or skipped himself are his (FT5).
+      const bens = new Set(live().flatMap((x) => (x.author !== 'coach' && 'slotKey' in x && x.kind !== 'swap' ? [x.slotKey] : [])));
+      append({ kind: 'fit', minutes: cmd.minutes }, prev?.editId ?? null, by);
+      for (const e of cmd.edits) {
+        if (e.kind === 'add') {
+          if (plannedKeys.has(e.slotKey) || addedSlotsOf(live()).length >= TODAY_EDIT_LIMITS.maxAdded || exerciseInOtherSlot(allSlots(), live(), e.slotKey, e.exerciseId)) return { kind: 'invalid', reason: 'in_plan' };
+          append({ kind: 'add', slotKey: e.slotKey, exerciseId: e.exerciseId }, null, by);
+          continue;
+        }
+        if (!plannedKeys.has(e.slotKey)) return { kind: 'invalid', reason: 'slot_gone' };
+        if (bens.has(e.slotKey)) return { kind: 'invalid', reason: 'in_plan' };
+        if (e.kind === 'sets' && !inRange({ kind: 'sets', slotKey: e.slotKey, workingSets: e.workingSets })) return { kind: 'invalid', reason: 'out_of_range' };
+        append(e.kind === 'skip' ? { kind: 'skip', slotKey: e.slotKey } : { kind: 'sets', slotKey: e.slotKey, workingSets: e.workingSets }, null, by);
+      }
+      // The last plan slot can't go (Start always has something to do).
+      const skippedNow = new Set(live().flatMap((x) => (x.kind === 'skip' ? [x.slotKey] : [])));
+      if (allSlots().every((x) => skippedNow.has(x.slotKey))) return { kind: 'invalid', reason: 'last_exercise' };
       break;
     }
     case 'clear_fit': {
@@ -1106,6 +1141,8 @@ export type TodayPlanOutput = (({ kind: 'routine' } & RoutineStartOutput) | ({ k
   plannedShape: Record<string, ShapeBefore>;
   /** The live fit, applied (fit-to-time FT4); null with none. */
   fit: FitOutcome | null;
+  /** Each slot's fit tier today (fit-to-time §4.2): what the trim and the coach's fit keep longest. */
+  tiers: Record<string, FitTier>;
 };
 
 /**
@@ -1133,8 +1170,9 @@ export function planWithTodayEdits(plan: TodayPlanInput, edits: TodayEditsInput)
     const plannedShape = out.shapedFrom ?? {};
     const mains = mainFlags([...plan.input.routine.exercises].sort((a, b) => a.order - b.order), (x) => compoundOf(x, input.exercises, edits));
     const mainOf = new Map(baseSlots.map((b, i) => [b.slotKey, mains[i] ?? false]));
-    const fitted = applyFit(plan, edits, { aggregate: finished, slotOf, resolved: applied.resolved, plannedShape, mainOf, exercises: input.exercises, at: plan.input.at });
-    return { kind: 'routine', ...out, aggregate: fitted.aggregate, slotOf, outcomes: applied.resolved.outcomes, resolved: applied.resolved, slots: editedSlots(baseSlots, applied.resolved), baseSlots, plannedShape, fit: fitted.fit };
+    const p = { aggregate: finished, slotOf, resolved: applied.resolved, plannedShape, mainOf, exercises: input.exercises, at: plan.input.at };
+    const fitted = applyFit(plan, edits, p);
+    return { kind: 'routine', ...out, aggregate: fitted.aggregate, slotOf, outcomes: applied.resolved.outcomes, resolved: applied.resolved, slots: editedSlots(baseSlots, applied.resolved), baseSlots, plannedShape, fit: fitted.fit, tiers: tiersOf(edits, p) };
   }
   const baseSlots = basisSlots({ kind: 'next', source: plan.input.source });
   const { input, applied } = applyTodayEditsToNext(plan.input, edits.edits, edits.swaps, edits.adds);
@@ -1151,8 +1189,43 @@ export function planWithTodayEdits(plan: TodayPlanInput, edits: TodayEditsInput)
   // A history basis has no stored `Main`: the WL9 rule at read (fit-to-time §4.2).
   const mains = defaultMain(baseSlots, (x) => compoundOf(x, plan.input.exercises, edits));
   const mainOf = new Map(baseSlots.map((b, i) => [b.slotKey, mains[i] ?? false]));
-  const fitted = applyFit(plan, edits, { aggregate: finished, slotOf, resolved: applied.resolved, plannedShape, mainOf, exercises: plan.input.exercises, at: plan.input.at });
-  return { kind: 'next', ...out, aggregate: fitted.aggregate, slotOf, outcomes: applied.resolved.outcomes, resolved: applied.resolved, slots: editedSlots(baseSlots, applied.resolved), baseSlots, plannedShape, fit: fitted.fit };
+  const p = { aggregate: finished, slotOf, resolved: applied.resolved, plannedShape, mainOf, exercises: plan.input.exercises, at: plan.input.at };
+  const fitted = applyFit(plan, edits, p);
+  return { kind: 'next', ...out, aggregate: fitted.aggregate, slotOf, outcomes: applied.resolved.outcomes, resolved: applied.resolved, slots: editedSlots(baseSlots, applied.resolved), baseSlots, plannedShape, fit: fitted.fit, tiers: tiersOf(edits, p) };
+}
+
+interface FitPlanParts {
+  aggregate: SessionAggregate;
+  slotOf: Readonly<Record<string, string>>;
+  resolved: ResolvedEdits;
+  plannedShape: Readonly<Record<string, ShapeBefore>>;
+  mainOf: ReadonlyMap<string, boolean>;
+  exercises: ReadonlyMap<string, { mechanic?: string | undefined }>;
+  at: ZonedTimestamp;
+}
+
+/** Each slot's planned rows, in today's order. */
+function rowsBySlotOf(p: Pick<FitPlanParts, 'aggregate' | 'slotOf'>): Map<string, string[]> {
+  const rowsBySlot = new Map<string, string[]>();
+  for (const ex of [...p.aggregate.exercises].sort((a, b) => a.order - b.order)) {
+    const key = p.slotOf[ex.id] ?? ex.id;
+    rowsBySlot.set(key, [...(rowsBySlot.get(key) ?? []), ex.id]);
+  }
+  return rowsBySlot;
+}
+
+/** A slot's tier (§4.2): main (an added exercise never is), else compound, else the rest. */
+function slotTier(slotKey: string, exerciseId: string, edits: TodayEditsInput, p: Pick<FitPlanParts, 'resolved' | 'mainOf' | 'exercises'>): FitTier {
+  return fitTier({ main: !p.resolved.added.has(slotKey) && (p.mainOf.get(slotKey) ?? false), compound: compoundOf(exerciseId, p.exercises, edits) });
+}
+
+function tiersOf(edits: TodayEditsInput, p: FitPlanParts): Record<string, FitTier> {
+  const out: Record<string, FitTier> = {};
+  for (const [slotKey, rows] of rowsBySlotOf(p)) {
+    const exerciseId = p.aggregate.exercises.find((e) => e.id === rows[0])?.exerciseId ?? '';
+    out[slotKey] = slotTier(slotKey, exerciseId, edits, p);
+  }
+  return out;
 }
 
 /** Catalogue `mechanic` (Coaching knowledge), from the plan's exercises or a swap's or add's own. Unknown: not compound. */
@@ -1168,28 +1241,12 @@ function compoundOf(exerciseId: string, exercises: ReadonlyMap<string, { mechani
  * its `before` is the same plan without them. Either sets `Finish by` (FT8)
  * and goes on the session's `todayEdits.fitted`.
  */
-function applyFit(
-  plan: TodayPlanInput,
-  edits: TodayEditsInput,
-  p: {
-    aggregate: SessionAggregate;
-    slotOf: Readonly<Record<string, string>>;
-    resolved: ResolvedEdits;
-    plannedShape: Readonly<Record<string, ShapeBefore>>;
-    mainOf: ReadonlyMap<string, boolean>;
-    exercises: ReadonlyMap<string, { mechanic?: string | undefined }>;
-    at: ZonedTimestamp;
-  },
-): { aggregate: SessionAggregate; fit: FitOutcome | null } {
+function applyFit(plan: TodayPlanInput, edits: TodayEditsInput, p: FitPlanParts): { aggregate: SessionAggregate; fit: FitOutcome | null } {
   const live = p.resolved.fit;
   if (live === null) return { aggregate: p.aggregate, fit: null };
   const pace = edits.fit?.pace ?? planPace([]);
   const target = live.minutes * 60;
-  const rowsBySlot = new Map<string, string[]>();
-  for (const ex of [...p.aggregate.exercises].sort((a, b) => a.order - b.order)) {
-    const key = p.slotOf[ex.id] ?? ex.id;
-    rowsBySlot.set(key, [...(rowsBySlot.get(key) ?? []), ex.id]);
-  }
+  const rowsBySlot = rowsBySlotOf(p);
   const benEdited = benEditedSlots(p.resolved);
   let aggregate = p.aggregate;
   let fit: FitOutcome;
@@ -1200,8 +1257,7 @@ function applyFit(
       return {
         slotKey,
         sessionExerciseIds: rows,
-        // An added exercise is never a main lift.
-        tier: fitTier({ main: !p.resolved.added.has(slotKey) && (p.mainOf.get(slotKey) ?? false), compound: compoundOf(exerciseId, p.exercises, edits) }),
+        tier: slotTier(slotKey, exerciseId, edits, p),
         benEdited: benEdited.has(slotKey),
         held: edits.fit?.held?.(exerciseId) ?? false,
         supersetGroup: row?.supersetGroup ?? null,

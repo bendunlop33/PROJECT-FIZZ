@@ -66,3 +66,4 @@ export * from './coach/pain-words';
 export * from './coach/short-forms';
 export * from './coach/next-session';
 export * from './session/fit-time';
+export * from './coach/fit';

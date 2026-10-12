@@ -459,6 +459,8 @@ export function createAppServices(deps: AppServicesDeps) {
     afterCommand,
     catalogueExercises,
     catalogueSubstitutions,
+    // `Ask coach` on How long? (fit-to-time §5): the coach's one request; `coach` is defined below and only read when Ben asks.
+    coachFit: (context, signal) => coach.fitToday(context, signal),
   });
 
   /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
@@ -572,6 +574,15 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     async clearFit(req: Omit<Parameters<typeof loop.overview.clearFit>[0], 'typicalEquipment'>) {
       return loop.overview.clearFit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    // The coach's fit (fit-to-time §5): only when Ben taps `Ask coach`; applied at once with Undo (rule 3).
+    async requestCoachFit(req: Omit<Parameters<typeof loop.overview.requestCoachFit>[0], 'typicalEquipment'>) {
+      return loop.overview.requestCoachFit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    undoCoachFit: (req: Parameters<typeof loop.overview.undoCoachFit>[0]) => loop.overview.undoCoachFit(req),
+    /** Whether `Ask coach` can be tapped (connected and not offline): reads settings only, no network. */
+    async coachFitAvailable(): Promise<boolean> {
+      return (await coach.availability().catch(() => null))?.status === 'ok';
     },
   };
 

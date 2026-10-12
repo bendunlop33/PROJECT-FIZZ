@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { EquipmentInstance, Exercise, Load, PreStartDraft, Routine, SessionAggregate, TodayEdit, WorkoutSet, ZonedTimestamp } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, PreStartDraft, Routine, SessionAggregate, TodayEdit, TodayFitArgs, WorkoutSet, ZonedTimestamp } from '@fizz/schemas';
 import { PreStartDraftSchema, SessionAggregateSchema, TodayEditSchema } from '@fizz/schemas';
 
 import {
@@ -24,7 +24,13 @@ import {
   substituteTargets,
   templateLinesFromEdits,
   todayShapes,
+  benOnly,
+  fitPlanOf,
+  validateTodayFit,
+  coachFitDraftEdits,
+  type AddCheck,
   type DraftCommand,
+  type FitPlanSlot,
   type ResolvedPace,
   type SubstituteContext,
   type SwapPlan,
@@ -535,6 +541,175 @@ describe('the overview with a fit (§3.1, §3.3, FT-C18)', () => {
     const out = plan([edit({ kind: 'fit', minutes: 30 })]);
     const lines = templateLinesFromEdits({ routine: pushA(), resolved: out.resolved, today: todayShapes(out.aggregate, out.slotOf), nameOf: (x) => EXERCISES.get(x)?.name ?? 'Exercise' });
     expect(lines).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The coach's fit (§5.2): the validator, the draft write, Undo
+
+const fitArgs = (edits: Partial<TodayFitArgs['edits'][number]>[], reason = 'Short on time.'): TodayFitArgs => ({
+  reason,
+  edits: edits.map((e) => ({ kind: 'skip' as const, slotKey: null, exerciseId: null, workingSets: null, slotKeys: null, value: null, ...e })),
+});
+
+function planSlots(out: ReturnType<typeof plan>, held: (x: string) => boolean = () => false): { slots: FitPlanSlot[]; unfitted: number } {
+  const r = out.resolved;
+  const { slots } = fitPlanOf({
+    aggregate: out.aggregate,
+    slotOf: out.slotOf,
+    tiers: out.tiers,
+    benEdited: new Set([...r.sets.keys(), ...r.reps.keys(), ...r.loads.keys(), ...r.added.keys()]),
+    skipped: new Set(r.skipped.keys()),
+    held,
+    muscles: (x) => EXERCISES.get(x)?.primaryMuscles ?? [],
+    lastOf: () => null,
+  });
+  return { slots, unfitted: estimateRemainingDuration(out.aggregate, { pace: PACE }).seconds };
+}
+const noAdd = (): AddCheck => ({ ok: false, why: 'not_own' });
+
+describe('validateTodayFit (§5.2, FT-C10, FT-C11, FT-C12)', () => {
+  it('shortening: skips and trims pass; a raised load, set count or reps, a rest change and a skipped main lift are refused', () => {
+    const { slots, unfitted } = planSlots(plan([]));
+    const v = validateTodayFit({
+      minutes: 45,
+      unfittedSeconds: unfitted,
+      slots,
+      args: fitArgs([
+        { kind: 'skip', slotKey: SLOT_FLY },
+        { kind: 'sets', slotKey: SLOT_RAISE, workingSets: 2 },
+        { kind: 'sets', slotKey: SLOT_PUSHDOWN, workingSets: 2 },
+        { kind: 'load', slotKey: SLOT_BENCH, value: 110 },
+        { kind: 'rest', slotKey: SLOT_BENCH, value: 60 },
+        { kind: 'sets', slotKey: SLOT_INCLINE, workingSets: 4 },
+        { kind: 'skip', slotKey: SLOT_BENCH },
+        { kind: 'sets', slotKey: SLOT_BENCH, workingSets: 1 },
+        { kind: 'reps', slotKey: SLOT_INCLINE, value: 12 },
+        { kind: 'add', exerciseId: FACE_PULL },
+        { kind: 'skip', slotKey: id(999) },
+        { kind: 'superset', slotKeys: [SLOT_BENCH, SLOT_INCLINE] },
+      ]),
+      canAdd: noAdd,
+      canSwap: () => ({ ok: true, name: 'X' }),
+    });
+    expect(v.shorten).toBe(true);
+    expect(v.accepted).toEqual([{ kind: 'skip', slotKey: SLOT_FLY }, { kind: 'sets', slotKey: SLOT_RAISE, workingSets: 2 }, { kind: 'sets', slotKey: SLOT_PUSHDOWN, workingSets: 2 }]);
+    expect(v.rejected.map((r) => r.why)).toEqual(['shorten_no_increase', 'rest_unchanged', 'shorten_no_increase', 'main_kept', 'main_kept', 'shorten_no_increase', 'shorten_no_increase', 'slot_gone', 'not_supported']);
+  });
+
+  it('lengthening: at most 2 added (Ben’s own, here, not flagged) and +2 sets an exercise; about 8 sets a muscle', () => {
+    const { slots, unfitted } = planSlots(plan([]));
+    const own = new Set([FACE_PULL, PULLUP, DB_BENCH]);
+    const canAdd = (x: string): AddCheck => (own.has(x) ? { ok: true, name: EXERCISES.get(x)?.name ?? x, muscles: EXERCISES.get(x)?.primaryMuscles ?? [] } : { ok: false, why: 'not_own' });
+    const v = validateTodayFit({
+      minutes: 90,
+      unfittedSeconds: unfitted,
+      slots,
+      args: fitArgs([
+        { kind: 'add', exerciseId: FACE_PULL },
+        { kind: 'add', exerciseId: id(4242) },
+        { kind: 'add', exerciseId: PULLUP },
+        { kind: 'add', exerciseId: DB_BENCH },
+        { kind: 'sets', slotKey: SLOT_RAISE, workingSets: 6 },
+        { kind: 'sets', slotKey: SLOT_RAISE, workingSets: 5 },
+        { kind: 'sets', slotKey: SLOT_BENCH, workingSets: 5 },
+        { kind: 'sets', slotKey: SLOT_FLY, workingSets: 5 },
+      ]),
+      canAdd,
+      canSwap: () => ({ ok: false, why: 'not_here' }),
+    });
+    expect(v.shorten).toBe(false);
+    expect(v.accepted).toEqual([{ kind: 'add', exerciseId: FACE_PULL }, { kind: 'add', exerciseId: PULLUP }, { kind: 'sets', slotKey: SLOT_RAISE, workingSets: 5 }, { kind: 'sets', slotKey: SLOT_BENCH, workingSets: 5 }]);
+    // Chest: bench 5 + incline-chest? (upper_chest is its own group) + fly 3 = 8; fly to 5 would make 10.
+    expect(v.rejected.map((r) => r.why)).toEqual(['not_own', 'max_added', 'max_extra_sets', 'muscle_cap']);
+  });
+
+  it('Ben’s edited slots and pain-held ones are left alone; swaps are suggestions only', () => {
+    const out = plan([edit({ kind: 'reps', slotKey: SLOT_FLY, reps: { min: 10, max: 12 }, durationS: null })]);
+    const { slots, unfitted } = planSlots(out, (x) => x === RAISE);
+    const v = validateTodayFit({
+      minutes: 90,
+      unfittedSeconds: unfitted,
+      slots,
+      args: fitArgs([{ kind: 'sets', slotKey: SLOT_FLY, workingSets: 4 }, { kind: 'sets', slotKey: SLOT_RAISE, workingSets: 4 }, { kind: 'swap', slotKey: SLOT_INCLINE, exerciseId: DB_BENCH }]),
+      canAdd: noAdd,
+      canSwap: (_slot, x) => ({ ok: true, name: EXERCISES.get(x)?.name ?? x }),
+    });
+    expect(v.accepted).toEqual([]);
+    expect(v.rejected.map((r) => r.why)).toEqual(['ben_edited', 'pain_hold']);
+    expect(v.suggestions).toEqual([{ slotKey: SLOT_INCLINE, toExerciseId: DB_BENCH, fromName: 'Incline DB press', toName: 'DB bench press' }]);
+  });
+});
+
+describe('the coach fit in the draft (§5.2, §5.3, FT2, FT-C8, FT-C10)', () => {
+  const ACTION = id(8800);
+  const coachFit = (d: PreStartDraft | null, opId: string, edits: Parameters<typeof coachFitDraftEdits>[0], minutes = 45, action = ACTION) =>
+    write(d, { type: 'coach_fit', minutes, actionId: action, edits: coachFitDraftEdits(edits, opId) }, opId);
+
+  it('applies at once as coach edits under one action; the card shows the coach fit with before → after from the estimate', () => {
+    const d = written(coachFit(null, 'c1', [{ kind: 'skip', slotKey: SLOT_FLY }, { kind: 'sets', slotKey: SLOT_RAISE, workingSets: 2 }, { kind: 'sets', slotKey: SLOT_PUSHDOWN, workingSets: 2 }]));
+    expect(liveEdits(d.edits).every((e) => e.author === 'coach' && e.actionId === ACTION)).toBe(true);
+    const out = plan(liveEdits(d.edits));
+    expect(out.fit).toMatchObject({ by: 'coach', actionId: ACTION, minutes: 45, status: 'fitted' });
+    expect(linesOf(out)).toEqual(['Lateral raise 3→2', 'Triceps pushdown 3→2', 'Cable fly skip']);
+    expect((out.fit?.beforeSeconds ?? 0) / 60).toBeCloseTo(55.67, 1);
+    expect(out.fit?.afterSeconds).toBeLessThanOrEqual(45 * 60);
+    const view = overview(out);
+    expect(view.fit?.title).toBe('Coach fitted to 45 min');
+    // The coach's edits are the fit, not Ben's: no `N EDITED`, `TRIMMED` not `EDITED`.
+    expect(view.editCount).toBe(0);
+    expect(view.rows.find((r) => r.slotKey === SLOT_RAISE)?.marker.kind).toBe('trimmed');
+    // Never a template line (rule 2).
+    expect(templateLinesFromEdits({ routine: pushA(), resolved: out.resolved, today: todayShapes(out.aggregate, out.slotOf), nameOf: () => 'X' })).toEqual([]);
+    expect(benOnly(out.resolved).sets.size).toBe(0);
+    expect(out.aggregate.session.todayEdits?.fitted?.by).toBe('coach');
+  });
+
+  it('a coach fit after a built-in one replaces it; its Undo takes every coach edit and brings the built-in fit back', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'fit', minutes: 30 } }, 'b1'));
+    const builtIn = plan(liveEdits(d.edits));
+    d = written(coachFit(d, 'c2', [{ kind: 'skip', slotKey: SLOT_FLY }]));
+    expect(liveEdits(d.edits).map((e) => [e.kind, e.author ?? 'ben'])).toEqual([
+      ['fit', 'coach'],
+      ['skip', 'coach'],
+    ]);
+    const coachFitEdit = liveEdits(d.edits).find((e) => e.kind === 'fit');
+    d = written(write(d, { type: 'undo', editId: coachFitEdit?.editId ?? '' }, 'u1'));
+    expect(liveEdits(d.edits).map((e) => [e.kind, e.author ?? 'ben'])).toEqual([['fit', 'ben']]);
+    expect(plan(liveEdits(d.edits)).aggregate.sets.map((x) => x.status)).toEqual(builtIn.aggregate.sets.map((x) => x.status));
+    // And the other way: Ben's trim after a coach fit; its Undo brings the coach fit back with its edits.
+    d = written(coachFit(d, 'c3', [{ kind: 'skip', slotKey: SLOT_FLY }], 45, id(8801)));
+    d = written(write(d, { type: 'edit', edit: { kind: 'fit', minutes: 30 } }, 'b2'));
+    expect(liveEdits(d.edits).map((e) => e.kind)).toEqual(['fit']);
+    const mine = liveEdits(d.edits)[0];
+    d = written(write(d, { type: 'undo', editId: mine?.editId ?? '' }, 'u2'));
+    expect(liveEdits(d.edits).map((e) => [e.kind, e.actionId])).toEqual([
+      ['fit', id(8801)],
+      ['skip', id(8801)],
+    ]);
+  });
+
+  it('never over a slot Ben edited; Ben’s later edit on a coach-trimmed slot wins; retries and stale versions write nothing', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'sets', slotKey: SLOT_FLY, workingSets: 4 } }, 'm1'));
+    expect(coachFit(d, 'c4', [{ kind: 'skip', slotKey: SLOT_FLY }])).toEqual({ kind: 'invalid', reason: 'in_plan' });
+    d = written(coachFit(d, 'c5', [{ kind: 'sets', slotKey: SLOT_RAISE, workingSets: 2 }]));
+    expect(coachFit(d, 'c5', [])).toMatchObject({ kind: 'duplicate' });
+    expect(write(d, { type: 'coach_fit', minutes: 45, actionId: ACTION, edits: [] }, 'c6', at(0), 1)).toMatchObject({ kind: 'stale' });
+    // Ben's own count on the raise replaces the coach's.
+    d = written(write(d, { type: 'edit', edit: { kind: 'sets', slotKey: SLOT_RAISE, workingSets: 3 } }, 'm2'));
+    const out = plan(liveEdits(d.edits));
+    expect(pendingWorking(out, SLOT_RAISE)).toBe(3);
+    expect(out.fit?.lines.some((l) => l.slotKey === SLOT_RAISE)).toBe(false);
+  });
+
+  it('an added exercise’s targets come from its own history (`addTargets`), never the model', () => {
+    const d = written(coachFit(null, 'c7', [{ kind: 'add', exerciseId: FACE_PULL }], 90));
+    const add = liveEdits(d.edits).find((e) => e.kind === 'add');
+    if (add?.kind !== 'add') throw new Error('no add');
+    const adds = new Map([[add.slotKey, addTargets(EXERCISES.get(FACE_PULL) as Exercise, [], ctxAt(MAIN_GYM))]]);
+    const out = plan(liveEdits(d.edits), { adds });
+    expect(out.fit?.lines).toEqual([{ slotKey: add.slotKey, kind: 'add' }]);
+    expect(setsOf(out, add.slotKey).every((x) => x.planned.source !== 'coach')).toBe(true);
   });
 });
 

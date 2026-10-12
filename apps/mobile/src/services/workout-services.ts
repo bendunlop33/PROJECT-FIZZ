@@ -81,6 +81,17 @@ import {
   draftIsLive,
   overviewTodayOf,
   planPace,
+  benEditedSlots,
+  coachFitDraftEdits,
+  fitMinutesOf,
+  fitPlanOf,
+  FIT_REFUSAL_WORDS,
+  PACE_SOURCE_LABEL,
+  roundEstimateMinutes,
+  validateTodayFit,
+  validFitMinutes,
+  type AddCheck,
+  type SwapCheck,
   editedSlots,
   liveEdits,
   moveSlot,
@@ -173,6 +184,7 @@ import {
   type SessionTypeKind,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
+import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
 import type {
   Load,
   LoadConvention,
@@ -222,6 +234,48 @@ export interface WorkoutServicesContext {
   catalogueExercises?: () => readonly Exercise[];
   /** A catalogue entry's substitutions (`variations.substitutions[].key`), in catalogue order (Coaching knowledge). Absent: none. */
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
+  /**
+   * The coach's fit request (fit-to-time §5; `coach.fitToday`): one model
+   * call with the context given, nothing written. Null: the coach can't be
+   * reached (no provider call). Absent: not in this build's wiring.
+   */
+  coachFit?: (context: TodayFitContext, signal?: AbortSignal) => Promise<TodayFitAnswer | null>;
+}
+
+/** `Ask coach` on `How long?` (fit-to-time §6): what came of it. Nothing is written unless `applied`. */
+export type CoachFitOutcome =
+  | { kind: 'applied'; actionId: string; draft: PreStartDraft | null; duplicate: boolean }
+  /** Every edit the coach sent failed the checks: nothing changed (`Couldn't use the coach's version`). */
+  | { kind: 'rejected'; reasons: string[] }
+  /** No answer in time (`timing.coachTimeout`). */
+  | { kind: 'timeout' }
+  /** The page (draft, targets, gym) moved while the coach worked: the answer is discarded (`Plan changed`). */
+  | { kind: 'plan_changed' }
+  /** Not connected, paused or offline: no provider call (`Coach offline`). */
+  | { kind: 'unavailable' }
+  | { kind: 'cancelled' }
+  | { kind: 'failed' };
+
+/** `Why?` on the coach's fit card (fit-to-time §7.2): the checks it passed, as app text. */
+export const FIT_CHECKS = {
+  unchanged: 'Loads and rest unchanged.',
+  own: 'Added from your own exercises.',
+  dropped: (n: number) => `${String(n)} ${n === 1 ? 'change' : 'changes'} not used.`,
+} as const;
+
+/** `Undo` on the coach's fit card (§5.3). */
+export type CoachFitUndoOutcome = { ok: true; draft: PreStartDraft | null } | { ok: false; reason: 'changed_since' | 'missing' | 'failed' };
+
+/** What the overview shows about the live coach fit (`Why?`, the swap suggestions), from its record. */
+export interface CoachFitInfo {
+  actionId: string;
+  reason: string | null;
+  /** The checks it passed, as app text (`Loads and rest unchanged.`). */
+  checks: string[];
+  /** Edits the checks refused, as app text. */
+  rejected: string[];
+  /** Swaps offered as a `Today only` card (never applied without Apply); ones already applied are left out. */
+  suggestions: { slotKey: string; toExerciseId: string; text: string }[];
 }
 
 export type CheckInWrite = { ok: true; checkIn: CheckIn; duplicate: boolean } | { ok: false; message: string; stale?: boolean };
@@ -579,6 +633,8 @@ export interface OverviewData {
   templateCard: { routineId: string; routineName: string; routineVersion: number; draftId: string; draftVersion: number; lines: TemplateLine[] } | null;
   /** The pace the TIME tile and a fit use (`How long?` → `ⓘ`, fit-to-time §3.2). */
   pace: ResolvedPace;
+  /** The live coach fit's record, when the fit is the coach's (fit-to-time §3.3). */
+  coachFit: CoachFitInfo | null;
 }
 
 /** The Add exercise list (§11.4): rows with this gym's targets; `Nothing else here at Main gym.` when empty. */
@@ -1487,7 +1543,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * history at this gym, never the original's load). No draft: no edits.
    */
   async function todayFor(p: UserProfile, resolved: ResolvedOverview, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, today: CheckIn | null): Promise<{ draft: PreStartDraft | null; input: TodayEditsInput }> {
-    const draft = await liveDraft(p.id, basisOf(resolved));
+    return todayForDraft(p, resolved, gymId, gymEquipment, today, await liveDraft(p.id, basisOf(resolved)));
+  }
+
+  /** `todayFor` with a given draft (the coach's fit plans the draft it is about to write). */
+  async function todayForDraft(p: UserProfile, resolved: ResolvedOverview, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, today: CheckIn | null, draft: PreStartDraft | null): Promise<{ draft: PreStartDraft | null; input: TodayEditsInput }> {
     if (draft === null) return { draft: null, input: NO_TODAY };
     const edits = liveEdits(draft.edits);
     const swaps = new Map<string, SwapPlan>();
@@ -1532,6 +1592,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       swapped.set(slotKey, { editId: sw.editId, fromExerciseId: base.exerciseId, fromName: fromName ?? 'Exercise' });
     }
     return overviewTodayOf(info, { swapped, draft: draft === null ? null : { id: draft.id, version: draft.version }, routineName: resolved.kind === 'routine' ? resolved.routine.name : null });
+  }
+
+  /** The live coach fit's record for the page (`Why?`, suggestions), or null. Never throws. */
+  async function coachFitInfo(info: TodayPlanInfo | null): Promise<CoachFitInfo | null> {
+    const fit = info?.fit ?? null;
+    if (info === null || fit === null || fit.by !== 'coach' || fit.actionId === null) return null;
+    const record = await ctx.store().repos.coach.getAction(fit.actionId).catch(() => null);
+    if (record === null || record.detail.kind !== 'fit_today') return null;
+    const d = record.detail;
+    const swappedTo = new Map([...info.resolved.swaps].map(([k, v]) => [k, v.toExerciseId]));
+    return {
+      actionId: record.actionId,
+      reason: record.reason,
+      // The checks every coach fit passed (§7.2 `Why?`): app text, not the model's.
+      checks: [FIT_CHECKS.unchanged, ...(fit.lines.some((l) => l.kind === 'add') ? [FIT_CHECKS.own] : []), ...(d.rejected.length > 0 ? [FIT_CHECKS.dropped(d.rejected.length)] : [])],
+      rejected: d.rejected.map((r) => r.text),
+      suggestions: d.suggestions.filter((x) => swappedTo.get(x.slotKey) !== x.toExerciseId),
+    };
   }
 
   /** `Update Push A ›` (§11.5): today's template-able edits as lines, against the workout as read. */
@@ -3083,6 +3161,92 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     }
   }
 
+  /**
+   * The coach fit's inputs (fit-to-time §5.1): today's shown plan without any
+   * fit, as the request's context and the validator's slots, and the checks
+   * an added or swapped exercise must pass. Local reads only.
+   */
+  async function coachFitPlan(p: UserProfile, req: DraftTarget & { minutes: number; checkInId?: string | null }, page: OverviewData) {
+    const gymId = req.gymId ?? 'typical-gym-preview';
+    const typical = req.gymId === null ? req.typicalEquipment : undefined;
+    const resolved = await resolveOverview(p, req.target, { gymId, gymEquipment: typical });
+    if (resolved === null) return null;
+    const { planCheckIn } = await overviewCheckIn(req.checkInId ?? null);
+    const t = await todayFor(p, resolved, gymId, typical, planCheckIn);
+    // The plan without any fit: a coach fit replaces the live one.
+    const without = { ...t.input, edits: t.input.edits.filter((e) => e.kind !== 'fit' && e.author !== 'coach') };
+    const run = await overviewDryRun(p, resolved, gymId, planCheckIn, typical, without);
+    if (run === null || run.today === null) return null;
+    const at = ctx.now();
+    const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
+    const held = (exerciseId: string) => painFlagCovering(flags, exerciseId, toMs(at.utc), at.tz) !== null;
+    const info = new Map<string, Exercise | null>();
+    const exOf = async (id: string) => {
+      if (!info.has(id)) info.set(id, await exerciseById(id));
+      return info.get(id) ?? null;
+    };
+    for (const ex of run.aggregate.exercises) await exOf(ex.exerciseId);
+    const r = run.today.resolved;
+    const benEdited = new Set([...benEditedSlots(r), ...[...r.skipped].filter(([, id]) => !r.coachEdits.has(id)).map(([k]) => k)]);
+    const lastBySlot = new Map(page.view.rows.map((row) => [row.slotKey, row.panel.find((l) => l.key === 'last')?.value ?? null]));
+    const { items, slots } = fitPlanOf({
+      aggregate: run.aggregate,
+      slotOf: run.today.slotOf,
+      tiers: run.today.tiers,
+      benEdited,
+      skipped: new Set(r.skipped.keys()),
+      held,
+      muscles: (id) => info.get(id)?.primaryMuscles ?? [],
+      lastOf: (sx) => lastBySlot.get(run.today?.slotOf[sx] ?? sx) ?? null,
+    });
+    const unfittedSeconds = estimateRemainingDuration(run.aggregate, { pace: page.pace }).seconds;
+    const equipment = typical ?? (await repos().equipment.listByGym(gymId).catch(() => [] as EquipmentInstance[]));
+    const gym = { id: gymId, name: page.view.gym?.name ?? 'this gym', equipment };
+    const inPlan = new Set(run.aggregate.exercises.map((e) => e.exerciseId));
+    // Ben's own exercises (done before, in his list), usable here, not flagged, not in today's plan: only when filling a longer session.
+    const own: { exerciseId: string; name: string }[] = [];
+    if (req.minutes * 60 > unfittedSeconds) {
+      for (const id of await workout.recentExerciseIds(40).catch(() => [] as string[])) {
+        const e = await exOf(id);
+        if (e === null || inPlan.has(id) || held(id) || !doableHere(e, gym)) continue;
+        own.push({ exerciseId: id, name: e.name });
+        if (own.length >= 20) break;
+      }
+    }
+    const ownIds = new Set(own.map((o) => o.exerciseId));
+    const canAdd = (exerciseId: string): AddCheck => {
+      const e = info.get(exerciseId) ?? null;
+      if (inPlan.has(exerciseId)) return { ok: false, why: 'in_plan' };
+      if (!ownIds.has(exerciseId) || e === null) return { ok: false, why: 'not_own' };
+      if (held(exerciseId)) return { ok: false, why: 'pain_hold' };
+      return { ok: true, name: e.name, muscles: e.primaryMuscles };
+    };
+    const canSwap = (slotKey: string, exerciseId: string): SwapCheck => {
+      const slot = slots.find((x) => x.slotKey === slotKey);
+      const to = info.get(exerciseId) ?? ctx.catalogueExercises?.().find((x) => x.id === exerciseId) ?? null;
+      const from = slot === undefined ? null : (info.get(slot.exerciseId) ?? null);
+      if (slot === undefined || to === null || from === null) return { ok: false, why: 'not_own' };
+      if (inPlan.has(exerciseId)) return { ok: false, why: 'in_plan' };
+      if (held(exerciseId)) return { ok: false, why: 'pain_hold' };
+      if (to.measurement !== from.measurement || !doableHere(to, gym)) return { ok: false, why: 'not_here' };
+      return { ok: true, name: to.name };
+    };
+    const equipmentKinds = [...new Set(equipment.map((e) => e.kind))];
+    const context: TodayFitContext = {
+      workout: page.view.title,
+      minutes: req.minutes,
+      estimateMinutes: roundEstimateMinutes(unfittedSeconds),
+      paceSource: PACE_SOURCE_LABEL[page.pace.source],
+      goal: null,
+      priorityGroups: [],
+      painFlags: flags.map((f) => ({ exercise: f.exerciseName, area: f.area })),
+      equipmentKinds,
+      plan: items,
+      ownExercises: own,
+    };
+    return { context, slots, unfittedSeconds, canAdd, canSwap, basis: basisOf(resolved), baseSlots: run.today.baseSlots, resolved, gymId, checkIn: planCheckIn, nameOf: new Map(slots.map((x) => [x.slotKey, x.name])) };
+  }
+
   const overview = {
     /**
      * `services.overview.load` (workout-overview §7): the page for Up next or
@@ -3165,6 +3329,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           reordered: (run.today?.resolved.order ?? null) !== null,
           templateCard: await templateCardOf(resolved, run, t.draft),
           pace: planPace(recent),
+          coachFit: await coachFitInfo(run.today),
         };
       } catch {
         return null;
@@ -3248,6 +3413,137 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return { ok: true, draft: null, duplicate: false, added: [], removed: [] };
       }
       return writeDraft(req, () => ({ type: 'edit', edit: { kind: 'fit', minutes: req.minutes } }));
+    },
+
+    /**
+     * `Ask coach` on `How long?` (fit-to-time §5, FT6): only when Ben asks.
+     * Sends today's shown plan (without any fit), his pain flags and the
+     * gym's equipment kinds, and nothing else (§5.1); validates the answer
+     * (`validateTodayFit`); and writes what passes as the coach's draft
+     * edits with one `fit_today` record, in one versioned write. Applied at
+     * once (rule 3: Ben asked; today only); Undo takes all of it back. A
+     * page that moved while the coach worked discards the answer (rule 5).
+     * Swaps come back as suggestions only. Logging never waits on this.
+     */
+    async requestCoachFit(req: DraftTarget & { minutes: number; previewKey: string; checkInId?: string | null; signal?: AbortSignal }): Promise<CoachFitOutcome> {
+      try {
+        if (ctx.coachFit === undefined || !validFitMinutes(req.minutes)) return { kind: 'unavailable' };
+        const p = await owner();
+        const prior = await ctx.store().repos.coach.findActionByOpId(p.id, req.opId).catch(() => null);
+        if (prior !== null && prior.detail.kind === 'fit_today') return { kind: 'applied', actionId: prior.actionId, draft: await ctx.store().repos.drafts.get(prior.detail.draftId).catch(() => null), duplicate: true };
+        const typical = req.gymId === null ? req.typicalEquipment : undefined;
+        const page = await overview.load({ target: req.target, gymId: req.gymId, checkInId: req.checkInId ?? null, ...(typical ? { typicalEquipment: typical } : {}) });
+        if (page === null || page.view.previewKey !== req.previewKey || (page.draft?.version ?? null) !== req.expectedDraftVersion) return { kind: 'plan_changed' };
+        const plan = await coachFitPlan(p, req, page);
+        if (plan === null) return { kind: 'plan_changed' };
+        const answer = await ctx.coachFit(plan.context, req.signal);
+        if (answer === null) return { kind: 'unavailable' };
+        if (!answer.ok) {
+          if (answer.error === 'timeout') return { kind: 'timeout' };
+          if (answer.error === 'cancelled') return { kind: 'cancelled' };
+          if (answer.error === 'network') return { kind: 'unavailable' };
+          return { kind: 'failed' };
+        }
+        // The page as it is now: anything that moved while the coach worked discards the answer (§6 `Plan changed`).
+        const now = await overview.load({ target: req.target, gymId: req.gymId, checkInId: req.checkInId ?? null, ...(typical ? { typicalEquipment: typical } : {}) });
+        if (now === null || now.view.previewKey !== req.previewKey) return { kind: 'plan_changed' };
+        const v = validateTodayFit({ minutes: req.minutes, unfittedSeconds: plan.unfittedSeconds, slots: plan.slots, args: answer.args, canAdd: plan.canAdd, canSwap: plan.canSwap });
+        const rejectedText = v.rejected.map((r) => `${r.slotKey === null ? r.kind : (plan.nameOf.get(r.slotKey) ?? r.kind)} · ${FIT_REFUSAL_WORDS[r.why]}`);
+        if (v.accepted.length === 0) return { kind: 'rejected', reasons: rejectedText };
+        const at = ctx.now();
+        const actionId = deriveId(`coach-fit:${req.opId}`);
+        const drafts = ctx.store().repos.drafts;
+        const current = await liveDraft(p.id, plan.basis);
+        if ((current?.version ?? null) !== req.expectedDraftVersion) return { kind: 'plan_changed' };
+        const change = applyDraftCommand({
+          current,
+          expectedVersion: req.expectedDraftVersion,
+          opId: req.opId,
+          at,
+          ownerId: p.id,
+          basis: plan.basis,
+          newDraftId: ctx.newId(),
+          slots: plan.baseSlots,
+          command: { type: 'coach_fit', minutes: req.minutes, actionId, edits: coachFitDraftEdits(v.accepted, req.opId) },
+        });
+        if (change.kind !== 'write') return change.kind === 'stale' || change.kind === 'duplicate' ? { kind: 'plan_changed' } : { kind: 'rejected', reasons: rejectedText };
+        // Before → after from the estimate (FT7): the draft this write leaves, planned now.
+        const t = await todayForDraft(p, plan.resolved, plan.gymId, typical, plan.checkIn, change.next);
+        const run = await overviewDryRun(p, plan.resolved, plan.gymId, plan.checkIn, typical, t.input);
+        const fit = run?.today?.fit ?? null;
+        if (run === null || fit === null) return { kind: 'failed' };
+        const beforeMinutes = fitMinutesOf(fit.beforeSeconds, 'fitted', req.minutes);
+        const afterMinutes = fitMinutesOf(fit.afterSeconds, fit.status, req.minutes);
+        const nameOfSlot = (slotKey: string): string => {
+          const sx = Object.entries(run.today?.slotOf ?? {}).find(([, k]) => k === slotKey)?.[0];
+          return run.aggregate.exercises.find((e) => e.id === sx)?.exerciseName ?? plan.nameOf.get(slotKey) ?? 'Exercise';
+        };
+        const lines = fit.lines.map((l) => (l.kind === 'skip' ? `${nameOfSlot(l.slotKey)} · skipped` : l.kind === 'add' ? `${nameOfSlot(l.slotKey)} · added` : `${nameOfSlot(l.slotKey)} · ${String(l.from)} → ${String(l.to)} sets`));
+        const fitEdit = change.next.edits.find((e) => change.added.includes(e.editId) && e.kind === 'fit');
+        if (fitEdit === undefined) return { kind: 'failed' };
+        const action: ActionRecord = {
+          actionId,
+          turnId: null,
+          opId: req.opId,
+          status: 'committed',
+          author: 'coach',
+          detail: {
+            kind: 'fit_today',
+            workoutLabel: page.view.title.slice(0, 120),
+            minutes: req.minutes,
+            beforeMinutes,
+            afterMinutes,
+            draftId: change.next.id,
+            fitEditId: fitEdit.editId,
+            editIds: change.added,
+            lines: lines.map((l) => l.slice(0, 200)),
+            rejected: v.rejected.map((r, i) => ({ text: (rejectedText[i] ?? r.why).slice(0, 200), why: r.why })),
+            suggestions: v.suggestions.map((x) => ({ slotKey: x.slotKey, toExerciseId: x.toExerciseId, text: `${x.fromName} → ${x.toName}`.slice(0, 200) })),
+          },
+          failure: null,
+          reason: answer.args.reason.trim() === '' ? null : answer.args.reason.trim().slice(0, 240),
+          evidenceRefs: [],
+          guardNotes: [],
+          entityVersions: [{ entity: 'pre_start_draft', id: change.next.id, before: current?.version ?? null, after: change.next.version }],
+          undoneBy: null,
+          createdAt: at,
+        };
+        const r = await drafts.applyCoachFit({ ownerId: p.id, next: change.next, expectedVersion: req.expectedDraftVersion, action });
+        if (r.status === 'stale') return { kind: 'plan_changed' };
+        return { kind: 'applied', actionId: r.action.actionId, draft: r.draft, duplicate: r.status === 'replayed' };
+      } catch {
+        return { kind: 'failed' };
+      }
+    },
+
+    /** `Undo` on the coach's fit card (§5.3): every edit it made removed in one write; a built-in fit it replaced comes back. */
+    async undoCoachFit(req: { actionId: string; opId: string }): Promise<CoachFitUndoOutcome> {
+      try {
+        const p = await owner();
+        const target = await ctx.store().repos.coach.getAction(req.actionId);
+        if (target === null || target.detail.kind !== 'fit_today') return { ok: false, reason: 'missing' };
+        const at = ctx.now();
+        const undo: ActionRecord = {
+          actionId: deriveId(`coach-fit-undo:${req.opId}`),
+          turnId: null,
+          opId: req.opId,
+          status: 'committed',
+          author: 'ben',
+          detail: { kind: 'undo', undoneActionId: req.actionId, what: `the fit to ${String(target.detail.minutes)} min`, restored: [], alreadyLogged: [] },
+          failure: null,
+          reason: null,
+          evidenceRefs: [],
+          guardNotes: [],
+          entityVersions: [],
+          undoneBy: null,
+          createdAt: at,
+        };
+        const r = await ctx.store().repos.drafts.undoCoachFit({ ownerId: p.id, undo, at });
+        if (r.status === 'not_possible') return { ok: false, reason: r.reason === 'missing' ? 'missing' : 'changed_since' };
+        return { ok: true, draft: r.draft };
+      } catch {
+        return { ok: false, reason: 'failed' };
+      }
     },
 
     /** `Clear fit` (fit-to-time §3.2): the live fit, and a coach fit's own edits, removed; `removed` is what the toast's Undo restores. */
