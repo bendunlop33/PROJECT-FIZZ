@@ -32,6 +32,7 @@ import {
   type Gym,
   type ImportAnswers,
   type ImportJob,
+  type ImportJobLayout,
   type ImportRow,
   type SessionAggregate,
   type UserProfile,
@@ -179,14 +180,17 @@ export interface PastImport {
 export interface ImportedSetProvenance {
   fileName: string;
   importedAt: ZonedTimestamp;
-  variant: FitNotesVariant;
+  /** FitNotes only; null for any other app's file (ADR 0026). */
+  variant: FitNotesVariant | null;
   row: ImportRow;
   header: string;
+  /** The layout a layout import used (its tag: `Coach layout` or `Layout: <name>`). */
+  layout: ImportJobLayout | null;
 }
 
 /** Where an imported set came from: its import and source row (check 24). */
 export function provenanceOf(job: ImportJob, row: ImportRow): ImportedSetProvenance {
-  return { fileName: job.fileName, importedAt: job.startedAt, variant: job.variant, row, header: job.header };
+  return { fileName: job.fileName, importedAt: job.startedAt, variant: job.variant, row, header: job.header, layout: job.layout ?? null };
 }
 
 /** Nothing would be imported or is waiting for an answer: every date the file could bring in is already in the app. */
