@@ -265,13 +265,25 @@ describe('r2 S1: opening an old workout under weekly bests selects its week', ()
       expect(sp(sel.point.display)).toBe('≈116.5 kg');
       expect(sel.point.title.startsWith('Thu')).toBe(true);
       expect(sp(sel.point.detail)).toBe('Est. 1RM  ≈116.5 kg  from 100 kg × 5');
+      // The panel's tag and VoiceOver say what the highlighted point is (r3 S1).
+      expect(sp(sel.weekBest?.text)).toBe('Week best ≈163.5 kg');
+      expect(sel.weekBest?.words).toMatch(/^Week best about 163\.5 kilograms, Monday \d+ \w+/);
     });
   }
+
+  it('an opened Thursday with every set marked has nothing to select under weekly bests (r3)', () => {
+    const marked = session('2025-06-12', [row([set(kg(100), 5, { exclusions: ['pain'] }), set(kg(100), 5, { exclusions: ['pain'] })])]);
+    const all = [...sessions.filter((x) => x.date !== '2025-06-12'), marked];
+    const v = buildExerciseDetailView({ sessions: all, exerciseId: 'bench', today: TODAY, sessionId: marked.sessionId });
+    expect([v?.range, v?.selectedSessionId, v?.selection]).toEqual(['all', null, null]);
+    expect(v?.heading.endsWith('· weekly best')).toBe(true);
+  });
 
   it('the week’s best workout selects its own point; a later fetch with `selectSessionId` keeps the selection without choosing the range', () => {
     const mon = sessions.find((x) => x.date === '2025-06-09') as ProgressSession;
     const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, sessionId: mon.sessionId });
     expect(v?.selection?.point.sessionId).toBe(mon.sessionId);
+    expect(v?.selection?.weekBest).toBeNull();
     expect(v?.points[v.selection?.index ?? -1]?.sessionId).toBe(mon.sessionId);
     const thu = thursday('2025-06-12');
     const again = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: 'all', selectSessionId: thu.sessionId });
@@ -315,7 +327,18 @@ describe('S3: FitNotes series labels never collide', () => {
   it('labels that still match after every step get an ordinal (last resort)', () => {
     const a = { ...(collectExerciseSeries([imported('2025-01-01', [row([set(kg(100), 5)])])], 'bench')[0] as ExerciseSeries) };
     const b = { ...a, id: `${a.id}-copy` };
-    expect([...seriesLabels([a, b], {}).values()]).toEqual(['FitNotes · kg · kg (1)', 'FitNotes · kg · kg (2)']);
+    expect([...seriesLabels([a, b], {}).values()]).toEqual(['FitNotes · kg (1)', 'FitNotes · kg (2)']);
+  });
+
+  it('timed and bodyweight imports say so, not a unit they don’t use (r3 N1)', () => {
+    const hold = imported('2025-01-01', [row([set(null, null, { durationS: 30 })], { convention: 'bodyweight', measurement: 'duration' })]);
+    const reps = imported('2025-01-02', [row([set(null, 12)], { convention: 'bodyweight' })]);
+    const assisted = imported('2025-01-03', [row([set(kg(20, 'assistance'), 8)], { convention: 'assistance' })]);
+    const weighted = imported('2025-01-04', [row([set(kg(10), null, { durationS: 45 })], { convention: 'total', measurement: 'duration' })]);
+    const labels = (xs: ProgressSession[]) => [...seriesLabels(collectExerciseSeries(xs, 'bench'), {}).values()].sort();
+    expect(labels([hold, assisted])).toEqual(['FitNotes · kg assist', 'FitNotes · timed']);
+    expect(labels([reps])).toEqual(['FitNotes · reps']);
+    expect(labels([weighted])).toEqual(['FitNotes · timed · weighted']);
   });
 
   it('timed imports in kg and lb fall back to the unit', () => {

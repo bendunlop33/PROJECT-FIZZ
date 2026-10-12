@@ -229,19 +229,21 @@ export interface SeriesOption {
 
 /** Series labels (§5.5): gym and equipment for logged series, `FitNotes · kg` for imported ones; made unique when two would read the same. */
 export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readonly<Record<string, string>>): Map<string, string> {
+  // Two series that would read the same: say what differs (unit and convention, or timed and weighted), then the unit, then an ordinal as a last resort.
+  const loadedTimed = (s: ExerciseSeries) => s.key.measurement === 'duration' && s.key.convention !== 'bodyweight';
+  const detail = (s: ExerciseSeries) => (s.key.measurement !== 'duration' ? seriesUnitText(s) : loadedTimed(s) ? 'timed · weighted' : 'timed');
   const base = new Map<string, string>();
   for (const s of series) {
     if (s.key.source === 'import') {
-      base.set(s.id, `FitNotes · ${s.key.unit}${s.key.convention === 'per_hand' ? ' each' : s.key.convention === 'assistance' ? ' assist' : ''}`);
+      // Timed and bodyweight imports say so (not a unit they don't use, review progress-B r3 N1).
+      const what = s.key.measurement === 'duration' ? detail(s) : s.key.convention === 'bodyweight' ? 'reps' : `${s.key.unit}${s.key.convention === 'per_hand' ? ' each' : s.key.convention === 'assistance' ? ' assist' : ''}`;
+      base.set(s.id, `FitNotes · ${what}`);
       continue;
     }
     const gym = s.gymId === null ? null : (gymNames[s.gymId] ?? null);
     const eq = s.key.equipmentId === null ? 'No equipment' : (s.equipmentName ?? 'Equipment');
     base.set(s.id, gym === null ? eq : `${gym} · ${eq}`);
   }
-  // Two series that would read the same: say what differs (unit and convention, or timed and weighted), then the unit, then an ordinal as a last resort.
-  const loadedTimed = (s: ExerciseSeries) => s.key.measurement === 'duration' && s.key.convention !== 'bodyweight';
-  const detail = (s: ExerciseSeries) => (s.key.measurement !== 'duration' ? seriesUnitText(s) : loadedTimed(s) ? 'timed · weighted' : 'timed');
   const step1 = new Map<string, string>();
   const baseCounts = countLabels(base);
   for (const s of series) {
@@ -256,6 +258,7 @@ export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readon
     step2.set(s.id, (step1Counts.get(l) ?? 0) > 1 ? `${l} · ${loadedTimed(s) ? seriesUnitText(s) : s.key.unit}` : l);
   }
   const step2Counts = countLabels(step2);
+  // The ordinal goes on the shorter step-1 label (`FitNotes · kg (1)`, not `FitNotes · kg · kg (1)`), counted per step-1 label so it stays unique (review progress-B r3 N1).
   const seen = new Map<string, number>();
   const out = new Map<string, string>();
   for (const s of series) {
@@ -264,9 +267,10 @@ export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readon
       out.set(s.id, l);
       continue;
     }
-    const k = (seen.get(l) ?? 0) + 1;
-    seen.set(l, k);
-    out.set(s.id, `${l} (${String(k)})`);
+    const short = step1.get(s.id) ?? l;
+    const k = (seen.get(short) ?? 0) + 1;
+    seen.set(short, k);
+    out.set(s.id, `${short} (${String(k)})`);
   }
   return out;
 }
@@ -402,8 +406,19 @@ export interface ExerciseDetailView {
    * What to select for `selectedSessionId`: the chart point to highlight and
    * the panel for that workout. Under weekly bests the point is the week's
    * and the panel is the workout's own value (review progress-B r2 S1).
+   * `weekBest` is set only then: the highlighted point's value for the
+   * panel's tag (`Week best ≈163.5 kg`) and VoiceOver (review progress-B r3 S1).
    */
-  selection: { index: number; point: ChartPointView } | null;
+  selection: ExerciseSelection | null;
+}
+
+export interface ExerciseSelection {
+  /** The chart point to highlight. */
+  index: number;
+  /** The workout the panel shows, opens and VoiceOver reads. */
+  point: ChartPointView;
+  /** Under weekly bests, when the workout isn't its week's best: the highlighted point's value. */
+  weekBest: { text: string; words: string } | null;
 }
 
 export interface ExerciseDetailInput {
@@ -708,19 +723,26 @@ function openedSelection(
   series: ExerciseSeries,
   metric: ExerciseMetric,
   today: string,
-): { index: number; point: ChartPointView } | null {
+): ExerciseSelection | null {
   if (sessionId === null) return null;
   const own = trend.points.findIndex((p) => p.sessionId === sessionId);
   if (own >= 0) {
     const point = points[own];
-    return point === undefined ? null : { index: own, point };
+    return point === undefined ? null : { index: own, point, weekBest: null };
   }
   if (trend.aggregation !== 'weekly_best') return null;
   const mine = trend.sessionPoints.find((p) => p.sessionId === sessionId);
   if (mine === undefined) return null;
   const week = mondayOf(mine.date);
   const index = trend.points.findIndex((p) => mondayOf(p.date) === week);
-  return index < 0 ? null : { index, point: pointView(mine, series, metric, today) };
+  const best = trend.points[index];
+  const shown = points[index];
+  if (best === undefined || shown === undefined) return null;
+  return {
+    index,
+    point: pointView(mine, series, metric, today),
+    weekBest: { text: `Week best ${shown.display}`, words: `Week best ${valueWords(best, series, metric)}, ${weekdayLongDate(best.date, today)}.` },
+  };
 }
 
 /**
