@@ -42,7 +42,7 @@ describe('workout gaps survive a force-close (schema 10)', () => {
   it('swap, notes, a removed exercise and a distance set read back exactly; Undo works after relaunch', async () => {
     const path = join(dir, 'training.db');
     let store = await openStore(openNodeDriver(path));
-    expect(await store.db.read((q) => readUserVersion(q))).toBe(12);
+    expect(await store.db.read((q) => readUserVersion(q))).toBe(13);
     await seed(store);
     let service = createSessionService(store.repos, idGen(80_000));
     const started = await service.start({ ownerId: OWNER, gymId: GYM, routineId: id(300), opId: 'start-1', at: at(0) });

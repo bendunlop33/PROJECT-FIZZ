@@ -55,6 +55,8 @@ export const YOUR_DATA_TABLES = [
   'coach_offers',
   // Today's edits before a workout starts (main's ADR 0022, migration 7): owner-scoped, Ben's choices.
   'pre_start_drafts',
+  // Coach-built workout drafts (workout-builder §8.2, migration 13): Ben's requests and the coach's plans for him.
+  'workout_drafts',
   // Tombstones of purged workouts (delete-workouts §6.3, migration 8): Your data, removed by Delete my data.
   'purged_sessions',
 ] as const;

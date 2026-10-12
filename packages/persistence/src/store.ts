@@ -18,6 +18,7 @@ import { migrate, MIGRATIONS, type Migration, type MigrationReport } from './mig
 import { SqliteImports } from './imports';
 import { SqliteCoachStore } from './coach';
 import { SqliteDrafts } from './drafts';
+import { SqliteWorkoutDrafts } from './workout-drafts';
 import { SqliteSessions } from './sessions';
 import { inHistorySql } from './sql';
 
@@ -30,6 +31,8 @@ export interface SqliteRepositories extends Repositories {
   imports: SqliteImports;
   coach: SqliteCoachStore;
   drafts: SqliteDrafts;
+  /** Coach-built workout drafts (workout-builder §8.2). */
+  workoutDrafts: SqliteWorkoutDrafts;
 }
 
 export function createSqliteRepositories(db: Database): SqliteRepositories {
@@ -46,6 +49,7 @@ export function createSqliteRepositories(db: Database): SqliteRepositories {
     imports: new SqliteImports(db),
     coach: new SqliteCoachStore(db),
     drafts: new SqliteDrafts(db),
+    workoutDrafts: new SqliteWorkoutDrafts(db),
   };
 }
 

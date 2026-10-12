@@ -26,6 +26,7 @@ import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId } from './sql';
+import { getWorkoutDraftIn, WORKOUT_DRAFT_SPEC } from './workout-drafts';
 
 /**
  * Coach v1 storage (ADR 0020 §9, slice C3). Every coach write is an
@@ -85,6 +86,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'add_playbook_candidate':
     case 'update_routine':
     case 'fit_today':
+    case 'build_workout':
     case 'undo':
       return null;
   }
@@ -222,6 +224,10 @@ async function startedFrom(q: SqlExecutor, ownerId: string, sourceSessionId: str
  * proposals and their Apply end there (ADR 0020 §3).
  */
 export async function basisStartedSince(q: SqlExecutor, ownerId: string, basis: DraftBasis, sinceUtc: string): Promise<boolean> {
+  if (basis.kind === 'coach_draft') {
+    const started = await q.getFirst<{ id: string }>("SELECT id FROM workout_drafts WHERE id = ? AND owner_id = ? AND status = 'started' AND updated_at_utc >= ?", [basis.draftId, ownerId, sinceUtc]);
+    return started !== null;
+  }
   const row =
     basis.kind === 'routine'
       ? await q.getFirst<{ id: string }>(`SELECT id FROM sessions WHERE owner_id = ? AND routine_id = ? AND started_at_utc >= ? AND (status = 'active' OR ${inHistorySql()}) LIMIT 1`, [ownerId, basis.routineId, sinceUtc])
@@ -494,6 +500,18 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback('already_exists');
         return null;
       }
+      case 'workout_draft': {
+        // workout-builder §8.2: the draft (new, or a new version on the version the turn read) and its record together.
+        if (write.draft.ownerId !== ownerId) throw new Error('Draft owner differs from the store owner');
+        if (write.expectedVersion !== null) {
+          const current = await getWorkoutDraftIn(tx, write.draft.id);
+          if (current === null || current.ownerId !== ownerId) throw new Rollback('missing');
+          if (current.status !== 'open' || current.expiresAtUtc <= write.action.createdAt.utc) throw new Rollback('stale_version');
+        }
+        const r = await saveDocumentIn(tx, WORKOUT_DRAFT_SPEC, write.draft, write.expectedVersion);
+        if (!r.ok) throw new Rollback(write.expectedVersion === null ? 'already_exists' : 'stale_version');
+        return null;
+      }
     }
   }
 
@@ -630,9 +648,11 @@ export class SqliteCoachStore {
       // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
       // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
       // The coach's fit to time has its own Undo (`drafts.undoCoachFit`), versioned on the draft.
+      // A draft version's Undo is Ben's draft write (`workout_drafts`), not a coach undo (workout-builder §5.3).
       case 'suggest_memory':
       case 'update_routine':
       case 'fit_today':
+      case 'build_workout':
       case 'undo':
         return 'unsupported';
     }
