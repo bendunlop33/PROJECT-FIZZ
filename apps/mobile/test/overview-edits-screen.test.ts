@@ -14,6 +14,7 @@ import {
   listHeaderText,
   noSwapsText,
   pageToast,
+  pageToasts,
   reorderUnits,
   rowCustomActions,
   showsWhy,
@@ -119,6 +120,16 @@ describe('change-review card, opIds and page toasts', () => {
     expect(pageToast({ ...landed, coachLanded: 0 }, new Set())).toBeNull();
     expect(pageToast({ cleared: false, removedEdits: 2, draft: { id: 'd', version: 3 } }, new Set([t?.key ?? '']))?.text).toBe('Plan changed · 2 edits removed');
     expect(pageToast({ cleared: false, removedEdits: 0, draft: null }, new Set())).toBeNull();
+  });
+  it('a refused and a landed coach change on one load both show, in turn (merge r3 S1)', () => {
+    const page = { cleared: false, removedEdits: 0, draft: { id: 'd1', version: 5 }, coachRefused: 1, coachLanded: 1 };
+    expect(pageToasts(page, new Set()).map((t) => t.text)).toEqual(['Coach change didn’t fit here', 'Coach change applied']);
+    // The screen shows the next once the first has gone.
+    expect(pageToast(page, new Set())?.key).toBe('coach-refused');
+    expect(pageToast(page, new Set(['coach-refused']))).toEqual({ key: 'coach-landed:d1:5', text: 'Coach change applied' });
+    expect(pageToast(page, new Set(['coach-refused', 'coach-landed:d1:5']))).toBeNull();
+    // `Earlier edits cleared` no longer swallows the coach notices.
+    expect(pageToasts({ ...page, cleared: true, removedEdits: 2 }, new Set()).map((t) => t.key)).toEqual(['cleared', 'coach-refused', 'coach-landed:d1:5']);
   });
 });
 

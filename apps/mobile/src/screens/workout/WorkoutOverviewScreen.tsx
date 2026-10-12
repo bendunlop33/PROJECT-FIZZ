@@ -50,7 +50,7 @@ import {
   editToast,
   listHeaderText,
   noSwapsText,
-  pageToast,
+  pageToasts,
   rowCustomActions,
   defaultChecked,
   EDIT_MODE_COPY,
@@ -197,6 +197,8 @@ export function WorkoutOverviewScreen() {
   const [fitWhy, setFitWhy] = useState<{ reason: string | null; checks: string[]; notUsed: string[] } | null>(null);
   const [dismissedSwaps, setDismissedSwaps] = useState<ReadonlySet<string>>(() => new Set(dismissedCoachSwaps));
   const shownToasts = useRef(new Set<string>());
+  // The page toasts still to show, one after another (merge r3 S1).
+  const pageToastQueue = useRef<{ key: string; text: string }[]>([]);
 
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym();
@@ -281,14 +283,23 @@ export function WorkoutOverviewScreen() {
   useEffect(() => {
     if (page) setOpen((o) => panelReducer(o, { kind: 'rows', rowIds: page.view.rows.map((r) => r.slotKey) }));
   }, [page]);
-  // `Earlier edits cleared` / `Plan changed · 1 edit removed`, once.
+  // `Earlier edits cleared` / coach notices / `Plan changed · 1 edit removed`, once each, in turn.
   useEffect(() => {
     if (!page) return;
-    const t = pageToast(page, shownToasts.current);
-    if (t === null) return;
-    shownToasts.current.add(t.key);
-    setToast({ text: t.text });
+    const [first, ...rest] = pageToasts(page, shownToasts.current);
+    pageToastQueue.current = rest;
+    if (first === undefined) return;
+    shownToasts.current.add(first.key);
+    setToast({ text: first.text });
   }, [page]);
+  // The next page toast once the current toast has gone.
+  useEffect(() => {
+    if (toast) return;
+    const next = pageToastQueue.current.shift();
+    if (next === undefined) return;
+    shownToasts.current.add(next.key);
+    setToast({ text: next.text });
+  }, [toast]);
   // The gym toast, once the page has re-read at the new gym.
   useEffect(() => {
     const sw = gymSwitch.current;

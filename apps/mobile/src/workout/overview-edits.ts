@@ -203,20 +203,33 @@ export function createOpIds(newId: () => string): { of: (intent: string) => stri
   };
 }
 
-/** The toasts a fresh page asks for, once per draft version: `Earlier edits cleared`, `Coach change didn’t fit here`, `Coach change applied`, `Plan changed · N edits removed`. */
-export function pageToast(page: { cleared: boolean; removedEdits: number; draft: { id: string; version: number } | null; coachRefused?: number; coachLanded?: number }, shown: ReadonlySet<string>): { key: string; text: string } | null {
-  if (page.cleared) return { key: 'cleared', text: TODAY_EDITS_COPY.earlierCleared };
-  if ((page.coachRefused ?? 0) > 0 && !shown.has('coach-refused')) return { key: 'coach-refused', text: TODAY_EDITS_COPY.coachRefused };
+type ToastPage = { cleared: boolean; removedEdits: number; draft: { id: string; version: number } | null; coachRefused?: number; coachLanded?: number };
+
+/**
+ * Every toast a fresh page asks for, in the order they show (one after another,
+ * so none is dropped; merge r3 S1): `Earlier edits cleared`, `Coach change didn’t fit here`,
+ * `Coach change applied`, `Plan changed · N edits removed`. Keyed toasts show once per draft version.
+ */
+export function pageToasts(page: ToastPage, shown: ReadonlySet<string>): { key: string; text: string }[] {
+  const out: { key: string; text: string }[] = [];
+  if (page.cleared) out.push({ key: 'cleared', text: TODAY_EDITS_COPY.earlierCleared });
+  if ((page.coachRefused ?? 0) > 0 && !shown.has('coach-refused')) out.push({ key: 'coach-refused', text: TODAY_EDITS_COPY.coachRefused });
   // A refused coach change that landed on this load (merge r2 S2): once per landing.
   if ((page.coachLanded ?? 0) > 0 && page.draft !== null) {
     const key = `coach-landed:${page.draft.id}:${String(page.draft.version)}`;
-    if (!shown.has(key)) return { key, text: TODAY_EDITS_COPY.coachLanded };
+    if (!shown.has(key)) out.push({ key, text: TODAY_EDITS_COPY.coachLanded });
   }
-  if (page.removedEdits > 0 && page.draft !== null) {
+  // Cleared edits leave nothing to report as removed.
+  if (!page.cleared && page.removedEdits > 0 && page.draft !== null) {
     const key = `removed:${page.draft.id}:${String(page.draft.version)}`;
-    return shown.has(key) ? null : { key, text: editToast.planChanged(page.removedEdits) };
+    if (!shown.has(key)) out.push({ key, text: editToast.planChanged(page.removedEdits) });
   }
-  return null;
+  return out;
+}
+
+/** The first toast a fresh page asks for (see `pageToasts`). */
+export function pageToast(page: ToastPage, shown: ReadonlySet<string>): { key: string; text: string } | null {
+  return pageToasts(page, shown)[0] ?? null;
 }
 
 // ---------------------------------------------------------------------------
