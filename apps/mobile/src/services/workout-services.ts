@@ -2595,13 +2595,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const ex = aggregate?.exercises.find((e) => e.id === set?.sessionExerciseId);
         if (!aggregate || !set || !ex) return null;
         const basisId = set.planned.provenance?.basis?.sessionId ?? null;
-        const [basisNow, gyms, flags, history] = await Promise.all([
+        const draftId = aggregate.session.coachDraft?.draftId ?? null;
+        const [basisNow, gyms, flags, history, coachDraft] = await Promise.all([
           basisId === null ? null : repos().sessions.get(basisId).catch(() => null),
           repos().gyms.listByOwner(p.id).catch(() => []),
           repos().painFlags.listByOwner(p.id).catch(() => [] as PainFlag[]),
           historyFor(p.id, ex.exerciseId).catch(() => [] as HistorySession[]),
+          draftId === null ? null : ctx.store().repos.workoutDrafts.get(draftId).catch(() => null),
         ]);
         return explainTarget({
+          coachDraftBuiltAt: coachDraft !== null && coachDraft.ownerId === p.id ? coachDraft.createdAt : null,
           aggregate,
           setId,
           nowMs: toMs(ctx.now().utc),

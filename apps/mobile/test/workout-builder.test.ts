@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
-import { catalogueExerciseId, loadCell, type OverviewRow } from '@fizz/domain';
+import { catalogueExerciseId, dayMonthText, loadCell, type OverviewRow } from '@fizz/domain';
 import type { TextCoachState } from '@fizz/providers';
 import type { SessionAggregate } from '@fizz/schemas';
 
@@ -195,6 +195,12 @@ describe('a draft from a fake model response (WB2, WB4, WB7–WB9)', () => {
     expect(benchSets.filter((x) => x.setType === 'working').every((x) => x.planned.rpe === 8 && x.planned.load?.unit === 'kg' && x.planned.load.convention === 'total')).toBe(true);
     const inclineRow = a.exercises.find((e) => e.exerciseName === 'Incline dumbbell press');
     expect(a.sets.find((x) => x.sessionExerciseId === inclineRow?.id && x.setType === 'working')?.planned.load).toMatchObject({ convention: 'per_hand' });
+    // Review S7 (§6.3, WB25): the set `Why?` says where the workout came from, with the day the coach built it.
+    const built = (await s.coachDrafts.get(draftId))?.createdAt;
+    if (built === undefined) throw new Error('no draft');
+    const benchSet = benchSets.find((x) => x.setType === 'working');
+    const why = await s.workout.explainTarget(a.session.id, benchSet?.id ?? '');
+    expect(why?.rows[0]).toEqual({ key: 'coach_workout', label: null, lines: [`From a coach workout · ${dayMonthText(built.utc, built.tz)}`], kind: 'app' });
   });
 });
 
