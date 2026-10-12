@@ -100,4 +100,109 @@ describe('coach structural Apply on a library workout → the library change-rev
     if (!reverted.ok) throw new Error(reverted.message);
     expect(order(reverted.routine.exercises)).toEqual([idOf('Bench press'), idOf('Lateral raise'), idOf('Triceps pushdown')]);
   });
+
+  /** Push A saved from a logged workout, its overview open, and Dumbbell bench press added there by Ben (§11 `add`). */
+  async function pushAWithAdd() {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const first = await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 60, reps: 8 }, { load: 60, reps: 8 }] },
+      { exercise: 'Lateral raise', sets: [{ load: 10, reps: 12 }] },
+      { exercise: 'Triceps pushdown', sets: [{ load: 25, reps: 12 }] },
+    ]);
+    h.clockMs += DAY;
+    const saved = await s.routines.saveFromSession({ sessionId: first, name: 'Push A', opId: 'save-push-a' });
+    if (!saved.ok) throw new Error(saved.message);
+    const started = await s.workout.start({ gymId, opId: 'start-routine', checkIn: null, routineOf: saved.routine.id });
+    if (!started.ok) throw new Error(started.error.message);
+    const agg = started.aggregate;
+    h.clockMs += 60_000;
+    const target = { kind: 'routine' as const, routineId: saved.routine.id };
+    const page = await s.overview.load({ target, gymId });
+    const sheet = await s.overview.addCandidates({ target, gymId, query: 'dumbbell bench', showAll: false });
+    const pick = sheet?.rows.find((r) => r.name === 'Dumbbell bench press');
+    if (page === null || pick === undefined) throw new Error('no overview or no dumbbell bench');
+    const added = await s.overview.edit({ target, gymId, expectedDraftVersion: page.draft?.version ?? null, opId: 'ben-add', edit: { kind: 'add', exerciseId: pick.exerciseId } });
+    if (!added.ok) throw new Error('not added');
+    const idOf = (name: string) => agg.exercises.find((e) => e.exerciseName === name)?.exerciseId;
+    return { s, gymId, target, agg, idOf, dumbbellBench: pick.exerciseId };
+  }
+
+  it('with an exercise Ben added today: remove + reorder applies whole, the added one kept at the end (review B2)', async () => {
+    const { s, gymId, target, agg, idOf } = await pushAWithAdd();
+    model = new StepModel([
+      () =>
+        toolCall('propose_next_workout_change', {
+          sourceSessionId: agg.session.id,
+          sourceVersion: agg.session.version,
+          changes: [
+            { change: 'remove', exerciseId: idOf('Triceps pushdown') },
+            { change: 'reorder', exerciseIds: [idOf('Lateral raise'), idOf('Bench press')] },
+          ],
+          reason: 'Shorter.',
+        }),
+      () => replyWith('Try that.'),
+    ]);
+    const r = await ask(s, 'Drop the pushdown next time and do laterals first');
+    const card = r.cards[0]?.record;
+    if (card?.detail.kind !== 'propose_next_workout_change') throw new Error('no card');
+    const applied = await s.coach.tapProposal(card.actionId, 'apply');
+    if (!applied.ok) throw new Error('not applied');
+    const page = await s.overview.load({ target, gymId });
+    expect(page?.coachRefused).toBe(0);
+    expect(page?.view.rows.map((x) => [x.name, x.edit?.kind ?? null])).toEqual([
+      ['Lateral raise', null],
+      ['Bench press', null],
+      ['Triceps pushdown', 'skipped'],
+      ['Dumbbell bench press', 'added'],
+    ]);
+    // A second load writes nothing more.
+    const again = await s.overview.load({ target, gymId });
+    expect(again?.draft?.version).toBe(page?.draft?.version);
+    expect(again?.coachRefused).toBe(0);
+  });
+
+  it('one change refused here: none of the Apply is written (review B2)', async () => {
+    const { s, gymId, target, agg, idOf, dumbbellBench } = await pushAWithAdd();
+    const before = await s.overview.load({ target, gymId });
+    // The swap's exercise is the one Ben added today, so the draft refuses it; the removal must not land alone.
+    model = new StepModel([
+      () =>
+        toolCall('propose_next_workout_change', {
+          sourceSessionId: agg.session.id,
+          sourceVersion: agg.session.version,
+          changes: [
+            { change: 'remove', exerciseId: idOf('Triceps pushdown') },
+            { change: 'swap', fromExerciseId: idOf('Bench press'), toExerciseId: dumbbellBench },
+          ],
+          reason: 'Shoulder.',
+        }),
+      () => replyWith('Try that.'),
+    ]);
+    const r = await ask(s, 'Drop the pushdown and swap bench for dumbbells next time');
+    const card = r.cards[0]?.record;
+    if (card?.detail.kind !== 'propose_next_workout_change') throw new Error('no card');
+    const applied = await s.coach.tapProposal(card.actionId, 'apply');
+    if (!applied.ok) throw new Error('not applied');
+    const page = await s.overview.load({ target, gymId });
+    expect(page?.coachRefused).toBe(1);
+    expect(page?.draft?.version).toBe(before?.draft?.version);
+    expect(page?.view.rows.map((x) => [x.name, x.edit?.kind ?? null])).toEqual([
+      ['Bench press', null],
+      ['Lateral raise', null],
+      ['Triceps pushdown', null],
+      ['Dumbbell bench press', 'added'],
+    ]);
+    // Ben takes his add back: the whole Apply lands then, both changes together.
+    const added = page?.view.rows.find((x) => x.name === 'Dumbbell bench press');
+    if (added?.edit?.kind !== 'added' || !page?.draft) throw new Error('no add');
+    expect((await s.overview.undoEdit({ target, gymId, expectedDraftVersion: page.draft.version, opId: 'ben-remove-add', editId: added.edit.editId })).ok).toBe(true);
+    const after = await s.overview.load({ target, gymId });
+    expect(after?.coachRefused).toBe(0);
+    expect(after?.view.rows.map((x) => [x.name, x.edit?.kind ?? null])).toEqual([
+      ['Dumbbell bench press', 'swapped'],
+      ['Lateral raise', null],
+      ['Triceps pushdown', 'skipped'],
+    ]);
+  });
 });

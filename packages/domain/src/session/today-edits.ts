@@ -326,13 +326,16 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         const skippedNow = new Map(live().flatMap((x) => (x.kind === 'skip' ? [[x.slotKey, x.editId] as const] : [])));
         const keepNow = keptGroups(slotsNow, skippedNow);
         const todayGroups = slotsNow.map((x) => ({ ...x, supersetGroup: x.supersetGroup !== null && keepNow.has(x.supersetGroup) ? x.supersetGroup : null }));
-        if (!validOrder(e.slotKeys, todayGroups)) return { kind: 'invalid', reason: 'bad_order' };
+        // An order that lists the plan's own slots but not today's added ones (a coach Apply's, review B2) keeps them at the end, as `resolveTodayEdits` reads it.
+        const addedNow = addedSlotsOf(live()).map((x) => x.slotKey);
+        const slotKeys = [...e.slotKeys, ...addedNow.filter((k) => !e.slotKeys.includes(k))];
+        if (!validOrder(slotKeys, todayGroups)) return { kind: 'invalid', reason: 'bad_order' };
         const prev = live().find((x) => x.kind === 'order');
         const base = slotsNow.map((s) => s.slotKey);
-        if (prev?.kind === 'order' && sameOrder(prev.slotKeys, e.slotKeys)) return { kind: 'unchanged', current };
-        if (prev === undefined && sameOrder(base, e.slotKeys)) return { kind: 'unchanged', current };
+        if (prev?.kind === 'order' && sameOrder(prev.slotKeys, slotKeys)) return { kind: 'unchanged', current };
+        if (prev === undefined && sameOrder(base, slotKeys)) return { kind: 'unchanged', current };
         if (prev !== undefined) remove(prev.editId, 'replaced');
-        append({ kind: 'order', slotKeys: [...e.slotKeys] }, prev?.editId ?? null);
+        append({ kind: 'order', slotKeys }, prev?.editId ?? null);
         break;
       }
       if (e.kind === 'add') {

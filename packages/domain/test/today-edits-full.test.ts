@@ -241,6 +241,18 @@ describe('the draft takes the §11 kinds: versioned, idempotent, within limits (
     expect(write(many, { type: 'edit', edit: { kind: 'add', slotKey: id(670), exerciseId: id(232) } }, 'm7')).toEqual({ kind: 'invalid', reason: 'too_many' });
   });
 
+  it('an order listing only the plan’s own slots keeps today’s added ones at the end (a coach Apply’s order, review B2); an unknown or missing planned slot is still refused', () => {
+    const d = written(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL } }, 'o0'));
+    const planned = moveSlot(SLOTS, SLOT_INCLINE, 'first') ?? [];
+    const r = written(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: planned } }, 'o1'));
+    expect(liveEdits(r.edits).find((e) => e.kind === 'order')).toMatchObject({ slotKeys: [...planned, NEW_SLOT] });
+    // The same order again (with or without the added key) changes nothing.
+    expect(write(r, { type: 'edit', edit: { kind: 'order', slotKeys: planned } }, 'o2')).toMatchObject({ kind: 'unchanged' });
+    expect(write(r, { type: 'edit', edit: { kind: 'order', slotKeys: [...planned, NEW_SLOT] } }, 'o3')).toMatchObject({ kind: 'unchanged' });
+    expect(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: planned.slice(1) } }, 'o4')).toEqual({ kind: 'invalid', reason: 'bad_order' });
+    expect(write(d, { type: 'edit', edit: { kind: 'order', slotKeys: [...planned, id(998)] } }, 'o5')).toEqual({ kind: 'invalid', reason: 'bad_order' });
+  });
+
   it('the last exercise left counts an added one: with every planned exercise skipped and one added, the skip is allowed', () => {
     let d = written(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL } }, 'l0'));
     for (const [i, s] of SLOTS.map((x) => x.slotKey).entries()) d = written(write(d, { type: 'edit', edit: { kind: 'skip', slotKey: s } }, `l${String(i + 1)}`));

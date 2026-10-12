@@ -3257,6 +3257,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** What every draft write names: the page's target and gym (the plan the edit is checked against). */
+  /** One command of a draft write, with its own op ID (a batch keeps each edit's idempotency). */
+  interface DraftStep {
+    opId: string;
+    command: DraftCommand;
+  }
+
   interface DraftTarget {
     target: OverviewTarget;
     gymId: string | null;
@@ -3274,7 +3280,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    */
   async function writeDraft(
     req: DraftTarget,
-    make: (slots: { base: ReturnType<typeof basisSlots>; today: ReturnType<typeof basisSlots> }) => DraftCommand | null | Promise<DraftCommand | null>,
+    make: (slots: { base: ReturnType<typeof basisSlots>; today: ReturnType<typeof basisSlots> }) => DraftCommand | DraftStep[] | null | Promise<DraftCommand | DraftStep[] | null>,
   ): Promise<DraftWrite> {
     try {
       const p = await owner();
@@ -3293,41 +3299,55 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (exId !== null && (await exerciseById(exId)) !== null) known.add(exId);
       }
       const resolvedEdits = current === null ? null : resolveTodayEdits(base, current.edits, (id) => known.has(id));
-      const command = await make({ base, today: resolvedEdits === null ? base : editedSlots(base, resolvedEdits) });
-      if (command === null) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
-      const c = applyDraftCommand({
-        current,
-        expectedVersion: req.expectedDraftVersion,
-        opId: req.opId,
-        at,
-        ownerId: p.id,
-        basis,
-        newDraftId: ctx.newId(),
-        slots: base,
-        prune: resolvedEdits === null ? [] : pruneOf(resolvedEdits.outcomes),
-        command,
-      });
-      switch (c.kind) {
-        case 'duplicate':
-          return { ok: true, draft: c.current, duplicate: true, added: [], removed: [] };
-        case 'unchanged':
-          return { ok: true, draft: c.current, duplicate: false, added: [], removed: [] };
-        case 'stale':
-          // Only the draft moved (a quick second tap on an older version): nothing about the plan to announce (review S2).
-          return { ok: false, reason: 'stale', message: DRAFT_COPY.failed };
-        case 'invalid':
-          return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
-        case 'write': {
-          const saved = await drafts.save(c.next, c.expectedVersion);
-          if (!saved.ok) {
-            // A retry whose first write landed reads as done; anything else moved under the page.
-            const now = await drafts.open(p.id, basis);
-            if (now?.opIds.includes(req.opId) === true) return { ok: true, draft: now, duplicate: true, added: [], removed: [] };
-            return { ok: false, reason: 'stale', message: DRAFT_COPY.failed };
-          }
-          return { ok: true, draft: c.next, duplicate: false, added: c.added, removed: c.removed };
-        }
+      const made = await make({ base, today: resolvedEdits === null ? base : editedSlots(base, resolvedEdits) });
+      if (made === null) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
+      // One command, or several written together (a coach Apply's edits, review B2): all of them in one save, or none.
+      const steps: DraftStep[] = Array.isArray(made) ? made : [{ opId: req.opId, command: made }];
+      if (steps.length === 0) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
+      if (steps.length > 1 && (current?.version ?? null) !== req.expectedDraftVersion) {
+        if (current !== null && steps.every((x) => current.opIds.includes(x.opId))) return { ok: true, draft: current, duplicate: true, added: [], removed: [] };
+        return { ok: false, reason: 'stale', message: DRAFT_COPY.failed };
       }
+      let draft = current;
+      let wrote = false;
+      let duplicates = 0;
+      const added: string[] = [];
+      const removed: string[] = [];
+      for (const [i, step] of steps.entries()) {
+        const c = applyDraftCommand({
+          current: draft,
+          expectedVersion: i === 0 ? req.expectedDraftVersion : (draft?.version ?? null),
+          opId: step.opId,
+          at,
+          ownerId: p.id,
+          basis,
+          newDraftId: draft?.id ?? ctx.newId(),
+          slots: base,
+          prune: i > 0 || resolvedEdits === null ? [] : pruneOf(resolvedEdits.outcomes),
+          command: step.command,
+        });
+        if (c.kind === 'duplicate') {
+          duplicates += 1;
+          continue;
+        }
+        if (c.kind === 'unchanged') continue;
+        // Only the draft moved (a quick second tap on an older version): nothing about the plan to announce (review S2).
+        if (c.kind === 'stale') return { ok: false, reason: 'stale', message: DRAFT_COPY.failed };
+        if (c.kind === 'invalid') return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
+        draft = c.next;
+        wrote = true;
+        added.push(...c.added);
+        removed.push(...c.removed);
+      }
+      if (!wrote || draft === null) return { ok: true, draft, duplicate: duplicates === steps.length, added: [], removed: [] };
+      const saved = await drafts.save(draft, current?.version ?? null);
+      if (!saved.ok) {
+        // A retry whose first write landed reads as done; anything else moved under the page.
+        const now = await drafts.open(p.id, basis);
+        if (now !== null && steps.every((x) => now.opIds.includes(x.opId))) return { ok: true, draft: now, duplicate: true, added: [], removed: [] };
+        return { ok: false, reason: 'stale', message: DRAFT_COPY.failed };
+      }
+      return { ok: true, draft, duplicate: false, added, removed };
     } catch {
       return { ok: false, reason: 'failed', message: DRAFT_COPY.failed };
     }
@@ -3604,6 +3624,27 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           return { type: 'edit', edit: { kind: 'add', slotKey: addSlotKey(req.opId), exerciseId: e.exerciseId } };
         }
         return { type: 'edit', edit: e };
+      });
+    },
+
+    /**
+     * Several of today's swap / skip / order edits as one draft write (a
+     * coach Apply's changes, ADR 0020 §3; review B2): every edit is checked
+     * as `edit` checks it, and either all are written in one versioned save
+     * or none is (`invalid` names no edit; the caller reports the Apply).
+     * Each edit keeps its own op ID, so a retry, or a later load, writes
+     * nothing twice. `opId` is the first edit's.
+     */
+    async editBatch(req: Omit<DraftTarget, 'opId'> & { edits: readonly { opId: string; edit: Extract<OverviewEdit, { kind: 'swap' | 'skip' | 'order' }> }[] }): Promise<DraftWrite> {
+      const first = req.edits[0];
+      if (first === undefined) return { ok: false, reason: 'invalid', message: DRAFT_COPY.failed };
+      return writeDraft({ ...req, opId: first.opId }, async ({ base }) => {
+        for (const { edit: e } of req.edits) {
+          if (e.kind !== 'swap') continue;
+          if (!(await swapAllowed({ ...req, opId: first.opId }, base, e.slotKey, e.toExerciseId))) return null;
+          if ((await ensureExercise(e.toExerciseId)) === null) return null;
+        }
+        return req.edits.map((x) => ({ opId: x.opId, command: { type: 'edit', edit: x.edit } }));
       });
     },
 

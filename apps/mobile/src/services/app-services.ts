@@ -532,7 +532,8 @@ export function createAppServices(deps: AppServicesDeps) {
    * earlier day's overview isn't written again (review S5). An edit the
    * draft's own checks refuse here (not doable at this gym, or no place for
    * it in the plan) is left out and reported (review S1): the card reads
-   * `Couldn't apply here` and the overview says so once.
+   * `Couldn't apply here` and the overview says so once. An Apply's changes
+   * are written together or not at all (review B2).
    */
   async function applyCoachChanges(target: OverviewTarget, gymId: string | null, startOf: OverviewStartOf, draftVersion: number | null): Promise<{ wrote: boolean; refused: number }> {
     const none = { wrote: false, refused: 0 };
@@ -546,15 +547,18 @@ export function createAppServices(deps: AppServicesDeps) {
     const refusedApplies = new Set<string>();
     let version = draftVersion;
     let wrote = false;
+    // One draft write per Apply (review B2): all of its changes are written, or none, so a card never stands half-applied.
+    const byApply = new Map<string, typeof plan.write>();
     for (const w of plan.write) {
-      const r = await overview.edit({ target, gymId, expectedDraftVersion: version, opId: w.opId, edit: w.edit });
+      const applyId = structuralApplyOf(w.opId) ?? w.opId;
+      byApply.set(applyId, [...(byApply.get(applyId) ?? []), w]);
+    }
+    for (const [applyId, writes] of byApply) {
+      const r = await overview.editBatch({ target, gymId, expectedDraftVersion: version, edits: writes });
       if (r.ok) {
         version = r.draft?.version ?? version;
         wrote = wrote || !r.duplicate;
-      } else if (r.reason === 'invalid') {
-        const applyId = structuralApplyOf(w.opId);
-        if (applyId !== null) refusedApplies.add(applyId);
-      }
+      } else if (r.reason === 'invalid') refusedApplies.add(applyId);
     }
     for (const editId of plan.remove) {
       const r = await overview.undoEdit({ target, gymId, expectedDraftVersion: version, opId: `coach-undo:${editId}`, editId });
@@ -618,6 +622,9 @@ export function createAppServices(deps: AppServicesDeps) {
     // Today's edits (overview-today-edits §4.2): with no gym, checked against the typical gym's items, as the page shows.
     async edit(req: Omit<Parameters<typeof loop.overview.edit>[0], 'typicalEquipment'>) {
       return loop.overview.edit({ ...req, ...(await typicalFor(req.gymId)) });
+    },
+    async editBatch(req: Omit<Parameters<typeof loop.overview.editBatch>[0], 'typicalEquipment'>) {
+      return loop.overview.editBatch({ ...req, ...(await typicalFor(req.gymId)) });
     },
     async move(req: Omit<Parameters<typeof loop.overview.move>[0], 'typicalEquipment'>) {
       return loop.overview.move({ ...req, ...(await typicalFor(req.gymId)) });
