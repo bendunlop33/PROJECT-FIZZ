@@ -838,6 +838,18 @@ describe('add with a Sets count (exercise-library §10.2, TE-B15, EL-B21)', () =
     for (const n of [0, 11, 2.5]) expect(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: n } }, `bad-${String(n)}`)).toEqual({ kind: 'invalid', reason: 'out_of_range' });
   });
 
+  it('the next session of a non-routine workout takes the add’s count too', () => {
+    const source = nextSource();
+    const out = planWithTodayEdits(
+      { kind: 'next', input: { opId: 'p', owner: profile(), gymId: MAIN, source, exercises: EXERCISES, gymEquipment: MAIN_EQ, at: at(0), newId: idGen(30_000) } },
+      { draft: { id: id(5000), version: 1 }, edits: [edit({ kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: 5 })], swaps: new Map(), adds: facePullPlan() },
+    );
+    expect(workingOf(out, NEW_SLOT)).toHaveLength(5);
+    expect(workingOf(out, NEW_SLOT).every((s) => s.planned.load?.convention === 'stack')).toBe(true);
+    // The source workout's own exercise keeps its count.
+    expect(workingOf(out, basisSlots({ kind: 'next', source })[0]?.slotKey ?? '')).toHaveLength(3);
+  });
+
   it('with no history the default shape is resized (no load invented), and a later `sets` edit on the added row wins', () => {
     const none = new Map([[NEW_SLOT, addTargets(exOf(FACE_PULL), [], ctxAt(MAIN_GYM))]]);
     const five = plan([edit({ kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL, workingSets: 5 })], { adds: none });
