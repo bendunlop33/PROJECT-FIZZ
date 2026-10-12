@@ -20,7 +20,7 @@ import type {
 import { isChangeClaim } from './claims';
 import { workoutView } from './context';
 import { renderActionResult } from './render';
-import { appendContentKeys } from './tool-call';
+import { appendContentKeys, memoryContentKey, memoryTextKind, playbookContentKey } from './tool-call';
 
 /**
  * Tool executors (ADR 0020 §2, §5; slice C4). Each one turns a parsed,
@@ -114,6 +114,55 @@ export interface ExerciseLookup {
 
 export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: ExerciseLookup; sessionId: string | null }): CoachExecutors {
   const { store } = deps;
+
+  /** A memory that waits for Ben's choice (CM1, CM2; CM9's split card when the words could be a rule). Never sent to the coach until saved. */
+  function suggestMemory(text: string, quote: string, source: 'coach_suggested' | 'ben_asked', ctx: ToolCallContext): Promise<ToolResult> {
+    const memoryId = deriveId(`coach-memory:${ctx.opId}`);
+    const memory: Memory = {
+      id: memoryId,
+      ownerId: ctx.ownerId,
+      version: 1,
+      createdAtUtc: ctx.now.utc,
+      updatedAtUtc: ctx.now.utc,
+      text,
+      contentKey: memoryContentKey(text),
+      status: 'suggested',
+      quote,
+      createdByActionId: actionIdFor(ctx.opId),
+      source,
+    };
+    const detail: ActionDetail = { kind: 'suggest_memory', memoryId, text };
+    return commitOr(store, ctx.ownerId, { kind: 'suggest_memory', action: newActionRecord(ctx, detail, { status: 'proposed' }), memory }, () =>
+      newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it is already saved or waiting' }),
+    );
+  }
+
+  /** A `To review` playbook candidate (Coaching knowledge): not used until Ben approves it. */
+  function addCandidate(text: string, statedBy: 'ben' | 'coach', ctx: ToolCallContext): Promise<ToolResult> {
+    const candidateId = deriveId(`coach-playbook:${ctx.opId}`);
+    const detail: ActionDetail = { kind: 'add_playbook_candidate', candidateId, text };
+    return commitOr(
+      store,
+      ctx.ownerId,
+      {
+        kind: 'playbook_candidate',
+        action: newActionRecord(ctx, detail),
+        candidate: {
+          id: candidateId,
+          version: 1,
+          createdAtUtc: ctx.now.utc,
+          updatedAtUtc: ctx.now.utc,
+          text,
+          contentKey: playbookContentKey(text),
+          statedBy,
+          status: 'to_review',
+          createdByActionId: actionIdFor(ctx.opId),
+        },
+      },
+      () => newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it was already reviewed' }),
+    );
+  }
+
   return {
     get_recent_actions: async (call, ctx) => {
       if (call.tool !== 'get_recent_actions') throw new TypeError(call.tool);
@@ -161,6 +210,12 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
 
     save_memory: async (call, ctx) => {
       if (call.tool !== 'save_memory') throw new TypeError(call.tool);
+      // CM9 (review coach-tools r2 S1): even when Ben says "remember …", a general rule is never a memory. In
+      // clear rule wording it goes to the playbook as a `To review` candidate from Ben (inert until he approves
+      // it, with Undo); when it could be either, it waits as a card with both choices.
+      const kind = memoryTextKind(call.args.text);
+      if (kind === 'rule') return addCandidate(call.args.text, 'ben', ctx);
+      if (kind === 'unclear') return suggestMemory(call.args.text, call.args.quote, 'ben_asked', ctx);
       const memoryId = deriveId(`coach-memory:${ctx.opId}`);
       const contentKey = appendContentKeys(call)[0] ?? `memory:${memoryId}`;
       const memory: Memory = {
@@ -183,25 +238,7 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
 
     suggest_memory: async (call, ctx) => {
       if (call.tool !== 'suggest_memory') throw new TypeError(call.tool);
-      // A suggestion only (CM2): a `suggested` memory that the coach never sees until Ben taps Save (CM1).
-      const memoryId = deriveId(`coach-memory:${ctx.opId}`);
-      const memory: Memory = {
-        id: memoryId,
-        ownerId: ctx.ownerId,
-        version: 1,
-        createdAtUtc: ctx.now.utc,
-        updatedAtUtc: ctx.now.utc,
-        text: call.args.text,
-        contentKey: appendContentKeys(call)[0] ?? `memory:${memoryId}`,
-        status: 'suggested',
-        quote: call.args.quote,
-        createdByActionId: actionIdFor(ctx.opId),
-        source: 'coach_suggested',
-      };
-      const detail: ActionDetail = { kind: 'suggest_memory', memoryId, text: call.args.text };
-      return commitOr(store, ctx.ownerId, { kind: 'suggest_memory', action: newActionRecord(ctx, detail, { status: 'proposed' }), memory }, () =>
-        newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it is already saved or waiting' }),
-      );
+      return suggestMemory(call.args.text, call.args.quote, 'coach_suggested', ctx);
     },
 
     forget_memory: async (call, ctx) => {
@@ -222,29 +259,7 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
 
     add_playbook_candidate: async (call, ctx) => {
       if (call.tool !== 'add_playbook_candidate') throw new TypeError(call.tool);
-      const candidateId = deriveId(`coach-playbook:${ctx.opId}`);
-      const contentKey = appendContentKeys(call)[0] ?? `playbook_candidate:${candidateId}`;
-      const detail: ActionDetail = { kind: 'add_playbook_candidate', candidateId, text: call.args.text };
-      return commitOr(
-        store,
-        ctx.ownerId,
-        {
-          kind: 'playbook_candidate',
-          action: newActionRecord(ctx, detail),
-          candidate: {
-            id: candidateId,
-            version: 1,
-            createdAtUtc: ctx.now.utc,
-            updatedAtUtc: ctx.now.utc,
-            text: call.args.text,
-            contentKey,
-            statedBy: call.args.statedBy,
-            status: 'to_review',
-            createdByActionId: actionIdFor(ctx.opId),
-          },
-        },
-        () => newActionRecord({ ...ctx, opId: `${ctx.opId}:refused` }, detail, { status: 'rejected', failure: 'it was already reviewed' }),
-      );
+      return addCandidate(call.args.text, call.args.statedBy, ctx);
     },
   };
 }

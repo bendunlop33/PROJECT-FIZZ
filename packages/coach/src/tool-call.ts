@@ -85,6 +85,11 @@ export function memoryContentKey(text: string): string {
   return `memory:${deriveId(normaliseContentText(text))}`;
 }
 
+/** The content key of a playbook candidate's text. */
+export function playbookContentKey(text: string): string {
+  return `playbook_candidate:${deriveId(normaliseContentText(text))}`;
+}
+
 export function appendContentKeys(call: CoachToolCall): string[] {
   switch (call.tool) {
     case 'set_pain_flag':
@@ -93,7 +98,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'suggest_memory':
       return [memoryContentKey(call.args.text)];
     case 'add_playbook_candidate':
-      return [`playbook_candidate:${deriveId(normaliseContentText(call.args.text))}`];
+      return [playbookContentKey(call.args.text)];
     case 'forget_memory':
     case 'adjust_pending_sets':
     case 'log_set':
@@ -188,21 +193,63 @@ export function personalPlaybookText(text: string): boolean {
 /** An instruction: starts with an imperative training verb ("Deload every 5th week", "Always rest 3 minutes on squats"). */
 const IMPERATIVE_RULE =
   /^(?:(?:always|never|don't|dont|do not|try to|make sure to|remember to) )?(?:deload|train|lift|rest(?! days?\b)|use|add|increase|decrease|drop|reduce|progress|keep|avoid|take|stop|start|push|aim|warm|stretch|superset|program|programme|cycle|swap|pick|choose|prioriti[sz]e|focus|include|limit|cap|finish|perform|do|repeat|switch|rotate|retest|bump|alternate)\b/;
-/** Advice wording: "should", "must", "it's best to", "every N weeks" with no one in particular. */
-const ADVICE_WORDS = /\b(?:should|shouldn't|must|ought to|it's best to|best to|it's better to|is best|rule of thumb|as a rule)\b|^(?:always|never)\b|\bevery \d+(?:st|nd|rd|th)? (?:week|weeks|session|sessions|workout|workouts|cycle|cycles)\b/;
+/** Advice wording that is a rule whoever reads it: "should", "it's best to", "rule of thumb". */
+const ADVICE_WORDS = /\b(?:should|shouldn't|ought to|it's best to|best to|it's better to|is best|works best|rule of thumb|as a rule)\b/;
+/** "must", "need to", "always", "never": a rule, or one person's constraint ("Sessions must be under 45 minutes"). */
+const SOFT_ADVICE = /\b(?:must|mustn't|need to|needs to|have to|has to)\b|^(?:always|never)\b/;
+/** A period: "every 5th week", "every 4-6 weeks", "every other session". */
+const EVERY_PERIOD = /\bevery (?:\d+(?:st|nd|rd|th)?|\d+ ?[-–] ?\d+|other|few|couple of) (?:weeks?|sessions?|workouts?|cycles?|blocks?|months?)\b/;
+/** "Always/never … every N weeks", or a deload on a period: a rule (review coach-tools r2 S2). */
+const PERIODIC_RULE = new RegExp(`(?:^(?:always|never)\\b|\\bdeloads?\\b).*${EVERY_PERIOD.source}`);
+/** A claim about what works for anyone: "helps recovery", "builds strength". */
+const GENERAL_CLAIM =
+  /\b(?:helps?|builds?|improves?|increases?|reduces?|drives?|prevents?|boosts?|speeds? up|maximi[sz]es?)\b(?: \w+)? (?:recovery|strength|hypertrophy|muscle|growth|gains|injur(?:y|ies)|fatigue|progress|performance|power|endurance|technique)\b/;
+/** A whole class of lifts or lifters, not one exercise Ben does: "heavy compounds", "lifters". */
+const CLASS_WORDS =
+  /\b(?:compounds?|compound (?:lifts?|movements?|exercises?)|isolation (?:work|lifts?|exercises?)|accessor(?:y|ies)(?: work| lifts?)?|heavy sets|big lifts|main lifts|each muscle|every muscle|muscle groups?|lifters|athletes|beginners|trainees|everyone|anyone|people)\b/;
+/**
+ * One person's week, day or time: a schedule constraint is Ben's, not a
+ * training rule ("Keep sessions under 45 minutes on weekdays", "Finish by
+ * 7:30 to get to work", "Train before work").
+ */
+const SCHEDULE_CONTEXT =
+  /\b(?:weekdays?|weekends?|mondays?|tuesdays?|wednesdays?|thursdays?|fridays?|saturdays?|sundays?|work|shifts?|commute|school|kids|lunch(?:time)?|mornings?|evenings?|tonight|today|tomorrow|home)\b|\b\d{1,2}[:.]\d{2}\b|\b\d{1,2} ?(?:am|pm)\b|\b(?:sessions?|workouts?|training) (?:\w+ ){0,2}(?:under|over|less than|at most|no longer than|within) \d+/;
 
 /**
- * Is this memory suggestion really a general training rule? (CLAUDE.md
- * rule 10, CM9, review coach-tools S4.) A suggestion is only for facts about
- * Ben; "Always deload every 5th week" belongs in the playbook, so the call is
- * refused whatever the model meant. Text that is clearly about Ben ("I
- * always train fasted", "Prefers machines") is never refused here.
+ * Where a memory's words belong (CLAUDE.md rule 10, coach-memory CM9;
+ * review coach-tools r2 S1, S2):
+ * - `personal`: about Ben (first person, a dropped-subject fact, his
+ *   schedule, or no rule wording at all): a memory.
+ * - `rule`: clear rule wording with no one in particular ("Always deload
+ *   every 5th week", "You should never train to failure", "Compound lifts
+ *   first", "A deload every 4-6 weeks helps recovery"): the playbook.
+ * - `unclear`: an instruction that could be either ("Avoid lunges", "Use
+ *   straps for deadlifts"): Ben picks on the card (CM9's split).
  */
-export function generalRuleMemoryText(text: string): boolean {
-  const t = text.toLowerCase().replace(/[‘’]/g, "'").trim();
-  if (personalPlaybookText(t)) return false;
-  return IMPERATIVE_RULE.test(t) || ADVICE_WORDS.test(t);
+export type MemoryTextKind = 'personal' | 'rule' | 'unclear';
+
+export function memoryTextKind(text: string): MemoryTextKind {
+  const t = text
+    .toLowerCase()
+    .replace(/[‘’]/g, "'")
+    .trim()
+    .replace(/^remember (?:that |to )?/, '');
+  if (personalPlaybookText(t)) return 'personal';
+  const clear = ADVICE_WORDS.test(t) || PERIODIC_RULE.test(t) || GENERAL_CLAIM.test(t) || ((IMPERATIVE_RULE.test(t) || SOFT_ADVICE.test(t) || /^(?:\w+ )?(?:lifts?|movements?|exercises?|work) (?:first|last)\b/.test(t)) && CLASS_WORDS.test(t));
+  const schedule = SCHEDULE_CONTEXT.test(t);
+  if (clear) return schedule ? 'unclear' : 'rule';
+  if (schedule) return 'personal';
+  if (IMPERATIVE_RULE.test(t) || SOFT_ADVICE.test(t) || EVERY_PERIOD.test(t)) return 'unclear';
+  return 'personal';
 }
+
+/** Clear rule wording only (see `memoryTextKind`); unclear text is not a rule here. */
+export function generalRuleMemoryText(text: string): boolean {
+  return memoryTextKind(text) === 'rule';
+}
+
+/** The app line when the coach suggests a general rule as a memory (minimal copy). */
+export const RULE_NOT_MEMORY_LINE = 'Rule, not a memory. Nothing changed.';
 
 export function parseToolCall(turnId: string, name: string, rawArguments: string, registry: TurnRegistry): ParsedToolCall {
   const decl = registry.tools.find((t) => t.name === name);
@@ -227,13 +274,11 @@ export function parseToolCall(turnId: string, name: string, rawArguments: string
       issues: ['text: personal fact, not a general rule (rule 10)'],
     };
   }
-  if (call.tool === 'suggest_memory' && generalRuleMemoryText(call.args.text)) {
-    return {
-      ok: false,
-      error: 'invalid_args',
-      line: "That's a general rule, not about you, so it wasn't suggested as a memory. Nothing changed.",
-      issues: ['text: general training rule, not a personal fact (rule 10)'],
-    };
+  // A coach suggestion in clear rule wording is refused: the coach can't add to the playbook unasked
+  // (add_playbook_candidate needs Ben's request). Ben's own "remember …" of a rule goes to the playbook
+  // instead (the save_memory executor). Unclear text becomes a card with both choices (CM9).
+  if (call.tool === 'suggest_memory' && memoryTextKind(call.args.text) === 'rule') {
+    return { ok: false, error: 'invalid_args', line: RULE_NOT_MEMORY_LINE, issues: ['text: general training rule, not a personal fact (rule 10)'] };
   }
   return { ok: true, call, opId: toolOpId(turnId, decl.name, semanticArgs(call)), dropped: parsed.dropped };
 }

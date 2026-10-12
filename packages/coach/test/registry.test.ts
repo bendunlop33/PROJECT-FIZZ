@@ -8,6 +8,8 @@ import {
   listCoachCapabilities,
   parseToolCall,
   generalRuleMemoryText,
+  memoryTextKind,
+  RULE_NOT_MEMORY_LINE,
   personalPlaybookText,
   toolOpId,
   appendContentKeys,
@@ -239,18 +241,59 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     }
   });
 
-  it('a memory suggestion that is a general training rule is refused; facts about Ben pass (review coach-tools S4, rule 10)', () => {
+  it('a memory suggestion in clear rule wording is refused with a short line; facts about Ben pass (review coach-tools S4, r2 S2, rule 10)', () => {
     const reg = buildTurnRegistry(gate());
-    for (const text of ['Always deload every 5th week', 'Deload every 6 weeks', 'Rest 3 minutes between heavy sets', 'You should never train to failure on squats', 'Lifters must warm up before heavy sets', 'Never superset heavy compounds']) {
+    for (const text of [
+      'Always deload every 5th week',
+      'remember to always deload every 5th week',
+      'Deload every 6 weeks',
+      'Rest 3 minutes between heavy sets',
+      'You should never train to failure on squats',
+      'Lifters must warm up before heavy sets',
+      'Never superset heavy compounds',
+      // Missed in round 2 (r2 S2).
+      'Progressive overload works best with small jumps',
+      'A deload every 4-6 weeks helps recovery',
+      'Compound lifts first',
+    ]) {
+      expect(memoryTextKind(text), text).toBe('rule');
       expect(generalRuleMemoryText(text), text).toBe(true);
       const r = parseToolCall('t1', 'suggest_memory', JSON.stringify({ text, quote: text }), reg);
       expect(r.ok, text).toBe(false);
-      if (!r.ok) expect(r.line).toMatch(/general rule/);
+      if (!r.ok) expect(r.line).toBe(RULE_NOT_MEMORY_LINE);
     }
-    for (const text of ['Trains before work', 'Prefers dumbbells to barbells', 'I always train fasted', 'Left knee is dodgy on lunges', 'Lower back gets tight on deadlifts', 'Rest day on Sundays', 'Gym closes at 9 on Sundays', 'Night shifts on Tuesdays']) {
+    expect(RULE_NOT_MEMORY_LINE.length).toBeLessThan(40);
+    for (const text of [
+      'Trains before work',
+      'Prefers dumbbells to barbells',
+      'I always train fasted',
+      'Left knee is dodgy on lunges',
+      'Lower back gets tight on deadlifts',
+      'Rest day on Sundays',
+      'Gym closes at 9 on Sundays',
+      'Night shifts on Tuesdays',
+      'Home dumbbells stop at 24 kg',
+      // Round 2's false positives: his schedule, not a training rule (r2 S2).
+      'Keep sessions under 45 minutes on weekdays',
+      'Sessions must be under 45 minutes on weekdays',
+      'Train before work',
+      'Finish by 7:30 to get to work',
+    ]) {
+      expect(memoryTextKind(text), text).toBe('personal');
+      expect(parseToolCall('t1', 'suggest_memory', JSON.stringify({ text, quote: text }), reg).ok, text).toBe(true);
+    }
+  });
+
+  it('an instruction that could be a rule or about Ben is unclear: suggested, never refused (CM9 split, review coach-tools r2 S2)', () => {
+    const reg = buildTurnRegistry(gate());
+    for (const text of ['Avoid lunges', 'Use straps for deadlifts', 'Always rest 3 minutes on squats', 'Sessions should be under 45 minutes on weekdays']) {
+      expect(memoryTextKind(text), text).toBe('unclear');
       expect(generalRuleMemoryText(text), text).toBe(false);
       expect(parseToolCall('t1', 'suggest_memory', JSON.stringify({ text, quote: text }), reg).ok, text).toBe(true);
     }
+    // save_memory is never refused at parse: its executor routes rules to the playbook (r2 S1).
+    const mem = buildTurnRegistry(gate({ benRequest: MEMORY }));
+    expect(parseToolCall('t1', 'save_memory', JSON.stringify({ text: 'Always deload every 5th week', quote: 'remember to always deload every 5th week' }), mem).ok).toBe(true);
   });
 
   it('a bare third-person verb or "owner" is a personal fact (review r5 S3, rule 10)', () => {
