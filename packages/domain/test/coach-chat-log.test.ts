@@ -61,8 +61,8 @@ describe('checkChatLog (log_set from chat)', () => {
     const row = setsFor(state, ROW)[0];
     if (!bench || !row) throw new Error('no set');
     expect(checkChatLog(input(state, bench.id, { load: lb(225), benWords: 'log 225 for 8' }))).toMatchObject({ status: 'rejected', failure: 'Bench press is logged in kg' });
-    expect(checkChatLog(input(state, row.id, { load: kg(50), benWords: 'log 50 for 8' }))).toMatchObject({ status: 'rejected', failure: 'Cable row is logged as stack' });
-    expect(checkChatLog(input(state, row.id, { load: kg(50, 'stack'), benWords: 'log 50 for 8' }))).toMatchObject({ status: 'ok' });
+    expect(checkChatLog(input(state, row.id, { load: kg(50), benWords: 'log cable row 50 for 8' }))).toMatchObject({ status: 'rejected', failure: 'Cable row is logged as stack' });
+    expect(checkChatLog(input(state, row.id, { load: kg(50, 'stack'), benWords: 'log cable row 50 for 8' }))).toMatchObject({ status: 'ok' });
   });
 
   it('a stale version, a done set, a timed exercise or no active workout is refused; nothing to write', () => {
@@ -73,8 +73,32 @@ describe('checkChatLog (log_set from chat)', () => {
     expect(checkChatLog(input(state, b1.id, { baseVersion: state.session.version - 1 }))).toMatchObject({ status: 'stale' });
     const logged = apply(state, logCmd(warm.id, { load: kg(60), reps: 10, durationS: null, rpe: null, rir: null }, 60));
     expect(checkChatLog(input(logged, warm.id, { benWords: 'log 100 for 8' }))).toMatchObject({ status: 'rejected', failure: 'set 1 is already logged' });
-    expect(checkChatLog(input(logged, hang.id))).toMatchObject({ status: 'rejected', failure: 'Dead hang is timed: log it in the workout' });
+    expect(checkChatLog(input(logged, hang.id, { benWords: 'log dead hang 100 for 8' }))).toMatchObject({ status: 'rejected', failure: 'Dead hang is timed: log it in the workout' });
     expect(checkChatLog({ ...input(logged, b1.id), aggregate: null })).toMatchObject({ status: 'stale' });
+  });
+});
+
+describe('checkChatLog: only the set the Log button would log (review S3)', () => {
+  it('the next pending set of the exercise in focus; a later set or another exercise is refused', () => {
+    const { state } = startFixture();
+    const [warm, b1, b2] = setsFor(state, BENCH);
+    const row = setsFor(state, ROW)[0];
+    if (!warm || !b1 || !b2 || !row) throw new Error('no set');
+    expect(checkChatLog(input(state, warm.id))).toMatchObject({ status: 'ok' });
+    // Pending warm-ups before it may be passed over.
+    expect(checkChatLog(input(state, b1.id))).toMatchObject({ status: 'ok' });
+    // Set 3 while set 2 is still pending: out of order.
+    expect(checkChatLog(input(state, b2.id))).toMatchObject({ status: 'rejected', failure: 'say which set' });
+    // Another exercise Ben didn't name.
+    expect(checkChatLog(input(state, row.id, { load: kg(50, 'stack'), benWords: 'log 50 for 8' }))).toMatchObject({ status: 'rejected', failure: 'say which set' });
+  });
+
+  it('the exercise Ben named: its next pending set only', () => {
+    const { state } = startFixture();
+    const [row1, row2] = setsFor(state, ROW);
+    if (!row1 || !row2) throw new Error('no set');
+    expect(checkChatLog(input(state, row1.id, { load: kg(50, 'stack'), benWords: 'Log cable row 50 for 8' }))).toMatchObject({ status: 'ok' });
+    expect(checkChatLog(input(state, row2.id, { load: kg(50, 'stack'), benWords: 'Log cable row 50 for 8' }))).toMatchObject({ status: 'rejected', failure: 'say which set' });
   });
 });
 
@@ -107,6 +131,9 @@ describe('checkChatCorrection (correct_set from chat)', () => {
     expect(checkChatCorrection(input(logged, setId, { load: kg(100), reps: 8, benWords: 'set 2 was 100 for 8' }))).toMatchObject({ status: 'rejected' });
     expect(checkChatCorrection(input(logged, setId, { load: kg(90), reps: null, benWords: 'set 2 was 95' }))).toMatchObject({ status: 'rejected', failure: 'say the corrected numbers' });
     expect(checkChatCorrection(input(logged, setId, { load: lb(210), reps: null, benWords: 'set 2 was 210' }))).toMatchObject({ status: 'rejected', failure: 'Bench press is logged in kg' });
+    // The set number isn't a value Ben said (review N2): reps can't become 2 from "set 2".
+    expect(checkChatCorrection(input(logged, setId, { load: kg(95), reps: 2, benWords: 'set 2 was 95' }))).toMatchObject({ status: 'rejected', failure: 'say the corrected numbers' });
+    expect(checkChatCorrection(input(logged, setId, { load: null, reps: 2, benWords: 'set two was 95' }))).toMatchObject({ status: 'rejected', failure: 'say the corrected numbers' });
   });
 });
 

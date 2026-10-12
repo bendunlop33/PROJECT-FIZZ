@@ -38,9 +38,9 @@ export function createChatSetExecutors(deps: ChatSetDeps): CoachExecutors {
     const base = { sessionId, setId: args.setId, exerciseName: check.exerciseName, setNumber: check.setNumber, setVersionAfter: check.setVersionAfter };
     const detail: ActionDetail = kind === 'log_set' ? { kind, ...base, values: check.after } : { kind, ...base, before: check.before, after: check.after };
     const record = newActionRecord(ctx, detail, { entityVersions: [{ entity: 'session', id: sessionId, before: args.baseVersion, after: args.baseVersion + 1 }] });
-    const r = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action: record, sessionId, command: check.command });
+    const r = await deps.store.commit(ctx.ownerId, { kind: 'session_command', action: record, sessionId, command: check.command, expectedSessionVersion: args.baseVersion });
     if (r.status === 'conflict') {
-      // The set changed between the check and the write (a Log tap): nothing was written.
+      // The workout or the set changed between the check and the write (a Log tap on any set): nothing was written.
       const stale = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord({ ...ctx, opId: `${ctx.opId}:stale` }, { ...detail, setVersionAfter: null }, { status: 'stale' }) });
       if (stale.status === 'conflict') throw new Error('Could not record the stale set write');
       return { kind: 'action', record: stale.action, replayed: stale.status === 'replayed' };

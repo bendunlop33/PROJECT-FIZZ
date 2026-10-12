@@ -1,5 +1,6 @@
 import type { Load, SessionAggregate, SessionCommand, SetValues, ZonedTimestamp } from '@fizz/schemas';
 import { buildSetEditView } from '../session/active-view';
+import { buildExecutionOrder, nextPendingSet } from '../session/order';
 import { reduceSession } from '../session/reducer';
 import { deriveId } from '../stable';
 
@@ -17,7 +18,11 @@ import { deriveId } from '../stable';
  * - Every number saved must be one Ben said in this turn ("log 100 for 8"),
  *   so a misread or invented value can't be logged. "Same as last time"
  *   isn't enough: he says the numbers or uses the Log button.
- * - Log: a pending set only. Correct: a logged set only, values only (load,
+ * - Log: only the set the Log button would log (review coach-tools S3): the
+ *   next pending set of the exercise in focus, or of the one exercise Ben
+ *   named ("log bench 100 for 8"). Pending warm-ups before it may be passed
+ *   over, as Ben often skips them; any other set is refused (`say which set`).
+ * - Correct: a logged set only, values only (load,
  *   reps, RPE). Marks (pain, spotted …), set types and deletes stay in the
  *   workout's own sheets. Logging starts rest as the Log button does; a
  *   correction never touches rest.
@@ -95,10 +100,55 @@ export function numbersInWords(text: string): Set<number> {
   return out;
 }
 
+/**
+ * Whether every value is a number Ben said. The number that names a set
+ * ("set 2 was 95") isn't a value he said (review N2), so it can't become the
+ * reps or the load.
+ */
 function said(benWords: string | null, values: readonly (number | null)[]): boolean {
   if (benWords === null) return false;
-  const nums = numbersInWords(benWords);
+  const withoutSetNumbers = benWords.replace(/\bsets?\s+(?:no\.?\s*|number\s+)?(?:\d+|[a-z]+)\b/gi, (m) => (numbersInWords(m).size > 0 ? ' ' : m));
+  const nums = numbersInWords(withoutSetNumbers);
   return values.every((v) => v === null || nums.has(v));
+}
+
+const norm = (t: string): string => ` ${t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+
+/** The one exercise of the workout Ben named (the longest name wins: `incline bench press` over `bench press`); null for none or several. */
+function namedExercise(agg: SessionAggregate, benWords: string | null): string | null {
+  if (benWords === null) return null;
+  const words = norm(benWords);
+  const named = agg.exercises.filter((e) => words.includes(norm(e.exerciseName)));
+  const longest = named.filter((e) => !named.some((o) => o !== e && norm(o.exerciseName).length > norm(e.exerciseName).length && norm(o.exerciseName).includes(norm(e.exerciseName))));
+  const ids = new Set(longest.map((e) => e.exerciseId));
+  return ids.size === 1 ? ([...ids][0] ?? null) : null;
+}
+
+/**
+ * The sets a chat log may land on (S3): for the exercise in focus and the one
+ * Ben named, the next pending set, plus the first pending non-warm-up set when
+ * only warm-ups are pending before it.
+ */
+export function chatLoggableSetIds(agg: SessionAggregate, benWords: string | null): Set<string> {
+  const order = buildExecutionOrder(agg.exercises, agg.sets);
+  const byId = new Map(agg.sets.map((x) => [x.id, x]));
+  const pending = order.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => x !== undefined && x.status === 'pending');
+  const active = agg.session.activeSetId;
+  const focusId = active !== null && pending.some((x) => x.id === active) ? active : nextPendingSet(null, agg.exercises, agg.sets);
+  const exerciseIdOf = (sessionExerciseId: string) => agg.exercises.find((e) => e.id === sessionExerciseId)?.exerciseId ?? null;
+  const focusEx = focusId === null ? null : (exerciseIdOf(byId.get(focusId)?.sessionExerciseId ?? '') ?? null);
+  const exercises = new Set([focusEx, namedExercise(agg, benWords)].filter((x): x is string => x !== null));
+  const out = new Set<string>();
+  if (focusId !== null) out.add(focusId);
+  for (const exerciseId of exercises) {
+    const own = pending.filter((x) => exerciseIdOf(x.sessionExerciseId) === exerciseId);
+    const first = own[0];
+    if (first === undefined) continue;
+    out.add(first.id);
+    const firstWorking = own.find((x) => x.setType !== 'warmup');
+    if (firstWorking !== undefined) out.add(firstWorking.id);
+  }
+  return out;
 }
 
 function valuesOf(v: SetValues | null): ChatSetValues {
@@ -143,6 +193,7 @@ export function checkChatLog(input: ChatSetInput): ChatSetCheck {
   if (agg.session.version !== input.baseVersion) return fail('stale', 'your workout moved on');
   if (set === null || ex === null) return fail('rejected', 'that set isn’t in this workout');
   if (set.status !== 'pending') return fail('rejected', `set ${String(setNumber)} is already logged`);
+  if (!chatLoggableSetIds(agg, input.benWords).has(set.id)) return fail('rejected', 'say which set');
   if (ex.measurement !== 'reps') return fail('rejected', `${ex.exerciseName} is timed: log it in the workout`);
   const unit = unitFailure(input.load, ex);
   if (unit !== null) return fail('rejected', unit);

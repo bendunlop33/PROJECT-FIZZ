@@ -139,7 +139,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Log a set you tell it ("log 100 for 8"), with Undo',
     capabilitySection: 'when_you_ask',
     description:
-      'Log one pending set with the weight, reps and RPE Ben just said, in the exercise’s own unit and convention. Only numbers Ben said are accepted. Starts rest like the Log button.',
+      'Log the set the Log button would log (the next pending set of the exercise in focus, or of the one exercise Ben names) with the weight, reps and RPE Ben just said, in the exercise’s own unit and convention. Only numbers Ben said are accepted. Starts rest like the Log button.',
   },
   {
     name: 'correct_set',

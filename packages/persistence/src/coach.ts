@@ -456,6 +456,7 @@ export class SqliteCoachStore {
       case 'session_command': {
         const agg = await readAggregate(tx, write.sessionId);
         if (agg === null || agg.session.ownerId !== ownerId) throw new Rollback('missing');
+        if (write.expectedSessionVersion !== undefined && agg.session.version !== write.expectedSessionVersion) throw new Rollback('stale_version');
         const r = reduceSession(agg, write.command);
         if (!r.ok) throw new Rollback(r.error.code === 'stale_version' ? 'stale_version' : 'missing');
         if (r.state !== agg) await writeAggregate(tx, r.state);

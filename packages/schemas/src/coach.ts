@@ -750,7 +750,8 @@ export type CoachWrite =
    * through the reducer inside the same transaction as the record, so the
    * targets and their record are saved together or not at all (rule 5).
    */
-  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand };
+  /** `expectedSessionVersion`: refused as stale when the workout moved on since the caller read it (checked inside the write, review N3). */
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }
