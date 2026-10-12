@@ -409,6 +409,26 @@ describe('structureChangedAtUtc (review r2 S1, WL7): only a change to a slot’s
     expect(times(write(editRoutine(r, { name: r.name, exercises: changed }, 1, 's1-e', at(400), compound)))).toEqual(Array(4).fill(at(400).utc));
   });
 
+  it('compares loads and reps field by field: another key order is not a change, another unit or convention is (review N12)', () => {
+    const [a, b, c] = editableExercises(r);
+    if (a === undefined || b === undefined || c === undefined) throw new Error('fixture');
+    const pinned = write(editRoutine(r, { name: r.name, exercises: [a, b, { ...c, setTemplates: c.setTemplates.map((t) => ({ ...t, targetLoad: kg(20), targetReps: { min: 8, max: 10 } })) }] }, 1, 'n12-a', at(800), compound));
+    expect(times(pinned)).toEqual([null, null, at(800).utc]);
+    const reordered = editableExercises(pinned).map((e) => ({
+      ...e,
+      setTemplates: e.setTemplates.map((t) => ({
+        ...t,
+        targetLoad: t.targetLoad === null ? null : { convention: t.targetLoad.convention, unit: t.targetLoad.unit, value: t.targetLoad.value },
+        targetReps: t.targetReps === null ? null : { max: t.targetReps.max, min: t.targetReps.min },
+      })),
+    }));
+    expect(times(write(editRoutine(pinned, { name: r.name, exercises: reordered }, 2, 'n12-b', at(900), compound)))).toEqual([null, null, at(800).utc]);
+    const inLb = editableExercises(pinned).map((e, i) => (i === 2 ? { ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetLoad: t.targetLoad === null ? null : { ...t.targetLoad, unit: 'lb' as const } })) } : e));
+    expect(times(write(editRoutine(pinned, { name: r.name, exercises: inLb }, 2, 'n12-c', at(950), compound)))).toEqual([null, null, at(950).utc]);
+    const perHand = editableExercises(pinned).map((e, i) => (i === 2 ? { ...e, setTemplates: e.setTemplates.map((t) => ({ ...t, targetLoad: t.targetLoad === null ? null : { ...t.targetLoad, convention: 'per_hand' as const } })) } : e));
+    expect(times(write(editRoutine(pinned, { name: r.name, exercises: perHand }, 2, 'n12-d', at(960), compound)))).toEqual([null, null, at(960).utc]);
+  });
+
   it('rotation toggles, renames and delete/restore never touch it; Duplicate starts without one', () => {
     const a = write(editRoutine(r, { name: r.name, exercises: editableExercises(r).map((e, i) => (i === 0 ? { ...e, setTemplates: e.setTemplates.slice(0, 2) } : e)) }, 1, 's1-f', at(500), compound));
     const off = setRoutineRotation(a, false, 2, 's1-g', at(600));

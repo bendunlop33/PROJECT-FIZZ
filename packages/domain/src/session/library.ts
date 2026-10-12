@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Exercise, Load, RestSetting, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, ZonedTimestamp } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, RepRange, RestSetting, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, ZonedTimestamp } from '@fizz/schemas';
 
 import { dayMonthText } from '../display';
 import { weekdayOf } from '../calendar';
@@ -146,9 +146,28 @@ function withoutStructureTime(e: RoutineExercise): RoutineExercise {
   return out;
 }
 
-/** What makes a slot's structure for a coach target (WL7): its exercise and its sets' types, reps, work time and Fixed loads. */
-function structureShape(e: RoutineExercise): string {
-  return JSON.stringify([e.exerciseId, e.setTemplates.map((t) => [t.setType, t.targetLoad, t.targetReps, t.targetDurationS])]);
+function sameLoad(a: Load | null, b: Load | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.value === b.value && a.unit === b.unit && a.convention === b.convention;
+}
+
+function sameReps(a: RepRange | null, b: RepRange | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.min === b.min && a.max === b.max;
+}
+
+/**
+ * Whether a slot's structure for a coach target (WL7) is the same: its
+ * exercise and its sets' types, reps, work time and Fixed loads. Fields are
+ * compared one by one, so key order never makes an unchanged slot "changed"
+ * (review N12).
+ */
+export function sameStructure(a: RoutineExercise, b: RoutineExercise): boolean {
+  if (a.exerciseId !== b.exerciseId || a.setTemplates.length !== b.setTemplates.length) return false;
+  return a.setTemplates.every((t, i) => {
+    const u = b.setTemplates[i];
+    return u !== undefined && t.setType === u.setType && t.targetDurationS === u.targetDurationS && sameLoad(t.targetLoad, u.targetLoad) && sameReps(t.targetReps, u.targetReps);
+  });
 }
 
 /**
@@ -161,7 +180,7 @@ export function withStructureTimes(before: readonly RoutineExercise[], after: re
   const was = new Map(before.map((e) => [e.id, e]));
   return after.map((e) => {
     const prior = was.get(e.id);
-    const changed = prior === undefined || structureShape(prior) !== structureShape(e);
+    const changed = prior === undefined || !sameStructure(prior, e);
     const keep = changed ? atUtc : prior.structureChangedAtUtc;
     return keep === undefined ? withoutStructureTime(e) : { ...e, structureChangedAtUtc: keep };
   });
