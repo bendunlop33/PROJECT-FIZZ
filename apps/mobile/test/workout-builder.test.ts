@@ -1,3 +1,7 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
@@ -340,9 +344,6 @@ describe('Save’s draft link (review S8)', () => {
     if (!a.ok) throw new Error('not saved');
     await h.forceClose();
     // As if the app closed after the workout was written and before the draft was linked.
-    const { DatabaseSync } = await import('node:sqlite');
-    const { readdirSync } = await import('node:fs');
-    const { join } = await import('node:path');
     let undone = 0;
     for (const f of readdirSync(h.dir).filter((n) => !/-(?:wal|shm)$/.test(n))) {
       const db = new DatabaseSync(join(h.dir, f));

@@ -15,7 +15,7 @@ Ben can ask the coach for a workout ("build me a 45-minute push session for this
 5. **ADR 0022 amendment:** `DraftBasis` gains `{kind: 'coach_draft', draftId}`; today's edits on a draft follow the normal pre-start rules. `TodayEdit` `fit` gains `minutes: null` ("no fit today"): the draft's `fitMinutes` acts as a built-in fit edit unless a fit edit is live, so `Clear fit` on a coach draft writes `minutes: null`.
 6. **ADR 0021 amendment:** `previewKey` includes the coach draft's ID and document version, and the start fence pins its `workout_drafts` row (`status = 'open'`). A new version, a discard, an expiry or another start after the page loaded makes Start create nothing. The session's create transaction marks the draft `started`.
 7. **Claim check:** "I've built you a push workout" stands only with a committed `build_workout` in the turn; "saved to your workouts" / "started the workout" are always hidden (no tool can do either). "Start it" / "save it" in a general turn whose thread holds a coach draft (or with one in context) gets the fixed line `Tap Start workout when you're ready.` with no model call; elsewhere those words go to the coach as before ("save that" may be about a memory).
-8. **Save to Workouts** is the library's `saveFrom` with a `coach_draft` preview: `source: 'coach'`, `createdFromDraft`, loads `Auto`, the coach's working-set RPE kept (`keepTargetRpe`). The draft names the workout and stays open; a tombstoned workout puts it back under `FROM COACH`.
+8. **Save to Workouts** is the library's `saveFrom` with a `coach_draft` preview: `source: 'coach'`, `createdFromDraft`, loads `Auto`, the coach's working-set RPE kept (`keepTargetRpe`). The draft names the workout (the link also runs on a same-opId retry) and stays open and listed under `FROM COACH` until started.
 9. **Timeouts:** a build turn has a 60 s whole-turn cap (`COACH_BUILD_TIMEOUT_MS`) on top of the first-event and stall timeouts, enforced by a timer that stops the running step (no wall clock in the package).
 
 ## Built differently from the spec (for the PM)
@@ -29,4 +29,4 @@ Ben can ask the coach for a workout ("build me a 45-minute push session for this
 ## Consequences
 
 - One planner path (OV3) covers routines, next sessions and coach drafts; the existing overview tests plus `workout-builder.test.ts` check preview == Start for drafts.
-- WB16 (a saved coach workout keeps its loads before it is done) still depends on §11 item 1 (never-done `Auto` rule), which Ben hasn't approved; not built.
+- WB16 (a saved coach workout keeps its loads before it is done) still depends on §11 item 1 (never-done `Auto` rule), which Ben hasn't approved; not built. Until then the overview stays on the draft basis after Save (not the spec's switch to the new workout), so the loads don't blank (review S6).

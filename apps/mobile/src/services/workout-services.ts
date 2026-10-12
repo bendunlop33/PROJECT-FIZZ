@@ -3117,10 +3117,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           return saved;
         };
         const existing = await repos().routines.get(id).catch(() => null);
-        if (existing) return linked(existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed });
+        if (existing) return await linked(existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed });
         const made = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
         if (made === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
-        return linked(await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing));
+        return await linked(await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing));
       } catch {
         return { ok: false, message: LIBRARY_COPY.saveFailed };
       }
