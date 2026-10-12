@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
-import { Pressable, ScrollView, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
 import { formatDuration, NBSP, type FocusView, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
@@ -9,6 +9,7 @@ import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, TextButton, TEXT_PRESSED_OPACITY, TimerNumeral, type SymbolName } from '../../ui';
 import { anchorScrollY, bottomSpacerHeight, chipsFor, rowTap, showsFolded, type AnchorRequest, type ChipState, type Expansions } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
+import { openRowWidth, stepperTexts, tileFit, type TileSpec } from '../../workout/tile-fit';
 import { GymPartDivider, SnapNote } from './GymSwitch';
 import { TargetWhyLink } from './TargetWhyPanel';
 
@@ -277,7 +278,6 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
               >
                 <TableSetRow
                   row={row}
-                  columns={block.kind === 'exercise' ? block.card.columns : block.superset.columns}
                   ax={props.ax}
                   onPress={() => {
                     const tap = rowTap(row);
@@ -456,7 +456,7 @@ function CardHeader({ card, current, ax, adjust, onFold, onMenu, onName, onNote,
           </AppText>
         </LinkLine>
       ) : null}
-      {!ax ? <ColumnLabels columns={card.columns} /> : <View style={{ height: theme.space['2'] }} />}
+      {!ax && card.columns !== null ? <ColumnLabels columns={card.columns} /> : <View style={{ height: theme.space['2'] }} />}
     </View>
   );
 }
@@ -495,7 +495,7 @@ function SupersetHeader({ superset, ax, onFold, onMenu, onPainBadge }: { superse
           </View>
         ))}
       </View>
-      {!ax ? <ColumnLabels columns={superset.columns} /> : <View style={{ height: theme.space['2'] }} />}
+      {!ax && superset.columns !== null ? <ColumnLabels columns={superset.columns} /> : <View style={{ height: theme.space['2'] }} />}
     </View>
   );
 }
@@ -508,7 +508,7 @@ function SupersetHeader({ superset, ax, onFold, onMenu, onPainBadge }: { superse
  * per cell. Done: bright, filled green tick. Pending: dim, open ring (a tap
  * anywhere selects it, never logs). Skipped: `Skipped` with a slashed circle.
  */
-export function TableSetRow({ row, columns, ax, onPress }: { row: TableRow; columns: TableColumns; ax: boolean; onPress: () => void }) {
+export function TableSetRow({ row, ax, onPress }: { row: TableRow; ax: boolean; onPress: () => void }) {
   const theme = useTheme();
   const done = row.state === 'done';
   const skipped = row.state === 'skipped';
@@ -592,7 +592,8 @@ export function TableSetRow({ row, columns, ax, onPress }: { row: TableRow; colu
               </AppText>
             ) : (
               <>
-                {columns.loadLabel !== null ? (
+                {/* Each row's own columns (review B2): a mixed superset's loaded member keeps its load cell. */}
+                {row.columns.loadLabel !== null ? (
                   <View style={{ flex: 1 }}>
                     <AppText variant="rowValue" color={valueColor} numeric style={valueStyle}>
                       {row.cells.load ?? '—'}
@@ -700,14 +701,26 @@ export function OpenSetRow(p: OpenSetRowProps) {
   const f = p.focus;
   const step = p.ax ? 60 : theme.target.workout.height;
   const working = f.workTimer !== null && (f.workTimer.state === 'running' || f.workTimer.state === 'paused');
+  // WT-D13 / WT40: numerals shrink to fit (≥ 28 pt), else the tiles stack; never clipped. Measured width, window estimate first.
+  const window = useWindowDimensions();
+  const [measured, setMeasured] = useState<number | null>(null);
+  const specs: TileSpec[] = [];
+  if (f.loadField) specs.push({ flex: 1.35, texts: stepperTexts(f.loadField.value, f.loadField.down, f.loadField.up, 3), unit: null });
+  if (working) specs.push({ flex: 1, texts: ['0:00'], unit: null });
+  else if (f.duration) specs.push({ flex: 1, texts: stepperTexts(f.duration.value, f.duration.down, f.duration.up, 2), unit: 's' });
+  if (f.distance) specs.push({ flex: 1, texts: stepperTexts(f.distance.value, f.distance.down, f.distance.up, 2), unit: null });
+  if (f.reps) specs.push({ flex: 1, texts: stepperTexts(f.reps.value, f.reps.down, f.reps.up, 2), unit: null });
+  const fit = tileFit({ rowWidth: measured ?? openRowWidth(window.width), tiles: specs, stepSize: step, fontScale: window.fontScale, ax: p.ax });
+  const flexOf = (n: number): number | null => (fit.stacked ? null : n);
   const tiles: ReactNode[] = [];
   if (f.loadField) {
     tiles.push(
       <NumberStepper
         key="load"
         inputRef={p.loadRef}
-        flex={1.35}
+        flex={flexOf(1.35)}
         stepSize={step}
+        numeralSize={fit.numeralSize}
         label={`${f.loadField.label} ${f.loadField.unitText}`.toUpperCase()}
         unit={null}
         value={f.loadField.value}
@@ -722,7 +735,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
   }
   if (working) {
     tiles.push(
-      <View key="work" style={{ flex: 1, alignItems: 'flex-start', gap: theme.space['1'], padding: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg }}>
+      <View key="work" style={{ ...(fit.stacked ? { alignSelf: 'stretch' as const } : { flex: 1 }), alignItems: 'flex-start', gap: theme.space['1'], padding: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg }}>
         <AppText variant="label" color="text.tertiary">
           WORK
         </AppText>
@@ -730,10 +743,10 @@ export function OpenSetRow(p: OpenSetRowProps) {
       </View>,
     );
   } else if (f.duration) {
-    tiles.push(<NumberStepper key="time" inputRef={p.timeRef} flex={1} stepSize={step} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />);
+    tiles.push(<NumberStepper key="time" inputRef={p.timeRef} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />);
   }
-  if (f.distance) tiles.push(<NumberStepper key="dist" inputRef={p.distanceRef} flex={1} stepSize={step} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />);
-  if (f.reps) tiles.push(<NumberStepper key="reps" inputRef={p.repsRef} flex={1} stepSize={step} label="REPS" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />);
+  if (f.distance) tiles.push(<NumberStepper key="dist" inputRef={p.distanceRef} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />);
+  if (f.reps) tiles.push(<NumberStepper key="reps" inputRef={p.repsRef} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="REPS" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />);
 
   const lastText = f.previous ? plainSpaces(f.previous.text) : null;
   return (
@@ -765,7 +778,15 @@ export function OpenSetRow(p: OpenSetRowProps) {
           {plainSpaces(f.plateLine)}
         </AppText>
       ) : null}
-      <View style={{ flexDirection: p.ax ? 'column' : 'row', gap: theme.space['2'] }}>{tiles}</View>
+      <View
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          if (measured === null || Math.abs(w - measured) >= 1) setMeasured(w);
+        }}
+        style={{ flexDirection: fit.stacked ? 'column' : 'row', gap: theme.space['2'] }}
+      >
+        {tiles}
+      </View>
       {p.timedLogLabel !== null ? (
         <View style={{ alignItems: 'flex-start' }}>
           <TextButton label={plainSpaces(p.timedLogLabel)} onPress={p.onTimedLog} />

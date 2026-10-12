@@ -123,6 +123,7 @@ export function NumberStepper({
   flex = 1,
   onSurface = false,
   stepSize,
+  numeralSize,
 }: {
   label: string;
   unit: string | null;
@@ -135,12 +136,18 @@ export function NumberStepper({
   hint?: string | null;
   /** So `Enter load` can focus the empty field (audit F2). */
   inputRef?: Ref<TextInput>;
-  /** Share of the row (D-ActiveSet: LOAD 1.4, REPS 1). */
-  flex?: number;
+  /** Share of the row (D-ActiveSet: LOAD 1.4, REPS 1); null when stacked full width (no flex in a column). */
+  flex?: number | null;
   /** Shown on `bg.surface` (a sheet): the D tile uses `bg.raised` so it still reads as a tile. */
   onSurface?: boolean;
   /** − / + button size (Table open row: 52 pt, 60 pt at AX1+; design-system §9.75). Default 44 × 52. */
   stepSize?: number;
+  /**
+   * The numeral's rendered size (pt), Dynamic Type already applied, from
+   * `tileFit` (WT-D13: shrinks to fit, never clipped). Rendered with font
+   * scaling off so the measured fit holds. Default: `type.loadDisplay`.
+   */
+  numeralSize?: number;
 }) {
   const theme = useTheme();
   const [text, setText] = useState(value === null ? '' : String(value));
@@ -172,11 +179,11 @@ export function NumberStepper({
       {...(hint ? { accessibilityHint: hint } : {})}
       placeholder="—"
       placeholderTextColor={theme.colors['text.tertiary']}
-      maxFontSizeMultiplier={theme.type.loadDisplay.maxFontSizeMultiplier}
+      {...(numeralSize !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}
       style={{
         minWidth: 36,
         textAlign: 'center',
-        fontSize: theme.type.loadDisplay.fontSize,
+        fontSize: numeralSize ?? theme.type.loadDisplay.fontSize,
         fontWeight: theme.type.loadDisplay.fontWeight,
         letterSpacing: theme.type.loadDisplay.letterSpacing,
         fontVariant: ['tabular-nums'],
@@ -188,7 +195,7 @@ export function NumberStepper({
   if (theme.components.cardBorderWidth === 0) {
     // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
     return (
-      <View style={{ flex, minWidth: 0, gap: theme.space['1'] }}>
+      <View style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
         <View
           style={{
             backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
