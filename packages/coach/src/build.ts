@@ -67,8 +67,12 @@ export interface BuildDeps {
   request: BuildRequest;
   /** The draft in context (a change makes its next version), else null (a new draft). */
   draft: WorkoutDraft | null;
-  /** The checks' context at the selected gym (`previous`: the plan being changed, for stable slot keys). */
-  checkContext: (previous: DraftPlan | null, opId: string) => Promise<WorkoutProposalContext>;
+  /**
+   * The checks' context at the selected gym (`previous`: the plan being
+   * changed, for stable slot keys; `catalogueIds`: what the call names, so
+   * their history can be read first).
+   */
+  checkContext: (previous: DraftPlan | null, opId: string, catalogueIds: readonly string[]) => Promise<WorkoutProposalContext>;
   nameOf: (exerciseId: string) => string;
   contextHash: string;
   /** The selected gym's equipment versions, hashed (what the usable list was read from). */
@@ -103,7 +107,7 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
     const args = call.args;
     const previous = deps.draft === null ? null : currentDraftVersion(deps.draft).plan;
     const draftId = deps.draft?.id ?? coachDraftIdFor(ctx.opId);
-    const check = checkWorkoutProposal(args, await deps.checkContext(previous, ctx.opId));
+    const check = checkWorkoutProposal(args, await deps.checkContext(previous, ctx.opId, args.exercises.map((e) => e.catalogueId)));
     const name = draftName(deps.request.focus, deps.request.minutes);
     const parentN = deps.draft?.currentVersion ?? null;
     const rationale = checkedRationale(args.message);
