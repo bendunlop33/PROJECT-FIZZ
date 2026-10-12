@@ -20,6 +20,7 @@ import {
   type BuildRequest,
 } from '../src/index';
 import { ScriptedCoachModel } from './fake-model';
+import { createStoreExecutors } from '../src/executors';
 import { call, memoryStore, ports, reply, request, words } from './turn-fixtures';
 
 /**
@@ -322,6 +323,22 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
     const other = new ScriptedCoachModel([reply('Sure.')]);
     await runCoachTurn(request({ input: words('save it'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(store, other, executors(store)));
     expect(other.requests).toHaveLength(1);
+    await store.close();
+  });
+
+  it('review S4: after the coach suggests a memory, "save it" goes to the coach even with a draft in the thread', async () => {
+    const store = await memoryStore();
+    const both = { ...createStoreExecutors({ store: store.repos.coach, exercises: { exerciseName: () => Promise.resolve(null) }, sessionId: null }), ...executors(store) };
+    const m1 = new ScriptedCoachModel([[call('suggest_memory', { text: 'Trains before work', quote: 'I train before work' }), { type: 'completed' }], reply('Want me to remember that?')]);
+    const first = await runCoachTurn(request({ input: words('I train before work'), draftInThread: true }), ports(store, m1, both));
+    expect(first.cards[0]?.record).toMatchObject({ status: 'proposed', detail: { kind: 'suggest_memory' } });
+    const m2 = new ScriptedCoachModel([reply('Tap Save on the card.')]);
+    await runCoachTurn(request({ input: words('save it'), threadId: first.threadId, draftInThread: true }), ports(store, m2, both));
+    expect(m2.requests).toHaveLength(1);
+    // "keep it", "add it" and "save that" are never the fixed line.
+    const m3 = new ScriptedCoachModel([reply('Ok.'), reply('Ok.'), reply('Ok.')]);
+    for (const t of ['keep it', 'add it', 'save that']) await runCoachTurn(request({ input: words(t), draftInThread: true }), ports(store, m3, both));
+    expect(m3.requests).toHaveLength(3);
     await store.close();
   });
 

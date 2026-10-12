@@ -736,12 +736,19 @@ export function createCoachService(deps: CoachServiceDeps) {
     buildChips?: { minutes: number | null; focus: BuildFocus } | null;
   }
 
-  /** Whether a thread holds a coach draft card (BD15's fixed line applies there). Reads records only. */
-  async function threadHasDraft(threadId: string | null): Promise<boolean> {
+  /**
+   * Whether the thread's newest coach draft is still open (BD15's fixed line applies there; review
+   * S4: a started, discarded or expired draft doesn't count). Newest turn first; stops at the first build.
+   */
+  async function threadHasOpenDraft(p: UserProfile, threadId: string | null): Promise<boolean> {
     if (threadId === null) return false;
     const msgs = await coachStore().listMessages(threadId).catch(() => []);
-    for (const turnId of new Set(msgs.map((m) => m.turnId))) {
-      if ((await coachStore().listTurnActions(turnId).catch(() => [])).some((a) => a.detail.kind === 'build_workout' && a.status === 'committed')) return true;
+    for (const turnId of [...new Set(msgs.map((m) => m.turnId))].reverse()) {
+      const build = [...(await coachStore().listTurnActions(turnId).catch(() => []))].reverse().find((a) => a.detail.kind === 'build_workout' && a.status === 'committed');
+      if (build !== undefined && build.detail.kind === 'build_workout') {
+        const d = await draftOf(p, build.detail.draftId);
+        return d !== null && d.status === 'open';
+      }
     }
     return false;
   }
@@ -893,7 +900,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           structuralSignals: await structuralSignalsFor(p, session).catch(() => []),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),
-          ...((await threadHasDraft(req.threadId)) ? { draftInThread: true } : {}),
+          ...((await threadHasOpenDraft(p, req.threadId)) ? { draftInThread: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },

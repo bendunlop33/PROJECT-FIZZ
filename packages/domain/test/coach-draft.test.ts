@@ -578,6 +578,6 @@ describe('lifecycle: 14 days, discard with Undo, saved and started (BD4, BD12, r
 describe('BD15: nothing starts or saves from chat', () => {
   it('recognises start and save asks (answered with the fixed line, no tool)', () => {
     for (const t of ['Start it', 'start it now', 'Save it', 'ok, save it to my workouts', 'Can you start the workout?', 'great, start it please', 'add it to my workouts']) expect(asksToStartOrSave(t)).toBe(true);
-    for (const t of ['When should I start bench?', 'start with bench next time', 'save the rest for tomorrow', 'build me a workout']) expect(asksToStartOrSave(t)).toBe(false);
+    for (const t of ['When should I start bench?', 'start with bench next time', 'save the rest for tomorrow', 'build me a workout', 'keep it', 'add it', 'save that', 'save this', 'add some core', 'keep that in mind']) expect(asksToStartOrSave(t)).toBe(false);
   });
 });

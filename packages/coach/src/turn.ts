@@ -350,6 +350,15 @@ function toolOutput(result: ToolResult, ref: string | null): string {
 
 const INTERRUPTED_NOTE = 'Stopped.';
 
+/** Whether the coach's last message is waiting on Ben: an offer, or a card he can accept (a memory suggestion, a proposal). */
+async function lastCoachAsked(store: CoachTurnStore, lastCoach: CoachMessage | undefined): Promise<boolean> {
+  if (lastCoach === undefined || lastCoach.body.role !== 'coach') return false;
+  if (lastCoach.body.offer !== null) return true;
+  if (lastCoach.body.actionIds.length === 0) return false;
+  const actions = await store.listTurnActions(lastCoach.turnId);
+  return actions.some((a) => lastCoach.body.role === 'coach' && lastCoach.body.actionIds.includes(a.actionId) && a.status === 'proposed' && a.detail.kind !== 'build_workout');
+}
+
 /**
  * Run one coach turn. Never throws for a model failure: the result says
  * what happened. Store errors (a broken database) do throw.
@@ -403,7 +412,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   const words = req.input.kind === 'words' ? req.input.text : null;
   // workout-builder BD15: "start it" / "save it" gets the fixed line and no model call; Start and Save are Ben's taps.
-  if (words !== null && req.kind === 'general' && (req.draftInThread === true || req.draftInContext === true) && asksToStartOrSave(words)) return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
+  // Review S4: not when the coach's last message asked something of its own (an offer, a memory suggestion, a proposal).
+  if (words !== null && req.kind === 'general' && (req.draftInThread === true || req.draftInContext === true) && asksToStartOrSave(words) && !(await lastCoachAsked(ports.store, lastCoach))) {
+    return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
+  }
   const mention = words === null ? 'none' : classifyPainMention(words);
   const messagePain: MessagePain | null = words === null ? null : { mention, exerciseIds: req.namedExerciseIds ?? [], bodyPart: painBodyPart(words) };
 

@@ -800,8 +800,19 @@ export function draftCardEndText(state: DraftCardState, clock: (utc: string, tz:
 /** The fixed reply to "start it" / "save it" (BD15): nothing starts or saves from chat. */
 export const START_BY_TAP_LINE = "Tap Start workout when you're ready.";
 
-/** "Start it", "save it", "start the workout", "add it to my workouts" (BD15): answered with the fixed line, never a tool. */
+/**
+ * "Start it", "save it", "start the workout", "save it to my workouts" (BD15): answered with the
+ * fixed line, never a tool. Review S4: only explicit start or save words. "keep it", "add it" and
+ * "save that" are ordinary replies (a memory, a revision) and go to the coach; "add" or "save
+ * that/this" count only with "to my workouts".
+ */
 export function asksToStartOrSave(text: string): boolean {
   const t = text.toLowerCase().replace(/[’]/g, "'").replace(/[.!?]+$/g, '').trim();
-  return /^(?:(?:ok|okay|great|cool|perfect|nice|yes|yep|sure|right)[,!.]? )*(?:(?:please|can you|could you|will you|go ahead and|just) )*(?:start|begin|kick off|launch|save|store|keep|add)(?: it| that| this| the (?:workout|draft|session)| my (?:workout|draft|session))?(?: (?:to|in|into) (?:my )?(?:workouts|library|routines))?(?: (?:now|for me|please))*$/.test(t);
+  const lead = '^(?:(?:ok|okay|great|cool|perfect|nice|yes|yep|sure|right)[,!.]? )*(?:(?:please|can you|could you|will you|go ahead and|just) )*';
+  const tail = '(?: (?:now|for me|please))*$';
+  const library = ' (?:to|in|into) (?:my )?(?:workouts|library|routines)';
+  const start = new RegExp(`${lead}(?:start|begin|kick off|launch)(?: it| that| this| the (?:workout|draft|session)| my (?:workout|draft|session))?${tail}`);
+  const save = new RegExp(`${lead}save(?: it| the (?:workout|draft|session)| my (?:workout|draft|session))(?:${library})?${tail}`);
+  const toLibrary = new RegExp(`${lead}(?:save|store|add)(?: it| that| this| the (?:workout|draft|session))${library}${tail}`);
+  return start.test(t) || save.test(t) || toLibrary.test(t);
 }
