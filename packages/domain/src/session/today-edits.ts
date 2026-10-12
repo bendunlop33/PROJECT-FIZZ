@@ -36,9 +36,11 @@ import { swapEquipmentId, type SwapPlan } from './swap-plan';
  * - `planWithTodayEdits`: the one path for both the overview's dry run and
  *   Start, so what the page shows is what Start creates (OV3, TE2).
  *
- * Edits never carry a load: a swap's targets come from the substitute's own
- * history (`substituteTargets`), re-planned on every read, so a gym change
- * re-fits them (GS2). No AI is involved anywhere here.
+ * Edits are intent: a swap's or an added exercise's targets come from its
+ * own history (`substituteTargets` / `addTargets`), re-planned on every
+ * read, so a gym change re-fits them (GS2). The one number an edit carries is
+ * Ben's own `load` (§11, TE13): his intended load, fitted on every read like
+ * any intended load. No AI is involved anywhere here.
  */
 
 // ---------------------------------------------------------------------------

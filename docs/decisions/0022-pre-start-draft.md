@@ -49,6 +49,7 @@ type TodayEdit = TodayEditBase & (
 
 - **`slotKey`** is the `RoutineExercise.id` (routine basis; the same id the planner already passes to the shared fit as `slotId`) or the source session's part-root `SessionExercise.id` (next basis). Edits never point at array positions or at dry-run ids.
 - **Intent, not numbers.** A swap stores the exercise, never a load. Targets are re-planned on every read, so a gym change, a routine edit or a late D21 target can't leave a stale number in the draft (as GS2).
+  - *Amended 12 Oct 2026 (overview-today-edits TE13, slice B):* the one exception is Ben's own `load` edit, which stores his **intended** load (convention explicit) and is fitted on every read like any intended load (toward easier, never past a max), so a gym change still re-fits it.
 - **Seam for target edits.** The `TodayEdit` union is closed in this version. A later target-changing kind (for example a lighter start after a break, once playbook R1/R2/R6 are approved) is added as a new variant that `applyTodayEdits` applies **after** the structural edits and before the fit. Nothing for it is built now.
 - **Your data.** Drafts are owner-scoped. They are exported and deleted with Your data, and they are never in coach context (rule 10). The overview makes no AI call.
 
