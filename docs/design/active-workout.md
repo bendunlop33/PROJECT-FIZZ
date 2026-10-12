@@ -202,9 +202,9 @@ With the coach reachable, the same offer has no `Next set` line, because the coa
 
 ```
 │ Superset A           Round 2 of 3   ⋯  │ pinned group header
-│ ▏A1 Cable fly · kg stack               │ members, bracket
-│ ▏A2 Lateral raise · kg each  [⚠ Pain]  │ icon + word
-│ SET     KG          REPS          ✓    │
+│ SET     KG          REPS          ✓    │ pins with it
+│ ▏A1 Cable fly · kg stack               │ members, bracket; scroll
+│ ▏A2 Lateral raise · kg each  [⚠ Pain]  │ with the body; icon + word
 │ ROUND 1                                │
 │ A1      25          14            ✓    │
 │ A2      10          15            ✓    │
@@ -274,8 +274,8 @@ While a work timer runs, the TIME tile shows `WORK 0:38` as a large numeral, and
   - Line 1: name (`type.title2`) with a trailing `chevron.right`. Tapping it opens the **exercise sheet** (§2A.7). After it come the `⚠ Pain` badge when a flag covers the exercise (`exclamationmark.triangle` + word, `status.warning`), the progress `1/3` (done / live sets, tabular, `text.tertiary`), then `Adjust` (current exercise only, `AdjustControl`, 52pt hit area), then `⋯`.
   - Line 2 (`type.callout`, `text.secondary`, tabular): equipment word, the convention when it isn't total load, and the last comparable session as actual results: `Barbell · Last 1 Oct: 100 × 8, 8, 7`, `Dumbbells · kg each · Last 1 Oct: 32 × 10, 9, 8`, `Cable · kg stack · per side`. With no history: `Barbell · No previous result`. FitNotes history: `Last (FitNotes, 1 Oct): …` (B7).
   - Line 3, only when Ben wrote one: the exercise note as typed (`type.callout`, `text.secondary`, ≤ 3 lines; tap to edit, §4.4 `Notes`).
-  - Warm-up ramp suggestion (first barbell exercise, before its first working set): `Warm-up · 20 × 10 · 60 × 5 · 80 × 3` with a `Hide` text button (as built).
   - Column labels, which pin with the header: `type.label` (16pt) caps in `text.tertiary`. They are hidden at AX1+.
+  - Not pinned (r3, 2026-10-12): the warm-up ramp suggestion (first barbell exercise, before its first working set: `Warm-up · 20 × 10 · 60 × 5 · 80 × 3` with a `Hide` text button) and the `AdjustRow` sit at the top of the card's body and scroll with it, so the pinned part stays short at 375pt.
 - **Columns** follow the exercise's measurement and convention. The unit is written once, in the label. Cells hold numbers only.
 
 | Exercise | Labels | Cell example |
@@ -305,6 +305,8 @@ While a work timer runs, the TIME tile shows `WORK 0:38` as a large numeral, and
 
 **Anchoring (Ben, decision 1).**
 - **The anchor** is the open row, or the after-set block above it when there is one. The list is positioned so that the anchor's exercise header is at the top of the list (pinned, or in its natural place on the exercise's first set), with the anchor directly under it. Everything finished (folded exercises, done rows, done warm-ups) is above the viewport. Pending rows and future exercises are below.
+- **When the after-set block and the open row's tiles can't both fit** (r3, 2026-10-12; e.g. stacked tiles plus a coach offer during rest at 375pt): the tiles win. The list scrolls just far enough for the open row's last tile to clear the rest and Log bars, and never past the open row's top (the open row directly under the header is the furthest it goes). As much of the after-set block as fits stays above the open row.
+- **With the keypad open** (WT39): the open row sits directly under the header when the focused tile then clears the bars the keypad lifts; otherwise the list scrolls further, until the focused tile's bottom (its value and `−`/`+`) clears them. Positions are measured with the keypad's layout (plate line and `Last` hidden). Whether WT39 holds for stacked tiles at 375 × 667 during rest and at AX3 is open (review r3 SP1, Ben to choose).
 - **When the anchor is applied:** on open (Start, Resume, P6 auto-open, relaunch after a force-close), after every Log, on `NowChip`, and after `setActiveSet` from outside the viewport (voice, the exercise menu). It is applied without animation on open. The anchor is derived from the stored active set and draft, so restore needs no saved scroll offset and lands on the same set.
 - **Auto-advance after Log:** the saved row turns done, the domain picks the next open row, and the list scrolls so the new anchor comes to the top. The set just done slides up under the pinned header. This uses `motion.swap` (180 ms); under Reduce Motion there's no animation, and the end position is the same. When the next set is in another exercise, the finished exercise folds above the viewport and the next card's header comes to the top.
 - **Bottom spacer.** The list ends with empty canvas: list viewport height minus the content below the anchor, with a floor of 0. This means the anchor can reach the top on the last sets too, so the declutter holds to the end.
@@ -381,7 +383,7 @@ The block lasts until the next Log, until another row is selected, or until that
 
 ### 2A.8 Supersets, unilateral and gym parts
 
-- **Superset** (§2.6): one card with the group header (`Superset A` · `Round 2 of 3` · `⋯`), a bracketed member list (`A1 Cable fly · kg stack`, `A2 Lateral raise · kg each`, each with its own `⚠ Pain` badge), and rows grouped under `ROUND n` in lifting order. Logging A1 opens A2 with no rest (`A1 · Log 25 kg × 14 → A2`). Logging A2 starts the round rest. The member's target line ends `· then A2, no rest`. The group folds only when every member is finished.
+- **Superset** (§2.6): one card with the group header (`Superset A` · `Round 2 of 3` · `Adjust` while current · `⋯`) and the shared column labels, which are the only parts that pin (r3, 2026-10-12). Under them, at the top of the body and scrolling with it, a bracketed member list (`A1 Cable fly · kg stack`, `A2 Lateral raise · kg each`, each with its name tap, `⋯`, its own `⚠ Pain` badge and note), then rows grouped under `ROUND n` in lifting order. Logging A1 opens A2 with no rest (`A1 · Log 25 kg × 14 → A2`). Logging A2 starts the round rest. The member's target line ends `· then A2, no rest`. The group folds only when every member is finished.
 - **Unilateral** (§2.9): rows carry `L` / `R`. The header line says `per side` once. The open row has the Side control. After a Left log, the domain adds the pending right-side row, which becomes the next open row by auto-advance. `Log right side ›` isn't needed in Table, because the row is already open.
 - **Gym parts** (§2.16): divider and gym caption as §2A.3. Steppers use only the current gym's equipment. A done row from another gym is corrected against that gym's equipment.
 
