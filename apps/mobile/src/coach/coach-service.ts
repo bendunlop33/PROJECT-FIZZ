@@ -104,6 +104,7 @@ import {
   isInHistory,
   isTriggerKind,
   lastAdjustedVersion,
+  movementMatcher,
   nextSessionBases,
   nextTargetFitsSource,
   nextTargetSourceBasis,
@@ -281,7 +282,7 @@ export interface CoachServiceDeps {
    * (12 Oct) What the coach's `add_exercise_today` check needs for one exercise ID at the workout's gym
    * (workout services; local reads only). Absent: the tool isn't in this build's wiring (withheld, never offered).
    */
-  coachAddInputs?: (exerciseId: string, aggregate: SessionAggregate) => Promise<{ exercise: Exercise | null; history: HistorySession[]; substitute: SubstituteContext; owner: UserProfile } | null>;
+  coachAddInputs?: (exerciseId: string, aggregate: SessionAggregate) => Promise<{ exercise: Exercise | null; history: HistorySession[]; substitute: SubstituteContext; owner: UserProfile; sameMovementIds?: string[]; exerciseUnsaved?: boolean } | null>;
 }
 
 /** A structural proposal card's state (ADR 0020 §3), from the proposal and Ben's taps on it. */
@@ -803,9 +804,12 @@ export function createCoachService(deps: CoachServiceDeps) {
     const at = deps.now();
     const nowMs = toMs(at.utc);
     const gym = { id: session.session.gymId ?? 'no-gym', name: 'this gym', equipment: currentGymEquipment(session.session) };
-    const inWorkout = new Set(session.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId));
-    return (await exercisePool())
-      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && (e.measurement === 'reps' || e.measurement === 'duration') && !inWorkout.has(e.id) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
+    const pool = await exercisePool();
+    // Review S2: the same movement under another ID or name (a FitNotes custom "Lateral Raise") counts as in the workout or flagged.
+    const inWorkout = movementMatcher(pool, session.exercises.filter((e) => e.removed === undefined));
+    const flagged = movementMatcher(pool, flags.filter((f) => f.status === 'active'));
+    return pool
+      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && (e.measurement === 'reps' || e.measurement === 'duration') && !inWorkout(e) && !flagged(e) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((e) => ({ exerciseId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
   }

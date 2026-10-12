@@ -50,6 +50,7 @@ export * from './step-card';
 export * from './target-provenance';
 export * from './session/target-why';
 export * from './pain-flags';
+export * from './exercise-identity';
 export * from './exclusions';
 export * from './session/pain-sheet';
 export * from './touches';

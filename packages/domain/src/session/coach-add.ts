@@ -1,7 +1,8 @@
 import { BUILD_LIMITS, type AddExerciseTodayArgs, type CoachTarget, type CommandOf, type Exercise, type GuardNote, type Load, type PlannedSet, type RepRange, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import { builtInRepRange, ruleCategory } from '../default-rule';
 import { dayMonthText, formatDuration, repRangeText } from '../display';
-import { PAIN_AREA_WORD, painFlagCovering } from '../pain-flags';
+import { painFlagForMovement, rowIsMovement } from '../exercise-identity';
+import { PAIN_AREA_WORD } from '../pain-flags';
 import type { HistorySession } from '../progression';
 import { deriveId } from '../stable';
 import { toMs } from '../time';
@@ -18,8 +19,10 @@ import { swapSource } from './swap-plan';
  *
  * 1. The workout is active and still at the version the coach read (rule 5).
  * 2. The exercise is one of Ben's or the catalogue's, measured in reps or time.
- * 3. Not pain-flagged (rule 9): refused, never substituted.
- * 4. Not already a live row today (one more set there is `adjust_pending_sets`).
+ * 3. Not pain-flagged (rule 9): refused, never substituted. The same movement
+ *    under another ID or name counts (`sameMovementIds`, review S2).
+ * 4. Not already a live row today, by ID or the same movement (one more set
+ *    there is `adjust_pending_sets`).
  * 5. Doable at the workout's current gym (rule 4).
  * 6. The position or superset partner is a live row (a partner needs a set left).
  * 7. Sets, reps or work time and target RPE are clamped to the builder's
@@ -45,6 +48,11 @@ export interface CoachAddInput {
   history: readonly HistorySession[];
   /** At the workout's current gym: its items, pain flags, check-in pain, Ben's unit. */
   substitute: SubstituteContext;
+  /**
+   * Review S2: other IDs of the same movement (same catalogue key or name, e.g. a FitNotes custom
+   * "Lateral Raise" for the catalogue's "Lateral raise"). A row or pain flag on any of them counts.
+   */
+  sameMovementIds?: readonly string[];
   owner: UserProfile;
   opId: string;
   at: ZonedTimestamp;
@@ -99,7 +107,8 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
 
   // 3. Rule 9: a flagged movement is never added by the coach.
   const nowMs = toMs(input.at.utc);
-  const flag = painFlagCovering(input.substitute.painFlags, exercise.id, nowMs, input.at.tz)?.flag ?? null;
+  const movementIds = [exercise.id, ...(input.sameMovementIds ?? [])];
+  const flag = painFlagForMovement(input.substitute.painFlags, exercise, movementIds, nowMs, input.at.tz);
   if (flag !== null) {
     const area = flag.area === null ? '' : `${PAIN_AREA_WORD[flag.area]} `;
     return reject(`${area}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`);
@@ -107,7 +116,7 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
 
   // 4. Already in today's workout: one more set there is a change to its sets.
   const live = s.exercises.filter((e) => e.removed === undefined);
-  if (live.some((e) => e.exerciseId === exercise.id)) return reject('it’s already in today’s workout');
+  if (live.some((e) => rowIsMovement(e, exercise, movementIds))) return reject('it’s already in today’s workout');
 
   // 5. Rule 4: something to do it on at this gym.
   const gym = { ...input.substitute.gym, equipment: currentGymEquipment(s.session) };

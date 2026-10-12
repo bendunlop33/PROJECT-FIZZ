@@ -218,6 +218,25 @@ describe('checkCoachAdd: refusals (nothing is added)', () => {
     if (r.status === 'rejected') expect(r.failure).toMatch(failure);
   });
 
+  // Review S2: a FitNotes custom "Lateral Raise" (own ID, no catalogue key) is the same movement.
+  const CUSTOM = exercise(260, 'Lateral Raises', { catalogueKey: null, compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand', ownerId: OWNER });
+  const withCustomRow = (): SessionAggregate =>
+    apply(session(MAIN, MAIN_EQ), buildAddExerciseCommand({ opId: 'custom', owner: profile(), exercise: CUSTOM, equipmentId: rack.id, at: at(2), newId: idGen(62_000), plan: [{ setType: 'working' as const, planned: { load: null, reps: { min: 10, max: 12 }, durationS: null, rpe: null, rir: null } }] }));
+
+  it('the same movement under another ID or name (review S2): already in the workout, or flagged, is refused', () => {
+    expect(checkCoachAdd(input(RAISE, withCustomRow()))).toMatchObject({ status: 'rejected', failure: 'it’s already in today’s workout' });
+    const customFlag: PainFlag = { ...flag, id: id(951), exerciseId: CUSTOM.id, exerciseName: CUSTOM.name };
+    const flagged = checkCoachAdd(input(RAISE, session(MAIN, MAIN_EQ), { substitute: subCtx(MAIN, MAIN_EQ, { painFlags: [customFlag] }) }));
+    expect(flagged.status === 'rejected' ? flagged.failure : flagged.status).toMatch(/shoulder flagged/);
+    // By catalogue key through `sameMovementIds`: Ben's saved copy under another ID and name.
+    const COPY = exercise(261, 'DB side raise', { catalogueKey: RAISE.catalogueKey ?? null, compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+    const copyFlag: PainFlag = { ...flag, id: id(952), exerciseId: COPY.id, exerciseName: COPY.name };
+    expect(checkCoachAdd(input(RAISE, session(MAIN, MAIN_EQ), { sameMovementIds: [COPY.id], substitute: subCtx(MAIN, MAIN_EQ, { painFlags: [copyFlag] }) })).status).toBe('rejected');
+    expect(checkCoachAdd(input(RAISE, session(MAIN, MAIN_EQ), { substitute: subCtx(MAIN, MAIN_EQ, { painFlags: [copyFlag] }) })).status).toBe('ok');
+    // A cleared flag on the look-alike doesn't block it.
+    expect(checkCoachAdd(input(RAISE, session(MAIN, MAIN_EQ), { substitute: subCtx(MAIN, MAIN_EQ, { painFlags: [{ ...customFlag, status: 'cleared' }] }) })).status).toBe('ok');
+  });
+
   it('a superset partner that is done is refused', () => {
     let s = session(MAIN, MAIN_EQ);
     const benchRow = rowsNamed(s, 'Bench press')[0];
