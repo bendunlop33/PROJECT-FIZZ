@@ -303,6 +303,7 @@ Section 3 covers the v1 build. These come after it.
 | Send a backup copy through the share sheet (AirDrop, Mail) | S | nothing | data-import-export §4.1 |
 | Backup settings: on/off after each workout, keep 7/14/30/All | S | nothing | data-import-export DX9 |
 | Automatic off-phone backup to a chosen folder (off by default) | M | Device test (DEP-FILES) | data-import-export §2.2 |
+| Online backup to Google Drive's hidden app-data folder (Google sign-in in the system sheet, drive.appdata scope, token in Keychain, no server; Ben creates a free Google Cloud OAuth client once; unverified-app warning acceptable for one user). Parked by Ben 12 Oct; preferred over an own server | M | Ben (parked) | Ben 12 Oct chat |
 | "Save a copy first" before import, restore and updates. *(partly: delete and reset only)* | S | nothing | data-import-export §4.1a |
 | Restore a backup but skip damaged records | M | nothing | ADR 0005 |
 | Clear AlarmKit alarms, Live Activities and audio on Delete my data | S | After those features | ADR 0023 |
