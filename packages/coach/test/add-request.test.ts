@@ -22,7 +22,9 @@ function writeTools(text: string, kind: 'workout' | 'general' = 'workout'): stri
     .sort();
 }
 
-const ADD = ['add_exercise_today', 'adjust_pending_sets'];
+// Review r2 B1: every add also opens the proposal tool, so a future scope always has a tool that only proposes.
+const ADD = ['add_exercise_today', 'adjust_pending_sets', 'propose_next_workout_change'];
+const FUTURE = ['propose_next_workout_change'];
 const SETS = ['adjust_pending_sets'];
 const NONE: string[] = [];
 
@@ -107,6 +109,53 @@ describe('the gate for adding to today’s workout (table)', () => {
     ['create 3 sets of curls next time', ['propose_next_workout_change']],
     ['add curls going forward', ['propose_next_workout_change']],
     ['superset curls with bench next time', ['propose_next_workout_change']],
+    // Review r2 B1: future scopes outside the r1 list.
+    ['add curls in future', FUTURE],
+    ['add curls in the future', FUTURE],
+    ['add curls in future workouts', FUTURE],
+    ['add curls to future sessions', FUTURE],
+    ['add curls to my next workouts', FUTURE],
+    ['add curls to the next sessions', FUTURE],
+    ['add curls permanently', FUTURE],
+    ['always add curls', FUTURE],
+    ['add curls to push days', FUTURE],
+    ['add curls on leg days', FUTURE],
+    ['add curls to every push day', FUTURE],
+    ['add curls every pull session', FUTURE],
+    ['add curls for the rest of the block', FUTURE],
+    ['add curls for the rest of the month', FUTURE],
+    ['add curls from today on', FUTURE],
+    ['add curls from today onwards', FUTURE],
+    // Review r2 S1: today's plan is today; a bare "the plan" is ambiguous, so both tools open.
+    ["add curls to today's plan", ADD],
+    ['add curls to today’s plan', ADD],
+    ['add curls to the plan for today', ADD],
+    ['add curls to my plan today', ADD],
+    ['add curls to the plan for this workout', ADD],
+    ['add curls in the plan', ADD],
+    ['add curls to the plan', ADD],
+    ['add curls to my plan', FUTURE],
+    ['add curls to my push plan', FUTURE],
+    // Review r2 S2: other ask forms.
+    ["I'd like to add curls", ADD],
+    ['I’d like to add curls', ADD],
+    ["i'd like some curls", ADD],
+    ['I would like some curls', ADD],
+    ['can I get 3 sets of curls', ADD],
+    ['can I have some curls?', ADD],
+    ['we should add curls', ADD],
+    ['maybe add some curls', ADD],
+    ['perhaps add face pulls at the end', ADD],
+    ['pair curls with bench', ADD],
+    ['do curls as a superset with bench', ADD],
+    ['add 3 sets of 12 on lateral raises', ADD],
+    ["I'd like to add curls next time", FUTURE],
+    ['we should add curls to every push day', FUTURE],
+    // Still not a request.
+    ["we shouldn't add curls", NONE],
+    ['should we add curls?', NONE],
+    ['maybe add some curls?', NONE],
+    ["I'd like to know why you added curls", NONE],
     // A swap or variety request is structural, not an add.
     ['Can we do something other than cable fly?', ['propose_next_workout_change']],
   ] as const)('%s → %j', (text, expected) => {
@@ -121,7 +170,7 @@ describe('the gate for adding to today’s workout (table)', () => {
   });
 
   it('an add request counts as asking for a change, so a reply with no card gets "No change made."', () => {
-    for (const t of ['put in some curls', 'stick some dips in', 'add 3 sets of lateral raises', 'add another set', 'add a set to bench', 'create 3 sets of lateral raises', 'add in some curls', 'superset curls with bench', 'add curls next time']) {
+    for (const t of ['put in some curls', 'stick some dips in', 'add 3 sets of lateral raises', 'add another set', 'add a set to bench', 'create 3 sets of lateral raises', 'add in some curls', 'superset curls with bench', 'add curls next time', "I'd like to add curls", 'I’d like some curls', 'can I get 3 sets of curls', 'we should add curls', 'maybe add some curls', 'pair curls with bench', 'do curls as a superset with bench', 'add 3 sets of 12 on lateral raises', 'add curls to every push day', "add curls to today's plan"]) {
       expect(gateFor({ kind: 'workout', input: words(t), previousOffer: null, structuralSignals: [] }).benAskedForChange).toBe(true);
     }
     expect(gateFor({ kind: 'workout', input: words('should I add curls?'), previousOffer: null, structuralSignals: [] }).benAskedForChange).toBe(false);

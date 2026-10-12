@@ -141,7 +141,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: "Add an exercise to today's workout, with Undo",
     capabilitySection: 'when_you_ask',
     description:
-      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn.",
+      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. Today only: if Ben names a future scope (next time, future sessions, his routine or template, every push day, permanently), use propose_next_workout_change instead and never this tool. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn.",
   },
   {
     name: 'log_set',
@@ -362,6 +362,9 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   adjust_pending_sets: ['change', 'difficulty', 'add'],
   // (12 Oct) "Add 3 sets of lateral raises", "put in some curls", "can we do some face pulls".
   add_exercise_today: ['add'],
+  // Review r2 B1: every add also opens the proposal tool, so a future scope Ben names ("to every push
+  // day", "permanently") always has a tool that only proposes, and today's add is never the only choice.
+  propose_next_workout_change: ['add'],
   log_set: ['log'],
   correct_set: ['correct'],
   save_memory: ['memory'],
@@ -391,7 +394,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'summary_turn':
       return g.kind === 'summary' ? null : 'needs_summary_turn';
     case 'structural_signal':
-      return isStructuralRequest(g.benRequest) || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
+      return isStructuralRequest(g.benRequest) || requestOpens(t, g.benRequest) || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
   }
 }
 

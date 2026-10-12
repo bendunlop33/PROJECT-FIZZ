@@ -422,6 +422,8 @@ function lower(text: string): string {
     text
       .toLowerCase()
       .replace(/[‘’]/g, "'")
+      // Review r2 S2: "I'd like to add curls" (straight or curly apostrophe) reads like "I would like to".
+      .replace(/\bi'd like\b/g, 'i would like')
       .replace(/\bgimme\b/g, 'give me')
       .replace(/\bwanna\b/g, 'want to')
       .replace(/\blemme\b/g, 'let me'),
@@ -617,10 +619,11 @@ function buildIn(clause: string): boolean {
  * curls" only counts after an ask ("let's", "can we", "I want to").
  */
 /** A rep count or range after "N sets of" (review B1): "3 sets of 12", "3 sets of 10-12 reps of". */
-const ADD_REPS = '(?:\\d+(?: ?(?:-|–|to) ?\\d+)?(?: reps?)?(?: of)? )?';
+// Review r2 S2: "on" only after a set count ("add 3 sets of 12 on lateral raises").
+const ADD_REPS = '(?:\\d+(?: ?(?:-|–|to) ?\\d+)?(?: reps?)?(?: of| on)? )?';
 const SET_COUNT = '(?:\\d+|one|two|three|four|five|six|a|some|a few|a couple(?: of)?|more)';
 /** An amount of sets: "3 sets of 12", "some sets of", "sets for", "3x12". */
-const ADD_SETS = `(?:(?:${SET_COUNT} )?(?:sets?|rounds?) (?:of|for) ${ADD_REPS}|\\d+ ?x ?\\d+(?: of)? )`;
+const ADD_SETS = `(?:(?:${SET_COUNT} )?(?:sets?|rounds?) (?:of|for) ${ADD_REPS}|\\d+ ?x ?\\d+(?: of| on)? )`;
 const ADD_AMOUNT = `(?:${ADD_SETS}|(?:some|a few|a couple(?: of)?|a bit of|more|(?:another|an extra|extra|one more) (?:round|set|exercise) of) )?`;
 const ADD_DET = '(?:(?:the|my|a|an|some) )?';
 /** Words between the amount and the exercise word: never a preposition or a load, set or time word ("add weight to bench"). */
@@ -637,29 +640,60 @@ const ADD_SPLIT = new RegExp(`^(?:put|throw|chuck|stick|pop|slot|squeeze|fit|ban
 const ADD_MAKE = new RegExp(`^(?:create|make|give me|do me|set up) (?:me )?(?:${ADD_SETS}|(?:some|a few|a couple(?: of)?) )${ADD_DET}${ADD_OBJECT}\\b`);
 /** Review B1: "superset curls with bench". The coach adds the exercise; one already there is refused by the domain. */
 const ADD_SUPERSET = new RegExp(`^superset (?:it |them )?(?:with )?${ADD_DET}${ADD_OBJECT}\\b`);
+/** Review r2 S2: "pair curls with bench", "do curls as a superset with bench". */
+const ADD_PAIR = new RegExp(`^pair (?:up )?${ADD_DET}${ADD_OBJECT} (?:with|and)\\b`);
+const ADD_DO_SUPERSET = new RegExp(`^do ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT} (?:as|in) a superset\\b`);
+/** Review r2 S2: an amount Ben wants or asks to get: "I'd like some curls", "can I get 3 sets of curls". */
+const ADD_WANT = new RegExp(`^i (?:want|need|would like) (?:${ADD_SETS}|(?:some|a few|a couple(?: of)?) )${ADD_DET}${ADD_OBJECT}\\b`);
+const ADD_GET = new RegExp(`^(?:get|have) (?:me )?(?:${ADD_SETS}|(?:some|a few|a couple(?: of)?) )${ADD_DET}${ADD_OBJECT}\\b`);
+/** Review r2 S2: suggestion prefixes that ask for an add only ("we should add curls", "maybe add some curls"). */
+const ADD_SUGGEST_PREFIX = /^(?:we should|maybe|always|perhaps|i think we should|we need to|we could|might as well) (.*)$/;
 const ADD_DO = new RegExp(`^(?:do|hit|try|have) ${ADD_AMOUNT}${ADD_DET}${ADD_OBJECT}\\b`);
 /** Set types and other things that are sets, not exercises: "add a drop set", "add a warm-up". */
 const ADD_NOT_EXERCISE = /^(?:top ?sets?|back ?-?off(?: sets?)?|drop ?sets?|warm ?-?ups?|amrap|finisher)\b/;
 /**
- * Review B2: an add with a future scope ("add curls next time", "to my routine", "from now on")
- * changes the plan, not today: a structural proposal (rule 3), never `add_exercise_today`.
+ * Review B2, r2 B1: an add with a future scope ("add curls next time", "to my routine", "from now on",
+ * "to every push day", "permanently") changes the plan, not today: a structural proposal (rule 3),
+ * never `add_exercise_today`. The list can't be complete, so every add also opens
+ * `propose_next_workout_change`, and the today tool's description says it is today only.
  */
-const ADD_FUTURE =
-  /\b(?:next (?:time|session|week|workout|push|pull|legs|leg day|upper|lower)|tomorrow|from now on|going forward|for good|every (?:week|time|session|workout)|(?:to|in|into|for|on|from) (?:the |my |our )?(?:[a-z]+ ){0,2}(?:routine|template|plan|programme|program|split)s?)\b/;
+const ADD_FUTURE_TIME =
+  /\b(?:next (?:time|sessions?|weeks?|workouts?|push|pull|legs|leg day|upper|lower|block|cycle|month)|tomorrow|from (?:now|today|here) on(?:wards?)?|from now|going forward|for good|permanently|always|in (?:the )?future|future (?:sessions?|workouts?|weeks?)|every (?:\w+ )?(?:week|time|session|workout|day)s?|each (?:\w+ )?(?:week|session|workout|day)|(?:push|pull|leg|legs|upper|lower|upper body|lower body|chest|back|arm|arms|shoulder|full body) days|for the rest of the (?:block|month|cycle|programme|program|phase|meso|mesocycle|year)|(?:rest of|for) the (?:block|programme|program|mesocycle))\b/;
+/** "to my routine", "in the push template": future unless today is named ("to today's plan") or it is a bare "the plan" (review r2 S1). */
+const ADD_FUTURE_PLAN = /\b(?:to|in|into|for|on|from) (?:the |my |our )?(?:[a-z]+ ){0,2}(?:routine|template|plan|programme|program|split)s?\b/;
+const ADD_TODAY = /\b(?:today|tonight|this (?:workout|session)|now)\b/;
+const ADD_BARE_PLAN = /^(?:to|in|into|for|on) (?:the )?plans?$/;
+
+function futureScope(clause: string): boolean {
+  if (ADD_FUTURE_TIME.test(clause)) return true;
+  const plan = ADD_FUTURE_PLAN.exec(clause);
+  if (plan === null) return false;
+  // "add curls in the plan" is ambiguous: an add today, and the proposal tool is open too.
+  if (ADD_BARE_PLAN.test(plan[0])) return false;
+  return !ADD_TODAY.test(clause);
+}
 
 /** The add phrasing itself, anchored after polite words and an ask; no scope or structural check. */
 function addMatch(clause: string): boolean {
   const c = clause.replace(POLITE, '');
   if (c.length === 0 || isOpinionQuestion(c)) return false;
-  const asked = ASK_PREFIX.exec(c);
-  const body = asked?.[1] ?? c;
-  const m = ADD_DIRECT.exec(body) ?? ADD_SPLIT.exec(body) ?? ADD_MAKE.exec(body) ?? ADD_SUPERSET.exec(body) ?? (asked !== null ? ADD_DO.exec(body) : null);
+  const asked = ASK_PREFIX.exec(c) ?? ADD_SUGGEST_PREFIX.exec(c);
+  const body = (asked?.[1] ?? c).replace(POLITE, '');
+  const m =
+    ADD_DIRECT.exec(body) ??
+    ADD_SPLIT.exec(body) ??
+    ADD_MAKE.exec(body) ??
+    ADD_SUPERSET.exec(body) ??
+    ADD_PAIR.exec(body) ??
+    ADD_DO_SUPERSET.exec(body) ??
+    ADD_WANT.exec(c) ??
+    (asked !== null ? (ADD_DO.exec(body) ?? ADD_GET.exec(body)) : null);
   return m !== null && !ADD_NOT_EXERCISE.test((m[1] ?? '').trim());
 }
 
 /** An add for the future plan (review B2): structural. */
 function futureAdd(clause: string): boolean {
-  return addMatch(clause) && ADD_FUTURE.test(clause);
+  return addMatch(clause) && futureScope(clause);
 }
 
 function addIn(clause: string): boolean {
