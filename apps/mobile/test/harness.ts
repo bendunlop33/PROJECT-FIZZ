@@ -8,6 +8,7 @@ import type { ZonedTimestamp } from '@fizz/schemas';
 
 import { createRestAlertController, type NotifierPort, type PlannedRestAlert } from '../src/alerts/rest-alerts';
 import type { BackupFileStore, TextFile } from '../src/backup/backup-service';
+import { createLiveActivityController, type LiveActivityPort } from '../src/live-activity/controller';
 import { createExpoDatabaseHost } from '../src/data/expo-driver';
 import { createPersonalFiles, type ContainerFileOps } from '../src/device/personal-files';
 import type { AppServices } from '../src/services/app-services';
@@ -67,6 +68,8 @@ export function createHarness(
     signOutTimeoutMs?: number;
     /** The data ledger can be damaged or failing in a test. */
     ledger?: TextFile;
+    /** A fake Live Activity system; each launch gets a fresh controller over it, as a relaunch does. */
+    liveActivity?: LiveActivityPort;
   } = {},
 ): Harness {
   const dir = mkdtempSync(join(tmpdir(), 'fizz-harness-'));
@@ -167,7 +170,7 @@ export function createHarness(
         newId: h.ids,
         app: { name: 'GymSmarter', version: '0.1.0', build: 'test' },
         locale: 'en-GB',
-        restAlerts: createRestAlertController(notifier),
+        restAlerts: createRestAlertController(notifier, opts.liveActivity ? { liveActivity: createLiveActivityController(opts.liveActivity, { tz: () => TZ }) } : {}),
         ...(opts.coach === undefined ? {} : { coach: opts.coach }),
         dataLedger: opts.ledger ?? {
           read: () => Promise.resolve(ledgerText),

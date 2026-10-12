@@ -114,7 +114,7 @@ export interface NotifierPort {
  * every command, on launch and on return to the foreground. A failing
  * notifier never throws into logging (rule 1): the error is kept for display.
  */
-export function createRestAlertController(notifier: NotifierPort) {
+export function createRestAlertController(notifier: NotifierPort, layers: { liveActivity?: LiveActivityLayer } = {}) {
   let current: ScheduledAlert | null = null;
   let lastError: string | null = null;
   let chain: Promise<void> = Promise.resolve();
@@ -140,7 +140,9 @@ export function createRestAlertController(notifier: NotifierPort) {
         }
         if (planned === null) current = null;
       });
-      return chain;
+      // The Lock Screen Live Activity follows the same committed state; it never blocks or fails the notification.
+      const activity = layers.liveActivity?.reconcile(state, nowMs).catch(() => undefined) ?? Promise.resolve();
+      return Promise.all([chain, activity]).then(() => undefined);
     },
     /**
      * Delete my data: every workout alert goes, including one scheduled
@@ -160,7 +162,8 @@ export function createRestAlertController(notifier: NotifierPort) {
         }
       });
       chain = run.catch(() => undefined);
-      return run;
+      const activity = layers.liveActivity?.endAll(keep?.startsWith(REST_ALERT_PREFIX) ? keep.slice(REST_ALERT_PREFIX.length) : undefined).catch(() => undefined) ?? Promise.resolve();
+      return Promise.all([run, activity]).then(() => undefined);
     },
     get scheduled(): ScheduledAlert | null {
       return current;
@@ -169,6 +172,12 @@ export function createRestAlertController(notifier: NotifierPort) {
       return lastError;
     },
   };
+}
+
+/** The Live Activity layer as the alert controller drives it (`live-activity/controller.ts`). */
+export interface LiveActivityLayer {
+  reconcile(state: SessionAggregate | null, nowMs: number): Promise<void>;
+  endAll(keepSessionId?: string): Promise<void>;
 }
 
 export type RestAlertController = ReturnType<typeof createRestAlertController>;

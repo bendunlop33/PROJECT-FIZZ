@@ -480,6 +480,9 @@ export function createAppServices(deps: AppServicesDeps) {
     newId: deps.newId,
     profile: getProfile,
     afterCommand,
+    afterStart: (a) => {
+      if (deps.restAlerts) void deps.restAlerts.reconcile(a, toMs(deps.now().utc));
+    },
     catalogueExercises,
     catalogueSubstitutions,
     // `Ask coach` on How long? (fit-to-time §5): the coach's one request; `coach` is defined below and only read when Ben asks.

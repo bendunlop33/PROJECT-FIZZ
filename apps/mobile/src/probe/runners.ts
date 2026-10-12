@@ -512,7 +512,16 @@ export async function runLiveActivityProbe(now: number): Promise<ResultUpdate> {
     // 0:00 timer doesn't sit on the Lock Screen looking live. The next Run (or
     // the timer below, if the app is still running) ends it.
     const instance = factory.start(
-      { startedAtMs: now, endsAtMs, nextLabel: 'Next: Bench press 100 kg × 8' },
+      {
+        state: 'resting',
+        title: 'Rest',
+        line1: 'Probe · Bench press · Set 2 of 3 next',
+        line2: 'Target 100\u00a0kg\u00a0×\u00a08',
+        startMs: now,
+        endMs: endsAtMs,
+        side: '',
+        a11y: 'Rest. Probe countdown.',
+      },
       undefined,
       // eslint-disable-next-line no-restricted-globals -- converting an injected time, not reading the clock
       new Date(endsAtMs),
