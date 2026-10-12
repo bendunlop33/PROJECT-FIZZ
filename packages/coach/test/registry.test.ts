@@ -296,6 +296,33 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     expect(parseToolCall('t1', 'save_memory', JSON.stringify({ text: 'Always deload every 5th week', quote: 'remember to always deload every 5th week' }), mem).ok).toBe(true);
   });
 
+  it("Ben-asked words go to the playbook only on strong signals; a leading 'should' is his (review coach-tools r3 S1)", () => {
+    // His own constraints with a dropped subject: personal, whoever asked.
+    for (const text of ['Should not bench heavy until the shoulder settles', 'Should keep sessions short', "Shouldn't squat deep until the knee heals"]) {
+      expect(memoryTextKind(text, 'ben'), text).toBe('personal');
+      expect(memoryTextKind(text), text).toBe('personal');
+    }
+    // A plain imperative or "should" with no strong signal: Ben picks on the split card.
+    for (const text of ['Rest 3 minutes between heavy sets', 'You should never train to failure on squats']) {
+      expect(memoryTextKind(text, 'ben'), text).toBe('unclear');
+      expect(memoryTextKind(text), text).toBe('rule');
+    }
+    // A leading "should" with a strong rule signal could be either.
+    expect(memoryTextKind('Should deload every 5th week', 'ben')).toBe('unclear');
+    // Unmistakably general: straight to the playbook (CM9).
+    for (const text of [
+      'Always deload every 5th week',
+      'remember to always deload every 5th week',
+      'A deload every 4-6 weeks helps recovery',
+      'Progressive overload works best with small jumps',
+      'Compound lifts first',
+      'Lifters must warm up before heavy sets',
+      'Never superset heavy compounds',
+    ]) {
+      expect(memoryTextKind(text, 'ben'), text).toBe('rule');
+    }
+  });
+
   it('a bare third-person verb or "owner" is a personal fact (review r5 S3, rule 10)', () => {
     for (const text of ['Trains fasted before work', 'Owner prefers machines', 'User likes high reps', 'Usually lifts at 6am', 'Prefers dumbbells', 'Hates lunges', 'Has a dodgy knee']) {
       expect(personalPlaybookText(text), text).toBe(true);

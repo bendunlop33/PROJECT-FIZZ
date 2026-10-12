@@ -210,10 +210,11 @@ export function createStoreExecutors(deps: { store: CoachWriteStore; exercises: 
 
     save_memory: async (call, ctx) => {
       if (call.tool !== 'save_memory') throw new TypeError(call.tool);
-      // CM9 (review coach-tools r2 S1): even when Ben says "remember …", a general rule is never a memory. In
-      // clear rule wording it goes to the playbook as a `To review` candidate from Ben (inert until he approves
-      // it, with Undo); when it could be either, it waits as a card with both choices.
-      const kind = memoryTextKind(call.args.text);
+      // CM9 (review coach-tools r2 S1): even when Ben says "remember …", a general rule is never a memory. Only
+      // unmistakably general wording (review r3 S1) goes to the playbook as a `To review` candidate from Ben
+      // (inert until he approves it, with Undo); anything that could be his own constraint waits as a card
+      // with both choices.
+      const kind = memoryTextKind(call.args.text, 'ben');
       if (kind === 'rule') return addCandidate(call.args.text, 'ben', ctx);
       if (kind === 'unclear') return suggestMemory(call.args.text, call.args.quote, 'ben_asked', ctx);
       const memoryId = deriveId(`coach-memory:${ctx.opId}`);

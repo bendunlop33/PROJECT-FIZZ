@@ -185,9 +185,17 @@ const OWNER_NOUN = /\b(?:owner|owner's|user|user's|client|client's)\b/;
 const BARE_THIRD_PERSON_VERB =
   /^(?:(?:usually|always|often|never|sometimes|normally|mostly|generally|typically|still|also|now|only|rarely) )?(?:trains|prefers|likes|loves|hates|dislikes|enjoys|avoids|has|had|works|lifts|gets|struggles|runs|finds|wants|needs|does|doesn't|doesnt|feels|sleeps|eats|lives|uses|tends|can't|cant|cannot|is|was|isn't|isnt|wasn't|wasnt|goes|walks|cycles|swims|plays|rides|wakes|commutes|sits|stands|travels|fasts|drinks|takes|tolerates|responds|recovers|reacts|gets|misses|skips|manages|suffers|injured|tore|broke|had|reports|says|said|mentioned|wanted|asked|prefers)\b/;
 
+/**
+ * "Until the shoulder settles", "till the knee heals": one person's joint
+ * recovering, so a personal constraint (review coach-tools r3 S1).
+ */
+const BODY_UNTIL_SETTLED = new RegExp(
+  `\\b(?:until|till|til|while) (?:the |my |his |her |it |that )?(?:(?:left|right|lower|upper) )?(?:${BODY_WORD} )?(?:settles?|heals?|calms? down|recovers?|(?:is|feels|gets) better|improves?|is sorted|clears? up)\\b`,
+);
+
 export function personalPlaybookText(text: string): boolean {
   const t = text.toLowerCase().replace(/[‘’]/g, "'").trim();
-  return OWNER_WORDS.test(t) || OWNED_BODY.test(t) || PARTICULAR_BODY.test(t) || THIRD_PERSON.test(t) || OWNER_NOUN.test(t) || BARE_THIRD_PERSON_VERB.test(t);
+  return OWNER_WORDS.test(t) || OWNED_BODY.test(t) || PARTICULAR_BODY.test(t) || THIRD_PERSON.test(t) || OWNER_NOUN.test(t) || BARE_THIRD_PERSON_VERB.test(t) || BODY_UNTIL_SETTLED.test(t);
 }
 
 /** An instruction: starts with an imperative training verb ("Deload every 5th week", "Always rest 3 minutes on squats"). */
@@ -228,16 +236,39 @@ const SCHEDULE_CONTEXT =
  */
 export type MemoryTextKind = 'personal' | 'rule' | 'unclear';
 
-export function memoryTextKind(text: string): MemoryTextKind {
+/**
+ * Who asked: `coach` for the coach's own `suggest_memory` (clear rule
+ * wording is refused there), `ben` for Ben's "remember …" (`save_memory`).
+ * Ben's words go to the playbook without a card only on the strongest
+ * signals (review coach-tools r3 S1); anything weaker gets the CM9 split.
+ */
+export type MemoryAsker = 'coach' | 'ben';
+
+/** A dropped subject before "should": "Should keep sessions short" is about Ben, like "Prefers dumbbells" (r3 S1). */
+const LEADING_SHOULD = /^(?:(?:probably|really|definitely|still|also) )?(?:should(?:n't| not)?|ought(?:n't)? to)\b/;
+/** Class words that name lifters or a class of lifts, not a kind of set Ben might do ("heavy sets"). */
+const STRONG_CLASS_WORDS =
+  /\b(?:compounds?|compound (?:lifts?|movements?|exercises?)|isolation (?:work|lifts?|exercises?)|accessor(?:y|ies)(?: work| lifts?)?|big lifts|main lifts|each muscle|every muscle|muscle groups?|lifters|athletes|beginners|trainees|everyone|anyone|people)\b/;
+/** Wording that only a general rule uses. */
+const RULE_PHRASE = /\b(?:works best|rule of thumb|as a rule)\b/;
+
+/** Unmistakably general: a periodic rule, a claim about what works, a class of lifts or lifters, rule phrasing. */
+function strongRuleSignal(t: string): boolean {
+  return PERIODIC_RULE.test(t) || GENERAL_CLAIM.test(t) || STRONG_CLASS_WORDS.test(t) || RULE_PHRASE.test(t);
+}
+
+export function memoryTextKind(text: string, asker: MemoryAsker = 'coach'): MemoryTextKind {
   const t = text
     .toLowerCase()
     .replace(/[‘’]/g, "'")
     .trim()
     .replace(/^remember (?:that |to )?/, '');
   if (personalPlaybookText(t)) return 'personal';
+  const strong = strongRuleSignal(t);
+  if (LEADING_SHOULD.test(t)) return strong ? 'unclear' : 'personal';
   const clear = ADVICE_WORDS.test(t) || PERIODIC_RULE.test(t) || GENERAL_CLAIM.test(t) || ((IMPERATIVE_RULE.test(t) || SOFT_ADVICE.test(t) || /^(?:\w+ )?(?:lifts?|movements?|exercises?|work) (?:first|last)\b/.test(t)) && CLASS_WORDS.test(t));
   const schedule = SCHEDULE_CONTEXT.test(t);
-  if (clear) return schedule ? 'unclear' : 'rule';
+  if (clear) return schedule || (asker === 'ben' && !strong) ? 'unclear' : 'rule';
   if (schedule) return 'personal';
   if (IMPERATIVE_RULE.test(t) || SOFT_ADVICE.test(t) || EVERY_PERIOD.test(t)) return 'unclear';
   return 'personal';

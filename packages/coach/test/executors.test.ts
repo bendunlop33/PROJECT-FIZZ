@@ -52,6 +52,25 @@ describe('store executors', () => {
     expect(personal).toMatchObject({ kind: 'action', record: { status: 'committed', detail: { kind: 'save_memory' } } });
   });
 
+  it("Ben's \"remember\" of his own constraint without a subject never lands in the playbook (review coach-tools r3 S1, rule 10)", async () => {
+    const s = await store();
+    const ex = createStoreExecutors({ store: s.repos.coach, exercises: { exerciseName: () => Promise.resolve(null) }, sessionId: null });
+    const health = await ex.save_memory?.({ tool: 'save_memory', args: { text: 'Should not bench heavy until the shoulder settles', quote: "remember I shouldn't bench heavy until my shoulder settles" } }, ctx('t:health'));
+    expect(health).toMatchObject({ kind: 'action', record: { status: 'committed', detail: { kind: 'save_memory' } } });
+    const short = await ex.save_memory?.({ tool: 'save_memory', args: { text: 'Should keep sessions short', quote: 'remember I should keep sessions short' } }, ctx('t:short'));
+    expect(short).toMatchObject({ kind: 'action', record: { status: 'committed', detail: { kind: 'save_memory' } } });
+    const rest = await ex.save_memory?.({ tool: 'save_memory', args: { text: 'Rest 3 minutes between heavy sets', quote: 'remember to rest 3 minutes between heavy sets' } }, ctx('t:rest'));
+    expect(rest).toMatchObject({ kind: 'action', record: { status: 'proposed', detail: { kind: 'suggest_memory' } } });
+    expect(await s.repos.coach.listPlaybookCandidates()).toEqual([]);
+    expect(await s.repos.coach.listMemories(OWNER, 'all')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'Should not bench heavy until the shoulder settles', status: 'active' }),
+        expect.objectContaining({ text: 'Should keep sessions short', status: 'active' }),
+        expect.objectContaining({ text: 'Rest 3 minutes between heavy sets', status: 'suggested', source: 'ben_asked' }),
+      ]),
+    );
+  });
+
   it('pain flags: an unknown exercise is refused (never guessed); an exercise already flagged is refused with why', async () => {
     const s = await store();
     const ex = createStoreExecutors({ store: s.repos.coach, exercises: { exerciseName: (x) => Promise.resolve(x === SQUAT ? 'Back squat' : null) }, sessionId: null });
