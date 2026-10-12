@@ -33,7 +33,14 @@ export interface TableColumns {
 
 export interface TableRow extends SetRowView {
   state: TableRowState;
-  /** Numbers only; the unit is in the column label. A range only ever appears on a target. */
+  /** This row's own columns (its exercise, part and equipment): whether it has a load cell, and which value. */
+  columns: TableColumns;
+  /**
+   * Numbers only when the block has one shared column header (the unit is in
+   * the label). When the block's rows disagree (a mixed superset, or parts in
+   * kg and lb), there's no shared header and each cell carries its unit:
+   * `25 lb each`, `+10 kg`, `12 reps`, `0:45`. A range only ever appears on a target.
+   */
   cells: { load: string | null; value: string };
   /** `RPE 8` / `RIR 2` on a done row (actual, no `@`); null otherwise. */
   effort: string | null;
@@ -76,7 +83,8 @@ export interface TableCard {
   /** "1 of 3 sets done". */
   progressAccessibility: string;
   painBadge: boolean;
-  columns: TableColumns;
+  /** The shared column header; null when the rows disagree (then each cell carries its unit). */
+  columns: TableColumns | null;
   rows: TableRow[];
   isCurrent: boolean;
   hasPending: boolean;
@@ -91,6 +99,12 @@ export interface SupersetMember {
   /** `kg stack`, `kg each`, `bodyweight`. */
   unitCaption: string;
   painBadge: boolean;
+  /** This member's own columns. */
+  columns: TableColumns;
+  /** Ben's note on this member today, or null. */
+  note: string | null;
+  /** The open row is one of this member's sets. */
+  isCurrent: boolean;
 }
 
 export interface SupersetCard {
@@ -101,7 +115,13 @@ export interface SupersetCard {
   /** `Round 2 of 3`. */
   roundText: string;
   members: SupersetMember[];
-  columns: TableColumns;
+  /** The shared column header when every member agrees; null otherwise (each cell carries its unit). */
+  columns: TableColumns | null;
+  /**
+   * The member the group's `⋯` and `Adjust` act on: the one with the open
+   * row, else the one whose set is next in lifting order, else the first.
+   */
+  menuTarget: string;
   /** Rows grouped by round, in lifting order (A1, A2 in each round). */
   rounds: { n: number; rows: TableRow[] }[];
   progress: { done: number; total: number };
@@ -197,13 +217,63 @@ function spokenValues(load: Load | null, reps: string | null, durationS: number 
 
 const SET_TYPE_SPOKEN: Record<WorkoutSet['setType'], string | null> = { warmup: 'warm-up', working: null, top: 'top set', backoff: 'back-off', drop: 'drop set' };
 
-function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null): TableRow {
+interface BuiltRow {
+  row: TableRow;
+  /** The same cells with their units, for a block whose rows disagree on columns. */
+  unitCells: TableRow['cells'];
+}
+
+function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null): BuiltRow {
+  const built = rowCore(state, base, activeSetId, ruleRpe, memberTag, memberName);
+  const set = state.sets.find((s) => s.id === base.setId);
+  const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+  if (!set || !ex) return { row: built, unitCells: built.cells };
+  const source = set.status === 'completed' && set.actual ? set.actual.load : set.planned.load;
+  const unitCells = {
+    load: built.cells.load === null ? null : withUnit(built.cells.load, source, ex),
+    value: ex.measurement === 'reps' && built.cells.value !== '—' && built.cells.value !== 'Skipped' ? `${built.cells.value}${NBSP}reps` : built.cells.value,
+  };
+  return { row: built, unitCells };
+}
+
+/** A load cell with its unit (`25 lb each`, `+10 kg`, `20 kg assist`); `BW` and `—` stay as they are. */
+function withUnit(cell: string, load: Load | null, ex: Pick<SessionExercise, 'loadConvention' | 'unit'>): string {
+  if (cell === 'BW' || cell === '—') return cell;
+  const unit = load?.unit ?? ex.unit;
+  const convention = load?.convention ?? ex.loadConvention;
+  switch (convention) {
+    case 'added':
+      return `+${cell}${NBSP}${unit}`;
+    case 'assistance':
+      return `${cell}${NBSP}${unit} assist`;
+    case 'per_hand':
+      return `${cell}${NBSP}${unit} each`;
+    case 'stack':
+      return `${cell}${NBSP}${unit} stack`;
+    case 'total':
+    case 'bodyweight':
+      return `${cell}${NBSP}${unit}`;
+  }
+}
+
+const sameColumns = (a: TableColumns, b: TableColumns): boolean => a.kind === b.kind && a.loadLabel === b.loadLabel && a.valueLabel === b.valueLabel;
+
+/** One shared header when every row (and the block's own columns) agree; else null, and every cell carries its unit. */
+function sharedColumns(own: readonly TableColumns[], built: readonly BuiltRow[]): { columns: TableColumns | null; rows: TableRow[] } {
+  const all = [...own, ...built.map((b) => b.row.columns)];
+  const first = all[0];
+  const shared = first !== undefined && all.every((c) => sameColumns(c, first)) ? first : null;
+  return { columns: shared, rows: built.map((b) => (shared === null ? { ...b.row, cells: b.unitCells } : b.row)) };
+}
+
+function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string | null, ruleRpe: number | null, memberTag: string | null, memberName: string | null): TableRow {
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) {
-    return { ...base, state: 'skipped', cells: { load: null, value: '—' }, effort: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
+    return { ...base, state: 'skipped', columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
   }
   const eq = equipmentOf(state, ex);
+  const columns = tableColumns(ex, eq);
   const label = memberTag ?? `Set ${String(base.number)}`;
   const who = [memberTag !== null && memberName !== null ? `${memberTag}, ${memberName}, set ${String(base.number)}` : label, SET_TYPE_SPOKEN[set.setType], set.side === 'left' ? 'left side' : set.side === 'right' ? 'right side' : null]
     .filter((p): p is string => p !== null)
@@ -217,6 +287,7 @@ function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | 
     return {
       ...base,
       state: 'done',
+      columns,
       cells: { load: loadCell(a.load, ex.loadConvention, eq), value: valueCellDone(a, ex.measurement) },
       effort,
       todayChange: null,
@@ -227,7 +298,7 @@ function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | 
     };
   }
   if (set.status === 'skipped') {
-    return { ...base, state: 'skipped', cells: { load: null, value: 'Skipped' }, effort: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
+    return { ...base, state: 'skipped', columns, cells: { load: null, value: 'Skipped' }, effort: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
   }
   const open = set.id === activeSetId;
   const today = carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null;
@@ -242,6 +313,7 @@ function rowOf(state: SessionAggregate, base: SetRowView, activeSetId: string | 
   return {
     ...base,
     state: open ? 'open' : 'pending',
+    columns,
     cells: { load: loadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(set, ex.measurement) },
     effort: null,
     todayChange: today,
@@ -328,7 +400,8 @@ function exerciseCard(input: ActiveViewInput, root: SessionExercise, parts: read
   const eq = equipmentOf(state, action);
   const blockLive = blockSets(state, root.id).filter(live);
   const ruleRpe = input.ruleTargetRpe?.[action.id] ?? input.ruleTargetRpe?.[root.id] ?? null;
-  const rows = buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null));
+  const ownColumns = tableColumns(action, eq);
+  const { columns, rows } = sharedColumns([ownColumns], buildSetRows(input, root.id, activeSetId).map((r) => rowOf(state, r, activeSetId, ruleRpe, null, null)));
   const prev = input.previous[action.id] ?? input.previous[root.id] ?? null;
   const headerLine = headerLineOf(action, eq);
   const lastLine = lastLineOf(prev, action, eq, state.session.startedAt.tz);
@@ -349,7 +422,7 @@ function exerciseCard(input: ActiveViewInput, root: SessionExercise, parts: read
       progressText: `${String(progress.done)}/${String(progress.total)}`,
       progressAccessibility: `${String(progress.done)} of ${String(progress.total)} sets done`,
       painBadge: painBadgeOf(input, action),
-      columns: tableColumns(action, eq),
+      columns,
       rows,
       isCurrent: activeSetId !== null && blockLive.some((s) => s.id === activeSetId),
       hasPending: blockLive.some((s) => s.status === 'pending'),
@@ -363,16 +436,34 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
   const state = input.aggregate;
   const members: SupersetMember[] = [];
   const unitsByMember: { tag: string; name: string; units: WorkoutSet[][] }[] = [];
-  const rowsById = new Map<string, TableRow>();
+  const built: BuiltRow[] = [];
+  const activeRow = activeSetId === null ? undefined : state.sets.find((s) => s.id === activeSetId);
   memberRoots.forEach((root, i) => {
     const parts = partsOf(state.exercises, root.id).filter((p) => p.removed === undefined);
     const action = actionRowOf(state, parts) ?? root;
     const tag = `${group}${String(i + 1)}`;
-    members.push({ tag, sessionExerciseId: action.id, exerciseId: action.exerciseId, name: action.exerciseName, unitCaption: unitWords(action) ?? (action.loadConvention === 'bodyweight' ? 'bodyweight' : action.unit), painBadge: painBadgeOf(input, action) });
+    const isCurrent = activeRow !== undefined && parts.some((p) => p.id === activeRow.sessionExerciseId);
+    members.push({
+      tag,
+      // The member's actions act on the open row's part when it's current.
+      sessionExerciseId: isCurrent ? activeRow.sessionExerciseId : action.id,
+      exerciseId: action.exerciseId,
+      name: action.exerciseName,
+      unitCaption: unitWords(action) ?? (action.loadConvention === 'bodyweight' ? 'bodyweight' : action.unit),
+      painBadge: painBadgeOf(input, action),
+      columns: tableColumns(action, equipmentOf(state, action)),
+      note: action.note ?? root.note ?? null,
+      isCurrent,
+    });
     const ruleRpe = input.ruleTargetRpe?.[action.id] ?? null;
-    for (const r of buildSetRows(input, root.id, activeSetId)) rowsById.set(r.setId, rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName));
+    for (const r of buildSetRows(input, root.id, activeSetId)) built.push(rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName));
     unitsByMember.push({ tag, name: action.exerciseName, units: parts.flatMap((p) => setUnits(state.sets, p.id)) });
   });
+  const { columns, rows: allRows } = sharedColumns(
+    members.map((m) => m.columns),
+    built,
+  );
+  const rowsById = new Map(allRows.map((r) => [r.setId, r]));
   const of = Math.max(0, ...unitsByMember.map((m) => m.units.length));
   const rounds: SupersetCard['rounds'] = [];
   for (let r = 0; r < of; r += 1) {
@@ -386,10 +477,12 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
   const activeRound = rounds.find((r) => r.rows.some((x) => x.setId === activeSetId));
   const firstPending = rounds.find((r) => r.rows.some((x) => x.state === 'pending' || x.state === 'open'));
   const n = activeRound?.n ?? firstPending?.n ?? of;
+  // The group's `⋯` acts on the open member, else the member whose set comes next in lifting order (review B3).
+  const nextTag = rounds.flatMap((r) => r.rows).find((x) => x.state === 'open' || x.state === 'pending')?.memberTag ?? null;
+  const menuTarget = members.find((m) => m.isCurrent) ?? members.find((m) => m.tag === nextTag) ?? members[0];
   const blockLive = memberRoots.flatMap((m) => blockSets(state, m.id)).filter(live);
   const progress = progressOf(blockLive);
   const first = memberRoots[0];
-  const firstEq = first ? equipmentOf(state, first) : null;
   const label = `Superset ${group}`;
   const summary = unitsByMember
     .map((m, i) => {
@@ -407,7 +500,8 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
       round: { n, of },
       roundText: `Round ${String(n)} of ${String(of)}`,
       members,
-      columns: first ? tableColumns(first, firstEq) : { kind: 'load_reps', loadLabel: 'KG', valueLabel: 'REPS' },
+      columns,
+      menuTarget: menuTarget?.sessionExerciseId ?? first?.id ?? '',
       rounds,
       progress,
       progressText: `${String(progress.done)}/${String(progress.total)}`,

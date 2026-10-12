@@ -1,20 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import type { EquipmentInstance, Exercise, SessionAggregate } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, SessionAggregate } from '@fizz/schemas';
 
 import {
   buildActiveSetView,
   buildAddExerciseCommand,
   buildWorkoutTableView,
+  exerciseCardFacts,
   NBSP,
   startWorkout,
   tableLogLabel,
   type ActiveViewInput,
+  type SupersetCard,
   type TableBlock,
   type TableCard,
   type TableRow,
   type WorkoutTableView,
 } from '../src/index';
-import { assisted, at, barbell, bodyweightStation, dumbbells, exercise, GYM, id, idGen, kg, lb, ms, plateMachine, profile, stack, values } from './fixtures';
+import { assisted, at, barbell, bodyweightStation, dumbbells, exercise, GYM, id, idGen, kg, lb, ms, plateMachine, profile, routine, routineExercise, stack, template, values } from './fixtures';
 import { apply, logCmd, setsFor, startFixture, BENCH, FACE, HANG, ROW } from './session-fixture';
 
 /**
@@ -219,7 +221,7 @@ describe('every set kind has a row (WT30–WT32, WT41)', () => {
       const s = emptyWith(ex, eq, unit);
       const t = table(s);
       const c = card(t.blocks[0]);
-      expect(c.columns.loadLabel, ex.name).toBe(loadLabel);
+      expect(c.columns?.loadLabel, ex.name).toBe(loadLabel);
       expect(plain(c.headerLine), ex.name).toBe(header);
       const setId = t.anchor?.setId ?? '';
       const v = buildActiveSetView(input(s));
@@ -347,5 +349,182 @@ describe('tableLogLabel', () => {
     expect(tableLogLabel({ kind: 'resume', label: 'Resume' }, t.log, { offscreen: true })).toEqual({ lead: null, label: 'Resume' });
     expect(tableLogLabel({ kind: 'stop_work', label: 'Stop' }, t.log, { offscreen: false })).toEqual({ lead: null, label: 'Stop' });
     expect(tableLogLabel({ kind: 'enter', label: 'Enter load', field: 'load' }, t.log, { offscreen: false })).toEqual({ lead: null, label: 'Enter load' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mixed supersets (review B2, B3, S6): each row draws its own columns; the
+// group `⋯` acts on the member whose set is open.
+
+interface Member {
+  ex: Exercise;
+  eq: EquipmentInstance | null;
+  load: Load | null;
+  reps?: number | null;
+  durationS?: number | null;
+}
+
+function supersetOf(members: readonly Member[]): SessionAggregate {
+  const r = routine(
+    members.map((m, i) =>
+      routineExercise(600 + i, {
+        exerciseId: m.ex.id,
+        equipmentId: m.eq?.id ?? null,
+        order: i,
+        supersetGroup: 'A',
+        setTemplates: [1, 2].map((k) => template(6000 + i * 10 + k, { targetLoad: m.load, targetReps: m.reps === null ? null : { min: m.reps ?? 10, max: m.reps ?? 10 }, targetDurationS: m.durationS ?? null })),
+      }),
+    ),
+  );
+  return startWorkout({
+    opId: 'start-mixed',
+    owner: profile(),
+    gymId: GYM,
+    routine: r,
+    exercises: new Map(members.map((m) => [m.ex.id, m.ex])),
+    gymEquipment: members.flatMap((m) => (m.eq === null ? [] : [m.eq])),
+    at: at(0),
+    newId: idGen(80_000),
+  }).aggregate;
+}
+
+function superset(t: WorkoutTableView): SupersetCard {
+  const b = t.blocks[0];
+  if (b?.kind !== 'superset') throw new Error('superset');
+  return b.superset;
+}
+
+const CHIN = exercise(240, 'Chin-up', { compatibleEquipment: ['bodyweight_station'], defaultLoadConvention: 'bodyweight' });
+const CURL = exercise(241, 'Dumbbell curl', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+const FLY = exercise(242, 'Cable fly', { compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' });
+const PLANK = exercise(243, 'Plank', { measurement: 'duration', compatibleEquipment: ['bodyweight_station'], defaultLoadConvention: 'bodyweight' });
+
+describe('mixed supersets: every row has its own columns (review B2)', () => {
+  it('bodyweight A1 with a loaded A2: A2’s planned and logged loads are drawn, with their unit', () => {
+    let s = supersetOf([
+      { ex: CHIN, eq: bodyweightStation(), load: null, reps: 8 },
+      { ex: CURL, eq: dumbbells(), load: kg(12.5, 'per_hand'), reps: 10 },
+    ]);
+    const ss = superset(table(s));
+    expect(ss.columns).toBeNull();
+    expect(ss.members.map((m) => [m.tag, m.columns.loadLabel, m.columns.valueLabel])).toEqual([
+      ['A1', null, 'REPS'],
+      ['A2', 'KG', 'REPS'],
+    ]);
+    const [c1] = setsFor(s, CHIN.id);
+    const [d1] = setsFor(s, CURL.id);
+    s = apply(s, logCmd(c1?.id ?? '', values(null, 8), 30));
+    s = apply(s, logCmd(d1?.id ?? '', values(kg(12.5, 'per_hand'), 10), 60));
+    const rows = superset(table(s, { nowMs: ms(61) })).rounds.flatMap((r) => r.rows);
+    expect(rows.map((r) => [r.memberTag, r.state, r.columns.loadLabel, r.cells.load === null ? null : plain(r.cells.load), plain(r.cells.value)])).toEqual([
+      ['A1', 'done', null, null, '8 reps'],
+      ['A2', 'done', 'KG', '12.5 kg each', '10 reps'],
+      ['A1', 'open', null, null, '8 reps'],
+      ['A2', 'pending', 'KG', '12.5 kg each', '10 reps'],
+    ]);
+  });
+
+  it('a kg stack with lb dumbbells: no shared KG label over lb values; each cell names its unit', () => {
+    const s = supersetOf([
+      { ex: FLY, eq: stack(), load: kg(25, 'stack'), reps: 12 },
+      { ex: CURL, eq: dumbbells({ unit: 'lb', loads: [10, 15, 20, 25, 30] }), load: lb(20, 'per_hand'), reps: 10 },
+    ]);
+    const ss = superset(table(s));
+    expect(ss.columns).toBeNull();
+    const rows = ss.rounds[0]?.rows ?? [];
+    expect(rows.map((r) => [r.columns.loadLabel, plain(r.cells.load)])).toEqual([
+      ['KG', '25 kg stack'],
+      ['LB', '20 lb each'],
+    ]);
+  });
+
+  it('reps with a timed member: the timed row is TIME, never under REPS', () => {
+    const s = supersetOf([
+      { ex: FLY, eq: stack(), load: kg(25, 'stack'), reps: 12 },
+      { ex: PLANK, eq: bodyweightStation(), load: null, reps: null, durationS: 45 },
+    ]);
+    const ss = superset(table(s));
+    expect(ss.columns).toBeNull();
+    const rows = ss.rounds[0]?.rows ?? [];
+    expect(rows.map((r) => [r.columns.kind, r.columns.valueLabel, r.cells.load === null ? null : plain(r.cells.load), plain(r.cells.value)])).toEqual([
+      ['load_reps', 'REPS', '25 kg stack', '12 reps'],
+      ['time', 'TIME', null, '0:45'],
+    ]);
+  });
+
+  it('members that agree keep one shared header and number-only cells', () => {
+    const { state } = startFixture();
+    const t = table(state);
+    const b = t.blocks[1];
+    if (b?.kind !== 'superset') throw new Error('superset');
+    expect(b.superset.columns).toEqual({ kind: 'load_reps', loadLabel: 'KG', valueLabel: 'REPS' });
+    expect(b.superset.rounds[0]?.rows.map((r) => r.cells.load)).toEqual(['50', '20']);
+  });
+});
+
+describe('the superset menu acts on the right member (review B3)', () => {
+  it('the open member when the group is current; else the member whose set is next', () => {
+    let s = supersetOf([
+      { ex: FLY, eq: stack(), load: kg(25, 'stack'), reps: 12 },
+      { ex: CURL, eq: dumbbells(), load: kg(12.5, 'per_hand'), reps: 10 },
+    ]);
+    const a1 = s.exercises.find((e) => e.exerciseId === FLY.id)?.id;
+    const a2 = s.exercises.find((e) => e.exerciseId === CURL.id)?.id;
+    let ss = superset(table(s));
+    expect(ss.members.map((m) => m.isCurrent)).toEqual([true, false]);
+    expect(ss.menuTarget).toBe(a1);
+    // A1 logged: A2 is open, so the group ⋯ (and Adjust) act on A2, never on A1.
+    const [f1] = setsFor(s, FLY.id);
+    s = apply(s, logCmd(f1?.id ?? '', values(kg(25, 'stack'), 12), 30));
+    ss = superset(table(s, { nowMs: ms(31) }));
+    expect(ss.members.map((m) => m.isCurrent)).toEqual([false, true]);
+    expect(ss.menuTarget).toBe(a2);
+    // No open row: the member whose set comes next in lifting order.
+    const paused = { ...s, session: { ...s.session, activeSetId: null } };
+    const idle = superset(table(paused, { nowMs: ms(31) }));
+    expect(idle.members.every((m) => !m.isCurrent)).toBe(true);
+    expect(idle.menuTarget).toBe(a2);
+  });
+
+  it('members carry their own note', () => {
+    const s = supersetOf([
+      { ex: FLY, eq: stack(), load: kg(25, 'stack'), reps: 12 },
+      { ex: CURL, eq: dumbbells(), load: kg(12.5, 'per_hand'), reps: 10 },
+    ]);
+    const a2 = s.exercises.find((e) => e.exerciseId === CURL.id);
+    const noted = { ...s, exercises: s.exercises.map((e) => (e.id === a2?.id ? { ...e, note: 'Supinate' } : e)) };
+    expect(superset(table(noted)).members.map((m) => m.note)).toEqual([null, 'Supinate']);
+  });
+});
+
+describe('exerciseCardFacts: a non-current card’s menu and sheet (review S2, S4)', () => {
+  it('next pending set, its coach change and target RPE, and the plates of every target load', () => {
+    const { state } = startFixture();
+    const benchRow = state.exercises.find((e) => e.exerciseId === BENCH)?.id ?? '';
+    const rowEx = state.exercises.find((e) => e.exerciseId === ROW)?.id ?? '';
+    const [w, , b2] = setsFor(state, BENCH);
+    // Bench is current; the coach changed its set 3 and Cable row's set 1.
+    const ACTION = id(77_101);
+    const [r1] = setsFor(state, ROW);
+    const s = apply(state, {
+      type: 'adjust_pending_targets',
+      at: at(5),
+      opId: 'coach:adjust:facts',
+      expectedVersion: state.session.version,
+      actionId: ACTION,
+      changes: [
+        { setId: r1?.id ?? '', target: { load: kg(45, 'stack'), reps: { min: 12, max: 12 } } },
+        { setId: b2?.id ?? '', target: { load: kg(95), reps: { min: 8, max: 8 } } },
+      ],
+      removeSetIds: [],
+      addSets: [],
+    });
+    const row = exerciseCardFacts({ aggregate: s }, rowEx);
+    expect(row).toMatchObject({ exerciseName: 'Cable row', nextSet: { id: r1?.id, number: 1 }, coachActionId: ACTION, adjustedBy: 'coach', swappedFrom: null, removable: true, plates: [] });
+    const bench = exerciseCardFacts({ aggregate: s }, benchRow);
+    expect(bench?.nextSet?.id).toBe(w?.id);
+    expect(bench?.coachActionId).toBeNull();
+    expect(bench?.plates.map(plain)).toEqual(['60 kg: 20 bar + 20 / side', '100 kg: 20 bar + 20 + 20 / side', '95 kg: 20 bar + 25 + 10 + 2.5 / side']);
+    expect(exerciseCardFacts({ aggregate: s }, 'nope')).toBeNull();
   });
 });
