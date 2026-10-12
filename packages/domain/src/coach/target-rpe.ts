@@ -36,6 +36,18 @@ export function targetRpeOf(set: { setType: SetType; planned: Pick<PlannedSet, '
 }
 
 /**
+ * The target without Ben's override (the coach's, then the plan's, then the
+ * rule's): what the set would have been planned at had he not set his own.
+ * His override is scoped to this workout (§4.8), so this is the baseline a
+ * next-session target is compared with (review target-rpe r2 S1).
+ */
+export function usualTargetRpeOf(set: { setType: SetType; planned: Pick<PlannedSet, 'rpe' | 'rir' | 'rpeOverride' | 'source'> }, ruleRpe: number | null): TargetRpe | null {
+  const planned = { ...set.planned };
+  delete planned.rpeOverride;
+  return targetRpeOf({ setType: set.setType, planned }, ruleRpe);
+}
+
+/**
  * The built-in target RPE of each exercise row in a workout, keyed by
  * session exercise ID. `info` looks up the catalogue entry: null when the
  * exercise has none (the accessory profile, as the default rule does),

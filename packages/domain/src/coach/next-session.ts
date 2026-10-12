@@ -4,7 +4,7 @@ import { stepLoad } from '../equipment';
 import { activeFlag, AREA_WORD, isIncrease, sameTarget, snapLoad, validReps } from './adjust';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { deriveId } from '../stable';
-import { targetRpeOf, type TargetRpeSource } from './target-rpe';
+import { usualTargetRpeOf, type TargetRpeSource } from './target-rpe';
 import { nextTargetBlocks } from '../session/gym-switch';
 
 /**
@@ -24,13 +24,16 @@ export interface NextSessionBasis {
   equipment: EquipmentInstance | null;
   /**
    * The last working target (today's plan; today's top set when there was
-   * none). Its `rpe` is the set's resolved target RPE (`targetRpeOf`: Ben's,
-   * the coach's, the routine's RPE or 10 − RIR, else the built-in rule's),
-   * the value the coach's context showed (review target-rpe B1).
+   * none). Its `rpe` is the set's usual target RPE (`usualTargetRpeOf`: the
+   * coach's, the routine's RPE or 10 − RIR, else the built-in rule's; review
+   * target-rpe B1). Ben's own override is left out: it is for that workout
+   * only (§4.8), so it is never the baseline for next time (r2 S1).
    */
   last: CoachTarget;
-  /** Where `last.rpe` came from; absent when it has none. */
+  /** Where `last.rpe` came from; absent when it has none. Never `ben`. */
   lastRpeSource?: TargetRpeSource | undefined;
+  /** Ben's own target RPE for that workout, when he set one (not carried forward). */
+  benRpe?: number | undefined;
   lastSets: number;
   /** The built-in rule's target for next time, for comparison; null when it plans nothing. */
   builtIn: { target: CoachTarget; sets: number } | null;
@@ -183,7 +186,8 @@ export function validateNextSessionTargets(input: NextSessionValidationInput): N
       reps = t.target.reps;
     }
     // A target RPE that restates the plan's or the built-in rule's is no change: next time's plan
-    // gives the same value again, so it isn't stored as the coach's (review target-rpe B1).
+    // gives the same value again, so it isn't stored as the coach's (review target-rpe B1). Ben's
+    // own value for the day isn't the baseline (r2 S1): repeating it is a change Ben applies.
     const restated = t.target.rpe != null && t.target.rpe === basis.last.rpe && (basis.lastRpeSource === 'rule' || basis.lastRpeSource === 'plan');
     const after: CoachTarget = { load, reps, ...(t.target.rpe != null && !restated ? { rpe: t.target.rpe } : {}) };
     const wantSets = t.sets ?? basis.lastSets;
@@ -240,9 +244,11 @@ export function nextSessionBases(
     const planned = plannedSet?.planned ?? null;
     const top = [...working].sort((a, b) => (b.actual?.load?.value ?? 0) - (a.actual?.load?.value ?? 0))[0] ?? first;
     // Field by field: today's plan where it had one, else what the top set did.
-    // The target RPE it was planned at, as the coach saw it: Ben's own, the coach's, the routine's (RIR as
-    // 10 − RIR), else the built-in rule's (review target-rpe B1).
-    const lastRpe = targetRpeOf(plannedSet ?? first, ruleTargetRpe[ex.id] ?? null);
+    // The target RPE it was planned at: the coach's, the routine's (RIR as 10 − RIR), else the built-in
+    // rule's (review target-rpe B1). Ben's override is for that workout only, so it isn't the baseline (r2 S1).
+    const basisSet = plannedSet ?? first;
+    const lastRpe = usualTargetRpeOf(basisSet, ruleTargetRpe[ex.id] ?? null);
+    const benRpe = basisSet.setType === 'warmup' || basisSet.setType === 'drop' ? undefined : basisSet.planned.rpeOverride;
     const last: CoachTarget = {
       load: planned?.load ?? top.actual?.load ?? null,
       reps: planned?.reps ?? (top.actual?.reps == null ? null : { min: top.actual.reps, max: top.actual.reps }),
@@ -256,6 +262,7 @@ export function nextSessionBases(
       equipment: block.equipment ?? equipmentOfRow(source.session.equipmentSnapshot, ex),
       last,
       ...(lastRpe !== null ? { lastRpeSource: lastRpe.source } : {}),
+      ...(benRpe !== undefined ? { benRpe } : {}),
       lastSets: block.workingSets,
       builtIn: firstPlan === undefined ? null : { target: { load: firstPlan.planned.load, reps: firstPlan.planned.reps }, sets: workingPlan.length },
     });

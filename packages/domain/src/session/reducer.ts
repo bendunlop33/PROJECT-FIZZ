@@ -515,8 +515,13 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
   const badSide = checkSide(side, ex);
   if (badSide) return { ok: false, error: badSide };
   // Ben's own target RPE for the logged set (CHANGELOG 2026-10-11 (b) "Edit set"): only a working set has one.
+  // It is offered during the workout only (`buildSetEditView`); a finished workout keeps its targets (review r2 N2).
+  if (targetRpe !== undefined && state.session.status !== 'active') return fail('session_finished', 'This workout is finished.');
   const finalType = setType ?? set.setType;
-  if (targetRpe != null && (finalType === 'warmup' || finalType === 'drop')) return fail('invalid_values', 'Warm-up and drop sets have no target effort.');
+  const noTarget = finalType === 'warmup' || finalType === 'drop';
+  if (targetRpe != null && noTarget) return fail('invalid_values', 'Warm-up and drop sets have no target effort.');
+  // A set changed to a warm-up or drop has no target: its override goes in the same correction (review r2 N4).
+  const clearOverride = noTarget && set.planned.rpeOverride !== undefined;
   const actual: SetValues = { ...set.actual };
   let valuesTouched = setType !== undefined || side !== undefined;
   for (const key of Object.keys(valuePatch) as (keyof SetValues)[]) {
@@ -534,7 +539,7 @@ function handleCorrectSet(state: SessionAggregate, cmd: CommandOf<'correct_set'>
     {
       ...set,
       actual,
-      ...(targetRpe === undefined ? {} : { planned: withRpeOverride(set.planned, targetRpe ?? undefined) }),
+      ...(clearOverride ? { planned: withRpeOverride(set.planned, undefined) } : targetRpe === undefined ? {} : { planned: withRpeOverride(set.planned, targetRpe ?? undefined) }),
       setType: setType ?? set.setType,
       side: side ?? set.side,
       flags: flagsFor(actual, state, ex),
