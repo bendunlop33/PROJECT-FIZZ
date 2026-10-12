@@ -80,7 +80,8 @@ export type TodayEditBody =
   | { kind: 'add'; slotKey: string; exerciseId: string }
   | { kind: 'sets'; slotKey: string; workingSets: number }
   | { kind: 'reps'; slotKey: string; reps: RepRange | null; durationS: number | null }
-  | { kind: 'load'; slotKey: string; load: Load };
+  /** `exerciseId`: set by `applyDraftCommand` to the slot's exercise when the load is typed (review B1); a caller's value is ignored. */
+  | { kind: 'load'; slotKey: string; load: Load; exerciseId?: string };
 
 /** The §11 edits on one slot that a newer one of the same kind replaces, and `Use planned` clears. */
 export type ShapeEditKind = 'sets' | 'reps' | 'load';
@@ -155,11 +156,22 @@ export interface TodaySlot {
 
 const editIdOf = (opId: string, n: number): string => deriveId(`today-edit:${opId}:${String(n)}`);
 
-/** Whether two edits change the same thing (a newer one replaces an older one). */
-function sameTarget(a: TodayEdit, b: Pick<TodayEdit, 'kind'> & { slotKey?: string }): boolean {
+/**
+ * Whether two edits change the same thing (a newer one replaces an older
+ * one). A load is per slot and per exercise (review B1): Ben's bench load
+ * and his DB bench load on the same slot are two different choices.
+ * `exerciseOf`: a load edit's exercise (its own, else the slot's planned one).
+ */
+function sameTarget(a: TodayEdit, b: Pick<TodayEdit, 'kind'> & { slotKey?: string; exerciseId?: string | undefined }, exerciseOf: (e: TodayEdit) => string | null): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === 'order') return true;
-  return a.slotKey === b.slotKey;
+  if (a.slotKey !== b.slotKey) return false;
+  return a.kind !== 'load' || exerciseOf(a) === (b.exerciseId ?? null);
+}
+
+/** A load edit's exercise: the one it was typed for, else (an edit from before that was recorded) the slot's own. */
+function loadExerciseOf(e: Extract<TodayEdit, { kind: 'load' }>, baseExercise: (slotKey: string) => string | null): string | null {
+  return e.exerciseId ?? baseExercise(e.slotKey);
 }
 
 /** Today's added slots (live `add` edits), after the plan's own, in the order they were added. */
@@ -252,6 +264,15 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
   // Today's slots: the plan's own, then the exercises added today (§11).
   const plannedKeys = new Set(input.slots.map((s) => s.slotKey));
   const allSlots = () => [...input.slots, ...addedSlotsOf(live())];
+  /** The slot's own exercise (planned, or the one added today), before any swap. */
+  const baseExercise = (slotKey: string): string | null =>
+    input.slots.find((x) => x.slotKey === slotKey)?.exerciseId ?? addedSlotsOf(live()).find((x) => x.slotKey === slotKey)?.exerciseId ?? null;
+  /** The exercise the slot holds now (after today's live swap). */
+  const exerciseNow = (slotKey: string): string | null => {
+    const sw = live().find((x) => x.kind === 'swap' && x.slotKey === slotKey);
+    return sw?.kind === 'swap' ? sw.toExerciseId : baseExercise(slotKey);
+  };
+  const exerciseOf = (e: TodayEdit): string | null => (e.kind === 'load' ? loadExerciseOf(e, baseExercise) : null);
 
   const cmd = input.command;
   switch (cmd.type) {
@@ -283,11 +304,13 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         break;
       }
       if (!allSlots().some((x) => x.slotKey === e.slotKey)) return { kind: 'invalid', reason: 'slot_gone' };
-      const prev = live().find((x) => sameTarget(x, e));
+      // A load is for the exercise the slot holds now (review B1).
+      const body: TodayEditBody = e.kind === 'load' ? { kind: 'load', slotKey: e.slotKey, load: { ...e.load }, ...stampOf(exerciseNow(e.slotKey)) } : e;
+      const prev = live().find((x) => sameTarget(x, body, exerciseOf));
       if (e.kind === 'sets' || e.kind === 'reps' || e.kind === 'load') {
-        if (prev !== undefined && sameShapeValue(prev, e)) return { kind: 'unchanged', current };
+        if (prev !== undefined && sameShapeValue(prev, body)) return { kind: 'unchanged', current };
         if (prev !== undefined) remove(prev.editId, 'replaced');
-        append(e, prev?.editId ?? null);
+        append(body, prev?.editId ?? null);
         break;
       }
       // An added exercise is taken out with `Remove` (its add's Undo), never skipped or swapped (§11.3).
@@ -328,7 +351,8 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
       break;
     }
     case 'clear': {
-      const e = live().find((x) => x.kind === cmd.kind && x.slotKey === cmd.slotKey);
+      // A load: the one for the exercise the slot holds now (another exercise's stays with it, review B1).
+      const e = live().find((x) => x.kind === cmd.kind && x.slotKey === cmd.slotKey && (x.kind !== 'load' || exerciseOf(x) === exerciseNow(cmd.slotKey)));
       if (e === undefined) return { kind: 'unchanged', current };
       // Back to the plan on that slot: nothing it replaced comes back.
       remove(e.editId, 'undo');
@@ -364,7 +388,7 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         const e = edits.find((x) => x.editId === id);
         if (e === undefined) return { kind: 'invalid', reason: 'not_found' };
         if (e.removed === null) continue;
-        const clash = live().find((x) => sameTarget(x, e.kind === 'order' ? { kind: 'order' } : { kind: e.kind, slotKey: e.slotKey }));
+        const clash = live().find((x) => sameTarget(x, e.kind === 'order' ? { kind: 'order' } : { kind: e.kind, slotKey: e.slotKey, exerciseId: exerciseOf(e) ?? undefined }, exerciseOf));
         if (clash !== undefined && (clash.kind === 'skip' || clash.kind === 'add' || cmd.keepLive === true)) continue;
         if (clash !== undefined) remove(clash.editId, 'replaced');
         append(bodyOf(e), clash?.editId ?? null);
@@ -439,9 +463,11 @@ function bodyOf(e: TodayEdit): TodayEditBody {
     case 'reps':
       return { kind: 'reps', slotKey: e.slotKey, reps: e.reps === null ? null : { ...e.reps }, durationS: e.durationS };
     case 'load':
-      return { kind: 'load', slotKey: e.slotKey, load: { ...e.load } };
+      return { kind: 'load', slotKey: e.slotKey, load: { ...e.load }, ...stampOf(e.exerciseId ?? null) };
   }
 }
+
+const stampOf = (exerciseId: string | null): { exerciseId?: string } => (exerciseId === null ? {} : { exerciseId });
 
 type EditBase = Pick<TodayEdit, 'editId' | 'opId' | 'atUtc' | 'replacesEditId' | 'removed'>;
 
@@ -521,7 +547,8 @@ export interface ResolvedEdits {
   /** §11: each slot's working-set count, reps or work time, and Ben's load today. */
   sets: Map<string, { editId: string; workingSets: number }>;
   reps: Map<string, { editId: string; reps: RepRange | null; durationS: number | null }>;
-  loads: Map<string, { editId: string; load: Load }>;
+  /** Ben's load on a slot while it holds the exercise the load was typed for (`exerciseId`, review B1). */
+  loads: Map<string, { editId: string; load: Load; exerciseId: string | null }>;
   outcomes: EditOutcome[];
 }
 
@@ -604,13 +631,18 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
   // Sets, reps and load (TE12: last): on any slot of today's, added ones included.
+  const baseOf = (slotKey: string): string | null => bySlot.get(slotKey)?.exerciseId ?? out.added.get(slotKey)?.exerciseId ?? null;
+  const nowOf = (slotKey: string): string | null => out.swaps.get(slotKey)?.toExerciseId ?? baseOf(slotKey);
   for (const e of open) {
     if (e.kind !== 'sets' && e.kind !== 'reps' && e.kind !== 'load') continue;
     const result: EditResult = allKeys.has(e.slotKey) ? 'applied' : 'stale';
+    // A load typed for another exercise than the slot holds now (a swap since, or an Undo of one) waits,
+    // neither applied nor pruned: it is back when the slot holds that exercise again (review B1).
+    if (result === 'applied' && e.kind === 'load' && loadExerciseOf(e, baseOf) !== nowOf(e.slotKey)) continue;
     if (result === 'applied') {
       if (e.kind === 'sets') out.sets.set(e.slotKey, { editId: e.editId, workingSets: e.workingSets });
       else if (e.kind === 'reps') out.reps.set(e.slotKey, { editId: e.editId, reps: e.reps, durationS: e.durationS });
-      else out.loads.set(e.slotKey, { editId: e.editId, load: e.load });
+      else out.loads.set(e.slotKey, { editId: e.editId, load: e.load, exerciseId: loadExerciseOf(e, baseOf) });
     }
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
@@ -775,6 +807,13 @@ function dropUnplanned(resolved: ResolvedEdits, swaps: ReadonlyMap<string, SwapP
     if (swaps.get(slotKey)?.exercise.id === s.toExerciseId) continue;
     resolved.swaps.delete(slotKey);
     stale(s.editId);
+    // The slot is back on its own exercise: a load typed for the substitute waits (review B1).
+    const l = resolved.loads.get(slotKey);
+    if (l !== undefined && l.exerciseId === s.toExerciseId) {
+      resolved.loads.delete(slotKey);
+      const at = resolved.outcomes.findIndex((o) => o.editId === l.editId);
+      if (at >= 0) resolved.outcomes.splice(at, 1);
+    }
   }
   for (const [slotKey, a] of [...resolved.added]) {
     if (adds.get(slotKey)?.exercise.id === a.exerciseId) continue;

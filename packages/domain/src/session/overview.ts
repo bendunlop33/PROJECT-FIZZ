@@ -434,11 +434,24 @@ export interface RowShapeEdit {
 export type SetsStep = { workingSets: number; clear: boolean } | null;
 
 /**
+ * The step from `count` working sets by `delta` (`+1`, `−1`), against the
+ * plan's own count: a step back at the plan clears the edit. Null outside
+ * TE17's limits. The screen steps a quick second tap from the count its
+ * previous write left, not the page it tapped on (review S2).
+ */
+export function setsStepFrom(count: number, delta: 1 | -1, plannedCount: number): SetsStep {
+  const to = count + delta;
+  return to < TODAY_EDIT_LIMITS.minSets || to > TODAY_EDIT_LIMITS.maxSets ? null : { workingSets: to, clear: to === plannedCount };
+}
+
+/**
  * A row in Edit mode (§11.3): the values its controls show and what each
  * step writes. The screen lays it out and sends these values; it computes nothing.
  */
 export interface EditRowView {
   workingSets: number;
+  /** The plan's own working-set count (what a step back to clears the edit at). */
+  plannedSets: number;
   /** `3 sets`. */
   setsText: string;
   setsDown: SetsStep;
@@ -1084,7 +1097,6 @@ export function editRowView(i: {
   const n = i.working.length;
   const first = i.working[0];
   const plannedCount = i.plannedShape?.workingSets ?? n;
-  const step = (to: number): SetsStep => (to < TODAY_EDIT_LIMITS.minSets || to > TODAY_EDIT_LIMITS.maxSets ? null : { workingSets: to, clear: to === plannedCount });
   const reps = first?.planned.reps ?? null;
   const durationS = first?.planned.durationS ?? null;
   const repsText = reps !== null ? `${repRangeText(reps)}${NBSP}reps` : durationS !== null ? formatDuration(durationS) : '—';
@@ -1107,9 +1119,10 @@ export function editRowView(i: {
     .join(', ');
   return {
     workingSets: n,
+    plannedSets: plannedCount,
     setsText,
-    setsDown: step(n - 1),
-    setsUp: step(n + 1),
+    setsDown: setsStepFrom(n, -1, plannedCount),
+    setsUp: setsStepFrom(n, 1, plannedCount),
     repsText,
     reps,
     durationS,
@@ -1120,9 +1133,20 @@ export function editRowView(i: {
     noHistory: i.noHistory,
     benLoad: i.benLoad !== null,
     intendedLoad: i.benLoad,
-    keypad: bodyweight ? null : { unit: frameUnit, convention: frameConvention, equipmentId: i.eq?.id ?? null, value: i.benLoad?.value ?? first?.planned.load?.value ?? null },
+    keypad: bodyweight ? null : { unit: frameUnit, convention: frameConvention, equipmentId: i.eq?.id ?? null, value: keypadValue([i.benLoad, first?.planned.load ?? null], frameUnit, frameConvention) },
     accessibilityLabel,
   };
+}
+
+/**
+ * The keypad's first value: the first of `loads` (Ben's intended load, then
+ * the fitted planned one) already in the frame's unit and convention. A
+ * number is never relabelled with another unit or convention (review B2):
+ * `37.5 kg each` at an lb rack opens at the fitted `80 lb each`, not `37.5 lb`.
+ */
+function keypadValue(loads: readonly (Load | null)[], unit: WeightUnit, convention: LoadConvention): number | null {
+  for (const l of loads) if (l !== null && l.unit === unit && l.convention === convention) return l.value;
+  return null;
 }
 
 /**

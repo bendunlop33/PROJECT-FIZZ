@@ -105,7 +105,8 @@ export function templateLinesFromEdits(input: TemplateLinesInput): TemplateLine[
     if (rex === undefined || now === undefined) continue;
     const was = shapeOfTemplates(rex.setTemplates).workingSets;
     if (was === now.workingSets) continue;
-    const name = nowName(slotKey);
+    // The workout's own exercise: the line changes the slot whether or not its `Changed` line is ticked (review N2).
+    const name = nameOf(rex.exerciseId);
     line('sets', `sets:${slotKey}`, `${name} ${String(was)}${NBSP}→${NBSP}${String(now.workingSets)}`, null, [e.editId], `${name}, ${String(was)} to ${String(now.workingSets)} sets`);
   }
   for (const [slotKey, e] of resolved.reps) {
@@ -114,7 +115,7 @@ export function templateLinesFromEdits(input: TemplateLinesInput): TemplateLine[
     if (rex === undefined || now === undefined) continue;
     const was = shapeOfTemplates(rex.setTemplates);
     if (sameAmount(was, now)) continue;
-    const name = nowName(slotKey);
+    const name = nameOf(rex.exerciseId);
     line('reps', `reps:${slotKey}`, `${name} ${amountText(was)}${NBSP}→${NBSP}${amountText(now)}`, null, [e.editId], `${name}, ${amountText(was)} to ${amountText(now)}`.replaceAll('–', ' to '));
   }
   if (resolved.order !== null && resolved.orderEditId !== null) {

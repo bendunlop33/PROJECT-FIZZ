@@ -16,12 +16,16 @@ import {
   pruneOf,
   rankAddCandidates,
   resolveTodayEdits,
+  setsStepFrom,
   shapeTemplates,
+  substituteTargets,
   templateLinesFromEdits,
+  withoutTodayOnlySets,
   todayLoadNote,
   todayShapes,
   type DraftCommand,
   type HistorySession,
+  type NextTargetEntry,
   type OverviewToday,
   type RowShapeEdit,
   type SubstituteContext,
@@ -618,5 +622,138 @@ describe('shapeTemplates (pure)', () => {
     expect(own).toEqual([id(2)]);
     expect(shapeTemplates(t, { workingSets: 1 }, { newId: idGen(90_100) }).map((x) => x.setType)).toEqual(['warmup', 'top']);
     expect(lb(5).unit).toBe('lb');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review B1, B2, S1 (slice B r1)
+
+describe('review B1: Ben’s typed load belongs to the exercise it was typed for', () => {
+  const DB_HISTORY = [history(920, 5, rack, kg(35, 'per_hand'), [8, 8, 8])];
+  const slotShape = { workingSets: 3, templates: [0, 1, 2].map(() => ({ setType: 'working' as const, reps: { min: 6, max: 8 }, durationS: null })) };
+  const dbPlan = (): Map<string, SwapPlan> => new Map([[SLOT_BENCH, substituteTargets(slotShape, exOf(DB_BENCH), DB_HISTORY, ctxAt(MAIN_GYM))]]);
+  const benchLoads = (d: PreStartDraft) => {
+    const out = plan(d.edits, { swaps: dbPlan() });
+    const view = overview(out);
+    return { out, row: view.rows.find((r) => r.slotKey === SLOT_BENCH), loads: workingOf(out, SLOT_BENCH).map((s) => s.planned.load) };
+  };
+
+  it('100 kg typed on Bench press, then a swap to DB bench press: the substitute plans its own 35 kg each, with no [Ben] tag; Undo swap brings the 100 kg back', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'load', slotKey: SLOT_BENCH, load: kg(100) } }, 'b1-load'));
+    expect(liveEdits(d.edits)[0]).toMatchObject({ kind: 'load', exerciseId: BENCH });
+    const swap = written(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 'b1-swap'));
+    d = swap;
+    const swapped = benchLoads(d);
+    expect(swapped.loads).toEqual([kg(35, 'per_hand'), kg(35, 'per_hand'), kg(35, 'per_hand')]);
+    expect(swapped.row?.editRow).toMatchObject({ benLoad: false, intendedLoad: null, keypad: { unit: 'kg', convention: 'per_hand', value: 35 } });
+    expect(swapped.out.resolved.loads.has(SLOT_BENCH)).toBe(false);
+    // Waiting, not pruned: no outcome for it, so the next write keeps it.
+    expect(pruneOf(swapped.out.outcomes)).toEqual([]);
+    // Without the fix: [null, null, null] and the [Ben] tag.
+
+    // `Undo swap` (clear_swap): Bench press and Ben's 100 kg again.
+    const sw = liveEdits(d.edits).find((e) => e.kind === 'swap');
+    d = written(write(d, { type: 'clear_swap', slotKey: SLOT_BENCH }, 'b1-unswap'));
+    const back = benchLoads(d);
+    expect(back.loads).toEqual([kg(100), kg(100), kg(100)]);
+    expect(back.row?.editRow).toMatchObject({ benLoad: true, keypad: { convention: 'total', value: 100 } });
+    // The toast's Undo of the swap does the same.
+    const viaUndo = written(write(swap, { type: 'undo', editId: sw?.editId ?? '' }, 'b1-undo'));
+    expect(benchLoads(viaUndo).loads).toEqual([kg(100), kg(100), kg(100)]);
+  });
+
+  it('a per-hand load typed on the substitute never lands on the barbell after Undo swap; both loads are kept, each for its own exercise', () => {
+    let d = written(write(null, { type: 'edit', edit: { kind: 'load', slotKey: SLOT_BENCH, load: kg(100) } }, 'b1b-1'));
+    d = written(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 'b1b-2'));
+    d = written(write(d, { type: 'edit', edit: { kind: 'load', slotKey: SLOT_BENCH, load: kg(37.5, 'per_hand') } }, 'b1b-3'));
+    // Two choices on one slot: the bench's isn't replaced by the DB bench's.
+    expect(liveEdits(d.edits).flatMap((e) => (e.kind === 'load' ? [[e.exerciseId, e.load.value]] : []))).toEqual([
+      [BENCH, 100],
+      [DB_BENCH, 37.5],
+    ]);
+    expect(benchLoads(d).loads).toEqual([kg(37.5, 'per_hand'), kg(37.5, 'per_hand'), kg(37.5, 'per_hand')]);
+    d = written(write(d, { type: 'clear_swap', slotKey: SLOT_BENCH }, 'b1b-4'));
+    expect(benchLoads(d).loads).toEqual([kg(100), kg(100), kg(100)]);
+    // `Use planned` clears the load of the exercise the slot holds now only.
+    d = written(write(d, { type: 'clear', kind: 'load', slotKey: SLOT_BENCH }, 'b1b-5'));
+    expect(liveEdits(d.edits).flatMap((e) => (e.kind === 'load' ? [e.exerciseId] : []))).toEqual([DB_BENCH]);
+    expect(benchLoads(d).loads[0]?.convention).toBe('total');
+    expect(benchLoads(d).row?.editRow.benLoad).toBe(false);
+    // Swap again: his DB bench load is back with it.
+    d = written(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH } }, 'b1b-6'));
+    expect(benchLoads(d).loads).toEqual([kg(37.5, 'per_hand'), kg(37.5, 'per_hand'), kg(37.5, 'per_hand')]);
+    // A caller's exerciseId is never trusted: the draft stamps the slot's own.
+    const forged = written(write(d, { type: 'edit', edit: { kind: 'load', slotKey: SLOT_BENCH, load: kg(40, 'per_hand'), exerciseId: BENCH } }, 'b1b-7'));
+    expect(liveEdits(forged.edits).flatMap((e) => (e.kind === 'load' ? [[e.exerciseId, e.load.value]] : []))).toEqual([[DB_BENCH, 40]]);
+  });
+
+  it('a load edit from before `exerciseId` was recorded applies to the slot’s own exercise only', () => {
+    const old = edit({ kind: 'load', slotKey: SLOT_BENCH, load: kg(100) });
+    expect(old.kind === 'load' && old.exerciseId).toBe(undefined);
+    expect(workingOf(plan([old]), SLOT_BENCH).map((s) => s.planned.load)).toEqual([kg(100), kg(100), kg(100)]);
+    const swapped = plan([old, edit({ kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH })], { swaps: dbPlan() });
+    expect(workingOf(swapped, SLOT_BENCH).map((s) => s.planned.load)).toEqual([kg(35, 'per_hand'), kg(35, 'per_hand'), kg(35, 'per_hand')]);
+  });
+});
+
+describe('review B2: the keypad never relabels Ben’s number with another unit or convention', () => {
+  it('37.5 kg each at an lb rack opens at the fitted 80 lb each, never 37.5 lb', () => {
+    const r = pushA({ exercises: [routineExercise(601, { exerciseId: INCLINE, equipmentId: rack.id, order: 0, setTemplates: [6011, 6012].map((n) => template(n, { targetLoad: kg(30, 'per_hand'), targetReps: { min: 8, max: 10 } })) })] });
+    const out = plan([edit({ kind: 'load', slotKey: SLOT_INCLINE, load: kg(37.5, 'per_hand') })], { gym: LB_GYM, r });
+    const row = overview(out).rows[0]?.editRow;
+    expect(plain(row?.loadText)).toBe('80 lb each');
+    expect(row?.intendedLoad).toEqual(kg(37.5, 'per_hand'));
+    // Without the fix: { unit: 'lb', value: 37.5 } (about 17 kg if saved as-is).
+    expect(row?.keypad).toMatchObject({ unit: 'lb', convention: 'per_hand', value: 80 });
+    // At a kg rack, his own number.
+    const main = overview(plan([edit({ kind: 'load', slotKey: SLOT_INCLINE, load: kg(37.5, 'per_hand') })], { r })).rows[0]?.editRow;
+    expect(main?.keypad).toMatchObject({ unit: 'kg', convention: 'per_hand', value: 37.5 });
+  });
+});
+
+describe('review S2: steps from a count (the screen chains quick taps on the last write’s count)', () => {
+  it('+ from 4 is 5; − back to the plan clears; the limits disable', () => {
+    expect(setsStepFrom(4, 1, 3)).toEqual({ workingSets: 5, clear: false });
+    expect(setsStepFrom(4, -1, 3)).toEqual({ workingSets: 3, clear: true });
+    expect(setsStepFrom(1, -1, 3)).toBeNull();
+    expect(setsStepFrom(10, 1, 3)).toBeNull();
+  });
+});
+
+describe('review S1: a routine from before the library drops last time’s today-only set counts (TE-B13)', () => {
+  const entry = (reps: number): NextTargetEntry => ({ setType: 'working', planned: { load: kg(12.5, 'per_hand'), reps: { min: reps, max: reps }, durationS: null, rpe: null, rir: null, source: 'built_in_rule' } });
+  const legacy = (): Routine => {
+    const r = pushA();
+    delete (r as { source?: unknown }).source;
+    return r;
+  };
+  const edited = (kinds: ('sets' | 'reps' | 'load')[]) => ({ edited: [{ sessionExerciseId: id(8000), slotKey: SLOT_INCLINE, kinds }] });
+
+  it('4 sets done on a 3-set slot after a today-only +: the next start plans 3; 2 after a today-only −: plans 3 again', () => {
+    const four = new Map([[INCLINE, [entry(10), entry(10), entry(10), entry(9)]]]);
+    expect(withoutTodayOnlySets(four, legacy(), edited(['sets'])).get(INCLINE)).toHaveLength(3);
+    const two = new Map([[INCLINE, [entry(10), entry(9)]]]);
+    const padded = withoutTodayOnlySets(two, legacy(), edited(['sets'])).get(INCLINE);
+    expect(padded?.map((p) => p.planned.reps?.min)).toEqual([10, 9, 9]);
+  });
+
+  it('unchanged without a sets edit, for library workouts, and with no last edits', () => {
+    const four = new Map([[INCLINE, [entry(10), entry(10), entry(10), entry(9)]]]);
+    expect(withoutTodayOnlySets(four, legacy(), edited(['reps', 'load'])).get(INCLINE)).toHaveLength(4);
+    expect(withoutTodayOnlySets(four, pushA(), edited(['sets'])).get(INCLINE)).toHaveLength(4);
+    expect(withoutTodayOnlySets(four, legacy(), undefined).get(INCLINE)).toHaveLength(4);
+  });
+});
+
+describe('review N2: a Sets or Reps line on a swapped slot names the workout’s own exercise', () => {
+  it('Bench press 3 → 4, not DB bench press, since an unticked Changed line leaves the slot as Bench press', () => {
+    const DB_PLAN: SwapPlan = { exercise: exOf(DB_BENCH), pin: null, plan: null };
+    const out = plan([edit({ kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: DB_BENCH }), edit({ kind: 'sets', slotKey: SLOT_BENCH, workingSets: 4 }), edit({ kind: 'reps', slotKey: SLOT_BENCH, reps: { min: 3, max: 5 }, durationS: null })], { swaps: new Map([[SLOT_BENCH, DB_PLAN]]) });
+    const lines = templateLinesFromEdits({ routine: pushA(), resolved: out.resolved, today: todayShapes(out.aggregate, out.slotOf), nameOf: (x) => EXERCISES.get(x)?.name ?? 'Exercise' });
+    expect(lines.map((l) => [l.label, plain(l.text)])).toEqual([
+      ['Changed', 'Bench press'],
+      ['Sets', 'Bench press 3 → 4'],
+      ['Reps', 'Bench press 6–8 → 3–5'],
+    ]);
   });
 });

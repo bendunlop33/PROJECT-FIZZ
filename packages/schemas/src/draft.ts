@@ -68,8 +68,12 @@ export const TodayEditSchema = z.discriminatedUnion('kind', [
    * Ben's own target load today (TE13): his *intended* load, convention
    * explicit, fitted on every read like any intended load (never past a
    * max, toward easier). The one edit that carries a number.
+   * `exerciseId`: the exercise it was typed for (the slot's exercise then). It
+   * applies only while the slot holds that exercise, so a swap never carries
+   * it onto another exercise in another convention (review B1). Absent on
+   * edits from before it was recorded: the slot's own exercise.
    */
-  z.object({ ...editBase, kind: z.literal('load'), slotKey: IdSchema, load: LoadSchema }),
+  z.object({ ...editBase, kind: z.literal('load'), slotKey: IdSchema, load: LoadSchema, exerciseId: IdSchema.optional() }),
 ]).superRefine((e, ctx) => {
   if (e.kind !== 'reps') return;
   if ((e.reps === null) === (e.durationS === null)) ctx.addIssue({ code: 'custom', message: 'A reps edit has reps or a work time, not both', path: ['reps'] });

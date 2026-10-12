@@ -7,6 +7,7 @@ import type {
   Routine,
   RoutineExercise,
   SessionAggregate,
+  SessionTodayEdits,
   SetTemplate,
   SetType,
   TargetProvenance,
@@ -513,6 +514,36 @@ const fitsRange = (coach: { min: number; max: number }, range: { min: number; ma
 function withGuardNote(p: PlannedSet, note: string): PlannedSet {
   if (p.provenance === undefined) return p;
   return { ...p, provenance: { ...p.provenance, guardNotes: [...p.provenance.guardNotes, note].slice(-10) } };
+}
+
+/**
+ * A routine from before the library is planned set for set from its last
+ * workout's next targets. A set count Ben changed for that day only (§11,
+ * `todayEdits.edited` with `sets`) isn't the workout's: those slots go back
+ * to the routine's own working-set count (TE-B13, review S1). Extra targets
+ * are dropped from the end; missing ones repeat the last working target.
+ * Library workouts are already planned from their own structure: unchanged.
+ */
+export function withoutTodayOnlySets(
+  targets: ReadonlyMap<string, readonly NextTargetEntry[]>,
+  routine: Pick<Routine, 'exercises' | 'source'>,
+  lastTodayEdits: Pick<SessionTodayEdits, 'edited'> | undefined,
+): Map<string, readonly NextTargetEntry[]> {
+  const out = new Map(targets);
+  if (routine.source !== undefined) return out;
+  for (const e of lastTodayEdits?.edited ?? []) {
+    if (!e.kinds.includes('sets')) continue;
+    const rex = routine.exercises.find((x) => x.id === e.slotKey);
+    const planned = rex === undefined ? undefined : out.get(rex.exerciseId);
+    if (rex === undefined || planned === undefined) continue;
+    const want = rex.setTemplates.filter((t) => t.setType !== 'warmup').length;
+    const working = planned.filter((p) => p.setType !== 'warmup');
+    const last = working.at(-1);
+    if (want < 1 || last === undefined || working.length === want) continue;
+    const kept = working.length > want ? working.slice(0, want) : [...working, ...Array.from({ length: want - working.length }, () => last)];
+    out.set(rex.exerciseId, [...planned.filter((p) => p.setType === 'warmup'), ...kept]);
+  }
+  return out;
 }
 
 /** A routine from before the library: the targets are the working sets (a stored load can't be told from a pin, so none is kept). */
