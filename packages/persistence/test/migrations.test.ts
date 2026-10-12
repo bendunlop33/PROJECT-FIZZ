@@ -23,6 +23,8 @@ const TABLES = [
   'exercises',
   'gyms',
   'import_jobs',
+  'import_layout_requests',
+  'import_profiles',
   'import_rows',
   'memories',
   'next_session_targets',

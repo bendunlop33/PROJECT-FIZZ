@@ -9,6 +9,7 @@ import {
   type ExerciseAlias,
   type RememberedTotal,
   type ImportJob,
+  type ImportProfile,
   type ImportRow,
   type PerHandReading,
   type SessionAggregate,
@@ -20,6 +21,7 @@ import { EXERCISE_SPEC, listDocuments, saveDocumentIn, decodeDocument, type Docu
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, parseJson, parseJsonOrNull, rowId } from './sql';
 import { writeAggregate } from './sessions';
+import { IMPORT_PROFILE_SPEC } from './import-profiles';
 
 /**
  * FitNotes import storage (data-import-export §2.5, §3.4, §4.3; brief §6
@@ -55,6 +57,9 @@ function rowRecord(r: ImportRow): Record<string, SqlValue> {
   return {
     job_id: r.jobId,
     row_number: r.row,
+    part: r.part ?? 0,
+    workout_key: r.workoutKey ?? null,
+    start_local: r.startLocal ?? null,
     line: r.line,
     local_date: r.localDate,
     exercise_name: r.exerciseName,
@@ -69,12 +74,16 @@ function rowRecord(r: ImportRow): Record<string, SqlValue> {
 
 /** Decode and validate one stored import row. Throws `CorruptDataError`. */
 export function decodeImportRow(row: SqlRow): ImportRow {
-  const id = `${rowId(row.job_id)}#${rowId(row.row_number)}`;
+  const part = typeof row.part === 'number' ? row.part : 0;
+  const id = `${rowId(row.job_id)}#${rowId(row.row_number)}${part === 0 ? '' : `#${String(part)}`}`;
+  // Layout rows (ADR 0026) carry their part, workout and start time; FitNotes rows read exactly as before.
+  const layout = row.workout_key !== null && row.workout_key !== undefined ? { part, workoutKey: row.workout_key, startLocal: row.start_local ?? null } : {};
   return checkRead(
     ImportRowSchema,
     {
       jobId: row.job_id,
       row: row.row_number,
+      ...layout,
       line: row.line,
       localDate: row.local_date,
       exerciseName: row.exercise_name,
@@ -135,12 +144,17 @@ export class SqliteImports {
 
   /** Every source row of a job, in file order. */
   rows(jobId: string): Promise<ImportRow[]> {
-    return this.db.read(async (q) => (await q.getAll('SELECT * FROM import_rows WHERE job_id = ? ORDER BY row_number', [jobId])).map(decodeImportRow));
+    return this.db.read(async (q) => (await q.getAll('SELECT * FROM import_rows WHERE job_id = ? ORDER BY row_number, part', [jobId])).map(decodeImportRow));
   }
 
   /** A job's source rows on one date, in file order (one imported workout's sets and their originals). */
   rowsOn(jobId: string, localDate: string): Promise<ImportRow[]> {
-    return this.db.read(async (q) => (await q.getAll('SELECT * FROM import_rows WHERE job_id = ? AND local_date = ? ORDER BY row_number', [jobId, localDate])).map(decodeImportRow));
+    return this.db.read(async (q) => (await q.getAll('SELECT * FROM import_rows WHERE job_id = ? AND local_date = ? ORDER BY row_number, part', [jobId, localDate])).map(decodeImportRow));
+  }
+
+  /** One imported workout's rows, in file order (layout imports can have two workouts on a date). */
+  rowsOfSession(jobId: string, sessionId: string): Promise<ImportRow[]> {
+    return this.db.read(async (q) => (await q.getAll('SELECT * FROM import_rows WHERE job_id = ? AND session_id = ? ORDER BY row_number, part', [jobId, sessionId])).map(decodeImportRow));
   }
 
   /** Where an imported set came from (check 24), or null for a set logged in the app. */
@@ -214,6 +228,11 @@ export class SqliteImports {
     });
   }
 
+  /** Workouts of a job already written (any status), by session ID. */
+  writtenSessions(jobId: string): Promise<Set<string>> {
+    return this.db.read(async (q) => new Set((await q.getAll<{ id: string }>('SELECT id FROM sessions WHERE import_job_id = ?', [jobId])).map((r) => r.id)));
+  }
+
   /** Workouts of a job already written (any status), by local date. */
   writtenDates(jobId: string): Promise<Set<string>> {
     return this.db.read(async (q) => {
@@ -229,7 +248,18 @@ export class SqliteImports {
    * in one transaction. Idempotent by job ID and operation ID: the same call
    * again is a `duplicate` and changes nothing.
    */
-  createJob(job: ImportJob, rows: readonly ImportRow[], extras: { exercises: readonly Exercise[]; aliases: readonly AliasToSave[]; at: ZonedTimestamp; newId: () => string }): Promise<CreateJobOutcome> {
+  createJob(
+    job: ImportJob,
+    rows: readonly ImportRow[],
+    extras: {
+      exercises: readonly Exercise[];
+      aliases: readonly AliasToSave[];
+      at: ZonedTimestamp;
+      newId: () => string;
+      /** `Save layout` (AI12): the layout this import saves or versions, written with the job (ADR 0026 §5). */
+      profile?: { record: ImportProfile; expectedVersion: number | null };
+    },
+  ): Promise<CreateJobOutcome> {
     return this.db.write(async (tx) => {
       const existing = await tx.getFirst('SELECT * FROM import_jobs WHERE id = ?', [job.id]);
       if (existing) {
@@ -242,7 +272,11 @@ export class SqliteImports {
       if (!saved.ok) return { ok: false, error: 'conflict' };
       for (const r of rows) {
         if (r.jobId !== job.id) throw new Error(`Row ${String(r.row)} belongs to another job`);
-        await insert(tx, 'import_rows', rowRecord(checkWrite(ImportRowSchema, r, 'import_rows', `${r.jobId}#${String(r.row)}`)));
+        await insert(tx, 'import_rows', rowRecord(checkWrite(ImportRowSchema, r, 'import_rows', `${r.jobId}#${String(r.row)}#${String(r.part ?? 0)}`)));
+      }
+      if (extras.profile) {
+        const p = await saveDocumentIn(tx, IMPORT_PROFILE_SPEC, extras.profile.record, extras.profile.expectedVersion);
+        if (!p.ok) throw new Error('The saved layout changed since the preview');
       }
       for (const e of extras.exercises) await saveImportExercise(tx, e);
       for (const a of extras.aliases) await upsertAlias(tx, job, a, extras.at, extras.newId);

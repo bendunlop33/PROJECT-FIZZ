@@ -301,6 +301,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
         { why: '`appDates`: dates with a workout in the app (active included)', query: /status IN \('active', 'finished'\)/ },
         { why: 'an import’s dates in Recently deleted', query: /^"SELECT local_date AS d FROM sessions WHERE owner_id = \? AND import_job_id IS NOT NULL AND status = 'deleted' AND purge_after_utc > \?"$/ },
         { why: '`writtenDates`: an import’s rows already written, any status (resume)', query: /^'SELECT local_date AS d FROM sessions WHERE import_job_id = \?'$/ },
+        { why: '`writtenSessions`: an import’s workouts already written, any status (resume; ADR 0026)', query: /^'SELECT id FROM sessions WHERE import_job_id = \?'$/ },
         { why: 'idempotent import write by start operation ID', query: /start_operation_id = \?'$/ },
       ],
     };

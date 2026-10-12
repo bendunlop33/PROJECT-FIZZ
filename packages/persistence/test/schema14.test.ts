@@ -18,8 +18,8 @@ describe('migration 14 in place on a schema-13 database', () => {
     // At 13 the old CHECK refuses the new kind.
     await expect(db.run(row('n1', 'add_exercise_today'))).rejects.toThrow();
     const before = await db.getAll('SELECT * FROM coach_actions ORDER BY id');
-    expect(await migrate(db)).toEqual({ from: 13, to: 14, applied: [14] });
-    expect(latestVersion()).toBe(14);
+    expect(await migrate(db, MIGRATIONS, 14)).toEqual({ from: 13, to: 14, applied: [14] });
+    expect(latestVersion()).toBeGreaterThanOrEqual(14);
     expect(await db.getAll('SELECT * FROM coach_actions ORDER BY id')).toEqual(before);
     await db.run(row('n1', 'add_exercise_today'));
     await expect(db.run(row('n2', 'not_a_kind'))).rejects.toThrow();
