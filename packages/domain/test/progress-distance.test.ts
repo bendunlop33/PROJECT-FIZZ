@@ -399,3 +399,49 @@ describe('distance: load at the same distance, plate-loaded sleds, unloaded seri
     expect(t.points.every((p) => p.value >= 101 && new Date(`${p.date}T00:00:00Z`).getUTCDay() === 4)).toBe(true);
   });
 });
+
+describe('distance: equal metres across sessions, longer then heavier everywhere (review misc-fixes-r2 S1)', () => {
+  it('the panel Best line and the StatStrip pick the same heavier set, whichever came first', () => {
+    const later = buildExerciseDetailView({
+      sessions: [session('2026-09-01', [sledRow([set(added(40), 25)])]), session('2026-10-01', [sledRow([set(added(80), 25)])])],
+      exerciseId: 'sled-push',
+      today: TODAY,
+      metric: 'best_distance',
+    });
+    if (later === null) throw new Error('no view');
+    expect(sp(later.stats[0]?.value)).toBe('80 kg × 25 m');
+    expect(sp(later.panel.find((l) => l.label === 'Best')?.value)).toBe('80 kg × 25 m · 1 Oct');
+    const earlier = buildExerciseDetailView({
+      sessions: [session('2026-09-01', [sledRow([set(added(80), 25)])]), session('2026-10-01', [sledRow([set(added(40), 25)])])],
+      exerciseId: 'sled-push',
+      today: TODAY,
+      metric: 'best_distance',
+    });
+    expect(sp(earlier?.stats[0]?.value)).toBe('80 kg × 25 m');
+    expect(sp(earlier?.panel.find((l) => l.label === 'Best')?.value)).toBe('80 kg × 25 m · 1 Sep');
+  });
+
+  it('equal metres and equal load keep the earlier session as Best; longer still beats heavier', () => {
+    const tie = exerciseTrend(onlySeries([session('2026-09-01', [sledRow([set(added(60), 25)])]), session('2026-10-01', [sledRow([set(added(60), 25)])])]), 'best_distance', 'all', TODAY);
+    expect(tie.summary.best?.date).toBe('2026-09-01');
+    const longer = exerciseTrend(onlySeries([session('2026-09-01', [sledRow([set(added(80), 25)])]), session('2026-10-01', [sledRow([set(added(20), 26)])])]), 'best_distance', 'all', TODAY);
+    expect(longer.summary.best).toMatchObject({ date: '2026-10-01', value: 26 });
+  });
+
+  it('weekly-best chart points pick the heavier set at equal metres', () => {
+    const sessions: ProgressSession[] = [];
+    // 90 weeks, Monday 40 kg × 25 m and Thursday 80 kg × 25 m (and the reverse every other week).
+    const monday0 = Date.parse('2024-12-30T00:00:00Z');
+    for (let w = 0; w < 90; w += 1) {
+      const mon = new Date(monday0 + w * 7 * 86_400_000).toISOString().slice(0, 10);
+      const thu = new Date(monday0 + (w * 7 + 3) * 86_400_000).toISOString().slice(0, 10);
+      const [a, b] = w % 2 === 0 ? [40, 80] : [80, 40];
+      sessions.push(session(mon, [sledRow([set(added(a), 25)])]));
+      sessions.push(session(thu, [sledRow([set(added(b), 25)])]));
+    }
+    const t = exerciseTrend(onlySeries(sessions), 'best_distance', 'all', TODAY);
+    expect(t.aggregation).toBe('weekly_best');
+    expect(t.points).toHaveLength(90);
+    expect(t.points.every((p) => p.value === 25 && p.fromSet?.load?.value === 80)).toBe(true);
+  });
+});

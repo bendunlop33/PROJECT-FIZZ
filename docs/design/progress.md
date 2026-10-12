@@ -712,6 +712,8 @@ All Progress reads are local and pure: they're computed from finished sessions w
 
 Distance series have no records section yet (no record is defined), like timed. Axis and values are metres (`m`, `km` from 1,000 m); a sled's load never reads `BW +`.
 
+`Best distance` is **longer, then heavier**: within a session and across sessions (StatStrip, panel `Best`, weekly-best chart points), equal metres go to the heavier load; equal metres and equal load keep the earlier date. The panel `Change` line for `Best distance` at equal metres reads the load difference against the first point: `Same distance, 40 kg more than 1 Sep` (up) or `Same distance, 20 kg less than 1 Sep` (down), with `each` for per-hand (`Same distance, 10 lb more each than 1 Sep`); equal metres and equal load read `Same as 1 Sep`. `Total distance` ignores load (`Same as 1 Sep`).
+
 ### 6.4 Schema additions (developer; Ben approves the PG32 one)
 
 - `WorkoutSession.durationConfirmedAt?: ZonedTimestamp` (PG25a).
@@ -798,7 +800,7 @@ Checks:
 36. **Long history.** `All` with years of FitNotes history draws weekly bests with `· weekly best` in the heading; the table lists every session.
 37. **FitNotes history (PG32).** `Add FitNotes history` on Main Gym barbell shows FitNotes sessions as hollow points with the legend, tags FitNotes rows, and changes nothing in the workout (the `Last` line, targets and the in-workout record line are the same before and after). Undo removes it. It's refused for a different convention or unit. **Deferred (O-PG1, review progress-B S6/SP1):** slice B ships without `Add FitNotes history`, `SeriesLink` or hollow points; FitNotes history stays its own `FitNotes · kg` series in the series menu. This check is unmet until Ben answers O-PG1 and the slice that builds it is chosen.
 38. **Volume** shows bars of Σ load × reps per session, with marked sets included, and isn't offered for assisted, bodyweight, timed or distance exercises.
-38a. **Distance** (sled push, carries, added 12 Oct 2026): sets of 40 kg × 20 m twice show `Total distance 40 m` for that session; `Best distance` reads `40 kg × 20 m`; the `BEST DISTANCE` table lists the longest counted set at each load; no Est. 1RM, top set, volume, rep table or records.
+38a. **Distance** (sled push, carries, added 12 Oct 2026): sets of 40 kg × 20 m twice show `Total distance 40 m` for that session; `Best distance` reads `40 kg × 20 m`; the `BEST DISTANCE` table lists the longest counted set at each load; no Est. 1RM, top set, volume, rep table or records. 40 kg × 25 m on 1 Sep and 80 kg × 25 m on 1 Oct: the StatStrip and the panel `Best` both read `80 kg × 25 m` (1 Oct) and `Change` reads `Same distance, 40 kg more than 1 Sep`; with the sessions reversed both read `80 kg × 25 m · 1 Sep`.
 39. **Records** list every record of the series, newest first, with `Best Est. 1RM` labelled as an estimate; a series with fewer than 3 logged sessions shows `Records start after 3 logged sessions.`
 40. **No new chart library** is added to `apps/mobile/package.json`; charts draw with Skia, and no chart animates.
 41. **Offline and no AI**: every slice B screen is identical online and offline.

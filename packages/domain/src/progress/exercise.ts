@@ -469,9 +469,15 @@ function pointsOf(series: ExerciseSeries, metric: ExerciseMetric, within: (date:
   return out;
 }
 
-function better(a: TrendPoint, b: TrendPoint | null, higher: boolean): boolean {
+function better(a: TrendPoint, b: TrendPoint | null, higher: boolean, distanceKey: SeriesKey | null = null): boolean {
   if (b === null) return true;
   if (a.value !== b.value) return higher ? a.value > b.value : a.value < b.value;
+  // Equal best distance: the heavier set wins (longer, then heavier, as the StatStrip); equal load keeps the earlier.
+  if (distanceKey !== null) {
+    const la = a.fromSet === null ? 0 : (seriesLoadValue(a.fromSet, distanceKey) ?? 0);
+    const lb = b.fromSet === null ? 0 : (seriesLoadValue(b.fromSet, distanceKey) ?? 0);
+    return la > lb;
+  }
   // A tie keeps the earlier one (the record date), except an equal top set with more reps.
   const ra = a.fromSet?.reps ?? 0;
   const rb = b.fromSet?.reps ?? 0;
@@ -493,6 +499,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
   const bounds = trendRangeBounds(range, today, firstDate);
   const within = (d: string) => inRange(d, bounds);
   const higher = higherIsBetter(series.kind, metric);
+  const distanceKey = metric === 'best_distance' && series.kind === 'distance' ? series.key : null;
   const inside = series.sessions.filter((s) => within(s.date));
 
   const gaps: TrendGap[] = [];
@@ -520,7 +527,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
     for (const p of sessionPoints) {
       const w = mondayOf(p.date);
       const cur = weeks.get(w) ?? null;
-      if (better(p, cur, higher)) weeks.set(w, p);
+      if (better(p, cur, higher, distanceKey)) weeks.set(w, p);
     }
     points = [...weeks.values()].sort((a, b) => a.date.localeCompare(b.date));
   }
@@ -534,7 +541,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
 
   // Latest, first and best always describe sessions, even when the chart shows weekly bests (B1).
   let best: TrendPoint | null = null;
-  for (const p of sessionRows) if (better(p, best, higher)) best = p;
+  for (const p of sessionRows) if (better(p, best, higher, distanceKey)) best = p;
   const before = series.sessions.filter((s) => s.date < bounds.from);
   const pointsByRange = Object.fromEntries(
     TREND_RANGES.map((r) => {
