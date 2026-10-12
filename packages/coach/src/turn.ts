@@ -266,8 +266,6 @@ export async function runModelStep(
   timing: CoachTiming,
   outer: AbortSignal | undefined,
   hooks: { onFirstEvent?: () => void; onReplyDelta?: (delta: string) => void } = {},
-  /** Wall-clock deadline for the whole turn (ms since epoch); past it the step times out. */
-  deadlineMs: number | null = null,
 ): Promise<StepOutcome> {
   const controller = new AbortController();
   const onOuter = (): void => {
@@ -283,8 +281,7 @@ export async function runModelStep(
   try {
     for (;;) {
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const step = first ? timing.firstEventMs : timing.stallMs;
-      const limit = deadlineMs === null ? step : Math.max(0, Math.min(step, deadlineMs - Date.now()));
+      const limit = first ? timing.firstEventMs : timing.stallMs;
       const timeout = new Promise<'timeout'>((resolve) => {
         timer = setTimeout(() => {
           resolve('timeout');
@@ -445,7 +442,21 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     req.onProgress?.({ kind: 'tool', line });
   };
   let replyStream = new ReplyMessageStream();
-  const deadlineMs = timing.totalMs === undefined ? null : Date.now() + timing.totalMs;
+  // The whole-turn cap (BD13): when it fires the running step is stopped and the turn ends as a timeout.
+  const cap = new AbortController();
+  const capped = { fired: false };
+  const capTimer =
+    timing.totalMs === undefined
+      ? undefined
+      : setTimeout(() => {
+          capped.fired = true;
+          cap.abort();
+        }, timing.totalMs);
+  const onStop = (): void => {
+    cap.abort();
+  };
+  if (req.signal?.aborted === true) cap.abort();
+  req.signal?.addEventListener('abort', onStop);
 
   for (let step = 0; ; step += 1) {
     if (step >= MAX_MODEL_STEPS) {
@@ -454,15 +465,15 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     }
     replyStream = new ReplyMessageStream();
     const stream = replyStream;
-    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, req.signal, {
+    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, cap.signal, {
       onFirstEvent,
       onReplyDelta: (delta) => {
         const fresh = stream.push(delta);
         if (fresh !== '') emit(filter.push(fresh));
       },
-    }, deadlineMs);
+    });
     if (out.kind === 'error') {
-      error = out.error;
+      error = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
       break;
     }
     if (out.kind === 'text') {
@@ -521,6 +532,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, ref) });
   }
 
+  clearTimeout(capTimer);
+  req.signal?.removeEventListener('abort', onStop);
   // The rest of the reply, through the same backstop. What already streamed is never sent twice.
   if (message !== null) {
     const streamed = replyStream.streamed;

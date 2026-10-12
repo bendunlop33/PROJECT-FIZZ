@@ -261,7 +261,7 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
         }
       },
     };
-    const p = { ...ports(store, model as never, executors(store)), timing: { firstEventMs: 200, stallMs: 200, totalMs: 300 } };
+    const p = { ...ports(store, model, executors(store)), timing: { firstEventMs: 200, stallMs: 200, totalMs: 300 } };
     const started = Date.now();
     const result = await runCoachTurn(request({ input: words('build me a push workout'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }), p);
     expect(result).toMatchObject({ status: 'failed', error: 'timeout', cards: [] });
