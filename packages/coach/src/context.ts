@@ -96,6 +96,21 @@ export interface CoachContextInput {
    * workout and the draft being changed. Your data. Absent on other turns.
    */
   build?: BuildContextView;
+  /**
+   * (12 Oct) A workout turn where Ben asked to add an exercise: the
+   * exercises he can do at the workout's gym, not pain-flagged and not
+   * already in it, by the ID `add_exercise_today` takes. Your data (his
+   * exercises and the catalogue's, filtered by his gym). Absent otherwise.
+   */
+  addable?: readonly AddableExercise[];
+}
+
+/** One exercise `add_exercise_today` may add (its ID, as the tool takes it). */
+export interface AddableExercise {
+  exerciseId: string;
+  name: string;
+  equipment: string;
+  measured: 'reps' | 'time';
 }
 
 export type OpenedFrom =
@@ -146,6 +161,8 @@ export interface YourData {
   builtInNext?: { exerciseId: string; name: string; target: CoachTarget; sets: number }[];
   /** Build turns only (workout-builder §8.4). */
   build?: BuildContextView;
+  /** (12 Oct) Workout turns where Ben asked to add an exercise: what `add_exercise_today` may add. */
+  addable?: AddableExercise[];
 }
 
 export interface CoachingKnowledge {
@@ -244,6 +261,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.builtInNext === undefined ? {} : { builtInNext: input.builtInNext.map((b) => ({ ...b })) }),
     ...(input.openedFrom === undefined ? {} : { openedFrom: copyOpenedFrom(input.openedFrom) }),
     ...(input.build === undefined ? {} : { build: JSON.parse(JSON.stringify(input.build)) as BuildContextView }),
+    ...(input.addable === undefined ? {} : { addable: input.addable.map((a) => ({ ...a })) }),
   };
 }
 
@@ -375,6 +393,7 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
     if (b.upNext !== null) yourData.push({ label: 'Up next', detail: b.upNext });
     if (b.draft !== null) yourData.push({ label: 'Coach draft', detail: `${b.draft.name} · version ${String(b.draft.version)}` });
   }
+  if (y.addable !== undefined) yourData.push({ label: 'Exercises you can add here', detail: plural(y.addable.length, 'exercise') });
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });
   // Read through tools when a question needs them (minimal by default), still Your data.
   if (!ctx.notAvailable.includes(NO_TRAINING_HISTORY)) yourData.push({ label: 'Past workouts and gym equipment', detail: 'read when needed' });

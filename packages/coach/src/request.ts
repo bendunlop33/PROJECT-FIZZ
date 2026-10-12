@@ -90,6 +90,13 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
  * only in the summary turn, which has `set_next_session_targets` anyway.
  * "Rule: …" and "Remember, …" are labelled lines.
  *
+ * (12 Oct) `add`: an exercise added to today's workout ("add 3 sets of
+ * lateral raises", "put in some curls", "stick some dips in", "can we do
+ * some face pulls?"). The object must be an exercise, not a set, a load or
+ * a set type: "add a set to bench", "add another set", "add 5 kg", "add a
+ * drop set" aren't adds (the first two are `change`). Questions asking for a
+ * view ("should I add curls?", "why can't you add curls?") aren't requests.
+ *
  * Which kinds open which tools is `REQUEST_KINDS_BY_TOOL` in `registry.ts`.
  *
  * A bare "yes" / "do it" is not classified here: accepting a coach offer is
@@ -99,7 +106,7 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
 
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build';
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -604,6 +611,33 @@ function buildIn(clause: string): boolean {
 }
 
 /**
+ * (12 Oct) Adding an exercise to today's workout. A verb that adds ("add",
+ * "put in", "throw in", "stick … in") with an exercise as its object, after
+ * an optional amount ("some", "3 sets of"). "Do / try some curls" only counts
+ * after an ask ("let's", "can we", "I want to").
+ */
+const ADD_AMOUNT = '(?:(?:some|a few|a couple(?: of)?|a bit of|more|(?:another|an extra|extra|one more) (?:round|set|exercise) of|(?:\\d+|one|two|three|four|five|six) (?:sets?|rounds?) of|\\d+ ?x ?\\d+(?: of)?) )?';
+const ADD_DET = '(?:(?:the|my|a|an|some) )?';
+/** Words between the amount and the exercise word: never a preposition or a load, set or time word ("add weight to bench"). */
+const ADD_FILLER = '(?:(?!(?:to|on|for|at|in|onto|into|with|weight|weights|load|loads|kg|kgs|kilos?|lbs?|pounds?|reps?|sets?|plates?|rest|time|seconds?|minutes?|something|anything|other|than|else|instead|different)\\b)[a-z-]+ ){0,3}';
+const ADD_VERB = '(?:add|include|put in|throw in|chuck in|stick in|pop in|slot in|squeeze in|fit in|bang in|whack in|tack on|tag on|work in)';
+const ADD_DIRECT = new RegExp(`^${ADD_VERB} ${ADD_AMOUNT}${ADD_DET}(${ADD_FILLER}${EXERCISE_WORD})\\b`);
+const ADD_SPLIT = new RegExp(`^(?:put|throw|chuck|stick|pop|slot|squeeze|fit|bang|whack|work) ${ADD_AMOUNT}${ADD_DET}(${ADD_FILLER}${EXERCISE_WORD}) (?:in|on)\\b`);
+const ADD_DO = new RegExp(`^(?:do|hit|try|have) ${ADD_AMOUNT}${ADD_DET}(${ADD_FILLER}${EXERCISE_WORD})\\b`);
+/** Set types and other things that are sets, not exercises: "add a drop set", "add a warm-up". */
+const ADD_NOT_EXERCISE = /^(?:top ?sets?|back ?-?off(?: sets?)?|drop ?sets?|warm ?-?ups?|amrap|finisher)\b/;
+
+function addIn(clause: string): boolean {
+  const c = clause.replace(POLITE, '');
+  // A swap or variety request ("something other than cable fly") is structural, not an add.
+  if (c.length === 0 || isOpinionQuestion(c) || structuralIn(c)) return false;
+  const asked = ASK_PREFIX.exec(c);
+  const body = asked?.[1] ?? c;
+  const m = ADD_DIRECT.exec(body) ?? ADD_SPLIT.exec(body) ?? (asked !== null ? ADD_DO.exec(body) : null);
+  return m !== null && !ADD_NOT_EXERCISE.test((m[1] ?? '').trim());
+}
+
+/**
  * With a coach draft in context (`Ask coach` on its overview, workout-builder
  * BD16), "make it shorter", "no barbell", "swap the pec deck", "drop the
  * dips", "add some core" change the draft: a new version, never today's sets.
@@ -668,6 +702,8 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
   // A whole workout (workout builder): its own kind, never a change to today's sets.
   const building = open.filter((c) => buildIn(c.text)).map((c) => c.text);
   if (building.length > 0) kinds.push('build');
+  // (12 Oct) An exercise added today; a question only counts when it asks ("can you add curls?").
+  if (open.some((c) => addIn(c.text) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('add');
   // A clause that is only a swap ("swap cable fly") isn't also a load change; nor is a build, in a general turn.
   const buildOnly = turnKind === 'general' ? building : [];
   if (askingClauses.some((c) => !structuralIn(c) && !buildOnly.includes(c))) kinds.push('change');
@@ -687,7 +723,7 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || buildIn(c.text) || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
+    if (c.label !== null || buildIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

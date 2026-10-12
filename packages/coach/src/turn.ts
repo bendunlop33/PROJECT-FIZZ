@@ -198,7 +198,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     case 'summary':
       break;
   }
-  const benAskedForChange = acceptedOffer || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build')));
+  const benAskedForChange = acceptedOffer || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'add')));
   return { kind: g.kind, benRequest, acceptedOffer, benPainWords, structuralSignals: g.structuralSignals, benAskedForChange, intent };
 }
 

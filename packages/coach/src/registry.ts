@@ -130,6 +130,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       "Change targets of today's pending sets (load, reps, target RPE; rpe null keeps it), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment. Ben's own target RPE always stays.",
   },
   {
+    // (12 Oct) Today only, because Ben asked (rule 3): applies at once with Undo. Not CC10's structural
+    // kind: that is the plan he trains from next time, which stays a proposal (`propose_next_workout_change`).
+    name: 'add_exercise_today',
+    effect: 'versioned_update',
+    writes: ['session_exercise'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: "Add an exercise to today's workout, with Undo",
+    capabilitySection: 'when_you_ask',
+    description:
+      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed.",
+  },
+  {
     name: 'log_set',
     effect: 'versioned_update',
     writes: ['logged_set'],
@@ -257,7 +271,8 @@ export const COACH_NEVER: readonly string[] = [
 
 /** Entity kinds a versioned update may write; all keep the previous version (CC6, check 1). */
 /** (11 Oct) `logged_set`: a set Ben told the coach to log or correct, through the workout's own versioned commands; never a delete. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set']);
+/** (12 Oct) `session_exercise`: an exercise added to today's workout with pending sets only; Undo takes it out. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -283,7 +298,7 @@ export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
     if (t.effect === 'read' && t.writes.length > 0) throw new UnsafeRegistryError(`${t.name}: a read tool can't write`);
     if (t.effect !== 'read' && t.writes.length === 0) throw new UnsafeRegistryError(`${t.name}: a write tool must declare what it writes`);
     if (t.effect === 'versioned_update' && t.writes.some((w) => !VERSIONED_WRITABLE.has(w))) {
-      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories or a set Ben named`);
+      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories, a set Ben named or an exercise added today`);
     }
     if (t.effect !== 'read' && (t.plainLabel === null || t.plainLabel.trim() === '')) {
       throw new UnsafeRegistryError(`${t.name}: a write tool needs a plainLabel for What the coach can do`);
@@ -342,7 +357,11 @@ export interface TurnRegistry {
  * Its `needs` is still unsettled in ADR 0020 (Ben/PM decision).
  */
 export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRequestKind[]>> = {
-  adjust_pending_sets: ['change', 'difficulty'],
+  // "Add a set to bench", "another set" are `change`; "put in some curls" is `add`, which also opens this
+  // tool so the coach can add one more set when the exercise is already in today's workout.
+  adjust_pending_sets: ['change', 'difficulty', 'add'],
+  // (12 Oct) "Add 3 sets of lateral raises", "put in some curls", "can we do some face pulls".
+  add_exercise_today: ['add'],
   log_set: ['log'],
   correct_set: ['correct'],
   save_memory: ['memory'],
