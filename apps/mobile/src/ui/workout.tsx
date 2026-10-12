@@ -16,15 +16,23 @@ import { nextFieldText, parseNumber } from './number-text';
 export const NUMBER_ACCESSORY_ID = 'fizz-number-done';
 
 export function NumberAccessory() {
+  return <KeyboardDoneAccessory nativeID={NUMBER_ACCESSORY_ID} />;
+}
+
+/**
+ * A `Done` bar above the keyboard (iOS `InputAccessoryView`) for a field whose keyboard has no
+ * Done key: number pads, and multiline text where Return adds a line (the coach sheet, build 131).
+ */
+export function KeyboardDoneAccessory({ nativeID }: { nativeID: string }) {
   const theme = useTheme();
   return (
-    <InputAccessoryView nativeID={NUMBER_ACCESSORY_ID} backgroundColor={theme.colors['bg.surface']}>
+    <InputAccessoryView nativeID={nativeID} backgroundColor={theme.colors['bg.surface']}>
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Done"
           onPress={() => {
-            // Closes the keyboard only; nothing is logged.
+            // Closes the keyboard only; nothing is logged or sent.
             Keyboard.dismiss();
           }}
           style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingHorizontal: theme.space['3'] }}

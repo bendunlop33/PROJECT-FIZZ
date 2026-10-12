@@ -15,6 +15,15 @@ import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, G
 import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
 import type { WorkoutPresence } from '../services/history-services';
 
+/**
+ * Build 131 ("the keyboard gets stuck on GPT chat"): the conversation hides the keyboard when
+ * Ben drags it down (`interactive`: the keyboard follows the finger, as in Messages) or taps
+ * outside the field; buttons in it still work on the first tap (`handled`). The field is
+ * multiline, so Return adds a line: the `Done` bar above the keyboard hides it.
+ */
+export const COACH_TRANSCRIPT_KEYBOARD = { keyboardDismissMode: 'interactive', keyboardShouldPersistTaps: 'handled' } as const;
+export const COACH_DONE_ACCESSORY_ID = 'fizz-coach-done';
+
 export type ViewIcon = 'checkmark.circle.fill' | 'arrow.uturn.backward' | 'minus.circle' | 'exclamationmark.triangle' | 'clock.badge.xmark' | 'xmark.octagon' | 'info.circle' | 'wifi.slash' | 'pause.circle' | 'ellipsis';
 
 // ---------------------------------------------------------------------------
