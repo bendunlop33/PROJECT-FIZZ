@@ -30,7 +30,9 @@
 
 > **Revision 2026-10-11 (Progress v1.0, [progress.md](progress.md)).** For Ben's analytics request: new components `WindowPicker` (§9.69), `WeekBars` (§9.70), `DayStrip` (§9.71), `FrequencyRow` (§9.72) and `RepTable` (§9.73); `StatStrip` (§9.65) is reused on Progress; `TrendChart` gains a hollow point for FitNotes sessions on a combined series and a bar variant for volume (§9.23). New chart sizes `chart.weekBars`, `chart.countBar`, `chart.dayCell` (§4.1). Number formats for long totals and per-week averages (§3). A Direction D note on chart selection (§2.1): D's accent is close to `text.primary`, so selection is shown by size, ring and guide line. Charts are drawn with Skia, with text as native overlays (§9.23). **No new colour values; one accent kept.**
 
-> **Revision 2026-10-11 (Workouts library, edit before start, fit to time; [routines.md](routines.md) Part A, [overview-today-edits.md](overview-today-edits.md) §11, [fit-to-time.md](fit-to-time.md)).** New components `WorkoutRow` (§9.74), `SaveWorkoutSheet` (§9.75), `EditRow` with `SetCountStepper` (§9.76), `RepsSheet` (§9.77), `HowLongSheet` (§9.78) and `FitCard` (§9.79); `ChangeMarker` gains `＋ ADDED`, `✎ EDITED` and `◷ TRIMMED` with a new precedence (§9.67); `ChangeReviewCard` gains per-line checks for multi-line Ben-authored cards (§9.80); `StatStrip`'s TIME column can be a button (§9.65). The UI name for saved routines is **Workouts**. **No new colour, type, spacing or timing values; one accent kept.** (Numbered §9.69–9.75 on the library branch; renumbered §9.74–9.80 at the merge with main, whose Progress components took §9.69–9.73.)
+> **Revision 2026-10-11 (Workouts library, edit before start, fit to time; [routines.md](routines.md) Part A, [overview-today-edits.md](overview-today-edits.md) §11, [fit-to-time.md](fit-to-time.md)).** New components `WorkoutRow` (§9.81), `SaveWorkoutSheet` (§9.82), `EditRow` with `SetCountStepper` (§9.83), `RepsSheet` (§9.84), `HowLongSheet` (§9.85) and `FitCard` (§9.86); `ChangeMarker` gains `＋ ADDED`, `✎ EDITED` and `◷ TRIMMED` with a new precedence (§9.67); `ChangeReviewCard` gains per-line checks for multi-line Ben-authored cards (§9.87); `StatStrip`'s TIME column can be a button (§9.65). The UI name for saved routines is **Workouts**. **No new colour, type, spacing or timing values; one accent kept.** (Numbered §9.69–9.75 on the library branch; renumbered §9.74–9.80 at the merge with main, whose Progress components took §9.69–9.73; renumbered again §9.81–9.87 at the second merge, whose workout Table components took §9.74–9.80.)
+
+> **Revision 2026-10-12 (workout Table view, [active-workout.md](active-workout.md) §2A; Ben's decisions 11 Oct).** New type token `type.rowValue` (§3). `target.workout` now applies to the `RestBar` pills and the Table chips (§5). §7's coach `C` badge is replaced by the `Coach` / `Rule` word tags. `SetRow` gains the Table anatomy (§9.3), and `RestTimer`'s compact version becomes `RestBar`, 64pt (§9.6). The `ActionBar` holds `Chat` + Log until voice ships (§9.1). New components `ExerciseCard` (§9.74), `OpenSetRow` (§9.75), `AfterSetBlock` (§9.76), `FoldedExercise` (§9.77), `DoneChip` (§9.78), `NowChip` (§9.79) and `RestBar` (§9.80), with index rows (§11). **No new colour values; one accent kept.**
 
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
@@ -229,6 +231,7 @@ The typeface is the system font (SF Pro). React Native gives you this by default
 | `type.title2` | 22 / 28 | Semibold | No | Title 2 | 2.5× | Screen titles, summary headings |
 | `type.headline` | 17 / 22 | Semibold | When numeric | Headline | 3× | Button labels, row titles, Log button |
 | `type.body` | 17 / 24 | Regular | When numeric | Body | 3× | Default body |
+| `type.rowValue` | 19 / 24 | Medium (done) · Regular (target) | Yes | Body | 3× | Values in workout Table rows (revision 2026-10-12). Done rows in `text.primary`, pending rows in `text.tertiary` |
 | `type.callout` | 16 / 22 | Regular | When numeric | Callout | 3× | Secondary text, set rows, "Last" line |
 | `type.label` | 16 / 20 | Medium | When numeric | Callout | 3× | Chips, table headers, status labels, keypad hints |
 | `type.keypad` | 28 / 34 | Regular | Yes | Title 1 | 1.5× | Custom keypad digits |
@@ -323,7 +326,7 @@ Geometry is in body heights (H) inside the figure code (`STROKE`, `ADULT_V1_PROF
 | Token | Value | Applies to |
 |---|---|---|
 | `target.min` | 44 × 44 | Anything tappable anywhere (HIG minimum) |
-| `target.workout` | 52 × 52 | Any control on the active workout screen: steppers, RPE chips, rest ±30 s, Skip, Talk |
+| `target.workout` | 52 × 52 | Any control on the active workout screen: steppers, RPE chips, rest ±30 s, Skip, Talk, Table rows, `RestBar` pills, `DoneChip` / `NowChip` hit areas (revision 2026-10-12) |
 | `target.primary` | full width × 60 | Log, Start, Resume, Finish, Done |
 | `target.keypadKey` | ≥ 64 wide × 56 tall | Custom keypad keys |
 
@@ -421,7 +424,8 @@ Target source (revision 2026-10-08, ADR 0006). A target's source is shown only w
 | Source | Where shown | Style | VoiceOver |
 |---|---|---|---|
 | Plan / built-in rule (in workout) | Default; no tag | `Target 100 kg × 6–8` | "Target …" |
-| Coach (in workout, pending sets) | Focused card, mini list, Overview | Label `Coach target`, `TargetSourceTag` `Coach`; Overview text badge `C` (set-type badge style); second line `Plan was …` in `text.secondary` | "Coach target, … Plan was …" |
+| Coach (in workout, pending sets) | Focused card, mini list, Table open row | Label `Coach target`, `TargetSourceTag` `Coach`; second line `Plan was …` in `text.secondary`. Table rows: the word tag `Coach` after the value (replaces the old Overview `C` badge, revision 2026-10-12) | "Coach target, … Plan was …" |
+| Built-in rule, changed today (CA6) | Table rows and open row, Focus | Plain `Target`; `SourceTag` `Rule` after the value; `Plan was …` | "Adjusted target, … Plan was …" |
 | Coach (summary `Next time`) | Summary rows | `TargetSourceTag` `Coach` | "Source: coach" |
 | Built-in rule (summary `Next time`) | Summary rows | `TargetSourceTag` `Rule` (`Why?` names the built-in rule) | Same text |
 
@@ -521,6 +525,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 
 ### 9.1 Bottom action bar (`ActionBar`)
 - This is a fixed bar at the bottom of the active workout. It holds the **Talk button** (left, 60 × 60) and the **primary button**, which fills the rest of the width. The gap between them is `space.2`.
+- (Revision 2026-10-12) Until voice ships, the left button is **`Chat`**: 60 × 60 round, 1pt `border.control`, `text.bubble` icon (22pt) over the word `Chat` (`type.label`, 16pt; never shrunk below the 16pt floor). At AX1+ the word drops and VoiceOver still says "Chat". It opens the coach sheet. Pause and Finish are never in this bar; Finish takes the primary only after the last set.
 - **When the keyboard or keypad is open, the bar sits directly above it.** The primary action is therefore always visible.
 - It sits on `bg.surface` with a top `border.divider`, and its padding is `space.3` vertical and `space.4` horizontal.
 - The bar stays visible at every Dynamic Type size. If the primary label gets too long, it wraps to two lines. The bar height then grows, but the button is never shortened.
@@ -557,6 +562,14 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
   - The Active row puts focus on its load field.
 - Swipe left on a Done row shows Delete. This asks for confirmation and gives an Undo toast. Swipe gestures are never the only way to do anything.
 - At AX sizes, Last and Target stack under the set number, and Done goes on its own line.
+- **Table variant `TableSetRow`** (revision 2026-10-12, active-workout §2A.4; the default workout view). This replaces the Last / Target / Done columns with **one state-styled value per cell**:
+  - Grid: `SET` (52pt) · load (flex) · reps / time / distance (flex) · status (52pt). ≥ 52pt tall, with a `border.divider` hairline between rows.
+  - Cells: `type.rowValue`, tabular, numbers only (the unit is in the column label).
+  - **Done:** `text.primary` Medium, effort `RPE 8` (`type.callout`, `text.secondary`) after the reps, `checkmark.circle.fill` in `status.done`. An optional second line (`type.callout`, `text.secondary`) holds the exclusion (`Spotted · not counted`), the note, the gym caption or `Edited`.
+  - **Pending:** `text.tertiary` Regular, with a 28pt `circle` ring in `border.control`, and the `SourceTag` `Coach` / `Rule` after a value changed today.
+  - **Skipped:** the word `Skipped` with `slash.circle`.
+  - **Taps:** done → correction sheet; pending (anywhere, including the ring) → select, **never log**; skipped → none. No swipe actions in Table.
+  - **AX1+:** block rows. Line 1 is the icon + `Set 3` (+ `· done`), line 2 the value (`Target 100 kg · 6–8 reps` on pending blocks).
 
 ### 9.4 Number field with stepper (`NumberStepper`)
 - Anatomy: [− button 52 × 52] [value field] [+ button 52 × 52], with the unit label inside the field. For example, `100 kg` shows the digits in `type.loadDisplay` and the unit in `type.label`.
@@ -588,7 +601,7 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 ### 9.6 Rest timer (`RestTimer`)
 - It lives inside the focused card (full version) or in a bar above the action bar (compact version, used in Overview).
 - **Full version:** label `Rest` (`type.label`, `text.secondary`), countdown in `type.timerDisplay`, and a control row with [−30 s] [+30 s] [Skip], each `target.workout`. Tap the time to edit the duration.
-- **Compact version:** 52pt tall: `Rest 1:47` · [−30] [+30] [Skip].
+- **Compact version:** `RestBar` (§9.80), 64pt tall, with 52pt pills (revision 2026-10-12; was 52pt with smaller pills, below `target.workout`).
 - States:
   - **Running:** accent `timer` icon.
   - **Ended:** label `Ready when you are`, plus a count-up `Rested 2:12` in `text.secondary`.
@@ -1007,21 +1020,69 @@ The % is never coloured: a bigger step isn't shown as bad. Rows aren't tappable 
 
 **9.67 addendum (2026-10-11).** New markers, all `text.secondary`, icon + word: `＋ ADDED` (`plus.circle`), `✎ EDITED` (`pencil`), `◷ TRIMMED` (`clock`). Precedence is now SKIPPED > HELD > NO LOAD > ADDED > SWAPPED > EDITED > TRIMMED > the rest.
 
+#### Workout Table view (revision 2026-10-12; owner: active-workout.md §2A)
+
+None of these adds a colour value. `accent` marks only the open row's bar, `NOW` / `NEXT`, the drain, and the Log pill.
+
+**9.74 `ExerciseCard`.** `bg.surface`, `radius.lg`, padding `space.3`, cards `space.3` apart. The header pins at the top of the list while its card is in view (iOS plain-list section header on `bg.surface`, with a `border.divider` hairline under it while pinned). Header contents:
+- line 1: name (`type.title2`) + `chevron.right` (opens the exercise sheet), an optional `⚠ Pain` `Tag` (`exclamationmark.triangle` + word, `status.warning`), progress `1/3` (`type.callout`, tabular, `text.tertiary`), `Adjust` (current exercise only, `AdjustControl` §9.13), and `⋯` (44pt; 52pt hit);
+- line 2: `type.callout` `text.secondary`;
+- optional note line;
+- column labels (`type.label`, caps, `text.tertiary`; hidden at AX1+).
+
+The superset variant has a group header (`Superset A` `type.title2` · `Round 2 of 3`), a 2pt `border.control` bracket for its member list, and `ROUND n` dividers (`type.label` caps). VoiceOver: each card is a heading, and the progress reads "1 of 3 sets done".
+
+**9.75 `OpenSetRow`.** `bg.raised`, `radius.md`, a 3pt `accent` bar on the leading edge (inset `space.3` top and bottom), padding `space.2`/`space.3`. Contents, top to bottom:
+- **Top line (44pt):** set number (`type.headline`), `NOW` / `NEXT` (`type.label` caps, `accent`), and a trailing `Last 100 × 8 ›` (`type.callout`, value underlined in `border.control`; 52pt hit).
+- **Plate line:** `type.callout`, `text.tertiary`.
+- **Value tiles:** `bg.surface`, `radius.md`, the label `type.label` caps `text.tertiary`, then `NumberStepper` buttons 52 × 52 on `bg.raised` around a `type.loadDisplay` numeral. The numeral shrinks to fit down to 28pt and never truncates. The load tile is flex 1.35. Tiles stack full width (60pt buttons) at AX1+, or when 28pt doesn't fit.
+- **Then:** the Side control (52pt), the target line (`type.callout` `text.secondary` + `TargetWhyLink`), the `Rest after` link, and notes (`NoteLine`, `PainFlagNote`, `SnapNote`).
+- **Rules:** no status ring or tick. VoiceOver: "Set 2, current", then each tile as an adjustable element ("Load, 100 kilograms. Swipe up or down to change").
+
+**9.76 `AfterSetBlock`.** It sits directly above the `OpenSetRow`, with no fill or border, `space.3` padding, and items `space.3` apart. Its contents:
+- an eyebrow (`type.label` caps `text.tertiary`: `SET 2 EFFORT`);
+- effort `ParamChip`s (52pt, five across, `space.2` apart; selected = `checkmark` + `accent.subtle` fill + `border.control`, **never** an accent fill);
+- the record line;
+- `PainReviewLine` (§9 in active-workout);
+- the coach slot (one `CoachOfferLine` / `CoachAdjustmentBanner` / outcome line / `ChangeReviewCard`). Offer buttons are 52pt outline pills, ≥ `space.8` apart, and `Adjust` is a `SecondaryButton`, never an accent fill.
+
+It takes 0 height when empty. It enters with `motion.listEnter` and leaves without moving the open row (the list compensates its offset). Reduce Motion: no animation.
+
+**9.77 `FoldedExercise`.** One 52pt row on `bg.surface`, `radius.lg`: a 24pt `checkmark.circle.fill` in `status.done` (skipped: `slash.circle` `text.tertiary`), the name (`type.headline`), and trailing actual results (`type.callout` `text.secondary` tabular, truncating from the middle, never the first value). It's a button: "Bench press, done, 100 kilograms for 8, 8 and 7. Expands." At AX1+ the results go on a second line.
+
+**9.78 `DoneChip`.** A pill in the top bar's title slot: `arrow.up` + `7 done` (`type.label`, tabular), `bg.raised`, 1pt `border.control`, 36pt visual height, 52pt hit area. It is shown only while done content is above the viewport and the open row is on screen. Otherwise the title (`type.label` caps `text.secondary`) shows. VoiceOver: "7 sets done above. Shows them."
+
+**9.79 `NowChip`.** A pill above the bottom stack, trailing, `space.4` from the edge: `Now` + `arrow.down` / `arrow.up`, `bg.raised`, 1pt `border.control`, 36pt visual height, 52pt hit area. It is shown only while the open row is fully off-screen. It appears and leaves with a 150 ms fade (none under Reduce Motion). VoiceOver: "Current set, below. Scrolls to it."
+
+**9.80 `RestBar`.** 64pt, `bg.surface`, `radius.md`, inset `space.3` from the screen edges, sitting above the `ActionBar` and under the toast. Contents:
+- `REST` eyebrow (`type.label` caps `text.tertiary`);
+- the countdown (`type.headline` at 26pt, tabular, a 52pt hit area that opens the full rest view);
+- a spacer;
+- `−30` `+30` `Skip` outline pills (`border.control`, `type.label`, 52pt hit, ≥ `space.2` apart);
+- a 3pt `accent` drain along the bottom edge (length = time left ÷ duration). It updates once a second and never animates between seconds.
+
+States:
+- **Ended:** `checkmark.circle.fill` `status.done` + `Ready · rested 3:12`, with Skip hidden.
+- **Paused:** `REST · PAUSED` in `status.warning` + `pause.circle.fill`, the numeral in `text.tertiary`, and the pills disabled.
+- **Transition:** `MOVE TO A2 · 0:15`.
+
+At 375pt, the `REST` eyebrow drops before any pill shrinks. VoiceOver reads the time left only when focused, and announces "Rest done" once.
+
 #### Workouts library, edit before start, fit to time (revision 2026-10-11; owners: routines.md Part A, overview-today-edits.md §11, fit-to-time.md)
 
-**9.74 `WorkoutRow`.** Library and picker-style row, min 64pt, `border.divider` between rows. Line 1: name `type.headline` (two lines max), optional `Tag` (`UP NEXT` with `arrow.clockwise`; `SourceTag` only for `Coach` / `Imported`), trailing `⋯` icon button 44 × 44 (or a `SecondaryButton` `Save` on `FROM HISTORY` rows). Line 2: `type.callout` `text.secondary` tabular (`6 exercises · ≈ 60 min · 6 days ago`); a gym problem uses `exclamationmark.triangle` + `status.warning` icon with `text.secondary` words. Whole row (except `⋯` / `Save`) is one button. At AX1+ line 2 wraps and `Save` moves under the name.
+**9.81 `WorkoutRow`.** Library and picker-style row, min 64pt, `border.divider` between rows. Line 1: name `type.headline` (two lines max), optional `Tag` (`UP NEXT` with `arrow.clockwise`; `SourceTag` only for `Coach` / `Imported`), trailing `⋯` icon button 44 × 44 (or a `SecondaryButton` `Save` on `FROM HISTORY` rows). Line 2: `type.callout` `text.secondary` tabular (`6 exercises · ≈ 60 min · 6 days ago`); a gym problem uses `exclamationmark.triangle` + `status.warning` icon with `text.secondary` words. Whole row (except `⋯` / `Save`) is one button. At AX1+ line 2 wraps and `Save` moves under the name.
 
-**9.75 `SaveWorkoutSheet`.** `BottomCard` medium detent. Title `type.title2` + `Cancel`; `Name` text field (`type.body`, ≥ 44pt, text selected on open); summary line `type.callout` `text.secondary` tabular; one switch row `Add to rotation` (`SettingsRow`, off); `PrimaryButton` `Save` in the `ActionBar`, above the keyboard. Duplicate-name note as a `NoteLine` under the field.
+**9.82 `SaveWorkoutSheet`.** `BottomCard` medium detent. Title `type.title2` + `Cancel`; `Name` text field (`type.body`, ≥ 44pt, text selected on open); summary line `type.callout` `text.secondary` tabular; one switch row `Add to rotation` (`SettingsRow`, off); `PrimaryButton` `Save` in the `ActionBar`, above the keyboard. Duplicate-name note as a `NoteLine` under the field.
 
-**9.76 `EditRow` and `SetCountStepper`.** Overview Edit mode row, `border.divider` between rows, padding `space.3` vertical. Line 1: index (as `OverviewRow`), name 17/600, `ChangeMarker`, `↑` `↓` icon buttons 44 × 44 (`chevron.up` / `chevron.down`, disabled at the ends). Line 2: `SetCountStepper` (`[−]` and `[+]` 44 × 44 outline circles, `border.control`; value `N sets` `type.body` tabular, min width for `10 sets`) and a reps button (`6–8 reps ›`, `type.body`, 44pt hit). Line 3: load button (`100 kg ›`, 22/500 tabular as the `OverviewRow` load; unit 16pt `text.secondary`; `—  No history` in `text.tertiary` when none), optional `SourceTag` `Ben`, then outline pills (`Swap`, `Skip` / `Remove` / `Bring back`, 44pt). Superset members carry the bracket bar as `OverviewRow`. At AX1+ every line stacks and the arrows get their own line.
+**9.83 `EditRow` and `SetCountStepper`.** Overview Edit mode row, `border.divider` between rows, padding `space.3` vertical. Line 1: index (as `OverviewRow`), name 17/600, `ChangeMarker`, `↑` `↓` icon buttons 44 × 44 (`chevron.up` / `chevron.down`, disabled at the ends). Line 2: `SetCountStepper` (`[−]` and `[+]` 44 × 44 outline circles, `border.control`; value `N sets` `type.body` tabular, min width for `10 sets`) and a reps button (`6–8 reps ›`, `type.body`, 44pt hit). Line 3: load button (`100 kg ›`, 22/500 tabular as the `OverviewRow` load; unit 16pt `text.secondary`; `—  No history` in `text.tertiary` when none), optional `SourceTag` `Ben`, then outline pills (`Swap`, `Skip` / `Remove` / `Bring back`, 44pt). Superset members carry the bracket bar as `OverviewRow`. At AX1+ every line stacks and the arrows get their own line.
 
-**9.77 `RepsSheet`.** `BottomCard` small detent. Title `Reps · <exercise>` + `Done`; `ParamChip` pair `Range` / `Exact`; one or two `NumberStepper`s (§9.4) joined by `to`; `Use planned` text button when edited. Timed variant: `Work time` picker (wheel, 5 s steps).
+**9.84 `RepsSheet`.** `BottomCard` small detent. Title `Reps · <exercise>` + `Done`; `ParamChip` pair `Range` / `Exact`; one or two `NumberStepper`s (§9.4) joined by `to`; `Use planned` text button when edited. Timed variant: `Work time` picker (wheel, 5 s steps).
 
-**9.78 `HowLongSheet`.** `BottomCard` medium detent. Title `How long?` + `Close`; `Now ≈ 62 min` (`type.title2`, tabular, `≈` `text.secondary`) with an `info.circle` button (44pt hit); `ParamChip` row `30 45 60 75 90 Other` (44pt, tabular, wrap); `PrimaryButton` `Trim to 45 min` (disabled variant `Fits already`); `SecondaryButton` `Ask coach` (disabled with caption `Coach offline` + `wifi.slash` icon); `Clear fit` text button when a fit is live. The page behind keeps its own `Start` (the sheet's filled button is modal, so the page rule "Start is the only filled pill" still holds).
+**9.85 `HowLongSheet`.** `BottomCard` medium detent. Title `How long?` + `Close`; `Now ≈ 62 min` (`type.title2`, tabular, `≈` `text.secondary`) with an `info.circle` button (44pt hit); `ParamChip` row `30 45 60 75 90 Other` (44pt, tabular, wrap); `PrimaryButton` `Trim to 45 min` (disabled variant `Fits already`); `SecondaryButton` `Ask coach` (disabled with caption `Coach offline` + `wifi.slash` icon); `Clear fit` text button when a fit is live. The page behind keeps its own `Start` (the sheet's filled button is modal, so the page rule "Start is the only filled pill" still holds).
 
-**9.79 `FitCard`.** A `ResultCard` (§9.48) above the overview list: `bg.surface`, `radius.md`, padding `space.3`. Line 1 `clock` icon + `Fitted to 45 min` / `Shortest: ≈ 52 min` (`type.headline`); coach variant starts with `SourceTag` `Coach`. Line 2 `≈ 62 → 44 min` (`type.body`, tabular). Cut lines `type.callout` `text.secondary`, one per exercise, plan order. Actions: `Undo` and `Change` (outline pills 44pt); coach variant adds `Why? ›`. Collapsed state: one 52pt line `◷ Fitted to 45 min · ≈ 44 min ›`. Static: no progress animation while the coach works (pending variant shows `Fitting to 45 min…` + `Cancel`).
+**9.86 `FitCard`.** A `ResultCard` (§9.48) above the overview list: `bg.surface`, `radius.md`, padding `space.3`. Line 1 `clock` icon + `Fitted to 45 min` / `Shortest: ≈ 52 min` (`type.headline`); coach variant starts with `SourceTag` `Coach`. Line 2 `≈ 62 → 44 min` (`type.body`, tabular). Cut lines `type.callout` `text.secondary`, one per exercise, plan order. Actions: `Undo` and `Change` (outline pills 44pt); coach variant adds `Why? ›`. Collapsed state: one 52pt line `◷ Fitted to 45 min · ≈ 44 min ›`. Static: no progress animation while the coach works (pending variant shows `Fitting to 45 min…` + `Cancel`).
 
-**9.80 `ChangeReviewCard` per-line checks (2026-10-11).** For a Ben-authored card with several lines (overview-today-edits TE15), each `ChangeLine` gets a leading checkbox (`checkmark.square` / `square`, 44pt row). Removals start unchecked. `Apply` (`SecondaryButton`) is disabled with nothing checked. Single-line cards keep the plain layout.
+**9.87 `ChangeReviewCard` per-line checks (2026-10-11).** For a Ben-authored card with several lines (overview-today-edits TE15), each `ChangeLine` gets a leading checkbox (`checkmark.square` / `square`, 44pt row). Removals start unchecked. `Apply` (`SecondaryButton`) is disabled with nothing checked. Single-line cards keep the plain layout.
 
 #### Sound asset
 
@@ -1078,8 +1139,9 @@ Use the canonical name in new specs. Aliases are kept so older specs stay readab
 | `RuleActivityTag` | §9.62 | "on/off-now tag", "Applies now" (revision 2026-10-09) |
 | `ParameterRow` | §9.63 | "Defaults" rows, "default value row" (revision 2026-10-09) |
 | `StepCardList` | §9.64 | "Next steps at <gym>", "step card" display (revision 2026-10-09) |
+| `ExerciseCard`, `OpenSetRow`, `AfterSetBlock`, `FoldedExercise`, `DoneChip`, `NowChip`, `RestBar` | §9.74–9.80 | Workout Table view (revision 2026-10-12). `TableSetRow` is the Table variant of `SetRow` (§9.3). `RestBar` is the compact `RestTimer` (§9.6). Draft names: "open row", "rest bar", "jump chip", `component.openRow`, `component.restBar`, `component.foldedExercise` |
 | `WindowPicker`, `WeekBars`, `DayStrip`, `FrequencyRow`, `RepTable` | §9.69–9.73 | Progress v1.0 (revision 2026-10-11). `FrequencyRow` replaces `VolumeBandRow` (§9.25) on Progress while the guide band is deferred; `DayStrip` is the windowed form of `WeekStrip` (§9.26); `RepTable` is the research's "rep records" / "rep-max table" |
-| `WorkoutRow` | §9.74 | `RoutineRow` (routines v0.1; its `Start` button is retired) (revision 2026-10-11) |
-| `SaveWorkoutSheet` | §9.75 | "Save as routine sheet" (premium-feel §2.6, workout-builder §3.8, session-picker §4.3) (revision 2026-10-11) |
-| `EditRow`, `SetCountStepper` | §9.76 | "Edit mode row" (overview-today-edits §11); replaces the overview Reorder mode's `ReorderRow` use (revision 2026-10-11) |
-| `RepsSheet`, `HowLongSheet`, `FitCard` | §9.77–9.79 | "How long? sheet", "fitted result card" (revision 2026-10-11) |
+| `WorkoutRow` | §9.81 | `RoutineRow` (routines v0.1; its `Start` button is retired) (revision 2026-10-11) |
+| `SaveWorkoutSheet` | §9.82 | "Save as routine sheet" (premium-feel §2.6, workout-builder §3.8, session-picker §4.3) (revision 2026-10-11) |
+| `EditRow`, `SetCountStepper` | §9.83 | "Edit mode row" (overview-today-edits §11); replaces the overview Reorder mode's `ReorderRow` use (revision 2026-10-11) |
+| `RepsSheet`, `HowLongSheet`, `FitCard` | §9.84–9.86 | "How long? sheet", "fitted result card" (revision 2026-10-11) |

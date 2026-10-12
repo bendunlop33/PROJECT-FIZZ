@@ -15,22 +15,25 @@ export interface DevicePrefs {
    * Per phone, since notification permission is per phone.
    */
   alertsAsk: AlertsAsk;
+  /** The workout screen's view (active-workout §4.5): Table by default; Ben's choice sticks on this phone. */
+  workoutView: 'table' | 'focus';
 }
 
 export type AlertsAsk = 'undetermined' | 'later' | 'answered';
 
-export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined' };
+export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table' };
 
 export function parsePrefs(text: string | null): DevicePrefs {
   if (text === null) return DEFAULT_PREFS;
   try {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
-    const { themeDirection: dir, guideAnimations, alertsAsk } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown };
+    const { themeDirection: dir, guideAnimations, alertsAsk, workoutView } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown };
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
       guideAnimations: guideAnimations !== false,
       alertsAsk: alertsAsk === 'later' || alertsAsk === 'answered' ? alertsAsk : 'undetermined',
+      workoutView: workoutView === 'focus' ? 'focus' : 'table',
     };
   } catch {
     return DEFAULT_PREFS;

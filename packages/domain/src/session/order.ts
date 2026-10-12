@@ -44,6 +44,11 @@ function unitsOf(sets: readonly WorkoutSet[], exerciseId: string): WorkoutSet[][
   return units;
 }
 
+/** One exercise row's sets as units (a set plus its paired other side), in round order: the Table's superset rounds. */
+export function setUnits(sets: readonly WorkoutSet[], sessionExerciseId: string): WorkoutSet[][] {
+  return unitsOf(sets, sessionExerciseId);
+}
+
 /**
  * The order sets are performed in. Plain exercises run all their sets in
  * order; superset members interleave round by round (A1 s1, A2 s1, A1 s2 …).
