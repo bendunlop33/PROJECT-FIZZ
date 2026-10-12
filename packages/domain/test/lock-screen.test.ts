@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { buildLockScreenContent, clockText, lockScreenTargetWords, STALE_SESSION_MS, toMs } from '../src/index';
 import { at, kg, ms, TZ, values } from './fixtures';
-import { apply, BENCH, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
+import { BENCH as GYM_BENCH, exerciseSets, HOTEL, HOTEL_EQ, propose, pushA, switchCmd } from './gym-fixture';
+import { apply, BENCH, expectOk, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
+import { reduceSession } from '../src/index';
 
 /**
  * Lock Screen Live Activity content (lock-screen-and-alerts.md §2.1, §5):
@@ -61,6 +63,19 @@ describe('buildLockScreenContent', () => {
     expect(s.session.activeSetId).toBe(row?.id);
     expect(plain(c?.line1 ?? '')).toMatch(/^Until \d\d:\d\d · Next: /);
     expect(plain(c?.line2 ?? '')).toBe('Target 50 kg stack × 10–12');
+  });
+
+  it('after a gym switch, the next part of the same exercise keeps its set numbers (review ben-bugs N4)', () => {
+    let s = pushA();
+    const bench = exerciseSets(s, GYM_BENCH);
+    s = apply(s, logCmd(bench[0]?.id ?? '', values(kg(100), 8), 60));
+    s = apply(s, logCmd(bench[1]?.id ?? '', values(kg(100), 7), 300));
+    const switched = expectOk(reduceSession(s, switchCmd(propose(s, { id: HOTEL, equipment: HOTEL_EQ }), 320))).state;
+    const active = switched.sets.find((x) => x.id === switched.session.activeSetId);
+    expect(active?.sessionExerciseId).not.toBe(bench[1]?.sessionExerciseId); // the continuation row
+    const c = buildLockScreenContent(switched, ms(330), TZ);
+    expect(c?.state).toBe('resting');
+    expect(plain(c?.line1 ?? '')).toMatch(/· Bench press · Set 3 of 4 next$/);
   });
 
   it('an adjusted rest moves the countdown and the Until time', () => {

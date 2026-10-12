@@ -3,6 +3,7 @@ import { clockText } from '../calendar';
 import { formatDuration, NBSP, targetShort } from '../display';
 import { toMs } from '../time';
 import { equipmentOfRow } from './equipment-snapshot';
+import { blockSets, partRootOf } from './gym-switch';
 import { STALE_SESSION_MS } from './recovery';
 import { getSessionPhase } from './view';
 
@@ -37,9 +38,6 @@ export interface LockScreenContent {
 
 const TITLE_FALLBACK = 'Workout';
 
-function liveSetsOf(state: SessionAggregate, sessionExerciseId: string): WorkoutSet[] {
-  return state.sets.filter((s) => s.sessionExerciseId === sessionExerciseId && s.status !== 'deleted').sort((a, b) => a.index - b.index);
-}
 
 interface NextSet {
   set: WorkoutSet;
@@ -54,7 +52,8 @@ function nextSetOf(state: SessionAggregate, setId: string | null): NextSet | nul
   const set = state.sets.find((s) => s.id === setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) return null;
-  const own = liveSetsOf(state, ex.id);
+  // The whole block (every gym part), so numbering matches the in-app header (review ben-bugs N4).
+  const own = blockSets(state, ex.id);
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
   const target = targetShort(set.planned, { convention: ex.loadConvention, equipment: eq });
   const perSide = target !== null && ex.laterality === 'unilateral' && set.planned.reps !== null ? `${NBSP}per side` : '';
@@ -96,7 +95,8 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
       let line1 = until;
       let nextWords = '';
       if (next !== null) {
-        const sameExercise = doneEx === next.ex.id;
+        // Another part of the same exercise (after a gym switch) is still the same exercise.
+        const sameExercise = doneEx !== undefined && partRootOf(state.exercises, doneEx) === partRootOf(state.exercises, next.ex.id);
         line1 = sameExercise ? `${until} · ${next.ex.exerciseName} · Set ${String(next.number)} of ${String(next.of)} next` : `${until} · Next: ${next.ex.exerciseName}`;
         nextWords = sameExercise ? ` Next: ${next.ex.exerciseName}, set ${String(next.number)} of ${String(next.of)}` : ` Next: ${next.ex.exerciseName}`;
       }
