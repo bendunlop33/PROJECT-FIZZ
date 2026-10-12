@@ -357,6 +357,36 @@ describe('Save to Workouts is the library’s save (WB15, BD12)', () => {
     if (!c.ok) throw new Error('not saved again');
     expect(await s.coachDrafts.get(draftId)).toMatchObject({ routineId: c.routine.id });
   });
+  it('review r3 S1: a draft revised after Save can be saved; Save shows again, the v1 card isn’t `Saved`, and the link moves to the v2 workout', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s);
+    const p1 = await page(s, draftId, gymId);
+    const from1 = { kind: 'preview' as const, target: { kind: 'coach_draft' as const, draftId }, gymId, previewKey: p1.view.previewKey };
+    const a = await s.routines.saveFrom({ from: from1, name: 'Push · 45 min', addToRotation: false, opId: 'save-v1' });
+    if (!a.ok) throw new Error('not saved');
+    expect(await s.coachDrafts.card({ draftId, versionN: 1, gymId })).toMatchObject({ state: { kind: 'saved', routineId: a.routine.id } });
+    model = new StepModel([pushStub(PUSH.slice(1)), () => replyWith('Dumbbells only.')]);
+    const r = await ask(s, 'no barbell', { kind: 'draft', draftId, name: 'Push · 45 min' });
+    expect(r.cards[0]?.record.detail).toMatchObject({ kind: 'build_workout', versionN: 2 });
+    const p2 = await page(s, draftId, gymId);
+    // v2 isn't saved: Save to Workouts shows (routineId null), and its card is open, not `Saved · Push · 45 min ›` to v1.
+    expect(p2.coachDraft?.routineId).toBeNull();
+    expect(await s.coachDrafts.card({ draftId, versionN: 2, gymId })).toMatchObject({ state: { kind: 'open' } });
+    const b = await s.routines.saveFrom({ from: { ...from1, previewKey: p2.view.previewKey }, name: 'Push · dumbbells', addToRotation: false, opId: 'save-v2' });
+    if (!b.ok) throw new Error(`v2 not saved: ${b.message}`);
+    expect(b.routine.createdFromDraft).toEqual({ draftId, version: 2 });
+    expect(b.routine.exercises.length).toBe(PUSH.length - 1);
+    expect(await s.coachDrafts.get(draftId)).toMatchObject({ routineId: b.routine.id, currentVersion: 2 });
+    const p3 = await page(s, draftId, gymId);
+    expect(p3.coachDraft?.routineId).toBe(b.routine.id);
+    expect(await s.coachDrafts.card({ draftId, versionN: 2, gymId })).toMatchObject({ state: { kind: 'saved', routineId: b.routine.id, routineName: 'Push · dumbbells' } });
+    // v2 is saved now: a third save is refused; the v1 workout is still in the library.
+    expect(await s.routines.saveFrom({ from: { ...from1, previewKey: p3.view.previewKey }, name: 'Push again', addToRotation: false, opId: 'save-v2b' })).toMatchObject({ ok: false, reason: 'already_saved' });
+    expect((await s.routines.list()).map((x) => x.name)).toEqual(expect.arrayContaining(['Push · 45 min', 'Push · dumbbells']));
+    // The v1 save's retry doesn't pull the link back to the older workout.
+    expect(await s.routines.saveFrom({ from: from1, name: 'Push · 45 min', addToRotation: false, opId: 'save-v1' })).toMatchObject({ ok: true, duplicate: true });
+    expect(await s.coachDrafts.get(draftId)).toMatchObject({ routineId: b.routine.id });
+  });
 });
 
 describe('Save’s draft link (review S8)', () => {

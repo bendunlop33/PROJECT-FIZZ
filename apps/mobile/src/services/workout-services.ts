@@ -213,6 +213,7 @@ import {
   type NotCopied,
   isInHistory,
   leftOutCount,
+  draftSavedRoutineId,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
@@ -1594,10 +1595,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   /** The overview's view of a coach draft (§4.3, §4.5): values and check lines from the stored version. */
   /** The live workout a coach draft was saved as, or null (not saved, or that workout was deleted). */
+  /** Review r3 S1: the live workout the draft's current version was saved as; one saved from an earlier version doesn't count. */
   async function liveRoutineOf(d: WorkoutDraft): Promise<string | null> {
     if (d.routineId === null) return null;
     const r = await ctx.store().repos.routines.get(d.routineId).catch(() => null);
-    return r !== null && !isDeleted(r) ? r.id : null;
+    return draftSavedRoutineId(d, r !== null && !isDeleted(r) ? r : null);
   }
 
   async function liveDraftRoutineId(draftId: string): Promise<string | null> {
@@ -3132,7 +3134,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           return saved;
         };
         const existing = await repos().routines.get(id).catch(() => null);
-        // Review r2 S2: one save per draft. A draft already linked to a live workout isn't saved again (the link stays on the first).
+        // Review r2 S2: one save per draft version. A draft whose current version is already a live workout isn't saved again (the link stays on the first);
+        // review r3 S1: a version revised after Save may be saved, and the link moves to the new workout.
         if (!existing && req.from.kind === 'preview' && req.from.target.kind === 'coach_draft' && (await liveDraftRoutineId(req.from.target.draftId)) !== null) {
           return { ok: false, message: LIBRARY_COPY.alreadySaved, reason: 'already_saved' };
         }
@@ -4374,7 +4377,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         await ctx.store().repos.workoutDrafts.expire(p.id, now.utc).catch(() => [] as WorkoutDraft[]);
         const d = await coachDrafts.get(req.draftId);
         const routine = d?.routineId == null ? null : await repos().routines.get(d.routineId).catch(() => null);
-        const savedName = routine !== null && !isDeleted(routine) ? routine.name : null;
+        const savedName = d !== null && routine !== null && !isDeleted(routine) && draftSavedRoutineId(d, routine) !== null ? routine.name : null;
         const active = await repos().sessions.getActive(p.id).catch(() => null);
         const state = draftCardState({ draft: d, versionN: req.versionN, nowUtc: now.utc, workoutActive: active !== null, savedName });
         const version = d?.versions.find((v) => v.n === req.versionN) ?? null;
