@@ -65,6 +65,6 @@ export function newProfile(input: NewProfileInput): UserProfile {
 }
 
 /** The next version of a profile with `patch` applied. */
-export function bumpProfile(profile: UserProfile, patch: Partial<Pick<UserProfile, 'preferredUnit' | 'setup'>>, atUtc: string): UserProfile {
+export function bumpProfile(profile: UserProfile, patch: Partial<Pick<UserProfile, 'preferredUnit' | 'setup' | 'progress'>>, atUtc: string): UserProfile {
   return { ...profile, ...patch, version: profile.version + 1, updatedAtUtc: atUtc };
 }

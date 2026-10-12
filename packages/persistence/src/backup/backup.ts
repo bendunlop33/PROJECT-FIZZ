@@ -4,7 +4,7 @@ import { stableStringify } from '@fizz/domain';
 import type { SqlExecutor, SqlRow } from '../driver';
 import { checkIntegrity, type IntegrityReport } from '../integrity';
 import { latestVersion, readUserVersion, type Migration, MIGRATIONS } from '../migrations';
-import { ident, insert } from '../sql';
+import { ident, insert, rowInHistory } from '../sql';
 import type { Store } from '../store';
 import { finishedWorkoutsDigest } from './coverage';
 import { writeStable, stableHash } from './serialise';
@@ -87,6 +87,8 @@ export interface BackupCounts {
   finishedWorkouts: number;
   unfinishedWorkouts: number;
   discardedWorkouts: number;
+  /** Workouts in Recently deleted or awaiting the purge (delete-workouts §6.5): counted on their own line, never in `finishedWorkouts`. */
+  deletedWorkouts: number;
   loggedSets: number;
   firstWorkoutUtc: string | null;
   lastWorkoutUtc: string | null;
@@ -163,9 +165,10 @@ export function countBackup(tables: Record<string, readonly SqlRow[]>): BackupCo
     exercises: len('exercises'),
     routines: len('routines'),
     progressionRules: len('progression_rules'),
-    finishedWorkouts: sessions.filter((s) => s.status === 'finished').length,
+    finishedWorkouts: sessions.filter(rowInHistory).length,
     unfinishedWorkouts: sessions.filter((s) => s.status === 'active').length,
     discardedWorkouts: sessions.filter((s) => s.status === 'discarded').length,
+    deletedWorkouts: sessions.filter((s) => s.status === 'deleted').length,
     loggedSets: (tables.session_sets ?? []).filter((s) => s.status === 'completed').length,
     firstWorkoutUtc: started[0] ?? null,
     lastWorkoutUtc: started.at(-1) ?? null,
@@ -249,7 +252,7 @@ export async function createBackup(store: Store, options: { at: ZonedTimestamp; 
     text,
     sha256,
     finishedWorkoutsDigest: finishedWorkoutsDigest(
-      (tables.sessions ?? []).filter((s) => s.status === 'finished').map((s) => ({ id: String(s.id), revision: Number(s.revision) })),
+      (tables.sessions ?? []).filter(rowInHistory).map((s) => ({ id: String(s.id), revision: Number(s.revision) })),
     ),
     schemaVersion,
     counts: countBackup(tables),

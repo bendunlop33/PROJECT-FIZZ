@@ -10,14 +10,16 @@ import { renderActionResult, type CoachTurnResult } from '@fizz/coach';
 import { coachUndoRefusal, type CoachTrigger } from '@fizz/domain';
 import type { ActionRecord, SessionAggregate } from '@fizz/schemas';
 
-import type { CoachAvailability } from './coach-service';
+import type { CoachAvailability, WorkoutOffer } from './coach-service';
 import { outcomeFor } from './sheet-view';
 
 export type SlotView =
   | { kind: 'pending'; title: string; cancel: true }
-  | { kind: 'banner'; actionId: string; title: string; detail: string | null; notes: string[]; canUndo: boolean }
+  /** `tag`: `Rule` when the built-in rule made the change (CA6 revised), else null (the coach's). */
+  | { kind: 'banner'; actionId: string; title: string; detail: string | null; notes: string[]; canUndo: boolean; tag: 'Rule' | null }
   | { kind: 'outcome'; text: string; retry: boolean }
-  | { kind: 'offer'; prompt: string; fact: string; triggerKind: CoachTrigger['kind'] };
+  /** `change`: the rule's concrete change (`Next sets: 57.5 kg × 3–6`), tagged `Rule`; null for the coach's offer. */
+  | { kind: 'offer'; prompt: string; fact: string; triggerKind: CoachTrigger['kind']; change: string | null; tag: 'Rule' | null };
 
 export interface SlotInput {
   pending: boolean;
@@ -25,7 +27,7 @@ export interface SlotInput {
   adjustment: ActionRecord | null;
   /** The latest turn's outcome when it changed nothing (refused, stale, failed). */
   outcome: { text: string; retry: boolean } | null;
-  offer: (CoachTrigger & { sessionExerciseId: string }) | null;
+  offer: WorkoutOffer | null;
   /** The workout as loaded, to hide Undo on a change that can't be undone now (gym changed since; review r2 B1). */
   workout?: Pick<SessionAggregate, 'session' | 'sets'> | null;
 }
@@ -47,11 +49,15 @@ export function slotView(input: SlotInput): SlotView | null {
   const a = input.adjustment;
   if (a !== null && a.detail.kind === 'adjust_pending_sets' && a.status === 'committed') {
     const r = renderActionResult(a, 'slot');
-    if (a.undoneBy !== null) return { kind: 'outcome', text: 'Coach change undone.', retry: false };
-    return { kind: 'banner', actionId: a.actionId, title: r.text, detail: r.detail, notes: slotNotes(a.guardNotes), canUndo: input.workout == null || coachUndoRefusal(input.workout, a.actionId) === null };
+    const byRule = a.author !== 'coach';
+    if (a.undoneBy !== null) return { kind: 'outcome', text: byRule ? 'Change undone.' : 'Coach change undone.', retry: false };
+    return { kind: 'banner', actionId: a.actionId, title: r.text, detail: r.detail, notes: slotNotes(a.guardNotes), canUndo: input.workout == null || coachUndoRefusal(input.workout, a.actionId) === null, tag: byRule ? 'Rule' : null };
   }
   if (input.outcome !== null) return { kind: 'outcome', text: input.outcome.text, retry: input.outcome.retry };
-  if (input.offer !== null) return { kind: 'offer', prompt: input.offer.prompt, fact: input.offer.fact, triggerKind: input.offer.kind };
+  if (input.offer !== null) {
+    const o = input.offer;
+    return { kind: 'offer', prompt: o.prompt, fact: o.fact, triggerKind: o.kind, change: o.by === 'rule' ? o.change : null, tag: o.by === 'rule' ? 'Rule' : null };
+  }
   return null;
 }
 
@@ -86,6 +92,19 @@ export function slotAfterTurn(result: CoachTurnResult): { adjustment: ActionReco
 }
 
 /**
+ * F3: whether a turn started from an offer's `Adjust` ended without the
+ * coach answering (no network, not available), so the built-in rule's
+ * offer can take its place. A turn the coach completed (even with no
+ * change) is the coach's answer and stands.
+ */
+export function coachCouldNotAnswer(result: CoachTurnResult | null): boolean {
+  if (result === null) return true;
+  if (result.cards.some((c) => c.record.detail.kind === 'adjust_pending_sets' && c.record.status === 'committed')) return false;
+  // Ben's own Cancel isn't the coach failing to answer.
+  return result.status === 'failed' && result.error !== 'cancelled';
+}
+
+/**
  * The slot after a turn that threw (review N2): "Nothing changed" only when
  * the turn saved nothing. A change saved before the error (say, the reply
  * failed to save) still shows as its banner with Undo.
@@ -95,6 +114,30 @@ export function slotAfterFailure(saved: readonly ActionRecord[]): { adjustment: 
   if (committed !== null) return { adjustment: committed, outcome: null };
   if (saved.some((r) => r.status === 'committed')) return { adjustment: null, outcome: { text: 'Couldn’t reach the coach.', retry: false } };
   return { adjustment: null, outcome: { text: 'Couldn’t reach the coach. Nothing changed.', retry: true } };
+}
+
+/**
+ * F7: which logged sets to check for an offer now. Offers only show on the
+ * rest card, so a set logged with no rest running (a superset's 0 s
+ * transition, an exercise with no rest) is held and checked when the next
+ * rest starts, newest first. Holds at most `max`.
+ */
+export function offerCandidates(held: readonly string[], setId: string, resting: boolean, max = 6): { check: string[]; held: string[] } {
+  const all = [setId, ...held.filter((id) => id !== setId)];
+  if (!resting) return { check: [], held: all.slice(0, max) };
+  return { check: all.slice(0, max + 1), held: [] };
+}
+
+/** One line when Ben's `Adjust` on the rule's offer changed nothing (minimal copy). */
+export function ruleOfferOutcome(status: 'stale' | 'unchanged' | 'failed'): { text: string; retry: boolean } {
+  switch (status) {
+    case 'stale':
+      return { text: 'Out of date. Nothing changed.', retry: false };
+    case 'unchanged':
+      return { text: 'Nothing to change.', retry: false };
+    case 'failed':
+      return { text: 'Couldn’t save. Nothing changed.', retry: false };
+  }
 }
 
 /** The `Adjust` control (§2.2): its caption and which chips it offers now. */
@@ -108,7 +151,8 @@ export interface AdjustControlView {
 export function adjustControlView(a: CoachAvailability): AdjustControlView {
   if (a.status === 'ok') return { caption: null, chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
   if (a.status === 'offline') return { caption: 'Offline', chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
-  return { caption: a.status === 'not_connected' ? 'Not connected' : 'Unavailable', chips: ['pain'], line: null };
+  // No coach: Too hard / Too easy are the built-in rule's (review coach-fallback S1); typing needs the coach.
+  return { caption: a.status === 'not_connected' ? 'Not connected' : 'Unavailable', chips: ['too_hard', 'too_easy', 'pain'], line: null };
 }
 
 export const ADJUST_CHIP_LABEL: Record<AdjustControlView['chips'][number], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', type: 'Type…' };

@@ -24,7 +24,7 @@ describe('Edit set: set type', () => {
     ]);
     expect(v?.setType.changed).toBe(false);
     expect(v?.changed).toBe(false);
-    const top = buildSetEditView(s, id, null, null, 'top');
+    const top = buildSetEditView(s, id, null, null, { setType: 'top' });
     expect(top).toMatchObject({ setType: { value: 'top', changed: true }, changed: true });
     expect(SET_TYPE_ORDER).toHaveLength(5);
   });

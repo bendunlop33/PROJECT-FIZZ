@@ -37,7 +37,7 @@
     },
     {
       "id": "5",
-      "short": "Unplanned RPE ≥ 9.5 (planned ≤ 8.5), or reps short by ≥ 2: the coach offers, for the remaining sets of that exercise, −5–10% load (≈ 2–4% per RPE point over target, rounded down to an achievable load) or the same load with fewer reps. How the two figures combine is D22.",
+      "short": "Harder than planned (rule T: logged effort ≥ target RPE + 1.5, or reps below the range minimum): the coach offers, for the remaining sets of that exercise, −5–10% load (≈ 2–4% per RPE point over target, rounded down to an achievable load) or the same load with fewer reps. How the two figures combine is D22. With no coach, the built-in rule offers the same, labelled.",
       "appliesWhen": "Mid-session (rule T)",
       "grade": "Weak + Practice",
       "use": "in_use",
@@ -45,7 +45,7 @@
     },
     {
       "id": "6",
-      "short": "Unplanned RPE ≤ 6 (planned ≥ 8) on a working set: the coach offers the next achievable load up (+2–5%) or +1–2 reps.",
+      "short": "Easier than planned (rule T: logged effort ≤ target RPE − 2) on a working set: the coach offers the next achievable load up (+2–5%) or +1–2 reps. With no coach, the built-in rule offers the same, labelled.",
       "appliesWhen": "Mid-session (rule T)",
       "grade": "Practice",
       "use": "in_use",
@@ -125,7 +125,7 @@
     },
     {
       "id": "T",
-      "short": "Mid-session offer triggers compare logged effort with planned effort. Warm-ups and planned all-out/AMRAP sets never trigger. \"Too easy\" never fires above 12 reps.",
+      "short": "Mid-session offer triggers compare logged effort with each working set's target RPE (Ben's, else the coach's, else the plan's, else the built-in rule's): harder at ≥ target + 1.5 or reps below the range minimum (unless effort was ≤ target − 1), easier at ≤ target − 2. Warm-ups, drop sets and planned all-out/AMRAP sets never trigger. \"Too easy\" never fires above 12 reps.",
       "appliesWhen": "Every logged working set",
       "grade": "Moderate (rating error) + Practice",
       "use": "in_use",

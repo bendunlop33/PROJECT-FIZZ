@@ -7,6 +7,8 @@ import { MIGRATION_0004 } from './schema/0004-active-set';
 import { MIGRATION_0005 } from './schema/0005-gym-switch';
 import { MIGRATION_0006 } from './schema/0006-coach';
 import { MIGRATION_0007 } from './schema/0007-pre-start-drafts';
+import { upMigration0008 } from './schema/0008-deleted-workouts';
+import { MIGRATION_0009 } from './schema/0009-progress';
 import { MIGRATION_0010 } from './schema/0010-workout-gaps';
 
 /**
@@ -45,14 +47,8 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(5, 'gym-switch', MIGRATION_0005),
   sqlMigration(6, 'coach', MIGRATION_0006),
   sqlMigration(7, 'pre-start-drafts', MIGRATION_0007),
-  // MERGE NOTE: 8 and 9 are reserved for the delete-workouts (8) and
-  // workout-library (9) branches. They are no-ops here only so this branch's
-  // migration can keep its number, 10. Whoever merges replaces them with the
-  // real ones; no build with these placeholders may reach Ben's phone (a
-  // database migrated past them would never run the real 8 and 9). The iOS
-  // workflow's release check fails while they are empty (`emptyMigrations`).
-  sqlMigration(8, 'reserved-delete-workouts', ''),
-  sqlMigration(9, 'reserved-workout-library', ''),
+  { version: 8, name: 'deleted-workouts', up: upMigration0008 },
+  sqlMigration(9, 'progress', MIGRATION_0009),
   sqlMigration(10, 'workout-gaps', MIGRATION_0010),
 ];
 

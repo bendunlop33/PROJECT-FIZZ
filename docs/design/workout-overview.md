@@ -93,7 +93,7 @@ Canvas `bg.canvas`, side margin 20 (`components.screenMargin`). The list scrolls
    - `FLAG`: `⚠ Shoulder · 6 Oct`, with `Still hurts?` (`isPainCheckDue`) as a link to the pain flag sheet.
    - `COACH`: the stored one-line reason, in quotes, clamped to 2 lines (only once the coach is live, §5).
 
-   Actions are outline pills, 44 pt: `How to` (exercise guide), `History` (Progress → exercise; **deferred** until Progress has a per-exercise screen, review S4), `Why?` (the `TargetWhyPanel` content from active-workout §2.12, in a sheet), and `Undo` / `Use coach target` on coach rows (§5).
+   Actions are outline pills, 44 pt: `How to` (exercise guide), `History` (Progress exercise detail, built in Progress slice B: opens the series on the equipment this gym uses for the row, else a series at this gym, else the most used; shown only when the exercise has a finished workout), `Why?` (the `TargetWhyPanel` content from active-workout §2.12, in a sheet), and `Undo` / `Use coach target` on coach rows (§5).
 9. **Fixed bottom bar** on the canvas, with no rule above it and a 14 pt fade over the list:
    - **Check-in row** (only when due or reused). A `CHECK-IN` label on the left, five tiles `1`–`5` on the right (`CheckInScale`, 50 × 52 pt at 390 pt, `radius.pill`, `border.control` outline). The selected tile is `accent.subtle` fill + 2 pt `accent` border + `checkmark`, **never an accent fill**, so Start stays the only filled pill. There are no end labels: VoiceOver says "1 of 5, rough" … "5 of 5, great". Keep **≥ 20 pt** between the tiles and Start. The row fits by measured width (onLayout), not only the font scale: label and tiles on one line when `label + 12 + 274 pt` fits; otherwise the label sits above the tiles (375 pt phones, xLarge–xxxLarge text); at AX sizes, or with no room for the 274 pt of tiles, it collapses to `Check-in ›`.
    - `Start workout`: `PrimaryButton`, 60 pt pill, `accent` / `on.accent`, full width.
@@ -215,7 +215,7 @@ The page has no explanation lines, no reassurance and no rule names. Explanation
 
 1. **The extra tap.** It is 3 taps to the first set (was 2). Should a long-press on Today's `Start workout` → `Start now` skip the overview? Recommendation: don't build it, and re-check after two weeks of real use.
 2. **Check-in moves onto the overview** (amends check-in.md CI2). Ignoring the tiles counts as Skip, a score never starts the workout, and a low score's What's up? returns to the overview. CI1 is unchanged.
-3. **Swap/Skip today and reorder** moved to [overview-today-edits.md](overview-today-edits.md); "Lighter start?" is still deferred. `History` waits for a Progress per-exercise screen (none exists yet).
+3. **Swap/Skip today and reorder** moved to [overview-today-edits.md](overview-today-edits.md); "Lighter start?" is still deferred. `History` is built (Progress slice B, progress.md §2.7).
 
 Follow-ups for the product manager (not edited here):
 - flow-first-milestone tap counts

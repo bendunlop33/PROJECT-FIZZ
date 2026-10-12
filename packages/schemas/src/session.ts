@@ -272,6 +272,13 @@ export interface PlannedSet {
   distanceM?: number | null | undefined;
   rpe: number | null;
   rir: number | null;
+  /**
+   * Ben's own target RPE for this set (CHANGELOG 2026-10-11 "Offers follow
+   * the target RPE"), set for the set, its exercise or today with
+   * `set_target_rpe`. Wins over `rpe` (the coach's or the routine's) and the
+   * built-in rule's value. Absent = not overridden.
+   */
+  rpeOverride?: number | undefined;
   source?: PlannedSource | undefined;
   /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
   provenance?: TargetProvenance | undefined;
@@ -287,6 +294,7 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   distanceM: DistanceMetresSchema.nullable().optional(),
   rpe: RpeSchema.nullable(),
   rir: RirSchema.nullable(),
+  rpeOverride: RpeSchema.optional(),
   source: PlannedSourceSchema.optional(),
   provenance: TargetProvenanceSchema.optional(),
   /** How the load was fitted to the gym's equipment (GS-S1); absent = as intended. */
@@ -464,6 +472,19 @@ export const PauseIntervalSchema = z.object({
 });
 export type PauseInterval = z.infer<typeof PauseIntervalSchema>;
 
+/**
+ * Why a finished workout is in Recently deleted (delete-workouts §6.1, DW-D1).
+ * Set only while `status` is `deleted`; cleared by Restore. `purgeAfterUtc`
+ * is the end of the local day 30 days after `at` (in `at.tz`): from then the
+ * workout is no longer listed or restorable, whether or not the purge has run.
+ */
+export const SessionDeletionSchema = z.object({
+  at: ZonedTimestampSchema,
+  opId: OperationIdSchema,
+  purgeAfterUtc: UtcTimestampSchema,
+});
+export type SessionDeletion = z.infer<typeof SessionDeletionSchema>;
+
 export const WorkoutSessionSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
@@ -483,8 +504,12 @@ export const WorkoutSessionSchema = z.object({
    * `reverted`: an imported workout hidden by `Undo this import` (DX7). Like
    * `discarded`, it is excluded from history, Progress, "Last" values and
    * targets; the rows are kept.
+   * `deleted`: a finished workout Ben deleted (delete-workouts DW-D1). Out of
+   * every derived view like `reverted`, restorable for 30 days (`deletion`).
    */
-  status: z.enum(['active', 'finished', 'discarded', 'reverted']),
+  status: z.enum(['active', 'finished', 'discarded', 'reverted', 'deleted']),
+  /** Present exactly when `status` is `deleted`. */
+  deletion: SessionDeletionSchema.optional(),
   source: z.enum(['manual', 'import']),
   /** The import job this workout came in with (imported workouts only). */
   importJobId: IdSchema.optional(),
@@ -528,6 +553,12 @@ export const WorkoutSessionSchema = z.object({
   finishBy: ZonedTimestampSchema.optional(),
   /** The pre-start draft's edits this workout was started with (ADR 0022 §4). Absent = none. */
   todayEdits: SessionTodayEditsSchema.optional(),
+  /**
+   * Ben confirmed a long workout's time with `Count it` (progress.md PG25a),
+   * Your data. A workout over Progress's 4 h cap counts in `Time in gym` only
+   * once this is set. Absent = not confirmed. Changes no set and no time.
+   */
+  durationConfirmedAt: ZonedTimestampSchema.optional(),
 });
 export type WorkoutSession = z.infer<typeof WorkoutSessionSchema>;
 
@@ -578,6 +609,8 @@ export const SetSnapshotSchema = z.object({
   actual: SetValuesSchema.nullable(),
   /** Absent on entries written before exclusions existed, and when none were set (`Set 2 marked: spotted`). */
   exclusions: SetExclusionsSchema.optional(),
+  /** Ben's own target RPE for the set (`planned.rpeOverride`); absent when none, and on entries written before it existed. */
+  targetRpe: RpeSchema.optional(),
   version: z.int().min(1),
 });
 export type SetSnapshot = z.infer<typeof SetSnapshotSchema>;

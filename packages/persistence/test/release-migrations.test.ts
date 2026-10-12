@@ -15,11 +15,11 @@ describe('emptyMigrations', () => {
 });
 
 /**
- * Run by the iOS workflow's check job (`FIZZ_RELEASE_CHECK=1`) before any
- * `.ipa` is built. Skipped in the everyday suite while this branch carries
- * the reserved 8 and 9 (MERGE NOTE in migrations.ts).
+ * Runs in the everyday suite and in the iOS workflow's check job before any
+ * `.ipa` is built. The reserved 8 and 9 were replaced by the real
+ * deleted-workouts and progress migrations when main merged in.
  */
-describe.runIf(process.env.FIZZ_RELEASE_CHECK === '1')('release: no placeholder migrations', () => {
+describe('release: no placeholder migrations', () => {
   it('every migration in the build has SQL', () => {
     expect(emptyMigrations(MIGRATIONS), 'Placeholder migrations would ship: replace them with the real ones before building').toEqual([]);
   });

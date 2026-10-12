@@ -145,6 +145,21 @@ function topOf<T extends { load: { value: number } | null; reps: number | null }
   return best;
 }
 
+/**
+ * Whether the rule's next target is the load today's plan started with (its
+ * first working set, before any change made today). A hold after a miss on
+ * lighter sets (the rule holds the easiest load used) isn't `Same target`.
+ */
+function sameAsPlanned(state: SessionAggregate, sessionExerciseId: string, t: NextTargets): boolean {
+  const first = state.sets
+    .filter((x) => x.sessionExerciseId === sessionExerciseId && x.setType !== 'warmup' && x.status !== 'deleted')
+    .sort((a, b) => a.index - b.index)[0];
+  const planned = first === undefined ? null : (first.planned.coach?.before ?? first.planned).load;
+  const next = (t.sets.find((x) => x.setType === 'working' || x.setType === 'top') ?? t.sets[0])?.load ?? null;
+  if (planned === null || next === null) return planned === next;
+  return planned.unit === next.unit && planned.convention === next.convention && Math.abs(planned.value - next.value) < 1e-9;
+}
+
 function nextTargetText(t: NextTargets, ex: SessionExercise, eq: EquipmentInstance | null, held: boolean): string {
   const first = t.sets.find((s) => s.setType === 'working' || s.setType === 'top') ?? t.sets[0];
   if (!first) return 'No target';
@@ -178,8 +193,10 @@ function listedKind(t: NextTargets): NextTimeRow['kind'] | null {
       return 'no_load';
     case 'halted_pain':
       return 'pain';
-    case 'hold':
     case 'hold_after_miss':
+      // A miss below the range is always listed (build 108 F5): the hold is the rule's answer to it, not "same targets".
+      return 'held';
+    case 'hold':
       // Held because the session was incomplete or one side lagged; other holds aren't listed.
       return t.explanation.facts.some((f) => f.endsWith('; holding.') || f.includes('only when both sides do')) ? 'held' : null;
     case 'insufficient_data':
@@ -344,7 +361,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       exerciseId: ex.exerciseId,
       exerciseName: block.root.exerciseName,
       kind,
-      target: nextTargetText(result, ex, eq, kind !== 'change'),
+      target: nextTargetText(result, ex, eq, kind !== 'change' && (result.decision !== 'hold_after_miss' || sameAsPlanned(state, ex.id, result))),
       summary: result.explanation.summary,
       facts: result.explanation.facts,
       ruleName: rule.name,

@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-lat-prayer",
+  "tier": "rich",
+  "name": "Lat prayer",
+  "aliases": ["Lat prayers", "Cable lat prayer", "Kneeling lat prayer", "Kneeling cable lat prayer"],
+  "family": "straight_arm_pulldown",
+  "movementPattern": "vertical_pull",
+  "mechanic": "isolation",
+  "primaryMuscles": ["lats"],
+  "secondaryMuscles": ["rear_delts", "chest", "triceps", "core"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["cable_column"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-11"
+  },
+  "cues": {
+    "setup": [
+      "Pulley about collarbone height when standing",
+      "Bar or rope; a close neutral grip suits most",
+      "Kneel or stand a step back, facing the cable",
+      "Hinge forward, arms long overhead"
+    ],
+    "execution": [
+      "Sweep the handle down in an arc to your thighs",
+      "Keep your elbows nearly straight",
+      "Lift your chest just enough to clear the cable",
+      "Lean forward slowly into the stretch"
+    ],
+    "faults": [
+      "Don't bend your elbows into a pushdown",
+      "Don't yank out of the stretched position",
+      "Don't sit far back and turn it into a crunch",
+      "Don't let the stack pull your arms up fast"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Reverse slowly at the stretched, arms-overhead position: the shoulder is at the end of its range there.",
+      "If the shoulder is uncomfortable at the top, try another grip width or handle, or stop the stretch a little short.",
+      "Kneel on a mat and keep the cable clear of your face as the handle passes it.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "cable-straight-arm-pulldown", "name": "Straight-arm pulldown", "reason": "Standing with a fixed torso; a shorter range that is easier to control." }
+    ],
+    "progressions": [
+      { "key": null, "name": "Lat prayer with a pause in the stretch", "reason": "A short hold at the top, arms overhead, adds time under tension without more load." }
+    ],
+    "substitutions": [
+      { "key": "cable-straight-arm-pulldown", "name": "Straight-arm pulldown", "reason": "Same straight-arm lat pull, standing at a high pulley. Stack numbers aren't comparable." },
+      { "key": "dumbbell-pullover", "name": "Dumbbell pullover", "reason": "Similar straight-arm arc lying on a bench; load is one dumbbell." },
+      { "key": "cable-lat-pulldown", "name": "Lat pulldown", "reason": "Vertical pull for the lats with the elbows bending; more weight and more biceps." },
+      { "key": "cable-single-arm-pulldown", "name": "Single-arm pulldown", "reason": "One arm at a time on the cable; good when one side lags." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view at chest height of a kneeling figure facing the cable column, pulley at about standing collarbone height on the far left. The cable line from the pulley to the hands must stay visible so the arc reads clearly.",
+    "keyPositions": [
+      {
+        "label": "Stretch",
+        "describe": "Kneeling about a step back from the column, hips hinged so the torso leans well forward. Arms reach up and forward toward the pulley, elbows almost straight, lats stretched.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 50, "hipFlexion": 60, "kneeFlexion": 90, "shoulderFlexion": 170, "elbowFlexion": 15 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Handle sweeping down past the face in an arc, elbows still nearly straight. Chest lifting a little so the cable clears the head.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 35, "hipFlexion": 40, "kneeFlexion": 90, "shoulderFlexion": 90, "elbowFlexion": 15 }
+      },
+      {
+        "label": "Finish",
+        "describe": "Handle at or just past the thighs, arms by the body, elbows still nearly straight. Torso more upright than at the start.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 20, "hipFlexion": 25, "kneeFlexion": 90, "shoulderFlexion": 0, "elbowFlexion": 15 }
+      }
+    ],
+    "ikHints": [
+      "Knees and shins fixed on the floor",
+      "Hands fixed to the handle; cable runs straight from the pulley to the hands",
+      "Elbow angle stays nearly constant through the rep"
+    ],
+    "barPath": "An arc from in front of and above the head down to the thighs",
+    "tempo": { "downMs": 1000, "holdMs": 300, "upMs": 2000 },
+    "props": ["cable_mid_anchor", "short_straight_bar", "floor_mat"],
+    "emphasise": [
+      "Arms stay nearly straight; the shoulders do the work",
+      "Torso leans forward into the stretch and lifts to finish",
+      "Slow turn at the stretched position"
+    ],
+    "doNotShow": ["Elbows bending into a pushdown", "Cable hitting the face", "Fast bounce at the stretch"]
+  },
+  "sources": [
+    {
+      "url": "https://us.humankinetics.com/blogs/excerpt/lat-prayer-exercise",
+      "title": "Human Kinetics excerpt from Bodybuilding Anatomy (Israetel, Feather, Guevarra): Lat Prayer Exercise",
+      "checkedOn": "2026-10-11",
+      "supports": "cues.setup[0-1,3]; cues.execution[0-3]; cues.faults[1]; safety.notes[0-2]; primaryMuscles; secondaryMuscles (rear_delts, chest)"
+    },
+    {
+      "url": "https://mennohenselmans.com/lat-prayers/",
+      "title": "Menno Henselmans: Lat prayers – the perfect exercise for the lats",
+      "checkedOn": "2026-10-11",
+      "supports": "cues.setup[2] (kneeling for heavier loads); cues.execution[1]; guideBrief.keyPositions (lean forward at the stretch, more upright at the finish)",
+      "note": "The page returned 403 to the fetcher. Content was seen only through a search-result summary. Supporting source only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "key",
+      "note": "Own entry rather than an alias of cable-straight-arm-pulldown: the lat prayer uses a lower pulley, a moving torso and usually a kneeling stance, so its stack numbers are higher and not comparable with the standing straight-arm pulldown. Ben may prefer to merge them."
+    },
+    {
+      "field": "cues.setup[2]",
+      "note": "The Human Kinetics description is standing; kneeling is a common variant for heavier loads (Henselmans, seen through a search summary only). Whether Ben kneels or stands is not known."
+    },
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets, not measured data."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

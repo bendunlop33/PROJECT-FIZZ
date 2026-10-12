@@ -1,9 +1,9 @@
 /**
  * Schema version 10: workout gaps (backlog §4.1; active-workout §4.4,
- * exercise-library §4.6, ADR 0011). Frozen once released. ALTERs only, so it
- * can't clash with a table rebuild in another branch's migration (8 and 9
- * are taken by the delete-workouts and workout-library branches; on this
- * branch they are placeholders, see `migrations.ts`).
+ * exercise-library §4.6, ADR 0011). Frozen once released. ALTERs only, on
+ * `session_exercises` and `session_sets`, after migration 8's `sessions`
+ * rebuild (deleted workouts) and migration 9 (Progress), so neither one's
+ * frozen column list or triggers are touched.
  *
  * - `session_exercises.note`, `session_sets.note`: Ben's notes (Your data).
  *   NULL = none, every row before this version.

@@ -217,3 +217,15 @@ describe('newerWorkoutData: a slow reload never overwrites a newer write', () =>
     expect(calls.filter((c) => !/^setData\(\(\w+\) => (\(.*\? \w+ : )?(newerWorkoutData|withCommandResult)\(/.test(c))).toEqual([]);
   });
 });
+
+describe('exerciseInfo survives whichever read wins (review target-rpe N2)', () => {
+  it('a newer read without an exercise’s info keeps the info an older read found, and the other way round', () => {
+    const agg = startFixture().state;
+    const older = { aggregate: agg, exerciseInfo: { a: null, b: null } } as unknown as ActiveWorkoutData;
+    const newer = { aggregate: { ...agg, revision: agg.revision + 1 }, exerciseInfo: { a: null } } as unknown as ActiveWorkoutData;
+    const shown = newerWorkoutData(older, newer);
+    expect(shown !== null && shown !== 'loading' ? Object.keys(shown.exerciseInfo ?? {}).sort() : null).toEqual(['a', 'b']);
+    const kept = newerWorkoutData(newer, older);
+    expect(kept !== null && kept !== 'loading' ? [kept.aggregate.revision, Object.keys(kept.exerciseInfo ?? {}).sort()] : null).toEqual([agg.revision + 1, ['a', 'b']]);
+  });
+});

@@ -49,8 +49,9 @@ import { CoachSlot } from './CoachSlot';
 import { MidSwapSheet } from './MidSwapSheet';
 import { NoteSheet } from './NoteSheet';
 import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './WorkoutCoach';
+import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
-import { exerciseMenu } from '../../workout/exercise-menu';
+import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
@@ -135,6 +136,12 @@ export function WorkoutScreen() {
   const whyEvent = useCallback((e: WhyEvent) => {
     setWhy((cur) => whyPanelReducer(cur, e));
   }, []);
+  // The workout as it is now, for action sheets that dispatch after Ben picks: their version is read
+  // when the command is sent, not when the sheet opened (review target-rpe N4 / r2 N6).
+  const latestData = useRef(data);
+  useEffect(() => {
+    latestData.current = data;
+  }, [data]);
   const played = useRef(new Set<string>());
   const [afterDismiss] = useState(() => createAfterDismiss());
   const tickedFor = useRef<string | null>(null);
@@ -517,6 +524,16 @@ export function WorkoutScreen() {
     },
     data === 'loading' || data === null ? null : data.aggregate,
   );
+  // F4: back from correcting a logged set's reps or effort: the offer check runs on the saved correction.
+  const corrected = route.params?.corrected;
+  const afterLog = coach.afterLog;
+  useEffect(() => {
+    if (corrected === undefined || !firstTime(`corrected:${corrected.key}`)) return;
+    void reload().then((d) => {
+      const id = correctedSetToCheck(corrected, d?.aggregate);
+      if (d && id !== null) afterLog(d.aggregate, id);
+    });
+  }, [corrected?.key]);
   // An unanswered offer goes when the rest ends (§3.2).
   const restRunning = data !== 'loading' && data !== null && data.aggregate.restTimer?.status === 'running';
   const clearOffer = coach.clearOffer;
@@ -718,11 +735,12 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, f.coachActionId !== null, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable });
+    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
       if (action === 'undo_coach' && f.coachActionId !== null) coach.undo(f.coachActionId);
+      if (action === 'target_rpe') pickTargetRpe(f);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'swap') void openSwap(f);
       if (action === 'notes') setNoteFor({ sessionExerciseId: f.sessionExerciseId, exerciseName: f.exerciseName, note: f.note });
@@ -797,6 +815,25 @@ export function WorkoutScreen() {
       return;
     }
     void go();
+  }
+
+  /** Ben's own target RPE (CHANGELOG 2026-10-11): a value, then this set, this exercise or today. Saved on the workout (versioned). */
+  function pickTargetRpe(f: FocusView) {
+    const values = targetRpeMenu(f.targetRpe);
+    ActionSheetIOS.showActionSheetWithOptions({ title: 'Target RPE', options: values.options, cancelButtonIndex: values.cancelButtonIndex }, (i) => {
+      const rpe = values.valueAt(i);
+      if (rpe === undefined) return;
+      const scopes = targetRpeScopeMenu(f.setId, f.sessionExerciseId);
+      ActionSheetIOS.showActionSheetWithOptions({ options: scopes.options, cancelButtonIndex: scopes.cancelButtonIndex }, (j) => {
+        const scope = scopes.scopeAt(j);
+        if (scope === null) return;
+        const current = latestData.current;
+        const expectedVersion = current !== null && current !== 'loading' && current.aggregate.session.id === session.id ? current.aggregate.session.version : session.version;
+        void run({ type: 'set_target_rpe', at: services.now(), opId: newUuid(), expectedVersion, scope, rpe }).then((r) => {
+          if (!r.ok) showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message });
+        });
+      });
+    });
   }
 
   async function addSet(sessionExerciseId: string) {
@@ -1284,7 +1321,7 @@ export function WorkoutScreen() {
         />
       </View>
 
-      <AdjustRow coach={coach} sessionId={session.id} onPain={() => void painFromAdjust(focus)} />
+      <AdjustRow coach={coach} sessionId={session.id} sessionExerciseId={focus.sessionExerciseId} onPain={() => void painFromAdjust(focus)} />
       {/* In Ready the slot sits under the header; offers only ever show during rest (§2.3). */}
       {!resting && coach.slot !== null && coach.slot.kind !== 'offer' ? <CoachSlot>{<CoachSlotContent coach={coach} />}</CoachSlot> : null}
 

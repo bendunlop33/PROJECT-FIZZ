@@ -28,6 +28,8 @@
 > - **Components:** a compact `ParamChip` size for digit and weekday chips (§9.17); the value-provenance tag `Default` (§9.28); new `TrainingContextCard` (§9.61), `RuleActivityTag` (§9.62), `ParameterRow` (§9.63) and `StepCardList` (§9.64); index rows (§11).
 > - **No new colour, type, spacing or timing values; one accent kept.** On/off-now tags and percentages never use status colours, because "off" isn't a warning and a percentage isn't good or bad.
 
+> **Revision 2026-10-11 (Progress v1.0, [progress.md](progress.md)).** For Ben's analytics request: new components `WindowPicker` (§9.69), `WeekBars` (§9.70), `DayStrip` (§9.71), `FrequencyRow` (§9.72) and `RepTable` (§9.73); `StatStrip` (§9.65) is reused on Progress; `TrendChart` gains a hollow point for FitNotes sessions on a combined series and a bar variant for volume (§9.23). New chart sizes `chart.weekBars`, `chart.countBar`, `chart.dayCell` (§4.1). Number formats for long totals and per-week averages (§3). A Direction D note on chart selection (§2.1): D's accent is close to `text.primary`, so selection is shown by size, ring and guide line. Charts are drawn with Skia, with text as native overlays (§9.23). **No new colour values; one accent kept.**
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -126,6 +128,8 @@ Rules:
 - The trend line is never `accent`. `accent` appears in a chart only for the selected point.
 - Up/down changes never use `status.done` or `status.danger`: a lower number isn't a failure (it may be a deload). Use arrow icons and words in `text.secondary`.
 - Meaningful graphics (line, points, bars, band edges, selected ring) need ≥ 3:1 against `bg.surface` and `bg.canvas` in both modes: `text.primary` and `text.secondary` exceed 7:1, `border.control` is 3.4:1 (dark) and 3.7:1 (light), `accent` exceeds 5.8:1. Re-check if any alias target changes.
+- (Revision 2026-10-11) **Direction D:** `accent` (`#EDE5DA` dark) is almost the same as `text.primary` (`#F3EEE8`), so `chart.selected` can't be told apart from the line by hue. In D, a selected point is shown by **size** (`chart.point` selected size), a 2pt ring with a 2pt `bg.canvas` gap inside it, and the 1pt vertical guide line, plus the selection panel text. The same structure is used in every direction, so it never depends on hue.
+- (Revision 2026-10-11) **Hollow points** (FitNotes sessions on a combined series, progress.md PG32): `chart.point` diameter, 2pt stroke in `chart.point`, filled with the surface colour behind the chart. Shape, not colour, carries the difference, and a one-line legend (`● Logged here  ○ FitNotes`) sits under the chart.
 
 ### 2.2 Surfaces outside the app (revision 2026-10-08, consolidation)
 
@@ -246,6 +250,7 @@ Rules:
   - Money (revision 2026-10-08, consolidation): USD with two decimals and tabular numerals (`$1.42`, `$5.00`). Any figure the app worked out itself carries the word `estimate` on the same line or in its heading (`October (estimate)`), plus the price-table date (ai-connection.md §2.9).
   - Dates in proposals and plan changes are local and written in full (`Thu 15 Oct`), never "tomorrow" (change-review.md §5).
   - Counts in data screens use thousands separators (`4,105 sets`), tabular.
+  - (Revision 2026-10-11, Progress) Totals of time: `8 h 32 min`; from 100 h, whole hours (`104 h`). Averages per week: one decimal (`2.1 a week`, `3.3` in a `PER WEEK` column). A missing value is `—`, never `0 min`. Estimated 1RM values: `≈126.5 kg` with `Est.` in the label, heading or column.
 
 ---
 
@@ -283,6 +288,9 @@ Layout:
 | `chart.markerLane` | 28 tall | Marker row under the x-axis |
 | `chart.bandBar` | 12 tall | `VolumeBandRow` bar |
 | `chart.weekBar` | 8 wide, gap 4 | Endurance weekly bars |
+| `chart.weekBars` | 64 tall plot; bar width = (plot width − gaps) ÷ bar count, max 28; gap 8; radius 4 top corners | `WeekBars` sessions per week (Progress, revision 2026-10-11) |
+| `chart.countBar` | 6 tall, radius 3 | `FrequencyRow` bar (revision 2026-10-11) |
+| `chart.dayCell` | 10 diameter glyph in a ≥ 32 wide column | `DayStrip` (not interactive; the card is the button) (revision 2026-10-11) |
 
 Charts never animate their drawing, values or axes. Changing a chip redraws at once.
 
@@ -726,6 +734,8 @@ Each component lists its anatomy, sizes, states and accessibility. Screen specs 
 - Selection: tap anywhere in the plot selects the nearest point by date (the plot is the hit area); drag scrubs with `haptic.step`. Selected point uses `chart.selected` ring + a 1pt guide line.
 - VoiceOver: the chart is one adjustable element; its label is the summary, swipe up/down moves between points and reads each. A visible `Show as table` button always sits under the panel.
 - No animation on load, on chip changes or on selection.
+- **Drawing (revision 2026-10-11).** Drawn with `@shopify/react-native-skia` (already in the app); no chart library. Lines, points, bars and gridlines are Skia paths; **all text (axis labels, units, counts, dates) is React Native `Text` positioned over the canvas**, so Dynamic Type, Bold Text and tabular numerals apply. The canvas is hidden from VoiceOver; a wrapping view carries the summary and the adjustable actions. Layout maths (scales, ticks, gap breaks, nearest point) is a pure, tested helper.
+- **Bar variant** (revision 2026-10-11): for amounts such as volume. Bars in `chart.bar`, one per session, same axes, selection and table; no line.
 - **`pointsOnly` variant** (revision 2026-10-09, check-in.md §2.7): for self-reported 1–5 ratings only. Points (`chart.point`) with **no connecting line**, no band, no average and no marker lane. The y-axis is fixed at 1–5 with the end words on the axis (`1 rough`, `5 great`); x-axis as normal. The heading says `(your own rating)`. Selection, `Show as table` and VoiceOver work as above; the VoiceOver summary lists counts per value, never a mean.
 
 ### 9.24 Chart marker (`ChartMarker`)
@@ -980,6 +990,18 @@ The % is never coloured: a bigger step isn't shown as bad. Rows aren't tappable 
 
 **9.68 `SubstituteRow` target variant** (overview Swap sheet). The `SubstituteRow` frame (§9.35), ≥ 64pt, whole row one button: line 1 name `type.headline` (+ trailing `⚠ May hurt` `AvailabilityTag` when flagged); line 2 equipment kind · `last …` actual or `No history`, `type.callout` `text.secondary` tabular; trailing target `type.body` tabular under a `TARGET` column header. No reason lines, no scores. At AX1+ the target stacks under line 2.
 
+#### Progress v1.0 (revision 2026-10-11; owner: progress.md)
+
+**9.69 `WindowPicker`.** A full-width segmented control, 44pt tall: `7 days | 14 days | 30 days | 60 days`. Selected segment `accent.subtle` with `text.primary` label (`type.label`, tabular); others `text.secondary`. `haptic.step` on change. A dates line follows it (`type.callout`, `text.secondary`, `12 Sep – 11 Oct`). At AX1+ (or whenever a label would wrap) it becomes a menu button `Last 30 days ▾` (≥ 44pt) with the four options. VoiceOver: "Window, 30 days, 3 of 4." Changing it never animates the cards below.
+
+**9.70 `WeekBars`.** Sessions per Monday–Sunday week inside the window. Plot `chart.weekBars`, scaled 0 to max(3, the largest count) so one session never fills the plot; bars `chart.bar`; a bar at 0 is drawn as a 2pt `chart.grid` stub so the week is visibly empty, not missing. The count sits above every bar (`type.label`, tabular, `text.primary`; `0` in `text.tertiary`). Week labels under the bars (`type.label`, `chart.axisText`): first and last always, others when there is room. The first label is the first date inside the window. No y-axis, no gridlines. Not interactive by itself (its card is the button). One VoiceOver element listing each week and count. At AX1+: a list, `Week from 15 Sep · 2`.
+
+**9.71 `DayStrip`.** One row of 7 day columns (two rows for 14 days, each with its first date at the leading edge in `type.label` `text.secondary`). Each column: weekday letter (`type.label`, `text.secondary`; today bold `text.primary`), then the glyph: `circle.fill` in `text.primary` (`chart.dayCell`) for a day with a workout, `2` (tabular `type.label`) for two or more, a 4pt `text.tertiary` dot for none. Shapes and numbers carry the meaning, not colour. Not interactive. VoiceOver: one sentence naming the workout days. At AX1+: a list of workout days only (`Wed 8 Oct · 1 workout`).
+
+**9.72 `FrequencyRow`.** One button row, ≥ 44pt. Leading: group name (`type.body`). Trailing: two right-aligned tabular columns, sessions and sets (`type.body`; fractional sets with `½`), under column headers in `type.sectionLabel`; an optional third `PER WEEK` column on the Muscles screen. Under the name, a `chart.countBar` bar in `chart.bar` scaled 0 to the largest sets value in the current list, on a `bg.raised` track. Zero rows: numbers `0` in `text.tertiary`, no bar fill. Expandable variant (Muscles screen): chevron `›` / `⌄`, then `Last trained 8 Oct` and contributor lines (`type.callout`, `text.secondary`, tabular, `Bench press  8 sets × 1 = 8`). The numbers are always shown, so the bar is never the only carrier. At AX1+: numbers on their own line under the name, no bar. VoiceOver: "Triceps, 3 sessions, 8 and a half sets."
+
+**9.73 `RepTable`.** A plain table with a two-segment toggle in its header (`By weight | By reps`, 44pt). Rows ≥ 44pt, each a button to the workout. Columns `type.body` tabular: *By weight* `Weight` · `Reps` · `Date`; *By reps* `Reps` · `Heaviest` · `Date`, with a superseding note `from 6 reps` in `type.callout` `text.secondary`, and `—` for a rep count with no set. FitNotes rows carry a `Tag` `FitNotes`. Actual values only: an estimated column is never mixed in. Shows 10 rows, then `Show all (17)`. At AX1+ each row stacks (value line, date line). VoiceOver per row: "5 reps, heaviest 102.5 kilograms, from a set of 6, 8 October."
+
 #### Sound asset
 
 `sound.restEnd` is the file `rest-end.caf` (≤ 2 s), used by both the in-app chime and the rest-end notification sound.
@@ -1035,3 +1057,4 @@ Use the canonical name in new specs. Aliases are kept so older specs stay readab
 | `RuleActivityTag` | §9.62 | "on/off-now tag", "Applies now" (revision 2026-10-09) |
 | `ParameterRow` | §9.63 | "Defaults" rows, "default value row" (revision 2026-10-09) |
 | `StepCardList` | §9.64 | "Next steps at <gym>", "step card" display (revision 2026-10-09) |
+| `WindowPicker`, `WeekBars`, `DayStrip`, `FrequencyRow`, `RepTable` | §9.69–9.73 | Progress v1.0 (revision 2026-10-11). `FrequencyRow` replaces `VolumeBandRow` (§9.25) on Progress while the guide band is deferred; `DayStrip` is the windowed form of `WeekStrip` (§9.26); `RepTable` is the research's "rep records" / "rep-max table" |

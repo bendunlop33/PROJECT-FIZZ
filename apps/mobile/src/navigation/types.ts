@@ -44,6 +44,34 @@ export type ProfileStackParams = {
   PastImports: undefined;
 };
 
+/** The Progress tab's stack (progress.md §2.1, slice A). */
+export type ProgressStackParams = {
+  ProgressHome: undefined;
+  /** `group`: the row to open expanded (a body-part group such as `Chest`, or `push` / `pull` / `legs` / `core` / `other`). */
+  ProgressMuscles: { group?: string };
+  /** Exercises list (slice B, §2.6). */
+  ProgressExercises: undefined;
+  /** Exercise detail inside the Progress tab (slice B, §2.7). */
+  ProgressExercise: ExerciseDetailParams;
+};
+
+/**
+ * Exercise detail (progress.md §2.7). `sessionId`: open on the series with
+ * that workout and select its point (a home record, a past workout's
+ * Summary). `equipmentId`: prefer that equipment's series (Workout overview).
+ */
+export interface ExerciseDetailParams {
+  exerciseId: string;
+  sessionId?: string;
+  /** With `sessionId`: the Summary row tapped. */
+  sessionExerciseId?: string;
+  equipmentId?: string;
+  /** Else a series at this gym (Workout overview `History`). */
+  gymId?: string;
+  /** Shown in the header while loading. */
+  name?: string;
+}
+
 export type ImportQuestionKind = 'per_hand' | 'total' | 'bodyweight' | 'unit' | 'effort' | 'dates' | 'gym';
 export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
 
@@ -53,7 +81,7 @@ export type TabParams = {
    * `undoRoutine`: the toast offers Undo for a routine deleted from the Workout overview.
    */
   Today: { toast?: string; undoRoutine?: { id: string; version: number } } | undefined;
-  Progress: undefined;
+  Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
 };
 
@@ -64,7 +92,8 @@ export type RootStackParams = {
   Tabs: NavigatorScreenParams<TabParams> | undefined;
   /** Active workout (set, rest). `toast` after a start with a check-in (check-in.md §2.6). */
   /** `checkGym`: open the gym card for that gym (`[Use changes today]`, gym-editor §4.9); `nonce` makes it one-off. */
-  Workout: { toast?: WorkoutToastParam; checkGym?: { gymId: string; nonce: string } } | undefined;
+  /** `corrected`: a logged set's numbers were corrected; the coach offer check runs on it again (build 108 F4). */
+  Workout: { toast?: WorkoutToastParam; checkGym?: { gymId: string; nonce: string }; corrected?: { setId: string; key: string } } | undefined;
   /** Pre-workout check-in sheet: before a start, or editing a saved one. */
   /**
    * `repeatOf`: start by repeating that finished workout (routines.md RT4). `nextOf`: its next session, with next targets (audit B2).
@@ -91,7 +120,8 @@ export type RootStackParams = {
   EditSet: { sessionId: string; setId: string };
   /** `back`: opened from history (Progress), so Done goes back there rather than to Today. */
   /** `justFinished`: reached by Finish itself; any other visit (Today, Progress) is static. */
-  Summary: { sessionId: string; back?: boolean; justFinished?: boolean };
+  /** `editTimes`: open straight into the time correction and go back when it closes (Progress `Edit times`, progress.md §2.3). */
+  Summary: { sessionId: string; back?: boolean; justFinished?: boolean; editTimes?: boolean };
   /**
    * Pain flag sheet (active-workout §2.14.4). From a set card, the workout
    * exercise makes `Before` / `Since` use its equipment.
@@ -100,6 +130,8 @@ export type RootStackParams = {
   AddGym: undefined;
   /** `Start from a past workout` list. */
   PastWorkouts: undefined;
+  /** Recently deleted (delete-workouts §2.5): from Past workouts' footer and Data & backup. */
+  RecentlyDeleted: undefined;
   /** Repeat a finished workout (routines.md §2.4). */
   Repeat: { sessionId: string };
   /**
@@ -108,6 +140,8 @@ export type RootStackParams = {
    * workout); never by a trigger, timer or reply. `focus`: the field gets focus.
    */
   Coach: { entry: CoachEntry; focus?: boolean };
+  /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
+  ExerciseProgress: ExerciseDetailParams;
 };
 
 export type WorkoutToastParam =

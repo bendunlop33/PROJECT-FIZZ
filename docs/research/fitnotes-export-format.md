@@ -190,6 +190,7 @@ Header notes:
 - `Category` is the exercise's muscle group. It is user-editable and can be reordered or deleted [Doc, exercises].
   - Real values: `Legs, Chest, Shoulders, Triceps, Back, Biceps` [Sample].
   - Don't use it to classify rows. An empty category is possible in FitNotes 2 files [Code: synthetic test].
+  - (Implementation note, 11 Oct 2026: the importer uses it only as a hint that drops or ranks name suggestions, never to match or classify; see ADR 0016.)
 - `Comment` (Android) is a **set** comment [Doc, workout_tracking]. It is probably present only if comments were included in the export. Evidence [Code/Reports]:
   - rosenpin's README;
   - FitNotes2Hevy treats it as optional;

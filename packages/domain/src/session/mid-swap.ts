@@ -153,7 +153,12 @@ export function buildSwapExerciseCommand(input: SwapCommandInput): SwapCommandRe
         const fitted = slot?.sets[i];
         // A dropped load (can't be made here, past the max) stays blank: Ben enters it (rule 4).
         const load = fitted === undefined || fitted.outcome === 'dropped' ? null : fitted.load;
-        return { newSetId: input.newId(), fromSetId: r.set.id, planned: { ...r.planned, load } };
+        // Target RPE as for an exercise added mid-workout (coach-adjustments §4.8, CHANGELOG 2026-10-11): the
+        // substitute's own coach or plan target, else the built-in rule's for its row. Ben's override was set
+        // on the replaced exercise's sets and stays on them (Undo swap brings it back).
+        const planned: PlannedSet = { ...r.planned, load };
+        delete planned.rpeOverride;
+        return { newSetId: input.newId(), fromSetId: r.set.id, planned };
       }),
     },
   };

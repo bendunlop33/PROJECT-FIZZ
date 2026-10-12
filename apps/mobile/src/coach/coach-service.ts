@@ -10,8 +10,11 @@
  */
 
 import {
+  actionIdFor,
+  applyBuiltInAdjustment,
   asksForMoreSets,
   buildCoachContext,
+  builtInAdjustOpId,
   createAdjustExecutor,
   createNextTargetsExecutor,
   createSessionReadExecutor,
@@ -30,23 +33,31 @@ import {
   type CoachTurnResult,
   type ContextDescription,
   type NextTargetTap,
+  type OpenedFrom,
 } from '@fizz/coach';
 import {
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
   evaluateCoachTrigger,
+  evaluateSessionAdjustment,
   exercisesNamedForPain,
+  isInHistory,
   isTriggerKind,
   lastAdjustedVersion,
   nextSessionBases,
   nextTargetFitsSource,
   nextTargetSourceBasis,
   painFlagChoices,
+  ruleTargetRpes,
+  progressWindowAt,
   shouldShowCoachOffer,
+  targetRpeOf,
   todayAdjustmentIds,
   toMs,
   unspecifiedPain,
   type CoachTrigger,
   type OfferLogEntry,
+  type SessionAdjustment,
+  type SessionAdjustmentTrigger,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 
@@ -62,6 +73,7 @@ import type {
   CoachTurnKind,
   NextSessionTargetRecord,
   PlannedSet,
+  ProgressWindowDays,
   SessionAggregate,
   SetType,
   UserProfile,
@@ -71,8 +83,19 @@ import type {
 /** Where the sheet was opened from (coach-sheet §1). */
 export type CoachEntry =
   | { kind: 'today' }
+  /** Progress (progress.md §2.1, §4.4): a general thread, framed by the window on screen. */
+  | { kind: 'progress'; days: ProgressWindowDays }
+  /** Exercise detail (progress.md slice B): a general thread framed by the exercise, its series and the chart's dates. */
+  | { kind: 'progress_exercise'; exerciseName: string; seriesLabel: string; from: string; to: string }
   | { kind: 'workout'; sessionId: string }
   | { kind: 'summary'; sessionId: string };
+
+/** Today and Progress: no workout attached; the general thread. */
+export type GeneralEntry = Extract<CoachEntry, { kind: 'today' | 'progress' | 'progress_exercise' }>;
+
+export function isGeneralEntry(entry: CoachEntry): entry is GeneralEntry {
+  return entry.kind === 'today' || entry.kind === 'progress' || entry.kind === 'progress_exercise';
+}
 
 /** Connection state as the coach UI needs it: the stored status, plus `offline` after a request failed for lack of network. */
 export type CoachStatus = TextCoachState['status'];
@@ -80,6 +103,59 @@ export type CoachStatus = TextCoachState['status'];
 export interface CoachAvailability {
   status: CoachStatus;
   model: string | null;
+}
+
+/**
+ * An offer on the rest card (path B). `coach`: Adjust asks the coach.
+ * `rule`: the coach can't answer, so the built-in rule offers its own
+ * change (CA6 revised, build 108 F2), shown as `change` and applied only on
+ * Ben's Adjust, with Undo.
+ */
+export type WorkoutOffer = CoachTrigger & {
+  sessionExerciseId: string;
+  by: 'coach' | 'rule';
+  change: string | null;
+  /**
+   * The rule's offer only: what it was worked out on and would write (review
+   * coach-fallback S2). `Adjust` applies only if the change worked out again
+   * now touches the same sets with the same targets. Null for the coach's.
+   */
+  basis: RuleOfferBasis | null;
+};
+
+export interface RuleOfferBasis {
+  /** The workout's version the offer was computed on (recorded; a rest or set-value edit moves it on without changing the offer). */
+  baseVersion: number;
+  touchedSetIds: string[];
+  /** Each changed set's new target, in order (canonical JSON). */
+  targets: string;
+}
+
+function basisOf(a: SessionAdjustment): RuleOfferBasis {
+  const targets = a.plan.flatMap((e) => e.changes.flatMap((c) => (c.after === null ? [] : [{ setId: c.setId, after: c.after }])));
+  return { baseVersion: a.args.baseVersion, touchedSetIds: [...a.touchedSetIds], targets: JSON.stringify(targets) };
+}
+
+/** Whether the change worked out now is the one Ben was shown (rule 5: never applied to different sets or targets). */
+export function sameRuleChange(shown: RuleOfferBasis, now: RuleOfferBasis): boolean {
+  return shown.touchedSetIds.length === now.touchedSetIds.length && shown.touchedSetIds.every((id, i) => now.touchedSetIds[i] === id) && shown.targets === now.targets;
+}
+
+/** What Ben's `Adjust` on the rule's offer did. */
+export type RuleOfferResult =
+  | { status: 'applied'; record: ActionRecord }
+  /** The workout moved on so the change Ben saw no longer fits it: nothing changed. */
+  | { status: 'stale' }
+  /** Nothing the rule can change any more (say, the sets were logged): nothing changed. */
+  | { status: 'unchanged' };
+
+interface OfferCheckInput {
+  aggregate: SessionAggregate;
+  setId: string;
+  resting: boolean;
+  /** The coach can answer now (`availability().status === 'ok'`). Otherwise the built-in rule offers. */
+  coachReachable: boolean;
+  pending: boolean;
 }
 
 export interface CoachServiceDeps {
@@ -113,6 +189,15 @@ export const OFFLINE_HOLD_MS = 60 * 1000;
 /** Exercise IDs Ben named in his words, matched to the workout's exercises (for rule 9's `messagePain`). */
 export function namedExercises(text: string, session: SessionAggregate | null): string[] {
   return session === null ? [] : exercisesNamedForPain(text, session.exercises);
+}
+
+/**
+ * Whose actions `get_recent_actions` reads: a workout's or summary's thread reads that workout's only,
+ * whether or not it's still in context (a deleted one then reads none); Today and the Progress entries
+ * (general threads) read the owner's (review r3 S1). The store leaves out actions on workouts out of context either way.
+ */
+export function recentActionsScope(entry: CoachEntry): string | null {
+  return isGeneralEntry(entry) ? null : entry.sessionId;
 }
 
 export function createCoachService(deps: CoachServiceDeps) {
@@ -152,15 +237,18 @@ export function createCoachService(deps: CoachServiceDeps) {
   }
 
   async function sessionOf(entry: CoachEntry): Promise<SessionAggregate | null> {
-    if (entry.kind === 'today') return null;
-    return repos().sessions.get(entry.sessionId).catch(() => null);
+    if (isGeneralEntry(entry)) return null;
+    const a = await repos().sessions.get(entry.sessionId).catch(() => null);
+    // Only the live workout or one in history is in the coach's context (delete-workouts §5): a deleted,
+    // discarded or reverted one isn't; its thread keeps its text.
+    return a !== null && (a.session.status === 'active' || isInHistory(a.session)) ? a : null;
   }
 
   /** CS1: a workout's own thread; outside a workout the last general thread if used in the last 6 hours. */
   async function resolveThread(entry: CoachEntry): Promise<string | null> {
     const p = await owner();
     const threads = await coachStore().listThreads(p.id);
-    if (entry.kind !== 'today') return threads.find((t) => t.sessionId === entry.sessionId)?.id ?? null;
+    if (!isGeneralEntry(entry)) return threads.find((t) => t.sessionId === entry.sessionId)?.id ?? null;
     const recent = threads.find((t) => t.sessionId === null);
     if (recent === undefined) return null;
     return toMs(deps.now().utc) - toMs(recent.updatedAtUtc) <= GENERAL_REUSE_MS ? recent.id : null;
@@ -196,25 +284,27 @@ export function createCoachService(deps: CoachServiceDeps) {
     return (await deps.builtInNextTargets(session.session.id).catch(() => null)) ?? new Map();
   }
 
-  async function executorsFor(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null, gymName: string | null, checkIn: CheckIn | null, benAskedForMoreSets: boolean, onlySessionExerciseId: string | null = null): Promise<CoachExecutors> {
+  async function executorsFor(p: UserProfile, entry: CoachEntry, kind: CoachTurnKind, session: SessionAggregate | null, gymName: string | null, checkIn: CheckIn | null, benAskedForMoreSets: boolean, onlySessionExerciseId: string | null = null): Promise<CoachExecutors> {
     const store = coachStore();
     const base: CoachExecutors = createStoreExecutors({
       store,
       exercises: { exerciseName: async (id) => (await repos().exercises.get(id).catch(() => null))?.name ?? session?.exercises.find((e) => e.exerciseId === id)?.exerciseName ?? null },
-      sessionId: session?.session.id ?? null,
+      // A workout's thread reads only that workout's actions, even when the workout is out of context
+      // (deleted): the store then returns none, rather than every action Ben has (review r3 S1).
+      sessionId: recentActionsScope(entry),
     });
     if (session === null) return base;
     const load = () => repos().sessions.get(session.session.id);
     const painFlags = () => repos().painFlags.listActive(p.id);
-    const out: CoachExecutors = { ...base, get_active_session: createSessionReadExecutor({ loadSession: load, gymName }) };
+    const out: CoachExecutors = { ...base, get_active_session: createSessionReadExecutor({ loadSession: load, gymName, ruleTargetRpe: ruleRpesOf }) };
     if (kind === 'workout') {
-      out.adjust_pending_sets = createAdjustExecutor({ store, targets: storeTodayTargets(store), loadSession: load, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, onlySessionExerciseId });
+      out.adjust_pending_sets = createAdjustExecutor({ store, targets: storeTodayTargets(store), loadSession: load, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, onlySessionExerciseId, ruleTargetRpe: ruleRpesOf });
     }
     if (kind === 'summary') {
       out.set_next_session_targets = createNextTargetsExecutor({
         store,
         source: session,
-        bases: nextSessionBases(session, await builtInNext(session)),
+        bases: nextSessionBases(session, await builtInNext(session), await ruleRpesOf(session).catch(() => ({}))),
         painFlags,
         gymName,
         workoutLabel: session.session.routineName ?? 'workout',
@@ -230,7 +320,16 @@ export function createCoachService(deps: CoachServiceDeps) {
     return (await repos().gyms.get(gymId).catch(() => null))?.name ?? null;
   }
 
-  async function contextInput(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null) {
+  /** Progress's window as dates in Ben's timezone, so the coach reads "this month" against what he sees. */
+  function openedFromOf(p: UserProfile, entry: CoachEntry): OpenedFrom | undefined {
+    if (entry.kind === 'progress_exercise') return { screen: 'progress_exercise', exercise: entry.exerciseName, series: entry.seriesLabel, range: { from: entry.from, to: entry.to } };
+    if (entry.kind !== 'progress') return undefined;
+    const w = progressWindowAt(toMs(deps.now().utc), p.timezone, entry.days);
+    return { screen: 'progress', window: { days: entry.days, from: w.from, to: w.to } };
+  }
+
+  async function contextInput(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null, entry: CoachEntry) {
+    const openedFrom = openedFromOf(p, entry);
     const gymName = await gymNameOf(session);
     const checkIn = await checkInOf(session);
     const builtIn = kind === 'summary' && session !== null ? await builtInNext(session) : null;
@@ -240,10 +339,12 @@ export function createCoachService(deps: CoachServiceDeps) {
       input: {
         session,
         gymName,
+        ...(session === null ? {} : { ruleTargetRpe: await ruleRpesOf(session).catch(() => ({})) }),
         painFlags: await repos().painFlags.listActive(p.id),
         checkIn,
         memories: await coachStore().listMemories(p.id),
         catalogue: [],
+        ...(openedFrom === undefined ? {} : { openedFrom }),
         ...(builtIn === null || session === null
           ? {}
           : {
@@ -281,9 +382,9 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (model === undefined || a.model === null) throw new Error("The coach isn't connected.");
     const session = await sessionOf(req.entry);
     const kind = kindFor(req.entry, session, req.summary === true);
-    const ctx = await contextInput(p, kind, session);
+    const ctx = await contextInput(p, kind, session, req.entry);
     const offerScope = req.input.kind === 'chip' ? (req.input.sessionExerciseId ?? null) : null;
-    const executors = await executorsFor(p, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
+    const executors = await executorsFor(p, req.entry, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
     const stop = new AbortController();
     running.set(req.turnId, stop);
     try {
@@ -349,7 +450,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const session = await sessionOf(entry);
       const kind = kindFor(entry, session, false);
-      const ctx = await contextInput(p, kind, session);
+      const ctx = await contextInput(p, kind, session, entry);
       const thread = threadId === null ? [] : await coachStore().listMessages(threadId);
       return describeCoachContext(buildCoachContext({ ...ctx.input, turnKind: kind, thread }));
     },
@@ -430,7 +531,7 @@ export function createCoachService(deps: CoachServiceDeps) {
      */
     async painChoices(entry: CoachEntry, words: string | null, focus: { exerciseId: string; name: string } | null = null): Promise<{ choices: { exerciseId: string; name: string }[]; pick: boolean }> {
       const p = await owner();
-      const sessionId = entry.kind === 'today' ? ((await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
+      const sessionId = isGeneralEntry(entry) ? ((await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
       const session = sessionId === null ? null : await repos().sessions.get(sessionId).catch(() => null);
       const seen = new Set<string>();
       const all: { exerciseId: string; exerciseName: string }[] = [];
@@ -497,27 +598,148 @@ export function createCoachService(deps: CoachServiceDeps) {
 
     /**
      * Path B (coach-adjustments §4.2): after a set is logged, a pure check;
-     * no AI call. Shown only while resting, with the coach reachable, nothing
-     * pending, a pending set left on that exercise, and at most once per
-     * exercise and kind (CA4). Showing it is saved at once (`coach_offers`),
+     * no AI call. Shown only while resting, nothing pending, a pending set
+     * left on that exercise, and at most once per exercise and kind (CA4).
+     * With the coach reachable it is the coach's offer; otherwise the
+     * built-in rule's, with its concrete change, or none when the rule has
+     * nothing to change (CA6 revised). Showing it is saved at once (`coach_offers`),
      * so it won't come back for that exercise and kind, even after a relaunch
      * (review S6). A failed read or write never blocks logging.
      */
-    async offerAfterLog(input: { aggregate: SessionAggregate; setId: string; resting: boolean; coachReachable: boolean; pending: boolean }): Promise<(CoachTrigger & { sessionExerciseId: string }) | null> {
+    async offerAfterLog(input: OfferCheckInput): Promise<WorkoutOffer | null> {
       // One check at a time per workout, so two quick logs can't both read the log before the first offer is saved (review r2 N3).
       const sessionId = input.aggregate.session.id;
       const run = (offerQueues.get(sessionId) ?? Promise.resolve()).then(() => checkOffer(input));
       offerQueues.set(sessionId, run.catch(() => undefined));
       return run;
     },
+
+    /**
+     * What a logged set triggers now (rule T against its target RPE), with no
+     * offer gate and nothing recorded: whether an offer already showing for
+     * it still holds after an effort chip or a correction (review r3 N3).
+     */
+    async triggerKindOf(aggregate: SessionAggregate, setId: string): Promise<CoachTrigger['kind'] | null> {
+      return (await triggerOf(aggregate, setId))?.kind ?? null;
+    },
+
+    /**
+     * F3: the coach was asked through an offer and couldn't answer. The
+     * built-in rule's offer for the same trigger, on the workout as it is
+     * now (not logged again for CA4: it is the same offer). Null when the
+     * rule has nothing to change.
+     */
+    async ruleOfferFor(offer: Pick<WorkoutOffer, 'triggerId' | 'kind' | 'setId' | 'fact' | 'prompt' | 'sessionExerciseId' | 'targetRpe' | 'loggedRpe'>): Promise<WorkoutOffer | null> {
+      const session = await sessionOfSet(offer.setId);
+      if (session === null) return null;
+      // The logged set must still trigger this offer (review target-rpe r3 S1).
+      if (!(await stillTriggers(session, offer))) return null;
+      const adjustment = await ruleAdjustment(session, offer).catch(() => null);
+      return adjustment === null ? null : { ...offer, by: 'rule', change: adjustment.change, basis: basisOf(adjustment) };
+    },
+
+    /**
+     * Ben's `Adjust` on the rule's offer. Worked out again on the workout as
+     * it is now and applied only if it is still the change he was shown
+     * (rule 5: never applied to newer state). One opId per trigger, so a
+     * double tap applies once and replays.
+     */
+    async applyRuleOffer(offer: WorkoutOffer): Promise<RuleOfferResult> {
+      const p = await owner();
+      const opId = builtInAdjustOpId(offer.triggerId);
+      const earlier = await coachStore()
+        .getAction(actionIdFor(opId))
+        .catch(() => null);
+      if (earlier !== null) return earlier.status === 'committed' ? { status: 'applied', record: earlier } : { status: 'stale' };
+      const session = await sessionOfSet(offer.setId);
+      if (session === null || session.session.status !== 'active') return { status: 'stale' };
+      // A correction (logged RPE, reps, target RPE) since the offer was shown can remove its reason (review target-rpe r3 S1).
+      if (!(await stillTriggers(session, offer))) return { status: 'stale' };
+      const adjustment = await ruleAdjustment(session, offer);
+      if (adjustment === null) return { status: 'unchanged' };
+      // Same sets, same targets, same words as shown (review S2); else it is a different change.
+      if (offer.basis === null || !sameRuleChange(offer.basis, basisOf(adjustment)) || adjustment.change !== offer.change) return { status: 'stale' };
+      return writeRuleChange(p.id, session.session.id, adjustment, opId);
+    },
+
+    /**
+     * Ben's own `Too hard` / `Too easy` chip when the coach can't answer
+     * (review coach-fallback S1; CLAUDE.md rule 3: when Ben asks, today's
+     * remaining sets change at once, with Undo; the built-in rule is the
+     * fallback with no AI). The rule's change to the focused exercise,
+     * applied now on the current version. One opId per tap.
+     */
+    async applyRuleRequest(input: { sessionId: string; sessionExerciseId: string; intent: 'too_hard' | 'too_easy'; opId: string }): Promise<RuleOfferResult> {
+      const p = await owner();
+      const opId = `built-in-ask:${input.opId}`;
+      const earlier = await coachStore()
+        .getAction(actionIdFor(opId))
+        .catch(() => null);
+      if (earlier !== null) return earlier.status === 'committed' ? { status: 'applied', record: earlier } : { status: 'stale' };
+      const session = await repos()
+        .sessions.getActive(p.id)
+        .catch(() => null);
+      if (session === null || session.session.id !== input.sessionId || !session.exercises.some((e) => e.id === input.sessionExerciseId)) return { status: 'stale' };
+      const adjustment = await ruleAdjustment(session, { kind: 'ben_asked', intent: input.intent, sessionExerciseId: input.sessionExerciseId, fact: input.intent === 'too_hard' ? 'Too hard' : 'Too easy' });
+      if (adjustment === null) return { status: 'unchanged' };
+      return writeRuleChange(p.id, session.session.id, adjustment, opId);
+    },
   };
 
-  async function checkOffer(input: { aggregate: SessionAggregate; setId: string; resting: boolean; coachReachable: boolean; pending: boolean }): Promise<(CoachTrigger & { sessionExerciseId: string }) | null> {
+  /** The built-in rule's target RPE per session exercise, from each exercise's catalogue entry (unknown: the accessory profile). */
+  async function ruleRpesOf(a: SessionAggregate): Promise<Record<string, number>> {
+    const info = new Map<string, Awaited<ReturnType<ReturnType<typeof repos>['exercises']['get']>>>();
+    for (const id of new Set(a.exercises.map((e) => e.exerciseId))) {
+      info.set(id, await repos().exercises.get(id).catch(() => null));
+    }
+    return ruleTargetRpes(a, (id) => info.get(id) ?? null);
+  }
+
+  /** The active workout a logged set belongs to. */
+  async function sessionOfSet(setId: string): Promise<SessionAggregate | null> {
+    const p = await owner();
+    const active = await repos()
+      .sessions.getActive(p.id)
+      .catch(() => null);
+    return active !== null && active.sets.some((x) => x.id === setId) ? active : null;
+  }
+
+  async function writeRuleChange(ownerId: string, sessionId: string, adjustment: SessionAdjustment, opId: string): Promise<RuleOfferResult> {
+    const w = await applyBuiltInAdjustment(coachStore(), { ownerId, sessionId, adjustment, opId, now: deps.now() });
+    if (w.status === 'stale') return { status: 'stale' };
+    const fresh = await repos().sessions.get(sessionId).catch(() => null);
+    if (fresh !== null) deps.onSessionChanged?.(fresh);
+    return { status: 'applied', record: w.record };
+  }
+
+  /** The built-in rule's change for a trigger or Ben's request (pure `evaluateSessionAdjustment` with Ben's pain flags, check-in and gym). */
+  async function ruleAdjustment(a: SessionAggregate, trigger: SessionAdjustmentTrigger): Promise<SessionAdjustment | null> {
+    const p = await owner();
+    const [painFlags, checkIn, gymName] = await Promise.all([repos().painFlags.listActive(p.id), checkInOf(a), gymNameOf(a)]);
+    return evaluateSessionAdjustment({ aggregate: a, trigger, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName });
+  }
+
+  /** Rule T on a logged set, judged against its target RPE: Ben's, the coach's, the plan's, else the built-in rule's (CHANGELOG 2026-10-11). */
+  async function triggerOf(a: SessionAggregate, setId: string): Promise<CoachTrigger | null> {
+    const set = a.sets.find((s) => s.id === setId);
+    if (set === undefined) return null;
+    const live = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status !== 'deleted').sort((x, y) => x.index - y.index);
+    const ruleRpe = (await ruleRpesOf(a))[set.sessionExerciseId] ?? null;
+    return evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS, targetRpeOf(set, ruleRpe)?.rpe ?? null);
+  }
+
+  /** Whether the offer's logged set, as it is now, still triggers the offer's kind. */
+  async function stillTriggers(a: SessionAggregate, offer: Pick<WorkoutOffer, 'setId' | 'kind'>): Promise<boolean> {
+    const now = await triggerOf(a, offer.setId).catch(() => null);
+    return now !== null && now.kind === offer.kind;
+  }
+
+  async function checkOffer(input: OfferCheckInput): Promise<WorkoutOffer | null> {
     const a = input.aggregate;
     const set = a.sets.find((s) => s.id === input.setId);
     if (set === undefined) return null;
     const live = a.sets.filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.status !== 'deleted').sort((x, y) => x.index - y.index);
-    const trigger = evaluateCoachTrigger(set, live.findIndex((s) => s.id === set.id) + 1, DEFAULT_COACH_TRIGGER_THRESHOLDS);
+    const trigger = await triggerOf(a, set.id);
     if (trigger === null) return null;
     // Nothing to adjust when this exercise has no pending set left (review S1).
     if (!live.some((s) => s.status === 'pending')) return null;
@@ -534,13 +756,17 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (typeof v === 'number') appliedAt.set(id, v);
     }
     const adjusted = lastAdjustedVersion(ids, appliedAt);
-    if (!shouldShowCoachOffer({ trigger, sessionExerciseId: set.sessionExerciseId, resting: input.resting, coachReachable: input.coachReachable, pending: input.pending, log, lastAdjustedAtVersion: adjusted })) return null;
+    if (!shouldShowCoachOffer({ trigger, sessionExerciseId: set.sessionExerciseId, resting: input.resting, pending: input.pending, log, lastAdjustedAtVersion: adjusted })) return null;
+    // The coach can't answer: the built-in rule offers its own change instead (CA6 revised). Nothing it can
+    // change (no lighter load or fewer reps that fit, pain blocks a raise): no offer, nothing extra shown.
+    const rule = input.coachReachable ? null : await ruleAdjustment(a, trigger).catch(() => null);
+    if (!input.coachReachable && rule === null) return null;
     const entry: OfferLogEntry = { sessionExerciseId: set.sessionExerciseId, kind: trigger.kind, atVersion: a.session.version };
     offerLogs.set(a.session.id, [...log.filter((e) => e.sessionExerciseId !== entry.sessionExerciseId || e.kind !== entry.kind), entry]);
     await coachStore()
       .recordOffer(a.session.ownerId, { sessionId: a.session.id, ...entry, atUtc: deps.now().utc })
       .catch(() => undefined);
-    return { ...trigger, sessionExerciseId: set.sessionExerciseId };
+    return { ...trigger, sessionExerciseId: set.sessionExerciseId, by: rule === null ? 'coach' : 'rule', change: rule?.change ?? null, basis: rule === null ? null : basisOf(rule) };
   }
 }
 

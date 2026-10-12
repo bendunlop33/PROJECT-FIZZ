@@ -3,6 +3,7 @@ import { SessionAggregateSchema, type PainFlag, type PlannedSet, type SessionAgg
 import {
   buildActiveSetView,
   buildAddExerciseCommand,
+  buildSetEditView,
   buildSwapExerciseCommand,
   builtInDefaultRule,
   calculateNextTargets,
@@ -12,6 +13,7 @@ import {
   reduceSession,
   startWorkoutFromSession,
   swapPainCarry,
+  targetRpeOf,
   valuesText,
   type SwapPlan,
 } from '../src/index';
@@ -483,5 +485,67 @@ describe('review gaps nits', () => {
     w = apply(w, swapCmd(w, chestPlan(45)));
     w = apply(w, { type: 'undo_op', at: at(420), opId: 'undo-swap', targetOpId: 'swap-1' });
     expect(w.sets.find((x) => x.id === b2?.id)).toMatchObject({ status: 'pending', draft: typed });
+  });
+});
+
+/** Target RPE (CHANGELOG 2026-10-11, main) meets the workout gaps (merge of main into claude/gaps). */
+describe('target RPE with swap, Undo and the set-type control', () => {
+  it('a swap’s substitute gets its target RPE as an added exercise does: its own plan, else the rule’s; Ben’s override stays on the replaced sets', () => {
+    const s0 = midBench();
+    const b2 = setsFor(s0, BENCH)[2];
+    if (!b2) throw new Error('fixture');
+    const withBen = apply(s0, { type: 'set_target_rpe', at: at(350), opId: 'rpe-today', expectedVersion: s0.session.version, scope: { kind: 'today' }, rpe: 9 });
+    expect(withBen.sets.find((x) => x.id === b2.id)?.planned.rpeOverride).toBe(9);
+    const swapped = expectOk(reduceSession(withBen, swapCmd(withBen, chestPlan(45)))).state;
+    const [moved] = setsFor(swapped, CHEST.id);
+    expect(moved && 'rpeOverride' in moved.planned).toBe(false);
+    expect(moved && targetRpeOf(moved, 7.5)).toEqual({ rpe: 7.5, source: 'rule' });
+    // The replaced set keeps Ben's target on its tombstone, so Undo swap brings it back.
+    expect(swapped.sets.find((x) => x.id === b2.id)?.planned.rpeOverride).toBe(9);
+    const undone = apply(swapped, { type: 'undo_op', at: at(420), opId: 'undo-swap', targetOpId: 'swap-1' });
+    expect(undone.sets.find((x) => x.id === b2.id)).toMatchObject({ status: 'pending', planned: { rpeOverride: 9 } });
+    expect(SessionAggregateSchema.safeParse(swapped).success).toBe(true);
+
+    // The substitute's own plan RPE is kept.
+    const planRpe: SwapPlan = { exercise: CHEST, pin: null, plan: [{ setType: 'working', planned: { ...planned(45), rpe: 8, source: 'repeat' } }] };
+    const [q] = setsFor(expectOk(reduceSession(s0, swapCmd(s0, planRpe))).state, CHEST.id);
+    expect(q && targetRpeOf(q, 7.5)).toEqual({ rpe: 8, source: 'plan' });
+  });
+
+  it('a swap command carrying an override is stored without it', () => {
+    const s = startFixture().state;
+    const cmd = swapCmd(s, chestPlan(45));
+    if (cmd.type !== 'swap_exercise') throw new Error('fixture');
+    const forged = { ...cmd, sets: cmd.sets.map((x) => ({ ...x, planned: { ...x.planned, rpeOverride: 9 } })) };
+    const r = expectOk(reduceSession(s, forged)).state;
+    for (const x of setsFor(r, CHEST.id)) expect('rpeOverride' in x.planned).toBe(false);
+  });
+
+  it('Undo of a correction that set Ben’s target RPE puts the target back too', () => {
+    const s0 = midBench();
+    const b1 = setsFor(s0, BENCH)[1];
+    if (!b1) throw new Error('fixture');
+    const fixed = apply(s0, { type: 'correct_set', at: at(500), opId: 'fix-rpe', setId: b1.id, expectedSetVersion: b1.version, patch: { reps: 7, targetRpe: 10 } });
+    expect(fixed.sets.find((x) => x.id === b1.id)?.planned.rpeOverride).toBe(10);
+    const undone = apply(fixed, { type: 'undo_op', at: at(510), opId: 'undo-fix', targetOpId: 'fix-rpe' });
+    const back = undone.sets.find((x) => x.id === b1.id);
+    expect(back?.actual).toEqual(b1.actual);
+    expect(back && 'rpeOverride' in back.planned).toBe(false);
+  });
+
+  it('Edit set: the target RPE row follows the set type as edited', () => {
+    const s = midBench();
+    const b1 = setsFor(s, BENCH)[1];
+    if (!b1) throw new Error('fixture');
+    const rule = { [b1.sessionExerciseId]: 8 };
+    expect(buildSetEditView(s, b1.id, null, null, { ruleTargetRpe: rule })?.targetRpe).toEqual({ target: { rpe: 8, source: 'rule' }, override: null, changed: false });
+    const asWarmup = buildSetEditView(s, b1.id, null, null, { ruleTargetRpe: rule, setType: 'warmup' });
+    expect(asWarmup?.targetRpe).toBeNull();
+    expect(asWarmup?.setType.changed).toBe(true);
+    expect(asWarmup?.changed).toBe(true);
+    const w = setsFor(s, BENCH)[0];
+    if (!w) throw new Error('fixture');
+    expect(buildSetEditView(s, w.id, null, null, { ruleTargetRpe: rule })?.targetRpe).toBeNull();
+    expect(buildSetEditView(s, w.id, null, null, { ruleTargetRpe: rule, setType: 'working' })?.targetRpe).toEqual({ target: { rpe: 8, source: 'rule' }, override: null, changed: false });
   });
 });

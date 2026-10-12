@@ -1,6 +1,7 @@
 import { stableStringify } from '@fizz/domain';
 
 import type { SqlRow } from '../driver';
+import { rowInHistory } from '../sql';
 import { noYield, type Slicer } from './slice';
 
 /**
@@ -9,7 +10,9 @@ import { noYield, type Slicer } from './slice';
  * backup doesn't have it, or has it with different content. On top of that,
  * a restore deletes the database kept for `Undo last restore`; anything in it
  * that is neither on this phone now nor in the backup is lost with it, so it
- * is counted too (review S2). Discarded workouts aren't counted.
+ * is counted too (review S2). Discarded, reverted and deleted workouts
+ * aren't counted as workouts; deleted ones the backup has live are counted
+ * on their own (delete-workouts §6.5).
  *
  * Records are compared by full content when both sides are at the same
  * schema version. When they aren't (an older backup, or an Undo copy left
@@ -76,8 +79,9 @@ async function fingerprints(tables: Tables, mode: CompareMode, slice: Slicer): P
   }
   const workouts = new Map<string, { print: string; startedAtUtc: string | null }>();
   for (const s of tables.sessions ?? []) {
-    // Discarded and reverted (undone import) workouts are hidden everywhere, so a restore doesn't count them.
-    if (s.status === 'discarded' || s.status === 'reverted') continue;
+    // Only history counts (delete-workouts §5): discarded, reverted (undone import) and deleted workouts are hidden
+    // everywhere, so a restore doesn't count them as replaced. Deleted ones are counted on their own (`deletedSinceBackup`).
+    if (!rowInHistory(s) && s.status !== 'active') continue;
     const id = keyOf(s);
     const print =
       mode === 'content'
@@ -134,6 +138,22 @@ export interface ReplaceAnalysis {
    * when no copy is kept.
    */
   keptForUndo: ReplaceCounts | null;
+  /**
+   * Workouts deleted on this phone (in Recently deleted, awaiting the purge,
+   * or purged) that the backup holds as live history: the restore brings
+   * them back (delete-workouts §6.5; `Keep deleted`, DW28, isn't built and
+   * waits on DW-Q4).
+   */
+  deletedSinceBackup: number;
+}
+
+/** Workouts this phone deleted or purged that `backup` has in history (§6.5). */
+export function deletedSince(current: Tables, backup: Tables): number {
+  const gone = new Set<string>();
+  for (const s of current.sessions ?? []) if (s.status === 'deleted') gone.add(keyOf(s));
+  for (const p of current.purged_sessions ?? []) if (typeof p.session_id === 'string') gone.add(p.session_id);
+  if (gone.size === 0) return 0;
+  return (backup.sessions ?? []).filter((s) => rowInHistory(s) && gone.has(keyOf(s))).length;
 }
 
 /** `slice` pauses between records so a large history never holds the JS thread (backup review B1). */
@@ -162,13 +182,14 @@ export async function analyseReplace(
     onlyOnPhone: notIn(current, [backup], 'absent'),
     changedOnPhone: notIn(current, [backup], 'differs'),
     keptForUndo,
+    deletedSinceBackup: deletedSince(input.current.tables, input.backup.tables),
   };
 }
 
 /** True when the restore would replace or delete anything (the confirm alert shows). */
 export function replacesAnything(a: ReplaceAnalysis): boolean {
   const n = (c: ReplaceCounts | null) => (c === null ? 0 : c.workouts + c.otherRecords);
-  return n(a.onlyOnPhone) + n(a.changedOnPhone) + n(a.keptForUndo) > 0;
+  return n(a.onlyOnPhone) + n(a.changedOnPhone) + n(a.keptForUndo) + a.deletedSinceBackup > 0;
 }
 
 /**

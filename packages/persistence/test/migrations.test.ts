@@ -33,6 +33,7 @@ const TABLES = [
   'processed_operations',
   'profiles',
   'progression_rules',
+  'purged_sessions',
   'rest_timers',
   'routines',
   'session_exercises',

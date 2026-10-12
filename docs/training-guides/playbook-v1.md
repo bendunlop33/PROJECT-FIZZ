@@ -48,8 +48,8 @@ The approval is recorded in [CHANGELOG 2026-10-09](../brief/CHANGELOG.md) and in
 | 2 | Strength: main lifts mostly at ≥ ~80% 1RM (≈ 1–6 reps at RPE 7–9), 2–3+ sets per lift per session, each lift ≥ 2×/week. | Strength is the main focus, or strength "also matters" | Strong (heavy loads); Moderate (≥ 2×/week, set count) | [evidence-core.md](evidence-core.md) E3; [goal-adaptive.md](goal-adaptive.md) GA2 |
 | 3 | Working sets default to RPE 7–9 on compounds. RPE 10 is for planned last sets, AMRAPs or isolation work. | Setting targets | Moderate | E4 |
 | 4 | Treat one RPE rating as ± 1 rep. Change *future* targets only on a pattern (≥ 2 sessions), never on one rating. Distrust ratings on sets above 12 reps. | Interpreting logs | Moderate | E5, E13 |
-| 5 | Unplanned RPE ≥ 9.5 (planned ≤ 8.5), or reps short by ≥ 2: the coach **offers**, for the remaining sets of that exercise, −5–10% load (≈ 2–4% per RPE point over target, rounded down to an achievable load) or the same load with fewer reps. How the two figures combine is D22. | Mid-session (rule T) | Weak + Practice | E6 |
-| 6 | Unplanned RPE ≤ 6 (planned ≥ 8) on a working set: the coach **offers** the next achievable load up (+2–5%) or +1–2 reps. | Mid-session (rule T) | Practice | E7 |
+| 5 | Harder than planned (rule T: logged effort ≥ target RPE + 1.5, or reps below the range minimum): the coach **offers**, for the remaining sets of that exercise, −5–10% load (≈ 2–4% per RPE point over target, rounded down to an achievable load) or the same load with fewer reps. How the two figures combine is D22. With no coach, the built-in rule offers the same, labelled. | Mid-session (rule T) | Weak + Practice | E6 |
+| 6 | Easier than planned (rule T: logged effort ≤ target RPE − 2) on a working set: the coach **offers** the next achievable load up (+2–5%) or +1–2 reps. With no coach, the built-in rule offers the same, labelled. | Mid-session (rule T) | Practice | E7 |
 | 7 | The AI coach chooses load, reps, sets or a variant from Ben's goal, his history on this equipment and the selected gym's real increments and min/max. Changes are shown in kg/lb and %. | Ben asks, a rule T signal, the post-workout review, or planning the next session or block | Strong / Moderate / Weak / Practice, split by claim (see 7) | [equipment-aware-progression.md](equipment-aware-progression.md) EQ1–EQ8, EQ10 |
 | 7-F | Labelled, equipment-aware double progression. It uses the smallest achievable increment. If that jump is > ~10% or the machine is at its max, it progresses reps instead, up to the rep cap, then holds. It doesn't add sets (D2). | Next-session targets when the coach is unavailable, or when no coach target has been applied (D21) | Weak + Practice | EQ9, E8, ADR 0006 amendment |
 | 8 | A stall (2–3 sessions failing the same target): propose a 5–10% reset or a rep-scheme change. One bad session gets a note only. | Next-session targets | Practice | E13 |
@@ -60,7 +60,7 @@ The approval is recorded in [CHANGELOG 2026-10-09](../brief/CHANGELOG.md) and in
 | 13 | Keep ≥ 2 heavy strength exposures a week through endurance phases (fewer sets, same heavy loads). | **When the endurance switch is on and endurance is one of Ben's goals** (was "Endurance/HYROX blocks") | Moderate | C5 |
 | 14 | **Removed** (HYROX special case). Goal and event handling now sits in rule G. | n/a | n/a | n/a |
 | G | Targets follow Ben's confirmed goal and how his training is run. Nothing is sport-specific. Rules 11 and 12 apply only while the endurance switch is on; rule 13 also needs endurance as a goal. | Always | Practice (structure), built on Strong/Moderate profile values | [goal-adaptive.md](goal-adaptive.md) GA1–GA19 |
-| T | Mid-session offer triggers compare logged effort with *planned* effort. Warm-ups and planned all-out/AMRAP sets never trigger. "Too easy" never fires above 12 reps. | Every logged working set | Moderate (rating error) + Practice | ADR 0006 amendment; E5–E7 |
+| T | Mid-session offer triggers compare logged effort with each working set's *target RPE* (Ben's, else the coach's, else the plan's, else the built-in rule's): harder at ≥ target + 1.5 or reps below the range minimum (unless effort was ≤ target − 1), easier at ≤ target − 2. Warm-ups, drop sets and planned all-out/AMRAP sets never trigger. "Too easy" never fires above 12 reps. | Every logged working set | Moderate (rating error) + Practice | ADR 0006 amendments 1 and 3; E5–E7 |
 
 ## Inputs the coach uses
 
@@ -322,7 +322,9 @@ With a strength goal on 3 days: each main lift gets 2–3 hard sets at its heavy
 
 ### Rule 5: "Too hard" offer (approved)
 
-**Rule.** After an unplanned RPE ≥ 9.5 (planned ≤ 8.5), or reps short by ≥ 2, the coach **offers** a change to the remaining sets of that exercise. Either −5–10% load (≈ 2–4% per RPE point over target, rounded down to an achievable load), or the same load with fewer reps.
+**Rule.** When a set was harder than planned (rule T, revised 11 Oct 2026: logged effort ≥ target RPE + 1.5, or reps below the range minimum), the coach **offers** a change to the remaining sets of that exercise. Either −5–10% load (≈ 2–4% per RPE point over target, rounded down to an achievable load), or the same load with fewer reps.
+
+**Note (Ben, 11 Oct 2026; ADR 0006 amendment 3).** With the coach not reachable, the built-in rule makes the same offer for today's remaining sets, tagged `Rule`, and applies it only on `Adjust`, with Undo. Its numbers: 2% per RPE point over target (the low end of 2–4%), at least 5% and at most 10% (D22), rounded down to an achievable load; with no effort logged (a rep miss) or Ben's own `Too hard`, 5%. If that load is more than 10% lighter, or there is none, the same load with fewer reps (the reps he managed after a miss, one fewer otherwise). Code: `evaluateSessionAdjustment`, `tooHardDropPct`.
 
 **Applies when:** mid-session, when rule T fires.
 
@@ -340,7 +342,9 @@ With a strength goal on 3 days: each main lift gets 2–3 hard sets at its heavy
 
 ### Rule 6: "Too easy" offer (approved)
 
-**Rule.** After an unplanned RPE ≤ 6 (planned ≥ 8) on a working set, the coach **offers** the next achievable load up (+2–5%) or +1–2 reps.
+**Rule.** When a working set was easier than planned (rule T, revised 11 Oct 2026: logged effort ≤ target RPE − 2), the coach **offers** the next achievable load up (+2–5%) or +1–2 reps.
+
+**Note (Ben, 11 Oct 2026; ADR 0006 amendment 3).** With the coach not reachable, the built-in rule makes the same offer for today's remaining sets, tagged `Rule`, applied only on `Adjust`, with Undo: the next achievable step up if it is at most 5%, else +1 rep; never with a pain flag on the movement or pain mentioned at check-in.
 
 **Applies when:** mid-session, when rule T fires.
 
@@ -593,15 +597,18 @@ The HYROX-specific rule is removed, along with the "HYROX or strength?" question
 - A plan proposal built on an older goal, setup or other-training version is rejected (guardrail 5).
 - The coach never infers a goal.
 
-### Rule T: Mid-session offer triggers compare logged with planned effort (approved; ADR 0006 amendment)
+### Rule T: Mid-session offer triggers compare logged effort with the target RPE (approved; ADR 0006 amendments 1 and 3)
 
-**Rule.** The deterministic offer triggers fire only on working sets, and they use the set's planned effort:
-- **"Too hard"** (rule 5) fires when logged RPE ≥ 9.5 and the plan was ≤ 8.5, or when reps fell short of target by ≥ 2.
-- **"Too easy"** (rule 6) fires when logged RPE ≤ 6 and the plan was ≥ 8.
-- **Never triggers:** warm-ups, and planned all-out, AMRAP or "+" sets.
+**Revised 11 Oct 2026 (Ben: "Hitting 10 RPE is not bad if that was the plan").** Every working set carries a **target RPE**: Ben's own override (a set, an exercise or today), else the coach's recommendation, else the routine's RPE/RIR, else the built-in rule's rep-range profile value (main barbell 8.5, compound 9, isolation 9; never above rule 3's 9). It shows on the target line as `@ RPE 8`.
+
+**Rule.** The deterministic offer triggers fire only on working sets, and compare what was logged with that target:
+- **"Too hard"** (rule 5) fires when logged effort ≥ target + 1.5, or when reps fell below the range minimum (any rep below a range's floor; a single-number target short by ≥ 2), unless logged effort was clearly below target (≤ target − 1). A rep miss with no effort logged still fires.
+- **"Too easy"** (rule 6) fires when logged effort ≤ target − 2, and the reps weren't short.
+- **Never triggers:** warm-ups, drop sets, and planned all-out (target RPE 10), AMRAP or "+" sets.
 - **Above 12 reps:** "too easy" never fires on sets above 12 reps.
+- RIR counts as RPE 10 − RIR, both logged and planned.
 
-Thresholds stay editable. A trigger only lets the coach offer ("Want me to adjust the remaining sets?"), and nothing changes until Ben accepts. If Ben mentions pain, the pain flow replaces the offer. Where a set has no planned RPE, the original ADR 0006 thresholds apply (RPE ≥ 9.5, or ≤ 6 on a working set), with the same exclusions (D20).
+Thresholds stay editable. A trigger only lets the coach (or, with no coach, the built-in rule) offer ("Adjust remaining sets?"), and nothing changes until Ben accepts. If Ben mentions pain, the pain flow replaces the offer. A set with no target at all (it shouldn't happen once every working set carries one) uses the original ADR 0006 thresholds: RPE ≥ 9.5, reps below the range minimum, or ≤ 6 on a working set, with the same exclusions (D20).
 
 **Applies when:** every logged working set.
 
@@ -668,7 +675,7 @@ None of these blocks v1. Until each one is decided, the behaviour described in t
 | D17 | Time budget: ~3 min per working set, ~4 min per heavy main-lift set and 10 min warm-up; accessory supersets as the default way to fit more in? | As stated; his own times after 3 sessions | V2 |
 | D18 | Count sets with no RPE (e.g. FitNotes imports) as hard, labelled "approx."? | As stated | V1 |
 | D19 | Run the plan as a rotation (A, B, C in order) rather than fixed weekdays? | Fixed as planned; a rotation if he asks | V7 |
-| D20 | With no planned RPE on a set, use the original ADR 0006 thresholds (RPE ≥ 9.5 / ≤ 6), with the same exclusions? | As stated | Rule T |
+| D20 | With no target RPE on a set, use the original ADR 0006 thresholds (RPE ≥ 9.5 / ≤ 6), with the same exclusions? (11 Oct: now a fallback only; every working set carries a target RPE, rule T) | As stated | Rule T |
 | D21 | **Who sets next-session targets when the coach is connected but Ben doesn't apply its proposal?** (A) The coach's target applies, with the change visible on the summary and one-tap Undo. This matches "a default rule won't always work best", but CLAUDE.md rule 3 and ADR 0006 say future-session changes are always proposals, so it needs his explicit change to both. (B) The built-in rule (7-F, equipment-aware) stays the baseline, labelled `Built-in rule`, with the coach's alternative shown beside it and `Apply` one tap away. | (B), shown honestly: 7-F's playbook tag reads `In use: when no coach target is applied`, never "not in use" | Review B1; CLAUDE.md rule 3; ADR 0006 |
 | D22 | Rule 5's arithmetic: −5–10% and "≈ 2–4% per RPE point" disagree at one point over plan. Is 5% the minimum drop, or is 2–4% fine for one point over? | 2–4% per point, at least 5% and at most 10%, rounded down to an achievable load | Review S2; E6 |
 

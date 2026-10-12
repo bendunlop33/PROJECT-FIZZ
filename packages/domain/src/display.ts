@@ -156,10 +156,10 @@ export function repRangeText(r: RepRange): string {
 }
 
 /**
- * `Target 100 kg · 6–8 reps` (focused card) or null when the set has no target
+ * `Target 100 kg · 6–8 reps @ RPE 8` (focused card) or null when the set has no target
  * at all (an exercise added to an empty workout).
  */
-export function targetText(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext; perSide?: boolean }): string | null {
+export function targetText(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext; perSide?: boolean; rpe?: number | null }): string | null {
   const parts: string[] = [];
   const isDistance = planned.distanceM !== undefined && planned.distanceM !== null;
   const load = planned.load === null ? null : isDistance ? distanceLoadText(planned.load, o.convention, o.equipment) : loadText(planned.load, o.convention, o.equipment);
@@ -170,7 +170,9 @@ export function targetText(planned: PlannedSet, o: { convention: LoadConvention;
   if (parts.length === 0) return null;
   // Rule 3: a coach target says so; any other source is behind `Why?` (`Set by`, minimal-copy D1).
   const word = planned.source === 'coach' ? 'Coach target' : 'Target';
-  return `${word} ${parts.join(' · ')}`;
+  // The set's target RPE (`targetRpeOf`): `Target 100 kg · 3–6 reps @ RPE 8`.
+  const rpe = o.rpe == null ? '' : ` @${NBSP}RPE${NBSP}${formatNumber(o.rpe)}`;
+  return `${word} ${parts.join(' · ')}${rpe}`;
 }
 
 /** Short target for list rows: `Target 100 kg × 6–8`. */
