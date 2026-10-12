@@ -85,7 +85,8 @@ export type TabParams = {
    * `undoRoutine`: the toast offers Undo for a routine deleted from the Workout overview.
    */
   /** `startEmpty`: `Empty workout` on the Workouts list, once per nonce (Today's own start, with its check-in gate). */
-  Today: { toast?: string; undoRoutine?: { id: string; version: number }; startEmpty?: string } | undefined;
+  /** `undoDraft`: a coach draft discarded from its overview (workout-builder §6.2): the toast's Undo restores it. */
+  Today: { toast?: string; undoRoutine?: { id: string; version: number }; undoDraft?: { id: string; version: number }; startEmpty?: string } | undefined;
   Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
 };
@@ -153,7 +154,8 @@ export type RootStackParams = {
    * workout `⋯` → Ask the coach, Adjust → Type…, Summary → Ask about this
    * workout); never by a trigger, timer or reply. `focus`: the field gets focus.
    */
-  Coach: { entry: CoachEntry; focus?: boolean };
+  /** `build`: open with the Build card (workout-builder §3, `Build with coach`). */
+  Coach: { entry: CoachEntry; focus?: boolean; build?: boolean };
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
 };

@@ -694,6 +694,8 @@ export function createAppServices(deps: AppServicesDeps) {
     async card(req: Omit<Parameters<typeof loop.coachDrafts.card>[0], 'typicalEquipment'>) {
       return loop.coachDrafts.card({ ...req, ...(await typicalFor(req.gymId)) });
     },
+    /** Whether a build can start (§5.4): reads the connection settings only, never the network or the model. */
+    buildBlock: () => coach.buildBlock(),
   };
 
   async function typicalFor(gymId: string | null): Promise<{ typicalEquipment?: EquipmentInstance[] }> {

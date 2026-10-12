@@ -122,6 +122,8 @@ export interface CardView {
    * be a general rule (CM9 split): `Save as a memory about me` · `Add to playbook` instead of `Save`.
    */
   memoryChoice?: { memoryId: string; version: number; split: boolean };
+  /** A committed coach draft (workout-builder §4.2): the sheet shows the draft card (and, for a new version, the version card) from it. */
+  draft?: ActionRecord;
 }
 
 /**
@@ -229,6 +231,7 @@ export function cardView(r: ActionRecord): CardView {
     text: rendered.text,
     accessibilityPrefix: rendered.accessibilityPrefix,
     canUndo: r.status === 'committed' && r.undoneBy === null && r.detail.kind !== 'undo' && UNDOABLE.has(r.detail.kind),
+    ...(r.detail.kind === 'build_workout' && r.status === 'committed' ? { draft: r } : {}),
   };
 }
 

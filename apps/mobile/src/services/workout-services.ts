@@ -544,15 +544,13 @@ export type RoutineWrite = { ok: true; routine: Routine; duplicate: boolean } | 
  */
 export type OverviewTarget = { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string };
 
-/** A coach-built draft in the picker's `FROM COACH` and Today's `SESSIONS` (workout-builder §4.4). Actuals only. */
-export interface CoachDraftRow {
+/** A coach-built draft in the picker's `FROM COACH` and Today's `SESSIONS` (workout-builder §4.4): a picker row. Actuals only. */
+export interface CoachDraftRow extends SessionPickerRow {
   draftId: string;
   /** `Push · 45 min` (code-made). */
   name: string;
   /** When the coach built it (`Today 18:02`). */
   createdAt: ZonedTimestamp;
-  exerciseCount: number;
-  target: OverviewTarget;
 }
 
 /** One session picker row (session-picker §2.2): actuals only, no targets and no coach content. */
@@ -570,6 +568,8 @@ export interface SessionPickerRow {
   recommended: boolean;
   /** Today's pre-start draft for this session has edits (`Edited`, SP-D6). */
   edited: boolean;
+  /** A coach draft (workout-builder §4.4): `Coach` tag, and when it was made instead of when last done. */
+  coachDraft?: { createdAt: ZonedTimestamp };
 }
 
 /** `services.sessions.list` (session-picker §7). `current`: Up next first, longest gap first, then `New`; `older`: `OLDER`. */
@@ -4272,7 +4272,22 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return (await drafts.listByOwner(p.id))
       .filter((d) => coachDraftIsOpen(d, now.utc) && (d.routineId === null || !liveIds.has(d.routineId)))
       .sort((a, b) => toMs(b.createdAt.utc) - toMs(a.createdAt.utc) || (a.id < b.id ? -1 : 1))
-      .map((d) => ({ draftId: d.id, name: d.name, createdAt: d.createdAt, exerciseCount: currentDraftVersion(d).plan.slots.length, target: { kind: 'coach_draft', draftId: d.id } }));
+      .map((d) => ({
+        key: `coach_draft:${d.id}`,
+        label: d.name,
+        kind: 'named' as const,
+        target: { kind: 'coach_draft' as const, draftId: d.id },
+        routineId: null,
+        sourceSessionId: null,
+        lastDone: null,
+        exerciseCount: currentDraftVersion(d).plan.slots.length,
+        recommended: false,
+        edited: false,
+        coachDraft: { createdAt: d.createdAt },
+        draftId: d.id,
+        name: d.name,
+        createdAt: d.createdAt,
+      }));
   }
 
   /** A Ben write on a coach draft (versioned, idempotent on the opId). */
