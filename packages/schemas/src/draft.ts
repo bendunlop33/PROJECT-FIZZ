@@ -42,6 +42,9 @@ const editBase = {
 /** Today's edit limits (TE17): working sets per exercise, added exercises, reps, work time. */
 export const TODAY_EDIT_LIMITS = { minSets: 1, maxSets: 10, maxAdded: 6, minReps: 1, maxReps: 50, minWorkS: 5, maxWorkS: 600 } as const;
 
+/** `How long?` (fit-to-time §3.2): the session length a fit aims at, in whole minutes (the wheel steps by 5). */
+export const FIT_MINUTES = { min: 15, max: 180, step: 5 } as const;
+
 /**
  * One edit. `slotKey`: the routine's `RoutineExercise.id`, or the source
  * workout's part-root `SessionExercise.id` (never an array position).
@@ -74,7 +77,16 @@ export const TodayEditSchema = z.discriminatedUnion('kind', [
    * edits from before it was recorded: the slot's own exercise.
    */
   z.object({ ...editBase, kind: z.literal('load'), slotKey: IdSchema, load: LoadSchema, exerciseId: IdSchema.optional() }),
+  /**
+   * Fit to time (fit-to-time FT4): the length today should fit, as intent.
+   * Ben's (no `author`, or `ben`): the built-in trim re-runs on every read,
+   * after the planner. The coach's (`author: 'coach'`, with `actionId`): the
+   * coach's own `skip` / `sets` / `add` edits with the same `actionId` are
+   * the fit, and the built-in trim doesn't run. One live at a time.
+   */
+  z.object({ ...editBase, kind: z.literal('fit'), minutes: z.int().min(FIT_MINUTES.min).max(FIT_MINUTES.max) }),
 ]).superRefine((e, ctx) => {
+  if (e.author === 'coach' && e.actionId === undefined) ctx.addIssue({ code: 'custom', message: 'A coach edit names its action', path: ['actionId'] });
   if (e.kind !== 'reps') return;
   if ((e.reps === null) === (e.durationS === null)) ctx.addIssue({ code: 'custom', message: 'A reps edit has reps or a work time, not both', path: ['reps'] });
   if (e.reps !== null && (e.reps.min < TODAY_EDIT_LIMITS.minReps || e.reps.max > TODAY_EDIT_LIMITS.maxReps)) ctx.addIssue({ code: 'custom', message: 'Reps are 1–50', path: ['reps'] });
@@ -142,6 +154,22 @@ export const SessionTodayEditsSchema = z.object({
   edited: z
     .array(z.object({ sessionExerciseId: IdSchema, slotKey: IdSchema, kinds: z.array(z.enum(['sets', 'reps', 'load'])).min(1).max(3) }))
     .max(40)
+    .optional(),
+  /** Fit to time (fit-to-time §6): the fit live at Start and what it cut or added. Absent: no fit. */
+  fitted: z
+    .object({
+      minutes: z.int().min(FIT_MINUTES.min).max(FIT_MINUTES.max),
+      by: z.enum(['built_in', 'coach']),
+      cuts: z
+        .array(
+          z.discriminatedUnion('kind', [
+            z.object({ kind: z.literal('sets'), slotKey: IdSchema, from: z.int().min(0).max(40), to: z.int().min(0).max(40) }),
+            z.object({ kind: z.literal('skip'), slotKey: IdSchema }),
+            z.object({ kind: z.literal('add'), slotKey: IdSchema }),
+          ]),
+        )
+        .max(40),
+    })
     .optional(),
 });
 export type SessionTodayEdits = z.infer<typeof SessionTodayEditsSchema>;
