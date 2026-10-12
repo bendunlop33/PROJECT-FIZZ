@@ -7,6 +7,8 @@
 > **Revision 2026-10-08 (workout builder, v0.5).** For [workout-builder.md](workout-builder.md): new timing token `timing.coachBuildTimeout` (§6) and components `ParamChip` (§9.17), `DraftExerciseRow` with diff markers (§9.18), `GuardNoteList` (§9.19) and `WorkoutDraftCard` (§9.20). No colour values added.
 >
 > **Revision 2026-10-12 (workout builder v1.0).** Coach drafts open on the Workout overview, so `DraftExerciseRow` (§9.18) is retired: draft rows are `OverviewRow`s, whose detail line adds `@ RPE n`. `WorkoutDraftCard` (§9.20) now ends in `Open ›`, and two components are added there: `BuildRequestCard` and `DraftChangeCard` (a `ResultCard`). `GuardNoteList` (§9.19) is used only in the `Why this workout` sheet. No token values changed; one accent kept.
+>
+> **Revision 2026-10-12 (workout builder v2).** `SourceTag` gains the word `est.` for a target load whose basis is an estimate (§7 target source table); the `Rule` tag is used in the row panel for a built-in fallback load in a coach draft. The builder's question card is `ClarifyChips` (§9.37) plus a `Skip` text button and the card's own text field; the status word is `Not answered` instead of `Not saved`. `BuildRequestCard` gains its own one-line text field and a `LengthChips` row (`ParamChip`s centred on the default length, ±5/10/15). No token values changed; one accent kept.
 
 > **Revision 2026-10-08 (Progress tab).** For [progress.md](progress.md): chart colour **aliases** of existing tokens (§2.1; no new colour values, one accent kept), number formats for fractional sets, changes and estimates (§3), chart dimension tokens (§4.1), components `Sparkline` (§9.21), `TrendRow` (§9.22), `TrendChart` (§9.23), `ChartMarker` (§9.24), `VolumeBandRow` (§9.25), `WeekStrip` (§9.26), `ChartDataTable` (§9.27), `SourceTag` (§9.28), `ResumeBar` (§9.29) and `CalendarDay` (§9.30), and chart items in the accessibility checklist (§10).
 
@@ -430,6 +432,8 @@ Target source (revision 2026-10-08, ADR 0006). A target's source is shown only w
 | Built-in rule, changed today (CA6) | Table rows and open row, Focus | Plain `Target`; `SourceTag` `Rule` after the value; `Plan was …` | "Adjusted target, … Plan was …" |
 | Coach (summary `Next time`) | Summary rows | `TargetSourceTag` `Coach` | "Source: coach" |
 | Built-in rule (summary `Next time`) | Summary rows | `TargetSourceTag` `Rule` (`Why?` names the built-in rule) | Same text |
+| Estimated target load (revision 2026-10-12, workout-builder v2 BD6) | Overview rows, row panel, set card target line, Table rows | The target value, then `SourceTag` `est.` (lower case, no icon). Unlike `≈ … (estimate)` values (1RM, minutes), an `est.` target **is** snapped to an achievable load: it is a target whose basis is an estimate, not Ben's own comparable history. `Why?` shows the basis | "Target 22.5 kilograms each, estimate" |
+| Built-in rule fallback in a coach draft (workout-builder v2 BD6) | Row panel and `Why this workout` only (not the row) | `SourceTag` `Rule` after the load in the panel | "Target …, built-in rule" |
 
 **`TargetSourceTag`** (alias of `SourceTag`, §9.28, revision consolidation): a text tag, `type.label`, `text.secondary` on `bg.raised`, `radius.sm`, padding `space.1`/`space.2`. The `Coach` tag adds the `text.bubble` icon before the word (the same icon as the Talk button's text state). It is not tappable on its own. It never uses `accent` (accent stays for the primary action and the active set) and never relies on colour. New specs should say `SourceTag`.
 
