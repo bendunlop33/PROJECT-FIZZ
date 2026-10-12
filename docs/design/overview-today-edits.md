@@ -176,7 +176,8 @@ Tapping `Change Push A too ›` replaces the link with a `ChangeReviewCard` (des
 | Draft with applied edits | Markers, `N EDITED`, recomputed strip | — |
 | Writing an edit | Nothing visible (local write); the row updates on success | — |
 | Edit write failed | Toast `Couldn't save that edit.` Row unchanged | Retry reuses the opId |
-| Stale draft version | Page re-reads; toast `Targets updated` | Rule 5 |
+| Stale draft version (only the draft moved, e.g. a quick second tap on an older version) | Page re-reads; toast `Couldn't save that edit.` Row unchanged | Rule 5. The plan didn't change, so nothing to announce (as built after review B r1 S2; pending PM/Ben approval) |
+| Today's plan gone or changed under a draft write (routine edited or deleted, source workout gone) | Page re-reads; toast `Targets updated` | Rule 5 |
 | An edit no longer fits (routine edited and the slot is gone; an `order` whose slots changed) | Edit marked `stale`, dropped. Toast `Plan changed · 1 edit removed` | Other edits still apply |
 | Edit made redundant (template now matches) | Dropped silently; row shows no `SWAPPED` | Change-review Apply does this in its transaction |
 | Reopened, draft open | Edits as left | — |
@@ -362,6 +363,10 @@ Follow-ups for the PM (not edited here): today.md (Up next reads the edited prev
 3. **`Change Push A too ›` uses a change-review card** (routines.md §4.2 updated to match).
 4. **Lighter start** waits for R1–R6 approval.
 5. **EL6** (same-movement substitute of a flagged exercise) is still pending; v1 marks only candidates that are themselves flagged.
+6. **Draft-conflict toast and card freshness** (§3, §11.5): `Couldn't save that edit.` for a draft-only conflict; the Update card goes out of date when the draft moves too (as built, review B r1/r2).
+7. **§11.4 keypad** (review B N3): the build uses the `NumberStepper` sheet, not a `WorkoutKeypad` with step keys; the strings `Assist`, `Most assistance here:`, `Least here:` and `Least assistance here:` still need adding to §11.8.
+8. **Typed load on a `HELD` movement** (rule 9, review B N4): today it replaces the held load with both `HELD` and `[Ben]` shown. Options: keep, ask first, or cap at the held load.
+9. **TE-B13 on legacy routines** (review B r1 S1): built as "drop today-only set counts", not "convert to a library routine on first edit".
 
 ---
 
@@ -465,7 +470,9 @@ Applies to every working set of that exercise today. Timed exercises show `Work 
 ```
 
 - **Apply** writes routine v+1 with the checked lines, in one transaction with an `ActionRecord` (`update_routine`, author `ben`, `before` stored) and the matching draft edits marked `redundant`. A swapped or added exercise gets `Auto` loads in the template (never converted). Collapses to `✓ Applied · Push A from now on` [Undo]; toast `Push A updated` [Undo].
-- **Out of date** (Push A changed since the page loaded): lines go `text.secondary` under `Was suggested:`, Apply hidden, `Dismiss` shown (CR4, rule 5).
+- **Out of date** (Push A changed since the page loaded, **or today's draft moved since the card opened**, for example another edit or an Undo): lines go `text.secondary` under `Was suggested:`, Apply hidden, `Dismiss` shown (CR4, rule 5). The card records the routine version and the draft version it was built from; Apply sends both and is refused if either moved.
+- `Done` (leaving Edit mode) closes an unapplied card; an applied one stays with its Undo.
+- *As built after review B r1 B3 and S2; pending PM/Ben approval.*
 - `Apply` is disabled with no line checked.
 - Not listed: loads typed for today, and anything the time fit did.
 
