@@ -7,7 +7,7 @@ import type { SetSide } from '@fizz/schemas';
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, TextButton, TEXT_PRESSED_OPACITY, TimerNumeral, type SymbolName } from '../../ui';
-import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadScrollY, rowTap, showsFolded, type AnchorRequest, type ChipState, type Expansions, type TileId } from '../../workout/table';
+import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadMovesTiles, keypadTileY, rowTap, showsFolded, tileReportFor, type AnchorRequest, type ChipState, type Expansions, type TileId, type TileReport } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
 import { openRowWidth, stepperTexts, tileFit, type TileSpec } from '../../workout/tile-fit';
 import { GymPartDivider, SnapNote } from './GymSwitch';
@@ -33,14 +33,8 @@ interface Layout {
   h: number;
 }
 
-/** The open row's tiles, relative to the open row's own top, for the set they belong to. */
-interface TileBoxes {
-  setId: string;
-  boxes: ReadonlyMap<TileId, Layout>;
-}
-
 /** `OpenSetRow` reports where its tiles are, so the keypad and rest anchors know where they end (review r2 B1, S2). */
-const TileLayoutContext = createContext<((t: TileBoxes) => void) | null>(null);
+const TileLayoutContext = createContext<((t: TileReport) => void) | null>(null);
 
 export interface WorkoutTableProps {
   table: WorkoutTableView;
@@ -93,7 +87,7 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
   const folded = useRef(new Map<string, Layout>());
   const open = useRef<{ setId: string; layout: Layout } | null>(null);
   const after = useRef<{ key: string; layout: Layout } | null>(null);
-  const tiles = useRef<TileBoxes | null>(null);
+  const tiles = useRef<TileReport | null>(null);
   const spacerAt = useRef<number | null>(null);
   const viewport = useRef(0);
   /** The viewport with the keypad closed (the keypad lifts the bottom bars and shrinks it by its height). */
@@ -155,21 +149,23 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
       const o = open.current;
       if (!header || !body || o?.setId !== anchorSetId) return;
       const openTop = body.y + o.layout.y;
-      const t = tiles.current?.setId === anchorSetId ? tiles.current.boxes : null;
+      // Only tiles measured under the current keypad state: it hides the plate line above them (review r3 S1).
+      const t = tileReportFor(tiles.current, { setId: anchorSetId, keypadOpen: props.keyboardHeight > 0 });
       const closed = viewportClosed.current > 0 ? viewportClosed.current : viewport.current;
       const geometry = { cardTop: header.y, headerHeight: header.h, viewportHeight: closed, openTop };
       let y: number;
       if (req.target.kind === 'tile') {
         // The focused tile clears the keypad: wait for its height and the tile's layout (review r2 B1).
-        const box = t?.get(req.target.tile);
-        if (box === undefined || props.keyboardHeight <= 0) return;
-        y = keypadScrollY({ ...geometry, keyboardHeight: props.keyboardHeight, tileBottom: openTop + box.y + box.h });
+        const ky = keypadTileY({ geometry, keyboardHeight: props.keyboardHeight, tile: req.target.tile, report: t });
+        if (ky === null) return;
+        y = ky;
       } else {
         // The after-set block leads, unless it and the open row's tiles can't both fit (review r2 S2).
         const a = props.afterSetKey !== null ? after.current : null;
         if (props.afterSetKey !== null && a?.key !== props.afterSetKey) return;
+        if (t.kind === 'stale') return;
         let tilesBottom: number | null = null;
-        if (t !== null) for (const b of t.values()) tilesBottom = Math.max(tilesBottom ?? 0, openTop + b.y + b.h);
+        if (t.kind === 'fresh') for (const b of t.boxes.values()) tilesBottom = Math.max(tilesBottom ?? 0, openTop + b.y + b.h);
         y = anchorTargetY({ ...geometry, viewportHeight: Math.max(0, closed - props.keyboardHeight), afterTop: a !== null ? body.y + a.layout.y : null, tilesBottom });
       }
       if (spacerAt.current !== null && closed > 0) {
@@ -212,7 +208,7 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
 
   const latestApply = useRef(tryApply);
   latestApply.current = tryApply;
-  const reportTiles = useCallback((t: TileBoxes) => {
+  const reportTiles = useCallback((t: TileReport) => {
     tiles.current = t;
     latestApply.current();
   }, []);
@@ -828,12 +824,35 @@ export function OpenSetRow(p: OpenSetRowProps) {
   const rowY = useRef(0);
   const containerY = useRef(0);
   const tileLayouts = useRef(new Map<TileId, Layout>());
+  // Each report carries the keypad state it was measured under; the Table ignores one from the other state (review r3 S1).
+  const keypadOpen = useRef(p.keypadOpen);
+  keypadOpen.current = p.keypadOpen;
+  const sentUnder = useRef<boolean | null>(null);
   const send = () => {
     if (report === null) return;
     const boxes = new Map<TileId, Layout>();
     for (const [id, l] of tileLayouts.current) if (shown.has(id)) boxes.set(id, { y: rowY.current + containerY.current + l.y, h: l.h });
-    report({ setId: f.setId, boxes });
+    sentUnder.current = keypadOpen.current;
+    report({ setId: f.setId, keypadOpen: keypadOpen.current, boxes });
   };
+  const latestSend = useRef(send);
+  latestSend.current = send;
+  const moves = keypadMovesTiles({ plateLine: f.plateLine !== null, last: f.previous !== null, ax: p.ax });
+  useEffect(() => {
+    if (sentUnder.current === null || sentUnder.current === p.keypadOpen) return;
+    // Nothing above the tiles changes: no layout event follows, so the last positions hold for the new state.
+    if (!moves) {
+      latestSend.current();
+      return;
+    }
+    // Something above them does: the next layout pass re-sends. If none comes (it didn't move after all), re-send.
+    const t = setTimeout(() => {
+      if (sentUnder.current !== keypadOpen.current) latestSend.current();
+    }, 300);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [p.keypadOpen, moves]);
   const tileLayout = (id: TileId) => (e: LayoutChangeEvent) => {
     tileLayouts.current.set(id, { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height });
     send();

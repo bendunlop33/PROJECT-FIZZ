@@ -37,6 +37,53 @@ export type TileId = 'load' | 'time' | 'distance' | 'reps';
 /** Clearance (pt) kept between a tile's bottom and whatever edge it must clear (the keypad, the rest or Log bar). */
 export const TILE_CLEARANCE = 8;
 
+/**
+ * Where the open row's tiles are (relative to the open row's top), for the
+ * set and the keypad state they were measured under. The keypad hides the
+ * plate line and `Last` above the tiles, so a report measured with the
+ * keypad closed is ~28 pt off once it opens, until the next layout pass
+ * (review r3 S1).
+ */
+export interface TileReport {
+  setId: string;
+  keypadOpen: boolean;
+  boxes: ReadonlyMap<TileId, { y: number; h: number }>;
+}
+
+/**
+ * The tile report an anchor may use: `fresh` when it's for this set and this
+ * keypad state, `stale` when it's for this set but the other keypad state
+ * (wait for the next layout, don't scroll), `none` when there's none yet.
+ */
+export type TileReportUse = { kind: 'fresh'; boxes: TileReport['boxes'] } | { kind: 'stale' } | { kind: 'none' };
+
+export function tileReportFor(report: TileReport | null, want: { setId: string | null; keypadOpen: boolean }): TileReportUse {
+  if (report === null || want.setId === null || report.setId !== want.setId) return { kind: 'none' };
+  if (report.keypadOpen !== want.keypadOpen) return { kind: 'stale' };
+  return { kind: 'fresh', boxes: report.boxes };
+}
+
+/**
+ * Whether opening or closing the keypad moves the open row's tiles (it hides
+ * the plate line and `Last` above them). When it doesn't, no layout event
+ * follows, so the row re-sends its last report under the new keypad state.
+ */
+export function keypadMovesTiles(p: { plateLine: boolean; last: boolean; ax: boolean }): boolean {
+  return !p.ax && (p.plateLine || p.last);
+}
+
+/**
+ * The keypad anchor's scroll offset for the focused tile, or null to wait:
+ * no keypad height yet, or no tile layout measured under the open keypad
+ * (a stale report would scroll too far and clear the request; review r3 S1).
+ */
+export function keypadTileY(p: { geometry: OpenRowGeometry; keyboardHeight: number; tile: TileId; report: TileReportUse }): number | null {
+  if (p.keyboardHeight <= 0 || p.report.kind !== 'fresh') return null;
+  const box = p.report.boxes.get(p.tile);
+  if (box === undefined) return null;
+  return keypadScrollY({ ...p.geometry, keyboardHeight: p.keyboardHeight, tileBottom: p.geometry.openTop + box.y + box.h });
+}
+
 /** Content-space positions for the open row's anchor, measured from the list's layout. */
 export interface OpenRowGeometry {
   /** Top of the anchor card's pinned header (its natural place) and its height. */

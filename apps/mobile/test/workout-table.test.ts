@@ -7,7 +7,7 @@ import { NBSP, tableLogLabel, type TableRow } from '@fizz/domain';
 import type { SessionCommand } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { anchorReducer, anchorScrollY, anchorTargetY, bottomSpacerHeight, chipsFor, keypadScrollY, rowTap, TILE_CLEARANCE, selectCommand, selectRowFlow, showsFolded, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type SelectOutcome, type TileId } from '../src/workout/table';
+import { anchorReducer, anchorScrollY, anchorTargetY, bottomSpacerHeight, chipsFor, keypadMovesTiles, keypadScrollY, keypadTileY, rowTap, TILE_CLEARANCE, selectCommand, selectRowFlow, showsFolded, tileReportFor, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type SelectOutcome, type TileId, type TileReport } from '../src/workout/table';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
@@ -107,6 +107,57 @@ describe('keypad anchor: the focused tile clears the keypad (WT39, review r2 B1)
     const big = keypadScrollY({ cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: 2000, openTop: OPEN_TOP, keyboardHeight: 335, tileBottom: tileTop(1) + TILE });
     expect(big).toBe(OPEN_TOP - HEADER);
     expect(keypadScrollY({ cardTop: 0, headerHeight: HEADER, viewportHeight: 600, openTop: HEADER, keyboardHeight: 0, tileBottom: 300 })).toBe(0);
+  });
+});
+
+describe('keypad anchor: tile positions from before the keypad hid the plate line (review r3 S1)', () => {
+  const phone = PHONES[0];
+  if (!phone) throw new Error('phone');
+  const PLATE_LINE = 28;
+  const geometry = { cardTop: CARD_TOP, headerHeight: HEADER, viewportHeight: viewport(phone, true), openTop: OPEN_TOP };
+  // REPS, the second tile: below the plate line while the keypad is closed, 28 pt higher once it opens.
+  const reps = (y: number) => new Map([['reps' as const, { y, h: TILE }]]);
+  const closedReport: TileReport = { setId: 's2', keypadOpen: false, boxes: reps(tileTop(1) - OPEN_TOP + PLATE_LINE) };
+  const openReport: TileReport = { setId: 's2', keypadOpen: true, boxes: reps(tileTop(1) - OPEN_TOP) };
+
+  it('a stale report waits; the fresh one then applies, about 28 pt short of the stale offset', () => {
+    // Pending keypad request; the frame runs before the tiles' new onLayout.
+    const state: { request: { tile: TileId } | null; scrolledTo: number | null } = { request: { tile: 'reps' }, scrolledTo: null };
+    const frame = (report: TileReport | null) => {
+      if (state.request === null) return;
+      const y = keypadTileY({ geometry, keyboardHeight: phone.keypad, tile: state.request.tile, report: tileReportFor(report, { setId: 's2', keypadOpen: true }) });
+      if (y === null) return;
+      state.scrolledTo = y;
+      state.request = null;
+    };
+    frame(closedReport);
+    expect(state.scrolledTo).toBeNull();
+    expect(state.request).not.toBeNull();
+    frame(openReport);
+    expect(state.request).toBeNull();
+    const fresh = keypadScrollY({ ...geometry, keyboardHeight: phone.keypad, tileBottom: tileTop(1) + TILE });
+    expect(state.scrolledTo).toBe(fresh);
+    const staleY = keypadScrollY({ ...geometry, keyboardHeight: phone.keypad, tileBottom: tileTop(1) + PLATE_LINE + TILE });
+    expect(staleY - fresh).toBe(PLATE_LINE);
+    // At 375 x 667 during rest the fresh offset keeps the − / + row (the tile's bottom 52 pt) below the pinned header.
+    const tileTopOnScreen = listTop(phone) + (tileTop(1) - fresh);
+    expect(tileTopOnScreen + TILE - 52).toBeGreaterThanOrEqual(listTop(phone) + HEADER);
+  });
+
+  it('tileReportFor: another set is none; the other keypad state is stale; no keypad height waits', () => {
+    expect(tileReportFor(openReport, { setId: 's3', keypadOpen: true })).toEqual({ kind: 'none' });
+    expect(tileReportFor(null, { setId: 's2', keypadOpen: true })).toEqual({ kind: 'none' });
+    expect(tileReportFor(openReport, { setId: 's2', keypadOpen: false })).toEqual({ kind: 'stale' });
+    expect(tileReportFor(closedReport, { setId: 's2', keypadOpen: false }).kind).toBe('fresh');
+    expect(keypadTileY({ geometry, keyboardHeight: 0, tile: 'reps', report: tileReportFor(openReport, { setId: 's2', keypadOpen: true }) })).toBeNull();
+    expect(keypadTileY({ geometry, keyboardHeight: phone.keypad, tile: 'load', report: tileReportFor(openReport, { setId: 's2', keypadOpen: true }) })).toBeNull();
+  });
+
+  it('only a plate line or Last (hidden by the keypad, and not at AX sizes) moves the tiles', () => {
+    expect(keypadMovesTiles({ plateLine: true, last: false, ax: false })).toBe(true);
+    expect(keypadMovesTiles({ plateLine: false, last: true, ax: false })).toBe(true);
+    expect(keypadMovesTiles({ plateLine: false, last: false, ax: false })).toBe(false);
+    expect(keypadMovesTiles({ plateLine: true, last: true, ax: true })).toBe(false);
   });
 });
 
