@@ -300,6 +300,8 @@ function make(status: RenderedStatus, text: string, spoken: string, detail: stri
   return { status, text, detail, spoken, accessibilityPrefix: PREFIX[status] };
 }
 
+const plural = (n: number, one: string): string => `${String(n)} ${n === 1 ? one : `${one}s`}`;
+
 function failureOr(record: ActionRecord, fallback: string): string {
   return record.failure ?? fallback;
 }
@@ -390,6 +392,17 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       }
       const text = `Couldn't fit today to ${String(d.minutes)} min. Nothing changed.`;
       return make(status, text, text);
+    }
+    case 'build_workout': {
+      // workout-builder §4.2, §5.3: the card reads the stored draft; this line is the tool log and `Why?` text.
+      if (st === 'committed') {
+        const left = d.leftOut > 0 ? ` · ${String(d.leftOut)} left out` : '';
+        const text = d.parentN === null ? `Draft ready: ${d.name} · ${plural(d.exerciseCount, 'exercise')}${left}.` : `Version ${String(d.versionN)}: ${d.name} · ${plural(d.exerciseCount, 'exercise')}${left}.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing built.', 'Out of date. Nothing built.');
+      const text = `Couldn't build a workout here: ${failureOr(record, 'it failed the checks')}. Nothing saved.`;
+      return make(status, text, speakable(text));
     }
     case 'set_pain_flag': {
       if (st === 'committed') {

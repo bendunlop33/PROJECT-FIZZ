@@ -50,6 +50,9 @@ export function semanticArgs(call: CoachToolCall): unknown {
       return { ...call.args, targets: call.args.targets.map((t) => ({ exerciseId: t.exerciseId, target: t.target, sets: t.sets })) };
     case 'propose_next_workout_change':
       return { sourceSessionId: call.args.sourceSessionId, sourceVersion: call.args.sourceVersion, changes: call.args.changes };
+    case 'propose_workout':
+      // The message is explanation: a retry that only rewords it is the same workout.
+      return { exercises: call.args.exercises };
     case 'log_set':
     case 'correct_set':
       return call.args;
@@ -105,6 +108,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'correct_set':
     case 'set_next_session_targets':
     case 'propose_next_workout_change':
+    case 'propose_workout':
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':
@@ -144,6 +148,9 @@ function parseArgs(schema: z.ZodType, value: unknown): { ok: true; value: unknow
   }
   return { ok: false, issues: ['too many unknown fields'] };
 }
+
+/** Tools whose unknown fields fail the call rather than being dropped (a field there could carry a number the app must decide). */
+const STRICT_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['propose_workout']);
 
 /** Words that tie a text to Ben himself: first person or his name. */
 const OWNER_WORDS = /\b(?:i|i'm|im|i've|ive|i'd|i'll|me|my|mine|myself|ben|ben's|bens)\b/;
@@ -292,6 +299,14 @@ export function parseToolCall(turnId: string, name: string, rawArguments: string
     return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: ['not JSON'] };
   }
   const schema: z.ZodType = COACH_TOOL_ARGS[decl.name];
+  // workout-builder BD1, WB3: `propose_workout` has no load, minutes, gym or equipment field, and one
+  // smuggled in (`load`, `weight`, `minutes` …) fails the call instead of being dropped.
+  if (STRICT_TOOLS.has(decl.name)) {
+    const strict = schema.safeParse(raw);
+    if (!strict.success) {
+      return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: strict.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`) };
+    }
+  }
   const parsed = parseArgs(schema, raw);
   if (!parsed.ok) {
     return { ok: false, error: 'invalid_args', line: `Couldn't read the coach's request for ${name}. Nothing changed.`, issues: parsed.issues };

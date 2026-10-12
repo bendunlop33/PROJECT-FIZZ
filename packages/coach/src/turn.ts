@@ -1,4 +1,4 @@
-import { classifyPainMention, painBodyPart, type AdjustIntent, type MessagePain } from '@fizz/domain';
+import { asksToStartOrSave, classifyPainMention, painBodyPart, START_BY_TAP_LINE, type AdjustIntent, type MessagePain } from '@fizz/domain';
 import {
   COACH_REPLY_TOOL_NAME,
   type ActionRecord,
@@ -25,8 +25,9 @@ import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { chipRequest, classifyBenRequest, requestHas, type BenRequest } from './request';
+import { chipRequest, classifyBenRequest, requestHas, revisesDraft, type BenRequest } from './request';
 import { parseToolCall } from './tool-call';
+import { BUILD_INSTRUCTIONS } from './build';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -93,6 +94,8 @@ export interface CoachTurnRequest {
   structuralSignals: readonly StructuralSignalKind[];
   /** Exercise IDs Ben named in his words (for `messagePain`); the caller matches names to the session. */
   namedExerciseIds?: readonly string[];
+  /** A coach draft is in context (workout-builder BD16): Ben's change words make its next version. */
+  draftInContext?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -153,6 +156,8 @@ export interface GateInput {
   /** The offer on the coach's last message in this thread, if any. */
   previousOffer: CoachOfferKind | null;
   structuralSignals: readonly StructuralSignalKind[];
+  /** A coach draft is in context (`Ask coach` on its overview): Ben's change words make a new version (workout-builder BD16). */
+  draftInContext?: boolean;
 }
 
 /** The turn gate from Ben's own input only (registry.ts `TurnGate`). */
@@ -165,6 +170,10 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     case 'words':
       if (g.previousOffer === 'adjust_today' && isBareAccept(g.input.text)) acceptedOffer = true;
       else benRequest = classifyBenRequest(g.input.text);
+      // BD16: with a draft in context, "make it shorter" / "no barbell" is a build request for that draft.
+      if (g.draftInContext === true && revisesDraft(g.input.text) && !requestHas(benRequest, 'build')) {
+        benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds : []), 'build'] };
+      }
       benPainWords = classifyPainMention(g.input.text) === 'pain';
       break;
     case 'chip':
@@ -178,7 +187,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     case 'summary':
       break;
   }
-  const benAskedForChange = acceptedOffer || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook')));
+  const benAskedForChange = acceptedOffer || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build')));
   return { kind: g.kind, benRequest, acceptedOffer, benPainWords, structuralSignals: g.structuralSignals, benAskedForChange, intent };
 }
 
@@ -353,7 +362,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const lastCoach = [...history].reverse().find((m) => m.body.role === 'coach');
   const previousOffer = lastCoach !== undefined && lastCoach.body.role === 'coach' ? lastCoach.body.offer : null;
 
-  const gate = gateFor({ kind: req.kind, input: req.input, previousOffer, structuralSignals: req.structuralSignals });
+  const gate = gateFor({ kind: req.kind, input: req.input, previousOffer, structuralSignals: req.structuralSignals, ...(req.draftInContext === true ? { draftInContext: true } : {}) });
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
   const turn: CoachTurn = {
@@ -381,11 +390,14 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   if (started.replayed) return replayedResult(started.turn, ports, req.surface);
 
   const words = req.input.kind === 'words' ? req.input.text : null;
+  // workout-builder BD15: "start it" / "save it" gets the fixed line and no model call; Start and Save are Ben's taps.
+  if (words !== null && req.kind === 'general' && asksToStartOrSave(words)) return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
   const mention = words === null ? 'none' : classifyPainMention(words);
   const messagePain: MessagePain | null = words === null ? null : { mention, exerciseIds: req.namedExerciseIds ?? [], bodyPart: painBodyPart(words) };
 
   const registry = runnable(buildTurnRegistry(gate), ports.executors);
   const tools = [...functionToolDefinitions(registry.tools), replyToolDefinition()];
+  const instructions = registry.tools.some((t) => t.name === 'propose_workout') ? `${COACH_INSTRUCTIONS}\n${BUILD_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
   if (said !== null) input.push({ type: 'message', role: 'user', content: said });
@@ -433,7 +445,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     }
     replyStream = new ReplyMessageStream();
     const stream = replyStream;
-    const out = await runModelStep(ports.model, { model: req.model, instructions: COACH_INSTRUCTIONS, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, req.signal, {
+    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, req.signal, {
       onFirstEvent,
       onReplyDelta: (delta) => {
         const fresh = stream.push(delta);
@@ -553,6 +565,21 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     contextHash: context.contextHash,
     replayed: false,
   };
+}
+
+/** A turn answered by code with a fixed line (BD15): Ben's message and the line are saved; the model isn't called. */
+async function fixedReply(req: CoachTurnRequest, ports: CoachTurnPorts, thread: CoachThread, line: string, contextHash: string): Promise<CoachTurnResult> {
+  const endedAt = ports.now();
+  await ports.store.appendMessage({
+    id: ports.newId(),
+    ownerId: req.ownerId,
+    threadId: thread.id,
+    turnId: req.turnId,
+    createdAt: endedAt,
+    body: { role: 'coach', items: [{ kind: 'sentence', text: line }], actionIds: [], note: null, offer: null, hiddenLines: [], complete: true },
+  });
+  await ports.store.updateTurn(req.turnId, { status: 'completed', error: null, endedAtUtc: endedAt.utc, toolLog: [] }, endedAt.utc);
+  return { turnId: req.turnId, threadId: thread.id, status: 'completed', error: null, items: [{ kind: 'sentence', text: line }], cards: [], note: null, offer: null, askPain: null, hiddenLines: [], toolLog: [], contextHash, replayed: false };
 }
 
 /** A turn ID that was already used: show what was saved, send nothing. */

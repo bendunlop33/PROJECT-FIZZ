@@ -384,6 +384,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Turn a pain flag on",
               "Save a memory",
               "Forget a memory",
+              "Build a workout you ask for, as a draft you open, start or save",
               "Add a general training rule to your playbook to review",
             ],
             "section": "when_you_ask",

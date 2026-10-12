@@ -395,6 +395,8 @@ function undoWhat(target: ActionRecord): string {
       return renderActionResult(target, 'sheet').text.replace(/\.$/, '').slice(0, 200);
     case 'fit_today':
       return `the fit to ${String(d.minutes)} min`;
+    case 'build_workout':
+      return `version ${String(d.versionN)} of ${d.name}`;
   }
 }
 

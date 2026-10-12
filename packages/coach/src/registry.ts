@@ -221,6 +221,19 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Forget a saved memory Ben asked you to forget. It can be undone.',
   },
   {
+    // workout-builder BD1, §8.2: structure only (no load, no minutes); a draft Ben opens, starts or saves himself.
+    name: 'propose_workout',
+    effect: 'propose',
+    writes: ['workout_draft'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['general'],
+    plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Build the workout Ben asked for, or a new version of the coach draft in context: exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. No loads or minutes: the app plans loads from his history and fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+  },
+  {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
     // spec (the stricter one) wins until Ben decides.
     name: 'add_playbook_candidate',
@@ -335,6 +348,8 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   save_memory: ['memory'],
   forget_memory: ['memory'],
   add_playbook_candidate: ['playbook'],
+  // workout-builder §8.2: a build request ("build me a 45-minute push session"), or a change to the draft in context (BD16).
+  propose_workout: ['build'],
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {

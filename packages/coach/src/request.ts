@@ -98,7 +98,7 @@ import { EXERCISE_WORD, TRAINING_NOUN } from './vocab';
 
 export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
 
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct';
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -568,6 +568,47 @@ const HOLD: readonly RegExp[] = [
   new RegExp(`^(?:stop|pause|hold off) (?:progressing|increasing|adding weight to|bumping|on progressing) (?:the |my )?(?:it|them|this|that|(?:\\w+ )?${EXERCISE_WORD})\\b`),
 ];
 
+/**
+ * (12 Oct, workout builder) Ben asks for a whole workout: "build me a
+ * 45-minute push session for this gym", "make a leg workout", "Build a 45
+ * min push workout" (the Build card's own words), "I want a quick upper
+ * body session". The noun must be a workout, session or day; a programme
+ * or a week is later (workout-builder §10) and isn't this kind. Only this
+ * kind opens `propose_workout`.
+ */
+const BUILD_NOUN = '(?:workout|work-?out|session|routine|day|circuit|training session)';
+const BUILD_VERB = '(?:build|make|plan|create|design|write|put together|throw together|whip up|sort out|sort|come up with|give|get|set up|draft)';
+const BUILD_DIRECT = new RegExp(`^${BUILD_VERB}(?: me| us| out)?(?: (?:a|an|another|my|the|some|today'?s|tonight'?s|one|new|quick|short|fresh))+\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
+const BUILD_WANT = new RegExp(`^i (?:want|need|would like|'d like|fancy)(?: to do)? (?:a|an|another|some|one)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
+const BUILD_LATER = /\b(?:programme|program|programs|programmes|mesocycle|block|weeks?|month|plan for the week|weekly plan|split)\b/;
+
+function buildIn(clause: string): boolean {
+  const c = clause.replace(POLITE, '');
+  if (BUILD_LATER.test(c) || isOpinionQuestion(c)) return false;
+  const body = ASK_PREFIX.exec(c)?.[1] ?? c;
+  return BUILD_DIRECT.test(body) || BUILD_WANT.test(c);
+}
+
+/**
+ * With a coach draft in context (`Ask coach` on its overview, workout-builder
+ * BD16), "make it shorter", "no barbell", "swap the pec deck", "drop the
+ * dips", "add some core" change the draft: a new version, never today's sets.
+ */
+const DRAFT_REVISION: readonly RegExp[] = [
+  /^(?:make|keep) (?:it|this|that|the (?:workout|session|draft))\b.*\b(?:shorter|longer|harder|easier|lighter|heavier|quicker|simpler|different)\b/,
+  /^(?:no|without|skip|drop|lose|ditch|remove|cut|swap|switch|replace|sub|change|add|include|more|less|fewer|use|only)\b/,
+  /^(?:can|could) (?:you|we) (?:make|swap|switch|replace|drop|remove|add|change|use)\b/,
+];
+
+/** Whether Ben's words change the coach draft in context (BD16). Code, never the model's reading. */
+export function revisesDraft(text: string): boolean {
+  return normalise(text).some((c) => {
+    const t = c.text.replace(POLITE, '');
+    const asks = !c.question || /^(?:can|could|would|will) (?:you|we)\b/.test(t);
+    return c.label === null && asks && !isOpinionQuestion(t) && DRAFT_REVISION.some((re) => re.test(t));
+  });
+}
+
 /** Classify Ben's own words (typed or spoken). Returns null when they don't ask for a change. */
 export function classifyBenRequest(text: string): BenRequest | null {
   const whole = lower(text).trim();
@@ -599,8 +640,11 @@ export function classifyBenRequest(text: string): BenRequest | null {
         (askingClauses.includes(c.text) || selfStandingStructural(c.text) || ASK_PREFIX.test(c.text.replace(POLITE, '')) || (!c.question && SWAP_VERB.test(c.text.replace(POLITE, '').split(' ')[0] ?? ''))),
     );
   if (structural) kinds.push('structural');
-  // A clause that is only a swap ("swap cable fly") isn't also a load change.
-  if (askingClauses.some((c) => !structuralIn(c))) kinds.push('change');
+  // A whole workout (workout builder): its own kind, never a change to today's sets.
+  const building = open.filter((c) => buildIn(c.text)).map((c) => c.text);
+  if (building.length > 0) kinds.push('build');
+  // A clause that is only a swap ("swap cable fly") or a build isn't also a load change.
+  if (askingClauses.some((c) => !structuralIn(c) && !building.includes(c))) kinds.push('change');
   // "Is 95 too light?" asks for a view; "too easy, what next?" reports how it went.
   if (!isOpinionQuestion(clauses[0] ?? '') && open.some(difficultyIn)) kinds.push('difficulty');
   if (open.some((c) => !c.question && HOLD.some((re) => re.test(c.text.replace(POLITE, ''))))) kinds.push('hold');
@@ -617,7 +661,7 @@ export function classifyBenRequest(text: string): BenRequest | null {
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
+    if (c.label !== null || buildIn(c.text) || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };
