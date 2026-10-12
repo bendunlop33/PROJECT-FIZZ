@@ -23,6 +23,8 @@ export interface ProgressSet {
   load: Load | null;
   reps: number | null;
   durationS: number | null;
+  /** Metres, on distance sets (sled push, carries); absent on every other set. */
+  distanceM?: number;
   rpe: number | null;
   rir: number | null;
   /** Ben's `Spotted`, `Pain`, `Form broke`, `Other equipment` marks (PG21). Absent = counts. */
@@ -100,6 +102,7 @@ export function toProgressSession(aggregate: SessionAggregate, ownerTz: string, 
       load: s.actual.load,
       reps: s.actual.reps,
       durationS: s.actual.durationS,
+      ...(s.actual.distanceM !== null && s.actual.distanceM !== undefined ? { distanceM: s.actual.distanceM } : {}),
       rpe: s.actual.rpe,
       rir: s.actual.rir,
       ...(s.exclusions && s.exclusions.length > 0 ? { exclusions: s.exclusions } : {}),

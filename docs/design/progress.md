@@ -623,11 +623,11 @@ Every number uses tabular numerals and design-system §3 formats. Estimates alwa
 | List | `Exercises` · search placeholder `Search` · row `Bench press` / `24 sessions · last 8 Oct` | — |
 | Series | `Main Gym · barbell` · `Hotel Gym · barbell` · `FitNotes · kg` · `Main Gym · barbell + FitNotes` · menu items `Add FitNotes history` · `Remove FitNotes history` | — |
 | Add confirm | `Show 40 FitNotes sessions (2019–2026) with Main Gym · barbell?` · `Add` · `Cancel` · toasts `FitNotes history added` / `FitNotes history removed` [Undo] | — |
-| StatStrip | `EST. 1RM ≈126.5 kg` · `BEST SET 105 × 3` · `SESSIONS 24` · `MOST REPS 14` · `LEAST ASSIST 15 kg` | Estimate / actual |
-| Metric chips | `Est. 1RM` · `Top set` · `Volume` · bodyweight `Best set` · timed `Longest hold` | — |
+| StatStrip | `EST. 1RM ≈126.5 kg` · `BEST SET 105 × 3` · `SESSIONS 24` · `MOST REPS 14` · `LEAST ASSIST 15 kg` · distance `BEST DISTANCE 60 kg × 25 m` · `TOTAL DISTANCE 1.2 km` | Estimate / actual |
+| Metric chips | `Est. 1RM` · `Top set` · `Volume` · bodyweight `Best set` · timed `Longest hold` · distance `Total distance` · `Best distance` | — |
 | Range chips | `3 mo` · `6 mo` · `1 yr` · `All` | — |
 | Headings | `Est. 1RM · 9 Apr – 8 Oct` · `Top set · …` · `Volume · …` · suffix `· weekly best` | As named |
-| Axis units | `kg` · `kg each` · `kg stack` · `reps` · `kg × reps` | — |
+| Axis units | `kg` · `kg each` · `kg stack` · `reps` · `kg × reps` · `m` | — |
 | Range summary | `Latest  ≈123 kg · 8 Oct` · `Best  ≈126.5 kg · 24 Sep (100 × 8)` · `Change  Up ≈6 kg since 9 Apr` · top set: `Latest  102.5 kg × 6 · 8 Oct` · `Change  Up 7.5 kg since 9 Apr` · `Same load, 2 more reps than 9 Apr` | Estimate / actual |
 | Selection | `Thu 1 Oct · Push A` · `Est. 1RM  ≈115.5 kg  from 105 kg × 3` · `Top set  105 kg × 3` · `Open workout ›` · `Clear` | — |
 | Legend (PG32) | `● Logged here  ○ FitNotes` | — |
@@ -708,6 +708,11 @@ All Progress reads are local and pure: they're computed from finished sessions w
 | Bodyweight + added | No | Yes (added load) | No | Yes (added load) | Best set · Most reps · Sessions |
 | Bodyweight | No | `Best set` (reps) | No (total reps in table only) | No | Most reps · Sessions |
 | Timed | No | `Longest hold` | No | No | Longest hold · Sessions |
+| Distance (sled push, carries; any convention) | No | `Total distance` (default; Σ metres, marked sets included, unilateral = busier side) · `Best distance` (longest counted set, shown with its load: `60 kg × 25 m`) | No | `BEST DISTANCE` by load instead (longest counted set at each load, heaviest first, `No load` last) | Best distance · Total distance · Sessions |
+
+Distance series have no records section yet (no record is defined), like timed. Axis and values are metres (`m`, `km` from 1,000 m); a sled's load never reads `BW +`.
+
+`Best distance` is **longer, then heavier**: within a session and across sessions (StatStrip, panel `Best`, weekly-best chart points), equal metres go to the heavier load; equal metres and equal load keep the earlier date. The panel `Change` line for `Best distance` at equal metres reads the load difference against the first point: `Same distance, 40 kg more than 1 Sep` (up) or `Same distance, 20 kg less than 1 Sep` (down), with `each` for per-hand (`Same distance, 10 lb more each than 1 Sep`); equal metres and equal load read `Same as 1 Sep`. `Total distance` ignores load (`Same as 1 Sep`).
 
 ### 6.4 Schema additions (developer; Ben approves the PG32 one)
 
@@ -785,7 +790,7 @@ Checks:
 26. **One series per chart.** Bench on Main Gym barbell and on Hotel Gym barbell are separate entries in the series menu and never share a chart.
 27. **Est. 1RM is labelled everywhere.** Every Est. 1RM value on every screen has `≈` and `Est.` (or "estimate" for VoiceOver).
 28. **Est. 1RM rules.** 100 kg × 5 shows `≈116.5 kg` (100 × (1 + 5/30) = 116.67, rounded to the nearest 0.5 kg); 100 kg × 1 shows `≈100 kg`. A session's value comes from its single best eligible set; sets over 10 reps, warm-ups and marked sets are ignored; no value is averaged across sessions.
-29. **Not offered** for assisted, bodyweight, bodyweight + added and timed exercises; the default metric becomes `Top set`, `Best set` or `Longest hold`.
+29. **Not offered** for assisted, bodyweight, bodyweight + added, timed and distance exercises; the default metric becomes `Top set`, `Best set`, `Longest hold` or `Total distance`.
 30. **Rep table by weight.** Sets of 100×8, 100×7 and 102.5×6 list `102.5 kg  6` and `100 kg  8` with their dates.
 31. **Rep table by reps.** The same sets give 6 reps `102.5 kg`, 5 reps `102.5 kg  from 6 reps`, 8 reps `100 kg`, 7 reps `100 kg  from 8 reps`, and no rows above 8.
 32. **Marked sets.** A 105×3 marked `Spotted` isn't in the chart, rep table, records or `StatStrip`; history reads `105×3 (spotted)`. If every set that day is marked, there's no point and the marker reads `Not counted`.
@@ -794,7 +799,8 @@ Checks:
 35. **Table and VoiceOver.** `Show as table` lists the same values as the chart; with VoiceOver, the chart reads its summary and swipe up/down moves point by point.
 36. **Long history.** `All` with years of FitNotes history draws weekly bests with `· weekly best` in the heading; the table lists every session.
 37. **FitNotes history (PG32).** `Add FitNotes history` on Main Gym barbell shows FitNotes sessions as hollow points with the legend, tags FitNotes rows, and changes nothing in the workout (the `Last` line, targets and the in-workout record line are the same before and after). Undo removes it. It's refused for a different convention or unit. **Deferred (O-PG1, review progress-B S6/SP1):** slice B ships without `Add FitNotes history`, `SeriesLink` or hollow points; FitNotes history stays its own `FitNotes · kg` series in the series menu. This check is unmet until Ben answers O-PG1 and the slice that builds it is chosen.
-38. **Volume** shows bars of Σ load × reps per session, with marked sets included, and isn't offered for assisted, bodyweight or timed exercises.
+38. **Volume** shows bars of Σ load × reps per session, with marked sets included, and isn't offered for assisted, bodyweight, timed or distance exercises.
+38a. **Distance** (sled push, carries, added 12 Oct 2026): sets of 40 kg × 20 m twice show `Total distance 40 m` for that session; `Best distance` reads `40 kg × 20 m`; the `BEST DISTANCE` table lists the longest counted set at each load; no Est. 1RM, top set, volume, rep table or records. 40 kg × 25 m on 1 Sep and 80 kg × 25 m on 1 Oct: the StatStrip and the panel `Best` both read `80 kg × 25 m` (1 Oct) and `Change` reads `Same distance, 40 kg more than 1 Sep`; with the sessions reversed both read `80 kg × 25 m · 1 Sep`.
 39. **Records** list every record of the series, newest first, with `Best Est. 1RM` labelled as an estimate; a series with fewer than 3 logged sessions shows `Records start after 3 logged sessions.`
 40. **No new chart library** is added to `apps/mobile/package.json`; charts draw with Skia, and no chart animates.
 41. **Offline and no AI**: every slice B screen is identical online and offline.

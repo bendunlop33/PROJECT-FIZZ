@@ -14,5 +14,6 @@ Node 22.18+ and npm workspaces. Packages: `packages/schemas` (zod schemas and ty
 npm install
 npm run typecheck
 npm run lint
-npm test
+npm test           # default suite, no wall-clock budgets
+npm run test:perf  # perf lane: *.perf.test.ts timing budgets (non-blocking in CI)
 ```

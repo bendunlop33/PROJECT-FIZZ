@@ -65,12 +65,13 @@ describe('app name (approved 9 Oct 2026)', () => {
     expect(workflow).toContain('IPA_NAME="$FILE_NAME-$VERSION-build$FIZZ_BUILD_NUMBER.ipa"');
   });
 
-  it('keeps npm install scripts on in both CI jobs and checks Skia\'s iOS libraries early (review N11)', () => {
+  it('keeps npm install scripts on in every CI job and checks Skia\'s iOS libraries early in check and build (review N11)', () => {
     const workflow = readFileSync(join(import.meta.dirname, '../../../.github/workflows/ios-ipa.yml'), 'utf8');
     const commands = workflow.split('\n').filter((l) => !l.trim().startsWith('#'));
     expect(commands.filter((l) => l.includes('ignore-scripts'))).toEqual([]);
-    expect(workflow.match(/^ {6}- run: npm ci$/gm)).toHaveLength(2);
-    expect(workflow.match(/# Install scripts must stay enabled \(never --ignore-scripts\)/g)).toHaveLength(2);
+    // check, build and the non-blocking perf lane.
+    expect(workflow.match(/^ {6}- run: npm ci$/gm)).toHaveLength(3);
+    expect(workflow.match(/# Install scripts must stay enabled \(never --ignore-scripts\)/g)).toHaveLength(3);
     expect(workflow.match(/node_modules\/@shopify\/react-native-skia\/libs\/ios\/libskia\.xcframework/g)).toHaveLength(2);
   });
 });

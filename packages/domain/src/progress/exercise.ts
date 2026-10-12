@@ -23,7 +23,7 @@ import { inRange, type DateRange } from './window';
  *   series' convention and unit is left out of the series' numbers.
  */
 
-export type ExerciseMetric = 'e1rm' | 'top_set' | 'volume' | 'best_set' | 'longest_hold';
+export type ExerciseMetric = 'e1rm' | 'top_set' | 'volume' | 'best_set' | 'longest_hold' | 'total_distance' | 'best_distance';
 export type TrendRange = '3m' | '6m' | '1y' | 'all';
 export const TREND_RANGES: readonly TrendRange[] = ['3m', '6m', '1y', 'all'];
 export const DEFAULT_TREND_RANGE: TrendRange = '6m';
@@ -42,9 +42,10 @@ export const DEFAULT_SERIES_DAYS = 84;
  * (§6.3): `load` (total, per hand, stack, plate-loaded `added`) has Est. 1RM,
  * top set and volume; `assisted` (less is better) and `added_bodyweight`
  * (`BW + 10 kg`) have a top set; `bodyweight` has the best set in reps;
- * `timed` the longest hold.
+ * `timed` the longest hold; `distance` (sled push, carries) total distance and
+ * the longest set, never an Est. 1RM.
  */
-export type SeriesKind = 'load' | 'assisted' | 'added_bodyweight' | 'bodyweight' | 'timed';
+export type SeriesKind = 'load' | 'assisted' | 'added_bodyweight' | 'bodyweight' | 'timed' | 'distance';
 
 export interface SeriesKey {
   exerciseId: string;
@@ -59,11 +60,12 @@ export interface SeriesKey {
 /** A stable string for a series (navigation params, remembered choice). */
 export function seriesIdOf(k: SeriesKey): string {
   const eq = k.source === 'import' ? 'import' : (k.equipmentId ?? 'none');
-  return [k.exerciseId, eq, k.convention, k.unit, k.measurement === 'duration' ? 'timed' : 'reps'].join('|');
+  return [k.exerciseId, eq, k.convention, k.unit, k.measurement === 'duration' ? 'timed' : k.measurement === 'distance' ? 'distance' : 'reps'].join('|');
 }
 
 export function seriesKind(convention: LoadConvention, equipmentKind: EquipmentKind | null, measurement: Measurement): SeriesKind {
   if (measurement === 'duration') return 'timed';
+  if (measurement === 'distance') return 'distance';
   if (convention === 'assistance') return 'assisted';
   if (convention === 'bodyweight') return 'bodyweight';
   if (convention === 'added' && equipmentKind !== 'plate_loaded_machine') return 'added_bodyweight';
@@ -82,6 +84,8 @@ export function metricsFor(kind: SeriesKind): ExerciseMetric[] {
       return ['best_set'];
     case 'timed':
       return ['longest_hold'];
+    case 'distance':
+      return ['total_distance', 'best_distance'];
   }
 }
 
@@ -292,6 +296,57 @@ export function sessionVolume(ss: SeriesSession, series: Pick<ExerciseSeries, 'k
   return used > 0 ? { value: Math.round(total * 100) / 100, kind: 'actual', fromSet: null } : null;
 }
 
+/** A completed non-warm-up distance set with metres. */
+type Distanced = ProgressSet & { distanceM: number };
+const distanced = (s: ProgressSet): s is Distanced => s.setType !== 'warmup' && s.distanceM !== undefined && s.distanceM > 0;
+
+/** The set's load when it is in the series' convention and unit (what a distance set carried or pushed). */
+export function seriesLoadValue(s: ProgressSet, key: SeriesKey): number | null {
+  return s.load !== null && s.load.convention === key.convention && s.load.unit === key.unit ? s.load.value : null;
+}
+
+/**
+ * Distance `Best distance`: the longest countable set (PG21), then the
+ * heavier load. Actual metres, never adjusted for load.
+ */
+export function sessionBestDistance(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind'>): MetricValue | null {
+  if (series.kind !== 'distance') return null;
+  let best: Distanced | null = null;
+  for (const s of ss.sets) {
+    if (!distanced(s) || !counts(s)) continue;
+    if (best === null || s.distanceM > best.distanceM || (s.distanceM === best.distanceM && (seriesLoadValue(s, series.key) ?? 0) > (seriesLoadValue(best, series.key) ?? 0))) best = s;
+  }
+  return best === null ? null : { value: best.distanceM, kind: 'actual', fromSet: best };
+}
+
+/**
+ * Distance `Total distance`: Σ metres over completed non-warm-up sets, marked
+ * sets included (the work was done, as volume, PG31). A unilateral row (a
+ * suitcase carry) counts its `both` sets plus the busier side.
+ */
+export function sessionTotalDistance(ss: SeriesSession, series: Pick<ExerciseSeries, 'kind'>): MetricValue | null {
+  if (series.kind !== 'distance') return null;
+  let used = 0;
+  const sum = (xs: readonly ProgressSet[]): number => {
+    let acc = 0;
+    for (const s of xs) {
+      if (!distanced(s) || !isSetCountable(s, 'volume')) continue;
+      used += 1;
+      acc += s.distanceM;
+    }
+    return acc;
+  };
+  let total = 0;
+  for (const row of ss.rows) {
+    if (row.laterality === 'bilateral') total += sum(row.sets);
+    else {
+      total += sum(row.sets.filter((s) => s.side === 'both' || s.side === null));
+      total += Math.max(sum(row.sets.filter((s) => s.side === 'left')), sum(row.sets.filter((s) => s.side === 'right')));
+    }
+  }
+  return used > 0 ? { value: Math.round(total * 100) / 100, kind: 'actual', fromSet: null } : null;
+}
+
 export function sessionMetric(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind' | 'equipmentKind'>, metric: ExerciseMetric): MetricValue | null {
   switch (metric) {
     case 'e1rm':
@@ -304,6 +359,10 @@ export function sessionMetric(ss: SeriesSession, series: Pick<ExerciseSeries, 'k
       return series.kind === 'bodyweight' ? sessionBestSet(ss) : null;
     case 'longest_hold':
       return series.kind === 'timed' ? sessionLongestHold(ss) : null;
+    case 'total_distance':
+      return sessionTotalDistance(ss, series);
+    case 'best_distance':
+      return sessionBestDistance(ss, series);
   }
 }
 
@@ -410,9 +469,15 @@ function pointsOf(series: ExerciseSeries, metric: ExerciseMetric, within: (date:
   return out;
 }
 
-function better(a: TrendPoint, b: TrendPoint | null, higher: boolean): boolean {
+function better(a: TrendPoint, b: TrendPoint | null, higher: boolean, distanceKey: SeriesKey | null = null): boolean {
   if (b === null) return true;
   if (a.value !== b.value) return higher ? a.value > b.value : a.value < b.value;
+  // Equal best distance: the heavier set wins (longer, then heavier, as the StatStrip); equal load keeps the earlier.
+  if (distanceKey !== null) {
+    const la = a.fromSet === null ? 0 : (seriesLoadValue(a.fromSet, distanceKey) ?? 0);
+    const lb = b.fromSet === null ? 0 : (seriesLoadValue(b.fromSet, distanceKey) ?? 0);
+    return la > lb;
+  }
   // A tie keeps the earlier one (the record date), except an equal top set with more reps.
   const ra = a.fromSet?.reps ?? 0;
   const rb = b.fromSet?.reps ?? 0;
@@ -434,6 +499,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
   const bounds = trendRangeBounds(range, today, firstDate);
   const within = (d: string) => inRange(d, bounds);
   const higher = higherIsBetter(series.kind, metric);
+  const distanceKey = metric === 'best_distance' && series.kind === 'distance' ? series.key : null;
   const inside = series.sessions.filter((s) => within(s.date));
 
   const gaps: TrendGap[] = [];
@@ -446,7 +512,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
   const markers: TrendMarker[] = gaps.map((g) => ({ kind: 'gap' as const, date: g.to, from: g.from, days: g.days }));
   for (const s of inside) {
     if (s.edited) markers.push({ kind: 'edited', date: s.date, sessionId: s.sessionId });
-    if (metric !== 'volume' && allMarked(s)) markers.push({ kind: 'not_counted', date: s.date, sessionId: s.sessionId });
+    if (metric !== 'volume' && metric !== 'total_distance' && allMarked(s)) markers.push({ kind: 'not_counted', date: s.date, sessionId: s.sessionId });
   }
   markers.sort((a, b) => a.date.localeCompare(b.date));
 
@@ -461,7 +527,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
     for (const p of sessionPoints) {
       const w = mondayOf(p.date);
       const cur = weeks.get(w) ?? null;
-      if (better(p, cur, higher)) weeks.set(w, p);
+      if (better(p, cur, higher, distanceKey)) weeks.set(w, p);
     }
     points = [...weeks.values()].sort((a, b) => a.date.localeCompare(b.date));
   }
@@ -475,7 +541,7 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
 
   // Latest, first and best always describe sessions, even when the chart shows weekly bests (B1).
   let best: TrendPoint | null = null;
-  for (const p of sessionRows) if (better(p, best, higher)) best = p;
+  for (const p of sessionRows) if (better(p, best, higher, distanceKey)) best = p;
   const before = series.sessions.filter((s) => s.date < bounds.from);
   const pointsByRange = Object.fromEntries(
     TREND_RANGES.map((r) => {
@@ -577,6 +643,43 @@ export function repTableByReps(series: ExerciseSeries, bounds: DateRange): RepBy
 }
 
 // ---------------------------------------------------------------------------
+// Best distance by load (distance series)
+
+export interface DistanceByLoadRow {
+  /** The load in the series' convention and unit; null for sets with none (an empty sled). */
+  load: number | null;
+  distanceM: number;
+  date: string;
+  sessionId: string;
+  source: 'app' | 'import';
+}
+
+/**
+ * Distance series: one row per load, the longest countable set at that load
+ * and the first date it was done; heaviest first, no load last. A set whose
+ * load is in another convention or unit is left out. 0 kg added (not plate
+ * loaded) is no load, matching the set text.
+ */
+export function distanceTableByLoad(series: ExerciseSeries, bounds: DateRange): DistanceByLoadRow[] {
+  if (series.kind !== 'distance') return [];
+  const byLoad = new Map<number | null, DistanceByLoadRow>();
+  for (const ss of series.sessions) {
+    if (!inRange(ss.date, bounds)) continue;
+    for (const s of ss.sets) {
+      if (!distanced(s) || !counts(s)) continue;
+      if (s.load !== null && s.load.convention !== 'bodyweight' && seriesLoadValue(s, series.key) === null) continue;
+      const v = seriesLoadValue(s, series.key);
+      // 0 kg reads `No load` only where the set text says so too (added load, not a plate-loaded sled; review misc-fixes N1).
+      const zeroIsNone = series.key.convention === 'added' && series.equipmentKind !== 'plate_loaded_machine';
+      const load = v === null || (v === 0 && zeroIsNone) ? null : v;
+      const cur = byLoad.get(load);
+      if (cur === undefined || s.distanceM > cur.distanceM) byLoad.set(load, { load, distanceM: s.distanceM, date: ss.date, sessionId: ss.sessionId, source: ss.source });
+    }
+  }
+  return [...byLoad.values()].sort((a, b) => (b.load ?? -1) - (a.load ?? -1));
+}
+
+// ---------------------------------------------------------------------------
 // Headline (StatStrip, all time)
 
 export interface ExerciseHeadline {
@@ -589,13 +692,26 @@ export interface ExerciseHeadline {
   mostReps: { reps: number; date: string; sessionId: string } | null;
   /** Timed: the longest hold, seconds. */
   longestHold: { seconds: number; date: string; sessionId: string } | null;
+  /** Distance: the longest countable set (then the heavier load). */
+  bestDistance: { set: ProgressSet & { distanceM: number }; date: string; sessionId: string } | null;
+  /** Distance: all-time metres, marked sets included (as `Total distance`). */
+  totalDistanceM: number | null;
 }
 
 /** `exerciseHeadline` (§6.2): all-time bests of the series, countable sets only (PG21). */
 export function exerciseHeadline(series: ExerciseSeries): ExerciseHeadline {
-  const out: ExerciseHeadline = { sessions: series.sessions.length, bestE1rm: null, bestSet: null, mostReps: null, longestHold: null };
+  const out: ExerciseHeadline = { sessions: series.sessions.length, bestE1rm: null, bestSet: null, mostReps: null, longestHold: null, bestDistance: null, totalDistanceM: null };
   const lowerWins = series.kind === 'assisted';
   for (const ss of series.sessions) {
+    if (series.kind === 'distance') {
+      const b = sessionBestDistance(ss, series);
+      const cur = out.bestDistance?.set ?? null;
+      const heavier = (x: ProgressSet, y: ProgressSet) => (seriesLoadValue(x, series.key) ?? 0) > (seriesLoadValue(y, series.key) ?? 0);
+      if (b !== null && b.fromSet !== null && (cur === null || b.value > cur.distanceM || (b.value === cur.distanceM && heavier(b.fromSet, cur)))) out.bestDistance = { set: { ...b.fromSet, distanceM: b.value }, date: ss.date, sessionId: ss.sessionId };
+      const t = sessionTotalDistance(ss, series);
+      if (t !== null) out.totalDistanceM = Math.round(((out.totalDistanceM ?? 0) + t.value) * 100) / 100;
+      continue;
+    }
     const e = sessionE1rm(ss, series);
     if (e !== null && e.fromSet !== null && (out.bestE1rm === null || e.value > out.bestE1rm.value)) out.bestE1rm = { value: e.value, date: ss.date, sessionId: ss.sessionId, fromSet: e.fromSet };
     for (const s of ss.sets) {

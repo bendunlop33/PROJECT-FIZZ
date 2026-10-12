@@ -408,6 +408,28 @@ export function ExerciseDetailScreen() {
           </View>
         ) : null}
 
+        {view.distanceTable ? (
+          <View style={{ gap: theme.space['2'] }}>
+            <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+              BEST DISTANCE
+            </AppText>
+            {view.distanceTable.rows.length === 0 ? (
+              <AppText variant="callout" color="text.secondary">
+                None in this range.
+              </AppText>
+            ) : (
+              <RepTable
+                table={view.distanceTable}
+                showAll={repAll}
+                onShowAll={() => {
+                  setRepAll(true);
+                }}
+                onOpen={openWorkout}
+              />
+            )}
+          </View>
+        ) : null}
+
         {records === null ? null : (
           <View style={{ gap: theme.space['2'] }}>
             <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">

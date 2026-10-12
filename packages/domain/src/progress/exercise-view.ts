@@ -1,5 +1,5 @@
 import type { EquipmentKind, Load } from '@fizz/schemas';
-import { formatDuration, formatNumber, loadText, NBSP } from '../display';
+import { distanceLoadText, formatDistance, formatDuration, formatNumber, loadText, NBSP } from '../display';
 import { exclusionWords, isSetCountable } from '../exclusions';
 import { E1RM_MAX_REPS } from './e1rm';
 import { RECORD_MIN_SESSIONS } from '../session/records';
@@ -7,6 +7,7 @@ import {
   ASSIST_RECORD_MIN_REPS,
   collectExerciseSeries,
   defaultSeries,
+  distanceTableByLoad,
   DEFAULT_TREND_RANGE,
   exerciseHeadline,
   exerciseHistory,
@@ -17,6 +18,7 @@ import {
   mondayOf,
   repTableByReps,
   repTableByWeight,
+  seriesLoadValue,
   TREND_RANGES,
   trendRangeBounds,
   type ExerciseMetric,
@@ -111,6 +113,10 @@ export function metricLabel(metric: ExerciseMetric): string {
       return 'Best set';
     case 'longest_hold':
       return 'Longest hold';
+    case 'total_distance':
+      return 'Total distance';
+    case 'best_distance':
+      return 'Best distance';
   }
 }
 
@@ -131,6 +137,9 @@ export function axisUnit(series: ExerciseSeries, metric: ExerciseMetric): string
       return 'reps';
     case 'longest_hold':
       return 'min:s';
+    case 'total_distance':
+    case 'best_distance':
+      return 'm';
   }
 }
 
@@ -151,6 +160,31 @@ function setWords(set: Pick<ProgressSet, 'load' | 'reps'>, kind: EquipmentKind |
   return `${massWords(set.load, kind)} by ${String(set.reps)}`;
 }
 
+/** A distance set's load as shown (`40 kg`, `24 kg each`); null with none (never `BW +`, as `distanceLoadText`). */
+function distanceSetLoad(load: Load | null, series: Pick<ExerciseSeries, 'key' | 'equipmentKind'>): string | null {
+  return distanceLoadText(load, series.key.convention, series.equipmentKind === null ? null : { kind: series.equipmentKind });
+}
+
+/** `40 kg × 50 m`, `50 m`. */
+function distanceSetText(set: Pick<ProgressSet, 'load' | 'distanceM'>, series: Pick<ExerciseSeries, 'key' | 'equipmentKind'>): string {
+  const d = set.distanceM === undefined ? '—' : formatDistance(set.distanceM);
+  const load = distanceSetLoad(set.load, series);
+  return load === null ? d : `${load}${TIMES}${d}`;
+}
+
+/** "40 kilograms", "24 kilograms each"; null with no load. */
+function distanceLoadWords(load: Load | null, series: Pick<ExerciseSeries, 'key' | 'equipmentKind'>): string | null {
+  if (load === null || distanceSetLoad(load, series) === null) return null;
+  return `${formatNumber(load.value)} ${load.unit === 'kg' ? 'kilograms' : 'pounds'}${load.convention === 'per_hand' ? ' each' : ''}`;
+}
+
+/** "50 metres with 40 kilograms"; "50 metres" with no load. */
+function distanceSetWords(set: Pick<ProgressSet, 'load' | 'distanceM'>, series: Pick<ExerciseSeries, 'key' | 'equipmentKind'>): string {
+  const metres = countNoun(set.distanceM ?? 0, 'metre', 'metres');
+  const load = distanceLoadWords(set.load, series);
+  return load === null ? metres : `${metres} with ${load}`;
+}
+
 /** A point's value as shown: `≈123 kg`, `102.5 kg × 6`, `4,520 kg × reps`, `14 reps`, `1:30`. */
 function valueText(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSeries, metric: ExerciseMetric): string {
   switch (metric) {
@@ -164,6 +198,10 @@ function valueText(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSer
       return countNoun(p.value, 'rep', 'reps');
     case 'longest_hold':
       return formatDuration(p.value);
+    case 'total_distance':
+      return formatDistance(p.value);
+    case 'best_distance':
+      return p.fromSet ? distanceSetText({ load: p.fromSet.load, distanceM: p.value }, series) : formatDistance(p.value);
   }
 }
 
@@ -184,6 +222,10 @@ function valueWords(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSe
       return countNoun(p.value, 'rep', 'reps');
     case 'longest_hold':
       return countNoun(p.value, 'second', 'seconds');
+    case 'total_distance':
+      return countNoun(p.value, 'metre', 'metres');
+    case 'best_distance':
+      return p.fromSet ? distanceSetWords({ load: p.fromSet.load, distanceM: p.value }, series) : countNoun(p.value, 'metre', 'metres');
   }
 }
 
@@ -199,13 +241,21 @@ function metricWords(metric: ExerciseMetric): string {
       return 'Best set';
     case 'longest_hold':
       return 'Longest hold';
+    case 'total_distance':
+      return 'Total distance';
+    case 'best_distance':
+      return 'Best distance';
   }
 }
 
-/** `100×8`, `L 20×10`, `+10×8`, `12`, `0:45`, with ` (spotted)` for a marked set (PG21). */
+/** `100×8`, `L 20×10`, `+10×8`, `12`, `0:45`, `40×50 m`, with ` (spotted)` for a marked set (PG21). */
 export function compactSetText(s: ProgressSet, series: Pick<ExerciseSeries, 'kind' | 'equipmentKind'>): string {
   let core: string;
-  if (series.kind === 'timed') core = s.durationS === null ? '—' : formatDuration(s.durationS);
+  if (series.kind === 'distance') {
+    const d = s.distanceM === undefined ? '—' : formatDistance(s.distanceM);
+    const noLoad = s.load === null || s.load.convention === 'bodyweight' || (s.load.convention === 'added' && s.load.value === 0 && series.equipmentKind !== 'plate_loaded_machine');
+    core = noLoad ? d : `${formatNumber(s.load?.value ?? 0)}×${d}`;
+  } else if (series.kind === 'timed') core = s.durationS === null ? '—' : formatDuration(s.durationS);
   else if (series.kind === 'bodyweight' || s.load === null) core = s.reps === null ? '—' : String(s.reps);
   else if (series.kind === 'added_bodyweight') core = `${s.load.value === 0 ? 'BW' : `+${formatNumber(s.load.value)}`}×${String(s.reps ?? 0)}`;
   else core = `${formatNumber(s.load.value)}×${String(s.reps ?? 0)}`;
@@ -343,6 +393,9 @@ export interface RepTableView {
   initial: number;
 }
 
+/** Distance series' best distance at each load (no toggle). */
+export type DistanceTableView = Omit<RepTableView, 'by'>;
+
 export interface RecordRowView {
   key: string;
   sessionId: string;
@@ -396,7 +449,9 @@ export interface ExerciseDetailView {
   panel: TrendPanelLine[];
   table: { headers: [string, string, string]; rows: TableRowView[] };
   repTable: RepTableView | null;
-  /** Null for series with no defined record (timed holds, SP2): the section is hidden. */
+  /** Distance series only: `BEST DISTANCE` by load. */
+  distanceTable: DistanceTableView | null;
+  /** Null for series with no defined record (timed holds, SP2; distance sets): the section is hidden. */
   records: { items: RecordRowView[]; empty: string | null } | null;
   history: { unit: string; months: { month: string; title: string; rows: HistoryRowView[] }[]; more: { label: string; months: number } | null };
   pain: { flagId: string; text: string; words: string } | null;
@@ -498,7 +553,7 @@ function pointTitle(p: { date: string; name: string | null; source: 'app' | 'imp
 
 function markedNote(p: TrendPoint, metric: ExerciseMetric): string | null {
   if (p.excludedSets === 0) return null;
-  return metric === 'volume' ? `${countNoun(p.excludedSets, 'marked set', 'marked sets')} included` : `${countNoun(p.excludedSets, 'set', 'sets')} not counted`;
+  return metric === 'volume' || metric === 'total_distance' ? `${countNoun(p.excludedSets, 'marked set', 'marked sets')} included` : `${countNoun(p.excludedSets, 'set', 'sets')} not counted`;
 }
 
 function pointView(p: TrendPoint, series: ExerciseSeries, metric: ExerciseMetric, today: string): ChartPointView {
@@ -563,6 +618,19 @@ function changeLine(first: TrendPoint, latest: TrendPoint, series: ExerciseSerie
       const reps = r > 0 ? countNoun(r, 'more rep', 'more reps') : countNoun(-r, 'fewer rep', 'fewer reps');
       return { label: 'Change', value: `${what}, ${reps} than ${since}`, words: `${what}, ${reps} than ${sinceWords}`, direction: r > 0 ? 'up' : 'down' };
     }
+    if (metric === 'best_distance' && latest.fromSet && first.fromSet) {
+      // Same metres, different load: on a sled, more load over a fixed distance is the progression (review misc-fixes S1).
+      const loadOf = (x: ProgressSet): number | null => (x.load === null ? 0 : seriesLoadValue(x, series.key));
+      const a = loadOf(first.fromSet);
+      const b = loadOf(latest.fromSet);
+      const l = a === null || b === null ? 0 : Math.round((b - a) * 100) / 100;
+      if (l !== 0) {
+        const more = l > 0 ? 'more' : 'less';
+        const each = series.key.convention === 'per_hand' ? ' each' : '';
+        const n = formatNumber(Math.abs(l));
+        return { label: 'Change', value: `Same distance, ${n}${NBSP}${series.key.unit} ${more}${each} than ${since}`, words: `Same distance, ${n} ${unitWords(series)} ${more}${each} than ${sinceWords}`, direction: l > 0 ? 'up' : 'down' };
+      }
+    }
     return { label: 'Change', value: `Same as ${since}`, words: `Same as ${sinceWords}`, direction: 'same' };
   };
   if (dir === 'same') return same();
@@ -582,6 +650,9 @@ function changeLine(first: TrendPoint, latest: TrendPoint, series: ExerciseSerie
       return { label: 'Change', value: `${word} ${countNoun(amount, 'rep', 'reps')} since ${since}`, words: `${word} ${countNoun(amount, 'rep', 'reps')} since ${sinceWords}`, direction: dir };
     case 'longest_hold':
       return { label: 'Change', value: `${word} ${formatDuration(amount)} since ${since}`, words: `${word} ${countNoun(amount, 'second', 'seconds')} since ${sinceWords}`, direction: dir };
+    case 'total_distance':
+    case 'best_distance':
+      return { label: 'Change', value: `${word} ${formatDistance(amount)} since ${since}`, words: `${word} ${countNoun(amount, 'metre', 'metres')} since ${sinceWords}`, direction: dir };
   }
 }
 
@@ -669,6 +740,25 @@ function repTableView(series: ExerciseSeries, bounds: DateRange, by: 'weight' | 
 }
 const REP_ROWS_ALL = 12;
 
+/** Distance series: `BEST DISTANCE` by load, heaviest first (the rep table's place). */
+function distanceTableView(series: ExerciseSeries, bounds: DateRange, today: string): DistanceTableView | null {
+  if (series.kind !== 'distance') return null;
+  const loadOf = (v: number): Load => ({ value: v, unit: series.key.unit, convention: series.key.convention });
+  const rows = distanceTableByLoad(series, bounds).map((r) => {
+    const load = r.load === null ? null : distanceSetLoad(loadOf(r.load), series);
+    const metres = formatDistance(r.distanceM);
+    return {
+      key: `d:${r.load === null ? 'none' : String(r.load)}`,
+      sessionId: r.sessionId,
+      cells: [load ?? 'No load', metres, shortDate(r.date, today)] as [string, string, string],
+      note: null,
+      tag: r.source === 'import' ? 'FitNotes' : null,
+      words: `${(r.load === null ? null : distanceLoadWords(loadOf(r.load), series)) ?? 'No load'}, ${countNoun(r.distanceM, 'metre', 'metres')}, ${longDate(r.date, today)}.${r.source === 'import' ? ' FitNotes.' : ''}`,
+    };
+  });
+  return { headers: ['Weight', 'Distance', 'Date'], rows, initial: 10 };
+}
+
 function headlineView(series: ExerciseSeries): { stats: { value: string; label: string }[]; words: string } {
   const h = exerciseHeadline(series);
   const sessions = { value: String(h.sessions), label: 'SESSIONS' };
@@ -707,6 +797,14 @@ function headlineView(series: ExerciseSeries): { stats: { value: string; label: 
         stats: [{ value: h.longestHold ? formatDuration(h.longestHold.seconds) : dash, label: 'LONGEST HOLD' }, sessions],
         words: [h.longestHold ? `Longest hold ${countNoun(h.longestHold.seconds, 'second', 'seconds')}.` : '', sessionsWords].filter((x) => x !== '').join(' '),
       };
+    case 'distance': {
+      const b = h.bestDistance;
+      const t = h.totalDistanceM;
+      return {
+        stats: [{ value: b ? distanceSetText(b.set, series) : dash, label: 'BEST DISTANCE' }, { value: t === null ? dash : formatDistance(t), label: 'TOTAL DISTANCE' }, sessions],
+        words: [b ? `Best distance ${distanceSetWords(b.set, series)}.` : '', t === null ? '' : `Total distance ${countNoun(t, 'metre', 'metres')}.`, sessionsWords].filter((x) => x !== '').join(' '),
+      };
+    }
   }
 }
 
@@ -845,7 +943,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   // Records (PG10, PG30)
   const rec = exerciseRecords(input.sessions, series);
   const records =
-    series.kind === 'timed'
+    series.kind === 'timed' || series.kind === 'distance'
       ? null
       : {
           items: rec.items.map((r) => recordView(r, series, today)),
@@ -855,7 +953,8 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   // History
   const historyMonths = Math.max(1, input.historyMonths ?? 2);
   const hist = exerciseHistory(series, historyMonths);
-  const unit = series.kind === 'timed' ? 'min:s' : series.kind === 'bodyweight' ? 'reps' : `${seriesUnitText(series)} × reps`;
+  const unit =
+    series.kind === 'timed' ? 'min:s' : series.kind === 'bodyweight' ? 'reps' : series.kind === 'distance' ? (series.key.convention === 'bodyweight' ? 'm' : `${seriesUnitText(series)} × m`) : `${seriesUnitText(series)} × reps`;
 
   const statStrip = headlineView(series);
   const selectId = input.sessionId ?? input.selectSessionId ?? null;
@@ -889,6 +988,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     panel,
     table: { headers: ['Date', metric === 'e1rm' ? 'Est. 1RM (estimate)' : metricLabel(metric), 'Notes'], rows: tableRows },
     repTable: repTableView(series, trend.bounds, input.repBy ?? 'weight', today),
+    distanceTable: distanceTableView(series, trend.bounds, today),
     records,
     history: {
       unit,
