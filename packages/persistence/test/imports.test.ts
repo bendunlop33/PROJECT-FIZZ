@@ -240,7 +240,9 @@ describe('import jobs and rows', () => {
     const ids = await store.repos.sessions.listRepeatableIds(OWNER, 10);
     expect(ids).toHaveLength(2);
     expect(await store.repos.sessions.listPastWorkoutIds(OWNER, 10)).toEqual(ids);
-    expect(await store.repos.sessions.countImportedFinished(OWNER)).toBe(2);
+    expect(await store.repos.sessions.listFinishedRefs(OWNER, 100, { includeImported: true })).toHaveLength(2);
+    // The rotation and pace read app workouts only; `includeImported` is for "the last workout Ben did" (review S1, S2).
+    expect(await store.repos.sessions.listFinishedRefs(OWNER, 100)).toEqual([]);
     const cats = await store.repos.imports.categoriesBySession(OWNER);
     expect([...cats.keys()].sort()).toEqual([...ids].sort());
     // 1 Oct: two Back sets; 3 Oct: one (the cardio row isn't a set).
@@ -267,7 +269,7 @@ describe('import jobs and rows', () => {
     expect(await store.listExerciseHistory(OWNER, LAT)).toEqual([]);
     expect(await store.countRecords()).toMatchObject({ finishedWorkouts: 0, loggedSets: 0 });
     expect(await store.repos.sessions.listRepeatableIds(OWNER, 10)).toEqual([]);
-    expect(await store.repos.sessions.countImportedFinished(OWNER)).toBe(0);
+    expect(await store.repos.sessions.listFinishedRefs(OWNER, 100, { includeImported: true })).toHaveLength(0);
     expect(await store.repos.sessions.latestFinished(OWNER)).toBeNull();
     const after = await store.db.read(async (q) => ({
       sessions: (await q.getFirst<{ n: number }>('SELECT count(*) AS n FROM sessions'))?.n,

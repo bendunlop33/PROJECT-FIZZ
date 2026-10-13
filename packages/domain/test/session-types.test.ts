@@ -6,6 +6,7 @@ import {
   deriveSessionTypes as deriveWith,
   formatLastDone,
   groupSessionTypes,
+  longestGapSource,
   nextInRotation,
   normaliseSessionName,
   orderSessionTypes,
@@ -167,7 +168,7 @@ describe('deriveSessionTypes (§3.1)', () => {
 
 describe('deriveSessionTypes: gates and keys', () => {
   it('groups imports by Category with Decision 1 on (approved 11 Oct 2026); off, only routines', () => {
-    expect(SESSION_PICKER_DECISIONS).toEqual({ groupImportsByCategory: true, longestGapFallback: false });
+    expect(SESSION_PICKER_DECISIONS).toEqual({ groupImportsByCategory: true, longestGapFallback: true });
     const { routines, sessions } = fixture();
     const on = deriveWith({ routines, sessions, now: NOW, groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory });
     expect(on.map((t) => t.label)).toEqual(expect.arrayContaining(['Arms', 'Full body', 'Back', 'Chest', 'Legs', 'Shoulders']));
@@ -202,6 +203,33 @@ describe('deriveSessionTypes: gates and keys', () => {
     expect(index.types).toHaveLength(1);
     expect(index.types[0]).toMatchObject({ key: 'routine:r-legs', kind: 'routine', sourceSessionId: 'i1', lastDone: on('2026-10-02'), startable: true, exerciseCount: 4 });
     expect(index.keyOfSession.get('i1')).toBe('routine:r-legs');
+  });
+});
+
+describe('longestGapSource (Decision 2 in the Up next resolver; review import-progress S1)', () => {
+  const index = (routines: readonly SessionTypeRoutine[], sessions: readonly SessionTypeSession[]) => groupSessionTypes({ routines, sessions, now: NOW, groupImportsByCategory: true });
+
+  it('after a FitNotes import, Up next is the type with the longest gap, never the workout just done', () => {
+    const { routines, sessions } = fixture();
+    // i-chest (9 Oct) was just done; Legs (5 Oct) has the longest gap.
+    expect(longestGapSource(index(routines, sessions), ref(nth(sessions, sessions.length - 1)))).toEqual({ sessionId: 'i-legs', key: 'name:legs', basis: { kind: 'longest_gap', lastDone: on('2026-10-05') } });
+  });
+
+  it('plans from the type’s newest workout', () => {
+    const sessions = [imported('legs-1', '2026-09-28', { Legs: 10 }), imported('legs-2', '2026-10-03', { Legs: 10 }), imported('back', '2026-10-09', { Back: 10 })];
+    expect(longestGapSource(index([], sessions), ref(nth(sessions, 2)))?.sessionId).toBe('legs-2');
+  });
+
+  it('routines are the rotation’s: a never-done or older routine is not picked here', () => {
+    const routines: SessionTypeRoutine[] = [{ id: 'r-full', name: 'Full body', exerciseCount: 6 }];
+    const sessions = [logged('s-full', '2026-10-01', { routineId: 'r-full', routineName: 'Full body' }), imported('legs', '2026-10-05', { Legs: 10 }), imported('back', '2026-10-09', { Back: 10 })];
+    expect(longestGapSource(index(routines, sessions), ref(nth(sessions, 2)))?.sessionId).toBe('legs');
+  });
+
+  it('no history type: null (the caller keeps D19’s newest workout)', () => {
+    expect(longestGapSource(index([], []), null)).toBeNull();
+    const unnamed = [logged('u', '2026-10-09')];
+    expect(longestGapSource(index([], unnamed), ref(nth(unnamed, 0)))).toBeNull();
   });
 });
 

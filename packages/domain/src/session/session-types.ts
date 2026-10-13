@@ -18,9 +18,9 @@
  *
  * Ben's two decisions (session-picker §9), both approved 11 Oct 2026
  * (CHANGELOG "Backlog defaults accepted"): `SESSION_PICKER_DECISIONS`.
- * Decision 1 (group imports by Category) is on. Decision 2 is only a marker
- * until the service resolver is wired to `recommendSession`; until then Up
- * next keeps D19's "last workout" fallback.
+ * Both are on. Decision 2 replaces D19's "last workout" fallback in the
+ * app's Up next resolver through `longestGapSource` (review import-progress
+ * S1); the D19 routine rotation is unchanged.
  */
 import type { ZonedTimestamp } from '@fizz/schemas';
 
@@ -44,19 +44,19 @@ const YEAR_AFTER_MONTHS = 11;
  * - `groupImportsByCategory` (Decision 1, on): unnamed FitNotes imports
  *   become types by their `Category` label, and start like any history
  *   type (B7).
- * - `longestGapFallback` (Decision 2): a marker, not a switch yet (review
- *   r2 S4). The rule is built and tested (`recommendSession`), but the
- *   services don't read this flag: Today, the picker, the overview and the
- *   Plan all take Up next from the app's D19 resolver (`resolveUpNext`).
- *   Its type is `false` so turning it on fails to compile until that
- *   resolver branches on it (with its eyebrow, §2.3 `UP NEXT · LAST DONE`).
+ * - `longestGapFallback` (Decision 2, on): when the D19 rotation doesn't
+ *   apply, the app's Up next resolver (`resolveUpNext`, which Today, the
+ *   picker, the overview and the Plan share) starts from the history type
+ *   with the longest gap (`longestGapSource`), not the newest workout. The
+ *   basis copy is still D19's (`From Mon 5 Oct`, `Next session · from …`),
+ *   which is true of the source; §2.3's `UP NEXT · LAST DONE` is not built.
  */
 export interface SessionPickerDecisions {
   groupImportsByCategory: boolean;
-  longestGapFallback: false;
+  longestGapFallback: boolean;
 }
 
-export const SESSION_PICKER_DECISIONS: Readonly<SessionPickerDecisions> = Object.freeze({ groupImportsByCategory: true, longestGapFallback: false });
+export const SESSION_PICKER_DECISIONS: Readonly<SessionPickerDecisions> = Object.freeze({ groupImportsByCategory: true, longestGapFallback: true });
 
 // ---------------------------------------------------------------------------
 // Names
@@ -345,7 +345,7 @@ type Done = SessionType & { lastDone: ZonedTimestamp };
 const doneMs = (t: Done): number => toMs(t.lastDone.utc);
 
 /**
- * Up next under Decision 2 (§3.3; SP-D4), once Ben approves it:
+ * Up next under Decision 2 (§3.3; SP-D4; approved 11 Oct 2026):
  * 1. The D19 rotation when the last workout came from a routine
  *    (`nextInRotation`, unchanged).
  * 2. Else, among startable types done in the last 42 days, the one done
@@ -376,6 +376,22 @@ export function recommendSession(input: RecommendSessionInput): SessionRecommend
   }
   const latest = [...done].sort((a, b) => doneMs(b) - doneMs(a) || a.key.localeCompare(b.key))[0];
   return latest === undefined ? null : { key: latest.key, basis: { kind: 'from', lastDone: latest.lastDone } };
+}
+
+/**
+ * Decision 2 in the app's Up next resolver (review import-progress S1): when
+ * the D19 rotation doesn't apply, the workout to plan Up next from. Among
+ * history types (named workouts and FitNotes Category groups; routines are
+ * the rotation's), the one with the longest gap since it was last done
+ * (`recommendSession` step 2, never the type just done unless it is the
+ * only one), and that type's newest workout as the source. Null when there
+ * is no history type: the caller falls back to the newest workout.
+ */
+export function longestGapSource(index: SessionTypeIndex, lastFinished: FinishedRef | null): { sessionId: string; key: string; basis: SessionRecommendationBasis } | null {
+  const history = index.types.filter((t) => t.routineId === null && t.sourceSessionId !== null);
+  const rec = recommendSession({ index: { types: history, keyOfSession: index.keyOfSession }, routines: [], lastFinished });
+  const type = rec === null ? undefined : history.find((t) => t.key === rec.key);
+  return rec === null || type?.sourceSessionId === undefined || type.sourceSessionId === null ? null : { sessionId: type.sourceSessionId, key: type.key, basis: rec.basis };
 }
 
 // ---------------------------------------------------------------------------

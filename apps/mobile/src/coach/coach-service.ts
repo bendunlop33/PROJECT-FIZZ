@@ -1292,7 +1292,8 @@ export function createCoachService(deps: CoachServiceDeps) {
      */
     async painChoices(entry: CoachEntry, words: string | null, focus: { exerciseId: string; name: string } | null = null): Promise<{ choices: { exerciseId: string; name: string }[]; pick: boolean }> {
       const p = await owner();
-      const sessionId = isGeneralEntry(entry) ? ((await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
+      // The last workout Ben did, FitNotes ones included (review import-progress S2).
+      const sessionId = isGeneralEntry(entry) ? ((await repos().sessions.listFinishedRefs(p.id, 1, { includeImported: true }).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
       const session = sessionId === null ? null : await repos().sessions.get(sessionId).catch(() => null);
       const seen = new Set<string>();
       const all: { exerciseId: string; exerciseName: string }[] = [];

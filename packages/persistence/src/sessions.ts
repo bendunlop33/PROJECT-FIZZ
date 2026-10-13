@@ -792,15 +792,18 @@ export class SqliteSessions implements SessionRepository {
    * The newest finished workouts done in the app with a completed set, as
    * small rows (no aggregate decode): what the rotation, the routine
    * list's `last done` and the pace estimate read (premium-feel §2.6).
-   * Newest first. Imported workouts stay out: they come from no routine and
-   * have no times.
+   * Newest first. Imported workouts stay out by default: they come from no
+   * routine and have no times. `includeImported`: the newest workout of any
+   * source, for readers that want "the last workout Ben did" (the pain chips
+   * from Today, Up next's longest gap; review import-progress S1, S2).
    */
-  listFinishedRefs(ownerId: string, limit: number): Promise<{ sessionId: string; routineId: string | null; startedAtUtc: string; tz: string }[]> {
+  listFinishedRefs(ownerId: string, limit: number, opts: { includeImported?: boolean } = {}): Promise<{ sessionId: string; routineId: string | null; startedAtUtc: string; tz: string }[]> {
+    const source = opts.includeImported === true ? '' : ` AND s.source = 'manual'`;
     return this.db.read(async (q) =>
       (
         await q.getAll<{ id: string; routine_id: string | null; started_at_utc: string; started_at_tz: string }>(
           `SELECT s.id, s.routine_id, s.started_at_utc, s.started_at_tz FROM sessions s
-           WHERE s.owner_id = ? AND ${inHistorySql('s')} AND s.source = 'manual'
+           WHERE s.owner_id = ? AND ${inHistorySql('s')}${source}
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ?`,
           [ownerId, limit],
@@ -842,19 +845,6 @@ export class SqliteSessions implements SessionRepository {
         exerciseCount: r.n,
       })),
     );
-  }
-
-  /** Finished imported workouts with a completed set (Data & backup counts). */
-  countImportedFinished(ownerId: string): Promise<number> {
-    return this.db.read(async (q) => {
-      const row = await q.getFirst<{ n: number }>(
-        `SELECT count(*) AS n FROM sessions s
-         WHERE s.owner_id = ? AND ${inHistorySql('s')} AND s.source = 'import'
-           AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')`,
-        [ownerId],
-      );
-      return row?.n ?? 0;
-    });
   }
 
   /**
