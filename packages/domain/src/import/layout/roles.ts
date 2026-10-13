@@ -147,7 +147,8 @@ export function structureOf(table: Pick<Table, 'header' | 'records'>, cols: read
 export function dateOrderOf(table: Pick<Table, 'records'>, s: Structure, answers: LayoutAnswers): { order: DateOrder | null; settledBy: string | null; conflict: boolean } {
   if (!s.date || s.date.format === null || !isSlashFormat(s.date.format)) return { order: null, settledBy: null, conflict: false };
   const ev = dateOrderEvidence(columnValues(table, s.date.index));
-  if (ev.order === 'conflict') return { order: null, settledBy: null, conflict: true };
+  // Both orders appear (`21/11` and `11/21`): no cell settles it, so it is asked; rows that don't fit the answer aren't read (S1).
+  if (ev.order === 'conflict') return { order: answers.dateOrder, settledBy: null, conflict: true };
   // A cell in the file settles it (AI5); otherwise Ben's answer; otherwise it is asked.
   if (ev.order === 'day_first' || ev.order === 'month_first') return { order: ev.order, settledBy: ev.cell, conflict: false };
   if (answers.dateOrder !== null) return { order: answers.dateOrder, settledBy: null, conflict: false };

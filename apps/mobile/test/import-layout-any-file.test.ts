@@ -5,6 +5,7 @@ import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import { sha256Hex } from '@fizz/persistence';
 
 import { checkLayoutView } from '../src/import/layout-views';
+import { previewView } from '../src/import/views';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, setUpGym, type Harness } from './harness';
 import { SpyLayoutPort, answerLayout, answerPreview, answerWith, layoutFixture, state } from './import-layout-helpers';
@@ -78,6 +79,39 @@ describe('wide and packed-with-load files import end to end (review B1)', () => 
     const parts = (job?.rows ?? []).filter((x) => x.line === 2);
     // `3x8 @ 100`: three sets from one cell.
     expect(parts.map((x) => x.part)).toEqual([0, 1, 2]);
+  });
+});
+
+describe('a blank unit cell on one loaded row (review r2 S1)', () => {
+  it('the row is listed as not read; the other rows reach the preview and commit', async () => {
+    const text = layoutFixture('liftosaur-like.synthetic.csv');
+    const [header = '', ...base] = text.trim().split('\n');
+    // 40 made-up rows cycling the fixture's; line 12's `Completed Weight Unit` is blank.
+    const rows = Array.from({ length: 40 }, (_, i) => {
+      const cells = (base[i % base.length] ?? '').split(',');
+      if (i + 2 === 12) cells[14] = '';
+      return cells.join(',');
+    });
+    const { s } = await launch([answerWith(JSON.parse(layoutFixture('liftosaur-like.spec.json')))]);
+    const { layoutId, v } = await readAndCheck(s, 'liftosaur.csv', `${header}\n${rows.join('\n')}\n`);
+    expect(v.review).toMatchObject({ open: 0, pending: 0, stuck: 0, ready: true });
+    const view = checkLayoutView(v, 'en-GB');
+    expect(view.stuckLine).toBeNull();
+    expect(view.notReadLine).toBe('1 row not read');
+    expect(view.primary).toEqual({ label: 'Use this layout', enabled: true });
+    const c = await s.importLayouts.confirmImportLayout(layoutId, v.layoutVersion);
+    if (!c.ok || c.result.kind !== 'preview') throw new Error('preview');
+    const d = await answerPreview(s, c.result.draft);
+    expect(d.analysis.counts.byResult.unreadable).toBe(1);
+    expect(previewView(d, 'en-GB').skipped.map((x) => x.line.text)).toContain('1 row can’t be read');
+    const done = await s.imports.commit(d.draftId, d.mappingVersion, 'op-commit');
+    expect(done).toMatchObject({ ok: true, status: 'finished' });
+    if (!done.ok) return;
+    const job = await s.imports.job(done.jobId);
+    expect((job?.rows ?? []).filter((x) => x.line === 12).map((x) => x.result)).toEqual(['unreadable']);
+    // Every other row is read (imported, or skipped only by Ben's own name answers).
+    expect((job?.rows ?? []).filter((x) => x.line !== 12 && x.result === 'unreadable')).toEqual([]);
+    expect((job?.rows ?? []).filter((x) => x.result === 'imported').length).toBeGreaterThan(0);
   });
 });
 

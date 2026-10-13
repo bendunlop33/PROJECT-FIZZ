@@ -101,23 +101,33 @@ function colOf(ctx: ReadContext, index: number | null): EffectiveColumn | null {
   return index === null ? null : (ctx.cols[index] ?? null);
 }
 
-/** The unit a row's weights are in, and whether it waits for Ben (`unit`). */
-function unitFor(ctx: ReadContext, cells: readonly string[]): { unit: WeightUnit | null; wait: boolean; problem: string | null } {
+/** No weight unit for a loaded row: its unit cell is blank and nothing else names one (S1: listed, never guessed). */
+export const NO_WEIGHT_UNIT = 'No weight unit';
+
+/**
+ * The unit a row's weights are in, and what it waits for: `role` while the
+ * unit column is still on `Check`, `unit` while the file-level question is
+ * unanswered. A blank cell in a unit column has no question that could answer
+ * it (the column says the unit row by row), so that row is unreadable with a
+ * fixed reason and the 95% rule decides.
+ */
+function unitFor(ctx: ReadContext, cells: readonly string[]): { unit: WeightUnit | null; wait: WaitReason | null; problem: string | null } {
   const s = ctx.structure;
   const unitCol = colOf(ctx, s.unit);
   if (unitCol !== null) {
     const raw = (cells[unitCol.index] ?? '').trim();
     if (raw !== '') {
-      if (!active(unitCol, ctx.provisional)) return { unit: null, wait: true, problem: null };
+      if (!active(unitCol, ctx.provisional)) return { unit: null, wait: 'role', problem: null };
       const u = unitWord(raw);
-      return u === null ? { unit: null, wait: false, problem: `Weight unit isn’t kg or lb (${raw})` } : { unit: u, wait: false, problem: null };
+      return u === null ? { unit: null, wait: null, problem: `Weight unit isn’t kg or lb (${raw})` } : { unit: u, wait: null, problem: null };
     }
   }
-  if (ctx.answers.unit !== null) return { unit: ctx.answers.unit, wait: false, problem: null };
+  if (ctx.answers.unit !== null) return { unit: ctx.answers.unit, wait: null, problem: null };
   const loadCol = colOf(ctx, s.load);
   const token = loadCol === null ? null : headerUnitToken(loadCol.header);
-  if (token !== null) return { unit: unitOfToken(token), wait: false, problem: null };
-  return { unit: null, wait: !ctx.provisional, problem: null };
+  if (token !== null) return { unit: unitOfToken(token), wait: null, problem: null };
+  if (unitCol !== null) return { unit: null, wait: null, problem: NO_WEIGHT_UNIT };
+  return { unit: null, wait: ctx.provisional ? null : 'unit', problem: null };
 }
 
 function notationFor(ctx: ReadContext, index: number, role: 'sets_reps' | 'one_set' | 'all_sets'): NotationAnswer | null {
@@ -262,7 +272,7 @@ export function readRecord(ctx: ReadContext, rec: CsvRecord, index: number): Rec
   if (anyLoad) {
     const u = unitFor(ctx, rec.cells);
     if (u.problem !== null) return unreadable(u.problem, { ...dated, exercise });
-    if (u.wait) waiting.add('unit');
+    if (u.wait !== null) waiting.add(u.wait);
     unit = u.unit;
   }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LAYOUT_ANSWERS, ImportMappingSpecV1Schema, type CellNotation, type ImportMappingSpecV1, type LayoutAnswers } from '@fizz/schemas';
-import { applyImportSpec, buildLayoutReview, readDateCell, readTable, validateImportSpec, type LayoutQuestion, type Table } from '../src';
-import { OPTS, answerAll, specOf, tableOf } from './layout-fixtures';
+import { NO_WEIGHT_UNIT, applyImportSpec, buildLayoutReview, readDateCell, readTable, validateImportSpec, type LayoutQuestion, type Table } from '../src';
+import { OPTS, answerAll, layoutText, specOf, tableOf } from './layout-fixtures';
 
 /** `applyImportSpec`: code reads every row (AI2; checks 46, 51, 52). */
 const notationQ = (qs: readonly LayoutQuestion[]) => qs.find((q): q is Extract<LayoutQuestion, { kind: 'notation' }> => q.kind === 'notation');
@@ -174,20 +174,87 @@ describe('never stuck in silence: open 0 with rows pending always says why', () 
     expect(review.stuck).toBe(0);
   });
 
-  it('slash dates no single order reads (`21/11` and `11/21`): the rows are counted as stuck, not left silent', () => {
+  it('slash dates in both orders (`21/11` and `11/21`): the order is asked; rows that don’t fit the answer aren’t read, and the 95% rule decides (S1)', () => {
     const tt = readTable('Date,Exercise,Weight (kg),Reps\n21/11/2025,Bench,100,8\n11/21/2025,Bench,100,8\n03/04/2025,Bench,100,8\n');
     if (!tt) throw new Error('table');
-    const spec = packedSpec('Reps', 'sets_x_reps', {
-      layout: { kind: 'row_per_set', setOrder: null },
-      date: { column: { header: 'Date', index: 0 }, format: 'DD/MM/YYYY' },
-      load: { column: { header: 'Weight (kg)', index: 2 }, unit: { kind: 'header_token', column: { header: 'Weight (kg)', index: 2 }, token: 'kg' } },
-      reps: { header: 'Reps', index: 3 },
-    });
-    const r = buildLayoutReview(tt, spec, confirmed(tt, spec, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' }), OPTS);
-    expect(r.questions.some((q) => q.kind === 'date_order')).toBe(false);
-    expect(r).toMatchObject({ open: 0, pending: 2, stuck: 2, ready: false });
+    const spec = slashSpec();
+    const fresh = buildLayoutReview(tt, spec, confirmed(tt, spec, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' }), OPTS);
+    // The example is a cell either order reads.
+    expect(fresh.questions.find((q) => q.kind === 'date_order')).toMatchObject({ answer: null, cell: '03/04/2025' });
+    expect(fresh).toMatchObject({ open: 1, stuck: 0, ready: false });
+    const answered = buildLayoutReview(tt, spec, confirmed(tt, spec, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', dateOrder: 'day_first' }), OPTS);
+    expect(answered).toMatchObject({ open: 0, pending: 0, stuck: 0, enough: false, ready: false });
+    expect(answered.dryRun.notRead.map((n) => n.problem)).toEqual(['Date doesn’t fit the layout (11/21/2025)']);
+  });
+
+  it('a saved layout’s slash dates on a later file with one `11/21` typo in 40 rows: that row is listed, the rest import (S1, r1 N6)', () => {
+    const lines = Array.from({ length: 40 }, (_, i) => (i === 7 ? '11/21/2025,Bench,100,8' : `${String((i % 28) + 1).padStart(2, '0')}/0${String((i % 9) + 1)}/2025,Bench,100,8`));
+    const tt = readTable(`Date,Exercise,Weight (kg),Reps\n${lines.join('\n')}\n`);
+    if (!tt) throw new Error('table');
+    const spec = slashSpec();
+    const answers = confirmed(tt, spec, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', dateOrder: 'day_first' });
+    const r = buildLayoutReview(tt, spec, answers, OPTS);
+    expect(r).toMatchObject({ open: 0, pending: 0, stuck: 0, enough: true, ready: true });
+    const rows = applyImportSpec(spec, answers, tt, OPTS).rows;
+    expect(rows.filter((x) => x.rowClass === 'strength')).toHaveLength(39);
+    expect(rows.find((x) => x.line === 9)).toMatchObject({ rowClass: 'unreadable', problem: 'Date doesn’t fit the layout (11/21/2025)' });
   });
 });
+
+describe('a blank cell in a unit column (S1)', () => {
+  const header = layoutText('liftosaur-like.synthetic.csv').split('\n')[0] ?? '';
+  const base = layoutText('liftosaur-like.synthetic.csv').trim().split('\n').slice(1);
+  /** Liftosaur-like rows (made up), `count` of them, with the unit cell blank on the given lines. */
+  const file = (count: number, blankLines: readonly number[]): Table => {
+    const rows = Array.from({ length: count }, (_, i) => {
+      const cells = (base[i % base.length] ?? '').split(',');
+      if (blankLines.includes(i + 2)) cells[14] = '';
+      return cells.join(',');
+    });
+    const t = readTable(`${header}\n${rows.join('\n')}\n`);
+    if (!t) throw new Error('table');
+    return t;
+  };
+  const s = specOf('liftosaur-like.spec.json');
+
+  it('one loaded row of 40 with a blank unit cell: listed as `No weight unit`, never guessed; the other 39 import', () => {
+    const tt = file(40, [12]);
+    expect(validateImportSpec(s, tt, OPTS).ok).toBe(true);
+    const answers = confirmed(tt, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' });
+    const r = buildLayoutReview(tt, s, answers, OPTS);
+    // No file-level unit question: the column says the unit row by row.
+    expect(r.questions.map((q) => q.kind)).toEqual(['record_kind']);
+    expect(r).toMatchObject({ open: 0, pending: 0, stuck: 0, enough: true, ready: true });
+    expect(r.dryRun.notRead).toEqual([{ index: 10, row: 12, line: 12, problem: NO_WEIGHT_UNIT }]);
+    const rows = applyImportSpec(s, answers, tt, OPTS).rows;
+    expect(rows.find((x) => x.line === 12)).toMatchObject({ rowClass: 'unreadable', problem: 'No weight unit', weight: null });
+    expect(rows.filter((x) => x.rowClass === 'strength')).toHaveLength(39);
+    expect(rows.filter((x) => x.rowClass === 'strength').every((x) => x.weight?.unit === 'kg')).toBe(true);
+  });
+
+  it('the same row while the unit column is still on `Check`: unreadable too, and nothing is counted stuck', () => {
+    const tt = file(40, [12]);
+    const r = buildLayoutReview(tt, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' }, OPTS);
+    expect(r.stuck).toBe(0);
+    expect(r.checks).toBeGreaterThan(0);
+  });
+
+  it('too many blank unit cells: the 95% rule blocks it, honestly (no stuck rows)', () => {
+    const tt = file(8, [3]);
+    const r = buildLayoutReview(tt, s, confirmed(tt, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' }), OPTS);
+    expect(r).toMatchObject({ open: 0, pending: 0, stuck: 0, enough: false, ready: false });
+  });
+});
+
+/** Slash dates, `Weight (kg)` and `Reps`, one row per set. */
+function slashSpec(): ImportMappingSpecV1 {
+  return packedSpec('Reps', 'sets_x_reps', {
+    layout: { kind: 'row_per_set', setOrder: null },
+    date: { column: { header: 'Date', index: 0 }, format: 'DD/MM/YYYY' },
+    load: { column: { header: 'Weight (kg)', index: 2 }, unit: { kind: 'header_token', column: { header: 'Weight (kg)', index: 2 }, token: 'kg' } },
+    reps: { header: 'Reps', index: 3 },
+  });
+}
 
 describe('dates, times and zones (AI6)', () => {
   it('Hevy `22 Dec 2025, 08:00`: two workouts on one date are two workout keys with their times as written', () => {

@@ -78,7 +78,7 @@ export interface LayoutReview {
   pending: number;
   /**
    * Records waiting for something no question on the screen asks (a backstop:
-   * e.g. slash dates that no single day/month order reads). Never silent: the
+   * known cases are asked or read as unreadable with a reason). Never silent: the
    * view says how many rows can't be read, and the primary stays off.
    */
   stuck: number;
@@ -194,8 +194,14 @@ export function buildLayoutReview(table: Table, spec: ImportMappingSpecV1 | null
 
   // Day/month order, unless a date in the file settles it.
   const order = dateOrderOf(table, s, answers);
-  if (s.date !== null && s.date.format !== null && (s.date.format === 'DD/MM/YYYY' || s.date.format === 'MM/DD/YYYY' || s.date.format === 'day_month_unknown') && order.settledBy === null && !order.conflict) {
-    const cell = columnValues(table, s.date.index).find((c) => slashFields(c) !== null)?.trim() ?? '';
+  if (s.date !== null && s.date.format !== null && (s.date.format === 'DD/MM/YYYY' || s.date.format === 'MM/DD/YYYY' || s.date.format === 'day_month_unknown') && order.settledBy === null) {
+    // The example is a cell either order reads, when there is one (the file's conflicting cells read only one way).
+    const slashCells = columnValues(table, s.date.index).filter((c) => slashFields(c) !== null);
+    const either = slashCells.find((c) => {
+      const f = slashFields(c);
+      return f !== null && f.first <= 12 && f.second <= 12;
+    });
+    const cell = (either ?? slashCells[0])?.trim() ?? '';
     const one = (o: DateOrder) => {
       const d = readDateCell(cell, 'day_month_unknown', { order: o, tz: opts.tz });
       const r = dateRange(table, s.date?.index ?? 0, o, opts.tz);

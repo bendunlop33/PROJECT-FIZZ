@@ -222,7 +222,7 @@ describe('Check the layout (§9.2.5)', () => {
     expect(done.examples[0]?.reading).toBe('→ 1 Sept 2025 · Bench Press · 100\u00a0kg × 8, 100\u00a0kg × 8, 100\u00a0kg × 7');
   });
 
-  it('rows waiting for something no question asks are never silent (review B1 backstop)', () => {
+  it('slash dates in both orders ask the order (review r2 S1); the stuck backstop is never silent (review B1)', () => {
     const text = 'Date,Exercise,Weight (kg),Reps\n21/11/2025,Bench,100,8\n11/21/2025,Bench,100,8\n03/04/2025,Bench,100,8\n';
     const table = readTable(text);
     if (!table) throw new Error('table');
@@ -247,8 +247,18 @@ describe('Check the layout (§9.2.5)', () => {
     for (const c of buildLayoutReview(table, spec, answers, OPTS).columns) if (c.state === 'check') roles[String(c.index)] = c.role;
     answers = { ...answers, roles };
     const review = buildLayoutReview(table, spec, answers, OPTS);
-    const v = checkLayoutView({ layoutId: 'l', layoutVersion: 1, fileName: 'log.csv', kind: 'coach', profileName: null, review, saved: null, newColumns: [], missing: [], canUndo: false, header: table.header }, 'en-GB');
-    expect(review).toMatchObject({ open: 0, stuck: 2 });
+    const base = { layoutId: 'l', layoutVersion: 1, fileName: 'log.csv', kind: 'coach' as const, profileName: null, review, saved: null, newColumns: [], missing: [], canUndo: false, header: table.header };
+    expect(review).toMatchObject({ open: 1, stuck: 0 });
+    expect(checkLayoutView(base, 'en-GB').questions.map((q) => q.title)).toContain('Dates like “03/04/2025”');
+    expect(checkLayoutView(base, 'en-GB').stuckLine).toBeNull();
+    // Answered: the `11/21` row is not read (listed), and 2 of 3 is under 95%.
+    const answered = buildLayoutReview(table, spec, { ...answers, dateOrder: 'day_first' }, OPTS);
+    const a = checkLayoutView({ ...base, review: answered }, 'en-GB');
+    expect(answered).toMatchObject({ open: 0, pending: 0, stuck: 0 });
+    expect(a.notReadLine).toBe('1 row not read');
+    expect(a.primary.enabled).toBe(false);
+    // The backstop: any row still waiting on nothing the screen asks is counted and said.
+    const v = checkLayoutView({ ...base, review: { ...answered, stuck: 2, pending: 2, ready: false } }, 'en-GB');
     expect(v.stuckLine).toMatchObject({ tone: 'warning', text: '2 rows can’t be read with this layout.' });
     expect(v.primary.enabled).toBe(false);
   });
