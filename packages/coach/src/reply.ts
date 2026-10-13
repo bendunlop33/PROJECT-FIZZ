@@ -179,6 +179,12 @@ export interface ReplyFilterOptions {
    * through the usual check, and true limits are never replaced.
    */
   noBuildToolLine?: boolean;
+  /**
+   * Review r2 S3: Ben asked for a build this turn (`propose_workout` offered). A refusal that names
+   * no workout ("I can't do that in the app", "I don't have a tool for that") is then the same
+   * false claim. Only read with `noBuildToolLine`.
+   */
+  buildAsked?: boolean;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
@@ -202,7 +208,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     // Build 131: on a general turn where the app can build one, "I can't build workouts here" is false.
     // The sentence is hidden (listed in Why?) and the reply says, once, what works instead.
     const draftThisTurn = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout');
-    if (options.noBuildToolLine === true && !draftThisTurn && claimsNoBuildTool(tokens.plainText)) {
+    if (options.noBuildToolLine === true && !draftThisTurn && claimsNoBuildTool(tokens.plainText, { generic: options.buildAsked === true })) {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_BUILD_TOOL_DETAIL });
       if (!askLineShown) out.push({ kind: 'sentence', text: BUILD_ASK_LINE });
       askLineShown = true;

@@ -436,7 +436,9 @@ function lower(text: string): string {
       // Review N1: a word on its own only, never "U-bar row".
       .replace(/(?<![\w-])u(?![\w-])/g, 'you')
       .replace(/(?<![\w-])ur(?![\w-])/g, 'your')
-      .replace(/\bsesh(es)?\b/g, 'session$1'),
+      .replace(/\bsesh(es)?\b/g, 'session$1')
+      // Review r2 B2: "make me a push sess" (the build-131 thread title's own truncation).
+      .replace(/\bsess\b/g, 'session'),
   );
 }
 
@@ -622,6 +624,16 @@ const BUILD_FOCUS = new RegExp(`^(?:make|give|build|plan|create|design|write|pro
 const BUILD_PLEASE = new RegExp(
   `^(?:(?:a|an) )?(?:(?:quick|short) )?(?:${FOCUS_RUN} ${BUILD_NOUN}|(?:new|another|fresh)(?: ${FOCUS_RUN})? ${BUILD_NOUN})(?: for (?:today|tonight|tomorrow))? please$`,
 );
+/**
+ * Review r2 B2: "add a push workout to the app", "can you add a push session to my workouts", "put a
+ * push session in the app for me": a new workout (a determiner) placed in the app. The determiner
+ * keeps exercise adds ("add curls to my workout") and records ("put my session in the app") out.
+ */
+const BUILD_PLACE = new RegExp(
+  `^(?:add|put|save|load|stick|pop)(?: me| us)?(?: (?:${NEW_DET}))+\\b.{0,60}?\\b${BUILD_NOUN}s?(?: for (?:me|us|today|tonight|tomorrow))? (?:to|in|into|on|onto) (?:the app|this app|my workouts|my routines|my library|the workouts tab)\\b`,
+);
+/** Review r2 B2: "can you do a push session for me" ("do" with "for me" after the noun). */
+const BUILD_DO_FOR = new RegExp(`^do (?:${NEW_DET} )+.{0,60}?\\b${BUILD_NOUN}s? for (?:me|us)\\b`);
 /** "push and legs" inside one request: joined before the clause split reads "and" as a new clause (build 131). */
 const FOCUS_AND = new RegExp(`\\b(${FOCUS}) (?:and|&|plus) (?=${FOCUS}\\b)`, 'gi');
 // Build 131: "split" is later only as a programme split ("my upper/lower split"), never "split squats".
@@ -638,7 +650,7 @@ function buildIn(clause: string): boolean {
   const c = clause.replace(POLITE, '');
   if (BUILD_LATER.test(c) || BUILD_NOT.test(c) || isOpinionQuestion(c)) return false;
   const body = ASK_PREFIX.exec(c)?.[1] ?? c;
-  return BUILD_DIRECT.test(body) || BUILD_WANT.test(c) || BUILD_CAN_I.test(c) || BUILD_FOCUS.test(body) || BUILD_PLEASE.test(c);
+  return BUILD_DIRECT.test(body) || BUILD_WANT.test(c) || BUILD_CAN_I.test(c) || BUILD_FOCUS.test(body) || BUILD_PLEASE.test(c) || BUILD_PLACE.test(body) || BUILD_DO_FOR.test(body);
 }
 
 /**

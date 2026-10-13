@@ -493,7 +493,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
   // The reply is always the last step, so every action it could cite is already in the ledger.
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildOffered });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {
@@ -549,8 +549,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     });
     if (out.kind === 'error') {
       const why = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
-      // The route refused the forced call: the held answer stands, as before the nudge (WB3: `No change made.`).
-      if (forceBuild && heldReply !== null && why !== 'cancelled' && why !== 'timeout' && why !== 'network') {
+      // The route refused the forced call (a rejected named tool_choice surfaces as `unavailable`): the held
+      // answer stands, as before the nudge (WB3: `No change made.`). Review r2 S2: any other error (usage
+      // limit, signed out, not eligible, model gone, network) is shown as it is, so the AI status stays honest.
+      if (forceBuild && heldReply !== null && why === 'unavailable') {
         const parsed = parseReply(heldReply, req.kind);
         if (parsed.ok) {
           message = parsed.reply.message;

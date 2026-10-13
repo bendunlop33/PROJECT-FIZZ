@@ -1,3 +1,4 @@
+import { classifyPainMention } from '@fizz/domain';
 import type { CoachMessage, CoachTurnKind } from '@fizz/schemas';
 import { classifyBenRequest, requestHas, revisesDraft } from './request';
 
@@ -28,12 +29,19 @@ import { classifyBenRequest, requestHas, revisesDraft } from './request';
  */
 const SETS_BY_REPS = /\b\d{1,2}\s*(?:[×x✕*]|sets?(?: of|,| x|:)?)\s*\d{1,3}(?:\s*[-–—]\s*\d{1,3})?(?:\s*reps?)?\b/gi;
 
+/** Reps written before sets (review r2 S3): "6-8 reps, 3 sets", "8-12 reps x 3 sets", "10 reps for 3 sets". */
+const REPS_BY_SETS = /\b\d{1,3}(?:\s*[-–—]\s*\d{1,3})?\s*reps?,?\s*(?:[×x✕*]|for|of|over)?\s*\d{1,2}\s*sets?\b/gi;
+
 /** Does this coach text lay out a session (two or more "sets × reps" lines)? Pure; the coach's words are data. */
 export function describesWorkoutPlan(text: string): boolean {
-  return (text.match(SETS_BY_REPS) ?? []).length >= 2;
+  return (text.match(SETS_BY_REPS) ?? []).length + (text.match(REPS_BY_SETS) ?? []).length >= 2;
 }
 
-const OFFER_VERB = /\b(?:want|shall|should|like) (?:me|i) to (?:build|add|make|put|save|create|set up|turn|load)\b|\b(?:build|add|put|save|load) (?:it|that|this|them)(?: (?:in|into|to) (?:the app|your workouts))?\s*\?/i;
+const OFFER_VERB = /\b(?:want|shall|should|like) (?:me|i) to (?:build|add|make|put|save|create|set up|set (?:it|that|this|them) up|turn|load)\b|\bshall i (?:build|add|make|put|save|create|set|load)\b|\b(?:build|add|put|save|load) (?:it|that|this|them)(?: (?:in|into|to) (?:the app|your workouts))?\s*\?/i;
+/** An offer as a statement (review r2 S3): "I can build it in the app if you like", "Happy to set that up if you want." */
+const OFFER_STATEMENT =
+  /\b(?:i can|i could|i'm happy to|happy to|glad to)\s+(?:build|add|make|put|save|create|set up|set (?:it|that|this|them) up|load|turn)\b[^.!?]*\b(?:if you (?:like|want|fancy|'d like|would like)|if that helps|if useful|just say(?: the word)?|(?:just )?let me know|say the word)\b/i;
+const NOT_WORKOUT_OFFER = /\b(?:memor(?:y|ies)|note|remember)\b/i;
 /** The offer is about a workout, not a memory or a note ("Want me to save that as a memory?" is not one). */
 const OFFER_ABOUT_WORKOUT = /\b(?:build|app|workouts?|sessions?|routines?|drafts?|day)\b/i;
 
@@ -44,27 +52,45 @@ const OFFER_ABOUT_WORKOUT = /\b(?:build|app|workouts?|sessions?|routines?|drafts
  * the clear signal; the result is still only a draft, BD12, BD15).
  */
 export function offersToBuild(text: string): boolean {
-  const questions = text.replace(/[’]/g, "'").match(/[^.!?]*\?/g) ?? [];
+  const t = text.replace(/[’]/g, "'");
+  const questions = t.match(/[^.!?]*\?/g) ?? [];
+  const statements = t.match(/[^.!?]+[.!]?/g) ?? [];
   const plan = describesWorkoutPlan(text);
-  return questions.some((q) => OFFER_VERB.test(q) && !/\b(?:memor(?:y|ies)|note|remember)\b/i.test(q) && (plan || OFFER_ABOUT_WORKOUT.test(q)));
+  const about = (q: string): boolean => !NOT_WORKOUT_OFFER.test(q) && (plan || OFFER_ABOUT_WORKOUT.test(q));
+  return questions.some((q) => OFFER_VERB.test(q) && about(q)) || statements.some((q) => OFFER_STATEMENT.test(q) && about(q));
 }
 
-const ACCEPT_WORD = "(?:yes|yeah|yea|yep|yup|ya|sure|ok|okay|k|please|alright|right|cool|great|perfect|nice|lovely|brilliant|absolutely|definitely|go on|go ahead|go for it|do it|let's do it|lets do it|let's go|lets go|go|sounds good|looks good|that works|love it|thanks|thank you|cheers|mate|coach)";
+/** Yes-family words: agreement on their own ("yes", "go on then", "sounds great", "why not", "👍"). */
+const YES_WORD =
+  "(?:yes|yeah|yea|yeh|yep|yup|ya|y|aye|sure|sure thing|please|absolutely|definitely|deffo|go on|go ahead|go for it|do it|let's do it|lets do it|let's go|lets go|let's|go|deal|why not|sounds good|sounds great|sounds perfect|sounds fine|looks good|looks great|that works|works for me|love it|be great|would be great|that would be great|that'd be great|that'd be good|that would be good|please do|yes please|of course|course|ok go|okay go)";
+/** Acknowledgements: agreement only after an offer, never after a refusal (review r2 S1). */
+const ACK_WORD = '(?:ok|okay|k|kk|alright|aight|right|fine|ok then|okay then)';
+/** Thanks, praise and sign-offs: never agreement on their own (review r2 S1). */
+const SOFT_WORD = '(?:thanks|thank you|ta|cheers|cool|great|perfect|nice|lovely|brilliant|awesome|ace|mate|coach|then|now|x|xx|for me|though|tho)';
 const FOLLOW_LEAD = "(?:(?:can|could|would|will) you (?:please |just )?|you can |please |just |go ahead and |now |then |and )*";
-const FOLLOW_VERB = '(?:add|put|save|load|stick|pop|chuck|throw|make|turn|build|create|set|log|start|do|plug|get)';
+const FOLLOW_VERB = '(?:add|put|save|load|stick|pop|chuck|throw|turn|build|create|set|start|plug)';
+/** Review r2 N1: these only with an object ("make it", never a bare "do"); "log it" means he did it, so it's out. */
+const FOLLOW_VERB_WITH_OBJECT = '(?:make|do|get)';
 const FOLLOW_OBJECT = '(?:it|that|this|them|those|these|(?:that|this|the|your) (?:one|session|workout|plan|routine|day)|(?:that|this|the) (?:push|pull|leg|legs|upper|lower|full body) (?:session|workout|day))';
 const FOLLOW_PLACE =
   "(?:(?:in|into|to|on|onto) (?:the |my |your )?(?:app|workouts?|routines?|library|phone)|(?:as|into) (?:a |an )?(?:new )?(?:workout|session|routine|draft)|a (?:workout|session|routine|draft)|(?:to|for) today(?:'s| is)?(?: (?:workout|session|plan))?|today|in|up|on|for me)";
-const SIGN_OFF = '(?:please|thanks|thank you|cheers|mate|coach|now|then|for me|though|tho|x)';
-const FOLLOW = new RegExp(`^${FOLLOW_LEAD}${FOLLOW_VERB}(?: ${FOLLOW_OBJECT})?(?: ${FOLLOW_PLACE})*$`);
+const SIGN_OFF = `(?:${SOFT_WORD}|please)`;
+const FOLLOW = new RegExp(`^${FOLLOW_LEAD}(?:${FOLLOW_VERB}(?: ${FOLLOW_OBJECT})?|${FOLLOW_VERB_WITH_OBJECT} ${FOLLOW_OBJECT})(?: ${FOLLOW_PLACE})*$`);
+/** "in the app please", "yes in the app", "to my workouts" (review r2 B1): the place alone, after the coach's plan. */
+const PLACE_ONLY = /^(?:(?:can you |please )?(?:put it |add it )?)?(?:in|into|to|on|onto) (?:the |my |your )?(?:app|workouts?|routines?|library)$/;
 /** Ben pushing back that the app can do it (build 131 review S2): "the app can do it", "it has a workout builder". */
 const PUSHBACK =
   /^(?:(?:but|well|yes|yeah|no|nah|actually) )*(?:the app|this app|the app itself|you|it) (?:can|could|does|do|has|have|has got|should be able to)(?: (?:a|an|got))? (?:do (?:it|that|this)|(?:a )?(?:workout |session )?builder|build(?: (?:it|that|them|workouts?|sessions?))?|add(?: (?:it|that|them|workouts?|sessions?))?|make (?:it|that|workouts?|sessions?))(?: (?:in|on) (?:the |this )?app)?$/;
-const ACCEPT_ONLY = new RegExp(`^${ACCEPT_WORD}(?: ${ACCEPT_WORD})*$`);
-const ACCEPT_LEAD = new RegExp(`^(?:${ACCEPT_WORD} )+`);
+const WORD = `(?:${YES_WORD}|${ACK_WORD}|${SOFT_WORD})`;
+const AGREE_ONLY = new RegExp(`^${WORD}(?: ${WORD})*$`);
+const HAS_YES = new RegExp(`(?:^| )${YES_WORD}(?= |$)`);
+const HAS_ACK = new RegExp(`(?:^| )${ACK_WORD}(?= |$)`);
+const AGREE_LEAD = new RegExp(`^(?:${WORD} )+`);
 const SIGN_OFF_TAIL = new RegExp(`(?: ${SIGN_OFF})+$`);
-/** After "but": a change Ben wants made in the draft ("make it 45 mins", "drop the calf raises", "swap … for …"). */
-const CHANGE_TAIL = /^(?:make it|make that|make them|swap|switch|drop|lose|remove|cut|skip|add|replace|change|use|no|without|with|less|more|shorter|longer|only|just|keep|leave out|take out|instead|go)\b/;
+/** A length on its own ("45 mins", "an hour", "half an hour"): a change after a yes (review r2 B1). */
+const LENGTH = /^(?:(?:make it|keep it|only|just|about|around|max|for) )?(?:\d{1,3} ?(?:m|min|mins|minutes?|h|hr|hrs|hours?)|(?:an|one|1|half an|an and a half|a half) hours?|(?:half|an) hour)\b/;
+/** After "but" (or "and", or straight after a yes): a change Ben wants made in the draft ("make it 45 mins", "drop the calf raises", "without dips"). */
+const CHANGE_TAIL = /^(?:make it|make that|make them|swap|switch|drop|lose|remove|cut|skip|add|replace|change|use|no|without|with|less|more|shorter|longer|only|just|keep|leave out|take out|instead|go|throw in|chuck in|stick in|put in|include)\b/;
 /** After "but": a question, which is never a build ("yes, but why split squats?"). */
 const QUESTION_TAIL = /^(?:why|what|how|when|where|which|who|is|are|was|were|do|does|did|can|could|should|would|will|isn't|aren't|don't)\b/;
 
@@ -73,37 +99,89 @@ export function expandTextSpeak(text: string): string {
   return text.replace(/(?<![\w-])u(?![\w-])/g, 'you').replace(/(?<![\w-])ur(?![\w-])/g, 'your');
 }
 
-function followCore(t: string): 'explicit' | 'accept' | null {
-  if (t === '') return null;
-  if (ACCEPT_ONLY.test(t)) return 'accept';
-  const body = t.replace(ACCEPT_LEAD, '').replace(SIGN_OFF_TAIL, '').trim();
-  return FOLLOW.test(body) || PUSHBACK.test(body) ? 'explicit' : null;
+/** Lower case, text-speak, thumbs-up as "yes", other emoji and punctuation as spaces. "why not" is agreement, not a question. */
+function normaliseReply(text: string): string {
+  return expandTextSpeak(text.toLowerCase().replace(/[‘’]/g, "'"))
+    .replace(/(?:👍|👌|✅|💪|🙌|🤙)\p{Emoji_Modifier}?/gu, ' yes ')
+    .replace(/\p{Extended_Pictographic}|\p{Emoji_Modifier}|\uFE0F|\u200D/gu, ' ')
+    .replace(/\bpls\b|\bplz\b/g, 'please')
+    .replace(/\bwhy not\b/g, 'yes')
+    .replace(/[.,!?;:…—–]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
+
+/** A change Ben wants made after his yes ("45 mins", "without dips", "and add some biceps", "but make it 45 mins"). */
+function isChange(rest: string): boolean {
+  const r = rest.replace(/^(?:and|but|with|just|so|then) /, '');
+  return CHANGE_TAIL.test(r) || LENGTH.test(r);
+}
+
+function followCore(t: string): FollowKind | null {
+  if (t === '') return null;
+  if (AGREE_ONLY.test(t)) return HAS_YES.test(t) ? 'accept' : HAS_ACK.test(t) ? 'ack' : null;
+  const lead = AGREE_LEAD.exec(t)?.[0] ?? '';
+  const body = t.slice(lead.length).replace(SIGN_OFF_TAIL, '').trim();
+  if (FOLLOW.test(body) || PUSHBACK.test(body) || PLACE_ONLY.test(body)) return 'explicit';
+  // Review r2 B1: "yes, 45 mins", "yes without dips", "yes and add some biceps" are a yes with a change.
+  return HAS_YES.test(lead.trim()) && isChange(body) ? 'explicit' : null;
+}
+
+/**
+ * How Ben's words read as agreement: `explicit` asks to have it in the app, `accept` is a yes
+ * ("yes", "go on then", "👍"), `ack` is an acknowledgement ("ok", "alright") that counts only
+ * after the coach offered. Thanks and praise on their own ("cool", "thanks mate") are none of these.
+ */
+export type FollowKind = 'explicit' | 'accept' | 'ack';
 
 /**
  * Ben's words after the coach described a session: `explicit` asks to have it
  * in the app ("add it", "put that in the app", "yes u can add in the app",
- * "the app can do it", "yes but make it 45 mins"), `accept` is only agreement
- * ("yes", "ok go"), null is anything else (a question, a change of topic, a
- * "no"). The whole message must be the follow-up: "yes, but why split
- * squats?" is a question, not a build. A "but <change>" after a yes or an add
- * is explicit: the model gets the change in his words and makes a draft (BD16). Pure.
+ * "the app can do it", "yes but make it 45 mins", "yes without dips", "in the
+ * app please"), `accept` is a yes ("yes", "go on then", "sounds great"),
+ * `ack` an acknowledgement ("ok"), null is anything else (a question, a
+ * change of topic, a "no", thanks or praise alone). The whole message must be
+ * the follow-up: "yes, but why split squats?" is a question, not a build. A
+ * change after a yes or an add is explicit: the model gets the change in his
+ * words and makes a draft (BD16). Pure.
  */
-export function buildFollowUp(text: string): 'explicit' | 'accept' | null {
-  const t = expandTextSpeak(text.toLowerCase().replace(/[‘’]/g, "'"))
-    .replace(/\bpls\b|\bplz\b/g, 'please')
-    .replace(/[.,!?;:…—–]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+export function buildFollowUp(text: string): FollowKind | null {
+  const t = normaliseReply(text);
   if (t === '') return null;
   const but = /^(.*?) but (.+)$/.exec(t);
   if (but !== null) {
     const head = followCore((but[1] ?? '').trim());
     const tail = (but[2] ?? '').trim();
     if (head === null || text.includes('?') || QUESTION_TAIL.test(tail)) return null;
-    return CHANGE_TAIL.test(tail) ? 'explicit' : null;
+    return isChange(tail) ? 'explicit' : null;
   }
   return followCore(t);
+}
+
+/** "no", "not now", "later", "don't", "I'll do it myself": Ben turning the offer down. */
+const REFUSAL =
+  /^(?:no|nah|nope|naw|na|not|don't|dont|do not|never ?mind|forget it|leave it|skip it|hold (?:on|off)|wait|stop|i'm (?:good|ok|okay|fine|alright)|im (?:good|ok|okay|fine)|all good)\b|\b(?:later|not now|not yet|not today|not right now|not for now|another time|other time|no thanks|no thank you|no need|don't bother|dont bother|don't worry|dont worry|don't (?:add|build|make|put|save|need|want)|myself|i'll do it|ill do it)\b/;
+/** A question anywhere, or a question word ("what about pull", "how long is it"). */
+const QUESTION_WORD =
+  /(?:^| )(?:why|what|how|when|where|which|who|whats|what's|hows|how's)(?= |$)|^(?:is|are|was|were|isn't|aren't) (?:it|that|this|there|they)(?= |$)|^(?:do|does|did|can|could|should|would|will|shall) (?:i|you|we|they)(?= |$)|^(?:does|did) (?:it|that|this)(?= |$)/;
+/** A remark about the plan ("looks heavy", "that's a lot"): Ben talking, not agreeing. A pleased remark is agreement. */
+const REMARK = /^(?:looks|seems|feels|sounds|that's|that is|thats|it's|it is|its|bit|a bit|quite|very|too|hmm|hm|um|erm)\b/;
+/** Replies longer than this aren't read as a "yes" to the offer: Ben has moved on to something else. */
+const OFFER_REPLY_MAX_WORDS = 15;
+
+/**
+ * Ben's reply to the coach's own "Want me to build it in the app?" (review r2 B1). The offer is the
+ * clear signal, so the rule is inverted: any reply that isn't a question, a refusal, a remark, a pain
+ * mention or thanks/praise on its own opens `propose_workout` ("go on then", "aye", "yes, 45 mins",
+ * "yes and add some biceps"). His words go to the model as the change; the result is only a draft
+ * (BD12, BD15). Pure.
+ */
+export function acceptsBuildOffer(text: string): boolean {
+  const t = normaliseReply(text);
+  if (t === '' || text.includes('?') || REFUSAL.test(t) || classifyPainMention(text) === 'pain') return false;
+  if (buildFollowUp(text) !== null) return true;
+  if (QUESTION_WORD.test(t) || AGREE_ONLY.test(t) || REMARK.test(t)) return false;
+  return t.split(' ').length <= OFFER_REPLY_MAX_WORDS;
 }
 
 /** The coach's shown words on a stored message (what Ben saw), or null for Ben's own. */
@@ -125,6 +203,19 @@ export interface BuildFollowUp {
   benTexts: string[];
 }
 
+/**
+ * Do Ben's words follow up on the coach's last message (`last`, its shown sentences)?
+ * - It offered to build: any reply that isn't a question, a refusal or thanks alone (`acceptsBuildOffer`).
+ * - It said it couldn't: an explicit ask or a yes ("yes", "ok go"); never "ok thanks" or "cool" (review r2 S1).
+ * - Otherwise (a plan in text, no offer): only an explicit ask ("add it", "put that in the app").
+ */
+function followsUp(text: string, last: readonly string[]): boolean {
+  if (offersToBuild(last.join(' '))) return acceptsBuildOffer(text);
+  const kind = buildFollowUp(text);
+  if (kind === 'explicit') return true;
+  return kind === 'accept' && last.some((s) => claimsNoBuildTool(s, { generic: true }) || s === BUILD_ASK_LINE);
+}
+
 /** How many coach messages back a follow-up may reach (review B2: one side question, or a refusal, in between). */
 export const FOLLOW_UP_WINDOW = 3;
 
@@ -138,12 +229,12 @@ export const FOLLOW_UP_WINDOW = 3;
  * to build, or said it couldn't (Ben is agreeing to try again).
  */
 export function buildFollowUpIn(history: readonly CoachMessage[], text: string): BuildFollowUp | null {
-  const kind = buildFollowUp(text);
-  if (kind === null) return null;
   const sorted = [...history].sort((a, b) => a.ordinal - b.ordinal);
   const coachAts = sorted.flatMap((m, i) => (m.body.role === 'coach' ? [i] : [])).reverse();
   const lastAt = coachAts[0];
   if (lastAt === undefined) return null;
+  const last = coachSentences(sorted[lastAt] as CoachMessage);
+  if (!followsUp(text, last)) return null;
   let anchorAt: number | null = null;
   let anchorBenAt: number | null = null;
   for (const at of coachAts.slice(0, FOLLOW_UP_WINDOW)) {
@@ -159,10 +250,6 @@ export function buildFollowUpIn(history: readonly CoachMessage[], text: string):
     }
   }
   if (anchorAt === null) return null;
-  if (kind === 'accept') {
-    const last = coachSentences(sorted[lastAt] as CoachMessage);
-    if (!offersToBuild(last.join(' ')) && !last.some((s) => claimsNoBuildTool(s) || s === BUILD_ASK_LINE)) return null;
-  }
   const from = anchorBenAt ?? anchorAt;
   const benTexts = sorted
     .slice(from)
@@ -222,7 +309,14 @@ const CANT_BUILD = new RegExp(
 );
 /** "I don't have access to a workout-creation tool", "there's no tool for adding workouts". */
 const NO_BUILD_TOOL = new RegExp(
-  `${NO_BUILD_LEAD}[^.?!]{0,30}?\\b(?:(?:workout|session|routine)[- ](?:creation|creating|building|builder|creator)(?: (?:tool|feature|function))?|(?:tool|ability|way|feature|function|access) (?:to|for) ${BUILD_VERBS} ${WORKOUT_OBJECT}\\b)`,
+  `${NO_BUILD_LEAD}[^.?!]{0,30}?\\b(?:(?:workout|session|routine)[- ](?:creation|creating|building|builder|creator)(?: (?:tool|feature|function))?|(?:tool|ability|way|feature|function|access) (?:to|for) (?:${BUILD_VERBS}|save|saving|store|storing) ${WORKOUT_OBJECT}\\b)`,
+);
+/**
+ * A refusal that names no workout (review r2 S3): "I can't do that in the app.", "I don't have a tool
+ * for that." Read as a no-build claim only where Ben asked for a build (`claimsNoBuildTool` `generic`).
+ */
+const GENERIC_NO_BUILD = new RegExp(
+  `${NO_BUILD_LEAD}[^.?!]{0,12}?\\b(?:do (?:that|it|this)(?: for you)? (?:in|on|from|through|with) (?:the |this )?app\\b|(?:a |any )?(?:tool|way|function|feature|ability) (?:for|to do) (?:that|this|it)\\b)`,
 );
 
 /**
@@ -232,10 +326,12 @@ const NO_BUILD_TOOL = new RegExp(
  * workout", "I can't create a programme" and "I don't have your Health data"
  * are true limits and stay (review B1). The reply filter uses it only on a
  * general turn where the app can build one and no draft was made (`createReplyFilter`).
+ * `generic` also reads a refusal that names no workout ("I can't do that in the app"):
+ * only where Ben asked for a build, so "can you sync Garmin?" keeps its true answer.
  */
-export function claimsNoBuildTool(sentence: string): boolean {
+export function claimsNoBuildTool(sentence: string, opts: { generic?: boolean } = {}): boolean {
   const t = sentence.toLowerCase().replace(/[’]/g, "'");
-  return CANT_BUILD.test(t) || NO_BUILD_TOOL.test(t);
+  return CANT_BUILD.test(t) || NO_BUILD_TOOL.test(t) || (opts.generic === true && GENERIC_NO_BUILD.test(t));
 }
 
 /** Shown in place of a "can't build" sentence: what works (minimal copy). */

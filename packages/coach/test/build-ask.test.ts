@@ -117,6 +117,16 @@ describe('build requests in a general turn (diagnosis table)', () => {
     'set me up a push workout',
     'Can you program me a push day',
     'make me a pull workout for next week',
+    // Review r2 B2: Ben's own vocabulary ("add in the app") on a first turn.
+    'Can you add a push session to my workouts',
+    'add a push workout to the app',
+    'put a push session in the app for me',
+    'can you put a new push session in the app',
+    'add a new leg day to my routines',
+    'could you add a quick upper body session to the app',
+    'save a push workout to my workouts',
+    'Can you make me a push sess',
+    'Can you do a push session for me',
   ];
 
   it.each(BUILD)('%s → build, propose_workout offered, never a change to today’s sets', (t) => {
@@ -164,6 +174,15 @@ describe('build requests in a general turn (diagnosis table)', () => {
     "make today's workout shorter",
     'program me a 6 week block',
     'make me a push session for each week',
+    // Review r2 B2 near-misses: no determiner (an exercise add, or Ben's records), or no place in the app.
+    'add curls to my workout',
+    'add curls to the app',
+    'put my session in the app',
+    'add my session to the app',
+    'add the push session to my workouts',
+    'add a set to my workout',
+    'add 3 sets of curls to my workout',
+    'save my workout',
   ];
 
   it.each(NOT_BUILD)('%s → no build on its own words', (t) => {
@@ -247,17 +266,80 @@ describe('follow-ups after the coach described a session in text', () => {
     expect(opens(t, true)).toBe(true);
   });
 
-  const ACCEPT = ['yes', 'yes please', 'do it', 'ok go', 'Yeah!', 'sure'];
+  const ACCEPT = ['yes', 'yes please', 'do it', 'ok go', 'Yeah!', 'sure', 'go on then', 'sure thing', 'sounds great', "that'd be great", 'yes that would be great', 'yeah why not', 'why not', 'aye', 'y', 'deal', 'Yes please 👍', '👍', 'yes mate', 'go on then thanks'];
   it.each(ACCEPT)('%s → accept: builds only when the coach offered to build it', (t) => {
     expect(buildFollowUp(t)).toBe('accept');
     expect(buildFollowUpIn([ben('what should I do today'), coach(PLAN)], t)).toBeNull();
     expect(buildFollowUpIn([ben('what should I do today'), coach(`${PLAN} Want me to build it in the app?`)], t)).not.toBeNull();
   });
 
-  const NOT = ['no', 'no thanks', "don't add it", 'why split squats?', 'yes, but why calf raises?', 'yes but why calf raises', 'no but make it 45 mins', 'looks heavy', 'what about pull?', 'swap the calf raises'];
-  it.each(NOT)('%s → not a follow-up build', (t) => {
+  const NOT = [
+    'no',
+    'no thanks',
+    "don't add it",
+    'why split squats?',
+    'yes, but why calf raises?',
+    'yes but why calf raises',
+    'no but make it 45 mins',
+    'looks heavy',
+    "that's a lot of sets",
+    'what about pull?',
+    'what about pull',
+    'nah',
+    'not now',
+    'maybe later',
+    'add it later',
+    'later',
+    "nah I'm good",
+    "I'll do it myself",
+    'hold on',
+    // Review r2 S1: thanks or praise alone is a sign-off, not a yes.
+    'thanks',
+    'thanks mate',
+    'cool',
+    'nice',
+    'perfect',
+    'cheers',
+    'my shoulder hurts today',
+  ];
+  it.each(NOT)('%s → not a follow-up build, even after the coach’s offer', (t) => {
     expect(buildFollowUp(t)).not.toBe('explicit');
     expect(buildFollowUpIn([ben('Can you make me a push session'), coach(`${PLAN} Want me to build it in the app?`)], t)).toBeNull();
+  });
+
+  // Review r2 B1: after the coach's own offer, any reply that isn't a question or a refusal opens the tool.
+  const AFTER_OFFER = [
+    ...ACCEPT,
+    'ok',
+    'ok thanks',
+    'yes, 45 mins',
+    'yes but 45 mins',
+    'yes without dips',
+    'yes and add some biceps',
+    'yes in the app',
+    'in the app please',
+    'swap the calf raises for leg press',
+    'without the calf raises',
+    'go for it, an hour',
+  ];
+  it.each(AFTER_OFFER)('after "Want me to build it in the app?", %s builds (a draft; his words are the change)', (t) => {
+    const thread = [ben('what should I do for push today'), coach('Bench press 3 × 6–8, overhead press 3 × 8–10, dips 3 × 8–12. Want me to build it in the app?')];
+    const f = buildFollowUpIn(thread, t);
+    expect(f).toEqual({ priorBenText: 'what should I do for push today', benTexts: ['what should I do for push today'] });
+    expect(asksForBuild({ turnKind: 'general', text: t, draftInContext: false, followUp: f })).toBe(true);
+    expect(opens(t, true)).toBe(true);
+  });
+
+  it('review r2 B1: a yes with a length, an exclusion or a place is explicit (it builds after a plan with no offer too)', () => {
+    for (const t of ['yes, 45 mins', 'yes but 45 mins', 'yes without dips', 'yes and add some biceps', 'yes in the app', 'in the app please', 'yeah, an hour', 'go on then, without dips']) {
+      expect(buildFollowUp(t)).toBe('explicit');
+      expect(buildFollowUpIn([ben('Can you make me a push session'), coach(PLAN)], t)).not.toBeNull();
+    }
+    // Review r2 N1: "log it" means he did it, and a bare "make" or "do" has no object.
+    for (const t of ['log it', 'make', 'do', 'get']) expect(buildFollowUpIn([ben('Can you make me a push session'), coach(PLAN)], t)).toBeNull();
+    // A bare length with no yes is not a build after a plan without an offer.
+    expect(buildFollowUp('45 mins')).toBeNull();
+    expect(buildFollowUpIn([ben('what should I do today'), coach(PLAN)], '45 mins')).toBeNull();
   });
 
   it('needs a plan in text, or an earlier build request, in the last coach turn', () => {
@@ -299,6 +381,19 @@ describe('follow-ups after the coach described a session in text', () => {
     },
   );
 
+  // Review r2 S1: after a refusal, a sign-off is not a yes; a yes-family word still builds.
+  it.each(['ok thanks', 'thanks mate', 'cool', 'nice', 'perfect', 'ok', 'thanks'])('device thread: %s → no build (a sign-off)', (t) => {
+    expect(buildFollowUpIn(DEVICE(), t)).toBeNull();
+  });
+  it.each(['yeah', 'yep', 'sure', 'ok go', 'do it', 'go on then', 'yes please'])('device thread: %s → builds (a yes)', (t) => {
+    expect(buildFollowUpIn(DEVICE(), t)).not.toBeNull();
+  });
+  it('review r2 S3: a refusal that names no workout ("I can’t do that in the app.") counts as the refusal', () => {
+    const thread = [ben('Can you make me a push session with split squats and calf raises'), coach(PLAN), ben('Yes u can add in the app'), coach("I can't do that in the app.")];
+    expect(buildFollowUpIn(thread, 'yes')).not.toBeNull();
+    expect(buildFollowUpIn(thread, 'ok thanks')).toBeNull();
+  });
+
   it('after one side question, "yes" to the coach’s offer builds (review B2)', () => {
     const thread = [ben('Can you make me a push session'), coach(PLAN), ben('why split squats?'), coach('They load legs with less spine. Want me to build it in the app?')];
     for (const t of ['yes', 'add it']) expect(buildFollowUpIn(thread, t)).not.toBeNull();
@@ -335,6 +430,14 @@ describe('follow-ups after the coach described a session in text', () => {
     expect(offersToBuild('Shall I add it?')).toBe(false);
     expect(offersToBuild('Want me to save that as a memory?')).toBe(false);
     expect(offersToBuild('How long have you got?')).toBe(false);
+    // Review r2 S3: reps before sets, and paraphrased offers.
+    expect(describesWorkoutPlan('Bench press for 6-8 reps, 3 sets. Dips for 8-12 reps, 3 sets.')).toBe(true);
+    expect(describesWorkoutPlan('Do 8 reps on bench.')).toBe(false);
+    expect(offersToBuild('I can build it in the app if you like.')).toBe(true);
+    expect(offersToBuild(`${PLAN} Want me to set that up?`)).toBe(true);
+    expect(offersToBuild(`${PLAN} Shall I set it up?`)).toBe(true);
+    expect(offersToBuild('I can save that as a memory if you like.')).toBe(false);
+    expect(offersToBuild('I can explain it if you like.')).toBe(false);
   });
 });
 
@@ -369,6 +472,25 @@ describe('"I can’t build workouts" on a general turn where the app can (build 
   ];
   it.each(FINE)('%s stays', (s) => {
     expect(claimsNoBuildTool(s)).toBe(false);
+    expect(claimsNoBuildTool(s, { generic: true })).toBe(false);
+  });
+
+  // Review r2 S3: no workout named. Only where Ben asked for a build; elsewhere it may be a true limit.
+  const GENERIC = ["I can't do that in the app.", "I don't have a tool for that.", "Sorry, I'm not able to do that in the app."];
+  it.each(GENERIC)('%s: a no-build claim on a build turn only', (s) => {
+    expect(claimsNoBuildTool(s, { generic: true })).toBe(true);
+    expect(claimsNoBuildTool(s)).toBe(false);
+  });
+  it("review r2 S3: \"I don't have a way to save workouts in the app.\"", () => {
+    expect(claimsNoBuildTool("I don't have a way to save workouts in the app.")).toBe(true);
+  });
+
+  it('on a build turn, a generic refusal is hidden too', () => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, buildAsked: true });
+    const items = [...f.push("I can't do that in the app. "), ...f.end(true)];
+    expect(items).toEqual([{ kind: 'sentence', text: BUILD_ASK_LINE }]);
+    const g = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true });
+    expect([...g.push("I can't do that in the app. "), ...g.end(true)]).toEqual([{ kind: 'sentence', text: "I can't do that in the app." }]);
   });
 
   const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });

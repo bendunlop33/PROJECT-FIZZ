@@ -580,6 +580,59 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(await s.coachDrafts.list()).toEqual([]);
   });
 
+  it.each(['usage_limit', 'auth_expired', 'not_eligible', 'model_gone'] as const)(
+    'review r2 S2: if the forced step fails with %s, the turn fails with that status (the held text never stands in)',
+    async (error) => {
+      const { s } = await benWithHistory();
+      model = new StepModel([() => replyWith(PLAN), () => [{ type: 'error', error }]]);
+      const r = await ask(s, 'Can you make me a push session');
+      expect(r).toMatchObject({ status: 'failed', error });
+      expect(r.cards).toEqual([]);
+      expect(await s.coachDrafts.list()).toEqual([]);
+    },
+  );
+
+  it('review r2 B1: "go on then" after the coach’s own offer ends in a draft card (only a draft)', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith('Bench press 3 × 6–8, overhead press 3 × 8–10, dips 3 × 8–12. Want me to build it in the app?')]);
+    const first = await ask(s, 'what should I do for push today');
+    expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_workout');
+    model = new StepModel([pushStub(PUSH), () => replyWith('Bench first.')]);
+    const second = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'go on then', spoken: false }, turnId: h.ids() });
+    const req = model.requests[0] as ModelRequest;
+    expect(req.tools.map((t) => t.name)).toContain('propose_workout');
+    expect(buildOf(req).request).toMatchObject({ focus: 'push', quote: 'what should I do for push today\ngo on then' });
+    const card = second.cards[0]?.record;
+    expect(card).toMatchObject({ status: 'committed', detail: { kind: 'build_workout' } });
+    expect(second.hiddenLines).toEqual([]);
+    expect(await s.sessions.active()).toBeNull();
+    const draftId = card?.detail.kind === 'build_workout' ? card.detail.draftId : '';
+    expect(await s.coachDrafts.get(draftId)).toMatchObject({ status: 'open', routineId: null });
+  });
+
+  it('review r2 S1: "ok thanks" after the coach’s refusal makes nothing (no tool, no draft)', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
+    const first = await ask(s, 'Can you make me a push session with split squats and calf raises');
+    const refusal = "The app may support adding workouts, but I don't have access to a workout-creation tool in this chat.";
+    model = new StepModel([() => replyWith(refusal), () => replyWith(refusal)]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'Yes u can add in the app', spoken: false }, turnId: h.ids() });
+    model = new StepModel([() => replyWith('Any time.')]);
+    const third = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'ok thanks', spoken: false }, turnId: h.ids() });
+    expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_workout');
+    expect(third.cards).toEqual([]);
+    expect(await s.coachDrafts.list()).toEqual([]);
+  });
+
+  it('review r2 B2: "add a push workout to the app" on a first turn is a build turn', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([pushStub(PUSH), () => replyWith('Bench first.')]);
+    const r = await ask(s, 'add a push workout to the app');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('propose_workout');
+    expect(r.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'build_workout' } });
+    expect(await s.sessions.active()).toBeNull();
+  });
+
   it('review B2: in a thread where the coach already refused, the retry builds (existing build-131 thread)', async () => {
     const { s } = await benWithHistory();
     model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
