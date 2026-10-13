@@ -9,6 +9,7 @@ import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, TextButton, TEXT_PRESSED_OPACITY, TimerNumeral, type SymbolName } from '../../ui';
 import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadMovesTiles, keypadTileY, rowTap, showsFolded, tileReportFor, type AnchorRequest, type ChipState, type Expansions, type TileId, type TileReport } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
+import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { openRowWidth, stepperTexts, tileFit, type TileSpec } from '../../workout/tile-fit';
 import { GymPartDivider, SnapNote } from './GymSwitch';
 import { TargetWhyLink } from './TargetWhyPanel';
@@ -389,7 +390,7 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
         onScroll={onScroll}
         scrollEventThrottle={32}
         onScrollBeginDrag={props.onUserScroll}
-        keyboardShouldPersistTaps="handled"
+        {...WORKOUT_KEYBOARD}
         contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['3'] }}
       >
         {children}

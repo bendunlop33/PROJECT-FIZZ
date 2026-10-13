@@ -54,6 +54,7 @@ import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu } from '../../workout/exercise-menu';
 import { shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
+import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
 import { logRefusal, reloadsAfterRefusal } from '../../workout/log-refusal';
 import { FinishSheet } from './FinishSheet';
@@ -652,6 +653,8 @@ export function WorkoutScreen() {
 
   async function log() {
     if (!focus || guard || busy || logBlockedBySwitch(switchCard) || focus.logLabel === null) return;
+    // F5: Log closes the number pad; the rest screen shouldn't open under it.
+    Keyboard.dismiss();
     setBusy(true);
     const cmd: SessionCommand = {
       type: 'log_set',
@@ -2019,7 +2022,9 @@ export function WorkoutScreen() {
           />
         </View>
       ) : (
-      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], gap: theme.space['5'], paddingBottom: theme.space['4'] }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], paddingBottom: theme.space['4'] }} {...WORKOUT_KEYBOARD}>
+        {/* F5: a tap outside a field or button closes the number pad (as the coach sheet). */}
+        <Pressable accessible={false} onPress={() => { Keyboard.dismiss(); }} style={{ flexGrow: 1, gap: theme.space['5'] }}>
         {/* Paused: the header pill and `REST · PAUSED` say it, no banner (§3.2). During rest only a failed write shows (§3.1). */}
         {banners
           .filter((b) => !resting || b.key === 'write')
@@ -2096,6 +2101,7 @@ export function WorkoutScreen() {
             {resting ? null : switchSlot}
           </View>
         ) : null}
+        </Pressable>
       </ScrollView>
       )}
 
