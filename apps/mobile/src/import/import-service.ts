@@ -78,6 +78,12 @@ export interface ImportServiceDeps {
   backUpOnPhone: (reason: 'before_import' | 'after_import' | 'after_undo_import') => Promise<{ ok: true } | { ok: false; error: string }>;
   /** Bundled catalogue entries; defaults to the shipped catalogue (read on first use, not at launch). */
   catalogue?: () => readonly CatalogueEntry[];
+  /**
+   * The layout session's current `layoutVersion` (the layout service's), or
+   * null when the session is gone (after a restart the draft is the snapshot
+   * Ben previewed). A draft made from an older version is refused (check 53).
+   */
+  layoutVersionOf?: (layoutId: string) => number | null;
 }
 
 /** The unfinished workout that blocks import and undo (DX4). */
@@ -942,6 +948,11 @@ export function createImportService(deps: ImportServiceDeps) {
     if (d.layout?.profile) {
       const now = await repos().importProfiles.get(d.layout.profile.id);
       if (now?.version !== d.layout.profile.version || now.deletedAt !== null) return { ok: false, reason: 'layout_changed' };
+    }
+    // The layout was changed on Check the layout since this preview was made (a stale `layoutVersion`, check 53): nothing is written.
+    if (d.layout) {
+      const current = deps.layoutVersionOf?.(d.layout.layoutId) ?? null;
+      if (current !== null && current !== d.layout.layoutVersion) return { ok: false, reason: 'layout_changed' };
     }
 
     const backup = await deps.backUpOnPhone('before_import');

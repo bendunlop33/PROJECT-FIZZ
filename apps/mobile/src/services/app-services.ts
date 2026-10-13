@@ -717,6 +717,8 @@ export function createAppServices(deps: AppServicesDeps) {
       const r = await backups.backUpOnPhone(reason);
       return r.ok ? { ok: true } : { ok: false, error: r.error };
     },
+    // Read at commit time, after both services exist.
+    layoutVersionOf: (layoutId) => importLayouts.layoutVersionOf(layoutId),
   });
 
   /**

@@ -128,16 +128,65 @@ describe('failures are honest and import nothing (checks 35, §9.3.3)', () => {
     expect(s.importLayouts.getLayoutReview(r.layoutId)).toBeNull();
   });
 
-  it('a layout that arrived before the app was left is reused when the file is opened again: nothing sent twice', async () => {
+  it('a layout that arrived before the app was closed is reused when the same file is opened again: nothing sent twice', async () => {
     const { s, port } = await launch();
     const { r, sample } = await newTable(s);
     await s.importLayouts.proposeImportMapping(r.layoutId, sample.hash, 'op-1');
-    s.importLayouts.discard(r.layoutId);
-    const again = await s.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    // Closed before Ben acted on it.
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    const again = await s2.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
     expect(again).toMatchObject({ kind: 'new_table', reused: true });
     if (again.kind !== 'new_table') return;
-    expect(await s.importLayouts.proposeImportMapping(again.layoutId, sample.hash, 'op-2')).toMatchObject({ status: 'proposed', reused: true });
+    expect(await s2.importLayouts.proposeImportMapping(again.layoutId, sample.hash, 'op-2')).toMatchObject({ status: 'proposed', reused: true });
     expect(port.requests).toHaveLength(1);
+  });
+
+  it('reuse is keyed on the whole file: the same sample from a different file is read afresh (review S1)', async () => {
+    const { s, port } = await launch([answerWith(SPEC), answerWith(SPEC)]);
+    const { r, sample } = await newTable(s);
+    await s.importLayouts.proposeImportMapping(r.layoutId, sample.hash, 'op-1');
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    // A trailing blank line: the same rows and sample, a different file.
+    const other = await s2.importLayouts.previewImport({ name: 'strong_workouts.csv', text: `${STRONG}\n` });
+    if (other.kind !== 'new_table') throw new Error(other.kind);
+    expect(s2.importLayouts.buildImportSample(other.layoutId)?.hash).toBe(sample.hash);
+    expect(other.reused).toBe(false);
+    expect(await s2.importLayouts.proposeImportMapping(other.layoutId, sample.hash, 'op-2')).toMatchObject({ status: 'proposed', reused: false });
+    expect(port.requests).toHaveLength(2);
+  });
+
+  it('`Cancel` sets the layout aside: choosing the file again and reading sends a new request (review S1)', async () => {
+    const { s, port } = await launch([answerWith(SPEC), answerWith(SPEC)]);
+    const { r, sample } = await newTable(s);
+    await s.importLayouts.proposeImportMapping(r.layoutId, sample.hash, 'op-1');
+    await s.importLayouts.discard(r.layoutId);
+    const again = await s.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    expect(again).toMatchObject({ kind: 'new_table', reused: false });
+    if (again.kind !== 'new_table') return;
+    expect(await s.importLayouts.proposeImportMapping(again.layoutId, sample.hash, 'op-2')).toMatchObject({ status: 'proposed', reused: false });
+    expect(port.requests).toHaveLength(2);
+  });
+
+  it('`Read with the coach again` sets the layout aside and the next tap sends a new request (§9.3.4, review S1)', async () => {
+    const { s, port } = await launch([answerWith(SPEC), answerWith(SPEC)]);
+    const { r, sample } = await newTable(s);
+    await s.importLayouts.proposeImportMapping(r.layoutId, sample.hash, 'op-1');
+    const fresh = await s.importLayouts.readAgain(r.layoutId);
+    if (fresh === null) throw new Error('read again');
+    expect(s.importLayouts.getLayoutReview(r.layoutId)).toBeNull();
+    expect(await s.importLayouts.newTable(fresh)).toMatchObject({ reused: false });
+    const shown = s.importLayouts.buildImportSample(fresh);
+    expect(shown?.hash).toBe(sample.hash);
+    expect(await s.importLayouts.proposeImportMapping(fresh, shown?.hash ?? '', 'op-2')).toMatchObject({ status: 'proposed', reused: false });
+    expect(port.requests).toHaveLength(2);
+    // The first layout is never offered again, even after a restart.
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    const later = await s2.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    // The second (never acted on) is the one that could come back.
+    expect(later).toMatchObject({ kind: 'new_table', reused: true });
   });
 
   it('a request cut off by a force-close shows `Interrupted.` once, and imports nothing', async () => {
@@ -265,8 +314,12 @@ describe('commit, resume and Undo (checks 52, 53, 54, 59)', () => {
     expect((await s.importLayouts.listLayouts()).rows).toMatchObject([{ name: 'strong_workouts', state: 'not_in_use', imports: 0 }]);
     expect(await s.importLayouts.layoutGoingWith(r.jobId)).toBeNull();
     const next = await s.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
-    expect(next.kind).toBe('new_table');
-    expect(port.requests).toHaveLength(1);
+    // The undone layout doesn't come back as the coach's suggestion: reading again sends a new request (review S1).
+    expect(next).toMatchObject({ kind: 'new_table', reused: false });
+    if (next.kind !== 'new_table') return;
+    const shown = s.importLayouts.buildImportSample(next.layoutId);
+    expect(await s.importLayouts.proposeImportMapping(next.layoutId, shown?.hash ?? '', 'op-read-2')).toMatchObject({ status: 'proposed', reused: false });
+    expect(port.requests).toHaveLength(2);
   });
 
   it('dates that came in with a FitNotes import still in effect are skipped and listed (AI7, check 52)', async () => {

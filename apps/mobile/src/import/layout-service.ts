@@ -237,6 +237,12 @@ interface Session {
   run: { stopped: boolean } | null;
   /** What `previewImport` found for a new table (shown again on the New file layout screen). */
   notes: { interrupted: boolean; damaged: (string | null)[] };
+  /** The whole file's checksum: a stored layout is reused only for the same file (review S1). */
+  fileHash: string;
+  /** The stored request whose layout this session uses: closed when Ben acts on it. */
+  request: { ownerId: string; operationId: string } | null;
+  /** `Read with the coach again`: never reuse a stored layout; the next tap sends a new request. */
+  fresh: boolean;
 }
 
 const INSTRUCTIONS_HASH = sha256Hex(IMPORT_LAYOUT_INSTRUCTIONS_V1);
@@ -308,7 +314,8 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     return built;
   }
 
-  function adoptSpec(s: Session, spec: ImportMappingSpecV1, model: string | null): void {
+  function adoptSpec(s: Session, spec: ImportMappingSpecV1, model: string | null, request: ImportLayoutRequest | null): void {
+    s.request = request === null ? null : { ownerId: request.ownerId, operationId: request.operationId };
     s.spec = spec;
     s.specHash = sha256Hex(stableStringify(spec));
     s.answers = EMPTY_LAYOUT_ANSWERS;
@@ -354,11 +361,37 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     const applied = applyImportSpec(s.spec, s.answers, s.table, opts());
     if (applied.pending > 0) return { ok: false, reason: 'not_ready' };
     const result = await deps.imports.openLayout(s.file, applied.rows, s.firstLine, draftLayout(s, s.spec, r));
+    // Ben used this layout: it is never offered again as the coach's suggestion (an Undo doesn't bring it back; review S1).
+    await closeRequest(s);
     return { ok: true, result };
   }
 
   async function storeRequest(record: ImportLayoutRequest, expected: number | null): Promise<void> {
     await repos().importProfiles.saveRequest(record, expected).catch(() => undefined);
+  }
+
+  /** Ben acted on this session's layout (`Use this layout`, `Cancel`, `Read with the coach again`): it is never reused. */
+  async function closeRequest(s: Session): Promise<void> {
+    const ref = s.request;
+    if (ref === null) return;
+    s.request = null;
+    const r = await repos().importProfiles.request(ref.ownerId, ref.operationId).catch(() => null);
+    if (!r || r.closedAt !== null) return;
+    const at = deps.now();
+    await storeRequest({ ...r, closedAt: at, version: r.version + 1, updatedAtUtc: at.utc }, r.version);
+  }
+
+  /**
+   * A stored layout for this exact sample of this exact file that Ben never
+   * acted on (the interrupted case, §9.3.3), checked again against the whole
+   * file before it is used (§9.2.4, review S1). Null: nothing to reuse.
+   */
+  async function reusable(s: Session, ownerId: string): Promise<{ request: ImportLayoutRequest; spec: ImportMappingSpecV1 } | null> {
+    if (s.fresh || s.sampleHash === null) return null;
+    const r = await repos().importProfiles.proposedFor(ownerId, s.sampleHash, s.fileHash).catch(() => null);
+    if (!r?.spec) return null;
+    const v = validateImportSpec(r.spec, s.table, opts());
+    return v.ok ? { request: r, spec: v.spec } : null;
   }
 
   const service = {
@@ -413,6 +446,9 @@ export function createLayoutService(deps: LayoutServiceDeps) {
         inflight: null,
         run: null,
         notes: { interrupted: false, damaged: [] },
+        fileHash: sha256Hex(file.text),
+        request: null,
+        fresh: false,
       };
       if (d.kind === 'saved_layout' || d.kind === 'saved_layout_changed') {
         const profile = live.find((x) => x.id === d.profileId);
@@ -428,7 +464,8 @@ export function createLayoutService(deps: LayoutServiceDeps) {
             newColumns: remapped?.added ?? [],
             missing: remapped?.missing ?? [],
             spec,
-            specHash: profile.provenance.specHash,
+            // A remapped spec is a different spec: its own hash, so the job and a newly saved layout record what read the rows (review S4).
+            specHash: remapped ? sha256Hex(stableStringify(remapped.spec)) : profile.provenance.specHash,
             saved: answers,
             answers,
             model: profile.provenance.model,
@@ -446,8 +483,8 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       // A new table: the sample Ben can see, and any layout that already came back for exactly this sample.
       sessions.set(base.id, base);
       sampleOf(base);
-      const reused = base.sampleHash === null ? null : await repos().importProfiles.proposedFor(p.id, base.sampleHash).catch(() => null);
-      if (reused?.spec) adoptSpec(base, reused.spec, reused.model);
+      const reused = await reusable(base, p.id);
+      if (reused) adoptSpec(base, reused.spec, reused.request.model, reused.request);
       const last = base.sampleHash === null ? null : await repos().importProfiles.latestFor(p.id, base.sampleHash).catch(() => null);
       const interrupted = last?.state === 'sent';
       if (last && interrupted) {
@@ -463,7 +500,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
         rows: d.table.records.length,
         firstLine: base.firstLine,
         coach: await coachStatus(),
-        reused: reused?.spec !== undefined && reused.spec !== null,
+        reused: reused !== null,
         interrupted,
         damaged,
       };
@@ -594,10 +631,33 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     readAsNew(layoutId: string): string | null {
       const s = sessions.get(layoutId);
       if (!s) return null;
-      const fresh: Session = { ...s, id: deps.newId(), run: null, inflight: null, kind: 'coach', profile: null, changed: false, newColumns: [], missing: [], spec: null, specHash: null, saved: null, answers: EMPTY_LAYOUT_ANSWERS, history: [], layoutVersion: 1, model: null };
+      const fresh: Session = { ...s, id: deps.newId(), run: null, inflight: null, kind: 'coach', profile: null, changed: false, newColumns: [], missing: [], spec: null, specHash: null, saved: null, answers: EMPTY_LAYOUT_ANSWERS, history: [], layoutVersion: 1, model: null, request: null };
       sessions.set(fresh.id, fresh);
       sampleOf(fresh);
       return fresh.id;
+    },
+
+    /**
+     * `Read with the coach again` (§9.3.4, §9.5): the coach's layout is set
+     * aside (never reused) and the file starts again at its consent screen.
+     * The next `Read with the coach` sends a new request, whatever is stored.
+     * Returns the new session's ID; null when the session is gone.
+     */
+    async readAgain(layoutId: string): Promise<string | null> {
+      const s = sessions.get(layoutId);
+      if (!s || s.kind !== 'coach') return null;
+      s.inflight?.abort();
+      await closeRequest(s);
+      sessions.delete(layoutId);
+      const fresh: Session = { ...s, id: deps.newId(), run: null, inflight: null, spec: null, specHash: null, answers: EMPTY_LAYOUT_ANSWERS, history: [], layoutVersion: 1, model: null, request: null, fresh: true, notes: { interrupted: false, damaged: s.notes.damaged } };
+      sessions.set(fresh.id, fresh);
+      sampleOf(fresh);
+      return fresh.id;
+    },
+
+    /** The layout session's current version (the commit refuses a draft made from an older one; check 53). Null when the session is gone. */
+    layoutVersionOf(layoutId: string): number | null {
+      return sessions.get(layoutId)?.layoutVersion ?? null;
     },
 
     /** One column's cells as written (the role sheet's `3x8, 5x5, 4x10 …` and row count). File text, data only. */
@@ -606,10 +666,13 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       return s ? s.table.records.map((r) => r.cells[column] ?? '') : [];
     },
 
-    /** `Cancel`: the layout session is dropped; nothing was saved. */
-    discard(layoutId: string): void {
-      sessions.get(layoutId)?.inflight?.abort();
+    /** `Cancel`: the layout session is dropped; nothing was saved, and its layout is never reused. */
+    async discard(layoutId: string): Promise<void> {
+      const s = sessions.get(layoutId);
+      if (!s) return;
+      s.inflight?.abort();
       sessions.delete(layoutId);
+      await closeRequest(s);
     },
 
     // -------------------------------------------------------------------
@@ -687,9 +750,9 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     const built = s.sample ?? sampleOf(s);
     if (s.sampleHash !== sampleHash) return { status: 'refused', reason: 'sample_changed' };
     // A layout that already arrived for exactly this text (before an interruption): reused, not sent again.
-    const reused = await repos().importProfiles.proposedFor(p.id, sampleHash);
-    if (reused?.spec) {
-      adoptSpec(s, reused.spec, reused.model);
+    const reused = await reusable(s, p.id);
+    if (reused) {
+      adoptSpec(s, reused.spec, reused.request.model, reused.request);
       return { status: 'proposed', layoutVersion: s.layoutVersion, reused: true };
     }
     const coach = await coachStatus();
@@ -707,6 +770,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       updatedAtUtc: at.utc,
       operationId,
       sampleHash,
+      fileHash: s.fileHash,
       instructionsHash: INSTRUCTIONS_HASH,
       route: 'chatgpt_plan',
       model: a.model,
@@ -718,11 +782,18 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       reasons: [],
       sentAt: at,
       finishedAt: null,
+      closedAt: null,
     };
     const created = await repos().importProfiles.saveRequest(record, null);
     if (!created.ok) {
       const again = await repos().importProfiles.request(p.id, operationId);
       return again ? replay(s, again) : { status: 'refused', reason: 'not_found' };
+    }
+    const done = (patch: Partial<ImportLayoutRequest>) => storeRequest({ ...record, ...patch, version: 2, updatedAtUtc: deps.now().utc, finishedAt: deps.now() }, 1);
+    // `Stop` tapped while the record was written: nothing is sent (review S5).
+    if (stopped()) {
+      await done({ state: 'failed', failure: 'stopped' });
+      return { status: 'failed', reason: 'stopped' };
     }
     const controller = new AbortController();
     s.inflight = controller;
@@ -740,7 +811,6 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       s.inflight = null;
       signal?.removeEventListener('abort', onOuter);
     }
-    const done = (patch: Partial<ImportLayoutRequest>) => storeRequest({ ...record, ...patch, version: 2, updatedAtUtc: deps.now().utc, finishedAt: deps.now() }, 1);
     // Stopped while it ran: a late answer is thrown away (§9.3.3).
     if (stopped()) {
       await done({ state: 'failed', failure: 'stopped' });
@@ -763,18 +833,21 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       return { status: 'unsupported' };
     }
     if (!v.ok) {
-      await done({ state: 'rejected', spec: answer.spec, reasons: v.failures });
+      // The reasons are enough: a rejected spec's strings are the model's and are never kept (§9.6.1).
+      await done({ state: 'rejected', reasons: v.failures });
       return { status: 'rejected', reasons: v.failures };
     }
     await done({ state: 'proposed', spec: v.spec });
-    adoptSpec(s, v.spec, a.model);
+    adoptSpec(s, v.spec, a.model, record);
     return { status: 'proposed', layoutVersion: s.layoutVersion, reused: false };
   }
 
   function replay(s: Session, r: ImportLayoutRequest): ProposeResult {
+    // An operation ID from another file's tap: refused, nothing adopted (review N5).
+    if (r.sampleHash !== s.sampleHash) return { status: 'refused', reason: 'sample_changed' };
     switch (r.state) {
       case 'proposed':
-        if (r.spec && s.spec === null) adoptSpec(s, r.spec, r.model);
+        if (r.spec && s.spec === null) adoptSpec(s, r.spec, r.model, r);
         return { status: 'proposed', layoutVersion: s.layoutVersion, reused: true };
       case 'rejected':
         return { status: 'rejected', reasons: r.reasons };
