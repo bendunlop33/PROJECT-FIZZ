@@ -522,4 +522,6 @@ Next in line: Goals & schedule plus rule 1 volume (after D13), the routine edito
 | F12 | "Couldn't reach the coach" errors | Bug | Catch-all text hides real cause (too_many_steps/no_reply/unavailable, sheet-view.ts:317-322). Show reason under Why? and log it; likely builder tool loops hitting step cap |
 | F13 | Target vs achieved per set, used for adjustments | Feature | Mostly exists (target RPE/reps vs logged, rule T). Needs visible target vs actual on table/summary |
 | F14 | ± time at end of workout works badly | Bug | Needs repro detail |
-| F15 | Progress periods: 7/14 vs 30 look different; any period (3 m, 4 m); 60-day formatting; prefer charts | UX | Partly fixed in build 133 (custom period). Make one adaptive chart for all periods (days → weeks → months) |
+| F15 | Progress periods: 7/14 vs 30 look different; any period (3 m, 4 m); 60-day formatting; prefer charts | UX | Partly fixed in build 133 (custom period). Make one adaptive bar chart for all periods (7/14 d: daily bars; 30/60 d: weekly; 3–12 m: monthly), same layout, labels thinned to fit (60 d labels currently skip/misalign, zero bars clutter). Screenshots 13 Oct |
+| F16 | Muscles table header "SESSIONS" wraps to "SESSION / S"; Ask button overlaps the table | Bug | Small: narrower header word or column width; content bottom padding under the Ask button |
+| F17 | TIME tile shows 45 min next to 3 sessions when only 1 has a time (imports have none) | UX | Small: show time only as avg of timed sessions, or label "45 min · 1 timed"; keep the footnote |
