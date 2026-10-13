@@ -121,14 +121,26 @@ export function rowLine(row: Pick<LibraryRow, 'detail' | 'issue'>): { text: stri
 /**
  * The editor's primary (routines.md §3.3): `Add a name`, then `Add an
  * exercise`, then `Save`; a stored workout with nothing changed reads `No
- * changes`; any other issue reads `Fix 1 issue`. Disabled unless it saves.
+ * changes`; a distance slot alone reads `Can’t save distance yet` (a
+ * workout saved before EL-B13 can hold one; review library-browse r3 S1);
+ * any other issue reads `Fix 1 issue`. Disabled unless it saves.
  */
 export function editorPrimary(input: { issues: readonly RoutineIssue[]; dirty: boolean; isNew: boolean }): { label: string; disabled: boolean } {
   const first = input.issues[0];
   if (first === 'Add a name' || first === 'Add an exercise') return { label: first, disabled: true };
+  if (first !== undefined && input.issues.every((x) => x === NO_DISTANCE_IN_WORKOUTS)) return { label: NO_DISTANCE_IN_WORKOUTS, disabled: true };
   if (first !== undefined) return { label: `Fix ${String(input.issues.length)} ${input.issues.length === 1 ? 'issue' : 'issues'}`, disabled: true };
   if (!input.isNew && !input.dirty) return { label: EDITOR_COPY.noChanges, disabled: true };
   return { label: EDITOR_COPY.save, disabled: false };
+}
+
+/**
+ * The issue line on an editor card: a distance exercise (only in a workout
+ * saved before EL-B13) reads `⚠ Can’t save distance yet` with `Replace` and
+ * `Remove`, so Ben can see which card blocks `Save` (review library-browse r3 S1).
+ */
+export function editorSlotIssue(x: { measurement: 'reps' | 'duration' | 'distance' } | undefined): { text: string; actions: string[] } | null {
+  return x?.measurement === 'distance' ? { text: NO_DISTANCE_IN_WORKOUTS, actions: [EDITOR_COPY.replace, EDITOR_COPY.remove] } : null;
 }
 
 /**

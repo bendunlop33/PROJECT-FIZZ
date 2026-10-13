@@ -45,7 +45,7 @@ import type { EditorExerciseInfo, RoutineEditorData } from '../../services/worko
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, Eyebrow, Icon, InfoLine, NumberAccessory, NumberStepper, PrimaryButton, Row, SetCountBar, SetShapeControl, ShapeRepsSheet, StatusLine, TextButton, TextField } from '../../ui';
-import { conflictLines, conflictText, EDITOR_COPY, editorAddRow, editorPrimary, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
+import { conflictLines, conflictText, EDITOR_COPY, editorAddRow, editorPrimary, editorSlotIssue, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
 import { handOffLibraryToast } from '../../workout/library-toast';
 import { saveEditRequest, settleSaveEdit } from '../../workout/save-edit-handoff';
 import { SET_BAR, SET_SHAPE_COPY, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../../workout/set-shape-view';
@@ -348,6 +348,7 @@ export function WorkoutEditorScreen() {
           const shape = slotShapeOf(slot);
           const effort = shapeEffortRow(shape, editor.effortScale);
           const open = eachOpen[slot.id] ?? shape.hasSpecialSets;
+          const slotIssue = editorSlotIssue(x);
           return (
             <View key={slot.id} style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['3'], gap: theme.space['2'], borderLeftWidth: slot.supersetGroup !== null ? 3 : 0, borderLeftColor: theme.colors['text.tertiary'] }}>
               {slot.supersetGroup !== null ? (
@@ -385,6 +386,23 @@ export function WorkoutEditorScreen() {
                   <Icon name="ellipsis" />
                 </Pressable>
               </View>
+              {slotIssue !== null ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: theme.space['2'] }}>
+                  <Icon name="exclamationmark.triangle" color="status.warning" size={14} />
+                  <AppText variant="callout" color="status.warning" style={{ flex: 1 }}>
+                    {slotIssue.text}
+                  </AppText>
+                  {slotIssue.actions.map((a) => (
+                    <TextButton
+                      key={a}
+                      label={a}
+                      onPress={() => {
+                        runExerciseAction(slot, a);
+                      }}
+                    />
+                  ))}
+                </View>
+              ) : null}
               <SetShapeControl
                 workingSets={shape.workingSets}
                 warmups={shape.warmups}

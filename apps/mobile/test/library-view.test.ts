@@ -3,9 +3,10 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { removeExercise, routineIssues } from '@fizz/domain';
 import type { RoutineExercise } from '@fizz/schemas';
 
-import { conflictLines, conflictText, deleteConfirm, EDITOR_COPY, editorPrimary, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices, rowMenu } from '../src/workout/library-view';
+import { conflictLines, conflictText, deleteConfirm, EDITOR_COPY, editorPrimary, editorSlotIssue, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices, rowMenu } from '../src/workout/library-view';
 import { allRows, pickerSections, SESSION_PICKER_COPY } from '../src/workout/session-picker';
 import type { SessionList, SessionPickerRow } from '../src/services/workout-services';
 
@@ -88,5 +89,46 @@ describe('WL-A16: no string in the library says "routine"', () => {
     const list = read('screens/routines/WorkoutsScreen.tsx');
     expect(list).toContain('minHeight: 64');
     expect(list).toMatch(/width: 44, height: 44/);
+  });
+});
+
+describe('a stored workout with a distance slot (saved before EL-B13; review library-browse r3 S1)', () => {
+  const slot = (id: string, exerciseId: string, order: number): RoutineExercise => ({
+    id,
+    exerciseId,
+    equipmentId: null,
+    order,
+    supersetGroup: null,
+    setTemplates: [1, 2, 3].map((n) => ({ id: `${id}-${String(n)}`, setType: 'working' as const, targetLoad: null, targetReps: { min: 8, max: 10 }, targetDurationS: null, targetRpe: null, targetRir: null, restOverrideS: null })),
+    restBySetType: {},
+    transitionRestS: null,
+    progressionRuleId: null,
+  });
+  const measurement: Record<string, 'reps' | 'distance'> = { squat: 'reps', carry: 'distance' };
+  const isDistance = (exerciseId: string) => measurement[exerciseId] === 'distance';
+
+  it('the carry card says why Save is off and offers Replace / Remove; removing it enables Save', () => {
+    const legacy = [slot('s1', 'squat', 0), slot('s2', 'carry', 1)];
+    const issues = routineIssues({ name: 'Legs A', exercises: legacy }, isDistance);
+    expect(issues).toEqual(['Can’t save distance yet']);
+    expect(editorPrimary({ issues, dirty: true, isNew: false })).toEqual({ label: 'Can’t save distance yet', disabled: true });
+    expect(editorSlotIssue({ measurement: 'distance' })).toEqual({ text: 'Can’t save distance yet', actions: [EDITOR_COPY.replace, EDITOR_COPY.remove] });
+    expect(editorSlotIssue({ measurement: 'reps' })).toBeNull();
+    expect(editorSlotIssue(undefined)).toBeNull();
+    // Every card action is a real menu action, so the screen runs it as from ⋯.
+    for (const a of editorSlotIssue({ measurement: 'distance' })?.actions ?? []) expect(exerciseMenu(legacy, 's2')).toContain(a);
+
+    const after = removeExercise(legacy, 's2');
+    const left = routineIssues({ name: 'Legs A', exercises: after }, isDistance);
+    expect(left).toEqual([]);
+    expect(editorPrimary({ issues: left, dirty: true, isNew: false })).toEqual({ label: 'Save', disabled: false });
+  });
+
+  it('with another issue as well, the primary still counts them', () => {
+    expect(editorPrimary({ issues: ['Can’t save distance yet', 'Reps: the first number must be the smaller one.'], dirty: true, isNew: false })).toEqual({ label: 'Fix 2 issues', disabled: true });
+  });
+
+  it('the editor renders the card line from editorSlotIssue', () => {
+    expect(read('screens/routines/WorkoutEditorScreen.tsx')).toContain('editorSlotIssue(x)');
   });
 });
