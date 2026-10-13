@@ -159,6 +159,14 @@ export function stepText(step: TargetStep): string {
   return `${sign}${amount}${pct}${tail}`;
 }
 
+/**
+ * The guard note for a rule target worked out with no equipment to check it
+ * on. A target fitted to a real item later (Start next or Up next from a
+ * FitNotes workout, `fitLater`) drops it for the fit's own note (review
+ * import-progress r2 S1).
+ */
+export const UNCHECKED_NOTE = 'Not checked against equipment: this exercise has no equipment set up at this gym.';
+
 export interface RuleProvenanceInput {
   result: NextTargets;
   history: readonly HistorySession[];
@@ -174,7 +182,7 @@ export function ruleTargetProvenance(input: RuleProvenanceInput, target: TargetS
   const from = basis === null ? null : referenceLoad(basis, target.setType);
   const step = from !== null && target.load !== null ? targetStep(from, target.load, eq) : null;
   const guardNotes: string[] = [];
-  if (result.loadFeasibility === 'unchecked') guardNotes.push('Not checked against equipment: this exercise has no equipment set up at this gym.');
+  if (result.loadFeasibility === 'unchecked') guardNotes.push(UNCHECKED_NOTE);
   if (eq !== null && target.load !== null && (result.decision === 'increase_reps' || result.decision === 'ceiling_reached')) {
     const card = buildStepCard(eq, target.load);
     if (card?.atMax) guardNotes.push(`Capped at ${loadWord(target.load, eq)}: ${maxPhrase(eq.kind)}.`);

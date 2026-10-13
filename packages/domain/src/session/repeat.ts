@@ -1,7 +1,7 @@
 import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, TargetProvenance, WorkoutSet } from '@fizz/schemas';
 import { loadText, NBSP, repRangeText, targetShort } from '../display';
 import { loadDirection } from '../equipment';
-import { fitProvenance, startWarningNote } from '../target-provenance';
+import { fitProvenance, startWarningNote, UNCHECKED_NOTE } from '../target-provenance';
 import { convertMass } from '../units';
 import { needsNoEquipment } from '../exercise-equipment';
 import { deriveId } from '../stable';
@@ -400,7 +400,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       const rule = from.planned.provenance;
       if (rule === undefined) return null;
       const fit = fitNote(found.templateId, 'Target');
-      return fitProvenance(fit === null ? rule : { ...rule, guardNotes: [...rule.guardNotes, fit] });
+      // r2 S1: a target fitted to a real item here was checked against it; the fit's note (or none, when exact) says how.
+      const fitted = (fitOf.get(found.templateId)?.slot.equipment ?? null) !== null;
+      const kept = fitted ? rule.guardNotes.filter((n) => n !== UNCHECKED_NOTE) : rule.guardNotes;
+      return fitProvenance({ ...rule, guardNotes: fit === null ? kept : [...kept, fit] });
     }
     if (from.set.actual === null) return null;
     const number = numbers.get(from.set.id);

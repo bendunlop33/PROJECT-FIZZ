@@ -5,7 +5,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
-import { createHarness, setUpGym, type Harness } from './harness';
+import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * Imported FitNotes history feeds everything that reads history (Ben,
@@ -210,9 +210,10 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     const r = await s.overview.start({ startOf: page.startOf, gymId, opId: 'start-up-next', checkIn: { kind: 'skipped', atUtc: h.now().utc }, expectedPreviewKey: page.view.previewKey, draft: null });
     if (!r.ok) throw new Error(r.error.message);
     const plan = plannedOf(r.aggregate, bench);
-    // 7 FitNotes sets with one at 70 × 4, then 60 × 8 three times: 4 working sets at 60, never 7 × 70.
+    // 7 FitNotes sets with one at 70 × 4, then 60 × 8 three times: 4 working sets, never 7 × 70. Every set at 60
+    // reached the top of bench's 3–6 range; the heavier 70 × 4 is context, not judged at 60 (r2 B1): one step up from 60.
     expect(plan.length).toBe(4);
-    for (const [load] of plan) expect(load).toBe(60);
+    for (const [load] of plan) expect(load).toBe(62.5);
   });
 
   it('B1: Repeat of a FitNotes workout is the workout as done, ramp included, each set at its own load (fitted)', async () => {
@@ -226,7 +227,7 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     expect(plannedOf(repeated.aggregate, squat).map(([load]) => load)).toEqual([60, 80, 100, 120, 100, 100, 100]);
   });
 
-  it('B2: Add exercise after top + back-offs shows them all as Last (FitNotes) and plans that many sets from the back-off load', async () => {
+  it('B2: Add exercise after top + back-offs shows them all as Last (FitNotes) and plans that many sets, progressed from the back-off load', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     await importFile(s);
@@ -246,9 +247,64 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     const planned = loaded?.aggregate.sets.filter((x) => x.sessionExerciseId === row?.id).map((x) => x.planned) ?? [];
     expect(planned).toHaveLength(4);
     for (const p of planned) {
-      expect(p.load).toMatchObject({ value: 60, unit: 'kg', convention: 'total' });
+      // From the back-off load: 60 × 8 on every back-off is past the top of 3–6, so one step up (r2 B1).
+      expect(p.load).toMatchObject({ value: 62.5, unit: 'kg', convention: 'total' });
       expect(p.provenance?.basis).toMatchObject({ imported: true });
     }
+  });
+
+  it("r2 S1: Why? on Start next from FitNotes never says 'Not checked' once a set is fitted to a real item", async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await importFile(s);
+    const past = (await s.history.pastWorkouts()).rows;
+    for (const date of ['2026-10-07', '2026-10-05']) {
+      const sourceId = past.find((r) => r.localDate === date)?.sessionId ?? '';
+      const started = await s.workout.start({ gymId, opId: `start-why-${date}`, checkIn: { kind: 'skipped', atUtc: h.now().utc }, nextOf: sourceId });
+      if (!started.ok) throw new Error(started.error.message);
+      const sid = started.aggregate.session.id;
+      const sets = started.aggregate.sets.filter((x) => x.planned.load !== null);
+      expect(sets.length).toBeGreaterThan(0);
+      for (const set of sets) {
+        expect(started.aggregate.exercises.find((e) => e.id === set.sessionExerciseId)?.equipmentId).not.toBeNull();
+        const why = JSON.stringify(await s.workout.explainTarget(sid, set.id));
+        expect(why).not.toContain('Not checked');
+        // Pulldown (7 Oct): FitNotes' 47.5 rounded to the stack's 45, and Why? says so. Bench (5 Oct): 62.5 is exact, no note.
+        if (date === '2026-10-07') expect(why).toMatch(/Rounded to 45\skg\sstack/);
+        else {
+          expect(why).not.toMatch(/Rounded/);
+          expect(why).toContain('1 heavier top set was kept as context; reps were judged on the sets at 60 kg');
+        }
+      }
+      const fin = await s.workout.dispatch(sid, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: started.aggregate.session.version, confirmedLoggedSets: 0 });
+      if (!fin.ok) throw new Error(fin.error.message);
+    }
+  });
+
+  it('r2 S2: Up next when the newest workout is an in-app routine session whose routine is gone: the longest gap, not that session', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await importFile(s);
+    // Today (12 Oct) in the app: a pull workout saved as a routine in the rotation, then deleted.
+    const today = await logWorkout(h, s, gymId, [{ exercise: 'Barbell row', sets: [{ load: 50, reps: 10 }, { load: 50, reps: 10 }] }]);
+    const saved = await s.routines.saveFromSession({ sessionId: today, name: 'Row day', opId: 'save-row', addToRotation: true });
+    if (!saved.ok) throw new Error(saved.message);
+    const gone = await s.routines.remove({ routineId: saved.routine.id, expectedVersion: saved.routine.version, opId: 'remove-row' });
+    expect(gone.ok).toBe(true);
+    const past = (await s.history.pastWorkouts()).rows;
+    expect(past[0]?.sessionId).toBe(today);
+    const benchDay = past.find((r) => r.localDate === '2026-10-05')?.sessionId;
+    // D19's fallback would be today's workout; Decision 2 picks Chest (5 Oct), the longest gap.
+    expect((await s.next.preview(gymId))?.sourceSessionId).toBe(benchDay);
+    expect((await s.sessions.list(gymId))?.upNext).toMatchObject({ sourceSessionId: benchDay, target: { kind: 'next' } });
+    const page = await s.overview.load({ target: { kind: 'next' }, gymId });
+    if (!page) throw new Error('no overview');
+    const r = await s.overview.start({ startOf: page.startOf, gymId, opId: 'start-up-next-gone', checkIn: { kind: 'skipped', atUtc: h.now().utc }, expectedPreviewKey: page.view.previewKey, draft: null });
+    if (!r.ok) throw new Error(r.error.message);
+    const bench = await exerciseIdOf(s, 'Bench press');
+    const plan = plannedOf(r.aggregate, bench);
+    expect(plan.length).toBe(4);
+    for (const [load] of plan) expect(load).toBe(62.5);
   });
 
   it('S2: pain mentioned from Today offers the movements of the last workout, FitNotes included', async () => {
