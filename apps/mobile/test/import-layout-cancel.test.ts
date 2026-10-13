@@ -82,6 +82,85 @@ describe('leaving drops the session (review r2 S2)', () => {
   });
 });
 
+describe('Cancel, back or the swipe while `Reading the layout` means Stop (§9.3.3, review r3 B1)', () => {
+  /** What the Reading screen does as it is removed: `beforeRemove` drops the session, then the unmount effect calls `stop`. */
+  async function leaveWhileReading(s: Awaited<ReturnType<typeof launch>>['s'], layoutId: string) {
+    await leaveLayoutScreen(s.importLayouts, layoutId, goBack);
+    s.importLayouts.stop(layoutId);
+  }
+
+  it('before the send: nothing is sent, and the same file is read afresh next time', async () => {
+    const { s, port } = await launch([answerWith(SPEC)]);
+    const r = await s.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    if (r.kind !== 'new_table') throw new Error(r.kind);
+    const sample = s.importLayouts.buildImportSample(r.layoutId);
+    // Still in its pre-send awaits (profile, block check, coach status) when Ben leaves.
+    const p = s.importLayouts.proposeImportMapping(r.layoutId, sample?.hash ?? '', 'op-1');
+    await leaveWhileReading(s, r.layoutId);
+    expect(await p).toEqual({ status: 'failed', reason: 'stopped' });
+    expect(port.requests).toHaveLength(0);
+    const again = await s.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    expect(again).toMatchObject({ kind: 'new_table', reused: false });
+    if (again.kind !== 'new_table') return;
+    const next = s.importLayouts.buildImportSample(again.layoutId);
+    expect(await s.importLayouts.proposeImportMapping(again.layoutId, next?.hash ?? '', 'op-2')).toMatchObject({ status: 'proposed', reused: false });
+    expect(port.requests).toHaveLength(1);
+  });
+
+  it('after the send, with a provider that ignores the cancel: the late answer is thrown away and never reused', async () => {
+    // Answers only when released, whatever the signal says.
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let sent: () => void = () => undefined;
+    const wasSent = new Promise<void>((resolve) => {
+      sent = resolve;
+    });
+    const deaf = {
+      requests: [] as ModelRequest[],
+      async *stream(req: ModelRequest): AsyncIterable<ModelEvent> {
+        deaf.requests.push(req);
+        if (deaf.requests.length === 1) {
+          sent();
+          await gate;
+        }
+        yield* answerWith(SPEC)();
+      },
+    };
+    h = createHarness('2026-10-12T09:00:00.000Z', { coach: { model: () => deaf, connection: () => Promise.resolve(state('ok')) } });
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    const r = await s.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    if (r.kind !== 'new_table') throw new Error(r.kind);
+    const sample = s.importLayouts.buildImportSample(r.layoutId);
+    const p = s.importLayouts.proposeImportMapping(r.layoutId, sample?.hash ?? '', 'op-1');
+    await wasSent;
+    await leaveWhileReading(s, r.layoutId);
+    release();
+    expect(await p).toEqual({ status: 'failed', reason: 'stopped' });
+    expect(deaf.requests).toHaveLength(1);
+    expect(deaf.requests[0]?.signal?.aborted).toBe(true);
+    const again = await s.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    expect(again).toMatchObject({ kind: 'new_table', reused: false });
+    if (again.kind !== 'new_table') return;
+    const next = s.importLayouts.buildImportSample(again.layoutId);
+    expect(await s.importLayouts.proposeImportMapping(again.layoutId, next?.hash ?? '', 'op-2')).toMatchObject({ status: 'proposed', reused: false });
+    expect(deaf.requests).toHaveLength(2);
+  });
+
+  it('`Read with the coach again` while a read is still starting stops it: nothing sent', async () => {
+    const { s, port } = await launch([answerWith(SPEC)]);
+    const r = await s.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    if (r.kind !== 'new_table') throw new Error(r.kind);
+    const sample = s.importLayouts.buildImportSample(r.layoutId);
+    const p = s.importLayouts.proposeImportMapping(r.layoutId, sample?.hash ?? '', 'op-1');
+    expect(await s.importLayouts.readAgain(r.layoutId)).not.toBeNull();
+    expect(await p).toEqual({ status: 'failed', reason: 'stopped' });
+    expect(port.requests).toHaveLength(0);
+  });
+});
+
 describe('the screens wire it (source checks)', () => {
   it('both screens use the Cancel hook; the hook drops the session on beforeRemove and shows `Cancel`', () => {
     for (const f of ['screens/import/ImportNewLayoutScreen.tsx', 'screens/import/ImportLayoutCheckScreen.tsx']) expect(src(f)).toContain('useLayoutCancel(layoutId)');

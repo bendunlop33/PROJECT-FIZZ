@@ -552,8 +552,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     /** `Stop`: the request is cancelled and a late answer is thrown away. */
     stop(layoutId: string): void {
       const s = sessions.get(layoutId);
-      if (s?.run) s.run.stopped = true;
-      s?.inflight?.abort();
+      if (s) stopSession(s);
     },
 
     getLayoutReview(layoutId: string): LayoutReviewView | null {
@@ -646,7 +645,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     async readAgain(layoutId: string): Promise<string | null> {
       const s = sessions.get(layoutId);
       if (!s || s.kind !== 'coach') return null;
-      s.inflight?.abort();
+      stopSession(s);
       await closeRequest(s);
       sessions.delete(layoutId);
       const fresh: Session = { ...s, id: deps.newId(), run: null, inflight: null, spec: null, specHash: null, answers: EMPTY_LAYOUT_ANSWERS, history: [], layoutVersion: 1, model: null, request: null, fresh: true, notes: { interrupted: false, damaged: s.notes.damaged } };
@@ -670,7 +669,8 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     async discard(layoutId: string): Promise<void> {
       const s = sessions.get(layoutId);
       if (!s) return;
-      s.inflight?.abort();
+      // Cancel, back or the swipe while it reads means `Stop` (§9.3.3, review r3 B1): nothing sent if it hasn't gone, a late answer thrown away.
+      stopSession(s);
       sessions.delete(layoutId);
       await closeRequest(s);
     },
@@ -733,14 +733,21 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     },
   };
 
+  /** `Stop` on one session: the running read is marked stopped and its request cancelled. */
+  function stopSession(s: Session): void {
+    if (s.run) s.run.stopped = true;
+    s.inflight?.abort();
+  }
+
   /** A stored request's result, without sending anything. */
   async function propose(layoutId: string, sampleHash: string, operationId: string, signal?: AbortSignal): Promise<ProposeResult> {
     const s = sessions.get(layoutId);
     if (!s) return { status: 'refused', reason: 'not_found' };
     const run = { stopped: false };
     s.run = run;
-    // Read through a function: Stop can mark it at any await below.
-    const stopped = (): boolean => run.stopped;
+    // Read through a function: Stop can mark it at any await below. A session that was dropped
+    // (Cancel, back, the swipe, `Read with the coach again`) is stopped too (review r3 B1).
+    const stopped = (): boolean => run.stopped || sessions.get(layoutId) !== s;
     const p = await deps.profile();
     if (!p) return { status: 'refused', reason: 'not_found' };
     if (await block()) return { status: 'refused', reason: 'workout_unfinished' };
@@ -751,6 +758,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     if (s.sampleHash !== sampleHash) return { status: 'refused', reason: 'sample_changed' };
     // A layout that already arrived for exactly this text (before an interruption): reused, not sent again.
     const reused = await reusable(s, p.id);
+    if (stopped()) return { status: 'failed', reason: 'stopped' };
     if (reused) {
       adoptSpec(s, reused.spec, reused.request.model, reused.request);
       return { status: 'proposed', layoutVersion: s.layoutVersion, reused: true };
