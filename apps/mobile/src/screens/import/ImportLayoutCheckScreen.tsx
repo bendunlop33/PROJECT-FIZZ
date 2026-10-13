@@ -7,7 +7,7 @@ import { changedColumnsView, checkLayoutView, type QuestionRowKey } from '../../
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Card, Group, Icon, PrimaryButton, Row, Screen, SecondaryButton, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
+import { AppText, Card, Group, Icon, InfoLine, PrimaryButton, Row, Screen, SecondaryButton, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
 import { useLayoutCancel } from './useLayoutCancel';
 
 /**
@@ -123,6 +123,7 @@ export function ImportLayoutCheckScreen() {
       <StatusLine icon={v.readLine.icon} tone={v.readLine.tone} text={v.readLine.text} />
       {v.notReadLine ? <StatusLine icon="info.circle" tone="info" text={v.notReadLine} /> : null}
       {v.stuckLine ? <StatusLine icon={v.stuckLine.icon} tone={v.stuckLine.tone} text={v.stuckLine.text} /> : null}
+      {v.checksLine ? <InfoLine text={v.checksLine.text} info={v.checksLine.why} infoLabel="Why?" /> : null}
       {v.plan ? <StatusLine icon="info.circle" tone="info" text={v.plan} /> : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 

@@ -334,6 +334,8 @@ export interface CheckLayoutView {
   notReadLine: string | null;
   /** Rows waiting for something no question here asks (backstop; never silent). */
   stuckLine: Line | null;
+  /** The coach's layout didn't pass every check, even corrected once: what failed, behind `Why?`. */
+  checksLine: { text: string; why: string } | null;
   questionsTitle: string | null;
   questions: QuestionRowView[];
   columns: ColumnRowView[];
@@ -502,6 +504,7 @@ export function checkLayoutView(v: LayoutReviewView, locale?: string): CheckLayo
     readLine: r.enough ? line('checkmark.circle.fill', 'done', `${num(read)} of ${num(total)} rows read`) : line('exclamationmark.triangle', 'warning', `${String(total === 0 ? 0 : Math.floor((100 * read) / total))}% of rows read. 95% needed.`),
     notReadLine: notRead > 0 ? plural(notRead, 'row not read', 'rows not read') : null,
     stuckLine: r.stuck > 0 ? line('exclamationmark.triangle', 'warning', `${plural(r.stuck, 'row', 'rows')} can’t be read with this layout.`) : null,
+    checksLine: v.checks.length === 0 ? null : { text: 'Didn’t pass every check', why: v.checks.map(checkReasonText).join('\n') },
     questionsTitle: open > 0 ? `Needs your answer (${num(open)})` : null,
     questions,
     columns,

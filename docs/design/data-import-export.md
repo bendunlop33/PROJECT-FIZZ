@@ -22,6 +22,8 @@ Sources: brief §5 (data foundation), §7 (`previewFitNotesImport`, `commitImpor
 >
 > Nothing outside §9 changed.
 
+> **Revision 13 Oct 2026 (developer, PM-directed; for Ben and the designer to confirm).** Ben's FitNotes 2 file (the iPhone workout export: `Name,StartTime,EndTime,BodyWeight,Exercise,Equipment,Reps,Weight,Time,Distance,Status,IsWarmup,RPE,RIR,Categories,Note`) is now a FitNotes format read offline, and a coach layout that fails the checks is corrected once and then asked on Check the layout (ADR 0026 amendment 14). New copy for the designer: `FitNotes 2 (iPhone) CSV · weight unit not in the file`, `Weight unit` (question screen), `<n> sets not done`, `Start and end times`, `Warm-ups as in the file`, `Didn't pass every check` + `Why?`. §9.3.3's "`Try again` never runs on its own" now has that one exception.
+
 **Why this matters more than usual.** Fizz is signed with a free Apple ID through SideStore. Deleting the app, or re-signing it with another Apple ID or tool, installs a separate app with an empty database (ADR 0004). Backups on the phone protect against a damaged database or a bad restore, but not against that. Only a copy saved to Files (off the phone) survives it. Fizz says which kind Ben has, every time, and offers a one-tap copy to Files before the moments when it matters (§4.1a), without nagging.
 
 | Part | Milestone |
