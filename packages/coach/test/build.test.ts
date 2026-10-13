@@ -19,6 +19,7 @@ import {
   runCoachTurn,
   type BuildContextView,
   type BuildRequest,
+  MAX_BUILD_STEPS,
 } from '../src/index';
 import { ScriptedCoachModel } from './fake-model';
 import { createStoreExecutors } from '../src/executors';
@@ -215,6 +216,34 @@ describe('a build turn end to end (fake model, real SQLite)', () => {
     const again = await executors(store).propose_workout?.({ tool: 'propose_workout', args: proposal() }, { ownerId: OWNER, turnId: req.turnId, opId: card?.opId ?? '', now: { utc: '2026-10-08T06:00:01.000Z', tz: TZ }, benWords: null, messagePain: null, intent: 'general' });
     expect(again).toMatchObject({ kind: 'action', replayed: true });
     expect(await store.repos.workoutDrafts.listByOwner(OWNER)).toHaveLength(1);
+    await store.close();
+  });
+
+  it('F12: a build turn has room for a nudge and two schema-failed calls before the draft and reply', async () => {
+    const store = await memoryStore();
+    const bad = proposal({ minutes: 45 });
+    const model = new ScriptedCoachModel([
+      reply('Bench, incline, raises.'),
+      [call('propose_workout', bad, 'c-1'), { type: 'completed' }],
+      [call('propose_workout', bad, 'c-2'), { type: 'completed' }],
+      [call('propose_workout', proposal(), 'c-3'), { type: 'completed' }],
+      reply('Here it is.'),
+    ]);
+    const req = request({ input: words('build me a push workout'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } });
+    const result = await runCoachTurn(req, ports(store, model, executors(store)));
+    expect(result).toMatchObject({ status: 'completed', error: null });
+    expect(model.requests.length).toBeLessThanOrEqual(MAX_BUILD_STEPS);
+    expect(await store.repos.workoutDrafts.listByOwner(OWNER)).toHaveLength(1);
+    await store.close();
+  });
+
+  it('F12: a build turn that never ends still stops at the build cap', async () => {
+    const store = await memoryStore();
+    const loop = Array.from({ length: 10 }, (_, i) => [call('propose_workout', proposal({ minutes: 45 }), `l${String(i)}`), { type: 'completed' as const }]);
+    const model = new ScriptedCoachModel(loop);
+    const req = request({ input: words('build me a push workout'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } });
+    expect(await runCoachTurn(req, ports(store, model, executors(store)))).toMatchObject({ status: 'failed', error: 'too_many_steps' });
+    expect(model.requests).toHaveLength(MAX_BUILD_STEPS);
     await store.close();
   });
 

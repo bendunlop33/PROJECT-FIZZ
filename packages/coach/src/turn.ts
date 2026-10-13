@@ -51,6 +51,12 @@ import { buildFollowUpIn, buildPainMention, forcesBuild, refusedBuildActionIds }
  */
 
 export const MAX_MODEL_STEPS = 4;
+/**
+ * A build turn (F12, 13 Oct): one read, the text-answer nudge, a `propose_workout` whose
+ * arguments fail the schema and its corrected retry, then `reply` is five steps; four ended
+ * such turns as `too_many_steps`. The whole-build time cap (BD13) still bounds the turn.
+ */
+export const MAX_BUILD_STEPS = 6;
 
 export interface CoachTiming {
   /** `timing.coachTimeout`: request → first stream event. */
@@ -547,8 +553,9 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   if (req.signal?.aborted === true) cap.abort();
   req.signal?.addEventListener('abort', onStop);
 
+  const maxSteps = buildInPlay || forced ? MAX_BUILD_STEPS : MAX_MODEL_STEPS;
   for (let step = 0; ; step += 1) {
-    if (step >= MAX_MODEL_STEPS) {
+    if (step >= maxSteps) {
       error = 'too_many_steps';
       break;
     }
@@ -591,7 +598,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       break;
     }
     if (out.extraCalls > 0) logLine({ tool: out.name, outcome: 'not_allowed', text: 'Only one call at a time; the others were ignored.', actionId: null });
-    if (out.name === COACH_REPLY_TOOL_NAME && holdReply && step + 2 < MAX_MODEL_STEPS) {
+    if (out.name === COACH_REPLY_TOOL_NAME && holdReply && step + 2 < maxSteps) {
       nudged = true;
       heldReply = out.arguments;
       logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: 'Answer in text; asked to build.', actionId: null });
