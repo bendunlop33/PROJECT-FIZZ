@@ -132,12 +132,20 @@ export class SqliteImportProfiles {
     });
   }
 
-  /** The newest request for this exact sample that brought a layout (reused after an interruption). */
-  proposedFor(ownerId: string, sampleHash: string): Promise<ImportLayoutRequest | null> {
+  /**
+   * The newest layout that arrived for this exact sample **of this exact file**
+   * and that Ben never acted on (`closedAt` null): reused after an
+   * interruption (§9.3.3). A layout he confirmed, cancelled or asked to read
+   * again is never reused; nor is one from a record with no file checksum.
+   */
+  proposedFor(ownerId: string, sampleHash: string, fileHash: string): Promise<ImportLayoutRequest | null> {
     return this.db.read(async (q) => {
       const rows = await q.getAll("SELECT * FROM import_layout_requests WHERE owner_id = ? AND sample_hash = ? AND state = 'proposed' ORDER BY updated_at_utc DESC, id DESC", [ownerId, sampleHash]);
-      const first = rows[0];
-      return first ? decodeDocument(IMPORT_LAYOUT_REQUEST_SPEC, first) : null;
+      for (const row of rows) {
+        const r = decodeDocument(IMPORT_LAYOUT_REQUEST_SPEC, row);
+        if (r.fileHash === fileHash && r.closedAt === null && r.spec !== null) return r;
+      }
+      return null;
     });
   }
 

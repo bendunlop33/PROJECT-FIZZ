@@ -109,6 +109,7 @@ function request(over: Partial<ImportLayoutRequest> = {}): ImportLayoutRequest {
     updatedAtUtc: AT.utc,
     operationId: 'layout-op-1',
     sampleHash: HASH,
+    fileHash: HASH,
     instructionsHash: HASH,
     route: 'chatgpt_plan',
     model: 'gpt-test',
@@ -120,6 +121,7 @@ function request(over: Partial<ImportLayoutRequest> = {}): ImportLayoutRequest {
     reasons: [],
     sentAt: AT,
     finishedAt: null,
+    closedAt: null,
     ...over,
   };
 }
@@ -234,8 +236,25 @@ describe('layout requests (§9.3.3, rule 5)', () => {
     expect(await s.repos.importProfiles.saveRequest({ ...request(), version: 2, state: 'proposed', spec: specOf('spreadsheet-sets-x-reps.spec.json'), finishedAt: LATER, updatedAtUtc: LATER.utc }, 1)).toEqual({ ok: true });
     expect(await s.repos.importProfiles.saveRequest({ ...request(), version: 2, state: 'failed' }, 1)).toEqual({ ok: false, error: 'stale' });
     expect((await s.repos.importProfiles.request(OWNER, 'layout-op-1'))?.state).toBe('proposed');
-    expect((await s.repos.importProfiles.proposedFor(OWNER, HASH))?.operationId).toBe('layout-op-1');
-    expect(await s.repos.importProfiles.proposedFor(OWNER, 'd'.repeat(64))).toBeNull();
+    expect((await s.repos.importProfiles.proposedFor(OWNER, HASH, HASH))?.operationId).toBe('layout-op-1');
+    expect(await s.repos.importProfiles.proposedFor(OWNER, 'd'.repeat(64), HASH)).toBeNull();
+    // Same sample, another file: not reused (review S1).
+    expect(await s.repos.importProfiles.proposedFor(OWNER, HASH, 'e'.repeat(64))).toBeNull();
+    // Closed (confirmed, cancelled or read again): never reused.
+    const proposed = await s.repos.importProfiles.request(OWNER, 'layout-op-1');
+    if (!proposed) throw new Error('request');
+    expect(await s.repos.importProfiles.saveRequest({ ...proposed, version: 3, closedAt: LATER }, 2)).toEqual({ ok: true });
+    expect(await s.repos.importProfiles.proposedFor(OWNER, HASH, HASH)).toBeNull();
+  });
+
+  it('a request stored before the file checksum and closing were kept reads with both null, and is never reused', async () => {
+    const s = await fresh();
+    const older: Record<string, unknown> = { ...request(), state: 'proposed', spec: specOf('spreadsheet-sets-x-reps.spec.json') };
+    delete older.fileHash;
+    delete older.closedAt;
+    expect(await s.repos.importProfiles.saveRequest(older as unknown as ImportLayoutRequest, null)).toEqual({ ok: true });
+    expect(await s.repos.importProfiles.request(OWNER, 'layout-op-1')).toMatchObject({ fileHash: null, closedAt: null });
+    expect(await s.repos.importProfiles.proposedFor(OWNER, HASH, HASH)).toBeNull();
   });
 });
 

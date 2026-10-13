@@ -255,6 +255,12 @@ export type SpecCheckFailure = z.infer<typeof SpecCheckFailureSchema>;
 export const ImportLayoutRequestSchema = RecordMetaSchema.extend({
   operationId: OperationIdSchema,
   sampleHash: z.string().regex(/^[0-9a-f]{64}$/),
+  /**
+   * The whole file's checksum (the sample is only some rows): a spec is
+   * reused only for the same file. Null on records made before it was kept:
+   * never reused.
+   */
+  fileHash: z.string().regex(/^[0-9a-f]{64}$/).nullable().default(null),
   instructionsHash: z.string().regex(/^[0-9a-f]{64}$/),
   route: z.literal('chatgpt_plan'),
   model: z.string().max(120),
@@ -267,6 +273,13 @@ export const ImportLayoutRequestSchema = RecordMetaSchema.extend({
   reasons: z.array(SpecCheckFailureSchema).max(20),
   sentAt: ZonedTimestampSchema,
   finishedAt: ZonedTimestampSchema.nullable(),
+  /**
+   * Ben finished with this layout: `Use this layout`, `Cancel` or `Read with
+   * the coach again`. A closed spec is never reused (only one that arrived
+   * and was never acted on, §9.3.3), so an undone or cancelled layout never
+   * comes back as the coach's suggestion.
+   */
+  closedAt: ZonedTimestampSchema.nullable().default(null),
 });
 export type ImportLayoutRequest = z.infer<typeof ImportLayoutRequestSchema>;
 
