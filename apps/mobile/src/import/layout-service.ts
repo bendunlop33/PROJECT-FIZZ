@@ -248,6 +248,8 @@ function stripExtension(name: string): string {
 
 export function createLayoutService(deps: LayoutServiceDeps) {
   const sessions = new Map<string, Session>();
+  /** Requests still running, by layout and operation ID: a repeat while one runs waits for it (rule 5). */
+  const proposing = new Map<string, Promise<ProposeResult>>();
   const repos = () => deps.store().repos;
 
   async function block(): Promise<ImportBlock | null> {
@@ -499,104 +501,15 @@ export function createLayoutService(deps: LayoutServiceDeps) {
      * operation ID and the hash of the text he can see. Never retried on
      * its own; nothing is imported here.
      */
-    async proposeImportMapping(layoutId: string, sampleHash: string, operationId: string, signal?: AbortSignal): Promise<ProposeResult> {
-      const s = sessions.get(layoutId);
-      if (!s) return { status: 'refused', reason: 'not_found' };
-      const run = { stopped: false };
-      s.run = run;
-      // Read through a function: Stop can mark it at any await below.
-      const stopped = (): boolean => run.stopped;
-      const p = await deps.profile();
-      if (!p) return { status: 'refused', reason: 'not_found' };
-      if (await block()) return { status: 'refused', reason: 'workout_unfinished' };
-      // A repeat of the same tap: its stored result, nothing sent.
-      const stored = await repos().importProfiles.request(p.id, operationId);
-      if (stored) return replay(s, stored);
-      const built = s.sample ?? sampleOf(s);
-      if (s.sampleHash !== sampleHash) return { status: 'refused', reason: 'sample_changed' };
-      // A layout that already arrived for exactly this text (before an interruption): reused, not sent again.
-      const reused = await repos().importProfiles.proposedFor(p.id, sampleHash);
-      if (reused?.spec) {
-        adoptSpec(s, reused.spec, reused.model);
-        return { status: 'proposed', layoutVersion: s.layoutVersion, reused: true };
-      }
-      const coach = await coachStatus();
-      const a = await deps.coach.availability().catch(() => ({ status: 'not_connected', model: null }));
-      const port = deps.coach.model?.();
-      if (coach.state !== 'ready' || port === undefined || a.model === null) return { status: 'unavailable', reason: coach.state === 'ready' ? 'not_connected' : coach.state };
-      // Stopped before anything went out: nothing is sent.
-      if (stopped()) return { status: 'failed', reason: 'stopped' };
-      const at = deps.now();
-      const record: ImportLayoutRequest = {
-        id: deps.newId(),
-        ownerId: p.id,
-        version: 1,
-        createdAtUtc: at.utc,
-        updatedAtUtc: at.utc,
-        operationId,
-        sampleHash,
-        instructionsHash: INSTRUCTIONS_HASH,
-        route: 'chatgpt_plan',
-        model: a.model,
-        chars: built.chars,
-        state: 'sent',
-        failure: null,
-        unavailable: null,
-        spec: null,
-        reasons: [],
-        sentAt: at,
-        finishedAt: null,
-      };
-      const created = await repos().importProfiles.saveRequest(record, null);
-      if (!created.ok) {
-        const again = await repos().importProfiles.request(p.id, operationId);
-        return again ? replay(s, again) : { status: 'refused', reason: 'not_found' };
-      }
-      const controller = new AbortController();
-      s.inflight = controller;
-      const onOuter = (): void => {
-        controller.abort();
-      };
-      signal?.addEventListener('abort', onOuter);
-      s.requestsSent += 1;
-      s.charsSent += built.chars;
-      let answer: Awaited<ReturnType<typeof requestImportLayout>>;
-      try {
-        // Exactly the text shown: the stored sample JSON, byte for byte (check 36).
-        answer = await requestImportLayout(port, buildImportLayoutRequest(built.json, a.model), { signal: controller.signal, ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }) });
-      } finally {
-        s.inflight = null;
-        signal?.removeEventListener('abort', onOuter);
-      }
-      const done = (patch: Partial<ImportLayoutRequest>) => storeRequest({ ...record, ...patch, version: 2, updatedAtUtc: deps.now().utc, finishedAt: deps.now() }, 1);
-      // Stopped while it ran: a late answer is thrown away (§9.3.3).
-      if (stopped()) {
-        await done({ state: 'failed', failure: 'stopped' });
-        return { status: 'failed', reason: 'stopped' };
-      }
-      if (!answer.ok) {
-        const outcome = importLayoutFailure(answer.error);
-        if (outcome.kind === 'unavailable') {
-          const reason: ImportCoachUnavailable = outcome.reason;
-          await done({ state: 'unavailable', unavailable: reason });
-          return { status: 'unavailable', reason };
-        }
-        await done({ state: 'failed', failure: outcome.reason });
-        return { status: 'failed', reason: outcome.reason };
-      }
-      // Code checks the layout against every row before anything is shown (§9.2.4).
-      const v = validateImportSpec(answer.spec, s.table, opts());
-      if (!v.ok && v.unsupported) {
-        await done({ state: 'failed', failure: 'unsupported' });
-        return { status: 'unsupported' };
-      }
-      if (!v.ok) {
-        await done({ state: 'rejected', spec: answer.spec, reasons: v.failures });
-        return { status: 'rejected', reasons: v.failures };
-      }
-      await done({ state: 'proposed', spec: v.spec });
-      adoptSpec(s, v.spec, a.model);
-      return { status: 'proposed', layoutVersion: s.layoutVersion, reused: false };
+    proposeImportMapping(layoutId: string, sampleHash: string, operationId: string, signal?: AbortSignal): Promise<ProposeResult> {
+      const key = `${layoutId}\u0000${operationId}`;
+      const running = proposing.get(key);
+      if (running) return running;
+      const p = propose(layoutId, sampleHash, operationId, signal).finally(() => {
+        proposing.delete(key);
+      });
+      proposing.set(key, p);
+      return p;
     },
 
     /** `Stop`: the request is cancelled and a late answer is thrown away. */
@@ -758,6 +671,106 @@ export function createLayoutService(deps: LayoutServiceDeps) {
   };
 
   /** A stored request's result, without sending anything. */
+  async function propose(layoutId: string, sampleHash: string, operationId: string, signal?: AbortSignal): Promise<ProposeResult> {
+    const s = sessions.get(layoutId);
+    if (!s) return { status: 'refused', reason: 'not_found' };
+    const run = { stopped: false };
+    s.run = run;
+    // Read through a function: Stop can mark it at any await below.
+    const stopped = (): boolean => run.stopped;
+    const p = await deps.profile();
+    if (!p) return { status: 'refused', reason: 'not_found' };
+    if (await block()) return { status: 'refused', reason: 'workout_unfinished' };
+    // A repeat of the same tap: its stored result, nothing sent.
+    const stored = await repos().importProfiles.request(p.id, operationId);
+    if (stored) return replay(s, stored);
+    const built = s.sample ?? sampleOf(s);
+    if (s.sampleHash !== sampleHash) return { status: 'refused', reason: 'sample_changed' };
+    // A layout that already arrived for exactly this text (before an interruption): reused, not sent again.
+    const reused = await repos().importProfiles.proposedFor(p.id, sampleHash);
+    if (reused?.spec) {
+      adoptSpec(s, reused.spec, reused.model);
+      return { status: 'proposed', layoutVersion: s.layoutVersion, reused: true };
+    }
+    const coach = await coachStatus();
+    const a = await deps.coach.availability().catch(() => ({ status: 'not_connected', model: null }));
+    const port = deps.coach.model?.();
+    if (coach.state !== 'ready' || port === undefined || a.model === null) return { status: 'unavailable', reason: coach.state === 'ready' ? 'not_connected' : coach.state };
+    // Stopped before anything went out: nothing is sent.
+    if (stopped()) return { status: 'failed', reason: 'stopped' };
+    const at = deps.now();
+    const record: ImportLayoutRequest = {
+      id: deps.newId(),
+      ownerId: p.id,
+      version: 1,
+      createdAtUtc: at.utc,
+      updatedAtUtc: at.utc,
+      operationId,
+      sampleHash,
+      instructionsHash: INSTRUCTIONS_HASH,
+      route: 'chatgpt_plan',
+      model: a.model,
+      chars: built.chars,
+      state: 'sent',
+      failure: null,
+      unavailable: null,
+      spec: null,
+      reasons: [],
+      sentAt: at,
+      finishedAt: null,
+    };
+    const created = await repos().importProfiles.saveRequest(record, null);
+    if (!created.ok) {
+      const again = await repos().importProfiles.request(p.id, operationId);
+      return again ? replay(s, again) : { status: 'refused', reason: 'not_found' };
+    }
+    const controller = new AbortController();
+    s.inflight = controller;
+    const onOuter = (): void => {
+      controller.abort();
+    };
+    signal?.addEventListener('abort', onOuter);
+    s.requestsSent += 1;
+    s.charsSent += built.chars;
+    let answer: Awaited<ReturnType<typeof requestImportLayout>>;
+    try {
+      // Exactly the text shown: the stored sample JSON, byte for byte (check 36).
+      answer = await requestImportLayout(port, buildImportLayoutRequest(built.json, a.model), { signal: controller.signal, ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }) });
+    } finally {
+      s.inflight = null;
+      signal?.removeEventListener('abort', onOuter);
+    }
+    const done = (patch: Partial<ImportLayoutRequest>) => storeRequest({ ...record, ...patch, version: 2, updatedAtUtc: deps.now().utc, finishedAt: deps.now() }, 1);
+    // Stopped while it ran: a late answer is thrown away (§9.3.3).
+    if (stopped()) {
+      await done({ state: 'failed', failure: 'stopped' });
+      return { status: 'failed', reason: 'stopped' };
+    }
+    if (!answer.ok) {
+      const outcome = importLayoutFailure(answer.error);
+      if (outcome.kind === 'unavailable') {
+        const reason: ImportCoachUnavailable = outcome.reason;
+        await done({ state: 'unavailable', unavailable: reason });
+        return { status: 'unavailable', reason };
+      }
+      await done({ state: 'failed', failure: outcome.reason });
+      return { status: 'failed', reason: outcome.reason };
+    }
+    // Code checks the layout against every row before anything is shown (§9.2.4).
+    const v = validateImportSpec(answer.spec, s.table, opts());
+    if (!v.ok && v.unsupported) {
+      await done({ state: 'failed', failure: 'unsupported' });
+      return { status: 'unsupported' };
+    }
+    if (!v.ok) {
+      await done({ state: 'rejected', spec: answer.spec, reasons: v.failures });
+      return { status: 'rejected', reasons: v.failures };
+    }
+    await done({ state: 'proposed', spec: v.spec });
+    adoptSpec(s, v.spec, a.model);
+    return { status: 'proposed', layoutVersion: s.layoutVersion, reused: false };
+  }
+
   function replay(s: Session, r: ImportLayoutRequest): ProposeResult {
     switch (r.state) {
       case 'proposed':
