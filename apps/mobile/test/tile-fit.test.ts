@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { COMPACT_STEP_MIN, NUMERAL_MIN, numeralEms, openRowWidth, stepperNumeralSize, stepperTexts, TILE_GAP, TILE_PADDING_H, tileFit, type TileSpec } from '../src/workout/tile-fit';
+import { COMPACT_STEP_MIN, NUMERAL_MIN, numeralEms, openRowWidth, stepperNumeralSize, stepperRowTiles, stepperTexts, TILE_GAP, TILE_PADDING_H, tileFit, tileRowLayout, type TileSpec } from '../src/workout/tile-fit';
 
 /**
  * The open row's tiles (review B1, WT-D13, WT40): with 52 pt − / + buttons,
@@ -116,7 +116,7 @@ describe('tileFit: one tile, and other pairs', () => {
   });
 });
 
-describe('stepperNumeralSize: Focus and Edit set REPS beside LOAD (F9)', () => {
+describe('stepperNumeralSize: a lone stepper with no row fit (F9 fallback)', () => {
   // Focus at 375 pt: 343 pt row, 12 pt gap, LOAD flex 1.4, REPS flex 1 → ~138 pt REPS tile, 44 pt − / +.
   const repsTile = ((375 - 32 - 12) * 1) / 2.4;
   const fits = (size: number, text: string, tileWidth: number, step: number) => numeralEms(text) * size + 6 <= tileWidth - TILE_PADDING_H - 2 * step;
@@ -142,5 +142,48 @@ describe('stepperNumeralSize: Focus and Edit set REPS beside LOAD (F9)', () => {
     const tile = ((375 - 32 - 12) * 1.4) / 2.4;
     const size = stepperNumeralSize({ tileWidth: tile, texts: ['102.5', '100', '105', '000'], unit: 'kg', stepSize: 44, fontScale: 1 });
     expect(numeralEms('102.5') * size + numeralEms(' kg') * 18 + 6).toBeLessThanOrEqual(tile - TILE_PADDING_H - 88);
+  });
+});
+
+describe('Focus and Edit set rows: tileFit keeps the 28 pt floor (review B1)', () => {
+  const field = (v: number, step: number) => ({ value: v, down: on(v - step), up: on(v + step) });
+  const row = (loadFlex: number, kg: number, r: number, unit = 'kg') => stepperRowTiles({ loadFlex, load: { ...field(kg, 2.5), unit }, time: null, distance: null, reps: field(r, 1) });
+
+  for (const width of [375, 390]) {
+    // Focus: 20 pt screen margins; Edit set: 16 pt. Both 12 pt between tiles, 44 pt − / +.
+    for (const [name, rowWidth, loadFlex] of [['Focus', width - 40, 1.4], ['Edit set', width - 32, 1]] as const) {
+      it(`${name} at ${String(width)} pt: LOAD 102.5 kg and REPS 10 stay at or above ${String(NUMERAL_MIN)} pt`, () => {
+        for (const unit of ['kg', 'lb', 'kg each']) {
+          const fit = tileFit({ rowWidth, tiles: row(loadFlex, 102.5, 10, unit), stepSize: 44, fontScale: 1, ax: false, gap: 12 });
+          expect(fit.numeralSize, unit).toBeGreaterThanOrEqual(NUMERAL_MIN);
+          // `kg each` (per-hand dumbbells) is too wide beside REPS: the tiles stack rather than shrink.
+          expect(fit.stacked, unit).toBe(unit === 'kg each');
+          // Never clipped: each numeral and its unit (18 pt at this text size) fit the tile as laid out.
+          const tiles = row(loadFlex, 102.5, 10, unit);
+          const total = tiles.reduce((a, t) => a + t.flex, 0);
+          for (const t of tiles) {
+            const w = fit.stacked ? rowWidth : ((rowWidth - 12) * t.flex) / total;
+            const unitW = t.unit === null ? 0 : numeralEms(` ${t.unit}`) * 18;
+            expect(Math.max(...t.texts.map(numeralEms)) * fit.numeralSize + unitW).toBeLessThanOrEqual(w - TILE_PADDING_H - (fit.compact ? 0 : 88));
+          }
+        }
+      });
+    }
+  }
+
+  it('at a larger text size the numeral still never drops below 28 pt: it stacks instead', () => {
+    const fit = tileFit({ rowWidth: 335, tiles: row(1.4, 102.5, 10), stepSize: 44, fontScale: XXXL, ax: false, gap: 12 });
+    expect(fit.numeralSize).toBeGreaterThanOrEqual(NUMERAL_MIN);
+  });
+
+  it('the bordered theme has no compact tile: it stacks', () => {
+    expect(tileRowLayout({ stacked: false, compact: true, numeralSize: 38 }, false)).toEqual({ compact: false, stacked: true });
+    expect(tileRowLayout({ stacked: false, compact: true, numeralSize: 38 }, true)).toEqual({ compact: true, stacked: false });
+    expect(tileRowLayout({ stacked: false, compact: false, numeralSize: 38 }, false)).toEqual({ compact: false, stacked: false });
+  });
+
+  it('a running work timer takes a tile; no load field, no LOAD tile', () => {
+    const tiles = stepperRowTiles({ loadFlex: 1.4, load: null, time: 'timer', distance: null, reps: field(10, 1) });
+    expect(tiles.map((t) => t.texts[0])).toEqual(['0:00', '10']);
   });
 });

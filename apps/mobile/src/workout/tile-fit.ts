@@ -21,7 +21,7 @@ export const NUMERAL_MAX_SCALE = 1.8;
 export const NUMERAL_MIN = 28;
 /** The stacked fallback still shrinks a very long number rather than clip it. */
 const NUMERAL_FLOOR = 18;
-/** A lone stepper (Focus, Edit set) has no stacked fallback: it shrinks further rather than clip. */
+/** A lone stepper with no row fit (`stepperNumeralSize` fallback) can't stack: it shrinks further rather than clip. */
 const STEPPER_FLOOR = 14;
 /** The field's own minimum width and caret room. */
 const INPUT_MIN_WIDTH = 36;
@@ -63,6 +63,8 @@ export interface TileFitInput {
   fontScale: number;
   /** AX1+: always stacked (§2A.10). */
   ax: boolean;
+  /** Gap between tiles; default `TILE_GAP` (the Table). Focus and Edit set use 12 pt. */
+  gap?: number;
 }
 
 export interface TileFit {
@@ -112,13 +114,22 @@ export function tileFit(p: TileFitInput): TileFit {
   if (p.tiles.length === 0) return { stacked: false, compact: false, numeralSize: floorHalf(wanted) };
   if (p.ax || p.tiles.length === 1) return { stacked: p.ax && p.tiles.length > 1, compact: false, numeralSize: stackedSize() };
   const totalFlex = p.tiles.reduce((a, t) => a + t.flex, 0);
-  const free = p.rowWidth - TILE_GAP * (p.tiles.length - 1);
+  const free = p.rowWidth - (p.gap ?? TILE_GAP) * (p.tiles.length - 1);
   const widthOf = (t: TileSpec): number => (free * t.flex) / totalFlex;
   const sideBySide = Math.min(...p.tiles.map((t) => maxSizeIn(widthOf(t), t, p.stepSize, p.fontScale)));
   if (sideBySide >= minimum) return { stacked: false, compact: false, numeralSize: floorHalf(Math.min(wanted, sideBySide)) };
   const compact = Math.min(...p.tiles.map((t) => compactSizeIn(widthOf(t), t, p.fontScale)));
   if (compact >= minimum) return { stacked: false, compact: true, numeralSize: floorHalf(Math.min(wanted, compact)) };
   return { stacked: true, compact: false, numeralSize: stackedSize() };
+}
+
+/**
+ * How a row of tiles renders a fit: compact (F11) needs the D tile (flat
+ * theme); the bordered theme stacks instead, as the Table does.
+ */
+export function tileRowLayout(fit: TileFit, flat: boolean): { compact: boolean; stacked: boolean } {
+  const compact = fit.compact && flat;
+  return { compact, stacked: fit.stacked || (fit.compact && !compact) };
 }
 
 /**
@@ -149,10 +160,10 @@ export interface StepperNumeralInput {
 }
 
 /**
- * A lone `NumberStepper`'s numeral size (F9, 13 Oct): on Focus and Edit set the
- * REPS tile sits beside LOAD with 44 pt − / +, leaving ~34 pt for a 38 pt
- * numeral, so `10` was cut to `1`. The numeral shrinks until the longest text
- * fits; never clipped (WT-D13). A lone stepper can't stack, so its floor is lower.
+ * A lone `NumberStepper`'s numeral size (F9, 13 Oct) when no row fit is given:
+ * the numeral shrinks until the longest text fits; never clipped. Rows of
+ * tiles (Table, Focus, Edit set) use `tileFit` instead, so they keep ≥ 28 pt
+ * and go compact or stacked (WT-D13, review B1).
  */
 export function stepperNumeralSize(p: StepperNumeralInput): number {
   const wanted = NUMERAL_BASE * Math.min(p.fontScale, NUMERAL_MAX_SCALE);
@@ -161,4 +172,24 @@ export function stepperNumeralSize(p: StepperNumeralInput): number {
   const ems = numeralEms(longest(p.texts));
   const fits = ems === 0 ? Number.POSITIVE_INFINITY : Math.max(0, room) / ems;
   return floorHalf(Math.max(STEPPER_FLOOR, Math.min(wanted, fits)));
+}
+
+interface RowField {
+  value: number | null;
+  down: { enabled: boolean; value?: number };
+  up: { enabled: boolean; value?: number };
+}
+
+/**
+ * The tiles of a Focus or Edit set row (review B1): LOAD (with its unit),
+ * TIME (or a running work timer), DIST, REPS, in that order.
+ */
+export function stepperRowTiles(p: { loadFlex: number; load: (RowField & { unit: string }) | null; time: RowField | 'timer' | null; distance: RowField | null; reps: RowField | null }): TileSpec[] {
+  const tiles: TileSpec[] = [];
+  if (p.load) tiles.push({ flex: p.loadFlex, texts: stepperTexts(p.load.value, p.load.down, p.load.up, 3), unit: p.load.unit });
+  if (p.time === 'timer') tiles.push({ flex: 1, texts: ['0:00'], unit: null });
+  else if (p.time) tiles.push({ flex: 1, texts: stepperTexts(p.time.value, p.time.down, p.time.up, 2), unit: 's' });
+  if (p.distance) tiles.push({ flex: 1, texts: stepperTexts(p.distance.value, p.distance.down, p.distance.up, 3), unit: 'm' });
+  if (p.reps) tiles.push({ flex: 1, texts: stepperTexts(p.reps.value, p.reps.down, p.reps.up, 2), unit: null });
+  return tiles;
 }

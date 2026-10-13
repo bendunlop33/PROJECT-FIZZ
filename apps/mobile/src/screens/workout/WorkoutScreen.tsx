@@ -34,6 +34,7 @@ import {
   EffortHeading,
   NumberAccessory,
   NumberStepper,
+  StepperTileRow,
   PulseOnce,
   RuledSection,
   SecondaryButton,
@@ -56,6 +57,7 @@ import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu } from '../../workout/e
 import { shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
+import { stepperRowTiles } from '../../workout/tile-fit';
 import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
 import { logRefusal, reloadsAfterRefusal } from '../../workout/log-refusal';
 import { FinishSheet } from './FinishSheet';
@@ -130,7 +132,7 @@ export function WorkoutScreen() {
   const mode = workoutViewOf(prefs.workoutView);
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, width: windowWidth } = useWindowDimensions();
   const ax = fontScale >= AX_FONT_SCALE;
   // Table anchoring (§2A.4): only these events move the list; Ben's own scrolling always wins.
   const [anchorRequest, setAnchorRequest] = useState<AnchorRequest | null>(null);
@@ -1547,11 +1549,21 @@ export function WorkoutScreen() {
       ) : null}
 
       <View style={{ gap: theme.space['3'] }}>
-        <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+        <StepperTileRow tiles={stepperRowTiles({
+            loadFlex: 1.4,
+            load: focus.loadField ? { ...focus.loadField, unit: focus.loadField.unitText } : null,
+            time: focus.workTimer && (focus.workTimer.state === 'running' || focus.workTimer.state === 'paused') ? 'timer' : focus.duration,
+            distance: focus.distance,
+            reps: focus.reps,
+          })} estimate={windowWidth - 2 * theme.space['5']}>
+          {({ numeralSize, compact, flexOf }) => (
+          <>
           {focus.loadField ? (
             <NumberStepper
               inputRef={loadRef}
-              flex={1.4}
+              flex={flexOf(1.4)}
+              numeralSize={numeralSize}
+              compact={compact}
               label={focus.loadField.label}
               unit={focus.loadField.unitText}
               value={focus.loadField.value}
@@ -1566,14 +1578,16 @@ export function WorkoutScreen() {
             />
           ) : null}
           {focus.workTimer && (focus.workTimer.state === 'running' || focus.workTimer.state === 'paused') ? (
-            <View style={{ flex: 1, alignItems: 'flex-start', gap: theme.space['1'] }}>
+            <View style={{ ...(flexOf(1) === null ? { alignSelf: 'stretch' as const } : { flex: 1 }), alignItems: 'flex-start', gap: theme.space['1'] }}>
               <Eyebrow>Work</Eyebrow>
               <TimerNumeral text={workTimerText(focus.workTimer.remainingMs)} accessibilityLabel={`Work time left ${workTimerText(focus.workTimer.remainingMs)}`} />
             </View>
           ) : focus.duration ? (
             <NumberStepper
               inputRef={timeRef}
-              flex={1}
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
               label="Time"
               unit="s"
               value={focus.duration.value}
@@ -1588,7 +1602,9 @@ export function WorkoutScreen() {
           {focus.distance ? (
             <NumberStepper
               inputRef={distanceRef}
-              flex={1}
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
               label="Distance"
               unit="m"
               value={focus.distance.value}
@@ -1603,7 +1619,9 @@ export function WorkoutScreen() {
           {focus.reps ? (
             <NumberStepper
               inputRef={repsRef}
-              flex={1}
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
               label="Reps"
               unit={null}
               value={focus.reps.value}
@@ -1615,7 +1633,9 @@ export function WorkoutScreen() {
               }}
             />
           ) : null}
-        </View>
+          </>
+          )}
+        </StepperTileRow>
         {/* A timed set before Start: the time in the field can be logged without the timer (review gaps S2). */}
         {view.primary.kind === 'start_work' && view.primary.logLabel !== null ? (
           <View style={{ alignItems: 'flex-start' }}>

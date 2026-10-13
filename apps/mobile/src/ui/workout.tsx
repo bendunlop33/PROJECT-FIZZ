@@ -12,7 +12,8 @@ import { FadeIn, TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
 import { nextFieldText, parseNumber } from './number-text';
 import { effortInfoLabel, effortInfoLines, type EffortScale } from '../workout/effort-info';
-import { stepperNumeralSize, stepperTexts } from '../workout/tile-fit';
+import { AX_FONT_SCALE } from '../workout/overview';
+import { stepperNumeralSize, stepperTexts, tileFit, tileRowLayout, type TileSpec } from '../workout/tile-fit';
 
 /** Shared keyboard toolbar for number fields (the system decimal pad has no Done key). */
 export const NUMBER_ACCESSORY_ID = 'fizz-number-done';
@@ -320,6 +321,42 @@ export function NumberStepper({
           {up.reason}
         </AppText>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * A row of `NumberStepper` tiles on Focus and Edit set (review B1, WT-D13):
+ * `tileFit` keeps numerals ≥ 28 pt, then goes compact (F11) or stacks. Each
+ * tile takes `numeralSize`, `compact` and `flexOf(share)` from `children`.
+ */
+export function StepperTileRow({
+  tiles,
+  estimate,
+  children,
+}: {
+  tiles: readonly TileSpec[];
+  /** The row's width before it's measured. */
+  estimate: number;
+  children: (row: { numeralSize: number; compact: boolean; flexOf: (share: number) => number | null }) => ReactNode;
+}) {
+  const theme = useTheme();
+  const { fontScale } = useWindowDimensions();
+  const [measured, setMeasured] = useState<number | null>(null);
+  const flat = theme.components.cardBorderWidth === 0;
+  const gap = theme.space['3'];
+  // The bordered variant's − / + are wider and sit 8 pt apart from the field (as `stepperNumeralSize`).
+  const stepSize = flat ? theme.target.min.width : theme.target.workout.width + theme.space['2'] + 2;
+  const fit = tileFit({ rowWidth: measured ?? estimate, tiles, stepSize, fontScale, ax: fontScale >= AX_FONT_SCALE, gap });
+  const { compact, stacked } = tileRowLayout(fit, flat);
+  return (
+    <View
+      onLayout={(e) => {
+        setMeasured(e.nativeEvent.layout.width);
+      }}
+      style={{ flexDirection: stacked ? 'column' : 'row', gap }}
+    >
+      {children({ numeralSize: fit.numeralSize, compact, flexOf: (share) => (stacked ? null : share) })}
     </View>
   );
 }
