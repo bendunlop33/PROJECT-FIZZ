@@ -8,7 +8,7 @@ import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
 import { AppText, Icon } from '../ui';
 import { AX_FONT_SCALE } from '../workout/overview';
-import { countBarWidth, mixHex, PARTIAL_BAR_MIX, visibleLabels, weekBarsLayout } from './chart-layout';
+import { barLabelBox, barLabelRoom, countBarWidth, mixHex, PARTIAL_BAR_MIX, showsBarCount, visibleLabels, weekBarsLayout } from './chart-layout';
 import { FREQUENCY_COLUMNS, FREQUENCY_HEADERS } from './frequency-columns';
 import { loadWeekBarsCanvas } from './load-charts';
 
@@ -149,10 +149,11 @@ export function WindowPicker({
 }
 
 /** `WeekBars` (§9.70; also one bar per month for long periods) or `DayStrip` (§9.71), from the view model. One VoiceOver element; the card around it is the button. */
+/** F15: one bar chart for every period (a bar a day, week or month); AX sizes get the list. */
 export function ActivityBars({ bars }: { bars: BarsView }) {
   const ax = useAx();
-  if (bars.kind === 'weeks' || bars.kind === 'months') return ax ? <BarList bars={bars} /> : <WeekBars bars={bars} />;
-  return ax ? <DayList bars={bars} /> : <DayStrip bars={bars} />;
+  if (ax) return bars.kind === 'days' ? <DayList bars={bars} /> : <BarList bars={bars} />;
+  return <WeekBars bars={bars} />;
 }
 
 function BarList({ bars }: { bars: Extract<BarsView, { kind: 'weeks' | 'months' }> }) {
@@ -167,7 +168,7 @@ function BarList({ bars }: { bars: Extract<BarsView, { kind: 'weeks' | 'months' 
   );
 }
 
-function WeekBars({ bars }: { bars: Extract<BarsView, { kind: 'weeks' | 'months' }> }) {
+function WeekBars({ bars }: { bars: BarsView }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
   const dims = theme.chart.weekBars;
@@ -178,7 +179,7 @@ function WeekBars({ bars }: { bars: Extract<BarsView, { kind: 'weeks' | 'months'
     dims,
     bars.bars.map((b) => b.partial),
   );
-  const labels = new Set(visibleLabels(bars.bars.length, width, 52));
+  const labels = new Set(visibleLabels(bars.bars.length, width, barLabelRoom(bars.kind)));
   const canvas = loadWeekBarsCanvas();
   const countHeight = 20;
   const partialColor = mixHex(theme.colors['chart.bar'], theme.colors['bg.surface'], PARTIAL_BAR_MIX);
@@ -219,7 +220,7 @@ function WeekBars({ bars }: { bars: Extract<BarsView, { kind: 'weeks' | 'months'
         ) : null}
         {rects.map((r, i) => {
           const b = bars.bars[i];
-          if (!b) return null;
+          if (!b || !showsBarCount(b.count)) return null;
           return (
             <View key={b.from} style={{ position: 'absolute', left: r.centreX - 20, width: 40, top: r.y, alignItems: 'center' }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
               <AppText variant="label" numeric color={b.count === 0 || b.partial ? 'text.tertiary' : 'text.primary'} maxFontSizeMultiplier={1.4}>
@@ -233,8 +234,9 @@ function WeekBars({ bars }: { bars: Extract<BarsView, { kind: 'weeks' | 'months'
         {rects.map((r, i) => {
           const b = bars.bars[i];
           if (!b || !labels.has(i)) return null;
+          const box = barLabelBox(r.centreX, width, 60);
           return (
-            <View key={b.from} style={{ position: 'absolute', left: r.centreX - 30, width: 60, alignItems: 'center' }}>
+            <View key={b.from} style={{ position: 'absolute', left: box.left, width: 60, alignItems: box.align }}>
               <AppText variant="label" color="chart.axisText" numeric maxFontSizeMultiplier={1.4} numberOfLines={1}>
                 {b.label}
               </AppText>
@@ -242,44 +244,6 @@ function WeekBars({ bars }: { bars: Extract<BarsView, { kind: 'weeks' | 'months'
           );
         })}
       </View>
-    </View>
-  );
-}
-
-function DayStrip({ bars }: { bars: Extract<BarsView, { kind: 'days' }> }) {
-  const theme = useTheme();
-  const d = theme.chart.dayCell;
-  return (
-    <View accessible accessibilityLabel={bars.words} style={{ gap: theme.space['3'] }}>
-      {bars.rows.map((row) => (
-        <View key={row.firstDate} style={{ gap: theme.space['1'] }}>
-          {bars.rows.length > 1 ? (
-            <AppText variant="label" color="text.secondary" numeric>
-              {row.firstDate}
-            </AppText>
-          ) : null}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            {row.cells.map((c) => (
-              <View key={c.date} style={{ minWidth: d.minColumn, alignItems: 'center', gap: theme.space['1'] }}>
-                <AppText variant="label" color={c.isToday ? 'text.primary' : 'text.secondary'} style={{ fontWeight: c.isToday ? '700' : '400' }} maxFontSizeMultiplier={1.4}>
-                  {c.letter}
-                </AppText>
-                <View style={{ height: 18, justifyContent: 'center', alignItems: 'center' }}>
-                  {c.count >= 2 ? (
-                    <AppText variant="label" numeric maxFontSizeMultiplier={1.4}>
-                      {String(c.count)}
-                    </AppText>
-                  ) : c.count === 1 ? (
-                    <View style={{ width: d.diameter, height: d.diameter, borderRadius: d.diameter / 2, backgroundColor: theme.colors['text.primary'] }} />
-                  ) : (
-                    <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: theme.colors['text.tertiary'] }} />
-                  )}
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-      ))}
     </View>
   );
 }

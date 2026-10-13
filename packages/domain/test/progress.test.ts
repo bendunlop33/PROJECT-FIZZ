@@ -439,6 +439,19 @@ describe('home view states (§3.1, check 19, 23)', () => {
     expect(w30.activity.bars).toMatchObject({ kind: 'weeks', max: 3 });
   });
 
+  it('F15: 7 and 14 days are day bars in the same chart as weeks and months', () => {
+    const w7 = buildProgressHomeView({ sessions: [session('2026-10-06'), session('2026-10-08'), session('2026-10-08')], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    if (w7.dataState !== 'normal' || w7.activity.bars.kind !== 'days') throw new Error('expected day bars');
+    expect(w7.activity.bars.bars.map((b) => b.label)).toEqual(['M', 'T', 'W', 'T', 'F', 'S', 'S']);
+    expect(w7.activity.bars.bars.map((b) => b.count)).toEqual([0, 1, 0, 2, 0, 0, 0]);
+    expect(w7.activity.bars.max).toBe(3);
+    const w14 = buildProgressHomeView({ sessions: [session('2026-10-08')], exercises: INFO, today: TODAY, days: 14, grouping: 'body_part' });
+    if (w14.dataState !== 'normal' || w14.activity.bars.kind !== 'days') throw new Error('expected day bars');
+    expect(w14.activity.bars.bars.map((b) => b.label)).toEqual(['28', '29', '30', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']);
+    const w60 = buildProgressHomeView({ sessions: [session('2026-10-08')], exercises: INFO, today: TODAY, days: 60, grouping: 'body_part' });
+    expect(w60.dataState === 'normal' && w60.activity.bars.kind).toBe('weeks');
+  });
+
   it('no invented values: no score, ring, percentage, streak, recovery, readiness or fatigue words', () => {
     const home = buildProgressHomeView({ sessions: CHECK1.map((d) => session(d, { exercises: [row('bench', [set(), set()])] })), exercises: INFO, today: TODAY, days: 30, grouping: 'ppl' });
     expect(JSON.stringify(home)).not.toMatch(/score|ring|%|streak|recovery|readiness|fatigue/i);

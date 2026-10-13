@@ -77,3 +77,28 @@ export function countBarWidth(fraction: number, trackWidth: number): number {
   if (!(fraction > 0) || trackWidth <= 0) return 0;
   return Math.max(2, Math.min(trackWidth, fraction * trackWidth));
 }
+
+/**
+ * F15: the room each bar label needs before labels are thinned: a day's
+ * letter or date (`M`, `14`), a month (`Oct`, `Oct 25`), a week's start (`14 Sep`).
+ */
+export function barLabelRoom(kind: 'days' | 'weeks' | 'months'): number {
+  return kind === 'days' ? 22 : kind === 'months' ? 44 : 52;
+}
+
+/**
+ * F15: where a bar's label box sits, centred under the bar but kept inside
+ * the chart, so the first and last labels never hang off an edge (60 days
+ * read misaligned). `align` keeps the text over its bar when clamped.
+ */
+export function barLabelBox(centreX: number, chartWidth: number, boxWidth: number): { left: number; align: 'center' | 'flex-start' | 'flex-end' } {
+  const left = centreX - boxWidth / 2;
+  if (left < 0) return { left: 0, align: 'flex-start' };
+  if (left + boxWidth > chartWidth) return { left: Math.max(0, chartWidth - boxWidth), align: 'flex-end' };
+  return { left, align: 'center' };
+}
+
+/** F15: a count shows above a bar only when there was a session (zero bars stay a quiet stub). */
+export function showsBarCount(count: number): boolean {
+  return count > 0;
+}

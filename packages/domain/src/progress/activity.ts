@@ -35,12 +35,13 @@ export interface MonthCount {
 }
 
 /**
- * Up to this many days the bars are weeks; longer custom periods get one bar
- * per month. 20 weeks sits between the presets (`3 months` is 89–92 days,
- * `6 months` 181–184), so each preset keeps one bar unit whatever today's date
- * (review ben-bugs S1), and no week chart goes past 21 bars.
+ * Up to this many days the bars are weeks; longer periods get one bar per
+ * month (F15, Ben 13 Oct: 7/14 days daily, 30/60 days weekly, 3–12 months
+ * monthly). Nine weeks sits between the 60-day preset and `3 months` (89–92
+ * days), so each preset keeps one bar unit whatever today's date (review
+ * ben-bugs S1), and no week chart goes past 10 bars.
  */
-export const WEEK_BARS_MAX_DAYS = 20 * 7;
+export const WEEK_BARS_MAX_DAYS = 9 * 7;
 
 export interface SessionCounts {
   count: number;

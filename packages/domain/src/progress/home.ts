@@ -68,7 +68,8 @@ export interface DayCellView {
 }
 
 export type BarsView =
-  | { kind: 'days'; rows: { firstDate: string; cells: DayCellView[] }[]; words: string }
+  /** F15: `bars` is the same bar chart as weeks and months (one bar a day); `rows` is the AX list. */
+  | { kind: 'days'; rows: { firstDate: string; cells: DayCellView[] }[]; bars: { label: string; from: string; count: number; partial: boolean; listText: string }[]; max: number; words: string }
   | { kind: 'weeks'; bars: { label: string; from: string; count: number; partial: boolean; /** AX list row (`Week from 14 Sep · 2`, `12 Oct only · 1`). */ listText: string }[]; max: number; words: string }
   | { kind: 'months'; bars: { label: string; from: string; count: number; partial: boolean; listText: string }[]; max: number; words: string };
 
@@ -263,7 +264,15 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
       const chunk = cells.slice(i, i + 7);
       rows.push({ firstDate: dayMonth(chunk[0]?.date ?? window.from), cells: chunk });
     }
-    bars = { kind: 'days', rows, words: dayStripWords(counts.days, endsToday ? `Last ${label}` : rangeWords(window, input.today)) };
+    // 7 days: weekday letters; longer: the day of the month (letters repeat and read ambiguously).
+    const short = cells.length <= 7;
+    bars = {
+      kind: 'days',
+      rows,
+      bars: cells.map((c) => ({ label: short ? c.letter : String(Number(c.date.slice(8, 10))), from: c.date, count: c.count, partial: false, listText: `${c.dateText} · ${String(c.count)}` })),
+      max: Math.max(3, ...cells.map((c) => c.count)),
+      words: dayStripWords(counts.days, endsToday ? `Last ${label}` : rangeWords(window, input.today)),
+    };
   } else if (counts.months !== null) {
     const months = counts.months;
     const withYear = window.from.slice(0, 4) !== window.to.slice(0, 4);

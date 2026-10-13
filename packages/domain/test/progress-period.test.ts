@@ -178,10 +178,14 @@ describe('custom period', () => {
     expect(stepPeriodDate('2025-01-20', { unit: 'month', by: -1 }, bounds)).toBe('2025-01-06');
   });
 
-  it('up to 20 weeks: week bars; longer: one bar per month, partial months marked, bars still add up', () => {
+  it('up to 9 weeks: week bars; longer (3 months on, F15): one bar per month, partial months marked, bars still add up', () => {
     const quarter = countSessions(HISTORY, customProgressWindow(presetProgressRange('2026-10-12', '3m')));
-    expect(quarter.weeks?.length).toBe(14);
-    expect(quarter.months).toBeNull();
+    expect(quarter.weeks).toBeNull();
+    expect(quarter.months?.length).toBe(4);
+    expect(quarter.months?.reduce((a, m) => a + m.count, 0)).toBe(quarter.count);
+    const twoMonths = countSessions(HISTORY, customProgressWindow({ from: '2026-08-14', to: '2026-10-12' }));
+    expect(twoMonths.months).toBeNull();
+    expect(twoMonths.weeks?.length).toBeLessThanOrEqual(10);
     const half = countSessions(HISTORY, customProgressWindow(presetProgressRange('2026-10-12', '6m')));
     expect(half.weeks).toBeNull();
     expect(half.months?.length).toBe(7);
@@ -260,13 +264,13 @@ describe('a period’s dates carry the year when they need it (review ben-bugs B
 });
 
 describe('each preset keeps one bar unit whatever today’s date (review ben-bugs S1)', () => {
-  it('3 months is always weeks and 6 months and 1 year always months, every day of 2025–2026', () => {
+  it('3 months, 6 months and 1 year are always months (F15), every day of 2025–2026', () => {
     for (let today = '2025-01-01'; today <= '2026-12-31'; today = addDays(today, 1)) {
       const q = countSessions([], customProgressWindow(presetProgressRange(today, '3m')));
       const h = countSessions([], customProgressWindow(presetProgressRange(today, '6m')));
       const y = countSessions([], customProgressWindow(presetProgressRange(today, '1y')));
-      expect(q.weeks !== null && q.months === null, `3m on ${today}`).toBe(true);
-      expect(q.weeks?.length ?? 99).toBeLessThanOrEqual(14);
+      expect(q.months !== null && q.weeks === null, `3m on ${today}`).toBe(true);
+      expect(q.months?.length ?? 99).toBeLessThanOrEqual(4);
       expect(h.months !== null && h.weeks === null, `6m on ${today}`).toBe(true);
       expect(y.months !== null && y.weeks === null, `1y on ${today}`).toBe(true);
     }
