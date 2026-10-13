@@ -356,12 +356,15 @@ export function namesExercise(sourceName: string, c: MatchCandidate): boolean {
  * (they win over everything). A tie is never broken by candidate order.
  * `categoryMuscles` is the FitNotes category hint (`categoryHint`), null for
  * none: it only ever removes or ranks suggestions, never makes a match.
+ * `equipmentHint` (FitNotes 2's `Equipment` cell) likewise, read as an
+ * equipment word when the name itself names none.
  */
 export function matchName(
   name: string,
   candidates: readonly MatchCandidate[],
   aliases: ReadonlyMap<string, AliasTarget>,
   categoryMuscles: ReadonlySet<string> | null = null,
+  equipmentHint: string | null = null,
 ): NameMatch {
   const key = nameKey(name);
   const saved = aliases.get(key);
@@ -369,7 +372,8 @@ export function matchName(
   if (saved?.kind === 'exercise' && candidates.some((c) => c.exerciseId === saved.exerciseId)) {
     return { status: 'matched', exerciseId: saved.exerciseId, via: 'alias', skip: false };
   }
-  const named = equipmentInName(name);
+  // FitNotes 2's `Equipment` cell reads like an equipment word in the name, only when the name has none (a hint: it drops or ranks, never matches).
+  const named = equipmentInName(name) ?? (equipmentHint === null ? null : equipmentInName(equipmentHint));
   const assisted = named?.has('assisted_stack') === true;
   const smith = named?.has('smith') === true;
   const own = candidates.filter((c) => c.importMade !== true);

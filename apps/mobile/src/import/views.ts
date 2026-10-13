@@ -381,21 +381,25 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
     skipped.push({ key: 'duplicate', line: info(`${plural(e.dates, 'workout', 'workouts')} came in with your import on ${shortDateOf(e.startedAtUtc, e.tz, locale)}. They’ll be skipped.`) });
   }
   if (skippedExerciseSets(a) > 0) skipped.push({ key: 'exercise', line: info(`${plural(skippedExerciseSets(a), 'set', 'sets')} of exercises you chose to skip`) });
-  if (r.skipped_not_a_set > 0) skipped.push({ key: 'not_a_set', line: info(`${plural(r.skipped_not_a_set, 'row', 'rows')} not a set`) });
+  if (r.skipped_not_a_set > 0) {
+    // FitNotes 2's `NotStarted` sets: planned, never done.
+    skipped.push({ key: 'not_a_set', line: info(d.variant === 'D' ? `${plural(r.skipped_not_a_set, 'set', 'sets')} not done` : `${plural(r.skipped_not_a_set, 'row', 'rows')} not a set`) });
+  }
   if (r.skipped_value_to_check > 0) skipped.push({ key: 'value_to_check', line: info(`${plural(r.skipped_value_to_check, 'set', 'sets')} skipped as values to check`) });
 
   const kept: Line[] = [];
   if (a.comments > 0) kept.push(info(`${plural(a.comments, 'comment', 'comments')}, kept with each set as written`));
   else if (d.variant !== null && !variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
   // AI6: times with no zone are kept as written; a file with none is date only.
-  kept.push(info(a.workouts.some((w) => w.startLocal !== undefined && w.startLocal !== null) ? 'Times as in the file (no time zone)' : 'Date only (no times)'));
+  // FitNotes 2's workout export says when each workout started and ended (UTC): real times and duration.
+  kept.push(info(d.variant === 'D' ? 'Start and end times' : a.workouts.some((w) => w.startLocal !== undefined && w.startLocal !== null) ? 'Times as in the file (no time zone)' : 'Date only (no times)'));
   if (a.machines.length > 0) {
     // Assistance reads the number the other way round (more is easier): name those exercises (review r5 S3), each with what it imports as (review r6 N2).
     const assisted = a.machines.filter((m) => m.convention === 'assistance').map(assistedText);
     kept.push(info('Machines: by exercise', assisted.length === 0 ? undefined : `Read as assistance (more weight is easier): ${assisted.join(', ')}`));
   }
   if (a.barless.length > 0) kept.push(info(`Kettlebell and other no-bar weights imported as written (${a.barless.map((b) => b.name).join(', ')})`));
-  if (d.variant !== null) kept.push(info('All sets as working sets'));
+  if (d.variant !== null) kept.push(info(d.variant === 'D' ? 'Warm-ups as in the file' : 'All sets as working sets'));
 
   const effortReview =
     a.effort.candidates.length === 0
@@ -424,7 +428,7 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
           text: `Imported before on ${shortDateOf(before.startedAt.utc, before.startedAt.tz, locale)} · new dates only`,
         }
       : null,
-    detection: d.variant !== null ? `${appLabel(d.variant)} · ${unitsLabel(a.units)}` : d.layout?.kind === 'saved' ? `Layout: ${d.layout.profileName ?? ''} · offline` : 'Coach layout · checked by you',
+    detection: d.variant !== null ? `${appLabel(d.variant)} · ${a.unit?.kind === 'no_unit' && a.unit.answer === null ? 'weight unit not in the file' : unitsLabel(a.units)}` : d.layout?.kind === 'saved' ? `Layout: ${d.layout.profileName ?? ''} · offline` : 'Coach layout · checked by you',
     unitLine: d.layout === null || d.layout.unit === null ? null : `${d.layout.unit} · ${UNIT_SOURCE_WORD[d.layout.unitSource ?? 'answer']}`,
     saveLayout: d.layout?.save ? { on: d.layout.save.on, name: d.layout.save.name, why: 'Files with these columns import offline next time.' } : null,
     rowsLine: `${plural(a.rowCount, 'row', 'rows')}${range}`,
@@ -481,11 +485,21 @@ export function originalText(variant: FitNotesVariant | null, cells: readonly st
       if (cell('Weight (kg)') !== '') parts.push(`${cell('Weight (kg)')} kg`);
       if (cell('Weight (lbs)') !== '') parts.push(`${cell('Weight (lbs)')} lbs`);
       break;
+    case 'D':
+      // No unit in the file: the number as written.
+      if (cell('Weight') !== '') parts.push(cell('Weight'));
+      break;
   }
   if (cell('Reps') !== '') parts.push(`${cell('Reps')} reps`);
   if (cell('Distance') !== '') parts.push(`${cell('Distance')} ${cell('Distance Unit')}`.trim());
   if (cell('Time') !== '') parts.push(cell('Time'));
-  const comment = header.includes('Comment') ? cell('Comment') : header.includes('Notes') ? cell('Notes') : '';
+  if (variant === 'D') {
+    if (cell('IsWarmup') === 'true') parts.push('warm-up');
+    if (cell('RPE') !== '') parts.push(`RPE ${cell('RPE')}`);
+    if (cell('RIR') !== '') parts.push(`RIR ${cell('RIR')}`);
+    if (cell('Status') !== '' && cell('Status') !== 'Done') parts.push(cell('Status'));
+  }
+  const comment = header.includes('Comment') ? cell('Comment') : header.includes('Notes') ? cell('Notes') : header.includes('Note') ? cell('Note') : '';
   if (comment !== '') parts.push(`“${comment}”`);
   return parts.join(' · ');
 }
@@ -527,7 +541,9 @@ export function resultRowLine(variant: FitNotesVariant | null, r: ImportRow): st
       ? `imported${r.imported ? ` as ${r.imported.exerciseName} · ${mappedSetText(r.imported)}` : ''}${r.detail ? ` (${r.detail})` : ''}`
       : r.result === 'unreadable' || r.result === 'skipped_unsupported'
         ? (r.detail ?? SKIP_WORDS[r.result])
-        : SKIP_WORDS[r.result];
+        : r.result === 'skipped_not_a_set' && variant === 'D'
+          ? 'not done'
+          : SKIP_WORDS[r.result];
   if (variant === null) return `Row ${formatCount(r.row)} · ${originalText(null, r.cells)} — ${reason}`;
   if (r.cells.length !== FITNOTES_HEADERS[variant].length) return `Row ${formatCount(r.row)} · ${originalText(variant, r.cells)} — ${reason}`;
   const date = r.localDate ?? (r.cells[0] ?? '').trim();
@@ -1037,7 +1053,8 @@ export function resultsView(p: PastImport & { rows: readonly ImportRow[] }, loca
   ];
   const skipped = order.flatMap((result) => {
     const rows = p.rows.filter((r) => r.result === result);
-    return rows.length === 0 ? [] : [{ result, title: SKIP_TITLE[result](rows.length), lines: rows.map((r) => resultRowLine(p.job.variant, r)) }];
+    const title = result === 'skipped_not_a_set' && p.job.variant === 'D' ? plural(rows.length, 'set not done', 'sets not done') : SKIP_TITLE[result](rows.length);
+    return rows.length === 0 ? [] : [{ result, title, lines: rows.map((r) => resultRowLine(p.job.variant, r)) }];
   });
   const banner: Line =
     p.state === 'finished'

@@ -5,6 +5,7 @@ import {
   LoadSchema,
   OperationIdSchema,
   RecordMetaSchema,
+  RirSchema,
   RpeSchema,
   TimeZoneSchema,
   WeightUnitSchema,
@@ -33,8 +34,11 @@ export type LocalDate = z.infer<typeof LocalDateSchema>;
  * - `A2-kg` / `A2-lb`: as A1, with `Comment`.
  * - `B1` / `B2`: Android v24+, `Weight` + `Weight Unit`, without / with `Comment`.
  * - `C`: FitNotes 2 (iPhone), `Weight (kg)` + `Weight (lbs)`, `Notes`, `Kind`.
+ * - `D`: FitNotes 2 (iPhone) workout export (seen on Ben's file, 13 Oct 2026): one row per set with
+ *   `Name`, `StartTime`/`EndTime` (ISO, UTC), `Weight` with no unit, `Status` (`Done`/`NotStarted`),
+ *   `IsWarmup`, `RPE`, `RIR`, `Categories`, `Note`.
  */
-export const FitNotesVariantSchema = z.enum(['A1-kg', 'A1-lb', 'A2-kg', 'A2-lb', 'B1', 'B2', 'C']);
+export const FitNotesVariantSchema = z.enum(['A1-kg', 'A1-lb', 'A2-kg', 'A2-lb', 'B1', 'B2', 'C', 'D']);
 export type FitNotesVariant = z.infer<typeof FitNotesVariantSchema>;
 
 /**
@@ -268,8 +272,10 @@ export const ImportedSetSchema = z.object({
   exerciseOrder: z.int().min(0),
   /** Position of the set within its session exercise (row order). */
   setIndex: z.int().min(0),
-  /** From a confirmed set-type marker (layout imports); absent = a working set, as before. */
+  /** From a confirmed set-type marker (layout imports) or FitNotes 2's `IsWarmup`; absent = a working set, as before. */
   setType: SetTypeSchema.optional(),
+  /** FitNotes 2's `RIR` column, when it holds a whole number 0–10; absent = none. */
+  rir: RirSchema.optional(),
 });
 export type ImportedSet = z.infer<typeof ImportedSetSchema>;
 

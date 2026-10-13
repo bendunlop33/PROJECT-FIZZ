@@ -24,7 +24,7 @@ import type {
 import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
-import { FITNOTES_HEADERS, type FitNotesRow } from './fitnotes';
+import { categoryColumnOf } from './fitnotes';
 import { categoryHint } from './category';
 import { equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 import type { RememberedTotal } from './remembered';
@@ -363,8 +363,10 @@ export interface MappedSet {
   load: Load | null;
   reps: number;
   rpe: number | null;
-  /** From a confirmed marker (layout imports); absent: a working set. */
+  /** From a confirmed marker (layout imports) or FitNotes 2's `IsWarmup`; absent: a working set. */
   setType?: SetType;
+  /** FitNotes 2's `RIR`; absent: none. */
+  rir?: number;
 }
 
 export type RowFate =
@@ -391,8 +393,11 @@ export interface ImportAnalysis {
   /** `total` exercises that use a bar (barbell, EZ bar, trap bar). Bar-less ones (a kettlebell) aren't asked. */
   total: TotalQuestion | null;
   bodyweight: BodyweightQuestion[];
-  /** FitNotes 2 rows with both weight columns filled. */
-  unit: { rows: number; answer: WeightUnit | null } | null;
+  /**
+   * FitNotes 2: `both_columns`, rows with both weight columns filled (which did Ben enter?);
+   * `no_unit`, rows whose weight has no unit (the workout export). Asked once per file, nothing selected.
+   */
+  unit: { rows: number; answer: WeightUnit | null; kind: 'both_columns' | 'no_unit' } | null;
   effort: { mode: 'notes_only' | 'review'; candidates: EffortCandidate[] };
   /** Exercises whose convention follows the exercise (stack, plates added, assisted): shown as text, not asked. */
   machines: MachineExercise[];
@@ -620,13 +625,28 @@ function plus(a: number, b: number): number {
   return fromScaled(toScaled(a) + toScaled(b));
 }
 
-/** The weight the row entered: its own, or the column Ben chose when both are filled. Undefined = still to be answered. */
-function enteredWeight(row: FitNotesRow, answers: ImportAnswers): { value: number; unit: WeightUnit } | null | undefined {
+/**
+ * The weight the row entered: its own, the column Ben chose when both are
+ * filled, or a FitNotes 2 weight with no unit in the unit he gave the file.
+ * Undefined = still to be answered.
+ */
+function enteredWeight(row: SourceSetRow, answers: ImportAnswers): { value: number; unit: WeightUnit } | null | undefined {
   if (row.bothColumns) {
     if (answers.bothColumns === null) return undefined;
     return { value: row.bothColumns[answers.bothColumns], unit: answers.bothColumns };
   }
+  const unitless = row.unitless ?? null;
+  if (unitless !== null) return answers.bothColumns === null ? undefined : { value: unitless, unit: answers.bothColumns };
   return row.weight;
+}
+
+/** The value as written while the unit is still open (ranges and samples only; never stored): kg as a placeholder unit. */
+function writtenWeight(row: SourceSetRow, answers: ImportAnswers): { value: number; unit: WeightUnit } | null {
+  const w = enteredWeight(row, answers);
+  if (w !== undefined) return w;
+  if (row.bothColumns) return { value: row.bothColumns.kg, unit: 'kg' };
+  const unitless = row.unitless ?? null;
+  return unitless === null ? null : { value: unitless, unit: 'kg' };
 }
 
 /** A bar's weight per unit: the Olympic bar has the spec's editable default; EZ and trap bars have none until Ben enters one. */
@@ -667,8 +687,8 @@ function negative(value: number): string {
 
 /** The dumbbell question from the rows still to import (review r3 S1). */
 function perHandQuestion(
-  live: readonly FitNotesRow[],
-  resolved: (r: FitNotesRow) => ResolvedExercise | null,
+  live: readonly SourceSetRow[],
+  resolved: (r: SourceSetRow) => ResolvedExercise | null,
   answers: ImportAnswers,
   remembered: ReadonlyMap<string, PerHandReading>,
 ): PerHandQuestion | null {
@@ -678,7 +698,7 @@ function perHandQuestion(
   for (const r of live) {
     const ex = resolved(r);
     if (ex?.convention !== 'per_hand') continue;
-    const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    const w = writtenWeight(r, answers);
     if (w === null) continue;
     const key = nameKey(r.exercise);
     let m = members.get(key);
@@ -725,8 +745,8 @@ function perHandQuestion(
 
 /** The barbell question from the rows still to import (PM decision after review r7). */
 function totalQuestion(
-  live: readonly FitNotesRow[],
-  resolved: (r: FitNotesRow) => ResolvedExercise | null,
+  live: readonly SourceSetRow[],
+  resolved: (r: SourceSetRow) => ResolvedExercise | null,
   answers: ImportAnswers,
   remembered: ReadonlyMap<string, RememberedTotal>,
 ): TotalQuestion | null {
@@ -738,7 +758,7 @@ function totalQuestion(
     const ex = resolved(r);
     if (ex?.convention !== 'total' || ex.bar === 'none') continue;
     const entered = enteredWeight(r, answers);
-    const w = entered ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    const w = writtenWeight(r, answers);
     if (w === null) continue;
     const key = nameKey(r.exercise);
     let m = members.get(key);
@@ -764,7 +784,7 @@ function totalQuestion(
       members.set(key, m);
     }
     m.sets += 1;
-    for (const u of entered ? [entered.unit] : r.bothColumns ? (['kg', 'lb'] as const) : []) if (!m.units.includes(u)) m.units.push(u);
+    for (const u of entered ? [entered.unit] : r.bothColumns || (r.unitless ?? null) !== null ? (['kg', 'lb'] as const) : []) if (!m.units.includes(u)) m.units.push(u);
     const bar = m.bar === 'unknown' ? null : m.bar;
     // Each bar's weight per unit, and whether plates-only rows need it (review S1).
     if (bar !== null && entered) {
@@ -828,26 +848,27 @@ function totalQuestion(
  */
 const MATCHES = new WeakMap<ImportContext, Map<string, NameMatch>>();
 
-function matchIn(ctx: ImportContext, key: string, name: string, categories: readonly string[]): NameMatch {
+function matchIn(ctx: ImportContext, key: string, name: string, categories: readonly string[], equipment = ''): NameMatch {
   let kept = MATCHES.get(ctx);
   if (!kept) {
     kept = new Map();
     MATCHES.set(ctx, kept);
   }
   // The category hint is part of the match, so it is part of the kept key.
-  const keptKey = `${key}\u0000${categories.join('\u0000')}`;
+  const keptKey = `${key}\u0000${categories.join('\u0000')}\u0001${equipment}`;
   let m = kept.get(keptKey);
   if (!m) {
-    m = matchName(name, ctx.candidates, ctx.aliases, categoryHint(categories));
+    m = matchName(name, ctx.candidates, ctx.aliases, categoryHint(categories), equipment === '' ? null : equipment);
     kept.set(keptKey, m);
   }
   return m;
 }
 
-/** The FitNotes `Category` cell (third column in every layout), trimmed. */
-/** The row's `Category` cell, by the variant's header (review import-names N2); blank when the layout has none. */
-function categoryOf(r: FitNotesRow, at: number): string {
-  return at < 0 ? '' : (r.cells[at] ?? '').trim();
+/** The row's categories: its `Category` cell, by the variant's header (review import-names N2), or FitNotes 2's `Categories` list; none when the layout has none. */
+function categoriesOf(r: SourceSetRow, at: number): string[] {
+  if (r.categories !== undefined) return r.categories;
+  const c = at < 0 ? '' : (r.cells[at] ?? '').trim();
+  return c === '' ? [] : [c];
 }
 
 /**
@@ -863,13 +884,16 @@ export function analyseImport(input: { variant: FitNotesVariant | null; rows: re
   const dateSkipped = (date: string): boolean => ctx.importedDates.has(date) || (ctx.appDates.has(date) && answers.existingDates === 'skip');
   // Every category each name was filed under, first seen first: the matcher's ranking hint.
   const categories = new Map<string, string[]>();
-  const categoryAt = input.variant === null ? -1 : FITNOTES_HEADERS[input.variant].indexOf('Category');
+  const categoryAt = input.variant === null ? -1 : categoryColumnOf(input.variant);
+  // FitNotes 2's `Equipment` per name, first seen first: a hint read like an equipment word in the name.
+  const equipment = new Map<string, string>();
   for (const r of strength) {
     const key = nameKey(r.exercise);
     const list = categories.get(key) ?? [];
-    const c = categoryOf(r, categoryAt);
-    if (c !== '' && !list.includes(c)) list.push(c);
+    for (const c of categoriesOf(r, categoryAt)) if (!list.includes(c)) list.push(c);
     categories.set(key, list);
+    const e = r.equipment ?? '';
+    if (e !== '' && !equipment.has(key)) equipment.set(key, e);
   }
   const nameRows = new Map<string, NameRow>();
   for (const r of strength) {
@@ -877,7 +901,7 @@ export function analyseImport(input: { variant: FitNotesVariant | null; rows: re
     let n = nameRows.get(key);
     if (!n) {
       const filed = categories.get(key) ?? [];
-      const match = matchIn(ctx, key, r.exercise, filed);
+      const match = matchIn(ctx, key, r.exercise, filed, equipment.get(key) ?? '');
       const answer = answers.names[key] ?? null;
       // The bar Ben chose shapes the exercise `Add new` makes only when he answered it "plates only" (review r8 S2).
       const chosenBar = answers.totalOverrides[key] === 'plates_only' ? (answers.totalBars?.[key] ?? null) : null;
@@ -890,7 +914,7 @@ export function analyseImport(input: { variant: FitNotesVariant | null; rows: re
 
   // Rows whose load needs a convention answer: strength rows not skipped by date or by name.
   const live = strength.filter((r) => r.date !== null && !dateSkipped(r.date) && nameRows.get(nameKey(r.exercise))?.resolution.kind !== 'skip');
-  const resolved = (r: FitNotesRow): ResolvedExercise | null => {
+  const resolved = (r: SourceSetRow): ResolvedExercise | null => {
     const res = nameRows.get(nameKey(r.exercise))?.resolution;
     return res?.kind === 'exercise' ? res.exercise : null;
   };
@@ -899,9 +923,11 @@ export function analyseImport(input: { variant: FitNotesVariant | null; rows: re
   const valueChecks: ValueCheckQuestion[] = input.variant !== null ? [] : valueChecksOf(live).map((v) => ({ ...v, answer: answers.valueChecks?.[v.key] ?? null }));
   const checkOf = new Map(valueChecks.map((v) => [v.key, v]));
 
-  // FitNotes 2 rows with both columns: one question per file.
+  // FitNotes 2 rows with both columns, or with a weight and no unit: one question per file.
   const bothRows = live.filter((r) => r.bothColumns !== null).length;
-  const unit = bothRows > 0 ? { rows: bothRows, answer: answers.bothColumns } : null;
+  const unitlessRows = live.filter((r) => (r.unitless ?? null) !== null).length;
+  const unit: ImportAnalysis['unit'] =
+    bothRows > 0 ? { rows: bothRows, answer: answers.bothColumns, kind: 'both_columns' } : unitlessRows > 0 ? { rows: unitlessRows, answer: answers.bothColumns, kind: 'no_unit' } : null;
 
   // Group questions (dumbbells, barbell) and per-exercise bodyweight questions.
   const perHand = perHandQuestion(live, resolved, answers, ctx.perHandAnswers ?? new Map());
@@ -913,7 +939,7 @@ export function analyseImport(input: { variant: FitNotesVariant | null; rows: re
   // same way whatever was imported before (review r6.1 S2).
   const fileRange = new Map<string, { min: number; max: number }>();
   for (const r of strength) {
-    const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    const w = writtenWeight(r, answers);
     if (!w) continue;
     const key = nameKey(r.exercise);
     const range = fileRange.get(key) ?? { min: w.value, max: w.value };
@@ -974,7 +1000,8 @@ export function analyseImport(input: { variant: FitNotesVariant | null; rows: re
   // Fates.
   const fates: RowFate[] = rows.map((r): RowFate => {
     // A marker Ben said is `Not a set` (a rest-timer row): skipped and listed.
-    if (r.setType === 'not_a_set') return { result: 'skipped_not_a_set', detail: 'Not a set' };
+    // FitNotes 2's `NotStarted` sets (never done) come the same way, with their own reason.
+    if (r.setType === 'not_a_set') return { result: 'skipped_not_a_set', detail: r.problem ?? 'Not a set' };
     switch (r.rowClass) {
       case 'unreadable':
         return { result: 'unreadable', detail: r.problem ?? 'Couldn’t be read' };
@@ -1007,7 +1034,18 @@ export function analyseImport(input: { variant: FitNotesVariant | null; rows: re
     const setType: SetType | undefined = r.setType === 'warmup' ? 'warmup' : r.setType === 'drop' ? 'drop' : undefined;
     const set = (convention: LoadConvention, load: Load | null): RowFate => ({
       result: 'imported',
-      set: { exerciseId: ex.exerciseId, exerciseName: ex.name, laterality: ex.laterality, convention, unit: w?.unit ?? null, load, reps: r.reps ?? 0, rpe, ...(setType === undefined ? {} : { setType }) },
+      set: {
+        exerciseId: ex.exerciseId,
+        exerciseName: ex.name,
+        laterality: ex.laterality,
+        convention,
+        unit: w?.unit ?? null,
+        load,
+        reps: r.reps ?? 0,
+        rpe,
+        ...(setType === undefined ? {} : { setType }),
+        ...((r.rir ?? null) === null ? {} : { rir: r.rir ?? 0 }),
+      },
     });
     const value = w?.value ?? null;
     switch (ex.convention) {
@@ -1131,8 +1169,9 @@ export function analyseImport(input: { variant: FitNotesVariant | null; rows: re
   let kg = 0;
   let lb = 0;
   for (const r of rows) {
-    if (r.weight?.unit === 'kg') kg += 1;
-    else if (r.weight?.unit === 'lb') lb += 1;
+    const u = r.weight?.unit ?? ((r.unitless ?? null) !== null ? enteredWeight(r, answers)?.unit : undefined);
+    if (u === 'kg') kg += 1;
+    else if (u === 'lb') lb += 1;
   }
 
   return {
@@ -1244,6 +1283,7 @@ export function planImportRows(
       exerciseOrder: g.order,
       setIndex: g.sets,
       ...(f.set.setType === undefined ? {} : { setType: f.set.setType }),
+      ...(f.set.rir === undefined ? {} : { rir: f.set.rir }),
     };
     g.sets += 1;
     let sessionId = sessionIds.get(wk);
