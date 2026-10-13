@@ -405,3 +405,23 @@ describe('review B1, B3, S2, S3 through the services', () => {
     expect(applied.routine.exercises.find((e) => e.id === raise.slotKey)?.setTemplates.filter((t) => t.setType !== 'warmup')).toHaveLength(4);
   });
 });
+
+describe('Edit mode add with the Sets bar (TE-B15, exercise-library §10.2)', () => {
+  it('`[+]` to 4 then a row tap adds 4 working sets; the stepper reads 4 and steps from there; SETS counts them; Start creates 4', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    const page = await load(s, gymId, routineId);
+    const sheet = await s.overview.addCandidates({ target: targetOf(routineId), gymId, query: 'dumbbell bench', showAll: false });
+    const pick = sheet?.rows.find((r) => r.name === 'Dumbbell bench press');
+    expect((await s.overview.edit({ ...base(page, gymId, routineId, 'add-4'), edit: { kind: 'add', exerciseId: pick?.exerciseId ?? '', workingSets: 4 } })).ok).toBe(true);
+    const p2 = await load(s, gymId, routineId);
+    const row = rowNamed(p2, 'Dumbbell bench press');
+    expect(row).toMatchObject({ marker: { kind: 'added' }, editRow: { workingSets: 4 } });
+    expect(row.editRow.setsDown?.workingSets).toBe(3);
+    expect(p2.view.workingSets).toBe(page.view.workingSets + 4);
+    const r = await startFromOverview({ start: (q) => s.overview.start(q), reload: () => s.overview.load({ target: targetOf(routineId), gymId }) }, { page: p2, opId: 'start-4', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (r.kind !== 'started') throw new Error(r.kind);
+    sameAsStart(p2, r.outcome.aggregate);
+    expect(model.requests).toHaveLength(0);
+  });
+});

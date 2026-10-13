@@ -17,23 +17,26 @@ export interface DevicePrefs {
   alertsAsk: AlertsAsk;
   /** The workout screen's view (active-workout §4.5): Table by default; Ben's choice sticks on this phone. */
   workoutView: 'table' | 'focus';
+  /** The Library tab's last segment (exercise-library EL10): a UI preference, not Your data, not backed up. */
+  librarySegment: 'exercises' | 'workouts';
 }
 
 export type AlertsAsk = 'undetermined' | 'later' | 'answered';
 
-export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table' };
+export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises' };
 
 export function parsePrefs(text: string | null): DevicePrefs {
   if (text === null) return DEFAULT_PREFS;
   try {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
-    const { themeDirection: dir, guideAnimations, alertsAsk, workoutView } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown };
+    const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown };
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
       guideAnimations: guideAnimations !== false,
       alertsAsk: alertsAsk === 'later' || alertsAsk === 'answered' ? alertsAsk : 'undetermined',
       workoutView: workoutView === 'focus' ? 'focus' : 'table',
+      librarySegment: librarySegment === 'workouts' ? 'workouts' : 'exercises',
     };
   } catch {
     return DEFAULT_PREFS;

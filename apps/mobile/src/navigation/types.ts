@@ -1,5 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { EquipmentKind, SetExclusion } from '@fizz/schemas';
+import type { EquipmentKind, RoutineExercise, SetExclusion } from '@fizz/schemas';
 
 import type { CoachEntry } from '../coach/coach-service';
 
@@ -57,7 +57,26 @@ export type ProgressStackParams = {
   ProgressExercises: undefined;
   /** Exercise detail inside the Progress tab (slice B, §2.7). */
   ProgressExercise: ExerciseDetailParams;
+  /** `Exercise info ›` on Progress exercise detail (exercise-library §9.7): the Library's Exercise detail, in this stack. */
+  ProgressExerciseInfo: ExerciseInfoParams;
 };
+
+/** The Library tab's stack (exercise-library §9, EL10). */
+export type LibraryStackParams = {
+  /** `segment`: open on it (the picker's `Edit workouts`); `toast`: back from the editor (`Saved Push A` [Undo]). */
+  LibraryHome: { segment?: LibrarySegment; toast?: LibraryToastParam } | undefined;
+  LibraryExercise: ExerciseInfoParams;
+};
+
+export type LibrarySegment = 'exercises' | 'workouts';
+
+/** Exercise detail (exercise-library §9.4). `readOnly`: opened from the editor's `⋯`; `Add to a workout` is hidden. */
+export interface ExerciseInfoParams {
+  exerciseId: string;
+  /** Shown in the header while loading. */
+  name?: string;
+  readOnly?: boolean;
+}
 
 /**
  * Exercise detail (progress.md §2.7). `sessionId`: open on the series with
@@ -87,6 +106,7 @@ export type TabParams = {
   /** `startEmpty`: `Empty workout` on the Workouts list, once per nonce (Today's own start, with its check-in gate). */
   /** `undoDraft`: a coach draft discarded from its overview (workout-builder §6.2): the toast's Undo restores it. */
   Today: { toast?: string; undoRoutine?: { id: string; version: number }; undoDraft?: { id: string; version: number }; startEmpty?: string } | undefined;
+  Library: NavigatorScreenParams<LibraryStackParams> | undefined;
   Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
 };
@@ -120,15 +140,24 @@ export type RootStackParams = {
    */
   /** Up next, a routine, or a session type picked from its history (session-picker §7). */
   WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string }; toast?: LibraryToastParam };
-  /** The Workouts library (routines.md §A2.1). `toast`: back from the editor (`Saved Push A` [Undo]). */
-  Workouts: { toast?: LibraryToastParam } | undefined;
   /**
    * The workout editor (§A2.3): a stored workout, or `New workout` (null).
    * `from`: where `Save` returns with its toast. `selectName`: a fresh copy
    * from `Duplicate` (the name is selected). `copyToast`: that copy's
    * `Saved Push A copy` [Undo] toast, handed back on `Cancel` (review S1).
    */
-  WorkoutEditor: { routineId: string | null; from: 'Workouts' | 'WorkoutOverview'; selectName?: boolean; copyToast?: LibraryToastParam };
+  /**
+   * `from: 'Library'`: Library › Workouts; `'ExerciseInfo'`: `Add to a
+   * workout` → `New workout` on Exercise detail (Save goes back there).
+   * `draft`: a new workout's starting exercises (that exercise with the
+   * sheet's shape); nothing is saved until `Save`.
+   * `saveAs`: the Save sheet's `Edit ›` (routines.md §A2.5, WL-A18): `draft`
+   * is the unsaved copy and `Save` creates the workout with the sheet's opId
+   * (`save-edit-handoff.ts` holds the request and takes the result back).
+   */
+  WorkoutEditor: { routineId: string | null; from: EditorFrom; selectName?: boolean; copyToast?: LibraryToastParam; draft?: { name: string; exercises: RoutineExercise[] }; saveAs?: string };
+  /** Exercise detail over the workout editor (`⋯` → `Exercise info`), read-only. */
+  ExerciseInfo: ExerciseInfoParams;
   ExercisePicker: { sessionId: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };
@@ -159,6 +188,12 @@ export type RootStackParams = {
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
 };
+
+/**
+ * Where the workout editor returns to. `SaveSheet`: the Save sheet's `Edit ›`
+ * (routines.md §A2.5): back to the screen under the sheet, which shows the result.
+ */
+export type EditorFrom = 'WorkoutOverview' | 'Library' | 'ExerciseInfo' | 'SaveSheet';
 
 /** A library toast handed back to the screen below (`key`: shown once). */
 export interface LibraryToastParam {

@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, TargetProvenance, WorkoutSet } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, PlannedSet, RepRange, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, TargetProvenance, WorkoutSet } from '@fizz/schemas';
 import { loadText, NBSP, repRangeText, targetShort } from '../display';
 import { loadDirection } from '../equipment';
 import { fitProvenance, startWarningNote } from '../target-provenance';
@@ -11,7 +11,7 @@ import type { SnapSetResult, SnapSlotResult } from './snap';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 import { repeatNoteText } from './snap-text';
 import { swapEquipmentId, type SwapPlan } from './swap-plan';
-import { addedSlotShape, shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
+import { addedSlotShape, resizeWorkingSets, shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
 
 /**
  * `Repeat last workout` / `Start from a past workout` (routines.md RT4, §2.4,
@@ -74,7 +74,8 @@ export interface RepeatInput {
    * on its default shape) and its place: `rank` is in the same order as the
    * source rows' `order`.
    */
-  added?: readonly { slotKey: string; rank: number; plan: SwapPlan }[];
+  /** `workingSets`: the count Ben chose when adding (exercise-library §10.2); absent = the plan's own. */
+  added?: readonly { slotKey: string; rank: number; plan: SwapPlan; workingSets?: number }[];
 }
 
 export interface RepeatNote {
@@ -278,10 +279,13 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     exercises.set(sp.exercise.id, sp.exercise);
     if (sp.pin !== null) knownEquipment.set(sp.pin.id, sp.pin);
     const plan = sp.plan ?? [];
-    const sources =
+    type Source = { setType: SetType; load: Load | null; reps: RepRange | null; durationS: number | null; from: { kind: 'rule'; planned: PlannedSet } | { kind: 'plain' } };
+    const sources = resizeWorkingSets<Source>(
       plan.length > 0
         ? plan.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS, from: { kind: 'rule' as const, planned: p.planned } }))
-        : addedSlotShape(sp.exercise, sp.pin?.kind ?? null).templates.map((t) => ({ setType: t.setType, load: null, reps: t.reps, durationS: t.durationS, from: { kind: 'plain' as const } }));
+        : addedSlotShape(sp.exercise, sp.pin?.kind ?? null).templates.map((t) => ({ setType: t.setType, load: null, reps: t.reps, durationS: t.durationS, from: { kind: 'plain' as const } })),
+      a.workingSets,
+    );
     const templates = shaped(
       a.slotKey,
       sources.map((x) => {

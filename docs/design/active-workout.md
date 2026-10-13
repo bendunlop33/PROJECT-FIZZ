@@ -672,7 +672,7 @@ Shown when the workout has no live sets: started with `Empty workout`, or every 
 │ [ 🎙 ] [        Add exercise         ] │
 └────────────────────────────────────────┘
 ```
-- `Add exercise` opens the exercise picker sheet (search field focused, recent exercises first). Choosing one calls `addExercise`, which adds the exercise with one empty working set and makes it active. The card then shows §2.1 with draft source `last_session` (`From 1 Oct`) or empty fields and the primary `Enter load` / `Enter reps`.
+- `Add exercise` opens the exercise picker sheet (search field focused, recent exercises first). Choosing one calls `addExercise`, which adds the exercise with **N pending working sets** (the picker's `Sets [−] 3 [+]` bar, default 3; revised 2026-10-12, was one empty working set; [exercise-library.md](exercise-library.md) §10.2) and makes it active. Targets come from its own history, else the fields are empty. The card then shows §2.1 with draft source `last_session` (`From 1 Oct`) or empty fields and the primary `Enter load` / `Enter reps`.
 - After that, `Add set` (exercise `⋯`, or `+ Add set` in Overview) adds the next set, copying the last set's values and rest. `+ Add exercise` sits at the end of the Overview list.
 - `Finish workout` stays in the `⋯` menu. Finishing an empty workout offers discard instead (§4.8).
 - Voice (when available): "add bench press" goes through the same `addExercise` service call.

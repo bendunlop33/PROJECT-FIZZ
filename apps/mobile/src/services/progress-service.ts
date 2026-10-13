@@ -336,6 +336,19 @@ export function createProgressService(deps: ProgressServiceDeps) {
       };
     },
 
+    /**
+     * What the Library reads from history (exercise-library §9): the same
+     * finished workouts Progress shows (one cache), gym names, today's local
+     * date and the ResumeBar. Local only.
+     */
+    async libraryHistory(): Promise<{ sessions: readonly ProgressSession[]; gymNames: Record<string, string>; today: string; resume: ResumeBar | null } | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const nowMs = toMs(deps.now().utc);
+      const [ctx, active] = await Promise.all([context(profile), repos().sessions.getActive(profile.id).catch(() => null)]);
+      return { sessions: ctx.sessions, gymNames: ctx.gymNames, today: localDateOf(nowMs, profile.timezone), resume: resumeBar(active, nowMs) };
+    },
+
     /** `buildCalendarMonth` (§6.2). `month` is `YYYY-MM`; default: this month. */
     async calendar(month?: string): Promise<{ view: CalendarMonthView; unreadable: number } | null> {
       const profile = await deps.profile();

@@ -39,6 +39,8 @@ import { MemoryScreen } from '../screens/profile/MemoryScreen';
 import { PlaybookScreen } from '../screens/profile/PlaybookScreen';
 import { PainFlagSheet } from '../screens/workout/PainFlagSheet';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
+import { ExerciseInfoScreen } from '../screens/library/ExerciseInfoScreen';
+import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
 import { ExercisesScreen } from '../screens/progress/ExercisesScreen';
 import { MusclesScreen } from '../screens/progress/MusclesScreen';
@@ -47,7 +49,6 @@ import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
 import { RecentlyDeletedScreen } from '../screens/repeat/RecentlyDeletedScreen';
 import { RepeatScreen } from '../screens/repeat/RepeatScreen';
 import { WorkoutEditorScreen } from '../screens/routines/WorkoutEditorScreen';
-import { WorkoutsScreen } from '../screens/routines/WorkoutsScreen';
 import { SetupScreen } from '../screens/setup/SetupScreen';
 import { TodayScreen } from '../screens/TodayScreen';
 import { CheckInScreen } from '../screens/workout/CheckInScreen';
@@ -62,7 +63,7 @@ import type { SetupStep } from '../services/setup';
 import { screenAnimation, useTheme } from '../theme';
 import { AppText, MessageScreen, PrimaryButton, type SymbolName } from '../ui';
 import { initialRootState } from './initial-state';
-import type { ImportQuestionKind, ProfileStackParams, ProgressStackParams, RootStackParams, TabParams } from './types';
+import type { ImportQuestionKind, LibraryStackParams, ProfileStackParams, ProgressStackParams, RootStackParams, TabParams } from './types';
 
 /**
  * How to is required on first open, not at launch (review S1): it keeps the
@@ -101,6 +102,7 @@ const RootStack = createNativeStackNavigator<RootStackParams>();
 const TabNav = createBottomTabNavigator<TabParams>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParams>();
 const ProgressStack = createNativeStackNavigator<ProgressStackParams>();
+const LibraryStack = createNativeStackNavigator<LibraryStackParams>();
 
 function useStackOptions() {
   const theme = useTheme();
@@ -130,7 +132,19 @@ function ProgressNavigator() {
       <ProgressStack.Screen name="ProgressMuscles" component={MusclesScreen} options={{ title: 'Muscles' }} />
       <ProgressStack.Screen name="ProgressExercises" component={ExercisesScreen} options={{ title: 'Exercises' }} />
       <ProgressStack.Screen name="ProgressExercise" component={ExerciseDetailScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
+      <ProgressStack.Screen name="ProgressExerciseInfo" component={ExerciseInfoScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
     </ProgressStack.Navigator>
+  );
+}
+
+/** The Library tab (exercise-library §9, EL10): Exercises · Workouts, and Exercise detail pushed in the same stack. */
+function LibraryNavigator() {
+  const options = useStackOptions();
+  return (
+    <LibraryStack.Navigator screenOptions={options}>
+      <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} options={{ headerShown: false }} />
+      <LibraryStack.Screen name="LibraryExercise" component={ExerciseInfoScreen} options={({ route }) => ({ title: route.params.name ?? '', headerBackTitle: 'Library' })} />
+    </LibraryStack.Navigator>
   );
 }
 
@@ -184,6 +198,7 @@ const IMPORT_QUESTION_TITLES: Record<ImportQuestionKind, string> = {
 
 const TAB_ICONS: Record<keyof TabParams, [SymbolName, SymbolName]> = {
   Today: ['sun.max', 'sun.max.fill'],
+  Library: ['dumbbell', 'dumbbell.fill'],
   Progress: ['chart.bar', 'chart.bar.fill'],
   Profile: ['person.crop.circle', 'person.crop.circle.fill'],
 };
@@ -221,6 +236,7 @@ function TabsNavigator() {
       }
     >
       <TabNav.Screen name="Today" component={TodayScreen} />
+      <TabNav.Screen name="Library" component={LibraryNavigator} />
       <TabNav.Screen name="Progress" component={ProgressNavigator} />
       <TabNav.Screen name="Profile" component={ProfileNavigator} />
     </TabNav.Navigator>
@@ -304,7 +320,6 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="RecentlyDeleted" component={RecentlyDeletedScreen} options={{ headerShown: true, title: 'Recently deleted' }} />
               <RootStack.Screen name="Repeat" component={RepeatScreen} options={{ headerShown: true, title: 'Repeat' }} />
               {/* The Workouts library (routines.md §A2.1); its editor is a sheet over the list or the overview (Cancel / Save). */}
-              <RootStack.Screen name="Workouts" component={WorkoutsScreen} options={{ headerShown: true, title: 'Workouts', ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
               <RootStack.Screen
                 name="WorkoutEditor"
                 component={WorkoutEditorScreen}
@@ -313,6 +328,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               {/* A side door, not a step: swipe down closes it and nothing in the workout waits for it (coach-sheet §1). */}
               {/* Exercise detail over a past workout's Summary or the Workout overview (`History`); swipe down or Done closes it. */}
               <RootStack.Screen name="ExerciseProgress" component={ExerciseDetailScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />
+              {/* The editor's `⋯` → `Exercise info` (read-only): over the editor; swipe down or back closes it. */}
+              <RootStack.Screen name="ExerciseInfo" component={ExerciseInfoScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />
               <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>
           ) : (

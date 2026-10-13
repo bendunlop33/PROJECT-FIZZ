@@ -52,7 +52,7 @@ Regions, top to bottom:
 5. **This week.** `2 of your 4 days done` (actual workouts against `Days a week you lift`, Ben's aim; `2 workouts this week` when it isn't set), plus one pinned lift line. The data is static, with no chart animation. (Revised 9 Oct evening, D19; was `2 of 4 planned sessions done`.)
 6. **Then.** One row, `Then: Pull A · Legs A ›`: the next two routines after Up next, no dates. It opens the weekly plan. (Revised 9 Oct evening, D19; was `Next: Pull A · Sat 10 Oct`.) If the last finished workout has unapplied coach proposals for the next session, a second line `2 coach suggestions to review ›` opens that summary's `Next time` section ([coach-adjustments.md](coach-adjustments.md) §4.6).
 7. **Ask pill.** The `TalkButton` pill, floating bottom-trailing above the tab bar. Content has a bottom inset so the pill never covers the Start button.
-8. **Tab bar.** Today · Progress · Profile.
+8. **Tab bar.** Today · Progress · Profile. **Proposed 2026-10-12 (exercise-library.md EL10, Ben to confirm):** Today · Library · Progress · Profile. Library holds `Exercises` and `Workouts`; Today's `Workouts` text link then retires, and nothing is added to Today.
 
 ### Wireframe: up next (normal; revised 9 Oct evening for the rotation)
 

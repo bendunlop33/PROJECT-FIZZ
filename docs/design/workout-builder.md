@@ -1,5 +1,7 @@
 # Workout builder (build a workout from the coach)
 
+> **Revision 2026-10-12 (sets when saving a draft; Ben on build 126).** To set the number of sets himself before saving a coach draft, Ben taps `Save to Workouts`, then `Edit ›` on the Save sheet's summary line. That opens the Workouts editor on the unsaved copy with `Sets [−] N [+]` per exercise ([routines.md](routines.md) §A2.5, [exercise-library.md](exercise-library.md) §10.4). The editor's Save creates the workout (one write, one Undo); Cancel returns to the sheet.
+
 > **v1.0, 12 Oct 2026: rebuilt on what main now has.** Ben asked: does the chat link into the app, so he can build workouts from chat ("build me a 45-minute push session for this gym")? Yes. The v0.1 text (8–9 Oct) designed its own Build sheet, review screen, version diff, pre-start re-check and save sheet. Main now has the same pieces as shared parts, so the builder **reuses** them:
 > - **One pre-workout page.** A coach draft opens on the **Workout overview**, the same page that library workouts and picker sessions use ([workout-overview.md](workout-overview.md), [overview-today-edits.md](overview-today-edits.md) §11, [session-picker.md](session-picker.md)). The v0.1 review screen (§3.3), diff screen (§3.4) and composer (§3.5) are retired.
 > - **One Start.** `Start workout` is the overview's fenced Start (ADR 0021, OV3: preview == start). There is no separate `startWorkoutFromDraft` or pre-start re-check (v0.1 §5.5): the preview key and write fence do that job.

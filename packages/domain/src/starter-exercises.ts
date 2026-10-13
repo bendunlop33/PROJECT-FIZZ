@@ -1,5 +1,6 @@
 import type { Exercise } from '@fizz/schemas';
 import { catalogueExerciseId } from './catalogue-id';
+import { searchExercises } from './exercise-search';
 import { deriveId } from './stable';
 
 /**
@@ -98,17 +99,6 @@ export const LEGACY_STARTER_IDS: readonly string[] = [
   'machine-leg-curl', 'machine-leg-press', 'assisted-pull-up', 'assisted-dip', 'bodyweight-pull-up', 'bodyweight-dip', 'bodyweight-push-up',
 ].map((key) => deriveId(`catalogue:${key}`));
 
-/** Simple, forgiving search: every word of the query must start a word of the name. */
-export function searchExercises<T extends Pick<Exercise, 'name'>>(list: readonly T[], query: string): T[] {
-  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w !== '');
-  const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name));
-  if (words.length === 0) return sorted;
-  return sorted.filter((e) => {
-    const nameWords = e.name.toLowerCase().split(/[^a-z0-9]+/);
-    return words.every((w) => nameWords.some((n) => n.startsWith(w)));
-  });
-}
-
 /** The common lifts (the starter list), in the order the picker shows them first. */
 export const COMMON_EXERCISE_IDS: readonly string[] = S.map((s) => starterExerciseId(s.key));
 
@@ -120,11 +110,12 @@ export interface PickerSection<T> {
 /**
  * The exercise picker's list (audit F4): with no query, recently done
  * exercises, then the common lifts, then everything else A–Z, each shown
- * once. With a query, every match A–Z. Pure.
+ * once. With a query, every match, best first (EL1: name, aliases, one
+ * typo per long word), then A–Z. Pure.
  */
-export function pickerSections<T extends { exercise: Pick<Exercise, 'id' | 'name'> }>(list: readonly T[], query: string, recentIds: readonly string[]): PickerSection<T>[] {
+export function pickerSections<T extends { exercise: Pick<Exercise, 'id' | 'name'>; aliases?: readonly string[] }>(list: readonly T[], query: string, recentIds: readonly string[]): PickerSection<T>[] {
   const matched = searchExercises(
-    list.map((p) => ({ name: p.exercise.name, p })),
+    list.map((p) => ({ name: p.exercise.name, aliases: p.aliases ?? [], p })),
     query,
   ).map((x) => x.p);
   if (query.trim() !== '') return matched.length === 0 ? [] : [{ title: 'Matches', items: matched }];

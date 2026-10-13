@@ -45,6 +45,7 @@ import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createGymServices } from './gym-services';
+import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
 import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
@@ -473,6 +474,16 @@ export function createAppServices(deps: AppServicesDeps) {
     return substitutionsByKey.get(catalogueKey) ?? [];
   };
 
+  /** A catalogue entry's other names (Coaching knowledge), for search (exercise-library EL1). */
+  let aliasesByKey: Map<string, readonly string[]> | null = null;
+  const catalogueAliases = (catalogueKey: string): readonly string[] => {
+    if (aliasesByKey === null) {
+      aliasesByKey = new Map();
+      for (const entry of deps.catalogue ? deps.catalogue() : bundledCatalogue().catalogue.entries) aliasesByKey.set(entry.key, entry.aliases);
+    }
+    return aliasesByKey.get(catalogueKey) ?? [];
+  };
+
   const loop = createWorkoutServices({
     repos,
     store: () => deps.manager.store,
@@ -485,6 +496,7 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     catalogueExercises,
     catalogueSubstitutions,
+    catalogueAliases,
     // `Ask coach` on How long? (fit-to-time §5): the coach's one request; `coach` is defined below and only read when Ben asks.
     coachFit: (context, signal) => coach.fitToday(context, signal),
   });
@@ -736,6 +748,30 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.idle === undefined ? {} : { idle: deps.idle }),
   });
 
+  /** Library › Exercises (exercise-library §9): browse, detail, Add to a workout. Local only. */
+  const library = createLibraryService({
+    repos,
+    now: deps.now,
+    newId: deps.newId,
+    profile: getProfile,
+    currentGym: () => yourData.currentGym(),
+    catalogueExercises,
+    catalogueAliases,
+    history: () => progress.libraryHistory(),
+    progressDetail: async (exerciseId) => (await progress.exerciseDetail({ exerciseId }))?.view ?? null,
+    addToSession: (req) => loop.workout.addExercise(req),
+    dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
+    updateRoutine: async (req) => {
+      const r = await loop.routines.update(req);
+      return r.ok ? { ok: true, routine: r.routine, actionId: r.actionId } : { ok: false, reason: r.reason, message: r.message };
+    },
+    revertRoutine: async (req) => {
+      const r = await loop.routines.revert(req);
+      return r.ok ? { ok: true } : { ok: false, message: r.message };
+    },
+    routineRows: () => loop.routines.list(),
+  });
+
   /** Deleting past workouts: delete, Undo, Recently deleted, Restore, purge (delete-workouts.md). */
   const history = createHistoryServices({
     repos,
@@ -762,6 +798,7 @@ export function createAppServices(deps: AppServicesDeps) {
 
   return {
     ...loop,
+    library,
     history,
     overview,
     routines,

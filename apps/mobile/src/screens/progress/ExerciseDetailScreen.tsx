@@ -165,6 +165,22 @@ export function ExerciseDetailScreen() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'] + 56, gap: theme.space['5'] }}
       >
+        {/* `Exercise info ›` (progress.md region 1, exercise-library §9.7): the Library's detail, in this stack. */}
+        {route.name === 'ProgressExercise' ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Exercise info"
+            onPress={() => {
+              navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressExerciseInfo', params: { exerciseId, name: view.title } } });
+            }}
+            style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], opacity: pressed ? 0.7 : 1 })}
+          >
+            <AppText variant="callout" color="accent">
+              Exercise info
+            </AppText>
+            <Icon name="chevron.right" color="accent" size={12} />
+          </Pressable>
+        ) : null}
         {view.pain ? (
           <Pressable
             accessibilityRole="button"

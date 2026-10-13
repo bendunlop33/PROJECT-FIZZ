@@ -1,6 +1,7 @@
 import type { EquipmentInstance, Exercise, Load, LoadConvention, Measurement, RepRange, RestSetting, RoutineExercise, SetTemplate, SetType, WeightUnit } from '@fizz/schemas';
 
 import { formatDuration, formatNumber, loadText, NBSP, repRangeText, SET_TYPE_BADGE, SET_TYPE_WORD } from '../display';
+import { builtInRepRange, ruleCategory } from '../default-rule';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
 import { equipmentForExercise } from '../exercise-equipment';
 import { resolveRestPreset } from '../rest';
@@ -37,20 +38,218 @@ function template(newId: () => string, setType: SetType, measurement: Measuremen
   };
 }
 
-/** `＋ Add exercise`: three working sets, `Auto × 8–10` (or `0:45` for a timed one), at the end. */
-export function addExercise(list: EditorList, exercise: { id: string; measurement: Measurement }, newId: () => string): RoutineExercise[] {
+/**
+ * `＋ Add exercise`: at the end, with `shape` (the add sheet's `Sets` count
+ * and the §10.1 defaults, `defaultSlotShape`); without one, three working
+ * sets `Auto × 8–10` (or `0:45` for a timed one). Loads are `Auto`.
+ */
+export function addExercise(list: EditorList, exercise: { id: string; measurement: Measurement }, newId: () => string, shape?: SlotShapeInput): RoutineExercise[] {
+  const id = newId();
+  const count = shape === undefined ? 3 : clampCount(shape.workingSets, SLOT_SET_LIMITS.working.min, SLOT_SET_LIMITS.working.max);
+  const warmups = shape === undefined ? 0 : clampCount(shape.warmups, SLOT_SET_LIMITS.warmups.min, SLOT_SET_LIMITS.warmups.max);
+  const timed = exercise.measurement === 'duration';
+  const working = (): SetTemplate => {
+    const t = template(newId, 'working', exercise.measurement);
+    if (shape === undefined) return t;
+    return { ...t, targetReps: timed || shape.reps === null ? t.targetReps : { ...shape.reps }, targetDurationS: timed ? (shape.durationS ?? DEFAULT_WORK_S) : null, targetRpe: shape.targetRpe, targetRir: shape.targetRir ?? null };
+  };
   const slot: RoutineExercise = {
-    id: newId(),
+    id,
     exerciseId: exercise.id,
     equipmentId: null,
     order: list.length,
     supersetGroup: null,
-    setTemplates: [0, 1, 2].map(() => template(newId, 'working', exercise.measurement)),
+    setTemplates: [...Array.from({ length: warmups }, () => template(newId, 'warmup', exercise.measurement)), ...Array.from({ length: count }, working)],
     restBySetType: {},
     transitionRestS: null,
     progressionRuleId: null,
   };
   return normaliseRoutineExercises([...list, slot]);
+}
+
+// ---------------------------------------------------------------------------
+// Set shape (exercise-library §10, routines WL11): `Sets [−] 3 [+]`, `Warm-ups`, `Reps`, `Target RPE`
+
+/** Stepper limits (§10.1). A slot already above the working max keeps its count; `+` is then off. */
+export const SLOT_SET_LIMITS = { working: { min: 1, max: 10 }, warmups: { min: 0, max: 5 } } as const;
+/** The default number of working sets when an exercise is added anywhere (§10.1). */
+export const DEFAULT_WORKING_SETS_ON_ADD = 3;
+
+const clampCount = (n: number, min: number, max: number): number => Math.max(min, Math.min(max, Math.round(n)));
+
+/** What a slot is created with: the add sheet's count and the §10.1 defaults. */
+export interface SlotShapeInput {
+  workingSets: number;
+  warmups: number;
+  /** Null for a timed exercise (it has `durationS`), or to keep the default. */
+  reps: RepRange | null;
+  durationS: number | null;
+  targetRpe: number | null;
+  targetRir?: number | null;
+}
+
+/**
+ * The §10.1 default shape for an exercise: 3 working sets, no warm-ups, the
+ * built-in rule's rep range for it (else 8–12), `0:45` for a timed one, no
+ * target RPE. `workingSets` overrides the count (the sheet's bar).
+ */
+export function defaultSlotShape(
+  exercise: Pick<Exercise, 'movementPattern' | 'measurement' | 'defaultLoadConvention' | 'compatibleEquipment'> & Partial<Pick<Exercise, 'mechanic' | 'family'>>,
+  ctx: { equipmentKind?: EquipmentInstance['kind'] | null; workingSets?: number } = {},
+): SlotShapeInput {
+  const timed = exercise.measurement === 'duration';
+  const reps = timed ? null : builtInRepRange(ruleCategory(exercise, ctx.equipmentKind ?? exercise.compatibleEquipment[0] ?? null, exercise.defaultLoadConvention));
+  return {
+    workingSets: clampCount(ctx.workingSets ?? DEFAULT_WORKING_SETS_ON_ADD, SLOT_SET_LIMITS.working.min, SLOT_SET_LIMITS.working.max),
+    warmups: 0,
+    reps,
+    durationS: timed ? DEFAULT_WORK_S : null,
+    targetRpe: null,
+  };
+}
+
+/** What the card's `SetShapeControl` shows (§10.5). */
+export interface SlotShapeView {
+  /** Every non-warm-up set. */
+  workingSets: number;
+  warmups: number;
+  reps: RepRange | 'mixed' | null;
+  durationS: number | 'mixed' | null;
+  targetRpe: number | 'mixed' | null;
+  targetRir: number | 'mixed' | null;
+  /** Top / Back-off / Drop sets, a Fixed load, a set's own rest, or working sets that differ: `Each set ▾` opens by default. */
+  hasSpecialSets: boolean;
+  /** Stepper targets; null at a limit (the button is dimmed). */
+  setsDown: number | null;
+  setsUp: number | null;
+  warmupsDown: number | null;
+  warmupsUp: number | null;
+}
+
+const isWarmup = (t: Pick<SetTemplate, 'setType'>): boolean => t.setType === 'warmup';
+
+/** The sets `Reps` and `Target RPE` read and write: the plain working sets, else (a top/back-off slot) every non-warm-up set. */
+function shapeTargets(slot: Pick<RoutineExercise, 'setTemplates'>): SetTemplate[] {
+  const plain = slot.setTemplates.filter((t) => t.setType === 'working');
+  return plain.length > 0 ? plain : slot.setTemplates.filter((t) => !isWarmup(t));
+}
+
+function common<T>(values: readonly T[], same: (a: T, b: T) => boolean): T | 'mixed' | null {
+  const first = values[0];
+  if (first === undefined) return null;
+  return values.every((v) => same(v, first)) ? first : 'mixed';
+}
+
+const sameRange = (a: RepRange | null, b: RepRange | null): boolean => (a === null || b === null ? a === b : a.min === b.min && a.max === b.max);
+
+export function slotShapeOf(slot: Pick<RoutineExercise, 'setTemplates'>): SlotShapeView {
+  const working = slot.setTemplates.filter((t) => !isWarmup(t));
+  const warmups = slot.setTemplates.length - working.length;
+  const targets = shapeTargets(slot);
+  const nonWarm = working;
+  const reps = common(nonWarm.map((t) => t.targetReps), sameRange);
+  const durationS = common(nonWarm.map((t) => t.targetDurationS), (a, b) => a === b);
+  const targetRpe = common(targets.map((t) => t.targetRpe), (a, b) => a === b);
+  const targetRir = common(targets.map((t) => t.targetRir), (a, b) => a === b);
+  const special =
+    working.some((t) => t.setType !== 'working') ||
+    slot.setTemplates.some((t) => t.targetLoad !== null || t.restOverrideS !== null) ||
+    reps === 'mixed' ||
+    durationS === 'mixed' ||
+    targetRpe === 'mixed' ||
+    targetRir === 'mixed';
+  const total = slot.setTemplates.length;
+  const wMax = Math.max(SLOT_SET_LIMITS.working.max, working.length);
+  return {
+    workingSets: working.length,
+    warmups,
+    reps: reps === 'mixed' ? 'mixed' : reps === null ? null : { ...reps },
+    durationS,
+    targetRpe,
+    targetRir,
+    hasSpecialSets: special,
+    setsDown: working.length > SLOT_SET_LIMITS.working.min ? working.length - 1 : null,
+    setsUp: working.length < wMax && working.length < SLOT_SET_LIMITS.working.max && total < ROUTINE_MAX_SETS ? working.length + 1 : null,
+    warmupsDown: warmups > SLOT_SET_LIMITS.warmups.min ? warmups - 1 : null,
+    warmupsUp: warmups < SLOT_SET_LIMITS.warmups.max && total < ROUTINE_MAX_SETS ? warmups + 1 : null,
+  };
+}
+
+/**
+ * `Sets [−] N [+]` (§10.5): `+` appends copies of the last non-warm-up set
+ * (its type, reps, load mode and RPE; not its own rest); `−` removes
+ * non-warm-up sets from the end. Clamped to 1–10 (a slot already above 10
+ * may only go down) and the slot's 30-set cap. Never reorders other sets.
+ */
+export function setWorkingSetCount(list: EditorList, slotId: string, n: number, newId: () => string): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const working = e.setTemplates.filter((t) => !isWarmup(t));
+    const max = Math.max(SLOT_SET_LIMITS.working.max, working.length);
+    let want = clampCount(n, SLOT_SET_LIMITS.working.min, max);
+    if (want > working.length) want = Math.min(want, SLOT_SET_LIMITS.working.max, working.length + (ROUTINE_MAX_SETS - e.setTemplates.length));
+    if (want === working.length) return e;
+    if (want < working.length) {
+      const drop = new Set(working.slice(want).map((t) => t.id));
+      return { ...e, setTemplates: e.setTemplates.filter((t) => !drop.has(t.id)) };
+    }
+    const last = working[working.length - 1];
+    const extra = Array.from({ length: want - working.length }, (): SetTemplate => (last === undefined ? template(newId, 'working', 'reps') : { ...last, id: newId(), restOverrideS: null }));
+    return { ...e, setTemplates: [...e.setTemplates, ...extra] };
+  });
+}
+
+/**
+ * `Warm-ups [−] N [+]` (§10.5): `+` inserts before the first non-warm-up set,
+ * copying the last warm-up (else `Auto × 5`); `−` removes the last warm-up.
+ * Clamped to 0–5 and the slot's 30-set cap.
+ */
+export function setWarmupCount(list: EditorList, slotId: string, n: number, measurement: Measurement, newId: () => string): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const warm = e.setTemplates.filter(isWarmup);
+    let want = clampCount(n, SLOT_SET_LIMITS.warmups.min, SLOT_SET_LIMITS.warmups.max);
+    if (want > warm.length) want = Math.min(want, warm.length + (ROUTINE_MAX_SETS - e.setTemplates.length));
+    if (want === warm.length) return e;
+    if (want < warm.length) {
+      const drop = new Set(warm.slice(want).map((t) => t.id));
+      return { ...e, setTemplates: e.setTemplates.filter((t) => !drop.has(t.id)) };
+    }
+    const like = warm[warm.length - 1];
+    const extra = Array.from({ length: want - warm.length }, (): SetTemplate => (like === undefined ? template(newId, 'warmup', measurement) : { ...like, id: newId(), restOverrideS: null }));
+    const at = e.setTemplates.findIndex((t) => !isWarmup(t));
+    const sets = at < 0 ? [...e.setTemplates, ...extra] : [...e.setTemplates.slice(0, at), ...extra, ...e.setTemplates.slice(at)];
+    return { ...e, setTemplates: sets };
+  });
+}
+
+/** `Reps` (or `Work time`) for the slot (§10.5): every plain working set (a top/back-off slot: every non-warm-up set). Loads kept. */
+export function setSlotReps(list: EditorList, slotId: string, value: { reps: RepRange } | { durationS: number }): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const ids = new Set(shapeTargets(e).map((t) => t.id));
+    return {
+      ...e,
+      setTemplates: e.setTemplates.map((t) => (!ids.has(t.id) ? t : 'reps' in value ? { ...t, targetReps: { ...value.reps }, targetDurationS: null } : { ...t, targetReps: null, targetDurationS: Math.max(1, Math.round(value.durationS)) })),
+    };
+  });
+}
+
+/** `Target RPE` / `Target RIR` (§10.5, EffortSheet): every plain working set; null = `None`. Writes one scale and clears the other. */
+export function setSlotTargetRpe(list: EditorList, slotId: string, value: number | null, scale: 'rpe' | 'rir' = 'rpe'): RoutineExercise[] {
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const ids = new Set(shapeTargets(e).map((t) => t.id));
+    return { ...e, setTemplates: e.setTemplates.map((t) => (!ids.has(t.id) ? t : scale === 'rpe' ? { ...t, targetRpe: value, targetRir: null } : { ...t, targetRir: value, targetRpe: null })) };
+  });
+}
+
+/** The EffortSheet's choices (§9.91): `None 6 7 7.5 8 8.5 9 9.5 10`, RIR `None 0 1 2 3 4`. */
+export const EFFORT_CHOICES: { rpe: readonly number[]; rir: readonly number[] } = { rpe: [6, 7, 7.5, 8, 8.5, 9, 9.5, 10], rir: [0, 1, 2, 3, 4] };
+
+/** Working sets across the workout (the summary line's `16 sets`): every non-warm-up set. */
+export function workingSetTotal(list: EditorList): number {
+  return list.reduce((n, e) => n + e.setTemplates.filter((t) => !isWarmup(t)).length, 0);
 }
 
 /** `Remove` (exercise `⋯`). */
@@ -252,9 +451,9 @@ export function editorSetRows(slot: Pick<RoutineExercise, 'setTemplates' | 'rest
   return rows;
 }
 
-/** `5 exercises · ≈ 55 min at Main gym` (live, under the name). */
-export function editorSummaryLine(exercises: number, minutes: number | null, gymName: string | null): string {
-  const n = `${String(exercises)} ${exercises === 1 ? 'exercise' : 'exercises'}`;
+/** `5 exercises · 16 sets · ≈ 55 min at Main gym` (live, under the name; sets = working sets, WL11). */
+export function editorSummaryLine(exercises: number, minutes: number | null, gymName: string | null, workingSets?: number): string {
+  const n = `${String(exercises)} ${exercises === 1 ? 'exercise' : 'exercises'}${workingSets === undefined ? '' : ` · ${String(workingSets)} ${workingSets === 1 ? 'set' : 'sets'}`}`;
   if (minutes === null) return n;
   return `${n} · ≈ ${String(minutes)} min${gymName === null ? '' : ` at ${gymName}`}`;
 }

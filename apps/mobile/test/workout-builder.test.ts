@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
-import { catalogueExerciseId, dayMonthText, loadCell, type OverviewRow } from '@fizz/domain';
+import { catalogueExerciseId, dayMonthText, loadCell, setWorkingSetCount, type OverviewRow } from '@fizz/domain';
 import type { TextCoachState } from '@fizz/providers';
 import type { SessionAggregate } from '@fizz/schemas';
 
@@ -331,6 +331,27 @@ describe('Save to Workouts is the library’s save (WB15, BD12)', () => {
     // Undo (toast): the workout is tombstoned, and the draft is back in `FROM COACH`.
     expect((await s.routines.remove({ routineId: a.routine.id, expectedVersion: a.routine.version, opId: 'undo-save' })).ok).toBe(true);
     expect((await s.sessions.list(gymId))?.fromCoach?.map((r) => r.draftId)).toEqual([draftId]);
+  });
+
+  it('Save → Edit › on a coach draft (exercise-library §10.4, WL-A18): Ben’s set count is saved, the draft is linked, and the coach’s RPE stays', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s);
+    const p = await page(s, draftId, gymId);
+    const from = { kind: 'preview' as const, target: { kind: 'coach_draft' as const, draftId }, gymId, previewKey: p.view.previewKey };
+    const source = await s.routines.saveSource(from);
+    if (source === null || source === 'stale') throw new Error('no source');
+    const first = source.exercises[0];
+    if (!first) throw new Error('no exercises');
+    const working = (e: { setTemplates: readonly { setType: string }[] } | undefined) => e?.setTemplates.filter((t) => t.setType !== 'warmup').length;
+    const want = (working(first) ?? 0) === 5 ? 4 : 5;
+    const edit = { name: 'Push · mine', exercises: setWorkingSetCount(source.exercises, first.id, want, h.ids) };
+    const a = await s.routines.saveFrom({ from, name: edit.name, addToRotation: false, opId: 'save-edited-draft', edit });
+    if (!a.ok) throw new Error(a.message);
+    expect(working(a.routine.exercises[0])).toBe(want);
+    expect(a.routine).toMatchObject({ name: 'Push · mine', source: 'ben', createdFromDraft: { draftId, version: 1 } });
+    expect(a.routine.exercises[0]?.setTemplates.filter((t) => t.setType === 'working').every((t) => t.targetRpe === 8)).toBe(true);
+    expect(await s.coachDrafts.get(draftId)).toMatchObject({ routineId: a.routine.id });
+    expect((await s.routines.list()).filter((r) => r.name === 'Push · mine')).toHaveLength(1);
   });
 
   it('review r2 S2: one save per draft; the page drops Save once saved; a second Save is refused and the link stays on the first; after Undo it saves again', async () => {

@@ -8,6 +8,8 @@
 
 > **Revision 2026-10-09 (pain-flag UX, competitor follow-up 8; approved by Ben, CHANGELOG 2026-10-09).** A pain-flagged exercise is now tagged **`⚠ May hurt`** (was `⚠ Pain flagged`), and adding it asks first: `Overhead press may hurt` [Add anyway] [Choose another] (EL9). This applies in Pick one and in the workout's Swap sheet. Pick several (the routine editor) shows an inline line on tick instead of an alert. Only exercises the flag covers are tagged; similar movements aren't (coach-memory CM5). Rows are never hidden. Everything is local and works offline. The rest of the pain UX (the two-weekly `Still hurts?` check, the pre-flag reference) is in [active-workout.md](active-workout.md) §2.14. Changed: §1 (EL9), §2.1, §2.2, §2.5, §3, §4.2, §5, §6, §7 (check 4 revised; checks 17–20), design-system additions.
 
+> **Revision 2026-10-12 (Browse outside a workout + sets when adding; Ben on build 126).** Ben: "I'd also like to be able to view exercises etc even when not in workout mode" and "when creating a workout [I] should be able to select the number of sets per exercise as I can't change it atm". New **§9 Browse and Exercise detail v1.0** (replaces §2.4 and the Browse row of §1): a **`Library` tab** (`Exercises` · `Workouts`), search with aliases and typos, filters, and an Exercise detail page with a still guide poster, muscles, cues, `What not to do`, Ben's history and records (→ Progress), and `Add to a workout`. New **§10 Sets when adding** gives every place that adds an exercise the same visible `Sets [−] 3 [+]` control (`SetShapeControl`, design-system §9.88), with the default shape pre-filled. Changed elsewhere: [routines.md](routines.md) §A2.3 (editor cards), [overview-today-edits.md](overview-today-edits.md) §11.4, [active-workout.md](active-workout.md) §2.10, [workout-builder.md](workout-builder.md), [today.md](today.md) (tab bar), design-system §9.88–9.91. Acceptance checks **EL-B1–EL-B24** (§9.11, §10.6). Entry points: §9.7. Decisions for Ben: **EL10–EL14** (§9.1).
+
 Status: v0.1 draft, 8 Oct 2026. Brief §1 ("exercise search"), §4 (`getCompatibleExercises`, `rankSubstitutions`), §6 (`Exercise` / `ExerciseAlias`), §12 Page 2. Schema: `packages/schemas/src/exercise.ts` (`movementPattern`, `primaryMuscles`, `measurement`, `laterality`, `compatibleEquipment`, `defaultLoadConvention`, `defaultRestS`). Tokens: [design-system.md](design-system.md).
 
 One component, four modes. The same search, rows and filters are used everywhere so Ben learns them once.
@@ -16,12 +18,12 @@ One component, four modes. The same search, rows and filters are used everywhere
 
 | Mode | Opened from | Question it answers | Primary action |
 |---|---|---|---|
-| **Pick one** | Active workout `Add exercise` (empty card, All-done card, Overview `+ Add exercise`) | "Which exercise am I doing next?" | Tap a row (adds it at once, one tap; a `May hurt` row asks first, EL9) |
-| **Pick several** | Routine editor `＋ Add exercise` | "Which exercises go in this routine?" | `Add 3 exercises` |
+| **Pick one** | Active workout `Add exercise` (empty card, All-done card, Overview `+ Add exercise`) | "Which exercise am I doing next?" | Tap a row (adds it at once, one tap, with the `Sets` count in the sheet's bar, §10.2; a `May hurt` row asks first, EL9) |
+| **Pick several** | Routine editor `＋ Add exercise` | "Which exercises go in this routine?" | `Add 3 exercises` (each with the `Sets` count in the bar, §10.3) |
 | **Swap** | Active workout exercise `⋯` → `Swap exercise` or `Machine busy`; routine editor `⋯` → `Replace`; routine detail `Swap ›` | "What can I do instead, here, and how different is it?" | Tap a substitute row |
-| **Browse** | Plan hub 🔍 (routines.md RT1) | "What do I know about this exercise?" | Tap a row (opens Detail) |
+| **Browse** (revised 2026-10-12, §9) | `Library` tab → `Exercises` segment | "What exercises are there, and what do I know about this one?" | Tap a row (opens Exercise detail) |
 
-Plus three screens: **Exercise detail** (browse), **Custom exercise** (create/edit; primary `Save exercise`) and **How to** (the exercise guide, §8; read-only, so it has no primary action beyond `Done`).
+Plus four screens: **Exercise detail** (browse, §9.4; primary `Add to a workout`), **Add to a workout** sheet (§9.5; primary `Add to <workout>`), **Custom exercise** (create/edit; primary `Save exercise`) and **How to** (the exercise guide, §8; read-only, so it has no primary action beyond `Done`).
 
 ### Design decisions to confirm with Ben (flagged, not yet in the brief)
 
@@ -41,7 +43,7 @@ Plus three screens: **Exercise detail** (browse), **Custom exercise** (create/ed
 
 ### 2.1 Pick one (in an active workout; sheet, large detent)
 
-Regions: sheet header · search field with mic · filter chips · `12 more not at Main Gym` line (when filtered) · `Recent` · `All exercises` (A–Z) · `Create "<query>"` row (when searching).
+Regions: sheet header · search field with mic · filter chips · `12 more not at Main Gym` line (when filtered) · `Recent` · `All exercises` (A–Z) · `Create "<query>"` row (when searching) · (2026-10-12) fixed bottom bar `Sets [−] 3 [+]`, above the keyboard (§10.2).
 
 ```
 ┌────────────────────────────────────────┐
@@ -124,7 +126,7 @@ Same as §2.1, but rows have a leading checkbox (`circle` / `checkmark.circle.fi
 │ [         Add 2 exercises            ] │ PrimaryButton, above keyboard
 ```
 
-Exercises are added in the order they were ticked, each with one working set (`Auto × 8–10`, or `0:45` for timed) and the type presets. `At <gym>` uses the routine's default gym (routines.md).
+Exercises are added in the order they were ticked, each with the default shape (§10.1: **3 working sets**, no warm-ups, the exercise's rep range, load `Auto`; `0:45` for timed) and the type presets. (Revised 2026-10-12: was one working set. The build already adds 3.) The action bar gains a `Sets [−] 3 [+]` row above `Add 2 exercises` (§10.3). `At <gym>` uses the routine's default gym (routines.md).
 
 (2026-10-09, EL9) Ticking a `⚠ May hurt` row selects it with no alert, and adds one line under the row: `⚠ May hurt: you flagged shoulder pain on 6 Oct. Loads won't go up while the flag is on.` (`type.callout`, `status.warning` icon, `text.secondary` text). The routine draft can still be cancelled or edited, so nothing is asked twice.
 
@@ -146,6 +148,8 @@ Exercises are added in the order they were ticked, each with one working set (`A
 - An active filter chip shows its choice: `Movement: Vertical pull`, or `Muscle: 2`. `Clear` empties that filter. Filters persist for the sheet's life only; `At <gym>` resets to the mode default each time.
 
 ### 2.4 Exercise detail (browse)
+
+> **Superseded 2026-10-12 by §9.4.** The v0.1 layout below is kept for reference. Its `Other names`, `Default rest`, `Notes`, `Alternatives` and `Used in` rows move to §9.4 (some into `⋯`); the decision not to show the guide on this page is revised (§9.1 EL12: a still poster, never animated here).
 
 ```
 ┌────────────────────────────────────────┐
@@ -469,7 +473,7 @@ Everything shown is **Coaching knowledge** (rule 10): the bundled catalogue entr
 |---|---|---|---|
 | Active workout, exercise `⋯` menu | `How to`, **first item** (provisional, confirm on device) | `howToKeyForExerciseId(exerciseId)` finds a guide or a rich entry | Built. Exercises without a how-to have no `How to` item at all; there is never a dead item |
 | Exercise picker (Pick one) | `ⓘ` button at the row's trailing edge (provisional, confirm on device; §2.1 row rules) | `hasHowTo(catalogueKey)` | Built. A row tap still adds the exercise in one tap |
-| Exercise detail (Browse) | `How to ›` row (§2.4) | `hasHowTo(catalogueKey)` | **Specified, not built** |
+| Exercise detail (Browse) | (revised 2026-10-12) The guide poster's `▷ Play` and the `Full how-to ›` row (§9.4); replaces the `How to ›` row (§2.4) | `hasHowTo(catalogueKey)` | **Specified, not built**. Also makes Sled push reachable (§9.6) |
 
 The guide is never shown inside a row, the Log card, the rest screen, Today, the Live Activity or a notification.
 
@@ -680,9 +684,413 @@ Full spec: [exercise-guides-v2.md](exercise-guides-v2.md). It comes from Ben's r
 
 Proposals in §8.9 still stand. P2 (`Key positions` button name) and P4 (mode-neutral VoiceOver label) are used in the v2 copy. P1 (`Safety`) moves to after `How to do it`, because `Common mistakes` no longer closes the screen.
 
+## 9. Browse and Exercise detail v1.0 (2026-10-12)
+
+Ben, build 126: "I'd also like to be able to view exercises etc even when not in workout mode." Today the only ways to see an exercise are the picker's `ⓘ` and the workout's `⋯ › How to`, both inside a workout, and Progress › Exercises, which lists only exercises he has done and shows charts, not how-to. This section replaces §2.4 and the Browse row of §1. Rows, search, filters and the How to screen (§8) are reused, not redesigned.
+
+### 9.1 Decisions (for Ben to confirm; PM defaults applied)
+
+| # | Decision | Reason |
+|---|---|---|
+| EL10 | **A `Library` tab, second: `Today · Library · Progress · Profile`.** It holds two segments, `Exercises` · `Workouts`. `Workouts` is the existing Workouts list (routines.md §A2.1), moved here from the Today push. Today gets **nothing new**, and its `Workouts` text link retires (PM default). The picker's `Edit workouts` opens Library › Workouts. The tab remembers its last segment and opens on `Exercises` the first time. Tab icon `dumbbell`, label `Library` | "View exercises etc" outside a workout = reference and planning in one place, one tap from anywhere, with Today left as is. Workouts were reachable only through a text link that hides while a workout is unfinished. A fourth tab is standard iOS. The Plan hub (routines.md WL1) isn't built: its `Week` view becomes a third segment here when it ships, not another tab. **Fallback** if Ben wants to keep three tabs: an `Exercises ›` row on Progress home and a 🔍 on the Workouts list (two taps, easy to miss) |
+| EL11 | **Browse lists every exercise** (catalogue + custom, hidden ones only on request), not only ones he has done. Progress › Exercises stays as it is: his history index with charts. `At <gym>` is **off** by default (EL2 unchanged). Browse rows have **no 🕘 button**; the row opens detail, which has the history | Ben wants to look things up, including exercises he hasn't done. Two lists with different jobs, each linking to the other |
+| EL12 | **Exercise detail shows the guide as a still poster** (key position 1), never animated on this page. `▷ Play` opens How to (§8), which plays as it does today. Revises §2.4 ("player not embedded") | Ben wants to see the movement when browsing. A still keeps §2.4's reasons: no motion he didn't ask for, and one playing surface to test for battery and Reduce Motion |
+| EL13 | **Detail has two labelled sections**: `Coaching knowledge` (how-to, muscles, cues, alternatives) then `Your data` (pain flag, last, best, records link, used in, notes), each under a `DomainLabel` | Rule 10: the page mixes the two domains. Charts and the full record list stay in Progress (`Progress and records ›`), not copied here |
+| EL14 | **`Add to a workout` applies at once with Undo** when the target is the workout in progress or a saved workout. Saving to a saved workout writes a new version with an `ActionRecord` (`update_routine`, author `ben`, WL10). `New workout` opens the editor instead. Completed sets are never touched | It's one exercise Ben chose himself, like an editor Save (rule 2 covers coach and broad changes). Undo survives a force-close (WL10) |
+
+### 9.2 Purpose
+
+| Screen | Question | Primary action |
+|---|---|---|
+| **Library › Exercises** | "What exercises are there, and which one do I want to look at?" | None. A row opens its detail (as the Workouts list) |
+| **Exercise detail** | "How do I do this, what does it work, and how have I done on it?" | `Add to a workout` |
+| **Add to a workout** (sheet) | "Which workout, and how many sets?" | `Add to Legs A` |
+
+### 9.3 Layout: Library › Exercises (390 × 844)
+
+Regions: large title · segmented control · search field · filter chips · hidden-count line (filter on) · `RECENT` · `ALL EXERCISES` · `New exercise` link · `ResumeBar` (workout unfinished) · tab bar.
+
+```
+┌────────────────────────────────────────┐
+│ Library                          ＋  ⋯ │ ＋ New exercise · ⋯ Show hidden
+│ [✓ Exercises |  Workouts  ]            │ segmented, 44pt
+│ ┌──────────────────────────────┬─────┐ │
+│ │ 🔍 Search exercises          │  🎙 │ │ SearchField, not focused on open
+│ └──────────────────────────────┴─────┘ │
+│ [ At Main Gym ] [Muscle ▾] [Equipment ▾│ FilterChips, wrap
+│ [Movement ▾]                           │
+│                                        │
+│ RECENT                                 │ last 10 done, newest first
+│ Bench press                       ▷  › │ ▷ = has a guide (not a button)
+│ Barbell · Chest                        │
+│ Last 100 kg × 8 · 6 Oct                │ actual
+│────────────────────────────────────────│
+│ Romanian deadlift                 ▷  › │
+│ Barbell · Hamstrings                   │
+│ Last 120 kg × 8 · 3 Oct                │
+│                                        │
+│ ALL EXERCISES · 142                    │ A–Z
+│ Arnold press                         › │
+│ Dumbbells · Shoulders                  │ no history: no third line
+│────────────────────────────────────────│
+│ Assisted pull-up                  ▷  › │
+│ Assisted · Back                        │
+│ ...                                    │
+│ ＋ New exercise                        │ link at the end too
+├────────────────────────────────────────┤
+│ ▶ Push A · Rest 1:12        [ Resume ] │ ResumeBar, only while unfinished
+│  Today   Library   Progress   Profile  │ tab bar
+└────────────────────────────────────────┘
+```
+
+Typing `rdl`:
+
+```
+│ │ 🔍 rdl                    ⓧ │  🎙 │ │
+│ MATCHES                                │
+│ Romanian deadlift                 ▷  › │
+│ Matches "RDL" · Barbell · Hamstrings   │ alias shown (EL1)
+│ Last 120 kg × 8 · 3 Oct                │
+│────────────────────────────────────────│
+│ Single-leg RDL                       › │
+│ Matches "RDL" · Dumbbells · per side   │
+│ ＋ Create "rdl" as a new exercise      │ always last when searching
+```
+
+Row rules (`ExerciseRow`, browse variant, design-system §9.89):
+- Line 1: name (`type.headline`, two lines max), then a `play.rectangle` glyph (`text.secondary`, decorative, read as "has a guide") when `hasHowTo` and a guide exists, then `chevron.right`. The whole row is one button.
+- Line 2: `Matches "<alias>"` (alias hits only) · equipment kinds · first main muscle · `per side` / `Time`. Tags: `⚠ May hurt`, `Custom` (icon or word + colour, as §2.1).
+- Line 3: `Last <actual> · <date>` from the most recent working set anywhere, with `at Hotel Gym` when that wasn't the selected gym. No line when he has never done it (no `No history` noise in Browse).
+- No availability tags in Browse unless `At <gym>` is on; then the hidden count line shows (`12 more not at Main Gym. Show ›`, EL2).
+- Search: EL1 ranking (exact name, prefix, alias, word, one typo per word of 5+ letters). `Show hidden exercises` (`⋯`) adds a `HIDDEN` section with `Unhide` on each row.
+
+### 9.4 Layout: Exercise detail (pushed in the Library stack)
+
+Regions: nav bar · header (name, movement and equipment, aliases, tags) · `Add to a workout` · `Coaching knowledge`: guide poster, muscles, `HOW TO DO IT`, `WHAT NOT TO DO`, `Full how-to ›`, `Alternatives at Main Gym ›` · `Your data`: pain line, series caption, `Last`, `Best set`, `Est. 1RM`, workouts count, `Progress and records ›`, `Used in`, `Notes` · `ResumeBar` · tab bar.
+
+```
+┌────────────────────────────────────────┐
+│ ‹ Library                           ⋯  │ ⋯: Other names, Default rest, Notes,
+├────────────────────────────────────────┤    (custom) Edit, Hide / Delete
+│ Romanian deadlift                      │ type.title2
+│ Hinge · Barbell                        │ type.callout, text.secondary
+│ Also called RDL                        │ aliases, one line, tail …
+│ [         Add to a workout           ] │ PrimaryButton (outline while
+│                                        │  the ResumeBar shows)
+│ [books] Coaching knowledge             │ DomainLabel
+│ ┌────────────────────────────────────┐ │
+│ │ [Draft guide]                      │ │ only until Ben approves it
+│ │   ┌────────────────────────────┐   │ │
+│ │   │  still: key position 1     │   │ │ ExerciseGuide, still mode (EL12)
+│ │   │  (Start), never animates   │   │ │  240pt, guide colours
+│ │   └────────────────────────────┘   │ │
+│ │ [ ▷ Play ]                         │ │ opens How to, playing
+│ └────────────────────────────────────┘ │
+│ Feel it most: Hamstrings · Glutes      │ MuscleFocusLegend text (v2), else
+│ Also works: Lower back · Forearms      │  `Muscles: Hamstrings · Glutes`
+│ HOW TO DO IT                           │ first 3 execution cues
+│ • Soft knees, push your hips back      │
+│ • Keep the bar against your legs       │
+│ • Stand up by driving your hips in     │
+│ WHAT NOT TO DO                         │ AvoidList, first 3
+│ • Don't round your lower back          │
+│ • Don't squat the bar down             │
+│ Full how-to                          › │ How to (§8): setup, key positions,
+│ Alternatives at Main Gym             › │  safety. Swap list, read-only
+│                                        │
+│ [person] Your data                     │ DomainLabel
+│ ⚠ May hurt · flagged 6 Oct           › │ only with an active flag
+│ Main Gym · barbell                     │ series caption (most used, 12 wk)
+│ Last       120 kg × 8 · 3 Oct          │ actual
+│ Best set   130 kg × 5 · 14 Sep         │ actual (record)
+│ Est. 1RM   ≈146 kg                     │ estimate; only where PG11 allows
+│ 14 workouts since 2 Jul                │
+│ Progress and records                 › │ → Progress exercise detail
+│ Used in    Legs A · Pull B             │ each name opens its overview
+│ Notes      Straps from set 3         › │ only when set
+├────────────────────────────────────────┤
+│ ▶ Push A · Rest 1:12        [ Resume ] │ ResumeBar (when unfinished)
+│  Today   Library   Progress   Profile  │
+└────────────────────────────────────────┘
+```
+
+Rules:
+- **`Add to a workout`** sits under the header, so it's on the first screen at every text size. It's the page's filled `PrimaryButton`, except while the `ResumeBar` shows, when it becomes a `SecondaryButton` so `Resume` stays the only filled button (as Progress, PG5).
+- **Guide poster** (`GuidePoster`, design-system §9.90): the `ExerciseGuide` canvas in still mode at key position 1 (or the first frame when it has none). No clock runs, so nothing moves, under any setting. `▷ Play` (44pt) opens How to, which autoplays as §8.4 (Reduce Motion: key positions view). The canvas itself isn't tappable (same rule as §8.5). No poster for exercises without a guide: their cues follow the muscles line directly.
+- **Cues**: up to 3 execution cues and up to 3 `What not to do` items (catalogue copy rules, ≤ 60 characters each). `Full how-to ›` shows when `hasHowTo`, and is the only route to setup, key positions and safety. A basic entry (no rich cues) shows the header, muscles if known, and `Alternatives`; nothing pretends to be a guide.
+- **Your data** is one series (gym · equipment · convention), never merged across equipment or units (§4.3, progress.md PG). The caption names it. FitNotes-only history reads `FitNotes · kg` as its caption. `Progress and records ›` opens the Progress exercise detail on that same series.
+- **No history**: the `Your data` section shows `No history yet.` and, if any, `Used in`. No Progress link.
+- Custom exercises: `⋯` → `Edit` (opens §2.6), and `Hide from lists` / `Delete` as §4.4.
+
+### 9.5 Add to a workout (sheet, large detent)
+
+```
+┌────────────────────────────────────────┐
+│ Add Romanian deadlift           Cancel │
+│ Sets         [−]    3    [+]           │ SetShapeControl (§10.5); working
+│ Warm-ups     [−]    0    [+]           │  sets; warm-ups separate
+│ Reps         8–10                    › │ RepsSheet; timed: Work time 0:45
+│ Target RPE   None                    › │ hidden when effort scale is off
+│                                        │
+│ NOW                                    │ only while a workout is unfinished
+│ ( ) Push A · in progress               │ RadioRow 52pt
+│ YOUR WORKOUTS                          │ rotation first, then recent
+│ ( ) Legs A                             │
+│     In progress · applies next time    │ when it's the running one
+│ (•) Pull B                             │
+│ ( ) Arms         Already in it         │ disabled, text.secondary
+│ ( ) ＋ New workout                     │
+├────────────────────────────────────────┤
+│ [            Add to Pull B           ] │ PrimaryButton; disabled
+└────────────────────────────────────────┘   `Choose a workout` until picked
+```
+
+- Nothing is preselected (a wrong write costs more than one tap here; this is a sit-down task).
+- **In progress**: `addExercise` with the shape (§10.1), at the end of the workout, with targets from its own history (as Pick one). Toast `Added to Push A` [Undo] (`remove_exercise`). Ben stays on the detail; the `ResumeBar` takes him back.
+- **Saved workout**: appends a slot with the shape and `Auto` loads, `Main` off; `services.routines.update` with `expectedVersion` and an `ActionRecord` (EL14). Toast `Added to Pull B` [Undo]. If that workout is running, the row says `In progress · applies next time` and the running workout doesn't change.
+- **New workout**: the editor opens (new) with this exercise and the chosen shape; nothing is saved until its `Save`.
+- A `⚠ May hurt` exercise asks first (EL9) when the primary is tapped. For the in-progress target, an exercise the gym can't do asks as §4.2. Both in one sheet when both apply.
+- Primary label follows the selection: `Add to Pull B` · `Add to Push A` · `Add to new workout`.
+
+### 9.6 States
+
+| Where | State | Shows |
+|---|---|---|
+| Library | Loading | Nothing for 300 ms, then static rows (local) |
+| Library | Normal, no query | `RECENT` (hidden with no history) then `ALL EXERCISES · N` |
+| Library | Query | `MATCHES` ranked; `Create "…"` last |
+| Library | No match | `No match for "landmine twst".` · `＋ Create "landmine twst" as a new exercise` · `Clear filters` (when any are on) |
+| Library | `At <gym>` on | Hidden count line `12 more not at Main Gym. Show ›` |
+| Library | No gym selected | `At …` chip reads `Any gym`, disabled |
+| Library | Hidden exercises shown | `HIDDEN` section with `Unhide` |
+| Library | Workouts segment | routines.md §A2.1–A3 unchanged, without the `‹ Today` back button |
+| Any | Workout unfinished: ready / resting / paused | `ResumeBar` with `Push A · Ready` / `· Rest 1:12` (counts from the saved deadline) / `· Paused`. Rest alerts fire as usual on this tab. Detail's primary becomes outline |
+| Any | Offline / AI unavailable / coach offline | No change. Nothing here needs network or AI (rule 1) |
+| Any | Database error | `Couldn't open your exercise list.` [Try again] |
+| Detail | Guide, draft | `Draft guide` tag on the poster |
+| Detail | Guide unreadable | No poster; cues as normal. `Full how-to ›` shows the §8.4 notice |
+| Detail | Rich cues, no guide | No poster; muscles, cues, `Full how-to ›` |
+| Detail | Basic entry | Header, muscles (if known), `Alternatives ›`, Your data |
+| Detail | Can't be logged yet (catalogue entry with no exercise row) | Everything above, but `Add to a workout` is replaced by the line `Can't log this yet.` and `Your data` is absent. This makes all 10 guides reachable (§8.2 "Reach") |
+| Add sheet | Distance exercise, e.g. Sled push (revised 2026-10-12, review library-browse S1 and spec issue 1) | Distance sets log since 2026-10-11, so `NOW` is offered. A saved workout's set template has no distance target yet, so every `YOUR WORKOUTS` row and `New workout` are disabled with `Can't save distance yet` (a distance exercise is never saved as reps) |
+| Detail | Pain flag | `⚠ May hurt · flagged 6 Oct ›` (opens the pain flag view, active-workout §2.14.4) |
+| Detail | No history | `No history yet.` |
+| Detail | History only at another gym | Caption names that gym (`Hotel Gym · Smith machine`) |
+| Detail | Est. 1RM not allowed for the convention | Row absent (PG11) |
+| Detail | Exercise hidden | Tag `Hidden`; `⋯` → `Unhide` |
+| Add sheet | No saved workouts | `NOW` (if any) and `＋ New workout` only |
+| Add sheet | Already in a workout | That row disabled with `Already in it` |
+| Add sheet | Workout changed since the sheet opened | Nothing written; `Pull B changed. Try again.`; the list re-reads (rule 5) |
+| Add sheet | Write failed | `Couldn't add it. Try again.` (same opId); the sheet stays |
+| Toast | Undo refused | `Can't undo: Pull B changed since.` (as WL-A5) |
+| Any | Force-close | The Library reopens on its last segment; a completed add and its Undo record survive |
+
+Transitions:
+
+```
+Tab Library ─► Exercises ─row─► Detail ─Add to a workout─► Sheet ─Add─► Detail (toast Undo)
+                   │                │                          └─New workout─► Editor ─Save─► Detail
+                   │                ├─▷ Play / Full how-to─► How to ─Done─► Detail
+                   │                ├─Progress and records─► Progress exercise detail (same series)
+                   │                └─Used in: Legs A─► Overview
+                   ├─＋ / Create "…"─► Custom exercise ─Save─► Detail (new)
+                   └─segment─► Workouts list (routines.md)
+Progress exercise detail ─Exercise info ›─► Detail (in the Progress stack)
+```
+
+### 9.7 Entry points (all)
+
+| From | Control | Opens |
+|---|---|---|
+| Tab bar | `Library` (`dumbbell`) | Library on its last segment (first time `Exercises`) |
+| Progress › Exercise detail | `Exercise info ›` row under the nav bar, `type.callout` | Exercise detail, pushed in the Progress stack |
+| Workouts editor | Exercise `⋯` → `Exercise info` | Exercise detail, pushed (read-only path; `Add to a workout` hidden here) |
+| Workout overview | **None new.** Its row panel already has `How to` (overview-today-edits §2.2); one more pill there is clutter before Start | — |
+| Session picker | `Edit workouts` | Library › Workouts |
+| Active workout | **None new.** `⋯ › How to` and the picker's `ⓘ` stay (§8.2) | Keeps the logging loop clear. Detail needs the tab |
+| Today | **None** (EL10). `Workouts` link retires | Keeps Today calm |
+
+### 9.8 Interactions
+
+| Path | Taps |
+|---|---|
+| Any tab → an exercise's detail | 2: `Library` → row (plus typing when searching) |
+| Detail → watch the guide | 1: `▷ Play` |
+| Detail → add to a saved workout | 3: `Add to a workout` → workout → `Add to Pull B` (+1 per set change) |
+| Detail → its charts | 1: `Progress and records ›` |
+
+- Search: tapping the field focuses it (system keyboard, return key `Search`, which dismisses the keyboard). Results update per keystroke. `ⓧ` clears. `🎙` dictates (hidden without on-device speech); dictation never opens a row.
+- Swipe back (system edge swipe) has the `‹ Library` button equivalent. Long-press a row: `Add to a workout`, `How to`, `Hide` (custom). Nothing is gesture-only.
+- Steppers: tap `−`/`+`; VoiceOver adjustable (swipe up/down). No keyboard on the Add sheet.
+- **Voice:** none new. Dictation into search only. "How do I do an RDL?" is a coach question (§8.5).
+- **Undo:** the add toast's Undo (8 s), then: in progress, exercise `⋯` → `Remove exercise` while no set is logged; saved workout, the editor or `services.routines.revert`. Hide → `Show hidden exercises` → `Unhide`. Nothing else on these pages writes.
+- **VoiceOver:** browse row "Romanian deadlift, barbell, hamstrings, last 120 kilograms times 8 on 3 October, has a guide. Button." Poster: the guide's `a11y.summary` as one image, then "Play guide, button". Section labels are headings.
+
+### 9.9 Copy
+
+`Last` and `Best set` are **actuals**; `Est. 1RM` is an **estimate** (`≈`); reps, sets and RPE on the Add sheet are **targets**.
+
+| Element | Text |
+|---|---|
+| Tab, segments | `Library` · `Exercises` · `Workouts` |
+| Library | `Search exercises` · `RECENT` · `ALL EXERCISES · 142` · `MATCHES` · `HIDDEN` · `Matches "RDL"` · `Last 100 kg × 8 · 6 Oct` · `at Hotel Gym` · `New exercise` · `Show hidden exercises` · `Unhide` · `No match for "…".` · `Create "…" as a new exercise` · `Clear filters` |
+| Detail header | `Hinge · Barbell` · `Also called RDL` · `Add to a workout` · `Custom` · `Hidden` |
+| Detail, knowledge | `Coaching knowledge` · `Draft guide` · `Play` · `Feel it most:` · `Also works:` · `Muscles:` · `HOW TO DO IT` · `WHAT NOT TO DO` · `Full how-to` · `Alternatives at Main Gym` · `Can't log this yet.` (no exercise row; not built) · Add sheet: `Can't save distance yet` |
+| Detail, your data | `Your data` · `May hurt · flagged 6 Oct` · `Main Gym · barbell` · `Last` · `Best set` · `Est. 1RM` `≈146 kg` · `14 workouts since 2 Jul` · `Progress and records` · `Used in` · `Notes` · `No history yet.` |
+| `⋯` | `Other names` · `Default rest` · `Notes` · `Edit` · `Hide from lists` · `Delete` · `Unhide` |
+| Elsewhere | `Exercise info` (Progress row, editor `⋯`) |
+| Add sheet | `Add Romanian deadlift` · `Cancel` · `Sets` · `Warm-ups` · `Reps` · `Work time` · `Target RPE` / `Target RIR` · `None` · `NOW` · `in progress` · `YOUR WORKOUTS` · `In progress · applies next time` · `Already in it` · `New workout` · `Choose a workout` · `Add to Pull B` · `Add to new workout` |
+| Toasts, errors | `Added to Pull B` [Undo] · `Removed from Pull B` · `Can't undo: Pull B changed since.` · `Pull B changed. Try again.` · `Couldn't add it. Try again.` · `Couldn't open your exercise list.` [Try again] |
+
+No lead text, no explanations of filters, alias matching or rules.
+
+### 9.10 Data needed
+
+Existing: `hasHowTo`, `buildHowToView` (detail reads `muscles`, the first 3 of `execution` and `mistakes`/`avoid`, `guide`), `bundledHowToSources`, `getCompatibleExercises`, `getEquipmentSnapshot`, `rankSubstitutions` (Alternatives), `getComparableHistory`, Progress `buildExerciseDetailView` (its series list and records feed the summary; the Progress screen itself is unchanged), `liveRoutines`, `buildLibraryView`, `PainStatus`, `addExercise` (session), `services.routines.update` / `revert`, `ActionRecord` (`update_routine`).
+
+New (pure in `packages/domain` unless noted; unit-tested):
+
+| Function | Contract |
+|---|---|
+| `searchExercises(entries, query, filters)` | **Replaces the build's prefix-only `searchExercises(list, query)`** (`starter-exercises.ts`). Matches name, catalogue aliases, Ben's aliases; one typo per word of 5+ letters; ranking EL1. Returns `{exercise, matchedAlias?, availability, lastActual?, painFlag?}[]` and `hiddenByGymCount` (§6 contract) |
+| `buildExerciseBrowseView({entries, history, gym, filters, query, recentLimit: 10})` | Sections `recent` / `all` / `matches` / `hidden`, row lines, guide flag, counts |
+| `buildExerciseInfoView({exercise, howTo, series, records, painFlag, routines, notes, gym})` | Detail model: header, `knowledge {poster: {catalogueKey, draft} \| null, muscles, cues[≤3], avoid[≤3], hasFullHowTo, alternativesAvailable}`, `yours {seriesKey, caption, last, bestSet, e1rm?, workouts, since, usedIn[], notes} \| null`, `loggable: boolean`. Named to avoid Progress's `buildExerciseDetailView` |
+| `buildAddDestinations({session, routines, rotation, exerciseId})` | The Add sheet's destination rows: in-progress session, live workouts (rotation first, then recent), disabled `already_in` / running `applies_next_time` flags |
+| `services.library.addToWorkout({exerciseId, shape, to: {kind: 'session', sessionId, expectedVersion} \| {kind: 'routine', routineId, expectedVersion}, opId})` | Session: `addExercise` with `shape` (§10.1). Routine: `editRoutine` append + `ActionRecord`. Idempotent by `opId`; refuses a stale version |
+| `services.library.hide` / `unhide` | As §6 `hideExercise` / `unhideExercise` |
+| UI state: `library.segment` | Last segment, local UI preference (not Your data, not backed up) |
+
+### 9.11 Acceptance checks (browse and detail)
+
+- **EL-B1. Reach.** From every tab, `Library` → an exercise's detail takes 2 taps, with or without a workout in progress. Today shows nothing new.
+- **EL-B2. Everything listed.** `ALL EXERCISES` includes exercises never done (e.g. Arnold press) and custom ones; hidden ones appear only after `Show hidden exercises`. Progress › Exercises still lists only done exercises.
+- **EL-B3. Search.** `RDL`, `rdl` and `romanain deadlift` all find Romanian deadlift; the alias hit shows `Matches "RDL"`. `landmine twst` with nothing matching shows `No match…` and `Create "landmine twst"…`.
+- **EL-B4. Filters.** `Muscle: Hamstrings` + `Equipment: Dumbbells` narrows correctly; `At Main Gym` on at a gym without a cable station hides cable exercises and the hidden count is right; `Show ›` brings them back. Filters are off by default in Browse.
+- **EL-B5. Detail content.** Romanian deadlift's detail shows the still poster (nothing moves for 10 s, Reduce Motion on or off), `Feel it most` / `Also works` (or `Muscles:`), at most 3 cues and 3 `Don't …` items, `Full how-to ›`, and the two `DomainLabel` sections in order.
+- **EL-B6. Guide plays only on request.** `▷ Play` opens How to playing (key positions under Reduce Motion); `Done` returns to the same scroll position on detail.
+- **EL-B7. Your data is honest.** `Last` and `Best set` come from one series named in the caption, are actuals, and match Progress for that series; `Est. 1RM` carries `≈` and is absent for assisted/bodyweight; no value is merged across equipment, gyms or units. With no history: `No history yet.` and no Progress link.
+- **EL-B8. Progress link.** `Progress and records ›` opens Progress exercise detail on the same series; `Exercise info ›` there opens this detail.
+- **EL-B9. Add to a saved workout.** Detail → `Add to a workout` → `Pull B` → `Sets [+]` to 4 → `Add to Pull B` adds a slot with 4 working sets, the shown reps and `Auto` loads; toast Undo restores Pull B's previous version, also after a force-close. A stale version writes nothing and shows `Pull B changed. Try again.`
+- **EL-B10. Add to the workout in progress.** With Push A resting, adding Face pull from the Library appends it with 3 pending working sets and history targets; the rest timer and alerts are unaffected; Undo removes it; no done set changes.
+- **EL-B11. Running workout's template.** Adding to Legs A while Legs A runs shows `In progress · applies next time`; the running workout doesn't change.
+- **EL-B12. Pain.** A flagged exercise shows `⚠ May hurt` on its row and detail; `Add to …` asks `… may hurt` first; `Choose another` writes nothing.
+- **EL-B13. Distance (revised 2026-10-12).** Sled push opens from the Library with its guide. `Add to a workout` offers the workout in progress; saved workouts and `New workout` are disabled with `Can't save distance yet`, and the service refuses a saved-workout add. The workout editor's `Add exercise` / `Replace` sheet shows distance exercises disabled with the same words, and create, edit and Save to Workouts › `Edit ›` refuse a distance slot, so nothing is saved as reps.
+- **EL-B14. Resume.** With a workout unfinished, the `ResumeBar` shows on Library and detail with live rest time; `Resume` is the only filled button; one tap returns to the workout.
+- **EL-B15. Offline.** Airplane mode, no AI: search, filters, detail, How to, Add and Undo all work; no provider call.
+- **EL-B16. Visual and access.** Rows ≥ 52pt, buttons and steppers ≥ 44pt; tabular numbers; `▷`, `⚠`, `Custom` carry icon or word; AX3 at 375pt with no sideways scroll and `Add to a workout` on the first screen; light and dark; no animation outside How to.
+
+---
+
+### 9.12 Specified, not built (2026-10-12, review library-browse S2)
+
+Built in the first Library slice: Browse (search with aliases and typos, filters, `At <gym>`, `RECENT`), Exercise detail (poster, muscles, cues, `Full how-to`, Your data from Progress's series, `Used in`), `Add to a workout` with the sets control, and the header `＋` → `New workout` on the Workouts segment. These parts of §9.3–§9.8 are deferred, so their acceptance checks don't apply yet:
+
+| Part | Why deferred | Checks affected |
+|---|---|---|
+| `＋ New exercise` (header on Exercises, end-of-list link) and `Create "<query>" as a new exercise` | No custom-exercise create flow or service exists yet; it is its own slice (catalogue + persistence) | EL-B3 (the `Create …` row; `No match…` is built), EL-B2 (custom rows only once created) |
+| `⋯` on Library (`Show hidden exercises`, `HIDDEN`, `Unhide`) | Needs hide/unhide writes | EL-B2 (hidden part) |
+| `Alternatives at Main Gym ›` on detail | Needs a read-only swap list screen over `rankSubstitutions`; the view model already computes `alternativesLabel` | — |
+| Detail `⋯` (Other names, Default rest, Notes, custom Edit, Hide / Delete), the `Notes` row, and long-press on browse rows | Each needs its own write path and undo | — |
+| `New with coach` in the Library header `＋` | The builder's entry needs the `Needs the coach` state that Today owns; Today and the session picker keep `Build with coach` | routines.md §A2.1 `＋` row |
+
+## 10. Sets when adding an exercise (every entry point, 2026-10-12)
+
+Ben, build 126: "When creating a workout [I] should be able to select the number of sets per exercise as I can't change it atm." The editor adds 3 working sets, but the count only changes through `+ Working` or by opening a set and tapping `Delete set`, so it doesn't read as a setting. The fix is one control, the same everywhere: **`Sets [−] 3 [+]`** (working sets), with warm-ups counted separately, plus reps and target RPE where the screen plans a workout.
+
+### 10.1 Default shape (`defaultSlotShape`, pure)
+
+| Field | Default |
+|---|---|
+| Working sets | **3** (limits 1–10; an existing slot above 10 keeps its count, `+` disabled) |
+| Warm-ups | **0** (limits 0–5). Warm-ups are their own row, never counted in `Sets` |
+| Reps | The exercise's built-in rule range (`progressionRuleId`), else its catalogue type preset, else `8–12`. Unilateral reads `8–10 per side`. Timed: work time `0:45` |
+| Target RPE | None. Uses `Target RIR` when his effort scale is RIR; the row is hidden when it's off |
+| Load | `Auto` (never a number from another exercise; Fixed only in the editor's `Each set`) |
+
+### 10.2 Pick one (active workout, empty workout, overview Edit `Add exercise`)
+
+The sheet gets a fixed bottom bar, above the keyboard:
+
+```
+│ ＋ Create "rdl" as a new exercise      │
+├────────────────────────────────────────┤
+│ Sets               [−]    3    [+]     │ SetCountBar, 64pt, bg.surface
+├────────────────────────────────────────┤
+│               keyboard                 │
+```
+
+- A row tap still adds in **one tap**, with that many pending working sets (EL1 check 1 holds). Changing the count first is optional.
+- The count starts at 3 each time the sheet opens. It isn't shown when Pick one is opened from Swap's `Search all exercises` (a swap keeps the pending sets' count).
+- Active workout: `addExercise` creates N pending working sets with targets from the exercise's own history (or empty fields). **Changes active-workout §2.10**, which added one empty working set. After adding, the count changes as today: `Add set`, or `Delete set` on a pending set.
+- Overview Edit mode: the new row appears with its `SetCountStepper` at N (overview-today-edits §11.4); reps via its reps button.
+
+### 10.3 Workout editor (new workout, edit workout, Duplicate, Save to Workouts → `Edit`)
+
+Each exercise card shows a `SetShapeControl` (§10.5) at the top of the card. The per-set rows move under `Each set ▸`. Full layout in [routines.md](routines.md) §A2.3 (revised).
+
+The add sheet (Pick several, or the build's single-pick sheet) gets the same `Sets [−] 3 [+]` bar above its primary; every exercise added gets that count, and each card can be changed after.
+
+### 10.4 Every entry point
+
+| Where a workout is created or an exercise is added | Sets control | Reps / RPE |
+|---|---|---|
+| Library › Workouts `＋` → `New workout` (editor) | Card `SetShapeControl`; add-sheet bar | Card rows |
+| `⋯` → `Edit workout`, `Duplicate` (editor) | Card `SetShapeControl` | Card rows |
+| Editor `⋯` → `Replace` | Keeps the slot's sets, reps and RPE | — |
+| Overview `Edit` → `Add exercise` | Pick one bar, then the row's `SetCountStepper` | Row reps button (RPE is set in the workout) |
+| Overview `Edit`, existing rows | `SetCountStepper` (built) | Reps button |
+| Empty workout → `Add exercise` | Pick one bar | From history; per set in the workout; `Target RPE` in the workout |
+| Mid-workout `+ Add exercise` | Pick one bar | As above |
+| Library detail → `Add to a workout` | Sheet `SetShapeControl` (§9.5) | Sheet rows |
+| `Save to Workouts` (Summary, past workout, overview `⋯`, `FROM HISTORY`, Repeat) | Save sheet row `5 exercises · 15 sets  Edit ›` opens the editor on the unsaved copy (routines.md §A2.5) | Editor |
+| Coach draft (workout builder) | `Save to Workouts` → same `Edit ›`; or ask the coach. The draft card itself has no steppers (it's the coach's proposal) | Editor |
+| Coach `add_exercise_today` (Ben asks the coach to add one) | The coach chooses the sets (CLAUDE.md rule 3), bounded by the domain; Ben changes the count afterwards as for any exercise in the workout. Not a Ben stepper path (checked 2026-10-12 after the merge) | Coach, then in the workout |
+
+### 10.5 `SetShapeControl` (design-system §9.88)
+
+```
+│ Sets         [−]    3    [+]           │ CountStepper rows, 52pt
+│ Warm-ups     [−]    0    [+]           │
+│ Reps         8–10                    › │ RepsSheet (§9.84)
+│ Target RPE   None                    › │ EffortSheet: None 6 7 7.5 8 8.5 9 9.5 10
+```
+
+- `Sets` counts every non-warm-up set. `+` appends a copy of the last non-warm-up set (its type, reps, load mode and RPE; not its own rest). `−` removes the last non-warm-up set. Disabled at the limits, read "dimmed".
+- `Warm-ups` `+` inserts a warm-up before the first non-warm-up set (copying the last warm-up, else `Auto × 5`); `−` removes the last warm-up.
+- `Reps` and `Target RPE` apply to every plain `Working` set of the slot. When those differ, the value reads `Mixed`; setting it replaces them all (RepsSheet adds `Replaces 3 different targets.`).
+- No toast per tap (`−` undoes `+`; the editor's `Cancel` undoes everything), as TE14.
+- VoiceOver: "Sets, 3, adjustable" (swipe up/down) and separate buttons "Fewer sets" / "More sets". "Warm-ups, 0, adjustable".
+
+### 10.6 Acceptance checks (sets)
+
+- **EL-B17. Editor sets.** New workout → add Bench press: its card shows `Sets [−] 3 [+]`, `Warm-ups 0`, `Reps` from its rule (e.g. 6–8), `Target RPE None`. `+` twice → 5 sets; `−` at 1 is disabled. Save; the overview and Start show 5 working sets.
+- **EL-B18. Warm-ups separate.** Warm-ups `+` once adds one `W` set before the working sets; `Sets` still reads 5; the overview's SETS tile still counts 5 working sets.
+- **EL-B19. Reps and RPE.** Reps → 8–10 and Target RPE → 8 change every plain working set; a top/back-off slot's `Reps` reads `Mixed` and its back-off sets keep their own reps unless replaced. RPE 8 shows as a target on those sets in the workout. With effort scale off, the RPE row is hidden; with RIR it reads `Target RIR`.
+- **EL-B20. Add sheet bar.** In the editor's add sheet, `Sets [+]` to 4 then adding Cable fly and Lateral raise gives both 4 working sets.
+- **EL-B21. Pick one bar.** In a running workout, `Add exercise` → `[−]` to 2 → tap Face pull adds it with 2 pending working sets (two taps after opening, no other step); with the count untouched, one tap adds 3. Opening Pick one from Swap shows no bar.
+- **EL-B22. Empty workout.** An empty workout's first `Add exercise` adds 3 pending working sets, not one.
+- **EL-B23. Save to Workouts.** Summary → `Save to Workouts` → `Edit ›` opens the editor on the copy; changing a set count and saving creates one workout (one opId, one toast Undo).
+- **EL-B24. Visible everywhere.** Every row of §10.4 offers its control without opening a per-set sheet; all steppers ≥ 44 × 44, values tabular, usable at AX3 at 375pt with the screen's primary (`Save`, `Start workout`, `Add to …`) visible above the keyboard.
+
+### 10.7 Data needed (sets)
+
+Pure, `packages/domain/src/session/routine-editor.ts` unless noted; unit-tested:
+
+| Function | Contract |
+|---|---|
+| `defaultSlotShape(exercise, ctx)` | §10.1 → `{workingSets, warmups, reps: {min, max} \| null, durationS: number \| null, targetRpe: null}` |
+| `slotShapeOf(slot)` | Display: `{workingSets, warmups, reps: Range \| 'mixed', durationS, targetRpe: number \| null \| 'mixed', hasSpecialSets}`; `hasSpecialSets` opens `Each set ▸` by default |
+| `setWorkingSetCount(list, slotId, n, newId)` / `setWarmupCount(list, slotId, n, newId)` | §10.5 rules; clamp to the limits; never reorder other sets |
+| `setSlotReps(list, slotId, reps \| {durationS})` / `setSlotTargetRpe(list, slotId, rpe \| null)` | Plain `working` sets only |
+| `addExercise(list, exercise, newId, shape?)` | Gains `shape` (default `defaultSlotShape`) |
+| `services.workout.addExercise({…, workingSets})` | Session add with N pending working sets (was one); one `opId`, one Undo |
+| `services.overview.edit({kind: 'add', …, workingSets?})` | Optional count; else TE16's 3 |
+
+`editRoutine` validation is unchanged (≥ 1 set per exercise, ≤ 30 sets each).
+
 ## Proposed design-system additions
 
-No new colours or timing tokens for the library itself. (Guides v2 adds `color.guide.muscle`, `color.guide.shade`, `guide.musclePulse`, the §4.2 guide dimensions and `MuscleFocusLegend` / `AvoidList` / `GuideFullScreen` in design-system.md.)
+No new colours or timing tokens for the library itself. (2026-10-12: `SetShapeControl` / `SetCountBar`, the browse `ExerciseRow` variant, `GuidePoster` and `AddToWorkoutSheet` are in design-system §9.88–9.91.) (Guides v2 adds `color.guide.muscle`, `color.guide.shade`, `guide.musclePulse`, the §4.2 guide dimensions and `MuscleFocusLegend` / `AvoidList` / `GuideFullScreen` in design-system.md.)
 
 | Component | Spec |
 |---|---|
@@ -700,7 +1108,9 @@ No new colours or timing tokens for the library itself. (Guides v2 adds `color.g
 - [design-system.md](design-system.md) principle 5, §2.3, §9.57: guide motion exception, colours and `ExerciseGuide`; §4.2, §9.58–9.60 for guides v2
 - [exercise-guides-v2.md](exercise-guides-v2.md): detailed figure, muscle focus, `What not to do`, Full screen
 - [coach-adjustments.md](coach-adjustments.md) CA2: coach-initiated swaps keep the Apply card
-- [routines.md](routines.md): `＋ Add exercise`, `Replace`, `Swap ›`, Plan hub 🔍
+- [routines.md](routines.md): `＋ Add exercise`, `Replace`, `Swap ›`; §A2.3 editor `SetShapeControl` (§10); the Workouts list is now Library › Workouts (EL10)
+- [progress.md](progress.md) §2.6–2.7: Progress › Exercises and its exercise detail (`Progress and records ›`, `Exercise info ›`, §9.7)
+- [overview-today-edits.md](overview-today-edits.md) §11.4: `Add exercise` with the Pick one sets bar (§10.2)
 - [change-review.md](change-review.md): `Change Push A too ›` and coach swap proposals
 - [workout-builder.md](workout-builder.md) WB4: the builder uses the same `rankSubstitutions` same-movement rule
 - [today.md](today.md): gym switcher (equipment context for `At <gym>`)

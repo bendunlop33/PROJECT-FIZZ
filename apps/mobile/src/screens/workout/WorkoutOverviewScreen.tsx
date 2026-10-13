@@ -13,7 +13,7 @@ import { newUuid } from '../../device/runtime';
 import { formatShortDate, localDateKey } from '../../format/dates';
 import { BUILD_COPY, draftWhyView, needsCoachView } from '../../coach/build-view';
 import { bundledHowToSources, howToRouteFor } from '../../guide/how-to';
-import { openStartedWorkout, popToTabs, popToToday, replaceWithWorkouts } from '../../navigation/actions';
+import { openLibrary, openStartedWorkout, popToTabs, popToToday } from '../../navigation/actions';
 import type { LibraryToastParam, RootStackParams } from '../../navigation/types';
 import { STALE_PREVIEW, type AddSheet, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
@@ -74,6 +74,7 @@ import {
   type EditPillKey,
   type RowCustomAction,
 } from '../../workout/overview-edits';
+import { SET_BAR } from '../../workout/set-shape-view';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { LIBRARY_COPY_UI, LIBRARY_TOASTS } from '../../workout/library-view';
@@ -183,6 +184,8 @@ export function WorkoutOverviewScreen() {
   const [loadEdit, setLoadEdit] = useState<{ slotKey: string; value: number | null; down: StepTarget; up: StepTarget; note: string | null } | null>(null);
   const addSearch = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [adding, setAdding] = useState<{ query: string; showAll: boolean; sheet: AddSheet | null; loading: boolean } | null>(null);
+  // The Add sheet's `Sets [−] 3 [+]` bar (exercise-library §10.2): 3 each time the sheet opens.
+  const [addSets, setAddSets] = useState<number>(SET_BAR.start);
   // `Update Push A` (§11.5): the lines as the card opened, Ben's ticks, and the record once applied.
   const [update, setUpdate] = useState<{ routineId: string; routineName: string; routineVersion: number; draftId: string; draftVersion: number; lines: TemplateLine[]; checked: Set<string>; applied: string | null } | null>(null);
   const [swap, setSwap] = useState<{ slotKey: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
@@ -1073,7 +1076,7 @@ export function WorkoutOverviewScreen() {
   async function pickAdd(row: AddSheet['rows'][number]) {
     const go = async () => {
       closeAdd();
-      const w = await writeEdit(`add:${row.exerciseId}`, (b) => services.overview.edit({ ...b, edit: { kind: 'add', exerciseId: row.exerciseId } }));
+      const w = await writeEdit(`add:${row.exerciseId}:${String(addSets)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'add', exerciseId: row.exerciseId, workingSets: addSets } }));
       const added = w?.added[0];
       if (w && added !== undefined) toastWithUndo(editModeToast.added(row.name), (v) => undoEdit(added, v), w.draft?.version ?? null);
     };
@@ -1332,7 +1335,7 @@ export function WorkoutOverviewScreen() {
       }}
       onEditWorkouts={() => {
         pickerAfter.arm(() => {
-          navigation.dispatch(replaceWithWorkouts());
+          navigation.dispatch(openLibrary('workouts'));
         });
         setPickerVisible(false);
       }}
@@ -1676,7 +1679,15 @@ export function WorkoutOverviewScreen() {
                 <SupersetBracket key={g.rows.map((r) => r.slotKey).join('+')}>{g.rows.map((r) => renderEditRow(r))}</SupersetBracket>
               ),
             ),
-            <EditLink key="add" text={EDIT_MODE_COPY.addExercise} icon="plus" onPress={() => void loadAdd('', false)} />,
+            <EditLink
+              key="add"
+              text={EDIT_MODE_COPY.addExercise}
+              icon="plus"
+              onPress={() => {
+                setAddSets(SET_BAR.start);
+                void loadAdd('', false);
+              }}
+            />,
             ...(link !== null && update === null ? [<EditLink key="update" text={link.text} onPress={openUpdate} />] : []),
             ...(update !== null
               ? [
@@ -1885,6 +1896,8 @@ export function WorkoutOverviewScreen() {
         onClose={() => {
           closeAdd();
         }}
+        sets={addSets}
+        onSets={setAddSets}
       />
       <HowLongSheet
         visible={howLong !== null}

@@ -3,9 +3,10 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { isRefusedDistanceSlot, removeExercise, routineIssues } from '@fizz/domain';
 import type { RoutineExercise } from '@fizz/schemas';
 
-import { conflictLines, conflictText, deleteConfirm, EDITOR_COPY, editorPrimary, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices, rowMenu } from '../src/workout/library-view';
+import { conflictLines, conflictText, deleteConfirm, EDITOR_COPY, editorPrimary, editorSlotIssue, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices, rowMenu } from '../src/workout/library-view';
 import { allRows, pickerSections, SESSION_PICKER_COPY } from '../src/workout/session-picker';
 import type { SessionList, SessionPickerRow } from '../src/services/workout-services';
 
@@ -41,9 +42,9 @@ describe('editor primary (§3.3)', () => {
   it('exercise ⋯: Superset with next only with a next one outside its group; Move up/down at the ends', () => {
     const e = (id: string, g: string | null) => ({ id, supersetGroup: g }) as Pick<RoutineExercise, 'id' | 'supersetGroup'>;
     const list = [e('a', null), e('b', 'A'), e('c', 'A')];
-    expect(exerciseMenu(list, 'a')).toEqual(['Replace', 'Superset with next', 'Move down', 'Remove']);
-    expect(exerciseMenu(list, 'b')).toEqual(['Replace', 'Ungroup', 'Move up', 'Move down', 'Remove']);
-    expect(exerciseMenu(list, 'c')).toEqual(['Replace', 'Ungroup', 'Move up', 'Remove']);
+    expect(exerciseMenu(list, 'a')).toEqual(['Replace', 'Exercise info', 'Superset with next', 'Move down', 'Remove']);
+    expect(exerciseMenu(list, 'b')).toEqual(['Replace', 'Exercise info', 'Ungroup', 'Move up', 'Move down', 'Remove']);
+    expect(exerciseMenu(list, 'c')).toEqual(['Replace', 'Exercise info', 'Ungroup', 'Move up', 'Remove']);
     expect(exerciseMenu(list, 'x')).toEqual([]);
   });
 
@@ -88,5 +89,54 @@ describe('WL-A16: no string in the library says "routine"', () => {
     const list = read('screens/routines/WorkoutsScreen.tsx');
     expect(list).toContain('minHeight: 64');
     expect(list).toMatch(/width: 44, height: 44/);
+  });
+});
+
+describe('a workout with a distance slot (review library-browse r3 S1)', () => {
+  const slot = (id: string, exerciseId: string, order: number, sets = 3): RoutineExercise => ({
+    id,
+    exerciseId,
+    equipmentId: null,
+    order,
+    supersetGroup: null,
+    setTemplates: Array.from({ length: sets }, (_, n) => ({ id: `${id}-${String(n)}`, setType: 'working' as const, targetLoad: null, targetReps: { min: 8, max: 10 }, targetDurationS: null, targetRpe: null, targetRir: null, restOverrideS: null })),
+    restBySetType: {},
+    transitionRestS: null,
+    progressionRuleId: null,
+  });
+  const measurement: Record<string, 'reps' | 'distance'> = { squat: 'reps', carry: 'distance' };
+  const isDistance = (exerciseId: string) => measurement[exerciseId] === 'distance';
+
+  it('a stored carry slot shows nothing and the workout saves; a newly added carry gets the card line and blocks Save', () => {
+    const stored = [slot('s1', 'squat', 0), slot('s2', 'carry', 1)];
+    // Legacy: rename and another exercise's sets change, carry kept as it was.
+    const legacy = [slot('s1', 'squat', 0, 4), slot('s2', 'carry', 1)];
+    expect(routineIssues({ name: 'Legs B', exercises: legacy }, isDistance, stored)).toEqual([]);
+    expect(editorPrimary({ issues: [], dirty: true, isNew: false })).toEqual({ label: 'Save', disabled: false });
+    for (const e of legacy) expect(editorSlotIssue(isRefusedDistanceSlot(e, isDistance, stored))).toBeNull();
+
+    // A new carry slot: refused, the card says why and offers Replace / Remove.
+    const fresh = slot('s3', 'carry', 2);
+    const added = [...legacy, fresh];
+    const issues = routineIssues({ name: 'Legs B', exercises: added }, isDistance, stored);
+    expect(issues).toEqual(['Can’t save distance yet']);
+    expect(editorPrimary({ issues, dirty: true, isNew: false })).toEqual({ label: 'Can’t save distance yet', disabled: true });
+    const line = editorSlotIssue(isRefusedDistanceSlot(fresh, isDistance, stored));
+    expect(line).toEqual({ text: 'Can’t save distance yet', actions: [EDITOR_COPY.replace, EDITOR_COPY.remove] });
+    expect(added.filter((e) => isRefusedDistanceSlot(e, isDistance, stored)).map((e) => e.id)).toEqual(['s3']);
+    // Every card action is a real menu action, so the screen runs it as from ⋯.
+    for (const a of line?.actions ?? []) expect(exerciseMenu(added, 's3')).toContain(a);
+
+    const after = removeExercise(added, 's3');
+    expect(routineIssues({ name: 'Legs B', exercises: after }, isDistance, stored)).toEqual([]);
+  });
+
+  it('with another issue as well, the primary still counts them', () => {
+    expect(editorPrimary({ issues: ['Can’t save distance yet', 'Reps: the first number must be the smaller one.'], dirty: true, isNew: false })).toEqual({ label: 'Fix 2 issues', disabled: true });
+  });
+
+  it('the editor renders the card line from editorSlotIssue', () => {
+    expect(read('screens/routines/WorkoutEditorScreen.tsx')).toContain('editorSlotIssue(isRefusedDistanceSlot(slot, isDistance, stored))');
+    expect(read('screens/routines/WorkoutEditorScreen.tsx')).toContain('routineIssues(edit, isDistance, stored)');
   });
 });

@@ -2,6 +2,8 @@
 
 > **v1.0, 11 Oct 2026 (Ben's request on the session picker: "a whole depository to save and edit pre-existing workouts", "upload any workout from the new workout and save it into the back of workouts").** Part A below is the v1.0 spec and wins wherever it differs from the v0.1 text after it. v0.1 (§1–§7 further down) stays as the detailed reference for the editor's set sheet, rest sheet, supersets and Repeat. Research: [workout-library-and-duration.md](../research/workout-library-and-duration.md). Mockup: [mockups/workout-library.html](mockups/workout-library.html) (frames 1, 2 and 5). Related v1.0 specs: [overview-today-edits.md](overview-today-edits.md) §11 (edit before start, slice B) and [fit-to-time.md](fit-to-time.md) (slice C).
 >
+> **Revision 2026-10-12 (Ben on build 126: "should be able to select the number of sets per exercise as I can't change it atm").** Editor cards lead with a `SetShapeControl`: `Sets [−] 3 [+]` (working sets), `Warm-ups`, `Reps`, `Target RPE`; the per-set rows move under `Each set ▸` (§A2.3, WL11). The add sheet gets a `Sets` bar. The Save sheet's summary line gets `Edit ›` to open the editor on the unsaved copy (§A2.5). The Workouts list moves into the new **`Library` tab** (`Exercises` · `Workouts`; exercise-library.md EL10), replacing the planned Plan hub segment; until the tab ships, nothing here changes. Shared rules and checks: [exercise-library.md](exercise-library.md) §10 (EL-B17–EL-B24).
+>
 > Code and data keep the name `Routine` (`routines` table, `Routine` schema, `services.routines`). Only the UI says **Workouts** (WL1).
 
 ---
@@ -21,6 +23,7 @@
 | WL7 | **Saved loads are `Auto`.** A workout saved from a session keeps exercises, order, set types and counts, rep ranges, rest by set type and supersets. Loads are `Auto` (next targets come from the coach's D21 target or the built-in rule, using the source session as history). Fixed loads only when Ben pins them in the editor. **Coach target vs Ben's later edit (Ben, 12 Oct 2026; CHANGELOG):** a coach target never changes a slot's set types. If the slot's structure hasn't changed since the target became active (saved, or Applied), the coach's load, reps and (on a one-type slot) set count apply. If Ben changed it since, his set count and reps win; the coach's load applies only where its reps fall inside his range, otherwise the built-in rule's load does, and the set's `Why?` gets one line (`Kept your edit: 4 sets, 6–8 reps`). "Changed" means the slot's exercise, set types, count, reps, work time or Fixed loads (`RoutineExercise.structureChangedAtUtc`); a rename, rest, `Main`, order, rotation toggle, delete/restore or saving the workout after the target doesn't count | A load copied from one session goes stale after one workout (RT3). Imported sessions can now be saved too: they have no checked loads to copy anyway. Ben's own later edit is newer than an automatic target (rule 3) |
 | WL8 | **Editor v1 scope** (§A2.3): name, exercises (add, replace, remove, reorder with buttons), sets per exercise (Warm-up / Working, plus Top, Back-off, Drop under `More`), reps (range or exact), load `Auto` / `Fixed`, rest by set type, superset Group / Ungroup, **`Main`** per exercise (WL9). **Later:** `% of top set`, AMRAP, Counts as heavy legs, Advanced (equipment pin, built-in rule, transition rest), Rest between sides, Version history screen | The XL backlog item becomes an L that unblocks the library. The deferred items have no user yet |
 | WL9 | **`Main` per exercise** (`RoutineExercise.main?: boolean`). Set when a workout is created or saved: on for compound exercises in the first two places, else the first exercise. Ben toggles it in the editor. Older workouts without the field use the same rule at read time | [fit-to-time.md](fit-to-time.md) keeps main lifts. Ben sees and controls which they are; nothing is guessed out of sight |
+| WL11 | (2026-10-12) **The set count is a visible stepper, not a by-product of set rows.** Each card shows `Sets [−] 3 [+]` (non-warm-up sets), `Warm-ups [−] 0 [+]`, `Reps` and `Target RPE` for the slot. Per-set detail (Top / Back-off / Drop, Fixed loads, a set's own rest) lives under `Each set ▸`, collapsed unless the slot has special sets or per-set differences. Restores the slot-level effort target that v1 left out (WL8) | Ben couldn't find how to change the count: `+ Working` read as "add a row", and removing one needed the set sheet's `Delete set`. One control, the same one the overview and the Library use (exercise-library §10) |
 | WL10 | **Every library write is versioned and undoable** with no new table: create, edit, duplicate, delete, rotation changes. An editor `Save` writes an `ActionRecord` (`update_routine`, author `ben`) holding the version before, so `Undo` survives a force-close | Rules 2 and 5. No migration for slice A |
 
 ## A1. Purpose
@@ -85,6 +88,55 @@
 ### A2.3 Editor (v1 scope, WL8)
 
 Same frame, action bar and keypad rules as v0.1 §2.3. Changes:
+
+**Revised 2026-10-12 (WL11).** Each exercise card now reads:
+
+```
+┌────────────────────────────────────────┐
+│ Cancel        Edit workout             │
+├────────────────────────────────────────┤
+│ Name                                   │
+│ ┌────────────────────────────────────┐ │
+│ │ Push A                             │ │
+│ └────────────────────────────────────┘ │
+│ 5 exercises · 16 sets · ≈ 55 min       │ live; sets = working sets
+│ EXERCISES                              │
+│ ┌────────────────────────────────────┐ │
+│ │ 1 Bench press        [✓ Main]  ⋯   │ │ ⋯: Replace, Exercise info,
+│ │ Sets         [−]    4    [+]       │ │  Superset with next, Move up,
+│ │ Warm-ups     [−]    1    [+]       │ │  Move down, Remove
+│ │ Reps         Mixed               › │ │ top + back-offs differ
+│ │ Target RPE   8                   › │ │ hidden when effort scale off
+│ │ Rest by set type                 › │ │
+│ │ Each set                         ▾ │ │ open: has special sets
+│ │ 1 W  Warm-up  Auto × 5     1:00    │ │ SetTemplateRow (tap = set sheet)
+│ │ 2 T  Top      Auto × 4–6   3:00    │ │
+│ │ 3–5 B Back-off Auto × 6–8  2:00    │ │
+│ │ [+ More ▾]                         │ │ Top, Back-off, Drop
+│ └────────────────────────────────────┘ │
+│ ┌────────────────────────────────────┐ │
+│ │ 2 Incline DB press   [ Main ]  ⋯   │ │
+│ │ Sets         [−]    3    [+]       │ │ SetShapeControl
+│ │ Warm-ups     [−]    0    [+]       │ │
+│ │ Reps         8–10                › │ │ RepsSheet
+│ │ Target RPE   None                › │ │
+│ │ Rest by set type                 › │ │
+│ │ Each set                         ▸ │ │ collapsed: all sets alike
+│ └────────────────────────────────────┘ │
+│ ＋ Add exercise                        │
+├────────────────────────────────────────┤
+│ [                Save                ] │ above the keyboard
+└────────────────────────────────────────┘
+```
+
+- `Sets` / `Warm-ups` / `Reps` / `Target RPE` follow exercise-library §10.5 (copy, limits, `Mixed`, VoiceOver). `[+ Warm-up]` and `[+ Working]` retire: the steppers do the same. `[+ More ▾]` (Top, Back-off, Drop) stays inside `Each set`.
+- `Each set ▸` is open by default when the slot has Top / Back-off / Drop sets, a Fixed load, a set's own rest, or working sets that differ; otherwise closed. Opening it is remembered per slot while the editor is open.
+- `Target RPE` writes `targetRpe` (or `targetRir`) on the plain working sets; the workout shows it as the target (`RPE 8`).
+- The summary line adds the working-set count (`16 sets`), live.
+- The add sheet (`＋ Add exercise`) has a `Sets [−] 3 [+]` bar above its primary; each new card starts with that count and the §10.1 defaults.
+- `⋯` gains `Exercise info` (opens the Library's Exercise detail; exercise-library §9.7).
+
+The v1.0 wireframe below is kept for reference.
 
 ```
 ┌────────────────────────────────────────┐
@@ -164,7 +216,7 @@ Same frame, action bar and keypad rules as v0.1 §2.3. Changes:
 │ ┌────────────────────────────────────┐ │
 │ │ Legs                               │ │ prefilled, text selected
 │ └────────────────────────────────────┘ │
-│ 5 exercises · 15 sets                  │ what will be saved
+│ 5 exercises · 15 sets           Edit › │ what will be saved; Edit (2026-10-12)
 │ Not copied: 3 distance sets (Sled push)│ only when something is left out
 │ Add to rotation               [  ○]    │ switch, off by default
 │ [               Save                 ] │ above the keyboard
@@ -173,6 +225,8 @@ Same frame, action bar and keypad rules as v0.1 §2.3. Changes:
 
 - Name prefill: the session's name, the history type's label, the coach draft's name, or `Workout · Sun 11 Oct` for an unnamed one. A duplicate name shows `You already have Legs.` under the field and still saves (`checkRoutineName`).
 - A set template has no distance target yet, so a distance exercise (sled push, carry) is left out, never saved as reps or as a timed set. The sheet lists it under the summary in Repeat's wording (`notCopiedText`): `Not copied: 3 distance sets (Sled push)` (review workout-library-merge S1, 12 Oct 2026).
+- A distance slot already stored (a workout saved by the editor before EL-B13, e.g. Farmer's carry as 3 × 8–10) is kept and the workout saves as it was; only a newly added or replaced-in distance slot is refused, and its card shows `⚠ Can't save distance yet` with `Replace` / `Remove`. `Duplicate` copies the slot and the copy saves the same way. Starting such a workout still plans reps for it (review library-browse r3 S1, N5; proposed, needs Ben's confirmation).
+- (2026-10-12) `Edit ›` (44pt, on the summary line) opens the editor on the unsaved copy, with the name carried over and the sets controls of §A2.3. The editor's `Save` creates the workout (same `opId`, one toast); its `Cancel` returns to this sheet unchanged. This is how sets are changed when saving a finished workout, a `FROM HISTORY` type, Repeat or a coach draft.
 - After `Save`: toast `Saved to Workouts` [Undo]. The entry point becomes `Saved · Legs ›` (opens the overview). Undo tombstones the new workout (and takes it out of the rotation if it was added).
 
 ### A2.6 Entry points for Save
@@ -262,7 +316,8 @@ Values are **targets** on the overview and in the editor (`Auto × 6–8`, `Fixe
 | `⋯` | `Edit workout` · `Duplicate` · `Add to rotation` · `Remove from rotation` · `Delete` |
 | `＋` | `New workout` · `New with coach` · `Coach offline` |
 | Empty | `No workouts yet.` · `New workout` · `New with coach` · `Empty workout` |
-| Editor | `New workout` / `Edit workout` · `Name` · `EXERCISES` · `Main` · `Add exercise` · `Save` · `No changes` · `Add a name` · `Add an exercise` · `In progress · changes apply next time` |
+| Editor | `New workout` / `Edit workout` · `Name` · `EXERCISES` · `Main` · `Add exercise` · `Save` · `No changes` · `Add a name` · `Add an exercise` · `In progress · changes apply next time` · (2026-10-12) `Sets` · `Warm-ups` · `Reps` · `Target RPE` / `Target RIR` · `None` · `Mixed` · `Each set` · `Exercise info` · `16 sets` |
+| Save sheet edit (2026-10-12) | `Edit` |
 | Picker | `YOUR WORKOUTS` · `FROM HISTORY` · `OLDER` · `Edit workouts` |
 | Save sheet | `Save to Workouts` · `Name` · `5 exercises · 15 sets` · `Add to rotation` · `Save` · `Cancel` · `You already have Legs.` |
 | Toasts | `Saved to Workouts` [Undo] · `Saved Push A` [Undo] · `Push A deleted` [Undo] · `Nothing to save` · `Can't undo: Push A changed since.` |
@@ -292,6 +347,7 @@ A fresh copy (Duplicate) opens in the editor; its first `Save` toast `Saved Push
 | `routineFromPlan(preview, name, at, newId, fromRoutine?)` | A workout from an overview preview: slots in shown order, skipped slots and sets left out, set types and counts as shown, rep ranges or work time, supersets. Rest: only the workout's own set-type presets and per-set overrides (exercise and global defaults fall through). Loads `Auto` except sets whose load Ben set by hand today (kept Fixed). When the preview is a saved workout's, `planSettingsOfRoutine` keeps its own Fixed pins (its unfitted load), each row's `Main` and item; a row swapped today keeps only `Main`. Otherwise `main` from WL9 |
 | `defaultMain(exercises, catalogue)` | WL9 rule. Used on create/save and for older workouts at read |
 | `editRoutine(current, patch, expectedVersion, opId, at)` | `RoutineChange` like `renameRoutine`; validates (≥ 1 set per exercise, reps min ≤ max, ≤ 40 exercises, ≤ 30 sets each) |
+| (2026-10-12) `defaultSlotShape`, `slotShapeOf`, `setWorkingSetCount`, `setWarmupCount`, `setSlotReps`, `setSlotTargetRpe`; `addExercise(…, shape?)` | Editor set shape (WL11). Contracts in exercise-library.md §10.7 |
 | `duplicateRoutine(current, newId, opId, at)` | Copy with new IDs, name `<name> copy`, not in the rotation |
 | `buildLibraryView({routines, finished, types, rotation, gym, now, tz})` | Rows for the three sections with counts, `≈` minutes, last done, gym issue count, source tag |
 
@@ -319,6 +375,9 @@ Fixture: saved Push A, Pull A, Legs A (rotation, Legs A next), Arms (never done)
 - **WL-A14.** Airplane mode, no AI: list, editor, Save, Duplicate, Delete, Undo, picker and overview all work; only `New with coach` reads `Coach offline`. No provider call is made by any library action.
 - **WL-A15.** Library data is Your data: in export, delete and backup with routines; never in Coaching knowledge; never in coach context except a workout Ben asks the coach about.
 - **WL-A16.** Every row, chip and button ≥ 44pt (rows ≥ 64pt); `UP NEXT`, `Main`, `⚠` and source tags carry an icon or word; tabular numbers; Dynamic Type to AX3 at 375pt with no sideways scroll; `Save` stays above the keyboard. No string in the library says "routine".
+
+- **WL-A17. (2026-10-12, WL11) Sets are a setting.** Every editor card shows `Sets [−] N [+]` without opening a set; changing it to 4 and saving gives 4 working sets on the overview and at Start. Warm-ups are counted separately. Details and the other entry points: exercise-library.md EL-B17–EL-B24.
+- **WL-A18. (2026-10-12) Save, then shape.** The Save sheet's `Edit ›` opens the editor on the unsaved copy; `Cancel` returns to the sheet with nothing saved; `Save` writes one workout.
 
 ### A7.1 Decisions (Ben, 12 Oct 2026) and open questions
 

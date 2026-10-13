@@ -165,6 +165,11 @@ interface Props {
   footer?: ReactNode;
   /** Developer › Exercise guide animations off: the still key positions only, and the clock never runs. */
   stillsOnly?: boolean;
+  /**
+   * `GuidePoster` (exercise-library EL12, design-system §9.90): key position 1
+   * (or the first frame) as a still canvas only; no clock, controls or text.
+   */
+  poster?: boolean;
 }
 
 /**
@@ -174,7 +179,8 @@ interface Props {
  * Under Reduce Motion it shows the key positions, one at a time (or the first
  * frame still, if the guide labels none), and never autoplays.
  */
-export function GuidePlayer({ guide, size, visible, footer, stillsOnly = false }: Props) {
+export function GuidePlayer({ guide, size, visible, footer, stillsOnly: stillsOnlyProp = false, poster: posterOnly = false }: Props) {
+  const stillsOnly = stillsOnlyProp || posterOnly;
   const theme = useTheme();
   const { loaded, stops } = guide;
   const reduceMotion = theme.a11y.reduceMotion;
@@ -298,6 +304,17 @@ export function GuidePlayer({ guide, size, visible, footer, stillsOnly = false }
   else if (poster) art = <Picture picture={poster} />;
 
   const pad = { paddingHorizontal: theme.space['4'] };
+  const canvas = (
+    <View accessible accessibilityRole="image" accessibilityLabel={guide.accessibilityLabel} style={{ width: size, height: size, alignSelf: 'center' }}>
+      <Canvas style={{ width: size, height: size }}>
+        <Group clip={rrect(rect(0, 0, size, size), corner, corner)}>
+          <Fill color={style.background} />
+          {art ? <Group transform={[{ scale: size }]}>{art}</Group> : null}
+        </Group>
+      </Canvas>
+    </View>
+  );
+  if (posterOnly) return canvas;
   return (
     <View style={{ gap: theme.space['3'] }}>
       {guide.draftLabel ? (
@@ -305,14 +322,7 @@ export function GuidePlayer({ guide, size, visible, footer, stillsOnly = false }
           <Tag text={guide.draftLabel} />
         </View>
       ) : null}
-      <View accessible accessibilityRole="image" accessibilityLabel={guide.accessibilityLabel} style={{ width: size, height: size, alignSelf: 'center' }}>
-        <Canvas style={{ width: size, height: size }}>
-          <Group clip={rrect(rect(0, 0, size, size), corner, corner)}>
-            <Fill color={style.background} />
-            {art ? <Group transform={[{ scale: size }]}>{art}</Group> : null}
-          </Group>
-        </Canvas>
-      </View>
+      {canvas}
 
       {stop ? (
         <View accessible accessibilityLabel={stepAccessibilityLabel(state, stop)} style={[pad, { gap: theme.space['1'] }]}>

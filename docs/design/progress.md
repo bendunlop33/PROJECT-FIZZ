@@ -328,7 +328,7 @@ Pushed from `Exercises ›`. Search field (system keyboard, `Search` return key,
 Pushed from the Exercises list, a home record, or the Summary's exercise rows (later).
 
 Regions:
-1. **Nav bar.** Back, exercise name.
+1. **Nav bar.** Back, exercise name. (2026-10-12) Under it, one `type.callout` row `Exercise info ›` (44pt) opens the Library's Exercise detail (how-to, muscles, cues, `Add to a workout`; [exercise-library.md](exercise-library.md) §9.4, §9.7).
 2. **Pain line** (only while a pain flag is active for this exercise): `⚠ Pain flag since 2 Oct` (`StatusBanner`, warning, icon + words). Tapping opens the existing pain flag view. Spans on the chart and the pre-flag reference are deferred (§9).
 3. **Series menu.** Button `Main Gym · barbell ▾`. Lists each series with its session count (`Main Gym · barbell · 24`, `Hotel Gym · barbell · 3`, `FitNotes · kg · 40`), then `Add FitNotes history` / `Remove FitNotes history` (PG32, only when a FitNotes series of the same convention and unit exists). Default: the series used most in the last 12 weeks.
 4. **`StatStrip`** for the selected series, all-time bests: `EST. 1RM ≈126.5 kg` (the best session value) · `BEST SET 105 × 3` (heaviest) · `SESSIONS 24`. Conventions without Est. 1RM show `BEST SET` · `MOST REPS` · `SESSIONS` (bodyweight), or `LEAST ASSIST` · `MOST REPS` · `SESSIONS` (assisted).
