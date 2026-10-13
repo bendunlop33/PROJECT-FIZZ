@@ -480,8 +480,7 @@ const APP_PLACE =
 /** Not about a new workout: where a past one went ("saved in History", "in your log"). */
 const NOT_HISTORY = '(?![^.?!]{0,20}\\b(?:history|log|logs|logbook|calendar)\\b)';
 /**
- * Review r5 B2: a new workout with an indefinite article ("a pull session", "you another workout"): the
- * only claim that counts when a draft already exists in the thread (that draft really is in Workouts).
+ * Review r5 B2: a new workout with an indefinite article ("a pull session", "you another 45 min session").
  */
 const NEW_INDEFINITE = "(?:(?:you|him) )?(?:a|an|another|one more|new|fresh)(?: (?:new|fresh|quick|short|full|whole|push|pull|legs?|leg day|upper|lower|body|full-body|chest|back|arms?|shoulders?|\\d{1,3}[- ]?(?:min|minute)s?)){0,3} (?:workout|session|routine)s?\\b";
 const FIRST_PERSON_PROMISE = "(?:i'll|i will|i'm going to|i am going to|im going to|i'm gonna|gonna|let me|lemme|i can now|i'll go ahead and|i'll just)\\s+(?:go ahead and |just |now |quickly )?";
@@ -511,7 +510,7 @@ const EXPLICIT_CLAIMS: readonly RegExp[] = [
   new RegExp(`\\byou(?:'ll| will| should| can now|'ll now)\\s+(?:now |soon )?(?:see|find|have)\\s+${BUILT_PRONOUN}\\b[^.?!]{0,20}?${BUILT_PLACE}`),
 ];
 
-/** Review r5 B2: with a draft already in the thread, only a claim of another new workout counts ("I've built you a pull session"). */
+/** A claim of a new workout with an indefinite article ("I'll make you a new 45 min legs session"). */
 const NEW_WORKOUT_CLAIMS: readonly RegExp[] = [
   new RegExp(`\\b${FIRST_PERSON_PROMISE}${BUILT_VERB}(?: up)? ${NEW_INDEFINITE}`),
   new RegExp(`\\b(?:i'm|i am|im|now)\\s+${BUILT_VERB_ING}(?: up)? ${NEW_INDEFINITE}`),
@@ -562,16 +561,13 @@ const NOT_BUILT_CLAIM = /\b(?:if you (?:like|want|fancy|'d like|would like)|let 
  * Questions and offers never count; history and advice ("It's in your workout history", "Let me put
  * it another way", "Adding a set would help") never do. Pure; the coach's words are data.
  */
-export function claimsWorkoutBuilt(sentence: string, opts: { inPlay?: boolean; draftExists?: boolean } = {}): boolean {
+export function claimsWorkoutBuilt(sentence: string, opts: { inPlay?: boolean } = {}): boolean {
   const t = sentence.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
   if (t === '' || /\?\s*$/.test(t) || OFFER_STATEMENT.test(t) || NOT_BUILT_CLAIM.test(t)) return false;
-  // Review r5 B2: a draft already in the thread (or in context) really is in Workouts: "It's ready in
-  // Workouts" and "Your push session is ready" are true. Only a claim of another new one counts.
-  // Review r6 B1: only when no build is in play. On a turn where Ben asked for a new one (or is following
-  // one up) and nothing was saved, "It's ready in your Workouts tab" is the build-131 false claim again.
-  if (opts.draftExists === true && opts.inPlay !== true) return NEW_WORKOUT_CLAIMS.some((re) => re.test(t));
-  if (EXPLICIT_CLAIMS.some((re) => re.test(t))) return true;
+  // Review r6 B1/B2: read only on a turn where a build is in play (asked, forced or followed up) and,
+  // there, with every claim whether or not an older draft exists. Elsewhere never (history passes).
   if (opts.inPlay !== true) return false;
+  if (EXPLICIT_CLAIMS.some((re) => re.test(t)) || NEW_WORKOUT_CLAIMS.some((re) => re.test(t))) return true;
   return IN_PLAY_CLAIMS.some((re) => re.test(t)) || (!PAST_WORKOUT.test(t) && IN_PLAY_NOUN_CLAIMS.some((re) => re.test(t)));
 }
 

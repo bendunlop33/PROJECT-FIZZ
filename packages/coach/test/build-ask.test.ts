@@ -546,7 +546,7 @@ describe('"I can’t build workouts" on a general turn where the app can (build 
 
 describe('review r3 B1: no promise or done-claim without a saved draft', () => {
   const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
-  // Explicit claims (review r4 B2): a workout noun, or a pronoun with "for you" or a place. Hidden on any turn that can build.
+  // Explicit claims (review r4 B2): a workout noun, or a pronoun with "for you" or a place. Review r6: read only with a build in play.
   const PROMISES = [
     "Okay, I'll set that up for you.",
     'Let me put that in the app.',
@@ -558,8 +558,9 @@ describe('review r3 B1: no promise or done-claim without a saved draft', () => {
     'Your push session is in the app.',
     "I'm setting that up now.",
   ];
-  it.each(PROMISES)('%s → a claim', (s) => {
-    expect(claimsWorkoutBuilt(s)).toBe(true);
+  it.each(PROMISES)('%s → a claim only with a build in play (review r6)', (s) => {
+    expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(true);
+    expect(claimsWorkoutBuilt(s)).toBe(false);
   });
   // Review r4 B2/S1: claims only when a build is in play (Ben asked, or is following one up).
   const IN_PLAY = ['Building it now.', 'Check your Workouts tab.', "It's set up for you."];
@@ -587,8 +588,8 @@ describe('review r3 B1: no promise or done-claim without a saved draft', () => {
     expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(false);
   });
 
-  it.each(PROMISES)('a no-tool general turn with a build available never shows "%s"; it asks the fixed offer once', (s) => {
-    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true });
+  it.each(PROMISES)('a no-tool build turn never shows "%s"; it asks the fixed offer once', (s) => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, buildAsked: true });
     const items = [...f.push(`${s} Push first, then legs. `), ...f.end(true)];
     const shown = items.map((i) => (i.kind === 'sentence' ? i.text : ''));
     expect(shown).not.toContain(s);
@@ -986,7 +987,7 @@ describe('review r5 B2: advice, history and true draft sentences are never hidde
     "Today's session is sorted: bench first.",
   ];
   const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
-  const run = (s: string, opts: { toolOffered: boolean; draftExists?: boolean; buildAsked?: boolean }) => {
+  const run = (s: string, opts: { toolOffered: boolean; buildAsked?: boolean }) => {
     const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, ...opts });
     return { items: [...f.push(`${s} `), ...f.end(true)], hidden: f.hiddenLines };
   };
@@ -1007,27 +1008,24 @@ describe('review r5 B2: advice, history and true draft sentences are never hidde
     '%s: shown on the turn after a draft was built (a draft in the thread, no build in play), tool offered or not',
     (s) => {
       for (const toolOffered of [false, true]) {
-        expect(claimsWorkoutBuilt(s, { draftExists: true })).toBe(false);
-        const r = run(s, { toolOffered, draftExists: true, buildAsked: false });
+        expect(claimsWorkoutBuilt(s)).toBe(false);
+        const r = run(s, { toolOffered, buildAsked: false });
         expect(r.hidden.map((h) => h.detail)).not.toContain('No workout was built.');
       }
     },
   );
-  it('with a draft in the thread, a claim of another new workout is still hidden', () => {
-    expect(claimsWorkoutBuilt("I've built you a pull session.", { draftExists: true })).toBe(true);
-    expect(claimsWorkoutBuilt("I'll make you a new 45 min legs session.", { draftExists: true })).toBe(true);
-    const r = run("I've built you a pull session. Rows first.", { toolOffered: true, draftExists: true, buildAsked: true });
+  it('review r6: with a build in play, a claim of a new workout is hidden', () => {
+    expect(claimsWorkoutBuilt("I've built you a pull session.", { inPlay: true })).toBe(true);
+    expect(claimsWorkoutBuilt("I'll make you a new 45 min legs session.", { inPlay: true })).toBe(true);
+    expect(claimsWorkoutBuilt("I've built you a pull session.")).toBe(false);
+    const r = run("I've built you a pull session. Rows first.", { toolOffered: true, buildAsked: true });
     expect(r.items).toEqual([{ kind: 'sentence', text: 'Rows first.' }]);
   });
-  it('with no draft, a session claimed in the app or its Workouts tab is still a claim everywhere', () => {
-    for (const s of ['Your push session is ready in Workouts.', 'Your push session is saved in the app.', 'Your push session is in the app.', "It's ready in your workouts.", 'Done, your pull session is ready in the Workouts tab.', 'A new pull session is in the app.']) {
-      expect(claimsWorkoutBuilt(s)).toBe(true);
+  it('review r6: a session claimed in the app is a claim only with a build in play', () => {
+    for (const s of ['Your push session is ready in Workouts.', 'Your push session is saved in the app.', 'Your push session is in the app.', "It's ready in your workouts.", 'Done, your pull session is ready in the Workouts tab.', 'A new pull session is in the app.', 'Your session is saved in the app.']) {
+      expect(claimsWorkoutBuilt(s)).toBe(false);
+      expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(true);
     }
-    // Review r6 B2: "Your session" with no focus reads as Ben's own (history); a claim only with a build in play.
-    expect(claimsWorkoutBuilt('Your session is saved in the app.')).toBe(false);
-    expect(claimsWorkoutBuilt('Your session is saved in the app.', { inPlay: true })).toBe(true);
-    // A saved routine really is in Workouts.
-    expect(claimsWorkoutBuilt('Your push routine is in Workouts.')).toBe(false);
   });
   it('a no-place "Your push session is ready." is a claim only with a build in play', () => {
     expect(claimsWorkoutBuilt('Your push session is ready.')).toBe(false);
@@ -1114,17 +1112,17 @@ describe('review r6 B1: a draft in the thread never turns the backstop off on a 
   const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
   const refused = { ref: 'a1', origin: 'this_turn' as const, record: { status: 'rejected', undoneBy: null, detail: { kind: 'build_workout' } } as unknown as ActionRecord };
   it.each(CLAIMS)('%s: a claim with a build in play, draft in the thread or not', (s) => {
-    expect(claimsWorkoutBuilt(s, { inPlay: true, draftExists: true })).toBe(true);
     expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(true);
+    expect(claimsWorkoutBuilt(s)).toBe(false);
   });
   it.each(CLAIMS)('%s: hidden on a build turn with a draft in the thread and no call', (s) => {
-    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true, draftExists: true });
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true });
     const items = [...f.push(`${s} Rows first. `), ...f.end(true)];
     expect(items.map((i) => (i.kind === 'sentence' ? i.text : ''))).toEqual(['Rows first.']);
     expect(f.hiddenLines.map((h) => h.detail)).toEqual(['No workout was built.']);
   });
   it.each(CLAIMS)('%s: hidden beside a refused call, draft in the thread', (s) => {
-    const f = createReplyFilter({ ledger: () => ({ turnId: 't', entries: [refused], knownExerciseNames: [] }), surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true, draftExists: true });
+    const f = createReplyFilter({ ledger: () => ({ turnId: 't', entries: [refused], knownExerciseNames: [] }), surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true });
     const items = [...f.push(`${s} `), ...f.end(true)];
     expect(items.filter((i) => i.kind === 'sentence')).toEqual([]);
     expect(f.hiddenLines).toHaveLength(1);
@@ -1141,7 +1139,7 @@ describe('review r6 B2: history answers are never hidden on a general turn', () 
   ];
   const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
   it.each(HISTORY)('%s: not a claim, with or without a build in play', (s) => {
-    for (const inPlay of [false, true]) for (const draftExists of [false, true]) expect(claimsWorkoutBuilt(s, { inPlay, draftExists })).toBe(false);
+    expect(claimsWorkoutBuilt(s)).toBe(false);
   });
   it.each(HISTORY)('%s: the same output as with the backstop off, tool offered or not', (s) => {
     for (const toolOffered of [false, true]) {

@@ -512,7 +512,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
   // The reply is always the last step, so every action it could cite is already in the ledger.
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, draftExists: req.draftInThread === true || req.draftInContext === true });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {

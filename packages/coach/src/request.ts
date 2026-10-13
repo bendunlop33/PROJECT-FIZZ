@@ -623,6 +623,7 @@ const FOCUS_RUN = `${FOCUS}(?:(?: ?/ ?| and | & | \\+ | plus | )${FOCUS})*`;
 const BUILD_CAN_I = new RegExp(`^(?:can|could|may) i (?:please )?(?:have|get|grab) (?:${NEW_DET} )+.{0,80}?\\b${BUILD_NOUN}s?\\b`);
 /** "make me push session", "give me a push/legs day" (build 131): a focus right before the noun. */
 const BUILD_FOCUS = new RegExp(`^(?:make|give|build|plan|create|design|write|program)(?: me| us)?(?: (?:${NEW_DET}))* ${FOCUS_RUN} ${BUILD_NOUN}\\b`);
+const GUARD_WORD = /\b(?:avoid|avoids|avoiding|without|except|around|easy on|easier on)\b/;
 /** Review r6 S2: "Push and legs today please": a focus, a day and "please", the whole message. */
 const BUILD_FOCUS_TODAY = new RegExp(`^${FOCUS_RUN}(?: (?:day|session|workout))? (?:today|tonight) please$`);
 /** "push session please", "push workout for today please" (build 131): no verb, but a plain ask. */
@@ -670,6 +671,8 @@ const FOCUS_LEAD = new RegExp(`^${FOCUS_RUN}(?= (?:(?:day|session|workout) )?(?:
 
 /** Ben's words with a training focus ("back and biceps session") taken out, for reading pain words (review r5 S1). Pure. */
 export function withoutFocusRuns(text: string): string {
+  // Review r6 S3: a guard word anywhere means a body part may be Ben's own; nothing is stripped (rule 9).
+  if (GUARD_WORD.test(lower(text))) return lower(text);
   return text.toLowerCase().replace(/[‘’]/g, "'").trim().replace(FOCUS_LEAD, '').replace(FOCUS_BEFORE_NOUN, '').replace(FOCUS_LIST_END, '');
 }
 

@@ -756,14 +756,13 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
   const said = (r: { items: readonly { kind: string; text?: string }[] }) => r.items.flatMap((i) => (i.kind === 'sentence' && i.text !== undefined ? [i.text] : []));
 
   it.each(["Okay, I'll set that up for you.", 'Let me put that in the app.', "I'll get that into your workouts.", "It's ready in your workouts.", 'You should see it in the app shortly.'])(
-    'review r3 B1, r4: on a turn with the tool offered but not used, "%s" is hidden and just dropped (no draft)',
+    'review r6 B2: on a non-build turn with the tool offered, the build backstop does not read "%s"',
     async (promise) => {
       const { s } = await benWithHistory();
       model = new StepModel([() => replyWith(`${promise} Push first.`)]);
       const r = await ask(s, 'how is my bench going?');
       expect(model.requests[0]?.tools.map((t) => t.name)).toContain('propose_workout');
-      expect(said(r)).toEqual(['Push first.']);
-      expect(r.note).toBe('Nothing changed · 1 line hidden');
+      expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
       expect(await s.coachDrafts.list()).toEqual([]);
     },
   );
