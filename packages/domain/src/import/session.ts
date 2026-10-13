@@ -19,6 +19,12 @@ import { importIds } from './plan';
  *   time: when it entered the app. The original row is the provenance.
  * - FitNotes has no warm-up flag, so every set is a working set (research
  *   §3.4; proposed spec change S6 would mark them "not recorded").
+ * - Layout imports (ADR 0026): one workout per workout key (two Strong
+ *   workouts on one date are two workouts). A start time written in the file
+ *   (no zone) is read in the import's zone, as FitNotes dates are, and is
+ *   only the ordering anchor; the cell as written stays the provenance
+ *   (`18:02 (as in the file)`). A confirmed warm-up or drop-set marker gives
+ *   the set that type.
  */
 
 /** FitNotes files have no rest: `not_recorded`, never a rest of 0 s from the global default (review N6). */
@@ -34,21 +40,28 @@ export interface ImportedSessionInput {
   /** When the commit started (the job's `startedAt.utc`). */
   importedAtUtc: string;
   date: string;
-  /** The job's imported rows for this date. */
+  /** The workout's key (layout imports); absent: the date (FitNotes). */
+  workoutKey?: string;
+  /** `HH:mm` as written in the file (layout imports); absent or null: none. */
+  startLocal?: string | null;
+  /** The job's imported rows for this workout. */
   rows: readonly ImportRow[];
 }
 
-export function anchorUtcFor(date: string, tz: string): string {
-  return toIso(localHourUtcMs(date, 12, tz));
+export function anchorUtcFor(date: string, tz: string, startLocal: string | null = null): string {
+  const m = startLocal === null ? null : /^(\d{2}):(\d{2})$/.exec(startLocal);
+  if (!m) return toIso(localHourUtcMs(date, 12, tz));
+  return toIso(localHourUtcMs(date, Number(m[1]), tz) + Number(m[2]) * 60_000);
 }
 
 export function buildImportedSession(input: ImportedSessionInput): SessionAggregate {
-  const sessionId = importIds.session(input.jobId, input.date);
-  const startOperationId = importIds.startOperation(input.operationId, input.date);
-  const anchor = anchorUtcFor(input.date, input.tz);
+  const key = input.workoutKey ?? input.date;
+  const sessionId = importIds.session(input.jobId, key);
+  const startOperationId = importIds.startOperation(input.operationId, key);
+  const anchor = anchorUtcFor(input.date, input.tz, input.startLocal ?? null);
   const rows = input.rows
-    .filter((r) => r.result === 'imported' && r.localDate === input.date && r.sessionId === sessionId)
-    .sort((a, b) => a.row - b.row);
+    .filter((r) => r.result === 'imported' && (input.workoutKey !== undefined || r.localDate === input.date) && r.sessionId === sessionId)
+    .sort((a, b) => a.row - b.row || (a.part ?? 0) - (b.part ?? 0));
 
   const exercises = new Map<string, SessionExercise>();
   const sets: WorkoutSet[] = [];
@@ -75,12 +88,13 @@ export function buildImportedSession(input: ImportedSessionInput): SessionAggreg
     }
     const side = m.laterality === 'unilateral' ? ('both' as const) : null;
     const actual = { load: m.load, reps: m.reps, durationS: null, rpe: m.rpe, rir: null };
+    const setType = m.setType ?? 'working';
     sets.push({
       id: r.setId,
       sessionId,
       sessionExerciseId: m.sessionExerciseId,
       index: m.setIndex,
-      setType: 'working',
+      setType,
       status: 'completed',
       side,
       pairedWithSetId: null,
@@ -103,7 +117,7 @@ export function buildImportedSession(input: ImportedSessionInput): SessionAggreg
       kind: 'logged',
       atUtc: input.importedAtUtc,
       before: null,
-      after: { status: 'completed', setType: 'working', side, actual, version: 1 },
+      after: { status: 'completed', setType, side, actual, version: 1 },
     });
   }
   const orderedExercises = [...exercises.values()].sort((a, b) => a.order - b.order);

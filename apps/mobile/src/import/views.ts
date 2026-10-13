@@ -139,6 +139,17 @@ export function writeFailedLine(r: { written: number; date: string; message: str
   return `Workout ${formatCount(r.written + 1)} (${longDate(r.date, locale)}) may not have saved: ${r.message}. ${plural(r.written, 'workout is', 'workouts are')} in before it.`;
 }
 
+/**
+ * A layout commit refused because the layout moved on (rule 5). A saved
+ * layout that changed or was deleted means choosing the file again; a
+ * layout changed on Check the layout since the preview goes back there,
+ * with Ben's answers kept and nothing sent again (review r2 S3).
+ */
+export function layoutRefusedView(r: { reason: 'layout_changed' } | { reason: 'layout_session_changed'; layoutId: string }): { text: string; back: { label: string; layoutId: string } | null } {
+  if (r.reason === 'layout_session_changed') return { text: 'The layout changed. Check it again.', back: { label: 'Check the layout', layoutId: r.layoutId } };
+  return { text: 'The saved layout changed. Choose the file again.', back: null };
+}
+
 export function introView(input: { block: ImportBlock | null; blockTime: string; paused: PastImport | null }): IntroView {
   const paused = input.paused && input.paused.state === 'paused' ? { text: pausedLine(input.paused), jobId: input.paused.job.id, version: input.paused.job.version } : null;
   return {
@@ -200,6 +211,12 @@ export function appLabel(variant: FitNotesVariant): string {
   return fitNotesApp(variant) === 'fitnotes2' ? 'FitNotes 2 (iPhone) CSV' : 'FitNotes (Android) CSV';
 }
 
+/** An import's source tag (§9.2.10): `FitNotes …`, `Coach layout` or `Layout: <name>`. */
+export function sourceLabel(job: Pick<ImportJob, 'variant' | 'layout'>): string {
+  if (job.variant !== null) return appLabel(job.variant);
+  return job.layout?.kind === 'saved' && job.layout.profileName !== null ? `Layout: ${job.layout.profileName}` : 'Coach layout';
+}
+
 export function unitsLabel(units: { kg: number; lb: number }): string {
   if (units.kg > 0 && units.lb > 0) return 'weights in kg and lb (per set)';
   if (units.kg > 0) return 'weights in kg';
@@ -207,7 +224,7 @@ export function unitsLabel(units: { kg: number; lb: number }): string {
   return 'no weights';
 }
 
-export type QuestionKey = { kind: 'names' } | { kind: 'per_hand' } | { kind: 'total' } | { kind: 'bodyweight'; key: string } | { kind: 'unit' };
+export type QuestionKey = { kind: 'names' } | { kind: 'per_hand' } | { kind: 'total' } | { kind: 'bodyweight'; key: string } | { kind: 'unit' } | { kind: 'value_checks' };
 
 export interface QuestionRow {
   key: QuestionKey;
@@ -215,13 +232,17 @@ export interface QuestionRow {
   line: Line;
 }
 
-export type SkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
+export type SkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise' | 'not_a_set' | 'value_to_check';
 
 export interface PreviewView {
   fileName: string;
   /** This file was imported before, but some of its dates aren't in the app now (review r3 S2). */
   notice: Line | null;
   detection: string;
+  /** Layout imports (§9.2.6): the unit and where it came from (`kg · from the column name`). */
+  unitLine: string | null;
+  /** Layout imports (§9.2.6): `Save layout`, its name, and the `Why?` text. Null for FitNotes and saved layouts. */
+  saveLayout: { on: boolean; name: string; why: string } | null;
   rowsLine: string;
   willImport: { line1: string; line2: string };
   questionsTitle: string;
@@ -291,6 +312,14 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
           },
     );
   }
+  if (a.valueChecks.length > 0) {
+    const open = a.valueChecks.filter((v) => v.answer === null).length;
+    out.push(
+      open > 0
+        ? { key: { kind: 'value_checks' }, answered: false, line: { icon: 'exclamationmark.triangle', tone: 'warning', text: `${plural(open, 'value', 'values')} to check` } }
+        : { key: { kind: 'value_checks' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Values to check: ${formatCount(a.valueChecks.length)} answered` } },
+    );
+  }
   if (a.unit) {
     out.push(
       a.unit.answer === null
@@ -334,6 +363,9 @@ export function inRecentlyDeletedLine(n: number): string {
   return `${formatCount(n)} ${n === 1 ? 'is' : 'are'} in Recently deleted.`;
 }
 
+/** Where a layout import's unit came from (§9.5 `kg · from the column name` / `kg · your answer`). */
+const UNIT_SOURCE_WORD = { header: 'from the column name', unit_column: 'from the unit column', answer: 'your answer' } as const;
+
 export function previewView(d: ImportDraft, locale?: string): PreviewView {
   const a = d.analysis;
   const r = a.counts.byResult;
@@ -358,18 +390,21 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
     skipped.push({ key: 'duplicate', line: info(`${plural(e.dates, 'workout', 'workouts')} came in with your import on ${shortDateOf(e.startedAtUtc, e.tz, locale)}. They’ll be skipped.`) });
   }
   if (skippedExerciseSets(a) > 0) skipped.push({ key: 'exercise', line: info(`${plural(skippedExerciseSets(a), 'set', 'sets')} of exercises you chose to skip`) });
+  if (r.skipped_not_a_set > 0) skipped.push({ key: 'not_a_set', line: info(`${plural(r.skipped_not_a_set, 'row', 'rows')} not a set`) });
+  if (r.skipped_value_to_check > 0) skipped.push({ key: 'value_to_check', line: info(`${plural(r.skipped_value_to_check, 'set', 'sets')} skipped as values to check`) });
 
   const kept: Line[] = [];
   if (a.comments > 0) kept.push(info(`${plural(a.comments, 'comment', 'comments')}, kept with each set as written`));
-  else if (!variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
-  kept.push(info('Date only (no times)'));
+  else if (d.variant !== null && !variantHasComments(d.variant)) kept.push(info('No comments in this file (FitNotes export without comments)'));
+  // AI6: times with no zone are kept as written; a file with none is date only.
+  kept.push(info(a.workouts.some((w) => w.startLocal !== undefined && w.startLocal !== null) ? 'Times as in the file (no time zone)' : 'Date only (no times)'));
   if (a.machines.length > 0) {
     // Assistance reads the number the other way round (more is easier): name those exercises (review r5 S3), each with what it imports as (review r6 N2).
     const assisted = a.machines.filter((m) => m.convention === 'assistance').map(assistedText);
     kept.push(info('Machines: by exercise', assisted.length === 0 ? undefined : `Read as assistance (more weight is easier): ${assisted.join(', ')}`));
   }
   if (a.barless.length > 0) kept.push(info(`Kettlebell and other no-bar weights imported as written (${a.barless.map((b) => b.name).join(', ')})`));
-  kept.push(info('All sets as working sets'));
+  if (d.variant !== null) kept.push(info('All sets as working sets'));
 
   const effortReview =
     a.effort.candidates.length === 0
@@ -398,7 +433,9 @@ export function previewView(d: ImportDraft, locale?: string): PreviewView {
           text: `Imported before on ${shortDateOf(before.startedAt.utc, before.startedAt.tz, locale)} · new dates only`,
         }
       : null,
-    detection: `${appLabel(d.variant)} · ${unitsLabel(a.units)}`,
+    detection: d.variant !== null ? `${appLabel(d.variant)} · ${unitsLabel(a.units)}` : d.layout?.kind === 'saved' ? `Layout: ${d.layout.profileName ?? ''} · offline` : 'Coach layout · checked by you',
+    unitLine: d.layout === null || d.layout.unit === null ? null : `${d.layout.unit} · ${UNIT_SOURCE_WORD[d.layout.unitSource ?? 'answer']}`,
+    saveLayout: d.layout?.save ? { on: d.layout.save.on, name: d.layout.save.name, why: 'Files with these columns import offline next time.' } : null,
     rowsLine: `${plural(a.rowCount, 'row', 'rows')}${range}`,
     willImport: { line1: `${plural(a.counts.workouts, 'workout', 'workouts')} · ${plural(a.counts.sets, 'set', 'sets')}`, line2: plural(a.counts.exercises, 'exercise', 'exercises') },
     questionsTitle: open > 0 ? `Needs your answer (${formatCount(open)})` : 'Your answers',
@@ -428,7 +465,9 @@ export function workoutRows(a: ImportAnalysis, page: number, locale?: string): {
 // Original row text and mapped set text (§2.5 step 3d, provenance copy)
 
 /** `Flat Barbell Bench Press · 100 kgs · 8 reps · "@8 felt heavy"`: the row as written, minus date and category. */
-export function originalText(variant: FitNotesVariant, cells: readonly string[]): string {
+export function originalText(variant: FitNotesVariant | null, cells: readonly string[]): string {
+  // Any other app's row: its cells as written, in file order (§9.2.10).
+  if (variant === null) return cells.map((c) => c.trim()).filter((c) => c !== '').join(' · ');
   const header = FITNOTES_HEADERS[variant];
   // Values don't line up with the columns: show them exactly as written instead of guessing which is which.
   if (cells.length !== header.length) return cells.join(',');
@@ -477,24 +516,28 @@ const SKIP_WORDS: Record<Exclude<ImportRowResult, 'imported'>, string> = {
   skipped_date_exists: 'this date already has a workout',
   skipped_exercise: 'you chose Skip',
   unreadable: 'can’t be read',
+  skipped_value_to_check: 'you chose Skip',
+  skipped_not_a_set: 'not a set',
+  not_read: 'not read',
 };
 
 /** One row of a preview workout (§2.5 step 3d) or a results list. */
-export function previewRowLines(variant: FitNotesVariant, row: FitNotesRow, fate: RowFate, candidate: MatchCandidate | null): { title: string; detail: string } {
-  const original = `FitNotes row ${formatCount(row.row)}: ${originalText(variant, row.cells)}`;
+export function previewRowLines(variant: FitNotesVariant | null, row: FitNotesRow, fate: RowFate, candidate: MatchCandidate | null): { title: string; detail: string } {
+  const original = `${variant === null ? 'Row' : 'FitNotes row'} ${formatCount(row.row)}: ${originalText(variant, row.cells)}`;
   if (fate.result === 'imported') return { title: `${fate.set.exerciseName} · ${mappedSetText(fate.set, loadContextFor(candidate))}`, detail: original };
   if (fate.result === 'pending') return { title: `${row.exercise} · needs an answer`, detail: original };
   return { title: `${row.exercise} · ${fate.detail}`, detail: original };
 }
 
 /** `Row 1,204 · 2024-05-03 · Treadmill · 5 km · 25:00 — cardio isn’t imported yet` (§2.5 step 5). */
-export function resultRowLine(variant: FitNotesVariant, r: ImportRow): string {
+export function resultRowLine(variant: FitNotesVariant | null, r: ImportRow): string {
   const reason =
     r.result === 'imported'
       ? `imported${r.imported ? ` as ${r.imported.exerciseName} · ${mappedSetText(r.imported)}` : ''}${r.detail ? ` (${r.detail})` : ''}`
       : r.result === 'unreadable' || r.result === 'skipped_unsupported'
         ? (r.detail ?? SKIP_WORDS[r.result])
         : SKIP_WORDS[r.result];
+  if (variant === null) return `Row ${formatCount(r.row)} · ${originalText(null, r.cells)} — ${reason}`;
   if (r.cells.length !== FITNOTES_HEADERS[variant].length) return `Row ${formatCount(r.row)} · ${originalText(variant, r.cells)} — ${reason}`;
   const date = r.localDate ?? (r.cells[0] ?? '').trim();
   return `Row ${formatCount(r.row)} · ${date === '' ? 'no date' : date} · ${originalText(variant, r.cells)} — ${reason}`;
@@ -962,7 +1005,7 @@ export function stateLine(p: PastImport, locale?: string): Line {
 }
 
 export function pastImportRow(p: PastImport, locale?: string): { title: string; subtitle: string; line: Line } {
-  return { title: p.job.fileName, subtitle: `Imported ${shortDateOf(p.job.startedAt.utc, p.job.startedAt.tz, locale)} · ${appLabel(p.job.variant)}`, line: stateLine(p, locale) };
+  return { title: p.job.fileName, subtitle: `Imported ${shortDateOf(p.job.startedAt.utc, p.job.startedAt.tz, locale)} · ${sourceLabel(p.job)}`, line: stateLine(p, locale) };
 }
 
 export interface ResultsView {
@@ -983,11 +1026,24 @@ const SKIP_TITLE: Record<Exclude<ImportRowResult, 'imported'>, (n: number) => st
   skipped_date_exists: (n) => `${plural(n, 'row', 'rows')} on dates already in GymSmarter`,
   skipped_duplicate: (n) => `${plural(n, 'row', 'rows')} from an earlier import`,
   skipped_exercise: (n) => `${plural(n, 'set', 'sets')} you chose to skip`,
+  skipped_value_to_check: (n) => `${plural(n, 'set', 'sets')} skipped as values to check`,
+  skipped_not_a_set: (n) => `${plural(n, 'row', 'rows')} not a set`,
+  not_read: (n) => `${plural(n, 'line', 'lines')} not read`,
 };
 
 export function resultsView(p: PastImport & { rows: readonly ImportRow[] }, locale?: string): ResultsView {
   const sets = p.rows.filter((r) => r.result === 'imported').length;
-  const order: Exclude<ImportRowResult, 'imported'>[] = ['skipped_cardio', 'skipped_unsupported', 'unreadable', 'skipped_date_exists', 'skipped_duplicate', 'skipped_exercise'];
+  const order: Exclude<ImportRowResult, 'imported'>[] = [
+    'skipped_cardio',
+    'skipped_unsupported',
+    'unreadable',
+    'skipped_date_exists',
+    'skipped_duplicate',
+    'skipped_exercise',
+    'skipped_value_to_check',
+    'skipped_not_a_set',
+    'not_read',
+  ];
   const skipped = order.flatMap((result) => {
     const rows = p.rows.filter((r) => r.result === result);
     return rows.length === 0 ? [] : [{ result, title: SKIP_TITLE[result](rows.length), lines: rows.map((r) => resultRowLine(p.job.variant, r)) }];
@@ -1025,6 +1081,11 @@ export function undoneToast(workouts: number): string {
 /** History set detail (§5 Provenance). */
 export function provenanceLines(p: ImportedSetProvenance, locale?: string): { source: string; original: string } {
   const date = longDate(localDateOf(toMs(p.importedAt.utc), p.importedAt.tz), locale);
+  if (p.variant === null) {
+    // Any other app (§9.2.10): the file and row, the cells as written, and the layout's tag; a start time as in the file.
+    const time = p.row.startLocal ? ` · ${p.row.startLocal} (as in the file)` : '';
+    return { source: `${p.fileName} · row ${formatCount(p.row.row)}${time}`, original: `Original: ${originalText(null, p.row.cells)}` };
+  }
   return { source: `Imported from FitNotes on ${date} · row ${formatCount(p.row.row)}`, original: `Original: ${originalText(p.variant, p.row.cells)}` };
 }
 
@@ -1049,7 +1110,7 @@ export function importedWorkouts(rows: readonly ImportRow[], locale?: string): {
  * named on the screen) and `Original: …` exactly as written.
  */
 export function importedSetLines(job: ImportJob, row: ImportRow, locale?: string): { title: string; source: string; original: string } {
-  const p = provenanceLines({ fileName: job.fileName, importedAt: job.startedAt, variant: job.variant, row, header: job.header }, locale);
+  const p = provenanceLines({ fileName: job.fileName, importedAt: job.startedAt, variant: job.variant, row, header: job.header, layout: job.layout ?? null }, locale);
   // The set as it came in, labelled so: a set corrected in the app since isn't shown here (review r2 N3).
   const set = row.imported;
   const title = set ? `${set.exerciseName} · imported as ${mappedSetText(set)}` : row.exerciseName;

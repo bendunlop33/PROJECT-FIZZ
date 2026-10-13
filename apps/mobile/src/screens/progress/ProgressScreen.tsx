@@ -498,7 +498,7 @@ function EmptyState({ hasResume }: { hasResume: boolean }) {
     navigation.navigate('Tabs', { screen: 'Today' });
   };
   const toImport = () => {
-    navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'ImportIntro', initial: false } });
+    navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'ImportHistory', initial: false } });
   };
   return (
     <Card>

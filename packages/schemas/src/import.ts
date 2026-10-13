@@ -11,6 +11,8 @@ import {
   ZonedTimestampSchema,
 } from './common';
 import { LateralitySchema } from './exercise';
+import { ImportJobLayoutSchema } from './import-layout';
+import { SetTypeSchema } from './routine';
 
 /**
  * FitNotes import (data-import-export.md §2.5, §3.4, §4.3; research
@@ -42,7 +44,7 @@ export type FitNotesVariant = z.infer<typeof FitNotesVariantSchema>;
  * - `skipped_duplicate`: the date came in with an earlier import.
  * - `skipped_date_exists`: the date has a workout logged in the app and Ben chose to skip those dates.
  */
-export const ImportRowResultSchema = z.enum([
+export const FITNOTES_ROW_RESULTS = [
   'imported',
   'skipped_cardio',
   'skipped_unsupported',
@@ -50,7 +52,17 @@ export const ImportRowResultSchema = z.enum([
   'skipped_date_exists',
   'skipped_exercise',
   'unreadable',
-]);
+] as const;
+
+/**
+ * Results only layout imports give (§9.2.10, ADR 0026):
+ * - `skipped_value_to_check`: Ben chose `Skip` on a value to check (AI13);
+ * - `skipped_not_a_set`: a marker he said is `Not a set` (a rest-timer row);
+ * - `not_read`: reserved for notes lines no pattern reads (deferred).
+ */
+export const LAYOUT_ROW_RESULTS = ['skipped_value_to_check', 'skipped_not_a_set', 'not_read'] as const;
+
+export const ImportRowResultSchema = z.enum([...FITNOTES_ROW_RESULTS, ...LAYOUT_ROW_RESULTS]);
 export type ImportRowResult = z.infer<typeof ImportRowResultSchema>;
 
 /** A source exercise name, normalised for matching (lower case, single spaces). */
@@ -167,6 +179,12 @@ export const ImportAnswersSchema = z.object({
   existingDates: z.enum(['skip', 'import']),
   /** Where the workouts were. Null = not recorded (the default: don't assume). */
   gymId: IdSchema.nullable(),
+  /**
+   * Values to check (AI13, layout imports): per `<workoutKey>|<name key>`,
+   * import as written or skip that exercise's sets in that workout. No
+   * default. Absent on FitNotes jobs.
+   */
+  valueChecks: z.record(z.string().max(400), z.enum(['import', 'skip'])).optional(),
 });
 export type ImportAnswers = z.infer<typeof ImportAnswersSchema>;
 
@@ -177,7 +195,19 @@ export const ImportCountsSchema = z.object({
   workouts: count,
   sets: count,
   exercises: count,
-  byResult: z.record(ImportRowResultSchema, count),
+  /** Every FitNotes result; the layout-only ones are absent on jobs stored before them. */
+  byResult: z.object({
+    imported: count,
+    skipped_cardio: count,
+    skipped_unsupported: count,
+    skipped_duplicate: count,
+    skipped_date_exists: count,
+    skipped_exercise: count,
+    unreadable: count,
+    skipped_value_to_check: count.optional(),
+    skipped_not_a_set: count.optional(),
+    not_read: count.optional(),
+  }),
 });
 export type ImportCounts = z.infer<typeof ImportCountsSchema>;
 
@@ -191,11 +221,15 @@ export const ImportJobStatusSchema = z.enum(['committing', 'committed', 'reverte
 export type ImportJobStatus = z.infer<typeof ImportJobStatusSchema>;
 
 export const ImportJobSchema = RecordMetaSchema.extend({
-  source: z.literal('fitnotes'),
+  /** `layout`: any other app's table, read through a layout (§9, ADR 0026). */
+  source: z.enum(['fitnotes', 'layout']),
   fileName: z.string().min(1).max(255),
   /** SHA-256 of the file's text: the same file is recognised however it's named. */
   checksum: z.string().regex(/^[0-9a-f]{64}$/),
-  variant: FitNotesVariantSchema,
+  /** FitNotes only; null for a layout import. */
+  variant: FitNotesVariantSchema.nullable(),
+  /** Layout imports: the layout used (absent on FitNotes jobs). */
+  layout: ImportJobLayoutSchema.optional(),
   /** The file's first line, as data. */
   header: z.string().max(4000),
   /** FitNotes dates have no zone: they are read as local dates in this zone (the phone's, when imported). */
@@ -213,7 +247,9 @@ export const ImportJobSchema = RecordMetaSchema.extend({
   finishedAt: ZonedTimestampSchema.nullable(),
   /** `Undo this import`: when, the operation, and how many workouts were hidden. */
   revert: z.object({ at: ZonedTimestampSchema, opId: OperationIdSchema, workouts: count }).nullable(),
-});
+})
+  .refine((j) => (j.source === 'fitnotes') === (j.variant !== null), { message: 'A FitNotes import has its variant, and only it', path: ['variant'] })
+  .refine((j) => (j.source === 'layout') === (j.layout !== undefined), { message: 'A layout import records its layout, and only it', path: ['layout'] });
 export type ImportJob = z.infer<typeof ImportJobSchema>;
 
 /** What one imported row became: the set's mapped values (never snapped to equipment; rule 2). */
@@ -232,6 +268,8 @@ export const ImportedSetSchema = z.object({
   exerciseOrder: z.int().min(0),
   /** Position of the set within its session exercise (row order). */
   setIndex: z.int().min(0),
+  /** From a confirmed set-type marker (layout imports); absent = a working set, as before. */
+  setType: SetTypeSchema.optional(),
 });
 export type ImportedSet = z.infer<typeof ImportedSetSchema>;
 
@@ -245,6 +283,16 @@ export const ImportRowSchema = z
     jobId: IdSchema,
     /** Spreadsheet row number: the header is row 1. */
     row: z.int().min(2),
+    /**
+     * Which set of the row (layout imports, ADR 0026): a packed or wide row
+     * (`3x8`, `100x5,100x5`, `Set 1…Set 4`) gives several. Absent or 0 for a
+     * row that gives one set (every FitNotes row).
+     */
+    part: z.int().min(0).max(63).optional(),
+    /** The workout the row belongs to (layout imports): its date, start time or `Which workout` cell. Absent = its date (FitNotes). */
+    workoutKey: z.string().min(1).max(200).optional(),
+    /** The start time as written in the file (`18:02`, no zone; AI6). Absent or null when the file has none. */
+    startLocal: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
     /** Physical line where the record starts (a quoted newline shifts lines). */
     line: z.int().min(1),
     /** The row's date when it is a valid date, else null. */

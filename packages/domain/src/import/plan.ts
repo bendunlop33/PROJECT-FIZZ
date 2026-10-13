@@ -17,6 +17,7 @@ import type {
   NameAnswer,
   PerHandAnswer,
   PerHandReading,
+  SetType,
   TotalAnswer,
   WeightUnit,
 } from '@fizz/schemas';
@@ -27,6 +28,8 @@ import { FITNOTES_HEADERS, type FitNotesRow } from './fitnotes';
 import { categoryHint } from './category';
 import { equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 import type { RememberedTotal } from './remembered';
+import { valueChecksOf, type ValueCheck } from './layout/value-checks';
+import { workoutKeyOf, type SourceSetRow } from './source-row';
 
 /**
  * The FitNotes import preview and plan (data-import-export §2.5, §3.4, §4.3).
@@ -348,7 +351,7 @@ export interface EffortCandidate {
   checked: boolean;
 }
 
-export type PendingReason = 'name' | 'per_hand' | 'total' | 'bodyweight' | 'unit';
+export type PendingReason = 'name' | 'per_hand' | 'total' | 'bodyweight' | 'unit' | 'value_check';
 
 /** The mapped set before IDs are assigned. */
 export interface MappedSet {
@@ -360,6 +363,8 @@ export interface MappedSet {
   load: Load | null;
   reps: number;
   rpe: number | null;
+  /** From a confirmed marker (layout imports); absent: a working set. */
+  setType?: SetType;
 }
 
 export type RowFate =
@@ -369,8 +374,14 @@ export type RowFate =
 
 export type FateCounts = Record<ImportRowResult | 'pending', number>;
 
+/** One value to check (AI13) with Ben's answer. */
+export interface ValueCheckQuestion extends ValueCheck {
+  answer: 'import' | 'skip' | null;
+}
+
 export interface ImportAnalysis {
-  variant: FitNotesVariant;
+  /** FitNotes only; null for a layout import (ADR 0026). */
+  variant: FitNotesVariant | null;
   rowCount: number;
   dateRange: { first: string; last: string } | null;
   /** Weighted rows per unit, to say `weights in kg`, `in lb` or `in kg and lb (per set)`. */
@@ -397,8 +408,14 @@ export interface ImportAnalysis {
   /** One fate per parsed row, in file order. */
   fates: RowFate[];
   counts: { workouts: number; sets: number; exercises: number; byResult: FateCounts };
-  /** Dates that will get a workout (imported or still pending an answer), newest first. */
-  workouts: { date: string; exercises: number; sets: number }[];
+  /**
+   * Workouts that will be written (imported or still pending an answer),
+   * newest first. FitNotes: one per date. Layout imports: one per workout key
+   * (`key` and `startLocal` set when the key isn't the date).
+   */
+  workouts: { date: string; key?: string; startLocal?: string | null; exercises: number; sets: number }[];
+  /** Values to check (AI13; layout imports only). */
+  valueChecks: ValueCheckQuestion[];
   questionsOpen: number;
   /** Every question answered and something to import. */
   ready: boolean;
@@ -837,7 +854,7 @@ function categoryOf(r: FitNotesRow, at: number): string {
  * Analyse a parsed file against the app's data and Ben's answers. Rows are
  * the parser's data rows in file order.
  */
-export function analyseImport(input: { variant: FitNotesVariant; rows: readonly FitNotesRow[] }, ctx: ImportContext, answers: ImportAnswers): ImportAnalysis {
+export function analyseImport(input: { variant: FitNotesVariant | null; rows: readonly SourceSetRow[] }, ctx: ImportContext, answers: ImportAnswers): ImportAnalysis {
   const byId = new Map(ctx.candidates.map((c) => [c.exerciseId, c]));
   const { rows } = input;
 
@@ -846,7 +863,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   const dateSkipped = (date: string): boolean => ctx.importedDates.has(date) || (ctx.appDates.has(date) && answers.existingDates === 'skip');
   // Every category each name was filed under, first seen first: the matcher's ranking hint.
   const categories = new Map<string, string[]>();
-  const categoryAt = FITNOTES_HEADERS[input.variant].indexOf('Category');
+  const categoryAt = input.variant === null ? -1 : FITNOTES_HEADERS[input.variant].indexOf('Category');
   for (const r of strength) {
     const key = nameKey(r.exercise);
     const list = categories.get(key) ?? [];
@@ -877,6 +894,10 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     const res = nameRows.get(nameKey(r.exercise))?.resolution;
     return res?.kind === 'exercise' ? res.exercise : null;
   };
+
+  // Values to check (AI13): layout imports only (FitNotes would be an ADR 0016 change; ADR 0026).
+  const valueChecks: ValueCheckQuestion[] = input.variant !== null ? [] : valueChecksOf(live).map((v) => ({ ...v, answer: answers.valueChecks?.[v.key] ?? null }));
+  const checkOf = new Map(valueChecks.map((v) => [v.key, v]));
 
   // FitNotes 2 rows with both columns: one question per file.
   const bothRows = live.filter((r) => r.bothColumns !== null).length;
@@ -952,6 +973,8 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
 
   // Fates.
   const fates: RowFate[] = rows.map((r): RowFate => {
+    // A marker Ben said is `Not a set` (a rest-timer row): skipped and listed.
+    if (r.setType === 'not_a_set') return { result: 'skipped_not_a_set', detail: 'Not a set' };
     switch (r.rowClass) {
       case 'unreadable':
         return { result: 'unreadable', detail: r.problem ?? 'Couldn’t be read' };
@@ -970,16 +993,21 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     const key = nameKey(r.exercise);
     const res = nameRows.get(key)?.resolution ?? { kind: 'open' };
     if (res.kind === 'skip') return { result: 'skipped_exercise', detail: 'You chose Skip for this exercise' };
+    const check = input.variant === null ? checkOf.get(`${workoutKeyOf(r) ?? ''}|${key}`) : undefined;
+    if (check?.answer === 'skip') return { result: 'skipped_value_to_check', detail: 'You chose Skip for this value' };
     const rpeInComment = r.comment.trim() === '' ? null : effortFromComment(r.comment);
     if (rpeInComment !== null) effortCandidates.push({ row: r.row, date, name: r.exercise, comment: r.comment, rpe: rpeInComment, checked: checked.has(r.row) });
     const w = enteredWeight(r, answers);
     if (w === undefined) return { result: 'pending', reason: 'unit' };
     if (res.kind === 'open') return { result: 'pending', reason: 'name' };
+    if (check !== undefined && check.answer === null) return { result: 'pending', reason: 'value_check' };
     const ex = res.exercise;
-    const rpe = answers.effort.mode === 'review' && checked.has(r.row) ? rpeInComment : null;
+    // An RPE column's value (layout imports) wins; otherwise a comment's, only for rows Ben ticked.
+    const rpe = r.rpe ?? (answers.effort.mode === 'review' && checked.has(r.row) ? rpeInComment : null);
+    const setType: SetType | undefined = r.setType === 'warmup' ? 'warmup' : r.setType === 'drop' ? 'drop' : undefined;
     const set = (convention: LoadConvention, load: Load | null): RowFate => ({
       result: 'imported',
-      set: { exerciseId: ex.exerciseId, exerciseName: ex.name, laterality: ex.laterality, convention, unit: w?.unit ?? null, load, reps: r.reps ?? 0, rpe },
+      set: { exerciseId: ex.exerciseId, exerciseName: ex.name, laterality: ex.laterality, convention, unit: w?.unit ?? null, load, reps: r.reps ?? 0, rpe, ...(setType === undefined ? {} : { setType }) },
     });
     const value = w?.value ?? null;
     switch (ex.convention) {
@@ -1056,24 +1084,28 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     skipped_date_exists: 0,
     skipped_exercise: 0,
     unreadable: 0,
+    skipped_value_to_check: 0,
+    skipped_not_a_set: 0,
+    not_read: 0,
   };
-  const perDate = new Map<string, { names: Set<string>; sets: number }>();
+  const perWorkout = new Map<string, { date: string; startLocal: string | null; names: Set<string>; sets: number }>();
   const exercises = new Set<string>();
   fates.forEach((f, i) => {
     byResult[f.result] += 1;
     if (f.result !== 'imported' && f.result !== 'pending') return;
     const r = rows[i];
     if (!r?.date) return;
-    const d = perDate.get(r.date) ?? { names: new Set<string>(), sets: 0 };
+    const wk = workoutKeyOf(r) ?? r.date;
+    const d = perWorkout.get(wk) ?? { date: r.date, startLocal: r.startLocal ?? null, names: new Set<string>(), sets: 0 };
     d.sets += 1;
     const id = f.result === 'imported' ? f.set.exerciseId : `name:${nameKey(r.exercise)}`;
     d.names.add(id);
     exercises.add(id);
-    perDate.set(r.date, d);
+    perWorkout.set(wk, d);
   });
-  const workouts = [...perDate.entries()]
-    .map(([date, d]) => ({ date, exercises: d.names.size, sets: d.sets }))
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const workouts = [...perWorkout.entries()]
+    .map(([key, d]) => ({ date: d.date, ...(key === d.date ? {} : { key, startLocal: d.startLocal }), exercises: d.names.size, sets: d.sets }))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.key ?? '') < (b.key ?? '') ? 1 : (a.key ?? '') > (b.key ?? '') ? -1 : 0));
 
   const dates = rows.map((r) => r.date).filter((d): d is string => d !== null).sort();
   const fileDates = new Set(dates);
@@ -1093,7 +1125,8 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     (perHand?.open ? 1 : 0) +
     (total?.open ? 1 : 0) +
     bodyweight.filter((q) => q.answer === null).length +
-    (unit !== null && unit.answer === null ? 1 : 0);
+    (unit !== null && unit.answer === null ? 1 : 0) +
+    (valueChecks.some((v) => v.answer === null) ? 1 : 0);
 
   let kg = 0;
   let lb = 0;
@@ -1122,6 +1155,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     fates,
     counts: { workouts: workouts.length, sets: byResult.imported + byResult.pending, exercises: exercises.size, byResult },
     workouts,
+    valueChecks,
     questionsOpen,
     ready: questionsOpen === 0 && byResult.pending === 0 && byResult.imported > 0,
   };
@@ -1131,9 +1165,10 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
 export const importIds = {
   session: (jobId: string, date: string) => deriveId(`fitnotes-import:${jobId}:session:${date}`),
   sessionExercise: (jobId: string, date: string, groupKey: string) => deriveId(`fitnotes-import:${jobId}:exercise:${date}:${groupKey}`),
-  set: (jobId: string, row: number) => deriveId(`fitnotes-import:${jobId}:row:${String(row)}`),
-  /** The workout's start operation ID: unique per owner, so writing it twice is refused. */
-  startOperation: (operationId: string, date: string) => `${operationId}:${date}`,
+  /** `part` 0 is every FitNotes row: its ID is unchanged (ADR 0026 golden test). */
+  set: (jobId: string, row: number, part = 0) => deriveId(part === 0 ? `fitnotes-import:${jobId}:row:${String(row)}` : `fitnotes-import:${jobId}:row:${String(row)}:part:${String(part)}`),
+  /** The workout's start operation ID: unique per owner, so writing it twice is refused. `key`: the date (FitNotes) or the workout key. */
+  startOperation: (operationId: string, key: string) => `${operationId}:${key}`,
 };
 
 const MAX_CELLS = 64;
@@ -1148,29 +1183,32 @@ const CUT_NOTE = 'Stored cut to 64 cells of 20,000 characters each';
  * keeps one workout per calendar date.
  */
 export function planImportRows(
-  input: { rows: readonly FitNotesRow[] },
+  input: { rows: readonly SourceSetRow[] },
   analysis: ImportAnalysis,
   ids: { jobId: string; defaultUnit: WeightUnit },
 ): ImportRow[] {
   if (!analysis.ready) throw new Error('The import still has questions to answer');
   const { jobId } = ids;
-  // Per date: the unit a weightless row joins (the exercise's first weighted unit that day).
+  // Per workout: the unit a weightless row joins (the exercise's first weighted unit in that workout).
   const firstUnit = new Map<string, WeightUnit>();
   analysis.fates.forEach((f, i) => {
     const r = input.rows[i];
     if (f.result !== 'imported' || !r?.date || f.set.unit === null) return;
-    const k = `${r.date}|${f.set.exerciseId}|${f.set.convention}`;
+    const k = `${workoutKeyOf(r) ?? r.date}|${f.set.exerciseId}|${f.set.convention}`;
     if (!firstUnit.has(k)) firstUnit.set(k, f.set.unit);
   });
   const groups = new Map<string, { order: number; sets: number; id: string }>();
   const sessionIds = new Map<string, string>();
-  const groupsPerDate = new Map<string, number>();
+  const groupsPerWorkout = new Map<string, number>();
   return analysis.fates.map((f, i): ImportRow => {
     const r = input.rows[i];
     if (!r) throw new Error('Row and fate lists differ');
+    const part = r.part ?? 0;
+    const layout = r.workoutKey !== undefined;
     const base = {
       jobId,
       row: r.row,
+      ...(layout ? { part, workoutKey: (r.workoutKey === '' ? null : r.workoutKey) ?? r.date ?? `row-${String(r.row)}`, startLocal: r.startLocal ?? null } : {}),
       line: r.line,
       localDate: r.date,
       exerciseName: r.exercise.slice(0, 4000),
@@ -1181,14 +1219,16 @@ export function planImportRows(
     if (f.result === 'pending') throw new Error('The import still has questions to answer');
     if (f.result !== 'imported') return { ...base, result: f.result, detail: (cut === null ? f.detail : `${f.detail}. ${cut}`).slice(0, 500), sessionId: null, setId: null, imported: null };
     const date = r.date ?? '';
-    const unit = f.set.unit ?? firstUnit.get(`${date}|${f.set.exerciseId}|${f.set.convention}`) ?? ids.defaultUnit;
+    // One workout per date for FitNotes; per workout key for a layout (its date for a file with no times or workout column).
+    const wk = workoutKeyOf(r) ?? date;
+    const unit = f.set.unit ?? firstUnit.get(`${wk}|${f.set.exerciseId}|${f.set.convention}`) ?? ids.defaultUnit;
     const groupKey = `${f.set.exerciseId}|${f.set.convention}|${unit}`;
-    const gk = `${date}|${groupKey}`;
+    const gk = `${wk}|${groupKey}`;
     let g = groups.get(gk);
     if (!g) {
-      const order = groupsPerDate.get(date) ?? 0;
-      groupsPerDate.set(date, order + 1);
-      g = { order, sets: 0, id: importIds.sessionExercise(jobId, date, groupKey) };
+      const order = groupsPerWorkout.get(wk) ?? 0;
+      groupsPerWorkout.set(wk, order + 1);
+      g = { order, sets: 0, id: importIds.sessionExercise(jobId, wk, groupKey) };
       groups.set(gk, g);
     }
     const imported: ImportedSet = {
@@ -1203,14 +1243,15 @@ export function planImportRows(
       sessionExerciseId: g.id,
       exerciseOrder: g.order,
       setIndex: g.sets,
+      ...(f.set.setType === undefined ? {} : { setType: f.set.setType }),
     };
     g.sets += 1;
-    let sessionId = sessionIds.get(date);
+    let sessionId = sessionIds.get(wk);
     if (sessionId === undefined) {
-      sessionId = importIds.session(jobId, date);
-      sessionIds.set(date, sessionId);
+      sessionId = importIds.session(jobId, wk);
+      sessionIds.set(wk, sessionId);
     }
-    return { ...base, result: 'imported', detail: cut, sessionId, setId: importIds.set(jobId, r.row), imported };
+    return { ...base, result: 'imported', detail: cut, sessionId, setId: importIds.set(jobId, r.row, part), imported };
   });
 }
 
@@ -1286,7 +1327,7 @@ export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
  * preview rebuilt against changed data starts from here again (r6 S1).
  */
 export function startingAnswers(
-  input: { variant: FitNotesVariant; rows: readonly FitNotesRow[] },
+  input: { variant: FitNotesVariant | null; rows: readonly SourceSetRow[] },
   ctx: ImportContext,
   earlier: { answers: ImportAnswers; gymIds: ReadonlySet<string> } | null,
 ): ImportAnswers {

@@ -1,0 +1,20 @@
+{
+  "specVersion": 1,
+  "file": { "delimiter": ",", "headerLine": 1, "decimal": "." },
+  "layout": { "kind": "row_per_set", "setOrder": { "header": "Set Order", "index": 4 } },
+  "workoutKey": [],
+  "date": { "column": { "header": "Date", "index": 0 }, "format": "YYYY-MM-DD HH:mm:ss" },
+  "exercise": { "header": "Exercise Name", "index": 3 },
+  "load": { "column": { "header": "Weight", "index": 5 }, "unit": { "kind": "none" } },
+  "reps": { "header": "Reps", "index": 6 },
+  "setType": { "column": { "header": "Set Order", "index": 4 }, "values": [{ "cell": "W", "meaning": "warmup" }, { "cell": "D", "meaning": "drop" }, { "cell": "F", "meaning": null }, { "cell": "Rest Timer", "meaning": "not_a_set" }] },
+  "rpe": { "header": "RPE", "index": 11 },
+  "notes": [{ "header": "Notes", "index": 9 }, { "header": "Workout Notes", "index": 10 }],
+  "unmapped": [{ "header": "Workout Name", "index": 1 }, { "header": "Duration", "index": 2 }, { "header": "Distance", "index": 7 }, { "header": "Seconds", "index": 8 }],
+  "selfCheck": [
+    { "line": 3, "date": "2024-11-03", "exercise": "Bench Press (Barbell)", "load": 185, "reps": 8 },
+    { "line": 8, "date": "2024-11-05", "exercise": "Squat (Barbell)", "load": 225, "reps": 5 },
+    { "line": 12, "date": "2024-11-07", "exercise": "Bench Press (Barbell)", "load": 190, "reps": 8 }
+  ],
+  "unsupported": null
+}

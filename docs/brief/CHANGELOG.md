@@ -186,3 +186,14 @@ Ben's answers to the open decisions of the workout-library branch (routines.md Â
 ## 2026-10-12: Workout split and coach goals (Ben)
 - Workout Split categories: Chest (incl. triceps), Shoulders (incl. triceps), Back (incl. biceps), Legs; a chest + shoulders session = Push. Details and the rest of Ben's 12 Oct ideas in `docs/brief/ideas-2026-10-12.md` (proposal pending).
 - Coach goals (strength / muscle / combination) live in a Profile coach setting, asked on first coach-driven use, re-checked every 6 weeks by default (adjustable); not asked per workout.
+
+## 2026-10-12: AI import from any app (Ben)
+- **2026-10-12 â€” Ben wants AI import from any app; built on the coach's ChatGPT plan route, no API-key fallback (Q3 unchanged).** Ben: "I do think having a GPT ability to just import would make the data importation much more efficient". This reopens the any-app import deferred in the 2026-10-11 backlog entry.
+- **Q1 is now an open set of apps.** The import is generic, with synthetic test files shaped like Strong, Hevy, JEFIT and spreadsheets.
+- **Q2 stands** (11 Oct): column names and up to 30 sample rows go to ChatGPT.
+- **What the coach does:** it proposes a typed layout only. Code checks it, applies it and asks Ben about anything the file doesn't state. Import keeps its preview, idempotent commit and Undo.
+- **Where it's written up:** ADR 0026 and `docs/design/ai-import-build-plan.md`.
+- **Open for the PM:**
+  - how times with no time zone are stored (AI6);
+  - dropping the separate `importLayouts` gate (S3);
+  - deferring notes and pasted text.

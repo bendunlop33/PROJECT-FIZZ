@@ -6,6 +6,7 @@ export * from './sql';
 export * from './documents';
 export * from './sessions';
 export * from './imports';
+export * from './import-profiles';
 export * from './coach';
 export * from './drafts';
 export * from './workout-drafts';

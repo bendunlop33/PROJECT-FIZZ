@@ -16,6 +16,7 @@ import {
 import type { SqlDriver } from './driver';
 import { migrate, MIGRATIONS, type Migration, type MigrationReport } from './migrations';
 import { SqliteImports } from './imports';
+import { SqliteImportProfiles } from './import-profiles';
 import { SqliteCoachStore } from './coach';
 import { SqliteDrafts } from './drafts';
 import { SqliteWorkoutDrafts } from './workout-drafts';
@@ -29,6 +30,8 @@ export interface SqliteRepositories extends Repositories {
   checkIns: SqliteCheckIns;
   painFlags: SqlitePainFlags;
   imports: SqliteImports;
+  /** Saved import layouts and layout requests (ADR 0026). */
+  importProfiles: SqliteImportProfiles;
   coach: SqliteCoachStore;
   drafts: SqliteDrafts;
   /** Coach-built workout drafts (workout-builder §8.2). */
@@ -47,6 +50,7 @@ export function createSqliteRepositories(db: Database): SqliteRepositories {
     checkIns: new SqliteCheckIns(db),
     painFlags: new SqlitePainFlags(db),
     imports: new SqliteImports(db),
+    importProfiles: new SqliteImportProfiles(db),
     coach: new SqliteCoachStore(db),
     drafts: new SqliteDrafts(db),
     workoutDrafts: new SqliteWorkoutDrafts(db),

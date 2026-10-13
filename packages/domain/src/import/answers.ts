@@ -24,7 +24,10 @@ export type AnswerChange =
   | { kind: 'effort_mode'; mode: 'notes_only' | 'review' }
   | { kind: 'effort_rows'; rows: readonly number[]; checked: boolean }
   | { kind: 'existing_dates'; answer: 'skip' | 'import' }
-  | { kind: 'gym'; gymId: string | null };
+  | { kind: 'gym'; gymId: string | null }
+  /** Values to check (AI13): one exercise in one workout, or every open one (`Import all as written`); null clears it. */
+  | { kind: 'value_check'; key: string; answer: 'import' | 'skip' | null }
+  | { kind: 'value_checks_all'; keys: readonly string[] };
 
 function without<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {
   const out: Record<string, T> = {};
@@ -73,5 +76,12 @@ export function applyAnswerChange(a: ImportAnswers, c: AnswerChange): ImportAnsw
       return { ...a, existingDates: c.answer };
     case 'gym':
       return { ...a, gymId: c.gymId };
+    case 'value_check':
+      return { ...a, valueChecks: setOrClear(a.valueChecks ?? {}, c.key, c.answer) };
+    case 'value_checks_all': {
+      const next = { ...(a.valueChecks ?? {}) };
+      for (const k of c.keys) next[k] ??= 'import';
+      return { ...a, valueChecks: next };
+    }
   }
 }

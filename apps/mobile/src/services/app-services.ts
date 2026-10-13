@@ -44,6 +44,7 @@ import { createBackupService, type BackupFileStore, type TextFile } from '../bac
 import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
+import { createLayoutService } from '../import/layout-service';
 import { createGymServices } from './gym-services';
 import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
@@ -731,6 +732,24 @@ export function createAppServices(deps: AppServicesDeps) {
       const r = await backups.backUpOnPhone(reason);
       return r.ok ? { ok: true } : { ok: false, error: r.error };
     },
+    // Read at commit time, after both services exist.
+    layoutVersionOf: (layoutId) => importLayouts.layoutVersionOf(layoutId),
+    layoutCommitting: (layoutId) => importLayouts.layoutCommitting(layoutId),
+  });
+
+  /**
+   * Import from any app (data-import-export §9, ADR 0026): detection, the
+   * layout request on the coach's own ChatGPT-plan port and status (no other
+   * route), Check the layout, saved layouts. Commits go through `imports`.
+   */
+  const importLayouts = createLayoutService({
+    store: () => deps.manager.store,
+    now: deps.now,
+    newId: deps.newId,
+    profile: getProfile,
+    activeWorkout: () => sessions.active(),
+    imports,
+    coach: { availability: () => coach.availability(), ...(deps.coach === undefined ? {} : { model: deps.coach.model }) },
   });
 
   /** Progress (progress.md slice A): windows, sessions, time, muscles, records, calendar, `Count it`. Local only. */
@@ -808,6 +827,7 @@ export function createAppServices(deps: AppServicesDeps) {
     coach,
     gyms,
     imports,
+    importLayouts,
     yourData,
     coachingKnowledge,
     setup,

@@ -13,6 +13,8 @@ const RESULTS: Record<ImportSkipKey, readonly string[]> = {
   date_exists: ['skipped_date_exists'],
   duplicate: ['skipped_duplicate'],
   exercise: ['skipped_exercise'],
+  not_a_set: ['skipped_not_a_set'],
+  value_to_check: ['skipped_value_to_check'],
 };
 const TITLES: Record<ImportSkipKey, string> = {
   cardio: 'Cardio rows',
@@ -21,6 +23,8 @@ const TITLES: Record<ImportSkipKey, string> = {
   date_exists: 'Dates already in GymSmarter',
   duplicate: 'From an earlier import',
   exercise: 'Exercises you chose to skip',
+  not_a_set: 'Not a set',
+  value_to_check: 'Values you chose to skip',
 };
 const PAGE = 100;
 

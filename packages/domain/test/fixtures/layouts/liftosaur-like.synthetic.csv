@@ -1,0 +1,9 @@
+Workout DateTime,Program,Day Name,Exercise,Is Warmup Set?,Required Reps,Completed Reps,Is AMRAP?,Required RPE,Completed RPE,Log RPE?,Required Weight Value,Required Weight Unit,Completed Weight Value,Completed Weight Unit,Ask Weight?,Completed Reps Time,Target Muscles,Synergist Muscles,Notes
+2025-05-01T18:30:00,GZCLP,Day 1,Squat,0,3,3,0,,,0,120,kg,120,kg,0,,Quads,Glutes,
+2025-05-01T18:30:00,GZCLP,Day 1,Squat,0,3,3,0,,,0,120,kg,120,kg,0,,Quads,Glutes,
+2025-05-01T18:30:00,GZCLP,Day 1,Squat,0,3,5,1,,,0,120,kg,120,kg,0,,Quads,Glutes,
+2025-05-01T18:30:00,GZCLP,Day 1,Bench Press,0,10,10,0,,,0,60,kg,60,kg,0,,Chest,Triceps,
+2025-05-01T18:30:00,GZCLP,Day 1,Bench Press,0,10,9,0,,,0,60,kg,60,kg,0,,Chest,Triceps,
+2025-05-03T18:30:00,GZCLP,Day 2,Overhead Press,0,3,3,0,,,0,45,kg,45,kg,0,,Shoulders,Triceps,
+2025-05-03T18:30:00,GZCLP,Day 2,Overhead Press,0,3,3,0,,,0,45,kg,45,kg,0,,Shoulders,Triceps,
+2025-05-03T18:30:00,GZCLP,Day 2,Deadlift,0,3,3,0,,,0,140,kg,140,kg,0,,Hamstrings,Glutes,

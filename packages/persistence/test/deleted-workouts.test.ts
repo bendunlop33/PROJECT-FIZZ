@@ -247,6 +247,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
       'packages/persistence/src/backup/backup.ts': { why: 'backup counts by status, each on its own line', lines: /discardedWorkouts:|deletedWorkouts:/ },
       'packages/persistence/src/data-domains.ts': { why: 'check-ins hidden with a deleted workout in exports and counts (review r2 S1)', lines: /FROM sessions d WHERE d\.check_in_id = c\.id AND d\.status = 'deleted'/ },
       'apps/mobile/src/import/import-service.ts': { why: 'import-job status (`reverted` = undone), not a session', lines: /\b(?:job|j|current\?)\.status/ },
+      'apps/mobile/src/import/layout-service.ts': { why: 'import-job status (`reverted` = undone): which saved layouts are still in use (AI12), not a session', lines: /\b(?:job|j)\.status/ },
       'apps/mobile/src/coach/sheet-view.ts': { why: 'the coach chip’s `Deleted workout` label (DW16; review r3 N5)', lines: /return session\.status === 'deleted' \? 'deleted' : 'unavailable';/ },
       'packages/domain/src/session/coach-draft.ts': { why: 'a coach draft’s own status (`discarded` = Discard draft, workout-builder §6.2), not a session', lines: /\b(?:current|d)\.status/ },
       'packages/persistence/src/workout-drafts.ts': { why: 'the coach-draft expiry (BD4): open and discarded drafts past 14 days', lines: /FROM workout_drafts WHERE owner_id = \? AND status IN \('open', 'discarded'\)/ },
@@ -301,6 +302,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
         { why: '`appDates`: dates with a workout in the app (active included)', query: /status IN \('active', 'finished'\)/ },
         { why: 'an import’s dates in Recently deleted', query: /^"SELECT local_date AS d FROM sessions WHERE owner_id = \? AND import_job_id IS NOT NULL AND status = 'deleted' AND purge_after_utc > \?"$/ },
         { why: '`writtenDates`: an import’s rows already written, any status (resume)', query: /^'SELECT local_date AS d FROM sessions WHERE import_job_id = \?'$/ },
+        { why: '`writtenSessions`: an import’s workouts already written, any status (resume; ADR 0026)', query: /^'SELECT id FROM sessions WHERE import_job_id = \?'$/ },
         { why: 'idempotent import write by start operation ID', query: /start_operation_id = \?'$/ },
       ],
     };
