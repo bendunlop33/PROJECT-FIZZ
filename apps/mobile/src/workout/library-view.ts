@@ -121,8 +121,8 @@ export function rowLine(row: Pick<LibraryRow, 'detail' | 'issue'>): { text: stri
 /**
  * The editor's primary (routines.md §3.3): `Add a name`, then `Add an
  * exercise`, then `Save`; a stored workout with nothing changed reads `No
- * changes`; a distance slot alone reads `Can’t save distance yet` (a
- * workout saved before EL-B13 can hold one; review library-browse r3 S1);
+ * changes`; a refused distance slot alone reads `Can’t save distance yet`
+ * (review library-browse r3 S1);
  * any other issue reads `Fix 1 issue`. Disabled unless it saves.
  */
 export function editorPrimary(input: { issues: readonly RoutineIssue[]; dirty: boolean; isNew: boolean }): { label: string; disabled: boolean } {
@@ -135,12 +135,14 @@ export function editorPrimary(input: { issues: readonly RoutineIssue[]; dirty: b
 }
 
 /**
- * The issue line on an editor card: a distance exercise (only in a workout
- * saved before EL-B13) reads `⚠ Can’t save distance yet` with `Replace` and
- * `Remove`, so Ben can see which card blocks `Save` (review library-browse r3 S1).
+ * The issue line on an editor card: a distance slot the save refuses
+ * (`isRefusedDistanceSlot`: newly added, or in an unsaved copy) reads
+ * `⚠ Can’t save distance yet` with `Replace` and `Remove`, so Ben can see
+ * which card blocks `Save`. A slot stored before EL-B13 shows nothing and
+ * saves as it was (review library-browse r3 S1).
  */
-export function editorSlotIssue(x: { measurement: 'reps' | 'duration' | 'distance' } | undefined): { text: string; actions: string[] } | null {
-  return x?.measurement === 'distance' ? { text: NO_DISTANCE_IN_WORKOUTS, actions: [EDITOR_COPY.replace, EDITOR_COPY.remove] } : null;
+export function editorSlotIssue(refused: boolean): { text: string; actions: string[] } | null {
+  return refused ? { text: NO_DISTANCE_IN_WORKOUTS, actions: [EDITOR_COPY.replace, EDITOR_COPY.remove] } : null;
 }
 
 /**

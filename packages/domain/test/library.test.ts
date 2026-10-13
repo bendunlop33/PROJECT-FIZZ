@@ -12,6 +12,7 @@ import {
   editableExercises,
   editRoutine,
   isInRotation,
+  isRefusedDistanceSlot,
   LIBRARY_HISTORY_CAP,
   mainFlags,
   nextInRotation,
@@ -82,10 +83,41 @@ describe('createRoutine / routineIssues (routines.md §A2.3, §A6)', () => {
     expect(routineIssues({ name: 'A', exercises: exs() }, () => false)).toEqual([]);
     expect(createRoutine({ id: id(903), ownerId: OWNER, edit: { name: 'A', exercises: exs() }, opId: 'o', at: at(0), isCompound: compound, isDistance })).toEqual({ kind: 'invalid', message: 'Can’t save distance yet' });
     const r = made();
-    expect(editRoutine(r, { name: 'A', exercises: r.exercises }, 1, 'e1', at(1), compound, isDistance)).toEqual({ kind: 'invalid', message: 'Can’t save distance yet' });
+    // A newly added distance slot, or a slot replaced to one, is refused against the stored workout.
+    const added = [...r.exercises, routineExercise(13, { exerciseId: FACE, order: 3 })];
+    expect(editRoutine(r, { name: 'A', exercises: added }, 1, 'e1', at(1), compound, isDistance)).toEqual({ kind: 'invalid', message: 'Can’t save distance yet' });
+    const replaced = r.exercises.map((e, i) => (i === 0 ? { ...e, exerciseId: FACE } : e));
+    expect(editRoutine(r, { name: 'A', exercises: replaced }, 1, 'e1', at(1), compound, isDistance)).toEqual({ kind: 'invalid', message: 'Can’t save distance yet' });
     // A retry of a save that landed, or a stale one, is reported as such before validation (rule 5).
     expect(editRoutine(r, { name: 'A', exercises: r.exercises }, 1, 'new-1', at(1), compound, isDistance)).toMatchObject({ kind: 'duplicate' });
     expect(withSaveEdit(r, { name: 'A', exercises: r.exercises }, compound, isDistance)).toEqual({ kind: 'invalid', message: 'Can’t save distance yet' });
+  });
+
+  it('a distance slot stored before EL-B13 is kept: rename and other set changes save; Duplicate copies it and the copy saves too (review library-browse r3 S1)', () => {
+    const isDistance = (x: string) => x === FACE;
+    const r = made(); // FACE stands in for a carry stored by build 126.
+    const stored = r.exercises;
+    const face = stored[2];
+    if (face === undefined) throw new Error('no slot');
+    expect(isRefusedDistanceSlot(face, isDistance, stored)).toBe(false);
+    expect(isRefusedDistanceSlot(face, isDistance)).toBe(true);
+    expect(isRefusedDistanceSlot({ id: 'new', exerciseId: FACE }, isDistance, stored)).toBe(true);
+    expect(isRefusedDistanceSlot(face, undefined, [])).toBe(false);
+    expect(routineIssues({ name: 'Legs A', exercises: stored }, isDistance, stored)).toEqual([]);
+
+    // Rename and a fourth row set: saves, the carry slot unchanged.
+    const more = r.exercises.map((e) => (e.exerciseId === ROW ? { ...e, setTemplates: [...e.setTemplates, template(113)] } : e));
+    const c = editRoutine(r, { name: 'Legs A', exercises: more }, 1, 'e2', at(1), compound, isDistance);
+    if (c.kind !== 'write') throw new Error(c.kind);
+    expect(c.next.version).toBe(2);
+    expect(c.next.name).toBe('Legs A');
+    expect(c.next.exercises.find((e) => e.exerciseId === ROW)?.setTemplates).toHaveLength(3);
+    expect(c.next.exercises.find((e) => e.exerciseId === FACE)?.id).toBe(face.id);
+
+    // Duplicate keeps it; the copy's stored slot saves the same way.
+    const copy = duplicateRoutine(r, { id: id(950), opId: 'dup', at: at(2), newId: idGen(9000), isCompound: compound });
+    expect(copy.exercises.some((e) => e.exerciseId === FACE)).toBe(true);
+    expect(editRoutine(copy, { name: 'Legs B', exercises: copy.exercises }, 1, 'e3', at(3), compound, isDistance)).toMatchObject({ kind: 'write' });
   });
 
   it('Main (WL9): an all-isolation workout marks only the first; Ben’s choice wins over the rule', () => {

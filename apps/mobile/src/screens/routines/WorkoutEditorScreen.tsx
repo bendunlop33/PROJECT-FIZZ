@@ -16,6 +16,7 @@ import {
   fixedLoadNote,
   fixedLoadSteps,
   formatDuration,
+  isRefusedDistanceSlot,
   mergeRoutineEdits,
   moveExercise,
   removeExercise,
@@ -159,7 +160,10 @@ export function WorkoutEditorScreen() {
   }, [services, list, gymId]);
 
   const edit: RoutineEdit = useMemo(() => ({ name, exercises: list }), [name, list]);
-  const issues = routineIssues(edit, (exerciseId) => info[exerciseId]?.measurement === 'distance');
+  const isDistance = (exerciseId: string) => info[exerciseId]?.measurement === 'distance';
+  // A distance slot already stored (saved before EL-B13) is kept; only new ones block Save (review library-browse r3 S1).
+  const stored = data !== 'loading' && data !== null ? (data.routine?.exercises ?? []) : [];
+  const issues = routineIssues(edit, isDistance, stored);
   const isNew = routineId === null;
   const dirty = routineEditDirty(base.current, edit);
   const primary = editorPrimary({ issues, dirty, isNew });
@@ -348,7 +352,7 @@ export function WorkoutEditorScreen() {
           const shape = slotShapeOf(slot);
           const effort = shapeEffortRow(shape, editor.effortScale);
           const open = eachOpen[slot.id] ?? shape.hasSpecialSets;
-          const slotIssue = editorSlotIssue(x);
+          const slotIssue = editorSlotIssue(isRefusedDistanceSlot(slot, isDistance, stored));
           return (
             <View key={slot.id} style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['3'], gap: theme.space['2'], borderLeftWidth: slot.supersetGroup !== null ? 3 : 0, borderLeftColor: theme.colors['text.tertiary'] }}>
               {slot.supersetGroup !== null ? (

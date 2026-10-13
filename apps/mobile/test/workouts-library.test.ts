@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NBSP, setWorkingSetCount } from '@fizz/domain';
@@ -536,6 +539,71 @@ describe('distance is never saved as reps (exercise-library EL-B13, review libra
     const edit = { name: 'Push', exercises: [...src.exercises, { ...slot(carry.id), order: src.exercises.length }] };
     expect(await s.routines.saveFrom({ from, name: 'Push', addToRotation: false, opId: 'sheet-carry', edit })).toEqual({ ok: false, message: 'Can’t save distance yet' });
     expect((await library(s, gymId)).view.all.map((r) => r.name)).toEqual(['Upper 2']);
+  });
+});
+
+describe('a workout stored with a distance slot before EL-B13 (review library-browse r3 S1)', () => {
+  const slot = (exerciseId: string, order: number) => ({
+    id: h.ids(),
+    exerciseId,
+    equipmentId: null,
+    order,
+    supersetGroup: null,
+    setTemplates: [1, 2, 3].map(() => ({ id: h.ids(), setType: 'working' as const, targetLoad: null, targetReps: { min: 8, max: 10 }, targetDurationS: null, targetRpe: null, targetRir: null, restOverrideS: null })),
+    restBySetType: {},
+    transitionRestS: null,
+    progressionRuleId: null,
+  });
+
+  it('keeps the carry: rename and a squat set change save; a newly added carry is refused; Duplicate copies it and the copy saves', async () => {
+    const first = await h.launch();
+    const s0 = first.services;
+    await setUpGym(h, s0);
+    const carry = (await s0.routines.searchExercises('carry')).find((x) => x.name === 'Farmer’s carry' || x.name === "Farmer's carry");
+    const squat = (await s0.routines.searchExercises('squat')).find((x) => x.name === 'Back squat');
+    if (!carry || !squat) throw new Error('no exercises');
+    const made = await s0.routines.create({ edit: { name: 'Legs A', exercises: [slot(squat.id, 0)] }, opId: 'new-legs' });
+    if (!made.ok) throw new Error(made.message);
+    const dbName = s0.developer.databaseNames().current;
+    await h.forceClose();
+
+    // What build 126's editor stored: the carry as 3 × 8–10 reps.
+    const db = new DatabaseSync(join(h.dir, dbName));
+    const row = db.prepare('SELECT data FROM routines WHERE id = ?').get(made.routine.id) as { data: string };
+    const stored = JSON.parse(row.data) as Routine;
+    const carrySlot = { ...slot(carry.id, 1), main: false };
+    db.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify({ ...stored, exercises: [...stored.exercises, carrySlot] }), made.routine.id);
+    db.close();
+
+    const { services: s } = await h.launch();
+    const legs = (await s.routines.editor({ routineId: made.routine.id, gymId: null }))?.routine;
+    if (!legs) throw new Error('no workout');
+    expect(legs.exercises.map((e) => e.exerciseId)).toEqual([squat.id, carry.id]);
+
+    // Rename and squat 3 → 4 sets: saves, the carry slot as it was.
+    const edited = legs.exercises.map((e) => (e.exerciseId === squat.id ? setWorkingSetCount([e], e.id, 4, h.ids)[0] ?? e : e));
+    const up = await s.routines.update({ routineId: legs.id, edit: { name: 'Legs B', exercises: edited }, expectedVersion: 1, opId: 'rename-legs' });
+    if (!up.ok) throw new Error(up.message);
+    expect(up.routine.version).toBe(2);
+    expect(up.routine.name).toBe('Legs B');
+    expect(up.routine.exercises.map((e) => [e.exerciseId, e.setTemplates.length])).toEqual([
+      [squat.id, 4],
+      [carry.id, 3],
+    ]);
+    expect(up.routine.exercises[1]?.id).toBe(carrySlot.id);
+
+    // A second carry added now: refused, version unchanged.
+    const again = await s.routines.update({ routineId: legs.id, edit: { name: 'Legs B', exercises: [...up.routine.exercises, slot(carry.id, 2)] }, expectedVersion: 2, opId: 'add-carry' });
+    expect(again).toMatchObject({ ok: false, reason: 'invalid', message: 'Can’t save distance yet' });
+    // Replacing the squat with a carry is a new distance slot too.
+    const swapped = up.routine.exercises.map((e) => (e.exerciseId === squat.id ? { ...e, exerciseId: carry.id } : e));
+    expect(await s.routines.update({ routineId: legs.id, edit: { name: 'Legs B', exercises: swapped }, expectedVersion: 2, opId: 'swap-carry' })).toMatchObject({ ok: false, reason: 'invalid' });
+
+    // Duplicate copies the carry; the copy saves the same way.
+    const dup = await s.routines.duplicate({ routineId: legs.id, opId: 'dup-legs' });
+    if (!dup.ok) throw new Error(dup.message);
+    expect(dup.routine.exercises.map((e) => e.exerciseId)).toEqual([squat.id, carry.id]);
+    expect(await s.routines.update({ routineId: dup.routine.id, edit: { name: 'Legs C', exercises: dup.routine.exercises }, expectedVersion: 1, opId: 'rename-copy' })).toMatchObject({ ok: true });
   });
 });
 
