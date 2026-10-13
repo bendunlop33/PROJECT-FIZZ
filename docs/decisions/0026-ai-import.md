@@ -78,7 +78,7 @@ Ben (12 Oct 2026): "I do think having a GPT ability to just import would make th
 - **Commits follow ADR 0016.**
   - Writes are `<operationId>:<workoutKey>`, with deterministic session and set IDs.
   - The staleness stamp gains `layoutRef`, `layoutVersion` and `specHash`.
-  - A stale `layoutVersion` is refused: at confirm, and at commit while the layout session is still open (a preview made before Ben changed the layout gives `layout_changed`). After a restart the session is gone and the draft is the immutable snapshot of the rows Ben previewed, so it commits as previewed.
+  - A stale `layoutVersion` is refused: at confirm, and at commit while the layout session is still open (a preview made before Ben changed the layout gives `layout_session_changed`: `The layout changed. Check it again.` and back to Check the layout with his answers; a saved layout changed or deleted since the preview gives `layout_changed`: `The saved layout changed. Choose the file again.`). After a restart the session is gone and the draft is the immutable snapshot of the rows Ben previewed, so it commits as previewed.
   - A remapped layout (Changed columns) records its own spec's hash, not the old layout's.
   - A force-close resumes through `Continue import`.
 
@@ -133,5 +133,10 @@ Built as planned, with these differences. Each needs the PM's or Ben's OK; none 
 9. **Copy not in §9.5** (designer to review): `Files with sections can't be read yet.`, `Not a table. Export a CSV.`, `Not a text file. Export a CSV.`, `This is an app backup, not an export. Export a CSV from the app.`, `The saved layout changed. Choose the file again.`, `Choose the file again.`, the `Values you chose to skip` / `Not a set` list titles.
 10. **Two imported workouts on one date** open together from Results (the imported-workout screen is keyed by date).
 11. **Review fixes (13 Oct 2026, `docs/reviews/ai-import.md`).** `Weight unit` is asked whenever loads come from the set cells (`100x8`, `3x8 @ 100`, `100x5,100x5`) with no unit evidence, not only with a load column (B1). Rows that wait for something no question asks are counted (`stuck`) and Check the layout says `<n> rows can't be read with this layout.`, never a silent disabled button. `Read with the coach again` is offered on Check the layout for every coach layout (the design lists it for `Too few rows`; a layout that passes the checks can still be wrong for Ben). A refused request (`not_found`, `sample_changed`) no longer says `No layout returned.`.
+
+12. **Review r2 fixes (13 Oct 2026, `docs/reviews/ai-import-r2.md`).**
+    - A loaded row whose unit-column cell is blank is unreadable with `No weight unit` (no question could answer it; nothing is guessed), and a file whose slash dates come in both orders asks the day/month order; rows that don't fit the answer are `Date doesn't fit the layout (<cell>)`. Both are listed under `Rows not read` and the 95% rule decides (S1). The `stuck` backstop stays.
+    - `Cancel` in the nav bar of New file layout and Check the layout. Cancel, back and the swipe all drop the session and close its request, so that layout is never reused; only New file layout handing the session to Check the layout keeps it. No alert, since nothing is saved (S2). Designer to confirm back and swipe (r2 spec issue 7).
+    - New copy for the designer: `The layout changed. Check it again.` with `Check the layout`, and the row reason `No weight unit` (S3, S1).
 
 Needs a real iPhone (L6), unchanged: whether the plan route accepts this strict schema (`const`, integer bounds, `anyOf`) under a forced call, latency against the 120 s limit, backgrounding mid-request, the file picker with Strong/Hevy exports, and AX3.
