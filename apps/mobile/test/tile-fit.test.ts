@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { NUMERAL_MIN, numeralEms, openRowWidth, stepperTexts, TILE_GAP, TILE_PADDING_H, tileFit, type TileSpec } from '../src/workout/tile-fit';
+import { NUMERAL_MIN, numeralEms, openRowWidth, stepperNumeralSize, stepperTexts, TILE_GAP, TILE_PADDING_H, tileFit, type TileSpec } from '../src/workout/tile-fit';
 
 /**
  * The open row's tiles (review B1, WT-D13, WT40): with 52 pt − / + buttons,
@@ -102,5 +102,34 @@ describe('tileFit: one tile, and other pairs', () => {
   it('an empty value still reserves room for its digits', () => {
     expect(stepperTexts(null, off, off, 3)).toEqual(['—', '000']);
     expect(stepperTexts(97.5, on(95), on(100), 3)).toEqual(['97.5', '95', '100', '000']);
+  });
+});
+
+describe('stepperNumeralSize: Focus and Edit set REPS beside LOAD (F9)', () => {
+  // Focus at 375 pt: 343 pt row, 12 pt gap, LOAD flex 1.4, REPS flex 1 → ~138 pt REPS tile, 44 pt − / +.
+  const repsTile = ((375 - 32 - 12) * 1) / 2.4;
+  const fits = (size: number, text: string, tileWidth: number, step: number) => numeralEms(text) * size + 6 <= tileWidth - TILE_PADDING_H - 2 * step;
+
+  it('shrinks the numeral so 10 or more reps are never cut to one digit', () => {
+    for (const v of [10, 12, 15, 20, 99]) {
+      const size = stepperNumeralSize({ tileWidth: repsTile, texts: [String(v), ...stepperTexts(v, on(v - 1), on(v + 1), 2)], unit: null, stepSize: 44, fontScale: 1 });
+      expect(fits(size, String(v), repsTile, 44), `${String(v)} at ${String(size)} pt`).toBe(true);
+    }
+  });
+
+  it('a typed second digit is part of the fit before the value updates', () => {
+    const size = stepperNumeralSize({ tileWidth: repsTile, texts: ['10', ...stepperTexts(1, off, on(2), 2)], unit: null, stepSize: 44, fontScale: 1 });
+    expect(fits(size, '10', repsTile, 44)).toBe(true);
+  });
+
+  it('keeps the full 38 pt when there is room, scaled with text size up to 1.8x', () => {
+    expect(stepperNumeralSize({ tileWidth: 343, texts: ['8', '00'], unit: null, stepSize: 44, fontScale: 1 })).toBe(38);
+    expect(stepperNumeralSize({ tileWidth: 343, texts: ['8', '00'], unit: null, stepSize: 44, fontScale: 3 })).toBeLessThanOrEqual(38 * 1.8);
+  });
+
+  it('leaves room for a unit (kg, s)', () => {
+    const tile = ((375 - 32 - 12) * 1.4) / 2.4;
+    const size = stepperNumeralSize({ tileWidth: tile, texts: ['102.5', '100', '105', '000'], unit: 'kg', stepSize: 44, fontScale: 1 });
+    expect(numeralEms('102.5') * size + numeralEms(' kg') * 18 + 6).toBeLessThanOrEqual(tile - TILE_PADDING_H - 88);
   });
 });

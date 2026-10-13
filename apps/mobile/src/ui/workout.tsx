@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode, type Ref } from 'react';
-import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { StepTarget } from '@fizz/domain';
@@ -11,6 +11,7 @@ import { Icon, type SymbolName } from './Icon';
 import { FadeIn, TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
 import { nextFieldText, parseNumber } from './number-text';
+import { stepperNumeralSize, stepperTexts } from '../workout/tile-fit';
 
 /** Shared keyboard toolbar for number fields (the system decimal pad has no Done key). */
 export const NUMBER_ACCESSORY_ID = 'fizz-number-done';
@@ -166,9 +167,29 @@ export function NumberStepper({
   const theme = useTheme();
   const [text, setText] = useState(value === null ? '' : String(value));
   const [focused, setFocused] = useState(false);
+  const [tileWidth, setTileWidth] = useState<number | null>(null);
+  const { fontScale } = useWindowDimensions();
   useEffect(() => {
     setText((t) => nextFieldText(t, value));
   }, [value]);
+  const flat = theme.components.cardBorderWidth === 0;
+  // F9: without a fitted size from the caller, the numeral shrinks to its measured tile so `10` never shows as `1`.
+  const fitted =
+    numeralSize ??
+    (tileWidth === null
+      ? undefined
+      : stepperNumeralSize({
+          tileWidth,
+          texts: [text, ...stepperTexts(value, down, up, decimals ? 3 : 2)],
+          unit: flat ? unit : null,
+          // The bordered variant's − / + are wider and sit 8 pt apart from the field.
+          stepSize: flat ? (stepSize ?? theme.target.min.width) : (stepSize ?? theme.target.workout.width) + theme.space['2'] + 2,
+          fontScale,
+        }));
+  const layout = (e: LayoutChangeEvent) => {
+    setTileWidth(e.nativeEvent.layout.width);
+    onLayout?.(e);
+  };
   const describe = label === 'Assist' ? 'Assistance' : label;
   const decrease = label === 'Assist' ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`;
   const increase = label === 'Assist' ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`;
@@ -194,11 +215,11 @@ export function NumberStepper({
       {...(hint ? { accessibilityHint: hint } : {})}
       placeholder="—"
       placeholderTextColor={theme.colors['text.tertiary']}
-      {...(numeralSize !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}
+      {...(fitted !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}
       style={{
         minWidth: 36,
         textAlign: 'center',
-        fontSize: numeralSize ?? theme.type.loadDisplay.fontSize,
+        fontSize: fitted ?? theme.type.loadDisplay.fontSize,
         fontWeight: theme.type.loadDisplay.fontWeight,
         letterSpacing: theme.type.loadDisplay.letterSpacing,
         fontVariant: ['tabular-nums'],
@@ -207,10 +228,10 @@ export function NumberStepper({
       }}
     />
   );
-  if (theme.components.cardBorderWidth === 0) {
+  if (flat) {
     // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
     return (
-      <View onLayout={onLayout} style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
+      <View onLayout={layout} style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
         <View
           style={{
             backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
@@ -247,7 +268,7 @@ export function NumberStepper({
     );
   }
   return (
-    <View onLayout={onLayout} style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
+    <View onLayout={layout} style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
       <AppText variant="label" color="text.secondary">
         {label}
       </AppText>

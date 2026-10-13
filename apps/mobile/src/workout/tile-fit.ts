@@ -21,6 +21,8 @@ export const NUMERAL_MAX_SCALE = 1.8;
 export const NUMERAL_MIN = 28;
 /** The stacked fallback still shrinks a very long number rather than clip it. */
 const NUMERAL_FLOOR = 18;
+/** A lone stepper (Focus, Edit set) has no stacked fallback: it shrinks further rather than clip. */
+const STEPPER_FLOOR = 14;
 /** The field's own minimum width and caret room. */
 const INPUT_MIN_WIDTH = 36;
 const CARET = 6;
@@ -111,4 +113,31 @@ export function openRowWidth(windowWidth: number): number {
 export function stepperTexts(value: number | null, down: { enabled: boolean; value?: number }, up: { enabled: boolean; value?: number }, minDigits: number): string[] {
   const steps = [down, up].flatMap((t) => (t.enabled && t.value !== undefined ? [String(t.value)] : []));
   return [value === null ? '—' : String(value), ...steps, '0'.repeat(minDigits)];
+}
+
+export interface StepperNumeralInput {
+  /** The stepper tile's measured width (pt). */
+  tileWidth: number;
+  /** Every text the field may show now (value, typed text, step targets, minimum digits). */
+  texts: readonly string[];
+  /** A unit after the numeral (` kg`, ` s`), or null. */
+  unit: string | null;
+  /** − / + size (44 pt on Focus and Edit set). */
+  stepSize: number;
+  fontScale: number;
+}
+
+/**
+ * A lone `NumberStepper`'s numeral size (F9, 13 Oct): on Focus and Edit set the
+ * REPS tile sits beside LOAD with 44 pt − / +, leaving ~34 pt for a 38 pt
+ * numeral, so `10` was cut to `1`. The numeral shrinks until the longest text
+ * fits; never clipped (WT-D13). A lone stepper can't stack, so its floor is lower.
+ */
+export function stepperNumeralSize(p: StepperNumeralInput): number {
+  const wanted = NUMERAL_BASE * Math.min(p.fontScale, NUMERAL_MAX_SCALE);
+  const unitW = p.unit === null ? 0 : numeralEms(` ${p.unit}`) * UNIT_SIZE * Math.min(p.fontScale, UNIT_MAX_SCALE);
+  const room = p.tileWidth - TILE_PADDING_H - 2 * p.stepSize - unitW - CARET;
+  const ems = numeralEms(longest(p.texts));
+  const fits = ems === 0 ? Number.POSITIVE_INFINITY : Math.max(0, room) / ems;
+  return floorHalf(Math.max(STEPPER_FLOOR, Math.min(wanted, fits)));
 }
