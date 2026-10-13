@@ -9,6 +9,7 @@ import { useTheme } from '../theme';
 import { AppText, Icon } from '../ui';
 import { AX_FONT_SCALE } from '../workout/overview';
 import { countBarWidth, mixHex, PARTIAL_BAR_MIX, visibleLabels, weekBarsLayout } from './chart-layout';
+import { FREQUENCY_COLUMNS, FREQUENCY_HEADERS } from './frequency-columns';
 import { loadWeekBarsCanvas } from './load-charts';
 
 /**
@@ -303,19 +304,16 @@ export function FrequencyHeader({ perWeek }: { perWeek: boolean }) {
   const theme = useTheme();
   const ax = useAx();
   if (ax) return null;
+  const head = (text: string, width: number) => (
+    <AppText variant="sectionLabel" color="text.tertiary" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ width, textAlign: 'right' }}>
+      {text}
+    </AppText>
+  );
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: theme.space['3'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <AppText variant="sectionLabel" color="text.tertiary" style={{ width: 72, textAlign: 'right' }}>
-        SESSIONS
-      </AppText>
-      <AppText variant="sectionLabel" color="text.tertiary" style={{ width: 52, textAlign: 'right' }}>
-        SETS
-      </AppText>
-      {perWeek ? (
-        <AppText variant="sectionLabel" color="text.tertiary" style={{ width: 72, textAlign: 'right' }}>
-          PER WEEK
-        </AppText>
-      ) : null}
+      {head(FREQUENCY_HEADERS.sessions, FREQUENCY_COLUMNS.sessions)}
+      {head(FREQUENCY_HEADERS.sets, FREQUENCY_COLUMNS.sets)}
+      {perWeek ? head(FREQUENCY_HEADERS.perWeek, FREQUENCY_COLUMNS.perWeek) : null}
       <View style={{ width: 14 }} />
     </View>
   );
@@ -329,14 +327,14 @@ export function FrequencyRow({ row, onPress, expanded, perWeek, hint }: { row: F
   const numColor = row.zero ? 'text.tertiary' : 'text.primary';
   const numbers = (
     <>
-      <AppText variant="body" numeric color={numColor} style={ax ? undefined : { width: 72, textAlign: 'right' }}>
+      <AppText variant="body" numeric color={numColor} style={ax ? undefined : { width: FREQUENCY_COLUMNS.sessions, textAlign: 'right' }}>
         {ax ? `${String(row.sessions)} sessions` : String(row.sessions)}
       </AppText>
-      <AppText variant="body" numeric color={numColor} style={ax ? undefined : { width: 52, textAlign: 'right' }}>
+      <AppText variant="body" numeric color={numColor} style={ax ? undefined : { width: FREQUENCY_COLUMNS.sets, textAlign: 'right' }}>
         {ax ? `${row.setsText} sets` : row.setsText}
       </AppText>
       {perWeek && row.perWeek !== null ? (
-        <AppText variant="body" numeric color={numColor} style={ax ? undefined : { width: 72, textAlign: 'right' }}>
+        <AppText variant="body" numeric color={numColor} style={ax ? undefined : { width: FREQUENCY_COLUMNS.perWeek, textAlign: 'right' }}>
           {ax ? `${row.perWeek} a week` : row.perWeek}
         </AppText>
       ) : null}
