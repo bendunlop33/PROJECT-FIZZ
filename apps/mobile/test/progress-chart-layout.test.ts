@@ -44,6 +44,22 @@ describe('one adaptive bar chart (F15)', () => {
     expect(barLabelBox(165, 330, 60)).toEqual({ left: 135, align: 'center' });
   });
 
+  it('clamps on the label’s own width, so 7- and 14-day edge labels stay centred under their bars (review S2)', () => {
+    for (const count of [7, 14]) {
+      const bars = weekBarsLayout(Array.from({ length: count }, () => 1), 330, 1, DIMS);
+      const room = barLabelRoom('days');
+      for (const b of [bars[0], bars[count - 1]]) {
+        if (!b) throw new Error('no bar');
+        const box = barLabelBox(b.centreX, 330, 60, room);
+        expect(box.align).toBe('center');
+        expect(box.left + 30).toBeCloseTo(b.centreX, 6);
+      }
+    }
+    // A label that would still cross the edge is clamped against it.
+    expect(barLabelBox(8, 330, 60, 22)).toEqual({ left: 0, align: 'flex-start' });
+    expect(barLabelBox(325, 330, 60, 22)).toEqual({ left: 270, align: 'flex-end' });
+  });
+
   it('labels thin to fit each bar unit: every day at 7, fewer at 14, 60 days of weeks without overlap', () => {
     expect(visibleLabels(7, 330, barLabelRoom('days'))).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(visibleLabels(14, 330, barLabelRoom('days'))).toHaveLength(14);

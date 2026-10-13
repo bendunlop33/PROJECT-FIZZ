@@ -234,7 +234,7 @@ function WeekBars({ bars }: { bars: BarsView }) {
         {rects.map((r, i) => {
           const b = bars.bars[i];
           if (!b || !labels.has(i)) return null;
-          const box = barLabelBox(r.centreX, width, 60);
+          const box = barLabelBox(r.centreX, width, 60, barLabelRoom(bars.kind));
           return (
             <View key={b.from} style={{ position: 'absolute', left: box.left, width: 60, alignItems: box.align }}>
               <AppText variant="label" color="chart.axisText" numeric maxFontSizeMultiplier={1.4} numberOfLines={1}>

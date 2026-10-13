@@ -89,13 +89,16 @@ export function barLabelRoom(kind: 'days' | 'weeks' | 'months'): number {
 /**
  * F15: where a bar's label box sits, centred under the bar but kept inside
  * the chart, so the first and last labels never hang off an edge (60 days
- * read misaligned). `align` keeps the text over its bar when clamped.
+ * read misaligned). The clamp uses the label's own width (`labelWidth`,
+ * e.g. `barLabelRoom(kind)`), not the wider box, so a label that fits
+ * centred stays over its bar (review S2: 7/14-day edge labels sat ~18 pt
+ * off). `align` keeps the text against the edge when clamped.
  */
-export function barLabelBox(centreX: number, chartWidth: number, boxWidth: number): { left: number; align: 'center' | 'flex-start' | 'flex-end' } {
-  const left = centreX - boxWidth / 2;
-  if (left < 0) return { left: 0, align: 'flex-start' };
-  if (left + boxWidth > chartWidth) return { left: Math.max(0, chartWidth - boxWidth), align: 'flex-end' };
-  return { left, align: 'center' };
+export function barLabelBox(centreX: number, chartWidth: number, boxWidth: number, labelWidth: number = boxWidth): { left: number; align: 'center' | 'flex-start' | 'flex-end' } {
+  const half = Math.min(labelWidth, boxWidth) / 2;
+  if (centreX - half < 0) return { left: 0, align: 'flex-start' };
+  if (centreX + half > chartWidth) return { left: Math.max(0, chartWidth - boxWidth), align: 'flex-end' };
+  return { left: centreX - boxWidth / 2, align: 'center' };
 }
 
 /** F15: a count shows above a bar only when there was a session (zero bars stay a quiet stub). */
