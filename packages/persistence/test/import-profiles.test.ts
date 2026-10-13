@@ -111,6 +111,7 @@ function request(over: Partial<ImportLayoutRequest> = {}): ImportLayoutRequest {
     sampleHash: HASH,
     fileHash: HASH,
     instructionsHash: HASH,
+    sampleJson: null,
     route: 'chatgpt_plan',
     model: 'gpt-test',
     chars: 1200,

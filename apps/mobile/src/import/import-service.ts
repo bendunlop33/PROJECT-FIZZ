@@ -879,8 +879,10 @@ export function createImportService(deps: ImportServiceDeps) {
    * The saved layout this commit writes (AI12): a new one for a coach layout
    * with `Save layout` on; the saved one again, with this import added to its
    * uses and Ben's answers now, when a saved layout was used. Never one Ben
-   * switched off. The values seen (markers, names with negative weights) are
-   * kept so a later file's new ones are asked, never absorbed.
+   * switched off. The markers seen are kept so a later file's new ones are
+   * asked, never absorbed. Names with negative weights are recorded as
+   * provenance only: the analysis asks about negative weights on every
+   * import, so nothing reads them (ADR 0026 Implementation 13; review r3 N5).
    */
   function layoutToSave(l: DraftLayout, jobId: string, ownerId: string, a: ImportAnalysis, at: ZonedTimestamp): { record: ImportProfile; expectedVersion: number | null } | undefined {
     const negative = new Set(l.seen.negativeNames);

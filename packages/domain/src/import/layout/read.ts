@@ -1,4 +1,4 @@
-import type { LayoutAnswers, MarkerMeaning, NotationAnswer, WeightUnit } from '@fizz/schemas';
+import type { LayoutAnswers, MarkerMeaning, NotationAnswer, UnitToken, WeightUnit } from '@fizz/schemas';
 import type { CsvRecord } from '../csv';
 import { deriveId } from '../../stable';
 import { isSlashFormat, readDateCell, type DateOrder } from './dates';
@@ -101,6 +101,28 @@ function colOf(ctx: ReadContext, index: number | null): EffectiveColumn | null {
   return index === null ? null : (ctx.cols[index] ?? null);
 }
 
+/**
+ * The unit word in the header of the column(s) the weights come from: the
+ * load column, or, with no load column, every set column that holds loads
+ * (`Set 1 (kg)` … `Set 4 (kg)`, `Sets x Reps @ kg`; review r3 N6). Null when
+ * any of them has none, or they disagree: then the unit is asked.
+ */
+export function loadHeaderToken(cols: readonly EffectiveColumn[], s: Structure): UnitToken | null {
+  if (s.load !== null) {
+    const loadCol = cols[s.load];
+    return loadCol ? headerUnitToken(loadCol.header) : null;
+  }
+  const setCols = [...s.oneSet, ...(s.allSets === null ? [] : [s.allSets]), ...(s.setsReps === null ? [] : [s.setsReps])];
+  if (setCols.length === 0) return null;
+  const tokens = setCols.map((i) => {
+    const c = cols[i];
+    return c ? headerUnitToken(c.header) : null;
+  });
+  const first = tokens[0] ?? null;
+  if (first === null || tokens.some((t) => t === null || unitOfToken(t) !== unitOfToken(first))) return null;
+  return first;
+}
+
 /** No weight unit for a loaded row: its unit cell is blank and nothing else names one (S1: listed, never guessed). */
 export const NO_WEIGHT_UNIT = 'No weight unit';
 
@@ -123,8 +145,7 @@ function unitFor(ctx: ReadContext, cells: readonly string[]): { unit: WeightUnit
     }
   }
   if (ctx.answers.unit !== null) return { unit: ctx.answers.unit, wait: null, problem: null };
-  const loadCol = colOf(ctx, s.load);
-  const token = loadCol === null ? null : headerUnitToken(loadCol.header);
+  const token = loadHeaderToken(ctx.cols, s);
   if (token !== null) return { unit: unitOfToken(token), wait: null, problem: null };
   if (unitCol !== null) return { unit: null, wait: null, problem: NO_WEIGHT_UNIT };
   return { unit: null, wait: ctx.provisional ? null : 'unit', problem: null };

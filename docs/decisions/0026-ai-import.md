@@ -58,7 +58,7 @@ Ben (12 Oct 2026): "I do think having a GPT ability to just import would make th
 ### 6. Failure states and idempotency
 - **Each request is stored** in `import_layout_requests` (Your data) under its `operationId` and `sampleHash`, with the whole file's checksum (`fileHash`), its state and the validated spec (a rejected one keeps only its reasons).
   - A repeat with the same operation ID returns the stored result and sends nothing.
-  - Reopening the same file after an interruption reuses a spec that had already arrived. Reuse is keyed on the sample hash **and** the file checksum, only for a spec Ben never acted on (`closedAt` null: not confirmed, cancelled or read again), and the spec is checked against the whole file again before it is used (review S1). So an undone or cancelled layout never comes back as the coach's suggestion.
+  - Reopening the same file after an interruption reuses a spec that had already arrived. Reuse is keyed on the sample hash **and** the file checksum, only for a spec Ben never acted on (`closedAt` null: not imported, cancelled or read again; the request closes when the import is committed, so a force-close on the preview still finds it, review r3 N1), and the spec is checked against the whole file again before it is used (review S1). So an undone or cancelled layout never comes back as the coach's suggestion.
   - `Read with the coach again` (Check the layout) sets the layout aside and returns to the consent; the next tap sends a new request.
 - **Failure mapping:**
 
@@ -68,9 +68,10 @@ Ben (12 Oct 2026): "I do think having a GPT ability to just import would make th
   | `auth_expired` | `signed_out` |
   | `model_gone` | `model_unavailable` |
   | `network` | `offline` |
+  | `not_eligible` (or the account's `region`) | `not_eligible`: `this account can't be used` |
   | `unavailable` | `try later` |
   | 120 s with no answer | `timeout` |
-  | `Stop` | `stopped`; a late answer is thrown away |
+  | `Stop`, or Cancel, back or the swipe while reading | `stopped`; nothing is sent if it hasn't gone, a late answer is thrown away, never reused |
   | App left mid-request | `interrupted` |
   | `unsupported` | `No sets found in this file.` |
 
@@ -138,5 +139,15 @@ Built as planned, with these differences. Each needs the PM's or Ben's OK; none 
     - A loaded row whose unit-column cell is blank is unreadable with `No weight unit` (no question could answer it; nothing is guessed), and a file whose slash dates come in both orders asks the day/month order; rows that don't fit the answer are `Date doesn't fit the layout (<cell>)`. Both are listed under `Rows not read` and the 95% rule decides (S1). The `stuck` backstop stays.
     - `Cancel` in the nav bar of New file layout and Check the layout. Cancel, back and the swipe all drop the session and close its request, so that layout is never reused; only New file layout handing the session to Check the layout keeps it. No alert, since nothing is saved (S2). Designer to confirm back and swipe (r2 spec issue 7).
     - New copy for the designer: `The layout changed. Check it again.` with `Check the layout`, and the row reason `No weight unit` (S3, S1).
+
+13. **Review r3 fixes (13 Oct 2026, `docs/reviews/ai-import-r3.md`).**
+    - Cancel, back or the swipe during `Reading the layout` is the same as `Stop`: `discard` and `Read with the coach again` mark the read stopped before dropping the session, and a read whose session was dropped is stopped at every check. Nothing is sent if it hasn't gone; a late answer is stored as `stopped`, never as a reusable layout (B1).
+    - The coach request is closed when the import is committed (and on Cancel or `Read with the coach again`), not at `Use this layout`, so a force-close on the preview reuses the layout instead of sending again (N1).
+    - New file layout reads the coach's state again every 15 s while it is `offline` or `unavailable`, and when the app returns to the foreground, so `Read with the coach` re-enables (§9.3.2) (N2). There is no network-change listener in the app; the coach's offline state is itself held for a minute after a failed request.
+    - `not_eligible` and `region` are their own state, `Coach: this account can't be used` / `Needs the coach · this account can't be used` with `Connect the coach ›`, from system-states §3.2. §9.3.2 has no row for it: designer to add (N3).
+    - The request record keeps `sampleJson`, the exact text sent (capped at 500,000 characters), on the request rather than on the job; the job keeps `sampleHash` and the request's operation ID ties them (N4).
+    - `seen.negativeNames` is kept as recorded provenance but never read: the analysis asks about negative weights for bodyweight and machine exercises on every import, which is stricter than §9.6.4's "asked when not seen before". PM to decide whether to drop the field or ask only for new ones (N5).
+    - A unit word in every load-carrying set column's header (`Set 1 (kg)` … `Set 4 (kg)`) is the unit, like a load column's header; headers that disagree or lack one still ask (N6). The unit question's range counts each load once (N7).
+    - Giving a column the unit role clears an earlier `Weight unit` answer (Undo brings it back), so a blank unit cell is always `No weight unit` (N8). The Cancel hook catches a failed discard (N9).
 
 Needs a real iPhone (L6), unchanged: whether the plan route accepts this strict schema (`const`, integer bounds, `anyOf`) under a forced call, latency against the 120 s limit, backgrounding mid-request, the file picker with Strong/Hevy exports, and AX3.

@@ -252,6 +252,9 @@ export type SpecCheckFailure = z.infer<typeof SpecCheckFailureSchema>;
  * under its operation ID, so a repeat returns the stored result and sends
  * nothing, and a spec that arrived before an interruption is reused.
  */
+/** The longest sample text a request record keeps (`sampleJson`). */
+export const IMPORT_SAMPLE_JSON_MAX = 500_000;
+
 export const ImportLayoutRequestSchema = RecordMetaSchema.extend({
   operationId: OperationIdSchema,
   sampleHash: z.string().regex(/^[0-9a-f]{64}$/),
@@ -262,6 +265,12 @@ export const ImportLayoutRequestSchema = RecordMetaSchema.extend({
    */
   fileHash: z.string().regex(/^[0-9a-f]{64}$/).nullable().default(null),
   instructionsHash: z.string().regex(/^[0-9a-f]{64}$/),
+  /**
+   * The exact text sent (§9.6.4; review r3 N4): the sample JSON, byte for
+   * byte, so there is a record of what left the phone (Your data). Null on
+   * records made before it was kept, or a sample over the cap.
+   */
+  sampleJson: z.string().max(IMPORT_SAMPLE_JSON_MAX).nullable().default(null),
   route: z.literal('chatgpt_plan'),
   model: z.string().max(120),
   chars: z.int().min(0),

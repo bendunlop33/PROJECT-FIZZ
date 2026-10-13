@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LAYOUT_ANSWERS, ImportMappingSpecV1Schema, type CellNotation, type ImportMappingSpecV1, type LayoutAnswers } from '@fizz/schemas';
 import { NO_WEIGHT_UNIT, applyImportSpec, buildLayoutReview, readDateCell, readTable, validateImportSpec, type LayoutQuestion, type Table } from '../src';
-import { OPTS, answerAll, layoutText, specOf, tableOf } from './layout-fixtures';
+import { OPTS, answerAll, layoutSpec, layoutText, specOf, tableOf } from './layout-fixtures';
 
 /** `applyImportSpec`: code reads every row (AI2; checks 46, 51, 52). */
 const notationQ = (qs: readonly LayoutQuestion[]) => qs.find((q): q is Extract<LayoutQuestion, { kind: 'notation' }> => q.kind === 'notation');
@@ -99,6 +99,40 @@ describe('wide set columns (`Set 1 … Set 4`, `100x8`)', () => {
     const done = buildLayoutReview(t, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', notation: { '2': 'load_x_reps' }, unit: 'lb' }, OPTS);
     expect(done).toMatchObject({ open: 0, pending: 0, stuck: 0, ready: true });
     expect(applyImportSpec(s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', notation: { '2': 'load_x_reps' }, unit: 'lb' }, t, OPTS).rows[0]?.weight).toEqual({ value: 100, unit: 'lb' });
+  });
+});
+
+describe('a unit word in the set columns’ headers (review r3 N6, N7)', () => {
+  /** The wide fixture with `Set n` headers renamed; the spec names the same headers. */
+  const wide = (names: readonly string[]) => {
+    const text = layoutText('spreadsheet-wide.synthetic.csv').replace('Set 1,Set 2,Set 3,Set 4', names.join(','));
+    const tt = readTable(text);
+    if (!tt) throw new Error('table');
+    const raw = layoutSpec('spreadsheet-wide.spec.json') as { layout: { setColumns: { header: string; index: number }[] } };
+    raw.layout.setColumns = raw.layout.setColumns.map((c, i) => ({ ...c, header: names[i] ?? c.header }));
+    return { tt, spec: ImportMappingSpecV1Schema.parse(raw) };
+  };
+  const answered = { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' as const, notation: { '2': 'load_x_reps' as const } };
+
+  it('`Set 1 (kg)` … `Set 4 (kg)`: the unit comes from the headers and `Weight unit` isn’t asked', () => {
+    const { tt, spec } = wide(['Set 1 (kg)', 'Set 2 (kg)', 'Set 3 (kg)', 'Set 4 (kg)']);
+    const r = buildLayoutReview(tt, spec, answered, OPTS);
+    expect(r.questions.map((q) => q.kind)).not.toContain('unit');
+    expect(r.unit).toEqual({ unit: 'kg', source: 'header', token: 'kg' });
+    expect(r).toMatchObject({ open: 0, pending: 0, stuck: 0, ready: true });
+    expect(applyImportSpec(spec, answered, tt, OPTS).rows[0]?.weight).toEqual({ value: 100, unit: 'kg' });
+  });
+
+  it('headers that disagree, or one without a unit: `Weight unit` is asked, with each load counted once in its range', () => {
+    for (const names of [
+      ['Set 1 (kg)', 'Set 2 (kg)', 'Set 3 (kg)', 'Set 4 (lb)'],
+      ['Set 1 (kg)', 'Set 2 (kg)', 'Set 3 (kg)', 'Set 4'],
+    ]) {
+      const { tt, spec } = wide(names);
+      const r = buildLayoutReview(tt, spec, answered, OPTS);
+      expect(r.questions.find((q) => q.kind === 'unit')).toEqual({ kind: 'unit', answer: null, range: { min: 0, max: 140 } });
+      expect(r.unit.source).toBeNull();
+    }
   });
 });
 

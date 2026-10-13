@@ -88,6 +88,7 @@ describe('a stored layout is checked against the whole file before it is reused 
       sampleHash: sha256Hex(buildImportSample(table, { hidden: [] }).json),
       fileHash: sha256Hex(STRONG),
       instructionsHash: 'a'.repeat(64),
+      sampleJson: null,
       route: 'chatgpt_plan',
       model: 'gpt-test',
       chars: 100,
@@ -147,5 +148,20 @@ describe('a stored layout is checked against the whole file before it is reused 
     const sample = s.buildImportSample(r.layoutId);
     expect(await s.proposeImportMapping(r.layoutId, sample?.hash ?? '', 'op-1')).toEqual({ status: 'refused', reason: 'sample_changed' });
     expect(s.getLayoutReview(r.layoutId)).toBeNull();
+  });
+});
+
+describe('the request record keeps the exact text sent (§9.6.4, review r3 N4)', () => {
+  it('`sampleJson` is the message sent, byte for byte, and hashes to `sampleHash`', async () => {
+    const port = new SpyLayoutPort([answerWith(SPEC)]);
+    const { store, requests } = fakeStore();
+    const s = service(store, port);
+    const r = await s.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    if (r.kind !== 'new_table') throw new Error(r.kind);
+    const sample = s.buildImportSample(r.layoutId);
+    expect(await s.proposeImportMapping(r.layoutId, sample?.hash ?? '', 'op-1')).toMatchObject({ status: 'proposed' });
+    const sent = port.requests[0]?.input[0];
+    expect(requests[0]?.sampleJson).toBe(sent?.type === 'message' ? sent.content : null);
+    expect(sha256Hex(requests[0]?.sampleJson ?? '')).toBe(requests[0]?.sampleHash);
   });
 });

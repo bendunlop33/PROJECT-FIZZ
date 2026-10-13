@@ -20,6 +20,7 @@ import { buildImportLayoutRequest, IMPORT_LAYOUT_INSTRUCTIONS_V1, importLayoutFa
 import { layoutInUse, sha256Hex, type Store } from '@fizz/persistence';
 import {
   EMPTY_LAYOUT_ANSWERS,
+  IMPORT_SAMPLE_JSON_MAX,
   LayoutAnswersSchema,
   validate,
   type ImportCoachUnavailable,
@@ -795,6 +796,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       sampleHash,
       fileHash: s.fileHash,
       instructionsHash: INSTRUCTIONS_HASH,
+      sampleJson: built.json.length <= IMPORT_SAMPLE_JSON_MAX ? built.json : null,
       route: 'chatgpt_plan',
       model: a.model,
       chars: built.chars,

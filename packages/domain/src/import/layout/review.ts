@@ -2,8 +2,8 @@ import type { ImportMappingSpecV1, LayoutAnswers, LayoutRole, NotationAnswer, We
 import { applyImportSpec, layoutContext, type LayoutOptions } from './apply-spec';
 import { readDateCell, slashFields, type DateOrder } from './dates';
 import { hasAtLoad, notationOptions, readNumber, readSetCell, type CellSet } from './notation';
-import { columnHasX, type RecordRead, type WaitReason } from './read';
-import { hasTargetWord, headerUnitToken, unitOfToken } from './role-words';
+import { columnHasX, loadHeaderToken, type RecordRead, type WaitReason } from './read';
+import { hasTargetWord, unitOfToken } from './role-words';
 import { dateOrderOf, effectiveColumns, structureOf, type EffectiveColumn, type MarkerReading } from './roles';
 import { columnValues } from './sample';
 import type { Table } from './table';
@@ -90,8 +90,7 @@ function unitReading(ctx: ReturnType<typeof layoutContext>): UnitReading {
   if (ctx.answers.unit !== null) return { unit: ctx.answers.unit, source: 'answer', token: null };
   const unitCol = s.unit === null ? null : ctx.cols[s.unit];
   if (unitCol && unitCol.state !== 'check') return { unit: null, source: 'unit_column', token: null };
-  const loadCol = s.load === null ? null : ctx.cols[s.load];
-  const token = loadCol ? headerUnitToken(loadCol.header) : null;
+  const token = loadHeaderToken(ctx.cols, s);
   if (token !== null) return { unit: unitOfToken(token), source: 'header', token };
   return { unit: null, source: null, token: null };
 }
@@ -185,10 +184,13 @@ export function buildLayoutReview(table: Table, spec: ImportMappingSpecV1 | null
   const cellLoads = loadsInCells(table, s);
   // A unit column (even one still on `Check`) says the unit row by row: no file-level question while it is there.
   if ((s.load !== null || cellLoads) && (unit.source === 'answer' || (unit.source === null && s.unit === null))) {
-    const values = (s.load === null ? [] : columnValues(table, s.load))
-      .map((v) => readNumber(v, ctx.decimalComma))
-      .filter((v): v is number => v !== null);
-    for (const r of reads) for (const x of r.sets) if (x.load !== null) values.push(x.load);
+    // The load column's values, or the loads read from the set cells: each once (review r3 N7).
+    const values =
+      s.load !== null
+        ? columnValues(table, s.load)
+            .map((v) => readNumber(v, ctx.decimalComma))
+            .filter((v): v is number => v !== null)
+        : reads.flatMap((r) => r.sets.flatMap((x) => (x.load === null ? [] : [x.load])));
     questions.push({ kind: 'unit', answer: answers.unit, range: range(values) });
   }
 
