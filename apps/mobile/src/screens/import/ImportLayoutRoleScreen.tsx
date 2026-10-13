@@ -44,7 +44,8 @@ export function ImportLayoutRoleScreen() {
       return;
     }
     const moved = r.displaced[0];
-    navigation.navigate('ImportLayoutCheck', { layoutId, ...(moved ? { moved: roleMovedToast(moved.header) } : {}) });
+    // Back to the Check the layout under this sheet, never a second one on top (React Navigation 7's `navigate` pushes).
+    navigation.popTo('ImportLayoutCheck', { layoutId, ...(moved ? { moved: roleMovedToast(moved.header) } : {}) });
   }
 
   return (

@@ -8,6 +8,7 @@ import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Card, Group, Icon, PrimaryButton, Row, Screen, SecondaryButton, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
+import { useLayoutCancel } from './useLayoutCancel';
 
 /**
  * Check the layout and Changed columns (data-import-export §9.2.5, §9.2.7).
@@ -27,6 +28,8 @@ export function ImportLayoutCheckScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [data] = useScreenData((s) => Promise.resolve(s.importLayouts.getLayoutReview(layoutId)));
+  // `Cancel`, back and the swipe drop the session: the layout isn't reused (review r2 S2).
+  useLayoutCancel(layoutId);
 
   useEffect(() => {
     const changedCols = data.state === 'ready' && data.value !== null && data.value.newColumns.length + data.value.missing.length > 0 && data.value.kind === 'saved';

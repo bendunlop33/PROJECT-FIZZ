@@ -9,6 +9,7 @@ import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Card, InfoLine, PrimaryButton, Row, Screen, StatusLine, TextButton } from '../../ui';
+import { useLayoutCancel } from './useLayoutCancel';
 
 type Phase = { kind: 'consent' } | { kind: 'reading'; chars: number } | { kind: 'result'; view: ReadingResultView };
 
@@ -35,6 +36,9 @@ export function ImportNewLayoutScreen() {
     const sample = s.importLayouts.buildImportSample(layoutId);
     return info && sample ? { info, sample } : null;
   });
+
+  // `Cancel`, back and the swipe drop the session; only the hand-off to Check the layout keeps it (review r2 S2).
+  useLayoutCancel(layoutId);
 
   useEffect(() => {
     navigation.setOptions({ title: phase.kind === 'reading' ? 'Reading the layout' : 'New file layout' });
