@@ -413,6 +413,12 @@ describe('buildPainFlagSheet (§2.14.4)', () => {
     expect([plain(sheet.before), sheet.sinceFlag]).toEqual(['5 Oct · 60 kg × 5', null]);
   });
 
+  it('review import-progress N1: a newest FitNotes workout (no item) still finds the app workouts on their item', () => {
+    const mixed = [hs(-6, [[55, 6], [55, 6], [55, 6]]), hs(8, [[50, 8], [50, 8]], { imported: true, equipmentId: null })];
+    const sheet = buildPainFlagSheet({ flag: f, history: mixed, nowMs: ms(9 * DAY), tz: TZ, exercise: press });
+    expect([plain(sheet.before), plain(sheet.sinceFlag)]).toEqual(['2 Oct · 55 kg × 6, 6, 6', '16 Oct · 50 kg × 8, 8']);
+  });
+
   it('a flag cleared elsewhere says so and asks nothing', () => {
     const cleared = clearPainFlag(f, at(7 * DAY));
     const sheet = buildPainFlagSheet({ flag: cleared, history, nowMs: ms(30 * DAY), tz: TZ, exercise: press });

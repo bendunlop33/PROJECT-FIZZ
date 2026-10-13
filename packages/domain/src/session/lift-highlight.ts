@@ -19,6 +19,7 @@ import { isInHistory } from './deletion';
  *   first, at most `maxPoints`. A FitNotes workout recorded no equipment, so
  *   it matches any (unit and convention still must match; B7), and the
  *   highlight says `FitNotes` when its newest point is one (`imported`).
+ *   App workouts are still charted on one item only (review S3).
  * - `change` compares the newest top set with the one before it.
  * - Sets Ben marked as not counting (`Spotted`, `Pain`, …, active-workout
  *   §2.13) are never a top set, a change or a trend point (check 45).
@@ -70,16 +71,25 @@ export function buildLiftHighlight(sessions: readonly SessionAggregate[], maxPoi
   if (!lift) return null;
 
   const series: { load: number; reps: number; set: WorkoutSet; session: SessionAggregate }[] = [];
+  /**
+   * The item app workouts are charted on. Only the match against a FitNotes
+   * workout is relaxed (review import-progress S3): app workouts still need
+   * one item, the lift's own, or (newest point imported) the item of the
+   * newest app workout in the series. `undefined`: not chosen yet.
+   */
+  let appItem: string | null | undefined = newest.session.source === 'import' ? undefined : lift.equipmentId;
   for (const a of logged) {
     if (series.length >= maxPoints) break;
-    const anyItem = a.session.source === 'import' || newest.session.source === 'import';
-    const same = a.exercises.filter((e) => e.exerciseId === lift.exerciseId && (anyItem || e.equipmentId === lift.equipmentId) && e.unit === lift.unit && e.loadConvention === lift.loadConvention);
-    let top: { load: number; reps: number; set: WorkoutSet } | null = null;
+    const imported = a.session.source === 'import';
+    const same = a.exercises.filter((e) => e.exerciseId === lift.exerciseId && (imported || appItem === undefined || e.equipmentId === appItem) && e.unit === lift.unit && e.loadConvention === lift.loadConvention);
+    let top: { load: number; reps: number; set: WorkoutSet; equipmentId: string | null } | null = null;
     for (const e of same) {
       const t = weightedTop(a, e);
-      if (t && (top === null || t.load > top.load || (t.load === top.load && t.reps > top.reps))) top = t;
+      if (t && (top === null || t.load > top.load || (t.load === top.load && t.reps > top.reps))) top = { ...t, equipmentId: e.equipmentId };
     }
-    if (top) series.push({ ...top, session: a });
+    if (!top) continue;
+    if (!imported && appItem === undefined) appItem = top.equipmentId;
+    series.push({ load: top.load, reps: top.reps, set: top.set, session: a });
   }
   const latest = series[0];
   if (!latest) return null;
