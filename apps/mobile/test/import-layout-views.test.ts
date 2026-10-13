@@ -118,6 +118,14 @@ describe('Reading results and check reasons (§9.3.3; checks 41, 49)', () => {
     expect(v.primary?.label).toBe(primary);
   });
 
+  it('a refusal says nothing was sent, never `No layout returned.` (rule 1, review S2)', () => {
+    expect(readingResultView({ status: 'refused', reason: 'not_found' })).toMatchObject({ status: { text: 'Choose the file again.' }, primary: { label: 'Choose another file', action: 'choose' }, next: null });
+    // The text shown changed: back to the consent with the text as it is now, no status line.
+    expect(readingResultView({ status: 'refused', reason: 'sample_changed' })).toEqual({ status: null, reasons: [], primary: null, fix: null, next: 'consent' });
+    expect(readingResultView({ status: 'refused', reason: 'workout_unfinished' })).toMatchObject({ status: { text: 'Finish or discard your workout first.' }, primary: null });
+    for (const reason of ['not_found', 'sample_changed', 'workout_unfinished'] as const) expect(JSON.stringify(readingResultView({ status: 'refused', reason }))).not.toContain('No layout returned');
+  });
+
   it('every reason comes from the fixed list, with only file text and numbers', () => {
     const all: SpecCheckFailure[] = [
       { kind: 'schema' },
@@ -200,6 +208,54 @@ describe('Check the layout (§9.2.5)', () => {
     ]);
     expect(questionScreenView(q('unit'), 'en-GB')).toEqual({ title: 'Weight unit', lines: ['Values: 55 to 165'], options: [{ value: 'kg', label: 'kg', detail: null, selected: false }, { value: 'lb', label: 'lb', detail: null, selected: false }] });
     expect(questionScreenView(q('record_kind'), 'en-GB').options.map((o) => o.selected)).toEqual([false, false]);
+  });
+
+  it('the wide file asks `Weight unit` with the loads read from the cells; answered, `Use this layout` (review B1)', () => {
+    const fresh = checkLayoutView(reviewView('spreadsheet-wide'), 'en-GB');
+    expect(fresh.questions.map((q) => q.title)).toEqual(['What is this file?', 'Weight unit', 'What “100x8” means']);
+    const r = reviewView('spreadsheet-wide', { recordKind: 'done', notation: { '2': 'load_x_reps' } });
+    const unit = r.review.questions.find((x) => x.kind === 'unit') as LayoutQuestion;
+    expect(questionScreenView(unit, 'en-GB').lines).toEqual(['Values: 0 to 140']);
+    expect(checkLayoutView(r, 'en-GB')).toMatchObject({ questionsTitle: 'Needs your answer (1)', stuckLine: null, primary: { label: 'Answer 1 question to continue', enabled: false } });
+    const done = checkLayoutView(reviewView('spreadsheet-wide', { recordKind: 'done', notation: { '2': 'load_x_reps' }, unit: 'kg' }), 'en-GB');
+    expect(done).toMatchObject({ questionsTitle: null, stuckLine: null, primary: { label: 'Use this layout', enabled: true } });
+    expect(done.examples[0]?.reading).toBe('→ 1 Sept 2025 · Bench Press · 100\u00a0kg × 8, 100\u00a0kg × 8, 100\u00a0kg × 7');
+  });
+
+  it('rows waiting for something no question asks are never silent (review B1 backstop)', () => {
+    const text = 'Date,Exercise,Weight (kg),Reps\n21/11/2025,Bench,100,8\n11/21/2025,Bench,100,8\n03/04/2025,Bench,100,8\n';
+    const table = readTable(text);
+    if (!table) throw new Error('table');
+    const spec = ImportMappingSpecV1Schema.parse({
+      specVersion: 1,
+      file: { delimiter: ',', headerLine: 1, decimal: '.' },
+      layout: { kind: 'row_per_set', setOrder: null },
+      workoutKey: [],
+      date: { column: { header: 'Date', index: 0 }, format: 'DD/MM/YYYY' },
+      exercise: { header: 'Exercise', index: 1 },
+      load: { column: { header: 'Weight (kg)', index: 2 }, unit: { kind: 'header_token', column: { header: 'Weight (kg)', index: 2 }, token: 'kg' } },
+      reps: { header: 'Reps', index: 3 },
+      setType: null,
+      rpe: null,
+      notes: [],
+      unmapped: [],
+      selfCheck: [1, 2, 3].map((n) => ({ line: n + 1, date: '2025-11-21', exercise: 'Bench', load: 100, reps: 8 })),
+      unsupported: null,
+    });
+    let answers: LayoutAnswers = { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' };
+    const roles: Record<string, LayoutAnswers['roles'][string]> = {};
+    for (const c of buildLayoutReview(table, spec, answers, OPTS).columns) if (c.state === 'check') roles[String(c.index)] = c.role;
+    answers = { ...answers, roles };
+    const review = buildLayoutReview(table, spec, answers, OPTS);
+    const v = checkLayoutView({ layoutId: 'l', layoutVersion: 1, fileName: 'log.csv', kind: 'coach', profileName: null, review, saved: null, newColumns: [], missing: [], canUndo: false, header: table.header }, 'en-GB');
+    expect(review).toMatchObject({ open: 0, stuck: 2 });
+    expect(v.stuckLine).toMatchObject({ tone: 'warning', text: '2 rows can’t be read with this layout.' });
+    expect(v.primary.enabled).toBe(false);
+  });
+
+  it('a coach layout offers `Read with the coach again`; a saved one doesn’t (§9.3.4)', () => {
+    expect(checkLayoutView(reviewView('strong-new-kg'), 'en-GB').readAgain).toBe('Read with the coach again');
+    expect(checkLayoutView({ ...reviewView('strong-new-kg'), kind: 'saved' }, 'en-GB').readAgain).toBeNull();
   });
 
   it('the role sheet: a Check column has nothing selected and shows the suggestion', () => {

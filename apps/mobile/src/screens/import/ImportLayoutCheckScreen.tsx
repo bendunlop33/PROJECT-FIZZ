@@ -75,6 +75,13 @@ export function ImportLayoutCheckScreen() {
     else changed();
   }
 
+  async function readAgain() {
+    setBusy(true);
+    const next = await services.importLayouts.readAgain(layoutId);
+    setBusy(false);
+    if (next !== null) navigation.replace('ImportNewLayout', { layoutId: next });
+  }
+
   return (
     <Screen
       footer={<PrimaryButton label={v.primary.label} disabled={!v.primary.enabled || busy} busy={busy} onPress={() => void useLayout()} />}
@@ -112,6 +119,7 @@ export function ImportLayoutCheckScreen() {
       ) : null}
       <StatusLine icon={v.readLine.icon} tone={v.readLine.tone} text={v.readLine.text} />
       {v.notReadLine ? <StatusLine icon="info.circle" tone="info" text={v.notReadLine} /> : null}
+      {v.stuckLine ? <StatusLine icon={v.stuckLine.icon} tone={v.stuckLine.tone} text={v.stuckLine.text} /> : null}
       {v.plan ? <StatusLine icon="info.circle" tone="info" text={v.plan} /> : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 
@@ -224,6 +232,7 @@ export function ImportLayoutCheckScreen() {
           />
         </View>
       ) : null}
+      {v.readAgain !== null ? <TextButton label={v.readAgain} tone="secondary" disabled={busy} onPress={() => void readAgain()} /> : null}
       <ToastFromRoute setToast={setToast} />
     </Screen>
   );

@@ -212,8 +212,8 @@ export interface ReadingResultView {
   primary: { label: 'Try again' | 'Choose another file' | 'Read with the coach'; action: 'retry' | 'choose' | 'read' } | null;
   /** The coach-state fix link (`Sign in ›`), when the failure is the route's. */
   fix: CoachFix;
-  /** Proposed: go to Check the layout. */
-  next: 'check' | null;
+  /** Proposed: go to Check the layout. `consent`: nothing was sent because the text shown changed; show New file layout again with the text as it is now. */
+  next: 'check' | 'consent' | null;
 }
 
 export function readingResultView(r: ProposeResult): ReadingResultView {
@@ -243,7 +243,15 @@ export function readingResultView(r: ProposeResult): ReadingResultView {
       }
       break;
     case 'refused':
-      return r.reason === 'workout_unfinished' ? plain('Finish or discard your workout first.', null) : plain('No layout returned.', { label: 'Try again', action: 'retry' });
+      // Nothing was sent in any of these: never `No layout returned.` (rule 1, review S2).
+      switch (r.reason) {
+        case 'workout_unfinished':
+          return plain('Finish or discard your workout first.', null);
+        case 'not_found':
+          return plain('Choose the file again.', { label: 'Choose another file', action: 'choose' });
+        case 'sample_changed':
+          return { status: null, reasons: [], primary: null, fix: null, next: 'consent' };
+      }
   }
   return plain('No layout returned.', { label: 'Try again', action: 'retry' });
 }
@@ -311,12 +319,16 @@ export interface CheckLayoutView {
   fileName: string;
   readLine: Line;
   notReadLine: string | null;
+  /** Rows waiting for something no question here asks (backstop; never silent). */
+  stuckLine: Line | null;
   questionsTitle: string | null;
   questions: QuestionRowView[];
   columns: ColumnRowView[];
   examples: ExampleView[];
   plan: string | null;
   primary: { label: string; enabled: boolean };
+  /** A coach layout: `Read with the coach again` (§9.3.4), a new request that never reuses this one. */
+  readAgain: 'Read with the coach again' | null;
 }
 
 const NOTATION_LABEL: Record<NotationAnswer, (example: string) => string> = {
@@ -476,6 +488,7 @@ export function checkLayoutView(v: LayoutReviewView, locale?: string): CheckLayo
     fileName: v.fileName,
     readLine: r.enough ? line('checkmark.circle.fill', 'done', `${num(read)} of ${num(total)} rows read`) : line('exclamationmark.triangle', 'warning', `${String(total === 0 ? 0 : Math.floor((100 * read) / total))}% of rows read. 95% needed.`),
     notReadLine: notRead > 0 ? plural(notRead, 'row not read', 'rows not read') : null,
+    stuckLine: r.stuck > 0 ? line('exclamationmark.triangle', 'warning', `${plural(r.stuck, 'row', 'rows')} can’t be read with this layout.`) : null,
     questionsTitle: open > 0 ? `Needs your answer (${num(open)})` : null,
     questions,
     columns,
@@ -486,6 +499,7 @@ export function checkLayoutView(v: LayoutReviewView, locale?: string): CheckLayo
       : open > 0
         ? { label: `Answer ${plural(open, 'question', 'questions')} to continue`, enabled: false }
         : { label: v.kind === 'saved' && v.newColumns.length > 0 ? 'Continue' : 'Use this layout', enabled: r.ready },
+    readAgain: v.kind === 'coach' ? 'Read with the coach again' : null,
   };
 }
 

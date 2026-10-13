@@ -6,7 +6,7 @@ import { Share, View } from 'react-native';
 import { newUuid } from '../../device/runtime';
 import { newLayoutView, readingResultView, readingSteps, type ReadingResultView } from '../../import/layout-views';
 import type { ProfileStackParams } from '../../navigation/types';
-import { useScreenData, useServices } from '../../shell/context';
+import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Card, InfoLine, PrimaryButton, Row, Screen, StatusLine, TextButton } from '../../ui';
 
@@ -23,6 +23,7 @@ type Phase = { kind: 'consent' } | { kind: 'reading'; chars: number } | { kind: 
 export function ImportNewLayoutScreen() {
   const theme = useTheme();
   const services = useServices();
+  const changed = useDataChanged();
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
   const { layoutId } = useRoute<RouteProp<ProfileStackParams, 'ImportNewLayout'>>().params;
   const [phase, setPhase] = useState<Phase>({ kind: 'consent' });
@@ -73,6 +74,12 @@ export function ImportNewLayoutScreen() {
     const view = readingResultView(r);
     if (view.next === 'check') {
       navigation.replace('ImportLayoutCheck', { layoutId });
+      return;
+    }
+    if (view.next === 'consent') {
+      // Nothing was sent: the consent again, with the text as it is now.
+      setPhase({ kind: 'consent' });
+      changed();
       return;
     }
     setPhase({ kind: 'result', view });
