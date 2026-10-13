@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 import { calculateNextTargets, comparableSetsOf, importedWorkingSetCount, lastComparableSession, workingSetsFromPrevious, type HistorySession } from '../src/index';
-import { doubleProgression, dumbbells } from './fixtures';
+import { barbell, doubleProgression, dumbbells } from './fixtures';
 
 /**
  * Review import-progress B1, B2: how a FitNotes session is read. FitNotes has
@@ -74,19 +74,100 @@ describe('comparableSetsOf on FitNotes sessions (reading (a): a leading ramp onl
 });
 
 describe('targets from FitNotes back-offs and pyramids (B1, B2)', () => {
-  it('ramp, top single, back-offs: the rule plans from the back-off load, never every set at the top load', () => {
+  it('ramp, top single, back-offs at the top of the range: increase from the back-off load (r2 B1)', () => {
     const t = next([fitnotes([[10, 10], [14, 5], [18, 3], [22, 4], [17.5, 10], [17.5, 10], [17.5, 10]])]);
-    // The top single (4 reps) is below the range: hold at the easiest counted load (the back-offs).
-    expect(t.decision).toBe('hold_after_miss');
-    expect(t.sets.every((x) => x.load !== null && x.load.value === 17.5)).toBe(true);
-    expect(t.explanation.facts.join(' ')).toMatch(/lighter sets before the top set were read as warm-ups/);
+    // The top single (4 reps) is context, not a miss at 17.5 kg: every set at 17.5 kg hit 10.
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets.every((x) => x.load !== null && x.load.value === 20)).toBe(true);
+    const facts = t.explanation.facts.join(' ');
+    expect(facts).toMatch(/lighter sets before the top set were read as warm-ups/);
+    expect(facts).toMatch(/1 heavier top set was kept as context; reps were judged on the sets at 17\.5 kg/);
+    expect(facts).toMatch(/every counted set reached 10\+ reps at 17\.5 kg/);
   });
 
-  it('a descending pyramid holds at its lightest set, and back-off sets are never called warm-ups', () => {
-    const t = next([fitnotes([[22.5, 8], [20, 9], [17.5, 10]])]);
+  it('a descending pyramid holds at its lightest set when that set is below the top, and back-off sets are never called warm-ups', () => {
+    const t = next([fitnotes([[22.5, 8], [20, 9], [17.5, 9]])]);
     expect(t.decision).toBe('hold');
     expect(t.sets.every((x) => x.load?.value === 17.5)).toBe(true);
     expect(t.explanation.facts.join(' ')).not.toMatch(/warm-ups/);
+  });
+
+  it('a descending pyramid whose lightest set hit the top of the range progresses', () => {
+    const t = next([fitnotes([[22.5, 8], [20, 9], [17.5, 10]])]);
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets.every((x) => x.load?.value === 20)).toBe(true);
+  });
+
+  it('back-offs in range but below the top: hold, not hold_after_miss', () => {
+    const t = next([fitnotes([[10, 10], [22.5, 3], [20, 9], [20, 9], [20, 8]])]);
+    expect(t.decision).toBe('hold');
+    expect(t.sets.every((x) => x.load?.value === 20)).toBe(true);
+  });
+});
+
+describe('two FitNotes sessions of a top single then back-offs (r2 B1)', () => {
+  const DAY1 = '2026-09-10T12:00:00.000Z';
+  const DAY2 = '2026-09-13T12:00:00.000Z';
+
+  it('in-range back-offs twice in a row: never reduce, and no miss is claimed at the back-off load', () => {
+    const shape: [number, number][] = [[10, 10], [15, 5], [22.5, 3], [20, 10], [20, 10], [20, 10]];
+    const t = next([fitnotes(shape, { day: DAY1 }), fitnotes(shape, { day: DAY2 })]);
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets.every((x) => x.load?.value === 22.5)).toBe(true);
+    expect(t.explanation.facts.join(' ')).not.toMatch(/fell below/);
+  });
+
+  it("the review's barbell case (40x10, 60x5, 80x3, 70x10 x3, twice; 8-10): increase, never reduce", () => {
+    const shape: [number, number][] = [[40, 10], [60, 5], [80, 3], [70, 10], [70, 10], [70, 10]];
+    const t = calculateNextTargets({
+      exerciseName: 'Bench press',
+      measurement: 'reps',
+      history: [fitnotes(shape, { day: DAY1, convention: 'total' }), fitnotes(shape, { day: DAY2, convention: 'total' })],
+      rule: RULE,
+      equipment: barbell(),
+      unit: 'kg',
+      convention: 'total',
+      pain: { active: false, reportedAtUtc: null },
+    });
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets.every((x) => x.load !== null && x.load.value > 70)).toBe(true);
+    expect(t.explanation.facts.join(' ')).not.toMatch(/fell below 8 reps at 70/);
+  });
+
+  it('lb: in-range back-offs after a top single progress the same way', () => {
+    const shape: [number, number][] = [[95, 5], [185, 2], [155, 10], [155, 10], [155, 10]];
+    const lbBar = barbell({ unit: 'lb', barMass: 45, plates: [{ mass: 45, count: 4 }, { mass: 25, count: 2 }, { mass: 10, count: 2 }, { mass: 5, count: 2 }, { mass: 2.5, count: 2 }] });
+    const t = calculateNextTargets({
+      exerciseName: 'Bench press',
+      measurement: 'reps',
+      history: [fitnotes(shape, { day: DAY1, convention: 'total', unit: 'lb' }), fitnotes(shape, { day: DAY2, convention: 'total', unit: 'lb' })],
+      rule: RULE,
+      equipment: lbBar,
+      unit: 'lb',
+      convention: 'total',
+      pain: { active: false, reportedAtUtc: null },
+    });
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets.every((x) => x.load?.unit === 'lb' && x.load.value > 155)).toBe(true);
+  });
+
+  it('a genuine miss at the back-off load: one session holds after the miss', () => {
+    const t = next([fitnotes([[10, 10], [22.5, 3], [20, 7], [20, 7], [20, 7]], { day: DAY2 })]);
+    expect(t.decision).toBe('hold_after_miss');
+    expect(t.sets.every((x) => x.load?.value === 20)).toBe(true);
+  });
+
+  it('a genuine miss at the back-off load twice in a row: reduce, naming the load the miss was at', () => {
+    const shape: [number, number][] = [[10, 10], [22.5, 3], [20, 7], [20, 7], [20, 7]];
+    const t = next([fitnotes(shape, { day: DAY1 }), fitnotes(shape, { day: DAY2 })]);
+    expect(t.decision).toBe('reduce_load');
+    expect(t.explanation.facts.join(' ')).toMatch(/2 sessions in a row fell below 8 reps at 20 kg/);
+    expect(t.sets.every((x) => x.load !== null && x.load.value < 20)).toBe(true);
+  });
+
+  it('in the app, a heavier set still counts toward a miss (logged history is read as logged)', () => {
+    const t = next([{ ...fitnotes([[22.5, 3], [20, 10], [20, 10], [20, 10]], { day: DAY2 }), imported: false, equipmentId: dumbbells().id }]);
+    expect(t.decision).toBe('hold_after_miss');
   });
 });
 

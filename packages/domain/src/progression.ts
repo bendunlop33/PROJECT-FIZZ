@@ -129,7 +129,9 @@ export function comparableSetsOf<T extends Pick<HistorySet, 'setType' | 'load'>>
  * set at the top load; and the reading never takes the count below the
  * built-in default (`floor`), so a top single followed by nothing doesn't
  * plan one set. A session with fewer sets than the default keeps its own
- * count (2 sets done, 2 planned). At most 10.
+ * count (2 sets done, 2 planned). At most 10: the rule's own `workingSets`
+ * cap, since a FitNotes session with no warm-up flag can hold many more rows
+ * than working sets; in-app counts are logged deliberately and aren't capped.
  */
 export function importedWorkingSetCount(comparable: number, total: number, floor: number): number {
   return Math.min(10, Math.max(comparable, Math.min(floor, total), 1));
@@ -348,6 +350,8 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
   // B7: imported (FitNotes) history counts on any equipment, read from its working sets only.
   /** The latest comparable session, when it came from FitNotes: whether lighter sets were read as warm-ups. */
   let latestFitNotes: { rampDropped: boolean } | null = null;
+  /** The latest comparable FitNotes session's sets heavier than the load it is judged at (r2 B1). */
+  let topSetsAside: { count: number; load: number } | null = null;
   for (const s of [...input.history].sort(byRecency)) {
     const typed = comparableSetsOf(s).filter((x) => types.includes(x.setType) && x.reps !== null);
     // §2.13: a set Ben marked (spotted, pain, form broke, other equipment) is
@@ -369,16 +373,27 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
     const numeric = loads.filter((l): l is number => l !== null);
     const easiest =
       numeric.length === 0 ? null : ctx.direction === 'resistance' ? Math.min(...numeric) : Math.max(...numeric);
-    const reps = counted.map((x) => x.reps ?? 0);
+    // Import-progress r2 B1: in a FitNotes session the rule plans from the easiest
+    // kept load (the back-offs), so it judges the range, misses and effort on the
+    // sets at that load only. Heavier top sets are context, never a miss there.
+    const judged =
+      s.imported && easiest !== null
+        ? counted.filter((x) => x.load !== null && x.load.convention !== 'bodyweight' && toScaled(x.load.value) === toScaled(easiest))
+        : counted;
+    if (s.imported && out.length === 0 && judged.length < counted.length && easiest !== null) {
+      topSetsAside = { count: counted.length - judged.length, load: easiest };
+    }
+    const reps = judged.map((x) => x.reps ?? 0);
     const wantsEffort = criteria.maxRpeToProgress !== null || criteria.minRirToProgress !== null;
     let missingEffort = 0;
-    for (const x of counted) {
+    for (const x of judged) {
       const recorded = (criteria.maxRpeToProgress !== null && x.rpe !== null) || (criteria.minRirToProgress !== null && x.rir !== null);
       if (wantsEffort && !recorded) missingEffort += 1;
     }
     const left = counted.filter((x) => x.side === 'left');
     const right = counted.filter((x) => x.side === 'right');
     const both = counted.filter((x) => x.side === 'both');
+    const atLoad = (xs: readonly HistorySet[]) => xs.filter((x) => judged.includes(x));
     const sided = left.length + right.length > 0;
     const unpairable = sided && counted.some((x) => x.side === null);
     out.push({
@@ -389,18 +404,22 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       otherSets: (s.imported ? comparableSetsOf(s).length : s.sets.length) - typed.length,
       leftOut: typed.length - counted.length,
       prescribedDone: sided ? both.length + Math.min(left.length, right.length) : counted.length,
-      sides: sided ? { left: evalSide([...both, ...left], criteria), right: evalSide([...both, ...right], criteria) } : null,
+      sides: sided ? { left: evalSide(atLoad([...both, ...left]), criteria), right: evalSide(atLoad([...both, ...right]), criteria) } : null,
       unpairable,
       load: easiest,
       minReps: reps.length === 0 ? 0 : Math.min(...reps),
       allHitTop: reps.length > 0 && reps.every((r) => r >= criteria.repRange.max),
       anyBelowFloor: reps.some((r) => r < criteria.repRange.min),
-      effortOk: effortWithin(counted, criteria),
+      effortOk: effortWithin(judged, criteria),
       missingEffort,
     });
   }
   if (latestFitNotes !== null) {
     pushFact(ctx, `Last session is from FitNotes (equipment not recorded)${latestFitNotes.rampDropped ? '; its lighter sets before the top set were read as warm-ups' : ''}.`);
+  }
+  if (topSetsAside !== null) {
+    const { count, load } = topSetsAside;
+    pushFact(ctx, `${count} heavier top set${count === 1 ? ' was' : 's were'} kept as context; reps were judged on the sets at ${fmt(ctx, load)}.`);
   }
   if (excluded > 0) {
     pushFact(
