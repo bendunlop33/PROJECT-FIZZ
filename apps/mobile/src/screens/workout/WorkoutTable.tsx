@@ -1,5 +1,5 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
-import { AccessibilityInfo, Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
+import { AccessibilityInfo, Keyboard, Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
 import { formatDuration, NBSP, type FocusView, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
@@ -7,7 +7,7 @@ import type { SetSide } from '@fizz/schemas';
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, TextButton, TEXT_PRESSED_OPACITY, TimerNumeral, type SymbolName } from '../../ui';
-import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadMovesTiles, keypadTileY, rowTap, showsFolded, tileReportFor, type AnchorRequest, type ChipState, type Expansions, type TileId, type TileReport } from '../../workout/table';
+import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadMovesTiles, keypadTileY, runRowTap, showsFolded, tileReportFor, type AnchorRequest, type ChipState, type Expansions, type TileId, type TileReport } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { openRowWidth, stepperTexts, tileFit, type TileSpec } from '../../workout/tile-fit';
@@ -331,12 +331,14 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
                   row={row}
                   ax={props.ax}
                   onPress={() => {
-                    const tap = rowTap(row);
-                    if (tap.kind === 'edit') props.onEditSet(tap.setId);
-                    if (tap.kind === 'select') {
-                      haptic('step');
-                      props.onSelectSet(tap.setId);
-                    }
+                    runRowTap(row, {
+                      dismissKeyboard: () => { Keyboard.dismiss(); },
+                      edit: props.onEditSet,
+                      select: (setId) => {
+                        haptic('step');
+                        props.onSelectSet(setId);
+                      },
+                    });
                   }}
                 />
               </View>,
