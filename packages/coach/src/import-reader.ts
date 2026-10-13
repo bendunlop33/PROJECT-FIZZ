@@ -1,4 +1,4 @@
-import { ImportMappingSpecV1Schema, type ImportMappingSpecV1 } from '@fizz/schemas';
+import { ImportMappingSpecV1Schema, type ImportMappingSpecV1, type SpecCheckFailure } from '@fizz/schemas';
 import { strictJsonSchema, type FunctionToolDefinition } from './function-tools';
 import type { CoachModelPort, ModelErrorKind, ModelRequest } from './model-port';
 import { runModelStep } from './turn';
@@ -56,11 +56,67 @@ export function buildImportLayoutRequest(sampleJson: string, model: string): Mod
   };
 }
 
+/**
+ * Why code refused a layout, as the tool result the model gets back for one
+ * correction (ADR 0026 amendment, 13 Oct 2026). Fixed sentences from the
+ * check list, filled in only with header cells and code's numbers. A date
+ * cell is quoted only when that exact cell was in the sample already sent;
+ * otherwise only its row is named. Nothing else from the file goes.
+ */
+export function importLayoutFeedback(failures: readonly SpecCheckFailure[], sampleJson: string): string {
+  const inSample = (cell: string): boolean => cell !== '' && sampleJson.includes(JSON.stringify(cell));
+  const lines = failures.map((f): string => {
+    switch (f.kind) {
+      case 'schema':
+        return 'The answer did not match the file: use the sample’s delimiter and headerLine 1.';
+      case 'unknown_column':
+        return f.header === '' ? 'A column reference is not a header cell at that index.' : `The column reference ${JSON.stringify(f.header)} has the wrong index.`;
+      case 'two_roles':
+        return `The column ${JSON.stringify(f.header)} is used for two roles.`;
+      case 'unit_token':
+        return `The unit token ${JSON.stringify(f.token)} is not a whole word of the load column’s header: use none.`;
+      case 'unit_column':
+        return `Not every value in ${JSON.stringify(f.header)} is kg, kgs, lb or lbs: it is not a unit column.`;
+      case 'marker':
+        return 'A set-type marker listed is not in that column: list only values the column holds.';
+      case 'date':
+        return inSample(f.cell) ? `The date format does not read ${JSON.stringify(f.cell)} (line ${String(f.row)}).` : `The date format does not read the date on line ${String(f.row)}.`;
+      case 'self_check':
+        return `The selfCheck reading of line ${String(f.row)} does not match the layout.`;
+      case 'dry_run':
+        return `Only ${String(f.percent)}% of rows can be read with this layout; 95% is needed.`;
+      case 'target_column':
+        return `${JSON.stringify(f.header)} holds targets, not results: put it in unmapped.`;
+    }
+  });
+  return ['The app checked the layout against every row and refused it:', ...lines, 'Call submit_import_layout once more with a corrected layout, or set unsupported.'].join('\n');
+}
+
+/**
+ * The one correction request: the same fixed instructions, the same sample
+ * (byte for byte), the model's own call, and code's reasons as its result.
+ * Nothing else is added (check 38).
+ */
+export function buildImportLayoutRepairRequest(sampleJson: string, model: string, previous: { callId: string; arguments: string }, feedback: string): ModelRequest {
+  return {
+    model,
+    instructions: IMPORT_LAYOUT_INSTRUCTIONS_V1,
+    input: [
+      { type: 'message', role: 'user', content: sampleJson },
+      { type: 'function_call', callId: previous.callId, name: SUBMIT_IMPORT_LAYOUT_TOOL_NAME, arguments: previous.arguments },
+      { type: 'function_call_output', callId: previous.callId, output: feedback },
+    ],
+    tools: [submitImportLayoutTool()],
+    toolChoice: 'required',
+    parallelToolCalls: false,
+  };
+}
+
 /** The adapter's limit for one layout request (§9.3.3 `No answer in time.`). */
 export const IMPORT_LAYOUT_TIMEOUT_MS = 120_000;
 
 export type ImportLayoutAnswer =
-  | { ok: true; spec: ImportMappingSpecV1; arguments: string }
+  | { ok: true; spec: ImportMappingSpecV1; arguments: string; callId: string }
   /**
    * - `no_layout_returned`: text only, a refusal, no call, several calls,
    *   another function, or arguments that don't parse.
@@ -98,7 +154,7 @@ export async function requestImportLayout(
       return { ok: false, error: 'no_layout_returned' };
     }
     const parsed = ImportMappingSpecV1Schema.safeParse(raw);
-    return parsed.success ? { ok: true, spec: parsed.data, arguments: out.arguments } : { ok: false, error: 'no_layout_returned' };
+    return parsed.success ? { ok: true, spec: parsed.data, arguments: out.arguments, callId: out.callId } : { ok: false, error: 'no_layout_returned' };
   } finally {
     clearTimeout(timer);
     opts.signal?.removeEventListener('abort', onOuter);

@@ -75,7 +75,7 @@ Ben (12 Oct 2026): "I do think having a GPT ability to just import would make th
   | App left mid-request | `interrupted` |
   | `unsupported` | `No sets found in this file.` |
 
-- **`Try again` is always Ben's tap.** Nothing retries on its own.
+- **`Try again` is always Ben's tap.** Nothing retries on its own, except the one correction below (amendment 14).
 - **Commits follow ADR 0016.**
   - Writes are `<operationId>:<workoutKey>`, with deterministic session and set IDs.
   - The staleness stamp gains `layoutRef`, `layoutVersion` and `specHash`.
@@ -149,5 +149,12 @@ Built as planned, with these differences. Each needs the PM's or Ben's OK; none 
     - `seen.negativeNames` is kept as recorded provenance but never read: the analysis asks about negative weights for bodyweight and machine exercises on every import, which is stricter than §9.6.4's "asked when not seen before". PM to decide whether to drop the field or ask only for new ones (N5).
     - A unit word in every load-carrying set column's header (`Set 1 (kg)` … `Set 4 (kg)`) is the unit, like a load column's header; headers that disagree or lack one still ask (N6). The unit question's range counts each load once (N7).
     - Giving a column the unit role clears an earlier `Weight unit` answer (Undo brings it back), so a blank unit cell is always `No weight unit` (N8). The Cancel hook catches a failed discard (N9).
+
+14. **Amendment, 13 Oct 2026 (PM-directed after Ben's real FitNotes 2 file failed with `Layout didn't pass the checks`; for Ben to approve).**
+    - **Root cause.** FitNotes 2's workout export writes `StartTime` as an ISO instant with `Z` (`…T18:02:03Z`). The closed date list had only the wall-clock `YYYY-MM-DDTHH:mm:ss`, so check 5 refused every correct layout (and a layout naming an `IsWarmup` marker `true` the file never uses also failed check 4). New format `YYYY-MM-DDTHH:mm:ssZ` (`Z` or `±HH:MM`), read as that instant in the import's zone.
+    - **FitNotes 2 workout export is FitNotes, offline** (variant `D`, exact header). No coach. `Status = NotStarted` rows are skipped and listed (`Not done`, stored as `skipped_not_a_set`, no migration); `IsWarmup` gives warm-ups; `RPE` (1–10, half steps) and `RIR` (0–10) are kept; `StartTime`/`EndTime` give the workout's real start, end and duration (no `localDate`), read from the kept cells at commit; `Name` is the workout's name; `Equipment` and `Categories` are matching hints only (drop or rank, never match); `BodyWeight` stays in the cells only (no weight log). The weight has no unit, so the existing FitNotes unit question asks once with nothing selected (`ImportAnswers.bothColumns` holds the answer; `analysis.unit.kind = 'no_unit'`).
+    - **One correction.** A layout that fails the checks is sent back once, on the same tap, as the call's result: the same instructions, the same sample byte for byte, the model's own call, and code's reasons as fixed sentences (header cells and code's numbers; a date cell only if it was in the sample). It is its own request record (`<operationId>:fix`), counted in `requestsSent`/`charsSent`; a repeat of the tap replays it.
+    - **Then Ben, not a dead end.** Still failing (or the correction couldn't be sent): `salvageImportSpec` keeps only what code can check (a wrong index moved to its exact header cell, unknown references dropped, a column's second role dropped, an unproven unit set to `none`, markers not in the file dropped, a date format replaced by code's own reading, result roles off target columns). Kept roles stay suggestions (`Check` unless a header word names them); Check the layout asks the rest (unit, markers, roles) with `Didn't pass every check · Why?` listing the reasons. Only a layout with nothing checkable left (no date or exercise column found, no set cells) still shows the reasons with `Try again`.
+    - Open: `Too few rows` still has no "skip the rows not read" override (the 95% rule stands); the stored layout's `provenance.proposedBy` stays `coach` for a kept-in-part layout.
 
 Needs a real iPhone (L6), unchanged: whether the plan route accepts this strict schema (`const`, integer bounds, `anyOf`) under a forced call, latency against the 120 s limit, backgrounding mid-request, the file picker with Strong/Hevy exports, and AX3.

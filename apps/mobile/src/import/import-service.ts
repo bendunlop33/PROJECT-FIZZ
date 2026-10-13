@@ -515,6 +515,7 @@ export function createImportService(deps: ImportServiceDeps) {
         date,
         // FitNotes reads exactly as before (one workout per date); a layout row carries its workout and start time.
         ...(w.workoutKey === undefined ? {} : { workoutKey: w.workoutKey, startLocal: w.startLocal }),
+        ...(job.variant === 'D' ? { fitNotes2: true } : {}),
         rows,
       });
       let outcome: Awaited<ReturnType<Store['repos']['imports']['commitWorkout']>>;
@@ -574,7 +575,7 @@ export function createImportService(deps: ImportServiceDeps) {
       if (!p) return { kind: 'no_profile' };
       const at = deps.now();
       const today = localDateOf(toMs(at.utc), at.tz);
-      const parsed = parseFitNotesCsv(file.text, today);
+      const parsed = parseFitNotesCsv(file.text, today, at.tz);
       if (!parsed.ok) {
         const f = parsed.file;
         switch (f.kind) {

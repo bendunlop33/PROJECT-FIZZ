@@ -1,5 +1,7 @@
 import type { FitNotesVariant, WeightUnit } from '@fizz/schemas';
 import { firstLine, normaliseText, parseCsv, type CsvDelimiter } from './csv';
+import { readInstant } from './instant';
+import type { SourceSetRow } from './source-row';
 
 /**
  * FitNotes and FitNotes 2 workout CSVs (research `fitnotes-export-format.md`
@@ -25,15 +27,22 @@ export const FITNOTES_HEADERS: Readonly<Record<FitNotesVariant, readonly string[
   B1: [...A_BASE, 'Weight', 'Weight Unit', 'Reps', ...DTS],
   B2: [...A_BASE, 'Weight', 'Weight Unit', 'Reps', ...DTS, 'Comment'],
   C: [...A_BASE, 'Weight (kg)', 'Weight (lbs)', 'Reps', ...DTS, 'Notes', 'Kind'],
+  D: ['Name', 'StartTime', 'EndTime', 'BodyWeight', 'Exercise', 'Equipment', 'Reps', 'Weight', 'Time', 'Distance', 'Status', 'IsWarmup', 'RPE', 'RIR', 'Categories', 'Note'],
 };
 
 /** Which app wrote it, for the preview line (`FitNotes (Android) CSV`, `FitNotes 2 (iPhone) CSV`). */
 export function fitNotesApp(variant: FitNotesVariant): 'android' | 'fitnotes2' {
-  return variant === 'C' ? 'fitnotes2' : 'android';
+  return variant === 'C' || variant === 'D' ? 'fitnotes2' : 'android';
 }
 
 export function variantHasComments(variant: FitNotesVariant): boolean {
-  return variant === 'A2-kg' || variant === 'A2-lb' || variant === 'B2' || variant === 'C';
+  return variant === 'A2-kg' || variant === 'A2-lb' || variant === 'B2' || variant === 'C' || variant === 'D';
+}
+
+/** The variant's column holding exercise categories (`Category`, or FitNotes 2's comma list `Categories`); -1 when none. */
+export function categoryColumnOf(variant: FitNotesVariant): number {
+  const h = FITNOTES_HEADERS[variant];
+  return variant === 'D' ? h.indexOf('Categories') : h.indexOf('Category');
 }
 
 const DELIMITERS: readonly CsvDelimiter[] = [',', ';', '\t'];
@@ -248,6 +257,9 @@ function readWeight(variant: FitNotesVariant, cells: readonly string[]): { weigh
       if (lb !== null) return { weight: { value: lb, unit: 'lb' }, bothColumns: null };
       return { weight: null, bothColumns: null };
     }
+    case 'D':
+      // Read by `parseFitNotes2Row`: its `Weight` has no unit.
+      return { weight: null, bothColumns: null };
   }
 }
 
@@ -259,7 +271,9 @@ export function parseFitNotesRow(
   variant: FitNotesVariant,
   record: { row: number; line: number; cells: string[]; problem: string | null },
   today: string,
-): FitNotesRow {
+  tz = 'UTC',
+): SourceSetRow {
+  if (variant === 'D') return parseFitNotes2Row(record, today, tz);
   const header = FITNOTES_HEADERS[variant];
   const c = columns(variant, record.cells);
   const base: FitNotesRow = {
@@ -306,9 +320,13 @@ export function parseFitNotesRow(
     if (e instanceof Unreadable) return { ...dated, rowClass: 'unreadable', problem: e.message, decimalComma: e.decimalComma };
     throw e;
   }
-  const parsed = { ...dated, weight, bothColumns, reps };
-  const hasWeight = weight !== null || bothColumns !== null;
-  const hasReps = reps !== null;
+  return classify({ ...dated, weight, bothColumns, reps });
+}
+
+/** What kind of set a parsed row is (`RowClass`), from what it has. */
+function classify<T extends SourceSetRow>(parsed: T): T {
+  const hasWeight = parsed.weight !== null || parsed.bothColumns !== null || (parsed.unitless ?? null) !== null;
+  const hasReps = parsed.reps !== null;
   const hasDistance = parsed.distance !== '';
   const hasTime = parsed.time !== '';
   if (!hasWeight && !hasReps && !hasDistance && !hasTime) return { ...parsed, rowClass: 'unreadable', problem: 'No weight, reps, distance or time' };
@@ -320,6 +338,99 @@ export function parseFitNotesRow(
   return { ...parsed, rowClass: 'strength', problem: null };
 }
 
+/** `Status` of a FitNotes 2 set that wasn't done: planned in the workout, never started. Skipped and listed, never imported. */
+export const FITNOTES2_NOT_DONE = 'Not done';
+const RPE_OK = (v: number): boolean => v >= 1 && v <= 10 && Number.isInteger(v * 2);
+
+/** A FitNotes 2 workout from its row's cells (variant `D`): the start and end instants and its name, as written. Null when they don't read. */
+export function fitNotes2WorkoutOf(cells: readonly string[], tz: string): { startUtcMs: number; endUtcMs: number | null; name: string | null } | null {
+  const h = FITNOTES_HEADERS.D;
+  const at = (name: string) => (cells[h.indexOf(name)] ?? '').trim();
+  const start = readInstant(at('StartTime'), tz);
+  if (start === null) return null;
+  const end = readInstant(at('EndTime'), tz);
+  const name = at('Name');
+  // An end before the start (or none) says nothing about how long it took: no duration (rule 6).
+  return { startUtcMs: start.ms, endUtcMs: end !== null && end.ms >= start.ms ? end.ms : null, name: name === '' ? null : name.slice(0, 120) };
+}
+
+/**
+ * One FitNotes 2 workout-export row (variant `D`). The weight has no unit
+ * (asked once per file, as for both columns); `NotStarted` sets weren't
+ * done and are skipped and listed; `IsWarmup` marks a warm-up; `RPE` and
+ * `RIR` are kept when they are valid; `StartTime` (UTC) gives the workout
+ * and its local date in the import's zone. `BodyWeight` stays in the cells
+ * only: no weight log is made from it.
+ */
+function parseFitNotes2Row(record: { row: number; line: number; cells: string[]; problem: string | null }, today: string, tz: string): SourceSetRow {
+  const header = FITNOTES_HEADERS.D;
+  const at = (name: string) => record.cells[header.indexOf(name)] ?? '';
+  const base: SourceSetRow = {
+    row: record.row,
+    line: record.line,
+    cells: record.cells,
+    date: null,
+    exercise: at('Exercise').trim(),
+    weight: null,
+    bothColumns: null,
+    reps: null,
+    distance: at('Distance').trim(),
+    distanceUnit: '',
+    time: at('Time').trim(),
+    comment: at('Note'),
+    rowClass: 'unreadable',
+    problem: null,
+    decimalComma: false,
+  };
+  if (record.problem !== null) return { ...base, problem: record.problem };
+  if (record.cells.length !== header.length) return { ...base, problem: `This row has ${String(record.cells.length)} values; the header has ${String(header.length)}` };
+  const startRaw = at('StartTime').trim();
+  const start = readInstant(startRaw, tz);
+  if (start === null) return { ...base, problem: `StartTime isn’t a date and time (${startRaw === '' ? 'blank' : startRaw})` };
+  const dated: SourceSetRow = {
+    ...base,
+    date: start.date,
+    workoutKey: `${start.date}@${startRaw}`.slice(0, 200),
+    startLocal: start.time,
+    equipment: at('Equipment').trim(),
+    categories: at('Categories')
+      .split(',')
+      .map((c) => c.trim())
+      .filter((c) => c !== ''),
+  };
+  if (start.date > today) return { ...dated, problem: 'Date is after today (a planned workout, not one done)' };
+  if (dated.exercise === '') return { ...dated, problem: 'No exercise name' };
+  const status = at('Status').trim();
+  if (status === 'NotStarted') return { ...dated, rowClass: 'unsupported', setType: 'not_a_set', problem: FITNOTES2_NOT_DONE };
+  if (status !== 'Done') return { ...dated, problem: `Status isn’t Done or NotStarted (${status === '' ? 'blank' : status})` };
+  const warm = at('IsWarmup').trim().toLowerCase();
+  if (warm !== 'true' && warm !== 'false') return { ...dated, problem: `IsWarmup isn’t true or false (${warm === '' ? 'blank' : warm})` };
+  let value: number | null;
+  let reps: number | null;
+  let rpeRaw: number | null;
+  let rirRaw: number | null;
+  try {
+    value = parseNumber(at('Weight'), 'Weight');
+    reps = parseReps(at('Reps'));
+    parseNumber(at('Distance'), 'Distance');
+    rpeRaw = parseNumber(at('RPE'), 'RPE');
+    rirRaw = parseNumber(at('RIR'), 'RIR');
+  } catch (e) {
+    if (e instanceof Unreadable) return { ...dated, problem: e.message, decimalComma: e.decimalComma };
+    throw e;
+  }
+  return classify({
+    ...dated,
+    // 0 adds no load and says nothing about the unit: same as blank (as FitNotes 2's both-zero columns).
+    unitless: value === null || value === 0 ? null : value,
+    reps,
+    setType: warm === 'true' ? 'warmup' : null,
+    // Outside RPE 1–10 in half steps, or RIR 0–10 whole: kept in the original cells only.
+    rpe: rpeRaw !== null && RPE_OK(rpeRaw) ? rpeRaw : null,
+    rir: rirRaw !== null && Number.isInteger(rirRaw) && rirRaw >= 0 && rirRaw <= 10 ? rirRaw : null,
+  });
+}
+
 export type FitNotesParse =
   | { ok: false; file: Exclude<FileKind, { kind: 'fitnotes' }> }
   | {
@@ -328,14 +439,14 @@ export type FitNotesParse =
       delimiter: CsvDelimiter;
       firstLine: string;
       /** Data rows only (the header is row 1). */
-      rows: FitNotesRow[];
+      rows: SourceSetRow[];
     };
 
-/** Detect, then parse every data row. `today` is `YYYY-MM-DD` in the import's zone. */
-export function parseFitNotesCsv(text: string, today: string): FitNotesParse {
+/** Detect, then parse every data row. `today` is `YYYY-MM-DD` in the import's zone `tz` (FitNotes 2's UTC times are read in it). */
+export function parseFitNotesCsv(text: string, today: string, tz = 'UTC'): FitNotesParse {
   const file = detectFitNotesFile(text);
   if (file.kind !== 'fitnotes') return { ok: false, file };
   const records = parseCsv(text, file.delimiter);
-  const rows = records.slice(1).map((r) => parseFitNotesRow(file.variant, r, today));
+  const rows = records.slice(1).map((r) => parseFitNotesRow(file.variant, r, today, tz));
   return { ok: true, variant: file.variant, delimiter: file.delimiter, firstLine: file.firstLine, rows };
 }

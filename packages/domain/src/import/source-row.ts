@@ -21,6 +21,14 @@ export interface SourceSetRow extends FitNotesRow {
   setType?: MarkerMeaning | null;
   /** From an `RPE` column: 1–10 in half steps; other values stay in the original only. */
   rpe?: number | null;
+  /** FitNotes 2 (`D`) `RIR`: a whole number 0–10; other values stay in the original only. */
+  rir?: number | null;
+  /** FitNotes 2 (`D`): a weight written with no unit; read in the unit Ben gives the file (asked once). */
+  unitless?: number | null;
+  /** FitNotes 2 (`D`) `Equipment` (`Barbell`, `Machine`): a matching hint only, like the category. */
+  equipment?: string;
+  /** FitNotes 2 (`D`) `Categories`, split on commas: the category hint. */
+  categories?: string[];
 }
 
 /** The workout a row belongs to: its key, else its date (FitNotes keeps one workout per date). */

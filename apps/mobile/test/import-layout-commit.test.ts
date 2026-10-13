@@ -105,12 +105,17 @@ describe('failures are honest and import nothing (checks 35, §9.3.3)', () => {
     expect(port.requests).toHaveLength(2);
   });
 
-  it('a layout that fails the checks is refused with code’s reasons; nothing of it is shown', async () => {
+  it('a layout that fails the checks goes back once; with no correction, code keeps what it can check and shows why', async () => {
     const lying = { ...(SPEC as object), reps: { header: 'Reps', index: 6 } };
-    const { s } = await launch([answerWith(lying)]);
+    // The correction request gets no answer (`unavailable`).
+    const { s, port } = await launch([answerWith(lying)]);
     const { r, sample } = await newTable(s);
-    expect(await s.importLayouts.proposeImportMapping(r.layoutId, sample.hash, 'op-1')).toEqual({ status: 'rejected', reasons: [{ kind: 'unknown_column', header: 'Reps' }] });
-    expect(s.importLayouts.getLayoutReview(r.layoutId)).toBeNull();
+    expect(await s.importLayouts.proposeImportMapping(r.layoutId, sample.hash, 'op-1')).toEqual({ status: 'proposed', layoutVersion: 1, reused: false, checks: [{ kind: 'unknown_column', header: 'Reps' }] });
+    expect(port.requests).toHaveLength(2);
+    // `Reps` is read from its own header cell; the reason is behind `Why?`.
+    const v = s.importLayouts.getLayoutReview(r.layoutId);
+    expect(v?.review.columns.find((c) => c.header === 'Reps')?.role).toBe('reps');
+    expect(v?.checks).toEqual([{ kind: 'unknown_column', header: 'Reps' }]);
   });
 
   it('`No sets found` when the coach says the file has none', async () => {

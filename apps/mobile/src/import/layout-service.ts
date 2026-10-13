@@ -8,6 +8,7 @@ import {
   localDateOf,
   remapLayout,
   roleRefusal,
+  salvageImportSpec,
   stableStringify,
   toMs,
   validateImportSpec,
@@ -16,7 +17,15 @@ import {
   type NotReadableReason,
   type Table,
 } from '@fizz/domain';
-import { buildImportLayoutRequest, IMPORT_LAYOUT_INSTRUCTIONS_V1, importLayoutFailure, requestImportLayout, type CoachModelPort } from '@fizz/coach';
+import {
+  buildImportLayoutRepairRequest,
+  buildImportLayoutRequest,
+  IMPORT_LAYOUT_INSTRUCTIONS_V1,
+  importLayoutFailure,
+  importLayoutFeedback,
+  requestImportLayout,
+  type CoachModelPort,
+} from '@fizz/coach';
 import { layoutInUse, sha256Hex, type Store } from '@fizz/persistence';
 import {
   EMPTY_LAYOUT_ANSWERS,
@@ -143,7 +152,12 @@ export type PreviewImportResult =
   | { kind: 'saved_layout_changed'; layoutId: string; profileName: string; added: number[]; missing: string[] };
 
 export type ProposeResult =
-  | { status: 'proposed'; layoutVersion: number; reused: boolean }
+  /**
+   * `checks`: the coach's layout didn't pass every check, even after it was
+   * told why once; code kept what it could check, and Check the layout asks
+   * Ben the rest (shown behind `Why?`). Absent when it passed.
+   */
+  | { status: 'proposed'; layoutVersion: number; reused: boolean; checks?: SpecCheckFailure[] }
   | { status: 'rejected'; reasons: SpecCheckFailure[] }
   /** The coach found no sets it can describe: `No sets found in this file.` */
   | { status: 'unsupported' }
@@ -188,6 +202,8 @@ export interface LayoutReviewView {
   missing: string[];
   canUndo: boolean;
   header: string[];
+  /** The checks the coach's layout didn't pass (`Why?`); empty when it passed. */
+  checks: SpecCheckFailure[];
 }
 
 export interface SampleView {
@@ -248,9 +264,16 @@ interface Session {
   request: { ownerId: string; operationId: string } | null;
   /** `Read with the coach again`: never reuse a stored layout; the next tap sends a new request. */
   fresh: boolean;
+  /** The checks the coach's layout didn't pass when code kept part of it (`Why?`). */
+  checks: SpecCheckFailure[];
 }
 
 const INSTRUCTIONS_HASH = sha256Hex(IMPORT_LAYOUT_INSTRUCTIONS_V1);
+
+/** The operation ID of a tap's one correction request (`${operationId}:fix`, within the 128-character limit). */
+function fixOperationId(operationId: string): string {
+  return `${operationId.slice(0, 124)}:fix`;
+}
 
 function stripExtension(name: string): string {
   const stem = name.replace(/\.[A-Za-z0-9]{1,5}$/, '').trim();
@@ -309,6 +332,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       missing: s.missing,
       canUndo: s.history.length > 0,
       header: s.table.header,
+      checks: s.checks,
     };
   }
 
@@ -327,6 +351,8 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     s.history = [];
     s.layoutVersion = 1;
     s.model = model;
+    // A stored request's reasons are the checks a kept-in-part layout didn't pass.
+    s.checks = request?.state === 'proposed' ? request.reasons : [];
   }
 
   /** What the preview commits with (ADR 0026 §5). */
@@ -404,7 +430,10 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     const r = await repos().importProfiles.proposedFor(ownerId, s.sampleHash, s.fileHash).catch(() => null);
     if (!r?.spec) return null;
     const v = validateImportSpec(r.spec, s.table, opts());
-    return v.ok ? { request: r, spec: v.spec } : null;
+    if (v.ok) return { request: r, spec: v.spec };
+    // A layout code kept in part (its reasons recorded): reused when only what Ben answers on the screen still fails.
+    if (r.reasons.length > 0 && !v.unsupported && v.failures.every((f) => f.kind === 'dry_run' || f.kind === 'self_check' || f.kind === 'date')) return { request: r, spec: r.spec };
+    return null;
   }
 
   const service = {
@@ -462,6 +491,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
         fileHash: sha256Hex(file.text),
         request: null,
         fresh: false,
+        checks: [],
       };
       if (d.kind === 'saved_layout' || d.kind === 'saved_layout_changed') {
         const profile = live.find((x) => x.id === d.profileId);
@@ -644,7 +674,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     readAsNew(layoutId: string): string | null {
       const s = sessions.get(layoutId);
       if (!s) return null;
-      const fresh: Session = { ...s, id: deps.newId(), run: null, inflight: null, kind: 'coach', profile: null, changed: false, newColumns: [], missing: [], spec: null, specHash: null, saved: null, answers: EMPTY_LAYOUT_ANSWERS, history: [], layoutVersion: 1, model: null, request: null };
+      const fresh: Session = { ...s, id: deps.newId(), run: null, inflight: null, kind: 'coach', profile: null, changed: false, newColumns: [], missing: [], spec: null, specHash: null, saved: null, answers: EMPTY_LAYOUT_ANSWERS, history: [], layoutVersion: 1, model: null, request: null, checks: [] };
       sessions.set(fresh.id, fresh);
       sampleOf(fresh);
       return fresh.id;
@@ -777,7 +807,11 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     if (await block()) return { status: 'refused', reason: 'workout_unfinished' };
     // A repeat of the same tap: its stored result, nothing sent.
     const stored = await repos().importProfiles.request(p.id, operationId);
-    if (stored) return replay(s, stored);
+    if (stored) {
+      // A refused layout was sent back once for a correction: that request's result is this tap's.
+      const fix = stored.state === 'rejected' ? await repos().importProfiles.request(p.id, fixOperationId(operationId)) : null;
+      return replay(s, fix ?? stored);
+    }
     const built = s.sample ?? sampleOf(s);
     if (s.sampleHash !== sampleHash) return { status: 'refused', reason: 'sample_changed' };
     // A layout that already arrived for exactly this text (before an interruption): reused, not sent again.
@@ -870,7 +904,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     if (!v.ok) {
       // The reasons are enough: a rejected spec's strings are the model's and are never kept (§9.6.1).
       await done({ state: 'rejected', reasons: v.failures });
-      return { status: 'rejected', reasons: v.failures };
+      return correct(s, { ownerId: p.id, operationId, model: a.model, port, built, signal, stopped }, { callId: answer.callId, arguments: answer.arguments, spec: answer.spec }, v.failures);
     }
     await done({ state: 'proposed', spec: v.spec });
     // Cancel, back or the swipe while the `proposed` row was written: stored as stopped and
@@ -883,13 +917,125 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     return { status: 'proposed', layoutVersion: s.layoutVersion, reused: false };
   }
 
+  /**
+   * The coach's layout failed the checks (ADR 0026 amendment, 13 Oct 2026):
+   * it is sent back **once**, on the same tap, with code's reasons as its
+   * call's result: the same sample, nothing else from the file. A corrected
+   * layout that passes is used as usual. Otherwise (still failing, or the
+   * correction couldn't be sent) code keeps what it can check of the layout
+   * (`salvageImportSpec`) and Check the layout asks Ben the rest, offline;
+   * only a layout with nothing checkable left stops with the reasons.
+   */
+  async function correct(
+    s: Session,
+    run: { ownerId: string; operationId: string; model: string; port: CoachModelPort; built: BuiltSample; signal: AbortSignal | undefined; stopped: () => boolean },
+    previous: { callId: string; arguments: string; spec: ImportMappingSpecV1 },
+    failures: SpecCheckFailure[],
+  ): Promise<ProposeResult> {
+    if (run.stopped()) return { status: 'failed', reason: 'stopped' };
+    const feedback = importLayoutFeedback(failures, run.built.json);
+    const operationId = fixOperationId(run.operationId);
+    const at = deps.now();
+    const record: ImportLayoutRequest = {
+      id: deps.newId(),
+      ownerId: run.ownerId,
+      version: 1,
+      createdAtUtc: at.utc,
+      updatedAtUtc: at.utc,
+      operationId,
+      sampleHash: s.sampleHash ?? '',
+      fileHash: s.fileHash,
+      instructionsHash: INSTRUCTIONS_HASH,
+      sampleJson: run.built.json.length <= IMPORT_SAMPLE_JSON_MAX ? run.built.json : null,
+      route: 'chatgpt_plan',
+      model: run.model,
+      chars: run.built.chars + feedback.length,
+      state: 'sent',
+      failure: null,
+      unavailable: null,
+      spec: null,
+      reasons: [],
+      sentAt: at,
+      finishedAt: null,
+      closedAt: null,
+    };
+    const created = await repos().importProfiles.saveRequest(record, null);
+    if (!created.ok) {
+      const again = await repos().importProfiles.request(run.ownerId, operationId);
+      if (run.stopped()) return { status: 'failed', reason: 'stopped' };
+      return again ? replay(s, again) : { status: 'rejected', reasons: failures };
+    }
+    const done = (patch: Partial<ImportLayoutRequest>) => storeRequest({ ...record, ...patch, version: 2, updatedAtUtc: deps.now().utc, finishedAt: deps.now() }, 1);
+    if (run.stopped()) {
+      await done({ state: 'failed', failure: 'stopped' });
+      return { status: 'failed', reason: 'stopped' };
+    }
+    const controller = new AbortController();
+    s.inflight = controller;
+    const onOuter = (): void => {
+      controller.abort();
+    };
+    run.signal?.addEventListener('abort', onOuter);
+    s.requestsSent += 1;
+    s.charsSent += record.chars;
+    let answer: Awaited<ReturnType<typeof requestImportLayout>>;
+    try {
+      answer = await requestImportLayout(run.port, buildImportLayoutRepairRequest(run.built.json, run.model, previous, feedback), {
+        signal: controller.signal,
+        ...(deps.timeoutMs === undefined ? {} : { timeoutMs: deps.timeoutMs }),
+      });
+    } finally {
+      s.inflight = null;
+      run.signal?.removeEventListener('abort', onOuter);
+    }
+    if (run.stopped()) {
+      await done({ state: 'failed', failure: 'stopped' });
+      return { status: 'failed', reason: 'stopped' };
+    }
+    // The layout to keep in part: the correction when it came back as a layout, else the first.
+    let raw: ImportMappingSpecV1 = previous.spec;
+    let reasons = failures;
+    let sendFailure: Pick<ImportLayoutRequest, 'failure' | 'unavailable'> = { failure: null, unavailable: null };
+    if (answer.ok) {
+      const v = validateImportSpec(answer.spec, s.table, opts());
+      if (v.ok) {
+        await done({ state: 'proposed', spec: v.spec });
+        if (run.stopped()) {
+          await closeStopped(run.ownerId, operationId);
+          return { status: 'failed', reason: 'stopped' };
+        }
+        adoptSpec(s, v.spec, run.model, { ...record, state: 'proposed', reasons: [] });
+        return { status: 'proposed', layoutVersion: s.layoutVersion, reused: false };
+      }
+      if (!v.unsupported) {
+        raw = answer.spec;
+        reasons = v.failures;
+      }
+    } else {
+      const outcome = importLayoutFailure(answer.error);
+      sendFailure = outcome.kind === 'unavailable' ? { failure: null, unavailable: outcome.reason } : { failure: outcome.reason, unavailable: null };
+    }
+    const kept = salvageImportSpec(raw, s.table, reasons, opts()) ?? (raw === previous.spec ? null : salvageImportSpec(previous.spec, s.table, failures, opts()));
+    if (kept === null) {
+      await done({ state: 'rejected', reasons, ...sendFailure });
+      return { status: 'rejected', reasons };
+    }
+    await done({ state: 'proposed', spec: kept.spec, reasons: kept.failed, ...sendFailure });
+    if (run.stopped()) {
+      await closeStopped(run.ownerId, operationId);
+      return { status: 'failed', reason: 'stopped' };
+    }
+    adoptSpec(s, kept.spec, run.model, { ...record, state: 'proposed', reasons: kept.failed });
+    return { status: 'proposed', layoutVersion: s.layoutVersion, reused: false, checks: kept.failed };
+  }
+
   function replay(s: Session, r: ImportLayoutRequest): ProposeResult {
     // An operation ID from another file's tap: refused, nothing adopted (review N5).
     if (r.sampleHash !== s.sampleHash) return { status: 'refused', reason: 'sample_changed' };
     switch (r.state) {
       case 'proposed':
         if (r.spec && s.spec === null) adoptSpec(s, r.spec, r.model, r);
-        return { status: 'proposed', layoutVersion: s.layoutVersion, reused: true };
+        return r.reasons.length > 0 ? { status: 'proposed', layoutVersion: s.layoutVersion, reused: true, checks: r.reasons } : { status: 'proposed', layoutVersion: s.layoutVersion, reused: true };
       case 'rejected':
         return { status: 'rejected', reasons: r.reasons };
       case 'unavailable':

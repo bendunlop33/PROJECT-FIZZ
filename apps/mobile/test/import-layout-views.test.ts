@@ -40,7 +40,7 @@ const sampleOf = (name: string, hidden: number[] = []): SampleView => {
 function reviewView(name: string, answers: Partial<LayoutAnswers> = {}): LayoutReviewView {
   const table = tableOf(`${name}.synthetic.csv`);
   const all = { ...EMPTY_LAYOUT_ANSWERS, ...answers };
-  return { layoutId: 'l', layoutVersion: 1, fileName: `${name}.csv`, kind: 'coach', profileName: null, review: buildLayoutReview(table, specOf(`${name}.spec.json`), all, OPTS), saved: null, newColumns: [], missing: [], canUndo: false, header: table.header };
+  return { layoutId: 'l', layoutVersion: 1, fileName: `${name}.csv`, kind: 'coach', profileName: null, review: buildLayoutReview(table, specOf(`${name}.spec.json`), all, OPTS), saved: null, newColumns: [], missing: [], canUndo: false, header: table.header, checks: [] };
 }
 
 describe('Import history and the coach line (§9.2.1, §9.3.2)', () => {
@@ -248,7 +248,7 @@ describe('Check the layout (§9.2.5)', () => {
     for (const c of buildLayoutReview(table, spec, answers, OPTS).columns) if (c.state === 'check') roles[String(c.index)] = c.role;
     answers = { ...answers, roles };
     const review = buildLayoutReview(table, spec, answers, OPTS);
-    const base = { layoutId: 'l', layoutVersion: 1, fileName: 'log.csv', kind: 'coach' as const, profileName: null, review, saved: null, newColumns: [], missing: [], canUndo: false, header: table.header };
+    const base = { layoutId: 'l', layoutVersion: 1, fileName: 'log.csv', kind: 'coach' as const, profileName: null, review, saved: null, newColumns: [], missing: [], canUndo: false, header: table.header, checks: [] };
     expect(review).toMatchObject({ open: 1, stuck: 0 });
     expect(checkLayoutView(base, 'en-GB').questions.map((q) => q.title)).toContain('Dates like “03/04/2025”');
     expect(checkLayoutView(base, 'en-GB').stuckLine).toBeNull();

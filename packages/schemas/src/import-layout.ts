@@ -39,11 +39,15 @@ export const UnitEvidenceSchema = z.discriminatedUnion('kind', [
 ]);
 export type UnitEvidence = z.infer<typeof UnitEvidenceSchema>;
 
-/** The closed list of date and time formats (§9.6.2). `day_month_unknown`: `03/04/2025`-style dates whose order the file doesn't settle. */
+/**
+ * The closed list of date and time formats (§9.6.2). `day_month_unknown`: `03/04/2025`-style dates whose order the file doesn't settle.
+ * `YYYY-MM-DDTHH:mm:ssZ`: an ISO instant with `Z` or `±HH:MM` (FitNotes 2's `StartTime`), read as that instant in the import's zone.
+ */
 export const DateFormatSchema = z.enum([
   'YYYY-MM-DD',
   'YYYY-MM-DD HH:mm:ss',
   'YYYY-MM-DDTHH:mm:ss',
+  'YYYY-MM-DDTHH:mm:ssZ',
   'D MMM YYYY, HH:mm',
   'unix_seconds',
   'DD/MM/YYYY',

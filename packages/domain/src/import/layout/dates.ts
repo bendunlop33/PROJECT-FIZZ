@@ -1,11 +1,12 @@
 import type { DateFormat } from '@fizz/schemas';
 import { localDateOf } from '../../calendar';
 import { isCalendarDate } from '../fitnotes';
+import { readInstant } from '../instant';
 
 /**
  * Date readers for the closed format list (§9.6.2, check 5). Pure. Times have
  * no zone in these files: they are kept as written (`18:02`, AI6). Only
- * `unix_seconds` is an instant; it is read in the import's zone.
+ * `unix_seconds` and `YYYY-MM-DDTHH:mm:ssZ` are instants; they are read in the import's zone.
  */
 
 export interface ReadDate {
@@ -79,7 +80,7 @@ export function dateOrderEvidence(cells: readonly string[]): { order: DateOrder 
 }
 
 export function formatHasTime(format: DateFormat): boolean {
-  return format === 'YYYY-MM-DD HH:mm:ss' || format === 'YYYY-MM-DDTHH:mm:ss' || format === 'D MMM YYYY, HH:mm' || format === 'unix_seconds';
+  return format === 'YYYY-MM-DD HH:mm:ss' || format === 'YYYY-MM-DDTHH:mm:ss' || format === 'YYYY-MM-DDTHH:mm:ssZ' || format === 'D MMM YYYY, HH:mm' || format === 'unix_seconds';
 }
 
 export function isSlashFormat(format: DateFormat): boolean {
@@ -106,6 +107,10 @@ export function readDateCell(cell: string, format: DateFormat, opts: { order: Da
     case 'YYYY-MM-DDTHH:mm:ss': {
       const m = ISO_T.exec(v);
       return m ? withTime(ymd(Number(m[1]), Number(m[2]), Number(m[3])), time(m[4], m[5], m[6])) : null;
+    }
+    case 'YYYY-MM-DDTHH:mm:ssZ': {
+      const r = readInstant(v, opts.tz);
+      return r === null ? null : { date: r.date, time: r.time, timeFull: r.timeFull };
     }
     case 'D MMM YYYY, HH:mm': {
       const m = D_MMM.exec(v);
@@ -143,7 +148,7 @@ export function readDateCell(cell: string, format: DateFormat, opts: { order: Da
 export function formatsReading(cells: readonly string[], tz: string): DateFormat[] {
   const filled = cells.map((c) => c.trim()).filter((c) => c !== '');
   if (filled.length === 0) return [];
-  const formats: DateFormat[] = ['YYYY-MM-DD', 'YYYY-MM-DD HH:mm:ss', 'YYYY-MM-DDTHH:mm:ss', 'D MMM YYYY, HH:mm', 'unix_seconds'];
+  const formats: DateFormat[] = ['YYYY-MM-DD', 'YYYY-MM-DD HH:mm:ss', 'YYYY-MM-DDTHH:mm:ss', 'YYYY-MM-DDTHH:mm:ssZ', 'D MMM YYYY, HH:mm', 'unix_seconds'];
   const out = formats.filter((f) => filled.every((c) => readDateCell(c, f, { order: null, tz }) !== null));
   if (filled.every((c) => slashFields(c) !== null)) {
     const ev = dateOrderEvidence(filled);
