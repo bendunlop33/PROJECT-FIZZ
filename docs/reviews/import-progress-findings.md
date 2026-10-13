@@ -23,11 +23,13 @@ The missing piece was a product decision that was approved but never built. Ben 
 | Past workouts list | `listPastWorkoutIds` used `source = 'manual'` | All workouts are listed. Imported ones show the existing `Imported` tag (DW-Q3). The "N imported workouts not listed" line is removed |
 | Session picker | `groupImportsByCategory: false`; imported types `startable: false`; no Category reader | Decision 1 is on, with the new `imports.categoriesBySession` (owner-scoped, history-filtered). All types are startable |
 
-**Reading FitNotes ramps (provisional, Ben to confirm).** FitNotes has no warm-up flag, and most of Ben's sessions ramp up (lighter sets first). If every set counted as a working set, the rule would hold or progress from the warm-up load. `comparableSetsOf` therefore reads only the sets at an imported workout's hardest load as working sets, per unit and convention. Lighter sets are read as warm-ups, and `Why?` says so. Stored data is unchanged, and the coach's history tools still see every set. A pyramid done top set first would also be read this way.
+**Reading FitNotes ramps (provisional, Ben to confirm; revised after review B2).** FitNotes has no warm-up flag, and most of Ben's sessions ramp up (lighter sets first). If every set counted as a working set, the rule would hold or progress from the warm-up load. `comparableSetsOf` therefore leaves out only the lighter sets **before** the workout's hardest set (per unit and convention). The hardest set and every set after it are kept: back-off sets and descending pyramids are working sets. The first version read every set lighter than the top as a warm-up, which hid back-offs in 38% of Ben's real exercise-sessions and planned 1 set (Add exercise) or every set at the top load (Start next). Stored data is unchanged, and the coach's history tools still see every set.
+
+**Set count (review B1).** Start next, Up next and Add exercise take the number of working sets from the same reading as the load (`importedWorkingSetCount`), never fewer than the built-in default of 3 because of the reading, and never more than the FitNotes workout had. Ramp, top single, 3 back-offs: 4 sets at the back-off load. Ramp to a top single only: 3 sets. A 2-set workout: 2.
 
 ## Legitimately empty (not bugs)
 
-- **Short windows.** Ben's data ends Thu 8 Oct, so on Mon 12 Oct the 7-, 14-, 30- and 60-day windows hold only his last few iPhone FitNotes workouts. The probe's counts matched the CSV dates.
+- **Short windows.** Ben's data ends a few days before Mon 12 Oct, so the 7-, 14-, 30- and 60-day windows hold only his last few iPhone FitNotes workouts. The probe's counts matched the CSV dates.
 - **Time in gym and average.** These show `—` with `No times for imported workouts`, because FitNotes CSVs have no start or end times (rule 6).
 - **Today's week strip.** It shows 0 because the week starts Mon 12 Oct.
 - **Bodyweight exercises.** No load is planned, by design.
@@ -47,27 +49,27 @@ After the fix:
 
 ## Tests
 
-- `apps/mobile/test/import-progress.test.ts` uses a synthetic CSV on real SQLite. It covers:
+- `apps/mobile/test/import-progress.test.ts` uses a synthetic CSV (invented dates and numbers) on real SQLite, with the shapes Ben's data has: a leading ramp, and a ramp to one top set followed by back-offs. It covers:
   - Progress windows 7/14/30/60, time in gym, muscles, calendar, the exercise list and exercise detail, all fresh right after the commit;
-  - Past workouts, Up next, the picker and the lift highlight;
-  - Start next fitted to the stack, with 47.5 rounded toward easier to 45;
-  - `Last (FitNotes)`, and planned loads that come from the top sets, not the ramp;
+  - Past workouts, the picker and the lift highlight;
+  - Start next fitted to the stack (47.5 rounded toward easier to 45), 2 sets from a 2-set workout;
+  - B1: Start next from ramp + top single + back-offs plans 4 sets at the back-off load, never 7 at the top load;
+  - B1, S1: Up next is the longest gap, not the workout just done, and one-tap Start from it plans the back-off block;
+  - Repeat of a FitNotes workout is the workout as done, each set at its own load;
+  - B2: Add exercise shows the top set and back-offs as `Last (FitNotes)` and plans that many sets;
+  - S2: pain from Today offers the last workout's movements when it is a FitNotes one;
   - the coach's overview, history and targets.
-- Domain tests (`history.test.ts`) cover:
-  - FitNotes on any equipment, with targets on a real dumbbell;
-  - the ramp read as warm-ups;
-  - capping at the equipment max;
-  - no load when there is no equipment, and raw loads with `fitLater`;
-  - another unit is never compared;
-  - the newest workout wins.
+- Domain tests: `fitnotes-reading.test.ts` (leading ramp, ramp + top + back-offs, descending pyramid, up-and-down pyramid, assisted, lb, the set count and its floor, Add exercise counts); `history.test.ts` (FitNotes on any equipment, equipment max, no load without equipment, `fitLater`, other units, newest wins); `lift-highlight.test.ts` (S3: app workouts on different items never charted together when the newest point is FitNotes); `session-types.test.ts` (`longestGapSource`); `pain-flags.test.ts` (N1: a newest FitNotes workout still finds app workouts on their item).
+- Persistence: `listFinishedRefs(…, { includeImported: true })`; the dead `countImportedFinished` is removed (N4).
 - Further tests cover the overview, summary, pain sheet, target provenance, substitutes (a hotel rack never above its max), session types and persistence (`categoriesBySession`, `listPastWorkoutIds`).
-- The tests that encoded P-I3 (a) are rewritten to B7, including the brief's home-dumbbell scenario. Repeating an imported workout at a gym with dumbbells up to 25 kg plans 25 kg each, never 40, and no bar or stack load.
+- The session-picker and library tests now expect Decision 2's Up next (SP1: Legs, the longest gap), not D19's newest workout.
 
 ## Open (for Ben / PM)
 
-1. **Ramp reading** (above): confirm, or say how FitNotes warm-ups should be told apart.
-2. **Records from FitNotes (PG30).** Should all-time bests from imported history appear as `FitNotes` records? Today an imported-only exercise shows `Records start after 3 logged sessions.`
-3. **Exercise detail.** The chart opens on the default `6 mo` range. Ben's Android history ends Jan 2026, so a FitNotes-only series can open nearly empty until he picks `1 yr`/`All`. Once he logs in the app, the app series becomes the default. PG32 (`Add FitNotes history` to a series) is still unbuilt and needs Ben's O-PG1. Proposal: widen the opening range when the series has fewer than 2 points in it.
-4. **Session picker Decision 2** (longest-gap Up next) is approved but not wired. Up next still repeats the newest workout's day, which is now an imported one.
-5. **`Add new` exercises.** These could take muscles from the FitNotes Category. Not done: the category isn't stored on the exercise, and mapping Ben's labels to muscles is a product call.
-6. **Device check.** Untested on the iPhone: the `Last (FitNotes, …)` header and the `Imported` rows in Past workouts.
+1. **Ramp reading** (above, reading (a)): confirm, or choose (b) the load with the most sets, or (c) every set as stored. Record the answer in the CHANGELOG and ADR 0016.
+2. **The set-count floor.** A FitNotes workout with 2 sets at the top load after a ramp (4 sets in all) plans 3 sets at that load. That is what review B1 asked for (never below the default because of the reading), but it is one set more than Ben did at that load. The alternative is no floor (plan 2).
+3. **Records from FitNotes (PG30).** Should all-time bests from imported history appear as `FitNotes` records? Today an imported-only exercise shows `Records start after 3 logged sessions.`
+4. **Exercise detail.** The chart opens on the default `6 mo` range, and on Est. 1RM even when no set qualifies (review N2). Proposal: widen the range when the series has fewer than 2 points, and open on `Top set` when e1RM has no eligible sets.
+5. **Decision 2 copy.** Up next now picks the longest gap, but its basis line is still `From <date>` (true of the source). §2.3's `UP NEXT · LAST DONE …` / `Last done Mon 5 Oct · 6 days ago` is not built. Routines outside the D19 rotation are not considered by the longest-gap pick.
+6. **`Add new` exercises.** These could take muscles from the FitNotes Category. Not done: the category isn't stored on the exercise, and mapping Ben's labels to muscles is a product call.
+7. **Device check.** Untested on the iPhone: the `Last (FitNotes, …)` header, the `Imported` rows in Past workouts, and Up next after an import.
