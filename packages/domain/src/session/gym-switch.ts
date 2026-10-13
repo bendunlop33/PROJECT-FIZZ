@@ -20,10 +20,11 @@ import { formatNumber, repRangeText } from '../display';
 import { isLoadAchievable } from '../equipment';
 import { equipmentRowLine } from '../gym-editor';
 import { nextTargetsFor, type NextTargetRequest } from '../next-target';
-import type { HistorySession, NextTargets } from '../progression';
+import { comparableSetsOf, fitNotesPlannedSets, type HistorySession, type NextTargets } from '../progression';
 import { toMs } from '../time';
 import { deriveId, stableStringify } from '../stable';
 import { toScaled } from '../units';
+import { DEFAULT_WORKING_SETS } from './first-run';
 import { appendToSnapshot, currentGymEquipment, equipmentOfRow, rowIsAtCurrentGym } from './equipment-snapshot';
 import { buildExecutionOrder } from './order';
 import { refitProvenance } from '../target-provenance';
@@ -129,6 +130,25 @@ function partGym(state: Pick<SessionAggregate, 'session' | 'sets'>, part: Sessio
   return state.sets.find((s) => s.sessionExerciseId === part.id && s.planned.snap?.gymId)?.planned.snap?.gymId ?? null;
 }
 
+/**
+ * Review import-progress B1: a FitNotes block's set count comes from the same
+ * reading as its load (`comparableSetsOf`: a leading ramp left out, the top
+ * set and back-offs kept), counting only the sets the rule judges
+ * (`fitNotesPlannedSets`, r3 S1: not a lone top set or a lighter finisher;
+ * r4 B1: a finisher never lifts the count), and the reading never takes it
+ * below the built-in default (`importedWorkingSetCount`). Counting
+ * every imported set would plan a ramp's 7 sets all at the top load.
+ */
+function importedBlockSets(state: Pick<SessionAggregate, 'sets'>, parts: readonly SessionExercise[]): number {
+  const sets = parts.flatMap((part) =>
+    state.sets
+      .filter((s) => s.sessionExerciseId === part.id && isDoneWorkingSet(s))
+      .sort((a, b) => a.index - b.index)
+      .map((s) => ({ setType: s.setType, load: s.actual?.load ?? null, reps: s.actual?.reps ?? null })),
+  );
+  return fitNotesPlannedSets(comparableSetsOf({ imported: true, sets }), sets.length, DEFAULT_WORKING_SETS);
+}
+
 /** Every exercise block with at least one done working set, in workout order. */
 export function nextTargetBlocks(state: Pick<SessionAggregate, 'session' | 'exercises' | 'sets'>): NextTargetBlock[] {
   const sorted = [...state.exercises].sort((a, b) => a.order - b.order);
@@ -147,7 +167,7 @@ export function nextTargetBlocks(state: Pick<SessionAggregate, 'session' | 'exer
       root,
       decider,
       equipment: withEq?.eq ?? null,
-      workingSets: done.reduce((n, x) => n + x.n, 0),
+      workingSets: state.session.source === 'import' ? importedBlockSets(state, done.map((x) => x.part)) : done.reduce((n, x) => n + x.n, 0),
       prescribedSets: parts.reduce((n, p) => n + state.sets.filter((s) => s.sessionExerciseId === p.id && s.status !== 'deleted' && s.setType === 'working').length, 0),
       // History groups a workout's sets by item, so parts on the decider's item are the decider's.
       otherPartsDone: done.filter((x) => x.part.equipmentId !== decider.equipmentId).reduce((n, x) => n + x.n, 0),

@@ -6,12 +6,11 @@ import { deleteToolbarLabel, pastRowDetail, pastRowOpens, pastRowTitle, recently
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { useSelectDelete } from '../../history/useSelectDelete';
-import { importedNotListedLine } from '../../import/views';
 import { newUuid } from '../../device/runtime';
 import { PAST_PAGE } from '../../services/history-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING } from '../../theme';
-import { AppText, DangerTextButton, Group, Icon, LinkLine, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton, Toast } from '../../ui';
+import { AppText, DangerTextButton, Group, Icon, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton, Toast } from '../../ui';
 import { LIBRARY_COPY_UI } from '../../workout/library-view';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 
@@ -24,8 +23,8 @@ import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
  * Undo. VoiceOver has a `Delete` action on each row. Swipe-to-delete isn't
  * built (ADR 0024). `⋯` on a row → `Save to Workouts` (routines.md §A2.6):
  * what was done, loads Auto.
- * Imported FitNotes workouts aren't listed here (P-I3); they are deleted
- * from their import's view.
+ * Imported FitNotes workouts are listed with an `Imported` tag and repeat
+ * like any other (B7, DW-Q3); their loads are fitted to the gym at Start.
  */
 export function PastWorkoutsScreen() {
   const navigation = useNavigation();
@@ -106,20 +105,8 @@ export function PastWorkoutsScreen() {
             }
           />
         ) : null}
-        {list.importedNotListed > 0 && !selecting ? (
-          <LinkLine
-            accessibilityLabel={`${importedNotListedLine(list.importedNotListed).replace(' ›', '')}. Opens Past imports.`}
-            onPress={() => {
-              navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'PastImports', initial: false } });
-            }}
-          >
-            <AppText variant="callout" color="text.secondary">
-              {importedNotListedLine(list.importedNotListed)}
-            </AppText>
-          </LinkLine>
-        ) : null}
         {list.rows.length === 0 ? (
-          <AppText variant="body">{list.importedNotListed > 0 ? 'No workouts logged in the app yet.' : 'No finished workouts yet.'}</AppText>
+          <AppText variant="body">No finished workouts yet.</AppText>
         ) : selecting ? (
           <Group>
             {list.rows.map((c) => (

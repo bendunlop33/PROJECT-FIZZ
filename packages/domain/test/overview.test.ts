@@ -123,11 +123,13 @@ describe('targetChangeMarker (§4, OV6)', () => {
     expect(targetChangeMarker(planned({ load: kg(65) }), p, null, null).kind).toBe('up');
   });
 
-  it('comparable: same equipment kind and bar, same convention, never imported (a different bar is NEW)', () => {
+  it('comparable: same equipment kind and bar, same convention; FitNotes on convention alone (B7; a different bar is NEW)', () => {
     const key = { equipment: equipmentKey(barbell()), convention: 'total' as const };
     expect(isComparable(key, past())).toBe(true);
     expect(isComparable(key, past({ equipment: equipmentKey(barbell({ barMass: 15 })) }))).toBe(false);
-    expect(isComparable(key, past({ imported: true }))).toBe(false);
+    // B7: FitNotes recorded no equipment, so it compares on convention alone.
+    expect(isComparable(key, past({ imported: true, equipment: null }))).toBe(true);
+    expect(isComparable(key, past({ imported: true, equipment: null, convention: 'stack' }))).toBe(false);
     expect(isComparable(key, past({ convention: 'stack', equipment: equipmentKey(stack()) }))).toBe(false);
     // Another gym's bar of the same mass (in lb) still compares.
     expect(sameEquipmentKind(equipmentKey(barbell()), equipmentKey(barbell({ unit: 'lb', barMass: 44.0925 })))).toBe(true);
@@ -177,7 +179,8 @@ describe('load cells, details and panel text', () => {
     const best = bestSet(key, [past(), older]);
     expect(best?.load).toEqual(kg(102.5));
     expect(best?.reps).toBe(5);
-    expect(bestSet(key, [past({ imported: true, actuals: [{ setType: 'working', load: kg(150), reps: 1, durationS: null }] })])).toBeNull();
+    // B7: a FitNotes best counts, and says where it came from.
+    expect(bestSet(key, [past(), past({ imported: true, equipment: null, actuals: [{ setType: 'working', load: kg(150), reps: 1, durationS: null }] })])).toMatchObject({ load: kg(150), reps: 1, imported: true });
   });
 
   it('BEST on an assisted machine is the least assistance, not the most (N5)', () => {

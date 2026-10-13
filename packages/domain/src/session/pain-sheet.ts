@@ -68,14 +68,23 @@ export interface PainFlagSheetInput {
   anchor?: PainSheetAnchor | null;
 }
 
-/** The latest non-imported workout of the exercise decides comparability when no workout is open. */
+/**
+ * When no workout is open: the latest workout of the exercise (FitNotes too,
+ * B7) decides the unit and load convention (from its first loaded set; on a
+ * FitNotes ramp that may be a lighter set, which has the same unit and
+ * convention). The item is the latest app workout's, since a FitNotes
+ * workout recorded none and matches any item, so `Since` still finds app
+ * workouts after a FitNotes one (review import-progress N1).
+ */
 function anchorFromHistory(history: readonly HistorySession[], fallback: LoadConvention): Omit<PainSheetAnchor, 'equipment'> | null {
-  const latest = [...history]
-    .filter((h) => !h.imported && h.sets.some((s) => s.setType !== 'warmup'))
-    .sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc))[0];
+  const done = [...history]
+    .filter((h) => h.sets.some((s) => s.setType !== 'warmup'))
+    .sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+  const latest = done[0];
   if (!latest) return null;
   const loaded = latest.sets.find((s) => s.setType !== 'warmup' && s.load !== null && s.load.convention !== 'bodyweight')?.load ?? null;
-  return { equipmentId: latest.equipmentId, unit: loaded?.unit ?? 'kg', loadConvention: loaded?.convention ?? fallback };
+  const equipmentId = latest.imported ? (done.find((h) => !h.imported)?.equipmentId ?? null) : latest.equipmentId;
+  return { equipmentId, unit: loaded?.unit ?? 'kg', loadConvention: loaded?.convention ?? fallback };
 }
 
 export function buildPainFlagSheet(input: PainFlagSheetInput): PainFlagSheetView {

@@ -878,7 +878,7 @@ function Hero({ label, labelAction, title, lines, children }: { label: string; l
 function LiftCard({ lift }: { lift: LiftHighlight }) {
   const theme = useTheme();
   const when = formatDayMonth(toMs(lift.performedAtUtc), lift.tz);
-  const detail = [when, lift.change].filter(Boolean).join(' · ');
+  const detail = [lift.imported ? 'FitNotes' : null, when, lift.change].filter(Boolean).join(' · ');
   return (
     <View style={{ gap: theme.space['2'] }}>
       <View accessible accessibilityLabel={`${lift.exerciseName}, last top set ${lift.text}, ${detail}`} style={{ gap: theme.space['2'] }}>

@@ -311,7 +311,9 @@ describe('Save to Workouts (WL-A9, A10, A11, A12)', () => {
     expect(after.view.all.map((x) => x.name)).toContain('Shoulders A');
     // The older `Shoulders` session keeps its name and stays a FROM HISTORY row (in the library and the picker).
     expect(after.view.history.map((x) => [x.label, x.sourceSessionId])).toEqual([['Shoulders', f.shoulders]]);
-    expect((await s.sessions.list(f.gymId))?.fromHistory.map((x) => x.label)).toEqual(['Shoulders']);
+    // In the picker it is the only history type, so Decision 2 makes it Up next.
+    const picker = await s.sessions.list(f.gymId);
+    expect([picker?.upNext, ...(picker?.fromHistory ?? [])].flatMap((x) => (x ? [[x.label, x.sourceSessionId]] : []))).toEqual([['Shoulders', f.shoulders]]);
     expect((await s.workout.load(f.shoulders))?.aggregate.session.routineName).toBe('Shoulders');
     expect((await s.workout.load(newer))?.aggregate.session.routineName).toBe('Shoulders');
   });

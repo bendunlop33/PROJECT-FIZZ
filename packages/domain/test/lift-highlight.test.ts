@@ -96,6 +96,22 @@ describe('buildLiftHighlight', () => {
     expect(h?.change).toBeNull();
   });
 
+  it('review import-progress S3: with a FitNotes newest point, app workouts on different items are still never charted together', () => {
+    const other = barbell({ id: '00000000-0000-4000-8000-000000009999', name: 'Smith machine' });
+    const fitnotes = (a: SessionAggregate): SessionAggregate => ({ ...a, session: { ...a.session, source: 'import', gymId: null, importJobId: '00000000-0000-4000-8000-0000000a0c01', localDate: '2026-10-08' } });
+    const onBar = finished(0, [{ ex: BENCH, eq: bar, sets: [values(kg(100), 5)] }]);
+    const onSmith = finished(10_000, [{ ex: BENCH, eq: other, sets: [values(kg(80), 5)] }]);
+    const olderImport = fitnotes(finished(5_000, [{ ex: BENCH, eq: bar, sets: [values(kg(90), 5)] }]));
+    const newest = fitnotes(finished(20_000, [{ ex: BENCH, eq: bar, sets: [values(kg(105), 5)] }]));
+    const h = buildLiftHighlight([onBar, olderImport, onSmith, newest]);
+    // FitNotes points match any item; the app points are the newest app item's (the Smith machine) only.
+    expect(h).toMatchObject({ imported: true, change: 'up from 80' });
+    expect(h?.points).toEqual([90, 80, 105]);
+    // App newest: the bar's series, FitNotes points included, the Smith machine left out (unchanged).
+    const appNewest = finished(30_000, [{ ex: BENCH, eq: bar, sets: [values(kg(102.5), 5)] }]);
+    expect(buildLiftHighlight([onBar, olderImport, onSmith, newest, appNewest])?.points).toEqual([100, 90, 105, 102.5]);
+  });
+
   it('a set marked as not counting is never the top set, the change or a trend point (check 45)', () => {
     const before = finished(0, [{ ex: BENCH, eq: bar, sets: [values(kg(100), 8)] }]);
     const spotted = finished(10_000, [{ ex: BENCH, eq: bar, sets: [values(kg(105), 8), values(kg(110), 8)] }]);

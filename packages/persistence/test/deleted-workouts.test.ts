@@ -582,9 +582,11 @@ describe('imports (§6.2)', () => {
     const [first] = sessions;
     if (!first) throw new Error('fixture');
     const rowsBefore = await store.repos.imports.rows(job.id);
-    expect(await store.repos.sessions.countImportedFinished(OWNER)).toBe(2);
+    /** Finished imported workouts: every finished workout less the app's own. */
+    const importedRefs = async () => (await store.repos.sessions.listFinishedRefs(OWNER, 100, { includeImported: true })).length - (await store.repos.sessions.listFinishedRefs(OWNER, 100)).length;
+    expect(await importedRefs()).toBe(2);
     const out = await del([first]);
-    expect(await store.repos.sessions.countImportedFinished(OWNER)).toBe(1);
+    expect(await importedRefs()).toBe(1);
     expect(await store.repos.imports.jobWorkoutCounts(job.id, NOW.utc)).toEqual({ finished: 1, deleted: 1 });
     expect(await store.repos.imports.rows(job.id)).toEqual(rowsBefore);
     const ref = out.refs[0];

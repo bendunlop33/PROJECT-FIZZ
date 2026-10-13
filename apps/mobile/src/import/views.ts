@@ -122,15 +122,6 @@ export function pausedLine(p: Pick<PastImport, 'written' | 'total'>): string {
 }
 
 /**
- * `Start from a past workout` with imported workouts left out (review r2
- * B1): they can't be repeated while P-I3 is open, and the list says so
- * rather than looking empty.
- */
-export function importedNotListedLine(n: number): string {
-  return `${plural(n, 'imported workout', 'imported workouts')} not listed ›`;
-}
-
-/**
  * A workout's write didn't report success (§3.4; review r2 N4). Its
  * transaction may still have committed, so this never says it failed:
  * each workout saves whole or not at all, and `Try again` checks.

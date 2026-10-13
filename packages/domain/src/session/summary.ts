@@ -279,9 +279,9 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     };
   });
 
-  // An imported (FitNotes) workout is a history record: no comparison, highlight or `Next time`.
-  // Imported history isn't comparable while P-I3 is open (ADR 0016; review r2 B1), and a
-  // `Next time` read from it would say "Same targets next time" about an old FitNotes date.
+  // An imported (FitNotes) workout is a history record: no comparison, highlight or `Next time`
+  // of its own (a `Next time` read from it would talk about an old FitNotes date). A workout
+  // logged in the app does compare with FitNotes history, labelled (B7).
   const imported = s.source === 'import';
 
   // Comparison: the first exercise in order with working sets today and comparable history.
@@ -316,19 +316,13 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
           todayText: valuesText(today, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
           lastText: valuesText(last, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
           lastAtUtc: prev.performedAtUtc,
-          why: `Same ${eq ? eq.name : 'set-up'}${comparedGymText(prev.gymId, s.gymId, input)}, working sets`,
+          why: prev.imported ? 'FitNotes, working sets' : `Same ${eq ? eq.name : 'set-up'}${comparedGymText(prev.gymId, s.gymId, input)}, working sets`,
         };
         break;
       }
     }
     if (comparison === null) {
-      const logged = others.filter((h) => !h.imported);
-      comparison =
-        logged.length > 0
-          ? { kind: 'not_comparable', text: 'Not compared · different equipment' }
-          : others.length > 0
-            ? { kind: 'not_comparable', text: 'Not compared · imported' }
-            : { kind: 'first_time', text: 'First time' };
+      comparison = others.length > 0 ? { kind: 'not_comparable', text: 'Not compared · different equipment' } : { kind: 'first_time', text: 'First time' };
     }
   }
 

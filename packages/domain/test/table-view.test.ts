@@ -10,6 +10,7 @@ import {
   startWorkout,
   tableLogLabel,
   type ActiveViewInput,
+  type PreviousSession,
   type SupersetCard,
   type TableBlock,
   type TableCard,
@@ -295,16 +296,19 @@ describe('Last and all done', () => {
   it('the header shows the last comparable session as actual results with its date', () => {
     const { state } = startFixture();
     const benchEx = setsFor(state, BENCH)[0]?.sessionExerciseId ?? '';
-    const previous = {
-      [benchEx]: {
+    const prev: PreviousSession = {
         sessionId: id(900),
         performedAtUtc: '2026-10-01T06:00:00.000Z',
         gymId: GYM,
+        imported: false,
         sets: [8, 8, 7].map((reps, index) => ({ index, values: values(kg(100), reps) })),
-      },
     };
+    const previous = { [benchEx]: prev };
     const c = card(table(state, { previous }).blocks[0]);
     expect(plain(c.subtitle)).toBe('Barbell · Last 1 Oct: 100 × 8, 8, 7');
+    // B7: FitNotes history is labelled as such.
+    const fromFitNotes = { [benchEx]: { ...prev, gymId: null, imported: true } };
+    expect(plain(card(table(state, { previous: fromFitNotes }).blocks[0]).subtitle)).toBe('Barbell · Last (FitNotes, 1 Oct): 100 × 8, 8, 7');
   });
 
   it('after the last pending set: all done, no anchor, every block folded, Finish is the primary', () => {

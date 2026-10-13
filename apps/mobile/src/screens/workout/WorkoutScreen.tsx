@@ -1456,7 +1456,7 @@ export function WorkoutScreen() {
           </AppText>
           {focus.previous ? (
             <LinkLine
-              accessibilityLabel={`${focus.headerLine}. Last time, ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}: ${focus.previous.text}. Tap to copy.`}
+              accessibilityLabel={`${focus.headerLine}. Last time${focus.previous.imported ? ' in FitNotes' : ''}, ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}: ${focus.previous.text}. Tap to copy.`}
               onPress={() => {
                 const prev = focus.previous;
                 if (!prev) return;
@@ -1464,7 +1464,7 @@ export function WorkoutScreen() {
               }}
             >
               <AppText variant="callout" color="text.secondary" numeric>
-                {`${focus.headerLine} · Last ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}: `}
+                {`${focus.headerLine} · ${focus.previous.imported ? `Last (FitNotes, ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)})` : `Last ${formatDayMonth(toMs(focus.previous.performedAtUtc), tz)}`}: `}
                 <AppText variant="callout" numeric>
                   {focus.previous.text}
                 </AppText>

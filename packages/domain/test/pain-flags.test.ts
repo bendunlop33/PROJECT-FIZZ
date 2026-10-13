@@ -406,10 +406,17 @@ describe('buildPainFlagSheet (§2.14.4)', () => {
     expect(sheet.sinceFlag).toBeNull();
   });
 
-  it('no history: no rows invented; imported workouts are never the reference', () => {
+  it('no history: no rows invented; a FitNotes workout can be the reference (B7)', () => {
     expect(buildPainFlagSheet({ flag: f, history: [], nowMs: ms(9 * DAY), tz: TZ, exercise: press })).toMatchObject({ before: null, sinceFlag: null });
-    const imported = [hs(-3, [[60, 5]], { imported: true })];
-    expect(buildPainFlagSheet({ flag: f, history: imported, nowMs: ms(9 * DAY), tz: TZ, exercise: press })).toMatchObject({ before: null, sinceFlag: null });
+    const imported = [hs(-3, [[60, 5]], { imported: true, equipmentId: null })];
+    const sheet = buildPainFlagSheet({ flag: f, history: imported, nowMs: ms(9 * DAY), tz: TZ, exercise: press });
+    expect([plain(sheet.before), sheet.sinceFlag]).toEqual(['5 Oct · 60 kg × 5', null]);
+  });
+
+  it('review import-progress N1: a newest FitNotes workout (no item) still finds the app workouts on their item', () => {
+    const mixed = [hs(-6, [[55, 6], [55, 6], [55, 6]]), hs(8, [[50, 8], [50, 8]], { imported: true, equipmentId: null })];
+    const sheet = buildPainFlagSheet({ flag: f, history: mixed, nowMs: ms(9 * DAY), tz: TZ, exercise: press });
+    expect([plain(sheet.before), plain(sheet.sinceFlag)]).toEqual(['2 Oct · 55 kg × 6, 6, 6', '16 Oct · 50 kg × 8, 8']);
   });
 
   it('a flag cleared elsewhere says so and asks nothing', () => {

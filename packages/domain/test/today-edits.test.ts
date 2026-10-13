@@ -356,8 +356,13 @@ describe('substituteTargets and rankSubstitutions (TE6, TE-A4, TE-A5)', () => {
     expect(p.plan?.[0]?.planned.provenance?.source).toBe('rule');
     const none = substituteTargets(benchSlot, exOf(CHEST_PRESS), [], ctxAt(MAIN_GYM));
     expect(none).toMatchObject({ pin: null, plan: null });
-    // Imported history is never comparable (ADR 0016).
-    expect(substituteTargets(benchSlot, exOf(DB_BENCH), [{ ...(DB_BENCH_HISTORY[0] as HistorySession), imported: true }], ctxAt(MAIN_GYM)).plan).toBeNull();
+    // B7: FitNotes history (no item recorded) is planned on the item this gym maps the exercise to, and fitted there.
+    const fromFitNotes = substituteTargets(benchSlot, exOf(DB_BENCH), [{ ...(DB_BENCH_HISTORY[0] as HistorySession), imported: true, equipmentId: null, gymId: null }], ctxAt(MAIN_GYM));
+    expect(fromFitNotes.pin?.id).toBe(rack.id);
+    expect(fromFitNotes.plan?.map((s) => s.planned.load)).toEqual([kg(32.5, 'per_hand'), kg(32.5, 'per_hand'), kg(32.5, 'per_hand')]);
+    // At the hotel (dumbbells to 20 kg each) the same FitNotes history never plans above the rack's max (rule 4).
+    const hotel = substituteTargets(benchSlot, exOf(DB_BENCH), [{ ...(DB_BENCH_HISTORY[0] as HistorySession), imported: true, equipmentId: null, gymId: null }], ctxAt(HOTEL_GYM));
+    expect(hotel.plan?.every((s) => s.planned.load !== null && s.planned.load.value <= 20)).toBe(true);
   });
 
   it('catalogue order, then family by recency; only what this gym can do, never in today’s plan (skipped included); unresolved keys left out', () => {

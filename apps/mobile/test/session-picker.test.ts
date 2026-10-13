@@ -140,28 +140,29 @@ describe('services.sessions.list (session-picker §3, §7)', () => {
     const { services: s } = await h.launch();
     const { gymId, unnamed, ids } = await split(s);
     const l = await list(s, gymId);
-    // D19 (Decision 2 open): Up next is the last workout's next session, Chest; then the longest gap first.
-    expect(l.upNext?.label).toBe('Chest');
+    // Decision 2 (approved 11 Oct; review import-progress S1): no rotation applies, so Up next is the longest gap, Legs,
+    // never Chest, the workout just done; then the longest gap first (SP1).
+    expect(l.upNext?.label).toBe('Legs');
     expect(l.workouts).toEqual([]);
-    expect(l.fromHistory.map((r) => r.label)).toEqual(['Legs', 'Shoulders', 'Back']);
-    expect(allRows(l).map((r) => r.label)).toEqual(['Chest', 'Legs', 'Shoulders', 'Back']);
+    expect(l.fromHistory.map((r) => r.label)).toEqual(['Shoulders', 'Back', 'Chest']);
+    expect(allRows(l).map((r) => r.label)).toEqual(['Legs', 'Shoulders', 'Back', 'Chest']);
     expect(pickerSections(l).map((x) => [x.title, x.rows.length])).toEqual([
       [null, 1],
       ['From history', 3],
     ]);
     expect(l.older).toEqual([]);
-    expect(l.recommendedKey).toBe('name:chest');
+    expect(l.recommendedKey).toBe('name:legs');
     expect(allRows(l).some((r) => r.sourceSessionId === unnamed)).toBe(false);
     const today = await s.next.preview(gymId);
-    expect(today?.sourceSessionId).toBe(rowOf(l, 'Chest').sourceSessionId);
-    expect(today?.title).toBe('Chest');
+    expect(today?.sourceSessionId).toBe(rowOf(l, 'Legs').sourceSessionId);
+    expect(today?.title).toBe('Legs');
     // The Up next row opens Today's own page; the others open their own history.
-    expect(rowOf(l, 'Chest')).toMatchObject({ recommended: true, target: { kind: 'next' }, sourceSessionId: ids.Chest });
+    expect(rowOf(l, 'Legs')).toMatchObject({ recommended: true, target: { kind: 'next' }, sourceSessionId: ids.Legs });
     expect(rowOf(l, 'Shoulders')).toMatchObject({ recommended: false, kind: 'named', target: { kind: 'session', sourceSessionId: ids.Shoulders }, exerciseCount: 2, edited: false });
     expect(rowOf(l, 'Legs').lastDone?.utc).toBe(new Date(at('2026-10-05')).toISOString());
     // Today: Change and Sessions show (2 or more types), without Up next.
     expect(hasChoice(l)).toBe(true);
-    expect(todaySessions(l, { includeUpNext: false })).toEqual({ rows: [rowOf(l, 'Legs'), rowOf(l, 'Shoulders'), rowOf(l, 'Back')], more: false });
+    expect(todaySessions(l, { includeUpNext: false })).toEqual({ rows: [rowOf(l, 'Shoulders'), rowOf(l, 'Back'), rowOf(l, 'Chest')], more: false });
     expect(todaySessions(l, { includeUpNext: true }).more).toBe(true);
     expect(lastDoneText(rowOf(l, 'Legs'), s.now())).toBe('6 days ago');
     expect(model.requests).toHaveLength(0);
@@ -315,7 +316,8 @@ describe('Picking a session (SP6, SP9, SP10, SP12, SP14)', () => {
     expect(page.view.rows.map((r) => r.name)).toEqual(['Back squat', 'Leg press']);
     const undo = await s.routines.remove({ routineId: a.routine.id, expectedVersion: a.routine.version, opId: 'undo-save' });
     expect(undo.ok).toBe(true);
-    expect(rowOf(await list(s, gymId), 'Legs')).toMatchObject({ kind: 'named', target: { kind: 'session', sourceSessionId: ids.Legs } });
+    // Back to a history type: the longest gap again, so Up next (Decision 2).
+    expect(rowOf(await list(s, gymId), 'Legs')).toMatchObject({ kind: 'named', recommended: true, target: { kind: 'next' }, sourceSessionId: ids.Legs });
   });
 
   it('SP14: the list, a switch and a pick make no provider call and need no network', async () => {
@@ -404,7 +406,7 @@ describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
     const { gymId } = await split(s);
     const l = await list(s, gymId);
     const done = todaySessions(l, { includeUpNext: true });
-    expect(done.rows.map((r) => r.label)).toEqual(['Chest', 'Legs', 'Shoulders']);
+    expect(done.rows.map((r) => r.label)).toEqual(['Legs', 'Shoulders', 'Back']);
     expect(done.rows[0]?.recommended).toBe(true);
     expect(done.more).toBe(true);
   });

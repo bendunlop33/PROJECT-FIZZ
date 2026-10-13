@@ -235,10 +235,19 @@ describe('import jobs and rows', () => {
     expect((await store.repos.imports.importedDates(OWNER)).get('2026-10-01')).toEqual({ jobId: job.id, fileName: job.fileName, startedAtUtc: AT.utc, tz: TZ });
   });
 
-  it('imported workouts are history, never Repeat candidates, and are counted as left out (review r2 B1)', async () => {
+  it('imported workouts are history and Repeat candidates (B7); their FitNotes Category is read per workout (Decision 1)', async () => {
     await importAll(store);
-    expect(await store.repos.sessions.listRepeatableIds(OWNER, 10)).toEqual([]);
-    expect(await store.repos.sessions.countImportedFinished(OWNER)).toBe(2);
+    const ids = await store.repos.sessions.listRepeatableIds(OWNER, 10);
+    expect(ids).toHaveLength(2);
+    expect(await store.repos.sessions.listPastWorkoutIds(OWNER, 10)).toEqual(ids);
+    expect(await store.repos.sessions.listFinishedRefs(OWNER, 100, { includeImported: true })).toHaveLength(2);
+    // The rotation and pace read app workouts only; `includeImported` is for "the last workout Ben did" (review S1, S2).
+    expect(await store.repos.sessions.listFinishedRefs(OWNER, 100)).toEqual([]);
+    const cats = await store.repos.imports.categoriesBySession(OWNER);
+    expect([...cats.keys()].sort()).toEqual([...ids].sort());
+    // 1 Oct: two Back sets; 3 Oct: one (the cardio row isn't a set).
+    expect([...cats.values()].map((c) => c.Back).sort()).toEqual([1, 2]);
+    expect(await store.repos.imports.categoriesBySession('00000000-0000-4000-8000-00000000ffff')).toEqual(new Map());
     const history = await store.listExerciseHistory(OWNER, LAT);
     expect(history.length).toBeGreaterThan(0);
     expect(history.every((h) => h.imported && h.gymId === null && h.equipmentId === null)).toBe(true);
@@ -260,7 +269,7 @@ describe('import jobs and rows', () => {
     expect(await store.listExerciseHistory(OWNER, LAT)).toEqual([]);
     expect(await store.countRecords()).toMatchObject({ finishedWorkouts: 0, loggedSets: 0 });
     expect(await store.repos.sessions.listRepeatableIds(OWNER, 10)).toEqual([]);
-    expect(await store.repos.sessions.countImportedFinished(OWNER)).toBe(0);
+    expect(await store.repos.sessions.listFinishedRefs(OWNER, 100, { includeImported: true })).toHaveLength(0);
     expect(await store.repos.sessions.latestFinished(OWNER)).toBeNull();
     const after = await store.db.read(async (q) => ({
       sessions: (await q.getFirst<{ n: number }>('SELECT count(*) AS n FROM sessions'))?.n,
