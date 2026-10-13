@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EquipmentInstance, Exercise, SessionAggregate, SetValues } from '@fizz/schemas';
 
 import {
+  doneTodayDurationLine,
   analyseImport,
   buildAddExerciseCommand,
   buildImportedSession,
@@ -410,5 +411,14 @@ describe('Summary record lines (premium-feel §5.1, review S3)', () => {
     // A heavier workout after this one doesn't take this one's record away.
     const later = toHistorySessions(past(80, 2), BENCH.id);
     expect(buildWorkoutSummary(input(today, [...history, ...later])).records).toHaveLength(1);
+  });
+});
+
+describe('doneTodayDurationLine (F20)', () => {
+  it('shows the duration once: not again under a title that already ends with it', () => {
+    expect(doneTodayDurationLine('Legs · 45 min', 45 * 60_000)).toBeNull();
+    expect(doneTodayDurationLine('Legs · 45 min', 52 * 60_000)).toBe('52 min');
+    expect(doneTodayDurationLine('Legs', 45 * 60_000)).toBe('45 min');
+    expect(doneTodayDurationLine('Legs · 45 min', null)).toBeNull();
   });
 });

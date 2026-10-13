@@ -1,6 +1,7 @@
 import type { CheckIn, PainFlag, SessionAggregate } from '@fizz/schemas';
 import { reusableCheckIn, type RecentCheckIn } from '../checkin';
 import { todayPainCheck, type TodayPainCheck } from '../pain-flags';
+import { formatMinutes } from '../display';
 import { toIso, toMs } from '../time';
 import { buildActiveSetView } from './active-view';
 import { GENERIC_WORKOUT_NAME, storedWorkoutName } from './first-run';
@@ -118,6 +119,18 @@ export interface WeekDay {
   trained: boolean;
   inProgress: boolean;
   today: boolean;
+}
+
+/**
+ * Done today's duration line (`45 min`), or null when there's no duration
+ * (date-only import, rule 6) or the title already ends with it (a coach
+ * draft's `Legs · 45 min`, F20): never the same text twice.
+ */
+export function doneTodayDurationLine(title: string, activeMs: number | null): string | null {
+  if (activeMs === null) return null;
+  const line = formatMinutes(activeMs);
+  const flat = (t: string) => t.replace(/\s+/gu, ' ').trim();
+  return flat(title).endsWith(flat(line)) ? null : line;
 }
 
 /**
