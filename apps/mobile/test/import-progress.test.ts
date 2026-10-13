@@ -150,10 +150,10 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     expect(lift).toMatchObject({ imported: true });
     expect(lift?.text).toMatch(/^120/);
     expect(squatDay).toBeDefined();
-    // The session picker groups imports by their FitNotes Category (Decision 1), all startable.
+    // The session picker groups unnamed imports by the title the overview gives them (Decision 1, F20), all startable.
     const picker = await s.sessions.list(gymId);
     const labels = [picker?.upNext, ...(picker?.fromHistory ?? []), ...(picker?.older ?? [])].filter((r) => r !== null && r !== undefined).map((r) => r.label);
-    expect(labels).toEqual(expect.arrayContaining(['Back', 'Chest', 'Legs']));
+    expect(labels).toEqual(expect.arrayContaining(['Pull', 'Push', 'Legs']));
 
     // Start next from the pull workout (7 Oct pulldowns, 2 sets): the rule's targets from FitNotes, fitted to the stack (rule 4).
     const fromNext = await s.workout.start({ gymId, opId: 'start-next', checkIn: { kind: 'skipped', atUtc: h.now().utc }, nextOf: pullDay ?? '' });
@@ -199,11 +199,11 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     const past = (await s.history.pastWorkouts()).rows;
     const benchDay = past.find((r) => r.localDate === '2026-10-05')?.sessionId;
     const bench = await exerciseIdOf(s, 'Bench press');
-    // Legs (9 Oct) was just done; Back was 7 Oct; Chest (5 Oct) has the longest gap (Decision 2).
+    // Legs (9 Oct) was just done; Pull was 7 Oct; Push (5 Oct) has the longest gap (Decision 2).
     const next = await s.next.preview(gymId);
     expect(next?.sourceSessionId).toBe(benchDay);
     const picker = await s.sessions.list(gymId);
-    expect(picker?.upNext).toMatchObject({ label: 'Chest', sourceSessionId: benchDay, target: { kind: 'next' } });
+    expect(picker?.upNext).toMatchObject({ label: 'Push', sourceSessionId: benchDay, target: { kind: 'next' } });
     // One tap: the overview's Start is the same plan.
     const page = await s.overview.load({ target: { kind: 'next' }, gymId });
     if (!page) throw new Error('no overview');
