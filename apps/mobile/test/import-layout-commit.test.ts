@@ -142,6 +142,29 @@ describe('failures are honest and import nothing (checks 35, §9.3.3)', () => {
     expect(port.requests).toHaveLength(1);
   });
 
+  it('force-closed on the preview, before the import: the same file reuses the layout, nothing sent twice (review r3 N1)', async () => {
+    const { s, port } = await launch([answerWith(SPEC), answerWith(SPEC)]);
+    await readToPreview(s);
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    const again = await s2.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    expect(again).toMatchObject({ kind: 'new_table', reused: true });
+    expect(port.requests).toHaveLength(1);
+  });
+
+  it('the import closes the request even while its session stays open (review r3 N1)', async () => {
+    const { s, port } = await launch([answerWith(SPEC), answerWith(SPEC)]);
+    const { draft } = await readToPreview(s);
+    const r = await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-commit');
+    if (!r.ok) throw new Error(r.reason);
+    const job = await s.imports.job(r.jobId);
+    expect(await s.imports.revert(r.jobId, job?.job.version ?? 0, 'undo-1')).toMatchObject({ ok: true });
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    expect(await s2.importLayouts.previewImport({ name: 'strong_workouts.csv', text: STRONG })).toMatchObject({ kind: 'new_table', reused: false });
+    expect(port.requests).toHaveLength(1);
+  });
+
   it('reuse is keyed on the whole file: the same sample from a different file is read afresh (review S1)', async () => {
     const { s, port } = await launch([answerWith(SPEC), answerWith(SPEC)]);
     const { r, sample } = await newTable(s);

@@ -719,6 +719,7 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     // Read at commit time, after both services exist.
     layoutVersionOf: (layoutId) => importLayouts.layoutVersionOf(layoutId),
+    layoutCommitting: (layoutId) => importLayouts.layoutCommitting(layoutId),
   });
 
   /**

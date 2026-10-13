@@ -84,6 +84,8 @@ export interface ImportServiceDeps {
    * Ben previewed). A draft made from an older version is refused (check 53).
    */
   layoutVersionOf?: (layoutId: string) => number | null;
+  /** A layout import is about to be written: its coach request is closed so the layout is never reused (review r3 N1). Never throws. */
+  layoutCommitting?: (layoutId: string) => Promise<void>;
 }
 
 /** The unfinished workout that blocks import and undo (DX4). */
@@ -1040,6 +1042,7 @@ export function createImportService(deps: ImportServiceDeps) {
       ...(x.perHand === undefined ? {} : { perHand: x.perHand }),
       ...(x.total === undefined ? {} : { total: x.total }),
     }));
+    if (d.layout) await deps.layoutCommitting?.(d.layout.layoutId).catch(() => undefined);
     let created: Awaited<ReturnType<Store['repos']['imports']['createJob']>>;
     try {
       created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId, ...(profileWrite ? { profile: profileWrite } : {}) });

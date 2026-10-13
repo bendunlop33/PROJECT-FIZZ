@@ -360,9 +360,9 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     if (!r.ready) return { ok: false, reason: 'not_ready' };
     const applied = applyImportSpec(s.spec, s.answers, s.table, opts());
     if (applied.pending > 0) return { ok: false, reason: 'not_ready' };
+    // The request stays open until the import is committed (`layoutCommitting`) or Ben leaves: a force-close
+    // on the preview still finds this layout for the same file, so it isn't sent again (review r3 N1).
     const result = await deps.imports.openLayout(s.file, applied.rows, s.firstLine, draftLayout(s, s.spec, r));
-    // Ben used this layout: it is never offered again as the coach's suggestion (an Undo doesn't bring it back; review S1).
-    await closeRequest(s);
     return { ok: true, result };
   }
 
@@ -663,6 +663,16 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     columnValues(layoutId: string, column: number): string[] {
       const s = sessions.get(layoutId);
       return s ? s.table.records.map((r) => r.cells[column] ?? '') : [];
+    },
+
+    /**
+     * The import made with this session's layout is being committed: Ben used
+     * the layout, so it is never offered again as the coach's suggestion (an
+     * Undo doesn't bring it back; review S1, r3 N1). The session stays.
+     */
+    async layoutCommitting(layoutId: string): Promise<void> {
+      const s = sessions.get(layoutId);
+      if (s) await closeRequest(s);
     },
 
     /** `Cancel`: the layout session is dropped; nothing was saved, and its layout is never reused. */
