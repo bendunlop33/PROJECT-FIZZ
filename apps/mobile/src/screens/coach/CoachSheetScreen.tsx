@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { undoOpId, type ContextDescription } from '@fizz/coach';
@@ -12,6 +12,8 @@ import { nowMs as clockNow } from '../../clock';
 import { isGeneralEntry, type CoachAvailability, type CoachEntry } from '../../coach/coach-service';
 import {
   applyProgress,
+  COACH_DONE_ACCESSORY_ID,
+  COACH_TRANSCRIPT_KEYBOARD,
   loadedOutOfContext,
   missingOutOfContext,
   routeLine,
@@ -33,7 +35,7 @@ import { formatTime } from '../../format/dates';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, Chip, DomainLabel, Icon, TextButton, TextField } from '../../ui';
+import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, TextButton, TextField } from '../../ui';
 import { CoachCard } from './CoachCard';
 import { BuildRequestCard, PendingBuildCard, WorkoutDraftCard } from './BuildCards';
 import { BUILD_COPY, buildCardView, needsCoachView } from '../../coach/build-view';
@@ -205,6 +207,8 @@ export function CoachSheetScreen() {
     setLive(startLiveTurn(turnId, input, clockNow()));
     const typed = input.kind === 'words' ? input.text : null;
     if (typed !== null) setDraft('');
+    // Build 131: the keyboard goes down on Send so the answer has the room; the transcript keeps to its end.
+    Keyboard.dismiss();
     try {
       const r = await services.coach.send({
         entry,
@@ -249,6 +253,7 @@ export function CoachSheetScreen() {
     const message = buildCardView({ minutes, focus: f, gymName: buildGym?.name ?? null }).message;
     setShowBuild(false);
     setNotice(null);
+    Keyboard.dismiss();
     setBuilding({ focus: f, minutes: minutes ?? 60, startedAtMs: clockNow() });
     setLive(startLiveTurn(turnId, { kind: 'words', text: message, spoken: false }, clockNow()));
     try {
@@ -474,7 +479,16 @@ export function CoachSheetScreen() {
         </View>
       ) : null}
 
-      <ScrollView ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })} contentContainerStyle={{ padding: theme.components.screenMargin, gap: theme.space['4'], flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scroll}
+        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+        // The keyboard showing or hiding resizes the transcript (KeyboardAvoidingView): keep the newest reply in view.
+        onLayout={() => scroll.current?.scrollToEnd({ animated: false })}
+        contentContainerStyle={{ padding: theme.components.screenMargin, flexGrow: 1 }}
+        {...COACH_TRANSCRIPT_KEYBOARD}
+      >
+        {/* A tap on the conversation (not on a button in it) hides the keyboard. */}
+        <Pressable accessible={false} onPress={() => { Keyboard.dismiss(); }} style={{ flexGrow: 1, gap: theme.space['4'] }}>
         {empty && chips.length > 0 && !showBuild ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {chips.map((c) => (
@@ -533,6 +547,7 @@ export function CoachSheetScreen() {
             {notice}
           </AppText>
         ) : null}
+        </Pressable>
       </ScrollView>
 
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: insets.bottom + theme.space['2'], gap: theme.space['2'] }}>
@@ -554,7 +569,7 @@ export function CoachSheetScreen() {
         {sees !== null ? <SeesPanel sees={sees} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>
           <View style={{ flex: 1 }}>
-            <TextField ref={field} value={text} onChangeText={setDraft} placeholder={status?.placeholder ?? 'Ask the coach…'} multiline style={{ maxHeight: 140 }} accessibilityLabel="Message to the coach" />
+            <TextField ref={field} value={text} onChangeText={setDraft} placeholder={status?.placeholder ?? 'Ask the coach…'} multiline inputAccessoryViewID={COACH_DONE_ACCESSORY_ID} style={{ maxHeight: 140 }} accessibilityLabel="Message to the coach" />
           </View>
           {running ? (
             <SendButton icon="stop.fill" label="Stop the coach" enabled onPress={() => {
@@ -574,6 +589,7 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
       </View>
+      <KeyboardDoneAccessory nativeID={COACH_DONE_ACCESSORY_ID} />
     </KeyboardAvoidingView>
   );
 }

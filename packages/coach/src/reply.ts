@@ -1,5 +1,6 @@
 import { setNumbersText } from '@fizz/domain';
 import type { HiddenLine } from '@fizz/schemas';
+import { BUILD_ASK_LINE, BUILD_OFFER_LINE, claimsNoBuildTool, claimsWorkoutBuilt } from './build-ask';
 import { checkReplyClaims, isChangeClaim, type TurnLedger } from './claims';
 import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
@@ -151,6 +152,12 @@ export function needsStructuralNoChangeLine(replyText: string, ledger: TurnLedge
 /** `Why?` → `Not shown` for a sentence that restated a saved change in its own words. */
 export const CARD_ONLY_DETAIL = 'Changes show on their cards, not in the reply.';
 
+/** `Why?` → `Not shown` for a sentence saying the app can't build a workout (build 131). */
+export const NO_BUILD_TOOL_DETAIL = 'The app can build a workout draft.';
+
+/** `Why?` → `Not shown` for a sentence promising or claiming a workout in the app when none was built (review r3 B1). */
+export const NO_DRAFT_BUILT_DETAIL = 'No workout was built.';
+
 export type NoChangeLineMode = 'structural' | 'topic' | 'off';
 
 export interface ReplyFilterOptions {
@@ -168,12 +175,34 @@ export interface ReplyFilterOptions {
   claimsNeedToken?: boolean;
   /** See `NoChangeLineContext.benAskedForChange`. */
   benAskedForChange?: boolean;
+  /**
+   * Build 131, review B1: a general turn where the app can build a workout. A sentence saying
+   * it can't (`claimsNoBuildTool`) is then false, so it is hidden and `BUILD_ASK_LINE` shown once,
+   * unless this turn already made a draft card. Review r3 B1: a promise or done-claim about a workout in
+   * the app (`claimsWorkoutBuilt`) is hidden too unless this turn saved a draft. Default false: elsewhere such a sentence goes
+   * through the usual check, and true limits are never replaced.
+   */
+  noBuildToolLine?: boolean;
+  /**
+   * Review r2 S3: Ben asked for a build this turn, or is following one up (a build in play). A refusal
+   * that names no workout ("I can't do that in the app", "I don't have a tool for that") is then the
+   * same false claim, and short done-claims ("On it!", "It's saved") are read as claims about a
+   * workout (review r4 S1). Only read with `noBuildToolLine`.
+   */
+  buildAsked?: boolean;
+  /**
+   * Review r4 S5: `propose_workout` was offered on this turn. A hidden "can't build" is then replaced
+   * by the fixed offer (`BUILD_OFFER_LINE`), and a hidden false promise is only dropped. Without the
+   * tool, a hidden promise is replaced by the offer and a "can't build" by `BUILD_ASK_LINE`.
+   */
+  toolOffered?: boolean;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
   const buffer = new SentenceBuffer();
   const hidden: HiddenLineDraft[] = [];
   const said: string[] = [];
+  let askLineShown = false;
 
   const process = (sentence: string): ReplyItem[] => {
     const ledger = options.ledger();
@@ -187,6 +216,28 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     const actions = tokens.segments.filter((s) => s.kind === 'action');
     for (const a of actions) cited.add(a.actionId);
 
+    // Build 131: on a general turn where the app can build one, "I can't build workouts here" is false.
+    // The sentence is hidden (listed in Why?) and the reply says, once, what works instead.
+    const draftThisTurn = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout');
+    const toolOffered = options.toolOffered === true;
+    if (options.noBuildToolLine === true && !draftThisTurn && claimsNoBuildTool(tokens.plainText, { generic: options.buildAsked === true })) {
+      hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_BUILD_TOOL_DETAIL });
+      if (!askLineShown) out.push({ kind: 'sentence', text: toolOffered ? BUILD_OFFER_LINE : BUILD_ASK_LINE });
+      askLineShown = true;
+      for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
+      return out;
+    }
+    // Review r3 B1, r4 B2/S1: with no saved draft this turn (no tool, the tool not used, or `propose_workout`
+    // refused), "I'll set that up for you" and "It's ready in your workouts" are false. Hidden. Only on a
+    // turn without the tool does the reply ask, once, "Want me to build it in the app?"; with the tool the
+    // false claim is just dropped, and a refused build's card already says what happened.
+    const draftSaved = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout' && e.record.status === 'committed' && e.record.undoneBy === null);
+    if (options.noBuildToolLine === true && options.buildAsked === true && !draftSaved && actions.length === 0 && claimsWorkoutBuilt(tokens.plainText, { inPlay: true })) {
+      hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_DRAFT_BUILT_DETAIL });
+      if (!askLineShown && !toolOffered && !draftThisTurn) out.push({ kind: 'sentence', text: BUILD_OFFER_LINE });
+      askLineShown = true;
+      return out;
+    }
     if (tokens.plainText.length > 0 && /[\p{L}\p{N}]/u.test(tokens.plainText)) {
       // Structural (PM decision 10 Oct): the card is how a change is shown, so the message may
       // describe a change only in a sentence that cites that change's token. Every other

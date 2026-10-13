@@ -199,7 +199,7 @@ const WEAK_DIRECTIVES: readonly RegExp[] = [
   ANOTHER_SET,
   ...PLAIN_TALK,
 ];
-const POLITE = /^(?:(?:please|pls|just|ok|okay|right|so|and|then|also|actually|yeah|yes|cool|fine|sure|alright|hey|oh|hmm|um|erm|coach),? )*/;
+const POLITE = /^(?:(?:please|pls|just|ok|okay|right|so|and|then|also|actually|yeah|yes|cool|fine|sure|alright|hey|yo|oi|oh|hmm|um|erm|coach),? )*/;
 const STRONG = new RegExp(`^(?:${STRONG_VERBS})\\b`);
 /**
  * "can you …", "could we …", "can I …", "let's …", "I want you to …":
@@ -431,7 +431,14 @@ function lower(text: string): string {
       .replace(/\bi'd like\b/g, 'i would like')
       .replace(/\bgimme\b/g, 'give me')
       .replace(/\bwanna\b/g, 'want to')
-      .replace(/\blemme\b/g, 'let me'),
+      .replace(/\blemme\b/g, 'let me')
+      // (12 Oct, build 131) Text-speak: "can u make me a push sesh".
+      // Review N1: a word on its own only, never "U-bar row".
+      .replace(/(?<![\w-])u(?![\w-])/g, 'you')
+      .replace(/(?<![\w-])ur(?![\w-])/g, 'your')
+      .replace(/\bsesh(es)?\b/g, 'session$1')
+      // Review r2 B2: "make me a push sess" (the build-131 thread title's own truncation).
+      .replace(/\bsess\b/g, 'session'),
   );
 }
 
@@ -594,27 +601,112 @@ const HOLD: readonly RegExp[] = [
 const BUILD_NOUN = '(?:workout|work-?out|session|routine|day|circuit|training session)';
 // Review B1: only verbs that ask for something new. "get" and "sort (out)" read Ben's own records
 // ("get my last session numbers", "sort out my session from yesterday"); they never build.
-const BUILD_VERB_STRONG = '(?:build|plan|create|design|write|put together|throw together|whip up|come up with|draft)';
-const BUILD_VERB_WEAK = '(?:make|give|set up)';
+// Review S3: "program me a push day" is a verb here; "a programme" stays later (BUILD_LATER).
+// Review r6 S2: "whip me up", "chuck together", "throw me together" (a "me"/"us" may sit inside the phrasal verb).
+const BUILD_VERB_STRONG = '(?:build|plan|create|design|write|put together|(?:throw|chuck) (?:me |us )?together|(?:whip|knock) (?:me |us )?up|come up with|draft|knock together|program(?= (?:me|us)\\b)|programme(?= (?:me|us)\\b))';
+// Review S3: "do me a push session", "sort me out a push session", "set me up a push workout". "do" and
+// "sort" need "me"/"us": "can I do a push session today?" is a question, and "sort out my session" reads records.
+// Review r3 S5: "sort me a push session" (no "out") is the same ask.
+const BUILD_VERB_WEAK = '(?:make|give|set up|set (?:me|us) up|do(?= (?:me|us)\\b)|sort (?:me|us) out|sort(?= (?:me|us)\\b))';
 // A new workout has an article or adjective; "the", "my" and "this" point at one that exists ("make the session easier").
 const NEW_DET = '(?:a|an|another|one|new|quick|short|fresh)';
+// `lower()` reads "today's" as "today is" (the apostrophe-s expansion), so both forms count (build 131).
 const BUILD_DIRECT = new RegExp(
-  `^(?:${BUILD_VERB_STRONG}(?: me| us| out)?(?: (?:${NEW_DET}|today'?s|tonight'?s))+|${BUILD_VERB_WEAK}(?: me| us)?(?: ${NEW_DET})+)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`,
+  `^(?:${BUILD_VERB_STRONG}(?: me| us| out)?(?: (?:${NEW_DET}|today'?s|tonight'?s|today is|tonight is))+|${BUILD_VERB_WEAK}(?: me| us)?(?: ${NEW_DET})+|${BUILD_VERB_WEAK} (?:me|us) (?:today'?s|tonight'?s|today is|tonight is))\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`,
 );
-const BUILD_WANT = new RegExp(`^i (?:want|need|would like|'d like|fancy)(?: to do)? (?:a|an|another|one)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
-const BUILD_LATER = /\b(?:programme|program|programs|programmes|mesocycle|block|weeks?|month|plan for the week|weekly plan|split)\b/;
+// Review r3 S5: "need a quick 30 min workout" (no "I").
+const BUILD_WANT = new RegExp(`^(?:i )?(?:want|need|would like|'d like|fancy)(?: to do)? (?:a|an|another|one)\\b.{0,80}?\\b${BUILD_NOUN}s?\\b`);
+/** The focus words of a workout ("push", "legs", "upper body"), for wording with no article (build 131). */
+const FOCUS = '(?:push|pull|legs?|upper(?: body)?|lower(?: body)?|full[ -]body|chest|back|arms?|shoulders?|glutes?|core|abs|triceps|biceps|tris|bis|hamstrings?|quads?|calves|delts)';
+const FOCUS_RUN = `${FOCUS}(?:(?: ?/ ?| and | & | \\+ | plus | )${FOCUS})*`;
+/** "can I have / get a push session" (build 131): asking for one. "get me a workout" alone stays out (review B1). */
+const BUILD_CAN_I = new RegExp(`^(?:can|could|may) i (?:please )?(?:have|get|grab) (?:${NEW_DET} )+.{0,80}?\\b${BUILD_NOUN}s?\\b`);
+/** "make me push session", "give me a push/legs day" (build 131): a focus right before the noun. */
+const BUILD_FOCUS = new RegExp(`^(?:make|give|build|plan|create|design|write|program)(?: me| us)?(?: (?:${NEW_DET}))* ${FOCUS_RUN} ${BUILD_NOUN}\\b`);
+const GUARD_WORD = /\b(?:avoid|avoids|avoiding|without|except|around|easy on|easier on)\b/;
+/** Review r6 S2: "Push and legs today please": a focus, a day and "please", the whole message. */
+const BUILD_FOCUS_TODAY = new RegExp(`^${FOCUS_RUN}(?: (?:day|session|workout))? (?:today|tonight) please$`);
+/** "push session please", "push workout for today please" (build 131): no verb, but a plain ask. */
+const BUILD_PLEASE = new RegExp(
+  `^(?:(?:a|an) )?(?:(?:quick|short) )?(?:${FOCUS_RUN} ${BUILD_NOUN}|(?:new|another|fresh)(?: ${FOCUS_RUN})? ${BUILD_NOUN})(?: for (?:today|tonight|tomorrow))? please$`,
+);
+/**
+ * Review r2 B2: "add a push workout to the app", "can you add a push session to my workouts", "put a
+ * push session in the app for me": a new workout (a determiner) placed in the app. The determiner
+ * keeps exercise adds ("add curls to my workout") and records ("put my session in the app") out.
+ */
+const BUILD_PLACE = new RegExp(
+  `^(?:add|put|save|load|stick|pop)(?: me| us)?(?: (?:${NEW_DET}))+\\b.{0,60}?\\b${BUILD_NOUN}s?(?: for (?:me|us|today|tonight|tomorrow))? (?:to|in|into|on|onto) (?:the app|this app|my workouts|my routines|my library|the workouts tab)\\b`,
+);
+/** Review r2 B2: "can you do a push session for me" ("do" with "for me" after the noun). */
+const BUILD_DO_FOR = new RegExp(`^do (?:${NEW_DET} )+.{0,60}?\\b${BUILD_NOUN}s? for (?:me|us)\\b`);
+/**
+ * Review r3 S5: "build me something", "design me something for today": a strong build verb and
+ * "something", the whole message. Review r4 B1 (PM, 13 Oct): "give/make/sort me something … today"
+ * is gone: "give me something for my sore shoulder today" is a pain question, not a workout. Those
+ * turns still have `propose_workout` offered (never forced); the model reads his words.
+ */
+// Review r6 S2: "make me something for today" (the whole message, so "… for my sore shoulder" stays out).
+const BUILD_SOMETHING = /^(?:build|create|design|make|put together|throw together|whip up|knock up|program|programme) (?:me|us) (?:something|a thing)(?: (?:quick|short|new|good|decent))?(?: (?:for (?:today|tonight)|today|tonight|to do(?: today| tonight)?|for (?:the )?gym))?$/;
+/** Review r3 S5: "push day today, can you sort it": a focus and a day, then "sort it" (the whole message). */
+const BUILD_SORT_IT = new RegExp(`^${FOCUS_RUN} (?:day|session|workout)(?: (?:today|tonight))?,? (?:(?:can|could|would) you |please )?(?:sort|build|make|do|plan) (?:it|that|one|me one|me out|me something)(?: (?:for me|please|out))*$`);
+/**
+ * Review r5 S1: muscle groups named as a session's focus, not as Ben's body: a run of two or more
+ * ("back and biceps", "chest/back") or one before a workout noun ("back session"), never after "my".
+ * The run before a noun, or a list of two or more ending the clause ("a pull session, back and biceps").
+ */
+/**
+ * Review r6 S3: a trailing list is a focus only straight after "session," / "workout," / "day,", and
+ * only in the plural or group words ("back and biceps", "chest and shoulders"). A single "shoulder",
+ * "arm" or "leg" there is a body part Ben may be guarding ("a back session, back and shoulder").
+ */
+const FOCUS_GROUP = '(?:push|pull|legs|upper(?: body)?|lower(?: body)?|full[ -]body|chest|back|arms|shoulders|glutes|core|abs|triceps|biceps|tris|bis|hamstrings|quads|calves|delts)';
+const FOCUS_LIST = `${FOCUS_GROUP}(?:(?: ?/ ?| and | & | \\+ | plus |, ?)${FOCUS_GROUP})+`;
+/** Review r6 S3: never a focus after a word that guards a body part ("avoiding back and shoulders", "easy on my back"). */
+const GUARDED = '(?<!\\b(?:avoid|avoids|avoiding|without|except|not|no|around|easy on|easier on|go easy on|skip|skipping|spare|sparing|protect|protecting|rest|resting|nothing for|no work for|off) )';
+const FOCUS_BEFORE_NOUN = new RegExp(`(?<!\\bmy )(?<!\\bmy [a-z]+ )${GUARDED}\\b${FOCUS_RUN} (?=${BUILD_NOUN}s?\\b)`, 'g');
+const FOCUS_LIST_END = new RegExp(`(?<=\\b${BUILD_NOUN}s?, ?)${FOCUS_LIST}(?= *(?:please)? *(?:[.,!;]|$))`, 'g');
+/** Review r6 S2: "Push and legs today please": a focus run that is the whole ask. */
+const FOCUS_LEAD = new RegExp(`^${FOCUS_RUN}(?= (?:(?:day|session|workout) )?(?:today|tonight)(?: please)?[.!]*$)`);
+
+/** Ben's words with a training focus ("back and biceps session") taken out, for reading pain words (review r5 S1). Pure. */
+export function withoutFocusRuns(text: string): string {
+  // Review r6 S3: a guard word anywhere means a body part may be Ben's own; nothing is stripped (rule 9).
+  if (GUARD_WORD.test(lower(text))) return lower(text);
+  return text.toLowerCase().replace(/[‘’]/g, "'").trim().replace(FOCUS_LEAD, '').replace(FOCUS_BEFORE_NOUN, '').replace(FOCUS_LIST_END, '');
+}
+
+/** "push and legs" inside one request: joined before the clause split reads "and" as a new clause (build 131). */
+const FOCUS_AND = new RegExp(`\\b(${FOCUS}) (?:and|&|plus) (?=${FOCUS}\\b)`, 'gi');
+// Build 131: "split" is later only as a programme split ("my upper/lower split"), never "split squats".
+// Review S3: "program me a push day" is one session; "for next week" is when, not how long.
+// Review r3 S5: "programme me a push session" is one session too; "this week" and "last week" are when.
+const BUILD_LATER = /\b(?:programme(?! (?:me|us)\b)|program(?! (?:me|us)\b)|programs|programmes|mesocycle|block|weeks|weekly|(?<!(?:next|this|last|the other) )week|month|plan for the week|weekly plan|split(?! (?:squats?|stances?|lunges?|jerks?)\b))\b/;
 /**
  * Not a new workout (review B1): a change to the one in hand ("a lighter session", "the rest of
  * the session"), a read of Ben's records ("a summary of my last session") or advice ("some tips
  * for leg day"), or a day without training ("a rest day").
  */
+/**
+ * Review r4 S2: more than one session ("a workout plan for this week", "a workout for each day this
+ * week", "sessions for this week"). Multi-week and weekly plans aren't available yet (§10).
+ */
+const BUILD_MULTI = /\b(?:(?:each|every|per) (?:day|week)|(?:workouts|sessions|days)\b.{0,40}\b(?:this|next) week|(?:plan|schedule)\b.{0,30}\b(?:this|next) week|(?:this|next) week'?s (?:workouts|sessions|plan|schedule)|\d+ (?:days|sessions|workouts) a week)\b/;
+
+/** Ben's words ask for a programme, a week or more of sessions (review r4 S2): never forced to one session. */
+export function multiWeekScope(text: string): boolean {
+  const t = lower(text);
+  return BUILD_LATER.test(t) || BUILD_MULTI.test(t);
+}
 const BUILD_NOT = /\b(?:easier|lighter|harder|heavier|less intense|more intense|rest of|summary|recap|review|numbers|stats|tips|advice|ideas?|feedback|breakdown|rest day|off day|day off|recovery day)\b/;
 
 function buildIn(clause: string): boolean {
   const c = clause.replace(POLITE, '');
-  if (BUILD_LATER.test(c) || BUILD_NOT.test(c) || isOpinionQuestion(c)) return false;
-  const body = ASK_PREFIX.exec(c)?.[1] ?? c;
-  return BUILD_DIRECT.test(body) || BUILD_WANT.test(c);
+  if (BUILD_LATER.test(c) || BUILD_MULTI.test(c) || BUILD_NOT.test(c) || isOpinionQuestion(c)) return false;
+  // Review r6 S2: "would you be able to make me …", "help me plan today's workout".
+  const asked = ASK_PREFIX.exec(c)?.[1] ?? c;
+  const body = asked.replace(/^(?:(?:(?:would|could|will|can) you )?be able to |are you able to |(?:you )?help (?:me|us) (?:to )?)/, '');
+  return BUILD_DIRECT.test(body) || BUILD_FOCUS_TODAY.test(c) || BUILD_WANT.test(c) || BUILD_CAN_I.test(c) || BUILD_FOCUS.test(body) || BUILD_PLEASE.test(c) || BUILD_PLACE.test(body) || BUILD_DO_FOR.test(body) || BUILD_SOMETHING.test(body);
 }
 
 /**
@@ -794,8 +886,17 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
     );
   if (structural) kinds.push('structural');
   // A whole workout (workout builder): its own kind, never a change to today's sets.
-  const building = open.filter((c) => buildIn(c.text)).map((c) => c.text);
-  if (building.length > 0) kinds.push('build');
+  // Build 131: an "if" doesn't hold a build back ("… if I only have 45 mins"): it only makes a draft
+  // Ben opens himself. A clause that is only the condition ("if it's too easy") never builds.
+  const buildable = all.filter((c) => c.label === null && !PLAYBOOK.test(c.text) && !/^(?:(?:and|so|but|ok|okay) )?(?:if|when|whenever|unless|in case|once)\b/.test(c.text));
+  // "make me a push and legs session": the focus words are joined first, so "and" doesn't split the request.
+  const joinedBuilds = (c: Clause): boolean => {
+    if (!c.first) return false;
+    const joined = c.sentence.replace(FOCUS_AND, '$1/');
+    return joined !== c.sentence && normalise(joined).some((x) => x.first && buildIn(x.text));
+  };
+  const building = buildable.filter((c) => buildIn(c.text) || joinedBuilds(c)).map((c) => c.text);
+  if (building.length > 0 || BUILD_SORT_IT.test(whole.replace(/[.!]+$/, ''))) kinds.push('build');
   // (12 Oct) An exercise added today; a question only counts when it asks ("can you add curls?").
   const adds = open.filter((c) => addIn(c.text) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))));
   if (adds.length > 0) kinds.push('add');

@@ -245,7 +245,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
     capabilitySection: 'when_you_ask',
     description:
-      'Build the workout Ben asked for, or a new version of the coach draft in context: exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. No loads or minutes: the app plans loads from his history and fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. No loads or minutes: the app plans loads from his history and fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
   },
   {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
@@ -328,6 +328,12 @@ export interface TurnGate {
   benPainWords: boolean;
   /** `getStructuralChangeSignals` for the workout in context. */
   structuralSignals: readonly StructuralSignalKind[];
+  /**
+   * Review r4 (PM, 13 Oct, pending Ben): a general turn in Ben's words where the app can build a
+   * workout (a gym or typical equipment). `propose_workout` is then offered whatever his words; it
+   * only makes a draft he opens, starts or saves himself (BD12, BD15). Forcing stays code's call.
+   */
+  buildOpen?: boolean;
 }
 
 export interface WithheldTool {
@@ -387,6 +393,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
       return null;
     case 'ben_request':
       if (requestOpens(t, g.benRequest)) return null;
+      if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
       // An accepted offer only counts for today's sets (CA1).
       return g.acceptedOffer && t.name === 'adjust_pending_sets' ? null : 'needs_request';
     case 'ben_pain_words':

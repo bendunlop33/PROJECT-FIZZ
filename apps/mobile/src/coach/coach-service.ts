@@ -40,7 +40,16 @@ import {
   DEFAULT_COACH_TIMING,
   classifyBenRequest,
   requestHas,
-  revisesDraft,
+  asksForBuild,
+  buildFollowUpIn,
+  refusedBuildActionIds,
+  capUsable,
+  usableFirst,
+  BUILD_USABLE_CAP,
+  OFFERED_USABLE_CAP,
+  buildRequestWords,
+  buildWordsNewestFirst,
+  type BuildFollowUp,
   type AddableExercise,
   type BuildContextView,
   structuralTapRecord,
@@ -831,17 +840,31 @@ export function createCoachService(deps: CoachServiceDeps) {
    * focus (Ben's chips, else his words, else the draft being changed, else
    * 60); the context lists only exercises usable at the selected gym (BD5);
    * the executor checks the call against the same gym, pain flags and
-   * limits. Null when Ben didn't ask for a workout (or there's no gym at all).
+   * limits. Review r4 (PM, 13 Oct, pending Ben): every general turn with a gym gets it, so
+   * `propose_workout` is offered whatever his words (forcing stays `forcesBuild`'s call in the turn).
+   * `inPlay`: Ben asked for a build or is following one up; otherwise the usable list is capped
+   * shorter and the whole-build timeout isn't applied. Null only when there's no gym at all.
    */
-  async function buildTurn(p: UserProfile, text: string, origin: 'chip' | 'card' | 'text' | 'voice', draft: WorkoutDraft | null, chips: { minutes: number | null; focus: BuildFocus } | null): Promise<{ view: BuildContextView; executors: CoachExecutors } | null> {
-    const asked = requestHas(classifyBenRequest(text, 'general'), 'build') || (draft !== null && revisesDraft(text));
-    if (!asked) return null;
+  async function buildTurn(
+    p: UserProfile,
+    said: string,
+    origin: 'chip' | 'card' | 'text' | 'voice',
+    draft: WorkoutDraft | null,
+    chips: { minutes: number | null; focus: BuildFocus } | null,
+    followUp: BuildFollowUp | null,
+  ): Promise<{ view: BuildContextView; executors: CoachExecutors; inPlay: boolean } | null> {
+    const inPlay = asksForBuild({ turnKind: 'general', text: said, draftInContext: draft !== null, followUp });
+    // A follow-up ("yes add it") reads length and focus from Ben's earlier request too; never from the coach's text.
+    const text = buildRequestWords(said, followUp);
     const place = await buildGym(p);
     if (place === null) return null;
     const { gym } = place;
     const parent = draft === null ? null : currentDraftVersion(draft);
-    const minutes = chips?.minutes ?? parseRequestedMinutes(text) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
-    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (parseRequestedFocus(text) ?? parent?.request.focus ?? 'coach_picks');
+    // Newest first: "yes but make it 45 mins" beats the request's length (review B2, B3).
+    const newest = buildWordsNewestFirst(said, followUp);
+    const firstOf = <T,>(read: (w: string) => T | null): T | null => newest.reduce<T | null>((found, w) => found ?? read(w), null);
+    const minutes = chips?.minutes ?? firstOf(parseRequestedMinutes) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
+    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (firstOf(parseRequestedFocus) ?? parent?.request.focus ?? 'coach_picks');
     const pool = await exercisePool();
     const byId = new Map(pool.map((e) => [e.id, e]));
     const byKey = new Map(pool.flatMap((e) => (e.catalogueKey ? [[e.catalogueKey, e] as const] : [])));
@@ -849,11 +872,20 @@ export function createCoachService(deps: CoachServiceDeps) {
     const at = deps.now();
     const nowMs = toMs(at.utc);
     const flagged = (id: string) => painFlagCovering(flags, id, nowMs, at.tz) !== null;
-    const usable = pool
-      .filter((e) => (e.measurement === 'reps' || e.measurement === 'duration') && !flagged(e.id) && doableHere(e, gym))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
     const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]));
+    const keyOf = (id: string): string => byId.get(id)?.catalogueKey ?? id;
+    const doable = pool.filter((e) => (e.measurement === 'reps' || e.measurement === 'duration') && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
+    // Review r5 S2: a capped list keeps what Ben named and what fits the focus ahead of the alphabetical fill.
+    const first = usableFirst({
+      words: newest,
+      focus,
+      pool: doable.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, split: e.split })),
+      draft: parent?.plan.slots.map((sl) => sl.catalogueId) ?? [],
+      routines: live.flatMap((r) => r.exercises.map((e) => keyOf(e.exerciseId))),
+    });
+    const allUsable = doable
+      .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
+    const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
     const refs = await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []);
     const pick = nextInRotation(rotationRoutines(live), refs[0] ?? null);
     const view: BuildContextView = {
@@ -917,7 +949,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       contextHash: deriveId(stableStringify(view)),
       equipmentVersion: deriveId(stableStringify(gym.equipment.map((e) => [e.id, e.version]))),
     });
-    return { view, executors };
+    return { view, executors, inPlay };
   }
 
   async function send(req: SendRequest): Promise<CoachTurnResult> {
@@ -933,7 +965,11 @@ export function createCoachService(deps: CoachServiceDeps) {
     const executors = await executorsFor(p, req.entry, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
     // workout-builder §8.2: a build turn (Ben asked for a workout, or to change the draft in context) gets its context and its one tool.
     const draftInContext = req.entry.kind === 'draft' ? await draftOf(p, req.entry.draftId) : null;
-    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null) : null;
+    // Build 131: a follow-up to a session the coach described in text ("yes add it"); the turn engine reads the same thread.
+    const history = kind === 'general' && req.input.kind === 'words' && req.threadId !== null ? await coachStore().listMessages(req.threadId).catch(() => []) : [];
+    const refused = history.length === 0 ? new Set<string>() : await refusedBuildActionIds(history, (id) => coachStore().listTurnActions(id));
+    const followUp = kind === 'general' && req.input.kind === 'words' ? buildFollowUpIn(history, req.input.text, refused) : null;
+    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) Ben asked to add an exercise in a workout turn: what can be added here, by ID.
     const addable = kind === 'workout' && session !== null && deps.coachAddInputs !== undefined && req.input.kind === 'words' && requestHas(classifyBenRequest(req.input.text, 'workout'), 'add') ? await addableFor(p, session) : null;
@@ -954,11 +990,13 @@ export function createCoachService(deps: CoachServiceDeps) {
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),
           ...((await threadHasOpenDraft(p, req.threadId)) ? { draftInThread: true } : {}),
+          // Review B1, S4: the coach is told the app builds a session only when it really can here.
+          ...(kind === 'general' && build !== null ? { buildAvailable: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },
         // A build turn has the whole-build cap (BD13) on top of the first-event and stall timeouts.
-        { model, store: coachStore(), executors, now: deps.now, newId: deps.newId, ...(build !== null ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : {}) },
+        { model, store: coachStore(), executors, now: deps.now, newId: deps.newId, ...(build?.inPlay === true ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : {}) },
       );
       if (result.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
       else if (result.status === 'completed') lastNetworkFailureMs = null;

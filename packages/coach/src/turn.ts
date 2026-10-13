@@ -19,7 +19,7 @@ import type { LedgerEntry, TurnLedger } from './claims';
 import { buildCoachContext, contextInputItems, type CoachContextInput } from './context';
 import type { CoachExecutors, ToolCallContext, ToolResult } from './executors';
 import { functionToolDefinitions } from './function-tools';
-import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelInputItem } from './model-port';
+import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelInputItem, ModelRequest } from './model-port';
 import { buildTurnRegistry, type TurnGate, type TurnRegistry } from './registry';
 import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
@@ -27,7 +27,8 @@ import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { chipRequest, classifyBenRequest, requestHas, revisesDraft, type BenRequest } from './request';
 import { parseToolCall } from './tool-call';
-import { BUILD_INSTRUCTIONS } from './build';
+import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS } from './build';
+import { buildFollowUpIn, buildPainMention, forcesBuild, refusedBuildActionIds } from './build-ask';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -107,6 +108,12 @@ export interface CoachTurnRequest {
    * call (BD15). Elsewhere those words go to the coach as usual.
    */
   draftInThread?: boolean;
+  /**
+   * Build 131 (review B1, S4): a general turn where the app could build a workout (a gym or
+   * typical equipment exists). Only then is the coach told the app builds one, and only then
+   * is "I can't build workouts" replaced. False or absent: the coach states its limits as usual.
+   */
+  buildAvailable?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -169,6 +176,13 @@ export interface GateInput {
   structuralSignals: readonly StructuralSignalKind[];
   /** A coach draft is in context (`Ask coach` on its overview): Ben's change words make a new version (workout-builder BD16). */
   draftInContext?: boolean;
+  /**
+   * Build 131: Ben's words agree to put the session the coach just described into the app
+   * (`buildFollowUpIn`, the same decision `coach-service` builds the context from).
+   */
+  buildFollowUp?: boolean;
+  /** Review r4: the app can build a workout on this general turn, so `propose_workout` is offered (never forced by this alone). */
+  buildOpen?: boolean;
 }
 
 /** The turn gate from Ben's own input only (registry.ts `TurnGate`). */
@@ -185,6 +199,10 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
       if (g.draftInContext === true && revisesDraft(g.input.text) && !requestHas(benRequest, 'build')) {
         benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds : []), 'build'] };
       }
+      // Build 131: "yes add it" after a session described in text is a build request, not a change to today's sets.
+      if (g.kind === 'general' && g.buildFollowUp === true && !requestHas(benRequest, 'build')) {
+        benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds.filter((k) => k !== 'change') : []), 'build'] };
+      }
       benPainWords = classifyPainMention(g.input.text) === 'pain';
       break;
     case 'chip':
@@ -199,7 +217,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
       break;
   }
   const benAskedForChange = acceptedOffer || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'add')));
-  return { kind: g.kind, benRequest, acceptedOffer, benPainWords, structuralSignals: g.structuralSignals, benAskedForChange, intent };
+  return { kind: g.kind, benRequest, acceptedOffer, benPainWords, structuralSignals: g.structuralSignals, benAskedForChange, intent, ...(g.buildOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildOpen: true } : {}) };
 }
 
 /** Tools the app can actually run in this build; others are withheld, never offered. */
@@ -363,6 +381,9 @@ function afterWrite(record: ActionRecord): { sessionVersion?: number; sessionExe
 
 const INTERRUPTED_NOTE = 'Stopped.';
 
+/** Fed back when a build turn's first answer was text (build 131). Never shown to Ben. */
+export const BUILD_NUDGE_LINE = 'Not shown. Ben asked for a workout in the app: call propose_workout now with the session (from his words, or the one you described earlier in this thread). Do not write the workout in reply.';
+
 /** Whether the coach's last message is waiting on Ben: an offer, or a card he can accept (a memory suggestion, a proposal). */
 async function lastCoachAsked(store: CoachTurnStore, lastCoach: CoachMessage | undefined): Promise<boolean> {
   if (lastCoach === undefined || lastCoach.body.role !== 'coach') return false;
@@ -396,7 +417,18 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const lastCoach = [...history].reverse().find((m) => m.body.role === 'coach');
   const previousOffer = lastCoach !== undefined && lastCoach.body.role === 'coach' ? lastCoach.body.offer : null;
 
-  const gate = gateFor({ kind: req.kind, input: req.input, previousOffer, structuralSignals: req.structuralSignals, ...(req.draftInContext === true ? { draftInContext: true } : {}) });
+  // Build 131: a follow-up to a session the coach described in text ("yes add it", "put that in the app").
+  // Review r4 S4: a refused build saved nothing, so "try again" on the next turn still reaches it.
+  const followUp = req.kind === 'general' && req.input.kind === 'words' ? buildFollowUpIn(history, req.input.text, await refusedBuildActionIds(history, (id) => ports.store.listTurnActions(id))) : null;
+  const gate = gateFor({
+    kind: req.kind,
+    input: req.input,
+    previousOffer,
+    structuralSignals: req.structuralSignals,
+    ...(req.draftInContext === true ? { draftInContext: true } : {}),
+    ...(followUp !== null ? { buildFollowUp: true } : {}),
+    ...(req.buildAvailable === true ? { buildOpen: true } : {}),
+  });
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
   const turn: CoachTurn = {
@@ -426,15 +458,34 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const words = req.input.kind === 'words' ? req.input.text : null;
   // workout-builder BD15: "start it" / "save it" gets the fixed line and no model call; Start and Save are Ben's taps.
   // Review S4: not when the coach's last message asked something of its own (an offer, a memory suggestion, a proposal).
-  if (words !== null && req.kind === 'general' && (req.draftInThread === true || req.draftInContext === true) && asksToStartOrSave(words) && !(await lastCoachAsked(ports.store, lastCoach))) {
+  // Build 131: not when the coach's last message described a new session in text: "save it" then builds that one.
+  if (words !== null && req.kind === 'general' && followUp === null && (req.draftInThread === true || req.draftInContext === true) && asksToStartOrSave(words) && !(await lastCoachAsked(ports.store, lastCoach))) {
     return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
   }
-  const mention = words === null ? 'none' : classifyPainMention(words);
+  const rawMention = words === null ? 'none' : classifyPainMention(words);
+  // Review r5 S1: in a build request, a muscle-group focus ("a back and biceps session") is not his body: no pain question.
+  const mention = words !== null && rawMention === 'unclear' && requestHas(classifyBenRequest(words, 'general'), 'build') && buildPainMention(words) === 'none' ? 'none' : rawMention;
   const messagePain: MessagePain | null = words === null ? null : { mention, exerciseIds: req.namedExerciseIds ?? [], bodyPart: painBodyPart(words) };
 
   const registry = runnable(buildTurnRegistry(gate), ports.executors);
   const tools = [...functionToolDefinitions(registry.tools), replyToolDefinition()];
-  const instructions = registry.tools.some((t) => t.name === 'propose_workout') ? `${COACH_INSTRUCTIONS}\n${BUILD_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
+  const buildOffered = registry.tools.some((t) => t.name === 'propose_workout');
+  // Build 131: a general turn without the build tool still knows the app builds workouts, so it never says it can't.
+  const canBuild = req.kind === 'general' && (buildOffered || req.buildAvailable === true);
+  // Review r4 (PM, 13 Oct, pending Ben): the tool is offered on every general turn with a gym. It is
+  // forced (text answer held, then the call named) only on an unambiguous build request in Ben's words
+  // with no pain word and no multi-week scope (`forcesBuild`). A clear follow-up ("yes add it") gets the
+  // build instructions, never the force; a loose one (r3 S1) the offer-reply ones; any other turn the
+  // offered ones, which say when to use it and when never to.
+  const forced = buildOffered && words !== null && forcesBuild(words, { draftInContext: req.draftInContext === true });
+  const benBuildWords = words !== null && (requestHas(classifyBenRequest(words, 'general'), 'build') || (req.draftInContext === true && revisesDraft(words)));
+  const painWords = mention !== 'none';
+  const clearFollowUp = followUp?.strength === 'clear' && !painWords;
+  const looseBuild = buildOffered && !forced && !clearFollowUp && followUp?.strength === 'loose' && !benBuildWords;
+  // A build is being talked about this turn: Ben asked for one or is following one up.
+  const buildInPlay = canBuild && (benBuildWords || followUp !== null);
+  const buildInstructions = forced || clearFollowUp ? BUILD_INSTRUCTIONS : looseBuild ? OFFER_REPLY_BUILD_INSTRUCTIONS : OFFERED_BUILD_INSTRUCTIONS;
+  const instructions = buildOffered ? `${COACH_INSTRUCTIONS}\n${buildInstructions}` : canBuild ? `${COACH_INSTRUCTIONS}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
   if (said !== null) input.push({ type: 'message', role: 'user', content: said });
@@ -452,10 +503,16 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let offer: CoachOfferKind | null = null;
   let error: CoachTurnError | null = null;
   let refCount = 0;
+  // Build 131: on a build turn the model answered in text instead of calling `propose_workout`. It gets
+  // one more step with the reason; its text reply isn't shown or streamed until a build was tried.
+  let buildTried = false;
+  let nudged = false;
+  // The held text answer: shown after all if the forced step can't run on this route (named tool_choice unproven, spike S3).
+  let heldReply: string | null = null;
 
   // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
   // The reply is always the last step, so every action it could cite is already in the ledger.
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {
@@ -497,15 +554,31 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     }
     replyStream = new ReplyMessageStream();
     const stream = replyStream;
-    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, cap.signal, {
+    const holdReply = forced && !buildTried && !nudged;
+    // Review S1: after a text answer on a build turn, the next step is forced to call `propose_workout`.
+    const forceBuild = forced && nudged && !buildTried;
+    const toolChoice: ModelRequest['toolChoice'] = forceBuild ? { type: 'function', name: 'propose_workout' } : 'required';
+    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice, parallelToolCalls: false }, timing, cap.signal, {
       onFirstEvent,
       onReplyDelta: (delta) => {
+        if (holdReply) return;
         const fresh = stream.push(delta);
         if (fresh !== '') emit(filter.push(fresh));
       },
     });
     if (out.kind === 'error') {
-      error = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
+      const why = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
+      // The route refused the forced call (a rejected named tool_choice surfaces as `unavailable`): the held
+      // answer stands, as before the nudge (WB3: `No change made.`). Review r2 S2: any other error (usage
+      // limit, signed out, not eligible, model gone, network) is shown as it is, so the AI status stays honest.
+      if (forceBuild && heldReply !== null && why === 'unavailable') {
+        const parsed = parseReply(heldReply, req.kind);
+        if (parsed.ok) {
+          message = parsed.reply.message;
+          break;
+        }
+      }
+      error = why;
       break;
     }
     if (out.kind === 'text') {
@@ -518,6 +591,15 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       break;
     }
     if (out.extraCalls > 0) logLine({ tool: out.name, outcome: 'not_allowed', text: 'Only one call at a time; the others were ignored.', actionId: null });
+    if (out.name === COACH_REPLY_TOOL_NAME && holdReply && step + 2 < MAX_MODEL_STEPS) {
+      nudged = true;
+      heldReply = out.arguments;
+      logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: 'Answer in text; asked to build.', actionId: null });
+      input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: BUILD_NUDGE_LINE }) });
+      continue;
+    }
+    if (out.name === 'propose_workout') buildTried = true;
     if (out.name === COACH_REPLY_TOOL_NAME) {
       const parsed = parseReply(out.arguments, req.kind);
       if (!parsed.ok) {

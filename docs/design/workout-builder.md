@@ -413,7 +413,7 @@ There's no lead text, no reassurance ("Nothing is saved yet") and no rule names.
 
 | Item | Contract |
 |---|---|
-| Tool **`propose_workout`** | `effect: 'propose'`, `needs: ben_request` of kind `build` (new kind in `REQUEST_KINDS_BY_TOOL`; the `Build a workout` chip and the Build card are `chipRequest`s of that kind). Strict JSON schema (§8.3). Offered only in general turns (not summary, not workout). The executor runs `checkWorkoutProposal`, then stores a version in one transaction with its `ActionRecord` (`kind: 'build_workout'`). Idempotent on opId |
+| Tool **`propose_workout`** | `effect: 'propose'`, `needs: ben_request` of kind `build` (new kind in `REQUEST_KINDS_BY_TOOL`; the `Build a workout` chip and the Build card are `chipRequest`s of that kind). **Amended 13 Oct (PM decision, pending Ben's confirmation; see §8.2a):** also offered on every general turn in Ben's words when he has a gym, never forced by that alone. Strict JSON schema (§8.3). Offered only in general turns (not summary, not workout). The executor runs `checkWorkoutProposal`, then stores a version in one transaction with its `ActionRecord` (`kind: 'build_workout'`). Idempotent on opId |
 | `checkWorkoutProposal(args, ctx)` → `{status: 'ok' \| 'partial' \| 'unusable', plan: DraftPlan, guardNotes[]}` | **Pure, `packages/domain`, unit-tested.** `ctx = {catalogue, exercises (Ben's, by catalogueKey), usableExerciseIds (selected gym, minus busy today), painFlags, restPresets, limits, gymId, equipmentVersion}`. Resolves catalogue IDs to Ben's exercises; applies BD9 and the §8.3 limits; sets `main` with `defaultMain`; fills a missing RPE from the rule (BD7). Never sets a load. `unusable` = no exercise left |
 | `DraftPlan` | Routine-shaped, so the **unchanged planner** runs on it: `{slots: {slotKey, exerciseId, order, main, supersetGroup, setTemplates: {setType, reps \| durationS, targetRpe, restS}[]}[]}`, with `targetLoad: null` everywhere. `draftAsRoutine(version)` → a transient `Routine` (`source: 'coach'`, never stored as a routine) |
 | `planCoachDraft(input)` | The overview basis's planner input: `draftAsRoutine` + a `targets` map from `substituteTargets(slot, exercise, history, ctx)` per slot (BD6; draft reps keep priority as WL7 "Ben changed it since" with `structureChangedAtUtc` = the version's time) → `planWithTodayEdits` (today's edits, then the fit from `fitMinutes` unless a `fit` edit overrides it). **The only path** for the overview dry run, Today's `SESSIONS` row and Start |
@@ -428,6 +428,23 @@ There's no lead text, no reassurance ("Nothing is saved yet") and no rule names.
 | `WorkoutSession.coachDraft?: {draftId, version}` | Optional; provenance for `Why?` |
 | `Routine.source: 'coach'` + `createdFromDraft?: {draftId, version}` | Set by `saveFrom` for a `coach_draft` basis (BD12) |
 | Migration (next free number at build; 13 if nothing lands first) | Table `workout_drafts` (`id`, `owner_id`, `status`, `version`, `expires_at_utc`, `data` JSON). Rebuild `coach_actions` so its `kind` CHECK also accepts `build_workout`, keeping migration 11's and 12's kinds (same pattern as 7, 11, 12). Backups include drafts (Your data). A restore keeps restored drafts `open` with their own 14-day clock; only pre-start drafts are discarded on restore (ADR 0022 §5) |
+
+### 8.2a Build from chat: when the tool is offered and when it is forced (13 Oct, PM decision, pending Ben's confirmation)
+
+Replaces Ben's-words-only gating after review r4 (`docs/reviews/coach-chat-fixes-r4.md`). Recorded in `docs/brief/CHANGELOG.md`.
+
+| Case | Tool | Held + forced by name | Instructions |
+|---|---|---|---|
+| Explicit build request in Ben's words (`classifyBenRequest` kind `build`, or a change to the draft in context), no pain word, no multi-week scope (`forcesBuild`) | Offered | Yes (one text answer held, then `tool_choice` names `propose_workout`) | Build |
+| Clear follow-up to a session described or offered in the thread ("yes add it", "go on then", "try again" after a refused build) | Offered | No | Build |
+| Loose reply to the coach's offer ("I'm going at 6") | Offered | No | Offer reply |
+| Any other general turn with a gym (questions, pain, "make me a workout plan for this week") | Offered | No | Offered: use only when Ben asks for a workout or agrees to put a described session into the app; never for pain, advice, history or multi-week plans |
+| No gym and no typical equipment | Not offered | No | None |
+
+- The result is always only an `open` draft; Start and Save stay Ben's taps (BD12, BD15).
+- Multi-week programmes and weekly plans aren't available yet (§10). Every build prompt says so.
+- **Claim backstop:** with no draft saved this turn, an explicit claim that a workout or session was built, added or saved in the app is hidden. Short done-claims ("On it!", "It's saved") are hidden only when a build is in play. With the tool offered, the claim is just dropped. Without it, it is replaced once by `Want me to build it in the app?`. A "can't build workouts" sentence is replaced by the same offer when the tool was offered.
+- **Context cost:** the usable list is capped at 60 exercises when the tool is only offered (Ben's draft and routine exercises first) and at 200 when a build is in play. That adds about 2.7k input tokens to each general turn (list about 1.8k, tool schema about 600, instructions about 300).
 
 ### 8.3 `propose_workout` arguments (strict; no other fields)
 
