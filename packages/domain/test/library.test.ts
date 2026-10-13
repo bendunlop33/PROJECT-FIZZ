@@ -76,6 +76,18 @@ describe('createRoutine / routineIssues (routines.md §A2.3, §A6)', () => {
     expect(createRoutine({ id: id(901), ownerId: OWNER, edit: { name: '', exercises: exs() }, opId: 'o', at: at(0), isCompound: compound })).toEqual({ kind: 'invalid', message: 'Add a name' });
   });
 
+  it('refuses a distance slot in create, edit and Save › Edit (EL-B13, review library-browse r2 S1)', () => {
+    const isDistance = (x: string) => x === FACE;
+    expect(routineIssues({ name: 'A', exercises: exs() }, isDistance)).toEqual(['Can’t save distance yet']);
+    expect(routineIssues({ name: 'A', exercises: exs() }, () => false)).toEqual([]);
+    expect(createRoutine({ id: id(903), ownerId: OWNER, edit: { name: 'A', exercises: exs() }, opId: 'o', at: at(0), isCompound: compound, isDistance })).toEqual({ kind: 'invalid', message: 'Can’t save distance yet' });
+    const r = made();
+    expect(editRoutine(r, { name: 'A', exercises: r.exercises }, 1, 'e1', at(1), compound, isDistance)).toEqual({ kind: 'invalid', message: 'Can’t save distance yet' });
+    // A retry of a save that landed, or a stale one, is reported as such before validation (rule 5).
+    expect(editRoutine(r, { name: 'A', exercises: r.exercises }, 1, 'new-1', at(1), compound, isDistance)).toMatchObject({ kind: 'duplicate' });
+    expect(withSaveEdit(r, { name: 'A', exercises: r.exercises }, compound, isDistance)).toEqual({ kind: 'invalid', message: 'Can’t save distance yet' });
+  });
+
   it('Main (WL9): an all-isolation workout marks only the first; Ben’s choice wins over the rule', () => {
     const iso = createRoutine({ id: id(902), ownerId: OWNER, edit: { name: 'Arms', exercises: exs() }, opId: 'o', at: at(0), isCompound: () => false });
     expect(iso.kind === 'write' && iso.next.exercises.map((e) => e.main)).toEqual([true, false, false]);

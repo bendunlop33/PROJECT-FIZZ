@@ -4,6 +4,7 @@ import { NBSP, setWorkingSetCount } from '@fizz/domain';
 import type { Routine } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
+import { editorAddRow } from '../src/workout/library-view';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -489,6 +490,52 @@ describe('create (New workout) and offline (WL-A14)', () => {
     expect(await s.routines.estimate({ exercises: a.routine.exercises, gymId })).toBeGreaterThan(0);
     const l = await library(s, gymId);
     expect(l.view.all.map((r) => r.name)).toEqual(['Upper']);
+  });
+});
+
+describe('distance is never saved as reps (exercise-library EL-B13, review library-browse r2 S1)', () => {
+  const slot = (exerciseId: string) => ({
+    id: h.ids(),
+    exerciseId,
+    equipmentId: null,
+    order: 0,
+    supersetGroup: null,
+    setTemplates: [1, 2, 3].map(() => ({ id: h.ids(), setType: 'working' as const, targetLoad: null, targetReps: { min: 8, max: 10 }, targetDurationS: null, targetRpe: null, targetRir: null, restOverrideS: null })),
+    restBySetType: {},
+    transitionRestS: null,
+    progressionRuleId: null,
+  });
+
+  it('the editor’s Add sheet shows Farmer’s carry disabled; create, update and saveFrom({ edit }) with a distance slot write nothing', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const carry = (await s.routines.searchExercises('carry')).find((x) => x.name === 'Farmer’s carry' || x.name === "Farmer's carry");
+    const bench = (await s.routines.searchExercises('bench')).find((x) => x.name === 'Bench press');
+    if (!carry || !bench) throw new Error('no exercises');
+    expect(carry.measurement).toBe('distance');
+    expect(editorAddRow(carry)).toEqual({ disabled: true, subtitle: 'Can’t save distance yet' });
+    expect(editorAddRow(bench)).toEqual({ disabled: false, subtitle: null });
+
+    // New workout › Save with a carry: refused, nothing stored.
+    expect(await s.routines.create({ edit: { name: 'Carry day', exercises: [slot(carry.id)] }, opId: 'new-carry' })).toEqual({ ok: false, message: 'Can’t save distance yet' });
+    expect((await library(s, gymId)).view.all).toEqual([]);
+
+    // Editing a stored workout to add a carry: refused, version unchanged.
+    const made = await s.routines.create({ edit: { name: 'Upper', exercises: [slot(bench.id)] }, opId: 'new-upper' });
+    if (!made.ok) throw new Error(made.message);
+    const up = await s.routines.update({ routineId: made.routine.id, edit: { name: 'Upper', exercises: [...made.routine.exercises, { ...slot(carry.id), order: 1 }] }, expectedVersion: 1, opId: 'edit-carry' });
+    expect(up).toMatchObject({ ok: false, reason: 'invalid', message: 'Can’t save distance yet' });
+    // Still version 1: the same edit without the carry saves against it.
+    expect(await s.routines.update({ routineId: made.routine.id, edit: { name: 'Upper 2', exercises: made.routine.exercises }, expectedVersion: 1, opId: 'edit-name' })).toMatchObject({ ok: true });
+
+    // Save to Workouts › Edit › Add exercise › carry: refused, nothing stored beyond Upper.
+    const sid = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
+    const from = { kind: 'session' as const, sessionId: sid };
+    const src = await s.routines.saveSource(from);
+    if (src === 'stale' || src === null) throw new Error('no source');
+    const edit = { name: 'Push', exercises: [...src.exercises, { ...slot(carry.id), order: src.exercises.length }] };
+    expect(await s.routines.saveFrom({ from, name: 'Push', addToRotation: false, opId: 'sheet-carry', edit })).toEqual({ ok: false, message: 'Can’t save distance yet' });
+    expect((await library(s, gymId)).view.all.map((r) => r.name)).toEqual(['Upper 2']);
   });
 });
 

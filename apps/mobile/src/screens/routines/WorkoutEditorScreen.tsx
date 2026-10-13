@@ -45,7 +45,7 @@ import type { EditorExerciseInfo, RoutineEditorData } from '../../services/worko
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, Eyebrow, Icon, InfoLine, NumberAccessory, NumberStepper, PrimaryButton, Row, SetCountBar, SetShapeControl, ShapeRepsSheet, StatusLine, TextButton, TextField } from '../../ui';
-import { conflictLines, conflictText, EDITOR_COPY, editorPrimary, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
+import { conflictLines, conflictText, EDITOR_COPY, editorAddRow, editorPrimary, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
 import { handOffLibraryToast } from '../../workout/library-toast';
 import { saveEditRequest, settleSaveEdit } from '../../workout/save-edit-handoff';
 import { SET_BAR, SET_SHAPE_COPY, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../../workout/set-shape-view';
@@ -159,7 +159,7 @@ export function WorkoutEditorScreen() {
   }, [services, list, gymId]);
 
   const edit: RoutineEdit = useMemo(() => ({ name, exercises: list }), [name, list]);
-  const issues = routineIssues(edit);
+  const issues = routineIssues(edit, (exerciseId) => info[exerciseId]?.measurement === 'distance');
   const isNew = routineId === null;
   const dirty = routineEditDirty(base.current, edit);
   const primary = editorPrimary({ issues, dirty, isNew });
@@ -865,7 +865,8 @@ function RestSheet({ visible, slot, name, presets, onChange, onClose }: { visibl
  * `Add exercise` / `Replace`: Ben's exercises and the catalogue's, by name,
  * aliases and one typo (EL1). `Add` has the `Sets [−] 3 [+]` bar
  * (exercise-library §10.3), starting at 3 each time; `Replace` keeps the
- * slot's sets.
+ * slot's sets. A distance exercise shows disabled: a saved workout can't
+ * hold distance yet (EL-B13).
  */
 function AddExerciseSheet({ visible, title, withSets, onPick, onClose }: { visible: boolean; title: string; withSets: boolean; onPick: (x: EditorExerciseInfo, sets: number) => void; onClose: () => void }) {
   const services = useServices();
@@ -900,16 +901,22 @@ function AddExerciseSheet({ visible, title, withSets, onPick, onClose }: { visib
       </View>
       <TextField accessibilityLabel={EDITOR_COPY.search} placeholder={EDITOR_COPY.search} value={query} onChangeText={setQuery} autoCorrect={false} returnKeyType="search" />
       <ScrollView style={{ flexGrow: 0, flexShrink: 1, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
-        {results.map((x) => (
-          <Row
-            key={x.id}
-            title={x.name}
-            onPress={() => {
-              setQuery('');
-              onPick(x, sets);
-            }}
-          />
-        ))}
+        {results.map((x) => {
+          const row = editorAddRow(x);
+          return (
+            <Row
+              key={x.id}
+              title={x.name}
+              subtitle={row.subtitle}
+              disabled={row.disabled}
+              onPress={() => {
+                if (row.disabled) return;
+                setQuery('');
+                onPick(x, sets);
+              }}
+            />
+          );
+        })}
       </ScrollView>
       {withSets ? <SetCountBar value={sets} limits={SET_BAR.limits} onChange={setSets} /> : null}
     </BottomCard>

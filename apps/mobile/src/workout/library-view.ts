@@ -1,4 +1,4 @@
-import { dayMonthText, formatDuration, toMs, type LibraryRow, type RoutineConflict, type RoutineIssue } from '@fizz/domain';
+import { dayMonthText, formatDuration, NO_DISTANCE_IN_WORKOUTS, toMs, type LibraryRow, type RoutineConflict, type RoutineIssue } from '@fizz/domain';
 
 import { formatTime } from '../format/dates';
 import type { RoutineExercise } from '@fizz/schemas';
@@ -129,6 +129,15 @@ export function editorPrimary(input: { issues: readonly RoutineIssue[]; dirty: b
   if (first !== undefined) return { label: `Fix ${String(input.issues.length)} ${input.issues.length === 1 ? 'issue' : 'issues'}`, disabled: true };
   if (!input.isNew && !input.dirty) return { label: EDITOR_COPY.noChanges, disabled: true };
   return { label: EDITOR_COPY.save, disabled: false };
+}
+
+/**
+ * A row in the editor's `Add exercise` / `Replace` sheet: a distance
+ * exercise shows disabled with `Can’t save distance yet`, as on the
+ * Library's Add sheet (exercise-library EL-B13, review library-browse r2 S1).
+ */
+export function editorAddRow(x: { measurement: 'reps' | 'duration' | 'distance' }): { disabled: boolean; subtitle: string | null } {
+  return x.measurement === 'distance' ? { disabled: true, subtitle: NO_DISTANCE_IN_WORKOUTS } : { disabled: false, subtitle: null };
 }
 
 /** An exercise card's `⋯` (§A2.3, revised 2026-10-12): Replace, Exercise info, Superset with next / Ungroup, Move up, Move down, Remove. */

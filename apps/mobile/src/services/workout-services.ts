@@ -1487,6 +1487,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return (exerciseId) => yes.has(exerciseId);
   }
 
+  /** Which exercises are measured in distance: a saved workout refuses them (EL-B13, review library-browse r2 S1). */
+  async function distanceOf(ids: Iterable<string>): Promise<(exerciseId: string) => boolean> {
+    const yes = new Set<string>();
+    for (const id of new Set(ids)) if ((await exerciseById(id))?.measurement === 'distance') yes.add(id);
+    return (exerciseId) => yes.has(exerciseId);
+  }
+
   /** Session types for the picker and the library (session-picker §3, routines.md WL5). Local reads. */
   async function typeIndex(p: UserProfile, live: readonly Routine[]) {
     const rows = await repos().sessions.listSessionTypeRows(p.id, TYPE_ROW_LIMIT);
@@ -3048,9 +3055,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async create(req: { edit: RoutineEdit; opId: string; inRotation?: boolean }): Promise<LibrarySaveWrite> {
       try {
         const p = await owner();
-        const isCompound = await compoundOf(req.edit.exercises.map((e) => e.exerciseId));
+        const ids = req.edit.exercises.map((e) => e.exerciseId);
+        const isCompound = await compoundOf(ids);
+        const isDistance = await distanceOf(ids);
         const id = deriveId(`routine:${req.opId}`);
-        const c = createRoutine({ id, ownerId: p.id, edit: req.edit, opId: req.opId, at: ctx.now(), isCompound, inRotation: req.inRotation === true });
+        const c = createRoutine({ id, ownerId: p.id, edit: req.edit, opId: req.opId, at: ctx.now(), isCompound, isDistance, inRotation: req.inRotation === true });
         // A retry of a save that landed is the same save, even if the edit no longer validates.
         if (c.kind === 'invalid' && (await repos().routines.get(id).catch(() => null)) === null) return { ok: false, message: c.message };
         return await createOnce(id, req.opId, () => (c.kind === 'write' ? c.next : null), LIBRARY_COPY.nothing);
@@ -3082,7 +3091,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         for (const e of req.edit.exercises) if ((await ensureExercise(e.exerciseId)) === null) return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
         const at = ctx.now();
-        const c = editRoutine(current, req.edit, req.expectedVersion, req.opId, at, await compoundOf(req.edit.exercises.map((e) => e.exerciseId)));
+        const ids = req.edit.exercises.map((e) => e.exerciseId);
+        const c = editRoutine(current, req.edit, req.expectedVersion, req.opId, at, await compoundOf(ids), await distanceOf(ids));
         if (c.kind === 'invalid') return { ok: false, reason: 'invalid', message: c.message };
         if (c.kind === 'duplicate') return { ok: true, routine: c.current, actionId, duplicate: true };
         if (c.kind === 'stale') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name), current: c.current, changedAtUtc: c.current.updatedAtUtc, lines: [] };
@@ -3222,7 +3232,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         let made = source;
         if (req.edit !== undefined && source !== null) {
           for (const e of req.edit.exercises) if ((await ensureExercise(e.exerciseId)) === null) return { ok: false, message: LIBRARY_COPY.notFound };
-          const edited = withSaveEdit(source, req.edit, await compoundOf(req.edit.exercises.map((e) => e.exerciseId)));
+          const ids = req.edit.exercises.map((e) => e.exerciseId);
+          const edited = withSaveEdit(source, req.edit, await compoundOf(ids), await distanceOf(ids));
           if (edited.kind === 'invalid') return { ok: false, message: edited.message };
           made = edited.next;
         }

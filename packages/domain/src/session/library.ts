@@ -40,20 +40,30 @@ export type RoutineIssue =
   | 'Reps: the first number must be the smaller one.'
   | 'Add a target to every set.'
   | 'Up to 40 exercises'
-  | 'Up to 30 sets per exercise';
+  | 'Up to 30 sets per exercise'
+  | 'Can’t save distance yet';
+
+/**
+ * Whether an exercise is measured in distance. A saved workout's set
+ * template has no distance target, so a distance slot is refused rather
+ * than saved as reps (exercise-library EL-B13; review library-browse r2 S1).
+ */
+export type IsDistanceExercise = (exerciseId: string) => boolean;
 
 /**
  * Why a workout can't be saved yet, first issue first (routines.md §3.3,
  * A6): a name, at least one exercise, at least one set each, reps min ≤
- * max, a rep or time target on every set, at most 40 exercises and 30 sets.
+ * max, a rep or time target on every set, at most 40 exercises and 30 sets,
+ * and no exercise measured in distance (`isDistance`, EL-B13).
  */
-export function routineIssues(edit: RoutineEdit): RoutineIssue[] {
+export function routineIssues(edit: RoutineEdit, isDistance?: IsDistanceExercise): RoutineIssue[] {
   const out: RoutineIssue[] = [];
   const name = edit.name.trim();
   if (name.length === 0) out.push('Add a name');
   else if (name.length > ROUTINE_NAME_MAX) out.push('Keep it under 120 characters');
   if (edit.exercises.length === 0) out.push('Add an exercise');
   if (edit.exercises.length > ROUTINE_MAX_EXERCISES) out.push('Up to 40 exercises');
+  if (isDistance !== undefined && edit.exercises.some((e) => isDistance(e.exerciseId))) out.push('Can’t save distance yet');
   const sets = edit.exercises.flatMap((e) => e.setTemplates);
   if (edit.exercises.some((e) => e.setTemplates.length === 0)) out.push('Add at least one set.');
   if (sets.some((t) => t.targetReps !== null && t.targetReps.min > t.targetReps.max)) out.push('Reps: the first number must be the smaller one.');
@@ -97,9 +107,11 @@ export function createRoutine(input: {
   opId: string;
   at: ZonedTimestamp;
   isCompound: (exerciseId: string) => boolean;
+  /** Refuses distance slots (EL-B13). */
+  isDistance?: IsDistanceExercise;
   inRotation?: boolean;
 }): RoutineCreate {
-  const issue = routineIssues(input.edit)[0];
+  const issue = routineIssues(input.edit, input.isDistance)[0];
   if (issue !== undefined) return { kind: 'invalid', message: issue };
   const on = input.inRotation === true;
   return {
@@ -129,8 +141,8 @@ export function createRoutine(input: {
  * stays: its ID, version 1, opId, rotation choice, history link and coach
  * draft link. Saving from the editor makes it Ben's (as `editRoutine`).
  */
-export function withSaveEdit(made: Routine, edit: RoutineEdit, isCompound: (exerciseId: string) => boolean): RoutineCreate {
-  const issue = routineIssues(edit)[0];
+export function withSaveEdit(made: Routine, edit: RoutineEdit, isCompound: (exerciseId: string) => boolean, isDistance?: IsDistanceExercise): RoutineCreate {
+  const issue = routineIssues(edit, isDistance)[0];
   if (issue !== undefined) return { kind: 'invalid', message: issue };
   return {
     kind: 'write',
@@ -144,10 +156,18 @@ export function withSaveEdit(made: Routine, edit: RoutineEdit, isCompound: (exer
  * rotation, history link and tombstone are untouched. A retry of the same
  * save is a duplicate; an older `expectedVersion` is stale (rule 5).
  */
-export function editRoutine(current: Routine, edit: RoutineEdit, expectedVersion: number, opId: string, at: ZonedTimestamp, isCompound: (exerciseId: string) => boolean): RoutineChange {
+export function editRoutine(
+  current: Routine,
+  edit: RoutineEdit,
+  expectedVersion: number,
+  opId: string,
+  at: ZonedTimestamp,
+  isCompound: (exerciseId: string) => boolean,
+  isDistance?: IsDistanceExercise,
+): RoutineChange {
   if (current.lastOpId === opId) return { kind: 'duplicate', current };
   if (current.version !== expectedVersion) return { kind: 'stale', current };
-  const issue = routineIssues(edit)[0];
+  const issue = routineIssues(edit, isDistance)[0];
   if (issue !== undefined) return { kind: 'invalid', message: issue };
   return routineWrite(current, expectedVersion, opId, at, {
     name: edit.name.trim(),
