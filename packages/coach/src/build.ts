@@ -79,6 +79,36 @@ export interface BuildDeps {
   equipmentVersion: string;
 }
 
+/**
+ * Review r4 (PM, 13 Oct): the build context now rides on every general turn with a gym, so the usable
+ * list is capped. A turn where a build is in play (Ben asked, or is following one up) gets up to
+ * `BUILD_USABLE_CAP`; a turn that only offers the tool gets `OFFERED_USABLE_CAP`. Each entry is about
+ * 120 characters (about 30 tokens) of JSON, so the offered list is about 1.8k tokens; with the tool
+ * schema (about 600) and the offered instructions (about 300) a general turn grows by about 2.7k.
+ */
+export const BUILD_USABLE_CAP = 200;
+export const OFFERED_USABLE_CAP = 60;
+
+/**
+ * The first `cap` usable exercises, the `first` ones (the draft's, then Ben's routines') ahead of the
+ * rest, returned in the list's own order (by name). Pure.
+ */
+export function capUsable(usable: readonly UsableExercise[], cap: number, first: readonly string[] = []): UsableExercise[] {
+  if (usable.length <= cap) return [...usable];
+  const rank = new Map<string, number>();
+  first.forEach((id, i) => {
+    if (!rank.has(id)) rank.set(id, i);
+  });
+  const keep = new Set(
+    usable
+      .map((u, i) => ({ u, i, r: rank.get(u.catalogueId) ?? Number.MAX_SAFE_INTEGER }))
+      .sort((a, b) => a.r - b.r || a.i - b.i)
+      .slice(0, cap)
+      .map((x) => x.i),
+  );
+  return usable.filter((_, i) => keep.has(i));
+}
+
 /** The draft's ID for a first version: derived from the opId, so a replay finds the same row. */
 export const coachDraftIdFor = (opId: string): string => deriveId(`coach-draft:${opId}`);
 
@@ -178,6 +208,8 @@ const BUILD_RULES = [
   'Its `message` (at most 240 characters) says why this selection and order, citing only facts given. No praise, scores, recovery claims or diagnoses.',
   'Never say the workout was saved, scheduled or started: Ben opens it, starts it or saves it himself. Then reply in one short sentence.',
   'If `propose_workout` is refused, say in one short sentence that it was not built and why; never say it is ready or in the app.',
+  // Review r4 S2: a build turn can say so too, not only a turn without the tool.
+  'It builds one session. Multi-week programmes and weekly plans are not available yet: if Ben asks for one, say so plainly.',
 ];
 
 /** Instructions added to a turn that offers `propose_workout` (§7 coach message rules, BD1, BD15). */
@@ -185,6 +217,17 @@ export const BUILD_INSTRUCTIONS = [
   'Ben asked for a workout in the app. Call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable. Never write the workout out as text in `reply`: a plan in text is not in the app.',
   'If he is agreeing to a session you described earlier in this thread, build that session: the same exercises (or the closest in build.usable), sets and reps.',
   'To change the draft in context, call `propose_workout` with the whole new version.',
+  ...BUILD_RULES,
+].join('\n');
+
+/**
+ * Review r4 (PM, 13 Oct, pending Ben's confirmation): every general turn with a gym offers
+ * `propose_workout`, never forced unless Ben's words are an unambiguous build request
+ * (`forcesBuild`). The model decides from his words; the result is only a draft (BD12, BD15).
+ */
+export const OFFERED_BUILD_INSTRUCTIONS = [
+  '`propose_workout` builds one workout session in the app as a draft Ben opens, starts or saves himself. Use it only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app. Never use it for pain or soreness, advice, questions about his history, or multi-week plans. If he asks for a session and mentions pain or soreness, ask about that first and build only once he says to.',
+  'If you describe a session he might want in the app, end by asking exactly: "Want me to build it in the app?" Never say a workout is built, added, saved or ready unless `propose_workout` succeeded this turn. Do not say the app cannot build workouts.',
   ...BUILD_RULES,
 ].join('\n');
 

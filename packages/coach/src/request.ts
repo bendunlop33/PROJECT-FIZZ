@@ -637,12 +637,12 @@ const BUILD_PLACE = new RegExp(
 /** Review r2 B2: "can you do a push session for me" ("do" with "for me" after the noun). */
 const BUILD_DO_FOR = new RegExp(`^do (?:${NEW_DET} )+.{0,60}?\\b${BUILD_NOUN}s? for (?:me|us)\\b`);
 /**
- * Review r3 S5: "build me something" (a strong verb), "make me something for today", "make me
- * something for push today": "something" is a workout after a build verb with a day or a focus.
+ * Review r3 S5: "build me something", "design me something for today": a strong build verb and
+ * "something", the whole message. Review r4 B1 (PM, 13 Oct): "give/make/sort me something … today"
+ * is gone: "give me something for my sore shoulder today" is a pain question, not a workout. Those
+ * turns still have `propose_workout` offered (never forced); the model reads his words.
  */
-const BUILD_SOMETHING = new RegExp(
-  `^(?:(?:build|create|design|put together|throw together|whip up|knock up|program|programme|sort) (?:me|us) (?:something|a thing)(?: (?:quick|short|new|good|decent))?(?: (?:for (?:today|tonight)|today|tonight|to do(?: today| tonight)?|for (?:the )?gym))?$|(?:make|give|build|create|design|sort|plan|put together|throw together|whip up) (?:me|us) (?:something|a thing)\\b.{0,40}?\\b(?:for (?:today|tonight)|today|tonight|${FOCUS_RUN})\\b)`,
-);
+const BUILD_SOMETHING = /^(?:build|create|design|put together|throw together|whip up|knock up|program|programme) (?:me|us) (?:something|a thing)(?: (?:quick|short|new|good|decent))?(?: (?:for (?:today|tonight)|today|tonight|to do(?: today| tonight)?|for (?:the )?gym))?$/;
 /** Review r3 S5: "push day today, can you sort it": a focus and a day, then "sort it" (the whole message). */
 const BUILD_SORT_IT = new RegExp(`^${FOCUS_RUN} (?:day|session|workout)(?: (?:today|tonight))?,? (?:(?:can|could|would) you |please )?(?:sort|build|make|do|plan) (?:it|that|one|me one|me out|me something)(?: (?:for me|please|out))*$`);
 /** "push and legs" inside one request: joined before the clause split reads "and" as a new clause (build 131). */
@@ -656,11 +656,22 @@ const BUILD_LATER = /\b(?:programme(?! (?:me|us)\b)|program(?! (?:me|us)\b)|prog
  * the session"), a read of Ben's records ("a summary of my last session") or advice ("some tips
  * for leg day"), or a day without training ("a rest day").
  */
+/**
+ * Review r4 S2: more than one session ("a workout plan for this week", "a workout for each day this
+ * week", "sessions for this week"). Multi-week and weekly plans aren't available yet (§10).
+ */
+const BUILD_MULTI = /\b(?:(?:each|every|per) (?:day|week)|(?:workouts|sessions|days)\b.{0,40}\b(?:this|next) week|(?:plan|schedule)\b.{0,30}\b(?:this|next) week|(?:this|next) week'?s (?:workouts|sessions|plan|schedule)|\d+ (?:days|sessions|workouts) a week)\b/;
+
+/** Ben's words ask for a programme, a week or more of sessions (review r4 S2): never forced to one session. */
+export function multiWeekScope(text: string): boolean {
+  const t = lower(text);
+  return BUILD_LATER.test(t) || BUILD_MULTI.test(t);
+}
 const BUILD_NOT = /\b(?:easier|lighter|harder|heavier|less intense|more intense|rest of|summary|recap|review|numbers|stats|tips|advice|ideas?|feedback|breakdown|rest day|off day|day off|recovery day)\b/;
 
 function buildIn(clause: string): boolean {
   const c = clause.replace(POLITE, '');
-  if (BUILD_LATER.test(c) || BUILD_NOT.test(c) || isOpinionQuestion(c)) return false;
+  if (BUILD_LATER.test(c) || BUILD_MULTI.test(c) || BUILD_NOT.test(c) || isOpinionQuestion(c)) return false;
   const body = ASK_PREFIX.exec(c)?.[1] ?? c;
   return BUILD_DIRECT.test(body) || BUILD_WANT.test(c) || BUILD_CAN_I.test(c) || BUILD_FOCUS.test(body) || BUILD_PLEASE.test(c) || BUILD_PLACE.test(body) || BUILD_DO_FOR.test(body) || BUILD_SOMETHING.test(body);
 }

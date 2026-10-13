@@ -1,6 +1,6 @@
 import { setNumbersText } from '@fizz/domain';
 import type { HiddenLine } from '@fizz/schemas';
-import { BUILD_ASK_LINE, claimsNoBuildTool, claimsWorkoutBuilt } from './build-ask';
+import { BUILD_ASK_LINE, BUILD_OFFER_LINE, claimsNoBuildTool, claimsWorkoutBuilt } from './build-ask';
 import { checkReplyClaims, isChangeClaim, type TurnLedger } from './claims';
 import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
@@ -184,11 +184,18 @@ export interface ReplyFilterOptions {
    */
   noBuildToolLine?: boolean;
   /**
-   * Review r2 S3: Ben asked for a build this turn (`propose_workout` offered). A refusal that names
-   * no workout ("I can't do that in the app", "I don't have a tool for that") is then the same
-   * false claim. Only read with `noBuildToolLine`.
+   * Review r2 S3: Ben asked for a build this turn, or is following one up (a build in play). A refusal
+   * that names no workout ("I can't do that in the app", "I don't have a tool for that") is then the
+   * same false claim, and short done-claims ("On it!", "It's saved") are read as claims about a
+   * workout (review r4 S1). Only read with `noBuildToolLine`.
    */
   buildAsked?: boolean;
+  /**
+   * Review r4 S5: `propose_workout` was offered on this turn. A hidden "can't build" is then replaced
+   * by the fixed offer (`BUILD_OFFER_LINE`), and a hidden false promise is only dropped. Without the
+   * tool, a hidden promise is replaced by the offer and a "can't build" by `BUILD_ASK_LINE`.
+   */
+  toolOffered?: boolean;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
@@ -212,20 +219,22 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     // Build 131: on a general turn where the app can build one, "I can't build workouts here" is false.
     // The sentence is hidden (listed in Why?) and the reply says, once, what works instead.
     const draftThisTurn = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout');
+    const toolOffered = options.toolOffered === true;
     if (options.noBuildToolLine === true && !draftThisTurn && claimsNoBuildTool(tokens.plainText, { generic: options.buildAsked === true })) {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_BUILD_TOOL_DETAIL });
-      if (!askLineShown) out.push({ kind: 'sentence', text: BUILD_ASK_LINE });
+      if (!askLineShown) out.push({ kind: 'sentence', text: toolOffered ? BUILD_OFFER_LINE : BUILD_ASK_LINE });
       askLineShown = true;
       for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
       return out;
     }
-    // Review r3 B1: with no saved draft this turn (no tool, or `propose_workout` refused), "I'll set that up",
-    // "Let me put that in the app" and "It's ready in your workouts" are false. Hidden; on a turn without
-    // the tool the reply says, once, what works instead. A refused build's card already says what happened.
+    // Review r3 B1, r4 B2/S1: with no saved draft this turn (no tool, the tool not used, or `propose_workout`
+    // refused), "I'll set that up for you" and "It's ready in your workouts" are false. Hidden. Only on a
+    // turn without the tool does the reply ask, once, "Want me to build it in the app?"; with the tool the
+    // false claim is just dropped, and a refused build's card already says what happened.
     const draftSaved = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout' && e.record.status === 'committed' && e.record.undoneBy === null);
-    if (options.noBuildToolLine === true && !draftSaved && actions.length === 0 && claimsWorkoutBuilt(tokens.plainText)) {
+    if (options.noBuildToolLine === true && !draftSaved && actions.length === 0 && claimsWorkoutBuilt(tokens.plainText, { inPlay: options.buildAsked === true })) {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_DRAFT_BUILT_DETAIL });
-      if (!askLineShown && options.buildAsked !== true && !draftThisTurn) out.push({ kind: 'sentence', text: BUILD_ASK_LINE });
+      if (!askLineShown && !toolOffered && !draftThisTurn) out.push({ kind: 'sentence', text: BUILD_OFFER_LINE });
       askLineShown = true;
       return out;
     }

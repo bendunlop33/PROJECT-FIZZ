@@ -16,8 +16,16 @@ import {
   claimsWorkoutBuilt,
   createReplyFilter,
   NO_BUILD_TOOL_INSTRUCTIONS,
+  BUILD_OFFER_LINE,
   retriesBuild,
   describesWorkoutPlan,
+  forcesBuild,
+  multiWeekScope,
+  BUILD_INSTRUCTIONS,
+  OFFERED_BUILD_INSTRUCTIONS,
+  OFFER_REPLY_BUILD_INSTRUCTIONS,
+  capUsable,
+  refusedBuildActionIds,
   gateFor,
   offersToBuild,
   requestHas,
@@ -136,7 +144,6 @@ describe('build requests in a general turn (diagnosis table)', () => {
     'make me a 45 min push session at the gym this week',
     'build me a workout based on what I did last week',
     'build me something for today',
-    'make me something for push today',
     'what should I do today? build me something',
     'need a quick 30 min workout',
     'can you sort me a push session',
@@ -325,7 +332,6 @@ describe('follow-ups after the coach described a session in text', () => {
   const AFTER_OFFER = [
     ...ACCEPT,
     'ok',
-    'ok thanks',
     'yes, 45 mins',
     'yes but 45 mins',
     'yes without dips',
@@ -538,6 +544,7 @@ describe('"I can’t build workouts" on a general turn where the app can (build 
 
 describe('review r3 B1: no promise or done-claim without a saved draft', () => {
   const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
+  // Explicit claims (review r4 B2): a workout noun, or a pronoun with "for you" or a place. Hidden on any turn that can build.
   const PROMISES = [
     "Okay, I'll set that up for you.",
     'Let me put that in the app.',
@@ -546,14 +553,17 @@ describe('review r3 B1: no promise or done-claim without a saved draft', () => {
     'You should see it in the app shortly.',
     "Sure, I'll set that up for you.",
     "I've added it to your workouts.",
-    'Building it now.',
     'Your push session is in the app.',
-    'Check your Workouts tab.',
     "I'm setting that up now.",
-    "It's set up for you.",
   ];
   it.each(PROMISES)('%s → a claim', (s) => {
     expect(claimsWorkoutBuilt(s)).toBe(true);
+  });
+  // Review r4 B2/S1: claims only when a build is in play (Ben asked, or is following one up).
+  const IN_PLAY = ['Building it now.', 'Check your Workouts tab.', "It's set up for you."];
+  it.each(IN_PLAY)('%s → a claim only with a build in play', (s) => {
+    expect(claimsWorkoutBuilt(s)).toBe(false);
+    expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(true);
   });
 
   const NOT_CLAIMS = [
@@ -572,21 +582,29 @@ describe('review r3 B1: no promise or done-claim without a saved draft', () => {
   ];
   it.each(NOT_CLAIMS)('%s → not a claim', (s) => {
     expect(claimsWorkoutBuilt(s)).toBe(false);
+    expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(false);
   });
 
-  it.each(PROMISES)('a no-tool general turn with a build available never shows "%s"', (s) => {
+  it.each(PROMISES)('a no-tool general turn with a build available never shows "%s"; it asks the fixed offer once', (s) => {
     const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true });
     const items = [...f.push(`${s} Push first, then legs. `), ...f.end(true)];
     const shown = items.map((i) => (i.kind === 'sentence' ? i.text : ''));
     expect(shown).not.toContain(s);
-    expect(shown).toEqual([BUILD_ASK_LINE, 'Push first, then legs.']);
+    expect(shown).toEqual([BUILD_OFFER_LINE, 'Push first, then legs.']);
     expect(f.hiddenLines.map((h) => h.reason)).toEqual(['no_action']);
     expect(f.note()?.text).toBe('Nothing changed · 1 line hidden');
   });
 
-  it.each(PROMISES)('a build turn whose propose_workout was refused never shows "%s"', (s) => {
+  it.each([...PROMISES, ...IN_PLAY])('review r4 (PM): with the tool offered but not used, "%s" is just dropped (build in play)', (s) => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true });
+    const items = [...f.push(`${s} Push first, then legs. `), ...f.end(true)];
+    expect(items.map((i) => (i.kind === 'sentence' ? i.text : ''))).toEqual(['Push first, then legs.']);
+    expect(f.hiddenLines.map((h) => h.detail)).toEqual(['No workout was built.']);
+  });
+
+  it.each([...PROMISES, ...IN_PLAY])('a build turn whose propose_workout was refused never shows "%s"', (s) => {
     const refused = { ref: 'a1', origin: 'this_turn' as const, record: { status: 'rejected', undoneBy: null, detail: { kind: 'build_workout' } } as unknown as ActionRecord };
-    const f = createReplyFilter({ ledger: () => ({ turnId: 't', entries: [refused], knownExerciseNames: [] }), surface: 'sheet', noBuildToolLine: true, buildAsked: true });
+    const f = createReplyFilter({ ledger: () => ({ turnId: 't', entries: [refused], knownExerciseNames: [] }), surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true });
     const items = [...f.push(`${s} `), ...f.end(true)];
     expect(items.map((i) => (i.kind === 'sentence' ? i.text : ''))).toEqual([]);
     expect(f.hiddenLines).toHaveLength(1);
@@ -706,5 +724,235 @@ describe('review r3 S4: detector gaps', () => {
     expect(describesWorkoutPlan('Dips — 3 × AMRAP. Plank 3 × 45 s.')).toBe(true);
     expect(describesWorkoutPlan('Bench 3 × 8. Plank 3 × 45s.')).toBe(true);
     expect(describesWorkoutPlan('Plank 3 × 45 s.')).toBe(false);
+  });
+});
+
+// ---------- Review r4 (PM decision 13 Oct, pending Ben's confirmation) ----------
+
+const offered = (text: string, kind: 'general' | 'workout' = 'general'): boolean =>
+  buildTurnRegistry(gateFor({ kind, input: words(text), previousOffer: null, structuralSignals: [], buildOpen: true })).tools.some((t) => t.name === 'propose_workout');
+
+describe('review r4: propose_workout offered on every general turn with a gym, forced only on an explicit ask', () => {
+  it.each(['how is my bench going?', 'where can I see my bench from Tuesday?', 'my shoulder hurts', 'what should I do today', 'i want it in the app', 'can you not just add it'])(
+    '%s: offered (buildOpen), never forced',
+    (t) => {
+      expect(offered(t)).toBe(true);
+      expect(forcesBuild(t)).toBe(false);
+    },
+  );
+  it('not in a workout turn, and not without a gym (buildOpen absent)', () => {
+    expect(offered('make me a push session', 'workout')).toBe(false);
+    expect(opens('how is my bench going?')).toBe(false);
+  });
+  it('a chip never opens it through buildOpen', () => {
+    const g = gateFor({ kind: 'general', input: { kind: 'chip', chip: 'too_hard' }, previousOffer: null, structuralSignals: [], buildOpen: true });
+    expect(buildTurnRegistry(g).tools.map((t) => t.name)).not.toContain('propose_workout');
+  });
+  it('buildOpen alone is not Ben asking for a change (no "Nothing changed" line from it)', () => {
+    expect(gateFor({ kind: 'general', input: words('how is my bench going?'), previousOffer: null, structuralSignals: [], buildOpen: true }).benAskedForChange).toBe(false);
+  });
+
+  it.each(['Can you make me a push session with split squats and calf raises', 'build me a 45 minute push workout', 'plan me a leg session', 'make me a push session', 'build me something for today'])('%s: forced', (t) => {
+    expect(forcesBuild(t)).toBe(true);
+  });
+  it.each(['make me a push session, my shoulder is sore', 'build me a leg workout but my knee hurts', 'make me a push session that is easy on my sore elbow'])('%s: a pain word, never forced (rule 9)', (t) => {
+    expect(forcesBuild(t)).toBe(false);
+  });
+  it('a change to the draft in context (BD16) is forced; with a pain word it is not', () => {
+    expect(forcesBuild('make it shorter', { draftInContext: true })).toBe(true);
+    expect(forcesBuild('make it shorter')).toBe(false);
+    expect(forcesBuild('drop the dips, my shoulder hurts', { draftInContext: true })).toBe(false);
+  });
+
+  // Review r4 S3 first-turn phrasings: no longer widened; the tool is offered and the model reads them.
+  it.each(['would you be able to make me a push session', 'any chance you could make me a push session', 'chuck together a push session for me', 'knock me up a push sesh', 'Push and legs today please', 'whats a good push session? can you make one'])(
+    '%s: offered, the model decides',
+    (t) => {
+      expect(offered(t)).toBe(true);
+    },
+  );
+
+  it('the offered instructions say when to use it and when never to', () => {
+    expect(OFFERED_BUILD_INSTRUCTIONS).toContain('Use it only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app');
+    expect(OFFERED_BUILD_INSTRUCTIONS).toContain('Never use it for pain or soreness, advice, questions about his history, or multi-week plans');
+    expect(OFFERED_BUILD_INSTRUCTIONS).toContain('Want me to build it in the app?');
+    const desc = buildTurnRegistry(gateFor({ kind: 'general', input: words('hi'), previousOffer: null, structuralSignals: [], buildOpen: true })).tools.find((t) => t.name === 'propose_workout')?.description ?? '';
+    expect(desc).toContain('only when Ben asks for a workout or session');
+    expect(desc).toContain('Never for pain or soreness, advice, his history, or multi-week plans');
+    expect(desc).toContain('It only makes a draft; Ben starts or saves it himself.');
+  });
+});
+
+describe('review r4 B1: a sore body part is never a build request', () => {
+  const PAIN_ASKS = [
+    'can you give me something for my sore shoulder today',
+    'give me something for my back pain today',
+    'give me something for my knee today',
+    'give me something to stretch my back today',
+    'give me something to do for my shoulder today, it hurts',
+    'make me something for dinner tonight',
+    'make me something to read about push today',
+  ];
+  it.each(PAIN_ASKS)('%s: not a build, never forced', (t) => {
+    expect(requestHas(classifyBenRequest(t, 'general'), 'build')).toBe(false);
+    expect(forcesBuild(t)).toBe(false);
+    expect(asksForBuild({ turnKind: 'general', text: t, draftInContext: false, followUp: null })).toBe(false);
+  });
+});
+
+describe('review r4 B2: history and advice sentences are never hidden', () => {
+  const ORDINARY = [
+    "It's in your workout history.",
+    "That's in your workouts from Tuesday.",
+    'You can see it in your workouts.',
+    'Look at your workout history for last week.',
+    'Check your workout log for the last bench.',
+    'Let me put it another way.',
+    'Let me make this simple.',
+    "I'll make it quick.",
+    'Let me get this straight.',
+    "I'll make that clear.",
+    "I'll get back to it.",
+    "I'll put it simply: rest more.",
+    'Adding a set this week would help.',
+    'Getting that extra rep is a good sign.',
+    'Making it to the gym three times is great.',
+    'Building it up slowly is the key.',
+    'Making this your top set is smart.',
+    'Fatigue should show up soon.',
+    'Your PR should show up in History now.',
+  ];
+  const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
+  it.each(ORDINARY)('%s: not a claim', (s) => {
+    expect(claimsWorkoutBuilt(s)).toBe(false);
+  });
+  // The build backstop adds nothing: the reply reads exactly as it does on a turn with no build at all
+  // (no hidden "No workout was built.", no inserted build line). Some of these are still hidden by the
+  // general change-claim check (claims.ts, CC9), which is not part of the build backstop.
+  it.each(ORDINARY)('%s: the build backstop leaves it as a no-build turn would (tool offered or not)', (s) => {
+    const plain = createReplyFilter({ ledger: empty, surface: 'sheet' });
+    const expected = [...plain.push(`${s} `), ...plain.end(true)];
+    for (const toolOffered of [false, true]) {
+      const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, toolOffered });
+      expect([...f.push(`${s} `), ...f.end(true)]).toEqual(expected);
+      expect(f.hiddenLines.map((h) => h.detail)).toEqual(plain.hiddenLines.map((h) => h.detail));
+      expect(f.hiddenLines.map((h) => h.detail)).not.toContain('No workout was built.');
+    }
+  });
+  // Even with a build in play, the ones that never read as a claim about a new workout stay.
+  it.each(ORDINARY.filter((s) => s !== 'You can see it in your workouts.'))('%s: not a claim with a build in play either', (s) => {
+    expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(false);
+  });
+});
+
+describe('review r4 S1: done-claims about a workout, with a build in play', () => {
+  const DONE = ["Here you go, it's saved.", "It's been added.", 'Okay, adding that now.', "I've set it up.", 'On it!', 'Coming right up.', 'Done! Open it from Workouts when you are ready.'];
+  const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
+  it.each(DONE)('%s: a claim with a build in play, ordinary words elsewhere', (s) => {
+    expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(true);
+    expect(claimsWorkoutBuilt(s)).toBe(false);
+  });
+  it.each(DONE)('%s: hidden (just dropped) on a build turn with the tool and no draft', (s) => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true });
+    const items = [...f.push(`${s} Bench first. `), ...f.end(true)];
+    expect(items).toEqual([{ kind: 'sentence', text: 'Bench first.' }]);
+    expect(f.hiddenLines.length).toBeGreaterThan(0);
+  });
+  it('without the tool, a hidden claim is replaced once by "Want me to build it in the app?"', () => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, buildAsked: true });
+    const items = [...f.push("On it! It's been added. Bench first. "), ...f.end(true)];
+    expect(items).toEqual([
+      { kind: 'sentence', text: 'Want me to build it in the app?' },
+      { kind: 'sentence', text: 'Bench first.' },
+    ]);
+    expect(BUILD_OFFER_LINE).toBe('Want me to build it in the app?');
+    expect(offersToBuild(BUILD_OFFER_LINE)).toBe(true);
+  });
+});
+
+describe('review r4 S2: a week of sessions is never forced into one', () => {
+  it.each(['make me a workout plan for this week', 'make me a workout for each day this week', 'make me sessions for this week', 'build me 4 workouts a week'])('%s: not a build, not forced', (t) => {
+    expect(multiWeekScope(t)).toBe(true);
+    expect(requestHas(classifyBenRequest(t, 'general'), 'build')).toBe(false);
+    expect(forcesBuild(t)).toBe(false);
+  });
+  it.each(['Could you make me a pull workout for this week', 'make me a 45 min push session at the gym this week', 'make me a pull workout for next week'])('%s: one session, still a build', (t) => {
+    expect(multiWeekScope(t)).toBe(false);
+    expect(forcesBuild(t)).toBe(true);
+  });
+  it('every build prompt says programmes and weekly plans are not available yet', () => {
+    for (const i of [BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS]) expect(i).toContain('Multi-week programmes and weekly plans are not available yet');
+  });
+});
+
+describe('review r4 S3: a laugh or a "maybe" with a yes still builds', () => {
+  const offerThread = (): CoachMessage[] => [ben('what should I do for push today'), coach('Bench press 3 × 6–8, overhead press 3 × 8–10, dips 3 × 8–12. Want me to build it in the app?')];
+  const askedThread = (): CoachMessage[] => [ben('Can you make me a push session'), coach(PLAN)];
+  it.each(['yes lol', 'haha yes go on', 'yes, maybe add curls', 'lol yes', 'yes haha'])('%s → clear after an offer and after his own unbuilt request', (t) => {
+    expect(buildFollowUpIn(offerThread(), t)?.strength).toBe('clear');
+    expect(buildFollowUpIn(askedThread(), t)?.strength).toBe('clear');
+  });
+  it.each(['lol', 'haha', 'maybe', 'maybe later'])('%s → still no build', (t) => {
+    expect(buildFollowUpIn(offerThread(), t)).toBeNull();
+  });
+});
+
+describe('review r4 S4: a refused build can be retried on the next turn', () => {
+  const thread = (): CoachMessage[] => [ben('Can you make me a push session'), coach("It wasn't built: none of those fit this gym.", ['a1'])];
+  it.each(['try again', 'yes', 'go on then', 'try it again'])('%s → clear when a1 was a refused build', (t) => {
+    const f = buildFollowUpIn(thread(), t, new Set(['a1']));
+    expect(f?.strength).toBe('clear');
+    expect(f?.priorBenText).toBe('Can you make me a push session');
+  });
+  it('a committed draft (a1 not refused) still ends the look-back', () => {
+    expect(buildFollowUpIn(thread(), 'try again')).toBeNull();
+  });
+  it('the refused IDs come from the stored records of the last coach messages', async () => {
+    const t = thread();
+    const record = (actionId: string, status: string, kind = 'build_workout') => ({ actionId, status, detail: { kind } }) as unknown as ActionRecord;
+    const ids = await refusedBuildActionIds(t, (turnId) => Promise.resolve(turnId === t[1]?.turnId ? [record('a1', 'rejected'), record('a2', 'committed'), record('a3', 'stale'), record('a4', 'rejected', 'save_memory')] : []));
+    expect([...ids]).toEqual(['a1', 'a3']);
+  });
+});
+
+describe('review r4 S5: a "can\'t build" on a turn with the tool offered becomes the offer, never the ask line', () => {
+  const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
+  it('loose or offered turn', () => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, toolOffered: true });
+    const items = [...f.push("I can't build workouts here. Push first. "), ...f.end(true)];
+    expect(items).toEqual([
+      { kind: 'sentence', text: BUILD_OFFER_LINE },
+      { kind: 'sentence', text: 'Push first.' },
+    ]);
+  });
+});
+
+describe('review r4 nits', () => {
+  const offerThread = (): CoachMessage[] => [ben('what should I do for push today'), coach('Bench press 3 × 6–8, overhead press 3 × 8–10. Want me to build it in the app?')];
+  it.each(['ok thanks', 'okay thank you', 'ok cheers'])('N1: %s after an offer is a sign-off, not a build', (t) => {
+    expect(buildFollowUp(t)).toBeNull();
+    expect(buildFollowUpIn(offerThread(), t)).toBeNull();
+  });
+  it('N1: a plain "ok" after an offer still builds', () => {
+    expect(buildFollowUpIn(offerThread(), 'ok')?.strength).toBe('clear');
+  });
+  it('N2: a bare "try that" after his own unbuilt request is not a retry; after a refusal it is', () => {
+    expect(buildFollowUpIn([ben('Can you make me a push session'), coach(PLAN)], 'try that')).toBeNull();
+    expect(buildFollowUpIn([ben('Can you make me a push session'), coach(PLAN)], 'try that again')?.strength).toBe('clear');
+    expect(buildFollowUpIn([ben('Can you make me a push session'), coach(PLAN), ben('add it'), coach(BUILD_ASK_LINE)], 'try that')?.strength).toBe('clear');
+  });
+  it('N3: "Sorry, that\'s outside what I can do here." is a generic no-build claim', () => {
+    expect(claimsNoBuildTool("Sorry, that's outside what I can do here.", { generic: true })).toBe(true);
+    expect(claimsNoBuildTool("Sorry, that's outside what I can do here.")).toBe(false);
+  });
+});
+
+describe('review r4: the usable list is capped, Ben\'s own exercises first', () => {
+  const u = (id: string) => ({ catalogueId: id, name: id, equipment: 'Barbell', measured: 'reps' as const });
+  it('keeps the list under the cap, in its own order, with the first ones kept', () => {
+    const list = ['a', 'b', 'c', 'd', 'e'].map(u);
+    expect(capUsable(list, 10)).toEqual(list);
+    expect(capUsable(list, 2).map((x) => x.catalogueId)).toEqual(['a', 'b']);
+    expect(capUsable(list, 2, ['e', 'c']).map((x) => x.catalogueId)).toEqual(['c', 'e']);
   });
 });
