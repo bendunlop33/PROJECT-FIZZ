@@ -115,6 +115,34 @@ describe('a blank unit cell on one loaded row (review r2 S1)', () => {
   });
 });
 
+describe('a unit column assigned after `Weight unit` was answered (review r3 N8)', () => {
+  it('the earlier answer is cleared: a blank unit cell is `No weight unit`, not the old answer', async () => {
+    const text = layoutFixture('liftosaur-like.synthetic.csv');
+    const [header = '', ...base] = text.trim().split('\n');
+    const rows = Array.from({ length: 40 }, (_, i) => {
+      const cells = (base[i % base.length] ?? '').split(',');
+      if (i + 2 === 12) cells[14] = '';
+      return cells.join(',');
+    });
+    const { s } = await launch([answerWith(JSON.parse(layoutFixture('liftosaur-like.spec.json')))]);
+    const { layoutId, v } = await readAndCheck(s, 'liftosaur.csv', `${header}\n${rows.join('\n')}\n`);
+    // Ben turns the unit column off, answers `lb`, then gives the column back its role.
+    const off = s.importLayouts.updateImportLayout(layoutId, { kind: 'role', column: 14, role: 'not_imported' }, v.layoutVersion);
+    if (!off.ok) throw new Error(off.reason);
+    expect(off.review.questions.map((q) => q.kind)).toContain('unit');
+    const lb = s.importLayouts.updateImportLayout(layoutId, { kind: 'unit', answer: 'lb' }, off.layoutVersion);
+    if (!lb.ok) throw new Error(lb.reason);
+    const back = s.importLayouts.updateImportLayout(layoutId, { kind: 'role', column: 14, role: 'unit' }, lb.layoutVersion);
+    if (!back.ok) throw new Error(back.reason);
+    expect(back.review.questions.map((q) => q.kind)).not.toContain('unit');
+    expect(back.review.dryRun.notRead).toEqual([expect.objectContaining({ line: 12, problem: 'No weight unit' })]);
+    // Undo brings Ben's answer back with the role.
+    const undo = s.importLayouts.updateImportLayout(layoutId, { kind: 'undo' }, back.layoutVersion);
+    if (!undo.ok) throw new Error(undo.reason);
+    expect(undo.review.unit).toMatchObject({ unit: 'lb', source: 'answer' });
+  });
+});
+
 describe('a stale layout version at commit (check 53, review S3)', () => {
   it('a preview made before the layout was changed on Check the layout commits nothing', async () => {
     const STRONG = layoutFixture('strong-new-kg.synthetic.csv');

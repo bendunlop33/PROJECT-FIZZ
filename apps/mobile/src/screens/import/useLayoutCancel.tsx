@@ -20,7 +20,7 @@ export function useLayoutCancel(layoutId: string): void {
   useEffect(
     () =>
       navigation.addListener('beforeRemove', (e) => {
-        void leaveLayoutScreen(services.importLayouts, layoutId, e.data.action);
+        leaveLayoutScreen(services.importLayouts, layoutId, e.data.action).catch(() => undefined);
       }),
     [navigation, services, layoutId],
   );

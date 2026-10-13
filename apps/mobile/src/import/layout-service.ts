@@ -585,7 +585,8 @@ export function createLayoutService(deps: LayoutServiceDeps) {
           displaced = moved.map((c) => ({ column: c, header: s.table.header[c] ?? '' }));
           const roles = { ...a.roles, [String(change.column)]: change.role };
           for (const c of moved) roles[String(c)] = 'not_imported';
-          next = { ...a, roles };
+          // A unit column says the unit row by row: a file-level answer from before doesn't fill its blank cells (review r3 N8).
+          next = change.role === 'unit' ? { ...a, roles, unit: null } : { ...a, roles };
           break;
         }
         case 'confirm': {
