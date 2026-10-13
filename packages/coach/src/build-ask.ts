@@ -440,8 +440,10 @@ export const BUILD_OFFER_LINE = 'Want me to build it in the app?';
  * The place a new workout went: the app, the Workouts tab, drafts. Review r4 B2: never "in your
  * workout history", "in your workouts from Tuesday", "your workout log for last week".
  */
+/** Review r6 B2: a place followed, in the same clause, by History or a log ("in the app under History", "in the app's History tab"). */
+const PLACE_NOT_HISTORY = "(?![^.?!]{0,25}\\b(?:history|log|logs|logbook|calendar)\\b)";
 const BUILT_PLACE =
-  "(?:(?:in|into|to|on|onto|under) (?:the |this |your |my )?(?:app|workouts?(?: tab| list| page)?|routines?|library|drafts?)\\b(?![- ](?:history|log|logs|from|last|on (?:mon|tue|wed|thu|fri|sat|sun)|for (?:last|the last))\\b))";
+  `(?:(?:in|into|to|on|onto|under) (?:the |this |your |my )?(?:app|workouts?(?: tab| list| page)?|routines?|library|drafts?)\\b(?![- ](?:history|log|logs|from|last|on (?:mon|tue|wed|thu|fri|sat|sun)|for (?:last|the last))\\b)${PLACE_NOT_HISTORY})`;
 const BUILT_PRONOUN = '(?:it|that|this|them|one|the (?:workout|session|draft|routine)|your (?:workout|session|draft|routine))';
 /** A pronoun's own tail that makes it a workout in the app (review r4 B2): never "make it quick", "put it simply". */
 const PRONOUN_TAIL = `(?:up )?(?:for you|right now|now|together|${BUILT_PLACE})`;
@@ -456,14 +458,25 @@ const PRONOUN_SUBJECT = "(?:it's|it is|its|that's|that is|thats|this is|they're|
 const NOUN_SUBJECT = `(?:${WORKOUT_OBJECT}(?: is|'s| has been| are|'s been))`;
 const DONE_STATE = '(?:ready|built|created|set up|loaded|waiting|added|saved|made|done|sorted)';
 /**
+ * Review r6 B2: the subject of an explicit (every-turn) noun claim reads as a new workout: at the start
+ * of the sentence (after "Done,", "OK,"), an indefinite article, or "your/the" with a focus ("Your pull
+ * session"). Never a past one ("Last week's pull session", "Tuesday's leg session", "Your last
+ * session", "Your session"): those are history answers. A routine is left out (Ben's saved routines
+ * really are in Workouts).
+ */
+const NEW_SUBJECT =
+  "^(?:(?:ok|okay|sure|right|great|cool|done|all done|yes|yep|perfect|there you go|here you go|and|so),? )*(?:(?:a|an|another|one more|new|fresh)(?: (?:new|fresh|quick|short))?(?: " +
+  "(?:push|pull|legs?|leg day|upper|lower|upper body|lower body|full-body|full body|chest|back|arms?|shoulders?|\\d{1,3}[- ]?(?:min|minute)s?)){0,3}" +
+  "|(?:your|the)(?: (?:new|fresh|quick|short))?(?: (?:push|pull|legs?|leg day|upper|lower|upper body|lower body|full-body|full body|chest|back|arms?|shoulders?|\\d{1,3}[- ]?(?:min|minute)s?)){1,3}) " +
+  "(?:workout|session)(?: is|'s| has been|'s been)";
+/**
  * Review r5 B2: a workout noun as the subject reads as a claim only with a build-ish state. "done" and
  * "made" are left out ("Once your workout is done, stretch", "The session is made up of five exercises").
  */
-const SESSION_SUBJECT = `(?:${WORKOUT_OBJECT.replace('|routines?', '')}(?: is|'s| has been| are|'s been))`;
 const NOUN_DONE_STATE = '(?:ready|built|created|set up|loaded|waiting|added|saved|sorted)';
 /** Review r5 B2: the app itself or its Workouts tab, never "your routines", "History" or a log. */
 const APP_PLACE =
-  "(?:(?:in|into|to|on|onto|under) (?:the |this |your |my )?(?:app|workouts(?: tab| list| page)?|workout tab|drafts?)\\b(?![- ](?:history|log|logs|from|last|on (?:mon|tue|wed|thu|fri|sat|sun)|for (?:last|the last))\\b))";
+  `(?:(?:in|into|to|on|onto|under) (?:the |this |your |my )?(?:app|workouts(?: tab| list| page)?|workout tab|drafts?)\\b(?![- ](?:history|log|logs|from|last|on (?:mon|tue|wed|thu|fri|sat|sun)|for (?:last|the last))\\b)${PLACE_NOT_HISTORY})`;
 /** Not about a new workout: where a past one went ("saved in History", "in your log"). */
 const NOT_HISTORY = '(?![^.?!]{0,20}\\b(?:history|log|logs|logbook|calendar)\\b)';
 /**
@@ -490,10 +503,10 @@ const EXPLICIT_CLAIMS: readonly RegExp[] = [
   new RegExp(`\\b(?:i've|i have|ive|i)\\s+(?:just |now |already )?${BUILT_VERB_ED}(?: up)? ${BUILT_OBJECT}`),
   // Ready in a place: "It's ready in your workouts".
   new RegExp(`\\b${PRONOUN_SUBJECT}\\s+(?:now |all |already |been )*${DONE_STATE}\\b[^.?!]{0,30}?${BUILT_PLACE}`),
-  // A workout ready in the app: "Your session is saved in the app", "Your push session is ready in the Workouts tab."
-  new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already |been )*${NOUN_DONE_STATE}\\b[^.?!]{0,30}?${APP_PLACE}`),
-  // A workout in the app: "Your push session is in the app." Not a routine: Ben's saved routines really are in Workouts.
-  new RegExp(`\\b${SESSION_SUBJECT}\\s+(?:now |all |already )*${APP_PLACE}`),
+  // A new workout ready in the app: "Your push session is ready in the Workouts tab", "A new pull session is saved in the app."
+  new RegExp(`${NEW_SUBJECT}\\s+(?:now |all |already |been )*${NOUN_DONE_STATE}\\b[^.?!]{0,30}?${APP_PLACE}`),
+  // A new workout in the app: "Your push session is in the app." Not a routine: Ben's saved routines really are in Workouts.
+  new RegExp(`${NEW_SUBJECT}\\s+(?:now |all |already )*${APP_PLACE}`),
   // A promise of where to look: "You should see it in the app shortly", "You'll find it in Workouts".
   new RegExp(`\\byou(?:'ll| will| should| can now|'ll now)\\s+(?:now |soon )?(?:see|find|have)\\s+${BUILT_PRONOUN}\\b[^.?!]{0,20}?${BUILT_PLACE}`),
 ];
@@ -522,6 +535,12 @@ const IN_PLAY_CLAIMS: readonly RegExp[] = [
   /\b(?:open|start) (?:it|that|this|the (?:draft|workout|session)) (?:from|in) (?:the |your )?workouts?(?: tab)?\b/,
   /\b(?:check|look in|head to|go to) (?:your |the )?workouts (?:tab|list|page)\b/,
   new RegExp(`\\b(?:should|will) (?:appear|show up|pop up|be there)\\b[^.?!]{0,30}?${BUILT_PLACE}`),
+];
+/**
+ * Review r5 B2, r6 B2: a workout as the subject, read only with a build in play and never about a past
+ * one ("Last week's pull session is in your workouts", "Your last session is saved").
+ */
+const IN_PLAY_NOUN_CLAIMS: readonly RegExp[] = [
   // Review r5 B2 (moved from the explicit claims): a workout ready, no place ("Your push session is ready.").
   new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already |been )*${NOUN_DONE_STATE}\\b${NOT_HISTORY}(?! up of\\b)`),
   // A workout in a place: "Your push session is in the app."
@@ -529,6 +548,9 @@ const IN_PLAY_CLAIMS: readonly RegExp[] = [
   // A workout ready in a looser place: "Your session is saved in your routines."
   new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already |been )*${NOUN_DONE_STATE}\\b[^.?!]{0,30}?${BUILT_PLACE}`),
 ];
+/** Review r6 B2: a past workout as the subject ("Last week's", "Tuesday's", "Your last", "yesterday's", "finished"). */
+const PAST_WORKOUT =
+  /\b(?:last|previous|earlier|finished|completed|logged|yesterday's|(?:mon|tues|wednes|thurs|fri|satur|sun)day's|week's|night's|morning's|(?:mon|tue|wed|thu|fri|sat|sun)'s)(?: [a-z-]+){0,3} (?:workouts?|sessions?|routines?)\b/;
 /** Statements that are an offer or a true limit, never a claim: "I can build it if you like", "Ben saves it himself". */
 const NOT_BUILT_CLAIM = /\b(?:if you (?:like|want|fancy|'d like|would like)|let me know|say the word|just say|want me to|shall i|should i|you can (?:open|start|save)|you open|you start|you save|tap)\b|\b(?:can't|cannot|can not|couldn't|could not|wasn't|was not|isn't|is not|didn't|did not|won't|will not|not) /;
 
@@ -545,8 +567,12 @@ export function claimsWorkoutBuilt(sentence: string, opts: { inPlay?: boolean; d
   if (t === '' || /\?\s*$/.test(t) || OFFER_STATEMENT.test(t) || NOT_BUILT_CLAIM.test(t)) return false;
   // Review r5 B2: a draft already in the thread (or in context) really is in Workouts: "It's ready in
   // Workouts" and "Your push session is ready" are true. Only a claim of another new one counts.
-  if (opts.draftExists === true) return NEW_WORKOUT_CLAIMS.some((re) => re.test(t));
-  return EXPLICIT_CLAIMS.some((re) => re.test(t)) || (opts.inPlay === true && IN_PLAY_CLAIMS.some((re) => re.test(t)));
+  // Review r6 B1: only when no build is in play. On a turn where Ben asked for a new one (or is following
+  // one up) and nothing was saved, "It's ready in your Workouts tab" is the build-131 false claim again.
+  if (opts.draftExists === true && opts.inPlay !== true) return NEW_WORKOUT_CLAIMS.some((re) => re.test(t));
+  if (EXPLICIT_CLAIMS.some((re) => re.test(t))) return true;
+  if (opts.inPlay !== true) return false;
+  return IN_PLAY_CLAIMS.some((re) => re.test(t)) || (!PAST_WORKOUT.test(t) && IN_PLAY_NOUN_CLAIMS.some((re) => re.test(t)));
 }
 
 /**

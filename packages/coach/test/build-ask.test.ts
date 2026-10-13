@@ -1004,11 +1004,11 @@ describe('review r5 B2: advice, history and true draft sentences are never hidde
     }
   });
   it.each([...SENTENCES, 'Your push session is ready in Workouts.', "It's ready in your workouts.", "I've added it to your workouts."])(
-    '%s: shown on the turn after a draft was built (a draft in the thread), tool offered or not',
+    '%s: shown on the turn after a draft was built (a draft in the thread, no build in play), tool offered or not',
     (s) => {
-      for (const toolOffered of [false, true]) for (const buildAsked of [false, true]) {
-        expect(claimsWorkoutBuilt(s, { inPlay: buildAsked, draftExists: true })).toBe(false);
-        const r = run(s, { toolOffered, draftExists: true, buildAsked });
+      for (const toolOffered of [false, true]) {
+        expect(claimsWorkoutBuilt(s, { draftExists: true })).toBe(false);
+        const r = run(s, { toolOffered, draftExists: true, buildAsked: false });
         expect(r.hidden.map((h) => h.detail)).not.toContain('No workout was built.');
       }
     },
@@ -1020,9 +1020,12 @@ describe('review r5 B2: advice, history and true draft sentences are never hidde
     expect(r.items).toEqual([{ kind: 'sentence', text: 'Rows first.' }]);
   });
   it('with no draft, a session claimed in the app or its Workouts tab is still a claim everywhere', () => {
-    for (const s of ['Your push session is ready in Workouts.', 'Your session is saved in the app.', 'Your push session is in the app.', "It's ready in your workouts."]) {
+    for (const s of ['Your push session is ready in Workouts.', 'Your push session is saved in the app.', 'Your push session is in the app.', "It's ready in your workouts.", 'Done, your pull session is ready in the Workouts tab.', 'A new pull session is in the app.']) {
       expect(claimsWorkoutBuilt(s)).toBe(true);
     }
+    // Review r6 B2: "Your session" with no focus reads as Ben's own (history); a claim only with a build in play.
+    expect(claimsWorkoutBuilt('Your session is saved in the app.')).toBe(false);
+    expect(claimsWorkoutBuilt('Your session is saved in the app.', { inPlay: true })).toBe(true);
     // A saved routine really is in Workouts.
     expect(claimsWorkoutBuilt('Your push routine is in Workouts.')).toBe(false);
   });
@@ -1096,5 +1099,91 @@ describe('review r5 S3: more follow-ups that ask for it in the app', () => {
   });
   it('"can you not add it" alone (may mean "don\'t") is not a follow-up', () => {
     expect(buildFollowUp('can you not add it')).toBeNull();
+  });
+});
+
+describe('review r6 B1: a draft in the thread never turns the backstop off on a build turn', () => {
+  const CLAIMS = [
+    'Your pull session is ready in the Workouts tab.',
+    'Your pull session is in the app now.',
+    "It's ready in your Workouts tab.",
+    "You'll find it in Workouts.",
+    'Done, your pull session is ready in the Workouts tab.',
+    "I've added it to your workouts.",
+  ];
+  const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
+  const refused = { ref: 'a1', origin: 'this_turn' as const, record: { status: 'rejected', undoneBy: null, detail: { kind: 'build_workout' } } as unknown as ActionRecord };
+  it.each(CLAIMS)('%s: a claim with a build in play, draft in the thread or not', (s) => {
+    expect(claimsWorkoutBuilt(s, { inPlay: true, draftExists: true })).toBe(true);
+    expect(claimsWorkoutBuilt(s, { inPlay: true })).toBe(true);
+  });
+  it.each(CLAIMS)('%s: hidden on a build turn with a draft in the thread and no call', (s) => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true, draftExists: true });
+    const items = [...f.push(`${s} Rows first. `), ...f.end(true)];
+    expect(items.map((i) => (i.kind === 'sentence' ? i.text : ''))).toEqual(['Rows first.']);
+    expect(f.hiddenLines.map((h) => h.detail)).toEqual(['No workout was built.']);
+  });
+  it.each(CLAIMS)('%s: hidden beside a refused call, draft in the thread', (s) => {
+    const f = createReplyFilter({ ledger: () => ({ turnId: 't', entries: [refused], knownExerciseNames: [] }), surface: 'sheet', noBuildToolLine: true, buildAsked: true, toolOffered: true, draftExists: true });
+    const items = [...f.push(`${s} `), ...f.end(true)];
+    expect(items.filter((i) => i.kind === 'sentence')).toEqual([]);
+    expect(f.hiddenLines).toHaveLength(1);
+  });
+});
+
+describe('review r6 B2: history answers are never hidden on a general turn', () => {
+  const HISTORY = [
+    "Last week's pull session is in your workouts.",
+    "Tuesday's leg session is in your workouts list.",
+    'Your last session is saved in the app under History.',
+    "Your session is in the app's History tab.",
+    "It's saved in the app under History.",
+  ];
+  const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
+  it.each(HISTORY)('%s: not a claim, with or without a build in play', (s) => {
+    for (const inPlay of [false, true]) for (const draftExists of [false, true]) expect(claimsWorkoutBuilt(s, { inPlay, draftExists })).toBe(false);
+  });
+  it.each(HISTORY)('%s: the same output as with the backstop off, tool offered or not', (s) => {
+    for (const toolOffered of [false, true]) {
+      const off = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: false, toolOffered });
+      const on = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true, toolOffered });
+      const expected = [...off.push(`${s} `), ...off.end(true)];
+      expect([...on.push(`${s} `), ...on.end(true)]).toEqual(expected);
+      expect(on.hiddenLines).toEqual(off.hiddenLines);
+    }
+  });
+});
+
+describe('review r6 S2: plainly explicit build requests are forced', () => {
+  it.each([
+    'would you be able to make me a push session',
+    'could you be able to build me a pull workout',
+    'chuck together a push session for me',
+    'throw me together a leg session',
+    'whip me up a leg session',
+    'help me plan todays workout',
+    'make me something for today',
+    'Push and legs today please',
+  ])('%s → build, forced', (t) => {
+    expect(requestHas(classifyBenRequest(t, 'general'), 'build')).toBe(true);
+    expect(forcesBuild(t)).toBe(true);
+  });
+  it.each(['make me something for my sore shoulder today', 'push and legs today', 'help me with my back'])('%s → not forced', (t) => {
+    expect(forcesBuild(t)).toBe(false);
+  });
+});
+
+describe('review r6 S3: a body part Ben may be guarding is never read as a focus (rule 9)', () => {
+  it.each([
+    'make me a session avoiding back and shoulders',
+    'make me a back session, back and shoulder',
+    'make me a push session without shoulders and triceps',
+  ])('%s → not forced, pain unclear', (t) => {
+    expect(buildPainMention(t)).not.toBe('none');
+    expect(forcesBuild(t)).toBe(false);
+  });
+  it.each(['make me a pull session, back and biceps', 'make me a back and biceps session', 'make me a chest and back workout'])('%s → still forced', (t) => {
+    expect(buildPainMention(t)).toBe('none');
+    expect(forcesBuild(t)).toBe(true);
   });
 });

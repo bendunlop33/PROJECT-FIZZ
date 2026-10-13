@@ -610,6 +610,37 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(r.items.map((i) => (i.kind === 'sentence' ? i.text : ''))).toContain('Your push session is ready in Workouts.');
     expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
   });
+  it.each([
+    'Done, your pull session is ready in the Workouts tab.',
+    'Your pull session is in the app now.',
+    "It's ready in your Workouts tab.",
+    "You'll find it in Workouts.",
+  ])('review r6 B1: push draft built, then a text pull plan, then "add it" with no call: "%s" is never shown', async (claim) => {
+    const { s } = await benWithHistory();
+    const { result } = await buildPush(s);
+    const pull = 'Rows 3 × 8–10, pulldown 3 × 10–12, curls 2 × 12–15.';
+    model = new StepModel([() => replyWith(pull), () => replyWith(pull)]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: result.threadId, input: { kind: 'words', text: 'what would a pull session look like?', spoken: false }, turnId: h.ids() });
+    model = new StepModel([() => replyWith(`${claim} Rows first.`), () => replyWith(`${claim} Rows first.`)]);
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: result.threadId, input: { kind: 'words', text: 'add it', spoken: false }, turnId: h.ids() });
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('propose_workout');
+    expect(r.cards).toEqual([]);
+    const shown = r.items.flatMap((i) => (i.kind === 'sentence' ? [i.text] : []));
+    expect(shown).not.toContain(claim);
+    expect(shown.join(' ')).not.toMatch(/workouts tab|in the app now|find it in workouts/i);
+    expect(r.hiddenLines.map((x) => x.detail)).toContain('No workout was built.');
+    // Only the push draft exists.
+    expect((await s.coachDrafts.list()).length).toBe(1);
+  });
+  it('review r6 B2: "did my last session save?" gets its history answer, with no build line', async () => {
+    const { s } = await benWithHistory();
+    for (const answer of ["Last week's pull session is in your workouts.", 'Your last session is saved in the app under History.', "Your session is in the app's History tab."]) {
+      model = new StepModel([() => replyWith(answer)]);
+      const r = await ask(s, 'did my last session save?');
+      expect(r.items.map((i) => (i.kind === 'sentence' ? i.text : ''))).toContain(answer);
+      expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
+    }
+  });
   it('review r5 S1: "make me a back and biceps session" is forced and asks nothing about pain', async () => {
     const { s } = await benWithHistory();
     model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
