@@ -1,8 +1,8 @@
 import type { ImportMappingSpecV1, LayoutAnswers, LayoutRole, NotationAnswer, WeightUnit } from '@fizz/schemas';
 import { applyImportSpec, layoutContext, type LayoutOptions } from './apply-spec';
 import { readDateCell, slashFields, type DateOrder } from './dates';
-import { notationOptions, readNumber, readSetCell, type CellSet } from './notation';
-import { columnHasX, type RecordRead } from './read';
+import { hasAtLoad, notationOptions, readNumber, readSetCell, type CellSet } from './notation';
+import { columnHasX, type RecordRead, type WaitReason } from './read';
 import { hasTargetWord, headerUnitToken, unitOfToken } from './role-words';
 import { dateOrderOf, effectiveColumns, structureOf, type EffectiveColumn, type MarkerReading } from './roles';
 import { columnValues } from './sample';
@@ -76,6 +76,12 @@ export interface LayoutReview {
   enough: boolean;
   /** Records waiting for an answer. */
   pending: number;
+  /**
+   * Records waiting for something no question on the screen asks (a backstop:
+   * e.g. slash dates that no single day/month order reads). Never silent: the
+   * view says how many rows can't be read, and the primary stays off.
+   */
+  stuck: number;
   ready: boolean;
 }
 
@@ -130,6 +136,33 @@ export interface ReviewOptions extends LayoutOptions {
   newColumns?: readonly number[];
 }
 
+/**
+ * Whether the set cells carry their own loads: `100x8` in a `One set` or
+ * `All sets` column (either orientation gives a load), or `3x8 @ 100` in a
+ * `Sets and reps` column. Known before the notation is answered.
+ */
+export function loadsInCells(table: Pick<Table, 'records'>, s: ReturnType<typeof layoutContext>['structure']): boolean {
+  const xCols = [...s.oneSet, ...(s.allSets === null ? [] : [s.allSets])];
+  if (xCols.some((c) => columnHasX(table, c))) return true;
+  return s.setsReps !== null && columnValues(table, s.setsReps).some((v) => hasAtLoad(v));
+}
+
+/** Which question (or `Check`) a wait reason is answered by. */
+function asks(reason: WaitReason, questions: readonly LayoutQuestion[], checks: number): boolean {
+  switch (reason) {
+    case 'role':
+      return checks > 0;
+    case 'unit':
+      return questions.some((q) => q.kind === 'unit' && q.answer === null);
+    case 'date_order':
+      return questions.some((q) => q.kind === 'date_order' && q.answer === null);
+    case 'notation':
+      return questions.some((q) => q.kind === 'notation' && q.answer === null);
+    case 'marker':
+      return questions.some((q) => q.kind === 'marker' && (q.marker.state === 'check' || q.marker.state === 'question'));
+  }
+}
+
 /** The review of a layout: the spec (or a saved layout's) plus Ben's answers. */
 export function buildLayoutReview(table: Table, spec: ImportMappingSpecV1 | null, answers: LayoutAnswers, opts: ReviewOptions): LayoutReview {
   const ctx = layoutContext(table, spec, answers, opts);
@@ -146,13 +179,16 @@ export function buildLayoutReview(table: Table, spec: ImportMappingSpecV1 | null
   // What is this file? Always asked, unless answered (a saved layout's answer included; AI4).
   questions.push({ kind: 'record_kind', answer: answers.recordKind, targetColumns: table.header.filter((h) => hasTargetWord(h)) });
 
-  // Weight unit: no unit word in the file, or Ben's answer over one.
+  // Weight unit: no unit word in the file, or Ben's answer over one. Loads come from a load column or from the
+  // set cells themselves (`100x8`, `3x8 @ 100`, `100x5,100x5`); either way they need a unit (check 44).
   const unit = unitReading(ctx);
+  const cellLoads = loadsInCells(table, s);
   // A unit column (even one still on `Check`) says the unit row by row: no file-level question while it is there.
-  if (s.load !== null && (unit.source === 'answer' || (unit.source === null && s.unit === null))) {
-    const values = columnValues(table, s.load)
+  if ((s.load !== null || cellLoads) && (unit.source === 'answer' || (unit.source === null && s.unit === null))) {
+    const values = (s.load === null ? [] : columnValues(table, s.load))
       .map((v) => readNumber(v, ctx.decimalComma))
       .filter((v): v is number => v !== null);
+    for (const r of reads) for (const x of r.sets) if (x.load !== null) values.push(x.load);
     questions.push({ kind: 'unit', answer: answers.unit, range: range(values) });
   }
 
@@ -239,6 +275,7 @@ export function buildLayoutReview(table: Table, spec: ImportMappingSpecV1 | null
     return { index: i, row: read.row, line: read.line, cells: read.cells, read };
   });
   const plan = answers.recordKind === 'plan';
+  const stuck = reads.filter((r) => r.status === 'pending' && r.waiting.some((w) => !asks(w, questions, checks))).length;
   return {
     columns: [...ctx.cols],
     unit,
@@ -252,6 +289,7 @@ export function buildLayoutReview(table: Table, spec: ImportMappingSpecV1 | null
     missing,
     enough,
     pending: applied.pending,
+    stuck,
     ready: open === 0 && !plan && answers.recordKind === 'done' && missing.length === 0 && enough && applied.pending === 0 && applied.rows.some((r) => r.rowClass === 'strength'),
   };
 }

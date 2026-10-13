@@ -78,7 +78,8 @@ describe('every stored value is in its row’s cells (check 40)', () => {
     ['hevy-assisted', {}],
     ['spreadsheet-sets-x-reps', { unit: 'kg' as const, notation: { '3': 'sets_x_reps' as const } }],
     ['spreadsheet-sets-x-reps', { unit: 'lb' as const, notation: { '3': 'reps_x_sets' as const } }],
-    ['spreadsheet-wide', { unit: 'kg' as const, notation: { '2': 'load_x_reps' as const } }],
+    ['spreadsheet-wide', { notation: { '2': 'load_x_reps' as const } }],
+    ['spreadsheet-packed-at', { notation: { '2': 'sets_x_reps' as const } }],
     ['liftosaur-like', {}],
   ])('%s %j', (name, over) => {
     const { answers } = answerAll(name, over);

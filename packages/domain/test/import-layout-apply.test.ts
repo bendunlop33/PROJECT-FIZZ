@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_LAYOUT_ANSWERS, type ImportMappingSpecV1 } from '@fizz/schemas';
-import { applyImportSpec, buildLayoutReview, readDateCell, readTable, validateImportSpec, type LayoutQuestion } from '../src';
+import { EMPTY_LAYOUT_ANSWERS, ImportMappingSpecV1Schema, type CellNotation, type ImportMappingSpecV1, type LayoutAnswers } from '@fizz/schemas';
+import { applyImportSpec, buildLayoutReview, readDateCell, readTable, validateImportSpec, type LayoutQuestion, type Table } from '../src';
 import { OPTS, answerAll, specOf, tableOf } from './layout-fixtures';
 
 /** `applyImportSpec`: code reads every row (AI2; checks 46, 51, 52). */
@@ -20,8 +20,8 @@ describe('`3x8` (check 46)', () => {
   });
 
   it('the answer changes the set count; loads come from the Weight column as written', () => {
-    const a = answerAll('spreadsheet-sets-x-reps', { notation: { '3': 'sets_x_reps' }, unit: 'kg' }).answers;
-    const b = answerAll('spreadsheet-sets-x-reps', { notation: { '3': 'reps_x_sets' }, unit: 'kg' }).answers;
+    const a = answerAll('spreadsheet-sets-x-reps', { notation: { '3': 'sets_x_reps' } }).answers;
+    const b = answerAll('spreadsheet-sets-x-reps', { notation: { '3': 'reps_x_sets' } }).answers;
     const rowsA = applyImportSpec(s, a, t, OPTS).rows.filter((r) => r.line === 2);
     const rowsB = applyImportSpec(s, b, t, OPTS).rows.filter((r) => r.line === 2);
     expect(rowsA.map((r) => [r.part, r.weight?.value, r.reps])).toEqual([
@@ -73,7 +73,7 @@ describe('wide set columns (`Set 1 … Set 4`, `100x8`)', () => {
   });
 
   it('`100 × 8` gives one set per filled cell, with its own load; empty cells give none', () => {
-    const { answers, review } = answerAll('spreadsheet-wide', { notation: { '2': 'load_x_reps' }, unit: 'kg' });
+    const { answers, review } = answerAll('spreadsheet-wide', { notation: { '2': 'load_x_reps' } });
     expect(review.ready).toBe(true);
     const rows = applyImportSpec(s, answers, t, OPTS).rows;
     expect(rows.filter((r) => r.line === 2).map((r) => [r.part, r.weight, r.reps])).toEqual([
@@ -86,12 +86,106 @@ describe('wide set columns (`Set 1 … Set 4`, `100x8`)', () => {
     expect(rows.find((r) => r.line === 7)?.weight).toEqual({ value: 0, unit: 'kg' });
   });
 
-  it('the wide file has no unit: asked once a load is read', () => {
+  it('the wide file has no unit: `Weight unit` is asked, and rows wait only until it is answered (B1, check 44)', () => {
     const r = buildLayoutReview(t, s, EMPTY_LAYOUT_ANSWERS, OPTS);
-    expect(r.questions.map((q) => q.kind)).toEqual(['record_kind', 'notation']);
+    expect(r.questions.map((q) => q.kind)).toEqual(['record_kind', 'unit', 'notation']);
+    // Before the notation is answered no load is read yet: no range to show.
+    expect(r.questions.find((q) => q.kind === 'unit')).toEqual({ kind: 'unit', answer: null, range: null });
     const after = buildLayoutReview(t, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', notation: { '2': 'load_x_reps' } }, OPTS);
-    // No load column: the unit has no column to read from, so each read row waits for it.
     expect(after.pending).toBe(6);
+    // The range comes from the loads read from the cells.
+    expect(after.questions.find((q) => q.kind === 'unit')).toEqual({ kind: 'unit', answer: null, range: { min: 0, max: 140 } });
+    expect(after).toMatchObject({ open: 1, stuck: 0, ready: false });
+    const done = buildLayoutReview(t, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', notation: { '2': 'load_x_reps' }, unit: 'lb' }, OPTS);
+    expect(done).toMatchObject({ open: 0, pending: 0, stuck: 0, ready: true });
+    expect(applyImportSpec(s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', notation: { '2': 'load_x_reps' }, unit: 'lb' }, t, OPTS).rows[0]?.weight).toEqual({ value: 100, unit: 'lb' });
+  });
+});
+
+/** Ben's `Use this` on every column still on `Check`. */
+function confirmed(table: Table, spec: ImportMappingSpecV1, answers: LayoutAnswers): LayoutAnswers {
+  const roles = { ...answers.roles };
+  for (const c of buildLayoutReview(table, spec, answers, OPTS).columns) if (c.state === 'check') roles[String(c.index)] = c.role;
+  return { ...answers, roles };
+}
+
+/** A packed file with no `Weight` column (`3x8 @ 100`, `100x5,100x5`): loads come from the cells, so the unit is asked. */
+function packedSpec(header: string, notation: CellNotation, over: Record<string, unknown> = {}): ImportMappingSpecV1 {
+  const row = (line: number) => ({ line, date: '2025-09-01', exercise: 'x', load: null, reps: null });
+  return ImportMappingSpecV1Schema.parse({
+    specVersion: 1,
+    file: { delimiter: ',', headerLine: 1, decimal: '.' },
+    layout: { kind: 'row_per_exercise_packed', sets: { header, index: 2 }, notation },
+    workoutKey: [],
+    date: { column: { header: 'Date', index: 0 }, format: 'YYYY-MM-DD' },
+    exercise: { header: 'Exercise', index: 1 },
+    load: null,
+    reps: null,
+    setType: null,
+    rpe: null,
+    notes: [],
+    unmapped: [],
+    selfCheck: [row(2), row(3), row(4)],
+    unsupported: null,
+    ...over,
+  });
+}
+
+describe('packed cells that carry their own loads (B1)', () => {
+  it('`3x8 @ 100` with no Weight column asks `Weight unit`; answered, every row is read in that unit', () => {
+    const tt = tableOf('spreadsheet-packed-at.synthetic.csv');
+    const s = specOf('spreadsheet-packed-at.spec.json');
+    expect(validateImportSpec(s, tt, OPTS).ok).toBe(true);
+    const fresh = buildLayoutReview(tt, s, EMPTY_LAYOUT_ANSWERS, OPTS);
+    expect(fresh.questions.map((q) => q.kind)).toEqual(['record_kind', 'unit', 'notation']);
+    const noUnit = buildLayoutReview(tt, s, confirmed(tt, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', notation: { '2': 'sets_x_reps' } }), OPTS);
+    expect(noUnit).toMatchObject({ open: 1, pending: 4, stuck: 0, ready: false });
+    expect(noUnit.questions.find((q) => q.kind === 'unit')).toMatchObject({ range: { min: 12.5, max: 140 } });
+    const answers = confirmed(tt, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', notation: { '2': 'sets_x_reps' }, unit: 'kg' });
+    expect(buildLayoutReview(tt, s, answers, OPTS)).toMatchObject({ open: 0, pending: 0, ready: true });
+    const rows = applyImportSpec(s, answers, tt, OPTS).rows;
+    expect(rows).toHaveLength(3 + 3 + 5 + 3);
+    expect(rows.find((r) => r.exercise === 'Dumbbell Curl')?.weight).toEqual({ value: 12.5, unit: 'kg' });
+  });
+
+  it('`3x8` with no load anywhere asks no unit', () => {
+    const tt = readTable('Date,Exercise,Sets\n2025-09-01,Pull Up,3x8\n2025-09-03,Dip,3x10\n');
+    if (!tt) throw new Error('table');
+    expect(buildLayoutReview(tt, packedSpec('Sets', 'sets_x_reps'), EMPTY_LAYOUT_ANSWERS, OPTS).questions.some((q) => q.kind === 'unit')).toBe(false);
+  });
+
+  it('`100x5,100x5,100x3` all-sets cells with no Weight column ask the unit', () => {
+    const tt = readTable('Date,Exercise,Sets\n2025-09-01,Bench,"100x5,100x5,100x3"\n2025-09-03,Squat,"140x5,140x5"\n');
+    if (!tt) throw new Error('table');
+    const s = packedSpec('Sets', 'load_x_reps');
+    expect(buildLayoutReview(tt, s, EMPTY_LAYOUT_ANSWERS, OPTS).questions.map((q) => q.kind)).toContain('unit');
+    const answers = confirmed(tt, s, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done', notation: { '2': 'load_x_reps' }, unit: 'lb' });
+    expect(buildLayoutReview(tt, s, answers, OPTS)).toMatchObject({ open: 0, pending: 0, ready: true });
+    expect(applyImportSpec(s, answers, tt, OPTS).rows.map((r) => r.weight?.unit)).toEqual(['lb', 'lb', 'lb', 'lb', 'lb']);
+  });
+});
+
+describe('never stuck in silence: open 0 with rows pending always says why', () => {
+  const fixtures = ['hevy-kg', 'hevy-lbs', 'hevy-assisted', 'strong-new-kg', 'strong-old', 'spreadsheet-sets-x-reps', 'spreadsheet-wide', 'spreadsheet-packed-at', 'liftosaur-like'];
+  it.each(fixtures)('%s: answering every question on the screen leaves no row pending', (name) => {
+    const { review } = answerAll(name);
+    expect(review.open).toBe(0);
+    expect(review.pending).toBe(0);
+    expect(review.stuck).toBe(0);
+  });
+
+  it('slash dates no single order reads (`21/11` and `11/21`): the rows are counted as stuck, not left silent', () => {
+    const tt = readTable('Date,Exercise,Weight (kg),Reps\n21/11/2025,Bench,100,8\n11/21/2025,Bench,100,8\n03/04/2025,Bench,100,8\n');
+    if (!tt) throw new Error('table');
+    const spec = packedSpec('Reps', 'sets_x_reps', {
+      layout: { kind: 'row_per_set', setOrder: null },
+      date: { column: { header: 'Date', index: 0 }, format: 'DD/MM/YYYY' },
+      load: { column: { header: 'Weight (kg)', index: 2 }, unit: { kind: 'header_token', column: { header: 'Weight (kg)', index: 2 }, token: 'kg' } },
+      reps: { header: 'Reps', index: 3 },
+    });
+    const r = buildLayoutReview(tt, spec, confirmed(tt, spec, { ...EMPTY_LAYOUT_ANSWERS, recordKind: 'done' }), OPTS);
+    expect(r.questions.some((q) => q.kind === 'date_order')).toBe(false);
+    expect(r).toMatchObject({ open: 0, pending: 2, stuck: 2, ready: false });
   });
 });
 
@@ -113,7 +207,7 @@ describe('dates, times and zones (AI6)', () => {
   });
 
   it('a file with dates only keys workouts by date', () => {
-    const { answers } = answerAll('spreadsheet-wide', { notation: { '2': 'load_x_reps' }, unit: 'kg' });
+    const { answers } = answerAll('spreadsheet-wide', { notation: { '2': 'load_x_reps' } });
     const rows = applyImportSpec(specOf('spreadsheet-wide.spec.json'), answers, tableOf('spreadsheet-wide.synthetic.csv'), OPTS).rows;
     expect([...new Set(rows.map((r) => r.workoutKey))]).toEqual(['2025-09-01', '2025-09-03', '2025-09-05']);
     expect(rows.every((r) => r.startLocal === null)).toBe(true);
