@@ -31,6 +31,7 @@ import {
   HeroHeader,
   Icon,
   LinkLine,
+  EffortHeading,
   NumberAccessory,
   NumberStepper,
   PulseOnce,
@@ -1356,7 +1357,9 @@ export function WorkoutScreen() {
   const effortBlock =
     view.justSaved && effortScale !== 'off' ? (
       <View style={{ gap: theme.space['3'] }}>
-        <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
+        <EffortHeading scale={effortScale}>
+          <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
+        </EffortHeading>
         {effortChips}
       </View>
     ) : null;

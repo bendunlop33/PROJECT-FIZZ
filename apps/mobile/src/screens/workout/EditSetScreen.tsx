@@ -15,7 +15,7 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
 
 /**
@@ -225,9 +225,11 @@ export function EditSetScreen() {
         </View>
         {effortScale !== 'off' ? (
           <View style={{ gap: theme.space['1'] }}>
-            <AppText variant="label" color="text.secondary">
-              {effortScale === 'rir' ? 'Reps in reserve' : 'Effort (RPE)'}
-            </AppText>
+            <EffortHeading scale={effortScale}>
+              <AppText variant="label" color="text.secondary">
+                {effortScale === 'rir' ? 'Reps in reserve' : 'Effort (RPE)'}
+              </AppText>
+            </EffortHeading>
             <ChipRow>
               {(effortScale === 'rir' ? [4, 3, 2, 1, 0] : [6, 7, 8, 9, 10]).map((n) => {
                 const selected = (effortScale === 'rir' ? current.rir : current.rpe) === n;

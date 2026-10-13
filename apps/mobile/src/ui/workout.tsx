@@ -11,6 +11,7 @@ import { Icon, type SymbolName } from './Icon';
 import { FadeIn, TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
 import { nextFieldText, parseNumber } from './number-text';
+import { effortInfoLabel, effortInfoLines, type EffortScale } from '../workout/effort-info';
 import { stepperNumeralSize, stepperTexts } from '../workout/tile-fit';
 
 /** Shared keyboard toolbar for number fields (the system decimal pad has no Done key). */
@@ -511,5 +512,45 @@ export function LinkLine({ children, onPress, accessibilityLabel }: { children: 
     <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
       {children}
     </Pressable>
+  );
+}
+
+/** The effort label with an ⓘ that shows the scale (F4): `10 Nothing left`, `9 1 rep left` … */
+export function EffortHeading({ scale, children }: { scale: EffortScale; children: ReactNode }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const lines = effortInfoLines(scale);
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+        {children}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={effortInfoLabel(scale, open)}
+          accessibilityState={{ expanded: open }}
+          hitSlop={4}
+          onPress={() => {
+            setOpen((o) => !o);
+          }}
+          style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+        >
+          <Icon name="info.circle" color="text.secondary" size={16} />
+        </Pressable>
+      </View>
+      {open ? (
+        <View accessible accessibilityLabel={lines.map((l) => `${l.value}: ${l.meaning}`).join('. ')} style={{ gap: 2 }}>
+          {lines.map((l) => (
+            <View key={l.value} style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+              <AppText variant="callout" numeric style={{ minWidth: 28 }}>
+                {l.value}
+              </AppText>
+              <AppText variant="callout" color="text.secondary">
+                {l.meaning}
+              </AppText>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
