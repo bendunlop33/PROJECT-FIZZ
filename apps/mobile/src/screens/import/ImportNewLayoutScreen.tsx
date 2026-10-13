@@ -27,6 +27,8 @@ export function ImportNewLayoutScreen() {
   const { layoutId } = useRoute<RouteProp<ProfileStackParams, 'ImportNewLayout'>>().params;
   const [phase, setPhase] = useState<Phase>({ kind: 'consent' });
   const alive = useRef(true);
+  // One request per tap: a second tap before the re-render sends nothing.
+  const sending = useRef(false);
   const [data] = useScreenData(async (s) => {
     const info = await s.importLayouts.newTable(layoutId);
     const sample = s.importLayouts.buildImportSample(layoutId);
@@ -59,10 +61,14 @@ export function ImportNewLayoutScreen() {
 
   async function read() {
     // The text shown now (the sheet may have changed it): its hash goes with the request (AI8).
+    if (sending.current) return;
     const now = services.importLayouts.buildImportSample(layoutId);
     if (!now) return;
+    sending.current = true;
     setPhase({ kind: 'reading', chars: now.chars });
-    const r = await services.importLayouts.proposeImportMapping(layoutId, now.hash, newUuid());
+    const r = await services.importLayouts.proposeImportMapping(layoutId, now.hash, newUuid()).finally(() => {
+      sending.current = false;
+    });
     if (!alive.current) return;
     const view = readingResultView(r);
     if (view.next === 'check') {
