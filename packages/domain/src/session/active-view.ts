@@ -17,7 +17,7 @@ import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclu
 import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
-import { comparableSetsOf, fitNotesJudgedCount, importedWorkingSetCount, matchesEquipment, type HistorySession } from '../progression';
+import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
@@ -93,11 +93,10 @@ export function workingSetsFromPrevious(previous: PreviousSession, history: read
   const withReps = previous.sets.filter((s) => s.values.reps !== null);
   const counted = withReps.length;
   if (!previous.imported) return counted;
-  // r3 S1: only the sets the rule judges (not a lone top set or a lighter finisher).
-  const judged = fitNotesJudgedCount(withReps.map((s) => ({ load: s.values.load })));
+  // r3 S1, r4 B1: only the sets the rule judges (not a lone top set); a lighter finisher never lifts the count.
   const source = history.find((h) => h.sessionId === previous.sessionId && h.imported);
   const total = source ? source.sets.filter((s) => s.setType !== 'warmup' && s.reps !== null).length : counted;
-  return importedWorkingSetCount(judged, total, DEFAULT_WORKING_SETS);
+  return fitNotesPlannedSets(withReps.map((s) => ({ load: s.values.load })), total, DEFAULT_WORKING_SETS);
 }
 
 /** Unsaved changes held by the screen (debounced to `save_draft`). */

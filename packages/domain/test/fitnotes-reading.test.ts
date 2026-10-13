@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Load, LoadConvention, WeightUnit } from '@fizz/schemas';
-import { calculateNextTargets, comparableSetsOf, importedWorkingSetCount, lastComparableSession, readFitNotesWorkingSets, workingSetsFromPrevious, type HistorySession } from '../src/index';
+import { calculateNextTargets, comparableSetsOf, fitNotesPlannedSets, importedWorkingSetCount, lastComparableSession, readFitNotesWorkingSets, workingSetsFromPrevious, type HistorySession } from '../src/index';
 import { barbell, doubleProgression, dumbbells } from './fixtures';
 
 /**
@@ -96,14 +96,16 @@ describe('targets from FitNotes back-offs and pyramids (B1, B2)', () => {
     const t = next([fitnotes([[22.5, 8], [20, 9], [17.5, 10]])]);
     expect(t.decision).toBe('hold');
     expect(t.sets.every((x) => x.load?.value === 17.5)).toBe(true);
-    expect(t.explanation.facts.join(' ')).toMatch(/No load had most of the sets, so reps were judged on all 3 sets; the plan is from the easiest, 17\.5 kg each/);
+    expect(t.explanation.facts.join(' ')).toMatch(/The 2 heavier sets were judged too, with the 1 set at 17\.5 kg each/);
+    expect(t.explanation.facts.join(' ')).not.toMatch(/No load had most/);
   });
 
-  it('r3 B1: a descending pyramid with every set at the top of the range progresses from its easiest load', () => {
+  it('r4 B1: a descending pyramid with every set at the top of the range increases from its heaviest set, never below it', () => {
     const t = next([fitnotes([[22.5, 10], [20, 10], [17.5, 10]])]);
     expect(t.decision).toBe('increase_load');
-    expect(t.sets.every((x) => x.load?.value === 20)).toBe(true);
-    expect(t.explanation.facts.join(' ')).toMatch(/all 3 judged sets reached 10\+ reps, the easiest at 17\.5 kg each/);
+    expect(t.sets).toHaveLength(3);
+    expect(t.sets.every((x) => x.load !== null && x.load.value > 22.5)).toBe(true);
+    expect(t.explanation.facts.join(' ')).toMatch(/all 3 judged sets reached 10\+ reps, the heaviest at 22\.5 kg each/);
   });
 
   it('back-offs in range but below the top: hold, not hold_after_miss', () => {
@@ -233,8 +235,21 @@ describe('the working load of a FitNotes session (r3 B1: the load with the most 
     expect(ref([[22, 4], [18, 9], [18, 9], [18, 8]])).toEqual({ load: 18, judged: [18, 18, 18], context: [22], harderJudged: [], easier: [] });
   });
 
-  it('two heavier sets then two back-offs: a tie goes to the easiest, and the heavier sets are judged (not fewer)', () => {
-    expect(ref([[22, 8], [22, 8], [18, 10], [18, 10]])).toEqual({ load: 18, judged: [22, 22, 18, 18], context: [], harderJudged: [22, 22], easier: [] });
+  it('r4 B1: a tie of 2 or more sets goes to the harder load; the lighter sets are finishers', () => {
+    expect(ref([[22, 8], [22, 8], [18, 10], [18, 10]])).toEqual({ load: 22, judged: [22, 22], context: [], harderJudged: [], easier: [18, 18] });
+    expect(ref([[20, 10], [20, 10], [20, 10], [12, 15], [12, 15], [12, 15]])).toEqual({ load: 20, judged: [20, 20, 20], context: [], harderJudged: [], easier: [12, 12, 12] });
+  });
+
+  it('r2 B1 kept: a tie of single sets goes to the easier load (a top single then one back-off)', () => {
+    expect(ref([[22.5, 5], [17.5, 10]])).toEqual({ load: 17.5, judged: [22.5, 17.5], context: [], harderJudged: [22.5], easier: [] });
+  });
+
+  it('r4 N1 shape: 22, 20, 18, 18 reads 18 (most sets) with the 2 heavier sets judged', () => {
+    expect(ref([[22, 8], [20, 8], [18, 8], [18, 8]])).toEqual({ load: 18, judged: [22, 20, 18, 18], context: [], harderJudged: [22, 20], easier: [] });
+  });
+
+  it('assisted: a tie of 2+ goes to the less-assisted load', () => {
+    expect(ref([[20, 10], [20, 10], [30, 12], [30, 12]], 'assistance')).toEqual({ load: 20, judged: [20, 20], context: [], harderJudged: [], easier: [30, 30] });
   });
 
   it('assisted: the reference is the most-assisted of tied loads; a less-assisted single is context', () => {
@@ -336,5 +351,155 @@ describe('only judged sets make up the rule (r3 S1)', () => {
   it('the planned count leaves out the context set and the finisher', () => {
     expect(importedWorkingSetCount(readFitNotesWorkingSets(comparableSetsOf(fitnotes([[22, 4], [18, 10], [18, 10], [18, 10], [18, 10]]))).judged.length, 5, 3)).toBe(4);
     expect(importedWorkingSetCount(readFitNotesWorkingSets(comparableSetsOf(fitnotes([[20, 10], [20, 10], [20, 10], [12, 15]]))).judged.length, 4, 3)).toBe(3);
+  });
+});
+
+describe('r4 B1: equal-count finishers, burnouts, drop sets and pyramids are never planned below the working load', () => {
+  const DAY1 = '2026-09-10T12:00:00.000Z';
+  const DAY2 = '2026-09-13T12:00:00.000Z';
+  const facts = (t: ReturnType<typeof next>) => t.explanation.facts.join(' ');
+
+  it('2 working sets at the top plus 2 finisher sets: never below 20, 2 sets planned (not 4)', () => {
+    const t = next([fitnotes([[20, 10], [20, 10], [12, 15], [12, 15]])]);
+    expect(t.decision).not.toBe('increase_load');
+    expect(t.decision).toBe('hold');
+    expect(t.sets.every((x) => x.load !== null && x.load.value >= 20)).toBe(true);
+    expect(facts(t)).toMatch(/2 lighter sets than 20 kg each \(a finisher or drop set\) were not judged/);
+    expect(facts(t)).toMatch(/Only 2 of 3 working sets were judged/);
+    const kept = comparableSetsOf(fitnotes([[20, 10], [20, 10], [12, 15], [12, 15]]));
+    expect(fitNotesPlannedSets(kept, 4, 3)).toBe(2);
+  });
+
+  it('3 working sets plus 3 burnout sets, all at the top: increase from 20, 3 sets', () => {
+    const shape: [number, number][] = [[20, 10], [20, 10], [20, 10], [12, 15], [12, 15], [12, 15]];
+    const t = next([fitnotes(shape)]);
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets.every((x) => x.load?.value === 22.5)).toBe(true);
+    expect(facts(t)).toMatch(/all 3 judged sets reached 10\+ reps at 20 kg each/);
+    expect(fitNotesPlannedSets(comparableSetsOf(fitnotes(shape)), 6, 3)).toBe(3);
+  });
+
+  it('drop-set triplets (20/15/10 x3): hold at 20, 3 sets planned (not 9), never a miss at the last drop', () => {
+    const shape: [number, number][] = [[20, 8], [15, 6], [10, 6], [20, 8], [15, 6], [10, 6], [20, 8], [15, 6], [10, 6]];
+    const t = next([fitnotes(shape)]);
+    expect(t.decision).toBe('hold');
+    expect(t.sets.every((x) => x.load?.value === 20)).toBe(true);
+    expect(fitNotesPlannedSets(comparableSetsOf(fitnotes(shape)), 9, 3)).toBe(3);
+    const twice = next([fitnotes(shape, { day: DAY1 }), fitnotes(shape, { day: DAY2 })]);
+    expect(twice.decision).toBe('hold');
+    expect(twice.sets.every((x) => x.load?.value === 20)).toBe(true);
+    expect(facts(twice)).not.toMatch(/fell below/);
+  });
+
+  it('a descending pyramid with a single set at each load: the plan count is the 3 judged sets', () => {
+    const kept = comparableSetsOf(fitnotes([[24, 10], [20, 10], [16, 10]]));
+    expect(fitNotesPlannedSets(kept, 3, 3)).toBe(3);
+    const t = next([fitnotes([[24, 10], [20, 10], [16, 10]])]);
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets.every((x) => x.load !== null && x.load.value > 24)).toBe(true);
+  });
+
+  it('a pyramid not all at the top still holds at the working load (no increase claim)', () => {
+    const t = next([fitnotes([[22.5, 8], [20, 10], [17.5, 10]])]);
+    expect(t.decision).toBe('hold');
+    expect(t.sets.every((x) => x.load?.value === 17.5)).toBe(true);
+  });
+
+  it('assisted pyramid all at the top: reduce assistance from the least-assisted set', () => {
+    const t = calculateNextTargets({
+      exerciseName: 'Assisted pull-up',
+      measurement: 'reps',
+      history: [fitnotes([[20, 10], [30, 10], [40, 10]], { convention: 'assistance' })],
+      rule: RULE,
+      equipment: null,
+      unit: 'kg',
+      convention: 'assistance',
+      pain: { active: false, reportedAtUtc: null },
+      fitLater: true,
+    });
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets.every((x) => x.load !== null && x.load.value < 20)).toBe(true);
+    expect(facts(t)).toMatch(/the least-assisted at assist 20 kg/);
+  });
+
+  it('lb barbell: 2 working sets plus 2 equal finishers never plan below 135 lb', () => {
+    const lbBar = barbell({ unit: 'lb', barMass: 45, plates: [{ mass: 45, count: 4 }, { mass: 25, count: 2 }, { mass: 10, count: 2 }, { mass: 5, count: 2 }, { mass: 2.5, count: 2 }] });
+    const t = calculateNextTargets({
+      exerciseName: 'Bench press',
+      measurement: 'reps',
+      history: [fitnotes([[135, 10], [135, 10], [95, 15], [95, 15]], { convention: 'total', unit: 'lb' })],
+      rule: RULE,
+      equipment: lbBar,
+      unit: 'lb',
+      convention: 'total',
+      pain: { active: false, reportedAtUtc: null },
+    });
+    expect(t.sets.every((x) => x.load?.unit === 'lb' && x.load.value >= 135)).toBe(true);
+  });
+});
+
+describe('r4 S1: working sets followed by one heavier set are working sets, not a ramp', () => {
+  const DAY1 = '2026-09-10T12:00:00.000Z';
+  const DAY2 = '2026-09-13T12:00:00.000Z';
+  const facts = (t: ReturnType<typeof next>) => t.explanation.facts.join(' ');
+
+  it('20x10 x3 then 22.5x6: all 4 kept; 20 is the working load and 22.5 is context', () => {
+    expect(read(fitnotes([[20, 10], [20, 10], [20, 10], [22.5, 6]]))).toEqual([[20, 10], [20, 10], [20, 10], [22.5, 6]]);
+    const t = next([fitnotes([[20, 10], [20, 10], [20, 10], [22.5, 6]])]);
+    expect(t.decision).toBe('increase_load');
+    expect(t.sets).toHaveLength(3);
+    expect(t.sets.every((x) => x.load?.value === 22.5)).toBe(true);
+    expect(facts(t)).toMatch(/1 heavier top set was kept as context; reps were judged on the 3 sets at 20 kg each/);
+    expect(facts(t)).not.toMatch(/warm-ups/);
+    expect(facts(t)).not.toMatch(/logged/);
+  });
+
+  it('a ramp up to working sets before the heavier single: the ramp is still left out', () => {
+    expect(read(fitnotes([[10, 12], [15, 10], [20, 10], [20, 10], [20, 10], [22.5, 6]]))).toEqual([[20, 10], [20, 10], [20, 10], [22.5, 6]]);
+  });
+
+  it('a miss at the working load (20x7 x3, 22.5x4): never plan heavier than 20', () => {
+    const t = next([fitnotes([[20, 7], [20, 7], [20, 7], [22.5, 4]])]);
+    expect(t.decision).toBe('hold_after_miss');
+    expect(t.sets.every((x) => x.load?.value === 20)).toBe(true);
+    const twice = next([fitnotes([[20, 7], [20, 7], [20, 7], [22.5, 4]], { day: DAY1 }), fitnotes([[20, 7], [20, 7], [20, 7], [22.5, 4]], { day: DAY2 })]);
+    expect(twice.decision).toBe('reduce_load');
+    expect(facts(twice)).toMatch(/fell below 8 reps at 20 kg each/);
+    expect(twice.sets.every((x) => x.load !== null && x.load.value < 20)).toBe(true);
+  });
+
+  it('a ramp with repeated empty-bar sets still reads as a ramp', () => {
+    const h = fitnotes([[20, 10], [20, 10], [60, 5], [80, 3], [100, 5]], { convention: 'total' });
+    expect(read(h)).toEqual([[100, 5]]);
+  });
+
+  it('repeated warm-up sets just before the top with fewer reps still read as a ramp', () => {
+    expect(read(fitnotes([[80, 3], [80, 3], [100, 5]], { convention: 'total' }))).toEqual([[100, 5]]);
+  });
+
+  it('repeated sets far below the top (under 80%) still read as a ramp', () => {
+    expect(read(fitnotes([[60, 5], [60, 5], [100, 5]], { convention: 'total' }))).toEqual([[100, 5]]);
+  });
+
+  it('as many sets at the top as before it: a ramp to working sets', () => {
+    expect(read(fitnotes([[18, 10], [18, 10], [20, 10], [20, 10]]))).toEqual([[20, 10], [20, 10]]);
+  });
+
+  it('assisted: repeated more-assisted sets then one less-assisted set are working sets', () => {
+    expect(read(fitnotes([[30, 10], [30, 10], [30, 10], [20, 5]], { convention: 'assistance' }))).toEqual([[30, 10], [30, 10], [30, 10], [20, 5]]);
+  });
+
+  it('the planned count follows the same reading: 3 working sets then a heavier single plan 3', () => {
+    const h = fitnotes([[20, 10], [20, 10], [20, 10], [22.5, 6]]);
+    const prev = lastComparableSession([h], { equipmentId: 'any-dumbbells', unit: 'kg', loadConvention: 'per_hand' });
+    expect(prev?.sets.map((x) => x.values.load?.value)).toEqual([20, 20, 20, 22.5]);
+    expect(prev ? workingSetsFromPrevious(prev, [h]) : null).toBe(3);
+  });
+
+  it('a short imported session says "judged", never "logged", and the ramp count is named', () => {
+    const t = next([fitnotes([[10, 12], [20, 10], [20, 10]])]);
+    expect(facts(t)).toMatch(/its 1 lighter set before the top set was read as warm-ups/);
+    expect(facts(t)).toMatch(/Only 2 of 3 working sets were judged on 2026-09-15; holding/);
+    expect(facts(t)).not.toMatch(/were logged on/);
   });
 });
