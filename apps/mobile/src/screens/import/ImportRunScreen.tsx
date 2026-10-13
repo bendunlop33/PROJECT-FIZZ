@@ -9,7 +9,7 @@ import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
 import { plural } from '../../format/numbers';
 import type { CommitResult } from '../../import/import-service';
-import { progressView, writeFailedLine } from '../../import/views';
+import { layoutRefusedView, progressView, writeFailedLine } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -20,7 +20,7 @@ type Phase =
   | { kind: 'confirm' }
   | { kind: 'backing_up' }
   | { kind: 'importing'; written: number; total: number }
-  | { kind: 'failed'; text: string; jobId: string | null; retry: boolean };
+  | { kind: 'failed'; text: string; jobId: string | null; retry: boolean; back?: { label: string; layoutId: string } | null };
 
 /**
  * Confirm, back up on this phone, then import (data-import-export §2.5
@@ -86,9 +86,12 @@ export function ImportRunScreen() {
         Alert.alert('The preview changed', 'Check the preview again.', [{ text: 'OK', onPress: () => { navigation.goBack(); } }]);
         return;
       case 'layout_changed':
-        // The saved layout changed or was deleted since the preview (rule 5): nothing was imported.
-        setPhase({ kind: 'failed', text: 'The saved layout changed. Choose the file again.', jobId: null, retry: false });
+      case 'layout_session_changed': {
+        // The saved layout changed, or the layout was changed on Check the layout, since the preview (rule 5): nothing was imported.
+        const v = layoutRefusedView(r);
+        setPhase({ kind: 'failed', text: v.text, jobId: null, retry: false, back: v.back });
         return;
+      }
       case 'workout_unfinished':
         setPhase({ kind: 'failed', text: `Finish or discard your workout first (${r.block.title}, started ${formatTime(toMs(r.block.startedAtUtc), r.block.tz)}).`, jobId: null, retry: false });
         return;
@@ -156,7 +159,15 @@ export function ImportRunScreen() {
     return (
       <Screen
         footer={
-          phase.retry ? (
+          phase.back ? (
+            <PrimaryButton
+              label={phase.back.label}
+              onPress={() => {
+                // Back to Check the layout with Ben's answers; the stale preview under it is dropped on the way.
+                if (phase.back) navigation.popTo('ImportLayoutCheck', { layoutId: phase.back.layoutId });
+              }}
+            />
+          ) : phase.retry ? (
             <PrimaryButton
               label="Try again"
               onPress={() => {

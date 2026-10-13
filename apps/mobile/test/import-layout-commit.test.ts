@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { sha256Hex } from '@fizz/persistence';
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 
-import { provenanceLines, previewView } from '../src/import/views';
+import { layoutRefusedView, provenanceLines, previewView } from '../src/import/views';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 import { SpyLayoutPort, answerLayout, answerPreview, answerWith, layoutFixture, state } from './import-layout-helpers';
@@ -345,7 +345,11 @@ describe('commit, resume and Undo (checks 52, 53, 54, 59)', () => {
     const d2 = await answerPreview(s, second.result.draft);
     const row = (await s.importLayouts.listLayouts()).rows[0];
     expect(await s.importLayouts.deleteLayout(row?.id ?? '', row?.version ?? 0)).toMatchObject({ ok: true });
-    expect(await s.imports.commit(d2.draftId, d2.mappingVersion, 'op-commit-2')).toEqual({ ok: false, reason: 'layout_changed' });
+    const refused = await s.imports.commit(d2.draftId, d2.mappingVersion, 'op-commit-2');
+    expect(refused).toEqual({ ok: false, reason: 'layout_changed' });
+    // A saved layout that changed keeps its own copy: choose the file again (review r2 S3).
+    if (refused.ok || refused.reason !== 'layout_changed') throw new Error('refused');
+    expect(layoutRefusedView(refused)).toEqual({ text: 'The saved layout changed. Choose the file again.', back: null });
   });
 });
 

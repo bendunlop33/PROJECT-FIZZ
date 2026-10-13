@@ -180,6 +180,12 @@ export type CommitResult =
   | { ok: false; reason: 'stale'; draft: ImportDraft }
   /** The saved layout changed or was deleted since the preview: open the file again (rule 5). */
   | { ok: false; reason: 'layout_changed' }
+  /**
+   * The layout was changed on Check the layout since this preview (a stale
+   * `layoutVersion`, check 53). The session and Ben's answers are still
+   * there: go back to Check the layout, not to the file (review r2 S3).
+   */
+  | { ok: false; reason: 'layout_session_changed'; layoutId: string }
   | { ok: false; reason: 'not_found' | 'not_ready' }
   | { ok: false; reason: 'workout_unfinished'; block: ImportBlock }
   | { ok: false; reason: 'another_import'; job: ImportJob }
@@ -952,7 +958,7 @@ export function createImportService(deps: ImportServiceDeps) {
     // The layout was changed on Check the layout since this preview was made (a stale `layoutVersion`, check 53): nothing is written.
     if (d.layout) {
       const current = deps.layoutVersionOf?.(d.layout.layoutId) ?? null;
-      if (current !== null && current !== d.layout.layoutVersion) return { ok: false, reason: 'layout_changed' };
+      if (current !== null && current !== d.layout.layoutVersion) return { ok: false, reason: 'layout_session_changed', layoutId: d.layout.layoutId };
     }
 
     const backup = await deps.backUpOnPhone('before_import');

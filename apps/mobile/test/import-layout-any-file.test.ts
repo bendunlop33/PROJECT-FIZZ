@@ -5,7 +5,7 @@ import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import { sha256Hex } from '@fizz/persistence';
 
 import { checkLayoutView } from '../src/import/layout-views';
-import { previewView } from '../src/import/views';
+import { layoutRefusedView, previewView } from '../src/import/views';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, setUpGym, type Harness } from './harness';
 import { SpyLayoutPort, answerLayout, answerPreview, answerWith, layoutFixture, state } from './import-layout-helpers';
@@ -118,7 +118,7 @@ describe('a blank unit cell on one loaded row (review r2 S1)', () => {
 describe('a stale layout version at commit (check 53, review S3)', () => {
   it('a preview made before the layout was changed on Check the layout commits nothing', async () => {
     const STRONG = layoutFixture('strong-new-kg.synthetic.csv');
-    const { s } = await launch([answerWith(JSON.parse(layoutFixture('strong-new-kg.spec.json')))]);
+    const { s, port } = await launch([answerWith(JSON.parse(layoutFixture('strong-new-kg.spec.json')))]);
     const { layoutId, v } = await readAndCheck(s, 'strong_workouts.csv', STRONG);
     const c = await s.importLayouts.confirmImportLayout(layoutId, v.layoutVersion);
     if (!c.ok || c.result.kind !== 'preview') throw new Error('preview');
@@ -126,14 +126,22 @@ describe('a stale layout version at commit (check 53, review S3)', () => {
     // Back on Check the layout, Ben changes a marker: the preview he made is now stale.
     const changed = s.importLayouts.updateImportLayout(layoutId, { kind: 'marker', token: 'D', meaning: 'working' }, v.layoutVersion);
     expect(changed.ok).toBe(true);
-    expect(await s.imports.commit(d.draftId, d.mappingVersion, 'op-commit')).toEqual({ ok: false, reason: 'layout_changed' });
+    const refused = await s.imports.commit(d.draftId, d.mappingVersion, 'op-commit');
+    expect(refused).toEqual({ ok: false, reason: 'layout_session_changed', layoutId });
     expect(await s.yourData.counts()).toMatchObject({ finishedWorkouts: 0 });
+    // The copy sends Ben back to Check the layout, not to the file (review r2 S3).
+    if (refused.ok || refused.reason !== 'layout_session_changed') throw new Error('refused');
+    expect(layoutRefusedView(refused)).toEqual({ text: 'The layout changed. Check it again.', back: { label: 'Check the layout', layoutId } });
+    // His answers are still there, including the change he just made.
+    expect(s.importLayouts.getLayoutReview(layoutId)?.review).toMatchObject({ open: 0, ready: true });
     // Confirming again makes a fresh preview from the version in effect, which commits.
     const now = s.importLayouts.getLayoutReview(layoutId);
     const c2 = await s.importLayouts.confirmImportLayout(layoutId, now?.layoutVersion ?? 0);
     if (!c2.ok || c2.result.kind !== 'preview') throw new Error('preview');
     const d2 = await answerPreview(s, c2.result.draft);
     expect(await s.imports.commit(d2.draftId, d2.mappingVersion, 'op-commit-2')).toMatchObject({ ok: true, status: 'finished' });
+    // Nothing was sent to the coach again.
+    expect(port.requests).toHaveLength(1);
   });
 });
 

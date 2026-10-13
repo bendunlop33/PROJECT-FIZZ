@@ -139,6 +139,17 @@ export function writeFailedLine(r: { written: number; date: string; message: str
   return `Workout ${formatCount(r.written + 1)} (${longDate(r.date, locale)}) may not have saved: ${r.message}. ${plural(r.written, 'workout is', 'workouts are')} in before it.`;
 }
 
+/**
+ * A layout commit refused because the layout moved on (rule 5). A saved
+ * layout that changed or was deleted means choosing the file again; a
+ * layout changed on Check the layout since the preview goes back there,
+ * with Ben's answers kept and nothing sent again (review r2 S3).
+ */
+export function layoutRefusedView(r: { reason: 'layout_changed' } | { reason: 'layout_session_changed'; layoutId: string }): { text: string; back: { label: string; layoutId: string } | null } {
+  if (r.reason === 'layout_session_changed') return { text: 'The layout changed. Check it again.', back: { label: 'Check the layout', layoutId: r.layoutId } };
+  return { text: 'The saved layout changed. Choose the file again.', back: null };
+}
+
 export function introView(input: { block: ImportBlock | null; blockTime: string; paused: PastImport | null }): IntroView {
   const paused = input.paused && input.paused.state === 'paused' ? { text: pausedLine(input.paused), jobId: input.paused.job.id, version: input.paused.job.version } : null;
   return {

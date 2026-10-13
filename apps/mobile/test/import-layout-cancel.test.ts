@@ -120,3 +120,31 @@ describe('the stack through React Navigation 7', () => {
     expect(s.routes[1]?.params).toEqual({ layoutId: 'a', moved: 'x' });
   });
 });
+
+describe('a stale coach-layout commit goes back to Check the layout (review r2 S3)', () => {
+  it('Run shows the session copy and pops to Check the layout; the saved-layout copy is unchanged', () => {
+    const run = src('screens/import/ImportRunScreen.tsx');
+    expect(run).toContain("case 'layout_session_changed'");
+    expect(run).toContain('layoutRefusedView(r)');
+    expect(run).toContain("navigation.popTo('ImportLayoutCheck', { layoutId: phase.back.layoutId })");
+  });
+
+  it('popTo from Run drops Preview and Run and keeps the one Check the layout', () => {
+    const routeNames = ['ImportHistory', 'ImportLayoutCheck', 'ImportPreview', 'ImportRun'];
+    const router = StackRouter({});
+    const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
+    type State = StackNavigationState<ParamListBase>;
+    let s: State = router.getInitialState(options);
+    for (const [name, params] of [
+      ['ImportLayoutCheck', { layoutId: 'a' }],
+      ['ImportPreview', { draftId: 'd' }],
+      ['ImportRun', { draftId: 'd', mappingVersion: 1, workouts: 3 }],
+      ['ImportLayoutCheck', { layoutId: 'a' }],
+    ] as const) {
+      const next = router.getStateForAction(s, name === 'ImportLayoutCheck' && s.routes.length > 1 ? { type: 'POP_TO', payload: { name, params } } : { type: 'NAVIGATE', payload: { name, params } }, options);
+      if (next === null) throw new Error(name);
+      s = next as State;
+    }
+    expect(s.routes.map((r) => r.name)).toEqual(['ImportHistory', 'ImportLayoutCheck']);
+  });
+});
