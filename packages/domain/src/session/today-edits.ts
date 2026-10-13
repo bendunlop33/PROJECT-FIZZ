@@ -1055,6 +1055,8 @@ export function applyTodayEditsToRoutine(
   const byKey = new Map(input.routine.exercises.map((r) => [r.id, r]));
   const order = resolved.order ?? [...slots.map((s) => s.slotKey), ...resolved.added.keys()];
   const targets = new Map(input.targets ?? []);
+  // A slot's own targets are for the exercise it holds: a swap drops them (F21).
+  const slotTargets = new Map(input.slotTargets ?? []);
   const exercises = new Map(input.exercises);
   const known = new Map(input.knownEquipment);
   const swapped: AppliedEdits['swapped'] = [];
@@ -1074,6 +1076,7 @@ export function applyTodayEditsToRoutine(
     const sp = sw === undefined ? undefined : swaps.get(key);
     if (sp === undefined) return [{ ...rex, order: i, supersetGroup }];
     swapped.push({ slotKey: key, fromExerciseId: rex.exerciseId, toExerciseId: sp.exercise.id });
+    slotTargets.delete(key);
     exercises.set(sp.exercise.id, sp.exercise);
     if (sp.pin !== null) known.set(sp.pin.id, sp.pin);
     // Warm-ups were for the original's loads: a swapped slot has none. The working sets' loads are never carried over.
@@ -1083,7 +1086,7 @@ export function applyTodayEditsToRoutine(
     return [{ ...rex, exerciseId: sp.exercise.id, equipmentId: swapEquipmentId(sp), order: i, supersetGroup, progressionRuleId: null, setTemplates: working.length > 0 ? working : rex.setTemplates.map((t) => ({ ...t, targetLoad: null })) }];
   });
   return {
-    input: { ...input, routine: { ...input.routine, exercises: rewritten }, exercises, knownEquipment: known, targets, shape: shapesOf(resolved) },
+    input: { ...input, routine: { ...input.routine, exercises: rewritten }, exercises, knownEquipment: known, targets, ...(input.slotTargets === undefined ? {} : { slotTargets }), shape: shapesOf(resolved) },
     applied: { resolved, swapped },
   };
 }

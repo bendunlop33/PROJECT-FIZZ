@@ -267,6 +267,20 @@ export function rowTap(row: Pick<TableRow, 'state' | 'setId'>): RowTap {
   }
 }
 
+/**
+ * Runs a row tap (review S3, F5): an edit or select tap closes the number pad
+ * first, so tapping another row is a tap outside the open row's fields
+ * (the Table keeps taps with `keyboardShouldPersistTaps: 'handled'`).
+ */
+export function runRowTap(row: Pick<TableRow, 'state' | 'setId'>, h: { dismissKeyboard: () => void; edit: (setId: string) => void; select: (setId: string) => void }): RowTap {
+  const tap = rowTap(row);
+  if (tap.kind === 'none') return tap;
+  h.dismissKeyboard();
+  if (tap.kind === 'edit') h.edit(tap.setId);
+  else h.select(tap.setId);
+  return tap;
+}
+
 /** The one command a select sends: `set_active_set`, versioned. Never `log_set`. */
 export function selectCommand(setId: string, expectedVersion: number, at: ZonedTimestamp, opId: string): Extract<SessionCommand, { type: 'set_active_set' }> {
   return { type: 'set_active_set', at, opId, setId, expectedVersion };

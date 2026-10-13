@@ -817,18 +817,21 @@ export class SqliteSessions implements SessionRepository {
    * small rows (no aggregate decode): what the session picker groups into
    * session types (session-picker §3.1). `exerciseCount` counts distinct
    * exercises with a completed set, as the next-session plan copies them
-   * (review r2 N3). Newest first.
+   * (review r2 N3); `exerciseIds` are those exercises (an unnamed import's
+   * type is named from them, F20). Newest first.
    */
   listSessionTypeRows(
     ownerId: string,
     limit: number,
-  ): Promise<{ sessionId: string; routineId: string | null; routineName: string | null; imported: boolean; startedAtUtc: string; tz: string; exerciseCount: number }[]> {
+  ): Promise<{ sessionId: string; routineId: string | null; routineName: string | null; imported: boolean; startedAtUtc: string; tz: string; exerciseCount: number; exerciseIds: string[] }[]> {
     return this.db.read(async (q) =>
       (
-        await q.getAll<{ id: string; routine_id: string | null; routine_name: string | null; source: string; started_at_utc: string; started_at_tz: string; n: number }>(
+        await q.getAll<{ id: string; routine_id: string | null; routine_name: string | null; source: string; started_at_utc: string; started_at_tz: string; n: number; ids: string | null }>(
           `SELECT s.id, s.routine_id, s.routine_name, s.source, s.started_at_utc, s.started_at_tz,
                   (SELECT count(DISTINCT e.exercise_id) FROM session_exercises e WHERE e.session_id = s.id
-                    AND EXISTS (SELECT 1 FROM session_sets y WHERE y.session_exercise_id = e.id AND y.status = 'completed')) AS n
+                    AND EXISTS (SELECT 1 FROM session_sets y WHERE y.session_exercise_id = e.id AND y.status = 'completed')) AS n,
+                  (SELECT group_concat(d.exercise_id, char(31)) FROM (SELECT DISTINCT e.exercise_id FROM session_exercises e WHERE e.session_id = s.id
+                    AND EXISTS (SELECT 1 FROM session_sets y WHERE y.session_exercise_id = e.id AND y.status = 'completed')) d) AS ids
            FROM sessions s
            WHERE s.owner_id = ? AND ${inHistorySql('s')}
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
@@ -843,6 +846,7 @@ export class SqliteSessions implements SessionRepository {
         startedAtUtc: r.started_at_utc,
         tz: r.started_at_tz,
         exerciseCount: r.n,
+        exerciseIds: r.ids === null || r.ids === '' ? [] : r.ids.split('\u001f'),
       })),
     );
   }

@@ -1,16 +1,31 @@
-import type { ProgressWindowDays } from '@fizz/schemas';
+import type { ProgressPeriodKey } from '@fizz/schemas';
 import { addDays, addMonths, daysBetween, localDateOf } from '../calendar';
 
 /**
- * Progress windows (progress.md PG24): `7 days` · `14 days` · `30 days` ·
- * `60 days`, each ending today, inclusive (30 days = today and the 29 days
- * before), or a custom period (Ben, 12 Oct 2026: `From`/`To`, or a preset).
- * The previous window is the same length immediately before it.
- * Days are local calendar dates (`YYYY-MM-DD`) in the owner's zone (PG16).
+ * Progress periods (Ben, 13 Oct 2026): `1 month` · `3 months` · `6 months` ·
+ * `1 year`, each ending today, inclusive (`1 month` on 13 Oct is 14 Sep –
+ * 13 Oct), or a custom period picked by month. The previous window is the
+ * same number of days immediately before it. Days are local calendar dates
+ * (`YYYY-MM-DD`) in the owner's zone (PG16).
  */
 
-export const PROGRESS_WINDOWS: readonly ProgressWindowDays[] = [7, 14, 30, 60];
-export const DEFAULT_PROGRESS_WINDOW: ProgressWindowDays = 30;
+export const PROGRESS_PERIODS: readonly { key: ProgressPeriodKey; label: string }[] = [
+  { key: '1m', label: '1 month' },
+  { key: '3m', label: '3 months' },
+  { key: '6m', label: '6 months' },
+  { key: '1y', label: '1 year' },
+];
+export const DEFAULT_PROGRESS_PERIOD: ProgressPeriodKey = '1m';
+
+/** `1 month`, `3 months`, `6 months`, `1 year`. */
+export function progressPeriodLabel(key: ProgressPeriodKey): string {
+  return PROGRESS_PERIODS.find((p) => p.key === key)?.label ?? '1 month';
+}
+
+/** The period in a phrase: `Last month`, `Previous 3 months`, `in the last year`. */
+export function progressPeriodPhrase(key: ProgressPeriodKey): string {
+  return key === '1m' ? 'month' : key === '1y' ? 'year' : progressPeriodLabel(key);
+}
 
 /** Inclusive local dates. */
 export interface DateRange {
@@ -19,17 +34,22 @@ export interface DateRange {
 }
 
 export interface ProgressWindow extends DateRange {
-  /** Days in the window, inclusive (a custom period can be any length). */
+  /** Days in the window, inclusive. */
   days: number;
-  /** The preset it came from; null for a custom period (`From`/`To` or `3 months`, `6 months`, `1 year`). */
-  preset: ProgressWindowDays | null;
+  /** The preset it came from; null for a custom period. */
+  preset: ProgressPeriodKey | null;
   previous: DateRange;
 }
 
-/** The window ending on `today` (a local date). */
-export function progressWindow(today: string, days: ProgressWindowDays): ProgressWindow {
+/** A window of `days` days ending on `today` (a local date), inclusive. */
+export function progressWindow(today: string, days: number): ProgressWindow {
   const from = addDays(today, -(days - 1));
-  return { days, preset: days, from, to: today, previous: { from: addDays(from, -days), to: addDays(from, -1) } };
+  return { days, preset: null, from, to: today, previous: { from: addDays(from, -days), to: addDays(from, -1) } };
+}
+
+/** A preset period ending on `today`: the day after the same date N months ago, to today. */
+export function periodProgressWindow(today: string, key: ProgressPeriodKey): ProgressWindow {
+  return { ...customProgressWindow(presetProgressRange(today, key)), preset: key };
 }
 
 /**
@@ -61,32 +81,48 @@ export function normaliseProgressRange(range: DateRange, today: string): DateRan
   return { from, to };
 }
 
-export type ProgressPeriodPreset = '3m' | '6m' | '1y';
-
-/** The period sheet's presets, each ending today. */
-export const PROGRESS_PERIOD_PRESETS: readonly { key: ProgressPeriodPreset; label: string }[] = [
-  { key: '3m', label: '3 months' },
-  { key: '6m', label: '6 months' },
-  { key: '1y', label: '1 year' },
-];
-
-/** `3 months` ending today, inclusive: the day after the same date 3 months ago, to today. */
-export function presetProgressRange(today: string, preset: ProgressPeriodPreset): DateRange {
-  const months = preset === '3m' ? 3 : preset === '6m' ? 6 : 12;
+/** A preset's dates ending today, inclusive: the day after the same date N months ago, to today. */
+export function presetProgressRange(today: string, preset: ProgressPeriodKey): DateRange {
+  const months = preset === '1m' ? 1 : preset === '3m' ? 3 : preset === '6m' ? 6 : 12;
   return { from: addDays(addMonths(today, -months), 1), to: today };
 }
 
-/** The period sheet's date steppers: a week or a month earlier or later, kept inside `[min, max]`. */
-export function stepPeriodDate(date: string, step: { unit: 'week' | 'month'; by: -1 | 1 }, bounds: DateRange): string {
-  const moved = step.unit === 'week' ? addDays(date, 7 * step.by) : addMonths(date, step.by);
-  if (moved < bounds.from) return bounds.from;
-  if (moved > bounds.to) return bounds.to;
-  return moved;
+/** Custom starts 18 months back (Ben, 13 Oct 2026). */
+export const CUSTOM_DEFAULT_MONTHS = 18;
+
+/** `YYYY-MM` of a local date. */
+export function monthKeyOf(date: string): string {
+  return date.slice(0, 7);
+}
+
+/**
+ * A custom period from the Start and End month pickers: the first day of the
+ * start month to the last day of the end month, never past today (reversed
+ * months swapped; `normaliseProgressRange` rules apply).
+ */
+export function customRangeFromMonths(start: string, end: string, today: string): DateRange | null {
+  const [a, b] = start <= end ? [start, end] : [end, start];
+  const lastDay = addDays(addMonths(`${b}-01`, 1), -1);
+  return normaliseProgressRange({ from: `${a}-01`, to: lastDay }, today);
+}
+
+/** Custom's defaults: Start = the month 18 months ago, End = this month (so the period ends today). */
+export function defaultCustomMonths(today: string): { start: string; end: string } {
+  return { start: monthKeyOf(addMonths(today, -CUSTOM_DEFAULT_MONTHS)), end: monthKeyOf(today) };
+}
+
+/** The months the pickers scroll through, oldest first: from `earliest`'s month (at most the longest period back) to this month. */
+export function pickerMonths(earliest: string, today: string): string[] {
+  const floor = monthKeyOf(addDays(today, -(PROGRESS_MAX_PERIOD_DAYS - 1)));
+  const lowest = monthKeyOf(earliest) < floor ? floor : monthKeyOf(earliest);
+  const out: string[] = [];
+  for (let m = `${lowest}-01`; monthKeyOf(m) <= monthKeyOf(today); m = addMonths(m, 1)) out.push(monthKeyOf(m));
+  return out;
 }
 
 /** The window ending today in `tz` at `nowMs`. */
-export function progressWindowAt(nowMs: number, tz: string, days: ProgressWindowDays): ProgressWindow {
-  return progressWindow(localDateOf(nowMs, tz), days);
+export function progressWindowAt(nowMs: number, tz: string, key: ProgressPeriodKey): ProgressWindow {
+  return periodProgressWindow(localDateOf(nowMs, tz), key);
 }
 
 /** `YYYY-MM-DD` strings compare in calendar order. */

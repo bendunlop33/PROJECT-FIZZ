@@ -2,9 +2,13 @@ import { z } from 'zod';
 import { RecordMetaSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema } from './common';
 import { RestSettingSchema } from './routine';
 
-/** Progress windows, in days, each ending today (progress.md PG24). */
+/** Legacy Progress windows, in days (progress.md PG24). Still read from older profiles; no longer offered or used (Ben, 13 Oct 2026). */
 export const ProgressWindowDaysSchema = z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(60)]);
 export type ProgressWindowDays = z.infer<typeof ProgressWindowDaysSchema>;
+
+/** Progress periods, each ending today (Ben, 13 Oct 2026): `1 month`, `3 months`, `6 months`, `1 year`. */
+export const ProgressPeriodKeySchema = z.enum(['1m', '3m', '6m', '1y']);
+export type ProgressPeriodKey = z.infer<typeof ProgressPeriodKeySchema>;
 
 /** Progress's muscle grouping (PG26, PG27). */
 export const ProgressGroupingSchema = z.enum(['body_part', 'ppl']);
@@ -43,11 +47,13 @@ export const UserProfileSchema = RecordMetaSchema.extend({
     .optional(),
   /**
    * Progress's last window and muscle grouping (progress.md PG24, §6.4), so
-   * the tab opens as Ben left it. Absent = `30 days`, `Body parts`.
+   * the tab opens as Ben left it. Absent = `1 month`, `Body parts`.
+   * `window` is the legacy day window: read, never written or used.
    */
   progress: z
     .object({
       window: ProgressWindowDaysSchema.optional(),
+      period: ProgressPeriodKeySchema.optional(),
       grouping: ProgressGroupingSchema.optional(),
     })
     .optional(),

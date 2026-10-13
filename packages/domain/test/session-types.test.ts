@@ -153,6 +153,17 @@ describe('deriveSessionTypes (§3.1)', () => {
     expect(deriveSessionTypes({ routines: [], sessions: [appSession], now: NOW })).toEqual([]);
   });
 
+  it('names an unnamed import from its exercises when given, as the overview does (F20)', () => {
+    const trap: SessionTypeSession = { ...imported('a', '2026-10-01', { Trapezius: 10 }), derivedTitle: 'Pull' };
+    const pull: SessionTypeSession = { ...imported('b', '2026-10-03', { Back: 10 }), derivedTitle: 'Pull' };
+    const types = deriveSessionTypes({ routines: [], sessions: [trap, pull], now: NOW });
+    expect(types).toHaveLength(1);
+    expect(types[0]).toMatchObject({ label: 'Pull', key: 'name:pull', sourceSessionId: 'b' });
+    // Nothing recognised (`Workout`) is not a type; no derived title falls back to Category.
+    expect(deriveSessionTypes({ routines: [], sessions: [{ ...trap, derivedTitle: 'Workout' }], now: NOW })).toEqual([]);
+    expect(deriveSessionTypes({ routines: [], sessions: [{ ...trap, derivedTitle: null }], now: NOW })[0]?.label).toBe('Trapezius');
+  });
+
   it('leaves workouts from a deleted routine to Past workouts', () => {
     expect(deriveSessionTypes({ routines: [], sessions: [logged('a', '2026-10-01', { routineId: 'gone', routineName: 'Old split' })], now: NOW })).toEqual([]);
   });

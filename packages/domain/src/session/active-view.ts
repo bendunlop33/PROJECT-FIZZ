@@ -240,8 +240,10 @@ export interface FocusView {
   removable: boolean;
   /** `Swap exercise` is offered: the row has pending sets a swap would move (`midSwapSlot`; not only a half-logged pair's other side, review gaps r2 S1). */
   swappable: boolean;
-  /** `Barbell · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
+  /** `Barbell · Working · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
   headerLine: string;
+  /** The set's type word, always shown (F3): `Warm-up`, `Working`, `Top set`, `Back-off`, `Drop set`. */
+  setTypeLabel: string;
   setNumber: number;
   setCount: number;
   /** `imported`: from FitNotes, shown as `Last (FitNotes, 1 Oct)` (B7). */
@@ -587,8 +589,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   }
 
   const prevFirst = prev?.sets.find((c) => c.index === setNumber - 1) ?? prev?.sets[prev.sets.length - 1] ?? null;
-  // `Working` is the usual case, so only other set types are named (D-ActiveSet: `Barbell · Set 2 of 4`).
-  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, set.setType === 'working' ? null : SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
+  // F3 (Ben, 13 Oct): every set names its type, `Working` too (`Barbell · Working · Set 2 of 4`).
+  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
 
   return {
     setId: set.id,
@@ -603,6 +605,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     removable: isRemovable(state, ex),
     swappable: midSwapSlot(state, ex.id) !== null,
     headerLine: headerParts.filter((p): p is string => p !== null).join(' · '),
+    setTypeLabel: SET_TYPE_WORD[set.setType],
     setNumber,
     setCount: own.length,
     previous:

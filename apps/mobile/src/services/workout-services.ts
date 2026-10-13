@@ -1504,9 +1504,23 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const rows = await repos().sessions.listSessionTypeRows(p.id, TYPE_ROW_LIMIT);
     // Decision 1: unnamed imports are typed by their FitNotes Category; unreadable rows just leave them untyped.
     const categories = SESSION_PICKER_DECISIONS.groupImportsByCategory && rows.some((r) => r.imported) ? await ctx.store().repos.imports.categoriesBySession(p.id).catch(() => new Map<string, Record<string, number>>()) : new Map<string, Record<string, number>>();
+    // F20: an unnamed import is typed by the title the overview and calendar give it (`Pull`), not its Category cell.
+    const infoById = new Map<string, Exercise | null>();
+    const derivedTitle = async (ids: readonly string[]): Promise<string | null> => {
+      const infos: Exercise[] = [];
+      for (const id of ids) {
+        if (!infoById.has(id)) infoById.set(id, await repos().exercises.get(id).catch(() => null));
+        const e = infoById.get(id);
+        if (e) infos.push(e);
+      }
+      return infos.length === 0 ? null : deriveWorkoutTitle(infos);
+    };
+    const titles = new Map<string, string>();
+    // No exercise read back: its Category cell still names it.
+    if (SESSION_PICKER_DECISIONS.groupImportsByCategory) for (const r of rows) if (r.imported && r.routineId === null) { const t = await derivedTitle(r.exerciseIds); if (t !== null) titles.set(r.sessionId, t); }
     return groupSessionTypes({
       routines: live.map((r) => ({ id: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, exerciseCount: routineCounts(r).exercises })),
-      sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported, importCategories: categories.get(r.sessionId) ?? null })),
+      sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported, importCategories: categories.get(r.sessionId) ?? null, derivedTitle: titles.get(r.sessionId) ?? null })),
       now: ctx.now(),
       groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory,
     });

@@ -147,6 +147,13 @@ export interface SessionTypeSession {
   imported: boolean;
   /** Imported only: working-set count per FitNotes `Category` cell (`imports.categoriesBySession`). */
   importCategories?: Readonly<Record<string, number>> | null;
+  /**
+   * Imported only: the title the overview and calendar give it from its
+   * exercises (`deriveWorkoutTitle`, F20). When given, it names the type
+   * instead of the Category cell, so the list and the overview agree;
+   * `Workout` (nothing recognised) leaves it untyped.
+   */
+  derivedTitle?: string | null;
 }
 
 /** A live routine, in list order. */
@@ -209,6 +216,9 @@ interface Group {
   members: { session: SessionTypeSession; label: string; kind: 'named' | 'category' | 'routine' }[];
 }
 
+/** `deriveWorkoutTitle`'s answer when no exercise is recognised: not a type. */
+const GENERIC_DERIVED_TITLE = 'Workout';
+
 const startedMs = (s: SessionTypeSession): number => toMs(s.startedAt.utc);
 
 /** Whole calendar days from `at` to `now`, in `now`'s zone. */
@@ -224,7 +234,12 @@ function historyLabelOf(s: SessionTypeSession, byCategory: boolean): { label: st
     if (label.length === 0) return null;
     return { label, key: nameKey(normaliseSessionName(label)), kind: 'named' };
   }
-  if (!byCategory || !s.imported || s.importCategories === undefined || s.importCategories === null) return null;
+  if (!byCategory || !s.imported) return null;
+  if (s.derivedTitle !== undefined && s.derivedTitle !== null) {
+    const label = displaySessionName(s.derivedTitle);
+    return label.length === 0 || label === GENERIC_DERIVED_TITLE ? null : { label, key: nameKey(normaliseSessionName(label)), kind: 'category' };
+  }
+  if (s.importCategories === undefined || s.importCategories === null) return null;
   const c = categoryLabel(s.importCategories);
   return c === null ? null : { ...c, kind: 'category' };
 }

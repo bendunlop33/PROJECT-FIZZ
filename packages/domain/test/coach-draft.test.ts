@@ -13,6 +13,7 @@ import {
   coachDraftListed,
   currentDraftVersion,
   diffDraftVersions,
+  draftWorkingSets,
   discardWorkoutDraft,
   doableHere,
   draftAsRoutine,
@@ -139,7 +140,7 @@ function ctx(over: Partial<WorkoutProposalContext> & { gym?: typeof MAIN_GYM } =
     restPresetsS: [60, 90, 120, 150, 180],
     ruleReps: () => null,
     previous: null,
-    newSlotKey: (exerciseId) => `00000000-0000-4000-9000-${exerciseId.slice(-12)}`,
+    newSlotKey: (exerciseId, i) => `00000000-0000-4000-9${String(i).padStart(3, '0')}-${exerciseId.slice(-12)}`,
     ...over,
   };
 }
@@ -319,7 +320,6 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
         pex('dumbbell-lateral-raise', { superset: 'B' }),
         pex('cable-triceps-pushdown', { superset: 'B' }),
         pex('assisted-pull-up', { superset: 'B' }),
-        pex('dumbbell-incline-press'),
         pex('landmine-twist'),
       ]),
       ctx({ restPresetsS: [120, 150] }),
@@ -330,7 +330,6 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
       'Bench press · reps 0–60 → 1–50',
       'Bench press · RPE 11 → 10',
       'Rest 2:15 → 2:00 (your presets)',
-      'Incline DB press left out · listed twice',
       'Landmine twist left out · not in your exercises',
       'Superset ungrouped · needs 2–4 exercises in a row',
     ]);
@@ -338,6 +337,35 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
     expect(bench?.setTemplates).toHaveLength(10);
     expect(bench?.setTemplates[0]).toMatchObject({ reps: { min: 1, max: 50 }, targetRpe: 10, restS: 120 });
     expect(r.plan.slots.every((s) => s.supersetGroup === null)).toBe(true);
+  });
+
+  it('F21: the same exercise listed twice is two slots (a light warm-up early, working sets later); a revision keeps each slot’s key', () => {
+    const list = [
+      pex('dumbbell-lateral-raise', { workingSets: 2, reps: { min: 15, max: 20 }, targetRpe: 6 }),
+      pex('barbell-bench-press'),
+      pex('dumbbell-lateral-raise', { workingSets: 3, reps: { min: 10, max: 12 }, targetRpe: 9 }),
+    ];
+    const r = checked(args(list));
+    expect(r.status).toBe('ok');
+    expect(r.checks).toEqual([]);
+    const lat = r.plan.slots.filter((x) => x.exerciseId === r.plan.slots[0]?.exerciseId);
+    expect(lat).toHaveLength(2);
+    expect(new Set(r.plan.slots.map((x) => x.slotKey)).size).toBe(3);
+    expect(lat.map((x) => draftWorkingSets(x))).toEqual([2, 3]);
+    expect(lat.map((x) => x.order)).toEqual([0, 2]);
+    // As a routine: two exercises with the same exercise ID, each its own row.
+    const d = draftOf();
+    const routine = draftAsRoutine(d, { ...currentDraftVersion(d), plan: r.plan });
+    expect(routine.exercises.map((e) => e.id)).toEqual(r.plan.slots.map((x) => x.slotKey));
+    // v2 changes only the second copy: its key is kept, and the diff names one change.
+    const v2 = checked(args([list[0] as ProposedExercise, list[1] as ProposedExercise, pex('dumbbell-lateral-raise', { workingSets: 4, reps: { min: 10, max: 12 }, targetRpe: 9 })]), ctx({ previous: r.plan })).plan;
+    expect(v2.slots.map((x) => x.slotKey)).toEqual(r.plan.slots.map((x) => x.slotKey));
+    const diff = diffDraftVersions(r.plan, v2);
+    expect(diff).toMatchObject({ added: [], removed: [], reordered: false });
+    expect(diff.changed).toEqual([expect.objectContaining({ slotKey: r.plan.slots[2]?.slotKey, fields: ['sets'], setsFrom: 3, setsTo: 4 })]);
+    // Dropping the warm-up copy reads as one removed slot.
+    const v3 = checked(args([list[1] as ProposedExercise, list[2] as ProposedExercise]), ctx({ previous: r.plan })).plan;
+    expect(diffDraftVersions(r.plan, v3).removed).toHaveLength(1);
   });
 
   it('BD7: a missing RPE is the built-in rule’s, with `RPE missing · n used`; a reversed rep range is put in order', () => {

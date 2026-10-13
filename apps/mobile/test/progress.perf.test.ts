@@ -64,7 +64,7 @@ describe('Progress on a 4-year, ~600-workout history', () => {
     const startLoad = loadSample();
     const budget = (ms: number) => timingBudget(ms, startLoad);
     const cold = await measureBlocking(() => svc.prewarm());
-    const first = await measureBlocking(() => svc.home({ days: 30 }));
+    const first = await measureBlocking(() => svc.home({ period: '1m' }));
     const view = first.result?.view;
     if (view?.dataState !== 'normal') throw new Error('expected normal');
     // 4 a week over the last 30 days ending the day before "today".
@@ -72,9 +72,9 @@ describe('Progress on a 4-year, ~600-workout history', () => {
     expect(await store.repos.sessions.listFinishedRevisions(profile().id)).toHaveLength(624);
 
     const switches: { totalMs: number; maxBlockMs: number }[] = [];
-    for (const days of [7, 14, 60, 30] as const) {
+    for (const period of ['3m', '6m', '1y', '1m'] as const) {
       for (const grouping of ['body_part', 'ppl'] as const) {
-        switches.push(await measureBlocking(() => svc.home({ days, grouping })));
+        switches.push(await measureBlocking(() => svc.home({ period, grouping })));
       }
     }
     const calendar = await measureBlocking(() => svc.calendar('2026-09'));
@@ -94,10 +94,10 @@ describe('Progress on a 4-year, ~600-workout history', () => {
     // A burst from parallel suites can stretch one pass; a real regression fails the repeat too (review progress-B r2 N1).
     let timed = { first: first.totalMs, worst: worstSwitch };
     if (timed.first >= budget(SWITCH_BUDGET_MS) || timed.worst >= budget(SWITCH_BUDGET_MS)) {
-      const again = await measureBlocking(() => svc.home({ days: 30 }));
+      const again = await measureBlocking(() => svc.home({ period: '1m' }));
       let worst = 0;
-      for (const days of [7, 14, 60, 30] as const) {
-        for (const grouping of ['body_part', 'ppl'] as const) worst = Math.max(worst, (await measureBlocking(() => svc.home({ days, grouping }))).totalMs);
+      for (const period of ['3m', '6m', '1y', '1m'] as const) {
+        for (const grouping of ['body_part', 'ppl'] as const) worst = Math.max(worst, (await measureBlocking(() => svc.home({ period, grouping }))).totalMs);
       }
       console.log(`[Progress] repeat after a slow pass: first open ${String(Math.round(again.totalMs))}ms, window switches worst ${String(Math.round(worst))}ms`);
       timed = { first: again.totalMs, worst };

@@ -22,14 +22,14 @@ describe('S3: Ask on the Muscles screen carries the Progress window', () => {
   it('Muscles floats the Ask pill with a progress entry for the shared window', () => {
     const src = read('screens/progress/MusclesScreen.tsx');
     expect(src).toContain('<AskPill');
-    expect(src).toContain("{ kind: 'progress', days, ");
+    expect(src).toContain("{ kind: 'progress', period, ");
     // On both the normal and the "Nothing to show yet" page.
     expect(src.match(/<Screen floating=\{ask\}>/g)).toHaveLength(2);
   });
 
   it('Screen draws `floating` over the scroll area and leaves room under the content for it', () => {
     const src = read('ui/layout.tsx');
-    expect(src).toContain('(floating ? FLOATING_ROOM : 0)');
+    expect(src).toContain('(floating ? FLOATING_PILL_ROOM : 0)');
     expect(src.indexOf('{floating}')).toBeGreaterThan(src.indexOf('</ScrollView>'));
   });
 });
@@ -93,21 +93,22 @@ describe('N2: a failed settings save drops only the fields it still owns', () =>
   it('grouping fails, a later window tap succeeds: the screen shows the saved grouping and the new window', async () => {
     const { progress, release, saved } = service([false, true]);
     const a = progress.saveSettings({ grouping: 'ppl' });
-    const b = progress.saveSettings({ days: 7 });
+    const b = progress.saveSettings({ period: '3m' });
     expect((await progress.home())?.grouping).toBe('ppl');
     await release();
     expect(await a).toEqual({ ok: false });
     await release();
     expect(await b).toEqual({ ok: true });
     const home = await progress.home();
-    expect([home?.days, home?.grouping]).toEqual([7, 'body_part']);
-    expect(saved()).toEqual({ window: 7, grouping: 'body_part' });
+    expect([home?.period, home?.grouping]).toEqual(['3m', 'body_part']);
+    // The legacy day window is kept as read, never used.
+    expect(saved()).toEqual({ window: 30, period: '3m', grouping: 'body_part' });
   });
 
   it('a later tap on the same field keeps it when the earlier save fails', async () => {
     const { progress, release } = service([false, true]);
     const a = progress.saveSettings({ grouping: 'ppl' });
-    const b = progress.saveSettings({ grouping: 'body_part', days: 14 });
+    const b = progress.saveSettings({ grouping: 'body_part', period: '6m' });
     const c = progress.saveSettings({ grouping: 'ppl' });
     await release();
     expect(await a).toEqual({ ok: false });
@@ -118,6 +119,6 @@ describe('N2: a failed settings save drops only the fields it still owns', () =>
     await release();
     await c;
     const home = await progress.home();
-    expect([home?.days, home?.grouping]).toEqual([14, 'ppl']);
+    expect([home?.period, home?.grouping]).toEqual(['6m', 'ppl']);
   });
 });

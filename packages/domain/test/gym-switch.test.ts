@@ -134,7 +134,7 @@ describe('Hotel switch (gym-switch check 1, brief §10)', () => {
     const view = buildActiveSetView({ aggregate: after, nowMs: Date.parse(at(410).utc), gymName: 'Hotel · Lisbon', gymNames: GYM_NAMES, previous: {}, painFlagged: new Set(), edits: null });
     const focus = view.focus;
     expect(focus?.exerciseName).toBe('Bench press');
-    expect(focus?.headerLine).toBe('Set 3 of 4');
+    expect(focus?.headerLine).toBe('Working · Set 3 of 4');
     expect(plain(focus?.target ?? '')).toBe('Target 6–8 reps');
     expect(focus?.snapNote).toEqual({ tone: 'warning', text: 'No load target · no olympic bar here · plan 100 kg' });
     expect(focus?.rows.map((r) => [r.number, r.status, r.gymCaption, r.partStart])).toEqual([

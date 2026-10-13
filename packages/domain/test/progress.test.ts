@@ -117,7 +117,6 @@ describe('windows and sessions (checks 1–3)', () => {
     expect(c30.weeks?.[0]).toMatchObject({ to: '2026-09-13', partial: true });
     expect(c30.weeks?.[4]).toMatchObject({ partial: false });
     expect(c30.perWeek).toBe(2.1);
-    expect(c30.days).toBeNull();
     expect(countSessions(sessions, progressWindow(TODAY, 7)).count).toBe(2);
   });
 
@@ -134,16 +133,6 @@ describe('windows and sessions (checks 1–3)', () => {
     }
   });
 
-  it('check 3: 7 days is 7 cells ending today; two workouts on a day count 2; 14 days is 14 cells; perWeek only from 14 days', () => {
-    const sessions = [session('2026-10-06'), session('2026-10-08'), session('2026-10-08')];
-    const c7 = countSessions(sessions, progressWindow(TODAY, 7));
-    expect(c7.days?.map((d) => d.count)).toEqual([0, 1, 0, 2, 0, 0, 0]);
-    expect(c7.days?.[0]).toMatchObject({ date: '2026-10-05', weekday: 0 });
-    expect(c7.days?.[6]).toMatchObject({ date: TODAY, weekday: 6, isToday: true });
-    expect(c7.perWeek).toBeNull();
-    expect(countSessions(sessions, progressWindow(TODAY, 14)).days).toHaveLength(14);
-  });
-
   it('lastSessionDate is the latest workout up to the window end, for `Last workout:`', () => {
     const c = countSessions([session('2026-08-14'), session('2026-07-01')], progressWindow(TODAY, 7));
     expect(c).toMatchObject({ count: 0, lastSessionDate: '2026-08-14' });
@@ -154,10 +143,23 @@ describe('time in gym (checks 4–8, PG25)', () => {
   it('check 4: imported workouts count as sessions, never add time, and are left out of time', () => {
     const t = timeInGym([session('2026-10-08'), imported('2026-10-06')], progressWindow(TODAY, 7));
     expect(t).toMatchObject({ sessionCount: 2, timedCount: 1, totalMs: 60 * MIN, avgMs: 60 * MIN, excluded: { imported: 1 } });
-    const home = buildProgressHomeView({ sessions: [imported('2026-10-06')], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [imported('2026-10-06')], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.activity.stats.map((s) => s.value)).toEqual(['1', '—', '—']);
     expect(home.activity.footnote).toBe('No times for imported workouts');
+  });
+
+  it('F17: 1 of 3 sessions timed (2 imported): TIME says so, never a total for all three', () => {
+    const home = buildProgressHomeView({ sessions: [session('2026-10-08', { durationMs: 45 * MIN }), imported('2026-10-06'), imported('2026-10-05')], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
+    if (home.dataState !== 'normal') throw new Error('expected normal');
+    expect(home.activity.stats.map((s) => sp(s.value))).toEqual(['3', '45 min', '45 min']);
+    expect(home.activity.stats[1]).toMatchObject({ label: 'TIME', note: '1 of 3 timed' });
+    expect(home.activity.statsWords).toBe('3 sessions. Time in gym 45 minutes, from 1 of 3 sessions. Average 45 minutes per session.');
+    expect(home.activity.footnote).toBe('Time from 1 of 3 sessions');
+    // Every session timed: no note.
+    const all = buildProgressHomeView({ sessions: [session('2026-10-08', { durationMs: 45 * MIN })], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
+    if (all.dataState !== 'normal') throw new Error('expected normal');
+    expect(all.activity.stats[1]?.note).toBeUndefined();
   });
 
   it('check 6: over 4 h is left out until confirmed; the footnote counts what was used', () => {
@@ -168,7 +170,7 @@ describe('time in gym (checks 4–8, PG25)', () => {
     expect(t.sessionCount).toBe(9);
     expect(t.timedCount).toBe(8);
     expect(t.excluded.overCap).toEqual([{ sessionId: long.sessionId, version: 3, name: 'Push A', date: '2026-10-02', durationMs: 5 * H + 12 * MIN }]);
-    const home = buildProgressHomeView({ sessions, exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions, exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.activity.footnote).toBe('Time from 8 of 9 sessions');
     expect(sp(home.activity.sheet.overCap[0]?.text)).toBe('Fri 2 Oct · Push A · 5 h 12 min');
@@ -194,12 +196,12 @@ describe('time in gym (checks 4–8, PG25)', () => {
 
   it('check 8: the comparison is counts and time, or none; never a percentage', () => {
     const sessions = [session('2026-09-01', { durationMs: 3 * H + 25 * MIN }), session('2026-09-03', { durationMs: 3 * H + 25 * MIN }), session('2026-10-08')];
-    const home = buildProgressHomeView({ sessions, exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions, exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
-    expect(sp(home.activity.comparison)).toBe('Previous 30 days: 2 sessions · 6 h 50 min');
-    const none = buildProgressHomeView({ sessions: [session('2026-10-08')], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    expect(sp(home.activity.comparison)).toBe('Previous month: 2 sessions · 6 h 50 min');
+    const none = buildProgressHomeView({ sessions: [session('2026-10-08')], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (none.dataState !== 'normal') throw new Error('expected normal');
-    expect(none.activity.comparison).toBe('Previous 30 days: none');
+    expect(none.activity.comparison).toBe('Previous month: none');
     expect(JSON.stringify(home)).not.toMatch(/%/);
   });
 
@@ -266,7 +268,7 @@ describe('muscles (checks 9–15, PG26, PG27)', () => {
     expect(rowOf(fr, 'Chest')).toMatchObject({ sessions: 2, sets: 4 });
     expect(fr.notCounted).toMatchObject({ warmups: 1, easy: 1 });
     expect(fr.markedCounted).toBe(1);
-    const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.muscles.notCounted).toMatchObject({ summary: '1 warm-up set · 1 rated under RPE 6', marked: '1 set you marked (spotted) is counted here.' });
   });
@@ -281,7 +283,7 @@ describe('muscles (checks 9–15, PG26, PG27)', () => {
   });
 
   it('check 15: contributor lines read `sets × factor = total`', () => {
-    const home = buildProgressHomeView({ sessions: [session('2026-10-08', { exercises: [row('bench', [set(), set(), set(), set()]), row('incline', [set(), set()])] })], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [session('2026-10-08', { exercises: [row('bench', [set(), set(), set(), set()]), row('incline', [set(), set()])] })], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     const chest = home.muscles.rows.find((r) => r.key === 'Chest');
     expect(chest?.contributors.map((c) => c.text)).toEqual(['Bench press  4 sets × 1 = 4', 'Incline press  2 sets × 1 = 2']);
@@ -302,7 +304,7 @@ describe('muscles (checks 9–15, PG26, PG27)', () => {
     expect(exerciseSplit(undefined)).toBe('other');
     expect(exerciseSplit({ name: 'x', movementPattern: 'vertical_push', primaryMuscles: [] })).toBe('push');
     expect(exerciseSplit({ name: 'x', movementPattern: 'hinge', primaryMuscles: ['hamstrings'], split: 'pull' })).toBe('pull');
-    const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.muscles.noMusclesLine).toBe('2 exercises have no muscles set');
     expect(home.muscles.noneSet).toBe(true);
@@ -325,7 +327,7 @@ describe('records in the window (check 17, PG10, PG30)', () => {
     expect(r.total).toBe(1);
     expect(r.items[0]).toMatchObject({ kind: 'heaviest', label: 'Heaviest set', date: '2026-10-01', isEstimate: false });
     expect(sp(r.items[0]?.value)).toBe('105 kg × 3');
-    const home = buildProgressHomeView({ sessions: [...history, session('2026-10-01', { exercises: [benchRow(kg(105), 3)] })], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part', gymNames: { 'gym-1': 'Main Gym' } });
+    const home = buildProgressHomeView({ sessions: [...history, session('2026-10-01', { exercises: [benchRow(kg(105), 3)] })], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part', gymNames: { 'gym-1': 'Main Gym' } });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.records.items[0]).toMatchObject({ title: 'Bench press · Main Gym', date: '1\u00a0Oct', words: 'Bench press, Main Gym. Heaviest set, 105 kilograms by 3, 1 October.' });
   });
@@ -397,37 +399,37 @@ describe('Est. 1RM (PG11)', () => {
 
 describe('home view states (§3.1, check 19, 23)', () => {
   it('empty: nothing to show', () => {
-    expect(buildProgressHomeView({ sessions: [], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' })).toEqual({ dataState: 'empty' });
+    expect(buildProgressHomeView({ sessions: [], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' })).toEqual({ dataState: 'empty' });
   });
 
   it('no sessions in the window: 0 · — · —, bars at 0 with labels, last workout line, every muscle row 0', () => {
-    const home = buildProgressHomeView({ sessions: [session('2026-08-14', { exercises: [row('bench', [set()])] })], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [session('2026-08-14', { exercises: [row('bench', [set()])] })], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
-    expect(sp(home.datesLine)).toBe('5 Oct – 11 Oct');
+    expect(sp(home.datesLine)).toBe('12 Sep – 11 Oct');
     expect(home.activity.stats).toEqual([
       { value: '0', label: 'SESSIONS' },
       { value: '—', label: 'TIME' },
       { value: '—', label: 'AVG' },
     ]);
     expect(sp(home.activity.lastWorkout)).toBe('Last workout: Fri 14 Aug');
-    expect(home.activity.bars).toMatchObject({ kind: 'days' });
-    expect(home.records.empty).toBe('No new records in the last 7 days.');
+    expect(home.activity.chart).toMatchObject({ unit: 'week', yTicks: [0, 1, 2, 3] });
+    expect(home.activity.chart.points.every((p) => p.count === 0)).toBe(true);
+    expect(home.records.empty).toBe('No new records in the last month.');
     expect(home.muscles.rows.every((r) => r.zero)).toBe(true);
   });
 
   it('VoiceOver sentences for the strip and bars', () => {
-    const home = buildProgressHomeView({ sessions: [session('2026-10-06', { durationMs: 59 * MIN }), session('2026-10-08', { durationMs: 59 * MIN })], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [session('2026-10-06', { durationMs: 59 * MIN }), session('2026-10-08', { durationMs: 59 * MIN })], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.activity.statsWords).toBe('2 sessions. Time in gym 1 hour 58 minutes. Average 59 minutes per session.');
-    expect(home.activity.bars.words).toBe('Last 7 days: Tuesday 6 October, 1 workout; Thursday 8 October, 1 workout. Other days none.');
-    const w30 = buildProgressHomeView({ sessions: CHECK1.map((d) => session(d)), exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    const w30 = buildProgressHomeView({ sessions: CHECK1.map((d) => session(d)), exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (w30.dataState !== 'normal') throw new Error('expected normal');
-    expect(w30.activity.bars.words).toBe('Sessions per week: 12 to 13 September, 1; week from 14 September, 2; week from 21 September, 2; week from 28 September, 2; week from 5 October, 2.');
-    expect(w30.activity.bars).toMatchObject({ kind: 'weeks', max: 3 });
+    expect(w30.activity.chart.words).toBe('Sessions per week: 12 to 13 September, 1; week from 14 September, 2; week from 21 September, 2; week from 28 September, 2; week from 5 October, 2.');
+    expect(w30.activity.chart).toMatchObject({ unit: 'week', yTicks: [0, 1, 2, 3] });
   });
 
   it('no invented values: no score, ring, percentage, streak, recovery, readiness or fatigue words', () => {
-    const home = buildProgressHomeView({ sessions: CHECK1.map((d) => session(d, { exercises: [row('bench', [set(), set()])] })), exercises: INFO, today: TODAY, days: 30, grouping: 'ppl' });
+    const home = buildProgressHomeView({ sessions: CHECK1.map((d) => session(d, { exercises: [row('bench', [set(), set()])] })), exercises: INFO, today: TODAY, period: '1m', grouping: 'ppl' });
     expect(JSON.stringify(home)).not.toMatch(/score|ring|%|streak|recovery|readiness|fatigue/i);
   });
 });
@@ -562,13 +564,13 @@ describe('review progress-A fixes (S6, S8, N1, N2, N5, N9)', () => {
     const s = session('2026-10-08', { exercises: [row('bench', [set({ exclusions: ['pain'] }), set({ exclusions: ['spotted'] }), set({ exclusions: ['spotted'] })])] });
     const fr = muscleFrequency([s], INFO, w7, 'body_part');
     expect(fr.markedKinds).toEqual(['spotted', 'pain']);
-    const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [s], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.muscles.notCounted.marked).toBe('3 sets you marked (spotted, pain) are counted here.');
   });
 
   it('N2: the dates line has a VoiceOver form with full month names and no dash', () => {
-    const home = buildProgressHomeView({ sessions: [session('2026-10-08')], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [session('2026-10-08')], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.datesWords).toBe('12 September to 11 October');
   });
@@ -577,7 +579,7 @@ describe('review progress-A fixes (S6, S8, N1, N2, N5, N9)', () => {
     const benchAt = (load: Load, reps: number, equipmentId: string) => row('bench', [set({ load, reps })], { exerciseName: 'Bench press', equipmentId });
     const hist = (eq: string) => ['2026-09-01', '2026-09-05', '2026-09-09'].map((d) => session(d, { exercises: [benchAt(kg(100), 5, eq)] }));
     const today = session('2026-10-01', { exercises: [benchAt(kg(105), 3, 'bar-1'), benchAt(kg(105), 3, 'bar-2')] });
-    const home = buildProgressHomeView({ sessions: [...hist('bar-1'), ...hist('bar-2'), today], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [...hist('bar-1'), ...hist('bar-2'), today], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     const keys = home.records.items.map((r) => r.key);
     expect(keys).toHaveLength(2);
@@ -586,7 +588,7 @@ describe('review progress-A fixes (S6, S8, N1, N2, N5, N9)', () => {
 
   it('N9: a `BW + 10 kg` record reads "body weight plus 10 kilograms"', () => {
     const dip = (d: string, v: number) => session(d, { exercises: [row('dip', [set({ load: kg(v, 'added'), reps: 8 })], { exerciseName: 'Dip', convention: 'added', equipmentKind: 'bodyweight_station' })] });
-    const home = buildProgressHomeView({ sessions: [dip('2026-09-01', 5), dip('2026-09-04', 5), dip('2026-09-07', 5), dip('2026-10-02', 10)], exercises: INFO, today: TODAY, days: 30, grouping: 'body_part' });
+    const home = buildProgressHomeView({ sessions: [dip('2026-09-01', 5), dip('2026-09-04', 5), dip('2026-09-07', 5), dip('2026-10-02', 10)], exercises: INFO, today: TODAY, period: '1m', grouping: 'body_part' });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(sp(home.records.items[0]?.value)).toBe('BW + 10 kg × 8');
     expect(home.records.items[0]?.words).toContain('Heaviest set, body weight plus 10 kilograms by 8');

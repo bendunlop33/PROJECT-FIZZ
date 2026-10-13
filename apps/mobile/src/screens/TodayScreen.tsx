@@ -4,7 +4,7 @@ import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native
 
 import { AskPill } from './coach/AskPill';
 
-import { discardCommand, discardConfirmation, formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
+import { discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
 import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
@@ -461,7 +461,7 @@ export function TodayScreen() {
       case 'done_today':
         return (
           // A date-only (imported) workout has no times, so no duration (rule 6).
-          <Hero label="Done today" title={main.title} lines={[main.activeMs === null ? null : formatMinutes(main.activeMs)]}>
+          <Hero label="Done today" title={main.title} lines={[doneTodayDurationLine(main.title, main.activeMs)]}>
             <SecondaryButton
               label="View summary"
               onPress={() => {

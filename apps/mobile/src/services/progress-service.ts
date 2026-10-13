@@ -3,7 +3,7 @@ import {
   buildExerciseDetailView,
   buildExerciseListView,
   buildProgressHomeView,
-  DEFAULT_PROGRESS_WINDOW,
+  DEFAULT_PROGRESS_PERIOD,
   localDateOf,
   monthOf,
   normaliseProgressRange,
@@ -26,7 +26,7 @@ import {
   type ResumeBar,
 } from '@fizz/domain';
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
-import type { Exercise, ProgressGrouping, ProgressWindowDays, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, ProgressGrouping, ProgressPeriodKey, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Progress (progress.md v1.0, slice A). Local reads only: nothing here waits
@@ -61,8 +61,8 @@ export interface ProgressServiceDeps {
 
 export interface ProgressHome {
   view: ProgressHomeView;
-  /** The preset in use, or the last one chosen when a custom period shows (it comes back on `Clear`). */
-  days: ProgressWindowDays;
+  /** The preset in use, or the last one chosen when a custom period shows. */
+  period: ProgressPeriodKey;
   /** The custom period showing (made valid), or null for a preset. For this run of the app only: not saved. */
   range: DateRange | null;
   /** Today in Ben's zone, and the first workout's date (or today): the period sheet's bounds. */
@@ -137,33 +137,33 @@ export function createProgressService(deps: ProgressServiceDeps) {
    * setting, check 15). Set synchronously, so a reload started right after
    * the tap already sees it. Tied to the open store: a restore drops it.
    */
-  let chosen: { store: Store; days?: ProgressWindowDays; grouping?: ProgressGrouping } | null = null;
+  let chosen: { store: Store; period?: ProgressPeriodKey; grouping?: ProgressGrouping } | null = null;
   /**
    * A custom period (Ben, 12 Oct 2026), shared by the home and Muscles like
    * the window. In memory for this run only: a fixed date range saved in Your
    * data would silently go stale, so a relaunch shows the saved preset.
    * Choosing a preset clears it. Tied to the open store.
    */
-  let period: { store: Store; range: DateRange } | null = null;
+  let customRange: { store: Store; range: DateRange } | null = null;
   let settingsWrites: Promise<unknown> = Promise.resolve();
   /** The tap that last set each field of `chosen`; a failed save drops only the fields it still owns (review r2 N2). */
-  const fieldOwner: { days?: symbol; grouping?: symbol } = {};
+  const fieldOwner: { period?: symbol; grouping?: symbol } = {};
 
-  function dropFailed(patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }, token: symbol): void {
+  function dropFailed(patch: { period?: ProgressPeriodKey; grouping?: ProgressGrouping }, token: symbol): void {
     if (chosen === null) return;
     const next = { ...chosen };
-    if (patch.days !== undefined && fieldOwner.days === token) {
-      delete next.days;
-      delete fieldOwner.days;
+    if (patch.period !== undefined && fieldOwner.period === token) {
+      delete next.period;
+      delete fieldOwner.period;
     }
     if (patch.grouping !== undefined && fieldOwner.grouping === token) {
       delete next.grouping;
       delete fieldOwner.grouping;
     }
-    chosen = next.days === undefined && next.grouping === undefined ? null : next;
+    chosen = next.period === undefined && next.grouping === undefined ? null : next;
   }
 
-  function chosenNow(): { days?: ProgressWindowDays; grouping?: ProgressGrouping } {
+  function chosenNow(): { period?: ProgressPeriodKey; grouping?: ProgressGrouping } {
     if (chosen === null || chosen.store !== deps.store()) return {};
     return chosen;
   }
@@ -305,28 +305,28 @@ export function createProgressService(deps: ProgressServiceDeps) {
 
     /**
      * `buildProgressHome` (§6.2): one call for the home and the Muscles
-     * screen. `days` / `grouping` default to Ben's last choice (the one shared
-     * setting: just chosen, else saved in Your data), else `30 days` and
+     * screen. `period` / `grouping` default to Ben's last choice (the one shared
+     * setting: just chosen, else saved in Your data), else `1 month` and
      * `Body parts`. Screens pass nothing, so they never disagree.
      */
-    async home(req: { days?: ProgressWindowDays; grouping?: ProgressGrouping; range?: DateRange } = {}): Promise<ProgressHome | null> {
+    async home(req: { period?: ProgressPeriodKey; grouping?: ProgressGrouping; range?: DateRange } = {}): Promise<ProgressHome | null> {
       const profile = await deps.profile();
       if (!profile) return null;
       const pick = chosenNow();
-      const days = req.days ?? pick.days ?? profile.progress?.window ?? DEFAULT_PROGRESS_WINDOW;
+      const period = req.period ?? pick.period ?? profile.progress?.period ?? DEFAULT_PROGRESS_PERIOD;
       const grouping = req.grouping ?? pick.grouping ?? profile.progress?.grouping ?? 'body_part';
       const now = deps.now();
       const nowMs = toMs(now.utc);
       const today = localDateOf(nowMs, profile.timezone);
-      const asked = req.range ?? (req.days === undefined && period !== null && period.store === deps.store() ? period.range : null);
+      const asked = req.range ?? (req.period === undefined && customRange !== null && customRange.store === deps.store() ? customRange.range : null);
       const range = asked === null ? null : normaliseProgressRange(asked, today);
       const ctx = await context(profile);
       const active = await repos().sessions.getActive(profile.id).catch(() => null);
       let earliest = today;
       for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
       return {
-        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, days, grouping, range }),
-        days,
+        view: buildProgressHomeView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, today, period, grouping, range }),
+        period,
         range,
         today,
         earliest,
@@ -400,23 +400,23 @@ export function createProgressService(deps: ProgressServiceDeps) {
      * saved, no Undo (Clear is the way back).
      */
     choosePeriod(range: DateRange | null): void {
-      period = range === null ? null : { store: deps.store(), range };
+      customRange = range === null ? null : { store: deps.store(), range };
     },
 
-    saveSettings(patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }): Promise<{ ok: boolean }> {
+    saveSettings(patch: { period?: ProgressPeriodKey; grouping?: ProgressGrouping }): Promise<{ ok: boolean }> {
       // Choosing a preset ends a custom period.
-      if (patch.days !== undefined) period = null;
+      if (patch.period !== undefined) customRange = null;
       const mine = { ...chosenNow(), ...patch, store: deps.store() };
       chosen = mine;
       const token = Symbol('settings tap');
-      if (patch.days !== undefined) fieldOwner.days = token;
+      if (patch.period !== undefined) fieldOwner.period = token;
       if (patch.grouping !== undefined) fieldOwner.grouping = token;
       const run = async (): Promise<{ ok: boolean }> => {
         const out = await deps
           .saveSettings((current) => {
             const now = current ?? {};
-            const next = { ...now, ...(patch.days !== undefined ? { window: patch.days } : {}), ...(patch.grouping !== undefined ? { grouping: patch.grouping } : {}) };
-            return next.window === now.window && next.grouping === now.grouping ? null : next;
+            const next = { ...now, ...(patch.period !== undefined ? { period: patch.period } : {}), ...(patch.grouping !== undefined ? { grouping: patch.grouping } : {}) };
+            return next.period === now.period && next.grouping === now.grouping ? null : next;
           })
           .catch(() => ({ ok: false }));
         if (!out.ok) dropFailed(patch, token);

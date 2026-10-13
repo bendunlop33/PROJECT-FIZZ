@@ -6,8 +6,8 @@ import { useTheme, type ColorToken } from '../theme';
 import { Icon, type SymbolName } from './Icon';
 import { AppText } from './Text';
 
-/** Room left under the content for a floating pill (44 pt target + its gap). */
-const FLOATING_ROOM = 56;
+/** Room left under the content for a floating pill (F16: its 44 pt, its 16 pt lift, and a 16 pt gap). */
+export const FLOATING_PILL_ROOM = 44 + 16 + 16;
 
 /**
  * A scrolling screen on `bg.canvas` with the look's side margin. `floating`:
@@ -24,7 +24,7 @@ export function Screen({ children, footer, floating, testID }: { children: React
         contentContainerStyle={{
           paddingHorizontal: theme.components.screenMargin,
           paddingTop: theme.space['4'],
-          paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + insets.bottom) + (floating ? FLOATING_ROOM : 0),
+          paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + insets.bottom) + (floating ? FLOATING_PILL_ROOM : 0),
           gap: theme.space['5'],
         }}
       >

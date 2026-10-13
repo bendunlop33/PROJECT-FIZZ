@@ -95,20 +95,20 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     await setUpGym(h, s);
     // Read (and cache) Progress before the import: nothing yet.
     await s.progress.prewarm();
-    expect((await s.progress.home({ days: 30 }))?.view.dataState).toBe('empty');
+    expect((await s.progress.home({ period: '1m' }))?.view.dataState).toBe('empty');
 
     await importFile(s);
 
-    const sessions = async (days: 7 | 14 | 30 | 60) => {
-      const v = (await s.progress.home({ days, grouping: 'body_part' }))?.view;
-      if (v?.dataState !== 'normal') throw new Error(`expected data for ${String(days)} days`);
+    const sessions = async (range: { from: string; to: string }) => {
+      const v = (await s.progress.home({ range, grouping: 'body_part' }))?.view;
+      if (v?.dataState !== 'normal') throw new Error(`expected data for ${range.from}–${range.to}`);
       return v;
     };
     // 6–12 Oct: 7 and 9 Oct. 29 Sep–12 Oct: + 2 and 5 Oct. 13 Sep–12 Oct: + 21 Sep. 14 Aug–12 Oct: the same five (3 Aug is older).
-    expect((await sessions(7)).activity.stats[0]).toEqual({ value: '2', label: 'SESSIONS' });
-    expect((await sessions(14)).activity.stats[0]).toEqual({ value: '4', label: 'SESSIONS' });
-    expect((await sessions(30)).activity.stats[0]).toEqual({ value: '5', label: 'SESSIONS' });
-    const sixty = await sessions(60);
+    expect((await sessions({ from: '2026-10-06', to: '2026-10-12' })).activity.stats[0]).toEqual({ value: '2', label: 'SESSIONS' });
+    expect((await sessions({ from: '2026-09-29', to: '2026-10-12' })).activity.stats[0]).toEqual({ value: '4', label: 'SESSIONS' });
+    expect((await sessions({ from: '2026-09-13', to: '2026-10-12' })).activity.stats[0]).toEqual({ value: '5', label: 'SESSIONS' });
+    const sixty = await sessions({ from: '2026-08-14', to: '2026-10-12' });
     expect(sixty.activity.stats[0]).toEqual({ value: '5', label: 'SESSIONS' });
     // FitNotes has no times: time in gym is honestly absent, never invented (rule 6).
     expect(JSON.stringify(sixty.activity)).toContain('No times for imported workouts');
@@ -150,10 +150,10 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     expect(lift).toMatchObject({ imported: true });
     expect(lift?.text).toMatch(/^120/);
     expect(squatDay).toBeDefined();
-    // The session picker groups imports by their FitNotes Category (Decision 1), all startable.
+    // The session picker groups unnamed imports by the title the overview gives them (Decision 1, F20), all startable.
     const picker = await s.sessions.list(gymId);
     const labels = [picker?.upNext, ...(picker?.fromHistory ?? []), ...(picker?.older ?? [])].filter((r) => r !== null && r !== undefined).map((r) => r.label);
-    expect(labels).toEqual(expect.arrayContaining(['Back', 'Chest', 'Legs']));
+    expect(labels).toEqual(expect.arrayContaining(['Pull', 'Push', 'Legs']));
 
     // Start next from the pull workout (7 Oct pulldowns, 2 sets): the rule's targets from FitNotes, fitted to the stack (rule 4).
     const fromNext = await s.workout.start({ gymId, opId: 'start-next', checkIn: { kind: 'skipped', atUtc: h.now().utc }, nextOf: pullDay ?? '' });
@@ -199,11 +199,11 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     const past = (await s.history.pastWorkouts()).rows;
     const benchDay = past.find((r) => r.localDate === '2026-10-05')?.sessionId;
     const bench = await exerciseIdOf(s, 'Bench press');
-    // Legs (9 Oct) was just done; Back was 7 Oct; Chest (5 Oct) has the longest gap (Decision 2).
+    // Legs (9 Oct) was just done; Pull was 7 Oct; Push (5 Oct) has the longest gap (Decision 2).
     const next = await s.next.preview(gymId);
     expect(next?.sourceSessionId).toBe(benchDay);
     const picker = await s.sessions.list(gymId);
-    expect(picker?.upNext).toMatchObject({ label: 'Chest', sourceSessionId: benchDay, target: { kind: 'next' } });
+    expect(picker?.upNext).toMatchObject({ label: 'Push', sourceSessionId: benchDay, target: { kind: 'next' } });
     // One tap: the overview's Start is the same plan.
     const page = await s.overview.load({ target: { kind: 'next' }, gymId });
     if (!page) throw new Error('no overview');

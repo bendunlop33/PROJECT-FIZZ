@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode, type Ref } from 'react';
-import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { Animated, InputAccessoryView, Keyboard, Pressable, TextInput, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { StepTarget } from '@fizz/domain';
@@ -11,6 +11,9 @@ import { Icon, type SymbolName } from './Icon';
 import { FadeIn, TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
 import { nextFieldText, parseNumber } from './number-text';
+import { effortInfoLabel, effortInfoLines, type EffortScale } from '../workout/effort-info';
+import { AX_FONT_SCALE } from '../workout/overview';
+import { stepperNumeralSize, stepperTexts, tileFit, tileRowLayout, type TileSpec } from '../workout/tile-fit';
 
 /** Shared keyboard toolbar for number fields (the system decimal pad has no Done key). */
 export const NUMBER_ACCESSORY_ID = 'fizz-number-done';
@@ -47,7 +50,7 @@ export function KeyboardDoneAccessory({ nativeID }: { nativeID: string }) {
 }
 
 /** D tile − / +: a light glyph with a full 44 × 52 pt target. */
-function TileStep({ glyph, target, onStep, describe, size }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined }) {
+function TileStep({ glyph, target, onStep, describe, size, grow = false }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined; /** Compact tile (F11): half the tile's width, full height. */ grow?: boolean }) {
   const theme = useTheme();
   const enabled = target.enabled;
   return (
@@ -65,7 +68,7 @@ function TileStep({ glyph, target, onStep, describe, size }: { glyph: string; ta
         }
       }}
       style={({ pressed }) => ({
-        width: size ?? theme.target.min.width,
+        ...(grow ? { flex: 1, minWidth: theme.target.min.width } : { width: size ?? theme.target.min.width }),
         height: size ?? theme.target.workout.height,
         borderRadius: theme.radius.pill,
         alignItems: 'center',
@@ -132,6 +135,7 @@ export function NumberStepper({
   onSurface = false,
   stepSize,
   numeralSize,
+  compact = false,
   onFocus,
   onLayout,
 }: {
@@ -158,6 +162,8 @@ export function NumberStepper({
    * scaling off so the measured fit holds. Default: `type.loadDisplay`.
    */
   numeralSize?: number;
+  /** F11: − / + under the numeral so tiles sit side by side in a narrow row (`tileFit().compact`, D tile only). */
+  compact?: boolean;
   /** The field took focus (the keypad is opening or moving to it): the Table anchors this tile (WT39). */
   onFocus?: () => void;
   /** The tile's frame in its parent, so the Table knows where the focused tile ends. */
@@ -166,9 +172,29 @@ export function NumberStepper({
   const theme = useTheme();
   const [text, setText] = useState(value === null ? '' : String(value));
   const [focused, setFocused] = useState(false);
+  const [tileWidth, setTileWidth] = useState<number | null>(null);
+  const { fontScale } = useWindowDimensions();
   useEffect(() => {
     setText((t) => nextFieldText(t, value));
   }, [value]);
+  const flat = theme.components.cardBorderWidth === 0;
+  // F9: without a fitted size from the caller, the numeral shrinks to its measured tile so `10` never shows as `1`.
+  const fitted =
+    numeralSize ??
+    (tileWidth === null
+      ? undefined
+      : stepperNumeralSize({
+          tileWidth,
+          texts: [text, ...stepperTexts(value, down, up, decimals ? 3 : 2)],
+          unit: flat ? unit : null,
+          // The bordered variant's − / + are wider and sit 8 pt apart from the field.
+          stepSize: flat ? (stepSize ?? theme.target.min.width) : (stepSize ?? theme.target.workout.width) + theme.space['2'] + 2,
+          fontScale,
+        }));
+  const layout = (e: LayoutChangeEvent) => {
+    setTileWidth(e.nativeEvent.layout.width);
+    onLayout?.(e);
+  };
   const describe = label === 'Assist' ? 'Assistance' : label;
   const decrease = label === 'Assist' ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`;
   const increase = label === 'Assist' ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`;
@@ -194,11 +220,11 @@ export function NumberStepper({
       {...(hint ? { accessibilityHint: hint } : {})}
       placeholder="—"
       placeholderTextColor={theme.colors['text.tertiary']}
-      {...(numeralSize !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}
+      {...(fitted !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}
       style={{
         minWidth: 36,
         textAlign: 'center',
-        fontSize: numeralSize ?? theme.type.loadDisplay.fontSize,
+        fontSize: fitted ?? theme.type.loadDisplay.fontSize,
         fontWeight: theme.type.loadDisplay.fontWeight,
         letterSpacing: theme.type.loadDisplay.letterSpacing,
         fontVariant: ['tabular-nums'],
@@ -207,10 +233,15 @@ export function NumberStepper({
       }}
     />
   );
-  if (theme.components.cardBorderWidth === 0) {
+  const unitText = unit ? (
+    <AppText variant="body" color="text.secondary" style={{ fontSize: 18 }} maxFontSizeMultiplier={1.4}>
+      {` ${unit}`}
+    </AppText>
+  ) : null;
+  if (flat) {
     // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
     return (
-      <View onLayout={onLayout} style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
+      <View onLayout={layout} style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
         <View
           style={{
             backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
@@ -225,18 +256,27 @@ export function NumberStepper({
           <AppText variant="sectionLabel" color="text.tertiary" style={{ paddingHorizontal: theme.space['2'] }}>
             {label}
           </AppText>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
-              {input}
-              {unit ? (
-                <AppText variant="body" color="text.secondary" style={{ fontSize: 18 }} maxFontSizeMultiplier={1.4}>
-                  {` ${unit}`}
-                </AppText>
-              ) : null}
+          {compact ? (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' }}>
+                {input}
+                {unitText}
+              </View>
+              <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+                <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} grow />
+                <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} grow />
+              </View>
+            </>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
+                {input}
+                {unitText}
+              </View>
+              <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
             </View>
-            <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
-          </View>
+          )}
         </View>
         {!up.enabled && value !== null ? (
           <AppText variant="callout" color="text.secondary" numeric>
@@ -247,7 +287,7 @@ export function NumberStepper({
     );
   }
   return (
-    <View onLayout={onLayout} style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
+    <View onLayout={layout} style={{ flex: 1, minWidth: 150, gap: theme.space['1'] }}>
       <AppText variant="label" color="text.secondary">
         {label}
       </AppText>
@@ -281,6 +321,42 @@ export function NumberStepper({
           {up.reason}
         </AppText>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * A row of `NumberStepper` tiles on Focus and Edit set (review B1, WT-D13):
+ * `tileFit` keeps numerals ≥ 28 pt, then goes compact (F11) or stacks. Each
+ * tile takes `numeralSize`, `compact` and `flexOf(share)` from `children`.
+ */
+export function StepperTileRow({
+  tiles,
+  estimate,
+  children,
+}: {
+  tiles: readonly TileSpec[];
+  /** The row's width before it's measured. */
+  estimate: number;
+  children: (row: { numeralSize: number; compact: boolean; flexOf: (share: number) => number | null }) => ReactNode;
+}) {
+  const theme = useTheme();
+  const { fontScale } = useWindowDimensions();
+  const [measured, setMeasured] = useState<number | null>(null);
+  const flat = theme.components.cardBorderWidth === 0;
+  const gap = theme.space['3'];
+  // The bordered variant's − / + are wider and sit 8 pt apart from the field (as `stepperNumeralSize`).
+  const stepSize = flat ? theme.target.min.width : theme.target.workout.width + theme.space['2'] + 2;
+  const fit = tileFit({ rowWidth: measured ?? estimate, tiles, stepSize, fontScale, ax: fontScale >= AX_FONT_SCALE, gap });
+  const { compact, stacked } = tileRowLayout(fit, flat);
+  return (
+    <View
+      onLayout={(e) => {
+        setMeasured(e.nativeEvent.layout.width);
+      }}
+      style={{ flexDirection: stacked ? 'column' : 'row', gap }}
+    >
+      {children({ numeralSize: fit.numeralSize, compact, flexOf: (share) => (stacked ? null : share) })}
     </View>
   );
 }
@@ -490,5 +566,45 @@ export function LinkLine({ children, onPress, accessibilityLabel }: { children: 
     <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
       {children}
     </Pressable>
+  );
+}
+
+/** The effort label with an ⓘ that shows the scale (F4): `10 Nothing left`, `9 1 rep left` … */
+export function EffortHeading({ scale, children }: { scale: EffortScale; children: ReactNode }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const lines = effortInfoLines(scale);
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+        {children}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={effortInfoLabel(scale, open)}
+          accessibilityState={{ expanded: open }}
+          hitSlop={4}
+          onPress={() => {
+            setOpen((o) => !o);
+          }}
+          style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+        >
+          <Icon name="info.circle" color="text.secondary" size={16} />
+        </Pressable>
+      </View>
+      {open ? (
+        <View accessible accessibilityLabel={lines.map((l) => `${l.value}: ${l.meaning}`).join('. ')} style={{ gap: 2 }}>
+          {lines.map((l) => (
+            <View key={l.value} style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+              <AppText variant="callout" numeric style={{ minWidth: 28 }}>
+                {l.value}
+              </AppText>
+              <AppText variant="callout" color="text.secondary">
+                {l.meaning}
+              </AppText>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }

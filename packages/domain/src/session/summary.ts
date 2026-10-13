@@ -330,8 +330,13 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   // an exercise split across gyms is read from one deciding part, with the block's
   // set count, the same as Start next session (`nextTargetsForBlock`; review r2 B1).
   const rows: NextTimeRow[] = [];
-  for (const block of imported ? [] : nextTargetBlocks(state)) {
-    if (block.prescribedSets === 0) continue;
+  const targetBlocks = imported ? [] : nextTargetBlocks(state);
+  // An exercise in two blocks (a light warm-up copy and working sets, F21): next time each repeats its own sets,
+  // as Start plans it (`planRoutineStart`, review S7), so no single target is promised for it here.
+  const blocksOf = new Map<string, number>();
+  for (const b of targetBlocks) blocksOf.set(b.root.exerciseId, (blocksOf.get(b.root.exerciseId) ?? 0) + 1);
+  for (const block of targetBlocks) {
+    if (block.prescribedSets === 0 || (blocksOf.get(block.root.exerciseId) ?? 0) > 1) continue;
     const ex = block.decider;
     const eq = block.equipment;
     const gymId = eq?.gymId ?? null;

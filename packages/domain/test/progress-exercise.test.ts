@@ -488,7 +488,7 @@ describe('records (PG10, PG30, check 39)', () => {
   it('Best Est. 1RM on the home: labelled, only when the row has no actual record', () => {
     const sessions = [bench('2026-09-20', [[100, 5]]), bench('2026-09-23', [[100, 5]]), bench('2026-09-26', [[100, 5]]), bench('2026-10-01', [[95, 10]])];
     const info = new Map<string, MuscleInfo>([['bench', { name: 'Bench press', movementPattern: 'horizontal_push', primaryMuscles: ['chest'] }]]);
-    const home = buildProgressHomeView({ sessions, exercises: info, today: TODAY, days: 30, grouping: 'body_part', gymNames: GYMS });
+    const home = buildProgressHomeView({ sessions, exercises: info, today: TODAY, period: '1m', grouping: 'body_part', gymNames: GYMS });
     if (home.dataState !== 'normal') throw new Error('home');
     expect(home.records.items.map((r) => [r.label, sp(r.value)])).toEqual([['Best Est. 1RM', '≈126.5 kg']]);
     expect(home.records.items[0]?.words).toMatch(/estimated one-rep max, an estimate/);

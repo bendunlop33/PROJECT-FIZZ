@@ -510,21 +510,21 @@ Next in line: Goals & schedule plus rule 1 volume (after D13), the routine edito
 |---|---|---|---|
 | F1 | Coach doesn't let you talk to it (voice) | Feature | Brief §10 step 5 (on-device tap-to-talk). Large; later |
 | F2 | Live two-way voice during workout + music | Feature | Realtime voice deferred (paid route, rule 7). Music: ducking already in audio-session module; Spotify integration not needed, "just works" with ducking. Later |
-| F3 | Current set doesn't say warm-up / working / drop set | Bug-ish UX | Small. Set-type tag on Focus/current row |
-| F4 | What does RPE 6–10 mean? | UX | Small. "Why?" info tap with RIR wording (minimal-copy rule) |
-| F5 | Keyboard stays up on working set | Bug | Small. Same fix as coach sheet (tap-out/Done/dismiss on Log) |
+| F3 | Current set doesn't say warm-up / working / drop set | Bug-ish UX | Small. Set-type tag on Focus/current row **Built on claude/quick-wins (13 Oct); device check pending.** |
+| F4 | What does RPE 6–10 mean? | UX | Small. "Why?" info tap with RIR wording (minimal-copy rule) **Built on claude/quick-wins (13 Oct); device check pending.** |
+| F5 | Keyboard stays up on working set | Bug | Small. Same fix as coach sheet (tap-out/Done/dismiss on Log) **Built on claude/quick-wins (13 Oct); device check pending.** |
 | F6 | Edit sets inline in table without opening each set | Feature | Medium. Editable table cells |
 | F7 | Focus view: swipe/buttons prev/next set, pinch out to workout | Feature | Medium |
 | F8 | Focus view shows last set's effort without saying it's previous; rest = previous small (editable) + next set, under timer | UX | Medium, high value |
-| F9 | Reps ≥ 10 show as 1 when logging | Bug | Small, high priority; likely field width/truncation — verify on device |
+| F9 | Reps ≥ 10 show as 1 when logging | Bug | Small, high priority; likely field width/truncation — verify on device **Built on claude/quick-wins (13 Oct); device check pending.** |
 | F10 | Recommended rest from what was done (effort) | Feature | Medium; deterministic rule + coach. Playbook candidate |
-| F11 | Table view: stack and reps on one row | UX | Small |
-| F12 | "Couldn't reach the coach" errors | Bug | Catch-all text hides real cause (too_many_steps/no_reply/unavailable, sheet-view.ts:317-322). Show reason under Why? and log it; likely builder tool loops hitting step cap |
+| F11 | Table view: stack and reps on one row | UX | Small **Built on claude/quick-wins (13 Oct); device check pending.** |
+| F12 | "Couldn't reach the coach" errors | Bug | Catch-all text hides real cause (too_many_steps/no_reply/unavailable, sheet-view.ts:317-322). Show reason under Why? and log it; likely builder tool loops hitting step cap **Built on claude/quick-wins (13 Oct); device check pending.** |
 | F13 | Target vs achieved per set, used for adjustments | Feature | Mostly exists (target RPE/reps vs logged, rule T). Needs visible target vs actual on table/summary |
 | F14 | ± time at end of workout works badly | Bug | Needs repro detail |
-| F15 | Progress periods: 7/14 vs 30 look different; any period (3 m, 4 m); 60-day formatting; prefer charts | UX | Partly fixed in build 133 (custom period). Make one adaptive bar chart for all periods (7/14 d: daily bars; 30/60 d: weekly; 3–12 m: monthly), same layout, labels thinned to fit (60 d labels currently skip/misalign, zero bars clutter). Screenshots 13 Oct |
-| F16 | Muscles table header "SESSIONS" wraps to "SESSION / S"; Ask button overlaps the table | Bug | Small: narrower header word or column width; content bottom padding under the Ask button |
-| F17 | TIME tile shows 45 min next to 3 sessions when only 1 has a time (imports have none) | UX | Small: show time only as avg of timed sessions, or label "45 min · 1 timed"; keep the footnote |
+| F15 | Progress periods: 7/14 vs 30 look different; any period (3 m, 4 m); 60-day formatting; prefer charts | UX | Partly fixed in build 133 (custom period). Make one adaptive bar chart for all periods (7/14 d: daily bars; 30/60 d: weekly; 3–12 m: monthly), same layout, labels thinned to fit (60 d labels currently skip/misalign, zero bars clutter). Screenshots 13 Oct **Built on claude/quick-wins (13 Oct); device check pending.** |
+| F16 | Muscles table header "SESSIONS" wraps to "SESSION / S"; Ask button overlaps the table | Bug | Small: narrower header word or column width; content bottom padding under the Ask button **Built on claude/quick-wins (13 Oct); device check pending.** |
+| F17 | TIME tile shows 45 min next to 3 sessions when only 1 has a time (imports have none) | UX | Small: show time only as avg of timed sessions, or label "45 min · 1 timed"; keep the footnote **Built on claude/quick-wins (13 Oct); device check pending.** |
 | F18 | Workout set structure as a per-set table: columns Weight · Reps · RPE, each changed by a scroll wheel; per-set values (not one weight per exercise); reps can be exact or a range. Library editor and edit-before-start overview | Feature | Medium. Supersedes F6 for the editor; reuse the existing per-set templates (load/reps/RPE already stored per set) |
 | F19 | Build card: drop the "Coach picks" chip; the coach builds whichever split is selected, defaulting to the next split from the Settings split (D7) | UX | Small; do with D7 |
 | F20 | Session list names imported sessions from the FitNotes Category ("Trapezius"); name them from their exercises like the overview ("Pull"). Today "Legs · 45 min" then "45 min" repeated | Bug | Small; with quick wins |

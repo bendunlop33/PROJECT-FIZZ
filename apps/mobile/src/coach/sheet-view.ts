@@ -9,7 +9,7 @@
  */
 
 import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
-import { isInHistory, rangeText } from '@fizz/domain';
+import { isInHistory, progressPeriodPhrase, rangeText } from '@fizz/domain';
 import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
@@ -286,7 +286,7 @@ export type ThreadRow =
   | { kind: 'card'; key: string; card: CardView }
   | { kind: 'note'; key: string; text: string }
   /** `input`: what `Try again` sends, the turn's own (a summary review: `{ kind: 'summary' }`); null when unknown. */
-  | { kind: 'outcome'; key: string; text: string; icon: ViewIcon; retry: boolean; input: BenInput | null };
+  | { kind: 'outcome'; key: string; text: string; icon: ViewIcon; retry: boolean; why: string | null; input: BenInput | null };
 
 const CHIP_TEXT: Record<Extract<BenInput, { kind: 'chip' }>['chip'], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', lighter_session: 'Lighter session' };
 
@@ -303,32 +303,41 @@ export function benText(input: BenInput): string | null {
   }
 }
 
-/** The line for a turn that didn't finish (coach-sheet §5, shortened). `retry`: offers Try again. */
-export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean): { text: string; icon: ViewIcon; retry: boolean } | null {
+/**
+ * The line for a turn that didn't finish (coach-sheet §5, shortened). `retry`: offers Try again.
+ * F12 (13 Oct): each cause has its own line; `why` (behind `Why?`) names the recorded reason,
+ * which the turn already stores as its `error`.
+ */
+export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean): { text: string; icon: ViewIcon; retry: boolean; why: string | null } | null {
   // The cards show anything applied; without one, say nothing changed (minimal copy, audit W2).
   const tail = anyCard ? '' : ' Nothing changed.';
-  if (status === 'interrupted') return { text: `Interrupted.${tail}`, icon: 'info.circle', retry: true };
-  if (status === 'cancelled') return { text: `Stopped.${tail}`, icon: 'info.circle', retry: false };
+  const line = (text: string, icon: ViewIcon, retry: boolean, why: string | null = null) => ({ text: `${text}${tail}`, icon, retry, why });
+  if (status === 'interrupted') return line('Interrupted.', 'info.circle', true);
+  if (status === 'cancelled') return line('Stopped.', 'info.circle', false);
   if (status !== 'failed') return null;
   switch (error) {
     case 'timeout':
-      return { text: `No answer in time.${tail}`, icon: 'clock.badge.xmark', retry: true };
+      return line('No answer in time.', 'clock.badge.xmark', true);
     case 'network':
-      return { text: `Offline.${tail}`, icon: 'wifi.slash', retry: true };
+      return line('Offline.', 'wifi.slash', true);
     case 'usage_limit':
-      return { text: `Usage limit reached.${tail}`, icon: 'pause.circle', retry: false };
+      return line('Usage limit reached.', 'pause.circle', false);
     case 'auth_expired':
-      return { text: `Signed out.${tail}`, icon: 'exclamationmark.triangle', retry: false };
+      return line('Signed out.', 'exclamationmark.triangle', false);
     case 'not_eligible':
-      return { text: `Unavailable.${tail}`, icon: 'xmark.octagon', retry: false };
+      return line('Unavailable.', 'xmark.octagon', false);
     case 'model_gone':
-      return { text: `Model unavailable.${tail}`, icon: 'exclamationmark.triangle', retry: false };
+      return line('Model unavailable.', 'exclamationmark.triangle', false);
     case 'too_many_steps':
+      return line('Coach got stuck.', 'exclamationmark.triangle', true, 'Too many steps without an answer (too_many_steps).');
     case 'no_reply':
+      return line('No reply.', 'exclamationmark.triangle', true, 'The answer was empty or unreadable (no_reply).');
     case 'unavailable':
+      return line('Coach unavailable.', 'xmark.octagon', true, 'The AI service refused the request (unavailable).');
     case 'cancelled':
+      return line('Stopped.', 'info.circle', true, 'The request was cancelled (cancelled).');
     case null:
-      return { text: `Couldn’t reach the coach.${tail}`, icon: 'exclamationmark.triangle', retry: true };
+      return line('Couldn’t reach the coach.', 'exclamationmark.triangle', true, 'No reason was recorded.');
   }
 }
 
@@ -448,7 +457,7 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
     case 'today':
       return 'Sees: Today';
     case 'progress':
-      return entry.range ? `Sees: Progress · ${rangeText(entry.range, today ?? '')}` : `Sees: Progress · last ${String(entry.days)} days`;
+      return entry.range ? `Sees: Progress · ${rangeText(entry.range, today ?? '')}` : `Sees: Progress · last ${progressPeriodPhrase(entry.period)}`;
     case 'progress_exercise':
       return `Sees: ${entry.exerciseName} · ${entry.seriesLabel}`;
     case 'summary':

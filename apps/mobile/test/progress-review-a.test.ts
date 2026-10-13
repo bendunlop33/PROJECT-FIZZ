@@ -49,29 +49,29 @@ describe('B3, S3: window and grouping are one shared, saved setting', () => {
     await logWorkout(hh, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
 
     // Home: 7 days.
-    const homePick = s.progress.saveSettings({ days: 7 });
-    expect((await normal(s)).days).toBe(7);
+    const homePick = s.progress.saveSettings({ period: '3m' });
+    expect((await normal(s)).period).toBe('3m');
     await homePick;
     // Muscles (same service call, no request of its own): 60 days. Read straight away, as the screen's reload does.
-    const musclesPick = s.progress.saveSettings({ days: 60 });
+    const musclesPick = s.progress.saveSettings({ period: '1y' });
     const home = await normal(s);
-    expect(home.days).toBe(60);
-    expect(home.view.windowLabel).toBe('60 days');
+    expect(home.period).toBe('1y');
+    expect(home.view.windowLabel).toBe('1 year');
     expect(await musclesPick).toEqual({ ok: true });
-    expect((await s.yourData.profile())?.progress).toMatchObject({ window: 60 });
+    expect((await s.yourData.profile())?.progress).toMatchObject({ period: '1y' });
   });
 
   it('two quick taps (grouping, then window) both land; neither overwrites the other, and both survive a relaunch', async () => {
     const { h: hh, s, gymId } = await setUp();
     await logWorkout(hh, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
-    const [a, b] = await Promise.all([s.progress.saveSettings({ grouping: 'ppl' }), s.progress.saveSettings({ days: 60 })]);
+    const [a, b] = await Promise.all([s.progress.saveSettings({ grouping: 'ppl' }), s.progress.saveSettings({ period: '1y' })]);
     expect(a.ok && b.ok).toBe(true);
-    expect((await s.yourData.profile())?.progress).toEqual({ window: 60, grouping: 'ppl' });
+    expect((await s.yourData.profile())?.progress).toEqual({ period: '1y', grouping: 'ppl' });
 
     await hh.forceClose();
     const { services: s2 } = await hh.launch();
     const again = await normal(s2);
-    expect([again.days, again.grouping]).toEqual([60, 'ppl']);
+    expect([again.period, again.grouping]).toEqual(['1y', 'ppl']);
   });
 
   it('neither screen keeps its own window or grouping; both read the service with no request', () => {
@@ -180,12 +180,12 @@ describe('S1, S2: Ask floats above the ResumeBar and carries the Progress window
     expect(ask).toBeLessThan(areaClose);
     expect(toast).toBeLessThan(areaClose);
     expect(resume).toBeGreaterThan(areaClose);
-    expect(src).toContain("{ kind: 'progress', days, ");
+    expect(src).toContain("{ kind: 'progress', period, ");
   });
 
   it('the coach sheet reads the window; the context frames it without inventing numbers', () => {
-    expect(seesLabel({ kind: 'progress', days: 30 }, null, false)).toBe('Sees: Progress · last 30 days');
-    expect(starterChips({ kind: 'progress', days: 30 }, { status: 'ok', model: 'm' }, false)).toEqual([]);
+    expect(seesLabel({ kind: 'progress', period: '1m' }, null, false)).toBe('Sees: Progress · last month');
+    expect(starterChips({ kind: 'progress', period: '1m' }, { status: 'ok', model: 'm' }, false)).toEqual([]);
     const ctx = buildCoachContext({
       turnKind: 'general',
       session: null,
@@ -204,8 +204,8 @@ describe('S1, S2: Ask floats above the ResumeBar and carries the Progress window
 
   it('through the services: `What the coach can see` from Progress names the window', async () => {
     const { s } = await setUp();
-    const d = await s.coach.describe({ kind: 'progress', days: 14 }, null);
-    expect(d.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · last 14 days' });
+    const d = await s.coach.describe({ kind: 'progress', period: '6m' }, null);
+    expect(d.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · last 6 months' });
   });
 });
 
@@ -233,9 +233,9 @@ describe('S8: local dates across the October DST change, through the service', (
     expect(cal?.view.days['2026-10-24'] ?? []).toEqual([]);
     expect(cal?.view.days['2026-10-25']).toHaveLength(2);
 
-    // 7 days ending Sat 31 Oct (local) runs 25–31 Oct: both count. A day later (1 Nov, 26 Oct – 1 Nov) neither does.
-    hh.clockMs = Date.parse('2026-10-31T12:00:00.000Z');
-    await s.progress.saveSettings({ days: 7 });
+    // 1 month ending Tue 24 Nov (local) runs 25 Oct – 24 Nov: both count. A day later (26 Oct – 25 Nov) neither does.
+    hh.clockMs = Date.parse('2026-11-24T12:00:00.000Z');
+    await s.progress.saveSettings({ period: '1m' });
     expect((await normal(s)).view.activity.stats[0]?.value).toBe('2');
     hh.clockMs += DAY;
     expect((await normal(s)).view.activity.stats[0]?.value).toBe('0');
