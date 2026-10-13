@@ -20,7 +20,8 @@ import { isInHistory } from './session/deletion';
  *   as half of a pair.
  * - `performedAtUtc` is the session's (possibly corrected) start time.
  * - `gymId` is the session's gym (null: not recorded); `imported` marks a
- *   FitNotes workout, which is never comparable history (review r2 B1).
+ *   FitNotes workout, read through `comparableSetsOf` and matched on any
+ *   item (B7).
  * - `identity: true` also keeps each set's ID and version and the session's
  *   zone and routine name, so a target made from this history can record its
  *   basis for `Why?` (active-workout §2.12) and spot later edits.

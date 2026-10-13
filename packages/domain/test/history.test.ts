@@ -132,7 +132,7 @@ describe('imported history (B7: FitNotes as Last and targets, labelled; rule 4)'
     const t = next([h]);
     // Three sets of 10 at 20 kg each: progress from 20, never from the 10 kg warm-up.
     expect([t.decision, t.sets[0]?.load]).toEqual(['increase_load', kg(22.5, 'per_hand')]);
-    expect(t.explanation.facts.join(' ')).toMatch(/lighter sets were read as warm-ups/);
+    expect(t.explanation.facts.join(' ')).toMatch(/lighter sets before the top set were read as warm-ups/);
     // Logged in the app, the same sets are read as logged (warm-ups are flagged there).
     expect(comparableSetsOf({ ...h, imported: false })).toHaveLength(5);
   });

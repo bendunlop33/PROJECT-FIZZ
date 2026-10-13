@@ -17,13 +17,13 @@ import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclu
 import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
-import { comparableSetsOf, matchesEquipment, type HistorySession } from '../progression';
+import { comparableSetsOf, importedWorkingSetCount, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
-import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
+import { DEFAULT_WORKING_SETS, GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
 import { midSwapSlot } from './mid-swap';
 import { setSnapNote, type NoteLine } from './snap-text';
@@ -79,6 +79,22 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
     };
   }
   return null;
+}
+
+/**
+ * Working sets to plan when an exercise is added after `previous` (Add
+ * exercise, `planFor`): its counted sets with reps. From FitNotes (review
+ * import-progress B1, B2), the same reading as the load
+ * (`comparableSetsOf`), and the reading never takes the count below the
+ * built-in default (`importedWorkingSetCount`): a top single followed by
+ * nothing still plans 3 sets, a 2-set session plans 2.
+ */
+export function workingSetsFromPrevious(previous: PreviousSession, history: readonly HistorySession[]): number {
+  const counted = previous.sets.filter((s) => s.values.reps !== null).length;
+  if (!previous.imported) return counted;
+  const source = history.find((h) => h.sessionId === previous.sessionId && h.imported);
+  const total = source ? source.sets.filter((s) => s.setType !== 'warmup' && s.reps !== null).length : counted;
+  return importedWorkingSetCount(counted, total, DEFAULT_WORKING_SETS);
 }
 
 /** Unsaved changes held by the screen (debounced to `save_draft`). */

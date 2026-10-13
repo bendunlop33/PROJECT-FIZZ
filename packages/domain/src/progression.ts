@@ -91,26 +91,48 @@ export function matchesEquipment(h: Pick<HistorySession, 'imported' | 'equipment
  * The sets of a history session that a comparison or target reads. Logged
  * history: every set, as logged (warm-ups are flagged). Imported history:
  * FitNotes has no warm-up flag, so a ramp (`60 × 10, 80 × 5, 100 × 5,
- * 100 × 5`) arrives as all working sets. Only the sets at the session's
- * hardest load are read as working sets (heaviest for resistance, least
- * assistance for assisted), per unit and convention; lighter ones are read
- * as warm-ups. Sets with no load (or bodyweight) are kept when nothing in the
- * session has a load. Nothing stored changes: this is how history is read.
+ * 100 × 5`) arrives as all working sets. Only the lighter sets **before** the
+ * session's hardest set (heaviest for resistance, least assistance for
+ * assisted), per unit and convention, are read as a warm-up ramp and left
+ * out. The hardest set and everything after it are kept, so back-off sets
+ * and descending pyramids (`100 × 5, 90 × 8, 80 × 10`) count as the working
+ * sets they are (review import-progress B2; reading (a), provisional until
+ * Ben confirms). Sets with no load (or bodyweight) are kept when nothing in
+ * the session has a load. Nothing stored changes: this is how history is read.
  */
 export function comparableSetsOf<T extends Pick<HistorySet, 'setType' | 'load'>>(h: { imported: boolean; sets: readonly T[] }): T[] {
   if (!h.imported) return [...h.sets];
   const loaded = h.sets.filter((x) => x.load !== null && x.load.convention !== 'bodyweight');
   if (loaded.length === 0) return h.sets.filter((x) => x.setType !== 'warmup');
-  const hardest = new Map<string, number>();
-  for (const x of loaded) {
-    if (x.load === null) continue;
-    const key = `${x.load.unit}|${x.load.convention}`;
+  const keyOf = (l: Load) => `${l.unit}|${l.convention}`;
+  /** Per unit and convention: the hardest load and where it first appears. */
+  const hardest = new Map<string, { v: number; at: number }>();
+  loaded.forEach((x, at) => {
+    if (x.load === null) return;
+    const key = keyOf(x.load);
     const v = toScaled(x.load.value);
     const prev = hardest.get(key);
     const resist = loadDirection(x.load.convention) === 'resistance';
-    if (prev === undefined || (resist ? v > prev : v < prev)) hardest.set(key, v);
-  }
-  return loaded.filter((x) => x.setType !== 'warmup' && x.load !== null && hardest.get(`${x.load.unit}|${x.load.convention}`) === toScaled(x.load.value));
+    if (prev === undefined || (resist ? v > prev.v : v < prev.v)) hardest.set(key, { v, at });
+  });
+  return loaded.filter((x, at) => {
+    if (x.setType === 'warmup' || x.load === null) return false;
+    const top = hardest.get(keyOf(x.load));
+    return top !== undefined && at >= top.at;
+  });
+}
+
+/**
+ * B1 / B2 (review import-progress): how many working sets to plan from a
+ * FitNotes session read through `comparableSetsOf` (`comparable` of its
+ * `total` sets). The same reading as the load, so a ramp never plans every
+ * set at the top load; and the reading never takes the count below the
+ * built-in default (`floor`), so a top single followed by nothing doesn't
+ * plan one set. A session with fewer sets than the default keeps its own
+ * count (2 sets done, 2 planned). At most 10.
+ */
+export function importedWorkingSetCount(comparable: number, total: number, floor: number): number {
+  return Math.min(10, Math.max(comparable, Math.min(floor, total), 1));
 }
 
 /** Active pain flag for this movement. Set and cleared explicitly by the user. */
@@ -378,7 +400,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
     });
   }
   if (latestFitNotes !== null) {
-    pushFact(ctx, `Last session is from FitNotes (equipment not recorded)${latestFitNotes.rampDropped ? '; its lighter sets were read as warm-ups' : ''}.`);
+    pushFact(ctx, `Last session is from FitNotes (equipment not recorded)${latestFitNotes.rampDropped ? '; its lighter sets before the top set were read as warm-ups' : ''}.`);
   }
   if (excluded > 0) {
     pushFact(
