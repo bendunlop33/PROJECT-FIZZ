@@ -819,7 +819,10 @@ export function OpenSetRow(p: OpenSetRowProps) {
   if (f.distance) specs.push({ flex: 1, texts: stepperTexts(f.distance.value, f.distance.down, f.distance.up, 2), unit: null });
   if (f.reps) specs.push({ flex: 1, texts: stepperTexts(f.reps.value, f.reps.down, f.reps.up, 2), unit: null });
   const fit = tileFit({ rowWidth: measured ?? openRowWidth(window.width), tiles: specs, stepSize: step, fontScale: window.fontScale, ax: p.ax });
-  const flexOf = (n: number): number | null => (fit.stacked ? null : n);
+  // F11: LOAD and REPS on one row, − / + under each numeral (D tiles); the bordered theme stacks as before.
+  const compact = fit.compact && theme.components.cardBorderWidth === 0;
+  const stacked = fit.stacked || (fit.compact && !compact);
+  const flexOf = (n: number): number | null => (stacked ? null : n);
   // Where each tile is, relative to the open row's own top (its wrapper in the list): row → tile container → tile.
   const report = useContext(TileLayoutContext);
   const rowY = useRef(0);
@@ -872,7 +875,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
         onLayout={tileLayout('load')}
         flex={flexOf(1.35)}
         stepSize={step}
-        numeralSize={fit.numeralSize}
+        numeralSize={fit.numeralSize} compact={compact}
         label={`${f.loadField.label} ${f.loadField.unitText}`.toUpperCase()}
         unit={null}
         value={f.loadField.value}
@@ -887,7 +890,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
   }
   if (working) {
     tiles.push(
-      <View key="work" style={{ ...(fit.stacked ? { alignSelf: 'stretch' as const } : { flex: 1 }), alignItems: 'flex-start', gap: theme.space['1'], padding: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg }}>
+      <View key="work" style={{ ...(stacked ? { alignSelf: 'stretch' as const } : { flex: 1 }), alignItems: 'flex-start', gap: theme.space['1'], padding: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg }}>
         <AppText variant="label" color="text.tertiary">
           WORK
         </AppText>
@@ -895,9 +898,9 @@ export function OpenSetRow(p: OpenSetRowProps) {
       </View>,
     );
   } else if (f.duration) {
-    tiles.push(<NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />);
+    tiles.push(<NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} compact={compact} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />);
   }
-  if (f.distance) tiles.push(<NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />);
+  if (f.distance) tiles.push(<NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={flexOf(1)} stepSize={step} numeralSize={fit.numeralSize} compact={compact} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />);
   if (f.reps) {
     tiles.push(
       <NumberStepper
@@ -907,7 +910,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
         onLayout={tileLayout('reps')}
         flex={flexOf(1)}
         stepSize={step}
-        numeralSize={fit.numeralSize}
+        numeralSize={fit.numeralSize} compact={compact}
         label="REPS"
         unit={null}
         value={f.reps.value}
@@ -965,7 +968,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
           containerY.current = e.nativeEvent.layout.y;
           send();
         }}
-        style={{ flexDirection: fit.stacked ? 'column' : 'row', gap: theme.space['2'] }}
+        style={{ flexDirection: stacked ? 'column' : 'row', gap: theme.space['2'] }}
       >
         {tiles}
       </View>

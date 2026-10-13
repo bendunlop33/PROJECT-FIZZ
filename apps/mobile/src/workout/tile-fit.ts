@@ -67,6 +67,12 @@ export interface TileFitInput {
 
 export interface TileFit {
   stacked: boolean;
+  /**
+   * F11 (Ben, 13 Oct: "load and reps on one row"): side by side with the − / +
+   * under the numeral, each half the tile (≥ 44 pt wide, full height), when
+   * they don't fit beside it. Never at AX1+ (always stacked).
+   */
+  compact: boolean;
   /** The numeral's rendered size in pt (Dynamic Type already applied; render with font scaling off). */
   numeralSize: number;
 }
@@ -84,6 +90,18 @@ function maxSizeIn(tileWidth: number, tile: TileSpec, stepSize: number, fontScal
 
 const floorHalf = (n: number): number => Math.floor(n * 2) / 2;
 
+/** Compact tile (F11): − / + share a row under the numeral, each at least this wide. */
+export const COMPACT_STEP_MIN = 44;
+
+/** The largest numeral size (pt) in a compact tile of this width; 0 when its − / + don't fit. */
+function compactSizeIn(tileWidth: number, tile: TileSpec, fontScale: number): number {
+  if (tileWidth - TILE_PADDING_H < 2 * COMPACT_STEP_MIN + TILE_GAP) return 0;
+  const unitW = tile.unit === null ? 0 : numeralEms(` ${tile.unit}`) * UNIT_SIZE * Math.min(fontScale, UNIT_MAX_SCALE);
+  const room = tileWidth - TILE_PADDING_H - unitW - CARET;
+  const ems = numeralEms(longest(tile.texts));
+  return ems === 0 ? Number.POSITIVE_INFINITY : Math.max(0, room) / ems;
+}
+
 export function tileFit(p: TileFitInput): TileFit {
   const wanted = NUMERAL_BASE * Math.min(p.fontScale, NUMERAL_MAX_SCALE);
   const minimum = Math.min(NUMERAL_MIN, wanted);
@@ -91,13 +109,16 @@ export function tileFit(p: TileFitInput): TileFit {
     const fits = Math.min(...p.tiles.map((t) => maxSizeIn(p.rowWidth, t, p.stepSize, p.fontScale)));
     return floorHalf(Math.max(NUMERAL_FLOOR, Math.min(wanted, fits)));
   };
-  if (p.tiles.length === 0) return { stacked: false, numeralSize: floorHalf(wanted) };
-  if (p.ax || p.tiles.length === 1) return { stacked: p.ax && p.tiles.length > 1, numeralSize: stackedSize() };
+  if (p.tiles.length === 0) return { stacked: false, compact: false, numeralSize: floorHalf(wanted) };
+  if (p.ax || p.tiles.length === 1) return { stacked: p.ax && p.tiles.length > 1, compact: false, numeralSize: stackedSize() };
   const totalFlex = p.tiles.reduce((a, t) => a + t.flex, 0);
   const free = p.rowWidth - TILE_GAP * (p.tiles.length - 1);
-  const sideBySide = Math.min(...p.tiles.map((t) => maxSizeIn((free * t.flex) / totalFlex, t, p.stepSize, p.fontScale)));
-  if (sideBySide >= minimum) return { stacked: false, numeralSize: floorHalf(Math.min(wanted, sideBySide)) };
-  return { stacked: true, numeralSize: stackedSize() };
+  const widthOf = (t: TileSpec): number => (free * t.flex) / totalFlex;
+  const sideBySide = Math.min(...p.tiles.map((t) => maxSizeIn(widthOf(t), t, p.stepSize, p.fontScale)));
+  if (sideBySide >= minimum) return { stacked: false, compact: false, numeralSize: floorHalf(Math.min(wanted, sideBySide)) };
+  const compact = Math.min(...p.tiles.map((t) => compactSizeIn(widthOf(t), t, p.fontScale)));
+  if (compact >= minimum) return { stacked: false, compact: true, numeralSize: floorHalf(Math.min(wanted, compact)) };
+  return { stacked: true, compact: false, numeralSize: stackedSize() };
 }
 
 /**

@@ -1680,7 +1680,7 @@ Open question for Ben (review S3): a pain flag set mid-workout leaves today's al
 | WT-D10 | `Rest after 3:00 ›` stays on the open row | P9 (approved v0.2): rest shown on every set | Only in the exercise sheet |
 | WT-D11 | An **open-ended workout** (no routine or plan) keeps `Add exercise` as the primary after its last set; Finish stays in `⋯` | Audit B1 as built: Ben is building as he goes, so "last set" isn't the end. **Ben to confirm**, because his decision 2 names Finish | Finish in the Log slot here too |
 | WT-D12 | The view choice is **per device**, defaulting to Table. No scroll offset is stored; the anchor is derived | Ben's choice sticks across workouts, and restore can't land somewhere stale | Per session |
-| WT-D13 | Tile numerals shrink to fit (down to 28pt), with the unit in the tile label. Below that, the tiles stack | `102.5` at 40pt doesn't fit beside 52pt buttons at 390pt. Never truncate a number | Always stacked tiles (taller open row) |
+| WT-D13 | Tile numerals shrink to fit (down to 28pt), with the unit in the tile label. Below that, the − / + move under the numeral (each half the tile, ≥ 44pt) so the tiles stay on one row (F11, Ben 13 Oct); only if that doesn't fit (or at AX1+) do they stack | `102.5` at 40pt doesn't fit beside 52pt buttons at 390pt. Never truncate a number | Always stacked tiles (taller open row) |
 | WT-D14 | Column labels use `type.label` (16pt), not a 12pt section label | The 16pt floor (design-system §3) | — |
 
 **Follow-ups for other specs (not edited here):**

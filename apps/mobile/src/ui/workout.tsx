@@ -49,7 +49,7 @@ export function KeyboardDoneAccessory({ nativeID }: { nativeID: string }) {
 }
 
 /** D tile − / +: a light glyph with a full 44 × 52 pt target. */
-function TileStep({ glyph, target, onStep, describe, size }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined }) {
+function TileStep({ glyph, target, onStep, describe, size, grow = false }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined; /** Compact tile (F11): half the tile's width, full height. */ grow?: boolean }) {
   const theme = useTheme();
   const enabled = target.enabled;
   return (
@@ -67,7 +67,7 @@ function TileStep({ glyph, target, onStep, describe, size }: { glyph: string; ta
         }
       }}
       style={({ pressed }) => ({
-        width: size ?? theme.target.min.width,
+        ...(grow ? { flex: 1, minWidth: theme.target.min.width } : { width: size ?? theme.target.min.width }),
         height: size ?? theme.target.workout.height,
         borderRadius: theme.radius.pill,
         alignItems: 'center',
@@ -134,6 +134,7 @@ export function NumberStepper({
   onSurface = false,
   stepSize,
   numeralSize,
+  compact = false,
   onFocus,
   onLayout,
 }: {
@@ -160,6 +161,8 @@ export function NumberStepper({
    * scaling off so the measured fit holds. Default: `type.loadDisplay`.
    */
   numeralSize?: number;
+  /** F11: − / + under the numeral so tiles sit side by side in a narrow row (`tileFit().compact`, D tile only). */
+  compact?: boolean;
   /** The field took focus (the keypad is opening or moving to it): the Table anchors this tile (WT39). */
   onFocus?: () => void;
   /** The tile's frame in its parent, so the Table knows where the focused tile ends. */
@@ -229,6 +232,11 @@ export function NumberStepper({
       }}
     />
   );
+  const unitText = unit ? (
+    <AppText variant="body" color="text.secondary" style={{ fontSize: 18 }} maxFontSizeMultiplier={1.4}>
+      {` ${unit}`}
+    </AppText>
+  ) : null;
   if (flat) {
     // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
     return (
@@ -247,18 +255,27 @@ export function NumberStepper({
           <AppText variant="sectionLabel" color="text.tertiary" style={{ paddingHorizontal: theme.space['2'] }}>
             {label}
           </AppText>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
-              {input}
-              {unit ? (
-                <AppText variant="body" color="text.secondary" style={{ fontSize: 18 }} maxFontSizeMultiplier={1.4}>
-                  {` ${unit}`}
-                </AppText>
-              ) : null}
+          {compact ? (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' }}>
+                {input}
+                {unitText}
+              </View>
+              <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+                <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} grow />
+                <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} grow />
+              </View>
+            </>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
+                {input}
+                {unitText}
+              </View>
+              <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
             </View>
-            <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
-          </View>
+          )}
         </View>
         {!up.enabled && value !== null ? (
           <AppText variant="callout" color="text.secondary" numeric>
