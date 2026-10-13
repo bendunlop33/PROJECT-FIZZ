@@ -1842,9 +1842,11 @@ export function WorkoutScreen() {
         {switchSlot}
         {effortHere ? (
           <View style={{ gap: theme.space['2'] }}>
-            <AppText variant="label" color="text.tertiary">
-              {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}SET ${String(afterSetSaved.setNumber)} ${effortScale === 'rir' ? 'REPS IN RESERVE' : 'EFFORT'}`}
-            </AppText>
+            <EffortHeading scale={effortScale}>
+              <AppText variant="label" color="text.tertiary" style={{ flexShrink: 1 }}>
+                {`${afterSetSaved.exerciseName !== focus?.exerciseName ? `${afterSetSaved.exerciseName.toUpperCase()} · ` : ''}SET ${String(afterSetSaved.setNumber)} ${effortScale === 'rir' ? 'REPS IN RESERVE' : 'EFFORT'}`}
+              </AppText>
+            </EffortHeading>
             {effortChips}
           </View>
         ) : null}
