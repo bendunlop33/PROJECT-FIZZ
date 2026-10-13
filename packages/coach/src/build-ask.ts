@@ -1,6 +1,6 @@
 import { classifyPainMention } from '@fizz/domain';
 import type { ActionRecord, CoachMessage, CoachTurnKind } from '@fizz/schemas';
-import { classifyBenRequest, multiWeekScope, requestHas, revisesDraft } from './request';
+import { classifyBenRequest, multiWeekScope, requestHas, revisesDraft, withoutFocusRuns } from './request';
 
 /**
  * Did Ben ask for a workout in the app? One decision, shared by the turn gate
@@ -73,7 +73,8 @@ const ACK_WORD = '(?:ok|okay|k|kk|alright|aight|right|fine|ok then|okay then)';
 const SOFT_WORD = '(?:thanks|thank you|ta|cheers|cool|great|perfect|nice|lovely|brilliant|awesome|ace|mate|coach|then|now|x|xx|for me|though|tho|lol|lmao|haha+|hehe+|ha+)';
 /** Review r4 N1: thanks in an acknowledgement ("ok thanks") is a sign-off, never a yes to build. */
 const THANKS = /(?:^| )(?:thanks|thank you|ta|cheers)(?= |$)/;
-const FOLLOW_LEAD = "(?:(?:can|could|would|will) you (?:please |just )?|you can |please |just |go ahead and |now |then |and )*";
+// Review r5 S3: "can you not just add it", "can't you just add it" (pushback; "can you not add it" alone may mean "don't").
+const FOLLOW_LEAD = "(?:(?:can|could|would|will) you (?:please |just )?|(?:can|could) you not just |(?:can't|cant|couldn't|couldnt) you (?:just )?|you can |please |just |go ahead and |now |then |and )*";
 const FOLLOW_VERB = '(?:add|put|save|load|stick|pop|chuck|throw|turn|build|create|set|start|plug)';
 /** Review r2 N1: these only with an object ("make it", never a bare "do"); "log it" means he did it, so it's out. */
 const FOLLOW_VERB_WITH_OBJECT = '(?:make|do|get)';
@@ -83,7 +84,8 @@ const FOLLOW_PLACE =
 const SIGN_OFF = `(?:${SOFT_WORD}|please)`;
 const FOLLOW = new RegExp(`^${FOLLOW_LEAD}(?:${FOLLOW_VERB}(?: ${FOLLOW_OBJECT})?|${FOLLOW_VERB_WITH_OBJECT} ${FOLLOW_OBJECT})(?: ${FOLLOW_PLACE})*$`);
 /** "in the app please", "yes in the app", "to my workouts" (review r2 B1): the place alone, after the coach's plan. */
-const PLACE_ONLY = /^(?:(?:can you |please )?(?:put it |add it )?)?(?:in|into|to|on|onto) (?:the |my |your )?(?:app|workouts?|routines?|library)$/;
+// Review r5 S3: "i want it in the app", "i'd like it in my workouts".
+const PLACE_ONLY = /^(?:(?:can you |please )?(?:put it |add it |(?:i )?(?:want|need) (?:it|that|this|them) |i'd like (?:it|that|this|them) |i would like (?:it|that|this|them) )?)?(?:in|into|to|on|onto) (?:the |my |your )?(?:app|workouts?|routines?|library)$/;
 /** Ben pushing back that the app can do it (build 131 review S2): "the app can do it", "it has a workout builder". */
 const PUSHBACK =
   /^(?:(?:but|well|yes|yeah|no|nah|actually) )*(?:the app|this app|the app itself|you|it) (?:can|could|does|do|has|have|has got|should be able to)(?: (?:a|an|got))? (?:do (?:it|that|this)|(?:a )?(?:workout |session )?builder|build(?: (?:it|that|them|workouts?|sessions?))?|add(?: (?:it|that|them|workouts?|sessions?))?|make (?:it|that|workouts?|sessions?))(?: (?:in|on) (?:the |this )?app)?$/;
@@ -453,35 +455,61 @@ const BUILT_OBJECT = `(?:(?:you |him )?${NEW_WORKOUT}|${BUILT_PRONOUN} ${PRONOUN
 const PRONOUN_SUBJECT = "(?:it's|it is|its|that's|that is|thats|this is|they're|they are|it has been|it's been|that's been|it has|that has)";
 const NOUN_SUBJECT = `(?:${WORKOUT_OBJECT}(?: is|'s| has been| are|'s been))`;
 const DONE_STATE = '(?:ready|built|created|set up|loaded|waiting|added|saved|made|done|sorted)';
+/**
+ * Review r5 B2: a workout noun as the subject reads as a claim only with a build-ish state. "done" and
+ * "made" are left out ("Once your workout is done, stretch", "The session is made up of five exercises").
+ */
+const SESSION_SUBJECT = `(?:${WORKOUT_OBJECT.replace('|routines?', '')}(?: is|'s| has been| are|'s been))`;
+const NOUN_DONE_STATE = '(?:ready|built|created|set up|loaded|waiting|added|saved|sorted)';
+/** Review r5 B2: the app itself or its Workouts tab, never "your routines", "History" or a log. */
+const APP_PLACE =
+  "(?:(?:in|into|to|on|onto|under) (?:the |this |your |my )?(?:app|workouts(?: tab| list| page)?|workout tab|drafts?)\\b(?![- ](?:history|log|logs|from|last|on (?:mon|tue|wed|thu|fri|sat|sun)|for (?:last|the last))\\b))";
+/** Not about a new workout: where a past one went ("saved in History", "in your log"). */
+const NOT_HISTORY = '(?![^.?!]{0,20}\\b(?:history|log|logs|logbook|calendar)\\b)';
+/**
+ * Review r5 B2: a new workout with an indefinite article ("a pull session", "you another workout"): the
+ * only claim that counts when a draft already exists in the thread (that draft really is in Workouts).
+ */
+const NEW_INDEFINITE = "(?:(?:you|him) )?(?:a|an|another|one more|new|fresh)(?: (?:new|fresh|quick|short|full|whole|push|pull|legs?|leg day|upper|lower|body|full-body|chest|back|arms?|shoulders?|\\d{1,3}[- ]?(?:min|minute)s?)){0,3} (?:workout|session|routine)s?\\b";
+const FIRST_PERSON_PROMISE = "(?:i'll|i will|i'm going to|i am going to|im going to|i'm gonna|gonna|let me|lemme|i can now|i'll go ahead and|i'll just)\\s+(?:go ahead and |just |now |quickly )?";
 
 /**
  * Explicit claims: a new workout, draft or session built, added or saved in the app. Hidden on any
  * turn that can build and saved no draft. Review r4 B2: each needs a workout noun, or a pronoun with
- * "for you" or a place, after a promise, done or progress verb.
+ * "for you" or a place, after a promise, done or progress verb. Review r5 B2: a workout noun as the
+ * subject counts here only with the app or the Workouts tab as the place.
  */
 const EXPLICIT_CLAIMS: readonly RegExp[] = [
   // Promises: "I'll set that up for you", "Let me put that in the app", "I will build you a push session".
-  new RegExp(`\\b(?:i'll|i will|i'm going to|i am going to|im going to|i'm gonna|gonna|let me|lemme|i can now|i'll go ahead and|i'll just)\\s+(?:go ahead and |just |now |quickly )?${BUILT_VERB}(?: up)? ${BUILT_OBJECT}`),
+  new RegExp(`\\b${FIRST_PERSON_PROMISE}${BUILT_VERB}(?: up)? ${BUILT_OBJECT}`),
   // In progress: "I'm setting that up now", "I'm building your session".
   new RegExp(`\\b(?:i'm|i am|im|now)\\s+${BUILT_VERB_ING}(?: up)? ${BUILT_OBJECT}`),
   // In progress, no subject, only with a place: "Adding it to the app." ("Adding a set this week would help" stays.)
   new RegExp(`^(?:(?:ok|okay|sure|right|great|cool),? )?${BUILT_VERB_ING}(?: up)?\\b[^.?!]{0,30}?${BUILT_PLACE}`),
   // Done: "I've added it to your workouts", "I have set up the session", "I built a push session".
   new RegExp(`\\b(?:i've|i have|ive|i)\\s+(?:just |now |already )?${BUILT_VERB_ED}(?: up)? ${BUILT_OBJECT}`),
-  // Ready in a place: "It's ready in your workouts", "Your session is saved in the app".
-  new RegExp(`\\b(?:${PRONOUN_SUBJECT}|${NOUN_SUBJECT})\\s+(?:now |all |already |been )*${DONE_STATE}\\b[^.?!]{0,30}?${BUILT_PLACE}`),
-  // A workout ready, no place: "Your push session is ready.", "The workout has been saved."
-  new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already |been )*${DONE_STATE}\\b`),
-  // A workout in a place: "Your push session is in the app."
-  new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already )*${BUILT_PLACE}`),
+  // Ready in a place: "It's ready in your workouts".
+  new RegExp(`\\b${PRONOUN_SUBJECT}\\s+(?:now |all |already |been )*${DONE_STATE}\\b[^.?!]{0,30}?${BUILT_PLACE}`),
+  // A workout ready in the app: "Your session is saved in the app", "Your push session is ready in the Workouts tab."
+  new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already |been )*${NOUN_DONE_STATE}\\b[^.?!]{0,30}?${APP_PLACE}`),
+  // A workout in the app: "Your push session is in the app." Not a routine: Ben's saved routines really are in Workouts.
+  new RegExp(`\\b${SESSION_SUBJECT}\\s+(?:now |all |already )*${APP_PLACE}`),
   // A promise of where to look: "You should see it in the app shortly", "You'll find it in Workouts".
   new RegExp(`\\byou(?:'ll| will| should| can now|'ll now)\\s+(?:now |soon )?(?:see|find|have)\\s+${BUILT_PRONOUN}\\b[^.?!]{0,20}?${BUILT_PLACE}`),
+];
+
+/** Review r5 B2: with a draft already in the thread, only a claim of another new workout counts ("I've built you a pull session"). */
+const NEW_WORKOUT_CLAIMS: readonly RegExp[] = [
+  new RegExp(`\\b${FIRST_PERSON_PROMISE}${BUILT_VERB}(?: up)? ${NEW_INDEFINITE}`),
+  new RegExp(`\\b(?:i'm|i am|im|now)\\s+${BUILT_VERB_ING}(?: up)? ${NEW_INDEFINITE}`),
+  new RegExp(`\\b(?:i've|i have|ive|i)\\s+(?:just |now |already )?${BUILT_VERB_ED}(?: up)? ${NEW_INDEFINITE}`),
 ];
 
 /**
  * Claims that are about a workout only when one is being talked about (a build in play this turn):
  * "it's saved", "It's been added", "I've set it up", "On it!", "Coming right up", "Done!", "adding that
- * now", "Open it from Workouts", "It's in the app". Review r4 S1. Elsewhere they are ordinary words.
+ * now", "Open it from Workouts", "It's in the app", "Your push session is ready." Review r4 S1, r5 B2.
+ * Elsewhere they are ordinary words.
  */
 const IN_PLAY_CLAIMS: readonly RegExp[] = [
   new RegExp(`\\b${PRONOUN_SUBJECT}\\s+(?:now |all |already |been )*${DONE_STATE}\\b(?: (?:for you|now|to go|and waiting|up))*\\s*[.!]*$`),
@@ -494,6 +522,12 @@ const IN_PLAY_CLAIMS: readonly RegExp[] = [
   /\b(?:open|start) (?:it|that|this|the (?:draft|workout|session)) (?:from|in) (?:the |your )?workouts?(?: tab)?\b/,
   /\b(?:check|look in|head to|go to) (?:your |the )?workouts (?:tab|list|page)\b/,
   new RegExp(`\\b(?:should|will) (?:appear|show up|pop up|be there)\\b[^.?!]{0,30}?${BUILT_PLACE}`),
+  // Review r5 B2 (moved from the explicit claims): a workout ready, no place ("Your push session is ready.").
+  new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already |been )*${NOUN_DONE_STATE}\\b${NOT_HISTORY}(?! up of\\b)`),
+  // A workout in a place: "Your push session is in the app."
+  new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already )*${BUILT_PLACE}`),
+  // A workout ready in a looser place: "Your session is saved in your routines."
+  new RegExp(`\\b${NOUN_SUBJECT}\\s+(?:now |all |already |been )*${NOUN_DONE_STATE}\\b[^.?!]{0,30}?${BUILT_PLACE}`),
 ];
 /** Statements that are an offer or a true limit, never a claim: "I can build it if you like", "Ben saves it himself". */
 const NOT_BUILT_CLAIM = /\b(?:if you (?:like|want|fancy|'d like|would like)|let me know|say the word|just say|want me to|shall i|should i|you can (?:open|start|save)|you open|you start|you save|tap)\b|\b(?:can't|cannot|can not|couldn't|could not|wasn't|was not|isn't|is not|didn't|did not|won't|will not|not) /;
@@ -506,10 +540,27 @@ const NOT_BUILT_CLAIM = /\b(?:if you (?:like|want|fancy|'d like|would like)|let 
  * Questions and offers never count; history and advice ("It's in your workout history", "Let me put
  * it another way", "Adding a set would help") never do. Pure; the coach's words are data.
  */
-export function claimsWorkoutBuilt(sentence: string, opts: { inPlay?: boolean } = {}): boolean {
+export function claimsWorkoutBuilt(sentence: string, opts: { inPlay?: boolean; draftExists?: boolean } = {}): boolean {
   const t = sentence.toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
   if (t === '' || /\?\s*$/.test(t) || OFFER_STATEMENT.test(t) || NOT_BUILT_CLAIM.test(t)) return false;
+  // Review r5 B2: a draft already in the thread (or in context) really is in Workouts: "It's ready in
+  // Workouts" and "Your push session is ready" are true. Only a claim of another new one counts.
+  if (opts.draftExists === true) return NEW_WORKOUT_CLAIMS.some((re) => re.test(t));
   return EXPLICIT_CLAIMS.some((re) => re.test(t)) || (opts.inPlay === true && IN_PLAY_CLAIMS.some((re) => re.test(t)));
+}
+
+/**
+ * Review r5 S1: the pain reading of a message that may ask for a session. Effort ("a hard push
+ * session") is not pain, so it reads as `none`; a muscle-group focus ("a back and biceps session",
+ * "a pull session, back and biceps") is a training focus, not Ben's body, so an `unclear` read only
+ * from it is `none`. Anything else (pain, or an unclear word outside the focus) stands (rule 9). Pure.
+ */
+export function buildPainMention(text: string): 'none' | 'pain' | 'unclear' {
+  const mention = classifyPainMention(text);
+  if (mention === 'none' || mention === 'effort') return 'none';
+  if (mention === 'pain') return 'pain';
+  const rest = classifyPainMention(withoutFocusRuns(text));
+  return rest === 'none' || rest === 'effort' ? 'none' : rest;
 }
 
 /**
@@ -520,7 +571,7 @@ export function claimsWorkoutBuilt(sentence: string, opts: { inPlay?: boolean } 
  * turn with a gym only offers the tool. Pure.
  */
 export function forcesBuild(text: string, opts: { draftInContext?: boolean } = {}): boolean {
-  if (classifyPainMention(text) !== 'none' || multiWeekScope(text)) return false;
+  if (buildPainMention(text) !== 'none' || multiWeekScope(text)) return false;
   return requestHas(classifyBenRequest(text, 'general'), 'build') || (opts.draftInContext === true && revisesDraft(text));
 }
 

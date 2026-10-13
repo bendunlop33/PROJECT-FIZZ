@@ -196,6 +196,11 @@ export interface ReplyFilterOptions {
    * tool, a hidden promise is replaced by the offer and a "can't build" by `BUILD_ASK_LINE`.
    */
   toolOffered?: boolean;
+  /**
+   * Review r5 B2: a coach draft already exists in this thread (or is in context). "It's ready in
+   * Workouts" is then true, so only a claim of another new workout is hidden.
+   */
+  draftExists?: boolean;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
@@ -232,7 +237,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     // turn without the tool does the reply ask, once, "Want me to build it in the app?"; with the tool the
     // false claim is just dropped, and a refused build's card already says what happened.
     const draftSaved = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout' && e.record.status === 'committed' && e.record.undoneBy === null);
-    if (options.noBuildToolLine === true && !draftSaved && actions.length === 0 && claimsWorkoutBuilt(tokens.plainText, { inPlay: options.buildAsked === true })) {
+    if (options.noBuildToolLine === true && !draftSaved && actions.length === 0 && claimsWorkoutBuilt(tokens.plainText, { inPlay: options.buildAsked === true, draftExists: options.draftExists === true })) {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_DRAFT_BUILT_DETAIL });
       if (!askLineShown && !toolOffered && !draftThisTurn) out.push({ kind: 'sentence', text: BUILD_OFFER_LINE });
       askLineShown = true;

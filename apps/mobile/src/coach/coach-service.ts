@@ -44,6 +44,7 @@ import {
   buildFollowUpIn,
   refusedBuildActionIds,
   capUsable,
+  usableFirst,
   BUILD_USABLE_CAP,
   OFFERED_USABLE_CAP,
   buildRequestWords,
@@ -873,10 +874,16 @@ export function createCoachService(deps: CoachServiceDeps) {
     const flagged = (id: string) => painFlagCovering(flags, id, nowMs, at.tz) !== null;
     const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]));
     const keyOf = (id: string): string => byId.get(id)?.catalogueKey ?? id;
-    const first = [...(parent?.plan.slots.map((sl) => sl.catalogueId) ?? []), ...live.flatMap((r) => r.exercises.map((e) => keyOf(e.exerciseId)))];
-    const allUsable = pool
-      .filter((e) => (e.measurement === 'reps' || e.measurement === 'duration') && !flagged(e.id) && doableHere(e, gym))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    const doable = pool.filter((e) => (e.measurement === 'reps' || e.measurement === 'duration') && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
+    // Review r5 S2: a capped list keeps what Ben named and what fits the focus ahead of the alphabetical fill.
+    const first = usableFirst({
+      words: newest,
+      focus,
+      pool: doable.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, split: e.split })),
+      draft: parent?.plan.slots.map((sl) => sl.catalogueId) ?? [],
+      routines: live.flatMap((r) => r.exercises.map((e) => keyOf(e.exerciseId))),
+    });
+    const allUsable = doable
       .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
     const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
     const refs = await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []);

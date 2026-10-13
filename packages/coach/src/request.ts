@@ -645,6 +645,20 @@ const BUILD_DO_FOR = new RegExp(`^do (?:${NEW_DET} )+.{0,60}?\\b${BUILD_NOUN}s? 
 const BUILD_SOMETHING = /^(?:build|create|design|put together|throw together|whip up|knock up|program|programme) (?:me|us) (?:something|a thing)(?: (?:quick|short|new|good|decent))?(?: (?:for (?:today|tonight)|today|tonight|to do(?: today| tonight)?|for (?:the )?gym))?$/;
 /** Review r3 S5: "push day today, can you sort it": a focus and a day, then "sort it" (the whole message). */
 const BUILD_SORT_IT = new RegExp(`^${FOCUS_RUN} (?:day|session|workout)(?: (?:today|tonight))?,? (?:(?:can|could|would) you |please )?(?:sort|build|make|do|plan) (?:it|that|one|me one|me out|me something)(?: (?:for me|please|out))*$`);
+/**
+ * Review r5 S1: muscle groups named as a session's focus, not as Ben's body: a run of two or more
+ * ("back and biceps", "chest/back") or one before a workout noun ("back session"), never after "my".
+ * The run before a noun, or a list of two or more ending the clause ("a pull session, back and biceps").
+ */
+const FOCUS_LIST = `${FOCUS}(?:(?: ?/ ?| and | & | \\+ | plus |, ?)${FOCUS})+`;
+const FOCUS_BEFORE_NOUN = new RegExp(`(?<!\\bmy )(?<!\\bmy [a-z]+ )\\b${FOCUS_RUN} (?=${BUILD_NOUN}s?\\b)`, 'g');
+const FOCUS_LIST_END = new RegExp(`(?<!\\bmy )\\b${FOCUS_LIST}(?= *(?:please)? *(?:[.,!;]|$))`, 'g');
+
+/** Ben's words with a training focus ("back and biceps session") taken out, for reading pain words (review r5 S1). Pure. */
+export function withoutFocusRuns(text: string): string {
+  return text.toLowerCase().replace(/[‘’]/g, "'").replace(FOCUS_BEFORE_NOUN, '').replace(FOCUS_LIST_END, '');
+}
+
 /** "push and legs" inside one request: joined before the clause split reads "and" as a new clause (build 131). */
 const FOCUS_AND = new RegExp(`\\b(${FOCUS}) (?:and|&|plus) (?=${FOCUS}\\b)`, 'gi');
 // Build 131: "split" is later only as a programme split ("my upper/lower split"), never "split squats".

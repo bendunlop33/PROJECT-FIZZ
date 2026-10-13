@@ -587,6 +587,36 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(forced).toBeLessThanOrEqual(BUILD_USABLE_CAP);
     expect(forced).toBeGreaterThanOrEqual(offeredOnly);
   });
+  it('review r5 B1: a load question on an offered-only turn is never told to withhold loads', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith('Try 102.5 kg for 3 × 6.')]);
+    const r = await ask(s, 'what weight should I use on bench next time?');
+    const instructions = model.requests[0]?.instructions ?? '';
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('propose_workout');
+    expect(instructions).not.toContain('Never give loads');
+    expect(instructions).not.toContain('one short sentence');
+    expect(instructions).toContain('Only if you call `propose_workout`');
+    expect(instructions).toContain('Multi-week programmes and weekly plans are not available yet');
+    expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
+    model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
+    await ask(s, 'Can you make me a push session');
+    expect(model.requests[0]?.instructions).toContain('Never give loads, weights or minutes');
+  });
+  it('review r5 B2: the turn after a draft was built, "Your push session is ready in Workouts." is shown', async () => {
+    const { s } = await benWithHistory();
+    const { result } = await buildPush(s);
+    model = new StepModel([() => replyWith('Your push session is ready in Workouts. Open it when you get there.')]);
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: result.threadId, input: { kind: 'words', text: 'where is it?', spoken: false }, turnId: h.ids() });
+    expect(r.items.map((i) => (i.kind === 'sentence' ? i.text : ''))).toContain('Your push session is ready in Workouts.');
+    expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
+  });
+  it('review r5 S1: "make me a back and biceps session" is forced and asks nothing about pain', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
+    const r = await ask(s, 'make me a back and biceps session');
+    expect(model.requests[0]?.instructions).toContain('Ben asked for a workout in the app');
+    expect(r.askPain).toBeNull();
+  });
   it('review S1: if the route refuses the forced call, the held text answer stands (no error, no draft)', async () => {
     const { s } = await benWithHistory();
     // The third step is missing: StepModel answers it with an `unavailable` error, as a route rejecting named tool_choice would.
