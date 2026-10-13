@@ -53,6 +53,8 @@ export interface ProgressHomeInput {
 export interface StatView {
   value: string;
   label: string;
+  /** F17: `1 of 3 timed` under TIME when only some sessions have a time (imports have none). */
+  note?: string;
 }
 
 export interface DayCellView {
@@ -243,10 +245,12 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   const counts = countSessions(input.sessions, window, input.today);
   const time = timeInGym(input.sessions, window);
   const timeValue = time.timedCount === 0 ? '—' : gymTimeText(time.totalMs);
+  // F17 (rule 6): a total from some sessions never reads as the total for all of them.
+  const partlyTimed = time.timedCount > 0 && time.timedCount < time.sessionCount;
   const avgValue = time.avgMs === null ? '—' : gymTimeText(time.avgMs);
   const statsWords = [
     `${countNoun(counts.count, 'session', 'sessions')}.`,
-    time.timedCount === 0 ? 'Time in gym not available.' : `Time in gym ${gymTimeWords(time.totalMs)}.`,
+    time.timedCount === 0 ? 'Time in gym not available.' : `Time in gym ${gymTimeWords(time.totalMs)}${partlyTimed ? `, from ${String(time.timedCount)} of ${countNoun(time.sessionCount, 'session', 'sessions')}` : ''}.`,
     time.avgMs === null ? '' : `Average ${gymTimeWords(time.avgMs)} per session.`,
   ]
     .filter((x) => x !== '')
@@ -297,7 +301,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   const activity: ActivityView = {
     stats: [
       { value: String(counts.count), label: 'SESSIONS' },
-      { value: timeValue, label: 'TIME' },
+      { value: timeValue, label: 'TIME', ...(partlyTimed ? { note: `${String(time.timedCount)} of ${String(time.sessionCount)} timed` } : {}) },
       { value: avgValue, label: 'AVG' },
     ],
     statsWords,

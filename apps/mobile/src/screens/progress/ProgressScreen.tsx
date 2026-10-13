@@ -345,7 +345,7 @@ function Overview({
         <Pressable accessibilityRole="button" accessibilityLabel={activity.cardWords} onPress={onCalendar}>
           <Card>
             <View style={{ gap: theme.space['4'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-              <StatStrip items={activity.stats.map((s) => ({ value: s.value, label: s.label }))} accessibilityLabel={activity.statsWords} ax={ax} />
+              <StatStrip items={activity.stats.map((s) => ({ value: s.value, label: s.label, ...(s.note !== undefined ? { note: s.note } : {}) }))} accessibilityLabel={activity.statsWords} ax={ax} />
               <ActivityBars bars={activity.bars} />
               <AppText variant="callout" color="text.secondary" numeric>
                 {activity.comparison}

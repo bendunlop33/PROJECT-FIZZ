@@ -160,6 +160,19 @@ describe('time in gym (checks 4–8, PG25)', () => {
     expect(home.activity.footnote).toBe('No times for imported workouts');
   });
 
+  it('F17: 1 of 3 sessions timed (2 imported): TIME says so, never a total for all three', () => {
+    const home = buildProgressHomeView({ sessions: [session('2026-10-08', { durationMs: 45 * MIN }), imported('2026-10-06'), imported('2026-10-05')], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    if (home.dataState !== 'normal') throw new Error('expected normal');
+    expect(home.activity.stats.map((s) => sp(s.value))).toEqual(['3', '45 min', '45 min']);
+    expect(home.activity.stats[1]).toMatchObject({ label: 'TIME', note: '1 of 3 timed' });
+    expect(home.activity.statsWords).toBe('3 sessions. Time in gym 45 minutes, from 1 of 3 sessions. Average 45 minutes per session.');
+    expect(home.activity.footnote).toBe('Time from 1 of 3 sessions');
+    // Every session timed: no note.
+    const all = buildProgressHomeView({ sessions: [session('2026-10-08', { durationMs: 45 * MIN })], exercises: INFO, today: TODAY, days: 7, grouping: 'body_part' });
+    if (all.dataState !== 'normal') throw new Error('expected normal');
+    expect(all.activity.stats[1]?.note).toBeUndefined();
+  });
+
   it('check 6: over 4 h is left out until confirmed; the footnote counts what was used', () => {
     const long = session('2026-10-02', { durationMs: 5 * H + 12 * MIN, name: 'Push A' });
     const sessions = [...CHECK1.map((d) => session(d)).slice(1), long];
