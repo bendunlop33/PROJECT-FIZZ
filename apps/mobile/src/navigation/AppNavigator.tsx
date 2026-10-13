@@ -23,6 +23,14 @@ import { ResetKnowledgeScreen } from '../screens/data/ResetKnowledgeScreen';
 import { ImportChooseScreen } from '../screens/import/ImportChooseScreen';
 import { ImportedWorkoutScreen } from '../screens/import/ImportedWorkoutScreen';
 import { ImportIntroScreen } from '../screens/import/ImportIntroScreen';
+import { ImportHistoryScreen } from '../screens/import/ImportHistoryScreen';
+import { ImportLayoutCheckScreen } from '../screens/import/ImportLayoutCheckScreen';
+import { ImportLayoutQuestionScreen } from '../screens/import/ImportLayoutQuestionScreen';
+import { ImportLayoutRoleScreen } from '../screens/import/ImportLayoutRoleScreen';
+import { ImportNewLayoutScreen } from '../screens/import/ImportNewLayoutScreen';
+import { ImportSentScreen } from '../screens/import/ImportSentScreen';
+import { ImportValueChecksScreen } from '../screens/import/ImportValueChecksScreen';
+import { SavedLayoutScreen, SavedLayoutsScreen } from '../screens/import/SavedLayoutsScreen';
 import { ImportNamesScreen } from '../screens/import/ImportNamesScreen';
 import { ImportPreviewScreen } from '../screens/import/ImportPreviewScreen';
 import { ImportQuestionScreen } from '../screens/import/ImportQuestionScreen';
@@ -156,7 +164,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="DeleteMyData" component={DeleteMyDataScreen} options={{ title: 'Delete my data' }} />
       <ProfileStack.Screen name="ResetKnowledge" component={ResetKnowledgeScreen} options={{ title: 'Reset coaching knowledge' }} />
       <ProfileStack.Screen name="ImportIntro" component={ImportIntroScreen} options={{ title: 'Import from FitNotes' }} />
-      <ProfileStack.Screen name="ImportPreview" component={ImportPreviewScreen} options={{ title: 'FitNotes import' }} />
+      <ProfileStack.Screen name="ImportPreview" component={ImportPreviewScreen} options={{ title: 'Import preview' }} />
       <ProfileStack.Screen name="ImportNames" component={ImportNamesScreen} options={{ title: 'Check exercise names' }} />
       <ProfileStack.Screen name="ImportChoose" component={ImportChooseScreen} options={({ route }) => ({ title: route.params.mode === 'new' ? 'Add new exercise' : 'Choose exercise' })} />
       <ProfileStack.Screen name="ImportQuestion" component={ImportQuestionScreen} options={({ route }) => ({ title: IMPORT_QUESTION_TITLES[route.params.question] })} />
@@ -165,6 +173,15 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="ImportResults" component={ImportResultsScreen} options={{ title: 'Import results' }} />
       <ProfileStack.Screen name="ImportedWorkout" component={ImportedWorkoutScreen} options={{ title: 'Imported workout' }} />
       <ProfileStack.Screen name="PastImports" component={PastImportsScreen} options={{ title: 'Past imports' }} />
+      <ProfileStack.Screen name="ImportHistory" component={ImportHistoryScreen} options={{ title: 'Import history' }} />
+      <ProfileStack.Screen name="ImportNewLayout" component={ImportNewLayoutScreen} options={{ title: 'New file layout' }} />
+      <ProfileStack.Screen name="ImportSent" component={ImportSentScreen} options={{ title: 'What’s sent', presentation: 'modal' }} />
+      <ProfileStack.Screen name="ImportLayoutCheck" component={ImportLayoutCheckScreen} options={{ title: 'Check the layout' }} />
+      <ProfileStack.Screen name="ImportLayoutRole" component={ImportLayoutRoleScreen} options={{ title: 'Column' }} />
+      <ProfileStack.Screen name="ImportLayoutQuestion" component={ImportLayoutQuestionScreen} options={{ title: 'Question' }} />
+      <ProfileStack.Screen name="ImportValueChecks" component={ImportValueChecksScreen} options={{ title: 'Values to check' }} />
+      <ProfileStack.Screen name="SavedLayouts" component={SavedLayoutsScreen} options={{ title: 'Saved import layouts' }} />
+      <ProfileStack.Screen name="SavedLayout" component={SavedLayoutScreen} options={{ title: 'Saved layout' }} />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />
       <ProfileStack.Screen name="ChatGptSignInTest" component={ChatGptSignInTestScreen} options={{ title: 'ChatGPT sign-in test' }} />

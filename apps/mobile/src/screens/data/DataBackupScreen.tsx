@@ -47,16 +47,17 @@ export function DataBackupScreen() {
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const [data] = useScreenData(async (s) => {
-    const [status, counts, blocked, undoBlocked, imports, leftover] = await Promise.all([
+    const [status, counts, blocked, undoBlocked, imports, leftover, layouts] = await Promise.all([
       s.backups.getStatus(),
       s.yourData.counts(),
       s.restore.blockedBy(),
       s.restore.undoBlockedBy(),
       s.imports.list(),
       s.data.leftover(),
+      s.importLayouts.listLayouts(),
     ]);
     const recentlyDeleted = await s.history.recentlyDeletedCount();
-    return { status, counts, blocked, undoBlocked, imports, leftover, recentlyDeleted, rollback: s.restore.rollbackTarget() };
+    return { status, counts, blocked, undoBlocked, imports, leftover, recentlyDeleted, rollback: s.restore.rollbackTarget(), savedLayouts: layouts.rows.length };
   });
   const now = services.now();
 
@@ -71,7 +72,7 @@ export function DataBackupScreen() {
   }
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
-  const { status, counts, blocked, undoBlocked, imports, leftover, recentlyDeleted, rollback } = data.value;
+  const { status, counts, blocked, undoBlocked, imports, leftover, recentlyDeleted, rollback, savedLayouts } = data.value;
   const deletedRow = recentlyDeletedDataRow(recentlyDeleted);
   const leftoverView = leftover ? deleteLeftoverView(leftover) : null;
 
@@ -294,13 +295,22 @@ export function DataBackupScreen() {
       <SectionHeader title="Import" />
       <Group>
         <Row
-          title="Import from FitNotes"
+          title="Import history"
           icon="square.and.arrow.down"
-          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : pausedImport ? pausedLine(pausedImport) : 'FitNotes CSV'}
+          subtitle={blocked ? `Finish or discard your workout first (${blocked.title})` : pausedImport ? pausedLine(pausedImport) : null}
           onPress={() => {
-            navigation.navigate('ImportIntro');
+            navigation.navigate('ImportHistory');
           }}
         />
+        {savedLayouts > 0 ? (
+          <Row
+            title={`Saved import layouts (${String(savedLayouts)})`}
+            icon="tablecells"
+            onPress={() => {
+              navigation.navigate('SavedLayouts');
+            }}
+          />
+        ) : null}
         <Row
           title={`Past imports (${String(imports.length)})`}
           icon="clock.arrow.circlepath"

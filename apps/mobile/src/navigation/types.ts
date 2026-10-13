@@ -46,6 +46,23 @@ export type ProfileStackParams = {
   /** One imported workout's sets, each with its source file, row and original values (check 24). */
   ImportedWorkout: { jobId: string; date: string };
   PastImports: undefined;
+  /** Import from any app (data-import-export §9.2.1): what reads offline, what needs the coach, `Choose file`. */
+  ImportHistory: undefined;
+  /** New file layout: consent, Needs the coach, Reading the layout and its results (§9.2.2, §9.2.4). */
+  ImportNewLayout: { layoutId: string };
+  /** What's sent (§9.2.3): the literal request text and the column switches. */
+  ImportSent: { layoutId: string };
+  /** Check the layout, or Changed columns (§9.2.5, §9.2.7). */
+  ImportLayoutCheck: { layoutId: string; /** The role sheet's `"Reps" → Not imported`, shown once as a toast with [Undo]. */ moved?: string };
+  /** The column role sheet (§9.2.5). */
+  ImportLayoutRole: { layoutId: string; column: number };
+  /** One layout question (§9.2.5): what the file is, unit, date order, a notation, a marker, a new column. */
+  ImportLayoutQuestion: { layoutId: string; kind: 'record_kind' | 'unit' | 'date_order' | 'notation' | 'marker' | 'new_column'; column?: number; token?: string };
+  /** Values to check on the preview (§9.2.6, AI13). */
+  ImportValueChecks: { draftId: string };
+  /** Saved import layouts (§9.2.9). */
+  SavedLayouts: undefined;
+  SavedLayout: { id: string };
 };
 
 /** The Progress tab's stack (progress.md §2.1, slice A). */

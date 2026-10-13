@@ -235,6 +235,8 @@ interface Session {
   inflight: AbortController | null;
   /** The current `Read with the coach` tap: `Stop` marks it, whether or not its request has gone out yet. */
   run: { stopped: boolean } | null;
+  /** What `previewImport` found for a new table (shown again on the New file layout screen). */
+  notes: { interrupted: boolean; damaged: (string | null)[] };
 }
 
 const INSTRUCTIONS_HASH = sha256Hex(IMPORT_LAYOUT_INSTRUCTIONS_V1);
@@ -408,6 +410,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
         charsSent: 0,
         inflight: null,
         run: null,
+        notes: { interrupted: false, damaged: [] },
       };
       if (d.kind === 'saved_layout' || d.kind === 'saved_layout_changed') {
         const profile = live.find((x) => x.id === d.profileId);
@@ -449,6 +452,7 @@ export function createLayoutService(deps: LayoutServiceDeps) {
         // Cut off by leaving or closing the app: recorded once, so it shows `Interrupted.` and nothing is imported.
         await storeRequest({ ...last, state: 'failed', failure: 'interrupted', finishedAt: deps.now(), version: last.version + 1, updatedAtUtc: deps.now().utc }, last.version);
       }
+      base.notes = { interrupted, damaged };
       return {
         kind: 'new_table',
         layoutId: base.id,
@@ -460,6 +464,24 @@ export function createLayoutService(deps: LayoutServiceDeps) {
         reused: reused?.spec !== undefined && reused.spec !== null,
         interrupted,
         damaged,
+      };
+    },
+
+    /** The New file layout screen's facts again (the coach's state read now). Null when the session is gone. */
+    async newTable(layoutId: string): Promise<Extract<PreviewImportResult, { kind: 'new_table' }> | null> {
+      const s = sessions.get(layoutId);
+      if (!s) return null;
+      return {
+        kind: 'new_table',
+        layoutId: s.id,
+        fileName: s.file.name,
+        columns: s.table.header.length,
+        rows: s.table.records.length,
+        firstLine: s.firstLine,
+        coach: await coachStatus(),
+        reused: s.spec !== null,
+        interrupted: s.notes.interrupted,
+        damaged: s.notes.damaged,
       };
     },
 
@@ -663,6 +685,12 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       sessions.set(fresh.id, fresh);
       sampleOf(fresh);
       return fresh.id;
+    },
+
+    /** One column's cells as written (the role sheet's `3x8, 5x5, 4x10 …` and row count). File text, data only. */
+    columnValues(layoutId: string, column: number): string[] {
+      const s = sessions.get(layoutId);
+      return s ? s.table.records.map((r) => r.cells[column] ?? '') : [];
     },
 
     /** `Cancel`: the layout session is dropped; nothing was saved. */

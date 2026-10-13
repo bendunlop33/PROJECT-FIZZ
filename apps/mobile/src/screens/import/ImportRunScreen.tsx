@@ -85,6 +85,10 @@ export function ImportRunScreen() {
       case 'stale':
         Alert.alert('The preview changed', 'Check the preview again.', [{ text: 'OK', onPress: () => { navigation.goBack(); } }]);
         return;
+      case 'layout_changed':
+        // The saved layout changed or was deleted since the preview (rule 5): nothing was imported.
+        setPhase({ kind: 'failed', text: 'The saved layout changed. Choose the file again.', jobId: null, retry: false });
+        return;
       case 'workout_unfinished':
         setPhase({ kind: 'failed', text: `Finish or discard your workout first (${r.block.title}, started ${formatTime(toMs(r.block.startedAtUtc), r.block.tz)}).`, jobId: null, retry: false });
         return;
