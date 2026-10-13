@@ -107,7 +107,7 @@ export async function requestImportLayout(
 
 /** How a failed request shows (§9.3.2, §9.3.3; ADR 0026 §6). Nothing retries on its own. */
 export type ImportLayoutOutcome =
-  | { kind: 'unavailable'; reason: 'limit' | 'signed_out' | 'model_unavailable' | 'offline' | 'unavailable' | 'not_connected' }
+  | { kind: 'unavailable'; reason: 'limit' | 'signed_out' | 'model_unavailable' | 'offline' | 'unavailable' | 'not_connected' | 'not_eligible' }
   | { kind: 'failed'; reason: 'timeout' | 'no_layout_returned' | 'stopped' | 'provider_error' };
 
 export function importLayoutFailure(error: 'no_layout_returned' | ModelErrorKind): ImportLayoutOutcome {
@@ -117,7 +117,7 @@ export function importLayoutFailure(error: 'no_layout_returned' | ModelErrorKind
     case 'auth_expired':
       return { kind: 'unavailable', reason: 'signed_out' };
     case 'not_eligible':
-      return { kind: 'unavailable', reason: 'not_connected' };
+      return { kind: 'unavailable', reason: 'not_eligible' };
     case 'model_gone':
       return { kind: 'unavailable', reason: 'model_unavailable' };
     case 'network':

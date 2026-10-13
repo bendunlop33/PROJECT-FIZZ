@@ -30,6 +30,7 @@ const COACH_LINE: Record<ImportCoachStatus['state'], string> = {
   limit: 'Coach: usage limit',
   unavailable: 'Coach: unavailable',
   model_unavailable: 'Coach: model unavailable',
+  not_eligible: 'Coach: this account can’t be used',
 };
 
 /** `Needs the coach · <reason>` (§9.5). */
@@ -40,6 +41,7 @@ const NEEDS_REASON: Record<Exclude<ImportCoachStatus['state'], 'ready'>, string>
   limit: 'usage limit reached',
   unavailable: 'try later',
   model_unavailable: 'model unavailable',
+  not_eligible: 'this account can’t be used',
 };
 
 /** The fix for a reason, as a link (§9.3.2), or none. */
@@ -58,6 +60,7 @@ export function needsCoachLine(c: ImportCoachStatus): { line: Line; fix: CoachFi
     signed_out: { label: 'Sign in ›', target: 'coach_connection' },
     limit: { label: 'Manage usage ›', target: 'coach_connection' },
     model_unavailable: { label: 'Choose model ›', target: 'coach_connection' },
+    not_eligible: { label: 'Connect the coach ›', target: 'coach_connection' },
   };
   return { line: line('slash.circle', 'info', `Needs the coach · ${NEEDS_REASON[c.state]}`), fix: fixes[c.state] ?? null };
 }
@@ -151,6 +154,16 @@ export function newLayoutView(r: Extract<PreviewImportResult, { kind: 'new_table
           ? { label: 'Try again', enabled: true }
           : { label: 'Choose another file', enabled: true },
   };
+}
+
+/**
+ * How often New file layout reads the coach's state again while it can't
+ * read (§9.3.2: `Read with the coach` is re-enabled when the connection
+ * returns; review r3 N2). Null: no need. Offline is held for a minute after
+ * a failed request, so a 15 s re-read finds the connection soon after it is back.
+ */
+export function coachRecheckMs(state: ImportCoachStatus['state']): number | null {
+  return state === 'offline' || state === 'unavailable' ? 15_000 : null;
 }
 
 export interface SentView {

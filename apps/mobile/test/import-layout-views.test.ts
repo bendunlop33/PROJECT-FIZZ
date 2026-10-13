@@ -3,11 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { buildImportSample, buildLayoutReview, readTable, validateImportSpec, type LayoutQuestion, type ValueCheckQuestion } from '@fizz/domain';
 import { EMPTY_LAYOUT_ANSWERS, ImportMappingSpecV1Schema, type LayoutAnswers, type SpecCheckFailure } from '@fizz/schemas';
 
-import type { LayoutReviewView, SampleView } from '../src/import/layout-service';
+import { importCoachStateOf, type LayoutReviewView, type SampleView } from '../src/import/layout-service';
 import {
   checkLayoutView,
   checkReasonText,
   coachLine,
+  coachRecheckMs,
   importHistoryView,
   layoutGoesLine,
   needsCoachLine,
@@ -297,5 +298,21 @@ describe('Values to check, saved layouts, results (§9.2.6, §9.2.9, §9.2.10)',
     for (const state of ['ready', 'not_connected', 'offline', 'signed_out', 'limit', 'unavailable', 'model_unavailable'] as const) {
       expect(JSON.stringify(coachLine({ route: 'chatgpt_plan', state }))).not.toMatch(/API key|OpenAI/);
     }
+  });
+});
+
+describe('coach states that aren’t `not connected` (review r3 N2, N3)', () => {
+  it('an account or region that can’t be used says so, with the connection screen as its fix', () => {
+    expect(importCoachStateOf('not_eligible', true)).toBe('not_eligible');
+    expect(importCoachStateOf('region', true)).toBe('not_eligible');
+    expect(importCoachStateOf('not_connected', true)).toBe('not_connected');
+    expect(coachLine({ route: 'chatgpt_plan', state: 'not_eligible' }).line.text).toBe('Coach: this account can’t be used');
+    expect(needsCoachLine({ route: 'chatgpt_plan', state: 'not_eligible' })).toMatchObject({ line: { text: 'Needs the coach · this account can’t be used' }, fix: { label: 'Connect the coach ›' } });
+  });
+
+  it('offline and unavailable are read again until the coach can read; other states wait for Ben', () => {
+    expect(coachRecheckMs('offline')).toBe(15_000);
+    expect(coachRecheckMs('unavailable')).toBe(15_000);
+    for (const st of ['ready', 'not_connected', 'signed_out', 'limit', 'model_unavailable', 'not_eligible'] as const) expect(coachRecheckMs(st)).toBeNull();
   });
 });

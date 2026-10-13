@@ -103,6 +103,10 @@ export function importCoachStateOf(status: string, hasPort: boolean): ImportCoac
     case 'model_gone':
     case 'no_model':
       return 'model_unavailable';
+    // The account or its region can't be used by other apps (system-states §3.2; review r3 N3): not "not connected".
+    case 'not_eligible':
+    case 'region':
+      return 'not_eligible';
     default:
       return 'not_connected';
   }

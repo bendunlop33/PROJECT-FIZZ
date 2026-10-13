@@ -229,7 +229,7 @@ export const LayoutRequestFailureSchema = z.enum(['timeout', 'no_layout_returned
 export type LayoutRequestFailure = z.infer<typeof LayoutRequestFailureSchema>;
 
 /** Coach states that stop a request before or during it (§9.3.2). No state switches route (rule 7). */
-export const ImportCoachUnavailableSchema = z.enum(['not_connected', 'offline', 'signed_out', 'limit', 'unavailable', 'model_unavailable']);
+export const ImportCoachUnavailableSchema = z.enum(['not_connected', 'offline', 'signed_out', 'limit', 'unavailable', 'model_unavailable', 'not_eligible']);
 export type ImportCoachUnavailable = z.infer<typeof ImportCoachUnavailableSchema>;
 
 /** A check reason from `validateImportSpec` (the fixed list, §9.5). Strings are file text or code's numbers, never model text. */

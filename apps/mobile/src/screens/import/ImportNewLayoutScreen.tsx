@@ -1,10 +1,10 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEffect, useRef, useState } from 'react';
-import { Share, View } from 'react-native';
+import { AppState, Share, View } from 'react-native';
 
 import { newUuid } from '../../device/runtime';
-import { newLayoutView, readingResultView, readingSteps, type ReadingResultView } from '../../import/layout-views';
+import { coachRecheckMs, newLayoutView, readingResultView, readingSteps, type ReadingResultView } from '../../import/layout-views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -31,7 +31,7 @@ export function ImportNewLayoutScreen() {
   const alive = useRef(true);
   // One request per tap: a second tap before the re-render sends nothing.
   const sending = useRef(false);
-  const [data] = useScreenData(async (s) => {
+  const [data, reload] = useScreenData(async (s) => {
     const info = await s.importLayouts.newTable(layoutId);
     const sample = s.importLayouts.buildImportSample(layoutId);
     return info && sample ? { info, sample } : null;
@@ -52,6 +52,20 @@ export function ImportNewLayoutScreen() {
     },
     [services, layoutId],
   );
+
+  // Offline or unavailable: the coach's state is read again until it can read, and when the app comes back (§9.3.2, review r3 N2).
+  const recheck = phase.kind === 'consent' && data.state === 'ready' && data.value !== null ? coachRecheckMs(data.value.info.coach.state) : null;
+  useEffect(() => {
+    if (recheck === null) return;
+    const t = setInterval(reload, recheck);
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') reload();
+    });
+    return () => {
+      clearInterval(t);
+      sub.remove();
+    };
+  }, [recheck, reload]);
 
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
   if (data.value === null) {

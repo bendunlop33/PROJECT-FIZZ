@@ -110,6 +110,7 @@ describe('requestImportLayout: only one parsed call counts', () => {
     ['model_gone', { kind: 'unavailable', reason: 'model_unavailable' }],
     ['network', { kind: 'unavailable', reason: 'offline' }],
     ['unavailable', { kind: 'unavailable', reason: 'unavailable' }],
+    ['not_eligible', { kind: 'unavailable', reason: 'not_eligible' }],
   ] as const)('a route failure (%s) is reported as itself, mid-request too (check 35)', async (error, outcome) => {
     const r = await send([{ type: 'heartbeat' }, { type: 'error', error }]).run;
     expect(r).toEqual({ ok: false, error });

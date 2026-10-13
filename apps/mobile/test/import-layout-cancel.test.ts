@@ -170,6 +170,13 @@ describe('the screens wire it (source checks)', () => {
     expect(hook).toContain('label="Cancel"');
   });
 
+  it('New file layout reads the coach’s state again while offline or unavailable, and when the app comes back (review r3 N2)', () => {
+    const screen = src('screens/import/ImportNewLayoutScreen.tsx');
+    expect(screen).toContain('coachRecheckMs(data.value.info.coach.state)');
+    expect(screen).toContain('setInterval(reload, recheck)');
+    expect(screen).toContain("if (st === 'active') reload()");
+  });
+
   it('the role sheet goes back to the Check the layout under it (no second copy to remove later)', () => {
     expect(src('screens/import/ImportLayoutRoleScreen.tsx')).toContain("navigation.popTo('ImportLayoutCheck'");
     expect(src('screens/import/ImportLayoutRoleScreen.tsx')).not.toContain("navigate('ImportLayoutCheck'");
