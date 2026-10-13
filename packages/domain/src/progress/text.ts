@@ -1,7 +1,7 @@
-import type { EquipmentKind, Load, LoadConvention, ProgressWindowDays, WeightUnit } from '@fizz/schemas';
+import type { EquipmentKind, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 import { weekdayIndexOfDate } from '../calendar';
 import { formatMinutes, formatNumber, localDateText, NBSP } from '../display';
-import type { DayCount, WeekCount } from './activity';
+import type { WeekCount } from './activity';
 import type { DateRange } from './window';
 
 /**
@@ -12,6 +12,7 @@ import type { DateRange } from './window';
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 const WEEKDAY_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 export const WEEKDAY_LETTER = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const MONTH_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
 
 /** `12 Sep`. */
@@ -40,6 +41,11 @@ export function monthTitle(month: string): string {
 }
 
 /** `October` from `2026-10`. */
+/** A month picker row: `Apr 2025`. `month` is `YYYY-MM`. */
+export function monthShortTitle(month: string): string {
+  return `${MONTH_SHORT[Number(month.slice(5, 7)) - 1] ?? ''} ${month.slice(0, 4)}`;
+}
+
 export function monthName(month: string): string {
   return MONTH_LONG[Number(month.split('-')[1]) - 1] ?? '';
 }
@@ -69,11 +75,6 @@ export function rangeWords(range: DateRange, today: string): string {
   const y = rangeYears(range, today);
   const withYear = (date: string, year: string): string => (year === '' ? dayMonthLong(date) : `${dayMonthLong(date)} ${year}`);
   return `${withYear(range.from, y.from)} to ${withYear(range.to, y.to)}`;
-}
-
-/** `30 days`. */
-export function windowLabel(days: ProgressWindowDays): string {
-  return `${String(days)} days`;
 }
 
 /** Time totals: `57 min`, `6 h 39 min`; from 100 h whole hours (`104 h`). */
@@ -147,7 +148,6 @@ export function weekBarsWords(weeks: readonly WeekCount[]): string {
   return `Sessions per week: ${weeks.map((w) => `${weekBarDates(w)}, ${String(w.count)}`).join('; ')}.`;
 }
 
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
 /** A month bar's label: `Sep`, or `Sep 25` when the period crosses a year. */
 export function monthBarLabel(from: string, withYear: boolean): string {
@@ -163,12 +163,16 @@ export function monthBarsWords(months: readonly { from: string; to: string; coun
   return `Sessions per month: ${months.map(one).join('; ')}.`;
 }
 
-/** "Last 7 days: Tuesday 6 October, 1 workout; Thursday 8 October, 1 workout. Other days none." */
-export function dayStripWords(days: readonly DayCount[], head = `Last ${String(days.length)} days`): string {
-  const done = days.filter((d) => d.count > 0);
-  if (done.length === 0) return `${head}: no workouts.`;
-  const list = done.map((d) => `${weekdayDayMonthLong(d.date)}, ${countNoun(d.count, 'workout', 'workouts')}`).join('; ');
-  return done.length === days.length ? `${head}: ${list}.` : `${head}: ${list}. Other days none.`;
+/**
+ * A chart point's dates, shown when it's tapped: a week `14–20 Sep`, `28 Sep –
+ * 4 Oct`, `12 Oct`; a whole month `Sep 2025`, a cut one `14–30 Sep 2025`.
+ */
+export function pointDatesText(p: { from: string; to: string }, unit: 'week' | 'month', partial: boolean): string {
+  const year = unit === 'month' ? `${NBSP}${p.from.slice(0, 4)}` : '';
+  if (unit === 'month' && !partial) return `${MONTH_SHORT[Number(p.from.slice(5, 7)) - 1] ?? ''}${year}`;
+  if (p.from === p.to) return `${localDateText(p.from)}${year}`;
+  const sameMonth = p.from.slice(0, 7) === p.to.slice(0, 7);
+  return sameMonth ? `${String(Number(p.from.slice(8, 10)))}–${localDateText(p.to)}${year}` : `${localDateText(p.from)} – ${localDateText(p.to)}${year}`;
 }
 
 /** A load for VoiceOver: `100 kilograms`, `22.5 kilograms each`, `body weight plus 10 kilograms`, `15 kilograms of assistance`. */

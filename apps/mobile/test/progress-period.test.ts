@@ -1,14 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { seesLabel } from '../src/coach/sheet-view';
-import { mixHex, weekBarsLayout } from '../src/progress/chart-layout';
 import { createHarness, logWorkout, type Harness } from './harness';
 
 /**
  * Progress custom period through the services (Ben, 12 Oct 2026: "flexibility
  * to select time period"): shared by the home and Muscles, cleared by a
- * preset, made valid (never past today), for this run only; and part-week
- * bars drawn lighter.
+ * preset, made valid (never past today), for this run only.
  */
 
 let h: Harness;
@@ -40,7 +38,7 @@ describe('custom period', () => {
   it('Show applies the dates to the home (and so Muscles); a preset clears it; the bounds come with the home', async () => {
     const s = await setUp();
     const before = await s.progress.home();
-    expect(before).toMatchObject({ days: 30, range: null, today: '2026-10-12', earliest: '2026-09-01' });
+    expect(before).toMatchObject({ period: '1m', range: null, today: '2026-10-12', earliest: '2026-09-01' });
 
     s.progress.choosePeriod({ from: '2026-09-01', to: '2026-09-30' });
     const custom = await s.progress.home();
@@ -51,9 +49,9 @@ describe('custom period', () => {
     expect(custom.view.datesLine).toBe('1 Sep – 30 Sep');
 
     // A preset ends the custom period.
-    expect(await s.progress.saveSettings({ days: 7 })).toEqual({ ok: true });
+    expect(await s.progress.saveSettings({ period: '3m' })).toEqual({ ok: true });
     const preset = await s.progress.home();
-    expect(preset).toMatchObject({ days: 7, range: null });
+    expect(preset).toMatchObject({ period: '3m', range: null });
   });
 
   it('dates past today are pulled back to today; reversed dates are put right', async () => {
@@ -75,31 +73,20 @@ describe('custom period', () => {
   });
 });
 
-describe('part-week bars', () => {
-  it('carry their partial flag into the layout; the lighter colour is the bar mixed into the card', () => {
-    const rects = weekBarsLayout([0, 3, 1], 300, 3, { height: 64, maxBarWidth: 28, gap: 8, radius: 4 }, [true, false, true]);
-    expect(rects.map((r) => r.partial)).toEqual([true, false, true]);
-    expect(weekBarsLayout([1], 100, 3, { height: 64, maxBarWidth: 28, gap: 8, radius: 4 })[0]?.partial).toBe(false);
-    expect(mixHex('#B5ADA5', '#181615', 0.45)).toBe('#5f5a56');
-    expect(mixHex('#ffffff', '#000000', 1)).toBe('#ffffff');
-    expect(mixHex('text.secondary', '#000000', 0.5)).toBe('text.secondary');
-  });
-});
-
 describe('the coach on a custom period', () => {
   it('the sheet and `What the coach can see` name the dates, never "last N days"', async () => {
-    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2026-09-01', to: '2026-09-30' } }, null, false, null, '2026-10-12')).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep');
-    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2025-09-01', to: '2025-09-30' } }, null, false, null, '2026-10-12')).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02025');
-    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2025-10-13', to: '2026-10-12' } }, null, false, null, '2026-10-12')).toBe(
+    expect(seesLabel({ kind: 'progress', period: '1m', range: { from: '2026-09-01', to: '2026-09-30' } }, null, false, null, '2026-10-12')).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep');
+    expect(seesLabel({ kind: 'progress', period: '1m', range: { from: '2025-09-01', to: '2025-09-30' } }, null, false, null, '2026-10-12')).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02025');
+    expect(seesLabel({ kind: 'progress', period: '1m', range: { from: '2025-10-13', to: '2026-10-12' } }, null, false, null, '2026-10-12')).toBe(
       'Sees: Progress · 13\u00a0Oct\u00a02025 – 12\u00a0Oct\u00a02026',
     );
     // No known today: the year is named rather than guessed.
-    expect(seesLabel({ kind: 'progress', days: 30, range: { from: '2026-09-01', to: '2026-09-30' } }, null, false)).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02026');
-    expect(seesLabel({ kind: 'progress', days: 30 }, null, false)).toBe('Sees: Progress · last 30 days');
+    expect(seesLabel({ kind: 'progress', period: '1m', range: { from: '2026-09-01', to: '2026-09-30' } }, null, false)).toBe('Sees: Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02026');
+    expect(seesLabel({ kind: 'progress', period: '1m' }, null, false)).toBe('Sees: Progress · last month');
     const s = await setUp();
-    const d = await s.coach.describe({ kind: 'progress', days: 30, range: { from: '2026-09-01', to: '2026-09-30' } }, null);
+    const d = await s.coach.describe({ kind: 'progress', period: '1m', range: { from: '2026-09-01', to: '2026-09-30' } }, null);
     expect(d.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · 1\u00a0Sep – 30\u00a0Sep' });
-    const past = await s.coach.describe({ kind: 'progress', days: 30, range: { from: '2025-09-01', to: '2025-09-30' } }, null);
+    const past = await s.coach.describe({ kind: 'progress', period: '1m', range: { from: '2025-09-01', to: '2025-09-30' } }, null);
     expect(past.yourData).toContainEqual({ label: 'Opened from', detail: 'Progress · 1\u00a0Sep – 30\u00a0Sep\u00a02025' });
   });
 

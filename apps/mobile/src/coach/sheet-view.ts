@@ -9,7 +9,7 @@
  */
 
 import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
-import { isInHistory, rangeText } from '@fizz/domain';
+import { isInHistory, progressPeriodPhrase, rangeText } from '@fizz/domain';
 import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
@@ -457,7 +457,7 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
     case 'today':
       return 'Sees: Today';
     case 'progress':
-      return entry.range ? `Sees: Progress · ${rangeText(entry.range, today ?? '')}` : `Sees: Progress · last ${String(entry.days)} days`;
+      return entry.range ? `Sees: Progress · ${rangeText(entry.range, today ?? '')}` : `Sees: Progress · last ${progressPeriodPhrase(entry.period)}`;
     case 'progress_exercise':
       return `Sees: ${entry.exerciseName} · ${entry.seriesLabel}`;
     case 'summary':

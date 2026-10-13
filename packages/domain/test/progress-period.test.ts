@@ -14,7 +14,14 @@ import {
   PROGRESS_MAX_PERIOD_DAYS,
   rangeText,
   rangeWords,
-  stepPeriodDate,
+  activityGranularity,
+  countAxisTicks,
+  customRangeFromMonths,
+  defaultCustomMonths,
+  periodProgressWindow,
+  pickerMonths,
+  progressWindowAt,
+  WEEKLY_POINTS_MAX_DAYS,
   timeInGym,
   toProgressSession,
   type MuscleInfo,
@@ -93,13 +100,13 @@ const inside = (from: string, to: string) => HISTORY.filter((s) => s.date >= fro
 describe('presets on two years of imported + logged history (every day of 2026 as today)', () => {
   it('sessions, previous, bars, time and muscle sessions all agree with a direct count', () => {
     for (let today = '2026-01-01'; today <= '2026-10-12'; today = addDays(today, 1)) {
-      for (const days of [7, 14, 30, 60] as const) {
-        const w = progressWindow(today, days);
+      for (const key of ['1m', '3m', '6m', '1y'] as const) {
+        const w = periodProgressWindow(today, key);
         const c = countSessions(HISTORY, w);
         const expected = inside(w.from, w.to);
         expect(c.count).toBe(expected.length);
         expect(c.previousCount).toBe(inside(w.previous.from, w.previous.to).length);
-        expect([...(c.days ?? []), ...(c.weeks ?? []), ...(c.months ?? [])].reduce((a, b) => a + b.count, 0)).toBe(expected.length);
+        expect([...(c.weeks ?? []), ...(c.months ?? [])].reduce((a, b) => a + b.count, 0)).toBe(expected.length);
         const t = timeInGym(HISTORY, w);
         expect(t.timedCount).toBe(expected.filter((s) => !s.dateOnly).length);
         expect(t.excluded.imported).toBe(expected.filter((s) => s.dateOnly).length);
@@ -111,13 +118,13 @@ describe('presets on two years of imported + logged history (every day of 2026 a
   });
 });
 
-describe('part weeks at either end of 30 and 60 days (today, Monday 12 Oct 2026)', () => {
+describe('part weeks at either end of 1 month and 60 days (today, Monday 12 Oct 2026)', () => {
   const today = '2026-10-12';
 
-  it('30 days starts on a Sunday and ends on today’s Monday: both end bars are one day, marked partial, and say so', () => {
-    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today, days: 30, grouping: 'body_part' });
-    if (home.dataState !== 'normal' || home.activity.bars.kind !== 'weeks') throw new Error('expected week bars');
-    const bars = home.activity.bars.bars;
+  it('1 month starts on a Sunday and ends on today’s Monday: both end points are one day, marked partial, and say so', () => {
+    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today, period: '1m', grouping: 'body_part' });
+    if (home.dataState !== 'normal' || home.activity.chart.unit !== 'week') throw new Error('expected weekly points');
+    const bars = home.activity.chart.points;
     expect(bars.map((b) => [b.label, b.count, b.partial])).toEqual([
       ['13 Sep', 0, true],
       ['14 Sep', 3, false],
@@ -128,17 +135,19 @@ describe('part weeks at either end of 30 and 60 days (today, Monday 12 Oct 2026)
     ]);
     expect(bars[0]?.listText).toBe('13 Sep only · 0');
     expect(bars[1]?.listText).toBe('Week from 14 Sep · 3');
-    expect(home.activity.bars.words).toBe(
+    expect(bars[1]?.valueText).toBe('14–20\u00a0Sep · 3 sessions');
+    expect(bars[0]?.valueText).toBe('13\u00a0Sep · 0 sessions');
+    expect(home.activity.chart.words).toBe(
       'Sessions per week: 13 September only, 0; week from 14 September, 3; week from 21 September, 3; week from 28 September, 3; week from 5 October, 3; 12 October only, 1.',
     );
   });
 
-  it('60 days starts on a Friday: the first bar is Fri–Sun, worded as those dates, not as a week', () => {
-    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today, days: 60, grouping: 'body_part' });
-    if (home.dataState !== 'normal' || home.activity.bars.kind !== 'weeks') throw new Error('expected week bars');
-    const first = home.activity.bars.bars[0];
+  it('60 days starts on a Friday: the first point is Fri–Sun, worded as those dates, not as a week', () => {
+    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today, period: '1m', grouping: 'body_part', range: { from: '2026-08-14', to: today } });
+    if (home.dataState !== 'normal' || home.activity.chart.unit !== 'week') throw new Error('expected weekly points');
+    const first = home.activity.chart.points[0];
     expect(first).toMatchObject({ from: '2026-08-14', count: 1, partial: true, listText: '14–16 Aug · 1' });
-    expect(home.activity.bars.words.startsWith('Sessions per week: 14 to 16 August, 1; week from 17 August, 3;')).toBe(true);
+    expect(home.activity.chart.words.startsWith('Sessions per week: 14 to 16 August, 1; week from 17 August, 3;')).toBe(true);
   });
 });
 
@@ -146,7 +155,7 @@ describe('custom period', () => {
   it('a window from–to inclusive, the previous one the same length just before it', () => {
     const w = customProgressWindow({ from: '2026-08-01', to: '2026-08-31' });
     expect(w).toEqual({ days: 31, preset: null, from: '2026-08-01', to: '2026-08-31', previous: { from: '2026-07-01', to: '2026-07-31' } });
-    expect(progressWindow('2026-10-12', 30).preset).toBe(30);
+    expect(periodProgressWindow('2026-10-12', '1m')).toMatchObject({ preset: '1m', days: 30, from: '2026-09-13', previous: { from: '2026-08-14', to: '2026-09-12' } });
   });
 
   it('normalise: never past today, from ≤ to, at most ~3 years, bad dates refused', () => {
@@ -162,7 +171,9 @@ describe('custom period', () => {
     expect(normaliseProgressRange({ from: 'yesterday', to: '2026-03-01' }, '2026-10-12')).toBeNull();
   });
 
-  it('presets end today: 3 months, 6 months, 1 year (as exercise detail’s ranges)', () => {
+  it('presets end today: 1 month, 3 months, 6 months, 1 year (as exercise detail’s ranges)', () => {
+    expect(presetProgressRange('2026-10-13', '1m')).toEqual({ from: '2026-09-14', to: '2026-10-13' });
+    expect(presetProgressRange('2026-03-31', '1m')).toEqual({ from: '2026-03-01', to: '2026-03-31' });
     expect(presetProgressRange('2026-10-12', '3m')).toEqual({ from: '2026-07-13', to: '2026-10-12' });
     expect(presetProgressRange('2026-10-12', '6m')).toEqual({ from: '2026-04-13', to: '2026-10-12' });
     expect(presetProgressRange('2026-10-12', '1y')).toEqual({ from: '2025-10-13', to: '2026-10-12' });
@@ -170,26 +181,42 @@ describe('custom period', () => {
     expect(addMonths('2026-03-31', -1)).toBe('2026-02-28');
   });
 
-  it('the date steppers move a week or a month and stay inside the bounds', () => {
-    const bounds = { from: '2025-01-06', to: '2026-10-12' };
-    expect(stepPeriodDate('2026-10-12', { unit: 'week', by: -1 }, bounds)).toBe('2026-10-05');
-    expect(stepPeriodDate('2026-10-12', { unit: 'month', by: -1 }, bounds)).toBe('2026-09-12');
-    expect(stepPeriodDate('2026-10-12', { unit: 'week', by: 1 }, bounds)).toBe('2026-10-12');
-    expect(stepPeriodDate('2025-01-20', { unit: 'month', by: -1 }, bounds)).toBe('2025-01-06');
+  it('Custom defaults: Start 18 months ago, End this month (so it ends today); picked months span whole months, never past today', () => {
+    expect(defaultCustomMonths('2026-10-13')).toEqual({ start: '2025-04', end: '2026-10' });
+    expect(defaultCustomMonths('2026-08-31')).toEqual({ start: '2025-02', end: '2026-08' });
+    const d = defaultCustomMonths('2026-10-13');
+    expect(customRangeFromMonths(d.start, d.end, '2026-10-13')).toEqual({ from: '2025-04-01', to: '2026-10-13' });
+    expect(customRangeFromMonths('2026-02', '2026-02', '2026-10-13')).toEqual({ from: '2026-02-01', to: '2026-02-28' });
+    // Reversed months are swapped.
+    expect(customRangeFromMonths('2026-06', '2026-03', '2026-10-13')).toEqual({ from: '2026-03-01', to: '2026-06-30' });
+    // The longest period still applies: the start moves, the end stays.
+    expect(customRangeFromMonths('2015-01', '2026-10', '2026-10-13')?.from).toBe(addDays('2026-10-13', -(PROGRESS_MAX_PERIOD_DAYS - 1)));
   });
 
-  it('up to 9 weeks: week bars; longer (3 months on, F15): one bar per month, partial months marked, bars still add up', () => {
-    const quarter = countSessions(HISTORY, customProgressWindow(presetProgressRange('2026-10-12', '3m')));
-    expect(quarter.weeks).toBeNull();
-    expect(quarter.months?.length).toBe(4);
-    expect(quarter.months?.reduce((a, m) => a + m.count, 0)).toBe(quarter.count);
-    const twoMonths = countSessions(HISTORY, customProgressWindow({ from: '2026-08-14', to: '2026-10-12' }));
-    expect(twoMonths.months).toBeNull();
-    expect(twoMonths.weeks?.length).toBeLessThanOrEqual(10);
-    const half = countSessions(HISTORY, customProgressWindow(presetProgressRange('2026-10-12', '6m')));
-    expect(half.weeks).toBeNull();
-    expect(half.months?.length).toBe(7);
-    const year = countSessions(HISTORY, customProgressWindow(presetProgressRange('2026-10-12', '1y')));
+  it('the month lists run from the first workout’s month (at most ~3 years back) to this month', () => {
+    expect(pickerMonths('2026-07-20', '2026-10-13')).toEqual(['2026-07', '2026-08', '2026-09', '2026-10']);
+    const long = pickerMonths('2010-01-01', '2026-10-13');
+    expect(long[0]).toBe('2023-10');
+    expect(long.at(-1)).toBe('2026-10');
+    expect(pickerMonths('2026-10-13', '2026-10-13')).toEqual(['2026-10']);
+  });
+
+  it('granularity: up to 6 months weekly, 1 year and longer custom monthly', () => {
+    expect(activityGranularity(30)).toBe('week');
+    expect(activityGranularity(WEEKLY_POINTS_MAX_DAYS)).toBe('week');
+    expect(activityGranularity(WEEKLY_POINTS_MAX_DAYS + 1)).toBe('month');
+    expect(activityGranularity(365)).toBe('month');
+    const quarter = countSessions(HISTORY, periodProgressWindow('2026-10-12', '3m'));
+    expect(quarter.months).toBeNull();
+    expect(quarter.weeks?.length).toBe(14);
+    expect(quarter.weeks?.reduce((a, w) => a + w.count, 0)).toBe(quarter.count);
+    const half = countSessions(HISTORY, periodProgressWindow('2026-10-12', '6m'));
+    expect(half.months).toBeNull();
+    expect(half.weeks?.reduce((a, w) => a + w.count, 0)).toBe(half.count);
+    const seven = countSessions(HISTORY, customProgressWindow({ from: '2026-03-01', to: '2026-09-30' }));
+    expect(seven.weeks).toBeNull();
+    expect(seven.months?.length).toBe(7);
+    const year = countSessions(HISTORY, periodProgressWindow('2026-10-12', '1y'));
     expect(year.weeks).toBeNull();
     expect(year.months?.length).toBe(13);
     expect(year.months?.[0]).toMatchObject({ from: '2025-10-13', to: '2025-10-31', partial: true });
@@ -198,10 +225,52 @@ describe('custom period', () => {
     expect(year.months?.reduce((a, m) => a + m.count, 0)).toBe(year.count);
     expect(year.count).toBe(inside('2025-10-13', '2026-10-12').length);
     expect(year.perWeek).not.toBeNull();
+    const custom18 = countSessions(HISTORY, customProgressWindow({ from: '2025-04-01', to: '2026-10-13' }));
+    expect(custom18.months?.length).toBe(19);
   });
 
-  it('the home on a past period names its dates (never "last"), labels months with the year when it crosses one, and bolds no day', () => {
-    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', days: 30, grouping: 'body_part', range: { from: '2025-11-01', to: '2026-04-30' } });
+  it('line points: one per week or month, labelled, valued for the tap, with a few whole-number Y gridlines from 0', () => {
+    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', period: '1y', grouping: 'body_part' });
+    if (home.dataState !== 'normal') throw new Error('expected normal');
+    const { chart } = home.activity;
+    expect(chart.unit).toBe('month');
+    expect(chart.points).toHaveLength(13);
+    expect(chart.points[1]).toMatchObject({ label: 'Nov 25', partial: false });
+    expect(chart.points[1]?.valueText.endsWith(' sessions')).toBe(true);
+    expect(chart.points[1]?.valueText.startsWith('Nov\u00a02025 · ')).toBe(true);
+    expect(chart.points[0]?.valueText.startsWith('13–31\u00a0Oct\u00a02025 · ')).toBe(true);
+    expect(chart.yTicks[0]).toBe(0);
+    expect(chart.yTicks.at(-1)).toBeGreaterThanOrEqual(Math.max(...chart.points.map((p) => p.count)));
+    expect(chart.yTicks.length).toBeLessThanOrEqual(5);
+    expect(home.windowLabel).toBe('1 year');
+    expect(home.activity.comparison.startsWith('Previous year: ')).toBe(true);
+    const six = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', period: '6m', grouping: 'body_part' });
+    expect(six.dataState === 'normal' && six.activity.chart.unit).toBe('week');
+    expect(six.dataState === 'normal' && six.activity.comparison.startsWith('Previous 6 months: ')).toBe(true);
+  });
+
+  it('Y gridlines: 0 to at least 3, at most four steps of 1, 2, 5 or 10', () => {
+    expect(countAxisTicks(0)).toEqual([0, 1, 2, 3]);
+    expect(countAxisTicks(3)).toEqual([0, 1, 2, 3]);
+    expect(countAxisTicks(4)).toEqual([0, 1, 2, 3, 4]);
+    expect(countAxisTicks(5)).toEqual([0, 2, 4, 6]);
+    expect(countAxisTicks(9)).toEqual([0, 5, 10]);
+    expect(countAxisTicks(17)).toEqual([0, 5, 10, 15, 20]);
+    expect(countAxisTicks(23)).toEqual([0, 10, 20, 30]);
+  });
+
+  it('presets and the previous period are in Ben’s timezone, ending today there', () => {
+    const late = Date.parse('2026-10-12T23:30:00.000Z');
+    expect(progressWindowAt(late, 'Europe/London', '1m')).toMatchObject({ from: '2026-09-14', to: '2026-10-13', previous: { from: '2026-08-15', to: '2026-09-13' } });
+    expect(progressWindowAt(late, 'America/Los_Angeles', '1m')).toMatchObject({ from: '2026-09-13', to: '2026-10-12' });
+    expect(progressWindowAt(late, 'Europe/London', '3m')).toMatchObject({ from: '2026-07-14', to: '2026-10-13', days: 92 });
+    expect(progressWindowAt(late, 'Europe/London', '6m')).toMatchObject({ from: '2026-04-14', to: '2026-10-13', days: 183 });
+    const y = progressWindowAt(late, 'Europe/London', '1y');
+    expect(y).toMatchObject({ from: '2025-10-14', to: '2026-10-13', days: 365, previous: { from: '2024-10-14', to: '2025-10-13' } });
+  });
+
+  it('the home on a past period names its dates (never "last") and labels months with the year when it crosses one', () => {
+    const home = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', period: '1m', grouping: 'body_part', range: { from: '2025-11-01', to: '2026-04-30' } });
     if (home.dataState !== 'normal') throw new Error('expected normal');
     expect(home.window).toMatchObject({ preset: null, from: '2025-11-01', to: '2026-04-30', days: 181 });
     expect(home.datesLine).toBe('1\u00a0Nov\u00a02025 – 30\u00a0Apr\u00a02026');
@@ -210,22 +279,17 @@ describe('custom period', () => {
     expect(home.activity.sheet.countLine).toBe('1\u00a0Nov\u00a02025 – 30\u00a0Apr\u00a02026: 0 of 77 sessions');
     expect(home.records.empty).toBe('No new records, 1\u00a0Nov\u00a02025 – 30\u00a0Apr\u00a02026.');
 
-    const yearly = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', days: 30, grouping: 'body_part', range: presetProgressRange('2026-10-12', '1y') });
-    if (yearly.dataState !== 'normal' || yearly.activity.bars.kind !== 'months') throw new Error('expected month bars');
-    expect(yearly.activity.bars.bars.map((b) => b.label).slice(0, 3)).toEqual(['Oct 25', 'Nov 25', 'Dec 25']);
-    expect(yearly.activity.bars.words.startsWith('Sessions per month: 13 to 31 October 2025, ')).toBe(true);
-
-    const short = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', days: 30, grouping: 'body_part', range: { from: '2026-09-01', to: '2026-09-10' } });
-    if (short.dataState !== 'normal' || short.activity.bars.kind !== 'days') throw new Error('expected day cells');
-    expect(short.activity.bars.rows.flatMap((r) => r.cells).some((c) => c.isToday)).toBe(false);
-    expect(short.activity.bars.words.startsWith('1 September to 10 September: ')).toBe(true);
+    const yearly = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today: '2026-10-12', period: '1m', grouping: 'body_part', range: presetProgressRange('2026-10-12', '1y') });
+    if (yearly.dataState !== 'normal' || yearly.activity.chart.unit !== 'month') throw new Error('expected monthly points');
+    expect(yearly.activity.chart.points.map((b) => b.label).slice(0, 3)).toEqual(['Oct 25', 'Nov 25', 'Dec 25']);
+    expect(yearly.activity.chart.words.startsWith('Sessions per month: 13 to 31 October 2025, ')).toBe(true);
   });
 });
 
 describe('a period’s dates carry the year when they need it (review ben-bugs B1)', () => {
   const today = '2026-10-12';
   const home = (range: { from: string; to: string }) => {
-    const v = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today, days: 30, grouping: 'body_part', range });
+    const v = buildProgressHomeView({ sessions: HISTORY, exercises: INFO, today, period: '1m', grouping: 'body_part', range });
     if (v.dataState !== 'normal') throw new Error('expected normal');
     return v;
   };
@@ -263,15 +327,14 @@ describe('a period’s dates carry the year when they need it (review ben-bugs B
   });
 });
 
-describe('each preset keeps one bar unit whatever today’s date (review ben-bugs S1)', () => {
-  it('3 months, 6 months and 1 year are always months (F15), every day of 2025–2026', () => {
+describe('each preset keeps one point unit whatever today’s date (review ben-bugs S1)', () => {
+  it('1, 3 and 6 months are always weekly; 1 year always monthly, every day of 2025–2026', () => {
     for (let today = '2025-01-01'; today <= '2026-12-31'; today = addDays(today, 1)) {
-      const q = countSessions([], customProgressWindow(presetProgressRange(today, '3m')));
-      const h = countSessions([], customProgressWindow(presetProgressRange(today, '6m')));
-      const y = countSessions([], customProgressWindow(presetProgressRange(today, '1y')));
-      expect(q.months !== null && q.weeks === null, `3m on ${today}`).toBe(true);
-      expect(q.months?.length ?? 99).toBeLessThanOrEqual(4);
-      expect(h.months !== null && h.weeks === null, `6m on ${today}`).toBe(true);
+      for (const key of ['1m', '3m', '6m'] as const) {
+        const c = countSessions([], periodProgressWindow(today, key));
+        expect(c.weeks !== null && c.months === null, `${key} on ${today}`).toBe(true);
+      }
+      const y = countSessions([], periodProgressWindow(today, '1y'));
       expect(y.months !== null && y.weeks === null, `1y on ${today}`).toBe(true);
     }
   });
@@ -322,7 +385,7 @@ describe('30 and 60 days across the DST end, through toProgressSession', () => {
   it('30 days: 5 sessions, previous 2, part weeks at both ends, 4 of 5 timed', () => {
     const w = progressWindow(today, 30);
     expect([w.from, w.to]).toEqual(['2026-10-04', '2026-11-02']);
-    const c = countSessions(sessions, w, today);
+    const c = countSessions(sessions, w);
     expect([c.count, c.previousCount, c.perWeek]).toEqual([5, 2, 1.2]);
     expect(c.weeks?.map((b) => [b.from, b.count, b.partial])).toEqual([
       ['2026-10-04', 1, true],
@@ -337,7 +400,7 @@ describe('30 and 60 days across the DST end, through toProgressSession', () => {
 
   it('60 days: 7 sessions, previous 2, a Fri–Sun first bar, 6 of 7 timed', () => {
     const w = progressWindow(today, 60);
-    const c = countSessions(sessions, w, today);
+    const c = countSessions(sessions, w);
     expect([c.count, c.previousCount, c.perWeek]).toEqual([7, 2, 0.8]);
     expect(c.weeks?.map((b) => b.count)).toEqual([1, 0, 0, 0, 2, 1, 0, 1, 1, 1]);
     expect(c.weeks?.[0]).toMatchObject({ from: '2026-09-04', to: '2026-09-06', partial: true });

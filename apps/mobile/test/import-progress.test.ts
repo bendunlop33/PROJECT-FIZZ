@@ -95,20 +95,20 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     await setUpGym(h, s);
     // Read (and cache) Progress before the import: nothing yet.
     await s.progress.prewarm();
-    expect((await s.progress.home({ days: 30 }))?.view.dataState).toBe('empty');
+    expect((await s.progress.home({ period: '1m' }))?.view.dataState).toBe('empty');
 
     await importFile(s);
 
-    const sessions = async (days: 7 | 14 | 30 | 60) => {
-      const v = (await s.progress.home({ days, grouping: 'body_part' }))?.view;
-      if (v?.dataState !== 'normal') throw new Error(`expected data for ${String(days)} days`);
+    const sessions = async (range: { from: string; to: string }) => {
+      const v = (await s.progress.home({ range, grouping: 'body_part' }))?.view;
+      if (v?.dataState !== 'normal') throw new Error(`expected data for ${range.from}–${range.to}`);
       return v;
     };
     // 6–12 Oct: 7 and 9 Oct. 29 Sep–12 Oct: + 2 and 5 Oct. 13 Sep–12 Oct: + 21 Sep. 14 Aug–12 Oct: the same five (3 Aug is older).
-    expect((await sessions(7)).activity.stats[0]).toEqual({ value: '2', label: 'SESSIONS' });
-    expect((await sessions(14)).activity.stats[0]).toEqual({ value: '4', label: 'SESSIONS' });
-    expect((await sessions(30)).activity.stats[0]).toEqual({ value: '5', label: 'SESSIONS' });
-    const sixty = await sessions(60);
+    expect((await sessions({ from: '2026-10-06', to: '2026-10-12' })).activity.stats[0]).toEqual({ value: '2', label: 'SESSIONS' });
+    expect((await sessions({ from: '2026-09-29', to: '2026-10-12' })).activity.stats[0]).toEqual({ value: '4', label: 'SESSIONS' });
+    expect((await sessions({ from: '2026-09-13', to: '2026-10-12' })).activity.stats[0]).toEqual({ value: '5', label: 'SESSIONS' });
+    const sixty = await sessions({ from: '2026-08-14', to: '2026-10-12' });
     expect(sixty.activity.stats[0]).toEqual({ value: '5', label: 'SESSIONS' });
     // FitNotes has no times: time in gym is honestly absent, never invented (rule 6).
     expect(JSON.stringify(sixty.activity)).toContain('No times for imported workouts');

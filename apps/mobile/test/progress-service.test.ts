@@ -45,7 +45,7 @@ describe('Progress home through the services', () => {
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 62.5, reps: 8 }] }]);
 
     const home = await normal(s);
-    expect(home.days).toBe(30);
+    expect(home.period).toBe('1m');
     expect(home.grouping).toBe('body_part');
     expect(home.view.activity.stats[0]).toEqual({ value: '2', label: 'SESSIONS' });
     const chest = home.view.muscles.rows.find((r) => r.key === 'Chest');
@@ -54,13 +54,13 @@ describe('Progress home through the services', () => {
     expect(home.unreadable).toBe(0);
     expect(home.resume).toBeNull();
 
-    expect(await s.progress.saveSettings({ days: 7, grouping: 'ppl' })).toEqual({ ok: true });
+    expect(await s.progress.saveSettings({ period: '3m', grouping: 'ppl' })).toEqual({ ok: true });
     const again = await normal(s);
-    expect(again.days).toBe(7);
+    expect(again.period).toBe('3m');
     expect(again.grouping).toBe('ppl');
     expect(again.view.muscles.rows.map((r) => r.label)).toEqual(['Push', 'Pull', 'Legs', 'Core']);
     // An explicit window wins over the saved one.
-    expect((await normal(s, { days: 60 })).view.windowLabel).toBe('60 days');
+    expect((await normal(s, { period: '1y' })).view.windowLabel).toBe('1 year');
   });
 
   it('an unfinished workout is never counted and shows the ResumeBar; a correction recomputes on the next read', async () => {
@@ -101,7 +101,7 @@ describe('Progress home through the services', () => {
     expect((await s.workout.dispatch(longId, { type: 'finish', at: h.now(), opId: 'fin-long', expectedVersion: v, endedAt: null })).ok).toBe(true);
     await h.settle(s);
 
-    const home = await normal(s, { days: 7 });
+    const home = await normal(s, { period: '3m' });
     expect(home.view.activity.footnote).toBe('Time from 1 of 2 sessions');
     const row = home.view.activity.sheet.overCap[0];
     expect(row?.sessionId).toBe(longId);
@@ -112,15 +112,15 @@ describe('Progress home through the services', () => {
     if (!counted.ok) throw new Error(counted.message);
     expect(await s.progress.confirmDuration(req)).toMatchObject({ ok: true });
     expect(await s.progress.confirmDuration({ ...req, opId: 'count-2' })).toMatchObject({ ok: false });
-    const withIt = await normal(s, { days: 7 });
+    const withIt = await normal(s, { period: '3m' });
     expect(withIt.view.activity.footnote).toBeNull();
     expect(withIt.view.activity.sheet.overCap).toEqual([]);
 
     await h.forceClose();
     const { services: s2 } = await h.launch();
-    expect((await normal(s2, { days: 7 })).view.activity.footnote).toBeNull();
+    expect((await normal(s2, { period: '3m' })).view.activity.footnote).toBeNull();
     const undone = await s2.progress.undoConfirmDuration({ sessionId: longId, expectedVersion: counted.version, opId: 'undo-1' });
     expect(undone.ok).toBe(true);
-    expect((await normal(s2, { days: 7 })).view.activity.footnote).toBe('Time from 1 of 2 sessions');
+    expect((await normal(s2, { period: '3m' })).view.activity.footnote).toBe('Time from 1 of 2 sessions');
   });
 });

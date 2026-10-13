@@ -1,15 +1,14 @@
-import type { ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
+import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
 import { formatNumber } from '../display';
 import { EXCLUSION_WORD } from '../exclusions';
 import { deriveWorkoutTitle } from '../session/first-run';
-import { countSessions, timeInGym, type DayCount, type LeftOutSession } from './activity';
+import { countAxisTicks, countSessions, timeInGym, type LeftOutSession } from './activity';
 import { muscleFrequency, type MuscleInfo } from './muscles';
 import type { ProgressSession } from './projection';
 import { recordsInWindow, type ProgressRecord } from './records';
 import {
   dayMonth,
   dayMonthLong,
-  dayStripWords,
   gymTimeText,
   gymTimeWords,
   massWords,
@@ -19,14 +18,14 @@ import {
   rangeWords,
   setsText,
   setsWords,
-  WEEKDAY_LETTER,
   monthBarLabel,
+  pointDatesText,
   monthBarsWords,
   weekBarListText,
   weekBarsWords,
   weekdayDayMonth,
 } from './text';
-import { customProgressWindow, progressWindow, type DateRange, type ProgressWindow } from './window';
+import { customProgressWindow, periodProgressWindow, progressPeriodLabel, progressPeriodPhrase, type DateRange, type ProgressWindow } from './window';
 
 /**
  * The Progress home view model (progress.md §2.2–§2.4, §3.1, §5): every
@@ -41,8 +40,8 @@ export interface ProgressHomeInput {
   exercises: ReadonlyMap<string, MuscleInfo>;
   /** Today's local date in the owner's zone. */
   today: string;
-  days: ProgressWindowDays;
-  /** A custom period (`normaliseProgressRange`); when set it replaces `days`. */
+  period: ProgressPeriodKey;
+  /** A custom period (`normaliseProgressRange`); when set it replaces `period`. */
   range?: DateRange | null;
   grouping: ProgressGrouping;
   gymNames?: Readonly<Record<string, string>>;
@@ -57,21 +56,28 @@ export interface StatView {
   note?: string;
 }
 
-export interface DayCellView {
-  date: string;
-  letter: string;
-  isToday: boolean;
-  /** The screen draws `●` for one, `2` for two or more, a small dot for none. */
+export interface ActivityPointView {
+  from: string;
+  to: string;
+  /** X label: `14 Sep` (week start inside the window), `Sep` or `Sep 25` (month). */
+  label: string;
   count: number;
-  /** `Thu 8 Oct` (the AX list). */
-  dateText: string;
+  /** The window cut this week or month. */
+  partial: boolean;
+  /** AX list row (`Week from 14 Sep · 2`, `Sep 2025 · 12`). */
+  listText: string;
+  /** Shown when the point is tapped: `14–20 Sep · 2 sessions`. */
+  valueText: string;
 }
 
-export type BarsView =
-  /** F15: `bars` is the same bar chart as weeks and months (one bar a day); `rows` is the AX list. */
-  | { kind: 'days'; rows: { firstDate: string; cells: DayCellView[] }[]; bars: { label: string; from: string; count: number; partial: boolean; listText: string }[]; max: number; words: string }
-  | { kind: 'weeks'; bars: { label: string; from: string; count: number; partial: boolean; /** AX list row (`Week from 14 Sep · 2`, `12 Oct only · 1`). */ listText: string }[]; max: number; words: string }
-  | { kind: 'months'; bars: { label: string; from: string; count: number; partial: boolean; listText: string }[]; max: number; words: string };
+/** Activity over time (Ben, 13 Oct 2026): a line, one point a week (up to 6 months) or a month. */
+export interface ActivityChartView {
+  unit: 'week' | 'month';
+  points: ActivityPointView[];
+  /** Y gridlines, 0 first; the last is the plot's top. */
+  yTicks: number[];
+  words: string;
+}
 
 export interface TimeSheetRow {
   sessionId: string;
@@ -85,7 +91,7 @@ export interface TimeSheetRow {
 export interface ActivityView {
   stats: StatView[];
   statsWords: string;
-  bars: BarsView;
+  chart: ActivityChartView;
   /** `Previous 30 days: 7 sessions · 6 h 50 min` · `Previous 30 days: none`. */
   comparison: string;
   /** `Last workout: Fri 14 Aug` when the window is empty; null otherwise. */
@@ -214,10 +220,6 @@ function recordView(r: ProgressRecord, gymNames: Readonly<Record<string, string>
   };
 }
 
-function dayCell(d: DayCount): DayCellView {
-  return { date: d.date, letter: WEEKDAY_LETTER[d.weekday] ?? '', isToday: d.isToday, count: d.count, dateText: weekdayDayMonth(d.date) };
-}
-
 function leftOutRow(s: LeftOutSession, title: string): TimeSheetRow {
   return {
     sessionId: s.sessionId,
@@ -230,11 +232,14 @@ function leftOutRow(s: LeftOutSession, title: string): TimeSheetRow {
 
 export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeView {
   if (input.sessions.length === 0) return { dataState: 'empty' };
-  const window = input.range ? customProgressWindow(input.range) : progressWindow(input.today, input.days);
-  const label = `${String(window.days)} days`;
+  const window = input.range ? customProgressWindow(input.range) : periodProgressWindow(input.today, input.period);
+  const custom = input.range !== undefined && input.range !== null;
+  const label = custom ? `${String(window.days)} days` : progressPeriodLabel(input.period);
+  // `Last month`, `Previous 3 months`; a custom period counts days.
+  const phrase = custom ? label : progressPeriodPhrase(input.period);
   // A custom period may end before today: its words name the dates, never "last".
   const endsToday = window.to === input.today;
-  const span = endsToday ? `Last ${label}` : rangeText(window, input.today);
+  const span = endsToday ? `Last ${phrase}` : rangeText(window, input.today);
   const gymNames = input.gymNames ?? {};
   const byId = new Map(input.sessions.map((s) => [s.sessionId, s]));
   const titleOf = (id: string): string => {
@@ -243,7 +248,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   };
 
   // Activity (PG24, PG25)
-  const counts = countSessions(input.sessions, window, input.today);
+  const counts = countSessions(input.sessions, window);
   const time = timeInGym(input.sessions, window);
   const timeValue = time.timedCount === 0 ? '—' : gymTimeText(time.totalMs);
   // F17 (rule 6): a total from some sessions never reads as the total for all of them.
@@ -256,42 +261,27 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   ]
     .filter((x) => x !== '')
     .join(' ');
-  let bars: BarsView;
-  if (counts.days !== null) {
-    const cells = counts.days.map(dayCell);
-    const rows: { firstDate: string; cells: DayCellView[] }[] = [];
-    for (let i = 0; i < cells.length; i += 7) {
-      const chunk = cells.slice(i, i + 7);
-      rows.push({ firstDate: dayMonth(chunk[0]?.date ?? window.from), cells: chunk });
-    }
-    // 7 days: weekday letters; longer: the day of the month (letters repeat and read ambiguously).
-    const short = cells.length <= 7;
-    bars = {
-      kind: 'days',
-      rows,
-      bars: cells.map((c) => ({ label: short ? c.letter : String(Number(c.date.slice(8, 10))), from: c.date, count: c.count, partial: false, listText: `${c.dateText} · ${String(c.count)}` })),
-      max: Math.max(3, ...cells.map((c) => c.count)),
-      words: dayStripWords(counts.days, endsToday ? `Last ${label}` : rangeWords(window, input.today)),
-    };
-  } else if (counts.months !== null) {
+  let chart: ActivityChartView;
+  const point = (p: { from: string; to: string; count: number; partial: boolean }, unit: 'week' | 'month', label: string, listText: string): ActivityPointView => ({
+    from: p.from,
+    to: p.to,
+    label,
+    count: p.count,
+    partial: p.partial,
+    listText,
+    valueText: `${pointDatesText(p, unit, p.partial)} · ${countNoun(p.count, 'session', 'sessions')}`,
+  });
+  if (counts.months !== null) {
     const months = counts.months;
     const withYear = window.from.slice(0, 4) !== window.to.slice(0, 4);
-    bars = {
-      kind: 'months',
-      bars: months.map((m) => ({ label: monthBarLabel(m.from, withYear), from: m.from, count: m.count, partial: m.partial, listText: `${monthBarLabel(m.from, withYear)}${m.partial ? ` (${dayMonth(m.from)}–${dayMonth(m.to)})` : ''} · ${String(m.count)}` })),
-      max: Math.max(3, ...months.map((m) => m.count)),
-      words: monthBarsWords(months),
-    };
+    const points = months.map((m) => point(m, 'month', monthBarLabel(m.from, withYear), `${monthBarLabel(m.from, withYear)}${m.partial ? ` (${dayMonth(m.from)}–${dayMonth(m.to)})` : ''} · ${String(m.count)}`));
+    chart = { unit: 'month', points, yTicks: countAxisTicks(Math.max(0, ...months.map((m) => m.count))), words: monthBarsWords(months) };
   } else {
     const weeks = counts.weeks ?? [];
-    bars = {
-      kind: 'weeks',
-      bars: weeks.map((w) => ({ label: dayMonth(w.from), from: w.from, count: w.count, partial: w.partial, listText: weekBarListText(w) })),
-      max: Math.max(3, ...weeks.map((w) => w.count)),
-      words: weekBarsWords(weeks),
-    };
+    const points = weeks.map((w) => point(w, 'week', dayMonth(w.from), weekBarListText(w)));
+    chart = { unit: 'week', points, yTicks: countAxisTicks(Math.max(0, ...weeks.map((w) => w.count))), words: weekBarsWords(weeks) };
   }
-  const prevHead = `Previous ${label}`;
+  const prevHead = `Previous ${phrase}`;
   const comparison =
     counts.previousCount === 0
       ? `${prevHead}: none`
@@ -303,10 +293,10 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
   const footnote = leftOut === 0 ? null : onlyImported ? 'No times for imported workouts' : `Time from ${String(time.timedCount)} of ${String(time.sessionCount)} sessions`;
   const comparisonWords =
     counts.previousCount === 0
-      ? `previous ${label} none`
+      ? `previous ${phrase} none`
       : time.previousTimedCount === 0
-        ? `previous ${label} ${countNoun(counts.previousCount, 'session', 'sessions')}`
-        : `previous ${label} ${countNoun(counts.previousCount, 'session', 'sessions')}, ${gymTimeWords(time.previousTotalMs)}`;
+        ? `previous ${phrase} ${countNoun(counts.previousCount, 'session', 'sessions')}`
+        : `previous ${phrase} ${countNoun(counts.previousCount, 'session', 'sessions')}, ${gymTimeWords(time.previousTotalMs)}`;
   const activity: ActivityView = {
     stats: [
       { value: String(counts.count), label: 'SESSIONS' },
@@ -314,11 +304,11 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
       { value: avgValue, label: 'AVG' },
     ],
     statsWords,
-    bars,
+    chart,
     comparison,
     lastWorkout: counts.count === 0 && counts.lastSessionDate !== null ? `Last workout: ${weekdayDayMonth(counts.lastSessionDate)}` : null,
     footnote,
-    cardWords: `${statsWords} ${bars.words} ${comparisonWords[0]?.toUpperCase() ?? ''}${comparisonWords.slice(1)}. Opens calendar.`,
+    cardWords: `${statsWords} ${chart.words} ${comparisonWords[0]?.toUpperCase() ?? ''}${comparisonWords.slice(1)}. Opens calendar.`,
     sheet: {
       countLine: `${span}: ${String(time.timedCount)} of ${countNoun(time.sessionCount, 'session', 'sessions')}`,
       overCap: time.excluded.overCap.map((s) => leftOutRow(s, titleOf(s.sessionId))),
@@ -378,7 +368,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
       total: rec.total,
       initial: HOME_RECORDS_INITIAL,
       more: listed > HOME_RECORDS_INITIAL ? { label: `All records (${String(listed)})`, words: `All records, ${String(listed)}.` } : null,
-      empty: rec.total === 0 ? (endsToday ? `No new records in the last ${label}.` : `No new records, ${rangeText(window, input.today)}.`) : null,
+      empty: rec.total === 0 ? (endsToday ? `No new records in the last ${phrase}.` : `No new records, ${rangeText(window, input.today)}.`) : null,
     },
   };
 }

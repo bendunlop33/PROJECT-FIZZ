@@ -2,24 +2,24 @@ import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { toMs, type ProgressHomeView, type RecordView } from '@fizz/domain';
-import type { ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
+import { toMs, type DateRange, type ProgressHomeView, type RecordView } from '@fizz/domain';
+import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { runCountIt, type CountItToast } from '../../progress/count-it';
-import { ActivityBars, FrequencyHeader, FrequencyRow, ResumeBar, Segmented, useAx, WindowPicker } from '../../progress/components';
+import { ActivityChart, FrequencyHeader, FrequencyRow, PeriodPicker, ResumeBar, Segmented, useAx } from '../../progress/components';
 import type { ProgressHome } from '../../services/progress-service';
 import { useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Card, Icon, PrimaryButton, SecondaryButton, StatStrip, StatusLine, TextButton, Toast } from '../../ui';
 import { AskPill } from '../coach/AskPill';
 import { CalendarView } from './CalendarView';
-import { HowCountedSheet, PeriodSheet, TimeSheet } from './sheets';
+import { HowCountedSheet, TimeSheet } from './sheets';
 
 /**
- * Progress home (progress.md v1.0 slice A, §2.2): one window drives every
+ * Progress home (progress.md v1.0 slice A, §2.2): one period drives every
  * card; Activity (sessions, time, bars), Muscles (Body parts | Push/Pull/
  * Legs), Records; `Overview | Calendar`. Local data only: identical offline
  * and with no coach (check 20). The screen lays out the service's view model
@@ -40,7 +40,6 @@ export function ProgressScreen() {
   const [data, reload] = useScreenData((s) => s.progress.home());
   const [timeOpen, setTimeOpen] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
-  const [periodOpen, setPeriodOpen] = useState(false);
   const [toast, setToast] = useState<Toasted>(null);
   const [placeholder, setPlaceholder] = useState(false);
   const [toastHeight, setToastHeight] = useState(0);
@@ -74,7 +73,7 @@ export function ProgressScreen() {
     }, theme.timing.undoToast);
   };
 
-  const change = (patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }) => {
+  const change = (patch: { period?: ProgressPeriodKey; grouping?: ProgressGrouping }) => {
     // The choice is shared the moment it's made; reload again once saved (a failed save falls back to the saved setting).
     const saved = services.progress.saveSettings(patch);
     reload();
@@ -169,11 +168,12 @@ export function ProgressScreen() {
         home={home}
         view={home.view}
         ax={ax}
-        onWindow={(days) => {
-          change({ days });
+        onPeriod={(period) => {
+          change({ period });
         }}
-        onPeriod={() => {
-          setPeriodOpen(true);
+        onCustom={(r) => {
+          services.progress.choosePeriod(r);
+          reload();
         }}
         onGrouping={(grouping) => {
           change({ grouping });
@@ -208,7 +208,7 @@ export function ProgressScreen() {
     );
   }
 
-  const days = home?.days ?? null;
+  const period = home?.period ?? null;
   const range = home?.range ?? null;
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
@@ -224,7 +224,7 @@ export function ProgressScreen() {
         <AskPill
           bottom={theme.space['4'] + (toastShown ? toastHeight : 0)}
           onPress={() => {
-            navigation.navigate('Coach', { entry: days === null ? { kind: 'today' } : { kind: 'progress', days, ...(range === null ? {} : { range }) } });
+            navigation.navigate('Coach', { entry: period === null ? { kind: 'today' } : { kind: 'progress', period, ...(range === null ? {} : { range }) } });
           }}
         />
         {toastShown ? (
@@ -267,31 +267,6 @@ export function ProgressScreen() {
           }}
         />
       ) : null}
-      {home?.view.dataState === 'normal' ? (
-        <PeriodSheet
-          visible={periodOpen}
-          today={home.today}
-          earliest={home.earliest}
-          current={{ from: home.view.window.from, to: home.view.window.to }}
-          onShow={(r) => {
-            setPeriodOpen(false);
-            services.progress.choosePeriod(r);
-            reload();
-          }}
-          onClear={
-            home.range === null
-              ? null
-              : () => {
-                  setPeriodOpen(false);
-                  services.progress.choosePeriod(null);
-                  reload();
-                }
-          }
-          onClose={() => {
-            setPeriodOpen(false);
-          }}
-        />
-      ) : null}
       <HowCountedSheet
         visible={howOpen}
         onClose={() => {
@@ -306,8 +281,8 @@ function Overview({
   home,
   view,
   ax,
-  onWindow,
   onPeriod,
+  onCustom,
   onGrouping,
   onCalendar,
   onTime,
@@ -319,8 +294,8 @@ function Overview({
   home: ProgressHome;
   view: Extract<ProgressHomeView, { dataState: 'normal' }>;
   ax: boolean;
-  onWindow: (d: ProgressWindowDays) => void;
-  onPeriod: () => void;
+  onPeriod: (p: ProgressPeriodKey) => void;
+  onCustom: (r: DateRange) => void;
   onGrouping: (g: ProgressGrouping) => void;
   onCalendar: () => void;
   onTime: () => void;
@@ -339,14 +314,24 @@ function Overview({
   const recordRows = recordsAll ? records.items : records.items.slice(0, records.initial);
   return (
     <View style={{ gap: theme.space['5'] }}>
-      <WindowPicker days={home.days} custom={home.range !== null} datesLine={view.datesLine} datesWords={view.datesWords} onChange={onWindow} onPeriod={onPeriod} />
+      <PeriodPicker
+        period={home.period}
+        custom={home.range !== null}
+        today={home.today}
+        earliest={home.earliest}
+        current={view.window}
+        datesLine={view.datesLine}
+        datesWords={view.datesWords}
+        onPreset={onPeriod}
+        onCustom={onCustom}
+      />
 
       <View style={{ gap: theme.space['2'] }}>
         <Pressable accessibilityRole="button" accessibilityLabel={activity.cardWords} onPress={onCalendar}>
           <Card>
             <View style={{ gap: theme.space['4'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
               <StatStrip items={activity.stats.map((s) => ({ value: s.value, label: s.label, ...(s.note !== undefined ? { note: s.note } : {}) }))} accessibilityLabel={activity.statsWords} ax={ax} />
-              <ActivityBars bars={activity.bars} />
+              <ActivityChart chart={activity.chart} />
               <AppText variant="callout" color="text.secondary" numeric>
                 {activity.comparison}
               </AppText>

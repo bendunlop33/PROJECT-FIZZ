@@ -32,7 +32,7 @@ async function setUp() {
 }
 
 async function normal(s: AppServices) {
-  const home = await s.progress.home({ days: 30, grouping: 'body_part' });
+  const home = await s.progress.home({ period: '1m', grouping: 'body_part' });
   if (home?.view.dataState !== 'normal') throw new Error('expected normal');
   return home.view;
 }

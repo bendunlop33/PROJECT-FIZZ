@@ -1,23 +1,35 @@
 import { useEffect, useState } from 'react';
-import { Pressable, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 
-import { resumeBarText, type BarsView, type FrequencyRowView, type ResumeBar as ResumeBarData } from '@fizz/domain';
-import type { ProgressWindowDays } from '@fizz/schemas';
+import {
+  customRangeFromMonths,
+  defaultCustomMonths,
+  monthKeyOf,
+  monthShortTitle,
+  pickerMonths,
+  PROGRESS_PERIODS,
+  resumeBarText,
+  type ActivityChartView,
+  type DateRange,
+  type FrequencyRowView,
+  type ResumeBar as ResumeBarData,
+} from '@fizz/domain';
+import type { ProgressPeriodKey } from '@fizz/schemas';
 
 import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
-import { AppText, Icon } from '../ui';
+import { AppText, Icon, PrimaryButton } from '../ui';
 import { AX_FONT_SCALE } from '../workout/overview';
-import { barLabelBox, barLabelRoom, countBarWidth, mixHex, PARTIAL_BAR_MIX, showsBarCount, visibleLabels, weekBarsLayout } from './chart-layout';
+import { ACTIVITY_LINE_DIMS, activityLineLayout, barLabelBox, barLabelRoom, countBarWidth, visibleLabels } from './chart-layout';
 import { FREQUENCY_COLUMNS, FREQUENCY_HEADERS } from './frequency-columns';
-import { loadWeekBarsCanvas } from './load-charts';
+import { loadTrendCanvas } from './load-charts';
+import { nearestPointIndex } from './trend-layout';
 
 /**
  * Progress components (design-system §9.69–9.72): `Segmented`,
- * `WindowPicker`, `WeekBars`, `DayStrip`, `FrequencyRow` and the
+ * `PeriodPicker`, `ActivityChart`, `FrequencyRow` and the
  * `ResumeBar`. They show the view model they are given and compute nothing.
- * No animation anywhere; numbers are always printed, so no bar or glyph is
- * the only carrier of a value; AX sizes switch to lists.
+ * No animation anywhere; AX sizes switch to lists.
  */
 
 export function useAx(): boolean {
@@ -61,204 +73,271 @@ export function Segmented<K extends string | number>({ options, selected, onSele
   );
 }
 
-const WINDOWS: readonly { key: ProgressWindowDays; label: string }[] = [
-  { key: 7, label: '7 days' },
-  { key: 14, label: '14 days' },
-  { key: 30, label: '30 days' },
-  { key: 60, label: '60 days' },
-];
-
 /**
- * `WindowPicker` (§9.69): segmented, or at AX sizes a `Last 30 days ▾` button
- * that lists the four. Under it, the window's dates; tapping them opens the
- * period sheet (a custom period, Ben 12 Oct 2026). With a custom period no
- * segment is selected and the dates carry the choice.
+ * `PeriodPicker` (Ben, 13 Oct 2026): one dropdown button listing `1 month`,
+ * `3 months`, `6 months`, `1 year` and `Custom`. Custom drops down a Start
+ * and an End month list, scrolled to pick; `Show` applies it. Under the
+ * button, the window's dates.
  */
-export function WindowPicker({
-  days,
+export function PeriodPicker({
+  period,
   custom,
+  today,
+  earliest,
+  current,
   datesLine,
   datesWords,
-  onChange,
-  onPeriod,
+  onPreset,
+  onCustom,
 }: {
-  days: ProgressWindowDays;
+  period: ProgressPeriodKey;
   /** A custom period is showing. */
   custom: boolean;
+  today: string;
+  /** The first workout's date: the month lists start there. */
+  earliest: string;
+  /** The dates showing now. */
+  current: DateRange;
   datesLine: string;
   datesWords: string;
-  onChange: (d: ProgressWindowDays) => void;
-  onPeriod: () => void;
+  onPreset: (k: ProgressPeriodKey) => void;
+  onCustom: (range: DateRange) => void;
 }) {
   const theme = useTheme();
-  const ax = useAx();
   const [open, setOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const label = custom ? 'Custom' : (PROGRESS_PERIODS.find((p) => p.key === period)?.label ?? '1 month');
+  const months = pickerMonths(earliest, today);
+  const openCustom = () => {
+    const d = custom ? { start: monthKeyOf(current.from), end: monthKeyOf(current.to) } : defaultCustomMonths(today);
+    setStart(d.start);
+    setEnd(d.end);
+    setCustomOpen(true);
+  };
+  const row = (key: string, text: string, on: boolean, onPress: () => void) => (
+    <Pressable
+      key={key}
+      accessibilityRole="button"
+      accessibilityState={{ selected: on }}
+      onPress={onPress}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+    >
+      <AppText variant="body" style={{ flex: 1 }}>
+        {text}
+      </AppText>
+      {on ? <Icon name="checkmark" color="text.primary" /> : null}
+    </Pressable>
+  );
   return (
     <View style={{ gap: theme.space['1'] }}>
-      {ax ? (
-        <View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={custom ? `Window, ${datesWords}` : `Window, ${String(days)} days. ${datesWords}`}
-            accessibilityState={{ expanded: open }}
-            onPress={() => {
-              setOpen((o) => !o);
-            }}
-            style={{ minHeight: theme.target.min.height, justifyContent: 'center' }}
-          >
-            <AppText variant="headline" color="accent">{`${custom ? datesLine : `Last ${String(days)} days`} ${open ? '▴' : '▾'}`}</AppText>
-          </Pressable>
-          {open
-            ? WINDOWS.map((w) => (
-                <Pressable
-                  key={w.key}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: !custom && w.key === days }}
-                  onPress={() => {
-                    setOpen(false);
-                    if (custom || w.key !== days) {
-                      haptic('step');
-                      onChange(w.key);
-                    }
-                  }}
-                  style={{ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}
-                >
-                  <AppText variant="body">{`Last ${w.label}`}</AppText>
-                  {!custom && w.key === days ? <Icon name="checkmark" color="text.primary" /> : null}
-                </Pressable>
-              ))
-            : null}
-        </View>
-      ) : (
-        <Segmented options={WINDOWS} selected={custom ? null : days} onSelect={onChange} label="Window" />
-      )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${datesWords}. Choose dates`}
-        onPress={onPeriod}
-        style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+        accessibilityLabel={`Period, ${label}. ${datesWords}`}
+        accessibilityState={{ expanded: open }}
+        onPress={() => {
+          setOpen((o) => !o);
+          setCustomOpen(false);
+        }}
+        style={({ pressed }) => ({ minHeight: theme.target.min.height, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.sm, backgroundColor: pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'] })}
       >
-        {/* Can wrap at large text sizes (both years in early January, review ben-bugs r2 N3): it shrinks, the icon stays on screen. */}
-        <AppText variant="callout" color={custom ? 'text.primary' : 'text.secondary'} numeric style={custom ? { fontWeight: '600', flexShrink: 1 } : { flexShrink: 1 }}>
-          {datesLine}
-        </AppText>
-        <Icon name="calendar" color="text.secondary" size={16} />
+        <AppText variant="headline">{label}</AppText>
+        <Icon name={open ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={14} />
       </Pressable>
+      {open ? (
+        <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], borderWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], overflow: 'hidden' }}>
+          {PROGRESS_PERIODS.map((p) =>
+            row(p.key, p.label, !custom && p.key === period, () => {
+              setOpen(false);
+              if (custom || p.key !== period) {
+                haptic('step');
+                onPreset(p.key);
+              }
+            }),
+          )}
+          {row('custom', 'Custom', custom, () => {
+            if (customOpen) setCustomOpen(false);
+            else openCustom();
+          })}
+          {customOpen ? (
+            <View style={{ gap: theme.space['3'], padding: theme.space['3'] }}>
+              <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+                <MonthList label="Start" months={months} selected={start} onSelect={setStart} />
+                <MonthList label="End" months={months} selected={end} onSelect={setEnd} />
+              </View>
+              <PrimaryButton
+                label="Show"
+                onPress={() => {
+                  const r = customRangeFromMonths(start, end, today);
+                  if (r === null) return;
+                  setOpen(false);
+                  setCustomOpen(false);
+                  haptic('step');
+                  onCustom(r);
+                }}
+              />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={datesWords}>
+        {datesLine}
+      </AppText>
     </View>
   );
 }
 
-/** `WeekBars` (§9.70; also one bar per month for long periods) or `DayStrip` (§9.71), from the view model. One VoiceOver element; the card around it is the button. */
-/** F15: one bar chart for every period (a bar a day, week or month); AX sizes get the list. */
-export function ActivityBars({ bars }: { bars: BarsView }) {
-  const ax = useAx();
-  if (ax) return bars.kind === 'days' ? <DayList bars={bars} /> : <BarList bars={bars} />;
-  return <WeekBars bars={bars} />;
+const MONTH_ROW = 40;
+const MONTH_ROWS_SHOWN = 5;
+
+/** A scrolling list of months (`Apr 2025`), opened on the selected one. */
+function MonthList({ label, months, selected, onSelect }: { label: string; months: readonly string[]; selected: string; onSelect: (m: string) => void }) {
+  const theme = useTheme();
+  const index = Math.max(0, months.indexOf(selected));
+  return (
+    <View style={{ flex: 1, gap: theme.space['1'] }}>
+      <AppText variant="sectionLabel" color="text.tertiary">
+        {label.toUpperCase()}
+      </AppText>
+      <ScrollView
+        style={{ height: MONTH_ROW * MONTH_ROWS_SHOWN, borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.raised'] }}
+        contentOffset={{ x: 0, y: Math.max(0, (index - Math.floor(MONTH_ROWS_SHOWN / 2)) * MONTH_ROW) }}
+        nestedScrollEnabled
+        accessibilityLabel={label}
+      >
+        {months.map((m) => {
+          const on = m === selected;
+          return (
+            <Pressable
+              key={m}
+              accessibilityRole="button"
+              accessibilityLabel={`${label}, ${monthShortTitle(m)}`}
+              accessibilityState={{ selected: on }}
+              onPress={() => {
+                onSelect(m);
+              }}
+              style={{ height: MONTH_ROW, justifyContent: 'center', alignItems: 'center', borderRadius: theme.radius.sm - 2, backgroundColor: on ? theme.colors['accent.subtle'] : 'transparent' }}
+            >
+              <AppText variant="body" numeric color={on ? 'text.primary' : 'text.secondary'} style={{ fontWeight: on ? '600' : '400' }}>
+                {monthShortTitle(m)}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 }
 
-function BarList({ bars }: { bars: Extract<BarsView, { kind: 'weeks' | 'months' }> }) {
+/** Activity over time: a line chart (one point a week or month); AX sizes get the list. One VoiceOver element; the card around it is the button. */
+export function ActivityChart({ chart }: { chart: ActivityChartView }) {
+  const ax = useAx();
+  if (ax) return <PointList chart={chart} />;
+  return <ActivityLine chart={chart} />;
+}
+
+function PointList({ chart }: { chart: ActivityChartView }) {
   return (
-    <View accessible accessibilityLabel={bars.words}>
-      {bars.bars.map((b) => (
-        <AppText key={b.from} variant="callout" numeric color={b.count === 0 ? 'text.tertiary' : 'text.primary'}>
-          {b.listText}
+    <View accessible accessibilityLabel={chart.words}>
+      {chart.points.map((p) => (
+        <AppText key={p.from} variant="callout" numeric color={p.count === 0 ? 'text.tertiary' : 'text.primary'}>
+          {p.listText}
         </AppText>
       ))}
     </View>
   );
 }
 
-function WeekBars({ bars }: { bars: BarsView }) {
+function ActivityLine({ chart }: { chart: ActivityChartView }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
-  const dims = theme.chart.weekBars;
-  const rects = weekBarsLayout(
-    bars.bars.map((b) => b.count),
+  // The tapped point, by its first date: a new period clears it.
+  const [selectedFrom, setSelectedFrom] = useState<string | null>(null);
+  const dims = ACTIVITY_LINE_DIMS;
+  const layout = activityLineLayout(
+    chart.points.map((p) => p.count),
+    chart.yTicks,
     width,
-    bars.max,
     dims,
-    bars.bars.map((b) => b.partial),
   );
-  const labels = new Set(visibleLabels(bars.bars.length, width, barLabelRoom(bars.kind)));
-  const canvas = loadWeekBarsCanvas();
-  const countHeight = 20;
-  const partialColor = mixHex(theme.colors['chart.bar'], theme.colors['bg.surface'], PARTIAL_BAR_MIX);
+  const selectedIndex = selectedFrom === null ? -1 : chart.points.findIndex((p) => p.from === selectedFrom);
+  const selected = selectedIndex >= 0 ? (chart.points[selectedIndex] ?? null) : null;
+  const room = barLabelRoom(chart.unit);
+  const labels = new Set(visibleLabels(chart.points.length, layout.plot.width, room));
+  const canvas = loadTrendCanvas();
+  const grid = theme.a11y.increaseContrast ? theme.colors['border.control'] : theme.colors['chart.grid'];
   return (
     <View
       accessible
-      accessibilityLabel={bars.words}
+      accessibilityLabel={chart.words}
       onLayout={(e) => {
         setWidth(Math.floor(e.nativeEvent.layout.width));
       }}
     >
-      <View style={{ height: countHeight + dims.height }}>
-        {width > 0 ? (
-          <View style={{ position: 'absolute', top: countHeight, left: 0 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            {canvas.ok ? (
-              <canvas.value bars={rects} width={width} height={dims.height} radius={dims.radius} barColor={theme.colors['chart.bar']} partialColor={partialColor} stubColor={theme.colors['chart.grid']} />
-            ) : (
-              // Skia unavailable: the same rectangles as plain views.
-              <View style={{ width, height: dims.height }}>
-                {rects.map((r, i) => (
-                  <View
-                    key={String(i)}
-                    style={{
-                      position: 'absolute',
-                      left: r.x,
-                      top: r.y,
-                      width: r.width,
-                      height: r.height,
-                      backgroundColor: r.zero ? theme.colors['chart.grid'] : r.partial ? partialColor : theme.colors['chart.bar'],
-                      borderTopLeftRadius: r.zero ? 0 : dims.radius,
-                      borderTopRightRadius: r.zero ? 0 : dims.radius,
-                    }}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
+      <View style={{ height: 20 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        {selected ? (
+          <AppText variant="label" numeric color="text.primary" numberOfLines={1}>
+            {selected.valueText}
+          </AppText>
         ) : null}
-        {rects.map((r, i) => {
-          const b = bars.bars[i];
-          if (!b || !showsBarCount(b.count)) return null;
-          return (
-            <View key={b.from} style={{ position: 'absolute', left: r.centreX - 20, width: 40, top: r.y, alignItems: 'center' }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-              <AppText variant="label" numeric color={b.count === 0 || b.partial ? 'text.tertiary' : 'text.primary'} maxFontSizeMultiplier={1.4}>
-                {String(b.count)}
-              </AppText>
-            </View>
-          );
-        })}
+      </View>
+      <View style={{ height: dims.height }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        {width > 0 ? (
+          canvas.ok ? (
+            <canvas.value
+              layout={layout}
+              width={width}
+              height={dims.height}
+              bars={false}
+              hollow={[]}
+              selected={selectedIndex >= 0 ? selectedIndex : null}
+              lineWidth={theme.chart.activeLineWidth}
+              pointSize={theme.chart.point}
+              pointSelectedSize={theme.chart.pointSelected}
+              gridWidth={theme.dividerWidth}
+              colors={{ line: theme.colors['chart.line'], point: theme.colors['chart.point'], selected: theme.colors['chart.selected'], grid, bar: theme.colors['chart.bar'], surface: theme.colors['bg.surface'] }}
+            />
+          ) : (
+            // Skia unavailable: the points as plain views (the label and the list still carry every value).
+            layout.xs.map((x, i) => {
+              const size = i === selectedIndex ? theme.chart.pointSelected : theme.chart.point;
+              return <View key={String(i)} style={{ position: 'absolute', left: x - size / 2, top: (layout.ys[i] ?? 0) - size / 2, width: size, height: size, borderRadius: size / 2, backgroundColor: theme.colors['chart.point'] }} />;
+            })
+          )
+        ) : null}
+        {layout.yTicks.map((t) => (
+          <View key={t.label} style={{ position: 'absolute', left: 0, width: dims.axisWidth - 6, top: t.y - 9, height: 18, alignItems: 'flex-end', justifyContent: 'center' }}>
+            <AppText variant="label" color="chart.axisText" numeric maxFontSizeMultiplier={1.4}>
+              {t.label}
+            </AppText>
+          </View>
+        ))}
+        <Pressable
+          accessible={false}
+          onPress={(e) => {
+            const i = nearestPointIndex(layout.xs, e.nativeEvent.locationX + layout.plot.x);
+            const p = chart.points[i];
+            if (!p) return;
+            haptic('step');
+            setSelectedFrom((cur) => (cur === p.from ? null : p.from));
+          }}
+          style={{ position: 'absolute', left: layout.plot.x, top: 0, width: layout.plot.width, height: dims.height }}
+        />
       </View>
       <View style={{ height: 20, marginTop: theme.space['1'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        {rects.map((r, i) => {
-          const b = bars.bars[i];
-          if (!b || !labels.has(i)) return null;
-          const box = barLabelBox(r.centreX, width, 60, barLabelRoom(bars.kind));
+        {chart.points.map((p, i) => {
+          if (!labels.has(i)) return null;
+          const box = barLabelBox(layout.xs[i] ?? 0, width, 60, room);
           return (
-            <View key={b.from} style={{ position: 'absolute', left: box.left, width: 60, alignItems: box.align }}>
+            <View key={p.from} style={{ position: 'absolute', left: box.left, width: 60, alignItems: box.align }}>
               <AppText variant="label" color="chart.axisText" numeric maxFontSizeMultiplier={1.4} numberOfLines={1}>
-                {b.label}
+                {p.label}
               </AppText>
             </View>
           );
         })}
       </View>
-    </View>
-  );
-}
-
-function DayList({ bars }: { bars: Extract<BarsView, { kind: 'days' }> }) {
-  const days = bars.rows.flatMap((r) => r.cells).filter((c) => c.count > 0);
-  return (
-    <View accessible accessibilityLabel={bars.words}>
-      {days.length === 0 ? (
-        <AppText variant="callout" color="text.tertiary">
-          No workouts
-        </AppText>
-      ) : (
-        days.map((c) => <AppText key={c.date} variant="callout" numeric>{`${c.dateText} · ${String(c.count)} ${c.count === 1 ? 'workout' : 'workouts'}`}</AppText>)
-      )}
     </View>
   );
 }

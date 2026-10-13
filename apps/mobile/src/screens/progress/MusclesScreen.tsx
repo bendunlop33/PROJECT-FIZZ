@@ -2,15 +2,16 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import type { ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
+import type { DateRange } from '@fizz/domain';
+import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
 
 import type { ProgressStackParams } from '../../navigation/types';
-import { FrequencyHeader, FrequencyRow, Segmented, WindowPicker } from '../../progress/components';
+import { FrequencyHeader, FrequencyRow, PeriodPicker, Segmented } from '../../progress/components';
 import { useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Screen, StatusLine, TextButton } from '../../ui';
 import { AskPill } from '../coach/AskPill';
-import { HowCountedSheet, PeriodSheet } from './sheets';
+import { HowCountedSheet } from './sheets';
 
 /**
  * Muscles (progress.md §2.4): the same window and grouping as the home (one
@@ -26,12 +27,15 @@ export function MusclesScreen() {
   const [data, reload] = useScreenData((s) => s.progress.home());
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(route.params.group ? [route.params.group] : []));
   const [howOpen, setHowOpen] = useState(false);
-  const [periodOpen, setPeriodOpen] = useState(false);
 
-  const change = (patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }) => {
+  const change = (patch: { period?: ProgressPeriodKey; grouping?: ProgressGrouping }) => {
     const saved = services.progress.saveSettings(patch);
     reload();
     void saved.then(reload);
+  };
+  const showCustom = (r: DateRange) => {
+    services.progress.choosePeriod(r);
+    reload();
   };
 
   if (data.state === 'error') {
@@ -64,11 +68,11 @@ export function MusclesScreen() {
     return <Screen>{data.state === 'loading' ? null : <AppText variant="headline">Nothing to show yet</AppText>}</Screen>;
   }
   // Ask on every Progress screen, with this screen's window (spec §2.1, review r2 S3).
-  const days = home.days;
+  const period = home.period;
   const ask = (
     <AskPill
       onPress={() => {
-        navigation.navigate('Coach', { entry: { kind: 'progress', days, ...(home.range === null ? {} : { range: home.range }) } });
+        navigation.navigate('Coach', { entry: { kind: 'progress', period, ...(home.range === null ? {} : { range: home.range }) } });
       }}
     />
   );
@@ -86,17 +90,18 @@ export function MusclesScreen() {
 
   return (
     <Screen floating={ask}>
-      <WindowPicker
-        days={home.days}
+      <PeriodPicker
+        period={home.period}
         custom={home.range !== null}
+        today={home.today}
+        earliest={home.earliest}
+        current={view.window}
         datesLine={view.datesLine}
         datesWords={view.datesWords}
-        onChange={(days) => {
-          change({ days });
+        onPreset={(p) => {
+          change({ period: p });
         }}
-        onPeriod={() => {
-          setPeriodOpen(true);
-        }}
+        onCustom={showCustom}
       />
       <Segmented
         options={[
@@ -187,29 +192,6 @@ export function MusclesScreen() {
           How this is counted ›
         </AppText>
       </Pressable>
-      <PeriodSheet
-        visible={periodOpen}
-        today={home.today}
-        earliest={home.earliest}
-        current={{ from: view.window.from, to: view.window.to }}
-        onShow={(r) => {
-          setPeriodOpen(false);
-          services.progress.choosePeriod(r);
-          reload();
-        }}
-        onClear={
-          home.range === null
-            ? null
-            : () => {
-                setPeriodOpen(false);
-                services.progress.choosePeriod(null);
-                reload();
-              }
-        }
-        onClose={() => {
-          setPeriodOpen(false);
-        }}
-      />
       <HowCountedSheet
         visible={howOpen}
         onClose={() => {

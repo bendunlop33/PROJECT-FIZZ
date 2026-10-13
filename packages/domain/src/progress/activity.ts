@@ -8,14 +8,6 @@ import { inRange, type DateRange, type ProgressWindow } from './window';
  * imported (their dates are real); only workouts with real times add time.
  */
 
-export interface DayCount {
-  date: string;
-  /** 0 = Monday … 6 = Sunday. */
-  weekday: number;
-  count: number;
-  isToday: boolean;
-}
-
 export interface WeekCount {
   /** First date of this bar inside the window (the label: `12 Sep`, not the Monday before it). */
   from: string;
@@ -35,24 +27,27 @@ export interface MonthCount {
 }
 
 /**
- * Up to this many days the bars are weeks; longer periods get one bar per
- * month (F15, Ben 13 Oct: 7/14 days daily, 30/60 days weekly, 3–12 months
- * monthly). Nine weeks sits between the 60-day preset and `3 months` (89–92
- * days), so each preset keeps one bar unit whatever today's date (review
- * ben-bugs S1), and no week chart goes past 10 bars.
+ * Activity-over-time granularity (Ben, 13 Oct 2026): `1 month` to `6 months`
+ * (and custom periods as long) are weekly points; `1 year` and longer custom
+ * periods are monthly. Six months is at most 184 days and a year at least
+ * 365, so 186 keeps every preset on its unit whatever today's date.
  */
-export const WEEK_BARS_MAX_DAYS = 9 * 7;
+export const WEEKLY_POINTS_MAX_DAYS = 186;
+
+export type ActivityGranularity = 'week' | 'month';
+
+export function activityGranularity(days: number): ActivityGranularity {
+  return days <= WEEKLY_POINTS_MAX_DAYS ? 'week' : 'month';
+}
 
 export interface SessionCounts {
   count: number;
   previousCount: number;
   /** Sessions a week, one decimal; windows of 14 days or more only. */
   perWeek: number | null;
-  /** `7 days` and `14 days`: one cell per day, oldest first. */
-  days: DayCount[] | null;
-  /** `30 days`, `60 days` and custom periods up to 20 weeks: one bar per Monday–Sunday week overlapping the window. The counts add up to `count`. */
+  /** Periods up to `WEEKLY_POINTS_MAX_DAYS`: one point per Monday–Sunday week overlapping the window. The counts add up to `count`. */
   weeks: WeekCount[] | null;
-  /** Custom periods over 20 weeks: one bar per calendar month overlapping the window (same rules as weeks). */
+  /** Longer periods: one point per calendar month overlapping the window (same rules as weeks). */
   months: MonthCount[] | null;
   /** The latest workout on or before the window's last day, for `Last workout: Fri 14 Aug`; null if none. */
   lastSessionDate: string | null;
@@ -69,8 +64,7 @@ function countBy(sessions: readonly ProgressSession[], range: DateRange): Map<st
   return out;
 }
 
-/** `today` marks the day cell in bold; it defaults to the window's last day (the presets end today). */
-export function countSessions(sessions: readonly ProgressSession[], window: ProgressWindow, today: string = window.to): SessionCounts {
+export function countSessions(sessions: readonly ProgressSession[], window: ProgressWindow): SessionCounts {
   const byDate = countBy(sessions, window);
   const count = [...byDate.values()].reduce((a, b) => a + b, 0);
   const previousCount = [...countBy(sessions, window.previous).values()].reduce((a, b) => a + b, 0);
@@ -78,11 +72,9 @@ export function countSessions(sessions: readonly ProgressSession[], window: Prog
   for (const s of sessions) if (s.date <= window.to && (lastSessionDate === null || s.date > lastSessionDate)) lastSessionDate = s.date;
 
   const totalDays = daysBetween(window.from, window.to) + 1;
-  const daily = window.days <= 14;
-  let days: DayCount[] | null = null;
   let weeks: WeekCount[] | null = null;
   let months: MonthCount[] | null = null;
-  if (totalDays > WEEK_BARS_MAX_DAYS) {
+  if (activityGranularity(totalDays) === 'month') {
     months = [];
     let from = window.from;
     while (from <= window.to) {
@@ -92,12 +84,6 @@ export function countSessions(sessions: readonly ProgressSession[], window: Prog
       for (let d = from; d <= to; d = addDays(d, 1)) n += byDate.get(d) ?? 0;
       months.push({ from, to, count: n, partial: from.slice(8, 10) !== '01' || to !== monthEnd });
       from = addDays(to, 1);
-    }
-  } else if (daily) {
-    days = [];
-    for (let i = 0; i < totalDays; i += 1) {
-      const date = addDays(window.from, i);
-      days.push({ date, weekday: weekdayIndexOfDate(date), count: byDate.get(date) ?? 0, isToday: date === today });
     }
   } else {
     weeks = [];
@@ -115,7 +101,6 @@ export function countSessions(sessions: readonly ProgressSession[], window: Prog
     count,
     previousCount,
     perWeek: window.days >= 14 ? oneDecimal(count / (totalDays / 7)) : null,
-    days,
     weeks,
     months,
     lastSessionDate,
@@ -208,4 +193,22 @@ export function timeInGym(sessions: readonly ProgressSession[], window: Progress
     previousTimedCount,
     excluded: { imported, noEnd: noEnd.sort(newestFirst), overCap: overCap.sort(newestFirst) },
   };
+}
+
+/**
+ * The activity chart's Y gridlines: whole session counts from 0, 1, 2, 5 or
+ * 10 apart, at most four steps, the top at or above `largest` (never under 3,
+ * so one session never fills the plot).
+ */
+export function countAxisTicks(largest: number): number[] {
+  const max = Math.max(3, Math.ceil(largest));
+  let step = 1;
+  for (const s of [1, 2, 5, 10, 20, 50, 100, 200, 500]) {
+    step = s;
+    if (Math.ceil(max / s) <= 4) break;
+  }
+  const top = Math.ceil(max / step) * step;
+  const out: number[] = [];
+  for (let v = 0; v <= top; v += step) out.push(v);
+  return out;
 }

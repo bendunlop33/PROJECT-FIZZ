@@ -31,16 +31,14 @@ function valueImporters(re: RegExp): string[] {
 }
 
 describe('guide isolation (review S1)', () => {
-  it('only the player, the bake and Progress’s bars and trend chart import Skia, Reanimated or worklets', () => {
-    expect(valueImporters(/^(@shopify\/react-native-skia|react-native-reanimated|react-native-worklets)$/)).toEqual(['guide/GuidePlayer.tsx', 'guide/bake.ts', 'progress/TrendCanvas.tsx', 'progress/WeekBarsCanvas.tsx']);
+  it('only the player, the bake and Progress’s chart canvas import Skia, Reanimated or worklets', () => {
+    expect(valueImporters(/^(@shopify\/react-native-skia|react-native-reanimated|react-native-worklets)$/)).toEqual(['guide/GuidePlayer.tsx', 'guide/bake.ts', 'progress/TrendCanvas.tsx']);
   });
 
-  it('Progress’s Skia bars and trend chart are required behind the same guard, never imported directly (progress.md §7.1)', () => {
-    expect(valueImporters(/\/WeekBarsCanvas$/)).toEqual([]);
+  it('Progress’s Skia chart canvas (activity line and trend chart) is required behind the same guard, never imported directly (progress.md §7.1)', () => {
     expect(valueImporters(/\/TrendCanvas$/)).toEqual([]);
     const loader = readFileSync(join(SRC, 'progress/load-charts.ts'), 'utf8');
     expect(loader).toContain('createGuardedLoader(() => {');
-    expect(loader).toContain("require('./WeekBarsCanvas')");
     expect(loader).toContain("require('./TrendCanvas')");
   });
 

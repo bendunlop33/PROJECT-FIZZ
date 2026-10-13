@@ -1,61 +1,44 @@
+import type { TrendLayout } from './trend-layout';
+
 /**
  * Pure geometry for Progress's small charts (progress.md §7.1; design-system
- * §4.1 `chart.weekBars`, §9.70). The Skia component only draws these
- * rectangles; text sits in native views at the returned positions, so Dynamic
+ * §9.70). The Skia component only draws these shapes; text sits in native views at the returned positions, so Dynamic
  * Type and VoiceOver work as everywhere else.
  */
 
-export interface WeekBarsDims {
+export interface ActivityLineDims {
   height: number;
-  maxBarWidth: number;
-  gap: number;
-  radius: number;
+  /** Room on the leading edge for the Y labels. */
+  axisWidth: number;
+  /** Room at the trailing edge so the last point (and its ring) isn't clipped. */
+  inset: number;
+  /** Room above the top gridline for its label and the selected ring. */
+  top: number;
 }
 
-export interface BarRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  /** A 0 bar: drawn as a 2pt stub in `chart.grid`, so the week reads as empty, not missing. */
-  zero: boolean;
-  /** Centre, for the count above and the label under. */
-  centreX: number;
-  /** The window cut this week (or month): drawn lighter, so a one-day bar never reads as an empty week. */
-  partial: boolean;
-}
-
-/** How much of the bar colour a part week keeps (the rest is the card behind it). */
-export const PARTIAL_BAR_MIX = 0.45;
-
-/** `#RRGGBB` `fg` over `bg` at `amount` (0–1), as an opaque `#RRGGBB`. Anything else returns `fg`. */
-export function mixHex(fg: string, bg: string, amount: number): string {
-  const parse = (h: string) => (/^#[0-9a-f]{6}$/i.test(h) ? [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)) : null);
-  const a = parse(fg);
-  const b = parse(bg);
-  if (a === null || b === null) return fg;
-  const t = Math.max(0, Math.min(1, amount));
-  return `#${a.map((v, i) => Math.round(v * t + (b[i] ?? 0) * (1 - t)).toString(16).padStart(2, '0')).join('')}`;
-}
-
-export const ZERO_STUB = 2;
+export const ACTIVITY_LINE_DIMS: ActivityLineDims = { height: 132, axisWidth: 24, inset: 8, top: 10 };
 
 /**
- * Bars spread over `width`: each `(width − gaps) ÷ count` wide, at most
- * `maxBarWidth`, centred in its slot. Heights scale from 0 to `max` (the view
- * model passes max(3, largest) so one session never fills the plot).
+ * The activity line (Ben, 13 Oct 2026): one point per week or month, evenly
+ * spaced, joined by one line (always a line, never bars or dots), from 0 at
+ * the bottom to the top Y tick. Returned in `TrendCanvas`'s shape so the same
+ * Skia drawing serves both charts.
  */
-export function weekBarsLayout(counts: readonly number[], width: number, max: number, dims: WeekBarsDims, partial: readonly boolean[] = []): BarRect[] {
+export function activityLineLayout(counts: readonly number[], yTicks: readonly number[], width: number, dims: ActivityLineDims): TrendLayout {
+  const plot = { x: dims.axisWidth, y: dims.top, width: Math.max(1, width - dims.axisWidth - dims.inset), height: Math.max(1, dims.height - dims.top) };
+  const top = Math.max(1, yTicks[yTicks.length - 1] ?? 1, ...counts);
+  const yOf = (v: number) => plot.y + plot.height - (Math.max(0, v) / top) * plot.height;
   const n = counts.length;
-  if (n === 0 || width <= 0) return [];
-  const slot = width / n;
-  const barWidth = Math.max(1, Math.min(dims.maxBarWidth, (width - dims.gap * (n - 1)) / n));
-  const scale = max > 0 ? dims.height / max : 0;
-  return counts.map((c, i) => {
-    const centreX = slot * i + slot / 2;
-    const h = c <= 0 ? ZERO_STUB : Math.max(ZERO_STUB, Math.min(dims.height, c * scale));
-    return { x: centreX - barWidth / 2, y: dims.height - h, width: barWidth, height: h, zero: c <= 0, centreX, partial: partial[i] === true };
-  });
+  const xs = counts.map((_, i) => (n <= 1 ? plot.x + plot.width / 2 : plot.x + (i * plot.width) / (n - 1)));
+  return {
+    plot,
+    xs,
+    ys: counts.map(yOf),
+    segments: n === 0 ? [] : [counts.map((_, i) => i)],
+    yTicks: yTicks.map((v) => ({ y: yOf(v), label: String(v) })),
+    months: [],
+    bars: [],
+  };
 }
 
 /**
@@ -78,12 +61,9 @@ export function countBarWidth(fraction: number, trackWidth: number): number {
   return Math.max(2, Math.min(trackWidth, fraction * trackWidth));
 }
 
-/**
- * F15: the room each bar label needs before labels are thinned: a day's
- * letter or date (`M`, `14`), a month (`Oct`, `Oct 25`), a week's start (`14 Sep`).
- */
-export function barLabelRoom(kind: 'days' | 'weeks' | 'months'): number {
-  return kind === 'days' ? 22 : kind === 'months' ? 44 : 52;
+/** The room each X label needs before labels are thinned: a month (`Oct`, `Oct 25`), a week's start (`14 Sep`). */
+export function barLabelRoom(unit: 'week' | 'month'): number {
+  return unit === 'month' ? 44 : 52;
 }
 
 /**
@@ -99,9 +79,4 @@ export function barLabelBox(centreX: number, chartWidth: number, boxWidth: numbe
   if (centreX - half < 0) return { left: 0, align: 'flex-start' };
   if (centreX + half > chartWidth) return { left: Math.max(0, chartWidth - boxWidth), align: 'flex-end' };
   return { left: centreX - boxWidth / 2, align: 'center' };
-}
-
-/** F15: a count shows above a bar only when there was a session (zero bars stay a quiet stub). */
-export function showsBarCount(count: number): boolean {
-  return count > 0;
 }
