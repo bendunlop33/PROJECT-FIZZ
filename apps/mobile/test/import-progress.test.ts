@@ -64,8 +64,8 @@ afterEach(async () => {
   await h.cleanup();
 });
 
-async function importFile(s: AppServices): Promise<string> {
-  const opened = await s.imports.open({ name: 'FitNotes_Export_synthetic.csv', text: FILE });
+async function importFile(s: AppServices, text = FILE, counts = { workouts: 6, sets: 23 }): Promise<string> {
+  const opened = await s.imports.open({ name: 'FitNotes_Export_synthetic.csv', text });
   if (opened.kind !== 'preview') throw new Error(`expected a preview, got ${opened.kind}`);
   let draft: ImportDraft = opened.draft;
   const step = async (change: Parameters<AppServices['imports']['answer']>[2]) => {
@@ -76,10 +76,10 @@ async function importFile(s: AppServices): Promise<string> {
   for (const n of draft.analysis.names.filter((x) => x.needsAnswer)) if (n.match.exerciseId) await step({ kind: 'name', key: n.key, answer: { kind: 'exercise', exerciseId: n.match.exerciseId } });
   if (draft.analysis.total?.open) await step({ kind: 'total', answer: 'total' });
   if (draft.analysis.perHand?.open) await step({ kind: 'per_hand', answer: 'each' });
-  expect(draft.analysis.counts).toMatchObject({ workouts: 6, sets: 23 });
+  expect(draft.analysis.counts).toMatchObject(counts);
   const r = await s.imports.commit(draft.draftId, draft.mappingVersion, 'import-op');
   if (!r.ok) throw new Error(r.reason);
-  expect(r).toMatchObject({ status: 'finished', written: 6 });
+  expect(r).toMatchObject({ status: 'finished', written: counts.workouts });
   return r.jobId;
 }
 
@@ -186,9 +186,9 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     const started = await s.workout.start({ gymId, opId: 'start-squat', checkIn: { kind: 'skipped', atUtc: h.now().utc }, nextOf: squatDay ?? '' });
     if (!started.ok) throw new Error(started.error.message);
     const plan = plannedOf(started.aggregate, squat);
-    // 7 FitNotes sets: 3 ramp, 120 × 4 once, then 100 × 6, 6, 5. The top set and back-offs are 4 working sets;
-    // the rule holds at the back-off load (not every set at 120, and not 7 sets).
-    expect(plan.length).toBe(4);
+    // 7 FitNotes sets: 3 ramp, 120 × 4 once, then 100 × 6, 6, 5. The back-offs are the 3 judged working sets
+    // and the top set is context (r3 S1); the rule holds at the back-off load (not every set at 120, and not 7 sets).
+    expect(plan.length).toBe(3);
     for (const [load] of plan) expect(load).toBe(100);
   });
 
@@ -210,9 +210,9 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     const r = await s.overview.start({ startOf: page.startOf, gymId, opId: 'start-up-next', checkIn: { kind: 'skipped', atUtc: h.now().utc }, expectedPreviewKey: page.view.previewKey, draft: null });
     if (!r.ok) throw new Error(r.error.message);
     const plan = plannedOf(r.aggregate, bench);
-    // 7 FitNotes sets with one at 70 × 4, then 60 × 8 three times: 4 working sets, never 7 × 70. Every set at 60
-    // reached the top of bench's 3–6 range; the heavier 70 × 4 is context, not judged at 60 (r2 B1): one step up from 60.
-    expect(plan.length).toBe(4);
+    // 7 FitNotes sets with one at 70 × 4, then 60 × 8 three times: 3 judged working sets (r3 S1), never 7 × 70. Every set
+    // at 60 reached the top of bench's 3–6 range; the heavier 70 × 4 is context, not judged at 60 (r2 B1): one step up from 60.
+    expect(plan.length).toBe(3);
     for (const [load] of plan) expect(load).toBe(62.5);
   });
 
@@ -227,7 +227,7 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     expect(plannedOf(repeated.aggregate, squat).map(([load]) => load)).toEqual([60, 80, 100, 120, 100, 100, 100]);
   });
 
-  it('B2: Add exercise after top + back-offs shows them all as Last (FitNotes) and plans that many sets, progressed from the back-off load', async () => {
+  it('B2: Add exercise after top + back-offs shows them all as Last (FitNotes) and plans the back-offs (r3 S1), progressed from the back-off load', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     await importFile(s);
@@ -245,7 +245,7 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     // The ramp (40, 50, 60 × 3) is left out; the top set and the back-offs are Ben's working sets.
     expect(prev?.sets.map((x) => [x.values.load?.value, x.values.reps])).toEqual([[70, 4], [60, 8], [60, 8], [60, 8]]);
     const planned = loaded?.aggregate.sets.filter((x) => x.sessionExerciseId === row?.id).map((x) => x.planned) ?? [];
-    expect(planned).toHaveLength(4);
+    expect(planned).toHaveLength(3);
     for (const p of planned) {
       // From the back-off load: 60 × 8 on every back-off is past the top of 3–6, so one step up (r2 B1).
       expect(p.load).toMatchObject({ value: 62.5, unit: 'kg', convention: 'total' });
@@ -273,7 +273,8 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
         if (date === '2026-10-07') expect(why).toMatch(/Rounded to 45\skg\sstack/);
         else {
           expect(why).not.toMatch(/Rounded/);
-          expect(why).toContain('1 heavier top set was kept as context; reps were judged on the sets at 60 kg');
+          expect(why).toContain('1 heavier top set was kept as context; reps were judged on the 3 sets at 60 kg');
+          expect(why).toContain('all 3 judged sets reached 6+ reps at 60 kg');
         }
       }
       const fin = await s.workout.dispatch(sid, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: started.aggregate.session.version, confirmedLoggedSets: 0 });
@@ -303,7 +304,7 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     if (!r.ok) throw new Error(r.error.message);
     const bench = await exerciseIdOf(s, 'Bench press');
     const plan = plannedOf(r.aggregate, bench);
-    expect(plan.length).toBe(4);
+    expect(plan.length).toBe(3);
     for (const [load] of plan) expect(load).toBe(62.5);
   });
 
@@ -338,5 +339,46 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
     expect(JSON.stringify(history?.data)).toContain('FitNotes import');
     expect(targets?.data).toMatchObject({ exercise: 'Lat pulldown', label: 'built-in rule (fallback), for comparison' });
     expect(targets?.data.not_available).toBeUndefined();
+  });
+
+  describe('r3 B1: working sets then a lighter finisher', () => {
+    const finisherFile = (rows: readonly [string, number, number][]) =>
+      [HEADER, ...rows.map(([d, kg, reps]) => `${d},Flat Barbell Bench Press,Chest,${kg.toFixed(1)},${String(reps)},,,`)].join('\n');
+
+    it('Start next increases from the working load, not the finisher, and plans the working sets', async () => {
+      const { services: s } = await h.launch();
+      const gymId = await setUpGym(h, s);
+      // A ramp, 3 working sets at the top of bench's 3–6 range, then a lighter finisher.
+      await importFile(s, finisherFile([['2026-10-05', 40, 10], ['2026-10-05', 60, 6], ['2026-10-05', 60, 6], ['2026-10-05', 60, 6], ['2026-10-05', 40, 12]]), { workouts: 1, sets: 5 });
+      const [day] = (await s.history.pastWorkouts()).rows.map((r) => r.sessionId);
+      const bench = await exerciseIdOf(s, 'Bench press');
+      const started = await s.workout.start({ gymId, opId: 'start-finisher', checkIn: { kind: 'skipped', atUtc: h.now().utc }, nextOf: day ?? '' });
+      if (!started.ok) throw new Error(started.error.message);
+      const plan = plannedOf(started.aggregate, bench);
+      expect(plan.length).toBe(3);
+      for (const [load] of plan) expect(load).toBe(62.5);
+      const set = started.aggregate.sets.find((x) => x.planned.load !== null);
+      const why = JSON.stringify(await s.workout.explainTarget(started.aggregate.session.id, set?.id ?? ''));
+      expect(why).toContain('1 lighter set than 60 kg (a finisher or drop set) was not judged');
+      expect(why).toContain('all 3 judged sets reached 6+ reps at 60 kg');
+    });
+
+    it('a miss at the working load twice, each followed by a finisher in range: Start next reduces from the working load', async () => {
+      const { services: s } = await h.launch();
+      const gymId = await setUpGym(h, s);
+      const rows: [string, number, number][] = [];
+      for (const d of ['2026-10-02', '2026-10-05']) rows.push([d, 60, 2], [d, 60, 2], [d, 60, 2], [d, 40, 6]);
+      await importFile(s, finisherFile(rows), { workouts: 2, sets: 8 });
+      const [day] = (await s.history.pastWorkouts()).rows.map((r) => r.sessionId);
+      const bench = await exerciseIdOf(s, 'Bench press');
+      const started = await s.workout.start({ gymId, opId: 'start-finisher-miss', checkIn: { kind: 'skipped', atUtc: h.now().utc }, nextOf: day ?? '' });
+      if (!started.ok) throw new Error(started.error.message);
+      const plan = plannedOf(started.aggregate, bench);
+      expect(plan.length).toBe(3);
+      for (const [load] of plan) expect(typeof load === 'number' && load < 60 && load > 40).toBe(true);
+      const set = started.aggregate.sets.find((x) => x.planned.load !== null);
+      const why = JSON.stringify(await s.workout.explainTarget(started.aggregate.session.id, set?.id ?? ''));
+      expect(why).toContain('2 sessions in a row fell below 3 reps at 60 kg');
+    });
   });
 });

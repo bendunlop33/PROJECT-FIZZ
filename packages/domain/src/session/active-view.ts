@@ -17,7 +17,7 @@ import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclu
 import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
-import { comparableSetsOf, importedWorkingSetCount, matchesEquipment, type HistorySession } from '../progression';
+import { comparableSetsOf, fitNotesJudgedCount, importedWorkingSetCount, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
@@ -90,11 +90,14 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
  * nothing still plans 3 sets, a 2-set session plans 2.
  */
 export function workingSetsFromPrevious(previous: PreviousSession, history: readonly HistorySession[]): number {
-  const counted = previous.sets.filter((s) => s.values.reps !== null).length;
+  const withReps = previous.sets.filter((s) => s.values.reps !== null);
+  const counted = withReps.length;
   if (!previous.imported) return counted;
+  // r3 S1: only the sets the rule judges (not a lone top set or a lighter finisher).
+  const judged = fitNotesJudgedCount(withReps.map((s) => ({ load: s.values.load })));
   const source = history.find((h) => h.sessionId === previous.sessionId && h.imported);
   const total = source ? source.sets.filter((s) => s.setType !== 'warmup' && s.reps !== null).length : counted;
-  return importedWorkingSetCount(counted, total, DEFAULT_WORKING_SETS);
+  return importedWorkingSetCount(judged, total, DEFAULT_WORKING_SETS);
 }
 
 /** Unsaved changes held by the screen (debounced to `save_draft`). */

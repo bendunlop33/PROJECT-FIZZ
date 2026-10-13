@@ -20,7 +20,7 @@ import { formatNumber, repRangeText } from '../display';
 import { isLoadAchievable } from '../equipment';
 import { equipmentRowLine } from '../gym-editor';
 import { nextTargetsFor, type NextTargetRequest } from '../next-target';
-import { comparableSetsOf, importedWorkingSetCount, type HistorySession, type NextTargets } from '../progression';
+import { comparableSetsOf, fitNotesJudgedCount, importedWorkingSetCount, type HistorySession, type NextTargets } from '../progression';
 import { toMs } from '../time';
 import { deriveId, stableStringify } from '../stable';
 import { toScaled } from '../units';
@@ -133,8 +133,10 @@ function partGym(state: Pick<SessionAggregate, 'session' | 'sets'>, part: Sessio
 /**
  * Review import-progress B1: a FitNotes block's set count comes from the same
  * reading as its load (`comparableSetsOf`: a leading ramp left out, the top
- * set and back-offs kept), and the reading never takes it below the built-in
- * default (`importedWorkingSetCount`). Counting
+ * set and back-offs kept), counting only the sets the rule judges
+ * (`fitNotesJudgedCount`, r3 S1: not a lone top set or a lighter finisher),
+ * and the reading never takes it below the built-in default
+ * (`importedWorkingSetCount`). Counting
  * every imported set would plan a ramp's 7 sets all at the top load.
  */
 function importedBlockSets(state: Pick<SessionAggregate, 'sets'>, parts: readonly SessionExercise[]): number {
@@ -144,7 +146,7 @@ function importedBlockSets(state: Pick<SessionAggregate, 'sets'>, parts: readonl
       .sort((a, b) => a.index - b.index)
       .map((s) => ({ setType: s.setType, load: s.actual?.load ?? null })),
   );
-  return importedWorkingSetCount(comparableSetsOf({ imported: true, sets }).length, sets.length, DEFAULT_WORKING_SETS);
+  return importedWorkingSetCount(fitNotesJudgedCount(comparableSetsOf({ imported: true, sets })), sets.length, DEFAULT_WORKING_SETS);
 }
 
 /** Every exercise block with at least one done working set, in workout order. */
