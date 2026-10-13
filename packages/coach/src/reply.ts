@@ -172,6 +172,13 @@ export interface ReplyFilterOptions {
   claimsNeedToken?: boolean;
   /** See `NoChangeLineContext.benAskedForChange`. */
   benAskedForChange?: boolean;
+  /**
+   * Build 131, review B1: a general turn where the app can build a workout. A sentence saying
+   * it can't (`claimsNoBuildTool`) is then false, so it is hidden and `BUILD_ASK_LINE` shown once,
+   * unless this turn already made a draft card. Default false: elsewhere such a sentence goes
+   * through the usual check, and true limits are never replaced.
+   */
+  noBuildToolLine?: boolean;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
@@ -192,9 +199,10 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     const actions = tokens.segments.filter((s) => s.kind === 'action');
     for (const a of actions) cited.add(a.actionId);
 
-    // Build 131: "I don't have access to a workout-creation tool" is never true: the app builds one when Ben
-    // asks. The sentence is hidden (listed in Why?) and the reply says, once, what works instead.
-    if (claimsNoBuildTool(tokens.plainText)) {
+    // Build 131: on a general turn where the app can build one, "I can't build workouts here" is false.
+    // The sentence is hidden (listed in Why?) and the reply says, once, what works instead.
+    const draftThisTurn = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout');
+    if (options.noBuildToolLine === true && !draftThisTurn && claimsNoBuildTool(tokens.plainText)) {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_BUILD_TOOL_DETAIL });
       if (!askLineShown) out.push({ kind: 'sentence', text: BUILD_ASK_LINE });
       askLineShown = true;

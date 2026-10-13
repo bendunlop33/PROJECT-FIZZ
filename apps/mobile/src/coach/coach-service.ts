@@ -43,6 +43,7 @@ import {
   asksForBuild,
   buildFollowUpIn,
   buildRequestWords,
+  buildWordsNewestFirst,
   type BuildFollowUp,
   type AddableExercise,
   type BuildContextView,
@@ -852,9 +853,11 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (place === null) return null;
     const { gym } = place;
     const parent = draft === null ? null : currentDraftVersion(draft);
-    const prior = followUp?.priorBenText ?? null;
-    const minutes = chips?.minutes ?? parseRequestedMinutes(said) ?? (prior === null ? null : parseRequestedMinutes(prior)) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
-    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (parseRequestedFocus(said) ?? (prior === null ? null : parseRequestedFocus(prior)) ?? parent?.request.focus ?? 'coach_picks');
+    // Newest first: "yes but make it 45 mins" beats the request's length (review B2, B3).
+    const newest = buildWordsNewestFirst(said, followUp);
+    const firstOf = <T,>(read: (w: string) => T | null): T | null => newest.reduce<T | null>((found, w) => found ?? read(w), null);
+    const minutes = chips?.minutes ?? firstOf(parseRequestedMinutes) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
+    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (firstOf(parseRequestedFocus) ?? parent?.request.focus ?? 'coach_picks');
     const pool = await exercisePool();
     const byId = new Map(pool.map((e) => [e.id, e]));
     const byKey = new Map(pool.flatMap((e) => (e.catalogueKey ? [[e.catalogueKey, e] as const] : [])));
@@ -970,6 +973,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),
           ...((await threadHasOpenDraft(p, req.threadId)) ? { draftInThread: true } : {}),
+          // Review B1, S4: the coach is told the app builds a session only when it really can here.
+          ...(kind === 'general' && (build !== null || (await buildGym(p).catch(() => null)) !== null) ? { buildAvailable: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { OWNER } from '@fizz/domain/testing';
-import type { CoachMessage } from '@fizz/schemas';
+import type { ActionRecord, CoachMessage } from '@fizz/schemas';
 
 import {
   asksForBuild,
@@ -9,6 +9,7 @@ import {
   buildFollowUp,
   buildFollowUpIn,
   buildRequestWords,
+  buildWordsNewestFirst,
   buildTurnRegistry,
   claimsNoBuildTool,
   classifyBenRequest,
@@ -105,6 +106,17 @@ describe('build requests in a general turn (diagnosis table)', () => {
     'push session please',
     'push workout for today please',
     "plan today's session",
+    // Review S3.
+    'can you do me a push session',
+    'do me a push workout',
+    'sort me out a push session',
+    'could you knock up a push session',
+    'can you create a chest and triceps workout',
+    "can you make me today's workout",
+    'new workout please',
+    'set me up a push workout',
+    'Can you program me a push day',
+    'make me a pull workout for next week',
   ];
 
   it.each(BUILD)('%s → build, propose_workout offered, never a change to today’s sets', (t) => {
@@ -146,6 +158,12 @@ describe('build requests in a general turn (diagnosis table)', () => {
     'build me a 6 week programme',
     'that workout was hard',
     'if it’s too easy',
+    // Review S3: kept out on purpose.
+    'can I do a push session today?',
+    'sort out my session from yesterday',
+    "make today's workout shorter",
+    'program me a 6 week block',
+    'make me a push session for each week',
   ];
 
   it.each(NOT_BUILD)('%s → no build on its own words', (t) => {
@@ -211,12 +229,20 @@ describe('follow-ups after the coach described a session in text', () => {
     'yes make it',
     'Yes please, add it!',
     'ok put it in the app thanks',
+    // Review S2: a change in the same breath, and Ben's pushback.
+    'yes add it to today',
+    'Yes but make it 45 mins',
+    'add it but drop the calf raises',
+    'yes but swap calf raises for leg press',
+    'you can add it to the app though',
+    'the app can do it',
+    'it has a workout builder',
   ];
   it.each(EXPLICIT)('%s → explicit; with the plan in the thread it builds', (t) => {
     expect(buildFollowUp(t)).toBe('explicit');
     const history = [ben('Can you make me a push sess with some legs'), coach(PLAN)];
     const f = buildFollowUpIn(history, t);
-    expect(f).toEqual({ priorBenText: 'Can you make me a push sess with some legs' });
+    expect(f).toEqual({ priorBenText: 'Can you make me a push sess with some legs', benTexts: ['Can you make me a push sess with some legs'] });
     expect(asksForBuild({ turnKind: 'general', text: t, draftInContext: false, followUp: f })).toBe(true);
     expect(opens(t, true)).toBe(true);
   });
@@ -228,7 +254,7 @@ describe('follow-ups after the coach described a session in text', () => {
     expect(buildFollowUpIn([ben('what should I do today'), coach(`${PLAN} Want me to build it in the app?`)], t)).not.toBeNull();
   });
 
-  const NOT = ['no', 'no thanks', "don't add it", 'why split squats?', 'yes, but why calf raises?', 'looks heavy', 'what about pull?', 'swap the calf raises'];
+  const NOT = ['no', 'no thanks', "don't add it", 'why split squats?', 'yes, but why calf raises?', 'yes but why calf raises', 'no but make it 45 mins', 'looks heavy', 'what about pull?', 'swap the calf raises'];
   it.each(NOT)('%s → not a follow-up build', (t) => {
     expect(buildFollowUp(t)).not.toBe('explicit');
     expect(buildFollowUpIn([ben('Can you make me a push session'), coach(`${PLAN} Want me to build it in the app?`)], t)).toBeNull();
@@ -241,12 +267,58 @@ describe('follow-ups after the coach described a session in text', () => {
     expect(buildFollowUpIn([ben('Can you make me a push session'), coach('How long have you got?')], 'yes add it')).not.toBeNull();
     // A turn that saved something (a draft card) isn't followed up here: its card has Open, and BD15 owns "save it".
     expect(buildFollowUpIn([ben('Can you make me a push session'), coach(PLAN, ['a1'])], 'save it')).toBeNull();
-    // Only the last coach message counts.
-    expect(buildFollowUpIn([ben('make me a push session'), coach(PLAN), ben('how is my squat?'), coach('Up 10 kg.')], 'add it')).toBeNull();
+    // Review B2: a bounded window. One side question in between still reaches the plan…
+    expect(buildFollowUpIn([ben('make me a push session'), coach(PLAN), ben('how is my squat?'), coach('Up 10 kg.')], 'add it')).not.toBeNull();
+    // …a bare "yes" doesn't, unless the last coach message offered to build…
+    expect(buildFollowUpIn([ben('make me a push session'), coach(PLAN), ben('how is my squat?'), coach('Up 10 kg.')], 'yes')).toBeNull();
+    // …three coach messages back is the limit…
+    const far = [ben('make me a push session'), coach(PLAN), ben('how is my squat?'), coach('Up 10 kg.'), ben('and bench?'), coach('Up 5 kg.'), ben('deadlift?'), coach('Same.')];
+    expect(buildFollowUpIn(far, 'add it')).toBeNull();
+    // …and a coach message that saved something ends the look-back.
+    expect(buildFollowUpIn([ben('make me a push session'), coach(PLAN), ben('thanks'), coach('Here.', ['a1'])], 'add it')).toBeNull();
+    expect(buildFollowUpIn([ben('make me a push session'), coach(PLAN, ['a1']), ben('why split squats?'), coach('Less spine load.')], 'add it')).toBeNull();
+  });
+
+  /** Ben's build-131 thread as stored on the device (review B2): every retry now builds. */
+  const DEVICE = (): CoachMessage[] => [
+    ben('Can you make me a push session with split squats and calf raises'),
+    coach(PLAN),
+    ben('Yes u can add in the app'),
+    coach("The app may support adding workouts, but I don't have access to a workout-creation tool in this chat. You can add it from the Workouts tab."),
+  ];
+  it.each(['Yes u can add in the app', 'add it', 'yes', 'add the push session to the app', 'please add that push session', 'make that push session in the app'])(
+    'device thread: %s → builds, with Ben’s request as the length and focus words',
+    (t) => {
+      const f = buildFollowUpIn(DEVICE(), t);
+      expect(f).toEqual({
+        priorBenText: 'Can you make me a push session with split squats and calf raises',
+        benTexts: ['Yes u can add in the app', 'Can you make me a push session with split squats and calf raises'],
+      });
+      expect(asksForBuild({ turnKind: 'general', text: t, draftInContext: false, followUp: f })).toBe(true);
+      expect(buildRequestWords(t, f)).toBe(`Can you make me a push session with split squats and calf raises\nYes u can add in the app\n${t}`);
+    },
+  );
+
+  it('after one side question, "yes" to the coach’s offer builds (review B2)', () => {
+    const thread = [ben('Can you make me a push session'), coach(PLAN), ben('why split squats?'), coach('They load legs with less spine. Want me to build it in the app?')];
+    for (const t of ['yes', 'add it']) expect(buildFollowUpIn(thread, t)).not.toBeNull();
+  });
+
+  it('review B3: "yes" to the coach’s own offer builds, whatever the plan’s wording', () => {
+    const offerOnly = [ben('what should I do for push today'), coach('Bench press: 3 sets, 6-8 reps. Overhead press: 3 sets, 8-10 reps. Want me to build it?')];
+    expect(buildFollowUpIn(offerOnly, 'yes')).not.toBeNull();
+    const after45 = [ben('Can you make me a push session'), coach(PLAN), ben('Yes but make it 45 mins'), coach('Sure, 45 minutes works. Want me to build it in the app?')];
+    for (const t of ['yes', 'yes please', 'do it']) {
+      const f = buildFollowUpIn(after45, t);
+      expect(f?.benTexts).toEqual(['Yes but make it 45 mins', 'Can you make me a push session']);
+    }
+    // An offer about something else is not a build offer.
+    expect(buildFollowUpIn([ben('remember I train fasted'), coach('Noted. Want me to save that as a memory?')], 'yes')).toBeNull();
   });
 
   it('length and focus come from Ben’s words (now, then the request before the plan), never the coach’s', () => {
-    expect(buildRequestWords('yes add it', { priorBenText: 'push session, 45 mins' })).toBe('push session, 45 mins\nyes add it');
+    expect(buildRequestWords('yes add it', { priorBenText: 'push session, 45 mins', benTexts: ['push session, 45 mins'] })).toBe('push session, 45 mins\nyes add it');
+    expect(buildWordsNewestFirst('yes', { priorBenText: 'push session', benTexts: ['make it 45 mins', 'push session'] })).toEqual(['yes', 'make it 45 mins', 'push session']);
     expect(buildRequestWords('build me a leg day', null)).toBe('build me a leg day');
   });
 
@@ -254,36 +326,73 @@ describe('follow-ups after the coach described a session in text', () => {
     expect(describesWorkoutPlan(PLAN)).toBe(true);
     expect(describesWorkoutPlan('Bench 3 sets of 8, then rows 3x10.')).toBe(true);
     expect(describesWorkoutPlan('Do 3 × 8 on bench.')).toBe(false);
+    // Review B3: "N sets, M reps" and "N sets of M-K".
+    expect(describesWorkoutPlan('Bench press: 3 sets, 6-8 reps. Overhead press: 3 sets, 8-10 reps.')).toBe(true);
+    expect(describesWorkoutPlan('Bench 3 sets of 6-8, rows 3 sets of 10–12.')).toBe(true);
     expect(offersToBuild('Want me to build it in the app?')).toBe(true);
-    expect(offersToBuild('Shall I add it?')).toBe(true);
+    expect(offersToBuild('Want me to build it?')).toBe(true);
+    expect(offersToBuild(`${PLAN} Shall I add it?`)).toBe(true);
+    expect(offersToBuild('Shall I add it?')).toBe(false);
+    expect(offersToBuild('Want me to save that as a memory?')).toBe(false);
     expect(offersToBuild('How long have you got?')).toBe(false);
   });
 });
 
-describe('"I don’t have access to a workout-creation tool" is never shown (build 131)', () => {
+describe('"I can’t build workouts" on a general turn where the app can (build 131, review B1)', () => {
   const NO_TOOL = [
     "The app may support adding workouts, but I don't have access to a workout-creation tool in this chat.",
     "I can plan your session, but I can't put it into the app for you from here.",
     'I’m unable to add that to your workouts.',
     "There's no tool for adding workouts here.",
     "I don't have the ability to create workouts in the app.",
+    // Review B1: missed before.
+    "I can't build workouts here.",
+    "I can't build a workout from here.",
+    "Unfortunately I can't create workouts for you.",
   ];
   it.each(NO_TOOL)('%s', (s) => {
     expect(claimsNoBuildTool(s)).toBe(true);
   });
 
-  const FINE = ["I can't make the session easier mid-set.", "I don't have your sleep data.", 'There is no session today.', "I can't see heart rate.", 'You can add it to your workouts from the overview.'];
+  const FINE = [
+    "I can't make the session easier mid-set.",
+    "I don't have your sleep data.",
+    'There is no session today.',
+    "I can't see heart rate.",
+    'You can add it to your workouts from the overview.',
+    // Review B1: true limits, never replaced.
+    "I don't have access to your Apple Health data in the app.",
+    "I can't save it to your workouts for you — open it and tap Save.",
+    "I can't add exercises to today's workout in the app.",
+    "I'm not able to create a programme in the app yet.",
+    "I don't have a tool to change your routines.",
+  ];
   it.each(FINE)('%s stays', (s) => {
     expect(claimsNoBuildTool(s)).toBe(false);
   });
 
-  it('the reply filter hides it (listed in Why?) and says once what works', () => {
-    const f = createReplyFilter({ ledger: () => ({ turnId: 't', entries: [], knownExerciseNames: [] }), surface: 'sheet' });
+  const empty = () => ({ turnId: 't', entries: [], knownExerciseNames: [] });
+
+  it('with a build available, the reply filter hides it (listed in Why?) and says once what works', () => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet', noBuildToolLine: true });
     const items = [...f.push(`${NO_TOOL[0] ?? ''} ${NO_TOOL[1] ?? ''} Push first, then legs. `), ...f.end(true)];
     expect(items).toEqual([
       { kind: 'sentence', text: BUILD_ASK_LINE },
       { kind: 'sentence', text: 'Push first, then legs.' },
     ]);
     expect(f.hiddenLines.map((h) => h.reason)).toEqual(['no_action', 'no_action']);
+  });
+
+  it('elsewhere (a workout or summary turn, no gym) the sentence is never swapped for the build line', () => {
+    const f = createReplyFilter({ ledger: empty, surface: 'sheet' });
+    const items = [...f.push("I can't build workouts here. Push first. "), ...f.end(true)];
+    expect(items.map((i) => (i.kind === 'sentence' ? i.text : ''))).not.toContain(BUILD_ASK_LINE);
+  });
+
+  it('never under a draft card made this turn', () => {
+    const draft = { ref: 'a1', origin: 'this_turn' as const, record: { detail: { kind: 'build_workout' } } as unknown as ActionRecord };
+    const f = createReplyFilter({ ledger: () => ({ turnId: 't', entries: [draft], knownExerciseNames: [] }), surface: 'sheet', noBuildToolLine: true });
+    const items = [...f.push("I can't put it into the app for you. "), ...f.end(true)];
+    expect(items.map((i) => (i.kind === 'sentence' ? i.text : ''))).not.toContain(BUILD_ASK_LINE);
   });
 });

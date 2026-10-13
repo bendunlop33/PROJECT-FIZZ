@@ -183,10 +183,12 @@ export const BUILD_INSTRUCTIONS = [
 ].join('\n');
 
 /**
- * Added to a general turn that doesn't offer `propose_workout` (build 131): the app can build a
- * workout, so the coach never says it can't; it points Ben to the words that build one.
+ * Added to a general turn that doesn't offer `propose_workout` but where the app could build one
+ * (build 131; review S4: scoped to one session). The coach offers instead of saying it can't, and
+ * still states the real limits: no programmes yet, and it never saves or starts a workout for Ben.
  */
 export const NO_BUILD_TOOL_INSTRUCTIONS = [
-  'The app builds workouts as drafts when Ben asks for one. Never say you or the app cannot add, save or build workouts, or that you have no tool for it.',
+  'The app can build one workout session as a draft when Ben asks for one; he opens, starts or saves it himself. Do not say you or the app cannot build a workout session.',
   'If you describe a session for Ben, end by asking: "Want me to build it in the app?"',
+  'Multi-week programmes are not available yet, and you never save, schedule or start a workout for him: say so plainly when he asks for that.',
 ].join('\n');

@@ -19,7 +19,7 @@ import type { LedgerEntry, TurnLedger } from './claims';
 import { buildCoachContext, contextInputItems, type CoachContextInput } from './context';
 import type { CoachExecutors, ToolCallContext, ToolResult } from './executors';
 import { functionToolDefinitions } from './function-tools';
-import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelInputItem } from './model-port';
+import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelInputItem, ModelRequest } from './model-port';
 import { buildTurnRegistry, type TurnGate, type TurnRegistry } from './registry';
 import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
@@ -108,6 +108,12 @@ export interface CoachTurnRequest {
    * call (BD15). Elsewhere those words go to the coach as usual.
    */
   draftInThread?: boolean;
+  /**
+   * Build 131 (review B1, S4): a general turn where the app could build a workout (a gym or
+   * typical equipment exists). Only then is the coach told the app builds one, and only then
+   * is "I can't build workouts" replaced. False or absent: the coach states its limits as usual.
+   */
+  buildAvailable?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -459,7 +465,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const tools = [...functionToolDefinitions(registry.tools), replyToolDefinition()];
   const buildOffered = registry.tools.some((t) => t.name === 'propose_workout');
   // Build 131: a general turn without the build tool still knows the app builds workouts, so it never says it can't.
-  const instructions = buildOffered ? `${COACH_INSTRUCTIONS}\n${BUILD_INSTRUCTIONS}` : req.kind === 'general' ? `${COACH_INSTRUCTIONS}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
+  const canBuild = req.kind === 'general' && (buildOffered || req.buildAvailable === true);
+  const instructions = buildOffered ? `${COACH_INSTRUCTIONS}\n${BUILD_INSTRUCTIONS}` : canBuild ? `${COACH_INSTRUCTIONS}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
   if (said !== null) input.push({ type: 'message', role: 'user', content: said });
@@ -481,10 +488,12 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // one more step with the reason; its text reply isn't shown or streamed until a build was tried.
   let buildTried = false;
   let nudged = false;
+  // The held text answer: shown after all if the forced step can't run on this route (named tool_choice unproven, spike S3).
+  let heldReply: string | null = null;
 
   // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
   // The reply is always the last step, so every action it could cite is already in the ledger.
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {
@@ -527,7 +536,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     replyStream = new ReplyMessageStream();
     const stream = replyStream;
     const holdReply = buildOffered && !buildTried && !nudged;
-    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice: 'required', parallelToolCalls: false }, timing, cap.signal, {
+    // Review S1: after a text answer on a build turn, the next step is forced to call `propose_workout`.
+    const forceBuild = buildOffered && nudged && !buildTried;
+    const toolChoice: ModelRequest['toolChoice'] = forceBuild ? { type: 'function', name: 'propose_workout' } : 'required';
+    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice, parallelToolCalls: false }, timing, cap.signal, {
       onFirstEvent,
       onReplyDelta: (delta) => {
         if (holdReply) return;
@@ -536,7 +548,16 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       },
     });
     if (out.kind === 'error') {
-      error = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
+      const why = out.error === 'cancelled' && capped.fired ? 'timeout' : out.error;
+      // The route refused the forced call: the held answer stands, as before the nudge (WB3: `No change made.`).
+      if (forceBuild && heldReply !== null && why !== 'cancelled' && why !== 'timeout' && why !== 'network') {
+        const parsed = parseReply(heldReply, req.kind);
+        if (parsed.ok) {
+          message = parsed.reply.message;
+          break;
+        }
+      }
+      error = why;
       break;
     }
     if (out.kind === 'text') {
@@ -551,6 +572,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     if (out.extraCalls > 0) logLine({ tool: out.name, outcome: 'not_allowed', text: 'Only one call at a time; the others were ignored.', actionId: null });
     if (out.name === COACH_REPLY_TOOL_NAME && holdReply && step + 2 < MAX_MODEL_STEPS) {
       nudged = true;
+      heldReply = out.arguments;
+      logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: 'Answer in text; asked to build.', actionId: null });
       input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: BUILD_NUDGE_LINE }) });
       continue;
