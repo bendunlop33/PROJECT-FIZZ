@@ -27,7 +27,7 @@ import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { chipRequest, classifyBenRequest, requestHas, revisesDraft, type BenRequest } from './request';
 import { parseToolCall } from './tool-call';
-import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS } from './build';
+import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS } from './build';
 import { buildFollowUpIn } from './build-ask';
 
 /**
@@ -466,7 +466,12 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const buildOffered = registry.tools.some((t) => t.name === 'propose_workout');
   // Build 131: a general turn without the build tool still knows the app builds workouts, so it never says it can't.
   const canBuild = req.kind === 'general' && (buildOffered || req.buildAvailable === true);
-  const instructions = buildOffered ? `${COACH_INSTRUCTIONS}\n${BUILD_INSTRUCTIONS}` : canBuild ? `${COACH_INSTRUCTIONS}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
+  // Review r3 S1: a reply to the coach's offer that only the inverted rule read as a yes ("I'm going at 6")
+  // offers the tool, but the text answer isn't held and the call isn't forced: the model reads his words.
+  const benBuildWords = words !== null && (requestHas(classifyBenRequest(words, 'general'), 'build') || (req.draftInContext === true && revisesDraft(words)));
+  const looseBuild = buildOffered && followUp?.strength === 'loose' && !benBuildWords;
+  const buildInstructions = looseBuild ? OFFER_REPLY_BUILD_INSTRUCTIONS : BUILD_INSTRUCTIONS;
+  const instructions = buildOffered ? `${COACH_INSTRUCTIONS}\n${buildInstructions}` : canBuild ? `${COACH_INSTRUCTIONS}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
   if (said !== null) input.push({ type: 'message', role: 'user', content: said });
@@ -493,7 +498,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
   // The reply is always the last step, so every action it could cite is already in the ledger.
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildOffered });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildOffered && !looseBuild });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {
@@ -535,7 +540,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     }
     replyStream = new ReplyMessageStream();
     const stream = replyStream;
-    const holdReply = buildOffered && !buildTried && !nudged;
+    const holdReply = buildOffered && !looseBuild && !buildTried && !nudged;
     // Review S1: after a text answer on a build turn, the next step is forced to call `propose_workout`.
     const forceBuild = buildOffered && nudged && !buildTried;
     const toolChoice: ModelRequest['toolChoice'] = forceBuild ? { type: 'function', name: 'propose_workout' } : 'required';

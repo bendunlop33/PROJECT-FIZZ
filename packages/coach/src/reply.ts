@@ -1,6 +1,6 @@
 import { setNumbersText } from '@fizz/domain';
 import type { HiddenLine } from '@fizz/schemas';
-import { BUILD_ASK_LINE, claimsNoBuildTool } from './build-ask';
+import { BUILD_ASK_LINE, claimsNoBuildTool, claimsWorkoutBuilt } from './build-ask';
 import { checkReplyClaims, isChangeClaim, type TurnLedger } from './claims';
 import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
@@ -155,6 +155,9 @@ export const CARD_ONLY_DETAIL = 'Changes show on their cards, not in the reply.'
 /** `Why?` → `Not shown` for a sentence saying the app can't build a workout (build 131). */
 export const NO_BUILD_TOOL_DETAIL = 'The app can build a workout draft.';
 
+/** `Why?` → `Not shown` for a sentence promising or claiming a workout in the app when none was built (review r3 B1). */
+export const NO_DRAFT_BUILT_DETAIL = 'No workout was built.';
+
 export type NoChangeLineMode = 'structural' | 'topic' | 'off';
 
 export interface ReplyFilterOptions {
@@ -175,7 +178,8 @@ export interface ReplyFilterOptions {
   /**
    * Build 131, review B1: a general turn where the app can build a workout. A sentence saying
    * it can't (`claimsNoBuildTool`) is then false, so it is hidden and `BUILD_ASK_LINE` shown once,
-   * unless this turn already made a draft card. Default false: elsewhere such a sentence goes
+   * unless this turn already made a draft card. Review r3 B1: a promise or done-claim about a workout in
+   * the app (`claimsWorkoutBuilt`) is hidden too unless this turn saved a draft. Default false: elsewhere such a sentence goes
    * through the usual check, and true limits are never replaced.
    */
   noBuildToolLine?: boolean;
@@ -213,6 +217,16 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       if (!askLineShown) out.push({ kind: 'sentence', text: BUILD_ASK_LINE });
       askLineShown = true;
       for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
+      return out;
+    }
+    // Review r3 B1: with no saved draft this turn (no tool, or `propose_workout` refused), "I'll set that up",
+    // "Let me put that in the app" and "It's ready in your workouts" are false. Hidden; on a turn without
+    // the tool the reply says, once, what works instead. A refused build's card already says what happened.
+    const draftSaved = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout' && e.record.status === 'committed' && e.record.undoneBy === null);
+    if (options.noBuildToolLine === true && !draftSaved && actions.length === 0 && claimsWorkoutBuilt(tokens.plainText)) {
+      hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_DRAFT_BUILT_DETAIL });
+      if (!askLineShown && options.buildAsked !== true && !draftThisTurn) out.push({ kind: 'sentence', text: BUILD_ASK_LINE });
+      askLineShown = true;
       return out;
     }
     if (tokens.plainText.length > 0 && /[\p{L}\p{N}]/u.test(tokens.plainText)) {

@@ -561,7 +561,8 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     model = new StepModel([() => replyWith("I can plan your session, but I can't put it into the app for you from here. Push first.")]);
     const r = await ask(s, 'how is my bench going?');
     expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_workout');
-    expect(model.requests[0]?.instructions).toContain('Do not say you or the app cannot build a workout session');
+    expect(model.requests[0]?.instructions).toContain('Do not say the app cannot build workouts');
+    expect(model.requests[0]?.instructions).toContain('You cannot build a workout on this turn');
     expect(model.requests[0]?.instructions).toContain('Multi-week programmes are not available yet');
     expect(r.items).toEqual([
       { kind: 'sentence', text: 'Say "Build me a workout" to get a draft.' },
@@ -667,6 +668,83 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(req.tools.map((t) => t.name)).toContain('propose_workout');
     expect(buildOf(req).request).toMatchObject({ minutes: 45, focus: 'push' });
     expect(third.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'build_workout', name: 'Push · 45 min' } });
+  });
+
+  const ASK = 'Say "Build me a workout" to get a draft.';
+  const said = (r: { items: readonly { kind: string; text?: string }[] }) => r.items.flatMap((i) => (i.kind === 'sentence' && i.text !== undefined ? [i.text] : []));
+
+  it.each(["Okay, I'll set that up for you.", 'Let me put that in the app.', "I'll get that into your workouts.", "It's ready in your workouts.", 'You should see it in the app shortly.'])(
+    'review r3 B1: on a turn without the tool, "%s" is hidden and the ask line shows (no draft)',
+    async (promise) => {
+      const { s } = await benWithHistory();
+      model = new StepModel([() => replyWith(`${promise} Push first.`)]);
+      const r = await ask(s, 'how is my bench going?');
+      expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_workout');
+      expect(said(r)).toEqual([ASK, 'Push first.']);
+      expect(r.note).toBe('Nothing changed · 1 line hidden');
+      expect(await s.coachDrafts.list()).toEqual([]);
+    },
+  );
+
+  it('review r3 B1: when propose_workout is refused, "It’s ready in your workouts." is hidden', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([pushStub([['Nope', {}], ['Also nope', {}]]), () => replyWith("It's ready in your workouts.")]);
+    const r = await ask(s, 'Can you make me a push session');
+    expect(r.cards[0]?.record).toMatchObject({ status: 'rejected', detail: { kind: 'build_workout' } });
+    expect(said(r)).toEqual([]);
+    expect(r.hiddenLines.map((x) => x.detail)).toEqual(['No workout was built.']);
+    expect(await s.coachDrafts.list()).toEqual([]);
+  });
+
+  it.each(['try again', 'yes you can', 'you do have a tool', 'use the workout builder'])('review r3 S2: in the stored build-131 thread, "%s" builds', async (t) => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
+    const first = await ask(s, 'Can you make me a push session with split squats and calf raises');
+    const refusal = "The app may support adding workouts, but I don't have access to a workout-creation tool in this chat.";
+    model = new StepModel([() => replyWith(refusal), () => replyWith(refusal)]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'Yes u can add in the app', spoken: false }, turnId: h.ids() });
+    model = new StepModel([pushStub(PUSH), () => replyWith('Bench first.')]);
+    const third = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: t, spoken: false }, turnId: h.ids() });
+    expect(model.requests[0]?.tools.map((x) => x.name)).toContain('propose_workout');
+    expect(third.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'build_workout' } });
+    expect(await s.sessions.active()).toBeNull();
+  });
+
+  it('review r3 S3: turn 1 ends in the held text plan (forced call refused); "yes" on turn 2 builds', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith(PLAN)]);
+    const first = await ask(s, 'Can you make me a push session');
+    expect(first.cards).toEqual([]);
+    model = new StepModel([pushStub(PUSH), () => replyWith('Bench first.')]);
+    const second = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'yes', spoken: false }, turnId: h.ids() });
+    expect(model.requests[0]?.tools.map((x) => x.name)).toContain('propose_workout');
+    expect(second.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'build_workout' } });
+  });
+
+  it('review r3 S1: "I’m going at 6" after an offer opens the tool but neither holds the reply nor forces the call', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => replyWith('Bench press 3 × 6–8, overhead press 3 × 8–10, dips 3 × 8–12. Want me to build it in the app?')]);
+    const first = await ask(s, 'what should I do for push today');
+    model = new StepModel([() => replyWith('Have a good one.')]);
+    const second = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: "I'm going at 6", spoken: false }, turnId: h.ids() });
+    expect(model.requests).toHaveLength(1);
+    expect(model.requests[0]?.tools.map((x) => x.name)).toContain('propose_workout');
+    expect(model.requests[0]?.toolChoice).toBe('required');
+    expect(model.requests[0]?.instructions).toContain('If his reply does not clearly agree, do not build');
+    expect(said(second)).toEqual(['Have a good one.']);
+    expect(await s.coachDrafts.list()).toEqual([]);
+  });
+
+  it('review r3 S1: "maybe" and "my shoulder feels a bit tight" after an offer never open the tool', async () => {
+    for (const t of ['maybe', 'my shoulder feels a bit tight']) {
+      const { s } = await benWithHistory();
+      model = new StepModel([() => replyWith('Bench press 3 × 6–8, overhead press 3 × 8–10, dips 3 × 8–12. Want me to build it in the app?')]);
+      const first = await ask(s, 'what should I do for push today');
+      model = new StepModel([() => replyWith('Okay.')]);
+      await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: t, spoken: false }, turnId: h.ids() });
+      expect(model.requests[0]?.tools.map((x) => x.name)).not.toContain('propose_workout');
+      expect(await s.coachDrafts.list()).toEqual([]);
+    }
   });
 
   it('review B1: a true limit (adding exercises to today’s workout) is shown, never swapped for the build line', async () => {

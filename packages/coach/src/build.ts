@@ -172,23 +172,39 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
   return { propose_workout: propose };
 }
 
+/** What every build turn says about the draft and the reply, after the call. */
+const BUILD_RULES = [
+  'Never give loads, weights or minutes: the app plans loads from his history and fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
+  'Its `message` (at most 240 characters) says why this selection and order, citing only facts given. No praise, scores, recovery claims or diagnoses.',
+  'Never say the workout was saved, scheduled or started: Ben opens it, starts it or saves it himself. Then reply in one short sentence.',
+  'If `propose_workout` is refused, say in one short sentence that it was not built and why; never say it is ready or in the app.',
+];
+
 /** Instructions added to a turn that offers `propose_workout` (§7 coach message rules, BD1, BD15). */
 export const BUILD_INSTRUCTIONS = [
   'Ben asked for a workout in the app. Call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable. Never write the workout out as text in `reply`: a plan in text is not in the app.',
   'If he is agreeing to a session you described earlier in this thread, build that session: the same exercises (or the closest in build.usable), sets and reps.',
   'To change the draft in context, call `propose_workout` with the whole new version.',
-  'Never give loads, weights or minutes: the app plans loads from his history and fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
-  'Its `message` (at most 240 characters) says why this selection and order, citing only facts given. No praise, scores, recovery claims or diagnoses.',
-  'Never say the workout was saved, scheduled or started: Ben opens it, starts it or saves it himself. Then reply in one short sentence.',
+  ...BUILD_RULES,
+].join('\n');
+
+/**
+ * Review r3 S1: Ben replied to your offer to build, but his words may not be a yes ("I'm going at 6").
+ * `propose_workout` is offered and nothing is forced: the model reads his words.
+ */
+export const OFFER_REPLY_BUILD_INSTRUCTIONS = [
+  'You offered to build a session in the app. Read Ben\'s reply: if it agrees, call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable, for the session you described (the same exercises, or the closest in build.usable, sets and reps).',
+  'If his reply does not clearly agree, do not build: reply briefly, and ask "Want me to build it in the app?" if it is still unclear.',
+  ...BUILD_RULES,
 ].join('\n');
 
 /**
  * Added to a general turn that doesn't offer `propose_workout` but where the app could build one
- * (build 131; review S4: scoped to one session). The coach offers instead of saying it can't, and
- * still states the real limits: no programmes yet, and it never saves or starts a workout for Ben.
+ * (build 131; review S4: scoped to one session). Review r3 B1: the prompt matches the turn. The model
+ * can't build on this turn, so it offers instead of promising, and never says the app can't build.
  */
 export const NO_BUILD_TOOL_INSTRUCTIONS = [
-  'The app can build one workout session as a draft when Ben asks for one; he opens, starts or saves it himself. Do not say you or the app cannot build a workout session.',
-  'If you describe a session for Ben, end by asking: "Want me to build it in the app?"',
+  'You cannot build a workout on this turn. Never say a workout is being built, set up, added or saved, or that it is ready, in the app or in his workouts.',
+  'If Ben wants a session in the app, or you describe one for him, end by asking exactly: "Want me to build it in the app?" Do not say the app cannot build workouts.',
   'Multi-week programmes are not available yet, and you never save, schedule or start a workout for him: say so plainly when he asks for that.',
 ].join('\n');
