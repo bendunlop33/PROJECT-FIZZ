@@ -197,3 +197,7 @@ Ben's answers to the open decisions of the workout-library branch (routines.md �
   - how times with no time zone are stored (AI6);
   - dropping the separate `importLayouts` gate (S3);
   - deferring notes and pasted text.
+
+## 2026-10-13 — D1–D8 answers (Ben, from the mockup)
+
+Recorded in `docs/brief/ideas-2026-10-12.md` ("Ben's D1–D8 answers"). Summary: D2 Alternative without the guide band; D3 multi-metric strength chart with a trailing average of last 3/5/10/20/custom sessions, Y axis, tap values, and a per-session KPI table below; D5 both Self options as a Settings choice; D7 splits from a Settings split choice (PPL, Chest/Legs/Shoulders/Back, custom) and main lift changeable per split in Settings; D8 gender, age, height, weight and a new lifting-experience level feed the coach's planning. D1, D4, D6 assumed as suggested pending confirmation. Not yet built (usage limited).
