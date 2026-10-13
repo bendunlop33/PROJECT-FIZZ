@@ -503,3 +503,23 @@ Run the phone checks in 5.5 alongside these. The first-milestone rule says backu
 6. **Lock-screen countdown** in the rest flow, once the DEP-LIVE retest passes. If it fails, build the quiet "Resting until" fallback instead. It's the top competitor opportunity and is already approved.
 
 Next in line: Goals & schedule plus rule 1 volume (after D13), the routine editor (which also unlocks supersets and transition rest), then voice (build step 5) once the en-GB speech test passes.
+
+## Ben's feedback 13 Oct (build 131-era; triaged, not started)
+
+| # | Item | Type | Triage |
+|---|---|---|---|
+| F1 | Coach doesn't let you talk to it (voice) | Feature | Brief §10 step 5 (on-device tap-to-talk). Large; later |
+| F2 | Live two-way voice during workout + music | Feature | Realtime voice deferred (paid route, rule 7). Music: ducking already in audio-session module; Spotify integration not needed, "just works" with ducking. Later |
+| F3 | Current set doesn't say warm-up / working / drop set | Bug-ish UX | Small. Set-type tag on Focus/current row |
+| F4 | What does RPE 6–10 mean? | UX | Small. "Why?" info tap with RIR wording (minimal-copy rule) |
+| F5 | Keyboard stays up on working set | Bug | Small. Same fix as coach sheet (tap-out/Done/dismiss on Log) |
+| F6 | Edit sets inline in table without opening each set | Feature | Medium. Editable table cells |
+| F7 | Focus view: swipe/buttons prev/next set, pinch out to workout | Feature | Medium |
+| F8 | Focus view shows last set's effort without saying it's previous; rest = previous small (editable) + next set, under timer | UX | Medium, high value |
+| F9 | Reps ≥ 10 show as 1 when logging | Bug | Small, high priority; likely field width/truncation — verify on device |
+| F10 | Recommended rest from what was done (effort) | Feature | Medium; deterministic rule + coach. Playbook candidate |
+| F11 | Table view: stack and reps on one row | UX | Small |
+| F12 | "Couldn't reach the coach" errors | Bug | Catch-all text hides real cause (too_many_steps/no_reply/unavailable, sheet-view.ts:317-322). Show reason under Why? and log it; likely builder tool loops hitting step cap |
+| F13 | Target vs achieved per set, used for adjustments | Feature | Mostly exists (target RPE/reps vs logged, rule T). Needs visible target vs actual on table/summary |
+| F14 | ± time at end of workout works badly | Bug | Needs repro detail |
+| F15 | Progress periods: 7/14 vs 30 look different; any period (3 m, 4 m); 60-day formatting; prefer charts | UX | Partly fixed in build 133 (custom period). Make one adaptive chart for all periods (days → weeks → months) |
