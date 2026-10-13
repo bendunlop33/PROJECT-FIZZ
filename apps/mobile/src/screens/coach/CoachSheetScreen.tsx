@@ -28,6 +28,7 @@ import {
   type StarterChip,
   type StatusAction,
   type ThreadRow,
+  type ViewIcon,
   type WorkoutOutOfContext,
 } from '../../coach/sheet-view';
 import { newUuid } from '../../device/runtime';
@@ -676,16 +677,40 @@ function Row({
         </View>
       );
     case 'outcome':
-      return (
-        <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
-          <Icon name={row.icon} size={16} />
-          <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
-            {row.text}
-          </AppText>
-          {row.retry ? <TextButton label="Try again" onPress={onRetry} /> : null}
-        </View>
-      );
+      return <OutcomeRow text={row.text} icon={row.icon} retry={row.retry} why={row.why} onRetry={onRetry} />;
   }
+}
+
+/** A turn that didn't finish: its line, `Try again`, and the recorded reason behind `Why?` (F12). */
+function OutcomeRow({ text, icon, retry, why, onRetry }: { text: string; icon: ViewIcon; retry: boolean; why: string | null; onRetry: () => void }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
+        <Icon name={icon} size={16} />
+        <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
+          {text}
+        </AppText>
+        {why !== null ? (
+          <TextButton
+            label="Why?"
+            tone="secondary"
+            accessibilityLabel={open ? 'Hide why' : 'Why the coach didn’t answer'}
+            onPress={() => {
+              setOpen((o) => !o);
+            }}
+          />
+        ) : null}
+        {retry ? <TextButton label="Try again" onPress={onRetry} /> : null}
+      </View>
+      {open && why !== null ? (
+        <AppText variant="callout" color="text.secondary">
+          {why}
+        </AppText>
+      ) : null}
+    </View>
+  );
 }
 
 function LiveRows({ live, now }: { live: LiveTurn; now: number }) {

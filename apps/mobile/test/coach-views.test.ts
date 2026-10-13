@@ -98,11 +98,20 @@ describe('cards: every status has an icon and a word; text from the record', () 
 
 describe('turn lines: honest, short, Try again where it helps', () => {
   it('failures say what happened and whether anything changed', () => {
-    expect(outcomeFor('failed', 'timeout', false)).toEqual({ text: 'No answer in time. Nothing changed.', icon: 'clock.badge.xmark', retry: true });
+    expect(outcomeFor('failed', 'timeout', false)).toEqual({ text: 'No answer in time. Nothing changed.', icon: 'clock.badge.xmark', retry: true, why: null });
     expect(outcomeFor('failed', 'usage_limit', false)?.retry).toBe(false);
     expect(outcomeFor('cancelled', 'cancelled', true)?.text).toBe('Stopped.');
     expect(outcomeFor('interrupted', null, false)?.text).toBe('Interrupted. Nothing changed.');
     expect(outcomeFor('completed', null, false)).toBeNull();
+  });
+
+  it('F12: each failure has its own short line and its recorded reason behind Why?', () => {
+    const lines = (['too_many_steps', 'no_reply', 'unavailable', 'cancelled', null] as const).map((e) => outcomeFor('failed', e, false));
+    expect(lines.map((o) => o?.text)).toEqual(['Coach got stuck. Nothing changed.', 'No reply. Nothing changed.', 'Coach unavailable. Nothing changed.', 'Stopped. Nothing changed.', 'Couldn’t reach the coach. Nothing changed.']);
+    expect(new Set(lines.map((o) => o?.text)).size).toBe(5);
+    expect(lines.every((o) => o?.retry === true && o.why !== null)).toBe(true);
+    expect(lines[0]?.why).toContain('too_many_steps');
+    expect(outcomeFor('failed', 'too_many_steps', true)?.text).toBe('Coach got stuck.');
   });
 
   it('a live turn: static thinking label with elapsed time after 3 s; tools, cards and sentences as they come', () => {
