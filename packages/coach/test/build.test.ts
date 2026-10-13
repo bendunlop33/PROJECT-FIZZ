@@ -90,7 +90,7 @@ function executors(store: Awaited<ReturnType<typeof memoryStore>>, draft: Workou
         restPresetsS: [60, 90, 120, 180],
         ruleReps: () => null,
         previous,
-        newSlotKey: (exerciseId: string) => `00000000-0000-4000-9000-${exerciseId.slice(-12)}`,
+        newSlotKey: (exerciseId: string, i: number) => `00000000-0000-4000-9${String(i).padStart(3, '0')}-${exerciseId.slice(-12)}`,
       }),
     nameOf: (exerciseId) => ALL.find((e) => e.id === exerciseId)?.name ?? 'Exercise',
     contextHash: 'ctx',

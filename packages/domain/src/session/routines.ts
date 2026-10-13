@@ -367,6 +367,12 @@ export interface RoutineStartInput {
    * templates.
    */
   targets?: ReadonlyMap<string, readonly NextTargetEntry[]>;
+  /**
+   * Targets for one slot (`RoutineExercise.id`), ahead of `targets`: what
+   * lets an exercise in two slots of a coach draft (F21) have each slot's
+   * own loads from history.
+   */
+  slotTargets?: ReadonlyMap<string, readonly NextTargetEntry[]>;
   at: ZonedTimestamp;
   newId: () => string;
   checkIn?: StartWorkoutInput['checkIn'];
@@ -413,7 +419,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
   const legacy = input.routine.source === undefined;
   const shapedFrom: Record<string, ShapeBefore> = {};
   for (const rex of [...input.routine.exercises].sort((a, b) => a.order - b.order)) {
-    const planned = (slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId);
+    const planned = input.slotTargets?.get(rex.id) ?? ((slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId));
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
     const targetedTemplates: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc }) : rex.setTemplates;

@@ -915,3 +915,105 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(r.items.map((i) => (i.kind === 'sentence' ? i.text : ''))).not.toContain('Say "Build me a workout" to get a draft.');
   });
 });
+
+describe('F21: the same exercise twice in a coach workout (Ben, 13 Oct)', () => {
+  const TWICE: [string, Record<string, unknown>][] = [
+    ['Lateral raise', { workingSets: 2, reps: { min: 15, max: 20 }, targetRpe: 6 }],
+    ['Bench press', { warmups: 1, workingSets: 3, reps: { min: 6, max: 8 }, targetRpe: 8 }],
+    ['Incline dumbbell press', { workingSets: 2, reps: { min: 8, max: 10 }, targetRpe: 8 }],
+    ['Lateral raise', { workingSets: 3, reps: { min: 10, max: 12 }, targetRpe: 9 }],
+  ];
+
+  it('both slots are kept, edited, started, logged, summarised, shown in history and progress, and saved as two rows', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId, result } = await buildPush(s, 'build me a 45-minute push session for this gym', TWICE);
+    expect(result.cards[0]?.record.detail).toMatchObject({ kind: 'build_workout', exerciseCount: 4, leftOut: 0 });
+    let p = await page(s, draftId, gymId);
+    const laterals = () => p.view.rows.filter((r) => r.name === 'Lateral raise');
+    expect(p.view.rows.map((r) => r.name)).toEqual(['Lateral raise', 'Bench press', 'Incline dumbbell press', 'Lateral raise']);
+    expect(new Set(p.view.rows.map((r) => r.slotKey)).size).toBe(4);
+    const [early, late] = laterals();
+    if (early === undefined || late === undefined) throw new Error('no laterals');
+    // Each slot's load from Ben's own history (10 kg each), not blank.
+    expect([early.load.value, late.load.value]).toEqual(['10', '10']);
+    expect(early.detail.replaceAll(' ', ' ')).toMatch(/^2 × 15–20 @ RPE 6/);
+    expect(late.detail.replaceAll(' ', ' ')).toMatch(/^3 × 10–12 @ RPE 9/);
+
+    // Overview edits act on one slot only.
+    const sets = await s.overview.edit({ target: { kind: 'coach_draft', draftId }, gymId, expectedDraftVersion: null, opId: 'twice-sets', edit: { kind: 'sets', slotKey: late.slotKey, workingSets: 4 } });
+    expect(sets.ok).toBe(true);
+    p = await page(s, draftId, gymId);
+    expect(laterals().map((r) => r.detail.replaceAll(' ', ' ').slice(0, 1))).toEqual(['2', '4']);
+    const order = [p.view.rows[1], p.view.rows[0], p.view.rows[2], p.view.rows[3]].map((r) => r?.slotKey ?? '');
+    const reordered = await s.overview.edit({ target: { kind: 'coach_draft', draftId }, gymId, expectedDraftVersion: p.draft?.version ?? null, opId: 'twice-order', edit: { kind: 'order', slotKeys: order } });
+    expect(reordered.ok).toBe(true);
+    p = await page(s, draftId, gymId);
+    expect(p.view.rows.map((r) => r.slotKey)).toEqual(order);
+    const skip = await s.overview.edit({ target: { kind: 'coach_draft', draftId }, gymId, expectedDraftVersion: p.draft?.version ?? null, opId: 'twice-skip', edit: { kind: 'skip', slotKey: early.slotKey } });
+    expect(skip.ok).toBe(true);
+    p = await page(s, draftId, gymId);
+    expect(laterals().map((r) => r.edit?.kind ?? null)).toEqual(['skipped', null]);
+    const skipEdit = p.view.rows.find((r) => r.slotKey === early.slotKey)?.edit;
+    const unskip = await s.overview.undoEdit({ target: { kind: 'coach_draft', draftId }, gymId, expectedDraftVersion: p.draft?.version ?? null, opId: 'twice-undo', editId: skipEdit !== undefined && skipEdit !== null && 'editId' in skipEdit ? skipEdit.editId : '' });
+    expect(unskip.ok).toBe(true);
+    p = await page(s, draftId, gymId);
+    expect(laterals().map((r) => r.edit?.kind ?? null)).toEqual([null, null]);
+
+    // Save to Workouts: two rows of the same exercise.
+    const from = { kind: 'preview' as const, target: { kind: 'coach_draft' as const, draftId }, gymId, previewKey: p.view.previewKey };
+    const saved = await s.routines.saveFrom({ from, name: 'Push twice', addToRotation: false, opId: 'save-twice' });
+    if (!saved.ok) throw new Error('not saved');
+    const latId = early.exerciseId;
+    expect(saved.routine.exercises.filter((e) => e.exerciseId === latId).map((e) => e.setTemplates.filter((t) => t.setType === 'working').length)).toEqual([2, 4]);
+
+    // Start: two Lateral raise blocks, each with its own sets.
+    p = await page(s, draftId, gymId);
+    const started = await s.overview.start(startReq(p, gymId, 'start-twice'));
+    if (!started.ok) throw new Error(started.error.message);
+    const agg = started.aggregate;
+    const blocks = agg.exercises.filter((e) => e.exerciseId === latId);
+    expect(blocks).toHaveLength(2);
+    expect(new Set(blocks.map((b) => b.id)).size).toBe(2);
+    const working = (id: string) => agg.sets.filter((x) => x.sessionExerciseId === id && x.setType === 'working');
+    expect(blocks.map((b) => working(b.id).length)).toEqual([2, 4]);
+    expect(blocks.map((b) => working(b.id)[0]?.planned.reps)).toEqual([{ min: 15, max: 20 }, { min: 10, max: 12 }]);
+    expect(blocks.map((b) => working(b.id)[0]?.planned.load?.value)).toEqual([10, 10]);
+
+    // Log every set; each block's own sets.
+    const sessionId = agg.session.id;
+    const loadOf = (b: (typeof blocks)[number], v: number) => ({ value: v, unit: b.unit, convention: b.loadConvention });
+    for (const ex of agg.exercises) {
+      for (const set of agg.sets.filter((x) => x.sessionExerciseId === ex.id && x.status === 'pending').sort((a, b) => a.index - b.index)) {
+        h.clockMs += 60_000;
+        const v = ex.id === blocks[0]?.id ? 5 : ex.id === blocks[1]?.id ? 10 : (set.planned.load?.value ?? 20);
+        const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: loadOf(ex, v), reps: ex.id === blocks[0]?.id ? 16 : 10, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+        if (!r.ok) throw new Error(r.error.message);
+      }
+    }
+    const done = await s.workout.load(sessionId);
+    if (!done) throw new Error('no workout');
+    const logged = (id: string) => done.aggregate.sets.filter((x) => x.sessionExerciseId === id && x.status === 'completed' && x.setType === 'working');
+    expect(blocks.map((b) => logged(b.id).map((x) => x.actual?.load?.value))).toEqual([[5, 5], [10, 10, 10, 10]]);
+    h.clockMs += 60_000;
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: 'fin-twice', expectedVersion: done.aggregate.session.version, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    await h.settle(s);
+
+    // Summary: four rows, two of them Lateral raise, with their own sets.
+    const summary = await s.workout.summary(sessionId, 'not_connected');
+    expect(summary?.exercises.map((e) => e.name)).toEqual(['Bench press', 'Lateral raise', 'Incline dumbbell press', 'Lateral raise']);
+    expect(summary?.facts).toMatchObject({ exercisesDone: 4, exercisesTotal: 4, workingSets: 2 + 3 + 2 + 4 });
+    expect(new Set(summary?.exercises.map((e) => e.sessionExerciseId)).size).toBe(4);
+    // No single next-time target is promised for an exercise in two blocks: each repeats its own sets.
+    expect(summary?.nextTime?.rows.some((r) => r.exerciseId === latId)).toBe(false);
+
+    // History and progress see both blocks' sets.
+    expect((await s.history.pastWorkouts()).rows.some((r) => r.sessionId === sessionId)).toBe(true);
+    const detail = (await s.progress.exerciseDetail({ exerciseId: latId, sessionId }))?.view;
+    expect(detail).not.toBeNull();
+    h.clockMs += 2 * DAY;
+    const again = await s.overview.load({ target: { kind: 'session', sourceSessionId: sessionId }, gymId });
+    // Repeating it: each Lateral raise slot repeats its own sets (2 × 16 at 5, 4 × 10 at 10).
+    expect(again?.view.rows.filter((r) => r.name === 'Lateral raise').map((r) => [r.detail.replaceAll('\u00a0', ' '), r.load.value])).toEqual([['2 × 16', '5'], ['4 × 10', '10']]);
+  });
+});
