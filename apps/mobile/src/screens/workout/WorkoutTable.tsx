@@ -930,10 +930,14 @@ export function OpenSetRow(p: OpenSetRowProps) {
     >
       <View style={{ position: 'absolute', left: 0, top: theme.space['3'], bottom: theme.space['3'], width: 3, borderRadius: 2, backgroundColor: theme.colors.accent }} />
       <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: theme.space['2'] }}>
-        <View ref={p.headerRef} accessible accessibilityRole="header" accessibilityLabel={`${f.exerciseName}, set ${String(f.setNumber)}${f.side?.kind === 'fixed' ? (f.side.value === 'left' ? ', left side' : ', right side') : ''}, ${p.resting ? 'next' : 'current'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        <View ref={p.headerRef} accessible accessibilityRole="header" accessibilityLabel={`${f.exerciseName}, set ${String(f.setNumber)}, ${f.setTypeLabel}${f.side?.kind === 'fixed' ? (f.side.value === 'left' ? ', left side' : ', right side') : ''}, ${p.resting ? 'next' : 'current'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
           <AppText variant="headline" numeric>{`${String(f.setNumber)}${f.side?.kind === 'fixed' ? (f.side.value === 'left' ? ' L' : ' R') : ''}`}</AppText>
           <AppText variant="label" color="accent">
             {p.resting ? 'NEXT' : 'NOW'}
+          </AppText>
+          {/* F3: the set's type, Working too. */}
+          <AppText variant="label" color="text.secondary">
+            {f.setTypeLabel.toUpperCase()}
           </AppText>
         </View>
         <View style={{ flex: 1 }} />
