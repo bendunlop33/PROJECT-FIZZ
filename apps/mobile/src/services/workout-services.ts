@@ -48,6 +48,7 @@ import {
   DEFAULT_CHECK_IN_SETTINGS,
   explainTarget,
   lastComparableSession,
+  workingSetsFromPrevious,
   localDateOf,
   localWeekBounds,
   mayHurtAccessibility,
@@ -210,6 +211,7 @@ import {
   type LibraryView,
   type RoutineEdit,
   SESSION_PICKER_DECISIONS,
+  longestGapSource,
   type SessionType,
   type SessionTypeKind,
   type NotCopied,
@@ -1224,6 +1226,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     if (!previous) return defaultStartingPlan(exercise, equipment?.kind ?? null, convention, undefined, { at: ctx.now() });
     const now = unspecifiedPain(await sessionCheckIn(aggregate));
     const then = unspecifiedPain(await sessionCheckIn(await repos().sessions.get(previous.sessionId)));
+    // From FitNotes: the same reading as the load, never below the default because of it (review import-progress B1, B2).
+    const workingSets = workingSetsFromPrevious(previous, history);
     const { result } = nextTargetsFor({
       ownerId: p.id,
       exerciseId: exercise.id,
@@ -1234,13 +1238,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       equipment,
       exercise,
       rule: null,
-      workingSets: previous.sets.filter((s) => s.values.reps !== null).length,
+      workingSets,
       history,
       painFlags: await repos().painFlags.listActive(p.id),
       sessionPain: now.active ? now : then,
     });
     // Each planned set records what produced it, for `Why?` (active-workout §2.12, AW3).
-    return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length), { at: ctx.now(), decision: result.decision });
+    return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, workingSets), { at: ctx.now(), decision: result.decision });
   }
 
   /**
@@ -1654,8 +1658,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const run = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
       if (run.r.ok) return { kind: 'routine' as const, routine: pick.routine, basis: pick.basis, run: { ...run, r: run.r } };
     }
+    // Decision 2 (approved 11 Oct 2026; review import-progress S1): the history type with the longest gap,
+    // never the workout Ben just did (since B7, often his newest FitNotes one). Unreadable: D19's newest workout.
+    if (SESSION_PICKER_DECISIONS.longestGapFallback) {
+      const gap = await longestGapUpNext(p, live).catch(() => null);
+      if (gap !== null) return { kind: 'next' as const, sessionId: gap };
+    }
     const last = (await repeat.candidates(1)).rows[0];
     return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
+  }
+
+  /** Decision 2's source workout for Up next (`longestGapSource`), if it is still a readable, repeatable workout. */
+  async function longestGapUpNext(p: UserProfile, live: readonly Routine[]): Promise<string | null> {
+    const index = await typeIndex(p, live);
+    const newest = (await repos().sessions.listFinishedRefs(p.id, 1, { includeImported: true }))[0] ?? null;
+    const pick = longestGapSource(index, newest);
+    if (pick === null) return null;
+    const source = await repos().sessions.get(pick.sessionId).catch(() => null);
+    return source !== null && source.session.ownerId === p.id && isInHistory(source.session) ? pick.sessionId : null;
   }
 
   /** Up next (as Today's card, at this gym) or the routine asked for. */
@@ -3462,7 +3482,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * The session picker's rows (session-picker §3, §7): routines and named
      * workouts, one row per normalised name, in picker order. `UP NEXT` is
      * the session Today's card shows (the same D19 resolver), so the two
-     * always agree; Decision 2 (longest gap) isn't wired yet. Imported
+     * always agree, Decision 2 (longest gap) included. Imported
      * workouts are typed by FitNotes Category (Decision 1) and start like any
      * other (B7). Local reads only: no AI, no network, nothing written.
      * Never throws: null when it can't be read.
