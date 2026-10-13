@@ -386,6 +386,14 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     await storeRequest({ ...r, closedAt: at, version: r.version + 1, updatedAtUtc: at.utc }, r.version);
   }
 
+  /** A read Ben left after its answer was stored: re-stored as `failed/stopped` and closed, so it is never reused (review r4 S1). */
+  async function closeStopped(ownerId: string, operationId: string): Promise<void> {
+    const r = await repos().importProfiles.request(ownerId, operationId).catch(() => null);
+    if (!r) return;
+    const at = deps.now();
+    await storeRequest({ ...r, state: 'failed', failure: 'stopped', spec: null, closedAt: r.closedAt ?? at, version: r.version + 1, updatedAtUtc: at.utc }, r.version);
+  }
+
   /**
    * A stored layout for this exact sample of this exact file that Ben never
    * acted on (the interrupted case, §9.3.3), checked again against the whole
@@ -812,6 +820,8 @@ export function createLayoutService(deps: LayoutServiceDeps) {
     const created = await repos().importProfiles.saveRequest(record, null);
     if (!created.ok) {
       const again = await repos().importProfiles.request(p.id, operationId);
+      // Left while the record was written: nothing adopted onto the dropped session (review r4 S1).
+      if (stopped()) return { status: 'failed', reason: 'stopped' };
       return again ? replay(s, again) : { status: 'refused', reason: 'not_found' };
     }
     const done = (patch: Partial<ImportLayoutRequest>) => storeRequest({ ...record, ...patch, version: 2, updatedAtUtc: deps.now().utc, finishedAt: deps.now() }, 1);
@@ -863,6 +873,12 @@ export function createLayoutService(deps: LayoutServiceDeps) {
       return { status: 'rejected', reasons: v.failures };
     }
     await done({ state: 'proposed', spec: v.spec });
+    // Cancel, back or the swipe while the `proposed` row was written: stored as stopped and
+    // closed, never adopted or reused (ADR 0026 §13, review r4 S1).
+    if (stopped()) {
+      await closeStopped(p.id, operationId);
+      return { status: 'failed', reason: 'stopped' };
+    }
     adoptSpec(s, v.spec, a.model, record);
     return { status: 'proposed', layoutVersion: s.layoutVersion, reused: false };
   }

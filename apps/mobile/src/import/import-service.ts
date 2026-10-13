@@ -1044,7 +1044,6 @@ export function createImportService(deps: ImportServiceDeps) {
       ...(x.perHand === undefined ? {} : { perHand: x.perHand }),
       ...(x.total === undefined ? {} : { total: x.total }),
     }));
-    if (d.layout) await deps.layoutCommitting?.(d.layout.layoutId).catch(() => undefined);
     let created: Awaited<ReturnType<Store['repos']['imports']['createJob']>>;
     try {
       created = await repos().imports.createJob(job, rows, { exercises, aliases, at, newId: deps.newId, ...(profileWrite ? { profile: profileWrite } : {}) });
@@ -1057,6 +1056,8 @@ export function createImportService(deps: ImportServiceDeps) {
       if (created.error === 'another_import_running' && running) return { ok: false, reason: 'another_import', job: running };
       return { ok: false, reason: 'not_found' };
     }
+    // Closed only once the job exists: a refused commit keeps the layout reusable after a force-close (review r4 N1).
+    if (d.layout) await deps.layoutCommitting?.(d.layout.layoutId).catch(() => undefined);
     drafts.delete(d.id);
     const stored = (await repos().imports.getJob(d.id)) ?? job;
     return writeWorkouts(stored, hooks);

@@ -74,6 +74,37 @@ describe('`Stop` while the request record is written (review S5)', () => {
   });
 });
 
+describe('Cancel while the `proposed` record is written (review r4 S1)', () => {
+  it('the answer is stored as stopped and closed, and the same file chosen again isn’t given it', async () => {
+    const port = new SpyLayoutPort([answerWith(SPEC), answerWith(SPEC)]);
+    let cancel = (): void => undefined;
+    const { store, requests } = fakeStore((r) => {
+      if (r.state === 'proposed') cancel();
+    });
+    const s = service(store, port);
+    const r = await s.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    if (r.kind !== 'new_table') throw new Error(r.kind);
+    cancel = () => {
+      cancel = () => undefined;
+      void s.discard(r.layoutId);
+    };
+    const sample = s.buildImportSample(r.layoutId);
+    expect(await s.proposeImportMapping(r.layoutId, sample?.hash ?? '', 'op-1')).toEqual({ status: 'failed', reason: 'stopped' });
+    expect(port.requests).toHaveLength(1);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ state: 'failed', failure: 'stopped', spec: null });
+    expect(requests[0]?.closedAt).not.toBeNull();
+
+    // The same file again: the walked-away layout isn't reused; the tap sends a new request.
+    const again = await s.previewImport({ name: 'strong_workouts.csv', text: STRONG });
+    if (again.kind !== 'new_table') throw new Error(again.kind);
+    const sample2 = s.buildImportSample(again.layoutId);
+    expect(sample2?.hash).toBe(sample?.hash);
+    expect(await s.proposeImportMapping(again.layoutId, sample2?.hash ?? '', 'op-2')).toMatchObject({ status: 'proposed', reused: false });
+    expect(port.requests).toHaveLength(2);
+  });
+});
+
 describe('a stored layout is checked against the whole file before it is reused (review S1)', () => {
   function stored(spec: unknown, over: Partial<ImportLayoutRequest> = {}): ImportLayoutRequest {
     const table = readTable(STRONG);
