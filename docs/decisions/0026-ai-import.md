@@ -1,6 +1,6 @@
 # 0026: Import from any app with a coach-proposed layout
 
-**Status:** Proposed, 12 Oct 2026 (developer, for the PM and Ben). Nothing is built yet; this records the plan before code. Design: [data-import-export.md](../design/data-import-export.md) §9 (AI1–AI16, checks 34–60). Research: [ai-import.md](../research/ai-import.md). Builds on [ADR 0016](0016-fitnotes-import.md) (FitNotes import) and [ADR 0020](0020-coach-v1.md) (coach route, structured function calls). Build plan: [ai-import-build-plan.md](../design/ai-import-build-plan.md).
+**Status:** Proposed, 12 Oct 2026 (developer, for the PM and Ben). **Built L1–L5, 13 Oct 2026** (see "Implementation" below). **Not working yet:** nothing has run on Ben's iPhone or against the real plan route (L6). Design: [data-import-export.md](../design/data-import-export.md) §9 (AI1–AI16, checks 34–60). Research: [ai-import.md](../research/ai-import.md). Builds on [ADR 0016](0016-fitnotes-import.md) (FitNotes import) and [ADR 0020](0020-coach-v1.md) (coach route, structured function calls). Build plan: [ai-import-build-plan.md](../design/ai-import-build-plan.md).
 
 ## Context
 
@@ -115,3 +115,20 @@ Ben (12 Oct 2026): "I do think having a GPT ability to just import would make th
   - the file picker;
   - layout at AX3.
 - **Still open:** real exports from Ben, if he has any beyond FitNotes. These include Strong's lb header and Hevy's unit columns (research §9 item 6).
+
+## Implementation (13 Oct 2026, slices L1–L5)
+
+Built as planned, with these differences. Each needs the PM's or Ben's OK; none is a quiet change of product behaviour.
+
+1. **JEFIT multi-section files are not read in v1.** `ImportSampleV1` has one header, so the sample can't show both sections, and the spec's `sections_joined` would need column references into two headers. The schema leaves `sections_joined` out; detection says `Files with sections can't be read yet.` Alternative: a sample with one header per section and a spec field per section.
+2. **Changed columns save a new layout** for the new header (same name) rather than a new version of the old one with several fingerprints. Older files still match the old layout. Simpler storage; the list can show two layouts with one name.
+3. **Times with no zone:** the recommended option is built (item 3 above): the start time is read in the phone's zone as an ordering anchor, the workout stays date-only in the UI, and provenance shows `18:02 (as in the file)` from the raw cell. Still the PM's call.
+4. **Notes and pasted text stay deferred**, so Import history doesn't show `Notes and pasted text` or `Paste text` (they would advertise a path that isn't there).
+5. **Two weight columns (kg and lb) in one row** can't be described by the spec (one load column). FitNotes 2 keeps its own question; other apps with both columns would need a spec change.
+6. **File words for markers count as evidence.** Hevy's `warmup`, `normal`, `dropset`, `failure` set the set type without a `Check` (evidence rule (c)); abbreviations like `W`, `D`, `F` stay `Check`s. `failure` is stored as a working set (the domain has no failure type) with the marker kept in the original.
+7. **Check reasons never show model text.** A column name or marker the model invented isn't file text, so `It names a column that isn't in the file.` and `Its marker isn't in the file.` drop the name (AI11, check 49).
+8. **Values to check:** a flagged value isn't the comparison point for the next workout, so one slip doesn't flag the workout after it.
+9. **Copy not in §9.5** (designer to review): `Files with sections can't be read yet.`, `Not a table. Export a CSV.`, `Not a text file. Export a CSV.`, `This is an app backup, not an export. Export a CSV from the app.`, `The saved layout changed. Choose the file again.`, `Choose the file again.`, the `Values you chose to skip` / `Not a set` list titles.
+10. **Two imported workouts on one date** open together from Results (the imported-workout screen is keyed by date).
+
+Needs a real iPhone (L6), unchanged: whether the plan route accepts this strict schema (`const`, integer bounds, `anyOf`) under a forced call, latency against the 120 s limit, backgrounding mid-request, the file picker with Strong/Hevy exports, and AX3.
