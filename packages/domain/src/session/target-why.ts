@@ -19,6 +19,7 @@ import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
 import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
+import { shownCoachNote } from './builder-loads';
 import { equipmentOfRow } from './equipment-snapshot';
 
 /**
@@ -248,9 +249,11 @@ function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: Ses
       return { key: 'reason', label: 'Reason', lines: ['Same as last time'], kind: 'app' };
     case 'coach': {
       // The coach's own words, in quotes (never shown as app text); none given, no row.
-      const reason = p.coach?.reason ?? null;
       // A coach-built load's words are a note (data, not fact; review r2 B1r): code's reason line is under Equipment.
-      const label = p.coach?.scope === 'build' ? 'Coach’s note' : 'Reason';
+      // Review r4: a build note with any number is never shown (sessions planned before the rule included).
+      const build = p.coach?.scope === 'build';
+      const reason = build ? shownCoachNote(p.coach?.reason) : (p.coach?.reason ?? null);
+      const label = build ? 'Coach’s note' : 'Reason';
       return reason === null || reason.trim() === '' ? null : { key: 'reason', label, lines: [`“${reason.trim()}”`], kind: 'app' };
     }
   }

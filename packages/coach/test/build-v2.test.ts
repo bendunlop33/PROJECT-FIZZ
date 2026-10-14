@@ -96,12 +96,12 @@ const QUESTION = { topic: 'main_lift', question: 'Main lift for legs?', answers:
 describe('propose_workout with loads (BD6)', () => {
   it('WB-L1: the coach’s 102.5 kg with a basis from the references is stored as the slot’s checked load', async () => {
     const store = await memoryStore();
-    const model = new ScriptedCoachModel([[call('propose_workout', proposal(benchLoad(102.5, 'last 3: 100×7 @8 → 102.5'))), { type: 'completed' }], reply('Bench first.')]);
+    const model = new ScriptedCoachModel([[call('propose_workout', proposal(benchLoad(102.5, 'main lift, strength focus'))), { type: 'completed' }], reply('Bench first.')]);
     const result = await runCoachTurn(request({ input: words(REQ.text), context: { session: null, gymName: 'Main gym', painFlags: [], checkIn: null, memories: [], catalogue: [], build: buildView() } }), ports(store, model, executors(store)));
     expect(result.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'build_workout' } });
     const [d] = await store.repos.workoutDrafts.listByOwner(OWNER);
     const t = d?.versions[0]?.plan.slots[0]?.setTemplates[0];
-    expect(t?.load).toMatchObject({ load: { value: 102.5, unit: 'kg', convention: 'total' }, source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'last 3: 100×7 @8 → 102.5' });
+    expect(t?.load).toMatchObject({ load: { value: 102.5, unit: 'kg', convention: 'total' }, source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'main lift, strength focus', notUsed: null });
     await store.close();
   });
 

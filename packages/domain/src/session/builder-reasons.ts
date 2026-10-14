@@ -1,7 +1,7 @@
 import type { Load, PlannedSet, TrainingGoal } from '@fizz/schemas';
 import { formatNumber } from '../display';
 import { loadDirection } from '../equipment';
-import { fitKeepingTail } from './builder-loads';
+import { fitKeepingTail, shownCoachNote } from './builder-loads';
 
 /**
  * Why each exercise in a coach draft is what it is, in one short line
@@ -139,7 +139,10 @@ export function loadWhyEntry(name: string, target: string, planned: PlannedSet |
   const merged = (base: readonly string[]): string[] => [...new Set([...base, ...(extra.planNotes ?? [])])];
   if (planned?.source === 'coach' && prov?.coach?.scope === 'build') {
     // B3: HELD only for a pain hold, from the check's own flag (never a note's first word).
-    return { name, target, label: prov.held === true ? 'HELD' : prov.estimate === true ? 'est.' : null, quote: prov.coach.reason, notes: merged(prov.guardNotes), notUsed };
+    // Review r4: a note with any number is never quoted; it stays under NOT USED.
+    const quote = shownCoachNote(prov.coach.reason);
+    const dropped = quote === null && prov.coach.reason !== null && prov.coach.reason.trim() !== '' ? prov.coach.reason : null;
+    return { name, target, label: prov.held === true ? 'HELD' : prov.estimate === true ? 'est.' : null, quote, notes: merged(prov.guardNotes), notUsed: notUsed ?? dropped };
   }
   if (planned?.source === 'built_in_rule') return { name, target, label: 'Rule', quote: null, notes: merged(extra.storedNotes), notUsed };
   return { name, target, label: null, quote: null, notes: merged(extra.storedNotes), notUsed };

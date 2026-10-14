@@ -79,6 +79,8 @@ export interface RefSet {
   value: number;
   reps: number;
   rpe: number | null;
+  /** The set as logged when its unit differs from the item's (`225 lb`): cited in its own unit (review r3 S4s). */
+  orig?: { value: number; unit: WeightUnit };
 }
 
 /**
@@ -191,8 +193,8 @@ export function refSessionOf(h: HistorySession, unit: WeightUnit, convention: Lo
   const sets: RefSet[] = [];
   for (const s of comparableSetsOf(h)) {
     if (s.setType === 'warmup' || s.load === null || s.reps === null || s.load.convention !== convention || !isSetCountable(s, 'e1rm')) continue;
-    const value = s.load.unit === unit ? s.load.value : convertMass({ value: s.load.value, unit: s.load.unit }, unit).value;
-    sets.push({ value: round2(value), reps: s.reps, rpe: s.rpe });
+    if (s.load.unit === unit) sets.push({ value: round2(s.load.value), reps: s.reps, rpe: s.rpe });
+    else sets.push({ value: round2(convertMass({ value: s.load.value, unit: s.load.unit }, unit).value), reps: s.reps, rpe: s.rpe, orig: { value: s.load.value, unit: s.load.unit } });
   }
   const top = topOf(sets, dir);
   if (top === null) return null;
@@ -335,7 +337,7 @@ export function personalRatioReference(target: readonly RefSession[], mates: rea
           ref: {
             kind: 'personal_ratio',
             e1rm: mateNow * (te / me),
-            text: top === undefined ? m.name.toLowerCase() : `${m.name.toLowerCase()} ${formatNumber(top.value)}×${String(top.reps)}`,
+            text: top === undefined ? m.name.toLowerCase() : `${m.name.toLowerCase()} ${refLoadText(top, 'total')}×${String(top.reps)}`,
             numbers: [...current.sessions.flatMap((s) => s.sets.flatMap((x) => [x.value, x.reps, ...(x.rpe === null ? [] : [x.rpe])])), ...t.sets.flatMap((x) => [x.value, x.reps])],
             sets: [...current.sessions.flatMap((s) => s.sets), ...t.sets],
           },
@@ -363,7 +365,7 @@ export function relatedLiftReference(r: RelatedLift, nowMs: number): DerivedRefe
   return {
     kind: 'related_lift',
     e1rm: e * r.ratio.low,
-    text: top === undefined ? r.fromName.toLowerCase() : `${r.fromName.toLowerCase()} ${formatNumber(top.value)}×${String(top.reps)}`,
+    text: top === undefined ? r.fromName.toLowerCase() : `${r.fromName.toLowerCase()} ${refLoadText(top, 'total')}×${String(top.reps)}`,
     numbers: own.sessions.flatMap((s) => s.sets.flatMap((x) => [x.value, x.reps, ...(x.rpe === null ? [] : [x.rpe])])),
     sets: own.sessions.flatMap((s) => s.sets),
   };
@@ -418,6 +420,8 @@ export interface LoadCheckContext {
   capReason?: string;
   /** Plan-time re-check with no newer history: only pain and the equipment apply (the stored load already passed). */
   bandsChecked?: boolean;
+  /** Plan-time re-check: the easy-side bounds never make the stored load harder (review r3 S3s). */
+  noRaise?: boolean;
 }
 
 export type LoadSource = 'coach' | 'coach_est' | 'rule' | 'none';
@@ -508,13 +512,16 @@ function bandFor(refs: LoadReferences, slot: LoadSlot, p: LoadProposalIn, ctx: L
   const dir = refs.direction;
   const own = refs.own;
   const capReason = ctx.capReason ?? 'more than recent sets support';
-  const lastText = (s: RefSession): string => `last ${formatNumber(s.top.value)} × ${String(s.top.reps)}`;
+  const lastText = (s: RefSession): string => `last ${refLoadText(s.top, refs.convention)} × ${String(s.top.reps)}`;
   const reject = `coach load ${formatNumber(p.value)} ${p.unit} too far from ${own?.sessions[0] !== undefined ? lastText(own.sessions[0]) : 'its reference'}`;
   if (own !== null && own.e1rm !== null && E1RM_CONVENTIONS.has(refs.convention)) {
     const E = expectedLoad(own.e1rm, slot.repsMin, slot.targetRpe) * (1 - returnCut(own.gapDays));
-    // The repeat floor F (B4): the most recent working load done for ≥ repsMin reps (gap < 14 days, no pain).
-    const withReps = own.sessions.find((s) => s.sets.some((x) => x.reps >= slot.repsMin));
-    const atReps = withReps === undefined ? null : Math.max(...withReps.sets.filter((x) => x.reps >= slot.repsMin).map((x) => x.value));
+    // The repeat floor F (B4) and the last-top cap: the most recent working load done for ≥ repsMin reps (gap < 14
+    // days, no pain). Only sets that feed the e1RM (≤ 12 reps), or are within the slot's own range, count: a light
+    // high-rep day (60×15) says nothing about a 6–8 load and must not cap it by raw load (review r3 S3s).
+    const atSameReps = (x: RefSet): boolean => x.reps >= slot.repsMin && x.reps <= Math.max(B.maxE1rmReps, slot.repsMax);
+    const withReps = own.sessions.find((s) => s.sets.some(atSameReps));
+    const atReps = withReps === undefined ? null : Math.max(...withReps.sets.filter(atSameReps).map((x) => x.value));
     const F = atReps !== null && own.gapDays < B.gapDays && ctx.pain === null ? atReps : null;
     if (own.estOnly) {
       const hardest = Math.max(E, F ?? -Infinity);
@@ -533,7 +540,8 @@ function bandFor(refs: LoadReferences, slot: LoadSlot, p: LoadProposalIn, ctx: L
       const up = ctx.askedHeavier ? B.stepsHarderAsked : B.stepsHarder;
       const easiest = byDifficulty[Math.max(0, at - B.stepsEasier)] ?? L;
       const hardest = byDifficulty[Math.min(byDifficulty.length - 1, at + up)] ?? L;
-      const lText = refs.convention === 'added' ? `+${formatNumber(L)}` : formatNumber(L);
+      const lTop = own.sessions[0]?.top;
+      const lText = lTop === undefined ? formatNumber(L) : refLoadText(lTop, refs.convention);
       return {
         easiest,
         hardest,
@@ -597,22 +605,29 @@ export function checkProposedLoad(p: LoadProposalIn | null, slot: LoadSlot, refs
   const band = bandFor(refs, slot, p, ctx, loads);
   if (band === null) return out({ source: 'none', notes: ['no reference · start light'] });
   let clamped = false;
+  /** The easy-side step clamp moved the load harder: not a cap (review r3 S2s). */
+  let raised = false;
   if (ctx.bandsChecked !== true) {
     if (harderThan(v, band.hardest, dir)) {
       if (band.limit !== null && harderThan(v, band.limit, dir)) return rule(band.rejectNote);
       v = band.hardest;
       clamped = true;
-    } else if (band.easiest !== null && harderThan(band.easiest, v, dir)) {
+    } else if (band.easiest !== null && harderThan(band.easiest, v, dir) && !held) {
+      // Review r3 S2s: under a pain hold the easy-side bound doesn't apply (any easier load is acceptable).
       if (!band.clampEasy) return rule(band.rejectNote);
-      v = band.easiest;
-      clamped = true;
+      // S3s: a plan-time re-check never makes a stored load harder.
+      if (ctx.noRaise !== true) {
+        v = band.easiest;
+        clamped = true;
+        raised = true;
+      }
     }
   }
 
   // 4. Equipment: achievable, never past the max (rule 4); clamped, held and estimated loads go toward easier.
   const est = band.est;
   // Step-bounded (assisted, added) loads always go toward easier (WB-L11: 32 assist → 35, never 30).
-  const towardEasier = clamped || held || est || band.stepFrom !== undefined;
+  const towardEasier = (clamped && !raised) || held || est || band.stepFrom !== undefined;
   let r = roundToAvailableLoad({ value: v, unit: refs.unit, convention: refs.convention }, eq, towardEasier ? 'easier' : 'nearest');
   if (r.ok && !towardEasier && ctx.bandsChecked !== true && harderThan(r.load.value, band.hardest, dir)) r = roundToAvailableLoad({ value: v, unit: refs.unit, convention: refs.convention }, eq, 'easier');
   if (!r.ok) return rule('nothing to fit it to here · rule used');
@@ -627,19 +642,30 @@ export function checkProposedLoad(p: LoadProposalIn | null, slot: LoadSlot, refs
   // Review r2 B1r: the reason line is always code's, from real reference sets and the final load.
   // The coach's words are only ever a `Coach's note` behind `Why?`, and only when they pass
   // `checkBasis` and code kept the load as proposed (B2: a changed load makes them name another number).
-  const capped = clamped || (r.bounded !== null && harderThan(v, final, dir));
+  // `capped` only when code made the load easier (a raise by the step bound or the item's min isn't a cap; r3 S2s).
+  const capped = (clamped && !raised) || (r.bounded !== null && harderThan(v, final, dir));
   const basis = reasonBasis(refs, { est, held, capped, final, convention: refs.convention });
   const changed = Math.abs(final - asked) > EPS || r.load.unit !== p.unit;
-  const ok = !changed && p.basis !== null && checkBasis(p.basis, basisAllowed(refs, slot, [p.value, final]), refs.own?.sessions.length ?? (refs.latest === null ? 0 : 1));
+  const ok = !changed && p.basis !== null && checkBasis(p.basis);
   return out({ load: r.load, source, held, basis, coachNote: ok ? p.basis : null, notUsed: ok ? null : p.basis });
 }
 
 /** Longest stored reason basis (the reason line keeps room for `held · est. · ` and a short shape note). */
 const FINAL_BASIS_MAX = 48;
 
-/** `100×7 @8`, `+20×6`: one real set as the reason line cites it. */
+/**
+ * A reference set's load as Ben logged it: `100`, `+20`, and in its own unit
+ * when that differs from the item's (`225 lb`, never a converted `102.06`;
+ * review r3 S4s).
+ */
+export function refLoadText(s: RefSet, convention: LoadConvention): string {
+  const sign = convention === 'added' ? '+' : '';
+  return s.orig === undefined ? `${sign}${formatNumber(s.value)}` : `${sign}${formatNumber(s.orig.value)} ${s.orig.unit}`;
+}
+
+/** `100×7 @8`, `+20×6`, `225 lb×8 @8`: one real set as the reason line cites it. */
 function setText(s: RefSet, convention: LoadConvention): string {
-  return `${convention === 'added' ? '+' : ''}${formatNumber(s.value)}×${String(s.reps)}${s.rpe === null ? '' : ` @${formatNumber(s.rpe)}`}`;
+  return `${refLoadText(s, convention)}×${String(s.reps)}${s.rpe === null ? '' : ` @${formatNumber(s.rpe)}`}`;
 }
 
 /** The set that sets the e1RM bands (highest `referenceE1rm`, newest first on a tie); else the newest top set. */
@@ -663,9 +689,14 @@ function drivingSet(sessions: readonly RefSession[], convention: LoadConvention)
  * A pain hold cites the most recent comparable session (what the hold reads).
  */
 export function referenceText(refs: LoadReferences, opts: { est: boolean; held: boolean }): string {
+  return referenceParts(refs, opts).text;
+}
+
+/** `referenceText` and the set it cites (whose own unit may differ from the item's). */
+function referenceParts(refs: LoadReferences, opts: { est: boolean; held: boolean }): { text: string; cited: RefSet | null } {
   if (opts.held && refs.latest !== null) {
     const l = refs.latest;
-    return `last ${setText(l.top, refs.convention)}${l.source === 'fitnotes' ? ' (FitNotes)' : ''}`;
+    return { text: `last ${setText(l.top, refs.convention)}${l.source === 'fitnotes' ? ' (FitNotes)' : ''}`, cited: l.top };
   }
   const own = refs.own;
   if (own !== null && own.sessions.length > 0) {
@@ -673,10 +704,10 @@ export function referenceText(refs: LoadReferences, opts: { est: boolean; held: 
     const set = multi ? drivingSet(own.sessions, refs.convention) : (own.sessions[0]?.top ?? null);
     const fit = own.sessions.every((x) => x.source === 'fitnotes') ? ' (FitNotes)' : '';
     const t = set === null ? 'last' : `last ${multi ? `${String(own.sessions.length)}: ` : ''}${setText(set, refs.convention)}${fit}`;
-    return opts.est || own.estOnly ? `est. · ${t}` : t;
+    return { text: opts.est || own.estOnly ? `est. · ${t}` : t, cited: set };
   }
-  if (refs.derived !== null) return `est. from ${refs.derived.text}`;
-  return 'est. · first time';
+  if (refs.derived !== null) return { text: `est. from ${refs.derived.text}`, cited: null };
+  return { text: 'est. · first time', cited: null };
 }
 
 /**
@@ -685,12 +716,20 @@ export function referenceText(refs: LoadReferences, opts: { est: boolean; held: 
  * characters with the final value never cut (N1r: the middle is shortened).
  */
 export function reasonBasis(refs: LoadReferences, o: { est: boolean; held: boolean; capped: boolean; final: number; convention: LoadConvention }): string {
-  return finalBasis(referenceText(refs, { est: o.est, held: o.held }), o.capped, o.final, o.convention);
+  const { text, cited } = referenceParts(refs, { est: o.est, held: o.held });
+  // S4s: a set cited in its own unit (`225 lb×8`) makes the target name its unit too (`→ 102.5 kg`).
+  return finalBasis(text, o.capped, o.final, o.convention, cited?.orig === undefined ? undefined : refs.unit);
 }
 
 /** `last 100×7 @8 · capped → 107.5`: a reference text ending with the load the row shows (B2). */
-export function finalBasis(code: string, capped: boolean, final: number, convention: LoadConvention): string {
-  return fitKeepingTail(`${code}${capped ? ' · capped' : ''} → ${noteLoad(final, convention)}`, FINAL_BASIS_MAX);
+export function finalBasis(code: string, capped: boolean, final: number, convention: LoadConvention, unit?: WeightUnit): string {
+  return fitKeepingTail(`${code}${capped ? ' · capped' : ''} → ${unit === undefined ? noteLoad(final, convention) : loadWithUnit(final, convention, unit)}`, FINAL_BASIS_MAX);
+}
+
+/** `102.5 kg`, `30 kg each`, `25 kg assist`, `+20 kg`. */
+function loadWithUnit(value: number, convention: LoadConvention, unit: WeightUnit): string {
+  const n = `${formatNumber(value)} ${unit}`;
+  return convention === 'assistance' ? `${n} assist` : convention === 'added' ? `+${n}` : convention === 'per_hand' ? `${n} each` : n;
 }
 
 /**
@@ -713,187 +752,37 @@ export function fitKeepingTail(line: string, max: number): string {
 }
 
 /**
- * What a coach note may cite (§7 basis rules, review B1, r2 B1r, r3 B1s).
- * `numbers`: bare numbers (references, the slot's reps and RPE, differences,
- * dates); never the proposal's values. `loads`: the numbers that may be
- * written as a load (reference loads, the e1RM, differences), never a rep,
- * RPE or day number; absent → `numbers`. `sets`: the only `load×reps` pairs
- * it may cite, the reference sets themselves. `targets`: the proposal's
- * values, allowed only after an arrow (`→ 102.5`, `→ 102.5×6` with reps in
- * the slot's range). `lastLoads`: the loads of the most recent session
- * (`100 last time`).
+ * Numbers written out (`eight reps`, `a hundred`, `a dozen`): still numbers
+ * (review builder-v2 r4, PM decision 14 Oct: every number Ben sees about a
+ * load is code's).
  */
-export interface BasisAllowed {
-  numbers: readonly number[];
-  loads?: readonly number[];
-  sets: readonly RefSet[];
-  targets?: readonly number[];
-  reps?: { min: number; max: number };
-  lastLoads?: readonly number[];
-}
-
-function basisAllowed(refs: LoadReferences, slot: LoadSlot, proposal: readonly number[]): BasisAllowed {
-  const numbers: number[] = [slot.repsMin, slot.repsMax, slot.targetRpe];
-  const loads: number[] = [];
-  const sets: RefSet[] = [];
-  const sessions = refs.own?.sessions ?? (refs.latest === null ? [] : [refs.latest]);
-  for (const s of sessions) {
-    for (const x of s.sets) {
-      numbers.push(x.value, x.reps, ...(x.rpe === null ? [] : [x.rpe]));
-      loads.push(x.value);
-      sets.push(x);
-    }
-    const day = Number(dayMonthText(s.performedAtUtc, s.tz).split(/\s/)[0]);
-    if (Number.isFinite(day)) numbers.push(day);
-    for (const v of proposal) {
-      const diff = Math.abs(round2(v - s.top.value));
-      numbers.push(diff);
-      loads.push(diff);
-    }
-  }
-  const e1rm = refs.own?.e1rm ?? null;
-  if (e1rm !== null) {
-    numbers.push(e1rm);
-    loads.push(e1rm);
-  }
-  if (refs.derived !== null) {
-    numbers.push(...refs.derived.numbers, refs.derived.e1rm);
-    loads.push(...refs.derived.sets.map((x) => x.value), refs.derived.e1rm);
-    sets.push(...refs.derived.sets);
-  }
-  const last = refs.latest ?? sessions[0] ?? null;
-  return { numbers, loads, sets, targets: proposal, reps: { min: slot.repsMin, max: slot.repsMax }, lastLoads: last === null ? [] : last.sets.map((x) => x.value) };
-}
-
-/** A number as written matches a value: exactly (±0.05), or the value rounded to a half, a tenth or a whole. */
-function citesValue(a: number, n: number): boolean {
-  if (Math.abs(a - n) < 0.051) return true;
-  return [Math.round(a * 2) / 2, Math.round(a * 10) / 10, Math.round(a)].some((r) => Math.abs(r - n) < 0.001);
-}
-
-// The forms a coach note can cite a set in (§7, review r2 B1r). Each is a `load×reps` pair that must be
-// a reference set (or, after an arrow, the proposal with reps in the slot's range).
-const NUM = String.raw`(\d+(?:[.,]\d+)?)`;
-const LOAD_WORDS = String.raw`(?:\s*(?:kg|lbs?)\b)?(?:\s*(?:each|assist)\b)?`;
-const RPE_PART = String.raw`(?:\s*(?:@\s*(?:RPE\s*)?|,?\s+(?:at\s+)?RPE\s*)(\d+(?:[.,]\d+)?))?`;
-const ARROW = String.raw`(→|->)?\s*`;
-const NO_NUM_BEFORE = String.raw`(?<![\d.,])`;
-type PairForm = { re: RegExp; arrow: number; value: number; reps: number; rpe: number };
-/** `100×7`, `100 x 7`, `100 kg × 7 @8`, `100*7`, `100/7`, `+20 x 6`, `30 each×8`. */
-const PAIR_TIMES: PairForm = { re: new RegExp(String.raw`${ARROW}\+?${NO_NUM_BEFORE}${NUM}${LOAD_WORDS}\s*[×x*/]\s*(\d+)\b(?:\s*reps?\b)?${RPE_PART}`, 'giu'), arrow: 1, value: 2, reps: 3, rpe: 4 };
-/** `100 for 7`, `100 kg for 7 reps @8`. */
-const PAIR_FOR: PairForm = { re: new RegExp(String.raw`${ARROW}\+?${NO_NUM_BEFORE}${NUM}${LOAD_WORDS}\s+for\s+(\d+)\b(?:\s*reps?\b)?${RPE_PART}`, 'giu'), arrow: 1, value: 2, reps: 3, rpe: 4 };
-/** `7 reps at 100`, `8 reps with 102.5 kg @8`. */
-const PAIR_REPS_AT: PairForm = { re: new RegExp(String.raw`${ARROW}${NO_NUM_BEFORE}(\d+)\s*reps?\s+(?:at|with|on|of)\s+\+?${NUM}${LOAD_WORDS}${RPE_PART}`, 'giu'), arrow: 1, value: 3, reps: 2, rpe: 4 };
-
-// "Last time" forms (review r3 B1s). They are checked on the whole note, before any pair is stripped, and
-// span an arrow and a pair: the load they name must be one of the most recent session's.
-const LAST_WORDS = String.raw`(?:last\s+(?:time|session|workout|week|wk)|previous(?:ly)?|each\s+time|every\s+time)`;
-const PAIR_TAIL = String.raw`(?:\s*(?:[×x*/]|\s+for\s+)\s*\d+\b(?:\s*reps?\b)?)?${RPE_PART}`;
-/** `100 last time`, `→ 102.5×8 last time`, `100 kg for 7 previously`, `102.5×8 each time`. */
-const LOAD_LAST_TIME = new RegExp(String.raw`\+?${NO_NUM_BEFORE}${NUM}${LOAD_WORDS}${PAIR_TAIL}\s+${LAST_WORDS}\b`, 'giu');
-/** `8 reps at 102.5 last time`. */
-const REPS_AT_LAST_TIME = new RegExp(String.raw`${NO_NUM_BEFORE}\d+\s*reps?\s+(?:at|with|on|of)\s+\+?${NUM}${LOAD_WORDS}${RPE_PART}\s+${LAST_WORDS}\b`, 'giu');
-/** `last time: 100`, `last session 100 kg`, `last time -> 102.5 for 8`, `last time: 7 reps at 100`. */
-const LAST_TIME_LOAD = new RegExp(String.raw`\b(?:last\s+(?:time|session|workout|week|wk)|previous(?:ly)?)\s*:?\s*(?:(?:→|->)\s*)?(?:\d+\s*reps?\s+(?:at|with|on|of)\s+)?\+?${NUM}`, 'giu');
-/** Words that say a result already happened; never next to an arrowed target (review r3 B1s). */
-const PAST = /\b(?:last\s+(?:time|session|workout|week|wk)|previous(?:ly)?|each\s+time|every\s+time|did|done|was|were|hit|got|managed|lifted|before|ago)\b/iu;
-/** `→ 102.5`, `-> +2.5`, `→ 12 each`: a target on its own. */
-const ARROW_VALUE = new RegExp(String.raw`(?:→|->)\s*(\+)?${NUM}((?:\s*(?:kg|lbs?)\b)?(?:\s*(?:each|assist)\b)?)`, 'giu');
-/** A bare number; group 1 `+`, group 3 a load word after it (`12 each`, `100 kg`). */
-const BARE_NUM = /(\+\s*)?(\d+(?:[.,]\d+)?)(\s*(?:kg|lbs?|each|assist)\b)?/giu;
-
-/** Every match of `re` passes `ok` → the text with the matches blanked; any fails → null. */
-function stripChecked(text: string, re: RegExp, ok: (m: RegExpMatchArray) => boolean): string | null {
-  for (const m of text.matchAll(re)) if (!ok(m)) return null;
-  return text.replace(re, ' ');
-}
+const NUMBER_WORDS = /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|dozen|half|quarter|double|twice|triple)\b/iu;
+/** Max and record claims (rule 6: a max is only ever code's labelled estimate). */
+const MAX_WORDS = /\b(?:max(?:imum|es)?|1\s?rm|rm|pr|prs|personal\s+(?:best|record)|record)\b/iu;
+const PRAISE = /\b(?:safe(?:ly)?|guarantee[ds]?|great|awesome|amazing|excellent|perfect|crush(?:ing)?|easy|score[sd]?)\b/iu;
 
 /**
- * Whether a past-time word sits next to an arrowed target (review r3 B1s):
- * after the arrow in the same clause (`→ 102.5×8 each time`), or right
- * before it with no number of its own (`did → 102.5`, `last time -> 102.5`).
- * `100 last time → 102.5` is fine: the clause before names its own load.
+ * `checkBasis` (§7; review builder-v2 r4, PM decision 14 Oct): whether the
+ * coach's note may be shown behind `Why?` as `Coach's note`. Every number
+ * Ben sees about a load comes from code (the reason line, the target), so a
+ * note is shown only when it is qualitative (`main lift, strength focus`):
+ * ≤ 60 characters, **no digit of any script and no number word**, no max or
+ * record claim, no praise, scores, "safe" or "guaranteed". Anything else goes
+ * under `NOT USED` (kept for audit, never shown as fact). Pure.
  */
-function pastNextToArrow(text: string): boolean {
-  for (const m of text.matchAll(/→|->/gu)) {
-    const at = m.index;
-    const after = text.slice(at + m[0].length).split(/[,;·()→]|->/u)[0] ?? '';
-    if (PAST.test(after)) return true;
-    const before = text.slice(0, at).split(/[,;·()→]|->/u).pop() ?? '';
-    if (PAST.test(before) && !/\d/.test(before.replace(/\blast\s+\d+\b/giu, ' '))) return true;
-    if (/\blast\s*:?\s*$/iu.test(before)) return true;
-  }
-  return false;
-}
-
-const PRAISE = /\b(?:safe(?:ly)?|guarantee[ds]?|great|awesome|amazing|excellent|perfect|crush(?:ing)?|easy|score[sd]?)\b/i;
-
-/**
- * `checkBasis` (§7): whether the coach's note may be shown behind `Why?`
- * as `Coach's note` (it is never the reason line, review r2 B1r). ≤ 60
- * characters; every `load×reps` pair, in any form (`A×B`, `A x B`, `A*B`,
- * `A/B`, `A for B`, `B reps at A`), is a reference set (its RPE too when
- * cited), or, after an arrow, the proposal with reps in the slot's range; a
- * load said to be `last time` (before or after it, across an arrow or a
- * pair) is one of the most recent session's; no past-time word next to an
- * arrowed target; the proposal's values appear only after an arrow, unless
- * they are a real reference load; a number written as a load (`12 each`,
- * `+2.5`, `100 kg`) is a reference load, the e1RM or a difference, never a
- * rep, RPE or day number; every other number is one it may cite (`last N`
- * with N ≤ the references listed); `1RM` or `max` only with `est.` or `≈`;
- * no praise, scores, "safe" or "guaranteed". Pure.
- */
-export function checkBasis(basis: string, allowed: BasisAllowed, refCount: number): boolean {
-  let t = basis.trim();
+export function checkBasis(basis: string): boolean {
+  const t = basis.trim();
   if (t === '' || t.length > 60) return false;
-  if (PRAISE.test(t)) return false;
-  if (/\b1\s?rm\b|\bmax\b/i.test(t) && !/est\.|≈|~/i.test(t)) return false;
-  const num = (x: string | undefined): number => Number((x ?? '').replace(',', '.'));
-  const loads = allowed.loads ?? allowed.numbers;
-  const targets = allowed.targets ?? [];
-  const isLoad = (n: number): boolean => loads.some((a) => citesValue(a, n));
-  const isTarget = (n: number): boolean => targets.some((a) => citesValue(a, n));
-  // Review r3 B1s: "last time" claims first, on the whole note, so an arrow or a pair can't hide them.
-  const lastLoad = (m: RegExpMatchArray): boolean => (allowed.lastLoads ?? []).some((a) => citesValue(a, num(m[1])));
-  for (const re of [LOAD_LAST_TIME, REPS_AT_LAST_TIME]) for (const m of t.matchAll(re)) if (!lastLoad(m)) return false;
-  for (const m of t.matchAll(LAST_TIME_LOAD)) {
-    // `100 last time → 102.5`: the words claim the load before them (checked above); the arrow starts the target.
-    const claimedBefore = /→|->/u.test(m[0]) && /\d/.test((t.slice(0, m.index).split(/[,;·()→]|->/u).pop() ?? '').replace(/\blast\s+\d+\b/giu, ' '));
-    if (!claimedBefore && !lastLoad(m)) return false;
-  }
-  if (pastNextToArrow(t)) return false;
-  const realSet = (value: number, reps: number, rpe: number | null): boolean => allowed.sets.some((s) => citesValue(s.value, value) && s.reps === reps && (rpe === null || (s.rpe !== null && Math.abs(s.rpe - rpe) < 0.051)));
-  const target = (value: number, reps: number, rpe: number | null): boolean => rpe === null && isTarget(value) && allowed.reps !== undefined && reps >= allowed.reps.min && reps <= allowed.reps.max;
-  for (const f of [PAIR_TIMES, PAIR_FOR, PAIR_REPS_AT]) {
-    const r = stripChecked(t, f.re, (m) => {
-      const value = num(m[f.value]);
-      const reps = Number(m[f.reps]);
-      const rpe = m[f.rpe] === undefined ? null : num(m[f.rpe]);
-      return realSet(value, reps, rpe) || (m[f.arrow] !== undefined && target(value, reps, rpe));
-    });
-    if (r === null) return false;
-    t = r;
-  }
-  // The words of a checked "last time" claim carry no number of their own now.
-  t = t.replace(new RegExp(String.raw`\b${LAST_WORDS}\b`, 'giu'), ' ');
-  const arrowed = stripChecked(t, ARROW_VALUE, (m) => {
-    const n = num(m[2]);
-    const asLoad = m[1] !== undefined || (m[3] ?? '').trim() !== '';
-    return isTarget(n) || isLoad(n) || (!asLoad && allowed.numbers.some((a) => citesValue(a, n)));
-  });
-  if (arrowed === null) return false;
-  t = arrowed;
-  const lastN = /\blast\s+(\d+)(?![.,]?\d)\b(?!\s*(?:kg|lb|×|x\b|each|assist))/gi;
-  for (const m of t.matchAll(lastN)) if (Number(m[1]) > refCount) return false;
-  const rest = t.replace(lastN, ' ').replace(/\b1\s?rm\b/gi, ' ').replace(/\bRPE\b/gi, ' ');
-  for (const m of rest.matchAll(BARE_NUM)) {
-    const n = num(m[2]);
-    const asLoad = m[1] !== undefined || m[3] !== undefined;
-    // Review r3 B1s: a number written as a load, or equal to the proposal, must be a real load (not a rep, RPE or day).
-    if ((asLoad || targets.some((a) => Math.abs(a - n) < 0.051)) ? !isLoad(n) : !allowed.numbers.some((a) => citesValue(a, n))) return false;
-  }
-  return true;
+  if (/\p{N}/u.test(t)) return false;
+  if (NUMBER_WORDS.test(t)) return false;
+  if (MAX_WORDS.test(t)) return false;
+  return !PRAISE.test(t);
+}
+
+/** The coach's note as `Why?` may show it: the text when it passes `checkBasis`, else null (`NOT USED`). */
+export function shownCoachNote(note: string | null | undefined): string | null {
+  if (note === null || note === undefined) return null;
+  return checkBasis(note) ? note.trim() : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -927,9 +816,19 @@ export interface StoredLoad {
   notUsed: string | null;
 }
 
-/** The coach's note of a stored load, whichever draft version wrote it. */
-export function storedCoachNote(stored: Pick<StoredLoad, 'basis' | 'basisFromCoach' | 'coachNote'>): string | null {
+/** The coach's text a stored load carries, whichever draft version wrote it (checked or not). */
+function storedCoachText(stored: Pick<StoredLoad, 'basis' | 'basisFromCoach' | 'coachNote'>): string | null {
   return stored.coachNote ?? (stored.basisFromCoach ? stored.basis : null);
+}
+
+/**
+ * The coach's note of a stored load as `Why?` may show it (review r4 B2t):
+ * drafts from any version go through today's `checkBasis` at plan time, so a
+ * legacy note with a number (`→ 102.5×8 (last time)`) is never shown. Null
+ * when there is none or it fails (the text then goes under `NOT USED`).
+ */
+export function storedCoachNote(stored: Pick<StoredLoad, 'basis' | 'basisFromCoach' | 'coachNote'>): string | null {
+  return shownCoachNote(storedCoachText(stored));
 }
 
 /** Newer sessions searched for by history version (more since a build is treated as a changed history). */
@@ -954,11 +853,28 @@ export function sessionsSinceCheck(all: readonly RefSession[], checkedHistoryVer
   return null;
 }
 
-/** The bands from one session alone (`recheckDraftLoad`); null when it is outside the window. */
-function newestAloneRefs(refsNow: LoadReferences, newest: RefSession, nowMs: number): LoadReferences | null {
+/** The bands from these sessions only (newest first); null when none is in the window. */
+function sessionsRefs(refsNow: LoadReferences, sessions: readonly RefSession[], nowMs: number): LoadReferences | null {
   const machine = refsNow.equipment !== null && MACHINE_KINDS.has(refsNow.equipment.kind);
-  const own = ownReferenceOf([newest], refsNow.convention, nowMs, machine && newest.source === 'fitnotes');
+  const app = sessions.filter((s) => s.source === 'app');
+  const own = machine && app.length > 0 ? ownReferenceOf(app, refsNow.convention, nowMs, false) : ownReferenceOf(sessions, refsNow.convention, nowMs, machine);
   return own === null ? null : { ...refsNow, own, derived: null };
+}
+
+/**
+ * The bands from the newest unseen session alone (`recheckDraftLoad`, r2
+ * B4r); null when it is outside the window. On an e1RM convention, a newest
+ * session with no set of 1–12 reps (a light high-rep day) can't be banded
+ * alone (review r3 S3s): the unseen sessions together are used instead, and
+ * `no_e1rm` when they have no e1RM either (the caller runs the full check).
+ */
+function newestAloneRefs(refsNow: LoadReferences, unseen: readonly RefSession[], nowMs: number): LoadReferences | 'no_e1rm' | null {
+  const newest = unseen[0];
+  if (newest === undefined) return null;
+  const alone = sessionsRefs(refsNow, [newest], nowMs);
+  if (alone === null || alone.own === null || alone.own.e1rm !== null || !E1RM_CONVENTIONS.has(refsNow.convention)) return alone;
+  const together = sessionsRefs(refsNow, unseen, nowMs);
+  return together !== null && together.own !== null && together.own.e1rm !== null ? together : 'no_e1rm';
 }
 
 /** The lighter of two re-checks: a fallback (`rule`, `none`) wins; else the easier load (`loadDirection`); `a` on a tie. */
@@ -992,7 +908,10 @@ export function recheckDraftLoad(
   ctx: { pain: { text: string } | null; checkedOn: CheckedOn | null; builtAtUtc: string; nowMs: number; checkedHistoryVersion?: string | null },
 ): LoadCheck {
   const note = storedCoachNote(stored);
-  const lost = note ?? stored.notUsed;
+  const raw = storedCoachText(stored);
+  // B2t: a stored note that fails today's check is kept for audit under NOT USED, never shown.
+  const keptNotUsed = stored.notUsed ?? (note === null ? raw : null);
+  const lost = note ?? keptNotUsed;
   if (stored.load === null || (stored.source !== 'coach' && stored.source !== 'coach_est')) {
     return { load: null, source: stored.source === 'none' ? 'none' : 'rule', held: stored.held, notes: [...stored.notes], basis: stored.basisFromCoach ? null : stored.basis, coachNote: null, notUsed: lost };
   }
@@ -1004,31 +923,35 @@ export function recheckDraftLoad(
   const since = sessionsSinceCheck(refsNow.all, ctx.checkedHistoryVersion, ctx.builtAtUtc);
   // The coach's words were checked at build time; the re-check judges the load only.
   const p: LoadProposalIn = { value: stored.load.value, unit: stored.load.unit, convention: stored.load.convention, basis: null };
-  const run = (refs: LoadReferences, extra: Pick<LoadCheckContext, 'capReason' | 'bandsChecked'>): LoadCheck => checkProposedLoad(p, slot, refs, { pain: ctx.pain, askedHeavier: false, ...extra });
+  // S3s: a re-check only ever keeps or lowers the stored load (the easy-side step clamp never raises it).
+  const run = (refs: LoadReferences, extra: Pick<LoadCheckContext, 'capReason' | 'bandsChecked'>): LoadCheck => checkProposedLoad(p, slot, refs, { pain: ctx.pain, askedHeavier: false, noRaise: true, ...extra });
   let r: LoadCheck;
   if (since === null) {
     // S1r: older history changed: the full check, and the newest session alone; the lighter wins.
     const full = run(refsNow, { capReason: 'history changed' });
     const newest = refsNow.all[0];
-    const alone = newest === undefined ? null : newestAloneRefs(refsNow, newest, ctx.nowMs);
-    r = lighterCheck(full, alone === null ? null : run(alone, { capReason: 'history changed' }), refsNow.direction);
+    const alone = newest === undefined ? null : newestAloneRefs(refsNow, [newest], ctx.nowMs);
+    r = lighterCheck(full, alone === null || alone === 'no_e1rm' ? null : run(alone, { capReason: 'history changed' }), refsNow.direction);
   } else if (since[0] !== undefined) {
     // B4r: the newest unseen session alone, so a newest RPE 10 rep miss isn't diluted by others.
     const newest = since[0];
-    const alone = newestAloneRefs(refsNow, newest, ctx.nowMs);
-    r = alone === null ? run(refsNow, { bandsChecked: true }) : run(alone, { capReason: `newer session ${dayMonthText(newest.performedAtUtc, newest.tz)}` });
+    const alone = newestAloneRefs(refsNow, since, ctx.nowMs);
+    // r3 S3s: a newest session with no e1RM (a light high-rep day, no set of 1–12 reps) isn't judged by its raw
+    // load in plate steps: the unseen sessions together, else the full e1RM check over the last 3, apply instead.
+    r = alone === null ? run(refsNow, { bandsChecked: true }) : alone === 'no_e1rm' ? run(refsNow, { capReason: `newer session ${dayMonthText(newest.performedAtUtc, newest.tz)}` }) : run(alone, { capReason: `newer session ${dayMonthText(newest.performedAtUtc, newest.tz)}` });
   } else {
     r = run(refsNow, { bandsChecked: true });
   }
   const unitNote = r.notes.filter((n) => n.endsWith('converted'));
   const fresh = r.notes.filter((n) => !n.endsWith('converted'));
   if (r.source === 'rule' || r.source === 'none') return { ...r, basis: null, coachNote: null, notUsed: lost, notes: [...stored.notes, ...fresh] };
-  // The stored label stays (an estimate stays `est.` unless a newer session of his own now backs it).
-  const source: LoadSource = since !== null && since.length > 0 ? r.source : stored.source;
+  // An estimate always shows as one (r4 S1t: a fallback to an estimate keeps `est.`); a stored estimate
+  // stays `est.` unless a newer session of his own now backs it.
+  const source: LoadSource = r.source === 'coach_est' ? 'coach_est' : since !== null && since.length > 0 ? r.source : stored.source;
   const changed = r.load === null || r.load.unit !== stored.load.unit || Math.abs(r.load.value - stored.load.value) > EPS;
   // Same history, same load, same hold: the build's own code line stands (it knows a build-time cap).
   const sameLine = !changed && since !== null && since.length === 0 && !stored.basisFromCoach && stored.basis !== null && r.held === stored.held;
-  return { ...r, basis: sameLine ? stored.basis : r.basis, coachNote: changed ? null : note, notUsed: changed ? lost : stored.notUsed, source, held: r.held || stored.held, notes: [...stored.notes, ...unitNote, ...fresh] };
+  return { ...r, basis: sameLine ? stored.basis : r.basis, coachNote: changed ? null : note, notUsed: changed ? lost : keptNotUsed, source, held: r.held || stored.held, notes: [...stored.notes, ...unitNote, ...fresh] };
 }
 
 /** Whether a load is the harder of two in its direction (for tests and callers). */

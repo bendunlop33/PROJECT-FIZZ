@@ -110,7 +110,7 @@ export interface LoadReferenceView {
 
 /**
  * One exercise's references as the coach is sent them (§8.6): exactly the
- * numbers `checkProposedLoad` checks against, so a basis citing them passes.
+ * numbers `checkProposedLoad` checks against.
  */
 export function loadReferenceView(catalogueId: string, name: string, refs: LoadReferences, held: boolean): LoadReferenceView {
   const own = refs.own;
@@ -360,7 +360,7 @@ export const QUESTION_NOT_OFFERED_LINE = 'No question now. Build with what you h
 
 /** About the `propose_workout` call itself (a turn that is building). */
 const CALL_RULES = [
-  'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters citing only those sets and numbers (sets exactly as listed), the load itself only after →, or the slot\'s reps and RPE (e.g. "last 3: 100×7 @8 → 102.5"). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Never give minutes: the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
+  'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters: a short reason in words, with no numbers (e.g. "main lift, strength focus"; the app shows the numbers). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Never give minutes: the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
   'Use build.known (goal, usual length, main lift, recent split days) and his training details; never ask for them. Put the main lift first when there is one.',
   'Its `message` (at most 240 characters) says why this selection and order, citing only facts given. No praise, scores, recovery claims or diagnoses.',
 ];
@@ -384,7 +384,7 @@ const MULTI_WEEK_LINE = 'It builds one session. Multi-week programmes and weekly
  * to use or what he lifted, the coach answers in full as usual (rule 3).
  */
 const SCOPED_BUILD_RULES = [
-  'Only if you call `propose_workout`: give each exercise a working load from build.loadReferences with a short basis citing only those numbers (no minutes: the app fits the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 240 characters) says why this selection and order, citing only facts given, with no praise, scores, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
+  'Only if you call `propose_workout`: give each exercise a working load from build.loadReferences with a short basis in words, no numbers (no minutes: the app fits the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 240 characters) says why this selection and order, citing only facts given, with no praise, scores, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
   'These limits are only for the call. On any other question, including what weight or reps to use or what he lifted before, answer as usual.',
   MULTI_WEEK_LINE,
 ];

@@ -138,7 +138,8 @@ export type ProposeWorkoutArgs = z.infer<typeof ProposeWorkoutArgsSchema>;
  * from real reference sets and the final load (review r2 B1r); in drafts
  * written before that, `basisFromCoach: true` marks it as the coach's text.
  * `coachNote` is the coach's own basis when it passed `checkBasis` (data,
- * shown only behind `Why?` as `Coach's note`).
+ * shown only behind `Why?` as `Coach's note`; review r4: words only, no
+ * numbers, and re-checked at plan time).
  */
 export const DraftLoadSchema = z.object({
   load: LoadSchema.nullable(),

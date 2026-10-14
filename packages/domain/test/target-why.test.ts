@@ -391,9 +391,15 @@ describe('buildActiveSetView: target.hasExplanation', () => {
       sets: plain0.sets.map((x) => ({ ...x, planned: { ...x.planned, source: 'coach' as const, provenance: { source: 'coach' as const, setAt: at(0), routineName: null, requestedLoad: null, basis: null, coach: { actionId: 'a1', scope: 'build' as const, reason: '100 for 8 @8 → 102.5' }, guardNotes: ['last 100×8 @8 → 102.5'] } } })),
     };
     const rows = rowsOf(explainTarget({ aggregate: built, setId: built.sets[0]?.id ?? '', nowMs: ms(2 * DAY + 10), basisNow: null, gymNames: GYMS, painFlags: [], history: [] }));
-    expect(rows.find((r) => r[0] === 'Coach’s note')).toEqual(['Coach’s note', '“100 for 8 @8 → 102.5”']);
+    // Review r4: a note with any number (from a session planned before the rule) is never shown.
+    expect(rows.some((r) => r[0] === 'Coach’s note')).toBe(false);
     expect(rows.find((r) => r[0] === 'Equipment')).toEqual(['Equipment', 'last 100×8 @8 → 102.5']);
     expect(rows.some((r) => r[0] === 'Reason')).toBe(false);
+    // A note in words only is quoted as the coach's.
+    const worded: SessionAggregate = { ...built, sets: built.sets.map((x) => ({ ...x, planned: { ...x.planned, provenance: x.planned.provenance === undefined ? undefined : { ...x.planned.provenance, coach: { actionId: 'a1', scope: 'build' as const, reason: 'main lift, strength focus' } } } })) };
+    const rows2 = rowsOf(explainTarget({ aggregate: worded, setId: worded.sets[0]?.id ?? '', nowMs: ms(2 * DAY + 10), basisNow: null, gymNames: GYMS, painFlags: [], history: [] }));
+    expect(rows2.find((r) => r[0] === 'Coach’s note')).toEqual(['Coach’s note', '“main lift, strength focus”']);
+    expect(rows2.some((r) => r[0] === 'Reason')).toBe(false);
   });
 });
 

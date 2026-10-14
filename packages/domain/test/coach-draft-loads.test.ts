@@ -136,8 +136,8 @@ const args = (exercises: ProposedExercise[]): ProposeWorkoutArgs => ({ name: nul
 
 /** Ben's 14 Oct case: 4 sets on bench for 6–8, with the coach's load and why. */
 const PUSH = args([
-  pex('barbell-bench-press', { workingSets: 4, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(102.5, 'total', 'last 3: 100×7 @8 → 102.5') }),
-  pex('dumbbell-incline-press', { reps: { min: 8, max: 10 }, load: load(30, 'per_hand', 'FitNotes 30×8 → repeat') }),
+  pex('barbell-bench-press', { workingSets: 4, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(102.5, 'total', 'main lift, strength focus') }),
+  pex('dumbbell-incline-press', { reps: { min: 8, max: 10 }, load: load(30, 'per_hand', 'repeat the imported weight') }),
   pex('cable-fly', { reps: { min: 12, max: 15 }, targetRpe: 9, load: load(100, 'stack', 'est. for 12–15 @9') }),
   pex('cable-triceps-pushdown', { reps: { min: 10, max: 12 }, targetRpe: 9, load: load(40, 'stack', 'last 25×12') }),
 ]);
@@ -193,7 +193,7 @@ describe('checkWorkoutProposal stores checked loads (BD6)', () => {
     if (r.status === 'unusable') throw new Error('unusable');
     const [bench, incline, fly, pushdown] = r.plan.slots;
     expect(bench?.setTemplates.map((t) => t.load?.load?.value)).toEqual([102.5, 102.5, 102.5, 102.5]);
-    expect(bench?.setTemplates[0]?.load).toMatchObject({ source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'last 3: 100×7 @8 → 102.5' });
+    expect(bench?.setTemplates[0]?.load).toMatchObject({ source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'main lift, strength focus' });
     expect(bench?.checkedOn).toMatchObject({ equipmentId: bar.id, kind: 'barbell', convention: 'total', unit: 'kg', barKg: 20 });
     expect(bench?.checkedHistoryVersion).toMatch(/[0-9a-f-]{36}/);
     expect(incline?.setTemplates[0]?.load).toMatchObject({ load: { value: 30, convention: 'per_hand' }, source: 'coach' });
@@ -238,7 +238,7 @@ describe('planCoachDraft plans the checked loads (WB-L1, WB5, WB-L10, WB-L12, WB
     const bench = setsFor(out, BENCH.id);
     expect(bench.map((s) => s.planned.load?.value)).toEqual([102.5, 102.5, 102.5, 102.5]);
     expect(bench[0]?.planned.source).toBe('coach');
-    expect(bench[0]?.planned.provenance).toMatchObject({ source: 'coach', coach: { scope: 'build', reason: 'last 3: 100×7 @8 → 102.5' } });
+    expect(bench[0]?.planned.provenance).toMatchObject({ source: 'coach', coach: { scope: 'build', reason: 'main lift, strength focus' } });
     expect(bench[0]?.planned.provenance?.estimate).toBeUndefined();
     const fly = setsFor(out, FLY.id);
     expect(fly[0]?.planned).toMatchObject({ load: { value: 25, convention: 'stack' }, source: 'coach', provenance: { estimate: true } });
@@ -330,9 +330,9 @@ describe('reason lines on the draft overview (Ben, 14 Oct: "no reason why")', ()
     const main = new Set(out.version.plan.slots.filter((s) => s.main).slice(0, 1).map((s) => s.exerciseId));
     const line = (e: Exercise) => draftReasonLine({ planned: firstWorking(out, e.id), reps: true, main: main.has(e.id), goal: 'strength' });
     expect(line(BENCH)).toBe('last 3: 100×7 @8 → 102.5 · main lift · strength');
-    // Review r2 B1r: code's line, never the coach's words (`FitNotes 30×8 → repeat` is its note behind Why?).
+    // Review r2 B1r: code's line, never the coach's words (`repeat the imported weight` is its note behind Why?).
     expect(line(INCLINE)).toBe('last 30×8 (FitNotes) → 30 each');
-    expect(firstWorking(out, INCLINE.id)?.provenance?.coach?.reason).toBe('FitNotes 30×8 → repeat');
+    expect(firstWorking(out, INCLINE.id)?.provenance?.coach?.reason).toBe('repeat the imported weight');
     // B2: 100 was capped to 25, so the coach's basis (another number) isn't shown; code's ends with the target.
     expect(line(FLY)).toBe('est. · first time · capped → 25');
     expect(line(PUSHDOWN)).toBe('Rule · last 25×12 @9');
@@ -381,6 +381,24 @@ describe('reason lines on the draft overview (Ben, 14 Oct: "no reason why")', ()
       const entry = loadWhyEntry('Bench press', '102.5 kg', first, { storedNotes: [], notUsed: why?.notUsed ?? null });
       expect(entry).toMatchObject({ quote: null, notUsed: words });
     }
+  });
+
+  it('review r4: every r4 probe wording reaches NOT USED end to end; a note with numbers carried on a planned set is never quoted', () => {
+    for (const words of ['→ 102.5×8 (last time)', '→ 102.5×8 on 8 Oct', 'Tue → 102.5×8', '→ 102.5×8 again', 'hit 130', 'did 5 kg']) {
+      const a = args([pex('barbell-bench-press', { workingSets: 4, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(102.5, 'total', words) })]);
+      const out = planOf(draftOf(a));
+      const first = setsFor(out, BENCH.id)[0]?.planned ?? null;
+      expect(first?.provenance?.coach?.reason).toBeNull();
+      const why = draftSlotWhy(out)[out.version.plan.slots[0]?.slotKey ?? ''];
+      expect(loadWhyEntry('Bench press', '102.5 kg', first, { storedNotes: [], notUsed: why?.notUsed ?? null })).toMatchObject({ quote: null, notUsed: words });
+    }
+    // A set planned before this rule (its provenance carries a numeric note): not quoted, moved under NOT USED.
+    const base = { load: kg(102.5), reps: { min: 6, max: 8 }, durationS: null, rpe: 8, rir: null, source: 'coach' as const };
+    const prov = { source: 'coach' as const, setAt: at(0), routineName: null, requestedLoad: null, basis: null, guardNotes: ['last 3: 100×7 @8 → 102.5'] };
+    const old = { ...base, provenance: { ...prov, coach: { actionId: id(1), scope: 'build' as const, reason: '→ 102.5×8 (last time)' } } };
+    expect(loadWhyEntry('Bench press', '102.5 kg', old, { storedNotes: [], notUsed: null })).toMatchObject({ quote: null, notUsed: '→ 102.5×8 (last time)' });
+    const worded = { ...base, provenance: { ...prov, coach: { actionId: id(1), scope: 'build' as const, reason: 'main lift, strength focus' } } };
+    expect(loadWhyEntry('Bench press', '102.5 kg', worded, { storedNotes: [], notUsed: null })).toMatchObject({ quote: 'main lift, strength focus', notUsed: null });
   });
 
   it('review r2 N1r: a long line keeps its final value; the coach’s note never shows in it', () => {

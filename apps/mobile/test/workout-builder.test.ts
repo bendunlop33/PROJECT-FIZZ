@@ -1024,7 +1024,7 @@ describe('F21: the same exercise twice in a coach workout (Ben, 13 Oct)', () => 
 describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', () => {
   const load = (value: number, convention: string, basis: string) => ({ value, unit: 'kg', convention, basis, from: 'own_history', relatedCatalogueId: null });
   const PUSH_LOADS: [string, Record<string, unknown>][] = [
-    ['Bench press', { warmups: 2, workingSets: 4, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(100, 'total', 'last 100×7 → repeat') }],
+    ['Bench press', { warmups: 2, workingSets: 4, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(100, 'total', 'repeat last weight') }],
     ['Cable fly', { workingSets: 3, reps: { min: 12, max: 15 }, targetRpe: 9, load: load(13, 'stack', 'est. for 12–15 @9') }],
     ['Triceps pushdown', { workingSets: 3, reps: { min: 10, max: 12 }, targetRpe: 9, load: load(40, 'stack', 'last 25×11') }],
   ];
@@ -1047,7 +1047,7 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     expect(bench.load.value).toBe('100');
     // Review r2 B1r: the row reads code's line; the coach's words are its note behind Why?.
     expect(p.coachDraft.reasons[bench.slotKey]).toBe('last 100×7 → 100 · main lift');
-    expect(p.coachDraft.loads.find((l) => l.name === 'Bench press')).toMatchObject({ quote: 'last 100×7 → repeat', notes: ['last 100×7 → 100'] });
+    expect(p.coachDraft.loads.find((l) => l.name === 'Bench press')).toMatchObject({ quote: 'repeat last weight', notes: ['last 100×7 → 100'] });
     expect(p.coachDraft.estimates).toEqual([fly.slotKey]);
     // B2: 13 was fitted to 10 on this stack, so code's basis names the target; the coach's line is under NOT USED.
     expect(p.coachDraft.reasons[fly.slotKey]).toBe('est. · first time → 10');
