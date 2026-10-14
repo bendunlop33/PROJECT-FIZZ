@@ -2373,7 +2373,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /** A typed load for a set not done yet, made achievable on its equipment (rule 4). */
-    snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null => snapPlannedLoad(data.aggregate, setId, typed),
+    snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null | undefined => snapPlannedLoad(data.aggregate, setId, typed),
 
     /** The rest screen's `Last set` and `Next` (F8). */
     restSets: (data: ActiveWorkoutData): { last: SetGlance | null; next: SetGlance | null } => restSetsView(data.aggregate, ruleRpes(data)),

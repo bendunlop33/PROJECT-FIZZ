@@ -1091,18 +1091,24 @@ export function toggleRepRange(reps: { min: number; max: number } | null): { min
 
 /**
  * A typed load for a set not done yet, made achievable (rule 4): the nearest
- * load the row's equipment can make, never past its min or max. Without
- * equipment it's kept as typed (not below 0). Null stays null.
+ * load the row's equipment can make, never past its min or max; agrees with
+ * what `edit_planned_set` accepts. Without equipment it's kept as typed (not
+ * below 0). Null stays null. `undefined` when the equipment can't make any
+ * load for this row (unit or convention mismatch, nothing achievable): no
+ * change, so a failed fit never clears the stored target (review S2).
  */
-export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: number | null): number | null {
+export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: number | null): number | null | undefined {
   if (typed === null) return null;
   const set = state.sets.find((s) => s.id === setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
-  if (!ex) return typed;
+  if (!ex) return undefined;
   const eq = equipmentOf(state, ex);
-  if (eq === null || eq.kind === 'bodyweight_station') return Math.max(0, typed);
+  if (eq === null) return Math.max(0, typed);
+  if (eq.loadConvention !== ex.loadConvention || eq.unit !== ex.unit) return undefined;
+  // A bodyweight station makes one load: none added (the reducer's `isLoadAchievable`).
+  if (eq.kind === 'bodyweight_station') return 0;
   const r = roundToAvailableLoad({ value: Math.max(0, typed), unit: ex.unit, convention: ex.loadConvention }, eq, 'nearest');
-  return r.ok ? r.load.value : null;
+  return r.ok ? r.load.value : undefined;
 }
 
 /**

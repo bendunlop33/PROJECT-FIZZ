@@ -13,7 +13,7 @@ import {
   toggleRepRange,
   workoutChatContext,
 } from '../src/index';
-import { assisted, at, dumbbells, exercise, GYM, idGen, kg, lb, profile, values } from './fixtures';
+import { assisted, at, bodyweightStation, dumbbells, exercise, GYM, idGen, kg, lb, profile, values } from './fixtures';
 import { apply, BENCH, expectOk, FACE, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
 const plain = (s: string | null | undefined) => (s ?? '').replaceAll(NBSP, ' ');
@@ -119,6 +119,32 @@ describe('snapPlannedLoad: a typed load becomes one the equipment can make', () 
     const v = buildPlannedSetEditView(s, set?.id ?? '', { load: 40 });
     expect(v?.loadField).toMatchObject({ label: 'Assist', assisted: true, up: { enabled: false }, down: { value: 35 } });
     expect(v?.patch?.load).toEqual(kg(40, 'assistance'));
+  });
+});
+
+describe('snapPlannedLoad: a failed fit is no change, never “no load” (review S2)', () => {
+  it('a row whose convention the equipment can’t make keeps its stored target', () => {
+    const rack = dumbbells();
+    const press = exercise(263, 'Dumbbell press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+    const base = emptyWith(press, rack);
+    const s: SessionAggregate = { ...base, exercises: base.exercises.map((e) => ({ ...e, loadConvention: 'total' as const })) };
+    const set = s.sets[0];
+    expect(snapPlannedLoad(s, set?.id ?? '', 22)).toBeUndefined();
+    // The view treats it as untouched: Save sends no load (the target isn't wiped).
+    expect(buildPlannedSetEditView(s, set?.id ?? '', {})?.patch?.load).toBeUndefined();
+    expect(snapPlannedLoad(s, 'no-such-set', 22)).toBeUndefined();
+  });
+
+  it('a bodyweight station: the only load it makes is none added, which the reducer accepts', () => {
+    const dips = exercise(264, 'Dip', { compatibleEquipment: ['bodyweight_station'], defaultLoadConvention: 'bodyweight' });
+    const s = emptyWith(dips, bodyweightStation());
+    const set = s.sets[0];
+    if (!set) throw new Error('no set');
+    expect(snapPlannedLoad(s, set.id, 10)).toBe(0);
+    const ex = s.exercises[0];
+    const load = { value: snapPlannedLoad(s, set.id, 10) ?? -1, unit: ex?.unit ?? 'kg', convention: ex?.loadConvention ?? 'bodyweight' };
+    const r = reduceSession(s, { type: 'edit_planned_set', at: at(5), opId: 'bw', setId: set.id, expectedSetVersion: set.version, patch: { load } });
+    expect(r.ok).toBe(true);
   });
 });
 
