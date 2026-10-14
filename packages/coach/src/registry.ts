@@ -258,7 +258,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
     capabilitySection: 'when_you_ask',
     description:
-      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. No loads or minutes: the app plans loads from his history and fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. For each exercise give the working `load` (and `topSet.load`) in the unit and convention listed for it in build.loadReferences, with a short `basis` (at most 60 characters) citing only numbers from those references, the load itself, or the slot\'s reps and RPE; null when you have no opinion. The app checks, bounds and fits every load to the equipment; a load with no history of his own is shown as an estimate. No minutes: the app fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+  },
+  {
+    // workout-builder v2.1 BD17, §8.4: one clarifying question card; at most 2 per build request, checked by code.
+    name: 'ask_build_question',
+    effect: 'append',
+    writes: ['build_question'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['general'],
+    plainLabel: 'Ask one quick question before building a workout, when it helps',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Before building, ask Ben one short question (at most 80 characters) with 2 to 4 short tap answers (at most 24 characters each), only when the answer changes the workout and is not already in YOUR DATA (training, build.known). Never ask about the session length, his goal, pain, injury or anything medical. topic main_lift: each answer carries a catalogueId from build.usable. Do not ask if you can build a good workout with what you have. Ben can skip it.',
   },
   {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
@@ -354,6 +367,11 @@ export interface TurnGate {
    * becomes an offer (he didn't) is decided in the turn by `todayChangeAsked`, never by the model.
    */
   liveWorkout?: boolean;
+  /**
+   * (14 Oct, workout builder v2.1 BD17) This build request may still ask a clarifying question:
+   * fewer than 2 asked, and not a revision of a draft. Absent or false: `ask_build_question` is withheld.
+   */
+  buildQuestionOpen?: boolean;
 }
 
 /**
@@ -407,6 +425,8 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   add_playbook_candidate: ['playbook'],
   // workout-builder §8.2: a build request ("build me a 45-minute push session"), or a change to the draft in context (BD16).
   propose_workout: ['build'],
+  // workout-builder v2.1 BD17: only in a build turn, and only while the request has a question left (`buildQuestionOpen`).
+  ask_build_question: ['build'],
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {
@@ -419,6 +439,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'none':
       return null;
     case 'ben_request':
+      if (t.name === 'ask_build_question') return requestOpens(t, g.benRequest) && g.buildQuestionOpen === true ? null : 'needs_request';
       if (requestOpens(t, g.benRequest)) return null;
       if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
       if (TODAY_TOOLS.has(t.name) && g.kind === 'workout' && g.liveWorkout === true) return null;

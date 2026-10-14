@@ -426,6 +426,11 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Couldn't build a workout here: ${failureOr(record, 'it failed the checks')}. Nothing saved.`;
       return make(status, text, speakable(text));
     }
+    case 'build_question': {
+      // workout-builder v2 §4.2: the card shows the checked question and its answers; nothing else was written.
+      const text = d.question;
+      return make(status, text, `${d.question} ${d.answers.map((a) => a.label).join(', ')}.`);
+    }
     case 'set_pain_flag': {
       if (st === 'committed') {
         const text = `Pain flag on: ${namesText(d.exerciseNames)} · no increases`;

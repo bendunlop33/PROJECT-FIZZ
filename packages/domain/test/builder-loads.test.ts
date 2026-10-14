@@ -103,7 +103,7 @@ describe('referenceE1rm and E (§8.5): separate from Progress’s estimateOneRep
     expect(referenceE1rm([{ value: 30, reps: 13, rpe: null }])).toBeNull();
     expect(expectedLoad(130, 6, 8)).toBeCloseTo(102.63, 2);
     // Progress is unchanged: plain Epley caps at 10 reps, so 25 × 12 has no e1RM there (WB-L3).
-    expect(estimateOneRepMax({ value: 25, unit: 'kg', convention: 'stack' }, 12, 'weight_stack').kind).not.toBe('estimate');
+    expect(estimateOneRepMax({ value: 25, unit: 'kg', convention: 'stack' }, 12, 'weight_stack').eligible).toBe(false);
   });
 
   it('a gap of 14+ days cuts E by the approved return-to-load steps (R1–R2)', () => {

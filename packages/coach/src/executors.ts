@@ -403,6 +403,8 @@ function undoWhat(target: ActionRecord): string {
       return `the fit to ${String(d.minutes)} min`;
     case 'build_workout':
       return `version ${String(d.versionN)} of ${d.name}`;
+    case 'build_question':
+      return 'the question';
   }
 }
 

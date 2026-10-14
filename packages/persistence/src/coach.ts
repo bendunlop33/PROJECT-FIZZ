@@ -89,6 +89,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'update_routine':
     case 'fit_today':
     case 'build_workout':
+    case 'build_question':
     case 'undo':
       return null;
   }
@@ -682,6 +683,7 @@ export class SqliteCoachStore {
       case 'update_routine':
       case 'fit_today':
       case 'build_workout':
+      case 'build_question':
       case 'undo':
         return 'unsupported';
     }

@@ -1,15 +1,17 @@
 import { z } from 'zod';
-import { IdSchema, OperationIdSchema, RepRangeSchema, RpeSchema, TimeZoneSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
+import { IdSchema, LoadConventionSchema, LoadSchema, OperationIdSchema, RepRangeSchema, RpeSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema, ZonedTimestampSchema } from './common';
+import { EquipmentKindSchema } from './exercise';
 import { SetTypeSchema } from './routine';
 import { SplitBodyPartSchema } from './training-profile';
 
 /**
- * Coach-built workouts (workout-builder.md v1.0). The coach proposes
- * **structure only** through the typed `propose_workout` tool; code checks
- * it (`checkWorkoutProposal`) and stores a `WorkoutDraft` version. Loads
- * come from Ben's history through the built-in rule, never from the model
- * (BD6); minutes come from the estimate and the fit, never from the model
- * (BD11). A draft is Your data, owner-scoped, kept 14 days (BD4).
+ * Coach-built workouts (workout-builder.md v2.1). The coach proposes the
+ * structure and (v2, Ben 12 Oct: B6 reversed) a working load per exercise
+ * with a short basis, through the typed `propose_workout` tool; code checks
+ * it (`checkWorkoutProposal`, `checkProposedLoad`) and stores a
+ * `WorkoutDraft` version. A missing or rejected load falls back to the
+ * built-in rule (BD6). Minutes come from the estimate and the fit, never
+ * from the model (BD11). A draft is Your data, owner-scoped, kept 14 days (BD4).
  */
 
 /** §8.3 limits. The tool's argument schema is wider so the checks can clamp and say so (WB13); these are what a draft may hold. */
@@ -50,10 +52,26 @@ export const BUILD_LENGTH_CHIPS = [30, 45, 60, 75, 90] as const;
 // The tool (`propose_workout`, §8.3)
 
 /**
- * One exercise in the model's proposal. Strict: an extra field (a `load`,
- * `weight`, `minutes`, `gymId`, `equipmentId`, `exerciseName` …) fails the
- * call (BD1, WB3); the tool-call parser never drops it. Optional values are
- * `null` (strict function calling needs every field present).
+ * A working load the coach proposes (§8.3). `basis` is data (≤ 60
+ * characters), checked by `checkBasis`; `from` is the model's claim (code
+ * re-derives `est.` itself). Bodyweight exercises send a null load.
+ */
+export const LoadProposalSchema = z.strictObject({
+  value: z.number().positive().max(2000),
+  unit: WeightUnitSchema,
+  convention: z.enum(['total', 'per_hand', 'stack', 'added', 'assistance']),
+  basis: z.string().max(60),
+  from: z.enum(['own_history', 'personal_ratio', 'related_lift', 'estimate']),
+  relatedCatalogueId: z.string().min(1).max(80).nullable(),
+});
+export type LoadProposal = z.infer<typeof LoadProposalSchema>;
+
+/**
+ * One exercise in the model's proposal. Strict: an extra field (a `weight`,
+ * `minutes`, `gymId`, `equipmentId`, `exerciseName` …) fails the call (BD1,
+ * WB3); the tool-call parser never drops it. Optional values are `null`
+ * (strict function calling needs every field present; `load` may be absent
+ * in calls made before v2, read as null).
  *
  * The number bounds here are only parse bounds: values outside §8.3 are
  * clamped by `checkWorkoutProposal` with a check line, so Ben sees what
@@ -69,14 +87,37 @@ export const ProposedExerciseSchema = z.strictObject({
   workSeconds: z.int().min(0).max(36_000).nullable(),
   /** Working sets' target RPE, 5–10 in half steps. Null: the built-in rule's (BD7). */
   targetRpe: z.number().min(0).max(20).nullable(),
-  /** One top set before the working sets, with its own reps and RPE. */
-  topSet: z.strictObject({ reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }), targetRpe: z.number().min(0).max(20).nullable() }).nullable(),
+  /** One top set before the working sets, with its own reps, RPE and (v2) load. */
+  topSet: z.strictObject({ reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }), targetRpe: z.number().min(0).max(20).nullable(), load: LoadProposalSchema.nullable().optional() }).nullable(),
+  /** (v2, BD6) The working (back-off) sets' load; null = no opinion → the built-in rule. */
+  load: LoadProposalSchema.nullable().optional(),
   /** Snapped to Ben's nearest rest preset. */
   restSeconds: z.int().min(0).max(3600).nullable(),
   /** Adjacent members share a letter. */
   superset: z.enum(['A', 'B', 'C']).nullable(),
 });
 export type ProposedExercise = z.infer<typeof ProposedExerciseSchema>;
+
+/**
+ * `ask_build_question` (workout-builder v2.1 BD17, §8.4): one clarifying
+ * question with 2–4 tap answers. No `goal` topic (code-only, BD20), no
+ * length, no pain. The parse bounds are wider than the rules so
+ * `checkBuildQuestion` can refuse with a reason; the card shows only what
+ * passed (≤ 80 characters, 2–4 answers of ≤ 24).
+ */
+export const BuildQuestionTopicSchema = z.enum(['main_lift', 'split', 'equipment_today', 'other']);
+export type BuildQuestionTopic = z.infer<typeof BuildQuestionTopicSchema>;
+
+export const AskBuildQuestionArgsSchema = z.strictObject({
+  topic: BuildQuestionTopicSchema,
+  question: z.string().min(1).max(200),
+  /** `main_lift`: a catalogueId on each (code shows the catalogue name); others: null. */
+  answers: z.array(z.strictObject({ label: z.string().min(1).max(60), catalogueId: z.string().min(1).max(80).nullable() })).min(1).max(8),
+});
+export type AskBuildQuestionArgs = z.infer<typeof AskBuildQuestionArgsSchema>;
+
+/** Most clarifying questions per build request (BD17). */
+export const MAX_BUILD_QUESTIONS = 2;
 
 export const ProposeWorkoutArgsSchema = z.strictObject({
   /** Ignored for display (the name is code-made, BD2); kept in `rawArgs`. */
@@ -88,7 +129,36 @@ export const ProposeWorkoutArgsSchema = z.strictObject({
 export type ProposeWorkoutArgs = z.infer<typeof ProposeWorkoutArgsSchema>;
 
 // ---------------------------------------------------------------------------
-// The checked plan (`DraftPlan`, §8.2): routine-shaped, no loads
+// The checked plan (`DraftPlan`, §8.2): routine-shaped, with checked loads (v2)
+
+/**
+ * A set template's checked load (v2, BD6): what `checkProposedLoad` decided.
+ * `coach`: from Ben's own history; `coach_est`: an estimate (`est.`);
+ * `rule`: planned by the built-in rule at plan time (`Rule`); `none`: no
+ * load possible (`— · start light`). `basis` is the coach's text when it
+ * passed `checkBasis` (data, quoted), else code's.
+ */
+export const DraftLoadSchema = z.object({
+  load: LoadSchema.nullable(),
+  source: z.enum(['coach', 'coach_est', 'rule', 'none']),
+  basis: z.string().max(80).nullable(),
+  basisFromCoach: z.boolean(),
+  held: z.boolean(),
+  notes: z.array(z.string().min(1).max(200)).max(8),
+  /** A coach basis that failed the check (`Why?` → `NOT USED`). */
+  notUsed: z.string().max(80).nullable(),
+});
+export type DraftLoad = z.infer<typeof DraftLoadSchema>;
+
+/** The item a slot's load was checked on (B7). */
+export const CheckedOnSchema = z.object({
+  equipmentId: IdSchema,
+  kind: EquipmentKindSchema,
+  convention: LoadConventionSchema,
+  unit: WeightUnitSchema,
+  barKg: z.number().nonnegative().nullable(),
+});
+export type CheckedOnRecord = z.infer<typeof CheckedOnSchema>;
 
 export const DraftSetTemplateSchema = z
   .object({
@@ -98,6 +168,8 @@ export const DraftSetTemplateSchema = z
     /** Working and top sets: the coach's (or the rule's, BD7). Warm-ups: null. */
     targetRpe: RpeSchema.nullable(),
     restS: z.int().min(0).max(BUILD_LIMITS.maxRestS).nullable(),
+    /** (v2) The checked load; absent on warm-ups and on drafts made before v2 (the rule plans those). */
+    load: DraftLoadSchema.optional(),
   })
   .refine((t) => (t.reps === null) !== (t.durationS === null), { message: 'A set has reps or a work time, not both' });
 export type DraftSetTemplate = z.infer<typeof DraftSetTemplateSchema>;
@@ -113,6 +185,10 @@ export const DraftSlotSchema = z.object({
   main: z.boolean(),
   supersetGroup: z.string().min(1).max(8).nullable(),
   setTemplates: z.array(DraftSetTemplateSchema).min(1).max(BUILD_LIMITS.maxWarmups + BUILD_LIMITS.maxWorkingSets + 1),
+  /** (v2, B7) The item the loads were checked on; null/absent: none (older drafts re-check as `Rule`). */
+  checkedOn: CheckedOnSchema.nullable().optional(),
+  /** (v2, B5) The comparable history's version when checked. */
+  checkedHistoryVersion: z.string().min(1).max(64).nullable().optional(),
 });
 export type DraftSlot = z.infer<typeof DraftSlotSchema>;
 
@@ -121,7 +197,7 @@ export type DraftPlan = z.infer<typeof DraftPlanSchema>;
 
 /** A check written by code (BD9), never by the model. `leftOut`: the exercise isn't in the draft. */
 export const BuildCheckSchema = z.object({
-  kind: z.enum(['unknown', 'not_here_swapped', 'not_here_left_out', 'pain', 'duplicate', 'ungrouped', 'clamped', 'rest_snapped', 'rpe_missing', 'reps_changed', 'shape']),
+  kind: z.enum(['unknown', 'not_here_swapped', 'not_here_left_out', 'pain', 'duplicate', 'ungrouped', 'clamped', 'rest_snapped', 'rpe_missing', 'reps_changed', 'shape', 'load', 'main_kept']),
   catalogueId: z.string().max(80).nullable(),
   exerciseId: IdSchema.nullable(),
   /** App text, e.g. `Overhead press left out · shoulder flagged 6 Oct`. */
