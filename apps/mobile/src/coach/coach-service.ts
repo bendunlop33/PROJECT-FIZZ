@@ -994,7 +994,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) Ben asked to add an exercise in a workout turn: what can be added here, by ID.
-    // (14 Oct) The tool is offered on every live turn; the list (long) goes only when his words might add one.
+    // (14 Oct) The list (long) goes only when his words might add one; without it the turn withholds add_exercise_today (review S5).
     const addable = kind === 'workout' && session !== null && deps.coachAddInputs !== undefined && req.input.kind === 'words' && (requestHas(classifyBenRequest(req.input.text, 'workout'), 'add') || mentionsAdding(req.input.text)) ? await addableFor(p, session) : null;
     const stop = new AbortController();
     running.set(req.turnId, stop);

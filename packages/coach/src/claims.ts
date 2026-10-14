@@ -592,6 +592,7 @@ function hasClaimTrigger(words: readonly string[], clause: string, sentence: str
   // Negation only counts in the words before the trigger (review r2 B1): a
   // trailing "not 100" doesn't undo "sets 3 and 4 are now 95 kg".
   if (GENERIC_ONLY.test(clause)) return true;
+  if (matchesUnnegated(RENAMED_WORKOUT, clause) && !isQuestion(sentence) && !OFFER_TAIL.test(sentence)) return true;
   if (presentStateClaim(clause, sentence)) return true;
   if (painHoldClaim(clause, sentence)) return true;
   if (structuralStateClaim(clause, sentence)) return true;
@@ -872,7 +873,15 @@ const BUILT_WORKOUT =
 const SAVED_WORKOUT =
   /\b(?:saved|stored|added|scheduled|booked|filed|put)(?: it| this| that| the workout| your workout| the draft| this workout)? (?:to|in|into|as|on) (?:your |the )?(?:workouts|library|routines|rotation|calendar|schedule)\b|\b(?:started|kicked off|launched|begun) (?:it|the workout|your workout|this workout|the draft|that workout)\b|\b(?:workout|draft) (?:is|has been|was|got) (?:now )?(?:saved|started|scheduled|booked)\b/;
 
+/**
+ * Review S2: "I've renamed the workout to Chest day", "It's now called Chest day": backed only by a
+ * committed `rename_workout` the sentence cites.
+ */
+const RENAMED_WORKOUT =
+  /\b(?:re-?named|(?:changed|updated|switched|set) (?:the |its |your |today's )?(?:(?:workout|session)(?:'s| is)? )?name|(?:is|it is|it's|workout is|session is) now (?:called|named)|(?:called|named) it)\b/;
+
 function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op: SetOp } {
+  if (RENAMED_WORKOUT.test(clause)) return { kinds: new Set<ClaimKind>(['rename_workout']), op: 'change' };
   if (SAVED_WORKOUT.test(clause)) return { kinds: new Set<ClaimKind>(['workout_saved']), op: 'change' };
   if (BUILT_WORKOUT.test(clause)) return { kinds: new Set<ClaimKind>(['build_workout']), op: 'change' };
   const kinds = new Set<ClaimKind>();

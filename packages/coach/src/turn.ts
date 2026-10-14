@@ -25,7 +25,7 @@ import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { asksToRename, chipRequest, classifyBenRequest, isStructuralRequest, mentionsTodaysSets, requestHas, revisesDraft, type BenRequest } from './request';
+import { asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, requestHas, revisesDraft, type BenRequest } from './request';
 import { parseToolCall } from './tool-call';
 import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS } from './build';
 import { buildFollowUpIn, buildPainMention, forcesBuild, refusedBuildActionIds } from './build-ask';
@@ -225,7 +225,8 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
       break;
   }
   const live = g.liveWorkout === true && g.kind === 'workout';
-  const setWords = live && g.input.kind === 'words' && mentionsTodaysSets(g.input.text);
+  // Review S2: asking to rename is asking for a change, so "I've renamed it" with no card is hidden and noted.
+  const setWords = live && g.input.kind === 'words' && (mentionsTodaysSets(g.input.text) || asksToRename(g.input.text));
   const benAskedForChange = acceptedOffer || setWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'add')));
   return {
     kind: g.kind,
@@ -250,9 +251,13 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
  *   (`mentionsTodaysSets`: weights, sets, reps, kg, heavier, lighter, target, repopulate, …);
  *   for an add, not one scoped to next time or the routine (review B2).
  * - `rename_workout`: words asking to rename it (`asksToRename`).
+ * - Review B1: words scoped to a later session or the plan ("heavier next time", `futureScopeOnly`)
+ *   never ask for today's sets or adds; the turn refuses the call (`FUTURE_SCOPE_LINE`).
+ * - Review S1: an accepted offer counts for `adjust_pending_sets` only, the change it offered.
  */
 export function todayChangeAsked(tool: string, gate: Pick<TurnGate, 'benRequest' | 'acceptedOffer'>, words: string | null): boolean {
-  if (gate.acceptedOffer) return true;
+  if (todayScopeRefused(tool, words)) return false;
+  if (gate.acceptedOffer && tool === 'adjust_pending_sets') return true;
   const r = gate.benRequest;
   switch (tool) {
     case 'adjust_pending_sets':
@@ -267,8 +272,22 @@ export function todayChangeAsked(tool: string, gate: Pick<TurnGate, 'benRequest'
   }
 }
 
+/** Review B1: a today-tool called on words about a later session or the plan. Refused, never offered. */
+export function todayScopeRefused(tool: string, words: string | null): boolean {
+  return (tool === 'adjust_pending_sets' || tool === 'add_exercise_today') && words !== null && futureScopeOnly(words);
+}
+
+/** Fed back for a today-tool called on words about a later session (review B1). */
+export const FUTURE_SCOPE_LINE = 'Not applied: Ben asked about a later session or his plan, not today. Today’s sets stay as they are.';
+
 /** Fed back for a today-change Ben didn't ask for: never run, shown to him as an offer instead (rule 3). */
 export const OFFER_INSTEAD_LINE = 'Not applied: Ben did not ask for this. He now sees an offer to adjust; in reply, say briefly what you would change and why. It applies only if he accepts.';
+
+/** Review S5: add_exercise_today is withheld when the context carries no `addable` list. */
+function withoutUnlistedAdd(registry: TurnRegistry, listed: boolean): TurnRegistry {
+  if (listed || !registry.tools.some((t) => t.name === 'add_exercise_today')) return registry;
+  return { tools: registry.tools.filter((t) => t.name !== 'add_exercise_today'), withheld: [...registry.withheld, { name: 'add_exercise_today', reason: 'needs_request' }] };
+}
 
 /** Tools the app can actually run in this build; others are withheld, never offered. */
 function runnable(registry: TurnRegistry, executors: CoachExecutors): TurnRegistry {
@@ -288,12 +307,22 @@ export const COACH_INSTRUCTIONS = [
   'You cannot delete workouts or sets. If Ben asks you to, reply only: "Delete workouts from Past workouts."',
 ].join('\n');
 
-/** (14 Oct) Sent when the today-tools are offered (a live workout). */
-export const LIVE_WORKOUT_INSTRUCTIONS = [
-  'This workout is live. You can change today’s remaining sets (adjust_pending_sets), add an exercise (add_exercise_today) and rename the workout (rename_workout). When Ben asks for one of these, call the tool; never say you lack a tool or can’t do it here.',
-  'For loads from his recent history, read get_recent_training first. History imported from FitNotes is his own training and a valid basis (equipment not recorded); the app fits every load to today’s equipment.',
-  'When Ben did not ask, the app turns your call into an offer he accepts; nothing applies until he does.',
-].join('\n');
+/**
+ * (14 Oct) Sent when the today-tools are offered (a live workout). Review S5: add_exercise_today is
+ * named only when it is offered (with the list of what can be added).
+ */
+export function liveWorkoutInstructions(addOffered: boolean): string {
+  return [
+    addOffered
+      ? 'This workout is live. You can change today’s remaining sets (adjust_pending_sets), add an exercise (add_exercise_today) and rename the workout (rename_workout). When Ben asks for one of these, call the tool; never say you lack a tool or can’t do it here.'
+      : 'This workout is live. You can change today’s remaining sets (adjust_pending_sets) and rename the workout (rename_workout). When Ben asks for one of these, call the tool; never say you lack a tool or can’t do it here.',
+    // Review B1.
+    'These tools change today only. Never use them for a change Ben wants next time, from now on, or in his routine or template.',
+    'For loads from his recent history, read get_recent_training first. History imported from FitNotes is his own training and a valid basis (equipment not recorded); the app fits every load to today’s equipment.',
+    'When Ben did not ask, the app turns your call into an offer he accepts; nothing applies until he does.',
+  ].join('\n');
+}
+export const LIVE_WORKOUT_INSTRUCTIONS = liveWorkoutInstructions(true);
 
 function benInputText(input: BenInput): string | null {
   switch (input.kind) {
@@ -526,7 +555,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const mention = words !== null && rawMention === 'unclear' && requestHas(classifyBenRequest(words, 'general'), 'build') && buildPainMention(words) === 'none' ? 'none' : rawMention;
   const messagePain: MessagePain | null = words === null ? null : { mention, exerciseIds: req.namedExerciseIds ?? [], bodyPart: painBodyPart(words) };
 
-  const registry = runnable(buildTurnRegistry(gate), ports.executors);
+  // Review S5: add_exercise_today only with the list of what can be added; without it the model can only guess an ID.
+  const registry = withoutUnlistedAdd(runnable(buildTurnRegistry(gate), ports.executors), context.yourData.addable !== undefined);
   const tools = [...functionToolDefinitions(registry.tools), replyToolDefinition()];
   const buildOffered = registry.tools.some((t) => t.name === 'propose_workout');
   // Build 131: a general turn without the build tool still knows the app builds workouts, so it never says it can't.
@@ -545,7 +575,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const buildInPlay = canBuild && (benBuildWords || followUp !== null);
   const buildInstructions = forced || clearFollowUp ? BUILD_INSTRUCTIONS : looseBuild ? OFFER_REPLY_BUILD_INSTRUCTIONS : OFFERED_BUILD_INSTRUCTIONS;
   const todayOffered = registry.tools.some((t) => TODAY_TOOLS.has(t.name));
-  const baseInstructions = todayOffered ? `${COACH_INSTRUCTIONS}\n${LIVE_WORKOUT_INSTRUCTIONS}` : COACH_INSTRUCTIONS;
+  const addOffered = registry.tools.some((t) => t.name === 'add_exercise_today');
+  const baseInstructions = todayOffered ? `${COACH_INSTRUCTIONS}\n${liveWorkoutInstructions(addOffered)}` : COACH_INSTRUCTIONS;
   const instructions = buildOffered ? `${baseInstructions}\n${buildInstructions}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
@@ -575,7 +606,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
   // The reply is always the last step, so every action it could cite is already in the ledger.
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, todayToolsOffered: todayOffered });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {
@@ -683,6 +714,11 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: parsed.error, line: parsed.line }) });
       continue;
     }
+    if (todayScopeRefused(parsed.call.tool, words)) {
+      logLine({ tool: parsed.call.tool, outcome: 'not_allowed', text: 'Not applied: a later session, not today.', actionId: null });
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: FUTURE_SCOPE_LINE }) });
+      continue;
+    }
     if (TODAY_TOOLS.has(parsed.call.tool) && !todayChangeAsked(parsed.call.tool, gate, words)) {
       offeredInstead = true;
       logLine({ tool: parsed.call.tool, outcome: 'proposed', text: 'Offered, not applied.', actionId: null });
@@ -726,6 +762,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     const streamed = replyStream.streamed;
     emit(filter.push(message.startsWith(streamed) ? message.slice(streamed.length) : ''));
     emit(filter.end(true));
+    // Review S3: a hidden "no tool for that" became "Want me to adjust?": Adjust applies it (rule 3).
+    if (filter.noTodayToolHidden && error === null && liveWorkout) offer = 'adjust_today';
   } else if (replyStream.streamed !== '') {
     // Cut off mid-reply (Stop, stall): the finished sentences stay; an unfinished one is never padded.
     emit(filter.end(false));

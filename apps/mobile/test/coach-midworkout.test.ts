@@ -53,7 +53,9 @@ describe('build 151 in the app: today-tools on every live turn', () => {
     model = new StepModel([lowerPending('Your recent best.'), () => replyWith('Set from your recent sets.')]);
     const r = await say(s, sessionId, BEN_151);
     const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
-    expect(tools).toEqual(expect.arrayContaining(['adjust_pending_sets', 'add_exercise_today', 'rename_workout']));
+    expect(tools).toEqual(expect.arrayContaining(['adjust_pending_sets', 'rename_workout']));
+    // Review S5: no add words, no list of what can be added, so no add tool.
+    expect(tools).not.toContain('add_exercise_today');
     expect(model.requests[0]?.toolChoice).toBe('required');
     expect(r.cards.map((c) => c.record.status)).toEqual(['committed']);
     expect(r.offer).toBeNull();

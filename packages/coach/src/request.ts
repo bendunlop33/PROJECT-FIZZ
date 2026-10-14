@@ -982,9 +982,33 @@ const TODAY_SET_WORDS =
 /** "Keep the weights as they are", "don't change the sets": a hold, not a request. */
 const KEEP_AS_IS = /\b(?:keep|leave|hold)\b[^.?!]{0,30}\b(?:as (?:it is|they are|is)|the same|where (?:it is|they are))\b|\b(?:don'?t|do not|no need to) (?:change|touch|adjust|alter|move|update)\b/;
 
+/**
+ * Review S6: a question for information ("What weight did I do last week?", "How many sets left?",
+ * "Was that 100?") asks for no change. "What about / how about …" is a suggestion, not one of these.
+ */
+const INFO_QUESTION = /^(?:what(?:'s|s)?|how|which|when|where|who|why|did|was|were|is|are|am i|do i|does|have i|had i)\b(?! about\b)/;
+
 export function mentionsTodaysSets(text: string): boolean {
-  const t = lower(text);
-  return TODAY_SET_WORDS.test(t) && !KEEP_AS_IS.test(t);
+  const t = lower(text).replace(/[‘’]/g, "'");
+  if (KEEP_AS_IS.test(t)) return false;
+  const sentences = t.match(/[^.!?;]+[.!?;]*/g) ?? [];
+  return sentences.some((s) => TODAY_SET_WORDS.test(s) && !INFO_QUESTION.test(s.trim()));
+}
+
+/** Review B1: words that put a change on a later session or the plan, not today. */
+const FUTURE_SCOPE_WORDS =
+  /\b(?:next (?:time|session|week|workout|one)|from now on|going forward|in (?:the )?future|future (?:sessions?|workouts?)|permanently|for good|routines?|templates?|programmes?|programs?|every (?:[a-z]+ )?(?:day|session|time|week|workout)|each (?:time|session|week|workout))\b/;
+/** Today's scope said outright: "today and next time", "for the rest of this workout". */
+const TODAY_SCOPE_WORDS = /\b(?:today|tonight|this (?:session|workout)|right now|for the rest|rest of (?:the|this|today'?s) (?:session|workout|sets)|remaining sets?)\b/;
+
+/**
+ * Review B1: Ben's words scope the change to a later session or his routine and never to today
+ * ("make bench heavier next time", "add curls to my routine", "every push day"). The today-tools
+ * never run on such words.
+ */
+export function futureScopeOnly(text: string): boolean {
+  const t = lower(text).replace(/[‘’]/g, "'");
+  return FUTURE_SCOPE_WORDS.test(t) && !TODAY_SCOPE_WORDS.test(t);
 }
 
 const RENAME =
@@ -999,5 +1023,6 @@ export function asksToRename(text: string): boolean {
 
 /** (14 Oct) Words that might add an exercise today: the app then sends what can be added (`addable`). */
 export function mentionsAdding(text: string): boolean {
-  return /\b(?:add|adding|another exercise|put in|throw in|chuck in|include|superset)\b/.test(lower(text));
+  // Review S5: "Can I also do some curls?", "fit in some dips", "finish with planks".
+  return /\b(?:add|adding|another exercise|put in|throw in|chuck in|include|superset|also do|do some|fit in|squeeze in|finish with|finish off with)\b/.test(lower(text));
 }
