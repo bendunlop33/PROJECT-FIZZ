@@ -44,6 +44,7 @@ const TABLES = [
   'sessions',
   'set_audit',
   'timing_audit',
+  'training_profiles',
   'work_intervals',
   'workout_drafts',
 ];

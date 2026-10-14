@@ -10,6 +10,7 @@ export * from './import-profiles';
 export * from './coach';
 export * from './drafts';
 export * from './workout-drafts';
+export * from './training-profiles';
 export * from './store';
 export * from './integrity';
 export * from './backup/sha256';
