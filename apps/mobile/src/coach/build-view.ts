@@ -1,5 +1,5 @@
-import { BUILD_LENGTH_CHIPS, type ActionRecord, type BuildFocus } from '@fizz/schemas';
-import { buildRequestText, buildingTitle, draftCardEndText, draftName, type DraftCardState } from '@fizz/domain';
+import { BUILD_LENGTH_CHIPS, type ActionRecord, type BuildDay, type BuildFocus, type TrainingSplit } from '@fizz/schemas';
+import { buildRequestText, buildingTitle, draftCardEndText, draftName, splitDayFocus, type DraftCardState } from '@fizz/domain';
 
 import type { CoachDraftCard, CoachDraftInfo } from '../services/workout-services';
 import type { BuildBlock } from './coach-service';
@@ -39,22 +39,22 @@ export const BUILD_COPY = {
   startByTap: "Tap Start workout when you're ready.",
 } as const;
 
-const FOCUS_CHIPS: readonly { focus: BuildFocus; label: string }[] = [
-  { focus: 'coach_picks', label: 'Coach picks' },
-  { focus: 'push', label: 'Push' },
-  { focus: 'pull', label: 'Pull' },
-  { focus: 'legs', label: 'Legs' },
-  { focus: 'upper', label: 'Upper' },
-  { focus: 'lower', label: 'Lower' },
-  { focus: 'full_body', label: 'Full body' },
-];
+/** One Build card chip: a day of the Settings split (F19). */
+export interface BuildDayChip {
+  id: string;
+  focus: BuildFocus;
+  day: BuildDay;
+}
 
-const FOCUS_SPOKEN: Readonly<Record<BuildFocus, string>> = { coach_picks: '', push: 'push ', pull: 'pull ', legs: 'legs ', upper: 'upper body ', lower: 'lower body ', full_body: 'full body ' };
+/** F19: the Build card's chips are the split's days, in its order. No `Coach picks`. */
+export function buildDayChips(split: TrainingSplit): BuildDayChip[] {
+  return split.days.map((d) => ({ id: d.id, focus: splitDayFocus(split, d), day: { name: d.name, bodyParts: [...d.bodyParts] } }));
+}
 
 export interface BuildCardView {
   title: string;
   lengths: { minutes: number; label: string; selected: boolean; accessibilityLabel: string }[];
-  focuses: { focus: BuildFocus; label: string; selected: boolean; accessibilityLabel: string }[];
+  focuses: { id: string; label: string; selected: boolean; accessibilityLabel: string }[];
   /** `⌂ Main gym`, or `⚠ No gym` (the typical gym's items are used). */
   gym: { text: string; warning: boolean };
   /** Ben's message `Build` sends: `Build a 45 min push workout`. */
@@ -63,26 +63,31 @@ export interface BuildCardView {
 }
 
 /**
- * The Build card (§4.1). Length defaults to the session length (Goals &
- * schedule) when set, else none selected (the build then uses 60). Focus
- * defaults to `Coach picks`.
+ * The Build card (§4.1, F19). Length defaults to the session length (Training
+ * details). The focus chips are the Settings split's days, the next day in
+ * rotation selected (`dayId`); a chip is always selected.
  */
-export function buildCardView(s: { minutes: number | null; focus: BuildFocus; gymName: string | null }): BuildCardView {
-  const message = buildRequestText({ minutes: s.minutes, focus: s.focus });
+export function buildCardView(s: { minutes: number | null; days: readonly BuildDayChip[]; dayId: string | null; gymName: string | null }): BuildCardView {
+  const chosen = s.days.find((d) => d.id === s.dayId) ?? s.days[0] ?? null;
+  const message = buildRequestText({ minutes: s.minutes, focus: chosen?.focus ?? 'coach_picks', dayName: chosen?.day.name ?? null });
+  const spoken = chosen === null ? '' : `${chosen.day.name.toLowerCase()} `;
   return {
     title: BUILD_COPY.title,
     lengths: BUILD_LENGTH_CHIPS.map((m) => ({ minutes: m, label: String(m), selected: s.minutes === m, accessibilityLabel: `${String(m)} minutes${s.minutes === m ? ', selected' : ''}, length` })),
-    focuses: FOCUS_CHIPS.map((f) => ({ ...f, selected: s.focus === f.focus, accessibilityLabel: `${f.label}${s.focus === f.focus ? ', selected' : ''}, focus` })),
+    focuses: s.days.map((d) => {
+      const selected = d.id === chosen?.id;
+      return { id: d.id, label: d.day.name, selected, accessibilityLabel: `${d.day.name}${selected ? ', selected' : ''}, focus` };
+    }),
     gym: s.gymName === null ? { text: BUILD_COPY.noGym, warning: true } : { text: `⌂ ${s.gymName}`, warning: false },
     message,
-    buildLabel: `Build a ${s.minutes === null ? '' : `${String(s.minutes)} minute `}${FOCUS_SPOKEN[s.focus]}workout`,
+    buildLabel: `Build a ${s.minutes === null ? '' : `${String(s.minutes)} minute `}${spoken}workout`,
   };
 }
 
 /** The pending card (§4.2): `Building Push · 45 min` and the elapsed `0:12` (no spinner). */
-export function pendingBuildView(s: { focus: BuildFocus; minutes: number; elapsedMs: number }): { title: string; elapsed: string } {
+export function pendingBuildView(s: { focus: BuildFocus; minutes: number; elapsedMs: number; dayName?: string | null }): { title: string; elapsed: string } {
   const sec = Math.max(0, Math.floor(s.elapsedMs / 1000));
-  return { title: buildingTitle(s.focus, s.minutes), elapsed: `${String(Math.floor(sec / 60))}:${String(sec % 60).padStart(2, '0')}` };
+  return { title: buildingTitle(s.focus, s.minutes, s.dayName ?? null), elapsed: `${String(Math.floor(sec / 60))}:${String(sec % 60).padStart(2, '0')}` };
 }
 
 export interface DraftCardView {
@@ -159,8 +164,8 @@ export function fromCoachRowText(row: { name: string; exerciseCount: number }, m
 }
 
 /** The draft's name for a chip choice (the card's own title before it's built). */
-export function chosenName(focus: BuildFocus, minutes: number | null): string {
-  return draftName(focus, minutes ?? 60);
+export function chosenName(focus: BuildFocus, minutes: number | null, dayName?: string | null): string {
+  return draftName(focus, minutes ?? 60, dayName ?? null);
 }
 
 /**

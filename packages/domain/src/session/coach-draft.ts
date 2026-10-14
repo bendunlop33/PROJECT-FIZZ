@@ -159,6 +159,10 @@ const FOCUS_WORD: Readonly<Record<BuildFocus, string | null>> = {
   upper: 'upper body',
   lower: 'lower body',
   full_body: 'full body',
+  chest: 'chest',
+  shoulders: 'shoulders',
+  back: 'back',
+  split_day: null,
 };
 
 const FOCUS_TITLE: Readonly<Record<BuildFocus, string>> = {
@@ -169,22 +173,27 @@ const FOCUS_TITLE: Readonly<Record<BuildFocus, string>> = {
   upper: 'Upper',
   lower: 'Lower',
   full_body: 'Full body',
+  chest: 'Chest',
+  shoulders: 'Shoulders',
+  back: 'Back',
+  split_day: 'Workout',
 };
 
 /** Ben's message from the Build card's chips (§4.1, §7): `Build a 45 min push workout`, `Build a workout`. */
-export function buildRequestText(req: { minutes: number | null; focus: BuildFocus }): string {
-  const parts = [req.minutes === null ? null : `${String(req.minutes)} min`, FOCUS_WORD[req.focus]].filter((x): x is string => x !== null);
+export function buildRequestText(req: { minutes: number | null; focus: BuildFocus; dayName?: string | null }): string {
+  const word = req.focus === 'split_day' && req.dayName ? req.dayName : FOCUS_WORD[req.focus];
+  const parts = [req.minutes === null ? null : `${String(req.minutes)} min`, word].filter((x): x is string => x !== null);
   return parts.length === 0 ? 'Build a workout' : `Build a ${parts.join(' ')} workout`;
 }
 
 /** The draft's name, made by code (BD2): `Push · 45 min`, `Workout · 45 min`. */
-export function draftName(focus: BuildFocus, minutes: number): string {
-  return `${FOCUS_TITLE[focus]} · ${String(minutes)} min`;
+export function draftName(focus: BuildFocus, minutes: number, dayName?: string | null): string {
+  return `${dayName ? dayName : FOCUS_TITLE[focus]} · ${String(minutes)} min`;
 }
 
 /** The pending card's title (§4.2): `Building Push · 45 min`. */
-export function buildingTitle(focus: BuildFocus, minutes: number): string {
-  return `Building ${draftName(focus, minutes)}`;
+export function buildingTitle(focus: BuildFocus, minutes: number, dayName?: string | null): string {
+  return `Building ${draftName(focus, minutes, dayName)}`;
 }
 
 /** The length a build uses: Ben's words, else his session length (Goals & schedule, when set), else 60 (§8.2). */

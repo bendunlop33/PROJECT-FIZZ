@@ -1082,6 +1082,16 @@ describe('review r5 S2: a capped usable list keeps what Ben named and what fits 
     const first = usableFirst({ words: ['help me plan todays workout, upper with a seated row'], focus: 'upper', pool, draft: ['a-3'], routines: [] });
     expect(first.slice(0, 3)).toEqual(['seated-row', 'a-3', 'triceps-pushdown']);
   });
+  it('profile review S7: a custom split day ranks exercises by its own body parts (Arms: biceps and triceps)', () => {
+    const muscles: Record<string, string> = { 'triceps-pushdown': 'triceps', 'seated-row': 'lats', 'a-80': 'biceps' };
+    const withMuscles = pool.map((p) => ({ ...p, primaryMuscle: muscles[p.catalogueId] }));
+    const first = usableFirst({ words: ['build me something'], focus: 'split_day', pool: withMuscles, draft: [], routines: [], dayBodyParts: ['Biceps', 'Triceps'] });
+    expect(first).toEqual(['a-80', 'triceps-pushdown']);
+    const kept = capUsable(usable, 60, first).map((u) => u.catalogueId);
+    expect(kept).toContain('a-80');
+    expect(kept).toContain('triceps-pushdown');
+    expect(usableFirst({ words: ['build me something'], focus: 'split_day', pool: withMuscles, draft: [], routines: [] })).toEqual([]);
+  });
 });
 
 describe('review r5 S3: more follow-ups that ask for it in the app', () => {

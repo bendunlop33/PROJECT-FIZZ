@@ -12,7 +12,7 @@ import {
   newWorkoutDraft,
   type WorkoutProposalContext,
 } from '@fizz/domain';
-import { BUILD_LIMITS, type ActionDetail, type BuildCheck, type BuildFocus, type DraftPlan, type GuardNote, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
+import { BUILD_LIMITS, muscleGroupOf, type ActionDetail, type BuildCheck, type BuildDay, type BuildFocus, type DraftPlan, type GuardNote, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
 import { isChangeClaim } from './claims';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
 
@@ -35,6 +35,8 @@ export interface BuildRequest {
   text: string;
   minutes: number;
   focus: BuildFocus;
+  /** (F19) The split day chosen on the Build card. */
+  day?: BuildDay | null;
   gymId: string | null;
   gymName: string | null;
   origin: 'chip' | 'card' | 'text' | 'voice';
@@ -51,7 +53,7 @@ export interface UsableExercise {
 
 /** What a build turn sends under `YOUR DATA` (§8.4) besides the usual blocks. */
 export interface BuildContextView {
-  request: { quote: string; minutes: number; focus: BuildFocus; origin: BuildRequest['origin'] };
+  request: { quote: string; minutes: number; focus: BuildFocus; origin: BuildRequest['origin']; /** (F19) The split day, its body parts and main lift (Ben's or recommended). */ day?: { name: string; bodyParts: string[]; mainLift: string | null } };
   gym: { name: string; typicalEquipment: boolean } | null;
   usable: UsableExercise[];
   /** Items marked busy today (none until the gym's `Busy today` exists). */
@@ -120,25 +122,34 @@ const FOCUS_SPLITS: Readonly<Record<BuildFocus, readonly string[]>> = {
   upper: ['push', 'pull'],
   lower: ['legs'],
   full_body: [],
+  chest: ['push'],
+  shoulders: ['push'],
+  back: ['pull'],
+  split_day: [],
 };
 
 /**
  * Review r5 S2: which usable exercises go ahead of the alphabetical fill when the list is capped, in
  * order: the ones Ben named in full ("split squats"), the draft's, the ones a distinctive word of his
- * names ("calf"), the ones fitting the focus (by catalogue split), then his routines'. Pure.
+ * names ("calf"), the ones whose main muscle is one of the split day's body parts (F19; review S7),
+ * the ones fitting the focus (by catalogue split), then his routines'. Pure.
  */
 export function usableFirst(input: {
   words: readonly string[];
   focus: BuildFocus;
-  pool: readonly { catalogueId: string; name: string; split?: string | undefined }[];
+  pool: readonly { catalogueId: string; name: string; split?: string | undefined; primaryMuscle?: string | undefined }[];
   draft: readonly string[];
   routines: readonly string[];
+  /** The Build card's split day's body parts, when one is chosen. */
+  dayBodyParts?: readonly string[];
 }): string[] {
   const text = input.words.join('\n');
   const named = input.pool.map((u) => ({ exerciseId: u.catalogueId, exerciseName: u.name }));
   const splits = FOCUS_SPLITS[input.focus];
+  const parts = input.dayBodyParts ?? [];
+  const day = parts.length === 0 ? [] : input.pool.filter((u) => u.primaryMuscle !== undefined && parts.includes(muscleGroupOf(u.primaryMuscle) ?? '')).map((u) => u.catalogueId);
   const focus = input.pool.filter((u) => u.split !== undefined && splits.includes(u.split)).map((u) => u.catalogueId);
-  return [...new Set([...exercisesNamedIn(text, named), ...input.draft, ...namedByTail(text, named), ...exercisesLooselyNamedIn(text, named), ...focus, ...input.routines])];
+  return [...new Set([...exercisesNamedIn(text, named), ...input.draft, ...namedByTail(text, named), ...exercisesLooselyNamedIn(text, named), ...day, ...focus, ...input.routines])];
 }
 
 const wordsOf = (s: string): string[] => s.toLowerCase().replace(/[’']/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 0);
@@ -190,7 +201,7 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
     const previous = deps.draft === null ? null : currentDraftVersion(deps.draft).plan;
     const draftId = deps.draft?.id ?? coachDraftIdFor(ctx.opId);
     const check = checkWorkoutProposal(args, await deps.checkContext(previous, ctx.opId, args.exercises.map((e) => e.catalogueId)));
-    const name = draftName(deps.request.focus, deps.request.minutes);
+    const name = draftName(deps.request.focus, deps.request.minutes, deps.request.day?.name ?? null);
     const parentN = deps.draft?.currentVersion ?? null;
     const rationale = checkedRationale(args.message);
     const base = { kind: 'build_workout' as const, draftId, name, gymName: deps.request.gymName?.slice(0, 120) ?? null };
@@ -208,7 +219,7 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
       status: 'current',
       actionId: actionIdFor(ctx.opId),
       turnId: ctx.turnId,
-      request: { text: deps.request.text.slice(0, 4000), minutes: deps.request.minutes, focus: deps.request.focus, gymId: deps.request.gymId, origin: deps.request.origin },
+      request: { text: deps.request.text.slice(0, 4000), minutes: deps.request.minutes, focus: deps.request.focus, gymId: deps.request.gymId, origin: deps.request.origin, ...(deps.request.day ? { day: { name: deps.request.day.name, bodyParts: [...deps.request.day.bodyParts] } } : {}) },
       rawArgs: JSON.stringify(args).slice(0, 40_000),
       plan: check.plan,
       fitMinutes: deps.request.minutes,

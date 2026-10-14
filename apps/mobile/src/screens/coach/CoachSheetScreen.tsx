@@ -39,7 +39,7 @@ import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, TextButton, TextField } from '../../ui';
 import { CoachCard } from './CoachCard';
 import { BuildRequestCard, PendingBuildCard, WorkoutDraftCard } from './BuildCards';
-import { BUILD_COPY, buildCardView, needsCoachView } from '../../coach/build-view';
+import { BUILD_COPY, buildCardView, needsCoachView, type BuildDayChip } from '../../coach/build-view';
 
 /**
  * The coach sheet (coach-sheet.md, ADR 0020 C6). A side door: it never opens
@@ -87,7 +87,9 @@ export function CoachSheetScreen() {
   /** The Build card (workout-builder §4.1), shown by the chip or an entry from `Build with coach`. */
   const [showBuild, setShowBuild] = useState(buildParam === true);
   /** A build turn running (the pending card, §4.2). */
-  const [building, setBuilding] = useState<{ focus: BuildFocus; minutes: number; startedAtMs: number } | null>(null);
+  const [building, setBuilding] = useState<{ focus: BuildFocus; dayName: string | null; minutes: number; startedAtMs: number } | null>(null);
+  /** F19: the Settings split's days for the Build card, the next one selected, and the session length. */
+  const [buildCard, setBuildCard] = useState<Awaited<ReturnType<typeof services.training.buildCard>> | null>(null);
   /** The selected gym a build uses (§4.1 gym line). */
   const [buildGym, setBuildGym] = useState<{ id: string; name: string } | null>(null);
   const sendGuard = useRef(0);
@@ -153,6 +155,9 @@ export function CoachSheetScreen() {
         const g = await services.yourData.currentGym().catch(() => null);
         if (!alive()) return;
         setBuildGym(g === null ? null : { id: g.id, name: g.name });
+        const card = await services.training.buildCard().catch(() => null);
+        if (!alive()) return;
+        setBuildCard(card);
         const today = await services.coach.today().catch(() => null);
         if (!alive()) return;
         setProfileToday(today);
@@ -247,15 +252,16 @@ export function CoachSheetScreen() {
   }
 
   /** `Build` on the Build card (§4.1): one message from the chips and one build turn; the pending card until it ends. */
-  async function build(minutes: number | null, f: BuildFocus) {
+  async function build(minutes: number | null, chip: BuildDayChip | null) {
     if (live !== null || clockNow() - sendGuard.current < TIMING.commitGuard) return;
     sendGuard.current = clockNow();
     const turnId = newUuid();
-    const message = buildCardView({ minutes, focus: f, gymName: buildGym?.name ?? null }).message;
+    const f: BuildFocus = chip?.focus ?? 'coach_picks';
+    const message = buildCardView({ minutes, days: chip === null ? [] : [chip], dayId: chip?.id ?? null, gymName: buildGym?.name ?? null }).message;
     setShowBuild(false);
     setNotice(null);
     Keyboard.dismiss();
-    setBuilding({ focus: f, minutes: minutes ?? 60, startedAtMs: clockNow() });
+    setBuilding({ focus: f, dayName: chip?.day.name ?? null, minutes: minutes ?? 60, startedAtMs: clockNow() });
     setLive(startLiveTurn(turnId, { kind: 'words', text: message, spoken: false }, clockNow()));
     try {
       const r = await services.coach.buildWorkout({
@@ -264,6 +270,8 @@ export function CoachSheetScreen() {
         turnId,
         minutes,
         focus: f,
+        day: chip?.day ?? null,
+        mainLift: chip === null ? null : (buildCard?.mainLifts[chip.id]?.name ?? null),
         extra: text,
         origin: 'card',
         onProgress: (p) => {
@@ -511,9 +519,9 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
         {showBuild && live === null ? (
-          <BuildRequestCard gymName={buildGym?.name ?? null} defaultMinutes={null} disabled={status?.canSend !== true} onBuild={(minutes, f) => void build(minutes, f)} />
+          <BuildRequestCard gymName={buildGym?.name ?? null} defaultMinutes={buildCard?.sessionMinutes ?? null} days={buildCard?.days ?? []} defaultDayId={buildCard?.nextDayId ?? null} disabled={status?.canSend !== true} onBuild={(minutes, chip) => void build(minutes, chip)} />
         ) : null}
-        {building !== null ? <PendingBuildCard focus={building.focus} minutes={building.minutes} startedAtMs={building.startedAtMs} nowMs={now} onCancel={() => { if (live !== null) services.coach.stop(live.turnId); }} /> : null}
+        {building !== null ? <PendingBuildCard focus={building.focus} dayName={building.dayName} minutes={building.minutes} startedAtMs={building.startedAtMs} nowMs={now} onCancel={() => { if (live !== null) services.coach.stop(live.turnId); }} /> : null}
         {rows.map((r) => (
           <Row
             key={r.key}

@@ -43,6 +43,8 @@ import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScr
 import { CoachConnectionScreen } from '../screens/profile/CoachConnectionScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
+import { SplitScreen } from '../screens/profile/SplitScreen';
+import { TrainingDetailsScreen } from '../screens/profile/TrainingDetailsScreen';
 import { MemoryScreen } from '../screens/profile/MemoryScreen';
 import { PlaybookScreen } from '../screens/profile/PlaybookScreen';
 import { PainFlagSheet } from '../screens/workout/PainFlagSheet';
@@ -162,6 +164,8 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="DataBackup" component={DataBackupScreen} options={{ title: 'Data & backup' }} />
       <ProfileStack.Screen name="AppStatus" component={AppStatusScreen} options={{ title: 'App status' }} />
       <ProfileStack.Screen name="PainFlags" component={PainFlagsScreen} options={{ title: 'Pain flags' }} />
+      <ProfileStack.Screen name="TrainingDetails" component={TrainingDetailsScreen} options={{ title: 'Training details' }} />
+      <ProfileStack.Screen name="Split" component={SplitScreen} options={{ title: 'Split' }} />
       <ProfileStack.Screen name="Memory" component={MemoryScreen} options={{ title: 'Memory' }} />
       <ProfileStack.Screen name="Playbook" component={PlaybookScreen} options={{ title: 'Playbook' }} />
       <ProfileStack.Screen name="CoachConnection" component={CoachConnectionScreen} options={{ title: 'Coach connection' }} />

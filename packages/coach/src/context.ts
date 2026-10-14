@@ -1,5 +1,5 @@
-import { buildExecutionOrder, deriveId, stableStringify, targetRpeOf } from '@fizz/domain';
-import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetValues } from '@fizz/schemas';
+import { ageFromBirthYear, buildExecutionOrder, deriveId, latestWeight, splitInUse, stableStringify, targetRpeOf, type MainLift } from '@fizz/domain';
+import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetValues, SplitBodyPart, TrainingProfile } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
 import type { BuildContextView } from './build';
@@ -103,6 +103,71 @@ export interface CoachContextInput {
    * exercises and the catalogue's, filtered by his gym). Absent otherwise.
    */
   addable?: readonly AddableExercise[];
+  /**
+   * (13 Oct, D7, D8) Ben's training details and split for planning: the
+   * stored profile (null: nothing saved yet), the year now (age from birth
+   * year), each split day's main lift (his choice or recommended from
+   * history) and the next day in rotation. Your data; unset values are
+   * listed as not set, never guessed (rule 6).
+   */
+  training?: TrainingInput;
+}
+
+export interface TrainingInput {
+  profile: TrainingProfile | null;
+  nowYear: number;
+  mainLifts: Readonly<Record<string, MainLift>>;
+  nextDayId: string | null;
+}
+
+/** What the coach sees of Ben's training details (Your data). Absent keys are not set. */
+export interface TrainingDetailsView {
+  /** From birth year only: the age reached this year. */
+  age?: { years: number; fromBirthYear: number };
+  gender?: 'male' | 'female';
+  heightCm?: number;
+  /** The latest dated entry; for bodyweight and assisted exercises. */
+  bodyweight?: { value: number; unit: 'kg' | 'lb'; date: string; use: 'bodyweight, weighted and assisted exercises' };
+  liftingExperience?: 'beginner' | 'intermediate' | 'experienced' | 'pro';
+  goal?: 'strength' | 'muscle' | 'both';
+  daysPerWeek?: number;
+  sessionMinutes: number;
+  split: {
+    kind: 'ppl' | 'clsb' | 'custom';
+    chosenByBen: boolean;
+    days: { name: string; bodyParts: SplitBodyPart[]; mainLift: { name: string; source: 'Ben chose' | 'recommended from history' } | null }[];
+    upNext: string | null;
+  };
+}
+
+/** The training details view and the lines for what isn't set (pure). */
+export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsView; notSet: string[] } {
+  const p = t.profile;
+  const a = p?.about ?? {};
+  const w = p === null ? null : latestWeight(p.weights);
+  const split = splitInUse(p);
+  const notSet: string[] = [];
+  const view: TrainingDetailsView = { sessionMinutes: p?.sessionMinutes ?? 45, split: { kind: split.kind, chosenByBen: p?.split !== undefined, days: [], upNext: null } };
+  if (a.birthYear !== undefined) view.age = { years: ageFromBirthYear(a.birthYear, t.nowYear), fromBirthYear: a.birthYear };
+  else notSet.push('Age (birth year)');
+  if (a.gender !== undefined) view.gender = a.gender;
+  else notSet.push('Gender');
+  if (a.heightCm !== undefined) view.heightCm = a.heightCm;
+  else notSet.push('Height');
+  if (w !== null) view.bodyweight = { value: w.value, unit: w.unit, date: w.date, use: 'bodyweight, weighted and assisted exercises' };
+  else notSet.push('Bodyweight');
+  if (a.experience !== undefined) view.liftingExperience = a.experience;
+  else notSet.push('Lifting experience');
+  if (p?.goal !== undefined) view.goal = p.goal;
+  else notSet.push('Goal');
+  if (p?.daysPerWeek !== undefined) view.daysPerWeek = p.daysPerWeek;
+  else notSet.push('Days a week');
+  view.split.days = split.days.map((d) => {
+    const m = t.mainLifts[d.id] ?? null;
+    return { name: d.name, bodyParts: [...d.bodyParts], mainLift: m === null ? null : { name: m.name, source: m.source === 'yours' ? 'Ben chose' : 'recommended from history' } };
+  });
+  view.split.upNext = split.days.find((d) => d.id === t.nextDayId)?.name ?? null;
+  return { view, notSet: notSet.map((n) => `${n}: not set`) };
 }
 
 /** One exercise `add_exercise_today` may add (its ID, as the tool takes it). */
@@ -163,6 +228,8 @@ export interface YourData {
   build?: BuildContextView;
   /** (12 Oct) Workout turns where Ben asked to add an exercise: what `add_exercise_today` may add. */
   addable?: AddableExercise[];
+  /** (13 Oct) Training details and split (D7, D8). */
+  training?: TrainingDetailsView;
 }
 
 export interface CoachingKnowledge {
@@ -262,6 +329,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.openedFrom === undefined ? {} : { openedFrom: copyOpenedFrom(input.openedFrom) }),
     ...(input.build === undefined ? {} : { build: JSON.parse(JSON.stringify(input.build)) as BuildContextView }),
     ...(input.addable === undefined ? {} : { addable: input.addable.map((a) => ({ ...a })) }),
+    ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
   };
 }
 
@@ -292,9 +360,11 @@ export function buildCoachingKnowledge(catalogue: readonly CatalogueCue[], candi
 /** Said while no read port for past workouts is built (review S4). */
 export const NO_TRAINING_HISTORY = 'Training history before this workout: not available';
 
+/** Said when the training details weren't read for this turn. */
+export const NO_TRAINING_DETAILS = 'Training details (age, gender, height, weight, experience, goal, schedule): not available';
+
 /** What the coach doesn't have in v1. Labelled, never guessed (rule 6, D15). */
 export const NOT_AVAILABLE: readonly string[] = [
-  'Goals and training schedule: not set in this app yet',
   'Recovery, sleep or wearable data: none',
   'Runs, rides or other endurance sessions: none logged',
 ];
@@ -335,7 +405,8 @@ function messageText(m: CoachMessage): string | null {
 export function buildCoachContext(input: CoachContextInput): CoachContext {
   const yourData = buildYourData(input);
   const coachingKnowledge = buildCoachingKnowledge(input.catalogue, input.playbookCandidates ?? []);
-  const notAvailable = input.trainingHistoryAvailable === true ? [...NOT_AVAILABLE] : [NO_TRAINING_HISTORY, ...NOT_AVAILABLE];
+  const training = input.training === undefined ? [NO_TRAINING_DETAILS] : trainingDetailsView(input.training).notSet;
+  const notAvailable = [...(input.trainingHistoryAvailable === true ? [] : [NO_TRAINING_HISTORY]), ...training, ...NOT_AVAILABLE];
   const history = historyItems(input.thread, input.historyBudgetChars ?? 6000);
   const contextHash = deriveId(stableStringify({ v: CONTEXT_FORMAT_VERSION, yourData, coachingKnowledge, notAvailable, history }));
   return { formatVersion: CONTEXT_FORMAT_VERSION, contextHash, yourData, coachingKnowledge, notAvailable, history, messagesSent: history.length };
@@ -392,6 +463,13 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
     if (b.gym !== null) yourData.push({ label: 'Gym', detail: `${b.gym.name}${b.gym.typicalEquipment ? ' · typical equipment' : ''} · ${plural(b.usable.length, 'exercise')} you can do here` });
     if (b.upNext !== null) yourData.push({ label: 'Up next', detail: b.upNext });
     if (b.draft !== null) yourData.push({ label: 'Coach draft', detail: `${b.draft.name} · version ${String(b.draft.version)}` });
+  }
+  if (y.training !== undefined) {
+    const t = y.training;
+    const about = [t.age === undefined ? null : `age ${String(t.age.years)}`, t.gender ?? null, t.heightCm === undefined ? null : `${String(t.heightCm)} cm`, t.bodyweight === undefined ? null : `${String(t.bodyweight.value)} ${t.bodyweight.unit}`, t.liftingExperience ?? null].filter((x): x is string => x !== null);
+    if (about.length > 0) yourData.push({ label: 'About you', detail: about.join(', ') });
+    yourData.push({ label: 'Training', detail: [t.goal ?? null, t.daysPerWeek === undefined ? null : `${String(t.daysPerWeek)} days a week`, `${String(t.sessionMinutes)} min`].filter((x): x is string => x !== null).join(', ') });
+    yourData.push({ label: 'Split', detail: t.split.days.map((d) => (d.mainLift === null ? d.name : `${d.name} (${d.mainLift.name})`)).join(', ') });
   }
   if (y.addable !== undefined) yourData.push({ label: 'Exercises you can add here', detail: plural(y.addable.length, 'exercise') });
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });

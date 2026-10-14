@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { ActionRecord } from '@fizz/schemas';
 
 import { buildBlockOf } from '../src/coach/coach-service';
-import { BUILD_COPY, buildCardView, draftCardView, draftChangeView, draftWhyView, fromCoachRowText, needsCoachView, pendingBuildView } from '../src/coach/build-view';
+import { DEFAULT_SPLIT, PRESET_SPLITS } from '@fizz/domain';
+import { BUILD_COPY, buildCardView, buildDayChips, draftCardView, draftChangeView, draftWhyView, fromCoachRowText, needsCoachView, pendingBuildView } from '../src/coach/build-view';
 import { cardView } from '../src/coach/sheet-view';
 import type { CoachDraftCard, CoachDraftRow, SessionList } from '../src/services/workout-services';
 import { allRows, isShownRow, pickerRowDetail, pickerRowLabel, pickerSections, todaySessions } from '../src/workout/session-picker';
@@ -20,17 +21,31 @@ const clock = () => '18:10';
 
 describe('the Build card (§4.1)', () => {
   it('chips with defaults; `Build` sends the code-made message; the gym line says `⚠ No gym` with no gym', () => {
-    const v = buildCardView({ minutes: 45, focus: 'push', gymName: 'Main gym' });
+    const v = buildCardView({ minutes: 45, days: buildDayChips(DEFAULT_SPLIT), dayId: 'push', gymName: 'Main gym' });
     expect(v.lengths.map((l) => [l.label, l.selected])).toEqual([['30', false], ['45', true], ['60', false], ['75', false], ['90', false]]);
-    expect(v.focuses.map((f) => f.label)).toEqual(['Coach picks', 'Push', 'Pull', 'Legs', 'Upper', 'Lower', 'Full body']);
+    expect(v.focuses.map((f) => f.label)).toEqual(['Push', 'Pull', 'Legs']);
     expect(v.focuses.find((f) => f.selected)?.label).toBe('Push');
     expect(v.message).toBe('Build a 45 min push workout');
     expect(v.gym).toEqual({ text: '⌂ Main gym', warning: false });
     expect(v.buildLabel).toBe('Build a 45 minute push workout');
     expect(v.lengths[1]?.accessibilityLabel).toBe('45 minutes, selected, length');
-    const none = buildCardView({ minutes: null, focus: 'coach_picks', gymName: null });
+    const none = buildCardView({ minutes: null, days: [], dayId: null, gymName: null });
     expect(none.message).toBe('Build a workout');
     expect(none.gym).toEqual({ text: BUILD_COPY.noGym, warning: true });
+  });
+
+  it('F19: chips are the Settings split’s days, no `Coach picks`; the next day is pre-selected; a custom day names the request', () => {
+    const clsb = buildCardView({ minutes: 60, days: buildDayChips({ kind: 'clsb', days: [...PRESET_SPLITS.clsb] }), dayId: 'shoulders', gymName: 'Main gym' });
+    expect(clsb.focuses.map((f) => [f.label, f.selected])).toEqual([['Chest', false], ['Legs', false], ['Shoulders', true], ['Back', false]]);
+    expect(clsb.message).toBe('Build a 60 min shoulders workout');
+    const custom = buildDayChips({ kind: 'custom', days: [{ id: 'a', name: 'Arms', bodyParts: ['Biceps', 'Triceps'] }, { id: 'b', name: 'Legs', bodyParts: ['Quads'] }] });
+    expect(custom.map((c) => c.focus)).toEqual(['split_day', 'split_day']);
+    const v = buildCardView({ minutes: 45, days: custom, dayId: null, gymName: null });
+    expect(v.focuses.find((f) => f.selected)?.label).toBe('Arms');
+    expect(v.message).toBe('Build a 45 min Arms workout');
+    expect(v.buildLabel).toBe('Build a 45 minute arms workout');
+    expect(pendingBuildView({ focus: 'split_day', dayName: 'Arms', minutes: 45, elapsedMs: 0 }).title).toBe('Building Arms · 45 min');
+    expect(JSON.stringify(v)).not.toContain('Coach picks');
   });
 
   it('the pending card counts up with no spinner text (§4.2)', () => {
@@ -160,7 +175,7 @@ describe('minimal copy (CLAUDE.md, 10 Oct)', () => {
     const strings = [
       ...Object.values(BUILD_COPY).flatMap((x) => (typeof x === 'string' ? [x] : [])),
       BUILD_COPY.leftOut(1),
-      buildCardView({ minutes: 45, focus: 'push', gymName: 'Main gym' }).message,
+      buildCardView({ minutes: 45, days: buildDayChips(DEFAULT_SPLIT), dayId: 'push', gymName: 'Main gym' }).message,
       needsCoachView('offline').line,
       draftCardView(card(), clock).accessibilityLabel,
     ];

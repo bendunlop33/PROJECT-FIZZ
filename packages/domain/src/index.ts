@@ -84,3 +84,4 @@ export * from './coach/memory-list';
 export * from './progress';
 export * from './session/fit-time';
 export * from './coach/fit';
+export * from './training-profile';

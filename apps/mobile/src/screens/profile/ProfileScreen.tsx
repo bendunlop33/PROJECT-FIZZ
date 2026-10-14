@@ -16,6 +16,7 @@ import { capabilityGroups, summariseCapabilities } from '../../status/capabiliti
 import { signingStatus } from '../../status/signing';
 import { Group, Row, Screen, SectionHeader } from '../../ui';
 import { BannerList } from '../BannerList';
+import { splitView, trainingDetailsView } from '../../training/training-view';
 import { useProbeResults } from './useProbeResults';
 
 /**
@@ -30,15 +31,18 @@ export function ProfileScreen() {
   const install = useInstallStatus();
   const probe = useProbeResults();
   const [data, reload] = useScreenData(async (s) => {
-    const [backup, banners, pain, gyms, coach] = await Promise.all([
+    const [backup, banners, pain, gyms, coach, training] = await Promise.all([
       s.backups.getStatus(),
       loadBanners(s, install),
       s.pain.active(),
       s.gyms.list(),
       // Keychain + settings file only; no network. A read failure shows as unknown, never as connected.
       readTextCoachState(coachConnectionPorts().ports).catch(() => null),
+      Promise.all([s.training.snapshot(), s.yourData.profile()]).catch(() => [null, null] as const),
     ]);
-    return { backup, banners, pain, gyms, coach };
+    const [snap, owner] = training;
+    const lines = snap === null ? null : { details: trainingDetailsView(snap.profile, { nowYear: snap.nowYear, unit: owner?.preferredUnit ?? 'kg' }).summary, split: splitView(snap.profile, snap.mainLifts).summary };
+    return { backup, banners, pain, gyms, coach, training: lines };
   });
   useEffect(() => {
     reload();
@@ -89,6 +93,22 @@ export function ProfileScreen() {
 
       <SectionHeader title="Training" />
       <Group>
+        <Row
+          title="Training details"
+          icon="person.text.rectangle"
+          subtitle={data.state === 'ready' ? (data.value.training?.details ?? null) : null}
+          onPress={() => {
+            navigation.navigate('TrainingDetails');
+          }}
+        />
+        <Row
+          title="Split"
+          icon="calendar"
+          subtitle={data.state === 'ready' ? (data.value.training?.split ?? null) : null}
+          onPress={() => {
+            navigation.navigate('Split');
+          }}
+        />
         <Row
           title="Pain flags"
           icon="exclamationmark.triangle"
