@@ -14,7 +14,7 @@ import {
   valuesText,
 } from '../display';
 import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclusions, notCountedLine, withExclusionWords } from '../exclusions';
-import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
+import { getAchievableLoads, isLoadAchievable, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
@@ -1019,4 +1019,157 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
 function planWasText(before: WorkoutSet['planned'], convention: SessionExercise['loadConvention'], eq: EquipmentInstance | null | undefined): string | null {
   const short = targetShort({ ...before, source: undefined }, { convention, ...(eq ? { equipment: eq } : {}) });
   return short === null ? null : short.replace(/^Target /, 'Plan was ');
+}
+
+// ---------------------------------------------------------------------------
+// Edit a set not done yet (14 Oct, Ben: "I should be able to edit anything on the sets")
+
+/** Ben's edits on the sheet, field by field; undefined = untouched (the stored value shows). */
+export interface PlannedSetEdits {
+  /** The load number in the row's unit and convention (null: no load). */
+  load?: number | null;
+  /** Exact (min = max) or a range. */
+  reps?: { min: number; max: number } | null;
+  durationS?: number | null;
+  distanceM?: number | null;
+  setType?: SetType;
+  /** A value, null to clear Ben's own target RPE. */
+  targetRpe?: number | null;
+  restS?: number;
+}
+
+export interface PlannedSetEditView {
+  setId: string;
+  setVersion: number;
+  exerciseName: string;
+  setNumber: number;
+  /** The set Log logs now; any other pending set offers `Do next`. */
+  isCurrent: boolean;
+  loadField: LoadField | null;
+  /** Reps target: one stepper (exact), or `min`–`max` (range). */
+  reps: { range: boolean; min: { value: number | null; down: StepTarget; up: StepTarget }; max: { value: number | null; down: StepTarget; up: StepTarget } | null } | null;
+  duration: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  distance: { value: number | null; down: StepTarget; up: StepTarget } | null;
+  setType: SetEditView['setType'];
+  /** Working sets only (a warm-up or drop set has no target effort). */
+  targetRpe: { target: TargetRpe | null; override: number | null; changed: boolean } | null;
+  /** Rest after this set, ±15 s, 0 to 60 min. */
+  rest: { seconds: number; text: string; down: StepTarget; up: StepTarget; changed: boolean };
+  /** `Target 100 kg × 6–8` as edited. */
+  text: string;
+  /** What `edit_planned_set` sends: only the fields that differ from the stored set; null when nothing does. */
+  patch: CommandOf<'edit_planned_set'>['patch'] | null;
+  changed: boolean;
+}
+
+const REST_STEP_S = 15;
+const REST_MAX_S = 3600;
+
+function restSteps(seconds: number): { down: StepTarget; up: StepTarget } {
+  const up = Math.min(REST_MAX_S, seconds + REST_STEP_S);
+  const down = Math.max(0, seconds - REST_STEP_S);
+  return {
+    up: seconds >= REST_MAX_S ? { enabled: false, reason: 'Maximum 60:00' } : { enabled: true, value: up, label: formatDuration(up) },
+    down: seconds <= 0 ? { enabled: false, reason: 'Minimum 0:00' } : { enabled: true, value: down, label: formatDuration(down) },
+  };
+}
+
+/** Reps steps for one end of a target: never below 1 (or `floor`), never above `ceiling`. */
+function boundedRepSteps(value: number | null, floor: number, ceiling: number | null): { down: StepTarget; up: StepTarget } {
+  const v = value ?? 0;
+  return {
+    up: ceiling !== null && v >= ceiling ? { enabled: false, reason: `Up to ${String(ceiling)}` } : { enabled: true, value: v + 1, label: String(v + 1) },
+    down: value === null || v - 1 < floor ? { enabled: false, reason: `Minimum ${String(floor)}` } : { enabled: true, value: v - 1, label: String(v - 1) },
+  };
+}
+
+/** `Range` on the reps target: an exact 8 becomes 8–10; a range becomes its top as an exact number. */
+export function toggleRepRange(reps: { min: number; max: number } | null): { min: number; max: number } {
+  if (reps === null) return { min: 8, max: 10 };
+  return reps.min === reps.max ? { min: reps.min, max: reps.min + 2 } : { min: reps.max, max: reps.max };
+}
+
+/**
+ * A typed load for a set not done yet, made achievable (rule 4): the nearest
+ * load the row's equipment can make, never past its min or max. Without
+ * equipment it's kept as typed (not below 0). Null stays null.
+ */
+export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: number | null): number | null {
+  if (typed === null) return null;
+  const set = state.sets.find((s) => s.id === setId);
+  const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+  if (!ex) return typed;
+  const eq = equipmentOf(state, ex);
+  if (eq === null || eq.kind === 'bodyweight_station') return Math.max(0, typed);
+  const r = roundToAvailableLoad({ value: Math.max(0, typed), unit: ex.unit, convention: ex.loadConvention }, eq, 'nearest');
+  return r.ok ? r.load.value : null;
+}
+
+/**
+ * Edit set for a set not done yet: its target (load through achievable
+ * loads only, reps exact or a range, time or distance), set type, target
+ * RPE and rest after it, as `edit_planned_set` saves them. Null when the
+ * set isn't pending (a logged set opens `buildSetEditView`).
+ */
+export function buildPlannedSetEditView(state: SessionAggregate, setId: string, edits: PlannedSetEdits = {}, options: Pick<SetEditOptions, 'ruleTargetRpe'> = {}): PlannedSetEditView | null {
+  const set = state.sets.find((s) => s.id === setId);
+  if (set?.status !== 'pending') return null;
+  const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
+  if (!ex) return null;
+  const eq = equipmentOf(state, ex);
+  const p = set.planned;
+  const storedLoad = p.load === null || p.load.convention === 'bodyweight' ? null : p.load.value;
+  const loadValue = edits.load === undefined ? storedLoad : edits.load;
+  const reps = edits.reps === undefined ? p.reps : edits.reps;
+  const durationS = edits.durationS === undefined ? p.durationS : edits.durationS;
+  const distanceM = edits.distanceM === undefined ? (p.distanceM ?? null) : edits.distanceM;
+  const setType = edits.setType ?? set.setType;
+  const working = setType !== 'warmup' && setType !== 'drop';
+  const storedOverride = p.rpeOverride ?? null;
+  const override = !working ? null : edits.targetRpe === undefined ? storedOverride : edits.targetRpe;
+  const restS = edits.restS ?? set.rest.seconds;
+
+  const label = loadFieldLabel(ex.loadConvention, eq);
+  const load: Load | null = loadValue === null ? (p.load?.convention === 'bodyweight' ? p.load : null) : { value: loadValue, unit: ex.unit, convention: ex.loadConvention };
+  const planned: WorkoutSet['planned'] = { ...p, load, reps, durationS, distanceM };
+  delete planned.rpeOverride;
+  if (override !== null) planned.rpeOverride = override;
+  const targetRpe = working ? { target: targetRpeOf({ setType, planned }, options.ruleTargetRpe?.[ex.id] ?? null), override, changed: override !== storedOverride } : null;
+
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const patch: NonNullable<PlannedSetEditView['patch']> = {};
+  if (!same(load, p.load)) patch.load = load;
+  if (ex.measurement === 'reps' && !same(reps, p.reps)) patch.reps = reps;
+  if (ex.measurement === 'duration' && !same(durationS, p.durationS)) patch.durationS = durationS;
+  if (ex.measurement === 'distance' && !same(distanceM, p.distanceM ?? null)) patch.distanceM = distanceM;
+  if (setType !== set.setType) patch.setType = setType;
+  // A type changed to a warm-up or drop clears the override in the reducer itself.
+  if (working && override !== storedOverride) patch.targetRpe = override;
+  if (restS !== set.rest.seconds) patch.restS = restS;
+  const changed = Object.keys(patch).length > 0;
+
+  const range = reps !== null && reps.min !== reps.max;
+  const own = exerciseSets(state, ex.id);
+  return {
+    setId: set.id,
+    setVersion: set.version,
+    exerciseName: ex.exerciseName,
+    setNumber: own.findIndex((s) => s.id === set.id) + 1,
+    isCurrent: state.session.activeSetId === set.id,
+    loadField: label === null ? null : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) },
+    reps:
+      ex.measurement !== 'reps'
+        ? null
+        : range
+          ? { range: true, min: { value: reps.min, ...boundedRepSteps(reps.min, 1, reps.max - 1) }, max: { value: reps.max, ...boundedRepSteps(reps.max, reps.min + 1, null) } }
+          : { range: false, min: { value: reps?.min ?? null, ...boundedRepSteps(reps?.min ?? null, 1, null) }, max: null },
+    duration: ex.measurement === 'duration' ? { value: durationS, ...durationSteps(durationS) } : null,
+    distance: ex.measurement === 'distance' ? { value: distanceM, ...distanceSteps(distanceM) } : null,
+    setType: { value: setType, changed: setType !== set.setType, choices: SET_TYPE_ORDER.map((t) => ({ type: t, label: SET_TYPE_WORD[t], selected: t === setType })) },
+    targetRpe,
+    rest: { seconds: restS, text: formatDuration(restS), ...restSteps(restS), changed: restS !== set.rest.seconds },
+    text: targetShort({ ...planned, source: undefined }, { convention: ex.loadConvention, ...(eq ? { equipment: eq } : {}) }) ?? 'No target',
+    patch: changed ? patch : null,
+    changed,
+  };
 }
