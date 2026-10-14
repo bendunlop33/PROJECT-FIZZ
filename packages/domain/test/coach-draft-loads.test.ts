@@ -5,10 +5,13 @@ import { DraftPlanSchema, WorkoutDraftSchema, type EquipmentInstance, type Exerc
 import {
   checkWorkoutProposal,
   doableHere,
+  draftHeadNote,
+  draftReasonLine,
   loadReferences,
   newWorkoutDraft,
   painHoldFor,
   planCoachDraft,
+  REASON_LINE_MAX,
   type HistorySession,
   type SubstituteContext,
   type WorkoutProposalContext,
@@ -111,7 +114,7 @@ function ctx(over: Partial<WorkoutProposalContext> = {}, opts: { flags?: PainFla
   };
 }
 
-const load = (value: number, convention: Load['convention'], basis: string): NonNullable<ProposedExercise['load']> => ({ value, unit: 'kg', convention, basis, from: 'own_history', relatedCatalogueId: null });
+const load = (value: number, convention: Exclude<Load['convention'], 'bodyweight'>, basis: string): NonNullable<ProposedExercise['load']> => ({ value, unit: 'kg', convention, basis, from: 'own_history', relatedCatalogueId: null });
 const pex = (catalogueId: string, over: Partial<ProposedExercise> = {}): ProposedExercise => ({
   catalogueId,
   warmups: null,
@@ -272,11 +275,44 @@ describe('planCoachDraft plans the checked loads (WB-L1, WB5, WB-L10, WB-L12, WB
   });
 
   it('a v1 draft (no stored loads) plans as before, from the rule', () => {
-    const v1 = checkWorkoutProposal(PUSH, ctx({ loads: undefined }));
+    const noLoads: WorkoutProposalContext = { ...ctx() };
+    delete noLoads.loads;
+    const v1 = checkWorkoutProposal(PUSH, noLoads);
     if (v1.status === 'unusable') throw new Error('unusable');
     expect(v1.plan.slots.every((s) => s.setTemplates.every((t) => t.load === undefined))).toBe(true);
     const d = newWorkoutDraft({ id: id(971), ownerId: OWNER, version: versionOf(v1.plan), opId: 'build-2', at: at(-60) });
     const out = planOf(d);
     expect(setsFor(out, BENCH.id)[0]?.planned.source).toBe('built_in_rule');
+  });
+});
+
+describe('reason lines on the draft overview (Ben, 14 Oct: "no reason why")', () => {
+  const firstWorking = (out: ReturnType<typeof planOf>, exerciseId: string) => setsFor(out, exerciseId)[0]?.planned ?? null;
+
+  it('each exercise gets a short data line: the coach’s basis, est., Rule with the last set, and main lift · goal', () => {
+    const out = planOf(draftOf());
+    // The lead main lift only (WL9 may mark more than one compound as main).
+    const main = new Set(out.version.plan.slots.filter((s) => s.main).slice(0, 1).map((s) => s.exerciseId));
+    const line = (e: Exercise) => draftReasonLine({ planned: firstWorking(out, e.id), reps: true, main: main.has(e.id), goal: 'strength' });
+    expect(line(BENCH)).toBe('last 3: 100×7 @8 → 102.5 · main lift · strength');
+    expect(line(INCLINE)).toBe('FitNotes 30×8 → repeat');
+    expect(line(FLY)).toBe('est. for 12–15 @9');
+    expect(line(PUSHDOWN)).toBe('Rule · last 25×12 @9');
+  });
+
+  it('held, estimates without the word, no load, no goal, timed, and the length cap', () => {
+    const out = planOf(draftOf(), { sessionPain: true });
+    expect(draftReasonLine({ planned: setsFor(out, BENCH.id)[0]?.planned ?? null, reps: true, main: false, goal: null })).toBe('held · last 3: 100×7 @8 → 102.5');
+    expect(draftReasonLine({ planned: { load: null, reps: { min: 8, max: 10 }, durationS: null, rpe: 8, rir: null }, reps: true, main: true, goal: null })).toBe('first time · start light · main lift');
+    expect(draftReasonLine({ planned: null, reps: false, main: false, goal: null })).toBeNull();
+    const est = { load: kg(25, 'stack'), reps: { min: 12, max: 15 }, durationS: null, rpe: 9, rir: null, source: 'coach' as const, provenance: { source: 'coach' as const, setAt: at(0), routineName: null, requestedLoad: null, basis: null, coach: { actionId: id(1), scope: 'build' as const, reason: null }, estimate: true as const, guardNotes: ['first time'] } };
+    expect(draftReasonLine({ planned: est, reps: true, main: false, goal: null })).toBe('est. · first time');
+    expect((draftReasonLine({ planned: { ...est, provenance: { ...est.provenance, coach: { ...est.provenance.coach, reason: 'x'.repeat(80) } } }, reps: true, main: true, goal: 'both' }) ?? '').length).toBeLessThanOrEqual(REASON_LINE_MAX);
+  });
+
+  it('the head note: split · main lift · length · last same split N days ago', () => {
+    expect(draftHeadNote({ split: 'Push', mainLift: 'Bench press', minutes: 45, lastSameDaysAgo: 6 })).toBe('Push · Bench press · 45 min · last Push 6 days ago');
+    expect(draftHeadNote({ split: 'Legs', mainLift: null, minutes: 60, lastSameDaysAgo: 1 })).toBe('Legs · 60 min · last Legs yesterday');
+    expect(draftHeadNote({ split: null, mainLift: null, minutes: 45, lastSameDaysAgo: 3 })).toBe('45 min');
   });
 });
