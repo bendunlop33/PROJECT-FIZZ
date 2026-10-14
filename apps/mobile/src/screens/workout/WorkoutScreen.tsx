@@ -73,6 +73,8 @@ import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/tar
 import { AX_FONT_SCALE } from '../../workout/overview';
 import { anchorReducer, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type ChipState } from '../../workout/table';
 import { ChatButton, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
+import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
+import { awayPrimary, nextViewing, pagerView } from '../../workout/set-pager';
 
 /**
  * Active workout: the Table view (default, active-workout §2A) or the
@@ -183,6 +185,8 @@ export function WorkoutScreen() {
   const openHeaderRef = useRef<View>(null);
   /** During rest the next set is folded away (D-Rest); this opens it. Reset when the set changes. */
   const [showNextSet, setShowNextSet] = useState(false);
+  /** F7: the set Ben is looking at with ‹ › or a swipe; null = the current set. Never changes what Log logs. */
+  const [viewing, setViewing] = useState<string | null>(null);
   /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
   const [focusRequest, setFocusRequest] = useState<{ field: EntryField } | null>(null);
   useEffect(() => {
@@ -606,10 +610,38 @@ export function WorkoutScreen() {
   const session = loaded.aggregate.session;
   const tz = session.startedAt.tz;
   const focus = view.focus;
+  // F7 / F8: the set pager and the rest screen's blocks (domain views; nothing computed here).
+  const nav = services.workout.navigation(loaded, viewing);
+  const shownGlance = nav.shownSetId === null ? null : services.workout.glance(loaded, nav.shownSetId);
+  const pager = pagerView(nav, shownGlance);
+  const away = pager?.away === true;
+  const restSets = services.workout.restSets(loaded);
 
   function close() {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.dispatch(popToToday());
+  }
+
+  function movePager(d: 'prev' | 'next') {
+    setViewing(nextViewing(nav, { kind: d }));
+  }
+
+  function editSet(setId: string) {
+    // The full rest view is a modal over the stack: close it first so Edit set shows on top.
+    setRestFull(false);
+    navigation.navigate('EditSet', { sessionId: session.id, setId });
+  }
+
+  /** `Make current` (F7): the viewed set becomes the one Log logs (`set_active_set`, versioned). */
+  function makeCurrent(setId: string) {
+    void selectRow(setId).then(() => {
+      setViewing(nextViewing(nav, { kind: 'made_current' }));
+    });
+  }
+
+  function showTable() {
+    updatePrefs({ workoutView: 'table' });
+    anchorEvent({ kind: 'view_switched' });
   }
 
   /** A refused menu action: the shortest honest line (the screen reloads on a stale version). */
@@ -697,6 +729,7 @@ export function WorkoutScreen() {
         .then(showRecord);
     // Path B: a pure check on the logged set, no AI call (coach-adjustments §4.2).
     coach.afterLog(r.aggregate, loggedSetId);
+    setViewing(nextViewing(services.workout.navigation({ ...loaded, aggregate: r.aggregate }, null), { kind: 'logged' }));
     // Table: the saved row slides up and the next open row comes to the top (§2A.4 auto-advance).
     setAfterSetFor(loggedSetId);
     anchorEvent({ kind: 'logged' });
@@ -790,11 +823,12 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null });
+    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
       if (action === 'undo_coach' && f.coachActionId !== null) coach.undo(f.coachActionId);
+      if (action === 'edit_set') editSet(f.setId);
       if (action === 'target_rpe') pickTargetRpe(f);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'swap') void openSwap(f);
@@ -852,12 +886,13 @@ export function WorkoutScreen() {
     const ex = { sessionExerciseId, exerciseId: facts.exerciseId, exerciseName: facts.exerciseName };
     const next = facts.nextSet;
     const howTo = howToRouteFor(ex, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null });
+    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null });
     ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
       if (action === 'undo_coach' && facts.coachActionId !== null) coach.undo(facts.coachActionId);
       if (action === 'undo_swap' && facts.swappedFrom !== null) undoSwap(facts.swappedFrom.opId);
+      if (action === 'edit_set' && next !== null) editSet(next.id);
       if (action === 'target_rpe' && next !== null) pickTargetRpe({ targetRpe: facts.targetRpe, setId: next.id, sessionExerciseId });
       if (action === 'add_set') void addSet(sessionExerciseId);
       if (action === 'swap') void openSwap(ex);
@@ -1272,7 +1307,18 @@ export function WorkoutScreen() {
     else await run({ type: 'resume', at: services.now(), opId: `resume:${session.id}:${n}` });
   }
 
+  // Review B2: while another set is on screen, the bar goes back to the current one instead of logging it unseen.
+  const currentGlance = nav.currentSetId === null ? null : services.workout.glance(loaded, nav.currentSetId);
+  const back = awayPrimary(view.primary.kind, away, currentGlance?.setNumber ?? null);
   const primary = (() => {
+    if (back.kind === 'back') {
+      return {
+        label: back.label,
+        onPress: () => {
+          setViewing(nextViewing(nav, { kind: 'now' }));
+        },
+      };
+    }
     switch (view.primary.kind) {
       case 'log':
         return { label: view.primary.label, onPress: () => void log(), busy };
@@ -1360,7 +1406,7 @@ export function WorkoutScreen() {
     view.justSaved && effortScale !== 'off' ? (
       <View style={{ gap: theme.space['3'] }}>
         <EffortHeading scale={effortScale}>
-          <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
+          <Eyebrow>{effortScale === 'rir' ? 'Last set · Reps in reserve' : 'Last set · Effort'}</Eyebrow>
         </EffortHeading>
         {effortChips}
       </View>
@@ -1414,22 +1460,53 @@ export function WorkoutScreen() {
     });
   }
 
+  // F8: under the timer, the set just done (compact, editable, its effort) and the next set, equally sized.
+  const lastEffort =
+    restSets.last !== null && view.justSaved?.setId === restSets.last.setId && effortScale !== 'off' ? (
+      <View style={{ gap: theme.space['2'] }}>
+        <EffortHeading scale={effortScale}>
+          <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
+        </EffortHeading>
+        {effortChips}
+      </View>
+    ) : null;
+  const restBlocks = (
+    <RestSetBlocks
+      last={restSets.last}
+      effort={lastEffort}
+      next={away ? shownGlance : restSets.next}
+      pager={pager}
+      onEditLast={() => {
+        if (restSets.last) editSet(restSets.last.setId);
+      }}
+      onEditNext={() => {
+        const id = away ? nav.shownSetId : restSets.next?.setId;
+        if (id) editSet(id);
+      }}
+      onMove={movePager}
+      onNow={() => {
+        setViewing(nextViewing(nav, { kind: 'now' }));
+      }}
+      onMakeCurrent={() => {
+        if (nav.shownSetId) makeCurrent(nav.shownSetId);
+      }}
+    />
+  );
   const restPanel =
     resting ? (
       <View style={{ gap: theme.space['5'] }}>
         <RestPanel
           rest={rest}
           ready={holding}
-          upNext={view.upNext !== null ? `Next · ${view.upNext}` : focus === null ? (view.openEnded ? 'Next · add exercise' : null) : null}
+          upNext={focus === null ? (view.openEnded ? 'Next · add exercise' : null) : null}
           onAdjust={adjustRest}
           onSkip={skipRest}
         />
         {switchSlot}
+        {restBlocks}
         {view.justSaved ? (
           <RuledSection>
-            {savedLine}
             {recordLine}
-            {effortBlock}
             {view.painReview && view.painReview.afterSetId === view.justSaved.setId ? (
               <PainReviewLine
                 question={view.painReview.question}
@@ -1771,8 +1848,8 @@ export function WorkoutScreen() {
               exclusionTag={r.exclusionTag}
               exclusionAccessibility={r.exclusionAccessibility}
               onPress={() => {
-                if (r.status === 'done') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
-                if (r.status === 'pending') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: r.setId, expectedVersion: session.version });
+                // Any set opens Edit set (14 Oct): a done one is corrected, one not done yet (the current one too, review B1) edits its plan.
+                if (r.status !== 'skipped') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
               }}
             />
           </View>
@@ -1815,7 +1892,7 @@ export function WorkoutScreen() {
   // ---- Table view (active-workout §2A) ----
   const tableMode = mode === 'table' && table !== null && view.phase !== 'empty';
   const pill = tableMode ? tableLogLabel(view.primary, table.log, { offscreen: chips.now !== null }) : null;
-  const barPrimary = pill === null ? primary : { ...primary, label: pill.label, lead: pill.lead };
+  const barPrimary = pill === null || back.kind === 'back' ? primary : { ...primary, label: pill.label, lead: pill.lead };
   const afterSetSaved = view.justSaved !== null && view.justSaved.setId === afterSetFor ? view.justSaved : null;
   const painReviewNode =
     view.painReview && afterSetSaved && view.painReview.afterSetId === afterSetSaved.setId ? (
@@ -2064,6 +2141,24 @@ export function WorkoutScreen() {
           </View>
         ) : null}
 
+        {/* F7: ‹ › and swipe through every set; viewing one never changes what Log logs. During rest it's on the Next block. */}
+        {!resting && pager !== null && view.phase !== 'empty' ? <SetPager pager={pager} onMove={movePager} onNow={() => { setViewing(nextViewing(nav, { kind: 'now' })); }} onTable={showTable} /> : null}
+        {!resting && pager?.away === true && shownGlance !== null ? (
+          // S3: swipe on the card too, not only the pager strip.
+          <Swipeable onSwipe={movePager}>
+          <ViewedSetCard
+            glance={shownGlance}
+            pager={pager}
+            onEdit={() => {
+              editSet(shownGlance.setId);
+            }}
+            onMakeCurrent={() => {
+              makeCurrent(shownGlance.setId);
+            }}
+          />
+          </Swipeable>
+        ) : null}
+
         {restPanel ? (
           <SwapIn swapKey="rest" animate={drawn.current} style={{ gap: theme.space['5'] }}>
             {restPanel}
@@ -2072,21 +2167,13 @@ export function WorkoutScreen() {
 
         {/* During rest the next set waits below its own toggle (D-Rest is rest-first, audit F8). One wrapper keyed
             by the set either side of the rest end, so an editor opened during rest stays mounted (review B1). */}
-        {slot.kind === 'link' ? (
-          // One fixed secondary link (premium-feel §3.3, D8). How to is in the next set's header and its ⋯ menu.
-          <View style={{ marginTop: 'auto' }}>
-            <TextButton
-              label="Edit next set"
-              tone="secondary"
-              onPress={() => {
-                setShowNextSet(true);
-              }}
-            />
-          </View>
-        ) : slot.kind === 'editor' && setEditor ? (
+        {slot.kind === 'link' ? null : slot.kind === 'editor' && setEditor && !away ? (
           // Rest → Ready: the editor fades in (motion.swap) only when the rest end brings it on screen.
           <SwapIn swapKey={slot.key} animate={slot.animateOnMount} style={{ flexGrow: 1 }}>
-            {setEditor}
+            {/* S3: the set card swipes to other sets as the pager strip does (not during rest: the Next block has its own). */}
+            <Swipeable onSwipe={movePager} enabled={!resting && pager !== null} grow>
+              {setEditor}
+            </Swipeable>
           </SwapIn>
         ) : null}
 
@@ -2171,13 +2258,8 @@ export function WorkoutScreen() {
             />
           </View>
           <ScrollView contentContainerStyle={{ paddingHorizontal: theme.space['5'], gap: theme.space['5'], paddingBottom: theme.space['4'] }}>
-            {rest !== null ? <RestPanel rest={rest} ready upNext={view.upNext !== null ? `Next · ${view.upNext}` : null} onAdjust={adjustRest} onSkip={skipRest} /> : null}
-            {view.justSaved ? (
-              <RuledSection>
-                {savedLine}
-                {effortBlock}
-              </RuledSection>
-            ) : null}
+            {rest !== null ? <RestPanel rest={rest} ready upNext={null} onAdjust={adjustRest} onSkip={skipRest} /> : null}
+            {restBlocks}
             <CoachSlot>{coach.slot !== null ? <CoachSlotContent coach={coach} /> : null}</CoachSlot>
           </ScrollView>
           <ActionBar
@@ -2420,7 +2502,7 @@ function SetRowLine({
   onPress: () => void;
 }) {
   const theme = useTheme();
-  const tappable = status === 'done' || status === 'pending';
+  const tappable = status !== 'skipped';
   // `100 kg × 8   RPE 8`: effort goes to the right.
   const [main, effort] = status === 'done' ? text.split(/\s{3}/) : [status === 'active' ? 'Now' : text, undefined];
   const marker =
@@ -2444,7 +2526,7 @@ function SetRowLine({
     <Pressable
       accessibilityRole={tappable ? 'button' : 'text'}
       accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${caption !== null ? `, at ${caption}` : ''}${edited ? ', edited' : ''}${exclusionAccessibility ? `. ${exclusionAccessibility}` : ''}`}
-      accessibilityHint={status === 'done' ? 'Edit or delete this set' : status === 'pending' ? 'Make this the current set' : undefined}
+      accessibilityHint={tappable ? 'Edit or delete this set' : undefined}
       disabled={!tappable}
       onPress={onPress}
       style={({ pressed }) => ({

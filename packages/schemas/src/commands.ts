@@ -199,6 +199,13 @@ export const AddSetCommandSchema = z.object({
   newSetId: IdSchema,
   setType: SetTypeSchema.nullable(),
   /**
+   * `Insert set after` (14 Oct): the new set goes straight after this live
+   * set of the same exercise (after its other side, when it has one) and
+   * copies its type, target and rest; later sets move down one place (their
+   * values and versions are untouched). Absent: at the end, as before.
+   */
+  afterSetId: IdSchema.optional(),
+  /**
    * After a gym switch, a set added to an exercise whose row is on another
    * gym's equipment goes on a new continuation row at the current gym, with
    * its target fitted by `snapPlanToGym` (gym-switch §4.3). Built by the
@@ -568,6 +575,37 @@ export const SetTargetRpeCommandSchema = z.object({
   rpe: RpeSchema.nullable(),
 });
 
+/**
+ * Ben's own edit of a set not done yet (14 Oct, "I should be able to edit
+ * anything on the sets"): its target load (in the row's unit and convention,
+ * achievable on its equipment, rule 4), reps (exact = min = max, or a
+ * range), time or distance, set type, target RPE and rest after it. Only a
+ * pending set; a logged set goes through `correct_set` (rule 2). Guarded on
+ * the set's own version (rule 5) and idempotent (`opId`). The edit replaces
+ * the coach's or the rule's marker on that set (it's Ben's target now) and
+ * the set's unsaved draft, and keeps everything it replaced on the set, so
+ * Undo (`undo_op`) puts exactly that back. A type changed to a warm-up or
+ * drop set has no target RPE.
+ */
+export const EditPlannedSetCommandSchema = z.object({
+  type: z.literal('edit_planned_set'),
+  ...base,
+  opId: OperationIdSchema,
+  setId: IdSchema,
+  expectedSetVersion: z.int().min(1),
+  patch: z
+    .object({
+      load: LoadSchema.nullable().optional(),
+      reps: RepRangeSchema.nullable().optional(),
+      durationS: DurationSecondsSchema.nullable().optional(),
+      distanceM: z.number().min(0).max(100_000).nullable().optional(),
+      setType: SetTypeSchema.optional(),
+      targetRpe: RpeSchema.nullable().optional(),
+      restS: DurationSecondsSchema.refine((x) => x <= 3600, { message: 'At most an hour' }).optional(),
+    })
+    .refine((p) => Object.values(p).some((v) => v !== undefined), { message: 'Nothing to change' }),
+});
+
 export const SessionCommandSchema = z.discriminatedUnion('type', [
   LogSetCommandSchema,
   SaveDraftCommandSchema,
@@ -601,6 +639,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   UndoOpCommandSchema,
   SetNoteCommandSchema,
   SetTargetRpeCommandSchema,
+  EditPlannedSetCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

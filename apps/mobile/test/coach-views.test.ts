@@ -58,9 +58,40 @@ describe('status (minimal copy: a word or two, the rest behind Why?)', () => {
   });
 });
 
+describe('workout chips (14 Oct): about the current exercise, words the coach acts on', () => {
+  const entry = { kind: 'workout' as const, sessionId: ID(9) };
+  const words = (label: string, text = label) => ({ label, input: { kind: 'words', text, spoken: false } });
+
+  it('name the current exercise, in order, and end with Pain', () => {
+    expect(starterChips(entry, avail('ok'), true, { exerciseName: 'Bench press', offTarget: false })).toEqual([
+      words('Set weights from my history'),
+      words('Lighter Bench press'),
+      words('Heavier Bench press'),
+      words('+ Set Bench press', 'Add a set of Bench press'),
+      words('− Set Bench press', 'Remove a set of Bench press'),
+      words('Swap Bench press'),
+      words('Add an exercise'),
+      words('Short on time'),
+      { label: 'Pain', input: null },
+    ]);
+  });
+
+  it('after a set off its target, `Adjust the rest?` comes first', () => {
+    const chips = starterChips(entry, avail('ok'), true, { exerciseName: 'Bench press', offTarget: true });
+    expect(chips[0]).toEqual(words('Adjust the rest?', 'Adjust the rest of my Bench press sets'));
+    expect(chips).toHaveLength(10);
+  });
+
+  it('offline still shows them (the sheet says offline); no coach at all keeps only Pain; a finished workout asks how it went', () => {
+    expect(starterChips(entry, avail('offline'), true, { exerciseName: 'Squat', offTarget: true })[0]?.label).toBe('Adjust the rest?');
+    expect(starterChips(entry, avail('not_connected'), true, { exerciseName: 'Squat', offTarget: true }).map((c) => c.label)).toEqual(['Pain']);
+    expect(starterChips(entry, avail('ok'), false, { exerciseName: 'Squat', offTarget: true }).map((c) => c.label)).toEqual(['How did that go?']);
+  });
+});
+
 describe('starter chips (CS6): ours, by context; Pain works without the coach', () => {
   it('workout chips; offline-unknown states keep only Pain', () => {
-    expect(starterChips({ kind: 'workout', sessionId: ID(9) }, avail('ok'), true).map((c) => c.label)).toEqual(['Too hard', 'Too easy', 'Short on time', 'Machine busy', 'Pain']);
+    expect(starterChips({ kind: 'workout', sessionId: ID(9) }, avail('ok'), true).map((c) => c.label)).toEqual(['Set weights from my history', 'Add an exercise', 'Short on time', 'Pain']);
     expect(starterChips({ kind: 'workout', sessionId: ID(9) }, avail('not_connected'), true).map((c) => c.label)).toEqual(['Pain']);
     expect(starterChips({ kind: 'summary', sessionId: ID(9) }, avail('ok'), false).map((c) => c.label)).toEqual(['What should I change next time?']);
     // workout-builder §3, §5.4: `Build a workout` is on Today's empty thread, disabled (`Needs the coach`) when the coach can't answer.

@@ -125,7 +125,7 @@ Partly built items are marked *(partly)*, with what exists. Sources are under `d
 | Shorten today's session to fit the time left ("I've only got 15 minutes"), and an offer when Finish by will be missed | M | nothing | brief §7 shortenSession; active-workout §2.15.4; competitor #10 |
 | "Machine busy today" without changing the saved gym | M | nothing | brief §4 setTemporaryAvailability; ADR 0019 |
 | Exercise history sheet from the exercise header (comparable history) | M | nothing | active-workout §4.4; exercise-library §4.3 |
-| Set-type control (warm-up / top / back-off / drop) in Edit set. *(partly: in the schema, no control)* | S | nothing | brief §1 |
+| Set-type control (warm-up / top / back-off / drop) in Edit set. *(built: done sets via correction; sets not done yet via `edit_planned_set`, claude/set-editing 14 Oct)* | S | nothing | brief §1 |
 | Transition rest between exercises: a way to set it. *(partly: carried into sessions, no UI)* | S | After the routine editor | rest-state §3 |
 | "Ask for effort before logging" option. *(partly: after-logging and off exist)* | S | nothing | flow P3; profile-and-settings PS7 |
 | Rest editor: "all working sets, today" scope and editing the running timer. *(partly)* | S | nothing | rest-state §2.4 |
@@ -514,8 +514,8 @@ Next in line: Goals & schedule plus rule 1 volume (after D13), the routine edito
 | F4 | What does RPE 6–10 mean? | UX | Small. "Why?" info tap with RIR wording (minimal-copy rule) **Built on claude/quick-wins (13 Oct); device check pending.** |
 | F5 | Keyboard stays up on working set | Bug | Small. Same fix as coach sheet (tap-out/Done/dismiss on Log) **Built on claude/quick-wins (13 Oct); device check pending.** |
 | F6 | Edit sets inline in table without opening each set | Feature | Medium. Editable table cells |
-| F7 | Focus view: swipe/buttons prev/next set, pinch out to workout | Feature | Medium |
-| F8 | Focus view shows last set's effort without saying it's previous; rest = previous small (editable) + next set, under timer | UX | Medium, high value |
+| F7 | Focus view: swipe/buttons prev/next set, pinch out to workout | Feature | Medium. **Built on claude/set-editing (14 Oct): ‹ › (44 pt) and swipe through every set on Focus and the rest Next block, `Now`, `Make current`, `Table` (no pinch); viewing never changes what Log logs. Device check pending.** |
+| F8 | Focus view shows last set's effort without saying it's previous; rest = previous small (editable) + next set, under timer | UX | Medium, high value. **Built on claude/set-editing (14 Oct): `Last set` block (tap to edit, effort chips) and `Next` block (exercise, set n of m, type, weight × reps @RPE, Edit) under the timer, in Focus and the full rest view. Device check pending.** |
 | F9 | Reps ≥ 10 show as 1 when logging | Bug | Small, high priority; likely field width/truncation — verify on device **Built on claude/quick-wins (13 Oct); device check pending.** |
 | F10 | Recommended rest from what was done (effort) | Feature | Medium; deterministic rule + coach. Playbook candidate |
 | F11 | Table view: stack and reps on one row | UX | Small **Built on claude/quick-wins (13 Oct); device check pending.** |

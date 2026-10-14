@@ -149,8 +149,12 @@ describe('correction sheet back to the workout (review coach-fallback B1)', () =
   it('EditSetScreen returns with that action, never navigate(\'Workout\')', () => {
     const src = readFileSync(join(import.meta.dirname, '../src/screens/workout/EditSetScreen.tsx'), 'utf8');
     expect(src).not.toMatch(/navigate\(\s*'Workout'/);
-    // Exclusion toast, `Set 2 updated` [Undo], the offer re-check alone, and `Set 2 deleted` [Undo] (workout gaps).
-    expect(src.match(/dispatch\(returnToWorkout\(/g)?.length).toBe(4);
+    // Exclusion toast, `Set 2 updated` [Undo], the offer re-check alone, `Set 2 deleted` [Undo] (workout gaps), and `Set 3 added` [Undo] (14 Oct).
+    expect(src.match(/dispatch\(returnToWorkout\(/g)?.length).toBe(5);
+    // Edit set for a set not done yet (14 Oct) returns the same way.
+    const planned = readFileSync(join(import.meta.dirname, '../src/screens/workout/PlannedSetEdit.tsx'), 'utf8');
+    expect(planned).not.toMatch(/navigate\(\s*'Workout'/);
+    expect(planned.match(/dispatch\(returnToWorkout\(/g)?.length).toBe(3);
   });
 });
 

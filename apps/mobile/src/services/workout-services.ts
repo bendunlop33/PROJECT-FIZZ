@@ -1,5 +1,15 @@
 import {
   addDays,
+  buildPlannedSetEditView,
+  restSetsView,
+  setGlance,
+  setNavigation,
+  snapPlannedLoad,
+  workoutChatContext,
+  type PlannedSetEdits,
+  type PlannedSetEditView,
+  type SetGlance,
+  type SetNavigation,
   coachDraftIsOpen,
   coachDraftListed,
   currentDraftVersion,
@@ -460,6 +470,12 @@ export interface RepeatPreview {
   sourceGymId: string | null;
   sourceStartedAtUtc: string;
   tz: string;
+}
+
+/** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), from the loaded exercise info. */
+function ruleRpes(data: ActiveWorkoutData): Record<string, number> {
+  const info = data.exerciseInfo ?? {};
+  return ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
 }
 
 export interface ActiveWorkoutData {
@@ -2351,6 +2367,34 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       return buildSetEditView(data.aggregate, setId, values, exclusions, { targetRpe, ruleTargetRpe, setType });
     },
 
+    /** Edit set for a set not done yet (14 Oct): its target, type, target RPE and rest, with the built-in target RPE as the default. */
+    plannedEditView(data: ActiveWorkoutData, setId: string, edits: PlannedSetEdits): PlannedSetEditView | null {
+      return buildPlannedSetEditView(data.aggregate, setId, edits, { ruleTargetRpe: ruleRpes(data) });
+    },
+
+    /** A typed load for a set not done yet, made achievable on its equipment (rule 4). */
+    snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null | undefined => snapPlannedLoad(data.aggregate, setId, typed),
+
+    /** The rest screen's `Last set` and `Next` (F8). */
+    restSets: (data: ActiveWorkoutData): { last: SetGlance | null; next: SetGlance | null } => restSetsView(data.aggregate, ruleRpes(data)),
+
+    /** One set at a glance (the Focus view's set pager, F7). */
+    glance: (data: ActiveWorkoutData, setId: string): SetGlance | null => setGlance(data.aggregate, setId, ruleRpes(data)),
+
+    /** Prev / next across the workout (F7); viewing never changes the current set. */
+    navigation: (data: ActiveWorkoutData, viewingSetId: string | null): SetNavigation => setNavigation(data.aggregate, viewingSetId),
+
+    /** What the workout's coach chips are about (14 Oct). */
+    chatContext: (data: ActiveWorkoutData): { exerciseName: string | null; offTarget: boolean } => workoutChatContext(data.aggregate, ruleRpes(data)),
+
+    /**
+     * `Edit set` → `Save changes` on a set not done yet (14 Oct):
+     * `edit_planned_set`, guarded on the set's version. Undo is `undo_op` on
+     * the same opId.
+     */
+    editPlannedSet: async (req: { sessionId: string; setId: string; expectedSetVersion: number; patch: NonNullable<PlannedSetEditView['patch']>; opId: string }): Promise<CommandOutcome> =>
+      ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'edit_planned_set', at: ctx.now(), opId: req.opId, setId: req.setId, expectedSetVersion: req.expectedSetVersion, patch: req.patch })),
+
     /**
      * `TimeLeftLine` and the `Time left` sheet (§2.15). The screen calls this
      * with a clock that moves only on events and once a minute, so the line
@@ -2521,7 +2565,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * on another gym's item goes on a continuation row at the current gym,
      * with its target fitted by the shared function (gym-switch §4.3).
      */
-    async addSet(req: { sessionId: string; sessionExerciseId: string; opId: string; newSetId: string }): Promise<CommandOutcome> {
+    async addSet(req: { sessionId: string; sessionExerciseId: string; opId: string; newSetId: string; afterSetId?: string }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       const aggregate = await repos().sessions.get(req.sessionId);
       if (!p || !aggregate) return { ok: false, error: { code: 'not_found', message: 'Workout not found.' } };
@@ -2539,7 +2583,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           newId: ctx.newId,
         });
       }
-      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType: null, ...(continuation ? { continuation } : {}) };
+      const cmd: SessionCommand = { type: 'add_set', at: ctx.now(), opId: req.opId, sessionExerciseId: req.sessionExerciseId, newSetId: req.newSetId, setType: null, ...(req.afterSetId !== undefined ? { afterSetId: req.afterSetId } : {}), ...(continuation ? { continuation } : {}) };
       return ctx.afterCommand(await domain().dispatch(req.sessionId, cmd));
     },
 

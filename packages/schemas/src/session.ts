@@ -288,6 +288,26 @@ export interface PlannedSet {
   snap?: PlannedSnap | undefined;
   /** `gymChanges`: how many gym-change entries the workout had when the coach made this change (Undo is refused after a later one). */
   coach?: { actionId: string; before: PlannedSet; gymChanges?: number | undefined } | undefined;
+  /**
+   * Ben's own edit of this not-yet-done set (`edit_planned_set`, 14 Oct
+   * "edit anything on the sets"): the op that made it, the set's version it
+   * left, and everything it replaced, so Undo (`undo_op`) puts exactly that
+   * back while nothing has changed since (rule 5).
+   */
+  edit?: PlannedSetEdit | undefined;
+}
+
+/** What one `edit_planned_set` replaced on a pending set. */
+export interface PlannedSetEdit {
+  opId: string;
+  /** The set's version right after the edit; Undo is refused once it moved on. */
+  version: number;
+  before: {
+    planned: PlannedSet;
+    setType: z.infer<typeof SetTypeSchema>;
+    rest: ResolvedRest;
+    draft: SetValues | null;
+  };
 }
 
 export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
@@ -304,6 +324,15 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   snap: PlannedSnapSchema.optional(),
   get coach() {
     return z.object({ actionId: IdSchema, before: PlannedSetSchema, gymChanges: z.int().min(0).optional() }).optional();
+  },
+  get edit() {
+    return z
+      .object({
+        opId: OperationIdSchema,
+        version: z.int().min(1),
+        before: z.object({ planned: PlannedSetSchema, setType: SetTypeSchema, rest: ResolvedRestSchema, draft: SetValuesSchema.nullable() }),
+      })
+      .optional();
   },
 });
 
