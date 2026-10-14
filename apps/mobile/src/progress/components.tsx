@@ -20,7 +20,7 @@ import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
 import { AppText, Icon, PrimaryButton } from '../ui';
 import { AX_FONT_SCALE } from '../workout/overview';
-import { ACTIVITY_LINE_DIMS, activityLineLayout, barLabelBox, barLabelRoom, countBarWidth, visibleLabels } from './chart-layout';
+import { ACTIVITY_LINE_DIMS, activityLineLayout, countBarWidth, guessLabelWidth, measuredLabelBox, thinLabelsByWidth } from './chart-layout';
 import { FREQUENCY_COLUMNS, FREQUENCY_HEADERS } from './frequency-columns';
 import { loadTrendCanvas } from './load-charts';
 import { nearestPointIndex } from './trend-layout';
@@ -263,8 +263,6 @@ function ActivityLine({ chart }: { chart: ActivityChartView }) {
   );
   const selectedIndex = selectedFrom === null ? -1 : chart.points.findIndex((p) => p.from === selectedFrom);
   const selected = selectedIndex >= 0 ? (chart.points[selectedIndex] ?? null) : null;
-  const room = barLabelRoom(chart.unit);
-  const labels = new Set(visibleLabels(chart.points.length, layout.plot.width, room));
   const canvas = loadTrendCanvas();
   const grid = theme.a11y.increaseContrast ? theme.colors['border.control'] : theme.colors['chart.grid'];
   return (
@@ -325,19 +323,57 @@ function ActivityLine({ chart }: { chart: ActivityChartView }) {
           style={{ position: 'absolute', left: layout.plot.x, top: 0, width: layout.plot.width, height: dims.height }}
         />
       </View>
-      <View style={{ height: 20, marginTop: theme.space['1'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        {chart.points.map((p, i) => {
-          if (!labels.has(i)) return null;
-          const box = barLabelBox(layout.xs[i] ?? 0, width, 60, room);
-          return (
-            <View key={p.from} style={{ position: 'absolute', left: box.left, width: 60, alignItems: box.align }}>
-              <AppText variant="label" color="chart.axisText" numeric maxFontSizeMultiplier={1.4} numberOfLines={1}>
-                {p.label}
-              </AppText>
-            </View>
-          );
-        })}
-      </View>
+      <XLabels labels={chart.points.map((p, i) => ({ key: p.from, x: layout.xs[i] ?? 0, text: p.label }))} width={width} />
+    </View>
+  );
+}
+
+/**
+ * X-axis labels under a chart, thinned by their measured widths so they
+ * never overlap; the first and last always show (`thinLabelsByWidth`).
+ * Each label is measured once, off screen, per text size.
+ */
+export function XLabels({ labels, width }: { labels: readonly { key: string; x: number; text: string }[]; width: number }) {
+  const theme = useTheme();
+  const { fontScale } = useWindowDimensions();
+  const [measured, setMeasured] = useState<{ scale: number; widths: Readonly<Record<string, number>> }>({ scale: fontScale, widths: {} });
+  const known = measured.scale === fontScale ? measured.widths : {};
+  const widths = labels.map((l) => known[l.text] ?? guessLabelWidth(l.text));
+  const shown = new Set(width > 0 ? thinLabelsByWidth(labels.map((l) => l.x), widths, width) : []);
+  const texts = [...new Set(labels.map((l) => l.text))].filter((t) => known[t] === undefined);
+  return (
+    <View style={{ height: 20, marginTop: theme.space['1'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      {labels.map((l, i) => {
+        if (!shown.has(i)) return null;
+        const w = widths[i] ?? 0;
+        const box = measuredLabelBox(l.x, w, width);
+        return (
+          <View key={l.key} style={{ position: 'absolute', left: box.left, width: w, alignItems: 'center' }}>
+            <AppText variant="label" color="chart.axisText" numeric maxFontSizeMultiplier={1.4} numberOfLines={1}>
+              {l.text}
+            </AppText>
+          </View>
+        );
+      })}
+      {texts.length > 0 ? (
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: 4000, flexDirection: 'row', opacity: 0 }}>
+          {texts.map((t) => (
+            <AppText
+              key={t}
+              variant="label"
+              numeric
+              maxFontSizeMultiplier={1.4}
+              numberOfLines={1}
+              onLayout={(e) => {
+                const w = Math.ceil(e.nativeEvent.layout.width) + 1;
+                setMeasured((m) => (m.scale === fontScale && m.widths[t] === w ? m : { scale: fontScale, widths: { ...(m.scale === fontScale ? m.widths : {}), [t]: w } }));
+              }}
+            >
+              {t}
+            </AppText>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
