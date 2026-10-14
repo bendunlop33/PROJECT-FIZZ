@@ -1,0 +1,221 @@
+import { describe, expect, it } from 'vitest';
+import { TrainingProfileSchema, type MuscleGroup, type TrainingChange, type TrainingProfile } from '@fizz/schemas';
+
+import {
+  ageFromBirthYear,
+  applyTrainingChange,
+  bodyweightLoadKg,
+  cmFromFeetInches,
+  DEFAULT_SPLIT,
+  feetInches,
+  goalCheckInDue,
+  heightText,
+  latestWeight,
+  mainLiftFor,
+  mainLiftOptions,
+  matchSplitDay,
+  newTrainingProfile,
+  nextSplitDay,
+  PRESET_SPLITS,
+  recommendMainLift,
+  weightText,
+  workoutMuscleGroups,
+  type LiftHistory,
+} from '../src/index';
+
+const ID = '00000000-0000-4000-8000-000000000001';
+const OWNER = '00000000-0000-4000-8000-000000000002';
+const T0 = '2026-10-13T08:00:00.000Z';
+const T1 = '2026-10-14T08:00:00.000Z';
+
+const fresh = (): TrainingProfile => newTrainingProfile({ id: ID, ownerId: OWNER, atUtc: T0 });
+
+let n = 0;
+function apply(p: TrainingProfile, c: TrainingChange, opId = `op-${String((n += 1))}`) {
+  return applyTrainingChange(p, c, { opId, expectedVersion: p.version, atUtc: T1, nowYear: 2026 });
+}
+function ok(p: TrainingProfile, c: TrainingChange): TrainingProfile {
+  const r = apply(p, c);
+  if (!r.ok) throw new Error(`expected ok, got ${r.error}`);
+  return r.profile;
+}
+
+describe('training profile writes (rule 5)', () => {
+  it('a new profile is valid with the defaults: check-in 6 weeks, 45 min, self targets off, nothing else set', () => {
+    const p = fresh();
+    expect(TrainingProfileSchema.parse(p)).toEqual(p);
+    expect(p).toMatchObject({ checkInWeeks: 6, sessionMinutes: 45, selfNextTargets: false, about: {}, weights: [] });
+    expect(p.goal).toBeUndefined();
+    expect(p.split).toBeUndefined();
+  });
+
+  it('each change bumps the version and records its op ID', () => {
+    const p = ok(fresh(), { kind: 'gender', gender: 'male' });
+    expect(p.version).toBe(2);
+    expect(p.updatedAtUtc).toBe(T1);
+    expect(p.about.gender).toBe('male');
+    expect(p.recentOps).toHaveLength(1);
+  });
+
+  it('a repeated op ID is a no-op replay, even after the version moved', () => {
+    const p0 = fresh();
+    const a = applyTrainingChange(p0, { kind: 'add_weight', entry: { id: 'w1', date: '2026-10-13', value: 82.5, unit: 'kg' } }, { opId: 'dup', expectedVersion: 1, atUtc: T1, nowYear: 2026 });
+    if (!a.ok) throw new Error('setup');
+    const again = applyTrainingChange(a.profile, { kind: 'add_weight', entry: { id: 'w1', date: '2026-10-13', value: 82.5, unit: 'kg' } }, { opId: 'dup', expectedVersion: 1, atUtc: T1, nowYear: 2026 });
+    expect(again).toEqual({ ok: true, profile: a.profile, replayed: true });
+    expect(a.profile.weights).toHaveLength(1);
+  });
+
+  it('a stale version is rejected and nothing changes', () => {
+    const p = ok(fresh(), { kind: 'goal', goal: 'strength' });
+    const r = applyTrainingChange(p, { kind: 'goal', goal: 'muscle' }, { opId: 'late', expectedVersion: 1, atUtc: T1, nowYear: 2026 });
+    expect(r).toEqual({ ok: false, error: 'stale', currentVersion: 2 });
+  });
+
+  it('out-of-range values are invalid: birth year, height, weight, check-in weeks, days, session length', () => {
+    const p = fresh();
+    const bad: TrainingChange[] = [
+      { kind: 'birth_year', year: 2020 },
+      { kind: 'birth_year', year: 1900 },
+      { kind: 'height', cm: 90 },
+      { kind: 'add_weight', entry: { id: 'x', date: '2026-10-13', value: 20, unit: 'kg' } },
+      { kind: 'add_weight', entry: { id: 'x', date: '13/10/2026', value: 80, unit: 'kg' } },
+      { kind: 'check_in_weeks', weeks: 3 },
+      { kind: 'check_in_weeks', weeks: 13 },
+      { kind: 'days_per_week', days: 0 },
+      { kind: 'session_minutes', minutes: 10 },
+      { kind: 'main_lift', dayId: 'nope', exerciseId: 'x' },
+      { kind: 'custom_split', days: [] },
+      { kind: 'custom_split', days: [{ id: 'a', name: '  ', bodyParts: ['Chest'] }] },
+      { kind: 'custom_split', days: [{ id: 'a', name: 'Arms', bodyParts: [] }] },
+      { kind: 'custom_split', days: [{ id: 'a', name: 'A', bodyParts: ['Chest'] }, { id: 'a', name: 'B', bodyParts: ['Back'] }] },
+    ];
+    for (const c of bad) expect(apply(p, c)).toMatchObject({ ok: false, error: 'invalid' });
+  });
+
+  it('about you: birth year, gender, height and experience set and clear (Not set)', () => {
+    let p = ok(fresh(), { kind: 'birth_year', year: 1992 });
+    p = ok(p, { kind: 'height', cm: 180.04 });
+    p = ok(p, { kind: 'experience', level: 'experienced' });
+    expect(p.about).toEqual({ birthYear: 1992, heightCm: 180, experience: 'experienced' });
+    p = ok(p, { kind: 'gender', gender: 'female' });
+    p = ok(p, { kind: 'gender', gender: null });
+    expect(p.about.gender).toBeUndefined();
+  });
+
+  it('weights: dated entries in kg or lb, kept in date order, deleted by ID', () => {
+    let p = ok(fresh(), { kind: 'add_weight', entry: { id: 'b', date: '2026-10-10', value: 181, unit: 'lb' } });
+    p = ok(p, { kind: 'add_weight', entry: { id: 'a', date: '2026-09-01', value: 83, unit: 'kg' } });
+    expect(p.weights.map((w) => w.id)).toEqual(['a', 'b']);
+    expect(latestWeight(p.weights)?.id).toBe('b');
+    p = ok(p, { kind: 'delete_weight', entryId: 'b' });
+    expect(p.weights.map((w) => w.id)).toEqual(['a']);
+    expect(latestWeight([])).toBeNull();
+  });
+
+  it('a lb weight is checked in kg: 55 lb (25 kg) is accepted, 50 lb is not', () => {
+    expect(apply(fresh(), { kind: 'add_weight', entry: { id: 'x', date: '2026-10-13', value: 50, unit: 'lb' } })).toMatchObject({ ok: false });
+    expect(apply(fresh(), { kind: 'add_weight', entry: { id: 'x', date: '2026-10-13', value: 56, unit: 'lb' } })).toMatchObject({ ok: true });
+  });
+
+  it('goal: set records when, so the check-in counts from it; clearing removes both', () => {
+    let p = ok(fresh(), { kind: 'goal', goal: 'both' });
+    expect(p.goalSetAtUtc).toBe(T1);
+    p = ok(p, { kind: 'check_in_weeks', weeks: 4 });
+    expect(goalCheckInDue(p, '2026-11-10T08:00:00.000Z')).toBe(false);
+    expect(goalCheckInDue(p, '2026-11-11T08:00:00.000Z')).toBe(true);
+    p = ok(p, { kind: 'goal', goal: null });
+    expect(p.goalSetAtUtc).toBeUndefined();
+    expect(goalCheckInDue(p, '2027-11-11T08:00:00.000Z')).toBe(false);
+  });
+
+  it('split: a preset, a custom list, and main lifts carried to a day with the same ID', () => {
+    let p = ok(fresh(), { kind: 'main_lift', dayId: 'legs', exerciseId: 'squat' });
+    expect(p.split?.kind).toBe('ppl');
+    p = ok(p, { kind: 'preset_split', split: 'clsb' });
+    expect(p.split?.days.map((d) => d.name)).toEqual(['Chest', 'Legs', 'Shoulders', 'Back']);
+    expect(p.split?.days.find((d) => d.id === 'legs')?.mainLiftExerciseId).toBe('squat');
+    p = ok(p, { kind: 'custom_split', days: [{ id: 'u', name: ' Upper ', bodyParts: ['Chest', 'Back'] }, { id: 'legs', name: 'Legs', bodyParts: ['Quads'] }] });
+    expect(p.split).toEqual({ kind: 'custom', days: [{ id: 'u', name: 'Upper', bodyParts: ['Chest', 'Back'] }, { id: 'legs', name: 'Legs', bodyParts: ['Quads'], mainLiftExerciseId: 'squat' }] });
+    p = ok(p, { kind: 'main_lift', dayId: 'legs', exerciseId: null });
+    expect(p.split?.days[1]?.mainLiftExerciseId).toBeUndefined();
+  });
+
+  it('D5: self next-time targets default off and switch on', () => {
+    expect(ok(fresh(), { kind: 'self_next_targets', on: true }).selfNextTargets).toBe(true);
+  });
+});
+
+describe('derived values', () => {
+  it('age from birth year is the age reached this calendar year', () => {
+    expect(ageFromBirthYear(1992, 2026)).toBe(34);
+  });
+
+  it('height shows cm and ft/in; ft/in converts back', () => {
+    expect(heightText(180)).toBe('180 cm · 5′11″');
+    expect(feetInches(152.4)).toEqual({ ft: 5, inch: 0 });
+    expect(cmFromFeetInches(6, 0)).toBe(182.9);
+  });
+
+  it('weight shows in the chosen unit', () => {
+    expect(weightText({ value: 82.5, unit: 'kg' }, 'kg')).toBe('82.5 kg');
+    expect(weightText({ value: 100, unit: 'kg' }, 'lb')).toBe('220.5 lb');
+  });
+
+  it('bodyweight loads: bodyweight, weighted (added on a bodyweight exercise), assisted; never below 0', () => {
+    expect(bodyweightLoadKg(80, { value: 0, unit: 'kg', convention: 'bodyweight' }, true)).toBe(80);
+    expect(bodyweightLoadKg(80, { value: 20, unit: 'kg', convention: 'added' }, true)).toBe(100);
+    expect(bodyweightLoadKg(80, { value: 20, unit: 'kg', convention: 'added' }, false)).toBeNull();
+    expect(bodyweightLoadKg(80, { value: 44.092, unit: 'lb', convention: 'assistance' }, true)).toBeCloseTo(60, 2);
+    expect(bodyweightLoadKg(80, { value: 100, unit: 'kg', convention: 'assistance' }, true)).toBe(0);
+    expect(bodyweightLoadKg(80, { value: 24, unit: 'kg', convention: 'per_hand' }, false)).toBeNull();
+    expect(bodyweightLoadKg(null, { value: 0, unit: 'kg', convention: 'bodyweight' }, true)).toBeNull();
+  });
+});
+
+describe('split rotation (F19)', () => {
+  const groups = (o: Partial<Record<MuscleGroup, number>>) => new Map(Object.entries(o) as [MuscleGroup, number][]);
+
+  it('workout muscle groups count working sets on each exercise’s first primary muscle', () => {
+    expect(workoutMuscleGroups([{ primaryMuscles: ['chest', 'triceps'], workingSets: 3 }, { primaryMuscles: ['triceps'], workingSets: 2 }, { primaryMuscles: [], workingSets: 3 }, { primaryMuscles: ['lats'], workingSets: 0 }])).toEqual(groups({ Chest: 3, Triceps: 2 }));
+  });
+
+  it('the next day follows the last workout’s day and wraps; first day with no history or no match', () => {
+    expect(nextSplitDay(DEFAULT_SPLIT, null).id).toBe('push');
+    expect(nextSplitDay(DEFAULT_SPLIT, groups({ Chest: 6, Triceps: 3 })).id).toBe('pull');
+    expect(nextSplitDay(DEFAULT_SPLIT, groups({ Quads: 6, Calves: 3 })).id).toBe('push');
+    expect(nextSplitDay(DEFAULT_SPLIT, groups({ Core: 6 })).id).toBe('push');
+    const clsb = { kind: 'clsb' as const, days: [...PRESET_SPLITS.clsb] };
+    expect(nextSplitDay(clsb, groups({ Shoulders: 6, Triceps: 2 })).id).toBe('back');
+    expect(matchSplitDay(clsb, groups({ Triceps: 3 }))?.id).toBe('chest');
+  });
+});
+
+describe('main lift (D7)', () => {
+  const ex = (id: string, name: string, muscle: string, mechanic: 'compound' | 'isolation' = 'compound') => ({ id, name, primaryMuscles: [muscle], mechanic });
+  const history: LiftHistory[] = [
+    { exercise: ex('bench', 'Bench press', 'chest'), sessions: 10, bestKg: 100 },
+    { exercise: ex('incline', 'Incline DB press', 'upper_chest'), sessions: 12, bestKg: 34 },
+    { exercise: ex('ohp', 'Overhead press', 'front_delts'), sessions: 20, bestKg: 60 },
+    { exercise: ex('fly', 'Cable fly', 'chest', 'isolation'), sessions: 30, bestKg: 20 },
+    { exercise: ex('squat', 'Squat', 'quads'), sessions: 0, bestKg: 140 },
+  ];
+
+  it('recommends a compound lift for the day’s first body part, most workouts first', () => {
+    expect(recommendMainLift(PRESET_SPLITS.ppl[0] ?? { bodyParts: ['Chest'] }, history)?.id).toBe('incline');
+    expect(recommendMainLift({ bodyParts: ['Shoulders', 'Triceps'] }, history)?.id).toBe('ohp');
+    expect(recommendMainLift({ bodyParts: ['Quads'] }, history)).toBeNull();
+  });
+
+  it('Ben’s choice wins; an unknown choice falls back to the recommendation', () => {
+    const day = { id: 'push', name: 'Push', bodyParts: ['Chest', 'Shoulders', 'Triceps'] as const };
+    const names: Record<string, string> = { bench: 'Bench press' };
+    const nameOf = (id: string) => names[id] ?? null;
+    expect(mainLiftFor({ ...day, bodyParts: [...day.bodyParts], mainLiftExerciseId: 'bench' }, history, nameOf)).toEqual({ exerciseId: 'bench', name: 'Bench press', source: 'yours' });
+    expect(mainLiftFor({ ...day, bodyParts: [...day.bodyParts], mainLiftExerciseId: 'gone' }, history, nameOf)).toEqual({ exerciseId: 'incline', name: 'Incline DB press', source: 'recommended' });
+  });
+
+  it('options are compound lifts for the day’s body parts, by name', () => {
+    expect(mainLiftOptions({ bodyParts: ['Chest'] }, history.map((h) => h.exercise)).map((e) => e.id)).toEqual(['bench', 'incline']);
+  });
+});
