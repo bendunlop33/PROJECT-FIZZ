@@ -2,7 +2,13 @@ import {
   buildCalendarMonthView,
   buildExerciseDetailView,
   buildExerciseListView,
+  buildExerciseTabView,
   buildProgressHomeView,
+  customProgressWindow,
+  listProgressExercises,
+  periodProgressWindow,
+  rangeText,
+  rangeWords,
   DEFAULT_PROGRESS_PERIOD,
   localDateOf,
   monthOf,
@@ -16,7 +22,9 @@ import {
   type CommandOutcome,
   type ExerciseDetailView,
   type ExerciseListView,
+  type ExerciseMeasure,
   type ExerciseMetric,
+  type ExerciseTabView,
   type MuscleGroup,
   type TrendRange,
   type MuscleInfo,
@@ -100,6 +108,31 @@ export interface ExerciseDetailRequest {
   selectSessionId?: string | null;
   repBy?: 'weight' | 'reps';
   historyMonths?: number;
+}
+
+/** Progress › Exercises tab (Ben, 13–14 Oct 2026): one exercise, measure, period and trailing count. */
+export interface ExerciseTabRequest {
+  /** Null: the most recently done exercise. */
+  exerciseId?: string | null;
+  period: ProgressPeriodKey;
+  /** A custom period, or null for the preset. */
+  range?: DateRange | null;
+  measure?: ExerciseMeasure | null;
+  trailing?: number | null;
+  seriesId?: string | null;
+}
+
+export interface ExerciseTab {
+  /** Null with no finished workout yet. */
+  view: ExerciseTabView | null;
+  period: ProgressPeriodKey;
+  range: DateRange | null;
+  window: DateRange;
+  datesLine: string;
+  datesWords: string;
+  today: string;
+  earliest: string;
+  unreadable: number;
 }
 
 export type ConfirmOutcome = { ok: true; sessionId: string; version: number } | { ok: false; message: string };
@@ -239,6 +272,38 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const ctx = await context(profile);
       const today = localDateOf(toMs(deps.now().utc), profile.timezone);
       return { view: buildExerciseListView({ sessions: ctx.sessions, exercises: ctx.exercises, today, query: req.query ?? '', group: req.group ?? null }), unreadable: ctx.unreadable };
+    },
+
+    /**
+     * The Exercises tab (Ben, 13–14 Oct 2026): local only, no AI. The period
+     * is the tab's own (not the shared home setting); the exercise defaults
+     * to the most recently done.
+     */
+    async exerciseTab(req: ExerciseTabRequest): Promise<ExerciseTab | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const ctx = await context(profile);
+      const today = localDateOf(toMs(deps.now().utc), profile.timezone);
+      const range = req.range ? normaliseProgressRange(req.range, today) : null;
+      const window = range === null ? periodProgressWindow(today, req.period) : customProgressWindow(range);
+      let earliest = today;
+      for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
+      const exerciseId = req.exerciseId ?? listProgressExercises(ctx.sessions)[0]?.exerciseId ?? null;
+      const view =
+        exerciseId === null
+          ? null
+          : buildExerciseTabView({
+              sessions: ctx.sessions,
+              exerciseId,
+              today,
+              window,
+              gymNames: ctx.gymNames,
+              name: ctx.exercises.get(exerciseId)?.name ?? '',
+              seriesId: req.seriesId ?? null,
+              measure: req.measure ?? null,
+              trailing: req.trailing ?? null,
+            });
+      return { view, period: req.period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable };
     },
 
     /**
