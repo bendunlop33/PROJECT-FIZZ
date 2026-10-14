@@ -363,8 +363,10 @@ Loads, reps, sets and `@ RPE n` on the overview are **targets**. `est.` marks a 
 
 **Coach basis rules** (instructions, checked by `checkBasis`, pure). A basis is ≤ 60 characters. Its numbers may come only from:
 - the load references for that exercise (§8.5): loads, reps, RPE, dates, and `last N` where N ≤ the number of references listed;
-- the proposal's own values (load, top-set load);
+- the proposal's own values (load, top-set load), **on their own only** (`→ 102.5`, or `→ 102.5×6` with reps in the slot's range after an arrow), never as a cited set;
 - the slot's own reps and target RPE.
+
+A `load×reps` pair (with its `@RPE` when cited) must be a reference set's own values (review builder-v2 B1): `last 110×6 @8` with no such set is replaced, even when 110 is the proposal. When code changes the load (pain hold, cap, step bound, unit conversion or equipment fit), the coach's basis names another number, so the line shows code's basis ending with the final value (`last 100×7 @8 · capped → 107.5`, `last 100×7 @8 → 100` with `held`) and the coach's goes under `NOT USED` (review B2). `HELD` and the `held` word mean a pain hold only; step-bound notes read `25 assist · one step from last 30` (review B3).
 
 Code normalises the forms before matching (`100×7`, `100 x 7`, `100 kg × 7`, `100kg x7`; `@8`, `@ RPE 8`; units). Any mention of `1RM` or `max` must carry `est.` or `≈`. A basis that fails is replaced by code's own basis (`est.` or `last 100 × 7`), and the original goes under `NOT USED`. No praise, no scores, no "safe" or "guaranteed".
 
@@ -546,6 +548,17 @@ The bands come from playbook rule 5/6 and D22: a single coach change of more tha
 | P3 | **Length chips:** `BUILD_LENGTH_CHIPS` (`packages/schemas/src/workout-draft.ts`) becomes default ±5/10/15 | The existing `[30, 45, 60, 75, 90]` chips, with the default selected |
 | P4 | `build_requests` migration, the `ToolResult` `question` kind and the `turn.ts` stop (§8.2) | `ask_build_question` isn't registered; builds run without questions |
 | P5 | `relatedLifts` content (Coaching knowledge, Ben approves) | That row is skipped; personal ratios and the first-time ceiling still apply |
+
+**Deferred from the builder-v2 slice (review S5, 14 Oct; pending Ben).** Not built yet; behaviour until they are:
+
+| Item | Until built |
+|---|---|
+| BD12: Save to Workouts writes the draft's re-checked loads as coach next-session targets | Saving doesn't carry the draft's coach loads as next-session targets; the saved workout plans as any library workout does. The draft's own page still shows the coach loads |
+| BD20: goal card (`Training for?`, `Still training for …?`) | No goal card. The goal is set in Profile; questions on the goal are refused by code (`known: <goal>` or not allowed) |
+| `YOU ANSWERED`, `knownHash` and `loadChecks` on `WorkoutDraftVersion` | `Why this workout` has no `YOU ANSWERED` section; the answers are in the thread; load checks are the slot's stored `DraftLoad`s |
+| `build_requests` record | The question count is derived from the thread (`buildQuestionChain`); answers aren't stored with the draft |
+| `previewKey` from the draft exercises' `historyVersion` | The key uses the newest finished workout; the re-check itself compares each slot's `checkedHistoryVersion` (review B4) |
+| WB-P7 45-minute default with no saved training details | With no saved row, a typed build uses 60 (`resolveBuildMinutes`); with a saved row, its session length (the Build card's chips default to 45) |
 
 ---
 
