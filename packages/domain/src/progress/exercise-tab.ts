@@ -1,3 +1,5 @@
+import type { ProgressPeriodKey } from '@fizz/schemas';
+
 import { formatDistance, formatDuration, formatNumber, loadText, NBSP } from '../display';
 import { isSetCountable } from '../exclusions';
 import {
@@ -15,7 +17,7 @@ import { longDate, seriesLabels, seriesUnitText, shortDate, thousands, weekdayLo
 import { countRowSets } from './muscles';
 import type { ProgressSession, ProgressSet } from './projection';
 import { countNoun, rangeWords } from './text';
-import { inRange, type DateRange } from './window';
+import { inRange, periodProgressWindow, PROGRESS_PERIODS, type DateRange } from './window';
 
 /**
  * Progress › Exercises tab (Ben, 13–14 Oct 2026; ideas-2026-10-12 D3 and
@@ -106,12 +108,33 @@ function workingLoaded(s: ProgressSet, series: Pick<ExerciseSeries, 'key'>): s i
 /**
  * Working weight: the load used for the most countable working sets; a tie
  * goes to the harder load (heavier; less assistance on assisted machines).
- * Returns the load and how many sets used it; null with no loaded sets.
+ * A left + right pair counts once, as in `workingSetCount` and
+ * `sessionVolume` (the busier side per load). Returns the load and how many
+ * sets used it; null with no loaded sets.
  */
-export function workingWeight(ss: Pick<SeriesSession, 'sets'>, series: Pick<ExerciseSeries, 'key' | 'kind'>): { value: number; sets: number } | null {
+export function workingWeight(ss: Pick<SeriesSession, 'rows'>, series: Pick<ExerciseSeries, 'key' | 'kind'>): { value: number; sets: number } | null {
   if (series.kind !== 'load' && series.kind !== 'assisted' && series.kind !== 'added_bodyweight') return null;
   const byLoad = new Map<number, number>();
-  for (const s of ss.sets) if (workingLoaded(s, series)) byLoad.set(s.load.value, (byLoad.get(s.load.value) ?? 0) + 1);
+  const tally = (sets: readonly ProgressSet[]): Map<number, number> => {
+    const m = new Map<number, number>();
+    for (const s of sets) if (workingLoaded(s, series)) m.set(s.load.value, (m.get(s.load.value) ?? 0) + 1);
+    return m;
+  };
+  const add = (m: Map<number, number>) => {
+    for (const [v, c] of m) byLoad.set(v, (byLoad.get(v) ?? 0) + c);
+  };
+  for (const row of ss.rows) {
+    if (row.laterality === 'bilateral') {
+      add(tally(row.sets));
+      continue;
+    }
+    add(tally(row.sets.filter((s) => s.side === 'both' || s.side === null)));
+    const left = tally(row.sets.filter((s) => s.side === 'left'));
+    const right = tally(row.sets.filter((s) => s.side === 'right'));
+    const sides = new Map<number, number>();
+    for (const v of new Set([...left.keys(), ...right.keys()])) sides.set(v, Math.max(left.get(v) ?? 0, right.get(v) ?? 0));
+    add(sides);
+  }
   const lowerWins = series.kind === 'assisted';
   let best: { value: number; sets: number } | null = null;
   for (const [value, sets] of byLoad) {
@@ -221,6 +244,8 @@ export interface ExerciseTabRow {
   sessionId: string;
   date: string;
   cells: { date: string; topSet: string; volume: string; sets: string; e1rm: string };
+  /** The chart readout for this session: its point's, or `8 Oct · Est. 1RM —` when it has no value for the measure. */
+  readout: string;
   words: string;
 }
 
@@ -244,9 +269,9 @@ export interface ExerciseTabView {
     points: ExerciseTabPoint[];
     words: string;
   };
-  /** Newest first. */
+  /** Newest first. `unit` carries the convention: `kg`, `kg each`, `kg stack`, `kg assist`, `reps`. */
   table: { unit: string; rows: ExerciseTabRow[] };
-  /** No session of this series in the period. */
+  /** No session of this series in the period, or none with a value for the measure. */
   empty: string | null;
 }
 
@@ -259,8 +284,31 @@ export interface ExerciseTabInput {
   /** The catalogue or custom name. */
   name?: string;
   seriesId?: string | null;
+  /** Open on the series holding this workout (a home record), ahead of `seriesId`. */
+  sessionId?: string | null;
+  /** With `sessionId`: the workout row, when the exercise is on two rows. */
+  sessionExerciseId?: string | null;
   measure?: ExerciseMeasure | null;
   trailing?: number | null;
+}
+
+function openSeries(all: readonly ExerciseSeries[], input: ExerciseTabInput): ExerciseSeries | undefined {
+  if (!input.sessionId) return undefined;
+  const hit = all.filter((s) => s.sessions.some((x) => x.sessionId === input.sessionId));
+  const onRow = input.sessionExerciseId ? hit.find((s) => s.sessions.some((x) => x.sessionId === input.sessionId && x.rows.some((r) => r.sessionExerciseId === input.sessionExerciseId))) : undefined;
+  return onRow ?? hit[0];
+}
+
+/**
+ * The period that shows a workout opened from a record: the asked preset
+ * when it holds the date, else the narrowest wider preset, else a custom
+ * period from that date to today.
+ */
+export function periodHolding(date: string, today: string, period: ProgressPeriodKey): { period: ProgressPeriodKey; range: DateRange | null } {
+  const holds = (k: ProgressPeriodKey) => inRange(date, periodProgressWindow(today, k));
+  const keys = PROGRESS_PERIODS.map((p) => p.key);
+  const wider = keys.slice(keys.indexOf(period)).find(holds);
+  return wider ? { period: wider, range: null } : { period, range: { from: date, to: today } };
 }
 
 /** The series shown by default: most sessions in the period (imports count), then the most recent. */
@@ -298,11 +346,13 @@ function bestSetStat(sessions: readonly SeriesSession[], series: ExerciseSeries)
 /** The Exercises tab for one exercise; null when it has no finished session. */
 export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView | null {
   const all = collectExerciseSeries(input.sessions, input.exerciseId);
-  const series = (input.seriesId ? all.find((s) => s.id === input.seriesId) : undefined) ?? exerciseTabSeries(all, input.window);
+  const series = openSeries(all, input) ?? (input.seriesId ? all.find((s) => s.id === input.seriesId) : undefined) ?? exerciseTabSeries(all, input.window);
   if (series === null) return null;
   const labels = seriesLabels(all, input.gymNames ?? {});
   const offered = measuresFor(series.kind);
-  const measure = input.measure && offered.includes(input.measure) ? input.measure : (offered[0] as ExerciseMeasure);
+  // The default is the first measure with a point (review B1): sets over 10 reps have no Est. 1RM, so isolation work opens on Weight.
+  const has = (m: ExerciseMeasure, inPeriod: boolean) => series.sessions.some((ss) => (!inPeriod || inRange(ss.date, input.window)) && measureValue(ss, series, m) !== null);
+  const measure = input.measure && offered.includes(input.measure) ? input.measure : (offered.find((m) => has(m, true)) ?? offered.find((m) => has(m, false)) ?? offered[0] ?? 'reps');
   const trailing = normaliseTrailing(input.trailing);
   const label = measureLabel(measure);
 
@@ -339,10 +389,14 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
   stats.push({ value: bestSetStat(inWindow, series) ?? '—', label: 'Best set' });
   stats.push({ value: String(inWindow.length), label: 'Sessions' });
 
-  const unit = series.key.unit;
+  const unit = seriesUnitText(series);
+  const readouts = new Map(points.map((p) => [p.sessionId, p.readout]));
   const rows: ExerciseTabRow[] = [...inWindow].reverse().map((ss) => {
     const top = series.kind === 'bodyweight' ? mostReps(ss, series) : (sessionTopSet(ss, series)?.fromSet ?? null);
-    const topText = top === null ? '—' : top.load === null || series.kind === 'bodyweight' ? String(top.reps ?? '—') : `${formatNumber(top.load.value)}×${String(top.reps ?? 0)}`;
+    const loaded = top !== null && top.load !== null && series.kind !== 'bodyweight';
+    const topText = top === null ? '—' : !loaded ? String(top.reps ?? '—') : `${formatNumber(top.load?.value ?? 0)}×${String(top.reps ?? 0)}`;
+    // VoiceOver hears the load in full (`Assist 30 kg by 8`, `12 kg each by 12`); the cell's unit is in the header.
+    const topWords = top === null ? 'none' : loaded ? setText(top, series).replace(/\u00a0/g, ' ').replace(' × ', ' by ') : countNoun(top.reps ?? 0, 'rep', 'reps');
     const vol = sessionVolume(ss, series);
     const e = sessionE1rm(ss, series);
     const sets = workingSetCount(ss);
@@ -350,10 +404,11 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
       sessionId: ss.sessionId,
       date: ss.date,
       cells: { date: shortDate(ss.date, input.today), topSet: topText, volume: vol === null ? '—' : thousands(vol.value), sets: String(sets), e1rm: e === null ? '—' : `≈${formatNumber(e.value)}` },
+      readout: readouts.get(ss.sessionId) ?? `${shortDate(ss.date, input.today)} · ${label} —`,
       words: [
         longDate(ss.date, input.today),
-        `top set ${topText.replace('×', ' by ')}`,
-        vol === null ? null : `volume ${formatNumber(vol.value)}`,
+        `top set ${topWords}`,
+        vol === null ? null : `volume ${formatNumber(vol.value)} ${unit}`,
         countNoun(sets, 'set', 'sets'),
         e === null ? null : `estimated one-rep max about ${formatNumber(e.value)}`,
       ]
@@ -383,6 +438,6 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
       words: `${label}${measure === 'e1rm' ? ', an estimate' : ''}, ${countNoun(points.length, 'session', 'sessions')}, ${range}. Trailing average of the last ${String(trailing)}.`,
     },
     table: { unit, rows },
-    empty: inWindow.length === 0 ? 'No sessions in this period.' : null,
+    empty: inWindow.length === 0 ? 'No sessions in this period.' : points.length === 0 ? `No ${label} in this period.` : null,
   };
 }

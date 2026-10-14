@@ -12,6 +12,7 @@ import {
   muscleLabel,
   normaliseTrailing,
   parseTrailing,
+  periodHolding,
   progressWindow,
   trailingAverage,
   workingSetCount,
@@ -240,6 +241,81 @@ describe('buildExerciseTabView', () => {
   it('an unknown measure falls back to the default', () => {
     const v = buildExerciseTabView({ sessions: history, exerciseId: 'bench', today: TODAY, window: WINDOW, measure: 'hold' });
     expect(v?.measure).toBe('e1rm');
+  });
+});
+
+describe('review fixes (progress-exercises B1, S1, S2, S3, S4)', () => {
+  const raises = (date: string, loads: number[]) => session(date, [row(loads.map((l) => set(kg(l, 'per_hand'), 15)), { exerciseId: 'raise', exerciseName: 'Lateral raise', convention: 'per_hand', equipmentKind: 'dumbbells', equipmentId: 'db-1' })]);
+
+  it('B1: work always over 10 reps opens on Weight, with points, not a blank Est. 1RM chart', () => {
+    const v = buildExerciseTabView({ sessions: [raises('2026-09-01', [10, 10, 10]), raises('2026-10-01', [12, 12, 12])], exerciseId: 'raise', today: TODAY, window: WINDOW });
+    expect(v?.measures[0]?.key).toBe('e1rm');
+    expect(v?.measure).toBe('weight');
+    expect(v?.chart.points.map((p) => p.value)).toEqual([10, 12]);
+    expect(v?.empty).toBeNull();
+  });
+
+  it('B1: a chosen measure with no points, in a period with sessions, says so', () => {
+    const v = buildExerciseTabView({ sessions: [raises('2026-09-01', [10, 10]), raises('2026-10-01', [12, 12])], exerciseId: 'raise', today: TODAY, window: WINDOW, measure: 'e1rm' });
+    expect(v?.measure).toBe('e1rm');
+    expect(v?.chart.points).toEqual([]);
+    expect(v?.empty).toBe('No Est. 1RM in this period.');
+    expect(v?.table.rows).toHaveLength(2);
+  });
+
+  it('B1: the default still prefers Est. 1RM when it has a point', () => {
+    const v = buildExerciseTabView({ sessions: [bench('2026-10-01', [[100, 5]])], exerciseId: 'bench', today: TODAY, window: WINDOW });
+    expect(v?.measure).toBe('e1rm');
+  });
+
+  it('S1: the sessions table names the convention: kg each for dumbbells, kg assist on an assisted machine', () => {
+    const db = buildExerciseTabView({ sessions: [raises('2026-10-01', [12, 12])], exerciseId: 'raise', today: TODAY, window: WINDOW });
+    expect(sp(db?.table.unit)).toBe('kg each');
+    expect(sp(db?.table.rows[0]?.words)).toContain('top set 12 kg each by 15');
+    expect(sp(db?.table.rows[0]?.words)).toContain('volume 360 kg each');
+    const assisted = [row([set(kg(30, 'assistance'), 8), set(kg(30, 'assistance'), 8)], { exerciseId: 'pullup', exerciseName: 'Assisted pull-up', convention: 'assistance', equipmentKind: 'assisted_stack' })];
+    const a = buildExerciseTabView({ sessions: [session('2026-10-01', assisted)], exerciseId: 'pullup', today: TODAY, window: WINDOW });
+    expect(sp(a?.table.unit)).toBe('kg assist');
+    expect(a?.table.rows[0]?.cells.topSet).toBe('30×8');
+    expect(sp(a?.table.rows[0]?.words)).toContain('top set Assist 30 kg by 8');
+    expect(a?.table.rows[0]?.words).not.toContain('top set 30 by 8');
+    const lbs = buildExerciseTabView({ sessions: [session('2026-10-01', [row([set(lb(225), 5)], { unit: 'lb' })])], exerciseId: 'bench', today: TODAY, window: WINDOW });
+    expect(lbs?.table.unit).toBe('lb');
+  });
+
+  it('S2: a left + right pair counts once for working weight, matching the Sets column', () => {
+    const side = (l: number, s: 'left' | 'right') => set(kg(l, 'per_hand'), 10, { side: s });
+    const uni = row([side(16, 'left'), side(16, 'right'), side(16, 'left'), side(16, 'right')], { exerciseId: 'db', convention: 'per_hand', equipmentKind: 'dumbbells', laterality: 'unilateral' });
+    const bi = row([set(kg(18, 'per_hand'), 10), set(kg(18, 'per_hand'), 10), set(kg(18, 'per_hand'), 10)], { exerciseId: 'db', convention: 'per_hand', equipmentKind: 'dumbbells', equipmentId: uni.equipmentId });
+    const s = only([session('2026-10-01', [uni, bi])], 'db');
+    expect(workingWeight(s.sessions[0] as never, s)).toEqual({ value: 18, sets: 3 });
+    expect(workingSetCount(s.sessions[0] as never)).toBe(5);
+    // A side with an extra set: the busier side counts.
+    const odd = only([session('2026-10-01', [row([side(20, 'left'), side(20, 'right'), side(20, 'left')], { exerciseId: 'db', convention: 'per_hand', equipmentKind: 'dumbbells', laterality: 'unilateral' })])], 'db');
+    expect(workingWeight(odd.sessions[0] as never, odd)).toEqual({ value: 20, sets: 2 });
+  });
+
+  it('S4: every row carries a readout; a session with no value for the measure reads `date · measure —`', () => {
+    const v = buildExerciseTabView({ sessions: [raises('2026-10-01', [12])], exerciseId: 'raise', today: TODAY, window: WINDOW, measure: 'e1rm' });
+    expect(sp(v?.table.rows[0]?.readout)).toBe('1 Oct · Est. 1RM —');
+    const w = buildExerciseTabView({ sessions: [raises('2026-10-01', [12])], exerciseId: 'raise', today: TODAY, window: WINDOW });
+    expect(w?.table.rows[0]?.readout).toBe(w?.chart.points[0]?.readout);
+  });
+
+  it('S3: opening on a record picks the series holding that workout', () => {
+    const lbSession = session('2026-10-05', [row([set(lb(225), 5)], { unit: 'lb' })]);
+    const sessions = [bench('2026-09-01', [[100, 5]]), bench('2026-09-08', [[100, 5]]), lbSession];
+    const v = buildExerciseTabView({ sessions, exerciseId: 'bench', today: TODAY, window: WINDOW, sessionId: lbSession.sessionId });
+    expect(v?.series).toHaveLength(2);
+    expect(v?.table.unit).toBe('lb');
+    expect(v?.chart.points.map((p) => p.sessionId)).toEqual([lbSession.sessionId]);
+  });
+
+  it('S3: a record older than the period widens it to the narrowest preset, or a custom period past 1 year', () => {
+    expect(periodHolding('2026-10-01', TODAY, '1m')).toEqual({ period: '1m', range: null });
+    expect(periodHolding('2026-06-01', TODAY, '1m')).toEqual({ period: '6m', range: null });
+    expect(periodHolding('2026-06-01', TODAY, '1y')).toEqual({ period: '1y', range: null });
+    expect(periodHolding('2024-02-10', TODAY, '6m')).toEqual({ period: '6m', range: { from: '2024-02-10', to: TODAY } });
   });
 });
 
