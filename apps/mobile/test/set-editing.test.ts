@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { AppServices } from '../src/services/app-services';
-import { plannedEditSave } from '../src/workout/set-edit';
+import { committedLoad, loadNeedsFit, plannedEditSave } from '../src/workout/set-edit';
 import { UNDO_TOAST } from '../src/workout/undo-op';
 import { createHarness, setUpGym, type Harness } from './harness';
 
@@ -51,6 +51,7 @@ describe('Edit set for a set not done yet, offline, through a force-close', () =
     const fitted = s.workout.snapPlannedLoad(data, second.id, 61.3);
     expect(fitted).not.toBe(61.3);
     expect(fitted).not.toBeNull();
+    if (fitted === undefined) throw new Error('no fit');
     const view = s.workout.plannedEditView(data, second.id, { load: fitted, reps: { min: 5, max: 5 }, setType: 'top', restS: 150 });
     expect(view?.patch).toMatchObject({ load: { value: fitted, unit: 'kg', convention: 'total' }, reps: { min: 5, max: 5 }, setType: 'top', restS: 150 });
     const r = await s.workout.editPlannedSet({ sessionId, setId: second.id, expectedSetVersion: view?.setVersion ?? 0, patch: view?.patch ?? {}, opId: 'edit-1' });
@@ -120,6 +121,19 @@ describe('plannedEditSave: the edit, then the note', () => {
   });
 });
 
+describe('a typed load shows what will be saved (review S1)', () => {
+  it('blur or Save turns 101 into the 100 the bar makes; a load nothing can make goes back to the stored one', () => {
+    expect(loadNeedsFit(101, 100)).toBe(true);
+    expect(committedLoad(101, 100)).toBe(100);
+    expect(loadNeedsFit(100, 100)).toBe(false);
+    expect(loadNeedsFit(null, null)).toBe(false);
+    // Nothing fits (undefined): back to untouched, so the stored target shows and is kept.
+    expect(loadNeedsFit(22, undefined)).toBe(true);
+    expect(committedLoad(22, undefined)).toBeUndefined();
+    expect(loadNeedsFit(undefined, undefined)).toBe(false);
+  });
+});
+
 describe('screens wire it (source checks; the feel needs a real iPhone)', () => {
   const SRC = join(__dirname, '..', 'src', 'screens', 'workout');
   it('Edit set routes a set not done yet to its plan editor; the editor never computes a target', () => {
@@ -129,5 +143,12 @@ describe('screens wire it (source checks; the feel needs a real iPhone)', () => 
     expect(planned).toContain('services.workout.plannedEditView(');
     expect(planned).toContain('services.workout.snapPlannedLoad(');
     expect(planned).not.toMatch(/roundToAvailableLoad|getAchievableLoads|stepLoad/);
+    expect(planned).toContain('if (loadNeedsFit(typedLoad, snapped))');
+  });
+  it('a refusal survives the reload’s remount: the error lives in EditSetScreen (review S4)', () => {
+    const edit = readFileSync(join(SRC, 'EditSetScreen.tsx'), 'utf8');
+    expect(edit).toMatch(/error=\{error\}\s+onRefused=/);
+    const planned = readFileSync(join(SRC, 'PlannedSetEdit.tsx'), 'utf8');
+    expect(planned).not.toContain('setError(');
   });
 });

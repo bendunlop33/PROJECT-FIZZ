@@ -137,6 +137,7 @@ export function NumberStepper({
   numeralSize,
   compact = false,
   onFocus,
+  onBlur,
   onLayout,
 }: {
   label: string;
@@ -166,6 +167,8 @@ export function NumberStepper({
   compact?: boolean;
   /** The field took focus (the keypad is opening or moving to it): the Table anchors this tile (WT39). */
   onFocus?: () => void;
+  /** The field lost focus (Edit set fits a typed load then). */
+  onBlur?: () => void;
   /** The tile's frame in its parent, so the Table knows where the focused tile ends. */
   onLayout?: (e: LayoutChangeEvent) => void;
 }) {
@@ -212,6 +215,7 @@ export function NumberStepper({
       }}
       onBlur={() => {
         setFocused(false);
+        onBlur?.();
       }}
       keyboardType={decimals ? 'decimal-pad' : 'number-pad'}
       inputAccessoryViewID={NUMBER_ACCESSORY_ID}

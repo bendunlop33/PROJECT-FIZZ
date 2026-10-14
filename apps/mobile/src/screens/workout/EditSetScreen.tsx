@@ -69,7 +69,19 @@ export function EditSetScreen() {
   const view = data ? services.workout.editView(data, setId, values, exclusions, targetRpe, setType) : null;
   // A set not done yet edits its plan (14 Oct): target, type, target RPE, rest, note.
   if (data && aggregate?.session.status === 'active' && aggregate.sets.find((s) => s.id === setId)?.status === 'pending') {
-    return <PlannedSetEdit key={`${setId}:${String(aggregate.revision)}`} data={data} setId={setId} onStale={() => void load()} />;
+    // Keyed on the revision so a reload starts fresh; the refusal lives here so it survives that remount (review S4).
+    return (
+      <PlannedSetEdit
+        key={`${setId}:${String(aggregate.revision)}`}
+        data={data}
+        setId={setId}
+        error={error}
+        onRefused={(message) => {
+          setError(message);
+          void load();
+        }}
+      />
+    );
   }
   if (!aggregate || !view) {
     return (

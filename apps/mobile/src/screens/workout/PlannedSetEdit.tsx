@@ -13,7 +13,7 @@ import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, SecondaryButton, StatusLine, StepperTileRow, TextButton, TextField } from '../../ui';
 import { targetRpeChips } from '../../workout/exercise-menu';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
-import { plannedEditSave } from '../../workout/set-edit';
+import { committedLoad, loadNeedsFit, plannedEditSave } from '../../workout/set-edit';
 import { stepperRowTiles } from '../../workout/tile-fit';
 import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 
@@ -26,7 +26,7 @@ import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
  * Log logs; `Insert set after` and `Delete set` apply at once with Undo.
  * Every value comes from `buildPlannedSetEditView`; nothing is computed here.
  */
-export function PlannedSetEdit({ data, setId, onStale }: { data: ActiveWorkoutData; setId: string; onStale: () => void }) {
+export function PlannedSetEdit({ data, setId, error, onRefused }: { data: ActiveWorkoutData; setId: string; error: string | null; onRefused: (message: string) => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -37,7 +37,6 @@ export function PlannedSetEdit({ data, setId, onStale }: { data: ActiveWorkoutDa
   /** The load as typed (fitted to the equipment for the view and the save); undefined = untouched. */
   const [typedLoad, setTypedLoad] = useState<number | null | undefined>(undefined);
   const [noteText, setNoteText] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [saveOp] = useState(newUuid);
   const [noteOp] = useState(newUuid);
   const [insertOp] = useState(newUuid);
@@ -59,6 +58,11 @@ export function PlannedSetEdit({ data, setId, onStale }: { data: ActiveWorkoutDa
 
   async function save() {
     if (!view) return;
+    // S1: a typed load the equipment can't make turns into the one it can first; the next Save saves what's shown.
+    if (loadNeedsFit(typedLoad, snapped)) {
+      setTypedLoad(committedLoad(typedLoad, snapped));
+      return;
+    }
     const r = await plannedEditSave({
       patch: view.patch,
       note: noteEdited ? noteValue(noteText) : undefined,
@@ -67,10 +71,9 @@ export function PlannedSetEdit({ data, setId, onStale }: { data: ActiveWorkoutDa
       setNote: (note, expectedVersion) => services.workout.setNote({ sessionId, target: { kind: 'set', setId }, note, expectedVersion, opId: noteOp }),
     });
     if (r.kind === 'refused') {
-      setError(r.message);
       setEdits({});
       setTypedLoad(undefined);
-      onStale();
+      onRefused(r.message);
       return;
     }
     changed();
@@ -84,8 +87,7 @@ export function PlannedSetEdit({ data, setId, onStale }: { data: ActiveWorkoutDa
   async function doNext() {
     const r = await services.workout.dispatch(sessionId, { type: 'set_active_set', at: services.now(), opId: newUuid(), setId, expectedVersion: aggregate.session.version });
     if (!r.ok) {
-      setError(r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message);
-      onStale();
+      onRefused(r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message);
       return;
     }
     changed();
@@ -95,8 +97,7 @@ export function PlannedSetEdit({ data, setId, onStale }: { data: ActiveWorkoutDa
   async function insertAfter() {
     const r = await services.workout.addSet({ sessionId, sessionExerciseId: set?.sessionExerciseId ?? '', opId: insertOp, newSetId: newUuid(), afterSetId: setId });
     if (!r.ok) {
-      setError(r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : r.error.message);
-      onStale();
+      onRefused(r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : r.error.message);
       return;
     }
     changed();
@@ -108,8 +109,7 @@ export function PlannedSetEdit({ data, setId, onStale }: { data: ActiveWorkoutDa
     // No confirm (copy D4): the workout screen offers Undo.
     const r = await services.workout.dispatch(sessionId, { type: 'delete_set', at: services.now(), opId: deleteOp, setId, expectedSetVersion: view.setVersion });
     if (!r.ok) {
-      setError(r.error.message);
-      onStale();
+      onRefused(r.error.message);
       return;
     }
     changed();
@@ -156,6 +156,9 @@ export function PlannedSetEdit({ data, setId, onStale }: { data: ActiveWorkoutDa
                   hint={view.loadField.assisted ? 'More assistance is easier' : null}
                   onChange={(v) => {
                     setTypedLoad(v);
+                  }}
+                  onBlur={() => {
+                    setTypedLoad(committedLoad(typedLoad, snapped));
                   }}
                 />
               ) : null}

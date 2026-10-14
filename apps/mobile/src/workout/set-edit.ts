@@ -45,3 +45,18 @@ export async function plannedEditSave<P>(i: {
 function refusal(e: { code: string; message: string }): string {
   return e.code === 'stale_version' || e.code === 'write_conflict' ? 'This set changed since it was shown. Showing the latest.' : e.message;
 }
+
+/**
+ * The load field after a typed value is committed (blur or Save; review S1):
+ * the load the equipment can make, so the field shows what will be saved.
+ * `snapped` undefined (nothing fits) drops the typed value: the stored
+ * target stays. `typed` undefined: untouched.
+ */
+export function committedLoad(typed: number | null | undefined, snapped: number | null | undefined): number | null | undefined {
+  return typed === undefined ? undefined : snapped;
+}
+
+/** Save shows the fitted load first when it differs from what's typed, rather than saving a number that isn't on screen. */
+export function loadNeedsFit(typed: number | null | undefined, snapped: number | null | undefined): boolean {
+  return typed !== undefined && typed !== snapped;
+}
