@@ -73,6 +73,8 @@ import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/tar
 import { AX_FONT_SCALE } from '../../workout/overview';
 import { anchorReducer, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type ChipState } from '../../workout/table';
 import { ChatButton, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
+import { RestSetBlocks, SetPager, ViewedSetCard } from './SetPager';
+import { nextViewing, pagerView } from '../../workout/set-pager';
 
 /**
  * Active workout: the Table view (default, active-workout §2A) or the
@@ -183,6 +185,8 @@ export function WorkoutScreen() {
   const openHeaderRef = useRef<View>(null);
   /** During rest the next set is folded away (D-Rest); this opens it. Reset when the set changes. */
   const [showNextSet, setShowNextSet] = useState(false);
+  /** F7: the set Ben is looking at with ‹ › or a swipe; null = the current set. Never changes what Log logs. */
+  const [viewing, setViewing] = useState<string | null>(null);
   /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
   const [focusRequest, setFocusRequest] = useState<{ field: EntryField } | null>(null);
   useEffect(() => {
@@ -606,10 +610,38 @@ export function WorkoutScreen() {
   const session = loaded.aggregate.session;
   const tz = session.startedAt.tz;
   const focus = view.focus;
+  // F7 / F8: the set pager and the rest screen's blocks (domain views; nothing computed here).
+  const nav = services.workout.navigation(loaded, viewing);
+  const shownGlance = nav.shownSetId === null ? null : services.workout.glance(loaded, nav.shownSetId);
+  const pager = pagerView(nav, shownGlance);
+  const away = pager?.away === true;
+  const restSets = services.workout.restSets(loaded);
 
   function close() {
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.dispatch(popToToday());
+  }
+
+  function movePager(d: 'prev' | 'next') {
+    setViewing(nextViewing(nav, { kind: d }));
+  }
+
+  function editSet(setId: string) {
+    // The full rest view is a modal over the stack: close it first so Edit set shows on top.
+    setRestFull(false);
+    navigation.navigate('EditSet', { sessionId: session.id, setId });
+  }
+
+  /** `Make current` (F7): the viewed set becomes the one Log logs (`set_active_set`, versioned). */
+  function makeCurrent(setId: string) {
+    void selectRow(setId).then(() => {
+      setViewing(nextViewing(nav, { kind: 'made_current' }));
+    });
+  }
+
+  function showTable() {
+    updatePrefs({ workoutView: 'table' });
+    anchorEvent({ kind: 'view_switched' });
   }
 
   /** A refused menu action: the shortest honest line (the screen reloads on a stale version). */
@@ -697,6 +729,7 @@ export function WorkoutScreen() {
         .then(showRecord);
     // Path B: a pure check on the logged set, no AI call (coach-adjustments §4.2).
     coach.afterLog(r.aggregate, loggedSetId);
+    setViewing(nextViewing(services.workout.navigation({ ...loaded, aggregate: r.aggregate }, null), { kind: 'logged' }));
     // Table: the saved row slides up and the next open row comes to the top (§2A.4 auto-advance).
     setAfterSetFor(loggedSetId);
     anchorEvent({ kind: 'logged' });
@@ -1360,7 +1393,7 @@ export function WorkoutScreen() {
     view.justSaved && effortScale !== 'off' ? (
       <View style={{ gap: theme.space['3'] }}>
         <EffortHeading scale={effortScale}>
-          <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
+          <Eyebrow>{effortScale === 'rir' ? 'Last set · Reps in reserve' : 'Last set · Effort'}</Eyebrow>
         </EffortHeading>
         {effortChips}
       </View>
@@ -1414,22 +1447,53 @@ export function WorkoutScreen() {
     });
   }
 
+  // F8: under the timer, the set just done (compact, editable, its effort) and the next set, equally sized.
+  const lastEffort =
+    restSets.last !== null && view.justSaved?.setId === restSets.last.setId && effortScale !== 'off' ? (
+      <View style={{ gap: theme.space['2'] }}>
+        <EffortHeading scale={effortScale}>
+          <Eyebrow>{effortScale === 'rir' ? 'Reps in reserve' : 'Effort'}</Eyebrow>
+        </EffortHeading>
+        {effortChips}
+      </View>
+    ) : null;
+  const restBlocks = (
+    <RestSetBlocks
+      last={restSets.last}
+      effort={lastEffort}
+      next={away ? shownGlance : restSets.next}
+      pager={pager}
+      onEditLast={() => {
+        if (restSets.last) editSet(restSets.last.setId);
+      }}
+      onEditNext={() => {
+        const id = away ? nav.shownSetId : restSets.next?.setId;
+        if (id) editSet(id);
+      }}
+      onMove={movePager}
+      onNow={() => {
+        setViewing(nextViewing(nav, { kind: 'now' }));
+      }}
+      onMakeCurrent={() => {
+        if (nav.shownSetId) makeCurrent(nav.shownSetId);
+      }}
+    />
+  );
   const restPanel =
     resting ? (
       <View style={{ gap: theme.space['5'] }}>
         <RestPanel
           rest={rest}
           ready={holding}
-          upNext={view.upNext !== null ? `Next · ${view.upNext}` : focus === null ? (view.openEnded ? 'Next · add exercise' : null) : null}
+          upNext={focus === null ? (view.openEnded ? 'Next · add exercise' : null) : null}
           onAdjust={adjustRest}
           onSkip={skipRest}
         />
         {switchSlot}
+        {restBlocks}
         {view.justSaved ? (
           <RuledSection>
-            {savedLine}
             {recordLine}
-            {effortBlock}
             {view.painReview && view.painReview.afterSetId === view.justSaved.setId ? (
               <PainReviewLine
                 question={view.painReview.question}
@@ -2064,6 +2128,21 @@ export function WorkoutScreen() {
           </View>
         ) : null}
 
+        {/* F7: ‹ › and swipe through every set; viewing one never changes what Log logs. During rest it's on the Next block. */}
+        {!resting && pager !== null && view.phase !== 'empty' ? <SetPager pager={pager} onMove={movePager} onNow={() => { setViewing(nextViewing(nav, { kind: 'now' })); }} onTable={showTable} /> : null}
+        {!resting && pager?.away === true && shownGlance !== null ? (
+          <ViewedSetCard
+            glance={shownGlance}
+            pager={pager}
+            onEdit={() => {
+              editSet(shownGlance.setId);
+            }}
+            onMakeCurrent={() => {
+              makeCurrent(shownGlance.setId);
+            }}
+          />
+        ) : null}
+
         {restPanel ? (
           <SwapIn swapKey="rest" animate={drawn.current} style={{ gap: theme.space['5'] }}>
             {restPanel}
@@ -2072,18 +2151,7 @@ export function WorkoutScreen() {
 
         {/* During rest the next set waits below its own toggle (D-Rest is rest-first, audit F8). One wrapper keyed
             by the set either side of the rest end, so an editor opened during rest stays mounted (review B1). */}
-        {slot.kind === 'link' ? (
-          // One fixed secondary link (premium-feel §3.3, D8). How to is in the next set's header and its ⋯ menu.
-          <View style={{ marginTop: 'auto' }}>
-            <TextButton
-              label="Edit next set"
-              tone="secondary"
-              onPress={() => {
-                setShowNextSet(true);
-              }}
-            />
-          </View>
-        ) : slot.kind === 'editor' && setEditor ? (
+        {slot.kind === 'link' ? null : slot.kind === 'editor' && setEditor && !away ? (
           // Rest → Ready: the editor fades in (motion.swap) only when the rest end brings it on screen.
           <SwapIn swapKey={slot.key} animate={slot.animateOnMount} style={{ flexGrow: 1 }}>
             {setEditor}
@@ -2171,13 +2239,8 @@ export function WorkoutScreen() {
             />
           </View>
           <ScrollView contentContainerStyle={{ paddingHorizontal: theme.space['5'], gap: theme.space['5'], paddingBottom: theme.space['4'] }}>
-            {rest !== null ? <RestPanel rest={rest} ready upNext={view.upNext !== null ? `Next · ${view.upNext}` : null} onAdjust={adjustRest} onSkip={skipRest} /> : null}
-            {view.justSaved ? (
-              <RuledSection>
-                {savedLine}
-                {effortBlock}
-              </RuledSection>
-            ) : null}
+            {rest !== null ? <RestPanel rest={rest} ready upNext={null} onAdjust={adjustRest} onSkip={skipRest} /> : null}
+            {restBlocks}
             <CoachSlot>{coach.slot !== null ? <CoachSlotContent coach={coach} /> : null}</CoachSlot>
           </ScrollView>
           <ActionBar
