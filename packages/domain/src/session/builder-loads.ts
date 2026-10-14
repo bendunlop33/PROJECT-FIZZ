@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Exercise, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
+import type { EquipmentInstance, EquipmentKind, Exercise, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 import { dayMonthText, formatNumber } from '../display';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad, type LoadDirection } from '../equipment';
 import { isSetCountable } from '../exclusions';
@@ -148,7 +148,7 @@ export interface DerivedReference {
 /** The item a load was checked on (B7): a later plan on another kind, convention or bar re-checks as `Rule`. */
 export interface CheckedOn {
   equipmentId: string;
-  kind: EquipmentInstance['kind'];
+  kind: EquipmentKind;
   convention: LoadConvention;
   unit: WeightUnit;
   barKg: number | null;

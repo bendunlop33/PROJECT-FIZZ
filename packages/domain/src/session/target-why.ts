@@ -179,7 +179,13 @@ function setByRow(p: TargetProvenance | undefined): WhyRow {
       return {
         key: 'set_by',
         label: 'Set by',
-        lines: [p.coach?.scope === 'next_session' && after !== null ? `Coach · after ${after}` : `Coach · ${dayMonthText(p.setAt.utc, p.setAt.tz)}`],
+        lines: [
+          p.coach?.scope === 'build'
+            ? `From a coach workout · ${dayMonthText(p.setAt.utc, p.setAt.tz)}${p.estimate === true ? ' · est.' : ''}`
+            : p.coach?.scope === 'next_session' && after !== null
+              ? `Coach · after ${after}`
+              : `Coach · ${dayMonthText(p.setAt.utc, p.setAt.tz)}`,
+        ],
         kind: 'app',
       };
   }

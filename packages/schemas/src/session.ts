@@ -237,14 +237,19 @@ export const TargetProvenanceSchema = z.object({
     })
     .optional(),
   step: TargetStepSchema.optional(),
-  /** `coach`: the action that set it (its record has the checks), today or next session, and the coach's reason. */
+  /**
+   * `coach`: the action that set it (its record has the checks), today, next session or (v2 builder,
+   * `build`) a coach-built workout's checked load, and the coach's reason.
+   */
   coach: z
     .object({
       actionId: IdSchema,
-      scope: z.enum(['today', 'next_session']),
+      scope: z.enum(['today', 'next_session', 'build']),
       reason: z.string().max(600).nullable(),
     })
     .optional(),
+  /** (workout-builder v2, rule 6) The load is an estimate (`est.`): no comparable history of Ben's own backs it. */
+  estimate: z.literal(true).optional(),
   /** Equipment notes made with the target: rounding, caps, conversions, drops. */
   guardNotes: z.array(z.string().min(1).max(300)).max(10),
 });
