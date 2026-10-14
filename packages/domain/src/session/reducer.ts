@@ -131,7 +131,9 @@ export type SessionEvent =
   /** `undo_op`: sets put back as they were before the operation. */
   | { type: 'SetsRestored'; opId: string; setIds: string[] }
   | { type: 'NoteChanged'; target: { kind: 'exercise'; sessionExerciseId: string } | { kind: 'set'; setId: string } }
-  | { type: 'TargetRpeSet'; setIds: string[]; rpe: number | null };
+  | { type: 'TargetRpeSet'; setIds: string[]; rpe: number | null }
+  /** Ben edited a set not done yet (target, type, rest), or its Undo put the old one back. Cue layers rebuild the rest-end line. */
+  | { type: 'PlannedSetEdited'; setId: string; undo: boolean };
 
 export type ReduceResult =
   | {
@@ -497,7 +499,7 @@ function makeCompanion(state: SessionAggregate, logged: WorkoutSet, cmd: Command
     status: 'pending',
     side: logged.side === 'left' ? 'right' : 'left',
     pairedWithSetId: logged.id,
-    planned: logged.planned,
+    planned: withoutEditRecords(logged.planned),
     rest: logged.rest,
     actual: null,
     // Same values as the side just logged; effort is never prefilled.
@@ -1013,7 +1015,14 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
   // Copy the last live set of the requested type (re-review minor 2): a warm-up
   // added after working sets must not inherit the working load and rest.
   const live = own.filter((s) => s.status !== 'deleted');
-  const template = cmd.setType === null ? (live[live.length - 1] ?? last) : live.filter((s) => s.setType === cmd.setType).at(-1);
+  // `Insert set after` (14 Oct): straight after that set (after its other side), copying it.
+  let after: WorkoutSet | null = null;
+  if (cmd.afterSetId !== undefined) {
+    const picked = live.find((s) => s.id === cmd.afterSetId);
+    if (!picked) return fail('set_not_found', 'That set isn’t in this exercise any more.');
+    after = picked.pairedWithSetId === null ? picked : (live.find((s) => s.id === picked.pairedWithSetId) ?? picked);
+  }
+  const template = after ?? (cmd.setType === null ? (live[live.length - 1] ?? last) : live.filter((s) => s.setType === cmd.setType).at(-1));
   if (!template) {
     return fail('set_not_found', `${ex.exerciseName} has no ${cmd.setType ?? ''} set to copy its target and rest from.`);
   }
@@ -1022,8 +1031,15 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
   if (!atCurrentGym && !cmd.continuation) return fail('equipment_not_found', `${ex.exerciseName}'s equipment isn't at this gym. Add the set from the workout screen.`);
   let exercises = state.exercises;
   let rowId = ex.id;
-  let planned = template.planned;
-  let index = last.index + 1;
+  // A copy is a new target: another set's Undo records stay with that set.
+  let planned = withoutEditRecords(template.planned);
+  let index = after === null ? last.index + 1 : after.index + 1;
+  let sets = state.sets;
+  if (after !== null && atCurrentGym) {
+    // Later sets move down one place; only their position changes (never a value or version).
+    const from = index;
+    sets = sets.map((s) => (s.sessionExerciseId === ex.id && s.index >= from ? { ...s, index: s.index + 1 } : s));
+  }
   const c = cmd.continuation;
   if (c && !atCurrentGym) {
     if (state.exercises.some((e) => e.id === c.id)) return fail('invalid_values', 'That exercise ID is already used.');
@@ -1043,6 +1059,7 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
     rowId = row.id;
     planned = c.planned;
     index = 0;
+    sets = state.sets;
   }
   const added: WorkoutSet = {
     id: cmd.newSetId,
@@ -1067,7 +1084,85 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
   };
   const events: SessionEvent[] = [{ type: 'SetAdded', setId: added.id, sessionExerciseId: rowId }];
   const activeSetId = activateIfIdle(state, added.id, events);
-  return { ok: true, state: bumpVersion({ ...state, exercises, sets: [...state.sets, added] }, activeSetId), events };
+  return { ok: true, state: bumpVersion({ ...state, exercises, sets: [...sets, added] }, activeSetId), events };
+}
+
+/** A target copied to a new set: without another set's coach or edit Undo record. */
+function withoutEditRecords(planned: WorkoutSet['planned']): WorkoutSet['planned'] {
+  if (planned.edit === undefined && planned.coach === undefined) return planned;
+  const copy = { ...planned };
+  delete copy.edit;
+  delete copy.coach;
+  return copy;
+}
+
+const NO_TARGET_TYPES: ReadonlySet<WorkoutSet['setType']> = new Set(['warmup', 'drop']);
+
+/**
+ * `edit_planned_set` (14 Oct, "I should be able to edit anything on the
+ * sets"): Ben's own target, type and rest for a set not done yet. A logged
+ * set is corrected instead (rule 2). Versioned on the set (rule 5); the load
+ * must be one the set's equipment can make (rule 4). Everything replaced is
+ * kept on the set for Undo.
+ */
+function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_planned_set'>): Handled {
+  const set = state.sets.find((s) => s.id === cmd.setId);
+  if (!set || set.status === 'deleted') return fail('set_not_found', 'Set not found.');
+  if (set.status !== 'pending') return fail('set_not_pending', set.status === 'completed' ? 'This set is logged: correct it instead.' : 'This set was skipped.');
+  if (set.version !== cmd.expectedSetVersion) return fail('stale_version', 'This set changed since it was shown.');
+  const ex = exerciseOf(state, set);
+  if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
+  if (isWorkLive(state, [set.id])) return fail('work_interval_running', 'Stop the work timer before editing this set.');
+  const p = cmd.patch;
+  if (p.reps != null && ex.measurement !== 'reps') return fail('invalid_values', `${ex.exerciseName} isn’t counted in reps.`);
+  if (p.durationS != null && ex.measurement !== 'duration') return fail('invalid_values', `${ex.exerciseName} isn’t timed.`);
+  if (p.distanceM != null && ex.measurement !== 'distance') return fail('invalid_values', `${ex.exerciseName} has no distance.`);
+  if (p.load != null) {
+    if (p.load.convention !== ex.loadConvention) return fail('convention_mismatch', `Load convention ${p.load.convention} does not match ${ex.loadConvention}.`);
+    if (p.load.unit !== ex.unit) return fail('unit_mismatch', `Load unit ${p.load.unit} does not match ${ex.unit}; convert explicitly first.`);
+    const eq = equipmentOf(state, ex);
+    if (eq && !isLoadAchievable(p.load, eq)) return fail('invalid_values', `${eq.name} can’t make that load.`);
+  }
+  const setType = p.setType ?? set.setType;
+  const noTarget = NO_TARGET_TYPES.has(setType);
+  if (p.targetRpe != null && noTarget) return fail('invalid_values', 'Warm-up and drop sets have no target effort.');
+
+  const valuesTouched = p.load !== undefined || p.reps !== undefined || p.durationS !== undefined || p.distanceM !== undefined;
+  let planned: WorkoutSet['planned'] = { ...set.planned };
+  delete planned.edit;
+  if (valuesTouched) {
+    // Ben's own target now: the coach's or the rule's marker, its fit note and its `Why?` no longer describe it.
+    delete planned.coach;
+    delete planned.source;
+    delete planned.provenance;
+    delete planned.snap;
+    if (p.load !== undefined) planned.load = p.load;
+    if (p.reps !== undefined) planned.reps = p.reps;
+    if (p.durationS !== undefined) planned.durationS = p.durationS;
+    if (p.distanceM !== undefined) planned.distanceM = p.distanceM;
+  }
+  if (noTarget) planned = withRpeOverride(planned, undefined);
+  else if (p.targetRpe !== undefined) planned = withRpeOverride(planned, p.targetRpe ?? undefined);
+  const rest = p.restS === undefined ? set.rest : { seconds: p.restS, source: 'set_override' as const, sourceLabel: 'This set' };
+
+  const beforePlanned = { ...set.planned };
+  delete beforePlanned.edit;
+  const version = set.version + 1;
+  const edited: WorkoutSet = {
+    ...set,
+    setType,
+    rest,
+    // The unsaved draft held the old target; the new one prefills Log.
+    draft: valuesTouched ? null : set.draft,
+    planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft } } },
+    version,
+  };
+  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds])) {
+    return { ok: true, state, events: [] };
+  }
+  const events: SessionEvent[] = [{ type: 'PlannedSetEdited', setId: set.id, undo: false }];
+  if (p.restS !== undefined) events.push({ type: 'RestPlanChanged', setIds: [set.id], seconds: p.restS });
+  return { ok: true, state: bumpVersion({ ...state, sets: replaceSet(state.sets, edited) }), events };
 }
 
 function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise'>): Handled {
@@ -1852,6 +1947,27 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handl
       } else activeSetId = activeAfterRestore({ ...state, exercises }, sets, ids, events);
       return { ok: true, state: bumpVersion({ ...state, exercises, sets, audit }, activeSetId), events };
     }
+    case 'edit_planned_set': {
+      // Only while the set is still pending and exactly as the edit left it (rule 5).
+      const set = state.sets.find((s) => s.planned.edit?.opId === cmd.targetOpId);
+      const edit = set?.planned.edit;
+      if (!set || !edit || set.status !== 'pending' || set.version !== edit.version) return fail('stale_version', STALE_UNDO);
+      if (isWorkLive(state, [set.id])) return fail('work_interval_running', 'Stop the work timer first.');
+      const back: WorkoutSet = { ...set, planned: edit.before.planned, setType: edit.before.setType, rest: edit.before.rest, draft: edit.before.draft, version: set.version + 1 };
+      return { ok: true, state: bumpVersion({ ...state, sets: replaceSet(state.sets, back) }), events: [{ type: 'PlannedSetEdited', setId: set.id, undo: true }] };
+    }
+    case 'add_set': {
+      // `Set 4 added` [Undo]: the added set goes again, only while it's still pending (a logged set is real).
+      const set = state.sets.find((s) => s.id === prior.createdIds?.[0]);
+      if (!set || set.status !== 'pending') return fail('stale_version', STALE_UNDO);
+      if (isWorkLive(state, [set.id])) return fail('work_interval_running', 'Stop the work timer first.');
+      const deleted: WorkoutSet = { ...set, status: 'deleted', version: set.version + 1 };
+      const audit = [...state.audit, auditEntry(state, cmd, 'deleted', set, deleted, 'deleted')];
+      events.push({ type: 'SetDeleted', setId: set.id });
+      const sets = dropPendingCompanions(state, replaceSet(state.sets, deleted), set.id, cmd, audit, events);
+      const activeSetId = repointActive(state, sets, events);
+      return { ok: true, state: bumpVersion({ ...state, sets, audit }, activeSetId), events };
+    }
     default:
       return fail('operation_not_undoable', 'That can’t be undone here.');
   }
@@ -1987,6 +2103,8 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleSetNote(state, command);
     case 'set_target_rpe':
       return handleSetTargetRpe(state, command);
+    case 'edit_planned_set':
+      return handleEditPlannedSet(state, command);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -2066,6 +2184,9 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'set_target_rpe':
       // A later override (or clear) replaced this one on the set.
       return command.scope.kind === 'set' && state.sets.find((s) => s.id === (command.scope.kind === 'set' ? command.scope.setId : ''))?.planned.rpeOverride !== (command.rpe ?? undefined);
+    case 'edit_planned_set':
+      // A later edit or its Undo replaced it.
+      return state.sets.find((s) => s.id === command.setId)?.planned.edit?.opId !== command.opId;
     case 'undo_op':
     case 'revert_target_adjustment':
     case 'undo_change_gym':
