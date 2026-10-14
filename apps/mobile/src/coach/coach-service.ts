@@ -896,9 +896,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     const first = usableFirst({
       words: newest,
       focus,
-      pool: doable.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, split: e.split })),
+      pool: doable.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, split: e.split, primaryMuscle: e.primaryMuscles[0] })),
       draft: parent?.plan.slots.map((sl) => sl.catalogueId) ?? [],
       routines: live.flatMap((r) => r.exercises.map((e) => keyOf(e.exerciseId))),
+      dayBodyParts: day?.bodyParts ?? [],
     });
     const allUsable = doable
       .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));

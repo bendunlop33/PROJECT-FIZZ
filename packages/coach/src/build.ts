@@ -12,7 +12,7 @@ import {
   newWorkoutDraft,
   type WorkoutProposalContext,
 } from '@fizz/domain';
-import { BUILD_LIMITS, type ActionDetail, type BuildCheck, type BuildDay, type BuildFocus, type DraftPlan, type GuardNote, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
+import { BUILD_LIMITS, muscleGroupOf, type ActionDetail, type BuildCheck, type BuildDay, type BuildFocus, type DraftPlan, type GuardNote, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
 import { isChangeClaim } from './claims';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
 
@@ -131,20 +131,25 @@ const FOCUS_SPLITS: Readonly<Record<BuildFocus, readonly string[]>> = {
 /**
  * Review r5 S2: which usable exercises go ahead of the alphabetical fill when the list is capped, in
  * order: the ones Ben named in full ("split squats"), the draft's, the ones a distinctive word of his
- * names ("calf"), the ones fitting the focus (by catalogue split), then his routines'. Pure.
+ * names ("calf"), the ones whose main muscle is one of the split day's body parts (F19; review S7),
+ * the ones fitting the focus (by catalogue split), then his routines'. Pure.
  */
 export function usableFirst(input: {
   words: readonly string[];
   focus: BuildFocus;
-  pool: readonly { catalogueId: string; name: string; split?: string | undefined }[];
+  pool: readonly { catalogueId: string; name: string; split?: string | undefined; primaryMuscle?: string | undefined }[];
   draft: readonly string[];
   routines: readonly string[];
+  /** The Build card's split day's body parts, when one is chosen. */
+  dayBodyParts?: readonly string[];
 }): string[] {
   const text = input.words.join('\n');
   const named = input.pool.map((u) => ({ exerciseId: u.catalogueId, exerciseName: u.name }));
   const splits = FOCUS_SPLITS[input.focus];
+  const parts = input.dayBodyParts ?? [];
+  const day = parts.length === 0 ? [] : input.pool.filter((u) => u.primaryMuscle !== undefined && parts.includes(muscleGroupOf(u.primaryMuscle) ?? '')).map((u) => u.catalogueId);
   const focus = input.pool.filter((u) => u.split !== undefined && splits.includes(u.split)).map((u) => u.catalogueId);
-  return [...new Set([...exercisesNamedIn(text, named), ...input.draft, ...namedByTail(text, named), ...exercisesLooselyNamedIn(text, named), ...focus, ...input.routines])];
+  return [...new Set([...exercisesNamedIn(text, named), ...input.draft, ...namedByTail(text, named), ...exercisesLooselyNamedIn(text, named), ...day, ...focus, ...input.routines])];
 }
 
 const wordsOf = (s: string): string[] => s.toLowerCase().replace(/[’']/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 0);
