@@ -214,7 +214,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
@@ -285,6 +285,8 @@ export type ThreadRow =
   | { kind: 'tools'; key: string; lines: string[] }
   | { kind: 'card'; key: string; card: CardView }
   | { kind: 'note'; key: string; text: string }
+  /** (14 Oct) The coach's offer on the thread's last message: `Adjust` sends Ben's acceptance (CA1). */
+  | { kind: 'offer'; key: string; input: Extract<BenInput, { kind: 'accept_offer' }> }
   /** `input`: what `Try again` sends, the turn's own (a summary review: `{ kind: 'summary' }`); null when unknown. */
   | { kind: 'outcome'; key: string; text: string; icon: ViewIcon; retry: boolean; why: string | null; input: BenInput | null };
 
@@ -379,6 +381,11 @@ export function threadRows(data: ThreadData): ThreadRow[] {
       const input = ben?.body.role === 'ben' ? ben.body.input : null;
       if (o !== null) rows.push({ kind: 'outcome', key: `${turnId}:outcome`, ...o, retry: o.retry && input !== null, input });
     }
+  }
+  // (14 Oct) Only the latest message's offer can be accepted: anything Ben sent after it answers it.
+  const last = data.messages.at(-1);
+  if (last !== undefined && last.body.role === 'coach' && last.body.offer !== null && data.turns.get(last.turnId)?.status === 'completed') {
+    rows.push({ kind: 'offer', key: `${last.id}:offer`, input: { kind: 'accept_offer', offer: last.body.offer } });
   }
   return rows;
 }

@@ -52,7 +52,7 @@ describe('migration 16', () => {
   it('adds training_profiles in place on a schema-15 database', async () => {
     const db = memoryDriver();
     await migrate(db, MIGRATIONS, 15);
-    expect(await migrate(db)).toEqual({ from: 15, to: 16, applied: [16] });
+    expect(await migrate(db, MIGRATIONS, 16)).toEqual({ from: 15, to: 16, applied: [16] });
     expect(await readUserVersion(db)).toBe(16);
     expect(await db.getAll("SELECT name FROM sqlite_master WHERE name = 'training_profiles'")).toHaveLength(1);
   });

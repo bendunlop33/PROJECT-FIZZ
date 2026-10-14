@@ -531,6 +531,7 @@ export function CoachSheetScreen() {
             onProposal={(id, tap) => void tapProposal(id, tap)}
             onMemory={(id, v, d) => void decideMemory(id, v, d)}
             onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)}
+            onAccept={() => r.kind === 'offer' && live === null && void send(r.input)}
             onDraft={{ gymId: buildGym?.id ?? null, open: openDraft, openRoutine: openRoutine, changed: () => { changed(); void loadRows(threadId ?? null); } }}
           />
         ))}
@@ -635,6 +636,7 @@ function Row({
   onProposal,
   onMemory,
   onRetry,
+  onAccept,
   onDraft,
 }: {
   row: ThreadRow;
@@ -643,6 +645,8 @@ function Row({
   onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
   onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
   onRetry: () => void;
+  /** `Adjust` on the coach's offer (CA1). */
+  onAccept: () => void;
   /** A coach draft's card (workout-builder §4.2): `Open ›` closes the sheet and opens its overview; the sheet never opens it by itself. */
   onDraft?: { gymId: string | null; open: (draftId: string) => void; openRoutine: (routineId: string) => void; changed: () => void };
 }) {
@@ -682,6 +686,12 @@ function Row({
           <AppText variant="callout" color="text.secondary">
             {row.text}
           </AppText>
+        </View>
+      );
+    case 'offer':
+      return (
+        <View style={{ flexDirection: 'row' }}>
+          <TextButton label="Adjust" onPress={onAccept} />
         </View>
       );
     case 'outcome':

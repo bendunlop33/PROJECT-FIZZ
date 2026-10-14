@@ -74,6 +74,7 @@ function sessionOf(record: ActionRecord): string | null {
   switch (record.detail.kind) {
     case 'adjust_pending_sets':
     case 'add_exercise_today':
+    case 'rename_workout':
     case 'log_set':
     case 'correct_set':
       return record.detail.sessionId;
@@ -644,6 +645,16 @@ export class SqliteCoachStore {
         if (agg === null || agg.session.ownerId !== ownerId || agg.session.status !== 'active') return 'changed_since';
         const r = reduceSession(agg, { type: 'undo_op', at: { utc: atUtc, tz: target.createdAt.tz }, opId: `undo:${target.actionId}`, targetOpId: target.opId });
         if (!r.ok || r.duplicate) return 'changed_since';
+        await writeAggregate(tx, r.state);
+        return 'ok';
+      }
+      case 'rename_workout': {
+        // (14 Oct) Named back with the workout's own `rename_session`, only while the name is still the coach's.
+        const agg = await readAggregate(tx, d.sessionId);
+        if (agg === null || agg.session.ownerId !== ownerId || agg.session.routineName !== d.after) return 'changed_since';
+        const r = reduceSession(agg, { type: 'rename_session', at: { utc: atUtc, tz: target.createdAt.tz }, opId: `undo:${target.actionId}`, name: d.before, expectedVersion: agg.session.version });
+        if (!r.ok) return 'unsupported';
+        if (r.duplicate) return 'changed_since';
         await writeAggregate(tx, r.state);
         return 'ok';
       }
