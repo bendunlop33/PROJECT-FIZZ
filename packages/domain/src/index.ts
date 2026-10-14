@@ -66,6 +66,7 @@ export * from './session/swap-plan';
 export * from './session/coach-draft';
 export * from './session/builder-loads';
 export * from './session/builder-reasons';
+export * from './session/builder-questions';
 export * from './session/substitutes';
 export * from './session/mid-swap';
 export * from './session/coach-add';
