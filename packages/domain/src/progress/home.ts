@@ -127,6 +127,17 @@ export interface FrequencyRowView {
   /** `Last trained 8 Oct` · `Not trained yet`. */
   lastTrained: string;
   contributors: ContributorLine[];
+  /** D2: shown under the row when it is tapped open. */
+  subRows: FrequencySubRowView[];
+}
+
+export interface FrequencySubRowView {
+  key: string;
+  label: string;
+  /** Empty for exercise sub-rows (Push/Pull/Legs). */
+  sessionsText: string;
+  setsText: string;
+  words: string;
 }
 
 export interface MusclesView {
@@ -334,6 +345,13 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
     contributors: r.contributors.map((c) => ({
       exerciseId: c.exerciseId,
       text: c.factor === null ? `${c.name}  ${countNoun(c.sets, 'set', 'sets')}` : `${c.name}  ${countNoun(c.sets, 'set', 'sets')} × ${c.factor === 1 ? '1' : '½'} = ${setsText(c.total)}`,
+    })),
+    subRows: r.subRows.map((sr) => ({
+      key: sr.key,
+      label: sr.label,
+      sessionsText: sr.sessions === null ? '' : String(sr.sessions),
+      setsText: setsText(sr.sets),
+      words: `${sr.label}, ${sr.sessions === null ? '' : `${countNoun(sr.sessions, 'session', 'sessions')}, `}${setsWords(sr.sets)}`,
     })),
   }));
   const skipped = [freq.notCounted.warmups > 0 ? countNoun(freq.notCounted.warmups, 'warm-up set', 'warm-up sets') : null, freq.notCounted.easy > 0 ? `${String(freq.notCounted.easy)} rated under RPE 6` : null].filter(

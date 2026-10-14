@@ -41,42 +41,46 @@ export function activityLineLayout(counts: readonly number[], yTicks: readonly n
   };
 }
 
-/**
- * Which week labels to show: first and last always, others only when each
- * label has `minLabelWidth` of room (§9.70). Returns indexes.
- */
-export function visibleLabels(count: number, width: number, minLabelWidth: number): number[] {
-  if (count <= 0) return [];
-  if (count === 1) return [0];
-  const slot = width / count;
-  const step = Math.max(1, Math.ceil(minLabelWidth / Math.max(1, slot)));
-  const out = new Set<number>([0, count - 1]);
-  for (let i = step; i < count - 1; i += step) if (count - 1 - i >= step || step === 1) out.add(i);
-  return [...out].sort((a, b) => a - b);
-}
-
 /** A `FrequencyRow` bar's filled width (0 to the track width). */
 export function countBarWidth(fraction: number, trackWidth: number): number {
   if (!(fraction > 0) || trackWidth <= 0) return 0;
   return Math.max(2, Math.min(trackWidth, fraction * trackWidth));
 }
 
-/** The room each X label needs before labels are thinned: a month (`Oct`, `Oct 25`), a week's start (`14 Sep`). */
-export function barLabelRoom(unit: 'week' | 'month'): number {
-  return unit === 'month' ? 44 : 52;
+/** A label of measured `width` centred under `x`, kept inside the chart: its left and right edges. */
+export function measuredLabelBox(x: number, width: number, chartWidth: number): { left: number; right: number } {
+  const left = Math.max(0, Math.min(chartWidth - width, x - width / 2));
+  return { left, right: left + width };
 }
 
 /**
- * F15: where a bar's label box sits, centred under the bar but kept inside
- * the chart, so the first and last labels never hang off an edge (60 days
- * read misaligned). The clamp uses the label's own width (`labelWidth`,
- * e.g. `barLabelRoom(kind)`), not the wider box, so a label that fits
- * centred stays over its bar (review S2: 7/14-day edge labels sat ~18 pt
- * off). `align` keeps the text against the edge when clamped.
+ * X labels thinned by their measured widths (device fix, 14 Oct 2026: at
+ * `1 year`, `Aug 26` and `Oct 26` collided). First and last always show;
+ * the others, left to right, only where they clear the last kept label and
+ * the final one by `gap`. If even the first and last would touch, only the
+ * last shows (the current end of the period). Returns indexes, ascending.
  */
-export function barLabelBox(centreX: number, chartWidth: number, boxWidth: number, labelWidth: number = boxWidth): { left: number; align: 'center' | 'flex-start' | 'flex-end' } {
-  const half = Math.min(labelWidth, boxWidth) / 2;
-  if (centreX - half < 0) return { left: 0, align: 'flex-start' };
-  if (centreX + half > chartWidth) return { left: Math.max(0, chartWidth - boxWidth), align: 'flex-end' };
-  return { left: centreX - boxWidth / 2, align: 'center' };
+export function thinLabelsByWidth(xs: readonly number[], widths: readonly number[], chartWidth: number, gap = 8): number[] {
+  const n = xs.length;
+  if (n === 0) return [];
+  const box = (i: number) => measuredLabelBox(xs[i] ?? 0, widths[i] ?? 0, chartWidth);
+  if (n === 1) return [0];
+  const last = box(n - 1);
+  if (box(0).right + gap > last.left) return [n - 1];
+  const out = [0];
+  let prevRight = box(0).right;
+  for (let i = 1; i < n - 1; i += 1) {
+    const b = box(i);
+    if (b.left >= prevRight + gap && b.right + gap <= last.left) {
+      out.push(i);
+      prevRight = b.right;
+    }
+  }
+  out.push(n - 1);
+  return out;
+}
+
+/** A width guess for a label not yet measured: generous, so nothing overlaps before the first layout. */
+export function guessLabelWidth(text: string): number {
+  return text.length * 9 + 4;
 }

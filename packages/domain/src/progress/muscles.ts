@@ -160,6 +160,35 @@ export interface FrequencyRow {
   lastTrained: string | null;
   /** Largest total first. */
   contributors: FrequencyContributor[];
+  /**
+   * D2 sub-rows (Ben, 13 Oct 2026), largest first, zeros left out. Body
+   * parts: the muscles in the group (`Lats`, `Traps`), 1 or ½ per set as
+   * the group. Push/Pull/Legs: the exercises (their sets add up to the row).
+   */
+  subRows: FrequencySubRow[];
+}
+
+export interface FrequencySubRow {
+  key: string;
+  label: string;
+  /** Sets in the window, in halves. */
+  sets: number;
+  /** Workouts with at least 1 counted set for it (body parts); null for exercises. */
+  sessions: number | null;
+}
+
+/** `upper_chest` → `Upper chest`. */
+export function muscleLabel(muscle: string): string {
+  const w = muscle.replace(/_/g, ' ');
+  return `${w.charAt(0).toUpperCase()}${w.slice(1)}`;
+}
+
+/** Per-muscle credit for one exercise: 1 for a primary muscle, ½ for a helper; the higher wins. Muscles outside the vocabulary are left out. */
+export function muscleCredits(info: Pick<MuscleInfo, 'primaryMuscles' | 'secondaryMuscles'>): Map<string, 1 | 0.5> {
+  const out = new Map<string, 1 | 0.5>();
+  for (const m of info.primaryMuscles) if (muscleGroupOf(m) !== null) out.set(m, 1);
+  for (const m of info.secondaryMuscles ?? []) if (muscleGroupOf(m) !== null && !out.has(m)) out.set(m, 0.5);
+  return out;
 }
 
 export interface MuscleFrequency {
@@ -186,6 +215,8 @@ interface GroupTally {
   sessions: number;
   lastTrained: string | null;
   contributors: Map<string, FrequencyContributor>;
+  /** Body parts: per muscle, halves and sessions in the window. */
+  muscles: Map<string, { halves: number; sessions: number }>;
 }
 
 /**
@@ -200,7 +231,7 @@ export function muscleFrequency(
   grouping: ProgressGrouping,
 ): MuscleFrequency {
   const keys: readonly string[] = grouping === 'body_part' ? MUSCLE_GROUPS : SPLIT_ORDER;
-  const tallies = new Map<string, GroupTally>(keys.map((k) => [k, { halves: 0, sessions: 0, lastTrained: null, contributors: new Map() }]));
+  const tallies = new Map<string, GroupTally>(keys.map((k) => [k, { halves: 0, sessions: 0, lastTrained: null, contributors: new Map(), muscles: new Map() }]));
   let warmups = 0;
   let easy = 0;
   let markedCounted = 0;
@@ -217,11 +248,22 @@ export function muscleFrequency(
     }
     return c;
   };
+  const muscleCache = new Map<string, Map<string, 1 | 0.5>>();
+  const musclesOf = (exerciseId: string): Map<string, 1 | 0.5> => {
+    let c = muscleCache.get(exerciseId);
+    if (c === undefined) {
+      const info = exercises.get(exerciseId);
+      c = grouping === 'body_part' && info ? muscleCredits(info) : new Map();
+      muscleCache.set(exerciseId, c);
+    }
+    return c;
+  };
 
   for (const s of sessions) {
     if (s.date > window.to) continue;
     const inWindow = inRange(s.date, window);
     const halvesToday = new Map<string, number>();
+    const muscleHalvesToday = new Map<string, number>();
     for (const ex of s.exercises) {
       const n = countRowSets(ex);
       const credits = creditsOf(ex.exerciseId);
@@ -255,6 +297,16 @@ export function muscleFrequency(
         c.total = c.sets * credit;
         t.contributors.set(ex.exerciseId, c);
       }
+      if (inWindow) for (const [muscle, credit] of musclesOf(ex.exerciseId)) muscleHalvesToday.set(muscle, (muscleHalvesToday.get(muscle) ?? 0) + n.hard * credit * 2);
+    }
+    for (const [muscle, halves] of muscleHalvesToday) {
+      const group = muscleGroupOf(muscle);
+      const t = group === null ? undefined : tallies.get(group);
+      if (t === undefined) continue;
+      const m = t.muscles.get(muscle) ?? { halves: 0, sessions: 0 };
+      m.halves += halves;
+      if (halves >= 2) m.sessions += 1;
+      t.muscles.set(muscle, m);
     }
     for (const [key, halves] of halvesToday) {
       const t = tallies.get(key);
@@ -270,8 +322,16 @@ export function muscleFrequency(
 
   const weeks = (daysBetween(window.from, window.to) + 1) / 7;
   const rows: FrequencyRow[] = keys.map((key) => {
-    const t = tallies.get(key) ?? { halves: 0, sessions: 0, lastTrained: null, contributors: new Map<string, FrequencyContributor>() };
+    const t = tallies.get(key) ?? { halves: 0, sessions: 0, lastTrained: null, contributors: new Map<string, FrequencyContributor>(), muscles: new Map<string, { halves: number; sessions: number }>() };
     const sets = t.halves / 2;
+    const contributors = [...t.contributors.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    const subRows: FrequencySubRow[] =
+      grouping === 'body_part'
+        ? [...t.muscles.entries()]
+            .filter(([, m]) => m.halves > 0)
+            .map(([muscle, m]) => ({ key: muscle, label: muscleLabel(muscle), sets: m.halves / 2, sessions: m.sessions }))
+            .sort((a, b) => b.sets - a.sets || a.label.localeCompare(b.label))
+        : contributors.filter((c) => c.total > 0).map((c) => ({ key: c.exerciseId, label: c.name, sets: c.total, sessions: null }));
     return {
       key,
       label: grouping === 'body_part' ? key : SPLIT_LABEL[key as ExerciseSplit],
@@ -279,7 +339,8 @@ export function muscleFrequency(
       sets,
       perWeek: window.days >= 14 ? oneDecimal(sets / weeks) : null,
       lastTrained: t.lastTrained,
-      contributors: [...t.contributors.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
+      contributors,
+      subRows,
     };
   });
   return {

@@ -32,3 +32,8 @@ export const E1RM_SHEET_LINES: readonly string[] = [
   'Only sets of 1–10 reps are used. Warm-ups and sets you marked spotted, painful or with form breaking aren’t used.',
   'It’s an estimate, not a target.',
 ];
+
+/** The unreadable-workouts line, on every Progress tab that shows counts (rules 1, 6). */
+export function unreadableText(n: number): string {
+  return `${String(n)} ${n === 1 ? 'workout couldn’t be read and isn’t' : 'workouts couldn’t be read and aren’t'} counted.`;
+}

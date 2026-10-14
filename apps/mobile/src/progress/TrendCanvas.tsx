@@ -1,4 +1,4 @@
-import { Canvas, Circle, Line, Path, Rect, RoundedRect, Skia, vec } from '@shopify/react-native-skia';
+import { Canvas, Circle, DashPathEffect, Line, Path, Rect, RoundedRect, Skia, vec } from '@shopify/react-native-skia';
 
 import type { TrendLayout } from './trend-layout';
 
@@ -25,10 +25,23 @@ export interface TrendCanvasProps {
   pointSize: number;
   pointSelectedSize: number;
   gridWidth: number;
+  /** A dashed second line through `layout.overlayYs` (the trailing average), thinner than the main line. */
+  overlay?: { color: string; width: number } | null;
 }
 
-export function TrendCanvas({ layout, width, height, bars, hollow, selected, colors, lineWidth, pointSize, pointSelectedSize, gridWidth }: TrendCanvasProps) {
+export function TrendCanvas({ layout, width, height, bars, hollow, selected, colors, lineWidth, pointSize, pointSelectedSize, gridWidth, overlay = null }: TrendCanvasProps) {
   const { plot } = layout;
+  const overlayYs = layout.overlayYs ?? [];
+  const overlayPath = (() => {
+    if (overlay === null || overlayYs.length < 2) return null;
+    const p = Skia.Path.Make();
+    overlayYs.forEach((y, i) => {
+      const x = layout.xs[i] ?? 0;
+      if (i === 0) p.moveTo(x, y);
+      else p.lineTo(x, y);
+    });
+    return p;
+  })();
   const paths = bars
     ? []
     : layout.segments
@@ -56,6 +69,11 @@ export function TrendCanvas({ layout, width, height, bars, hollow, selected, col
       {bars
         ? layout.bars.map((b, i) => <RoundedRect key={`b${String(i)}`} x={b.x} y={b.y} width={b.width} height={b.height} r={Math.min(2, b.width / 2)} color={i === selected ? colors.line : colors.bar} />)
         : null}
+      {overlayPath !== null && overlay !== null ? (
+        <Path path={overlayPath} style="stroke" strokeWidth={overlay.width} strokeJoin="round" color={overlay.color}>
+          <DashPathEffect intervals={[6, 5]} />
+        </Path>
+      ) : null}
       {paths.map((p, i) => (
         <Path key={`l${String(i)}`} path={p} style="stroke" strokeWidth={lineWidth} strokeJoin="round" strokeCap="round" color={colors.line} />
       ))}

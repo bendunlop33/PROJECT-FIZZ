@@ -50,7 +50,6 @@ import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ExerciseInfoScreen } from '../screens/library/ExerciseInfoScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
-import { ExercisesScreen } from '../screens/progress/ExercisesScreen';
 import { MusclesScreen } from '../screens/progress/MusclesScreen';
 import { ProgressScreen } from '../screens/progress/ProgressScreen';
 import { PastWorkoutsScreen } from '../screens/repeat/PastWorkoutsScreen';
@@ -138,7 +137,6 @@ function ProgressNavigator() {
     <ProgressStack.Navigator screenOptions={options}>
       <ProgressStack.Screen name="ProgressHome" component={ProgressScreen} options={{ headerShown: false }} />
       <ProgressStack.Screen name="ProgressMuscles" component={MusclesScreen} options={{ title: 'Muscles' }} />
-      <ProgressStack.Screen name="ProgressExercises" component={ExercisesScreen} options={{ title: 'Exercises' }} />
       <ProgressStack.Screen name="ProgressExercise" component={ExerciseDetailScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
       <ProgressStack.Screen name="ProgressExerciseInfo" component={ExerciseInfoScreen} options={({ route }) => ({ title: route.params.name ?? '' })} />
     </ProgressStack.Navigator>

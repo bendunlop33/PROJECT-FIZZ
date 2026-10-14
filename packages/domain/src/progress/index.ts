@@ -11,3 +11,4 @@ export * from './calendar-view';
 export * from './resume';
 export * from './exercise';
 export * from './exercise-view';
+export * from './exercise-tab';

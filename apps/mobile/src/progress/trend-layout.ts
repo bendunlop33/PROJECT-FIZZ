@@ -28,6 +28,8 @@ export interface TrendLayoutInput {
   axisWidth: number;
   /** Room left at the trailing edge so the last point (and its ring) isn't clipped. */
   inset: number;
+  /** A second line on the same scale, one value per point (the Exercises tab's trailing average). */
+  overlay?: readonly number[];
 }
 
 export interface Rect {
@@ -46,6 +48,8 @@ export interface TrendLayout {
   yTicks: { y: number; label: string }[];
   months: { x: number; label: string }[];
   bars: Rect[];
+  /** `overlay`'s y per point; empty without one. */
+  overlayYs?: number[];
 }
 
 /** A y value as an axis label: `120`, `102.5`, `12,000`, or `1:30` for holds. */
@@ -117,7 +121,7 @@ export function monthTicks(from: string, to: string, plot: Pick<Rect, 'x' | 'wid
 
 export function trendLayout(input: TrendLayoutInput): TrendLayout {
   const plot: Rect = { x: input.axisWidth, y: 8, width: Math.max(1, input.width - input.axisWidth - input.inset), height: Math.max(1, input.height - 16) };
-  const values = input.points.map((p) => p.value);
+  const values = [...input.points.map((p) => p.value), ...(input.overlay ?? [])];
   let lo = values.length > 0 ? Math.min(...values) : 0;
   let hi = values.length > 0 ? Math.max(...values) : 1;
   if (input.bars) lo = 0;
@@ -162,6 +166,7 @@ export function trendLayout(input: TrendLayoutInput): TrendLayout {
     yTicks: ticks.filter((v) => v >= lo - 1e-9 && v <= hi + 1e-9).map((v) => ({ y: yOf(v), label: axisLabel(v, input.format) })),
     months: monthTicks(input.from, input.to, plot),
     bars,
+    overlayYs: (input.overlay ?? []).map(yOf),
   };
 }
 
