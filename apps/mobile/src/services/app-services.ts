@@ -48,6 +48,7 @@ import { createLayoutService } from '../import/layout-service';
 import { createGymServices } from './gym-services';
 import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
+import { createTrainingService } from './training-service';
 import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
@@ -502,8 +503,12 @@ export function createAppServices(deps: AppServicesDeps) {
     coachFit: (context, signal) => coach.fitToday(context, signal),
   });
 
+  /** Training details and split (Ben 13 Oct: D5, D7, D8; F19). Your data, local only. */
+  const training = createTrainingService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises });
+
   /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
   const coach = createCoachService({
+    training: () => training.coachInput(),
     store: () => deps.manager.store,
     profile: getProfile,
     now: deps.now,
@@ -825,6 +830,7 @@ export function createAppServices(deps: AppServicesDeps) {
     progress,
     data,
     coach,
+    training,
     gyms,
     imports,
     importLayouts,

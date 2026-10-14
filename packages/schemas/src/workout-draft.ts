@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, OperationIdSchema, RepRangeSchema, RpeSchema, TimeZoneSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
 import { SetTypeSchema } from './routine';
+import { SplitBodyPartSchema } from './training-profile';
 
 /**
  * Coach-built workouts (workout-builder.md v1.0). The coach proposes
@@ -33,8 +34,13 @@ export const BUILD_LIMITS = {
 /** How long a coach draft is kept (BD4). */
 export const COACH_DRAFT_DAYS = 14;
 
-/** The Build card's focus chips (§4.1); `coach_picks` = no focus. */
-export const BuildFocusSchema = z.enum(['coach_picks', 'push', 'pull', 'legs', 'upper', 'lower', 'full_body']);
+/**
+ * A build's focus (§4.1). `coach_picks` = no focus (a text request that names
+ * none). The Build card's chips are the Settings split's days (F19):
+ * Push/Pull/Legs, Chest/Legs/Shoulders/Back, or a custom day (`split_day`,
+ * named by the request's `day`).
+ */
+export const BuildFocusSchema = z.enum(['coach_picks', 'push', 'pull', 'legs', 'upper', 'lower', 'full_body', 'chest', 'shoulders', 'back', 'split_day']);
 export type BuildFocus = z.infer<typeof BuildFocusSchema>;
 
 /** The Build card's length chips (§4.1), in minutes. */
@@ -126,6 +132,13 @@ export type BuildCheck = z.infer<typeof BuildCheckSchema>;
 
 export const BuildRequestOriginSchema = z.enum(['chip', 'card', 'text', 'voice']);
 
+/** The split day a Build card chip asked for (F19): its name and body parts. */
+export const BuildDaySchema = z.object({
+  name: z.string().trim().min(1).max(30),
+  bodyParts: z.array(SplitBodyPartSchema).min(1).max(10),
+});
+export type BuildDay = z.infer<typeof BuildDaySchema>;
+
 export const WorkoutDraftVersionSchema = z.object({
   n: z.int().min(1),
   parentN: z.int().min(1).nullable(),
@@ -139,6 +152,8 @@ export const WorkoutDraftVersionSchema = z.object({
     focus: BuildFocusSchema,
     gymId: IdSchema.nullable(),
     origin: BuildRequestOriginSchema,
+    /** (F19) The split day chosen on the Build card; absent on older drafts and text requests. */
+    day: BuildDaySchema.optional(),
   }),
   /** The model's arguments as received (data). */
   rawArgs: z.string().max(40_000),
