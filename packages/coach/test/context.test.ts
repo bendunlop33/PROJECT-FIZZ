@@ -210,7 +210,7 @@ describe('training details in the planning context (13 Oct, D7, D8)', () => {
   function details(changes: TrainingChange[]): TrainingProfile {
     let p = newTrainingProfile({ id: id(700), ownerId: OWNER, atUtc: at(0).utc });
     changes.forEach((c, i) => {
-      const r = applyTrainingChange(p, c, { opId: `t${String(i)}`, expectedVersion: p.version, atUtc: at(i + 1).utc, nowYear: 2026 });
+      const r = applyTrainingChange(p, c, { opId: `t${String(i)}`, expectedVersion: p.version, atUtc: at(i + 1).utc, nowYear: 2026, today: '2026-10-14' });
       if (!r.ok) throw new Error(r.error);
       p = r.profile;
     });

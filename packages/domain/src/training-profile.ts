@@ -5,7 +5,6 @@ import {
   TRAINING_LIMITS,
   TrainingProfileSchema,
   type Exercise,
-  type Load,
   type MuscleGroup,
   type SessionAggregate,
   type SplitBodyPart,
@@ -58,6 +57,15 @@ export function newTrainingProfile(s: { id: string; ownerId: string; atUtc: stri
   };
 }
 
+export interface TrainingWriteContext {
+  opId: string;
+  expectedVersion: number;
+  atUtc: string;
+  nowYear: number;
+  /** Ben's local calendar date, `YYYY-MM-DD`: a weight can't be dated after it. */
+  today: string;
+}
+
 export type TrainingWriteResult =
   | { ok: true; profile: TrainingProfile; replayed: boolean }
   | { ok: false; error: 'stale' | 'invalid'; currentVersion: number };
@@ -81,8 +89,31 @@ function validCustomDays(days: Extract<TrainingChange, { kind: 'custom_split' }>
 
 const byDate = (a: WeightEntry, b: WeightEntry): number => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.recordedAtUtc < b.recordedAtUtc ? -1 : a.recordedAtUtc > b.recordedAtUtc ? 1 : a.id.localeCompare(b.id));
 
-/** The change applied to a copy, or null when it isn't valid. Main lifts carry over to a day with the same ID. */
-function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: number): TrainingProfile | null {
+/** Ben's main lift per day ID: the kept map, else (an older row) the split's days. */
+function liftsOf(p: TrainingProfile): Record<string, string> {
+  if (p.mainLifts !== undefined) return { ...p.mainLifts };
+  const out: Record<string, string> = {};
+  for (const d of p.split?.days ?? []) if (d.mainLiftExerciseId !== undefined) out[d.id] = d.mainLiftExerciseId;
+  return out;
+}
+
+const stripLift = (d: Pick<SplitDay, 'id' | 'name' | 'bodyParts'>): SplitDay => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] });
+
+/**
+ * A new split, keeping what switching away would lose (review B2): the last
+ * custom days, and every main lift by day ID (only for days that can come
+ * back: the presets' and the kept custom days').
+ */
+function withSplit(p: TrainingProfile, kind: TrainingSplit['kind'], days: readonly Pick<SplitDay, 'id' | 'name' | 'bodyParts'>[], lifts: Record<string, string>): TrainingProfile {
+  const customDays = kind === 'custom' ? days.map(stripLift) : p.split?.kind === 'custom' ? p.split.days.map(stripLift) : p.customDays;
+  const keep = new Set([...PRESET_SPLITS.ppl, ...PRESET_SPLITS.clsb, ...(customDays ?? []), ...days].map((d) => d.id));
+  const mainLifts = Object.fromEntries(Object.entries(lifts).filter(([id]) => keep.has(id)));
+  const split: TrainingSplit = { kind, days: days.map((d) => ({ ...stripLift(d), ...(lifts[d.id] === undefined ? {} : { mainLiftExerciseId: lifts[d.id] }) })) };
+  return { ...p, split, mainLifts, ...(customDays === undefined ? {} : { customDays }) };
+}
+
+/** The change applied to a copy, or null when it isn't valid. */
+function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: number, today: string): TrainingProfile | null {
   const about = { ...p.about };
   switch (c.kind) {
     case 'birth_year':
@@ -106,7 +137,7 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     case 'add_weight': {
       const kg = weightKg(c.entry);
       if (!(kg >= TRAINING_LIMITS.weightKgMin && kg <= TRAINING_LIMITS.weightKgMax)) return null;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(c.entry.date)) return null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(c.entry.date) || c.entry.date > today) return null;
       if (p.weights.some((w) => w.id === c.entry.id)) return p;
       const weights = [...p.weights, { ...c.entry, value: Math.round(c.entry.value * 100) / 100, recordedAtUtc: atUtc }].sort(byDate);
       return { ...p, weights: weights.slice(-TRAINING_LIMITS.weightsMax) };
@@ -136,41 +167,31 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     case 'session_minutes':
       return intIn(c.minutes, TRAINING_LIMITS.sessionMinMin, TRAINING_LIMITS.sessionMinMax) ? { ...p, sessionMinutes: c.minutes } : null;
     case 'preset_split':
-      return { ...p, split: { kind: c.split, days: carryMainLifts(PRESET_SPLITS[c.split], p.split) } };
+      return withSplit(p, c.split, PRESET_SPLITS[c.split], liftsOf(p));
     case 'custom_split':
       if (!validCustomDays(c.days)) return null;
-      return { ...p, split: { kind: 'custom', days: carryMainLifts(c.days.map((d) => ({ id: d.id, name: d.name.trim(), bodyParts: [...d.bodyParts] })), p.split) } };
+      return withSplit(p, 'custom', c.days.map((d) => ({ id: d.id, name: d.name.trim(), bodyParts: [...d.bodyParts] })), liftsOf(p));
     case 'main_lift': {
       const split = p.split ?? DEFAULT_SPLIT;
       if (!split.days.some((d) => d.id === c.dayId)) return null;
-      const days = split.days.map((d) => {
-        if (d.id !== c.dayId) return d;
-        const rest: SplitDay = { id: d.id, name: d.name, bodyParts: d.bodyParts };
-        return c.exerciseId === null ? rest : { ...rest, mainLiftExerciseId: c.exerciseId };
-      });
-      return { ...p, split: { kind: split.kind, days } };
+      const lifts = Object.fromEntries(Object.entries(liftsOf(p)).filter(([id]) => id !== c.dayId));
+      return withSplit(p, split.kind, split.days, c.exerciseId === null ? lifts : { ...lifts, [c.dayId]: c.exerciseId });
     }
     case 'self_next_targets':
       return { ...p, selfNextTargets: c.on };
   }
 }
 
-function carryMainLifts(days: readonly Omit<SplitDay, 'mainLiftExerciseId'>[], old: TrainingSplit | undefined): SplitDay[] {
-  return days.map((d) => {
-    const lift = old?.days.find((o) => o.id === d.id)?.mainLiftExerciseId;
-    return { id: d.id, name: d.name, bodyParts: [...d.bodyParts], ...(lift === undefined ? {} : { mainLiftExerciseId: lift }) };
-  });
-}
-
 /**
  * One versioned, idempotent write (rule 5): a repeated `opId` returns the
  * stored profile unchanged; an `expectedVersion` that isn't the stored one is
- * `stale` and nothing changes; an out-of-range value is `invalid`.
+ * `stale` and nothing changes; an out-of-range value (or a weight dated
+ * after `today`, Ben's local `YYYY-MM-DD`) is `invalid`.
  */
-export function applyTrainingChange(current: TrainingProfile, change: TrainingChange, w: { opId: string; expectedVersion: number; atUtc: string; nowYear: number }): TrainingWriteResult {
+export function applyTrainingChange(current: TrainingProfile, change: TrainingChange, w: TrainingWriteContext): TrainingWriteResult {
   if (current.recentOps.includes(w.opId)) return { ok: true, profile: current, replayed: true };
   if (w.expectedVersion !== current.version) return { ok: false, error: 'stale', currentVersion: current.version };
-  const next = changed(current, change, w.atUtc, w.nowYear);
+  const next = changed(current, change, w.atUtc, w.nowYear, w.today);
   if (next === null) return { ok: false, error: 'invalid', currentVersion: current.version };
   const out: TrainingProfile = { ...next, version: current.version + 1, updatedAtUtc: w.atUtc, recentOps: [...current.recentOps, w.opId].slice(-TRAINING_LIMITS.recentOpsMax) };
   return TrainingProfileSchema.safeParse(out).success ? { ok: true, profile: out, replayed: false } : { ok: false, error: 'invalid', currentVersion: current.version };
@@ -306,30 +327,6 @@ export function goalCheckInDue(p: Pick<TrainingProfile, 'goal' | 'goalSetAtUtc' 
   return toMs(nowUtc) - toMs(p.goalSetAtUtc) >= p.checkInWeeks * 7 * 86_400_000;
 }
 
-/**
- * The resistance moved on a bodyweight, weighted or assisted set, from the
- * latest bodyweight: bodyweight alone, plus added load (on a bodyweight
- * exercise only: `added` is also a plate-loaded machine's convention), or
- * minus assistance (never below 0). Null for anything else or with no
- * bodyweight.
- */
-export function bodyweightLoadKg(bodyweightKg: number | null, load: Pick<Load, 'value' | 'unit' | 'convention'>, bodyweightExercise: boolean): number | null {
-  if (bodyweightKg === null) return null;
-  const kg = load.unit === 'kg' ? load.value : load.value * KG_PER_LB;
-  switch (load.convention) {
-    case 'bodyweight':
-      return bodyweightKg;
-    case 'added':
-      return bodyweightExercise ? bodyweightKg + kg : null;
-    case 'assistance':
-      return Math.max(0, bodyweightKg - kg);
-    case 'total':
-    case 'per_hand':
-    case 'stack':
-      return null;
-  }
-}
-
 /** True for a split body part list made of valid parts (for UI pickers). */
 export const isSplitBodyPart = (s: string): s is SplitBodyPart => SplitBodyPartSchema.safeParse(s).success;
 
@@ -373,10 +370,17 @@ export function liftHistoryFrom(sessions: readonly SessionAggregate[], exerciseO
   return [...by.values()];
 }
 
-/** The muscle groups of the newest finished workout (by start), for `nextSplitDay`; null with none. */
-export function lastWorkoutGroups(sessions: readonly SessionAggregate[], exerciseOf: (id: string) => ExerciseInfo | null): Map<MuscleGroup, number> | null {
-  const last = [...sessions].sort((a, b) => (a.session.startedAt.utc < b.session.startedAt.utc ? 1 : a.session.startedAt.utc > b.session.startedAt.utc ? -1 : 0))[0];
-  if (last === undefined) return null;
-  const sets = workingSetsBy(last);
-  return workoutMuscleGroups(last.exercises.map((ex) => ({ primaryMuscles: exerciseOf(ex.exerciseId)?.primaryMuscles ?? [], workingSets: sets.get(ex.id)?.sets ?? 0 })));
+/**
+ * The muscle groups of the newest finished workout (by start) that matches a
+ * day of `split`, for `nextSplitDay`; a workout that fits no day (Core only,
+ * say) is skipped so the rotation doesn't reset (review S6). Null with none.
+ */
+export function lastSplitWorkoutGroups(split: TrainingSplit, sessions: readonly SessionAggregate[], exerciseOf: (id: string) => ExerciseInfo | null): Map<MuscleGroup, number> | null {
+  const newestFirst = [...sessions].sort((a, b) => (a.session.startedAt.utc < b.session.startedAt.utc ? 1 : a.session.startedAt.utc > b.session.startedAt.utc ? -1 : 0));
+  for (const a of newestFirst) {
+    const sets = workingSetsBy(a);
+    const groups = workoutMuscleGroups(a.exercises.map((ex) => ({ primaryMuscles: exerciseOf(ex.exerciseId)?.primaryMuscles ?? [], workingSets: sets.get(ex.id)?.sets ?? 0 })));
+    if (matchSplitDay(split, groups) !== null) return groups;
+  }
+  return null;
 }

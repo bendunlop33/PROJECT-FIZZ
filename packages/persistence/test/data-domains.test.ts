@@ -116,7 +116,7 @@ async function populate(store: Store): Promise<void> {
   await repos.routines.save(routine([routineExercise(700, { exerciseId: SPLIT_SQUAT.id })]), null);
   await repos.progressionRules.save(doubleProgression(), null);
   // Training details (migration 16): Your data, so Delete my data removes it and a reset never touches it.
-  await repos.trainingProfiles.change(OWNER, { kind: 'birth_year', year: 1990 }, { opId: 'tp-op', expectedVersion: 1, atUtc: at(1).utc, nowYear: 2026 });
+  await repos.trainingProfiles.change(OWNER, { kind: 'birth_year', year: 1990 }, { opId: 'tp-op', expectedVersion: 1, atUtc: at(1).utc, nowYear: 2026, today: '2026-10-14' });
   await repos.sessions.save(richFinishedSession(), null);
   const active = unilateralSession('start-active', idGen(97_000));
   const checkIn = newCheckIn({ id: id(300), ownerId: OWNER, opId: 'checkin-op', score: 2, reasons: ['tired'], note: 'Slept badly', at: at(10), localDate: '2026-10-08' });

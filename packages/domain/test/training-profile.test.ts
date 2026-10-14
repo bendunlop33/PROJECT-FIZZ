@@ -4,7 +4,6 @@ import { TrainingProfileSchema, type MuscleGroup, type TrainingChange, type Trai
 import {
   ageFromBirthYear,
   applyTrainingChange,
-  bodyweightLoadKg,
   cmFromFeetInches,
   DEFAULT_SPLIT,
   feetInches,
@@ -19,7 +18,7 @@ import {
   PRESET_SPLITS,
   recommendMainLift,
   weightText,
-  lastWorkoutGroups,
+  lastSplitWorkoutGroups,
   liftHistoryFrom,
   splitDayFocus,
   workoutMuscleGroups,
@@ -36,7 +35,7 @@ const fresh = (): TrainingProfile => newTrainingProfile({ id: ID, ownerId: OWNER
 
 let n = 0;
 function apply(p: TrainingProfile, c: TrainingChange, opId = `op-${String((n += 1))}`) {
-  return applyTrainingChange(p, c, { opId, expectedVersion: p.version, atUtc: T1, nowYear: 2026 });
+  return applyTrainingChange(p, c, { opId, expectedVersion: p.version, atUtc: T1, nowYear: 2026, today: '2026-10-14' });
 }
 function ok(p: TrainingProfile, c: TrainingChange): TrainingProfile {
   const r = apply(p, c);
@@ -63,16 +62,16 @@ describe('training profile writes (rule 5)', () => {
 
   it('a repeated op ID is a no-op replay, even after the version moved', () => {
     const p0 = fresh();
-    const a = applyTrainingChange(p0, { kind: 'add_weight', entry: { id: 'w1', date: '2026-10-13', value: 82.5, unit: 'kg' } }, { opId: 'dup', expectedVersion: 1, atUtc: T1, nowYear: 2026 });
+    const a = applyTrainingChange(p0, { kind: 'add_weight', entry: { id: 'w1', date: '2026-10-13', value: 82.5, unit: 'kg' } }, { opId: 'dup', expectedVersion: 1, atUtc: T1, nowYear: 2026, today: '2026-10-14' });
     if (!a.ok) throw new Error('setup');
-    const again = applyTrainingChange(a.profile, { kind: 'add_weight', entry: { id: 'w1', date: '2026-10-13', value: 82.5, unit: 'kg' } }, { opId: 'dup', expectedVersion: 1, atUtc: T1, nowYear: 2026 });
+    const again = applyTrainingChange(a.profile, { kind: 'add_weight', entry: { id: 'w1', date: '2026-10-13', value: 82.5, unit: 'kg' } }, { opId: 'dup', expectedVersion: 1, atUtc: T1, nowYear: 2026, today: '2026-10-14' });
     expect(again).toEqual({ ok: true, profile: a.profile, replayed: true });
     expect(a.profile.weights).toHaveLength(1);
   });
 
   it('a stale version is rejected and nothing changes', () => {
     const p = ok(fresh(), { kind: 'goal', goal: 'strength' });
-    const r = applyTrainingChange(p, { kind: 'goal', goal: 'muscle' }, { opId: 'late', expectedVersion: 1, atUtc: T1, nowYear: 2026 });
+    const r = applyTrainingChange(p, { kind: 'goal', goal: 'muscle' }, { opId: 'late', expectedVersion: 1, atUtc: T1, nowYear: 2026, today: '2026-10-14' });
     expect(r).toEqual({ ok: false, error: 'stale', currentVersion: 2 });
   });
 
@@ -145,6 +144,54 @@ describe('training profile writes (rule 5)', () => {
     expect(p.split?.days[1]?.mainLiftExerciseId).toBeUndefined();
   });
 
+  it('review B2: Custom → preset → Custom restores the custom days and their main lifts', () => {
+    let p = ok(fresh(), { kind: 'custom_split', days: [{ id: 'u', name: 'Upper', bodyParts: ['Chest', 'Back'] }, { id: 'a', name: 'Arms', bodyParts: ['Biceps', 'Triceps'] }] });
+    p = ok(p, { kind: 'main_lift', dayId: 'u', exerciseId: 'bench' });
+    const custom = p.split;
+    p = ok(p, { kind: 'preset_split', split: 'ppl' });
+    expect(p.split?.kind).toBe('ppl');
+    expect(p.customDays?.map((d) => d.name)).toEqual(['Upper', 'Arms']);
+    // Picking Custom again sends the kept days (the Split screen's `customStartDays`).
+    p = ok(p, { kind: 'custom_split', days: p.customDays ?? [] });
+    expect(p.split).toEqual(custom);
+    expect(TrainingProfileSchema.parse(p)).toEqual(p);
+  });
+
+  it('review B2: PPL → CLSB → PPL restores the Push and Pull main lifts; Legs carries both ways', () => {
+    let p = ok(fresh(), { kind: 'main_lift', dayId: 'push', exerciseId: 'ohp' });
+    p = ok(p, { kind: 'main_lift', dayId: 'pull', exerciseId: 'row' });
+    p = ok(p, { kind: 'main_lift', dayId: 'legs', exerciseId: 'squat' });
+    p = ok(p, { kind: 'preset_split', split: 'clsb' });
+    expect(p.split?.days.map((d) => d.mainLiftExerciseId)).toEqual([undefined, 'squat', undefined, undefined]);
+    p = ok(p, { kind: 'main_lift', dayId: 'chest', exerciseId: 'bench' });
+    p = ok(p, { kind: 'preset_split', split: 'ppl' });
+    expect(p.split?.days.map((d) => d.mainLiftExerciseId)).toEqual(['ohp', 'row', 'squat']);
+    p = ok(p, { kind: 'preset_split', split: 'clsb' });
+    expect(p.split?.days.find((d) => d.id === 'chest')?.mainLiftExerciseId).toBe('bench');
+  });
+
+  it('review B2: a main lift cleared on one split stays cleared; removed custom days drop their lifts', () => {
+    let p = ok(fresh(), { kind: 'main_lift', dayId: 'push', exerciseId: 'ohp' });
+    p = ok(p, { kind: 'main_lift', dayId: 'push', exerciseId: null });
+    p = ok(ok(p, { kind: 'preset_split', split: 'clsb' }), { kind: 'preset_split', split: 'ppl' });
+    expect(p.split?.days[0]?.mainLiftExerciseId).toBeUndefined();
+    p = ok(p, { kind: 'custom_split', days: [{ id: 'x', name: 'X', bodyParts: ['Core'] }, { id: 'y', name: 'Y', bodyParts: ['Calves'] }] });
+    p = ok(p, { kind: 'main_lift', dayId: 'y', exerciseId: 'calf' });
+    p = ok(p, { kind: 'custom_split', days: [{ id: 'x', name: 'X', bodyParts: ['Core'] }] });
+    expect(p.mainLifts).toEqual({});
+  });
+
+  it('an older row with lifts only on the split days still carries them', () => {
+    const legacy: TrainingProfile = { ...fresh(), split: { kind: 'ppl', days: PRESET_SPLITS.ppl.map((d) => (d.id === 'legs' ? { ...d, mainLiftExerciseId: 'squat' } : d)) } };
+    const p = ok(legacy, { kind: 'preset_split', split: 'clsb' });
+    expect(p.mainLifts).toEqual({ legs: 'squat' });
+  });
+
+  it('review S5: a weight dated after today is refused', () => {
+    expect(apply(fresh(), { kind: 'add_weight', entry: { id: 'x', date: '2026-10-15', value: 80, unit: 'kg' } })).toMatchObject({ ok: false, error: 'invalid' });
+    expect(apply(fresh(), { kind: 'add_weight', entry: { id: 'x', date: '2026-10-14', value: 80, unit: 'kg' } })).toMatchObject({ ok: true });
+  });
+
   it('D5: self next-time targets default off and switch on', () => {
     expect(ok(fresh(), { kind: 'self_next_targets', on: true }).selfNextTargets).toBe(true);
   });
@@ -164,16 +211,6 @@ describe('derived values', () => {
   it('weight shows in the chosen unit', () => {
     expect(weightText({ value: 82.5, unit: 'kg' }, 'kg')).toBe('82.5 kg');
     expect(weightText({ value: 100, unit: 'kg' }, 'lb')).toBe('220.5 lb');
-  });
-
-  it('bodyweight loads: bodyweight, weighted (added on a bodyweight exercise), assisted; never below 0', () => {
-    expect(bodyweightLoadKg(80, { value: 0, unit: 'kg', convention: 'bodyweight' }, true)).toBe(80);
-    expect(bodyweightLoadKg(80, { value: 20, unit: 'kg', convention: 'added' }, true)).toBe(100);
-    expect(bodyweightLoadKg(80, { value: 20, unit: 'kg', convention: 'added' }, false)).toBeNull();
-    expect(bodyweightLoadKg(80, { value: 44.092, unit: 'lb', convention: 'assistance' }, true)).toBeCloseTo(60, 2);
-    expect(bodyweightLoadKg(80, { value: 100, unit: 'kg', convention: 'assistance' }, true)).toBe(0);
-    expect(bodyweightLoadKg(80, { value: 24, unit: 'kg', convention: 'per_hand' }, false)).toBeNull();
-    expect(bodyweightLoadKg(null, { value: 0, unit: 'kg', convention: 'bodyweight' }, true)).toBeNull();
   });
 });
 
@@ -235,10 +272,25 @@ describe('from history (finished workouts)', () => {
   });
 
   it('the last workout’s groups feed the rotation: split squats (quads) → Legs, so Push is next', () => {
-    const g = lastWorkoutGroups([richFinishedSession()], exerciseOf);
+    const g = lastSplitWorkoutGroups(DEFAULT_SPLIT, [richFinishedSession()], exerciseOf);
     expect(g?.get('Quads')).toBeGreaterThan(0);
     expect(nextSplitDay(DEFAULT_SPLIT, g).id).toBe('push');
-    expect(lastWorkoutGroups([], exerciseOf)).toBeNull();
+    expect(lastSplitWorkoutGroups(DEFAULT_SPLIT, [], exerciseOf)).toBeNull();
+  });
+
+  it('review S6: a newer workout that fits no day (Core only) is skipped, so the rotation keeps going', () => {
+    const push = richFinishedSession();
+    const core = richFinishedSession();
+    const later = new Date(Date.parse(push.session.startedAt.utc) + 86_400_000).toISOString();
+    const coreAgg = { ...core, session: { ...core.session, startedAt: { ...core.session.startedAt, utc: later } }, exercises: core.exercises.map((e) => ({ ...e, exerciseId: 'plank' })) };
+    const plank = { ...squat, id: 'plank', name: 'Plank', primaryMuscles: ['abs'] };
+    const press = { ...squat, primaryMuscles: ['chest'] };
+    const of = (id: string) => (id === squat.id ? press : id === 'plank' ? plank : null);
+    // Push, then Core only: Pull is next (not back to Push).
+    const g = lastSplitWorkoutGroups(DEFAULT_SPLIT, [coreAgg, push], of);
+    expect(g?.get('Chest')).toBeGreaterThan(0);
+    expect(nextSplitDay(DEFAULT_SPLIT, g).id).toBe('pull');
+    expect(lastSplitWorkoutGroups(DEFAULT_SPLIT, [coreAgg], of)).toBeNull();
   });
 
   it('a split day’s build focus: preset days by ID, custom days by name (split_day)', () => {

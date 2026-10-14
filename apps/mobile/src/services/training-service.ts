@@ -1,5 +1,5 @@
 import {
-  lastWorkoutGroups,
+  lastSplitWorkoutGroups,
   liftHistoryFrom,
   mainLiftFor,
   mainLiftOptions,
@@ -52,8 +52,9 @@ export function createTrainingService(deps: TrainingServiceDeps) {
   const repo = () => deps.store().repos.trainingProfiles;
   const yearOf = (at: ZonedTimestamp): number => Number(localDateKey(toMs(at.utc), at.tz).slice(0, 4));
 
+  /** Throws when the row can't be read (review S4): the screen shows its error state, the coach "not available". */
   async function stored(owner: UserProfile): Promise<TrainingProfile> {
-    return (await repo().get(owner.id).catch(() => null)) ?? newTrainingProfile({ id: trainingProfileId(owner.id), ownerId: owner.id, atUtc: owner.createdAtUtc });
+    return (await repo().get(owner.id)) ?? newTrainingProfile({ id: trainingProfileId(owner.id), ownerId: owner.id, atUtc: owner.createdAtUtc });
   }
 
   async function pool(): Promise<Map<string, Exercise>> {
@@ -86,7 +87,7 @@ export function createTrainingService(deps: TrainingServiceDeps) {
       mainLifts[d.id] = mainLiftFor(d, history, (id) => exercises.get(id)?.name ?? null);
       options[d.id] = mainLiftOptions(d, all).map((e) => ({ id: e.id, name: e.name }));
     }
-    return { owner, profile, mainLifts, options, nextDayId: nextSplitDay(split, lastWorkoutGroups(sessions, exerciseOf)).id, nowYear: yearOf(deps.now()) };
+    return { owner, profile, mainLifts, options, nextDayId: nextSplitDay(split, lastSplitWorkoutGroups(split, sessions, exerciseOf)).id, nowYear: yearOf(deps.now()) };
   }
 
   return {
@@ -102,25 +103,25 @@ export function createTrainingService(deps: TrainingServiceDeps) {
       if (owner === null) return { ok: false, reason: 'no_profile', profile: null };
       const at = deps.now();
       try {
-        const r = await repo().change(owner.id, change, { opId, expectedVersion, atUtc: at.utc, nowYear: yearOf(at) });
+        const r = await repo().change(owner.id, change, { opId, expectedVersion, atUtc: at.utc, nowYear: yearOf(at), today: localDateKey(toMs(at.utc), at.tz) });
         return r.status === 'written' || r.status === 'replayed' ? { ok: true, profile: r.profile } : { ok: false, reason: r.status, profile: r.profile };
       } catch {
         return { ok: false, reason: 'failed', profile: null };
       }
     },
 
-    /** The coach's planning context (Your data). Null with no profile. */
+    /** The coach's planning context (Your data). Null with no profile; throws when the row can't be read. */
     async coachInput(): Promise<TrainingInput | null> {
       const s = await snapshot();
       if (s === null) return null;
-      const owner = s.owner;
-      const saved = await repo().get(owner.id).catch(() => null);
+      const saved = await repo().get(s.owner.id);
       return { profile: saved, nowYear: s.nowYear, mainLifts: s.mainLifts, nextDayId: s.nextDayId };
     },
 
     /** F19: the Build card's chips (the split's days), the next day selected, and the session length. */
     async buildCard(): Promise<{ days: BuildDayChip[]; nextDayId: string | null; sessionMinutes: number; mainLifts: Record<string, MainLift> }> {
-      const s = await snapshot();
+      // Building a workout never waits on this row: an unreadable one gives the default split.
+      const s = await snapshot().catch(() => null);
       const split = splitInUse(s?.profile ?? null);
       return { days: buildDayChips(split), nextDayId: s?.nextDayId ?? split.days[0]?.id ?? null, sessionMinutes: s?.profile.sessionMinutes ?? 45, mainLifts: s?.mainLifts ?? {} };
     },

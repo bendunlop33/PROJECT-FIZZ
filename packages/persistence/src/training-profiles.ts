@@ -1,5 +1,5 @@
 import { TrainingProfileSchema, type TrainingChange, type TrainingProfile } from '@fizz/schemas';
-import { applyTrainingChange, deriveId, newTrainingProfile } from '@fizz/domain';
+import { applyTrainingChange, deriveId, newTrainingProfile, type TrainingWriteContext } from '@fizz/domain';
 import type { Database } from './database';
 import { decodeDocument, erase, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
@@ -51,7 +51,7 @@ export class SqliteTrainingProfiles {
   }
 
   /** One change on `expectedVersion` (the version the screen showed). */
-  change(ownerId: string, change: TrainingChange, w: { opId: string; expectedVersion: number; atUtc: string; nowYear: number }): Promise<TrainingProfileWrite> {
+  change(ownerId: string, change: TrainingChange, w: TrainingWriteContext): Promise<TrainingProfileWrite> {
     return this.db.write(async (tx) => {
       const current = (await readIn(tx, ownerId)) ?? newTrainingProfile({ id: trainingProfileId(ownerId), ownerId, atUtc: w.atUtc });
       const stored = await tx.getFirst('SELECT 1 AS x FROM training_profiles WHERE owner_id = ?', [ownerId]);

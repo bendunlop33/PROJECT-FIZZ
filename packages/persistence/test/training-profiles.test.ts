@@ -21,7 +21,7 @@ import { memoryDriver, tempDir } from './helpers';
 /** Training details and split (migration 16; Ben 13 Oct D5, D7, D8). */
 
 const APP = { name: 'PROJECT-FIZZ', version: '0.1.0', build: null };
-const W = (opId: string, expectedVersion: number) => ({ opId, expectedVersion, atUtc: at(10).utc, nowYear: 2026 });
+const W = (opId: string, expectedVersion: number) => ({ opId, expectedVersion, atUtc: at(10).utc, nowYear: 2026, today: '2026-10-14' });
 
 const stores: Store[] = [];
 const cleanups: (() => void)[] = [];

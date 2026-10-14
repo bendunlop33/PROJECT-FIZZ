@@ -89,6 +89,16 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
   sessionMinutes: z.int().min(TRAINING_LIMITS.sessionMinMin).max(TRAINING_LIMITS.sessionMinMax),
   /** Absent: no split chosen yet (the Build card offers the default Push/Pull/Legs). */
   split: TrainingSplitSchema.optional(),
+  /**
+   * The last custom split's days, kept while a preset is in use so picking
+   * Custom again restores them (profile-settings review B2). Absent: none yet.
+   */
+  customDays: z.array(SplitDaySchema).min(1).max(TRAINING_LIMITS.splitDaysMax).optional(),
+  /**
+   * Ben's main lift per split day ID, kept across split changes so switching
+   * back restores them (review B2). Absent on older rows: read from `split`.
+   */
+  mainLifts: z.record(z.string().min(1).max(64), z.string().min(1).max(64)).optional(),
   /** D5: next-time targets for Self-driven sessions. Default off. */
   selfNextTargets: z.boolean(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
