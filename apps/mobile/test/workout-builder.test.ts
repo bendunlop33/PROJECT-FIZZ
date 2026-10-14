@@ -11,7 +11,8 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
-import { threadRows } from '../src/coach/sheet-view';
+import { questionTap } from '../src/coach/build-view';
+import { answerSaveOf, threadRows } from '../src/coach/sheet-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -1046,7 +1047,13 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     expect(bench.load.value).toBe('100');
     expect(p.coachDraft.reasons[bench.slotKey]).toBe('last 100×7 → repeat · main lift');
     expect(p.coachDraft.estimates).toEqual([fly.slotKey]);
-    expect(p.coachDraft.reasons[fly.slotKey]).toBe('est. for 12–15 @9');
+    // B2: 13 was fitted to 10 on this stack, so code's basis names the target; the coach's line is under NOT USED.
+    expect(p.coachDraft.reasons[fly.slotKey]).toBe('est. · first time → 10');
+    expect(p.coachDraft.loads.find((l) => l.name === 'Cable fly')).toMatchObject({ label: 'est.', notUsed: 'est. for 12–15 @9' });
+    expect(p.coachDraft.loadLines[fly.slotKey]).toBe('LOAD  10 kg stack · est.');
+    expect(p.coachDraft.loadLines[pushdown.slotKey]).toMatch(/^LOAD {2}25 kg stack · Rule$/);
+    // USED names only what was read: everything here is logged in the app.
+    expect(p.coachDraft.historyUsed).toBe('logged');
     expect(p.coachDraft.reasons[pushdown.slotKey]).toMatch(/^Rule · last 25×11$/);
     expect(p.coachDraft.headNote).toMatch(/^Push · Bench press · 45 min · last Push 2 days ago$/);
     expect(p.coachDraft.loads.find((l) => l.name === 'Triceps pushdown')).toMatchObject({ label: 'Rule', notes: ['coach load 40 kg too far from last 25 × 11'] });
@@ -1074,6 +1081,41 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     const started = await s.overview.start(startReq(before, gymId, 'start-stale'));
     expect(started.ok).toBe(false);
     const ok = await s.overview.start(startReq(after, gymId, 'start-fresh'));
+    if (!ok.ok) throw new Error(ok.error.message);
+    for (const r of after.view.rows) matchesSession(r, ok.aggregate);
+  });
+
+  it('B4: a draft built during a workout is re-checked against that workout’s sets (started before the build)', async () => {
+    const { s, gymId } = await benWithHistory();
+    // The workout starts first; the draft is built while it is open; bench 100 × 5 @ 10 is logged after.
+    const started = await s.workout.start({ gymId, opId: 'during-start', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    h.clockMs += 60_000;
+    const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
+    const before = await page(s, draftId, gymId);
+    expect(before.view.rows.find((r) => r.name === 'Bench press')?.load.value).toBe('100');
+    const sessionId = started.aggregate.session.id;
+    const pick = (await s.workout.pickerExercises(sessionId, 'Bench press')).find((x) => x.exercise.name === 'Bench press');
+    if (!pick) throw new Error('bench');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: 'during-add' });
+    if (!added.ok) throw new Error(added.error.message);
+    const ex = added.aggregate.exercises.at(-1);
+    const set = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.id).sort((a, b) => a.index - b.index)[0];
+    if (!ex || !set) throw new Error('set');
+    for (const extra of added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.id !== set.id)) await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: extra.id, expectedSetVersion: extra.version });
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: { value: 100, unit: 'kg', convention: 'total' }, reps: 5, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    const cur = await s.workout.load(sessionId);
+    if (!cur) throw new Error('session');
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: cur.aggregate.session.version, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    h.clockMs += DAY;
+    const after = await page(s, draftId, gymId);
+    const bench = after.view.rows.find((r) => r.name === 'Bench press');
+    expect(bench?.load.value).toBe('95');
+    expect(after.coachDraft?.reasons[bench?.slotKey ?? '']).toBe('last 100×5 @10 · capped → 95 · main lift');
+    const ok = await s.overview.start(startReq(after, gymId, 'start-after-during'));
     if (!ok.ok) throw new Error(ok.error.message);
     for (const r of after.view.rows) matchesSession(r, ok.aggregate);
   });
@@ -1169,5 +1211,87 @@ describe('v2: clarifying questions in the sheet (BD17; WB-Q1, WB-Q2, WB-Q9, WB-Q
     if (data === null) throw new Error('thread');
     const later = threadRows({ ...data, nowUtc: new Date(h.clockMs + 13 * 3_600_000).toISOString() }).find((r) => r.kind === 'card' && r.card.question !== undefined);
     expect(later?.kind === 'card' && later.card.question).toMatchObject({ state: 'not_answered', collapsed: 'Not answered' });
+  });
+});
+
+describe('builder-v2 review: references, length, questions (S1, S2, S7, WB-L5c, WB-P7, WB-Q6, WB-Q7, WB-Q9)', () => {
+  const load = (value: number, convention: string, basis: string) => ({ value, unit: 'kg', convention, basis, from: 'own_history', relatedCatalogueId: null });
+  type RefView = { name: string; estimate: string | null; last: string[] };
+  const refsOf = (req: ModelRequest) => (buildOf(req) as BuildView & { loadReferences?: RefView[] }).loadReferences ?? [];
+
+  it('WB-L5c / S1: bench last done over 180 days ago is listed with Ben’s own ratio, and the checker bounds the load by the same reference (est.)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const now0 = h.clockMs;
+    h.clockMs = now0 - 220 * DAY;
+    await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 100, reps: 8, rpe: 8 }] },
+      { exercise: 'Incline dumbbell press', sets: [{ load: 30, reps: 8, rpe: 8 }] },
+    ]);
+    h.clockMs = now0 - 5 * DAY;
+    await logWorkout(h, s, gymId, [{ exercise: 'Incline dumbbell press', sets: [{ load: 32.5, reps: 8, rpe: 8 }] }]);
+    h.clockMs = now0;
+    const { draftId } = await buildPush(s, 'build me a push session with bench press', [['Bench press', { workingSets: 3, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(110, 'total', 'est. from incline') }]]);
+    const bench = refsOf(model.requests[0] as ModelRequest).find((r) => r.name === 'Bench press');
+    expect(bench?.estimate).toMatch(/^est\. from incline dumbbell press 32\.5×8$/);
+    const p = await page(s, draftId, gymId);
+    const row = p.view.rows.find((r) => r.name === 'Bench press');
+    expect(row?.load.value).toBe('110');
+    expect(p.coachDraft?.estimates).toEqual([row?.slotKey]);
+  });
+
+  it('WB-P7 / S2: a typed build with no length uses Profile’s session length (the KNOWN block’s); words or chips still win', async () => {
+    const { s } = await benWithHistory();
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    // No training details saved yet: KNOWN lists the length as missing and the build default applies (§8.8 P1).
+    await buildPush(s, 'build me a push session');
+    expect(buildOf(model.requests[0] as ModelRequest).request.minutes).toBe(60);
+    await s.training.change({ kind: 'session_minutes', minutes: 75 }, snap.profile.version, 'len-75');
+    await buildPush(s, 'build me a push session');
+    expect(buildOf(model.requests[0] as ModelRequest).request.minutes).toBe(75);
+    await buildPush(s, 'build me a 30 min push session');
+    expect(buildOf(model.requests[0] as ModelRequest).request.minutes).toBe(30);
+  });
+
+  it('WB-Q6: typing "bench, under 40 min" answers the question and sets the fit to 40', async () => {
+    const { s, gymId } = await benWithHistory();
+    model = new StepModel([() => toolCall('ask_build_question', { topic: 'main_lift', question: 'Main lift for push?', answers: [{ label: 'Bench', catalogueId: 'barbell-bench-press' }, { label: 'Incline', catalogueId: 'dumbbell-incline-press' }] })]);
+    const first = await ask(s, 'build me a push workout');
+    model = new StepModel([pushStub(PUSH), () => replyWith('Done.')]);
+    const second = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'bench, under 40 min', spoken: false }, turnId: h.ids() });
+    expect(buildOf(model.requests[0] as ModelRequest).request.minutes).toBe(40);
+    const rec = second.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_workout') throw new Error('no draft');
+    expect((await page(s, rec.detail.draftId, gymId)).coachDraft?.fitMinutes).toBe(40);
+  });
+
+  it('WB-Q7: with everything known the tool is still offered, and a build is one turn with no question card', async () => {
+    const { s } = await benWithHistory();
+    const { result } = await buildPush(s, 'build me a 45-minute push session for this gym');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('ask_build_question');
+    expect(result.cards.map((c) => c.record.detail.kind)).toEqual(['build_workout']);
+  });
+
+  it('WB-Q9 / S7: offline, a chip tap saves nothing and says `Needs the coach`; a save survives reopening the sheet with its Undo', async () => {
+    const { s } = await benWithHistory();
+    const q = { actionId: 'q-off', topic: 'main_lift', day: { id: 'legs' } };
+    connection = { ...CONNECTED, status: 'offline' };
+    const before = await s.training.appliedOps();
+    const tap = questionTap(await s.coach.buildBlock(), q, { label: 'Back squat', catalogueId: 'barbell-back-squat' }, 'Skip');
+    expect(tap).toEqual({ kind: 'blocked', line: 'Needs the coach · Offline' });
+    expect(await s.training.appliedOps()).toEqual(before);
+    connection = CONNECTED;
+    const go = questionTap(await s.coach.buildBlock(), q, { label: 'Back squat', catalogueId: 'barbell-back-squat' }, 'Skip');
+    if (go.kind !== 'send' || go.saveMainLift === null) throw new Error('no save');
+    expect(go.saveMainLift).toEqual({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q-off:main-lift' });
+    expect(await s.training.saveMainLiftAnswer(go.saveMainLift)).not.toBeNull();
+    // Reopen: the state comes from the profile, not the screen's memory.
+    const { services: again } = await h.launch();
+    expect(answerSaveOf('q-off', await again.training.appliedOps())).toEqual({ state: 'saved', canUndo: true });
+    const ops = await again.training.appliedOps();
+    expect(await again.training.undoMainLiftAnswer({ dayId: 'legs', savedVersion: ops?.version ?? 0, opId: 'q-off:main-lift-undo' })).toBe('undone');
+    expect(answerSaveOf('q-off', await again.training.appliedOps())).toEqual({ state: 'undone', canUndo: false });
+    expect(answerSaveOf('q-other', await again.training.appliedOps())).toBeNull();
   });
 });

@@ -263,6 +263,8 @@ export interface FocusView {
    */
   workTimer: WorkTimerView | null;
   target: string | null;
+  /** The target's load is an estimate (`est.` after the target, `estimate` in VoiceOver; rule 6, WB-L5). */
+  targetEstimate: boolean;
   /** The set's target RPE and who set it (`@ RPE 8` on the target line); null on warm-up and drop sets. */
   targetRpe: TargetRpe | null;
   /** `Plan was 100 kg × 6–8` when a coach adjustment set this target (coach-adjustments §2.7); else null. */
@@ -626,6 +628,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
     workTimer: ex.measurement === 'duration' ? workTimerView(state, set, values, input.nowMs) : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral, rpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null }),
+    targetEstimate: set.planned.load !== null && set.planned.provenance?.estimate === true,
     targetRpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null),
     planWas: carriesTodayAdjustment(set.planned) && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,
     coachActionId: carriesTodayAdjustment(set.planned) && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
@@ -1019,4 +1022,14 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
 function planWasText(before: WorkoutSet['planned'], convention: SessionExercise['loadConvention'], eq: EquipmentInstance | null | undefined): string | null {
   const short = targetShort({ ...before, source: undefined }, { convention, ...(eq ? { equipment: eq } : {}) });
   return short === null ? null : short.replace(/^Target /, 'Plan was ');
+}
+
+/** The set card's target line (WB-L5): `Target 12.5 kg × 12–15 · est.` when the load is an estimate. */
+export function targetLineText(target: string | null, estimate: boolean): string | null {
+  return target === null ? null : estimate ? `${target} · est.` : target;
+}
+
+/** The target line for VoiceOver: the word `estimate`, not the abbreviation. */
+export function targetLineLabel(target: string | null, estimate: boolean): string | null {
+  return target === null ? null : estimate ? `${target}, estimate` : target;
 }

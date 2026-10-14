@@ -1470,6 +1470,7 @@ export function WorkoutOverviewScreen() {
         footer={rowFooter(r)}
         reason={page.coachDraft?.reasons[r.slotKey] ?? null}
         estimate={page.coachDraft?.estimates.includes(r.slotKey) === true}
+        loadLine={page.coachDraft?.loadLines[r.slotKey] ?? null}
         onToggle={() => {
           toggle(r.slotKey);
         }}

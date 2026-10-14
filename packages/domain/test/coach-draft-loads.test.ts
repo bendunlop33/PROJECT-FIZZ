@@ -7,7 +7,11 @@ import {
   doableHere,
   draftHeadNote,
   draftReasonLine,
+  draftSlotWhy,
+  historyUsedOf,
+  loadPanelLine,
   loadReferences,
+  loadWhyEntry,
   newWorkoutDraft,
   painHoldFor,
   planCoachDraft,
@@ -222,6 +226,9 @@ describe('checkWorkoutProposal stores checked loads (BD6)', () => {
     // WB-P4: a pain-flagged main lift isn't inserted.
     const flagged = checkWorkoutProposal(noBench, ctx({ mainLift: { exercise: OHP, skip: false } }, { flags: [SHOULDER] }));
     expect(flagged.status !== 'unusable' && flagged.plan.slots.map((s) => s.exerciseId)).toEqual([INCLINE.id, FLY.id]);
+    // The main is then the coach's own first compound, not the flagged lift.
+    expect(flagged.status !== 'unusable' && flagged.plan.slots.map((s) => s.main)).toEqual([true, false]);
+    expect(flagged.status !== 'unusable' && flagged.checks.some((c) => c.exerciseId === OHP.id || /Overhead press/.test(c.text))).toBe(true);
   });
 });
 
@@ -256,6 +263,34 @@ describe('planCoachDraft plans the checked loads (WB-L1, WB5, WB-L10, WB-L12, WB
     const bench = setsFor(out, BENCH.id);
     expect(bench.every((s) => s.planned.load?.value === 95)).toBe(true);
     expect(bench[0]?.planned.provenance?.guardNotes.some((n) => /^capped at 95 · newer session/.test(n.replaceAll(' ', ' ')))).toBe(true);
+  });
+
+  it('B4: a bench session started before the build (logged after it) caps the stored load on the overview and at Start', () => {
+    const d = draftOf();
+    const newer = new Map(HISTORIES);
+    // Built 60 s ago; the workout it was built during started 2 min ago and logged 100×5 @10 after the build.
+    newer.set(BENCH.id, [{ ...session(991, 0, bar, [{ load: kg(100), reps: 5, rpe: 10 }]), performedAtUtc: at(-120).utc }, ...(HISTORIES.get(BENCH.id) ?? [])]);
+    const out = planOf(d, { histories: newer });
+    const bench = setsFor(out, BENCH.id);
+    expect(bench.every((s) => s.planned.load?.value === 95)).toBe(true);
+    expect(bench[0]?.planned.provenance?.coach?.reason).toBeNull();
+    expect(draftReasonLine({ planned: bench[0]?.planned ?? null, reps: true, main: false, goal: null })).toBe('last 100×5 @10 · capped → 95');
+    // Preview == Start: the same inputs plan the same loads.
+    expect(planOf(d, { histories: newer }).aggregate.sets.map((s) => s.planned.load)).toEqual(out.aggregate.sets.map((s) => s.planned.load));
+  });
+
+  it('review S4: draftSlotWhy gives plan-time fallback notes, the coach basis not used and the history sources', () => {
+    const out = planOf(draftOf(), { gym: HOTEL_GYM });
+    const why = draftSlotWhy(out);
+    const benchKey = out.version.plan.slots[0]?.slotKey ?? '';
+    expect(why[benchKey]).toMatchObject({ planNotes: ['different equipment here · rule used'] });
+    const main = planOf(draftOf());
+    const w = draftSlotWhy(main);
+    const [bench, incline, fly, pushdown] = main.version.plan.slots.map((s) => w[s.slotKey]);
+    expect(bench).toMatchObject({ notUsed: null, sources: ['app'] });
+    expect(incline?.sources).toEqual(['fitnotes']);
+    expect(fly).toMatchObject({ notUsed: 'est. for 12–15 @9', sources: [] });
+    expect(pushdown).toMatchObject({ notUsed: 'last 25×12' });
   });
 
   it('WB-L6b: at Hotel gym (dumbbells only) a barbell-checked bench load is never read as per hand: the rule plans it', () => {
@@ -296,18 +331,40 @@ describe('reason lines on the draft overview (Ben, 14 Oct: "no reason why")', ()
     const line = (e: Exercise) => draftReasonLine({ planned: firstWorking(out, e.id), reps: true, main: main.has(e.id), goal: 'strength' });
     expect(line(BENCH)).toBe('last 3: 100×7 @8 → 102.5 · main lift · strength');
     expect(line(INCLINE)).toBe('FitNotes 30×8 → repeat');
-    expect(line(FLY)).toBe('est. for 12–15 @9');
+    // B2: 100 was capped to 25, so the coach's basis (another number) isn't shown; code's ends with the target.
+    expect(line(FLY)).toBe('est. · first time · capped → 25');
     expect(line(PUSHDOWN)).toBe('Rule · last 25×12 @9');
   });
 
   it('held, estimates without the word, no load, no goal, timed, and the length cap', () => {
     const out = planOf(draftOf(), { sessionPain: true });
-    expect(draftReasonLine({ planned: setsFor(out, BENCH.id)[0]?.planned ?? null, reps: true, main: false, goal: null })).toBe('held · last 3: 100×7 @8 → 102.5');
+    expect(draftReasonLine({ planned: setsFor(out, BENCH.id)[0]?.planned ?? null, reps: true, main: false, goal: null })).toBe('held · last 100×7 @8 → 100');
+    // B3: the pain hold is carried as a flag on the provenance, not read from a note's first word.
+    expect(setsFor(out, BENCH.id)[0]?.planned.provenance?.held).toBe(true);
+    expect(setsFor(planOf(draftOf()), BENCH.id)[0]?.planned.provenance?.held).toBeUndefined();
     expect(draftReasonLine({ planned: { load: null, reps: { min: 8, max: 10 }, durationS: null, rpe: 8, rir: null }, reps: true, main: true, goal: null })).toBe('first time · start light · main lift');
     expect(draftReasonLine({ planned: null, reps: false, main: false, goal: null })).toBeNull();
     const est = { load: kg(25, 'stack'), reps: { min: 12, max: 15 }, durationS: null, rpe: 9, rir: null, source: 'coach' as const, provenance: { source: 'coach' as const, setAt: at(0), routineName: null, requestedLoad: null, basis: null, coach: { actionId: id(1), scope: 'build' as const, reason: null }, estimate: true as const, guardNotes: ['first time'] } };
     expect(draftReasonLine({ planned: est, reps: true, main: false, goal: null })).toBe('est. · first time');
     expect((draftReasonLine({ planned: { ...est, provenance: { ...est.provenance, coach: { ...est.provenance.coach, reason: 'x'.repeat(80) } } }, reps: true, main: true, goal: 'both' }) ?? '').length).toBeLessThanOrEqual(REASON_LINE_MAX);
+  });
+
+  it('B3 / §4.4: Why? labels HELD only for a pain hold; the panel LOAD line; NOT USED carried', () => {
+    const held = setsFor(planOf(draftOf(), { sessionPain: true }), BENCH.id)[0]?.planned ?? null;
+    expect(loadWhyEntry('Bench press', '100 kg', held, { storedNotes: [], notUsed: null }).label).toBe('HELD');
+    const stepped = { load: kg(25, 'assistance'), reps: { min: 8, max: 10 }, durationS: null, rpe: 8, rir: null, source: 'coach' as const, provenance: { source: 'coach' as const, setAt: at(0), routineName: null, requestedLoad: null, basis: null, coach: { actionId: id(1), scope: 'build' as const, reason: null }, guardNotes: ['last 30×8 @8 · capped → 25 assist', '25 assist · one step from last 30'] } };
+    const e = loadWhyEntry('Assisted pull-up', '25 kg assist', stepped, { storedNotes: [], notUsed: '5 assist, easy' });
+    expect(e).toMatchObject({ label: null, notUsed: '5 assist, easy' });
+    expect(draftReasonLine({ planned: stepped, reps: true, main: false, goal: null })).toBe('last 30×8 @8 · capped → 25 assist');
+    expect(loadPanelLine(e)).toBe('LOAD  25 kg assist');
+    expect(loadPanelLine({ target: '12.5 kg', label: 'est.' })).toBe('LOAD  12.5 kg · est.');
+    expect(loadPanelLine({ target: '100 kg', label: 'Rule' })).toBe('LOAD  100 kg · Rule');
+    expect(loadPanelLine({ target: '95 kg', label: 'HELD' })).toBe('LOAD  95 kg · HELD');
+    expect(loadPanelLine({ target: '—', label: null })).toBe('LOAD  — · start light');
+    // Plan-time notes join a rule row's stored notes once.
+    expect(loadWhyEntry('Bench press', '100 kg', null, { storedNotes: ['a'], notUsed: null, planNotes: ['a', 'different equipment here · rule used'] }).notes).toEqual(['a', 'different equipment here · rule used']);
+    expect(historyUsedOf(['app', 'fitnotes', 'app'])).toBe('both');
+    expect(historyUsedOf([])).toBeNull();
   });
 
   it('the head note: split · main lift · length · last same split N days ago', () => {

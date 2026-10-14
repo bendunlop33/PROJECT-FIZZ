@@ -250,6 +250,8 @@ export const TargetProvenanceSchema = z.object({
     .optional(),
   /** (workout-builder v2, rule 6) The load is an estimate (`est.`): no comparable history of Ben's own backs it. */
   estimate: z.literal(true).optional(),
+  /** (workout-builder v2, BD10) The load is held for pain (`HELD`): a flag on the movement or session pain. Never a step bound or a cap. */
+  held: z.literal(true).optional(),
   /** Equipment notes made with the target: rounding, caps, conversions, drops. */
   guardNotes: z.array(z.string().min(1).max(300)).max(10),
 });

@@ -16,7 +16,7 @@ import type { RepeatInput, RepeatNote, RepeatOutput } from './session/repeat';
 import { isDeleted, type RoutineStartInput } from './session/routines';
 import type { FitTier } from './session/fit-time';
 import { noResolvedEdits, planWithTodayEdits, type EditOutcome, type FitOutcome, type ResolvedEdits, type TodayEditsInput, type TodaySlot } from './session/today-edits';
-import { planCoachDraft } from './session/coach-draft';
+import { draftSlotWhy, planCoachDraft, type DraftSlotWhy } from './session/coach-draft';
 import type { SubstituteContext } from './session/substitutes';
 import type { HistorySession } from './progression';
 import type { ShapeBefore } from './session/today-shape';
@@ -314,7 +314,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       fence?: WriteFence;
       today?: TodayEditsInput;
     },
-  ): Promise<{ ok: true; aggregate: SessionAggregate; duplicate: boolean; fits: Record<string, SetFit>; today: TodayPlanInfo } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
+  ): Promise<{ ok: true; aggregate: SessionAggregate; duplicate: boolean; fits: Record<string, SetFit>; today: TodayPlanInfo; draftWhy?: Record<string, DraftSlotWhy> } | { ok: false; error: ServiceError | { code: 'nothing_to_start'; message: string } }> {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
       if (existing) return { ok: true, aggregate: existing, duplicate: true, fits: {}, today: { slotOf: {}, outcomes: [], resolved: noResolvedEdits(), slots: [], baseSlots: [], plannedShape: {}, fit: null, tiers: {} } };
@@ -348,7 +348,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     });
     const today: TodayPlanInfo = { slotOf: out.slotOf, setTemplateIds: out.setTemplateIds, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.aggregate.exercises.length === 0) return { ok: false, error: { code: 'nothing_to_start', message: 'This workout has no exercises to start.' } };
-    if (req.preview) return { ok: true, aggregate: out.aggregate, duplicate: false, fits: out.fits, today };
+    if (req.preview) return { ok: true, aggregate: out.aggregate, duplicate: false, fits: out.fits, today, draftWhy: draftSlotWhy(out) };
     const saved = await trySave(() => repos.sessions.save(out.aggregate, null, req.fence));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
     if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' } };

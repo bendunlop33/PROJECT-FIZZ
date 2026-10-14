@@ -3,7 +3,11 @@ import {
   draftHeadNote,
   draftReasonLine,
   formatLoad,
+  historyUsedOf,
+  loadPanelLine,
   loadWhyEntry,
+  type DraftSlotWhy,
+  type HistoryUsed,
   matchSplitDay,
   splitInUse,
   workoutMuscleGroups,
@@ -743,6 +747,10 @@ export interface CoachDraftInfo {
   estimates: string[];
   /** `Why this workout` → `LOADS` (§4.5): each row's target, label, the coach's basis quoted, code's notes. */
   loads: LoadWhyEntry[];
+  /** The row panel's `LOAD` line (§4.4), by slot key: `LOAD  12.5 kg · est.`, `LOAD  — · start light`. */
+  loadLines: Record<string, string>;
+  /** `USED`: which history the loads came from (review S4); null when none did. */
+  historyUsed: HistoryUsed;
 }
 
 /**
@@ -1672,11 +1680,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return d === null ? null : liveRoutineOf(d);
   }
 
-  async function coachDraftInfoOf(d: WorkoutDraft, planned?: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate }): Promise<CoachDraftInfo> {
+  async function coachDraftInfoOf(d: WorkoutDraft, planned?: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate; draftWhy: Record<string, DraftSlotWhy> }): Promise<CoachDraftInfo> {
     const v = currentDraftVersion(d);
     const base = { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: v.rationale, checks: v.checks.filter((c) => c.kind !== 'load').map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
-    if (planned === undefined) return { ...base, headNote: '', reasons: {}, estimates: [], loads: [] };
-    return { ...base, ...(await draftExplain(d, planned).catch(() => ({ headNote: '', reasons: {}, estimates: [], loads: [] }))) };
+    const none = { headNote: '', reasons: {}, estimates: [], loads: [], loadLines: {}, historyUsed: null };
+    if (planned === undefined) return { ...base, ...none };
+    return { ...base, ...(await draftExplain(d, planned).catch(() => none)) };
   }
 
   /**
@@ -1685,7 +1694,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * provenance (`draftReasonLine`), the training profile's goal and split,
    * and Ben's recent workouts. Values only; the detail is behind `Why?`.
    */
-  async function draftExplain(d: WorkoutDraft, planned: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate }): Promise<Pick<CoachDraftInfo, 'headNote' | 'reasons' | 'estimates' | 'loads'>> {
+  async function draftExplain(d: WorkoutDraft, planned: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate; draftWhy: Record<string, DraftSlotWhy> }): Promise<Pick<CoachDraftInfo, 'headNote' | 'reasons' | 'estimates' | 'loads' | 'loadLines' | 'historyUsed'>> {
     const v = currentDraftVersion(d);
     const profile = await ctx.store().repos.trainingProfiles.get(planned.ownerId).catch(() => null);
     const goal = profile?.goal ?? null;
@@ -1694,6 +1703,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const reasons: Record<string, string> = {};
     const estimates: string[] = [];
     const loads: LoadWhyEntry[] = [];
+    const loadLines: Record<string, string> = {};
+    const sources: ('app' | 'fitnotes')[] = [];
     for (const row of planned.rows) {
       const set = firstSet(row);
       const reps = planned.aggregate.exercises.find((e) => e.id === row.sessionExerciseId)?.measurement === 'reps';
@@ -1702,8 +1713,18 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       if (line !== null) reasons[row.slotKey] = line;
       if (set?.planned.provenance?.estimate === true) estimates.push(row.slotKey);
       const slot = v.plan.slots.find((sl) => sl.slotKey === row.slotKey);
-      const stored = slot?.setTemplates.find((t) => t.setType !== 'warmup' && t.load !== undefined)?.load?.notes ?? [];
-      if (reps) loads.push(loadWhyEntry(row.name, set === undefined ? '—' : formatLoad(set.planned.load, row.load.none ? undefined : set.planned.load?.convention), set?.planned ?? null, stored));
+      const stored = slot?.setTemplates.find((t) => t.setType !== 'warmup' && t.load !== undefined)?.load ?? null;
+      const why = planned.draftWhy[row.slotKey];
+      const prov = set?.planned.provenance;
+      // USED: only the history a load actually came from (a coach load's references; the rule's basis).
+      if (set?.planned.source === 'coach') sources.push(...(why?.sources ?? []));
+      else if (set?.planned.source === 'built_in_rule' && prov?.basis) sources.push(prov.basis.imported ? 'fitnotes' : 'app');
+      if (reps) {
+        const target = set === undefined || set.planned.load === null ? '—' : formatLoad(set.planned.load, row.load.none ? undefined : set.planned.load.convention);
+        const entry = loadWhyEntry(row.name, target, set?.planned ?? null, { storedNotes: stored?.notes ?? [], notUsed: why?.notUsed ?? stored?.notUsed ?? null, planNotes: why?.planNotes ?? [] });
+        loads.push(entry);
+        loadLines[row.slotKey] = loadPanelLine(entry);
+      }
     }
     // The head note: split day · main lift · length · last workout of the same split day.
     const split = splitInUse(profile);
@@ -1725,7 +1746,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     }
     const mainRow = mainSlot === null ? null : (planned.rows.find((r) => r.slotKey === mainSlot.slotKey) ?? null);
     const headNote = draftHeadNote({ split: dayName, mainLift: mainRow?.name ?? null, minutes: v.fitMinutes, lastSameDaysAgo });
-    return { headNote, reasons, estimates, loads };
+    return { headNote, reasons, estimates, loads, loadLines, historyUsed: historyUsedOf(sources) };
   }
 
   /** An open coach draft (14 days, not started or discarded), as the overview plans it. Null: gone (`Draft deleted`). */
@@ -2064,11 +2085,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     today: CheckIn | null,
     gymEquipment?: readonly EquipmentInstance[],
     todayEdits: TodayEditsInput = NO_TODAY,
-  ): Promise<{ aggregate: SessionAggregate; fits: Record<string, SetFit>; today: TodayPlanInfo | null } | null> {
+  ): Promise<{ aggregate: SessionAggregate; fits: Record<string, SetFit>; today: TodayPlanInfo | null; draftWhy?: Record<string, DraftSlotWhy> } | null> {
     const newId = previewIds();
     if (resolved.kind === 'coach_draft') {
       const r = await coachDraftStart(p, resolved.draft, { gymId, opId: 'overview-preview', preview: true, today, newId, todayEdits, ...(gymEquipment ? { gymEquipment } : {}) });
-      return r.ok ? { aggregate: r.aggregate, fits: r.fits, today: r.today } : null;
+      return r.ok ? { aggregate: r.aggregate, fits: r.fits, today: r.today, draftWhy: r.draftWhy ?? {} } : null;
     }
     if (resolved.kind === 'routine') {
       const { r } = await routineStart(p, { routineId: resolved.routine.id, gymId, opId: 'overview-preview', preview: true, today, newId, todayEdits, ...(gymEquipment ? { gymEquipment } : {}) });
@@ -4020,7 +4041,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           templateCard: await templateCardOf(resolved, run, t.draft),
           pace: planPace(recent),
           coachFit: await coachFitInfo(run.today),
-          coachDraft: resolved.kind === 'coach_draft' ? await coachDraftInfoOf(resolved.draft, { ownerId: p.id, rows: view.rows, aggregate }) : null,
+          coachDraft: resolved.kind === 'coach_draft' ? await coachDraftInfoOf(resolved.draft, { ownerId: p.id, rows: view.rows, aggregate, draftWhy: run.draftWhy ?? {} }) : null,
         };
       } catch {
         return null;

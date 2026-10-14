@@ -897,7 +897,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     // Newest first: "yes but make it 45 mins" beats the request's length (review B2, B3).
     const newest = buildWordsNewestFirst(said, followUp);
     const firstOf = <T,>(read: (w: string) => T | null): T | null => newest.reduce<T | null>((found, w) => found ?? read(w), null);
-    const minutes = chips?.minutes ?? firstOf(parseRequestedMinutes) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
+    // v2 (BD6, BD18): what the coach proposes loads from, and what is already known (never asked again).
+    const training = (await deps.training?.().catch(() => null)) ?? null;
+    // BD11 / WB-P7 (review S2): chips, else his words, else the draft being changed, else Profile's session length (the KNOWN block's), else the default.
+    const minutes = chips?.minutes ?? firstOf(parseRequestedMinutes) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, training?.profile?.sessionMinutes ?? null);
     const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (firstOf(parseRequestedFocus) ?? parent?.request.focus ?? 'coach_picks');
     // F19: the Build card's split day (else the draft's own), with its main lift (Ben's or recommended), for naming and context.
     const day = chips !== null && chips.focus !== 'coach_picks' ? (chips.day ?? null) : chips === null && firstOf(parseRequestedFocus) === null ? (parent?.request.day ?? null) : null;
@@ -923,8 +926,6 @@ export function createCoachService(deps: CoachServiceDeps) {
     const allUsable = doable
       .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
     const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
-    // v2 (BD6, BD18): what the coach proposes loads from, and what is already known (never asked again).
-    const training = (await deps.training?.().catch(() => null)) ?? null;
     const split = splitInUse(training?.profile ?? null);
     const dayObj = day !== null ? (split.days.find((d) => d.name === day.name) ?? null) : (split.days.find((d) => d.id === focus) ?? null);
     const ownMain = dayObj === null ? null : (training?.mainLifts[dayObj.id] ?? null);
@@ -935,18 +936,29 @@ export function createCoachService(deps: CoachServiceDeps) {
     const recentIds = [...new Set(recent.flatMap((a) => a.exercises.map((e) => e.exerciseId)))];
     const recentHistory = new Map<string, HistorySession[]>(recentIds.map((id) => [id, recent.flatMap((a) => toHistorySessions(a, id, { identity: true })).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc))]));
     const fullHistory = new Map<string, HistorySession[]>();
+    // Review S1: the context and the checker read the same references, so an exercise's (and its pattern-mates')
+    // whole history is read up front: a personal ratio pairs sessions older than 180 days (§8.5, WB-L5c).
+    const historyOf = async (id: string): Promise<HistorySession[]> => {
+      const hit = fullHistory.get(id);
+      if (hit !== undefined) return hit;
+      const h = await deps.store().listExerciseHistory(p.id, id).catch(() => recentHistory.get(id) ?? []);
+      fullHistory.set(id, h);
+      return h;
+    };
     const checkIn = (await repos().checkIns.listSince(p.id, toIso(nowMs - 12 * 3_600_000)).catch(() => [] as CheckIn[])).find((c) => c.deletedAtUtc === undefined) ?? null;
     const sessionPain = unspecifiedPain(checkIn);
     const loadCtx = { ownerId: p.id, unit: p.preferredUnit, gym, knownEquipment: new Map(gym.equipment.map((e) => [e.id, e])), painFlags: flags, sessionPain, at };
-    const mates = recentIds.flatMap((id) => {
-      const e = byId.get(id);
-      return e === undefined ? [] : [{ exercise: e, history: recentHistory.get(id) ?? [] }];
-    });
+    // Pattern-mates with their whole history (read up front below), so a ratio can pair old sessions.
+    const matesOf = () =>
+      recentIds.flatMap((id) => {
+        const e = byId.get(id);
+        return e === undefined ? [] : [{ exercise: e, history: fullHistory.get(id) ?? recentHistory.get(id) ?? [] }];
+      });
     const refsCache = new Map<string, LoadReferences>();
     const refsFor = (e: Exercise): LoadReferences => {
       const hit = refsCache.get(e.id);
       if (hit !== undefined) return hit;
-      const r = buildReferences({ target: { exercise: e, history: fullHistory.get(e.id) ?? recentHistory.get(e.id) ?? [] }, mates, ctx: loadCtx, nowMs });
+      const r = buildReferences({ target: { exercise: e, history: fullHistory.get(e.id) ?? recentHistory.get(e.id) ?? [] }, mates: matesOf(), ctx: loadCtx, nowMs });
       refsCache.set(e.id, r);
       return r;
     };
@@ -959,9 +971,13 @@ export function createCoachService(deps: CoachServiceDeps) {
       const e = byKey.get(k) ?? byId.get(k);
       return e !== undefined && e.measurement === 'reps' && e.defaultLoadConvention !== 'bodyweight' && !lastDone.has(e.id) ? [e] : [];
     });
+    const listed = inPlay ? [...withHistory, ...firstTime].slice(0, LOAD_REFERENCE_CAP) : [];
+    if (inPlay) {
+      for (const id of new Set([...recentIds, ...listed.map((e) => e.id)])) await historyOf(id);
+      refsCache.clear();
+    }
     const loadViews = inPlay
-      ? [...withHistory, ...firstTime]
-          .slice(0, LOAD_REFERENCE_CAP)
+      ? listed
           .map((e) => loadReferenceView(e.catalogueKey ?? e.id, e.name, refsFor(e), painFor(e) !== null))
           .filter((v) => v.last.length > 0 || v.estimate !== null || v.firstTimeMax !== null)
       : [];
@@ -988,6 +1004,13 @@ export function createCoachService(deps: CoachServiceDeps) {
       mainLift: known.mainLift === null ? null : `${known.mainLift.day}: ${known.mainLift.name}`,
       recentSplits: known.recentSplits.map((r) => `${r.day} · ${r.date}`),
       missing: known.missing,
+      about: [
+        ...(known.about.experience === null ? [] : [`experience: ${known.about.experience}`]),
+        ...(known.about.birthYear === null ? [] : [`born ${String(known.about.birthYear)}`]),
+        ...(known.about.gender === null ? [] : [`gender: ${known.about.gender}`]),
+        ...(known.about.heightCm === null ? [] : [`height ${String(known.about.heightCm)} cm`]),
+        ...(known.about.bodyweight === null ? [] : [`bodyweight ${String(known.about.bodyweight.value)} ${known.about.bodyweight.unit} (${known.about.bodyweight.date})`]),
+      ],
       questionsLeft: Math.max(0, 2 - (chain?.asked ?? 0)),
     };
     const refs = await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []);

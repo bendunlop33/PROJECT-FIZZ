@@ -1,5 +1,5 @@
 import { BUILD_LENGTH_CHIPS, type ActionRecord, type BuildDay, type BuildFocus, type TrainingSplit } from '@fizz/schemas';
-import { buildRequestText, buildingTitle, draftCardEndText, draftName, splitDayFocus, type DraftCardState } from '@fizz/domain';
+import { buildRequestText, buildingTitle, draftCardEndText, draftName, historyUsedLine, splitDayFocus, type DraftCardState } from '@fizz/domain';
 
 import type { CoachDraftCard, CoachDraftInfo } from '../services/workout-services';
 import type { BuildBlock } from './coach-service';
@@ -173,14 +173,40 @@ export function chosenName(focus: BuildFocus, minutes: number | null, dayName?: 
  * rationale and the code's check lines. Read-only; nothing here is the
  * model's number.
  */
-export function draftWhyView(d: Pick<CoachDraftInfo, 'request' | 'rationale' | 'checks' | 'fitMinutes'> & Partial<Pick<CoachDraftInfo, 'loads' | 'headNote'>>): { heading: string; lines: string[] }[] {
+export function draftWhyView(d: Pick<CoachDraftInfo, 'request' | 'rationale' | 'checks' | 'fitMinutes'> & Partial<Pick<CoachDraftInfo, 'loads' | 'headNote' | 'historyUsed'>>): { heading: string; lines: string[] }[] {
   // v2 §4.5 `LOADS`: the final target (code), its label, the coach's basis quoted, code's notes.
   const loads = (d.loads ?? []).flatMap((l) => [`${l.name} ${l.target}${l.label === null ? '' : ` · ${l.label}`}`, ...(l.quote === null ? [] : [`  “${l.quote}”`]), ...l.notes.map((n) => `  ⓘ ${n}`)]);
+  // WB-L9: a coach basis code didn't use (failed the check, or named another number than the target), quoted.
+  const notUsed = (d.loads ?? []).flatMap((l) => (l.notUsed === null ? [] : [`${l.name}: “${l.notUsed}”`]));
+  // Review S4: only the history a load actually came from (absent before the page is planned: not claimed).
+  const history = d.historyUsed === undefined ? null : historyUsedLine(d.historyUsed);
   return [
     { heading: 'YOU ASKED', lines: [`“${d.request}”`] },
     ...(d.rationale === null ? [] : [{ heading: 'COACH', lines: [d.rationale] }]),
     ...(loads.length === 0 ? [] : [{ heading: 'LOADS', lines: loads }]),
-    { heading: 'USED', lines: [d.headNote !== undefined && d.headNote !== '' ? d.headNote : `${String(d.fitMinutes)} min`, 'Logged and FitNotes history'] },
+    { heading: 'USED', lines: [d.headNote !== undefined && d.headNote !== '' ? d.headNote : `${String(d.fitMinutes)} min`, ...(history === null ? [] : [history])] },
     ...(d.checks.length === 0 ? [] : [{ heading: 'CHECKS', lines: d.checks }]),
+    ...(notUsed.length === 0 ? [] : [{ heading: 'NOT USED', lines: notUsed }]),
   ];
+}
+
+/**
+ * A tap on the coach's question card (§6.2, WB-Q9): with the coach
+ * unavailable, nothing is saved or sent and the card says `Needs the coach ·
+ * Offline`; otherwise the answer (or `Skip`) is sent as Ben's message, and a
+ * tapped main lift for a split day is saved to Profile first (the service
+ * refuses it when Ben already chose one).
+ */
+export type QuestionTap = { kind: 'blocked'; line: string } | { kind: 'send'; text: string; saveMainLift: { dayId: string; catalogueId: string; opId: string } | null };
+
+export function questionTap(
+  block: BuildBlock | null,
+  q: { actionId: string; topic: string; day: { id: string } | null },
+  a: { label: string; catalogueId: string | null } | 'skip',
+  skipText: string,
+): QuestionTap {
+  if (block !== null) return { kind: 'blocked', line: needsCoachView(block).line };
+  if (a === 'skip') return { kind: 'send', text: skipText, saveMainLift: null };
+  const save = a.catalogueId !== null && q.topic === 'main_lift' && q.day !== null ? { dayId: q.day.id, catalogueId: a.catalogueId, opId: `${q.actionId}:main-lift` } : null;
+  return { kind: 'send', text: a.label, saveMainLift: save };
 }

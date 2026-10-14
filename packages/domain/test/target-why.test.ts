@@ -4,6 +4,8 @@ import type { EquipmentInstance, Exercise, PainFlag, SessionAggregate, SetValues
 import {
   basisSetsText,
   buildActiveSetView,
+  targetLineLabel,
+  targetLineText,
   buildAddExerciseCommand,
   buildStepCard,
   calculateNextTargets,
@@ -362,6 +364,23 @@ describe('buildActiveSetView: target.hasExplanation', () => {
     // A target with no stored provenance still gets Why? (it says `Not recorded`).
     expect(view(today(2, hist(basis), { why: false })).focus?.hasExplanation).toBe(true);
     expect(view(today(2, [])).focus?.hasExplanation).toBe(false);
+  });
+
+  it('WB-L5 (review S3): an estimated target says `est.` on the target line and `estimate` to VoiceOver', () => {
+    const basis = finished(0, [values(kg(100), 8, { rpe: 8 }), values(kg(100), 8, { rpe: 8 })]);
+    const view = (a: SessionAggregate) => buildActiveSetView({ aggregate: a, nowMs: ms(2 * DAY + 10), gymName: 'Main Gym', previous: {}, painFlagged: new Set(), edits: null });
+    const plain0 = today(2, hist(basis));
+    expect(view(plain0).focus?.targetEstimate).toBe(false);
+    const est: SessionAggregate = {
+      ...plain0,
+      sets: plain0.sets.map((x) => ({ ...x, planned: { ...x.planned, source: 'coach' as const, provenance: { source: 'coach' as const, setAt: at(0), routineName: null, requestedLoad: null, basis: null, coach: { actionId: 'a1', scope: 'build' as const, reason: null }, estimate: true as const, guardNotes: [] } } })),
+    };
+    const f = view(est).focus;
+    expect(f?.targetEstimate).toBe(true);
+    expect(targetLineText(f?.target ?? null, f?.targetEstimate ?? false)?.endsWith(' · est.')).toBe(true);
+    expect(targetLineLabel(f?.target ?? null, f?.targetEstimate ?? false)?.endsWith(', estimate')).toBe(true);
+    expect(targetLineText(null, true)).toBeNull();
+    expect(targetLineText('Target 100 kg', false)).toBe('Target 100 kg');
   });
 });
 

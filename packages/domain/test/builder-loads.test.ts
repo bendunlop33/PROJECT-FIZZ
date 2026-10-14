@@ -20,6 +20,7 @@ import {
   refSessionOf,
   relatedLiftReference,
   returnCut,
+  sessionsSinceCheck,
   type HistorySession,
   type LoadCheckContext,
   type LoadProposalIn,
@@ -185,7 +186,7 @@ describe('imported FitNotes history counts (WB-L4, WB-L4b, WB-L5 machine)', () =
 describe('estimates are labelled and bounded (WB-L5, WB-L5b, WB-L5c)', () => {
   it('WB-L5: cable fly with no reference at 13 kg → 12.5 est., `13 → 12.5 (this stack)`', () => {
     const c = checkProposedLoad(P(13, 'stack'), slot(12, 15, 9), refs(FLY, [], [cable]), NO_PAIN);
-    expect(c).toMatchObject({ load: { value: 12.5 }, source: 'coach_est', notes: ['13 → 12.5 (this stack)'], basis: 'est. · first time' });
+    expect(c).toMatchObject({ load: { value: 12.5 }, source: 'coach_est', notes: ['13 → 12.5 (this stack)'], basis: 'est. · first time → 12.5' });
   });
 
   it('WB-L5: pec deck from the related chest press (0.6–0.7): 40 → 32.5 est.', () => {
@@ -197,7 +198,7 @@ describe('estimates are labelled and bounded (WB-L5, WB-L5b, WB-L5c)', () => {
     const c = checkProposedLoad(P(40, 'stack'), slot(12, 15, 9), r, NO_PAIN);
     expect(c.load?.value).toBe(32.5);
     expect(c.source).toBe('coach_est');
-    expect(c.basis).toBe('est. from chest press 60×10');
+    expect(c.basis).toBe('est. from chest press 60×10 · capped → 32.5');
   });
 
   it('WB-L5b: the first-time ceiling: cable fly at 100 → 25 est.; the assisted machine’s is 55 assist', () => {
@@ -290,13 +291,13 @@ describe('assisted and added loads in steps, toward easier (WB-L11)', () => {
   const weighted = refs(WEIGHTED, [session(981, 4, belt, [{ load: kg(20, 'added'), reps: 6, rpe: 8 }])], [belt]);
 
   it('5 kg assistance (last 30) → 25, one step; 32 → 35 (toward easier), never 30', () => {
-    expect(checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN)).toMatchObject({ load: { value: 25, convention: 'assistance' }, notes: ['held at 25 assist · one step from last 30'] });
+    expect(checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN)).toMatchObject({ load: { value: 25, convention: 'assistance' }, notes: ['25 assist · one step from last 30'] });
     expect(checkProposedLoad(P(32, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN).load?.value).toBe(35);
-    expect(checkProposedLoad(P(60, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN)).toMatchObject({ load: { value: 40 }, notes: ['held at 40 assist · two steps from last 30'] });
+    expect(checkProposedLoad(P(60, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN)).toMatchObject({ load: { value: 40 }, notes: ['40 assist · two steps from last 30'] });
   });
 
   it('+35 kg (last +20) → +21.25; "heavier" in Ben’s words allows +22.5', () => {
-    expect(checkProposedLoad(P(35, 'added'), slot(5, 6, 8), weighted, NO_PAIN)).toMatchObject({ load: { value: 21.25, convention: 'added' }, notes: ['held at +21.25 · one step from last +20'] });
+    expect(checkProposedLoad(P(35, 'added'), slot(5, 6, 8), weighted, NO_PAIN)).toMatchObject({ load: { value: 21.25, convention: 'added' }, notes: ['+21.25 · one step from last +20'] });
     expect(checkProposedLoad(P(35, 'added'), slot(5, 6, 8), weighted, { pain: null, askedHeavier: true }).load?.value).toBe(22.5);
   });
 });
@@ -325,6 +326,8 @@ describe('newer history re-check and slot consistency (WB-L12, WB-L13)', () => {
     const out = checkSlotLoads(top, back);
     expect(out.load?.value).toBe(100);
     expect(out.notes).toContain('back-offs ≤ top set');
+    // B2: the dropped back-offs carry the top set's basis, never one naming 102.5.
+    expect(out.basis).toBe(top.basis);
     // Assisted: more assistance is easier, so a back-off with less assistance than the top set drops to it.
     const a = checkSlotLoads({ ...back, load: kg(30, 'assistance') }, { ...back, load: kg(25, 'assistance'), notes: [] });
     expect(a.load?.value).toBe(30);
@@ -332,8 +335,8 @@ describe('newer history re-check and slot consistency (WB-L12, WB-L13)', () => {
 });
 
 describe('checkBasis (WB-L9): only numbers it may cite', () => {
-  const allowed = [100, 7, 8, 102.5, 2.5, 6, 130];
-  it('accepts reference numbers in any of the normal forms, and the proposal’s own value', () => {
+  const allowed = { numbers: [100, 7, 8, 102.5, 2.5, 6, 130], sets: [{ value: 100, reps: 7, rpe: 8 }], targets: [102.5], reps: { min: 6, max: 8 } };
+  it('accepts reference sets in any of the normal forms, and the proposal’s own value on its own', () => {
     expect(checkBasis('last 3: 100×7 @8 → 102.5', allowed, 3)).toBe(true);
     expect(checkBasis('last 100 kg × 7 @ RPE 8', allowed, 3)).toBe(true);
     expect(checkBasis('100kg x7, +2.5', allowed, 3)).toBe(true);
@@ -375,5 +378,91 @@ describe('buildReferences: Ben’s own same-pattern lifts (WB-L5c, B1)', () => {
     const c = checkProposedLoad(P(30, 'stack'), slot(10, 12, 9), r, NO_PAIN);
     // Half of E (≈ 26.2) is ≈ 13.1 → 12.5 on this stack, below the range ceiling of 25.
     expect(c).toMatchObject({ load: { value: 12.5 }, source: 'coach_est', notes: ['capped at 12.5 · first time'] });
+  });
+});
+
+describe('review builder-v2 B1–B4', () => {
+  it('B1: a basis citing the proposal as a set (110×6, 104×8) is not used; the proposal is allowed on its own or after an arrow', () => {
+    const invented = checkProposedLoad(P(110, 'total', 'last 110×6 @8'), BENCH_SLOT, benchRefs(), NO_PAIN);
+    expect(invented).toMatchObject({ basisFromCoach: false, notUsed: 'last 110×6 @8' });
+    expect(invented.basis).not.toContain('110×6');
+    const again = checkProposedLoad(P(104, 'total', 'last 104×8 @7'), slot(6, 8, 7), benchRefs(), NO_PAIN);
+    expect(again.basisFromCoach).toBe(false);
+    expect(again.basis).not.toContain('104×8');
+    // A real set with the wrong RPE is invented too.
+    expect(checkProposedLoad(P(102.5, 'total', 'last 100×7 @6 → 102.5'), BENCH_SLOT, benchRefs(), NO_PAIN).basisFromCoach).toBe(false);
+    // The proposal after an arrow, with reps in the slot's range, is a target, not a cited set.
+    expect(checkProposedLoad(P(102.5, 'total', 'last 100×7 @8 → 102.5×6'), BENCH_SLOT, benchRefs(), NO_PAIN).basisFromCoach).toBe(true);
+    expect(checkProposedLoad(P(102.5, 'total', 'last 100×7 @8 → 102.5×12'), BENCH_SLOT, benchRefs(), NO_PAIN).basisFromCoach).toBe(false);
+    // A derived reference's own sets may be cited.
+    const allowed = { numbers: [60, 10], sets: [{ value: 60, reps: 10, rpe: null }] };
+    expect(checkBasis('est. from chest press 60×10', allowed, 0)).toBe(true);
+    expect(checkBasis('est. from chest press 60×12', allowed, 0)).toBe(false);
+  });
+
+  it('N1: a number near, but not equal to, an allowed value is not accepted', () => {
+    const allowed = { numbers: [100, 8], sets: [] };
+    expect(checkBasis('from 100.5', allowed, 1)).toBe(false);
+    expect(checkBasis('@8.5', allowed, 1)).toBe(false);
+    expect(checkBasis('from 100', allowed, 1)).toBe(true);
+  });
+
+  it('B2: when code changes the load, the basis ends with the final value (clamp, hold, snap); the coach’s goes under NOT USED', () => {
+    const clamped = checkProposedLoad(P(120, 'total', 'last 3: 100×7 @8 → 120'), BENCH_SLOT, benchRefs(), NO_PAIN);
+    expect(clamped).toMatchObject({ load: { value: 107.5 }, basis: 'last 100×7 @8 · capped → 107.5', basisFromCoach: false, notUsed: 'last 3: 100×7 @8 → 120' });
+    const held = checkProposedLoad(P(102.5, 'total', 'last 3: 100×7 @8 → 102.5'), BENCH_SLOT, benchRefs(), { pain: { text: 'pain reported today' }, askedHeavier: false });
+    expect(held).toMatchObject({ load: { value: 100 }, held: true, basis: 'last 100×7 @8 → 100', basisFromCoach: false });
+    const snapped = checkProposedLoad(P(101, 'total', 'last 3: 100×7 @8 → 101'), BENCH_SLOT, benchRefs(), NO_PAIN);
+    expect(snapped.load?.value).not.toBe(101);
+    expect(snapped.basis?.endsWith(`→ ${String(snapped.load?.value)}`)).toBe(true);
+    expect(snapped.basisFromCoach).toBe(false);
+    // Converted from lb: the coach's number is in another unit, so code's basis names the kg target.
+    const lb = checkProposedLoad(P(225, 'total', 'last 100×7 → 225', 'lb'), BENCH_SLOT, benchRefs(), NO_PAIN);
+    expect(lb.basis).toBe('last 100×7 @8 → 102.5');
+    // Unchanged: the coach's basis stays.
+    expect(checkProposedLoad(P(102.5, 'total', 'last 3: 100×7 @8 → 102.5'), BENCH_SLOT, benchRefs(), NO_PAIN).basisFromCoach).toBe(true);
+  });
+
+  it('B2 at plan time: a re-check that changes the stored load replaces the stored coach basis', () => {
+    const r1 = benchRefs();
+    const stored = { load: kg(102.5), source: 'coach' as const, basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: true, held: false, notes: [], notUsed: null };
+    const held = recheckDraftLoad(stored, BENCH_SLOT, r1, { pain: { text: 'pain reported today' }, checkedOn: checkedOnOf(r1), builtAtUtc: at(0).utc, nowMs: NOW, checkedHistoryVersion: r1.historyVersion });
+    expect(held).toMatchObject({ load: { value: 100 }, held: true, basis: 'last 100×7 @8 → 100', basisFromCoach: false, notUsed: 'last 3: 100×7 @8 → 102.5' });
+  });
+
+  it('B3: a step bound on assisted or added loads is not a pain hold (no `held` note or flag)', () => {
+    const pullups = refs(PULLUP, [session(980, 4, assist, [{ load: kg(30, 'assistance'), reps: 8, rpe: 8 }])], [assist]);
+    const c = checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN);
+    expect(c.held).toBe(false);
+    expect(c.notes.some((n) => n.startsWith('held'))).toBe(false);
+    expect(c.basis).toBe('last 30×8 @8 · capped → 25 assist');
+  });
+
+  it('B4: a session started before the build but not seen by it counts as newer (checkedHistoryVersion)', () => {
+    const r1 = benchRefs();
+    const stored = { load: kg(102.5), source: 'coach' as const, basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: true, held: false, notes: [], notUsed: null };
+    // The workout started 1 h ago; the draft was built 30 min ago, before 100×5 @10 was logged in it.
+    const during = session(991, 0, bar, [{ load: kg(100), reps: 5, rpe: 10 }]);
+    const started = { ...during, performedAtUtc: at(-3600).utc };
+    const now = refs(BENCH, [started, ...BENCH_HISTORY], [bar]);
+    const r = recheckDraftLoad(stored, BENCH_SLOT, now, { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: at(-1800).utc, nowMs: NOW, checkedHistoryVersion: r1.historyVersion });
+    expect(r.load?.value).toBe(95);
+    expect(plain(r.notes.join(' | '))).toMatch(/^capped at 95 · newer session \d+ Oct$/);
+    expect(r.basis).toBe('last 100×5 @10 · capped → 95');
+    // The same history as at build time: unchanged, the coach's basis kept.
+    const same = recheckDraftLoad(stored, BENCH_SLOT, r1, { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: at(-1800).utc, nowMs: NOW, checkedHistoryVersion: r1.historyVersion });
+    expect(same).toMatchObject({ load: { value: 102.5 }, notes: [], basisFromCoach: true });
+  });
+
+  it('B4: a correction to older history re-checks against the whole history; sessionsSinceCheck finds only the unseen ones', () => {
+    const r1 = benchRefs();
+    const extra = refSessionOf(session(992, 0, bar, [{ load: kg(100), reps: 5, rpe: 10 }]), 'kg', 'total');
+    const all = [extra, ...r1.all].flatMap((x) => (x === null ? [] : [x]));
+    expect(sessionsSinceCheck(all, r1.historyVersion, at(0).utc)?.map((s) => s.sessionId)).toEqual([id(992)]);
+    expect(sessionsSinceCheck(r1.all, r1.historyVersion, at(0).utc)).toEqual([]);
+    const corrected = refs(BENCH, [BENCH_HISTORY[0] as HistorySession, { ...(BENCH_HISTORY[1] as HistorySession), sets: [{ setType: 'working', side: null, load: kg(80), reps: 8, rpe: 8, rir: null }] }, BENCH_HISTORY[2] as HistorySession], [bar]);
+    expect(sessionsSinceCheck(corrected.all, r1.historyVersion, at(0).utc)).toBeNull();
+    // Older drafts with no stored version: by start time, as before.
+    expect(sessionsSinceCheck(all, null, at(-60).utc)?.map((s) => s.sessionId)).toEqual([id(992)]);
   });
 });

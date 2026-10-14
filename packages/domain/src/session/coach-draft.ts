@@ -683,6 +683,38 @@ export type CoachDraftPlan = Extract<TodayPlanOutput, { kind: 'routine' }> & {
   ruleNotes: Map<string, string[]>;
 };
 
+/** `Why?` facts for one slot of a planned coach draft (review S4). */
+export interface DraftSlotWhy {
+  /** Plan-time fallback notes (`different equipment here · rule used`, `capped at 95 · newer session 9 Oct`). */
+  planNotes: string[];
+  /** The coach's basis that wasn't used (`NOT USED`), stored or from today's re-check. */
+  notUsed: string | null;
+  /** Where the coach load's references came from (app, FitNotes); empty for a rule slot (its provenance says). */
+  sources: ('app' | 'fitnotes')[];
+}
+
+/** Per slot key: what `Why this workout` needs beyond the planned sets' provenance. Pure. */
+export function draftSlotWhy(plan: Pick<CoachDraftPlan, 'version' | 'coachLoads' | 'ruleNotes'>): Record<string, DraftSlotWhy> {
+  const out: Record<string, DraftSlotWhy> = {};
+  for (const slot of plan.version.plan.slots) {
+    const coach = plan.coachLoads.get(slot.slotKey);
+    if (coach !== undefined) {
+      const checks = [...coach.checks.values()];
+      const used = coach.refs.own?.sessions ?? (coach.refs.latest === null ? [] : [coach.refs.latest]);
+      const anyHeld = checks.some((c) => c.held);
+      out[slot.slotKey] = {
+        planNotes: [],
+        notUsed: checks.find((c) => c.notUsed !== null)?.notUsed ?? null,
+        sources: [...new Set((anyHeld && coach.refs.latest !== null ? [coach.refs.latest] : used).map((x) => x.source))],
+      };
+      continue;
+    }
+    const stored = slot.setTemplates.find((t) => t.setType !== 'warmup' && t.load !== undefined)?.load ?? null;
+    out[slot.slotKey] = { planNotes: [...(plan.ruleNotes.get(slot.slotKey) ?? [])], notUsed: stored?.notUsed ?? null, sources: [] };
+  }
+  return out;
+}
+
 /** Pain that holds a movement's load (BD10): its flag (`shoulder flagged 6 Oct`), else session pain (`pain reported today`). */
 export function painHoldFor(exerciseId: string, flags: readonly PainFlag[], sessionPain: { active: boolean }, nowMs: number, tz: string): { text: string } | null {
   const flag = painFlagCovering(flags, exerciseId, nowMs, tz)?.flag ?? null;
@@ -711,7 +743,7 @@ export function recheckDraftSlot(slot: DraftSlot, exercise: Exercise, history: r
   const checks = new Map<number, LoadCheck>();
   for (const { t, i, load } of stored) {
     if (t.reps === null || t.targetRpe === null) continue;
-    const c = recheckDraftLoad(load, { repsMin: t.reps.min, repsMax: t.reps.max, targetRpe: t.targetRpe }, refs, { pain, checkedOn: slot.checkedOn ?? null, builtAtUtc, nowMs });
+    const c = recheckDraftLoad(load, { repsMin: t.reps.min, repsMax: t.reps.max, targetRpe: t.targetRpe }, refs, { pain, checkedOn: slot.checkedOn ?? null, builtAtUtc, nowMs, checkedHistoryVersion: slot.checkedHistoryVersion ?? null });
     if (c.load === null) return { kind: 'rule', notes: c.notes.length > 0 ? c.notes : ['rule used'] };
     checks.set(i, c);
   }
@@ -806,6 +838,7 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
       basis: null,
       coach: { actionId: version.actionId, scope: 'build', reason: c.basisFromCoach ? c.basis : null },
       ...(c.source === 'coach_est' ? { estimate: true as const } : {}),
+      ...(c.held ? { held: true as const } : {}),
       guardNotes: [...(c.basisFromCoach || c.basis === null ? [] : [c.basis]), ...c.notes, ...(set.planned.provenance?.guardNotes ?? [])].slice(0, 10).map((n) => n.slice(0, 300)),
     };
     return { ...set, planned: { ...set.planned, source: 'coach' as const, provenance } };

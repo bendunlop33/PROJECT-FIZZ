@@ -69,7 +69,7 @@ export function draftReasonLine(input: ReasonLineInput): string | null {
     const prov = p.provenance;
     if (p.source === 'coach' && prov?.coach?.scope === 'build') {
       const basis = (prov.coach.reason ?? prov.guardNotes[0] ?? '').trim();
-      const held = prov.guardNotes.some((n) => n.startsWith('held'));
+      const held = prov.held === true;
       if (held) parts.push('held');
       if (prov.estimate === true && !/^est\b/i.test(basis)) parts.push('est.');
       if (basis !== '') parts.push(basis);
@@ -112,15 +112,54 @@ export interface LoadWhyEntry {
   /** The coach's basis, quoted (data); null when code's or none. */
   quote: string | null;
   notes: string[];
+  /** The coach's basis that wasn't used (failed `checkBasis`, or named another number than the final load): `NOT USED` (WB-L9). */
+  notUsed: string | null;
+}
+
+/** What the draft stored for the exercise and what planning it today added (review S4). */
+export interface LoadWhyExtra {
+  /** Build-time check notes of the stored load. */
+  storedNotes: readonly string[];
+  /** The stored (or re-checked) coach basis that wasn't used. */
+  notUsed: string | null;
+  /** Plan-time notes (`recheckDraftSlot`'s fallback: `different equipment here · rule used`). */
+  planNotes?: readonly string[];
 }
 
 /** The `LOADS` entries of `Why this workout` from the planned sets (code values; the coach's words only quoted). */
-export function loadWhyEntry(name: string, target: string, planned: PlannedSet | null, storedNotes: readonly string[]): LoadWhyEntry {
+export function loadWhyEntry(name: string, target: string, planned: PlannedSet | null, extra: LoadWhyExtra): LoadWhyEntry {
   const prov = planned?.provenance;
+  const notUsed = extra.notUsed === null || extra.notUsed.trim() === '' ? null : extra.notUsed;
+  const merged = (base: readonly string[]): string[] => [...new Set([...base, ...(extra.planNotes ?? [])])];
   if (planned?.source === 'coach' && prov?.coach?.scope === 'build') {
-    const held = prov.guardNotes.some((n) => n.startsWith('held'));
-    return { name, target, label: held ? 'HELD' : prov.estimate === true ? 'est.' : null, quote: prov.coach.reason, notes: [...prov.guardNotes] };
+    // B3: HELD only for a pain hold, from the check's own flag (never a note's first word).
+    return { name, target, label: prov.held === true ? 'HELD' : prov.estimate === true ? 'est.' : null, quote: prov.coach.reason, notes: merged(prov.guardNotes), notUsed };
   }
-  if (planned?.source === 'built_in_rule') return { name, target, label: 'Rule', quote: null, notes: [...storedNotes] };
-  return { name, target, label: null, quote: null, notes: [...storedNotes] };
+  if (planned?.source === 'built_in_rule') return { name, target, label: 'Rule', quote: null, notes: merged(extra.storedNotes), notUsed };
+  return { name, target, label: null, quote: null, notes: merged(extra.storedNotes), notUsed };
+}
+
+/**
+ * The row panel's `LOAD` line (§4.4): `LOAD  102.5 kg`, `LOAD  12.5 kg ·
+ * est.`, `LOAD  100 kg · Rule`, `LOAD  95 kg · HELD`, `LOAD  — · start
+ * light`. `Why?` is the panel's own pill.
+ */
+export function loadPanelLine(e: Pick<LoadWhyEntry, 'target' | 'label'>): string {
+  if (e.target === '—' || e.target.trim() === '') return 'LOAD  — · start light';
+  return `LOAD  ${e.target}${e.label === null ? '' : ` · ${e.label}`}`;
+}
+
+/** Which history a draft's loads came from (`USED`, review S4): only what was actually read. */
+export type HistoryUsed = 'logged' | 'fitnotes' | 'both' | null;
+
+/** `Logged history`, `FitNotes history`, `Logged and FitNotes history`; null when no load came from history. */
+export function historyUsedLine(h: HistoryUsed): string | null {
+  return h === 'both' ? 'Logged and FitNotes history' : h === 'logged' ? 'Logged history' : h === 'fitnotes' ? 'FitNotes history' : null;
+}
+
+/** Combine per-exercise sources into one `HistoryUsed`. */
+export function historyUsedOf(sources: readonly ('app' | 'fitnotes')[]): HistoryUsed {
+  const app = sources.includes('app');
+  const fit = sources.includes('fitnotes');
+  return app && fit ? 'both' : app ? 'logged' : fit ? 'fitnotes' : null;
 }

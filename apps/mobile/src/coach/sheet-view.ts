@@ -533,3 +533,20 @@ export function workoutBarText(rest: { kind: 'running' | 'paused'; remainingMs: 
   }
   return 'Ready';
 }
+
+/**
+ * `Saved to Profile · Undo` on a question card (§6.2, WB-Q9; review S7),
+ * read from the training profile itself so it survives closing and
+ * reopening the sheet: the answer's save op (`<actionId>:main-lift`) is in
+ * the profile's applied ops; Undo only while it is still the newest change
+ * (the version the answer saved); `undone` once its undo op is applied.
+ */
+export type AnswerSaveState = { state: 'saved' | 'undone'; canUndo: boolean };
+
+export function answerSaveOf(actionId: string, profile: { recentOps: readonly string[] } | null): AnswerSaveState | null {
+  if (profile === null) return null;
+  const save = `${actionId}:main-lift`;
+  if (!profile.recentOps.includes(save)) return null;
+  if (profile.recentOps.includes(`${actionId}:main-lift-undo`)) return { state: 'undone', canUndo: false };
+  return { state: 'saved', canUndo: profile.recentOps.at(-1) === save };
+}

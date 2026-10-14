@@ -142,6 +142,8 @@ export interface KnownView {
   mainLift: string | null;
   recentSplits: string[];
   missing: string[];
+  /** Training details from Profile (`experience: intermediate`, `born 1990`, `bodyweight 82 kg (3 Oct)`): never asked (review S6). */
+  about?: string[];
   /** Clarifying questions left in this build request (BD17: at most 2). */
   questionsLeft: number;
 }

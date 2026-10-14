@@ -133,6 +133,14 @@ export function createTrainingService(deps: TrainingServiceDeps) {
       }
     },
 
+    /** The profile's applied op IDs and version (a question card's `Saved to Profile` state, §6.2). Null: no profile or unreadable. */
+    async appliedOps(): Promise<{ recentOps: string[]; version: number } | null> {
+      const owner = await deps.profile().catch(() => null);
+      if (owner === null) return null;
+      const p = await repo().get(owner.id).catch(() => null);
+      return p === null ? null : { recentOps: [...p.recentOps], version: p.version };
+    },
+
     /** `Undo` on `Saved to Profile` (§6.2): only while the profile is still at the version this answer saved. */
     async undoMainLiftAnswer(req: { dayId: string; savedVersion: number; opId: string }): Promise<'undone' | 'changed'> {
       const owner = await deps.profile();
