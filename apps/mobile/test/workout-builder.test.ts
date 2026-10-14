@@ -1045,7 +1045,9 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     const pushdown = row('Triceps pushdown');
     if (!bench || !fly || !pushdown || p.coachDraft === null) throw new Error('rows');
     expect(bench.load.value).toBe('100');
-    expect(p.coachDraft.reasons[bench.slotKey]).toBe('last 100×7 → repeat · main lift');
+    // Review r2 B1r: the row reads code's line; the coach's words are its note behind Why?.
+    expect(p.coachDraft.reasons[bench.slotKey]).toBe('last 100×7 → 100 · main lift');
+    expect(p.coachDraft.loads.find((l) => l.name === 'Bench press')).toMatchObject({ quote: 'last 100×7 → repeat', notes: ['last 100×7 → 100'] });
     expect(p.coachDraft.estimates).toEqual([fly.slotKey]);
     // B2: 13 was fitted to 10 on this stack, so code's basis names the target; the coach's line is under NOT USED.
     expect(p.coachDraft.reasons[fly.slotKey]).toBe('est. · first time → 10');

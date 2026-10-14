@@ -193,7 +193,7 @@ describe('checkWorkoutProposal stores checked loads (BD6)', () => {
     if (r.status === 'unusable') throw new Error('unusable');
     const [bench, incline, fly, pushdown] = r.plan.slots;
     expect(bench?.setTemplates.map((t) => t.load?.load?.value)).toEqual([102.5, 102.5, 102.5, 102.5]);
-    expect(bench?.setTemplates[0]?.load).toMatchObject({ source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: true });
+    expect(bench?.setTemplates[0]?.load).toMatchObject({ source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'last 3: 100×7 @8 → 102.5' });
     expect(bench?.checkedOn).toMatchObject({ equipmentId: bar.id, kind: 'barbell', convention: 'total', unit: 'kg', barKg: 20 });
     expect(bench?.checkedHistoryVersion).toMatch(/[0-9a-f-]{36}/);
     expect(incline?.setTemplates[0]?.load).toMatchObject({ load: { value: 30, convention: 'per_hand' }, source: 'coach' });
@@ -324,13 +324,15 @@ describe('planCoachDraft plans the checked loads (WB-L1, WB5, WB-L10, WB-L12, WB
 describe('reason lines on the draft overview (Ben, 14 Oct: "no reason why")', () => {
   const firstWorking = (out: ReturnType<typeof planOf>, exerciseId: string) => setsFor(out, exerciseId)[0]?.planned ?? null;
 
-  it('each exercise gets a short data line: the coach’s basis, est., Rule with the last set, and main lift · goal', () => {
+  it('each exercise gets a short data line built by code: the reference set and final load, est., Rule with the last set, and main lift · goal', () => {
     const out = planOf(draftOf());
     // The lead main lift only (WL9 may mark more than one compound as main).
     const main = new Set(out.version.plan.slots.filter((s) => s.main).slice(0, 1).map((s) => s.exerciseId));
     const line = (e: Exercise) => draftReasonLine({ planned: firstWorking(out, e.id), reps: true, main: main.has(e.id), goal: 'strength' });
     expect(line(BENCH)).toBe('last 3: 100×7 @8 → 102.5 · main lift · strength');
-    expect(line(INCLINE)).toBe('FitNotes 30×8 → repeat');
+    // Review r2 B1r: code's line, never the coach's words (`FitNotes 30×8 → repeat` is its note behind Why?).
+    expect(line(INCLINE)).toBe('last 30×8 (FitNotes) → 30 each');
+    expect(firstWorking(out, INCLINE.id)?.provenance?.coach?.reason).toBe('FitNotes 30×8 → repeat');
     // B2: 100 was capped to 25, so the coach's basis (another number) isn't shown; code's ends with the target.
     expect(line(FLY)).toBe('est. · first time · capped → 25');
     expect(line(PUSHDOWN)).toBe('Rule · last 25×12 @9');
@@ -365,6 +367,31 @@ describe('reason lines on the draft overview (Ben, 14 Oct: "no reason why")', ()
     expect(loadWhyEntry('Bench press', '100 kg', null, { storedNotes: ['a'], notUsed: null, planNotes: ['a', 'different equipment here · rule used'] }).notes).toEqual(['a', 'different equipment here · rule used']);
     expect(historyUsedOf(['app', 'fitnotes', 'app'])).toBe('both');
     expect(historyUsedOf([])).toBeNull();
+  });
+
+  it('review r2 B1r: an invented-history basis never reaches the row or Why?; the row reads code’s line', () => {
+    for (const words of ['8 reps at 102.5 last time', 'last: 102.5/8 @8', 'last 2: 102.5, 102.5', 'last: 102.5 for 8']) {
+      const a = args([pex('barbell-bench-press', { workingSets: 4, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(102.5, 'total', words) })]);
+      const out = planOf(draftOf(a));
+      const first = setsFor(out, BENCH.id)[0]?.planned ?? null;
+      expect(first?.load?.value).toBe(102.5);
+      expect(draftReasonLine({ planned: first, reps: true, main: false, goal: null })).toBe('last 3: 100×7 @8 → 102.5');
+      expect(first?.provenance?.coach?.reason).toBeNull();
+      const why = draftSlotWhy(out)[out.version.plan.slots[0]?.slotKey ?? ''];
+      const entry = loadWhyEntry('Bench press', '102.5 kg', first, { storedNotes: [], notUsed: why?.notUsed ?? null });
+      expect(entry).toMatchObject({ quote: null, notUsed: words });
+    }
+  });
+
+  it('review r2 N1r: a long line keeps its final value; the coach’s note never shows in it', () => {
+    const base = { load: kg(27.5, 'per_hand'), reps: { min: 8, max: 10 }, durationS: null, rpe: 8, rir: null, source: 'coach' as const };
+    const prov = { source: 'coach' as const, setAt: at(0), routineName: null, requestedLoad: null, basis: null, coach: { actionId: id(1), scope: 'build' as const, reason: 'incline 30×8 → 27.5' }, held: true as const, estimate: true as const };
+    const planned = { ...base, provenance: { ...prov, guardNotes: [`last 3: ${'9'.repeat(30)}×8 @8, 30×8 @8 · capped → 27.5 each`] } };
+    const line = draftReasonLine({ planned, reps: true, main: true, goal: 'both' }) ?? '';
+    expect(line.length).toBeLessThanOrEqual(REASON_LINE_MAX);
+    expect(line.startsWith('held · est. · ')).toBe(true);
+    expect(line.endsWith('· capped → 27.5 each')).toBe(true);
+    expect(line).not.toContain('incline');
   });
 
   it('the head note: split · main lift · length · last same split N days ago', () => {

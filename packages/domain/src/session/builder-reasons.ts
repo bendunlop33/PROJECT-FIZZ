@@ -1,17 +1,21 @@
 import type { Load, PlannedSet, TrainingGoal } from '@fizz/schemas';
 import { formatNumber } from '../display';
 import { loadDirection } from '../equipment';
+import { fitKeepingTail } from './builder-loads';
 
 /**
  * Why each exercise in a coach draft is what it is, in one short line
  * (Ben, 14 Oct: "it gave me 4 sets on 90kg for 6–8 with no reason why").
- * Pure. Data, not rule prose (minimal-copy convention): the basis the load
- * came from (`last 3: 87.5×8 @8 → +2.5`, `est. from incline 30 each`,
- * `Rule · last 85×8`), and why those sets and reps only when notable
- * (`main lift · strength`). The full detail stays behind `Why?`.
+ * Pure. Data, not rule prose (minimal-copy convention), always built by
+ * code (review r2 B1r): the real reference sets and the final load
+ * (`last 3: 100×7 @8 → 102.5`, `last 100×7 @8 · capped → 107.5`, `held ·
+ * last 100×7 @8 → 100`, `est. from incline 30×8 → 27.5 each`, `Rule · last
+ * 85×8`), and why those sets and reps only when notable (`main lift ·
+ * strength`). The coach's own words never appear here; they are a `Coach's
+ * note` behind `Why?`.
  */
 
-/** Longest line shown under an exercise; longer is cut at a separator. */
+/** Longest line shown under an exercise; the load part keeps its final `→ N` (N1r), the rest is dropped. */
 export const REASON_LINE_MAX = 64;
 
 const GOAL_WORD: Readonly<Record<TrainingGoal, string>> = { strength: 'strength', muscle: 'muscle', both: 'strength + muscle' };
@@ -68,11 +72,13 @@ export function draftReasonLine(input: ReasonLineInput): string | null {
   if (input.reps && p !== null) {
     const prov = p.provenance;
     if (p.source === 'coach' && prov?.coach?.scope === 'build') {
-      const basis = (prov.coach.reason ?? prov.guardNotes[0] ?? '').trim();
-      const held = prov.held === true;
-      if (held) parts.push('held');
-      if (prov.estimate === true && !/^est\b/i.test(basis)) parts.push('est.');
-      if (basis !== '') parts.push(basis);
+      // Code's line (first guard note), never `coach.reason` (the coach's note, `Why?` only).
+      const basis = (prov.guardNotes[0] ?? '').trim();
+      const load: string[] = [];
+      if (prov.held === true) load.push('held');
+      if (prov.estimate === true && !/^est\b/i.test(basis)) load.push('est.');
+      if (basis !== '') load.push(basis);
+      if (load.length > 0) parts.push(fitKeepingTail(load.join(' · '), REASON_LINE_MAX));
     } else if (p.source === 'built_in_rule') {
       const last = prov?.basis ? topText(prov.basis.sets) : null;
       parts.push(last === null ? 'Rule' : `Rule · last ${last}${prov?.basis?.imported === true ? ' (FitNotes)' : ''}`);
@@ -109,7 +115,7 @@ export interface LoadWhyEntry {
   name: string;
   target: string;
   label: 'est.' | 'Rule' | 'HELD' | null;
-  /** The coach's basis, quoted (data); null when code's or none. */
+  /** The coach's note, quoted under `Coach's note` (data, not fact); null when none passed `checkBasis` or code changed the load. */
   quote: string | null;
   notes: string[];
   /** The coach's basis that wasn't used (failed `checkBasis`, or named another number than the final load): `NOT USED` (WB-L9). */

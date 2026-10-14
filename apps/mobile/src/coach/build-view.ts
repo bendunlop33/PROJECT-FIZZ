@@ -174,8 +174,8 @@ export function chosenName(focus: BuildFocus, minutes: number | null, dayName?: 
  * model's number.
  */
 export function draftWhyView(d: Pick<CoachDraftInfo, 'request' | 'rationale' | 'checks' | 'fitMinutes'> & Partial<Pick<CoachDraftInfo, 'loads' | 'headNote' | 'historyUsed'>>): { heading: string; lines: string[] }[] {
-  // v2 §4.5 `LOADS`: the final target (code), its label, the coach's basis quoted, code's notes.
-  const loads = (d.loads ?? []).flatMap((l) => [`${l.name} ${l.target}${l.label === null ? '' : ` · ${l.label}`}`, ...(l.quote === null ? [] : [`  “${l.quote}”`]), ...l.notes.map((n) => `  ⓘ ${n}`)]);
+  // v2 §4.5 `LOADS`: the final target (code), its label, code's reason line and notes, then the coach's note quoted (data, review r2 B1r).
+  const loads = (d.loads ?? []).flatMap((l) => [`${l.name} ${l.target}${l.label === null ? '' : ` · ${l.label}`}`, ...l.notes.map((n) => `  ⓘ ${n}`), ...(l.quote === null ? [] : [`  Coach’s note “${l.quote}”`])]);
   // WB-L9: a coach basis code didn't use (failed the check, or named another number than the target), quoted.
   const notUsed = (d.loads ?? []).flatMap((l) => (l.notUsed === null ? [] : [`${l.name}: “${l.notUsed}”`]));
   // Review S4: only the history a load actually came from (absent before the page is planned: not claimed).

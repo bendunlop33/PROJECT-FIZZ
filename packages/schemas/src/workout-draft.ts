@@ -134,14 +134,19 @@ export type ProposeWorkoutArgs = z.infer<typeof ProposeWorkoutArgsSchema>;
  * A set template's checked load (v2, BD6): what `checkProposedLoad` decided.
  * `coach`: from Ben's own history; `coach_est`: an estimate (`est.`);
  * `rule`: planned by the built-in rule at plan time (`Rule`); `none`: no
- * load possible (`— · start light`). `basis` is the coach's text when it
- * passed `checkBasis` (data, quoted), else code's.
+ * load possible (`— · start light`). `basis` is code's reason line, built
+ * from real reference sets and the final load (review r2 B1r); in drafts
+ * written before that, `basisFromCoach: true` marks it as the coach's text.
+ * `coachNote` is the coach's own basis when it passed `checkBasis` (data,
+ * shown only behind `Why?` as `Coach's note`).
  */
 export const DraftLoadSchema = z.object({
   load: LoadSchema.nullable(),
   source: z.enum(['coach', 'coach_est', 'rule', 'none']),
   basis: z.string().max(80).nullable(),
+  /** Drafts before r3 only (`basis` is the coach's text); written `false` now. */
   basisFromCoach: z.boolean(),
+  coachNote: z.string().max(80).nullable().optional(),
   held: z.boolean(),
   notes: z.array(z.string().min(1).max(200)).max(8),
   /** A coach basis that failed the check (`Why?` → `NOT USED`). */

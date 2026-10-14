@@ -476,7 +476,7 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   const loadCtx = lc === undefined ? null : { pain: lc.painFor(ex), askedHeavier: lc.askedHeavier };
   const checkLoad = (proposal: ProposedExercise['load'], r: RepRange, targetRpe: number): LoadCheck | null => {
     if (refs === null || loadCtx === null) return null;
-    if (swapped) return { load: null, source: 'rule', held: false, notes: ['swapped here · rule used'], basis: null, basisFromCoach: false, notUsed: null };
+    if (swapped) return { load: null, source: 'rule', held: false, notes: ['swapped here · rule used'], basis: null, coachNote: null, notUsed: null };
     return checkProposedLoad(proposal === undefined || proposal === null ? null : { value: proposal.value, unit: proposal.unit, convention: proposal.convention, basis: proposal.basis }, { repsMin: r.min, repsMax: r.max, targetRpe }, refs, loadCtx);
   };
   const loadNotes = (c: LoadCheck | null, label: string): void => {
@@ -524,7 +524,8 @@ function storedLoad(c: LoadCheck): DraftLoad {
     load: c.load,
     source: c.source,
     basis: c.basis === null ? null : c.basis.slice(0, 80),
-    basisFromCoach: c.basisFromCoach,
+    basisFromCoach: false,
+    coachNote: c.coachNote === null ? null : c.coachNote.slice(0, 80),
     held: c.held,
     notes: c.notes.slice(0, 8).map((n) => n.slice(0, 200)),
     notUsed: c.notUsed === null ? null : c.notUsed.slice(0, 80),
@@ -836,10 +837,11 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
       routineName: input.draft.name,
       requestedLoad: c.load,
       basis: null,
-      coach: { actionId: version.actionId, scope: 'build', reason: c.basisFromCoach ? c.basis : null },
+      // Review r2 B1r: `reason` is the coach's note (data, `Why?` only); the reason line is code's, first in guardNotes.
+      coach: { actionId: version.actionId, scope: 'build', reason: c.coachNote },
       ...(c.source === 'coach_est' ? { estimate: true as const } : {}),
       ...(c.held ? { held: true as const } : {}),
-      guardNotes: [...(c.basisFromCoach || c.basis === null ? [] : [c.basis]), ...c.notes, ...(set.planned.provenance?.guardNotes ?? [])].slice(0, 10).map((n) => n.slice(0, 300)),
+      guardNotes: [...(c.basis === null ? [] : [c.basis]), ...c.notes, ...(set.planned.provenance?.guardNotes ?? [])].slice(0, 10).map((n) => n.slice(0, 300)),
     };
     return { ...set, planned: { ...set.planned, source: 'coach' as const, provenance } };
   });

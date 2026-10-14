@@ -137,7 +137,7 @@ describe('`Why this workout` (§4.5)', () => {
     ]);
   });
 
-  it('v2 `LOADS`: each target with its label, the coach’s basis quoted, code’s notes; `USED` reads the head note', () => {
+  it('v2 `LOADS`: each target with its label, code’s line and notes, then the coach’s note quoted (r2 B1r); `USED` reads the head note', () => {
     const why = draftWhyView({
       request: 'build me a push session',
       rationale: null,
@@ -145,7 +145,7 @@ describe('`Why this workout` (§4.5)', () => {
       fitMinutes: 45,
       headNote: 'Push · Bench press · 45 min · last Push 6 days ago',
       loads: [
-        { name: 'Bench press', target: '102.5 kg', label: null, quote: 'last 3: 100×7 @8 → 102.5', notes: [], notUsed: null },
+        { name: 'Bench press', target: '102.5 kg', label: null, quote: '100 for 7 @8 → 102.5', notes: ['last 3: 100×7 @8 → 102.5'], notUsed: null },
         { name: 'Cable fly', target: '12.5 kg', label: 'est.', quote: null, notes: ['est. · first time', '13 → 12.5 (this stack)'], notUsed: null },
         { name: 'Triceps pushdown', target: '27.5 kg', label: 'Rule', quote: null, notes: ['coach load 40 kg too far from last 25 × 12'], notUsed: null },
       ],
@@ -155,7 +155,7 @@ describe('`Why this workout` (§4.5)', () => {
       { heading: 'YOU ASKED', lines: ['“build me a push session”'] },
       {
         heading: 'LOADS',
-        lines: ['Bench press 102.5 kg', '  “last 3: 100×7 @8 → 102.5”', 'Cable fly 12.5 kg · est.', '  ⓘ est. · first time', '  ⓘ 13 → 12.5 (this stack)', 'Triceps pushdown 27.5 kg · Rule', '  ⓘ coach load 40 kg too far from last 25 × 12'],
+        lines: ['Bench press 102.5 kg', '  ⓘ last 3: 100×7 @8 → 102.5', '  Coach’s note “100 for 7 @8 → 102.5”', 'Cable fly 12.5 kg · est.', '  ⓘ est. · first time', '  ⓘ 13 → 12.5 (this stack)', 'Triceps pushdown 27.5 kg · Rule', '  ⓘ coach load 40 kg too far from last 25 × 12'],
       },
       { heading: 'USED', lines: ['Push · Bench press · 45 min · last Push 6 days ago', 'Logged and FitNotes history'] },
     ]);

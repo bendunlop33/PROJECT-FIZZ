@@ -360,7 +360,7 @@ export const QUESTION_NOT_OFFERED_LINE = 'No question now. Build with what you h
 
 /** About the `propose_workout` call itself (a turn that is building). */
 const CALL_RULES = [
-  'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters citing only those numbers, the load itself, or the slot\'s reps and RPE (e.g. "last 3: 100×7 @8 → 102.5"). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Never give minutes: the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
+  'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters citing only those sets and numbers (sets exactly as listed), the load itself only after →, or the slot\'s reps and RPE (e.g. "last 3: 100×7 @8 → 102.5"). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Never give minutes: the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
   'Use build.known (goal, usual length, main lift, recent split days) and his training details; never ask for them. Put the main lift first when there is one.',
   'Its `message` (at most 240 characters) says why this selection and order, citing only facts given. No praise, scores, recovery claims or diagnoses.',
 ];

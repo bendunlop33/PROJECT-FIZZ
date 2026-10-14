@@ -382,6 +382,19 @@ describe('buildActiveSetView: target.hasExplanation', () => {
     expect(targetLineText(null, true)).toBeNull();
     expect(targetLineText('Target 100 kg', false)).toBe('Target 100 kg');
   });
+
+  it('review r2 B1r: a coach-built load’s words are a `Coach’s note` (quoted); code’s reason line is under Equipment', () => {
+    const basis = finished(0, [values(kg(100), 8, { rpe: 8 }), values(kg(100), 8, { rpe: 8 })]);
+    const plain0 = today(2, hist(basis));
+    const built: SessionAggregate = {
+      ...plain0,
+      sets: plain0.sets.map((x) => ({ ...x, planned: { ...x.planned, source: 'coach' as const, provenance: { source: 'coach' as const, setAt: at(0), routineName: null, requestedLoad: null, basis: null, coach: { actionId: 'a1', scope: 'build' as const, reason: '100 for 8 @8 → 102.5' }, guardNotes: ['last 100×8 @8 → 102.5'] } } })),
+    };
+    const rows = rowsOf(explainTarget({ aggregate: built, setId: built.sets[0]?.id ?? '', nowMs: ms(2 * DAY + 10), basisNow: null, gymNames: GYMS, painFlags: [], history: [] }));
+    expect(rows.find((r) => r[0] === 'Coach’s note')).toEqual(['Coach’s note', '“100 for 8 @8 → 102.5”']);
+    expect(rows.find((r) => r[0] === 'Equipment')).toEqual(['Equipment', 'last 100×8 @8 → 102.5']);
+    expect(rows.some((r) => r[0] === 'Reason')).toBe(false);
+  });
 });
 
 describe('explainTarget: sets left out (Not used, active-workout §2.13)', () => {
