@@ -7,7 +7,7 @@
 import { formatNumber, TARGET_RPE_CHOICES, type TargetRpe } from '@fizz/domain';
 import type { TargetRpeScope } from '@fizz/schemas';
 
-export type ExerciseMenuAction = 'how_to' | 'undo_coach' | 'undo_swap' | 'target_rpe' | 'add_set' | 'swap' | 'notes' | 'add_exercise' | 'delete_set' | 'skip_exercise' | 'remove_exercise';
+export type ExerciseMenuAction = 'how_to' | 'edit_set' | 'undo_coach' | 'undo_swap' | 'target_rpe' | 'add_set' | 'swap' | 'notes' | 'add_exercise' | 'delete_set' | 'skip_exercise' | 'remove_exercise';
 
 interface MenuItem {
   action: ExerciseMenuAction | 'cancel';
@@ -22,6 +22,8 @@ const UNDO_COACH: MenuItem = { action: 'undo_coach', label: 'Undo coach change',
 const UNDO_RULE: MenuItem = { action: 'undo_coach', label: 'Undo change', destructive: false };
 /** While the exercise is today's mid-workout swap and its swap can be undone (EL4). */
 const UNDO_SWAP: MenuItem = { action: 'undo_swap', label: 'Undo swap', destructive: false };
+/** The set Log logs next, opened in Edit set (type, insert after, note…; review B1: "edit anything on the sets"). */
+const EDIT_SET: MenuItem = { action: 'edit_set', label: 'Edit set', destructive: false };
 /** Ben's own target RPE (CHANGELOG 2026-10-11): only on a set that carries one (not a warm-up or drop set). */
 const TARGET_RPE: MenuItem = { action: 'target_rpe', label: 'Target RPE', destructive: false };
 const ADD_SET: MenuItem = { action: 'add_set', label: 'Add set', destructive: false };
@@ -56,11 +58,13 @@ export interface ExerciseMenuOptions {
   canRemove?: boolean;
   /** The focused set carries a target RPE (not a warm-up or drop set): `Target RPE`. */
   hasTargetRpe?: boolean;
+  /** The exercise has a set not done yet (the current one in Focus): `Edit set` opens it. */
+  canEditSet?: boolean;
 }
 
 export function exerciseMenu(hasHowTo: boolean, hasCoachChange: boolean | 'rule' = false, o: ExerciseMenuOptions = {}): ExerciseMenu {
   const undo = hasCoachChange === 'rule' ? [UNDO_RULE] : hasCoachChange ? [UNDO_COACH] : [];
-  const items = [...(hasHowTo ? [HOW_TO] : []), ...undo, ...(o.canUndoSwap ? [UNDO_SWAP] : []), ...(o.hasTargetRpe ? [TARGET_RPE] : []), ADD_SET, ...(o.canSwap ? [SWAP] : []), ...ITEMS, ...(o.canRemove ? [REMOVE] : []), CANCEL];
+  const items = [...(hasHowTo ? [HOW_TO] : []), ...undo, ...(o.canUndoSwap ? [UNDO_SWAP] : []), ...(o.canEditSet ? [EDIT_SET] : []), ...(o.hasTargetRpe ? [TARGET_RPE] : []), ADD_SET, ...(o.canSwap ? [SWAP] : []), ...ITEMS, ...(o.canRemove ? [REMOVE] : []), CANCEL];
   return {
     options: items.map((i) => i.label),
     destructiveButtonIndex: items.flatMap((item, i) => (item.destructive ? [i] : [])),
