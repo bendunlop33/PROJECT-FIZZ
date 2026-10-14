@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { activityLineLayout, countBarWidth, guessLabelWidth, measuredLabelBox, thinLabelsByWidth } from '../src/progress/chart-layout';
-import { nearestPointIndex } from '../src/progress/trend-layout';
+import { nearestPointIndex, trendLayout } from '../src/progress/trend-layout';
 
 const DIMS = { height: 132, axisWidth: 24, inset: 8, top: 10 };
 
@@ -81,5 +81,21 @@ describe('activity line geometry (Ben, 13 Oct 2026)', () => {
     expect(fn).toContain('return <ActivityLine chart={chart} />;');
     expect(src).not.toContain('function WeekBars');
     expect(src).not.toContain('function DayList');
+  });
+
+  it('Exercises tab: the trailing average shares the line’s scale and widens it; no gap breaks; two points still join', () => {
+    const base = { from: '2026-04-15', to: '2026-10-14', width: 330, height: 260, bars: false, format: 'number' as const, axisWidth: 44, inset: 10 };
+    const points = [
+      { date: '2026-05-01', value: 100, breakBefore: false },
+      { date: '2026-09-01', value: 110, breakBefore: false },
+    ];
+    const l = trendLayout({ ...base, points, overlay: [90, 105] });
+    expect(l.segments).toEqual([[0, 1]]);
+    expect(l.overlayYs).toHaveLength(2);
+    // 90 sits below 100 on screen (larger y), inside the plot.
+    expect(l.overlayYs?.[0] ?? 0).toBeGreaterThan(l.ys[0] ?? 0);
+    expect(l.overlayYs?.[0] ?? 0).toBeLessThanOrEqual(l.plot.y + l.plot.height);
+    expect(l.yTicks.length).toBeGreaterThanOrEqual(3);
+    expect(trendLayout({ ...base, points }).overlayYs).toEqual([]);
   });
 });
