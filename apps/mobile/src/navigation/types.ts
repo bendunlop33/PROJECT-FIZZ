@@ -1,5 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { EquipmentKind, SetExclusion } from '@fizz/schemas';
+import type { EquipmentKind, RoutineExercise, SetExclusion } from '@fizz/schemas';
 
 import type { CoachEntry } from '../coach/coach-service';
 
@@ -10,6 +10,10 @@ export type ProfileStackParams = {
   Developer: undefined;
   CapabilityProbe: undefined;
   PainFlags: undefined;
+  /** Profile › Training details (Ben 13 Oct: D5, D8). */
+  TrainingDetails: undefined;
+  /** Profile › Split and main lifts (D7, F19). */
+  Split: undefined;
   /** Profile → Coach → Memory (coach-memory §2.1). */
   Memory: undefined;
   /** Profile → Coach → Playbook: chat rules to review (coaching-playbook §2.1). */
@@ -46,6 +50,23 @@ export type ProfileStackParams = {
   /** One imported workout's sets, each with its source file, row and original values (check 24). */
   ImportedWorkout: { jobId: string; date: string };
   PastImports: undefined;
+  /** Import from any app (data-import-export §9.2.1): what reads offline, what needs the coach, `Choose file`. */
+  ImportHistory: undefined;
+  /** New file layout: consent, Needs the coach, Reading the layout and its results (§9.2.2, §9.2.4). */
+  ImportNewLayout: { layoutId: string };
+  /** What's sent (§9.2.3): the literal request text and the column switches. */
+  ImportSent: { layoutId: string };
+  /** Check the layout, or Changed columns (§9.2.5, §9.2.7). */
+  ImportLayoutCheck: { layoutId: string; /** The role sheet's `"Reps" → Not imported`, shown once as a toast with [Undo]. */ moved?: string };
+  /** The column role sheet (§9.2.5). */
+  ImportLayoutRole: { layoutId: string; column: number };
+  /** One layout question (§9.2.5): what the file is, unit, date order, a notation, a marker, a new column. */
+  ImportLayoutQuestion: { layoutId: string; kind: 'record_kind' | 'unit' | 'date_order' | 'notation' | 'marker' | 'new_column'; column?: number; token?: string };
+  /** Values to check on the preview (§9.2.6, AI13). */
+  ImportValueChecks: { draftId: string };
+  /** Saved import layouts (§9.2.9). */
+  SavedLayouts: undefined;
+  SavedLayout: { id: string };
 };
 
 /** The Progress tab's stack (progress.md §2.1, slice A). */
@@ -53,11 +74,28 @@ export type ProgressStackParams = {
   ProgressHome: undefined;
   /** `group`: the row to open expanded (a body-part group such as `Chest`, or `push` / `pull` / `legs` / `core` / `other`). */
   ProgressMuscles: { group?: string };
-  /** Exercises list (slice B, §2.6). */
-  ProgressExercises: undefined;
   /** Exercise detail inside the Progress tab (slice B, §2.7). */
   ProgressExercise: ExerciseDetailParams;
+  /** `Exercise info ›` on Progress exercise detail (exercise-library §9.7): the Library's Exercise detail, in this stack. */
+  ProgressExerciseInfo: ExerciseInfoParams;
 };
+
+/** The Library tab's stack (exercise-library §9, EL10). */
+export type LibraryStackParams = {
+  /** `segment`: open on it (the picker's `Edit workouts`); `toast`: back from the editor (`Saved Push A` [Undo]). */
+  LibraryHome: { segment?: LibrarySegment; toast?: LibraryToastParam } | undefined;
+  LibraryExercise: ExerciseInfoParams;
+};
+
+export type LibrarySegment = 'exercises' | 'workouts';
+
+/** Exercise detail (exercise-library §9.4). `readOnly`: opened from the editor's `⋯`; `Add to a workout` is hidden. */
+export interface ExerciseInfoParams {
+  exerciseId: string;
+  /** Shown in the header while loading. */
+  name?: string;
+  readOnly?: boolean;
+}
 
 /**
  * Exercise detail (progress.md §2.7). `sessionId`: open on the series with
@@ -77,7 +115,7 @@ export interface ExerciseDetailParams {
 }
 
 export type ImportQuestionKind = 'per_hand' | 'total' | 'bodyweight' | 'unit' | 'effort' | 'dates' | 'gym';
-export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise';
+export type ImportSkipKey = 'cardio' | 'unsupported' | 'unreadable' | 'date_exists' | 'duplicate' | 'exercise' | 'not_a_set' | 'value_to_check';
 
 export type TabParams = {
   /**
@@ -87,6 +125,7 @@ export type TabParams = {
   /** `startEmpty`: `Empty workout` on the Workouts list, once per nonce (Today's own start, with its check-in gate). */
   /** `undoDraft`: a coach draft discarded from its overview (workout-builder §6.2): the toast's Undo restores it. */
   Today: { toast?: string; undoRoutine?: { id: string; version: number }; undoDraft?: { id: string; version: number }; startEmpty?: string } | undefined;
+  Library: NavigatorScreenParams<LibraryStackParams> | undefined;
   Progress: NavigatorScreenParams<ProgressStackParams> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParams> | undefined;
 };
@@ -120,15 +159,24 @@ export type RootStackParams = {
    */
   /** Up next, a routine, or a session type picked from its history (session-picker §7). */
   WorkoutOverview: { target: { kind: 'next' } | { kind: 'routine'; routineId: string } | { kind: 'session'; sourceSessionId: string } | { kind: 'coach_draft'; draftId: string }; toast?: LibraryToastParam };
-  /** The Workouts library (routines.md §A2.1). `toast`: back from the editor (`Saved Push A` [Undo]). */
-  Workouts: { toast?: LibraryToastParam } | undefined;
   /**
    * The workout editor (§A2.3): a stored workout, or `New workout` (null).
    * `from`: where `Save` returns with its toast. `selectName`: a fresh copy
    * from `Duplicate` (the name is selected). `copyToast`: that copy's
    * `Saved Push A copy` [Undo] toast, handed back on `Cancel` (review S1).
    */
-  WorkoutEditor: { routineId: string | null; from: 'Workouts' | 'WorkoutOverview'; selectName?: boolean; copyToast?: LibraryToastParam };
+  /**
+   * `from: 'Library'`: Library › Workouts; `'ExerciseInfo'`: `Add to a
+   * workout` → `New workout` on Exercise detail (Save goes back there).
+   * `draft`: a new workout's starting exercises (that exercise with the
+   * sheet's shape); nothing is saved until `Save`.
+   * `saveAs`: the Save sheet's `Edit ›` (routines.md §A2.5, WL-A18): `draft`
+   * is the unsaved copy and `Save` creates the workout with the sheet's opId
+   * (`save-edit-handoff.ts` holds the request and takes the result back).
+   */
+  WorkoutEditor: { routineId: string | null; from: EditorFrom; selectName?: boolean; copyToast?: LibraryToastParam; draft?: { name: string; exercises: RoutineExercise[] }; saveAs?: string };
+  /** Exercise detail over the workout editor (`⋯` → `Exercise info`), read-only. */
+  ExerciseInfo: ExerciseInfoParams;
   ExercisePicker: { sessionId: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };
@@ -159,6 +207,12 @@ export type RootStackParams = {
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
 };
+
+/**
+ * Where the workout editor returns to. `SaveSheet`: the Save sheet's `Edit ›`
+ * (routines.md §A2.5): back to the screen under the sheet, which shows the result.
+ */
+export type EditorFrom = 'WorkoutOverview' | 'Library' | 'ExerciseInfo' | 'SaveSheet';
 
 /** A library toast handed back to the screen below (`key`: shown once). */
 export interface LibraryToastParam {

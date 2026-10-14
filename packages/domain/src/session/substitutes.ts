@@ -1,6 +1,7 @@
 import type { EquipmentInstance, Exercise, Load, PainFlag, RepRange, SetType, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 import { dayMonthText, formatDuration, formatNumber, NBSP, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
+import { matchExercise } from '../exercise-search';
 import { needsNoEquipment } from '../exercise-equipment';
 import { nextTargetsFor, plannedSetsFromTargets } from '../next-target';
 import { mayHurtAccessibility, mayHurtConfirm, painFlagCovering } from '../pain-flags';
@@ -63,15 +64,18 @@ export function doableHere(exercise: Exercise, gym: SnapGym): boolean {
 }
 
 /**
- * The newest comparable appearance of the substitute (not imported, with
- * working sets): on the same kind of item the gym would map it to, with no
- * item for a bodyweight exercise, or any item when this gym has none (the
- * row then reads `NO LOAD`).
+ * The newest comparable appearance of the substitute (with working sets): on
+ * the same kind of item the gym would map it to, with no item for a
+ * bodyweight exercise, or any item when this gym has none (the row then
+ * reads `NO LOAD`). A FitNotes workout has no item recorded, so it matches
+ * whatever this gym maps the exercise to, and its targets are made on that
+ * item (B7; rule 4).
  */
 export function comparableHistory(exercise: Exercise, history: readonly HistorySession[], ctx: Pick<SubstituteContext, 'gym' | 'lastUsedHere' | 'knownEquipment'>): { session: HistorySession; equipment: EquipmentInstance | null } | null {
   const { equipment: here, mapping } = equipmentHere(exercise, ctx);
-  const newest = [...history].filter((h) => !h.imported && h.sets.some((s) => s.setType !== 'warmup')).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+  const newest = [...history].filter((h) => h.sets.some((s) => s.setType !== 'warmup')).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
   for (const h of newest) {
+    if (h.imported) return { session: h, equipment: here };
     const eq = h.equipmentId === null ? null : (ctx.gym.equipment.find((e) => e.id === h.equipmentId) ?? ctx.knownEquipment.get(h.equipmentId) ?? null);
     if (h.equipmentId !== null && eq === null) continue;
     if (mapping === 'none_needed' ? eq === null || eq.kind === 'bodyweight_station' : mapping === 'not_here' ? true : eq !== null && here !== null && sameKind(eq, here)) {
@@ -226,7 +230,7 @@ function lastTopText(h: HistorySession): { text: string; spoken: string } | null
   for (const s of working) if (top !== undefined && s.load !== null && s.load.convention !== 'bodyweight' && (top.load === null || top.load.convention === 'bodyweight' || sign(s.load) > sign(top.load))) top = s;
   if (top === undefined) return null;
   const reps = String(top.reps ?? 0);
-  const at = dayMonthText(h.performedAtUtc, h.tz ?? 'UTC');
+  const at = `${h.imported ? 'FitNotes, ' : ''}${dayMonthText(h.performedAtUtc, h.tz ?? 'UTC')}`;
   if (top.load === null || top.load.convention === 'bodyweight') return { text: `last BW${NBSP}×${NBSP}${reps} · ${at}`, spoken: `last bodyweight for ${reps}` };
   const n = formatNumber(top.load.value);
   const each = top.load.convention === 'per_hand' ? ' each' : top.load.convention === 'assistance' ? ' of assistance' : '';
@@ -314,7 +318,7 @@ export function rankSubstitutions(input: RankInput): SubstituteRow[] {
   }
   const lastDone = (id: string): number => {
     const hs = input.histories.get(id) ?? [];
-    return hs.reduce((m, h) => (h.imported ? m : Math.max(m, toMs(h.performedAtUtc))), -Infinity);
+    return hs.reduce((m, h) => Math.max(m, toMs(h.performedAtUtc)), -Infinity);
   };
   const slotId = input.slotExercise.id;
   const ordered: Exercise[] = [];
@@ -367,20 +371,31 @@ export function rankAddCandidates(input: {
   nowMs: number;
   tz: string;
   limit?: number;
+  /** Other names to search by (catalogue aliases, Ben's own; exercise-library EL1). */
+  aliasesOf?: (e: Exercise) => readonly string[];
 }): Exercise[] {
   const q = input.query.trim().toLowerCase();
   const seen = new Set<string>();
-  const lastDone = (id: string): number => (input.histories.get(id) ?? []).reduce((m, h) => (h.imported ? m : Math.max(m, toMs(h.performedAtUtc))), -Infinity);
+  const lastDone = (id: string): number => (input.histories.get(id) ?? []).reduce((m, h) => Math.max(m, toMs(h.performedAtUtc)), -Infinity);
+  // The shared search (EL1: aliases, one typo per long word), plus any part of the name as before.
+  const rankOf = (e: Exercise): number | null => {
+    if (q === '') return 0;
+    const m = matchExercise(q, e.name, input.aliasesOf?.(e) ?? []);
+    return m !== null ? m.rank : e.name.toLowerCase().includes(q) ? 7 : null;
+  };
+  const ranks = new Map<string, number>();
   const pool = input.exercises.filter((e) => {
     if (seen.has(e.id) || input.excludeExerciseIds.has(e.id)) return false;
     seen.add(e.id);
-    if (q !== '' && !e.name.toLowerCase().includes(q)) return false;
+    const rank = rankOf(e);
+    if (rank === null) return false;
+    ranks.set(e.id, rank);
     return input.showAll || doableHere(e, input.gym);
   });
   const flagged = (e: Exercise) => painFlagCovering([...input.painFlags], e.id, input.nowMs, input.tz) !== null;
   return pool
-    .map((e) => ({ e, last: lastDone(e.id), hurt: flagged(e) }))
-    .sort((a, b) => Number(a.hurt) - Number(b.hurt) || b.last - a.last || a.e.name.localeCompare(b.e.name))
+    .map((e) => ({ e, last: lastDone(e.id), hurt: flagged(e), rank: ranks.get(e.id) ?? 0 }))
+    .sort((a, b) => Number(a.hurt) - Number(b.hurt) || a.rank - b.rank || b.last - a.last || a.e.name.localeCompare(b.e.name))
     .slice(0, input.limit ?? MAX_ADD_CANDIDATES)
     .map((x) => x.e);
 }

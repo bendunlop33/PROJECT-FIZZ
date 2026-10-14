@@ -22,7 +22,7 @@ import { blockSets, partRootOf } from './gym-switch';
 import { nextPendingSet } from './order';
 import { startWorkoutFromSession, type RepeatInput, type RepeatOutput } from './repeat';
 import { defaultMain, mainFlags, planRoutineStart, type RoutineStartInput, type RoutineStartOutput } from './routines';
-import { addedSlotShape, type ShapeBefore, type SlotShape } from './today-shape';
+import { addedSlotShape, resizeWorkingSets, type ShapeBefore, type SlotShape } from './today-shape';
 import { swapEquipmentId, type SwapPlan } from './swap-plan';
 
 /**
@@ -86,7 +86,7 @@ export type TodayEditBody =
   | { kind: 'skip'; slotKey: string }
   | { kind: 'order'; slotKeys: readonly string[] }
   /** §11: an exercise added at the end; `slotKey` is the new row's own key. */
-  | { kind: 'add'; slotKey: string; exerciseId: string }
+  | { kind: 'add'; slotKey: string; exerciseId: string; workingSets?: number }
   | { kind: 'sets'; slotKey: string; workingSets: number }
   | { kind: 'reps'; slotKey: string; reps: RepRange | null; durationS: number | null }
   /** `exerciseId`: set by `applyDraftCommand` to the slot's exercise when the load is typed (review B1); a caller's value is ignored. */
@@ -220,10 +220,11 @@ function inRange(e: TodayEditBody): boolean {
       return Number.isFinite(e.load.value) && e.load.value >= 0 && e.load.value <= 2000;
     case 'fit':
       return e.minutes === null || validFitMinutes(e.minutes);
+    case 'add':
+      return e.workingSets === undefined || (Number.isInteger(e.workingSets) && e.workingSets >= L.minSets && e.workingSets <= L.maxSets);
     case 'swap':
     case 'skip':
     case 'order':
-    case 'add':
       return true;
   }
 }
@@ -385,7 +386,7 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         if (addedSlotsOf(live()).length >= TODAY_EDIT_LIMITS.maxAdded) return { kind: 'invalid', reason: 'too_many' };
         // Never an exercise already in today's plan (targets are planned per exercise, as for a swap).
         if (exerciseInOtherSlot(allSlots(), live(), e.slotKey, e.exerciseId)) return { kind: 'invalid', reason: 'in_plan' };
-        append({ kind: 'add', slotKey: e.slotKey, exerciseId: e.exerciseId }, null);
+        append({ kind: 'add', slotKey: e.slotKey, exerciseId: e.exerciseId, ...(e.workingSets === undefined ? {} : { workingSets: e.workingSets }) }, null);
         break;
       }
       if (!allSlots().some((x) => x.slotKey === e.slotKey)) return { kind: 'invalid', reason: 'slot_gone' };
@@ -590,7 +591,7 @@ function bodyOf(e: TodayEdit): TodayEditBody {
     case 'order':
       return { kind: 'order', slotKeys: [...e.slotKeys] };
     case 'add':
-      return { kind: 'add', slotKey: e.slotKey, exerciseId: e.exerciseId };
+      return { kind: 'add', slotKey: e.slotKey, exerciseId: e.exerciseId, ...(e.workingSets === undefined ? {} : { workingSets: e.workingSets }) };
     case 'sets':
       return { kind: 'sets', slotKey: e.slotKey, workingSets: e.workingSets };
     case 'reps':
@@ -622,7 +623,7 @@ function withBase(body: TodayEditBody, base: EditBase, by: Authorship = {}): Tod
     case 'skip':
       return { ...base, ...who, kind: 'skip', slotKey: body.slotKey };
     case 'add':
-      return { ...base, ...who, kind: 'add', slotKey: body.slotKey, exerciseId: body.exerciseId };
+      return { ...base, ...who, kind: 'add', slotKey: body.slotKey, exerciseId: body.exerciseId, ...(body.workingSets === undefined ? {} : { workingSets: body.workingSets }) };
     case 'sets':
       return { ...base, ...who, kind: 'sets', slotKey: body.slotKey, workingSets: body.workingSets };
     case 'reps':
@@ -689,7 +690,7 @@ export interface ResolvedEdits {
   order: string[] | null;
   orderEditId: string | null;
   /** §11: exercises added today, by their new slot key, in the order they were added. */
-  added: Map<string, { editId: string; exerciseId: string }>;
+  added: Map<string, { editId: string; exerciseId: string; workingSets?: number }>;
   /** §11: each slot's working-set count, reps or work time, and Ben's load today. */
   sets: Map<string, { editId: string; workingSets: number }>;
   reps: Map<string, { editId: string; reps: RepRange | null; durationS: number | null }>;
@@ -765,7 +766,7 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
   for (const e of open) {
     if (e.kind !== 'add') continue;
     const result: EditResult = bySlot.has(e.slotKey) || out.added.has(e.slotKey) || !knownExercise(e.exerciseId) || inPlanNow(e.exerciseId) || out.added.size >= TODAY_EDIT_LIMITS.maxAdded ? 'stale' : 'applied';
-    if (result === 'applied') out.added.set(e.slotKey, { editId: e.editId, exerciseId: e.exerciseId });
+    if (result === 'applied') out.added.set(e.slotKey, { editId: e.editId, exerciseId: e.exerciseId, ...(e.workingSets === undefined ? {} : { workingSets: e.workingSets }) });
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
   const all = [...slots, ...[...out.added].map(([slotKey, a]) => ({ slotKey, exerciseId: a.exerciseId, supersetGroup: null }))];
@@ -1020,12 +1021,14 @@ function dropUnplanned(resolved: ResolvedEdits, swaps: ReadonlyMap<string, SwapP
 }
 
 /** An added exercise as a routine slot (§11, TE16): its own targets' shape, else the default shape; never a load from another exercise. */
-function addedRoutineExercise(slotKey: string, sp: SwapPlan, order: number): RoutineExercise {
+function addedRoutineExercise(slotKey: string, sp: SwapPlan, order: number, workingSets: number | undefined): RoutineExercise {
   const plan = sp.plan ?? [];
-  const shapes =
+  const shapes = resizeWorkingSets(
     plan.length > 0
       ? plan.filter((p) => p.setType !== 'warmup').map((p) => ({ setType: p.setType, reps: p.planned.reps, durationS: p.planned.durationS }))
-      : addedSlotShape(sp.exercise, sp.pin?.kind ?? null).templates;
+      : addedSlotShape(sp.exercise, sp.pin?.kind ?? null).templates,
+    workingSets,
+  );
   return {
     id: slotKey,
     exerciseId: sp.exercise.id,
@@ -1052,6 +1055,8 @@ export function applyTodayEditsToRoutine(
   const byKey = new Map(input.routine.exercises.map((r) => [r.id, r]));
   const order = resolved.order ?? [...slots.map((s) => s.slotKey), ...resolved.added.keys()];
   const targets = new Map(input.targets ?? []);
+  // A slot's own targets are for the exercise it holds: a swap drops them (F21).
+  const slotTargets = new Map(input.slotTargets ?? []);
   const exercises = new Map(input.exercises);
   const known = new Map(input.knownEquipment);
   const swapped: AppliedEdits['swapped'] = [];
@@ -1063,7 +1068,7 @@ export function applyTodayEditsToRoutine(
       if (add.pin !== null) known.set(add.pin.id, add.pin);
       if (add.plan !== null && add.plan.length > 0) targets.set(add.exercise.id, add.plan);
       else targets.delete(add.exercise.id);
-      return [addedRoutineExercise(key, add, i)];
+      return [addedRoutineExercise(key, add, i, resolved.added.get(key)?.workingSets)];
     }
     if (rex === undefined) return [];
     const supersetGroup = rex.supersetGroup !== null && keep.has(rex.supersetGroup) ? rex.supersetGroup : null;
@@ -1071,6 +1076,7 @@ export function applyTodayEditsToRoutine(
     const sp = sw === undefined ? undefined : swaps.get(key);
     if (sp === undefined) return [{ ...rex, order: i, supersetGroup }];
     swapped.push({ slotKey: key, fromExerciseId: rex.exerciseId, toExerciseId: sp.exercise.id });
+    slotTargets.delete(key);
     exercises.set(sp.exercise.id, sp.exercise);
     if (sp.pin !== null) known.set(sp.pin.id, sp.pin);
     // Warm-ups were for the original's loads: a swapped slot has none. The working sets' loads are never carried over.
@@ -1080,7 +1086,7 @@ export function applyTodayEditsToRoutine(
     return [{ ...rex, exerciseId: sp.exercise.id, equipmentId: swapEquipmentId(sp), order: i, supersetGroup, progressionRuleId: null, setTemplates: working.length > 0 ? working : rex.setTemplates.map((t) => ({ ...t, targetLoad: null })) }];
   });
   return {
-    input: { ...input, routine: { ...input.routine, exercises: rewritten }, exercises, knownEquipment: known, targets, shape: shapesOf(resolved) },
+    input: { ...input, routine: { ...input.routine, exercises: rewritten }, exercises, knownEquipment: known, targets, ...(input.slotTargets === undefined ? {} : { slotTargets }), shape: shapesOf(resolved) },
     applied: { resolved, swapped },
   };
 }
@@ -1124,7 +1130,8 @@ export function applyTodayEditsToNext(
   }
   const added = [...resolved.added.keys()].flatMap((key) => {
     const plan = adds.get(key);
-    return plan === undefined ? [] : [{ slotKey: key, rank: rank.get(key) ?? order.length, plan }];
+    const workingSets = resolved.added.get(key)?.workingSets;
+    return plan === undefined ? [] : [{ slotKey: key, rank: rank.get(key) ?? order.length, plan, ...(workingSets === undefined ? {} : { workingSets }) }];
   });
   return {
     input: { ...input, source: { ...input.source, exercises: reordered }, ...(planSwaps.size > 0 ? { swaps: planSwaps } : {}), ...(added.length > 0 ? { added } : {}), shape: shapesOf(resolved) },

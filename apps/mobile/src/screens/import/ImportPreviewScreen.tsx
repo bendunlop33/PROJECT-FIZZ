@@ -1,12 +1,13 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Switch, View } from 'react-native';
 
 import { previewView, workoutRows, WORKOUT_PAGE, type QuestionKey } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
-import { useScreenData, useServices } from '../../shell/context';
-import { AppText, Card, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton } from '../../ui';
+import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { useTheme } from '../../theme';
+import { AppText, Card, Group, InfoLine, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton, TextField } from '../../ui';
 
 /**
  * The import preview (data-import-export §2.5 step 3): what needs Ben
@@ -15,7 +16,9 @@ import { AppText, Card, Group, PrimaryButton, Row, Screen, SectionHeader, Status
  * disabled until every question is answered (check 17).
  */
 export function ImportPreviewScreen() {
+  const theme = useTheme();
   const services = useServices();
+  const changed = useDataChanged();
   const navigation = useNavigation<NativeStackNavigationProp<ProfileStackParams>>();
   const root = useNavigation();
   const { draftId } = useRoute<RouteProp<ProfileStackParams, 'ImportPreview'>>().params;
@@ -83,6 +86,9 @@ export function ImportPreviewScreen() {
       case 'unit':
         navigation.navigate('ImportQuestion', { draftId, question: k.kind });
         return;
+      case 'value_checks':
+        navigation.navigate('ImportValueChecks', { draftId });
+        return;
     }
   }
 
@@ -104,6 +110,11 @@ export function ImportPreviewScreen() {
         <AppText variant="callout" color="text.secondary">
           {v.detection}
         </AppText>
+        {v.unitLine !== null ? (
+          <AppText variant="callout" color="text.secondary">
+            {v.unitLine}
+          </AppText>
+        ) : null}
         <AppText variant="callout" color="text.secondary" numeric>
           {v.rowsLine}
         </AppText>
@@ -196,6 +207,40 @@ export function ImportPreviewScreen() {
         />
       </Group>
 
+      {v.saveLayout ? (
+        <Group>
+          <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: theme.space['4'], gap: theme.space['3'] }}>
+            <View style={{ flex: 1 }}>
+              <InfoLine text="Save layout" info={v.saveLayout.why} infoLabel="Why?" />
+            </View>
+            <Switch
+              accessibilityLabel="Save layout"
+              value={v.saveLayout.on}
+              onValueChange={(on) => {
+                void services.imports.setSaveLayout(draftId, { on, name: v.saveLayout?.name ?? '' }).then(changed);
+              }}
+              trackColor={{ true: theme.colors.accent, false: theme.colors['bg.raised'] }}
+            />
+          </View>
+          {v.saveLayout.on ? (
+            <View style={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['3'], gap: theme.space['1'] }}>
+              <AppText variant="label" color="text.secondary">
+                Name
+              </AppText>
+              <TextField
+                defaultValue={v.saveLayout.name}
+                accessibilityLabel="Layout name"
+                returnKeyType="done"
+                maxLength={80}
+                onEndEditing={(e) => {
+                  void services.imports.setSaveLayout(draftId, { on: true, name: e.nativeEvent.text }).then(changed);
+                }}
+              />
+            </View>
+          ) : null}
+        </Group>
+      ) : null}
+
       <SectionHeader title={v.workoutsTitle} />
       {rows.length === 0 ? (
         <AppText variant="callout" color="text.secondary">
@@ -203,9 +248,9 @@ export function ImportPreviewScreen() {
         </AppText>
       ) : (
         <Group>
-          {rows.map((w) => (
+          {rows.map((w, i) => (
             <Row
-              key={w.date}
+              key={`${w.date}:${String(i)}`}
               title={w.text}
               onPress={() => {
                 navigation.navigate('ImportRows', { draftId, date: w.date });

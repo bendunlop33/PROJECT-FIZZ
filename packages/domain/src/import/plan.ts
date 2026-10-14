@@ -17,16 +17,19 @@ import type {
   NameAnswer,
   PerHandAnswer,
   PerHandReading,
+  SetType,
   TotalAnswer,
   WeightUnit,
 } from '@fizz/schemas';
 import { deriveId } from '../stable';
 import { fromScaled, toScaled } from '../units';
 import { effortFromComment } from './effort';
-import { FITNOTES_HEADERS, type FitNotesRow } from './fitnotes';
+import { categoryColumnOf } from './fitnotes';
 import { categoryHint } from './category';
 import { equipmentInName, implementsFor, matchName, nameKey, type MatchCandidate, type NameMatch } from './match';
 import type { RememberedTotal } from './remembered';
+import { valueChecksOf, type ValueCheck } from './layout/value-checks';
+import { workoutKeyOf, type SourceSetRow } from './source-row';
 
 /**
  * The FitNotes import preview and plan (data-import-export §2.5, §3.4, §4.3).
@@ -348,7 +351,7 @@ export interface EffortCandidate {
   checked: boolean;
 }
 
-export type PendingReason = 'name' | 'per_hand' | 'total' | 'bodyweight' | 'unit';
+export type PendingReason = 'name' | 'per_hand' | 'total' | 'bodyweight' | 'unit' | 'value_check';
 
 /** The mapped set before IDs are assigned. */
 export interface MappedSet {
@@ -360,6 +363,10 @@ export interface MappedSet {
   load: Load | null;
   reps: number;
   rpe: number | null;
+  /** From a confirmed marker (layout imports) or FitNotes 2's `IsWarmup`; absent: a working set. */
+  setType?: SetType;
+  /** FitNotes 2's `RIR`; absent: none. */
+  rir?: number;
 }
 
 export type RowFate =
@@ -369,8 +376,14 @@ export type RowFate =
 
 export type FateCounts = Record<ImportRowResult | 'pending', number>;
 
+/** One value to check (AI13) with Ben's answer. */
+export interface ValueCheckQuestion extends ValueCheck {
+  answer: 'import' | 'skip' | null;
+}
+
 export interface ImportAnalysis {
-  variant: FitNotesVariant;
+  /** FitNotes only; null for a layout import (ADR 0026). */
+  variant: FitNotesVariant | null;
   rowCount: number;
   dateRange: { first: string; last: string } | null;
   /** Weighted rows per unit, to say `weights in kg`, `in lb` or `in kg and lb (per set)`. */
@@ -380,8 +393,11 @@ export interface ImportAnalysis {
   /** `total` exercises that use a bar (barbell, EZ bar, trap bar). Bar-less ones (a kettlebell) aren't asked. */
   total: TotalQuestion | null;
   bodyweight: BodyweightQuestion[];
-  /** FitNotes 2 rows with both weight columns filled. */
-  unit: { rows: number; answer: WeightUnit | null } | null;
+  /**
+   * FitNotes 2: `both_columns`, rows with both weight columns filled (which did Ben enter?);
+   * `no_unit`, rows whose weight has no unit (the workout export). Asked once per file, nothing selected.
+   */
+  unit: { rows: number; answer: WeightUnit | null; kind: 'both_columns' | 'no_unit' } | null;
   effort: { mode: 'notes_only' | 'review'; candidates: EffortCandidate[] };
   /** Exercises whose convention follows the exercise (stack, plates added, assisted): shown as text, not asked. */
   machines: MachineExercise[];
@@ -397,8 +413,14 @@ export interface ImportAnalysis {
   /** One fate per parsed row, in file order. */
   fates: RowFate[];
   counts: { workouts: number; sets: number; exercises: number; byResult: FateCounts };
-  /** Dates that will get a workout (imported or still pending an answer), newest first. */
-  workouts: { date: string; exercises: number; sets: number }[];
+  /**
+   * Workouts that will be written (imported or still pending an answer),
+   * newest first. FitNotes: one per date. Layout imports: one per workout key
+   * (`key` and `startLocal` set when the key isn't the date).
+   */
+  workouts: { date: string; key?: string; startLocal?: string | null; exercises: number; sets: number }[];
+  /** Values to check (AI13; layout imports only). */
+  valueChecks: ValueCheckQuestion[];
   questionsOpen: number;
   /** Every question answered and something to import. */
   ready: boolean;
@@ -603,13 +625,28 @@ function plus(a: number, b: number): number {
   return fromScaled(toScaled(a) + toScaled(b));
 }
 
-/** The weight the row entered: its own, or the column Ben chose when both are filled. Undefined = still to be answered. */
-function enteredWeight(row: FitNotesRow, answers: ImportAnswers): { value: number; unit: WeightUnit } | null | undefined {
+/**
+ * The weight the row entered: its own, the column Ben chose when both are
+ * filled, or a FitNotes 2 weight with no unit in the unit he gave the file.
+ * Undefined = still to be answered.
+ */
+function enteredWeight(row: SourceSetRow, answers: ImportAnswers): { value: number; unit: WeightUnit } | null | undefined {
   if (row.bothColumns) {
     if (answers.bothColumns === null) return undefined;
     return { value: row.bothColumns[answers.bothColumns], unit: answers.bothColumns };
   }
+  const unitless = row.unitless ?? null;
+  if (unitless !== null) return answers.bothColumns === null ? undefined : { value: unitless, unit: answers.bothColumns };
   return row.weight;
+}
+
+/** The value as written while the unit is still open (ranges and samples only; never stored): kg as a placeholder unit. */
+function writtenWeight(row: SourceSetRow, answers: ImportAnswers): { value: number; unit: WeightUnit } | null {
+  const w = enteredWeight(row, answers);
+  if (w !== undefined) return w;
+  if (row.bothColumns) return { value: row.bothColumns.kg, unit: 'kg' };
+  const unitless = row.unitless ?? null;
+  return unitless === null ? null : { value: unitless, unit: 'kg' };
 }
 
 /** A bar's weight per unit: the Olympic bar has the spec's editable default; EZ and trap bars have none until Ben enters one. */
@@ -650,8 +687,8 @@ function negative(value: number): string {
 
 /** The dumbbell question from the rows still to import (review r3 S1). */
 function perHandQuestion(
-  live: readonly FitNotesRow[],
-  resolved: (r: FitNotesRow) => ResolvedExercise | null,
+  live: readonly SourceSetRow[],
+  resolved: (r: SourceSetRow) => ResolvedExercise | null,
   answers: ImportAnswers,
   remembered: ReadonlyMap<string, PerHandReading>,
 ): PerHandQuestion | null {
@@ -661,7 +698,7 @@ function perHandQuestion(
   for (const r of live) {
     const ex = resolved(r);
     if (ex?.convention !== 'per_hand') continue;
-    const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    const w = writtenWeight(r, answers);
     if (w === null) continue;
     const key = nameKey(r.exercise);
     let m = members.get(key);
@@ -708,8 +745,8 @@ function perHandQuestion(
 
 /** The barbell question from the rows still to import (PM decision after review r7). */
 function totalQuestion(
-  live: readonly FitNotesRow[],
-  resolved: (r: FitNotesRow) => ResolvedExercise | null,
+  live: readonly SourceSetRow[],
+  resolved: (r: SourceSetRow) => ResolvedExercise | null,
   answers: ImportAnswers,
   remembered: ReadonlyMap<string, RememberedTotal>,
 ): TotalQuestion | null {
@@ -721,7 +758,7 @@ function totalQuestion(
     const ex = resolved(r);
     if (ex?.convention !== 'total' || ex.bar === 'none') continue;
     const entered = enteredWeight(r, answers);
-    const w = entered ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    const w = writtenWeight(r, answers);
     if (w === null) continue;
     const key = nameKey(r.exercise);
     let m = members.get(key);
@@ -747,7 +784,7 @@ function totalQuestion(
       members.set(key, m);
     }
     m.sets += 1;
-    for (const u of entered ? [entered.unit] : r.bothColumns ? (['kg', 'lb'] as const) : []) if (!m.units.includes(u)) m.units.push(u);
+    for (const u of entered ? [entered.unit] : r.bothColumns || (r.unitless ?? null) !== null ? (['kg', 'lb'] as const) : []) if (!m.units.includes(u)) m.units.push(u);
     const bar = m.bar === 'unknown' ? null : m.bar;
     // Each bar's weight per unit, and whether plates-only rows need it (review S1).
     if (bar !== null && entered) {
@@ -811,33 +848,34 @@ function totalQuestion(
  */
 const MATCHES = new WeakMap<ImportContext, Map<string, NameMatch>>();
 
-function matchIn(ctx: ImportContext, key: string, name: string, categories: readonly string[]): NameMatch {
+function matchIn(ctx: ImportContext, key: string, name: string, categories: readonly string[], equipment = ''): NameMatch {
   let kept = MATCHES.get(ctx);
   if (!kept) {
     kept = new Map();
     MATCHES.set(ctx, kept);
   }
   // The category hint is part of the match, so it is part of the kept key.
-  const keptKey = `${key}\u0000${categories.join('\u0000')}`;
+  const keptKey = `${key}\u0000${categories.join('\u0000')}\u0001${equipment}`;
   let m = kept.get(keptKey);
   if (!m) {
-    m = matchName(name, ctx.candidates, ctx.aliases, categoryHint(categories));
+    m = matchName(name, ctx.candidates, ctx.aliases, categoryHint(categories), equipment === '' ? null : equipment);
     kept.set(keptKey, m);
   }
   return m;
 }
 
-/** The FitNotes `Category` cell (third column in every layout), trimmed. */
-/** The row's `Category` cell, by the variant's header (review import-names N2); blank when the layout has none. */
-function categoryOf(r: FitNotesRow, at: number): string {
-  return at < 0 ? '' : (r.cells[at] ?? '').trim();
+/** The row's categories: its `Category` cell, by the variant's header (review import-names N2), or FitNotes 2's `Categories` list; none when the layout has none. */
+function categoriesOf(r: SourceSetRow, at: number): string[] {
+  if (r.categories !== undefined) return r.categories;
+  const c = at < 0 ? '' : (r.cells[at] ?? '').trim();
+  return c === '' ? [] : [c];
 }
 
 /**
  * Analyse a parsed file against the app's data and Ben's answers. Rows are
  * the parser's data rows in file order.
  */
-export function analyseImport(input: { variant: FitNotesVariant; rows: readonly FitNotesRow[] }, ctx: ImportContext, answers: ImportAnswers): ImportAnalysis {
+export function analyseImport(input: { variant: FitNotesVariant | null; rows: readonly SourceSetRow[] }, ctx: ImportContext, answers: ImportAnswers): ImportAnalysis {
   const byId = new Map(ctx.candidates.map((c) => [c.exerciseId, c]));
   const { rows } = input;
 
@@ -846,13 +884,16 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   const dateSkipped = (date: string): boolean => ctx.importedDates.has(date) || (ctx.appDates.has(date) && answers.existingDates === 'skip');
   // Every category each name was filed under, first seen first: the matcher's ranking hint.
   const categories = new Map<string, string[]>();
-  const categoryAt = FITNOTES_HEADERS[input.variant].indexOf('Category');
+  const categoryAt = input.variant === null ? -1 : categoryColumnOf(input.variant);
+  // FitNotes 2's `Equipment` per name, first seen first: a hint read like an equipment word in the name.
+  const equipment = new Map<string, string>();
   for (const r of strength) {
     const key = nameKey(r.exercise);
     const list = categories.get(key) ?? [];
-    const c = categoryOf(r, categoryAt);
-    if (c !== '' && !list.includes(c)) list.push(c);
+    for (const c of categoriesOf(r, categoryAt)) if (!list.includes(c)) list.push(c);
     categories.set(key, list);
+    const e = r.equipment ?? '';
+    if (e !== '' && !equipment.has(key)) equipment.set(key, e);
   }
   const nameRows = new Map<string, NameRow>();
   for (const r of strength) {
@@ -860,7 +901,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     let n = nameRows.get(key);
     if (!n) {
       const filed = categories.get(key) ?? [];
-      const match = matchIn(ctx, key, r.exercise, filed);
+      const match = matchIn(ctx, key, r.exercise, filed, equipment.get(key) ?? '');
       const answer = answers.names[key] ?? null;
       // The bar Ben chose shapes the exercise `Add new` makes only when he answered it "plates only" (review r8 S2).
       const chosenBar = answers.totalOverrides[key] === 'plates_only' ? (answers.totalBars?.[key] ?? null) : null;
@@ -873,14 +914,20 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
 
   // Rows whose load needs a convention answer: strength rows not skipped by date or by name.
   const live = strength.filter((r) => r.date !== null && !dateSkipped(r.date) && nameRows.get(nameKey(r.exercise))?.resolution.kind !== 'skip');
-  const resolved = (r: FitNotesRow): ResolvedExercise | null => {
+  const resolved = (r: SourceSetRow): ResolvedExercise | null => {
     const res = nameRows.get(nameKey(r.exercise))?.resolution;
     return res?.kind === 'exercise' ? res.exercise : null;
   };
 
-  // FitNotes 2 rows with both columns: one question per file.
+  // Values to check (AI13): layout imports only (FitNotes would be an ADR 0016 change; ADR 0026).
+  const valueChecks: ValueCheckQuestion[] = input.variant !== null ? [] : valueChecksOf(live).map((v) => ({ ...v, answer: answers.valueChecks?.[v.key] ?? null }));
+  const checkOf = new Map(valueChecks.map((v) => [v.key, v]));
+
+  // FitNotes 2 rows with both columns, or with a weight and no unit: one question per file.
   const bothRows = live.filter((r) => r.bothColumns !== null).length;
-  const unit = bothRows > 0 ? { rows: bothRows, answer: answers.bothColumns } : null;
+  const unitlessRows = live.filter((r) => (r.unitless ?? null) !== null).length;
+  const unit: ImportAnalysis['unit'] =
+    bothRows > 0 ? { rows: bothRows, answer: answers.bothColumns, kind: 'both_columns' } : unitlessRows > 0 ? { rows: unitlessRows, answer: answers.bothColumns, kind: 'no_unit' } : null;
 
   // Group questions (dumbbells, barbell) and per-exercise bodyweight questions.
   const perHand = perHandQuestion(live, resolved, answers, ctx.perHandAnswers ?? new Map());
@@ -892,7 +939,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
   // same way whatever was imported before (review r6.1 S2).
   const fileRange = new Map<string, { min: number; max: number }>();
   for (const r of strength) {
-    const w = enteredWeight(r, answers) ?? (r.bothColumns ? { value: r.bothColumns.kg, unit: 'kg' as const } : null);
+    const w = writtenWeight(r, answers);
     if (!w) continue;
     const key = nameKey(r.exercise);
     const range = fileRange.get(key) ?? { min: w.value, max: w.value };
@@ -952,6 +999,9 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
 
   // Fates.
   const fates: RowFate[] = rows.map((r): RowFate => {
+    // A marker Ben said is `Not a set` (a rest-timer row): skipped and listed.
+    // FitNotes 2's `NotStarted` sets (never done) come the same way, with their own reason.
+    if (r.setType === 'not_a_set') return { result: 'skipped_not_a_set', detail: r.problem ?? 'Not a set' };
     switch (r.rowClass) {
       case 'unreadable':
         return { result: 'unreadable', detail: r.problem ?? 'Couldn’t be read' };
@@ -970,16 +1020,32 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     const key = nameKey(r.exercise);
     const res = nameRows.get(key)?.resolution ?? { kind: 'open' };
     if (res.kind === 'skip') return { result: 'skipped_exercise', detail: 'You chose Skip for this exercise' };
+    const check = input.variant === null ? checkOf.get(`${workoutKeyOf(r) ?? ''}|${key}`) : undefined;
+    if (check?.answer === 'skip') return { result: 'skipped_value_to_check', detail: 'You chose Skip for this value' };
     const rpeInComment = r.comment.trim() === '' ? null : effortFromComment(r.comment);
     if (rpeInComment !== null) effortCandidates.push({ row: r.row, date, name: r.exercise, comment: r.comment, rpe: rpeInComment, checked: checked.has(r.row) });
     const w = enteredWeight(r, answers);
     if (w === undefined) return { result: 'pending', reason: 'unit' };
     if (res.kind === 'open') return { result: 'pending', reason: 'name' };
+    if (check !== undefined && check.answer === null) return { result: 'pending', reason: 'value_check' };
     const ex = res.exercise;
-    const rpe = answers.effort.mode === 'review' && checked.has(r.row) ? rpeInComment : null;
+    // An RPE column's value (layout imports) wins; otherwise a comment's, only for rows Ben ticked.
+    const rpe = r.rpe ?? (answers.effort.mode === 'review' && checked.has(r.row) ? rpeInComment : null);
+    const setType: SetType | undefined = r.setType === 'warmup' ? 'warmup' : r.setType === 'drop' ? 'drop' : undefined;
     const set = (convention: LoadConvention, load: Load | null): RowFate => ({
       result: 'imported',
-      set: { exerciseId: ex.exerciseId, exerciseName: ex.name, laterality: ex.laterality, convention, unit: w?.unit ?? null, load, reps: r.reps ?? 0, rpe },
+      set: {
+        exerciseId: ex.exerciseId,
+        exerciseName: ex.name,
+        laterality: ex.laterality,
+        convention,
+        unit: w?.unit ?? null,
+        load,
+        reps: r.reps ?? 0,
+        rpe,
+        ...(setType === undefined ? {} : { setType }),
+        ...((r.rir ?? null) === null ? {} : { rir: r.rir ?? 0 }),
+      },
     });
     const value = w?.value ?? null;
     switch (ex.convention) {
@@ -1056,24 +1122,28 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     skipped_date_exists: 0,
     skipped_exercise: 0,
     unreadable: 0,
+    skipped_value_to_check: 0,
+    skipped_not_a_set: 0,
+    not_read: 0,
   };
-  const perDate = new Map<string, { names: Set<string>; sets: number }>();
+  const perWorkout = new Map<string, { date: string; startLocal: string | null; names: Set<string>; sets: number }>();
   const exercises = new Set<string>();
   fates.forEach((f, i) => {
     byResult[f.result] += 1;
     if (f.result !== 'imported' && f.result !== 'pending') return;
     const r = rows[i];
     if (!r?.date) return;
-    const d = perDate.get(r.date) ?? { names: new Set<string>(), sets: 0 };
+    const wk = workoutKeyOf(r) ?? r.date;
+    const d = perWorkout.get(wk) ?? { date: r.date, startLocal: r.startLocal ?? null, names: new Set<string>(), sets: 0 };
     d.sets += 1;
     const id = f.result === 'imported' ? f.set.exerciseId : `name:${nameKey(r.exercise)}`;
     d.names.add(id);
     exercises.add(id);
-    perDate.set(r.date, d);
+    perWorkout.set(wk, d);
   });
-  const workouts = [...perDate.entries()]
-    .map(([date, d]) => ({ date, exercises: d.names.size, sets: d.sets }))
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const workouts = [...perWorkout.entries()]
+    .map(([key, d]) => ({ date: d.date, ...(key === d.date ? {} : { key, startLocal: d.startLocal }), exercises: d.names.size, sets: d.sets }))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.key ?? '') < (b.key ?? '') ? 1 : (a.key ?? '') > (b.key ?? '') ? -1 : 0));
 
   const dates = rows.map((r) => r.date).filter((d): d is string => d !== null).sort();
   const fileDates = new Set(dates);
@@ -1093,13 +1163,15 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     (perHand?.open ? 1 : 0) +
     (total?.open ? 1 : 0) +
     bodyweight.filter((q) => q.answer === null).length +
-    (unit !== null && unit.answer === null ? 1 : 0);
+    (unit !== null && unit.answer === null ? 1 : 0) +
+    (valueChecks.some((v) => v.answer === null) ? 1 : 0);
 
   let kg = 0;
   let lb = 0;
   for (const r of rows) {
-    if (r.weight?.unit === 'kg') kg += 1;
-    else if (r.weight?.unit === 'lb') lb += 1;
+    const u = r.weight?.unit ?? ((r.unitless ?? null) !== null ? enteredWeight(r, answers)?.unit : undefined);
+    if (u === 'kg') kg += 1;
+    else if (u === 'lb') lb += 1;
   }
 
   return {
@@ -1122,6 +1194,7 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
     fates,
     counts: { workouts: workouts.length, sets: byResult.imported + byResult.pending, exercises: exercises.size, byResult },
     workouts,
+    valueChecks,
     questionsOpen,
     ready: questionsOpen === 0 && byResult.pending === 0 && byResult.imported > 0,
   };
@@ -1131,9 +1204,10 @@ export function analyseImport(input: { variant: FitNotesVariant; rows: readonly 
 export const importIds = {
   session: (jobId: string, date: string) => deriveId(`fitnotes-import:${jobId}:session:${date}`),
   sessionExercise: (jobId: string, date: string, groupKey: string) => deriveId(`fitnotes-import:${jobId}:exercise:${date}:${groupKey}`),
-  set: (jobId: string, row: number) => deriveId(`fitnotes-import:${jobId}:row:${String(row)}`),
-  /** The workout's start operation ID: unique per owner, so writing it twice is refused. */
-  startOperation: (operationId: string, date: string) => `${operationId}:${date}`,
+  /** `part` 0 is every FitNotes row: its ID is unchanged (ADR 0026 golden test). */
+  set: (jobId: string, row: number, part = 0) => deriveId(part === 0 ? `fitnotes-import:${jobId}:row:${String(row)}` : `fitnotes-import:${jobId}:row:${String(row)}:part:${String(part)}`),
+  /** The workout's start operation ID: unique per owner, so writing it twice is refused. `key`: the date (FitNotes) or the workout key. */
+  startOperation: (operationId: string, key: string) => `${operationId}:${key}`,
 };
 
 const MAX_CELLS = 64;
@@ -1148,29 +1222,32 @@ const CUT_NOTE = 'Stored cut to 64 cells of 20,000 characters each';
  * keeps one workout per calendar date.
  */
 export function planImportRows(
-  input: { rows: readonly FitNotesRow[] },
+  input: { rows: readonly SourceSetRow[] },
   analysis: ImportAnalysis,
   ids: { jobId: string; defaultUnit: WeightUnit },
 ): ImportRow[] {
   if (!analysis.ready) throw new Error('The import still has questions to answer');
   const { jobId } = ids;
-  // Per date: the unit a weightless row joins (the exercise's first weighted unit that day).
+  // Per workout: the unit a weightless row joins (the exercise's first weighted unit in that workout).
   const firstUnit = new Map<string, WeightUnit>();
   analysis.fates.forEach((f, i) => {
     const r = input.rows[i];
     if (f.result !== 'imported' || !r?.date || f.set.unit === null) return;
-    const k = `${r.date}|${f.set.exerciseId}|${f.set.convention}`;
+    const k = `${workoutKeyOf(r) ?? r.date}|${f.set.exerciseId}|${f.set.convention}`;
     if (!firstUnit.has(k)) firstUnit.set(k, f.set.unit);
   });
   const groups = new Map<string, { order: number; sets: number; id: string }>();
   const sessionIds = new Map<string, string>();
-  const groupsPerDate = new Map<string, number>();
+  const groupsPerWorkout = new Map<string, number>();
   return analysis.fates.map((f, i): ImportRow => {
     const r = input.rows[i];
     if (!r) throw new Error('Row and fate lists differ');
+    const part = r.part ?? 0;
+    const layout = r.workoutKey !== undefined;
     const base = {
       jobId,
       row: r.row,
+      ...(layout ? { part, workoutKey: (r.workoutKey === '' ? null : r.workoutKey) ?? r.date ?? `row-${String(r.row)}`, startLocal: r.startLocal ?? null } : {}),
       line: r.line,
       localDate: r.date,
       exerciseName: r.exercise.slice(0, 4000),
@@ -1181,14 +1258,16 @@ export function planImportRows(
     if (f.result === 'pending') throw new Error('The import still has questions to answer');
     if (f.result !== 'imported') return { ...base, result: f.result, detail: (cut === null ? f.detail : `${f.detail}. ${cut}`).slice(0, 500), sessionId: null, setId: null, imported: null };
     const date = r.date ?? '';
-    const unit = f.set.unit ?? firstUnit.get(`${date}|${f.set.exerciseId}|${f.set.convention}`) ?? ids.defaultUnit;
+    // One workout per date for FitNotes; per workout key for a layout (its date for a file with no times or workout column).
+    const wk = workoutKeyOf(r) ?? date;
+    const unit = f.set.unit ?? firstUnit.get(`${wk}|${f.set.exerciseId}|${f.set.convention}`) ?? ids.defaultUnit;
     const groupKey = `${f.set.exerciseId}|${f.set.convention}|${unit}`;
-    const gk = `${date}|${groupKey}`;
+    const gk = `${wk}|${groupKey}`;
     let g = groups.get(gk);
     if (!g) {
-      const order = groupsPerDate.get(date) ?? 0;
-      groupsPerDate.set(date, order + 1);
-      g = { order, sets: 0, id: importIds.sessionExercise(jobId, date, groupKey) };
+      const order = groupsPerWorkout.get(wk) ?? 0;
+      groupsPerWorkout.set(wk, order + 1);
+      g = { order, sets: 0, id: importIds.sessionExercise(jobId, wk, groupKey) };
       groups.set(gk, g);
     }
     const imported: ImportedSet = {
@@ -1203,14 +1282,16 @@ export function planImportRows(
       sessionExerciseId: g.id,
       exerciseOrder: g.order,
       setIndex: g.sets,
+      ...(f.set.setType === undefined ? {} : { setType: f.set.setType }),
+      ...(f.set.rir === undefined ? {} : { rir: f.set.rir }),
     };
     g.sets += 1;
-    let sessionId = sessionIds.get(date);
+    let sessionId = sessionIds.get(wk);
     if (sessionId === undefined) {
-      sessionId = importIds.session(jobId, date);
-      sessionIds.set(date, sessionId);
+      sessionId = importIds.session(jobId, wk);
+      sessionIds.set(wk, sessionId);
     }
-    return { ...base, result: 'imported', detail: cut, sessionId, setId: importIds.set(jobId, r.row), imported };
+    return { ...base, result: 'imported', detail: cut, sessionId, setId: importIds.set(jobId, r.row, part), imported };
   });
 }
 
@@ -1286,7 +1367,7 @@ export function aliasesToSave(analysis: ImportAnalysis): AliasSave[] {
  * preview rebuilt against changed data starts from here again (r6 S1).
  */
 export function startingAnswers(
-  input: { variant: FitNotesVariant; rows: readonly FitNotesRow[] },
+  input: { variant: FitNotesVariant | null; rows: readonly SourceSetRow[] },
   ctx: ImportContext,
   earlier: { answers: ImportAnswers; gymIds: ReadonlySet<string> } | null,
 ): ImportAnswers {

@@ -37,6 +37,8 @@ export interface NextTargetRequest {
   painFlags: readonly PainFlag[];
   /** Pain mentioned without a movement in the workout the targets come from. */
   sessionPain: PainStatus;
+  /** See `NextTargetsInput.fitLater` (Start next session from a FitNotes workout). */
+  fitLater?: boolean;
 }
 
 export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; rule: ProgressionRule } {
@@ -53,6 +55,7 @@ export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; r
     unit: req.unit,
     convention: req.convention,
     pain,
+    ...(req.fitLater === true ? { fitLater: true } : {}),
   });
   return { result, rule };
 }

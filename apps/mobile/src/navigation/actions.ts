@@ -1,6 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
-import type { LibraryToastParam, RootStackParams, TabParams } from './types';
+import type { EditorFrom, LibrarySegment, LibraryToastParam, RootStackParams, TabParams } from './types';
 
 /**
  * Root-stack actions that land on a tab (review workout-loop B1).
@@ -65,8 +65,21 @@ export function replaceWithSummary(sessionId: string) {
  * was opened from, handing over the toast (`Saved Push A` [Undo]). The
  * overview keeps its target (params merge).
  */
-export function popToFromEditor(from: 'Workouts' | 'WorkoutOverview', toast: LibraryToastParam) {
+export function popToFromEditor(from: EditorFrom, toast: LibraryToastParam) {
+  if (from === 'Library') return openLibrary('workouts', toast);
+  // Exercise detail sits right under the editor: back to it (its toast is handed off in memory, `library-toast.ts`).
+  // The Save sheet's `Edit ›`: back to the screen under the sheet, which takes the result (`save-edit-handoff.ts`).
+  if (from === 'ExerciseInfo' || from === 'SaveSheet') return { type: 'GO_BACK' } as const;
   return { type: 'POP_TO', payload: { name: from, params: { toast }, merge: true } } as const;
+}
+
+/**
+ * The Library tab on a segment (exercise-library EL10): from anywhere above
+ * Tabs (the overview's picker `Edit workouts`, the editor's Save), popping
+ * back to the one Tabs. `toast`: the editor's `Saved Push A` [Undo].
+ */
+export function openLibrary(segment: LibrarySegment, toast?: LibraryToastParam): PopToTabsAction {
+  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment, ...(toast ? { toast } : {}) } } });
 }
 
 /**
@@ -74,17 +87,8 @@ export function popToFromEditor(from: 'Workouts' | 'WorkoutOverview', toast: Lib
  * from `Duplicate` hands back its `Saved Push A copy` [Undo] toast, so the
  * copy can still be undone (review S1); otherwise a plain back.
  */
-export function backFromEditor(from: 'Workouts' | 'WorkoutOverview', copyToast: LibraryToastParam | undefined) {
+export function backFromEditor(from: EditorFrom, copyToast: LibraryToastParam | undefined) {
   return copyToast === undefined ? ({ type: 'GO_BACK' } as const) : popToFromEditor(from, copyToast);
-}
-
-/**
- * `Edit workouts` from the overview's picker (§A2.4): the list takes the
- * overview's place, so a row's overview is a fresh page (never a stale one
- * found under the list).
- */
-export function replaceWithWorkouts() {
-  return { type: 'REPLACE', payload: { name: 'Workouts', params: {} } } as const;
 }
 
 /**

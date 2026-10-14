@@ -28,6 +28,8 @@ export interface StatItem {
   label: string;
   /** A `clock` icon before the label (`TIME · FIT 45`). */
   clock?: boolean;
+  /** A quiet line under the label (`1 of 3 timed`, F17). */
+  note?: string;
   /**
    * The column is a button (fit-to-time FT1: the TIME tile opens `How long?`):
    * a caret after the value, ≥ 44 pt, its own VoiceOver element.
@@ -100,6 +102,11 @@ export function StatStrip({ items, accessibilityLabel, ax }: { items: readonly S
               {it.label}
             </AppText>
           </View>
+          {it.note !== undefined ? (
+            <AppText variant="callout" color="text.secondary" numeric>
+              {it.note}
+            </AppText>
+          ) : null}
         </View>
         );
         const b = it.button;

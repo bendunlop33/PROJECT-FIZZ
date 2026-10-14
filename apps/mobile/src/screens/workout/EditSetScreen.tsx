@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
@@ -15,8 +15,9 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, StepperTileRow, TextButton, TextField } from '../../ui';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
+import { stepperRowTiles } from '../../workout/tile-fit';
 
 /**
  * Correction sheet for a logged set (active-workout §4.4): `correct_set`
@@ -35,6 +36,7 @@ export function EditSetScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const { sessionId, setId } = useRoute<RouteProp<RootStackParams, 'EditSet'>>().params;
   const [data, setData] = useState<ActiveWorkoutData | null>(null);
   const aggregate = data?.aggregate ?? null;
@@ -165,10 +167,18 @@ export function EditSetScreen() {
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
         </View>
         {view.completedAtUtc ? <AppText variant="callout" color="text.secondary" numeric>{`Done at ${formatTime(toMs(view.completedAtUtc), tz)}`}</AppText> : null}
-        <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+        <StepperTileRow
+          tiles={stepperRowTiles({ loadFlex: 1, load: view.loadField && ex ? { ...view.loadField, unit: view.loadField.unitText } : null, time: view.duration, distance: view.distance, reps: view.reps })}
+          estimate={windowWidth - 2 * theme.space['4']}
+        >
+          {({ numeralSize, compact, flexOf }) => (
+          <>
           {view.loadField && ex ? (
             <NumberStepper
               onSurface
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
               label={view.loadField.label}
               unit={view.loadField.unitText}
               value={view.loadField.value}
@@ -183,6 +193,9 @@ export function EditSetScreen() {
           {view.duration ? (
             <NumberStepper
               onSurface
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
               label="Time"
               unit="s"
               value={view.duration.value}
@@ -197,6 +210,9 @@ export function EditSetScreen() {
           {view.distance ? (
             <NumberStepper
               onSurface
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
               label="Distance"
               unit="m"
               value={view.distance.value}
@@ -211,6 +227,9 @@ export function EditSetScreen() {
           {view.reps ? (
             <NumberStepper
               onSurface
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
               label="Reps"
               unit={null}
               value={view.reps.value}
@@ -222,12 +241,16 @@ export function EditSetScreen() {
               }}
             />
           ) : null}
-        </View>
+          </>
+          )}
+        </StepperTileRow>
         {effortScale !== 'off' ? (
           <View style={{ gap: theme.space['1'] }}>
-            <AppText variant="label" color="text.secondary">
-              {effortScale === 'rir' ? 'Reps in reserve' : 'Effort (RPE)'}
-            </AppText>
+            <EffortHeading scale={effortScale}>
+              <AppText variant="label" color="text.secondary">
+                {effortScale === 'rir' ? 'Reps in reserve' : 'Effort (RPE)'}
+              </AppText>
+            </EffortHeading>
             <ChipRow>
               {(effortScale === 'rir' ? [4, 3, 2, 1, 0] : [6, 7, 8, 9, 10]).map((n) => {
                 const selected = (effortScale === 'rir' ? current.rir : current.rpe) === n;

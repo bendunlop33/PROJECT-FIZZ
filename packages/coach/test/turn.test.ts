@@ -212,7 +212,8 @@ describe("today's sets through the turn (rule 3: offer, accept, apply; rule 4, r
     const ctx = { session: targets.state, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] };
     const first = new ScriptedCoachModel([reply('Set 2 was RPE 10. Want me to take 5 kg off the last two?', 'adjust_today')]);
     const r1 = await runCoachTurn(request({ kind: 'workout', input: words('Set 2 was rough'), context: ctx }), ports(s, first, adjustExecutors(s, targets)));
-    expect(first.offeredTools()[0]).not.toContain('adjust_pending_sets');
+    // (14 Oct) Offered on every live turn; a call Ben didn't ask for would become an offer (midworkout.test.ts).
+    expect(first.offeredTools()[0]).toContain('adjust_pending_sets');
     expect(r1.offer).toBe('adjust_today');
     expect(targets.applied).toEqual([]);
 

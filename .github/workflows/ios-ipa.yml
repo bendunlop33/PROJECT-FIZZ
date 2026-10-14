@@ -120,6 +120,8 @@ jobs:
     name: Build unsigned .ipa
     needs: check
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[ios-build]')
+    # macos-15 only has Xcode 26.3, which can't compile Expo SDK 57 (expo-modules-jsi); keep macos-26.
+    # ios-ipa-retry.yml re-queues this job when no macos-26 runner is assigned.
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -134,6 +136,11 @@ jobs:
 
       - name: Select Xcode
         run: |
+          if [ ! -d "$XCODE_APP" ]; then
+            # Fall back to the newest Xcode 26 on the image (macos-15 may carry a different 26.x).
+            ALT=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+            if [ -n "$ALT" ]; then echo "Using $ALT instead of $XCODE_APP"; XCODE_APP="$ALT"; fi
+          fi
           if [ ! -d "$XCODE_APP" ]; then
             echo "::error::$XCODE_APP is not on this runner image. Installed Xcodes:"
             ls -d /Applications/Xcode*.app || true

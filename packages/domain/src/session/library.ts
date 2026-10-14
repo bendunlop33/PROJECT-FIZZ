@@ -40,20 +40,43 @@ export type RoutineIssue =
   | 'Reps: the first number must be the smaller one.'
   | 'Add a target to every set.'
   | 'Up to 40 exercises'
-  | 'Up to 30 sets per exercise';
+  | 'Up to 30 sets per exercise'
+  | 'Can’t save distance yet';
+
+/**
+ * Whether an exercise is measured in distance. A saved workout's set
+ * template has no distance target, so a distance slot is refused rather
+ * than saved as reps (exercise-library EL-B13; review library-browse r2 S1).
+ */
+export type IsDistanceExercise = (exerciseId: string) => boolean;
+
+/**
+ * Whether a slot is a distance slot the save refuses: a distance exercise
+ * that isn't already stored in this slot. A workout saved before EL-B13 can
+ * hold one (review library-browse r3 S1); it stays and saves as it was, so
+ * only a newly added or replaced-in distance slot is refused. `stored`: the
+ * stored workout's exercises (none for a new workout or an unsaved copy).
+ */
+export function isRefusedDistanceSlot(slot: Pick<RoutineExercise, 'id' | 'exerciseId'>, isDistance: IsDistanceExercise | undefined, stored: readonly Pick<RoutineExercise, 'id' | 'exerciseId'>[] = []): boolean {
+  if (isDistance === undefined || !isDistance(slot.exerciseId)) return false;
+  return !stored.some((s) => s.id === slot.id && s.exerciseId === slot.exerciseId);
+}
 
 /**
  * Why a workout can't be saved yet, first issue first (routines.md §3.3,
  * A6): a name, at least one exercise, at least one set each, reps min ≤
- * max, a rep or time target on every set, at most 40 exercises and 30 sets.
+ * max, a rep or time target on every set, at most 40 exercises and 30 sets,
+ * and no newly added exercise measured in distance (`isDistance`, EL-B13;
+ * a distance slot already in `stored` is kept, `isRefusedDistanceSlot`).
  */
-export function routineIssues(edit: RoutineEdit): RoutineIssue[] {
+export function routineIssues(edit: RoutineEdit, isDistance?: IsDistanceExercise, stored?: readonly RoutineExercise[]): RoutineIssue[] {
   const out: RoutineIssue[] = [];
   const name = edit.name.trim();
   if (name.length === 0) out.push('Add a name');
   else if (name.length > ROUTINE_NAME_MAX) out.push('Keep it under 120 characters');
   if (edit.exercises.length === 0) out.push('Add an exercise');
   if (edit.exercises.length > ROUTINE_MAX_EXERCISES) out.push('Up to 40 exercises');
+  if (edit.exercises.some((e) => isRefusedDistanceSlot(e, isDistance, stored))) out.push('Can’t save distance yet');
   const sets = edit.exercises.flatMap((e) => e.setTemplates);
   if (edit.exercises.some((e) => e.setTemplates.length === 0)) out.push('Add at least one set.');
   if (sets.some((t) => t.targetReps !== null && t.targetReps.min > t.targetReps.max)) out.push('Reps: the first number must be the smaller one.');
@@ -97,9 +120,11 @@ export function createRoutine(input: {
   opId: string;
   at: ZonedTimestamp;
   isCompound: (exerciseId: string) => boolean;
+  /** Refuses distance slots (EL-B13). */
+  isDistance?: IsDistanceExercise;
   inRotation?: boolean;
 }): RoutineCreate {
-  const issue = routineIssues(input.edit)[0];
+  const issue = routineIssues(input.edit, input.isDistance)[0];
   if (issue !== undefined) return { kind: 'invalid', message: issue };
   const on = input.inRotation === true;
   return {
@@ -123,15 +148,40 @@ export function createRoutine(input: {
 }
 
 /**
+ * `Save to Workouts` → `Edit ›` → `Save` (routines.md §A2.5, WL-A18): the
+ * unsaved copy `made` (from a finished workout, Repeat, an overview or a coach
+ * draft) with the editor's name and exercises. Everything else `made` carries
+ * stays: its ID, version 1, opId, rotation choice, history link and coach
+ * draft link. Saving from the editor makes it Ben's (as `editRoutine`).
+ */
+export function withSaveEdit(made: Routine, edit: RoutineEdit, isCompound: (exerciseId: string) => boolean, isDistance?: IsDistanceExercise): RoutineCreate {
+  const issue = routineIssues(edit, isDistance)[0];
+  if (issue !== undefined) return { kind: 'invalid', message: issue };
+  return {
+    kind: 'write',
+    next: { ...made, name: edit.name.trim(), exercises: withDefaultMain(normaliseRoutineExercises(edit.exercises), isCompound), source: 'ben' },
+  };
+}
+
+/**
  * The editor's `Save` on a stored workout (§A4.2): name and exercises, with
  * `Main` written down. Saving makes a coach workout Ben's (WB8). The
  * rotation, history link and tombstone are untouched. A retry of the same
  * save is a duplicate; an older `expectedVersion` is stale (rule 5).
  */
-export function editRoutine(current: Routine, edit: RoutineEdit, expectedVersion: number, opId: string, at: ZonedTimestamp, isCompound: (exerciseId: string) => boolean): RoutineChange {
+export function editRoutine(
+  current: Routine,
+  edit: RoutineEdit,
+  expectedVersion: number,
+  opId: string,
+  at: ZonedTimestamp,
+  isCompound: (exerciseId: string) => boolean,
+  isDistance?: IsDistanceExercise,
+): RoutineChange {
   if (current.lastOpId === opId) return { kind: 'duplicate', current };
   if (current.version !== expectedVersion) return { kind: 'stale', current };
-  const issue = routineIssues(edit)[0];
+  // A distance slot already stored (saved before EL-B13) stays saveable; only new ones are refused (review library-browse r3 S1).
+  const issue = routineIssues(edit, isDistance, current.exercises)[0];
   if (issue !== undefined) return { kind: 'invalid', message: issue };
   return routineWrite(current, expectedVersion, opId, at, {
     name: edit.name.trim(),
@@ -189,7 +239,9 @@ export function withStructureTimes(before: readonly RoutineExercise[], after: re
 /**
  * `Duplicate` (§4.4): a copy with new IDs throughout, named `<name> copy`,
  * source `ben`, linked to the original, never in the rotation and with no
- * history of its own (it starts `New`).
+ * history of its own (it starts `New`). A distance slot saved before EL-B13
+ * is copied as it is, and is stored in the copy, so the copy saves as the
+ * original does (review library-browse r3 S1).
  */
 export function duplicateRoutine(current: Routine, input: { id: string; opId: string; at: ZonedTimestamp; newId: () => string; isCompound: (exerciseId: string) => boolean }): Routine {
   const name = `${current.name.trim()} copy`.slice(0, ROUTINE_NAME_MAX).trim();

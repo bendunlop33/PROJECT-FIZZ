@@ -103,3 +103,21 @@ export function addedSlotShape(
     templates: Array.from({ length: ADDED_WORKING_SETS }, () => ({ setType: 'working' as const, reps: reps === null ? null : { ...reps }, durationS: timed ? ADDED_WORK_S : null })),
   };
 }
+
+/**
+ * An added exercise's sets at the count Ben chose when adding it
+ * (exercise-library §10.2): warm-ups kept; working sets cut from the end, or
+ * the last one copied (its target included). `n` absent = unchanged. Pure.
+ */
+export function resizeWorkingSets<T extends { setType: SetType }>(list: readonly T[], n: number | undefined): T[] {
+  if (n === undefined) return [...list];
+  const want = Math.max(1, Math.min(10, Math.round(n)));
+  const working = list.filter((t) => t.setType !== 'warmup');
+  const last = working[working.length - 1];
+  if (last === undefined || want === working.length) return [...list];
+  if (want < working.length) {
+    const drop = new Set(working.slice(want));
+    return list.filter((t) => !drop.has(t));
+  }
+  return [...list, ...Array.from({ length: want - working.length }, () => ({ ...last }))];
+}

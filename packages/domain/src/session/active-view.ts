@@ -17,13 +17,13 @@ import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclu
 import { getAchievableLoads, isLoadAchievable, loadDirection, stepLoad } from '../equipment';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
-import type { HistorySession } from '../progression';
+import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
-import { GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
+import { DEFAULT_WORKING_SETS, GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
 import { midSwapSlot } from './mid-swap';
 import { setSnapNote, type NoteLine } from './snap-text';
@@ -44,6 +44,8 @@ export interface PreviousSession {
   performedAtUtc: string;
   /** The compared workout's own gym (null: not recorded), so nothing claims it was at today's gym. */
   gymId: string | null;
+  /** From FitNotes (B7): shown as `Last (FitNotes, 1 Oct)`, never as an app session. */
+  imported: boolean;
   /** Working-order sets as logged, for prefill and the `Last (…)` line. */
   sets: ComparableSet[];
 }
@@ -52,14 +54,15 @@ export interface PreviousSession {
  * Pick the most recent history session that is like-for-like with this
  * session exercise: same equipment instance, and every load in the same unit
  * and convention (history in another unit or convention is never offered).
- * Imported (FitNotes) history is never offered while P-I3 is open, even when
- * neither side has equipment (review r2 B1).
+ * Imported (FitNotes) history has no equipment recorded, so it matches on
+ * unit and convention alone and is marked `imported` (B7, approved 11 Oct
+ * 2026); only its working sets are offered (`comparableSetsOf`).
  */
 export function lastComparableSession(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): PreviousSession | null {
   const sorted = [...history].sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
   for (const h of sorted) {
-    if (h.imported || h.equipmentId !== ex.equipmentId) continue;
-    const sets = h.sets.filter((s) => s.setType !== 'warmup');
+    if (!matchesEquipment(h, ex.equipmentId)) continue;
+    const sets = comparableSetsOf(h).filter((s) => s.setType !== 'warmup');
     if (sets.length === 0) continue;
     const alike = sets.every((s) => s.load === null || s.load.convention === 'bodyweight' || (s.load.unit === ex.unit && s.load.convention === ex.loadConvention));
     if (!alike) continue;
@@ -67,6 +70,7 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
       sessionId: h.sessionId,
       performedAtUtc: h.performedAtUtc,
       gymId: h.gymId,
+      imported: h.imported,
       sets: sets.map((s, index) => ({
         index,
         values: { load: s.load, reps: s.reps, durationS: s.durationS ?? null, rpe: s.rpe, rir: s.rir, ...(s.distanceM !== undefined ? { distanceM: s.distanceM } : {}) },
@@ -75,6 +79,24 @@ export function lastComparableSession(history: readonly HistorySession[], ex: Pi
     };
   }
   return null;
+}
+
+/**
+ * Working sets to plan when an exercise is added after `previous` (Add
+ * exercise, `planFor`): its counted sets with reps. From FitNotes (review
+ * import-progress B1, B2), the same reading as the load
+ * (`comparableSetsOf`), and the reading never takes the count below the
+ * built-in default (`importedWorkingSetCount`): a top single followed by
+ * nothing still plans 3 sets, a 2-set session plans 2.
+ */
+export function workingSetsFromPrevious(previous: PreviousSession, history: readonly HistorySession[]): number {
+  const withReps = previous.sets.filter((s) => s.values.reps !== null);
+  const counted = withReps.length;
+  if (!previous.imported) return counted;
+  // r3 S1, r4 B1: only the sets the rule judges (not a lone top set); a lighter finisher never lifts the count.
+  const source = history.find((h) => h.sessionId === previous.sessionId && h.imported);
+  const total = source ? source.sets.filter((s) => s.setType !== 'warmup' && s.reps !== null).length : counted;
+  return fitNotesPlannedSets(withReps.map((s) => ({ load: s.values.load })), total, DEFAULT_WORKING_SETS);
 }
 
 /** Unsaved changes held by the screen (debounced to `save_draft`). */
@@ -218,11 +240,14 @@ export interface FocusView {
   removable: boolean;
   /** `Swap exercise` is offered: the row has pending sets a swap would move (`midSwapSlot`; not only a half-logged pair's other side, review gaps r2 S1). */
   swappable: boolean;
-  /** `Barbell · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
+  /** `Barbell · Working · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
   headerLine: string;
+  /** The set's type word, always shown (F3): `Warm-up`, `Working`, `Top set`, `Back-off`, `Drop set`. */
+  setTypeLabel: string;
   setNumber: number;
   setCount: number;
-  previous: { performedAtUtc: string; text: string; values: SetValues } | null;
+  /** `imported`: from FitNotes, shown as `Last (FitNotes, 1 Oct)` (B7). */
+  previous: { performedAtUtc: string; text: string; values: SetValues; imported: boolean } | null;
   draft: SetValues;
   draftSource: DraftSource | 'edited' | 'copied';
   loadField: LoadField | null;
@@ -564,8 +589,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   }
 
   const prevFirst = prev?.sets.find((c) => c.index === setNumber - 1) ?? prev?.sets[prev.sets.length - 1] ?? null;
-  // `Working` is the usual case, so only other set types are named (D-ActiveSet: `Barbell · Set 2 of 4`).
-  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, set.setType === 'working' ? null : SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
+  // F3 (Ben, 13 Oct): every set names its type, `Working` too (`Barbell · Working · Set 2 of 4`).
+  const headerParts = [eq ? EQUIPMENT_WORD[eq.kind] : null, SET_TYPE_WORD[set.setType], `Set ${String(setNumber)} of ${String(own.length)}`, unilateral ? 'per side' : null];
 
   return {
     setId: set.id,
@@ -580,6 +605,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     removable: isRemovable(state, ex),
     swappable: midSwapSlot(state, ex.id) !== null,
     headerLine: headerParts.filter((p): p is string => p !== null).join(' · '),
+    setTypeLabel: SET_TYPE_WORD[set.setType],
     setNumber,
     setCount: own.length,
     previous:
@@ -589,6 +615,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
             // §2.13: a flagged set still shows (and copies) what happened, with its words.
             text: withExclusionWords(valuesText(prevFirst.values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }), prevFirst.exclusions),
             values: prevFirst.values,
+            imported: prev.imported,
           }
         : null,
     draft: values,

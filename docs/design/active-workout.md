@@ -672,7 +672,7 @@ Shown when the workout has no live sets: started with `Empty workout`, or every 
 │ [ 🎙 ] [        Add exercise         ] │
 └────────────────────────────────────────┘
 ```
-- `Add exercise` opens the exercise picker sheet (search field focused, recent exercises first). Choosing one calls `addExercise`, which adds the exercise with one empty working set and makes it active. The card then shows §2.1 with draft source `last_session` (`From 1 Oct`) or empty fields and the primary `Enter load` / `Enter reps`.
+- `Add exercise` opens the exercise picker sheet (search field focused, recent exercises first). Choosing one calls `addExercise`, which adds the exercise with **N pending working sets** (the picker's `Sets [−] 3 [+]` bar, default 3; revised 2026-10-12, was one empty working set; [exercise-library.md](exercise-library.md) §10.2) and makes it active. Targets come from its own history, else the fields are empty. The card then shows §2.1 with draft source `last_session` (`From 1 Oct`) or empty fields and the primary `Enter load` / `Enter reps`.
 - After that, `Add set` (exercise `⋯`, or `+ Add set` in Overview) adds the next set, copying the last set's values and rest. `+ Add exercise` sits at the end of the Overview list.
 - `Finish workout` stays in the `⋯` menu. Finishing an empty workout offers discard instead (§4.8).
 - Voice (when available): "add bench press" goes through the same `addExercise` service call.
@@ -1680,7 +1680,7 @@ Open question for Ben (review S3): a pain flag set mid-workout leaves today's al
 | WT-D10 | `Rest after 3:00 ›` stays on the open row | P9 (approved v0.2): rest shown on every set | Only in the exercise sheet |
 | WT-D11 | An **open-ended workout** (no routine or plan) keeps `Add exercise` as the primary after its last set; Finish stays in `⋯` | Audit B1 as built: Ben is building as he goes, so "last set" isn't the end. **Ben to confirm**, because his decision 2 names Finish | Finish in the Log slot here too |
 | WT-D12 | The view choice is **per device**, defaulting to Table. No scroll offset is stored; the anchor is derived | Ben's choice sticks across workouts, and restore can't land somewhere stale | Per session |
-| WT-D13 | Tile numerals shrink to fit (down to 28pt), with the unit in the tile label. Below that, the tiles stack | `102.5` at 40pt doesn't fit beside 52pt buttons at 390pt. Never truncate a number | Always stacked tiles (taller open row) |
+| WT-D13 | Tile numerals shrink to fit (down to 28pt), with the unit in the tile label. Below that, the − / + move under the numeral (each half the tile, ≥ 44pt) so the tiles stay on one row (F11, Ben 13 Oct); only if that doesn't fit (or at AX1+) do they stack | `102.5` at 40pt doesn't fit beside 52pt buttons at 390pt. Never truncate a number | Always stacked tiles (taller open row) |
 | WT-D14 | Column labels use `type.label` (16pt), not a 12pt section label | The 16pt floor (design-system §3) | — |
 
 **Follow-ups for other specs (not edited here):**

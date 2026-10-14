@@ -12,7 +12,7 @@ import type {
 import { formatNumber, loadText, NBSP } from './display';
 import { isSetCountable } from './exclusions';
 import { loadDirection } from './equipment';
-import type { HistorySession, NextTargets, TargetSet } from './progression';
+import { comparableSetsOf, matchesEquipment, type HistorySession, type NextTargets, type TargetSet } from './progression';
 import type { StartWarning } from './session/create';
 import { buildStepCard, pctChange } from './step-card';
 import { toScaled } from './units';
@@ -73,7 +73,7 @@ const loadWord = (l: Load, eq: EquipmentInstance | null): string => loadText(l, 
 
 /** The basis sets as they are now (actual results), warm-ups left out. */
 function basisSets(h: HistorySession): TargetBasisSet[] {
-  return h.sets
+  return comparableSetsOf(h)
     .filter((s) => s.setType !== 'warmup')
     .map((s) => ({
       ...(s.setId !== undefined ? { setId: s.setId } : {}),
@@ -95,7 +95,7 @@ function basisSets(h: HistorySession): TargetBasisSet[] {
  */
 export function ruleBasis(result: NextTargets, history: readonly HistorySession[], equipmentId: string | null, fallbackTz: string): TargetBasis | null {
   for (const id of result.basedOnSessionIds) {
-    const h = history.find((x) => x.sessionId === id && x.equipmentId === equipmentId && !x.imported);
+    const h = history.find((x) => x.sessionId === id && matchesEquipment(x, equipmentId));
     if (!h) continue;
     const sets = basisSets(h);
     if (!sets.some((s) => isSetCountable(s, 'progression'))) continue;
@@ -106,6 +106,7 @@ export function ruleBasis(result: NextTargets, history: readonly HistorySession[
       gymId: h.gymId,
       equipmentId: h.equipmentId,
       sets,
+      ...(h.imported ? { imported: true as const } : {}),
     };
   }
   return null;
@@ -158,6 +159,14 @@ export function stepText(step: TargetStep): string {
   return `${sign}${amount}${pct}${tail}`;
 }
 
+/**
+ * The guard note for a rule target worked out with no equipment to check it
+ * on. A target fitted to a real item later (Start next or Up next from a
+ * FitNotes workout, `fitLater`) drops it for the fit's own note (review
+ * import-progress r2 S1).
+ */
+export const UNCHECKED_NOTE = 'Not checked against equipment: this exercise has no equipment set up at this gym.';
+
 export interface RuleProvenanceInput {
   result: NextTargets;
   history: readonly HistorySession[];
@@ -173,7 +182,7 @@ export function ruleTargetProvenance(input: RuleProvenanceInput, target: TargetS
   const from = basis === null ? null : referenceLoad(basis, target.setType);
   const step = from !== null && target.load !== null ? targetStep(from, target.load, eq) : null;
   const guardNotes: string[] = [];
-  if (result.loadFeasibility === 'unchecked') guardNotes.push('Not checked against equipment: this exercise has no equipment set up at this gym.');
+  if (result.loadFeasibility === 'unchecked') guardNotes.push(UNCHECKED_NOTE);
   if (eq !== null && target.load !== null && (result.decision === 'increase_reps' || result.decision === 'ceiling_reached')) {
     const card = buildStepCard(eq, target.load);
     if (card?.atMax) guardNotes.push(`Capped at ${loadWord(target.load, eq)}: ${maxPhrase(eq.kind)}.`);

@@ -69,6 +69,8 @@ export const CoachEntityKindSchema = z.enum([
    * workout's own `add_exercise` command; Undo takes it out while nothing on it is done.
    */
   'session_exercise',
+  /** (14 Oct) The live workout's own name (`rename_workout`), through the workout's `rename_session` command; Undo names it back. */
+  'session_name',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -181,6 +183,18 @@ export const AddExerciseTodayArgsSchema = z.strictObject({
 });
 export type AddExerciseTodayArgs = z.infer<typeof AddExerciseTodayArgsSchema>;
 
+/**
+ * (14 Oct) Rename the live workout when Ben asks ("change the name of the
+ * workout to Chest day"). The workout's own `rename_session` command,
+ * versioned on the session (rule 5); the routine keeps its name.
+ */
+export const RenameWorkoutArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  name: z.string().min(1).max(120),
+});
+export type RenameWorkoutArgs = z.infer<typeof RenameWorkoutArgsSchema>;
+
 export const GetRecentActionsArgsSchema = z.strictObject({
   limit: z.int().min(1).max(10),
 });
@@ -288,6 +302,8 @@ export const CoachToolNameSchema = z.enum([
   'adjust_pending_sets',
   /** (12 Oct) Add an exercise to today's workout when Ben asks; applied at once with Undo. */
   'add_exercise_today',
+  /** (14 Oct) Rename the live workout when Ben asks; applied at once with Undo. */
+  'rename_workout',
   'log_set',
   'correct_set',
   'set_next_session_targets',
@@ -313,6 +329,7 @@ export const COACH_TOOL_ARGS = {
   get_recent_actions: GetRecentActionsArgsSchema,
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
   add_exercise_today: AddExerciseTodayArgsSchema,
+  rename_workout: RenameWorkoutArgsSchema,
   log_set: LogSetArgsSchema,
   correct_set: CorrectSetArgsSchema,
   set_next_session_targets: SetNextSessionTargetsArgsSchema,
@@ -473,6 +490,13 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     equipmentName: z.string().min(1).max(120).nullable(),
     afterName: z.string().min(1).max(120).nullable(),
     supersetWithName: z.string().min(1).max(120).nullable(),
+  }),
+  /** (14 Oct) The live workout renamed from chat: the name before (null: none) and after, for Undo. */
+  z.object({
+    kind: z.literal('rename_workout'),
+    sessionId: IdSchema,
+    before: z.string().min(1).max(120).nullable(),
+    after: z.string().min(1).max(120),
   }),
   /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
   z.object({

@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { undoOpId, type ContextDescription } from '@fizz/coach';
@@ -12,6 +12,8 @@ import { nowMs as clockNow } from '../../clock';
 import { isGeneralEntry, type CoachAvailability, type CoachEntry } from '../../coach/coach-service';
 import {
   applyProgress,
+  COACH_DONE_ACCESSORY_ID,
+  COACH_TRANSCRIPT_KEYBOARD,
   loadedOutOfContext,
   missingOutOfContext,
   routeLine,
@@ -26,6 +28,7 @@ import {
   type StarterChip,
   type StatusAction,
   type ThreadRow,
+  type ViewIcon,
   type WorkoutOutOfContext,
 } from '../../coach/sheet-view';
 import { newUuid } from '../../device/runtime';
@@ -33,10 +36,10 @@ import { formatTime } from '../../format/dates';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, Chip, DomainLabel, Icon, TextButton, TextField } from '../../ui';
+import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, TextButton, TextField } from '../../ui';
 import { CoachCard } from './CoachCard';
 import { BuildRequestCard, PendingBuildCard, WorkoutDraftCard } from './BuildCards';
-import { BUILD_COPY, buildCardView, needsCoachView } from '../../coach/build-view';
+import { BUILD_COPY, buildCardView, needsCoachView, type BuildDayChip } from '../../coach/build-view';
 
 /**
  * The coach sheet (coach-sheet.md, ADR 0020 C6). A side door: it never opens
@@ -50,7 +53,7 @@ import { BUILD_COPY, buildCardView, needsCoachView } from '../../coach/build-vie
 /** Typed text per entry, kept while the app runs (closing the sheet keeps it; CS4). */
 const drafts = new Map<string, string>();
 const entryKey = (e: CoachEntry): string =>
-  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${String(e.days)}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : e.kind === 'draft' ? `draft:${e.draftId}` : `${e.kind}:${e.sessionId}`;
+  e.kind === 'today' ? 'today' : e.kind === 'progress' ? `progress:${e.period}` : e.kind === 'progress_exercise' ? `exercise:${e.exerciseName}:${e.seriesLabel}` : e.kind === 'draft' ? `draft:${e.draftId}` : `${e.kind}:${e.sessionId}`;
 
 export function CoachSheetScreen() {
   const theme = useTheme();
@@ -84,7 +87,9 @@ export function CoachSheetScreen() {
   /** The Build card (workout-builder §4.1), shown by the chip or an entry from `Build with coach`. */
   const [showBuild, setShowBuild] = useState(buildParam === true);
   /** A build turn running (the pending card, §4.2). */
-  const [building, setBuilding] = useState<{ focus: BuildFocus; minutes: number; startedAtMs: number } | null>(null);
+  const [building, setBuilding] = useState<{ focus: BuildFocus; dayName: string | null; minutes: number; startedAtMs: number } | null>(null);
+  /** F19: the Settings split's days for the Build card, the next one selected, and the session length. */
+  const [buildCard, setBuildCard] = useState<Awaited<ReturnType<typeof services.training.buildCard>> | null>(null);
   /** The selected gym a build uses (§4.1 gym line). */
   const [buildGym, setBuildGym] = useState<{ id: string; name: string } | null>(null);
   const sendGuard = useRef(0);
@@ -150,6 +155,9 @@ export function CoachSheetScreen() {
         const g = await services.yourData.currentGym().catch(() => null);
         if (!alive()) return;
         setBuildGym(g === null ? null : { id: g.id, name: g.name });
+        const card = await services.training.buildCard().catch(() => null);
+        if (!alive()) return;
+        setBuildCard(card);
         const today = await services.coach.today().catch(() => null);
         if (!alive()) return;
         setProfileToday(today);
@@ -205,6 +213,8 @@ export function CoachSheetScreen() {
     setLive(startLiveTurn(turnId, input, clockNow()));
     const typed = input.kind === 'words' ? input.text : null;
     if (typed !== null) setDraft('');
+    // Build 131: the keyboard goes down on Send so the answer has the room; the transcript keeps to its end.
+    Keyboard.dismiss();
     try {
       const r = await services.coach.send({
         entry,
@@ -242,14 +252,16 @@ export function CoachSheetScreen() {
   }
 
   /** `Build` on the Build card (§4.1): one message from the chips and one build turn; the pending card until it ends. */
-  async function build(minutes: number | null, f: BuildFocus) {
+  async function build(minutes: number | null, chip: BuildDayChip | null) {
     if (live !== null || clockNow() - sendGuard.current < TIMING.commitGuard) return;
     sendGuard.current = clockNow();
     const turnId = newUuid();
-    const message = buildCardView({ minutes, focus: f, gymName: buildGym?.name ?? null }).message;
+    const f: BuildFocus = chip?.focus ?? 'coach_picks';
+    const message = buildCardView({ minutes, days: chip === null ? [] : [chip], dayId: chip?.id ?? null, gymName: buildGym?.name ?? null }).message;
     setShowBuild(false);
     setNotice(null);
-    setBuilding({ focus: f, minutes: minutes ?? 60, startedAtMs: clockNow() });
+    Keyboard.dismiss();
+    setBuilding({ focus: f, dayName: chip?.day.name ?? null, minutes: minutes ?? 60, startedAtMs: clockNow() });
     setLive(startLiveTurn(turnId, { kind: 'words', text: message, spoken: false }, clockNow()));
     try {
       const r = await services.coach.buildWorkout({
@@ -258,6 +270,8 @@ export function CoachSheetScreen() {
         turnId,
         minutes,
         focus: f,
+        day: chip?.day ?? null,
+        mainLift: chip === null ? null : (buildCard?.mainLifts[chip.id]?.name ?? null),
         extra: text,
         origin: 'card',
         onProgress: (p) => {
@@ -474,7 +488,16 @@ export function CoachSheetScreen() {
         </View>
       ) : null}
 
-      <ScrollView ref={scroll} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })} contentContainerStyle={{ padding: theme.components.screenMargin, gap: theme.space['4'], flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scroll}
+        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+        // The keyboard showing or hiding resizes the transcript (KeyboardAvoidingView): keep the newest reply in view.
+        onLayout={() => scroll.current?.scrollToEnd({ animated: false })}
+        contentContainerStyle={{ padding: theme.components.screenMargin, flexGrow: 1 }}
+        {...COACH_TRANSCRIPT_KEYBOARD}
+      >
+        {/* A tap on the conversation (not on a button in it) hides the keyboard. */}
+        <Pressable accessible={false} onPress={() => { Keyboard.dismiss(); }} style={{ flexGrow: 1, gap: theme.space['4'] }}>
         {empty && chips.length > 0 && !showBuild ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {chips.map((c) => (
@@ -496,9 +519,9 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
         {showBuild && live === null ? (
-          <BuildRequestCard gymName={buildGym?.name ?? null} defaultMinutes={null} disabled={status?.canSend !== true} onBuild={(minutes, f) => void build(minutes, f)} />
+          <BuildRequestCard gymName={buildGym?.name ?? null} defaultMinutes={buildCard?.sessionMinutes ?? null} days={buildCard?.days ?? []} defaultDayId={buildCard?.nextDayId ?? null} disabled={status?.canSend !== true} onBuild={(minutes, chip) => void build(minutes, chip)} />
         ) : null}
-        {building !== null ? <PendingBuildCard focus={building.focus} minutes={building.minutes} startedAtMs={building.startedAtMs} nowMs={now} onCancel={() => { if (live !== null) services.coach.stop(live.turnId); }} /> : null}
+        {building !== null ? <PendingBuildCard focus={building.focus} dayName={building.dayName} minutes={building.minutes} startedAtMs={building.startedAtMs} nowMs={now} onCancel={() => { if (live !== null) services.coach.stop(live.turnId); }} /> : null}
         {rows.map((r) => (
           <Row
             key={r.key}
@@ -508,6 +531,7 @@ export function CoachSheetScreen() {
             onProposal={(id, tap) => void tapProposal(id, tap)}
             onMemory={(id, v, d) => void decideMemory(id, v, d)}
             onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)}
+            onAccept={() => r.kind === 'offer' && live === null && void send(r.input)}
             onDraft={{ gymId: buildGym?.id ?? null, open: openDraft, openRoutine: openRoutine, changed: () => { changed(); void loadRows(threadId ?? null); } }}
           />
         ))}
@@ -533,6 +557,7 @@ export function CoachSheetScreen() {
             {notice}
           </AppText>
         ) : null}
+        </Pressable>
       </ScrollView>
 
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: insets.bottom + theme.space['2'], gap: theme.space['2'] }}>
@@ -554,7 +579,7 @@ export function CoachSheetScreen() {
         {sees !== null ? <SeesPanel sees={sees} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>
           <View style={{ flex: 1 }}>
-            <TextField ref={field} value={text} onChangeText={setDraft} placeholder={status?.placeholder ?? 'Ask the coach…'} multiline style={{ maxHeight: 140 }} accessibilityLabel="Message to the coach" />
+            <TextField ref={field} value={text} onChangeText={setDraft} placeholder={status?.placeholder ?? 'Ask the coach…'} multiline inputAccessoryViewID={COACH_DONE_ACCESSORY_ID} style={{ maxHeight: 140 }} accessibilityLabel="Message to the coach" />
           </View>
           {running ? (
             <SendButton icon="stop.fill" label="Stop the coach" enabled onPress={() => {
@@ -574,6 +599,7 @@ export function CoachSheetScreen() {
           </View>
         ) : null}
       </View>
+      <KeyboardDoneAccessory nativeID={COACH_DONE_ACCESSORY_ID} />
     </KeyboardAvoidingView>
   );
 }
@@ -610,6 +636,7 @@ function Row({
   onProposal,
   onMemory,
   onRetry,
+  onAccept,
   onDraft,
 }: {
   row: ThreadRow;
@@ -618,6 +645,8 @@ function Row({
   onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
   onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
   onRetry: () => void;
+  /** `Adjust` on the coach's offer (CA1). */
+  onAccept: () => void;
   /** A coach draft's card (workout-builder §4.2): `Open ›` closes the sheet and opens its overview; the sheet never opens it by itself. */
   onDraft?: { gymId: string | null; open: (draftId: string) => void; openRoutine: (routineId: string) => void; changed: () => void };
 }) {
@@ -659,17 +688,47 @@ function Row({
           </AppText>
         </View>
       );
-    case 'outcome':
+    case 'offer':
       return (
-        <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
-          <Icon name={row.icon} size={16} />
-          <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
-            {row.text}
-          </AppText>
-          {row.retry ? <TextButton label="Try again" onPress={onRetry} /> : null}
+        <View style={{ flexDirection: 'row' }}>
+          <TextButton label="Adjust" onPress={onAccept} />
         </View>
       );
+    case 'outcome':
+      return <OutcomeRow text={row.text} icon={row.icon} retry={row.retry} why={row.why} onRetry={onRetry} />;
   }
+}
+
+/** A turn that didn't finish: its line, `Try again`, and the recorded reason behind `Why?` (F12). */
+function OutcomeRow({ text, icon, retry, why, onRetry }: { text: string; icon: ViewIcon; retry: boolean; why: string | null; onRetry: () => void }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
+        <Icon name={icon} size={16} />
+        <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
+          {text}
+        </AppText>
+        {why !== null ? (
+          <TextButton
+            label="Why?"
+            tone="secondary"
+            accessibilityLabel={open ? 'Hide why' : 'Why the coach didn’t answer'}
+            onPress={() => {
+              setOpen((o) => !o);
+            }}
+          />
+        ) : null}
+        {retry ? <TextButton label="Try again" onPress={onRetry} /> : null}
+      </View>
+      {open && why !== null ? (
+        <AppText variant="callout" color="text.secondary">
+          {why}
+        </AppText>
+      ) : null}
+    </View>
+  );
 }
 
 function LiveRows({ live, now }: { live: LiveTurn; now: number }) {

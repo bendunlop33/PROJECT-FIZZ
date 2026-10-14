@@ -5,7 +5,8 @@ import type { OverviewRow, StepTarget } from '@fizz/domain';
 
 import type { AddSheet } from '../../services/workout-services';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Chip, ChipRow, Icon, NumberStepper, PrimaryButton, SubstituteRowView, TextButton, TextField } from '../../ui';
+import { AppText, BottomCard, Chip, ChipRow, Icon, NumberStepper, PrimaryButton, SetCountBar, SubstituteRowView, TextButton, TextField } from '../../ui';
+import { SET_BAR } from '../../workout/set-shape-view';
 import { EDIT_MODE_COPY, repsDraftOf, repsDraftWith, repsPayload, repsSteps, TODAY_EDITS_COPY, type RepsDraft } from '../../workout/overview-edits';
 import { OVERVIEW_COPY } from '../../workout/overview';
 
@@ -170,6 +171,8 @@ export function AddExerciseSheet({
   onPick,
   onClose,
   stacked,
+  sets,
+  onSets,
 }: {
   visible: boolean;
   sheet: AddSheet | null;
@@ -180,6 +183,9 @@ export function AddExerciseSheet({
   onPick: (row: AddSheet['rows'][number]) => void;
   onClose: () => void;
   stacked: boolean;
+  /** The `Sets` bar (exercise-library §10.2): how many working sets a row tap adds. */
+  sets: number;
+  onSets: (n: number) => void;
 }) {
   const theme = useTheme();
   return (
@@ -192,7 +198,7 @@ export function AddExerciseSheet({
       </View>
       <TextField value={query} onChangeText={onQuery} placeholder={EDIT_MODE_COPY.search} accessibilityLabel={EDIT_MODE_COPY.search} autoCorrect={false} returnKeyType="search" />
       {sheet !== null && sheet.rows.length > 0 ? (
-        <ScrollView keyboardShouldPersistTaps="handled">
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }}>
           <View style={{ alignItems: 'flex-end', paddingBottom: theme.space['1'] }}>
             <AppText variant="sectionLabel" color="text.tertiary">
               {OVERVIEW_COPY.target}
@@ -215,6 +221,7 @@ export function AddExerciseSheet({
           {OVERVIEW_COPY.loadFailed}
         </AppText>
       ) : null}
+      <SetCountBar value={sets} limits={SET_BAR.limits} onChange={onSets} />
     </BottomCard>
   );
 }

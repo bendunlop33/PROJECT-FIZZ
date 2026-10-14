@@ -1,8 +1,10 @@
-import type { EquipmentInstance, Exercise, Load, PlannedSet, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, TargetProvenance, WorkoutSet } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, PlannedSet, RepRange, Routine, RoutineExercise, SessionAggregate, SetTemplate, SetType, TargetProvenance, WorkoutSet } from '@fizz/schemas';
 import { loadText, NBSP, repRangeText, targetShort } from '../display';
 import { loadDirection } from '../equipment';
-import { fitProvenance, startWarningNote } from '../target-provenance';
+import { fitProvenance, startWarningNote, UNCHECKED_NOTE } from '../target-provenance';
 import { convertMass } from '../units';
+import { needsNoEquipment } from '../exercise-equipment';
+import { deriveId } from '../stable';
 import { startWorkoutWithMode, type StartWorkoutInput, type StartWorkoutOutput } from './create';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, partRootOf, partsOf } from './gym-switch';
@@ -11,7 +13,7 @@ import type { SnapSetResult, SnapSlotResult } from './snap';
 import { GENERIC_WORKOUT_NAME } from './first-run';
 import { repeatNoteText } from './snap-text';
 import { swapEquipmentId, type SwapPlan } from './swap-plan';
-import { addedSlotShape, shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
+import { addedSlotShape, resizeWorkingSets, shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
 
 /**
  * `Repeat last workout` / `Start from a past workout` (routines.md RT4, §2.4,
@@ -74,7 +76,8 @@ export interface RepeatInput {
    * on its default shape) and its place: `rank` is in the same order as the
    * source rows' `order`.
    */
-  added?: readonly { slotKey: string; rank: number; plan: SwapPlan }[];
+  /** `workingSets`: the count Ben chose when adding (exercise-library §10.2); absent = the plan's own. */
+  added?: readonly { slotKey: string; rank: number; plan: SwapPlan; workingSets?: number }[];
 }
 
 export interface RepeatNote {
@@ -114,8 +117,14 @@ export interface RepeatOutput extends StartWorkoutOutput {
   shapedFrom?: Record<string, ShapeBefore>;
 }
 
+/** The pin an exercise from a FitNotes workout starts from: no item recorded, so the shared fit maps one by kind (B7). */
+export function importPinId(exercise: Pick<Exercise, 'id'>): string {
+  return deriveId(`fitnotes-pin:${exercise.id}`);
+}
+
 export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
   const src = input.source;
+  const imported = src.session.source === 'import';
   const notCopied: RepeatOutput['notCopied'] = [];
   const exercises = new Map<string, Exercise>();
   const routineExercises: RoutineExercise[] = [];
@@ -261,8 +270,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     routineExercises.push({
       id: rexId,
       exerciseId: exercise.id,
-      // Pinned to last time's item: `snapPlanToGym` maps it to this gym (GS3).
-      equipmentId: sourceEq?.id ?? null,
+      // Pinned to last time's item: `snapPlanToGym` maps it to this gym (GS3). A FitNotes
+      // workout recorded no item (B7): a pin found nowhere, so the fit maps one by the
+      // exercise's kinds and rounds toward easier, never above a max, or drops the load (rule 4).
+      equipmentId: sourceEq?.id ?? (imported && !needsNoEquipment(exercise) ? importPinId(exercise) : null),
       order: routineExercises.length,
       supersetGroup: sx.supersetGroup,
       setTemplates: templates,
@@ -278,10 +289,13 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     exercises.set(sp.exercise.id, sp.exercise);
     if (sp.pin !== null) knownEquipment.set(sp.pin.id, sp.pin);
     const plan = sp.plan ?? [];
-    const sources =
+    type Source = { setType: SetType; load: Load | null; reps: RepRange | null; durationS: number | null; from: { kind: 'rule'; planned: PlannedSet } | { kind: 'plain' } };
+    const sources = resizeWorkingSets<Source>(
       plan.length > 0
         ? plan.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS, from: { kind: 'rule' as const, planned: p.planned } }))
-        : addedSlotShape(sp.exercise, sp.pin?.kind ?? null).templates.map((t) => ({ setType: t.setType, load: null, reps: t.reps, durationS: t.durationS, from: { kind: 'plain' as const } }));
+        : addedSlotShape(sp.exercise, sp.pin?.kind ?? null).templates.map((t) => ({ setType: t.setType, load: null, reps: t.reps, durationS: t.durationS, from: { kind: 'plain' as const } })),
+      a.workingSets,
+    );
     const templates = shaped(
       a.slotKey,
       sources.map((x) => {
@@ -390,7 +404,10 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       const rule = from.planned.provenance;
       if (rule === undefined) return null;
       const fit = fitNote(found.templateId, 'Target');
-      return fitProvenance(fit === null ? rule : { ...rule, guardNotes: [...rule.guardNotes, fit] });
+      // r2 S1: a target fitted to a real item here was checked against it; the fit's note (or none, when exact) says how.
+      const fitted = (fitOf.get(found.templateId)?.slot.equipment ?? null) !== null;
+      const kept = fitted ? rule.guardNotes.filter((n) => n !== UNCHECKED_NOTE) : rule.guardNotes;
+      return fitProvenance({ ...rule, guardNotes: fit === null ? kept : [...kept, fit] });
     }
     if (from.set.actual === null) return null;
     const number = numbers.get(from.set.id);

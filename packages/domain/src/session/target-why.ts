@@ -13,7 +13,7 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText } from '../display';
-import type { HistorySession } from '../progression';
+import { comparableSetsOf, matchesEquipment, type HistorySession } from '../progression';
 import { isPainCheckDue, PAIN_AREA_WORD } from '../pain-flags';
 import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
@@ -195,22 +195,22 @@ function storedLastTime(basis: TargetBasis, ex: SessionExercise, eq: EquipmentIn
   const lines = [sets.length === 0 ? ALL_LEFT_OUT : basisSetsText(sets, ex, basisEq ?? eq)];
   const effort = effortText(sets);
   if (effort !== null) lines.push(effort);
-  lines.push(whereText(dayMonthText(basis.performedAt.utc, basis.performedAt.tz), basis.gymId, basisEq?.name ?? null, gymNames));
+  lines.push(basis.imported === true ? `${dayMonthText(basis.performedAt.utc, basis.performedAt.tz)} · FitNotes` : whereText(dayMonthText(basis.performedAt.utc, basis.performedAt.tz), basis.gymId, basisEq?.name ?? null, gymNames));
   return { key: 'last_time', label: 'Last time', lines, kind: 'actual' };
 }
 
 /** A history workout's non-warm-up sets, sides kept, in the shape the rows print. */
 function shownSets(h: HistorySession): ShownSet[] {
-  return h.sets
+  return comparableSetsOf(h)
     .filter((x) => x.setType !== 'warmup')
     .map((x) => ({ ...(x.number !== undefined ? { number: x.number } : {}), side: x.side, values: { load: x.load, reps: x.reps, durationS: null, rpe: x.rpe, rir: x.rir }, ...(x.exclusions ? { exclusions: x.exclusions } : {}) }));
 }
 
-/** The workout `lastComparableSession` picks (same equipment, unit and convention; never imported), with its sides. */
+/** The workout `lastComparableSession` picks (same equipment, unit and convention; FitNotes on any equipment, B7), with its sides. */
 export function lastComparableHistory(history: readonly HistorySession[], ex: Pick<SessionExercise, 'equipmentId' | 'unit' | 'loadConvention'>): HistorySession | null {
   const prev = lastComparableSession(history, ex);
   if (prev === null) return null;
-  return history.find((h) => h.sessionId === prev.sessionId && h.equipmentId === ex.equipmentId) ?? null;
+  return history.find((h) => h.sessionId === prev.sessionId && matchesEquipment(h, ex.equipmentId)) ?? null;
 }
 
 /** `55 kg × 6, 6, 6`: a history workout's non-warm-up sets as actual results (`Before flag`, the pain flag sheet). */
@@ -227,7 +227,7 @@ function historyLastTime(prev: HistorySession | null, ex: SessionExercise, eq: E
   const lines = [sets.length === 0 ? ALL_LEFT_OUT : basisSetsText(sets, ex, eq)];
   const effort = effortText(sets);
   if (effort !== null) lines.push(effort);
-  lines.push(whereText(dayMonthText(prev.performedAtUtc, prev.tz ?? tz), prev.gymId, eq?.name ?? null, gymNames));
+  lines.push(prev.imported ? `${dayMonthText(prev.performedAtUtc, prev.tz ?? tz)} · FitNotes` : whereText(dayMonthText(prev.performedAtUtc, prev.tz ?? tz), prev.gymId, eq?.name ?? null, gymNames));
   return { key: 'last_time', label: 'Last time', lines, kind: 'actual' };
 }
 

@@ -1,4 +1,4 @@
-import { dayMonthText, formatDuration, toMs, type LibraryRow, type RoutineConflict, type RoutineIssue } from '@fizz/domain';
+import { dayMonthText, formatDuration, NO_DISTANCE_IN_WORKOUTS, toMs, type LibraryRow, type RoutineConflict, type RoutineIssue } from '@fizz/domain';
 
 import { formatTime } from '../format/dates';
 import type { RoutineExercise } from '@fizz/schemas';
@@ -35,6 +35,9 @@ export const LIBRARY_COPY_UI = {
   restore: 'Restore from backup',
   more: 'More',
   saveToWorkouts: 'Save to Workouts',
+  /** The Save sheet's summary-line `Edit ›` (§A2.5, WL-A18) and its VoiceOver label. */
+  edit: 'Edit',
+  editBeforeSaving: 'Edit sets before saving',
   savedToWorkouts: 'Saved to Workouts',
   savedLink: (name: string) => `Saved · ${name} ›`,
   nothingToSave: 'Nothing to save',
@@ -57,6 +60,7 @@ export const EDITOR_COPY = {
   dropSet: 'Drop set',
   restByType: 'Rest by set type',
   replace: 'Replace',
+  exerciseInfo: 'Exercise info',
   supersetWithNext: 'Superset with next',
   ungroup: 'Ungroup',
   moveUp: 'Move up',
@@ -117,17 +121,40 @@ export function rowLine(row: Pick<LibraryRow, 'detail' | 'issue'>): { text: stri
 /**
  * The editor's primary (routines.md §3.3): `Add a name`, then `Add an
  * exercise`, then `Save`; a stored workout with nothing changed reads `No
- * changes`; any other issue reads `Fix 1 issue`. Disabled unless it saves.
+ * changes`; a refused distance slot alone reads `Can’t save distance yet`
+ * (review library-browse r3 S1);
+ * any other issue reads `Fix 1 issue`. Disabled unless it saves.
  */
 export function editorPrimary(input: { issues: readonly RoutineIssue[]; dirty: boolean; isNew: boolean }): { label: string; disabled: boolean } {
   const first = input.issues[0];
   if (first === 'Add a name' || first === 'Add an exercise') return { label: first, disabled: true };
+  if (first !== undefined && input.issues.every((x) => x === NO_DISTANCE_IN_WORKOUTS)) return { label: NO_DISTANCE_IN_WORKOUTS, disabled: true };
   if (first !== undefined) return { label: `Fix ${String(input.issues.length)} ${input.issues.length === 1 ? 'issue' : 'issues'}`, disabled: true };
   if (!input.isNew && !input.dirty) return { label: EDITOR_COPY.noChanges, disabled: true };
   return { label: EDITOR_COPY.save, disabled: false };
 }
 
-/** An exercise card's `⋯` (§A2.3): Replace, Superset with next / Ungroup, Move up, Move down, Remove. */
+/**
+ * The issue line on an editor card: a distance slot the save refuses
+ * (`isRefusedDistanceSlot`: newly added, or in an unsaved copy) reads
+ * `⚠ Can’t save distance yet` with `Replace` and `Remove`, so Ben can see
+ * which card blocks `Save`. A slot stored before EL-B13 shows nothing and
+ * saves as it was (review library-browse r3 S1).
+ */
+export function editorSlotIssue(refused: boolean): { text: string; actions: string[] } | null {
+  return refused ? { text: NO_DISTANCE_IN_WORKOUTS, actions: [EDITOR_COPY.replace, EDITOR_COPY.remove] } : null;
+}
+
+/**
+ * A row in the editor's `Add exercise` / `Replace` sheet: a distance
+ * exercise shows disabled with `Can’t save distance yet`, as on the
+ * Library's Add sheet (exercise-library EL-B13, review library-browse r2 S1).
+ */
+export function editorAddRow(x: { measurement: 'reps' | 'duration' | 'distance' }): { disabled: boolean; subtitle: string | null } {
+  return x.measurement === 'distance' ? { disabled: true, subtitle: NO_DISTANCE_IN_WORKOUTS } : { disabled: false, subtitle: null };
+}
+
+/** An exercise card's `⋯` (§A2.3, revised 2026-10-12): Replace, Exercise info, Superset with next / Ungroup, Move up, Move down, Remove. */
 export function exerciseMenu(list: readonly Pick<RoutineExercise, 'id' | 'supersetGroup'>[], slotId: string): string[] {
   const i = list.findIndex((e) => e.id === slotId);
   const slot = list[i];
@@ -136,6 +163,7 @@ export function exerciseMenu(list: readonly Pick<RoutineExercise, 'id' | 'supers
   const canGroup = next !== undefined && !(slot.supersetGroup !== null && slot.supersetGroup === next.supersetGroup);
   return [
     EDITOR_COPY.replace,
+    EDITOR_COPY.exerciseInfo,
     ...(canGroup ? [EDITOR_COPY.supersetWithNext] : []),
     ...(slot.supersetGroup !== null ? [EDITOR_COPY.ungroup] : []),
     ...(i > 0 ? [EDITOR_COPY.moveUp] : []),

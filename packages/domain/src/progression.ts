@@ -63,17 +63,216 @@ export interface HistorySession {
   /** The workout's gym; null when it wasn't recorded (an imported workout). */
   gymId: string | null;
   /**
-   * Imported from FitNotes. Until P-I3 is decided (ADR 0016), imported
-   * history is never comparable: it doesn't feed `Last`, targets, the summary
-   * comparison or a highlight, whatever its equipment (review r2 B1). It
-   * isn't enough that it has no equipment: an exercise with no equipment on
-   * either side would otherwise match it.
+   * Imported from FitNotes (B7, approved 11 Oct 2026; ADR 0016 P-I3 option
+   * (b)). Imported history has no equipment instance, so it matches on
+   * exercise, unit and load convention alone (`matchesEquipment`), and only
+   * its working sets count (`comparableSetsOf`). It is always labelled
+   * FitNotes where it shows (`Last (FitNotes, 1 Oct)`), and every target made
+   * from it is still fitted to today's real equipment (rule 4).
    */
   imported: boolean;
   sets: readonly HistorySet[];
   /** The workout's time zone and routine name, for `Why?` (`after Push A, 1 Oct`). */
   tz?: string;
   routineName?: string | null;
+}
+
+/**
+ * B7: whether a history session can be compared with an exercise done on
+ * `equipmentId`. Logged history needs the same equipment instance; imported
+ * (FitNotes) history has none recorded, so it matches any (unit and
+ * convention are still checked by each caller).
+ */
+export function matchesEquipment(h: Pick<HistorySession, 'imported' | 'equipmentId'>, equipmentId: string | null): boolean {
+  return h.imported || h.equipmentId === equipmentId;
+}
+
+/**
+ * The sets of a history session that a comparison or target reads. Logged
+ * history: every set, as logged (warm-ups are flagged). Imported history:
+ * FitNotes has no warm-up flag, so a ramp (`60 × 10, 80 × 5, 100 × 5,
+ * 100 × 5`) arrives as all working sets. Only the lighter sets **before** the
+ * session's hardest set (heaviest for resistance, least assistance for
+ * assisted), per unit and convention, are read as a warm-up ramp and left
+ * out. The hardest set and everything after it are kept, so back-off sets
+ * and descending pyramids (`100 × 5, 90 × 8, 80 × 10`) count as the working
+ * sets they are (review import-progress B2; reading (a), provisional until
+ * Ben confirms).
+ *
+ * Import-progress r4 S1: working sets followed by one heavier set
+ * (`20 × 10 ×3, 22.5 × 6`) are not a ramp. The sets just before the first
+ * hardest set are kept as working sets (`workingRunBeforeTop`) when they are
+ * 2 or more in a row at one load, more than the sets at the hardest load,
+ * each with at least as many reps as the first hardest set, and (resistance)
+ * at least 80% of its load. A real ramp (`20 × 10, 20 × 10, 60 × 5, 80 × 3,
+ * 100 × 5`, or `80 × 3, 80 × 3, 100 × 5`) still reads as a ramp. Sets with no
+ * load (or bodyweight) are kept when nothing in the session has a load.
+ * Nothing stored changes: this is how history is read.
+ */
+export function comparableSetsOf<T extends Pick<HistorySet, 'setType' | 'load'> & { reps?: number | null }>(h: { imported: boolean; sets: readonly T[] }): T[] {
+  if (!h.imported) return [...h.sets];
+  const loaded = h.sets.filter((x) => x.load !== null && x.load.convention !== 'bodyweight');
+  if (loaded.length === 0) return h.sets.filter((x) => x.setType !== 'warmup');
+  const keyOf = (l: Load) => `${l.unit}|${l.convention}`;
+  /** Per unit and convention: the hardest load and where it first appears. */
+  const hardest = new Map<string, { v: number; at: number }>();
+  loaded.forEach((x, at) => {
+    if (x.load === null) return;
+    const key = keyOf(x.load);
+    const v = toScaled(x.load.value);
+    const prev = hardest.get(key);
+    const resist = loadDirection(x.load.convention) === 'resistance';
+    if (prev === undefined || (resist ? v > prev.v : v < prev.v)) hardest.set(key, { v, at });
+  });
+  /** Per unit and convention: where the kept sets start. */
+  const startAt = new Map<string, number>();
+  for (const [key, top] of hardest) startAt.set(key, workingRunBeforeTop(loaded, key, top, keyOf));
+  return loaded.filter((x, at) => {
+    if (x.setType === 'warmup' || x.load === null) return false;
+    const start = startAt.get(keyOf(x.load));
+    return start !== undefined && at >= start;
+  });
+}
+
+/**
+ * r4 S1: where the kept sets of one unit and convention start. The first
+ * hardest set, or the start of a run of working sets just before it (see
+ * `comparableSetsOf`). Indices are into `loaded`.
+ */
+function workingRunBeforeTop(
+  loaded: readonly (Pick<HistorySet, 'setType' | 'load'> & { reps?: number | null })[],
+  key: string,
+  top: { v: number; at: number },
+  keyOf: (l: Load) => string,
+): number {
+  const same = loaded.map((x, at) => ({ x, at })).filter(({ x }) => x.load !== null && keyOf(x.load) === key && x.setType !== 'warmup');
+  const p = same.findIndex(({ at }) => at === top.at);
+  if (p < 1) return top.at;
+  const sv = (i: number) => toScaled((same[i]?.x.load as Load).value);
+  const runLoad = sv(p - 1);
+  let first = p - 1;
+  while (first > 0 && sv(first - 1) === runLoad) first -= 1;
+  const run = same.slice(first, p);
+  const atTop = same.filter((_, i) => sv(i) === top.v).length;
+  const topReps = same[p]?.x.reps;
+  if (run.length < 2 || run.length <= atTop || topReps === undefined || topReps === null) return top.at;
+  if (!run.every(({ x }) => x.reps !== undefined && x.reps !== null && x.reps >= topReps)) return top.at;
+  const convention = (same[p]?.x.load as Load).convention;
+  if (loadDirection(convention) === 'resistance' && runLoad * 100 < top.v * 80) return top.at;
+  return run[0]?.at ?? top.at;
+}
+
+/** How the sets kept from a FitNotes session (`comparableSetsOf`) are judged (`readFitNotesWorkingSets`). */
+export interface FitNotesReading<T> {
+  /**
+   * The working load: the kept load with the most sets. A tie goes to the
+   * easiest only when the tied loads have one set each; otherwise to the
+   * hardest (r4 B1). Null when no kept set has a load.
+   */
+  reference: Load | null;
+  /** The sets the rule judges, in session order: the sets at the reference, plus the harder sets when they aren't a lone top set. */
+  judged: T[];
+  /** Harder sets than the reference, fewer than the sets at it (a top set before back-offs): context, never judged. */
+  context: T[];
+  /** Harder sets than the reference that are judged with it (they aren't fewer than the sets at it, e.g. a pyramid). */
+  harderJudged: T[];
+  /** Easier sets than the reference (a finisher or drop set): never judged and never the planned load. */
+  easier: T[];
+}
+
+/**
+ * Import-progress r3 B1 (provisional until Ben confirms; ADR 0016): which
+ * load is the working load of a FitNotes session, read from the sets
+ * `comparableSetsOf` kept (ramp already left out). The reference is the load
+ * with the most sets. Ties go to the easiest only when the tied loads have one
+ * set each (a top single and one back-off, r2 B1); a tie of 2 or more sets
+ * goes to the hardest, so equal-count finishers, burnouts and drop-set
+ * triplets are never the working load (r4 B1). So:
+ * - working sets then a lighter finisher (`20 × 10 ×3, 12 × 15`, or
+ *   `20 × 10 ×3, 12 × 15 ×3`): 20, and the finisher is left out;
+ * - a top single then back-offs (`22 × 4, 18 × 9 ×3`): 18, and the top single
+ *   is context because it is fewer than the sets at 18 (r2 B1);
+ * - a descending pyramid (`24 × 6, 20 × 8, 16 × 10`): 16, and the harder sets
+ *   are judged with it because they aren't fewer than the sets at 16.
+ * Sets in another unit or convention than the reference are in none of the
+ * lists (the rule leaves such a session out). Logged-in-app history is never
+ * read this way.
+ */
+export function readFitNotesWorkingSets<T extends Pick<HistorySet, 'load'>>(kept: readonly T[]): FitNotesReading<T> {
+  const loadOf = (x: T): Load | null => (x.load !== null && x.load.convention !== 'bodyweight' ? x.load : null);
+  const loaded = kept.filter((x) => loadOf(x) !== null);
+  if (loaded.length === 0) return { reference: null, judged: [...kept], context: [], harderJudged: [], easier: [] };
+  const kindOf = (l: Load) => `${l.unit}|${l.convention}`;
+  const groups = new Map<string, { load: Load; n: number }>();
+  for (const x of loaded) {
+    const l = loadOf(x) as Load;
+    const key = `${kindOf(l)}|${String(toScaled(l.value))}`;
+    const g = groups.get(key);
+    if (g) g.n += 1;
+    else groups.set(key, { load: l, n: 1 });
+  }
+  let best: { load: Load; n: number } | null = null;
+  for (const g of groups.values()) {
+    if (best === null || g.n > best.n) best = g;
+    else if (g.n === best.n && kindOf(g.load) === kindOf(best.load)) {
+      const dir = loadDirection(g.load.convention);
+      // r4 B1: single sets tie to the easiest (a top single then one back-off); 2+ to the hardest.
+      if (g.n === 1 ? harder(best.load.value, g.load.value, dir) : harder(g.load.value, best.load.value, dir)) best = g;
+    }
+  }
+  const ref = (best as { load: Load; n: number }).load;
+  const dir = loadDirection(ref.convention);
+  const sameKind = loaded.filter((x) => kindOf(loadOf(x) as Load) === kindOf(ref));
+  const v = (x: T) => (loadOf(x) as Load).value;
+  const atRef = sameKind.filter((x) => toScaled(v(x)) === toScaled(ref.value));
+  const harderSets = sameKind.filter((x) => harder(v(x), ref.value, dir));
+  const easier = sameKind.filter((x) => harder(ref.value, v(x), dir));
+  const contextOnly = harderSets.length < atRef.length;
+  return {
+    reference: { value: fromScaled(toScaled(ref.value)), unit: ref.unit, convention: ref.convention },
+    judged: sameKind.filter((x) => atRef.includes(x) || (!contextOnly && harderSets.includes(x))),
+    context: contextOnly ? harderSets : [],
+    harderJudged: contextOnly ? [] : harderSets,
+    easier,
+  };
+}
+
+/**
+ * The working sets to plan from a FitNotes session's kept sets
+ * (`comparableSetsOf`): the sets the rule judges (`readFitNotesWorkingSets`).
+ * A lone top set kept as context and a lighter finisher aren't planned at
+ * the new load (import-progress r3 S1; ADR 0016), so Ben isn't asked for
+ * more sets than he did at the working load.
+ */
+export function fitNotesJudgedCount(kept: readonly Pick<HistorySet, 'load'>[]): number {
+  return readFitNotesWorkingSets(kept).judged.length;
+}
+
+/**
+ * r4 B1: the working sets to plan from a FitNotes session, from its kept sets
+ * and `total` sets (`importedWorkingSetCount`). Lighter finishers are never
+ * the planned load, so they never lift the count either: 2 working sets plus
+ * 2 finishers plan 2, and drop-set triplets plan 3, not 9.
+ */
+export function fitNotesPlannedSets(kept: readonly Pick<HistorySet, 'load'>[], total: number, floor: number): number {
+  const r = readFitNotesWorkingSets(kept);
+  return importedWorkingSetCount(r.judged.length, total - r.easier.length, floor);
+}
+
+/**
+ * B1 / B2 (review import-progress): how many working sets to plan from a
+ * FitNotes session read through `comparableSetsOf` and
+ * `readFitNotesWorkingSets` (`comparable`, the judged sets, of its
+ * `total` sets). The same reading as the load, so a ramp never plans every
+ * set at the top load; and the reading never takes the count below the
+ * built-in default (`floor`), so a top single followed by nothing doesn't
+ * plan one set. A session with fewer sets than the default keeps its own
+ * count (2 sets done, 2 planned). At most 10: the rule's own `workingSets`
+ * cap, since a FitNotes session with no warm-up flag can hold many more rows
+ * than working sets; in-app counts are logged deliberately and aren't capped.
+ */
+export function importedWorkingSetCount(comparable: number, total: number, floor: number): number {
+  return Math.min(10, Math.max(comparable, Math.min(floor, total), 1));
 }
 
 /** Active pain flag for this movement. Set and cleared explicitly by the user. */
@@ -94,6 +293,14 @@ export interface NextTargetsInput {
   unit: WeightUnit;
   convention: LoadConvention;
   pain: PainStatus;
+  /**
+   * The caller fits these loads to a gym's equipment afterwards (Start next
+   * session from a FitNotes workout: `snapPlanToGym` maps an item by kind,
+   * rounds toward easier and never above a max, or drops the load). Without
+   * it, a load built on FitNotes history with no equipment here to check it
+   * is not prescribed (B7, ADR 0016 P-I3; rule 4).
+   */
+  fitLater?: boolean;
 }
 
 export type ProgressionDecision =
@@ -145,6 +352,8 @@ interface SideEval {
 }
 
 interface SessionEval {
+  /** From a FitNotes import (B7). */
+  imported: boolean;
   sessionId: string;
   performedAtUtc: string;
   /** Completed sets of the counted type (working, or top for top-set rules), as logged rows. */
@@ -162,11 +371,33 @@ interface SessionEval {
   otherSets: number;
   /** Sets of the counted type Ben left out of progress (§2.13); not in `loggedSets`. */
   leftOut: number;
-  /** Easiest counted load (lowest resistance / most assistance); null for bodyweight or no sets. */
+  /**
+   * The load the rule plans from. Logged in the app: the easiest counted load
+   * (lowest resistance / most assistance). FitNotes: the working load
+   * (`readFitNotesWorkingSets`). Null for bodyweight or no sets.
+   */
   load: number | null;
+  /** Sets judged for the range and effort (FitNotes: `readFitNotesWorkingSets`; in the app: every counted set). */
+  judgedSets: number;
+  /** FitNotes: harder sets kept as context, judged with the working load, and easier sets left out. Zero in the app. */
+  contextSets: number;
+  harderJudged: number;
+  easierLeftOut: number;
+  /**
+   * r4 B1: FitNotes, when harder sets are judged with the working load and
+   * every judged set reached the top of the range: the hardest judged load,
+   * which an increase starts from (never below a load Ben did at the top).
+   * Null otherwise.
+   */
+  increaseFrom: number | null;
   minReps: number;
-  /** Every counted set reached the top of the range (false when nothing was counted). */
+  /** Every judged set reached the top of the range (false when nothing was counted). */
   allHitTop: boolean;
+  /**
+   * A set at the planned load fell below the range. FitNotes: only sets at
+   * the working load, so a harder set is never a miss at the load planned
+   * below it (r2 B1), and a finisher never hides a miss at the working load (r3 B1).
+   */
   anyBelowFloor: boolean;
   effortOk: boolean;
   missingEffort: number;
@@ -276,9 +507,11 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
   const out: SessionEval[] = [];
   let excluded = 0;
 
-  // Imported history isn't comparable (P-I3 open; review r2 B1): left out before anything is counted.
-  for (const s of input.history.filter((h) => !h.imported).sort(byRecency)) {
-    const typed = s.sets.filter((x) => types.includes(x.setType) && x.reps !== null);
+  // B7: imported (FitNotes) history counts on any equipment, read from its working sets only.
+  /** The latest comparable session, when it came from FitNotes: how many lighter sets were read as a warm-up ramp. */
+  let latestFitNotes: { rampDropped: number } | null = null;
+  for (const s of [...input.history].sort(byRecency)) {
+    const typed = comparableSetsOf(s).filter((x) => types.includes(x.setType) && x.reps !== null);
     // §2.13: a set Ben marked (spotted, pain, form broke, other equipment) is
     // left out here, including the unit check (a flagged set on other
     // equipment doesn't make the session incomparable).
@@ -289,42 +522,93 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
         x.load.convention !== 'bodyweight' &&
         (x.load.unit !== ctx.unit || x.load.convention !== ctx.convention),
     );
-    if (s.equipmentId !== wantedEquipment || mismatched) {
+    if (!matchesEquipment(s, wantedEquipment) || mismatched || (s.imported && typed.length === 0)) {
       excluded += 1;
       continue;
     }
+    if (s.imported && out.length === 0) latestFitNotes = { rampDropped: s.sets.length - comparableSetsOf(s).length };
     const loads = counted.map((x) => (x.load === null || x.load.convention === 'bodyweight' ? null : x.load.value));
     const numeric = loads.filter((l): l is number => l !== null);
     const easiest =
       numeric.length === 0 ? null : ctx.direction === 'resistance' ? Math.min(...numeric) : Math.max(...numeric);
-    const reps = counted.map((x) => x.reps ?? 0);
+    // Import-progress r3 B1: a FitNotes session is planned from its working load
+    // (the load with the most sets, ties to the easiest) and judged on the sets
+    // there, plus harder sets unless they are a lone top set. Lighter finishers
+    // are never judged or planned from.
+    const reading = s.imported ? readFitNotesWorkingSets(counted) : null;
+    const judged = reading ? reading.judged : counted;
+    const planLoad = reading ? (reading.reference?.value ?? null) : easiest;
+    const atPlan = reading ? judged.filter((x) => !reading.harderJudged.includes(x)) : counted;
+    const reps = judged.map((x) => x.reps ?? 0);
+    const allHitTop = reps.length > 0 && reps.every((r) => r >= criteria.repRange.max);
+    let increaseFrom: number | null = null;
+    if (reading && reading.harderJudged.length > 0 && allHitTop) {
+      for (const x of reading.harderJudged) {
+        const l = x.load?.value ?? null;
+        if (l !== null && (increaseFrom === null || harder(l, increaseFrom, ctx.direction))) increaseFrom = l;
+      }
+    }
     const wantsEffort = criteria.maxRpeToProgress !== null || criteria.minRirToProgress !== null;
     let missingEffort = 0;
-    for (const x of counted) {
+    for (const x of judged) {
       const recorded = (criteria.maxRpeToProgress !== null && x.rpe !== null) || (criteria.minRirToProgress !== null && x.rir !== null);
       if (wantsEffort && !recorded) missingEffort += 1;
     }
-    const left = counted.filter((x) => x.side === 'left');
-    const right = counted.filter((x) => x.side === 'right');
-    const both = counted.filter((x) => x.side === 'both');
-    const sided = left.length + right.length > 0;
+    const sided = counted.some((x) => x.side === 'left' || x.side === 'right');
     const unpairable = sided && counted.some((x) => x.side === null);
-    out.push({
+    // r3 S1: only judged sets count toward the rule's sets (a lone top set kept as
+    // context, or a finisher left out, never makes up a 3-set rule).
+    const left = judged.filter((x) => x.side === 'left');
+    const right = judged.filter((x) => x.side === 'right');
+    const both = judged.filter((x) => x.side === 'both');
+    const eval_: SessionEval = {
       sessionId: s.sessionId,
+      imported: s.imported,
       performedAtUtc: s.performedAtUtc,
       loggedSets: counted.length,
-      otherSets: s.sets.length - typed.length,
+      otherSets: (s.imported ? comparableSetsOf(s).length : s.sets.length) - typed.length,
       leftOut: typed.length - counted.length,
-      prescribedDone: sided ? both.length + Math.min(left.length, right.length) : counted.length,
+      prescribedDone: sided ? both.length + Math.min(left.length, right.length) : judged.length,
       sides: sided ? { left: evalSide([...both, ...left], criteria), right: evalSide([...both, ...right], criteria) } : null,
       unpairable,
-      load: easiest,
+      load: planLoad,
+      judgedSets: judged.length,
+      contextSets: reading?.context.length ?? 0,
+      harderJudged: reading?.harderJudged.length ?? 0,
+      easierLeftOut: reading?.easier.length ?? 0,
+      increaseFrom,
       minReps: reps.length === 0 ? 0 : Math.min(...reps),
-      allHitTop: reps.length > 0 && reps.every((r) => r >= criteria.repRange.max),
-      anyBelowFloor: reps.some((r) => r < criteria.repRange.min),
-      effortOk: effortWithin(counted, criteria),
+      allHitTop,
+      anyBelowFloor: atPlan.some((x) => (x.reps ?? 0) < criteria.repRange.min),
+      effortOk: effortWithin(judged, criteria),
       missingEffort,
-    });
+    };
+    out.push(eval_);
+  }
+  if (latestFitNotes !== null) {
+    const n = latestFitNotes.rampDropped;
+    pushFact(ctx, `Last session is from FitNotes (equipment not recorded)${n > 0 ? `; its ${n} lighter set${n === 1 ? '' : 's'} before the top set ${n === 1 ? 'was' : 'were'} read as warm-ups` : ''}.`);
+  }
+  const latest = out[0];
+  if (latest?.imported === true && latest.load !== null) {
+    const hard = ctx.direction === 'resistance' ? 'heavier' : 'less-assisted';
+    const easy = ctx.direction === 'resistance' ? 'lighter' : 'more-assisted';
+    const at = fmt(ctx, latest.load);
+    const sets = (n: number) => `${n} set${n === 1 ? '' : 's'}`;
+    if (latest.contextSets > 0) {
+      const n = latest.contextSets;
+      pushFact(ctx, `${n} ${hard} top set${n === 1 ? ' was' : 's were'} kept as context; reps were judged on the ${sets(latest.judgedSets)} at ${at}.`);
+    }
+    if (latest.harderJudged > 0) {
+      // r4 N1: word it from the counts, never "no load had most of the sets".
+      const n = latest.harderJudged;
+      const atRef = latest.judgedSets - n;
+      pushFact(ctx, `The ${n} ${hard} set${n === 1 ? ' was' : 's were'} judged too, with the ${sets(atRef)} at ${at}.`);
+    }
+    if (latest.easierLeftOut > 0) {
+      const n = latest.easierLeftOut;
+      pushFact(ctx, `${n} ${easy} set${n === 1 ? '' : 's'} than ${at} (a finisher or drop set) ${n === 1 ? 'was' : 'were'} not judged.`);
+    }
   }
   if (excluded > 0) {
     pushFact(
@@ -528,7 +812,10 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
     const verb = latest.prescribedDone === 1 ? 'was' : 'were';
     pushFact(
       ctx,
-      latest.leftOut > 0
+      // r4 S1: FitNotes sets are read (ramp, context, finisher), so say "judged", never "logged".
+      latest.imported
+        ? `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} ${verb} judged on ${when}; holding.`
+        : latest.leftOut > 0
         ? `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} counted on ${when} (${latest.leftOut} left out); holding.`
         : `Only ${latest.prescribedDone} of ${required} ${countedLabel(rule, required)} ${verb} logged on ${when}; holding.`,
     );
@@ -567,11 +854,23 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
   }
 
   if (complete && latest.allHitTop && latest.effortOk) {
-    pushFact(ctx, `Last session: every counted set reached ${criteria.repRange.max}+ reps at ${lastText}.`);
+    // r3 B1: from FitNotes, count the sets actually judged.
+    const n = latest.judgedSets;
+    const judgedText = n === 1 ? 'the 1 judged set' : `all ${n} judged sets`;
+    // r4 B1: harder sets judged and all at the top: the increase starts from the hardest of them.
+    const base = latest.increaseFrom ?? L;
+    const baseText = fmt(ctx, base);
+    const hardest = ctx.direction === 'resistance' ? 'the heaviest' : 'the least-assisted';
+    const which = !latest.imported
+      ? `every counted set reached ${criteria.repRange.max}+ reps at ${lastText}`
+      : latest.increaseFrom !== null
+        ? `${judgedText} reached ${criteria.repRange.max}+ reps, ${hardest} at ${baseText}`
+        : `${judgedText} reached ${criteria.repRange.max}+ reps at ${lastText}`;
+    pushFact(ctx, `Last session: ${which}.`);
     const cap = rule.ceilingRepCap;
     /** Progress reps at the held load. All text names the prescribed load, never the historical one. */
     const repStep = (reasonFor: (target: string) => string): PrimaryDecision => {
-      const held = feasibleHold(ctx, L);
+      const held = feasibleHold(ctx, base);
       const target = fmt(ctx, held);
       const reason = reasonFor(target);
       const n = Math.max(latest.minReps + 1, criteria.repRange.max + 1);
@@ -590,8 +889,8 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
         summary: `Add a rep: aim for ${n} at ${target}, because ${reason}.`,
       };
     };
-    if (L === null) return repStep(() => 'there is no external load to add');
-    const step = nextHarderLoad(ctx, L);
+    if (base === null) return repStep(() => 'there is no external load to add');
+    const step = nextHarderLoad(ctx, base);
     const eqName = input.equipment?.name ?? 'this equipment';
     switch (step.kind) {
       case 'load': {
@@ -704,7 +1003,12 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
 
   const criteria = criteriaOf(rule);
   const sessions = comparableSessions(ctx);
-  const primary = decidePrimary(ctx, sessions, criteria);
+  const decided = decidePrimary(ctx, sessions, criteria);
+  // B7 (P-I3): a load built on FitNotes history needs equipment here to be checked on; with none, none is prescribed.
+  const fromFitNotes = sessions.find((s) => s.loggedSets > 0)?.imported === true;
+  const unchecked = fromFitNotes && input.equipment === null && input.fitLater !== true && convention !== 'bodyweight' && decided.load !== null;
+  if (unchecked) pushFact(ctx, `No equipment here to check the FitNotes load (${fmt(ctx, decided.load)}) on, so no load is prescribed; enter your load.`);
+  const primary = unchecked ? { ...decided, load: null, summary: `Pick a load you can do for ${range(criteria.repRange)} reps.` } : decided;
   const primaryLoad = asLoad(ctx, primary.load);
 
   const sets: TargetSet[] = [];

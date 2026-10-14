@@ -48,6 +48,7 @@ import {
   DEFAULT_CHECK_IN_SETTINGS,
   explainTarget,
   lastComparableSession,
+  workingSetsFromPrevious,
   localDateOf,
   localWeekBounds,
   mayHurtAccessibility,
@@ -71,6 +72,10 @@ import {
   type NextTargetEntry,
   equipmentForExercise,
   searchExercises,
+  defaultSlotShape,
+  shapeAddPlan,
+  type AddShape,
+  type SlotShapeInput,
   shouldAskCheckIn,
   toIso,
   toMs,
@@ -191,6 +196,7 @@ import {
   routineTypeKey,
   buildLibraryView,
   createRoutine,
+  withSaveEdit,
   duplicateRoutine,
   editableExercises,
   editableEdit,
@@ -210,6 +216,7 @@ import {
   type LibraryView,
   type RoutineEdit,
   SESSION_PICKER_DECISIONS,
+  longestGapSource,
   type SessionType,
   type SessionTypeKind,
   type NotCopied,
@@ -275,6 +282,8 @@ export interface WorkoutServicesContext {
   catalogueExercises?: () => readonly Exercise[];
   /** A catalogue entry's substitutions (`variations.substitutions[].key`), in catalogue order (Coaching knowledge). Absent: none. */
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
+  /** A catalogue entry's other names (Coaching knowledge), for search (EL1). Absent: none. */
+  catalogueAliases?: (catalogueKey: string) => readonly string[];
   /**
    * The coach's fit request (fit-to-time §5; `coach.fitToday`): one model
    * call with the context given, nothing written. Null: the coach can't be
@@ -359,6 +368,8 @@ const RECENT_PACE_WINDOW_MS = 90 * 86_400_000;
 
 export interface PickerExercise {
   exercise: Exercise;
+  /** Catalogue aliases and Ben's own (FitNotes) names, for search (EL1). */
+  aliases: readonly string[];
   /** Compatible equipment at this workout's gym. Empty = none needed (bodyweight) or none there (loads not checked). */
   equipment: Pick<EquipmentInstance, 'id' | 'name' | 'kind'>[];
   /**
@@ -433,13 +444,11 @@ export interface RepeatCandidate {
 
 /**
  * Past workouts for Repeat; `unreadable` counts records skipped because they
- * failed to decode. Imported (FitNotes) workouts are never candidates while
- * P-I3 is open (review r2 B1); `importedNotListed` says how many were left out.
+ * failed to decode. Imported (FitNotes) workouts are candidates too (B7).
  */
 export interface RepeatCandidates {
   rows: RepeatCandidate[];
   unreadable: number;
-  importedNotListed: number;
 }
 
 export interface RepeatPreview {
@@ -610,6 +619,8 @@ export interface EditorExerciseInfo {
   /** Rest resolution step 3: Ben's own default for it, else the catalogue's. */
   defaultRestS: number | null;
   compound: boolean;
+  /** The §10.1 default shape (3 working sets, the built-in rule's reps, `0:45` timed); the add sheet's `Sets` bar sets the count. */
+  defaultShape: SlotShapeInput;
 }
 
 /** The workout editor's data (routines.md §A2.3). Local reads only. */
@@ -626,6 +637,8 @@ export interface RoutineEditorData {
   restPresets: RestSetting[];
   /** This workout is the one in progress (`In progress · changes apply next time`). */
   inProgress: boolean;
+  /** `Target RPE` / `Target RIR` on the cards (WL11); null hides the row (effort scale off). */
+  effortScale: 'rpe' | 'rir' | null;
 }
 
 /** An editor save (WL10): the new version and the record its Undo reads. */
@@ -647,6 +660,8 @@ export interface SaveSource {
   detail: string;
   /** What isn't saved (`Not copied: 3 distance sets (Sled push)`, review S1); null when nothing is left out. */
   notSaved: string | null;
+  /** The unsaved copy's exercises, for the sheet's `Edit ›` (routines.md §A2.5, WL-A18): the editor opens on them. */
+  exercises: RoutineExercise[];
 }
 
 export type LibrarySaveWrite = RoutineWrite | { ok: false; message: string; reason: 'nothing' | 'stale_preview' | 'already_saved' };
@@ -800,7 +815,7 @@ export type TemplateSwapWrite =
 
 /** One of today's edits as the page sends it (§4.2, §11.7). `add` names only the exercise: the new row's key comes from the opId. */
 /** `order` is the coach's Applied reorder (structural proposals) as well as `move`. */
-export type OverviewEdit = Exclude<TodayEditBody, { kind: 'add' }> | { kind: 'add'; exerciseId: string };
+export type OverviewEdit = Exclude<TodayEditBody, { kind: 'add' }> | { kind: 'add'; exerciseId: string; workingSets?: number };
 
 /** The slot key an added exercise gets: from the write's opId, so a retry names the same row. */
 export function addSlotKey(opId: string): string {
@@ -1228,6 +1243,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     if (!previous) return defaultStartingPlan(exercise, equipment?.kind ?? null, convention, undefined, { at: ctx.now() });
     const now = unspecifiedPain(await sessionCheckIn(aggregate));
     const then = unspecifiedPain(await sessionCheckIn(await repos().sessions.get(previous.sessionId)));
+    // From FitNotes: the same reading as the load, never below the default because of it (review import-progress B1, B2).
+    const workingSets = workingSetsFromPrevious(previous, history);
     const { result } = nextTargetsFor({
       ownerId: p.id,
       exerciseId: exercise.id,
@@ -1238,13 +1255,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       equipment,
       exercise,
       rule: null,
-      workingSets: previous.sets.filter((s) => s.values.reps !== null).length,
+      workingSets,
       history,
       painFlags: await repos().painFlags.listActive(p.id),
       sessionPain: now.active ? now : then,
     });
     // Each planned set records what produced it, for `Why?` (active-workout §2.12, AW3).
-    return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, previous.sets.length), { at: ctx.now(), decision: result.decision });
+    return plannedSetsFromTargets(result, { history, equipment, at: ctx.now() }) ?? defaultStartingPlan(exercise, equipment?.kind ?? null, convention, Math.max(1, workingSets), { at: ctx.now(), decision: result.decision });
   }
 
   /**
@@ -1292,7 +1309,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const history = await historyFor(p.id, sx.exerciseId);
       const { result } = nextTargetsForBlock(
         block,
-        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain },
+        // A FitNotes source recorded no item: its loads are fitted to the gym when the workout is built (B7; rule 4).
+        { ownerId: p.id, sessionId: source.session.id, count: 'done', exercise, rule: null, history, painFlags: flags, sessionPain, ...(source.session.source === 'import' ? { fitLater: true } : {}) },
         null,
       );
       // Rule provenance on each set, so `Why?` explains a progressed target as the rule's, never as a repeat (review B1.1).
@@ -1474,12 +1492,35 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return (exerciseId) => yes.has(exerciseId);
   }
 
+  /** Which exercises are measured in distance: a saved workout refuses them (EL-B13, review library-browse r2 S1). */
+  async function distanceOf(ids: Iterable<string>): Promise<(exerciseId: string) => boolean> {
+    const yes = new Set<string>();
+    for (const id of new Set(ids)) if ((await exerciseById(id))?.measurement === 'distance') yes.add(id);
+    return (exerciseId) => yes.has(exerciseId);
+  }
+
   /** Session types for the picker and the library (session-picker §3, routines.md WL5). Local reads. */
   async function typeIndex(p: UserProfile, live: readonly Routine[]) {
     const rows = await repos().sessions.listSessionTypeRows(p.id, TYPE_ROW_LIMIT);
+    // Decision 1: unnamed imports are typed by their FitNotes Category; unreadable rows just leave them untyped.
+    const categories = SESSION_PICKER_DECISIONS.groupImportsByCategory && rows.some((r) => r.imported) ? await ctx.store().repos.imports.categoriesBySession(p.id).catch(() => new Map<string, Record<string, number>>()) : new Map<string, Record<string, number>>();
+    // F20: an unnamed import is typed by the title the overview and calendar give it (`Pull`), not its Category cell.
+    const infoById = new Map<string, Exercise | null>();
+    const derivedTitle = async (ids: readonly string[]): Promise<string | null> => {
+      const infos: Exercise[] = [];
+      for (const id of ids) {
+        if (!infoById.has(id)) infoById.set(id, await repos().exercises.get(id).catch(() => null));
+        const e = infoById.get(id);
+        if (e) infos.push(e);
+      }
+      return infos.length === 0 ? null : deriveWorkoutTitle(infos);
+    };
+    const titles = new Map<string, string>();
+    // No exercise read back: its Category cell still names it.
+    if (SESSION_PICKER_DECISIONS.groupImportsByCategory) for (const r of rows) if (r.imported && r.routineId === null) { const t = await derivedTitle(r.exerciseIds); if (t !== null) titles.set(r.sessionId, t); }
     return groupSessionTypes({
       routines: live.map((r) => ({ id: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, exerciseCount: routineCounts(r).exercises })),
-      sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported })),
+      sessions: rows.map((r) => ({ id: r.sessionId, routineId: r.routineId, routineName: r.routineName, startedAt: { utc: r.startedAtUtc, tz: r.tz }, exerciseCount: r.exerciseCount, imported: r.imported, importCategories: categories.get(r.sessionId) ?? null, derivedTitle: titles.get(r.sessionId) ?? null })),
       now: ctx.now(),
       groupImportsByCategory: SESSION_PICKER_DECISIONS.groupImportsByCategory,
     });
@@ -1636,7 +1677,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   async function resolveNext(p: UserProfile, sourceSessionId: string): Promise<ResolvedOverview | null> {
     const source = await repos().sessions.get(sourceSessionId);
-    if (!source || source.session.ownerId !== p.id || !isInHistory(source.session) || source.session.source === 'import') return null;
+    // An imported (FitNotes) workout can be the source too (B7): Start fits its loads to the gym.
+    if (!source || source.session.ownerId !== p.id || !isInHistory(source.session)) return null;
     return { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } };
   }
 
@@ -1654,8 +1696,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const run = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
       if (run.r.ok) return { kind: 'routine' as const, routine: pick.routine, basis: pick.basis, run: { ...run, r: run.r } };
     }
-    const last = (await repeat.candidates(1, { countImported: false })).rows[0];
+    // Decision 2 (approved 11 Oct 2026; review import-progress S1): the history type with the longest gap,
+    // never the workout Ben just did (since B7, often his newest FitNotes one). Unreadable: D19's newest workout.
+    if (SESSION_PICKER_DECISIONS.longestGapFallback) {
+      const gap = await longestGapUpNext(p, live).catch(() => null);
+      if (gap !== null) return { kind: 'next' as const, sessionId: gap };
+    }
+    const last = (await repeat.candidates(1)).rows[0];
     return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
+  }
+
+  /** Decision 2's source workout for Up next (`longestGapSource`), if it is still a readable, repeatable workout. */
+  async function longestGapUpNext(p: UserProfile, live: readonly Routine[]): Promise<string | null> {
+    const index = await typeIndex(p, live);
+    const newest = (await repos().sessions.listFinishedRefs(p.id, 1, { includeImported: true }))[0] ?? null;
+    const pick = longestGapSource(index, newest);
+    if (pick === null) return null;
+    const source = await repos().sessions.get(pick.sessionId).catch(() => null);
+    return source !== null && source.session.ownerId === p.id && isInHistory(source.session) ? pick.sessionId : null;
   }
 
   /** Up next (as Today's card, at this gym) or the routine asked for. */
@@ -1730,6 +1788,22 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** A picked catalogue exercise is saved as a row before a workout can use it (as `Add exercise` does). */
+  /**
+   * Other names each exercise is searched by (EL1): the catalogue's aliases
+   * and Ben's own FitNotes names that map to it. A name that can't be read
+   * just isn't searched; nothing is hidden or blocked.
+   */
+  async function aliasIndex(p: UserProfile | null): Promise<(e: Pick<Exercise, 'id' | 'name' | 'catalogueKey'>) => string[]> {
+    const own = new Map<string, string[]>();
+    const saved = p === null ? [] : await repos().imports.aliases(p.id).catch(() => []);
+    for (const a of saved) if (a.target.kind === 'exercise') own.set(a.target.exerciseId, [...(own.get(a.target.exerciseId) ?? []), a.name]);
+    return (e) => {
+      const names = [...(e.catalogueKey ? (ctx.catalogueAliases?.(e.catalogueKey) ?? []) : []), ...(own.get(e.id) ?? [])];
+      const self = e.name.trim().toLowerCase();
+      return [...new Set(names)].filter((n) => n.trim().toLowerCase() !== self);
+    };
+  }
+
   async function ensureExercise(exerciseId: string): Promise<Exercise | null> {
     const stored = await repos().exercises.get(exerciseId).catch(() => null);
     if (stored) return stored;
@@ -2110,7 +2184,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         });
         if (!r.ok) {
           const e = r.error;
-          if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'nothing_to_repeat') return { ok: false, error: { code: 'not_found', message: e.message } };
           if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
           return { ok: false, error: e };
         }
@@ -2124,7 +2198,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const r = await domain().startFromSession({ ownerId: p.id, gymId: req.gymId, routineId: null, opId: req.opId, at: ctx.now(), checkIn, sourceSessionId: req.repeatOf, lastUsedHere });
         if (!r.ok) {
           const e = r.error;
-          if (e.code === 'nothing_to_repeat' || e.code === 'imported_not_repeatable') return { ok: false, error: { code: 'not_found', message: e.message } };
+          if (e.code === 'nothing_to_repeat') return { ok: false, error: { code: 'not_found', message: e.message } };
           return { ok: false, error: e };
         }
         return { ok: true, aggregate: r.aggregate, warnings: [], duplicate: r.duplicate };
@@ -2489,11 +2563,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const flags = p ? await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]) : [];
       const at = ctx.now();
       const nowMs = toMs(at.utc);
+      const aliasesOf = await aliasIndex(p);
       // Bodyweight exercises never need (or get) a gym item: there's no load to check.
-      return searchExercises(all, query).map((exercise) => {
+      return searchExercises(
+        all.map((exercise) => ({ name: exercise.name, aliases: aliasesOf(exercise), exercise })),
+        query,
+      ).map(({ exercise, aliases }) => {
         const covering = painFlagCovering(flags, exercise.id, nowMs, at.tz);
         return {
           exercise,
+          aliases,
           equipment: equipmentForExercise(exercise, snapshot).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
           mayHurt: covering ? { flagId: covering.flag.id, accessibilityLabel: mayHurtAccessibility(covering.flag), confirm: mayHurtConfirm({ ...covering.flag, exerciseName: exercise.name }) } : null,
         };
@@ -2518,7 +2597,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * Summary showed, shown as `Target`, its source behind `Why?`; review S3, minimal-copy D1), or one
      * empty set when there's no comparable history.
      */
-    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string }): Promise<CommandOutcome> {
+    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; shape?: AddShape }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       // A catalogue exercise is saved (Coaching knowledge, no owner) the first time it's added.
@@ -2529,7 +2608,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           if (!saved?.ok && !(await repos().exercises.get(req.exerciseId))) return { ok: false, error: { code: 'write_failed', message: 'Couldn’t save that exercise. Try again.' } };
         }
       }
-      const plan = await planFor(p, req).catch(() => null);
+      const planned = await planFor(p, req).catch(() => null);
+      // The picker's `Sets` count (exercise-library §10.2): only this exercise's new pending sets are shaped (rule 2).
+      const plan = req.shape === undefined ? planned : shapeAddPlan(planned, req.shape);
       return ctx.afterCommand(
         await domain().addExercise(req.sessionId, {
           ownerId: p.id,
@@ -2781,12 +2862,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * `Start from a past workout`: the newest `limit` finished workouts with
      * logged sets, newest first (review S1). Only those rows are decoded; a
      * record that fails to decode is skipped and counted, never thrown.
-     * Imported (FitNotes) workouts are left out and counted: their loads
-     * were never checked on any equipment, and P-I3 is open (review r2 B1).
+     * Imported (FitNotes) workouts are included (B7): Start fits their loads
+     * to the gym's equipment like any other (rule 4).
      */
-    async candidates(limit = 30, opts: { countImported?: boolean } = {}): Promise<RepeatCandidates> {
+    async candidates(limit = 30): Promise<RepeatCandidates> {
       const p = await ctx.profile();
-      if (!p) return { rows: [], unreadable: 0, importedNotListed: 0 };
+      if (!p) return { rows: [], unreadable: 0 };
       const gyms = new Map<string, string>();
       const rows: RepeatCandidate[] = [];
       let unreadable = 0;
@@ -2802,15 +2883,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             unreadable += 1;
             continue;
           }
-          if (!a || a.session.source === 'import') continue;
+          if (!a) continue;
           const row = await repeat.describe(a, gyms);
           if (row.sets === 0) continue;
           rows.push(row);
         }
       }
-      // Only `Start from a past workout` shows this count; Today's row doesn't read it (review r3 N4).
-      const importedNotListed = opts.countImported === false ? 0 : await repos().sessions.countImportedFinished(p.id).catch(() => 0);
-      return { rows, unreadable, importedNotListed };
+      return { rows, unreadable };
     },
 
     /**
@@ -2848,7 +2927,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /** Today's `Repeat last workout` row: the newest readable candidate, or null. Never throws (review S1). */
     async last(): Promise<RepeatCandidate | null> {
       try {
-        return (await repeat.candidates(1, { countImported: false })).rows[0] ?? null;
+        return (await repeat.candidates(1)).rows[0] ?? null;
       } catch {
         return null;
       }
@@ -2944,6 +3023,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           unit: p.preferredUnit,
           globalDefault: p.defaultRest,
           restPresets: p.restPresets,
+          effortScale: p.effortScale === 'off' ? null : p.effortScale,
           inProgress: routine !== null && active?.session.routineId === routine.id,
         };
       } catch {
@@ -2967,20 +3047,25 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           compatibleEquipment: x.compatibleEquipment,
           defaultRestS: p?.exerciseRestS?.[id] ?? x.defaultRestS ?? null,
           compound: x.mechanic === 'compound',
+          defaultShape: defaultSlotShape(x),
         };
       }
       return out;
     },
 
-    /** The editor's `Add exercise` list: Ben's exercises and the catalogue's, searched by name. */
+    /** The editor's `Add exercise` list: Ben's exercises and the catalogue's, searched by name, aliases and Ben's own names (EL1). */
     async searchExercises(query: string): Promise<EditorExerciseInfo[]> {
       const p = await ctx.profile();
       const saved = (await repos().exercises.list()).filter((e) => e.ownerId === null || e.ownerId === p?.id);
       const have = new Set(saved.map((e) => e.id));
       const all = [...saved, ...(ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [])];
-      return searchExercises(all, query)
+      const aliasesOf = await aliasIndex(p);
+      return searchExercises(
+        all.map((x) => ({ name: x.name, aliases: aliasesOf(x), x })),
+        query,
+      )
         .slice(0, 60)
-        .map((x) => ({ id: x.id, name: x.name, measurement: x.measurement, laterality: x.laterality, defaultLoadConvention: x.defaultLoadConvention, compatibleEquipment: x.compatibleEquipment, defaultRestS: p?.exerciseRestS?.[x.id] ?? x.defaultRestS ?? null, compound: x.mechanic === 'compound' }));
+        .map(({ x }) => ({ id: x.id, name: x.name, measurement: x.measurement, laterality: x.laterality, defaultLoadConvention: x.defaultLoadConvention, compatibleEquipment: x.compatibleEquipment, defaultRestS: p?.exerciseRestS?.[x.id] ?? x.defaultRestS ?? null, compound: x.mechanic === 'compound', defaultShape: defaultSlotShape(x) }));
     },
 
     /** `≈ N min` while editing (§A2.3): the workout as edited, planned at this gym with no targets. Null when it can't be estimated. */
@@ -3007,9 +3092,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async create(req: { edit: RoutineEdit; opId: string; inRotation?: boolean }): Promise<LibrarySaveWrite> {
       try {
         const p = await owner();
-        const isCompound = await compoundOf(req.edit.exercises.map((e) => e.exerciseId));
+        const ids = req.edit.exercises.map((e) => e.exerciseId);
+        const isCompound = await compoundOf(ids);
+        const isDistance = await distanceOf(ids);
         const id = deriveId(`routine:${req.opId}`);
-        const c = createRoutine({ id, ownerId: p.id, edit: req.edit, opId: req.opId, at: ctx.now(), isCompound, inRotation: req.inRotation === true });
+        const c = createRoutine({ id, ownerId: p.id, edit: req.edit, opId: req.opId, at: ctx.now(), isCompound, isDistance, inRotation: req.inRotation === true });
         // A retry of a save that landed is the same save, even if the edit no longer validates.
         if (c.kind === 'invalid' && (await repos().routines.get(id).catch(() => null)) === null) return { ok: false, message: c.message };
         return await createOnce(id, req.opId, () => (c.kind === 'write' ? c.next : null), LIBRARY_COPY.nothing);
@@ -3041,7 +3128,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         for (const e of req.edit.exercises) if ((await ensureExercise(e.exerciseId)) === null) return { ok: false, reason: 'missing', message: LIBRARY_COPY.notFound };
         const at = ctx.now();
-        const c = editRoutine(current, req.edit, req.expectedVersion, req.opId, at, await compoundOf(req.edit.exercises.map((e) => e.exerciseId)));
+        const ids = req.edit.exercises.map((e) => e.exerciseId);
+        const c = editRoutine(current, req.edit, req.expectedVersion, req.opId, at, await compoundOf(ids), await distanceOf(ids));
         if (c.kind === 'invalid') return { ok: false, reason: 'invalid', message: c.message };
         if (c.kind === 'duplicate') return { ok: true, routine: c.current, actionId, duplicate: true };
         if (c.kind === 'stale') return { ok: false, reason: 'stale', message: LIBRARY_COPY.changed(current.name), current: c.current, changedAtUtc: c.current.updatedAtUtc, lines: [] };
@@ -3133,7 +3221,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           const source = await repos().sessions.get(from.sessionId).catch(() => null);
           name = source === null ? null : (source.session.routineName ?? storedName(source) ?? unnamedWorkoutName(source.session.startedAt));
         }
-        return { name: name ?? unnamedWorkoutName(ctx.now()), detail: saveSheetDetail(r), notSaved: notCopiedText(left) };
+        return { name: name ?? unnamedWorkoutName(ctx.now()), detail: saveSheetDetail(r), notSaved: notCopiedText(left), exercises: editableExercises(r) };
       } catch {
         return null;
       }
@@ -3144,9 +3232,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * finished one (imported too) or from what an overview shows. Loads are
      * `Auto` (Repeat's save keeps them Fixed). Idempotent by `opId`; the
      * source is never changed. A preview save with an out-of-date key saves
-     * nothing (`Targets updated`).
+     * nothing (`Targets updated`). `edit`: the Save sheet's `Edit ›` →
+     * editor `Save` (§A2.5, WL-A18): the same copy with the editor's name
+     * and exercises (set counts), still one write under the sheet's opId.
      */
-    async saveFrom(req: { from: SaveFrom; name: string; addToRotation: boolean; opId: string }): Promise<LibrarySaveWrite> {
+    async saveFrom(req: { from: SaveFrom; name: string; addToRotation: boolean; opId: string; edit?: RoutineEdit }): Promise<LibrarySaveWrite> {
       try {
         const p = await owner();
         const name = checkRoutineName(req.name, []);
@@ -3174,8 +3264,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           return { ok: false, message: LIBRARY_COPY.alreadySaved, reason: 'already_saved' };
         }
         if (existing) return await linked(existing.lastOpId === req.opId || existing.version > 1 ? { ok: true, routine: existing, duplicate: true } : { ok: false, message: LIBRARY_COPY.saveFailed });
-        const made = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
-        if (made === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
+        const source = await routineFromSource(p, req.from, { id, name: name.name, opId: req.opId, inRotation: req.addToRotation });
+        if (source === 'stale') return { ok: false, message: STALE_PREVIEW, reason: 'stale_preview' };
+        let made = source;
+        if (req.edit !== undefined && source !== null) {
+          for (const e of req.edit.exercises) if ((await ensureExercise(e.exerciseId)) === null) return { ok: false, message: LIBRARY_COPY.notFound };
+          const ids = req.edit.exercises.map((e) => e.exerciseId);
+          const edited = withSaveEdit(source, req.edit, await compoundOf(ids), await distanceOf(ids));
+          if (edited.kind === 'invalid') return { ok: false, message: edited.message };
+          made = edited.next;
+        }
         return await linked(await createOnce(id, req.opId, () => made, LIBRARY_COPY.nothing));
       } catch {
         return { ok: false, message: LIBRARY_COPY.saveFailed };
@@ -3465,9 +3563,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * The session picker's rows (session-picker §3, §7): routines and named
      * workouts, one row per normalised name, in picker order. `UP NEXT` is
      * the session Today's card shows (the same D19 resolver), so the two
-     * always agree; Ben's Decision 2 (longest gap) stays off until he
-     * decides. Types that can't be started (an imported source, P-I3) are
-     * left out. Local reads only: no AI, no network, nothing written.
+     * always agree, Decision 2 (longest gap) included. Imported
+     * workouts are typed by FitNotes Category (Decision 1) and start like any
+     * other (B7). Local reads only: no AI, no network, nothing written.
      * Never throws: null when it can't be read.
      */
     async list(req: { gymId: string | null; typicalEquipment?: readonly EquipmentInstance[] }): Promise<SessionList | null> {
@@ -3908,7 +4006,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (e.kind === 'add') {
           // A picked catalogue exercise is saved as a row first (as the workout's `Add exercise` does). The new row's key comes from the opId, so a retry is the same row.
           if ((await ensureExercise(e.exerciseId)) === null) return null;
-          return { type: 'edit', edit: { kind: 'add', slotKey: addSlotKey(req.opId), exerciseId: e.exerciseId } };
+          return { type: 'edit', edit: { kind: 'add', slotKey: addSlotKey(req.opId), exerciseId: e.exerciseId, ...(e.workingSets === undefined ? {} : { workingSets: e.workingSets }) } };
         }
         return { type: 'edit', edit: e };
       });
@@ -4146,7 +4244,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const sctx = await substituteCtx(p, gymId, gymEquipment, planCheckIn, []);
         const histories = new Map<string, HistorySession[]>();
         for (const id of await workout.recentExerciseIds(40).catch(() => [] as string[])) histories.set(id, await historyFor(p.id, id).catch(() => [] as HistorySession[]));
-        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: inPlan, query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz });
+        const aliasesOf = await aliasIndex(p);
+        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: inPlan, query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz, aliasesOf });
         const rows: SubstituteRow[] = [];
         for (const e of picked) {
           const history = histories.get(e.id) ?? (await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));

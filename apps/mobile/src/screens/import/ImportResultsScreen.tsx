@@ -8,6 +8,7 @@ import { toMs } from '@fizz/domain';
 import { pickBackupFolder } from '../../device/files';
 import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
+import { layoutGoesLine, resultsLayoutLine } from '../../import/layout-views';
 import { resultsView, undoAlert, undoneToast } from '../../import/views';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
@@ -40,14 +41,14 @@ export function ImportResultsScreen() {
   // An imported workout deleted from its own view comes back here with Undo (delete-workouts DW24).
   const deleted = useDeleteToast();
   const [data, reload] = useScreenData(async (s) => {
-    const [job, block, workouts] = await Promise.all([s.imports.job(jobId), s.imports.blockedBy(), s.history.importWorkouts(jobId)]);
-    return { job, block, workouts: workouts.rows };
+    const [job, block, workouts, layoutGoes] = await Promise.all([s.imports.job(jobId), s.imports.blockedBy(), s.history.importWorkouts(jobId), s.importLayouts.layoutGoingWith(jobId)]);
+    return { job, block, workouts: workouts.rows, layoutGoes };
   });
   // Select in the import's workout list (§2.1, DW24): only its workouts still in history.
   const selectable = data.state === 'ready' && data.value.job?.state !== 'undone' ? data.value.workouts : NO_ROWS;
   const sel = useSelectDelete({ rows: selectable, loaded: data.state === 'ready', title: 'Import results', reload, toast: deleted });
   if (data.state !== 'ready') return <Screen>{null}</Screen>;
-  const { job, block } = data.value;
+  const { job, block, layoutGoes } = data.value;
   if (!job) {
     return (
       <Screen>
@@ -60,7 +61,9 @@ export function ImportResultsScreen() {
 
   function undo() {
     const a = undoAlert(current);
-    Alert.alert(a.title, a.message, [
+    // The layout this import saved goes too when no other import still in effect uses it (§9.2.10, AI12).
+    const extra = layoutGoesLine(layoutGoes);
+    Alert.alert(a.title, extra === null ? a.message : `${a.message}\n${extra}`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Undo import',
@@ -163,6 +166,11 @@ export function ImportResultsScreen() {
         <AppText variant="callout" color="text.secondary">
           {v.from}
         </AppText>
+        {resultsLayoutLine(job.job.layout) !== null ? (
+          <AppText variant="callout" color="text.secondary">
+            {resultsLayoutLine(job.job.layout)}
+          </AppText>
+        ) : null}
       </Card>
       {block !== null && (v.canContinue || v.canUndo) ? <StatusLine icon="info.circle" tone="info" text={`Finish or discard your workout first (${block.title}).`} /> : null}
       {note ? <StatusLine icon={note.ok ? 'checkmark.circle.fill' : 'exclamationmark.triangle'} tone={note.ok ? 'done' : 'warning'} text={note.text} /> : null}

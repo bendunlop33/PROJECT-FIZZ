@@ -335,7 +335,7 @@ describe('import preview: questions before anything is saved', () => {
   it('FitNotes 2 rows with both weight columns ask once which one was entered; the other is kept as written', () => {
     const p = parsed('C.synthetic.csv');
     const first = analyseImport(p, ctx(), DEFAULT_ANSWERS);
-    expect(first.unit).toEqual({ rows: 1, answer: null });
+    expect(first.unit).toEqual({ rows: 1, answer: null, kind: 'both_columns' });
     const base = { names: useSuggestions(first), total: 'total' as const, perHand: 'each' as const };
     const lb = analyseImport(p, ctx(), answers({ ...base, bothColumns: 'lb' }));
     expect(lb.ready).toBe(true);

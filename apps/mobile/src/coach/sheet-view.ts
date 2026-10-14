@@ -9,11 +9,20 @@
  */
 
 import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
-import { isInHistory, rangeText } from '@fizz/domain';
+import { isInHistory, progressPeriodPhrase, rangeText } from '@fizz/domain';
 import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
 import type { WorkoutPresence } from '../services/history-services';
+
+/**
+ * Build 131 ("the keyboard gets stuck on GPT chat"): the conversation hides the keyboard when
+ * Ben drags it down (`interactive`: the keyboard follows the finger, as in Messages) or taps
+ * outside the field; buttons in it still work on the first tap (`handled`). The field is
+ * multiline, so Return adds a line: the `Done` bar above the keyboard hides it.
+ */
+export const COACH_TRANSCRIPT_KEYBOARD = { keyboardDismissMode: 'interactive', keyboardShouldPersistTaps: 'handled' } as const;
+export const COACH_DONE_ACCESSORY_ID = 'fizz-coach-done';
 
 export type ViewIcon = 'checkmark.circle.fill' | 'arrow.uturn.backward' | 'minus.circle' | 'exclamationmark.triangle' | 'clock.badge.xmark' | 'xmark.octagon' | 'info.circle' | 'wifi.slash' | 'pause.circle' | 'ellipsis';
 
@@ -205,7 +214,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
@@ -276,8 +285,10 @@ export type ThreadRow =
   | { kind: 'tools'; key: string; lines: string[] }
   | { kind: 'card'; key: string; card: CardView }
   | { kind: 'note'; key: string; text: string }
+  /** (14 Oct) The coach's offer on the thread's last message: `Adjust` sends Ben's acceptance (CA1). */
+  | { kind: 'offer'; key: string; input: Extract<BenInput, { kind: 'accept_offer' }> }
   /** `input`: what `Try again` sends, the turn's own (a summary review: `{ kind: 'summary' }`); null when unknown. */
-  | { kind: 'outcome'; key: string; text: string; icon: ViewIcon; retry: boolean; input: BenInput | null };
+  | { kind: 'outcome'; key: string; text: string; icon: ViewIcon; retry: boolean; why: string | null; input: BenInput | null };
 
 const CHIP_TEXT: Record<Extract<BenInput, { kind: 'chip' }>['chip'], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', lighter_session: 'Lighter session' };
 
@@ -294,32 +305,41 @@ export function benText(input: BenInput): string | null {
   }
 }
 
-/** The line for a turn that didn't finish (coach-sheet §5, shortened). `retry`: offers Try again. */
-export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean): { text: string; icon: ViewIcon; retry: boolean } | null {
+/**
+ * The line for a turn that didn't finish (coach-sheet §5, shortened). `retry`: offers Try again.
+ * F12 (13 Oct): each cause has its own line; `why` (behind `Why?`) names the recorded reason,
+ * which the turn already stores as its `error`.
+ */
+export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean): { text: string; icon: ViewIcon; retry: boolean; why: string | null } | null {
   // The cards show anything applied; without one, say nothing changed (minimal copy, audit W2).
   const tail = anyCard ? '' : ' Nothing changed.';
-  if (status === 'interrupted') return { text: `Interrupted.${tail}`, icon: 'info.circle', retry: true };
-  if (status === 'cancelled') return { text: `Stopped.${tail}`, icon: 'info.circle', retry: false };
+  const line = (text: string, icon: ViewIcon, retry: boolean, why: string | null = null) => ({ text: `${text}${tail}`, icon, retry, why });
+  if (status === 'interrupted') return line('Interrupted.', 'info.circle', true);
+  if (status === 'cancelled') return line('Stopped.', 'info.circle', false);
   if (status !== 'failed') return null;
   switch (error) {
     case 'timeout':
-      return { text: `No answer in time.${tail}`, icon: 'clock.badge.xmark', retry: true };
+      return line('No answer in time.', 'clock.badge.xmark', true);
     case 'network':
-      return { text: `Offline.${tail}`, icon: 'wifi.slash', retry: true };
+      return line('Offline.', 'wifi.slash', true);
     case 'usage_limit':
-      return { text: `Usage limit reached.${tail}`, icon: 'pause.circle', retry: false };
+      return line('Usage limit reached.', 'pause.circle', false);
     case 'auth_expired':
-      return { text: `Signed out.${tail}`, icon: 'exclamationmark.triangle', retry: false };
+      return line('Signed out.', 'exclamationmark.triangle', false);
     case 'not_eligible':
-      return { text: `Unavailable.${tail}`, icon: 'xmark.octagon', retry: false };
+      return line('Unavailable.', 'xmark.octagon', false);
     case 'model_gone':
-      return { text: `Model unavailable.${tail}`, icon: 'exclamationmark.triangle', retry: false };
+      return line('Model unavailable.', 'exclamationmark.triangle', false);
     case 'too_many_steps':
+      return line('Coach got stuck.', 'exclamationmark.triangle', true, 'Too many steps without an answer (too_many_steps).');
     case 'no_reply':
+      return line('No reply.', 'exclamationmark.triangle', true, 'The answer was empty or unreadable (no_reply).');
     case 'unavailable':
+      return line('Coach unavailable.', 'xmark.octagon', true, 'The AI service refused the request (unavailable).');
     case 'cancelled':
+      return line('Stopped.', 'info.circle', true, 'The request was cancelled (cancelled).');
     case null:
-      return { text: `Couldn’t reach the coach.${tail}`, icon: 'exclamationmark.triangle', retry: true };
+      return line('Couldn’t reach the coach.', 'exclamationmark.triangle', true, 'No reason was recorded.');
   }
 }
 
@@ -361,6 +381,11 @@ export function threadRows(data: ThreadData): ThreadRow[] {
       const input = ben?.body.role === 'ben' ? ben.body.input : null;
       if (o !== null) rows.push({ kind: 'outcome', key: `${turnId}:outcome`, ...o, retry: o.retry && input !== null, input });
     }
+  }
+  // (14 Oct) Only the latest message's offer can be accepted: anything Ben sent after it answers it.
+  const last = data.messages.at(-1);
+  if (last !== undefined && last.body.role === 'coach' && last.body.offer !== null && data.turns.get(last.turnId)?.status === 'completed') {
+    rows.push({ kind: 'offer', key: `${last.id}:offer`, input: { kind: 'accept_offer', offer: last.body.offer } });
   }
   return rows;
 }
@@ -439,7 +464,7 @@ export function seesLabel(entry: CoachEntry, workoutTitle: string | null, active
     case 'today':
       return 'Sees: Today';
     case 'progress':
-      return entry.range ? `Sees: Progress · ${rangeText(entry.range, today ?? '')}` : `Sees: Progress · last ${String(entry.days)} days`;
+      return entry.range ? `Sees: Progress · ${rangeText(entry.range, today ?? '')}` : `Sees: Progress · last ${progressPeriodPhrase(entry.period)}`;
     case 'progress_exercise':
       return `Sees: ${entry.exerciseName} · ${entry.seriesLabel}`;
     case 'summary':

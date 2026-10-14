@@ -9,14 +9,17 @@ import { isInHistory } from './deletion';
  * `6 Oct · up from 97.5`, a sparkline). Pure; from logged sets only, never an
  * estimate (rule 6).
  *
- * - The lift is the first exercise, in order, of the newest logged (not
- *   imported) workout that has a weighted working set measured in reps.
+ * - The lift is the first exercise, in order, of the newest workout (logged
+ *   or imported from FitNotes, B7) that has a weighted working set measured
+ *   in reps.
  *   Assisted and bodyweight-only movements are passed over: "up" would mean
  *   the opposite there, and there is no load to chart.
  * - The series is the top set (heaviest, then most reps) of each workout with
  *   that exercise on the same equipment, unit and load convention, oldest
- *   first, at most `maxPoints`. Imported workouts are left out: they aren't
- *   comparable history yet (ADR 0016).
+ *   first, at most `maxPoints`. A FitNotes workout recorded no equipment, so
+ *   it matches any (unit and convention still must match; B7), and the
+ *   highlight says `FitNotes` when its newest point is one (`imported`).
+ *   App workouts are still charted on one item only (review S3).
  * - `change` compares the newest top set with the one before it.
  * - Sets Ben marked as not counting (`Spotted`, `Pain`, …, active-workout
  *   §2.13) are never a top set, a change or a trend point (check 45).
@@ -32,6 +35,8 @@ export interface LiftHighlight {
   change: string | null;
   /** Top-set loads, oldest first. A sparkline needs 2 or more. */
   points: number[];
+  /** The newest point is from a FitNotes import (shown `FitNotes · 6 Oct`). */
+  imported: boolean;
 }
 
 export const LIFT_HIGHLIGHT_MAX_POINTS = 7;
@@ -56,7 +61,7 @@ function eligible(ex: SessionExercise): boolean {
 
 export function buildLiftHighlight(sessions: readonly SessionAggregate[], maxPoints = LIFT_HIGHLIGHT_MAX_POINTS): LiftHighlight | null {
   const logged = sessions
-    .filter((a) => isInHistory(a.session) && a.session.source !== 'import')
+    .filter((a) => isInHistory(a.session))
     .sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
   // The newest workout with a counted weighted set: one whose sets were all marked as not counting is passed over.
   const liftOf = (a: SessionAggregate) => [...a.exercises].sort((x, y) => x.order - y.order).find((ex) => eligible(ex) && weightedTop(a, ex) !== null);
@@ -66,15 +71,25 @@ export function buildLiftHighlight(sessions: readonly SessionAggregate[], maxPoi
   if (!lift) return null;
 
   const series: { load: number; reps: number; set: WorkoutSet; session: SessionAggregate }[] = [];
+  /**
+   * The item app workouts are charted on. Only the match against a FitNotes
+   * workout is relaxed (review import-progress S3): app workouts still need
+   * one item, the lift's own, or (newest point imported) the item of the
+   * newest app workout in the series. `undefined`: not chosen yet.
+   */
+  let appItem: string | null | undefined = newest.session.source === 'import' ? undefined : lift.equipmentId;
   for (const a of logged) {
     if (series.length >= maxPoints) break;
-    const same = a.exercises.filter((e) => e.exerciseId === lift.exerciseId && e.equipmentId === lift.equipmentId && e.unit === lift.unit && e.loadConvention === lift.loadConvention);
-    let top: { load: number; reps: number; set: WorkoutSet } | null = null;
+    const imported = a.session.source === 'import';
+    const same = a.exercises.filter((e) => e.exerciseId === lift.exerciseId && (imported || appItem === undefined || e.equipmentId === appItem) && e.unit === lift.unit && e.loadConvention === lift.loadConvention);
+    let top: { load: number; reps: number; set: WorkoutSet; equipmentId: string | null } | null = null;
     for (const e of same) {
       const t = weightedTop(a, e);
-      if (t && (top === null || t.load > top.load || (t.load === top.load && t.reps > top.reps))) top = t;
+      if (t && (top === null || t.load > top.load || (t.load === top.load && t.reps > top.reps))) top = { ...t, equipmentId: e.equipmentId };
     }
-    if (top) series.push({ ...top, session: a });
+    if (!top) continue;
+    if (!imported && appItem === undefined) appItem = top.equipmentId;
+    series.push({ load: top.load, reps: top.reps, set: top.set, session: a });
   }
   const latest = series[0];
   if (!latest) return null;
@@ -101,6 +116,7 @@ export function buildLiftHighlight(sessions: readonly SessionAggregate[], maxPoi
     tz: latest.session.session.startedAt.tz,
     change,
     points: series.map((p) => p.load).reverse(),
+    imported: latest.session.session.source === 'import',
   };
 }
 

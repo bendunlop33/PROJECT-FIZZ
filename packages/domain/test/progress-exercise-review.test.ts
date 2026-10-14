@@ -380,13 +380,13 @@ describe('S5: home lists 3 records, then `All records (n)`', () => {
     const lifts = ['a', 'b', 'c', 'd', 'e'].map((id) => lift(id, `Lift ${id}`));
     const sessions = lifts.flatMap((f, i) => [f('2026-08-01', 50), f('2026-08-04', 50), f('2026-08-07', 50), f(`2026-10-0${String(i + 1)}`, 60)]);
     const info = new Map<string, MuscleInfo>();
-    const home = buildProgressHomeView({ sessions, exercises: info, today: TODAY, days: 30, grouping: 'body_part', gymNames: GYMS });
+    const home = buildProgressHomeView({ sessions, exercises: info, today: TODAY, period: '1m', grouping: 'body_part', gymNames: GYMS });
     if (home.dataState !== 'normal') throw new Error('home');
     expect(home.records.items).toHaveLength(5);
     expect(home.records.initial).toBe(3);
     expect(home.records.more).toEqual({ label: 'All records (5)', words: 'All records, 5.' });
     expect(home.records.items[0]?.sessionExerciseId).toBeTruthy();
-    const few = buildProgressHomeView({ sessions: sessions.filter((s) => !s.exercises.some((e) => e.exerciseId === 'a' || e.exerciseId === 'b')), exercises: info, today: TODAY, days: 30, grouping: 'body_part' });
+    const few = buildProgressHomeView({ sessions: sessions.filter((s) => !s.exercises.some((e) => e.exerciseId === 'a' || e.exerciseId === 'b')), exercises: info, today: TODAY, period: '1m', grouping: 'body_part' });
     if (few.dataState !== 'normal') throw new Error('home');
     expect(few.records.items).toHaveLength(3);
     expect(few.records.more).toBeNull();

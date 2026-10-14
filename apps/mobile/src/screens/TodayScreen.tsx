@@ -4,7 +4,7 @@ import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native
 
 import { AskPill } from './coach/AskPill';
 
-import { discardCommand, discardConfirmation, formatDuration, formatMinutes, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
+import { discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
 import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
@@ -461,7 +461,7 @@ export function TodayScreen() {
       case 'done_today':
         return (
           // A date-only (imported) workout has no times, so no duration (rule 6).
-          <Hero label="Done today" title={main.title} lines={[main.activeMs === null ? null : formatMinutes(main.activeMs)]}>
+          <Hero label="Done today" title={main.title} lines={[doneTodayDurationLine(main.title, main.activeMs)]}>
             <SecondaryButton
               label="View summary"
               onPress={() => {
@@ -713,19 +713,7 @@ export function TodayScreen() {
           </RuledSection>
         ) : null}
 
-        {/* The Workouts library (routines.md §A2.1): always one tap from Today. */}
-        {main.kind !== 'resume' && main.kind !== 'stale' ? (
-          <View style={{ alignSelf: 'flex-start' }}>
-            <TextButton
-              label="Workouts"
-              icon="chevron.right"
-              tone="secondary"
-              onPress={() => {
-                navigation.navigate('Workouts');
-              }}
-            />
-          </View>
-        ) : null}
+        {/* The Workouts list is in the Library tab now (exercise-library EL10): Today gets nothing new and its `Workouts` link retired. */}
 
         <RuledSection title="This week">
           {view && view.week.days.length === 7 ? <WeekStrip days={view.week.days} /> : null}
@@ -763,7 +751,7 @@ export function TodayScreen() {
         }}
         onEditWorkouts={() => {
           pickerAfter.arm(() => {
-            navigation.navigate('Workouts');
+            navigation.navigate('Tabs', { screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts' } } });
           });
           setPickerVisible(false);
         }}
@@ -890,7 +878,7 @@ function Hero({ label, labelAction, title, lines, children }: { label: string; l
 function LiftCard({ lift }: { lift: LiftHighlight }) {
   const theme = useTheme();
   const when = formatDayMonth(toMs(lift.performedAtUtc), lift.tz);
-  const detail = [when, lift.change].filter(Boolean).join(' · ');
+  const detail = [lift.imported ? 'FitNotes' : null, when, lift.change].filter(Boolean).join(' · ');
   return (
     <View style={{ gap: theme.space['2'] }}>
       <View accessible accessibilityLabel={`${lift.exerciseName}, last top set ${lift.text}, ${detail}`} style={{ gap: theme.space['2'] }}>

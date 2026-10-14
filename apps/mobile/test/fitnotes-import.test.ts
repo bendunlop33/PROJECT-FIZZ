@@ -63,7 +63,7 @@ async function answerAll(s: AppServices, d: ImportDraft, opts: { hammerRow?: 'ne
   return draft;
 }
 
-/** The workout an import brought in on `date`. Imported workouts aren't Repeat candidates (review r2 B1), so tests find them here. */
+/** The workout an import brought in on `date`. */
 async function importedSessionId(s: AppServices, jobId: string, date: string): Promise<string> {
   const id = (await s.imports.importedRows(jobId, date))?.rows.find((r) => r.sessionId !== null)?.sessionId;
   if (!id) throw new Error(`nothing imported on ${date}`);
@@ -113,11 +113,10 @@ describe('FitNotes import: preview, answers, commit', () => {
     const reasons = (await s.backups.getStatus()).copiesOnPhone.map((c) => c.reason);
     expect(reasons).toEqual(expect.arrayContaining(['before_import', 'after_import']));
 
-    // In history, date only, gym not recorded, no equipment; never offered for Repeat (P-I3 open; review r2 B1).
-    expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0, importedNotListed: 3 });
-    // Today's row doesn't count them (review r3 N4).
-    expect(await s.repeat.candidates(1, { countImported: false })).toEqual({ rows: [], unreadable: 0, importedNotListed: 0 });
-    expect(await s.repeat.last()).toBeNull();
+    // In history, date only, gym not recorded, no equipment; offered for Repeat like any workout (B7), tagged as imported.
+    const offered = await s.repeat.candidates();
+    expect(offered.rows.map((c) => [c.source, c.localDate, c.gymName])).toEqual([['import', '2026-09-05', 'Gym not recorded'], ['import', '2026-09-03', 'Gym not recorded'], ['import', '2026-09-01', 'Gym not recorded']]);
+    expect((await s.repeat.last())?.localDate).toBe('2026-09-05');
     const jobId = r.ok ? r.jobId : '';
     const past = await Promise.all(['2026-09-05', '2026-09-03', '2026-09-01'].map(async (d) => s.workout.load(await importedSessionId(s, jobId, d))));
     expect(past.map((w) => [w?.aggregate.session.localDate, w?.aggregate.session.gymId, w?.aggregate.session.source, w?.aggregate.exercises.map((e) => [e.exerciseName, e.equipmentId])])).toEqual([
@@ -308,7 +307,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     const backups = await s.backups.getStatus();
     expect(backups.copiesOnPhone.filter((c) => c.reason === 'after_undo_import')).toHaveLength(1);
     expect(backups.onPhone.state).toBe('backed_up');
-    expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0, importedNotListed: 0 });
+    expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0 });
     const after = await s.imports.job(jobId);
     expect(after?.rows.length).toBe(job.rows.length);
     expect(after?.state).toBe('undone');
@@ -409,7 +408,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect([w?.aggregate.session.gymId, w?.gymName]).toEqual([gymId, 'Main Gym']);
   });
 
-  it('at a dumbbells-only gym an imported workout is never repeated and FitNotes sets are never Last (rule 4, brief home-gym scenario, review r2 B1)', async () => {
+  it('at a dumbbells-only gym an imported workout repeats with loads fitted to the rack, never above its max; FitNotes is Last, labelled (B7, rule 4, brief home-gym scenario)', async () => {
     const { services: s } = await h.launch();
     // Dumbbells up to 25 kg each; no bar, no cable stack.
     const gymId = await setUpGym(h, s, 'home_dumbbells');
@@ -429,14 +428,18 @@ describe('FitNotes import: preview, answers, commit', () => {
     const imported = await s.workout.load(importedId);
     expect(imported?.aggregate.sets.map((x) => [x.actual?.load?.value, x.actual?.load?.convention])).toEqual([[40, 'per_hand'], [140, 'total'], [90, 'stack']]);
 
-    // Not offered: Today's `Repeat last workout` and `Start from a past workout` leave it out and say so.
-    expect(await s.repeat.last()).toBeNull();
-    expect(await s.repeat.candidates()).toEqual({ rows: [], unreadable: 0, importedNotListed: 1 });
-    // Refused when asked for directly too: no preview, no workout, nothing planned at 40 kg each, 140 kg or 90 kg.
-    expect(await s.repeat.preview(importedId, gymId)).toBeNull();
+    // Offered: Today's `Repeat last workout` and `Start from a past workout`.
+    expect((await s.repeat.last())?.sessionId).toBe(importedId);
+    expect((await s.repeat.candidates()).rows.map((c) => c.sessionId)).toEqual([importedId]);
+    // Fitted to this gym: dumbbell bench capped at the rack's 25 kg each; no bar or stack here, so no load target for those.
+    const preview = await s.repeat.preview(importedId, gymId);
+    expect(preview).not.toBeNull();
     const repeated = await s.workout.start({ gymId, opId: 'repeat-imported', checkIn: { kind: 'skipped', atUtc: h.now().utc }, repeatOf: importedId });
-    expect(repeated).toMatchObject({ ok: false, error: { code: 'not_found' } });
-    expect(await s.sessions.active()).toBeNull();
+    if (!repeated.ok) throw new Error(repeated.error.message);
+    const planned = repeated.aggregate.exercises.map((e) => [e.exerciseName, repeated.aggregate.sets.filter((x) => x.sessionExerciseId === e.id).map((x) => x.planned.load?.value ?? null)]);
+    expect(planned).toEqual([['Dumbbell bench press', [25]], ['Bench press', [null]], ['Lat pulldown', [null]]]);
+    const d = await s.workout.dispatch(repeated.aggregate.session.id, { type: 'discard', at: h.now(), opId: 'discard-repeat', expectedVersion: repeated.aggregate.session.version, confirmedLoggedSets: 0 });
+    expect(d.ok).toBe(true);
 
     // A workout logged in the app at this gym, the same exercises (dumbbells here; no bar or stack, so no equipment).
     h.clockMs += 86_400_000;
@@ -448,28 +451,30 @@ describe('FitNotes import: preview, answers, commit', () => {
     const today = await s.workout.load(sid);
     if (!today) throw new Error('no workout');
     expect(today.aggregate.exercises.map((e) => [e.exerciseName, e.equipmentId === null])).toEqual([['Dumbbell bench press', false], ['Bench press', true], ['Lat pulldown', true]]);
-    // No `Last` from FitNotes, even where neither side has equipment, and no planned load copied from it.
-    expect(Object.values(today.previous)).toEqual([null, null, null]);
-    expect(today.aggregate.sets.map((x) => x.planned.load?.value ?? null).filter((v) => v === 40 || v === 140 || v === 90)).toEqual([]);
-    // The summary doesn't compare with FitNotes, or claim it was the same set-up at this gym.
+    // `Last (FitNotes, 1 Oct)` on each: same exercise, unit and convention.
+    expect(Object.values(today.previous).map((p) => [p?.imported, p?.sets[0]?.values.load?.value])).toEqual([[true, 40], [true, 140], [true, 90]]);
+    // Planned loads: the dumbbell bench on a real dumbbell (never above 25); with no bar or stack here, no load from FitNotes at all.
+    const loads = today.aggregate.exercises.map((e) => today.aggregate.sets.filter((x) => x.sessionExerciseId === e.id).map((x) => x.planned.load?.value ?? null));
+    expect(loads[0]?.every((v) => v !== null && v <= 25)).toBe(true);
+    expect([...(loads[1] ?? []), ...(loads[2] ?? [])].every((v) => v === null)).toBe(true);
+    // The summary compares with FitNotes, says so, and never claims it was the same set-up at this gym.
     const sum = await s.workout.summary(sid);
-    expect(sum?.comparison).toEqual({ kind: 'not_comparable', text: 'Not compared · imported' });
-    expect(sum?.highlight).toBeNull();
-    expect(JSON.stringify(sum)).not.toMatch(/Same set-up|FitNotes, 1 Oct/);
+    expect(sum?.comparison).toMatchObject({ kind: 'compared', exerciseName: 'Dumbbell bench press', why: 'FitNotes, working sets' });
+    expect(JSON.stringify(sum)).not.toMatch(/Same set-up/);
     const benchOnly = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
-    // Next time, the app-logged bench is comparable (same gym, no equipment either side), named by its own gym.
+    // Next time, the app-logged bench is the newest comparable (same gym, no equipment either side), named by its own gym.
     const second = await s.workout.summary(benchOnly);
     expect(second?.comparison).toMatchObject({ kind: 'compared', why: 'Same set-up at Main Gym, working sets' });
   });
 
-  it('a workout with only FitNotes history for an exercise says so instead of "first time"', async () => {
+  it('a workout with only FitNotes history for an exercise compares with it, labelled (B7)', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s, 'home_dumbbells');
     const draft = await openPreview(s, [A1, '2026-10-01,Lat Pulldown,Back,90.0,10,,,'].join('\n'));
     expect(await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1')).toMatchObject({ ok: true });
     h.clockMs += 86_400_000;
     const sid = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 45, reps: 10 }] }]);
-    expect((await s.workout.summary(sid))?.comparison).toEqual({ kind: 'not_comparable', text: 'Not compared · imported' });
+    expect((await s.workout.summary(sid))?.comparison).toMatchObject({ kind: 'compared', why: 'FitNotes, working sets' });
   });
 
   it('tells file kinds apart by content and stops on an unknown header (DX5, check 16)', async () => {

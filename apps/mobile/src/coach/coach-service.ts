@@ -20,6 +20,8 @@ import {
   type TodayFitAnswer,
   type TodayFitContext,
   createAddExerciseExecutor,
+  createRenameExecutor,
+  mentionsAdding,
   createAdjustExecutor,
   createChatSetExecutors,
   createNextTargetsExecutor,
@@ -40,7 +42,16 @@ import {
   DEFAULT_COACH_TIMING,
   classifyBenRequest,
   requestHas,
-  revisesDraft,
+  asksForBuild,
+  buildFollowUpIn,
+  refusedBuildActionIds,
+  capUsable,
+  usableFirst,
+  BUILD_USABLE_CAP,
+  OFFERED_USABLE_CAP,
+  buildRequestWords,
+  buildWordsNewestFirst,
+  type BuildFollowUp,
   type AddableExercise,
   type BuildContextView,
   structuralTapRecord,
@@ -56,6 +67,7 @@ import {
   type ContextDescription,
   type NextTargetTap,
   type OpenedFrom,
+  type TrainingInput,
 } from '@fizz/coach';
 import {
   basisSlots,
@@ -110,6 +122,7 @@ import {
   nextTargetSourceBasis,
   painFlagChoices,
   ruleTargetRpes,
+  progressPeriodPhrase,
   progressWindowAt,
   customProgressWindow,
   localDateOf,
@@ -131,6 +144,7 @@ import { summaryNoteSentences } from './next-time-view';
 import type { TextCoachState } from '@fizz/providers';
 import type {
   ActionDetail,
+  BuildDay,
   BuildFocus,
   EquipmentInstance,
   PainFlag,
@@ -151,7 +165,7 @@ import type {
   CoachTurnKind,
   NextSessionTargetRecord,
   PlannedSet,
-  ProgressWindowDays,
+  ProgressPeriodKey,
   SessionAggregate,
   SetType,
   UserProfile,
@@ -162,7 +176,7 @@ import type {
 export type CoachEntry =
   | { kind: 'today' }
   /** Progress (progress.md §2.1, §4.4): a general thread, framed by the window on screen. */
-  | { kind: 'progress'; days: ProgressWindowDays; /** A custom period on screen (replaces `days`). */ range?: { from: string; to: string } }
+  | { kind: 'progress'; period: ProgressPeriodKey; /** A custom period on screen (replaces `period`). */ range?: { from: string; to: string } }
   /** Exercise detail (progress.md slice B): a general thread framed by the exercise, its series and the chart's dates. */
   | { kind: 'progress_exercise'; exerciseName: string; seriesLabel: string; from: string; to: string }
   | { kind: 'workout'; sessionId: string }
@@ -263,6 +277,14 @@ interface OfferCheckInput {
   pending: boolean;
 }
 
+/** The Build card's chips (code, never the model): length, focus, and the split day with its main lift (F19). */
+export interface BuildChips {
+  minutes: number | null;
+  focus: BuildFocus;
+  day?: BuildDay | null;
+  mainLift?: string | null;
+}
+
 export interface CoachServiceDeps {
   store: () => Store;
   profile: () => Promise<UserProfile | null>;
@@ -286,6 +308,8 @@ export interface CoachServiceDeps {
    * (workout services; local reads only). Absent: the tool isn't in this build's wiring (withheld, never offered).
    */
   coachAddInputs?: (exerciseId: string, aggregate: SessionAggregate) => Promise<{ exercise: Exercise | null; history: HistorySession[]; substitute: SubstituteContext; owner: UserProfile; sameMovementIds?: string[]; exerciseUnsaved?: boolean } | null>;
+  /** (13 Oct, D7, D8) Ben's training details, split and main lifts for the planning context. Absent: listed as not available. */
+  training?: () => Promise<TrainingInput | null>;
 }
 
 /** A structural proposal card's state (ADR 0020 §3), from the proposal and Ben's taps on it. */
@@ -666,6 +690,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       out.adjust_pending_sets = createAdjustExecutor({ store, targets: storeTodayTargets(store), loadSession: load, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, onlySessionExerciseId, ruleTargetRpe: ruleRpesOf });
       // "Log 100 for 8", "set 2 was 95" (backlog §4.3): the workout's own commands, only when Ben's words ask.
       Object.assign(out, createChatSetExecutors({ store, loadSession: load, ...(deps.onSessionChanged === undefined ? {} : { onSessionChanged: deps.onSessionChanged }) }));
+      // "Change name of workout to …" (14 Oct): the workout's own `rename_session`, applied only when Ben asked.
+      Object.assign(out, createRenameExecutor({ store, loadSession: load, ...(deps.onSessionChanged === undefined ? {} : { onSessionChanged: deps.onSessionChanged }) }));
       // "Add 3 sets of lateral raises", "put in some curls" (12 Oct): the workout's own `add_exercise`, only when Ben's words ask.
       const addInputs = deps.coachAddInputs;
       if (addInputs !== undefined) {
@@ -709,8 +735,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (entry.kind === 'progress_exercise') return { screen: 'progress_exercise', exercise: entry.exerciseName, series: entry.seriesLabel, range: { from: entry.from, to: entry.to } };
     if (entry.kind !== 'progress') return undefined;
     if (entry.range) return { screen: 'progress', window: { days: customProgressWindow(entry.range).days, from: entry.range.from, to: entry.range.to, label: rangeText(entry.range, localDateOf(toMs(deps.now().utc), p.timezone)) } };
-    const w = progressWindowAt(toMs(deps.now().utc), p.timezone, entry.days);
-    return { screen: 'progress', window: { days: entry.days, from: w.from, to: w.to } };
+    const w = progressWindowAt(toMs(deps.now().utc), p.timezone, entry.period);
+    return { screen: 'progress', window: { days: w.days, from: w.from, to: w.to, label: `last ${progressPeriodPhrase(entry.period)}` } };
   }
 
   async function contextInput(p: UserProfile, kind: CoachTurnKind, session: SessionAggregate | null, entry: CoachEntry) {
@@ -718,6 +744,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const gymName = await gymNameOf(session);
     const checkIn = await checkInOf(session);
     const builtIn = kind === 'summary' && session !== null ? await builtInNext(session) : null;
+    const training = (await deps.training?.().catch(() => null)) ?? null;
     return {
       gymName,
       checkIn,
@@ -734,6 +761,7 @@ export function createCoachService(deps: CoachServiceDeps) {
         // The read tools for past workouts, equipment and the built-in rule are wired (backlog §4.3).
         trainingHistoryAvailable: true,
         ...(openedFrom === undefined ? {} : { openedFrom }),
+        ...(training === null ? {} : { training }),
         ...(builtIn === null || session === null
           ? {}
           : {
@@ -764,7 +792,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     /** How a build request was made (§8.2 `origin`): the Build card or the chip; words typed or spoken otherwise. */
     buildOrigin?: 'chip' | 'card';
     /** The Build card's chips (code, never the model): its length and focus win over what the words say. */
-    buildChips?: { minutes: number | null; focus: BuildFocus } | null;
+    buildChips?: BuildChips | null;
   }
 
   /**
@@ -831,17 +859,33 @@ export function createCoachService(deps: CoachServiceDeps) {
    * focus (Ben's chips, else his words, else the draft being changed, else
    * 60); the context lists only exercises usable at the selected gym (BD5);
    * the executor checks the call against the same gym, pain flags and
-   * limits. Null when Ben didn't ask for a workout (or there's no gym at all).
+   * limits. Review r4 (PM, 13 Oct, pending Ben): every general turn with a gym gets it, so
+   * `propose_workout` is offered whatever his words (forcing stays `forcesBuild`'s call in the turn).
+   * `inPlay`: Ben asked for a build or is following one up; otherwise the usable list is capped
+   * shorter and the whole-build timeout isn't applied. Null only when there's no gym at all.
    */
-  async function buildTurn(p: UserProfile, text: string, origin: 'chip' | 'card' | 'text' | 'voice', draft: WorkoutDraft | null, chips: { minutes: number | null; focus: BuildFocus } | null): Promise<{ view: BuildContextView; executors: CoachExecutors } | null> {
-    const asked = requestHas(classifyBenRequest(text, 'general'), 'build') || (draft !== null && revisesDraft(text));
-    if (!asked) return null;
+  async function buildTurn(
+    p: UserProfile,
+    said: string,
+    origin: 'chip' | 'card' | 'text' | 'voice',
+    draft: WorkoutDraft | null,
+    chips: BuildChips | null,
+    followUp: BuildFollowUp | null,
+  ): Promise<{ view: BuildContextView; executors: CoachExecutors; inPlay: boolean } | null> {
+    const inPlay = asksForBuild({ turnKind: 'general', text: said, draftInContext: draft !== null, followUp });
+    // A follow-up ("yes add it") reads length and focus from Ben's earlier request too; never from the coach's text.
+    const text = buildRequestWords(said, followUp);
     const place = await buildGym(p);
     if (place === null) return null;
     const { gym } = place;
     const parent = draft === null ? null : currentDraftVersion(draft);
-    const minutes = chips?.minutes ?? parseRequestedMinutes(text) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
-    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (parseRequestedFocus(text) ?? parent?.request.focus ?? 'coach_picks');
+    // Newest first: "yes but make it 45 mins" beats the request's length (review B2, B3).
+    const newest = buildWordsNewestFirst(said, followUp);
+    const firstOf = <T,>(read: (w: string) => T | null): T | null => newest.reduce<T | null>((found, w) => found ?? read(w), null);
+    const minutes = chips?.minutes ?? firstOf(parseRequestedMinutes) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
+    const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (firstOf(parseRequestedFocus) ?? parent?.request.focus ?? 'coach_picks');
+    // F19: the Build card's split day (else the draft's own), with its main lift (Ben's or recommended), for naming and context.
+    const day = chips !== null && chips.focus !== 'coach_picks' ? (chips.day ?? null) : chips === null && firstOf(parseRequestedFocus) === null ? (parent?.request.day ?? null) : null;
     const pool = await exercisePool();
     const byId = new Map(pool.map((e) => [e.id, e]));
     const byKey = new Map(pool.flatMap((e) => (e.catalogueKey ? [[e.catalogueKey, e] as const] : [])));
@@ -849,15 +893,25 @@ export function createCoachService(deps: CoachServiceDeps) {
     const at = deps.now();
     const nowMs = toMs(at.utc);
     const flagged = (id: string) => painFlagCovering(flags, id, nowMs, at.tz) !== null;
-    const usable = pool
-      .filter((e) => (e.measurement === 'reps' || e.measurement === 'duration') && !flagged(e.id) && doableHere(e, gym))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
     const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]));
+    const keyOf = (id: string): string => byId.get(id)?.catalogueKey ?? id;
+    const doable = pool.filter((e) => (e.measurement === 'reps' || e.measurement === 'duration') && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
+    // Review r5 S2: a capped list keeps what Ben named and what fits the focus ahead of the alphabetical fill.
+    const first = usableFirst({
+      words: newest,
+      focus,
+      pool: doable.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, split: e.split, primaryMuscle: e.primaryMuscles[0] })),
+      draft: parent?.plan.slots.map((sl) => sl.catalogueId) ?? [],
+      routines: live.flatMap((r) => r.exercises.map((e) => keyOf(e.exerciseId))),
+      dayBodyParts: day?.bodyParts ?? [],
+    });
+    const allUsable = doable
+      .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
+    const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
     const refs = await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []);
     const pick = nextInRotation(rotationRoutines(live), refs[0] ?? null);
     const view: BuildContextView = {
-      request: { quote: text, minutes, focus, origin },
+      request: { quote: text, minutes, focus, origin, ...(day === null ? {} : { day: { name: day.name, bodyParts: [...day.bodyParts], mainLift: chips?.mainLift ?? null } }) },
       gym: { name: gym.name, typicalEquipment: place.typical },
       usable,
       busyToday: [],
@@ -878,7 +932,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const subCtx = (): SubstituteContext => ({ ownerId: p.id, unit: p.preferredUnit, gym, knownEquipment: new Map(gym.equipment.map((e) => [e.id, e])), painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, at });
     const executors = createBuildExecutor({
       store: coachStore(),
-      request: { text, minutes, focus, gymId: place.typical ? null : gym.id, gymName: place.typical ? null : gym.name, origin },
+      request: { text, minutes, focus, day, gymId: place.typical ? null : gym.id, gymName: place.typical ? null : gym.name, origin },
       draft,
       checkContext: async (previous, opId, catalogueIds) => {
         // The rule's reps on each named exercise's own history (BD8), read before the checks run.
@@ -917,7 +971,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       contextHash: deriveId(stableStringify(view)),
       equipmentVersion: deriveId(stableStringify(gym.equipment.map((e) => [e.id, e.version]))),
     });
-    return { view, executors };
+    return { view, executors, inPlay };
   }
 
   async function send(req: SendRequest): Promise<CoachTurnResult> {
@@ -933,10 +987,15 @@ export function createCoachService(deps: CoachServiceDeps) {
     const executors = await executorsFor(p, req.entry, kind, session, ctx.gymName, ctx.checkIn, await askedForMoreSets(req.threadId), offerScope);
     // workout-builder §8.2: a build turn (Ben asked for a workout, or to change the draft in context) gets its context and its one tool.
     const draftInContext = req.entry.kind === 'draft' ? await draftOf(p, req.entry.draftId) : null;
-    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null) : null;
+    // Build 131: a follow-up to a session the coach described in text ("yes add it"); the turn engine reads the same thread.
+    const history = kind === 'general' && req.input.kind === 'words' && req.threadId !== null ? await coachStore().listMessages(req.threadId).catch(() => []) : [];
+    const refused = history.length === 0 ? new Set<string>() : await refusedBuildActionIds(history, (id) => coachStore().listTurnActions(id));
+    const followUp = kind === 'general' && req.input.kind === 'words' ? buildFollowUpIn(history, req.input.text, refused) : null;
+    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) Ben asked to add an exercise in a workout turn: what can be added here, by ID.
-    const addable = kind === 'workout' && session !== null && deps.coachAddInputs !== undefined && req.input.kind === 'words' && requestHas(classifyBenRequest(req.input.text, 'workout'), 'add') ? await addableFor(p, session) : null;
+    // (14 Oct) The list (long) goes only when his words might add one; without it the turn withholds add_exercise_today (review S5).
+    const addable = kind === 'workout' && session !== null && deps.coachAddInputs !== undefined && req.input.kind === 'words' && (requestHas(classifyBenRequest(req.input.text, 'workout'), 'add') || mentionsAdding(req.input.text)) ? await addableFor(p, session) : null;
     const stop = new AbortController();
     running.set(req.turnId, stop);
     try {
@@ -954,15 +1013,17 @@ export function createCoachService(deps: CoachServiceDeps) {
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),
           ...((await threadHasOpenDraft(p, req.threadId)) ? { draftInThread: true } : {}),
+          // Review B1, S4: the coach is told the app builds a session only when it really can here.
+          ...(kind === 'general' && build !== null ? { buildAvailable: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },
         // A build turn has the whole-build cap (BD13) on top of the first-event and stall timeouts.
-        { model, store: coachStore(), executors, now: deps.now, newId: deps.newId, ...(build !== null ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : {}) },
+        { model, store: coachStore(), executors, now: deps.now, newId: deps.newId, ...(build?.inPlay === true ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : {}) },
       );
       if (result.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
       else if (result.status === 'completed') lastNetworkFailureMs = null;
-      if (session !== null && result.cards.some((c) => (c.record.detail.kind === 'adjust_pending_sets' || c.record.detail.kind === 'add_exercise_today') && c.record.status === 'committed')) {
+      if (session !== null && result.cards.some((c) => (c.record.detail.kind === 'adjust_pending_sets' || c.record.detail.kind === 'add_exercise_today' || c.record.detail.kind === 'rename_workout') && c.record.status === 'committed')) {
         const fresh = await repos().sessions.get(session.session.id).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
       }
@@ -992,10 +1053,10 @@ export function createCoachService(deps: CoachServiceDeps) {
      * (`Build a 45 min push workout`) plus anything typed, and one build
      * turn. Nothing is sent when the coach can't build (`Needs the coach`).
      */
-    async buildWorkout(req: { entry: CoachEntry; threadId: string | null; turnId: string; minutes: number | null; focus: BuildFocus; extra?: string; origin: 'chip' | 'card'; onProgress?: (p: CoachTurnProgress) => void }): Promise<{ ok: true; result: CoachTurnResult } | { ok: false; block: BuildBlock }> {
+    async buildWorkout(req: { entry: CoachEntry; threadId: string | null; turnId: string; minutes: number | null; focus: BuildFocus; day?: BuildDay | null; mainLift?: string | null; extra?: string; origin: 'chip' | 'card'; onProgress?: (p: CoachTurnProgress) => void }): Promise<{ ok: true; result: CoachTurnResult } | { ok: false; block: BuildBlock }> {
       const block = buildBlockOf((await availability()).status);
       if (block !== null) return { ok: false, block };
-      const words = buildRequestText({ minutes: req.minutes, focus: req.focus });
+      const words = buildRequestText({ minutes: req.minutes, focus: req.focus, dayName: req.day?.name ?? null });
       const extra = req.extra?.trim() ?? '';
       const text = extra === '' ? words : `${words}. ${extra}`;
       const result = await send({
@@ -1004,7 +1065,7 @@ export function createCoachService(deps: CoachServiceDeps) {
         turnId: req.turnId,
         input: { kind: 'words', text, spoken: false },
         buildOrigin: req.origin,
-        buildChips: { minutes: req.minutes, focus: req.focus },
+        buildChips: { minutes: req.minutes, focus: req.focus, day: req.day ?? null, mainLift: req.mainLift ?? null },
         ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
       });
       return { ok: true, result };
@@ -1039,7 +1100,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const r = await undoCoachAction(coachStore(), { ownerId: p.id, actionId, opId, now: deps.now() });
       const target = r.result.status === 'written' || r.result.status === 'replayed' ? r.result.target : null;
-      if (target?.detail.kind === 'adjust_pending_sets' || target?.detail.kind === 'add_exercise_today' || target?.detail.kind === 'log_set' || target?.detail.kind === 'correct_set') {
+      if (target?.detail.kind === 'adjust_pending_sets' || target?.detail.kind === 'add_exercise_today' || target?.detail.kind === 'rename_workout' || target?.detail.kind === 'log_set' || target?.detail.kind === 'correct_set') {
         const fresh = await repos().sessions.get(target.detail.sessionId).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
       }
@@ -1306,7 +1367,8 @@ export function createCoachService(deps: CoachServiceDeps) {
      */
     async painChoices(entry: CoachEntry, words: string | null, focus: { exerciseId: string; name: string } | null = null): Promise<{ choices: { exerciseId: string; name: string }[]; pick: boolean }> {
       const p = await owner();
-      const sessionId = isGeneralEntry(entry) ? ((await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
+      // The last workout Ben did, FitNotes ones included (review import-progress S2).
+      const sessionId = isGeneralEntry(entry) ? ((await repos().sessions.listFinishedRefs(p.id, 1, { includeImported: true }).catch(() => []))[0]?.sessionId ?? null) : entry.sessionId;
       const session = sessionId === null ? null : await repos().sessions.get(sessionId).catch(() => null);
       const seen = new Set<string>();
       const all: { exerciseId: string; exerciseName: string }[] = [];

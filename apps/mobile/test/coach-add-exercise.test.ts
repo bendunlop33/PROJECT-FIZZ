@@ -134,7 +134,7 @@ describe('add an exercise from chat', () => {
     expect(curl?.sets.every((x) => x.planned.load === null)).toBe(true);
   });
 
-  it('a reply with no tool call to an add request shows "No change made."; a question never gets the tool', async () => {
+  it('a reply with no tool call to an add request shows "No change made."; a question gets no "No change made."', async () => {
     const { s, sessionId } = await benchWorkout();
     model = new StepModel([() => replyWith('Curls are a good shout at the end.')]);
     const r = await say(s, sessionId, 'Put in some curls');
@@ -145,8 +145,8 @@ describe('add an exercise from chat', () => {
 
     model = new StepModel([() => replyWith('They would help.')]);
     const q = await say(s, sessionId, 'Should I add curls?');
-    expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('add_exercise_today');
-    expect(contextAddable(model.requests[0] as ModelRequest)).toBeUndefined();
+    // (14 Oct) The tool is offered on every live turn; a call to it here would be an offer, not an add (midworkout.test.ts).
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('add_exercise_today');
     expect(q.note).toBeNull();
   });
 
@@ -235,7 +235,7 @@ describe('add an exercise from chat', () => {
       model = new StepModel([addFromContext('Lateral raise'), () => replyWith('Ok.')]);
       const r = await say(s, sessionId, text);
       const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
-      expect(tools).not.toContain('add_exercise_today');
+      // (14 Oct) Offered on every live turn, but a next-time add is never applied to today.
       expect(tools).toContain('propose_next_workout_change');
       expect(r.cards.some((c) => c.record.detail.kind === 'add_exercise_today' && c.record.status === 'committed')).toBe(false);
       expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);

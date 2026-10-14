@@ -186,6 +186,8 @@ export const TargetBasisSchema = z.object({
   gymId: IdSchema.nullable(),
   equipmentId: IdSchema.nullable(),
   sets: z.array(TargetBasisSetSchema).max(60),
+  /** From a FitNotes import (B7): `Why?` says `FitNotes` instead of a gym. Absent on app history. */
+  imported: z.literal(true).optional(),
 });
 export type TargetBasis = z.infer<typeof TargetBasisSchema>;
 

@@ -260,3 +260,26 @@ export async function pickCsvFile(): Promise<PickedFile> {
     return { kind: 'failed', message: text };
   }
 }
+
+/**
+ * `Choose file` on Import history (data-import-export §9.4): CSV, TSV and
+ * plain text from any app. As `pickCsvFile`: a copy in `tmp` that is
+ * deleted once read; the kind is decided from the content, on the phone.
+ * Spreadsheet, PDF and image files are allowed through the picker only so
+ * detection can say what to export instead (`Spreadsheet file. Export the
+ * sheet as CSV.`). Needs a device test (Files, iCloud Drive, a Strong or
+ * Hevy export shared from the app).
+ */
+export async function pickImportFile(): Promise<PickedFile> {
+  try {
+    const picked = await File.pickFileAsync({
+      mimeTypes: ['text/csv', 'text/comma-separated-values', 'text/tab-separated-values', 'text/plain', 'text/*', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/pdf'],
+    });
+    if (picked.canceled) return { kind: 'cancelled' };
+    return await readThenDelete(picked.result, MAX_IMPORT_BYTES, 'That file is too large to import.');
+  } catch (e) {
+    const text = e instanceof Error ? e.message : String(e);
+    if (/cancel/i.test(text)) return { kind: 'cancelled' };
+    return { kind: 'failed', message: text };
+  }
+}

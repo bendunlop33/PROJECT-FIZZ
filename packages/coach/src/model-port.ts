@@ -21,9 +21,10 @@ export interface ModelRequest {
   /**
    * `required`: every step calls exactly one function, either a registry
    * tool or `reply`; the model has no free-text channel (PM decision 10 Oct).
-   * Optional only so older test requests stay valid.
+   * Optional only so older test requests stay valid. A named function forces
+   * that one call (build 131 review S1: the build nudge forces `propose_workout`).
    */
-  toolChoice?: 'required';
+  toolChoice?: 'required' | { type: 'function'; name: string };
   /** Always false: the coach makes one call at a time so each write is checked in order. */
   parallelToolCalls: false;
   signal?: AbortSignal;

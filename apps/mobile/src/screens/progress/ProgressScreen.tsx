@@ -2,26 +2,29 @@ import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { toMs, type ProgressHomeView, type RecordView } from '@fizz/domain';
-import type { ProgressGrouping, ProgressWindowDays } from '@fizz/schemas';
+import { toMs, type DateRange, type ProgressHomeView, type RecordView } from '@fizz/domain';
+import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { runCountIt, type CountItToast } from '../../progress/count-it';
-import { ActivityBars, FrequencyHeader, FrequencyRow, ResumeBar, Segmented, useAx, WindowPicker } from '../../progress/components';
+import { ActivityChart, FrequencyHeader, FrequencyRow, FrequencySubRows, PeriodPicker, ResumeBar, Segmented, useAx } from '../../progress/components';
 import type { ProgressHome } from '../../services/progress-service';
 import { useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Card, Icon, PrimaryButton, SecondaryButton, StatStrip, StatusLine, TextButton, Toast } from '../../ui';
 import { AskPill } from '../coach/AskPill';
 import { CalendarView } from './CalendarView';
-import { HowCountedSheet, PeriodSheet, TimeSheet } from './sheets';
+import { unreadableText } from '../../progress/copy';
+import { ExercisesTab, type ExercisesFocus } from './ExercisesTab';
+import { HowCountedSheet, TimeSheet } from './sheets';
 
 /**
- * Progress home (progress.md v1.0 slice A, §2.2): one window drives every
+ * Progress home (progress.md v1.0 slice A, §2.2): one period drives every
  * card; Activity (sessions, time, bars), Muscles (Body parts | Push/Pull/
- * Legs), Records; `Overview | Calendar`. Local data only: identical offline
+ * Legs; D2: parents that open to sub-rows), Records; `Activity | Exercises |
+ * Calendar` (Ben, 13–14 Oct 2026). Local data only: identical offline
  * and with no coach (check 20). The screen lays out the service's view model
  * and computes nothing.
  */
@@ -33,14 +36,16 @@ export function ProgressScreen() {
   const navigation = useNavigation();
   const services = useServices();
   const ax = useAx();
-  const [segment, setSegment] = useState<'overview' | 'calendar'>('overview');
+  const [segment, setSegment] = useState<'activity' | 'exercises' | 'calendar'>('activity');
   const [month, setMonth] = useState<string | null>(null);
   const [calendarSeen, setCalendarSeen] = useState(false);
+  const [exercisesSeen, setExercisesSeen] = useState(false);
+  // A record tap opens the Exercises tab on that exercise and workout (review S3); `n` makes a repeat tap re-open it.
+  const [exercisesFocus, setExercisesFocus] = useState<ExercisesFocus | null>(null);
   // No local window or grouping: the service holds the one shared choice, so home and Muscles never disagree (check 15).
   const [data, reload] = useScreenData((s) => s.progress.home());
   const [timeOpen, setTimeOpen] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
-  const [periodOpen, setPeriodOpen] = useState(false);
   const [toast, setToast] = useState<Toasted>(null);
   const [placeholder, setPlaceholder] = useState(false);
   const [toastHeight, setToastHeight] = useState(0);
@@ -74,7 +79,7 @@ export function ProgressScreen() {
     }, theme.timing.undoToast);
   };
 
-  const change = (patch: { days?: ProgressWindowDays; grouping?: ProgressGrouping }) => {
+  const change = (patch: { period?: ProgressPeriodKey; grouping?: ProgressGrouping }) => {
     // The choice is shared the moment it's made; reload again once saved (a failed save falls back to the saved setting).
     const saved = services.progress.saveSettings(patch);
     reload();
@@ -109,12 +114,14 @@ export function ProgressScreen() {
       {home?.view.dataState === 'normal' ? (
         <Segmented
           options={[
-            { key: 'overview', label: 'Overview' },
+            { key: 'activity', label: 'Activity' },
+            { key: 'exercises', label: 'Exercises' },
             { key: 'calendar', label: 'Calendar' },
           ]}
           selected={segment}
           onSelect={(k) => {
             if (k === 'calendar') setCalendarSeen(true);
+            if (k === 'exercises') setExercisesSeen(true);
             setSegment(k);
           }}
           label="Progress"
@@ -151,9 +158,14 @@ export function ProgressScreen() {
   } else if (home.view.dataState === 'empty') {
     body = <EmptyState hasResume={resume !== null} />;
   } else {
-    // Both segments stay mounted once seen, so each keeps its place (selected day, scroll) on `Overview ⇄ Calendar` (§3.5).
+    // Every segment stays mounted once seen, so each keeps its place (selected day, exercise, scroll) (§3.5).
     body = (
       <>
+        {exercisesSeen || segment === 'exercises' ? (
+          <View style={segment === 'exercises' ? null : { display: 'none' }}>
+            <ExercisesTab focus={exercisesFocus} />
+          </View>
+        ) : null}
         {calendarSeen || segment === 'calendar' ? (
           <View style={segment === 'calendar' ? null : { display: 'none' }}>
             <CalendarView
@@ -164,16 +176,17 @@ export function ProgressScreen() {
             />
           </View>
         ) : null}
-        <View style={segment === 'overview' ? null : { display: 'none' }}>
+        <View style={segment === 'activity' ? null : { display: 'none' }}>
       <Overview
         home={home}
         view={home.view}
         ax={ax}
-        onWindow={(days) => {
-          change({ days });
+        onPeriod={(period) => {
+          change({ period });
         }}
-        onPeriod={() => {
-          setPeriodOpen(true);
+        onCustom={(r) => {
+          services.progress.choosePeriod(r);
+          reload();
         }}
         onGrouping={(grouping) => {
           change({ grouping });
@@ -189,18 +202,13 @@ export function ProgressScreen() {
         onHow={() => {
           setHowOpen(true);
         }}
-        onMuscle={(group) => {
-          navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressMuscles', params: { group } } });
+        onMuscles={() => {
+          navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressMuscles', params: { group: '' } } });
         }}
         onRecord={(r) => {
-          // Slice B: a record opens exercise detail on its series with its point selected (§4.1).
-          navigation.navigate('Tabs', {
-            screen: 'Progress',
-            params: { screen: 'ProgressExercise', params: { exerciseId: r.exerciseId, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, ...(r.equipmentId === null ? {} : { equipmentId: r.equipmentId }) } },
-          });
-        }}
-        onExercises={() => {
-          navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressExercises' } });
+          setExercisesFocus((f) => ({ exerciseId: r.exerciseId, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, n: (f?.n ?? 0) + 1 }));
+          setExercisesSeen(true);
+          setSegment('exercises');
         }}
       />
         </View>
@@ -208,7 +216,7 @@ export function ProgressScreen() {
     );
   }
 
-  const days = home?.days ?? null;
+  const period = home?.period ?? null;
   const range = home?.range ?? null;
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
@@ -224,7 +232,7 @@ export function ProgressScreen() {
         <AskPill
           bottom={theme.space['4'] + (toastShown ? toastHeight : 0)}
           onPress={() => {
-            navigation.navigate('Coach', { entry: days === null ? { kind: 'today' } : { kind: 'progress', days, ...(range === null ? {} : { range }) } });
+            navigation.navigate('Coach', { entry: period === null ? { kind: 'today' } : { kind: 'progress', period, ...(range === null ? {} : { range }) } });
           }}
         />
         {toastShown ? (
@@ -267,31 +275,6 @@ export function ProgressScreen() {
           }}
         />
       ) : null}
-      {home?.view.dataState === 'normal' ? (
-        <PeriodSheet
-          visible={periodOpen}
-          today={home.today}
-          earliest={home.earliest}
-          current={{ from: home.view.window.from, to: home.view.window.to }}
-          onShow={(r) => {
-            setPeriodOpen(false);
-            services.progress.choosePeriod(r);
-            reload();
-          }}
-          onClear={
-            home.range === null
-              ? null
-              : () => {
-                  setPeriodOpen(false);
-                  services.progress.choosePeriod(null);
-                  reload();
-                }
-          }
-          onClose={() => {
-            setPeriodOpen(false);
-          }}
-        />
-      ) : null}
       <HowCountedSheet
         visible={howOpen}
         onClose={() => {
@@ -306,28 +289,26 @@ function Overview({
   home,
   view,
   ax,
-  onWindow,
   onPeriod,
+  onCustom,
   onGrouping,
   onCalendar,
   onTime,
   onHow,
-  onMuscle,
+  onMuscles,
   onRecord,
-  onExercises,
 }: {
   home: ProgressHome;
   view: Extract<ProgressHomeView, { dataState: 'normal' }>;
   ax: boolean;
-  onWindow: (d: ProgressWindowDays) => void;
-  onPeriod: () => void;
+  onPeriod: (p: ProgressPeriodKey) => void;
+  onCustom: (r: DateRange) => void;
   onGrouping: (g: ProgressGrouping) => void;
   onCalendar: () => void;
   onTime: () => void;
   onHow: () => void;
-  onMuscle: (group: string) => void;
+  onMuscles: () => void;
   onRecord: (r: RecordView) => void;
-  onExercises: () => void;
 }) {
   const theme = useTheme();
   const { activity, muscles, records } = view;
@@ -337,16 +318,28 @@ function Overview({
   const [recordsAllFor, setRecordsAllFor] = useState<string | null>(null);
   const recordsAll = recordsAllFor === windowKey;
   const recordRows = recordsAll ? records.items : records.items.slice(0, records.initial);
+  // D2: parents only; a row opens to its sub-rows in place.
+  const [openRows, setOpenRows] = useState<ReadonlySet<string>>(new Set());
   return (
     <View style={{ gap: theme.space['5'] }}>
-      <WindowPicker days={home.days} custom={home.range !== null} datesLine={view.datesLine} datesWords={view.datesWords} onChange={onWindow} onPeriod={onPeriod} />
+      <PeriodPicker
+        period={home.period}
+        custom={home.range !== null}
+        today={home.today}
+        earliest={home.earliest}
+        current={view.window}
+        datesLine={view.datesLine}
+        datesWords={view.datesWords}
+        onPreset={onPeriod}
+        onCustom={onCustom}
+      />
 
       <View style={{ gap: theme.space['2'] }}>
         <Pressable accessibilityRole="button" accessibilityLabel={activity.cardWords} onPress={onCalendar}>
           <Card>
             <View style={{ gap: theme.space['4'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-              <StatStrip items={activity.stats.map((s) => ({ value: s.value, label: s.label }))} accessibilityLabel={activity.statsWords} ax={ax} />
-              <ActivityBars bars={activity.bars} />
+              <StatStrip items={activity.stats.map((s) => ({ value: s.value, label: s.label, ...(s.note !== undefined ? { note: s.note } : {}) }))} accessibilityLabel={activity.statsWords} ax={ax} />
+              <ActivityChart chart={activity.chart} />
               <AppText variant="callout" color="text.secondary" numeric>
                 {activity.comparison}
               </AppText>
@@ -398,26 +391,34 @@ function Overview({
         ) : (
           <View>
             <FrequencyHeader perWeek={false} />
-            {muscles.rows.map((r) => (
-              <FrequencyRow
-                key={r.key}
-                row={r}
-                perWeek={false}
-                hint="Opens Muscles"
-                onPress={() => {
-                  onMuscle(r.key);
-                }}
-              />
-            ))}
+            {muscles.rows.map((r) => {
+              const expanded = openRows.has(r.key);
+              return (
+                <View key={r.key}>
+                  <FrequencyRow
+                    row={r}
+                    perWeek={false}
+                    expanded={expanded}
+                    onPress={() => {
+                      setOpenRows((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(r.key)) next.delete(r.key);
+                        else next.add(r.key);
+                        return next;
+                      });
+                    }}
+                  />
+                  {expanded ? <FrequencySubRows rows={r.subRows} empty={r.lastTrained} /> : null}
+                </View>
+              );
+            })}
           </View>
         )}
         {muscles.noMusclesLine !== null ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${muscles.noMusclesLine}. Opens Muscles.`}
-            onPress={() => {
-              onMuscle('');
-            }}
+            onPress={onMuscles}
             style={{ minHeight: theme.target.min.height, justifyContent: 'center' }}
           >
             <AppText variant="callout" color="text.secondary">{`${muscles.noMusclesLine} ›`}</AppText>
@@ -471,21 +472,8 @@ function Overview({
         ) : null}
       </View>
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Exercises"
-        accessibilityHint="Opens every exercise's history"
-        onPress={onExercises}
-        style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], borderTopWidth: theme.dividerWidth, borderBottomWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
-      >
-        <AppText variant="body" style={{ flex: 1 }}>
-          Exercises
-        </AppText>
-        <Icon name="chevron.right" color="text.tertiary" size={14} />
-      </Pressable>
-
       {home.unreadable > 0 ? (
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text={`${String(home.unreadable)} ${home.unreadable === 1 ? 'workout couldn’t be read and isn’t' : 'workouts couldn’t be read and aren’t'} counted.`} />
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text={unreadableText(home.unreadable)} />
       ) : null}
     </View>
   );
@@ -498,7 +486,7 @@ function EmptyState({ hasResume }: { hasResume: boolean }) {
     navigation.navigate('Tabs', { screen: 'Today' });
   };
   const toImport = () => {
-    navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'ImportIntro', initial: false } });
+    navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'ImportHistory', initial: false } });
   };
   return (
     <Card>

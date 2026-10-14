@@ -22,6 +22,8 @@ Sources: brief §5 (data foundation), §7 (`previewFitNotesImport`, `commitImpor
 >
 > Nothing outside §9 changed.
 
+> **Revision 13 Oct 2026 (developer, PM-directed; for Ben and the designer to confirm).** Ben's FitNotes 2 file (the iPhone workout export: `Name,StartTime,EndTime,BodyWeight,Exercise,Equipment,Reps,Weight,Time,Distance,Status,IsWarmup,RPE,RIR,Categories,Note`) is now a FitNotes format read offline, and a coach layout that fails the checks is corrected once and then asked on Check the layout (ADR 0026 amendment 14). New copy for the designer: `FitNotes 2 (iPhone) CSV · weight unit not in the file`, `Weight unit` (question screen), `<n> sets not done`, `Start and end times`, `Warm-ups as in the file`, `Didn't pass every check` + `Why?`. §9.3.3's "`Try again` never runs on its own" now has that one exception.
+
 **Why this matters more than usual.** Fizz is signed with a free Apple ID through SideStore. Deleting the app, or re-signing it with another Apple ID or tool, installs a separate app with an empty database (ADR 0004). Backups on the phone protect against a damaged database or a bad restore, but not against that. Only a copy saved to Files (off the phone) survives it. Fizz says which kind Ben has, every time, and offers a one-tap copy to Files before the moments when it matters (§4.1a), without nagging.
 
 | Part | Milestone |
@@ -1802,7 +1804,7 @@ The source is `getImportCoachStatus` (§9.6), which composes `getAiCapabilities`
 | State | Shows | Next |
 |---|---|---|
 | Sending, waiting, checking | The §9.2.4 step rows | Check the layout, or a failure |
-| Stopped by Ben | `Stopped.` A late answer is thrown away | New file layout |
+| Stopped by Ben (`Stop`, or `Cancel`, back or the swipe) | `Stopped.` A late answer is thrown away | New file layout (`Stop`); the screen before (`Cancel`, back, swipe) |
 | Interrupted (app left or closed) | `Interrupted.` | `Read with the coach` |
 | Timed out (adapter, 120 s) | `No answer in time.` | `Try again` |
 | Limit or error mid-request | The §9.3.2 status for that state | As §9.3.2 |
@@ -1812,6 +1814,7 @@ The source is `getImportCoachStatus` (§9.6), which composes `getAiCapabilities`
 | Done | (none) | Check the layout |
 
 - **`Try again` never runs on its own.** Each attempt is Ben's tap and sends exactly the text he can see in §9.2.3.
+- **`Cancel`, back or the swipe while reading is the same as `Stop`.** Nothing is sent if the request hasn't gone, a late answer is thrown away, and the layout is dropped: choosing the same file again reads it afresh, never reusing that answer.
 - **A spec that arrived before an interruption is kept** under its operation ID and sample hash. Opening the file again reuses it rather than sending again.
 - **Nothing is imported in any of these states.** Only `commitImport` writes workouts.
 
@@ -1859,7 +1862,7 @@ Import history ─file/paste─► detect ─┬─ FitNotes ──────�
 - **Choose file** opens the system picker (CSV, TSV, plain text, Markdown). The file is copied to the cache and detected on the phone. Nothing leaves the phone until Ben taps a consent screen's primary.
 - **Paste text** opens the editor. `Continue` is enabled once the text has a digit. The size limit is set after measuring on the phone. Over the limit: `Too long to paste. Save it as a file.`
 - **See what's sent** opens the sheet. Column switches change the text, the count and the send line at once. What's sent is always the sheet's current text, checked by hash (AI8).
-- **Read with the coach** sends one request with an operation ID and the sample hash. `Stop` cancels the request and throws away any late answer.
+- **Read with the coach** sends one request with an operation ID and the sample hash. `Stop` cancels the request and throws away any late answer. `Cancel`, back and the swipe while reading do the same (§9.3.3).
 - **Check the layout:**
   - each question opens its screen, and `Done` returns with `✓` and the answer;
   - `Use this` confirms a `Check` with one tap, and `Change…` opens the role sheet;

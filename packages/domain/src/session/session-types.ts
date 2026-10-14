@@ -16,11 +16,11 @@
  * - `formatLastDone` (§6): `Today` / `Yesterday` / `N days ago` / `14 Aug` /
  *   `14 Aug 2025`.
  *
- * Ben's two open decisions (session-picker §9), both off until he decides:
- * `SESSION_PICKER_DECISIONS`. Decision 1 is a switch; Decision 2 is only a
- * marker until the service resolver is wired to `recommendSession`. Until
- * then imports are never grouped by Category and Up next keeps D19's "last
- * workout" fallback.
+ * Ben's two decisions (session-picker §9), both approved 11 Oct 2026
+ * (CHANGELOG "Backlog defaults accepted"): `SESSION_PICKER_DECISIONS`.
+ * Both are on. Decision 2 replaces D19's "last workout" fallback in the
+ * app's Up next resolver through `longestGapSource` (review import-progress
+ * S1); the D19 routine rotation is unchanged.
  */
 import type { ZonedTimestamp } from '@fizz/schemas';
 
@@ -40,24 +40,23 @@ const RELATIVE_DAYS_MAX = 13;
 const YEAR_AFTER_MONTHS = 11;
 
 /**
- * Ben's open decisions (session-picker §9). Both stay false until he
- * approves them and the CHANGELOG records it (review SI6).
- * - `groupImportsByCategory` (Decision 1): unnamed FitNotes imports become
- *   types by their `Category` label. Also needs P-I3: imported workouts
- *   can't be started yet, so such a type is `startable: false` (ADR 0016).
- * - `longestGapFallback` (Decision 2): a marker, not a switch yet (review
- *   r2 S4). The rule is built and tested (`recommendSession`), but the
- *   services don't read this flag: Today, the picker, the overview and the
- *   Plan all take Up next from the app's D19 resolver (`resolveUpNext`).
- *   Its type is `false` so turning it on fails to compile until that
- *   resolver branches on it (with its eyebrow, §2.3 `UP NEXT · LAST DONE`).
+ * Ben's decisions (session-picker §9), approved 11 Oct 2026 (CHANGELOG).
+ * - `groupImportsByCategory` (Decision 1, on): unnamed FitNotes imports
+ *   become types by their `Category` label, and start like any history
+ *   type (B7).
+ * - `longestGapFallback` (Decision 2, on): when the D19 rotation doesn't
+ *   apply, the app's Up next resolver (`resolveUpNext`, which Today, the
+ *   picker, the overview and the Plan share) starts from the history type
+ *   with the longest gap (`longestGapSource`), not the newest workout. The
+ *   basis copy is still D19's (`From Mon 5 Oct`, `Next session · from …`),
+ *   which is true of the source; §2.3's `UP NEXT · LAST DONE` is not built.
  */
 export interface SessionPickerDecisions {
   groupImportsByCategory: boolean;
-  longestGapFallback: false;
+  longestGapFallback: boolean;
 }
 
-export const SESSION_PICKER_DECISIONS: Readonly<SessionPickerDecisions> = Object.freeze({ groupImportsByCategory: false, longestGapFallback: false });
+export const SESSION_PICKER_DECISIONS: Readonly<SessionPickerDecisions> = Object.freeze({ groupImportsByCategory: true, longestGapFallback: true });
 
 // ---------------------------------------------------------------------------
 // Names
@@ -148,6 +147,13 @@ export interface SessionTypeSession {
   imported: boolean;
   /** Imported only: working-set count per FitNotes `Category` cell (`imports.categoriesBySession`). */
   importCategories?: Readonly<Record<string, number>> | null;
+  /**
+   * Imported only: the title the overview and calendar give it from its
+   * exercises (`deriveWorkoutTitle`, F20). When given, it names the type
+   * instead of the Category cell, so the list and the overview agree;
+   * `Workout` (nothing recognised) leaves it untyped.
+   */
+  derivedTitle?: string | null;
 }
 
 /** A live routine, in list order. */
@@ -181,11 +187,10 @@ export interface SessionType {
   /** Last done more than 42 days ago (listed under `OLDER`, never the longest-gap pick). */
   older: boolean;
   /**
-   * Whether Start can begin this type today. A routine always can (its own
-   * structure). A history type plans from its source workout, which can't
-   * be an imported one while P-I3 is open (ADR 0016: never repeated, loads
-   * never checked on equipment). Unstartable types are never recommended,
-   * and the service leaves them out of the picker until P-I3 is decided.
+   * Whether Start can begin this type today. Every type can since B7
+   * (approved 11 Oct 2026): a routine from its own structure, a history type
+   * from its source workout, imported ones included (their loads are fitted
+   * to the gym at Start). Kept so a future unstartable kind has a place.
    */
   startable: boolean;
 }
@@ -211,6 +216,9 @@ interface Group {
   members: { session: SessionTypeSession; label: string; kind: 'named' | 'category' | 'routine' }[];
 }
 
+/** `deriveWorkoutTitle`'s answer when no exercise is recognised: not a type. */
+const GENERIC_DERIVED_TITLE = 'Workout';
+
 const startedMs = (s: SessionTypeSession): number => toMs(s.startedAt.utc);
 
 /** Whole calendar days from `at` to `now`, in `now`'s zone. */
@@ -226,7 +234,12 @@ function historyLabelOf(s: SessionTypeSession, byCategory: boolean): { label: st
     if (label.length === 0) return null;
     return { label, key: nameKey(normaliseSessionName(label)), kind: 'named' };
   }
-  if (!byCategory || !s.imported || s.importCategories === undefined || s.importCategories === null) return null;
+  if (!byCategory || !s.imported) return null;
+  if (s.derivedTitle !== undefined && s.derivedTitle !== null) {
+    const label = displaySessionName(s.derivedTitle);
+    return label.length === 0 || label === GENERIC_DERIVED_TITLE ? null : { label, key: nameKey(normaliseSessionName(label)), kind: 'category' };
+  }
+  if (s.importCategories === undefined || s.importCategories === null) return null;
   const c = categoryLabel(s.importCategories);
   return c === null ? null : { ...c, kind: 'category' };
 }
@@ -302,7 +315,8 @@ export function groupSessionTypes(input: DeriveSessionTypesInput): SessionTypeIn
       lastDone: newest.session.startedAt,
       exerciseCount: newest.session.exerciseCount,
       older: daysSince(newest.session.startedAt, input.now) > OLDER_AFTER_DAYS,
-      startable: !newest.session.imported,
+      // B7: an imported source is startable too; Start fits its loads to the gym (rule 4).
+      startable: true,
     });
   }
   // Routines were added first, in list order; history types follow by label.
@@ -346,7 +360,7 @@ type Done = SessionType & { lastDone: ZonedTimestamp };
 const doneMs = (t: Done): number => toMs(t.lastDone.utc);
 
 /**
- * Up next under Decision 2 (§3.3; SP-D4), once Ben approves it:
+ * Up next under Decision 2 (§3.3; SP-D4; approved 11 Oct 2026):
  * 1. The D19 rotation when the last workout came from a routine
  *    (`nextInRotation`, unchanged).
  * 2. Else, among startable types done in the last 42 days, the one done
@@ -377,6 +391,22 @@ export function recommendSession(input: RecommendSessionInput): SessionRecommend
   }
   const latest = [...done].sort((a, b) => doneMs(b) - doneMs(a) || a.key.localeCompare(b.key))[0];
   return latest === undefined ? null : { key: latest.key, basis: { kind: 'from', lastDone: latest.lastDone } };
+}
+
+/**
+ * Decision 2 in the app's Up next resolver (review import-progress S1): when
+ * the D19 rotation doesn't apply, the workout to plan Up next from. Among
+ * history types (named workouts and FitNotes Category groups; routines are
+ * the rotation's), the one with the longest gap since it was last done
+ * (`recommendSession` step 2, never the type just done unless it is the
+ * only one), and that type's newest workout as the source. Null when there
+ * is no history type: the caller falls back to the newest workout.
+ */
+export function longestGapSource(index: SessionTypeIndex, lastFinished: FinishedRef | null): { sessionId: string; key: string; basis: SessionRecommendationBasis } | null {
+  const history = index.types.filter((t) => t.routineId === null && t.sourceSessionId !== null);
+  const rec = recommendSession({ index: { types: history, keyOfSession: index.keyOfSession }, routines: [], lastFinished });
+  const type = rec === null ? undefined : history.find((t) => t.key === rec.key);
+  return rec === null || type?.sourceSessionId === undefined || type.sourceSessionId === null ? null : { sessionId: type.sourceSessionId, key: type.key, basis: rec.basis };
 }
 
 // ---------------------------------------------------------------------------

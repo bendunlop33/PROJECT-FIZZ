@@ -341,6 +341,16 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Couldn't add ${d.exerciseName}: ${failureOr(record, 'it was refused')}. Nothing changed.`;
       return make(status, text, speakable(text));
     }
+    case 'rename_workout': {
+      // (14 Oct) The live workout renamed because Ben asked: the name only, with Undo on the card.
+      if (st === 'committed') {
+        const text = `Renamed workout: ${d.after}.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not renamed: your workout moved on.', 'Not renamed. Your workout moved on.');
+      const text = `Not renamed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
     case 'log_set': {
       if (st === 'committed') {
         const text = `Logged set ${String(d.setNumber)} · ${d.exerciseName}: ${chatValues(d.values)} (actual).`;

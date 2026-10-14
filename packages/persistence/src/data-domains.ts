@@ -45,6 +45,9 @@ export const YOUR_DATA_TABLES = [
   'import_jobs',
   'import_rows',
   'exercise_aliases',
+  // Saved import layouts and layout requests (ADR 0026, migration 15): Ben's own files' layouts and what was sent.
+  'import_profiles',
+  'import_layout_requests',
   'coach_threads',
   'coach_turns',
   'coach_messages',
@@ -57,6 +60,8 @@ export const YOUR_DATA_TABLES = [
   'pre_start_drafts',
   // Coach-built workout drafts (workout-builder §8.2, migration 13): Ben's requests and the coach's plans for him.
   'workout_drafts',
+  // Training details and split (migration 16): birth year, gender, height, weights, goal, split. About Ben.
+  'training_profiles',
   // Tombstones of purged workouts (delete-workouts §6.3, migration 8): Your data, removed by Delete my data.
   'purged_sessions',
 ] as const;

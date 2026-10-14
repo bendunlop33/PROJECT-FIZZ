@@ -158,7 +158,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
    * `startWorkoutFromSession` (routines.md §4.6): a new session whose targets
    * are a finished session's actuals. Idempotent by `opId`, one active
    * session at a time, like `start`. `preview: true` builds it without saving.
-   * An imported workout is refused (`imported_not_repeatable`; review r2 B1).
+   * An imported (FitNotes) workout is planned the same way, its loads fitted to this gym (B7).
    */
   async function startFromSession(
     req: StartRequest & {
@@ -176,7 +176,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     },
   ): Promise<
     | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean; fits: Record<string, SetFit>; today: TodayPlanInfo | null }
-    | { ok: false; error: ServiceError | { code: 'nothing_to_repeat'; message: string } | { code: 'imported_not_repeatable'; message: string } }
+    | { ok: false; error: ServiceError | { code: 'nothing_to_repeat'; message: string } }
   > {
     if (!req.preview) {
       const existing = await repos.sessions.findByStartOperation(req.ownerId, req.opId);
@@ -192,11 +192,9 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     if (!source || source.session.ownerId !== req.ownerId || !isInHistory(source.session)) {
       return { ok: false, error: { code: 'not_found', message: 'That workout wasn’t found.' } };
     }
-    // An imported (FitNotes) workout has no equipment to check its loads on, and P-I3 is open:
-    // it's never repeated, so nothing unchecked becomes today's target (rule 4; review r2 B1).
-    if (source.session.source === 'import') {
-      return { ok: false, error: { code: 'imported_not_repeatable', message: 'Workouts imported from FitNotes can’t be repeated yet.' } };
-    }
+    // An imported (FitNotes) workout is repeatable (B7): it recorded no equipment, so each
+    // exercise is pinned to no known item and the shared fit maps one at this gym by kind,
+    // rounding toward easier and never above a max (rule 4; `startWorkoutFromSession`).
     const exercises = new Map<string, Exercise>();
     for (const ex of source.exercises) {
       const e = await repos.exercises.get(ex.exerciseId);

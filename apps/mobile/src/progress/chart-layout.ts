@@ -1,79 +1,86 @@
+import type { TrendLayout } from './trend-layout';
+
 /**
  * Pure geometry for Progress's small charts (progress.md §7.1; design-system
- * §4.1 `chart.weekBars`, §9.70). The Skia component only draws these
- * rectangles; text sits in native views at the returned positions, so Dynamic
+ * §9.70). The Skia component only draws these shapes; text sits in native views at the returned positions, so Dynamic
  * Type and VoiceOver work as everywhere else.
  */
 
-export interface WeekBarsDims {
+export interface ActivityLineDims {
   height: number;
-  maxBarWidth: number;
-  gap: number;
-  radius: number;
+  /** Room on the leading edge for the Y labels. */
+  axisWidth: number;
+  /** Room at the trailing edge so the last point (and its ring) isn't clipped. */
+  inset: number;
+  /** Room above the top gridline for its label and the selected ring. */
+  top: number;
 }
 
-export interface BarRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  /** A 0 bar: drawn as a 2pt stub in `chart.grid`, so the week reads as empty, not missing. */
-  zero: boolean;
-  /** Centre, for the count above and the label under. */
-  centreX: number;
-  /** The window cut this week (or month): drawn lighter, so a one-day bar never reads as an empty week. */
-  partial: boolean;
-}
-
-/** How much of the bar colour a part week keeps (the rest is the card behind it). */
-export const PARTIAL_BAR_MIX = 0.45;
-
-/** `#RRGGBB` `fg` over `bg` at `amount` (0–1), as an opaque `#RRGGBB`. Anything else returns `fg`. */
-export function mixHex(fg: string, bg: string, amount: number): string {
-  const parse = (h: string) => (/^#[0-9a-f]{6}$/i.test(h) ? [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)) : null);
-  const a = parse(fg);
-  const b = parse(bg);
-  if (a === null || b === null) return fg;
-  const t = Math.max(0, Math.min(1, amount));
-  return `#${a.map((v, i) => Math.round(v * t + (b[i] ?? 0) * (1 - t)).toString(16).padStart(2, '0')).join('')}`;
-}
-
-export const ZERO_STUB = 2;
+export const ACTIVITY_LINE_DIMS: ActivityLineDims = { height: 132, axisWidth: 24, inset: 8, top: 10 };
 
 /**
- * Bars spread over `width`: each `(width − gaps) ÷ count` wide, at most
- * `maxBarWidth`, centred in its slot. Heights scale from 0 to `max` (the view
- * model passes max(3, largest) so one session never fills the plot).
+ * The activity line (Ben, 13 Oct 2026): one point per week or month, evenly
+ * spaced, joined by one line (always a line, never bars or dots), from 0 at
+ * the bottom to the top Y tick. Returned in `TrendCanvas`'s shape so the same
+ * Skia drawing serves both charts.
  */
-export function weekBarsLayout(counts: readonly number[], width: number, max: number, dims: WeekBarsDims, partial: readonly boolean[] = []): BarRect[] {
+export function activityLineLayout(counts: readonly number[], yTicks: readonly number[], width: number, dims: ActivityLineDims): TrendLayout {
+  const plot = { x: dims.axisWidth, y: dims.top, width: Math.max(1, width - dims.axisWidth - dims.inset), height: Math.max(1, dims.height - dims.top) };
+  const top = Math.max(1, yTicks[yTicks.length - 1] ?? 1, ...counts);
+  const yOf = (v: number) => plot.y + plot.height - (Math.max(0, v) / top) * plot.height;
   const n = counts.length;
-  if (n === 0 || width <= 0) return [];
-  const slot = width / n;
-  const barWidth = Math.max(1, Math.min(dims.maxBarWidth, (width - dims.gap * (n - 1)) / n));
-  const scale = max > 0 ? dims.height / max : 0;
-  return counts.map((c, i) => {
-    const centreX = slot * i + slot / 2;
-    const h = c <= 0 ? ZERO_STUB : Math.max(ZERO_STUB, Math.min(dims.height, c * scale));
-    return { x: centreX - barWidth / 2, y: dims.height - h, width: barWidth, height: h, zero: c <= 0, centreX, partial: partial[i] === true };
-  });
-}
-
-/**
- * Which week labels to show: first and last always, others only when each
- * label has `minLabelWidth` of room (§9.70). Returns indexes.
- */
-export function visibleLabels(count: number, width: number, minLabelWidth: number): number[] {
-  if (count <= 0) return [];
-  if (count === 1) return [0];
-  const slot = width / count;
-  const step = Math.max(1, Math.ceil(minLabelWidth / Math.max(1, slot)));
-  const out = new Set<number>([0, count - 1]);
-  for (let i = step; i < count - 1; i += step) if (count - 1 - i >= step || step === 1) out.add(i);
-  return [...out].sort((a, b) => a - b);
+  const xs = counts.map((_, i) => (n <= 1 ? plot.x + plot.width / 2 : plot.x + (i * plot.width) / (n - 1)));
+  return {
+    plot,
+    xs,
+    ys: counts.map(yOf),
+    segments: n === 0 ? [] : [counts.map((_, i) => i)],
+    yTicks: yTicks.map((v) => ({ y: yOf(v), label: String(v) })),
+    months: [],
+    bars: [],
+  };
 }
 
 /** A `FrequencyRow` bar's filled width (0 to the track width). */
 export function countBarWidth(fraction: number, trackWidth: number): number {
   if (!(fraction > 0) || trackWidth <= 0) return 0;
   return Math.max(2, Math.min(trackWidth, fraction * trackWidth));
+}
+
+/** A label of measured `width` centred under `x`, kept inside the chart: its left and right edges. */
+export function measuredLabelBox(x: number, width: number, chartWidth: number): { left: number; right: number } {
+  const left = Math.max(0, Math.min(chartWidth - width, x - width / 2));
+  return { left, right: left + width };
+}
+
+/**
+ * X labels thinned by their measured widths (device fix, 14 Oct 2026: at
+ * `1 year`, `Aug 26` and `Oct 26` collided). First and last always show;
+ * the others, left to right, only where they clear the last kept label and
+ * the final one by `gap`. If even the first and last would touch, only the
+ * last shows (the current end of the period). Returns indexes, ascending.
+ */
+export function thinLabelsByWidth(xs: readonly number[], widths: readonly number[], chartWidth: number, gap = 8): number[] {
+  const n = xs.length;
+  if (n === 0) return [];
+  const box = (i: number) => measuredLabelBox(xs[i] ?? 0, widths[i] ?? 0, chartWidth);
+  if (n === 1) return [0];
+  const last = box(n - 1);
+  if (box(0).right + gap > last.left) return [n - 1];
+  const out = [0];
+  let prevRight = box(0).right;
+  for (let i = 1; i < n - 1; i += 1) {
+    const b = box(i);
+    if (b.left >= prevRight + gap && b.right + gap <= last.left) {
+      out.push(i);
+      prevRight = b.right;
+    }
+  }
+  out.push(n - 1);
+  return out;
+}
+
+/** A width guess for a label not yet measured: generous, so nothing overlaps before the first layout. */
+export function guessLabelWidth(text: string): number {
+  return text.length * 9 + 4;
 }

@@ -171,7 +171,11 @@ export function ImportQuestionScreen() {
         const unit = a.unit;
         body = (
           <>
-            <AppText variant="body">{`${String(unit.rows)} ${unit.rows === 1 ? 'row has values' : 'rows have values'} in both the kg and lb columns. Which did you enter in FitNotes?`}</AppText>
+            <AppText variant="body">
+              {unit.kind === 'no_unit'
+                ? 'Weight unit'
+                : `${String(unit.rows)} ${unit.rows === 1 ? 'row has values' : 'rows have values'} in both the kg and lb columns. Which did you enter in FitNotes?`}
+            </AppText>
             {(['kg', 'lb'] as const).map((u) => (
               <ChoiceCard key={u} title={u} selected={unit.answer === u} onPress={() => void answer({ kind: 'both_columns', answer: u })} />
             ))}

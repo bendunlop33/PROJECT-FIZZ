@@ -3,7 +3,7 @@ import { Pressable, View } from 'react-native';
 
 import type { ActionRecord, BuildFocus } from '@fizz/schemas';
 
-import { BUILD_COPY, buildCardView, draftCardView, draftChangeView, pendingBuildView, type DraftCardView, type DraftChangeView } from '../../coach/build-view';
+import { BUILD_COPY, buildCardView, draftCardView, draftChangeView, pendingBuildView, type BuildDayChip, type DraftCardView, type DraftChangeView } from '../../coach/build-view';
 import { formatTime } from '../../format/dates';
 import { toMs } from '@fizz/domain';
 import { useServices } from '../../shell/context';
@@ -34,11 +34,18 @@ function Frame({ children, label }: { children: React.ReactNode; label?: string 
 }
 
 /** `BuildRequestCard` (§4.1): one tap with defaults; `Build` is the card's own secondary button (the sheet's primary is `Send`). */
-export function BuildRequestCard({ gymName, defaultMinutes, disabled, onBuild }: { gymName: string | null; defaultMinutes: number | null; disabled: boolean; onBuild: (minutes: number | null, focus: BuildFocus) => void }) {
+export function BuildRequestCard({ gymName, defaultMinutes, days, defaultDayId, disabled, onBuild }: { gymName: string | null; defaultMinutes: number | null; days: readonly BuildDayChip[]; defaultDayId: string | null; disabled: boolean; onBuild: (minutes: number | null, chip: BuildDayChip | null) => void }) {
   const theme = useTheme();
   const [minutes, setMinutes] = useState<number | null>(defaultMinutes);
-  const [focus, setFocus] = useState<BuildFocus>('coach_picks');
-  const v = buildCardView({ minutes, focus, gymName });
+  const [dayId, setDayId] = useState<string | null>(defaultDayId);
+  useEffect(() => {
+    setDayId(defaultDayId);
+  }, [defaultDayId]);
+  useEffect(() => {
+    setMinutes(defaultMinutes);
+  }, [defaultMinutes]);
+  const v = buildCardView({ minutes, days, dayId, gymName });
+  const chosen = days.find((d) => d.id === dayId) ?? days[0] ?? null;
   return (
     <Frame>
       <AppText variant="headline">{v.title}</AppText>
@@ -55,7 +62,7 @@ export function BuildRequestCard({ gymName, defaultMinutes, disabled, onBuild }:
       </AppText>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
         {v.focuses.map((f) => (
-          <Chip key={f.focus} label={f.label} selected={f.selected} accessibilityLabel={f.accessibilityLabel} onPress={() => { setFocus(f.focus); }} />
+          <Chip key={f.id} label={f.label} selected={f.selected} accessibilityLabel={f.accessibilityLabel} onPress={() => { setDayId(f.id); }} />
         ))}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
@@ -64,15 +71,15 @@ export function BuildRequestCard({ gymName, defaultMinutes, disabled, onBuild }:
           {v.gym.text.replace(/^(?:⌂|⚠) /, '')}
         </AppText>
       </View>
-      <SecondaryButton label={BUILD_COPY.build} accessibilityLabel={v.buildLabel} disabled={disabled} onPress={() => { onBuild(minutes, focus); }} />
+      <SecondaryButton label={BUILD_COPY.build} accessibilityLabel={v.buildLabel} disabled={disabled} onPress={() => { onBuild(minutes, chosen); }} />
     </Frame>
   );
 }
 
 /** The pending card (§4.2): static icon, `Building Push · 45 min`, elapsed `m:ss`, `Cancel`. No spinner loop. */
-export function PendingBuildCard({ focus, minutes, startedAtMs, nowMs, onCancel }: { focus: BuildFocus; minutes: number; startedAtMs: number; nowMs: number; onCancel: () => void }) {
+export function PendingBuildCard({ focus, dayName, minutes, startedAtMs, nowMs, onCancel }: { focus: BuildFocus; dayName: string | null; minutes: number; startedAtMs: number; nowMs: number; onCancel: () => void }) {
   const theme = useTheme();
-  const v = pendingBuildView({ focus, minutes, elapsedMs: nowMs - startedAtMs });
+  const v = pendingBuildView({ focus, dayName, minutes, elapsedMs: nowMs - startedAtMs });
   return (
     <Frame>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>

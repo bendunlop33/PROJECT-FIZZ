@@ -275,6 +275,10 @@ describe('sessions.listSessionTypeRows (session picker)', () => {
     expect(rows[0]).toMatchObject({ routineName: 'Legs', imported: false, startedAtUtc: at(86_400).utc, exerciseCount: done(newer) });
     expect(rows[1]?.exerciseCount).toBe(done(older));
     expect(done(newer)).toBeGreaterThan(0);
+    // The same exercises, by ID (F20: an unnamed import's type is named from them).
+    const doneIds = (agg: typeof older): string[] => [...new Set(agg.exercises.filter((e) => agg.sets.some((x) => x.sessionExerciseId === e.id && x.status === 'completed')).map((e) => e.exerciseId))].sort();
+    expect([...(rows[0]?.exerciseIds ?? [])].sort()).toEqual(doneIds(newer));
+    expect([...(rows[1]?.exerciseIds ?? [])].sort()).toEqual(doneIds(older));
     expect(await store.repos.sessions.listSessionTypeRows(OWNER, 1)).toHaveLength(1);
     await store.close();
   });

@@ -38,6 +38,8 @@
 
 > **Revision 2026-10-12 (workout Table view, [active-workout.md](active-workout.md) §2A; Ben's decisions 11 Oct).** New type token `type.rowValue` (§3). `target.workout` now applies to the `RestBar` pills and the Table chips (§5). §7's coach `C` badge is replaced by the `Coach` / `Rule` word tags. `SetRow` gains the Table anatomy (§9.3), and `RestTimer`'s compact version becomes `RestBar`, 64pt (§9.6). The `ActionBar` holds `Chat` + Log until voice ships (§9.1). New components `ExerciseCard` (§9.74), `OpenSetRow` (§9.75), `AfterSetBlock` (§9.76), `FoldedExercise` (§9.77), `DoneChip` (§9.78), `NowChip` (§9.79) and `RestBar` (§9.80), with index rows (§11). **No new colour values; one accent kept.**
 
+> **Revision 2026-10-12 (Library tab and sets when adding; [exercise-library.md](exercise-library.md) §9–§10, [routines.md](routines.md) WL11).** New components `SetShapeControl` and `SetCountBar` (§9.88), the browse variant of `ExerciseRow` (§9.89), `GuidePoster` (§9.90) and `AddToWorkoutSheet` with `EffortSheet` (§9.91), with index rows (§11). Proposed tab bar: `Today · Library · Progress · Profile` (tab icon `dumbbell`; EL10, Ben to confirm). **No new colour, type, spacing or timing values; one accent kept.** `GuidePoster` never animates, so principle 5's guide exception is unchanged.
+
 Status: v0.1 draft, 8 Oct 2026. This file is the only source of design tokens. Screen specs refer to tokens by name (for example `color.accent`, `type.loadDisplay`). Developers implement these values directly in `apps/mobile` (a single `theme.ts` is enough). If you need a value that is not here, add it here first. Don't hard-code it in a screen.
 
 Context: one person uses the app on an iPhone, one-handed, mid-workout, with sweaty fingers and headphones, often in bright or dim gym light. Every choice below favours speed, legibility and calm over decoration.
@@ -1093,6 +1095,18 @@ At 375pt, the `REST` eyebrow drops before any pill shrinks. VoiceOver reads the 
 
 **9.87 `ChangeReviewCard` per-line checks (2026-10-11).** For a Ben-authored card with several lines (overview-today-edits TE15), each `ChangeLine` gets a leading checkbox (`checkmark.square` / `square`, 44pt row). Removals start unchecked. `Apply` (`SecondaryButton`) is disabled with nothing checked. Single-line cards keep the plain layout.
 
+**9.88 `SetShapeControl` and `SetCountBar` (2026-10-12).** The one control for "how many sets" wherever an exercise is planned (exercise-library §10). `SetShapeControl` is up to four rows, each ≥ 52pt, label `type.body` `text.primary` on the left:
+- `Sets` and `Warm-ups`: a `CountStepper` (§9.31–9.53 list) on the right: `[−]` and `[+]` 44 × 44 outline circles (`border.control`, `minus` / `plus` icons), value `type.headline` tabular, centred, min width for `10`. A button at a limit is disabled (`text.tertiary`, VoiceOver "dimmed"). The row is one adjustable VoiceOver element ("Sets, 3, adjustable") plus the two buttons ("Fewer sets", "More sets").
+- `Reps` (or `Work time`) and `Target RPE` (or `Target RIR`; hidden when the effort scale is off): value `type.body` tabular in `text.secondary` + `chevron.right`; the whole row is one button opening `RepsSheet` (§9.84) or `EffortSheet` (§9.91). `Mixed` when the sets differ.
+- In the editor card it sits directly under the exercise name line, separated by `border.divider` hairlines. At AX1+ the label sits above its control.
+`SetCountBar`: the compact form for pick sheets, one `Sets` row in a fixed 64pt bar (`bg.surface`, top `border.divider`, padding `space.3`/`space.4`), above the keyboard and above the sheet's primary if it has one. No toast per tap.
+
+**9.89 `ExerciseRow`, browse variant (2026-10-12).** As `ExerciseRow` (§9.35) with no checkbox and no 🕘 button. Line 1 name `type.headline` + optional `play.rectangle` glyph (20pt, `text.secondary`, decorative; VoiceOver adds "has a guide") + `chevron.right`. Line 2 `type.callout` `text.secondary` (`Matches "RDL" · Barbell · Hamstrings`). Optional line 3 `Last 120 kg × 8 · 3 Oct`, tabular, actual. Whole row one button, ≥ 52pt. Section labels `type.sectionLabel` (`RECENT`, `ALL EXERCISES · 142`, `MATCHES`, `HIDDEN`).
+
+**9.90 `GuidePoster` (2026-10-12).** `ExerciseGuide` (§9.57) in still mode on a card (`bg.surface`, `radius.md`, padding `space.3`): canvas square, `min(240, width − 2 × screenMargin − 2 × space.3)`, never under 160pt, key position 1 (or the first frame), guide colour aliases, no clock and no motion under any setting. Optional `Draft guide` `Tag` above the canvas. One `SecondaryButton` `▷ Play` (`play.fill`, 44pt) under it, opening How to. The canvas isn't tappable. VoiceOver: one image with the guide's `a11y.summary`.
+
+**9.91 `AddToWorkoutSheet` and `EffortSheet` (2026-10-12).** `AddToWorkoutSheet`: `BottomCard` large detent; title `Add <exercise>` `type.title2` + `Cancel`; a `SetShapeControl`; section labels `NOW` / `YOUR WORKOUTS`; destination `RadioRow`s ≥ 52pt (`circle` / `largecircle.fill.circle`), an optional second line `type.callout` `text.secondary` (`In progress · applies next time`), disabled rows `text.secondary` with `Already in it`; `PrimaryButton` in the `ActionBar` whose label names the destination (`Add to Pull B`), disabled `Choose a workout`. `EffortSheet`: `BottomCard` small detent; title `Target RPE · <exercise>` + `Done`; compact `ParamChip`s `None 6 7 7.5 8 8.5 9 9.5 10` (RIR: `None 0 1 2 3 4`), single select, tabular, wrapping.
+
 #### Sound asset
 
 `sound.restEnd` is the file `rest-end.caf` (≤ 2 s), used by both the in-app chime and the rest-end notification sound.
@@ -1154,3 +1168,5 @@ Use the canonical name in new specs. Aliases are kept so older specs stay readab
 | `SaveWorkoutSheet` | §9.82 | "Save as routine sheet" (premium-feel §2.6, workout-builder §3.8, session-picker §4.3) (revision 2026-10-11) |
 | `EditRow`, `SetCountStepper` | §9.83 | "Edit mode row" (overview-today-edits §11); replaces the overview Reorder mode's `ReorderRow` use (revision 2026-10-11) |
 | `RepsSheet`, `HowLongSheet`, `FitCard` | §9.84–9.86 | "How long? sheet", "fitted result card" (revision 2026-10-11) |
+| `SetShapeControl`, `SetCountBar` | §9.88 | "Sets − 3 +", "sets control", "set count bar" (revision 2026-10-12). `SetCountStepper` (§9.83) is the overview row's inline form of the same control |
+| `ExerciseRow` browse variant, `GuidePoster`, `AddToWorkoutSheet`, `EffortSheet` | §9.89–9.91 | "Library row", "guide still", "Add to a workout sheet", "Target RPE sheet" (revision 2026-10-12) |

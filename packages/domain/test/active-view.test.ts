@@ -43,6 +43,7 @@ describe('buildActiveSetView: planned workout', () => {
     expect(v.title).toBe('Push A');
     expect(f.exerciseName).toBe('Bench press');
     expect(plain(f.headerLine)).toBe('Barbell · Warm-up · Set 1 of 3');
+    expect(f.setTypeLabel).toBe('Warm-up');
     expect(plain(f.target)).toBe('Target 60 kg · 10 reps');
     expect(f.draftSource).toBe('target');
     expect(plain(f.logLabel)).toBe('Log 60 kg × 10');
@@ -194,7 +195,7 @@ describe('buildActiveSetView: empty workout and equipment conventions', () => {
     const s = emptyWith(split, db);
     const f = focus(view(s, { edits: { setId: focus(view(s)).setId, values: values(kg(15, 'per_hand'), 10) } }));
     expect(f.side).toEqual({ kind: 'choice', value: 'both' });
-    expect(plain(f.headerLine)).toBe('Dumbbells · Set 1 of 1 · per side');
+    expect(plain(f.headerLine)).toBe('Dumbbells · Working · Set 1 of 1 · per side');
     expect(plain(f.logLabel)).toBe('Log 15 kg each × 10 per side');
     const left = focus(view(s, { edits: { setId: f.setId, values: values(kg(15, 'per_hand'), 10), side: 'left' } }));
     expect(plain(left.logLabel)).toBe('Log Left · 15 kg each × 10');

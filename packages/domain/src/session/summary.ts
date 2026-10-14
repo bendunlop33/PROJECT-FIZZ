@@ -279,9 +279,9 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
     };
   });
 
-  // An imported (FitNotes) workout is a history record: no comparison, highlight or `Next time`.
-  // Imported history isn't comparable while P-I3 is open (ADR 0016; review r2 B1), and a
-  // `Next time` read from it would say "Same targets next time" about an old FitNotes date.
+  // An imported (FitNotes) workout is a history record: no comparison, highlight or `Next time`
+  // of its own (a `Next time` read from it would talk about an old FitNotes date). A workout
+  // logged in the app does compare with FitNotes history, labelled (B7).
   const imported = s.source === 'import';
 
   // Comparison: the first exercise in order with working sets today and comparable history.
@@ -316,19 +316,13 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
           todayText: valuesText(today, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
           lastText: valuesText(last, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
           lastAtUtc: prev.performedAtUtc,
-          why: `Same ${eq ? eq.name : 'set-up'}${comparedGymText(prev.gymId, s.gymId, input)}, working sets`,
+          why: prev.imported ? 'FitNotes, working sets' : `Same ${eq ? eq.name : 'set-up'}${comparedGymText(prev.gymId, s.gymId, input)}, working sets`,
         };
         break;
       }
     }
     if (comparison === null) {
-      const logged = others.filter((h) => !h.imported);
-      comparison =
-        logged.length > 0
-          ? { kind: 'not_comparable', text: 'Not compared · different equipment' }
-          : others.length > 0
-            ? { kind: 'not_comparable', text: 'Not compared · imported' }
-            : { kind: 'first_time', text: 'First time' };
+      comparison = others.length > 0 ? { kind: 'not_comparable', text: 'Not compared · different equipment' } : { kind: 'first_time', text: 'First time' };
     }
   }
 
@@ -336,8 +330,13 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
   // an exercise split across gyms is read from one deciding part, with the block's
   // set count, the same as Start next session (`nextTargetsForBlock`; review r2 B1).
   const rows: NextTimeRow[] = [];
-  for (const block of imported ? [] : nextTargetBlocks(state)) {
-    if (block.prescribedSets === 0) continue;
+  const targetBlocks = imported ? [] : nextTargetBlocks(state);
+  // An exercise in two blocks (a light warm-up copy and working sets, F21): next time each repeats its own sets,
+  // as Start plans it (`planRoutineStart`, review S7), so no single target is promised for it here.
+  const blocksOf = new Map<string, number>();
+  for (const b of targetBlocks) blocksOf.set(b.root.exerciseId, (blocksOf.get(b.root.exerciseId) ?? 0) + 1);
+  for (const block of targetBlocks) {
+    if (block.prescribedSets === 0 || (blocksOf.get(block.root.exerciseId) ?? 0) > 1) continue;
     const ex = block.decider;
     const eq = block.equipment;
     const gymId = eq?.gymId ?? null;

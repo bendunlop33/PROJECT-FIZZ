@@ -159,6 +159,10 @@ const FOCUS_WORD: Readonly<Record<BuildFocus, string | null>> = {
   upper: 'upper body',
   lower: 'lower body',
   full_body: 'full body',
+  chest: 'chest',
+  shoulders: 'shoulders',
+  back: 'back',
+  split_day: null,
 };
 
 const FOCUS_TITLE: Readonly<Record<BuildFocus, string>> = {
@@ -169,22 +173,27 @@ const FOCUS_TITLE: Readonly<Record<BuildFocus, string>> = {
   upper: 'Upper',
   lower: 'Lower',
   full_body: 'Full body',
+  chest: 'Chest',
+  shoulders: 'Shoulders',
+  back: 'Back',
+  split_day: 'Workout',
 };
 
 /** Ben's message from the Build card's chips (§4.1, §7): `Build a 45 min push workout`, `Build a workout`. */
-export function buildRequestText(req: { minutes: number | null; focus: BuildFocus }): string {
-  const parts = [req.minutes === null ? null : `${String(req.minutes)} min`, FOCUS_WORD[req.focus]].filter((x): x is string => x !== null);
+export function buildRequestText(req: { minutes: number | null; focus: BuildFocus; dayName?: string | null }): string {
+  const word = req.focus === 'split_day' && req.dayName ? req.dayName : FOCUS_WORD[req.focus];
+  const parts = [req.minutes === null ? null : `${String(req.minutes)} min`, word].filter((x): x is string => x !== null);
   return parts.length === 0 ? 'Build a workout' : `Build a ${parts.join(' ')} workout`;
 }
 
 /** The draft's name, made by code (BD2): `Push · 45 min`, `Workout · 45 min`. */
-export function draftName(focus: BuildFocus, minutes: number): string {
-  return `${FOCUS_TITLE[focus]} · ${String(minutes)} min`;
+export function draftName(focus: BuildFocus, minutes: number, dayName?: string | null): string {
+  return `${dayName ? dayName : FOCUS_TITLE[focus]} · ${String(minutes)} min`;
 }
 
 /** The pending card's title (§4.2): `Building Push · 45 min`. */
-export function buildingTitle(focus: BuildFocus, minutes: number): string {
-  return `Building ${draftName(focus, minutes)}`;
+export function buildingTitle(focus: BuildFocus, minutes: number, dayName?: string | null): string {
+  return `Building ${draftName(focus, minutes, dayName)}`;
 }
 
 /** The length a build uses: Ben's words, else his session length (Goals & schedule, when set), else 60 (§8.2). */
@@ -287,12 +296,13 @@ interface Pending {
 
 /**
  * `checkWorkoutProposal(args, ctx)` (§8.2, BD9). In order, per exercise:
- * unknown → left out; a duplicate → left out; pain-flagged → left out,
+ * unknown → left out; pain-flagged → left out,
  * never substituted (rule 9); not usable here → the top same-pattern
  * substitute, else left out (rule 4); then sets, reps or work time, RPE
  * and rest clamped to §8.3 with a check line each; a missing RPE is the
  * rule's (BD7). Supersets with fewer than 2 or more than 4 members, or not
- * in a row, are ungrouped. Every line is app text. `unusable`: nothing left.
+ * in a row, are ungrouped. The same exercise listed twice is two slots
+ * (F21). Every line is app text. `unusable`: nothing left.
  */
 export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutProposalContext): WorkoutProposalCheck {
   const checks: BuildCheck[] = [];
@@ -327,10 +337,7 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
       exercise = sub;
     }
     const ex = exercise;
-    if (pending.some((x) => x.exercise.id === ex.id)) {
-      add({ kind: 'duplicate', catalogueId: p.catalogueId, exerciseId: ex.id, text: `${ex.name} left out · listed twice`, leftOut: true });
-      continue;
-    }
+    // The same exercise listed again is its own slot (F21, Ben 13 Oct: a light warm-up early, working sets later).
     pending.push({ exercise: ex, catalogueId: ex.catalogueKey ?? p.catalogueId, slot: shapeOf(p, ex, ctx, add), superset: p.superset });
   }
   if (pending.length === 0) return { status: 'unusable', plan: null, checks };
@@ -556,13 +563,19 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const routine = draftAsRoutine(input.draft, version);
   const targets = new Map<string, SwapPlan>();
   const entries = new Map<string, NonNullable<SwapPlan['plan']>>();
+  // An exercise in two slots (F21): each slot's targets from its own sets and reps, by slot key.
+  const copies = new Map<string, number>();
+  for (const s of version.plan.slots) copies.set(s.exerciseId, (copies.get(s.exerciseId) ?? 0) + 1);
+  const slotEntries = new Map<string, NonNullable<SwapPlan['plan']>>();
   for (const s of version.plan.slots) {
     const exercise = input.start.exercises.get(s.exerciseId);
     if (exercise === undefined) continue;
     const slot = { workingSets: draftWorkingSets(s), templates: s.setTemplates.map((t) => ({ setType: t.setType, reps: t.reps, durationS: t.durationS })) };
     const plan = substituteTargets(slot, exercise, input.histories.get(exercise.id) ?? [], input.substitute);
-    targets.set(s.exerciseId, plan);
-    if (plan.plan !== null && plan.plan.length > 0) entries.set(s.exerciseId, plan.plan);
+    if (!targets.has(s.exerciseId)) targets.set(s.exerciseId, plan);
+    if (plan.plan === null || plan.plan.length === 0) continue;
+    if ((copies.get(s.exerciseId) ?? 0) > 1) slotEntries.set(s.slotKey, plan.plan);
+    else entries.set(s.exerciseId, plan.plan);
   }
   // The history's item is the slot's pin, so the shared fit maps the same kind (GS3), as for a swap.
   const pinned: Routine = {
@@ -575,7 +588,7 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const known = new Map(input.start.knownEquipment);
   for (const t of targets.values()) if (t.pin !== null && !known.has(t.pin.id)) known.set(t.pin.id, t.pin);
   const edits = withDraftFit(input.today.edits, input.draft.id, version);
-  const out = planWithTodayEdits({ kind: 'routine', input: { ...input.start, knownEquipment: known, routine: pinned, targets: entries } }, { ...input.today, edits });
+  const out = planWithTodayEdits({ kind: 'routine', input: { ...input.start, knownEquipment: known, routine: pinned, targets: entries, ...(slotEntries.size > 0 ? { slotTargets: slotEntries } : {}) } }, { ...input.today, edits });
   // A coach draft isn't a routine: the session names the draft, never a routine (rotation untouched, §6.3).
   const aggregate = {
     ...out.aggregate,
@@ -602,15 +615,30 @@ function workingRpe(s: DraftSlot): number | null {
   return s.setTemplates.find((t) => t.setType !== 'warmup' && t.setType !== 'top')?.targetRpe ?? null;
 }
 
-/** `diffDraftVersions(a, b)` (§8.2): what b added, removed and changed against a, by exercise. */
+/**
+ * `diffDraftVersions(a, b)` (§8.2): what b added, removed and changed against
+ * a, by exercise. An exercise in two slots (F21) is matched slot by slot, in
+ * order, so a second copy reads as added or removed, never as a change.
+ */
 export function diffDraftVersions(a: DraftPlan, b: DraftPlan): DraftDiff {
-  const inA = new Map(a.slots.map((s) => [s.exerciseId, s]));
-  const inB = new Map(b.slots.map((s) => [s.exerciseId, s]));
-  const added = b.slots.filter((s) => !inA.has(s.exerciseId));
-  const removed = a.slots.filter((s) => !inB.has(s.exerciseId));
+  // Each slot's identity: its exercise and which copy of it this is (`id#0`, `id#1`).
+  const keysOf = (slots: readonly DraftSlot[]): string[] => {
+    const seen = new Map<string, number>();
+    return slots.map((s) => {
+      const n = seen.get(s.exerciseId) ?? 0;
+      seen.set(s.exerciseId, n + 1);
+      return `${s.exerciseId}#${String(n)}`;
+    });
+  };
+  const ka = keysOf(a.slots);
+  const kb = keysOf(b.slots);
+  const inA = new Map(a.slots.map((s, i) => [ka[i] ?? '', s]));
+  const inB = new Map(b.slots.map((s, i) => [kb[i] ?? '', s]));
+  const added = b.slots.filter((_, i) => !inA.has(kb[i] ?? ''));
+  const removed = a.slots.filter((_, i) => !inB.has(ka[i] ?? ''));
   const changed: DraftDiff['changed'] = [];
-  for (const s of b.slots) {
-    const was = inA.get(s.exerciseId);
+  for (const [i, s] of b.slots.entries()) {
+    const was = inA.get(kb[i] ?? '');
     if (was === undefined) continue;
     const fields: DraftDiff['changed'][number]['fields'] = [];
     const setsFrom = draftWorkingSets(was);
@@ -625,8 +653,8 @@ export function diffDraftVersions(a: DraftPlan, b: DraftPlan): DraftDiff {
     if ((was.supersetGroup === null) !== (s.supersetGroup === null)) fields.push('superset');
     if (fields.length > 0) changed.push({ slotKey: s.slotKey, exerciseId: s.exerciseId, fields, setsFrom, setsTo });
   }
-  const commonA = a.slots.filter((s) => inB.has(s.exerciseId)).map((s) => s.exerciseId);
-  const commonB = b.slots.filter((s) => inA.has(s.exerciseId)).map((s) => s.exerciseId);
+  const commonA = ka.filter((k) => inB.has(k));
+  const commonB = kb.filter((k) => inA.has(k));
   return { added, removed, changed, reordered: commonA.some((id, i) => commonB[i] !== id) };
 }
 

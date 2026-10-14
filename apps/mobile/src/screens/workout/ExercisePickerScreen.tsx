@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { ActionSheetIOS, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActionSheetIOS, KeyboardAvoidingView, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EQUIPMENT_WORD, pickerEquipmentLabel, pickerSections } from '@fizz/domain';
@@ -11,8 +11,9 @@ import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Group, Icon, Row, SectionHeader, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
+import { AppText, Group, Icon, Row, SectionHeader, SetCountBar, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
 import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
+import { SET_BAR } from '../../workout/set-shape-view';
 
 /**
  * Exercise picker (active-workout §2.10): recent, then the common lifts,
@@ -24,6 +25,9 @@ import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
  * added without equipment and loads aren't checked. An exercise with an
  * active pain flag is tagged `⚠ May hurt` and asks before it's added (EL9);
  * the row is never hidden and similar movements are never tagged.
+ * The `Sets [−] 3 [+]` bar (exercise-library §10.2) sets how many pending
+ * working sets the add makes; it starts at 3 each time, and a row tap still
+ * adds in one tap.
  */
 export function ExercisePickerScreen() {
   const theme = useTheme();
@@ -39,6 +43,7 @@ export function ExercisePickerScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [opIds] = useState(() => new Map<string, string>());
+  const [sets, setSets] = useState<number>(SET_BAR.start);
 
   const [withCatalogue, setWithCatalogue] = useState(false);
   const [load, setLoad] = useState<PickerLoad>('loading');
@@ -76,10 +81,10 @@ export function ExercisePickerScreen() {
     if (busy) return;
     setBusy(true);
     setError(null);
-    const key = `${p.exercise.id}:${equipmentId ?? ''}`;
+    const key = `${p.exercise.id}:${equipmentId ?? ''}:${String(sets)}`;
     const opId = opIds.get(key) ?? newUuid();
     opIds.set(key, opId);
-    const r = await services.workout.addExercise({ sessionId, exerciseId: p.exercise.id, equipmentId, opId });
+    const r = await services.workout.addExercise({ sessionId, exerciseId: p.exercise.id, equipmentId, opId, shape: { workingSets: sets } });
     setBusy(false);
     if (!r.ok) {
       setError(`Couldn’t add ${p.exercise.name}: ${r.error.message}`);
@@ -116,7 +121,7 @@ export function ExercisePickerScreen() {
   const sections = pickerSections(list, query, recent);
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['3'], gap: theme.space['3'], backgroundColor: theme.colors['bg.canvas'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <AppText variant="title1" accessibilityRole="header" style={{ flex: 1 }} numberOfLines={2}>
@@ -150,7 +155,7 @@ export function ExercisePickerScreen() {
           />
         )}
       </View>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], gap: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         {choosing ? (
           <Group>
@@ -207,6 +212,11 @@ export function ExercisePickerScreen() {
           ))
         )}
       </ScrollView>
-    </View>
+      {choosing ? null : (
+        <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: insets.bottom, backgroundColor: theme.colors['bg.surface'] }}>
+          <SetCountBar value={sets} limits={SET_BAR.limits} onChange={setSets} />
+        </View>
+      )}
+    </KeyboardAvoidingView>
   );
 }

@@ -9,6 +9,8 @@
 >
 > **v2.0 (12 Oct): the coach sets working weights, asks when it helps, and reuses what Ben has already said.** After trying the builder in build 131, Ben wrote: *"Why does the coach not estimate my working weights when building? That's the whole point, it should learn from data."* **Ben reversed B6 / BD6 (12 Oct; CHANGELOG, ADR 0025 amendment 1).** Loads come from the coach and code checks them (BD6). BD8 is retired. There can be clarifying questions (BD17, at most 2), and known preferences are read rather than asked (BD18–BD20; ◇ = pending D6/D7). The Build card has its own text field. v1.0 and v0.1 are in git history.
 
+> **Revision 2026-10-12 (sets when saving a draft; Ben on build 126).** To set the number of sets himself before saving a coach draft, Ben taps `Save to Workouts`, then `Edit ›` on the Save sheet's summary line. That opens the Workouts editor on the unsaved copy with `Sets [−] N [+]` per exercise ([routines.md](routines.md) §A2.5, [exercise-library.md](exercise-library.md) §10.4). The editor's Save creates the workout (one write, one Undo); Cancel returns to the sheet.
+
 Status: v2.1 draft, 12 Oct 2026. Feature approved in brief CHANGELOG v0.5. B6 was reversed by Ben on 12 Oct (CHANGELOG 2026-10-12). **The numbers in §8.5 are a designer proposal.** They need training-researcher evidence and Ben's approval before build (§11.3). ◇ = pending D6/D7. Prerequisite slices: §8.8. Coach tools: ADR 0020; drafts: ADR 0025 (amendment 1). Tokens: [design-system.md](design-system.md). Rules: CLAUDE.md 1–10 and the minimal-copy convention.
 
 The builder sits **outside the logging loop**. It adds nothing to the active workout, Rest or Summary, and it never runs between sets unless Ben asks in the coach sheet.
@@ -380,7 +382,7 @@ Code normalises the forms before matching (`100×7`, `100 x 7`, `100 kg × 7`, `
 
 | Item | Contract |
 |---|---|
-| `propose_workout` | §8.3. Strict: unknown fields fail the call; optional values are `null`. The executor runs `checkWorkoutProposal` (which calls `checkProposedLoad` per load) and stores a version with its `ActionRecord`. Idempotent on opId |
+| `propose_workout` | §8.3. **Amended 13 Oct (PM decision, pending Ben's confirmation; see §8.2a):** also offered on every general turn in Ben's words when he has a gym, never forced by that alone. Strict: unknown fields fail the call; optional values are `null`. The executor runs `checkWorkoutProposal` (which calls `checkProposedLoad` per load) and stores a version with its `ActionRecord`. Idempotent on opId |
 | **`ask_build_question`** | §8.4. **`effect: 'append'`**: it appends one question record to the `BuildRequest` (no other write; idempotent on opId). Offered only in a build turn, only while `questionsAsked < 2` and not in a draft revision. The executor runs `checkBuildQuestion`. A fail returns `{kind: 'refused', line}` (`known: Strength`, `not allowed`) and the turn keeps stepping. A pass returns the new kind below |
 | **`ToolResult` (`packages/coach/src/executors.ts`)** | Adds `{kind: 'question'; record: BuildQuestionRecord; replayed: boolean}`. **`turn.ts`:** on `question`, stop stepping (no further model call this turn), close the turn with outcome `asked`, and render the card from the record. Any reply text in that step is claim-checked as usual |
 | **`checkBuildQuestion(args, known, request, gymCtx)`** | **Pure, unit-tested.** Rejects whatever the `topic` label says. (1) **Text check** on the question and every answer label: length or minutes words (`how long`, `minutes`, `mins`, `hours`, `session length`, `<n> min`) → `known: 45 min`, or `not allowed` if the length is unknown; goal words (`goal`, `training for`, `strength or`, `hypertrophy`, `muscle or`) → `known: <goal>`, or `not allowed` if no goal is set (code asks it, BD20); the name of any stored main lift for the request's split → `known: <name>`; any match from `pain-words.ts` or medical terms → `not allowed`. (2) The topic is in `knownPreferences` or answered by the request's parsed fields (minutes, split, main lift named) → `known: <value>`. (3) Answers: trimmed to 2–4, ≤ 24 chars, no duplicates. For `main_lift`, each `catalogueId` must be in `doableHere`, not pain-flagged, and in that split's list; failing answers are dropped. Fewer than 2 left → `not allowed`. False positives just mean building with defaults |
@@ -404,6 +406,23 @@ Code normalises the forms before matching (`100×7`, `100 x 7`, `100 kg × 7`, `
 | Profile | `goalConfirmedAt`, `goalCheckWeeks` (default 6), `mainLifts` per split ◇, `defaultSessionLength` default 45 ◇. All Your data, versioned, with Undo (§8.8 P1) |
 | `saveFrom` (coach_draft) | Also writes the draft's re-checked loads as coach next-session targets for the new workout (BD12, D21, with reason and Undo) |
 | Migrations | (1) `build_requests` table (new, Your data, owner-scoped; included in backup/export/delete). (2) `workout_drafts` JSON gains the slot fields above; old versions read `checkedOn: null` → those slots re-check as `Rule` on a convention mismatch. (3) Profile fields come with the Goals & schedule slice (§8.8 P1) |
+
+### 8.2a Build from chat: when the tool is offered and when it is forced (13 Oct, PM decision, pending Ben's confirmation)
+
+Replaces Ben's-words-only gating after review r4 (`docs/reviews/coach-chat-fixes-r4.md`). Recorded in `docs/brief/CHANGELOG.md`.
+
+| Case | Tool | Held + forced by name | Instructions |
+|---|---|---|---|
+| Explicit build request in Ben's words (`classifyBenRequest` kind `build`, or a change to the draft in context), no pain word, no multi-week scope (`forcesBuild`) | Offered | Yes (one text answer held, then `tool_choice` names `propose_workout`) | Build |
+| Clear follow-up to a session described or offered in the thread ("yes add it", "go on then", "try again" after a refused build) | Offered | No | Build |
+| Loose reply to the coach's offer ("I'm going at 6") | Offered | No | Offer reply |
+| Any other general turn with a gym (questions, pain, "make me a workout plan for this week") | Offered | No | Offered: use only when Ben asks for a workout or agrees to put a described session into the app; never for pain, advice, history or multi-week plans |
+| No gym and no typical equipment | Not offered | No | None |
+
+- The result is always only an `open` draft; Start and Save stay Ben's taps (BD12, BD15).
+- Multi-week programmes and weekly plans aren't available yet (§10). Every build prompt says so.
+- **Claim backstop:** with no draft saved this turn, an explicit claim that a workout or session was built, added or saved in the app is hidden. Short done-claims ("On it!", "It's saved") are hidden only when a build is in play. With the tool offered, the claim is just dropped. Without it, it is replaced once by `Want me to build it in the app?`. A "can't build workouts" sentence is replaced by the same offer when the tool was offered.
+- **Context cost:** the usable list is capped at 60 exercises when the tool is only offered (Ben's draft and routine exercises first) and at 200 when a build is in play. That adds about 2.7k input tokens to each general turn (list about 1.8k, tool schema about 600, instructions about 300).
 
 ### 8.3 `propose_workout` arguments (strict; no other fields)
 
