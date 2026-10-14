@@ -1059,6 +1059,25 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     expect(benchSets.every((x) => x.planned.load?.value === 100 && x.planned.source === 'coach' && x.planned.provenance?.coach?.scope === 'build')).toBe(true);
   });
 
+  it('WB-L12: a newer bench session caps the stored load on the page and at Start; the preview key changes', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
+    const before = await page(s, draftId, gymId);
+    h.clockMs += 3_600_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 5, rpe: 10 }] }]);
+    h.clockMs += 3_600_000;
+    const after = await page(s, draftId, gymId);
+    expect(after.view.previewKey).not.toBe(before.view.previewKey);
+    const bench = after.view.rows.find((r) => r.name === 'Bench press');
+    expect(bench?.load.value).toBe('95');
+    expect(after.coachDraft?.loads.find((l) => l.name === 'Bench press')?.notes.some((n) => /^capped at 95 · newer session/.test(n.replaceAll('\u00a0', ' ')))).toBe(true);
+    const started = await s.overview.start(startReq(before, gymId, 'start-stale'));
+    expect(started.ok).toBe(false);
+    const ok = await s.overview.start(startReq(after, gymId, 'start-fresh'));
+    if (!ok.ok) throw new Error(ok.error.message);
+    for (const r of after.view.rows) matchesSession(r, ok.aggregate);
+  });
+
   it('WB-L10: offline after the build, the stored loads and reasons are the same and nothing is asked', async () => {
     const { s, gymId } = await benWithHistory();
     const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);

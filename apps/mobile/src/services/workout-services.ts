@@ -2019,6 +2019,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** `previewKey` inputs as stored now (workout-overview §7). `gymId` null: the typical gym Start will save. */
+  /** The newest finished workout (app or imported) and its revision: new or corrected history changes a coach draft's key (WB-L12). */
+  async function newestFinished(ownerId: string): Promise<{ sessionId: string; revision: number } | null> {
+    const ref = (await repos().sessions.listFinishedRefs(ownerId, 1, { includeImported: true }).catch(() => []))[0];
+    if (ref === undefined) return null;
+    const a = await repos().sessions.get(ref.sessionId).catch(() => null);
+    return { sessionId: ref.sessionId, revision: a?.revision ?? 0 };
+  }
+
   async function previewKeyParts(p: UserProfile, resolved: ResolvedOverview, gymId: string | null, checkIn: CheckIn | null, draft: PreStartDraft | null = null): Promise<PreviewKeyParts> {
     const equipment = gymId === null ? null : await repos().equipment.listByGym(gymId);
     const source = await overviewSource(resolved);
@@ -2033,7 +2041,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             : { kind: 'next', sourceSessionId: resolved.source.session.id },
       routine: resolved.kind === 'routine' ? { id: resolved.routine.id, version: resolved.routine.version } : null,
       // A coach draft's version: a new version, a discard or a start since the page loaded makes Start create nothing (§6.3).
-      ...(resolved.kind === 'coach_draft' ? { coachDraft: { id: resolved.draft.id, version: resolved.draft.version } } : {}),
+      ...(resolved.kind === 'coach_draft' ? { coachDraft: { id: resolved.draft.id, version: resolved.draft.version }, history: await newestFinished(p.id) } : {}),
       gym: gymId === null || equipment === null ? { typical: true } : { id: gymId, equipment: equipment.map((e) => ({ id: e.id, version: e.version })) },
       source: source === null ? null : { id: source.session.id, revision: source.revision },
       painFlags: flags.map((f) => ({ id: f.id, version: f.version })),

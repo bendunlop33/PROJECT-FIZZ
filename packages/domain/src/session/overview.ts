@@ -598,6 +598,11 @@ export interface PreviewKeyParts {
   draft?: { id: string; version: number } | null;
   /** A coach draft (workout-builder §6.3): a new version, a discard or a start changes the key. */
   coachDraft?: { id: string; version: number } | null;
+  /**
+   * (workout-builder v2 §8.2, WB-L12) A coach draft's stored loads are re-checked against newer
+   * history at plan time: the newest finished workout (and its revision) is part of the key.
+   */
+  history?: { sessionId: string; revision: number } | null;
 }
 
 const byId = <T extends { id: string }>(xs: readonly T[]): T[] => [...xs].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -618,6 +623,7 @@ export function previewKey(parts: PreviewKeyParts): string {
       // Absent and null hash alike, so a page with no draft keeps the key it had before drafts existed.
       ...(parts.draft ? { draft: parts.draft } : {}),
       ...(parts.coachDraft ? { coachDraft: parts.coachDraft } : {}),
+      ...(parts.history ? { history: parts.history } : {}),
     }),
   );
 }
