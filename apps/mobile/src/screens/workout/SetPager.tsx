@@ -18,17 +18,20 @@ import { claimsDrag, swipeIntent, type PagerView } from '../../workout/set-pager
 const plain = (s: string) => s.replaceAll(NBSP, ' ');
 
 /** Swipe left / right on its children: next / previous. A vertical drag stays the scroll view's. */
-function Swipeable({ onSwipe, children }: { onSwipe: (d: 'prev' | 'next') => void; children: ReactNode }) {
+export function Swipeable({ onSwipe, children, enabled = true, grow = false }: { onSwipe: (d: 'prev' | 'next') => void; children: ReactNode; enabled?: boolean; grow?: boolean }) {
   const latest = useRef(onSwipe);
   latest.current = onSwipe;
+  // Read through a ref so toggling it never remounts the children (an open field keeps its focus).
+  const on = useRef(enabled);
+  on.current = enabled;
   const responder = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponder: (_e, g) => claimsDrag(g.dx, g.dy),
+        onMoveShouldSetPanResponder: (_e, g) => on.current && claimsDrag(g.dx, g.dy),
         onPanResponderTerminationRequest: () => true,
         onPanResponderRelease: (_e, g) => {
           const d = swipeIntent(g.dx, g.dy);
-          if (d !== null) {
+          if (d !== null && on.current) {
             haptic('step');
             latest.current(d);
           }
@@ -36,7 +39,11 @@ function Swipeable({ onSwipe, children }: { onSwipe: (d: 'prev' | 'next') => voi
       }),
     [],
   );
-  return <View {...responder.panHandlers}>{children}</View>;
+  return (
+    <View style={grow ? { flexGrow: 1 } : undefined} {...responder.panHandlers}>
+      {children}
+    </View>
+  );
 }
 
 function ArrowButton({ direction, enabled, onPress }: { direction: 'prev' | 'next'; enabled: boolean; onPress: () => void }) {

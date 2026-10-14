@@ -74,3 +74,17 @@ export function pagerView(nav: SetNavigation, glance: SetGlance | null): PagerVi
     accessibilityLabel: `${glance.accessibilityLabel}. Set ${String(nav.position)} of ${String(nav.total)} in the workout.`,
   };
 }
+
+/** The primary kinds that act on the current set (log it, open its editor, start its work timer). */
+export type PrimaryKind = 'log' | 'enter' | 'resume' | 'start_work' | 'stop_work' | 'add_exercise' | 'finish' | 'none';
+
+/**
+ * The action bar while Ben views another set (review B2): a primary that
+ * acts on the current set would log values that aren't on screen (or unfold
+ * an editor that isn't drawn), so it becomes `Back to Set N` instead. Stop,
+ * Resume, Add exercise and Finish don't depend on the viewed set.
+ */
+export function awayPrimary(kind: PrimaryKind, away: boolean, currentSetNumber: number | null): { kind: 'as_is' } | { kind: 'back'; label: string } {
+  if (!away || (kind !== 'log' && kind !== 'enter' && kind !== 'start_work')) return { kind: 'as_is' };
+  return { kind: 'back', label: currentSetNumber === null ? 'Back' : `Back to Set ${String(currentSetNumber)}` };
+}
