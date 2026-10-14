@@ -97,3 +97,37 @@ describe('parseBuildRequest (BD19, BD16, WB-Q6)', () => {
   });
 });
 
+
+describe('training details are known, never asked (review S6)', () => {
+  const withAbout = knownPreferences({
+    profile: profile({
+      about: { experience: 'intermediate', birthYear: 1990, gender: 'male', heightCm: 180 },
+      weights: [
+        { id: 'w1', date: '2026-09-01', value: 84, unit: 'kg', recordedAtUtc: '2026-09-01T07:00:00.000Z' },
+        { id: 'w2', date: '2026-10-03', value: 82.5, unit: 'kg', recordedAtUtc: '2026-10-03T07:00:00.000Z' },
+      ],
+    }),
+    goalDate: '2026-10-02',
+    day: null,
+    recentSplits: [],
+    memories: [],
+  });
+
+  it('KNOWN carries experience, birth year, gender, height and the latest bodyweight', () => {
+    expect(withAbout.about).toEqual({ experience: 'intermediate', birthYear: 1990, gender: 'male', heightCm: 180, bodyweight: { value: 82.5, unit: 'kg', date: '2026-10-03' } });
+    expect(KNOWN_FULL.about).toEqual({ experience: null, birthYear: null, gender: null, heightCm: null, bodyweight: null });
+  });
+
+  it('a question on any of them is refused with the known value, or not allowed when unset, whatever its topic', () => {
+    const ask = (text: string, k = withAbout) => checkBuildQuestion(q('other', text, [['Yes', null], ['No', null]]), k, req());
+    expect(ask('Are you a beginner or experienced?')).toEqual({ ok: false, line: 'known: intermediate' });
+    expect(ask('How long have you been lifting?')).toEqual({ ok: false, line: 'known: intermediate' });
+    expect(ask('What do you weigh right now?')).toEqual({ ok: false, line: 'known: 82.5 kg' });
+    expect(ask('How tall are you?')).toEqual({ ok: false, line: 'known: 180 cm' });
+    expect(ask('How old are you?')).toEqual({ ok: false, line: 'known: born 1990' });
+    expect(ask('Male or female?')).toEqual({ ok: false, line: 'known: male' });
+    expect(ask('What do you weigh right now?', KNOWN_FULL)).toEqual({ ok: false, line: QUESTION_NOT_ALLOWED });
+    // An ordinary question still passes.
+    expect(ask('Cables busy today?').ok).toBe(true);
+  });
+});

@@ -1,5 +1,6 @@
 import type { AskBuildQuestionArgs, BuildQuestionTopic, TrainingGoal, TrainingProfile } from '@fizz/schemas';
 import { classifyPainMention } from '../coach/pain-words';
+import { formatNumber } from '../display';
 import { stableStringify, deriveId } from '../stable';
 import { parseRequestedMinutes } from './coach-draft';
 
@@ -8,12 +9,14 @@ import { parseRequestedMinutes } from './coach-draft';
  * (workout-builder.md v2.1 BD17–BD20, §2.1, §8.2). Pure.
  *
  * - `knownPreferences`: what is already known from Ben's training details
- *   (goal, session length, main lift per split day, experience, age,
- *   gender, height, bodyweight), confirmed memories and the last 14 days'
- *   split days. It is the build context's `KNOWN` block: never asked again.
+ *   (goal, session length, main lift per split day, and `about`:
+ *   experience, birth year, gender, height, latest bodyweight), confirmed
+ *   memories and the last 14 days' split days. It is the build context's
+ *   `KNOWN` block: never asked again.
  * - `checkBuildQuestion`: code checks every question's **text**, whatever
  *   its topic label says (length, goal, pain or medical words, a stored
- *   main lift's name), refuses a known topic with the known value, and
+ *   main lift's name, Ben's training details), refuses a known topic with
+ *   the known value, and
  *   trims the answers (2–4, ≤ 24 characters, no duplicates; `main_lift`
  *   answers must be usable here, not pain-flagged and in the split).
  * - `parseBuildRequest`: code reads Ben's words for the length, a request
@@ -34,8 +37,19 @@ export interface KnownInput {
   memories: readonly { text: string; savedOn: string }[];
 }
 
+/** Training details from Profile (never asked in a build; review S6). Null: not set. */
+export interface KnownAbout {
+  experience: string | null;
+  birthYear: number | null;
+  gender: string | null;
+  heightCm: number | null;
+  /** The latest bodyweight entry, in the unit Ben typed. */
+  bodyweight: { value: number; unit: 'kg' | 'lb'; date: string } | null;
+}
+
 export interface KnownPreferences {
   goal: { value: TrainingGoal; word: string; since: string | null } | null;
+  about: KnownAbout;
   sessionMinutes: number | null;
   mainLift: { day: string; exerciseId: string; name: string } | null;
   recentSplits: { date: string; day: string }[];
@@ -54,7 +68,15 @@ export function knownPreferences(input: KnownInput): KnownPreferences {
   if (sessionMinutes === null) missing.push('session length');
   const mainLift = input.day === null || input.day.mainLift === null ? null : { day: input.day.name, ...input.day.mainLift };
   if (input.day !== null && mainLift === null) missing.push(`main lift (${input.day.name})`);
-  return { goal, sessionMinutes, mainLift, recentSplits: input.recentSplits.slice(0, 14).map((r) => ({ ...r })), memories: input.memories.slice(0, 20).map((m) => ({ ...m })), missing };
+  const latest = [...(p?.weights ?? [])].sort((a, b) => (a.date === b.date ? a.recordedAtUtc.localeCompare(b.recordedAtUtc) : a.date.localeCompare(b.date))).at(-1);
+  const about: KnownAbout = {
+    experience: p?.about.experience ?? null,
+    birthYear: p?.about.birthYear ?? null,
+    gender: p?.about.gender ?? null,
+    heightCm: p?.about.heightCm ?? null,
+    bodyweight: latest === undefined ? null : { value: latest.value, unit: latest.unit, date: latest.date },
+  };
+  return { goal, about, sessionMinutes, mainLift, recentSplits: input.recentSplits.slice(0, 14).map((r) => ({ ...r })), memories: input.memories.slice(0, 20).map((m) => ({ ...m })), missing };
 }
 
 /** The `KNOWN` block's hash (`Why?` `USED`). */
@@ -101,6 +123,15 @@ export type QuestionCheck = { ok: true; topic: BuildQuestionTopic; question: str
 
 const LENGTH = /\bhow long\b|\bminutes?\b|\bmins?\b|\bhours?\b|\bhrs?\b|\bsession length\b|\b\d+\s?(?:min|m)\b|\btime (?:do you have|have you got|you've got)\b|\bhow much time\b/i;
 const GOAL = /\bgoals?\b|\btraining for\b|\bstrength\b|\bhypertrophy\b|\bmuscle or\b|\bbulk(?:ing)?\b|\bcutting\b|\bsize or\b/i;
+/** Training details (review S6): Profile's to set, never a build question. Checked before the length words (`how long have you been lifting`). */
+const ABOUT: readonly { re: RegExp; known: (a: KnownAbout) => string | null }[] = [
+  { re: /\bbeginner\b|\bintermediate\b|\bexperienced?\b|\badvanced\b|\bnovice\b|\bhow long (?:have you|you've) been (?:lifting|training)\b|\btraining age\b|\byears? (?:of )?(?:lifting|training)\b/i, known: (a) => a.experience },
+  { re: /\bhow old\b|\byour age\b|\bage\b|\bbirth|\bborn\b/i, known: (a) => (a.birthYear === null ? null : `born ${String(a.birthYear)}`) },
+  { re: /\bgender\b|\bmale\b|\bfemale\b|\bman or (?:a )?woman\b|\bsex\b/i, known: (a) => a.gender },
+  { re: /\bheight\b|\bhow tall\b/i, known: (a) => (a.heightCm === null ? null : `${formatNumber(a.heightCm)} cm`) },
+  { re: /\bbody ?weight\b|\bweigh\b|\bweigh-in\b/i, known: (a) => (a.bodyweight === null ? null : `${formatNumber(a.bodyweight.value)} ${a.bodyweight.unit}`) },
+];
+
 const MEDICAL = /\binjur|\bdoctor\b|\bphysio|\bmedic|\bdiagnos|\bhurt|\bsore\b|\bsoreness\b|\bache\b|\baching\b|\bpain|\btweak|\bstrain|\bsprain|\bniggle/i;
 
 /** `not allowed` (fed back to the model; no card shows). */
@@ -109,7 +140,9 @@ export const QUESTION_NOT_ALLOWED = 'not allowed';
 /**
  * `checkBuildQuestion(args, known, request, gym)` (§8.2). Pure. Refuses
  * whatever the `topic` label says:
- * 1. text checks on the question and every answer: length words → `known:
+ * 1. text checks on the question and every answer: training details
+ *    (experience, age, gender, height, bodyweight) → `known: <value>` (or
+ *    not allowed: Profile's to set, never a build question); length words → `known:
  *    45 min` (or not allowed); goal words → `known: Strength` (or not
  *    allowed: the goal is code's to ask, BD20); a stored main lift's name →
  *    `known: <name>`; pain or medical words → not allowed;
@@ -125,6 +158,11 @@ export function checkBuildQuestion(args: AskBuildQuestionArgs, known: KnownPrefe
   const texts = [question, ...args.answers.map((a) => a.label)];
   const all = texts.join('\n');
   const length = known.sessionMinutes ?? request.requestMinutes;
+  for (const a of ABOUT) {
+    if (!texts.some((t) => a.re.test(t))) continue;
+    const value = a.known(known.about);
+    return { ok: false, line: value === null ? QUESTION_NOT_ALLOWED : `known: ${value}` };
+  }
   if (texts.some((t) => LENGTH.test(t))) return { ok: false, line: request.requestMinutes !== null ? `known: ${String(request.requestMinutes)} min` : length !== null ? `known: ${String(length)} min` : QUESTION_NOT_ALLOWED };
   if (texts.some((t) => GOAL.test(t))) return { ok: false, line: known.goal === null ? QUESTION_NOT_ALLOWED : `known: ${known.goal.word}` };
   if (texts.some((t) => MEDICAL.test(t) || classifyPainMention(t) === 'pain')) return { ok: false, line: QUESTION_NOT_ALLOWED };
