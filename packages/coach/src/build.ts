@@ -1,5 +1,6 @@
 import {
   addDraftVersion,
+  checkBuildQuestion,
   checkWorkoutProposal,
   currentDraftVersion,
   deriveId,
@@ -10,6 +11,8 @@ import {
   exercisesNamedIn,
   leftOutCount,
   newWorkoutDraft,
+  type KnownPreferences,
+  type QuestionContext,
   type WorkoutProposalContext,
 } from '@fizz/domain';
 import { BUILD_LIMITS, muscleGroupOf, type ActionDetail, type BuildCheck, type BuildDay, type BuildFocus, type DraftPlan, type GuardNote, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
@@ -17,16 +20,21 @@ import { isChangeClaim } from './claims';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
 
 /**
- * The workout builder's tool (workout-builder.md v1.0 §8.2): `propose_workout`.
+ * The workout builder's tools (workout-builder.md v2.1 §8.2):
+ * `propose_workout` and `ask_build_question`.
  *
- * Offered only in a general turn when Ben asked for a workout (request kind
- * `build`) or, with a coach draft in context, asked to change it (BD16).
- * The model sends structure only; `checkWorkoutProposal` decides what stays
- * (the selected gym, pain flags, §8.3 limits) and the executor stores a
- * `WorkoutDraft` version with its `build_workout` record in one transaction,
- * idempotent on the opId. Nothing here plans a load or a length: the
- * overview does that from history and the fit (BD6, BD11). Nothing starts
- * or saves: Ben taps Start or Save himself (BD15).
+ * `propose_workout` is offered in a general turn when Ben asked for a
+ * workout (request kind `build`), or, with a coach draft in context, asked
+ * to change it (BD16). v2 (BD6): the model sends the structure and a
+ * working load per exercise with its basis; `checkWorkoutProposal` decides
+ * what stays (the selected gym, pain flags, §8.3 limits) and
+ * `checkProposedLoad` checks, bounds and fits each load. The executor stores
+ * a `WorkoutDraft` version with its `build_workout` record in one
+ * transaction, idempotent on the opId. Minutes are never the model's
+ * (BD11). Nothing starts or saves: Ben taps Start or Save himself (BD15).
+ *
+ * `ask_build_question` (BD17) records one checked question card (status
+ * `proposed`) and nothing else; the turn stops there and Ben's tap answers it.
  */
 
 /** Ben's request as code read it (BD3, §8.2): never the model's reading. */
@@ -63,7 +71,47 @@ export interface BuildContextView {
   /** The rotation's next workout, by name. */
   upNext: string | null;
   /** The coach draft being changed (BD16), as stored. */
-  draft: { name: string; version: number; exercises: { catalogueId: string; name: string; workingSets: number; reps: string; targetRpe: number | null }[] } | null;
+  draft: { name: string; version: number; exercises: { catalogueId: string; name: string; workingSets: number; reps: string; targetRpe: number | null; load?: string | null }[] } | null;
+  /**
+   * (v2, §8.6) What the coach proposes loads from: per candidate exercise,
+   * the last comparable working tops (app and FitNotes, labelled), the
+   * reference e1RM (est.), the gap, a personal ratio, and the first-time
+   * ceiling with no reference. The same numbers `checkProposedLoad` checks against.
+   */
+  loadReferences?: LoadReferenceView[];
+  /** (v2, BD18) What is already known: never asked again. Missing items are listed. */
+  known?: KnownView;
+}
+
+/** One exercise's load references as the coach reads them (Your data). */
+export interface LoadReferenceView {
+  catalogueId: string;
+  name: string;
+  /** The unit and convention a load for it must use here. */
+  unit: 'kg' | 'lb';
+  convention: string;
+  /** `100×7 @8 · 6 Oct · app`, newest first, at most 3. */
+  last: string[];
+  /** The reference e1RM, an estimate. */
+  e1rmEst: number | null;
+  gapDays: number | null;
+  /** `est. from DB bench press 32.5×8` (personal ratio) or a related lift. */
+  estimate: string | null;
+  /** With no reference: the most a first-time load may be here (est.). */
+  firstTimeMax: number | null;
+  /** Pain holds it at no harder than the last working load. */
+  held: boolean;
+}
+
+/** The `KNOWN` block (§8.6). */
+export interface KnownView {
+  goal: string | null;
+  sessionMinutes: number | null;
+  mainLift: string | null;
+  recentSplits: string[];
+  missing: string[];
+  /** Clarifying questions left in this build request (BD17: at most 2). */
+  questionsLeft: number;
 }
 
 export interface BuildDeps {
@@ -81,6 +129,8 @@ export interface BuildDeps {
   contextHash: string;
   /** The selected gym's equipment versions, hashed (what the usable list was read from). */
   equipmentVersion: string;
+  /** (v2, BD17) The question checks' inputs; absent: `ask_build_question` has no executor (never offered). */
+  questions?: { known: KnownPreferences; context: QuestionContext; day: { id: string; name: string } | null };
 }
 
 /**
@@ -256,14 +306,34 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
     landedOpId = ctx.opId;
     return { kind: 'action', record: r.action, replayed: r.status === 'replayed' };
   };
-  return { propose_workout: propose };
+  const ask: ToolExecutor = async (call, ctx): Promise<ToolResult> => {
+    if (call.tool !== 'ask_build_question') throw new TypeError(call.tool);
+    const q = deps.questions;
+    if (q === undefined) return { kind: 'refused', line: QUESTION_NOT_OFFERED_LINE };
+    if (landedOpId !== null) return { kind: 'refused', line: BUILD_ALREADY_LINE };
+    const checked = checkBuildQuestion(call.args, q.known, q.context);
+    if (!checked.ok) return { kind: 'refused', line: `${checked.line}. Build now with what you have.` };
+    const detail: ActionDetail = { kind: 'build_question', topic: checked.topic, question: checked.question, answers: checked.answers, day: checked.topic === 'main_lift' ? q.day : null };
+    const r = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord(ctx, detail, { status: 'proposed' }) });
+    if (r.status === 'conflict') throw new Error('Could not record the question');
+    return { kind: 'action', record: r.action, replayed: r.status === 'replayed' };
+  };
+  return { propose_workout: propose, ...(deps.questions === undefined ? {} : { ask_build_question: ask }) };
 }
+
+/** Fed back when the question tool runs with no question context (never offered then). */
+export const QUESTION_NOT_OFFERED_LINE = 'No question now. Build with what you have.';
 
 /** About the `propose_workout` call itself (a turn that is building). */
 const CALL_RULES = [
-  'Never give loads, weights or minutes: the app plans loads from his history and fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
+  'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters citing only those numbers, the load itself, or the slot\'s reps and RPE (e.g. "last 3: 100×7 @8 → 102.5"). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Never give minutes: the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
+  'Use build.known (goal, usual length, main lift, recent split days) and his training details; never ask for them. Put the main lift first when there is one.',
   'Its `message` (at most 240 characters) says why this selection and order, citing only facts given. No praise, scores, recovery claims or diagnoses.',
 ];
+
+/** (v2, BD17) Added when `ask_build_question` is offered. */
+export const QUESTION_RULES =
+  'If, and only if, one answer would change the workout and it is not in build.known or his training details, you may first call `ask_build_question` instead of `propose_workout`: one short question with 2 to 4 tap answers. Never about the length, his goal, pain or injury. Most builds need no question.';
 
 /** About the reply after the call (a turn that is building). */
 const AFTER_CALL_RULES = [
@@ -280,7 +350,7 @@ const MULTI_WEEK_LINE = 'It builds one session. Multi-week programmes and weekly
  * to use or what he lifted, the coach answers in full as usual (rule 3).
  */
 const SCOPED_BUILD_RULES = [
-  'Only if you call `propose_workout`: put no loads or minutes in the call (the app plans them from his history and the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 240 characters) says why this selection and order, citing only facts given, with no praise, scores, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
+  'Only if you call `propose_workout`: give each exercise a working load from build.loadReferences with a short basis citing only those numbers (no minutes: the app fits the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 240 characters) says why this selection and order, citing only facts given, with no praise, scores, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
   'These limits are only for the call. On any other question, including what weight or reps to use or what he lifted before, answer as usual.',
   MULTI_WEEK_LINE,
 ];

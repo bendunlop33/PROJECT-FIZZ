@@ -611,3 +611,54 @@ export async function refusedBuildActionIds(history: readonly CoachMessage[], li
   }
   return out;
 }
+
+/** What a thread's latest clarifying questions say about this turn (workout-builder v2.1 BD17). */
+export interface QuestionChain {
+  /** Questions asked in this build request (the run of coach messages with a question, newest back). */
+  asked: number;
+  /** The question on the coach's last message, waiting for Ben's answer; null when there is none. */
+  open: ActionRecord | null;
+  /** Ben's words answer the open question (`Skip` included): a build follow-up, `clear`. */
+  followUp: BuildFollowUp | null;
+  /** Ben tapped `Skip`: build with the defaults, no further question. */
+  skipped: boolean;
+}
+
+/** The `Skip` chip's words (§4.2). Typed "skip" reads the same: build with the defaults. */
+export const SKIP_ANSWER = 'Skip';
+
+/**
+ * `buildQuestionChain(history, text, actionsOf)`: how many questions this
+ * build request has asked, whether the coach's last message is a question
+ * waiting for Ben, and (if so) the follow-up his answer makes, carrying his
+ * original request's words for the length and focus (never the coach's).
+ * Code only; nothing here reads the model's words.
+ */
+export async function buildQuestionChain(history: readonly CoachMessage[], text: string | null, listTurnActions: (turnId: string) => Promise<readonly ActionRecord[]>): Promise<QuestionChain> {
+  const sorted = [...history].sort((a, b) => a.ordinal - b.ordinal);
+  const coachAts = sorted.flatMap((m, i) => (m.body.role === 'coach' ? [i] : [])).reverse();
+  let asked = 0;
+  let open: ActionRecord | null = null;
+  let firstAt: number | null = null;
+  for (const [k, at] of coachAts.entries()) {
+    const m = sorted[at];
+    if (m === undefined || m.body.role !== 'coach') break;
+    const ids = new Set(m.body.actionIds);
+    const q = (await listTurnActions(m.turnId)).find((a) => ids.has(a.actionId) && a.detail.kind === 'build_question' && a.status === 'proposed');
+    if (q === undefined) break;
+    asked += 1;
+    if (k === 0) open = q;
+    firstAt = at;
+  }
+  if (open === null || firstAt === null || text === null) return { asked: open === null ? 0 : asked, open, followUp: null, skipped: false };
+  const requestAt = sorted.slice(0, firstAt).map((x) => x.body.role).lastIndexOf('ben');
+  const benTexts = sorted
+    .slice(requestAt < 0 ? firstAt : requestAt)
+    .flatMap((m) => {
+      const w = benWords(m);
+      return w === null ? [] : [w];
+    })
+    .reverse();
+  const skipped = normaliseReply(text) === SKIP_ANSWER.toLowerCase();
+  return { asked, open, followUp: { priorBenText: requestAt < 0 ? null : benWords(sorted[requestAt]), benTexts, strength: 'clear' }, skipped };
+}

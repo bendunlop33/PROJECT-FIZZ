@@ -970,8 +970,10 @@ describe('review r5 B1: an offered-only turn never tells the coach to withhold l
       expect(i).toContain('Multi-week programmes and weekly plans are not available yet');
     }
   });
-  it('a turn that is building keeps the call and reply rules', () => {
-    expect(BUILD_INSTRUCTIONS).toContain('Never give loads, weights or minutes');
+  it('a turn that is building keeps the call and reply rules (v2: loads from build.loadReferences with a basis, never minutes)', () => {
+    expect(BUILD_INSTRUCTIONS).toContain('working `load`');
+    expect(BUILD_INSTRUCTIONS).toContain('build.loadReferences');
+    expect(BUILD_INSTRUCTIONS).toContain('Never give minutes');
     expect(BUILD_INSTRUCTIONS).toContain('Then reply in one short sentence.');
   });
 });
