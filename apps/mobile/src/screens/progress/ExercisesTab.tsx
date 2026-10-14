@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { parseTrailing, TRAILING_OPTIONS, type DateRange, type ExerciseMeasure, type ExerciseTabView } from '@fizz/domain';
@@ -6,6 +6,7 @@ import type { ProgressPeriodKey } from '@fizz/schemas';
 
 import { DropdownButton, DropdownPanel, PeriodPicker, useAx } from '../../progress/components';
 import { ExerciseLineChart } from '../../progress/exercise-line-chart';
+import { unreadableText } from '../../progress/copy';
 import { useScreenData } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Icon, StatStrip, StatusLine, TextButton, TextField } from '../../ui';
@@ -22,7 +23,15 @@ type Open = 'exercise' | 'measure' | 'period' | 'series' | 'trailing' | null;
 
 const DEFAULT_PERIOD: ProgressPeriodKey = '6m';
 
-export function ExercisesTab() {
+/** Open on this exercise and workout (a home record); a new `n` re-opens it. */
+export interface ExercisesFocus {
+  exerciseId: string;
+  sessionId: string;
+  sessionExerciseId: string | null;
+  n: number;
+}
+
+export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null } = {}) {
   const theme = useTheme();
   const ax = useAx();
   const [exerciseId, setExerciseId] = useState<string | null>(null);
@@ -33,7 +42,19 @@ export function ExercisesTab() {
   const [seriesId, setSeriesId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState<Open>(null);
-  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, period, range, measure, trailing, seriesId }));
+  // The record's workout: picks its series and widens the period until Ben picks another exercise, series or period.
+  const [opened, setOpened] = useState<{ sessionId: string; sessionExerciseId: string | null } | null>(null);
+  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, period, range, measure, trailing, seriesId, open: opened }));
+  useEffect(() => {
+    if (focus === null) return;
+    setExerciseId(focus.exerciseId);
+    setSeriesId(null);
+    setMeasure(null);
+    setOpened({ sessionId: focus.sessionId, sessionExerciseId: focus.sessionExerciseId });
+    setSelected(focus.sessionId);
+    setOpen(null);
+    reload();
+  }, [focus, reload]);
   const toggle = (k: Exclude<Open, null>) => {
     setOpen((o) => (o === k ? null : k));
   };
@@ -41,16 +62,17 @@ export function ExercisesTab() {
   if (data.state === 'error') {
     return <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open your training data." info={data.message} infoLabel="Error details" action={<TextButton label="Try again" onPress={reload} />} />;
   }
-  if (data.state !== 'ready' || data.value === null) return null;
+  if (data.state !== 'ready') return null;
   const tab = data.value;
-  const view = tab.view;
-  if (view === null) {
+  const view = tab?.view ?? null;
+  if (tab === null || view === null) {
     return (
       <AppText variant="body" color="text.secondary">
         Nothing logged yet.
       </AppText>
     );
   }
+  const selectedRow = selected === null ? undefined : view.table.rows.find((r) => r.sessionId === selected);
 
   const measurePanel =
     open === 'measure' ? (
@@ -68,6 +90,7 @@ export function ExercisesTab() {
 
   return (
     <View style={{ gap: theme.space['4'] }}>
+      {tab.unreadable > 0 ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={unreadableText(tab.unreadable)} /> : null}
       <ExercisePicker
         name={view.title}
         open={open === 'exercise'}
@@ -77,6 +100,7 @@ export function ExercisesTab() {
         onPick={(id) => {
           setOpen(null);
           setExerciseId(id);
+          setOpened(null);
           setSeriesId(null);
           setMeasure(null);
           setSelected(null);
@@ -102,6 +126,7 @@ export function ExercisesTab() {
               selected={view.seriesId}
               onSelect={(k) => {
                 setOpen(null);
+                setOpened(null);
                 setSeriesId(k);
                 setMeasure(null);
                 setSelected(null);
@@ -125,12 +150,14 @@ export function ExercisesTab() {
           setOpen(o ? 'period' : null);
         }}
         onPreset={(p) => {
+          setOpened(null);
           setPeriod(p);
           setRange(null);
           setSelected(null);
           reload();
         }}
         onCustom={(r) => {
+          setOpened(null);
           setRange(r);
           setSelected(null);
           reload();
@@ -160,6 +187,7 @@ export function ExercisesTab() {
         <ExerciseLineChart
           chart={view.chart}
           selected={selected}
+          readout={selectedRow?.readout ?? null}
           onSelect={(id) => {
             setSelected(id);
           }}

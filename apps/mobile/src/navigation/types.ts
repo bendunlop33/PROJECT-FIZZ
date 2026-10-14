@@ -70,8 +70,6 @@ export type ProgressStackParams = {
   ProgressHome: undefined;
   /** `group`: the row to open expanded (a body-part group such as `Chest`, or `push` / `pull` / `legs` / `core` / `other`). */
   ProgressMuscles: { group?: string };
-  /** Exercises list (slice B, §2.6). */
-  ProgressExercises: undefined;
   /** Exercise detail inside the Progress tab (slice B, §2.7). */
   ProgressExercise: ExerciseDetailParams;
   /** `Exercise info ›` on Progress exercise detail (exercise-library §9.7): the Library's Exercise detail, in this stack. */

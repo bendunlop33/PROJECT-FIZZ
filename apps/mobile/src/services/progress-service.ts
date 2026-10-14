@@ -6,6 +6,7 @@ import {
   buildProgressHomeView,
   customProgressWindow,
   listProgressExercises,
+  periodHolding,
   periodProgressWindow,
   rangeText,
   rangeWords,
@@ -120,6 +121,8 @@ export interface ExerciseTabRequest {
   measure?: ExerciseMeasure | null;
   trailing?: number | null;
   seriesId?: string | null;
+  /** Opened from a home record: that workout's series, and a period wide enough to show it. */
+  open?: { sessionId: string; sessionExerciseId: string | null } | null;
 }
 
 export interface ExerciseTab {
@@ -284,8 +287,11 @@ export function createProgressService(deps: ProgressServiceDeps) {
       if (!profile) return null;
       const ctx = await context(profile);
       const today = localDateOf(toMs(deps.now().utc), profile.timezone);
-      const range = req.range ? normaliseProgressRange(req.range, today) : null;
-      const window = range === null ? periodProgressWindow(today, req.period) : customProgressWindow(range);
+      let period = req.period;
+      let range = req.range ? normaliseProgressRange(req.range, today) : null;
+      const openDate = req.open ? ctx.sessions.find((s) => s.sessionId === req.open?.sessionId)?.date : undefined;
+      if (openDate !== undefined && range === null) ({ period, range } = periodHolding(openDate, today, period));
+      const window = range === null ? periodProgressWindow(today, period) : customProgressWindow(range);
       let earliest = today;
       for (const s of ctx.sessions) if (s.date < earliest) earliest = s.date;
       const exerciseId = req.exerciseId ?? listProgressExercises(ctx.sessions)[0]?.exerciseId ?? null;
@@ -300,10 +306,12 @@ export function createProgressService(deps: ProgressServiceDeps) {
               gymNames: ctx.gymNames,
               name: ctx.exercises.get(exerciseId)?.name ?? '',
               seriesId: req.seriesId ?? null,
+              sessionId: req.open?.sessionId ?? null,
+              sessionExerciseId: req.open?.sessionExerciseId ?? null,
               measure: req.measure ?? null,
               trailing: req.trailing ?? null,
             });
-      return { view, period: req.period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable };
+      return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable };
     },
 
     /**

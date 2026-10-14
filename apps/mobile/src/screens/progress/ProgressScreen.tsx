@@ -16,7 +16,8 @@ import { useTheme } from '../../theme';
 import { AppText, Card, Icon, PrimaryButton, SecondaryButton, StatStrip, StatusLine, TextButton, Toast } from '../../ui';
 import { AskPill } from '../coach/AskPill';
 import { CalendarView } from './CalendarView';
-import { ExercisesTab } from './ExercisesTab';
+import { unreadableText } from '../../progress/copy';
+import { ExercisesTab, type ExercisesFocus } from './ExercisesTab';
 import { HowCountedSheet, TimeSheet } from './sheets';
 
 /**
@@ -39,6 +40,8 @@ export function ProgressScreen() {
   const [month, setMonth] = useState<string | null>(null);
   const [calendarSeen, setCalendarSeen] = useState(false);
   const [exercisesSeen, setExercisesSeen] = useState(false);
+  // A record tap opens the Exercises tab on that exercise and workout (review S3); `n` makes a repeat tap re-open it.
+  const [exercisesFocus, setExercisesFocus] = useState<ExercisesFocus | null>(null);
   // No local window or grouping: the service holds the one shared choice, so home and Muscles never disagree (check 15).
   const [data, reload] = useScreenData((s) => s.progress.home());
   const [timeOpen, setTimeOpen] = useState(false);
@@ -160,7 +163,7 @@ export function ProgressScreen() {
       <>
         {exercisesSeen || segment === 'exercises' ? (
           <View style={segment === 'exercises' ? null : { display: 'none' }}>
-            <ExercisesTab />
+            <ExercisesTab focus={exercisesFocus} />
           </View>
         ) : null}
         {calendarSeen || segment === 'calendar' ? (
@@ -203,11 +206,9 @@ export function ProgressScreen() {
           navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressMuscles', params: { group: '' } } });
         }}
         onRecord={(r) => {
-          // Slice B: a record opens exercise detail on its series with its point selected (§4.1).
-          navigation.navigate('Tabs', {
-            screen: 'Progress',
-            params: { screen: 'ProgressExercise', params: { exerciseId: r.exerciseId, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, ...(r.equipmentId === null ? {} : { equipmentId: r.equipmentId }) } },
-          });
+          setExercisesFocus((f) => ({ exerciseId: r.exerciseId, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, n: (f?.n ?? 0) + 1 }));
+          setExercisesSeen(true);
+          setSegment('exercises');
         }}
       />
         </View>
@@ -472,7 +473,7 @@ function Overview({
       </View>
 
       {home.unreadable > 0 ? (
-        <StatusLine icon="exclamationmark.triangle" tone="warning" text={`${String(home.unreadable)} ${home.unreadable === 1 ? 'workout couldn’t be read and isn’t' : 'workouts couldn’t be read and aren’t'} counted.`} />
+        <StatusLine icon="exclamationmark.triangle" tone="warning" text={unreadableText(home.unreadable)} />
       ) : null}
     </View>
   );

@@ -88,14 +88,14 @@ describe('slice B static checks', () => {
     const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '../package.json'), 'utf8')) as { dependencies?: Record<string, string> };
     const deps = Object.keys(pkg.dependencies ?? {});
     expect(deps.filter((d) => /chart|victory|svg-charts|gifted|recharts|d3/i.test(d))).toEqual([]);
-    for (const f of ['progress/TrendCanvas.tsx', 'progress/trend-chart.tsx', 'screens/progress/ExerciseDetailScreen.tsx', 'screens/progress/ExercisesScreen.tsx']) {
+    for (const f of ['progress/TrendCanvas.tsx', 'progress/trend-chart.tsx', 'screens/progress/ExerciseDetailScreen.tsx', 'screens/progress/ExercisesTab.tsx', 'progress/exercise-line-chart.tsx']) {
       const src = read(f);
       expect(src).not.toMatch(/react-native-reanimated|Animated\.|useSharedValue|withTiming|LayoutAnimation/);
     }
   });
 
   it('check 23: no score, ring, percentage, streak, recovery, readiness or fatigue words on the new screens and sheet', () => {
-    const text = [E1RM_SHEET_LINES.join(' '), read('screens/progress/ExerciseDetailScreen.tsx'), read('screens/progress/ExercisesScreen.tsx')].join(' ');
+    const text = [E1RM_SHEET_LINES.join(' '), read('screens/progress/ExerciseDetailScreen.tsx'), read('screens/progress/ExercisesTab.tsx')].join(' ');
     expect(text).not.toMatch(/recovery|readiness|fatigue|streak|\bscore\b/i);
     expect(E1RM_SHEET_LINES.join(' ')).toMatch(/estimate/);
   });

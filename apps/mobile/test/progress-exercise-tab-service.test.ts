@@ -56,4 +56,23 @@ describe('exerciseTab', () => {
     const again = (await s2.progress.exerciseTab({ period: '6m', measure: 'weight', trailing: 3 }))?.view;
     expect(again?.chart.points.map((p) => p.average)).toEqual([60, 61.25, 62.5]);
   });
+
+  it('opening on a record: its series, a period wide enough to hold it, the unreadable count (review S3, S5)', async () => {
+    const { services: s } = await h.launch();
+    await s.setup.saveUnits('kg');
+    const gym = await s.setup.useTypicalGym();
+    await s.setup.complete();
+    const gymId = gym.ok ? (gym.gymId ?? '') : '';
+    const old = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 5 }] }]);
+    h.clockMs += 100 * DAY;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 70, reps: 5 }] }]);
+    const plain = await s.progress.exerciseTab({ period: '1m' });
+    expect(plain?.period).toBe('1m');
+    expect(plain?.view?.chart.points).toHaveLength(1);
+    expect(plain?.unreadable).toBe(0);
+    const opened = await s.progress.exerciseTab({ period: '1m', open: { sessionId: old, sessionExerciseId: null } });
+    expect(opened?.period).toBe('6m');
+    expect(opened?.range).toBeNull();
+    expect(opened?.view?.chart.points.map((p) => p.sessionId)).toContain(old);
+  });
 });

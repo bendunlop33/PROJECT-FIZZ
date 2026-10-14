@@ -21,7 +21,8 @@ const AXIS_WIDTH = 44;
 const INSET = 10;
 const HEIGHT = 260;
 
-export function ExerciseLineChart({ chart, selected, onSelect }: { chart: ExerciseTabView['chart']; selected: string | null; onSelect: (sessionId: string | null) => void }) {
+/** `readout`: the selected session's line from the table, shown when it has no point for the measure (`8 Oct · Est. 1RM —`). */
+export function ExerciseLineChart({ chart, selected, readout = null, onSelect }: { chart: ExerciseTabView['chart']; selected: string | null; readout?: string | null; onSelect: (sessionId: string | null) => void }) {
   const theme = useTheme();
   const [width, setWidth] = useState(0);
   // One run, no gap breaks: Ben asked for a line every time.
@@ -30,6 +31,7 @@ export function ExerciseLineChart({ chart, selected, onSelect }: { chart: Exerci
   const canvas = loadTrendCanvas();
   const index = selected === null ? -1 : chart.points.findIndex((p) => p.sessionId === selected);
   const point = index >= 0 ? chart.points[index] : undefined;
+  const shown = point?.readout ?? (selected === null ? null : readout);
   const grid = theme.a11y.increaseContrast ? theme.colors['border.control'] : theme.colors['chart.grid'];
   return (
     <View accessible accessibilityLabel={chart.words} {...(point ? { accessibilityValue: { text: point.words } } : {})}>
@@ -37,9 +39,9 @@ export function ExerciseLineChart({ chart, selected, onSelect }: { chart: Exerci
         <AppText variant="label" color="chart.axisText" maxFontSizeMultiplier={1.6}>
           {chart.unit}
         </AppText>
-        {point ? (
+        {shown !== null ? (
           <AppText variant="label" numeric color="text.primary" numberOfLines={1} style={{ flexShrink: 1 }}>
-            {point.readout}
+            {shown}
           </AppText>
         ) : null}
       </View>
@@ -83,8 +85,8 @@ export function ExerciseLineChart({ chart, selected, onSelect }: { chart: Exerci
             })
           )
         ) : null}
-        {layout.yTicks.map((t) => (
-          <View key={t.label} pointerEvents="none" style={{ position: 'absolute', left: 0, width: AXIS_WIDTH - 6, top: t.y - 10 }}>
+        {layout.yTicks.map((t, i) => (
+          <View key={`${String(i)}-${t.label}`} pointerEvents="none" style={{ position: 'absolute', left: 0, width: AXIS_WIDTH - 6, top: t.y - 10 }}>
             <AppText variant="label" numeric color="chart.axisText" align="right" numberOfLines={1} maxFontSizeMultiplier={1.6}>
               {t.label}
             </AppText>
