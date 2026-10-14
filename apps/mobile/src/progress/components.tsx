@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 
 import {
@@ -12,6 +12,7 @@ import {
   type ActivityChartView,
   type DateRange,
   type FrequencyRowView,
+  type FrequencySubRowView,
   type ResumeBar as ResumeBarData,
 } from '@fizz/domain';
 import type { ProgressPeriodKey } from '@fizz/schemas';
@@ -89,6 +90,10 @@ export function PeriodPicker({
   datesWords,
   onPreset,
   onCustom,
+  leading,
+  leadingPanel,
+  open: openProp,
+  onOpenChange,
 }: {
   period: ProgressPeriodKey;
   /** A custom period is showing. */
@@ -102,9 +107,22 @@ export function PeriodPicker({
   datesWords: string;
   onPreset: (k: ProgressPeriodKey) => void;
   onCustom: (range: DateRange) => void;
+  /** Another compact dropdown button on the same row, before Period (the Exercises tab's Measure). */
+  leading?: ReactNode;
+  /** That button's open list, shown full width under the row. */
+  leadingPanel?: ReactNode;
+  /** Controlled open state, so only one dropdown on the row is open at once. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const theme = useTheme();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (next: boolean | ((o: boolean) => boolean)) => {
+    const v = typeof next === 'function' ? next(open) : next;
+    setOpenState(v);
+    onOpenChange?.(v);
+  };
   const [customOpen, setCustomOpen] = useState(false);
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
@@ -130,8 +148,7 @@ export function PeriodPicker({
       {on ? <Icon name="checkmark" color="text.primary" /> : null}
     </Pressable>
   );
-  return (
-    <View style={{ gap: theme.space['1'] }}>
+  const periodButton = (
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Period, ${label}. ${datesWords}`}
@@ -145,6 +162,18 @@ export function PeriodPicker({
         <AppText variant="headline">{label}</AppText>
         <Icon name={open ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={14} />
       </Pressable>
+  );
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      {leading === undefined ? (
+        periodButton
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+          {leading}
+          {periodButton}
+        </View>
+      )}
+      {leadingPanel ?? null}
       {open ? (
         <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], borderWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], overflow: 'hidden' }}>
           {PROGRESS_PERIODS.map((p) =>
@@ -453,6 +482,43 @@ export function FrequencyRow({ row, onPress, expanded, perWeek, hint }: { row: F
   );
 }
 
+/** D2 (Ben, 13 Oct 2026): a muscle row's sub-rows, indented, numbers in the row's columns, no bar. With none, the row's `Last trained` line. */
+export function FrequencySubRows({ rows, empty }: { rows: readonly FrequencySubRowView[]; empty: string }) {
+  const theme = useTheme();
+  const ax = useAx();
+  if (rows.length === 0) {
+    return (
+      <AppText variant="callout" color="text.tertiary" numeric style={{ paddingLeft: theme.space['4'], paddingBottom: theme.space['2'] }}>
+        {empty}
+      </AppText>
+    );
+  }
+  return (
+    <View style={{ paddingLeft: theme.space['4'], paddingBottom: theme.space['2'] }}>
+      {rows.map((r) => (
+        <View key={r.key} accessible accessibilityLabel={r.words} style={{ minHeight: 32, flexDirection: ax ? 'column' : 'row', alignItems: ax ? 'flex-start' : 'center', gap: ax ? 0 : theme.space['3'] }}>
+          <AppText variant="callout" color="text.secondary" style={ax ? undefined : { flex: 1 }} numberOfLines={ax ? undefined : 1}>
+            {r.label}
+          </AppText>
+          {ax ? (
+            <AppText variant="callout" color="text.secondary" numeric>{`${r.sessionsText === '' ? '' : `${r.sessionsText} sessions · `}${r.setsText} sets`}</AppText>
+          ) : (
+            <>
+              <AppText variant="callout" color="text.secondary" numeric style={{ width: FREQUENCY_COLUMNS.sessions, textAlign: 'right' }}>
+                {r.sessionsText}
+              </AppText>
+              <AppText variant="callout" color="text.secondary" numeric style={{ width: FREQUENCY_COLUMNS.sets, textAlign: 'right' }}>
+                {r.setsText}
+              </AppText>
+              <View style={{ width: 14 }} />
+            </>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** The `ResumeBar` (PG5): the whole bar resumes the workout; the rest countdown ticks once a second. */
 export function ResumeBar({ bar, onResume, now }: { bar: ResumeBarData; onResume: () => void; now: () => number }) {
   const theme = useTheme();
@@ -493,5 +559,54 @@ export function ResumeBar({ bar, onResume, now }: { bar: ResumeBarData; onResume
         </AppText>
       </View>
     </Pressable>
+  );
+}
+
+/** A compact dropdown button (`Est. 1RM ▾`), the same look as Period's. `small` is the callout size for secondary controls. */
+export function DropdownButton({ label, accessibilityLabel, open, onPress, small = false }: { label: string; accessibilityLabel: string; open: boolean; onPress: () => void; small?: boolean }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ expanded: open }}
+      onPress={onPress}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], borderRadius: theme.radius.sm, backgroundColor: pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'] })}
+    >
+      <AppText variant={small ? 'callout' : 'headline'} numberOfLines={1}>
+        {label}
+      </AppText>
+      <Icon name={open ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={small ? 12 : 14} />
+    </Pressable>
+  );
+}
+
+/** The open list under a `DropdownButton`: one row per option, a check on the chosen one. */
+export function DropdownPanel<K extends string | number>({ options, selected, onSelect, footer }: { options: readonly { key: K; label: string }[]; selected: K | null; onSelect: (k: K) => void; footer?: ReactNode }) {
+  const theme = useTheme();
+  return (
+    <View style={{ borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], borderWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'], overflow: 'hidden' }}>
+      {options.map((o) => {
+        const on = o.key === selected;
+        return (
+          <Pressable
+            key={String(o.key)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: on }}
+            onPress={() => {
+              if (!on) haptic('step');
+              onSelect(o.key);
+            }}
+            style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+          >
+            <AppText variant="body" style={{ flex: 1 }}>
+              {o.label}
+            </AppText>
+            {on ? <Icon name="checkmark" color="text.primary" /> : null}
+          </Pressable>
+        );
+      })}
+      {footer ?? null}
+    </View>
   );
 }

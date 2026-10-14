@@ -299,7 +299,7 @@ function bestSetStat(sessions: readonly SeriesSession[], series: ExerciseSeries)
 export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView | null {
   const all = collectExerciseSeries(input.sessions, input.exerciseId);
   const series = (input.seriesId ? all.find((s) => s.id === input.seriesId) : undefined) ?? exerciseTabSeries(all, input.window);
-  if (series === null || series === undefined) return null;
+  if (series === null) return null;
   const labels = seriesLabels(all, input.gymNames ?? {});
   const offered = measuresFor(series.kind);
   const measure = input.measure && offered.includes(input.measure) ? input.measure : (offered[0] as ExerciseMeasure);

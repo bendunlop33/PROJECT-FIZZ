@@ -31,7 +31,7 @@ import { kg, lb } from './fixtures';
  * assisted machines and marked sets.
  */
 
-const sp = (s: string | null | undefined) => s?.replace(/ /g, ' ');
+const sp = (s: string | null | undefined) => s?.replace(/\u00a0/g, ' ');
 const TODAY = '2026-10-14';
 const WINDOW = { from: '2026-04-15', to: TODAY };
 
@@ -102,7 +102,7 @@ describe('working weight (Weight measure)', () => {
   it('a tie goes to the harder load: heavier, or less assistance on an assisted machine', () => {
     const s = only([bench('2026-10-01', [[100, 5], [100, 5], [110, 3], [110, 3]])]);
     expect(workingWeight(s.sessions[0] as never, s)?.value).toBe(110);
-    const a = only([session('2026-10-01', [row([set(kg(30, 'assistance'), 8), set(kg(30, 'assistance'), 8), set(kg(20, 'assistance'), 6), set(kg(20, 'assistance'), 6)], { exerciseId: 'pullup', exerciseName: 'Assisted pull-up', convention: 'assistance', equipmentKind: 'selectorized_machine' })])], 'pullup');
+    const a = only([session('2026-10-01', [row([set(kg(30, 'assistance'), 8), set(kg(30, 'assistance'), 8), set(kg(20, 'assistance'), 6), set(kg(20, 'assistance'), 6)], { exerciseId: 'pullup', exerciseName: 'Assisted pull-up', convention: 'assistance', equipmentKind: 'assisted_stack' })])], 'pullup');
     expect(workingWeight(a.sessions[0] as never, a)?.value).toBe(20);
   });
 
@@ -193,7 +193,7 @@ describe('buildExerciseTabView', () => {
 
   it('the sessions table is newest first: date, top set, volume, sets, Est. 1RM', () => {
     const v = buildExerciseTabView({ sessions: history, exerciseId: 'bench', today: TODAY, window: WINDOW });
-    expect(v?.table.rows.map((r) => r.cells.date.replace(/ /g, ' '))).toEqual(['1 Oct', '1 Sep']);
+    expect(v?.table.rows.map((r) => r.cells.date.replace(/\u00a0/g, ' '))).toEqual(['1 Oct', '1 Sep']);
     expect(v?.table.rows[0]?.cells).toMatchObject({ topSet: '105×3', volume: '1,515', sets: '3' });
     expect(v?.table.rows[0]?.cells.e1rm).toMatch(/^≈/);
     expect(v?.table.rows[0]?.words).toContain('estimated one-rep max about');
@@ -223,7 +223,7 @@ describe('buildExerciseTabView', () => {
   });
 
   it('an assisted machine offers Weight, Reps and Top set, no Est. 1RM; Best set is the least assistance', () => {
-    const rows = (a: number) => [row([set(kg(a, 'assistance'), 8), set(kg(a, 'assistance'), 8)], { exerciseId: 'pullup', exerciseName: 'Assisted pull-up', convention: 'assistance', equipmentKind: 'selectorized_machine' })];
+    const rows = (a: number) => [row([set(kg(a, 'assistance'), 8), set(kg(a, 'assistance'), 8)], { exerciseId: 'pullup', exerciseName: 'Assisted pull-up', convention: 'assistance', equipmentKind: 'assisted_stack' })];
     const v = buildExerciseTabView({ sessions: [session('2026-09-01', rows(30)), session('2026-10-01', rows(25))], exerciseId: 'pullup', today: TODAY, window: WINDOW });
     expect(v?.measures.map((m) => m.key)).toEqual(['weight', 'reps', 'top_set']);
     expect(v?.measure).toBe('weight');
