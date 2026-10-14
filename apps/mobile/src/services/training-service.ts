@@ -110,6 +110,42 @@ export function createTrainingService(deps: TrainingServiceDeps) {
       }
     },
 
+    /**
+     * (workout-builder v2.1 §2.1, §6.2) A tapped `main_lift` answer on the
+     * coach's question: saved for that split day only when Ben hasn't chosen
+     * one (a field that is set is never overwritten), on the version read
+     * now, idempotent on `opId`. Null: nothing saved (already set, stale,
+     * or the exercise isn't known). The saved version is what Undo needs.
+     */
+    async saveMainLiftAnswer(req: { dayId: string; catalogueId: string; opId: string }): Promise<{ savedVersion: number; exerciseId: string } | null> {
+      const s = await snapshot().catch(() => null);
+      if (s === null || s.mainLifts[req.dayId]?.source === 'yours') return null;
+      const exercises = await pool();
+      const all = [...exercises.values()];
+      const e = all.find((x) => x.ownerId === s.owner.id && x.catalogueKey === req.catalogueId) ?? all.find((x) => x.catalogueKey === req.catalogueId || x.id === req.catalogueId) ?? null;
+      if (e === null) return null;
+      const at = deps.now();
+      try {
+        const r = await repo().change(s.owner.id, { kind: 'main_lift', dayId: req.dayId, exerciseId: e.id }, { opId: req.opId, expectedVersion: s.profile.version, atUtc: at.utc, nowYear: yearOf(at), today: localDateKey(toMs(at.utc), at.tz) });
+        return r.status === 'written' || r.status === 'replayed' ? { savedVersion: r.profile.version, exerciseId: e.id } : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /** `Undo` on `Saved to Profile` (§6.2): only while the profile is still at the version this answer saved. */
+    async undoMainLiftAnswer(req: { dayId: string; savedVersion: number; opId: string }): Promise<'undone' | 'changed'> {
+      const owner = await deps.profile();
+      if (owner === null) return 'changed';
+      const at = deps.now();
+      try {
+        const r = await repo().change(owner.id, { kind: 'main_lift', dayId: req.dayId, exerciseId: null }, { opId: req.opId, expectedVersion: req.savedVersion, atUtc: at.utc, nowYear: yearOf(at), today: localDateKey(toMs(at.utc), at.tz) });
+        return r.status === 'written' || r.status === 'replayed' ? 'undone' : 'changed';
+      } catch {
+        return 'changed';
+      }
+    },
+
     /** The coach's planning context (Your data). Null with no profile; throws when the row can't be read. */
     async coachInput(): Promise<TrainingInput | null> {
       const s = await snapshot();

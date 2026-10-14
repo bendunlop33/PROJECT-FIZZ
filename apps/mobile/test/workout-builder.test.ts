@@ -11,6 +11,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
+import { threadRows } from '../src/coach/sheet-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -1068,5 +1069,86 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     expect(after.view.rows.map((r) => r.load.value)).toEqual(before.view.rows.map((r) => r.load.value));
     expect(after.coachDraft?.reasons).toEqual(before.coachDraft?.reasons);
     expect(model.requests.length).toBe(calls);
+  });
+});
+
+describe('v2: clarifying questions in the sheet (BD17; WB-Q1, WB-Q2, WB-Q9, WB-Q10, WB-Q11)', () => {
+  const QUESTION = {
+    topic: 'main_lift',
+    question: 'Main lift for legs?',
+    answers: [
+      { label: 'squat', catalogueId: 'barbell-back-squat' },
+      { label: 'front', catalogueId: 'barbell-front-squat' },
+      { label: 'LP', catalogueId: 'machine-leg-press' },
+    ],
+  };
+  const legs = (req: ModelRequest): ModelEvent[] => {
+    const b = buildOf(req);
+    const id = (name: string) => b.usable.find((u) => u.name === name)?.catalogueId ?? 'barbell-back-squat';
+    return toolCall('propose_workout', { name: 'Legs', exercises: [ex(id('Back squat'), { workingSets: 4, reps: { min: 5, max: 6 } })], message: 'Squat first.' });
+  };
+
+  it('one card with catalogue names and no count; the turn stops; the answer continues the build; a tapped main lift is saved with Undo', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => toolCall('ask_build_question', QUESTION), () => replyWith('never')]);
+    const first = await ask(s, 'build me a leg workout');
+    expect(model.requests).toHaveLength(1);
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('ask_build_question');
+    const card = first.cards[0]?.record;
+    expect(card).toMatchObject({ status: 'proposed', detail: { kind: 'build_question', question: 'Main lift for legs?', day: { id: 'legs', name: 'Legs' } } });
+    // Catalogue names, not the model's labels; an answer code can't use here (WB-Q2) is dropped.
+    const labels = card?.detail.kind === 'build_question' ? card.detail.answers.map((a) => a.label) : [];
+    expect(labels.slice(0, 2)).toEqual(['Back squat', 'Front squat']);
+    expect(labels.every((l) => ['Back squat', 'Front squat', 'Leg press'].includes(l))).toBe(true);
+    expect(await s.coachDrafts.list()).toEqual([]);
+
+    const rowsOf = async () => threadRows({ ...((await s.coach.loadThread(first.threadId)) ?? (() => { throw new Error('thread'); })()), nowUtc: h.now().utc });
+    const qRow = (await rowsOf()).find((r) => r.kind === 'card' && r.card.question !== undefined);
+    expect(qRow?.kind === 'card' && qRow.card.question).toMatchObject({ state: 'open', collapsed: null, question: 'Main lift for legs?' });
+
+    // Ben taps Back squat: saved for Legs (he hadn't chosen one), then sent as his answer.
+    const saved = await s.training.saveMainLiftAnswer({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q1:main-lift' });
+    expect(saved).not.toBeNull();
+    expect((await s.training.snapshot())?.mainLifts.legs).toMatchObject({ name: 'Back squat', source: 'yours' });
+    // A retried tap saves once.
+    expect(await s.training.saveMainLiftAnswer({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q1:main-lift' })).toBeNull();
+    model = new StepModel([legs, () => replyWith('Squat first.')]);
+    const second = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'Back squat', spoken: false }, turnId: h.ids() });
+    expect(model.requests[0]?.instructions).toContain('Ben’s message answers your question');
+    expect(second.cards[0]?.record.detail.kind).toBe('build_workout');
+    const after = (await rowsOf()).find((r) => r.kind === 'card' && r.card.question !== undefined);
+    expect(after?.kind === 'card' && after.card.question?.collapsed).toBe('Main lift for legs? Back squat ✓');
+
+    // Undo while the profile is still at the saved version.
+    expect(await s.training.undoMainLiftAnswer({ dayId: 'legs', savedVersion: saved?.savedVersion ?? 0, opId: 'q1:undo' })).toBe('undone');
+    expect((await s.training.snapshot())?.mainLifts.legs?.source).not.toBe('yours');
+  });
+
+  it('WB-Q10 / WB-Q11: a Profile choice made since the card wins: no save over it, and a stale Undo is refused', async () => {
+    const { s } = await benWithHistory();
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    const front = snap.options.legs?.find((o) => o.name === 'Front squat');
+    if (!front) throw new Error('no front squat option');
+    await s.training.change({ kind: 'main_lift', dayId: 'legs', exerciseId: front.id }, snap.profile.version, 'profile-front');
+    expect(await s.training.saveMainLiftAnswer({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q2:main-lift' })).toBeNull();
+    expect((await s.training.snapshot())?.mainLifts.legs?.name).toBe('Front squat');
+
+    await s.training.change({ kind: 'main_lift', dayId: 'legs', exerciseId: null }, (await s.training.snapshot())?.profile.version ?? 0, 'profile-clear');
+    const saved = await s.training.saveMainLiftAnswer({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q3:main-lift' });
+    if (saved === null) throw new Error('not saved');
+    await s.training.change({ kind: 'main_lift', dayId: 'legs', exerciseId: front.id }, saved.savedVersion, 'profile-front-2');
+    expect(await s.training.undoMainLiftAnswer({ dayId: 'legs', savedVersion: saved.savedVersion, opId: 'q3:undo' })).toBe('changed');
+    expect((await s.training.snapshot())?.mainLifts.legs?.name).toBe('Front squat');
+  });
+
+  it('WB-Q9: an unanswered card reads `Not answered` after 12 h', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => toolCall('ask_build_question', QUESTION)]);
+    const first = await ask(s, 'build me a leg workout');
+    const data = await s.coach.loadThread(first.threadId);
+    if (data === null) throw new Error('thread');
+    const later = threadRows({ ...data, nowUtc: new Date(h.clockMs + 13 * 3_600_000).toISOString() }).find((r) => r.kind === 'card' && r.card.question !== undefined);
+    expect(later?.kind === 'card' && later.card.question).toMatchObject({ state: 'not_answered', collapsed: 'Not answered' });
   });
 });

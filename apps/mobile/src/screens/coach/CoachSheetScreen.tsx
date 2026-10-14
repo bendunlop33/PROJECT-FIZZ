@@ -4,7 +4,7 @@ import { Keyboard, KeyboardAvoidingView, Linking, Pressable, ScrollView, View, t
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { undoOpId, type ContextDescription } from '@fizz/coach';
-import { coachUndoRefusal, localDateOf, toMs } from '@fizz/domain';
+import { coachUndoRefusal, localDateOf, toIso, toMs } from '@fizz/domain';
 import type { BenInput, BuildFocus, CoachThread } from '@fizz/schemas';
 
 import { MANAGE_USAGE_URL } from '../../ai/coach-connection-view';
@@ -25,6 +25,7 @@ import {
   threadRows,
   workoutBarText,
   type LiveTurn,
+  type QuestionCardView,
   type StarterChip,
   type StatusAction,
   type ThreadRow,
@@ -38,7 +39,7 @@ import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, TextButton, TextField } from '../../ui';
 import { CoachCard } from './CoachCard';
-import { BuildRequestCard, PendingBuildCard, WorkoutDraftCard } from './BuildCards';
+import { BuildQuestionCard, BuildRequestCard, PendingBuildCard, QUESTION_COPY, WorkoutDraftCard } from './BuildCards';
 import { BUILD_COPY, buildCardView, needsCoachView, type BuildDayChip } from '../../coach/build-view';
 
 /**
@@ -84,6 +85,8 @@ export function CoachSheetScreen() {
   /** Show the choices as chips even when there is one (a short name, say "bench"; never flagged on a guess). */
   const [painPick, setPainPick] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** (v2, §6.2) Main lifts saved from a question's tap, by question: Undo while the profile is still at that version. */
+  const [savedAnswers, setSavedAnswers] = useState<Record<string, { dayId: string; savedVersion: number; text: string; canUndo: boolean }>>({});
   /** The Build card (workout-builder §4.1), shown by the chip or an entry from `Build with coach`. */
   const [showBuild, setShowBuild] = useState(buildParam === true);
   /** A build turn running (the pending card, §4.2). */
@@ -105,7 +108,7 @@ export function CoachSheetScreen() {
       }
       const data = await services.coach.loadThread(id);
       if (data === null) return;
-      setRows(threadRows(data));
+      setRows(threadRows({ ...data, nowUtc: toIso(clockNow()) }));
       setTitle(data.thread.title);
     },
     [services],
@@ -249,6 +252,34 @@ export function CoachSheetScreen() {
       setLive(null);
       setAvailability(await services.coach.availability());
     }
+  }
+
+  /**
+   * A tap on the coach's question (workout-builder v2.1 §6.2): sends the answer
+   * (or `Skip`) as Ben's message. Offline, nothing is saved or sent (`Needs the
+   * coach`). A tapped main lift for a split day Ben hasn't set is saved to his
+   * training profile (versioned), with Undo on the card.
+   */
+  async function answerQuestion(q: QuestionCardView, a: { label: string; catalogueId: string | null } | 'skip') {
+    if (live !== null) return;
+    const block = await services.coach.buildBlock();
+    if (block !== null) {
+      setNotice(needsCoachView(block).line);
+      return;
+    }
+    if (a !== 'skip' && a.catalogueId !== null && q.topic === 'main_lift' && q.day !== null) {
+      const day = q.day;
+      const saved = await services.training.saveMainLiftAnswer({ dayId: day.id, catalogueId: a.catalogueId, opId: `${q.actionId}:main-lift` }).catch(() => null);
+      if (saved !== null) setSavedAnswers((m) => ({ ...m, [q.actionId]: { dayId: day.id, savedVersion: saved.savedVersion, text: QUESTION_COPY.saved, canUndo: true } }));
+    }
+    await send({ kind: 'words', text: a === 'skip' ? QUESTION_COPY.skip : a.label, spoken: false });
+  }
+
+  async function undoAnswerSave(actionId: string) {
+    const s0 = savedAnswers[actionId];
+    if (s0 === undefined || !s0.canUndo) return;
+    const r = await services.training.undoMainLiftAnswer({ dayId: s0.dayId, savedVersion: s0.savedVersion, opId: `${actionId}:main-lift-undo` }).catch(() => 'changed' as const);
+    setSavedAnswers((m) => ({ ...m, [actionId]: { ...s0, canUndo: false, text: r === 'undone' ? 'Undone' : QUESTION_COPY.notUndone } }));
   }
 
   /** `Build` on the Build card (§4.1): one message from the chips and one build turn; the pending card until it ends. */
@@ -533,6 +564,12 @@ export function CoachSheetScreen() {
             onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)}
             onAccept={() => r.kind === 'offer' && live === null && void send(r.input)}
             onDraft={{ gymId: buildGym?.id ?? null, open: openDraft, openRoutine: openRoutine, changed: () => { changed(); void loadRows(threadId ?? null); } }}
+            onQuestion={{
+              disabled: live !== null || status?.canSend !== true,
+              saved: (actionId) => savedAnswers[actionId] ?? null,
+              answer: (q, a) => void answerQuestion(q, a),
+              undoSave: (actionId) => void undoAnswerSave(actionId),
+            }}
           />
         ))}
         {live !== null ? <LiveRows live={live} now={now} /> : null}
@@ -638,6 +675,7 @@ function Row({
   onRetry,
   onAccept,
   onDraft,
+  onQuestion,
 }: {
   row: ThreadRow;
   undoBlocked: (actionId: string) => boolean;
@@ -649,6 +687,8 @@ function Row({
   onAccept: () => void;
   /** A coach draft's card (workout-builder §4.2): `Open ›` closes the sheet and opens its overview; the sheet never opens it by itself. */
   onDraft?: { gymId: string | null; open: (draftId: string) => void; openRoutine: (routineId: string) => void; changed: () => void };
+  /** (v2, §4.2) The coach's question card: tap answers, `Skip`, and Undo on a saved main lift. */
+  onQuestion?: { disabled: boolean; saved: (actionId: string) => { text: string; canUndo: boolean } | null; answer: (q: QuestionCardView, a: { label: string; catalogueId: string | null } | 'skip') => void; undoSave: (actionId: string) => void };
 }) {
   const theme = useTheme();
   switch (row.kind) {
@@ -677,6 +717,25 @@ function Row({
         </AppText>
       );
     case 'card':
+      if (row.card.question !== undefined && onQuestion !== undefined) {
+        const q = row.card.question;
+        return (
+          <BuildQuestionCard
+            view={q}
+            disabled={onQuestion.disabled}
+            saved={onQuestion.saved(q.actionId)}
+            onAnswer={(a) => {
+              onQuestion.answer(q, a);
+            }}
+            onSkip={() => {
+              onQuestion.answer(q, 'skip');
+            }}
+            onUndoSave={() => {
+              onQuestion.undoSave(q.actionId);
+            }}
+          />
+        );
+      }
       if (row.card.draft !== undefined && onDraft !== undefined) return <WorkoutDraftCard record={row.card.draft} gymId={onDraft.gymId} onOpen={onDraft.open} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} />;
     case 'note':
