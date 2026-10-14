@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Switch, View } from 'react-native';
+import { View } from 'react-native';
 
 import { cmFromFeetInches, feetInches } from '@fizz/domain';
-import type { TrainingChange, TrainingProfile, WeightUnit } from '@fizz/schemas';
+import type { TrainingChange, TrainingProfile, WeightEntry, WeightUnit } from '@fizz/schemas';
 
 import { nowMs as clockNow } from '../../clock';
 import { localDateKey } from '../../format/dates';
@@ -28,6 +28,7 @@ export function TrainingDetailsScreen() {
   const [editing, setEditing] = useState<Editing>(null);
   const [opId, setOpId] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [undo, setUndo] = useState<WeightEntry | null>(null);
 
   if (data.state === 'loading') return <Screen>{null}</Screen>;
   if (data.state === 'error' || data.value.snap === null) {
@@ -46,19 +47,31 @@ export function TrainingDetailsScreen() {
     setNotice(null);
     setEditing(e);
   };
-  const save = async (change: TrainingChange, op = opId) => {
+  const save = async (change: TrainingChange, op = opId, version = p.version): Promise<boolean> => {
     // A new weight entry's ID is the sheet's operation ID, so a retried Save can't add it twice.
-    const c: TrainingChange = change.kind === 'add_weight' ? { ...change, entry: { ...change.entry, id: op } } : change;
-    const r = await services.training.change(c, p.version, op);
+    const c: TrainingChange = change.kind === 'add_weight' && change.entry.id === '' ? { ...change, entry: { ...change.entry, id: op } } : change;
+    const r = await services.training.change(c, version, op);
     setEditing(null);
     if (!r.ok) setNotice(r.reason === 'stale' ? C.stale : r.reason === 'invalid' ? C.invalid : C.failed);
     changed();
     reload();
+    return r.ok;
+  };
+  // Review S1: a deleted weight comes back with one tap (same entry ID).
+  const remove = async (entryId: string) => {
+    const entry = p.weights.find((w) => w.id === entryId);
+    setUndo(null);
+    if (entry !== undefined && (await save({ kind: 'delete_weight', entryId }, services.newId()))) setUndo(entry);
+  };
+  const restore = (e: WeightEntry) => {
+    setUndo(null);
+    void save({ kind: 'add_weight', entry: { id: e.id, date: e.date, value: e.value, unit: e.unit } }, services.newId(), p.version);
   };
 
   return (
     <Screen>
       {notice ? <Toast icon="exclamationmark.triangle" text={notice} onDismiss={() => { setNotice(null); }} /> : null}
+      {undo && !notice ? <Toast text={C.deleted} action={C.undo} onAction={() => { restore(undo); }} onDismiss={() => { setUndo(null); }} showClose /> : null}
       <SectionHeader title={C.aboutYou} />
       <Group>
         {v.about.map((r) => (
@@ -74,8 +87,8 @@ export function TrainingDetailsScreen() {
             title={w.value}
             subtitle={w.title}
             actions={[{ name: 'delete', label: C.delete }]}
-            onAction={() => void save({ kind: 'delete_weight', entryId: w.id }, services.newId())}
-            trailing={<TextButton label={C.delete} tone="secondary" accessibilityLabel={`${C.delete} ${w.accessibilityLabel}`} onPress={() => void save({ kind: 'delete_weight', entryId: w.id }, services.newId())} />}
+            onAction={() => void remove(w.id)}
+            trailing={<TextButton label={C.delete} tone="secondary" accessibilityLabel={`${C.delete} ${w.accessibilityLabel}`} onPress={() => void remove(w.id)} />}
           />
         ))}
         <Row title={C.addWeight} icon="plus" onPress={() => { open('addWeight'); }} />
@@ -88,14 +101,6 @@ export function TrainingDetailsScreen() {
         ))}
       </Group>
 
-      <SectionHeader title={C.self} />
-      <Group>
-        <Row
-          title={C.nextTargets}
-          trailing={<Switch accessibilityLabel={C.nextTargets} value={p.selfNextTargets} onValueChange={(on) => void save({ kind: 'self_next_targets', on }, services.newId())} />}
-        />
-      </Group>
-
       <EditSheet editing={editing} profile={p} nowYear={snap.nowYear} unit={unit} today={localDateKey(clockNow(), services.now().tz)} onClose={() => { setEditing(null); }} onSave={(c) => void save(c)} />
     </Screen>
   );
@@ -104,12 +109,12 @@ export function TrainingDetailsScreen() {
 function EditSheet({ editing, profile: p, nowYear, unit, today, onClose, onSave }: { editing: Editing; profile: TrainingProfile; nowYear: number; unit: WeightUnit; today: string; onClose: () => void; onSave: (c: TrainingChange) => void }) {
   return (
     <BottomCard visible={editing !== null} onClose={onClose}>
-      {editing === null || editing === 'nextTargets' ? null : <SheetBody key={editing} editing={editing} profile={p} nowYear={nowYear} unit={unit} today={today} onClose={onClose} onSave={onSave} />}
+      {editing === null ? null : <SheetBody key={editing} editing={editing} profile={p} nowYear={nowYear} unit={unit} today={today} onClose={onClose} onSave={onSave} />}
     </BottomCard>
   );
 }
 
-function SheetBody({ editing, profile: p, nowYear, unit, today, onClose, onSave }: { editing: Exclude<Editing, null | 'nextTargets'>; profile: TrainingProfile; nowYear: number; unit: WeightUnit; today: string; onClose: () => void; onSave: (c: TrainingChange) => void }) {
+function SheetBody({ editing, profile: p, nowYear, unit, today, onClose, onSave }: { editing: Exclude<Editing, null>; profile: TrainingProfile; nowYear: number; unit: WeightUnit; today: string; onClose: () => void; onSave: (c: TrainingChange) => void }) {
   const year = birthYearPicker(p.about.birthYear, nowYear);
   const [yearText, setYearText] = useState(String(year.start));
   const [cm, setCm] = useState(p.about.heightCm ?? 175);
@@ -215,7 +220,7 @@ function SheetBody({ editing, profile: p, nowYear, unit, today, onClose, onSave 
         </>
       );
     case 'addWeight': {
-      const entry = readWeightEntry(weight, date);
+      const entry = readWeightEntry(weight, date, today);
       return (
         <>
           <AppText variant="headline">{C.addWeight}</AppText>

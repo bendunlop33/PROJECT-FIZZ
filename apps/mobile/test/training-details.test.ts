@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { applyTrainingChange, newTrainingProfile } from '@fizz/domain';
-import type { TrainingChange, TrainingProfile } from '@fizz/schemas';
+import type { Store } from '@fizz/persistence';
+import type { TrainingChange, TrainingProfile, UserProfile } from '@fizz/schemas';
+
+import { createTrainingService } from '../src/services/training-service';
 
 import { birthYearPicker, bodyPartChoices, customStartDays, heightPicker, readWeightEntry, splitView, TRAINING_COPY, trainingDetailsView } from '../src/training/training-view';
 import type { ModelRequest } from '@fizz/coach';
@@ -15,7 +18,7 @@ const OWNER = '00000000-0000-4000-8000-0000000000aa';
 function profileWith(changes: TrainingChange[]): TrainingProfile {
   let p = newTrainingProfile({ id: '00000000-0000-4000-8000-0000000000ab', ownerId: OWNER, atUtc: '2026-10-13T08:00:00.000Z' });
   changes.forEach((c, i) => {
-    const r = applyTrainingChange(p, c, { opId: `v${String(i)}`, expectedVersion: p.version, atUtc: `2026-10-13T08:0${String(i)}:00.000Z`, nowYear: 2026 });
+    const r = applyTrainingChange(p, c, { opId: `v${String(i)}`, expectedVersion: p.version, atUtc: `2026-10-13T08:0${String(i)}:00.000Z`, nowYear: 2026, today: '2026-10-14' });
     if (!r.ok) throw new Error(r.error);
     p = r.profile;
   });
@@ -23,7 +26,7 @@ function profileWith(changes: TrainingChange[]): TrainingProfile {
 }
 
 describe('Training details view (values only)', () => {
-  it('a new profile reads Not set, check-in every 6 weeks, 45 min, next-time targets Off', () => {
+  it('a new profile reads Not set and 45 min; Check-in and Self next-time targets aren’t shown yet (review B1, S3)', () => {
     const v = trainingDetailsView(profileWith([]), { nowYear: 2026, unit: 'kg' });
     expect(v.about.map((r) => [r.title, r.value])).toEqual([
       ['Birth year', 'Not set'],
@@ -33,11 +36,10 @@ describe('Training details view (values only)', () => {
     ]);
     expect(v.training.map((r) => [r.title, r.value])).toEqual([
       ['Goal', 'Not set'],
-      ['Check-in', 'Every 6 weeks'],
       ['Days a week', 'Not set'],
       ['Session length', '45 min'],
     ]);
-    expect(v.self).toEqual([{ key: 'nextTargets', title: 'Next-time targets', value: 'Off' }]);
+    expect(JSON.stringify(v)).not.toMatch(/Next-time|Check-in/);
     expect(v.weights).toEqual([]);
     expect(v.summary).toBe('Not set');
   });
@@ -61,7 +63,6 @@ describe('Training details view (values only)', () => {
       ['a', 'Tue 1 Sep 2026', '84 kg'],
     ]);
     expect(v.summary).toBe('34 · 81.6 kg · Muscle');
-    expect(v.self[0]?.value).toBe('On');
   });
 
   it('pickers: birth year bounded to 1920…now−10, starting at the stored year; height shows ft/in', () => {
@@ -71,10 +72,14 @@ describe('Training details view (values only)', () => {
   });
 
   it('Add weight reads a typed number (comma or point) and a date; nonsense is refused', () => {
-    expect(readWeightEntry('82,5', '2026-10-13')).toEqual({ value: 82.5, date: '2026-10-13' });
-    expect(readWeightEntry('abc', '2026-10-13')).toBeNull();
-    expect(readWeightEntry('80', '13/10/2026')).toBeNull();
-    expect(readWeightEntry('-3', '2026-10-13')).toBeNull();
+    const today = '2026-10-14';
+    expect(readWeightEntry('82,5', '2026-10-13', today)).toEqual({ value: 82.5, date: '2026-10-13' });
+    expect(readWeightEntry('82', today, today)).toEqual({ value: 82, date: today });
+    expect(readWeightEntry('abc', '2026-10-13', today)).toBeNull();
+    expect(readWeightEntry('80', '13/10/2026', today)).toBeNull();
+    expect(readWeightEntry('-3', '2026-10-13', today)).toBeNull();
+    // Review S5: a typo'd future date can't become the latest weight.
+    expect(readWeightEntry('80', '2027-10-13', today)).toBeNull();
   });
 
   it('minimal copy: no explanations or reassurance', () => {
@@ -101,6 +106,15 @@ describe('Split view', () => {
     expect(bodyPartChoices(['Biceps']).map((c) => c.part)).not.toContain('Forearms');
     expect(bodyPartChoices(['Biceps']).filter((c) => c.checked).map((c) => c.part)).toEqual(['Biceps']);
     expect(customStartDays(null).map((d) => d.name)).toEqual(['Push', 'Pull', 'Legs']);
+  });
+
+  it('review B2: after switching to a preset, Custom starts from the last custom days', () => {
+    const p = profileWith([
+      { kind: 'custom_split', days: [{ id: 'a', name: 'Arms', bodyParts: ['Biceps', 'Triceps'] }] },
+      { kind: 'preset_split', split: 'ppl' },
+    ]);
+    expect(splitView(p, {}).choices.find((c) => c.selected)?.kind).toBe('ppl');
+    expect(customStartDays(p)).toEqual([{ id: 'a', name: 'Arms', bodyParts: ['Biceps', 'Triceps'] }]);
   });
 });
 
@@ -130,7 +144,7 @@ describe('training service, end to end on the phone’s store', () => {
   it('survives a force-close (restart recovery)', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
-    await s.training.change({ kind: 'add_weight', entry: { id: 'w1', date: '2026-10-13', value: 82, unit: 'kg' } }, 1, 'tap-1');
+    await s.training.change({ kind: 'add_weight', entry: { id: 'w1', date: '2026-10-08', value: 82, unit: 'kg' } }, 1, 'tap-1');
     await h.forceClose();
     const { services: again } = await h.launch();
     expect((await again.training.snapshot())?.profile.weights.map((w) => w.value)).toEqual([82]);
@@ -165,10 +179,31 @@ describe('training service, end to end on the phone’s store', () => {
     const empty = await s.training.coachInput();
     expect(empty?.profile).toBeNull();
     await s.training.change({ kind: 'birth_year', year: 1990 }, 1, 't1');
-    await s.training.change({ kind: 'add_weight', entry: { id: 'w', date: '2026-10-13', value: 80, unit: 'kg' } }, 2, 't2');
+    await s.training.change({ kind: 'add_weight', entry: { id: 'w', date: '2026-10-08', value: 80, unit: 'kg' } }, 2, 't2');
     const input = await s.training.coachInput();
     expect(input?.profile?.about.birthYear).toBe(1990);
     expect(input?.nextDayId).toBe('push');
+  });
+});
+
+describe('an unreadable training row (review S4)', () => {
+  const owner = { id: 'owner-1', createdAtUtc: '2026-10-01T08:00:00.000Z', preferredUnit: 'kg' } as UserProfile;
+  const svc = (get: () => Promise<TrainingProfile | null>) =>
+    createTrainingService({
+      store: () => ({ repos: { trainingProfiles: { get }, exercises: { list: () => Promise.resolve([]) }, sessions: { listFinishedBetweenReadable: () => Promise.resolve({ sessions: [], unreadable: 0 }) } } }) as unknown as Store,
+      profile: () => Promise.resolve(owner),
+      now: () => ({ utc: '2026-10-14T08:00:00.000Z', tz: 'Europe/London' }),
+    });
+
+  it('isn’t shown as defaults: the screen read and the coach input fail; the Build card still gets the default split', async () => {
+    const s = svc(() => Promise.reject(new Error('Document failed validation')));
+    await expect(s.snapshot()).rejects.toThrow();
+    await expect(s.coachInput()).rejects.toThrow();
+    expect((await s.buildCard()).days.map((d) => d.day.name)).toEqual(['Push', 'Pull', 'Legs']);
+  });
+
+  it('a row that isn’t there yet still reads as the defaults', async () => {
+    expect((await svc(() => Promise.resolve(null)).snapshot())?.profile.version).toBe(1);
   });
 });
 

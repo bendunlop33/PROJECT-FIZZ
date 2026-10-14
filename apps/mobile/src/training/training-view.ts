@@ -15,7 +15,6 @@ export const TRAINING_COPY = {
   aboutYou: 'ABOUT YOU',
   weight: 'WEIGHT',
   training: 'TRAINING',
-  self: 'SELF SESSIONS',
   birthYear: 'Birth year',
   gender: 'Gender',
   height: 'Height',
@@ -24,9 +23,10 @@ export const TRAINING_COPY = {
   checkIn: 'Check-in',
   days: 'Days a week',
   length: 'Session length',
-  nextTargets: 'Next-time targets',
   addWeight: 'Add weight',
   delete: 'Delete',
+  deleted: 'Weight deleted',
+  undo: 'Undo',
   notSet: 'Not set',
   save: 'Save',
   cancel: 'Cancel',
@@ -70,7 +70,7 @@ export const SPLIT_CHOICES: readonly { kind: SplitKind; label: string }[] = [
 
 const labelOf = <T>(choices: readonly { value: T; label: string }[], v: T | undefined): string => (v === undefined ? TRAINING_COPY.notSet : (choices.find((c) => c.value === v)?.label ?? TRAINING_COPY.notSet));
 
-export type TrainingRowKey = 'birthYear' | 'gender' | 'height' | 'experience' | 'goal' | 'checkIn' | 'days' | 'length' | 'nextTargets';
+export type TrainingRowKey = 'birthYear' | 'gender' | 'height' | 'experience' | 'goal' | 'checkIn' | 'days' | 'length';
 
 export interface TrainingRow {
   key: TrainingRowKey;
@@ -89,12 +89,15 @@ export interface TrainingDetailsView {
   about: TrainingRow[];
   weights: WeightRowView[];
   training: TrainingRow[];
-  self: TrainingRow[];
   /** Profile hub subtitle: `34 · 82.5 kg · Strength`, or `Not set`. */
   summary: string;
 }
 
-/** The Training details screen (values only). Weights newest first, shown in Ben's unit. */
+/**
+ * The Training details screen (values only). Weights newest first, shown in
+ * Ben's unit. Check-in and Self next-time targets are stored but not shown
+ * until the check-in prompt and Self sessions exist (review B1, S3).
+ */
 export function trainingDetailsView(p: TrainingProfile, s: { nowYear: number; unit: WeightUnit }): TrainingDetailsView {
   const a = p.about;
   const latest = latestWeight(p.weights);
@@ -118,11 +121,9 @@ export function trainingDetailsView(p: TrainingProfile, s: { nowYear: number; un
     weights,
     training: [
       { key: 'goal', title: TRAINING_COPY.goal, value: labelOf(GOAL_CHOICES, p.goal) },
-      { key: 'checkIn', title: TRAINING_COPY.checkIn, value: `Every ${String(p.checkInWeeks)} weeks` },
       { key: 'days', title: TRAINING_COPY.days, value: p.daysPerWeek === undefined ? TRAINING_COPY.notSet : String(p.daysPerWeek) },
       { key: 'length', title: TRAINING_COPY.length, value: `${String(p.sessionMinutes)} min` },
     ],
-    self: [{ key: 'nextTargets', title: TRAINING_COPY.nextTargets, value: p.selfNextTargets ? 'On' : 'Off' }],
     summary: summaryParts.length === 0 ? TRAINING_COPY.notSet : summaryParts.join(' · '),
   };
 }
@@ -141,13 +142,13 @@ export function heightPicker(cm: number): { label: string; limits: { min: number
 
 /**
  * The Add weight sheet's entry, read from what Ben typed: a positive number
- * (comma or point) and a calendar date. Null when it can't be read; range
+ * (comma or point) and a calendar date not after `today`. Null when it can't be read; range
  * checks happen in the domain write.
  */
-export function readWeightEntry(text: string, date: string): { value: number; date: string } | null {
+export function readWeightEntry(text: string, date: string, today: string): { value: number; date: string } | null {
   const v = Number(text.trim().replace(',', '.'));
   if (!Number.isFinite(v) || v <= 0) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || localDateKey(localHourUtcMs(date, 12, 'UTC'), 'UTC') !== date) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || localDateKey(localHourUtcMs(date, 12, 'UTC'), 'UTC') !== date || date > today) return null;
   return { value: v, date };
 }
 
@@ -190,7 +191,11 @@ export function bodyPartChoices(selected: readonly SplitBodyPart[]): { part: Spl
   return SPLIT_BODY_PARTS.map((part) => ({ part, checked: selected.includes(part) }));
 }
 
-/** The days a custom split starts from when Ben picks Custom: his current days, so nothing is lost. */
+/**
+ * The days a custom split starts from: the custom days in use, else his last
+ * custom days (kept while a preset was in use; review B2), else the current preset's.
+ */
 export function customStartDays(p: TrainingProfile | null): { id: string; name: string; bodyParts: SplitBodyPart[] }[] {
-  return splitInUse(p).days.map((d) => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] }));
+  const days = p?.split?.kind !== 'custom' && p?.customDays !== undefined ? p.customDays : splitInUse(p).days;
+  return days.map((d) => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] }));
 }
