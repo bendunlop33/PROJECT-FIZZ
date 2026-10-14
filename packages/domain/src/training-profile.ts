@@ -1,4 +1,5 @@
 import {
+  type BuildFocus,
   muscleGroupOf,
   SplitBodyPartSchema,
   TRAINING_LIMITS,
@@ -6,6 +7,7 @@ import {
   type Exercise,
   type Load,
   type MuscleGroup,
+  type SessionAggregate,
   type SplitBodyPart,
   type SplitDay,
   type TrainingChange,
@@ -327,3 +329,51 @@ export function bodyweightLoadKg(bodyweightKg: number | null, load: Pick<Load, '
 
 /** True for a split body part list made of valid parts (for UI pickers). */
 export const isSplitBodyPart = (s: string): s is SplitBodyPart => SplitBodyPartSchema.safeParse(s).success;
+
+const PRESET_FOCUS: Readonly<Record<string, BuildFocus>> = { push: 'push', pull: 'pull', legs: 'legs', chest: 'chest', shoulders: 'shoulders', back: 'back' };
+
+/** F19: a split day's build focus; a custom day is `split_day`, named by its own name. */
+export function splitDayFocus(split: Pick<TrainingSplit, 'kind'>, day: Pick<SplitDay, 'id'>): BuildFocus {
+  return split.kind !== 'custom' ? (PRESET_FOCUS[day.id] ?? 'split_day') : 'split_day';
+}
+
+type ExerciseInfo = Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'mechanic'>;
+
+/** Completed working sets per session exercise row (warm-ups don't count). */
+function workingSetsBy(a: SessionAggregate): Map<string, { sets: number; bestKg: number | null }> {
+  const out = new Map<string, { sets: number; bestKg: number | null }>();
+  for (const s of a.sets) {
+    if (s.status !== 'completed' || s.setType === 'warmup') continue;
+    const cur = out.get(s.sessionExerciseId) ?? { sets: 0, bestKg: null };
+    const l = s.actual?.load ?? null;
+    const kg = l === null || l.convention === 'bodyweight' || l.convention === 'assistance' ? null : l.unit === 'kg' ? l.value : l.value * KG_PER_LB;
+    out.set(s.sessionExerciseId, { sets: cur.sets + 1, bestKg: kg === null ? cur.bestKg : Math.max(cur.bestKg ?? 0, kg) });
+  }
+  return out;
+}
+
+/** Ben's lifts from finished workouts, for `recommendMainLift`: how many workouts each was in and its heaviest working load. */
+export function liftHistoryFrom(sessions: readonly SessionAggregate[], exerciseOf: (id: string) => ExerciseInfo | null): LiftHistory[] {
+  const by = new Map<string, LiftHistory>();
+  for (const a of sessions) {
+    const sets = workingSetsBy(a);
+    const seen = new Set<string>();
+    for (const ex of a.exercises) {
+      const w = sets.get(ex.id);
+      const info = exerciseOf(ex.exerciseId);
+      if (w === undefined || info === null || seen.has(info.id)) continue;
+      seen.add(info.id);
+      const cur = by.get(info.id) ?? { exercise: info, sessions: 0, bestKg: null };
+      by.set(info.id, { exercise: info, sessions: cur.sessions + 1, bestKg: w.bestKg === null ? cur.bestKg : Math.max(cur.bestKg ?? 0, w.bestKg) });
+    }
+  }
+  return [...by.values()];
+}
+
+/** The muscle groups of the newest finished workout (by start), for `nextSplitDay`; null with none. */
+export function lastWorkoutGroups(sessions: readonly SessionAggregate[], exerciseOf: (id: string) => ExerciseInfo | null): Map<MuscleGroup, number> | null {
+  const last = [...sessions].sort((a, b) => (a.session.startedAt.utc < b.session.startedAt.utc ? 1 : a.session.startedAt.utc > b.session.startedAt.utc ? -1 : 0))[0];
+  if (last === undefined) return null;
+  const sets = workingSetsBy(last);
+  return workoutMuscleGroups(last.exercises.map((ex) => ({ primaryMuscles: exerciseOf(ex.exerciseId)?.primaryMuscles ?? [], workingSets: sets.get(ex.id)?.sets ?? 0 })));
+}

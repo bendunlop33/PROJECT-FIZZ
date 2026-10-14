@@ -19,9 +19,13 @@ import {
   PRESET_SPLITS,
   recommendMainLift,
   weightText,
+  lastWorkoutGroups,
+  liftHistoryFrom,
+  splitDayFocus,
   workoutMuscleGroups,
   type LiftHistory,
 } from '../src/index';
+import { richFinishedSession, SPLIT_SQUAT } from './testing';
 
 const ID = '00000000-0000-4000-8000-000000000001';
 const OWNER = '00000000-0000-4000-8000-000000000002';
@@ -217,5 +221,29 @@ describe('main lift (D7)', () => {
 
   it('options are compound lifts for the day’s body parts, by name', () => {
     expect(mainLiftOptions({ bodyParts: ['Chest'] }, history.map((h) => h.exercise)).map((e) => e.id)).toEqual(['bench', 'incline']);
+  });
+});
+
+describe('from history (finished workouts)', () => {
+  const squat = { ...SPLIT_SQUAT, primaryMuscles: ['quads'], mechanic: 'compound' as const };
+  const exerciseOf = (id: string) => (id === squat.id ? squat : null);
+
+  it('counts each exercise once per workout with its heaviest completed working load (per-hand kept as typed)', () => {
+    const h = liftHistoryFrom([richFinishedSession(), richFinishedSession()], exerciseOf);
+    expect(h).toEqual([{ exercise: squat, sessions: 2, bestKg: 15 }]);
+    expect(liftHistoryFrom([richFinishedSession()], () => null)).toEqual([]);
+  });
+
+  it('the last workout’s groups feed the rotation: split squats (quads) → Legs, so Push is next', () => {
+    const g = lastWorkoutGroups([richFinishedSession()], exerciseOf);
+    expect(g?.get('Quads')).toBeGreaterThan(0);
+    expect(nextSplitDay(DEFAULT_SPLIT, g).id).toBe('push');
+    expect(lastWorkoutGroups([], exerciseOf)).toBeNull();
+  });
+
+  it('a split day’s build focus: preset days by ID, custom days by name (split_day)', () => {
+    expect(splitDayFocus({ kind: 'clsb' }, { id: 'shoulders' })).toBe('shoulders');
+    expect(splitDayFocus({ kind: 'ppl' }, { id: 'pull' })).toBe('pull');
+    expect(splitDayFocus({ kind: 'custom' }, { id: 'legs' })).toBe('split_day');
   });
 });

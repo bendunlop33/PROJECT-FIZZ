@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { newCheckIn, newPainFlag } from '@fizz/domain';
-import type { CoachMessage, Memory } from '@fizz/schemas';
+import { applyTrainingChange, newCheckIn, newPainFlag, newTrainingProfile } from '@fizz/domain';
+import type { CoachMessage, Memory, TrainingChange, TrainingProfile } from '@fizz/schemas';
 import { buildPlaybookBundle, PLAYBOOK_JSON, PLAYBOOK_MD } from '../scripts/playbook-bundle';
 import { buildCoachContext, chatRuleNumbers, contextInputItems, describeCoachContext, PLAYBOOK_V1, type CoachContextInput } from '../src/context';
 import { at, id, OWNER, workout } from './turn-fixtures';
@@ -96,7 +96,7 @@ describe('buildCoachContext: Your data and Coaching knowledge stay apart (rule 1
   it('nothing invented: history, goals, schedule, recovery and endurance are listed as not available (rule 6, review S4)', () => {
     expect(buildCoachContext(input()).notAvailable).toEqual([
       'Training history before this workout: not available',
-      'Goals and training schedule: not set in this app yet',
+      'Training details (age, gender, height, weight, experience, goal, schedule): not available',
       'Recovery, sleep or wearable data: none',
       'Runs, rides or other endurance sessions: none logged',
     ]);
@@ -203,5 +203,63 @@ describe('timed and distance sets in the workout view (review gaps N2)', () => {
     expect(sets.find((x) => x.setId === warm?.id)?.actual).toEqual({ load: kg(60), reps: { min: 10, max: 10 }, rpe: null });
     const sled = { ...s, sets: s.sets.map((x) => (x.id === warm?.id && x.actual ? { ...x, actual: { ...x.actual, reps: null, distanceM: 20 } } : x)) };
     expect(workoutView(sled, 'Main').exercises.flatMap((e) => e.sets).find((x) => x.setId === warm?.id)?.actual).toMatchObject({ load: kg(60), reps: null, distanceM: 20 });
+  });
+});
+
+describe('training details in the planning context (13 Oct, D7, D8)', () => {
+  function details(changes: TrainingChange[]): TrainingProfile {
+    let p = newTrainingProfile({ id: id(700), ownerId: OWNER, atUtc: at(0).utc });
+    changes.forEach((c, i) => {
+      const r = applyTrainingChange(p, c, { opId: `t${String(i)}`, expectedVersion: p.version, atUtc: at(i + 1).utc, nowYear: 2026 });
+      if (!r.ok) throw new Error(r.error);
+      p = r.profile;
+    });
+    return p;
+  }
+
+  it('sends age (from birth year), gender, height, latest weight, experience, goal, days, length, split and main lifts as Your data', () => {
+    const profile = details([
+      { kind: 'birth_year', year: 1990 },
+      { kind: 'gender', gender: 'male' },
+      { kind: 'height', cm: 181 },
+      { kind: 'add_weight', entry: { id: 'w1', date: '2026-09-01', value: 84, unit: 'kg' } },
+      { kind: 'add_weight', entry: { id: 'w2', date: '2026-10-10', value: 181, unit: 'lb' } },
+      { kind: 'experience', level: 'experienced' },
+      { kind: 'goal', goal: 'both' },
+      { kind: 'days_per_week', days: 4 },
+      { kind: 'session_minutes', minutes: 60 },
+      { kind: 'preset_split', split: 'clsb' },
+    ]);
+    const ctx = buildCoachContext(input({ training: { profile, nowYear: 2026, mainLifts: { chest: { exerciseId: 'b', name: 'Bench press', source: 'yours' }, legs: { exerciseId: 's', name: 'Squat', source: 'recommended' } }, nextDayId: 'shoulders' } }));
+    expect(ctx.yourData.training).toEqual({
+      age: { years: 36, fromBirthYear: 1990 },
+      gender: 'male',
+      heightCm: 181,
+      bodyweight: { value: 181, unit: 'lb', date: '2026-10-10', use: 'bodyweight, weighted and assisted exercises' },
+      liftingExperience: 'experienced',
+      goal: 'both',
+      daysPerWeek: 4,
+      sessionMinutes: 60,
+      split: {
+        kind: 'clsb',
+        chosenByBen: true,
+        days: [
+          { name: 'Chest', bodyParts: ['Chest', 'Triceps'], mainLift: { name: 'Bench press', source: 'Ben chose' } },
+          { name: 'Legs', bodyParts: ['Quads', 'Hamstrings', 'Glutes', 'Calves'], mainLift: { name: 'Squat', source: 'recommended from history' } },
+          { name: 'Shoulders', bodyParts: ['Shoulders', 'Triceps'], mainLift: null },
+          { name: 'Back', bodyParts: ['Back', 'Biceps'], mainLift: null },
+        ],
+        upNext: 'Shoulders',
+      },
+    });
+    expect(ctx.notAvailable.some((l) => l.includes('not set'))).toBe(false);
+    expect(JSON.stringify(ctx.coachingKnowledge)).not.toContain('Bench press (');
+    expect(describeCoachContext(ctx).yourData.map((l) => l.label)).toEqual(expect.arrayContaining(['About you', 'Training', 'Split']));
+  });
+
+  it('nothing invented: unset values are absent and listed as not set; the default split is marked as not chosen', () => {
+    const ctx = buildCoachContext(input({ training: { profile: null, nowYear: 2026, mainLifts: {}, nextDayId: null } }));
+    expect(ctx.yourData.training).toEqual({ sessionMinutes: 45, split: { kind: 'ppl', chosenByBen: false, days: expect.any(Array) as unknown, upNext: null } });
+    expect(ctx.notAvailable).toEqual(expect.arrayContaining(['Age (birth year): not set', 'Gender: not set', 'Height: not set', 'Bodyweight: not set', 'Lifting experience: not set', 'Goal: not set', 'Days a week: not set']));
   });
 });
