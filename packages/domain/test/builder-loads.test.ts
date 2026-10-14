@@ -501,6 +501,50 @@ describe('review builder-v2 r2: code’s reason line, coach notes, newest-alone 
     }
   });
 
+  it('B1s (r3): "last time" spans an arrow or a pair; past-time words next to an arrowed target fail', () => {
+    for (const words of [
+      '→ 102.5×8 last time',
+      'last time -> 102.5 for 8',
+      'last session → 102.5 for 8',
+      'last 3 → 102.5×8 each time',
+      'last time → 102.5',
+      'did → 102.5',
+      'last → 102.5×8',
+      '→ 7 reps at 102.5 last time',
+      '100×7 → 102.5×8 previously',
+    ]) {
+      const c = checkProposedLoad(P(102.5, 'total', words), BENCH_SLOT, benchRefs(), NO_PAIN);
+      expect({ words, note: c.coachNote, notUsed: c.notUsed, basis: c.basis, load: c.load?.value }).toEqual({ words, note: null, notUsed: words, basis: CODE_LINE, load: 102.5 });
+    }
+    // The real ones still pass: the "last time" load is the most recent session's, the arrow starts today's target.
+    for (const words of ['100 last time → 102.5', 'last time: 100×7 → 102.5', 'last time 100 → 102.5 for 8', '100×7 each time → 102.5', 'last 3 → 102.5×8']) {
+      expect({ words, note: checkProposedLoad(P(102.5, 'total', words), BENCH_SLOT, benchRefs(), NO_PAIN).coachNote }).toEqual({ words, note: words });
+    }
+  });
+
+  it('B1s (r3): a number written as a load, or equal to the proposal, must be a real load, not a rep, RPE or day', () => {
+    // Lateral raise on a 1 kg-step rack: last 11 each ×15 @8, slot 12–15 @8, proposal 12 each (12 is the slot's repsMin).
+    const LATERAL = exercise(223, 'Lateral raise', { movementPattern: 'shoulder_abduction', compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+    const kgRack = dumbbells({ id: id(711), gymId: MAIN, loads: steps(1, 20, 1) });
+    const r = refs(LATERAL, [session(960, 3, kgRack, [{ load: kg(11, 'per_hand'), reps: 15, rpe: 8 }])], [kgRack]);
+    const lat = slot(12, 15, 8);
+    const real = '11 each ×15 @8 → 12 each';
+    expect(checkProposedLoad(P(12, 'per_hand', real), lat, r, NO_PAIN)).toMatchObject({ load: { value: 12 }, coachNote: real });
+    for (const words of ['did 12 each', 'previous: 12 each', 'was 12 each, keep', '12 each', 'last 11×15 @8, 12 before', 'last 11×15 → 15 each']) {
+      const c = checkProposedLoad(P(12, 'per_hand', words), lat, r, NO_PAIN);
+      expect({ words, note: c.coachNote, notUsed: c.notUsed, load: c.load?.value }).toEqual({ words, note: null, notUsed: words, load: 12 });
+    }
+    // checkBasis directly: a rep, RPE or day number is never a load; the proposal is never a bare number.
+    const allowed = { numbers: [100, 7, 8, 6, 28, 2.5], loads: [100, 2.5], sets: [{ value: 100, reps: 7, rpe: 8 }], targets: [102.5, 28], reps: { min: 6, max: 8 }, lastLoads: [100] };
+    expect(checkBasis('on 28 Sep', { ...allowed, targets: [102.5] }, 1)).toBe(true);
+    expect(checkBasis('on 28 Sep', allowed, 1)).toBe(false);
+    expect(checkBasis('was 8 kg', allowed, 1)).toBe(false);
+    expect(checkBasis('+6', allowed, 1)).toBe(false);
+    expect(checkBasis('+2.5 from 100', allowed, 1)).toBe(true);
+    expect(checkBasis('100×7 @8 → 28 kg', allowed, 1)).toBe(true);
+    expect(checkBasis('100×7 @8 → 8 kg', allowed, 1)).toBe(false);
+  });
+
   it('B1r: real sets in any wording, and the proposal after an arrow, pass as a Coach’s note (still not the line)', () => {
     for (const words of ['last 3: 100×7 @8 → 102.5', '100 for 7 @8 → 102.5', '7 reps at 100 → 102.5', '100 last time → 102.5', 'last 100/7 → +2.5', 'last 100×7 @8 → 102.5 for 7', 'last time: 100×7 → 102.5', '97.5 for 8 @8, 100×7 @8 → 102.5']) {
       const c = checkProposedLoad(P(102.5, 'total', words), BENCH_SLOT, benchRefs(), NO_PAIN);

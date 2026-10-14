@@ -713,16 +713,19 @@ export function fitKeepingTail(line: string, max: number): string {
 }
 
 /**
- * What a coach note may cite (§7 basis rules, review B1, r2 B1r).
+ * What a coach note may cite (§7 basis rules, review B1, r2 B1r, r3 B1s).
  * `numbers`: bare numbers (references, the slot's reps and RPE, differences,
- * dates); never the proposal's values. `sets`: the only `load×reps` pairs it
- * may cite, the reference sets themselves. `targets`: the proposal's
+ * dates); never the proposal's values. `loads`: the numbers that may be
+ * written as a load (reference loads, the e1RM, differences), never a rep,
+ * RPE or day number; absent → `numbers`. `sets`: the only `load×reps` pairs
+ * it may cite, the reference sets themselves. `targets`: the proposal's
  * values, allowed only after an arrow (`→ 102.5`, `→ 102.5×6` with reps in
  * the slot's range). `lastLoads`: the loads of the most recent session
  * (`100 last time`).
  */
 export interface BasisAllowed {
   numbers: readonly number[];
+  loads?: readonly number[];
   sets: readonly RefSet[];
   targets?: readonly number[];
   reps?: { min: number; max: number };
@@ -731,25 +734,35 @@ export interface BasisAllowed {
 
 function basisAllowed(refs: LoadReferences, slot: LoadSlot, proposal: readonly number[]): BasisAllowed {
   const numbers: number[] = [slot.repsMin, slot.repsMax, slot.targetRpe];
+  const loads: number[] = [];
   const sets: RefSet[] = [];
   const sessions = refs.own?.sessions ?? (refs.latest === null ? [] : [refs.latest]);
   for (const s of sessions) {
     for (const x of s.sets) {
       numbers.push(x.value, x.reps, ...(x.rpe === null ? [] : [x.rpe]));
+      loads.push(x.value);
       sets.push(x);
     }
     const day = Number(dayMonthText(s.performedAtUtc, s.tz).split(/\s/)[0]);
     if (Number.isFinite(day)) numbers.push(day);
-    for (const v of proposal) numbers.push(Math.abs(round2(v - s.top.value)));
+    for (const v of proposal) {
+      const diff = Math.abs(round2(v - s.top.value));
+      numbers.push(diff);
+      loads.push(diff);
+    }
   }
   const e1rm = refs.own?.e1rm ?? null;
-  if (e1rm !== null) numbers.push(e1rm);
+  if (e1rm !== null) {
+    numbers.push(e1rm);
+    loads.push(e1rm);
+  }
   if (refs.derived !== null) {
     numbers.push(...refs.derived.numbers, refs.derived.e1rm);
+    loads.push(...refs.derived.sets.map((x) => x.value), refs.derived.e1rm);
     sets.push(...refs.derived.sets);
   }
   const last = refs.latest ?? sessions[0] ?? null;
-  return { numbers, sets, targets: proposal, reps: { min: slot.repsMin, max: slot.repsMax }, lastLoads: last === null ? [] : last.sets.map((x) => x.value) };
+  return { numbers, loads, sets, targets: proposal, reps: { min: slot.repsMin, max: slot.repsMax }, lastLoads: last === null ? [] : last.sets.map((x) => x.value) };
 }
 
 /** A number as written matches a value: exactly (±0.05), or the value rounded to a half, a tenth or a whole. */
@@ -772,17 +785,46 @@ const PAIR_TIMES: PairForm = { re: new RegExp(String.raw`${ARROW}\+?${NO_NUM_BEF
 const PAIR_FOR: PairForm = { re: new RegExp(String.raw`${ARROW}\+?${NO_NUM_BEFORE}${NUM}${LOAD_WORDS}\s+for\s+(\d+)\b(?:\s*reps?\b)?${RPE_PART}`, 'giu'), arrow: 1, value: 2, reps: 3, rpe: 4 };
 /** `7 reps at 100`, `8 reps with 102.5 kg @8`. */
 const PAIR_REPS_AT: PairForm = { re: new RegExp(String.raw`${ARROW}${NO_NUM_BEFORE}(\d+)\s*reps?\s+(?:at|with|on|of)\s+\+?${NUM}${LOAD_WORDS}${RPE_PART}`, 'giu'), arrow: 1, value: 3, reps: 2, rpe: 4 };
-/** `100 last time`, `100 kg previously`: a load claimed for the most recent session. */
-const LOAD_LAST_TIME = new RegExp(String.raw`\+?${NO_NUM_BEFORE}${NUM}${LOAD_WORDS}\s+(?:last\s+(?:time|session|workout|week)|previously)\b`, 'giu');
-/** `last time: 100`, `last session 100 kg`. */
-const LAST_TIME_LOAD = new RegExp(String.raw`\blast\s+(?:time|session|workout)\s*:?\s*\+?${NUM}`, 'giu');
-/** `→ 102.5`, `-> +2.5`: a target on its own. */
-const ARROW_VALUE = new RegExp(String.raw`(?:→|->)\s*\+?${NUM}`, 'gu');
+
+// "Last time" forms (review r3 B1s). They are checked on the whole note, before any pair is stripped, and
+// span an arrow and a pair: the load they name must be one of the most recent session's.
+const LAST_WORDS = String.raw`(?:last\s+(?:time|session|workout|week|wk)|previous(?:ly)?|each\s+time|every\s+time)`;
+const PAIR_TAIL = String.raw`(?:\s*(?:[×x*/]|\s+for\s+)\s*\d+\b(?:\s*reps?\b)?)?${RPE_PART}`;
+/** `100 last time`, `→ 102.5×8 last time`, `100 kg for 7 previously`, `102.5×8 each time`. */
+const LOAD_LAST_TIME = new RegExp(String.raw`\+?${NO_NUM_BEFORE}${NUM}${LOAD_WORDS}${PAIR_TAIL}\s+${LAST_WORDS}\b`, 'giu');
+/** `8 reps at 102.5 last time`. */
+const REPS_AT_LAST_TIME = new RegExp(String.raw`${NO_NUM_BEFORE}\d+\s*reps?\s+(?:at|with|on|of)\s+\+?${NUM}${LOAD_WORDS}${RPE_PART}\s+${LAST_WORDS}\b`, 'giu');
+/** `last time: 100`, `last session 100 kg`, `last time -> 102.5 for 8`, `last time: 7 reps at 100`. */
+const LAST_TIME_LOAD = new RegExp(String.raw`\b(?:last\s+(?:time|session|workout|week|wk)|previous(?:ly)?)\s*:?\s*(?:(?:→|->)\s*)?(?:\d+\s*reps?\s+(?:at|with|on|of)\s+)?\+?${NUM}`, 'giu');
+/** Words that say a result already happened; never next to an arrowed target (review r3 B1s). */
+const PAST = /\b(?:last\s+(?:time|session|workout|week|wk)|previous(?:ly)?|each\s+time|every\s+time|did|done|was|were|hit|got|managed|lifted|before|ago)\b/iu;
+/** `→ 102.5`, `-> +2.5`, `→ 12 each`: a target on its own. */
+const ARROW_VALUE = new RegExp(String.raw`(?:→|->)\s*(\+)?${NUM}((?:\s*(?:kg|lbs?)\b)?(?:\s*(?:each|assist)\b)?)`, 'giu');
+/** A bare number; group 1 `+`, group 3 a load word after it (`12 each`, `100 kg`). */
+const BARE_NUM = /(\+\s*)?(\d+(?:[.,]\d+)?)(\s*(?:kg|lbs?|each|assist)\b)?/giu;
 
 /** Every match of `re` passes `ok` → the text with the matches blanked; any fails → null. */
 function stripChecked(text: string, re: RegExp, ok: (m: RegExpMatchArray) => boolean): string | null {
   for (const m of text.matchAll(re)) if (!ok(m)) return null;
   return text.replace(re, ' ');
+}
+
+/**
+ * Whether a past-time word sits next to an arrowed target (review r3 B1s):
+ * after the arrow in the same clause (`→ 102.5×8 each time`), or right
+ * before it with no number of its own (`did → 102.5`, `last time -> 102.5`).
+ * `100 last time → 102.5` is fine: the clause before names its own load.
+ */
+function pastNextToArrow(text: string): boolean {
+  for (const m of text.matchAll(/→|->/gu)) {
+    const at = m.index;
+    const after = text.slice(at + m[0].length).split(/[,;·()→]|->/u)[0] ?? '';
+    if (PAST.test(after)) return true;
+    const before = text.slice(0, at).split(/[,;·()→]|->/u).pop() ?? '';
+    if (PAST.test(before) && !/\d/.test(before.replace(/\blast\s+\d+\b/giu, ' '))) return true;
+    if (/\blast\s*:?\s*$/iu.test(before)) return true;
+  }
+  return false;
 }
 
 const PRAISE = /\b(?:safe(?:ly)?|guarantee[ds]?|great|awesome|amazing|excellent|perfect|crush(?:ing)?|easy|score[sd]?)\b/i;
@@ -793,10 +835,14 @@ const PRAISE = /\b(?:safe(?:ly)?|guarantee[ds]?|great|awesome|amazing|excellent|
  * characters; every `load×reps` pair, in any form (`A×B`, `A x B`, `A*B`,
  * `A/B`, `A for B`, `B reps at A`), is a reference set (its RPE too when
  * cited), or, after an arrow, the proposal with reps in the slot's range; a
- * load said to be `last time` is one of the most recent session's; the
- * proposal's values appear only after an arrow; every other number is one
- * it may cite (`last N` with N ≤ the references listed); `1RM` or `max`
- * only with `est.` or `≈`; no praise, scores, "safe" or "guaranteed". Pure.
+ * load said to be `last time` (before or after it, across an arrow or a
+ * pair) is one of the most recent session's; no past-time word next to an
+ * arrowed target; the proposal's values appear only after an arrow, unless
+ * they are a real reference load; a number written as a load (`12 each`,
+ * `+2.5`, `100 kg`) is a reference load, the e1RM or a difference, never a
+ * rep, RPE or day number; every other number is one it may cite (`last N`
+ * with N ≤ the references listed); `1RM` or `max` only with `est.` or `≈`;
+ * no praise, scores, "safe" or "guaranteed". Pure.
  */
 export function checkBasis(basis: string, allowed: BasisAllowed, refCount: number): boolean {
   let t = basis.trim();
@@ -804,8 +850,21 @@ export function checkBasis(basis: string, allowed: BasisAllowed, refCount: numbe
   if (PRAISE.test(t)) return false;
   if (/\b1\s?rm\b|\bmax\b/i.test(t) && !/est\.|≈|~/i.test(t)) return false;
   const num = (x: string | undefined): number => Number((x ?? '').replace(',', '.'));
+  const loads = allowed.loads ?? allowed.numbers;
+  const targets = allowed.targets ?? [];
+  const isLoad = (n: number): boolean => loads.some((a) => citesValue(a, n));
+  const isTarget = (n: number): boolean => targets.some((a) => citesValue(a, n));
+  // Review r3 B1s: "last time" claims first, on the whole note, so an arrow or a pair can't hide them.
+  const lastLoad = (m: RegExpMatchArray): boolean => (allowed.lastLoads ?? []).some((a) => citesValue(a, num(m[1])));
+  for (const re of [LOAD_LAST_TIME, REPS_AT_LAST_TIME]) for (const m of t.matchAll(re)) if (!lastLoad(m)) return false;
+  for (const m of t.matchAll(LAST_TIME_LOAD)) {
+    // `100 last time → 102.5`: the words claim the load before them (checked above); the arrow starts the target.
+    const claimedBefore = /→|->/u.test(m[0]) && /\d/.test((t.slice(0, m.index).split(/[,;·()→]|->/u).pop() ?? '').replace(/\blast\s+\d+\b/giu, ' '));
+    if (!claimedBefore && !lastLoad(m)) return false;
+  }
+  if (pastNextToArrow(t)) return false;
   const realSet = (value: number, reps: number, rpe: number | null): boolean => allowed.sets.some((s) => citesValue(s.value, value) && s.reps === reps && (rpe === null || (s.rpe !== null && Math.abs(s.rpe - rpe) < 0.051)));
-  const target = (value: number, reps: number, rpe: number | null): boolean => rpe === null && (allowed.targets ?? []).some((a) => citesValue(a, value)) && allowed.reps !== undefined && reps >= allowed.reps.min && reps <= allowed.reps.max;
+  const target = (value: number, reps: number, rpe: number | null): boolean => rpe === null && isTarget(value) && allowed.reps !== undefined && reps >= allowed.reps.min && reps <= allowed.reps.max;
   for (const f of [PAIR_TIMES, PAIR_FOR, PAIR_REPS_AT]) {
     const r = stripChecked(t, f.re, (m) => {
       const value = num(m[f.value]);
@@ -816,20 +875,23 @@ export function checkBasis(basis: string, allowed: BasisAllowed, refCount: numbe
     if (r === null) return false;
     t = r;
   }
-  for (const re of [LOAD_LAST_TIME, LAST_TIME_LOAD]) {
-    const r = stripChecked(t, re, (m) => (allowed.lastLoads ?? []).some((a) => citesValue(a, num(m[1]))));
-    if (r === null) return false;
-    t = r;
-  }
-  const arrowed = stripChecked(t, ARROW_VALUE, (m) => [...(allowed.targets ?? []), ...allowed.numbers].some((a) => citesValue(a, num(m[1]))));
+  // The words of a checked "last time" claim carry no number of their own now.
+  t = t.replace(new RegExp(String.raw`\b${LAST_WORDS}\b`, 'giu'), ' ');
+  const arrowed = stripChecked(t, ARROW_VALUE, (m) => {
+    const n = num(m[2]);
+    const asLoad = m[1] !== undefined || (m[3] ?? '').trim() !== '';
+    return isTarget(n) || isLoad(n) || (!asLoad && allowed.numbers.some((a) => citesValue(a, n)));
+  });
   if (arrowed === null) return false;
   t = arrowed;
-  const lastN = /\blast\s+(\d+)(?![.,]?\d)\b(?!\s*(?:kg|lb|×|x\b))/gi;
+  const lastN = /\blast\s+(\d+)(?![.,]?\d)\b(?!\s*(?:kg|lb|×|x\b|each|assist))/gi;
   for (const m of t.matchAll(lastN)) if (Number(m[1]) > refCount) return false;
   const rest = t.replace(lastN, ' ').replace(/\b1\s?rm\b/gi, ' ').replace(/\bRPE\b/gi, ' ');
-  for (const m of rest.matchAll(/\d+(?:[.,]\d+)?/g)) {
-    const n = num(m[0]);
-    if (!allowed.numbers.some((a) => citesValue(a, n))) return false;
+  for (const m of rest.matchAll(BARE_NUM)) {
+    const n = num(m[2]);
+    const asLoad = m[1] !== undefined || m[3] !== undefined;
+    // Review r3 B1s: a number written as a load, or equal to the proposal, must be a real load (not a rep, RPE or day).
+    if ((asLoad || targets.some((a) => Math.abs(a - n) < 0.051)) ? !isLoad(n) : !allowed.numbers.some((a) => citesValue(a, n))) return false;
   }
   return true;
 }
