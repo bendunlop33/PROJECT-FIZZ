@@ -1,7 +1,7 @@
-import { ageFromBirthYear, feetInches, heightText, latestWeight, splitInUse, weightText, type MainLift } from '@fizz/domain';
+import { ageFromBirthYear, feetInches, localHourUtcMs, heightText, latestWeight, splitInUse, weightText, type MainLift } from '@fizz/domain';
 import { SPLIT_BODY_PARTS, TRAINING_LIMITS, type Gender, type LiftingExperience, type SplitBodyPart, type SplitKind, type TrainingGoal, type TrainingProfile, type WeightUnit } from '@fizz/schemas';
 
-import { formatCalendarDate } from '../format/dates';
+import { formatCalendarDate, localDateKey } from '../format/dates';
 
 /**
  * Profile › Training details and Split (Ben 13 Oct: D5, D7, D8; F19). Pure
@@ -147,7 +147,7 @@ export function heightPicker(cm: number): { label: string; limits: { min: number
 export function readWeightEntry(text: string, date: string): { value: number; date: string } | null {
   const v = Number(text.trim().replace(',', '.'));
   if (!Number.isFinite(v) || v <= 0) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`))) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || localDateKey(localHourUtcMs(date, 12, 'UTC'), 'UTC') !== date) return null;
   return { value: v, date };
 }
 

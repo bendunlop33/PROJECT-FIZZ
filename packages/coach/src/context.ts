@@ -466,7 +466,7 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
   }
   if (y.training !== undefined) {
     const t = y.training;
-    const about = [t.age === undefined ? null : `${String(t.age.years)}`, t.gender ?? null, t.heightCm === undefined ? null : `${String(t.heightCm)} cm`, t.bodyweight === undefined ? null : `${String(t.bodyweight.value)} ${t.bodyweight.unit}`, t.liftingExperience ?? null].filter((x): x is string => x !== null);
+    const about = [t.age === undefined ? null : `age ${String(t.age.years)}`, t.gender ?? null, t.heightCm === undefined ? null : `${String(t.heightCm)} cm`, t.bodyweight === undefined ? null : `${String(t.bodyweight.value)} ${t.bodyweight.unit}`, t.liftingExperience ?? null].filter((x): x is string => x !== null);
     if (about.length > 0) yourData.push({ label: 'About you', detail: about.join(', ') });
     yourData.push({ label: 'Training', detail: [t.goal ?? null, t.daysPerWeek === undefined ? null : `${String(t.daysPerWeek)} days a week`, `${String(t.sessionMinutes)} min`].filter((x): x is string => x !== null).join(', ') });
     yourData.push({ label: 'Split', detail: t.split.days.map((d) => (d.mainLift === null ? d.name : `${d.name} (${d.mainLift.name})`)).join(', ') });

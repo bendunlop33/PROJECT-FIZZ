@@ -15,6 +15,7 @@ import {
   type TrainingSplit,
   type WeightEntry,
 } from '@fizz/schemas';
+import { toMs } from './time';
 import { convertMass, KG_PER_LB } from './units';
 
 /**
@@ -144,7 +145,7 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
       if (!split.days.some((d) => d.id === c.dayId)) return null;
       const days = split.days.map((d) => {
         if (d.id !== c.dayId) return d;
-        const { mainLiftExerciseId: _old, ...rest } = d;
+        const rest: SplitDay = { id: d.id, name: d.name, bodyParts: d.bodyParts };
         return c.exerciseId === null ? rest : { ...rest, mainLiftExerciseId: c.exerciseId };
       });
       return { ...p, split: { kind: split.kind, days } };
@@ -302,7 +303,7 @@ export function mainLiftOptions<E extends Pick<Exercise, 'id' | 'name' | 'primar
 /** Whether the goal check-in is due: `checkInWeeks` since the goal was set or confirmed. */
 export function goalCheckInDue(p: Pick<TrainingProfile, 'goal' | 'goalSetAtUtc' | 'checkInWeeks'>, nowUtc: string): boolean {
   if (p.goal === undefined || p.goalSetAtUtc === undefined) return false;
-  return Date.parse(nowUtc) - Date.parse(p.goalSetAtUtc) >= p.checkInWeeks * 7 * 86_400_000;
+  return toMs(nowUtc) - toMs(p.goalSetAtUtc) >= p.checkInWeeks * 7 * 86_400_000;
 }
 
 /**
@@ -322,7 +323,9 @@ export function bodyweightLoadKg(bodyweightKg: number | null, load: Pick<Load, '
       return bodyweightExercise ? bodyweightKg + kg : null;
     case 'assistance':
       return Math.max(0, bodyweightKg - kg);
-    default:
+    case 'total':
+    case 'per_hand':
+    case 'stack':
       return null;
   }
 }

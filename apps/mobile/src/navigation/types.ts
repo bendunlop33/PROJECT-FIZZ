@@ -10,6 +10,10 @@ export type ProfileStackParams = {
   Developer: undefined;
   CapabilityProbe: undefined;
   PainFlags: undefined;
+  /** Profile › Training details (Ben 13 Oct: D5, D8). */
+  TrainingDetails: undefined;
+  /** Profile › Split and main lifts (D7, F19). */
+  Split: undefined;
   /** Profile → Coach → Memory (coach-memory §2.1). */
   Memory: undefined;
   /** Profile → Coach → Playbook: chat rules to review (coaching-playbook §2.1). */

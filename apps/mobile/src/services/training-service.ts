@@ -6,6 +6,7 @@ import {
   newTrainingProfile,
   nextSplitDay,
   splitInUse,
+  toIso,
   toMs,
   type LiftHistory,
   type MainLift,
@@ -15,6 +16,7 @@ import type { Exercise, SessionAggregate, TrainingChange, TrainingProfile, UserP
 import type { TrainingInput } from '@fizz/coach';
 
 import { buildDayChips, type BuildDayChip } from '../coach/build-view';
+import { localDateKey } from '../format/dates';
 
 /**
  * Training details and split (Ben 13 Oct: D5, D7, D8; F19). Your data, local
@@ -48,7 +50,7 @@ export interface TrainingSnapshot {
 
 export function createTrainingService(deps: TrainingServiceDeps) {
   const repo = () => deps.store().repos.trainingProfiles;
-  const yearOf = (at: ZonedTimestamp): number => Number(new Intl.DateTimeFormat('en-GB', { timeZone: at.tz, year: 'numeric' }).format(new Date(toMs(at.utc))));
+  const yearOf = (at: ZonedTimestamp): number => Number(localDateKey(toMs(at.utc), at.tz).slice(0, 4));
 
   async function stored(owner: UserProfile): Promise<TrainingProfile> {
     return (await repo().get(owner.id).catch(() => null)) ?? newTrainingProfile({ id: trainingProfileId(owner.id), ownerId: owner.id, atUtc: owner.createdAtUtc });
@@ -63,8 +65,8 @@ export function createTrainingService(deps: TrainingServiceDeps) {
 
   async function recent(owner: UserProfile): Promise<SessionAggregate[]> {
     const now = deps.now();
-    const from = new Date(toMs(now.utc) - MAIN_LIFT_WINDOW_DAYS * 86_400_000).toISOString();
-    const r = await deps.store().repos.sessions.listFinishedBetweenReadable(owner.id, from, new Date(toMs(now.utc) + 1).toISOString()).catch(() => ({ sessions: [] as SessionAggregate[], unreadable: 0 }));
+    const from = toIso(toMs(now.utc) - MAIN_LIFT_WINDOW_DAYS * 86_400_000);
+    const r = await deps.store().repos.sessions.listFinishedBetweenReadable(owner.id, from, toIso(toMs(now.utc) + 1)).catch(() => ({ sessions: [] as SessionAggregate[], unreadable: 0 }));
     return r.sessions;
   }
 
