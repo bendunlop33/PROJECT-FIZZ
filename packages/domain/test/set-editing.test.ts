@@ -156,6 +156,36 @@ describe('edit_planned_set: a set not done yet', () => {
     expect(bench(logged, 1).actual?.load).toEqual(kg(90));
   });
 
+  it('edit A, edit B, Undo B: A’s Undo works again and puts the original back; it survives a restart (review S5)', async () => {
+    const { SessionAggregateSchema } = await import('@fizz/schemas');
+    let s = startFixture().state;
+    const b1 = bench(s, 1);
+    s = apply(s, edit(b1.id, b1.version, { load: kg(90) }));
+    s = apply(s, edit(b1.id, bench(s, 1).version, { load: kg(95), restS: 60 }, 'edit-2'));
+    s = apply(s, { type: 'undo_op', at: at(40), opId: 'u-b', targetOpId: 'edit-2' });
+    expect(bench(s, 1).planned.load).toEqual(kg(90));
+    s = SessionAggregateSchema.parse(JSON.parse(JSON.stringify(s)));
+    const r = expectOk(reduceSession(s, { type: 'undo_op', at: at(41), opId: 'u-a', targetOpId: 'edit-1' }));
+    expect(bench(r.state, 1).planned).toEqual(b1.planned);
+    expect(bench(r.state, 1).rest).toEqual(b1.rest);
+    // Versions only go up.
+    expect(bench(r.state, 1).version).toBe(b1.version + 4);
+  });
+
+  it('an earlier edit that was already stale before the next one stays stale after that one’s Undo', () => {
+    let s = startFixture().state;
+    const b1 = bench(s, 1);
+    s = apply(s, edit(b1.id, b1.version, { load: kg(90) }));
+    // Something else moved the set on (A's Undo is now refused)…
+    s = { ...s, sets: s.sets.map((x) => (x.id === b1.id ? { ...x, version: x.version + 1 } : x)) };
+    expectError(reduceSession(s, { type: 'undo_op', at: at(39), opId: 'u0', targetOpId: 'edit-1' }), 'stale_version');
+    s = apply(s, edit(b1.id, bench(s, 1).version, { load: kg(95) }, 'edit-2'));
+    s = apply(s, { type: 'undo_op', at: at(40), opId: 'u-b', targetOpId: 'edit-2' });
+    // …so undoing B doesn't bring A's Undo back.
+    expect(bench(s, 1).planned.edit).toBeUndefined();
+    expectError(reduceSession(s, { type: 'undo_op', at: at(41), opId: 'u-a', targetOpId: 'edit-1' }), 'stale_version');
+  });
+
   it('Ben’s edit replaces a coach change’s marker on that set, so the coach’s Undo can’t revert it', () => {
     let s = startFixture().state;
     const b2 = bench(s, 2);

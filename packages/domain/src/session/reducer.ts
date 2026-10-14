@@ -1145,8 +1145,8 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
   else if (p.targetRpe !== undefined) planned = withRpeOverride(planned, p.targetRpe ?? undefined);
   const rest = p.restS === undefined ? set.rest : { seconds: p.restS, source: 'set_override' as const, sourceLabel: 'This set' };
 
+  // An earlier edit's record stays in `before`, so undoing this one gives that one its Undo back (review S5).
   const beforePlanned = { ...set.planned };
-  delete beforePlanned.edit;
   const version = set.version + 1;
   const edited: WorkoutSet = {
     ...set,
@@ -1953,7 +1953,14 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handl
       const edit = set?.planned.edit;
       if (!set || !edit || set.status !== 'pending' || set.version !== edit.version) return fail('stale_version', STALE_UNDO);
       if (isWorkLive(state, [set.id])) return fail('work_interval_running', 'Stop the work timer first.');
-      const back: WorkoutSet = { ...set, planned: edit.before.planned, setType: edit.before.setType, rest: edit.before.rest, draft: edit.before.draft, version: set.version + 1 };
+      // The earlier edit (if this one came straight after it) can be undone again: the set is exactly as it left it.
+      const planned = { ...edit.before.planned };
+      const earlier = planned.edit;
+      if (earlier !== undefined) {
+        if (earlier.version === edit.version - 1) planned.edit = { ...earlier, version: set.version + 1 };
+        else delete planned.edit;
+      }
+      const back: WorkoutSet = { ...set, planned, setType: edit.before.setType, rest: edit.before.rest, draft: edit.before.draft, version: set.version + 1 };
       return { ok: true, state: bumpVersion({ ...state, sets: replaceSet(state.sets, back) }), events: [{ type: 'PlannedSetEdited', setId: set.id, undo: true }] };
     }
     case 'add_set': {
