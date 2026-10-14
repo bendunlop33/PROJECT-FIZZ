@@ -164,6 +164,8 @@ export interface LoadReferences {
   own: OwnReference | null;
   /** The most recent comparable session of any age (the pain hold reads it). */
   latest: RefSession | null;
+  /** Every comparable session, any age, newest first (personal ratios read the older ones). */
+  all: RefSession[];
   derived: DerivedReference | null;
   /** E1RMs of Ben's other exercises in the same movement pattern and convention, in this unit (first-time ceiling). */
   patternE1rms: number[];
@@ -243,10 +245,40 @@ export function loadReferences(input: LoadReferencesInput): LoadReferences {
     equipment,
     own,
     latest: all[0] ?? null,
+    all,
     derived: own === null ? (input.derived ?? null) : null,
     patternE1rms: [...(input.patternE1rms ?? [])],
     historyVersion: historyVersionOf(all),
   };
+}
+
+/** One candidate exercise and its history, for `buildReferences`. */
+export interface ExerciseHistory {
+  exercise: Exercise;
+  history: readonly HistorySession[];
+}
+
+/**
+ * `loadReferences` for a build (§8.5, §8.2 `personalRatios`): the
+ * exercise's own references, plus, from Ben's other exercises in the same
+ * movement pattern (`mates`, Your data, derived now and never stored):
+ * their e1RMs in the same unit and convention (the first-time ceiling's
+ * ×0.5 part), and, when its own history is older than 180 days, a personal
+ * ratio (`est.`). Mates in another unit are skipped (no cross-unit ratios).
+ */
+export function buildReferences(input: { target: ExerciseHistory; mates: readonly ExerciseHistory[]; ctx: LoadReferencesInput['ctx']; nowMs: number; related?: DerivedReference | null }): LoadReferences {
+  const base = loadReferences({ exercise: input.target.exercise, history: input.target.history, ctx: input.ctx, nowMs: input.nowMs });
+  const mates = input.mates
+    .filter((m) => m.exercise.id !== input.target.exercise.id && m.exercise.movementPattern === input.target.exercise.movementPattern)
+    .map((m) => ({ m, refs: loadReferences({ exercise: m.exercise, history: m.history, ctx: input.ctx, nowMs: input.nowMs }) }))
+    .filter((x) => x.refs.unit === base.unit && x.refs.own !== null && !x.refs.own.estOnly && x.refs.own.e1rm !== null);
+  const patternE1rms = mates.filter((x) => x.refs.convention === base.convention).flatMap((x) => (x.refs.own?.e1rm === null || x.refs.own?.e1rm === undefined ? [] : [x.refs.own.e1rm]));
+  let derived: DerivedReference | null = null;
+  if (base.own === null && E1RM_CONVENTIONS.has(base.convention)) {
+    derived = base.all.length > 0 ? personalRatioReference(base.all, mates.map((x) => ({ name: x.m.exercise.name, sessions: x.refs.all })), input.nowMs) : null;
+    derived = derived ?? input.related ?? null;
+  }
+  return { ...base, derived, patternE1rms };
 }
 
 /** A stable fingerprint of the comparable history (new or corrected sessions change it). */

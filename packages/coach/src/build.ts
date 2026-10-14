@@ -1,6 +1,10 @@
 import {
   addDraftVersion,
   checkBuildQuestion,
+  dayMonthText,
+  expectedLoad,
+  formatNumber,
+  noReferenceCeiling,
   checkWorkoutProposal,
   currentDraftVersion,
   deriveId,
@@ -12,6 +16,7 @@ import {
   leftOutCount,
   newWorkoutDraft,
   type KnownPreferences,
+  type LoadReferences,
   type QuestionContext,
   type WorkoutProposalContext,
 } from '@fizz/domain';
@@ -101,6 +106,33 @@ export interface LoadReferenceView {
   firstTimeMax: number | null;
   /** Pain holds it at no harder than the last working load. */
   held: boolean;
+}
+
+/**
+ * One exercise's references as the coach is sent them (§8.6): exactly the
+ * numbers `checkProposedLoad` checks against, so a basis citing them passes.
+ */
+export function loadReferenceView(catalogueId: string, name: string, refs: LoadReferences, held: boolean): LoadReferenceView {
+  const own = refs.own;
+  const last = (own?.sessions ?? []).map((s) => {
+    const v = refs.convention === 'added' ? `+${formatNumber(s.top.value)}` : formatNumber(s.top.value);
+    return `${v}×${String(s.top.reps)}${s.top.rpe === null ? '' : ` @${formatNumber(s.top.rpe)}`} · ${dayMonthText(s.performedAtUtc, s.tz).replace(/\u00a0/g, ' ')} · ${s.source === 'fitnotes' ? 'FitNotes import' : 'app'}`;
+  });
+  const e1rm = own?.e1rm ?? null;
+  const noRef = own === null && refs.derived === null;
+  return {
+    catalogueId,
+    name,
+    unit: refs.unit,
+    convention: refs.convention,
+    last,
+    e1rmEst: e1rm === null ? null : Math.round(e1rm * 2) / 2,
+    gapDays: own?.gapDays ?? null,
+    estimate: refs.derived !== null ? `est. from ${refs.derived.text}` : own?.estOnly === true ? 'est.: FitNotes, machine not recorded' : null,
+    // The checker uses the slot's own reps; 12 reps at RPE 8 is the usual first-time slot.
+    firstTimeMax: noRef ? noReferenceCeiling(refs.equipment, refs.patternE1rms.map((e) => expectedLoad(e, 12, 8))) : null,
+    held,
+  };
 }
 
 /** The `KNOWN` block (§8.6). */

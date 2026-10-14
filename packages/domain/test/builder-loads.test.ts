@@ -4,6 +4,7 @@ import type { EquipmentInstance, Exercise, Load } from '@fizz/schemas';
 
 import {
   BUILDER_LOAD_BOUNDS,
+  buildReferences,
   checkBasis,
   checkedOnOf,
   checkProposedLoad,
@@ -348,5 +349,31 @@ describe('checkBasis (WB-L9): only numbers it may cite', () => {
   it('a failing basis is replaced by code’s and kept under NOT USED', () => {
     const c = checkProposedLoad(P(102.5, 'total', 'you hit 110×5 last week'), BENCH_SLOT, benchRefs(), NO_PAIN);
     expect(c).toMatchObject({ basis: 'last 100×7 @8', basisFromCoach: false, notUsed: 'you hit 110×5 last week' });
+  });
+});
+
+describe('buildReferences: Ben’s own same-pattern lifts (WB-L5c, B1)', () => {
+  const DB_PRESS = exercise(221, 'DB bench press', { movementPattern: 'horizontal_push', compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+  const ctx = ctxAt(bar, rack, cable);
+
+  it('an exercise with only old history gets a personal ratio (est.) from a pattern-mate done within 28 days of it', () => {
+    const oldBench = [session(940, 220, bar, [{ load: kg(100), reps: 8, rpe: 8 }])];
+    const db = [session(941, 210, rack, [{ load: kg(30, 'per_hand'), reps: 8, rpe: 8 }]), session(942, 5, rack, [{ load: kg(32.5, 'per_hand'), reps: 8, rpe: 8 }])];
+    const r = buildReferences({ target: { exercise: BENCH, history: oldBench }, mates: [{ exercise: DB_PRESS, history: db }], ctx, nowMs: NOW });
+    expect(r.own).toBeNull();
+    expect(r.derived).toMatchObject({ kind: 'personal_ratio', text: 'db bench press 32.5×8' });
+    // 100 kg bench ≈ 3.33 × the 30 kg DB press then; now 32.5 → about 108.3 e1RM-equivalent × (1 + 10/30).
+    expect(r.derived?.e1rm).toBeCloseTo((100 / 30) * 32.5 * (1 + 10 / 30), 6);
+    expect(checkProposedLoad(P(150, 'total'), BENCH_SLOT, r, NO_PAIN).source).toBe('rule');
+  });
+
+  it('a first-time exercise’s ceiling also uses half the E of his same-pattern, same-convention lifts', () => {
+    const pushdowns = [session(950, 3, cable, [{ load: kg(25, 'stack'), reps: 12, rpe: 9 }])];
+    const PRESSDOWN = exercise(222, 'Rope pressdown', { movementPattern: 'elbow_extension', compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' });
+    const r = buildReferences({ target: { exercise: PRESSDOWN, history: [] }, mates: [{ exercise: PUSHDOWN, history: pushdowns }], ctx, nowMs: NOW });
+    expect(r.patternE1rms).toHaveLength(1);
+    const c = checkProposedLoad(P(30, 'stack'), slot(10, 12, 9), r, NO_PAIN);
+    // Half of E (≈ 26.2) is ≈ 13.1 → 12.5 on this stack, below the range ceiling of 25.
+    expect(c).toMatchObject({ load: { value: 12.5 }, source: 'coach_est', notes: ['capped at 12.5 · first time'] });
   });
 });

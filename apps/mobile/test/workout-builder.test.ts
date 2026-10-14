@@ -621,7 +621,8 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
     model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
     await ask(s, 'Can you make me a push session');
-    expect(model.requests[0]?.instructions).toContain('Never give loads, weights or minutes');
+    expect(model.requests[0]?.instructions).toContain('Never give minutes');
+    expect(model.requests[0]?.instructions).toContain('build.loadReferences');
   });
   it('review r5 B2: the turn after a draft was built, "Your push session is ready in Workouts." is shown', async () => {
     const { s } = await benWithHistory();
@@ -1015,5 +1016,57 @@ describe('F21: the same exercise twice in a coach workout (Ben, 13 Oct)', () => 
     const again = await s.overview.load({ target: { kind: 'session', sourceSessionId: sessionId }, gymId });
     // Repeating it: each Lateral raise slot repeats its own sets (2 × 16 at 5, 4 × 10 at 10).
     expect(again?.view.rows.filter((r) => r.name === 'Lateral raise').map((r) => [r.detail.replaceAll('\u00a0', ' '), r.load.value])).toEqual([['2 × 16', '5'], ['4 × 10', '10']]);
+  });
+});
+
+describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', () => {
+  const load = (value: number, convention: string, basis: string) => ({ value, unit: 'kg', convention, basis, from: 'own_history', relatedCatalogueId: null });
+  const PUSH_LOADS: [string, Record<string, unknown>][] = [
+    ['Bench press', { warmups: 2, workingSets: 4, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(100, 'total', 'last 100×7 → repeat') }],
+    ['Cable fly', { workingSets: 3, reps: { min: 12, max: 15 }, targetRpe: 9, load: load(13, 'stack', 'est. for 12–15 @9') }],
+    ['Triceps pushdown', { workingSets: 3, reps: { min: 10, max: 12 }, targetRpe: 9, load: load(40, 'stack', 'last 25×11') }],
+  ];
+
+  it('the context lists load references; each row shows its load and a short reason; est. and Rule are marked; preview == Start', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
+    const refs = (buildOf(model.requests[0] as ModelRequest) as BuildView & { loadReferences?: { name: string; last: string[]; convention: string; firstTimeMax: number | null }[] }).loadReferences ?? [];
+    const benchRef = refs.find((r) => r.name === 'Bench press');
+    expect(benchRef?.convention).toBe('total');
+    expect(benchRef?.last[0]).toMatch(/^100×7 · \d+ Oct · app$/);
+    expect(refs.find((r) => r.name === 'Cable fly')?.firstTimeMax).toBeGreaterThan(0);
+
+    const p = await page(s, draftId, gymId);
+    const row = (name: string) => p.view.rows.find((r) => r.name === name);
+    const bench = row('Bench press');
+    const fly = row('Cable fly');
+    const pushdown = row('Triceps pushdown');
+    if (!bench || !fly || !pushdown || p.coachDraft === null) throw new Error('rows');
+    expect(bench.load.value).toBe('100');
+    expect(p.coachDraft.reasons[bench.slotKey]).toBe('last 100×7 → repeat · main lift');
+    expect(p.coachDraft.estimates).toEqual([fly.slotKey]);
+    expect(p.coachDraft.reasons[fly.slotKey]).toBe('est. for 12–15 @9');
+    expect(p.coachDraft.reasons[pushdown.slotKey]).toMatch(/^Rule · last 25×11$/);
+    expect(p.coachDraft.headNote).toMatch(/^Push · Bench press · 45 min · last Push 2 days ago$/);
+    expect(p.coachDraft.loads.find((l) => l.name === 'Triceps pushdown')).toMatchObject({ label: 'Rule', notes: ['coach load 40 kg too far from last 25 × 11'] });
+
+    const started = await s.overview.start(startReq(p, gymId, 'start-v2'));
+    if (!started.ok) throw new Error(started.error.message);
+    for (const r of p.view.rows) matchesSession(r, started.aggregate);
+    const benchRow = started.aggregate.exercises.find((e) => e.exerciseName === 'Bench press');
+    const benchSets = started.aggregate.sets.filter((x) => x.sessionExerciseId === benchRow?.id && x.setType === 'working');
+    expect(benchSets.every((x) => x.planned.load?.value === 100 && x.planned.source === 'coach' && x.planned.provenance?.coach?.scope === 'build')).toBe(true);
+  });
+
+  it('WB-L10: offline after the build, the stored loads and reasons are the same and nothing is asked', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
+    const before = await page(s, draftId, gymId);
+    const calls = model.requests.length;
+    connection = { ...CONNECTED, status: 'offline' };
+    const after = await page(s, draftId, gymId);
+    expect(after.view.rows.map((r) => r.load.value)).toEqual(before.view.rows.map((r) => r.load.value));
+    expect(after.coachDraft?.reasons).toEqual(before.coachDraft?.reasons);
+    expect(model.requests.length).toBe(calls);
   });
 });

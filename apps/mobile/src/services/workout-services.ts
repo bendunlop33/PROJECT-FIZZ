@@ -1,5 +1,14 @@
 import {
   addDays,
+  draftHeadNote,
+  draftReasonLine,
+  formatLoad,
+  loadWhyEntry,
+  matchSplitDay,
+  splitInUse,
+  workoutMuscleGroups,
+  type LoadWhyEntry,
+  type OverviewRow,
   coachDraftIsOpen,
   coachDraftListed,
   currentDraftVersion,
@@ -723,6 +732,17 @@ export interface CoachDraftInfo {
   fitMinutes: number;
   /** The live library workout it was saved as (still open, Ben may start it); null when not saved or that workout was deleted. Review r2 S2: set, the page offers no second Save. */
   routineId: string | null;
+  /**
+   * (Ben, 14 Oct) The one-line note at the top: `Push · Bench press · 45 min · last Push 6 days ago`.
+   * Empty before the page is planned.
+   */
+  headNote: string;
+  /** (Ben, 14 Oct) Each row's short reason line, by slot key: `last 3: 87.5×8 @8 → +2.5`, `Rule · last 85×8`. */
+  reasons: Record<string, string>;
+  /** Rows whose target is an estimate (`est.`, rule 6), by slot key. */
+  estimates: string[];
+  /** `Why this workout` → `LOADS` (§4.5): each row's target, label, the coach's basis quoted, code's notes. */
+  loads: LoadWhyEntry[];
 }
 
 /**
@@ -1652,9 +1672,60 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return d === null ? null : liveRoutineOf(d);
   }
 
-  async function coachDraftInfoOf(d: WorkoutDraft): Promise<CoachDraftInfo> {
+  async function coachDraftInfoOf(d: WorkoutDraft, planned?: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate }): Promise<CoachDraftInfo> {
     const v = currentDraftVersion(d);
-    return { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: v.rationale, checks: v.checks.map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
+    const base = { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: v.rationale, checks: v.checks.filter((c) => c.kind !== 'load').map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
+    if (planned === undefined) return { ...base, headNote: '', reasons: {}, estimates: [], loads: [] };
+    return { ...base, ...(await draftExplain(d, planned).catch(() => ({ headNote: '', reasons: {}, estimates: [], loads: [] }))) };
+  }
+
+  /**
+   * (Ben, 14 Oct: "4 sets on 90kg for 6–8 with no reason why") The draft's
+   * head note and each row's reason line, from the planned sets' own
+   * provenance (`draftReasonLine`), the training profile's goal and split,
+   * and Ben's recent workouts. Values only; the detail is behind `Why?`.
+   */
+  async function draftExplain(d: WorkoutDraft, planned: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate }): Promise<Pick<CoachDraftInfo, 'headNote' | 'reasons' | 'estimates' | 'loads'>> {
+    const v = currentDraftVersion(d);
+    const profile = await ctx.store().repos.trainingProfiles.get(planned.ownerId).catch(() => null);
+    const goal = profile?.goal ?? null;
+    const mainSlot = [...v.plan.slots].sort((a, b) => a.order - b.order).find((sl) => sl.main) ?? null;
+    const firstSet = (row: OverviewRow) => planned.aggregate.sets.find((x) => x.id === row.firstSetId) ?? planned.aggregate.sets.filter((x) => x.sessionExerciseId === row.sessionExerciseId && x.setType !== 'warmup').sort((a, b) => a.index - b.index)[0];
+    const reasons: Record<string, string> = {};
+    const estimates: string[] = [];
+    const loads: LoadWhyEntry[] = [];
+    for (const row of planned.rows) {
+      const set = firstSet(row);
+      const reps = planned.aggregate.exercises.find((e) => e.id === row.sessionExerciseId)?.measurement === 'reps';
+      const isMain = mainSlot !== null && row.slotKey === mainSlot.slotKey && row.exerciseId === mainSlot.exerciseId;
+      const line = draftReasonLine({ planned: set?.planned ?? null, reps, main: isMain, goal });
+      if (line !== null) reasons[row.slotKey] = line;
+      if (set?.planned.provenance?.estimate === true) estimates.push(row.slotKey);
+      const slot = v.plan.slots.find((sl) => sl.slotKey === row.slotKey);
+      const stored = slot?.setTemplates.find((t) => t.setType !== 'warmup' && t.load !== undefined)?.load?.notes ?? [];
+      if (reps) loads.push(loadWhyEntry(row.name, set === undefined ? '—' : formatLoad(set.planned.load, row.load.none ? undefined : set.planned.load?.convention), set?.planned ?? null, stored));
+    }
+    // The head note: split day · main lift · length · last workout of the same split day.
+    const split = splitInUse(profile);
+    const FOCUS: Record<string, string> = { push: 'Push', pull: 'Pull', legs: 'Legs', chest: 'Chest', shoulders: 'Shoulders', back: 'Back', upper: 'Upper', lower: 'Lower', full_body: 'Full body' };
+    const dayName = v.request.day?.name ?? FOCUS[v.request.focus] ?? null;
+    let lastSameDaysAgo: number | null = null;
+    if (dayName !== null) {
+      const now = ctx.now();
+      const nowMs = toMs(now.utc);
+      const recent = await repos().sessions.listFinishedBetween(planned.ownerId, toIso(nowMs - 120 * 86_400_000), toIso(nowMs + 1)).catch(() => [] as SessionAggregate[]);
+      const muscles = new Map<string, readonly string[]>();
+      for (const a of recent) for (const e of a.exercises) if (!muscles.has(e.exerciseId)) muscles.set(e.exerciseId, (await exerciseById(e.exerciseId))?.primaryMuscles ?? []);
+      const same = [...recent].reverse().find((a) => matchSplitDay(split, workoutMuscleGroups(a.exercises.map((ex) => ({ primaryMuscles: muscles.get(ex.exerciseId) ?? [], workingSets: a.sets.filter((x) => x.sessionExerciseId === ex.id && x.status === 'completed' && x.setType !== 'warmup').length }))))?.name === dayName);
+      if (same !== undefined) {
+        const today = localDateOf(nowMs, now.tz);
+        const then = localDateOf(toMs(same.session.startedAt.utc), now.tz);
+        lastSameDaysAgo = Math.round((toMs(`${today}T00:00:00.000Z`) - toMs(`${then}T00:00:00.000Z`)) / 86_400_000);
+      }
+    }
+    const mainRow = mainSlot === null ? null : (planned.rows.find((r) => r.slotKey === mainSlot.slotKey) ?? null);
+    const headNote = draftHeadNote({ split: dayName, mainLift: mainRow?.name ?? null, minutes: v.fitMinutes, lastSameDaysAgo });
+    return { headNote, reasons, estimates, loads };
   }
 
   /** An open coach draft (14 days, not started or discarded), as the overview plans it. Null: gone (`Draft deleted`). */
@@ -3941,7 +4012,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           templateCard: await templateCardOf(resolved, run, t.draft),
           pace: planPace(recent),
           coachFit: await coachFitInfo(run.today),
-          coachDraft: resolved.kind === 'coach_draft' ? await coachDraftInfoOf(resolved.draft) : null,
+          coachDraft: resolved.kind === 'coach_draft' ? await coachDraftInfoOf(resolved.draft, { ownerId: p.id, rows: view.rows, aggregate }) : null,
         };
       } catch {
         return null;

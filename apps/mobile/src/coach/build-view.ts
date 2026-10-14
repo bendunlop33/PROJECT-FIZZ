@@ -173,11 +173,14 @@ export function chosenName(focus: BuildFocus, minutes: number | null, dayName?: 
  * rationale and the code's check lines. Read-only; nothing here is the
  * model's number.
  */
-export function draftWhyView(d: Pick<CoachDraftInfo, 'request' | 'rationale' | 'checks' | 'fitMinutes'>): { heading: string; lines: string[] }[] {
+export function draftWhyView(d: Pick<CoachDraftInfo, 'request' | 'rationale' | 'checks' | 'fitMinutes'> & Partial<Pick<CoachDraftInfo, 'loads' | 'headNote'>>): { heading: string; lines: string[] }[] {
+  // v2 §4.5 `LOADS`: the final target (code), its label, the coach's basis quoted, code's notes.
+  const loads = (d.loads ?? []).flatMap((l) => [`${l.name} ${l.target}${l.label === null ? '' : ` · ${l.label}`}`, ...(l.quote === null ? [] : [`  “${l.quote}”`]), ...l.notes.map((n) => `  ⓘ ${n}`)]);
   return [
     { heading: 'YOU ASKED', lines: [`“${d.request}”`] },
     ...(d.rationale === null ? [] : [{ heading: 'COACH', lines: [d.rationale] }]),
-    { heading: 'USED', lines: [`${String(d.fitMinutes)} min`] },
+    ...(loads.length === 0 ? [] : [{ heading: 'LOADS', lines: loads }]),
+    { heading: 'USED', lines: [d.headNote !== undefined && d.headNote !== '' ? d.headNote : `${String(d.fitMinutes)} min`, 'Logged and FitNotes history'] },
     ...(d.checks.length === 0 ? [] : [{ heading: 'CHECKS', lines: d.checks }]),
   ];
 }
