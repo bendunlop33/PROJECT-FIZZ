@@ -20,6 +20,8 @@ import {
   type TodayFitAnswer,
   type TodayFitContext,
   createAddExerciseExecutor,
+  createRenameExecutor,
+  mentionsAdding,
   createAdjustExecutor,
   createChatSetExecutors,
   createNextTargetsExecutor,
@@ -688,6 +690,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       out.adjust_pending_sets = createAdjustExecutor({ store, targets: storeTodayTargets(store), loadSession: load, painFlags, sessionPainUnspecified: unspecifiedPain(checkIn).active, gymName, onlySessionExerciseId, ruleTargetRpe: ruleRpesOf });
       // "Log 100 for 8", "set 2 was 95" (backlog §4.3): the workout's own commands, only when Ben's words ask.
       Object.assign(out, createChatSetExecutors({ store, loadSession: load, ...(deps.onSessionChanged === undefined ? {} : { onSessionChanged: deps.onSessionChanged }) }));
+      // "Change name of workout to …" (14 Oct): the workout's own `rename_session`, applied only when Ben asked.
+      Object.assign(out, createRenameExecutor({ store, loadSession: load, ...(deps.onSessionChanged === undefined ? {} : { onSessionChanged: deps.onSessionChanged }) }));
       // "Add 3 sets of lateral raises", "put in some curls" (12 Oct): the workout's own `add_exercise`, only when Ben's words ask.
       const addInputs = deps.coachAddInputs;
       if (addInputs !== undefined) {
@@ -990,7 +994,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) Ben asked to add an exercise in a workout turn: what can be added here, by ID.
-    const addable = kind === 'workout' && session !== null && deps.coachAddInputs !== undefined && req.input.kind === 'words' && requestHas(classifyBenRequest(req.input.text, 'workout'), 'add') ? await addableFor(p, session) : null;
+    // (14 Oct) The tool is offered on every live turn; the list (long) goes only when his words might add one.
+    const addable = kind === 'workout' && session !== null && deps.coachAddInputs !== undefined && req.input.kind === 'words' && (requestHas(classifyBenRequest(req.input.text, 'workout'), 'add') || mentionsAdding(req.input.text)) ? await addableFor(p, session) : null;
     const stop = new AbortController();
     running.set(req.turnId, stop);
     try {
@@ -1018,7 +1023,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       );
       if (result.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
       else if (result.status === 'completed') lastNetworkFailureMs = null;
-      if (session !== null && result.cards.some((c) => (c.record.detail.kind === 'adjust_pending_sets' || c.record.detail.kind === 'add_exercise_today') && c.record.status === 'committed')) {
+      if (session !== null && result.cards.some((c) => (c.record.detail.kind === 'adjust_pending_sets' || c.record.detail.kind === 'add_exercise_today' || c.record.detail.kind === 'rename_workout') && c.record.status === 'committed')) {
         const fresh = await repos().sessions.get(session.session.id).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
       }
@@ -1095,7 +1100,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       const p = await owner();
       const r = await undoCoachAction(coachStore(), { ownerId: p.id, actionId, opId, now: deps.now() });
       const target = r.result.status === 'written' || r.result.status === 'replayed' ? r.result.target : null;
-      if (target?.detail.kind === 'adjust_pending_sets' || target?.detail.kind === 'add_exercise_today' || target?.detail.kind === 'log_set' || target?.detail.kind === 'correct_set') {
+      if (target?.detail.kind === 'adjust_pending_sets' || target?.detail.kind === 'add_exercise_today' || target?.detail.kind === 'rename_workout' || target?.detail.kind === 'log_set' || target?.detail.kind === 'correct_set') {
         const fresh = await repos().sessions.get(target.detail.sessionId).catch(() => null);
         if (fresh !== null) deps.onSessionChanged?.(fresh);
       }

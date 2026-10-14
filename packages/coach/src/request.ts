@@ -966,3 +966,38 @@ export function asksForMoreSets(text: string): boolean {
     });
   });
 }
+
+/**
+ * (14 Oct, PM decision pending Ben) Ben's words in a live workout that are about today's loads or
+ * sets: weights, sets, reps, load, kg/lb, heavier, lighter, target, repopulate, recalculate, "based
+ * on". A broad test on purpose: the classifier above kept missing real requests ("can you
+ * repopulate the weights based on my maximum working weight recently?"). The today-tools are offered
+ * on every live turn; a call in reply to words like these applies at once with Undo (rule 3), and a
+ * call without them becomes an offer. Singular "set" alone ("set 2 felt good") doesn't count, nor
+ * does a hold ("keep the weights as they are").
+ */
+const TODAY_SET_WORDS =
+  /\b(?:weights?|sets|reps?|loads?|loading|kgs?|kilos?|lbs?|pounds|heavier|lighter|targets?|re-?populate|re-?calculate|based on)\b|\d\s?(?:kg|lb)s?\b/;
+
+/** "Keep the weights as they are", "don't change the sets": a hold, not a request. */
+const KEEP_AS_IS = /\b(?:keep|leave|hold)\b[^.?!]{0,30}\b(?:as (?:it is|they are|is)|the same|where (?:it is|they are))\b|\b(?:don'?t|do not|no need to) (?:change|touch|adjust|alter|move|update)\b/;
+
+export function mentionsTodaysSets(text: string): boolean {
+  const t = lower(text);
+  return TODAY_SET_WORDS.test(t) && !KEEP_AS_IS.test(t);
+}
+
+const RENAME =
+  /\b(?:re-?name)\b|\b(?:change|update|set|make|switch)\b[^.?!]{0,25}\bname\b|\bname (?:it|this|that|the (?:workout|session)|today'?s (?:workout|session)|my (?:workout|session))\b|\bcall (?:it|this|the (?:workout|session)|today'?s (?:workout|session))\b/;
+
+/** (14 Oct) Ben asks to rename today's workout ("Change name of workout to Chest day", "call it Push B"). */
+export function asksToRename(text: string): boolean {
+  const t = text.toLowerCase().replace(/[‘’]/g, "'");
+  const m = RENAME.exec(t);
+  return m !== null && !NEGATORS.test(t.slice(Math.max(0, m.index - 12), m.index));
+}
+
+/** (14 Oct) Words that might add an exercise today: the app then sends what can be added (`addable`). */
+export function mentionsAdding(text: string): boolean {
+  return /\b(?:add|adding|another exercise|put in|throw in|chuck in|include|superset)\b/.test(lower(text));
+}

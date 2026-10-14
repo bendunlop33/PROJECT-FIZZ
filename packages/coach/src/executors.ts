@@ -387,6 +387,8 @@ function undoWhat(target: ActionRecord): string {
       return 'the playbook suggestion';
     case 'add_exercise_today':
       return `adding ${d.exerciseName}`;
+    case 'rename_workout':
+      return `the name “${d.after}”`;
     case 'log_set':
       return `logging set ${String(d.setNumber)} of ${d.exerciseName}`;
     case 'correct_set':

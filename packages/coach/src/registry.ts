@@ -59,7 +59,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: null,
     capabilitySection: 'read',
     description:
-      "One exercise's last workouts (sets as logged, units and conventions explicit, sets Ben left out labelled) and its heaviest logged sets per equipment item. Imported workouts are labelled and never compared with app sets.",
+      "One exercise's last workouts (sets as logged, units and conventions explicit, sets Ben left out labelled) and its heaviest logged sets per equipment item. Workouts imported from FitNotes are Ben's own history (equipment not recorded) and a valid basis for loads; the app fits any load to today's equipment.",
   },
   {
     name: 'get_training_overview',
@@ -71,7 +71,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: null,
     capabilitySection: 'read',
     description:
-      'Ben’s training over the last weeks: how many workouts, what was done, and per exercise the first and latest comparable top set (like for like only). Use it for "How am I doing?". No estimates.',
+      'Ben’s training over the last weeks: how many workouts, what was done, and per exercise the first and latest top set logged in the app on the same equipment, for trends. Use it for "How am I doing?". For loads, use get_recent_training, which includes FitNotes history. No estimates.',
   },
   {
     name: 'get_gym_equipment',
@@ -142,6 +142,19 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     capabilitySection: 'when_you_ask',
     description:
       "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. Today only: if Ben names a future scope (next time, future sessions, his routine or template, every push day, permanently), use propose_next_workout_change instead and never this tool. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn.",
+  },
+  {
+    // (14 Oct, PM decision pending Ben) Offered on every live-workout turn; applies at once with Undo only when
+    // Ben asked (rule 3), else the turn turns the call into an offer (`turn.ts`).
+    name: 'rename_workout',
+    effect: 'versioned_update',
+    writes: ['session_name'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: "Rename today's workout, with Undo",
+    capabilitySection: 'when_you_ask',
+    description: "Rename today's live workout to the name Ben asked for (baseVersion from the workout). Today's workout only: the routine it came from keeps its name.",
   },
   {
     name: 'log_set',
@@ -272,7 +285,8 @@ export const COACH_NEVER: readonly string[] = [
 /** Entity kinds a versioned update may write; all keep the previous version (CC6, check 1). */
 /** (11 Oct) `logged_set`: a set Ben told the coach to log or correct, through the workout's own versioned commands; never a delete. */
 /** (12 Oct) `session_exercise`: an exercise added to today's workout with pending sets only; Undo takes it out. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise']);
+/** (14 Oct) `session_name`: the live workout's name, through the workout's own `rename_session`; Undo names it back. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -298,7 +312,7 @@ export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
     if (t.effect === 'read' && t.writes.length > 0) throw new UnsafeRegistryError(`${t.name}: a read tool can't write`);
     if (t.effect !== 'read' && t.writes.length === 0) throw new UnsafeRegistryError(`${t.name}: a write tool must declare what it writes`);
     if (t.effect === 'versioned_update' && t.writes.some((w) => !VERSIONED_WRITABLE.has(w))) {
-      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories, a set Ben named or an exercise added today`);
+      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories, a set Ben named, an exercise added today or today's workout name`);
     }
     if (t.effect !== 'read' && (t.plainLabel === null || t.plainLabel.trim() === '')) {
       throw new UnsafeRegistryError(`${t.name}: a write tool needs a plainLabel for What the coach can do`);
@@ -334,7 +348,20 @@ export interface TurnGate {
    * only makes a draft he opens, starts or saves himself (BD12, BD15). Forcing stays code's call.
    */
   buildOpen?: boolean;
+  /**
+   * (14 Oct, PM decision pending Ben) A workout turn while the workout is live. The today-tools
+   * (`TODAY_TOOLS`) are then offered whatever Ben's words: whether a call applies (Ben asked) or
+   * becomes an offer (he didn't) is decided in the turn by `todayChangeAsked`, never by the model.
+   */
+  liveWorkout?: boolean;
 }
+
+/**
+ * (14 Oct) Tools that change today's live workout and are offered on every live-workout turn: the
+ * regex classifier kept missing Ben's wording ("can you repopulate the weights based on my max?"),
+ * and a withheld tool made the coach say it had none. Rule 3 still holds: see `todayChangeAsked`.
+ */
+export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['adjust_pending_sets', 'add_exercise_today', 'rename_workout']);
 
 export interface WithheldTool {
   name: CoachToolName;
@@ -394,6 +421,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'ben_request':
       if (requestOpens(t, g.benRequest)) return null;
       if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
+      if (TODAY_TOOLS.has(t.name) && g.kind === 'workout' && g.liveWorkout === true) return null;
       // An accepted offer only counts for today's sets (CA1).
       return g.acceptedOffer && t.name === 'adjust_pending_sets' ? null : 'needs_request';
     case 'ben_pain_words':

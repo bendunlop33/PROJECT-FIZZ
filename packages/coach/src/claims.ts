@@ -1067,6 +1067,7 @@ function factsOf(record: ActionRecord): RecordFacts {
       if (d.durationS !== null) f.numbers.add(String(d.durationS));
       if (d.target?.load) f.primaryLoad = d.target.load;
       break;
+    case 'rename_workout':
     case 'propose_next_workout_change':
     case 'update_routine':
     case 'fit_today':
