@@ -9,6 +9,7 @@ export const UNDO_TOAST = {
   deleted: (setNumber: number): string => `Set ${String(setNumber)} deleted`,
   skipped: (exerciseName: string): string => `${exerciseName} skipped`,
   corrected: (setNumber: number): string => `Set ${String(setNumber)} updated`,
+  added: (setNumber: number): string => `Set ${String(setNumber)} added`,
   removed: (exerciseName: string): string => `${exerciseName} removed`,
   swapped: (fromName: string, toName: string): string => `${fromName} → ${toName}`,
   undone: 'Undone',

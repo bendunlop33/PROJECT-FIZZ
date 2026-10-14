@@ -7,7 +7,7 @@ import type { SetSide } from '@fizz/schemas';
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, TextButton, TEXT_PRESSED_OPACITY, TimerNumeral, type SymbolName } from '../../ui';
-import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadMovesTiles, keypadTileY, runRowTap, showsFolded, tileReportFor, type AnchorRequest, type ChipState, type Expansions, type TileId, type TileReport } from '../../workout/table';
+import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadMovesTiles, keypadTileY, runRowTap, showsFolded, tileReportFor, type AnchorRequest, type ChipState, type Expansions, type RowPart, type TileId, type TileReport } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { openRowWidth, stepperTexts, tileFit, type TileSpec } from '../../workout/tile-fit';
@@ -330,7 +330,7 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
                 <TableSetRow
                   row={row}
                   ax={props.ax}
-                  onPress={() => {
+                  onPress={(part) => {
                     runRowTap(row, {
                       dismissKeyboard: () => { Keyboard.dismiss(); },
                       edit: props.onEditSet,
@@ -338,7 +338,7 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
                         haptic('step');
                         props.onSelectSet(setId);
                       },
-                    });
+                    }, part);
                   }}
                 />
               </View>,
@@ -611,10 +611,11 @@ function SupersetMembers({ superset, ax, onMenu, onName, onNote, onPainBadge }: 
 
 /**
  * `TableSetRow` (design-system §9.3 Table variant): one state-styled value
- * per cell. Done: bright, filled green tick. Pending: dim, open ring (a tap
- * anywhere selects it, never logs). Skipped: `Skipped` with a slashed circle.
+ * per cell. Done: bright, filled green tick; a tap edits it. Pending: dim,
+ * open ring; a tap on the row edits its plan, a tap on the ring makes it
+ * the current set (never logs). Skipped: `Skipped` with a slashed circle.
  */
-export function TableSetRow({ row, ax, onPress }: { row: TableRow; ax: boolean; onPress: () => void }) {
+export function TableSetRow({ row, ax, onPress }: { row: TableRow; ax: boolean; onPress: (part: RowPart) => void }) {
   const theme = useTheme();
   const done = row.state === 'done';
   const skipped = row.state === 'skipped';
@@ -627,7 +628,18 @@ export function TableSetRow({ row, ax, onPress }: { row: TableRow; ax: boolean; 
   ) : skipped ? (
     <Icon name="slash.circle" color="text.tertiary" size={24} />
   ) : (
-    <View style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: theme.colors['border.control'] }} />
+    // The ring is its own 52 pt target: it makes this the current set (Ben's decision 3).
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Make set ${setLabel} current`}
+      hitSlop={8}
+      onPress={() => {
+        onPress('marker');
+      }}
+      style={{ width: 52, minHeight: theme.target.workout.height, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <View style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: theme.colors['border.control'] }} />
+    </Pressable>
   );
   const tag = row.todayChange === null ? null : (
     <View style={{ marginLeft: theme.space['1'], paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, backgroundColor: theme.colors['bg.raised'] }}>
@@ -640,13 +652,15 @@ export function TableSetRow({ row, ax, onPress }: { row: TableRow; ax: boolean; 
     <Pressable
       accessibilityRole={skipped ? 'text' : 'button'}
       accessibilityLabel={row.accessibilityLabel}
-      accessibilityHint={done ? 'Edit this set' : skipped ? undefined : 'Makes this the current set'}
-      accessibilityActions={done ? [{ name: 'activate' }, { name: 'edit', label: 'Edit' }] : skipped ? [] : [{ name: 'activate' }, { name: 'select', label: 'Select' }]}
-      onAccessibilityAction={() => {
-        onPress();
+      accessibilityHint={skipped ? undefined : 'Edit this set'}
+      accessibilityActions={done ? [{ name: 'activate' }, { name: 'edit', label: 'Edit' }] : skipped ? [] : [{ name: 'activate' }, { name: 'edit', label: 'Edit' }, { name: 'select', label: 'Make current' }]}
+      onAccessibilityAction={(e) => {
+        onPress(e.nativeEvent.actionName === 'select' ? 'marker' : 'row');
       }}
       disabled={skipped}
-      onPress={onPress}
+      onPress={() => {
+        onPress('row');
+      }}
       style={({ pressed }) => ({
         minHeight: theme.target.workout.height,
         borderTopWidth: theme.dividerWidth,

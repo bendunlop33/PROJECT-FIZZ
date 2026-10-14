@@ -28,10 +28,10 @@ describe('workout keyboard (F5)', () => {
   });
 
   it('in the Table, tapping another row closes it before selecting or editing (review S3)', () => {
-    for (const [state, action] of [['pending', 'select'], ['done', 'edit']] as const) {
+    for (const [state, part, action] of [['pending', 'marker', 'select'], ['pending', 'row', 'edit'], ['done', 'row', 'edit']] as const) {
       const calls: string[] = [];
       const h = { dismissKeyboard: vi.fn(() => calls.push('dismiss')), edit: vi.fn(() => calls.push('edit')), select: vi.fn(() => calls.push('select')) };
-      expect(runRowTap({ state, setId: 's1' }, h).kind).toBe(action);
+      expect(runRowTap({ state, setId: 's1' }, h, part).kind).toBe(action);
       expect(calls).toEqual(['dismiss', action]);
       expect(h[action]).toHaveBeenCalledWith('s1');
     }

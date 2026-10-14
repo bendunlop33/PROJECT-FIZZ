@@ -262,9 +262,12 @@ describe('chips (WT8, WT9)', () => {
 
 describe('row taps (WT10, WT11, WT12; Ben decision 4)', () => {
   const row = (state: TableRow['state']) => ({ state, setId: `set-${state}` });
-  it('a done row opens the correction sheet; a pending row (ring included) only selects; open and skipped do nothing', () => {
+  it('a done row opens the correction sheet; a pending row opens Edit set and its ring only selects; open and skipped do nothing', () => {
     expect(rowTap(row('done'))).toEqual({ kind: 'edit', setId: 'set-done' });
-    expect(rowTap(row('pending'))).toEqual({ kind: 'select', setId: 'set-pending' });
+    expect(rowTap(row('done'), 'marker')).toEqual({ kind: 'edit', setId: 'set-done' });
+    expect(rowTap(row('pending'))).toEqual({ kind: 'edit', setId: 'set-pending' });
+    expect(rowTap(row('pending'), 'marker')).toEqual({ kind: 'select', setId: 'set-pending' });
+    expect(rowTap(row('open'), 'marker')).toEqual({ kind: 'none' });
     expect(rowTap(row('open'))).toEqual({ kind: 'none' });
     expect(rowTap(row('skipped'))).toEqual({ kind: 'none' });
   });
@@ -436,7 +439,7 @@ describe('the Table loop end to end, offline (WT1, WT6, WT10, WT13, WT42)', () =
     const rows = t.blocks[0]?.kind === 'exercise' ? t.blocks[0].card.rows : [];
     const [open, , third] = rows;
     if (!open || !third) throw new Error('rows');
-    expect(rowTap(third)).toEqual({ kind: 'select', setId: third.setId });
+    expect(rowTap(third, 'marker')).toEqual({ kind: 'select', setId: third.setId });
     // The screen's own flow: the open row's unsaved edit is saved, then the select, on the version the save returned.
     const selected = await selectRowFlow({
       setId: third.setId,

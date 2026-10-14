@@ -15,7 +15,8 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NumberAccessory, NumberStepper, PrimaryButton, StatusLine, StepperTileRow, TextButton, TextField } from '../../ui';
+import { AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NumberAccessory, NumberStepper, PrimaryButton, SecondaryButton, StatusLine, StepperTileRow, TextButton, TextField } from '../../ui';
+import { PlannedSetEdit } from './PlannedSetEdit';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
 import { stepperRowTiles } from '../../workout/tile-fit';
 
@@ -28,7 +29,8 @@ import { stepperRowTiles } from '../../workout/tile-fit';
  * `correct_set`; their toast (with its own Undo) wins when they changed.
  * In an active workout, `Target RPE` sets Ben's own target for this set in
  * the same `correct_set` (CHANGELOG 2026-10-11 (b) "Edit set"); the offer
- * check runs on it again (F4).
+ * check runs on it again (F4). A set not done yet opens `PlannedSetEdit`
+ * instead (14 Oct): its plan, never a result.
  */
 export function EditSetScreen() {
   const theme = useTheme();
@@ -50,6 +52,7 @@ export function EditSetScreen() {
   const [saveOp] = useState(newUuid);
   const [deleteOp] = useState(newUuid);
   const [noteOp] = useState(newUuid);
+  const [insertOp] = useState(newUuid);
   /** The note field as typed; null = untouched (shows the stored note). */
   const [noteText, setNoteText] = useState<string | null>(null);
 
@@ -64,6 +67,10 @@ export function EditSetScreen() {
   }, [sessionId, setId]);
 
   const view = data ? services.workout.editView(data, setId, values, exclusions, targetRpe, setType) : null;
+  // A set not done yet edits its plan (14 Oct): target, type, target RPE, rest, note.
+  if (data && aggregate?.session.status === 'active' && aggregate.sets.find((s) => s.id === setId)?.status === 'pending') {
+    return <PlannedSetEdit key={`${setId}:${String(aggregate.revision)}`} data={data} setId={setId} onStale={() => void load()} />;
+  }
   if (!aggregate || !view) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], padding: theme.space['4'] }}>
@@ -156,6 +163,19 @@ export function EditSetScreen() {
     }
     changed();
     navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.deleted(view.setNumber), targetOpId: deleteOp } }));
+  }
+
+  /** `Insert set after` (14 Oct): a new set straight after this one, copying it, with Undo. The logged set is never touched. */
+  async function insertAfter() {
+    if (!view || !ex || aggregate?.session.status !== 'active') return;
+    const r = await services.workout.addSet({ sessionId, sessionExerciseId: ex.id, opId: insertOp, newSetId: newUuid(), afterSetId: setId });
+    if (!r.ok) {
+      setError(r.error.code === 'stale_version' || r.error.code === 'write_conflict' ? 'The workout changed. Try again.' : r.error.message);
+      void load();
+      return;
+    }
+    changed();
+    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.added(view.setNumber + 1), targetOpId: insertOp } }));
   }
 
   return (
@@ -330,6 +350,11 @@ export function EditSetScreen() {
         <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText>
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
         <PrimaryButton label="Save changes" disabled={!view.changed && !noteEdited} onPress={() => void save()} />
+        {aggregate.session.status === 'active' ? (
+          <View style={{ flexDirection: 'row' }}>
+            <SecondaryButton label="Insert set after" onPress={() => void insertAfter()} />
+          </View>
+        ) : null}
         <View style={{ height: theme.space['8'] }} />
         <DangerTextButton label="Delete set" onPress={() => void remove()} />
       </ScrollView>

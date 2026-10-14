@@ -1771,8 +1771,8 @@ export function WorkoutScreen() {
               exclusionTag={r.exclusionTag}
               exclusionAccessibility={r.exclusionAccessibility}
               onPress={() => {
-                if (r.status === 'done') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
-                if (r.status === 'pending') void run({ type: 'set_active_set', at: services.now(), opId: newUuid(), setId: r.setId, expectedVersion: session.version });
+                // Any set opens Edit set (14 Oct): a done one is corrected, one not done yet edits its plan (`Do next` there makes it current).
+                if (r.status === 'done' || r.status === 'pending') navigation.navigate('EditSet', { sessionId: session.id, setId: r.setId });
               }}
             />
           </View>
@@ -2444,7 +2444,7 @@ function SetRowLine({
     <Pressable
       accessibilityRole={tappable ? 'button' : 'text'}
       accessibilityLabel={`Set ${String(number)}${badges.length ? ` ${badges.join(' ')}` : ''}, ${STATUS_WORD[status]}, ${text}${caption !== null ? `, at ${caption}` : ''}${edited ? ', edited' : ''}${exclusionAccessibility ? `. ${exclusionAccessibility}` : ''}`}
-      accessibilityHint={status === 'done' ? 'Edit or delete this set' : status === 'pending' ? 'Make this the current set' : undefined}
+      accessibilityHint={status === 'done' || status === 'pending' ? 'Edit or delete this set' : undefined}
       disabled={!tappable}
       onPress={onPress}
       style={({ pressed }) => ({

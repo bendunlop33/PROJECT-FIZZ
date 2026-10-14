@@ -250,17 +250,22 @@ export function chipsFor(p: ChipInput): ChipState {
 
 export type RowTap = { kind: 'edit'; setId: string } | { kind: 'select'; setId: string } | { kind: 'none' };
 
+/** Where on a row the tap landed: the row itself, or its ring / tick (the marker cell). */
+export type RowPart = 'row' | 'marker';
+
 /**
- * A row tap (§2A.7, Ben's decision 4): a done row opens the correction
- * sheet; a pending row (anywhere, its ring included) only becomes the open
- * row; the open and skipped rows do nothing. No tap here ever logs.
+ * A row tap (§2A.7; 14 Oct, Ben: "I should be able to edit anything on the
+ * sets"): a done row opens the correction sheet; a pending row opens Edit
+ * set for its plan, and its ring only makes it the open row (Ben's decision
+ * 3: a non-current row's tick selects, never logs); the open and skipped
+ * rows do nothing. No tap here ever logs.
  */
-export function rowTap(row: Pick<TableRow, 'state' | 'setId'>): RowTap {
+export function rowTap(row: Pick<TableRow, 'state' | 'setId'>, part: RowPart = 'row'): RowTap {
   switch (row.state) {
     case 'done':
       return { kind: 'edit', setId: row.setId };
     case 'pending':
-      return { kind: 'select', setId: row.setId };
+      return part === 'marker' ? { kind: 'select', setId: row.setId } : { kind: 'edit', setId: row.setId };
     case 'open':
     case 'skipped':
       return { kind: 'none' };
@@ -272,8 +277,8 @@ export function rowTap(row: Pick<TableRow, 'state' | 'setId'>): RowTap {
  * first, so tapping another row is a tap outside the open row's fields
  * (the Table keeps taps with `keyboardShouldPersistTaps: 'handled'`).
  */
-export function runRowTap(row: Pick<TableRow, 'state' | 'setId'>, h: { dismissKeyboard: () => void; edit: (setId: string) => void; select: (setId: string) => void }): RowTap {
-  const tap = rowTap(row);
+export function runRowTap(row: Pick<TableRow, 'state' | 'setId'>, h: { dismissKeyboard: () => void; edit: (setId: string) => void; select: (setId: string) => void }, part: RowPart = 'row'): RowTap {
+  const tap = rowTap(row, part);
   if (tap.kind === 'none') return tap;
   h.dismissKeyboard();
   if (tap.kind === 'edit') h.edit(tap.setId);
