@@ -19,6 +19,7 @@ import {
   routeLine,
   seesLabel,
   starterChips,
+  type WorkoutChipContext,
   startLiveTurn,
   statusView,
   thinkingLabel,
@@ -76,7 +77,7 @@ export function CoachSheetScreen() {
   /** Today in the profile zone, as the coach context uses (review ben-bugs r2 N2). */
   const [profileToday, setProfileToday] = useState<string | null>(null);
   const [threads, setThreads] = useState<CoachThread[] | null>(null);
-  const [workout, setWorkout] = useState<{ title: string | null; active: boolean; out: WorkoutOutOfContext | null; bar: string; exercise: { id: string; name: string } | null } | null>(null);
+  const [workout, setWorkout] = useState<{ title: string | null; active: boolean; out: WorkoutOutOfContext | null; bar: string; exercise: { id: string; name: string } | null; chips: WorkoutChipContext | null } | null>(null);
   const [askPain, setAskPain] = useState(false);
   /** The movements `Pain` can flag (named, else the focus row, else all); `picking` shows them as chips. */
   const [painChoices, setPainChoices] = useState<{ exerciseId: string; name: string }[]>([]);
@@ -120,7 +121,7 @@ export function CoachSheetScreen() {
     if (d === null) {
       // The coach gets nothing of it; the chip never says `Sees: this workout` then (review r2 N3).
       const out = missingWorkout.current;
-      setWorkout(out === null ? null : { title: null, active: false, out, bar: '', exercise: null });
+      setWorkout(out === null ? null : { title: null, active: false, out, bar: '', exercise: null, chips: null });
       return;
     }
     const active = d.aggregate.session.status === 'active';
@@ -133,6 +134,7 @@ export function CoachSheetScreen() {
       out: loadedOutOfContext(d.aggregate.session),
       bar: workoutBarText(rest === null ? null : rest.kind === 'ended' ? { kind: 'ended' } : { kind: rest.kind, remainingMs: rest.remainingMs }, d.aggregate.session.pause !== null),
       exercise: v?.focus ? { id: v.focus.exerciseId, name: v.focus.exerciseName } : null,
+      chips: active ? services.workout.chatContext(d) : null,
     });
   }, [services]);
 
@@ -391,7 +393,7 @@ export function CoachSheetScreen() {
 
   const status = availability === null ? null : statusView(availability);
   const route = availability === null ? null : routeLine(availability);
-  const chips: StarterChip[] = availability === null ? [] : starterChips(entry, availability, workout?.active === true);
+  const chips: StarterChip[] = availability === null ? [] : starterChips(entry, availability, workout?.active === true, workout?.chips ?? null);
   const empty = rows.length === 0 && live === null;
   const running = live !== null;
   const canSend = status?.canSend === true && text.trim() !== '' && !running;

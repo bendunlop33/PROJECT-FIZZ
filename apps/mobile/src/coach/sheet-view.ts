@@ -83,7 +83,33 @@ export type StarterChip =
   /** workout-builder §3: opens the Build card in the thread; disabled with `Needs the coach` when the coach can't answer (§5.4). */
   | { label: 'Build a workout'; input: null; build: { enabled: boolean } };
 
-export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutActive: boolean): StarterChip[] {
+/** What a live workout's chips are about (`workoutChatContext`): the current exercise, and whether the set just logged was off target. */
+export interface WorkoutChipContext {
+  exerciseName: string | null;
+  offTarget: boolean;
+}
+
+/**
+ * A live workout's chips (14 Oct): about the current exercise, and words the
+ * coach's tools act on (so they work whichever tools the coach has today).
+ * `Adjust the rest?` leads after a set that was off its target.
+ */
+function liveWorkoutChips(ctx: WorkoutChipContext | null, pain: StarterChip): StarterChip[] {
+  const chip = (label: string, text = label): StarterChip => ({ label, input: { kind: 'words', text, spoken: false } });
+  const name = ctx?.exerciseName ?? null;
+  return [
+    ...(ctx?.offTarget === true && name !== null ? [chip('Adjust the rest?', `Adjust the rest of my ${name} sets`)] : []),
+    chip('Set weights from my history'),
+    ...(name === null
+      ? []
+      : [chip(`Lighter ${name}`), chip(`Heavier ${name}`), chip(`+ Set ${name}`, `Add a set of ${name}`), chip(`− Set ${name}`, `Remove a set of ${name}`), chip(`Swap ${name}`)]),
+    chip('Add an exercise'),
+    chip('Short on time'),
+    pain,
+  ];
+}
+
+export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutActive: boolean, workout: WorkoutChipContext | null = null): StarterChip[] {
   const pain: StarterChip = { label: 'Pain', input: null };
   const words = (text: string): StarterChip => ({ label: text, input: { kind: 'words', text, spoken: false } });
   // Pain is deterministic and works offline; the rest need the coach.
@@ -91,9 +117,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
   switch (entry.kind) {
     case 'workout':
       if (!workoutActive) return ready ? [words('How did that go?')] : [];
-      return ready
-        ? [{ label: 'Too hard', input: { kind: 'chip', chip: 'too_hard' } }, { label: 'Too easy', input: { kind: 'chip', chip: 'too_easy' } }, words('Short on time'), words('Machine busy'), pain]
-        : [pain];
+      return ready ? liveWorkoutChips(workout, pain) : [pain];
     case 'summary':
       return ready ? [words('What should I change next time?')] : [];
     case 'today':
