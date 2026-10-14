@@ -120,7 +120,8 @@ jobs:
     name: Build unsigned .ipa
     needs: check
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[ios-build]')
-    runs-on: macos-26
+    # macos-26 runners were not being assigned (13–14 Oct); macos-15 has more capacity.
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -134,6 +135,11 @@ jobs:
 
       - name: Select Xcode
         run: |
+          if [ ! -d "$XCODE_APP" ]; then
+            # Fall back to the newest Xcode 26 on the image (macos-15 may carry a different 26.x).
+            ALT=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+            if [ -n "$ALT" ]; then echo "Using $ALT instead of $XCODE_APP"; XCODE_APP="$ALT"; fi
+          fi
           if [ ! -d "$XCODE_APP" ]; then
             echo "::error::$XCODE_APP is not on this runner image. Installed Xcodes:"
             ls -d /Applications/Xcode*.app || true
