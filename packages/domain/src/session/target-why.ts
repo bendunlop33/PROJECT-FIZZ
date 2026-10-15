@@ -19,6 +19,7 @@ import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
 import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
+import { shownCoachNote } from './builder-loads';
 import { equipmentOfRow } from './equipment-snapshot';
 
 /**
@@ -36,7 +37,7 @@ export type WhyRowKey = 'coach_workout' | 'set_by' | 'last_time' | 'reason' | 'e
 export interface WhyRow {
   key: WhyRowKey;
   /** Null: one full-width line with no label column (`Swapped before start · Bench press`, overview-today-edits.md §5). */
-  label: 'Set by' | 'Last time' | 'Reason' | 'Equipment' | 'Pain' | 'Before flag' | 'Not used' | null;
+  label: 'Set by' | 'Last time' | 'Reason' | 'Coach’s note' | 'Equipment' | 'Pain' | 'Before flag' | 'Not used' | null;
   lines: string[];
   /** `actual`: logged results, never targets. `warning`: shown with the warning icon. */
   kind: 'app' | 'actual' | 'warning';
@@ -179,7 +180,13 @@ function setByRow(p: TargetProvenance | undefined): WhyRow {
       return {
         key: 'set_by',
         label: 'Set by',
-        lines: [p.coach?.scope === 'next_session' && after !== null ? `Coach · after ${after}` : `Coach · ${dayMonthText(p.setAt.utc, p.setAt.tz)}`],
+        lines: [
+          p.coach?.scope === 'build'
+            ? `From a coach workout · ${dayMonthText(p.setAt.utc, p.setAt.tz)}${p.estimate === true ? ' · est.' : ''}`
+            : p.coach?.scope === 'next_session' && after !== null
+              ? `Coach · after ${after}`
+              : `Coach · ${dayMonthText(p.setAt.utc, p.setAt.tz)}`,
+        ],
         kind: 'app',
       };
   }
@@ -242,8 +249,12 @@ function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: Ses
       return { key: 'reason', label: 'Reason', lines: ['Same as last time'], kind: 'app' };
     case 'coach': {
       // The coach's own words, in quotes (never shown as app text); none given, no row.
-      const reason = p.coach?.reason ?? null;
-      return reason === null || reason.trim() === '' ? null : { key: 'reason', label: 'Reason', lines: [`“${reason.trim()}”`], kind: 'app' };
+      // A coach-built load's words are a note (data, not fact; review r2 B1r): code's reason line is under Equipment.
+      // Review r4: a build note with any number is never shown (sessions planned before the rule included).
+      const build = p.coach?.scope === 'build';
+      const reason = build ? shownCoachNote(p.coach?.reason) : (p.coach?.reason ?? null);
+      const label = build ? 'Coach’s note' : 'Reason';
+      return reason === null || reason.trim() === '' ? null : { key: 'reason', label, lines: [`“${reason.trim()}”`], kind: 'app' };
     }
   }
 }

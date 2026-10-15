@@ -11,6 +11,8 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
+import { draftWhyView, questionTap } from '../src/coach/build-view';
+import { answerSaveOf, threadRows } from '../src/coach/sheet-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -621,7 +623,8 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
     model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
     await ask(s, 'Can you make me a push session');
-    expect(model.requests[0]?.instructions).toContain('Never give loads, weights or minutes');
+    expect(model.requests[0]?.instructions).toContain('Never give minutes');
+    expect(model.requests[0]?.instructions).toContain('build.loadReferences');
   });
   it('review r5 B2: the turn after a draft was built, "Your push session is ready in Workouts." is shown', async () => {
     const { s } = await benWithHistory();
@@ -1015,5 +1018,309 @@ describe('F21: the same exercise twice in a coach workout (Ben, 13 Oct)', () => 
     const again = await s.overview.load({ target: { kind: 'session', sourceSessionId: sessionId }, gymId });
     // Repeating it: each Lateral raise slot repeats its own sets (2 × 16 at 5, 4 × 10 at 10).
     expect(again?.view.rows.filter((r) => r.name === 'Lateral raise').map((r) => [r.detail.replaceAll('\u00a0', ' '), r.load.value])).toEqual([['2 × 16', '5'], ['4 × 10', '10']]);
+  });
+});
+
+describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', () => {
+  const load = (value: number, convention: string, basis: string) => ({ value, unit: 'kg', convention, basis, from: 'own_history', relatedCatalogueId: null });
+  const PUSH_LOADS: [string, Record<string, unknown>][] = [
+    ['Bench press', { warmups: 2, workingSets: 4, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(100, 'total', 'repeat last weight') }],
+    ['Cable fly', { workingSets: 3, reps: { min: 12, max: 15 }, targetRpe: 9, load: load(13, 'stack', 'est. for 12–15 @9') }],
+    ['Triceps pushdown', { workingSets: 3, reps: { min: 10, max: 12 }, targetRpe: 9, load: load(40, 'stack', 'last 25×11') }],
+  ];
+
+  it('the context lists load references; each row shows its load and a short reason; est. and Rule are marked; preview == Start', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
+    const refs = (buildOf(model.requests[0] as ModelRequest) as BuildView & { loadReferences?: { name: string; last: string[]; convention: string; firstTimeMax: number | null }[] }).loadReferences ?? [];
+    const benchRef = refs.find((r) => r.name === 'Bench press');
+    expect(benchRef?.convention).toBe('total');
+    expect(benchRef?.last[0]).toMatch(/^100×7 · \d+ Oct · app$/);
+    expect(refs.find((r) => r.name === 'Cable fly')?.firstTimeMax).toBeGreaterThan(0);
+
+    const p = await page(s, draftId, gymId);
+    const row = (name: string) => p.view.rows.find((r) => r.name === name);
+    const bench = row('Bench press');
+    const fly = row('Cable fly');
+    const pushdown = row('Triceps pushdown');
+    if (!bench || !fly || !pushdown || p.coachDraft === null) throw new Error('rows');
+    expect(bench.load.value).toBe('100');
+    // Review r2 B1r: the row reads code's line; the coach's words are its note behind Why?.
+    expect(p.coachDraft.reasons[bench.slotKey]).toBe('last 100×7 → 100 · main lift');
+    expect(p.coachDraft.loads.find((l) => l.name === 'Bench press')).toMatchObject({ quote: 'repeat last weight', notes: ['last 100×7 → 100'] });
+    expect(p.coachDraft.estimates).toEqual([fly.slotKey]);
+    // B2: 13 was fitted to 10 on this stack, so code's basis names the target; the coach's line is under NOT USED.
+    expect(p.coachDraft.reasons[fly.slotKey]).toBe('est. · first time → 10');
+    expect(p.coachDraft.loads.find((l) => l.name === 'Cable fly')).toMatchObject({ label: 'est.', notUsed: 'est. for 12–15 @9' });
+    expect(p.coachDraft.loadLines[fly.slotKey]).toBe('LOAD  10 kg stack · est.');
+    expect(p.coachDraft.loadLines[pushdown.slotKey]).toMatch(/^LOAD {2}25 kg stack · Rule$/);
+    // USED names only what was read: everything here is logged in the app.
+    expect(p.coachDraft.historyUsed).toBe('logged');
+    expect(p.coachDraft.reasons[pushdown.slotKey]).toMatch(/^Rule · last 25×11$/);
+    expect(p.coachDraft.headNote).toMatch(/^Push · Bench press · 45 min · last Push 2 days ago$/);
+    expect(p.coachDraft.loads.find((l) => l.name === 'Triceps pushdown')).toMatchObject({ label: 'Rule', notes: ['coach load 40 kg too far from last 25 × 11'] });
+
+    const started = await s.overview.start(startReq(p, gymId, 'start-v2'));
+    if (!started.ok) throw new Error(started.error.message);
+    for (const r of p.view.rows) matchesSession(r, started.aggregate);
+    const benchRow = started.aggregate.exercises.find((e) => e.exerciseName === 'Bench press');
+    const benchSets = started.aggregate.sets.filter((x) => x.sessionExerciseId === benchRow?.id && x.setType === 'working');
+    expect(benchSets.every((x) => x.planned.load?.value === 100 && x.planned.source === 'coach' && x.planned.provenance?.coach?.scope === 'build')).toBe(true);
+  });
+
+  it('WB-L12: a newer bench session caps the stored load on the page and at Start; the preview key changes', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
+    const before = await page(s, draftId, gymId);
+    h.clockMs += 3_600_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 5, rpe: 10 }] }]);
+    h.clockMs += 3_600_000;
+    const after = await page(s, draftId, gymId);
+    expect(after.view.previewKey).not.toBe(before.view.previewKey);
+    const bench = after.view.rows.find((r) => r.name === 'Bench press');
+    expect(bench?.load.value).toBe('95');
+    expect(after.coachDraft?.loads.find((l) => l.name === 'Bench press')?.notes.some((n) => /^capped at 95 · newer session/.test(n.replaceAll('\u00a0', ' ')))).toBe(true);
+    const started = await s.overview.start(startReq(before, gymId, 'start-stale'));
+    expect(started.ok).toBe(false);
+    const ok = await s.overview.start(startReq(after, gymId, 'start-fresh'));
+    if (!ok.ok) throw new Error(ok.error.message);
+    for (const r of after.view.rows) matchesSession(r, ok.aggregate);
+  });
+
+  it('B4: a draft built during a workout is re-checked against that workout’s sets (started before the build)', async () => {
+    const { s, gymId } = await benWithHistory();
+    // The workout starts first; the draft is built while it is open; bench 100 × 5 @ 10 is logged after.
+    const started = await s.workout.start({ gymId, opId: 'during-start', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    h.clockMs += 60_000;
+    const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
+    const before = await page(s, draftId, gymId);
+    expect(before.view.rows.find((r) => r.name === 'Bench press')?.load.value).toBe('100');
+    const sessionId = started.aggregate.session.id;
+    const pick = (await s.workout.pickerExercises(sessionId, 'Bench press')).find((x) => x.exercise.name === 'Bench press');
+    if (!pick) throw new Error('bench');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: 'during-add' });
+    if (!added.ok) throw new Error(added.error.message);
+    const ex = added.aggregate.exercises.at(-1);
+    const set = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex?.id).sort((a, b) => a.index - b.index)[0];
+    if (!ex || !set) throw new Error('set');
+    for (const extra of added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.id !== set.id)) await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: extra.id, expectedSetVersion: extra.version });
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: { value: 100, unit: 'kg', convention: 'total' }, reps: 5, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    const cur = await s.workout.load(sessionId);
+    if (!cur) throw new Error('session');
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: cur.aggregate.session.version, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    h.clockMs += DAY;
+    const after = await page(s, draftId, gymId);
+    const bench = after.view.rows.find((r) => r.name === 'Bench press');
+    expect(bench?.load.value).toBe('95');
+    expect(after.coachDraft?.reasons[bench?.slotKey ?? '']).toBe('last 100×5 @10 · capped → 95 · main lift');
+    const ok = await s.overview.start(startReq(after, gymId, 'start-after-during'));
+    if (!ok.ok) throw new Error(ok.error.message);
+    for (const r of after.view.rows) matchesSession(r, ok.aggregate);
+  });
+
+  it('WB-L10: offline after the build, the stored loads and reasons are the same and nothing is asked', async () => {
+    const { s, gymId } = await benWithHistory();
+    const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
+    const before = await page(s, draftId, gymId);
+    const calls = model.requests.length;
+    connection = { ...CONNECTED, status: 'offline' };
+    const after = await page(s, draftId, gymId);
+    expect(after.view.rows.map((r) => r.load.value)).toEqual(before.view.rows.map((r) => r.load.value));
+    expect(after.coachDraft?.reasons).toEqual(before.coachDraft?.reasons);
+    expect(model.requests.length).toBe(calls);
+  });
+});
+
+describe('v2: clarifying questions in the sheet (BD17; WB-Q1, WB-Q2, WB-Q9, WB-Q10, WB-Q11)', () => {
+  const QUESTION = {
+    topic: 'main_lift',
+    question: 'Main lift for legs?',
+    answers: [
+      { label: 'squat', catalogueId: 'barbell-back-squat' },
+      { label: 'front', catalogueId: 'barbell-front-squat' },
+      { label: 'LP', catalogueId: 'machine-leg-press' },
+    ],
+  };
+  const legs = (req: ModelRequest): ModelEvent[] => {
+    const b = buildOf(req);
+    const id = (name: string) => b.usable.find((u) => u.name === name)?.catalogueId ?? 'barbell-back-squat';
+    return toolCall('propose_workout', { name: 'Legs', exercises: [ex(id('Back squat'), { workingSets: 4, reps: { min: 5, max: 6 } })], message: 'Squat first.' });
+  };
+
+  it('one card with catalogue names and no count; the turn stops; the answer continues the build; a tapped main lift is saved with Undo', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => toolCall('ask_build_question', QUESTION), () => replyWith('never')]);
+    const first = await ask(s, 'build me a leg workout');
+    expect(model.requests).toHaveLength(1);
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('ask_build_question');
+    const card = first.cards[0]?.record;
+    expect(card).toMatchObject({ status: 'proposed', detail: { kind: 'build_question', question: 'Main lift for legs?', day: { id: 'legs', name: 'Legs' } } });
+    // Catalogue names, not the model's labels; an answer code can't use here (WB-Q2) is dropped.
+    const labels = card?.detail.kind === 'build_question' ? card.detail.answers.map((a) => a.label) : [];
+    expect(labels.slice(0, 2)).toEqual(['Back squat', 'Front squat']);
+    expect(labels.every((l) => ['Back squat', 'Front squat', 'Leg press'].includes(l))).toBe(true);
+    expect(await s.coachDrafts.list()).toEqual([]);
+
+    const rowsOf = async () => threadRows({ ...((await s.coach.loadThread(first.threadId)) ?? (() => { throw new Error('thread'); })()), nowUtc: h.now().utc });
+    const qRow = (await rowsOf()).find((r) => r.kind === 'card' && r.card.question !== undefined);
+    expect(qRow?.kind === 'card' && qRow.card.question).toMatchObject({ state: 'open', collapsed: null, question: 'Main lift for legs?' });
+
+    // Ben taps Back squat: saved for Legs (he hadn't chosen one), then sent as his answer.
+    const saved = await s.training.saveMainLiftAnswer({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q1:main-lift' });
+    expect(saved).not.toBeNull();
+    expect((await s.training.snapshot())?.mainLifts.legs).toMatchObject({ name: 'Back squat', source: 'yours' });
+    // A retried tap saves once.
+    expect(await s.training.saveMainLiftAnswer({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q1:main-lift' })).toBeNull();
+    model = new StepModel([legs, () => replyWith('Squat first.')]);
+    const second = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'Back squat', spoken: false }, turnId: h.ids() });
+    expect(model.requests[0]?.instructions).toContain('Ben’s message answers your question');
+    expect(second.cards[0]?.record.detail.kind).toBe('build_workout');
+    const after = (await rowsOf()).find((r) => r.kind === 'card' && r.card.question !== undefined);
+    expect(after?.kind === 'card' && after.card.question?.collapsed).toBe('Main lift for legs? Back squat ✓');
+
+    // Undo while the profile is still at the saved version.
+    expect(await s.training.undoMainLiftAnswer({ dayId: 'legs', savedVersion: saved?.savedVersion ?? 0, opId: 'q1:undo' })).toBe('undone');
+    expect((await s.training.snapshot())?.mainLifts.legs?.source).not.toBe('yours');
+  });
+
+  it('WB-Q10 / WB-Q11: a Profile choice made since the card wins: no save over it, and a stale Undo is refused', async () => {
+    const { s } = await benWithHistory();
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    const front = snap.options.legs?.find((o) => o.name === 'Front squat');
+    if (!front) throw new Error('no front squat option');
+    await s.training.change({ kind: 'main_lift', dayId: 'legs', exerciseId: front.id }, snap.profile.version, 'profile-front');
+    expect(await s.training.saveMainLiftAnswer({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q2:main-lift' })).toBeNull();
+    expect((await s.training.snapshot())?.mainLifts.legs?.name).toBe('Front squat');
+
+    await s.training.change({ kind: 'main_lift', dayId: 'legs', exerciseId: null }, (await s.training.snapshot())?.profile.version ?? 0, 'profile-clear');
+    const saved = await s.training.saveMainLiftAnswer({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q3:main-lift' });
+    if (saved === null) throw new Error('not saved');
+    await s.training.change({ kind: 'main_lift', dayId: 'legs', exerciseId: front.id }, saved.savedVersion, 'profile-front-2');
+    expect(await s.training.undoMainLiftAnswer({ dayId: 'legs', savedVersion: saved.savedVersion, opId: 'q3:undo' })).toBe('changed');
+    expect((await s.training.snapshot())?.mainLifts.legs?.name).toBe('Front squat');
+  });
+
+  it('WB-Q9: an unanswered card reads `Not answered` after 12 h', async () => {
+    const { s } = await benWithHistory();
+    model = new StepModel([() => toolCall('ask_build_question', QUESTION)]);
+    const first = await ask(s, 'build me a leg workout');
+    const data = await s.coach.loadThread(first.threadId);
+    if (data === null) throw new Error('thread');
+    const later = threadRows({ ...data, nowUtc: new Date(h.clockMs + 13 * 3_600_000).toISOString() }).find((r) => r.kind === 'card' && r.card.question !== undefined);
+    expect(later?.kind === 'card' && later.card.question).toMatchObject({ state: 'not_answered', collapsed: 'Not answered' });
+  });
+});
+
+describe('builder-v2 review: references, length, questions (S1, S2, S7, WB-L5c, WB-P7, WB-Q6, WB-Q7, WB-Q9)', () => {
+  const load = (value: number, convention: string, basis: string) => ({ value, unit: 'kg', convention, basis, from: 'own_history', relatedCatalogueId: null });
+  type RefView = { name: string; estimate: string | null; last: string[] };
+  const refsOf = (req: ModelRequest) => (buildOf(req) as BuildView & { loadReferences?: RefView[] }).loadReferences ?? [];
+
+  it('WB-L5c / S1: bench last done over 180 days ago is listed with Ben’s own ratio, and the checker bounds the load by the same reference (est.)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const now0 = h.clockMs;
+    h.clockMs = now0 - 220 * DAY;
+    await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 100, reps: 8, rpe: 8 }] },
+      { exercise: 'Incline dumbbell press', sets: [{ load: 30, reps: 8, rpe: 8 }] },
+    ]);
+    h.clockMs = now0 - 5 * DAY;
+    await logWorkout(h, s, gymId, [{ exercise: 'Incline dumbbell press', sets: [{ load: 32.5, reps: 8, rpe: 8 }] }]);
+    h.clockMs = now0;
+    const { draftId } = await buildPush(s, 'build me a push session with bench press', [['Bench press', { workingSets: 3, reps: { min: 6, max: 8 }, targetRpe: 8, load: load(110, 'total', 'est. from incline') }]]);
+    const bench = refsOf(model.requests[0] as ModelRequest).find((r) => r.name === 'Bench press');
+    expect(bench?.estimate).toMatch(/^est\. from incline dumbbell press 32\.5×8$/);
+    const p = await page(s, draftId, gymId);
+    const row = p.view.rows.find((r) => r.name === 'Bench press');
+    expect(row?.load.value).toBe('110');
+    expect(p.coachDraft?.estimates).toEqual([row?.slotKey]);
+  });
+
+  it('WB-P7 / S2: a typed build with no length uses Profile’s session length (the KNOWN block’s); words or chips still win', async () => {
+    const { s } = await benWithHistory();
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    // No training details saved yet: KNOWN lists the length as missing and the build default applies (§8.8 P1).
+    await buildPush(s, 'build me a push session');
+    expect(buildOf(model.requests[0] as ModelRequest).request.minutes).toBe(60);
+    await s.training.change({ kind: 'session_minutes', minutes: 75 }, snap.profile.version, 'len-75');
+    await buildPush(s, 'build me a push session');
+    expect(buildOf(model.requests[0] as ModelRequest).request.minutes).toBe(75);
+    await buildPush(s, 'build me a 30 min push session');
+    expect(buildOf(model.requests[0] as ModelRequest).request.minutes).toBe(30);
+  });
+
+  it('WB-Q6: typing "bench, under 40 min" answers the question and sets the fit to 40', async () => {
+    const { s, gymId } = await benWithHistory();
+    model = new StepModel([() => toolCall('ask_build_question', { topic: 'main_lift', question: 'Main lift for push?', answers: [{ label: 'Bench', catalogueId: 'barbell-bench-press' }, { label: 'Incline', catalogueId: 'dumbbell-incline-press' }] })]);
+    const first = await ask(s, 'build me a push workout');
+    model = new StepModel([pushStub(PUSH), () => replyWith('Done.')]);
+    const second = await s.coach.send({ entry: { kind: 'today' }, threadId: first.threadId, input: { kind: 'words', text: 'bench, under 40 min', spoken: false }, turnId: h.ids() });
+    expect(buildOf(model.requests[0] as ModelRequest).request.minutes).toBe(40);
+    const rec = second.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_workout') throw new Error('no draft');
+    expect((await page(s, rec.detail.draftId, gymId)).coachDraft?.fitMinutes).toBe(40);
+  });
+
+  it('WB-Q7: with everything known the tool is still offered, and a build is one turn with no question card', async () => {
+    const { s } = await benWithHistory();
+    const { result } = await buildPush(s, 'build me a 45-minute push session for this gym');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('ask_build_question');
+    expect(result.cards.map((c) => c.record.detail.kind)).toEqual(['build_workout']);
+  });
+
+  it('WB-Q9 / S7: offline, a chip tap saves nothing and says `Needs the coach`; a save survives reopening the sheet with its Undo', async () => {
+    const { s } = await benWithHistory();
+    const q = { actionId: 'q-off', topic: 'main_lift', day: { id: 'legs' } };
+    connection = { ...CONNECTED, status: 'offline' };
+    const before = await s.training.appliedOps();
+    const tap = questionTap(await s.coach.buildBlock(), q, { label: 'Back squat', catalogueId: 'barbell-back-squat' }, 'Skip');
+    expect(tap).toEqual({ kind: 'blocked', line: 'Needs the coach · Offline' });
+    expect(await s.training.appliedOps()).toEqual(before);
+    connection = CONNECTED;
+    const go = questionTap(await s.coach.buildBlock(), q, { label: 'Back squat', catalogueId: 'barbell-back-squat' }, 'Skip');
+    if (go.kind !== 'send' || go.saveMainLift === null) throw new Error('no save');
+    expect(go.saveMainLift).toEqual({ dayId: 'legs', catalogueId: 'barbell-back-squat', opId: 'q-off:main-lift' });
+    expect(await s.training.saveMainLiftAnswer(go.saveMainLift)).not.toBeNull();
+    // Reopen: the state comes from the profile, not the screen's memory.
+    const { services: again } = await h.launch();
+    expect(answerSaveOf('q-off', await again.training.appliedOps())).toEqual({ state: 'saved', canUndo: true });
+    const ops = await again.training.appliedOps();
+    expect(await again.training.undoMainLiftAnswer({ dayId: 'legs', savedVersion: ops?.version ?? 0, opId: 'q-off:main-lift-undo' })).toBe('undone');
+    expect(answerSaveOf('q-off', await again.training.appliedOps())).toEqual({ state: 'undone', canUndo: false });
+    expect(answerSaveOf('q-other', await again.training.appliedOps())).toBeNull();
+  });
+});
+
+describe('review builder-v2 r5 B1u: the coach’s message on the card and in `Why this workout` is words only', () => {
+  it('a message stating sets Ben never lifted shows only its words-only sentence; a decimal is never garbled', async () => {
+    const { s, gymId } = await benWithHistory();
+    model = new StepModel([pushStub(PUSH, 'Bench 102.5 since you hit 102.5 for 8 on Tuesday. Then incline. You did 105×8 on Tuesday, so bench leads.'), () => replyWith('Here it is.')]);
+    const result = await ask(s, 'build me a 45-minute push session for this gym');
+    const rec = result.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_workout') throw new Error('no draft');
+    const card = await s.coachDrafts.card({ draftId: rec.detail.draftId, versionN: 1, gymId });
+    expect(card?.rationale).toBe('Then incline.');
+    const p = await page(s, rec.detail.draftId, gymId);
+    expect(p.coachDraft?.rationale).toBe('Then incline.');
+    const coach = draftWhyView(p.coachDraft ?? { request: '', rationale: null, checks: [], fitMinutes: 0 }).find((x) => x.heading === 'COACH');
+    expect(coach?.lines).toEqual(['Then incline.']);
+  });
+
+  it('a message that is all numbers leaves no COACH section and no card text', async () => {
+    const { s, gymId } = await benWithHistory();
+    model = new StepModel([pushStub(PUSH, 'Your est. max is 140, so bench at 110.'), () => replyWith('Here it is.')]);
+    const result = await ask(s, 'build me a 45-minute push session for this gym');
+    const rec = result.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_workout') throw new Error('no draft');
+    expect((await s.coachDrafts.card({ draftId: rec.detail.draftId, versionN: 1, gymId }))?.rationale).toBeNull();
+    const p = await page(s, rec.detail.draftId, gymId);
+    expect(draftWhyView(p.coachDraft ?? { request: '', rationale: null, checks: [], fitMinutes: 0 }).some((x) => x.heading === 'COACH')).toBe(false);
   });
 });

@@ -53,6 +53,8 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'propose_workout':
       // The message is explanation: a retry that only rewords it is the same workout.
       return { exercises: call.args.exercises };
+    case 'ask_build_question':
+      return { topic: call.args.topic, question: call.args.question.trim().toLowerCase(), answers: call.args.answers };
     case 'log_set':
     case 'correct_set':
       return call.args;
@@ -116,6 +118,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'set_next_session_targets':
     case 'propose_next_workout_change':
     case 'propose_workout':
+    case 'ask_build_question':
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':

@@ -168,17 +168,18 @@ describe('`propose_workout` in the registry (§8.2)', () => {
     expect(all.filter((n) => /start|save_workout|save_routine|routine|schedule/.test(n))).toEqual([]);
   });
 
-  it('its strict schema has no load, weight, minutes, gym or equipment field', () => {
+  it('v2 (BD6): its strict schema has a per-exercise load with a basis, and no weight, minutes, gym or equipment field', () => {
     const [def] = functionToolDefinitions(buildTurnRegistry({ kind: 'general', benRequest: classifyBenRequest('build me a workout'), acceptedOffer: false, benPainWords: false, structuralSignals: [] }).tools.filter((t) => t.name === 'propose_workout'));
     const text = JSON.stringify(def?.parameters);
-    for (const f of ['load', 'weight', 'minutes', 'gymId', 'equipmentId', 'exerciseName']) expect(text).not.toContain(`"${f}"`);
+    for (const f of ['weight', 'minutes', 'gymId', 'equipmentId', 'exerciseName']) expect(text).not.toContain(`"${f}"`);
+    for (const f of ['load', 'basis', 'convention', 'unit']) expect(text).toContain(`"${f}"`);
   });
 });
 
 describe('arguments are checked before anything runs (WB3, WB13)', () => {
   const registry = buildTurnRegistry({ kind: 'general', benRequest: classifyBenRequest('build me a workout'), acceptedOffer: false, benPainWords: false, structuralSignals: [] });
 
-  it('a smuggled `load` (or minutes) fails the call; it is never dropped and run', () => {
+  it('a malformed `load` (no basis) or `minutes` fails the call; it is never dropped and run', () => {
     const withLoad = proposal({ exercises: [{ ...proposal().exercises[0], load: { value: 200, unit: 'kg', convention: 'total' } }] });
     expect(parseToolCall('t1', 'propose_workout', JSON.stringify(withLoad), registry)).toMatchObject({ ok: false, error: 'invalid_args' });
     expect(parseToolCall('t1', 'propose_workout', JSON.stringify(proposal({ minutes: 45 })), registry)).toMatchObject({ ok: false, error: 'invalid_args' });

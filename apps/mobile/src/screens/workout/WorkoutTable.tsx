@@ -1,7 +1,7 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { AccessibilityInfo, Keyboard, Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
-import { formatDuration, NBSP, type FocusView, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
+import { formatDuration, NBSP, targetLineLabel, targetLineText, type FocusView, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
 
 import { haptic } from '../../device/haptics';
@@ -1013,8 +1013,8 @@ export function OpenSetRow(p: OpenSetRowProps) {
       ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: theme.space['1'] }}>
-          <AppText variant="callout" color="text.secondary" numeric>
-            {plainSpaces(f.target ?? 'No target')}
+          <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={targetLineLabel(f.target, f.targetEstimate) ?? 'No target'}>
+            {plainSpaces(targetLineText(f.target, f.targetEstimate) ?? 'No target')}
           </AppText>
           {f.adjustedBy !== null ? (
             <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, backgroundColor: theme.colors['bg.surface'] }}>

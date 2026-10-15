@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -1723,13 +1723,13 @@ export function WorkoutScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
           <View style={{ flex: 1 }}>
             <LinkLine
-              accessibilityLabel={`${focus.target ?? 'No target for this set'}. Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change the rest.`}
+              accessibilityLabel={`${targetLineLabel(focus.target, focus.targetEstimate) ?? 'No target for this set'}. Rest after this set: ${formatDuration(focus.restAfterS)}. Tap to change the rest.`}
               onPress={() => {
                 setRestEditor(true);
               }}
             >
               <AppText variant="callout" color="text.secondary" numeric>
-                {`${focus.target ?? 'No target'} · Rest after `}
+                {`${targetLineText(focus.target, focus.targetEstimate) ?? 'No target'} · Rest after `}
                 <AppText variant="callout" numeric style={{ textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] }}>
                   {formatDuration(focus.restAfterS)}
                 </AppText>

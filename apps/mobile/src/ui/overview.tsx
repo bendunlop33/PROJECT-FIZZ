@@ -279,6 +279,12 @@ export interface OverviewRowProps {
   onCustomAction?: ((name: RowCustomAction['name']) => void) | undefined;
   /** After the pills: `Change Push A too ›` or its change-review card (§2.5). */
   footer?: ReactNode;
+  /** (Ben, 14 Oct) A coach draft's short reason line under the row: data, never rule prose. */
+  reason?: string | null;
+  /** The target is an estimate: `est.` by the load (rule 6). */
+  estimate?: boolean;
+  /** A coach draft's panel `LOAD` line (workout-builder §4.4): `LOAD  12.5 kg · est.`; `Why?` is the panel's pill. */
+  loadLine?: string | null;
 }
 
 /** `SourceTag` `Coach` (§5): the coach set this row's target. Icon and word, never colour alone. */
@@ -299,7 +305,7 @@ function CoachTag() {
  * the snap changed the target here; the reason is in the panel. At AX sizes
  * the load stacks under the name.
  */
-export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onHistory, onWhy, onStillHurts, onEditGym, onCoach, editPills = [], onEditPill, showWhy = true, customActions = [], onCustomAction, footer }: OverviewRowProps) {
+export function OverviewRow({ row, detail, open, stacked, last, first, onToggle, onHowTo, onHistory, onWhy, onStillHurts, onEditGym, onCoach, editPills = [], onEditPill, showWhy = true, customActions = [], onCustomAction, footer, reason = null, estimate = false, loadLine = null }: OverviewRowProps) {
   const theme = useTheme();
   const coachLabel = row.coach === null ? null : coachPill(row.coach).label;
   // Skipped variant (design-system §9.66): name and detail in text.tertiary, load `—`.
@@ -320,6 +326,11 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
           ) : null}
         </AppText>
         {row.rounded ? <Icon name="info.circle" color="text.tertiary" size={14} /> : null}
+        {estimate && !row.load.none ? (
+          <AppText variant="sectionLabel" color="text.secondary">
+            est.
+          </AppText>
+        ) : null}
       </View>
     </View>
   );
@@ -327,7 +338,7 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
     <View style={{ borderTopWidth: first ? 0 : theme.dividerWidth, borderBottomWidth: last ? theme.dividerWidth : 0, borderColor: theme.colors['border.divider'] }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={row.accessibilityLabel}
+        accessibilityLabel={`${row.accessibilityLabel}${estimate && !row.load.none ? ', estimate' : ''}${reason === null ? '' : `. ${reason}`}`}
         accessibilityHint={open ? 'Collapses.' : 'Expands.'}
         accessibilityState={{ expanded: open }}
         accessibilityActions={customActions.map((a) => ({ name: a.name, label: a.label }))}
@@ -350,12 +361,22 @@ export function OverviewRow({ row, detail, open, stacked, last, first, onToggle,
           <AppText variant="callout" color={skipped ? 'text.tertiary' : 'text.secondary'} numeric>
             {detail}
           </AppText>
+          {reason !== null && !skipped ? (
+            <AppText variant="label" color="text.tertiary" numeric numberOfLines={2}>
+              {reason}
+            </AppText>
+          ) : null}
           {stacked ? right : null}
         </View>
         {stacked ? null : right}
       </Pressable>
       {open ? (
         <View style={{ marginLeft: 36, marginBottom: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['3'] + 2, paddingTop: theme.space['3'], paddingBottom: theme.space['3'] + 2, gap: theme.space['3'] }}>
+          {loadLine !== null && !skipped ? (
+            <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={loadLine.replace(/^LOAD\s+/, 'Load ').replace(' · est.', ', estimate').replace(' · ', ', ')}>
+              {loadLine}
+            </AppText>
+          ) : null}
           {row.panel.length > 0 ? <PanelLines lines={row.panel} stacked={stacked} stillHurts={row.painFlag?.checkDue === true} onStillHurts={onStillHurts} onEditGym={onEditGym} /> : null}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {editPills.map((p) => (

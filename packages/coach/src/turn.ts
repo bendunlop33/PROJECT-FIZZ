@@ -1,6 +1,7 @@
 import { asksToStartOrSave, classifyPainMention, painBodyPart, START_BY_TAP_LINE, type AdjustIntent, type MessagePain } from '@fizz/domain';
 import {
   COACH_REPLY_TOOL_NAME,
+  MAX_BUILD_QUESTIONS,
   type ActionRecord,
   type BenInput,
   type CoachMessage,
@@ -27,8 +28,8 @@ import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, requestHas, revisesDraft, type BenRequest } from './request';
 import { parseToolCall } from './tool-call';
-import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS } from './build';
-import { buildFollowUpIn, buildPainMention, forcesBuild, refusedBuildActionIds } from './build-ask';
+import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
+import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, refusedBuildActionIds } from './build-ask';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -191,6 +192,8 @@ export interface GateInput {
   buildOpen?: boolean;
   /** (14 Oct) A workout turn while the workout is live: the today-tools are offered whatever Ben's words. */
   liveWorkout?: boolean;
+  /** (v2, BD17) This build request may still ask one clarifying question. */
+  buildQuestionOpen?: boolean;
 }
 
 /** The turn gate from Ben's own input only (registry.ts `TurnGate`). */
@@ -238,6 +241,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     intent,
     ...(g.buildOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildOpen: true } : {}),
     ...(live ? { liveWorkout: true } : {}),
+    ...(g.buildQuestionOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildQuestionOpen: true } : {}),
   };
 }
 
@@ -467,6 +471,11 @@ function afterWrite(record: ActionRecord): { sessionVersion?: number; sessionExe
 
 const INTERRUPTED_NOTE = 'Stopped.';
 
+/** (v2, BD17) Ben tapped Skip on the coach's question. */
+export const SKIPPED_LINE = 'Ben skipped your question: build now with the defaults and what you know. Do not ask again.';
+/** (v2, BD17) Ben's message answers the coach's question. */
+export const ANSWERED_LINE = 'Ben’s message answers your question: build the workout now (or, only if still needed, ask one more).';
+
 /** Fed back when a build turn's first answer was text (build 131). Never shown to Ben. */
 export const BUILD_NUDGE_LINE = 'Not shown. Ben asked for a workout in the app: call propose_workout now with the session (from his words, or the one you described earlier in this thread). Do not write the workout in reply.';
 
@@ -505,8 +514,14 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   // Build 131: a follow-up to a session the coach described in text ("yes add it", "put that in the app").
   // Review r4 S4: a refused build saved nothing, so "try again" on the next turn still reaches it.
-  const followUp = req.kind === 'general' && req.input.kind === 'words' ? buildFollowUpIn(history, req.input.text, await refusedBuildActionIds(history, (id) => ports.store.listTurnActions(id))) : null;
+  const saidWords = req.kind === 'general' && req.input.kind === 'words' ? req.input.text : null;
+  // v2 (BD17): Ben answering the coach's clarifying question is a build follow-up carrying his request's words.
+  const chain = saidWords === null ? null : await buildQuestionChain(history, saidWords, (id) => ports.store.listTurnActions(id));
+  const followUp = saidWords === null ? null : (chain?.followUp ?? buildFollowUpIn(history, saidWords, await refusedBuildActionIds(history, (id) => ports.store.listTurnActions(id))));
   const liveWorkout = req.kind === 'workout' && req.context.session?.session.status === 'active';
+  const askedBuild = saidWords !== null && (requestHas(classifyBenRequest(saidWords, 'general'), 'build') || (req.draftInContext === true && revisesDraft(saidWords)));
+  // At most 2 questions per build request, none in a draft revision, none after Skip (BD17).
+  const questionOpen = chain !== null && req.draftInContext !== true && !chain.skipped && chain.asked < MAX_BUILD_QUESTIONS && (askedBuild || chain.open !== null);
   const gate = gateFor({
     kind: req.kind,
     input: req.input,
@@ -516,6 +531,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(req.draftInContext === true ? { draftInContext: true } : {}),
     ...(followUp !== null ? { buildFollowUp: true } : {}),
     ...(req.buildAvailable === true ? { buildOpen: true } : {}),
+    ...(questionOpen ? { buildQuestionOpen: true } : {}),
   });
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
@@ -577,7 +593,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const todayOffered = registry.tools.some((t) => TODAY_TOOLS.has(t.name));
   const addOffered = registry.tools.some((t) => t.name === 'add_exercise_today');
   const baseInstructions = todayOffered ? `${COACH_INSTRUCTIONS}\n${liveWorkoutInstructions(addOffered)}` : COACH_INSTRUCTIONS;
-  const instructions = buildOffered ? `${baseInstructions}\n${buildInstructions}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions;
+  const questionOffered = registry.tools.some((t) => t.name === 'ask_build_question');
+  const questionLines = [...(questionOffered ? [QUESTION_RULES] : []), ...(chain?.skipped === true ? [SKIPPED_LINE] : chain?.open !== null && chain?.open !== undefined ? [ANSWERED_LINE] : [])];
+  const withBuild = buildOffered ? [buildInstructions, ...questionLines].join('\n') : null;
+  const instructions = withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
   if (said !== null) input.push({ type: 'message', role: 'user', content: said });
@@ -593,6 +612,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   let message: string | null = null;
   let offer: CoachOfferKind | null = null;
+  // v2 (BD17): a question card was saved; the turn stops and waits for Ben's tap.
+  let askedQuestion = false;
   // (14 Oct) A today-change the coach raised on its own: never run, offered instead (rule 3).
   let offeredInstead = false;
   let error: CoachTurnError | null = null;
@@ -750,8 +771,11 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
         actionId: result.record.actionId,
       });
       if (already === undefined) req.onProgress?.({ kind: 'card', card: { record: result.record, rendered: renderActionResult(result.record, req.surface) } });
+      if (result.record.detail.kind === 'build_question' && result.record.status === 'proposed') askedQuestion = true;
     }
     input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, ref) });
+    // BD17: a question ends the turn (no further model call); the card is the coach's message.
+    if (askedQuestion) break;
   }
 
   clearTimeout(capTimer);

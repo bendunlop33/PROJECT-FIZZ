@@ -44,6 +44,9 @@ import {
   requestHas,
   asksForBuild,
   buildFollowUpIn,
+  buildQuestionChain,
+  loadReferenceView,
+  type QuestionChain,
   refusedBuildActionIds,
   capUsable,
   usableFirst,
@@ -132,6 +135,16 @@ import {
   todayAdjustmentIds,
   toMs,
   unspecifiedPain,
+  buildReferences,
+  exercisesNamedIn,
+  knownPreferences,
+  matchSplitDay,
+  painHoldFor,
+  parseBuildRequest,
+  splitInUse,
+  toHistorySessions,
+  workoutMuscleGroups,
+  type LoadReferences,
   type CoachTrigger,
   type OfferLogEntry,
   type SessionAdjustment,
@@ -142,6 +155,7 @@ import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
 
 import { summaryNoteSentences } from './next-time-view';
 import type { TextCoachState } from '@fizz/providers';
+import { muscleGroupOf } from '@fizz/schemas';
 import type {
   ActionDetail,
   BuildDay,
@@ -871,6 +885,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     draft: WorkoutDraft | null,
     chips: BuildChips | null,
     followUp: BuildFollowUp | null,
+    chain: QuestionChain | null = null,
   ): Promise<{ view: BuildContextView; executors: CoachExecutors; inPlay: boolean } | null> {
     const inPlay = asksForBuild({ turnKind: 'general', text: said, draftInContext: draft !== null, followUp });
     // A follow-up ("yes add it") reads length and focus from Ben's earlier request too; never from the coach's text.
@@ -882,7 +897,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     // Newest first: "yes but make it 45 mins" beats the request's length (review B2, B3).
     const newest = buildWordsNewestFirst(said, followUp);
     const firstOf = <T,>(read: (w: string) => T | null): T | null => newest.reduce<T | null>((found, w) => found ?? read(w), null);
-    const minutes = chips?.minutes ?? firstOf(parseRequestedMinutes) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, null);
+    // v2 (BD6, BD18): what the coach proposes loads from, and what is already known (never asked again).
+    const training = (await deps.training?.().catch(() => null)) ?? null;
+    // BD11 / WB-P7 (review S2): chips, else his words, else the draft being changed, else Profile's session length (the KNOWN block's), else the default.
+    const minutes = chips?.minutes ?? firstOf(parseRequestedMinutes) ?? parent?.fitMinutes ?? resolveBuildMinutes(null, training?.profile?.sessionMinutes ?? null);
     const focus: BuildFocus = chips !== null && chips.focus !== 'coach_picks' ? chips.focus : (firstOf(parseRequestedFocus) ?? parent?.request.focus ?? 'coach_picks');
     // F19: the Build card's split day (else the draft's own), with its main lift (Ben's or recommended), for naming and context.
     const day = chips !== null && chips.focus !== 'coach_picks' ? (chips.day ?? null) : chips === null && firstOf(parseRequestedFocus) === null ? (parent?.request.day ?? null) : null;
@@ -908,6 +926,93 @@ export function createCoachService(deps: CoachServiceDeps) {
     const allUsable = doable
       .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
     const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
+    const split = splitInUse(training?.profile ?? null);
+    const dayObj = day !== null ? (split.days.find((d) => d.name === day.name) ?? null) : (split.days.find((d) => d.id === focus) ?? null);
+    const ownMain = dayObj === null ? null : (training?.mainLifts[dayObj.id] ?? null);
+    const mainEx = ownMain !== null && ownMain.source === 'yours' ? (byId.get(ownMain.exerciseId) ?? null) : null;
+    const words = parseBuildRequest(newest.join('\n'));
+    const namedKeys = new Set(exercisesNamedIn(newest.join('\n'), pool.map((e) => ({ exerciseId: e.id, exerciseName: e.name }))));
+    const recent = inPlay ? await repos().sessions.listFinishedBetween(p.id, toIso(nowMs - 180 * 86_400_000), toIso(nowMs + 1)).catch(() => [] as SessionAggregate[]) : [];
+    const recentIds = [...new Set(recent.flatMap((a) => a.exercises.map((e) => e.exerciseId)))];
+    const recentHistory = new Map<string, HistorySession[]>(recentIds.map((id) => [id, recent.flatMap((a) => toHistorySessions(a, id, { identity: true })).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc))]));
+    const fullHistory = new Map<string, HistorySession[]>();
+    // Review S1: the context and the checker read the same references, so an exercise's (and its pattern-mates')
+    // whole history is read up front: a personal ratio pairs sessions older than 180 days (§8.5, WB-L5c).
+    const historyOf = async (id: string): Promise<HistorySession[]> => {
+      const hit = fullHistory.get(id);
+      if (hit !== undefined) return hit;
+      const h = await deps.store().listExerciseHistory(p.id, id).catch(() => recentHistory.get(id) ?? []);
+      fullHistory.set(id, h);
+      return h;
+    };
+    const checkIn = (await repos().checkIns.listSince(p.id, toIso(nowMs - 12 * 3_600_000)).catch(() => [] as CheckIn[])).find((c) => c.deletedAtUtc === undefined) ?? null;
+    const sessionPain = unspecifiedPain(checkIn);
+    const loadCtx = { ownerId: p.id, unit: p.preferredUnit, gym, knownEquipment: new Map(gym.equipment.map((e) => [e.id, e])), painFlags: flags, sessionPain, at };
+    // Pattern-mates with their whole history (read up front below), so a ratio can pair old sessions.
+    const matesOf = () =>
+      recentIds.flatMap((id) => {
+        const e = byId.get(id);
+        return e === undefined ? [] : [{ exercise: e, history: fullHistory.get(id) ?? recentHistory.get(id) ?? [] }];
+      });
+    const refsCache = new Map<string, LoadReferences>();
+    const refsFor = (e: Exercise): LoadReferences => {
+      const hit = refsCache.get(e.id);
+      if (hit !== undefined) return hit;
+      const r = buildReferences({ target: { exercise: e, history: fullHistory.get(e.id) ?? recentHistory.get(e.id) ?? [] }, mates: matesOf(), ctx: loadCtx, nowMs });
+      refsCache.set(e.id, r);
+      return r;
+    };
+    const painFor = (e: Exercise) => painHoldFor(e.id, flags, sessionPain, nowMs, at.tz);
+    const LOAD_REFERENCE_CAP = 40;
+    const lastDone = new Map<string, number>(recentIds.map((id) => [id, toMs(recentHistory.get(id)?.[0]?.performedAtUtc ?? '1970-01-01T00:00:00.000Z')]));
+    const withHistory = doable.filter((e) => e.measurement === 'reps' && lastDone.has(e.id)).sort((a, b) => (lastDone.get(b.id) ?? 0) - (lastDone.get(a.id) ?? 0));
+    // Then first-time exercises (the first-time maximum), ranked as the usable list is: what Ben named and what fits the focus first.
+    const firstTime = [...new Set([...first, ...usable.map((u) => u.catalogueId)])].flatMap((k) => {
+      const e = byKey.get(k) ?? byId.get(k);
+      return e !== undefined && e.measurement === 'reps' && e.defaultLoadConvention !== 'bodyweight' && !lastDone.has(e.id) ? [e] : [];
+    });
+    const listed = inPlay ? [...withHistory, ...firstTime].slice(0, LOAD_REFERENCE_CAP) : [];
+    if (inPlay) {
+      for (const id of new Set([...recentIds, ...listed.map((e) => e.id)])) await historyOf(id);
+      refsCache.clear();
+    }
+    const loadViews = inPlay
+      ? listed
+          .map((e) => loadReferenceView(e.catalogueKey ?? e.id, e.name, refsFor(e), painFor(e) !== null))
+          .filter((v) => v.last.length > 0 || v.estimate !== null || v.firstTimeMax !== null)
+      : [];
+    const memories = (await coachStore().listMemories(p.id).catch(() => [] as Memory[])).map((m) => ({ text: m.text, savedOn: localDateOf(toMs(m.createdAtUtc), at.tz) }));
+    const recentSplits = recent
+      .filter((a) => nowMs - toMs(a.session.startedAt.utc) <= 14 * 86_400_000)
+      .flatMap((a) => {
+        const groups = workoutMuscleGroups(a.exercises.map((ex) => ({ primaryMuscles: byId.get(ex.exerciseId)?.primaryMuscles ?? [], workingSets: a.sets.filter((x) => x.sessionExerciseId === ex.id && x.status === 'completed' && x.setType !== 'warmup').length })));
+        const d = matchSplitDay(split, groups);
+        return d === null ? [] : [{ date: localDateOf(toMs(a.session.startedAt.utc), a.session.startedAt.tz), day: d.name }];
+      })
+      .reverse();
+    const goalSet = training?.profile?.goalSetAtUtc;
+    const known = knownPreferences({
+      profile: training?.profile ?? null,
+      goalDate: goalSet === undefined ? null : localDateOf(toMs(goalSet), at.tz),
+      day: dayObj === null ? null : { name: dayObj.name, mainLift: mainEx === null ? null : { exerciseId: mainEx.id, name: mainEx.name } },
+      recentSplits,
+      memories,
+    });
+    const knownView = {
+      goal: known.goal === null ? null : `${known.goal.word}${known.goal.since === null ? '' : ` (since ${known.goal.since})`}`,
+      sessionMinutes: known.sessionMinutes,
+      mainLift: known.mainLift === null ? null : `${known.mainLift.day}: ${known.mainLift.name}`,
+      recentSplits: known.recentSplits.map((r) => `${r.day} · ${r.date}`),
+      missing: known.missing,
+      about: [
+        ...(known.about.experience === null ? [] : [`experience: ${known.about.experience}`]),
+        ...(known.about.birthYear === null ? [] : [`born ${String(known.about.birthYear)}`]),
+        ...(known.about.gender === null ? [] : [`gender: ${known.about.gender}`]),
+        ...(known.about.heightCm === null ? [] : [`height ${String(known.about.heightCm)} cm`]),
+        ...(known.about.bodyweight === null ? [] : [`bodyweight ${String(known.about.bodyweight.value)} ${known.about.bodyweight.unit} (${known.about.bodyweight.date})`]),
+      ],
+      questionsLeft: Math.max(0, 2 - (chain?.asked ?? 0)),
+    };
     const refs = await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []);
     const pick = nextInRotation(rotationRoutines(live), refs[0] ?? null);
     const view: BuildContextView = {
@@ -917,6 +1022,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       busyToday: [],
       setBudget: buildSetBudget(minutes),
       upNext: pick.kind === 'routine' ? pick.routine.name : null,
+      ...(loadViews.length === 0 ? {} : { loadReferences: loadViews }),
+      known: knownView,
       draft:
         parent === null || draft === null
           ? null
@@ -925,7 +1032,8 @@ export function createCoachService(deps: CoachServiceDeps) {
               version: parent.n,
               exercises: parent.plan.slots.map((sl) => {
                 const w = sl.setTemplates.find((t) => t.setType !== 'warmup' && t.setType !== 'top');
-                return { catalogueId: sl.catalogueId, name: byId.get(sl.exerciseId)?.name ?? 'Exercise', workingSets: draftWorkingSets(sl), reps: w?.reps === null || w === undefined ? `${String(w?.durationS ?? 0)} s` : `${String(w.reps.min)}–${String(w.reps.max)}`, targetRpe: w?.targetRpe ?? null };
+                const l = w?.load?.load ?? null;
+                return { catalogueId: sl.catalogueId, name: byId.get(sl.exerciseId)?.name ?? 'Exercise', workingSets: draftWorkingSets(sl), reps: w?.reps === null || w === undefined ? `${String(w?.durationS ?? 0)} s` : `${String(w.reps.min)}–${String(w.reps.max)}`, targetRpe: w?.targetRpe ?? null, load: l === null ? null : `${String(l.value)} ${l.unit} ${l.convention}` };
               }),
             },
     };
@@ -941,6 +1049,9 @@ export function createCoachService(deps: CoachServiceDeps) {
           const e = byKey.get(key) ?? byId.get(key);
           if (e === undefined) continue;
           const history = await deps.store().listExerciseHistory(p.id, e.id).catch(() => []);
+          // The whole history (an exercise last done over 180 days ago gets a personal ratio, §8.5).
+          fullHistory.set(e.id, history);
+          refsCache.delete(e.id);
           const plan = substituteTargets({ workingSets: 3, templates: [] }, e, history, subCtx()).plan;
           reps.set(e.id, plan?.find((x) => x.setType !== 'warmup')?.planned.reps ?? null);
         }
@@ -965,11 +1076,30 @@ export function createCoachService(deps: CoachServiceDeps) {
           ruleReps: (e) => reps.get(e.id) ?? null,
           previous,
           newSlotKey: (exerciseId, i) => deriveId(`coach-draft-slot:${opId}:${exerciseId}:${String(i)}`),
+          loads: { refsFor, painFor, askedHeavier: words.askedHeavier },
+          mainLift: mainEx === null ? null : { exercise: mainEx, skip: words.skipMainInsert || (draft !== null && parent !== null && !parent.plan.slots.some((sl) => sl.exerciseId === mainEx.id)) },
+          namedByBen: (e) => namedKeys.has(e.id),
         };
       },
       nameOf: (exerciseId) => byId.get(exerciseId)?.name ?? 'Exercise',
       contextHash: deriveId(stableStringify(view)),
       equipmentVersion: deriveId(stableStringify(gym.equipment.map((e) => [e.id, e.version]))),
+      questions: {
+        known,
+        day: dayObj === null ? null : { id: dayObj.id, name: dayObj.name },
+        context: {
+          requestMinutes: chips?.minutes ?? firstOf(parseRequestedMinutes),
+          dayName: dayObj?.name ?? null,
+          mainNamed: words.skipMainInsert,
+          mainLiftOk: (key) => {
+            const e = byKey.get(key) ?? byId.get(key);
+            if (e === undefined || e.mechanic !== 'compound' || !doable.includes(e)) return false;
+            const g = e.primaryMuscles[0] === undefined ? null : muscleGroupOf(e.primaryMuscles[0]);
+            return dayObj === null || (g !== null && (dayObj.bodyParts as readonly string[]).includes(g));
+          },
+          nameOf: (key) => (byKey.get(key) ?? byId.get(key))?.name ?? null,
+        },
+      },
     });
     return { view, executors, inPlay };
   }
@@ -990,8 +1120,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     // Build 131: a follow-up to a session the coach described in text ("yes add it"); the turn engine reads the same thread.
     const history = kind === 'general' && req.input.kind === 'words' && req.threadId !== null ? await coachStore().listMessages(req.threadId).catch(() => []) : [];
     const refused = history.length === 0 ? new Set<string>() : await refusedBuildActionIds(history, (id) => coachStore().listTurnActions(id));
-    const followUp = kind === 'general' && req.input.kind === 'words' ? buildFollowUpIn(history, req.input.text, refused) : null;
-    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp) : null;
+    // v2 (BD17): Ben answering the coach's question is a build follow-up with his request's words.
+    const chain = kind === 'general' && req.input.kind === 'words' && history.length > 0 ? await buildQuestionChain(history, req.input.text, (id) => coachStore().listTurnActions(id)) : null;
+    const followUp = kind === 'general' && req.input.kind === 'words' ? (chain?.followUp ?? buildFollowUpIn(history, req.input.text, refused)) : null;
+    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) Ben asked to add an exercise in a workout turn: what can be added here, by ID.
     // (14 Oct) The list (long) goes only when his words might add one; without it the turn withholds add_exercise_today (review S5).

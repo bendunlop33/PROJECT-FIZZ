@@ -26,6 +26,19 @@ Ben can ask the coach for a workout ("build me a 45-minute push session for this
 - **`propose_workout` is general-turn only** (§8.2). A build from the coach sheet during a workout works from Today's sheet (a general turn) and the card reads `After this workout` (BD14); the workout's own sheet doesn't offer the tool.
 - **Failure lines** use the coach sheet's existing outcome copy (`No answer in time. Nothing changed.` etc.), not the builder-specific lines in §5.1.
 
+## Amendment 1 (12 Oct 2026): coach loads, questions, known preferences
+
+**Status:** Proposed (designer). Ben reversed B6 on 12 Oct (CHANGELOG 2026-10-12). The bounds and ◇ items are pending his confirmation. Design: [workout-builder.md](../design/workout-builder.md) v2.0.
+
+Changes to decisions 1 and 4 above:
+
+1. **`propose_workout` gains per-exercise load proposals** (`load`, `topSet.load`: value, unit, convention, basis ≤ 60 chars, `from`, `relatedCatalogueId`; null = no opinion). It still has no minutes, gym or equipment field and is still strict.
+2. **`checkProposedLoad` (pure, domain)** converts or rejects the convention and unit, holds on pain (≤ last comparable working load), bounds against a reference e1RM from the last 3 comparable sessions (app and FitNotes; RIR-adjusted Epley; return-to-load reduction after a gap of 14 days or more), then snaps with `snapPlanToGym` within the item's min/max. Accept / clamp / reject bands are in spec §8.5. A reject switches only that slot to the built-in rule (`Rule`); a load with no own comparable history is `est.`. The model and the checker read the same `loadReferences` output.
+3. **The draft stores checked loads** (`DraftPlan` set templates gain `targetLoad`, `loadSource`, `loadBasis`, `loadNote`). `planCoachDraft` uses them, re-checks pain and equipment at plan time, and calls `substituteTargets` only for `rule` / `none` slots. `comparableHistory` / `substituteTargets` gain `includeImported` (on for the builder fallback only).
+4. **New tool `ask_build_question`** (`effect: 'none'`, build turns only, at most 2 per `BuildRequest`, enforced by leaving it out of the registry). `checkBuildQuestion` rejects known topics (from `knownPreferences`: Profile goal, length, main lift per split ◇, confirmed memories) and pain topics, returning the known value as the tool result.
+5. **Save to Workouts** also writes the draft's checked loads as coach next-session targets for the new workout (D21), so the review S6 workaround (staying on the draft basis after Save) can go once this is built.
+6. **Profile gains** `goalConfirmedAt`, `goalCheckWeeks` (default 6), `mainLifts` per split ◇ and a 45-min default length ◇, all Your data. Imported history is used for build references; `training-view.ts`'s "imported: never compared" stays for trend words only.
+
 ## Consequences
 
 - One planner path (OV3) covers routines, next sessions and coach drafts; the existing overview tests plus `workout-builder.test.ts` check preview == Start for drafts.

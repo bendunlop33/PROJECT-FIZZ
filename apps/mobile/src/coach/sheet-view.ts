@@ -9,7 +9,7 @@
  */
 
 import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
-import { isInHistory, progressPeriodPhrase, rangeText } from '@fizz/domain';
+import { isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
 import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
@@ -157,6 +157,40 @@ export interface CardView {
   memoryChoice?: { memoryId: string; version: number; split: boolean };
   /** A committed coach draft (workout-builder §4.2): the sheet shows the draft card (and, for a new version, the version card) from it. */
   draft?: ActionRecord;
+  /** (v2, BD17) The coach's clarifying question (§4.2): its tap answers, or the collapsed answer. */
+  question?: QuestionCardView;
+}
+
+/**
+ * The question card (workout-builder v2.1 §4.2): one checked question with
+ * 2–4 tap answers and `Skip`; after Ben's reply it collapses to one line.
+ * No question count. `not_answered`: a newer message came first, or 12 h
+ * passed (`timing.buildQuestionTtl`).
+ */
+export interface QuestionCardView {
+  actionId: string;
+  topic: 'main_lift' | 'split' | 'equipment_today' | 'other';
+  question: string;
+  answers: { label: string; catalogueId: string | null }[];
+  day: { id: string; name: string } | null;
+  state: 'open' | 'answered' | 'skipped' | 'not_answered';
+  /** Ben's reply (what he tapped or typed); null while open. */
+  answer: string | null;
+  /** `Main lift for legs? Squat ✓`, `… Skipped`, `Not answered`. */
+  collapsed: string | null;
+}
+
+/** `timing.buildQuestionTtl` (§5.1): an unanswered question reads `Not answered` after 12 h. */
+export const BUILD_QUESTION_TTL_MS = 12 * 3_600_000;
+
+/** The question card from its record and Ben's next message in the thread (code only). */
+export function questionCardView(r: ActionRecord, reply: string | null, ageMs: number): QuestionCardView | null {
+  const d = r.detail;
+  if (d.kind !== 'build_question') return null;
+  const skipped = reply !== null && reply.trim().toLowerCase() === 'skip';
+  const state: QuestionCardView['state'] = reply === null ? (ageMs >= BUILD_QUESTION_TTL_MS ? 'not_answered' : 'open') : skipped ? 'skipped' : 'answered';
+  const collapsed = state === 'answered' ? `${d.question} ${reply ?? ''} ✓` : state === 'skipped' ? `${d.question} Skipped` : state === 'not_answered' ? 'Not answered' : null;
+  return { actionId: r.actionId, topic: d.topic, question: d.question, answers: d.answers.map((a) => ({ ...a })), day: d.day, state, answer: reply, collapsed };
 }
 
 /**
@@ -371,8 +405,16 @@ function toolLines(log: readonly ToolLogLine[]): string[] {
   return log.filter((l) => l.outcome === 'read').map((l) => l.text);
 }
 
+/** Ben's first message after a turn (the answer to its question), as he wrote or tapped it. */
+function nextBenText(messages: readonly CoachMessage[], turnId: string): string | null {
+  const sorted = [...messages].sort((a, b) => a.ordinal - b.ordinal);
+  const at = sorted.map((m) => m.turnId).lastIndexOf(turnId);
+  const next = sorted.slice(at + 1).find((m) => m.body.role === 'ben');
+  return next === undefined || next.body.role !== 'ben' ? null : benText(next.body.input);
+}
+
 /** Every row of a stored thread, oldest first. Cards come from the records, in commit order. */
-export function threadRows(data: ThreadData): ThreadRow[] {
+export function threadRows(data: ThreadData & { nowUtc?: string }): ThreadRow[] {
   const rows: ThreadRow[] = [];
   const byTurn = new Map<string, CoachMessage[]>();
   for (const m of data.messages) byTurn.set(m.turnId, [...(byTurn.get(m.turnId) ?? []), m]);
@@ -391,7 +433,8 @@ export function threadRows(data: ThreadData): ThreadRow[] {
       const state = data.proposals?.get(a.actionId);
       const memory = data.memories?.get(a.actionId);
       const special = state !== undefined ? proposalCardView(a, state) : memory !== undefined ? memoryCardView(a, memory) : null;
-      rows.push({ kind: 'card', key: a.actionId, card: special ?? cardView(a) });
+      const question = a.detail.kind === 'build_question' ? questionCardView(a, nextBenText(data.messages, turnId), data.nowUtc === undefined ? 0 : toMs(data.nowUtc) - toMs(a.createdAt.utc)) : null;
+      rows.push({ kind: 'card', key: a.actionId, card: question !== null ? { ...cardView(a), question } : (special ?? cardView(a)) });
     }
     const coach = msgs.find((m) => m.body.role === 'coach');
     if (coach !== undefined && coach.body.role === 'coach') {
@@ -438,8 +481,10 @@ export function applyProgress(live: LiveTurn, p: CoachTurnProgress): LiveTurn {
       return { ...live, firstEvent: true };
     case 'tool':
       return p.line.outcome === 'read' ? { ...live, firstEvent: true, tools: [...live.tools, p.line.text] } : { ...live, firstEvent: true };
-    case 'card':
-      return { ...live, firstEvent: true, cards: [...live.cards, cardView(p.card.record)] };
+    case 'card': {
+      const question = questionCardView(p.card.record, null, 0);
+      return { ...live, firstEvent: true, cards: [...live.cards, question === null ? cardView(p.card.record) : { ...cardView(p.card.record), question }] };
+    }
     case 'item':
       return p.item.kind === 'sentence' ? { ...live, firstEvent: true, sentences: [...live.sentences, p.item.text] } : live;
   }
@@ -511,4 +556,21 @@ export function workoutBarText(rest: { kind: 'running' | 'paused'; remainingMs: 
     return `Rest ${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`;
   }
   return 'Ready';
+}
+
+/**
+ * `Saved to Profile · Undo` on a question card (§6.2, WB-Q9; review S7),
+ * read from the training profile itself so it survives closing and
+ * reopening the sheet: the answer's save op (`<actionId>:main-lift`) is in
+ * the profile's applied ops; Undo only while it is still the newest change
+ * (the version the answer saved); `undone` once its undo op is applied.
+ */
+export type AnswerSaveState = { state: 'saved' | 'undone'; canUndo: boolean };
+
+export function answerSaveOf(actionId: string, profile: { recentOps: readonly string[] } | null): AnswerSaveState | null {
+  if (profile === null) return null;
+  const save = `${actionId}:main-lift`;
+  if (!profile.recentOps.includes(save)) return null;
+  if (profile.recentOps.includes(`${actionId}:main-lift-undo`)) return { state: 'undone', canUndo: false };
+  return { state: 'saved', canUndo: profile.recentOps.at(-1) === save };
 }

@@ -1468,6 +1468,9 @@ export function WorkoutOverviewScreen() {
           customAction(r, name);
         }}
         footer={rowFooter(r)}
+        reason={page.coachDraft?.reasons[r.slotKey] ?? null}
+        estimate={page.coachDraft?.estimates.includes(r.slotKey) === true}
+        loadLine={page.coachDraft?.loadLines[r.slotKey] ?? null}
         onToggle={() => {
           toggle(r.slotKey);
         }}
@@ -1588,6 +1591,11 @@ export function WorkoutOverviewScreen() {
             {view.muscles[0]}
           </AppText>
           {view.muscles.slice(1).map((m) => ` · ${m}`).join('')}
+        </AppText>
+      ) : null}
+      {page.coachDraft !== null && page.coachDraft.headNote !== '' ? (
+        <AppText variant="callout" color="text.secondary" numeric style={{ marginTop: theme.space['2'] }}>
+          {page.coachDraft.headNote}
         </AppText>
       ) : null}
       {page.coachDraft !== null && page.coachDraft.leftOut > 0 ? (

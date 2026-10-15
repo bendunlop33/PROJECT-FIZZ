@@ -72,21 +72,34 @@ export function doableHere(exercise: Exercise, gym: SnapGym): boolean {
  * item (B7; rule 4).
  */
 export function comparableHistory(exercise: Exercise, history: readonly HistorySession[], ctx: Pick<SubstituteContext, 'gym' | 'lastUsedHere' | 'knownEquipment'>): { session: HistorySession; equipment: EquipmentInstance | null } | null {
+  return comparableSessions(exercise, history, ctx)[0] ?? null;
+}
+
+/**
+ * Every comparable appearance, newest first: the same test as
+ * `comparableHistory`, which takes the first. The builder's load references
+ * read the last few (workout-builder §8.5).
+ */
+export function comparableSessions(exercise: Exercise, history: readonly HistorySession[], ctx: Pick<SubstituteContext, 'gym' | 'lastUsedHere' | 'knownEquipment'>): { session: HistorySession; equipment: EquipmentInstance | null }[] {
   const { equipment: here, mapping } = equipmentHere(exercise, ctx);
   const newest = [...history].filter((h) => h.sets.some((s) => s.setType !== 'warmup')).sort((a, b) => toMs(b.performedAtUtc) - toMs(a.performedAtUtc));
+  const out: { session: HistorySession; equipment: EquipmentInstance | null }[] = [];
   for (const h of newest) {
-    if (h.imported) return { session: h, equipment: here };
+    if (h.imported) {
+      out.push({ session: h, equipment: here });
+      continue;
+    }
     const eq = h.equipmentId === null ? null : (ctx.gym.equipment.find((e) => e.id === h.equipmentId) ?? ctx.knownEquipment.get(h.equipmentId) ?? null);
     if (h.equipmentId !== null && eq === null) continue;
-    if (mapping === 'none_needed' ? eq === null || eq.kind === 'bodyweight_station' : mapping === 'not_here' ? true : eq !== null && here !== null && sameKind(eq, here)) {
-      return { session: h, equipment: eq };
+    if (mapping === 'none_needed' ? eq === null || eq.kind === 'bodyweight_station' : mapping === 'not_here' ? true : eq !== null && here !== null && sameItemKind(eq, here)) {
+      out.push({ session: h, equipment: eq });
     }
   }
-  return null;
+  return out;
 }
 
 /** Same kind; a barbell also needs the same bar mass (a different bar makes totals incomparable). */
-function sameKind(a: EquipmentInstance, b: EquipmentInstance): boolean {
+function sameItemKind(a: EquipmentInstance, b: EquipmentInstance): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind !== 'barbell' || b.kind !== 'barbell') return true;
   return Math.abs(convertMass({ value: a.barMass, unit: a.unit }, 'kg').value - convertMass({ value: b.barMass, unit: b.unit }, 'kg').value) < 1e-6;

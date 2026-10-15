@@ -6,6 +6,7 @@ import {
   MAX_WORKOUT_DRAFT_VERSIONS,
   type BuildCheck,
   type BuildFocus,
+  type DraftLoad,
   type DraftPlan,
   type DraftSetTemplate,
   type DraftSlot,
@@ -17,6 +18,7 @@ import {
   type Routine,
   type RoutineExercise,
   type SetTemplate,
+  type TargetProvenance,
   type TodayEdit,
   type WorkoutDraft,
   type WorkoutDraftVersion,
@@ -30,6 +32,8 @@ import type { HistorySession } from '../progression';
 import { deriveId } from '../stable';
 import { toIso, toMs } from '../time';
 import { defaultMain, type RoutineStartInput } from './routines';
+import { checkedOnOf, checkProposedLoad, checkSlotLoads, loadReferences, recheckDraftLoad, type LoadCheck, type LoadReferences } from './builder-loads';
+import { intendedOf } from './snap';
 import { substituteTargets, type SubstituteContext } from './substitutes';
 import type { SwapPlan } from './swap-plan';
 import { liveEdits, planWithTodayEdits, type TodayEditsInput, type TodayPlanOutput } from './today-edits';
@@ -233,6 +237,22 @@ export interface WorkoutProposalContext {
   previous: DraftPlan | null;
   /** A new slot's key (stable for the same operation). */
   newSlotKey(exerciseId: string, index: number): string;
+  /** (v2, BD6) The load check's inputs at the selected gym. Absent: no loads are checked or stored (the rule plans them). */
+  loads?: ProposalLoadContext;
+  /** (v2, BD19) Ben's stored main lift for the build's split day, and whether his words ask for something else today. */
+  mainLift?: { exercise: Exercise; skip: boolean } | null;
+  /** (v2, BD9) Ben named this exercise in his request: a pain-flagged one is then kept and held, not left out. */
+  namedByBen?: (exercise: Exercise) => boolean;
+}
+
+/** What `checkProposedLoad` needs per exercise (workout-builder v2.1 §8.2). */
+export interface ProposalLoadContext {
+  /** `loadReferences` for the exercise at the selected gym (the same numbers the coach was sent). */
+  refsFor(exercise: Exercise): LoadReferences;
+  /** Pain on the movement (`shoulder flagged 6 Oct`) or session pain (`pain reported today`); null when none. */
+  painFor(exercise: Exercise): { text: string } | null;
+  /** Ben asked heavier in his words (BD16). */
+  askedHeavier: boolean;
 }
 
 export type WorkoutProposalCheck =
@@ -292,6 +312,8 @@ interface Pending {
   catalogueId: string;
   slot: Omit<DraftSlot, 'order' | 'main' | 'supersetGroup' | 'slotKey'>;
   superset: 'A' | 'B' | 'C' | null;
+  /** BD19: inserted by code as Ben's main lift. */
+  main?: boolean;
 }
 
 /**
@@ -312,6 +334,7 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
   };
   for (const p of args.exercises.slice(0, L.maxExercises)) {
     let exercise = ctx.exerciseFor(p.catalogueId);
+    let swapped = false;
     if (exercise === null) {
       add({ kind: 'unknown', catalogueId: p.catalogueId, exerciseId: null, text: `${keyWords(p.catalogueId)} left out · not in your exercises`, leftOut: true });
       continue;
@@ -323,8 +346,13 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
     const flag = painFlagCovering(ctx.painFlags, exercise.id, ctx.nowMs, ctx.tz)?.flag ?? null;
     if (flag !== null) {
       const area = flag.area === null ? null : PAIN_AREA_WORD[flag.area];
-      add({ kind: 'pain', catalogueId: p.catalogueId, exerciseId: exercise.id, text: `${exercise.name} left out · ${area === null ? '' : `${area} `}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`, leftOut: true });
-      continue;
+      const flagged = `${area === null ? '' : `${area} `}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`;
+      // BD9 (v2): Ben named it in this request ("include overhead press, light"): kept, its load held (BD10).
+      if (ctx.namedByBen?.(exercise) !== true || !ctx.usable(exercise)) {
+        add({ kind: 'pain', catalogueId: p.catalogueId, exerciseId: exercise.id, text: `${exercise.name} left out · ${flagged}`, leftOut: true });
+        continue;
+      }
+      add({ kind: 'pain', catalogueId: p.catalogueId, exerciseId: exercise.id, text: `${exercise.name} kept · held · ${flagged}`, leftOut: false });
     }
     if (!ctx.usable(exercise)) {
       const sub = ctx.substituteFor(exercise);
@@ -335,11 +363,14 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
       }
       add({ kind: 'not_here_swapped', catalogueId: p.catalogueId, exerciseId: sub.id, text: `${exercise.name} swapped for ${sub.name} · no ${needsNoEquipment(exercise) ? 'space' : equipmentWordOf(exercise)} here`, leftOut: false });
       exercise = sub;
+      swapped = true;
     }
     const ex = exercise;
     // The same exercise listed again is its own slot (F21, Ben 13 Oct: a light warm-up early, working sets later).
-    pending.push({ exercise: ex, catalogueId: ex.catalogueKey ?? p.catalogueId, slot: shapeOf(p, ex, ctx, add), superset: p.superset });
+    // BD9: a substitute's load comes from the rule (the coach's basis was for another exercise).
+    pending.push({ exercise: ex, catalogueId: ex.catalogueKey ?? p.catalogueId, slot: shapeOf(swapped ? { ...p, load: null, topSet: p.topSet === null ? null : { ...p.topSet, load: null } } : p, ex, ctx, add, swapped), superset: p.superset });
   }
+  insertMainLift(args, ctx, pending, add);
   if (pending.length === 0) return { status: 'unusable', plan: null, checks };
 
   // Supersets (BD9): adjacent members sharing a letter, 2–4 of them; anything else is ungrouped.
@@ -354,22 +385,38 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
     else add({ kind: 'ungrouped', catalogueId: null, exerciseId: null, text: `Superset ungrouped · needs ${String(L.minSuperset)}–${String(L.maxSuperset)} exercises in a row`, leftOut: false });
   }
   const used = new Set<string>();
-  const main = defaultMain(
-    pending.map((x) => ({ exerciseId: x.exercise.id })),
-    (id) => pending.find((x) => x.exercise.id === id)?.exercise.mechanic === 'compound',
-  );
+  // BD19: Ben's main lift for the split leads when it's in the workout; otherwise the usual compound rule (WL9).
+  const mainId = ctx.mainLift?.exercise.id ?? null;
+  const mainAt = mainId === null ? -1 : pending.findIndex((x) => x.exercise.id === mainId);
+  const main =
+    mainAt >= 0
+      ? pending.map((_, i) => i === mainAt)
+      : defaultMain(
+          pending.map((x) => ({ exerciseId: x.exercise.id })),
+          (id) => pending.find((x) => x.exercise.id === id)?.exercise.mechanic === 'compound',
+        );
   const slots: DraftSlot[] = pending.map((x, i) => {
     const prior = ctx.previous?.slots.find((s) => s.exerciseId === x.exercise.id && !used.has(s.slotKey)) ?? null;
     const slotKey = prior?.slotKey ?? ctx.newSlotKey(x.exercise.id, i);
     used.add(slotKey);
-    return { slotKey, exerciseId: x.exercise.id, catalogueId: x.catalogueId, order: i, main: main[i] ?? false, supersetGroup: x.superset !== null && keep.has(x.superset) ? x.superset : null, setTemplates: x.slot.setTemplates };
+    return {
+      slotKey,
+      exerciseId: x.exercise.id,
+      catalogueId: x.catalogueId,
+      order: i,
+      main: main[i] ?? false,
+      supersetGroup: x.superset !== null && keep.has(x.superset) ? x.superset : null,
+      setTemplates: x.slot.setTemplates,
+      ...(x.slot.checkedOn !== undefined ? { checkedOn: x.slot.checkedOn } : {}),
+      ...(x.slot.checkedHistoryVersion !== undefined ? { checkedHistoryVersion: x.slot.checkedHistoryVersion } : {}),
+    };
   });
   const leftOut = checks.some((c) => c.leftOut);
   return { status: leftOut ? 'partial' : 'ok', plan: { slots }, checks };
 }
 
 /** One exercise's sets, clamped to §8.3, each change with its check line. */
-function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext, add: (c: BuildCheck) => void): Pick<DraftSlot, 'exerciseId' | 'catalogueId' | 'setTemplates'> {
+function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext, add: (c: BuildCheck) => void, swapped = false): Pick<DraftSlot, 'exerciseId' | 'catalogueId' | 'setTemplates' | 'checkedOn' | 'checkedHistoryVersion'> {
   const note = (kind: BuildCheck['kind'], text: string): void => {
     add({ kind, catalogueId: p.catalogueId, exerciseId: ex.id, text, leftOut: false });
   };
@@ -423,6 +470,20 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
     if (rule !== null && (rule.min !== reps.min || rule.max !== reps.max)) note('reps_changed', `${ex.name} · reps changed from last time · load not adjusted`);
   }
 
+  // v2 (BD6): the coach's loads, checked by code. Rep sets only; timed sets have no load.
+  const lc = ctx.loads;
+  const refs = lc !== undefined && !timed && reps !== null ? lc.refsFor(ex) : null;
+  const loadCtx = lc === undefined ? null : { pain: lc.painFor(ex), askedHeavier: lc.askedHeavier };
+  const checkLoad = (proposal: ProposedExercise['load'], r: RepRange, targetRpe: number): LoadCheck | null => {
+    if (refs === null || loadCtx === null) return null;
+    if (swapped) return { load: null, source: 'rule', held: false, notes: ['swapped here · rule used'], basis: null, coachNote: null, notUsed: null };
+    return checkProposedLoad(proposal === undefined || proposal === null ? null : { value: proposal.value, unit: proposal.unit, convention: proposal.convention, basis: proposal.basis }, { repsMin: r.min, repsMax: r.max, targetRpe }, refs, loadCtx);
+  };
+  const loadNotes = (c: LoadCheck | null, label: string): void => {
+    if (c === null) return;
+    for (const n of c.notes) note('load', `${ex.name}${label} · ${n}`);
+  };
+
   const templates: DraftSetTemplate[] = [];
   for (let i = 0; i < warmups; i += 1) templates.push({ setType: 'warmup', reps: timed ? null : { min: 5, max: 5 }, durationS: timed ? (durationS ?? 45) : null, targetRpe: null, restS });
   if (p.topSet !== null && timed) note('shape', `${ex.name} · top set left out (timed)`);
@@ -436,12 +497,78 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
     if (p.topSet.targetRpe !== null && topRpe !== p.topSet.targetRpe) note('clamped', `${ex.name} · top set RPE ${String(p.topSet.targetRpe)} → ${String(topRpe)}`);
     const backoffs = Math.min(working, L.maxWorkingSets - 1);
     if (backoffs !== working) note('clamped', `${ex.name} · sets ${String(working + 1)} → ${String(backoffs + 1)} with the top set (most allowed)`);
-    templates.push({ setType: 'top', reps: topReps, durationS: null, targetRpe: topRpe, restS });
-    for (let i = 0; i < backoffs; i += 1) templates.push({ setType: 'backoff', reps, durationS: null, targetRpe: rpe, restS });
+    const top = checkLoad(p.topSet.load, topReps, topRpe);
+    const back = reps === null ? null : checkLoad(p.load, reps, rpe);
+    // BD6 step 5: the back-offs are never harder than the top set.
+    const backChecked = top !== null && back !== null ? checkSlotLoads(top, back) : back;
+    loadNotes(top, ' top set');
+    loadNotes(backChecked, '');
+    templates.push({ setType: 'top', reps: topReps, durationS: null, targetRpe: topRpe, restS, ...(top === null ? {} : { load: storedLoad(top) }) });
+    for (let i = 0; i < backoffs; i += 1) templates.push({ setType: 'backoff', reps, durationS: null, targetRpe: rpe, restS, ...(backChecked === null ? {} : { load: storedLoad(backChecked) }) });
   } else {
-    for (let i = 0; i < working; i += 1) templates.push({ setType: 'working', reps, durationS, targetRpe: rpe, restS });
+    const c = reps === null ? null : checkLoad(p.load, reps, rpe);
+    loadNotes(c, '');
+    for (let i = 0; i < working; i += 1) templates.push({ setType: 'working', reps, durationS, targetRpe: rpe, restS, ...(c === null ? {} : { load: storedLoad(c) }) });
   }
-  return { exerciseId: ex.id, catalogueId: ex.catalogueKey ?? p.catalogueId, setTemplates: templates };
+  return {
+    exerciseId: ex.id,
+    catalogueId: ex.catalogueKey ?? p.catalogueId,
+    setTemplates: templates,
+    ...(refs === null ? {} : { checkedOn: checkedOnOf(refs), checkedHistoryVersion: refs.historyVersion }),
+  };
+}
+
+/** A check as the draft stores it (`DraftLoad`). */
+function storedLoad(c: LoadCheck): DraftLoad {
+  return {
+    load: c.load,
+    source: c.source,
+    basis: c.basis === null ? null : c.basis.slice(0, 80),
+    basisFromCoach: false,
+    coachNote: c.coachNote === null ? null : c.coachNote.slice(0, 80),
+    held: c.held,
+    notes: c.notes.slice(0, 8).map((n) => n.slice(0, 200)),
+    notUsed: c.notUsed === null ? null : c.notUsed.slice(0, 80),
+  };
+}
+
+/**
+ * BD19: Ben's stored main lift for the split day leads the workout. When
+ * the coach left it out, code inserts it as slot 1 (sets, reps and RPE from
+ * the coach's first slot; its load from the rule), unless his words asked
+ * for something else today (`skip`). Pain-flagged or not usable here: left
+ * out with a note, and the coach's own first lift stays.
+ */
+function insertMainLift(args: ProposeWorkoutArgs, ctx: WorkoutProposalContext, pending: Pending[], add: (c: BuildCheck) => void): void {
+  const m = ctx.mainLift ?? null;
+  if (m === null || m.skip || pending.some((x) => x.exercise.id === m.exercise.id)) return;
+  const ex = m.exercise;
+  const flag = painFlagCovering(ctx.painFlags, ex.id, ctx.nowMs, ctx.tz)?.flag ?? null;
+  if (flag !== null) {
+    const area = flag.area === null ? null : PAIN_AREA_WORD[flag.area];
+    add({ kind: 'pain', catalogueId: ex.catalogueKey ?? null, exerciseId: ex.id, text: `${ex.name} not used as main · ${area === null ? '' : `${area} `}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`, leftOut: false });
+    return;
+  }
+  if (!ctx.usable(ex) || ex.measurement !== 'reps' || pending.length >= L.maxExercises) {
+    if (!ctx.usable(ex)) add({ kind: 'not_here_left_out', catalogueId: ex.catalogueKey ?? null, exerciseId: ex.id, text: `${ex.name} not used as main · not here`, leftOut: false });
+    return;
+  }
+  const first = args.exercises[0];
+  const shapeFrom: ProposedExercise = {
+    catalogueId: ex.catalogueKey ?? ex.id,
+    warmups: first?.warmups ?? null,
+    workingSets: first?.workingSets ?? 3,
+    reps: first?.reps ?? null,
+    workSeconds: null,
+    targetRpe: first?.targetRpe ?? null,
+    topSet: null,
+    restSeconds: first?.restSeconds ?? null,
+    superset: null,
+    load: null,
+  };
+  const quiet = (): void => undefined;
+  pending.unshift({ exercise: ex, catalogueId: ex.catalogueKey ?? ex.id, slot: shapeOf(shapeFrom, ex, ctx, quiet), superset: null, main: true });
+  add({ kind: 'main_kept', catalogueId: ex.catalogueKey ?? null, exerciseId: ex.id, text: `${ex.name} kept as main lift`, leftOut: false });
 }
 
 /** The draft's exercises left out by a check (`⚠ 1 left out`). */
@@ -547,16 +674,99 @@ export interface CoachDraftPlanInput {
   today: TodayEditsInput;
 }
 
-export type CoachDraftPlan = Extract<TodayPlanOutput, { kind: 'routine' }> & { routine: Routine; version: WorkoutDraftVersion; targets: Map<string, SwapPlan> };
+export type CoachDraftPlan = Extract<TodayPlanOutput, { kind: 'routine' }> & {
+  routine: Routine;
+  version: WorkoutDraftVersion;
+  targets: Map<string, SwapPlan>;
+  /** (v2) Slots planned from the coach's re-checked loads, by slot key. */
+  coachLoads: Map<string, Extract<RecheckedSlot, { kind: 'coach' }>>;
+  /** (v2) Slots whose stored coach load fell back to the rule at plan time, with why. */
+  ruleNotes: Map<string, string[]>;
+};
+
+/** `Why?` facts for one slot of a planned coach draft (review S4). */
+export interface DraftSlotWhy {
+  /** Plan-time fallback notes (`different equipment here · rule used`, `capped at 95 · newer session 9 Oct`). */
+  planNotes: string[];
+  /** The coach's basis that wasn't used (`NOT USED`), stored or from today's re-check. */
+  notUsed: string | null;
+  /** Where the coach load's references came from (app, FitNotes); empty for a rule slot (its provenance says). */
+  sources: ('app' | 'fitnotes')[];
+}
+
+/** Per slot key: what `Why this workout` needs beyond the planned sets' provenance. Pure. */
+export function draftSlotWhy(plan: Pick<CoachDraftPlan, 'version' | 'coachLoads' | 'ruleNotes'>): Record<string, DraftSlotWhy> {
+  const out: Record<string, DraftSlotWhy> = {};
+  for (const slot of plan.version.plan.slots) {
+    const coach = plan.coachLoads.get(slot.slotKey);
+    if (coach !== undefined) {
+      const checks = [...coach.checks.values()];
+      const used = coach.refs.own?.sessions ?? (coach.refs.latest === null ? [] : [coach.refs.latest]);
+      const anyHeld = checks.some((c) => c.held);
+      out[slot.slotKey] = {
+        planNotes: [],
+        notUsed: checks.find((c) => c.notUsed !== null)?.notUsed ?? null,
+        sources: [...new Set((anyHeld && coach.refs.latest !== null ? [coach.refs.latest] : used).map((x) => x.source))],
+      };
+      continue;
+    }
+    const stored = slot.setTemplates.find((t) => t.setType !== 'warmup' && t.load !== undefined)?.load ?? null;
+    out[slot.slotKey] = { planNotes: [...(plan.ruleNotes.get(slot.slotKey) ?? [])], notUsed: stored?.notUsed ?? null, sources: [] };
+  }
+  return out;
+}
+
+/** Pain that holds a movement's load (BD10): its flag (`shoulder flagged 6 Oct`), else session pain (`pain reported today`). */
+export function painHoldFor(exerciseId: string, flags: readonly PainFlag[], sessionPain: { active: boolean }, nowMs: number, tz: string): { text: string } | null {
+  const flag = painFlagCovering(flags, exerciseId, nowMs, tz)?.flag ?? null;
+  if (flag !== null) {
+    const area = flag.area === null ? null : PAIN_AREA_WORD[flag.area];
+    return { text: `${area === null ? '' : `${area} `}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}` };
+  }
+  return sessionPain.active ? { text: 'pain reported today' } : null;
+}
+
+/** A slot's stored coach loads, re-checked now (`recheckDraftLoad`), by template index; or the rule's fallback note. */
+export type RecheckedSlot = { kind: 'coach'; checks: Map<number, LoadCheck>; refs: LoadReferences } | { kind: 'rule'; notes: string[] };
+
+/**
+ * v2 (§8.2 `planCoachDraft`, B5–B7): each stored coach load re-checked at
+ * plan time against the current history, pain flags, session pain and the
+ * item this gym maps the exercise to. Any working template falling back
+ * makes the whole slot the rule's (one source per exercise). Null when the
+ * slot has no stored coach load (a v1 draft, or the rule from the start).
+ */
+export function recheckDraftSlot(slot: DraftSlot, exercise: Exercise, history: readonly HistorySession[], substitute: SubstituteContext, builtAtUtc: string, nowMs: number): RecheckedSlot | null {
+  const stored = slot.setTemplates.flatMap((t, i) => (t.load !== undefined && t.setType !== 'warmup' ? [{ t, i, load: t.load }] : []));
+  if (stored.length === 0 || !stored.some((x) => x.load.source === 'coach' || x.load.source === 'coach_est')) return null;
+  const refs = loadReferences({ exercise, history, ctx: substitute, nowMs });
+  const pain = painHoldFor(exercise.id, substitute.painFlags, substitute.sessionPain, nowMs, substitute.at.tz);
+  const checks = new Map<number, LoadCheck>();
+  for (const { t, i, load } of stored) {
+    if (t.reps === null || t.targetRpe === null) continue;
+    const c = recheckDraftLoad(load, { repsMin: t.reps.min, repsMax: t.reps.max, targetRpe: t.targetRpe }, refs, { pain, checkedOn: slot.checkedOn ?? null, builtAtUtc, nowMs, checkedHistoryVersion: slot.checkedHistoryVersion ?? null });
+    if (c.load === null) return { kind: 'rule', notes: c.notes.length > 0 ? c.notes : ['rule used'] };
+    checks.set(i, c);
+  }
+  // BD6 step 5 again, on today's loads.
+  const topAt = slot.setTemplates.findIndex((t) => t.setType === 'top');
+  const top = topAt < 0 ? null : (checks.get(topAt) ?? null);
+  if (top !== null) for (const [i, c] of checks) if (i !== topAt) checks.set(i, checkSlotLoads(top, c));
+  return { kind: 'coach', checks, refs };
+}
 
 /**
  * `planCoachDraft` (§8.2): the one path for the overview's dry run, Today's
- * row and Start. Each slot's targets are `substituteTargets` on the
- * exercise's **own** comparable history with the slot's working-set count
- * (BD6: the same path as a swap or an add); no history → no load (B6). The
- * draft's reps, sets and RPE stay (WL7: the slot's structure wins); loads
- * are fitted by `snapPlanToGym` inside the planner. Then today's edits,
- * then the fit from `fitMinutes` unless a fit edit overrides it.
+ * row and Start. v2: a slot with stored coach loads uses them, re-checked
+ * now (`recheckDraftSlot`: newer history, pain, session pain, the item at
+ * this gym), as the slot's own loads on that item. Every other slot (no
+ * coach load, or one that fell back) is planned from `substituteTargets`
+ * on the exercise's **own** comparable history (app and FitNotes) with the
+ * slot's working-set count; no history → no load. The draft's reps, sets
+ * and RPE stay (WL7). Loads are fitted by `snapPlanToGym` inside the
+ * planner. Then today's edits, then the fit from `fitMinutes` unless a fit
+ * edit overrides it. Sets planned from a coach load carry `source: coach`
+ * with its basis, check notes and `est.` (rule 3, rule 6).
  */
 export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const version = currentDraftVersion(input.draft);
@@ -567,34 +777,80 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const copies = new Map<string, number>();
   for (const s of version.plan.slots) copies.set(s.exerciseId, (copies.get(s.exerciseId) ?? 0) + 1);
   const slotEntries = new Map<string, NonNullable<SwapPlan['plan']>>();
+  const nowMs = toMs(input.start.at.utc);
+  const coachSlots = new Map<string, Extract<RecheckedSlot, { kind: 'coach' }>>();
+  const ruleNotes = new Map<string, string[]>();
   for (const s of version.plan.slots) {
     const exercise = input.start.exercises.get(s.exerciseId);
     if (exercise === undefined) continue;
+    const history = input.histories.get(exercise.id) ?? [];
+    const re = recheckDraftSlot(s, exercise, history, input.substitute, version.createdAt.utc, nowMs);
+    if (re?.kind === 'coach') {
+      coachSlots.set(s.slotKey, re);
+      continue;
+    }
+    if (re?.kind === 'rule') ruleNotes.set(s.slotKey, re.notes);
     const slot = { workingSets: draftWorkingSets(s), templates: s.setTemplates.map((t) => ({ setType: t.setType, reps: t.reps, durationS: t.durationS })) };
-    const plan = substituteTargets(slot, exercise, input.histories.get(exercise.id) ?? [], input.substitute);
+    const plan = substituteTargets(slot, exercise, history, input.substitute);
     if (!targets.has(s.exerciseId)) targets.set(s.exerciseId, plan);
     if (plan.plan === null || plan.plan.length === 0) continue;
     if ((copies.get(s.exerciseId) ?? 0) > 1) slotEntries.set(s.slotKey, plan.plan);
     else entries.set(s.exerciseId, plan.plan);
   }
   // The history's item is the slot's pin, so the shared fit maps the same kind (GS3), as for a swap.
+  // A coach slot is pinned to the item its loads were checked on, with those loads as its own.
   const pinned: Routine = {
     ...routine,
     exercises: routine.exercises.map((rex) => {
-      const pin = targets.get(rex.exerciseId)?.pin ?? null;
+      const coach = coachSlots.get(rex.id);
+      if (coach !== undefined) {
+        const setTemplates = rex.setTemplates.map((t, i) => {
+          const c = coach.checks.get(i);
+          return c === undefined || c.load === null ? t : { ...t, targetLoad: c.load };
+        });
+        return { ...rex, setTemplates, equipmentId: coach.refs.equipment?.id ?? rex.equipmentId };
+      }
+      const pin = (copies.get(rex.exerciseId) ?? 0) > 1 && !slotEntries.has(rex.id) ? null : (targets.get(rex.exerciseId)?.pin ?? null);
       return pin === null ? rex : { ...rex, equipmentId: pin.id };
     }),
   };
   const known = new Map(input.start.knownEquipment);
   for (const t of targets.values()) if (t.pin !== null && !known.has(t.pin.id)) known.set(t.pin.id, t.pin);
+  for (const c of coachSlots.values()) if (c.refs.equipment !== null && !known.has(c.refs.equipment.id)) known.set(c.refs.equipment.id, c.refs.equipment);
   const edits = withDraftFit(input.today.edits, input.draft.id, version);
   const out = planWithTodayEdits({ kind: 'routine', input: { ...input.start, knownEquipment: known, routine: pinned, targets: entries, ...(slotEntries.size > 0 ? { slotTargets: slotEntries } : {}) } }, { ...input.today, edits });
   // A coach draft isn't a routine: the session names the draft, never a routine (rotation untouched, §6.3).
+  const exerciseOfRow = new Map(out.aggregate.exercises.map((e) => [e.id, e.exerciseId]));
+  const slotByKey = new Map(version.plan.slots.map((sl) => [sl.slotKey, sl]));
+  const sets = out.aggregate.sets.map((set) => {
+    const slotKey = out.slotOf[set.sessionExerciseId];
+    const coach = slotKey === undefined ? undefined : coachSlots.get(slotKey);
+    const slot = slotKey === undefined ? undefined : slotByKey.get(slotKey);
+    if (coach === undefined || slot === undefined || set.setType === 'warmup' || exerciseOfRow.get(set.sessionExerciseId) !== slot.exerciseId) return set;
+    const at = slot.setTemplates.findIndex((t) => t.setType === set.setType);
+    const c = coach.checks.get(at) ?? [...coach.checks.values()][0];
+    const intended = intendedOf(set.planned);
+    if (c === undefined || c.load === null || intended === null || Math.abs(intended.value - c.load.value) > 1e-6 || intended.convention !== c.load.convention) return set;
+    const provenance: TargetProvenance = {
+      source: 'coach',
+      setAt: version.createdAt,
+      routineName: input.draft.name,
+      requestedLoad: c.load,
+      basis: null,
+      // Review r2 B1r: `reason` is the coach's note (data, `Why?` only); the reason line is code's, first in guardNotes.
+      coach: { actionId: version.actionId, scope: 'build', reason: c.coachNote },
+      ...(c.source === 'coach_est' ? { estimate: true as const } : {}),
+      ...(c.held ? { held: true as const } : {}),
+      guardNotes: [...(c.basis === null ? [] : [c.basis]), ...c.notes, ...(set.planned.provenance?.guardNotes ?? [])].slice(0, 10).map((n) => n.slice(0, 300)),
+    };
+    return { ...set, planned: { ...set.planned, source: 'coach' as const, provenance } };
+  });
   const aggregate = {
     ...out.aggregate,
+    sets,
     session: { ...out.aggregate.session, routineId: null, routineName: input.draft.name, coachDraft: { draftId: input.draft.id, version: version.n, name: input.draft.name } },
   };
-  return { ...out, aggregate, routine: pinned, version, targets };
+  return { ...out, aggregate, routine: pinned, version, targets, coachLoads: coachSlots, ruleNotes };
 }
 
 // ---------------------------------------------------------------------------

@@ -128,6 +128,15 @@ describe('`Needs the coach` (§5.4): the reason word, never a stand-in plan', ()
 });
 
 describe('`Why this workout` (§4.5)', () => {
+  it('r5 B1u: a stored rationale with numbers is re-checked: no digit from the coach is shown under COACH', () => {
+    const coachOf = (rationale: string) => draftWhyView({ request: 'push', rationale, checks: [], fitMinutes: 45 }).find((x) => x.heading === 'COACH')?.lines ?? [];
+    expect(coachOf('You did 105×8 on Tuesday, so bench leads.')).toEqual([]);
+    expect(coachOf('Bench leads; last week you hit 110 for 6.')).toEqual([]);
+    expect(coachOf('Bench 102.5 since you hit 102.5 for 8 on Tuesday. Then incline.')).toEqual(['Then incline.']);
+    expect(coachOf('Your est. max is 140, so bench at 110.')).toEqual([]);
+    expect(coachOf('Bench first. Then eight sets of rows.')).toEqual(['Bench first.']);
+  });
+
   it('Ben’s words quoted, the checked rationale, the length used and the code’s checks', () => {
     expect(draftWhyView({ request: '45 min push, finish with core', rationale: 'Bench first.', checks: ['Overhead press left out · shoulder flagged 6 Oct'], fitMinutes: 45 })).toEqual([
       { heading: 'YOU ASKED', lines: ['“45 min push, finish with core”'] },
@@ -135,6 +144,46 @@ describe('`Why this workout` (§4.5)', () => {
       { heading: 'USED', lines: ['45 min'] },
       { heading: 'CHECKS', lines: ['Overhead press left out · shoulder flagged 6 Oct'] },
     ]);
+  });
+
+  it('v2 `LOADS`: each target with its label, code’s line and notes, then the coach’s note quoted (r2 B1r); `USED` reads the head note', () => {
+    const why = draftWhyView({
+      request: 'build me a push session',
+      rationale: null,
+      checks: [],
+      fitMinutes: 45,
+      headNote: 'Push · Bench press · 45 min · last Push 6 days ago',
+      loads: [
+        { name: 'Bench press', target: '102.5 kg', label: null, quote: '100 for 7 @8 → 102.5', notes: ['last 3: 100×7 @8 → 102.5'], notUsed: null },
+        { name: 'Cable fly', target: '12.5 kg', label: 'est.', quote: null, notes: ['est. · first time', '13 → 12.5 (this stack)'], notUsed: null },
+        { name: 'Triceps pushdown', target: '27.5 kg', label: 'Rule', quote: null, notes: ['coach load 40 kg too far from last 25 × 12'], notUsed: null },
+      ],
+      historyUsed: 'both',
+    });
+    expect(why).toEqual([
+      { heading: 'YOU ASKED', lines: ['“build me a push session”'] },
+      {
+        heading: 'LOADS',
+        lines: ['Bench press 102.5 kg', '  ⓘ last 3: 100×7 @8 → 102.5', '  Coach’s note “100 for 7 @8 → 102.5”', 'Cable fly 12.5 kg · est.', '  ⓘ est. · first time', '  ⓘ 13 → 12.5 (this stack)', 'Triceps pushdown 27.5 kg · Rule', '  ⓘ coach load 40 kg too far from last 25 × 12'],
+      },
+      { heading: 'USED', lines: ['Push · Bench press · 45 min · last Push 6 days ago', 'Logged and FitNotes history'] },
+    ]);
+  });
+
+  it('WB-L9 / review S4: a coach basis not used is listed under NOT USED; USED names only the history actually read', () => {
+    const why = draftWhyView({
+      request: 'push',
+      rationale: null,
+      checks: [],
+      fitMinutes: 45,
+      loads: [{ name: 'Bench press', target: '102.5 kg', label: null, quote: null, notes: ['last 100×7 @8'], notUsed: 'you hit 110×5 last week' }],
+      historyUsed: 'logged',
+    });
+    expect(why.find((s) => s.heading === 'NOT USED')?.lines).toEqual(['Bench press: “you hit 110×5 last week”']);
+    expect(why.find((s) => s.heading === 'USED')?.lines).toEqual(['45 min', 'Logged history']);
+    // Nothing from history (first-time estimates only): no history line at all.
+    expect(draftWhyView({ request: 'push', rationale: null, checks: [], fitMinutes: 45, historyUsed: null }).find((s) => s.heading === 'USED')?.lines).toEqual(['45 min']);
+    expect(draftWhyView({ request: 'push', rationale: null, checks: [], fitMinutes: 45, historyUsed: 'fitnotes' }).find((s) => s.heading === 'USED')?.lines).toEqual(['45 min', 'FitNotes history']);
   });
 });
 

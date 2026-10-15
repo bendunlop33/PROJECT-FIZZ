@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 import type { ActionRecord, BuildFocus } from '@fizz/schemas';
 
 import { BUILD_COPY, buildCardView, draftCardView, draftChangeView, pendingBuildView, type BuildDayChip, type DraftCardView, type DraftChangeView } from '../../coach/build-view';
+import type { QuestionCardView } from '../../coach/sheet-view';
 import { formatTime } from '../../format/dates';
 import { toMs } from '@fizz/domain';
 import { useServices } from '../../shell/context';
@@ -205,3 +206,67 @@ export function WorkoutDraftCard({ record, gymId, onOpen, onOpenRoutine, onChang
     </View>
   );
 }
+
+/**
+ * `BuildQuestionCard` (workout-builder v2.1 §4.2): the coach's one question,
+ * 2–4 tap answers (catalogue names for a main lift) and `Skip`. Typing in
+ * the sheet's field answers it too. After Ben's reply it collapses to one
+ * line; `Saved to Profile · Undo` only when a tapped main lift was saved for
+ * a split day he hadn't set. No question count.
+ */
+export function BuildQuestionCard({
+  view,
+  disabled,
+  saved,
+  onAnswer,
+  onSkip,
+  onUndoSave,
+}: {
+  view: QuestionCardView;
+  disabled: boolean;
+  /** `Saved to Profile` with Undo, `Not undone · changed in Profile`, or nothing. */
+  saved: { text: string; canUndo: boolean } | null;
+  onAnswer: (answer: { label: string; catalogueId: string | null }) => void;
+  onSkip: () => void;
+  onUndoSave: () => void;
+}) {
+  const theme = useTheme();
+  if (view.state !== 'open') {
+    return (
+      <Frame label={`Coach question. ${view.collapsed ?? view.question}`}>
+        <AppText variant="callout" color="text.secondary">
+          {view.state === 'not_answered' ? `${view.question} · ${view.collapsed ?? ''}` : (view.collapsed ?? view.question)}
+        </AppText>
+        {saved !== null ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+            <AppText variant="callout" color="text.secondary">
+              {saved.text}
+            </AppText>
+            {saved.canUndo ? <TextButton label={BUILD_COPY.undo} onPress={onUndoSave} /> : null}
+          </View>
+        ) : null}
+      </Frame>
+    );
+  }
+  return (
+    <Frame>
+      <View accessible accessibilityLabel={`Coach question: ${view.question}`}>
+        <AppText variant="headline">{view.question}</AppText>
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+        {view.answers.map((a) => (
+          <Chip key={a.catalogueId ?? a.label} label={a.label} selected={false} accessibilityLabel={`${a.label}, button`} onPress={() => { if (!disabled) onAnswer(a); }} />
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <TextButton label={QUESTION_COPY.skip} onPress={() => { if (!disabled) onSkip(); }} />
+      </View>
+    </Frame>
+  );
+}
+
+export const QUESTION_COPY = {
+  skip: 'Skip',
+  saved: 'Saved to Profile',
+  notUndone: 'Not undone · changed in Profile',
+} as const;

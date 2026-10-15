@@ -10,6 +10,19 @@ import {
   type PlannedSetEditView,
   type SetGlance,
   type SetNavigation,
+  draftHeadNote,
+  draftReasonLine,
+  formatLoad,
+  historyUsedOf,
+  loadPanelLine,
+  loadWhyEntry,
+  type DraftSlotWhy,
+  type HistoryUsed,
+  matchSplitDay,
+  splitInUse,
+  workoutMuscleGroups,
+  type LoadWhyEntry,
+  type OverviewRow,
   coachDraftIsOpen,
   coachDraftListed,
   currentDraftVersion,
@@ -233,6 +246,7 @@ import {
   isInHistory,
   leftOutCount,
   draftSavedRoutineId,
+  wordsOnlyMessage,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
@@ -739,6 +753,21 @@ export interface CoachDraftInfo {
   fitMinutes: number;
   /** The live library workout it was saved as (still open, Ben may start it); null when not saved or that workout was deleted. Review r2 S2: set, the page offers no second Save. */
   routineId: string | null;
+  /**
+   * (Ben, 14 Oct) The one-line note at the top: `Push · Bench press · 45 min · last Push 6 days ago`.
+   * Empty before the page is planned.
+   */
+  headNote: string;
+  /** (Ben, 14 Oct) Each row's short reason line, by slot key: `last 3: 87.5×8 @8 → +2.5`, `Rule · last 85×8`. */
+  reasons: Record<string, string>;
+  /** Rows whose target is an estimate (`est.`, rule 6), by slot key. */
+  estimates: string[];
+  /** `Why this workout` → `LOADS` (§4.5): each row's target, label, the coach's basis quoted, code's notes. */
+  loads: LoadWhyEntry[];
+  /** The row panel's `LOAD` line (§4.4), by slot key: `LOAD  12.5 kg · est.`, `LOAD  — · start light`. */
+  loadLines: Record<string, string>;
+  /** `USED`: which history the loads came from (review S4); null when none did. */
+  historyUsed: HistoryUsed;
 }
 
 /**
@@ -1668,9 +1697,73 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return d === null ? null : liveRoutineOf(d);
   }
 
-  async function coachDraftInfoOf(d: WorkoutDraft): Promise<CoachDraftInfo> {
+  async function coachDraftInfoOf(d: WorkoutDraft, planned?: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate; draftWhy: Record<string, DraftSlotWhy> }): Promise<CoachDraftInfo> {
     const v = currentDraftVersion(d);
-    return { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: v.rationale, checks: v.checks.map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
+    const base = { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: wordsOnlyMessage(v.rationale), checks: v.checks.filter((c) => c.kind !== 'load').map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
+    const none = { headNote: '', reasons: {}, estimates: [], loads: [], loadLines: {}, historyUsed: null };
+    if (planned === undefined) return { ...base, ...none };
+    return { ...base, ...(await draftExplain(d, planned).catch(() => none)) };
+  }
+
+  /**
+   * (Ben, 14 Oct: "4 sets on 90kg for 6–8 with no reason why") The draft's
+   * head note and each row's reason line, from the planned sets' own
+   * provenance (`draftReasonLine`), the training profile's goal and split,
+   * and Ben's recent workouts. Values only; the detail is behind `Why?`.
+   */
+  async function draftExplain(d: WorkoutDraft, planned: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate; draftWhy: Record<string, DraftSlotWhy> }): Promise<Pick<CoachDraftInfo, 'headNote' | 'reasons' | 'estimates' | 'loads' | 'loadLines' | 'historyUsed'>> {
+    const v = currentDraftVersion(d);
+    const profile = await ctx.store().repos.trainingProfiles.get(planned.ownerId).catch(() => null);
+    const goal = profile?.goal ?? null;
+    const mainSlot = [...v.plan.slots].sort((a, b) => a.order - b.order).find((sl) => sl.main) ?? null;
+    const firstSet = (row: OverviewRow) => planned.aggregate.sets.find((x) => x.id === row.firstSetId) ?? planned.aggregate.sets.filter((x) => x.sessionExerciseId === row.sessionExerciseId && x.setType !== 'warmup').sort((a, b) => a.index - b.index)[0];
+    const reasons: Record<string, string> = {};
+    const estimates: string[] = [];
+    const loads: LoadWhyEntry[] = [];
+    const loadLines: Record<string, string> = {};
+    const sources: ('app' | 'fitnotes')[] = [];
+    for (const row of planned.rows) {
+      const set = firstSet(row);
+      const reps = planned.aggregate.exercises.find((e) => e.id === row.sessionExerciseId)?.measurement === 'reps';
+      const isMain = mainSlot !== null && row.slotKey === mainSlot.slotKey && row.exerciseId === mainSlot.exerciseId;
+      const line = draftReasonLine({ planned: set?.planned ?? null, reps, main: isMain, goal });
+      if (line !== null) reasons[row.slotKey] = line;
+      if (set?.planned.provenance?.estimate === true) estimates.push(row.slotKey);
+      const slot = v.plan.slots.find((sl) => sl.slotKey === row.slotKey);
+      const stored = slot?.setTemplates.find((t) => t.setType !== 'warmup' && t.load !== undefined)?.load ?? null;
+      const why = planned.draftWhy[row.slotKey];
+      const prov = set?.planned.provenance;
+      // USED: only the history a load actually came from (a coach load's references; the rule's basis).
+      if (set?.planned.source === 'coach') sources.push(...(why?.sources ?? []));
+      else if (set?.planned.source === 'built_in_rule' && prov?.basis) sources.push(prov.basis.imported ? 'fitnotes' : 'app');
+      if (reps) {
+        const target = set === undefined || set.planned.load === null ? '—' : formatLoad(set.planned.load, row.load.none ? undefined : set.planned.load.convention);
+        const entry = loadWhyEntry(row.name, target, set?.planned ?? null, { storedNotes: stored?.notes ?? [], notUsed: why?.notUsed ?? stored?.notUsed ?? null, planNotes: why?.planNotes ?? [] });
+        loads.push(entry);
+        loadLines[row.slotKey] = loadPanelLine(entry);
+      }
+    }
+    // The head note: split day · main lift · length · last workout of the same split day.
+    const split = splitInUse(profile);
+    const FOCUS: Record<string, string> = { push: 'Push', pull: 'Pull', legs: 'Legs', chest: 'Chest', shoulders: 'Shoulders', back: 'Back', upper: 'Upper', lower: 'Lower', full_body: 'Full body' };
+    const dayName = v.request.day?.name ?? FOCUS[v.request.focus] ?? null;
+    let lastSameDaysAgo: number | null = null;
+    if (dayName !== null) {
+      const now = ctx.now();
+      const nowMs = toMs(now.utc);
+      const recent = await repos().sessions.listFinishedBetween(planned.ownerId, toIso(nowMs - 120 * 86_400_000), toIso(nowMs + 1)).catch(() => [] as SessionAggregate[]);
+      const muscles = new Map<string, readonly string[]>();
+      for (const a of recent) for (const e of a.exercises) if (!muscles.has(e.exerciseId)) muscles.set(e.exerciseId, (await exerciseById(e.exerciseId))?.primaryMuscles ?? []);
+      const same = [...recent].reverse().find((a) => matchSplitDay(split, workoutMuscleGroups(a.exercises.map((ex) => ({ primaryMuscles: muscles.get(ex.exerciseId) ?? [], workingSets: a.sets.filter((x) => x.sessionExerciseId === ex.id && x.status === 'completed' && x.setType !== 'warmup').length }))))?.name === dayName);
+      if (same !== undefined) {
+        const today = localDateOf(nowMs, now.tz);
+        const then = localDateOf(toMs(same.session.startedAt.utc), now.tz);
+        lastSameDaysAgo = Math.round((toMs(`${today}T00:00:00.000Z`) - toMs(`${then}T00:00:00.000Z`)) / 86_400_000);
+      }
+    }
+    const mainRow = mainSlot === null ? null : (planned.rows.find((r) => r.slotKey === mainSlot.slotKey) ?? null);
+    const headNote = draftHeadNote({ split: dayName, mainLift: mainRow?.name ?? null, minutes: v.fitMinutes, lastSameDaysAgo });
+    return { headNote, reasons, estimates, loads, loadLines, historyUsed: historyUsedOf(sources) };
   }
 
   /** An open coach draft (14 days, not started or discarded), as the overview plans it. Null: gone (`Draft deleted`). */
@@ -1964,6 +2057,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   }
 
   /** `previewKey` inputs as stored now (workout-overview §7). `gymId` null: the typical gym Start will save. */
+  /** The newest finished workout (app or imported) and its revision: new or corrected history changes a coach draft's key (WB-L12). */
+  async function newestFinished(ownerId: string): Promise<{ sessionId: string; revision: number } | null> {
+    const ref = (await repos().sessions.listFinishedRefs(ownerId, 1, { includeImported: true }).catch(() => []))[0];
+    if (ref === undefined) return null;
+    const a = await repos().sessions.get(ref.sessionId).catch(() => null);
+    return { sessionId: ref.sessionId, revision: a?.revision ?? 0 };
+  }
+
   async function previewKeyParts(p: UserProfile, resolved: ResolvedOverview, gymId: string | null, checkIn: CheckIn | null, draft: PreStartDraft | null = null): Promise<PreviewKeyParts> {
     const equipment = gymId === null ? null : await repos().equipment.listByGym(gymId);
     const source = await overviewSource(resolved);
@@ -1978,7 +2079,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             : { kind: 'next', sourceSessionId: resolved.source.session.id },
       routine: resolved.kind === 'routine' ? { id: resolved.routine.id, version: resolved.routine.version } : null,
       // A coach draft's version: a new version, a discard or a start since the page loaded makes Start create nothing (§6.3).
-      ...(resolved.kind === 'coach_draft' ? { coachDraft: { id: resolved.draft.id, version: resolved.draft.version } } : {}),
+      ...(resolved.kind === 'coach_draft' ? { coachDraft: { id: resolved.draft.id, version: resolved.draft.version }, history: await newestFinished(p.id) } : {}),
       gym: gymId === null || equipment === null ? { typical: true } : { id: gymId, equipment: equipment.map((e) => ({ id: e.id, version: e.version })) },
       source: source === null ? null : { id: source.session.id, revision: source.revision },
       painFlags: flags.map((f) => ({ id: f.id, version: f.version })),
@@ -2001,11 +2102,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     today: CheckIn | null,
     gymEquipment?: readonly EquipmentInstance[],
     todayEdits: TodayEditsInput = NO_TODAY,
-  ): Promise<{ aggregate: SessionAggregate; fits: Record<string, SetFit>; today: TodayPlanInfo | null } | null> {
+  ): Promise<{ aggregate: SessionAggregate; fits: Record<string, SetFit>; today: TodayPlanInfo | null; draftWhy?: Record<string, DraftSlotWhy> } | null> {
     const newId = previewIds();
     if (resolved.kind === 'coach_draft') {
       const r = await coachDraftStart(p, resolved.draft, { gymId, opId: 'overview-preview', preview: true, today, newId, todayEdits, ...(gymEquipment ? { gymEquipment } : {}) });
-      return r.ok ? { aggregate: r.aggregate, fits: r.fits, today: r.today } : null;
+      return r.ok ? { aggregate: r.aggregate, fits: r.fits, today: r.today, draftWhy: r.draftWhy ?? {} } : null;
     }
     if (resolved.kind === 'routine') {
       const { r } = await routineStart(p, { routineId: resolved.routine.id, gymId, opId: 'overview-preview', preview: true, today, newId, todayEdits, ...(gymEquipment ? { gymEquipment } : {}) });
@@ -3985,7 +4086,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           templateCard: await templateCardOf(resolved, run, t.draft),
           pace: planPace(recent),
           coachFit: await coachFitInfo(run.today),
-          coachDraft: resolved.kind === 'coach_draft' ? await coachDraftInfoOf(resolved.draft) : null,
+          coachDraft: resolved.kind === 'coach_draft' ? await coachDraftInfoOf(resolved.draft, { ownerId: p.id, rows: view.rows, aggregate, draftWhy: run.draftWhy ?? {} }) : null,
         };
       } catch {
         return null;
@@ -4576,7 +4677,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         const leftOut = version === null ? 0 : leftOutCount(version.checks);
         const name = version === null ? (d?.name ?? 'Workout') : draftName(version.request.focus, version.fitMinutes);
-        return { draftId: req.draftId, versionN: req.versionN, name, exerciseCount, estimateMinutes, gymName: gym?.name ?? null, leftOut, state, rationale: version?.rationale ?? null };
+        return { draftId: req.draftId, versionN: req.versionN, name, exerciseCount, estimateMinutes, gymName: gym?.name ?? null, leftOut, state, rationale: wordsOnlyMessage(version?.rationale) };
       } catch {
         return null;
       }

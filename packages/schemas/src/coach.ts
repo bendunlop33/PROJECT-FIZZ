@@ -14,7 +14,7 @@ import { DraftBasisSchema } from './draft';
 import type { SessionCommand } from './commands';
 import type { Exercise } from './exercise';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
-import { ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
+import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 
 /**
  * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
@@ -71,6 +71,8 @@ export const CoachEntityKindSchema = z.enum([
   'session_exercise',
   /** (14 Oct) The live workout's own name (`rename_workout`), through the workout's `rename_session` command; Undo names it back. */
   'session_name',
+  /** (14 Oct, workout builder v2) A clarifying question card in the thread (`ask_build_question`); it changes nothing else. */
+  'build_question',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -313,8 +315,10 @@ export const CoachToolNameSchema = z.enum([
   'suggest_memory',
   'forget_memory',
   'add_playbook_candidate',
-  /** (12 Oct) The workout builder's only tool (workout-builder BD1): structure only, no loads or minutes. */
+  /** (12 Oct) The workout builder's tool (workout-builder BD1); v2: structure and checked loads, never minutes. */
   'propose_workout',
+  /** (14 Oct, workout builder v2 BD17) One clarifying question before a build; at most 2 per build request. */
+  'ask_build_question',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -340,6 +344,7 @@ export const COACH_TOOL_ARGS = {
   forget_memory: ForgetMemoryArgsSchema,
   add_playbook_candidate: AddPlaybookCandidateArgsSchema,
   propose_workout: ProposeWorkoutArgsSchema,
+  ask_build_question: AskBuildQuestionArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -637,6 +642,21 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     leftOut: z.int().min(0).max(40),
     gymName: z.string().min(1).max(120).nullable(),
     lines: z.array(StructuralChangeLineSchema).max(40),
+  }),
+  /**
+   * (14 Oct, workout builder v2 BD17) A clarifying question the coach asked
+   * before building, after `checkBuildQuestion` passed it. Status
+   * `proposed` while it waits for Ben's tap. App-checked text: the question
+   * (≤ 80), 2–4 answers (≤ 24; `main_lift` answers are catalogue names with
+   * their IDs). Nothing else is written.
+   */
+  z.object({
+    kind: z.literal('build_question'),
+    topic: BuildQuestionTopicSchema,
+    question: z.string().min(1).max(80),
+    answers: z.array(z.object({ label: z.string().min(1).max(24), catalogueId: z.string().min(1).max(80).nullable() })).min(2).max(4),
+    /** The split day the question is about (`main_lift` saves go to this day), when there is one. */
+    day: z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(30) }).nullable(),
   }),
   z.object({
     kind: z.literal('undo'),
