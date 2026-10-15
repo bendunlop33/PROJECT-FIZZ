@@ -1,0 +1,88 @@
+diff --git a/node_modules/expo-widgets/ios/WidgetsStorage.swift b/node_modules/expo-widgets/ios/WidgetsStorage.swift
+index 86f9d6c..29575ec 100644
+--- a/node_modules/expo-widgets/ios/WidgetsStorage.swift
++++ b/node_modules/expo-widgets/ios/WidgetsStorage.swift
+@@ -1,5 +1,10 @@
++import Foundation
++
+ public enum WidgetsStorage {
+-  public static var appGroupIdentifier: String? = Bundle.main.object(forInfoDictionaryKey: "ExpoWidgetsAppGroupIdentifier") as? String
++  // PROJECT-FIZZ patch (docs/decisions/0007): resolved at runtime, not only read from
++  // the build-time Info.plist key. SideStore/AltStore sign the app and the extension
++  // with "<group>.<TEAMID>" and list it in ALTAppGroups. See FizzAppGroupResolver.
++  public static var appGroupIdentifier: String? = FizzAppGroupResolver.resolve()
+   static let defaults = UserDefaults(suiteName: appGroupIdentifier)
+ 
+   static func set(_ value: [String: Any], forKey key: String) {
+@@ -56,3 +61,71 @@ public enum WidgetsStorage {
+     defaults.removeObject(forKey: key)
+   }
+ }
++
++// PROJECT-FIZZ patch (docs/decisions/0007, patches/expo-widgets+57.0.23.patch).
++// Runs once per process (the app, and the widget extension) on first use of
++// WidgetsStorage. Order:
++//   1. ALTAppGroups in this bundle's own Info.plist (written by the signing tool);
++//   2. in the extension only, ALTAppGroups in the parent app's Info.plist;
++//   3. the configured group (ExpoWidgetsAppGroupIdentifier, set at build time).
++// Only groups equal to the configured one or "<configured>.<suffix>" are taken from
++// ALTAppGroups, and only if containerURL resolves (i.e. this binary is entitled to it).
++// The choice is written to the chosen group's shared defaults so the app's capability
++// probe can check that the app and the extension agree.
++enum FizzAppGroupResolver {
++  static let configuredKey = "ExpoWidgetsAppGroupIdentifier"
++  static let recordKeyPrefix = "fizz.appGroupResolution."
++
++  static func resolve() -> String? {
++    let bundle = Bundle.main
++    let configured = bundle.object(forInfoDictionaryKey: configuredKey) as? String
++    let isExtension = bundle.bundleURL.pathExtension == "appex"
++    var sources: [(source: String, groups: [String])] = [
++      ("altAppGroups", bundle.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? [])
++    ]
++    if isExtension {
++      // <App>.app/PlugIns/<Extension>.appex -> <App>.app/Info.plist
++      let parentInfo = bundle.bundleURL
++        .deletingLastPathComponent()
++        .deletingLastPathComponent()
++        .appendingPathComponent("Info.plist")
++      let parent = NSDictionary(contentsOf: parentInfo) as? [String: Any]
++      sources.append(("parentAltAppGroups", parent?["ALTAppGroups"] as? [String] ?? []))
++    }
++    for (source, groups) in sources {
++      for group in groups where isRelated(group, to: configured) && hasContainer(group) {
++        record(group: group, source: source, configured: configured, isExtension: isExtension)
++        return group
++      }
++    }
++    if let configured, hasContainer(configured) {
++      record(group: configured, source: "configured", configured: configured, isExtension: isExtension)
++    }
++    return configured
++  }
++
++  private static func isRelated(_ group: String, to configured: String?) -> Bool {
++    guard let configured else { return true }
++    return group == configured || group.hasPrefix(configured + ".")
++  }
++
++  private static func hasContainer(_ group: String) -> Bool {
++    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) != nil
++  }
++
++  private static func record(group: String, source: String, configured: String?, isExtension: Bool) {
++    guard let shared = UserDefaults(suiteName: group) else { return }
++    let info = Bundle.main.infoDictionary ?? [:]
++    shared.set(
++      [
++        "group": group,
++        "source": source,
++        "configured": configured ?? "",
++        "bundleId": Bundle.main.bundleIdentifier ?? "",
++        "buildNumber": info["CFBundleVersion"] as? String ?? "",
++        "atUtc": ISO8601DateFormatter().string(from: Date()),
++      ],
++      forKey: recordKeyPrefix + (isExtension ? "extension" : "app")
++    )
++  }
++}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "cable-neutral-grip-pulldown",
+  "tier": "basic",
+  "name": "Neutral-grip pulldown",
+  "aliases": ["Neutral-grip lat pulldown", "Close-grip pulldown", "Close-grip lat pulldown", "V-bar pulldown", "V-handle pulldown"],
+  "family": "pulldown",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats"],
+  "secondaryMuscles": ["upper_back", "biceps", "brachialis", "rear_delts"],
+  "compatibleEquipment": ["weight_stack"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "stack",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

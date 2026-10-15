@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "key": "barbell-back-squat",
+  "tier": "rich",
+  "name": "Back squat",
+  "aliases": ["Barbell squat", "Barbell back squat", "BB squat", "BB back squat", "High-bar squat"],
+  "family": "squat",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings", "spinal_erectors", "core"],
+  "compatibleEquipment": ["barbell"],
+  "requiresStation": ["rack"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 180,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Set the bar at mid-chest height in the rack",
+      "Bar on your upper back, not your neck",
+      "Grip just outside your shoulders",
+      "Step back, feet shoulder width, toes slightly out"
+    ],
+    "execution": [
+      "Breathe in, brace, then sit down",
+      "Knees track over your toes",
+      "Sink until hips are just below knees, heels down",
+      "Stand up with hips and chest rising together"
+    ],
+    "faults": [
+      "Don't let your heels or toes lift",
+      "Don't let your knees cave inward",
+      "Don't let your hips rise faster than your chest",
+      "Don't let your lower back round at the bottom"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Squat inside a rack with the safety arms set just below the lowest point the bar reaches.",
+      "Practise lowering a light bar onto the safety arms so you know how to bail out of a failed rep.",
+      "A spotter is optional and does not replace safety arms. If you use one, agree the signals before the set.",
+      "Only go as deep as you can with heels down and your lower back holding its position.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "bodyweight-squat", "name": "Bodyweight squat", "reason": "Learns the pattern and depth with no load." },
+      { "key": "dumbbell-goblet-squat", "name": "Goblet squat", "reason": "A load held in front makes an upright torso easier to find." },
+      { "key": "barbell-box-squat", "name": "Box squat", "reason": "The box gives a consistent depth target." }
+    ],
+    "progressions": [
+      { "key": "barbell-paused-back-squat", "name": "Paused back squat", "reason": "A pause at the bottom removes the bounce and builds control." },
+      { "key": "barbell-front-squat", "name": "Front squat", "reason": "More upright torso and more quad demand; needs more wrist, ankle and upper-back mobility." }
+    ],
+    "substitutions": [
+      { "key": "machine-hack-squat", "name": "Hack squat", "reason": "Same squat pattern on a guided path; no rack or spotter needed." },
+      { "key": "machine-leg-press", "name": "Leg press", "reason": "Trains quads and glutes without a bar on the back." },
+      { "key": "smith-machine-squat", "name": "Smith machine squat", "reason": "Fixed bar path with built-in catches. Loads are not comparable with a free bar." },
+      { "key": "barbell-front-squat", "name": "Front squat", "reason": "Same pattern with the bar in front; more upright." },
+      { "key": "dumbbell-bulgarian-split-squat", "name": "Bulgarian split squat", "reason": "One leg at a time with much lighter loads." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view, figure facing right, camera at hip height, whole body in frame. Rack uprights optional, drawn behind the figure.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Standing tall. Knees and hips straight but not forced back. Bar on the upper back directly over mid-foot. Hands just outside the shoulders, elbows pointing down and slightly back. Feet flat.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 5, "hipFlexion": 5, "kneeFlexion": 5, "ankleDorsiflexion": 5, "elbowFlexion": 110 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Hips moving back and down while the knees move forward over the toes. Bar still over mid-foot. Heels down. Spine neutral.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 25, "hipFlexion": 65, "kneeFlexion": 60, "ankleDorsiflexion": 20, "elbowFlexion": 110 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Hip crease just below the top of the knee (thigh slightly past parallel). Shins and torso at similar forward angles. Heels flat. Lower back neutral, chest up, gaze forward. Bar still over mid-foot.",
+        "approxAnglesDeg": { "trunkLeanFromVertical": 38, "hipFlexion": 133, "kneeFlexion": 125, "ankleDorsiflexion": 30, "elbowFlexion": 110 }
+      }
+    ],
+    "barPath": "Vertical line over mid-foot; drift ≤ 3% of body height",
+    "tempo": { "downMs": 1600, "holdMs": 200, "upMs": 1000 },
+    "props": ["barbell_loaded", "rack_optional"],
+    "emphasise": [
+      "Bar stays over mid-foot all the way down and up",
+      "Heels stay flat",
+      "Knees travel forward over the toes, not inward",
+      "Hips and chest rise at the same rate"
+    ],
+    "doNotShow": ["Bounce at the bottom", "Spotter", "Rounded lower back", "Knees caving in", "Depth past where the back stays neutral"]
+  },
+  "sources": [
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4262933",
+      "title": "Myer GD et al. (2014) The back squat: a proposed assessment of functional deficits and technical factors that limit performance. Strength Cond J 36(6):4-27",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[3]; cues.execution[0-3]; cues.faults[0-3]; guideBrief.keyPositions[2] (depth, shin and torso angle, heels down, gaze)"
+    },
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/11/back-squat/",
+      "title": "ACE Exercise Library: Back Squat",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[0-3]; cues.execution[2-3]"
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Approximate drawing targets worked out from the cited depth and shin/torso guidance. Not measured data and not a form standard. Trunk lean varies with bar position and body proportions."
+    },
+    {
+      "field": "safety.notes[0-2]",
+      "note": "Safety-arm and spotter advice is standard gym practice. Neither cited source covers it."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}

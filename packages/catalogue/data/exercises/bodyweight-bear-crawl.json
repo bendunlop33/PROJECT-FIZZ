@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-bear-crawl",
+  "tier": "basic",
+  "name": "Bear crawl",
+  "aliases": ["Bear crawls", "Bear walk", "Forward bear crawl"],
+  "family": "crawl",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["core", "front_delts"],
+  "secondaryMuscles": ["quads", "triceps", "chest", "obliques"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "duration",
+  "laterality": "bilateral",
+  "defaultRestS": 60,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

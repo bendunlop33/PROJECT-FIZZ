@@ -1,0 +1,29 @@
+name: iOS IPA retry
+
+# When the macOS build job is cancelled because no runner was assigned (no steps ran),
+# wait a little and re-run the failed jobs. At most 3 retries per run.
+on:
+  workflow_run:
+    workflows: ["iOS IPA"]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  retry:
+    if: github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.run_attempt < 4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Re-run if the build job never got a runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          jobs=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?filter=latest" --jq '.jobs[] | select(.name=="Build unsigned .ipa") | "\(.conclusion) \(.steps | length)"')
+          echo "Build job: $jobs"
+          if [ "$jobs" != "cancelled 0" ]; then echo "Not a missing-runner cancel; nothing to do."; exit 0; fi
+          sleep 600
+          gh run rerun "$RUN_ID" --failed --repo "$REPO"

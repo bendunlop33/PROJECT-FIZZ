@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "rowing-erg",
+  "tier": "basic",
+  "name": "Rowing machine",
+  "aliases": ["Row erg", "Rowing erg", "Rower", "Indoor rower", "Indoor rowing", "HYROX row", "RowErg"],
+  "family": "rowing",
+  "movementPattern": "conditioning",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes", "lats"],
+  "secondaryMuscles": ["hamstrings", "upper_back", "biceps", "spinal_erectors", "core"],
+  "compatibleEquipment": ["erg"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "distance",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

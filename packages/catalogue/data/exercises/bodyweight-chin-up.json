@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "key": "bodyweight-chin-up",
+  "tier": "basic",
+  "name": "Chin-up",
+  "aliases": ["Chinup", "Chin up", "Underhand pull-up", "Supinated pull-up", "Bodyweight chin-up"],
+  "family": "pull_up",
+  "movementPattern": "vertical_pull",
+  "mechanic": "compound",
+  "primaryMuscles": ["lats", "biceps"],
+  "secondaryMuscles": ["upper_back", "brachialis", "rear_delts", "grip", "core"],
+  "compatibleEquipment": ["bodyweight_station"],
+  "requiresStation": ["pullup_bar"],
+  "defaultLoadConvention": "bodyweight",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

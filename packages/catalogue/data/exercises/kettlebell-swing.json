@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "key": "kettlebell-swing",
+  "tier": "basic",
+  "name": "Kettlebell swing",
+  "aliases": ["KB swing", "Russian swing", "Russian kettlebell swing", "Two-hand kettlebell swing", "Two-handed swing"],
+  "family": "kettlebell_swing",
+  "movementPattern": "hinge",
+  "mechanic": "compound",
+  "primaryMuscles": ["glutes", "hamstrings"],
+  "secondaryMuscles": ["spinal_erectors", "quads", "core", "grip"],
+  "compatibleEquipment": ["kettlebell"],
+  "defaultLoadConvention": "total",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 90,
+  "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },
+  "review": { "status": "draft", "benApprovedOn": null }
+}

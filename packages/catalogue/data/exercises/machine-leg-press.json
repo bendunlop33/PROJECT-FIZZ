@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "key": "machine-leg-press",
+  "tier": "rich",
+  "name": "Leg press",
+  "aliases": ["45-degree leg press", "45° leg press", "Sled leg press", "Plate-loaded leg press", "Incline leg press"],
+  "family": "leg_press",
+  "movementPattern": "squat",
+  "mechanic": "compound",
+  "primaryMuscles": ["quads", "glutes"],
+  "secondaryMuscles": ["adductors", "hamstrings"],
+  "compatibleEquipment": ["plate_loaded_machine"],
+  "requiresStation": ["specific_machine"],
+  "defaultLoadConvention": "added",
+  "measurement": "reps",
+  "laterality": "bilateral",
+  "defaultRestS": 120,
+  "provenance": {
+    "source": "fizz",
+    "crossCheckedWith": [],
+    "copiedFields": [],
+    "retrievedOn": "2026-10-09"
+  },
+  "cues": {
+    "setup": [
+      "Back and hips flat against the pad",
+      "Feet mid-plate, about hip to shoulder width",
+      "Press up, then release the safety catches",
+      "Hold the side handles lightly"
+    ],
+    "execution": [
+      "Lower slowly, knees in line with your toes",
+      "Stop before your hips curl off the pad",
+      "Push through your whole foot",
+      "Straighten without locking your knees"
+    ],
+    "faults": [
+      "Don't let your lower back or hips peel off the pad",
+      "Don't lock your knees out hard at the top",
+      "Don't let your heels lift off the plate",
+      "Don't let your knees cave inward"
+    ]
+  },
+  "safety": {
+    "notes": [
+      "Learn where the machine's safety catches are before loading it. Re-engage them before you take your feet off the plate.",
+      "If the machine has adjustable stops, set them just below your lowest position.",
+      "Keep a slight bend in the knees at the top; don't lock them under load.",
+      "The logged load is the plates added. It isn't the true resistance, and numbers aren't comparable between machines.",
+      "If pain lingers or comes back, stop this exercise and get it checked by a physio or doctor."
+    ],
+    "stopIf": [
+      "Sharp, pinching or sudden pain",
+      "Pain that changes how you move",
+      "Dizziness, numbness or tingling"
+    ]
+  },
+  "variations": {
+    "regressions": [
+      { "key": "machine-seated-leg-press", "name": "Seated leg press (stack)", "reason": "Selector-pin machine with smaller loads and a simple setup." }
+    ],
+    "progressions": [
+      { "key": "machine-single-leg-press", "name": "Single-leg press", "reason": "One leg at a time; shows and trains side-to-side differences." },
+      { "key": "machine-hack-squat", "name": "Hack squat", "reason": "Standing squat pattern on a guided path; more trunk demand." }
+    ],
+    "substitutions": [
+      { "key": "machine-hack-squat", "name": "Hack squat", "reason": "Guided squat pattern for quads and glutes." },
+      { "key": "barbell-back-squat", "name": "Back squat", "reason": "Free-weight squat pattern; needs a rack and safety arms." },
+      { "key": "machine-seated-leg-press", "name": "Seated leg press (stack)", "reason": "Same leg-press pattern on a stack. Loads aren't comparable." },
+      { "key": "dumbbell-goblet-squat", "name": "Goblet squat", "reason": "Squat pattern with one dumbbell when the machine is busy." },
+      { "key": "dumbbell-bulgarian-split-squat", "name": "Bulgarian split squat", "reason": "One leg at a time with dumbbells." }
+    ]
+  },
+  "guideBrief": {
+    "view": "side",
+    "cameraNote": "Side view of a 45° plate-loaded leg press, rail rising to the right, camera at seat height. Figure reclined on the seat pad with feet on the sliding foot plate. Whole machine outline in frame.",
+    "keyPositions": [
+      {
+        "label": "Start",
+        "describe": "Reclined on the pad, lower back and hips flat on it. Feet flat in the middle of the plate about hip to shoulder width. Legs nearly straight with a small knee bend. Hands on the side handles.",
+        "approxAnglesDeg": { "kneeFlexion": 12, "hipFlexion": 85, "ankleDorsiflexion": 0 }
+      },
+      {
+        "label": "Halfway",
+        "describe": "Foot plate halfway down the rail. Knees bending in line with the toes. Feet flat, hips and back still on the pad.",
+        "approxAnglesDeg": { "kneeFlexion": 50, "hipFlexion": 100, "ankleDorsiflexion": 10 }
+      },
+      {
+        "label": "Bottom",
+        "describe": "Knees bent about 90°. Thighs coming toward the chest, but hips and lower back still flat on the pad (tailbone not curling up). Heels flat on the plate.",
+        "approxAnglesDeg": { "kneeFlexion": 95, "hipFlexion": 125, "ankleDorsiflexion": 20 }
+      }
+    ],
+    "barPath": "Foot plate moves along the fixed 45° rail; feet fixed to the plate; hips fixed to the seat",
+    "tempo": { "downMs": 1600, "holdMs": 200, "upMs": 1000 },
+    "props": ["machine_sled_45deg", "seat_reclined", "plates_on_sled_horns"],
+    "emphasise": [
+      "Hips and lower back stay on the pad at the bottom",
+      "Feet stay flat on the plate throughout",
+      "Knees stay slightly bent at the top"
+    ],
+    "doNotShow": ["Knees locked straight", "Tailbone curling off the seat", "Knees touching the chest"]
+  },
+  "sources": [
+    {
+      "url": "https://www.acefitness.org/resources/everyone/exercise-library/154/half-kneeling-hip-flexor-stretch/",
+      "title": "ACE Exercise Library: Seated Leg Press (served at a mislabelled URL slug)",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[0,3]; cues.execution[1-3]; cues.faults[0-2]; guideBrief.keyPositions[2] (knees about 90°)",
+      "note": "ACE describes the selector-pin seated version. The technique points carry over to the 45° plate-loaded machine."
+    },
+    {
+      "url": "https://sponet.de/sponet/Record/4006198",
+      "title": "Escamilla RF et al. (2001) Effects of technique variations on knee biomechanics during the squat and leg press. Med Sci Sports Exerc 33(9):1552-1566",
+      "checkedOn": "2026-10-09",
+      "supports": "cues.setup[1] (foot angle made no difference; wide high feet added hamstring activity); secondaryMuscles",
+      "note": "Abstract only."
+    }
+  ],
+  "uncertain": [
+    {
+      "field": "guideBrief.keyPositions[*].approxAnglesDeg",
+      "note": "Hip angles depend on the machine's seat-back angle, which varies by model. Treat them as drawing targets only."
+    },
+    {
+      "field": "safety.notes[0-1]",
+      "note": "Safety catches and stops differ between machine models. The advice is general practice, not from the cited sources."
+    },
+    {
+      "field": "compatibleEquipment",
+      "note": "Limited to plate-loaded machines on purpose. Selector-pin seated leg presses are a separate entry (machine-seated-leg-press) so stack and plate histories don't mix."
+    }
+  ],
+  "review": { "status": "draft", "benApprovedOn": null }
+}
