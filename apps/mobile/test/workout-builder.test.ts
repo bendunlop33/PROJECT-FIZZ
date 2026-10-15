@@ -11,7 +11,7 @@ import type { SessionAggregate } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
 import type { OverviewData } from '../src/services/workout-services';
-import { questionTap } from '../src/coach/build-view';
+import { draftWhyView, questionTap } from '../src/coach/build-view';
 import { answerSaveOf, threadRows } from '../src/coach/sheet-view';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
@@ -1295,5 +1295,32 @@ describe('builder-v2 review: references, length, questions (S1, S2, S7, WB-L5c, 
     expect(await again.training.undoMainLiftAnswer({ dayId: 'legs', savedVersion: ops?.version ?? 0, opId: 'q-off:main-lift-undo' })).toBe('undone');
     expect(answerSaveOf('q-off', await again.training.appliedOps())).toEqual({ state: 'undone', canUndo: false });
     expect(answerSaveOf('q-other', await again.training.appliedOps())).toBeNull();
+  });
+});
+
+describe('review builder-v2 r5 B1u: the coach’s message on the card and in `Why this workout` is words only', () => {
+  it('a message stating sets Ben never lifted shows only its words-only sentence; a decimal is never garbled', async () => {
+    const { s, gymId } = await benWithHistory();
+    model = new StepModel([pushStub(PUSH, 'Bench 102.5 since you hit 102.5 for 8 on Tuesday. Then incline. You did 105×8 on Tuesday, so bench leads.'), () => replyWith('Here it is.')]);
+    const result = await ask(s, 'build me a 45-minute push session for this gym');
+    const rec = result.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_workout') throw new Error('no draft');
+    const card = await s.coachDrafts.card({ draftId: rec.detail.draftId, versionN: 1, gymId });
+    expect(card?.rationale).toBe('Then incline.');
+    const p = await page(s, rec.detail.draftId, gymId);
+    expect(p.coachDraft?.rationale).toBe('Then incline.');
+    const coach = draftWhyView(p.coachDraft ?? { request: '', rationale: null, checks: [], fitMinutes: 0 }).find((x) => x.heading === 'COACH');
+    expect(coach?.lines).toEqual(['Then incline.']);
+  });
+
+  it('a message that is all numbers leaves no COACH section and no card text', async () => {
+    const { s, gymId } = await benWithHistory();
+    model = new StepModel([pushStub(PUSH, 'Your est. max is 140, so bench at 110.'), () => replyWith('Here it is.')]);
+    const result = await ask(s, 'build me a 45-minute push session for this gym');
+    const rec = result.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_workout') throw new Error('no draft');
+    expect((await s.coachDrafts.card({ draftId: rec.detail.draftId, versionN: 1, gymId }))?.rationale).toBeNull();
+    const p = await page(s, rec.detail.draftId, gymId);
+    expect(draftWhyView(p.coachDraft ?? { request: '', rationale: null, checks: [], fitMinutes: 0 }).some((x) => x.heading === 'COACH')).toBe(false);
   });
 });

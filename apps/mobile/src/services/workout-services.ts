@@ -236,6 +236,7 @@ import {
   isInHistory,
   leftOutCount,
   draftSavedRoutineId,
+  wordsOnlyMessage,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
@@ -1682,7 +1683,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   async function coachDraftInfoOf(d: WorkoutDraft, planned?: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate; draftWhy: Record<string, DraftSlotWhy> }): Promise<CoachDraftInfo> {
     const v = currentDraftVersion(d);
-    const base = { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: v.rationale, checks: v.checks.filter((c) => c.kind !== 'load').map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
+    const base = { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: wordsOnlyMessage(v.rationale), checks: v.checks.filter((c) => c.kind !== 'load').map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
     const none = { headNote: '', reasons: {}, estimates: [], loads: [], loadLines: {}, historyUsed: null };
     if (planned === undefined) return { ...base, ...none };
     return { ...base, ...(await draftExplain(d, planned).catch(() => none)) };
@@ -4632,7 +4633,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         const leftOut = version === null ? 0 : leftOutCount(version.checks);
         const name = version === null ? (d?.name ?? 'Workout') : draftName(version.request.focus, version.fitMinutes);
-        return { draftId: req.draftId, versionN: req.versionN, name, exerciseCount, estimateMinutes, gymName: gym?.name ?? null, leftOut, state, rationale: version?.rationale ?? null };
+        return { draftId: req.draftId, versionN: req.versionN, name, exerciseCount, estimateMinutes, gymName: gym?.name ?? null, leftOut, state, rationale: wordsOnlyMessage(version?.rationale) };
       } catch {
         return null;
       }

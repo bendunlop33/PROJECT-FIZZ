@@ -128,6 +128,15 @@ describe('`Needs the coach` (§5.4): the reason word, never a stand-in plan', ()
 });
 
 describe('`Why this workout` (§4.5)', () => {
+  it('r5 B1u: a stored rationale with numbers is re-checked: no digit from the coach is shown under COACH', () => {
+    const coachOf = (rationale: string) => draftWhyView({ request: 'push', rationale, checks: [], fitMinutes: 45 }).find((x) => x.heading === 'COACH')?.lines ?? [];
+    expect(coachOf('You did 105×8 on Tuesday, so bench leads.')).toEqual([]);
+    expect(coachOf('Bench leads; last week you hit 110 for 6.')).toEqual([]);
+    expect(coachOf('Bench 102.5 since you hit 102.5 for 8 on Tuesday. Then incline.')).toEqual(['Then incline.']);
+    expect(coachOf('Your est. max is 140, so bench at 110.')).toEqual([]);
+    expect(coachOf('Bench first. Then eight sets of rows.')).toEqual(['Bench first.']);
+  });
+
   it('Ben’s words quoted, the checked rationale, the length used and the code’s checks', () => {
     expect(draftWhyView({ request: '45 min push, finish with core', rationale: 'Bench first.', checks: ['Overhead press left out · shoulder flagged 6 Oct'], fitMinutes: 45 })).toEqual([
       { heading: 'YOU ASKED', lines: ['“45 min push, finish with core”'] },

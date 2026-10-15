@@ -15,6 +15,7 @@ import {
   exercisesNamedIn,
   leftOutCount,
   newWorkoutDraft,
+  wordsOnlyMessage,
   type KnownPreferences,
   type LoadReferences,
   type QuestionContext,
@@ -264,12 +265,15 @@ function linesOf(previous: DraftPlan | null, plan: DraftPlan, nameOf: (id: strin
     .map((l) => ({ change: l.change, text: l.text.slice(0, 200) }));
 }
 
-/** The coach's message after the claim check (§7): at most 240 characters; a sentence claiming a change is dropped. */
+/**
+ * The coach's message after the claim check (§7; review r5 B1u): at most 240
+ * characters; a sentence claiming a change, or with any number, number word,
+ * max/record claim or praise (`checkCoachWords`, the load-note rule), is
+ * dropped. Sentences split without breaking decimals or `est.`.
+ */
 export function checkedRationale(message: string): string | null {
   const t = message.replace(/\s+/g, ' ').trim().slice(0, BUILD_LIMITS.messageMax);
-  if (t === '') return null;
-  const kept = (t.match(/[^.!?]+[.!?]*/g) ?? [t]).map((x) => x.trim()).filter((x) => x !== '' && !isChangeClaim(x));
-  return kept.length === 0 ? null : kept.join(' ');
+  return wordsOnlyMessage(t, (x) => !isChangeClaim(x));
 }
 
 /** The tool output for a second build in one turn (review S2). */
@@ -362,7 +366,7 @@ export const QUESTION_NOT_OFFERED_LINE = 'No question now. Build with what you h
 const CALL_RULES = [
   'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters: a short reason in words, with no numbers (e.g. "main lift, strength focus"; the app shows the numbers). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Never give minutes: the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
   'Use build.known (goal, usual length, main lift, recent split days) and his training details; never ask for them. Put the main lift first when there is one.',
-  'Its `message` (at most 240 characters) says why this selection and order, citing only facts given. No praise, scores, recovery claims or diagnoses.',
+  'Its `message` (at most 240 characters) says why this selection and order: explain in words only; never state numbers — the app shows them. No praise, scores, recovery claims or diagnoses.',
 ];
 
 /** (v2, BD17) Added when `ask_build_question` is offered. */
@@ -384,7 +388,7 @@ const MULTI_WEEK_LINE = 'It builds one session. Multi-week programmes and weekly
  * to use or what he lifted, the coach answers in full as usual (rule 3).
  */
 const SCOPED_BUILD_RULES = [
-  'Only if you call `propose_workout`: give each exercise a working load from build.loadReferences with a short basis in words, no numbers (no minutes: the app fits the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 240 characters) says why this selection and order, citing only facts given, with no praise, scores, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
+  'Only if you call `propose_workout`: give each exercise a working load from build.loadReferences with a short basis in words, no numbers (no minutes: the app fits the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 240 characters) says why this selection and order: explain in words only; never state numbers — the app shows them; no praise, scores, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
   'These limits are only for the call. On any other question, including what weight or reps to use or what he lifted before, answer as usual.',
   MULTI_WEEK_LINE,
 ];

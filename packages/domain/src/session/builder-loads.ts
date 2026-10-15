@@ -508,9 +508,27 @@ function stepIndex(loads: readonly number[], v: number): number {
   return best;
 }
 
+/**
+ * Whether code's notes for this load name its unit (review r5 S2u): when the
+ * proposal or any cited set is in another unit (`225 lb` history at a kg
+ * bar), so no number sits unit-less next to one in another unit.
+ */
+function namesUnit(refs: LoadReferences, p: Pick<LoadProposalIn, 'unit'>): boolean {
+  if (p.unit !== refs.unit) return true;
+  const sessions = [...(refs.own?.sessions ?? []), ...(refs.latest === null ? [] : [refs.latest])];
+  return sessions.some((x) => x.top.orig !== undefined || x.sets.some((y) => y.orig !== undefined));
+}
+
+/** A load in one of code's notes: with its unit when `named`, and always for assistance (`25 kg assist`; r5 S2u). */
+function codeLoad(value: number, convention: LoadConvention, unit: WeightUnit, named: boolean): string {
+  return named || convention === 'assistance' ? loadWithUnit(value, convention, unit) : noteLoad(value, convention);
+}
+
 function bandFor(refs: LoadReferences, slot: LoadSlot, p: LoadProposalIn, ctx: LoadCheckContext, loads: readonly number[]): Band | null {
   const dir = refs.direction;
   const own = refs.own;
+  const named = namesUnit(refs, p);
+  const at = (v: number): string => codeLoad(v, refs.convention, refs.unit, named);
   const capReason = ctx.capReason ?? 'more than recent sets support';
   const lastText = (s: RefSession): string => `last ${refLoadText(s.top, refs.convention)} × ${String(s.top.reps)}`;
   const reject = `coach load ${formatNumber(p.value)} ${p.unit} too far from ${own?.sessions[0] !== undefined ? lastText(own.sessions[0]) : 'its reference'}`;
@@ -525,21 +543,21 @@ function bandFor(refs: LoadReferences, slot: LoadSlot, p: LoadProposalIn, ctx: L
     const F = atReps !== null && own.gapDays < B.gapDays && ctx.pain === null ? atReps : null;
     if (own.estOnly) {
       const hardest = Math.max(E, F ?? -Infinity);
-      return { easiest: B.rejectLow * E, hardest, limit: Math.max(B.clampHigh * E, hardest), clampEasy: false, est: true, capNote: (v) => `capped at ${formatNumber(v)} · est.`, rejectNote: reject };
+      return { easiest: B.rejectLow * E, hardest, limit: Math.max(B.clampHigh * E, hardest), clampEasy: false, est: true, capNote: (v) => `capped at ${at(v)} · est.`, rejectNote: reject };
     }
     const capBase = Math.min(B.capE * E, atReps === null ? Infinity : B.capLastTop * atReps);
     const cap = Math.max(capBase, F ?? -Infinity);
-    return { easiest: B.rejectLow * E, hardest: cap, limit: Math.max(B.clampHigh * E, cap), clampEasy: false, est: false, capNote: (v) => `capped at ${formatNumber(v)} · ${capReason}`, rejectNote: reject };
+    return { easiest: B.rejectLow * E, hardest: cap, limit: Math.max(B.clampHigh * E, cap), clampEasy: false, est: false, capNote: (v) => `capped at ${at(v)} · ${capReason}`, rejectNote: reject };
   }
   if (own !== null && loads.length > 0) {
     // Assisted, added, or no set in 1–12 reps: steps from the most recent working load (B2).
     const L = own.sessions[0]?.top.value;
     if (L !== undefined) {
       const byDifficulty = dir === 'resistance' ? [...loads] : [...loads].reverse();
-      const at = stepIndex(byDifficulty, L);
+      const from = stepIndex(byDifficulty, L);
       const up = ctx.askedHeavier ? B.stepsHarderAsked : B.stepsHarder;
-      const easiest = byDifficulty[Math.max(0, at - B.stepsEasier)] ?? L;
-      const hardest = byDifficulty[Math.min(byDifficulty.length - 1, at + up)] ?? L;
+      const easiest = byDifficulty[Math.max(0, from - B.stepsEasier)] ?? L;
+      const hardest = byDifficulty[Math.min(byDifficulty.length - 1, from + up)] ?? L;
       const lTop = own.sessions[0]?.top;
       const lText = lTop === undefined ? formatNumber(L) : refLoadText(lTop, refs.convention);
       return {
@@ -550,7 +568,7 @@ function bandFor(refs: LoadReferences, slot: LoadSlot, p: LoadProposalIn, ctx: L
         est: own.estOnly,
         stepFrom: L,
         // Not `held` (that word is the pain hold's, BD10; review B3).
-        capNote: (v) => `${noteLoad(v, refs.convention)} · ${stepWord(Math.abs(stepIndex(byDifficulty, v) - at))} from last ${lText}`,
+        capNote: (v) => `${at(v)} · ${stepWord(Math.abs(stepIndex(byDifficulty, v) - from))} from last ${lText}`,
         rejectNote: reject,
       };
     }
@@ -558,12 +576,12 @@ function bandFor(refs: LoadReferences, slot: LoadSlot, p: LoadProposalIn, ctx: L
   if (refs.derived !== null && E1RM_CONVENTIONS.has(refs.convention)) {
     const E = expectedLoad(refs.derived.e1rm, slot.repsMin, slot.targetRpe);
     const low = refs.derived.kind === 'personal_ratio' ? B.ratioLow : B.relatedLow;
-    return { easiest: low * E, hardest: E, limit: B.clampHigh * E, clampEasy: false, est: true, capNote: (v) => `capped at ${formatNumber(v)} · est. from ${refs.derived?.text ?? 'a related lift'}`, rejectNote: `coach load ${formatNumber(p.value)} ${p.unit} too far from est.` };
+    return { easiest: low * E, hardest: E, limit: B.clampHigh * E, clampEasy: false, est: true, capNote: (v) => `capped at ${at(v)} · est. from ${refs.derived?.text ?? 'a related lift'}`, rejectNote: `coach load ${formatNumber(p.value)} ${p.unit} too far from est.` };
   }
   const patternEs = refs.patternE1rms.map((e) => expectedLoad(e, slot.repsMin, slot.targetRpe));
   const C = noReferenceCeiling(refs.equipment, patternEs);
   if (C === null) return null;
-  return { easiest: null, hardest: C, limit: null, clampEasy: false, est: true, capNote: (v) => `capped at ${noteLoad(v, refs.convention)} · first time`, rejectNote: reject };
+  return { easiest: null, hardest: C, limit: null, clampEasy: false, est: true, capNote: (v) => `capped at ${at(v)} · first time`, rejectNote: reject };
 }
 
 /**
@@ -584,19 +602,24 @@ export function checkProposedLoad(p: LoadProposalIn | null, slot: LoadSlot, refs
   if (eq === null || loads.length === 0) return rule('nothing to fit it to here · rule used');
   const dir = refs.direction;
   let v = p.value;
+  const named = namesUnit(refs, p);
   if (p.unit !== refs.unit) {
     v = convertMass({ value: v, unit: p.unit }, refs.unit).value;
     notes.push(`${p.unit} → ${refs.unit} converted`);
   }
   /** The proposal in the item's unit, before any hold, clamp or fit. */
   const asked = v;
+  /** `v` as a note may cite it: never a converted decimal (r5 S2u: `225 lb`, not `102.058`). */
+  let vText = codeLoad(p.value, refs.convention, p.unit, named);
 
   // 2. Pain (BD10): no harder than the most recent comparable session's working load (not the heaviest).
   let held = false;
   if (ctx.pain !== null) {
     const last = refs.latest?.top.value ?? null;
     if (last === null) return out({ source: 'none', held: true, notes: [`held · ${ctx.pain.text}`] });
-    v = easierOf(v, last, dir);
+    const easier = easierOf(v, last, dir);
+    if (Math.abs(easier - v) > EPS && refs.latest !== null) vText = refs.latest.top.orig === undefined ? codeLoad(last, refs.convention, refs.unit, named) : refLoadText(refs.latest.top, refs.convention);
+    v = easier;
     held = true;
     notes.push(`held · ${ctx.pain.text}`);
   }
@@ -636,7 +659,7 @@ export function checkProposedLoad(p: LoadProposalIn | null, slot: LoadSlot, refs
   if (r.bounded !== null && harderThan(final, v, dir) && ctx.bandsChecked !== true && harderThan(final, band.hardest, dir)) return rule(band.rejectNote);
   if (r.bounded !== null && harderThan(v, final, dir)) notes.push(`capped at machine ${dir === 'resistance' ? 'max' : 'min'} ${formatNumber(final)} ${refs.unit}`);
   else if (clamped) notes.push(band.capNote(final));
-  else if (Math.abs(final - v) > EPS) notes.push(`${formatNumber(v)} → ${formatNumber(final)} (${KIND_WORD[eq.kind]})`);
+  else if (Math.abs(final - v) > EPS) notes.push(`${vText} → ${codeLoad(final, refs.convention, refs.unit, named)} (${KIND_WORD[eq.kind]})`);
 
   const source: LoadSource = est ? 'coach_est' : 'coach';
   // Review r2 B1r: the reason line is always code's, from real reference sets and the final load.
@@ -718,7 +741,8 @@ function referenceParts(refs: LoadReferences, opts: { est: boolean; held: boolea
 export function reasonBasis(refs: LoadReferences, o: { est: boolean; held: boolean; capped: boolean; final: number; convention: LoadConvention }): string {
   const { text, cited } = referenceParts(refs, { est: o.est, held: o.held });
   // S4s: a set cited in its own unit (`225 lb×8`) makes the target name its unit too (`→ 102.5 kg`).
-  return finalBasis(text, o.capped, o.final, o.convention, cited?.orig === undefined ? undefined : refs.unit);
+  // r5 S2u: an assist value always names its unit (`→ 25 kg assist`).
+  return finalBasis(text, o.capped, o.final, o.convention, cited?.orig === undefined && o.convention !== 'assistance' ? undefined : refs.unit);
 }
 
 /** `last 100×7 @8 · capped → 107.5`: a reference text ending with the load the row shows (B2). */
@@ -732,23 +756,36 @@ function loadWithUnit(value: number, convention: LoadConvention, unit: WeightUni
   return convention === 'assistance' ? `${n} assist` : convention === 'added' ? `+${n}` : convention === 'per_hand' ? `${n} each` : n;
 }
 
+/** The imported-set label a shortened line keeps. */
+const SOURCE_LABEL = ' (FitNotes)';
+
 /**
  * Shortens a reason line to `max` characters without cutting its final
  * `· capped → N` (review r2 N1r): the middle is cut at a word boundary and
- * marked `…`. A line with no arrow is cut at the end.
+ * marked `…`, keeping a `(FitNotes)` label and never leaving a number
+ * without its unit (r5 S2u). A line with no arrow is cut at the end.
  */
+
 export function fitKeepingTail(line: string, max: number): string {
   if (line.length <= max) return line;
   let at = line.lastIndexOf(' → ');
   if (at < 0) return `${line.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
   if (line.slice(0, at).endsWith(' · capped')) at -= ' · capped'.length;
   const tail = line.slice(at);
-  const room = max - tail.length - 1;
-  if (room <= 0) return tail.trimStart().slice(0, max);
-  const head = line.slice(0, at);
+  // r5 S2u: the source label stays (`(FitNotes)` is what tells Ben the set was imported).
+  const full = line.slice(0, at);
+  const label = full.endsWith(SOURCE_LABEL) ? SOURCE_LABEL : '';
+  const head = full.slice(0, full.length - label.length);
+  const room = max - tail.length - label.length - 1;
+  if (room <= 0) return label === '' ? tail.trimStart().slice(0, max) : fitKeepingTail(`${head}${tail}`, max);
   let cutAt = head.lastIndexOf(' ', room);
   if (cutAt <= 0) cutAt = room;
-  return `${head.slice(0, cutAt).replace(/[\s·:,]+$/u, '')}…${tail}`;
+  // Never leave a number without its unit (`last 66…` from `last 66 lb×8`): drop the number too.
+  if (/^\s*(?:lb|kg)\b/u.test(head.slice(cutAt))) {
+    const back = head.lastIndexOf(' ', cutAt - 1);
+    cutAt = back > 0 ? back : cutAt;
+  }
+  return `${head.slice(0, cutAt).replace(/[\s·:,]+$/u, '')}…${label}${tail}`;
 }
 
 /**
@@ -773,10 +810,63 @@ const PRAISE = /\b(?:safe(?:ly)?|guarantee[ds]?|great|awesome|amazing|excellent|
 export function checkBasis(basis: string): boolean {
   const t = basis.trim();
   if (t === '' || t.length > 60) return false;
+  return checkCoachWords(t);
+}
+
+/**
+ * `checkBasis` without the length limit (review builder-v2 r5 B1u): true when
+ * the coach's text is words only, with no digit of any script, no number
+ * word, no max or record claim and no praise. Used for every displayed piece
+ * of coach text about a draft (load notes and the draft's message). Pure.
+ */
+export function checkCoachWords(text: string): boolean {
+  const t = text.trim();
+  if (t === '') return false;
   if (/\p{N}/u.test(t)) return false;
   if (NUMBER_WORDS.test(t)) return false;
   if (MAX_WORDS.test(t)) return false;
   return !PRAISE.test(t);
+}
+
+/** Abbreviations whose full stop never ends a sentence (`est.`, `e.g.`, `vs.`). */
+const ABBREVIATION = /(?:^|[\s(])(?:est|approx|e\.g|i\.e|vs|etc|incl|lbs?|kg)\.$/iu;
+
+/**
+ * Splits coach text into sentences (review r5 B1u): only at `.`, `!` or `?`
+ * followed by whitespace and a capital, digit or quote (or the end), never
+ * inside a decimal (`102.5`) and never after an abbreviation (`est.`). When in
+ * doubt it doesn't split, so a failing part takes its neighbours with it. Pure.
+ */
+export function coachSentences(text: string): string[] {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t === '') return [];
+  const out: string[] = [];
+  let start = 0;
+  const end = /[.!?]+["”’)]*(?=\s|$)/gu;
+  for (let m = end.exec(t); m !== null; m = end.exec(t)) {
+    const stop = m.index + m[0].length;
+    const piece = t.slice(start, stop);
+    const rest = t.slice(stop);
+    const boundary = rest.trim() === '' || /^\s+["“‘(\p{Lu}\p{N}]/u.test(rest);
+    if (!boundary || (m[0].startsWith('.') && ABBREVIATION.test(t.slice(start, m.index + 1)))) continue;
+    out.push(piece.trim());
+    start = stop;
+  }
+  const tail = t.slice(start).trim();
+  if (tail !== '') out.push(tail);
+  return out.filter((x) => x !== '');
+}
+
+/**
+ * The coach's draft message as Ben may see it (review r5 B1u): only the
+ * sentences that pass `checkCoachWords` (and `keep`, e.g. the claim check),
+ * joined; null when none is left. Applied at build time and again when the
+ * card or `Why this workout` reads a stored message. Pure.
+ */
+export function wordsOnlyMessage(text: string | null | undefined, keep: (sentence: string) => boolean = () => true): string | null {
+  if (text === null || text === undefined) return null;
+  const kept = coachSentences(text).filter((x) => checkCoachWords(x) && keep(x));
+  return kept.length === 0 ? null : kept.join(' ');
 }
 
 /** The coach's note as `Why?` may show it: the text when it passes `checkBasis`, else null (`NOT USED`). */

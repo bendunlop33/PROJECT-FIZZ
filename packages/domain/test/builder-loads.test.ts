@@ -6,7 +6,9 @@ import {
   BUILDER_LOAD_BOUNDS,
   buildReferences,
   checkBasis,
+  checkCoachWords,
   checkedOnOf,
+  coachSentences,
   checkProposedLoad,
   checkSlotLoads,
   estimateOneRepMax,
@@ -29,6 +31,7 @@ import {
   type LoadSlot,
   storedCoachNote,
   type SubstituteContext,
+  wordsOnlyMessage,
 } from '../src/index';
 import { assisted, at, barbell, dumbbells, exercise, id, kg, lb, plateMachine, stack, T0_MS, TZ } from './fixtures';
 
@@ -213,7 +216,7 @@ describe('estimates are labelled and bounded (WB-L5, WB-L5b, WB-L5c)', () => {
     // Own same-pattern references lower it further (half their E).
     expect(noReferenceCeiling(cable, [30])).toBe(15);
     const first = checkProposedLoad(P(40, 'assistance'), slot(6, 8, 8), refs(PULLUP, [], [assist]), NO_PAIN);
-    expect(first).toMatchObject({ load: { value: 55, convention: 'assistance' }, source: 'coach_est', notes: ['capped at 55 assist · first time'] });
+    expect(first).toMatchObject({ load: { value: 55, convention: 'assistance' }, source: 'coach_est', notes: ['capped at 55 kg assist · first time'] });
   });
 
   it('WB-L5c: a personal ratio bounds a lift whose own history is too old, as est.', () => {
@@ -295,9 +298,9 @@ describe('assisted and added loads in steps, toward easier (WB-L11)', () => {
   const weighted = refs(WEIGHTED, [session(981, 4, belt, [{ load: kg(20, 'added'), reps: 6, rpe: 8 }])], [belt]);
 
   it('5 kg assistance (last 30) → 25, one step; 32 → 35 (toward easier), never 30', () => {
-    expect(checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN)).toMatchObject({ load: { value: 25, convention: 'assistance' }, notes: ['25 assist · one step from last 30'] });
+    expect(checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN)).toMatchObject({ load: { value: 25, convention: 'assistance' }, notes: ['25 kg assist · one step from last 30'] });
     expect(checkProposedLoad(P(32, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN).load?.value).toBe(35);
-    expect(checkProposedLoad(P(60, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN)).toMatchObject({ load: { value: 40 }, notes: ['40 assist · two steps from last 30'] });
+    expect(checkProposedLoad(P(60, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN)).toMatchObject({ load: { value: 40 }, notes: ['40 kg assist · two steps from last 30'] });
   });
 
   it('+35 kg (last +20) → +21.25; "heavier" in Ben’s words allows +22.5', () => {
@@ -446,7 +449,7 @@ describe('review builder-v2 B1–B4', () => {
     const c = checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN);
     expect(c.held).toBe(false);
     expect(c.notes.some((n) => n.startsWith('held'))).toBe(false);
-    expect(c.basis).toBe('last 30×8 @8 · capped → 25 assist');
+    expect(c.basis).toBe('last 30×8 @8 · capped → 25 kg assist');
   });
 
   it('B4: a session started before the build but not seen by it counts as newer (checkedHistoryVersion)', () => {
@@ -711,13 +714,13 @@ describe('review builder-v2 r4: every number about a load is code’s (B1t, B2t,
     const pullups = refs(PULLUP, [session(982, 4, assist, [{ load: kg(20, 'assistance'), reps: 8, rpe: 8 }])], [assist]);
     const shoulder = { pain: { text: 'shoulder flagged 6 Oct' }, askedHeavier: false };
     const c = checkProposedLoad(P(40, 'assistance'), slot(8, 10, 8), pullups, shoulder);
-    expect(c).toMatchObject({ load: { value: 40, convention: 'assistance' }, held: true, basis: 'last 20×8 @8 → 40 assist', notes: ['held · shoulder flagged 6 Oct'] });
+    expect(c).toMatchObject({ load: { value: 40, convention: 'assistance' }, held: true, basis: 'last 20×8 @8 → 40 kg assist', notes: ['held · shoulder flagged 6 Oct'] });
     expect(c.basis).not.toContain('capped');
     // A harder proposal under the hold is held at the last load.
     expect(checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), pullups, shoulder)).toMatchObject({ load: { value: 20 }, held: true });
     // Without pain the easy-side step bound still applies, but raising it isn't called `capped`.
     const raised = checkProposedLoad(P(40, 'assistance'), slot(8, 10, 8), pullups, NO_PAIN);
-    expect(raised).toMatchObject({ load: { value: 30 }, held: false, basis: 'last 20×8 @8 → 30 assist', notes: ['30 assist · two steps from last 20'] });
+    expect(raised).toMatchObject({ load: { value: 30 }, held: false, basis: 'last 20×8 @8 → 30 kg assist', notes: ['30 kg assist · two steps from last 20'] });
     // Under a hold, a very light barbell load isn't rejected as a slip either (any easier load is fine).
     expect(checkProposedLoad(P(40, 'total'), BENCH_SLOT, benchRefs(), { pain: { text: 'pain reported today' }, askedHeavier: false })).toMatchObject({ load: { value: 40 }, source: 'coach', held: true });
   });
@@ -756,5 +759,68 @@ describe('review builder-v2 r4: every number about a load is code’s (B1t, B2t,
     expect(l.basis).not.toMatch(/220\.46/);
     // Same-unit sets read as before.
     expect(checkProposedLoad(P(102.5, 'total'), BENCH_SLOT, benchRefs(), NO_PAIN).basis).toBe(CODE_LINE);
+  });
+});
+
+describe('review builder-v2 r5: the draft message is words only (B1u); notes keep their units (S2u)', () => {
+  const R5_PROBES = [
+    'You did 105×8 on Tuesday, so bench leads.',
+    'Bench leads; last week you hit 110 for 6.',
+    'Bench 102.5 since you hit 102.5 for 8 on Tuesday. Then incline.',
+    'Your est. max is 140, so bench at 110.',
+  ];
+
+  it('B1u: sentences split without breaking decimals or `est.`', () => {
+    expect(coachSentences('Bench 102.5 since you hit 102.5 for 8 on Tuesday. Then incline.')).toEqual(['Bench 102.5 since you hit 102.5 for 8 on Tuesday.', 'Then incline.']);
+    expect(coachSentences('Your est. max is 140, so bench at 110.')).toEqual(['Your est. max is 140, so bench at 110.']);
+    expect(coachSentences('Est. Bench leads, e.g. strength first! Then rows? Yes')).toEqual(['Est. Bench leads, e.g. strength first!', 'Then rows?', 'Yes']);
+    expect(coachSentences('  ')).toEqual([]);
+  });
+
+  it('B1u: checkCoachWords is checkBasis without the length limit', () => {
+    const long = 'Main lift first while you are fresh, then the accessories for chest and back in pairs to save time.';
+    expect(long.length).toBeGreaterThan(60);
+    expect(checkCoachWords(long)).toBe(true);
+    expect(checkBasis(long)).toBe(false);
+    for (const bad of ['hit ten last week', 'new record pace', 'great work', 'top set ２', '']) expect(checkCoachWords(bad)).toBe(false);
+  });
+
+  it('B1u: the r5 probes show no number; a decimal sentence is dropped whole, never garbled', () => {
+    expect(wordsOnlyMessage(R5_PROBES[0])).toBeNull();
+    expect(wordsOnlyMessage(R5_PROBES[1])).toBeNull();
+    expect(wordsOnlyMessage(R5_PROBES[2])).toBe('Then incline.');
+    expect(wordsOnlyMessage(R5_PROBES[3])).toBeNull();
+    for (const m of R5_PROBES) expect(wordsOnlyMessage(m) ?? '').not.toMatch(/\p{N}/u);
+    expect(wordsOnlyMessage('Bench first while you are fresh. Rows balance the pressing.')).toBe('Bench first while you are fresh. Rows balance the pressing.');
+    expect(wordsOnlyMessage('Bench first. Rows after.', (x) => !x.startsWith('Rows'))).toBe('Bench first.');
+    expect(wordsOnlyMessage(null)).toBeNull();
+  });
+
+  it('S2u: a lb proposal on a kg bar is cited as proposed (226 lb → 102.5 kg), never a converted decimal', () => {
+    const c = checkProposedLoad(P(226, 'total', null, 'lb'), BENCH_SLOT, benchRefs(), NO_PAIN);
+    expect(c.notes[0]).toBe('lb → kg converted');
+    expect(c.notes).toContain('226 lb → 102.5 kg (these plates)');
+    expect(c.notes.join(' ')).not.toMatch(/\d+\.\d{3}/);
+  });
+
+  it('S2u: a kg assisted machine with a FitNotes lb set names units on every load and keeps `(FitNotes)`', () => {
+    const r = refs(PULLUP, [session(1201, 3, null, [{ load: lb(66, 'assistance'), reps: 8, rpe: 8 }], true)], [assist]);
+    const c = checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), r, NO_PAIN);
+    expect(c.load).toMatchObject({ unit: 'kg', convention: 'assistance' });
+    const v = String(c.load?.value);
+    expect(c.notes).toContain(`${v} kg assist · one step from last 66 lb`);
+    expect(c.basis).toContain('(FitNotes)');
+    expect(c.basis).toMatch(new RegExp(`→ ${v} kg assist$`));
+    expect((c.basis ?? '').length).toBeLessThanOrEqual(48);
+    // No cited number is separated from its unit.
+    for (const line of [c.basis ?? '', ...c.notes]) expect(line).not.toMatch(/\b\d+(?:\.\d+)? assist\b/);
+  });
+
+  it('S2u: fitKeepingTail keeps `(FitNotes)` and never leaves a number without its unit', () => {
+    expect(fitKeepingTail('last 66 lb×8 @8 (FitNotes) · capped → 25 kg assist', 48)).toBe('last 66 lb×8… (FitNotes) · capped → 25 kg assist');
+    const cut = fitKeepingTail('est. · last 3: 66 lb×8 @8 (FitNotes) · capped → 25 kg assist', 48);
+    expect(cut.endsWith('(FitNotes) · capped → 25 kg assist')).toBe(true);
+    expect(cut).not.toMatch(/\d…/);
+    expect(cut.length).toBeLessThanOrEqual(48);
   });
 });
