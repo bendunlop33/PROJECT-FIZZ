@@ -108,6 +108,7 @@ export function EditSetScreen() {
     const actual = aggregate.sets.find((s) => s.id === setId)?.actual;
     if (!actual) return;
     let sessionVersion = aggregate.session.version;
+    let modeFailed = false;
     let corrected: Extract<Awaited<ReturnType<typeof services.workout.correctSet>>, { ok: true }> | null = null;
     const patch: Parameters<typeof services.workout.correctSet>[0]['patch'] = {};
     if (view.changed) {
@@ -133,7 +134,9 @@ export function EditSetScreen() {
       const mode = patch.load?.convention;
       if (ex && aggregate.session.status === 'active' && view.addWeight && (mode === 'added' || mode === 'bodyweight') && mode !== ex.loadConvention) {
         const m = await services.workout.dispatch(sessionId, { type: 'set_load_mode', at: services.now(), opId: modeOp, expectedVersion: sessionVersion, sessionExerciseId: ex.id, mode });
+        // The correction is saved either way; say when the other sets didn't follow (review S2).
         if (m.ok) sessionVersion = m.aggregate.session.version;
+        else modeFailed = true;
       }
     }
     // The set's note (Your data) is its own versioned write; it never changes a value.
@@ -151,7 +154,10 @@ export function EditSetScreen() {
       }
     }
     changed();
-    const withNote = (text: string) => correctionToastText(text, noteFailed);
+    const withNote = (text: string) => {
+      const t = correctionToastText(text, noteFailed);
+      return modeFailed ? `${t} · other sets unchanged` : t;
+    };
     // F4: a corrected rep or effort count, the set's target RPE or its type, runs the same offer check as a log (rule T: every logged working set).
     const effortOrReps = corrected !== null && (patch.reps !== undefined || patch.rpe !== undefined || patch.rir !== undefined || patch.targetRpe !== undefined || patch.setType !== undefined);
     const check = effortOrReps ? { corrected: { setId, key: saveOp } } : {};
