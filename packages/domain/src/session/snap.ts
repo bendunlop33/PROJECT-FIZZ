@@ -12,6 +12,7 @@ import type {
   WeightUnit,
 } from '@fizz/schemas';
 import { compareDifficulty, loadDirection, roundToAvailableLoad } from '../equipment';
+import { addedWeightEquipment, isWeightedBodyweight } from '../added-weight';
 import { needsNoEquipment } from '../exercise-equipment';
 import { convertMass, toScaled } from '../units';
 
@@ -315,7 +316,10 @@ export function snapPlanToGym(input: SnapInput): SnapResult {
     const unit = equipment?.unit ?? (mapping === 'none_needed' ? slot.unit : input.ownerUnit);
     const convention = equipment?.loadConvention ?? (mapping === 'none_needed' ? slot.convention : slot.exercise.defaultLoadConvention);
     const pain = input.painFlagged?.has(slot.exercise.id) ?? false;
-    const sets = slot.sets.map((s) => fitSet(s, equipment, mapping, unit, convention, input.mode, pain));
+    // Weight held or worn on a bodyweight exercise: fitted to the gym's own dumbbells and plates (rule 4).
+    const weighted = convention === 'added' && slot.exercise.defaultLoadConvention === 'bodyweight' && isWeightedBodyweight({ loadConvention: convention }, equipment, true);
+    const fitEq = weighted ? addedWeightEquipment(usableAt(input.gym), unit, equipment, input.gym.id) : equipment;
+    const sets = slot.sets.map((s) => fitSet(s, fitEq, mapping, unit, convention, input.mode, pain));
     return {
       slotId: slot.slotId,
       exerciseId: slot.exercise.id,

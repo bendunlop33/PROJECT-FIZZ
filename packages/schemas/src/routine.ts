@@ -63,6 +63,11 @@ export const RoutineExerciseSchema = z.object({
    */
   main: z.boolean().optional(),
   /**
+   * A bodyweight exercise done with weight held or worn (Ben, 18 Oct): its
+   * sets log the added mass (`added`). Absent or false: bodyweight.
+   */
+  addedWeight: z.boolean().optional(),
+  /**
    * When Ben last changed this slot's structure in the editor (its exercise,
    * set types, count, reps, work time or Fixed loads; routines.md WL7). A
    * rename or a rotation toggle doesn't count. A coach next-session target

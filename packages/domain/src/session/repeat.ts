@@ -280,6 +280,8 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       restBySetType: {},
       transitionRestS: sx.transitionRestS,
       progressionRuleId: null,
+      // Done with weight held or worn last time: again (Ben, 18 Oct).
+      ...(sx.loadConvention === 'added' && exercise.defaultLoadConvention === 'bodyweight' ? { addedWeight: true } : {}),
     });
   }
 

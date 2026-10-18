@@ -1,6 +1,7 @@
 import type { EquipmentInstance, Exercise, Load, LoadConvention, Measurement, RepRange, RestSetting, RoutineExercise, SetTemplate, SetType, WeightUnit } from '@fizz/schemas';
 
-import { formatDuration, formatNumber, loadText, NBSP, repRangeText, SET_TYPE_BADGE, SET_TYPE_WORD } from '../display';
+import { formatDuration, formatNumber, loadText, NBSP, repRangeText, SET_TYPE_BADGE, SET_TYPE_WORD, type LoadContext } from '../display';
+import { addedWeightEquipment } from '../added-weight';
 import { builtInRepRange, ruleCategory } from '../default-rule';
 import { getAchievableLoads, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
 import { equipmentForExercise } from '../exercise-equipment';
@@ -342,6 +343,44 @@ export function setMain(list: EditorList, slotId: string, main: boolean): Routin
   return list.map((e) => (e.id === slotId ? { ...e, main } : e));
 }
 
+/** A slot's load convention: `added` for a bodyweight exercise saved with `Add weight` (Ben, 18 Oct), else the exercise's own. */
+export function slotLoadConvention(slot: Pick<RoutineExercise, 'addedWeight'>, exerciseDefault: LoadConvention): LoadConvention {
+  return slot.addedWeight === true && exerciseDefault === 'bodyweight' ? 'added' : exerciseDefault;
+}
+
+/**
+ * `Add weight` on a bodyweight exercise (Ben, 18 Oct): its sets log the mass
+ * held or worn. A Fixed load in the other convention goes back to Auto, so a
+ * saved workout never mixes the two.
+ */
+export function setAddedWeight(list: EditorList, slotId: string, on: boolean): RoutineExercise[] {
+  const keep = on ? 'added' : 'bodyweight';
+  return list.map((e) => {
+    if (e.id !== slotId) return e;
+    const setTemplates = e.setTemplates.map((t) => (t.targetLoad !== null && t.targetLoad.convention !== keep ? { ...t, targetLoad: null } : t));
+    const next: RoutineExercise = { ...e, setTemplates };
+    if (on) next.addedWeight = true;
+    else delete next.addedWeight;
+    return next;
+  });
+}
+
+/**
+ * The item a slot's Fixed loads step through in the editor: for a weighted
+ * bodyweight slot, the gym's dumbbells and plates (`addedWeightEquipment`);
+ * else `editorItemFor`.
+ */
+export function editorLoadItem(
+  slot: Pick<RoutineExercise, 'equipmentId' | 'addedWeight'>,
+  exercise: Pick<Exercise, 'defaultLoadConvention' | 'compatibleEquipment'>,
+  gym: { id: string; equipment: readonly EquipmentInstance[] },
+  unit: WeightUnit,
+): EquipmentInstance | null {
+  const item = editorItemFor(slot, exercise, gym.equipment);
+  if (slotLoadConvention(slot, exercise.defaultLoadConvention) !== 'added' || exercise.defaultLoadConvention !== 'bodyweight') return item;
+  return addedWeightEquipment(gym.equipment.filter((e) => e.availability === 'available'), unit, item, gym.id);
+}
+
 /** What each `Main` chip shows: Ben's stored choice, else the rule over the list as it is now. */
 export function editorMainFlags(list: EditorList, isCompound: (exerciseId: string) => boolean): boolean[] {
   const rule = defaultMain(list, isCompound);
@@ -467,12 +506,12 @@ export function editorSummaryLine(exercises: number, minutes: number | null, gym
  * or a reason it can't be checked. Null when it's achievable as is. Saving
  * is always allowed; Start fits it (ADR 0003 B1).
  */
-export function fixedLoadNote(load: Load, eq: EquipmentInstance | null): string | null {
+export function fixedLoadNote(load: Load, eq: EquipmentInstance | null, display: LoadContext = eq): string | null {
   if (eq === null || eq.kind === 'bodyweight_station') return null;
   const r = roundToAvailableLoad(load, eq, 'easier');
   if (!r.ok) return droppedWords(r.reason, { unit: load.unit });
   if (r.exact && r.convertedRequest === null) return null;
-  const words = loadText(r.load, r.load.convention, eq);
+  const words = loadText(r.load, r.load.convention, display);
   if (r.bounded !== null) return boundWords(r.bounded, words, loadDirection(eq.loadConvention) === 'assistance');
   return `At Start ${words}`;
 }
@@ -483,8 +522,8 @@ export function fixedLoadFrame(eq: EquipmentInstance | null, unit: WeightUnit, c
 }
 
 /** The set sheet's load stepper: achievable loads on this item (P5); without one, 2.5 kg / 5 lb steps. */
-export function fixedLoadSteps(value: number | null, frame: { unit: WeightUnit; convention: LoadConvention }, eq: EquipmentInstance | null): { down: StepTarget; up: StepTarget } {
-  const fmt = (v: number) => loadText({ value: v, unit: frame.unit, convention: frame.convention }, frame.convention, eq);
+export function fixedLoadSteps(value: number | null, frame: { unit: WeightUnit; convention: LoadConvention }, eq: EquipmentInstance | null, display: LoadContext = eq): { down: StepTarget; up: StepTarget } {
+  const fmt = (v: number) => loadText({ value: v, unit: frame.unit, convention: frame.convention }, frame.convention, display);
   if (eq !== null && eq.kind !== 'bodyweight_station') {
     const loads = getAchievableLoads(eq).loads;
     if (loads.length === 0) return { down: { enabled: false, reason: 'No loads set up here' }, up: { enabled: false, reason: 'No loads set up here' } };

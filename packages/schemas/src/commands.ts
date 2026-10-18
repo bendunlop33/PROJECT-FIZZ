@@ -606,6 +606,22 @@ export const EditPlannedSetCommandSchema = z.object({
     .refine((p) => Object.values(p).some((v) => v !== undefined), { message: 'Nothing to change' }),
 });
 
+/**
+ * `+ Weight` on a bodyweight exercise (Ben, 18 Oct): the row is logged with
+ * the mass held or worn (`added`) for the rest of today, or back to
+ * bodyweight. Only sets not done yet change (their load target and unsaved
+ * load); a logged set keeps what it was logged as (rule 2). Versioned on the
+ * session (rule 5) and idempotent (`opId`).
+ */
+export const SetLoadModeCommandSchema = z.object({
+  type: z.literal('set_load_mode'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  sessionExerciseId: IdSchema,
+  mode: z.enum(['added', 'bodyweight']),
+});
+
 export const SessionCommandSchema = z.discriminatedUnion('type', [
   LogSetCommandSchema,
   SaveDraftCommandSchema,
@@ -640,6 +656,7 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   SetNoteCommandSchema,
   SetTargetRpeCommandSchema,
   EditPlannedSetCommandSchema,
+  SetLoadModeCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];
