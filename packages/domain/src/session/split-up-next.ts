@@ -93,12 +93,13 @@ export interface SplitDayPick {
 }
 
 /**
- * The split day trained least recently (never trained in `workouts` first),
- * leaving out the days the newest matching workout trained unless that
- * leaves none. Ties go to split order. Null when no workout matches any day
+ * Split days in the order they are due: trained least recently first (never
+ * trained in `workouts` first, ties in split order), leaving out the days the
+ * newest matching workout trained unless that leaves none. The caller plans
+ * the first one it has a plan for. Empty when no workout matches any day
  * (the caller keeps its other rules).
  */
-export function upNextSplitDay(split: TrainingSplit, workouts: readonly SplitWorkout[]): SplitDayPick | null {
+export function splitDaysByDue(split: TrainingSplit, workouts: readonly SplitWorkout[]): SplitDayPick[] {
   const last = new Map<string, string>();
   let lastDays: string[] | null = null;
   for (const w of newestFirst(workouts)) {
@@ -107,17 +108,21 @@ export function upNextSplitDay(split: TrainingSplit, workouts: readonly SplitWor
     lastDays ??= days;
     for (const d of days) if (!last.has(d)) last.set(d, w.startedAtUtc);
   }
-  if (lastDays === null) return null;
+  if (lastDays === null) return [];
   const justDone = lastDays;
   const others = split.days.filter((d) => !justDone.includes(d.id));
   const pool = others.length > 0 ? others : split.days;
-  let best: SplitDayPick | null = null;
-  for (const day of pool) {
-    const at = last.get(day.id) ?? null;
-    if (best === null) best = { day, lastTrainedUtc: at };
-    else if (best.lastTrainedUtc !== null && (at === null || toMs(at) < toMs(best.lastTrainedUtc))) best = { day, lastTrainedUtc: at };
-  }
-  return best;
+  const ms = (id: string): number => {
+    const at = last.get(id);
+    return at === undefined ? Number.NEGATIVE_INFINITY : toMs(at);
+  };
+  // `sort` is stable: equal days keep split order.
+  return [...pool].sort((a, b) => (ms(a.id) === ms(b.id) ? 0 : ms(a.id) < ms(b.id) ? -1 : 1)).map((day) => ({ day, lastTrainedUtc: last.get(day.id) ?? null }));
+}
+
+/** The split day due first (`splitDaysByDue`), or null. */
+export function upNextSplitDay(split: TrainingSplit, workouts: readonly SplitWorkout[]): SplitDayPick | null {
+  return splitDaysByDue(split, workouts)[0] ?? null;
 }
 
 /**

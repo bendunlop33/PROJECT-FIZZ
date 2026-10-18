@@ -311,7 +311,8 @@ describe('Picking a session (SP6, SP9, SP10, SP12, SP14)', () => {
     const l = await list(s, gymId);
     expect(allRows(l).filter((r) => r.label === 'Legs')).toHaveLength(1);
     const legs = rowOf(l, 'Legs');
-    expect(legs).toMatchObject({ kind: 'routine', target: { kind: 'routine', routineId: a.routine.id } });
+    // PM decision 18 Oct: Legs is the split day trained least recently, and its routine is Up next.
+    expect(legs).toMatchObject({ kind: 'routine', routineId: a.routine.id, recommended: true, target: { kind: 'next' } });
     const page = await load(s, legs.target, gymId);
     expect(page.view.rows.map((r) => r.name)).toEqual(['Back squat', 'Leg press']);
     const undo = await s.routines.remove({ routineId: a.routine.id, expectedVersion: a.routine.version, opId: 'undo-save' });
@@ -416,8 +417,9 @@ describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
     const { gymId, ids } = await split(s);
     const saved = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' , addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
-    const legs = rowOf(await list(s, gymId), 'Legs');
-    expect(legs.target).toEqual({ kind: 'routine', routineId: saved.routine.id });
+    // The routine's own target (its row is Up next since 18 Oct, which would fall back to the Legs workout).
+    expect(rowOf(await list(s, gymId), 'Legs').routineId).toBe(saved.routine.id);
+    const legs = { target: { kind: 'routine', routineId: saved.routine.id } as OverviewTarget };
     // The routine is deleted while the picker is open.
     expect((await s.routines.remove({ routineId: saved.routine.id, expectedVersion: saved.routine.version, opId: 'rm-legs' })).ok).toBe(true);
 
@@ -541,5 +543,39 @@ describe('Picker view helpers', () => {
   it('no list (unreadable) means no Change and no Sessions', () => {
     expect(hasChoice(null)).toBe(false);
     expect(todaySessions(null, { includeUpNext: false })).toEqual({ rows: [], more: false });
+  });
+});
+
+describe('Up next by split day (PM decision 18 Oct, pending Ben)', () => {
+  it('Ben’s week: back trained yesterday in an unnamed workout → Up next is not Pull; Legs (least recent) from the Legs workout', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const back = [{ exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10 }, { load: 60, reps: 10 }] }, { exercise: 'Barbell row', sets: [{ load: 70, reps: 8 }, { load: 70, reps: 8 }] }];
+    const push = [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }, { load: 80, reps: 8 }] }];
+    const legs = [{ exercise: 'Back squat', sets: [{ load: 100, reps: 5 }, { load: 100, reps: 5 }] }, { exercise: 'Leg press', sets: [{ load: 150, reps: 10 }] }];
+    h.clockMs = at('2026-10-04');
+    await name(s, await logWorkout(h, s, gymId, back), 'Pull');
+    h.clockMs = at('2026-10-07');
+    const legsId = await logWorkout(h, s, gymId, legs);
+    await name(s, legsId, 'Legs');
+    h.clockMs = at('2026-10-08');
+    await name(s, await logWorkout(h, s, gymId, push), 'Push');
+    // Tue, Wed, Fri, Sat: unnamed (coach-built or empty) workouts.
+    h.clockMs = at('2026-10-13');
+    await logWorkout(h, s, gymId, push);
+    h.clockMs = at('2026-10-14');
+    await logWorkout(h, s, gymId, legs);
+    h.clockMs = at('2026-10-16');
+    await logWorkout(h, s, gymId, push);
+    h.clockMs = at('2026-10-17');
+    await logWorkout(h, s, gymId, back);
+    h.clockMs = Date.parse('2026-10-18T08:00:00.000Z');
+    const up = await s.next.preview(gymId);
+    expect(up?.title).not.toBe('Pull');
+    expect(up).toMatchObject({ title: 'Legs', routine: null, sourceSessionId: legsId });
+    // The picker and the overview agree.
+    expect(rowOf(await list(s, gymId), 'Legs')).toMatchObject({ recommended: true, target: { kind: 'next' } });
+    expect((await load(s, { kind: 'next' }, gymId)).view.title).toBe('Legs');
+    expect(model.requests).toHaveLength(0);
   });
 });

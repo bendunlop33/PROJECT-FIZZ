@@ -10,6 +10,7 @@ import {
   preferFullSource,
   PRESET_SPLITS,
   splitDaySource,
+  splitDaysByDue,
   splitDaysTrained,
   splitWorkoutOf,
   upNextSplitDay,
@@ -42,6 +43,8 @@ describe('Up next by split day (PM decision 18 Oct)', () => {
     // Legs (Wed) is the least recently trained of Push (Fri) and Legs.
     expect(pick?.day.id).toBe('legs');
     expect(pick?.lastTrainedUtc).toBe('2026-10-14T17:00:00.000Z');
+    // Then Push: the order the service tries them in when a day has no plan.
+    expect(splitDaysByDue(DEFAULT_SPLIT, history).map((d) => d.day.id)).toEqual(['legs', 'push']);
   });
 
   it('a day never trained in the window comes first; ties go to split order', () => {
