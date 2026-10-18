@@ -558,7 +558,7 @@ describe('Picker view helpers', () => {
 });
 
 describe('Up next by split day (PM decision 18 Oct, pending Ben)', () => {
-  it('Ben’s week: back trained yesterday in an unnamed workout → Up next is not Pull; Legs (least recent) from the Legs workout', async () => {
+  it('Ben’s week: back trained yesterday in an unnamed workout → Up next is not Pull; Legs (least recent) from the newest legs workout, not the older named one (review today-18oct B2, S5)', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const back = [{ exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10 }, { load: 60, reps: 10 }] }, { exercise: 'Barbell row', sets: [{ load: 70, reps: 8 }, { load: 70, reps: 8 }] }];
@@ -575,7 +575,8 @@ describe('Up next by split day (PM decision 18 Oct, pending Ben)', () => {
     h.clockMs = at('2026-10-13');
     await logWorkout(h, s, gymId, push);
     h.clockMs = at('2026-10-14');
-    await logWorkout(h, s, gymId, legs);
+    // Named older vs unnamed newer: Wednesday's heavier legs are the latest evidence.
+    const legs14 = await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 110, reps: 5 }, { load: 110, reps: 5 }] }, { exercise: 'Leg press', sets: [{ load: 160, reps: 10 }] }]);
     h.clockMs = at('2026-10-16');
     await logWorkout(h, s, gymId, push);
     h.clockMs = at('2026-10-17');
@@ -583,10 +584,111 @@ describe('Up next by split day (PM decision 18 Oct, pending Ben)', () => {
     h.clockMs = Date.parse('2026-10-18T08:00:00.000Z');
     const up = await s.next.preview(gymId);
     expect(up?.title).not.toBe('Pull');
-    expect(up).toMatchObject({ title: 'Legs', routine: null, sourceSessionId: legsId });
-    // The picker and the overview agree.
-    expect(rowOf(await list(s, gymId), 'Legs')).toMatchObject({ recommended: true, target: { kind: 'next' } });
-    expect((await load(s, { kind: 'next' }, gymId)).view.title).toBe('Legs');
+    expect(up).toMatchObject({ routine: null, sourceSessionId: legs14 });
+    expect(up?.sourceSessionId).not.toBe(legsId);
+    expect(up?.targets.find((t) => t.exerciseName === 'Back squat')?.line).toMatch(/11\d/);
+    // The `Legs` row opens its own newest workout (7 Oct), so it isn't marked Up next (review r2 B1).
+    expect(rowOf(await list(s, gymId), 'Legs')).toMatchObject({ recommended: false, target: { kind: 'session', sourceSessionId: legsId } });
+    // The overview agrees; the card is called what the started workout and Recent will be (S5).
+    const page = await load(s, { kind: 'next' }, gymId);
+    expect(page.view.title).toBe(up?.title);
+    const r = await startFromOverview(ports(s, { kind: 'next' }, gymId), { page, opId: 'start-up-next', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (r.kind !== 'started') throw new Error(r.kind);
+    const started = r.outcome.aggregate.session;
+    expect(started.routineName === null || started.routineName === 'Workout').toBe(true);
+    expect(model.requests).toHaveLength(0);
+  });
+
+  /** A workout cut short: `planned` working sets of one exercise, only the first logged. */
+  async function logCutShort(s: AppServices, gymId: string, exercise: string, load: number, planned: number): Promise<string> {
+    const started = await s.workout.start({ gymId, opId: `start-${String(h.clockMs)}`, checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    const pick = (await s.workout.pickerExercises(sessionId, exercise)).find((x) => x.exercise.name === exercise);
+    if (!pick) throw new Error(exercise);
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: h.ids() });
+    if (!added.ok) throw new Error(added.error.message);
+    const ex = added.aggregate.exercises.at(-1);
+    if (!ex) throw new Error('exercise');
+    let own = added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.setType !== 'warmup');
+    for (let i = own.length; i < planned; i += 1) {
+      const r = await s.workout.dispatch(sessionId, { type: 'add_set', at: h.now(), opId: h.ids(), sessionExerciseId: ex.id, newSetId: h.ids(), setType: null });
+      if (!r.ok) throw new Error(r.error.message);
+      own = r.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.setType !== 'warmup');
+    }
+    const first = [...own].sort((a, b) => a.index - b.index)[0];
+    if (!first) throw new Error('set');
+    h.clockMs += 60_000;
+    const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${first.id}:0`, setId: first.id, values: { load: { value: load, unit: ex.unit, convention: ex.loadConvention }, reps: 10, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+    if (!r.ok) throw new Error(r.error.message);
+    const cur = await s.workout.load(sessionId);
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: cur?.aggregate.session.version ?? 0, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    await h.settle(s);
+    return sessionId;
+  }
+
+  it('a cut-short workout that is the day’s only source is planned whole: its estimate is the full plan’s (review today-18oct S2)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    h.clockMs = at('2026-10-10');
+    const short = await logCutShort(s, gymId, 'Lat pulldown', 60, 4);
+    h.clockMs = at('2026-10-12');
+    await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 100, reps: 5 }, { load: 100, reps: 5 }] }]);
+    h.clockMs = at('2026-10-13');
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }, { load: 80, reps: 8 }] }]);
+    h.clockMs = Date.parse('2026-10-14T08:00:00.000Z');
+    const up = await s.next.preview(gymId);
+    expect(up).toMatchObject({ routine: null, sourceSessionId: short });
+    const working = (up?.targets ?? []).find((t) => t.exerciseName === 'Lat pulldown');
+    expect(working).toBeDefined();
+    // 4 planned working sets, not the 1 logged.
+    const page = await load(s, { kind: 'next' }, gymId);
+    const row = page.view.rows.find((r) => r.name === 'Lat pulldown');
+    expect(row?.detail.replaceAll('\u00a0', ' ')).toMatch(/^4 ×/);
+    const r = await startFromOverview(ports(s, { kind: 'next' }, gymId), { page, opId: 'start-short', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (r.kind !== 'started') throw new Error(r.kind);
+    expect(r.outcome.aggregate.sets.filter((x) => x.setType !== 'warmup')).toHaveLength(4);
+  });
+
+  it('a saved split wins over the rotation when the last workout came from a routine; with no split the rotation still wins', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    h.clockMs = at('2026-10-05');
+    const legs = await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 100, reps: 5 }, { load: 100, reps: 5 }] }, { exercise: 'Leg press', sets: [{ load: 150, reps: 10 }] }]);
+    h.clockMs = at('2026-10-07');
+    const back = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10 }, { load: 60, reps: 10 }] }, { exercise: 'Barbell row', sets: [{ load: 70, reps: 8 }] }]);
+    h.clockMs = at('2026-10-08');
+    const push = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8 }, { load: 80, reps: 8 }] }]);
+    const pullA = await s.routines.saveFromSession({ sessionId: back, name: 'Pull A', opId: 'save-pull', addToRotation: true });
+    const pushA = await s.routines.saveFromSession({ sessionId: push, name: 'Push A', opId: 'save-push', addToRotation: true });
+    if (!pullA.ok || !pushA.ok) throw new Error('save');
+    // The last workout is Push A's.
+    h.clockMs = at('2026-10-10');
+    const started = await s.workout.start({ gymId, opId: 'start-push-a', checkIn: null, routineOf: pushA.routine.id });
+    if (!started.ok) throw new Error(started.error.message);
+    const cur = await s.workout.load(started.aggregate.session.id);
+    for (const set of cur?.aggregate.sets ?? []) {
+      if (set.status !== 'pending') continue;
+      h.clockMs += 60_000;
+      const r = await s.workout.dispatch(started.aggregate.session.id, { type: 'log_set', at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: set.planned.load, reps: 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+      if (!r.ok) throw new Error(r.error.message);
+    }
+    const now = await s.workout.load(started.aggregate.session.id);
+    const fin = await s.workout.dispatch(started.aggregate.session.id, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: now?.aggregate.session.version ?? 0, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+    await h.settle(s);
+    h.clockMs = Date.parse('2026-10-11T08:00:00.000Z');
+    // No split saved: the rotation's next routine.
+    expect((await s.next.preview(gymId))?.routine?.id).toBe(pullA.routine.id);
+    // Push/Pull/Legs saved: legs (5 Oct) were trained least recently.
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    expect(await s.training.change({ kind: 'preset_split', split: 'ppl' }, snap.profile.version, 'split-ppl')).toMatchObject({ ok: true });
+    expect(await s.next.preview(gymId)).toMatchObject({ routine: null, sourceSessionId: legs });
+    // The Build card preselects the same day (S3).
+    const after = await s.training.snapshot();
+    expect(after?.nextDayId).toBe('legs');
     expect(model.requests).toHaveLength(0);
   });
 });

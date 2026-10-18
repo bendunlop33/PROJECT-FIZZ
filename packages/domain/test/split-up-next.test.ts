@@ -3,6 +3,8 @@ import type { MuscleGroup, SessionAggregate, TrainingSplit } from '@fizz/schemas
 
 import {
   baseWorkoutName,
+  buildDayFor,
+  nextSplitDay,
   builtMinutes,
   cutShort,
   DEFAULT_SPLIT,
@@ -131,5 +133,11 @@ describe('short sources (why a 20 min workout was up next)', () => {
     const r = splitWorkoutOf(withSets(['completed', 'completed']), quads, 60);
     expect(r.groups.get('Quads')).toBe(2);
     expect(r.sessionId).toBe(base.session.id);
+  });
+});
+
+describe('buildDayFor (review today-18oct S3)', () => {
+  it('with no workout in the window, the day after the last one (as before)', () => {
+    expect(buildDayFor(DEFAULT_SPLIT, [], () => null, '2026-10-18T08:00:00.000Z').id).toBe(nextSplitDay(DEFAULT_SPLIT, null).id);
   });
 });

@@ -515,6 +515,7 @@ export function createAppServices(deps: AppServicesDeps) {
     newId: deps.newId,
     ...(deps.coach === undefined ? {} : { model: deps.coach.model, connection: deps.coach.connection }),
     builtInNextTargets: (sessionId) => loop.workout.builtInNextTargets(sessionId),
+    upNextTitle: (gymId) => loop.workout.upNextTitle(gymId),
     coachAddInputs: (exerciseId, aggregate) => loop.workout.coachAddInputs(exerciseId, aggregate),
     onSessionChanged: (a) => {
       if (deps.restAlerts) void deps.restAlerts.reconcile(a, toMs(deps.now().utc));

@@ -402,8 +402,16 @@ export function recommendSession(input: RecommendSessionInput): SessionRecommend
  * only one), and that type's newest workout as the source. Null when there
  * is no history type: the caller falls back to the newest workout.
  */
-export function longestGapSource(index: SessionTypeIndex, lastFinished: FinishedRef | null): { sessionId: string; key: string; basis: SessionRecommendationBasis } | null {
-  const history = index.types.filter((t) => t.routineId === null && t.sourceSessionId !== null);
+export function longestGapSource(
+  index: SessionTypeIndex,
+  lastFinished: FinishedRef | null,
+  /** Source workouts that trained the split day(s) just done (PM decision 18 Oct): passed over unless nothing else is left. */
+  avoid?: ReadonlySet<string>,
+): { sessionId: string; key: string; basis: SessionRecommendationBasis } | null {
+  const all = index.types.filter((t) => t.routineId === null && t.sourceSessionId !== null);
+  // `OLDER` types are never recommended (SP-D3), so they don't count as another type left.
+  const kept = avoid === undefined ? all : all.filter((t) => !t.older && !avoid.has(t.sourceSessionId ?? ''));
+  const history = kept.length > 0 ? kept : all;
   const rec = recommendSession({ index: { types: history, keyOfSession: index.keyOfSession }, routines: [], lastFinished });
   const type = rec === null ? undefined : history.find((t) => t.key === rec.key);
   return rec === null || type?.sourceSessionId === undefined || type.sourceSessionId === null ? null : { sessionId: type.sourceSessionId, key: type.key, basis: rec.basis };

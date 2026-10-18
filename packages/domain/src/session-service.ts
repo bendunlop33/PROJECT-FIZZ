@@ -173,6 +173,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       fence?: WriteFence;
       /** Today's edits from the pre-start draft (ADR 0022); the overview's dry run and Start pass the same. */
       today?: TodayEditsInput;
+      /** A cut-short source: plan its not-done working sets too (`RepeatInput.includeNotDone`). */
+      includeNotDone?: boolean;
     },
   ): Promise<
     | { ok: true; aggregate: SessionAggregate; notes: RepeatNote[]; notCopied: RepeatOutput['notCopied']; duplicate: boolean; fits: Record<string, SetFit>; today: TodayPlanInfo | null }
@@ -215,6 +217,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       ...(req.name !== undefined ? { name: req.name } : {}),
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
+      ...(req.includeNotDone === true ? { includeNotDone: true } : {}),
     } }, req.today ?? NO_EDITS);
     const today: TodayPlanInfo = { slotOf: out.slotOf, outcomes: out.outcomes, resolved: out.resolved, slots: out.slots, baseSlots: out.baseSlots, plannedShape: out.plannedShape, fit: out.fit, tiers: out.tiers };
     if (out.empty) return { ok: false, error: { code: 'nothing_to_repeat', message: 'That workout has no logged sets to repeat.' } };

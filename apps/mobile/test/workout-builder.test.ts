@@ -45,6 +45,7 @@ interface BuildView {
   usable: { catalogueId: string; name: string }[];
   setBudget: number;
   draft: { name: string; version: number } | null;
+  upNext: string | null;
 }
 
 function buildOf(req: ModelRequest): BuildView {
@@ -1322,5 +1323,76 @@ describe('review builder-v2 r5 B1u: the coach’s message on the card and in `Wh
     expect((await s.coachDrafts.card({ draftId: rec.detail.draftId, versionN: 1, gymId }))?.rationale).toBeNull();
     const p = await page(s, rec.detail.draftId, gymId);
     expect(draftWhyView(p.coachDraft ?? { request: '', rationale: null, checks: [], fitMinutes: 0 }).some((x) => x.heading === 'COACH')).toBe(false);
+  });
+});
+
+describe('Up next and a short coach build (review today-18oct S2, S6)', () => {
+  /** Logs every pending set of a started workout at its target, then finishes it. */
+  async function logAllAndFinish(s: AppServices, sessionId: string): Promise<void> {
+    const cur = await s.workout.load(sessionId);
+    if (!cur) throw new Error('session');
+    const fallbackLoad = (exId: string) => {
+      const ex = cur.aggregate.exercises.find((e) => e.id === exId);
+      return ex === undefined ? null : { value: 20, unit: ex.unit, convention: ex.loadConvention };
+    };
+    for (const set of [...cur.aggregate.sets].sort((a, b) => a.index - b.index)) {
+      if (set.status !== 'pending' || set.pairedWithSetId !== null) continue;
+      h.clockMs += 60_000;
+      const r = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: set.planned.load ?? fallbackLoad(set.sessionExerciseId), reps: set.planned.reps?.min ?? 8, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+      if (!r.ok) throw new Error(r.error.message);
+    }
+    const now = await s.workout.load(sessionId);
+    const fin = await s.workout.dispatch(sessionId, { type: 'finish', at: h.now(), opId: h.ids(), expectedVersion: now?.aggregate.session.version ?? 0, endedAt: null });
+    if (!fin.ok) throw new Error(fin.error.message);
+  }
+
+  it('a `Push · 20 min` build shorter than the Profile length is passed over for the full push; its own next session is called `Push`', async () => {
+    const { s, gymId } = await benWithHistory();
+    const fullPush = (await s.history.pastWorkouts()).rows[0]?.sessionId ?? '';
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    expect(await s.training.change({ kind: 'session_minutes', minutes: 45 }, snap.profile.version, 'len-45')).toMatchObject({ ok: true });
+    const { draftId } = await buildPush(s, 'build me a 20-minute push session for this gym');
+    expect((await s.coachDrafts.get(draftId))?.name).toBe('Push · 20 min');
+    const p = await page(s, draftId, gymId);
+    const started = await s.overview.start(startReq(p, gymId, 'start-20'));
+    if (!started.ok) throw new Error('not started');
+    const short = started.aggregate.session.id;
+    await logAllAndFinish(s, short);
+    h.clockMs += DAY;
+    await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10 }, { load: 60, reps: 10 }] }, { exercise: 'Barbell row', sets: [{ load: 70, reps: 8 }, { load: 70, reps: 8 }] }]);
+    h.clockMs += DAY;
+
+    // Pull was yesterday and legs have no workout to plan from: Push is Up next, from the full workout, not the 20-minute one.
+    const up = await s.next.preview(gymId);
+    expect(up).toMatchObject({ routine: null, sourceSessionId: fullPush });
+    expect(up?.title).not.toMatch(/min$/);
+
+    // The 20-minute workout's own next session (picked or repeated) drops the length from its name everywhere.
+    const picked = await s.overview.load({ target: { kind: 'session', sourceSessionId: short }, gymId });
+    expect(picked?.view.title).toBe('Push');
+    const next = await s.workout.start({ gymId, opId: 'start-from-short', checkIn: null, nextOf: short });
+    if (!next.ok) throw new Error(next.error.message);
+    expect(next.aggregate.session.routineName).toBe('Push');
+  });
+});
+
+describe('the coach is told the Up next Today shows (review today-18oct S1)', () => {
+  it('the build context’s upNext is Today’s card title, not the rotation’s', async () => {
+    const { s, gymId } = await benWithHistory();
+    const pullA = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10 }, { load: 60, reps: 10 }] }, { exercise: 'Barbell row', sets: [{ load: 70, reps: 8 }] }]);
+    const saved = await s.routines.saveFromSession({ sessionId: pullA, name: 'Pull A', opId: 'save-pull-a', addToRotation: true });
+    if (!saved.ok) throw new Error(saved.message);
+    h.clockMs += DAY;
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    expect(await s.training.change({ kind: 'preset_split', split: 'ppl' }, snap.profile.version, 'split-ppl')).toMatchObject({ ok: true });
+    const card = await s.next.preview(gymId);
+    // Pull was just done: the split's Push, not the rotation's only routine (Pull A).
+    expect(card?.title).toBeDefined();
+    expect(card?.title).not.toBe('Pull A');
+    await buildPush(s);
+    const b = buildOf(model.requests[0] as ModelRequest);
+    expect(b.upNext).toBe(card?.title);
   });
 });

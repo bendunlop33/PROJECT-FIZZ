@@ -1,7 +1,7 @@
 import type { Exercise, MuscleGroup, SessionAggregate, SplitDay, TrainingSplit } from '@fizz/schemas';
 
 import { toMs } from '../time';
-import { matchSplitDay, workoutGroupsOf } from '../training-profile';
+import { lastSplitWorkoutGroups, matchSplitDay, nextSplitDay, workoutGroupsOf } from '../training-profile';
 import { normaliseSessionName } from './session-types';
 
 /**
@@ -149,4 +149,15 @@ export function splitDaySource(split: TrainingSplit, day: Pick<SplitDay, 'id'>, 
 export function preferFullSource(workouts: readonly SplitWorkout[]): string | null {
   const sorted = newestFirst(workouts);
   return (sorted.find((w) => !w.short) ?? sorted[0])?.sessionId ?? null;
+}
+
+/**
+ * The split day to preselect for `Build with coach` (review today-18oct S3): the same day Up next is
+ * planned for (`splitDaysByDue`, workouts in the last `SPLIT_WINDOW_DAYS` before `nowUtc`), else the
+ * day after the last one (`nextSplitDay`) when no workout in the window matches a day.
+ */
+export function buildDayFor(split: TrainingSplit, sessions: readonly SessionAggregate[], exerciseOf: (id: string) => Pick<Exercise, 'id' | 'name' | 'primaryMuscles'> | null, nowUtc: string): SplitDay {
+  const from = toMs(nowUtc) - SPLIT_WINDOW_DAYS * 86_400_000;
+  const workouts = sessions.filter((a) => toMs(a.session.startedAt.utc) >= from).map((a) => splitWorkoutOf(a, exerciseOf, null));
+  return splitDaysByDue(split, workouts)[0]?.day ?? nextSplitDay(split, lastSplitWorkoutGroups(split, sessions, exerciseOf));
 }

@@ -324,6 +324,8 @@ export interface CoachServiceDeps {
   coachAddInputs?: (exerciseId: string, aggregate: SessionAggregate) => Promise<{ exercise: Exercise | null; history: HistorySession[]; substitute: SubstituteContext; owner: UserProfile; sameMovementIds?: string[]; exerciseUnsaved?: boolean } | null>;
   /** (13 Oct, D7, D8) Ben's training details, split and main lifts for the planning context. Absent: listed as not available. */
   training?: () => Promise<TrainingInput | null>;
+  /** Up next as Today's card names it (workout services; local reads only). Absent: the rotation's routine. */
+  upNextTitle?: (gymId: string | null) => Promise<string | null>;
 }
 
 /** A structural proposal card's state (ADR 0020 §3), from the proposal and Ben's taps on it. */
@@ -1013,15 +1015,22 @@ export function createCoachService(deps: CoachServiceDeps) {
       ],
       questionsLeft: Math.max(0, 2 - (chain?.asked ?? 0)),
     };
-    const refs = await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []);
-    const pick = nextInRotation(rotationRoutines(live), refs[0] ?? null);
+    // The same Up next as Today's card (review today-18oct S1); without that wiring, the rotation's routine.
+    const upNext =
+      deps.upNextTitle !== undefined
+        ? await deps.upNextTitle(place.typical ? null : gym.id).catch(() => null)
+        : await (async () => {
+            const refs = await repos().sessions.listFinishedRefs(p.id, 1).catch(() => []);
+            const pick = nextInRotation(rotationRoutines(live), refs[0] ?? null);
+            return pick.kind === 'routine' ? pick.routine.name : null;
+          })();
     const view: BuildContextView = {
       request: { quote: text, minutes, focus, origin, ...(day === null ? {} : { day: { name: day.name, bodyParts: [...day.bodyParts], mainLift: chips?.mainLift ?? null } }) },
       gym: { name: gym.name, typicalEquipment: place.typical },
       usable,
       busyToday: [],
       setBudget: buildSetBudget(minutes),
-      upNext: pick.kind === 'routine' ? pick.routine.name : null,
+      upNext,
       ...(loadViews.length === 0 ? {} : { loadReferences: loadViews }),
       known: knownView,
       draft:
