@@ -187,8 +187,8 @@ describe('views and history', () => {
     expect(f?.loadField?.label).toBe('Added');
     expect(f?.logValues.load).toEqual(kg(0, 'added'));
     expect(f?.loadField?.up).toMatchObject({ enabled: true, value: 1.25 });
-    // Without the catalogue's word it's ambiguous: no switch offered.
-    expect(view(s, undefined)?.addWeight).toBeNull();
+    // The session's own record (set_load_mode stamped it) keeps the switch without the catalogue.
+    expect(view(s, undefined)?.addWeight).toEqual({ on: true });
   });
 
   it('the correction sheet follows the set’s own convention', () => {

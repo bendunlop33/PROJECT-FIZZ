@@ -342,6 +342,8 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
           rir: tpl.targetRir,
           ...(fitted !== null ? { snap: fitted } : {}),
           ...(provenance !== null ? { provenance } : {}),
+          // Weight held or worn on a bodyweight exercise: the reducer checks it against the gym's dumbbells and plates.
+          ...(fit.convention === 'added' && exercise.defaultLoadConvention === 'bodyweight' ? { bodyweightExercise: true as const } : {}),
         },
         rest: resolveRestPreset({
           setType: tpl.setType,

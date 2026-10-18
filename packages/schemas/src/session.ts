@@ -293,6 +293,19 @@ export interface PlannedSet {
   /** Absent on targets made before `Why?` existed (shown as `Not recorded`). */
   provenance?: TargetProvenance | undefined;
   snap?: PlannedSnap | undefined;
+  /**
+   * A bodyweight exercise (catalogue default `bodyweight`; Ben, 18 Oct): an
+   * `added` load on its row is weight held or worn, checked against the
+   * gym's dumbbells and plates (rule 4). Stamped when the row starts weighted
+   * or `set_load_mode` switches it; any set of the row carrying it marks the row.
+   */
+  bodyweightExercise?: true | undefined;
+  /**
+   * The target this set had in the other mode before `set_load_mode`
+   * switched it (bodyweight or added), put back if Ben switches back while
+   * the set still has no load target.
+   */
+  otherMode?: PlannedSet | undefined;
   /** `gymChanges`: how many gym-change entries the workout had when the coach made this change (Undo is refused after a later one). */
   coach?: { actionId: string; before: PlannedSet; gymChanges?: number | undefined } | undefined;
   /**
@@ -329,6 +342,10 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   provenance: TargetProvenanceSchema.optional(),
   /** How the load was fitted to the gym's equipment (GS-S1); absent = as intended. */
   snap: PlannedSnapSchema.optional(),
+  bodyweightExercise: z.literal(true).optional(),
+  get otherMode() {
+    return PlannedSetSchema.optional();
+  },
   get coach() {
     return z.object({ actionId: IdSchema, before: PlannedSetSchema, gymChanges: z.int().min(0).optional() }).optional();
   },

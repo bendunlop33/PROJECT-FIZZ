@@ -109,3 +109,14 @@ export function addWeightToggle(
   if (!on && addedWeightItems(gymEquipment, row.unit).length === 0) return null;
   return { on };
 }
+
+/**
+ * The row is a bodyweight exercise by the session's own record: a set of it
+ * carries `planned.bodyweightExercise` (stamped at start or by
+ * `set_load_mode`). Lets the reducer check added weight without the
+ * catalogue, and keeps a sled push or a leg press whose machine is missing
+ * (also `added`, no item) out of it.
+ */
+export function rowMarkedBodyweight(sets: readonly { sessionExerciseId: string; planned: { bodyweightExercise?: true | undefined } }[], sessionExerciseId: string): boolean {
+  return sets.some((s) => s.sessionExerciseId === sessionExerciseId && s.planned.bodyweightExercise === true);
+}

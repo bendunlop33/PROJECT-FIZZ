@@ -21,7 +21,7 @@ import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySe
 import { toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
-import { addedWeightItems, addWeightToggle, canAddWeight, loadCheckEquipment } from '../added-weight';
+import { addedWeightItems, addWeightToggle, canAddWeight, isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
 import { DEFAULT_WORKING_SETS, GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
@@ -388,14 +388,19 @@ function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentIns
   return equipmentOfRow(state.session.equipmentSnapshot, ex);
 }
 
+/** A bodyweight exercise: the catalogue says so, or the session's own record does (`planned.bodyweightExercise`). */
+function isBodyweightExercise(state: SessionAggregate, ex: SessionExercise, bodyweight: ReadonlySet<string> | undefined): boolean {
+  return (bodyweight?.has(ex.exerciseId) ?? false) || rowMarkedBodyweight(state.sets, ex.id);
+}
+
 /** What the row's loads step through: the gym's added-weight options for a weighted bodyweight row, else its item. */
 function checkEquipmentOf(state: SessionAggregate, ex: SessionExercise, eq: EquipmentInstance | null, bodyweight: ReadonlySet<string> | undefined): EquipmentInstance | null {
-  return loadCheckEquipment(ex, eq, currentGymEquipment(state.session), state.session.gymId, bodyweight?.has(ex.exerciseId) ?? false);
+  return loadCheckEquipment(ex, eq, currentGymEquipment(state.session), state.session.gymId, isBodyweightExercise(state, ex, bodyweight));
 }
 
 function addWeightOf(state: SessionAggregate, ex: SessionExercise, eq: EquipmentInstance | null, bodyweight: ReadonlySet<string> | undefined): { on: boolean } | null {
   if (state.session.status !== 'active') return null;
-  return addWeightToggle(ex, eq, currentGymEquipment(state.session), bodyweight?.has(ex.exerciseId) ?? false);
+  return addWeightToggle(ex, eq, currentGymEquipment(state.session), isBodyweightExercise(state, ex, bodyweight));
 }
 
 /** The gym a part's sets are planned or done at: its item's gym, else where its targets were fitted. */
@@ -583,7 +588,15 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
 
   let offProfileWarning: string | null = null;
   let offProfileEquipment: FocusView['offProfileEquipment'] = null;
-  if (eq !== null && values.load !== null && values.load.convention !== 'bodyweight' && !isLoadAchievable(values.load, eq)) {
+  const weighted = isWeightedBodyweight(ex, eq, isBodyweightExercise(state, ex, input.bodyweightExercises));
+  if (weighted && values.load !== null && values.load.convention === 'added' && values.load.value > 0) {
+    // Weight held or worn: the gym's dumbbells and plates (rule 4).
+    const options = checkEquipmentOf(state, ex, eq, input.bodyweightExercises);
+    if (options !== null && !isLoadAchievable(values.load, options)) {
+      const top = getAchievableLoads(options).loads.at(-1);
+      offProfileWarning = `Not at ${input.gymName ?? 'this gym'}${top === undefined ? '' : ` (max ${formatNumber(top)} ${ex.unit})`}`;
+    }
+  } else if (eq !== null && values.load !== null && values.load.convention !== 'bodyweight' && !isLoadAchievable(values.load, eq)) {
     const max = maxText(eq, values.load);
     offProfileWarning = `Not on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}`;
     offProfileEquipment = { gymId: eq.gymId, equipmentId: eq.id, kind: eq.kind };
@@ -1009,7 +1022,7 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
   const eq = equipmentOf(state, ex);
   const values = edits ?? set.actual;
   const setType = options.setType ?? set.setType;
-  const bw = options.bodyweightExercises?.has(ex.exerciseId) ?? false;
+  const bw = isBodyweightExercise(state, ex, options.bodyweightExercises);
   const switchable = canAddWeight(ex, eq, bw);
   const own = values.load?.convention;
   const conv: SessionExercise['loadConvention'] = switchable && (own === 'bodyweight' || own === 'added') ? own : ex.loadConvention;
@@ -1136,15 +1149,15 @@ export function toggleRepRange(reps: { min: number; max: number } | null): { min
  * load for this row (unit or convention mismatch, nothing achievable): no
  * change, so a failed fit never clears the stored target (review S2).
  */
-export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: number | null): number | null | undefined {
+export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: number | null, bodyweightExercises?: ReadonlySet<string>): number | null | undefined {
   if (typed === null) return null;
   const set = state.sets.find((s) => s.id === setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!ex) return undefined;
   const own = equipmentOf(state, ex);
   // Weight added to a bodyweight exercise: the gym's dumbbells and plates (none: only 0).
-  if (ex.loadConvention === 'added' && own?.kind === 'bodyweight_station') {
-    const options = checkEquipmentOf(state, ex, own, undefined);
+  if (isWeightedBodyweight(ex, own, isBodyweightExercise(state, ex, bodyweightExercises))) {
+    const options = checkEquipmentOf(state, ex, own, bodyweightExercises);
     if (options === null) return 0;
     const r = roundToAvailableLoad({ value: Math.max(0, typed), unit: ex.unit, convention: 'added' }, options, 'nearest');
     return r.ok ? r.load.value : undefined;

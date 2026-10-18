@@ -5,6 +5,7 @@ import type {
   ZonedTimestamp,
   EquipmentInstance,
   Load,
+  PlannedSet,
   PauseInterval,
   ProcessedOperation,
   RestTimer,
@@ -20,7 +21,7 @@ import type {
   WorkoutSet,
 } from '@fizz/schemas';
 import { isLoadAchievable } from '../equipment';
-import { loadCheckEquipment } from '../added-weight';
+import { isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
 import { normaliseExclusions } from '../exclusions';
 import { currentGymEquipment, equipmentOfRow, rowIsAtCurrentGym } from './equipment-snapshot';
 import { applyChangeGym, applyUndoChangeGym, partRootOf } from './gym-switch';
@@ -248,24 +249,37 @@ function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentIns
  * for a bodyweight exercise logged with weight, else the row's own item.
  */
 function checkEquipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentInstance | undefined {
-  return loadCheckEquipment(ex, equipmentOf(state, ex) ?? null, currentGymEquipment(state.session), state.session.gymId) ?? undefined;
+  return loadCheckEquipment(ex, equipmentOf(state, ex) ?? null, currentGymEquipment(state.session), state.session.gymId, rowMarkedBodyweight(state.sets, ex.id)) ?? undefined;
+}
+
+/** A bodyweight exercise logged with weight held or worn (on a station, or marked by the session's own record). */
+function weightedRow(state: SessionAggregate, ex: SessionExercise): boolean {
+  return isWeightedBodyweight(ex, equipmentOf(state, ex) ?? null, rowMarkedBodyweight(state.sets, ex.id));
+}
+
+/** The row can switch between bodyweight and added: a bodyweight row, a station, or a row marked as a bodyweight exercise. */
+function switchableRow(state: SessionAggregate, ex: SessionExercise): boolean {
+  if (ex.loadConvention !== 'bodyweight' && ex.loadConvention !== 'added') return false;
+  const own = equipmentOf(state, ex) ?? null;
+  if (own !== null) return own.kind === 'bodyweight_station';
+  return ex.loadConvention === 'bodyweight' || rowMarkedBodyweight(state.sets, ex.id);
 }
 
 /** No weight added to a bodyweight exercise: nothing to check. */
 function nothingAdded(load: Load, state: SessionAggregate, ex: SessionExercise): boolean {
-  return load.convention === 'added' && load.value === 0 && equipmentOf(state, ex)?.kind === 'bodyweight_station';
+  return load.convention === 'added' && load.value === 0 && weightedRow(state, ex);
 }
 
 /**
  * A logged set on a bodyweight exercise keeps the convention it was logged
  * with: after `+ Weight` (or back) its bodyweight or added result can still
- * be corrected as it was.
+ * be corrected as it was. Only for bodyweight exercises (review S5): a sled
+ * push or a leg press with its machine missing stays `added` only.
  */
 function conventionFits(load: Load, ex: SessionExercise, state: SessionAggregate): boolean {
   if (load.convention === ex.loadConvention) return true;
   const pair = (c: Load['convention']) => c === 'bodyweight' || c === 'added';
-  const own = equipmentOf(state, ex) ?? null;
-  return pair(load.convention) && pair(ex.loadConvention) && (own === null || own.kind === 'bodyweight_station');
+  return pair(load.convention) && switchableRow(state, ex);
 }
 
 function validateValues(values: SetValues, ex: SessionExercise, state: SessionAggregate): SessionError | null {
@@ -308,8 +322,8 @@ function checkSide(side: SetSide | null | undefined, ex: SessionExercise): Sessi
 function flagsFor(values: SetValues, state: SessionAggregate, ex: SessionExercise): SetFlag[] {
   if (values.load === null || values.load.convention === 'bodyweight') return [];
   const own = equipmentOf(state, ex) ?? null;
-  const weighted = values.load.convention === 'added' && own?.kind === 'bodyweight_station';
-  const eq = weighted ? loadCheckEquipment({ loadConvention: 'added', unit: ex.unit }, own, currentGymEquipment(state.session), state.session.gymId) : own;
+  const weighted = values.load.convention === 'added' && isWeightedBodyweight({ loadConvention: 'added' }, own, rowMarkedBodyweight(state.sets, ex.id));
+  const eq = weighted ? loadCheckEquipment({ loadConvention: 'added', unit: ex.unit }, own, currentGymEquipment(state.session), state.session.gymId, true) : own;
   if (weighted && values.load.value === 0) return [];
   if (weighted && !eq) return ['off_profile_load'];
   if (!eq) return [];
@@ -2082,30 +2096,44 @@ function handleSetTargetRpe(state: SessionAggregate, cmd: CommandOf<'set_target_
 /**
  * `set_load_mode` (Ben, 18 Oct): a bodyweight exercise logged with weight
  * held or worn (`added`), or back to bodyweight, for the rest of today. Only
- * sets not done yet change: a load target or unsaved load in the other
- * convention is cleared (an added target never carries over to bodyweight,
- * and none is invented going the other way). Logged sets keep what they were
- * logged as (rule 2). Version-gated (rule 5).
+ * sets not done yet change: a load target in the other convention is set
+ * aside (`planned.otherMode`, never carried across: an added target is not a
+ * bodyweight one) and put back, with its Undo records, when Ben switches
+ * back while the set still has no load target (review S1). An unsaved load in
+ * the other convention is cleared. Every pending set is stamped as a
+ * bodyweight exercise so later checks use the gym's dumbbells and plates
+ * (review B1). Logged sets keep what they were logged as (rule 2).
+ * Version-gated (rule 5).
  */
 function handleSetLoadMode(state: SessionAggregate, cmd: CommandOf<'set_load_mode'>): Handled {
   if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
   const ex = state.exercises.find((e) => e.id === cmd.sessionExerciseId);
   if (!ex || ex.removed !== undefined) return fail('exercise_not_found', 'Exercise not found in this workout.');
-  const own = equipmentOf(state, ex) ?? null;
-  const switchable = (ex.loadConvention === 'bodyweight' || ex.loadConvention === 'added') && (own === null || own.kind === 'bodyweight_station');
-  if (!switchable) return fail('convention_mismatch', `${ex.exerciseName} is loaded on ${own?.name ?? 'its equipment'}.`);
+  if (!switchableRow(state, ex)) return fail('convention_mismatch', `${ex.exerciseName} is loaded on ${equipmentOf(state, ex)?.name ?? 'its equipment'}.`);
   if (ex.loadConvention === cmd.mode) return { ok: true, state, events: [] };
   const other = (l: Load | null | undefined): boolean => l != null && l.convention !== cmd.mode;
   const changed: string[] = [];
   const sets = state.sets.map((s) => {
     if (s.sessionExerciseId !== ex.id || s.status !== 'pending') return s;
-    const plannedOther = other(s.planned.load);
+    const version = s.version + 1;
+    const current: PlannedSet = { ...s.planned };
+    const stashed = current.otherMode;
+    delete current.otherMode;
+    let planned: PlannedSet;
+    if (other(current.load)) {
+      // Set aside, with its Undo records, for the way back.
+      planned = { ...withoutEditRecords(current), load: null, otherMode: current };
+    } else if (current.load === null && stashed !== undefined && stashed.load?.convention === cmd.mode) {
+      planned = { ...stashed };
+      if (planned.edit !== undefined) planned.edit = { ...planned.edit, version };
+    } else {
+      planned = current;
+    }
+    planned.bodyweightExercise = true;
     const draftOther = other(s.draft?.load);
-    if (!plannedOther && !draftOther) return s;
-    changed.push(s.id);
-    const planned = plannedOther ? { ...withoutEditRecords(s.planned), load: null } : s.planned;
     const draft = s.draft && draftOther ? { ...s.draft, load: null } : s.draft;
-    return { ...s, planned, draft, version: s.version + 1 };
+    if (planned.load !== s.planned.load || draftOther) changed.push(s.id);
+    return { ...s, planned, draft, version };
   });
   const exercises = state.exercises.map((e) => (e.id === ex.id ? { ...e, loadConvention: cmd.mode } : e));
   return { ok: true, state: bumpVersion({ ...state, exercises, sets }), events: [{ type: 'LoadModeChanged', sessionExerciseId: ex.id, mode: cmd.mode, setIds: changed }] };
