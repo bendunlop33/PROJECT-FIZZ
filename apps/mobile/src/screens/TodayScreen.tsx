@@ -390,6 +390,21 @@ export function TodayScreen() {
   const checkInLine = (c: NonNullable<typeof unlinked>) => `Check-in ${formatTime(toMs(c.recordedAt.utc), zoned.tz)} · ${scoreText(c.score)}${c.reasons.length ? ` · ${reasonsText(c.reasons)}` : ''}`;
   const main = view?.main ?? { kind: 'no_plan' as const };
   const recentRows = recentWorkoutRows(recent, zoned);
+  // `Change` on the Up next and Done today labels: the session picker (session-picker §2.1; review today-18oct B1).
+  const changeAction = hasChoice(sessions)
+    ? {
+        labelAction: (
+          <TextButton
+            label={SESSION_PICKER_COPY.change}
+            tone="secondary"
+            accessibilityLabel={SESSION_PICKER_COPY.changeSession}
+            onPress={() => {
+              setPickerVisible(true);
+            }}
+          />
+        ),
+      }
+    : {};
 
   const hero = (() => {
     switch (main.kind) {
@@ -460,7 +475,8 @@ export function TodayScreen() {
       case 'done_today':
         return (
           // A date-only (imported) workout has no times, so no duration (rule 6).
-          <Hero label="Done today" title={main.title} lines={[doneTodayDurationLine(main.title, main.activeMs)]}>
+          // Change sits on the label, as on Up next: the way to start another session (review today-18oct B1).
+          <Hero label="Done today" {...changeAction} title={main.title} lines={[doneTodayDurationLine(main.title, main.activeMs)]}>
             <SecondaryButton
               label="View summary"
               onPress={() => {
@@ -468,9 +484,8 @@ export function TodayScreen() {
               }}
             />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
-              {/* A second workout: a routine row below, or an empty one (premium-feel §2.4). With no routines yet,
-                  the next session of today's workout stays one tap (review S1). */}
-              {next && routines.length === 0 ? (
+              {/* A second workout: Up next stays one tap, Change picks another (premium-feel §2.4; review today-18oct B1). */}
+              {next ? (
                 <TextButton
                   label="Start next session"
                   onPress={() => {
@@ -496,20 +511,7 @@ export function TodayScreen() {
           return (
             <Hero
               label="Up next"
-              {...(hasChoice(sessions)
-                ? {
-                    labelAction: (
-                      <TextButton
-                        label={SESSION_PICKER_COPY.change}
-                        tone="secondary"
-                        accessibilityLabel={SESSION_PICKER_COPY.changeSession}
-                        onPress={() => {
-                          setPickerVisible(true);
-                        }}
-                      />
-                    ),
-                  }
-                : {})}
+              {...changeAction}
               title={next.title}
               lines={[
                 [next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'}`, next.aboutMinutes !== null ? `about ${String(next.aboutMinutes)} min` : `${String(next.sets)} sets`].filter(Boolean).join(' · '),

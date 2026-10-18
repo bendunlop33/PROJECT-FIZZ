@@ -415,13 +415,14 @@ describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
   it('switching to a session that can’t be shown leaves the page as it was; a good one shows with the same check-in and gym', async () => {
     const { services: s } = await h.launch();
     const { gymId, ids } = await split(s);
-    const saved = await s.routines.saveFromSession({ sessionId: ids.Legs, name: 'Legs', opId: 'save-legs' , addToRotation: true });
+    // A routine that isn't Up next, so its real row opens the routine itself (review today-18oct S6).
+    const saved = await s.routines.saveFromSession({ sessionId: ids.Shoulders, name: 'Shoulders', opId: 'save-shoulders', addToRotation: true });
     if (!saved.ok) throw new Error(saved.message);
-    // The routine's own target (its row is Up next since 18 Oct, which would fall back to the Legs workout).
-    expect(rowOf(await list(s, gymId), 'Legs').routineId).toBe(saved.routine.id);
-    const legs = { target: { kind: 'routine', routineId: saved.routine.id } as OverviewTarget };
+    const legs = rowOf(await list(s, gymId), 'Shoulders');
+    expect(legs.recommended).toBe(false);
+    expect(legs.target).toEqual({ kind: 'routine', routineId: saved.routine.id });
     // The routine is deleted while the picker is open.
-    expect((await s.routines.remove({ routineId: saved.routine.id, expectedVersion: saved.routine.version, opId: 'rm-legs' })).ok).toBe(true);
+    expect((await s.routines.remove({ routineId: saved.routine.id, expectedVersion: saved.routine.version, opId: 'rm-shoulders' })).ok).toBe(true);
 
     const ci = await s.checkIns.record({ checkInId: h.ids(), opId: h.ids(), score: 4 });
     if (!ci.ok) throw new Error(ci.message);
@@ -454,6 +455,16 @@ describe('Done today and the in-place switch (§5, SP9, SP11, r2 S1)', () => {
   it('Today’s Change reads “Change session” to VoiceOver (§4.5, r2 N4)', () => {
     const today = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
     expect(today).toMatch(/label=\{SESSION_PICKER_COPY\.change\}\n\s*tone="secondary"\n\s*accessibilityLabel=\{SESSION_PICKER_COPY\.changeSession\}/);
+  });
+
+  it('Done today keeps Change and Start next session whenever there is an Up next, routines or not (review today-18oct B1)', () => {
+    const today = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
+    const done = today.slice(today.indexOf("case 'done_today':"), today.indexOf("case 'no_plan':"));
+    expect(done).toContain('<Hero label="Done today" {...changeAction}');
+    expect(done).toMatch(/\{next \? \(\n\s*<TextButton\n\s*label="Start next session"/);
+    expect(done).not.toContain('routines.length');
+    expect(today).toContain('<Hero\n              label="Up next"\n              {...changeAction}');
+    expect(today).toMatch(/const changeAction = hasChoice\(sessions\)/);
   });
 });
 
