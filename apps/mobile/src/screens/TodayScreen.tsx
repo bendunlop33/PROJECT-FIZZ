@@ -4,8 +4,8 @@ import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native
 
 import { AskPill } from './coach/AskPill';
 
-import { discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, sparklinePoints, toMs, weekStripLabel, type LiftHighlight, type ResumeRow, type TodayMain, type WeekDay } from '@fizz/domain';
-import type { SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
+import { discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, recentWorkoutRows, RECENT_LIMIT, scoreText, toMs, type RecentWorkoutRow, type ResumeRow, type TodayMain } from '@fizz/domain';
+import type { SessionAggregate } from '@fizz/schemas';
 
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
@@ -19,8 +19,8 @@ import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
 import type { OverviewTarget, RoutineRow, SessionPickerRow } from '../services/workout-services';
-import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, Sparkline, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
-import { hasChoice, lastDoneText, pickerRowLabel, SESSION_PICKER_COPY, todaySessions } from '../workout/session-picker';
+import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
+import { hasChoice, SESSION_PICKER_COPY } from '../workout/session-picker';
 import { SessionPickerSheet } from './workout/SessionPickerSheet';
 import { NameSheet } from './routines/NameSheet';
 import { BannerList } from './BannerList';
@@ -34,7 +34,7 @@ import { NeedsCoachSheet } from './coach/NeedsCoachSheet';
 /**
  * Today (today.md, D-Today mockup): date and gym, banners, one hero (Resume,
  * the stale-workout card, Done today, the next session, or a first workout),
- * the rare unlinked check-in line, and This week.
+ * the rare unlinked check-in line, and Recent (the last 5 workouts).
  *
  * First-run audit: `Start workout` always works. With no gym it first saves
  * a typical one (marked not checked, B4); with routines it starts the next in
@@ -43,9 +43,9 @@ import { NeedsCoachSheet } from './coach/NeedsCoachSheet';
  * that opens the exercise picker. Up next's Start (and its rows) and a
  * `Your routines` row open the Workout overview (workout-overview.md), whose
  * Start starts the workout; the check-in for those starts lives there.
- * Choosing another session (session-picker §2.1): `Change` on Up next and
- * `All sessions` open the picker sheet; a `Sessions` row opens that
- * session's overview. The
+ * Choosing another session (session-picker §2.1): `Change` on Up next opens
+ * the picker sheet. A `Recent` row opens that past workout, as Past workouts
+ * does (PM decision 18 Oct, pending Ben). The
  * rare pain flag check (region 4b) opens the pain flag sheet. The weekly
  * plan comes later. No AI, no network.
  */
@@ -101,12 +101,12 @@ export function TodayScreen() {
     ]);
     // Never blocks Today or Start (review S1): an unreadable past workout only hides the card.
     const next = gym ? await s.next.preview(gym.id).catch(() => null) : null;
-    // Decorative history; never blocks Today either.
-    const lift = await s.today.liftHighlight().catch(() => null);
+    // Recent: the newest finished workouts, as Past workouts lists them; never blocks Today.
+    const recent = await s.history.pastWorkouts({ limit: RECENT_LIMIT }).then((p) => p.rows).catch(() => []);
     const routines = await s.routines.list().catch(() => [] as RoutineRow[]);
-    // Session types for `Change` / `Sessions` (local; null when unreadable: the routines list stays).
+    // Session types for `Change` (local; null when unreadable: the routines list stays).
     const sessions = await s.sessions.list(gym?.id ?? null).catch(() => null);
-    return { gym, view, banners, active, unlinked, next, lift, routines, sessions };
+    return { gym, view, banners, active, unlinked, next, recent, routines, sessions };
   });
 
   useEffect(() => {
@@ -385,12 +385,11 @@ export function TodayScreen() {
       </View>
     );
   }
-  const { gym, view, banners, active, unlinked, next, lift, routines, sessions } = data.value;
+  const { gym, view, banners, active, unlinked, next, recent, routines, sessions } = data.value;
   const zoned = services.now();
   const checkInLine = (c: NonNullable<typeof unlinked>) => `Check-in ${formatTime(toMs(c.recordedAt.utc), zoned.tz)} · ${scoreText(c.score)}${c.reasons.length ? ` · ${reasonsText(c.reasons)}` : ''}`;
   const main = view?.main ?? { kind: 'no_plan' as const };
-  // Up next is the hero; on Done today it leads the list (session-picker §5).
-  const sessionRows = todaySessions(sessions, { includeUpNext: main.kind === 'done_today' });
+  const recentRows = recentWorkoutRows(recent, zoned);
 
   const hero = (() => {
     switch (main.kind) {
@@ -637,47 +636,6 @@ export function TodayScreen() {
 
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 
-        {/* Sessions (session-picker §2.1): up to 3 other sessions, then `All sessions`. Hidden while a workout is in progress. */}
-        {sessionRows.rows.length > 0 && main.kind !== 'resume' && main.kind !== 'stale' ? (
-          <RuledSection title={SESSION_PICKER_COPY.sessions} gap="2">
-            {sessionRows.rows.map((r) => {
-              const routineRow = r.routineId === null ? null : (routines.find((x) => x.id === r.routineId) ?? null);
-              return (
-                <SessionListRow
-                  key={r.key}
-                  row={r}
-                  now={zoned}
-                  onPress={() => {
-                    openOverview(r.target);
-                  }}
-                  onLongPress={
-                    routineRow
-                      ? () => {
-                          ActionSheetIOS.showActionSheetWithOptions({ title: routineRow.name, options: ['Rename', 'Delete', 'Cancel'], destructiveButtonIndex: 1, cancelButtonIndex: 2 }, (k) => {
-                            if (k === 0) askRename(routineRow);
-                            if (k === 1) confirmDelete(routineRow);
-                          });
-                        }
-                      : undefined
-                  }
-                />
-              );
-            })}
-            {sessionRows.more ? (
-              <View style={{ alignSelf: 'flex-start' }}>
-                <TextButton
-                  label={SESSION_PICKER_COPY.allSessions}
-                  icon="chevron.right"
-                  tone="secondary"
-                  onPress={() => {
-                    setPickerVisible(true);
-                  }}
-                />
-              </View>
-            ) : null}
-          </RuledSection>
-        ) : null}
-
         {/* Your routines (premium-feel §2.1 region 6), only when the session list couldn't be read: routines stay reachable. */}
         {sessions === null && routines.length > 0 && main.kind !== 'resume' && main.kind !== 'stale' ? (
           <RuledSection title="Your workouts" gap="2">
@@ -715,15 +673,21 @@ export function TodayScreen() {
 
         {/* The Workouts list is in the Library tab now (exercise-library EL10): Today gets nothing new and its `Workouts` link retired. */}
 
-        <RuledSection title="This week">
-          {view && view.week.days.length === 7 ? <WeekStrip days={view.week.days} /> : null}
-          <AppText variant="callout" color="text.secondary" numeric>
-            {view?.week.text ?? 'No workouts yet this week.'}
-          </AppText>
-        </RuledSection>
-
-        {/* Shown in every state but Stale and First workout (premium-feel §2.1). */}
-        {lift && main.kind !== 'stale' ? <LiftCard lift={lift} /> : null}
+        {/* Recent (PM decision 18 Oct, pending Ben): replaces This week, the lift card and the Sessions rows. */}
+        {recentRows.length > 0 ? (
+          <RuledSection title="Recent" gap="2">
+            {recentRows.map((r) => (
+              <RecentRow
+                key={r.sessionId}
+                row={r}
+                onPress={() => {
+                  if (r.opens === 'summary') navigation.navigate('Summary', { sessionId: r.sessionId, back: true });
+                  else navigation.navigate('Repeat', { sessionId: r.sessionId });
+                }}
+              />
+            ))}
+          </RuledSection>
+        ) : null}
       </ScrollView>
       <AskPill
         onPress={() => {
@@ -874,65 +838,6 @@ function Hero({ label, labelAction, title, lines, children }: { label: string; l
   );
 }
 
-/** D-Today's lift: `BENCH PRESS`, `100 kg × 8  6 Oct · up from 97.5`, a trend line. Logged sets only (rule 6). */
-function LiftCard({ lift }: { lift: LiftHighlight }) {
-  const theme = useTheme();
-  const when = formatDayMonth(toMs(lift.performedAtUtc), lift.tz);
-  const detail = [lift.imported ? 'FitNotes' : null, when, lift.change].filter(Boolean).join(' · ');
-  return (
-    <View style={{ gap: theme.space['2'] }}>
-      <View accessible accessibilityLabel={`${lift.exerciseName}, last top set ${lift.text}, ${detail}`} style={{ gap: theme.space['2'] }}>
-        <Eyebrow>{lift.exerciseName}</Eyebrow>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: theme.space['3'] }}>
-          <AppText variant="title1" numeric style={{ fontSize: 28, lineHeight: 34, fontWeight: '500' }}>
-            {lift.text}
-          </AppText>
-          <AppText variant="callout" color="text.secondary" numeric>
-            {detail}
-          </AppText>
-        </View>
-      </View>
-      {lift.points.length >= 2 ? (
-        <Sparkline
-          points={(w) => sparklinePoints(lift.points, w, 40)}
-          height={40}
-        />
-      ) : null}
-    </View>
-  );
-}
-
-/** This week (D-Today): a dot per day; filled = trained, ring with a centre = in progress, ringed = today. The line below says it in words. */
-function WeekStrip({ days }: { days: readonly WeekDay[] }) {
-  const theme = useTheme();
-  return (
-    <View accessible accessibilityLabel={weekStripLabel(days)} style={{ flexDirection: 'row' }}>
-      {days.map((d) => (
-        <View key={d.localDate} style={{ flex: 1, alignItems: 'center', gap: theme.space['2'] }}>
-          <AppText variant="sectionLabel" color={d.today ? 'text.primary' : 'text.tertiary'} style={{ letterSpacing: 0 }}>
-            {d.letter}
-          </AppText>
-          {/* Done = filled; in progress = ring with a 4 pt centre; today with nothing = ring (premium-feel §2.5). */}
-          <View
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: 5,
-              backgroundColor: d.trained ? theme.colors.accent : 'transparent',
-              borderWidth: d.trained ? 0 : d.inProgress || d.today ? 1.5 : 0,
-              borderColor: theme.colors.accent,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {d.inProgress && !d.trained ? <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: theme.colors.accent }} /> : null}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 const ROW_ICON: Record<ResumeRow['status'], { icon: SymbolName; color: 'status.done' | 'accent' | 'text.tertiary' }> = {
   done: { icon: 'checkmark.circle.fill', color: 'status.done' },
   now: { icon: 'arrowtriangle.right.fill', color: 'accent' },
@@ -1055,16 +960,14 @@ function RoutineListRow({ row, tz, onPress, onLongPress }: { row: RoutineRow; tz
   );
 }
 
-/** A Today `Sessions` row (≥ 52 pt): name, `4 days ago` (or `New`), and a chevron. Opens that session's overview. */
-function SessionListRow({ row, now, onPress, onLongPress }: { row: SessionPickerRow; now: ZonedTimestamp; onPress: () => void; onLongPress: (() => void) | undefined }) {
+/** A `Recent` row (≥ 52 pt): name, then `Yesterday · 16 sets`, and a chevron. Opens that past workout. */
+function RecentRow({ row, onPress }: { row: RecentWorkoutRow; onPress: () => void }) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={pickerRowLabel(row, now, false)}
-      {...(onLongPress ? { accessibilityHint: 'Touch and hold to rename or delete.' } : {})}
+      accessibilityLabel={row.accessibilityLabel}
       onPress={onPress}
-      {...(onLongPress ? { onLongPress } : {})}
       style={({ pressed }) => ({
         minHeight: theme.target.workout.height,
         flexDirection: 'row',
@@ -1074,10 +977,10 @@ function SessionListRow({ row, now, onPress, onLongPress }: { row: SessionPicker
       })}
     >
       <AppText variant="body" numberOfLines={2} style={{ flex: 1 }}>
-        {row.label}
+        {row.title}
       </AppText>
       <AppText variant="callout" color="text.secondary" numeric>
-        {lastDoneText(row, now)}
+        {`${row.when} · ${row.detail}`}
       </AppText>
       <Icon name="chevron.right" color="text.tertiary" size={14} />
     </Pressable>
