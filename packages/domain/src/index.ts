@@ -2,6 +2,7 @@ export * from './result';
 export * from './time';
 export * from './units';
 export * from './equipment';
+export * from './added-weight';
 export * from './rest';
 export * from './progression';
 export * from './history';

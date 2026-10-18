@@ -686,6 +686,16 @@ export function WorkoutScreen() {
     setValues({ ...f.draft, load: v === null ? null : { value: v, unit, convention } });
   }
 
+  /** `+ Weight` on a bodyweight exercise, or back to bodyweight, for the rest of today (versioned). */
+  function toggleWeight(f: FocusView) {
+    if (!f.addWeight) return;
+    const current = latestData.current;
+    const expectedVersion = current !== null && current !== 'loading' && current.aggregate.session.id === session.id ? current.aggregate.session.version : session.version;
+    void run({ type: 'set_load_mode', at: services.now(), opId: newUuid(), expectedVersion, sessionExerciseId: f.sessionExerciseId, mode: f.addWeight.on ? 'bodyweight' : 'added' }).then((r) => {
+      if (!r.ok) showToast({ icon: 'info.circle', text: r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message });
+    });
+  }
+
   async function log() {
     if (!focus || guard || busy || logBlockedBySwitch(switchCard) || focus.logLabel === null) return;
     // F5: Log closes the number pad; the rest screen shouldn't open under it.
@@ -1713,6 +1723,17 @@ export function WorkoutScreen() {
           </>
           )}
         </StepperTileRow>
+        {focus.addWeight ? (
+          <View style={{ alignItems: 'flex-start' }}>
+            <TextButton
+              label={focus.addWeight.on ? 'Bodyweight' : '+ Weight'}
+              tone="secondary"
+              onPress={() => {
+                toggleWeight(focus);
+              }}
+            />
+          </View>
+        ) : null}
         {/* A timed set before Start: the time in the field can be logged without the timer (review gaps S2). */}
         {view.primary.kind === 'start_work' && view.primary.logLabel !== null ? (
           <View style={{ alignItems: 'flex-start' }}>

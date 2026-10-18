@@ -513,6 +513,8 @@ export interface ActiveWorkoutData {
    * since the load is missing and shows no built-in value until the next load.
    */
   exerciseInfo?: Readonly<Record<string, RuleExerciseInfo | null>>;
+  /** Exercise IDs the catalogue lists as bodyweight: `+ Weight` and added-weight steps. */
+  bodyweightExercises?: ReadonlySet<string>;
 }
 
 /**
@@ -2420,9 +2422,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const title = storedName(aggregate) === null && aggregate.exercises.length > 0 ? (await titleFor(liveExercises(aggregate.exercises).map((e) => e.exerciseId))).title : null;
       const pace = await recentPace(p.id, aggregate.session.id, toMs(ctx.now().utc));
       const exerciseInfo: Record<string, RuleExerciseInfo | null> = {};
-      for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) exerciseInfo[id] = await exerciseById(id).catch(() => null);
+      const bodyweightExercises = new Set<string>();
+      for (const id of new Set(aggregate.exercises.map((e) => e.exerciseId))) {
+        const e = await exerciseById(id).catch(() => null);
+        exerciseInfo[id] = e;
+        if (e?.defaultLoadConvention === 'bodyweight') bodyweightExercises.add(id);
+      }
       return {
         exerciseInfo,
+        bodyweightExercises,
         aggregate,
         gymName: gym?.name ?? null,
         gymNames: await gymNamesOf(p.id),
@@ -2441,7 +2449,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       // `Time left` has one source on this screen: `timeLeft` below, on its own minute clock (review N4).
       const info = data.exerciseInfo ?? {};
       const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
-      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe });
+      return buildActiveSetView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe, ...(data.bodyweightExercises ? { bodyweightExercises: data.bodyweightExercises } : {}) });
     },
 
     /**
@@ -2451,7 +2459,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     tableView(data: ActiveWorkoutData, nowMs: number, edits: DraftEdits | null): WorkoutTableView {
       const info = data.exerciseInfo ?? {};
       const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
-      return buildWorkoutTableView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe });
+      return buildWorkoutTableView({ aggregate: data.aggregate, nowMs, gymName: data.gymName, gymNames: data.gymNames, previous: data.previous, painFlagged: data.painFlagged, painFlags: data.painFlags, edits, title: data.title, withTimeLeft: false, ruleTargetRpe, ...(data.bodyweightExercises ? { bodyweightExercises: data.bodyweightExercises } : {}) });
     },
 
     /** `exerciseCardFacts` for any card's `⋯` and name sheet, with the built-in target RPE as the default (§2A.7). */
@@ -2465,16 +2473,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     editView(data: ActiveWorkoutData, setId: string, values: SetValues | null, exclusions: readonly SetExclusion[] | null, targetRpe: number | null | undefined, setType: SetType | null = null): SetEditView | null {
       const info = data.exerciseInfo ?? {};
       const ruleTargetRpe = ruleTargetRpes(data.aggregate, (id) => (id in info ? (info[id] ?? null) : undefined));
-      return buildSetEditView(data.aggregate, setId, values, exclusions, { targetRpe, ruleTargetRpe, setType });
+      return buildSetEditView(data.aggregate, setId, values, exclusions, { targetRpe, ruleTargetRpe, setType, bodyweightExercises: data.bodyweightExercises });
     },
 
     /** Edit set for a set not done yet (14 Oct): its target, type, target RPE and rest, with the built-in target RPE as the default. */
     plannedEditView(data: ActiveWorkoutData, setId: string, edits: PlannedSetEdits): PlannedSetEditView | null {
-      return buildPlannedSetEditView(data.aggregate, setId, edits, { ruleTargetRpe: ruleRpes(data) });
+      return buildPlannedSetEditView(data.aggregate, setId, edits, { ruleTargetRpe: ruleRpes(data), bodyweightExercises: data.bodyweightExercises });
     },
 
     /** A typed load for a set not done yet, made achievable on its equipment (rule 4). */
-    snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null | undefined => snapPlannedLoad(data.aggregate, setId, typed),
+    snapPlannedLoad: (data: ActiveWorkoutData, setId: string, typed: number | null): number | null | undefined => snapPlannedLoad(data.aggregate, setId, typed, data.bodyweightExercises),
 
     /** The rest screen's `Last set` and `Next` (F8). */
     restSets: (data: ActiveWorkoutData): { last: SetGlance | null; next: SetGlance | null } => restSetsView(data.aggregate, ruleRpes(data)),

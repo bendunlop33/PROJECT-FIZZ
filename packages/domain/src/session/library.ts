@@ -8,6 +8,8 @@ import { toMs } from '../time';
 import { isDeleted, isDistanceSet, isInRotation, rotationRoutines, ROUTINE_NAME_MAX, routineCounts, routineWrite, withDefaultMain, type RoutineChange } from './routines';
 import { formatLastDone, routineTypeKey, type SessionType } from './session-types';
 import { blockSets, partRootOf } from './gym-switch';
+import { equipmentOfRow } from './equipment-snapshot';
+import { isWeightedBodyweight, rowMarkedBodyweight } from '../added-weight';
 
 /**
  * The Workouts library (routines.md Part A). Pure: creating, editing,
@@ -466,6 +468,8 @@ export function routineFromPlan(input: RoutineFromPlanInput): Routine | null {
       exerciseId: sx.exerciseId,
       equipmentId: row === undefined ? sx.equipmentId : row.equipmentId,
       ...(row?.main !== undefined ? { main: row.main } : {}),
+      // A bodyweight exercise done with weight held or worn keeps it (Ben, 18 Oct); applies only where the exercise is bodyweight.
+      ...(isWeightedBodyweight(sx, equipmentOfRow(src.session.equipmentSnapshot, sx), rowMarkedBodyweight(src.sets, sx.id)) ? { addedWeight: true } : {}),
       order: exercises.length,
       supersetGroup: sx.supersetGroup,
       setTemplates: templates.slice(0, ROUTINE_MAX_SETS),

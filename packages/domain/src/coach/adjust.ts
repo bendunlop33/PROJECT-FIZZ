@@ -18,7 +18,8 @@ import { formatNumber, loadText } from '../display';
 import { compareDifficulty, loadDirection, roundToAvailableLoad, type RoundingPolicy } from '../equipment';
 import { boundWords, convertedWords } from '../session/fit-words';
 import { buildExecutionOrder } from '../session/order';
-import { equipmentOfRow } from '../session/equipment-snapshot';
+import { currentGymEquipment, equipmentOfRow } from '../session/equipment-snapshot';
+import { isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
 import { deriveId } from '../stable';
 import { convertMass } from '../units';
 import type { PainMention } from './pain-words';
@@ -167,8 +168,13 @@ type LoadOutcome =
   | { ok: true; load: Load; note: { kind: GuardNoteKind; text: string } | null; extra: { kind: GuardNoteKind; text: string } | null }
   | { ok: false; note: { kind: GuardNoteKind; text: string } };
 
-export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | null, policy: RoundingPolicy): LoadOutcome {
+/**
+ * `weighted`: a bodyweight exercise with weight held or worn; `eq` is then the
+ * gym's dumbbells and plates (`loadCheckEquipment`), not one item.
+ */
+export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInstance | null, policy: RoundingPolicy, weighted = false): LoadOutcome {
   const asked = loadText(requested, requested.convention);
+  const where = (e: EquipmentInstance): string => (weighted ? 'with the weights here' : `on this ${equipmentNoun(e)}`);
   if (ex.loadConvention === 'bodyweight') {
     if (requested.convention === 'bodyweight') return { ok: true, load: requested, note: null, extra: null };
     return { ok: false, note: { kind: 'convention_mismatch', text: `Couldn't use the coach's load: ${ex.exerciseName} is bodyweight. Load unchanged.` } };
@@ -184,7 +190,7 @@ export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInst
   }
   const r = roundToAvailableLoad(requested, eq, policy);
   if (!r.ok) {
-    return { ok: false, note: { kind: 'no_achievable_load', text: `Couldn't use the coach's load: ${asked} isn't possible on this ${equipmentNoun(eq)}. Load unchanged.` } };
+    return { ok: false, note: { kind: 'no_achievable_load', text: `Couldn't use the coach's load: ${asked} isn't possible ${where(eq)}. Load unchanged.` } };
   }
   const direction = loadDirection(eq.loadConvention);
   const requestedInUnit = r.convertedRequest?.value ?? requested.value;
@@ -192,7 +198,7 @@ export function snapLoad(requested: Load, ex: SessionExercise, eq: EquipmentInst
   const easierThanAsked = compareDifficulty(r.load.value, requestedInUnit, direction) < 0;
   // "Too hard" never rounds to something harder than the coach asked for (§2.6).
   if (policy === 'easier' && harderThanAsked) {
-    return { ok: false, note: { kind: 'no_achievable_load', text: `Couldn't use the coach's load: ${asked} isn't possible on this ${equipmentNoun(eq)}. Load unchanged.` } };
+    return { ok: false, note: { kind: 'no_achievable_load', text: `Couldn't use the coach's load: ${asked} isn't possible ${where(eq)}. Load unchanged.` } };
   }
   const got = loadText(r.load, r.load.convention, eq);
   const extra =
@@ -307,7 +313,10 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
     seenExercises.add(ex.id);
     const sets = liveSetsInOrder(state, ex.id);
     const numberOf = (setId: string): number => sets.findIndex((s) => s.id === setId) + 1;
-    const eq = equipmentOf(state, ex);
+    const own = equipmentOf(state, ex);
+    // Weight held or worn on a bodyweight exercise: the gym's dumbbells and plates (rule 4).
+    const weighted = isWeightedBodyweight(ex, own, rowMarkedBodyweight(state.sets, ex.id));
+    const eq = weighted ? loadCheckEquipment(ex, own, currentGymEquipment(state.session), state.session.gymId, true) : own;
     const flag = activeFlag(input.painFlags, ex.exerciseId);
     const area = flag?.area ? AREA_WORD[flag.area] : '';
     const painPart = flag === null ? null : area ? `Not increasing ${ex.exerciseName}: you flagged ${area} pain.` : `Not increasing ${ex.exerciseName}: you flagged pain on it.`;
@@ -340,7 +349,7 @@ export function validateTodayAdjustment(input: TodayAdjustmentInput): TodayAdjus
       // Snap notes only count when the change is kept.
       const pending: { kind: GuardNoteKind; text: string }[] = [];
       if (ask.load !== null) {
-        const snapped = snapLoad(ask.load, ex, eq, policy);
+        const snapped = snapLoad(ask.load, ex, eq, policy, weighted);
         if (!snapped.ok) {
           notes.add(snapped.note.kind, snapped.note.text, setIds);
           blockedOutcomes.push(snapped.note.text.replace('Load unchanged.', 'Sets unchanged.'));

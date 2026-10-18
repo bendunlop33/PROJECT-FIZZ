@@ -20,7 +20,8 @@ import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touc
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
-import { equipmentOfRow } from './equipment-snapshot';
+import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
+import { addedWeightItems, addWeightToggle, canAddWeight, isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
 import { blockSets, isEmptyPart, partRootOf } from './gym-switch';
 import { buildExecutionOrder, nextPendingSet } from './order';
 import { DEFAULT_WORKING_SETS, GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
@@ -115,6 +116,8 @@ export function saveDraftCommand(edits: DraftEdits, at: ZonedTimestamp): Command
 
 export interface ActiveViewInput {
   aggregate: SessionAggregate;
+  /** Exercise IDs the catalogue lists as bodyweight (`+ Weight`, added-weight steps). Omitted: none known. */
+  bodyweightExercises?: ReadonlySet<string>;
   nowMs: number;
   gymName: string | null;
   /** Keyed by session exercise ID. */
@@ -251,6 +254,8 @@ export interface FocusView {
   draft: SetValues;
   draftSource: DraftSource | 'edited' | 'copied';
   loadField: LoadField | null;
+  /** `+ Weight` on a bodyweight exercise (`on`: logged with added weight today); null: not offered. */
+  addWeight: { on: boolean } | null;
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   /** Timed sets: the work time in seconds, stepping 5 s. */
   duration: { value: number | null; down: StepTarget; up: StepTarget } | null;
@@ -383,6 +388,21 @@ function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentIns
   return equipmentOfRow(state.session.equipmentSnapshot, ex);
 }
 
+/** A bodyweight exercise: the catalogue says so, or the session's own record does (`planned.bodyweightExercise`). */
+function isBodyweightExercise(state: SessionAggregate, ex: SessionExercise, bodyweight: ReadonlySet<string> | undefined): boolean {
+  return (bodyweight?.has(ex.exerciseId) ?? false) || rowMarkedBodyweight(state.sets, ex.id);
+}
+
+/** What the row's loads step through: the gym's added-weight options for a weighted bodyweight row, else its item. */
+function checkEquipmentOf(state: SessionAggregate, ex: SessionExercise, eq: EquipmentInstance | null, bodyweight: ReadonlySet<string> | undefined): EquipmentInstance | null {
+  return loadCheckEquipment(ex, eq, currentGymEquipment(state.session), state.session.gymId, isBodyweightExercise(state, ex, bodyweight));
+}
+
+function addWeightOf(state: SessionAggregate, ex: SessionExercise, eq: EquipmentInstance | null, bodyweight: ReadonlySet<string> | undefined): { on: boolean } | null {
+  if (state.session.status !== 'active') return null;
+  return addWeightToggle(ex, eq, currentGymEquipment(state.session), isBodyweightExercise(state, ex, bodyweight));
+}
+
 /** The gym a part's sets are planned or done at: its item's gym, else where its targets were fitted. */
 function partGymId(state: SessionAggregate, row: SessionExercise): string | null {
   const eq = equipmentOf(state, row);
@@ -417,9 +437,12 @@ function stepWord(eq: EquipmentInstance | null): string {
 }
 
 /** Steppers move through achievable loads only (P5, rule 4). Without equipment: 2.5 kg / 5 lb, unchecked. */
-function loadSteps(value: number | null, ex: SessionExercise, eq: EquipmentInstance | null): { down: StepTarget; up: StepTarget } {
+function loadSteps(value: number | null, ex: SessionExercise, own: EquipmentInstance | null, check: EquipmentInstance | null = own): { down: StepTarget; up: StepTarget } {
   const unit = ex.unit;
-  const fmt = (v: number) => loadText({ value: v, unit, convention: ex.loadConvention }, ex.loadConvention, eq);
+  const fmt = (v: number) => loadText({ value: v, unit, convention: ex.loadConvention }, ex.loadConvention, own);
+  const eq = check;
+  // Weight added to a bodyweight exercise: nothing entered is nothing added.
+  if (value === null && check !== own) value = 0;
   if (eq !== null && eq.kind !== 'bodyweight_station') {
     const loads = getAchievableLoads(eq).loads;
     if (loads.length === 0) {
@@ -435,7 +458,7 @@ function loadSteps(value: number | null, ex: SessionExercise, eq: EquipmentInsta
     const top = loads[loads.length - 1] ?? value;
     const bottom = loads[0] ?? value;
     return {
-      up: up.ok ? { enabled: true, value: up.value, label: fmt(up.value) } : { enabled: false, reason: `${stepWord(eq)} ${fmt(top)}` },
+      up: up.ok ? { enabled: true, value: up.value, label: fmt(up.value) } : { enabled: false, reason: `${stepWord(eq === own ? eq : null)} ${fmt(top)}` },
       down: down.ok ? { enabled: true, value: down.value, label: fmt(down.value) } : { enabled: false, reason: `Minimum ${fmt(bottom)}` },
     };
   }
@@ -547,6 +570,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   values = { ...values, rpe: null, rir: null };
   // A bodyweight exercise has no load; `added` with nothing entered means none added.
   if (ex.loadConvention === 'bodyweight') values = { ...values, load: { value: 0, unit: ex.unit, convention: 'bodyweight' } };
+  // Weighted today after a bodyweight Last: nothing added until Ben steps it.
+  if (ex.loadConvention === 'added' && values.load?.convention === 'bodyweight') values = { ...values, load: { value: 0, unit: ex.unit, convention: 'added' } };
   const draftSource: FocusView['draftSource'] = edits ? (edits.copied ? 'copied' : 'edited') : pre.source;
 
   const unilateral = ex.laterality === 'unilateral';
@@ -559,11 +584,19 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
   const loadField: LoadField | null =
     loadLabel === null
       ? null
-      : { label: loadLabel, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) };
+      : { label: loadLabel, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq, checkEquipmentOf(state, ex, eq, input.bodyweightExercises)) };
 
   let offProfileWarning: string | null = null;
   let offProfileEquipment: FocusView['offProfileEquipment'] = null;
-  if (eq !== null && values.load !== null && values.load.convention !== 'bodyweight' && !isLoadAchievable(values.load, eq)) {
+  const weighted = isWeightedBodyweight(ex, eq, isBodyweightExercise(state, ex, input.bodyweightExercises));
+  if (weighted && values.load !== null && values.load.convention === 'added' && values.load.value > 0) {
+    // Weight held or worn: the gym's dumbbells and plates (rule 4).
+    const options = checkEquipmentOf(state, ex, eq, input.bodyweightExercises);
+    if (options !== null && !isLoadAchievable(values.load, options)) {
+      const top = getAchievableLoads(options).loads.at(-1);
+      offProfileWarning = `Not at ${input.gymName ?? 'this gym'}${top === undefined ? '' : ` (max ${formatNumber(top)} ${ex.unit})`}`;
+    }
+  } else if (eq !== null && values.load !== null && values.load.convention !== 'bodyweight' && !isLoadAchievable(values.load, eq)) {
     const max = maxText(eq, values.load);
     offProfileWarning = `Not on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}`;
     offProfileEquipment = { gymId: eq.gymId, equipmentId: eq.id, kind: eq.kind };
@@ -623,6 +656,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     draft: values,
     draftSource,
     loadField,
+    addWeight: addWeightOf(state, ex, eq, input.bodyweightExercises),
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS, ...durationSteps(values.durationS) } : null,
     distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
@@ -929,6 +963,10 @@ export interface SetEditView {
   completedAtUtc: string | null;
   values: SetValues;
   loadField: LoadField | null;
+  /** The load convention the field edits: the set's own on a bodyweight exercise (bodyweight or added), else the row's. */
+  convention: SessionExercise['loadConvention'];
+  /** `+ Weight` / `Bodyweight` on a bodyweight exercise's set; null: not offered. */
+  addWeight: { on: boolean } | null;
   reps: { value: number | null; down: StepTarget; up: StepTarget } | null;
   /** Timed sets: seconds, ±5 s. */
   duration: { value: number | null; down: StepTarget; up: StepTarget } | null;
@@ -967,6 +1005,8 @@ export interface SetEditOptions {
   targetRpe?: number | null | undefined;
   /** The built-in rule's target RPE per session exercise (`ruleTargetRpes`), the default shown. */
   ruleTargetRpe?: Readonly<Record<string, number>> | undefined;
+  /** Exercise IDs the catalogue lists as bodyweight (`ActiveViewInput.bodyweightExercises`). */
+  bodyweightExercises?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -982,9 +1022,14 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
   const eq = equipmentOf(state, ex);
   const values = edits ?? set.actual;
   const setType = options.setType ?? set.setType;
+  const bw = isBodyweightExercise(state, ex, options.bodyweightExercises);
+  const switchable = canAddWeight(ex, eq, bw);
+  const own = values.load?.convention;
+  const conv: SessionExercise['loadConvention'] = switchable && (own === 'bodyweight' || own === 'added') ? own : ex.loadConvention;
+  const rowAs: SessionExercise = { ...ex, loadConvention: conv };
   const stored = normaliseExclusions(set.exclusions);
   const exclusions = exclusionEdits === null ? stored : normaliseExclusions(exclusionEdits);
-  const label = loadFieldLabel(ex.loadConvention, eq);
+  const label = loadFieldLabel(conv, eq);
   const loadValue = values.load === null || values.load.convention === 'bodyweight' ? null : values.load.value;
   const storedOverride = set.planned.rpeOverride ?? null;
   const override = options.targetRpe === undefined ? storedOverride : options.targetRpe;
@@ -1005,11 +1050,13 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
     loadField:
       label === null
         ? null
-        : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) },
+        : { label, unitText: loadFieldUnit(ex.unit, conv), value: loadValue, assisted: loadDirection(conv) === 'assistance', ...loadSteps(loadValue, rowAs, eq, loadCheckEquipment(rowAs, eq, currentGymEquipment(state.session), state.session.gymId, bw)) },
+    convention: conv,
+    addWeight: switchable && (conv === 'added' || addedWeightItems(currentGymEquipment(state.session), ex.unit).length > 0) ? { on: conv === 'added' } : null,
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
     duration: ex.measurement === 'duration' ? { value: values.durationS, ...durationSteps(values.durationS) } : null,
     distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
-    text: valuesText(values, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
+    text: valuesText(values, { convention: conv, measurement: ex.measurement, equipment: eq }),
     exclusions,
     painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,
     setType: { value: setType, changed: setType !== set.setType, choices: SET_TYPE_ORDER.map((t) => ({ type: t, label: SET_TYPE_WORD[t], selected: t === setType })) },
@@ -1049,6 +1096,8 @@ export interface PlannedSetEditView {
   /** The set Log logs now; any other pending set offers `Do next`. */
   isCurrent: boolean;
   loadField: LoadField | null;
+  /** `+ Weight` / `Bodyweight` for the exercise today (`set_load_mode`); null: not offered. */
+  addWeight: { on: boolean } | null;
   /** Reps target: one stepper (exact), or `min`–`max` (range). */
   reps: { range: boolean; min: { value: number | null; down: StepTarget; up: StepTarget }; max: { value: number | null; down: StepTarget; up: StepTarget } | null } | null;
   duration: { value: number | null; down: StepTarget; up: StepTarget } | null;
@@ -1100,12 +1149,20 @@ export function toggleRepRange(reps: { min: number; max: number } | null): { min
  * load for this row (unit or convention mismatch, nothing achievable): no
  * change, so a failed fit never clears the stored target (review S2).
  */
-export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: number | null): number | null | undefined {
+export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: number | null, bodyweightExercises?: ReadonlySet<string>): number | null | undefined {
   if (typed === null) return null;
   const set = state.sets.find((s) => s.id === setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!ex) return undefined;
-  const eq = equipmentOf(state, ex);
+  const own = equipmentOf(state, ex);
+  // Weight added to a bodyweight exercise: the gym's dumbbells and plates (none: only 0).
+  if (isWeightedBodyweight(ex, own, isBodyweightExercise(state, ex, bodyweightExercises))) {
+    const options = checkEquipmentOf(state, ex, own, bodyweightExercises);
+    if (options === null) return 0;
+    const r = roundToAvailableLoad({ value: Math.max(0, typed), unit: ex.unit, convention: 'added' }, options, 'nearest');
+    return r.ok ? r.load.value : undefined;
+  }
+  const eq = own;
   if (eq === null) return Math.max(0, typed);
   if (eq.loadConvention !== ex.loadConvention || eq.unit !== ex.unit) return undefined;
   // A bodyweight station makes one load: none added (the reducer's `isLoadAchievable`).
@@ -1120,7 +1177,7 @@ export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: n
  * RPE and rest after it, as `edit_planned_set` saves them. Null when the
  * set isn't pending (a logged set opens `buildSetEditView`).
  */
-export function buildPlannedSetEditView(state: SessionAggregate, setId: string, edits: PlannedSetEdits = {}, options: Pick<SetEditOptions, 'ruleTargetRpe'> = {}): PlannedSetEditView | null {
+export function buildPlannedSetEditView(state: SessionAggregate, setId: string, edits: PlannedSetEdits = {}, options: Pick<SetEditOptions, 'ruleTargetRpe' | 'bodyweightExercises'> = {}): PlannedSetEditView | null {
   const set = state.sets.find((s) => s.id === setId);
   if (set?.status !== 'pending') return null;
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
@@ -1165,7 +1222,8 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
     exerciseName: ex.exerciseName,
     setNumber: own.findIndex((s) => s.id === set.id) + 1,
     isCurrent: state.session.activeSetId === set.id,
-    loadField: label === null ? null : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq) },
+    addWeight: addWeightOf(state, ex, eq, options.bodyweightExercises),
+    loadField: label === null ? null : { label, unitText: loadFieldUnit(ex.unit, ex.loadConvention), value: loadValue, assisted: loadDirection(ex.loadConvention) === 'assistance', ...loadSteps(loadValue, ex, eq, checkEquipmentOf(state, ex, eq, options.bodyweightExercises)) },
     reps:
       ex.measurement !== 'reps'
         ? null

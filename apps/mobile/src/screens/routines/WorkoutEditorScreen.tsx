@@ -8,6 +8,9 @@ import {
   addSet,
   deleteSet,
   editorItemFor,
+  editorLoadItem,
+  setAddedWeight,
+  slotLoadConvention,
   editorMainFlags,
   editorSetRows,
   editableEdit,
@@ -341,7 +344,7 @@ export function WorkoutEditorScreen() {
           const x = info[slot.exerciseId];
           const rows = editorSetRows(slot, {
             exerciseName: nameOf(slot.exerciseId),
-            convention: x?.defaultLoadConvention ?? 'total',
+            convention: slotLoadConvention(slot, x?.defaultLoadConvention ?? 'total'),
             equipment: x && editor.gym ? editorItemFor(slot, x, editor.gym.equipment) : null,
             exerciseDefaultRestS: x?.defaultRestS ?? null,
             globalDefault: editor.globalDefault,
@@ -371,6 +374,15 @@ export function WorkoutEditorScreen() {
                 >
                   {`${String(i + 1)} ${nameOf(slot.exerciseId)}`}
                 </AppText>
+                {x?.defaultLoadConvention === 'bodyweight' ? (
+                  <Chip
+                    label={EDITOR_COPY.addWeight}
+                    selected={slot.addedWeight === true}
+                    onPress={() => {
+                      setList((l) => setAddedWeight(l, slot.id, slot.addedWeight !== true));
+                    }}
+                  />
+                ) : null}
                 <Chip
                   label={EDITOR_COPY.main}
                   selected={main}
@@ -685,9 +697,12 @@ function SetSheet({
   const theme = useTheme();
   const t = slot?.setTemplates.find((x) => x.id === setIds[0]) ?? null;
   const index = slot && t ? slot.setTemplates.indexOf(t) + 1 : 0;
-  const item: EquipmentInstance | null = slot && info && editor.gym ? editorItemFor(slot, info, editor.gym.equipment) : null;
-  const frame = fixedLoadFrame(item, editor.unit, info?.defaultLoadConvention ?? 'total');
-  const bodyweight = (info?.defaultLoadConvention ?? 'total') === 'bodyweight';
+  const convention = slot ? slotLoadConvention(slot, info?.defaultLoadConvention ?? 'total') : (info?.defaultLoadConvention ?? 'total');
+  const own: EquipmentInstance | null = slot && info && editor.gym ? editorItemFor(slot, info, editor.gym.equipment) : null;
+  const item: EquipmentInstance | null = slot && info && editor.gym ? editorLoadItem(slot, info, editor.gym, editor.unit) : null;
+  const weighted = convention === 'added' && info?.defaultLoadConvention === 'bodyweight';
+  const frame = weighted ? { unit: editor.unit, convention } : fixedLoadFrame(item, editor.unit, convention);
+  const bodyweight = convention === 'bodyweight';
   const timed = info?.measurement === 'duration';
   const set = (patch: Partial<SetTemplate>) => {
     if (slot) onChange(slot.id, setIds, patch);
@@ -725,7 +740,7 @@ function SetSheet({
                   selected={t.targetLoad !== null}
                   onPress={() => {
                     if (t.targetLoad === null) {
-                      const steps = fixedLoadSteps(null, frame, item);
+                      const steps = fixedLoadSteps(null, frame, item, weighted ? own : item);
                       set({ targetLoad: { value: steps.up.enabled ? steps.up.value : 0, unit: frame.unit, convention: frame.convention } });
                     }
                   }}
@@ -738,6 +753,7 @@ function SetSheet({
                   value={t.targetLoad.value}
                   frame={{ unit: t.targetLoad.unit, convention: t.targetLoad.convention }}
                   item={item}
+                  display={weighted ? own : item}
                   onChange={(v) => {
                     set({ targetLoad: v === null ? null : { value: v, unit: t.targetLoad?.unit ?? frame.unit, convention: t.targetLoad?.convention ?? frame.convention } });
                   }}
@@ -794,13 +810,14 @@ function SetSheet({
   );
 }
 
-function FixedLoad({ value, frame, item, onChange }: { value: number; frame: { unit: WeightUnit; convention: LoadConvention }; item: EquipmentInstance | null; onChange: (v: number | null) => void }) {
-  const steps = fixedLoadSteps(value, frame, item);
-  const note = fixedLoadNote({ value, unit: frame.unit, convention: frame.convention }, item);
+function FixedLoad({ value, frame, item, display, onChange }: { value: number; frame: { unit: WeightUnit; convention: LoadConvention }; item: EquipmentInstance | null; display: EquipmentInstance | null; onChange: (v: number | null) => void }) {
+  const steps = fixedLoadSteps(value, frame, item, display);
+  const note = fixedLoadNote({ value, unit: frame.unit, convention: frame.convention }, item, display);
   const assist = frame.convention === 'assistance';
+  const added = frame.convention === 'added' && display?.kind !== 'plate_loaded_machine';
   return (
     <View style={{ gap: 6 }}>
-      <NumberStepper label={assist ? 'Assist' : 'Load'} unit={`${frame.unit}${frame.convention === 'per_hand' ? ' each' : ''}`} value={value} decimals down={steps.down} up={steps.up} onChange={onChange} warning={note !== null} onSurface />
+      <NumberStepper label={assist ? 'Assist' : added ? 'Added' : 'Load'} unit={`${frame.unit}${frame.convention === 'per_hand' ? ' each' : ''}`} value={value} decimals down={steps.down} up={steps.up} onChange={onChange} warning={note !== null} onSurface />
       {note !== null ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Icon name="exclamationmark.triangle" color="status.warning" size={14} />

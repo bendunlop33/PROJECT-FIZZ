@@ -267,7 +267,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
       exercise: { id: exercise.id, name: exercise.name, compatibleEquipment: exercise.compatibleEquipment, defaultLoadConvention: exercise.defaultLoadConvention },
       sourceEquipment: source,
       unit: input.owner.preferredUnit,
-      convention: exercise.defaultLoadConvention,
+      convention: rex.addedWeight === true && exercise.defaultLoadConvention === 'bodyweight' ? 'added' : exercise.defaultLoadConvention,
       sets: rex.setTemplates.map((tpl) => ({ id: tpl.id, setType: tpl.setType, intended: unchecked ? null : tpl.targetLoad, current: null, reps: tpl.targetReps, durationS: tpl.targetDurationS })),
     };
   });
@@ -342,6 +342,8 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
           rir: tpl.targetRir,
           ...(fitted !== null ? { snap: fitted } : {}),
           ...(provenance !== null ? { provenance } : {}),
+          // Weight held or worn on a bodyweight exercise: the reducer checks it against the gym's dumbbells and plates.
+          ...(fit.convention === 'added' && exercise.defaultLoadConvention === 'bodyweight' ? { bodyweightExercise: true as const } : {}),
         },
         rest: resolveRestPreset({
           setType: tpl.setType,
