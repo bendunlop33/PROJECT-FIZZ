@@ -86,6 +86,15 @@ describe('buildWorkoutTableView: a fresh planned workout (WT1)', () => {
     expectAgreement(state);
   });
 
+  it('the open row reads as a table row: its cells follow the draft, a short target under it (18 Oct)', () => {
+    const { state } = startFixture();
+    const f = buildActiveSetView(input(state)).focus;
+    expect(f?.cells).toEqual({ load: '60', value: '10' });
+    expect(f?.targetBrief).toBe('10');
+    const edited = buildActiveSetView(input(state, { edits: { setId: f?.setId ?? '', values: values(kg(62.5), 9) } })).focus;
+    expect(edited?.cells).toEqual({ load: '62.5', value: '9' });
+  });
+
   it('pending rows read as targets and the open row as current (WT15)', () => {
     const { state } = startFixture();
     const bench = card(table(state).blocks[0]);
@@ -93,6 +102,16 @@ describe('buildWorkoutTableView: a fresh planned workout (WT1)', () => {
     expect(bench.rows[1]?.accessibilityLabel).toMatch(/^Set 2, target 100 kilograms, 6 to 8 reps/);
     expect(bench.rows[1]?.blockTitle).toBe('Set 2');
     expect(plain(bench.rows[1]?.blockValue)).toMatch(/^Target 100 kg · 6–8 reps/);
+  });
+});
+
+describe('target RPE is a cell (18 Oct)', () => {
+  it('pending and open rows carry `@ 8.5`; no target, no cell', () => {
+    const { state } = startFixture();
+    const [, b1, b2] = setsFor(state, BENCH);
+    const s = { ...state, sets: state.sets.map((x) => (x.id === b1?.id || x.id === b2?.id ? { ...x, planned: { ...x.planned, rpe: 8.5 } } : x)) };
+    const bench = card(table(s).blocks[0]);
+    expect(bench.rows.map((r) => (r.effort === null ? null : plain(r.effort)))).toEqual([null, '@ 8.5', '@ 8.5']);
   });
 });
 
@@ -306,9 +325,9 @@ describe('Last and all done', () => {
     const previous = { [benchEx]: prev };
     const c = card(table(state, { previous }).blocks[0]);
     expect(plain(c.subtitle)).toBe('Barbell · Last 1 Oct: 100 × 8, 8, 7');
-    // B7: FitNotes history is labelled as such.
+    // 18 Oct (Ben): imported history reads like any other, no `FitNotes` tag.
     const fromFitNotes = { [benchEx]: { ...prev, gymId: null, imported: true } };
-    expect(plain(card(table(state, { previous: fromFitNotes }).blocks[0]).subtitle)).toBe('Barbell · Last (FitNotes, 1 Oct): 100 × 8, 8, 7');
+    expect(plain(card(table(state, { previous: fromFitNotes }).blocks[0]).subtitle)).toBe('Barbell · Last 1 Oct: 100 × 8, 8, 7');
   });
 
   it('after the last pending set: all done, no anchor, every block folded, Finish is the primary', () => {

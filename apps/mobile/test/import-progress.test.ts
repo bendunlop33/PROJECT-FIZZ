@@ -273,8 +273,10 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
         if (date === '2026-10-07') expect(why).toMatch(/Rounded to 45\skg\sstack/);
         else {
           expect(why).not.toMatch(/Rounded/);
-          expect(why).toContain('1 heavier top set was kept as context; reps were judged on the 3 sets at 60 kg');
-          expect(why).toContain('all 3 judged sets reached 6+ reps at 60 kg');
+          // 18 Oct: Why? is one short line per row; the rule's facts stay in the stored provenance.
+          const stored = JSON.stringify(set.planned.provenance);
+          expect(stored).toContain('1 heavier top set was kept as context; reps were judged on the 3 sets at 60 kg');
+          expect(stored).toContain('all 3 judged sets reached 6+ reps at 60 kg');
         }
       }
       const fin = await s.workout.dispatch(sid, { type: 'discard', at: h.now(), opId: h.ids(), expectedVersion: started.aggregate.session.version, confirmedLoggedSets: 0 });
@@ -358,7 +360,8 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
       expect(plan.length).toBe(3);
       for (const [load] of plan) expect(load).toBe(62.5);
       const set = started.aggregate.sets.find((x) => x.planned.load !== null);
-      const why = JSON.stringify(await s.workout.explainTarget(started.aggregate.session.id, set?.id ?? ''));
+      // 18 Oct: Why? is brief; the rule's facts stay in the stored provenance.
+      const why = JSON.stringify(set?.planned.provenance);
       expect(why).toContain('1 lighter set than 60 kg (a finisher or drop set) was not judged');
       expect(why).toContain('all 3 judged sets reached 6+ reps at 60 kg');
     });
@@ -377,7 +380,7 @@ describe('imported FitNotes history feeds Progress, history, targets and the coa
       expect(plan.length).toBe(3);
       for (const [load] of plan) expect(typeof load === 'number' && load < 60 && load > 40).toBe(true);
       const set = started.aggregate.sets.find((x) => x.planned.load !== null);
-      const why = JSON.stringify(await s.workout.explainTarget(started.aggregate.session.id, set?.id ?? ''));
+      const why = JSON.stringify(set?.planned.provenance);
       expect(why).toContain('2 sessions in a row fell below 3 reps at 60 kg');
     });
   });

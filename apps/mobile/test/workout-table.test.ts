@@ -7,7 +7,7 @@ import { NBSP, tableLogLabel, type TableRow } from '@fizz/domain';
 import type { SessionCommand } from '@fizz/schemas';
 
 import type { AppServices } from '../src/services/app-services';
-import { anchorReducer, anchorScrollY, anchorTargetY, bottomSpacerHeight, chipsFor, keypadMovesTiles, keypadScrollY, keypadTileY, rowTap, TILE_CLEARANCE, selectCommand, selectRowFlow, showsFolded, tileReportFor, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type SelectOutcome, type TileId, type TileReport } from '../src/workout/table';
+import { anchorReducer, anchorScrollY, anchorTargetY, bottomSpacerHeight, cellEditReducer, chipsFor, correctionPatch, doneRowEditing, keypadScrollY, loadCellA11y, valueCellA11y, openRowEditing, runRowTap, keypadTileY, rowTap, TILE_CLEARANCE, selectCommand, selectRowFlow, showsFolded, tileReportFor, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type SelectOutcome, type TileId, type TileReport } from '../src/workout/table';
 import { createHarness, setUpGym, type Harness } from './harness';
 
 /**
@@ -153,12 +153,6 @@ describe('keypad anchor: tile positions from before the keypad hid the plate lin
     expect(keypadTileY({ geometry, keyboardHeight: phone.keypad, tile: 'load', report: tileReportFor(openReport, { setId: 's2', keypadOpen: true }) })).toBeNull();
   });
 
-  it('only a plate line or Last (hidden by the keypad, and not at AX sizes) moves the tiles', () => {
-    expect(keypadMovesTiles({ plateLine: true, last: false, ax: false })).toBe(true);
-    expect(keypadMovesTiles({ plateLine: false, last: true, ax: false })).toBe(true);
-    expect(keypadMovesTiles({ plateLine: false, last: false, ax: false })).toBe(false);
-    expect(keypadMovesTiles({ plateLine: true, last: true, ax: true })).toBe(false);
-  });
 });
 
 describe('rest anchor: the after-set block gives way to the open row’s tiles (review r2 S2)', () => {
@@ -270,6 +264,64 @@ describe('row taps (WT10, WT11, WT12; Ben decision 4)', () => {
     expect(rowTap(row('open'), 'marker')).toEqual({ kind: 'none' });
     expect(rowTap(row('open'))).toEqual({ kind: 'none' });
     expect(rowTap(row('skipped'))).toEqual({ kind: 'none' });
+  });
+  it('a KG or REPS cell edits in place (18 Oct): pending selects then opens the cell, done corrects in its row; no full-screen editor', () => {
+    const cols = { loadLabel: 'KG', valueLabel: 'REPS' } as const;
+    expect(rowTap({ ...row('pending'), columns: cols }, 'load')).toEqual({ kind: 'select_edit', setId: 'set-pending', field: 'load' });
+    expect(rowTap({ ...row('pending'), columns: cols }, 'value')).toEqual({ kind: 'select_edit', setId: 'set-pending', field: 'reps' });
+    expect(rowTap({ ...row('done'), columns: cols }, 'load')).toEqual({ kind: 'correct', setId: 'set-done', field: 'load' });
+    expect(rowTap({ ...row('done'), columns: { loadLabel: null, valueLabel: 'TIME' } }, 'value')).toEqual({ kind: 'correct', setId: 'set-done', field: 'time' });
+    expect(rowTap({ ...row('done'), columns: { loadLabel: 'KG', valueLabel: 'DIST' } }, 'value')).toEqual({ kind: 'correct', setId: 'set-done', field: 'distance' });
+    // A row with no load column has no load cell: the set number still opens Edit set.
+    expect(rowTap({ ...row('pending'), columns: { loadLabel: null, valueLabel: 'REPS' } }, 'load')).toEqual({ kind: 'edit', setId: 'set-pending' });
+    expect(rowTap({ ...row('open'), columns: cols }, 'load')).toEqual({ kind: 'none' });
+    expect(rowTap({ ...row('skipped'), columns: cols }, 'value')).toEqual({ kind: 'none' });
+    const calls: string[] = [];
+    const h = { dismissKeyboard: () => calls.push('dismiss'), edit: () => calls.push('edit'), select: () => calls.push('select'), selectEdit: (id: string, f: string) => calls.push(`selectEdit:${id}:${f}`), correct: (id: string, f: string) => calls.push(`correct:${id}:${f}`) };
+    runRowTap({ ...row('pending'), columns: cols }, h, 'load');
+    runRowTap({ ...row('done'), columns: cols }, h, 'value');
+    expect(calls).toEqual(['dismiss', 'selectEdit:set-pending:load', 'dismiss', 'correct:set-done:reps']);
+  });
+});
+
+describe('in-place cell editing (18 Oct; review S3, S4, S6)', () => {
+  const open = { kind: 'tap', setId: 's2', field: 'load', row: 'open' } as const;
+  it('a cell tap opens it; the same tap, Done or a tap elsewhere closes it', () => {
+    const s = cellEditReducer(null, open);
+    expect(s).toEqual({ setId: 's2', field: 'load', row: 'open' });
+    expect(cellEditReducer(s, open)).toBeNull();
+    expect(cellEditReducer(s, { kind: 'close' })).toBeNull();
+    // Another cell moves the editor there.
+    expect(cellEditReducer(s, { ...open, field: 'reps' })).toEqual({ setId: 's2', field: 'reps', row: 'open' });
+  });
+  it('a Log closes it, so an Undo that makes the set current again never reopens it', () => {
+    const s = cellEditReducer(null, open);
+    const logged = cellEditReducer(s, { kind: 'logged' });
+    expect(logged).toBeNull();
+    // After Undo, s2 is active again: nothing is open.
+    expect(openRowEditing(logged, 's2')).toBeNull();
+    // Without the close, the stale edit would have shown up again on s2.
+    expect(openRowEditing(s, 's2')).toBe('load');
+    expect(openRowEditing(s, 's3')).toBeNull();
+    expect(cellEditReducer(s, { kind: 'selected' })).toBeNull();
+  });
+  it('Enter load opens the open row’s load cell and never toggles it shut', () => {
+    const s = cellEditReducer(null, { kind: 'enter', setId: 's2', field: 'load' });
+    expect(openRowEditing(s, 's2')).toBe('load');
+    expect(cellEditReducer(s, { kind: 'enter', setId: 's2', field: 'load' })).toEqual(s);
+  });
+  it('a done row’s edit is a correction, never the open row’s draft', () => {
+    const s = cellEditReducer(null, { kind: 'tap', setId: 's1', field: 'reps', row: 'done' });
+    expect(doneRowEditing(s)).toEqual({ setId: 's1', field: 'reps', row: 'done' });
+    expect(openRowEditing(s, 's1')).toBeNull();
+    expect(doneRowEditing(cellEditReducer(null, open))).toBeNull();
+  });
+  it('a correction sends only what changed, and nothing when unchanged (rule 2: one versioned write on close)', () => {
+    const kg = (value: number) => ({ value, unit: 'kg' as const, convention: 'total' as const });
+    const actual = { load: kg(100), reps: 8, durationS: null, distanceM: null };
+    expect(correctionPatch(actual, actual)).toBeNull();
+    expect(correctionPatch(actual, { ...actual, reps: 7 })).toEqual({ reps: 7 });
+    expect(correctionPatch(actual, { ...actual, load: kg(102.5) })).toEqual({ load: kg(102.5) });
   });
   it('a select is set_active_set, versioned; never log_set', () => {
     const at = { utc: '2026-10-08T17:00:00.000Z', tz: 'Europe/London' };
@@ -535,5 +587,24 @@ describe('the Table loop end to end, offline (WT1, WT6, WT10, WT13, WT42)', () =
     const after = [...h.pending.values()].map((a) => a.key);
     expect(after).toHaveLength(1);
     for (const k of alertsBefore) expect(after).not.toContain(k);
+  });
+});
+
+describe('cell labels (review S7)', () => {
+  it('never reads `BW kg` or `— kg`', () => {
+    expect(loadCellA11y('KG', '82.5')).toBe('Load 82.5 kg');
+    expect(loadCellA11y('LB', '185')).toBe('Load 185 lb');
+    expect(loadCellA11y('ASSIST KG', '20')).toBe('Assistance 20 kg');
+    expect(loadCellA11y('+KG', '10')).toBe('Added load 10 kg');
+    expect(loadCellA11y('+KG', 'BW')).toBe('Added load: bodyweight');
+    expect(loadCellA11y('KG', '—')).toBe('Load: none');
+    expect(loadCellA11y('KG', null)).toBe('Load: none');
+    expect(loadCellA11y(null, '25\u00a0lb each')).toBe('Load 25 lb each');
+  });
+  it('reads ranges as words', () => {
+    expect(valueCellA11y('REPS', '6–8')).toBe('Reps 6 to 8');
+    expect(valueCellA11y('REPS', '—')).toBe('Reps: none');
+    expect(valueCellA11y('TIME', '0:45')).toBe('Time 0:45');
+    expect(valueCellA11y('DIST', '20\u00a0m')).toBe('Distance 20 m');
   });
 });

@@ -366,7 +366,7 @@ describe('imported history is comparable, labelled FitNotes (B7; was P-I3 option
     if (!ex) throw new Error('no exercise');
     expect(lastComparableSession(history, ex)).toMatchObject({ imported: true, gymId: null, sets: [{ values: { load: kg(40, 'stack'), reps: 10 } }] });
     const sum = buildWorkoutSummary(input(s, history));
-    expect(sum.comparison).toMatchObject({ kind: 'compared', why: 'FitNotes, working sets', lastAtUtc: history[0]?.performedAtUtc });
+    expect(sum.comparison).toMatchObject({ kind: 'compared', why: 'Working sets', lastAtUtc: history[0]?.performedAtUtc });
     // 45 > 40: heaviest, against FitNotes too.
     expect(sum.highlight).toMatch(/^Heaviest Lat pulldown set/);
     // Never claims the FitNotes workout was at today's gym.

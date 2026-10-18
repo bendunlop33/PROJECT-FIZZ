@@ -719,14 +719,13 @@ export function referenceText(refs: LoadReferences, opts: { est: boolean; held: 
 function referenceParts(refs: LoadReferences, opts: { est: boolean; held: boolean }): { text: string; cited: RefSet | null } {
   if (opts.held && refs.latest !== null) {
     const l = refs.latest;
-    return { text: `last ${setText(l.top, refs.convention)}${l.source === 'fitnotes' ? ' (FitNotes)' : ''}`, cited: l.top };
+    return { text: `last ${setText(l.top, refs.convention)}`, cited: l.top };
   }
   const own = refs.own;
   if (own !== null && own.sessions.length > 0) {
     const multi = own.sessions.length > 1 && E1RM_CONVENTIONS.has(refs.convention);
     const set = multi ? drivingSet(own.sessions, refs.convention) : (own.sessions[0]?.top ?? null);
-    const fit = own.sessions.every((x) => x.source === 'fitnotes') ? ' (FitNotes)' : '';
-    const t = set === null ? 'last' : `last ${multi ? `${String(own.sessions.length)}: ` : ''}${setText(set, refs.convention)}${fit}`;
+    const t = set === null ? 'last' : `last ${multi ? `${String(own.sessions.length)}: ` : ''}${setText(set, refs.convention)}`;
     return { text: opts.est || own.estOnly ? `est. · ${t}` : t, cited: set };
   }
   if (refs.derived !== null) return { text: `est. from ${refs.derived.text}`, cited: null };

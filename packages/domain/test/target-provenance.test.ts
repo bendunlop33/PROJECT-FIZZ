@@ -79,15 +79,15 @@ describe('buildStepCard (coaching-playbook §6): achievable neighbours from getA
 describe('stepText: the Equipment row’s step line', () => {
   it('kg bar, lb bar, dumbbells (each), stack, assisted, and no equipment', () => {
     const bar = barbell();
-    expect(plain(stepText(targetStep(kg(100), kg(102.5), bar) ?? fail()))).toBe('+2.5 kg (+2.5%), the smallest step on this bar.');
-    expect(plain(stepText(targetStep(kg(100), kg(105), bar) ?? fail()))).toBe('+5 kg (+5%) on this bar.');
-    expect(plain(stepText(targetStep(kg(100), kg(90), bar) ?? fail()))).toBe('−10 kg (−10%) on this bar.');
-    expect(plain(stepText(targetStep(kg(100), kg(97.5), bar) ?? fail()))).toBe('−2.5 kg (−2.5%), the smallest step down on this bar.');
-    expect(plain(stepText(targetStep(kg(20, 'per_hand'), kg(22.5, 'per_hand'), dumbbells()) ?? fail()))).toBe('+2.5 kg each (+12.5%), the smallest step on this rack.');
-    expect(plain(stepText(targetStep(kg(40, 'stack'), kg(45, 'stack'), stack()) ?? fail()))).toBe('+5 kg (+12.5%), the smallest step on this stack.');
-    expect(plain(stepText(targetStep(kg(20, 'assistance'), kg(15, 'assistance'), assisted()) ?? fail()))).toBe('5 kg less assistance, the smallest step on this machine.');
-    expect(plain(stepText(targetStep(kg(20, 'assistance'), kg(30, 'assistance'), assisted()) ?? fail()))).toBe('10 kg more assistance on this machine.');
-    expect(plain(stepText(targetStep(kg(60), kg(62.5), null) ?? fail()))).toBe('+2.5 kg (+4.2%).');
+    expect(plain(stepText(targetStep(kg(100), kg(102.5), bar) ?? fail()))).toBe('+2.5 kg (+2.5%) · smallest step');
+    expect(plain(stepText(targetStep(kg(100), kg(105), bar) ?? fail()))).toBe('+5 kg (+5%)');
+    expect(plain(stepText(targetStep(kg(100), kg(90), bar) ?? fail()))).toBe('−10 kg (−10%)');
+    expect(plain(stepText(targetStep(kg(100), kg(97.5), bar) ?? fail()))).toBe('−2.5 kg (−2.5%) · smallest step');
+    expect(plain(stepText(targetStep(kg(20, 'per_hand'), kg(22.5, 'per_hand'), dumbbells()) ?? fail()))).toBe('+2.5 kg each (+12.5%) · smallest step');
+    expect(plain(stepText(targetStep(kg(40, 'stack'), kg(45, 'stack'), stack()) ?? fail()))).toBe('+5 kg (+12.5%) · smallest step');
+    expect(plain(stepText(targetStep(kg(20, 'assistance'), kg(15, 'assistance'), assisted()) ?? fail()))).toBe('5 kg less assistance · smallest step');
+    expect(plain(stepText(targetStep(kg(20, 'assistance'), kg(30, 'assistance'), assisted()) ?? fail()))).toBe('10 kg more assistance');
+    expect(plain(stepText(targetStep(kg(60), kg(62.5), null) ?? fail()))).toBe('+2.5 kg (+4.2%)');
     // No change, or a change across units/conventions, is not a step.
     expect(targetStep(kg(100), kg(100), bar)).toBeNull();
     expect(targetStep(kg(100), lb(225), bar)).toBeNull();
@@ -133,7 +133,7 @@ describe('built-in rule provenance (plannedSetsFromTargets with why)', () => {
     expect(result.sets[0]?.load).toEqual(lb(230));
     const p = provenanceOf(plannedSetsFromTargets(result, { history: h, equipment: lbBar, at: at(2 * DAY) }));
     expect(p.step).toMatchObject({ from: lb(225), to: lb(230), pctChange: 2.2, smallest: true });
-    expect(plain(stepText(p.step ?? fail()))).toBe('+5 lb (+2.2%), the smallest step on this bar.');
+    expect(plain(stepText(p.step ?? fail()))).toBe('+5 lb (+2.2%) · smallest step');
   });
 
   it('per-hand dumbbells at the heaviest in the rack: reps go up, and the cap is said', () => {
@@ -152,7 +152,7 @@ describe('built-in rule provenance (plannedSetsFromTargets with why)', () => {
     const result = rule(machine, h);
     expect(result.sets[0]?.load).toEqual(kg(15, 'assistance'));
     const p = provenanceOf(plannedSetsFromTargets(result, { history: h, equipment: machine, at: at(2 * DAY) }));
-    expect(plain(stepText(p.step ?? fail()))).toBe('5 kg less assistance, the smallest step on this machine.');
+    expect(plain(stepText(p.step ?? fail()))).toBe('5 kg less assistance · smallest step');
   });
 
   it('assisted machine at its least assistance: capped, never past the machine', () => {

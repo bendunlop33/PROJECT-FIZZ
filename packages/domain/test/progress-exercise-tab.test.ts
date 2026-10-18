@@ -211,7 +211,7 @@ describe('buildExerciseTabView', () => {
     const fn = [imported('2026-06-01', [row([set(kg(95), 5)])]), imported('2026-07-01', [row([set(kg(97.5), 5)])]), imported('2026-08-01', [row([set(kg(100), 5)])])];
     const v = buildExerciseTabView({ sessions: [...history, ...fn], exerciseId: 'bench', today: TODAY, window: WINDOW, measure: 'weight' });
     expect(v?.series).toHaveLength(2);
-    expect(v?.series.map((s) => s.label)).toContain('FitNotes · kg');
+    expect(v?.series.map((s) => s.label)).toContain('History · kg');
     expect(v?.chart.points.map((p) => p.value)).toEqual([95, 97.5, 100]);
     const app = v?.series.find((s) => !s.label.startsWith('FitNotes'));
     const w = buildExerciseTabView({ sessions: [...history, ...fn], exerciseId: 'bench', today: TODAY, window: WINDOW, seriesId: app?.id ?? null });

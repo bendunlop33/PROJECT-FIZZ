@@ -1,5 +1,5 @@
-import type { EquipmentInstance, Load, LoadConvention, Measurement, SessionAggregate, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
-import { dayMonthText, EQUIPMENT_WORD, formatDistance, formatDuration, formatNumber, NBSP, repRangeText, targetText } from '../display';
+import type { EquipmentInstance, Load, Measurement, SessionAggregate, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
+import { dayMonthText, EQUIPMENT_WORD, formatDistance, formatDuration, formatNumber, NBSP, repRangeText, rowLoadCell, rowValueCell, targetText } from '../display';
 import { painFlagCovering } from '../pain-flags';
 import { massWords } from '../progress/text';
 import { targetRpeOf } from '../coach/target-rpe';
@@ -42,7 +42,7 @@ export interface TableRow extends SetRowView {
    * `25 lb each`, `+10 kg`, `12 reps`, `0:45`. A range only ever appears on a target.
    */
   cells: { load: string | null; value: string };
-  /** `RPE 8` / `RIR 2` on a done row (actual, no `@`); null otherwise. */
+  /** `RPE 8` / `RIR 2` on a done row (actual, no `@`); the target `@ 8.5` on a pending or open row; null otherwise. */
   effort: string | null;
   /** A pending target changed today: the word tag `Coach` or `Rule` (never `C`). */
   todayChange: 'coach' | 'rule' | null;
@@ -72,7 +72,7 @@ export interface TableCard {
   name: string;
   /** `Barbell`, `Dumbbells · kg each`, `Cable / stack · kg stack · per side`. */
   headerLine: string;
-  /** `Last 1 Oct: 100 × 8, 8, 7` (actual), `Last (FitNotes, 1 Oct): …` (B7) or `No previous result`. */
+  /** `Last 1 Oct: 100 × 8, 8, 7` (actual; imported history reads the same, 18 Oct) or `No previous result`. */
   lastLine: string;
   /** Header line 2: `Barbell · Last 1 Oct: 100 × 8, 8, 7`. */
   subtitle: string;
@@ -173,21 +173,6 @@ export function tableColumns(ex: Pick<SessionExercise, 'measurement' | 'loadConv
   const kind: TableColumns['kind'] =
     ex.measurement === 'duration' ? (loadLabel === null ? 'time' : 'load_time') : ex.measurement === 'distance' ? (loadLabel === null ? 'distance' : 'load_distance') : loadLabel === null ? 'reps' : 'load_reps';
   return { kind, loadLabel, valueLabel };
-}
-
-/** A load cell: the number only (`100`), `BW` for nothing added, `—` for no load. */
-function loadCell(load: Load | null, convention: LoadConvention, eq: Pick<EquipmentInstance, 'kind'> | null): string | null {
-  if (convention === 'bodyweight') return null;
-  if (load === null) return convention === 'added' && eq?.kind !== 'plate_loaded_machine' ? 'BW' : '—';
-  if (load.convention === 'bodyweight') return 'BW';
-  if (load.convention === 'added' && load.value === 0 && eq?.kind !== 'plate_loaded_machine') return 'BW';
-  return formatNumber(load.value);
-}
-
-function valueCellDone(v: SetValues, m: Measurement): string {
-  if (m === 'duration') return v.durationS === null ? '—' : formatDuration(v.durationS);
-  if (m === 'distance') return v.distanceM === null || v.distanceM === undefined ? '—' : formatDistance(v.distanceM);
-  return v.reps === null ? '—' : String(v.reps);
 }
 
 function valueCellTarget(set: WorkoutSet, m: Measurement): string {
@@ -291,7 +276,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
       ...base,
       state: 'done',
       columns,
-      cells: { load: loadCell(a.load, ex.loadConvention, eq), value: valueCellDone(a, ex.measurement) },
+      cells: { load: rowLoadCell(a.load, ex.loadConvention, eq), value: rowValueCell(a, ex.measurement) },
       effort,
       todayChange: null,
       memberTag,
@@ -317,8 +302,9 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     ...base,
     state: open ? 'open' : 'pending',
     columns,
-    cells: { load: loadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(set, ex.measurement) },
-    effort: null,
+    cells: { load: rowLoadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(set, ex.measurement) },
+    // The target RPE is a cell too (18 Oct: set · KG · REPS · RPE · ✓).
+    effort: rpe === null ? null : `@${NBSP}${formatNumber(rpe)}`,
     todayChange: today,
     memberTag,
     blockTitle: open ? `${label} · NOW` : label,
@@ -333,8 +319,8 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
 export function resultsSummary(values: readonly SetValues[], ex: Pick<SessionExercise, 'measurement' | 'loadConvention' | 'laterality'>, eq: Pick<EquipmentInstance, 'kind'> | null): string {
   const groups: { load: string | null; values: string[] }[] = [];
   for (const v of values) {
-    const load = loadCell(v.load, ex.loadConvention, eq);
-    const value = valueCellDone(v, ex.measurement);
+    const load = rowLoadCell(v.load, ex.loadConvention, eq);
+    const value = rowValueCell(v, ex.measurement);
     const last = groups.at(-1);
     if (last?.load === load) last.values.push(value);
     else groups.push({ load, values: [value] });
@@ -373,7 +359,7 @@ function lastLineOf(prev: PreviousSession | null, ex: SessionExercise, eq: Equip
   if (prev === null || prev.sets.length === 0) return 'No previous result';
   const values = prev.sets.map((s) => s.values);
   const when = dayMonthText(prev.performedAtUtc, tz);
-  return `${prev.imported ? `Last (FitNotes, ${when})` : `Last ${when}`}: ${resultsSummary(values, ex, eq)}`;
+  return `Last ${when}: ${resultsSummary(values, ex, eq)}`;
 }
 
 function painBadgeOf(input: ActiveViewInput, ex: SessionExercise): boolean {

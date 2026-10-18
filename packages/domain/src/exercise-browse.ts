@@ -184,10 +184,10 @@ function line2Of(e: RowExercise, match: ExerciseMatch | null): string {
   return parts.join(' · ');
 }
 
-/** `Last 120 kg × 8 · 3 Oct`, with ` at Hotel Gym` when it was done elsewhere, or `· FitNotes` for imported history. */
+/** `Last 120 kg × 8 · 3 Oct`, with ` at Hotel Gym` when it was done elsewhere; imported history reads the same (Ben, 18 Oct). */
 export function lastLine(last: LastActual | undefined, gymId: string | null, gymNames: Readonly<Record<string, string>>, today: string): string | null {
   if (last === undefined) return null;
-  const where = last.source === 'import' ? ' · FitNotes' : last.gymId !== null && gymId !== null && last.gymId !== gymId && gymNames[last.gymId] !== undefined ? ` at ${gymNames[last.gymId] as string}` : '';
+  const where = last.source === 'import' ? '' : last.gymId !== null && gymId !== null && last.gymId !== gymId && gymNames[last.gymId] !== undefined ? ` at ${gymNames[last.gymId] as string}` : '';
   return `Last ${last.text} · ${shortDate(last.date, today)}${where}`;
 }
 

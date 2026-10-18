@@ -6,8 +6,8 @@
  * target, a load or a label: those come from `buildWorkoutTableView` and
  * `buildActiveSetView` (domain).
  */
-import type { TableBlock, TableRow } from '@fizz/domain';
-import type { SessionCommand, ZonedTimestamp } from '@fizz/schemas';
+import type { TableBlock, TableColumns, TableRow } from '@fizz/domain';
+import type { SessionCommand, SetValues, ZonedTimestamp } from '@fizz/schemas';
 
 // ---------------------------------------------------------------------------
 // Anchoring
@@ -61,15 +61,6 @@ export function tileReportFor(report: TileReport | null, want: { setId: string |
   if (report === null || want.setId === null || report.setId !== want.setId) return { kind: 'none' };
   if (report.keypadOpen !== want.keypadOpen) return { kind: 'stale' };
   return { kind: 'fresh', boxes: report.boxes };
-}
-
-/**
- * Whether opening or closing the keypad moves the open row's tiles (it hides
- * the plate line and `Last` above them). When it doesn't, no layout event
- * follows, so the row re-sends its last report under the new keypad state.
- */
-export function keypadMovesTiles(p: { plateLine: boolean; last: boolean; ax: boolean }): boolean {
-  return !p.ax && (p.plateLine || p.last);
 }
 
 /**
@@ -248,23 +239,41 @@ export function chipsFor(p: ChipInput): ChipState {
 // ---------------------------------------------------------------------------
 // Rows
 
-export type RowTap = { kind: 'edit'; setId: string } | { kind: 'select'; setId: string } | { kind: 'none' };
+/** A value a table cell edits in place (18 Oct). */
+export type CellField = 'load' | 'reps' | 'time' | 'distance';
 
-/** Where on a row the tap landed: the row itself, or its ring / tick (the marker cell). */
-export type RowPart = 'row' | 'marker';
+export type RowTap =
+  | { kind: 'edit'; setId: string }
+  | { kind: 'select'; setId: string }
+  /** A pending row's cell: it becomes the open row, then that cell's editor opens (`set_active_set`, no new command). */
+  | { kind: 'select_edit'; setId: string; field: CellField }
+  /** A done row's cell: its editor opens under the row; saved as one versioned correction on close (rule 2). */
+  | { kind: 'correct'; setId: string; field: CellField }
+  | { kind: 'none' };
+
+/** Where on a row the tap landed: the row itself (set number, long-press), its ring / tick, or a value cell. */
+export type RowPart = 'row' | 'marker' | 'load' | 'value';
+
+/** The field a row's value cell edits. */
+export function valueFieldOf(columns: Pick<TableColumns, 'valueLabel'>): CellField {
+  return columns.valueLabel === 'TIME' ? 'time' : columns.valueLabel === 'DIST' ? 'distance' : 'reps';
+}
 
 /**
- * A row tap (§2A.7; 14 Oct, Ben: "I should be able to edit anything on the
- * sets"): a done row opens the correction sheet; a pending row opens Edit
- * set for its plan, and its ring only makes it the open row (Ben's decision
- * 3: a non-current row's tick selects, never logs); the open and skipped
- * rows do nothing. No tap here ever logs.
+ * A row tap (§2A.7; 18 Oct, Ben: "the table stays a table"): a KG or REPS
+ * cell edits in place, never on a separate screen. A pending row's cell
+ * makes it the open row and opens that cell; a done row's cell opens a
+ * correction in its row. The row's set number (or a long-press) opens Edit
+ * set for type, side and notes. A pending row's ring only makes it current
+ * (Ben's decision 3: never a log). The open and skipped rows do nothing here.
  */
-export function rowTap(row: Pick<TableRow, 'state' | 'setId'>, part: RowPart = 'row'): RowTap {
+export function rowTap(row: Pick<TableRow, 'state' | 'setId'> & { columns?: Pick<TableColumns, 'loadLabel' | 'valueLabel'> }, part: RowPart = 'row'): RowTap {
+  const field: CellField | null = part === 'value' ? valueFieldOf(row.columns ?? { valueLabel: 'REPS' }) : part === 'load' && row.columns?.loadLabel != null ? 'load' : null;
   switch (row.state) {
     case 'done':
-      return { kind: 'edit', setId: row.setId };
+      return field !== null ? { kind: 'correct', setId: row.setId, field } : { kind: 'edit', setId: row.setId };
     case 'pending':
+      if (field !== null) return { kind: 'select_edit', setId: row.setId, field };
       return part === 'marker' ? { kind: 'select', setId: row.setId } : { kind: 'edit', setId: row.setId };
     case 'open':
     case 'skipped':
@@ -272,18 +281,113 @@ export function rowTap(row: Pick<TableRow, 'state' | 'setId'>, part: RowPart = '
   }
 }
 
+export interface RowTapHandlers {
+  dismissKeyboard: () => void;
+  edit: (setId: string) => void;
+  select: (setId: string) => void;
+  selectEdit: (setId: string, field: CellField) => void;
+  correct: (setId: string, field: CellField) => void;
+}
+
 /**
- * Runs a row tap (review S3, F5): an edit or select tap closes the number pad
- * first, so tapping another row is a tap outside the open row's fields
- * (the Table keeps taps with `keyboardShouldPersistTaps: 'handled'`).
+ * Runs a row tap (review S3, F5): any tap that does something closes the
+ * number pad first, so tapping another row is a tap outside the open row's
+ * fields (the Table keeps taps with `keyboardShouldPersistTaps: 'handled'`).
  */
-export function runRowTap(row: Pick<TableRow, 'state' | 'setId'>, h: { dismissKeyboard: () => void; edit: (setId: string) => void; select: (setId: string) => void }, part: RowPart = 'row'): RowTap {
+export function runRowTap(row: Parameters<typeof rowTap>[0], h: RowTapHandlers, part: RowPart = 'row'): RowTap {
   const tap = rowTap(row, part);
   if (tap.kind === 'none') return tap;
   h.dismissKeyboard();
   if (tap.kind === 'edit') h.edit(tap.setId);
-  else h.select(tap.setId);
+  else if (tap.kind === 'select') h.select(tap.setId);
+  else if (tap.kind === 'select_edit') h.selectEdit(tap.setId, tap.field);
+  else h.correct(tap.setId, tap.field);
   return tap;
+}
+
+// ---------------------------------------------------------------------------
+// In-place cell editing (18 Oct)
+
+/** The cell being edited in place: on the open row (the draft path) or a done row (a correction). */
+export interface CellEdit {
+  setId: string;
+  field: CellField;
+  row: 'open' | 'done';
+}
+
+export type CellEditEvent =
+  /** A cell tap: opens it, or closes it when it's the one already open. */
+  | { kind: 'tap'; setId: string; field: CellField; row: 'open' | 'done' }
+  /** `Enter load` (rest) or the keypad's next field: opens the open row's cell, never toggles it shut. */
+  | { kind: 'enter'; setId: string; field: CellField }
+  /** Done, a tap elsewhere, a scroll, another row's tap. */
+  | { kind: 'close' }
+  /** A Log or a select: the editor never comes back by itself (an Undo makes the set current again; review S3). */
+  | { kind: 'logged' }
+  | { kind: 'selected' };
+
+export function cellEditReducer(cur: CellEdit | null, e: CellEditEvent): CellEdit | null {
+  switch (e.kind) {
+    case 'tap':
+      return cur !== null && cur.setId === e.setId && cur.field === e.field && cur.row === e.row ? null : { setId: e.setId, field: e.field, row: e.row };
+    case 'enter':
+      return { setId: e.setId, field: e.field, row: 'open' };
+    case 'close':
+    case 'logged':
+    case 'selected':
+      return null;
+  }
+}
+
+/** The open row's cell being edited, when the edit is for the set that's open now. */
+export function openRowEditing(cur: CellEdit | null, activeSetId: string | null): CellField | null {
+  return cur !== null && cur.row === 'open' && cur.setId === activeSetId ? cur.field : null;
+}
+
+/** The done row being corrected in place, if any. */
+export function doneRowEditing(cur: CellEdit | null): CellEdit | null {
+  return cur !== null && cur.row === 'done' ? cur : null;
+}
+
+const UNIT_WORD: Record<string, string> = { KG: 'kg', LB: 'lb' };
+
+/**
+ * VoiceOver for a load cell (review S7): `Load 100 kg`, `Assistance 20 kg`,
+ * `Added load 10 kg`, `Load: bodyweight`, `Load: none`. A cell that already
+ * carries its unit (`25 lb each`) is read as it is.
+ */
+export function loadCellA11y(loadLabel: string | null, cell: string | null): string {
+  const label = loadLabel ?? 'KG';
+  const word = label.startsWith('ASSIST') ? 'Assistance' : label.startsWith('+') ? 'Added load' : 'Load';
+  const text = (cell ?? '').replace(/\u00a0/g, ' ').trim();
+  if (text === 'BW') return `${word}: bodyweight`;
+  if (text === '' || text === '—') return `${word}: none`;
+  if (/[a-z]/i.test(text)) return `${word} ${text}`;
+  const unit = UNIT_WORD[label.replace(/^(ASSIST |\+)/, '')] ?? '';
+  return `${word} ${text}${unit === '' ? '' : ` ${unit}`}`;
+}
+
+/** VoiceOver for a value cell: `Reps 6 to 8`, `Time 0:45`, `Distance 20 m`, `Reps: none`. */
+export function valueCellA11y(valueLabel: TableColumns['valueLabel'], cell: string): string {
+  const word = valueLabel === 'TIME' ? 'Time' : valueLabel === 'DIST' ? 'Distance' : 'Reps';
+  const text = cell.replace(/\u00a0/g, ' ').trim();
+  if (text === '' || text === '—') return `${word}: none`;
+  return `${word} ${text.replace(/(\d)\s*–\s*(\d)/g, '$1 to $2')}`;
+}
+
+type CorrectableValues = Pick<SetValues, 'load' | 'reps' | 'durationS' | 'distanceM'>;
+
+/**
+ * A done row's in-place correction (rule 2): only the values that differ
+ * from what was logged, or null when nothing changed (no write, no toast).
+ * Sent once on close as `correctSet` with the set's version, never per step.
+ */
+export function correctionPatch(actual: CorrectableValues, edited: CorrectableValues): Partial<CorrectableValues> | null {
+  const patch: Partial<CorrectableValues> = {};
+  for (const k of ['load', 'reps', 'durationS', 'distanceM'] as const) {
+    if (JSON.stringify(edited[k]) !== JSON.stringify(actual[k])) Object.assign(patch, { [k]: edited[k] });
+  }
+  return Object.keys(patch).length === 0 ? null : patch;
 }
 
 /** The one command a select sends: `set_active_set`, versioned. Never `log_set`. */

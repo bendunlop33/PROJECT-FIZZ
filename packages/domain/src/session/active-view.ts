@@ -9,6 +9,9 @@ import {
   loadFieldLabel,
   loadFieldUnit,
   loadText,
+  rowLoadCell,
+  rowValueCell,
+  targetBrief,
   targetShort,
   targetText,
   valuesText,
@@ -45,7 +48,7 @@ export interface PreviousSession {
   performedAtUtc: string;
   /** The compared workout's own gym (null: not recorded), so nothing claims it was at today's gym. */
   gymId: string | null;
-  /** From FitNotes (B7): shown as `Last (FitNotes, 1 Oct)`, never as an app session. */
+  /** From FitNotes (B7): kept as data; `Last` reads like any other (18 Oct). */
   imported: boolean;
   /** Working-order sets as logged, for prefill and the `Last (…)` line. */
   sets: ComparableSet[];
@@ -249,7 +252,7 @@ export interface FocusView {
   setTypeLabel: string;
   setNumber: number;
   setCount: number;
-  /** `imported`: from FitNotes, shown as `Last (FitNotes, 1 Oct)` (B7). */
+  /** `imported`: from FitNotes (B7); kept as data, shown like any other `Last` (18 Oct). */
   previous: { performedAtUtc: string; text: string; values: SetValues; imported: boolean } | null;
   draft: SetValues;
   draftSource: DraftSource | 'edited' | 'copied';
@@ -268,6 +271,10 @@ export interface FocusView {
    */
   workTimer: WorkTimerView | null;
   target: string | null;
+  /** The open table row's short target, `3–6 @ 8.5` (load is in its own cell); null when none. */
+  targetBrief: string | null;
+  /** The open table row's cells for the values about to be logged (`82.5`, `6`), as every other row reads. */
+  cells: { load: string | null; value: string };
   /** The target's load is an estimate (`est.` after the target, `estimate` in VoiceOver; rule 6, WB-L5). */
   targetEstimate: boolean;
   /** The set's target RPE and who set it (`@ RPE 8` on the target line); null on warm-up and drop sets. */
@@ -662,6 +669,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
     workTimer: ex.measurement === 'duration' ? workTimerView(state, set, values, input.nowMs) : null,
     target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral, rpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null }),
+    targetBrief: targetBrief(set.planned, targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null),
+    cells: { load: rowLoadCell(logValues.load, ex.loadConvention, eq), value: rowValueCell(logValues, ex.measurement) },
     targetEstimate: set.planned.load !== null && set.planned.provenance?.estimate === true,
     targetRpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null),
     planWas: carriesTodayAdjustment(set.planned) && set.planned.coach ? planWasText(set.planned.coach.before, ex.loadConvention, eq) : null,

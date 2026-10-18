@@ -172,7 +172,7 @@ describe('imported FitNotes history counts (WB-L4, WB-L4b, WB-L5 machine)', () =
     const r = refs(INCLINE, inclineHistory, [rack]);
     expect(r.own?.sessions[0]?.source).toBe('fitnotes');
     const c = checkProposedLoad(P(27.5, 'per_hand', 'FitNotes 30×8, 28 Sep → 27.5'), slot(8, 10, 8), r, NO_PAIN);
-    expect(c).toMatchObject({ load: { value: 27.5, convention: 'per_hand' }, source: 'coach', basis: 'last 30×8 (FitNotes) → 27.5 each', coachNote: null, notUsed: 'FitNotes 30×8, 28 Sep → 27.5' });
+    expect(c).toMatchObject({ load: { value: 27.5, convention: 'per_hand' }, source: 'coach', basis: 'last 30×8 → 27.5 each', coachNote: null, notUsed: 'FitNotes 30×8, 28 Sep → 27.5' });
   });
 
   it('WB-L4b: repeating 30 kg each for 8 is accepted with no clamp (the repeat floor F)', () => {
@@ -556,8 +556,8 @@ describe('review builder-v2 r2: code’s reason line, coach notes, newest-alone 
   it('B1r: est., first time, held, capped and per-hand lines are code’s, ending with the final load', () => {
     expect(checkProposedLoad(P(13, 'stack', 'est. 13 for 12–15 @9'), slot(12, 15, 9), refs(FLY, [], [cable]), NO_PAIN)).toMatchObject({ basis: 'est. · first time → 12.5', coachNote: null });
     const incline = refs(INCLINE, [session(920, 10, null, [{ load: kg(30, 'per_hand'), reps: 8 }], true)], [rack]);
-    expect(checkProposedLoad(P(30, 'per_hand', 'FitNotes 30×8 → repeat'), slot(8, 10, 8), incline, NO_PAIN)).toMatchObject({ basis: 'last 30×8 (FitNotes) → 30 each', coachNote: null, notUsed: 'FitNotes 30×8 → repeat' });
-    expect(checkProposedLoad(P(30, 'per_hand', 'repeat the imported weight'), slot(8, 10, 8), incline, NO_PAIN)).toMatchObject({ basis: 'last 30×8 (FitNotes) → 30 each', coachNote: 'repeat the imported weight' });
+    expect(checkProposedLoad(P(30, 'per_hand', 'FitNotes 30×8 → repeat'), slot(8, 10, 8), incline, NO_PAIN)).toMatchObject({ basis: 'last 30×8 → 30 each', coachNote: null, notUsed: 'FitNotes 30×8 → repeat' });
+    expect(checkProposedLoad(P(30, 'per_hand', 'repeat the imported weight'), slot(8, 10, 8), incline, NO_PAIN)).toMatchObject({ basis: 'last 30×8 → 30 each', coachNote: 'repeat the imported weight' });
     expect(checkProposedLoad(P(120, 'total', null), BENCH_SLOT, benchRefs(), NO_PAIN).basis).toBe('last 3: 100×7 @8 · capped → 107.5');
     expect(checkProposedLoad(P(102.5, 'total', null), BENCH_SLOT, benchRefs(), { pain: { text: 'pain reported today' }, askedHeavier: false }).basis).toBe('last 100×7 @8 → 100');
   });
@@ -750,12 +750,12 @@ describe('review builder-v2 r4: every number about a load is code’s (B1t, B2t,
     const fit = [session(998, 3, null, [{ load: lb(225), reps: 8, rpe: 8 }], true)];
     const r = refs(BENCH, fit, [bar]);
     const c = checkProposedLoad(P(102.5, 'total'), BENCH_SLOT, r, NO_PAIN);
-    expect(c.basis).toBe('last 225 lb×8 @8 (FitNotes) → 102.5 kg');
+    expect(c.basis).toBe('last 225 lb×8 @8 → 102.5 kg');
     expect(c.basis).not.toMatch(/102\.06/);
     const lbBar = barbell({ id: id(720), gymId: MAIN, unit: 'lb', barMass: 45, plates: [{ mass: 45, count: 4 }, { mass: 25, count: 2 }, { mass: 10, count: 2 }, { mass: 5, count: 2 }, { mass: 2.5, count: 2 }] });
     const atLb = loadReferences({ exercise: BENCH, history: [session(999, 3, null, [{ load: kg(100), reps: 7, rpe: 8 }], true)], ctx: { gym: gymWith(lbBar), knownEquipment: new Map([[lbBar.id, lbBar]]), unit: 'lb' }, nowMs: NOW });
     const l = checkProposedLoad(P(225, 'total', null, 'lb'), BENCH_SLOT, atLb, NO_PAIN);
-    expect(l.basis).toMatch(/^last 100 kg×7 @8 \(FitNotes\) → \d+(\.\d+)? lb$/);
+    expect(l.basis).toMatch(/^last 100 kg×7 @8 → \d+(\.\d+)? lb$/);
     expect(l.basis).not.toMatch(/220\.46/);
     // Same-unit sets read as before.
     expect(checkProposedLoad(P(102.5, 'total'), BENCH_SLOT, benchRefs(), NO_PAIN).basis).toBe(CODE_LINE);
@@ -803,13 +803,13 @@ describe('review builder-v2 r5: the draft message is words only (B1u); notes kee
     expect(c.notes.join(' ')).not.toMatch(/\d+\.\d{3}/);
   });
 
-  it('S2u: a kg assisted machine with a FitNotes lb set names units on every load and keeps `(FitNotes)`', () => {
+  it('S2u: a kg assisted machine with a FitNotes lb set names units on every load, with no `FitNotes` tag (18 Oct)', () => {
     const r = refs(PULLUP, [session(1201, 3, null, [{ load: lb(66, 'assistance'), reps: 8, rpe: 8 }], true)], [assist]);
     const c = checkProposedLoad(P(5, 'assistance'), slot(8, 10, 8), r, NO_PAIN);
     expect(c.load).toMatchObject({ unit: 'kg', convention: 'assistance' });
     const v = String(c.load?.value);
     expect(c.notes).toContain(`${v} kg assist · one step from last 66 lb`);
-    expect(c.basis).toContain('(FitNotes)');
+    expect(c.basis).not.toContain('FitNotes');
     expect(c.basis).toMatch(new RegExp(`→ ${v} kg assist$`));
     expect((c.basis ?? '').length).toBeLessThanOrEqual(48);
     // No cited number is separated from its unit.

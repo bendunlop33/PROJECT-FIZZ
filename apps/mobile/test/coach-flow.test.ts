@@ -363,7 +363,7 @@ describe('C8: Summary next-session targets (D21) and routines', () => {
     // Why? on the set: set by the coach after the workout it reviewed, its reason in quotes.
     expect(work[0]?.planned.provenance).toMatchObject({ source: 'coach', coach: { scope: 'next_session', reason: 'Every set was RPE 10.' } });
     const why = await s.workout.explainTarget(started.aggregate.session.id, work[0]?.id ?? '');
-    expect(why?.rows.find((r) => r.key === 'reason')?.lines).toEqual(['“Every set was RPE 10.”']);
+    expect(why?.rows.find((r) => r.key === 'reason')?.lines).toEqual(['“Every set was RPE 10”']);
     expect(plain(why?.rows.find((r) => r.key === 'set_by')?.lines[0])).toBe('Coach · after your 10 Oct workout');
     await h.settle(s);
     const used = await s.coach.nextTargets(first);

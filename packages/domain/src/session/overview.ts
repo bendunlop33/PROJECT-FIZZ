@@ -1082,14 +1082,14 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     const change = edit?.kind === 'skipped' ? null : changeText(marker);
     if (change !== null) panel.push({ key: 'change', label: 'Change', value: change, tone: 'normal' });
     const last = comparable === null ? null : lastText(comparable);
-    if (comparable !== null && last !== null) panel.push({ key: 'last', label: 'Last', value: `${last} · ${comparable.imported ? 'FitNotes, ' : ''}${dayMonthText(comparable.performedAt.utc, comparable.performedAt.tz)}`, tone: 'normal' });
+    if (comparable !== null && last !== null) panel.push({ key: 'last', label: 'Last', value: `${last} · ${dayMonthText(comparable.performedAt.utc, comparable.performedAt.tz)}`, tone: 'normal' });
     if (barbellEx?.id === ex.id) {
       const w = warmupText(warm);
       if (w !== null) panel.push({ key: 'warmup', label: 'Warm-up', value: w, tone: 'normal' });
       const plates = planned.load !== null && eq !== null ? platesText(planned.load, eq) : null;
       if (plates !== null) panel.push({ key: 'plates', label: 'Plates', value: plates, tone: 'normal' });
       const best = bestSet(key, pasts);
-      if (best !== null) panel.push({ key: 'best', label: 'Best', value: `${loadWord(best.load)}${NBSP}×${NBSP}${String(best.reps)} · ${best.imported ? 'FitNotes, ' : ''}${dayMonthText(best.at.utc, best.at.tz)}`, tone: 'normal' });
+      if (best !== null) panel.push({ key: 'best', label: 'Best', value: `${loadWord(best.load)}${NBSP}×${NBSP}${String(best.reps)} · ${dayMonthText(best.at.utc, best.at.tz)}`, tone: 'normal' });
     }
     if (rounded !== null && !dropped) panel.push({ key: 'rounded', label: 'Rounded', value: roundedText(rounded, eq), tone: 'normal' });
     const missing = dropped?.reason === 'equipment_not_in_gym' ? dropped.missing : null;
