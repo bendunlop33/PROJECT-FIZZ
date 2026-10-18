@@ -73,7 +73,8 @@ The CSV does have each row's **`Category`**, which is Ben's own muscle-group lab
 ```
 
 - `SESSIONS` lists up to 3 types in picker order, **excluding Up next**, then `All sessions ›` when more exist. It shows whenever there are 2 or more types (not only when routines exist). It is hidden while a workout is in progress (unchanged).
-- `Change` appears only in the Up next state. It is not shown in Resume or Stale, or when there are fewer than 2 types. In Done today the `SESSIONS` list is the way to start another session.
+- `Change` appears on the Up next and Done today labels (18 Oct, PM decision pending Ben; was Up next only). It is not shown in Resume or Stale, or when there are fewer than 2 types. In Done today, `Start next session` (whenever there is an Up next) and `Change` are the way to start another session.
+- *(Superseded 18 Oct: the `SESSIONS` rows and `All sessions ›` under Start are gone; Today shows `Recent` instead. See CHANGELOG 2026-10-18.)*
 - Basis line variants (actuals): `After Pull A · Thu 8 Oct` (D19) · `Your only routine` · `Last done Mon 5 Oct · 6 days ago` (longest gap) · `From Thu 8 Oct` (one type only).
 
 ### 2.2 Picker sheet (`SessionPickerSheet`, new; `BottomCard`, medium detent, drag to large)
@@ -216,7 +217,7 @@ From the FitNotes `Category` raw cells of a session's **working** sets (`import_
 | Today | 1 type | Up next with `From …`. No `Change`, no `SESSIONS` |
 | Today | 2 or more types | §2.1 |
 | Today | Resume / Stale | Unchanged. No `Change`, no `SESSIONS` |
-| Today | Done today | Hero unchanged; `SESSIONS` (all types, Up next included first) |
+| Today | Done today | `Change` on the label (2 or more types); `Start next session` when there is an Up next; `Empty workout` (18 Oct; was `SESSIONS`) |
 | Picker | Loading | Nothing for 300 ms, then static rows (no shimmer). Local only |
 | Picker | Normal / with `OLDER` / with `Edited` / with `New` | §2.2 |
 | Picker | Couldn't read | `Couldn't load sessions.` [Try again], plus `Empty workout` |
