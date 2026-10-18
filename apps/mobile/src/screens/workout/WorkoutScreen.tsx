@@ -988,6 +988,7 @@ export function WorkoutScreen() {
     const items: { label: string; run: () => void }[] = [
       ...(f.previous !== null ? [{ label: `Copy last · ${f.previous.text.replaceAll('\u00a0', ' ')}`, run: () => { copyLast(f); } }] : []),
       { label: 'Edit set', run: () => { editSet(f.setId); } },
+      ...(f.addWeight ? [{ label: f.addWeight.on ? 'Bodyweight' : '+ Weight', run: () => { toggleWeight(f); } }] : []),
       { label: 'Focus view', run: () => { updatePrefs({ workoutView: 'focus' }); } },
     ];
     ActionSheetIOS.showActionSheetWithOptions({ title: `Set ${String(f.setNumber)}`, options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => {
