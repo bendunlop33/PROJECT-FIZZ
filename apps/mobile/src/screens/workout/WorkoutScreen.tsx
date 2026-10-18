@@ -189,8 +189,17 @@ export function WorkoutScreen() {
   const [viewing, setViewing] = useState<string | null>(null);
   /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
   const [focusRequest, setFocusRequest] = useState<{ field: EntryField } | null>(null);
+  /** Table: the open row's cell being edited in place (18 Oct), keyed to its set so it closes when the set changes. */
+  const [cellEdit, setCellEdit] = useState<{ setId: string; field: EntryField } | null>(null);
+  const activeSetId = data !== 'loading' && data !== null ? data.aggregate.session.activeSetId : null;
+  const editingCell = cellEdit !== null && cellEdit.setId === activeSetId ? cellEdit.field : null;
   useEffect(() => {
     if (focusRequest === null) return;
+    // Table: the field lives in the open row's inline editor; open it first, then focus once it's drawn.
+    if (modeRef.current === 'table' && activeSetId !== null && editingCell !== focusRequest.field) {
+      setCellEdit({ setId: activeSetId, field: focusRequest.field });
+      return;
+    }
     const id = requestAnimationFrame(() => {
       (focusRequest.field === 'load' ? loadRef : focusRequest.field === 'time' ? timeRef : focusRequest.field === 'distance' ? distanceRef : repsRef).current?.focus();
       setFocusRequest(null);
@@ -198,7 +207,7 @@ export function WorkoutScreen() {
     return () => {
       cancelAnimationFrame(id);
     };
-  }, [focusRequest, showNextSet]);
+  }, [focusRequest, showNextSet, activeSetId, editingCell]);
 
   /** Counts workout reads as they start, so a slow older read never brings back older pain flags or names. */
   const loadSeq = useRef(0);
@@ -954,6 +963,18 @@ export function WorkoutScreen() {
   function openPainBadge(exerciseId: string) {
     const flag = loaded.painFlags.find((f) => f.exerciseId === exerciseId && f.status === 'active');
     if (flag) openPainFlag(flag.id);
+  }
+
+  /** The open row's `⋯` / long-press (18 Oct): copy last time, the full set editor (type, side, notes), Focus. */
+  function openSetMore(f: FocusView) {
+    const items: { label: string; run: () => void }[] = [
+      ...(f.previous !== null ? [{ label: `Copy last · ${f.previous.text.replaceAll('\u00a0', ' ')}`, run: () => { copyLast(f); } }] : []),
+      { label: 'Edit set', run: () => { editSet(f.setId); } },
+      { label: 'Focus view', run: () => { updatePrefs({ workoutView: 'focus' }); } },
+    ];
+    ActionSheetIOS.showActionSheetWithOptions({ title: `Set ${String(f.setNumber)}`, options: [...items.map((x) => x.label), 'Cancel'], cancelButtonIndex: items.length }, (i) => {
+      items[i]?.run();
+    });
   }
 
   /** A non-current row (or its ring) only becomes the open row: `set_active_set`, never a log (Ben, decision 4). */
@@ -1957,6 +1978,15 @@ export function WorkoutScreen() {
       keypadOpen={keypadOpen}
       caption={restored ? 'Unsaved edit restored' : copied}
       timedLogLabel={view.primary.kind === 'start_work' ? view.primary.logLabel : null}
+      editing={editingCell}
+      canLog={focus.logLabel !== null && !busy && !guard}
+      onEditCell={(field) => {
+        setCellEdit(field === null ? null : { setId: focus.setId, field });
+      }}
+      onLog={() => void log()}
+      onMore={() => {
+        openSetMore(focus);
+      }}
       whyOpen={why !== null && why.setId === focus.setId}
       whyPanel={
         why !== null && why.setId === focus.setId ? (
@@ -1973,9 +2003,6 @@ export function WorkoutScreen() {
       timeRef={timeRef}
       distanceRef={distanceRef}
       headerRef={openHeaderRef}
-      onCopyLast={() => {
-        copyLast(focus);
-      }}
       onLoad={(v) => {
         editLoad(focus, v);
       }}
@@ -2003,7 +2030,6 @@ export function WorkoutScreen() {
       onOffProfile={() => {
         openOffProfileEquipment(focus.offProfileEquipment);
       }}
-      onTimedLog={() => void log()}
       onTileFocus={(tile) => {
         if (modeRef.current === 'table') anchorEvent({ kind: 'keypad_opened', tile });
       }}

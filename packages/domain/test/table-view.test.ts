@@ -86,6 +86,15 @@ describe('buildWorkoutTableView: a fresh planned workout (WT1)', () => {
     expectAgreement(state);
   });
 
+  it('the open row reads as a table row: its cells follow the draft, a short target under it (18 Oct)', () => {
+    const { state } = startFixture();
+    const f = buildActiveSetView(input(state)).focus;
+    expect(f?.cells).toEqual({ load: '60', value: '10' });
+    expect(f?.targetBrief).toBe('10');
+    const edited = buildActiveSetView(input(state, { edits: { setId: f?.setId ?? '', values: values(kg(62.5), 9) } })).focus;
+    expect(edited?.cells).toEqual({ load: '62.5', value: '9' });
+  });
+
   it('pending rows read as targets and the open row as current (WT15)', () => {
     const { state } = startFixture();
     const bench = card(table(state).blocks[0]);
@@ -306,9 +315,9 @@ describe('Last and all done', () => {
     const previous = { [benchEx]: prev };
     const c = card(table(state, { previous }).blocks[0]);
     expect(plain(c.subtitle)).toBe('Barbell · Last 1 Oct: 100 × 8, 8, 7');
-    // B7: FitNotes history is labelled as such.
+    // 18 Oct (Ben): imported history reads like any other, no `FitNotes` tag.
     const fromFitNotes = { [benchEx]: { ...prev, gymId: null, imported: true } };
-    expect(plain(card(table(state, { previous: fromFitNotes }).blocks[0]).subtitle)).toBe('Barbell · Last (FitNotes, 1 Oct): 100 × 8, 8, 7');
+    expect(plain(card(table(state, { previous: fromFitNotes }).blocks[0]).subtitle)).toBe('Barbell · Last 1 Oct: 100 × 8, 8, 7');
   });
 
   it('after the last pending set: all done, no anchor, every block folded, Finish is the primary', () => {

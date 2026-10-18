@@ -175,6 +175,38 @@ export function targetText(planned: PlannedSet, o: { convention: LoadConvention;
   return `${word} ${parts.join(' · ')}${rpe}`;
 }
 
+/** A table load cell: the number only (`100`), `BW` for nothing added, `—` for no load; null when the exercise has no load column. */
+export function rowLoadCell(load: Load | null, convention: LoadConvention, eq: Pick<EquipmentInstance, 'kind'> | null): string | null {
+  if (convention === 'bodyweight') return null;
+  if (load === null) return convention === 'added' && eq?.kind !== 'plate_loaded_machine' ? 'BW' : '—';
+  if (load.convention === 'bodyweight') return 'BW';
+  if (load.convention === 'added' && load.value === 0 && eq?.kind !== 'plate_loaded_machine') return 'BW';
+  return formatNumber(load.value);
+}
+
+/** A table value cell for set values: `8`, `0:45`, `20 m`, or `—`. */
+export function rowValueCell(v: SetValues, m: Measurement): string {
+  if (m === 'duration') return v.durationS === null ? '—' : formatDuration(v.durationS);
+  if (m === 'distance') return v.distanceM === null || v.distanceM === undefined ? '—' : formatDistance(v.distanceM);
+  return v.reps === null ? '—' : String(v.reps);
+}
+
+/**
+ * The open table row's short target line (18 Oct, Ben: "the table stays a
+ * table"): reps / time / distance and the target RPE, `3–6 @ 8.5`. The load
+ * is in the row's own cell, so it isn't repeated. Null when there's nothing.
+ */
+export function targetBrief(planned: Pick<PlannedSet, 'reps' | 'durationS' | 'distanceM'>, rpe: number | null): string | null {
+  const parts: string[] = [];
+  if (planned.reps !== null) parts.push(repRangeText(planned.reps));
+  if (planned.durationS !== null) parts.push(formatDuration(planned.durationS));
+  if (planned.distanceM !== undefined && planned.distanceM !== null) parts.push(formatDistance(planned.distanceM));
+  const head = parts.join(' · ');
+  const tail = rpe === null ? '' : `@${NBSP}${formatNumber(rpe)}`;
+  const text = [head, tail].filter((x) => x !== '').join(' ');
+  return text === '' ? null : text;
+}
+
 /** Short target for list rows: `Target 100 kg × 6–8`. */
 export function targetShort(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext }): string | null {
   const distance = planned.distanceM === undefined || planned.distanceM === null ? null : formatDistance(planned.distanceM);
