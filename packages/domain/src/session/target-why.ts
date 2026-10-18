@@ -62,7 +62,7 @@ export interface ExplainTargetInput {
   nowMs: number;
   /** The basis workout as stored now (edit check, equipment name); null when there is none or it wasn't found. */
   basisNow: SessionAggregate | null;
-  /** Gym names by ID (a gym missing here isn't named). */
+  /** Gym names by ID (kept for callers; the brief panel no longer names the gym, 18 Oct). */
   gymNames: Readonly<Record<string, string>>;
   /** Ben's pain flags on this exercise, active and cleared. */
   painFlags: readonly PainFlag[];
@@ -90,8 +90,19 @@ interface ShownSet {
 /** `Last time` and `Before flag` list counted sets only; the ones Ben marked go under `Not used` (§2.13). */
 const counted = <T extends ShownSet>(sets: readonly T[]): T[] => sets.filter((s) => isSetCountable(s, 'progression'));
 
+/**
+ * One short line (Ben, 18 Oct: "I don't need the reason explanation to be so
+ * in depth"): the first sentence of a stored line, without its full stop.
+ * Stored text is kept as it was; only the panel shortens it.
+ */
+export function briefLine(text: string): string {
+  const t = text.trim();
+  const end = t.search(/[.!?](\s|$)/);
+  return (end === -1 ? t : t.slice(0, end)).trim();
+}
+
 /** Shown when every set of the workout was left out. */
-const ALL_LEFT_OUT = 'No counted sets (all left out).';
+const ALL_LEFT_OUT = 'All left out';
 
 /**
  * `Not used`: basis sets Ben marked, by the number the card showed them with
@@ -100,7 +111,7 @@ const ALL_LEFT_OUT = 'No counted sets (all left out).';
  */
 function notUsedRow(sets: readonly ShownSet[], day: string): WhyRow | null {
   const lines = sets.flatMap((s, i) => (isSetCountable(s, 'progression') ? [] : [notUsedLine(s.number ?? i + 1, day, s.exclusions)]));
-  return lines.length === 0 ? null : { key: 'not_used', label: 'Not used', lines, kind: 'actual' };
+  return lines.length === 0 ? null : { key: 'not_used', label: 'Not used', lines: [lines.map(briefLine).join(' · ')], kind: 'actual' };
 }
 
 const SIDE_ORDER: Record<SetSide, number> = { both: 0, left: 1, right: 2 };
@@ -133,14 +144,6 @@ export function basisSetsText(sets: readonly ShownSet[], ex: Pick<SessionExercis
   return groups.map((g) => `${g.head}${g.amounts.join(', ')}`).join('; ');
 }
 
-/** `RPE 8, 8.5, –` when any effort was recorded (RPE first, else RIR). */
-function effortText(shown: readonly ShownSet[]): string | null {
-  const sets = displayOrder(shown);
-  if (sets.some((s) => s.values.rpe !== null)) return `RPE ${sets.map((s) => (s.values.rpe === null ? '–' : formatNumber(s.values.rpe))).join(', ')}`;
-  if (sets.some((s) => s.values.rir !== null)) return `RIR ${sets.map((s) => (s.values.rir === null ? '–' : String(s.values.rir))).join(', ')}`;
-  return null;
-}
-
 /** `Push A, 1 Oct` or `your 1 Oct workout`. */
 function workoutName(routineName: string | null, utc: string, tz: string): string {
   const day = dayMonthText(utc, tz);
@@ -161,14 +164,14 @@ function planTargetText(planned: PlannedSet, requested: Load | null, ex: Pick<Se
 }
 
 function setByRow(p: TargetProvenance | undefined): WhyRow {
-  if (p === undefined) return { key: 'set_by', label: 'Set by', lines: ['Not recorded (set before this app version)'], kind: 'app' };
+  if (p === undefined) return { key: 'set_by', label: 'Set by', lines: ['Not recorded'], kind: 'app' };
   const after = p.basis === null ? null : workoutName(p.basis.routineName, p.basis.performedAt.utc, p.basis.performedAt.tz);
   switch (p.source) {
     case 'rule':
       return {
         key: 'set_by',
         label: 'Set by',
-        lines: [after === null ? `Built-in rule · ${dayMonthText(p.setAt.utc, p.setAt.tz)}` : `Built-in rule · after ${after}`, ...(p.rule ? [p.rule.name] : [])],
+        lines: [after === null ? `Rule · ${dayMonthText(p.setAt.utc, p.setAt.tz)}` : `Rule · after ${after}`],
         kind: 'app',
       };
     case 'plan':
@@ -192,18 +195,17 @@ function setByRow(p: TargetProvenance | undefined): WhyRow {
   }
 }
 
-function whereText(day: string, gymId: string | null, equipmentName: string | null, gymNames: Readonly<Record<string, string>>): string {
-  return [day, gymId === null ? null : (gymNames[gymId] ?? null), equipmentName].filter((x): x is string => x !== null && x !== '').join(' · ');
+/** `100 kg × 8, 8, 7 @ 8 · 1 Oct`: one line, the top effort only. */
+function lastLine(sets: readonly ShownSet[], text: string, day: string): string {
+  if (sets.length === 0) return `${ALL_LEFT_OUT} · ${day}`;
+  const top = sets.reduce<number | null>((m, s) => (s.values.rpe === null ? m : m === null ? s.values.rpe : Math.max(m, s.values.rpe)), null);
+  return `${text}${top === null ? '' : ` @${NBSP}${formatNumber(top)}`} · ${day}`;
 }
 
-function storedLastTime(basis: TargetBasis, ex: SessionExercise, eq: EquipmentInstance | null, basisNow: SessionAggregate | null, gymNames: Readonly<Record<string, string>>): WhyRow {
+function storedLastTime(basis: TargetBasis, ex: SessionExercise, eq: EquipmentInstance | null, basisNow: SessionAggregate | null): WhyRow {
   const basisEq = basis.equipmentId === null ? null : (basisNow?.session.equipmentSnapshot.find((e) => e.id === basis.equipmentId) ?? (eq?.id === basis.equipmentId ? eq : null));
   const sets = counted(basis.sets);
-  const lines = [sets.length === 0 ? ALL_LEFT_OUT : basisSetsText(sets, ex, basisEq ?? eq)];
-  const effort = effortText(sets);
-  if (effort !== null) lines.push(effort);
-  lines.push(basis.imported === true ? `${dayMonthText(basis.performedAt.utc, basis.performedAt.tz)} · FitNotes` : whereText(dayMonthText(basis.performedAt.utc, basis.performedAt.tz), basis.gymId, basisEq?.name ?? null, gymNames));
-  return { key: 'last_time', label: 'Last time', lines, kind: 'actual' };
+  return { key: 'last_time', label: 'Last time', lines: [lastLine(sets, basisSetsText(sets, ex, basisEq ?? eq), dayMonthText(basis.performedAt.utc, basis.performedAt.tz))], kind: 'actual' };
 }
 
 /** A history workout's non-warm-up sets, sides kept, in the shape the rows print. */
@@ -226,25 +228,24 @@ export function historySetsText(h: HistorySession, ex: Pick<SessionExercise, 'lo
   return sets.length === 0 ? ALL_LEFT_OUT : basisSetsText(sets, ex, eq);
 }
 
-function historyLastTime(prev: HistorySession | null, ex: SessionExercise, eq: EquipmentInstance | null, tz: string, gymNames: Readonly<Record<string, string>>): WhyRow {
+function historyLastTime(prev: HistorySession | null, ex: SessionExercise, eq: EquipmentInstance | null, tz: string): WhyRow {
   if (prev === null) {
-    return { key: 'last_time', label: 'Last time', lines: [eq === null ? 'No earlier sets of this exercise.' : `No earlier sets on ${eq.name}.`], kind: 'app' };
+    return { key: 'last_time', label: 'Last time', lines: ['None'], kind: 'app' };
   }
   const sets = counted(shownSets(prev));
-  const lines = [sets.length === 0 ? ALL_LEFT_OUT : basisSetsText(sets, ex, eq)];
-  const effort = effortText(sets);
-  if (effort !== null) lines.push(effort);
-  lines.push(prev.imported ? `${dayMonthText(prev.performedAtUtc, prev.tz ?? tz)} · FitNotes` : whereText(dayMonthText(prev.performedAtUtc, prev.tz ?? tz), prev.gymId, eq?.name ?? null, gymNames));
-  return { key: 'last_time', label: 'Last time', lines, kind: 'actual' };
+  return { key: 'last_time', label: 'Last time', lines: [lastLine(sets, basisSetsText(sets, ex, eq), dayMonthText(prev.performedAtUtc, prev.tz ?? tz))], kind: 'actual' };
 }
 
 function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: SessionExercise, eq: EquipmentInstance | null): WhyRow | null {
   if (p === undefined) return null;
   switch (p.source) {
     case 'rule':
-      return p.rule ? { key: 'reason', label: 'Reason', lines: [p.rule.summary, ...p.rule.facts].filter((l) => l !== ''), kind: 'app' } : null;
+    {
+      const line = p.rule ? briefLine(p.rule.summary).replace(/,? because .*$/, '') : '';
+      return line !== '' ? { key: 'reason', label: 'Reason', lines: [line], kind: 'app' } : null;
+    }
     case 'plan':
-      return { key: 'reason', label: 'Reason', lines: [`${p.routineName ?? 'Your routine'} sets ${planTargetText(planned, p.requestedLoad, ex, eq)}.`], kind: 'app' };
+      return { key: 'reason', label: 'Reason', lines: [`Plan ${planTargetText(planned, p.requestedLoad, ex, eq)}`], kind: 'app' };
     case 'repeat':
       return { key: 'reason', label: 'Reason', lines: ['Same as last time'], kind: 'app' };
     case 'coach': {
@@ -254,15 +255,16 @@ function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: Ses
       const build = p.coach?.scope === 'build';
       const reason = build ? shownCoachNote(p.coach?.reason) : (p.coach?.reason ?? null);
       const label = build ? 'Coach’s note' : 'Reason';
-      return reason === null || reason.trim() === '' ? null : { key: 'reason', label, lines: [`“${reason.trim()}”`], kind: 'app' };
+      return reason === null || reason.trim() === '' ? null : { key: 'reason', label, lines: [`“${briefLine(reason)}”`], kind: 'app' };
     }
   }
 }
 
 function equipmentRow(p: TargetProvenance | undefined): WhyRow | null {
   if (p === undefined) return null;
-  const lines = [...(p.step ? [stepText(p.step)] : []), ...p.guardNotes];
-  return lines.length === 0 ? null : { key: 'equipment', label: 'Equipment', lines, kind: 'app' };
+  // `Capped at 100 kg: the most this bar makes. …` → `Capped at 100 kg`.
+  const lines = [...(p.step ? [stepText(p.step)] : []), ...p.guardNotes].map((l) => briefLine(l).replace(/(: |, )the .*$/, '')).filter((l) => l !== '');
+  return lines.length === 0 ? null : { key: 'equipment', label: 'Equipment', lines: [lines.join(' · ')], kind: 'app' };
 }
 
 /** The flag `Pain` and `Before flag` are about: the oldest active one, else the latest cleared within the reference window. */
@@ -306,7 +308,7 @@ function basisEditedNote(basis: TargetBasis, basisNow: SessionAggregate | null):
   }
   if (!changed) return null;
   const day = dayMonthText(basis.performedAt.utc, basis.performedAt.tz);
-  return lastEdit === null ? `Based on ${day} before you edited it.` : `Based on ${day} before you edited it on ${dayMonthText(lastEdit, basis.performedAt.tz)}.`;
+  return lastEdit === null ? `Based on ${day}, since edited` : `Based on ${day}, edited ${dayMonthText(lastEdit, basis.performedAt.tz)}`;
 }
 
 /**
@@ -338,7 +340,7 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   if (swapped !== undefined) rows.push({ key: 'swapped', label: null, lines: [`Swapped before start · ${swapped.fromExerciseName}`], kind: 'app' });
   rows.push(setByRow(p));
   const fromHistory = p?.basis ? null : lastComparableHistory(input.history, ex);
-  rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow, input.gymNames) : historyLastTime(fromHistory, ex, eq, tz, input.gymNames));
+  rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow) : historyLastTime(fromHistory, ex, eq, tz));
   const reason = reasonRow(p, planned, ex, eq);
   if (reason) rows.push(reason);
   const equipment = equipmentRow(p);
@@ -349,9 +351,9 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   if (ref?.active) {
     const area = ref.flag.area === null ? null : PAIN_AREA_WORD[ref.flag.area];
     const since = dayMonthText(ref.flag.reportedAt.utc, ref.flag.reportedAt.tz);
-    const lines = [`Since ${since}${area === null ? '' : ` (${area})`} · no increases`];
     // A flag set after the target was made doesn't change it (targets already planned stay as they are).
-    if (p !== undefined && toMs(ref.flag.reportedAt.utc) > toMs(p.setAt.utc)) lines.push('Flagged after this target was set');
+    const after = p !== undefined && toMs(ref.flag.reportedAt.utc) > toMs(p.setAt.utc);
+    const lines = [`Held · since ${since}${area === null ? '' : ` (${area})`}${after ? ' · after target' : ''}`];
     // `Check due ›` opens the pain flag sheet with `Still hurts?` first (§2.14.2).
     const checkDue = isPainCheckDue(ref.flag, input.nowMs, tz);
     rows.push({ key: 'pain', label: 'Pain', lines, kind: 'warning', ...(checkDue ? { link: { kind: 'pain_flag', flagId: ref.flag.id, label: 'Check due ›' } } : {}) });

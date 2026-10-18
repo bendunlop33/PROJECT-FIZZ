@@ -43,10 +43,10 @@ describe('Why? through the services', () => {
 
     const e = await s.workout.explainTarget(sessionId, setId);
     expect(rowsOf(e)).toEqual([
-      ['Set by', 'Built-in rule · after your 8 Oct workout', '3–6 reps, up to RPE 8.5'],
-      ['Last time', '100 kg × 6, 6, 6', 'RPE 8, 8, 8', '8 Oct · Main Gym · Barbell and plates'],
-      ['Reason', 'Increase to 102.5 kg for 3–6 reps.', 'Last session: every counted set reached 6+ reps at 100 kg.'],
-      ['Equipment', '+2.5 kg (+2.5%), the smallest step on this bar.'],
+      ['Set by', 'Rule · after your 8 Oct workout'],
+      ['Last time', '100 kg × 6, 6, 6 @ 8 · 8 Oct'],
+      ['Reason', 'Increase to 102.5 kg for 3–6 reps'],
+      ['Equipment', '+2.5 kg (+2.5%) · smallest step'],
     ]);
     // A read: nothing about the workout changes.
     expect((await s.workout.load(sessionId))?.aggregate.revision).toBe(aggregate.revision);
@@ -87,8 +87,8 @@ describe('Why? through the services', () => {
     expect(fixed.ok).toBe(true);
 
     const e = await s.workout.explainTarget(sessionId, setId);
-    expect(plain(e?.basisEdited ?? '')).toBe('Based on 8 Oct before you edited it on 11 Oct.');
-    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 6, 6, 6', 'RPE 8, 8, 8', '8 Oct · Main Gym · Barbell and plates']);
+    expect(plain(e?.basisEdited ?? '')).toBe('Based on 8 Oct, edited 11 Oct');
+    expect(rowsOf(e)[1]).toEqual(['Last time', '100 kg × 6, 6, 6 @ 8 · 8 Oct']);
     expect((await s.workout.load(sessionId))?.aggregate.sets.map((x) => x.planned.load?.value)).toEqual([102.5, 102.5, 102.5]);
   });
 
@@ -108,10 +108,10 @@ describe('Why? through the services', () => {
     const setId = aggregate.sets[0]?.id ?? '';
     const on = await s.workout.explainTarget(sessionId, setId);
     expect(rowsOf(on).filter((r) => r[0] === 'Pain' || r[0] === 'Before flag')).toEqual([
-      ['Pain', 'Since 9 Oct (shoulder) · no increases'],
+      ['Pain', 'Held · since 9 Oct (shoulder)'],
       ['Before flag', '105 kg × 5, 5, 5 · 8 Oct'],
     ]);
-    expect(rowsOf(on)[2]?.[1]).toMatch(/^Progression for Bench press is paused because pain was reported/);
+    expect(rowsOf(on)[2]?.[1]).toBe('Progression for Bench press is paused');
 
     for (const f of flagged.ok ? (flagged.flags ?? []) : []) await s.pain.clearConfirmed({ flagId: f.id, expectedVersion: f.version });
     const off = await s.workout.explainTarget(sessionId, setId);
@@ -126,7 +126,7 @@ describe('Why? through the services', () => {
     expect(aggregate.sets[0]?.planned.provenance?.source).toBe('rule');
     const rows = rowsOf(await s.workout.explainTarget(sessionId, aggregate.sets[0]?.id ?? ''));
     expect(rows[0]?.[0]).toBe('Set by');
-    expect(rows[0]?.[1]).toMatch(/^Built-in rule · /);
+    expect(rows[0]?.[1]).toMatch(/^Rule · /);
     expect(rows.find((r) => r[0] === 'Reason')).toEqual(['Reason', '3 × 3–6 · load: your choice']);
     expect(rows.flat().join(' ')).not.toMatch(/Not recorded/);
   });

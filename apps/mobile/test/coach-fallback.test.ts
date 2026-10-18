@@ -134,8 +134,8 @@ describe('Ben’s case: 62.5 kg × 3–6 planned, 2 reps logged', () => {
 
     // Why? on the changed set: the built-in rule, never the coach.
     const why = await s.workout.explainTarget(sessionId, s2.id);
-    expect(plain(why?.rows.find((x) => x.key === 'set_by')?.lines[0])).toMatch(/^Built-in rule · /);
-    expect(why?.rows.find((x) => x.key === 'reason')?.lines).toEqual(['Lighter load for the remaining sets (8%).', '2 reps on set 1 (target 3–6)']);
+    expect(plain(why?.rows.find((x) => x.key === 'set_by')?.lines[0])).toMatch(/^Rule · /);
+    expect(why?.rows.find((x) => x.key === 'reason')?.lines).toEqual(['Lighter load for the remaining sets (8%)']);
     expect(exerciseMenu(false, 'rule').options).toContain('Undo change');
 
     const undone = await s.coach.undo(r.record.actionId, `undo:${r.record.actionId}`);

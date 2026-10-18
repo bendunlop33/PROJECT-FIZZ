@@ -142,21 +142,18 @@ export function targetStep(from: Load, to: Load, eq: EquipmentInstance | null): 
   };
 }
 
-/** `+2.5 kg (+2.5%), the smallest step on this bar.` / `2.5 kg less assistance on this machine.` */
+/** `+2.5 kg (+2.5%) · smallest step` / `2.5 kg less assistance` (one short line, 18 Oct). */
 export function stepText(step: TargetStep): string {
   const { from, to } = step;
   const each = to.convention === 'per_hand' ? `${NBSP}each` : '';
   const amount = `${formatNumber(Math.abs(to.value - from.value))}${NBSP}${to.unit}${each}`;
-  const noun = equipmentNoun(step.equipmentKind);
   const up = toScaled(to.value) > toScaled(from.value);
   if (loadDirection(to.convention) === 'assistance') {
-    const tail = step.equipmentKind === null ? '.' : step.smallest ? `, the smallest step on this ${noun}.` : ` on this ${noun}.`;
-    return `${amount} ${up ? 'more' : 'less'} assistance${tail}`;
+    return `${amount} ${up ? 'more' : 'less'} assistance${step.smallest ? ' · smallest step' : ''}`;
   }
   const sign = up ? '+' : '−';
   const pct = step.pctChange === null ? '' : ` (${sign}${formatNumber(Math.abs(step.pctChange))}%)`;
-  const tail = step.equipmentKind === null ? '.' : step.smallest ? `, the smallest step${up ? '' : ' down'} on this ${noun}.` : ` on this ${noun}.`;
-  return `${sign}${amount}${pct}${tail}`;
+  return `${sign}${amount}${pct}${step.smallest ? ' · smallest step' : ''}`;
 }
 
 /**

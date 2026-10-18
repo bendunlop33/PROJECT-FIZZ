@@ -61,7 +61,7 @@ describe('Why? after a gym switch', () => {
   it('the Why? panel’s Equipment row reads the new fit', () => {
     const set = exerciseSets(after, INCLINE)[0];
     const why = explainTarget({ aggregate: after, setId: set?.id ?? '', nowMs: Date.parse(at(400).utc), basisNow: null, gymNames: GYM_NAMES, painFlags: [], history: [] });
-    expect(why?.rows.find((r) => r.key === 'equipment')?.lines.map(plain)).toEqual(['Capped at 20 kg each: the most this rack makes. Plan was 32.5 kg each.']);
+    expect(why?.rows.find((r) => r.key === 'equipment')?.lines.map(plain)).toEqual(['Capped at 20 kg each']);
   });
 
   it('Undo restores every target’s provenance exactly', () => {

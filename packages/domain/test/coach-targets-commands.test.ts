@@ -115,7 +115,7 @@ describe('Why? on a coach target (active-workout §2.12, ADR 0020 §4)', () => {
     expect(SessionAggregateSchema.safeParse(r.state).success).toBe(true);
     const why = explainTarget({ aggregate: r.state, setId: b2.id, nowMs: 400_000, basisNow: null, gymNames: {}, painFlags: [], history: [] });
     expect(why?.rows.find((x) => x.key === 'set_by')?.lines[0]).toMatch(/^Coach · /);
-    expect(why?.rows.find((x) => x.key === 'reason')?.lines).toEqual(['“Set 1 was RPE 10.”']);
+    expect(why?.rows.find((x) => x.key === 'reason')?.lines).toEqual(['“Set 1 was RPE 10”']);
     const back = expectOk(reduceSession(r.state, revert()));
     expect(back.state.sets.find((x) => x.id === b2.id)?.planned).toEqual(s.sets.find((x) => x.id === b2.id)?.planned);
   });
