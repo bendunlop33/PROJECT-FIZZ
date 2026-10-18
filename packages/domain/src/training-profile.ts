@@ -378,9 +378,14 @@ export function liftHistoryFrom(sessions: readonly SessionAggregate[], exerciseO
 export function lastSplitWorkoutGroups(split: TrainingSplit, sessions: readonly SessionAggregate[], exerciseOf: (id: string) => ExerciseInfo | null): Map<MuscleGroup, number> | null {
   const newestFirst = [...sessions].sort((a, b) => (a.session.startedAt.utc < b.session.startedAt.utc ? 1 : a.session.startedAt.utc > b.session.startedAt.utc ? -1 : 0));
   for (const a of newestFirst) {
-    const sets = workingSetsBy(a);
-    const groups = workoutMuscleGroups(a.exercises.map((ex) => ({ primaryMuscles: exerciseOf(ex.exerciseId)?.primaryMuscles ?? [], workingSets: sets.get(ex.id)?.sets ?? 0 })));
+    const groups = workoutGroupsOf(a, exerciseOf);
     if (matchSplitDay(split, groups) !== null) return groups;
   }
   return null;
+}
+
+/** The muscle groups one finished workout trained: completed working sets on each exercise's first primary muscle. */
+export function workoutGroupsOf(a: SessionAggregate, exerciseOf: (id: string) => Pick<Exercise, 'primaryMuscles'> | null): Map<MuscleGroup, number> {
+  const sets = workingSetsBy(a);
+  return workoutMuscleGroups(a.exercises.map((ex) => ({ primaryMuscles: exerciseOf(ex.exerciseId)?.primaryMuscles ?? [], workingSets: sets.get(ex.id)?.sets ?? 0 })));
 }
