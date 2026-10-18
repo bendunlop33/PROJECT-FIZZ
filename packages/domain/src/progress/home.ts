@@ -103,7 +103,7 @@ export interface ActivityView {
     countLine: string;
     overCap: TimeSheetRow[];
     noEnd: TimeSheetRow[];
-    /** `1 imported from FitNotes`; null when none. */
+    /** `1 imported`; null when none (18 Oct: no `FitNotes` word). */
     imported: string | null;
   };
 }
@@ -324,7 +324,7 @@ export function buildProgressHomeView(input: ProgressHomeInput): ProgressHomeVie
       countLine: `${span}: ${String(time.timedCount)} of ${countNoun(time.sessionCount, 'session', 'sessions')}`,
       overCap: time.excluded.overCap.map((s) => leftOutRow(s, titleOf(s.sessionId))),
       noEnd: time.excluded.noEnd.map((s) => leftOutRow(s, titleOf(s.sessionId))),
-      imported: time.excluded.imported === 0 ? null : `${String(time.excluded.imported)} imported from FitNotes`,
+      imported: time.excluded.imported === 0 ? null : `${String(time.excluded.imported)} imported`,
     },
   };
 

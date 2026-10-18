@@ -243,7 +243,7 @@ function lastTopText(h: HistorySession): { text: string; spoken: string } | null
   for (const s of working) if (top !== undefined && s.load !== null && s.load.convention !== 'bodyweight' && (top.load === null || top.load.convention === 'bodyweight' || sign(s.load) > sign(top.load))) top = s;
   if (top === undefined) return null;
   const reps = String(top.reps ?? 0);
-  const at = `${h.imported ? 'FitNotes, ' : ''}${dayMonthText(h.performedAtUtc, h.tz ?? 'UTC')}`;
+  const at = dayMonthText(h.performedAtUtc, h.tz ?? 'UTC');
   if (top.load === null || top.load.convention === 'bodyweight') return { text: `last BW${NBSP}×${NBSP}${reps} · ${at}`, spoken: `last bodyweight for ${reps}` };
   const n = formatNumber(top.load.value);
   const each = top.load.convention === 'per_hand' ? ' each' : top.load.convention === 'assistance' ? ' of assistance' : '';

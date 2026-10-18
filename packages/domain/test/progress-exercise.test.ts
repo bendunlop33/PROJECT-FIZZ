@@ -114,7 +114,7 @@ describe('series (PG15, check 26)', () => {
       ['app', 'bar-2', 1],
     ]);
     const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS });
-    expect(v?.series.map((s) => s.menuLabel)).toEqual(['Main Gym · Barbell · 2', 'Hotel Gym · Barbell · 1', 'FitNotes · kg · 1']);
+    expect(v?.series.map((s) => s.menuLabel)).toEqual(['Main Gym · Barbell · 2', 'Hotel Gym · Barbell · 1', 'History · kg · 1']);
     // Default: the series used most in the last 12 weeks.
     expect(v?.seriesLabel).toBe('Main Gym · Barbell');
     expect(v?.points.map((p) => p.sessionId)).toEqual([sessions[0]?.sessionId, sessions[3]?.sessionId]);
@@ -281,10 +281,10 @@ describe('rep table (PG28, checks 30, 31)', () => {
     expect(rows.every((r) => r.load === 60 && r.date === '2026-09-01')).toBe(true);
   });
 
-  it('uses the selected range; imported rows carry FitNotes', () => {
+  it('uses the selected range; imported rows read like any other, no FitNotes tag (18 Oct)', () => {
     const imp = imported('2026-02-01', [row([set(kg(110), 2)])]);
     const v = buildExerciseDetailView({ sessions: [imp], exerciseId: 'bench', today: TODAY, range: 'all' });
-    expect(v?.repTable?.rows[0]?.tag).toBe('FitNotes');
+    expect(v?.repTable?.rows[0]?.tag).toBeNull();
     expect(buildExerciseDetailView({ sessions: [imp], exerciseId: 'bench', today: TODAY, range: '3m' })?.repTable?.rows).toEqual([]);
   });
 });
@@ -477,11 +477,11 @@ describe('records (PG10, PG30, check 39)', () => {
     expect(exerciseRecords([heavy, ...base], withImp).items.map((x) => x.kind)).toEqual(['best_e1rm']);
     const onlyImp = [imported('2026-01-01', [row([set(kg(100), 5)])]), imported('2026-01-04', [row([set(kg(100), 5)])]), imported('2026-01-07', [row([set(kg(100), 5)])]), imported('2026-01-10', [row([set(kg(120), 5)])])];
     const v = buildExerciseDetailView({ sessions: onlyImp, exerciseId: 'bench', today: TODAY, range: 'all' });
-    expect(v?.seriesLabel).toBe('FitNotes · kg');
+    expect(v?.seriesLabel).toBe('History · kg');
     expect(v?.records).toEqual({ items: [], empty: 'Records start after 3 logged sessions.' });
-    // Imported provenance travels to every point and row.
-    expect(v?.points.every((p) => p.notes.includes('FitNotes'))).toBe(true);
-    expect(v?.history.months[0]?.rows.every((r) => r.tags.includes('FitNotes'))).toBe(true);
+    // 18 Oct (Ben): imported points and rows carry no `FitNotes` tag; the source stays in the data.
+    expect(v?.points.some((p) => p.notes.includes('FitNotes'))).toBe(false);
+    expect(v?.history.months[0]?.rows.some((r) => r.tags.includes('FitNotes'))).toBe(false);
     expect(v?.history.months[0]?.rows[0]?.title).toMatch(/· Workout$/);
   });
 

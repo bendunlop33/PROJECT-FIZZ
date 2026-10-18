@@ -331,7 +331,7 @@ describe('reason lines on the draft overview (Ben, 14 Oct: "no reason why")', ()
     const line = (e: Exercise) => draftReasonLine({ planned: firstWorking(out, e.id), reps: true, main: main.has(e.id), goal: 'strength' });
     expect(line(BENCH)).toBe('last 3: 100×7 @8 → 102.5 · main lift · strength');
     // Review r2 B1r: code's line, never the coach's words (`repeat the imported weight` is its note behind Why?).
-    expect(line(INCLINE)).toBe('last 30×8 (FitNotes) → 30 each');
+    expect(line(INCLINE)).toBe('last 30×8 → 30 each');
     expect(firstWorking(out, INCLINE.id)?.provenance?.coach?.reason).toBe('repeat the imported weight');
     // B2: 100 was capped to 25, so the coach's basis (another number) isn't shown; code's ends with the target.
     expect(line(FLY)).toBe('est. · first time · capped → 25');

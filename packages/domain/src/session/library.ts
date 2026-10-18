@@ -608,13 +608,14 @@ export function buildLibraryView(input: LibraryViewInput): LibraryView {
     const c = routineCounts(r);
     const lastDone = typeOf.get(routineTypeKey(r.id))?.lastDone ?? null;
     const upNext = input.upNextRoutineId === r.id && isInRotation(r);
-    const sourceTag = r.source === 'coach' ? 'Coach' : r.source === 'imported' ? 'Imported' : null;
+    // 18 Oct (Ben): where a routine came from isn't shown, except the coach's (rule 3).
+    const sourceTag = r.source === 'coach' ? 'Coach' : null;
     const issue = x.gymIssues > 0 ? `${String(x.gymIssues)} not here` : null;
     const parts = lastDone === null ? ['New', exercisesWord(c.exercises), ...(x.minutes === null ? [] : [minutesWord(x.minutes)])] : [exercisesWord(c.exercises), ...(x.minutes === null ? [] : [minutesWord(x.minutes)]), ...(issue === null ? [formatLastDone(lastDone, input.now)] : [])];
     const said = [
       r.name,
       ...(upNext ? ['up next'] : []),
-      ...(sourceTag === null ? [] : [`made by ${sourceTag === 'Coach' ? 'the coach' : 'import'}`]),
+      ...(sourceTag === null ? [] : ['made by the coach']),
       exercisesWord(c.exercises),
       ...(x.minutes === null ? [] : [`about ${String(x.minutes)} minutes`]),
       ...(issue === null ? [] : [`${issue} at this gym`]),

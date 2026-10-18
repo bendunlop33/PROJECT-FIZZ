@@ -459,7 +459,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect([...(loads[1] ?? []), ...(loads[2] ?? [])].every((v) => v === null)).toBe(true);
     // The summary compares with FitNotes, says so, and never claims it was the same set-up at this gym.
     const sum = await s.workout.summary(sid);
-    expect(sum?.comparison).toMatchObject({ kind: 'compared', exerciseName: 'Dumbbell bench press', why: 'FitNotes, working sets' });
+    expect(sum?.comparison).toMatchObject({ kind: 'compared', exerciseName: 'Dumbbell bench press', why: 'Working sets' });
     expect(JSON.stringify(sum)).not.toMatch(/Same set-up/);
     const benchOnly = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
     // Next time, the app-logged bench is the newest comparable (same gym, no equipment either side), named by its own gym.
@@ -474,7 +474,7 @@ describe('FitNotes import: preview, answers, commit', () => {
     expect(await s.imports.commit(draft.draftId, draft.mappingVersion, 'op-1')).toMatchObject({ ok: true });
     h.clockMs += 86_400_000;
     const sid = await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 45, reps: 10 }] }]);
-    expect((await s.workout.summary(sid))?.comparison).toMatchObject({ kind: 'compared', why: 'FitNotes, working sets' });
+    expect((await s.workout.summary(sid))?.comparison).toMatchObject({ kind: 'compared', why: 'Working sets' });
   });
 
   it('tells file kinds apart by content and stops on an unknown header (DX5, check 16)', async () => {

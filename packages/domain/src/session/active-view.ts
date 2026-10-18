@@ -47,7 +47,7 @@ export interface PreviousSession {
   performedAtUtc: string;
   /** The compared workout's own gym (null: not recorded), so nothing claims it was at today's gym. */
   gymId: string | null;
-  /** From FitNotes (B7): shown as `Last (FitNotes, 1 Oct)`, never as an app session. */
+  /** From FitNotes (B7): kept as data; `Last` reads like any other (18 Oct). */
   imported: boolean;
   /** Working-order sets as logged, for prefill and the `Last (…)` line. */
   sets: ComparableSet[];
@@ -249,7 +249,7 @@ export interface FocusView {
   setTypeLabel: string;
   setNumber: number;
   setCount: number;
-  /** `imported`: from FitNotes, shown as `Last (FitNotes, 1 Oct)` (B7). */
+  /** `imported`: from FitNotes (B7); kept as data, shown like any other `Last` (18 Oct). */
   previous: { performedAtUtc: string; text: string; values: SetValues; imported: boolean } | null;
   draft: SetValues;
   draftSource: DraftSource | 'edited' | 'copied';

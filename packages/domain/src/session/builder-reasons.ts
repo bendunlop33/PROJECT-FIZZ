@@ -81,7 +81,7 @@ export function draftReasonLine(input: ReasonLineInput): string | null {
       if (load.length > 0) parts.push(fitKeepingTail(load.join(' · '), REASON_LINE_MAX));
     } else if (p.source === 'built_in_rule') {
       const last = prov?.basis ? topText(prov.basis.sets) : null;
-      parts.push(last === null ? 'Rule' : `Rule · last ${last}${prov?.basis?.imported === true ? ' (FitNotes)' : ''}`);
+      parts.push(last === null ? 'Rule' : `Rule · last ${last}`);
     } else if (p.load === null) {
       parts.push('first time · start light');
     }
@@ -161,9 +161,9 @@ export function loadPanelLine(e: Pick<LoadWhyEntry, 'target' | 'label'>): string
 /** Which history a draft's loads came from (`USED`, review S4): only what was actually read. */
 export type HistoryUsed = 'logged' | 'fitnotes' | 'both' | null;
 
-/** `Logged history`, `FitNotes history`, `Logged and FitNotes history`; null when no load came from history. */
+/** `Your history` whichever history it was (18 Oct: no `FitNotes` word); null when no load came from history. */
 export function historyUsedLine(h: HistoryUsed): string | null {
-  return h === 'both' ? 'Logged and FitNotes history' : h === 'logged' ? 'Logged history' : h === 'fitnotes' ? 'FitNotes history' : null;
+  return h === null ? null : 'Your history';
 }
 
 /** Combine per-exercise sources into one `HistoryUsed`. */

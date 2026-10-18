@@ -304,30 +304,30 @@ describe('S3: FitNotes series labels never collide', () => {
       imported('2025-01-04', [row([set(null, null, { durationS: 30 })], { convention: 'bodyweight', measurement: 'duration' })]),
     ];
     const labels = [...seriesLabels(collectExerciseSeries(sessions, 'bench'), {}).values()];
-    expect(labels.sort()).toEqual(['FitNotes · kg', 'FitNotes · kg stack', 'FitNotes · reps', 'FitNotes · timed']);
+    expect(labels.sort()).toEqual(['History · kg', 'History · kg stack', 'History · reps', 'History · timed']);
     const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY });
     expect(new Set(v?.series.map((s) => s.menuLabel)).size).toBe(4);
   });
 
   it('a single FitNotes series keeps the short label; kg and lb differ already', () => {
     const sessions = [imported('2025-01-01', [row([set(kg(100), 5)])]), imported('2025-01-02', [row([set(lb(225), 5)], { unit: 'lb' })])];
-    expect([...seriesLabels(collectExerciseSeries(sessions, 'bench'), {}).values()].sort()).toEqual(['FitNotes · kg', 'FitNotes · lb']);
+    expect([...seriesLabels(collectExerciseSeries(sessions, 'bench'), {}).values()].sort()).toEqual(['History · kg', 'History · lb']);
   });
 
   it('a weighted and an unweighted timed import of one unit (plank) read differently (r2 S3)', () => {
     const plank = (convention: 'total' | 'bodyweight', unit: 'kg' | 'lb' = 'kg') =>
       imported('2025-01-01', [row([set(convention === 'total' ? (unit === 'kg' ? kg(10) : lb(25)) : null, null, { durationS: 45 })], { convention, measurement: 'duration', unit })]);
     const two = [...seriesLabels(collectExerciseSeries([plank('bodyweight'), plank('total')], 'bench'), {}).values()];
-    expect(two.sort()).toEqual(['FitNotes · timed', 'FitNotes · timed · weighted']);
+    expect(two.sort()).toEqual(['History · timed', 'History · timed · weighted']);
     // With kg and lb of each: the unit, never the same label twice.
     const four = [...seriesLabels(collectExerciseSeries([plank('bodyweight'), plank('total'), plank('bodyweight', 'lb'), plank('total', 'lb')], 'bench'), {}).values()];
-    expect(four.sort()).toEqual(['FitNotes · timed · kg', 'FitNotes · timed · lb', 'FitNotes · timed · weighted · kg', 'FitNotes · timed · weighted · lb']);
+    expect(four.sort()).toEqual(['History · timed · kg', 'History · timed · lb', 'History · timed · weighted · kg', 'History · timed · weighted · lb']);
   });
 
   it('labels that still match after every step get an ordinal (last resort)', () => {
     const a = { ...(collectExerciseSeries([imported('2025-01-01', [row([set(kg(100), 5)])])], 'bench')[0] as ExerciseSeries) };
     const b = { ...a, id: `${a.id}-copy` };
-    expect([...seriesLabels([a, b], {}).values()]).toEqual(['FitNotes · kg (1)', 'FitNotes · kg (2)']);
+    expect([...seriesLabels([a, b], {}).values()]).toEqual(['History · kg (1)', 'History · kg (2)']);
   });
 
   it('timed and bodyweight imports say so, not a unit they don’t use (r3 N1)', () => {
@@ -336,9 +336,9 @@ describe('S3: FitNotes series labels never collide', () => {
     const assisted = imported('2025-01-03', [row([set(kg(20, 'assistance'), 8)], { convention: 'assistance' })]);
     const weighted = imported('2025-01-04', [row([set(kg(10), null, { durationS: 45 })], { convention: 'total', measurement: 'duration' })]);
     const labels = (xs: ProgressSession[]) => [...seriesLabels(collectExerciseSeries(xs, 'bench'), {}).values()].sort();
-    expect(labels([hold, assisted])).toEqual(['FitNotes · kg assist', 'FitNotes · timed']);
-    expect(labels([reps])).toEqual(['FitNotes · reps']);
-    expect(labels([weighted])).toEqual(['FitNotes · timed · weighted']);
+    expect(labels([hold, assisted])).toEqual(['History · kg assist', 'History · timed']);
+    expect(labels([reps])).toEqual(['History · reps']);
+    expect(labels([weighted])).toEqual(['History · timed · weighted']);
   });
 
   it('timed imports in kg and lb fall back to the unit', () => {

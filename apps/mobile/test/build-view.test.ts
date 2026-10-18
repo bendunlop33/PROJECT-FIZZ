@@ -166,7 +166,7 @@ describe('`Why this workout` (§4.5)', () => {
         heading: 'LOADS',
         lines: ['Bench press 102.5 kg', '  ⓘ last 3: 100×7 @8 → 102.5', '  Coach’s note “100 for 7 @8 → 102.5”', 'Cable fly 12.5 kg · est.', '  ⓘ est. · first time', '  ⓘ 13 → 12.5 (this stack)', 'Triceps pushdown 27.5 kg · Rule', '  ⓘ coach load 40 kg too far from last 25 × 12'],
       },
-      { heading: 'USED', lines: ['Push · Bench press · 45 min · last Push 6 days ago', 'Logged and FitNotes history'] },
+      { heading: 'USED', lines: ['Push · Bench press · 45 min · last Push 6 days ago', 'Your history'] },
     ]);
   });
 
@@ -180,10 +180,10 @@ describe('`Why this workout` (§4.5)', () => {
       historyUsed: 'logged',
     });
     expect(why.find((s) => s.heading === 'NOT USED')?.lines).toEqual(['Bench press: “you hit 110×5 last week”']);
-    expect(why.find((s) => s.heading === 'USED')?.lines).toEqual(['45 min', 'Logged history']);
+    expect(why.find((s) => s.heading === 'USED')?.lines).toEqual(['45 min', 'Your history']);
     // Nothing from history (first-time estimates only): no history line at all.
     expect(draftWhyView({ request: 'push', rationale: null, checks: [], fitMinutes: 45, historyUsed: null }).find((s) => s.heading === 'USED')?.lines).toEqual(['45 min']);
-    expect(draftWhyView({ request: 'push', rationale: null, checks: [], fitMinutes: 45, historyUsed: 'fitnotes' }).find((s) => s.heading === 'USED')?.lines).toEqual(['45 min', 'FitNotes history']);
+    expect(draftWhyView({ request: 'push', rationale: null, checks: [], fitMinutes: 45, historyUsed: 'fitnotes' }).find((s) => s.heading === 'USED')?.lines).toEqual(['45 min', 'Your history']);
   });
 });
 

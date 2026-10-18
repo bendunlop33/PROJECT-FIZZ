@@ -316,7 +316,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
           todayText: valuesText(today, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
           lastText: valuesText(last, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq }),
           lastAtUtc: prev.performedAtUtc,
-          why: prev.imported ? 'FitNotes, working sets' : `Same ${eq ? eq.name : 'set-up'}${comparedGymText(prev.gymId, s.gymId, input)}, working sets`,
+          why: prev.imported ? 'Working sets' : `Same ${eq ? eq.name : 'set-up'}${comparedGymText(prev.gymId, s.gymId, input)}, working sets`,
         };
         break;
       }

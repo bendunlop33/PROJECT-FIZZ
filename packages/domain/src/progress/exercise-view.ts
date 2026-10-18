@@ -269,7 +269,7 @@ export function compactSetText(s: ProgressSet, series: Pick<ExerciseSeries, 'kin
 
 export interface SeriesOption {
   id: string;
-  /** `Main Gym · Barbell`, `FitNotes · kg`. */
+  /** `Main Gym · Barbell`, `History · kg` (imported; 18 Oct: no `FitNotes` in labels). */
   label: string;
   sessionCount: number;
   /** `Main Gym · Barbell · 24`. */
@@ -277,7 +277,7 @@ export interface SeriesOption {
   source: 'app' | 'import';
 }
 
-/** Series labels (§5.5): gym and equipment for logged series, `FitNotes · kg` for imported ones; made unique when two would read the same. */
+/** Series labels (§5.5): gym and equipment for logged series, `History · kg` for imported ones (no equipment recorded); made unique when two would read the same. */
 export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readonly<Record<string, string>>): Map<string, string> {
   // Two series that would read the same: say what differs (unit and convention, or timed and weighted), then the unit, then an ordinal as a last resort.
   const loadedTimed = (s: ExerciseSeries) => s.key.measurement === 'duration' && s.key.convention !== 'bodyweight';
@@ -287,7 +287,7 @@ export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readon
     if (s.key.source === 'import') {
       // Timed and bodyweight imports say so (not a unit they don't use, review progress-B r3 N1).
       const what = s.key.measurement === 'duration' ? detail(s) : s.key.convention === 'bodyweight' ? 'reps' : `${s.key.unit}${s.key.convention === 'per_hand' ? ' each' : s.key.convention === 'assistance' ? ' assist' : ''}`;
-      base.set(s.id, `FitNotes · ${what}`);
+      base.set(s.id, `History · ${what}`);
       continue;
     }
     const gym = s.gymId === null ? null : (gymNames[s.gymId] ?? null);
@@ -299,7 +299,7 @@ export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readon
   for (const s of series) {
     const l = base.get(s.id) ?? '';
     if ((baseCounts.get(l) ?? 0) <= 1) step1.set(s.id, l);
-    else step1.set(s.id, s.key.source === 'import' ? `FitNotes · ${detail(s)}` : `${l} · ${detail(s)}`);
+    else step1.set(s.id, s.key.source === 'import' ? `History · ${detail(s)}` : `${l} · ${detail(s)}`);
   }
   const step1Counts = countLabels(step1);
   const step2 = new Map<string, string>();
@@ -308,7 +308,7 @@ export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readon
     step2.set(s.id, (step1Counts.get(l) ?? 0) > 1 ? `${l} · ${loadedTimed(s) ? seriesUnitText(s) : s.key.unit}` : l);
   }
   const step2Counts = countLabels(step2);
-  // The ordinal goes on the shorter step-1 label (`FitNotes · kg (1)`, not `FitNotes · kg · kg (1)`), counted per step-1 label so it stays unique (review progress-B r3 N1).
+  // The ordinal goes on the shorter step-1 label (`History · kg (1)`, not `History · kg · kg (1)`), counted per step-1 label so it stays unique (review progress-B r3 N1).
   const seen = new Map<string, number>();
   const out = new Map<string, string>();
   for (const s of series) {
@@ -559,7 +559,7 @@ function markedNote(p: TrendPoint, metric: ExerciseMetric): string | null {
 function pointView(p: TrendPoint, series: ExerciseSeries, metric: ExerciseMetric, today: string): ChartPointView {
   const display = valueText(p, series, metric);
   const from = metric === 'e1rm' && p.fromSet ? `  from ${setText(p.fromSet, series)}` : '';
-  const notes = [p.edited ? 'Edited' : null, markedNote(p, metric), p.source === 'import' ? 'FitNotes' : null].filter((x): x is string => x !== null);
+  const notes = [p.edited ? 'Edited' : null, markedNote(p, metric)].filter((x): x is string => x !== null);
   const fromWords = metric === 'e1rm' && p.fromSet ? `, from ${setWords(p.fromSet, series.equipmentKind)}` : '';
   const metricName = metric === 'e1rm' ? 'estimated one-rep max' : metricLabel(metric).toLowerCase();
   return {
@@ -696,7 +696,7 @@ function historyRow(ss: SeriesSession, series: ExerciseSeries, today: string): H
   const working = ss.sets.filter((s) => s.setType !== 'warmup');
   const shown = working.length > 0 ? working : ss.sets;
   const sets = shown.map((s) => compactSetText(s, series)).join(' · ');
-  const tags = [ss.edited ? 'Edited' : null, ss.source === 'import' ? 'FitNotes' : null].filter((x): x is string => x !== null);
+  const tags = [ss.edited ? 'Edited' : null].filter((x): x is string => x !== null);
   const title = pointTitle(ss, today);
   return {
     key: ss.sessionId,
@@ -711,7 +711,7 @@ function historyRow(ss: SeriesSession, series: ExerciseSeries, today: string): H
 function repTableView(series: ExerciseSeries, bounds: DateRange, by: 'weight' | 'reps', today: string): RepTableView | null {
   if (!hasRepTable(series.kind)) return null;
   const lower = series.kind === 'assisted';
-  const tag = (src: 'app' | 'import' | null) => (src === 'import' ? 'FitNotes' : null);
+  // 18 Oct (Ben): imported rows read like any other (no `FitNotes` tag); the source stays in the data.
   const loadOf = (v: number): Load => ({ value: v, unit: series.key.unit, convention: series.key.convention });
   if (by === 'weight') {
     const rows = repTableByWeight(series, bounds).map((r) => ({
@@ -719,8 +719,8 @@ function repTableView(series: ExerciseSeries, bounds: DateRange, by: 'weight' | 
       sessionId: r.sessionId,
       cells: [setLoadText(loadOf(r.load), series), String(r.reps), shortDate(r.date, today)] as [string, string, string],
       note: null,
-      tag: tag(r.source),
-      words: `${massWords(loadOf(r.load), series.equipmentKind)}, ${countNoun(r.reps, 'rep', 'reps')}, ${longDate(r.date, today)}.${r.source === 'import' ? ' FitNotes.' : ''}`,
+      tag: null,
+      words: `${massWords(loadOf(r.load), series.equipmentKind)}, ${countNoun(r.reps, 'rep', 'reps')}, ${longDate(r.date, today)}.`,
     }));
     return { by, headers: [lower ? 'Assist' : 'Weight', 'Reps', 'Date'], rows, initial: 10 };
   }
@@ -730,7 +730,7 @@ function repTableView(series: ExerciseSeries, bounds: DateRange, by: 'weight' | 
     sessionId: r.sessionId,
     cells: [String(r.reps), r.load === null ? '—' : setLoadText(loadOf(r.load), series), r.date === null ? '' : shortDate(r.date, today)] as [string, string, string],
     note: r.fromReps === null ? null : `from ${String(r.fromReps)} reps`,
-    tag: tag(r.source),
+    tag: null,
     words:
       r.load === null || r.date === null
         ? `${countNoun(r.reps, 'rep', 'reps')}, none.`
@@ -752,8 +752,8 @@ function distanceTableView(series: ExerciseSeries, bounds: DateRange, today: str
       sessionId: r.sessionId,
       cells: [load ?? 'No load', metres, shortDate(r.date, today)] as [string, string, string],
       note: null,
-      tag: r.source === 'import' ? 'FitNotes' : null,
-      words: `${(r.load === null ? null : distanceLoadWords(loadOf(r.load), series)) ?? 'No load'}, ${countNoun(r.distanceM, 'metre', 'metres')}, ${longDate(r.date, today)}.${r.source === 'import' ? ' FitNotes.' : ''}`,
+      tag: null,
+      words: `${(r.load === null ? null : distanceLoadWords(loadOf(r.load), series)) ?? 'No load'}, ${countNoun(r.distanceM, 'metre', 'metres')}, ${longDate(r.date, today)}.`,
     };
   });
   return { headers: ['Weight', 'Distance', 'Date'], rows, initial: 10 };
@@ -927,7 +927,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     if (ss.date < trend.bounds.from || ss.date > trend.bounds.to) continue;
     const p = rowsBySession.get(ss.sessionId);
     if (p === undefined && !notCounted.has(ss.sessionId)) continue;
-    const notes = [gapAt.has(ss.date) ? `Gap ${String(gapAt.get(ss.date))} days` : null, ss.edited ? 'Edited' : null, notCounted.has(ss.sessionId) ? 'Not counted' : null, ss.source === 'import' ? 'FitNotes' : null].filter((x): x is string => x !== null);
+    const notes = [gapAt.has(ss.date) ? `Gap ${String(gapAt.get(ss.date))} days` : null, ss.edited ? 'Edited' : null, notCounted.has(ss.sessionId) ? 'Not counted' : null].filter((x): x is string => x !== null);
     const value = p === undefined ? '—' : valueText(p, series, metric);
     tableRows.push({
       key: ss.sessionId,

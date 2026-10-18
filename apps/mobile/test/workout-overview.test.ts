@@ -219,7 +219,7 @@ describe('Workout overview', () => {
     expect(why).not.toBeNull();
     expect(why).toEqual(withId);
     // Pain mentioned: progression paused, as the row shows (no +2.5 kg explained).
-    expect(why?.rows.find((r) => r.key === 'reason')?.lines[0]).toMatch(/paused because pain was reported/);
+    expect(why?.rows.find((r) => r.key === 'reason')?.lines[0]).toMatch(/is paused$/);
     expect(bench.marker.kind).not.toBe('up');
   });
 

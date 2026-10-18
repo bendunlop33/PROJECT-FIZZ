@@ -27,7 +27,6 @@ export const DELETE_COPY = {
   empty: 'Nothing deleted in the last 30 days.',
   gone: 'This workout was deleted.',
   none: 'None',
-  imported: 'Imported',
 } as const;
 
 /** `Thu 8 Oct` (an imported, date-only workout: `Thu 2 May 2024`, never shifted by the phone's zone). */
@@ -40,9 +39,9 @@ export function pastRowTitle(row: PastRow, phoneTz: string): string {
   return `${workoutDateText(row, phoneTz)} · ${row.title}`;
 }
 
-/** `Main Gym · 16 sets`, or `12 sets · Imported`. */
+/** `Main Gym · 16 sets`, or `12 sets` (imported: no gym recorded; 18 Oct, no `Imported` tag). */
 export function pastRowDetail(row: PastRow): string {
-  return row.source === 'import' ? `${plural(row.sets, 'set', 'sets')} · ${DELETE_COPY.imported}` : `${row.gymName} · ${plural(row.sets, 'set', 'sets')}`;
+  return row.source === 'import' ? plural(row.sets, 'set', 'sets') : `${row.gymName} · ${plural(row.sets, 'set', 'sets')}`;
 }
 
 /** `2 workouts couldn’t be read and aren’t listed.` (Past workouts, Recently deleted). */
