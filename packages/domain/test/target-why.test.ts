@@ -3,6 +3,8 @@ import type { EquipmentInstance, Exercise, PainFlag, SessionAggregate, SetValues
 
 import {
   basisSetsText,
+  briefCut,
+  quotedBrief,
   buildActiveSetView,
   targetLineLabel,
   targetLineText,
@@ -140,7 +142,7 @@ describe('explainTarget: built-in rule target (check 39)', () => {
     const after = explain(now, { basisNow: basis, history: [...h, ...hist(newer)], painFlags: [flag(3)], nowMs: ms(4 * DAY) });
     expect(rowsOf(after).slice(0, 4)).toEqual(rowsOf(before));
     // The flag itself is shown as it is now, and says it came after the target.
-    expect(rowsOf(after)[4]).toEqual(['Pain', 'Held · since 11 Oct (shoulder) · after target']);
+    expect(rowsOf(after)[4]).toEqual(['Pain', 'Flagged after target · since 11 Oct (shoulder)']);
     expect(after?.rows[4]?.kind).toBe('warning');
   });
 
@@ -453,5 +455,21 @@ describe('explainTarget: sets left out (Not used, active-workout §2.13)', () =>
     const e = explain(today(2, h, { why: false }), { history: h });
     expect(rowsOf(e)[1]?.[1]).toBe('100 kg × 8, 8 @ 8 · 8 Oct');
     expect(rowsOf(e).at(-1)).toEqual(['Not used', 'Set 3 on 8 Oct: form broke']);
+  });
+});
+
+describe('brief lines (18 Oct review S2)', () => {
+  it('keeps the first sentence and says when text was dropped', () => {
+    expect(briefCut('Hit 12 last time. Adding 2.5 kg.')).toEqual({ line: 'Hit 12 last time', cut: true });
+    expect(briefCut('Hit 12 last time.')).toEqual({ line: 'Hit 12 last time', cut: false });
+    expect(briefCut('Up to 82.5 kg')).toEqual({ line: 'Up to 82.5 kg', cut: false });
+  });
+  it('never cuts at an abbreviation', () => {
+    expect(briefCut('Go lighter, e.g. 80 kg, today. Then build.').line).toBe('Go lighter, e.g. 80 kg, today');
+    expect(briefCut('Approx. 3 reps in reserve').line).toBe('Approx. 3 reps in reserve');
+  });
+  it('quotes a shortened reason with an ellipsis, never as the full words', () => {
+    expect(quotedBrief('Easy last week. Pushing it up.')).toBe('“Easy last week…”');
+    expect(quotedBrief('Easy last week.')).toBe('“Easy last week”');
   });
 });

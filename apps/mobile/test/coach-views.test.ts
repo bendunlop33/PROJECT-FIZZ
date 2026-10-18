@@ -226,6 +226,12 @@ describe('Next time (D21): coach rows over the built-in rule', () => {
     expect(v?.undoAll).toEqual({ actionId: ID(77), rows: saved });
   });
 
+  it('a built-in row’s Why is one short line: no rule facts, so no FitNotes wording (Ben, 18 Oct; review B3)', () => {
+    const imported: NextTimeRow = { ...builtInRow('Row', 2), summary: 'Use 60 kg for 8–10 reps. Then build up.', facts: ['Last session is from FitNotes (equipment not recorded).'] };
+    const v = nextTimeView({ ...input([]), builtIn: { sourceTag: 'Built-in rule', rows: [imported], emptyText: null } });
+    expect(v?.rows[0]?.why.map(nb)).toEqual(['Use 60 kg for 8–10 reps']);
+  });
+
   it('the coach note drops a number about an exercise without a saved coach target (review S5)', () => {
     const said = ['All three sets were RPE 10.', 'Bench at 57.5 should feel better.', 'Next time row 65 for 10.', 'Rows looked smooth.'];
     // Bench has the coach's saved row; Row has none, so its number would sit beside the built-in rule's.

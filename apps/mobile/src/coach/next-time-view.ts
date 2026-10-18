@@ -9,7 +9,7 @@
  */
 
 import { targetPhrase } from '@fizz/coach';
-import { EXERCISE_SHORT_FORMS, pctText, shortFormMeans, type NextTimeRow } from '@fizz/domain';
+import { briefLine, EXERCISE_SHORT_FORMS, pctText, shortFormMeans, type NextTimeRow } from '@fizz/domain';
 import type { NextSessionTargetRecord } from '@fizz/schemas';
 
 import type { CoachAvailability } from './coach-service';
@@ -106,7 +106,8 @@ export function nextTimeView(input: NextTimeInput): NextTimeView | null {
     const c = byExercise.get(b.exerciseId);
     seen.add(b.exerciseId);
     if (c !== undefined) rows.push(coachRow(c, b, stale.has(c.id)));
-    else rows.push({ key: b.exerciseId, exerciseName: b.exerciseName, target: b.target, pct: null, tag: input.builtIn.sourceTag, why: [b.summary, ...b.facts], actions: [], note: null, row: null });
+    // One short line (Ben, 18 Oct): the rule's facts stay stored and in the coach's context, not on screen (review B3).
+    else rows.push({ key: b.exerciseId, exerciseName: b.exerciseName, target: b.target, pct: null, tag: input.builtIn.sourceTag, why: [briefLine(b.summary)], actions: [], note: null, row: null });
   }
   // Coach rows for exercises the built-in rule didn't list (it held them).
   for (const c of input.coachRows) if (!seen.has(c.exerciseId)) rows.push(coachRow(c, undefined, stale.has(c.id)));

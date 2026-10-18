@@ -96,9 +96,31 @@ const counted = <T extends ShownSet>(sets: readonly T[]): T[] => sets.filter((s)
  * Stored text is kept as it was; only the panel shortens it.
  */
 export function briefLine(text: string): string {
+  return briefCut(text).line;
+}
+
+/** Words whose full stop isn't a sentence end (`e.g. 5 kg`, `approx. 80`). */
+const ABBREVIATIONS = new Set(['e.g', 'i.e', 'eg', 'ie', 'approx', 'vs', 'incl', 'ca', 'cf']);
+
+/** `briefLine`, and whether anything after the first sentence was dropped. */
+export function briefCut(text: string): { line: string; cut: boolean } {
   const t = text.trim();
-  const end = t.search(/[.!?](\s|$)/);
-  return (end === -1 ? t : t.slice(0, end)).trim();
+  const ends = /[.!?](\s|$)/g;
+  for (let m = ends.exec(t); m !== null; m = ends.exec(t)) {
+    if (m[0].startsWith('.')) {
+      const word = (/(\S+)$/.exec(t.slice(0, m.index))?.[1] ?? '').toLowerCase();
+      if (ABBREVIATIONS.has(word)) continue;
+    }
+    const rest = t.slice(m.index + 1).trim();
+    return { line: t.slice(0, m.index).trim(), cut: rest !== '' };
+  }
+  return { line: t, cut: false };
+}
+
+/** Someone's words shortened to one line, in quotes; `…` marks dropped text so it never reads as all they said. */
+export function quotedBrief(text: string): string {
+  const { line, cut } = briefCut(text);
+  return `“${line}${cut ? '…' : ''}”`;
 }
 
 /** Shown when every set of the workout was left out. */
@@ -255,7 +277,7 @@ function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: Ses
       const build = p.coach?.scope === 'build';
       const reason = build ? shownCoachNote(p.coach?.reason) : (p.coach?.reason ?? null);
       const label = build ? 'Coach’s note' : 'Reason';
-      return reason === null || reason.trim() === '' ? null : { key: 'reason', label, lines: [`“${briefLine(reason)}”`], kind: 'app' };
+      return reason === null || reason.trim() === '' ? null : { key: 'reason', label, lines: [quotedBrief(reason)], kind: 'app' };
     }
   }
 }
@@ -353,7 +375,8 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
     const since = dayMonthText(ref.flag.reportedAt.utc, ref.flag.reportedAt.tz);
     // A flag set after the target was made doesn't change it (targets already planned stay as they are).
     const after = p !== undefined && toMs(ref.flag.reportedAt.utc) > toMs(p.setAt.utc);
-    const lines = [`Held · since ${since}${area === null ? '' : ` (${area})`}${after ? ' · after target' : ''}`];
+    // …so it's never called `Held` then: the target may still carry an increase (review S1).
+    const lines = [`${after ? 'Flagged after target' : 'Held'} · since ${since}${area === null ? '' : ` (${area})`}`];
     // `Check due ›` opens the pain flag sheet with `Still hurts?` first (§2.14.2).
     const checkDue = isPainCheckDue(ref.flag, input.nowMs, tz);
     rows.push({ key: 'pain', label: 'Pain', lines, kind: 'warning', ...(checkDue ? { link: { kind: 'pain_flag', flagId: ref.flag.id, label: 'Check due ›' } } : {}) });

@@ -105,6 +105,16 @@ describe('buildWorkoutTableView: a fresh planned workout (WT1)', () => {
   });
 });
 
+describe('target RPE is a cell (18 Oct)', () => {
+  it('pending and open rows carry `@ 8.5`; no target, no cell', () => {
+    const { state } = startFixture();
+    const [, b1, b2] = setsFor(state, BENCH);
+    const s = { ...state, sets: state.sets.map((x) => (x.id === b1?.id || x.id === b2?.id ? { ...x, planned: { ...x.planned, rpe: 8.5 } } : x)) };
+    const bench = card(table(s).blocks[0]);
+    expect(bench.rows.map((r) => (r.effort === null ? null : plain(r.effort)))).toEqual([null, '@ 8.5', '@ 8.5']);
+  });
+});
+
 describe('after logging (WT2–WT4, WT8, WT15, WT16)', () => {
   function benchDone() {
     const { state } = startFixture();

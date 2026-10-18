@@ -42,7 +42,7 @@ export interface TableRow extends SetRowView {
    * `25 lb each`, `+10 kg`, `12 reps`, `0:45`. A range only ever appears on a target.
    */
   cells: { load: string | null; value: string };
-  /** `RPE 8` / `RIR 2` on a done row (actual, no `@`); null otherwise. */
+  /** `RPE 8` / `RIR 2` on a done row (actual, no `@`); the target `@ 8.5` on a pending or open row; null otherwise. */
   effort: string | null;
   /** A pending target changed today: the word tag `Coach` or `Rule` (never `C`). */
   todayChange: 'coach' | 'rule' | null;
@@ -303,7 +303,8 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     state: open ? 'open' : 'pending',
     columns,
     cells: { load: rowLoadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(set, ex.measurement) },
-    effort: null,
+    // The target RPE is a cell too (18 Oct: set · KG · REPS · RPE · ✓).
+    effort: rpe === null ? null : `@${NBSP}${formatNumber(rpe)}`,
     todayChange: today,
     memberTag,
     blockTitle: open ? `${label} · NOW` : label,
