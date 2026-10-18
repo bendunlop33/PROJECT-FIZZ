@@ -1,13 +1,13 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { AccessibilityInfo, Keyboard, Pressable, ScrollView, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
-import { formatDuration, NBSP, targetLineLabel, targetLineText, type FocusView, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
+import { formatDuration, NBSP, targetLineLabel, targetLineText, type FocusView, type LoadField, type StepTarget, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
 
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, TextButton, TEXT_PRESSED_OPACITY, type SymbolName } from '../../ui';
-import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadTileY, runRowTap, showsFolded, tileReportFor, type AnchorRequest, type ChipState, type Expansions, type RowPart, type TileId, type TileReport } from '../../workout/table';
+import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadTileY, loadCellA11y, runRowTap, showsFolded, tileReportFor, valueCellA11y, type AnchorRequest, type CellField, type ChipState, type Expansions, type RowPart, type RowTap, type TileId, type TileReport } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { GymPartDivider, SnapNote } from './GymSwitch';
@@ -66,6 +66,12 @@ export interface WorkoutTableProps {
   onEditSet: (setId: string) => void;
   /** `onScreen`: the row was visible when tapped (no scroll follows). */
   onSelectSet: (setId: string) => void;
+  /** A KG / REPS cell of a pending or done row: edited in place, never on another screen (18 Oct). */
+  onCellTap: (tap: Extract<RowTap, { kind: 'select_edit' | 'correct' }>) => void;
+  /** A done row's in-place correction, drawn under its row; null when none is open. */
+  rowEditor: { setId: string; field: CellField; node: ReactNode } | null;
+  /** A drag, or a tap on the list outside the rows: closes any cell editor (review S4). */
+  onTapElsewhere: () => void;
   onAddSet: (sessionExerciseId: string) => void;
   onMenu: (sessionExerciseId: string) => void;
   onName: (card: { sessionExerciseId: string; exerciseId: string; name: string; isCurrent: boolean }) => void;
@@ -314,7 +320,7 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
                   tryApply();
                 }}
               >
-                <OpenRowColumnsContext.Provider value={row.columns}>{props.openRow}</OpenRowColumnsContext.Provider>
+                <OpenRowContext.Provider value={row}>{props.openRow}</OpenRowContext.Provider>
               </View>,
             );
           } else {
@@ -329,19 +335,33 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
                 <TableSetRow
                   row={row}
                   ax={props.ax}
+                  editing={props.rowEditor?.setId === row.setId ? props.rowEditor.field : null}
                   onPress={(part) => {
                     runRowTap(row, {
                       dismissKeyboard: () => { Keyboard.dismiss(); },
-                      edit: props.onEditSet,
+                      edit: (setId) => {
+                        props.onTapElsewhere();
+                        props.onEditSet(setId);
+                      },
                       select: (setId) => {
                         haptic('step');
+                        props.onTapElsewhere();
                         props.onSelectSet(setId);
+                      },
+                      selectEdit: (setId, field) => {
+                        haptic('step');
+                        props.onCellTap({ kind: 'select_edit', setId, field });
+                      },
+                      correct: (setId, field) => {
+                        haptic('step');
+                        props.onCellTap({ kind: 'correct', setId, field });
                       },
                     }, part);
                   }}
                 />
               </View>,
             );
+            if (props.rowEditor?.setId === row.setId) parts.push(<View key={`edit:${row.setId}`}>{props.rowEditor.node}</View>);
           }
           // Rows are direct children of the body, so their measured y is body-relative.
           return parts;
@@ -362,13 +382,15 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
     );
   }
   children.push(
-    <View key="footer" style={{ paddingTop: theme.space['3'], gap: theme.space['3'] }}>
+    <Pressable key="footer" accessible={false} onPress={props.onTapElsewhere} style={{ paddingTop: theme.space['3'], gap: theme.space['3'] }}>
       {props.footer}
-    </View>,
+    </Pressable>,
   );
   children.push(
-    <View
+    <Pressable
       key="spacer"
+      accessible={false}
+      onPress={props.onTapElsewhere}
       onLayout={(e) => {
         spacerAt.current = e.nativeEvent.layout.y;
         tryApply();
@@ -390,7 +412,10 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
         }}
         onScroll={onScroll}
         scrollEventThrottle={32}
-        onScrollBeginDrag={props.onUserScroll}
+        onScrollBeginDrag={() => {
+          props.onUserScroll();
+          props.onTapElsewhere();
+        }}
         {...WORKOUT_KEYBOARD}
         contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['3'] }}
       >
@@ -614,7 +639,13 @@ function SupersetMembers({ superset, ax, onMenu, onName, onNote, onPainBadge }: 
  * open ring; a tap on the row edits its plan, a tap on the ring makes it
  * the current set (never logs). Skipped: `Skipped` with a slashed circle.
  */
-export function TableSetRow({ row, ax, onPress }: { row: TableRow; ax: boolean; onPress: (part: RowPart) => void }) {
+/**
+ * A set row (§9.74; 18 Oct, Ben: "the table stays a table"). Each cell is its
+ * own target: the set number opens Edit set (type, side, notes), the KG and
+ * REPS cells edit in place (`rowTap`), a pending row's ring makes it current.
+ * A long-press anywhere opens Edit set. Skipped rows do nothing.
+ */
+export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: boolean; editing: CellField | null; onPress: (part: RowPart) => void }) {
   const theme = useTheme();
   const done = row.state === 'done';
   const skipped = row.state === 'skipped';
@@ -647,101 +678,153 @@ export function TableSetRow({ row, ax, onPress }: { row: TableRow; ax: boolean; 
       </AppText>
     </View>
   );
-  return (
-    <Pressable
-      accessibilityRole={skipped ? 'text' : 'button'}
-      accessibilityLabel={row.accessibilityLabel}
-      accessibilityHint={skipped ? undefined : 'Edit this set'}
-      accessibilityActions={done ? [{ name: 'activate' }, { name: 'edit', label: 'Edit' }] : skipped ? [] : [{ name: 'activate' }, { name: 'edit', label: 'Edit' }, { name: 'select', label: 'Make current' }]}
-      onAccessibilityAction={(e) => {
-        onPress(e.nativeEvent.actionName === 'select' ? 'marker' : 'row');
-      }}
-      disabled={skipped}
-      onPress={() => {
-        onPress('row');
-      }}
-      style={({ pressed }) => ({
-        minHeight: theme.target.workout.height,
-        borderTopWidth: theme.dividerWidth,
-        borderTopColor: theme.colors['border.divider'],
-        backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent',
-        justifyContent: 'center',
-        paddingVertical: theme.space['1'],
-      })}
-    >
-      {ax ? (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['3'], paddingVertical: theme.space['2'] }}>
-          <View style={{ paddingTop: 2 }}>{marker}</View>
-          <View style={{ flex: 1, gap: theme.space['1'] }}>
-            <AppText variant="headline" color={done ? 'text.primary' : 'text.secondary'}>
-              {`${row.badges.length > 0 ? `${row.badges.join(' ')} · ` : ''}${row.blockTitle}`}
-            </AppText>
-            <AppText variant="body" color={valueColor} numeric>
-              {plainSpaces(row.blockValue)}
-            </AppText>
-            {tag}
-            {second.map((s) => (
-              <AppText key={s} variant="callout" color="text.secondary">
-                {s}
+  const rowActions = (done ? [{ name: 'activate' }, { name: 'edit', label: 'Edit set' }] : [{ name: 'activate' }, { name: 'edit', label: 'Edit set' }, { name: 'select', label: 'Make current' }]).concat(
+    row.columns.loadLabel !== null ? [{ name: 'load', label: 'Edit load here' }] : [],
+    [{ name: 'value', label: `Edit ${row.columns.valueLabel === 'REPS' ? 'reps' : row.columns.valueLabel === 'TIME' ? 'time' : 'distance'} here` }],
+  );
+  const longPress = () => {
+    onPress('row');
+  };
+
+  if (ax || skipped) {
+    // AX1+ block rows and skipped rows: one element; the cells are VoiceOver actions.
+    return (
+      <Pressable
+        accessibilityRole={skipped ? 'text' : 'button'}
+        accessibilityLabel={row.accessibilityLabel}
+        accessibilityHint={skipped ? undefined : 'Edit this set'}
+        accessibilityActions={skipped ? [] : rowActions}
+        onAccessibilityAction={(e) => {
+          const a = e.nativeEvent.actionName;
+          onPress(a === 'select' ? 'marker' : a === 'load' ? 'load' : a === 'value' ? 'value' : 'row');
+        }}
+        disabled={skipped}
+        onPress={() => {
+          onPress('row');
+        }}
+        style={({ pressed }) => ({
+          minHeight: theme.target.workout.height,
+          borderTopWidth: theme.dividerWidth,
+          borderTopColor: theme.colors['border.divider'],
+          backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent',
+          justifyContent: 'center',
+          paddingVertical: theme.space['1'],
+        })}
+      >
+        {ax ? (
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space['3'], paddingVertical: theme.space['2'] }}>
+            <View style={{ paddingTop: 2 }}>{marker}</View>
+            <View style={{ flex: 1, gap: theme.space['1'] }}>
+              <AppText variant="headline" color={done ? 'text.primary' : 'text.secondary'}>
+                {`${row.badges.length > 0 ? `${row.badges.join(' ')} · ` : ''}${row.blockTitle}`}
               </AppText>
-            ))}
-          </View>
-        </View>
-      ) : (
-        <View>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 52, flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: theme.space['1'] }}>
-              {row.badges.length > 0 && row.memberTag === null ? (
-                row.badges.map((b) => (
-                  <View key={b} style={{ minWidth: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors['border.control'], alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
-                    <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1.4}>
-                      {b}
-                    </AppText>
-                  </View>
-                ))
-              ) : (
-                <AppText variant="headline" color="text.secondary" numeric>
-                  {`${setLabel}${row.memberTag !== null && row.badges.length > 0 ? row.badges.join('') : ''}`}
+              <AppText variant="body" color={valueColor} numeric>
+                {plainSpaces(row.blockValue)}
+              </AppText>
+              {tag}
+              {second.map((x) => (
+                <AppText key={x} variant="callout" color="text.secondary">
+                  {x}
                 </AppText>
-              )}
+              ))}
             </View>
-            {skipped ? (
-              <AppText variant="callout" color="text.tertiary" style={{ flex: 1 }}>
-                {row.cells.value}
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ width: 52, paddingLeft: theme.space['1'] }}>
+              <AppText variant="headline" color="text.secondary" numeric>
+                {setLabel}
               </AppText>
-            ) : (
-              <>
-                {/* Each row's own columns (review B2): a mixed superset's loaded member keeps its load cell. */}
-                {row.columns.loadLabel !== null ? (
-                  <View style={{ flex: 1 }}>
-                    <AppText variant="rowValue" color={valueColor} numeric style={valueStyle}>
-                      {row.cells.load ?? '—'}
-                    </AppText>
-                  </View>
-                ) : null}
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <AppText variant="rowValue" color={valueColor} numeric style={valueStyle}>
-                    {plainSpaces(row.cells.value)}
-                  </AppText>
-                  {row.effort !== null ? (
-                    <AppText variant="callout" color="text.secondary" numeric style={{ marginLeft: theme.space['2'] }}>
-                      {plainSpaces(row.effort)}
-                    </AppText>
-                  ) : null}
-                  {tag}
-                </View>
-              </>
-            )}
+            </View>
+            <AppText variant="callout" color="text.tertiary" style={{ flex: 1 }}>
+              {row.cells.value}
+            </AppText>
             <View style={{ width: 52, alignItems: 'center', justifyContent: 'center' }}>{marker}</View>
           </View>
-          {second.length > 0 ? (
-            <AppText variant="callout" color="text.secondary" style={{ paddingLeft: 52, paddingBottom: theme.space['1'] }}>
-              {second.join(' · ')}
-            </AppText>
-          ) : null}
+        )}
+      </Pressable>
+    );
+  }
+
+  const cell = (part: 'load' | 'value', text: string, a11y: string, extra: ReactNode) => {
+    const on = editing !== null && (part === 'load' ? editing === 'load' : editing !== 'load');
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${a11y}, set ${setLabel}`}
+        accessibilityHint={on ? 'Closes the editor' : done ? 'Corrects it here' : 'Edits it here'}
+        accessibilityState={{ expanded: on }}
+        onPress={() => {
+          onPress(part);
+        }}
+        onLongPress={longPress}
+        style={({ pressed }) => ({ flex: 1, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+      >
+        <View style={on ? { paddingHorizontal: theme.space['1'], marginLeft: -theme.space['1'], borderRadius: theme.radius.sm, borderWidth: 2, borderColor: theme.colors['border.control'] } : undefined}>
+          <AppText variant="rowValue" color={valueColor} numeric style={valueStyle}>
+            {text}
+          </AppText>
         </View>
-      )}
-    </Pressable>
+        {extra}
+      </Pressable>
+    );
+  };
+
+  return (
+    <View style={{ minHeight: theme.target.workout.height, borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'], justifyContent: 'center', paddingVertical: theme.space['1'] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={row.accessibilityLabel}
+          accessibilityHint="Edit this set"
+          accessibilityActions={rowActions}
+          onAccessibilityAction={(e) => {
+            const a = e.nativeEvent.actionName;
+            onPress(a === 'select' ? 'marker' : a === 'load' ? 'load' : a === 'value' ? 'value' : 'row');
+          }}
+          onPress={() => {
+            onPress('row');
+          }}
+          onLongPress={longPress}
+          style={({ pressed }) => ({ width: 52, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: theme.space['1'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+        >
+          {row.badges.length > 0 && row.memberTag === null ? (
+            row.badges.map((b) => (
+              <View key={b} style={{ minWidth: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors['border.control'], alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
+                <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1.4}>
+                  {b}
+                </AppText>
+              </View>
+            ))
+          ) : (
+            <AppText variant="headline" color="text.secondary" numeric>
+              {`${setLabel}${row.memberTag !== null && row.badges.length > 0 ? row.badges.join('') : ''}`}
+            </AppText>
+          )}
+        </Pressable>
+        {/* Each row's own columns (review B2): a mixed superset's loaded member keeps its load cell. */}
+        {row.columns.loadLabel !== null ? cell('load', row.cells.load ?? '—', loadCellA11y(row.columns.loadLabel, row.cells.load), null) : null}
+        {cell(
+          'value',
+          plainSpaces(row.cells.value),
+          valueCellA11y(row.columns.valueLabel, row.cells.value),
+          <>
+            {row.effort !== null ? (
+              <AppText variant="callout" color="text.secondary" numeric style={{ marginLeft: theme.space['2'] }}>
+                {plainSpaces(row.effort)}
+              </AppText>
+            ) : null}
+            {tag}
+          </>,
+        )}
+        <View style={{ width: 52, alignItems: 'center', justifyContent: 'center' }}>{marker}</View>
+      </View>
+      {second.length > 0 ? (
+        <AppText variant="callout" color="text.secondary" style={{ paddingLeft: 52, paddingBottom: theme.space['1'] }}>
+          {second.join(' · ')}
+        </AppText>
+      ) : null}
+    </View>
   );
 }
 
@@ -820,8 +903,8 @@ export interface OpenSetRowProps {
   onTileFocus: (tile: TileId) => void;
 }
 
-/** The open row's own columns (its exercise, part and equipment), from the Table, so its cells line up with the header. */
-const OpenRowColumnsContext = createContext<TableColumns | null>(null);
+/** The open row's table row (its columns and target RPE cell), from the Table, so its cells line up with the header. */
+const OpenRowContext = createContext<Pick<TableRow, 'columns' | 'effort'> | null>(null);
 
 /**
  * `OpenSetRow` (18 Oct, Ben: "the table stays a table"): the current set is
@@ -834,7 +917,8 @@ const OpenRowColumnsContext = createContext<TableColumns | null>(null);
 export function OpenSetRow(p: OpenSetRowProps) {
   const theme = useTheme();
   const f = p.focus;
-  const columns = useContext(OpenRowColumnsContext);
+  const tableRow = useContext(OpenRowContext);
+  const columns = tableRow?.columns ?? null;
   const step = p.ax ? 60 : theme.target.workout.height;
   const working = f.workTimer !== null && (f.workTimer.state === 'running' || f.workTimer.state === 'paused');
   // Where the editor is, relative to the open row's own top, so the keypad anchor knows where it ends.
@@ -897,18 +981,19 @@ export function OpenSetRow(p: OpenSetRowProps) {
     );
   };
 
-  const loadA11y = f.loadField ? `${f.loadField.label} ${f.cells.load ?? 'none'} ${f.loadField.unitText}` : `Load ${f.cells.load ?? 'none'}`;
-  const valueA11y = valueField === 'reps' ? `Reps ${f.cells.value}` : valueField === 'time' ? `Time ${valueText}` : `Distance ${plainSpaces(f.cells.value)}`;
+  const loadA11y = loadCellA11y(columns?.loadLabel ?? null, f.cells.load);
+  const valueA11y = valueField === 'time' && working ? `Time ${valueText}` : valueCellA11y(columns?.valueLabel ?? (valueField === 'time' ? 'TIME' : valueField === 'distance' ? 'DIST' : 'REPS'), f.cells.value);
+  const numeral = p.ax ? 40 : 32;
 
   let editor: ReactNode = null;
   if (p.editing === 'load' && f.loadField) {
-    editor = <NumberStepper key="load" inputRef={p.loadRef} onFocus={tileFocus('load')} onLayout={tileLayout('load')} flex={1} stepSize={step} numeralSize={32} label={`${f.loadField.label} ${f.loadField.unitText}`.toUpperCase()} unit={null} value={f.loadField.value} decimals down={f.loadField.down} up={f.loadField.up} warning={f.offProfileWarning !== null} hint={f.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+    editor = <NumberStepper key="load" inputRef={p.loadRef} onFocus={tileFocus('load')} onLayout={tileLayout('load')} flex={1} stepSize={step} numeralSize={numeral} label={`${f.loadField.label} ${f.loadField.unitText}`.toUpperCase()} unit={null} value={f.loadField.value} decimals down={f.loadField.down} up={f.loadField.up} warning={f.offProfileWarning !== null} hint={f.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
   } else if (p.editing === 'reps' && f.reps) {
-    editor = <NumberStepper key="reps" inputRef={p.repsRef} onFocus={tileFocus('reps')} onLayout={tileLayout('reps')} flex={1} stepSize={step} numeralSize={32} label="REPS" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
+    editor = <NumberStepper key="reps" inputRef={p.repsRef} onFocus={tileFocus('reps')} onLayout={tileLayout('reps')} flex={1} stepSize={step} numeralSize={numeral} label="REPS" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
   } else if (p.editing === 'time' && f.duration && !working) {
-    editor = <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={1} stepSize={step} numeralSize={32} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
+    editor = <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={1} stepSize={step} numeralSize={numeral} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
   } else if (p.editing === 'distance' && f.distance) {
-    editor = <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={1} stepSize={step} numeralSize={32} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
+    editor = <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
   }
 
   const target = targetLineText(f.targetBrief, f.targetEstimate);
@@ -937,7 +1022,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
           accessibilityHint="More for this set"
           onPress={p.onMore}
           onLongPress={p.onMore}
-          style={{ width: 48, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: 2 }}
+          style={{ width: 49, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: 2 }}
         >
           {badges.length > 0 ? (
             badges.map((b) => (
@@ -953,6 +1038,11 @@ export function OpenSetRow(p: OpenSetRowProps) {
         </Pressable>
         {hasLoadColumn ? cell(f.loadField ? 'load' : null, f.cells.load ?? '—', loadA11y, 1) : null}
         {cell(working ? null : valueField, valueText, valueA11y, 1)}
+        {tableRow?.effort != null ? (
+          <AppText variant="callout" color="text.secondary" numeric style={{ marginRight: theme.space['1'] }} accessibilityLabel={`Target RPE ${plainSpaces(tableRow.effort).replace(/^@\s*/, '')}`}>
+            {plainSpaces(tableRow.effort)}
+          </AppText>
+        ) : null}
         {f.adjustedBy !== null ? (
           <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, backgroundColor: theme.colors['bg.surface'], marginRight: theme.space['1'] }}>
             <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={2}>
@@ -962,7 +1052,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
         ) : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={p.timedLogLabel !== null ? plainSpaces(p.timedLogLabel) : `Log set ${String(f.setNumber)}`}
+          accessibilityLabel={`Set ${String(f.setNumber)}, ${plainSpaces(p.timedLogLabel ?? f.logLabel ?? 'Log')}`}
           accessibilityState={{ disabled: !p.canLog }}
           disabled={!p.canLog}
           onPress={p.onLog}
@@ -980,16 +1070,16 @@ export function OpenSetRow(p: OpenSetRowProps) {
             editorY.current = e.nativeEvent.layout.y;
             send();
           }}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingBottom: theme.space['1'] }}
         >
-          {editor}
-          <TextButton
-            label="Done"
-            onPress={() => {
+          <InlineEditor
+            ax={p.ax}
+            onDone={() => {
               Keyboard.dismiss();
               p.onEditCell(null);
             }}
-          />
+          >
+            {editor}
+          </InlineEditor>
         </View>
       ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: theme.space['3'], paddingLeft: 48 }}>
@@ -1041,6 +1131,65 @@ export function OpenSetRow(p: OpenSetRowProps) {
           <StatusLine icon="exclamationmark.triangle" tone="warning" text={f.offProfileWarning} />
         )
       ) : null}
+    </View>
+  );
+}
+
+/** An in-place cell editor and its Done: side by side, stacked at AX sizes so nothing clips (review S8). */
+function InlineEditor({ ax, onDone, children }: { ax: boolean; onDone: () => void; children: ReactNode }) {
+  const theme = useTheme();
+  return (
+    <View style={{ flexDirection: ax ? 'column' : 'row', alignItems: ax ? 'stretch' : 'center', gap: theme.space['2'], paddingBottom: theme.space['1'] }}>
+      {children}
+      <View style={ax ? { alignItems: 'flex-end' } : undefined}>
+        <TextButton label="Done" onPress={onDone} />
+      </View>
+    </View>
+  );
+}
+
+export interface CorrectionEditorProps {
+  field: CellField;
+  ax: boolean;
+  loadField: LoadField | null;
+  reps: StepField | null;
+  duration: StepField | null;
+  distance: StepField | null;
+  onLoad: (v: number | null) => void;
+  onReps: (v: number | null) => void;
+  onTime: (v: number | null) => void;
+  onDistance: (v: number | null) => void;
+  /** Saves the correction (one versioned write, with Undo) and closes. */
+  onDone: () => void;
+}
+
+type StepField = { value: number | null; down: StepTarget; up: StepTarget };
+
+/**
+ * A done row's KG or REPS edited in its row (18 Oct): the same − value +
+ * as the open row, with the steps from `buildSetEditView`. Nothing is
+ * written per step; Done (or a tap elsewhere) sends one `correctSet` (rule 2).
+ */
+export function CorrectionEditor(p: CorrectionEditorProps) {
+  const theme = useTheme();
+  const step = p.ax ? 60 : theme.target.workout.height;
+  const numeral = p.ax ? 40 : 32;
+  let editor: ReactNode = null;
+  if (p.field === 'load' && p.loadField) {
+    editor = <NumberStepper key="load" flex={1} stepSize={step} numeralSize={numeral} label={`${p.loadField.label} ${p.loadField.unitText}`.toUpperCase()} unit={null} value={p.loadField.value} decimals down={p.loadField.down} up={p.loadField.up} hint={p.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+  } else if (p.field === 'reps' && p.reps) {
+    editor = <NumberStepper key="reps" flex={1} stepSize={step} numeralSize={numeral} label="REPS" unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
+  } else if (p.field === 'time' && p.duration) {
+    editor = <NumberStepper key="time" flex={1} stepSize={step} numeralSize={numeral} label="TIME" unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
+  } else if (p.field === 'distance' && p.distance) {
+    editor = <NumberStepper key="dist" flex={1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
+  }
+  if (editor === null) return null;
+  return (
+    <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['2'], paddingTop: theme.space['1'] }}>
+      <InlineEditor ax={p.ax} onDone={p.onDone}>
+        {editor}
+      </InlineEditor>
     </View>
   );
 }

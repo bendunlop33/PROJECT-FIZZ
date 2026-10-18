@@ -71,8 +71,8 @@ import { UNDO_TOAST } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
-import { anchorReducer, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type ChipState } from '../../workout/table';
-import { ChatButton, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
+import { anchorReducer, cellEditReducer, correctionPatch, doneRowEditing, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type CellEdit, type CellEditEvent, type ChipState, type RowTap } from '../../workout/table';
+import { ChatButton, CorrectionEditor, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
 import { awayPrimary, nextViewing, pagerView } from '../../workout/set-pager';
 
@@ -189,15 +189,20 @@ export function WorkoutScreen() {
   const [viewing, setViewing] = useState<string | null>(null);
   /** A field to focus once the editor is drawn (`Enter load` during rest opens it first). A fresh object per tap. */
   const [focusRequest, setFocusRequest] = useState<{ field: EntryField } | null>(null);
-  /** Table: the open row's cell being edited in place (18 Oct), keyed to its set so it closes when the set changes. */
-  const [cellEdit, setCellEdit] = useState<{ setId: string; field: EntryField } | null>(null);
+  /** Table: the cell being edited in place (18 Oct), on the open row or a done row, keyed to its set. */
+  const [cellEdit, setCellEdit] = useState<CellEdit | null>(null);
+  const editCell = useCallback((e: CellEditEvent) => {
+    setCellEdit((cur) => cellEditReducer(cur, e));
+  }, []);
+  /** A done row's in-place correction as edited (null values: untouched); saved once on close. */
+  const [correction, setCorrection] = useState<{ setId: string; values: SetValues | null; opId: string } | null>(null);
   const activeSetId = data !== 'loading' && data !== null ? data.aggregate.session.activeSetId : null;
-  const editingCell = cellEdit !== null && cellEdit.setId === activeSetId ? cellEdit.field : null;
+  const editingCell = openRowEditing(cellEdit, activeSetId);
   useEffect(() => {
     if (focusRequest === null) return;
     // Table: the field lives in the open row's inline editor; open it first, then focus once it's drawn.
     if (modeRef.current === 'table' && activeSetId !== null && editingCell !== focusRequest.field) {
-      setCellEdit({ setId: activeSetId, field: focusRequest.field });
+      editCell({ kind: 'enter', setId: activeSetId, field: focusRequest.field });
       return;
     }
     const id = requestAnimationFrame(() => {
@@ -207,7 +212,7 @@ export function WorkoutScreen() {
     return () => {
       cancelAnimationFrame(id);
     };
-  }, [focusRequest, showNextSet, activeSetId, editingCell]);
+  }, [focusRequest, showNextSet, activeSetId, editingCell, editCell]);
 
   /** Counts workout reads as they start, so a slow older read never brings back older pain flags or names. */
   const loadSeq = useRef(0);
@@ -699,6 +704,7 @@ export function WorkoutScreen() {
     if (!focus || guard || busy || logBlockedBySwitch(switchCard) || focus.logLabel === null) return;
     // F5: Log closes the number pad; the rest screen shouldn't open under it.
     Keyboard.dismiss();
+    if (correction !== null) void saveCorrection();
     setBusy(true);
     const cmd: SessionCommand = {
       type: 'log_set',
@@ -742,6 +748,8 @@ export function WorkoutScreen() {
     // Table: the saved row slides up and the next open row comes to the top (§2A.4 auto-advance).
     setAfterSetFor(loggedSetId);
     anchorEvent({ kind: 'logged' });
+    // The editor never reopens by itself when an Undo makes this set current again (review S3).
+    editCell({ kind: 'logged' });
     setEdits(null);
     whyEvent({ kind: 'logged' });
     setRestoredDraft(null);
@@ -978,8 +986,10 @@ export function WorkoutScreen() {
   }
 
   /** A non-current row (or its ring) only becomes the open row: `set_active_set`, never a log (Ben, decision 4). */
-  async function selectRow(setId: string) {
+  async function selectRow(setId: string): Promise<boolean> {
     setAfterSetFor(null);
+    if (correction !== null) void saveCorrection();
+    editCell({ kind: 'selected' });
     // The open row keeps its unsaved edit: saved now, not left to the 300 ms debounce the select would cancel.
     const r = await selectRowFlow({
       setId,
@@ -991,6 +1001,62 @@ export function WorkoutScreen() {
       select: run,
     });
     if (!r.ok && !r.quiet) showToast({ icon: 'info.circle', text: refusalText(r.code, r.message) });
+    return r.ok;
+  }
+
+  /**
+   * A done row's in-place correction (18 Oct; rule 2): one versioned
+   * `correctSet` with the set's version and this edit's opId, sent on Done
+   * or a tap elsewhere, never per step. Undo is the usual toast.
+   */
+  async function saveCorrection() {
+    const c = correction;
+    setCorrection(null);
+    if (c === null || c.values === null) return;
+    const v = services.workout.editView(loaded, c.setId, c.values, null, undefined, null);
+    const actual = loaded.aggregate.sets.find((x) => x.id === c.setId)?.actual;
+    if (!v || !actual) return;
+    const patch = correctionPatch(actual, v.values);
+    if (patch === null) return;
+    const r = await services.workout.correctSet({ sessionId: session.id, setId: c.setId, expectedSetVersion: v.setVersion, patch, opId: c.opId });
+    changed();
+    if (!r.ok) {
+      showToast({ icon: 'info.circle', text: r.message });
+      void reload();
+      return;
+    }
+    if (r.toast !== null && r.undo !== null) showHanded({ kind: 'exclusion', key: c.opId, text: r.toast, undo: { sessionId: session.id, ...r.undo } });
+    else if (!r.duplicate) toastUndoOp(UNDO_TOAST.corrected(v.setNumber), c.opId, session.id);
+    // F4: a corrected rep count runs the same offer check as a log.
+    void reload().then((d) => {
+      const id = patch.reps !== undefined ? correctedSetToCheck({ setId: c.setId }, d?.aggregate) : null;
+      if (d && id !== null) coach.afterLog(d.aggregate, id);
+    });
+  }
+
+  /** Done, a tap elsewhere or a drag: any cell editor closes; a done row's correction is saved (review S4). */
+  function closeCellEditors() {
+    if (correction !== null) void saveCorrection();
+    if (cellEdit !== null) editCell({ kind: 'close' });
+  }
+
+  /** A pending or done row's KG / REPS cell (18 Oct): edited in place, never on another screen (review B1). */
+  function cellTap(tap: Extract<RowTap, { kind: 'select_edit' | 'correct' }>) {
+    if (tap.kind === 'select_edit') {
+      void selectRow(tap.setId).then((ok) => {
+        if (ok) editCell({ kind: 'tap', setId: tap.setId, field: tap.field, row: 'open' });
+      });
+      return;
+    }
+    const same = cellEdit !== null && cellEdit.row === 'done' && cellEdit.setId === tap.setId && cellEdit.field === tap.field;
+    if (correction !== null) void saveCorrection();
+    if (same) {
+      editCell({ kind: 'close' });
+      return;
+    }
+    Keyboard.dismiss();
+    setCorrection({ setId: tap.setId, values: null, opId: newUuid() });
+    editCell({ kind: 'tap', setId: tap.setId, field: tap.field, row: 'done' });
   }
 
   async function openSwap(f: Pick<FocusView, 'sessionExerciseId' | 'exerciseName'>) {
@@ -1970,6 +2036,45 @@ export function WorkoutScreen() {
         />
       </View>
     ) : null;
+  // A done row's correction, drawn in its row (18 Oct): steps from `buildSetEditView`, saved on close.
+  const doneEdit = doneRowEditing(cellEdit);
+  const correctionView = doneEdit !== null && correction !== null && correction.setId === doneEdit.setId ? services.workout.editView(loaded, doneEdit.setId, correction.values, null, undefined, null) : null;
+  const correctionEx = correctionView === null ? undefined : loaded.aggregate.exercises.find((e) => e.id === loaded.aggregate.sets.find((x) => x.id === correctionView.setId)?.sessionExerciseId);
+  const editCorrection = (patch: Partial<SetValues>) => {
+    if (correctionView === null) return;
+    setCorrection((c) => (c === null ? c : { ...c, values: { ...correctionView.values, ...patch } }));
+  };
+  const rowEditorNode =
+    doneEdit !== null && correctionView !== null ? {
+      setId: doneEdit.setId,
+      field: doneEdit.field,
+      node: (
+        <CorrectionEditor
+          field={doneEdit.field}
+          ax={ax}
+          loadField={correctionView.loadField}
+          reps={correctionView.reps}
+          duration={correctionView.duration}
+          distance={correctionView.distance}
+          onLoad={(v) => {
+            if (correctionEx) editCorrection({ load: v === null ? null : { value: v, unit: correctionEx.unit, convention: correctionEx.loadConvention } });
+          }}
+          onReps={(v) => {
+            editCorrection({ reps: v === null ? null : Math.round(v) });
+          }}
+          onTime={(v) => {
+            editCorrection({ durationS: v === null ? null : Math.max(0, Math.round(v)) });
+          }}
+          onDistance={(v) => {
+            editCorrection({ distanceM: v === null ? null : Math.max(0, v) });
+          }}
+          onDone={() => {
+            Keyboard.dismiss();
+            closeCellEditors();
+          }}
+        />
+      ),
+    } : null;
   const openRowNode = focus ? (
     <OpenSetRow
       focus={focus}
@@ -1981,7 +2086,8 @@ export function WorkoutScreen() {
       editing={editingCell}
       canLog={focus.logLabel !== null && !busy && !guard}
       onEditCell={(field) => {
-        setCellEdit(field === null ? null : { setId: focus.setId, field });
+        if (correction !== null) void saveCorrection();
+        editCell(field === null ? { kind: 'close' } : { kind: 'enter', setId: focus.setId, field });
       }}
       onLog={() => void log()}
       onMore={() => {
@@ -2140,6 +2246,9 @@ export function WorkoutScreen() {
               navigation.navigate('EditSet', { sessionId: session.id, setId });
             }}
             onSelectSet={(id) => void selectRow(id)}
+            onCellTap={cellTap}
+            rowEditor={rowEditorNode}
+            onTapElsewhere={closeCellEditors}
             onAddSet={(id) => void addSet(id)}
             onMenu={openCardMenu}
             onName={openExerciseSheet}
