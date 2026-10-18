@@ -51,6 +51,7 @@ export const EDITOR_COPY = {
   name: 'Name',
   exercises: 'Exercises',
   main: 'Main',
+  addWeight: 'Add weight',
   addExercise: 'Add exercise',
   addWarmup: '+ Warm-up',
   addWorking: '+ Working',

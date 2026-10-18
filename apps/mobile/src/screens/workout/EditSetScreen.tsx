@@ -53,6 +53,7 @@ export function EditSetScreen() {
   const [deleteOp] = useState(newUuid);
   const [noteOp] = useState(newUuid);
   const [insertOp] = useState(newUuid);
+  const [modeOp] = useState(newUuid);
   /** The note field as typed; null = untouched (shows the stored note). */
   const [noteText, setNoteText] = useState<string | null>(null);
 
@@ -78,6 +79,10 @@ export function EditSetScreen() {
         error={error}
         onRefused={(message) => {
           setError(message);
+          void load();
+        }}
+        onReload={() => {
+          setError(null);
           void load();
         }}
       />
@@ -124,6 +129,12 @@ export function EditSetScreen() {
       }
       corrected = r;
       sessionVersion = r.aggregate.session.version;
+      // `+ Weight` (or back) on a logged set: the rest of today's sets of this exercise follow it.
+      const mode = patch.load?.convention;
+      if (ex && aggregate.session.status === 'active' && view.addWeight && (mode === 'added' || mode === 'bodyweight') && mode !== ex.loadConvention) {
+        const m = await services.workout.dispatch(sessionId, { type: 'set_load_mode', at: services.now(), opId: modeOp, expectedVersion: sessionVersion, sessionExerciseId: ex.id, mode });
+        if (m.ok) sessionVersion = m.aggregate.session.version;
+      }
     }
     // The set's note (Your data) is its own versioned write; it never changes a value.
     let noteFailed = false;
@@ -218,7 +229,7 @@ export function EditSetScreen() {
               down={view.loadField.down}
               up={view.loadField.up}
               onChange={(v) => {
-                setValues({ ...current, load: v === null ? null : { value: v, unit: ex.unit, convention: ex.loadConvention } });
+                setValues({ ...current, load: v === null ? null : { value: v, unit: ex.unit, convention: view.convention } });
               }}
             />
           ) : null}
@@ -276,6 +287,17 @@ export function EditSetScreen() {
           </>
           )}
         </StepperTileRow>
+        {view.addWeight && ex ? (
+          <View style={{ alignItems: 'flex-start' }}>
+            <TextButton
+              label={view.addWeight.on ? 'Bodyweight' : '+ Weight'}
+              tone="secondary"
+              onPress={() => {
+                setValues({ ...current, load: { value: 0, unit: ex.unit, convention: view.addWeight?.on === true ? 'bodyweight' : 'added' } });
+              }}
+            />
+          </View>
+        ) : null}
         {effortScale !== 'off' ? (
           <View style={{ gap: theme.space['1'] }}>
             <EffortHeading scale={effortScale}>

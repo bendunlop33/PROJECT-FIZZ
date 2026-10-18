@@ -26,7 +26,7 @@ import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
  * Log logs; `Insert set after` and `Delete set` apply at once with Undo.
  * Every value comes from `buildPlannedSetEditView`; nothing is computed here.
  */
-export function PlannedSetEdit({ data, setId, error, onRefused }: { data: ActiveWorkoutData; setId: string; error: string | null; onRefused: (message: string) => void }) {
+export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { data: ActiveWorkoutData; setId: string; error: string | null; onRefused: (message: string) => void; onReload: () => void }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -92,6 +92,18 @@ export function PlannedSetEdit({ data, setId, error, onRefused }: { data: Active
     }
     changed();
     navigation.goBack();
+  }
+
+  /** `+ Weight` / `Bodyweight`: the exercise's load for the rest of today (versioned); the sheet reloads to show it. */
+  async function toggleWeight() {
+    if (!view?.addWeight || !set) return;
+    const r = await services.workout.dispatch(sessionId, { type: 'set_load_mode', at: services.now(), opId: newUuid(), expectedVersion: aggregate.session.version, sessionExerciseId: set.sessionExerciseId, mode: view.addWeight.on ? 'bodyweight' : 'added' });
+    if (!r.ok) {
+      onRefused(r.error.code === 'stale_version' ? 'The workout changed. Try again.' : r.error.message);
+      return;
+    }
+    changed();
+    onReload();
   }
 
   async function insertAfter() {
@@ -190,6 +202,11 @@ export function PlannedSetEdit({ data, setId, error, onRefused }: { data: Active
             </>
           )}
         </StepperTileRow>
+        {view.addWeight ? (
+          <View style={{ alignItems: 'flex-start' }}>
+            <TextButton label={view.addWeight.on ? 'Bodyweight' : '+ Weight'} tone="secondary" onPress={() => void toggleWeight()} />
+          </View>
+        ) : null}
         {reps ? (
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['3'] }}>
             <ChipRow>
