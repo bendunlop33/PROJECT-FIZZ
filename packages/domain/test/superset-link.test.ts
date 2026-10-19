@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
-import { buildExecutionOrder, isRoundEnd, reduceSession } from '../src/index';
+import { buildExecutionOrder, isRoundEnd, reduceSession, supersetMenu, supersetPartners, supersetPartnerSets } from '../src/index';
 import { at, kg, values } from './fixtures';
 import { apply, BENCH, expectError, expectOk, FACE, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -162,5 +162,26 @@ describe('pairing mid-workout starts in the current round (roundOffset)', () => 
     const solo = apply(back, split(back, rowId(back, HANG)));
     const soloName = (setId: string | undefined) => solo.exercises.find((e) => e.id === solo.sets.find((x) => x.id === setId)?.sessionExerciseId)?.exerciseName;
     expect(buildExecutionOrder(solo.exercises, solo.sets).map(soloName)).toEqual(['Bench press', 'Bench press', 'Bench press', 'Dead hang', 'Cable row', 'Face pull', 'Cable row', 'Face pull']);
+  });
+});
+
+describe('the ⋯ menu and the partner list (supersetMenu, supersetPartners, supersetPartnerSets)', () => {
+  it('offers Superset with… on a row with a set left, Remove superset on a member; lists rows it can pair with', () => {
+    const s = started();
+    expect(supersetMenu(s, rowId(s, BENCH))).toEqual({ canPair: true, inSuperset: false });
+    expect(supersetMenu(s, rowId(s, ROW))).toEqual({ canPair: true, inSuperset: true });
+    expect(supersetPartners(s, rowId(s, BENCH)).map((p) => [p.exerciseName, p.detail])).toEqual([
+      ['Cable row', 'Superset A · 2 sets left'],
+      ['Face pull', 'Superset A · 2 sets left'],
+      ['Dead hang', '1 set left'],
+    ]);
+    // A member of superset A can't pair with another member, or a row in another superset.
+    expect(supersetPartners(s, rowId(s, ROW)).map((p) => p.exerciseName)).toEqual(['Bench press', 'Dead hang']);
+    // A new partner starts with the working sets bench has left (2; the warm-up is done).
+    expect(supersetPartnerSets(s, rowId(s, BENCH))).toBe(2);
+    let done = s;
+    for (const x of setsFor(done, HANG)) done = apply(done, logCmd(x.id, values(null, null, { durationS: 45 }), 500));
+    expect(supersetMenu(done, rowId(done, HANG)).canPair).toBe(false);
+    expect(supersetPartners(done, rowId(done, BENCH)).map((p) => p.exerciseName)).not.toContain('Dead hang');
   });
 });

@@ -36,6 +36,16 @@ describe('exercise ⋯ menu', () => {
     expect(exerciseMenu(false, false, { canSwap: false }).options).not.toContain('Swap exercise');
   });
 
+  it('Superset with… and Remove superset (Ben, 19 Oct) sit under Swap, never red, each mapped to its own action', () => {
+    const m = exerciseMenu(false, false, { canSwap: true, canSuperset: true, inSuperset: true });
+    expect(m.options).toEqual(['Add set', 'Swap exercise', 'Superset with…', 'Remove superset', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
+    expect(m.actionAt(2)).toBe('superset_with');
+    expect(m.actionAt(3)).toBe('remove_superset');
+    expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise']);
+    expect(exerciseMenu(false).options).not.toContain('Superset with…');
+    expect(exerciseMenu(false, false, { canSuperset: true }).options).not.toContain('Remove superset');
+  });
+
   it('Remove exercise (nothing logged, §4.6) is the last red row, above Cancel', () => {
     const m = exerciseMenu(false, false, { canSwap: true, canRemove: true });
     expect(m.options.slice(-3)).toEqual(['Skip exercise', 'Remove exercise', 'Cancel']);

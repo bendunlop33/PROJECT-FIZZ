@@ -7,6 +7,7 @@ import { EQUIPMENT_WORD, pickerEquipmentLabel, pickerSections } from '@fizz/doma
 
 import { newUuid } from '../../device/runtime';
 import { bundledHowToSources, hasHowTo } from '../../guide/how-to';
+import { returnToWorkout } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
@@ -14,6 +15,8 @@ import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Group, Icon, Row, SectionHeader, SetCountBar, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
 import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
 import { pickerAddSets, pickerBarValue, SET_BAR, type PickerSetsBar } from '../../workout/set-shape-view';
+import { supersetPickerView } from '../../workout/superset-picker';
+import { UNDO_TOAST } from '../../workout/undo-op';
 
 /**
  * Exercise picker (active-workout §2.10): recent, then the common lifts,
@@ -28,6 +31,12 @@ import { pickerAddSets, pickerBarValue, SET_BAR, type PickerSetsBar } from '../.
  * The `Sets [−] 3 [+]` bar (exercise-library §10.2) sets how many pending
  * working sets the add makes; it starts at 3 each time, and a row tap still
  * adds in one tap.
+ *
+ * `Superset with…` (Ben, 19 Oct; `supersetWith`): the exercises already in
+ * the workout it can pair with come first (a tap links them), then the whole
+ * list, the same exercise included (a tap adds it as the partner, with as
+ * many sets as the exercise has left unless Ben changes the count). Both
+ * apply at once and return to the workout with Undo.
  */
 export function ExercisePickerScreen() {
   const theme = useTheme();
@@ -35,7 +44,8 @@ export function ExercisePickerScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { sessionId } = useRoute<RouteProp<RootStackParams, 'ExercisePicker'>>().params;
+  const { sessionId, supersetWith } = useRoute<RouteProp<RootStackParams, 'ExercisePicker'>>().params;
+  const [pairing, setPairing] = useState<Awaited<ReturnType<typeof services.workout.supersetChoices>>>(null);
   const [query, setQuery] = useState('');
   const [list, setList] = useState<PickerExercise[]>([]);
   const [recent, setRecent] = useState<string[]>([]);
@@ -71,6 +81,21 @@ export function ExercisePickerScreen() {
     };
   }, [services, sessionId, withCatalogue]);
   useEffect(() => {
+    if (supersetWith === undefined) return;
+    let alive = true;
+    void services.workout
+      .supersetChoices(sessionId, supersetWith)
+      .then((c) => {
+        if (alive) setPairing(c);
+      })
+      .catch(() => {
+        // No list of exercises to pair with: the whole list below still adds one.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [services, sessionId, supersetWith]);
+  useEffect(() => {
     services.workout
       .recentExerciseIds()
       .then(setRecent)
@@ -84,18 +109,42 @@ export function ExercisePickerScreen() {
     setBusy(true);
     setError(null);
     // A cardio machine adds one set unless Ben set the count (review S2).
-    const sets = pickerAddSets(bar, p.exercise.measurement);
+    const sets = pickerAddSets(bar, p.exercise.measurement, barStart);
     const key = `${p.exercise.id}:${equipmentId ?? ''}:${String(sets)}`;
     const opId = opIds.get(key) ?? newUuid();
     opIds.set(key, opId);
-    const r = await services.workout.addExercise({ sessionId, exerciseId: p.exercise.id, equipmentId, opId, shape: { workingSets: sets } });
+    const r = await services.workout.addExercise({ sessionId, exerciseId: p.exercise.id, equipmentId, opId, shape: { workingSets: sets }, ...(supersetWith === undefined ? {} : { supersetWithSessionExerciseId: supersetWith }) });
     setBusy(false);
     if (!r.ok) {
       setError(`Couldn’t add ${p.exercise.name}: ${r.error.message}`);
       return;
     }
     changed();
+    if (supersetWith !== undefined && pairing !== null) {
+      navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.supersetted(pairing.name, p.exercise.name), targetOpId: opId } }));
+      return;
+    }
     navigation.goBack();
+  }
+
+  /** An exercise already in the workout: linked into the superset (`link_superset`), with Undo. */
+  async function link(partner: { sessionExerciseId: string; exerciseName: string }) {
+    if (busy || supersetWith === undefined || pairing === null) return;
+    setBusy(true);
+    setError(null);
+    const key = `link:${partner.sessionExerciseId}`;
+    const opId = opIds.get(key) ?? newUuid();
+    opIds.set(key, opId);
+    const r = await services.workout.linkSuperset({ sessionId, sessionExerciseId: supersetWith, withSessionExerciseId: partner.sessionExerciseId, expectedVersion: pairing.version, opId });
+    setBusy(false);
+    if (!r.ok) {
+      setError(r.error.code === 'stale_version' ? 'Your workout changed. Try again.' : r.error.message);
+      // A newer workout: read the choices again so a second tap uses it.
+      void services.workout.supersetChoices(sessionId, supersetWith).then(setPairing);
+      return;
+    }
+    changed();
+    navigation.dispatch(returnToWorkout({ toast: { kind: 'undo_op', text: UNDO_TOAST.supersetted(pairing.name, partner.exerciseName), targetOpId: opId } }));
   }
 
   /**
@@ -123,13 +172,15 @@ export function ExercisePickerScreen() {
   }
 
   const sections = pickerSections(list, query, recent, { cardio });
+  const pairView = supersetPickerView(pairing, query);
+  const barStart = pairing?.sets ?? SET_BAR.start;
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['3'], gap: theme.space['3'], backgroundColor: theme.colors['bg.canvas'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <AppText variant="title1" accessibilityRole="header" style={{ flex: 1 }} numberOfLines={2}>
-            {choosing ? choosing.exercise.name : 'Add exercise'}
+            {choosing ? choosing.exercise.name : (pairView?.title ?? 'Add exercise')}
           </AppText>
           <TextButton
             label={choosing ? 'Back' : 'Cancel'}
@@ -172,6 +223,16 @@ export function ExercisePickerScreen() {
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
+        {!choosing && pairView !== null && pairView.partners.length > 0 ? (
+          <View style={{ gap: theme.space['2'] }}>
+            <SectionHeader title="In this workout" />
+            <Group>
+              {pairView.partners.map((x) => (
+                <Row key={x.sessionExerciseId} title={x.exerciseName} subtitle={x.detail} onPress={() => void link(x)} disabled={busy} />
+              ))}
+            </Group>
+          </View>
+        ) : null}
         {choosing ? (
           <Group>
             {choosing.equipment.map((e) => (
@@ -229,7 +290,7 @@ export function ExercisePickerScreen() {
       </ScrollView>
       {choosing ? null : (
         <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: insets.bottom, backgroundColor: theme.colors['bg.surface'] }}>
-          <SetCountBar value={pickerBarValue(bar, cardio)} limits={SET_BAR.limits} onChange={(n) => { setBar({ value: n, touched: true }); }} />
+          <SetCountBar value={pickerBarValue(bar, cardio, barStart)} limits={SET_BAR.limits} onChange={(n) => { setBar({ value: n, touched: true }); }} />
         </View>
       )}
     </KeyboardAvoidingView>

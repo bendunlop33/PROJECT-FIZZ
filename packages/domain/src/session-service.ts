@@ -401,13 +401,17 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       at: ZonedTimestamp;
       plan?: AddExerciseInput['plan'] | undefined;
       exerciseRestS?: number | null | undefined;
+      /** (19 Oct, `Superset with…`) In a superset with this live row. */
+      supersetWithSessionExerciseId?: string | undefined;
     },
   ): Promise<CommandOutcome> {
     const owner = await repos.profiles.get(req.ownerId);
     if (!owner) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
     const exercise = await repos.exercises.get(req.exerciseId);
     if (!exercise) return { ok: false, error: { code: 'not_found', message: 'Exercise not found.' } };
-    return dispatch(sessionId, buildAddExerciseCommand({ ...req, owner, exercise, newId }));
+    const { supersetWithSessionExerciseId, ...rest } = req;
+    const command = buildAddExerciseCommand({ ...rest, owner, exercise, newId });
+    return dispatch(sessionId, supersetWithSessionExerciseId === undefined ? command : { ...command, supersetWithSessionExerciseId });
   }
 
   /** Cold-start recovery: restore the unfinished session (if any) without committing anything. */

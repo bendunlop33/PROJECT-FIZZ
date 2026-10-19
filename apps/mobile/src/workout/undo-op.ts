@@ -12,6 +12,9 @@ export const UNDO_TOAST = {
   added: (setNumber: number): string => `Set ${String(setNumber)} added`,
   removed: (exerciseName: string): string => `${exerciseName} removed`,
   swapped: (fromName: string, toName: string): string => `${fromName} → ${toName}`,
+  /** (19 Oct) `Superset with…`: `Superset · Seated calf raise + Seated calf raise`. */
+  supersetted: (a: string, b: string): string => `Superset · ${a} + ${b}`,
+  supersetRemoved: 'Superset removed',
   undone: 'Undone',
 } as const;
 

@@ -58,6 +58,9 @@ import {
   midSwapSlot,
   swapPainCarry,
   applyCheckInPatch,
+  supersetPartners,
+  supersetPartnerSets,
+  type SupersetPartner,
   buildActiveSetView,
   buildWorkoutTableView,
   exerciseCardFacts,
@@ -2968,7 +2971,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * Summary showed, shown as `Target`, its source behind `Why?`; review S3, minimal-copy D1), or one
      * empty set when there's no comparable history.
      */
-    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; shape?: AddShape }): Promise<CommandOutcome> {
+    /**
+     * `Superset with…` (Ben, 19 Oct): the exercises already in the workout this one can pair with,
+     * at the workout's version (a link sent with it is refused once the workout moved on), and the
+     * set count a new exercise starts with (as many as this one has left). Reads only.
+     */
+    async supersetChoices(sessionId: string, sessionExerciseId: string): Promise<{ version: number; name: string; partners: SupersetPartner[]; sets: number } | null> {
+      const aggregate = await repos().sessions.get(sessionId).catch(() => null);
+      const row = aggregate?.exercises.find((e) => e.id === sessionExerciseId);
+      if (!aggregate || !row) return null;
+      return { version: aggregate.session.version, name: row.exerciseName, partners: supersetPartners(aggregate, sessionExerciseId), sets: supersetPartnerSets(aggregate, sessionExerciseId) };
+    },
+
+    /** `Superset with…` an exercise already in the workout: `link_superset`, versioned; Undo is `undoOp` on the opId. */
+    async linkSuperset(req: { sessionId: string; sessionExerciseId: string; withSessionExerciseId: string; expectedVersion: number; opId: string }): Promise<CommandOutcome> {
+      return ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'link_superset', at: ctx.now(), opId: req.opId, expectedVersion: req.expectedVersion, sessionExerciseId: req.withSessionExerciseId, withSessionExerciseId: req.sessionExerciseId }));
+    },
+
+    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; shape?: AddShape; supersetWithSessionExerciseId?: string }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       // A catalogue exercise is saved (Coaching knowledge, no owner) the first time it's added.
@@ -2991,6 +3011,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           at: ctx.now(),
           plan,
           exerciseRestS: p.exerciseRestS?.[req.exerciseId] ?? null,
+          ...(req.supersetWithSessionExerciseId === undefined ? {} : { supersetWithSessionExerciseId: req.supersetWithSessionExerciseId }),
         }),
       );
     },
