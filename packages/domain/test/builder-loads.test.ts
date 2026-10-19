@@ -156,13 +156,14 @@ describe('checkProposedLoad: own history (WB-L1, WB-L2, WB-L3, WB26)', () => {
     expect(checkProposedLoad(null, BENCH_SLOT, benchRefs(), NO_PAIN)).toMatchObject({ source: 'rule', notes: ['no load from coach · rule used'] });
   });
 
-  it('Ben 19 Oct: the coach ceilings are 20% above E and 20% above the last load for these reps; the error catcher stays above them', () => {
+  it('Ben 19 Oct: +15% is accepted and +25% capped (the coach ceilings are 20% above E and 20% above the last load for these reps; the error catcher stays above them)', () => {
     expect(BUILDER_LOAD_BOUNDS.capE).toBe(1.2);
     expect(BUILDER_LOAD_BOUNDS.capLastTop).toBe(1.2);
     expect(BUILDER_LOAD_BOUNDS.clampHigh).toBeGreaterThan(BUILDER_LOAD_BOUNDS.capE);
     // A clear signal: 3 × 10 at RPE 6 on a 6–8 slot (reps well over the range, low effort).
     const easy = refs(BENCH, [session(930, 3, bar, [{ load: kg(100), reps: 10, rpe: 6 }, { load: kg(100), reps: 10, rpe: 6 }, { load: kg(100), reps: 10, rpe: 6 }])], [bar]);
-    // +15%: within both ceilings, accepted as the coach's.
+    // +15%: within both ceilings, accepted as the coach's. Code doesn't check the signal; the
+    // instructions (LOAD_CHOICE_LINE) ask the coach for one and for the reason in the basis.
     expect(checkProposedLoad(P(115, 'total', 'reps well over range, easy'), BENCH_SLOT, easy, NO_PAIN)).toMatchObject({ load: { value: 115 }, source: 'coach', notes: [] });
     // +25%: past 20% above the last 100 × 10, clamped to 120.
     expect(checkProposedLoad(P(125, 'total', 'reps well over range, easy'), BENCH_SLOT, easy, NO_PAIN)).toMatchObject({ load: { value: 120 }, source: 'coach', notes: ['capped at 120 · more than recent sets support'] });

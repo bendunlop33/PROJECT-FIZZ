@@ -470,19 +470,28 @@ function requiredSets(rule: ProgressionRule): number {
  * What counts: the judged working sets (`readFitNotesWorkingSets`: the sets
  * at the working load, plus harder sets judged with it; never a ramp
  * warm-up, a lone top set kept as context or a lighter finisher) summed over
- * the run of comparable imported sessions from the latest back to the first
- * in-app one. The latest session's own judged sets still decide: every one
- * must reach the top of the range within the effort limit. So `2 × 10` with
- * an earlier imported `2 × 9` (4 sets) progresses; a lone imported `2 × 10`
- * (2 sets) still holds. In-app history is unchanged: it needs the rule's sets.
+ * the recent run of comparable imported sessions: the latest and the ones
+ * before it, back to the first in-app one, and only those within
+ * `IMPORTED_HISTORY_DAYS` days of the latest (review limits-19oct S1: years
+ * of old FitNotes sets never release a one-set hold). The latest session's
+ * own judged sets still decide: every one must reach the top of the range
+ * within the effort limit. So `2 × 10` with an imported `2 × 9` a week
+ * earlier (4 sets) progresses; a lone imported `2 × 10` (2 sets) holds, and
+ * so does `1 × 10` with 2 sets from months before. In-app history is
+ * unchanged: it needs the rule's sets.
  */
 export const MIN_IMPORTED_SETS = 3;
+/** An earlier imported session counts toward `MIN_IMPORTED_SETS` only within this many days of the latest. */
+export const IMPORTED_HISTORY_DAYS = 28;
 
-/** Judged sets (pairs, when sided) in the run of imported sessions from the latest (`MIN_IMPORTED_SETS`). */
+/** Judged sets (pairs, when sided) in the recent run of imported sessions from the latest (`MIN_IMPORTED_SETS`). */
 function importedHistorySets(sessions: readonly SessionEval[]): number {
+  const latest = sessions[0];
+  if (latest === undefined) return 0;
+  const from = toMs(latest.performedAtUtc) - IMPORTED_HISTORY_DAYS * 86_400_000;
   let n = 0;
   for (const s of sessions) {
-    if (!s.imported) break;
+    if (!s.imported || toMs(s.performedAtUtc) < from) break;
     if (!s.unpairable) n += s.prescribedDone;
   }
   return n;

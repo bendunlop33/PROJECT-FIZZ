@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EquipmentInstance, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
-import { calculateNextTargets, MIN_IMPORTED_SETS, type HistorySession } from '../src/index';
+import { calculateNextTargets, IMPORTED_HISTORY_DAYS, MIN_IMPORTED_SETS, type HistorySession } from '../src/index';
 import { barbell, doubleProgression, dumbbells } from './fixtures';
 
 /**
@@ -27,6 +27,14 @@ function fitnotes(sets: readonly [number, number][], day: string, o: { conventio
   };
 }
 
+function sided(pairs: readonly [number, number][], day: string): HistorySession {
+  const base = fitnotes([], day);
+  return {
+    ...base,
+    sets: pairs.flatMap(([l, reps]) => (['left', 'right'] as const).map((side) => ({ setType: 'working' as const, side, load: load(l, 'per_hand', 'kg'), reps, rpe: null, rir: null }))),
+  };
+}
+
 function inApp(sets: readonly [number, number][], day: string, eq: EquipmentInstance): HistorySession {
   return { ...fitnotes(sets, day), sessionId: `app-${day}`, imported: false, equipmentId: eq.id, gymId: eq.gymId };
 }
@@ -50,8 +58,37 @@ function next(history: HistorySession[], o: { equipment?: EquipmentInstance | nu
 const facts = (t: ReturnType<typeof next>) => t.explanation.facts.join(' ');
 
 describe('MIN_IMPORTED_SETS (Ben, 19 Oct)', () => {
-  it('is 3', () => {
+  it('is 3, counted over imported workouts within 28 days of the latest', () => {
     expect(MIN_IMPORTED_SETS).toBe(3);
+    expect(IMPORTED_HISTORY_DAYS).toBe(28);
+  });
+
+  it('review S1: a latest workout of 1 set with 2 sets from years before still holds', () => {
+    const t = next([fitnotes([[20, 10]], DAY3), fitnotes([[10, 10], [10, 10]], '2022-03-01T12:00:00.000Z')]);
+    expect(t.decision).toBe('hold');
+    expect(t.sets.every((x) => x.load?.value === 20)).toBe(true);
+    expect(facts(t)).not.toMatch(/imported history are enough/);
+  });
+
+  it('review S1: the window is 28 days from the latest imported workout, inclusive', () => {
+    const at28 = '2026-08-18T12:00:00.000Z'; // 28 days before DAY3
+    const at29 = '2026-08-17T12:00:00.000Z';
+    expect(next([fitnotes([[20, 10], [20, 10]], DAY3), fitnotes([[20, 9]], at28)]).decision).toBe('increase_load');
+    expect(next([fitnotes([[20, 10], [20, 10]], DAY3), fitnotes([[20, 9]], at29)]).decision).toBe('hold');
+  });
+
+  it('review S1: 1 set at the top with 2 recent imported sets (3 sets) progresses; an old session stops the count', () => {
+    expect(next([fitnotes([[20, 10]], DAY3), fitnotes([[20, 9]], DAY2), fitnotes([[20, 9]], DAY1)]).decision).toBe('increase_load');
+    // An old session between them ends the run, even with a recent-looking count behind it.
+    expect(next([fitnotes([[20, 10]], DAY3), fitnotes([[20, 9], [20, 9]], '2025-01-10T12:00:00.000Z')]).decision).toBe('hold');
+  });
+
+  it('review S2: left/right pairs count once each (2 pairs + 1 earlier pair = 3 progresses; 2 pairs alone hold)', () => {
+    const t = next([sided([[20, 10], [20, 10]], DAY3), sided([[20, 9]], DAY1)]);
+    expect(t.decision).toBe('increase_load');
+    expect(facts(t)).toMatch(/3 sets of imported history are enough/);
+    // 4 rows but 2 pairs: still 2 sets of imported history.
+    expect(next([sided([[20, 10], [20, 10]], DAY3)]).decision).toBe('hold');
   });
 
   it('a lone imported session of 2 sets at the top still holds (2 sets of imported history)', () => {
