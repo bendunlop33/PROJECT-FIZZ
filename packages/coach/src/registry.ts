@@ -127,7 +127,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: "Change today's remaining sets",
     capabilitySection: 'when_you_ask',
     description:
-      "Change targets of today's pending sets (load, reps, target RPE; rpe null keeps it), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment. Ben's own target RPE always stays.",
+      "Change targets of today's pending sets (load, reps, target RPE; rpe null keeps it), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment. Ben's own target RPE always stays. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer.",
   },
   {
     // (12 Oct) Today only, because Ben asked (rule 3): applies at once with Undo. Not CC10's structural
@@ -141,7 +141,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: "Add an exercise to today's workout, with Undo",
     capabilitySection: 'when_you_ask',
     description:
-      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. Today only: if Ben names a future scope (next time, future sessions, his routine or template, every push day, permanently), use propose_next_workout_change instead and never this tool. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn.",
+      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. Today only: if Ben names a future scope (next time, future sessions, his routine or template, every push day, permanently), use propose_next_workout_change instead and never this tool. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer.",
   },
   {
     // (14 Oct, PM decision pending Ben) Offered on every live-workout turn; applies at once with Undo only when
@@ -154,7 +154,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ['workout'],
     plainLabel: "Rename today's workout, with Undo",
     capabilitySection: 'when_you_ask',
-    description: "Rename today's live workout to the name Ben asked for (baseVersion from the workout). Today's workout only: the routine it came from keeps its name.",
+    description: "Rename today's live workout to the name Ben asked for (baseVersion from the workout). Today's workout only: the routine it came from keeps its name. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer.",
   },
   {
     name: 'log_set',
@@ -248,7 +248,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Forget a saved memory Ben asked you to forget. It can be undone.',
   },
   {
-    // workout-builder BD1, §8.2: structure only (no load, no minutes); a draft Ben opens, starts or saves himself.
+    // workout-builder BD1, §8.2: a draft Ben opens, starts or saves himself. Coach v3: its length, focus and gym are the model's reading, checked by code.
     name: 'propose_workout',
     effect: 'propose',
     writes: ['workout_draft'],
@@ -258,7 +258,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
     capabilitySection: 'when_you_ask',
     description:
-      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. For each exercise give the working `load` (and `topSet.load`) in the unit and convention listed for it in build.loadReferences, with a short `basis` (at most 60 characters): a reason in words with no numbers (the app shows the numbers); null when you have no opinion. The app checks, bounds and fits every load to the equipment; a load with no history of his own is shown as an estimate. No minutes: the app fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. For each exercise give the working `load` (and `topSet.load`) in the unit and convention listed for it in build.loadReferences, with a short `basis` (at most 60 characters): a reason in words with no numbers (the app shows the numbers); null when you have no opinion. The app checks, bounds and fits every load to the equipment; a load with no history of his own is shown as an estimate. Give `minutes` (15–180) when Ben asked for a length in this conversation ("make it 40" after a build is 40), `focus` for what he asked to train ("a shoulder workout" is shoulders), and `gymName` when he named one of his gyms in build.gyms ("my hotel gym"); null otherwise. The app checks each and fits the workout to the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
   },
   {
     // workout-builder v2.1 BD17, §8.4: one clarifying question card; at most 2 per build request, checked by code.

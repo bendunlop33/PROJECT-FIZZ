@@ -30,6 +30,8 @@ import { asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStruc
 import { parseToolCall } from './tool-call';
 import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
 import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, refusedBuildActionIds } from './build-ask';
+import { lastLoggedSets } from './context';
+import { verifyAsked, type AskClaim, type AskVerdict } from './intent';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -276,6 +278,25 @@ export function todayChangeAsked(tool: string, gate: Pick<TurnGate, 'benRequest'
   }
 }
 
+/**
+ * Coach v3 (ADR 0027): did Ben ask for this today-change? The model's claim (`benAsked`, with his
+ * words in `benQuote`) checked against his message by `verifyAsked`; a tap counts for today's
+ * sets; `todayChangeAsked` (the word lists) only when there's no claim code can verify.
+ * `noWorkingSet`: a Too easy / Too hard tap after warm-ups only is about no working set he did,
+ * so the change is offered, not applied.
+ */
+export function todayAskVerdict(tool: string, gate: Pick<TurnGate, 'benRequest' | 'acceptedOffer'>, words: string | null, claim: AskClaim, opts: { noWorkingSet?: boolean } = {}): AskVerdict {
+  const chip = gate.benRequest?.source === 'chip' && opts.noWorkingSet !== true;
+  return verifyAsked({ tool, chip, acceptedOffer: gate.acceptedOffer, words, claim, fallback: () => todayChangeAsked(tool, { benRequest: gate.benRequest?.source === 'chip' && !chip ? null : gate.benRequest, acceptedOffer: gate.acceptedOffer }, words) });
+}
+
+/** The model's ask claim on a today-tool call (absent on calls that don't carry one). */
+function askClaimOf(args: unknown): AskClaim {
+  if (args === null || typeof args !== 'object') return {};
+  const a = args as { benAsked?: unknown; benQuote?: unknown };
+  return { benAsked: typeof a.benAsked === 'boolean' ? a.benAsked : null, benQuote: typeof a.benQuote === 'string' ? a.benQuote : null };
+}
+
 /** Review B1: a today-tool called on words about a later session or the plan. Refused, never offered. */
 export function todayScopeRefused(tool: string, words: string | null): boolean {
   return (tool === 'adjust_pending_sets' || tool === 'add_exercise_today') && words !== null && futureScopeOnly(words);
@@ -322,6 +343,9 @@ export function liveWorkoutInstructions(addOffered: boolean): string {
       : 'This workout is live. You can change today’s remaining sets (adjust_pending_sets) and rename the workout (rename_workout). When Ben asks for one of these, call the tool; never say you lack a tool or can’t do it here.',
     // Review B1.
     'These tools change today only. Never use them for a change Ben wants next time, from now on, or in his routine or template.',
+    // Coach v3 (ADR 0027): the model reads Ben's intent; code checks the quote.
+    'On each of these calls say whether Ben asked for it: benAsked true when his message this turn asks for the change or answers your question about it ("Working set"), with benQuote his asking words copied exactly; benAsked false when it is your own idea (he then sees an offer).',
+    'Too easy or Too hard with no set named is about his last logged working set (workout.lastWorkingSet); a warm-up never counts. Change that exercise’s remaining sets; never ask him which set it was. After warm-ups only, offer instead.',
     'For loads from his recent history, read get_recent_training first. History imported from FitNotes is his own training and a valid basis (equipment not recorded); the app fits every load to today’s equipment.',
     'When Ben did not ask, the app turns your call into an offer he accepts; nothing applies until he does.',
   ].join('\n');
@@ -608,6 +632,12 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     entries,
     knownExerciseNames: context.yourData.workout?.exercises.map((e) => e.name) ?? [],
   });
+  // Ben 18 Oct: a Too easy / Too hard tap is about his last working set (of the tapped exercise, if any).
+  // After warm-ups only, there is no working set it can be about: the change is offered, never applied.
+  const difficultyChip = req.input.kind === 'chip' && (req.input.chip === 'too_easy' || req.input.chip === 'too_hard');
+  const tappedRow = req.input.kind === 'chip' ? req.input.sessionExerciseId : undefined;
+  const logged = difficultyChip && req.context.session !== null ? lastLoggedSets(req.context.session, tappedRow) : null;
+  const difficultyTapWithoutWork = logged !== null && logged.lastLogged !== null && logged.lastWorkingSet === null;
   const callCtx: ToolCallContext = { ownerId: req.ownerId, turnId: req.turnId, opId: '', now: startedAt, benWords: words, messagePain, intent: gate.intent };
 
   let message: string | null = null;
@@ -740,7 +770,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: FUTURE_SCOPE_LINE }) });
       continue;
     }
-    if (TODAY_TOOLS.has(parsed.call.tool) && !todayChangeAsked(parsed.call.tool, gate, words)) {
+    if (TODAY_TOOLS.has(parsed.call.tool) && !todayAskVerdict(parsed.call.tool, gate, words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork }).asked) {
       offeredInstead = true;
       logLine({ tool: parsed.call.tool, outcome: 'proposed', text: 'Offered, not applied.', actionId: null });
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: OFFER_INSTEAD_LINE }) });

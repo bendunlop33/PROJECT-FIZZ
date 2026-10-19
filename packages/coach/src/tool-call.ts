@@ -51,8 +51,13 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'propose_next_workout_change':
       return { sourceSessionId: call.args.sourceSessionId, sourceVersion: call.args.sourceVersion, changes: call.args.changes };
     case 'propose_workout':
-      // The message is explanation: a retry that only rewords it is the same workout.
-      return { exercises: call.args.exercises };
+      // The message is explanation: a retry that only rewords it is the same workout. A new length, focus or gym isn't.
+      return {
+        exercises: call.args.exercises,
+        ...(call.args.minutes == null ? {} : { minutes: call.args.minutes }),
+        ...(call.args.focus == null ? {} : { focus: call.args.focus }),
+        ...(call.args.gymName == null ? {} : { gymName: call.args.gymName.trim().toLowerCase() }),
+      };
     case 'ask_build_question':
       return { topic: call.args.topic, question: call.args.question.trim().toLowerCase(), answers: call.args.answers };
     case 'log_set':
@@ -62,7 +67,8 @@ export function semanticArgs(call: CoachToolCall): unknown {
       return { baseVersion: call.args.baseVersion, name: call.args.name.trim() };
     case 'add_exercise_today':
       // The reason is explanation: a retry that only rewords it adds the same exercise.
-      return { ...call.args, reason: undefined };
+      // Coach v3: so is the ask claim (`benAsked`, `benQuote`): who asked doesn't change what is added.
+      return { ...call.args, reason: undefined, benAsked: undefined, benQuote: undefined };
     case 'set_pain_flag':
       return { exerciseIds: [...new Set(call.args.exerciseIds)].sort(), area: call.args.area };
     case 'save_memory':

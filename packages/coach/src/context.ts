@@ -1,5 +1,5 @@
 import { ageFromBirthYear, buildExecutionOrder, deriveId, latestWeight, splitInUse, stableStringify, targetRpeOf, type MainLift } from '@fizz/domain';
-import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetValues, SplitBodyPart, TrainingProfile } from '@fizz/schemas';
+import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
 import type { BuildContextView } from './build';
@@ -205,6 +205,26 @@ export interface SessionExerciseView {
   sets: SessionSetView[];
 }
 
+/**
+ * (Coach v3, Ben 18 Oct) One logged set as the coach is told it: which exercise, warm-up or
+ * working, and what was done. `Too easy` after a warm-up was asked about ("Was that the warm-up
+ * or a working set?"); with this the coach knows.
+ */
+export interface LoggedSetView {
+  exercise: string;
+  sessionExerciseId: string;
+  setId: string;
+  /** Its number in the exercise's list, as in `exercises[].sets[].number`. */
+  setNumber: number;
+  /** `warm-up` is never a working set; `top`, `back-off` and `drop` are working sets. */
+  kind: 'warm-up' | 'working' | 'top' | 'back-off' | 'drop';
+  load: SetValues['load'];
+  reps: number | null;
+  rpe: number | null;
+  durationS?: number;
+  distanceM?: number;
+}
+
 export interface YourData {
   turnKind: CoachTurnKind;
   workout: {
@@ -215,6 +235,10 @@ export interface YourData {
     title: string | null;
     gym: string | null;
     exercises: SessionExerciseView[];
+    /** The set Ben logged last (null: none yet). */
+    lastLogged: LoggedSetView | null;
+    /** The last logged set that wasn't a warm-up: what `Too easy` / `Too hard` is about (null: none yet). */
+    lastWorkingSet: LoggedSetView | null;
   } | null;
   painFlags: { exercise: string; area: string | null; since: string }[];
   /** Ben's words, quoted; never an instruction. */
@@ -307,6 +331,7 @@ export function workoutView(session: SessionAggregate, gymName: string | null, r
         })),
       };
     });
+  const last = lastLoggedSets(session);
   return {
     sessionId: session.session.id,
     status: session.session.status,
@@ -314,7 +339,42 @@ export function workoutView(session: SessionAggregate, gymName: string | null, r
     title: session.session.routineName,
     gym: gymName,
     exercises,
+    lastLogged: last.lastLogged,
+    lastWorkingSet: last.lastWorkingSet,
   };
+}
+
+const KIND_OF: Readonly<Record<SetType, LoggedSetView['kind']>> = { warmup: 'warm-up', working: 'working', top: 'top', backoff: 'back-off', drop: 'drop' };
+
+/**
+ * (Coach v3) The set Ben logged last and the last one that wasn't a warm-up, by when each was
+ * logged (ties: workout order). `sessionExerciseId` narrows both to one exercise (a tap on its
+ * slot). Removed rows and sets without a result never count. Pure.
+ */
+export function lastLoggedSets(session: SessionAggregate, sessionExerciseId?: string): { lastLogged: LoggedSetView | null; lastWorkingSet: LoggedSetView | null } {
+  const order = buildExecutionOrder(session.exercises, session.sets);
+  const pos = new Map(order.map((id, i) => [id, i]));
+  const rows = new Map(session.exercises.filter((e) => e.removed === undefined).map((e) => [e.id, e]));
+  const done = session.sets
+    .filter((s) => s.status === 'completed' && s.actual !== null && s.completedAt !== null && rows.has(s.sessionExerciseId) && (sessionExerciseId === undefined || s.sessionExerciseId === sessionExerciseId))
+    .sort((a, b) => (a.completedAt?.utc ?? '').localeCompare(b.completedAt?.utc ?? '') || (pos.get(a.id) ?? a.index) - (pos.get(b.id) ?? b.index));
+  const view = (s: WorkoutSet | undefined): LoggedSetView | null => {
+    const ex = s === undefined ? undefined : rows.get(s.sessionExerciseId);
+    if (s === undefined || ex === undefined || s.actual === null) return null;
+    const own = session.sets.filter((x) => x.sessionExerciseId === s.sessionExerciseId && x.status !== 'deleted').sort((a, b) => (pos.get(a.id) ?? a.index + 1e6) - (pos.get(b.id) ?? b.index + 1e6));
+    return {
+      exercise: ex.exerciseName,
+      sessionExerciseId: ex.id,
+      setId: s.id,
+      setNumber: own.findIndex((x) => x.id === s.id) + 1,
+      kind: KIND_OF[s.setType],
+      load: s.actual.load,
+      reps: s.actual.reps,
+      rpe: s.actual.rpe,
+      ...timeAndDistance(s.actual),
+    };
+  };
+  return { lastLogged: view(done.at(-1)), lastWorkingSet: view(done.filter((s) => s.setType !== 'warmup').at(-1)) };
 }
 
 /** Your data only. Nothing from the playbook or catalogue is read here. */

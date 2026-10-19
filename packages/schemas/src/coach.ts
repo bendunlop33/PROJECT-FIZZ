@@ -87,6 +87,17 @@ const reason = z.string().min(1).max(240);
 const quote = z.string().min(1).max(400);
 
 /**
+ * (Coach v3, ADR 0027, 18 Oct) The model's reading of whether Ben asked for a change to today's
+ * workout (rule 3): `benAsked` true with `benQuote`, his words copied verbatim from this turn's
+ * message. Code checks the quote against his message (`verifyAsked`); a claim it can't find is
+ * never trusted. Null or absent: no claim (code's own reading decides).
+ */
+const askClaim = {
+  benAsked: z.boolean().nullable().optional(),
+  benQuote: z.string().max(200).nullable().optional(),
+};
+
+/**
  * A set target. Unit and convention are always explicit. In tool arguments a
  * null field means "keep the current value"; in action records it means the
  * set has no target for that field.
@@ -182,6 +193,7 @@ export const AddExerciseTodayArgsSchema = z.strictObject({
   /** In a superset with this exercise of today's workout (it must have a set left); null = none. */
   supersetWithSessionExerciseId: IdSchema.nullable(),
   reason,
+  ...askClaim,
 });
 export type AddExerciseTodayArgs = z.infer<typeof AddExerciseTodayArgsSchema>;
 
@@ -194,6 +206,7 @@ export const RenameWorkoutArgsSchema = z.strictObject({
   /** The session version the coach read (rule 5). */
   baseVersion: z.int().min(1),
   name: z.string().min(1).max(120),
+  ...askClaim,
 });
 export type RenameWorkoutArgs = z.infer<typeof RenameWorkoutArgsSchema>;
 
@@ -222,6 +235,7 @@ export const AdjustPendingSetsArgsSchema = z.strictObject({
   baseVersion: z.int().min(1),
   exercises: z.array(ExerciseAdjustmentSchema).min(1).max(12),
   reason,
+  ...askClaim,
 });
 export type AdjustPendingSetsArgs = z.infer<typeof AdjustPendingSetsArgsSchema>;
 
