@@ -4617,7 +4617,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
-     * The Add exercise list (§11.4, TE16): not in today's plan, doable here
+     * The Add exercise list (§11.4, TE16): any exercise (one already in today's plan is a second copy), doable here
      * unless `showAll`, matching `query`; each row with the target the pick
      * will plan (its own history, else `No history`), flagged ones marked.
      * Reads only; never an AI call.
@@ -4630,10 +4630,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const resolved = await resolveOverview(p, req.target, { gymId, gymEquipment });
         if (resolved === null) return null;
         const { planCheckIn } = await overviewCheckIn(req.checkInId ?? null);
-        const t = await todayFor(p, resolved, gymId, gymEquipment, planCheckIn);
-        const base = basisSlots(slotBasisOf(resolved));
-        // Today's exercises (after swaps): one swapped away today can be added back (review N3).
-        const inPlan = new Set(editedSlots(base, resolveTodayEdits(base, t.input.edits)).map((x) => x.exerciseId));
+        // (Ben, 19 Oct) An exercise already in today's plan can be added again as a second copy.
         const all = new Map<string, Exercise>();
         for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) if (!isArchivedExercise(e)) all.set(e.id, e);
         for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);
@@ -4641,7 +4638,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const histories = new Map<string, HistorySession[]>();
         for (const id of await workout.recentExerciseIds(40).catch(() => [] as string[])) histories.set(id, await historyFor(p.id, id).catch(() => [] as HistorySession[]));
         const aliasesOf = await aliasIndex(p);
-        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: inPlan, query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz, aliasesOf });
+        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: new Set<string>(), query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz, aliasesOf });
         const rows: SubstituteRow[] = [];
         for (const e of picked) {
           const history = histories.get(e.id) ?? (await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));

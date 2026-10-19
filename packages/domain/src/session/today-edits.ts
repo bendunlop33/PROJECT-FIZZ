@@ -391,8 +391,7 @@ export function applyDraftCommand(input: DraftWriteInput): DraftChange {
         if (live().some((x) => x.kind === 'add' && x.slotKey === e.slotKey)) return { kind: 'unchanged', current };
         if (plannedKeys.has(e.slotKey) || edits.some((x) => x.editId === e.slotKey)) return { kind: 'invalid', reason: 'in_plan' };
         if (addedSlotsOf(live()).length >= TODAY_EDIT_LIMITS.maxAdded) return { kind: 'invalid', reason: 'too_many' };
-        // Never an exercise already in today's plan (targets are planned per exercise, as for a swap).
-        if (exerciseInOtherSlot(allSlots(), live(), e.slotKey, e.exerciseId)) return { kind: 'invalid', reason: 'in_plan' };
+        // (Ben, 19 Oct) An exercise already in today's plan is added as a second copy: its slot plans its own targets.
         append({ kind: 'add', slotKey: e.slotKey, exerciseId: e.exerciseId, ...(e.workingSets === undefined ? {} : { workingSets: e.workingSets }) }, null);
         break;
       }
@@ -768,11 +767,10 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
   dropDuplicateSwaps(slots, open, out);
-  // Added exercises (§11, TE12: after swaps): never one already in today's plan, at most six.
-  const inPlanNow = (exerciseId: string): boolean => slots.some((s) => (out.swaps.get(s.slotKey)?.toExerciseId ?? s.exerciseId) === exerciseId) || [...out.added.values()].some((a) => a.exerciseId === exerciseId);
+  // Added exercises (§11, TE12: after swaps): at most six. (Ben, 19 Oct) One already in today's plan is a second copy.
   for (const e of open) {
     if (e.kind !== 'add') continue;
-    const result: EditResult = bySlot.has(e.slotKey) || out.added.has(e.slotKey) || !knownExercise(e.exerciseId) || inPlanNow(e.exerciseId) || out.added.size >= TODAY_EDIT_LIMITS.maxAdded ? 'stale' : 'applied';
+    const result: EditResult = bySlot.has(e.slotKey) || out.added.has(e.slotKey) || !knownExercise(e.exerciseId) || out.added.size >= TODAY_EDIT_LIMITS.maxAdded ? 'stale' : 'applied';
     if (result === 'applied') out.added.set(e.slotKey, { editId: e.editId, exerciseId: e.exerciseId, ...(e.workingSets === undefined ? {} : { workingSets: e.workingSets }) });
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
   }
@@ -1064,6 +1062,14 @@ export function applyTodayEditsToRoutine(
   const targets = new Map(input.targets ?? []);
   // A slot's own targets are for the exercise it holds: a swap drops them (F21).
   const slotTargets = new Map(input.slotTargets ?? []);
+  // (19 Oct) An exercise added today that the plan already has: each slot keeps its own targets, so the
+  // planned slot's are pinned to it before the second copy would make the planner fall back to templates.
+  const addedIds = new Set([...resolved.added.values()].map((a) => a.exerciseId));
+  for (const rex of input.routine.exercises) {
+    const own = targets.get(rex.exerciseId);
+    if (!addedIds.has(rex.exerciseId) || own === undefined || slotTargets.has(rex.id) || input.routine.exercises.filter((x) => x.exerciseId === rex.exerciseId).length > 1) continue;
+    slotTargets.set(rex.id, own);
+  }
   const exercises = new Map(input.exercises);
   const known = new Map(input.knownEquipment);
   const swapped: AppliedEdits['swapped'] = [];
@@ -1073,8 +1079,9 @@ export function applyTodayEditsToRoutine(
     if (rex === undefined && add !== undefined) {
       exercises.set(add.exercise.id, add.exercise);
       if (add.pin !== null) known.set(add.pin.id, add.pin);
-      if (add.plan !== null && add.plan.length > 0) targets.set(add.exercise.id, add.plan);
-      else targets.delete(add.exercise.id);
+      // Its own slot's targets (19 Oct: the plan may hold the same exercise in another slot).
+      if (add.plan !== null && add.plan.length > 0) slotTargets.set(key, add.plan);
+      else slotTargets.delete(key);
       return [addedRoutineExercise(key, add, i, resolved.added.get(key)?.workingSets)];
     }
     if (rex === undefined) return [];
@@ -1093,7 +1100,7 @@ export function applyTodayEditsToRoutine(
     return [{ ...rex, exerciseId: sp.exercise.id, equipmentId: swapEquipmentId(sp), order: i, supersetGroup, progressionRuleId: null, setTemplates: working.length > 0 ? working : rex.setTemplates.map((t) => ({ ...t, targetLoad: null })) }];
   });
   return {
-    input: { ...input, routine: { ...input.routine, exercises: rewritten }, exercises, knownEquipment: known, targets, ...(input.slotTargets === undefined ? {} : { slotTargets }), shape: shapesOf(resolved) },
+    input: { ...input, routine: { ...input.routine, exercises: rewritten }, exercises, knownEquipment: known, targets, ...(slotTargets.size === 0 && input.slotTargets === undefined ? {} : { slotTargets }), shape: shapesOf(resolved) },
     applied: { resolved, swapped },
   };
 }

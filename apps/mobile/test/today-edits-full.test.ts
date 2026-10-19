@@ -143,12 +143,11 @@ describe('Edit mode: sets, reps, load and add (TE-B1 to TE-B6, TE-B10, TE-B11)',
     expect((await s.overview.loadKeypad({ equipmentId: bench.editRow.keypad?.equipmentId ?? null, unit: 'kg', convention: 'total', value: 61 })).note).toMatch(/^Rounds to 60 kg here$/);
     expect((await s.overview.edit({ ...base(p3, gymId, routineId, 'load-1'), edit: { kind: 'load', slotKey: bench.slotKey, load: { value: 62.5, unit: 'kg', convention: 'total' } } })).ok).toBe(true);
 
-    // Add an exercise: candidates are this gym's, not in today's plan; the pick goes at the end.
+    // Add an exercise: candidates are this gym's (one in today's plan is a second copy); the pick goes at the end.
     const p4 = await load(s, gymId, routineId);
     const sheet = await s.overview.addCandidates({ target: targetOf(routineId), gymId, query: 'dumbbell bench', showAll: false });
     const pick = sheet?.rows.find((r) => r.name === 'Dumbbell bench press');
     expect(pick).toBeDefined();
-    expect(sheet?.rows.map((r) => r.name)).not.toContain('Bench press');
     // Its own history (32.5 kg each), never bench's.
     expect(plain(pick?.targetText)).toMatch(/^3[25](\.5)? kg each × /);
     const added = await s.overview.edit({ ...base(p4, gymId, routineId, 'add-1'), edit: { kind: 'add', exerciseId: pick?.exerciseId ?? '' } });
@@ -423,5 +422,28 @@ describe('Edit mode add with the Sets bar (TE-B15, exercise-library §10.2)', ()
     if (r.kind !== 'started') throw new Error(r.kind);
     sameAsStart(p2, r.outcome.aggregate);
     expect(model.requests).toHaveLength(0);
+  });
+});
+
+describe('the same exercise twice before Start (Ben, 19 Oct)', () => {
+  it('Lateral raise added again is its own row with its own sets; Start makes two rows; the plan’s row is unchanged', async () => {
+    const { services: s } = await h.launch();
+    const { gymId, routineId } = await withPushA(s);
+    const page = await load(s, gymId, routineId);
+    const raise = rowNamed(page, 'Lateral raise');
+    const sheet = await s.overview.addCandidates({ target: targetOf(routineId), gymId, query: 'lateral raise', showAll: false });
+    const pick = sheet?.rows.find((r) => r.name === 'Lateral raise');
+    expect(pick).toBeDefined();
+    const added = await s.overview.edit({ ...base(page, gymId, routineId, 'add-again'), edit: { kind: 'add', exerciseId: pick?.exerciseId ?? '' } });
+    expect(added.ok).toBe(true);
+    const p2 = await load(s, gymId, routineId);
+    expect(p2.view.rows.filter((r) => r.name === 'Lateral raise')).toHaveLength(2);
+    expect(rowNamed(p2, 'Lateral raise')).toMatchObject({ slotKey: raise.slotKey, editRow: { workingSets: raise.editRow.workingSets } });
+    const r = await startFromOverview({ start: (q) => s.overview.start(q), reload: () => s.overview.load({ target: targetOf(routineId), gymId }) }, { page: p2, opId: 'start-twice', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (r.kind !== 'started') throw new Error(r.kind);
+    sameAsStart(p2, r.outcome.aggregate);
+    const rows = r.outcome.aggregate.exercises.filter((e) => e.exerciseName === 'Lateral raise');
+    expect(rows).toHaveLength(2);
+    expect(new Set(r.outcome.aggregate.sets.filter((x) => rows.some((e) => e.id === x.sessionExerciseId)).map((x) => x.sessionExerciseId)).size).toBe(2);
   });
 });

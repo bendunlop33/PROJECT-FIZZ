@@ -1111,7 +1111,9 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
     // B6 (workout-builder BD6): no comparable history, so no load; the first set card asks for it.
     if (input.targetRpe === true && edit?.kind !== 'skipped' && planned.load === null && comparable === null && dropped === null && ex.loadConvention !== 'bodyweight') panel.push({ key: 'load', label: 'Load', value: '— · start light', tone: 'normal' });
     if (topRpe !== null && workRpe !== null && topRpe !== workRpe) panel.push({ key: 'rpe', label: 'RPE', value: `Top ${formatNumber(topRpe)} · back-off ${formatNumber(workRpe)}`, tone: 'normal' });
-    const coach = overviewCoachOf(first, coachByExercise.get(ex.exerciseId), { sourceVersion, sourceBasis, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
+    // (19 Oct) An exercise added again today is its own copy: the coach's next-time target is the plan's slot's only.
+    const addedCopy = today?.added?.has(slotOf(ex.id)) === true && ordered.some((o) => o.id !== ex.id && o.exerciseId === ex.exerciseId);
+    const coach = overviewCoachOf(first, addedCopy ? undefined : coachByExercise.get(ex.exerciseId), { sourceVersion, sourceBasis, painFlagged: covering !== null, painToday: input.coach?.painToday === true });
     // D1 (minimal copy): a built-in rule target says so in one word, as a coach target does; the rule in full is behind `Why?`.
     if (coach?.state !== 'coach' && first?.planned.source === 'built_in_rule') panel.push({ key: 'rule', label: 'Rule', value: first.planned.provenance?.rule?.name ?? 'Built-in', tone: 'normal' });
     if (coach?.state === 'coach' && coach.reason !== null) panel.push({ key: 'coach', label: 'Coach', value: `“${coach.reason}”`, tone: 'normal' });
