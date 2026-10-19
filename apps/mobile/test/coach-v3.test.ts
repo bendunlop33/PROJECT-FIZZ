@@ -150,6 +150,23 @@ describe('Ben’s report "Can’t properly create based on constraints I give" (
     expect(await overviewGymId({ ...ports, draftGym: () => Promise.resolve(hotelId) }, { kind: 'next' }, null)).toBe(mainId);
   });
 
+  it('review S6: two days after the hotel trip, "build me a leg day" in the same thread is built at the gym in use, not the hotel', async () => {
+    const { s, mainId, hotelId } = await twoGyms();
+    model = new StepModel([shoulders({ gymName: 'Hotel gym' }), () => replyWith('Here it is.')]);
+    const r1 = await say(s, BEN_HOTEL, null);
+    expect((await draftOf(s, r1)).draft.versions[0]?.request.gymId).toBe(hotelId);
+    // Same day, a revision still belongs to that build: the hotel stands.
+    model = new StepModel([shoulders({ minutes: 40 }), () => replyWith('Shorter now.')]);
+    const r2 = await say(s, 'make it 40', r1.threadId);
+    expect(buildOf(model.requests[0]).gym?.name).toBe('Hotel gym');
+    expect((await draftOf(s, r2)).draft.versions[0]?.request.gymId).toBe(hotelId);
+    h.clockMs += 2 * DAY;
+    model = new StepModel([shoulders({ minutes: 45 }), () => replyWith('Here it is.')]);
+    const r3 = await say(s, 'build me a leg day', r1.threadId);
+    expect(buildOf(model.requests[0]).gym?.name).toBe('Main Gym');
+    expect((await draftOf(s, r3)).draft.versions[0]?.request.gymId).toBe(mainId);
+  });
+
   it('Ben’s literal number wins: the model says 45 on "make it 40", the draft is 40', async () => {
     const { s } = await twoGyms();
     model = new StepModel([shoulders({ gymName: 'Hotel gym' }), () => replyWith('Here it is.')]);

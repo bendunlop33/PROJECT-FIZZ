@@ -25,6 +25,7 @@ import {
 } from '@fizz/domain';
 import { BUILD_LIMITS, muscleGroupOf, type ActionDetail, type BuildCheck, type BuildDay, type BuildFocus, type DraftPlan, type GuardNote, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
 import { isChangeClaim } from './claims';
+import { classifyBenRequest, requestHas, revisesDraft } from './request';
 import { collectFacts, mergeFacts, verifySentence, withoutNumbers, type NumberFacts } from './numbers';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
 
@@ -403,6 +404,29 @@ export function lengthRevision(text: string): number | null {
   if (new RegExp(String.raw`\b(?:(?:make|keep) (?:it|that|this|the (?:workout|session|draft))|(?:cut|shorten|change|trim|drop) (?:it|that|this)(?: down)? to) ${n}\b`).test(t)) return bare[0] ?? null;
   if (new RegExp(String.raw`\b${n} instead\b`).test(t)) return bare[0] ?? null;
   return null;
+}
+
+/** How far back Ben's earlier messages can still be part of the build he is asking about (review S6). */
+export const BUILD_CHAIN_MAX_MESSAGES = 6;
+export const BUILD_CHAIN_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * (Coach v3 review S6) Ben's earlier words that belong to the build he is asking about now, newest
+ * first: when his newest message changes or follows a build ("make it 40", "hotel gym instead"),
+ * his messages back to and including the request that started it, within the last
+ * `BUILD_CHAIN_MAX_MESSAGES` and `BUILD_CHAIN_MAX_AGE_MS`. A new build request of its own ("build
+ * me a leg day") starts fresh: a gym named in an older request doesn't steer it. Pure.
+ */
+export function buildChainWords(said: string, earlier: readonly { text: string; atMs: number }[], nowMs: number): string[] {
+  const asksBuild = (t: string): boolean => requestHas(classifyBenRequest(t, 'general'), 'build');
+  if (asksBuild(said) && !revisesDraft(said) && lengthRevision(said) === null) return [];
+  const out: string[] = [];
+  for (const m of earlier.slice(0, BUILD_CHAIN_MAX_MESSAGES)) {
+    if (nowMs - m.atMs > BUILD_CHAIN_MAX_AGE_MS) break;
+    out.push(m.text);
+    if (asksBuild(m.text)) return out;
+  }
+  return [];
 }
 
 /**

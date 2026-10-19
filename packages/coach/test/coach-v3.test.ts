@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Store } from '@fizz/persistence';
 import type { SessionAggregate } from '@fizz/schemas';
 import { capAddable, ADDABLE_CAP } from '../src/add-exercise';
-import { bareNumbers, buildFocusFor, lengthRevision, buildMinutesFor, gymNamedIn, gymNameCore, sameGymName, savedGymFor, unknownGymLine } from '../src/build';
+import { bareNumbers, buildChainWords, buildFocusFor, lengthRevision, buildMinutesFor, gymNamedIn, gymNameCore, sameGymName, savedGymFor, unknownGymLine } from '../src/build';
 import { buildCoachContext, contextInputItems, lastLoggedSets, workoutView, type YourData } from '../src/context';
 import { createSessionReadExecutor, createStoreExecutors, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
 import { createEditTodayExecutor } from '../src/edit-today';
@@ -286,6 +286,19 @@ describe('build length, focus and gym from the model’s arguments, checked (Ben
     for (const t of ['Leg session, I want to work up to 140 on squat', 'build me something, hotel room 115', 'hotel room 215', 'Shoulders, then 40 on the lateral raise', 'make it 40 or 50', 'push day']) expect([t, lengthRevision(t)]).toEqual([t, null]);
     // So the model's reading stands.
     expect(buildMinutesFor({ minutes: 60, minutesFromBen: null, benNumbers: [lengthRevision('Leg session, I want to work up to 140 on squat')].filter((n): n is number => n !== null) }, 60)).toEqual({ minutes: 60, by: 'coach' });
+  });
+
+  it('review S6: earlier words count only within the build being changed, back to its request, recent only', () => {
+    const now = 1_000_000_000;
+    const hotel = { text: 'Can you make me a shoulder workout in my hotel gym, dumbbells only', atMs: now - 60_000 };
+    expect(buildChainWords('make it 40', [hotel], now)).toEqual([hotel.text]);
+    expect(buildChainWords('build me a leg day', [hotel], now)).toEqual([]);
+    expect(buildChainWords('make it 40', [{ ...hotel, atMs: now - 2 * 86_400_000 }], now)).toEqual([]);
+    // Only back to the request that started this build, never past it.
+    const older = { text: 'build me a push session at the hotel gym', atMs: now - 120_000 };
+    expect(buildChainWords('make it 40', [{ text: 'no barbell', atMs: now - 30_000 }, hotel, older], now)).toEqual(['no barbell', hotel.text]);
+    // No build request among them: nothing.
+    expect(buildChainWords('make it 40', [{ text: 'I am at the hotel gym this week', atMs: now - 30_000 }], now)).toEqual([]);
   });
 
   it('focus: the Build card’s chip stands; else the model’s reading; never split_day from the model', () => {

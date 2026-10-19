@@ -53,6 +53,7 @@ import {
   OFFERED_USABLE_CAP,
   buildRequestWords,
   buildWordsNewestFirst,
+  buildChainWords,
   lengthRevision,
   gymNamedIn,
   sameGymName,
@@ -1194,8 +1195,9 @@ export function createCoachService(deps: CoachServiceDeps) {
     // v2 (BD17): Ben answering the coach's question is a build follow-up with his request's words.
     const chain = kind === 'general' && req.input.kind === 'words' && history.length > 0 ? await buildQuestionChain(history, req.input.text, (id) => coachStore().listTurnActions(id)) : null;
     const followUp = kind === 'general' && req.input.kind === 'words' ? (chain?.followUp ?? buildFollowUpIn(history, req.input.text, refused)) : null;
-    // Coach v3: Ben's earlier words in this thread, newest first (the gym he named two messages ago).
-    const earlierWords = history.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [m.body.input.text] : [])).reverse().slice(0, 6);
+    // Coach v3: Ben's earlier words in this thread that belong to this build, newest first (the gym he named two messages ago; review S6: never an older request's).
+    const earlierBen = history.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [{ text: m.body.input.text, atMs: toMs(m.createdAt.utc) }] : [])).reverse();
+    const earlierWords = req.input.kind === 'words' ? buildChainWords(req.input.text, earlierBen, toMs(deps.now().utc)) : [];
     const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
