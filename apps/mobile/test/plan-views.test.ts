@@ -88,6 +88,19 @@ describe('consistencyCardView', () => {
     expect(JSON.stringify(v)).not.toMatch(/miss/i);
   });
 
+  it('two workouts on one day are one day against the aim, and the label says days (review S2)', () => {
+    const two = [
+      { sessionId: 'a', routineId: null, startedAtUtc: '2026-09-30T06:00:00.000Z' },
+      { sessionId: 'b', routineId: null, startedAtUtc: '2026-09-30T17:00:00.000Z' },
+    ];
+    const v = consistencyCardView(consistency({ workouts: two, nowMs, tz: 'Europe/London', aim: 2, plan: null }), '2026-10-08');
+    expect(v.weeks.at(-1)).toMatchObject({ value: '1/2', atAim: false, accessibilityLabel: 'Week of 28 September: 1 of 2 days' });
+    expect(v.atAim).toBe('Weeks at your aim: 0 of 8');
+    // With no aim: workouts, labelled as workouts.
+    const none = consistencyCardView(consistency({ workouts: two, nowMs, tz: 'Europe/London', aim: null, plan: null }), '2026-10-08');
+    expect(none.weeks.at(-1)).toMatchObject({ value: '2', accessibilityLabel: 'Week of 28 September: 2 workouts' });
+  });
+
   it('no aim: counts only', () => {
     const v = consistencyCardView(consistency({ workouts: [], nowMs, tz: 'Europe/London', aim: null, plan: null }), '2026-10-08');
     expect(v.thisWeek).toBe('This week 0');

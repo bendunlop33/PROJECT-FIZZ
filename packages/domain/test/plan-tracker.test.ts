@@ -150,6 +150,23 @@ describe('consistency: the last 8 weeks against the aim (proposal 2)', () => {
     expect(JSON.stringify(v)).not.toMatch(/miss/i);
   });
 
+  it('the aim is days a week: two workouts on one local day are one day; workouts are still counted (review S2)', () => {
+    const v = consistency({
+      workouts: [
+        // Tue 29 Sep, morning and evening in Auckland; Wed 30 Sep.
+        w(1, '2026-09-28T19:00:00.000Z'),
+        w(2, '2026-09-29T07:00:00.000Z'),
+        w(3, '2026-09-29T19:00:00.000Z'),
+      ],
+      nowMs,
+      tz: TZ,
+      aim: 3,
+      plan: null,
+    });
+    expect(v.weeks.at(-1)).toMatchObject({ monday: '2026-09-28', workouts: 3, days: 2, text: '2/3', atAim: false });
+    expect(v.atAimText).toBe('Weeks at your aim: 0 of 8');
+  });
+
   it('no aim: counts only', () => {
     const v = consistency({ workouts: [w(1, '2026-10-05T06:00:00.000Z')], nowMs, tz: TZ, aim: null, plan: null });
     expect(v.thisWeek).toMatchObject({ text: '1', atAim: null });

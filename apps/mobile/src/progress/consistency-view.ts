@@ -18,7 +18,6 @@ export interface ConsistencyCardView {
 }
 
 export function consistencyCardView(c: ConsistencyView, today: string): ConsistencyCardView {
-  const unit = c.aim === null ? 'workouts' : `of ${String(c.aim)} days`;
   return {
     title: 'Consistency',
     thisWeek: `This week ${c.thisWeek.text}`,
@@ -27,7 +26,8 @@ export function consistencyCardView(c: ConsistencyView, today: string): Consiste
       label: shortDate(w.monday, today),
       value: w.text,
       atAim: w.atAim,
-      accessibilityLabel: `Week of ${longDate(w.monday, today)}: ${String(w.workouts)} ${c.aim === null ? (w.workouts === 1 ? 'workout' : 'workouts') : unit}${w.atAim === true ? ', at your aim' : ''}`,
+      // With an aim the count is days trained (review S2), else workouts; the label says which.
+      accessibilityLabel: `Week of ${longDate(w.monday, today)}: ${c.aim === null ? `${String(w.workouts)} ${w.workouts === 1 ? 'workout' : 'workouts'}` : `${String(w.days)} of ${String(c.aim)} days`}${w.atAim === true ? ', at your aim' : ''}`,
     })),
     atAim: c.atAimText,
     plan: c.planThisWeek === null ? null : `Plan this week ${c.planThisWeek.text}`,

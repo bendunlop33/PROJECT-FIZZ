@@ -1,5 +1,5 @@
 import type { Load, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
-import { addDays, localWeekBounds } from '../calendar';
+import { addDays, localDateOf, localWeekBounds } from '../calendar';
 import { formatDuration, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
 import { toMs } from '../time';
@@ -14,8 +14,8 @@ import { toMs } from '../time';
  * - `plannedVsDone`: per exercise of a finished workout, sets done of
  *   planned, the reps (or times) done against the target, and one word:
  *   `Hit`, `Short` or `Over`.
- * - `consistency`: the last 8 weeks' workouts against Ben's days-a-week aim
- *   (none set: workouts per week only), and with a plan, the plan days done
+ * - `consistency`: the last 8 weeks' training days against Ben's
+ *   days-a-week aim (none set: workouts per week only), and with a plan, the plan days done
  *   this week.
  * - `exerciseTargetHistory`: per session of one exercise, target against
  *   actual, and `Targets hit 5 of last 6`.
@@ -175,7 +175,12 @@ export interface ConsistencyWeek {
   /** Local Monday, `YYYY-MM-DD`. */
   monday: string;
   workouts: number;
-  /** `2/3` with an aim, else `2`. */
+  /**
+   * Distinct local dates trained: what the days-a-week aim is measured in
+   * (two workouts on one day are one day; review plans-19oct S2).
+   */
+  days: number;
+  /** `2/3` (days of the aim) with an aim, else `2` (workouts). */
   text: string;
   /** Null with no aim. */
   atAim: boolean | null;
@@ -203,27 +208,31 @@ export interface ConsistencyInput {
   plan: { days: readonly { routineId: string; createdFromSessionId?: string | null | undefined }[]; appliedAtUtc: string } | null;
 }
 
-function weekOf(monday: string, workouts: number, aim: number | null): ConsistencyWeek {
-  return { monday, workouts, text: aim === null ? String(workouts) : `${String(workouts)}/${String(aim)}`, atAim: aim === null ? null : workouts >= aim };
+function weekOf(monday: string, workouts: number, days: number, aim: number | null): ConsistencyWeek {
+  return { monday, workouts, days, text: aim === null ? String(workouts) : `${String(days)}/${String(aim)}`, atAim: aim === null ? null : days >= aim };
 }
 
 /**
- * `Consistency` on Progress: workouts per local Monday–Sunday week for the
- * last 8 full weeks and this week so far, against the aim. With a plan,
+ * `Consistency` on Progress: per local Monday–Sunday week for the last 8
+ * full weeks and this week so far, the days trained against the
+ * days-a-week aim (with none, workouts per week). With a plan,
  * how many of its days were done this week (since Apply). Counts only.
  */
 export function consistency(input: ConsistencyInput): ConsistencyView {
   const { startMs: thisStart, mondayLocalDate } = localWeekBounds(input.nowMs, input.tz);
   const mondays = Array.from({ length: CONSISTENCY_WEEKS }, (_, i) => addDays(mondayLocalDate, -7 * (CONSISTENCY_WEEKS - i)));
   const counts = new Map<string, number>();
+  const dates = new Map<string, Set<string>>();
   for (const w of input.workouts) {
     const ms = toMs(w.startedAtUtc);
     if (ms > input.nowMs) continue;
     const monday = localWeekBounds(ms, input.tz).mondayLocalDate;
     counts.set(monday, (counts.get(monday) ?? 0) + 1);
+    dates.set(monday, (dates.get(monday) ?? new Set<string>()).add(localDateOf(ms, input.tz)));
   }
-  const weeks = mondays.map((m) => weekOf(m, counts.get(m) ?? 0, input.aim));
-  const thisWeek = weekOf(mondayLocalDate, counts.get(mondayLocalDate) ?? 0, input.aim);
+  const weekFor = (m: string) => weekOf(m, counts.get(m) ?? 0, dates.get(m)?.size ?? 0, input.aim);
+  const weeks = mondays.map(weekFor);
+  const thisWeek = weekFor(mondayLocalDate);
   const atAim = weeks.filter((w) => w.atAim === true).length;
   let planThisWeek: ConsistencyView['planThisWeek'] = null;
   const plan = input.plan;
