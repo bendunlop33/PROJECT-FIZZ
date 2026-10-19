@@ -349,7 +349,10 @@ describe('source checks', () => {
     for (const reset of ['startOp.current = null;', 'setOpen(null);', 'setCard(null);', 'setSwap(null);', 'setEditing(false);', 'setUpdate(null);', 'setRepsSlot(null);', 'setLoadEdit(null);', 'closeAdd();', 'wroteDraft.current = null;', 'pendingSets.current.clear();', 'setStartError(null);', 'setTarget(t);', 'reload();']) expect(show).toContain(reset);
     // Kept: the tapped score and the gym are never touched by a switch.
     expect(body).not.toMatch(/setTapped|tappedRef\.current =|gyms\.select|selectGym/);
-    expect(body).toContain('const gymId = page?.view.gym?.id ??');
+    expect(body).toContain('const pageGym = page?.view.gym?.id ??');
+    // Coach v3 review B2: a coach draft is shown at the gym it was built at; anything else keeps the page's gym.
+    expect(body).toContain('const gymId = await overviewGymId({ draftGym: (id) => services.coachDrafts.gymOf(id), currentGym: () => Promise.resolve(pageGym) }, next, null);');
+    expect(screen).toContain('const gymId = await overviewGymId({ draftGym: (id) => s.coachDrafts.gymOf(id), currentGym: async () => (await s.yourData.currentGym())?.id ?? null }, target, pickedGym.current);');
     // A failed read leaves the page up, with a toast; nothing was reset.
     expect(body).toMatch(/if \(done === 'failed'\) \{\n\s*switching\.current = false;\n\s*setToast\(\{ text: SESSION_PICKER_COPY\.switchFailed \}\);/);
     // Picking the shown row does nothing.
