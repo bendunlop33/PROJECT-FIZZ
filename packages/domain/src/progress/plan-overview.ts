@@ -185,7 +185,7 @@ export interface PlanDayDetailRow {
   key: string;
   exerciseId: string;
   name: string;
-  /** `3 × 6–8 · 85 kg`, `3 × 10–12 · 22.5 kg each`, `1 × 10:00`. */
+  /** `3 × 6–8 · 85 kg`, `3 × 10–12 · 22.5 kg each`, `1 × 10:00`, `95 kg top, 3 × 6–8 · 85 kg`, `3 sets` (mixed targets). */
   line: string;
   /** `Last 17 Oct: 80 × 12, 12 · Targets hit 5 of last 6`, `est.` (no history; an estimated load), or null. */
   sub: string | null;
@@ -216,23 +216,18 @@ function isPrescribed(s: WorkoutSet): boolean {
   return s.setType !== 'warmup' && s.status !== 'deleted' && s.skippedBy !== 'before_start' && s.pairedWithSetId === null;
 }
 
-function mostCommon(values: readonly string[]): string | null {
-  const counts = new Map<string, number>();
-  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
-  let best: string | null = null;
-  let n = 0;
-  for (const [v, c] of counts) if (c > n) [best, n] = [v, c];
-  return best;
+/** Each set's planned target as text (reps, time, distance or the cardio values); a set with none is left out. */
+function schemeValues(ex: Pick<SessionExercise, 'measurement'>, sets: readonly WorkoutSet[]): string[] {
+  if (ex.measurement === 'cardio') return sets.map((s) => cardioValuesText({ durationS: s.planned.durationS, distanceM: s.planned.distanceM ?? null })).filter((x) => x !== '—');
+  if (ex.measurement === 'distance') return sets.flatMap((s) => (s.planned.distanceM == null ? [] : [formatDistance(s.planned.distanceM)]));
+  if (ex.measurement === 'duration') return sets.flatMap((s) => (s.planned.durationS === null ? [] : [formatDuration(s.planned.durationS)]));
+  return sets.flatMap((s) => (s.planned.reps === null ? [] : [repRangeText(s.planned.reps)]));
 }
 
-function schemeOf(ex: Pick<SessionExercise, 'measurement'>, sets: readonly WorkoutSet[]): string | null {
-  if (ex.measurement === 'cardio') {
-    const t = mostCommon(sets.map((s) => cardioValuesText({ durationS: s.planned.durationS, distanceM: s.planned.distanceM ?? null })).filter((x) => x !== '—'));
-    return t;
-  }
-  if (ex.measurement === 'distance') return mostCommon(sets.flatMap((s) => (s.planned.distanceM == null ? [] : [formatDistance(s.planned.distanceM)])));
-  if (ex.measurement === 'duration') return mostCommon(sets.flatMap((s) => (s.planned.durationS === null ? [] : [formatDuration(s.planned.durationS)])));
-  return mostCommon(sets.flatMap((s) => (s.planned.reps === null ? [] : [repRangeText(s.planned.reps)])));
+/** The one value every one of `count` sets shares, else null (mixed sets never read as the most common one; review planview S6). */
+function sameOf(values: readonly string[], count: number): string | null {
+  const first = values[0];
+  return first !== undefined && values.length === count && values.every((v) => v === first) ? first : null;
 }
 
 /** A logged load, short as the history lines print it (`80`, `+10`, `Assist 20`); the unit only when it isn't the plan's. */
@@ -279,8 +274,8 @@ export function planDayHeader(dayN: number, of: number, gymName: string | null, 
 
 /**
  * A plan day as its screen shows it: per exercise, what Start would plan
- * here (`3 × 6–8 · 85 kg`, the most common target and load of its working
- * sets) and a line from his history: last time's sets and `Targets hit 5 of
+ * here (`3 × 6–8 · 85 kg`: the target and load its working sets share; a
+ * top set on its own, `95 kg top, 3 × 6–8 · 85 kg`) and a line from his history: last time's sets and `Targets hit 5 of
  * last 6`; with no history, `est.` when the planned load is an estimate
  * (rule 6). Values only.
  */
@@ -292,12 +287,23 @@ export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
     .sort((a, b) => a.order - b.order)
     .map((ex): PlanDayDetailRow => {
       const sets = input.planned.sets.filter((s) => s.sessionExerciseId === ex.id && isPrescribed(s)).sort((a, b) => a.index - b.index);
-      const scheme = schemeOf(ex, sets);
       const eq = equipmentOfRow(snapshot, ex);
-      const loads = ex.measurement === 'cardio' ? [] : sets.flatMap((s) => (s.planned.load === null ? [] : [loadText(s.planned.load, ex.loadConvention, eq)])).filter((t) => t !== '—' && t !== 'BW');
-      const load = mostCommon(loads);
-      const n = String(sets.length);
-      const line = `${scheme === null ? `${n} ${sets.length === 1 ? 'set' : 'sets'}` : `${n} × ${scheme}`}${load === null ? '' : ` · ${load}`}`;
+      const loadsOf = (xs: readonly WorkoutSet[]): string[] => (ex.measurement === 'cardio' ? [] : xs.flatMap((s) => (s.planned.load === null ? [] : [loadText(s.planned.load, ex.loadConvention, eq)])).filter((t) => t !== '—' && t !== 'BW'));
+      // Review planview S6: a top set reads on its own (`95 kg top, 3 × 6–8 · 85 kg`); the rest show a target or load only when they share it.
+      const tops = sets.filter((s) => s.setType === 'top');
+      const rest = sets.filter((s) => s.setType !== 'top');
+      const parts: string[] = [];
+      if (tops.length > 0) {
+        const topLoad = sameOf(loadsOf(tops), tops.length);
+        parts.push(topLoad === null ? (tops.length === 1 ? 'Top set' : `${String(tops.length)} top sets`) : `${tops.length === 1 ? '' : `${String(tops.length)} × `}${topLoad} top`);
+      }
+      if (rest.length > 0 || tops.length === 0) {
+        const scheme = sameOf(schemeValues(ex, rest), rest.length);
+        const load = sameOf(loadsOf(rest), rest.length);
+        const n = String(rest.length);
+        parts.push(`${scheme === null ? `${n} ${rest.length === 1 ? 'set' : 'sets'}` : `${n} × ${scheme}`}${load === null ? '' : ` · ${load}`}`);
+      }
+      const line = parts.join(', ');
       const unit = sets.find((s) => s.planned.load !== null)?.planned.load?.unit ?? null;
       const history = [...input.history(ex.exerciseId)].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
       let sub: string | null = null;

@@ -256,6 +256,23 @@ describe('planDayDetail: a plan day’s lines', () => {
     ]);
   });
 
+  it('a top set reads on its own; mixed working sets show only what they share (review planview S6)', () => {
+    const squat = ex(70, 'Back squat');
+    const press = ex(80, 'Overhead press');
+    const mixed: Agg = {
+      session: session(510, '2026-10-08T06:00:00.000Z'),
+      exercises: [squat, press],
+      sets: [
+        set(squat, 0, { load: kg(95), reps: [6, 8] }, null, { setType: 'top' }),
+        ...[1, 2, 3].map((i) => set(squat, i, { load: kg(85), reps: [6, 8] }, null)),
+        set(press, 0, { load: kg(50), reps: [5, 5] }, null),
+        set(press, 1, { load: kg(45), reps: [8, 10] }, null),
+      ],
+    };
+    const lines = planDayDetail({ dayN: 1, of: 4, gymName: null, aboutMinutes: null, planned: mixed, history: () => [] }).rows.map((r) => plain(r.line));
+    expect(lines).toEqual(['95 kg top, 3 × 6–8 · 85 kg', '2 sets']);
+  });
+
   it('last time from his newest workout with it, with targets hit; lb shown where the plan is kg; est. with no history; cardio with pace', () => {
     expect(detail.rows.map((r) => plain(r.sub))).toEqual([
       'Last 7 Oct: 80 × 12, 12, 75 × 10 · Targets hit 1 of last 2',
