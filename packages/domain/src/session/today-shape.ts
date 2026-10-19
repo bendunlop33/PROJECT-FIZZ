@@ -13,7 +13,8 @@ import { CARDIO_DEFAULT_S } from '../cardio';
  */
 export interface SlotShape {
   workingSets?: number;
-  reps?: { reps: RepRange | null; durationS: number | null };
+  /** `distanceM`: a cardio row's distance today (null: none); absent on any other row's edit. */
+  reps?: { reps: RepRange | null; durationS: number | null; distanceM?: number | null };
   /** Ben's intended load: the top and plain working sets (back-off and drop sets keep theirs). */
   load?: Load;
 }
@@ -23,15 +24,18 @@ export interface ShapeBefore {
   workingSets: number;
   reps: RepRange | null;
   durationS: number | null;
+  /** Cardio: the first working set's distance target; absent when it has none. */
+  distanceM?: number;
 }
 
 const isWorkingTemplate = (t: Pick<SetTemplate, 'setType'>): boolean => t.setType !== 'warmup';
 
 /** The working-set count and the first working set's reps or time. */
-export function shapeOfTemplates(templates: readonly Pick<SetTemplate, 'setType' | 'targetReps' | 'targetDurationS'>[]): ShapeBefore {
+export function shapeOfTemplates(templates: readonly Pick<SetTemplate, 'setType' | 'targetReps' | 'targetDurationS' | 'targetDistanceM'>[]): ShapeBefore {
   const working = templates.filter(isWorkingTemplate);
   const first = working[0];
-  return { workingSets: working.length, reps: first?.targetReps ?? null, durationS: first?.targetDurationS ?? null };
+  const distanceM = first?.targetDistanceM ?? null;
+  return { workingSets: working.length, reps: first?.targetReps ?? null, durationS: first?.targetDurationS ?? null, ...(distanceM !== null ? { distanceM } : {}) };
 }
 
 /**
@@ -70,7 +74,14 @@ export function shapeTemplates(
   }
   if (shape.reps !== undefined) {
     const r = shape.reps;
-    out = out.map((t) => (isWorkingTemplate(t) ? { ...t, targetReps: r.reps === null ? null : { ...r.reps }, targetDurationS: r.reps === null ? r.durationS : null } : t));
+    out = out.map((t) => {
+      if (!isWorkingTemplate(t)) return t;
+      const next: SetTemplate = { ...t, targetReps: r.reps === null ? null : { ...r.reps }, targetDurationS: r.reps === null ? r.durationS : null };
+      // Cardio (review S1): the distance today goes with the time; null clears it.
+      if (r.distanceM === null) delete next.targetDistanceM;
+      else if (r.distanceM !== undefined) next.targetDistanceM = r.distanceM;
+      return next;
+    });
   }
   if (shape.load !== undefined) {
     const load = shape.load;

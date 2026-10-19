@@ -13,6 +13,7 @@ import {
   coachDraftListed,
   currentDraftVersion,
   diffDraftVersions,
+  draftSchemeText,
   draftWorkingSets,
   discardWorkoutDraft,
   doableHere,
@@ -494,6 +495,24 @@ describe('planCoachDraft: the one path for the overview, Today and Start (BD6, B
     const noTime = checked(args([pex('rowing-erg', { workingSets: 1, reps: null, workSeconds: null })]), c);
     expect(noTime.plan.slots[0]?.setTemplates[0]).toMatchObject({ durationS: 600 });
     expect(noTime.checks.map((x) => plain(x.text))).toContain('Rowing machine · time missing · 10:00 used');
+  });
+
+  it('cardio in a build (review S3): "a 5k row" is a distance with no time, carried to the session as asked', () => {
+    const ROWER = ex(231, 'Rowing machine', 'rowing-erg', { movementPattern: 'conditioning', compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', measurement: 'cardio', mechanic: 'compound' });
+    const c = ctx({ exerciseFor: (key) => (key === 'rowing-erg' ? ROWER : (BY_KEY.get(key) ?? null)) });
+    const fiveK = args([...PUSH.exercises, pex('rowing-erg', { workingSets: 1, reps: null, workSeconds: null, distanceMetres: 5000, targetRpe: null })]);
+    const r = checked(fiveK, c);
+    expect(r.plan.slots.find((x) => x.exerciseId === ROWER.id)?.setTemplates).toEqual([{ setType: 'working', reps: null, durationS: null, distanceM: 5000, targetRpe: null, restS: null }]);
+    expect(r.checks.map((x) => plain(x.text))).not.toContain('Rowing machine · time missing · 10:00 used');
+    const slot = r.plan.slots.find((x) => x.exerciseId === ROWER.id);
+    expect(slot && plain(draftSchemeText(slot))).toBe('1 × 5,000 m');
+    EXERCISES.set(ROWER.id, ROWER);
+    try {
+      const out = planOf(draftOf(fiveK, c));
+      expect(setsFor(out, ROWER.id).map((x) => x.planned)).toEqual([expect.objectContaining({ durationS: null, distanceM: 5000, reps: null })]);
+    } finally {
+      EXERCISES.delete(ROWER.id);
+    }
   });
 
   it('a coach draft names itself on the session, never a routine (rotation untouched, §6.3); supersets and timed sets carry through', () => {

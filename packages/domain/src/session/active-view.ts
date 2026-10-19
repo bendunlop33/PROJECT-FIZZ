@@ -22,7 +22,7 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
-import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, cardioElapsedMs, cardioHasValue, paceText } from '../cardio';
+import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, cardioElapsedMs, cardioHasValue, paceText, resumeCardioInterval } from '../cardio';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { addedWeightItems, addWeightToggle, canAddWeight, isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
@@ -342,6 +342,16 @@ export type RestView =
   | { kind: 'ended'; timerId: string; endedAtUtc: string | null; restedMs: number; skipped: boolean }
   | { kind: 'paused'; remainingMs: number };
 
+export type CardioWorkAction = { kind: 'stop_work'; label: 'Stop' } | { kind: 'resume_work'; label: 'Resume'; durationS: number };
+
+/** Cardio's secondary timer button (review S6); null for any other set and while the primary is already Stop. */
+export function cardioWorkAction(focus: Pick<FocusView, 'measurement' | 'workTimer'> | null, primary: PrimaryAction): CardioWorkAction | null {
+  if (focus === null || focus.measurement !== 'cardio') return null;
+  if (focus.workTimer?.state === 'running' && primary.kind === 'log') return { kind: 'stop_work', label: 'Stop' };
+  if (focus.workTimer?.state === 'ended' && focus.workTimer.resumable === true && (primary.kind === 'log' || primary.kind === 'enter')) return { kind: 'resume_work', label: 'Resume', durationS: CARDIO_TIMER_CAP_S };
+  return null;
+}
+
 export type PrimaryAction =
   | { kind: 'log'; label: string }
   /** A value is missing: the button focuses that field (audit F2), it never logs. */
@@ -373,6 +383,12 @@ export interface ActiveSetView {
   /** The `Still hurts?` line for the rest card, or null. */
   painReview: PainReviewPrompt | null;
   primary: PrimaryAction;
+  /**
+   * Cardio's small timer button next to the primary (review S6): `Stop` while
+   * the big button logs the time so far, `Resume` after Stop (the same timer
+   * carries on: `start_work_interval`). Null otherwise.
+   */
+  workAction: CardioWorkAction | null;
   progress: { done: number; total: number };
   /** Ordered exercises with their live set count (exercise menu, pain picker). */
   exercises: { sessionExerciseId: string; exerciseId: string; name: string; pendingSets: number; doneSets: number }[];
@@ -529,6 +545,8 @@ export interface WorkTimerView {
    * running or paused; null otherwise) and ✓ logs it. Absent on timed sets.
    */
   elapsedMs?: number | null;
+  /** Cardio: stopped short of the cap, so `Resume` carries the same timer on (review S6). Absent otherwise. */
+  resumable?: boolean;
 }
 
 /** Default work time when a timed set has no target or draft (active-workout §2.7). */
@@ -538,8 +556,8 @@ export const DEFAULT_WORK_S = 30;
 function cardioTimerView(state: SessionAggregate, set: WorkoutSet, nowMs: number): WorkTimerView {
   const wi = state.workInterval?.setId === set.id ? state.workInterval : null;
   if (wi?.status === 'running' || wi?.status === 'paused') return { state: wi.status, plannedS: wi.durationS, remainingMs: null, label: 'Stop', elapsedMs: cardioElapsedMs(wi, nowMs) };
-  const ended = wi?.status === 'completed' || wi?.status === 'stopped';
-  return { state: ended ? 'ended' : 'idle', plannedS: CARDIO_TIMER_CAP_S, remainingMs: null, label: 'Start', elapsedMs: null };
+  if (wi?.status === 'completed' || wi?.status === 'stopped') return { state: 'ended', plannedS: CARDIO_TIMER_CAP_S, remainingMs: null, label: 'Resume', elapsedMs: cardioElapsedMs(wi, nowMs), resumable: resumeCardioInterval(wi, nowMs) !== null };
+  return { state: 'idle', plannedS: CARDIO_TIMER_CAP_S, remainingMs: null, label: 'Start', elapsedMs: null };
 }
 
 /** The time and distance fields of a set (timed, distance or cardio); null where the exercise has none. */
@@ -912,6 +930,8 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   else if (phase.kind === 'paused') primary = { kind: 'resume', label: 'Resume' };
   else if (phase.kind === 'empty') primary = { kind: 'add_exercise', label: 'Add exercise' };
   else if (focus === null) primary = isOpenEndedWorkout(state) ? { kind: 'add_exercise', label: 'Add exercise' } : { kind: 'finish', label: 'Finish workout' };
+  // Cardio while its timer runs (review S6): the big button logs the time so far with the distance typed in; Stop is the small one.
+  else if (focus.measurement === 'cardio' && focus.workTimer?.state === 'running' && focus.logLabel !== null) primary = { kind: 'log', label: focus.logLabel };
   // A timed set (§2.7): `Start 0:45` until its work timer runs, `Stop` while it runs, then `Log 0:38`.
   else if (focus.workTimer?.state === 'running' || focus.workTimer?.state === 'paused') primary = { kind: 'stop_work', label: 'Stop' };
   else if (focus.workTimer?.state === 'idle') primary = { kind: 'start_work', label: focus.workTimer.label, durationS: focus.workTimer.plannedS, logLabel: focus.logLabel };
@@ -919,6 +939,8 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     const field = focus.missing ?? 'reps';
     primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : field === 'distance' ? 'Enter distance' : 'Enter reps' };
   } else primary = { kind: 'log', label: focus.logLabel };
+
+  const workAction = cardioWorkAction(focus, primary);
 
   const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
   const justSaved = buildJustSaved(state);
@@ -936,6 +958,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     justSaved,
     painReview: buildPainReview(input, justSaved),
     primary,
+    workAction,
     progress: { done: completed.length, total: liveSets.length },
     exercises: exerciseEntries(state, liveSets),
     lastCompletedAtUtc: last,

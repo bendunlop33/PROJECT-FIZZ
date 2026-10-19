@@ -455,7 +455,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
       // The synthetic routine isn't the source: the set Ben did last time is, or the built-in rule's target.
       const from = fromOf(s.id)?.from;
       // A coach target for next time (D21) keeps its source and its own `Why?`.
-      const source = from?.kind === 'rule' ? (from.planned.source === 'coach' ? 'coach' : 'built_in_rule') : from?.kind === 'plain' ? null : 'repeat';
+      const source = from?.kind === 'rule' ? (from.planned.source === 'coach' ? 'coach' : from.planned.source === 'repeat' ? 'repeat' : 'built_in_rule') : from?.kind === 'plain' ? null : 'repeat';
       const planned: PlannedSet = { ...s.planned };
       // A swapped slot with no history of its own has reps only: no source to claim.
       if (source === null) delete planned.source;

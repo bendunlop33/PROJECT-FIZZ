@@ -183,6 +183,8 @@ function line2Of(e: RowExercise, match: ExerciseMatch | null): string {
   if (e.laterality === 'unilateral') parts.push('per side');
   if (e.measurement === 'duration') parts.push('Time');
   if (e.measurement === 'distance') parts.push('Distance');
+  // Review N6: a cardio machine says so in the Library too.
+  if (e.measurement === 'cardio') parts.push('Cardio');
   return parts.join(' · ');
 }
 

@@ -586,6 +586,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     sets: z.int().min(0).max(20),
     target: CoachTargetSchema.nullable(),
     durationS: z.int().min(0).max(36_000).nullable(),
+    /** Cardio (review S3): the distance target in metres; absent otherwise and on records made before it. */
+    distanceM: z.number().min(0).max(100_000).optional(),
     equipmentName: z.string().min(1).max(120).nullable(),
     afterName: z.string().min(1).max(120).nullable(),
     supersetWithName: z.string().min(1).max(120).nullable(),
@@ -621,6 +623,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
           sets: z.int().min(0).max(20),
           target: CoachTargetSchema.nullable(),
           durationS: z.int().min(0).max(36_000).nullable(),
+          /** Cardio (review S3): the distance target in metres; absent otherwise. */
+          distanceM: z.number().min(0).max(100_000).optional(),
           afterName: z.string().min(1).max(120).nullable(),
           supersetWithName: z.string().min(1).max(120).nullable(),
         }),

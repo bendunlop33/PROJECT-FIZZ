@@ -192,7 +192,8 @@ export const DraftSetTemplateSchema = z
     /** (v2) The checked load; absent on warm-ups and on drafts made before v2 (the rule plans those). */
     load: DraftLoadSchema.optional(),
   })
-  .refine((t) => (t.reps === null) !== (t.durationS === null), { message: 'A set has reps or a work time, not both' })
+  // Cardio (review S3): a distance alone is a whole target ("a 5k row"); every other set has reps or a work time.
+  .refine((t) => (t.reps === null) !== (t.durationS === null && t.distanceM == null), { message: 'A set has reps or a work time, not both' })
   .refine((t) => t.distanceM == null || t.reps === null, { message: 'A distance goes with a work time, not reps' });
 export type DraftSetTemplate = z.infer<typeof DraftSetTemplateSchema>;
 

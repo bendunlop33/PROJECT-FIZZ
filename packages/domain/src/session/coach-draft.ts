@@ -25,7 +25,7 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import { builtInRepRange, builtInTargetRpe, ruleCategory } from '../default-rule';
-import { dayMonthText, EQUIPMENT_WORD, formatDuration, repRangeText } from '../display';
+import { cardioDistanceText, dayMonthText, EQUIPMENT_WORD, formatDuration, repRangeText } from '../display';
 import { needsNoEquipment } from '../exercise-equipment';
 import { PAIN_AREA_WORD, painFlagCovering } from '../pain-flags';
 import type { HistorySession } from '../progression';
@@ -433,12 +433,17 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   let durationS: number | null = null;
   let distanceM: number | null = null;
   if (cardio) {
-    // Cardio (19 Oct): a time (10 min when missing) and the distance asked for, if any; no warm-ups, reps, RPE or load.
+    // Cardio (19 Oct): a time and the distance asked for, if any; no warm-ups, reps, RPE or load. A distance
+    // alone gets no time (review S3: "a 5k row" has no time to aim for); with neither, 10 minutes.
     const asked = p.workSeconds;
-    durationS = clampInt(asked ?? CARDIO_DEFAULT_S, L.minWorkS, L.maxCardioS);
-    if (asked === null) note('shape', `${ex.name} · time missing · ${formatDuration(durationS)} used`);
-    else if (durationS !== asked) note('clamped', `${ex.name} · time ${formatDuration(asked)} → ${formatDuration(durationS)}`);
-    distanceM = p.distanceMetres == null ? null : Math.round(Math.min(100_000, Math.max(0, p.distanceMetres)));
+    distanceM = p.distanceMetres == null || p.distanceMetres <= 0 ? null : Math.round(Math.min(100_000, p.distanceMetres));
+    if (asked === null && distanceM !== null) durationS = null;
+    else {
+      const d = clampInt(asked ?? CARDIO_DEFAULT_S, L.minWorkS, L.maxCardioS);
+      durationS = d;
+      if (asked === null) note('shape', `${ex.name} · time missing · ${formatDuration(d)} used`);
+      else if (d !== asked) note('clamped', `${ex.name} · time ${formatDuration(asked)} → ${formatDuration(d)}`);
+    }
   } else if (timed) {
     const asked = p.workSeconds;
     durationS = clampInt(asked ?? 45, L.minWorkS, L.maxWorkS);
@@ -807,6 +812,8 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
       continue;
     }
     if (re?.kind === 'rule') ruleNotes.set(s.slotKey, re.notes);
+    // Cardio: the build's own time and distance stand (no load to plan, never last time's over what was asked).
+    if (exercise.measurement === 'cardio') continue;
     const slot = { workingSets: draftWorkingSets(s), templates: s.setTemplates.map((t) => ({ setType: t.setType, reps: t.reps, durationS: t.durationS })) };
     const plan = substituteTargets(slot, exercise, history, input.substitute);
     if (!targets.has(s.exerciseId)) targets.set(s.exerciseId, plan);
@@ -935,7 +942,7 @@ export function diffDraftVersions(a: DraftPlan, b: DraftPlan): DraftDiff {
 export function draftSchemeText(s: DraftSlot): string {
   const n = draftWorkingSets(s);
   const t = s.setTemplates.find((x) => x.setType !== 'warmup');
-  const what = t === undefined ? '' : t.reps !== null ? repRangeText(t.reps) : formatDuration(t.durationS ?? 0);
+  const what = t === undefined ? '' : t.reps !== null ? repRangeText(t.reps) : t.durationS === null && t.distanceM != null ? cardioDistanceText(t.distanceM) : formatDuration(t.durationS ?? 0);
   return `${String(n)} × ${what}`;
 }
 

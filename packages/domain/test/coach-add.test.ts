@@ -182,6 +182,19 @@ describe('checkCoachAdd: loads from history, fitted to this gym', () => {
     expect(ok(input(BIKE, s, {}, { reps: null, workSeconds: 4 * 3600, workingSets: 1, targetRpe: null })).command.plan?.[0]?.planned).toMatchObject({ durationS: 7200 });
   });
 
+  it('cardio (review S3): "add a 5k row" is a distance with no time; no RPE lands on a cardio set (N4)', () => {
+    const ROWER = ex(223, 'Rowing machine', 'rowing-erg', { compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', measurement: 'cardio' });
+    const s = session(MAIN, MAIN_EQ);
+    const r = ok(input(ROWER, s, {}, { reps: null, workSeconds: null, distanceMetres: 5000, workingSets: 1, targetRpe: 8 }));
+    expect(r.command.plan?.[0]?.planned).toMatchObject({ durationS: null, distanceM: 5000, reps: null, load: null, rpe: null });
+    expect(r.summary).toMatchObject({ durationS: null, distanceM: 5000 });
+    const done = expectOk(reduceSession(s, r.command)).state;
+    const set = done.sets.find((x) => done.exercises.find((e) => e.id === x.sessionExerciseId)?.exerciseId === ROWER.id);
+    expect(set?.planned).toMatchObject({ durationS: null, distanceM: 5000 });
+    // A distance of 0 is no distance: 10:00 as with neither.
+    expect(ok(input(ROWER, s, {}, { reps: null, workSeconds: null, distanceMetres: 0, workingSets: 1, targetRpe: null })).command.plan?.[0]?.planned).toMatchObject({ durationS: 600 });
+  });
+
   it('pain mentioned in today’s check-in holds the load: never above last time', () => {
     const s = session(MAIN, MAIN_EQ);
     const r = ok(input(RAISE, s, { substitute: subCtx(MAIN, MAIN_EQ, { sessionPain: { active: true, reportedAtUtc: at(0).utc } }) }));

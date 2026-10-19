@@ -35,7 +35,7 @@ import {
   resumeRestTimer,
 } from '../rest';
 import { deriveId, stableStringify } from '../stable';
-import { CARDIO_TIMER_CAP_S, cardioElapsedMs, cardioHasValue } from '../cardio';
+import { asCardioInterval, CARDIO_TIMER_CAP_S, cardioElapsedMs, cardioHasValue, resumeCardioInterval } from '../cardio';
 import { toIso, toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
@@ -357,12 +357,24 @@ function isTimerLive(timer: RestTimer | null): timer is RestTimer {
   return timer !== null && (timer.status === 'running' || timer.status === 'paused');
 }
 
+/** The live work interval of a cardio set as `asCardioInterval` reads it; the state unchanged otherwise. */
+function withCardioInterval(state: SessionAggregate): SessionAggregate {
+  const wi = state.workInterval;
+  if (wi === null || (wi.status !== 'running' && wi.status !== 'paused' && wi.status !== 'stopped') || wi.durationS >= CARDIO_TIMER_CAP_S) return state;
+  const set = state.sets.find((s) => s.id === wi.setId);
+  if (set === undefined || exerciseOf(state, set)?.measurement !== 'cardio') return state;
+  return { ...state, workInterval: asCardioInterval(wi) };
+}
+
 /**
  * Apply the passage of time: expire a rest timer or work interval whose
  * deadline has passed. Never commits a set (invariant 1). No-op while paused.
  */
-function applyClock(state: SessionAggregate, nowMs: number): { state: SessionAggregate; events: SessionEvent[] } {
-  if (state.session.status !== 'active' || state.session.pause !== null) return { state, events: [] };
+function applyClock(stored: SessionAggregate, nowMs: number): { state: SessionAggregate; events: SessionEvent[] } {
+  if (stored.session.status !== 'active') return { state: stored, events: [] };
+  // A cardio timer stored before migration 20 (the air bike's, run to its old 10-minute target) runs on to the cardio cap (review S7).
+  const state = withCardioInterval(stored);
+  if (state.session.pause !== null) return { state, events: [] };
   const events: SessionEvent[] = [];
   let next = state;
 
@@ -796,6 +808,9 @@ function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_int
   if (wi && (wi.status === 'running' || wi.status === 'paused')) {
     return fail('work_interval_running', 'A work timer is already running.');
   }
+  // Cardio after Stop (review S6): Start resumes the same timer, so ✓ logs both segments; it never restarts at 0.
+  const resumed = ex.measurement === 'cardio' && wi?.setId === set.id ? resumeCardioInterval(wi, nowMs) : null;
+  if (ex.measurement === 'cardio' && wi?.setId === set.id && wi.status === 'completed') return fail('invalid_values', 'This timer reached its 4-hour limit.');
   const events: SessionEvent[] = [];
   let restTimer = state.restTimer;
   if (restTimer?.status === 'running') {
@@ -804,7 +819,7 @@ function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_int
   }
   // Cardio counts up: its timer runs to the cap, whatever was asked, and ✓ or Stop ends it (19 Oct).
   const durationS = ex.measurement === 'cardio' ? CARDIO_TIMER_CAP_S : cmd.durationS;
-  const workInterval = {
+  const workInterval = resumed ?? {
     setId: set.id,
     durationS,
     startedAtUtc: toIso(nowMs),
@@ -841,8 +856,11 @@ function handleStopWork(state: SessionAggregate, cmd: CommandOf<'stop_work_inter
     return fail('work_interval_not_running', 'No work timer is running for this set.');
   }
   const endMs = pause === null ? nowMs : toMs(pause.pausedAtUtc);
-  const elapsedS = Math.max(0, Math.min(wi.durationS, Math.round((endMs - toMs(wi.startedAtUtc) - wi.pausedMs) / 1000)));
   const set = state.sets.find((s) => s.id === wi.setId);
+  const cardio = set !== undefined && exerciseOf(state, set)?.measurement === 'cardio';
+  const elapsedS = cardio
+    ? Math.round(cardioElapsedMs({ ...wi, status: 'stopped', endedAtUtc: toIso(endMs) }, endMs) / 1000)
+    : Math.max(0, Math.min(wi.durationS, Math.round((endMs - toMs(wi.startedAtUtc) - wi.pausedMs) / 1000)));
   let sets = state.sets;
   if (set?.status === 'pending') {
     sets = replaceSet(sets, { ...set, draft: { ...baseDraft(set), durationS: elapsedS } });

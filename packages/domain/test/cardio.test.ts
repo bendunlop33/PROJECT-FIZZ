@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SessionAggregateSchema, type SessionAggregate } from '@fizz/schemas';
+import { DraftSetTemplateSchema, SessionAggregateSchema, TodayEditSchema, type PlannedSet, type SessionAggregate, type WorkInterval } from '@fizz/schemas';
 import {
   buildActiveSetView,
   buildAddExerciseCommand,
@@ -7,12 +7,19 @@ import {
   buildWorkoutTableView,
   calculateNextTargets,
   builtInDefaultRule,
+  asCardioInterval,
   CARDIO_TIMER_CAP_S,
+  cardioHasValue,
+  cardioRepeatTargets,
+  cardioTemplatesWithTargets,
+  parseCardioTime,
+  planRoutineStart,
+  resumeCardioInterval,
+  shapeAddPlan,
+  shapeTemplates,
+  type HistorySession,
   cardioDistanceText,
   cardioElapsedMs,
-  cardioMinutes,
-  cardioMinutesField,
-  cardioSecondsFromMinutes,
   cardioValuesText,
   catalogueExerciseId,
   collectExerciseSeries,
@@ -34,7 +41,7 @@ import {
   toProgressSession,
   valuesText,
 } from '../src/index';
-import { at, exercise, idGen, ms, profile, T0_MS } from './fixtures';
+import { at, exercise, GYM, id, idGen, ms, profile, routine, routineExercise, T0_MS, template } from './fixtures';
 import { apply, expectError, logCmd, setsFor, startFixture } from './session-fixture';
 
 /**
@@ -154,7 +161,9 @@ describe('the cardio timer: tap to start, ✓ logs the time (19 Oct)', () => {
     expect(s1.workInterval).toMatchObject({ setId, durationS: CARDIO_TIMER_CAP_S, status: 'running', startedAtUtc: at(100).utc });
     const running = view(s1, 100 + 754);
     expect(running.focus?.workTimer).toMatchObject({ state: 'running', label: 'Stop', elapsedMs: 754_000, remainingMs: null });
-    expect(running.primary).toEqual({ kind: 'stop_work', label: 'Stop' });
+    // The big button logs the time so far (review S6); Stop is the small one.
+    expect(running.primary).toEqual({ kind: 'log', label: 'Log 12:34' });
+    expect(running.workAction).toEqual({ kind: 'stop_work', label: 'Stop' });
     // While it runs ✓ is live: the time comes from the timer.
     expect(running.focus?.missing).toBeNull();
     expect(running.focus?.logValues.durationS).toBe(754);
@@ -276,16 +285,193 @@ describe('finding cardio machines', () => {
   });
 });
 
-describe('the cardio time field is typed in minutes', () => {
-  it('20 minutes is 1200 s; half minutes keep their seconds; never past the cap or below 0', () => {
-    expect(cardioMinutes(1200)).toBe(20);
-    expect(cardioMinutes(1230)).toBe(20.5);
-    expect(cardioMinutes(null)).toBeNull();
-    expect(cardioSecondsFromMinutes(20)).toBe(1200);
-    expect(cardioSecondsFromMinutes(20.5)).toBe(1230);
-    expect(cardioSecondsFromMinutes(-3)).toBe(0);
-    expect(cardioSecondsFromMinutes(1000)).toBe(CARDIO_TIMER_CAP_S);
-    expect(cardioSecondsFromMinutes(null)).toBeNull();
-    expect(cardioMinutesField({ value: 1200, down: { enabled: true, value: 1140, label: '19:00' }, up: { enabled: false, reason: 'x' } })).toEqual({ value: 20, down: { enabled: true, value: 19, label: '19:00' }, up: { enabled: false, reason: 'x' } });
+describe('review fixes: ✓ at 0 s, Resume after Stop, old timers, the cap, Undo (S4, S6, S7)', () => {
+  it('S4: a time or distance of 0 is no value; ✓ right after Start is refused and the timer keeps running', () => {
+    expect(cardioHasValue({ durationS: 0, distanceM: null })).toBe(false);
+    expect(cardioHasValue({ durationS: null, distanceM: 0 })).toBe(false);
+    expect(cardioHasValue({ durationS: 1, distanceM: undefined })).toBe(true);
+    const { s: s0, setId } = withRower();
+    const s1 = apply(s0, { type: 'start_work_interval', at: at(100), opId: 'start-row', setId, durationS: 1 });
+    expectError(reduceSession(s1, logCmd(setId, { load: null, reps: null, durationS: null, rpe: null, rir: null }, 100)), 'invalid_values');
+    const v = view(s1, 100);
+    expect(v.focus?.logLabel).toBeNull();
+    expect(v.primary).toEqual({ kind: 'stop_work', label: 'Stop' });
+    expect(s1.workInterval?.status).toBe('running');
+    // A second later the big button logs it.
+    expect(view(s1, 101).primary).toEqual({ kind: 'log', label: 'Log 0:01' });
+  });
+
+  it('S6: Stop then Resume carries the same timer on; ✓ logs both segments, the gap left out', () => {
+    const { s: s0, setId } = withRower();
+    let s = apply(s0, { type: 'start_work_interval', at: at(100), opId: 'start-row', setId, durationS: 1 });
+    s = apply(s, { type: 'stop_work_interval', at: at(700), opId: 'stop', setId });
+    const stopped = view(s, 760);
+    expect(stopped.primary).toEqual({ kind: 'log', label: 'Log 10:00' });
+    expect(stopped.workAction).toEqual({ kind: 'resume_work', label: 'Resume', durationS: CARDIO_TIMER_CAP_S });
+    expect(stopped.focus?.workTimer).toMatchObject({ state: 'ended', elapsedMs: 600_000, resumable: true });
+    // Resume a minute later (water): the count goes on from 10:00, never from 0.
+    s = apply(s, { type: 'start_work_interval', at: at(760), opId: 'resume', setId, durationS: CARDIO_TIMER_CAP_S });
+    expect(view(s, 760).focus?.workTimer?.elapsedMs).toBe(600_000);
+    expect(view(s, 1360).focus?.workTimer?.elapsedMs).toBe(1_200_000);
+    expect(view(s, 1360).workAction).toEqual({ kind: 'stop_work', label: 'Stop' });
+    s = apply(s, logCmd(setId, { load: null, reps: null, durationS: null, rpe: null, rir: null, distanceM: 4800 }, 1360));
+    expect(s.sets.find((x) => x.id === setId)?.actual).toMatchObject({ durationS: 1200, distanceM: 4800 });
+  });
+
+  it('S6: resumeCardioInterval only from a stopped timer under the cap', () => {
+    const base: WorkInterval = { setId: 's', durationS: CARDIO_TIMER_CAP_S, startedAtUtc: at(0).utc, deadlineUtc: at(CARDIO_TIMER_CAP_S).utc, status: 'stopped', remainingMsAtPause: null, pausedMs: 0, endedAtUtc: at(300).utc };
+    expect(resumeCardioInterval(base, ms(400))).toMatchObject({ status: 'running', pausedMs: 100_000, endedAtUtc: null, deadlineUtc: at(400 + CARDIO_TIMER_CAP_S - 300).utc });
+    expect(resumeCardioInterval({ ...base, status: 'running', endedAtUtc: null }, ms(400))).toBeNull();
+    expect(resumeCardioInterval({ ...base, status: 'completed', endedAtUtc: at(CARDIO_TIMER_CAP_S).utc }, ms(CARDIO_TIMER_CAP_S + 5))).toBeNull();
+  });
+
+  it('S7: an air-bike timer started before migration 20 (10-minute interval) runs on past 10:00 as cardio', () => {
+    const { s: s0, setId } = withRower();
+    // As stored by the old build: a timed interval to its 10:00 target.
+    const old: SessionAggregate = { ...s0, workInterval: { setId, durationS: 600, startedAtUtc: at(100).utc, deadlineUtc: at(700).utc, status: 'running', remainingMsAtPause: null, pausedMs: 0, endedAtUtc: null } };
+    expect(asCardioInterval(old.workInterval as WorkInterval)).toMatchObject({ durationS: CARDIO_TIMER_CAP_S, deadlineUtc: at(100 + CARDIO_TIMER_CAP_S).utc, startedAtUtc: at(100).utc });
+    const ticked = reduceSession(old, { type: 'tick', at: at(800) });
+    if (!ticked.ok) throw new Error('tick');
+    expect(ticked.events.filter((e) => e.type === 'WorkIntervalEnded')).toEqual([]);
+    expect(ticked.state.workInterval).toMatchObject({ status: 'running', durationS: CARDIO_TIMER_CAP_S });
+    expect(view(ticked.state, 1300).focus?.workTimer?.elapsedMs).toBe(1_200_000);
+    const done = apply(ticked.state, logCmd(setId, { load: null, reps: null, durationS: null, rpe: null, rir: null, distanceM: 6000 }, 1300));
+    expect(done.sets.find((x) => x.id === setId)?.actual).toMatchObject({ durationS: 1200, distanceM: 6000 });
+  });
+
+  it('S7: the 4-hour cap ends the timer with the cap as the draft; nothing is logged; Start can’t restart it', () => {
+    const { s: s0, setId } = withRower();
+    const s1 = apply(s0, { type: 'start_work_interval', at: at(100), opId: 'start-row', setId, durationS: 1 });
+    const r = reduceSession(s1, { type: 'tick', at: at(100 + CARDIO_TIMER_CAP_S + 5) });
+    if (!r.ok) throw new Error('tick');
+    expect(r.events).toEqual([expect.objectContaining({ type: 'WorkIntervalEnded', reason: 'completed', elapsedS: CARDIO_TIMER_CAP_S })]);
+    const set = r.state.sets.find((x) => x.id === setId);
+    expect(set).toMatchObject({ status: 'pending', draft: { durationS: CARDIO_TIMER_CAP_S } });
+    expect(view(r.state, 100 + CARDIO_TIMER_CAP_S + 10).workAction).toBeNull();
+    expectError(reduceSession(r.state, { type: 'start_work_interval', at: at(100 + CARDIO_TIMER_CAP_S + 10), opId: 'again', setId, durationS: 1 }), 'invalid_values');
+  });
+
+  it('S7: Undo of a cardio log puts its time and distance back in the field, with no timer running; logging again gives the same set', () => {
+    const { s: s0, setId } = withRower();
+    let s = apply(s0, { type: 'start_work_interval', at: at(100), opId: 'start-row', setId, durationS: 1 });
+    s = apply(s, logCmd(setId, { load: null, reps: null, durationS: null, rpe: null, rir: null, distanceM: 4800 }, 1300));
+    const logged = s.sets.find((x) => x.id === setId);
+    s = apply(s, { type: 'undo_log', at: at(1310), opId: 'undo', setId, expectedSetVersion: logged?.version ?? 0 });
+    const back = s.sets.find((x) => x.id === setId);
+    expect(back).toMatchObject({ status: 'pending', actual: null, draft: { durationS: 1200, distanceM: 4800 } });
+    expect(s.workInterval).toBeNull();
+    const v = view(s, 1320);
+    expect(v.focus?.workTimer?.state).toBe('idle');
+    expect(v.primary.kind).toBe('start_work');
+    expect(sp(v.primary.kind === 'start_work' ? v.primary.logLabel : null)).toBe('Log 20:00 · 4,800 m');
+    s = apply(s, logCmd(setId, v.focus?.logValues ?? { load: null, reps: null, durationS: null, rpe: null, rir: null }, 1330, 'relog'));
+    expect(s.sets.find((x) => x.id === setId)?.actual).toMatchObject({ durationS: 1200, distanceM: 4800 });
+  });
+});
+
+describe('S5: a cardio time is typed as the machine shows it', () => {
+  it('20:34 and 20.34 are 20 min 34 s; 20 is 20 minutes; 1:05:00 is an hour and 5 minutes', () => {
+    expect(parseCardioTime('20:34')).toBe(1234);
+    expect(parseCardioTime('20.34')).toBe(1234);
+    expect(parseCardioTime('20,34')).toBe(1234);
+    expect(parseCardioTime('20')).toBe(1200);
+    expect(parseCardioTime('1:05:00')).toBe(3900);
+    expect(parseCardioTime(' 0:45 ')).toBe(45);
+  });
+
+  it('half-typed or impossible times are no value (never a guess); nothing past 4 h', () => {
+    expect(parseCardioTime('')).toBeNull();
+    expect(parseCardioTime('20.3')).toBeNull();
+    expect(parseCardioTime('20:75')).toBeNull();
+    expect(parseCardioTime('20:')).toBeNull();
+    expect(parseCardioTime('abc')).toBeNull();
+    expect(parseCardioTime('4:00:01')).toBeNull();
+    expect(parseCardioTime('240')).toBe(CARDIO_TIMER_CAP_S);
+  });
+});
+
+describe('B1: next time repeats last time’s time and distance on every path', () => {
+  const history = (over: Partial<HistorySession> = {}): HistorySession => ({
+    sessionId: id(900),
+    performedAtUtc: at(0).utc,
+    equipmentId: null,
+    gymId: GYM,
+    imported: false,
+    tz: 'Pacific/Auckland',
+    routineName: 'Push + row',
+    sets: [{ setType: 'working', side: null, load: null, reps: null, rpe: null, rir: null, durationS: 1200, distanceM: 4800, setId: id(901), version: 2, number: 1 }],
+    ...over,
+  });
+
+  it('cardioRepeatTargets: the latest workout with a counted cardio set, as it was, sourced as a repeat', () => {
+    const newer = history({ sessionId: 'new', performedAtUtc: at(86_400).utc, sets: [{ setType: 'working', side: null, load: null, reps: null, rpe: null, rir: null, durationS: 1500, setId: 'set-2' }] });
+    const empty = history({ sessionId: 'newest', performedAtUtc: at(172_800).utc, sets: [{ setType: 'working', side: null, load: null, reps: null, rpe: null, rir: null, durationS: 0 }] });
+    const t = cardioRepeatTargets([history(), newer, empty], { at: at(200_000) });
+    expect(t?.map((x) => x.setType)).toEqual(['working']);
+    expect(t?.map((x) => x.planned)).toEqual([expect.objectContaining({ load: null, reps: null, durationS: 1500, rpe: null, rir: null, source: 'repeat' })]);
+    expect(t?.[0]?.planned.distanceM).toBeUndefined();
+    const one = cardioRepeatTargets([history()], { at: at(200_000) });
+    expect(one?.[0]?.planned).toMatchObject({ durationS: 1200, distanceM: 4800, provenance: { source: 'repeat', basis: { sessionId: id(900), sets: [{ setId: id(901), values: { durationS: 1200, distanceM: 4800 } }] } } });
+    // Flagged sets and warm-ups don't set next time's target; no history, no target.
+    expect(cardioRepeatTargets([history({ sets: [{ setType: 'working', side: null, load: null, reps: null, rpe: null, rir: null, durationS: 1200, exclusions: ['spotted'] }] })], { at: at(1) })).toBeNull();
+    expect(cardioRepeatTargets([], { at: at(1) })).toBeNull();
+  });
+
+  it('a saved workout’s 10:00 row starts at last time’s 20:00 · 4,800 m (the routine’s set count kept)', () => {
+    const r = routine([routineExercise(700, { exerciseId: ROWER.id, equipmentId: null, order: 0, setTemplates: [template(7001, { targetLoad: null, targetReps: null, targetDurationS: 600 })] })]);
+    const targets = new Map([[ROWER.id, cardioRepeatTargets([history()], { at: at(90_000) }) ?? []]]);
+    const out = planRoutineStart({ opId: 'rs-row', owner: profile(), gymId: GYM, routine: r, exercises: new Map([[ROWER.id, ROWER]]), knownEquipment: new Map(), gymEquipment: [], at: at(90_000), newId: idGen(81_000), targets });
+    const sets = setsFor(out.aggregate, ROWER.id);
+    expect(sets.map((x) => x.planned)).toEqual([expect.objectContaining({ load: null, reps: null, durationS: 1200, distanceM: 4800, source: 'repeat' })]);
+    expect(sets[0]?.planned.provenance?.source).toBe('repeat');
+    expect(SessionAggregateSchema.safeParse(JSON.parse(JSON.stringify(out.aggregate))).success).toBe(true);
+    // A distance-only last time starts as a distance-only set.
+    const distOnly = new Map([[ROWER.id, cardioRepeatTargets([history({ sets: [{ setType: 'working', side: null, load: null, reps: null, rpe: null, rir: null, distanceM: 2000 }] })], { at: at(90_000) }) ?? []]]);
+    const out2 = planRoutineStart({ opId: 'rs-row-2', owner: profile(), gymId: GYM, routine: r, exercises: new Map([[ROWER.id, ROWER]]), knownEquipment: new Map(), gymEquipment: [], at: at(90_000), newId: idGen(82_000), targets: distOnly });
+    expect(setsFor(out2.aggregate, ROWER.id).map((x) => x.planned)).toEqual([expect.objectContaining({ durationS: null, distanceM: 2000 })]);
+  });
+
+  it('cardioTemplatesWithTargets: each set takes its own, the last past the end; warm-ups untouched', () => {
+    const ruleOf = new Map<string, PlannedSet>();
+    const t = cardioTemplatesWithTargets(
+      [template(1, { setType: 'warmup', targetReps: null, targetDurationS: 300 }), template(2, { targetReps: null, targetDurationS: 600 }), template(3, { targetReps: null, targetDurationS: 600, targetDistanceM: 1000 })],
+      [{ setType: 'working', planned: { load: null, reps: null, durationS: 900, distanceM: 3000, rpe: null, rir: null } }],
+      { newId: idGen(83_000), ruleOf },
+    );
+    expect(t.map((x) => [x.setType, x.targetDurationS, x.targetDistanceM])).toEqual([['warmup', 300, undefined], ['working', 900, 3000], ['working', 900, 3000]]);
+    expect(ruleOf.size).toBe(2);
+  });
+});
+
+describe('S1: today’s cardio edit and the add sheets take a long time and a distance', () => {
+  const edit = (o: Record<string, unknown>) => TodayEditSchema.safeParse({ editId: id(910), opId: 'op-edit-1', atUtc: at(0).utc, replacesEditId: null, removed: null, kind: 'reps', slotKey: id(911), reps: null, ...o }).success;
+
+  it('a cardio edit (it carries its distance) may hold 20:00 or a distance alone; any other row stays at most 10:00', () => {
+    expect(edit({ durationS: 1200, distanceM: 4800 })).toBe(true);
+    expect(edit({ durationS: null, distanceM: 5000 })).toBe(true);
+    expect(edit({ durationS: CARDIO_TIMER_CAP_S, distanceM: null })).toBe(true);
+    expect(edit({ durationS: null, distanceM: null })).toBe(false);
+    expect(edit({ durationS: 1200 })).toBe(false);
+    expect(edit({ durationS: 600 })).toBe(true);
+  });
+
+  it('today’s shape puts the time and distance on every working set; null clears the distance', () => {
+    const ts = [template(1, { targetReps: null, targetDurationS: 600, targetDistanceM: 2000 }), template(2, { targetReps: null, targetDurationS: 600 })];
+    const a = shapeTemplates(ts, { reps: { reps: null, durationS: 1200, distanceM: 4800 } }, { newId: idGen(84_000) });
+    expect(a.map((x) => [x.targetDurationS, x.targetDistanceM])).toEqual([[1200, 4800], [1200, 4800]]);
+    const b = shapeTemplates(ts, { reps: { reps: null, durationS: 1200, distanceM: null } }, { newId: idGen(85_000) });
+    expect(b.map((x) => [x.targetDurationS, x.targetDistanceM])).toEqual([[1200, undefined], [1200, undefined]]);
+  });
+
+  it('an add with Ben’s time and distance (Library sheet) shapes the new cardio set', () => {
+    const plan = shapeAddPlan(null, { workingSets: 1, durationS: null, distanceM: 5000 });
+    expect(plan.map((x) => x.setType)).toEqual(['working']);
+    expect(plan.map((x) => x.planned)).toEqual([expect.objectContaining({ reps: null, durationS: null, distanceM: 5000 })]);
+  });
+
+  it('a build’s distance-only cardio set is a whole target; a set with neither is still refused', () => {
+    expect(DraftSetTemplateSchema.safeParse({ setType: 'working', reps: null, durationS: null, distanceM: 5000, targetRpe: null, restS: null }).success).toBe(true);
+    expect(DraftSetTemplateSchema.safeParse({ setType: 'working', reps: null, durationS: null, targetRpe: null, restS: null }).success).toBe(false);
+    expect(DraftSetTemplateSchema.safeParse({ setType: 'working', reps: { min: 8, max: 10 }, durationS: null, distanceM: 5000, targetRpe: null, restS: null }).success).toBe(false);
   });
 });
