@@ -2,7 +2,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { clampWorkoutTimes, TIME_NOTE, timesNeedDate, workoutDurationText, type TimeNote, type WorkoutTimeBounds } from '@fizz/domain';
+import { clampWorkoutTimes, TIME_NOTE, timesNeedDate, wheelNeedsDate, workoutDurationText, type TimeNote, type WorkoutTimeBounds } from '@fizz/domain';
 
 import { dateAt } from '../../clock';
 import { formatShortDate, formatTime } from '../../format/dates';
@@ -14,7 +14,8 @@ import { AppText, Group, Icon, StatusLine, TEXT_PRESSED_OPACITY } from '../../ui
  * workout"): two rows; a tap opens the iOS wheel for that row in place (the date too when the
  * workout crosses midnight). The live duration sits under them. A value outside the bounds
  * (`workoutTimeBounds`) is clamped with a short note. Used by the Finish sheet and a past
- * workout's `Edit times`; nothing is written here.
+ * workout's `Edit times`, and the start alone (`startOnly`) in `Edit workout times` before Finish;
+ * nothing is written here. A wheel has a date column whenever its range spans two dates (review S4).
  *
  * Needs `@react-native-community/datetimepicker` in the native build (Expo SDK 57's 9.1.0).
  */
@@ -30,6 +31,7 @@ export function WorkoutTimesRows({
   onChange,
   endNow = null,
   endEstimate = null,
+  startOnly = false,
 }: {
   times: WorkoutTimes;
   bounds: WorkoutTimeBounds;
@@ -39,6 +41,8 @@ export function WorkoutTimesRows({
   endNow?: number | null;
   /** A forgotten Finish's default end (last set + 3 min) reads `(estimated)` until Ben moves it. */
   endEstimate?: number | null;
+  /** Before Finish: only `Started`, no duration (the workout is still going). */
+  startOnly?: boolean;
 }) {
   const theme = useTheme();
   const [open, setOpen] = useState<'start' | 'end' | null>(null);
@@ -57,6 +61,8 @@ export function WorkoutTimesRows({
 
   const row = (which: 'start' | 'end', label: string, ms: number) => {
     const expanded = open === which;
+    const minMs = which === 'start' ? bounds.startMinMs : Math.max(bounds.endMinMs, times.startMs + 60_000);
+    const maxMs = which === 'start' ? bounds.startMaxMs : bounds.endMaxMs;
     return (
       <View>
         <Pressable
@@ -79,11 +85,11 @@ export function WorkoutTimesRows({
         {expanded ? (
           <DateTimePicker
             value={dateAt(ms)}
-            mode={withDate ? 'datetime' : 'time'}
+            mode={withDate || wheelNeedsDate(minMs, maxMs, tz) ? 'datetime' : 'time'}
             display="spinner"
             timeZoneName={tz}
-            minimumDate={dateAt(which === 'start' ? bounds.startMinMs : Math.max(bounds.endMinMs, times.startMs + 60_000))}
-            maximumDate={dateAt(which === 'start' ? bounds.startMaxMs : bounds.endMaxMs)}
+            minimumDate={dateAt(minMs)}
+            maximumDate={dateAt(maxMs)}
             themeVariant={theme.scheme}
             onValueChange={(_e, date) => {
               pick(which, date);
@@ -98,11 +104,13 @@ export function WorkoutTimesRows({
     <View style={{ gap: theme.space['2'] }}>
       <Group>
         {row('start', 'Started', times.startMs)}
-        {row('end', 'Ended', times.endMs)}
+        {startOnly ? null : row('end', 'Ended', times.endMs)}
       </Group>
-      <AppText variant="callout" color="text.secondary" numeric accessibilityLiveRegion="polite">
-        {workoutDurationText(times.startMs, times.endMs)}
-      </AppText>
+      {startOnly ? null : (
+        <AppText variant="callout" color="text.secondary" numeric accessibilityLiveRegion="polite">
+          {workoutDurationText(times.startMs, times.endMs)}
+        </AppText>
+      )}
       {note !== null ? <StatusLine icon="info.circle" tone="info" text={TIME_NOTE[note]} /> : null}
     </View>
   );

@@ -942,6 +942,10 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
   if (cmd.startedAt !== undefined) {
     const startError = checkStartTime(state, startMs, nowMs);
     if (startError) return { ok: false, error: startError };
+    // The same check as `update_session_timing` (review N5).
+    if (state.session.pause !== null && startMs > toMs(state.session.pause.pausedAtUtc)) {
+      return fail('invalid_time', 'The start time is after the workout was paused.');
+    }
   }
   const timeError = checkEndTime(state, endMs, nowMs, startMs);
   if (timeError) return { ok: false, error: timeError };

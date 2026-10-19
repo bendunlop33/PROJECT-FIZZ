@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
-import { clampWorkoutTimes, START_BACK_MS, summaryTimeBounds, TIME_NOTE, timesNeedDate, workoutDurationText, workoutTimeBounds } from '../src/index';
+import { clampWorkoutTimes, reduceSession, START_BACK_MS, summaryTimeBounds, TIME_NOTE, timesNeedDate, wheelNeedsDate, workoutDurationText, workoutTimeBounds } from '../src/index';
 import { at, kg, ms, values } from './fixtures';
-import { apply, BENCH, logCmd, setsFor, startFixture } from './session-fixture';
+import { apply, BENCH, expectError, expectOk, logCmd, setsFor, startFixture } from './session-fixture';
 
 /**
  * Started / Ended wheels on the Finish sheet and a past workout's Edit times (Ben, 19 Oct): start
@@ -57,6 +57,40 @@ describe('the live duration and the date wheel', () => {
     // T0 is 19:00 in Auckland (06:00 UTC): to 23:30 is the same day, to 00:30 the next.
     expect(timesNeedDate({ startMs: ms(0), endMs: ms(4.5 * 3600) }, 'Pacific/Auckland')).toBe(false);
     expect(timesNeedDate({ startMs: ms(0), endMs: ms(5.5 * 3600) }, 'Pacific/Auckland')).toBe(true);
+  });
+});
+
+describe('review S4: the wheel crosses midnight while both times are on one date', () => {
+  it('a wheel whose range spans two dates has the date column; one within a day does not', () => {
+    // T0 is 19:00 in Auckland: 19:00–23:30 is one date, 23:30–00:30 two.
+    expect(wheelNeedsDate(ms(0), ms(4.5 * 3600), 'Pacific/Auckland')).toBe(false);
+    expect(wheelNeedsDate(ms(4.5 * 3600), ms(5.5 * 3600), 'Pacific/Auckland')).toBe(true);
+  });
+
+  it('a start recorded at 00:05 can move back to 23:50 the day before', () => {
+    // Started at T0 + 5 h 5 min (00:05), first set at 00:20, now 01:00.
+    const startAt = 5 * 3600 + 300;
+    let s = startFixture().state;
+    s = apply(s, { type: 'update_session_timing', at: at(startAt), opId: 'move-start', expectedVersion: s.session.version, startedAt: at(startAt), endedAt: null });
+    const [w] = setsFor(s, BENCH);
+    s = apply(s, logCmd(w?.id ?? '', values(kg(60), 10), startAt + 900));
+    const b = workoutTimeBounds(s, ms(6 * 3600));
+    const times = { startMs: ms(startAt), endMs: ms(6 * 3600) };
+    expect(timesNeedDate(times, 'Pacific/Auckland')).toBe(false);
+    expect(wheelNeedsDate(b.startMinMs, b.startMaxMs, 'Pacific/Auckland')).toBe(true);
+    const back = ms(startAt - 15 * 60);
+    expect(clampWorkoutTimes({ startMs: back, endMs: times.endMs }, b)).toEqual({ startMs: back, endMs: times.endMs, note: null });
+  });
+});
+
+describe('review N5: Finish checks a moved start against a pause, like Edit times', () => {
+  it('the start wheel stops at the pause, and Finish refuses a start after it', () => {
+    let s = startFixture().state;
+    s = apply(s, { type: 'pause', at: at(600), opId: 'p' });
+    expect(workoutTimeBounds(s, ms(1200)).startMaxMs).toBe(ms(600));
+    const finish = (startSec: number, opId: string) => reduceSession(s, { type: 'finish', at: at(1200), opId, expectedVersion: s.session.version, endedAt: at(1200), startedAt: at(startSec) });
+    expectError(finish(900, 'f-late'), 'invalid_time');
+    expect(expectOk(finish(300, 'f-ok')).state.session.startedAt).toEqual(at(300));
   });
 });
 

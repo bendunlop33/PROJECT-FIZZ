@@ -31,9 +31,11 @@ export function workoutTimeBounds(state: SessionAggregate, nowMs: number): Worko
   const startMs = toMs(state.session.startedAt.utc);
   const first = done.length > 0 ? Math.min(...done) : null;
   const last = done.length > 0 ? Math.max(...done) : null;
+  // A workout still paused: the start can't move after the pause (as `update_session_timing`).
+  const paused = state.session.pause === null ? nowMs : toMs(state.session.pause.pausedAtUtc);
   return {
     startMinMs: startMs - START_BACK_MS,
-    startMaxMs: Math.min(nowMs, first ?? nowMs),
+    startMaxMs: Math.min(nowMs, paused, first ?? nowMs),
     endMinMs: last ?? startMs,
     endMaxMs: nowMs,
   };
@@ -88,9 +90,18 @@ export function workoutDurationText(startMs: number, endMs: number): string {
   return formatMinutes(Math.max(0, endMs - startMs));
 }
 
-/** The wheels show the date as well when the workout crosses midnight (or spans days); otherwise the time only. */
+/** The rows show the date as well when the workout crosses midnight (or spans days); otherwise the time only. */
 export function timesNeedDate(times: { startMs: number; endMs: number }, tz: string): boolean {
   return localDateOf(times.startMs, tz) !== localDateOf(times.endMs, tz);
+}
+
+/**
+ * A wheel shows the date column whenever the range it allows spans two local dates (review S4), so
+ * a start recorded at 00:05 can move back to 23:50 the day before even while both times are on
+ * one date. A range within one day keeps the time-only wheel.
+ */
+export function wheelNeedsDate(minMs: number, maxMs: number, tz: string): boolean {
+  return localDateOf(minMs, tz) !== localDateOf(maxMs, tz);
 }
 
 /** The same bounds from a finished workout's Summary (`timingBounds`), read again at `nowMs`. */

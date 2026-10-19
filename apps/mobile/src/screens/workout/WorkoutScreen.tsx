@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cardioTimeText, checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { cardioTimeText, checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -57,7 +57,7 @@ import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu } from '../../workout/exercise-menu';
 import { cuesWorkEnd, shouldCueRestEnd, workTimerText } from '../../workout/cues';
-import { startTimeBounds, stepTime } from '../../workout/finish';
+import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { stepperRowTiles } from '../../workout/tile-fit';
 import { newerWorkoutData, withCommandResult } from '../../workout/load-order';
@@ -2933,32 +2933,32 @@ function RestAfterSheet({
   );
 }
 
-/** `Edit workout times` before Finish: start only (active-workout §4.6). */
+/** `Edit workout times` before Finish: start only (active-workout §4.6), on the same wheel as Finish (review S3). */
 function StartTimeSheet({ visible, data, onClose, onSaved }: { visible: boolean; data: ActiveWorkoutData; onClose: () => void; onSaved: (d: ActiveWorkoutData) => void }) {
   const theme = useTheme();
   const services = useServices();
   const insets = useSafeAreaInsets();
   const tz = data.aggregate.session.startedAt.tz;
-  const [startMs, setStartMs] = useState(toMs(data.aggregate.session.startedAt.utc));
+  const [nowAt, setNowAt] = useState(clockNow);
+  const [times, setTimes] = useState<WorkoutTimes>({ startMs: toMs(data.aggregate.session.startedAt.utc), endMs: nowAt });
   const [opId, setOpId] = useState(newUuid);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!visible) return;
-    setStartMs(toMs(data.aggregate.session.startedAt.utc));
+    const n = clockNow();
+    setNowAt(n);
+    setTimes({ startMs: toMs(data.aggregate.session.startedAt.utc), endMs: n });
     setOpId(newUuid());
     setError(null);
   }, [visible, data]);
-  const bounds = startTimeBounds(data.aggregate, clockNow());
-  const step = (m: number) => {
-    setStartMs((v) => stepTime(v, m, bounds.minMs, bounds.maxMs));
-  };
+  const bounds = workoutTimeBounds(data.aggregate, nowAt);
   async function save() {
     const r = await services.workout.dispatch(data.aggregate.session.id, {
       type: 'update_session_timing',
       at: services.now(),
       opId,
       expectedVersion: data.aggregate.session.version,
-      startedAt: { utc: toIso(startMs), tz },
+      startedAt: { utc: toIso(times.startMs), tz },
       endedAt: null,
     });
     if (!r.ok) {
@@ -2969,25 +2969,15 @@ function StartTimeSheet({ visible, data, onClose, onSaved }: { visible: boolean;
   }
   return (
     <ModalSheet visible={visible} onClose={onClose}>
-      <View style={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
+      <ScrollView contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
         <AppText variant="title2" accessibilityRole="header">
           Edit workout times
         </AppText>
-        <AppText variant="label" color="text.secondary">
-          Started at
-        </AppText>
-        <AppText variant="title2" numeric>
-          {formatTime(startMs, tz)}
-        </AppText>
-        <ChipRow>
-          {[-15, -5, -1, 1, 5].map((m) => (
-            <Chip key={m} label={`${m < 0 ? '−' : '+'}${String(Math.abs(m))} min`} selected={false} onPress={() => { step(m); }} />
-          ))}
-        </ChipRow>
+        <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} startOnly />
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <SecondaryButton label="Save" onPress={() => void save()} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />
-      </View>
+      </ScrollView>
     </ModalSheet>
   );
 }
