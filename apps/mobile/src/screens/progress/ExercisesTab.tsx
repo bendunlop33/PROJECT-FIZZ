@@ -4,6 +4,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { parseTrailing, PLAN_VERDICT_WORD, TRAILING_OPTIONS, type DateRange, type ExerciseMeasure, type ExerciseTabView, type ExerciseTargetHistory } from '@fizz/domain';
 import type { ProgressPeriodKey } from '@fizz/schemas';
 
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { DropdownButton, DropdownPanel, PeriodPicker, useAx } from '../../progress/components';
 import { ExerciseLineChart } from '../../progress/exercise-line-chart';
 import { unreadableText } from '../../progress/copy';
@@ -44,7 +45,8 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
   const [open, setOpen] = useState<Open>(null);
   // The record's workout: picks its series and widens the period until Ben picks another exercise, series or period.
   const [opened, setOpened] = useState<{ sessionId: string; sessionExerciseId: string | null } | null>(null);
-  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, period, range, measure, trailing, seriesId, open: opened }));
+  const { prefs } = useDevicePrefs();
+  const [data, reload] = useScreenData((s) => s.progress.exerciseTab({ exerciseId, period, range, measure, trailing, seriesId, open: opened, targetsHit: prefs.targetsHit }));
   useEffect(() => {
     if (focus === null) return;
     setExerciseId(focus.exerciseId);

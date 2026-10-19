@@ -4,7 +4,8 @@ import { DEFAULT_VOICE_PREFS, parseVoicePrefs, type VoicePrefs } from '../voice/
 /**
  * Preferences that belong to this phone, not to Ben's training data, so they
  * are not in backups: the look (Developer → Look) and whether exercise guides
- * animate (Developer → Exercise guide animations). Pure parse.
+ * animate (Developer → Exercise guide animations), and display choices
+ * such as Profile › `Targets hit`. Pure parse.
  */
 export interface DevicePrefs {
   themeDirection: 'A' | 'D' | null;
@@ -22,18 +23,20 @@ export interface DevicePrefs {
   librarySegment: 'exercises' | 'workouts';
   /** Settings › Voice: spoken cues, reading coach replies, the voice and its speed (this phone's voices). */
   voice: VoicePrefs;
+  /** Profile › `Targets hit` (Ben, 20 Oct): `Targets hit 5 of last 6` on main lifts; off by default. */
+  targetsHit: boolean;
 }
 
 export type AlertsAsk = 'undetermined' | 'later' | 'answered';
 
-export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS };
+export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false };
 
 export function parsePrefs(text: string | null): DevicePrefs {
   if (text === null) return DEFAULT_PREFS;
   try {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
-    const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment, voice } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown; voice?: unknown };
+    const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment, voice, targetsHit } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown; voice?: unknown; targetsHit?: unknown };
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
       guideAnimations: guideAnimations !== false,
@@ -41,6 +44,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
       workoutView: workoutView === 'focus' ? 'focus' : 'table',
       librarySegment: librarySegment === 'workouts' ? 'workouts' : 'exercises',
       voice: parseVoicePrefs(voice),
+      targetsHit: targetsHit === true,
     };
   } catch {
     return DEFAULT_PREFS;

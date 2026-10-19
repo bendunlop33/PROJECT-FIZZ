@@ -2,6 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import type { LibraryStackParams } from '../../navigation/types';
 import { PLAN_COPY } from '../../services/plan-services';
 import { useScreenData } from '../../shell/context';
@@ -29,7 +30,8 @@ export function PlanDayScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { routineId, name: shownName } = useRoute<RouteProp<LibraryStackParams, 'LibraryPlanDay'>>().params;
-  const [data, reload] = useScreenData((s) => s.plans.planDay(routineId));
+  const { prefs } = useDevicePrefs();
+  const [data, reload] = useScreenData((s) => s.plans.planDay(routineId, { targetsHit: prefs.targetsHit }));
   const day = data.state === 'ready' ? data.value : null;
   const name = day?.name ?? shownName ?? '';
 

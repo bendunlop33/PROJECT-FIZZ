@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useEffect } from 'react';
+import { Switch } from 'react-native';
 
 import { toMs } from '@fizz/domain';
 import { readTextCoachState } from '@fizz/providers';
@@ -33,7 +34,7 @@ export function ProfileScreen() {
   const services = useServices();
   const install = useInstallStatus();
   const probe = useProbeResults();
-  const { prefs } = useDevicePrefs();
+  const { prefs, update } = useDevicePrefs();
   const [data, reload] = useScreenData(async (s) => {
     const [backup, banners, pain, gyms, coach, training] = await Promise.all([
       s.backups.getStatus(),
@@ -120,6 +121,21 @@ export function ProfileScreen() {
           onPress={() => {
             navigation.navigate('PainFlags');
           }}
+        />
+        {/* Ben, 20 Oct: `Targets hit 5 of last 6` on main lifts only, when on (this phone; default off). */}
+        <Row
+          title="Targets hit"
+          icon="target"
+          subtitle="Main lifts"
+          trailing={
+            <Switch
+              accessibilityLabel="Targets hit"
+              value={prefs.targetsHit}
+              onValueChange={(on) => {
+                update({ targetsHit: on });
+              }}
+            />
+          }
         />
       </Group>
 

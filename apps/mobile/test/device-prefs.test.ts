@@ -7,7 +7,7 @@ describe('device prefs', () => {
   it('guide animations default on, including for files saved before the setting existed', () => {
     expect(DEFAULT_PREFS.guideAnimations).toBe(true);
     expect(parsePrefs(null).guideAnimations).toBe(true);
-    expect(parsePrefs('{"themeDirection":"A"}')).toEqual({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS });
+    expect(parsePrefs('{"themeDirection":"A"}')).toEqual({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
     expect(parsePrefs('garbage')).toEqual(DEFAULT_PREFS);
   });
 
@@ -24,26 +24,33 @@ describe('device prefs', () => {
     expect(parsePrefs('{"librarySegment":"x"}').librarySegment).toBe('exercises');
   });
 
+  it('Targets hit is off unless turned on (Ben, 20 Oct)', () => {
+    expect(DEFAULT_PREFS.targetsHit).toBe(false);
+    expect(parsePrefs('{"guideAnimations":true}').targetsHit).toBe(false);
+    expect(parsePrefs('{"targetsHit":true}').targetsHit).toBe(true);
+    expect(parsePrefs('{"targetsHit":"yes"}').targetsHit).toBe(false);
+  });
+
   it('only an explicit false turns them off', () => {
     expect(parsePrefs('{"guideAnimations":false}').guideAnimations).toBe(false);
     expect(parsePrefs('{"guideAnimations":"no"}').guideAnimations).toBe(true);
   });
 
   it('a change keeps the other preferences', () => {
-    const a = updatePrefs({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS }, { guideAnimations: false });
-    expect(a).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS });
-    expect(updatePrefs(a, { themeDirection: 'D' })).toEqual({ themeDirection: 'D', guideAnimations: false, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS });
-    expect(updatePrefs(null, { guideAnimations: false })).toEqual({ themeDirection: null, guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS });
+    const a = updatePrefs({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false }, { guideAnimations: false });
+    expect(a).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
+    expect(updatePrefs(a, { themeDirection: 'D' })).toEqual({ themeDirection: 'D', guideAnimations: false, alertsAsk: 'later', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
+    expect(updatePrefs(null, { guideAnimations: false })).toEqual({ themeDirection: null, guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
   });
 });
 
 describe('prefs changed before the file loads (review N1)', () => {
   it('keeps the early change on top of the file and saves the merge', () => {
-    const loaded = { themeDirection: 'D' as const, guideAnimations: true, alertsAsk: 'undetermined' as const, workoutView: 'table' as const, librarySegment: 'exercises' as const, voice: DEFAULT_VOICE_PREFS };
-    expect(settleLoadedPrefs(loaded, { guideAnimations: false })).toEqual({ prefs: { themeDirection: 'D', guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS }, save: true });
+    const loaded = { themeDirection: 'D' as const, guideAnimations: true, alertsAsk: 'undetermined' as const, workoutView: 'table' as const, librarySegment: 'exercises' as const, voice: DEFAULT_VOICE_PREFS, targetsHit: false };
+    expect(settleLoadedPrefs(loaded, { guideAnimations: false })).toEqual({ prefs: { themeDirection: 'D', guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false }, save: true });
   });
   it('with no early change, uses the file as it is and writes nothing', () => {
-    const loaded = { themeDirection: 'A' as const, guideAnimations: false, alertsAsk: 'answered' as const, workoutView: 'table' as const, librarySegment: 'exercises' as const, voice: DEFAULT_VOICE_PREFS };
+    const loaded = { themeDirection: 'A' as const, guideAnimations: false, alertsAsk: 'answered' as const, workoutView: 'table' as const, librarySegment: 'exercises' as const, voice: DEFAULT_VOICE_PREFS, targetsHit: false };
     expect(settleLoadedPrefs(loaded, {})).toEqual({ prefs: loaded, save: false });
   });
 });
@@ -86,7 +93,7 @@ describe('createPrefsHolder (review S2)', () => {
   }
 
   it('after Delete my data cleared it, a load still in flight and later changes never write the old prefs back', async () => {
-    const f = file(JSON.stringify({ themeDirection: 'D', guideAnimations: false, alertsAsk: 'answered', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS }));
+    const f = file(JSON.stringify({ themeDirection: 'D', guideAnimations: false, alertsAsk: 'answered', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false }));
     const { gate, go } = f.holdRead();
     const seen: DevicePrefs[] = [];
     const holder = createPrefsHolder(f.port(gate), (p) => seen.push(p));
@@ -103,13 +110,13 @@ describe('createPrefsHolder (review S2)', () => {
   });
 
   it('without a delete: loads, keeps early changes on top, saves', async () => {
-    const f = file(JSON.stringify({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS }));
+    const f = file(JSON.stringify({ themeDirection: 'A', guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false }));
     const seen: DevicePrefs[] = [];
     const holder = createPrefsHolder(f.port(), (p) => seen.push(p));
     const loading = holder.load();
     await holder.update({ guideAnimations: false });
     await loading;
-    expect(seen.at(-1)).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS });
-    expect(JSON.parse(f.text ?? 'null')).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS });
+    expect(seen.at(-1)).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
+    expect(JSON.parse(f.text ?? 'null')).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
   });
 });
