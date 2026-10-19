@@ -245,3 +245,23 @@ After build 156, Ben reported two problems: "make it 40" left a hotel-gym should
 - **The coach reads Ben's history**: records (e1RM labelled an estimate), recent workouts, any saved gym's equipment. At most 4 reads a turn.
 - **Numbers in replies are allowed when checked** against Ben's data, tool results and his words. Unchecked sentences are hidden. Build messages may be up to 600 characters.
 - **Thinking effort per turn**: builds high, mid-workout low, otherwise medium. Mid-workout the coach can ask to think harder once a turn. Settings has an optional lighter `Mid-workout` model from his plan's list; the default is the coach's model.
+
+## 2026-10-19: Cardio with a timer and distance (Ben approved 19 Oct; details PM decision, pending Ben)
+Ben: "Can we also add options to add things like rowing machine or bike eg something cardio focussed with a timer and distance". **Ben approved 19 Oct:**
+- **Cardio sets record time and distance**, both optional but at least one: `20:00 · 4,800 m`. A new `cardio` measurement; the rowing machine, ski erg, treadmill run (were distance) and air bike (was timed) become cardio, history included.
+- **A start/stop timer on the set**: `Start`, then ✓ logs the time on the timer with the distance typed from the machine; `Stop` puts the time in the field first. It counts up from the stored start (the work interval), so a force-close loses nothing. In the table row and the focus card.
+- **Pace shown automatically**: `/500 m` on the rower and ski erg, `/km` on everything else. Never estimated: shown only with both a time and a distance.
+- **More machines**: Exercise bike, Cross trainer, Stair climber, Incline walk (treadmill).
+- **A Cardio filter**: the Library's Equipment filter, and a `Cardio` chip in Add exercise.
+- **Targets repeat last time**: next time's target is last time's time and distance; the built-in rule never adds load or reps to cardio.
+- **The coach can add cardio** to today's workout (`edit_today` add) and to builds (`propose_workout`), with `workSeconds` and an optional `distanceMetres`.
+- **Progress**: cardio is kept out of Est. 1RM, volume and muscle set counts; its history shows time, distance and pace (`20:00 · 4,800 m · 2:05 /500 m`), with total distance, best distance and total time.
+- No calories (no reliable data, rule 6).
+
+**PM decisions, pending Ben:**
+- **Migration 20 moves the four machines' history to cardio** so one exercise keeps one history. No set's values change (rule 2): an old rowing set reads `2,000 m`, an old air-bike set `10:00`. Older backups convert when restored.
+- **Cardio machines need no gym item.** Gym profiles don't list cardio machines, so the picker and the coach offer them at any gym. A hotel gym without a rower isn't known to the app.
+- **Defaults**: a new cardio slot or coach add is one 10-minute set. A coach build without a time uses 10:00, and builds cap cardio at 2 h. Time is typed in minutes (`20` or `20.5`). Steps are 1 minute and 100 m. The timer stops itself at 4 h (the most a set's time holds).
+- **While the timer runs**, the lock screen shows `Since 18:20` and no countdown. No "Time" notification fires. A count-up Live Activity needs native work and isn't built.
+- **The four new machines are basic catalogue entries** like the other cardio machines, with no cues, safety notes or guide. Rich entries need sourced research (`exercise-researcher`).
+- **FitNotes cardio rows are still skipped** on import (P-I4). Importing them as cardio is a later step.
