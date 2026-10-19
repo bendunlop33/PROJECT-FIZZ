@@ -85,15 +85,34 @@ export function ownPlanDay<D extends Pick<PlanDueDay, 'routineId' | 'createdFrom
 }
 
 /**
- * The plan days a workout trained: its own day (a plan workout), and every
- * day it trained by the split rule (`splitDaysTrained`: the day that got
- * most of its sets, and any with a third of them).
+ * The plan days a workout trained, by the split rule with the plan's days as
+ * the split (`splitDaysTrained`: the day that got most of its sets, and any
+ * with a third of them), plus its own day for a plan workout.
  */
 export function planDaysTrained(days: readonly PlanDueDay[], w: PlanDueWorkout): string[] {
   const own = ownPlanDay(days, w)?.routineId;
   const split = planSplit(days);
   const byMuscle = split === null ? [] : splitDaysTrained(split, w.groups);
   return [...new Set([...(own === undefined ? [] : [own]), ...byMuscle])];
+}
+
+/**
+ * The plan days a workout counts as done for, for Up next's order: a plan
+ * workout for its own day and the day(s) it mainly trained (the same unless
+ * Ben changed it into another day's session), so days that share a muscle
+ * (Pull and an Upper day) still take turns; any other workout for every day
+ * it trained (`planDaysTrained`).
+ */
+function planDaysCredited(days: readonly PlanDueDay[], w: PlanDueWorkout): string[] {
+  const own = ownPlanDay(days, w);
+  if (own === undefined) return planDaysTrained(days, w);
+  const split = planSplit(days);
+  const main = split === null ? null : (matchSplitDay(split, w.groups) ?? null);
+  // Days with the same body parts as its own (`Upper A`, `Upper B`) are the same muscles: trained too.
+  const same = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x) => b.includes(x));
+  const twins = own.bodyParts.length === 0 ? [] : days.filter((d) => same(d.bodyParts, own.bodyParts)).map((d) => d.routineId);
+  const mainId = main === null || twins.includes(main.id) ? [] : [main.id];
+  return [...new Set([own.routineId, ...twins, ...mainId])];
 }
 
 /**
@@ -129,10 +148,12 @@ export function activePin(pin: PlanPin | null | undefined, days: readonly PlanDu
 /**
  * The plan days in the order they are due (Ben, 20 Oct). The pinned day
  * first (`Make next`, until done). Then trained least recently first,
- * counting every workout in `workouts` by the muscles done; never the day(s)
- * the newest workout trained unless that leaves none. Ties: the day whose
- * own workout is oldest (so `Upper A` and `Upper B` alternate), then plan
- * order (day 1 before any is done). The caller starts the first it can.
+ * counting every workout in `workouts` by the muscles done (an off-plan
+ * workout for every day it trained; a plan workout for its own day and the
+ * day it mainly trained, so overlapping days still take turns); never the
+ * day(s) the newest workout trained unless that leaves none. Ties: the day
+ * whose own workout is oldest (so `Upper A` and `Upper B` alternate), then
+ * plan order (day 1 before any is done). The caller starts the first it can.
  */
 export function planDaysByDue<D extends PlanDueDay>(days: readonly D[], workouts: readonly PlanDueWorkout[], pin?: PlanPin | null): PlanDuePick<D>[] {
   if (days.length === 0) return [];
@@ -141,12 +162,14 @@ export function planDaysByDue<D extends PlanDueDay>(days: readonly D[], workouts
   let justDone: string[] | null = null;
   for (const w of newestFirst(workouts)) {
     const trained = planDaysTrained(days, w);
+    const credited = planDaysCredited(days, w);
     const ms = toMs(w.startedAtUtc);
     const own = ownPlanDay(days, w);
     if (own !== undefined && !lastOwn.has(own.routineId)) lastOwn.set(own.routineId, ms);
-    if (trained.length === 0) continue;
-    justDone ??= trained;
-    for (const id of trained) if (!last.has(id)) last.set(id, ms);
+    if (trained.length === 0 && credited.length === 0) continue;
+    // The newest workout's days are left out of the pool: never the day(s) just trained.
+    justDone ??= credited;
+    for (const id of credited) if (!last.has(id)) last.set(id, ms);
   }
   const done = justDone ?? [];
   const others = days.filter((d) => !done.includes(d.routineId));
@@ -162,12 +185,6 @@ export function planDaysByDue<D extends PlanDueDay>(days: readonly D[], workouts
   };
   const rest = sorted.filter((d) => d.routineId !== pinDay?.routineId).map((d) => pick(d, false));
   return pinDay === undefined ? rest : [pick(pinDay, true), ...rest];
-}
-
-/** Whether a workout (by its groups) is mainly one of the plan's days, for `matchSplitDay` callers. */
-export function mainPlanDay(days: readonly PlanDueDay[], groups: ReadonlyMap<MuscleGroup, number>): string | null {
-  const split = planSplit(days);
-  return split === null ? null : (matchSplitDay(split, groups)?.id ?? null);
 }
 
 // ---------------------------------------------------------------------------

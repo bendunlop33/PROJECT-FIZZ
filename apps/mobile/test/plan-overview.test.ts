@@ -104,9 +104,10 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     let v = await s.plans.overview();
     expect(v).toMatchObject({ planId, name: '4-day plan', goal: { action: 'Set goal' } });
     expect(plain(v?.since)).toBe('Since 13 Oct');
+    // (Ben, 20 Oct) Up next adapts: Ben trained chest yesterday (before Apply), so Pull is next, not day 1.
     expect(v?.days.map((d) => [d.n, d.name, d.state, d.next, d.when])).toEqual([
-      [1, 'Push', 'next', true, null],
-      [2, 'Pull', 'todo', false, null],
+      [1, 'Push', 'todo', false, null],
+      [2, 'Pull', 'next', true, null],
       [3, 'Legs', 'todo', false, null],
       [4, 'Upper', 'todo', false, null],
     ]);
@@ -151,7 +152,7 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     expect((await s.plans.consistency())?.planThisWeek?.text).toBe('1 of 4');
     expect(plain((await s.plans.planDay(days[0] ?? ''))?.rows[0]?.sub)).toBe('Last 13 Oct: 100 × 8, 8, 8 · Targets hit 2 of last 2');
 
-    // A new week (Monday 19 Oct): no ✓; day 1 reads when it was last done.
+    // A new week (Monday 19 Oct): no ✓; day 1 reads when it was last done. (Pull is still next: Push was trained last.)
     h.clockMs = Date.parse('2026-10-19T07:00:00.000Z');
     v = await s.plans.overview();
     expect(v?.days.map((d) => [d.state, plain(d.when)])).toEqual([
@@ -197,14 +198,15 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     const { s, gymId, days } = await benWithPlan();
     const page = await s.overview.load({ target: { kind: 'next' }, gymId });
     if (!page) throw new Error('no overview');
-    expect(page.view.title).toBe('Push');
-    const incline = page.view.rows.find((x) => x.name === 'Incline dumbbell press');
-    if (!incline) throw new Error('no row');
-    expect(await s.overview.edit({ target: { kind: 'next' }, gymId, expectedDraftVersion: page.draft?.version ?? null, opId: 'skip-incline', edit: { kind: 'skip', slotKey: incline.slotKey } })).toMatchObject({ ok: true });
-    const day1 = await s.plans.planDay(days[0] ?? '');
-    expect(day1?.rows.map((r) => r.name)).toEqual(['Bench press']);
+    // (20 Oct) Adaptive: chest was trained the day before Apply, so Up next is Pull.
+    expect(page.view.title).toBe('Pull');
+    const row = page.view.rows.find((x) => x.name === 'Barbell row');
+    if (!row) throw new Error('no row');
+    expect(await s.overview.edit({ target: { kind: 'next' }, gymId, expectedDraftVersion: page.draft?.version ?? null, opId: 'skip-row', edit: { kind: 'skip', slotKey: row.slotKey } })).toMatchObject({ ok: true });
+    const day2 = await s.plans.planDay(days[1] ?? '');
+    expect(day2?.rows.map((r) => r.name)).toEqual(['Lat pulldown']);
     // Another day has no edits: as planned.
-    expect((await s.plans.planDay(days[1] ?? ''))?.rows.map((r) => r.name)).toEqual(['Lat pulldown', 'Barbell row']);
+    expect((await s.plans.planDay(days[0] ?? ''))?.rows.map((r) => r.name)).toEqual(['Bench press', 'Incline dumbbell press']);
   });
 
   it('no gym: the plan day says so and shows the saved sets × targets, no loads (review planview S2)', async () => {

@@ -84,6 +84,23 @@ describe('adaptive Up next while a plan is in use (Ben, 20 Oct)', () => {
     expect(names(planDaysByDue(days, [upper(1, 0, A.routineId), workout(2, DAY, L.routineId, { Quads: 6 })]))[0]).toBe('Upper B');
   });
 
+  it('days that share a muscle (Pull and an Upper day with back work) still take turns when Ben follows the plan', () => {
+    const UPPER: PlanDueDay = { routineId: id(15), name: 'Upper', bodyParts: ['Shoulders', 'Back'] };
+    const days = [PUSH, PULL, LEGS, UPPER];
+    const upperDone = (n: number, s: number) => workout(n, s, UPPER.routineId, { Shoulders: 3, Back: 3 });
+    const ws: PlanDueWorkout[] = [];
+    const walked: string[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const next = planDaysByDue(days, ws)[0]?.day ?? PUSH;
+      walked.push(next.name);
+      const doit = { Push: pushDone, Pull: pullDone, Legs: legsDone, Upper: upperDone }[next.name] ?? pushDone;
+      ws.push(doit(i, i * DAY));
+    }
+    expect(walked).toEqual(['Push', 'Pull', 'Legs', 'Upper', 'Push', 'Pull', 'Legs', 'Upper']);
+    // An off-plan back session still counts for both.
+    expect(names(planDaysByDue(days, [workout(1, 0, null, { Back: 6 })]))).toEqual(['Push', 'Legs']);
+  });
+
   it('a plan day with no body parts (cardio) counts by its own workouts only', () => {
     const cardio: PlanDueDay = { routineId: id(14), name: 'Conditioning', bodyParts: [] };
     const days = [PUSH, cardio];

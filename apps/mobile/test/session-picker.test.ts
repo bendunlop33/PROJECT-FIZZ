@@ -198,8 +198,8 @@ describe('services.sessions.list (session-picker §3, §7)', () => {
     const { services: s } = await h.launch();
     expect(await s.sessions.list(null)).toBeNull();
     const gymId = await setUpGym(h, s);
-    expect(await list(s, gymId)).toEqual({ upNext: null, workouts: [], fromHistory: [], older: [], recommendedKey: null, fromCoach: [] });
-    expect(await list(s, null)).toEqual({ upNext: null, workouts: [], fromHistory: [], older: [], recommendedKey: null, fromCoach: [] });
+    expect(await list(s, gymId)).toEqual({ upNext: null, plan: [], workouts: [], fromHistory: [], older: [], recommendedKey: null, fromCoach: [] });
+    expect(await list(s, null)).toEqual({ upNext: null, plan: [], workouts: [], fromHistory: [], older: [], recommendedKey: null, fromCoach: [] });
   });
 
   it('sessions not done in 42 days are listed under OLDER, with the year once they are 11 months back', async () => {
