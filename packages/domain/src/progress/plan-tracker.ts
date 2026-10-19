@@ -208,6 +208,45 @@ export interface ConsistencyInput {
   plan: { days: readonly { routineId: string; createdFromSessionId?: string | null | undefined }[]; appliedAtUtc: string } | null;
 }
 
+export interface PlanWeekDay {
+  routineId: string;
+  createdFromSessionId?: string | null | undefined;
+}
+
+export interface PlanWeekWorkout {
+  sessionId: string;
+  routineId: string | null;
+  startedAtUtc: string;
+}
+
+/** The finished workout is that plan day's: started from its workout (or the workout it was saved from). */
+export function dayOf<D extends PlanWeekDay>(days: readonly D[], w: Pick<PlanWeekWorkout, 'sessionId' | 'routineId'>): D | undefined {
+  return days.find((d) => d.routineId === w.routineId || (d.createdFromSessionId != null && d.createdFromSessionId === w.sessionId));
+}
+
+/** Since Monday 00:00 local, and since Apply: the instant this week's plan counts from. */
+export function planWeekStartMs(input: { appliedAtUtc: string; nowMs: number; tz: string }): number {
+  return Math.max(localWeekBounds(input.nowMs, input.tz).startMs, toMs(input.appliedAtUtc));
+}
+
+/**
+ * The plan days done this week (since Apply, up to now): per day, its newest
+ * such workout. The Progress consistency card's `3 of 4` counts the same.
+ */
+export function planDaysDoneThisWeek(input: { days: readonly PlanWeekDay[]; appliedAtUtc: string; workouts: readonly PlanWeekWorkout[]; nowMs: number; tz: string }): Map<string, string> {
+  const from = planWeekStartMs(input);
+  const done = new Map<string, string>();
+  for (const w of input.workouts) {
+    const ms = toMs(w.startedAtUtc);
+    if (ms < from || ms > input.nowMs) continue;
+    const d = dayOf(input.days, w);
+    if (d === undefined) continue;
+    const prev = done.get(d.routineId);
+    if (prev === undefined || toMs(prev) < ms) done.set(d.routineId, w.startedAtUtc);
+  }
+  return done;
+}
+
 function weekOf(monday: string, workouts: number, days: number, aim: number | null): ConsistencyWeek {
   return { monday, workouts, days, text: aim === null ? String(workouts) : `${String(days)}/${String(aim)}`, atAim: aim === null ? null : days >= aim };
 }
@@ -219,7 +258,7 @@ function weekOf(monday: string, workouts: number, days: number, aim: number | nu
  * how many of its days were done this week (since Apply). Counts only.
  */
 export function consistency(input: ConsistencyInput): ConsistencyView {
-  const { startMs: thisStart, mondayLocalDate } = localWeekBounds(input.nowMs, input.tz);
+  const { mondayLocalDate } = localWeekBounds(input.nowMs, input.tz);
   const mondays = Array.from({ length: CONSISTENCY_WEEKS }, (_, i) => addDays(mondayLocalDate, -7 * (CONSISTENCY_WEEKS - i)));
   const counts = new Map<string, number>();
   const dates = new Map<string, Set<string>>();
@@ -237,14 +276,8 @@ export function consistency(input: ConsistencyInput): ConsistencyView {
   let planThisWeek: ConsistencyView['planThisWeek'] = null;
   const plan = input.plan;
   if (plan !== null && plan.days.length > 0) {
-    const from = Math.max(thisStart, toMs(plan.appliedAtUtc));
-    const done = new Set<string>();
-    for (const w of input.workouts) {
-      const ms = toMs(w.startedAtUtc);
-      if (ms < from || ms > input.nowMs) continue;
-      const day = plan.days.find((d) => d.routineId === w.routineId || (d.createdFromSessionId != null && d.createdFromSessionId === w.sessionId));
-      if (day !== undefined) done.add(day.routineId);
-    }
+    // The same count as Library › Your plan's `Days this week` (planDaysDoneThisWeek).
+    const done = planDaysDoneThisWeek({ days: plan.days, appliedAtUtc: plan.appliedAtUtc, workouts: input.workouts, nowMs: input.nowMs, tz: input.tz });
     planThisWeek = { done: done.size, of: plan.days.length, text: `${String(done.size)} of ${String(plan.days.length)}` };
   }
   return { weeks, thisWeek, aim: input.aim, atAimText: input.aim === null ? null : `Weeks at your aim: ${String(atAim)} of ${String(weeks.length)}`, planThisWeek };

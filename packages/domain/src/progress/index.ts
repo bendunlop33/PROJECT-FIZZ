@@ -13,3 +13,4 @@ export * from './exercise';
 export * from './exercise-view';
 export * from './exercise-tab';
 export * from './plan-tracker';
+export * from './plan-overview';
