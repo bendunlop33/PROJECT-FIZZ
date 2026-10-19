@@ -18,6 +18,7 @@
     "@fizz/persistence": "0.1.0",
     "@fizz/providers": "0.1.0",
     "@fizz/schemas": "0.1.0",
+    "@react-native-community/datetimepicker": "9.1.0",
     "@react-navigation/bottom-tabs": "7.20.0",
     "@react-navigation/native": "7.5.0",
     "@react-navigation/native-stack": "7.20.0",

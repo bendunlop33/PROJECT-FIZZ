@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { toIso } from '@fizz/domain';
+import { toIso, toMs, workoutTimeBounds } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { nowMs as clockNow } from '../../clock';
@@ -10,13 +10,15 @@ import { newUuid } from '../../device/runtime';
 import { formatTime } from '../../format/dates';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, DangerTextButton, Eyebrow, PrimaryButton, SecondaryButton, StatusLine, TextButton } from '../../ui';
-import { finishModel, stepTime } from '../../workout/finish';
+import { AppText, DangerTextButton, Eyebrow, PrimaryButton, StatusLine, TextButton } from '../../ui';
+import { finishModel } from '../../workout/finish';
+import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
 
 /**
  * Finish sheet (active-workout §4.8; today.md §4 for a stale workout).
  * Nothing is written until `Finish`: one `finish` with the chosen end time
- * in the same transaction (ADR 0003 S5). A stale version reloads and says so
+ * (and start, when Ben moved it on the wheel; Ben, 19 Oct) in the same
+ * transaction (ADR 0003 S5). A stale version reloads and says so
  * (review N8). With nothing logged, `Discard workout` is the primary.
  */
 export function FinishSheet({
@@ -43,7 +45,10 @@ export function FinishSheet({
   const [opId, setOpId] = useState(newUuid);
   const [now, setNow] = useState(clockNow);
   const model = finishModel(aggregate, now);
-  const [endMs, setEndMs] = useState(model.defaultEndMs);
+  const recordedStartMs = toMs(aggregate.session.startedAt.utc);
+  const [times, setTimes] = useState<WorkoutTimes>({ startMs: recordedStartMs, endMs: model.defaultEndMs });
+  const endMs = times.endMs;
+  const bounds = workoutTimeBounds(aggregate, now);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tz = aggregate.session.startedAt.tz;
@@ -53,7 +58,7 @@ export function FinishSheet({
     if (!visible) return;
     const t = clockNow();
     setNow(t);
-    setEndMs(finishModel(aggregate, t).defaultEndMs);
+    setTimes({ startMs: toMs(aggregate.session.startedAt.utc), endMs: finishModel(aggregate, t).defaultEndMs });
     setOpId(newUuid());
     setError(null);
   }, [visible, aggregate]);
@@ -70,6 +75,8 @@ export function FinishSheet({
       opId,
       expectedVersion: aggregate.session.version,
       endedAt: chosenIsNow ? null : { utc: toIso(endMs), tz: at.tz },
+      // The workout's own zone (review N6); only when Ben moved it.
+      ...(times.startMs === recordedStartMs ? {} : { startedAt: { utc: toIso(times.startMs), tz } }),
     });
     setBusy(false);
     if (!r.ok) {
@@ -87,18 +94,6 @@ export function FinishSheet({
     }
     onFinished(aggregate.session.id);
   }
-
-  const timeButton = (label: string, minutes: number) => (
-    <SecondaryButton
-      key={label}
-      grow
-      label={label}
-      accessibilityLabel={`${minutes < 0 ? 'Earlier' : 'Later'} by ${String(Math.abs(minutes))} minutes`}
-      onPress={() => {
-        setEndMs((v) => stepTime(v, minutes, model.minEndMs, model.maxEndMs));
-      }}
-    />
-  );
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} {...(onDismissed ? { onDismiss: onDismissed } : {})}>
@@ -118,21 +113,12 @@ export function FinishSheet({
         )}
         {!model.nothingLogged ? (
           <View style={{ gap: theme.space['2'] }}>
-            <Eyebrow>Ended at</Eyebrow>
-            <AppText variant="title1" numeric accessibilityLiveRegion="polite" maxFontSizeMultiplier={1.6} style={{ fontWeight: '300', fontSize: 40, lineHeight: 46 }}>
-              {`${formatTime(endMs, tz)}${Math.abs(endMs - now) < 60_000 ? ' (now)' : model.forgotten && endMs === model.defaultEndMs ? ' (estimated)' : ''}`}
-            </AppText>
-            <View style={{ flexDirection: 'row', gap: theme.space['2'], flexWrap: 'wrap' }}>
-              {timeButton('−5 min', -5)}
-              {timeButton('−1 min', -1)}
-              {timeButton('+1 min', 1)}
-              {timeButton('+5 min', 5)}
-            </View>
+            <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} endNow={now} endEstimate={model.forgotten ? model.defaultEndMs : null} />
             {Math.abs(endMs - now) >= 60_000 ? (
               <TextButton
                 label={`Use now (${formatTime(now, tz)})`}
                 onPress={() => {
-                  setEndMs(now);
+                  setTimes((t) => ({ ...t, endMs: now }));
                 }}
               />
             ) : null}

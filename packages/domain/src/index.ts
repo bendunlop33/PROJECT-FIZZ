@@ -10,6 +10,7 @@ export * from './gym-presets';
 export * from './stable';
 export * from './session/order';
 export * from './session/superset-with';
+export * from './session/workout-times';
 export * from './session/create';
 export * from './session/reducer';
 export * from './session/view';
