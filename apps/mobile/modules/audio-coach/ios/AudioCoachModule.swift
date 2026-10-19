@@ -277,7 +277,7 @@ public final class AudioCoachModule: Module {
     // Content > Voices adds more). Personal Voice needs its own permission and
     // isn't listed until granted; novelty voices are marked so JS can hide them.
     Function("getVoices") { () -> [[String: Any]] in
-      return AVSpeechSynthesisVoice.speechVoices().map { voice in
+      return AVSpeechSynthesisVoice.speechVoices().map { (voice: AVSpeechSynthesisVoice) -> [String: Any] in
         var entry: [String: Any] = [
           "identifier": voice.identifier,
           "name": voice.name,
