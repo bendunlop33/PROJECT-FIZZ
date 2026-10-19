@@ -353,7 +353,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
 /** The facts plus the text of every card this turn and earlier ones in the ledger (app text, from saved records). */
 function factsWithCards(facts: NumberFacts, ledger: TurnLedger, surface: RenderSurface): NumberFacts {
   if (ledger.entries.length === 0) return facts;
-  return mergeFacts(facts, collectFacts(ledger.entries.map((e) => renderActionResult(e.record, surface, { earlier: e.origin === 'earlier' }).text)));
+  return mergeFacts(facts, collectFacts(ledger.entries.map((e) => ({ text: renderActionResult(e.record, surface, { earlier: e.origin === 'earlier' }).text, setsDone: false }))));
 }
 
 /** Stamp drafts for storage (`HiddenLine`, Your data). */

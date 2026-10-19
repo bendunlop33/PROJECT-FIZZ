@@ -81,6 +81,35 @@ describe('verifySentence', () => {
     expect(verifySentence('Try 105 kg × 8.', f)).toEqual({ ok: true });
   });
 
+  it('review S1: today’s target 105 kg × 8 is a plan, never a set done; the logged set in the same context is', () => {
+    const load = (value: number) => ({ value, unit: 'kg', convention: 'total' });
+    const workout = {
+      domain: 'Your data',
+      workout: {
+        exercises: [
+          {
+            name: 'Bench press',
+            sets: [
+              { setId: 'a', status: 'completed', target: { load: load(100), reps: { min: 8, max: 8 }, rpe: 8 }, actual: { load: load(100), reps: { min: 7, max: 7 }, rpe: 9 } },
+              { setId: 'b', status: 'pending', target: { load: load(105), reps: { min: 8, max: 8 }, rpe: 8 }, actual: null },
+            ],
+          },
+        ],
+        lastLogged: { exercise: 'Bench press', kind: 'working', load: load(100), reps: 7, rpe: 9 },
+      },
+      builtIn: { label: 'built-in rule (fallback), for comparison', sets: [{ type: 'working', target: '110 kg × 6', load: load(110), reps: { min: 6, max: 6 }, rpe: 8 }] },
+    };
+    const f = collectFacts([`YOUR DATA\n${JSON.stringify(workout)}`, { text: 'Bench press: 100 → 105 kg × 8', setsDone: false }]);
+    expect([...f.pairs]).toEqual(['100|7']);
+    expect(verifySentence('Last time you did 105 kg × 8.', f)).toMatchObject({ ok: false, numbers: ['105 kg × 8'] });
+    expect(verifySentence('Last time you did 110 kg × 6.', f).ok).toBe(false);
+    expect(verifySentence('You did 100 kg × 7 last set.', f)).toEqual({ ok: true });
+    // Its numbers are still values: advice with 105 kg passes.
+    expect(verifySentence('Next set: 105 kg × 8.', f)).toEqual({ ok: true });
+    // Ben's own words state a set done.
+    expect(collectFacts(['I did 105 x 8 on Monday']).pairs.has('105|8')).toBe(true);
+  });
+
   it('IDs are not facts: digits inside a UUID never verify a number', () => {
     expect(verifySentence('Your best is 777 kg.', facts).ok).toBe(false);
   });

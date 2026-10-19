@@ -33,7 +33,7 @@ import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, ref
 import { lastLoggedSets } from './context';
 import { verifyAsked, type AskClaim, type AskVerdict } from './intent';
 import { editOfferIn } from './edit-today';
-import { collectFacts, type NumberFacts } from './numbers';
+import { collectFacts, type FactText, type NumberFacts } from './numbers';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -720,7 +720,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let factsCache: { n: number; facts: NumberFacts } | null = null;
   const facts = (): NumberFacts => {
     if (factsCache?.n === input.length) return factsCache.facts;
-    const texts = input.flatMap((i) => (i.type === 'message' ? (i.role === 'assistant' ? [] : [i.content]) : i.type === 'function_call_output' ? [i.output] : []));
+    // Only Ben's own messages state a set done in plain text; context and tool JSON give logged sets from their data (review S1).
+    const texts = input.flatMap((i): FactText[] => (i.type === 'message' ? (i.role === 'assistant' ? [] : i.role === 'user' ? [i.content] : [{ text: i.content, setsDone: false }]) : i.type === 'function_call_output' ? [{ text: i.output, setsDone: false }] : []));
     factsCache = { n: input.length, facts: collectFacts(texts) };
     return factsCache.facts;
   };

@@ -64,18 +64,81 @@ function monthNumber(word: string): number {
 const pad = (n: number): string => String(n).padStart(2, '0');
 const pairKey = (load: number, reps: number): string => `${String(load)}|${String(reps)}`;
 /** `100 kg × 7`, `100×7`, `22.5 kg each for 8`. */
-const PAIR_TEXT = /(\d+(?:[.,]\d+)?)\s?(?:kgs?|lbs?|kilos?|pounds?)?(?:\s?each)?\s?(?:×|x|for)\s?(\d+)(?![\d.]|\s?(?:kgs?|lbs?|kilos?|pounds?|sets?|min))/gi;
-/** `{"load":{"value":100,…},"reps":7` in JSON facts. */
-const PAIR_JSON = /"value":\s?(\d+(?:\.\d+)?)[^\]{}]{0,80}\}[^\]{}]{0,40}?"reps":\s?(\d+)/g;
+const PAIR_TEXT = /(\d+(?:[.,]\d+)?)\s?(?:kgs?|lbs?|kilos?|pounds?)?(?:\s?each)?\s?(?:×|x|for)\s?(\d+)(?!\d|\.\d|\s?(?:kgs?|lbs?|kilos?|pounds?|sets?|min))/gi;
 
-/** Numbers and dates in code's and Ben's texts (context JSON, tool outputs, his messages). */
-export function collectFacts(texts: readonly string[]): NumberFacts {
+/**
+ * Keys whose values are plans, not logged results (review coach-v3 S1): a set's `target`, a draft's
+ * slots and templates, the built-in rule's targets, an offer. Their numbers still count as values;
+ * only a logged set can back "you did 105 × 8".
+ */
+const PLANNED_KEY = /^(?:target|targets|planned|builtInNext|next|nextTargets|proposed|offer|suggested|slots|setTemplates|templates|before|after|added|changes)$/i;
+
+/** A load-and-reps object as logged: `{load:{value:N},reps:M}` or reps `{min:M,max:M}`. */
+function loggedPairOf(o: Record<string, unknown>): [number, number] | null {
+  const load = o.load;
+  if (typeof load !== 'object' || load === null || typeof (load as { value?: unknown }).value !== 'number') return null;
+  const value = (load as { value: number }).value;
+  const reps = o.reps;
+  if (typeof reps === 'number') return [value, reps];
+  if (typeof reps === 'object' && reps !== null) {
+    const r = reps as { min?: unknown; max?: unknown };
+    if (typeof r.min === 'number' && r.min === r.max) return [value, r.min];
+  }
+  return null;
+}
+
+/** Logged sets in parsed JSON: load-and-reps objects and `100 kg × 7` strings, outside planned keys. */
+function walkPairs(node: unknown, pairs: Set<string>): void {
+  if (typeof node === 'string') {
+    for (const m of node.matchAll(PAIR_TEXT)) pairs.add(pairKey(parseNumber(m[1] ?? ''), Number(m[2])));
+    return;
+  }
+  if (Array.isArray(node)) {
+    for (const x of node) walkPairs(x, pairs);
+    return;
+  }
+  if (typeof node !== 'object' || node === null) return;
+  const o = node as Record<string, unknown>;
+  // A set carrying its own `target` (the built-in rule's view) is a plan, whatever else it has.
+  if ('target' in o && !('actual' in o)) return;
+  const pair = loggedPairOf(o);
+  if (pair !== null) pairs.add(pairKey(pair[0], pair[1]));
+  for (const [k, v] of Object.entries(o)) if (!PLANNED_KEY.test(k)) walkPairs(v, pairs);
+}
+
+/** The JSON a fact text carries (a tool output, or a context block after its first line), if any. */
+function jsonOf(raw: string): unknown {
+  const t = raw.trimStart();
+  const at = t.startsWith('{') || t.startsWith('[') ? 0 : t.indexOf('\n') + 1;
+  if (at < 0 || (t[at] !== '{' && t[at] !== '[')) return undefined;
+  try {
+    return JSON.parse(t.slice(at)) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A fact text. A plain string is Ben's or code's text whose `100 kg × 7` also counts as a set done
+ * (his own words). `{ text, setsDone: false }`: its numbers count, but no set in it backs a claim
+ * that a set was done (cards of changes, instructions: their pairs are targets or examples).
+ */
+export type FactText = string | { text: string; setsDone: boolean };
+
+/**
+ * Numbers and dates in code's and Ben's texts (context JSON, tool outputs, his messages). Sets done
+ * (`pairs`) come only from logged results: JSON outside planned keys (review S1), and plain text
+ * marked as able to state one.
+ */
+export function collectFacts(texts: readonly FactText[]): NumberFacts {
   const values = new Set<number>();
   const dates = new Set<string>();
   const pairs = new Set<string>();
-  for (const raw of texts) {
-    for (const m of raw.matchAll(PAIR_JSON)) pairs.add(pairKey(parseNumber(m[1] ?? ''), Number(m[2])));
-    for (const m of raw.matchAll(PAIR_TEXT)) pairs.add(pairKey(parseNumber(m[1] ?? ''), Number(m[2])));
+  for (const item of texts) {
+    const raw = typeof item === 'string' ? item : item.text;
+    const json = jsonOf(raw);
+    if (json !== undefined) walkPairs(json, pairs);
+    else if (typeof item === 'string' || item.setsDone) for (const m of raw.matchAll(PAIR_TEXT)) pairs.add(pairKey(parseNumber(m[1] ?? ''), Number(m[2])));
     let t = raw.replace(UUID, ' ');
     t = t.replace(ISO_DATE, (_m, y: string, mo: string, d: string) => {
       dates.add(`${mo}-${d}`);
