@@ -421,7 +421,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   }
   // Cardio (19 Oct): ✓ while its timer runs ends it and logs the time on it, with the distance typed in.
   // The set's timer goes with the log, as after Stop.
-  const values: SetValues = timing && wi !== null ? { ...cmd.values, durationS: Math.round(cardioElapsedMs(wi, nowMs) / 1000) } : cmd.values;
+  const values: SetValues = timing ? { ...cmd.values, durationS: Math.round(cardioElapsedMs(wi, nowMs) / 1000) } : cmd.values;
   const invalid = validateValues(values, ex, state) ?? checkSide(cmd.side, ex);
   if (invalid) return { ok: false, error: invalid };
   if (set.pairedWithSetId !== null && cmd.side !== undefined && cmd.side !== set.side) {

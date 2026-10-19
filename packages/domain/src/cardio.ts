@@ -1,6 +1,6 @@
 import type { Measurement, SetValues, WorkInterval } from '@fizz/schemas';
 import { catalogueExerciseId } from './catalogue-id';
-import { formatElapsed, NBSP } from './display';
+import { cardioDistanceText, cardioTimeText, formatElapsed, NBSP } from './display';
 import { toMs } from './time';
 
 /**
@@ -52,7 +52,7 @@ export function paceText(values: Pick<SetValues, 'durationS' | 'distanceM'>, exe
 
 /** A cardio set can be logged with a time, a distance, or both; never with neither. */
 export function cardioHasValue(values: Pick<SetValues, 'durationS' | 'distanceM'>): boolean {
-  return (values.durationS !== null && values.durationS !== undefined) || (values.distanceM !== null && values.distanceM !== undefined);
+  return values.durationS !== null || (values.distanceM !== null && values.distanceM !== undefined);
 }
 
 /**
@@ -67,4 +67,45 @@ export function cardioElapsedMs(wi: Pick<WorkInterval, 'durationS' | 'startedAtU
   else if (wi.status === 'running') ms = nowMs - toMs(wi.startedAtUtc) - wi.pausedMs;
   else ms = (wi.endedAtUtc === null ? nowMs : toMs(wi.endedAtUtc)) - toMs(wi.startedAtUtc) - wi.pausedMs;
   return Math.max(0, Math.min(cap, ms));
+}
+
+type Step = { enabled: true; value: number; label: string } | { enabled: false; reason: string };
+
+/** Cardio time steps: a minute, up to 4 h (typed as minutes in the field). */
+export function cardioDurationSteps(value: number | null): { down: Step; up: Step } {
+  const v = value ?? 0;
+  const up = Math.min(CARDIO_TIMER_CAP_S, v + 60);
+  return {
+    up: v >= CARDIO_TIMER_CAP_S ? { enabled: false, reason: 'Maximum 4:00:00' } : { enabled: true, value: up, label: cardioTimeText(up) },
+    down: value === null || v - 60 < 0 ? { enabled: false, reason: 'Minimum 0:00' } : { enabled: true, value: v - 60, label: cardioTimeText(v - 60) },
+  };
+}
+
+/** Cardio distance steps: 100 m, never below 0 (the machine's number is usually typed). */
+export function cardioDistanceSteps(value: number | null): { down: Step; up: Step } {
+  const v = value ?? 0;
+  return {
+    up: { enabled: true, value: v + 100, label: cardioDistanceText(v + 100) },
+    down: value === null || v - 100 < 0 ? { enabled: false, reason: 'Minimum 0' } : { enabled: true, value: v - 100, label: cardioDistanceText(v - 100) },
+  };
+}
+
+/** Seconds as the minutes field shows them: `20`, `20.5`; null stays null. */
+export function cardioMinutes(seconds: number | null): number | null {
+  return seconds === null ? null : Math.round((seconds / 60) * 100) / 100;
+}
+
+/** Minutes typed in the field as stored seconds, whole and between 0 and the cap; null stays null. */
+export function cardioSecondsFromMinutes(minutes: number | null): number | null {
+  if (minutes === null || !Number.isFinite(minutes)) return null;
+  return Math.max(0, Math.min(CARDIO_TIMER_CAP_S, Math.round(minutes * 60)));
+}
+
+/**
+ * A cardio time field (seconds, stepping a minute) as a minutes field: the
+ * same steps and labels, values in minutes, so `20` is typed for 20:00.
+ */
+export function cardioMinutesField(field: { value: number | null; down: Step; up: Step }): { value: number | null; down: Step; up: Step } {
+  const inMinutes = (s: Step): Step => (s.enabled ? { ...s, value: cardioMinutes(s.value) ?? 0 } : s);
+  return { value: cardioMinutes(field.value), down: inMinutes(field.down), up: inMinutes(field.up) };
 }

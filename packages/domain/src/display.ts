@@ -57,7 +57,7 @@ export function cardioDistanceText(metres: number): string {
 /** `20:00 · 4,800 m`, `20:00`, `4,800 m`, or `—` with neither. */
 export function cardioValuesText(values: Pick<SetValues, 'durationS' | 'distanceM'>): string {
   const parts: string[] = [];
-  if (values.durationS !== null && values.durationS !== undefined) parts.push(cardioTimeText(values.durationS));
+  if (values.durationS !== null) parts.push(cardioTimeText(values.durationS));
   if (values.distanceM !== null && values.distanceM !== undefined) parts.push(cardioDistanceText(values.distanceM));
   return parts.length === 0 ? '—' : parts.join(' · ');
 }
@@ -246,6 +246,8 @@ export function targetBrief(planned: Pick<PlannedSet, 'reps' | 'durationS' | 'di
 export function targetShort(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext }): string | null {
   const distance = planned.distanceM === undefined || planned.distanceM === null ? null : formatDistance(planned.distanceM);
   if (planned.load === null && planned.reps === null && planned.durationS === null && distance === null) return null;
+  // A time and a distance together is a cardio target (19 Oct): `Target 20:00 · 4,800 m`.
+  if (planned.durationS !== null && distance !== null) return `${planned.source === 'coach' ? 'Coach target' : 'Target'} ${cardioValuesText(planned)}`;
   const load = planned.load === null ? null : distance !== null ? distanceLoadText(planned.load, o.convention, o.equipment) : loadText(planned.load, o.convention, o.equipment);
   const reps = planned.reps === null ? null : repRangeText(planned.reps);
   const dur = planned.durationS === null ? null : formatDuration(planned.durationS);

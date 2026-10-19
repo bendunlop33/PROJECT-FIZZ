@@ -10,6 +10,9 @@ import {
   CARDIO_TIMER_CAP_S,
   cardioDistanceText,
   cardioElapsedMs,
+  cardioMinutes,
+  cardioMinutesField,
+  cardioSecondsFromMinutes,
   cardioValuesText,
   catalogueExerciseId,
   collectExerciseSeries,
@@ -26,6 +29,7 @@ import {
   rowValueCell,
   seriesKind,
   startWorkoutFromSession,
+  targetShort,
   targetText,
   toProgressSession,
   valuesText,
@@ -41,7 +45,7 @@ import { apply, expectError, logCmd, setsFor, startFixture } from './session-fix
  * e1RM, volume and muscle set counts.
  */
 
-const sp = (s: string | null | undefined) => s?.replace(/ /g, ' ');
+const sp = (s: string | null | undefined) => s?.replace(/\u00a0/g, ' ');
 const ROWER = exercise(0, 'Rowing machine', { id: catalogueExerciseId('rowing-erg'), catalogueKey: 'rowing-erg', measurement: 'cardio', movementPattern: 'conditioning', compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', primaryMuscles: ['quads', 'glutes', 'lats'] });
 const BIKE = exercise(0, 'Exercise bike', { id: catalogueExerciseId('exercise-bike'), catalogueKey: 'exercise-bike', measurement: 'cardio', movementPattern: 'conditioning', compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', primaryMuscles: ['quads', 'glutes'] });
 
@@ -95,6 +99,7 @@ describe('cardio text', () => {
     expect(sp(valuesText(v, { convention: 'bodyweight', measurement: 'cardio' }))).toBe('20:00 · 4,800 m');
     expect(sp(rowValueCell({ ...v, rpe: null, rir: null }, 'cardio'))).toBe('20:00 · 4,800 m');
     expect(sp(targetText({ load: null, reps: null, durationS: 1200, distanceM: 4800, rpe: null, rir: null }, { convention: 'bodyweight', measurement: 'cardio' }))).toBe('Target 20:00 · 4,800 m');
+    expect(sp(targetShort({ load: null, reps: null, durationS: 1200, distanceM: 4800, rpe: null, rir: null, source: 'coach' }, { convention: 'bodyweight' }))).toBe('Coach target 20:00 · 4,800 m');
   });
 
   it('old distance-only and time-only sets read correctly as cardio (the four machines migrated, 19 Oct)', () => {
@@ -268,5 +273,19 @@ describe('finding cardio machines', () => {
     const list = [{ exercise: { id: 'b', name: 'Bench press', measurement: 'reps' as const } }, { exercise: { id: ROWER.id, name: ROWER.name, measurement: 'cardio' as const } }, { exercise: { id: BIKE.id, name: BIKE.name, measurement: 'cardio' as const } }];
     expect(pickerSections(list, '', ['b'], { cardio: true })).toEqual([{ title: 'Cardio', items: [list[2], list[1]] }]);
     expect(pickerSections(list, 'row', [], { cardio: true }).map((x) => x.items.map((i) => i.exercise.name))).toEqual([['Rowing machine']]);
+  });
+});
+
+describe('the cardio time field is typed in minutes', () => {
+  it('20 minutes is 1200 s; half minutes keep their seconds; never past the cap or below 0', () => {
+    expect(cardioMinutes(1200)).toBe(20);
+    expect(cardioMinutes(1230)).toBe(20.5);
+    expect(cardioMinutes(null)).toBeNull();
+    expect(cardioSecondsFromMinutes(20)).toBe(1200);
+    expect(cardioSecondsFromMinutes(20.5)).toBe(1230);
+    expect(cardioSecondsFromMinutes(-3)).toBe(0);
+    expect(cardioSecondsFromMinutes(1000)).toBe(CARDIO_TIMER_CAP_S);
+    expect(cardioSecondsFromMinutes(null)).toBeNull();
+    expect(cardioMinutesField({ value: 1200, down: { enabled: true, value: 1140, label: '19:00' }, up: { enabled: false, reason: 'x' } })).toEqual({ value: 20, down: { enabled: true, value: 19, label: '19:00' }, up: { enabled: false, reason: 'x' } });
   });
 });

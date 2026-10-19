@@ -175,7 +175,8 @@ export interface AddableExercise {
   exerciseId: string;
   name: string;
   equipment: string;
-  measured: 'reps' | 'time';
+  /** `cardio` (19 Oct): a time (`workSeconds`) and optionally a distance (`distanceMetres`); never reps or a load. */
+  measured: 'reps' | 'time' | 'cardio';
 }
 
 export type OpenedFrom =

@@ -3,8 +3,6 @@ import {
   EQUIPMENT_WORD,
   SET_TYPE_BADGE,
   SET_TYPE_WORD,
-  cardioDistanceText,
-  cardioTimeText,
   formatDistance,
   formatDuration,
   formatNumber,
@@ -24,7 +22,7 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
-import { CARDIO_TIMER_CAP_S, cardioElapsedMs, cardioHasValue, paceText } from '../cardio';
+import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, cardioElapsedMs, cardioHasValue, paceText } from '../cardio';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { addedWeightItems, addWeightToggle, canAddWeight, isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
@@ -542,25 +540,6 @@ function cardioTimerView(state: SessionAggregate, set: WorkoutSet, nowMs: number
   if (wi?.status === 'running' || wi?.status === 'paused') return { state: wi.status, plannedS: wi.durationS, remainingMs: null, label: 'Stop', elapsedMs: cardioElapsedMs(wi, nowMs) };
   const ended = wi?.status === 'completed' || wi?.status === 'stopped';
   return { state: ended ? 'ended' : 'idle', plannedS: CARDIO_TIMER_CAP_S, remainingMs: null, label: 'Start', elapsedMs: null };
-}
-
-/** Cardio time steps: a minute, up to 4 h (typed as minutes in the field). */
-function cardioDurationSteps(value: number | null): { down: StepTarget; up: StepTarget } {
-  const v = value ?? 0;
-  const up = Math.min(CARDIO_TIMER_CAP_S, v + 60);
-  return {
-    up: v >= CARDIO_TIMER_CAP_S ? { enabled: false, reason: 'Maximum 4:00:00' } : { enabled: true, value: up, label: cardioTimeText(up) },
-    down: value === null || v - 60 < 0 ? { enabled: false, reason: 'Minimum 0:00' } : { enabled: true, value: v - 60, label: cardioTimeText(v - 60) },
-  };
-}
-
-/** Cardio distance steps: 100 m, never below 0 (the machine's number is usually typed). */
-function cardioDistanceSteps(value: number | null): { down: StepTarget; up: StepTarget } {
-  const v = value ?? 0;
-  return {
-    up: { enabled: true, value: v + 100, label: cardioDistanceText(v + 100) },
-    down: value === null || v - 100 < 0 ? { enabled: false, reason: 'Minimum 0' } : { enabled: true, value: v - 100, label: cardioDistanceText(v - 100) },
-  };
 }
 
 /** The time and distance fields of a set (timed, distance or cardio); null where the exercise has none. */

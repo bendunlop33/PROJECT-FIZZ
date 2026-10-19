@@ -28,7 +28,7 @@ export const EXERCISE_EQUIPMENT_WORD: Record<ExerciseEquipmentKind, string> = {
   bodyweight_station: 'Bodyweight',
   kettlebell: 'Kettlebell',
   sled: 'Sled',
-  erg: 'Erg',
+  erg: 'Cardio',
   medicine_ball: 'Medicine ball',
   sandbag: 'Sandbag',
   band: 'Band',

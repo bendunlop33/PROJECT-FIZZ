@@ -1007,7 +1007,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     heading: `${metricLabel(metric)} · ${rangeText}${trend.aggregation === 'weekly_best' ? ' · weekly best' : ''}`,
     estimateInfo: metric === 'e1rm',
     axisUnit: axisUnit(series, metric),
-    axisFormat: metric === 'longest_hold' ? 'duration' : 'number',
+    axisFormat: metric === 'longest_hold' || metric === 'total_time' ? 'duration' : 'number',
     bars: metric === 'volume',
     bounds: trend.bounds,
     chart,
