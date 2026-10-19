@@ -26,6 +26,7 @@ export * from './session/volume';
 export * from './session/time-left';
 export * from './ports';
 export * from './memory';
+export * from './morning-reminder';
 export * from './session-service';
 export * from './calendar';
 export * from './checkin';

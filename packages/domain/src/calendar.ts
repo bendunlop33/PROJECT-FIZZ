@@ -82,6 +82,11 @@ export function localHourUtcMs(localDate: string, hour: number, tz: string): num
   return guess;
 }
 
+/** The UTC instant of `hour`:`minute` local time on `localDate` in `tz` (a skipped time resolves to the instant just after the clock change). */
+export function localTimeUtcMs(localDate: string, hour: number, minute: number, tz: string): number {
+  return localHourUtcMs(localDate, hour, tz) + minute * 60_000;
+}
+
 /** Add whole days to a `YYYY-MM-DD` date (calendar arithmetic, zone-free). */
 export function addDays(localDate: string, days: number): string {
   const [y, m, d] = localDate.split('-').map(Number);
