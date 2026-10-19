@@ -164,6 +164,8 @@ export interface CardView {
   draft?: ActionRecord;
   /** (v2, BD17) The coach's clarifying question (§4.2): its tap answers, or the collapsed answer. */
   question?: QuestionCardView;
+  /** (19 Oct) A committed coach plan: the sheet shows the plan card (every day, Apply or Undo) from it. */
+  plan?: ActionRecord;
 }
 
 /**
@@ -306,6 +308,7 @@ export function cardView(r: ActionRecord): CardView {
     accessibilityPrefix: rendered.accessibilityPrefix,
     canUndo: r.status === 'committed' && r.undoneBy === null && r.detail.kind !== 'undo' && UNDOABLE.has(r.detail.kind),
     ...(r.detail.kind === 'build_workout' && r.status === 'committed' ? { draft: r } : {}),
+    ...(r.detail.kind === 'build_plan' && r.status === 'committed' ? { plan: r } : {}),
   };
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { parseTrailing, TRAILING_OPTIONS, type DateRange, type ExerciseMeasure, type ExerciseTabView } from '@fizz/domain';
+import { parseTrailing, PLAN_VERDICT_WORD, TRAILING_OPTIONS, type DateRange, type ExerciseMeasure, type ExerciseTabView, type ExerciseTargetHistory } from '@fizz/domain';
 import type { ProgressPeriodKey } from '@fizz/schemas';
 
 import { DropdownButton, DropdownPanel, PeriodPicker, useAx } from '../../progress/components';
@@ -209,6 +209,7 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
 
       <SessionsTable
         view={view}
+        targets={tab.targets ?? null}
         selected={selected}
         onSelect={(id) => {
           setSelected((cur) => (cur === id ? null : id));
@@ -355,7 +356,7 @@ function TrailingControl({ value, open, onToggle, onChoose }: { value: number; o
 const COLS = { date: 64, sets: 36 } as const;
 
 /** Sessions in the period, newest first; tapping a row selects its point. */
-function SessionsTable({ view, selected, onSelect }: { view: ExerciseTabView; selected: string | null; onSelect: (sessionId: string) => void }) {
+function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTabView; targets: ExerciseTargetHistory | null; selected: string | null; onSelect: (sessionId: string) => void }) {
   const theme = useTheme();
   const ax = useAx();
   if (view.table.rows.length === 0) return null;
@@ -374,6 +375,12 @@ function SessionsTable({ view, selected, onSelect }: { view: ExerciseTabView; se
       <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
         {`SESSIONS · ${view.table.unit.toUpperCase()}`}
       </AppText>
+      {/* Plan tracker v1 (19 Oct): targets hit, counted from what was planned and logged. */}
+      {targets?.hitText != null ? (
+        <AppText variant="callout" color="text.secondary" numeric>
+          {targets.hitText}
+        </AppText>
+      ) : null}
       {ax ? null : (
         <View style={{ flexDirection: 'row', gap: theme.space['2'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {head('DATE', { width: COLS.date })}
@@ -386,41 +393,48 @@ function SessionsTable({ view, selected, onSelect }: { view: ExerciseTabView; se
       <View>
         {view.table.rows.map((r) => {
           const on = r.sessionId === selected;
+          const t = on ? (targets?.rows.find((x) => x.sessionId === r.sessionId && x.target !== null && x.verdict !== null) ?? null) : null;
           return (
-            <Pressable
-              key={r.sessionId}
-              accessibilityRole="button"
-              accessibilityLabel={r.words}
-              accessibilityState={{ selected: on }}
-              onPress={() => {
-                onSelect(r.sessionId);
-              }}
-              style={({ pressed }) => ({
-                minHeight: theme.target.min.height,
-                paddingVertical: theme.space['2'],
-                flexDirection: ax ? 'column' : 'row',
-                alignItems: ax ? 'flex-start' : 'center',
-                gap: ax ? 2 : theme.space['2'],
-                borderTopWidth: theme.dividerWidth,
-                borderTopColor: theme.colors['border.divider'],
-                backgroundColor: on ? theme.colors['accent.subtle'] : pressed ? theme.colors['bg.raised'] : 'transparent',
-              })}
-            >
-              {ax ? (
-                <>
-                  <AppText variant="body">{r.cells.date}</AppText>
-                  <AppText variant="callout" color="text.secondary" numeric>{`${r.cells.topSet} · ${r.cells.volume} · ${r.cells.sets} sets · ${r.cells.e1rm}`}</AppText>
-                </>
-              ) : (
-                <>
-                  {cell(r.cells.date, { width: COLS.date })}
-                  {cell(r.cells.topSet, { flex: 1 })}
-                  {cell(r.cells.volume, { flex: 1, textAlign: 'right' })}
-                  {cell(r.cells.sets, { width: COLS.sets, textAlign: 'right' })}
-                  {cell(r.cells.e1rm, { flex: 1, textAlign: 'right' })}
-                </>
-              )}
-            </Pressable>
+            <View key={r.sessionId}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={r.words}
+                accessibilityState={{ selected: on }}
+                onPress={() => {
+                  onSelect(r.sessionId);
+                }}
+                style={({ pressed }) => ({
+                  minHeight: theme.target.min.height,
+                  paddingVertical: theme.space['2'],
+                  flexDirection: ax ? 'column' : 'row',
+                  alignItems: ax ? 'flex-start' : 'center',
+                  gap: ax ? 2 : theme.space['2'],
+                  borderTopWidth: theme.dividerWidth,
+                  borderTopColor: theme.colors['border.divider'],
+                  backgroundColor: on ? theme.colors['accent.subtle'] : pressed ? theme.colors['bg.raised'] : 'transparent',
+                })}
+              >
+                {ax ? (
+                  <>
+                    <AppText variant="body">{r.cells.date}</AppText>
+                    <AppText variant="callout" color="text.secondary" numeric>{`${r.cells.topSet} · ${r.cells.volume} · ${r.cells.sets} sets · ${r.cells.e1rm}`}</AppText>
+                  </>
+                ) : (
+                  <>
+                    {cell(r.cells.date, { width: COLS.date })}
+                    {cell(r.cells.topSet, { flex: 1 })}
+                    {cell(r.cells.volume, { flex: 1, textAlign: 'right' })}
+                    {cell(r.cells.sets, { width: COLS.sets, textAlign: 'right' })}
+                    {cell(r.cells.e1rm, { flex: 1, textAlign: 'right' })}
+                  </>
+                )}
+              </Pressable>
+              {t !== null && t.verdict !== null ? (
+                <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Target ${t.target ?? ''}, did ${t.actual}. ${PLAN_VERDICT_WORD[t.verdict]}.`}>
+                  {`Target ${t.target ?? ''} · ${t.actual} · ${PLAN_VERDICT_WORD[t.verdict]}`}
+                </AppText>
+              ) : null}
+            </View>
           );
         })}
       </View>

@@ -37,7 +37,7 @@ import {
   type ResumeBar,
 } from '@fizz/domain';
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
-import type { Exercise, ProgressGrouping, ProgressPeriodKey, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, ProgressGrouping, ProgressPeriodKey, SessionAggregate, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Progress (progress.md v1.0, slice A). Local reads only: nothing here waits
@@ -138,6 +138,8 @@ export interface ExerciseTab {
   today: string;
   earliest: string;
   unreadable: number;
+  /** (19 Oct, plan tracker v1) The exercise's target against actual per workout and `Targets hit 5 of last 6`; null with no exercise. */
+  targets?: ExerciseTargetHistory | null;
 }
 
 export type ConfirmOutcome = { ok: true; sessionId: string; version: number } | { ok: false; message: string };
@@ -261,6 +263,21 @@ export function createProgressService(deps: ProgressServiceDeps) {
     };
   }
 
+  /** Target against actual for one exercise: its newest finished workouts, read as planned and logged (plan tracker v1). */
+  async function targetsFor(profile: UserProfile, sessions: readonly ProgressSession[], exerciseId: string, limit = 20): Promise<ExerciseTargetHistory> {
+    const ids = sessions
+      .filter((x) => x.exercises.some((e) => e.exerciseId === exerciseId))
+      .sort((a, b) => b.startedMs - a.startedMs)
+      .slice(0, limit)
+      .map((x) => x.sessionId);
+    const aggregates: SessionAggregate[] = [];
+    for (const id of ids) {
+      const a = await repos().sessions.get(id).catch(() => null);
+      if (a !== null && a.session.ownerId === profile.id) aggregates.push(a);
+    }
+    return exerciseTargetHistory(aggregates, exerciseId, limit);
+  }
+
   /**
    * Ben's choices on exercise detail, per exercise, for this run of the app
    * (§4.2: the series and the rep-table toggle are remembered per exercise).
@@ -313,7 +330,8 @@ export function createProgressService(deps: ProgressServiceDeps) {
               measure: req.measure ?? null,
               trailing: req.trailing ?? null,
             });
-      return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable };
+      const targets = exerciseId === null ? null : await targetsFor(profile, ctx.sessions, exerciseId).catch(() => null);
+      return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable, targets };
     },
 
     /**
@@ -373,17 +391,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const profile = await deps.profile();
       if (!profile) return null;
       const { sessions } = await finishedSessions(profile);
-      const ids = sessions
-        .filter((x) => x.exercises.some((e) => e.exerciseId === exerciseId))
-        .sort((a, b) => b.startedMs - a.startedMs)
-        .slice(0, limit)
-        .map((x) => x.sessionId);
-      const aggregates = [];
-      for (const id of ids) {
-        const a = await repos().sessions.get(id).catch(() => null);
-        if (a !== null && a.session.ownerId === profile.id) aggregates.push(a);
-      }
-      return exerciseTargetHistory(aggregates, exerciseId, limit);
+      return targetsFor(profile, sessions, exerciseId, limit);
     },
 
     /**
