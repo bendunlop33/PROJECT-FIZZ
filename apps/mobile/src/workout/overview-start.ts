@@ -1,7 +1,7 @@
 import { asksReasons, DEFAULT_CHECK_IN_SETTINGS, type CheckInGate, type WorkoutOverview } from '@fizz/domain';
 import type { CheckIn, CheckInScore, SessionCheckIn } from '@fizz/schemas';
 
-import type { OverviewData, OverviewStartOf, WorkoutStartOutcome } from '../services/workout-services';
+import type { OverviewData, OverviewStartOf, OverviewTarget, WorkoutStartOutcome } from '../services/workout-services';
 import { checkInForStart, OVERVIEW_COPY, startFailure } from './overview';
 import { TODAY_EDITS_COPY } from './overview-edits';
 
@@ -41,6 +41,21 @@ export function createGuard(): { run: <R>(fn: () => Promise<R>) => Promise<R | n
  */
 export function samePage(a: WorkoutOverview, b: WorkoutOverview): boolean {
   return JSON.stringify({ ...a, previewKey: '' }) === JSON.stringify({ ...b, previewKey: '' });
+}
+
+/**
+ * The gym the overview plans at (Coach v3 review B2, Ben 18 Oct "in my hotel gym"): a gym Ben
+ * picked on this page with the gym switcher; else, for a coach draft, the gym it was built at while
+ * that gym is still saved (`draftGym`); else the gym in use. Start sends the page's gym, so the
+ * workout runs and is filed there too.
+ */
+export async function overviewGymId(ports: { draftGym: (draftId: string) => Promise<string | null>; currentGym: () => Promise<string | null> }, target: OverviewTarget, picked: string | null): Promise<string | null> {
+  if (picked !== null) return picked;
+  if (target.kind === 'coach_draft') {
+    const own = await ports.draftGym(target.draftId).catch(() => null);
+    if (own !== null) return own;
+  }
+  return ports.currentGym().catch(() => null);
 }
 
 export type OverviewStartResult =

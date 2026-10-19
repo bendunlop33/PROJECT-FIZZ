@@ -5,6 +5,7 @@ import type { TextCoachState } from '@fizz/providers';
 
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, contextWorkout, replyWith, StepModel, toolCall } from './coach-model';
+import { overviewGymId } from '../src/workout/overview-start';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -100,6 +101,53 @@ describe('Ben’s report "Can’t properly create based on constraints I give" (
     // The card shows the draft's own gym, whatever gym the sheet is on.
     const card = await s.coachDrafts.card({ draftId: second.draft.id, versionN: 1, gymId: mainId });
     expect(card).toMatchObject({ name: 'Shoulders · 40 min', gymName: 'Hotel gym' });
+  });
+
+  it('review B2: the hotel draft opens and starts at the hotel gym, with the hotel’s dumbbells; the gym switcher still wins', async () => {
+    const { s, mainId, hotelId } = await twoGyms();
+    await logWorkout(h, s, mainId, [{ exercise: 'Dumbbell shoulder press', sets: [{ load: 32.5, reps: 10, rpe: 8 }, { load: 32.5, reps: 10, rpe: 8 }] }]);
+    h.clockMs += 2 * DAY;
+    model = new StepModel([shoulders({ minutes: 40, gymName: 'Hotel gym' }), () => replyWith('Here it is.')]);
+    const { draft } = await draftOf(s, await say(s, `${BEN_HOTEL}, 40 minutes`, null));
+    const target = { kind: 'coach_draft' as const, draftId: draft.id };
+    const ports = { draftGym: (id: string) => s.coachDrafts.gymOf(id), currentGym: async () => (await s.yourData.currentGym())?.id ?? null };
+    // Main Gym is still the gym in use; the draft opens at its own gym.
+    expect((await s.yourData.currentGym())?.id).toBe(mainId);
+    const gymId = await overviewGymId(ports, target, null);
+    expect(gymId).toBe(hotelId);
+    const page = await s.overview.load({ target, gymId });
+    if (page === null) throw new Error('no overview');
+    expect(page.view.gym?.name).toBe('Hotel gym');
+    expect(page.view.title).toBe('Shoulders · 40 min');
+    // The same draft at Main Gym plans the press from his 32.5 kg sets there.
+    const atMain = await s.overview.load({ target, gymId: mainId });
+    expect(atMain?.view.gym?.name).toBe('Main Gym');
+    expect(JSON.stringify(atMain?.view.rows.find((r) => r.name === 'Dumbbell shoulder press')?.load)).toMatch(/32\.5/);
+    const started = await s.overview.start({ startOf: page.startOf, gymId: page.view.gym?.id ?? null, opId: 'start-hotel', checkIn: { kind: 'skipped', atUtc: h.now().utc }, expectedPreviewKey: page.view.previewKey, draft: page.draft === null ? null : { id: page.draft.id, expectedVersion: page.draft.version } });
+    if (!started.ok) throw new Error(started.error.message);
+    // Filed under the hotel gym; the press is planned on the hotel's rack (up to 25 kg), not Main Gym's 32.5 kg (rule 4).
+    expect(started.aggregate.session.gymId).toBe(hotelId);
+    const hotelBells: number[] = (await s.yourData.equipment(hotelId)).flatMap((e) => (e.kind === 'dumbbells' ? [...e.loads] : []));
+    expect(Math.max(...hotelBells)).toBe(25);
+    const press = started.aggregate.exercises.find((e) => e.exerciseName === 'Dumbbell shoulder press');
+    const loads = started.aggregate.sets.filter((x) => x.sessionExerciseId === press?.id && x.setType !== 'warmup').map((x) => x.planned.load);
+    expect(loads.length).toBeGreaterThan(0);
+    for (const l of loads) {
+      expect(l?.convention).toBe('per_hand');
+      expect(hotelBells).toContain(l?.value);
+    }
+    // Ben picks another gym on the page: that wins over the draft's own.
+    expect(await overviewGymId(ports, target, mainId)).toBe(mainId);
+  });
+
+  it('review B2: a draft whose gym was archived opens at the gym in use', async () => {
+    const { s, mainId, hotelId } = await twoGyms();
+    model = new StepModel([shoulders({ minutes: 40, gymName: 'Hotel gym' }), () => replyWith('Here it is.')]);
+    const { draft } = await draftOf(s, await say(s, BEN_HOTEL, null));
+    expect(await s.coachDrafts.gymOf(draft.id)).toBe(hotelId);
+    const ports = { draftGym: () => Promise.resolve(null), currentGym: () => Promise.resolve(mainId) };
+    expect(await overviewGymId(ports, { kind: 'coach_draft', draftId: draft.id }, null)).toBe(mainId);
+    expect(await overviewGymId({ ...ports, draftGym: () => Promise.resolve(hotelId) }, { kind: 'next' }, null)).toBe(mainId);
   });
 
   it('Ben’s literal number wins: the model says 45 on "make it 40", the draft is 40', async () => {

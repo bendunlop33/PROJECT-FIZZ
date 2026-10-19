@@ -429,7 +429,9 @@ export function coachEditPainHold(input: { aggregate: SessionAggregate; command:
         if (f !== null) return said(step.exercise.name, f);
         break;
       }
-      default:
+      case 'remove_exercise':
+      case 'skip_exercise':
+      case 'move_exercise':
         break;
     }
   }

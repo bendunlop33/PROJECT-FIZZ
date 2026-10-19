@@ -4769,6 +4769,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
+     * The gym a draft was built at (Coach v3, Ben 18 Oct "in my hotel gym"; review B2): the
+     * current version's gym while it is still saved and not archived, else null (the caller's
+     * gym). Opening and Start plan the draft there, so loads fit that gym (rule 4) and the
+     * workout is filed under it. Local read only.
+     */
+    async gymOf(draftId: string): Promise<string | null> {
+      try {
+        const p = await owner();
+        const d = await coachDrafts.get(draftId);
+        const version = d?.versions.find((v) => v.n === d.currentVersion) ?? d?.versions.at(-1) ?? null;
+        const gymId = version?.request.gymId ?? null;
+        if (gymId === null) return null;
+        const g = await repos().gyms.get(gymId).catch(() => null);
+        return g !== null && g.ownerId === p.id && g.archivedAtUtc === undefined ? g.id : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
      * The draft card (§4.2): name, counts and `≈` minutes from the stored
      * draft and the same dry run the overview shows (`estimateRemainingDuration`
      * of the fitted plan), and its end state. Null when it can't be read.
