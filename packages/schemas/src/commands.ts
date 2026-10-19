@@ -622,6 +622,75 @@ export const SetLoadModeCommandSchema = z.object({
   mode: z.enum(['added', 'bodyweight']),
 });
 
+/**
+ * (Coach v3, ADR 0027, 18 Oct) Move a live row (with its whole superset, when
+ * it is in one) to straight after another live row, or first. Only a row with
+ * a set not done yet; no set changes (rule 2). Versioned on the session (rule
+ * 5); Undo (`undo_op`) puts the rows back in their old order while nothing
+ * was moved since.
+ */
+export const MoveExerciseCommandSchema = z.object({
+  type: z.literal('move_exercise'),
+  ...base,
+  opId: OperationIdSchema,
+  sessionExerciseId: IdSchema,
+  /** Straight after this live row (after its whole superset); null = first. */
+  afterSessionExerciseId: IdSchema.nullable(),
+  expectedVersion: z.int().min(1),
+});
+
+/** One step of a coach edit: the workout's own commands, checked by the planner (`planCoachEdit`). */
+export const CoachEditStepSchema = z.discriminatedUnion('type', [
+  AdjustPendingTargetsCommandSchema,
+  SwapExerciseCommandSchema,
+  AddExerciseCommandSchema,
+  RemoveExerciseCommandSchema,
+  SkipExerciseCommandSchema,
+  MoveExerciseCommandSchema,
+]);
+export type CoachEditStep = z.infer<typeof CoachEditStepSchema>;
+
+/** The operation ID of step `index` of a coach edit (each step is recorded as its own operation, for Undo). */
+export function coachEditStepOpId(opId: string, index: number): string {
+  return `${opId}:${String(index)}`;
+}
+
+/**
+ * (Coach v3, ADR 0027, 18 Oct) The coach's `edit_today`: several changes to
+ * today's workout (swap, add, remove, move, set count, set targets) as one
+ * operation. All or nothing, one version bump (rule 5: refused when the
+ * workout moved on since `expectedVersion`). Each step is the workout's own
+ * command, run in order with the step's opId `coachEditStepOpId(opId, i)`
+ * (its own guards apply: pending sets only, achievable loads). Steps'
+ * `expectedVersion`s are set by the reducer as it goes. `actionId`: the coach
+ * record; the target step (`adjust_pending_targets`) carries the same one.
+ * Undo is `revert_coach_edit`.
+ */
+export const CoachEditTodayCommandSchema = z.object({
+  type: z.literal('coach_edit_today'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  actionId: IdSchema,
+  steps: z.array(CoachEditStepSchema).min(1).max(24),
+});
+export type CoachEditTodayCommand = z.infer<typeof CoachEditTodayCommandSchema>;
+
+/**
+ * Undo of one coach edit (Ben's tap): each step undone in reverse order with
+ * its own Undo, all or nothing, one version bump. Refused when any of it
+ * changed since (a set done on an added exercise, a row moved again), so
+ * nothing is half undone. Target changes come back only on sets still pending
+ * (a set logged since stays, as for `revert_target_adjustment`).
+ */
+export const RevertCoachEditCommandSchema = z.object({
+  type: z.literal('revert_coach_edit'),
+  ...base,
+  opId: OperationIdSchema,
+  targetOpId: OperationIdSchema,
+  actionId: IdSchema,
+});
+
 export const SessionCommandSchema = z.discriminatedUnion('type', [
   LogSetCommandSchema,
   SaveDraftCommandSchema,
@@ -657,6 +726,9 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   SetTargetRpeCommandSchema,
   EditPlannedSetCommandSchema,
   SetLoadModeCommandSchema,
+  MoveExerciseCommandSchema,
+  CoachEditTodayCommandSchema,
+  RevertCoachEditCommandSchema,
 ]);
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 export type SessionCommandType = SessionCommand['type'];

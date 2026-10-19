@@ -11,7 +11,7 @@ import {
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
 import { DraftBasisSchema } from './draft';
-import type { SessionCommand } from './commands';
+import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
 import type { Exercise } from './exercise';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
@@ -210,6 +210,46 @@ export const RenameWorkoutArgsSchema = z.strictObject({
 });
 export type RenameWorkoutArgs = z.infer<typeof RenameWorkoutArgsSchema>;
 
+/**
+ * (Coach v3, ADR 0027, 18 Oct) One change to today's live workout in `edit_today`. IDs are
+ * the workout's (`sessionExerciseId`, `setId`) or, for a new exercise, one from YOUR DATA
+ * `addable` (`exerciseId`, `toExerciseId`). Only sets not done yet change (rule 2); the app
+ * checks and fits every number (rule 4) and refuses the whole edit if any op is refused.
+ */
+export const EditTodayOpSchema = z.discriminatedUnion('op', [
+  /** A pending set's target (load, reps, target RPE; null keeps a value). */
+  z.strictObject({ op: z.literal('set'), setId: IdSchema, target: CoachTargetSchema }),
+  /** The exercise's working sets today, done ones included: more adds pending sets like its last one, fewer removes pending ones from the end. */
+  z.strictObject({ op: z.literal('set_count'), sessionExerciseId: IdSchema, workingSets: z.int().min(0).max(20) }),
+  /** The exercise's pending sets move to another exercise (done sets stay). */
+  z.strictObject({ op: z.literal('swap'), sessionExerciseId: IdSchema, toExerciseId: z.string().min(1).max(80) }),
+  /** A new exercise with pending sets; the app plans its loads from Ben's history on this gym's equipment. */
+  z.strictObject({
+    op: z.literal('add'),
+    exerciseId: z.string().min(1).max(80),
+    workingSets: z.int().min(0).max(100),
+    reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
+    workSeconds: z.int().min(0).max(36_000).nullable(),
+    targetRpe: z.number().min(0).max(20).nullable(),
+    afterSessionExerciseId: IdSchema.nullable(),
+    supersetWithSessionExerciseId: IdSchema.nullable(),
+  }),
+  /** The exercise's pending sets go (a row with nothing done leaves the workout; otherwise its rest is skipped). */
+  z.strictObject({ op: z.literal('remove'), sessionExerciseId: IdSchema }),
+  /** The exercise (with its superset) goes straight after another one, or first (null). */
+  z.strictObject({ op: z.literal('move'), sessionExerciseId: IdSchema, afterSessionExerciseId: IdSchema.nullable() }),
+]);
+export type EditTodayOp = z.infer<typeof EditTodayOpSchema>;
+
+export const EditTodayArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  ops: z.array(EditTodayOpSchema).min(1).max(12),
+  reason,
+  ...askClaim,
+});
+export type EditTodayArgs = z.infer<typeof EditTodayArgsSchema>;
+
 export const GetRecentActionsArgsSchema = z.strictObject({
   limit: z.int().min(1).max(10),
 });
@@ -320,6 +360,11 @@ export const CoachToolNameSchema = z.enum([
   'add_exercise_today',
   /** (14 Oct) Rename the live workout when Ben asks; applied at once with Undo. */
   'rename_workout',
+  /**
+   * (Coach v3, 18 Oct) One general tool for today's live workout: swap, add, remove, move, set count
+   * and set targets. Replaces `adjust_pending_sets` and `add_exercise_today` on live-workout turns.
+   */
+  'edit_today',
   'log_set',
   'correct_set',
   'set_next_session_targets',
@@ -348,6 +393,7 @@ export const COACH_TOOL_ARGS = {
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
   add_exercise_today: AddExerciseTodayArgsSchema,
   rename_workout: RenameWorkoutArgsSchema,
+  edit_today: EditTodayArgsSchema,
   log_set: LogSetArgsSchema,
   correct_set: CorrectSetArgsSchema,
   set_next_session_targets: SetNextSessionTargetsArgsSchema,
@@ -516,6 +562,39 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     sessionId: IdSchema,
     before: z.string().min(1).max(120).nullable(),
     after: z.string().min(1).max(120),
+  }),
+  /**
+   * (Coach v3, ADR 0027, 18 Oct) The coach's change to today's live workout (`edit_today`): swaps,
+   * adds, removals, moves, set counts and set targets, as one operation (`coach_edit_today`).
+   * `lines`: app text, one per structural change (`Bench press → Dumbbell bench press`).
+   * `exercises`: set targets and counts before and after (as `adjust_pending_sets`). `names`: every
+   * exercise the edit touched, for the claim check. `command`: exactly what applies (and, on an
+   * offer, what Ben's accept applies, with no model call), or null on a refusal. `proposalId`: on
+   * the record of Ben's accept, the offer it applied. Undo is `revert_coach_edit` on the command.
+   */
+  z.object({
+    kind: z.literal('edit_today'),
+    sessionId: IdSchema,
+    baseVersion: z.int().min(1),
+    lines: z.array(StructuralChangeLineSchema).max(24),
+    exercises: z.array(ExerciseTargetChangesSchema).max(24),
+    names: z.array(z.string().min(1).max(120)).max(48),
+    /** Each added exercise as saved (in the order of the `add` lines): its first working set's target, for the card. */
+    added: z
+      .array(
+        z.object({
+          exerciseName: z.string().min(1).max(120),
+          sets: z.int().min(0).max(20),
+          target: CoachTargetSchema.nullable(),
+          durationS: z.int().min(0).max(36_000).nullable(),
+          afterName: z.string().min(1).max(120).nullable(),
+          supersetWithName: z.string().min(1).max(120).nullable(),
+        }),
+      )
+      .max(12)
+      .optional(),
+    command: CoachEditTodayCommandSchema.nullable(),
+    proposalId: IdSchema.optional(),
   }),
   /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
   z.object({
@@ -979,7 +1058,7 @@ export type CoachWrite =
    * `saveExercise` (coach add, review S3): a catalogue exercise not yet in Ben's exercises, saved in the same
    * transaction as the command, so a refused or stale add leaves no exercise row behind (audit F4).
    */
-  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise }
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise; saveExercises?: readonly Exercise[] }
   /**
    * (12 Oct, workout builder) A coach draft and its record, in one write.
    * `expectedVersion`: null creates the draft; otherwise the draft's version
