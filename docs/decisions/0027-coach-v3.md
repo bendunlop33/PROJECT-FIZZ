@@ -49,4 +49,16 @@ Ben asked "Why isn't the coach more dynamic like AI would be?". He agreed to the
 
 - The fallback word lists can't block a request the model understood and quoted. A model that makes a quote up gets an offer, not a change.
 - Every live turn carries about 60 add entries, roughly 1.8k more input tokens.
-- Opening a draft built at another gym still plans it at the current gym until Ben switches gym on the overview. This is an open item.
+- A draft opens and starts at the gym it was built at while that gym is saved; the overview's gym switcher still wins.
+
+## Review fixes (docs/reviews/coach-v3.md, 19 Oct)
+
+- **B1.** `Adjust` on a stored offer reads pain again. A flag set since the offer refuses an increase, more sets, an add or a swap it covers (`coachEditPainHold`).
+- **B2.** Opening and Start plan a coach draft at its own gym (`coachDrafts.gymOf`, `overviewGymId`).
+- **S1.** Only logged results back "you did 105 × 8": targets, plans and change cards no longer count as sets done.
+- **S2.** A bare number sets the length only when Ben's message revises it ("make it 40", "40 instead"); "work up to 140 on squat" doesn't.
+- **S3.** A verified quote applies only when it reads as a request, or is his whole short answer ("Working set"). A statement or an opinion question ("Bench felt easy, what do you think?") is offered. This narrows decision 1; Ben to confirm (review SP1).
+- **S4.** `Adjust` on an offer with no stored edit runs the model, but its edit is shown as an offer first. Only a stored offer applies on accept, so what applies is always what Ben saw.
+- **S5.** A `Too easy` / `Too hard` tap the coach answers with a question and no change gets the built-in rule's change at once, with Undo. A plain "no change" answer still stands.
+- **S6.** Earlier messages steer a build (its gym) only within the build being changed: back to its request, within 12 hours. A new request starts fresh.
+- **S7.** A mid-workout model his plan stops listing reads "not available" in Settings and `Choose model` in the workout. Chips and offers fall back to the built-in rule. No other model is used.
