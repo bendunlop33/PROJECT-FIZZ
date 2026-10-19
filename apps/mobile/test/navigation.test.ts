@@ -247,10 +247,10 @@ describe('Library stack: Your plan from Today (review planview S1)', () => {
   };
   const nested = (a: ReturnType<typeof openYourPlan>) => {
     const tab = a.payload.params;
-    if (tab.screen !== 'Library' || tab.params === undefined || !('screen' in tab.params) || tab.params.screen === undefined) throw new Error('not Library');
-    return { type: 'NAVIGATE', payload: { name: tab.params.screen, ...(tab.params.params === undefined ? {} : { params: tab.params.params as object }), ...(tab.params.pop === undefined ? {} : { pop: tab.params.pop }) } } as const;
+    if (tab.screen !== 'Library' || tab.params === undefined || !('screen' in tab.params)) throw new Error('not Library');
+    return { type: 'NAVIGATE', payload: { name: tab.params.screen, ...(tab.params.params === undefined ? {} : { params: tab.params.params }), ...(tab.params.pop === undefined ? {} : { pop: tab.params.pop }) } } as const;
   };
-  const withPlanDay = () => apply(router.getInitialState(options) as State, { type: 'NAVIGATE', payload: { name: 'LibraryPlanDay', params: { routineId: 'r1' } } });
+  const withPlanDay = () => apply(router.getInitialState(options), { type: 'NAVIGATE', payload: { name: 'LibraryPlanDay', params: { routineId: 'r1' } } });
 
   it('a plan day on top is popped: the stack is exactly [LibraryHome] on Workouts with the nonce', () => {
     const s = apply(withPlanDay(), nested(openYourPlan('n1')));
