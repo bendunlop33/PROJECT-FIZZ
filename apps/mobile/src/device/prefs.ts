@@ -1,4 +1,5 @@
 import type { TextFile } from '../backup/backup-service';
+import { DEFAULT_VOICE_PREFS, parseVoicePrefs, type VoicePrefs } from '../voice/settings';
 
 /**
  * Preferences that belong to this phone, not to Ben's training data, so they
@@ -19,24 +20,27 @@ export interface DevicePrefs {
   workoutView: 'table' | 'focus';
   /** The Library tab's last segment (exercise-library EL10): a UI preference, not Your data, not backed up. */
   librarySegment: 'exercises' | 'workouts';
+  /** Settings › Voice: spoken cues, reading coach replies, the voice and its speed (this phone's voices). */
+  voice: VoicePrefs;
 }
 
 export type AlertsAsk = 'undetermined' | 'later' | 'answered';
 
-export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises' };
+export const DEFAULT_PREFS: DevicePrefs = { themeDirection: null, guideAnimations: true, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS };
 
 export function parsePrefs(text: string | null): DevicePrefs {
   if (text === null) return DEFAULT_PREFS;
   try {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
-    const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown };
+    const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment, voice } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown; voice?: unknown };
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
       guideAnimations: guideAnimations !== false,
       alertsAsk: alertsAsk === 'later' || alertsAsk === 'answered' ? alertsAsk : 'undetermined',
       workoutView: workoutView === 'focus' ? 'focus' : 'table',
       librarySegment: librarySegment === 'workouts' ? 'workouts' : 'exercises',
+      voice: parseVoicePrefs(voice),
     };
   } catch {
     return DEFAULT_PREFS;
