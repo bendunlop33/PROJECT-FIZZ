@@ -29,7 +29,8 @@ export const BUILD_LIMITS = {
   maxRestS: 300,
   minSuperset: 2,
   maxSuperset: 4,
-  messageMax: 240,
+  /** (Coach v3, ADR 0027) Was 240: room for a coach's reasons, with checked numbers. */
+  messageMax: 600,
 } as const;
 
 /** How long a coach draft is kept (BD4). */

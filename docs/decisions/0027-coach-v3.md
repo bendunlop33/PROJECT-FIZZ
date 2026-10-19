@@ -1,6 +1,6 @@
 # 0027: Coach v3: the model reads intent, code checks it
 
-**Status:** Approved by Ben, 18 Oct 2026, after build 156. **Built: slice 1** (intent by the model, verified; build length, focus and gym from the tool's arguments; the add list on every live turn; the last logged set in context). Later slices are listed under "Still to build". **Not working yet:** nothing here has run on Ben's iPhone or against the real plan route. Builds on [ADR 0020](0020-coach-v1.md) and [ADR 0025](0025-coach-built-workout-drafts.md).
+**Status:** Approved by Ben, 18 Oct 2026, after build 156. **Built: slices 1–6** (below). **Not working yet:** nothing here has run on Ben's iPhone or against the real plan route. Builds on [ADR 0020](0020-coach-v1.md) and [ADR 0025](0025-coach-built-workout-drafts.md).
 
 ## Context
 
@@ -36,15 +36,16 @@ Ben asked "Why isn't the coach more dynamic like AI would be?". He agreed to the
    - **Draft card.** The card shows the gym the draft was built at.
 4. **The add list goes on every live-workout turn** with no word gate. It is capped at 60 entries, with the exercises Ben named first.
 
-## Still to build (approved in the same plan)
-
-- One general `edit_today` tool (swap, add, remove, move, set count, set targets) as one composite versioned change with one Undo. Offers are stored as proposed records and applied without re-running the model.
-- History reads: records (e1RM labelled est.), recent sessions, a gym summary. A cap on reads and a cache.
-- Numbers allowed in replies when they're checked against the facts the coach was given. Unverified sentences are dropped.
-- Reasoning effort per turn kind, probed per route. An optional lighter mid-workout model, and a "think harder" step.
-- Tone and length limits.
+5. **One tool for today's workout (`edit_today`).** Swap, add, remove, move, set count and set targets in one call, applied as one versioned change (`coach_edit_today`) with one Undo (`revert_coach_edit`), all or nothing. Pending sets only. An edit Ben didn't ask for is checked and saved as an offer; `Adjust` applies exactly that saved edit with no model call, refused as stale if the workout moved on. Replaces `adjust_pending_sets` and `add_exercise_today` on live turns (their records and Undo stay).
+6. **History reads.** `get_exercise_records` (heaviest logged set, most reps, best estimated 1RM, always labelled an estimate), `get_recent_sessions` (last workouts with sets as logged) and `get_gym_equipment` by saved gym name with a one-line summary per item. At most 4 reads a turn; an identical read is answered from the turn's cache. 6 model steps a turn (was 4). A live-workout turn has a 30 s cap.
+7. **Numbers allowed, checked** (`packages/coach/src/numbers.ts`). A number in a reply or a draft message must be in what the coach was given: YOUR DATA, tool results, cards or Ben's words, never the model's own earlier words. A set stated as done must match a logged load and reps together. Advice counts (reps, sets, RPE, rest, minutes) pass on their own unless the sentence is about the past or a record. An estimated 1RM must be called an estimate. A sentence that fails is hidden whole (`unverified_number`, in `Why?`).
+8. **Reasoning effort.** Build turns `high`, live-workout turns `low`, everything else `medium`, sent as `reasoning.effort`. The plan route's support is unproven: it is sent while unknown, a 400 before any stream event is retried once without it, and the result is remembered per model (`supported` / `rejected`). `think_harder` (live turns, once a turn) moves the next steps to `high` on Ben's main model. Settings → Coach connection → `Mid-workout` picks an optional lighter model from his plan's listed models; the default is the coach's own model.
+9. **Tone.** A coach's voice; one or two short sentences mid-workout. Build message up to 600 characters (was 240). Still at most 2 build questions.
 
 ## Consequences
+
+- Nothing here has run on Ben's iPhone or against the real plan route. All tests use a scripted model. The `reasoning` field and any mid-workout model must be checked on the device before they count as working.
+- The number check passes any number found anywhere in the facts, whatever it was about (except load × reps pairs in record statements). It stops invented numbers, not every misattributed one.
 
 - The fallback word lists can't block a request the model understood and quoted. A model that makes a quote up gets an offer, not a change.
 - Every live turn carries about 60 add entries, roughly 1.8k more input tokens.

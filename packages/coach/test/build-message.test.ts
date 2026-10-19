@@ -28,10 +28,11 @@ describe('checkedRationale: words only (r5 B1u)', () => {
     for (const m of ['Bench at １０２.５ today.', 'Bench for Ⅻ reps.', 'Top set ① then back-offs.', 'Bench 1. Rows 2.']) expect(checkedRationale(m) ?? '').not.toMatch(/\p{N}/u);
   });
 
-  it('both prompts ask for words only, never numbers', () => {
+  it('Coach v3 (ADR 0027): every build prompt allows numbers only from what the coach was given, up to 600 characters', () => {
     for (const p of [BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS]) {
-      expect(p).toContain('explain in words only; never state numbers — the app shows them');
-      expect(p).not.toContain('citing only facts given');
+      expect(p).not.toContain('never state numbers');
+      expect(p).toMatch(/must come from YOUR DATA, a tool result, Ben’s words or this workout/);
+      expect(p).toContain('at most 600 characters');
     }
   });
 });

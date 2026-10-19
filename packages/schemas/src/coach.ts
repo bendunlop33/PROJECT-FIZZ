@@ -813,8 +813,8 @@ export const ActionRecordSchema = z.object({
   detail: ActionDetailSchema,
   /** Why a `rejected` / `stale` / `failed` action didn't happen, as app text. */
   failure: z.string().min(1).max(200).nullable(),
-  /** The coach's one-sentence reason, after the claim check. */
-  reason: z.string().max(240).nullable(),
+  /** The coach's reason, after the claim check. (Coach v3) Up to 600: a build's message is its reason. */
+  reason: z.string().max(600).nullable(),
   evidenceRefs: z.array(z.string().min(1).max(120)).max(40),
   guardNotes: z.array(GuardNoteSchema).max(40),
   entityVersions: z.array(EntityVersionSchema).max(60),
