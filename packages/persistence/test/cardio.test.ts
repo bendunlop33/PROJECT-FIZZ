@@ -130,6 +130,7 @@ describe('migration 21: the four machines become cardio, history included', () =
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
       const copy = { ...row };
       delete copy.measures_cardio;
+      delete copy.round_offset;
       return copy;
     });
     expect(tables.session_exercises.find((r) => r.exercise_id === ROWING_ID)).toMatchObject({ measurement: 'reps', measures_distance: 1 });
@@ -181,6 +182,7 @@ describe('migration 21 mid-workout: an air-bike timer already running (review S7
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
       const copy = { ...row };
       delete copy.measures_cardio;
+      delete copy.round_offset;
       return copy;
     });
     const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables };

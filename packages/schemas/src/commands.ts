@@ -166,6 +166,12 @@ export const FinishCommandSchema = z.object({
   expectedVersion: z.int().min(1),
   /** Chosen end time (e.g. forgotten Finish: last set + 3 min); null = `at`. */
   endedAt: ZonedTimestampSchema.nullable(),
+  /**
+   * (Ben, 19 Oct: "change start and end by scrolling when finish workout")
+   * A corrected start time, chosen on the Finish sheet; absent = unchanged.
+   * Checked like `update_session_timing` (not after the first logged set) and audited.
+   */
+  startedAt: ZonedTimestampSchema.optional(),
 });
 
 /**
@@ -639,6 +645,37 @@ export const MoveExerciseCommandSchema = z.object({
   expectedVersion: z.int().min(1),
 });
 
+/**
+ * `Superset with…` on a live row (Ben, 19 Oct): `sessionExerciseId` joins
+ * `withSessionExerciseId`'s superset (or both get a new group letter) and
+ * moves to straight after that superset's last member. Both need a set not
+ * done yet. Only rows and order change, never a set (rule 2). Versioned on
+ * the session (rule 5) and idempotent (`opId`); Undo (`undo_op`) puts the row
+ * back where it was and out of the group while nothing moved since.
+ */
+export const LinkSupersetCommandSchema = z.object({
+  type: z.literal('link_superset'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  sessionExerciseId: IdSchema,
+  withSessionExerciseId: IdSchema,
+});
+
+/**
+ * `Remove superset` (Ben, 19 Oct): every member of `sessionExerciseId`'s
+ * superset goes back to a single exercise, in the same order. No set changes
+ * (rule 2). Versioned and idempotent; Undo (`undo_op`) groups them again while
+ * they are still as the split left them.
+ */
+export const SplitSupersetCommandSchema = z.object({
+  type: z.literal('split_superset'),
+  ...base,
+  opId: OperationIdSchema,
+  expectedVersion: z.int().min(1),
+  sessionExerciseId: IdSchema,
+});
+
 /** One step of a coach edit: the workout's own commands, checked by the planner (`planCoachEdit`). */
 export const CoachEditStepSchema = z.discriminatedUnion('type', [
   AdjustPendingTargetsCommandSchema,
@@ -647,6 +684,8 @@ export const CoachEditStepSchema = z.discriminatedUnion('type', [
   RemoveExerciseCommandSchema,
   SkipExerciseCommandSchema,
   MoveExerciseCommandSchema,
+  LinkSupersetCommandSchema,
+  SplitSupersetCommandSchema,
 ]);
 export type CoachEditStep = z.infer<typeof CoachEditStepSchema>;
 
@@ -727,6 +766,8 @@ export const SessionCommandSchema = z.discriminatedUnion('type', [
   EditPlannedSetCommandSchema,
   SetLoadModeCommandSchema,
   MoveExerciseCommandSchema,
+  LinkSupersetCommandSchema,
+  SplitSupersetCommandSchema,
   CoachEditTodayCommandSchema,
   RevertCoachEditCommandSchema,
 ]);

@@ -458,7 +458,7 @@ function supersetCard(input: ActiveViewInput, group: string, memberRoots: readon
     });
     const ruleRpe = input.ruleTargetRpe?.[action.id] ?? null;
     for (const r of buildSetRows(input, root.id, activeSetId)) built.push(rowOf(state, r, activeSetId, ruleRpe, tag, action.exerciseName));
-    unitsByMember.push({ tag, name: action.exerciseName, units: parts.flatMap((p) => setUnits(state.sets, p.id)) });
+    unitsByMember.push({ tag, name: action.exerciseName, units: parts.flatMap((p, k) => setUnits(state.sets, p.id, k === 0 ? (root.roundOffset ?? 0) : 0)) });
   });
   const { columns, rows: allRows } = sharedColumns(
     members.map((m) => m.columns),

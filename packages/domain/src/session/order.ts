@@ -45,8 +45,29 @@ function unitsOf(sets: readonly WorkoutSet[], exerciseId: string): WorkoutSet[][
 }
 
 /** One exercise row's sets as units (a set plus its paired other side), in round order: the Table's superset rounds. */
-export function setUnits(sets: readonly WorkoutSet[], sessionExerciseId: string): WorkoutSet[][] {
-  return unitsOf(sets, sessionExerciseId);
+export function setUnits(sets: readonly WorkoutSet[], sessionExerciseId: string, roundOffset = 0): WorkoutSet[][] {
+  return [...Array.from({ length: roundOffset }, (): WorkoutSet[] => []), ...unitsOf(sets, sessionExerciseId)];
+}
+
+/** A superset member's units by round: the rounds it sits out first (`roundOffset`, a row paired mid-workout), then its own. */
+function roundUnits(sets: readonly WorkoutSet[], ex: SessionExercise): WorkoutSet[][] {
+  return setUnits(sets, ex.id, ex.supersetGroup === null ? 0 : (ex.roundOffset ?? 0));
+}
+
+/**
+ * The offset that puts a row joining a superset in the group's current round
+ * (the first round with a set not done yet), so A3 is followed by B1 rather
+ * than B1 pairing with the done A1. Never negative (a row with more done than
+ * the group starts where it is).
+ */
+export function joinRoundOffset(members: readonly SessionExercise[], sets: readonly WorkoutSet[], joiner: SessionExercise): number {
+  const firstPending = (units: readonly WorkoutSet[][]): number => {
+    const i = units.findIndex((u) => u.some((s) => s.status === 'pending'));
+    return i < 0 ? units.length : i;
+  };
+  const rounds = members.filter((m) => m.id !== joiner.id).map((m) => firstPending(roundUnits(sets, m)));
+  if (rounds.length === 0) return 0;
+  return Math.max(0, Math.min(...rounds) - firstPending(unitsOf(sets, joiner.id)));
 }
 
 /**
@@ -61,7 +82,7 @@ export function buildExecutionOrder(
 ): string[] {
   const order: string[] = [];
   for (const block of blocks(exercises)) {
-    const memberUnits = block.members.map((m) => unitsOf(sets, m.id));
+    const memberUnits = block.members.map((m) => (block.group === null ? unitsOf(sets, m.id) : roundUnits(sets, m)));
     const rounds = Math.max(0, ...memberUnits.map((u) => u.length));
     for (let r = 0; r < rounds; r += 1) {
       for (const units of memberUnits) {
@@ -102,11 +123,9 @@ export function isRoundEnd(
   const own = exercises.find((e) => e.id === set.sessionExerciseId);
   if (!own || own.supersetGroup === null) return true;
   const group = own.supersetGroup;
-  const later = exercises
-    .filter((e) => e.supersetGroup === group && e.order > own.order)
-    .map((e) => e.id);
-  const round = unitsOf(sets, own.id).findIndex((u) => u.some((s) => s.id === set.id));
-  return !later.some((exId) => unitsOf(sets, exId)[round]?.some((s) => s.status === 'pending') ?? false);
+  const later = exercises.filter((e) => e.supersetGroup === group && e.order > own.order);
+  const round = roundUnits(sets, own).findIndex((u) => u.some((s) => s.id === set.id));
+  return !later.some((ex) => roundUnits(sets, ex)[round]?.some((s) => s.status === 'pending') ?? false);
 }
 
 /**
