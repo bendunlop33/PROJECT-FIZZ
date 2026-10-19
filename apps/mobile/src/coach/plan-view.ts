@@ -44,7 +44,9 @@ export function planCardView(d: PlanCardData): PlanCardView {
           ? { kind: 'ended', text: `Replaced by version ${String(d.state.byN)}` }
           : d.state.kind === 'superseded'
             ? { kind: 'ended', text: 'Replaced by a newer plan' }
-            : d.state.kind === 'expired'
+            : d.state.kind === 'ended'
+              ? { kind: 'ended', text: 'Ended' }
+              : d.state.kind === 'expired'
               ? { kind: 'ended', text: 'Expired' }
               : { kind: 'ended', text: 'Deleted' };
   return {

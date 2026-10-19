@@ -775,7 +775,18 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   /** Coach-built plans (19 Oct): the card, Apply and Undo, the consistency card. Local only. */
-  const plans = createPlanServices({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises });
+  const plans = createPlanServices({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    catalogueExercises,
+    currentGym: async () => {
+      const g = await yourData.currentGym();
+      return g === null ? null : { id: g.id, name: g.name };
+    },
+    upNextRoutineId: async (gymId) => (await loop.next.preview(gymId ?? 'typical-gym-preview'))?.routine?.id ?? null,
+    plannedDay: (routineId, gymId) => loop.routines.planned(routineId, gymId),
+  });
 
   /** Library › Exercises (exercise-library §9): browse, detail, Add to a workout. Local only. */
   const library = createLibraryService({

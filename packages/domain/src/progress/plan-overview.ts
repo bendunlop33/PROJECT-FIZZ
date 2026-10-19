@@ -272,6 +272,11 @@ function doneText(ex: Pick<SessionExercise, 'measurement' | 'exerciseId'>, sets:
   return groups.map((g) => (g.load === null ? g.values.join(', ') : `${g.load} × ${g.values.join(', ')}`)).join(', ');
 }
 
+/** `Day 2 of 4 · Main gym · about 60 min`; the parts not known are left out. */
+export function planDayHeader(dayN: number, of: number, gymName: string | null, aboutMinutes: number | null): string {
+  return [`Day ${String(dayN)} of ${String(of)}`, gymName, aboutMinutes === null ? null : `about ${String(aboutMinutes)} min`].filter((x): x is string => x !== null).join(' · ');
+}
+
 /**
  * A plan day as its screen shows it: per exercise, what Start would plan
  * here (`3 × 6–8 · 85 kg`, the most common target and load of its working
@@ -280,7 +285,7 @@ function doneText(ex: Pick<SessionExercise, 'measurement' | 'exerciseId'>, sets:
  * (rule 6). Values only.
  */
 export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
-  const header = [`Day ${String(input.dayN)} of ${String(input.of)}`, input.gymName, input.aboutMinutes === null ? null : `about ${String(input.aboutMinutes)} min`].filter((x): x is string => x !== null).join(' · ');
+  const header = planDayHeader(input.dayN, input.of, input.gymName, input.aboutMinutes);
   const snapshot = input.planned.session.equipmentSnapshot;
   const rows = [...input.planned.exercises]
     .filter((e) => e.removed === undefined)

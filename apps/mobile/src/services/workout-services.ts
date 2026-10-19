@@ -3868,6 +3868,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return null;
       }
     },
+
+    /** (19 Oct) Library › Your plan › a day: what Start would create at this gym (the same dry run) and about how long. Saves nothing. */
+    async planned(routineId: string, gymId: string): Promise<{ aggregate: SessionAggregate; aboutMinutes: number | null } | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const { r } = await routineStart(p, { routineId, gymId, opId: `preview-plan-day:${routineId}`, preview: true });
+        if (!r.ok) return null;
+        return { aggregate: r.aggregate, aboutMinutes: await aboutMinutes(p, r.aggregate) };
+      } catch {
+        return null;
+      }
+    },
   };
 
   const next = {

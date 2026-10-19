@@ -45,6 +45,7 @@ describe('planCardView', () => {
     expect(planCardView(card({ state: { kind: 'expired' } })).action).toEqual({ kind: 'ended', text: 'Expired' });
     // A newer plan applied since (review S3): ended, no Undo.
     expect(planCardView(card({ state: { kind: 'superseded' } })).action).toEqual({ kind: 'ended', text: 'Replaced by a newer plan' });
+    expect(planCardView(card({ state: { kind: 'ended' } })).action).toEqual({ kind: 'ended', text: 'Ended' });
     expect(planCardView(card({ replaces: [] })).replaces).toBeNull();
   });
 
