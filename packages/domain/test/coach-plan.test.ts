@@ -419,6 +419,42 @@ describe('Apply and Undo (rule 2, rule 3, rule 5)', () => {
     expect(applyPlan(u.next, { expectedVersion: 3, versionN: 1, mode: 'add', opId: 'apply-2', at: at(70), live: all }).kind).toBe('write');
   });
 
+  it('a second plan’s Apply ends the first (superseded, no Undo of its own); the second’s Undo puts the first back as the plan in use (review S3)', () => {
+    const first = planOf();
+    const a = applyPlan(first, { expectedVersion: 1, versionN: 1, mode: 'replace', opId: 'apply-a', at: at(0), live });
+    if (a.kind !== 'write') throw new Error(a.kind);
+    const routinesA = [...a.create, ...a.update.map((u) => u.next), ARMS];
+    const second = { ...planOf(), id: id(971) };
+    const b = applyPlan(second, { expectedVersion: 1, versionN: 1, mode: 'replace', opId: 'apply-b', at: at(60), live: routinesA, applied: [a.next] });
+    if (b.kind !== 'write') throw new Error(b.kind);
+    // The first plan's days leave the rotation (Replace); the first plan is ended, naming the plan that ended it.
+    expect(b.update.map((u) => u.next.name)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    expect(b.supersede).toHaveLength(1);
+    const ended = b.supersede[0]?.next as PlanDraft;
+    expect(ended).toMatchObject({ id: first.id, status: 'superseded', supersededBy: { planId: second.id, opId: 'apply-b' }, version: 3 });
+    expect(b.supersede[0]?.expectedVersion).toBe(2);
+    expect(PlanDraftSchema.safeParse(ended).success).toBe(true);
+    expect(b.next.applied?.superseded).toEqual([{ planId: first.id, versionAfter: 3 }]);
+    expect(PlanDraftSchema.safeParse(b.next).success).toBe(true);
+    // The first plan is no longer in use: no days for Up next, and its Undo is stale (never "changed since").
+    expect(planRoutines(ended, [...b.create, ...b.update.map((u) => u.next)])).toEqual([]);
+    const routinesB = new Map<string, Routine | null>([...b.create, ...b.update.map((u) => u.next), ARMS, ...a.update.map((u) => u.next)].map((r) => [r.id, r]));
+    expect(undoPlanApply(ended, { expectedVersion: 3, opId: 'undo-a', at: at(90), routines: routinesB }).kind).toBe('stale');
+    // The second plan's Undo: its days gone, the first plan's days back in the rotation, the first plan applied again.
+    const u = undoPlanApply(b.next, { expectedVersion: 2, opId: 'undo-b', at: at(90), routines: routinesB, plans: new Map([[first.id, ended]]) });
+    if (u.kind !== 'write') throw new Error(u.kind);
+    expect(u.restore).toHaveLength(1);
+    expect(u.restore[0]?.next).toMatchObject({ id: first.id, status: 'applied', supersededBy: null, version: 4 });
+    expect(PlanDraftSchema.safeParse(u.restore[0]?.next).success).toBe(true);
+    const back = new Map(routinesB);
+    for (const x of u.update) back.set(x.next.id, x.next);
+    expect(rotationRoutines([...back.values()].filter((r): r is Routine => r !== null)).map((r) => r.name)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    expect(planRoutines(u.restore[0]?.next ?? null, [...back.values()].filter((r): r is Routine => r !== null)).map((r) => r.id)).toEqual(a.create.map((r) => r.id));
+    // A first plan changed since (not as this Apply left it) isn't touched.
+    const moved = undoPlanApply(b.next, { expectedVersion: 2, opId: 'undo-b2', at: at(90), routines: routinesB, plans: new Map([[first.id, { ...ended, version: 9 }]]) });
+    expect(moved.kind === 'write' ? moved.restore : null).toEqual([]);
+  });
+
   it('Undo refuses (nothing changes) when Ben changed a plan workout or a workout Apply took out since; one he deleted stays deleted', () => {
     const p = planOf();
     const a = applyPlan(p, { expectedVersion: 1, versionN: 1, mode: 'replace', opId: 'apply-1', at: at(0), live });

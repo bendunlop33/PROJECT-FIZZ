@@ -283,6 +283,8 @@ export type PlanApplyChange =
       create: Routine[];
       /** Workouts taken out of the rotation (`Replace my workouts`). */
       update: { next: Routine; expectedVersion: number }[];
+      /** Plans applied before this one, now ended (`superseded`; review S3). */
+      supersede: { next: PlanDraft; expectedVersion: number }[];
     }
   | { kind: 'duplicate'; current: PlanDraft }
   /** The card was older than the plan (a newer version, or already applied or undone): nothing changes (rule 5). */
@@ -295,9 +297,15 @@ export type PlanApplyChange =
  * other workout in the rotation comes out of it (kept in Workouts). The
  * card's `expectedVersion` and `versionN` must still be the plan's: a newer
  * version, or an Apply or Undo since, makes it stale and nothing changes.
- * `live`: Ben's live workouts as stored now.
+ * `live`: Ben's live workouts as stored now. `applied`: Ben's other plans
+ * that are applied now: this Apply ends them (`superseded`), so only one
+ * plan is in use and an old card never offers an Undo that can't work;
+ * this Apply's Undo puts them back (review plans-19oct S3).
  */
-export function applyPlan(current: PlanDraft, input: { expectedVersion: number; versionN: number; mode: PlanApplyMode; opId: string; at: ZonedTimestamp; live: readonly Routine[] }): PlanApplyChange {
+export function applyPlan(
+  current: PlanDraft,
+  input: { expectedVersion: number; versionN: number; mode: PlanApplyMode; opId: string; at: ZonedTimestamp; live: readonly Routine[]; applied?: readonly PlanDraft[] },
+): PlanApplyChange {
   if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
   if (current.version !== input.expectedVersion || current.currentVersion !== input.versionN) return { kind: 'stale', current };
   if (!planIsOpen(current, input.at.utc)) return { kind: current.status === 'applied' ? 'stale' : 'closed', current };
@@ -319,12 +327,25 @@ export function applyPlan(current: PlanDraft, input: { expectedVersion: number; 
       if (rotationOff.length >= 40) break;
     }
   }
-  const applied: PlanApplied = { mode: input.mode, versionN: v.n, opId: input.opId, atUtc: input.at.utc, made: create.map((r, i) => ({ dayIndex: v.days[i]?.index ?? i, routineId: r.id, version: r.version })), rotationOff };
-  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', applied }), expectedVersion: current.version, create, update };
+  const supersede = (input.applied ?? [])
+    .filter((o) => o.id !== current.id && o.ownerId === current.ownerId && o.status === 'applied' && o.applied !== null)
+    .slice(0, 8)
+    .map((o) => ({ next: bump(o, `${input.opId}:supersede:${o.id}`, input.at.utc, { status: 'superseded', supersededBy: { planId: current.id, opId: input.opId, atUtc: input.at.utc } }), expectedVersion: o.version }));
+  const applied: PlanApplied = {
+    mode: input.mode,
+    versionN: v.n,
+    opId: input.opId,
+    atUtc: input.at.utc,
+    made: create.map((r, i) => ({ dayIndex: v.days[i]?.index ?? i, routineId: r.id, version: r.version })),
+    rotationOff,
+    ...(supersede.length > 0 ? { superseded: supersede.map((x) => ({ planId: x.next.id, versionAfter: x.next.version })) } : {}),
+  };
+  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', applied }), expectedVersion: current.version, create, update, supersede };
 }
 
 export type PlanUndoChange =
-  | { kind: 'write'; next: PlanDraft; expectedVersion: number; update: { next: Routine; expectedVersion: number }[] }
+  /** `restore`: the plans this Apply ended, the plan in use again (review S3). */
+  | { kind: 'write'; next: PlanDraft; expectedVersion: number; update: { next: Routine; expectedVersion: number }[]; restore: { next: PlanDraft; expectedVersion: number }[] }
   | { kind: 'duplicate'; current: PlanDraft }
   | { kind: 'stale'; current: PlanDraft }
   /** A workout Apply made or took out was changed since (Ben edited it): nothing changes; `names` says which. */
@@ -337,8 +358,13 @@ export type PlanUndoChange =
  * version Apply left it; one Ben changed since refuses the whole Undo
  * (`changed_since`), so nothing he did is lost (rule 2). A workout he
  * deleted himself stays deleted. The plan is open again (Apply re-offers).
+ * A plan this Apply ended (`superseded`) is the plan in use again, if it
+ * is still as this Apply left it. `plans`: those plans as stored now.
  */
-export function undoPlanApply(current: PlanDraft, input: { expectedVersion: number; opId: string; at: ZonedTimestamp; routines: ReadonlyMap<string, Routine | null> }): PlanUndoChange {
+export function undoPlanApply(
+  current: PlanDraft,
+  input: { expectedVersion: number; opId: string; at: ZonedTimestamp; routines: ReadonlyMap<string, Routine | null>; plans?: ReadonlyMap<string, PlanDraft | null> },
+): PlanUndoChange {
   if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
   if (current.version !== input.expectedVersion || current.status !== 'applied' || current.applied === null) return { kind: 'stale', current };
   const a = current.applied;
@@ -365,8 +391,17 @@ export function undoPlanApply(current: PlanDraft, input: { expectedVersion: numb
     if (c.kind === 'write') update.push({ next: c.next, expectedVersion: c.expectedVersion });
   }
   if (changed.length > 0) return { kind: 'changed_since', current, names: [...new Set(changed)] };
+  const restore: { next: PlanDraft; expectedVersion: number }[] = [];
+  for (const s of a.superseded ?? []) {
+    const o = input.plans?.get(s.planId) ?? null;
+    if (o === null || o.status !== 'superseded' || o.version !== s.versionAfter || o.supersededBy?.planId !== current.id) continue;
+    // Its workouts this Undo puts back in the rotation are at new versions: its own Undo must find them as left now.
+    const after = new Map(update.map((x) => [x.next.id, x.next.version]));
+    const app = o.applied === null ? null : { ...o.applied, made: o.applied.made.map((m) => ({ ...m, version: after.get(m.routineId) ?? m.version })) };
+    restore.push({ next: bump(o, `${input.opId}:restore:${o.id}`, input.at.utc, { status: 'applied', supersededBy: null, applied: app }), expectedVersion: o.version });
+  }
   const reopen = toIso(Math.max(toMs(current.expiresAtUtc), toMs(input.at.utc) + PLAN_LIMITS.openDays * DAY_MS));
-  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'open', applied: null, undoneAtUtc: input.at.utc, expiresAtUtc: reopen }), expectedVersion: current.version, update };
+  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'open', applied: null, undoneAtUtc: input.at.utc, expiresAtUtc: reopen }), expectedVersion: current.version, update, restore };
 }
 
 // ---------------------------------------------------------------------------

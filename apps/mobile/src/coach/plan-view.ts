@@ -42,9 +42,11 @@ export function planCardView(d: PlanCardData): PlanCardView {
         ? { kind: 'undo', text: PLAN_COPY.applied }
         : d.state.kind === 'replaced'
           ? { kind: 'ended', text: `Replaced by version ${String(d.state.byN)}` }
-          : d.state.kind === 'expired'
-            ? { kind: 'ended', text: 'Expired' }
-            : { kind: 'ended', text: 'Deleted' };
+          : d.state.kind === 'superseded'
+            ? { kind: 'ended', text: 'Replaced by a newer plan' }
+            : d.state.kind === 'expired'
+              ? { kind: 'ended', text: 'Expired' }
+              : { kind: 'ended', text: 'Deleted' };
   return {
     title: d.name,
     subtitle: [`${String(d.days.length)} ${d.days.length === 1 ? 'day' : 'days'}`, d.gymName].filter((x): x is string => x !== null).join(' · '),

@@ -318,6 +318,77 @@ describe('build a 4-day plan → card → Apply (replace) → Up next walks it �
     expect(walked).toEqual(['Upper', 'Lower', 'Upper', 'Lower']);
   });
 
+  it('a second plan applied over the first ends it: the first card shows it ended (no Undo); the second’s Undo brings the first back (review S3)', async () => {
+    const { s, gymId } = await benWithSetup();
+    const first = await buildFour(s);
+    const c1 = await s.plans.card({ planId: first.planId, versionN: 1 });
+    expect(await s.plans.apply({ planId: first.planId, versionN: 1, expectedVersion: c1?.planVersion ?? 0, mode: 'replace', opId: 'apply-first' })).toMatchObject({ ok: true });
+    const upperLower: [string, string | null, Ex[]][] = [
+      ['Upper', null, [['Bench press', { load: kgLoad(100) }], ['Lat pulldown', { load: kgLoad(60, 'stack') }]]],
+      ['Lower', null, [['Back squat', { load: kgLoad(100) }]]],
+    ];
+    model = new StepModel([planStub(upperLower, 'Upper and lower.'), () => replyWith('Here.')]);
+    const r = await ask(s, 'Build me an upper/lower plan, 2 days');
+    const rec = r.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_plan') throw new Error('no plan');
+    const secondId = rec.detail.planId;
+    expect(secondId).not.toBe(first.planId);
+    const c2 = await s.plans.card({ planId: secondId, versionN: 1 });
+    expect(c2?.replaces).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    expect(await s.plans.apply({ planId: secondId, versionN: 1, expectedVersion: c2?.planVersion ?? 0, mode: 'replace', opId: 'apply-second' })).toMatchObject({ ok: true });
+    expect(await rotation(s)).toEqual(['Upper', 'Lower']);
+    // The first card: ended, no Undo; an Undo from it changes nothing and names nothing.
+    const old = await s.plans.card({ planId: first.planId, versionN: 1 });
+    expect(old?.state).toEqual({ kind: 'superseded' });
+    expect(await s.plans.undo({ planId: first.planId, expectedVersion: c1?.planVersion ?? 0, opId: 'undo-first-old' })).toMatchObject({ ok: false, reason: 'stale' });
+    expect(await s.plans.undo({ planId: first.planId, expectedVersion: old?.planVersion ?? 0, opId: 'undo-first' })).toMatchObject({ ok: false, reason: 'stale' });
+    expect(await rotation(s)).toEqual(['Upper', 'Lower']);
+    expect((await s.plans.active())?.planId).toBe(secondId);
+    expect(await s.next.preview(gymId)).toMatchObject({ title: 'Upper', routine: { basis: { kind: 'plan', dayN: 1, of: 2 } } });
+    // Undo of the second: the first plan's days and the first plan are back, as the plan in use.
+    const now2 = await s.plans.card({ planId: secondId, versionN: 1 });
+    expect(await s.plans.undo({ planId: secondId, expectedVersion: now2?.planVersion ?? 0, opId: 'undo-second' })).toMatchObject({ ok: true });
+    expect(await rotation(s)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    expect((await s.plans.active())?.planId).toBe(first.planId);
+    expect((await s.plans.card({ planId: first.planId, versionN: 1 }))?.state).toMatchObject({ kind: 'applied', mode: 'replace' });
+    expect((await s.plans.card({ planId: secondId, versionN: 1 }))?.state).toEqual({ kind: 'open' });
+    expect(await s.next.preview(gymId)).toMatchObject({ title: 'Push', routine: { basis: { kind: 'plan', dayN: 1, of: 4 } } });
+    // And the first plan's Undo works again: Push A and Pull A back.
+    const back = await s.plans.card({ planId: first.planId, versionN: 1 });
+    expect(await s.plans.undo({ planId: first.planId, expectedVersion: back?.planVersion ?? 0, opId: 'undo-first-2' })).toMatchObject({ ok: true });
+    expect(await rotation(s)).toEqual(['Push A', 'Pull A']);
+  });
+
+  it('a stale Apply writes nothing to Ben’s data, not even the catalogue exercises the plan names (review S4)', async () => {
+    const { s } = await benWithSetup();
+    const stored = new Set((await s.coachingKnowledge.exercises()).map((e) => e.id));
+    // A plan naming a catalogue exercise that isn't one of Ben's rows yet.
+    let extra = '';
+    const withExtra = (req: ModelRequest): ModelEvent[] => {
+      const b = buildOf(req);
+      extra = b.usable.find((u) => !stored.has(u.catalogueId))?.catalogueId ?? '';
+      const bench = b.usable.find((u) => u.name === 'Bench press')?.catalogueId ?? '';
+      return toolCall('propose_plan', { days: [{ dayName: 'Push', splitDayId: 'push', focus: null, minutes: null, exercises: [ex(bench, { load: kgLoad(100) }), ex(extra)] }, { dayName: 'Legs', splitDayId: 'legs', focus: null, minutes: null, exercises: [ex(bench)] }], message: 'Two days.', minutes: null, gymName: null });
+    };
+    model = new StepModel([withExtra, () => replyWith('Here.')]);
+    const first = await ask(s, 'Build me a 2-day plan');
+    const rec = first.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_plan') throw new Error('no plan');
+    const planId = rec.detail.planId;
+    expect(extra).not.toBe('');
+    const v1 = await s.plans.card({ planId, versionN: 1 });
+    const extraId = (await s.plans.day({ planId, versionN: 1, dayIndex: 0 }))?.rows[1]?.exerciseId ?? '';
+    expect(stored.has(extraId) || extraId === '').toBe(false);
+    model = new StepModel([withExtra, () => replyWith('Again.')]);
+    expect((await ask(s, 'make the legs day different', first.threadId)).cards[0]?.record.detail).toMatchObject({ kind: 'build_plan', versionN: 2 });
+    expect(await s.plans.apply({ planId, versionN: 1, expectedVersion: v1?.planVersion ?? 0, mode: 'replace', opId: 'apply-stale' })).toMatchObject({ ok: false, reason: 'stale' });
+    expect((await s.coachingKnowledge.exercises()).some((e) => e.id === extraId)).toBe(false);
+    // The current card applies, and the new exercise is saved with it.
+    const v2 = await s.plans.card({ planId, versionN: 2 });
+    expect(await s.plans.apply({ planId, versionN: 2, expectedVersion: v2?.planVersion ?? 0, mode: 'replace', opId: 'apply-ok' })).toMatchObject({ ok: true });
+    expect((await s.coachingKnowledge.exercises()).some((e) => e.id === extraId)).toBe(true);
+  });
+
   it('a change to the plan in the thread is a new version; the old card can’t apply (rule 5)', async () => {
     const { s } = await benWithSetup();
     const { planId, threadId } = await buildFour(s);

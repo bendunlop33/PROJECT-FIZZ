@@ -38,6 +38,8 @@ export type PlanCardState =
   | { kind: 'applied'; mode: PlanApplyMode; atUtc: string }
   /** A newer version of the same plan exists: this card can't apply (rule 5). */
   | { kind: 'replaced'; byN: number }
+  /** A newer plan was applied since: this one ended (no Undo here; the newer plan's Undo brings it back). */
+  | { kind: 'superseded' }
   | { kind: 'expired' }
   | { kind: 'gone' };
 
@@ -115,6 +117,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     if (plan === null) return { kind: 'gone' };
     if (plan.status === 'expired' || plan.status === 'discarded' || (plan.status === 'open' && !planIsOpen(plan, nowUtc))) return { kind: 'expired' };
     if (plan.currentVersion !== versionN) return { kind: 'replaced', byN: plan.currentVersion };
+    if (plan.status === 'superseded') return { kind: 'superseded' };
     if (plan.status === 'applied' && plan.applied !== null) return { kind: 'applied', mode: plan.applied.mode, atUtc: plan.applied.atUtc };
     return { kind: 'open' };
   }
@@ -123,18 +126,21 @@ export function createPlanServices(deps: PlanServicesDeps) {
     return liveRoutines(await deps.store().repos.routines.listByOwner(ownerId).catch(() => [] as Routine[]));
   }
 
-  /** Every catalogue exercise a plan names is saved as Ben's row before a workout uses it (as `Add exercise` does). */
-  async function ensureExercises(plan: PlanDraft): Promise<boolean> {
+  /**
+   * The catalogue exercises a plan names that aren't Ben's rows yet (as `Add exercise` saves them). Read only:
+   * Apply saves them in its own transaction, so a stale or refused Apply writes nothing (review S4). Null: one is unknown.
+   */
+  async function exercisesToSave(plan: PlanDraft): Promise<Exercise[] | null> {
     const ids = new Set(currentPlanVersion(plan).days.flatMap((d) => d.plan.slots.map((s) => s.exerciseId)));
     const catalogue = new Map((deps.catalogueExercises?.() ?? []).map((e) => [e.id, e]));
+    const out: Exercise[] = [];
     for (const id of ids) {
       if ((await deps.store().repos.exercises.get(id).catch(() => null)) !== null) continue;
       const row = catalogue.get(id);
-      if (row === undefined) return false;
-      await deps.store().repos.exercises.save(row, null).catch(() => null);
-      if ((await deps.store().repos.exercises.get(id).catch(() => null)) === null) return false;
+      if (row === undefined) return null;
+      out.push(row);
     }
-    return true;
+    return out;
   }
 
   /** The applied plan in use and its live days, in day order; null without one. */
@@ -206,10 +212,11 @@ export function createPlanServices(deps: PlanServicesDeps) {
       if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
       const plan = await get(req.planId);
       if (plan === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
-      if (!(await ensureExercises(plan))) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+      const exercises = await exercisesToSave(plan);
+      if (exercises === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
       const at = deps.now();
       const r = await repo()
-        .apply(p.id, req.planId, (c, routines) => applyPlan(c, { expectedVersion: req.expectedVersion, versionN: req.versionN, mode: req.mode, opId: req.opId, at, live: liveRoutines(routines) }))
+        .apply(p.id, req.planId, (c, routines, applied) => applyPlan(c, { expectedVersion: req.expectedVersion, versionN: req.versionN, mode: req.mode, opId: req.opId, at, live: liveRoutines(routines), applied }), exercises)
         .catch(() => null);
       if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
       switch (r.status) {
@@ -234,7 +241,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
       if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
       const at = deps.now();
       const r = await repo()
-        .undo(p.id, req.planId, (c, routines) => undoPlanApply(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routines }))
+        .undo(p.id, req.planId, (c, routines, plans) => undoPlanApply(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routines, plans }))
         .catch(() => null);
       if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
       switch (r.status) {

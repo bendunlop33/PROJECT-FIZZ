@@ -124,10 +124,17 @@ export const PlanAppliedSchema = z.object({
   rotationOff: z
     .array(z.object({ routineId: IdSchema, name: z.string().min(1).max(120), rotationAtUtc: UtcTimestampSchema.nullable(), versionBefore: z.int().min(1), versionAfter: z.int().min(2) }))
     .max(40),
+  /**
+   * Plans that were applied before this one and that this Apply ended
+   * (`superseded`), at the version it left them, so this Apply's Undo puts
+   * them back as the plan in use (review plans-19oct S3). Absent: none.
+   */
+  superseded: z.array(z.object({ planId: IdSchema, versionAfter: z.int().min(2) })).max(8).optional(),
 });
 export type PlanApplied = z.infer<typeof PlanAppliedSchema>;
 
-export const PlanDraftStatusSchema = z.enum(['open', 'applied', 'discarded', 'expired']);
+/** `superseded`: was applied, then a newer plan's Apply ended it (its workouts stay as Ben's workouts). */
+export const PlanDraftStatusSchema = z.enum(['open', 'applied', 'superseded', 'discarded', 'expired']);
 export type PlanDraftStatus = z.infer<typeof PlanDraftStatusSchema>;
 
 /**
@@ -147,6 +154,8 @@ export const PlanDraftSchema = z
     applied: PlanAppliedSchema.nullable(),
     /** The last Undo of an Apply (provenance; the plan is `open` again). */
     undoneAtUtc: UtcTimestampSchema.nullable(),
+    /** The newer plan whose Apply ended this one (status `superseded`); absent or null otherwise. */
+    supersededBy: z.object({ planId: IdSchema, opId: OperationIdSchema, atUtc: UtcTimestampSchema }).nullable().optional(),
     opIds: z.array(OperationIdSchema).max(PLAN_LIMITS.maxOps),
     createdAt: ZonedTimestampSchema,
     tz: TimeZoneSchema,
@@ -156,5 +165,6 @@ export const PlanDraftSchema = z
     updatedAtUtc: UtcTimestampSchema,
   })
   .refine((d) => d.versions.some((v) => v.n === d.currentVersion && v.status === 'current'), { message: 'The current version must exist', path: ['currentVersion'] })
-  .refine((d) => (d.status === 'applied') === (d.applied !== null), { message: 'Only an applied plan names what it made', path: ['applied'] });
+  .refine((d) => (d.status === 'applied' || d.status === 'superseded') === (d.applied !== null), { message: 'Only an applied plan names what it made', path: ['applied'] })
+  .refine((d) => (d.status === 'superseded') === ((d.supersededBy ?? null) !== null), { message: 'Only a superseded plan names the plan that ended it', path: ['supersededBy'] });
 export type PlanDraft = z.infer<typeof PlanDraftSchema>;

@@ -6,7 +6,8 @@
  * - `plan_drafts`: one row per coach plan (Your data, owner-scoped), a
  *   validated JSON document with lookup columns. Open plans are kept 14
  *   days; an applied plan stays while in use (its Apply record is what Undo
- *   reads). Backups carry it like every table.
+ *   reads); a newer plan's Apply marks it `superseded`. Backups carry it
+ *   like every table.
  * - `coach_actions.kind` gains `build_plan` (the coach built a plan, or a
  *   new version of one, because Ben asked; a proposal he applies). SQLite
  *   can't alter a CHECK, so the table is rebuilt with the same columns,
@@ -17,7 +18,7 @@ export const MIGRATION_0020 = `
 CREATE TABLE plan_drafts (
   id TEXT PRIMARY KEY NOT NULL,
   owner_id TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('open', 'applied', 'discarded', 'expired')),
+  status TEXT NOT NULL CHECK (status IN ('open', 'applied', 'superseded', 'discarded', 'expired')),
   version INTEGER NOT NULL CHECK (version >= 1),
   expires_at_utc TEXT NOT NULL,
   updated_at_utc TEXT NOT NULL,

@@ -1,7 +1,7 @@
-import { PlanDraftSchema, type PlanDraft, type Routine } from '@fizz/schemas';
+import { PlanDraftSchema, type Exercise, type PlanDraft, type Routine } from '@fizz/schemas';
 import { expirePlanDraft, type PlanApplyChange, type PlanLifeChange, type PlanUndoChange } from '@fizz/domain';
 import type { Database } from './database';
-import { decodeDocument, DocumentRepository, erase, listDocuments, ROUTINE_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
+import { decodeDocument, DocumentRepository, erase, EXERCISE_SPEC, listDocuments, ROUTINE_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
 
 /**
@@ -80,13 +80,14 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
    * rotation changed, and the plan marked applied, together or not at all.
    * `make` gets the plan and Ben's workouts as stored inside the transaction.
    */
-  apply(ownerId: string, planId: string, make: (current: PlanDraft, routines: readonly Routine[]) => PlanApplyChange): Promise<PlanWrite> {
+  apply(ownerId: string, planId: string, make: (current: PlanDraft, routines: readonly Routine[], applied: readonly PlanDraft[]) => PlanApplyChange, exercises: readonly Exercise[] = []): Promise<PlanWrite> {
     return this.db
       .write(async (tx): Promise<PlanWrite> => {
         const current = await getPlanDraftIn(tx, planId);
         if (current === null || current.ownerId !== ownerId) return { status: 'missing' };
         const routines = await listDocuments(tx, ROUTINE_SPEC, 'owner_id = ?', [ownerId]);
-        const c = make(current, routines);
+        const applied = await listDocuments(tx, PLAN_DRAFT_SPEC, "owner_id = ? AND status = 'applied' AND id != ?", [ownerId, planId]);
+        const c = make(current, routines, applied);
         switch (c.kind) {
           case 'duplicate':
             return { status: 'replayed', plan: c.current, routines: (c.current.applied?.made ?? []).flatMap((m) => routines.filter((r) => r.id === m.routineId)) };
@@ -95,11 +96,17 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
           case 'closed':
             return { status: 'closed', plan: c.current };
           case 'write': {
+            // Catalogue exercises the plan names, saved as Ben's rows only with the Apply itself (review S4).
+            for (const e of exercises) {
+              if ((await tx.getFirst('SELECT id FROM exercises WHERE id = ?', [e.id])) !== null) continue;
+              if (!(await saveDocumentIn(tx, EXERCISE_SPEC, e, null)).ok) throw new Conflict();
+            }
             for (const r of c.create) {
               if (r.ownerId !== ownerId) throw new Error('Routine owner differs from the store owner');
               if (!(await saveDocumentIn(tx, ROUTINE_SPEC, r, null)).ok) throw new Conflict();
             }
             for (const u of c.update) if (!(await saveDocumentIn(tx, ROUTINE_SPEC, u.next, u.expectedVersion)).ok) throw new Conflict();
+            for (const o of c.supersede) if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, o.next, o.expectedVersion)).ok) throw new Conflict();
             if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion)).ok) throw new Conflict();
             return { status: 'written', plan: c.next, routines: [...c.create, ...c.update.map((u) => u.next)] };
           }
@@ -113,7 +120,7 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
   }
 
   /** Undo of an Apply: the plan's workouts deleted, the others back in the rotation, the plan open again; all or nothing. */
-  undo(ownerId: string, planId: string, make: (current: PlanDraft, routines: ReadonlyMap<string, Routine | null>) => PlanUndoChange): Promise<PlanWrite> {
+  undo(ownerId: string, planId: string, make: (current: PlanDraft, routines: ReadonlyMap<string, Routine | null>, plans: ReadonlyMap<string, PlanDraft | null>) => PlanUndoChange): Promise<PlanWrite> {
     return this.db
       .write(async (tx): Promise<PlanWrite> => {
         const current = await getPlanDraftIn(tx, planId);
@@ -125,7 +132,12 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
           const r = row === null ? null : decodeDocument(ROUTINE_SPEC, row);
           routines.set(id, r !== null && r.ownerId === ownerId ? r : null);
         }
-        const c = make(current, routines);
+        const plans = new Map<string, PlanDraft | null>();
+        for (const s of current.applied?.superseded ?? []) {
+          const o = await getPlanDraftIn(tx, s.planId);
+          plans.set(s.planId, o !== null && o.ownerId === ownerId ? o : null);
+        }
+        const c = make(current, routines, plans);
         switch (c.kind) {
           case 'duplicate':
             return { status: 'replayed', plan: c.current, routines: [] };
@@ -135,6 +147,7 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
             return { status: 'changed_since', plan: c.current, names: c.names };
           case 'write': {
             for (const u of c.update) if (!(await saveDocumentIn(tx, ROUTINE_SPEC, u.next, u.expectedVersion)).ok) throw new Conflict();
+            for (const o of c.restore) if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, o.next, o.expectedVersion)).ok) throw new Conflict();
             if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion)).ok) throw new Conflict();
             return { status: 'written', plan: c.next, routines: c.update.map((u) => u.next) };
           }
