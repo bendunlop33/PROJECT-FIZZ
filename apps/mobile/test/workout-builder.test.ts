@@ -1080,14 +1080,15 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     const { s, gymId } = await benWithHistory();
     const { draftId } = await buildPush(s, 'build me a 45-minute push session for this gym', PUSH_LOADS);
     const before = await page(s, draftId, gymId);
+    // 85 × 5 @10: the stored 100 is more than 20% above what it supports (Ben 19 Oct), so it is capped.
     h.clockMs += 3_600_000;
-    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 5, rpe: 10 }] }]);
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 85, reps: 5, rpe: 10 }] }]);
     h.clockMs += 3_600_000;
     const after = await page(s, draftId, gymId);
     expect(after.view.previewKey).not.toBe(before.view.previewKey);
     const bench = after.view.rows.find((r) => r.name === 'Bench press');
-    expect(bench?.load.value).toBe('95');
-    expect(after.coachDraft?.loads.find((l) => l.name === 'Bench press')?.notes.some((n) => /^capped at 95 · newer session/.test(n.replaceAll('\u00a0', ' ')))).toBe(true);
+    expect(bench?.load.value).toBe('92.5');
+    expect(after.coachDraft?.loads.find((l) => l.name === 'Bench press')?.notes.some((n) => /^capped at 92.5 · newer session/.test(n.replaceAll('\u00a0', ' ')))).toBe(true);
     const started = await s.overview.start(startReq(before, gymId, 'start-stale'));
     expect(started.ok).toBe(false);
     const ok = await s.overview.start(startReq(after, gymId, 'start-fresh'));
@@ -1097,7 +1098,7 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
 
   it('B4: a draft built during a workout is re-checked against that workout’s sets (started before the build)', async () => {
     const { s, gymId } = await benWithHistory();
-    // The workout starts first; the draft is built while it is open; bench 100 × 5 @ 10 is logged after.
+    // The workout starts first; the draft is built while it is open; bench 85 × 5 @ 10 is logged after (more than 20% below the stored 100, Ben 19 Oct).
     const started = await s.workout.start({ gymId, opId: 'during-start', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
     if (!started.ok) throw new Error(started.error.message);
     h.clockMs += 60_000;
@@ -1114,7 +1115,7 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     if (!ex || !set) throw new Error('set');
     for (const extra of added.aggregate.sets.filter((x) => x.sessionExerciseId === ex.id && x.id !== set.id)) await s.workout.dispatch(sessionId, { type: 'delete_set', at: h.now(), opId: h.ids(), setId: extra.id, expectedSetVersion: extra.version });
     h.clockMs += 60_000;
-    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: { value: 100, unit: 'kg', convention: 'total' }, reps: 5, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: `log:${set.id}:0`, setId: set.id, values: { load: { value: 85, unit: 'kg', convention: 'total' }, reps: 5, durationS: null, rpe: 10, rir: null }, restTimerId: h.ids() });
     if (!logged.ok) throw new Error(logged.error.message);
     const cur = await s.workout.load(sessionId);
     if (!cur) throw new Error('session');
@@ -1123,8 +1124,8 @@ describe('v2: the coach proposes loads; the page says why (BD6; Ben, 14 Oct)', (
     h.clockMs += DAY;
     const after = await page(s, draftId, gymId);
     const bench = after.view.rows.find((r) => r.name === 'Bench press');
-    expect(bench?.load.value).toBe('95');
-    expect(after.coachDraft?.reasons[bench?.slotKey ?? '']).toBe('last 100×5 @10 · capped → 95 · main lift');
+    expect(bench?.load.value).toBe('92.5');
+    expect(after.coachDraft?.reasons[bench?.slotKey ?? '']).toBe('last 85×5 @10 · capped → 92.5 · main lift');
     const ok = await s.overview.start(startReq(after, gymId, 'start-after-during'));
     if (!ok.ok) throw new Error(ok.error.message);
     for (const r of after.view.rows) matchesSession(r, ok.aggregate);
