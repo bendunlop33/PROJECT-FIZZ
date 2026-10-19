@@ -237,6 +237,16 @@ describe('longestGapSource (Decision 2 in the Up next resolver; review import-pr
     expect(longestGapSource(index(routines, sessions), ref(nth(sessions, 2)))?.sessionId).toBe('legs');
   });
 
+  it('passes over a type whose workout trained the day just done while another is left (review today-18oct S4)', () => {
+    // Back yesterday (unnamed, so not a type); Pull (1 Oct) has the longest gap but trained back too.
+    const sessions = [imported('pull', '2026-10-01', { Back: 10 }), imported('core', '2026-10-05', { Abs: 10 }), logged('u-back', '2026-10-09')];
+    const last = ref(nth(sessions, 2));
+    expect(longestGapSource(index([], sessions), last)?.sessionId).toBe('pull');
+    expect(longestGapSource(index([], sessions), last, new Set(['pull', 'u-back']))?.sessionId).toBe('core');
+    // The only type left: still planned (never no Up next because of it).
+    expect(longestGapSource(index([], sessions.filter((x) => x.id !== 'core')), last, new Set(['pull']))?.sessionId).toBe('pull');
+  });
+
   it('no history type: null (the caller keeps D19’s newest workout)', () => {
     expect(longestGapSource(index([], []), null)).toBeNull();
     const unnamed = [logged('u', '2026-10-09')];

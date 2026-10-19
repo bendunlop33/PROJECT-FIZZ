@@ -247,7 +247,7 @@ describe('Workout overview', () => {
     expect(started).toMatchObject({ ok: true, duplicate: false, aggregate: { session: { routineName: 'Push late' } } });
   });
 
-  it('S5: when the rotation’s routine can’t start, Today’s card and the overview both fall back to the last workout’s next session', async () => {
+  it('S5: when the rotation’s routine can’t start, Today’s card and the overview both fall back to the same next session', async () => {
     let { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const a = await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 60, reps: 8 }] }]);
@@ -268,12 +268,14 @@ describe('Workout overview', () => {
     raw.close();
     s = (await h.launch()).services;
 
+    // Push is still the day due (PM decision 18 Oct): its routine can't start, so its workout's next session.
     const card = await s.next.preview(gymId);
-    expect(card).toMatchObject({ routine: null, sourceSessionId: b });
+    expect(card).toMatchObject({ routine: null, sourceSessionId: a, title: 'Push' });
     const page = await s.overview.load({ target: { kind: 'next' }, gymId });
     if (!page) throw new Error('the overview must match Today’s Up next card');
-    expect(page.startOf).toEqual({ nextOf: b });
-    expect(page.view.rows.map((r) => r.name)).toEqual(['Back squat']);
+    expect(page.startOf).toEqual({ nextOf: a });
+    expect(page.view.title).toBe('Push');
+    expect(page.view.rows.map((r) => r.name)).toEqual(['Bench press']);
     const started = await s.overview.start({ startOf: page.startOf, gymId, opId: 'op-s5', checkIn: null, expectedPreviewKey: page.view.previewKey });
     expect(started.ok).toBe(true);
   });

@@ -78,6 +78,11 @@ export interface RepeatInput {
    */
   /** `workingSets`: the count Ben chose when adding (exercise-library §10.2); absent = the plan's own. */
   added?: readonly { slotKey: string; rank: number; plan: SwapPlan; workingSets?: number }[];
+  /**
+   * A cut-short source (`cutShort`) planned as its full plan (review today-18oct S2): its skipped and
+   * never-logged working sets come too, at the targets they had, after the done ones. Off: Repeat as RT4.
+   */
+  includeNotDone?: boolean;
 }
 
 export interface RepeatNote {
@@ -166,12 +171,14 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     const own = blockSets(src, sx.id);
     // A left/right pair is one prescribed set: the companion row isn't copied again.
     const done = own.filter((s) => s.status === 'completed' && s.actual !== null && s.pairedWithSetId === null);
-    const skipped = own.filter((s) => s.status === 'skipped').length;
+    // A cut-short source's working sets not done, with a rep or time target (S2); none otherwise.
+    const notDone = input.includeNotDone === true ? own.filter((s) => (s.status === 'skipped' || s.status === 'pending') && s.setType !== 'warmup' && s.pairedWithSetId === null && (s.planned.reps !== null || s.planned.durationS !== null)) : [];
+    const skipped = own.filter((s) => s.status === 'skipped').length - notDone.filter((s) => s.status === 'skipped').length;
     if (skipped > 0) notCopied.push({ kind: 'skipped', exerciseName: sx.exerciseName, skipped });
     // Distance-only sets have no template field to copy into (review gaps S4): listed, not dropped silently.
     const distanceOnly = done.filter((s) => s.actual !== null && s.actual.reps === null && s.actual.durationS === null && s.actual.distanceM !== undefined && s.actual.distanceM !== null).length;
     if (distanceOnly > 0) notCopied.push({ kind: 'distance', exerciseName: sx.exerciseName, sets: distanceOnly });
-    if (done.length === 0) continue;
+    if (done.length === 0 && notDone.length === 0) continue;
     const swap = input.swaps?.get(sx.id);
     if (swap !== undefined) {
       // A swapped slot (ADR 0022): the substitute on its own item, with its own targets, or last time's reps with no load.
@@ -218,7 +225,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     const sourceEq =
       [...parts]
         .reverse()
-        .filter((p) => done.some((d) => d.sessionExerciseId === p.id))
+        .filter((p) => [...done, ...notDone].some((d) => d.sessionExerciseId === p.id))
         .map((p) => equipmentOfRow(src.session.equipmentSnapshot, p))
         .find((e) => e !== null) ?? null;
     const exercise: Exercise = known ?? {
@@ -241,11 +248,14 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
 
     const doneWithReps = done.filter((s) => s.actual !== null && (s.actual.reps !== null || s.actual.durationS !== null));
     const planned = targetsFor(sx.exerciseId);
-    type Source = { setType: SetType; load: Load | null; reps: { min: number; max: number } | null; durationS: number | null; from: { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet } };
-    const sources: Source[] =
-      planned && planned.length > 0
+    type Source = { setType: SetType; load: Load | null; reps: { min: number; max: number } | null; durationS: number | null; from: { kind: 'copy'; set: WorkoutSet } | { kind: 'rule'; planned: PlannedSet } | { kind: 'plain' } };
+    const sources: Source[] = [
+      ...(planned && planned.length > 0
         ? planned.map((p) => ({ setType: p.setType, load: p.planned.load, reps: p.planned.reps, durationS: p.planned.durationS, from: { kind: 'rule' as const, planned: p.planned } }))
-        : doneWithReps.flatMap((s) => (s.actual === null ? [] : [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps === null ? null : { min: s.actual.reps, max: s.actual.reps }, durationS: s.actual.durationS, from: { kind: 'copy' as const, set: s } }]));
+        : doneWithReps.flatMap((s) => (s.actual === null ? [] : [{ setType: s.setType, load: s.actual.load, reps: s.actual.reps === null ? null : { min: s.actual.reps, max: s.actual.reps }, durationS: s.actual.durationS, from: { kind: 'copy' as const, set: s } }]))),
+      // The rest of a cut-short workout's plan, at its own targets (no `Why?` of a copy or the rule).
+      ...[...notDone].sort((a, b) => a.index - b.index).map((s) => ({ setType: s.setType, load: s.planned.load, reps: s.planned.reps, durationS: s.planned.durationS, from: { kind: 'plain' as const } })),
+    ];
     let templates: SetTemplate[] = [];
     for (const a of sources) {
       const templateId = input.newId();

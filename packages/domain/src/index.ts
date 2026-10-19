@@ -42,6 +42,8 @@ export * from './session/routines';
 export * from './session/library';
 export * from './session/routine-editor';
 export * from './session/session-types';
+export * from './session/split-up-next';
+export * from './session/recent';
 export * from './session/duration';
 export * from './session/first-run';
 export * from './session/snap';

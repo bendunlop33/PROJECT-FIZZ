@@ -138,10 +138,11 @@ describe('rotation and names', () => {
     await s.workout.dispatch(started.aggregate.session.id, { type: 'finish', at: h.now(), opId: 'f', expectedVersion: v, endedAt: null });
     h.clockMs += DAY;
     expect(await s.next.preview(gymId)).toMatchObject({ title: 'Legs A', routine: { id: ids[2], basis: { kind: 'after', routineName: 'Pull A' } } });
-    // A workout not from a routine: Up next is its next session again.
+    // A workout not from a routine (PM decision 18 Oct): Up next is the split day trained least recently, by muscles done.
+    // Deadlift trained legs today and Pull A was 2 days ago, so Push is due: its routine, Push A.
     h.clockMs += DAY;
-    const free = await logWorkout(h, s, gymId, [{ exercise: 'Deadlift', sets: [{ load: 100, reps: 5 }] }]);
-    expect(await s.next.preview(gymId)).toMatchObject({ routine: null, sourceSessionId: free });
+    await logWorkout(h, s, gymId, [{ exercise: 'Deadlift', sets: [{ load: 100, reps: 5 }] }]);
+    expect(await s.next.preview(gymId)).toMatchObject({ title: 'Push A', routine: { id: ids[0], basis: { kind: 'split' } } });
   });
 
   it('renaming a routine never renames past workouts; renaming a workout never renames the routine; both undo', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 
-import { lastTimeTopSet, NBSP, repeatPreviewLines, startWorkoutFromSession } from '../src/index';
+import { cutShort, lastTimeTopSet, NBSP, repeatPreviewLines, startWorkoutFromSession } from '../src/index';
 import { reduceSession, startWorkout } from '../src/index';
 import { assisted, at, barbell, dumbbells, exercise, GYM, id, idGen, kg, lb, profile, routine, routineExercise, stack, template, values } from './fixtures';
 import { apply, BENCH, exercises, logCmd, ROW, setsFor, startFixture } from './session-fixture';
@@ -52,6 +52,23 @@ describe('Repeat last workout (routines.md RT4, check 13)', () => {
       ['Cable row', '1 set · 50 kg stack × 12'],
     ]);
     expect(out.notes).toEqual([]);
+  });
+
+  it('a cut-short source with includeNotDone plans its whole plan: skipped and unlogged working sets at their targets (review today-18oct S2)', () => {
+    expect(cutShort(source)).toBe(true);
+    const out = startWorkoutFromSession({ opId: 'rep-full', owner: profile(), gymId: GYM, source, exercises, gymEquipment: [barbell(), stack()], at: at(86_400), newId: idGen(44_000) });
+    const full = startWorkoutFromSession({ opId: 'rep-full', owner: profile(), gymId: GYM, source, exercises, gymEquipment: [barbell(), stack()], at: at(86_400), newId: idGen(44_000), includeNotDone: true });
+    expect(full.aggregate.exercises.map((e) => e.exerciseName)).toEqual(source.exercises.map((e) => e.exerciseName));
+    const workingOf = (a: SessionAggregate) => a.sets.filter((x) => x.setType !== 'warmup').length;
+    const plannedWorking = source.sets.filter((x) => x.setType !== 'warmup' && x.pairedWithSetId === null && x.status !== 'deleted').length;
+    expect(workingOf(full.aggregate)).toBe(plannedWorking);
+    expect(workingOf(full.aggregate)).toBeGreaterThan(workingOf(out.aggregate));
+    // Done sets are still last time's actuals; the rest keep the targets they had.
+    expect(setsFor(full.aggregate, BENCH).map((x) => x.planned.load?.value)).toEqual([60, 102.5, 100]);
+    const rowSource = setsFor(source, ROW);
+    expect(setsFor(full.aggregate, ROW).map((x) => x.planned.reps)).toEqual([{ min: 12, max: 12 }, rowSource[1]?.planned.reps]);
+    expect(full.notCopied.filter((n) => n.kind === 'skipped')).toEqual([]);
+    expect(full.aggregate.sets.every((x) => x.status === 'pending' && x.actual === null)).toBe(true);
   });
 
   it('at another gym: loads are rounded toward easier and never above its max; missing equipment is said plainly', () => {

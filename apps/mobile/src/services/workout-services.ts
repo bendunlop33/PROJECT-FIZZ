@@ -20,6 +20,15 @@ import {
   type HistoryUsed,
   matchSplitDay,
   splitInUse,
+  SPLIT_WINDOW_DAYS,
+  splitWorkoutOf,
+  splitDaysByDue,
+  isSplitDayName,
+  splitDaySource,
+  splitDaysTrained,
+  cutShort,
+  baseWorkoutName,
+  type SplitWorkout,
   workoutMuscleGroups,
   type LoadWhyEntry,
   type OverviewRow,
@@ -276,6 +285,9 @@ import type {
   SetExclusion,
   SetType,
   SetValues,
+  SplitDay,
+  TrainingProfile,
+  TrainingSplit,
   UserProfile,
   WorkoutDraft,
   ZonedTimestamp,
@@ -521,12 +533,15 @@ export interface ActiveWorkoutData {
  * Today's main card (audit B2): the next session, built from the last
  * workout with the built-in rule's next targets (labelled), at this gym.
  */
+/** Why a routine is Up next: after the last in the rotation (D19), the only one, or its split day is due (18 Oct). */
+export type UpNextRoutineBasis = { kind: 'after'; routineName: string; atUtc: string; tz: string } | { kind: 'only' } | { kind: 'split' };
+
 export interface NextSessionPreview {
   /**
    * Up next is a routine (premium-feel §2.6, rotation D19): Start starts it.
    * Null: the last workout's next session (Start uses `sourceSessionId`).
    */
-  routine: { id: string; basis: { kind: 'after'; routineName: string; atUtc: string; tz: string } | { kind: 'only' } } | null;
+  routine: { id: string; basis: UpNextRoutineBasis } | null;
   /** The workout the targets come from; null for a routine not done yet (its own templates). */
   sourceSessionId: string | null;
   title: string;
@@ -1381,6 +1396,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   /** The source's own name, unless it's the generic `Workout`. */
   const storedName = (a: SessionAggregate): string | null => storedWorkoutName(a.session);
 
+  /** A next session's name: a coach build's without its length (`Pull · 20 min` → `Pull`; the plan's own estimate is shown). */
+  const upNextName = (a: SessionAggregate): string | null => {
+    const n = storedName(a);
+    if (n === null || a.session.coachDraft === undefined) return n;
+    // `Workout · 45 min` is the generic name: the derived title (`Push`) is used instead (review today-18oct N1).
+    const base = baseWorkoutName(n);
+    return base === '' || base === GENERIC_WORKOUT_NAME ? null : base;
+  };
+
   /** `about N min` for a workout not started yet, at Ben's pace over his last 5 workouts. Null if it can't be read. */
   async function aboutMinutes(p: UserProfile, a: SessionAggregate): Promise<number | null> {
     try {
@@ -1801,27 +1825,96 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    */
   async function resolveUpNext(p: UserProfile, gymId: string, gymEquipment?: readonly EquipmentInstance[]) {
     const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
+    const training = await ctx.store().repos.trainingProfiles.get(p.id).catch(() => null);
     // Only workouts in the rotation (D19, RT9); a workout from before the library is in it.
     const pick = nextInRotation(rotationRoutines(live), refs[0] ?? null);
-    if (pick.kind === 'routine') {
+    const rotation = async () => {
+      if (pick.kind !== 'routine') return null;
       const run = await routineStart(p, { routineId: pick.routine.id, gymId, opId: `preview-next-routine:${pick.routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
-      if (run.r.ok) return { kind: 'routine' as const, routine: pick.routine, basis: pick.basis, run: { ...run, r: run.r } };
+      return run.r.ok ? { kind: 'routine' as const, routine: pick.routine, basis: pick.basis as UpNextRoutineBasis, run: { ...run, r: run.r } } : null;
+    };
+    // PM decision 18 Oct (pending Ben): the rotation wins only when the last workout was a routine's and Ben set no split;
+    // otherwise the split day trained least recently, counting every workout by the muscles done.
+    if (training?.split === undefined) {
+      const rot = await rotation();
+      if (rot !== null) return rot;
+    }
+    const bySplit = await splitUpNext(p, live, training, gymId, gymEquipment).catch(() => null);
+    if (bySplit?.plan) return bySplit.plan;
+    if (training?.split !== undefined) {
+      const rot = await rotation();
+      if (rot !== null) return rot;
     }
     // Decision 2 (approved 11 Oct 2026; review import-progress S1): the history type with the longest gap,
     // never the workout Ben just did (since B7, often his newest FitNotes one). Unreadable: D19's newest workout.
+    // A type whose workout trained the day(s) just done only when no other type is left (review today-18oct S4).
     if (SESSION_PICKER_DECISIONS.longestGapFallback) {
-      const gap = await longestGapUpNext(p, live).catch(() => null);
+      const gap = await longestGapUpNext(p, live, bySplit?.avoid).catch(() => null);
       if (gap !== null) return { kind: 'next' as const, sessionId: gap };
     }
     const last = (await repeat.candidates(1)).rows[0];
     return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
   }
 
+  /**
+   * Up next by split day (PM decision 18 Oct, pending Ben): Ben's split (else Push/Pull/Legs), the day trained least
+   * recently in the last 42 days by every finished workout's muscles. Planned from a live routine with the day's name,
+   * else the newest workout that was mainly that day (a full one before a cut-short or short-built one), whatever its
+   * name, so targets come from the latest evidence (review today-18oct B2); a workout older than the window is never
+   * Up next (SP-D3). `avoid`: the days the last workout trained, for the fallbacks (S4). Null plan: the other rules apply.
+   */
+  async function splitUpNext(p: UserProfile, live: readonly Routine[], training: TrainingProfile | null, gymId: string, gymEquipment?: readonly EquipmentInstance[]) {
+    const split = splitInUse(training);
+    const nowMs = toMs(ctx.now().utc);
+    const { sessions } = await repos().sessions.listFinishedBetweenReadable(p.id, toIso(nowMs - SPLIT_WINDOW_DAYS * 86_400_000), toIso(nowMs + 1));
+    const infos = new Map<string, Exercise | null>();
+    for (const a of sessions) for (const e of a.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, await exerciseById(e.exerciseId));
+    const workouts = sessions.map((a) => splitWorkoutOf(a, (id) => infos.get(id) ?? null, training?.sessionMinutes ?? null));
+    const due = splitDaysByDue(split, workouts);
+    for (const { day } of due) {
+      const plan = await splitDayPlan(p, live, split, day, workouts, gymId, gymEquipment);
+      if (plan !== null) return { plan, avoid: new Set<string>() };
+    }
+    // No due day has a workout to plan from: the window's workouts that trained the day(s) just done (left out of `due`).
+    const dueIds = new Set(due.map((d) => d.day.id));
+    const justDone = due.length === 0 || dueIds.size === split.days.length ? new Set<string>() : new Set(split.days.filter((d) => !dueIds.has(d.id)).map((d) => d.id));
+    return { plan: null, avoid: new Set(workouts.filter((w) => splitDaysTrained(split, w.groups).some((d) => justDone.has(d))).map((w) => w.sessionId)) };
+  }
+
+  /** One split day's Up next: its routine, else the newest workout (in the window) mainly that day; null when none. */
+  async function splitDayPlan(
+    p: UserProfile,
+    live: readonly Routine[],
+    split: TrainingSplit,
+    day: SplitDay,
+    workouts: readonly SplitWorkout[],
+    gymId: string,
+    gymEquipment: readonly EquipmentInstance[] | undefined,
+  ) {
+    const routine = live.find((r) => isSplitDayName(r.name, day.name));
+    if (routine !== undefined) {
+      const run = await routineStart(p, { routineId: routine.id, gymId, opId: `preview-next-routine:${routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
+      if (run.r.ok) return { kind: 'routine' as const, routine, basis: { kind: 'split' } as UpNextRoutineBasis, run: { ...run, r: run.r } };
+    }
+    const sessionId = splitDaySource(split, day, workouts)?.sessionId ?? null;
+    if (sessionId === null) return null;
+    const source = await repos().sessions.get(sessionId).catch(() => null);
+    if (source === null || source.session.ownerId !== p.id || !isInHistory(source.session)) return null;
+    // A workout from a saved routine: that routine, as Ben saved it.
+    const own = live.find((r) => isFromRoutine({ sessionId, routineId: source.session.routineId }, r));
+    if (own !== undefined) {
+      const run = await routineStart(p, { routineId: own.id, gymId, opId: `preview-next-routine:${own.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
+      if (run.r.ok) return { kind: 'routine' as const, routine: own, basis: { kind: 'split' } as UpNextRoutineBasis, run: { ...run, r: run.r } };
+    }
+    // Called what the started workout and Recent will call it: its own name, else its derived title (S5).
+    return { kind: 'next' as const, sessionId };
+  }
+
   /** Decision 2's source workout for Up next (`longestGapSource`), if it is still a readable, repeatable workout. */
-  async function longestGapUpNext(p: UserProfile, live: readonly Routine[]): Promise<string | null> {
+  async function longestGapUpNext(p: UserProfile, live: readonly Routine[], avoid?: ReadonlySet<string>): Promise<string | null> {
     const index = await typeIndex(p, live);
     const newest = (await repos().sessions.listFinishedRefs(p.id, 1, { includeImported: true }))[0] ?? null;
-    const pick = longestGapSource(index, newest);
+    const pick = longestGapSource(index, newest, avoid);
     if (pick === null) return null;
     const source = await repos().sessions.get(pick.sessionId).catch(() => null);
     return source !== null && source.session.ownerId === p.id && isInHistory(source.session) ? pick.sessionId : null;
@@ -1840,7 +1933,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const up = await resolveUpNext(p, gym?.gymId ?? 'typical-gym-preview', gym?.gymEquipment);
       if (up === null) return null;
       if (up.kind === 'next') return resolveNext(p, up.sessionId);
-      const basis: OverviewBasis = up.basis.kind === 'only' ? { kind: 'only' } : { kind: 'after', routineName: up.basis.routineName, at: { utc: up.basis.atUtc, tz: up.basis.tz } };
+      const basis: OverviewBasis | null = up.basis.kind === 'only' ? { kind: 'only' } : up.basis.kind === 'after' ? { kind: 'after', routineName: up.basis.routineName, at: { utc: up.basis.atUtc, tz: up.basis.tz } } : null;
       return resolveRoutine(p, up.routine.id, basis);
     }
     if (target.routineOf !== undefined) return resolveRoutine(p, target.routineOf, null);
@@ -2126,7 +2219,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       sourceSessionId: resolved.source.session.id,
       preview: true,
       targets: targets ?? new Map(),
-      name: storedName(resolved.source) ?? GENERIC_WORKOUT_NAME,
+      name: upNextName(resolved.source) ?? GENERIC_WORKOUT_NAME,
+      // A cut-short source is planned whole, so the estimate is its full plan's (review today-18oct S2).
+      includeNotDone: cutShort(resolved.source),
       lastUsedHere,
       today: todayEdits,
       ...(gymEquipment ? { gymEquipment } : {}),
@@ -2188,6 +2283,25 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const source = await repos().sessions.get(sessionId);
       if (!p || !source) return null;
       return builtInNextTargetsOf(p, source, null).catch(() => null);
+    },
+
+    /**
+     * Up next's name as Today's card shows it (routine name, the source's own name, else its derived
+     * title), for the coach's build context (review today-18oct S1). Null: no Up next or unreadable.
+     */
+    async upNextTitle(gymId: string | null): Promise<string | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const up = await resolveUpNext(p, gymId ?? 'typical-gym-preview');
+        if (up === null) return null;
+        if (up.kind === 'routine') return up.routine.name;
+        const source = await repos().sessions.get(up.sessionId);
+        if (!source) return null;
+        return upNextName(source) ?? (await titleFor(liveExercises(source.exercises).map((e) => e.exerciseId))).title;
+      } catch {
+        return null;
+      }
     },
 
     /**
@@ -2296,7 +2410,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           checkIn,
           sourceSessionId: req.nextOf,
           targets: targets ?? new Map(),
-          name: storedName(source) ?? GENERIC_WORKOUT_NAME,
+          name: upNextName(source) ?? GENERIC_WORKOUT_NAME,
+          includeNotDone: cutShort(source),
           lastUsedHere,
           today: t.input,
           ...(fenced ? { fence: fenced } : {}),
@@ -3687,13 +3802,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const targets = await nextTargetsOf(p, source);
         const t = await todayFor(p, { kind: 'next', source, basis: { kind: 'next_from', at: source.session.startedAt } }, gymId, undefined, null);
         const lastUsedHere = await lastUsedFor(p.id, [...source.exercises.map((e) => e.exerciseId), ...swapExerciseIds(t.input)], gymId);
-        const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview-next:${last.sessionId}`, at: ctx.now(), sourceSessionId: last.sessionId, preview: true, targets, lastUsedHere, today: t.input });
+        const r = await domain().startFromSession({ ownerId: p.id, gymId, routineId: null, opId: `preview-next:${last.sessionId}`, at: ctx.now(), sourceSessionId: last.sessionId, preview: true, targets, lastUsedHere, today: t.input, includeNotDone: cutShort(source) });
         if (!r.ok) return null;
         const derived = await titleFor(liveExercises(source.exercises).map((e) => e.exerciseId));
         return {
           routine: null,
           sourceSessionId: last.sessionId,
-          title: storedName(source) ?? derived.title,
+          title: upNextName(source) ?? derived.title,
           muscles: derived.muscles,
           exercises: repeatPreviewLines(r.aggregate).map((l) => ({ exerciseName: l.exerciseName, line: l.line })),
           targets: targetSummaryLines(r.aggregate),
@@ -4053,7 +4168,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (req.gymId !== null && gym === null) return null;
         const at = ctx.now();
         const title =
-          resolved.kind === 'next' ? (storedName(resolved.source) ?? (await titleFor(liveExercises(resolved.source.exercises).map((e) => e.exerciseId))).title) : resolved.kind === 'coach_draft' ? resolved.draft.name : resolved.routine.name;
+          resolved.kind === 'next' ? (upNextName(resolved.source) ?? (await titleFor(liveExercises(resolved.source.exercises).map((e) => e.exerciseId))).title) : resolved.kind === 'coach_draft' ? resolved.draft.name : resolved.routine.name;
         const source = await overviewSource(resolved);
         // A failed read shows no coach rows; the key below reads them again, so a Start planned without them is refused.
         const coachTargets = await storedCoachTargets(p.id, source).catch(() => [] as NextSessionTargetRecord[]);

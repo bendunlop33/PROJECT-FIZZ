@@ -1,10 +1,9 @@
 import {
-  lastSplitWorkoutGroups,
+  buildDayFor,
   liftHistoryFrom,
   mainLiftFor,
   mainLiftOptions,
   newTrainingProfile,
-  nextSplitDay,
   splitInUse,
   toIso,
   toMs,
@@ -87,7 +86,7 @@ export function createTrainingService(deps: TrainingServiceDeps) {
       mainLifts[d.id] = mainLiftFor(d, history, (id) => exercises.get(id)?.name ?? null);
       options[d.id] = mainLiftOptions(d, all).map((e) => ({ id: e.id, name: e.name }));
     }
-    return { owner, profile, mainLifts, options, nextDayId: nextSplitDay(split, lastSplitWorkoutGroups(split, sessions, exerciseOf)).id, nowYear: yearOf(deps.now()) };
+    return { owner, profile, mainLifts, options, nextDayId: buildDayFor(split, sessions, exerciseOf, deps.now().utc).id, nowYear: yearOf(deps.now()) };
   }
 
   return {
