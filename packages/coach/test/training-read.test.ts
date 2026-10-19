@@ -95,13 +95,13 @@ describe('read tools for past training, equipment and the built-in rule (backlog
     expect(port.calls).toEqual([`history:${BENCH_ID}:3`, `targets:${BENCH_ID}`, 'equipment:all', `history:${BENCH_ID}:3`]);
   });
 
-  it('a replayed read (same call twice) is harmless: nothing is written', async () => {
+  it('a replayed read (same call twice) is harmless: answered from the turn cache (Coach v3), nothing is written', async () => {
     const s = await store();
     const port = new FakePort();
     const model = new ScriptedCoachModel([[call('get_training_overview', { weeks: 2 }), { type: 'completed' }], [call('get_training_overview', { weeks: 2 }), { type: 'completed' }], reply('Steady.')]);
     const r = await runCoachTurn(request({ kind: 'general', input: words('How am I doing?') }), ports(s, model, createTrainingReadExecutors(port)));
     expect(r.status).toBe('completed');
-    expect(port.calls).toEqual(['overview:2', 'overview:2']);
+    expect(port.calls).toEqual(['overview:2']);
     expect(await s.repos.coach.listTurnActions(r.turnId)).toEqual([]);
   });
 });

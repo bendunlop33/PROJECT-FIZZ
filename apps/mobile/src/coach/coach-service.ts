@@ -38,6 +38,7 @@ import {
   createStructuralExecutors,
   createBuildExecutor,
   COACH_BUILD_TIMEOUT_MS,
+  COACH_WORKOUT_TIMEOUT_MS,
   DEFAULT_COACH_TIMING,
   asksForBuild,
   buildFollowUpIn,
@@ -54,6 +55,7 @@ import {
   buildWordsNewestFirst,
   bareNumbers,
   gymNamedIn,
+  sameGymName,
   savedGymFor,
   type BuildGym,
   type BuildFollowUp,
@@ -112,6 +114,8 @@ import {
   builtInTargetsView,
   equipmentView,
   exerciseHistoryView,
+  exerciseRecordsView,
+  recentSessionsView,
   toIso,
   trainingOverviewView,
   DEFAULT_COACH_TRIGGER_THRESHOLDS,
@@ -656,13 +660,32 @@ export function createCoachService(deps: CoachServiceDeps) {
         const firstWorkoutUtc = await repos().sessions.earliestFinishedStartUtc(p.id).catch(() => null);
         return trainingOverviewView({ weeks, nowUtc: now.utc, tz: now.tz, sessions: aggs, gymNames: await gymNames(), firstWorkoutUtc });
       },
-      async equipment(exerciseId) {
-        const gym = await gymInContext(p, session);
+      async equipment(exerciseId, gymName) {
+        // Coach v3: another saved gym by name (the hotel gym), matched like a build's gymName; else the gym in context.
+        const saved = (await repos().gyms.listByOwner(p.id).catch(() => [])).filter((g) => g.archivedAtUtc === undefined);
+        const named = gymName == null || gymName.trim() === '' ? null : (saved.find((g) => sameGymName(gymName, g.name)) ?? null);
+        if (gymName != null && gymName.trim() !== '' && named === null) return null;
+        const gym = named === null ? await gymInContext(p, session) : { id: named.id, name: named.name };
         if (gym === null) return null;
         const exercise = exerciseId === null ? null : await repos().exercises.get(exerciseId).catch(() => null);
         if (exerciseId !== null && exercise === null) return null;
         const items = await repos().equipment.listByGym(gym.id).catch(() => []);
-        return equipmentView({ gymName: gym.name, equipment: items, exercise });
+        return equipmentView({ gymName: gym.name, equipment: items, exercise, savedGyms: saved.map((g) => g.name) });
+      },
+      async exerciseRecords(exerciseId) {
+        const aggs = await finishedWith(exerciseId);
+        const name = await exerciseNameOf(exerciseId, aggs);
+        if (name === null || aggs.length === 0) return null;
+        return exerciseRecordsView({ exerciseId, exerciseName: name, sessions: aggs, gymNames: await gymNames(), equipmentNames: equipmentNames(aggs) });
+      },
+      async recentSessions(count) {
+        const refs = await repos().sessions.listFinishedRefs(p.id, count, { includeImported: true }).catch(() => []);
+        const aggs: SessionAggregate[] = [];
+        for (const r of refs) {
+          const a = await repos().sessions.get(r.sessionId).catch(() => null);
+          if (a !== null) aggs.push(a);
+        }
+        return recentSessionsView({ sessions: aggs, count, gymNames: await gymNames() });
       },
       async builtInTargets(exerciseId) {
         const aggs = await finishedWith(exerciseId);
@@ -1205,7 +1228,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           executors,
           now: deps.now,
           newId: deps.newId,
-          ...(build?.inPlay === true ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : {}),
+          ...(build?.inPlay === true ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : kind === 'workout' ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_WORKOUT_TIMEOUT_MS } } : {}),
           // Coach v3: Adjust on an offered edit applies exactly that offer (no model call); stale when the workout moved on.
           ...(kind === 'workout' && session !== null ? { acceptOffer: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptEditOffer(editDepsFor(p, session, ctx.gymName, ctx.checkIn), proposal, c) } : {}),
         },

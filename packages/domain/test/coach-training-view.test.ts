@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PainFlag, SessionAggregate } from '@fizz/schemas';
-import { builtInTargetsView, equipmentView, exerciseHistoryView, toIso, toMs, trainingOverviewView } from '../src/index';
+import { builtInTargetsView, E1RM_LABEL, equipmentView, exerciseHistoryView, exerciseRecordsView, gymSummaryLines, recentSessionsView, toIso, toMs, trainingOverviewView } from '../src/index';
 import { assisted, at, barbell, dumbbells, exercise, kg, lb, stack, T0, TZ, values } from './fixtures';
 import { apply, BENCH, FACE, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
@@ -211,5 +211,80 @@ describe('builtInTargetsView (get_progression_targets)', () => {
     expect(v.sets.map((x) => x.target.replace(/\u00a0/g, ' '))).toEqual(['100 kg × 6–8 reps', '100 kg × 6–8 reps @ RPE 8.5', '100 kg × 6–8 reps @ RPE 7.5', '100 kg × 6–8 reps @ RPE 8.5', '100 kg × 6–8 reps']);
     // Rule target unknown: no RPE invented (rule 6).
     expect(builtInTargetsView({ exerciseName: 'Bench press', convention: 'total', planned: [set('working', null)], basedOn: null, painFlag: null }).sets[0]?.rpe).toBeNull();
+  });
+});
+
+describe('exerciseRecordsView (get_exercise_records, Coach v3)', () => {
+  it('heaviest logged set, most reps and the best e1RM, which is always labelled an estimate', () => {
+    const v = exerciseRecordsView({ exerciseId: BENCH, exerciseName: 'Bench press', sessions: [workout(0, [{ load: 100, reps: 5 }, { load: 90, reps: 10 }]), workout(7, [{ load: 95, reps: 8 }])], ...NAMES });
+    expect(v.domain).toBe('Your data');
+    expect(v.totalSessions).toBe(2);
+    expect(v.records).toHaveLength(1);
+    const r = v.records[0];
+    expect(r?.heaviest).toMatchObject({ label: 'heaviest logged set (not an estimate)', reps: 5, load: kg(100) });
+    expect(r?.mostReps).toMatchObject({ reps: 10, load: kg(90) });
+    // Epley: 90 × (1 + 10/30) = 120; 100 × (1 + 5/30) = 116.7; 95 × (1 + 8/30) = 120.3 → 120.5.
+    expect(r?.bestE1rm?.label).toBe(E1RM_LABEL);
+    expect(r?.bestE1rm?.label).toMatch(/estimate, not a tested max/);
+    expect(r?.bestE1rm?.value).toBe(120.5);
+    expect(r?.bestE1rm?.text).toMatch(/^≈ 120\.5 kg \(est\.\)$/);
+    expect(r?.bestE1rm?.from).toMatchObject({ reps: 8, load: kg(95) });
+  });
+
+  it('kg and lb, app and FitNotes stay on separate lines; sets Ben left out never count', () => {
+    const v = exerciseRecordsView({
+      exerciseId: BENCH,
+      exerciseName: 'Bench press',
+      sessions: [workout(0, [{ load: 130, reps: 3, exclusions: ['spotted'] }, { load: 100, reps: 5 }]), workout(1, [{ load: 225, reps: 5 }], { unit: 'lb' }), workout(2, [{ load: 110, reps: 3 }], { imported: true })],
+      ...NAMES,
+    });
+    expect(v.records.map((r) => [r.heaviest.load.value, r.unit, r.source]).sort()).toEqual([
+      [100, 'kg', 'app'],
+      [110, 'kg', 'FitNotes import'],
+      [225, 'lb', 'app'],
+    ]);
+    expect(v.imported).toMatch(/FitNotes/);
+  });
+
+  it('no e1RM for assisted sets (bigger assistance is easier), and none from sets over 10 reps', () => {
+    const base = workout(0, [{ load: 30, reps: 8 }]);
+    const assistedAgg: SessionAggregate = { ...base, sets: base.sets.map((x) => (x.actual?.load?.unit === 'kg' && x.actual.load.convention === 'total' ? { ...x, actual: { ...x.actual, load: { ...x.actual.load, convention: 'assistance' as const } } } : x)) };
+    const a = exerciseRecordsView({ exerciseId: BENCH, exerciseName: 'Assisted pull-up', sessions: [assistedAgg], ...NAMES });
+    expect(a.records.find((r) => r.convention === 'assistance')?.bestE1rm).toBeNull();
+    const high = exerciseRecordsView({ exerciseId: BENCH, exerciseName: 'Bench press', sessions: [workout(0, [{ load: 60, reps: 15 }])], ...NAMES });
+    expect(high.records[0]?.bestE1rm).toBeNull();
+    expect(high.records[0]?.mostReps.reps).toBe(15);
+  });
+});
+
+describe('recentSessionsView (get_recent_sessions, Coach v3)', () => {
+  it('newest first, limited to count, every exercise with its sets as logged (warm-ups marked)', () => {
+    const v = recentSessionsView({ sessions: [workout(0, [{ load: 95, reps: 8 }]), workout(7, [{ load: 97.5, reps: 8, exclusions: ['pain'] }]), workout(3, [{ load: 96, reps: 8 }])], count: 2, gymNames: NAMES.gymNames });
+    expect(v.domain).toBe('Your data');
+    expect(v.sessions.map((x) => x.date)).toEqual(['2026-10-15', '2026-10-11']);
+    const bench = v.sessions[0]?.exercises[0];
+    expect(bench?.sets[0]).toMatch(/^warm-up 60\skg × 10$/u);
+    expect(bench?.sets[1]).toMatch(/^97\.5\skg × 8 \(not counted: pain\)$/u);
+    expect(v.sessions[0]?.exercises.map((e) => e.exerciseId)).toContain(ROW);
+    expect(v.sessions[0]).toMatchObject({ title: 'Push A', gym: 'Main Gym', source: 'app' });
+  });
+
+  it('an imported workout is labelled and has no minutes', () => {
+    const v = recentSessionsView({ sessions: [workout(0, [{ load: 95, reps: 8 }], { imported: true })], count: 5, gymNames: {} });
+    expect(v.sessions[0]).toMatchObject({ source: 'FitNotes import', minutes: null });
+    expect(v.imported).toMatch(/FitNotes/);
+  });
+});
+
+describe('gym summary (get_gym_equipment with no exercise, Coach v3)', () => {
+  it('one line per item: per-hand dumbbells say each, assisted says assist; another gym can be read by name', () => {
+    const v = equipmentView({ gymName: 'Hotel gym', equipment: [dumbbells(), assisted(), barbell()], exercise: null, savedGyms: ['Main Gym', 'Hotel gym'] });
+    expect(v.savedGyms).toEqual(['Main Gym', 'Hotel gym']);
+    const lines = v.summary ?? [];
+    expect(lines.find((l) => /each$/.test(l))).toBeDefined();
+    expect(lines.find((l) => /: assist /.test(l))).toBeDefined();
+    expect(lines).toEqual(gymSummaryLines(v.items));
+    // With an exercise, no summary.
+    expect(equipmentView({ gymName: 'G', equipment: [barbell()], exercise: exercise(200, 'Bench press') }).summary).toBeUndefined();
   });
 });

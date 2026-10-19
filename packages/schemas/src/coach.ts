@@ -129,6 +129,27 @@ export const GetTrainingOverviewArgsSchema = z.strictObject({
 export const GetGymEquipmentArgsSchema = z.strictObject({
   /** Null = everything used in the current or last workout. */
   exerciseId: IdSchema.nullable(),
+  /** (Coach v3) One of Ben's saved gyms by name; null = the gym in context. */
+  gymName: z.string().max(80).nullable().optional(),
+});
+
+/** (Coach v3) An exercise's records: heaviest logged set, most reps, best estimated 1RM (labelled an estimate). */
+export const GetExerciseRecordsArgsSchema = z.strictObject({
+  exerciseId: IdSchema,
+});
+
+/** (Coach v3) Ben's last finished workouts, every exercise's sets as logged. */
+export const GetRecentSessionsArgsSchema = z.strictObject({
+  count: z.int().min(1).max(10),
+});
+
+/**
+ * (Coach v3, Ben 18 Oct: "gauge itself whether it's needed") Mid-workout turns start light; the
+ * coach calls this once when the question needs more thought. The next step runs at a higher
+ * reasoning effort on Ben's main model. Changes nothing.
+ */
+export const ThinkHarderArgsSchema = z.strictObject({
+  why: z.string().max(120),
 });
 
 export const GetProgressionTargetsArgsSchema = z.strictObject({
@@ -355,6 +376,12 @@ export const CoachToolNameSchema = z.enum([
   'get_progression_targets',
   'get_substitutions',
   'get_recent_actions',
+  /** (Coach v3) Records per exercise, the e1RM labelled an estimate. */
+  'get_exercise_records',
+  /** (Coach v3) The last finished workouts with their sets. */
+  'get_recent_sessions',
+  /** (Coach v3) One step at a higher reasoning effort, once per turn. */
+  'think_harder',
   'adjust_pending_sets',
   /** (12 Oct) Add an exercise to today's workout when Ben asks; applied at once with Undo. */
   'add_exercise_today',
@@ -390,6 +417,9 @@ export const COACH_TOOL_ARGS = {
   get_progression_targets: GetProgressionTargetsArgsSchema,
   get_substitutions: GetSubstitutionsArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,
+  get_exercise_records: GetExerciseRecordsArgsSchema,
+  get_recent_sessions: GetRecentSessionsArgsSchema,
+  think_harder: ThinkHarderArgsSchema,
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
   add_exercise_today: AddExerciseTodayArgsSchema,
   rename_workout: RenameWorkoutArgsSchema,
@@ -797,7 +827,8 @@ export type ActionRecord = z.infer<typeof ActionRecordSchema>;
 export const HiddenLineSchema = z.object({
   turnId: z.string().min(1).max(64),
   sentence: z.string().min(1).max(2000),
-  reason: z.enum(['no_action', 'not_committed', 'mismatch', 'numbers_differ', 'unknown_token']),
+  /** (Coach v3) `unverified_number`: a number not found in anything the coach was given. */
+  reason: z.enum(['no_action', 'not_committed', 'mismatch', 'numbers_differ', 'unknown_token', 'unverified_number']),
   /** App text, e.g. `No change was saved in this reply.` */
   detail: z.string().min(1).max(300),
   atUtc: UtcTimestampSchema,

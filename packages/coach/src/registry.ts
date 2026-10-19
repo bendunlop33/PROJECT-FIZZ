@@ -82,7 +82,45 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ALL,
     plainLabel: null,
     capabilitySection: 'read',
-    description: 'Equipment for an exercise at the current gym: unit, load convention, achievable loads, min and max.',
+    description:
+      'Equipment for an exercise at a gym: unit, load convention, achievable loads, min and max. exerciseId null: the whole gym, with a one-line summary per item. gymName: one of Ben’s saved gyms by name; null for the gym in context.',
+  },
+  {
+    // Coach v3 (ADR 0027): history reads, so the coach can answer from Ben's records instead of guessing.
+    name: 'get_exercise_records',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description:
+      'One exercise’s records per equipment item, unit and convention: the heaviest logged set, the set with the most reps, and the best estimated 1RM. An estimated 1RM is always an estimate: call it “est.” or “≈”, never a max he lifted.',
+  },
+  {
+    name: 'get_recent_sessions',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: 'Ben’s last finished workouts (count, newest first): date, title, gym, minutes and every exercise’s sets as logged. FitNotes imports are his own history.',
+  },
+  {
+    // Coach v3 (Ben 18 Oct): a mid-workout turn starts light; this buys one deeper step when it's needed.
+    name: 'think_harder',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: null,
+    capabilitySection: 'read',
+    description:
+      'Once per turn: your next step runs with more reasoning on Ben’s main model. Use it only when the answer needs real thought (a replan, conflicting history, pain with a load question); a quick change or a short answer doesn’t.',
   },
   {
     name: 'get_progression_targets',

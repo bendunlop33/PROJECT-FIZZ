@@ -54,7 +54,17 @@ import { editOfferIn } from './edit-today';
  *   to honest statuses; nothing switches route or invents a reply (rule 1, 7).
  */
 
-export const MAX_MODEL_STEPS = 4;
+/**
+ * Coach v3 (ADR 0027): 6, so a turn can read Ben's history (up to `MAX_READ_CALLS` reads), make a
+ * change and reply. Was 4.
+ */
+export const MAX_MODEL_STEPS = 6;
+/** (Coach v3) Reads per turn. A repeated identical read is answered from the turn's cache and doesn't count. */
+export const MAX_READ_CALLS = 4;
+/** Fed back for a read past `MAX_READ_CALLS`. */
+export const READ_LIMIT_LINE = 'Read limit reached for this turn. Answer with what you have.';
+/** (Coach v3) A live-workout turn's whole-turn cap: Ben is between sets. */
+export const COACH_WORKOUT_TIMEOUT_MS = 30_000;
 /**
  * A build turn (F12, 13 Oct): one read, the text-answer nudge, a `propose_workout` whose
  * arguments fail the schema and its corrected retry, then `reply` is five steps; four ended
@@ -410,6 +420,8 @@ const TOOL_READ_LINE: Partial<Record<string, string>> = {
   get_progression_targets: 'Read next targets',
   get_substitutions: 'Read swap options',
   get_recent_actions: 'Read earlier coach changes',
+  get_exercise_records: 'Read your records',
+  get_recent_sessions: 'Read your recent workouts',
 };
 
 export type StepOutcome =
@@ -731,6 +743,9 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     if (already === undefined) req.onProgress?.({ kind: 'card', card: { record: result.record, rendered: renderActionResult(result.record, req.surface) } });
     return ref;
   };
+  // Coach v3: reads per turn, and identical reads answered from this turn's cache (keyed by the opId).
+  let readCalls = 0;
+  const readCache = new Map<string, string>();
   let replyStream = new ReplyMessageStream();
   // The whole-turn cap (BD13): when it fires the running step is stopped and the turn ends as a timeout.
   const cap = new AbortController();
@@ -824,6 +839,27 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     if (todayScopeRefused(parsed.call.tool, words)) {
       logLine({ tool: parsed.call.tool, outcome: 'not_allowed', text: 'Not applied: a later session, not today.', actionId: null });
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: FUTURE_SCOPE_LINE }) });
+      continue;
+    }
+    // Coach v3: reads are capped per turn; the same read twice is answered from the cache.
+    if (registry.tools.some((t) => t.name === parsed.call.tool && t.effect === 'read')) {
+      const cached = readCache.get(parsed.opId);
+      if (cached !== undefined) {
+        input.push({ type: 'function_call_output', callId: out.callId, output: cached });
+        continue;
+      }
+      if (readCalls >= MAX_READ_CALLS) {
+        logLine({ tool: parsed.call.tool, outcome: 'not_allowed', text: 'Read limit reached.', actionId: null });
+        input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_allowed', line: READ_LIMIT_LINE }) });
+        continue;
+      }
+      readCalls += 1;
+      const reader = ports.executors[parsed.call.tool];
+      if (reader === undefined) throw new Error(`No executor for ${parsed.call.tool}`);
+      const result = await reader(parsed.call, { ...callCtx, opId: parsed.opId });
+      const output = toolOutput(result, noteResult(parsed.call.tool, result));
+      readCache.set(parsed.opId, output);
+      input.push({ type: 'function_call_output', callId: out.callId, output });
       continue;
     }
     const setsOnly = setsOnlyOf(parsed.call);

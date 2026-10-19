@@ -5,7 +5,7 @@ import type { ActionRecord, CoachToolCall, SessionAggregate } from '@fizz/schema
 import { createStoreExecutors, undoCoachAction, type CoachExecutors, type ToolExecutor } from '../src/executors';
 import { createEditTodayExecutor } from '../src/edit-today';
 import { COACH_TOOLS } from '../src/registry';
-import { recoverCoachTurns, runCoachTurn, isBareAccept, gateFor } from '../src/turn';
+import { MAX_MODEL_STEPS, recoverCoachTurns, runCoachTurn, isBareAccept, gateFor } from '../src/turn';
 import { chunked, ScriptedCoachModel } from './fake-model';
 import { at, call, HangingModel, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, streamedReply, words, workout } from './turn-fixtures';
 import type { CoachTurnProgress } from '../src/turn';
@@ -339,13 +339,14 @@ describe('errors, timeouts, Stop and restart recovery (rule 1: honest states, no
     expect(await running).toMatchObject({ status: 'cancelled', error: 'cancelled' });
   });
 
-  it('at most four model steps', async () => {
+  it('at most six model steps (Coach v3; was four)', async () => {
     const s = await store();
-    const loop = Array.from({ length: 6 }, (_, i) => [call('get_recent_actions', { limit: 3 }, `l${String(i)}`), { type: 'completed' as const }]);
+    const loop = Array.from({ length: 8 }, (_, i) => [call('get_recent_actions', { limit: 3 }, `l${String(i)}`), { type: 'completed' as const }]);
     const model = new ScriptedCoachModel(loop);
     const r = await runCoachTurn(request({ input: words('What did you change?') }), ports(s, model, storeExecutors(s)));
     expect(r).toMatchObject({ status: 'failed', error: 'too_many_steps' });
-    expect(model.requests).toHaveLength(4);
+    expect(model.requests).toHaveLength(MAX_MODEL_STEPS);
+    expect(MAX_MODEL_STEPS).toBe(6);
   });
 
   it('coach-sheet 9 as a replay: the same turn ID sends nothing again and shows the saved cards', async () => {

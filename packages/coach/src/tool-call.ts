@@ -83,11 +83,16 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':
-    case 'get_gym_equipment':
     case 'get_progression_targets':
     case 'get_substitutions':
     case 'get_recent_actions':
+    case 'get_exercise_records':
+    case 'get_recent_sessions':
       return call.args;
+    case 'get_gym_equipment':
+      return { exerciseId: call.args.exerciseId, gymName: call.args.gymName?.trim().toLowerCase() ?? null };
+    case 'think_harder':
+      return {};
   }
 }
 
@@ -136,6 +141,9 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'get_progression_targets':
     case 'get_substitutions':
     case 'get_recent_actions':
+    case 'get_exercise_records':
+    case 'get_recent_sessions':
+    case 'think_harder':
       return [];
   }
 }
