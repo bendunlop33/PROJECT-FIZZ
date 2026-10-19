@@ -56,7 +56,7 @@
   },
   "variations": {
     "regressions": [
-      { "key": null, "name": "Bodyweight calf raise", "reason": "Same movement with no bar; learn the full range and balance first." },
+      { "key": "bodyweight-calf-raise", "name": "Calf raise (bodyweight)", "reason": "Same movement with no bar; learn the full range and balance first." },
       { "key": "machine-standing-calf-raise", "name": "Standing calf raise (machine)", "reason": "The machine takes away balance, so the calves are the only limit." }
     ],
     "progressions": [
