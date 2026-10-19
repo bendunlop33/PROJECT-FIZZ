@@ -28,6 +28,7 @@ import { isChangeClaim } from './claims';
 import { classifyBenRequest, requestHas, revisesDraft } from './request';
 import { collectFacts, mergeFacts, verifySentence, withoutNumbers, type NumberFacts } from './numbers';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
+import type { PlanContextView } from './plan';
 
 /**
  * The workout builder's tools (workout-builder.md v2.1 §8.2):
@@ -110,6 +111,8 @@ export interface BuildContextView {
   loadReferences?: LoadReferenceView[];
   /** (v2, BD18) What is already known: never asked again. Missing items are listed. */
   known?: KnownView;
+  /** (19 Oct) A plan turn: the split days, days a week, each day's length and budget, the plan being changed. */
+  plan?: PlanContextView;
 }
 
 /** One exercise's load references as the coach reads them (Your data). */
@@ -569,7 +572,7 @@ const AFTER_CALL_RULES = [
 ];
 
 /** Review r4 S2: every turn with the tool says so, building or not. */
-const MULTI_WEEK_LINE = 'It builds one session. Multi-week programmes and weekly plans are not available yet: if Ben asks for one, say so plainly.';
+const MULTI_WEEK_LINE = 'It builds one session. A plan of several days is built when Ben asks for one ("build me a 4-day plan"); multi-week blocks and deloads are not available yet: if Ben asks for one, say so plainly.';
 
 /**
  * Review r5 B1: on a turn that only offers the tool, the call and post-call rules apply only if the
@@ -622,5 +625,5 @@ export const OFFER_REPLY_BUILD_INSTRUCTIONS = [
 export const NO_BUILD_TOOL_INSTRUCTIONS = [
   'You cannot build a workout on this turn. Never say a workout is being built, set up, added or saved, or that it is ready, in the app or in his workouts.',
   'If Ben wants a session in the app, or you describe one for him, end by asking exactly: "Want me to build it in the app?" Do not say the app cannot build workouts.',
-  'Multi-week programmes are not available yet, and you never save, schedule or start a workout for him: say so plainly when he asks for that.',
+  'A plan of several days is built when Ben asks for one ("build me a 4-day plan"); multi-week blocks are not available yet, and you never save, schedule or start a workout for him: say so plainly when he asks for that.',
 ].join('\n');

@@ -751,6 +751,18 @@ function planIn(clause: string): boolean {
   return PLAN_VERB.test(body) && PLAN_SHAPE.test(body);
 }
 
+/** "Legs day shorter", "only 3 days", "day 2 without barbell", "swap Friday's squat": a change to the plan in context. */
+const PLAN_REVISION = new RegExp(`\\b(?:day ${PLAN_NUM}|${PLAN_NUM} days|(?:mon|tues|wednes|thurs|fri|satur|sun)day'?s?|push|pull|legs?|upper|lower|full[ -]body)\\b`);
+
+/** Whether Ben's words change the plan in context: a draft-style change ("make it shorter", "no barbell"), or one naming a day. */
+export function revisesPlan(text: string): boolean {
+  if (multiWeekBlock(text)) return false;
+  return revisesDraft(text) || normalise(text).some((c) => {
+    const t = c.text.replace(POLITE, '');
+    return c.label === null && !isOpinionQuestion(t) && PLAN_REVISION.test(t) && /^(?:make|keep|change|swap|switch|replace|drop|remove|add|only|no|without|more|less|fewer|use|(?:can|could) (?:you|we))\b/.test(t);
+  });
+}
+
 /** Whether Ben's words ask for a multi-day plan (`build_plan`). Code, never the model's reading. */
 export function asksForPlan(text: string): boolean {
   return requestHas(classifyBenRequest(text, 'general'), 'build_plan');

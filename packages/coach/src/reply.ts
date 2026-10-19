@@ -254,7 +254,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
 
     // Build 131: on a general turn where the app can build one, "I can't build workouts here" is false.
     // The sentence is hidden (listed in Why?) and the reply says, once, what works instead.
-    const draftThisTurn = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout');
+    const draftThisTurn = ledger.entries.some((e) => e.origin === 'this_turn' && (e.record.detail.kind === 'build_workout' || e.record.detail.kind === 'build_plan'));
     const toolOffered = options.toolOffered === true;
     if (options.noBuildToolLine === true && !draftThisTurn && claimsNoBuildTool(tokens.plainText, { generic: options.buildAsked === true })) {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_BUILD_TOOL_DETAIL });
@@ -275,7 +275,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
     // refused), "I'll set that up for you" and "It's ready in your workouts" are false. Hidden. Only on a
     // turn without the tool does the reply ask, once, "Want me to build it in the app?"; with the tool the
     // false claim is just dropped, and a refused build's card already says what happened.
-    const draftSaved = ledger.entries.some((e) => e.origin === 'this_turn' && e.record.detail.kind === 'build_workout' && e.record.status === 'committed' && e.record.undoneBy === null);
+    const draftSaved = ledger.entries.some((e) => e.origin === 'this_turn' && (e.record.detail.kind === 'build_workout' || e.record.detail.kind === 'build_plan') && e.record.status === 'committed' && e.record.undoneBy === null);
     if (options.noBuildToolLine === true && options.buildAsked === true && !draftSaved && actions.length === 0 && claimsWorkoutBuilt(tokens.plainText, { inPlay: true })) {
       hidden.push({ sentence: tokens.plainText, reason: 'no_action', detail: NO_DRAFT_BUILT_DETAIL });
       if (!askLineShown && !toolOffered && !draftThisTurn) out.push({ kind: 'sentence', text: BUILD_OFFER_LINE });

@@ -883,8 +883,8 @@ describe('review r4 S2: a week of sessions is never forced into one', () => {
     expect(multiWeekScope(t)).toBe(false);
     expect(forcesBuild(t)).toBe(true);
   });
-  it('every build prompt says programmes and weekly plans are not available yet', () => {
-    for (const i of [BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS]) expect(i).toContain('Multi-week programmes and weekly plans are not available yet');
+  it('every build prompt says a plan of several days is built on request and multi-week blocks are not available yet (19 Oct)', () => {
+    for (const i of [BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS]) expect(i).toContain('A plan of several days is built when Ben asks for one ("build me a 4-day plan"); multi-week blocks and deloads are not available yet');
   });
 });
 
@@ -967,7 +967,7 @@ describe('review r5 B1: an offered-only turn never tells the coach to withhold l
       expect(i).not.toContain('one short sentence');
       expect(i).toContain('Only if you call `propose_workout`');
       expect(i).toContain('what weight or reps to use or what he lifted before, answer as usual');
-      expect(i).toContain('Multi-week programmes and weekly plans are not available yet');
+      expect(i).toContain('multi-week blocks and deloads are not available yet');
     }
   });
   it('a turn that is building keeps the call and reply rules (v2: loads from build.loadReferences with a basis; Coach v3: minutes, focus and gym from what Ben asked)', () => {
