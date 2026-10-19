@@ -101,10 +101,16 @@ async function buildFour(s: AppServices): Promise<{ planId: string; threadId: st
 const rotation = async (s: AppServices) => (await s.routines.list()).filter((r) => r.inRotation).sort((a, b) => (a.rotationAtUtc < b.rotationAtUtc ? -1 : 1)).map((r) => r.name);
 
 /** Start a routine, log every pending set at its planned load (reps as given, else the top of its range), finish. */
-async function doRoutine(s: AppServices, gymId: string, routineId: string, reps: (setIndex: number, exerciseName: string) => number | null = () => null): Promise<{ sessionId: string; started: SessionAggregate }> {
+async function doRoutine(s: AppServices, gymId: string, routineId: string, reps: (setIndex: number, exerciseName: string) => number | null = () => null, addSetTo: string | null = null): Promise<{ sessionId: string; started: SessionAggregate }> {
   const started = await s.workout.start({ gymId, opId: `start-${routineId}-${String(h.clockMs)}`, checkIn: null, routineOf: routineId });
   if (!started.ok) throw new Error(started.error.message);
   const id = started.aggregate.session.id;
+  // Ben adds a set mid-workout (`add_set` copies the last set's target).
+  const addTo = addSetTo === null ? undefined : started.aggregate.exercises.find((e) => e.exerciseName === addSetTo);
+  if (addTo !== undefined) {
+    const r = await s.workout.dispatch(id, { type: 'add_set', at: h.now(), opId: `add-set-${id}`, sessionExerciseId: addTo.id, newSetId: h.ids(), setType: null });
+    if (!r.ok) throw new Error(r.error.message);
+  }
   const cur = await s.workout.load(id);
   const names = new Map(cur?.aggregate.exercises.map((e) => [e.id, e.exerciseName]));
   const conventions = new Map(cur?.aggregate.exercises.map((e) => [e.id, e.loadConvention]));
@@ -231,6 +237,19 @@ describe('build a 4-day plan → card → Apply (replace) → Up next walks it �
     expect((await s2.next.preview(gymId))?.routine?.basis.kind).not.toBe('plan');
     // The workout done from day 1 stays in history (rule 2).
     expect((await s2.workout.load(sessionId))?.aggregate.session.status).toBe('finished');
+  });
+
+  it('a set Ben adds mid-workout is done beyond the plan: `4/3 sets` Over, and the header stays at the plan’s 9 (review S1)', async () => {
+    const { s, gymId } = await benWithSetup();
+    const { planId } = await buildFour(s);
+    const card = await s.plans.card({ planId, versionN: 1 });
+    expect(await s.plans.apply({ planId, versionN: 1, expectedVersion: card?.planVersion ?? 0, mode: 'replace', opId: 'apply-s1' })).toMatchObject({ ok: true });
+    const day1 = (await s.next.preview(gymId))?.routine?.id ?? '';
+    h.clockMs += 3_600_000;
+    const { sessionId } = await doRoutine(s, gymId, day1, (_i, name) => (name === 'Bench press' ? 8 : null), 'Bench press');
+    const pvd = await s.workout.planVsDone(sessionId);
+    expect(pvd?.rows.find((r) => r.name === 'Bench press')).toMatchObject({ text: '4/3 sets · 8, 8, 8, 8 of 6–8', verdict: 'over', plannedSets: 3, doneSets: 4 });
+    expect(pvd?.header).toBe('9/9 planned sets');
   });
 
   it('Add alongside keeps the current workouts in the rotation; day 1 is Up next until a plan day is done', async () => {

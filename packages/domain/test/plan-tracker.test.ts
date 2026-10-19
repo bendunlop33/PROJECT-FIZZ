@@ -97,6 +97,20 @@ describe('plannedVsDone: the Summary’s plan vs done (proposal 1)', () => {
     expect(extra).toMatchObject({ plannedSets: 1, doneSets: 2, verdict: 'over', text: '2/1 sets · 8, 8 of 8' });
   });
 
+  it('a set Ben added in the workout copies a planned target but isn’t planned: `4/3 sets` is Over and the header stays at the plan (review S1)', () => {
+    const planned = { load: kg(100) };
+    const added = set(bench, 3, planned, { load: kg(100), reps: 8 });
+    const sets = [
+      set(bench, 0, planned, { load: kg(100), reps: 8 }),
+      set(bench, 1, planned, { load: kg(100), reps: 8 }),
+      set(bench, 2, planned, { load: kg(100), reps: 8 }),
+      { ...added, planned: { ...added.planned, addedInWorkout: true as const } },
+    ];
+    const r = plannedVsDone({ exercises: [bench], sets });
+    expect(r.rows[0]).toMatchObject({ plannedSets: 3, doneSets: 4, verdict: 'over', text: '4/3 sets · 8, 8, 8, 8 of 8' });
+    expect(r.header).toBe('3/3 planned sets');
+  });
+
   it('nothing planned (an empty start, an import): no rows', () => {
     expect(plannedVsDone({ exercises: [bench], sets: [set(bench, 0, { reps: null }, { load: kg(100), reps: 8 })] })).toBeNull();
     expect(plannedVsDone({ exercises: [{ ...bench, removed: { opId: 'x', at: { utc: '2026-10-08T06:00:00.000Z', tz: TZ }, by: 'remove' } }], sets: [set(bench, 0, {}, { reps: 8 })] })).toBeNull();

@@ -315,6 +315,12 @@ export interface PlannedSet {
    * back while nothing has changed since (rule 5).
    */
   edit?: PlannedSetEdit | undefined;
+  /**
+   * Ben added this set during the workout (`add_set`), so it isn't part of
+   * the plan the workout started with: plan vs done counts it as done, not
+   * planned (review plans-19oct S1). Absent on every start-time set.
+   */
+  addedInWorkout?: true | undefined;
 }
 
 /** What one `edit_planned_set` replaced on a pending set. */
@@ -343,6 +349,7 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
   /** How the load was fitted to the gym's equipment (GS-S1); absent = as intended. */
   snap: PlannedSnapSchema.optional(),
   bodyweightExercise: z.literal(true).optional(),
+  addedInWorkout: z.literal(true).optional(),
   get otherMode() {
     return PlannedSetSchema.optional();
   },

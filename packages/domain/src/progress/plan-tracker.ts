@@ -54,9 +54,12 @@ function isWorking(s: WorkoutSet): boolean {
   return s.setType !== 'warmup' && s.status !== 'deleted' && s.pairedWithSetId === null;
 }
 
-/** Part of today's plan: a target of its own, and not taken out before the start (`Skip today`). */
+/**
+ * Part of today's plan: a target of its own, not taken out before the start (`Skip today`), and not a set Ben
+ * added during the workout (it copies a planned set's target, but it's done beyond the plan: review S1).
+ */
 function isPlanned(s: WorkoutSet): boolean {
-  return (s.planned.reps !== null || s.planned.durationS !== null) && s.skippedBy !== 'before_start';
+  return (s.planned.reps !== null || s.planned.durationS !== null) && s.skippedBy !== 'before_start' && s.planned.addedInWorkout !== true;
 }
 
 const EPS = 1e-6;
