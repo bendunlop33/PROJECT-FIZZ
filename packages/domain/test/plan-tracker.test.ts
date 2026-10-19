@@ -107,8 +107,8 @@ describe('plannedVsDone: the Summary’s plan vs done (proposal 1)', () => {
       { ...added, planned: { ...added.planned, addedInWorkout: true as const } },
     ];
     const r = plannedVsDone({ exercises: [bench], sets });
-    expect(r.rows[0]).toMatchObject({ plannedSets: 3, doneSets: 4, verdict: 'over', text: '4/3 sets · 8, 8, 8, 8 of 8' });
-    expect(r.header).toBe('3/3 planned sets');
+    expect(r?.rows[0]).toMatchObject({ plannedSets: 3, doneSets: 4, verdict: 'over', text: '4/3 sets · 8, 8, 8, 8 of 8' });
+    expect(r?.header).toBe('3/3 planned sets');
   });
 
   it('nothing planned (an empty start, an import): no rows', () => {
