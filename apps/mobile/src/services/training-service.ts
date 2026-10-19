@@ -1,6 +1,8 @@
 import {
   buildDayFor,
   liftHistoryFrom,
+  liveRoutines,
+  mainLiftIds,
   mainLiftFor,
   mainLiftOptions,
   newTrainingProfile,
@@ -91,6 +93,23 @@ export function createTrainingService(deps: TrainingServiceDeps) {
 
   return {
     snapshot,
+
+    /**
+     * Every main lift (Ben, 20 Oct: `Targets hit` on main lifts only): each
+     * split day's main lift (his or the recommended one) and every exercise
+     * marked `Main` in a live workout. Empty when nothing can be read.
+     */
+    async mainLiftIds(): Promise<Set<string>> {
+      const snap = await snapshot().catch(() => null);
+      if (snap === null) return new Set();
+      const routines = liveRoutines(await deps.store().repos.routines.listByOwner(snap.owner.id).catch(() => []));
+      const exercises = await pool();
+      return mainLiftIds({
+        dayMainLifts: Object.values(snap.mainLifts).map((m) => m?.exerciseId ?? null),
+        routines,
+        isCompound: (id) => exercises.get(id)?.mechanic === 'compound',
+      });
+    },
 
     /**
      * One change on the version the screen showed (rule 5). `opId` is the

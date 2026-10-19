@@ -5,6 +5,7 @@ import {
   endPlan,
   isDeleted,
   liveRoutines,
+  isMainLift,
   planDayDetail,
   planDayFromTemplates,
   planDayLines,
@@ -15,6 +16,7 @@ import {
   planRoutines,
   planWeekStartMs,
   rotationRoutines,
+  showsTargetsHit,
   toIso,
   toMs,
   undoEndPlan,
@@ -47,6 +49,8 @@ export interface PlanServicesDeps {
   upNextRoutineId?: (gymId: string | null) => Promise<string | null>;
   /** What Start would create for a workout at this gym (a dry run, saves nothing) and about how long. */
   plannedDay?: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate; aboutMinutes: number | null } | null>;
+  /** Every main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
+  mainLiftIds?: () => Promise<ReadonlySet<string>>;
 }
 
 export type PlanCardState =
@@ -367,7 +371,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     },
 
     /** One day of the plan in use (Library › Your plan › a day): its planned sets at this gym and last time's. Null: not a day of it. */
-    async planDay(routineId: string): Promise<PlanDayScreenData | null> {
+    async planDay(routineId: string, opts: { targetsHit: boolean } = { targetsHit: false }): Promise<PlanDayScreenData | null> {
       const p = await owner();
       if (p === null) return null;
       const plan = await repo().applied(p.id).catch(() => null);
@@ -383,10 +387,13 @@ export function createPlanServices(deps: PlanServicesDeps) {
         histories.set(exerciseId, await deps.store().repos.sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => []));
       }
       const history = (id: string) => histories.get(id) ?? [];
+      // `Targets hit` (Ben, 20 Oct): with the setting on, on main lifts only.
+      const mains = opts.targetsHit ? ((await deps.mainLiftIds?.().catch(() => null)) ?? new Set<string>()) : new Set<string>();
+      const targetsHit = (id: string) => showsTargetsHit({ on: opts.targetsHit, main: isMainLift(id, mains) });
       const detail =
         run === null
-          ? planDayFromTemplates({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, routine, exerciseOf: await exerciseOf(), unit: p.preferredUnit, history })
-          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history });
+          ? planDayFromTemplates({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, routine, exerciseOf: await exerciseOf(), unit: p.preferredUnit, history, targetsHit })
+          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history, targetsHit });
       const status = run !== null ? 'planned' : gym === null ? 'no_gym' : 'not_here';
       return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status };
     },

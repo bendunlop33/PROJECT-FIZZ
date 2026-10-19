@@ -221,9 +221,18 @@ describe('build a 4-day plan → card → Apply (replace) → Up next walks it �
     expect(JSON.stringify(c)).not.toMatch(/miss/i);
     // Exercise history: target vs actual, targets hit.
     const benchId = benchRow?.exerciseId ?? '';
-    const targets = await s2.progress.exerciseTargets(benchId);
+    const targets = await s2.progress.exerciseTargets(benchId, { targetsHit: true });
     expect(targets?.rows[0]).toMatchObject({ sessionId, target: '3 × 6–8', actual: '8, 8, 5', verdict: 'short' });
     expect(targets?.hitText).toMatch(/^Targets hit \d of last \d$/);
+    // (Ben, 20 Oct) Setting off (the default): the per-workout rows stay, no `Targets hit`.
+    const off = await s2.progress.exerciseTargets(benchId);
+    expect(off?.rows[0]).toMatchObject({ sessionId, target: '3 × 6–8', verdict: 'short' });
+    expect(off?.hitText).toBeNull();
+    // Progress › Exercises tab: the same.
+    expect((await s2.progress.exerciseTab({ exerciseId: benchId, period: '6m', targetsHit: true }))?.targets?.hitText).toMatch(/^Targets hit \d of last \d$/);
+    const tabOff = await s2.progress.exerciseTab({ exerciseId: benchId, period: '6m' });
+    expect(tabOff?.targets?.hitText).toBeNull();
+    expect(tabOff?.targets?.rows[0]).toMatchObject({ sessionId, verdict: 'short' });
 
     // Undo: Push A and Pull A back in the rotation in their places; the plan's workouts are gone; the plan is open again.
     const now = await s2.plans.card({ planId, versionN: 1 });
