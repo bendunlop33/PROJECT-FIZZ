@@ -26,7 +26,8 @@ import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, requestHas, revisesDraft, type BenRequest } from './request';
+import { asksForPlan, asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, type BenRequest } from './request';
+import { PLAN_INSTRUCTIONS } from './plan';
 import { parseToolCall } from './tool-call';
 import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
 import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, refusedBuildActionIds } from './build-ask';
@@ -149,6 +150,11 @@ export interface CoachTurnRequest {
    * is "I can't build workouts" replaced. False or absent: the coach states its limits as usual.
    */
   buildAvailable?: boolean;
+  /**
+   * (19 Oct, plans) The thread's newest build is an open coach plan: Ben's change words ("make legs
+   * shorter", "only 3 days") make its next version (`propose_plan`), never a one-session build.
+   */
+  planInContext?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -222,6 +228,10 @@ export interface GateInput {
   liveWorkout?: boolean;
   /** (v2, BD17) This build request may still ask one clarifying question. */
   buildQuestionOpen?: boolean;
+  /** (19 Oct) An open coach plan is the thread's newest build: change words revise it (`build_plan`). */
+  planInContext?: boolean;
+  /** (19 Oct) The build follow-up (an answer to the coach's question, "yes put it in") is about Ben's plan request. */
+  planFollowUp?: boolean;
 }
 
 /** The turn gate from Ben's own input only (registry.ts `TurnGate`). */
@@ -238,9 +248,13 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
       if (g.draftInContext === true && revisesDraft(g.input.text) && !requestHas(benRequest, 'build')) {
         benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds : []), 'build'] };
       }
+      // (19 Oct) With an open plan in the thread, "make legs shorter" or "only 3 days" is a new version of the plan.
+      if (g.kind === 'general' && g.planInContext === true && revisesPlan(g.input.text) && !requestHas(benRequest, 'build_plan')) {
+        benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds.filter((k) => k !== 'build' && k !== 'change') : []), 'build_plan'] };
+      }
       // Build 131: "yes add it" after a session described in text is a build request, not a change to today's sets.
-      if (g.kind === 'general' && g.buildFollowUp === true && !requestHas(benRequest, 'build')) {
-        benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds.filter((k) => k !== 'change') : []), 'build'] };
+      if (g.kind === 'general' && g.buildFollowUp === true && !requestHas(benRequest, 'build') && !requestHas(benRequest, 'build_plan')) {
+        benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds.filter((k) => k !== 'change') : []), g.planFollowUp === true ? 'build_plan' : 'build'] };
       }
       benPainWords = classifyPainMention(g.input.text) === 'pain';
       break;
@@ -258,7 +272,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
   const live = g.liveWorkout === true && g.kind === 'workout';
   // Review S2: asking to rename is asking for a change, so "I've renamed it" with no card is hidden and noted.
   const setWords = live && g.input.kind === 'words' && (mentionsTodaysSets(g.input.text) || asksToRename(g.input.text));
-  const benAskedForChange = acceptedOffer || setWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'add')));
+  const benAskedForChange = acceptedOffer || setWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'build_plan') || requestHas(benRequest, 'add')));
   return {
     kind: g.kind,
     benRequest,
@@ -267,7 +281,8 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     structuralSignals: g.structuralSignals,
     benAskedForChange,
     intent,
-    ...(g.buildOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildOpen: true } : {}),
+    // (19 Oct) A plan request offers `propose_plan`, never a one-session build beside it.
+    ...(g.buildOpen === true && g.kind === 'general' && g.input.kind === 'words' && !requestHas(benRequest, 'build_plan') ? { buildOpen: true } : {}),
     ...(live ? { liveWorkout: true } : {}),
     ...(g.buildQuestionOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildQuestionOpen: true } : {}),
   };
@@ -557,6 +572,9 @@ export const ANSWERED_LINE = 'Ben’s message answers your question: build the w
 /** Fed back when a build turn's first answer was text (build 131). Never shown to Ben. */
 export const BUILD_NUDGE_LINE = 'Not shown. Ben asked for a workout in the app: call propose_workout now with the session (from his words, or the one you described earlier in this thread). Do not write the workout in reply.';
 
+/** Fed back when a plan turn's first answer was text (19 Oct). Never shown to Ben. */
+export const PLAN_NUDGE_LINE = 'Not shown. Ben asked for a plan in the app: call propose_plan now with every day. Do not write the plan in reply.';
+
 /** Whether the coach's last message is waiting on Ben: an offer, or a card he can accept (a memory suggestion, a proposal). */
 async function lastCoachAsked(store: CoachTurnStore, lastCoach: CoachMessage | undefined): Promise<boolean> {
   if (lastCoach === undefined || lastCoach.body.role !== 'coach') return false;
@@ -597,7 +615,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const chain = saidWords === null ? null : await buildQuestionChain(history, saidWords, (id) => ports.store.listTurnActions(id));
   const followUp = saidWords === null ? null : (chain?.followUp ?? buildFollowUpIn(history, saidWords, await refusedBuildActionIds(history, (id) => ports.store.listTurnActions(id))));
   const liveWorkout = req.kind === 'workout' && req.context.session?.session.status === 'active';
-  const askedBuild = saidWords !== null && (requestHas(classifyBenRequest(saidWords, 'general'), 'build') || (req.draftInContext === true && revisesDraft(saidWords)));
+  // (19 Oct) Ben answering the coach's question about his plan (or agreeing to put a plan in the app) continues the plan.
+  const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
+  const askedPlan = saidWords !== null && (planFollowUp || requestHas(classifyBenRequest(saidWords, 'general'), 'build_plan') || (req.planInContext === true && revisesPlan(saidWords)));
+  const askedBuild = saidWords !== null && (askedPlan || requestHas(classifyBenRequest(saidWords, 'general'), 'build') || (req.draftInContext === true && revisesDraft(saidWords)));
   // At most 2 questions per build request, none in a draft revision, none after Skip (BD17).
   const questionOpen = chain !== null && req.draftInContext !== true && !chain.skipped && chain.asked < MAX_BUILD_QUESTIONS && (askedBuild || chain.open !== null);
   const gate = gateFor({
@@ -610,6 +631,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(followUp !== null ? { buildFollowUp: true } : {}),
     ...(req.buildAvailable === true ? { buildOpen: true } : {}),
     ...(questionOpen ? { buildQuestionOpen: true } : {}),
+    ...(req.planInContext === true ? { planInContext: true } : {}),
+    ...(planFollowUp ? { planFollowUp: true } : {}),
   });
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
@@ -661,6 +684,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const registry = runnable(buildTurnRegistry(gate), ports.executors);
   const tools = [...functionToolDefinitions(registry.tools), replyToolDefinition()];
   const buildOffered = registry.tools.some((t) => t.name === 'propose_workout');
+  // (19 Oct) A plan request (or a change to the plan in context) offers `propose_plan`, forced like a build.
+  const planOffered = registry.tools.some((t) => t.name === 'propose_plan');
   // Build 131: a general turn without the build tool still knows the app builds workouts, so it never says it can't.
   const canBuild = req.kind === 'general' && (buildOffered || req.buildAvailable === true);
   // Review r4 (PM, 13 Oct, pending Ben): the tool is offered on every general turn with a gym. It is
@@ -668,13 +693,15 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // with no pain word and no multi-week scope (`forcesBuild`). A clear follow-up ("yes add it") gets the
   // build instructions, never the force; a loose one (r3 S1) the offer-reply ones; any other turn the
   // offered ones, which say when to use it and when never to.
-  const forced = buildOffered && words !== null && forcesBuild(words, { draftInContext: req.draftInContext === true });
+  const forcedPlan = planOffered && words !== null && askedPlan && buildPainMention(words) === 'none' && !multiWeekBlock(words);
+  const forced = forcedPlan || (buildOffered && words !== null && forcesBuild(words, { draftInContext: req.draftInContext === true }));
+  const forcedTool = forcedPlan ? 'propose_plan' : 'propose_workout';
   const benBuildWords = words !== null && (requestHas(classifyBenRequest(words, 'general'), 'build') || (req.draftInContext === true && revisesDraft(words)));
   const painWords = mention !== 'none';
   const clearFollowUp = followUp?.strength === 'clear' && !painWords;
   const looseBuild = buildOffered && !forced && !clearFollowUp && followUp?.strength === 'loose' && !benBuildWords;
   // A build is being talked about this turn: Ben asked for one or is following one up.
-  const buildInPlay = canBuild && (benBuildWords || followUp !== null);
+  const buildInPlay = (canBuild && (benBuildWords || followUp !== null)) || planOffered;
   const buildInstructions = forced || clearFollowUp ? BUILD_INSTRUCTIONS : looseBuild ? OFFER_REPLY_BUILD_INSTRUCTIONS : OFFERED_BUILD_INSTRUCTIONS;
   const todayOffered = registry.tools.some((t) => TODAY_TOOLS.has(t.name));
   // Review S5: adding is named only with the list of what can be added; without it the model can only guess an ID.
@@ -682,7 +709,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const baseInstructions = todayOffered ? `${COACH_INSTRUCTIONS}\n${liveWorkoutInstructions(addOffered)}` : COACH_INSTRUCTIONS;
   const questionOffered = registry.tools.some((t) => t.name === 'ask_build_question');
   const questionLines = [...(questionOffered ? [QUESTION_RULES] : []), ...(chain?.skipped === true ? [SKIPPED_LINE] : chain?.open !== null && chain?.open !== undefined ? [ANSWERED_LINE] : [])];
-  const withBuild = buildOffered ? [buildInstructions, ...questionLines].join('\n') : null;
+  const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
   const instructions = withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
@@ -809,7 +836,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     const holdReply = forced && !buildTried && !nudged;
     // Review S1: after a text answer on a build turn, the next step is forced to call `propose_workout`.
     const forceBuild = forced && nudged && !buildTried;
-    const toolChoice: ModelRequest['toolChoice'] = forceBuild ? { type: 'function', name: 'propose_workout' } : 'required';
+    const toolChoice: ModelRequest['toolChoice'] = forceBuild ? { type: 'function', name: forcedTool } : 'required';
     const out = await runModelStep(ports.model, { model: stepModel(), instructions, input, tools, toolChoice, parallelToolCalls: false, effort: stepEffort() }, timing, cap.signal, {
       onFirstEvent,
       onReplyDelta: (delta) => {
@@ -848,10 +875,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       heldReply = out.arguments;
       logLine({ tool: COACH_REPLY_TOOL_NAME, outcome: 'not_allowed', text: 'Answer in text; asked to build.', actionId: null });
       input.push({ type: 'function_call', callId: out.callId, name: out.name, arguments: out.arguments });
-      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: BUILD_NUDGE_LINE }) });
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_shown', line: forcedPlan ? PLAN_NUDGE_LINE : BUILD_NUDGE_LINE }) });
       continue;
     }
-    if (out.name === 'propose_workout') buildTried = true;
+    if (out.name === 'propose_workout' || out.name === 'propose_plan') buildTried = true;
     if (out.name === COACH_REPLY_TOOL_NAME) {
       const parsed = parseReply(out.arguments, req.kind);
       if (!parsed.ok) {

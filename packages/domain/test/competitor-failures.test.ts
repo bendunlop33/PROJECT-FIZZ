@@ -365,8 +365,8 @@ describe('(a) an import never changes planned or pending sets (Fitbod refresh)',
     ];
     for (const step of steps) s = apply(s, step(s));
     for (const [sid, plan] of planned) expect(current(s, sid).planned, `planned target of ${sid}`).toEqual(plan);
-    // The added set copies the last set's target; it isn't re-planned from history.
-    expect(current(s, id(1401)).planned).toEqual(b2.planned);
+    // The added set copies the last set's target; it isn't re-planned from history (marked as added in the workout: plan vs done).
+    expect(current(s, id(1401)).planned).toEqual({ ...b2.planned, addedInWorkout: true });
   });
 });
 

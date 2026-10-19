@@ -27,6 +27,7 @@ import { decodeDocument, erase, EXERCISE_SPEC, listDocuments, PAIN_FLAG_SPEC, sa
 import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId } from './sql';
 import { getWorkoutDraftIn, WORKOUT_DRAFT_SPEC } from './workout-drafts';
+import { getPlanDraftIn, PLAN_DRAFT_SPEC } from './plan-drafts';
 
 /**
  * Coach v1 storage (ADR 0020 §9, slice C3). Every coach write is an
@@ -91,6 +92,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'fit_today':
     case 'build_workout':
     case 'build_question':
+    case 'build_plan':
     case 'undo':
       return null;
   }
@@ -524,6 +526,18 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback(write.expectedVersion === null ? 'already_exists' : 'stale_version');
         return null;
       }
+      case 'plan_draft': {
+        // (19 Oct) A coach plan (new, or a new version on the version the turn read) and its record together.
+        if (write.plan.ownerId !== ownerId) throw new Error('Plan owner differs from the store owner');
+        if (write.expectedVersion !== null) {
+          const current = await getPlanDraftIn(tx, write.plan.id);
+          if (current === null || current.ownerId !== ownerId) throw new Rollback('missing');
+          if (current.status !== 'open' || current.expiresAtUtc <= write.action.createdAt.utc) throw new Rollback('stale_version');
+        }
+        const r = await saveDocumentIn(tx, PLAN_DRAFT_SPEC, write.plan, write.expectedVersion);
+        if (!r.ok) throw new Rollback(write.expectedVersion === null ? 'already_exists' : 'stale_version');
+        return null;
+      }
     }
   }
 
@@ -704,11 +718,13 @@ export class SqliteCoachStore {
       // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
       // The coach's fit to time has its own Undo (`drafts.undoCoachFit`), versioned on the draft.
       // A draft version's Undo is Ben's draft write (`workout_drafts`), not a coach undo (workout-builder §5.3).
+      // A plan's Apply and Undo are Ben's own writes on the plan (`plan_drafts`), not a coach undo.
       case 'suggest_memory':
       case 'update_routine':
       case 'fit_today':
       case 'build_workout':
       case 'build_question':
+      case 'build_plan':
       case 'undo':
         return 'unsupported';
     }

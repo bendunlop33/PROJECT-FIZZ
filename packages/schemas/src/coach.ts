@@ -15,6 +15,7 @@ import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
 import type { Exercise } from './exercise';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
+import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 
 /**
  * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
@@ -73,6 +74,8 @@ export const CoachEntityKindSchema = z.enum([
   'session_name',
   /** (14 Oct, workout builder v2) A clarifying question card in the thread (`ask_build_question`); it changes nothing else. */
   'build_question',
+  /** (19 Oct, plans) A coach-built multi-day plan: a proposal Ben applies; never a routine or the rotation directly. */
+  'plan_draft',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -405,6 +408,8 @@ export const CoachToolNameSchema = z.enum([
   'propose_workout',
   /** (14 Oct, workout builder v2 BD17) One clarifying question before a build; at most 2 per build request. */
   'ask_build_question',
+  /** (19 Oct) A multi-day plan Ben asked for: every day at once, as a proposal he applies. */
+  'propose_plan',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -435,6 +440,7 @@ export const COACH_TOOL_ARGS = {
   add_playbook_candidate: AddPlaybookCandidateArgsSchema,
   propose_workout: ProposeWorkoutArgsSchema,
   ask_build_question: AskBuildQuestionArgsSchema,
+  propose_plan: ProposePlanArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -781,6 +787,20 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     /** The split day the question is about (`main_lift` saves go to this day), when there is one. */
     day: z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(30) }).nullable(),
   }),
+  /**
+   * (19 Oct, plans) The coach built a multi-day plan, or a new version of one, because Ben asked.
+   * A proposal: nothing changes until Ben applies it (the plan document records Apply and Undo).
+   * App text and counts only; the card reads the plan itself.
+   */
+  z.object({
+    kind: z.literal('build_plan'),
+    planId: IdSchema,
+    versionN: z.int().min(1),
+    parentN: z.int().min(1).nullable(),
+    name: z.string().min(1).max(120),
+    days: z.array(z.object({ name: z.string().min(1).max(30), exerciseCount: z.int().min(0).max(40), leftOut: z.int().min(0).max(40) })).max(7),
+    gymName: z.string().min(1).max(120).nullable(),
+  }),
   z.object({
     kind: z.literal('undo'),
     undoneActionId: IdSchema,
@@ -1095,7 +1115,9 @@ export type CoachWrite =
    * `expectedVersion`: null creates the draft; otherwise the draft's version
    * the new version was built on (a newer one refuses it as stale, rule 5).
    */
-  | { kind: 'workout_draft'; action: ActionRecord; draft: WorkoutDraft; expectedVersion: number | null };
+  | { kind: 'workout_draft'; action: ActionRecord; draft: WorkoutDraft; expectedVersion: number | null }
+  /** (19 Oct) A coach plan and its record, in one write; `expectedVersion` as for a draft. */
+  | { kind: 'plan_draft'; action: ActionRecord; plan: PlanDraft; expectedVersion: number | null };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

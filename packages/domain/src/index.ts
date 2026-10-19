@@ -68,6 +68,7 @@ export * from './session/overview';
 export * from './session/today-edits';
 export * from './session/swap-plan';
 export * from './session/coach-draft';
+export * from './session/coach-plan';
 export * from './session/builder-loads';
 export * from './session/builder-reasons';
 export * from './session/builder-questions';

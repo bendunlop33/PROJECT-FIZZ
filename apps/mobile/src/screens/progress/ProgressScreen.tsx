@@ -9,6 +9,7 @@ import { newUuid } from '../../device/runtime';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import { runCountIt, type CountItToast } from '../../progress/count-it';
+import { consistencyCardView, type ConsistencyCardView } from '../../progress/consistency-view';
 import { ActivityChart, FrequencyHeader, FrequencyRow, FrequencySubRows, PeriodPicker, ResumeBar, Segmented, useAx } from '../../progress/components';
 import type { ProgressHome } from '../../services/progress-service';
 import { useScreenData, useServices } from '../../shell/context';
@@ -44,6 +45,8 @@ export function ProgressScreen() {
   const [exercisesFocus, setExercisesFocus] = useState<ExercisesFocus | null>(null);
   // No local window or grouping: the service holds the one shared choice, so home and Muscles never disagree (check 15).
   const [data, reload] = useScreenData((s) => s.progress.home());
+  // Plan tracker v1 (19 Oct): the last 8 weeks against Ben's days-a-week aim, and his plan's days this week.
+  const [consistencyData] = useScreenData((s) => s.plans.consistency());
   const [timeOpen, setTimeOpen] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
   const [toast, setToast] = useState<Toasted>(null);
@@ -176,7 +179,8 @@ export function ProgressScreen() {
             />
           </View>
         ) : null}
-        <View style={segment === 'activity' ? null : { display: 'none' }}>
+        <View style={segment === 'activity' ? { gap: theme.space['5'] } : { display: 'none' }}>
+      {consistencyData.state === 'ready' && consistencyData.value !== null ? <ConsistencyCard view={consistencyCardView(consistencyData.value, home.today)} /> : null}
       <Overview
         home={home}
         view={home.view}
@@ -282,6 +286,45 @@ export function ProgressScreen() {
         }}
       />
     </View>
+  );
+}
+
+/** `Consistency` (plan tracker v1): counts and a mark per week, never colour alone; never "missed". */
+function ConsistencyCard({ view }: { view: ConsistencyCardView }) {
+  return (
+    <Card>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+          {view.title.toUpperCase()}
+        </AppText>
+        <AppText variant="callout" numeric>
+          {view.thisWeek}
+        </AppText>
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        {view.weeks.map((w) => (
+          <View key={w.key} accessible accessibilityLabel={w.accessibilityLabel} style={{ alignItems: 'center', gap: 2 }}>
+            <AppText variant="callout" numeric>
+              {w.value}
+            </AppText>
+            {w.atAim === true ? <Icon name="checkmark" size={12} color="text.secondary" /> : <View style={{ height: 12 }} />}
+            <AppText variant="label" color="text.tertiary" numeric>
+              {w.label}
+            </AppText>
+          </View>
+        ))}
+      </View>
+      {view.atAim !== null ? (
+        <AppText variant="callout" color="text.secondary" numeric>
+          {view.atAim}
+        </AppText>
+      ) : null}
+      {view.plan !== null ? (
+        <AppText variant="callout" color="text.secondary" numeric>
+          {view.plan}
+        </AppText>
+      ) : null}
+    </Card>
   );
 }
 

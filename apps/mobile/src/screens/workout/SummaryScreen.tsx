@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, PLAN_VERDICT_WORD, toIso, toMs, type PlannedVsDone, type WorkoutSummary } from '@fizz/domain';
 import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
 
@@ -62,7 +62,7 @@ export function SummaryScreen() {
   const [data, reload] = useScreenData(async (s) => {
     // Keychain + settings file only, no network; a read failure counts as not connected.
     const coach = summaryCoachView(await readTextCoachState(coachConnectionPorts().ports).catch(() => null));
-    const [summary, backup, painFlags, routines] = await Promise.all([s.workout.summary(sessionId, coach.coach), s.backups.getStatus(), s.pain.active(), s.routines.list().catch(() => [])]);
+    const [summary, backup, painFlags, routines, planVsDone] = await Promise.all([s.workout.summary(sessionId, coach.coach), s.backups.getStatus(), s.pain.active(), s.routines.list().catch(() => []), s.workout.planVsDone(sessionId).catch(() => null)]);
     // `Save to Workouts` (routines.md §A2.6): once saved from here, the link reads `Saved · Legs ›`.
     const savedAs = routines.find((r) => r.createdFromSessionId === sessionId) ?? null;
     // D21: the coach's saved targets over the built-in rule's, and the summary turn's checked reply as the note.
@@ -71,7 +71,7 @@ export function SummaryScreen() {
     // A deleted (or purged) workout opens read-only with Restore (delete-workouts §3.2).
     // A presence read that fails offers no delete rather than one that would be refused (review r2 N2).
     const presence = await s.history.presence(sessionId).catch((): WorkoutPresence => ({ kind: 'hidden' }));
-    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence };
+    return { summary, backup, painFlags, savedAs, coachNote: turnNote ?? coach.note, nextTime, presence, planVsDone };
   });
   // The one coach review after Finish (D21). It runs in the service, so leaving the Summary doesn't stop it;
   // its small changes are saved when it answers, until a workout starts from this one (CA10).
@@ -465,6 +465,12 @@ export function SummaryScreen() {
         {sum.exercises.length > 0 ? (
           <View>
             <SectionHeader title="Exercises" />
+            {/* Plan tracker v1 (19 Oct): planned vs done, numbers and one word each, never colour alone. */}
+            {data.value.planVsDone !== null ? (
+              <AppText variant="callout" color="text.secondary" numeric>
+                {data.value.planVsDone.header}
+              </AppText>
+            ) : null}
             {sum.exercises.map((e, i) => (
               <View
                 key={e.sessionExerciseId}
@@ -500,6 +506,7 @@ export function SummaryScreen() {
                     {e.results}
                   </AppText>
                 ) : null}
+                {planLine(data.value.planVsDone, e.sessionExerciseId)}
                 {e.skipped > 0 ? <AppText variant="callout" color="text.secondary" numeric>{`${String(e.skipped)} skipped`}</AppText> : null}
                 {e.sides ? (
                   <AppText variant="callout" color="text.secondary" numeric>
@@ -628,6 +635,18 @@ export function SummaryScreen() {
         }}
       />
     </View>
+  );
+}
+
+/** `3/3 sets · 8, 8, 7 of 8 · Short`: the exercise against today's plan (plan tracker v1), or nothing with no plan. */
+function planLine(p: PlannedVsDone | null, sessionExerciseId: string) {
+  const row = p?.rows.find((r) => r.sessionExerciseId === sessionExerciseId);
+  if (row === undefined) return null;
+  const word = PLAN_VERDICT_WORD[row.verdict];
+  return (
+    <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Plan: ${row.text.replace(' · ', ', ')}. ${word}.`}>
+      {`${row.text} · ${word}`}
+    </AppText>
   );
 }
 

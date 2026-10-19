@@ -381,6 +381,12 @@ export interface RoutineStartInput {
   /** GS3 step 2: the item an exercise last used at this gym. */
   lastUsedHere?: StartWorkoutInput['lastUsedHere'];
   /**
+   * (19 Oct, plans) A plan workout's first start (`planFirstLoads`): per row, each set template's
+   * planned set from the plan's checked loads. Used only on rows with no targets; a template with a
+   * load of its own (Fixed) or no entry keeps the routine's own.
+   */
+  firstLoads?: ReadonlyMap<string, { exerciseId: string; sets: readonly (PlannedSet | null)[] }>;
+  /**
    * Today's shape per slot (`RoutineExercise.id`; overview-today-edits §11):
    * Ben's sets, reps and load for today, applied after the targets.
    */
@@ -422,7 +428,15 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     const planned = input.slotTargets?.get(rex.id) ?? ((slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId));
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
-    const targetedTemplates: SetTemplate[] = useTargets ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc }) : rex.setTemplates;
+    // A row swapped today (another exercise) doesn't take the plan's loads.
+    const firstOf = useTargets ? undefined : input.firstLoads?.get(rex.id);
+    const first = firstOf !== undefined && firstOf.exerciseId === rex.exerciseId ? firstOf.sets : undefined;
+    if (first !== undefined && first.some((p) => p !== null)) targeted.add(rex.exerciseId);
+    const targetedTemplates: SetTemplate[] = useTargets
+      ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc })
+      : first !== undefined
+        ? withFirstLoads(rex.setTemplates, first, input.newId, ruleOf)
+        : rex.setTemplates;
     // Ben's today-only shape (§11) comes last: his choice for today wins over any target.
     const shape = input.shape?.get(rex.id);
     if (input.shape !== undefined) shapedFrom[rex.id] = shapeOfTemplates(targetedTemplates);
@@ -573,6 +587,17 @@ export function routineTemplatesWithTargets(
     }
   }
   return out;
+}
+
+/** A plan workout's first start: each Auto template takes its planned set's load (recorded in `ruleOf` for its `Why?`). */
+function withFirstLoads(templates: readonly SetTemplate[], first: readonly (PlannedSet | null)[], newId: () => string, ruleOf: Map<string, PlannedSet>): SetTemplate[] {
+  return templates.map((t, i) => {
+    const p = first[i] ?? null;
+    if (p === null || p.load === null || t.targetLoad !== null || t.setType === 'warmup') return t;
+    const id = newId();
+    ruleOf.set(id, p);
+    return { ...t, id, targetLoad: p.load };
+  });
 }
 
 const sameRange = (a: { min: number; max: number }, b: { min: number; max: number }): boolean => a.min === b.min && a.max === b.max;

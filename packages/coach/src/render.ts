@@ -472,6 +472,18 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `Couldn't build a workout here: ${failureOr(record, 'it failed the checks')}. Nothing saved.`;
       return make(status, text, speakable(text));
     }
+    case 'build_plan': {
+      // (19 Oct) The plan card reads the stored plan; this line is the tool log and `Why?` text. A proposal: nothing applied.
+      if (st === 'committed' || st === 'proposed') {
+        const left = d.days.reduce((n, x) => n + x.leftOut, 0);
+        const what = `${d.name} · ${d.days.map((x) => x.name).join(', ')}${left > 0 ? ` · ${String(left)} left out` : ''}`;
+        const text = d.parentN === null ? `Plan ready: ${what}. Not applied.` : `Version ${String(d.versionN)}: ${what}. Not applied.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing built.', 'Out of date. Nothing built.');
+      const text = `Couldn't build a plan here: ${failureOr(record, 'it failed the checks')}. Nothing saved.`;
+      return make(status, text, speakable(text));
+    }
     case 'build_question': {
       // workout-builder v2 §4.2: the card shows the checked question and its answers; nothing else was written.
       const text = d.question;

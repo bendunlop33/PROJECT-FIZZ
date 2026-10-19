@@ -45,6 +45,7 @@ import { TIMING, useTheme } from '../../theme';
 import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, TextButton, TextField } from '../../ui';
 import { CoachCard } from './CoachCard';
 import { BuildQuestionCard, BuildRequestCard, PendingBuildCard, QUESTION_COPY, WorkoutDraftCard } from './BuildCards';
+import { PlanCard } from './PlanCard';
 import { BUILD_COPY, buildCardView, needsCoachView, questionTap, type BuildDayChip } from '../../coach/build-view';
 
 /**
@@ -809,6 +810,7 @@ function Row({
           />
         );
       }
+      if (row.card.plan !== undefined && onDraft !== undefined) return <PlanCard record={row.card.plan} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       if (row.card.draft !== undefined && onDraft !== undefined) return <WorkoutDraftCard record={row.card.draft} gymId={onDraft.gymId} onOpen={onDraft.open} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} />;
     case 'note':

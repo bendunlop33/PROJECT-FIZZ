@@ -49,6 +49,7 @@ import { createGymServices } from './gym-services';
 import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
+import { createPlanServices } from './plan-services';
 import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
@@ -773,6 +774,9 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.idle === undefined ? {} : { idle: deps.idle }),
   });
 
+  /** Coach-built plans (19 Oct): the card, Apply and Undo, the consistency card. Local only. */
+  const plans = createPlanServices({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises });
+
   /** Library › Exercises (exercise-library §9): browse, detail, Add to a workout. Local only. */
   const library = createLibraryService({
     repos,
@@ -828,6 +832,7 @@ export function createAppServices(deps: AppServicesDeps) {
     overview,
     routines,
     coachDrafts,
+    plans,
     progress,
     data,
     coach,

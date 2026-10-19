@@ -302,6 +302,21 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Before building, ask Ben one short question (at most 80 characters) with 2 to 4 short tap answers (at most 24 characters each), only when the answer changes the workout and is not already in YOUR DATA (training, build.known). Never ask about the session length, his goal, pain, injury or anything medical. topic main_lift: each answer carries a catalogueId from build.usable. Do not ask if you can build a good workout with what you have. Ben can skip it.',
   },
   {
+    // (19 Oct, Ben: "Can it build plans across multiple days as well not just single workouts?") Every day at once, as a
+    // proposal (rule 3: a structural change Ben applies, with Undo). Each day is checked like a `propose_workout` draft.
+    name: 'propose_plan',
+    effect: 'propose',
+    writes: ['plan_draft'],
+    needs: 'ben_request',
+    // Not CC10's signal-gated kind: it opens only on Ben's own plan request, and Apply is always his tap.
+    structural: false,
+    turnKinds: ['general'],
+    plainLabel: 'Build a multi-day plan you ask for, as a proposal you apply or undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Build a plan of several different days at once (1 to 7 days), only when Ben asks for a plan, a split or a week of workouts, or asks to change the plan in context. Never a multi-week block or deloads, and never for one session (use propose_workout). Follow his split in plan.splitDays unless he asks for another: give each day its `splitDayId` (null for a day that is none of them) and a short `dayName`. Spread the muscles sensibly across the days and keep each day within plan.setBudget working sets. Each day\'s exercises are exactly like propose_workout\'s: catalogueIds from YOUR DATA build.usable only, working sets, a rep range (or workSeconds), targetRpe, optional warm-ups, one optional top set, rest, supersets, and a working `load` (and `topSet.load`) from build.loadReferences in the unit and convention listed, with a short `basis` in words (no numbers); null when you have no opinion. Give `minutes` (15–180) for every day when Ben asked for a length ("60 min each"), or a day\'s own `minutes` when he asked for one for that day; null otherwise. `gymName`: one of build.gyms when he named one. The app checks every day, bounds and fits every load to the equipment, and shows the plan as a proposal: nothing changes until Ben taps Apply.',
+  },
+  {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
     // spec (the stricter one) wins until Ben decides.
     name: 'add_playbook_candidate',
@@ -463,7 +478,10 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   // workout-builder §8.2: a build request ("build me a 45-minute push session"), or a change to the draft in context (BD16).
   propose_workout: ['build'],
   // workout-builder v2.1 BD17: only in a build turn, and only while the request has a question left (`buildQuestionOpen`).
-  ask_build_question: ['build'],
+  // (19 Oct) A plan request may ask too (at most 2 per request, as a build).
+  ask_build_question: ['build', 'build_plan'],
+  // (19 Oct) A plan of several days ("build me a 4-day plan", "PPL week"), or a change to the plan in context.
+  propose_plan: ['build_plan'],
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {

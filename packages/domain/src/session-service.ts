@@ -239,6 +239,8 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       routineId: string;
       preview?: boolean;
       targets?: RoutineStartInput['targets'];
+      /** (19 Oct) A plan workout's first start: the plan's checked loads per row (`planFirstLoads`). */
+      firstLoads?: RoutineStartInput['firstLoads'];
       /** Preview only: fit to this equipment instead of the gym's (workout-overview §8, no gym yet). */
       gymEquipment?: readonly EquipmentInstance[];
       /** What the caller's preview was planned from, re-checked inside the write. */
@@ -286,6 +288,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
       newId,
       checkIn: req.checkIn ?? null,
       ...(req.targets ? { targets: req.targets } : {}),
+      ...(req.firstLoads && req.firstLoads.size > 0 ? { firstLoads: req.firstLoads } : {}),
       ...(gym ? { gymName: gym.name } : {}),
       ...(req.lastUsedHere ? { lastUsedHere: req.lastUsedHere } : {}),
     } }, req.today ?? NO_EDITS);

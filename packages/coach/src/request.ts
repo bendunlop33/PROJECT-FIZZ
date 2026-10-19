@@ -111,7 +111,7 @@ export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
  * future: a bare "the plan" ("add curls to the plan") or a routine/template/programme/split together with a
  * today word ("add curls to my routine now"). Always alongside `add`; it also opens the proposal tool.
  */
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add' | 'add_plan';
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add' | 'add_plan' | 'build_plan';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -710,6 +710,65 @@ function buildIn(clause: string): boolean {
 }
 
 /**
+ * (19 Oct, plans; Ben: "Can it build plans across multiple days as well not just single workouts?")
+ * Ben asks for several days at once: "build me a 4-day plan", "PPL week, 60 min each", "plan my
+ * week", "a 3 day split please", "can you set me up a weekly plan". Its own kind (`build_plan`):
+ * it opens `propose_plan` only, never `propose_workout` or today's sets. Multi-week blocks,
+ * mesocycles and deloads aren't plans in v1 (`multiWeekBlock`).
+ */
+const PLAN_NUM = '(?:\\d|one|two|three|four|five|six|seven)';
+const PLAN_NOUN = '(?:plan|plans|programme|program|split|routine|schedule|rotation|week)';
+const PLAN_SPLIT = '(?:ppl|push[ /,&+-]+pull[ /,&+-]+(?:and )?legs?|upper[ /&+-]+(?:and )?lower|bro split|full[ -]body)';
+const PLAN_SHAPE = new RegExp(
+  [
+    `\\b${PLAN_NUM}[ -]?days?(?: (?:a|per) week| weekly)?(?: (?:workout|training|gym|lifting|weekly))? ${PLAN_NOUN}\\b`,
+    `\\b${PLAN_NUM} (?:days|sessions|workouts) (?:a|per) week\\b`,
+    `\\b(?:weekly|multi-?day|training|workout|gym|lifting) (?:plan|programme|program|split|schedule|rotation)\\b`,
+    `\\bplan (?:out )?(?:my|the|this|next|a) (?:training )?week\\b`,
+    `\\b(?:plan|programme|program|schedule|workouts|sessions) for (?:the|this|next|my|a) week\\b`,
+    `\\b${PLAN_SPLIT}(?: (?:week|plan|split|programme|program|rotation|days|routine))\\b`,
+    `\\b(?:a|my|the) (?:training )?week of (?:workouts|sessions|training)\\b`,
+    `\\bplans? (?:across|over|for) (?:multiple|several|a few|${PLAN_NUM}) days\\b`,
+  ].join('|'),
+);
+const PLAN_VERB = new RegExp(`^(?:${BUILD_VERB_STRONG}(?: me| us| out)?|${BUILD_VERB_WEAK}(?: me| us)?|(?:i )?(?:want|need|would like|'d like|fancy)|(?:can|could|may) i (?:please )?(?:have|get))\\b`);
+/** "PPL week, 60 min each", "4 day split please": the plan's shape leads the message, no verb. */
+const PLAN_LEAD = new RegExp(`^(?:(?:a|my) )?(?:${PLAN_SPLIT}|${PLAN_NUM}[ -]?days?(?: (?:a|per) week)?) (?:week|plan|split|programme|program|rotation|routine)\\b`);
+/** A block of several weeks: not in v1. */
+const MULTI_WEEK_BLOCK = /\b(?:\d+|two|three|four|five|six|eight|ten|twelve)[ -]?weeks?\b|\bmesocycles?\b|\b(?:training )?blocks?\b|\bdeloads?\b|\bmonths?\b|\bmonthly\b|\bperiodi[sz]/;
+
+/** Ben's words ask for a block of several weeks (not available yet). */
+export function multiWeekBlock(text: string): boolean {
+  return MULTI_WEEK_BLOCK.test(lower(text));
+}
+
+function planIn(clause: string): boolean {
+  const c = clause.replace(POLITE, '');
+  if (MULTI_WEEK_BLOCK.test(c) || isOpinionQuestion(c)) return false;
+  if (PLAN_LEAD.test(c)) return true;
+  const asked = ASK_PREFIX.exec(c)?.[1] ?? c;
+  const body = asked.replace(/^(?:(?:(?:would|could|will|can) you )?be able to |are you able to |(?:you )?help (?:me|us) (?:to )?)/, '');
+  return PLAN_VERB.test(body) && PLAN_SHAPE.test(body);
+}
+
+/** "Legs day shorter", "only 3 days", "day 2 without barbell", "swap Friday's squat": a change to the plan in context. */
+const PLAN_REVISION = new RegExp(`\\b(?:day ${PLAN_NUM}|${PLAN_NUM} days|(?:mon|tues|wednes|thurs|fri|satur|sun)day'?s?|push|pull|legs?|upper|lower|full[ -]body)\\b`);
+
+/** Whether Ben's words change the plan in context: a draft-style change ("make it shorter", "no barbell"), or one naming a day. */
+export function revisesPlan(text: string): boolean {
+  if (multiWeekBlock(text)) return false;
+  return revisesDraft(text) || normalise(text).some((c) => {
+    const t = c.text.replace(POLITE, '');
+    return c.label === null && !isOpinionQuestion(t) && PLAN_REVISION.test(t) && /^(?:make|keep|change|swap|switch|replace|drop|remove|add|only|no|without|more|less|fewer|use|(?:can|could) (?:you|we))\b/.test(t);
+  });
+}
+
+/** Whether Ben's words ask for a multi-day plan (`build_plan`). Code, never the model's reading. */
+export function asksForPlan(text: string): boolean {
+  return requestHas(classifyBenRequest(text, 'general'), 'build_plan');
+}
+
+/**
  * (12 Oct) Adding an exercise to today's workout. A verb that adds ("add",
  * "put in", "throw in", "stick … in") with an exercise as its object, after
  * an optional amount ("some", "3 sets of", "3 sets of 12"). "Do / try some
@@ -895,14 +954,17 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
     const joined = c.sentence.replace(FOCUS_AND, '$1/');
     return joined !== c.sentence && normalise(joined).some((x) => x.first && buildIn(x.text));
   };
-  const building = buildable.filter((c) => buildIn(c.text) || joinedBuilds(c)).map((c) => c.text);
-  if (building.length > 0 || BUILD_SORT_IT.test(whole.replace(/[.!]+$/, ''))) kinds.push('build');
+  // (19 Oct) A plan of several days is its own kind, never also a one-session build ("a 4-day plan" names a "day").
+  const planning = buildable.filter((c) => planIn(c.text)).map((c) => c.text);
+  if (planning.length > 0) kinds.push('build_plan');
+  const building = planning.length > 0 ? [] : buildable.filter((c) => buildIn(c.text) || joinedBuilds(c)).map((c) => c.text);
+  if (planning.length === 0 && (building.length > 0 || BUILD_SORT_IT.test(whole.replace(/[.!]+$/, '')))) kinds.push('build');
   // (12 Oct) An exercise added today; a question only counts when it asks ("can you add curls?").
   const adds = open.filter((c) => addIn(c.text) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))));
   if (adds.length > 0) kinds.push('add');
   if (adds.length > 0 && (adds.some((c) => unclearAddScope(c.text)) || open.some((c) => scopeOnly(c.text)))) kinds.push('add_plan');
   // A clause that is only a swap ("swap cable fly") isn't also a load change; nor is a build, in a general turn.
-  const buildOnly = turnKind === 'general' ? building : [];
+  const buildOnly = turnKind === 'general' ? [...building, ...planning] : [];
   if (askingClauses.some((c) => !structuralIn(c) && !buildOnly.includes(c))) kinds.push('change');
   // "Is 95 too light?" asks for a view; "too easy, what next?" reports how it went.
   if (!isOpinionQuestion(clauses[0] ?? '') && open.some(difficultyIn)) kinds.push('difficulty');
@@ -920,7 +982,7 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || buildIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
+    if (c.label !== null || buildIn(c.text) || planIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

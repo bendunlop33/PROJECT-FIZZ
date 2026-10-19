@@ -1085,8 +1085,9 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
   if (!atCurrentGym && !cmd.continuation) return fail('equipment_not_found', `${ex.exerciseName}'s equipment isn't at this gym. Add the set from the workout screen.`);
   let exercises = state.exercises;
   let rowId = ex.id;
-  // A copy is a new target: another set's Undo records stay with that set.
-  let planned = withoutEditRecords(template.planned);
+  // A copy is a new target: another set's Undo records stay with that set. Marked as added in the workout,
+  // so plan vs done counts it as done, never as planned (review plans-19oct S1).
+  let planned: WorkoutSet['planned'] = { ...withoutEditRecords(template.planned), addedInWorkout: true };
   let index = after === null ? last.index + 1 : after.index + 1;
   let sets = state.sets;
   if (after !== null && atCurrentGym) {
@@ -1111,7 +1112,7 @@ function handleAddSet(state: SessionAggregate, cmd: CommandOf<'add_set'>): Handl
     sorted.splice(at + 1, 0, row);
     exercises = sorted.map((e, i) => (e.order === i ? e : { ...e, order: i }));
     rowId = row.id;
-    planned = c.planned;
+    planned = { ...c.planned, addedInWorkout: true };
     index = 0;
     sets = state.sets;
   }

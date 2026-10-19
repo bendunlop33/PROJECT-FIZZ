@@ -2,7 +2,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 
-import type { ExerciseDetailView, ExerciseMetric, TrendRange } from '@fizz/domain';
+import { PLAN_VERDICT_WORD, type ExerciseDetailView, type ExerciseMetric, type PlanVerdict, type TrendRange } from '@fizz/domain';
 
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
@@ -26,6 +26,17 @@ import { E1rmSheet } from './sheets';
  */
 
 type Route = RouteProp<{ ProgressExercise: ExerciseDetailParams; ExerciseProgress: ExerciseDetailParams }, 'ProgressExercise' | 'ExerciseProgress'>;
+
+/** `Target 3 × 8–10 · Hit` under a history row (plan tracker v1): the word always with the numbers. */
+function targetLine(t: { target: string | null; verdict: PlanVerdict | null } | null) {
+  if (t === null || t.target === null || t.verdict === null) return null;
+  const word = PLAN_VERDICT_WORD[t.verdict];
+  return (
+    <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Target ${t.target}. ${word}.`}>
+      {`Target ${t.target} · ${word}`}
+    </AppText>
+  );
+}
 
 export function ExerciseDetailScreen() {
   const theme = useTheme();
@@ -71,6 +82,10 @@ export function ExerciseDetailScreen() {
     }),
   );
   const view: ExerciseDetailView | null = data.state === 'ready' ? (data.value?.view ?? null) : null;
+  // Plan tracker v1 (19 Oct): target against actual per workout, and `Targets hit 5 of last 6`.
+  const [targetsData] = useScreenData((s) => s.progress.exerciseTargets(exerciseId));
+  const targets = targetsData.state === 'ready' ? targetsData.value : null;
+  const targetOf = (sessionId: string) => targets?.rows.find((t) => t.sessionId === sessionId && t.target !== null) ?? null;
 
   useEffect(() => {
     // With VoiceOver running, the first open shows the table (§4.2).
@@ -492,6 +507,11 @@ export function ExerciseDetailScreen() {
               {view.history.unit}
             </AppText>
           </View>
+          {targets?.hitText != null ? (
+            <AppText variant="callout" color="text.secondary" numeric>
+              {targets.hitText}
+            </AppText>
+          ) : null}
           {view.history.months.map((m) => (
             <View key={m.month}>
               <AppText variant="headline" accessibilityRole="header">
@@ -514,6 +534,7 @@ export function ExerciseDetailScreen() {
                     <AppText variant="callout" color="text.secondary" numeric>
                       {r.sets}
                     </AppText>
+                    {targetLine(targetOf(r.sessionId))}
                     {r.tags.length > 0 ? (
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
                         {r.tags.map((t) => (
