@@ -209,6 +209,8 @@ export interface PlanDayDetailInput {
   planned: Aggregate;
   /** Finished workouts with this exercise (any order). */
   history: (exerciseId: string) => readonly Aggregate[];
+  /** Whether its line shows `Targets hit` (the setting on and a main lift, `targetsHitShown`). */
+  targetsHit: (exerciseId: string) => boolean;
 }
 
 /** One prescribed working set (warm-ups, tombstones, sets skipped before the start and other-side companions aren't). */
@@ -275,8 +277,8 @@ export function planDayHeader(dayN: number, of: number, gymName: string | null, 
 /**
  * A plan day as its screen shows it: per exercise, what Start would plan
  * here (`3 × 6–8 · 85 kg`: the target and load its working sets share; a
- * top set on its own, `95 kg top, 3 × 6–8 · 85 kg`) and a line from his history: last time's sets and `Targets hit 5 of
- * last 6`; with no history, `est.` when the planned load is an estimate
+ * top set on its own, `95 kg top, 3 × 6–8 · 85 kg`) and a line from his history: last time's sets and, for a main lift with the
+ * setting on, `Targets hit 5 of last 6`; with no history, `est.` when the planned load is an estimate
  * (rule 6). Values only.
  */
 export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
@@ -310,7 +312,7 @@ export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
       }
       const line = parts.join(', ');
       const unit = sets.find((s) => s.planned.load !== null)?.planned.load?.unit ?? null;
-      const sub = lastTimeSub(ex.exerciseId, input.history(ex.exerciseId), unit) ?? (sets.some((s) => s.planned.provenance?.estimate === true) ? 'est.' : null);
+      const sub = lastTimeSub(ex.exerciseId, input.history(ex.exerciseId), unit, input.targetsHit(ex.exerciseId)) ?? (sets.some((s) => s.planned.provenance?.estimate === true) ? 'est.' : null);
       return detailRow(ex.id, ex.exerciseId, ex.exerciseName, line, sub);
     });
   return { header, rows };
@@ -320,8 +322,8 @@ function detailRow(key: string, exerciseId: string, name: string, line: string, 
   return { key, exerciseId, name, line, sub, accessibilityLabel: [name, line, ...(sub === null ? [] : [sub === 'est.' ? 'estimated load' : sub])].join(', ') };
 }
 
-/** `Last 17 Oct: 80 × 12, 12 · Targets hit 5 of last 6` from his newest finished workout with it, else null. */
-function lastTimeSub(exerciseId: string, workouts: readonly Aggregate[], unit: string | null): string | null {
+/** `Last 17 Oct: 80 × 12, 12 · Targets hit 5 of last 6` (`Targets hit` only when `withHit`) from his newest finished workout with it, else null. */
+function lastTimeSub(exerciseId: string, workouts: readonly Aggregate[], unit: string | null, withHit: boolean): string | null {
   const history = [...workouts].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
   for (const a of history) {
     const parts = a.exercises.filter((e) => e.exerciseId === exerciseId && e.removed === undefined).sort((x, y) => x.order - y.order);
@@ -329,7 +331,7 @@ function lastTimeSub(exerciseId: string, workouts: readonly Aggregate[], unit: s
     const text = parts[0] === undefined ? null : doneText(parts[0], logged, unit);
     if (text === null) continue;
     const sub = `Last ${dayMonthText(a.session.startedAt.utc, a.session.startedAt.tz)}: ${text}`;
-    const hit = exerciseTargetHistory(history, exerciseId).hitText;
+    const hit = withHit ? exerciseTargetHistory(history, exerciseId).hitText : null;
     return hit === null ? sub : `${sub} · ${hit}`;
   }
   return null;
@@ -345,6 +347,8 @@ export interface PlanDayTemplateInput {
   /** Ben's unit: a logged load in another unit shows its unit. */
   unit: string;
   history: (exerciseId: string) => readonly Aggregate[];
+  /** Whether its line shows `Targets hit` (the setting on and a main lift, `targetsHitShown`). */
+  targetsHit: (exerciseId: string) => boolean;
 }
 
 /**
@@ -370,7 +374,7 @@ export function planDayFromTemplates(input: PlanDayTemplateInput): PlanDayDetail
       });
       const scheme = sameOf(values, rest.length);
       const parts = [...(tops.length === 0 ? [] : [tops.length === 1 ? 'Top set' : `${String(tops.length)} top sets`]), ...(rest.length > 0 || tops.length === 0 ? [scheme === null ? `${String(rest.length)} ${rest.length === 1 ? 'set' : 'sets'}` : `${String(rest.length)} × ${scheme}`] : [])];
-      return detailRow(re.id, re.exerciseId, name, parts.join(', '), lastTimeSub(re.exerciseId, input.history(re.exerciseId), input.unit));
+      return detailRow(re.id, re.exerciseId, name, parts.join(', '), lastTimeSub(re.exerciseId, input.history(re.exerciseId), input.unit, input.targetsHit(re.exerciseId)));
     });
   return { header: planDayHeader(input.dayN, input.of, input.gymName, null), rows };
 }

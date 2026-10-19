@@ -238,11 +238,13 @@ describe('planDayDetail: a plan day’s lines', () => {
     [rower.exerciseId, [past(305, '2026-10-02T06:00:00.000Z', rower, (sx) => [set(sx, 0, { reps: null, durationS: 600 }, { durationS: 600, distanceM: 2450 })])]],
     [curl.exerciseId, [past(306, '2026-10-02T06:00:00.000Z', curl, (sx) => [8, 8].map((r, i) => set(sx, i, { reps: null }, { load: { value: 60, unit: 'lb', convention: 'total' }, reps: r })))]],
   ]);
-  const detail = planDayDetail({ dayN: 2, of: 4, gymName: 'Main gym', aboutMinutes: 60, planned, history: (exerciseId) => histories.get(exerciseId) ?? [] });
+  // `Targets hit` (Ben, 20 Oct): the setting on and a main lift; here Barbell row is the main lift.
+  const mainOnly = (x: string) => x === row.exerciseId;
+  const detail = planDayDetail({ dayN: 2, of: 4, gymName: 'Main gym', aboutMinutes: 60, planned, history: (exerciseId) => histories.get(exerciseId) ?? [], targetsHit: mainOnly });
 
   it('the header: day of days, gym, about how long (parts not known are left out)', () => {
     expect(detail.header).toBe('Day 2 of 4 · Main gym · about 60 min');
-    expect(planDayDetail({ dayN: 1, of: 3, gymName: null, aboutMinutes: null, planned, history: () => [] }).header).toBe('Day 1 of 3');
+    expect(planDayDetail({ dayN: 1, of: 3, gymName: null, aboutMinutes: null, planned, history: () => [], targetsHit: () => false }).header).toBe('Day 1 of 3');
   });
 
   it('each exercise: working sets × target · load (warm-ups and sets taken out before the start aren’t counted); kg, per-hand, assisted, cardio', () => {
@@ -269,11 +271,11 @@ describe('planDayDetail: a plan day’s lines', () => {
         set(press, 1, { load: kg(45), reps: [8, 10] }, null),
       ],
     };
-    const lines = planDayDetail({ dayN: 1, of: 4, gymName: null, aboutMinutes: null, planned: mixed, history: () => [] }).rows.map((r) => plain(r.line));
+    const lines = planDayDetail({ dayN: 1, of: 4, gymName: null, aboutMinutes: null, planned: mixed, history: () => [], targetsHit: () => false }).rows.map((r) => plain(r.line));
     expect(lines).toEqual(['95 kg top, 3 × 6–8 · 85 kg', '2 sets']);
     // An exercise skipped today (every working set taken out before the start) isn't listed.
     const skipped: Agg = { ...mixed, sets: mixed.sets.map((x) => (x.sessionExerciseId === press.id ? { ...x, status: 'skipped' as const, skippedBy: 'before_start' as const } : x)) };
-    expect(planDayDetail({ dayN: 1, of: 4, gymName: null, aboutMinutes: null, planned: skipped, history: () => [] }).rows.map((r) => r.name)).toEqual(['Back squat']);
+    expect(planDayDetail({ dayN: 1, of: 4, gymName: null, aboutMinutes: null, planned: skipped, history: () => [], targetsHit: () => false }).rows.map((r) => r.name)).toEqual(['Back squat']);
   });
 
   it('nothing planned at a gym (review planview S2): the saved sets × target, no load, with last time', () => {
@@ -283,24 +285,31 @@ describe('planDayDetail: a plan day’s lines', () => {
       routineExercise(3, { exerciseId: db.exerciseId, order: 2, setTemplates: [template(30, { targetReps: { min: 10, max: 12 } }), template(31, { targetReps: { min: 8, max: 10 } })] }),
     ]);
     const names = new Map([[row.exerciseId, { name: 'Barbell row', measurement: 'reps' as const }], [rower.exerciseId, { name: 'Rowing machine', measurement: 'cardio' as const }], [db.exerciseId, { name: 'Chest-supported row', measurement: 'reps' as const }]]);
-    const d = planDayFromTemplates({ dayN: 2, of: 4, gymName: null, routine: r, exerciseOf: (x) => names.get(x) ?? null, unit: 'kg', history: (x) => histories.get(x) ?? [] });
+    const d = planDayFromTemplates({ dayN: 2, of: 4, gymName: null, routine: r, exerciseOf: (x) => names.get(x) ?? null, unit: 'kg', history: (x) => histories.get(x) ?? [], targetsHit: mainOnly });
     expect(d.header).toBe('Day 2 of 4');
     expect(d.rows.map((x) => [x.name, plain(x.line), plain(x.sub)])).toEqual([
       ['Barbell row', 'Top set, 3 × 6–8', 'Last 7 Oct: 80 × 12, 12, 75 × 10 · Targets hit 1 of last 2'],
-      ['Rowing machine', '1 × 10:00', 'Last 2 Oct: 10:00 · 2,450 m · 2:02 /500 m · Targets hit 1 of last 1'],
+      ['Rowing machine', '1 × 10:00', 'Last 2 Oct: 10:00 · 2,450 m · 2:02 /500 m'],
       ['Chest-supported row', '2 sets', 'Last 2 Oct: 20 × 12, 12, 11'],
     ]);
+    // Setting off: no `Targets hit` on any row.
+    const off = planDayFromTemplates({ dayN: 2, of: 4, gymName: null, routine: r, exerciseOf: (x) => names.get(x) ?? null, unit: 'kg', history: (x) => histories.get(x) ?? [], targetsHit: () => false });
+    expect(off.rows.map((x) => plain(x.sub))).toEqual(['Last 7 Oct: 80 × 12, 12, 75 × 10', 'Last 2 Oct: 10:00 · 2,450 m · 2:02 /500 m', 'Last 2 Oct: 20 × 12, 12, 11']);
   });
 
-  it('last time from his newest workout with it, with targets hit; lb shown where the plan is kg; est. with no history; cardio with pace', () => {
+  it('last time from his newest workout with it, targets hit on the main lift only; lb shown where the plan is kg; est. with no history; cardio with pace', () => {
     expect(detail.rows.map((r) => plain(r.sub))).toEqual([
       'Last 7 Oct: 80 × 12, 12, 75 × 10 · Targets hit 1 of last 2',
       'Last 2 Oct: 20 × 12, 12, 11',
       'Last 2 Oct: Assist 35 × 8, 8',
       'est.',
-      'Last 2 Oct: 10:00 · 2,450 m · 2:02 /500 m · Targets hit 1 of last 1',
+      'Last 2 Oct: 10:00 · 2,450 m · 2:02 /500 m',
       'Last 2 Oct: 60 lb × 8, 8',
     ]);
+    // Setting off: none.
+    const off = planDayDetail({ dayN: 2, of: 4, gymName: 'Main gym', aboutMinutes: 60, planned, history: (exerciseId) => histories.get(exerciseId) ?? [], targetsHit: () => false });
+    expect(off.rows.some((r) => (r.sub ?? '').includes('Targets hit'))).toBe(false);
+    expect(plain(off.rows[0]?.sub)).toBe('Last 7 Oct: 80 × 12, 12, 75 × 10');
     expect(plain(detail.rows[3]?.accessibilityLabel)).toBe('Rear-delt fly, 2 × 12–15 · 7.5 kg each, estimated load');
   });
 });
