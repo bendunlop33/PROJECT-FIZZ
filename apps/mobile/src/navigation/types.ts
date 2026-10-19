@@ -1,5 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { EquipmentKind, RoutineExercise, SetExclusion } from '@fizz/schemas';
+import type { CustomExerciseFields, EquipmentKind, RoutineExercise, SetExclusion } from '@fizz/schemas';
 
 import type { CoachEntry } from '../coach/coach-service';
 
@@ -179,6 +179,11 @@ export type RootStackParams = {
   WorkoutEditor: { routineId: string | null; from: EditorFrom; selectName?: boolean; copyToast?: LibraryToastParam; draft?: { name: string; exercises: RoutineExercise[] }; saveAs?: string };
   /** Exercise detail over the workout editor (`⋯` → `Exercise info`), read-only. */
   ExerciseInfo: ExerciseInfoParams;
+  /**
+   * (19 Oct) Ben's own exercise: `＋ New exercise` (`name`: the search text), Edit (`exerciseId`), or
+   * the coach card's Edit (`proposalActionId` with the card's `fields`: Save is Add).
+   */
+  ExerciseForm: { exerciseId?: string; name?: string; proposalActionId?: string; fields?: CustomExerciseFields };
   ExercisePicker: { sessionId: string };
   /** How to (ADR 0013): guide, cues and mistakes for a catalogue exercise. Opened only when it has a how-to. */
   HowTo: { catalogueKey: string; name: string };

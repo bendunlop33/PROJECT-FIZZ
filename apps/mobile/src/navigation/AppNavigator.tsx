@@ -66,6 +66,7 @@ import { EditSetScreen } from '../screens/workout/EditSetScreen';
 import { ExercisePickerScreen } from '../screens/workout/ExercisePickerScreen';
 import type { HowToScreen } from '../screens/workout/HowToScreen';
 import { CoachSheetScreen } from '../screens/coach/CoachSheetScreen';
+import { ExerciseFormScreen } from '../screens/library/ExerciseFormScreen';
 import { SummaryScreen } from '../screens/workout/SummaryScreen';
 import { WorkoutOverviewScreen } from '../screens/workout/WorkoutOverviewScreen';
 import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
@@ -351,6 +352,8 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="ExerciseProgress" component={ExerciseDetailScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />
               {/* The editor's `⋯` → `Exercise info` (read-only): over the editor; swipe down or back closes it. */}
               <RootStack.Screen name="ExerciseInfo" component={ExerciseInfoScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />
+              {/* (19 Oct) Ben's own exercise: New, Edit, or the coach card's Edit; over Library or the coach sheet. */}
+              <RootStack.Screen name="ExerciseForm" component={ExerciseFormScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
               <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>
           ) : (

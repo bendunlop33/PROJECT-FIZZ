@@ -126,6 +126,11 @@ export function ExerciseInfoScreen() {
               {view.aliasesLine}
             </AppText>
           ) : null}
+          {d.editable && readOnly !== true ? (
+            <View style={{ alignItems: 'flex-start' }}>
+              <TextButton label={EXERCISE_INFO_COPY.edit} onPress={() => { navigation.navigate('ExerciseForm', { exerciseId }); }} />
+            </View>
+          ) : null}
           {view.tags.length > 0 || view.yours.pain !== null ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'], paddingTop: theme.space['1'] }}>
               {view.tags.map((t) => (

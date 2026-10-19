@@ -36,6 +36,7 @@ import {
 } from '../../coach/sheet-view';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { newUuid } from '../../device/runtime';
+import { addedMessage, takeAdded } from '../../library/exercise-form-handoff';
 import { createReplyVoice, replyToSpeak, sheetReadOn } from '../../voice/read-aloud';
 import { appleSpeaker, voiceCapability } from '../../voice/speaker';
 import { formatTime } from '../../format/dates';
@@ -131,6 +132,14 @@ export function CoachSheetScreen() {
   const sheetOpen = useRef(false);
   const typedText = useRef(text);
   typedText.current = text;
+  // (19 Oct) Back from the new-exercise card's Edit with it saved: Ben's `Added <name>.` carries the coach on.
+  const afterAddedRef = useRef<(name: string) => void>(() => undefined);
+  useFocusEffect(
+    useCallback(() => {
+      const added = takeAdded();
+      if (added !== null) afterAddedRef.current(added.name);
+    }, []),
+  );
   useFocusEffect(
     useCallback(() => {
       sheetOpen.current = true;
@@ -435,6 +444,36 @@ export function CoachSheetScreen() {
     changed();
   }
 
+  /**
+   * (19 Oct) The coach's new-exercise card: `Add` saves it now (rule 3), then Ben's `Added <name>.`
+   * goes to the coach so it carries on with what he asked (only when it can answer: the exercise is
+   * saved either way). `Edit` opens the form with the card's fields; its Save is the Add.
+   */
+  async function tapNewExercise(actionId: string, tap: 'add' | 'edit') {
+    if (tap === 'edit') {
+      const card = await services.coach.exerciseProposal(actionId).catch(() => null);
+      if (card === null || card.state !== 'open') return;
+      navigation.navigate('ExerciseForm', { proposalActionId: actionId, fields: card.fields });
+      return;
+    }
+    const r = await services.coach.addProposedExercise({ actionId, opId: `${actionId}:add` }).catch(() => null);
+    if (r === null || !r.ok) {
+      setNotice(r?.message ?? 'Couldn’t save.');
+      await loadRows(threadId ?? null);
+      return;
+    }
+    changed();
+    await afterAdded(r.exercise.name);
+  }
+
+  async function afterAdded(name: string) {
+    await loadRows(threadId ?? null);
+    if (status?.canSend === true && live === null) await send({ kind: 'words', text: addedMessage(name), spoken: false });
+  }
+  afterAddedRef.current = (name) => {
+    void afterAdded(name);
+  };
+
   /** Save, Not now or (CM9 split) Add to playbook on a memory suggestion (coach-memory §2.4, §2.4a). */
   async function decideMemory(memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') {
     if (decision === 'playbook') {
@@ -635,6 +674,7 @@ export function CoachSheetScreen() {
             onUndo={(id) => void undo(id)}
             onProposal={(id, tap) => void tapProposal(id, tap)}
             onMemory={(id, v, d) => void decideMemory(id, v, d)}
+            onNewExercise={(id, tap) => void tapNewExercise(id, tap)}
             onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)}
             onAccept={() => r.kind === 'offer' && live === null && void send(r.input)}
             onDraft={{ gymId: buildGym?.id ?? null, open: openDraft, openRoutine: openRoutine, changed: () => { changed(); void loadRows(threadId ?? null); } }}
@@ -746,6 +786,7 @@ function Row({
   onUndo,
   onProposal,
   onMemory,
+  onNewExercise,
   onRetry,
   onAccept,
   onDraft,
@@ -756,6 +797,7 @@ function Row({
   onUndo: (actionId: string) => void;
   onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
   onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
+  onNewExercise: (actionId: string, tap: 'add' | 'edit') => void;
   onRetry: () => void;
   /** `Adjust` on the coach's offer (CA1). */
   onAccept: () => void;
@@ -812,7 +854,7 @@ function Row({
       }
       if (row.card.plan !== undefined && onDraft !== undefined) return <PlanCard record={row.card.plan} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       if (row.card.draft !== undefined && onDraft !== undefined) return <WorkoutDraftCard record={row.card.draft} gymId={onDraft.gymId} onOpen={onDraft.open} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
-      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} />;
+      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} onNewExercise={onNewExercise} />;
     case 'note':
       return (
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>

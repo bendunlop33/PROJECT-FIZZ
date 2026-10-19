@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NO_FILTERS, toMs, type BrowseRowView, type ExerciseFilters } from '@fizz/domain';
 
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
+import { EXERCISE_FORM_COPY } from '../../library/exercise-form-view';
 import type { LibrarySegment, LibraryStackParams } from '../../navigation/types';
 import { ResumeBar, Segmented } from '../../progress/components';
 import { useScreenData, useServices } from '../../shell/context';
@@ -44,8 +45,8 @@ export function LibraryScreen() {
           <AppText variant="title1" accessibilityRole="header" style={{ flex: 1 }}>
             {LIBRARY_BROWSE_COPY.title}
           </AppText>
-          {/* `＋` (§9.3, review B1): `New workout` on Workouts. `New exercise` on Exercises is deferred (§9.11). */}
-          {segment === 'workouts' ? <NewWorkoutButton from="Library" /> : null}
+          {/* `＋` (§9.3, review B1): `New workout` on Workouts; `New exercise` on Exercises (Ben, 19 Oct). */}
+          {segment === 'workouts' ? <NewWorkoutButton from="Library" /> : <NewExerciseButton />}
         </View>
         <Segmented
           options={LIBRARY_BROWSE_COPY.segments}
@@ -152,6 +153,7 @@ function ExercisesBrowse() {
                   {view.empty}
                 </AppText>
                 {view.canClear ? <TextButton label={LIBRARY_BROWSE_COPY.clearFilters} onPress={() => { setFilters(NO_FILTERS); }} /> : null}
+                {query.trim() !== '' ? <TextButton icon="plus" label={EXERCISE_FORM_COPY.createNamed(query.trim())} onPress={() => { navigation.navigate('ExerciseForm', { name: query.trim() }); }} /> : null}
               </View>
             ) : null}
           </>
@@ -177,6 +179,23 @@ function ExercisesBrowse() {
         }}
       />
     </>
+  );
+}
+
+/** `＋` on Exercises (§9.3; Ben, 19 Oct): `New exercise`. */
+function NewExerciseButton() {
+  const navigation = useNavigation();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={EXERCISE_FORM_COPY.newExercise}
+      onPress={() => {
+        navigation.navigate('ExerciseForm', {});
+      }}
+      style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <Icon name="plus" color="text.primary" size={22} />
+    </Pressable>
   );
 }
 
