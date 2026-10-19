@@ -1,5 +1,5 @@
 /**
- * Schema version 20: cardio sets (Ben, 19 Oct: "rowing machine or bike …
+ * Schema version 21: cardio sets (Ben, 19 Oct: "rowing machine or bike …
  * with a timer and distance"). Frozen once released. If another branch
  * takes number 20 first, this one is renumbered on merge (its SQL is
  * independent of theirs).
@@ -29,7 +29,7 @@
  */
 const CARDIO_IDS = `('33ae601d-be6e-54ec-b93d-c2e37bd5677f', '1230c5d3-261c-5a3a-ad76-98c3802ee1c5', '6bee590c-12d1-5961-b4b1-ab2d8c63b73f', '34a700ae-ecb1-5c7d-ae66-e90ca73c7215')`;
 
-export const MIGRATION_0020 = `
+export const MIGRATION_0021 = `
 ALTER TABLE session_exercises ADD COLUMN measures_cardio INTEGER CHECK (measures_cardio IS NULL OR (measures_cardio = 1 AND measurement = 'duration' AND measures_distance IS NULL));
 UPDATE session_exercises SET measurement = 'duration', measures_distance = NULL, measures_cardio = 1
   WHERE exercise_id IN ${CARDIO_IDS} AND (measures_distance = 1 OR measurement = 'duration');
