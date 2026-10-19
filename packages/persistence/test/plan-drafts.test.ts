@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { addPlanVersion, applyPlan, currentPlanVersion, newPlanDraft, rotationRoutines, undoPlanApply } from '@fizz/domain';
+import { addPlanVersion, applyPlan, currentPlanVersion, endPlan, newPlanDraft, rotationRoutines, undoEndPlan, undoPlanApply } from '@fizz/domain';
 import { at, hotelFixture, id, OWNER, profile } from '@fizz/domain/testing';
 import { RoutineSchema, type ActionRecord, type PlanDraft, type PlanDraftVersion, type Routine } from '@fizz/schemas';
 
-import { checkIntegrity, createBackup, DatabaseManager, domainOf, exportTables, openStore, type Store } from '../src/index';
+import { checkIntegrity, createBackup, DatabaseManager, domainOf, exportTables, migrate, MIGRATIONS, openStore, type Store } from '../src/index';
 import { nodeDatabaseHost } from '../src/node/index';
 import { failingDriver, memoryDriver, tempDir } from './helpers';
 
@@ -182,6 +182,62 @@ describe('Apply and Undo: the plan and its workouts in one transaction', () => {
     expect((await store.repos.routines.listByOwner(OWNER))).toHaveLength(2);
     expect(await store.repos.planDrafts.get(PLAN)).toMatchObject({ status: 'open', version: 1 });
     await store.close();
+  });
+});
+
+const end = (store: Store, opId: string, expectedVersion: number) => store.repos.planDrafts.endOrResume(OWNER, PLAN, (c, routines) => endPlan(c, { expectedVersion, opId, at: at(300), routines }));
+const resume = (store: Store, opId: string, expectedVersion: number) => store.repos.planDrafts.endOrResume(OWNER, PLAN, (c, routines, otherApplied) => undoEndPlan(c, { expectedVersion, opId, at: at(400), routines, otherApplied }));
+
+describe('End plan and its Undo (migration 22): the plan and its days in one transaction', () => {
+  it('End takes the days out of the rotation and keeps them; a retry replays; Undo puts them back; a relaunch reads the ended plan', async () => {
+    const d = tempDir();
+    dirs.push(d);
+    const m = await managerIn(d.dir);
+    await seeded(m.store);
+    await apply(m.store, 'apply-1');
+    expect(await end(m.store, 'end-1', 2)).toMatchObject({ status: 'written', plan: { status: 'ended', version: 3 } });
+    expect(await end(m.store, 'end-1', 2)).toMatchObject({ status: 'replayed' });
+    expect(await end(m.store, 'end-2', 2)).toMatchObject({ status: 'stale' });
+    expect(await rotation(m.store)).toEqual([]);
+    expect((await m.store.repos.routines.listByOwner(OWNER)).map((r) => r.name).sort()).toEqual(['Legs', 'Pull', 'Pull A', 'Push', 'Push A']);
+    expect(await m.store.repos.planDrafts.applied(OWNER)).toBeNull();
+    expect((await checkIntegrity(m.store.db)).ok).toBe(true);
+    await m.close();
+    const again = await managerIn(d.dir);
+    expect(await again.store.repos.planDrafts.get(PLAN)).toMatchObject({ status: 'ended' });
+    expect(await resume(again.store, 'resume-1', 3)).toMatchObject({ status: 'written', plan: { status: 'applied', version: 4 } });
+    expect(await resume(again.store, 'resume-1', 3)).toMatchObject({ status: 'replayed' });
+    expect(await rotation(again.store)).toEqual(['Push', 'Pull', 'Legs']);
+    expect(await again.store.repos.planDrafts.applied(OWNER)).toMatchObject({ id: PLAN });
+    await again.close();
+  });
+
+  it('a failed write mid-End leaves nothing behind (all or nothing)', async () => {
+    const driver = failingDriver(memoryDriver(), (sql) => sql.includes('"plan_drafts"') && sql.includes('ON CONFLICT'));
+    driver.armed = false;
+    const store = await openStore(driver);
+    await seeded(store);
+    await apply(store, 'apply-1');
+    driver.armed = true;
+    await expect(end(store, 'end-1', 2)).rejects.toThrow();
+    driver.armed = false;
+    expect(await rotation(store)).toEqual(['Push', 'Pull', 'Legs']);
+    expect(await store.repos.planDrafts.get(PLAN)).toMatchObject({ status: 'applied', version: 2 });
+    await store.close();
+  });
+
+  it('migration 22 keeps every plan row; before it, an ended plan can’t be stored', async () => {
+    const old = memoryDriver();
+    const at21 = await openStore(old, { migrations: MIGRATIONS.filter((x) => x.version <= 21) });
+    await seeded(at21);
+    await apply(at21, 'apply-1');
+    await expect(end(at21, 'end-1', 2)).rejects.toThrow();
+    expect(await migrate(old)).toMatchObject({ from: 21, to: 22, applied: [22] });
+    const at22 = await openStore(old);
+    expect(await at22.repos.planDrafts.get(PLAN)).toMatchObject({ status: 'applied', version: 2 });
+    expect(await end(at22, 'end-1', 2)).toMatchObject({ status: 'written' });
+    expect((await checkIntegrity(at22.db)).ok).toBe(true);
+    await at22.close();
   });
 });
 

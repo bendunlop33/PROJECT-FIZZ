@@ -1,5 +1,5 @@
 import { PlanDraftSchema, type Exercise, type PlanDraft, type Routine } from '@fizz/schemas';
-import { expirePlanDraft, type PlanApplyChange, type PlanLifeChange, type PlanUndoChange } from '@fizz/domain';
+import { expirePlanDraft, type PlanApplyChange, type PlanEndChange, type PlanLifeChange, type PlanUndoChange } from '@fizz/domain';
 import type { Database } from './database';
 import { decodeDocument, DocumentRepository, erase, EXERCISE_SPEC, listDocuments, ROUTINE_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
@@ -148,6 +148,46 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
           case 'write': {
             for (const u of c.update) if (!(await saveDocumentIn(tx, ROUTINE_SPEC, u.next, u.expectedVersion)).ok) throw new Conflict();
             for (const o of c.restore) if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, o.next, o.expectedVersion)).ok) throw new Conflict();
+            if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion)).ok) throw new Conflict();
+            return { status: 'written', plan: c.next, routines: c.update.map((u) => u.next) };
+          }
+        }
+      })
+      .catch(async (e: unknown) => {
+        if (!(e instanceof Conflict)) throw e;
+        const plan = await this.get(planId);
+        return plan === null ? { status: 'missing' as const } : { status: 'stale' as const, plan };
+      });
+  }
+
+  /**
+   * `End plan` and its Undo (Ben, 19 Oct): the plan and the workouts it takes
+   * out of (or puts back in) the rotation, together or not at all. `make`
+   * gets the plan, its workouts as stored inside the transaction, and whether
+   * another plan is applied now (Undo of End is stale then).
+   */
+  endOrResume(ownerId: string, planId: string, make: (current: PlanDraft, routines: ReadonlyMap<string, Routine | null>, otherApplied: boolean) => PlanEndChange): Promise<PlanWrite> {
+    return this.db
+      .write(async (tx): Promise<PlanWrite> => {
+        const current = await getPlanDraftIn(tx, planId);
+        if (current === null || current.ownerId !== ownerId) return { status: 'missing' };
+        const routines = new Map<string, Routine | null>();
+        for (const m of current.applied?.made ?? []) {
+          const row = await tx.getFirst('SELECT * FROM routines WHERE id = ?', [m.routineId]);
+          const r = row === null ? null : decodeDocument(ROUTINE_SPEC, row);
+          routines.set(m.routineId, r !== null && r.ownerId === ownerId ? r : null);
+        }
+        const other = await tx.getFirst("SELECT id FROM plan_drafts WHERE owner_id = ? AND status = 'applied' AND id != ?", [ownerId, planId]);
+        const c = make(current, routines, other !== null);
+        switch (c.kind) {
+          case 'duplicate':
+            return { status: 'replayed', plan: c.current, routines: [] };
+          case 'stale':
+            return { status: 'stale', plan: c.current };
+          case 'changed_since':
+            return { status: 'changed_since', plan: c.current, names: c.names };
+          case 'write': {
+            for (const u of c.update) if (!(await saveDocumentIn(tx, ROUTINE_SPEC, u.next, u.expectedVersion)).ok) throw new Conflict();
             if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion)).ok) throw new Conflict();
             return { status: 'written', plan: c.next, routines: c.update.map((u) => u.next) };
           }

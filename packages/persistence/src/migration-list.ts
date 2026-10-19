@@ -25,6 +25,7 @@ import { MIGRATION_0018 } from './schema/0018-coach-build-question';
 import { MIGRATION_0019 } from './schema/0019-coach-edit-today';
 import { MIGRATION_0020 } from './schema/0020-coach-plans';
 import { MIGRATION_0021 } from './schema/0021-cardio';
+import { MIGRATION_0022 } from './schema/0022-plan-end';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -66,6 +67,7 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(19, 'coach-edit-today', MIGRATION_0019),
   sqlMigration(20, 'coach-plans', MIGRATION_0020),
   sqlMigration(21, 'cardio', MIGRATION_0021),
+  sqlMigration(22, 'plan-end', MIGRATION_0022),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */
