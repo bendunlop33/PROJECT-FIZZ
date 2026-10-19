@@ -29,11 +29,14 @@ import { doableHere, substituteTargets } from './substitutes';
  * - `remove`: a row with nothing done leaves the workout (`remove_exercise`); otherwise its pending
  *   sets are skipped (`skip_exercise`). Done sets are never touched.
  * - `move`: `move_exercise` (a row with a set left).
+ * - `superset` / `split_superset` (Ben, 19 Oct): `link_superset` / `split_superset` on rows already
+ *   here (both with a set left). An `add` may name an exercise already in the workout: a second copy,
+ *   e.g. a superset with itself at 0 (`load`).
  *
  * A structural op that is refused refuses the whole edit (nothing half applies). Two ops on the same
  * row that would fight (a swap and a set change, two moves) are refused too. IDs derive from the
  * opId, so a replay builds the same rows. Steps run in a fixed order: targets and counts, swaps,
- * removals, adds, moves.
+ * removals, adds, moves, supersets.
  */
 
 /** Local reads for one exercise an `add` or `swap` op names (the add tool's inputs). */
@@ -87,6 +90,8 @@ function rowOf(state: SessionAggregate, op: EditTodayOp): string | null {
     case 'swap':
     case 'remove':
     case 'move':
+    case 'superset':
+    case 'split_superset':
       return op.sessionExerciseId;
     case 'add':
       return null;
@@ -97,6 +102,7 @@ function rowOf(state: SessionAggregate, op: EditTodayOp): string | null {
 function anchorsOf(op: EditTodayOp): string[] {
   if (op.op === 'add') return [op.afterSessionExerciseId, op.supersetWithSessionExerciseId].filter((x): x is string => x !== null);
   if (op.op === 'move') return op.afterSessionExerciseId === null ? [] : [op.afterSessionExerciseId];
+  if (op.op === 'superset') return [op.withSessionExerciseId];
   return [];
 }
 
@@ -132,7 +138,8 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
       if (moved.has(op.sessionExerciseId)) return reject(`two moves of ${nameOf(op.sessionExerciseId)}`);
       moved.add(op.sessionExerciseId);
     }
-    const id = op.op === 'add' ? op.exerciseId : op.op === 'swap' ? op.toExerciseId : null;
+    // Two swaps to one exercise would fight; an exercise added twice is two copies (Ben, 19 Oct).
+    const id = op.op === 'swap' ? op.toExerciseId : null;
     if (id !== null) {
       if (newIds.has(id)) return reject('the same exercise twice');
       newIds.add(id);
@@ -322,7 +329,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     const after = op.afterSessionExerciseId === null ? null : (placedAfter.get(op.afterSessionExerciseId) ?? op.afterSessionExerciseId);
     const check = checkCoachAdd({
       aggregate: s,
-      args: { baseVersion: input.args.baseVersion, exerciseId: op.exerciseId, workingSets: op.workingSets, reps: op.reps, workSeconds: op.workSeconds, distanceMetres: op.distanceMetres ?? null, targetRpe: op.targetRpe, afterSessionExerciseId: op.afterSessionExerciseId, supersetWithSessionExerciseId: op.supersetWithSessionExerciseId, reason: input.args.reason },
+      args: { baseVersion: input.args.baseVersion, exerciseId: op.exerciseId, workingSets: op.workingSets, reps: op.reps, workSeconds: op.workSeconds, distanceMetres: op.distanceMetres ?? null, targetRpe: op.targetRpe, afterSessionExerciseId: op.afterSessionExerciseId, supersetWithSessionExerciseId: op.supersetWithSessionExerciseId, load: op.load ?? null, reason: input.args.reason },
       ...got,
       opId,
       at: input.at,
@@ -356,6 +363,33 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     steps.push({ type: 'move_exercise', at: input.at, opId: nextOpId(), sessionExerciseId: row.id, afterSessionExerciseId: after?.id ?? null, expectedVersion: input.args.baseVersion });
     lines.push({ change: 'reorder', text: after === null ? `${row.exerciseName} moved first` : `${row.exerciseName} moved after ${after.exerciseName}` });
     names.add(row.exerciseName);
+  }
+
+  // 6. Supersets (Ben, 19 Oct): two rows already here become one, or one is taken apart. Rows only, never a set.
+  const grouped = new Set<string>();
+  for (const op of ops) {
+    if (op.op !== 'superset' && op.op !== 'split_superset') continue;
+    const row = liveRow(s, op.sessionExerciseId);
+    if (row === undefined) return reject('the coach named an exercise that isn’t in this workout');
+    if (grouped.has(row.id)) return reject(`two superset changes to ${row.exerciseName}`);
+    grouped.add(row.id);
+    if (op.op === 'split_superset') {
+      if (row.supersetGroup === null) return reject(`${row.exerciseName} isn’t in a superset`);
+      steps.push({ type: 'split_superset', at: input.at, opId: nextOpId(), sessionExerciseId: row.id, expectedVersion: input.args.baseVersion });
+      const others = s.exercises.filter((e) => e.removed === undefined && e.id !== row.id && e.supersetGroup === row.supersetGroup).map((e) => e.exerciseName);
+      lines.push({ change: 'edit', text: `Superset split: ${[row.exerciseName, ...others].join(', ')}`.slice(0, 200) });
+      names.add(row.exerciseName);
+      continue;
+    }
+    const other = liveRow(s, op.withSessionExerciseId);
+    if (other === undefined) return reject('the coach named an exercise that isn’t in this workout');
+    if (other.id === row.id) return reject(`${row.exerciseName} can’t be in a superset with itself`);
+    for (const r of [row, other]) if (!s.sets.some((x) => x.sessionExerciseId === r.id && x.status === 'pending')) return reject(`${r.exerciseName} is done`);
+    if (row.supersetGroup !== null && other.supersetGroup !== null && row.supersetGroup !== other.supersetGroup) return reject(`${row.exerciseName} is already in a superset`);
+    if (row.supersetGroup !== null && row.supersetGroup === other.supersetGroup) continue;
+    steps.push({ type: 'link_superset', at: input.at, opId: nextOpId(), sessionExerciseId: row.id, withSessionExerciseId: other.id, expectedVersion: input.args.baseVersion });
+    lines.push({ change: 'edit', text: `Superset: ${other.exerciseName} + ${row.exerciseName}`.slice(0, 200) });
+    names.add(row.exerciseName).add(other.exerciseName);
   }
 
   if (steps.length === 0) return reject('no change');
@@ -432,6 +466,8 @@ export function coachEditPainHold(input: { aggregate: SessionAggregate; command:
       case 'remove_exercise':
       case 'skip_exercise':
       case 'move_exercise':
+      case 'link_superset':
+      case 'split_superset':
         break;
     }
   }

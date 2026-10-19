@@ -1,4 +1,4 @@
-import type { SessionAggregate } from '@fizz/schemas';
+import type { SessionAggregate, SessionExercise } from '@fizz/schemas';
 import type { HistorySession, HistorySet } from './progression';
 import { equipmentOfRow } from './session/equipment-snapshot';
 import { setDisplayNumbers } from './session/order';
@@ -29,9 +29,10 @@ import { isInHistory } from './session/deletion';
 export function toHistorySessions(aggregate: SessionAggregate, exerciseId: string, opts: { identity?: boolean } = {}): HistorySession[] {
   const { session } = aggregate;
   if (!isInHistory(session)) return [];
-  const exercises = aggregate.exercises
-    .filter((e) => e.exerciseId === exerciseId)
-    .sort((a, b) => a.order - b.order);
+  const exercises = mainCopies(
+    aggregate,
+    aggregate.exercises.filter((e) => e.exerciseId === exerciseId).sort((a, b) => a.order - b.order),
+  );
   const byEquipment = new Map<string | null, HistorySet[]>();
   const numbers = opts.identity ? setDisplayNumbers(aggregate.exercises, aggregate.sets) : null;
   for (const ex of exercises) {
@@ -73,4 +74,37 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
     sets,
     ...(opts.identity ? { tz: session.startedAt.tz, routineName: session.routineName } : {}),
   }));
+}
+
+/**
+ * (Ben, 19 Oct: the same exercise twice in a workout, e.g. a superset with itself at 0) Rows of one
+ * exercise that aren't parts of each other are separate copies. The copies other than the main one:
+ * by item (`byItem`, how history groups sets) or across items. Main: the most done working sets,
+ * then the heaviest, then the first. Parts after a gym switch (`continuesFromId`) aren't copies.
+ */
+export function extraCopies(aggregate: Pick<SessionAggregate, 'exercises' | 'sets'>, rows: readonly SessionExercise[], byItem: boolean): Set<string> {
+  const done = (row: SessionExercise) => aggregate.sets.filter((s) => s.sessionExerciseId === row.id && s.status === 'completed' && s.actual !== null && s.setType !== 'warmup');
+  const heaviest = (row: SessionExercise): number => {
+    const loads = done(row).flatMap((s) => (s.actual?.load && s.actual.load.convention !== 'bodyweight' ? [s.actual.load.convention === 'assistance' ? -s.actual.load.value : s.actual.load.value] : []));
+    return loads.length === 0 ? Number.NEGATIVE_INFINITY : Math.max(...loads);
+  };
+  const groups = new Map<string, SessionExercise[]>();
+  for (const row of rows) {
+    if (row.continuesFromId !== undefined || row.removed !== undefined) continue;
+    const key = `${row.exerciseId}|${byItem ? (row.equipmentId ?? '') : ''}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const extra = new Set<string>();
+  for (const copies of groups.values()) {
+    if (copies.length < 2) continue;
+    const main = [...copies].sort((a, b) => done(b).length - done(a).length || heaviest(b) - heaviest(a) || a.order - b.order)[0];
+    for (const c of copies) if (c.id !== main?.id) extra.add(c.id);
+  }
+  return extra;
+}
+
+/** Only the main copy of the exercise on each item is its history, so a lighter or bodyweight copy never merges into its sets. */
+function mainCopies(aggregate: SessionAggregate, rows: readonly SessionExercise[]): SessionExercise[] {
+  const extra = extraCopies(aggregate, rows, true);
+  return rows.filter((r) => !extra.has(r.id) && !(r.continuesFromId !== undefined && extra.has(r.continuesFromId)));
 }

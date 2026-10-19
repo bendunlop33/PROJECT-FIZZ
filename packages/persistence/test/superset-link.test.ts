@@ -19,6 +19,7 @@ async function seed(store: Store): Promise<string> {
   await repos.equipment.save(stack(), null);
   for (const e of exercises.values()) await repos.exercises.save(e, null);
   const r = startFixture().input.routine;
+  if (r === null) throw new Error('no routine');
   await repos.routines.save(r, null);
   return r.id;
 }

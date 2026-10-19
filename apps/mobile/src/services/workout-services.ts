@@ -1397,7 +1397,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     // block's set count, the same as the Summary's `Next time` (review r2 B1).
     for (const block of nextTargetBlocks(source)) {
       const sx = block.decider;
-      if (out.has(sx.exerciseId)) continue;
+      // (19 Oct) A second copy of an exercise (a superset with itself at 0) never plans next time.
+      if (block.copy || out.has(sx.exerciseId)) continue;
       // Cardio (review B1): never progressed; next time repeats last time's time and distance (this workout's, as history reads it).
       if (sx.measurement === 'cardio') {
         const plan = cardioRepeatTargets(await historyFor(p.id, sx.exerciseId), { at: ctx.now() });

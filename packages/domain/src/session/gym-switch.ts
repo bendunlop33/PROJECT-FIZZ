@@ -1,3 +1,4 @@
+import { extraCopies } from '../history';
 import type {
   ChangeGymSlot,
   CommandOf,
@@ -121,6 +122,11 @@ export interface NextTargetBlock {
    * at the same gym, which must not read as `Done at more than one gym`.
    */
   gyms: number;
+  /**
+   * (19 Oct) Another copy of an exercise already in the workout (a superset with itself, a lighter
+   * copy): next time is planned from the main copy, never from this one.
+   */
+  copy: boolean;
 }
 
 /** The gym a part was at: its item's gym, else where its targets were fitted, else unknown. */
@@ -153,6 +159,7 @@ function importedBlockSets(state: Pick<SessionAggregate, 'sets'>, parts: readonl
 export function nextTargetBlocks(state: Pick<SessionAggregate, 'session' | 'exercises' | 'sets'>): NextTargetBlock[] {
   const sorted = [...state.exercises].sort((a, b) => a.order - b.order);
   const out: NextTargetBlock[] = [];
+  const copies = extraCopies(state, sorted, false);
   for (const root of sorted.filter((e) => partRootOf(state.exercises, e.id) === e.id)) {
     const parts = partsOf(state.exercises, root.id);
     const done = parts.map((part) => ({ part, n: state.sets.filter((s) => s.sessionExerciseId === part.id && isDoneWorkingSet(s)).length })).filter((x) => x.n > 0);
@@ -173,6 +180,7 @@ export function nextTargetBlocks(state: Pick<SessionAggregate, 'session' | 'exer
       otherPartsDone: done.filter((x) => x.part.equipmentId !== decider.equipmentId).reduce((n, x) => n + x.n, 0),
       split: done.length > 1,
       gyms: new Set(done.map((x) => partGym(state, x.part)).filter((g): g is string => g !== null)).size,
+      copy: copies.has(root.id),
     });
   }
   return out;

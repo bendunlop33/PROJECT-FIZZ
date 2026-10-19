@@ -965,8 +965,9 @@ export function createCoachService(deps: CoachServiceDeps) {
 
   /**
    * (12 Oct) The exercises `add_exercise_today` may add in this workout: Ben's and the catalogue's, measured
-   * in reps or time, doable at the workout's current gym (rule 4), not pain-flagged (rule 9) and not already
-   * in it. Sent only when Ben's words asked to add one.
+   * in reps or time, doable at the workout's current gym (rule 4) and not pain-flagged (rule 9). (19 Oct)
+   * Exercises already in it stay listed: an add of one is a second copy (a superset with itself at 0).
+   * Sent only when Ben's words asked to add one.
    */
   async function addableFor(p: UserProfile, session: SessionAggregate): Promise<AddableExercise[]> {
     const flags = await repos().painFlags.listActive(p.id).catch(() => [] as PainFlag[]);
@@ -974,11 +975,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     const nowMs = toMs(at.utc);
     const gym = { id: session.session.gymId ?? 'no-gym', name: 'this gym', equipment: currentGymEquipment(session.session) };
     const pool = await exercisePool();
-    // Review S2: the same movement under another ID or name (a FitNotes custom "Lateral Raise") counts as in the workout or flagged.
-    const inWorkout = movementMatcher(pool, session.exercises.filter((e) => e.removed === undefined));
+    // Review S2: the same movement under another ID or name (a FitNotes custom "Lateral Raise") counts as flagged.
     const flagged = movementMatcher(pool, flags.filter((f) => f.status === 'active'));
     return pool
-      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) && e.measurement !== 'distance' && !inWorkout(e) && !flagged(e) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
+      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) && e.measurement !== 'distance' && !flagged(e) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((e) => ({ exerciseId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
   }

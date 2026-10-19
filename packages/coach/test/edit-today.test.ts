@@ -18,7 +18,8 @@ import { ASSIST, at, BAR, call, DB, id, memoryStore, OWNER, ports, reply, reques
 const nb = (s: string): string => s.replace(/\u00a0/g, ' ');
 const INCLINE = exercise(4001, 'Incline DB press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
 const RAISE = exercise(4002, 'Lateral raise', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
-const KNOWN = new Map<string, Exercise>([INCLINE, RAISE].map((e) => [e.id, e]));
+const DB_PRESS = exercise(1020, 'Dumbbell press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+const KNOWN = new Map<string, Exercise>([INCLINE, RAISE, DB_PRESS].map((e) => [e.id, e]));
 
 let stores: Store[] = [];
 async function store(): Promise<Store> {
@@ -278,3 +279,39 @@ describe('edit_today through the turn (Coach v3 slice 2)', () => {
   });
 });
 
+
+describe('edit_today: the same exercise again, and supersets (Ben, 19 Oct)', () => {
+  it('"Just do weighted and we put 0": a second dumbbell press at 0 supersets with the first; one Undo takes it out', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const args = { baseVersion: 7, ops: [{ op: 'add', exerciseId: DB_PRESS.id, workingSets: 2, reps: { min: 20, max: 20 }, workSeconds: null, targetRpe: null, afterSessionExerciseId: null, supersetWithSessionExerciseId: id(20), load: 0 }], reason: 'Ben asked.', benAsked: true, benQuote: 'Just do weighted and we put 0' };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Done.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('Just do weighted and we put 0'), context: ctx(workout()) }), livePorts(s, model));
+    expect(r.cards.map((c) => c.record.status)).toEqual(['committed']);
+    const after = await s.repos.sessions.get(SESSION);
+    expect(live(after)).toEqual(['Bench press', 'Dumbbell press', 'Dumbbell press', 'Assisted pull-up']);
+    const copies = (after?.exercises ?? []).filter((e) => e.exerciseName === 'Dumbbell press').sort((a, b) => a.order - b.order);
+    expect(copies.map((e) => [e.supersetGroup, e.equipmentId])).toEqual([
+      ['A', DB.id],
+      ['A', null],
+    ]);
+    expect(after?.sets.filter((x) => x.sessionExerciseId === copies[1]?.id).map((x) => x.planned.load?.value)).toEqual([0, 0]);
+    const actionId = r.cards[0]?.record.actionId ?? '';
+    expect((await undoCoachAction(s.repos.coach, { ownerId: OWNER, actionId, opId: undoOpId(actionId), now: at(900) })).result.status).toBe('written');
+    const back = await s.repos.sessions.get(SESSION);
+    expect(live(back)).toEqual(['Bench press', 'Dumbbell press', 'Assisted pull-up']);
+    expect(back?.exercises.filter((e) => e.removed === undefined).every((e) => e.supersetGroup === null)).toBe(true);
+  });
+
+  it('two exercises already here become a superset: the pull-up moves after bench, no set changes', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const args = { baseVersion: 7, ops: [{ op: 'superset', sessionExerciseId: id(30), withSessionExerciseId: id(10) }], reason: 'Ben asked.', benAsked: true, benQuote: 'superset pull-ups with bench' };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Done.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('superset pull-ups with bench'), context: ctx(workout()) }), livePorts(s, model));
+    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', expect.stringContaining('Superset: Bench press + Assisted pull-up')]]);
+    const after = await s.repos.sessions.get(SESSION);
+    expect(live(after)).toEqual(['Bench press', 'Assisted pull-up', 'Dumbbell press']);
+    expect(after?.sets).toEqual(workout().sets);
+  });
+});
