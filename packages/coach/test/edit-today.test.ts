@@ -200,6 +200,18 @@ describe('edit_today through the turn (Coach v3 slice 2)', () => {
     expect(live(await s.repos.sessions.get(SESSION))).toContain('Incline DB press');
   });
 
+  it('review S3: "Bench felt easy, what do you think?" quoted as "felt easy" is offered, not applied (rule 3)', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const up = { load: { value: 102.5, unit: 'kg', convention: 'total' }, reps: null, rpe: null };
+    const args = { baseVersion: 7, ops: [{ op: 'set', setId: id(102), target: up }, { op: 'set', setId: id(103), target: up }], reason: 'Felt easy.', benAsked: true, benQuote: 'felt easy' };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Want me to add 2.5 kg?')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('Bench felt easy, what do you think?'), context: ctx(workout()) }), livePorts(s, model));
+    expect(r.cards.map((c) => c.record.status)).toEqual(['proposed']);
+    expect(r.offer).toBe('adjust_today');
+    expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(7);
+  });
+
   describe('review B1: pain flagged after the offer, before Adjust (rule 9)', () => {
     const benchFlag = (n: number): PainFlag => ({
       id: id(960),

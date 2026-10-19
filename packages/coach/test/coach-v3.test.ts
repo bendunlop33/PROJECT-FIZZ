@@ -6,7 +6,7 @@ import { bareNumbers, buildFocusFor, lengthRevision, buildMinutesFor, gymNamedIn
 import { buildCoachContext, contextInputItems, lastLoggedSets, workoutView, type YourData } from '../src/context';
 import { createSessionReadExecutor, createStoreExecutors, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
 import { createEditTodayExecutor } from '../src/edit-today';
-import { quoteInWords, verifyAsked } from '../src/intent';
+import { quoteAsks, quoteInWords, verifyAsked } from '../src/intent';
 import type { ModelRequest } from '../src/model-port';
 import { createRenameExecutor } from '../src/rename';
 import { parseToolCall } from '../src/tool-call';
@@ -118,6 +118,19 @@ describe('verifyAsked: the model says Ben asked; code checks his words', () => {
     expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: true, benQuote: 'make it heavier' }, fallback: () => true })).toEqual({ asked: true, by: 'words' });
     expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: false, benQuote: null }, fallback: () => true })).toEqual({ asked: false, by: 'model_said_no' });
     expect(verifyAsked({ ...base, tool: 'adjust_pending_sets', claim: { benAsked: null } })).toEqual({ asked: false, by: 'no_request' });
+  });
+
+  it('review S3: Ben’s words that are a statement or a question for an opinion are an offer, even quoted; a short answer or a request applies', () => {
+    const base = { tool: 'edit_today', chip: false, acceptedOffer: false, setsOnly: true, fallback: () => true };
+    const said = 'Bench felt easy, what do you think?';
+    expect(verifyAsked({ ...base, words: said, claim: { benAsked: true, benQuote: 'felt easy' } })).toEqual({ asked: false, by: 'not_a_request' });
+    expect(verifyAsked({ ...base, words: said, claim: { benAsked: true, benQuote: 'what do you think' } })).toEqual({ asked: false, by: 'not_a_request' });
+    expect(verifyAsked({ ...base, words: 'Bench felt easy, should I go heavier?', claim: { benAsked: true, benQuote: 'go heavier' } })).toEqual({ asked: false, by: 'not_a_request' });
+    expect(verifyAsked({ ...base, words: 'Working set', claim: { benAsked: true, benQuote: 'Working set' } })).toEqual({ asked: true, by: 'quote' });
+    expect(verifyAsked({ ...base, words: 'Bench felt easy, can you make it heavier?', claim: { benAsked: true, benQuote: 'make it heavier' } })).toEqual({ asked: true, by: 'quote' });
+    expect(verifyAsked({ ...base, words: 'Drop the last two to 95', claim: { benAsked: true, benQuote: 'Drop the last two to 95' } })).toEqual({ asked: true, by: 'quote' });
+    expect(quoteAsks('swap bench for incline dumbbell press', 'swap bench for incline dumbbell press and add lateral raises')).toBe(true);
+    expect(quoteAsks('felt easy', 'Felt easy')).toBe(true);
   });
 
   it('todayAskVerdict: after warm-ups only, a Too easy tap is offered, not applied', () => {
