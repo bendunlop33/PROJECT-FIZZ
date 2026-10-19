@@ -9,7 +9,7 @@
 import type { CoachTurnResult } from '@fizz/coach';
 import type { ActionRecord, SessionAggregate } from '@fizz/schemas';
 
-import type { CoachAvailability, CoachService, WorkoutOffer } from './coach-service';
+import { liveCoachReachable, type CoachAvailability, type CoachService, type WorkoutOffer } from './coach-service';
 import { coachAskedInstead, coachCouldNotAnswer, offerCandidates, ruleOfferOutcome } from './slot-view';
 
 /** Sets logged with no rest running, held for the next rest (F7). Per workout. */
@@ -39,7 +39,7 @@ export async function findOffer(
 ): Promise<{ availability: CoachAvailability; offer: WorkoutOffer | null }> {
   const availability = await coach.availability();
   for (const setId of input.check) {
-    const offer = await coach.offerAfterLog({ aggregate: input.aggregate, setId, resting: input.resting, coachReachable: availability.status === 'ok', pending: input.pending });
+    const offer = await coach.offerAfterLog({ aggregate: input.aggregate, setId, resting: input.resting, coachReachable: liveCoachReachable(availability), pending: input.pending });
     if (offer !== null) return { availability, offer };
   }
   // r3 N3: an effort chip (or a correction) re-checks the set whose offer is showing. CA4 won't offer the same
@@ -64,9 +64,9 @@ export interface RuleRequest {
   intent: 'too_hard' | 'too_easy';
 }
 
-/** Ben's chip: the coach when it reads `ok` now; otherwise the built-in rule applies at once (no AI call). */
+/** Ben's chip: the coach when it reads `ok` now (with his mid-workout model listed, review S7); otherwise the built-in rule applies at once (no AI call). */
 export function chipRoute(availability: CoachAvailability | null): 'coach' | 'rule' {
-  return availability?.status === 'ok' ? 'coach' : 'rule';
+  return liveCoachReachable(availability) ? 'coach' : 'rule';
 }
 
 /** One chip at a time (r3 N5): held from the tap until the chip has been sent to the coach or the rule's write is done. */

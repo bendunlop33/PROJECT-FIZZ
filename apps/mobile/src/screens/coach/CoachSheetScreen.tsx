@@ -439,7 +439,7 @@ export function CoachSheetScreen() {
     return d !== null && coachUndoRefusal(d.aggregate, actionId) !== null;
   };
 
-  const status = availability === null ? null : statusView(availability);
+  const status = availability === null ? null : statusView(availability, entry.kind === 'workout' && workout?.active === true);
   const route = availability === null ? null : routeLine(availability);
   const chips: StarterChip[] = availability === null ? [] : starterChips(entry, availability, workout?.active === true, workout?.chips ?? null);
   const empty = rows.length === 0 && live === null;

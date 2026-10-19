@@ -174,6 +174,8 @@ describe('Mid-workout model (Coach v3, Ben 18 Oct)', () => {
     expect(connectionStatusView(state('ok'), null).workoutModelRow).toBe('Mid-workout: Same as coach');
     expect(connectionStatusView(state('ok', { workoutModel: LUNA }), null).workoutModelRow).toBe('Mid-workout: GPT-6-Luna');
     expect(connectionStatusView(state('limit'), null).workoutModelRow ?? null).toBeNull();
+    // Review S7: his plan stopped listing it.
+    expect(connectionStatusView(state('ok', { workoutModel: LUNA, workoutModelGone: true }), null).workoutModelRow).toBe('Mid-workout: GPT-6-Luna · not available');
   });
 
   it('the list: Same as coach first, then only the plan’s listed models', () => {

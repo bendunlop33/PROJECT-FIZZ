@@ -289,6 +289,24 @@ describe('settings, failures and models', () => {
     expect(back.modelSlug).toBe('gpt-6.1-sol');
   });
 
+  it('(Coach v3 review S7) a mid-workout model his plan no longer lists reads as gone; the coach’s own model is unaffected and never swapped in', async () => {
+    const s = new MemorySettings();
+    const listed = [
+      { slug: 'gpt-6.1-sol', displayName: 'GPT-6.1-Sol' },
+      { slug: 'gpt-6-mini', displayName: 'GPT-6 mini' },
+    ];
+    await selectModel(s, listed, 'gpt-6.1-sol');
+    await selectWorkoutModel(s, listed, 'gpt-6-mini');
+    const settings = await loadConnectionSettings(s);
+    expect(textCoachState({ tokens: null, registration: null, settings, listedModels: listed }).workoutModelGone).toBeUndefined();
+    // Not read yet this run: unknown, so not marked.
+    expect(textCoachState({ tokens: null, registration: null, settings, listedModels: null }).workoutModelGone).toBeUndefined();
+    const gone = textCoachState({ tokens: null, registration: null, settings, listedModels: [listed[0] as (typeof listed)[number]] });
+    expect(gone.workoutModelGone).toBe(true);
+    expect(gone.workoutModel).toEqual({ slug: 'gpt-6-mini', displayName: 'GPT-6 mini' });
+    expect((await loadConnectionSettings(s)).workoutModelSlug).toBe('gpt-6-mini');
+  });
+
   it('(Coach v3) reasoning capability per model: unknown until recorded; garbage values are dropped', async () => {
     const s = new MemorySettings();
     expect(reasoningCapabilityOf(await loadConnectionSettings(s), 'm')).toBe('unknown');

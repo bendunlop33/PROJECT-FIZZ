@@ -5,6 +5,9 @@ import type { TextCoachState } from '@fizz/providers';
 
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, contextWorkout, replyWith, StepModel, toolCall } from './coach-model';
+import { chipRoute } from '../src/coach/offer-check';
+import { statusView } from '../src/coach/sheet-view';
+import { slotAfterTurn } from '../src/coach/slot-view';
 import { overviewGymId } from '../src/workout/overview-start';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
@@ -329,6 +332,23 @@ describe('Coach v3 slice 5: effort per turn and the mid-workout model (Ben 18 Oc
     model = new StepModel([() => replyWith('Two or three times a week works.')]);
     await say(s, 'how often should I train?', null);
     expect(model.requests.map((q) => [q.model, q.effort])).toEqual([[CONNECTED.model?.slug, 'medium']]);
+  });
+
+  it('review S7: a mid-workout model his plan no longer lists: Choose model in the workout, chips go to the rule, a live turn’s error names it; no other model is used', async () => {
+    connection = { ...CONNECTED, workoutModel: { slug: 'gpt-6-mini', displayName: 'GPT-6 mini' }, workoutModelGone: true };
+    const { s, sessionId } = await benchThenWarmup();
+    const a = await s.coach.availability();
+    expect(a).toMatchObject({ status: 'ok', workoutModel: 'gpt-6-mini', workoutModelGone: true });
+    expect(statusView(a, true)).toMatchObject({ word: 'Choose model', canSend: false, why: 'The mid-workout model you chose isn’t available any more.' });
+    // Outside a workout the coach still runs on his main model.
+    expect(statusView(a, false)).toMatchObject({ word: null, canSend: true });
+    expect(chipRoute(a)).toBe('rule');
+    // A live turn sent anyway runs on his chosen model only, and fails as that model gone.
+    model = new StepModel([() => [{ type: 'error', error: 'model_gone' }]]);
+    const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'words', text: 'How was that?', spoken: false }, turnId: h.ids() });
+    expect(model.requests.map((q) => q.model)).toEqual(['gpt-6-mini']);
+    expect(r.error).toBe('model_gone');
+    expect(slotAfterTurn(r, { workoutModelGone: a.workoutModelGone === true }).outcome).toEqual(expect.objectContaining({ text: 'Mid-workout model unavailable. Nothing changed.' }));
   });
 
   it('a build is high effort', async () => {

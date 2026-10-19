@@ -44,10 +44,15 @@ export interface StatusView {
   placeholder: string;
 }
 
-export function statusView(a: CoachAvailability): StatusView {
+
+/** (Coach v3 review S7) Why live-workout turns can't run: his mid-workout model left his plan's list. */
+export const MID_WORKOUT_MODEL_GONE = 'The mid-workout model you chose isn’t available any more.';
+export function statusView(a: CoachAvailability, liveWorkout = false): StatusView {
   const ready = { icon: 'info.circle' as const, why: null, action: null, canSend: true, placeholder: 'Ask the coach…' };
   switch (a.status) {
     case 'ok':
+      // Review S7: in a live workout the coach runs on his mid-workout model; once his plan stops listing it, he chooses again.
+      if (liveWorkout && a.workoutModelGone === true) return { word: 'Choose model', icon: 'exclamationmark.triangle', why: MID_WORKOUT_MODEL_GONE, action: { label: 'Choose model', action: 'choose_model' }, canSend: false, placeholder: 'Choose a model' };
       return { ...ready, word: null };
     case 'offline':
       // Known only after a request failed for lack of network: Send stays on so Ben can try again himself; nothing sends later on its own.
@@ -369,7 +374,7 @@ export function benText(input: BenInput): string | null {
  * F12 (13 Oct): each cause has its own line; `why` (behind `Why?`) names the recorded reason,
  * which the turn already stores as its `error`.
  */
-export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean): { text: string; icon: ViewIcon; retry: boolean; why: string | null } | null {
+export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean, opts: { workoutModelGone?: boolean } = {}): { text: string; icon: ViewIcon; retry: boolean; why: string | null } | null {
   // The cards show anything applied; without one, say nothing changed (minimal copy, audit W2).
   const tail = anyCard ? '' : ' Nothing changed.';
   const line = (text: string, icon: ViewIcon, retry: boolean, why: string | null = null) => ({ text: `${text}${tail}`, icon, retry, why });
@@ -388,7 +393,7 @@ export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | 
     case 'not_eligible':
       return line('Unavailable.', 'xmark.octagon', false);
     case 'model_gone':
-      return line('Model unavailable.', 'exclamationmark.triangle', false);
+      return opts.workoutModelGone === true ? line('Mid-workout model unavailable.', 'exclamationmark.triangle', false, MID_WORKOUT_MODEL_GONE) : line('Model unavailable.', 'exclamationmark.triangle', false);
     case 'too_many_steps':
       return line('Coach got stuck.', 'exclamationmark.triangle', true, 'Too many steps without an answer (too_many_steps).');
     case 'no_reply':

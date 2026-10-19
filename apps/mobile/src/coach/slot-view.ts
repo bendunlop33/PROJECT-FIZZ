@@ -82,7 +82,7 @@ export async function syncAdjustment(cached: ActionRecord | null, read: (actionI
  * What a finished Adjust turn leaves in the slot: its adjustment card, or
  * one line saying what happened (nothing changed). Never the model's words.
  */
-export function slotAfterTurn(result: CoachTurnResult): { adjustment: ActionRecord | null; outcome: { text: string; retry: boolean } | null } {
+export function slotAfterTurn(result: CoachTurnResult, opts: { workoutModelGone?: boolean } = {}): { adjustment: ActionRecord | null; outcome: { text: string; retry: boolean } | null } {
   const adjust = result.cards.map((c) => c.record).filter(isTodayChange);
   const committed = adjust.find((r) => r.status === 'committed') ?? null;
   if (committed !== null) return { adjustment: committed, outcome: null };
@@ -91,7 +91,7 @@ export function slotAfterTurn(result: CoachTurnResult): { adjustment: ActionReco
     const text = refused.status === 'stale' ? 'Out of date' : renderActionResult(refused, 'slot').text;
     return { adjustment: null, outcome: { text, retry: refused.status === 'stale' } };
   }
-  const failed = outcomeFor(result.status, result.error, result.cards.length > 0);
+  const failed = outcomeFor(result.status, result.error, result.cards.length > 0, opts);
   if (failed !== null) return { adjustment: null, outcome: failed };
   return { adjustment: null, outcome: { text: 'No change made.', retry: false } };
 }

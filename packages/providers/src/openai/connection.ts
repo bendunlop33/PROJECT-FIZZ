@@ -132,6 +132,11 @@ export interface TextCoachState {
   model: ModelOption | null;
   /** (Coach v3) The mid-workout model Ben chose; null or absent: the coach's model. */
   workoutModel?: ModelOption | null;
+  /**
+   * (Coach v3 review S7) His mid-workout model is no longer in his plan's model list: live-workout
+   * turns can't run until he chooses again. Never replaced by another model on its own (AC6).
+   */
+  workoutModelGone?: true;
 }
 
 export interface TextCoachInput {
@@ -151,7 +156,8 @@ export function textCoachState(input: TextCoachInput): TextCoachState {
   const sticky = settings.lastFailure?.kind ?? null;
   const workoutSlug = settings.workoutModelSlug ?? null;
   const workoutModel = workoutSlug === null ? null : { slug: workoutSlug, displayName: settings.workoutModelName ?? workoutSlug };
-  const out = (status: TextCoachStatus): TextCoachState => ({ status, route: status === 'not_connected' ? null : 'chatgpt_plan', email, model, ...(workoutModel === null ? {} : { workoutModel }) });
+  const workoutGone = workoutSlug !== null && input.listedModels !== null && !input.listedModels.some((m) => m.slug === workoutSlug);
+  const out = (status: TextCoachStatus): TextCoachState => ({ status, route: status === 'not_connected' ? null : 'chatgpt_plan', email, model, ...(workoutModel === null ? {} : { workoutModel }), ...(workoutGone ? { workoutModelGone: true as const } : {}) });
 
   if (tokens === null) {
     if (sticky === 'expired') return out('expired');

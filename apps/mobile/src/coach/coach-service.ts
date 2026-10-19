@@ -245,6 +245,17 @@ export interface CoachAvailability {
   model: string | null;
   /** (Coach v3) Ben's mid-workout model, when he chose one in Settings. */
   workoutModel?: string | null;
+  /** (Coach v3 review S7) That model is no longer in his plan's list: live-workout turns can't run. */
+  workoutModelGone?: true;
+}
+
+/**
+ * (Coach v3 review S7) The coach can answer during a live workout: connected and ok, and his
+ * mid-workout model (if he chose one) still listed. Otherwise the built-in rule offers and acts
+ * on his chips, as when offline; no other model is ever used in its place.
+ */
+export function liveCoachReachable(a: CoachAvailability | null): boolean {
+  return a?.status === 'ok' && a.workoutModelGone !== true;
 }
 
 /**
@@ -437,7 +448,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const s = await deps.connection().catch((): TextCoachState => ({ status: 'not_connected', route: null, email: null, model: null }));
     const offline = lastNetworkFailureMs !== null && toMs(deps.now().utc) - lastNetworkFailureMs < OFFLINE_HOLD_MS;
     const status: CoachStatus = s.status === 'ok' && offline ? 'offline' : s.status;
-    return { status, model: s.model?.slug ?? null, ...(s.workoutModel == null ? {} : { workoutModel: s.workoutModel.slug }) };
+    return { status, model: s.model?.slug ?? null, ...(s.workoutModel == null ? {} : { workoutModel: s.workoutModel.slug }), ...(s.workoutModelGone === true ? { workoutModelGone: true as const } : {}) };
   }
 
   async function sessionOf(entry: CoachEntry): Promise<SessionAggregate | null> {

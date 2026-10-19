@@ -118,7 +118,7 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
         try {
           const threadId = await services.coach.resolveThread({ kind: 'workout', sessionId });
           result = await services.coach.send({ entry: { kind: 'workout', sessionId }, threadId, input, turnId });
-          after = slotAfterTurn(result);
+          after = slotAfterTurn(result, { workoutModelGone: availability?.workoutModelGone === true });
         } catch {
           // Read what this turn saved before saying "Nothing changed" (review N2).
           const threadId = await services.coach.resolveThread({ kind: 'workout', sessionId }).catch(() => null);
@@ -142,7 +142,7 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
         if (asking.current === turnId) asking.current = null;
       });
     },
-    [services, sessionId, pending],
+    [services, sessionId, pending, availability],
   );
 
   /** `Adjust` on the built-in rule's offer: applied at once (a local write), with Undo in the banner. */

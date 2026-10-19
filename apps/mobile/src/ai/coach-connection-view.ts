@@ -56,6 +56,9 @@ export function showFirstUseNotice(outcome: Extract<ConnectOutcome, { kind: 'con
   return coachChatInBuild && outcome.firstUse && outcome.models.length > 0;
 }
 
+/** (Coach v3 review S7) After the mid-workout model's name when his plan no longer lists it. */
+export const WORKOUT_MODEL_GONE = 'not available';
+
 /**
  * The status screen (§2.1 / §2.6 and the §3.1 rows). `signInUnavailable` is
  * the reason when this build has no loopback module.
@@ -88,7 +91,7 @@ export function connectionStatusView(state: TextCoachState, signInUnavailable: s
         ...base,
         card: { icon: 'checkmark.circle.fill', tone: 'done', title: 'Connected · ChatGPT plan', lines: [...signedIn, 'Limits are set in ChatGPT.', ...(coachChatInBuild ? [] : [NO_COACH_YET])] },
         modelRow: `Model: ${modelName ?? 'not chosen'}`,
-        workoutModelRow: `Mid-workout: ${state.workoutModel?.displayName ?? SAME_AS_COACH}`,
+        workoutModelRow: `Mid-workout: ${state.workoutModel?.displayName ?? SAME_AS_COACH}${state.workoutModelGone === true ? ` · ${WORKOUT_MODEL_GONE}` : ''}`,
         primary: null,
         links: [manage],
       };
