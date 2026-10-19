@@ -103,6 +103,61 @@ describe('link_superset', () => {
   });
 });
 
+describe('link_superset either way round (review B1)', () => {
+  /** Bench warm-up and set 1 logged: bench is in progress. */
+  function midBench(): SessionAggregate {
+    const s = started();
+    const [, b1] = setsFor(s, BENCH);
+    return apply(s, logCmd(b1?.id ?? '', values(kg(100), 8), 200));
+  }
+  const pendingNames = (s: SessionAggregate): (string | undefined)[] =>
+    buildExecutionOrder(s.exercises, s.sets)
+      .filter((x) => s.sets.find((y) => y.id === x)?.status === 'pending')
+      .map((x) => s.exercises.find((e) => e.id === s.sets.find((y) => y.id === x)?.sessionExerciseId)?.exerciseName);
+
+  it('the ⋯ menu on Dead hang picking Bench gives the same result as the reverse: bench stays put, the hang alternates from its next round', () => {
+    const s0 = midBench();
+    const fromHang = apply(s0, link(s0, rowId(s0, BENCH), rowId(s0, HANG)));
+    const fromBench = apply(s0, link(s0, rowId(s0, HANG), rowId(s0, BENCH)));
+    expect(fromHang.exercises).toEqual(fromBench.exercises);
+    expect(order(fromHang)).toEqual(['Bench press:B', 'Dead hang:B', 'Cable row:A', 'Face pull:A']);
+    expect(fromHang.exercises.find((e) => e.exerciseId === HANG)?.roundOffset).toBe(2);
+    expect(fromHang.exercises.find((e) => e.exerciseId === BENCH)?.roundOffset).toBeUndefined();
+    expect(pendingNames(fromHang).slice(0, 3)).toEqual(['Bench press', 'Dead hang', 'Cable row']);
+    expect(fromHang.sets).toEqual(s0.sets);
+  });
+
+  it('bench in progress joins a superset not started: the superset moves after bench and sits out its done rounds; Undo puts it all back', () => {
+    const s0 = midBench();
+    for (const [x, y] of [[BENCH, ROW], [ROW, BENCH]] as const) {
+      const s1 = apply(s0, link(s0, rowId(s0, x), rowId(s0, y)));
+      expect(order(s1)).toEqual(['Bench press:A', 'Cable row:A', 'Face pull:A', 'Dead hang']);
+      expect(s1.exercises.filter((e) => e.supersetGroup === 'A').map((e) => [e.exerciseName, e.roundOffset ?? 0])).toEqual(
+        expect.arrayContaining([
+          ['Bench press', 0],
+          ['Cable row', 2],
+          ['Face pull', 2],
+        ]),
+      );
+      // B2 then Cable row, Face pull (a round), B3 …: bench is still next.
+      expect(pendingNames(s1).slice(0, 4)).toEqual(['Bench press', 'Cable row', 'Face pull', 'Cable row']);
+      expect(s1.sets).toEqual(s0.sets);
+      const back = apply(reload(s1), undo('link-1'));
+      expect(order(back)).toEqual(['Bench press', 'Cable row:A', 'Face pull:A', 'Dead hang']);
+      expect(back.exercises.map((e) => e.roundOffset)).toEqual(s0.exercises.map((e) => e.roundOffset));
+      expect(buildExecutionOrder(back.exercises, back.sets)).toEqual(buildExecutionOrder(s0.exercises, s0.sets));
+    }
+  });
+
+  it('nothing done on either side: the earlier row anchors whichever is named first', () => {
+    const s0 = startFixture().state;
+    const x = apply(s0, link(s0, rowId(s0, BENCH), rowId(s0, HANG)));
+    const y = apply(s0, link(s0, rowId(s0, HANG), rowId(s0, BENCH)));
+    expect(order(x)).toEqual(order(y));
+    expect(order(x)).toEqual(['Bench press:B', 'Dead hang:B', 'Cable row:A', 'Face pull:A']);
+  });
+});
+
 describe('split_superset', () => {
   it('takes the whole superset apart, order and sets kept; Undo groups it again after a reload', () => {
     const s0 = started();

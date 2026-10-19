@@ -40,7 +40,7 @@ import { toIso, toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { pendingSetsOf } from './mid-swap';
-import { buildExecutionOrder, isRoundEnd, joinRoundOffset, nextPendingSet } from './order';
+import { buildExecutionOrder, effectiveOffset, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -2265,20 +2265,18 @@ function undoMove(state: SessionAggregate, prior: ProcessedOperation): Handled {
   return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: moved, undo: true }] };
 }
 
-/** The live members of a superset group, in order. */
-function groupMembers(exercises: readonly SessionExercise[], group: string): SessionExercise[] {
-  return liveExercises(exercises).filter((e) => e.supersetGroup === group).sort(byOrder);
-}
-
 /** A row split across gyms (a continuation, or one with a continuation): its order follows its parts. */
 function partedRow(live: readonly SessionExercise[], e: SessionExercise): boolean {
   return e.continuesFromId !== undefined || live.some((x) => x.continuesFromId === e.id);
 }
 
 /**
- * `link_superset` (Ben, 19 Oct, `Superset with…`): the row joins the other's superset (both get a new
- * letter when neither is in one) and moves to straight after the group's last member. When only the
- * other row is in a superset already, that's the group joined; two different supersets are refused.
+ * `link_superset` (Ben, 19 Oct, `Superset with…`): the two rows (or a row and the superset it joins)
+ * become one superset (a new letter when neither is in one; two different supersets are refused).
+ * Which row was named first never matters (review B1): the side further along (more rounds done; on
+ * a tie the superset already there, else the earlier row) stays where it is, and the other side
+ * moves to straight after it and sits out the rounds the leading side has done (`roundOffset`), so
+ * the exercise in progress keeps going and the sets alternate from its current round.
  * Both rows need a set not done yet. No set changes (rule 2).
  */
 function handleLinkSuperset(state: SessionAggregate, cmd: CommandOf<'link_superset'>): Handled {
@@ -2290,41 +2288,39 @@ function handleLinkSuperset(state: SessionAggregate, cmd: CommandOf<'link_supers
   if (a.id === b.id) return fail('invalid_values', 'Pick another exercise.');
   if (a.supersetGroup !== null && a.supersetGroup === b.supersetGroup) return { ok: true, state, events: [] };
   if (a.supersetGroup !== null && b.supersetGroup !== null) return fail('invalid_values', `${a.exerciseName} is already in a superset.`);
-  // The row that isn't in a superset is the one that joins (and moves).
-  const [joiner, anchor] = a.supersetGroup === null ? [a, b] : [b, a];
-  for (const row of [anchor, joiner]) {
+  for (const row of [a, b]) {
     if (!state.sets.some((x) => x.sessionExerciseId === row.id && x.status === 'pending')) return fail('set_not_pending', `${row.exerciseName} is done.`);
     if (partedRow(live, row)) return fail('invalid_values', `${row.exerciseName} has sets at another gym.`);
   }
-  let group = anchor.supersetGroup;
+  const { lead, lag, shift } = supersetLinkSides(state.exercises, state.sets, a, b);
+  if (lag.some((m) => effectiveOffset(m) + shift > MAX_ROUND_OFFSET)) return fail('invalid_values', 'Too many rounds done to pair these.');
+  let group = a.supersetGroup ?? b.supersetGroup;
   if (group === null) {
     const used = new Set(state.exercises.map((e) => e.supersetGroup));
     group = GROUP_LETTERS.find((l) => !used.has(l)) ?? null;
     if (group === null) return fail('invalid_values', 'No superset letter left in this workout.');
   }
-  const last = anchor.supersetGroup === null ? anchor : (groupMembers(state.exercises, anchor.supersetGroup).at(-1) ?? anchor);
-  const sorted = [...state.exercises].sort(byOrder);
-  const rest = sorted.filter((e) => e.id !== joiner.id);
-  const at = rest.findIndex((e) => e.id === last.id) + 1;
-  const next = [...rest.slice(0, at), joiner, ...rest.slice(at)];
-  const pos = new Map(next.map((e, i) => [e.id, i]));
   const g = group;
-  // A new pair starts at round 1 for the anchor; the joiner sits out the rounds the group has done.
-  const anchorRow: SessionExercise = { ...anchor, supersetGroup: g };
-  if (anchor.supersetGroup === null) delete anchorRow.roundOffset;
-  const members = anchor.supersetGroup === null ? [anchorRow] : groupMembers(state.exercises, anchor.supersetGroup);
-  const offset = joinRoundOffset(members, state.sets, joiner);
+  const lagIds = new Set(lag.map((m) => m.id));
+  const leadIds = new Set(lead.map((m) => m.id));
+  const last = lead.at(-1) ?? lead[0];
+  const sorted = [...state.exercises].sort(byOrder);
+  const rest = sorted.filter((e) => !lagIds.has(e.id));
+  const at = rest.findIndex((e) => e.id === last?.id) + 1;
+  const next = [...rest.slice(0, at), ...sorted.filter((e) => lagIds.has(e.id)), ...rest.slice(at)];
+  const pos = new Map(next.map((e, i) => [e.id, i]));
+  const withOffset = (e: SessionExercise, offset: number, order: number): SessionExercise => {
+    const row: SessionExercise = { ...e, order, supersetGroup: g, roundOffset: offset };
+    if (offset === 0) delete row.roundOffset;
+    return row;
+  };
   const exercises = state.exercises.map((e) => {
     const order = pos.get(e.id) ?? e.order;
-    if (e.id === anchor.id) return { ...anchorRow, order };
-    if (e.id === joiner.id) {
-      const row: SessionExercise = { ...e, order, supersetGroup: g, roundOffset: offset };
-      if (offset === 0) delete row.roundOffset;
-      return row;
-    }
+    if (leadIds.has(e.id)) return withOffset(e, effectiveOffset(e), order);
+    if (lagIds.has(e.id)) return withOffset(e, effectiveOffset(e) + shift, order);
     return e.order === order ? e : { ...e, order };
   });
-  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [joiner.id, anchor.id], undo: false }] };
+  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...lagIds, ...leadIds], undo: false }] };
 }
 
 /** `split_superset` (Ben, 19 Oct, `Remove superset`): every member back to a single exercise, order kept. No set changes. */
@@ -2357,10 +2353,20 @@ function undoLinkSuperset(state: SessionAggregate, prior: ProcessedOperation): H
   if (rows.some((e) => e.supersetGroup !== group)) return fail('stale_version', STALE_UNDO);
   const pos = new Map(before.map((id, i) => [id, i]));
   const left = state.exercises.filter((e) => e.supersetGroup === group && e.removed === undefined && !joined.has(e.id));
+  // A superset that sat out rounds to follow a row further along drops the shift the link gave it
+  // (an even shift of every member changes no order, so the smallest offset goes back to 0).
+  const drop = left.length > 1 ? Math.min(...left.map((e) => e.roundOffset ?? 0)) : 0;
   const exercises = state.exercises.map((e) => {
     const order = pos.get(e.id) ?? e.order;
     const ungroup = joined.has(e.id) || (left.length === 1 && left[0]?.id === e.id);
-    return { ...e, order, supersetGroup: ungroup ? null : e.supersetGroup };
+    const row: SessionExercise = { ...e, order, supersetGroup: ungroup ? null : e.supersetGroup };
+    if (ungroup) delete row.roundOffset;
+    else if (drop > 0 && left.some((x) => x.id === e.id)) {
+      const offset = (e.roundOffset ?? 0) - drop;
+      if (offset > 0) row.roundOffset = offset;
+      else delete row.roundOffset;
+    }
+    return row;
   });
   return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...joined], undo: true }] };
 }

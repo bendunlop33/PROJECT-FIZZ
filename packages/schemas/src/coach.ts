@@ -302,7 +302,7 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('remove'), sessionExerciseId: IdSchema }),
   /** The exercise (with its superset) goes straight after another one, or first (null). */
   z.strictObject({ op: z.literal('move'), sessionExerciseId: IdSchema, afterSessionExerciseId: IdSchema.nullable() }),
-  /** (19 Oct) Two exercises already in today's workout become a superset (sets alternate); the first joins the second's. */
+  /** (19 Oct) Two exercises already in today's workout become a superset (sets alternate). Either order: the one further along stays put, the other joins after it. */
   z.strictObject({ op: z.literal('superset'), sessionExerciseId: IdSchema, withSessionExerciseId: IdSchema }),
   /** (19 Oct) The exercise's superset is taken apart (each member back to its own sets). */
   z.strictObject({ op: z.literal('split_superset'), sessionExerciseId: IdSchema }),

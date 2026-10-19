@@ -9,6 +9,7 @@ import { checkCoachAdd, type CoachAddInput } from './coach-add';
 import { currentGymEquipment } from './equipment-snapshot';
 import { buildSwapExerciseCommand, midSwapSlot, swapPainCarry } from './mid-swap';
 import { doableHere, substituteTargets } from './substitutes';
+import { supersetLinkSides } from './order';
 
 /**
  * Coach v3 (ADR 0027, Ben 18 Oct): the coach's one tool for today's live workout, `edit_today`.
@@ -388,7 +389,10 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     if (row.supersetGroup !== null && other.supersetGroup !== null && row.supersetGroup !== other.supersetGroup) return reject(`${row.exerciseName} is already in a superset`);
     if (row.supersetGroup !== null && row.supersetGroup === other.supersetGroup) continue;
     steps.push({ type: 'link_superset', at: input.at, opId: nextOpId(), sessionExerciseId: row.id, withSessionExerciseId: other.id, expectedVersion: input.args.baseVersion });
-    lines.push({ change: 'edit', text: `Superset: ${other.exerciseName} + ${row.exerciseName}`.slice(0, 200) });
+    // Named in the order they'll run: the one further along first (review B1).
+    const { lead } = supersetLinkSides(s.exercises, s.sets, row, other);
+    const [first, second] = lead.some((e) => e.id === row.id) ? [row, other] : [other, row];
+    lines.push({ change: 'edit', text: `Superset: ${first.exerciseName} + ${second.exerciseName}`.slice(0, 200) });
     names.add(row.exerciseName).add(other.exerciseName);
   }
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { buildExecutionOrder } from '@fizz/domain';
 import { exercise, GYM, profile } from '@fizz/domain/testing';
 import type { Store } from '@fizz/persistence';
 import type { Exercise, PainFlag, SessionAggregate } from '@fizz/schemas';
@@ -320,5 +321,22 @@ describe('edit_today: the same exercise again, and supersets (Ben, 19 Oct)', () 
       ['Assisted pull-up', 'A'],
       ['Dumbbell press', null],
     ]);
+  });
+
+  it('review B1: "superset bench with pull-ups" (bench named first, two sets done) keeps bench in place and next; the pull-up alternates from round 3', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const args = { baseVersion: 7, ops: [{ op: 'superset', sessionExerciseId: id(10), withSessionExerciseId: id(30) }], reason: 'Ben asked.', benAsked: true, benQuote: 'superset bench with pull-ups' };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Done.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('superset bench with pull-ups'), context: ctx(workout()) }), livePorts(s, model));
+    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', expect.stringContaining('Superset: Bench press + Assisted pull-up')]]);
+    const after = (await s.repos.sessions.get(SESSION)) as SessionAggregate;
+    expect(live(after)).toEqual(['Bench press', 'Assisted pull-up', 'Dumbbell press']);
+    expect(after.exercises.find((e) => e.id === id(30))?.roundOffset).toBe(2);
+    expect(after.exercises.find((e) => e.id === id(10))?.roundOffset).toBeUndefined();
+    const name = (setId: string) => after.exercises.find((e) => e.id === after.sets.find((x) => x.id === setId)?.sessionExerciseId)?.exerciseName;
+    const pending = buildExecutionOrder(after.exercises, after.sets).filter((x) => after.sets.find((y) => y.id === x)?.status === 'pending');
+    expect(pending.slice(0, 4).map(name)).toEqual(['Bench press', 'Assisted pull-up', 'Bench press', 'Assisted pull-up']);
+    expect(after.sets).toEqual(workout().sets);
   });
 });

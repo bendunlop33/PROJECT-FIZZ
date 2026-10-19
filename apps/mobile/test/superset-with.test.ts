@@ -132,4 +132,35 @@ describe('Superset with… during a workout', () => {
     const stale = await s.workout.linkSuperset({ sessionId, sessionExerciseId: push, withSessionExerciseId: rowsNamed(now, 'Seated calf raise')[0]?.id ?? '', expectedVersion: choices?.version ?? 0, opId: 'link-stale' });
     expect(stale).toMatchObject({ ok: false, error: { code: 'stale_version' } });
   });
+  it('either way round (review B1): ⋯ on Plank picking Push-up, with a push-up set done, keeps push-up in place and next', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s, 'commercial');
+    const started = await s.workout.start({ gymId, opId: 'start-b1', checkIn: { kind: 'skipped', atUtc: h.now().utc } });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    for (const [i, name] of ['Push-up', 'Seated calf raise', 'Plank'].entries()) {
+      const pick = (await s.workout.pickerExercises(sessionId, name, { withCatalogue: true })).find((p) => p.exercise.name === name);
+      if (!pick) throw new Error(`no ${name}`);
+      const r = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: `add-${String(i)}`, shape: { workingSets: 3 } });
+      if (!r.ok) throw new Error(r.error.message);
+    }
+    const now = (await s.workout.load(sessionId))?.aggregate as SessionAggregate;
+    const push = rowsNamed(now, 'Push-up')[0]?.id ?? '';
+    const plank = rowsNamed(now, 'Plank')[0]?.id ?? '';
+    const first = now.sets.filter((x) => x.sessionExerciseId === push).sort((a, b) => a.index - b.index)[0];
+    h.clockMs += 60_000;
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-push', setId: first?.id ?? '', values: { load: first?.planned.load ?? null, reps: 10, durationS: null, rpe: null, rir: null }, restTimerId: h.ids() });
+    if (!logged.ok) throw new Error(logged.error.message);
+    // The ⋯ menu is on Plank; Push-up is the exercise picked.
+    const choices = await s.workout.supersetChoices(sessionId, plank);
+    const linked = await s.workout.linkSuperset({ sessionId, sessionExerciseId: plank, withSessionExerciseId: push, expectedVersion: choices?.version ?? 0, opId: 'link-b1' });
+    if (!linked.ok) throw new Error(linked.error.message);
+    expect(linked.aggregate.exercises.filter((e) => e.removed === undefined).sort((a, b) => a.order - b.order).map((e) => [e.exerciseName, e.supersetGroup, e.roundOffset ?? 0])).toEqual([
+      ['Push-up', 'A', 0],
+      ['Plank', 'A', 1],
+      ['Seated calf raise', null, 0],
+    ]);
+    expect(nextNames(linked.aggregate, 4)).toEqual(['Push-up', 'Plank', 'Push-up', 'Plank']);
+    expect(linked.aggregate.sets).toEqual(logged.aggregate.sets);
+  });
 });
