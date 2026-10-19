@@ -273,7 +273,7 @@ describe('Make next, pause and resume (Ben, 20 Oct): versioned writes on the pla
     expect(await again.store.repos.planDrafts.get(PLAN)).toEqual(before);
     // End: the days out and Push A and Pull A back, together.
     expect(await again.store.repos.planDrafts.endOrResume(OWNER, PLAN, (c, routines) => endPlan(c, { expectedVersion: 7, opId: 'end-1', at: at(1000), routines }))).toMatchObject({ status: 'written', plan: { status: 'ended', ended: { notRestored: [] } } });
-    expect(await rotationRoutines(await again.store.repos.routines.listByOwner(OWNER)).map((r) => r.name)).toEqual(['Push A', 'Pull A']);
+    expect(rotationRoutines(await again.store.repos.routines.listByOwner(OWNER)).map((r) => r.name)).toEqual(['Push A', 'Pull A']);
     expect(await again.store.repos.planDrafts.endOrResume(OWNER, PLAN, (c, routines, other) => undoEndPlan(c, { expectedVersion: 8, opId: 'resume-end', at: at(1100), routines, otherApplied: other }))).toMatchObject({ status: 'written' });
     expect(rotationRoutines(await again.store.repos.routines.listByOwner(OWNER)).map((r) => r.name)).toEqual(['Push', 'Pull', 'Legs']);
     await again.close();
