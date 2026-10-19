@@ -7,6 +7,7 @@ import type {
   AudioSessionState,
   KeepAliveStartResult,
   KeepAliveStopResult,
+  NativeVoice,
   SessionOptions,
   SpeakOptions,
   SpeakResult,
@@ -21,6 +22,8 @@ declare class AudioCoachNativeModule extends NativeModule<AudioCoachEvents> {
   startKeepAlive(): Promise<KeepAliveStartResult>;
   stopKeepAlive(): Promise<KeepAliveStopResult>;
   getSessionState(): AudioSessionState;
+  /** Absent in builds made before it existed: check before calling. */
+  getVoices?(): NativeVoice[];
   getAlarmKitStatus(): Promise<AlarmKitStatus>;
   /** Shows the system prompt if not yet determined; resolves to the resulting state. */
   requestAlarmKitAuthorization(): Promise<AlarmKitStatus>;

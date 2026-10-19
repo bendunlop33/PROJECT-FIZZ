@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 
+import { appleSpeaker, voicePrefs } from '../voice/speaker';
 import { isWorkoutOnScreen, showRestAlertInForeground } from './presentation';
 import { REST_ALERT_PREFIX, type NotifierPort } from './rest-alerts';
 
@@ -11,15 +12,16 @@ import { REST_ALERT_PREFIX, type NotifierPort } from './rest-alerts';
  * Device test still needed for this build's alerts (lock-screen-and-alerts §7).
  */
 
-// With the workout screen on screen, the app's own cue is the alert: never
-// also a banner (§4.3). Minimised to Today or Profile, the banner and sound
-// are the alert (review S1).
+// With the workout screen on screen, or a spoken cue about to play anywhere
+// in the app, the app's own cue is the alert: never also a banner (§4.3;
+// voice review S2). Otherwise the banner and sound are the alert (review S1).
 Notifications.setNotificationHandler({
   handleNotification: (n) => {
     const show = showRestAlertInForeground({
       isWorkoutAlert: n.request.identifier.startsWith(REST_ALERT_PREFIX),
       appActive: AppState.currentState === 'active',
       workoutOnScreen: isWorkoutOnScreen(),
+      spokenCueWillPlay: voicePrefs().cuesOn && appleSpeaker.available(),
     });
     return Promise.resolve({ shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false });
   },

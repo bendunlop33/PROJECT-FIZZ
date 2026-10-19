@@ -6,6 +6,7 @@ import {
   setNavigation,
   snapPlannedLoad,
   workoutChatContext,
+  type ComparableSet,
   type PlannedSetEdits,
   type PlannedSetEditView,
   type SetGlance,
@@ -2513,6 +2514,23 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return recordFromContext(context, aggregate, setId) ?? null;
       } catch {
         return null;
+      }
+    },
+
+    /**
+     * The last comparable session's sets for one exercise row of a workout, as
+     * the card's prefill reads them (`load` → `previous`), for the spoken
+     * "Rest done. Set 2 …" (voice review B1). Empty when none or unreadable.
+     */
+    async lastComparableSets(state: SessionAggregate, sessionExerciseId: string): Promise<ComparableSet[]> {
+      try {
+        const p = await ctx.profile();
+        const ex = state.exercises.find((e) => e.id === sessionExerciseId);
+        if (!p || !ex) return [];
+        const h = (await historyFor(p.id, ex.exerciseId)).filter((x) => x.sessionId !== state.session.id);
+        return lastComparableSession(h, ex)?.sets ?? [];
+      } catch {
+        return [];
       }
     },
 

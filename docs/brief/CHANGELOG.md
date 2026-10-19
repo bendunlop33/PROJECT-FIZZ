@@ -245,3 +245,23 @@ After build 156, Ben reported two problems: "make it 40" left a hotel-gym should
 - **The coach reads Ben's history**: records (e1RM labelled an estimate), recent workouts, any saved gym's equipment. At most 4 reads a turn.
 - **Numbers in replies are allowed when checked** against Ben's data, tool results and his words. Unchecked sentences are hidden. Build messages may be up to 600 characters.
 - **Thinking effort per turn**: builds high, mid-workout low, otherwise medium. Mid-workout the coach can ask to think harder once a turn. Settings has an optional lighter `Mid-workout` model from his plan's list; the default is the coach's model.
+
+## 2026-10-19: The app speaks: spoken workout cues, coach replies read aloud, Settings › Voice (Ben approved 19 Oct)
+Ben (19 Oct): "it doesn't quite talk to you yet though if you're in the app and silent mode is on. also what voice are we using?" Until now the app never spoke: rest alerts were notifications (muted by the silent switch, suppressed on the workout screen) and the audio-coach module was used only by the capability probe. Ben said "yes in parallel" to the proposal and added: "should have option to turn on / off as well, and choose whether to include prompts just for timer or for timer and set detail".
+
+Approved by Ben (19 Oct):
+- **Spoken cues while the app is open**, through the audio-coach module (`.playback` / `.voicePrompt`: plays with the silent switch on, ducks music, gives it back after with `notifyOthersOnDeactivation`). "10 seconds" before a rest ends, then "Rest done"; with set details: "Rest done. Set 2, bench press, 80 kilos for 8." (load in words with unit and convention, "each" per hand, assisted, bodyweight plus; warm-ups say "Warm-up"; timed and cardio sets "for 20 minutes"). Driven by the persisted rest deadlines, behind the rest alerts' version guard; each cue once, nothing for a deadline that passed while the app was closed. In the background the notification stays the alert. The set detail says the values on the card (saved draft, then target, then history), never different ones.
+- **Settings › Voice** (Profile): Spoken cues Off / Timer only / Timer and set details (default); Read coach replies During workouts (default) / Always / Off; Voice: the installed Apple voices in Ben's language (default the best en-GB, else en-US, else the system voice); Speed 0.8–1.2; Test. `Better voices: Settings › Accessibility › Spoken Content › Voices` only when no Enhanced or Premium voice is installed. Saved on this phone (device prefs), not in backups.
+- **Quick toggle** in the workout ⋯ menu: `Turn off spoken cues` / `Turn on spoken cues`, mirroring the setting.
+- **Coach replies read aloud** in the coach sheet: the first two sentences (max 300 characters), numbers said naturally; a speaker toggle in the sheet header; speech stops when Ben types, closes the sheet or the next reply arrives.
+- **Honesty and cost (rules 1, 7):** Apple voices only, never an OpenAI or other paid voice. Without the module (Expo Go, an old build) Voice reads `Not in this build` and nothing is spoken. No new entitlements; background audio stays a later optional item.
+
+Pending Ben's approval (developer and review choices, built as described; each is easy to change):
+- **Speed** is five steps (0.8, 0.9, 1.0, 1.1, 1.2) rather than a free slider.
+- **Timed sets** also get "10 seconds" and a "Time." cue at the end of the work interval.
+- **The stack load** is spoken with its unit ("45 kilos on the stack"); design-system §8 said "45 on the stack".
+- **Earlier specs replaced for now:** rest-state.md §5's Quiet / Set cues / Conversation modes and its "Ready when you are…" script; voice.md §4.4's "replies spoken only when Ben started by voice" (typed questions are read aloud during a workout by default).
+- **One alert in the foreground** (voice review S2): when a spoken cue will play (cues on, module in this build, app open), the rest notification's banner and sound are suppressed anywhere in the app, not only on the workout screen. The alternative is speaking cues only on the workout screen.
+- **Cues win over replies** (review S1): a rest cue cuts a reply being read; stopping a reply never cuts a cue.
+- **"During workouts" means any workout in progress** (review S4), however the coach sheet was opened (tab, Today or the workout).
+- **The header speaker is for that sheet only** (review S5); it never changes Settings › Voice, so muting once doesn't silence the next workout.

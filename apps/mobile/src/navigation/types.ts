@@ -8,6 +8,8 @@ export type ProfileStackParams = {
   DataBackup: undefined;
   AppStatus: undefined;
   Developer: undefined;
+  /** Profile › Voice: spoken cues, coach replies read aloud, voice, speed (Ben, 19 Oct 2026). */
+  Voice: undefined;
   CapabilityProbe: undefined;
   PainFlags: undefined;
   /** Profile › Training details (Ben 13 Oct: D5, D8). */

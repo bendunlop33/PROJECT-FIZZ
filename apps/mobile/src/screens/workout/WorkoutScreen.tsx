@@ -11,6 +11,8 @@ import { getAlertPermission, requestAlertPermission, type AlertPermission } from
 import { restEndCueKey, setWorkoutOnScreen } from '../../alerts/presentation';
 import { nowMs as clockNow } from '../../clock';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
+import { voiceCapability } from '../../voice/speaker';
+import { toggleCues } from '../../voice/settings';
 import { haptic } from '../../device/haptics';
 import { newUuid } from '../../device/runtime';
 import { formatDayMonth, formatTime } from '../../format/dates';
@@ -1306,8 +1308,12 @@ export function WorkoutScreen() {
         setTimesOpen(true);
       },
       discard: confirmDiscard,
+      cues: () => {
+        updatePrefs({ voice: toggleCues(prefs.voice) });
+      },
     };
-    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName }).map((m) => ({ label: m.label, run: run[m.id] }));
+    const cuesOn = voiceCapability().speech ? prefs.voice.cuesOn : undefined;
+    const items = workoutMenu({ view: mode, paused: session.pause !== null, openEnded: view?.openEnded ?? false, ax, gymName: loaded.gymName, cuesOn }).map((m) => ({ label: m.label, run: run[m.id] }));
     const options = [...items.map((x) => x.label), 'Cancel'];
     ActionSheetIOS.showActionSheetWithOptions({ options, destructiveButtonIndex: items.length - 1, cancelButtonIndex: items.length }, (i) => {
       items[i]?.run();

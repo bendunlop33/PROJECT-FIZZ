@@ -18,6 +18,9 @@ import { Group, Row, Screen, SectionHeader } from '../../ui';
 import { BannerList } from '../BannerList';
 import { splitView, trainingDetailsView } from '../../training/training-view';
 import { useProbeResults } from './useProbeResults';
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
+import { voiceCapability } from '../../voice/speaker';
+import { voiceRowLine } from '../../voice/settings';
 
 /**
  * Profile hub skeleton (profile-and-settings.md §2.1). No primary button;
@@ -30,6 +33,7 @@ export function ProfileScreen() {
   const services = useServices();
   const install = useInstallStatus();
   const probe = useProbeResults();
+  const { prefs } = useDevicePrefs();
   const [data, reload] = useScreenData(async (s) => {
     const [backup, banners, pain, gyms, coach, training] = await Promise.all([
       s.backups.getStatus(),
@@ -141,6 +145,18 @@ export function ProfileScreen() {
           icon="books.vertical"
           onPress={() => {
             navigation.navigate('Playbook');
+          }}
+        />
+      </Group>
+
+      <SectionHeader title="Voice" />
+      <Group>
+        <Row
+          title="Voice"
+          icon="speaker.wave.2"
+          subtitle={voiceRowLine(prefs.voice, voiceCapability().speech)}
+          onPress={() => {
+            navigation.navigate('Voice');
           }}
         />
       </Group>

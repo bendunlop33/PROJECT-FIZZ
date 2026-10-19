@@ -114,7 +114,7 @@ export interface NotifierPort {
  * every command, on launch and on return to the foreground. A failing
  * notifier never throws into logging (rule 1): the error is kept for display.
  */
-export function createRestAlertController(notifier: NotifierPort, layers: { liveActivity?: LiveActivityLayer } = {}) {
+export function createRestAlertController(notifier: NotifierPort, layers: { liveActivity?: LiveActivityLayer; spokenCues?: SpokenCueLayer } = {}) {
   let current: ScheduledAlert | null = null;
   let lastError: string | null = null;
   let chain: Promise<void> = Promise.resolve();
@@ -141,6 +141,12 @@ export function createRestAlertController(notifier: NotifierPort, layers: { live
     chain = chain.then(async () => {
       if (state !== null && applied !== null && applied.sessionId === state.session.id && state.session.version < applied.version) return;
       applied = state === null ? null : { sessionId: state.session.id, version: state.session.version };
+      // In-app spoken cues follow the same committed state, behind the same version guard; never throws into logging.
+      try {
+        layers.spokenCues?.reconcile(state, nowMs);
+      } catch {
+        // A cue problem never affects the alert.
+      }
       const planned = planRestAlert(state, nowMs);
       // After a relaunch nothing is known: cancel by identifier first so a stale alert can't survive.
       const known = current ?? (state ? { identifier: restAlertIdentifier(state.session.id), key: '' } : null);
@@ -208,6 +214,11 @@ export function createRestAlertController(notifier: NotifierPort, layers: { live
       return lastError;
     },
   };
+}
+
+/** In-app spoken cues (`voice/cue-controller.ts`): schedules or drops its cues from each committed state. */
+export interface SpokenCueLayer {
+  reconcile(state: SessionAggregate | null, nowMs: number): void;
 }
 
 /** The Live Activity layer as the alert controller drives it (`live-activity/controller.ts`). */
