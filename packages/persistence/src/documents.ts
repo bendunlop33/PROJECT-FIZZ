@@ -211,6 +211,18 @@ export class SqliteExercises extends DocumentRepository<Exercise> {
   list(): Promise<Exercise[]> {
     return this.listWhere('1 = 1', []);
   }
+
+  /** (19 Oct) Whether any completed set was logged with this exercise (a custom exercise's shape then stays, EL3). */
+  hasLoggedSets(exerciseId: string): Promise<boolean> {
+    return this.db.read(async (q) => {
+      const row = await q.getFirst(
+        `SELECT 1 AS used FROM session_exercises e JOIN session_sets s ON s.session_exercise_id = e.id
+         WHERE e.exercise_id = ? AND s.status = 'completed' LIMIT 1`,
+        [exerciseId],
+      );
+      return row !== null;
+    });
+  }
 }
 
 export class SqliteRoutines extends DocumentRepository<Routine> {

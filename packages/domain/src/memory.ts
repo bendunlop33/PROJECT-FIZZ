@@ -64,6 +64,10 @@ class MemoryExercises extends MemoryVersioned<Exercise> implements ExerciseRepos
   list(): Promise<Exercise[]> {
     return Promise.resolve(this.all());
   }
+  /** The in-memory store keeps no sets here. */
+  hasLoggedSets(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
 }
 
 class MemoryRoutines extends MemoryVersioned<Routine> implements RoutineRepository {

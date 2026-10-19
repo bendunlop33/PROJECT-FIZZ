@@ -1,0 +1,191 @@
+import { CustomExerciseFieldsSchema, muscleGroupOf, type CustomExerciseFields, type Exercise, type ExerciseEquipmentKind, type LoadConvention, type Measurement } from '@fizz/schemas';
+
+import { EXERCISE_EQUIPMENT_WORD } from './exercise-browse';
+import { normaliseSearchText } from './exercise-search';
+import { deriveId } from './stable';
+
+/**
+ * Custom exercises (Ben, 19 Oct: "Why can't the chat function make exercises
+ * not in the catalogue"; exercise-library §2.6). Pure. Ben makes one in
+ * Library › ＋ New exercise, or taps Add on the coach's proposal card (rule 3:
+ * a proposal until he does). Once saved it is a normal exercise row owned by
+ * Ben (Your data, rule 10): pickers, the coach's lists, loads checked against
+ * the gym's equipment (rule 4), Progress, backups. Writes are versioned and
+ * idempotent by opId (rule 5); delete hides it and keeps its history.
+ */
+
+/** Equipment choices in the form's order, each with the load conventions that fit it (first = default). */
+export const CUSTOM_EQUIPMENT: readonly { kind: ExerciseEquipmentKind; conventions: readonly LoadConvention[] }[] = [
+  { kind: 'barbell', conventions: ['total', 'added'] },
+  { kind: 'dumbbells', conventions: ['per_hand'] },
+  { kind: 'weight_stack', conventions: ['stack'] },
+  { kind: 'plate_loaded_machine', conventions: ['added'] },
+  { kind: 'bodyweight_station', conventions: ['bodyweight', 'added'] },
+  { kind: 'assisted_stack', conventions: ['assistance'] },
+  { kind: 'kettlebell', conventions: ['per_hand', 'total'] },
+  { kind: 'ez_bar', conventions: ['total'] },
+  { kind: 'trap_bar', conventions: ['total', 'added'] },
+  { kind: 'erg', conventions: ['bodyweight'] },
+  { kind: 'band', conventions: ['bodyweight'] },
+  { kind: 'sled', conventions: ['added'] },
+  { kind: 'medicine_ball', conventions: ['total'] },
+  { kind: 'sandbag', conventions: ['total'] },
+];
+
+/** Short words for how a load is counted (form chips and the proposal card). */
+export const CONVENTION_WORD: Record<LoadConvention, string> = {
+  total: 'Total',
+  per_hand: 'Each hand',
+  stack: 'Stack',
+  added: 'Plates added',
+  assistance: 'Assisted',
+  bodyweight: 'Bodyweight',
+};
+
+export const MEASUREMENT_WORD: Record<Measurement, string> = { reps: 'Reps', duration: 'Time', distance: 'Distance', cardio: 'Cardio' };
+
+/** The muscle stored for each group chip on the form (the group is what every view shows). */
+export const GROUP_MUSCLE = {
+  Chest: 'chest',
+  Back: 'lats',
+  Shoulders: 'front_delts',
+  Biceps: 'biceps',
+  Triceps: 'triceps',
+  Quads: 'quads',
+  Hamstrings: 'hamstrings',
+  Glutes: 'glutes',
+  Calves: 'calves',
+  Core: 'abs',
+  Forearms: 'forearms',
+} as const satisfies Record<string, CustomExerciseFields['primaryMuscles'][number]>;
+
+export function conventionsFor(kind: ExerciseEquipmentKind): readonly LoadConvention[] {
+  return CUSTOM_EQUIPMENT.find((c) => c.kind === kind)?.conventions ?? ['total'];
+}
+
+export function defaultConventionFor(kind: ExerciseEquipmentKind): LoadConvention {
+  return conventionsFor(kind)[0] ?? 'total';
+}
+
+export type CustomFieldsCheck = { ok: true; fields: CustomExerciseFields } | { ok: false; problem: string };
+
+/** Schema plus the pairing rules: a convention that fits the equipment, muscles once each. */
+export function checkCustomExerciseFields(input: unknown): CustomFieldsCheck {
+  const r = CustomExerciseFieldsSchema.safeParse(input);
+  if (!r.success) return { ok: false, problem: r.error.issues[0]?.path[0] === 'name' ? 'Name needed.' : r.error.issues[0]?.path[0] === 'primaryMuscles' ? 'Pick 1 to 3 muscles.' : 'Check the fields.' };
+  const f = { ...r.data, name: r.data.name.replace(/\s+/g, ' ') };
+  if (!conventionsFor(f.equipment).includes(f.loadConvention)) return { ok: false, problem: `${EXERCISE_EQUIPMENT_WORD[f.equipment]} can’t be ${CONVENTION_WORD[f.loadConvention].toLowerCase()}.` };
+  if (new Set(f.primaryMuscles).size !== f.primaryMuscles.length) return { ok: false, problem: 'Pick each muscle once.' };
+  return { ok: true, fields: f };
+}
+
+/** A name compared by meaning: case, punctuation and plurals ("raises") aside. */
+export function exerciseNameKey(name: string): string {
+  return normaliseSearchText(name)
+    .split(' ')
+    .map((w) => (w.length > 3 && w.endsWith('es') && /(ss|sh|ch|x)es$/.test(w) ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w))
+    .join(' ');
+}
+
+export interface ClashCandidate {
+  id: string;
+  name: string;
+  aliases: readonly string[];
+  source: Exercise['source'];
+  archived: boolean;
+}
+
+/**
+ * An exercise already in Ben's list under this name or one of its other names (archived ones
+ * aside): "Seated calf raise is already in your exercises". `selfId`: the exercise being edited.
+ */
+export function exerciseNameClash<T extends ClashCandidate>(name: string, pool: readonly T[], selfId: string | null = null): T | null {
+  const key = exerciseNameKey(name);
+  if (key === '') return null;
+  const hits = pool.filter((e) => e.id !== selfId && !e.archived && (exerciseNameKey(e.name) === key || e.aliases.some((a) => exerciseNameKey(a) === key)));
+  return hits.find((e) => exerciseNameKey(e.name) === key && e.source === 'catalogue') ?? hits.find((e) => exerciseNameKey(e.name) === key) ?? hits[0] ?? null;
+}
+
+export const clashLine = (existingName: string): string => `${existingName} is already in your exercises.`;
+
+/** The ID a custom exercise gets: from the coach's proposal (one exercise per card), else from Ben's form operation. */
+export function customExerciseIdOf(ownerId: string, from: { proposalActionId: string } | { opId: string }): string {
+  return 'proposalActionId' in from ? deriveId(`custom-exercise:${ownerId}:coach:${from.proposalActionId}`) : deriveId(`custom-exercise:${ownerId}:library:${from.opId}`);
+}
+
+export function isArchivedExercise(e: Pick<Exercise, 'archivedAtUtc'>): boolean {
+  return e.archivedAtUtc !== undefined;
+}
+
+/** Version 1 of a custom exercise. */
+export function newCustomExercise(fields: CustomExerciseFields, at: { id: string; ownerId: string; atUtc: string; opId: string }): Exercise {
+  return {
+    id: at.id,
+    ownerId: at.ownerId,
+    source: 'custom',
+    name: fields.name,
+    movementPattern: 'other',
+    primaryMuscles: [...fields.primaryMuscles],
+    catalogueKey: null,
+    measurement: fields.measurement,
+    laterality: fields.laterality,
+    compatibleEquipment: [fields.equipment],
+    defaultLoadConvention: fields.loadConvention,
+    lastOpId: at.opId,
+    version: 1,
+    createdAtUtc: at.atUtc,
+    updatedAtUtc: at.atUtc,
+  };
+}
+
+/** The form's fields for an existing custom exercise (Edit). */
+export function customFieldsOf(e: Exercise): CustomExerciseFields {
+  const equipment = e.compatibleEquipment[0] ?? (e.defaultLoadConvention === 'bodyweight' ? 'bodyweight_station' : 'barbell');
+  const muscles = e.primaryMuscles.filter((m): m is CustomExerciseFields['primaryMuscles'][number] => muscleGroupOf(m) !== null).slice(0, 3);
+  return { name: e.name, equipment, loadConvention: e.defaultLoadConvention, primaryMuscles: muscles.length === 0 ? ['chest'] : muscles, measurement: e.measurement, laterality: e.laterality };
+}
+
+export type CustomEdit = { ok: true; exercise: Exercise } | { ok: false; reason: 'not_custom' | 'locked'; message: string };
+
+export const CUSTOM_LOCKED_LINE = 'Logged with this already: equipment, load, measure and sides stay. Make a new exercise to change them.';
+
+/**
+ * A new version with Ben's edit (EL3): once a set is logged with it, the equipment, how the load is
+ * counted, the measure and the sides stay (history stays comparable); the name and muscles change.
+ */
+export function editedCustomExercise(existing: Exercise, fields: CustomExerciseFields, at: { atUtc: string; opId: string; logged: boolean }): CustomEdit {
+  if (existing.source !== 'custom') return { ok: false, reason: 'not_custom', message: 'Only your own exercises can be edited.' };
+  const before = customFieldsOf(existing);
+  const shapeChanged = before.equipment !== fields.equipment || before.loadConvention !== fields.loadConvention || before.measurement !== fields.measurement || before.laterality !== fields.laterality;
+  if (at.logged && shapeChanged) return { ok: false, reason: 'locked', message: CUSTOM_LOCKED_LINE };
+  return {
+    ok: true,
+    exercise: {
+      ...existing,
+      name: fields.name,
+      primaryMuscles: [...fields.primaryMuscles],
+      measurement: fields.measurement,
+      laterality: fields.laterality,
+      compatibleEquipment: [fields.equipment],
+      defaultLoadConvention: fields.loadConvention,
+      lastOpId: at.opId,
+      version: existing.version + 1,
+      updatedAtUtc: at.atUtc,
+    },
+  };
+}
+
+/** Delete: hidden from pickers and the coach; history kept and still named. */
+export function archivedCustomExercise(existing: Exercise, at: { atUtc: string; opId: string }): Exercise {
+  return { ...existing, archivedAtUtc: at.atUtc, lastOpId: at.opId, version: existing.version + 1, updatedAtUtc: at.atUtc };
+}
+
+const MEASURED_SHORT: Record<Measurement, string> = { reps: 'reps', duration: 'time', distance: 'distance', cardio: 'cardio' };
+const CONVENTION_SHORT: Record<LoadConvention, string> = { total: 'total load', per_hand: 'each hand', stack: 'stack', added: 'plates added', assistance: 'assisted', bodyweight: 'bodyweight' };
+
+/** The proposal card's one line: "Meadows row · Barbell · total load · Back, Biceps · reps". */
+export function customExerciseLine(f: CustomExerciseFields): string {
+  const groups = [...new Set(f.primaryMuscles.map((m) => muscleGroupOf(m) ?? m))];
+  const sides = f.laterality === 'unilateral' ? ' · each side' : '';
+  return `${f.name} · ${EXERCISE_EQUIPMENT_WORD[f.equipment]} · ${CONVENTION_SHORT[f.loadConvention]} · ${groups.join(', ')} · ${MEASURED_SHORT[f.measurement]}${sides}`;
+}

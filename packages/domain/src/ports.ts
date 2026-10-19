@@ -40,6 +40,8 @@ export interface EquipmentRepository extends VersionedRepository<EquipmentInstan
 
 export interface ExerciseRepository extends VersionedRepository<Exercise> {
   list(): Promise<Exercise[]>;
+  /** (19 Oct) Whether any completed set was logged with this exercise. */
+  hasLoggedSets(exerciseId: string): Promise<boolean>;
 }
 
 export interface RoutineRepository extends VersionedRepository<Routine> {

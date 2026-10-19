@@ -126,7 +126,7 @@ export interface BrowseEntry extends SearchableEntry {
   painFlag: { since: string; accessibilityLabel: string } | null;
 }
 
-export type BrowseTag = { kind: 'may_hurt'; text: 'May hurt'; accessibilityLabel: string } | { kind: 'custom'; text: 'Custom' } | { kind: 'not_at_gym'; text: string };
+export type BrowseTag = { kind: 'may_hurt'; text: 'May hurt'; accessibilityLabel: string } | { kind: 'custom'; text: 'Yours' } | { kind: 'not_at_gym'; text: string };
 
 export interface BrowseRowView {
   exerciseId: string;
@@ -206,7 +206,7 @@ export function buildExerciseBrowseView(input: BrowseInput): ExerciseBrowseView 
     const e = r.entry.exercise;
     const tags: BrowseTag[] = [];
     if (r.entry.painFlag !== null) tags.push({ kind: 'may_hurt', text: 'May hurt', accessibilityLabel: r.entry.painFlag.accessibilityLabel });
-    if (e.source === 'custom') tags.push({ kind: 'custom', text: 'Custom' });
+    if (e.source === 'custom') tags.push({ kind: 'custom', text: 'Yours' });
     // Availability tags only while `At <gym>` is on (§9.3); then nothing not-at-gym is listed anyway.
     const line2 = line2Of(e, r.match);
     const line3 = lastLine(input.last.get(e.id), gymId, input.gymNames, input.today);
@@ -273,7 +273,7 @@ export interface ExerciseInfoView {
   subtitle: string;
   /** `Also called RDL, Barbell RDL` or null. */
   aliasesLine: string | null;
-  tags: { kind: 'custom'; text: 'Custom' }[];
+  tags: { kind: 'custom'; text: 'Yours' }[];
   knowledge: {
     poster: ExerciseKnowledgeInput['poster'];
     /** `Feel it most: Hamstrings · Glutes` lines, else one `Muscles: …` line from the exercise, else none. */
@@ -354,7 +354,7 @@ export function buildExerciseInfoView(input: ExerciseInfoInput): ExerciseInfoVie
     title: e.name,
     subtitle,
     aliasesLine: input.aliases.length > 0 ? `Also called ${input.aliases.join(', ')}` : null,
-    tags: e.source === 'custom' ? [{ kind: 'custom', text: 'Custom' }] : [],
+    tags: e.source === 'custom' ? [{ kind: 'custom', text: 'Yours' }] : [],
     knowledge: {
       poster: input.knowledge.poster,
       muscles,
