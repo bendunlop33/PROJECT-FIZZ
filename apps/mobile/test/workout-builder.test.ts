@@ -624,7 +624,7 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
     model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
     await ask(s, 'Can you make me a push session');
-    expect(model.requests[0]?.instructions).toContain('Never give minutes');
+    expect(model.requests[0]?.instructions).toContain('Give `minutes`, `focus` and `gymName`');
     expect(model.requests[0]?.instructions).toContain('build.loadReferences');
   });
   it('review r5 B2: the turn after a draft was built, "Your push session is ready in Workouts." is shown', async () => {

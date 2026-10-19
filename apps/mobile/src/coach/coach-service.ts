@@ -21,7 +21,6 @@ import {
   type TodayFitContext,
   createAddExerciseExecutor,
   createRenameExecutor,
-  mentionsAdding,
   createAdjustExecutor,
   createChatSetExecutors,
   createNextTargetsExecutor,
@@ -40,8 +39,6 @@ import {
   createBuildExecutor,
   COACH_BUILD_TIMEOUT_MS,
   DEFAULT_COACH_TIMING,
-  classifyBenRequest,
-  requestHas,
   asksForBuild,
   buildFollowUpIn,
   buildQuestionChain,
@@ -49,11 +46,16 @@ import {
   type QuestionChain,
   refusedBuildActionIds,
   capUsable,
+  capAddable,
   usableFirst,
   BUILD_USABLE_CAP,
   OFFERED_USABLE_CAP,
   buildRequestWords,
   buildWordsNewestFirst,
+  bareNumbers,
+  gymNamedIn,
+  savedGymFor,
+  type BuildGym,
   type BuildFollowUp,
   type AddableExercise,
   type BuildContextView,
@@ -835,8 +837,15 @@ export function createCoachService(deps: CoachServiceDeps) {
   }
 
   /** The selected gym for a build (§4.1): the default gym, else the typical gym's items (`⚠ No gym`). */
-  async function buildGym(p: UserProfile): Promise<{ gym: SnapGym; typical: boolean } | null> {
-    const g = await gymInContext(p, null);
+  /**
+   * The gym a build is planned at. Coach v3 (Ben 18 Oct, "in my hotel gym"): a saved gym Ben's words
+   * name (newest first), else the draft's own gym, else the gym in context.
+   */
+  async function buildGym(p: UserProfile, words: readonly string[] = [], draftGymId: string | null = null): Promise<{ gym: SnapGym; typical: boolean } | null> {
+    const saved = (await repos().gyms.listByOwner(p.id).catch(() => [])).filter((x) => x.archivedAtUtc === undefined);
+    const named = gymNamedIn(words, saved.map((x) => x.name));
+    const pick = saved.find((x) => named !== null && x.name === named) ?? saved.find((x) => x.id === draftGymId) ?? null;
+    const g = pick === null ? await gymInContext(p, null) : { id: pick.id, name: pick.name };
     if (g !== null) return { gym: { id: g.id, name: g.name, equipment: await repos().equipment.listByGym(g.id).catch(() => []) }, typical: false };
     const typical = (await deps.typicalEquipment?.().catch(() => null)) ?? null;
     return typical === null ? null : { gym: { id: 'typical-gym-preview', name: 'Typical gym', equipment: typical }, typical: true };
@@ -888,16 +897,19 @@ export function createCoachService(deps: CoachServiceDeps) {
     chips: BuildChips | null,
     followUp: BuildFollowUp | null,
     chain: QuestionChain | null = null,
+    /** Coach v3: Ben's earlier messages in this thread, newest first (which gym he named). */
+    earlierWords: readonly string[] = [],
   ): Promise<{ view: BuildContextView; executors: CoachExecutors; inPlay: boolean } | null> {
     const inPlay = asksForBuild({ turnKind: 'general', text: said, draftInContext: draft !== null, followUp });
     // A follow-up ("yes add it") reads length and focus from Ben's earlier request too; never from the coach's text.
     const text = buildRequestWords(said, followUp);
-    const place = await buildGym(p);
-    if (place === null) return null;
-    const { gym } = place;
     const parent = draft === null ? null : currentDraftVersion(draft);
     // Newest first: "yes but make it 45 mins" beats the request's length (review B2, B3).
     const newest = buildWordsNewestFirst(said, followUp);
+    const place = await buildGym(p, [...newest, ...earlierWords], parent?.request.gymId ?? null);
+    if (place === null) return null;
+    const { gym } = place;
+    const savedGyms = (await repos().gyms.listByOwner(p.id).catch(() => [])).filter((x) => x.archivedAtUtc === undefined);
     const firstOf = <T,>(read: (w: string) => T | null): T | null => newest.reduce<T | null>((found, w) => found ?? read(w), null);
     // v2 (BD6, BD18): what the coach proposes loads from, and what is already known (never asked again).
     const training = (await deps.training?.().catch(() => null)) ?? null;
@@ -949,21 +961,25 @@ export function createCoachService(deps: CoachServiceDeps) {
     };
     const checkIn = (await repos().checkIns.listSince(p.id, toIso(nowMs - 12 * 3_600_000)).catch(() => [] as CheckIn[])).find((c) => c.deletedAtUtc === undefined) ?? null;
     const sessionPain = unspecifiedPain(checkIn);
-    const loadCtx = { ownerId: p.id, unit: p.preferredUnit, gym, knownEquipment: new Map(gym.equipment.map((e) => [e.id, e])), painFlags: flags, sessionPain, at };
+    const loadCtxAt = (g: SnapGym) => ({ ownerId: p.id, unit: p.preferredUnit, gym: g, knownEquipment: new Map(g.equipment.map((e) => [e.id, e])), painFlags: flags, sessionPain, at });
+    const loadCtx = loadCtxAt(gym);
     // Pattern-mates with their whole history (read up front below), so a ratio can pair old sessions.
     const matesOf = () =>
       recentIds.flatMap((id) => {
         const e = byId.get(id);
         return e === undefined ? [] : [{ exercise: e, history: fullHistory.get(id) ?? recentHistory.get(id) ?? [] }];
       });
+    // Per gym (Coach v3: the model may build at another saved gym), keyed by gym and exercise.
     const refsCache = new Map<string, LoadReferences>();
-    const refsFor = (e: Exercise): LoadReferences => {
-      const hit = refsCache.get(e.id);
+    const refsAt = (g: SnapGym) => (e: Exercise): LoadReferences => {
+      const key = `${g.id}:${e.id}`;
+      const hit = refsCache.get(key);
       if (hit !== undefined) return hit;
-      const r = buildReferences({ target: { exercise: e, history: fullHistory.get(e.id) ?? recentHistory.get(e.id) ?? [] }, mates: matesOf(), ctx: loadCtx, nowMs });
-      refsCache.set(e.id, r);
+      const r = buildReferences({ target: { exercise: e, history: fullHistory.get(e.id) ?? recentHistory.get(e.id) ?? [] }, mates: matesOf(), ctx: g === gym ? loadCtx : loadCtxAt(g), nowMs });
+      refsCache.set(key, r);
       return r;
     };
+    const refsFor = refsAt(gym);
     const painFor = (e: Exercise) => painHoldFor(e.id, flags, sessionPain, nowMs, at.tz);
     const LOAD_REFERENCE_CAP = 40;
     const lastDone = new Map<string, number>(recentIds.map((id) => [id, toMs(recentHistory.get(id)?.[0]?.performedAtUtc ?? '1970-01-01T00:00:00.000Z')]));
@@ -1032,6 +1048,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       setBudget: buildSetBudget(minutes),
       upNext,
       ...(loadViews.length === 0 ? {} : { loadReferences: loadViews }),
+      ...(savedGyms.length === 0 ? {} : { gyms: savedGyms.map((x) => x.name) }),
       known: knownView,
       draft:
         parent === null || draft === null
@@ -1046,12 +1063,11 @@ export function createCoachService(deps: CoachServiceDeps) {
               }),
             },
     };
-    const subCtx = (): SubstituteContext => ({ ownerId: p.id, unit: p.preferredUnit, gym, knownEquipment: new Map(gym.equipment.map((e) => [e.id, e])), painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, at });
-    const executors = createBuildExecutor({
-      store: coachStore(),
-      request: { text, minutes, focus, day, gymId: place.typical ? null : gym.id, gymName: place.typical ? null : gym.name, origin },
-      draft,
-      checkContext: async (previous, opId, catalogueIds) => {
+    const subCtxAt = (g: SnapGym): SubstituteContext => ({ ownerId: p.id, unit: p.preferredUnit, gym: g, knownEquipment: new Map(g.equipment.map((e) => [e.id, e])), painFlags: flags, sessionPain: { active: false, reportedAtUtc: null }, at });
+    const checkContextAt = (g: SnapGym): BuildGym['checkContext'] => {
+      const subCtx = () => subCtxAt(g);
+      const refsHere = refsAt(g);
+      return async (previous, opId, catalogueIds) => {
         // The rule's reps on each named exercise's own history (BD8), read before the checks run.
         const reps = new Map<string, RepRange | null>();
         for (const key of new Set(catalogueIds)) {
@@ -1060,13 +1076,13 @@ export function createCoachService(deps: CoachServiceDeps) {
           const history = await deps.store().listExerciseHistory(p.id, e.id).catch(() => []);
           // The whole history (an exercise last done over 180 days ago gets a personal ratio, §8.5).
           fullHistory.set(e.id, history);
-          refsCache.delete(e.id);
+          refsCache.delete(`${g.id}:${e.id}`);
           const plan = substituteTargets({ workingSets: 3, templates: [] }, e, history, subCtx()).plan;
           reps.set(e.id, plan?.find((x) => x.setType !== 'warmup')?.planned.reps ?? null);
         }
         return {
           exerciseFor: (key) => byKey.get(key) ?? byId.get(key) ?? null,
-          usable: (e) => doableHere(e, gym),
+          usable: (e) => doableHere(e, g),
           substituteFor: (e) =>
             rankSubstitutions({
               ...subCtx(),
@@ -1085,14 +1101,31 @@ export function createCoachService(deps: CoachServiceDeps) {
           ruleReps: (e) => reps.get(e.id) ?? null,
           previous,
           newSlotKey: (exerciseId, i) => deriveId(`coach-draft-slot:${opId}:${exerciseId}:${String(i)}`),
-          loads: { refsFor, painFor, askedHeavier: words.askedHeavier },
+          loads: { refsFor: refsHere, painFor, askedHeavier: words.askedHeavier },
           mainLift: mainEx === null ? null : { exercise: mainEx, skip: words.skipMainInsert || (draft !== null && parent !== null && !parent.plan.slots.some((sl) => sl.exerciseId === mainEx.id)) },
           namedByBen: (e) => namedKeys.has(e.id),
         };
+      };
+    };
+    const equipmentVersionOf = (g: SnapGym): string => deriveId(stableStringify(g.equipment.map((e) => [e.id, e.version])));
+    // Coach v3: a length Ben stated outright (a chip, or a time word in his newest message) beats the model's.
+    const minutesFromBen = chips?.minutes ?? parseRequestedMinutes(said);
+    const executors = createBuildExecutor({
+      store: coachStore(),
+      request: { text, minutes, focus, day, gymId: place.typical ? null : gym.id, gymName: place.typical ? null : gym.name, origin, minutesFromBen, benNumbers: chips === null ? bareNumbers(said) : [], focusFromChips: chips !== null && chips.focus !== 'coach_picks' },
+      draft,
+      checkContext: checkContextAt(gym),
+      gyms: savedGyms.map((x) => x.name),
+      gymFor: async (name) => {
+        const matched = savedGymFor(name, savedGyms.map((x) => x.name));
+        const other = savedGyms.find((x) => x.name === matched);
+        if (other === undefined) return null;
+        const g: SnapGym = other.id === gym.id ? gym : { id: other.id, name: other.name, equipment: await repos().equipment.listByGym(other.id).catch(() => []) };
+        return { gymId: g.id, gymName: g.name, checkContext: checkContextAt(g), equipmentVersion: equipmentVersionOf(g) };
       },
       nameOf: (exerciseId) => byId.get(exerciseId)?.name ?? 'Exercise',
       contextHash: deriveId(stableStringify(view)),
-      equipmentVersion: deriveId(stableStringify(gym.equipment.map((e) => [e.id, e.version]))),
+      equipmentVersion: equipmentVersionOf(gym),
       questions: {
         known,
         day: dayObj === null ? null : { id: dayObj.id, name: dayObj.name },
@@ -1132,11 +1165,13 @@ export function createCoachService(deps: CoachServiceDeps) {
     // v2 (BD17): Ben answering the coach's question is a build follow-up with his request's words.
     const chain = kind === 'general' && req.input.kind === 'words' && history.length > 0 ? await buildQuestionChain(history, req.input.text, (id) => coachStore().listTurnActions(id)) : null;
     const followUp = kind === 'general' && req.input.kind === 'words' ? (chain?.followUp ?? buildFollowUpIn(history, req.input.text, refused)) : null;
-    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain) : null;
+    // Coach v3: Ben's earlier words in this thread, newest first (the gym he named two messages ago).
+    const earlierWords = history.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [m.body.input.text] : [])).reverse().slice(0, 6);
+    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords) : null;
     if (build !== null) Object.assign(executors, build.executors);
-    // (12 Oct) Ben asked to add an exercise in a workout turn: what can be added here, by ID.
-    // (14 Oct) The list (long) goes only when his words might add one; without it the turn withholds add_exercise_today (review S5).
-    const addable = kind === 'workout' && session !== null && deps.coachAddInputs !== undefined && req.input.kind === 'words' && (requestHas(classifyBenRequest(req.input.text, 'workout'), 'add') || mentionsAdding(req.input.text)) ? await addableFor(p, session) : null;
+    // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
+    // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first.
+    const addable = kind === 'workout' && session !== null && session.session.status === 'active' && deps.coachAddInputs !== undefined ? capAddable(await addableFor(p, session), req.input.kind === 'words' ? req.input.text : '') : null;
     const stop = new AbortController();
     running.set(req.turnId, stop);
     try {

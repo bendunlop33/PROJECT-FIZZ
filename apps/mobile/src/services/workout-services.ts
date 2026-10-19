@@ -4784,12 +4784,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const version = d?.versions.find((v) => v.n === req.versionN) ?? null;
         let estimateMinutes: number | null = null;
         let exerciseCount = version?.plan.slots.length ?? 0;
-        const gym = req.gymId === null ? null : await repos().gyms.get(req.gymId).catch(() => null);
+        // Coach v3 (Ben 18 Oct, "in my hotel gym"): the gym the draft was built at, while it is still saved; else the caller's.
+        const own = version?.request.gymId == null ? null : await repos().gyms.get(version.request.gymId).catch(() => null);
+        const ownGym = own !== null && own.ownerId === p.id && own.archivedAtUtc === undefined ? own : null;
+        const cardGymId = ownGym?.id ?? req.gymId;
+        const gym = ownGym ?? (req.gymId === null ? null : await repos().gyms.get(req.gymId).catch(() => null));
         if (d !== null && (state.kind === 'open' || state.kind === 'after_workout')) {
           const resolved = await resolveCoachDraft(p, d.id);
           if (resolved !== null) {
-            const gymId = req.gymId ?? 'typical-gym-preview';
-            const typical = req.gymId === null ? req.typicalEquipment : undefined;
+            const gymId = cardGymId ?? 'typical-gym-preview';
+            const typical = cardGymId === null ? req.typicalEquipment : undefined;
             const t = await todayFor(p, resolved, gymId, typical, null);
             const run = await overviewDryRun(p, resolved, gymId, null, typical, t.input);
             if (run !== null) {
