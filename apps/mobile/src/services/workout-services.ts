@@ -3874,7 +3874,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       try {
         const p = await ctx.profile();
         if (!p) return null;
-        const { r } = await routineStart(p, { routineId, gymId, opId: `preview-plan-day:${routineId}`, preview: true });
+        // Review planview S3: the same edited preview as Up next and the overview (TE-A14): with a live draft of today's edits, plan with them.
+        const routine = await repos().routines.get(routineId).catch(() => null);
+        const t = routine === null ? null : await todayFor(p, { kind: 'routine', routine, ref: null, basis: { kind: 'only' } }, gymId, undefined, null);
+        const edited = t === null || t.draft === null ? null : await routineStart(p, { routineId, gymId, opId: `preview-plan-day:${routineId}`, preview: true, todayEdits: t.input });
+        const { r } = edited !== null && edited.r.ok ? edited : await routineStart(p, { routineId, gymId, opId: `preview-plan-day:${routineId}`, preview: true });
         if (!r.ok) return null;
         return { aggregate: r.aggregate, aboutMinutes: await aboutMinutes(p, r.aggregate) };
       } catch {

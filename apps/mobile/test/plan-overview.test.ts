@@ -190,6 +190,20 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     expect((await s2.plans.card({ planId, versionN: 1 }))?.state).toMatchObject({ kind: 'applied' });
   });
 
+  it('a plan day plans what Start opens: with today’s edits on Up next, the day’s lines follow them (review planview S3)', async () => {
+    const { s, gymId, days } = await benWithPlan();
+    const page = await s.overview.load({ target: { kind: 'next' }, gymId });
+    if (!page) throw new Error('no overview');
+    expect(page.view.title).toBe('Push');
+    const incline = page.view.rows.find((x) => x.name === 'Incline dumbbell press');
+    if (!incline) throw new Error('no row');
+    expect(await s.overview.edit({ target: { kind: 'next' }, gymId, expectedDraftVersion: page.draft?.version ?? null, opId: 'skip-incline', edit: { kind: 'skip', slotKey: incline.slotKey } })).toMatchObject({ ok: true });
+    const day1 = await s.plans.planDay(days[0] ?? '');
+    expect(day1?.rows.map((r) => r.name)).toEqual(['Bench press']);
+    // Another day has no edits: as planned.
+    expect((await s.plans.planDay(days[1] ?? ''))?.rows.map((r) => r.name)).toEqual(['Lat pulldown', 'Barbell row']);
+  });
+
   it('no plan applied: no block; End on a plan that isn’t there changes nothing', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);

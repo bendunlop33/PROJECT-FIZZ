@@ -284,6 +284,11 @@ export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
   const snapshot = input.planned.session.equipmentSnapshot;
   const rows = [...input.planned.exercises]
     .filter((e) => e.removed === undefined)
+    // Skipped today (every working set taken out before the start, review planview S3): not in what Start opens.
+    .filter((e) => {
+      const own = input.planned.sets.filter((s) => s.sessionExerciseId === e.id && s.setType !== 'warmup' && s.status !== 'deleted');
+      return !(own.length > 0 && own.every((s) => s.skippedBy === 'before_start'));
+    })
     .sort((a, b) => a.order - b.order)
     .map((ex): PlanDayDetailRow => {
       const sets = input.planned.sets.filter((s) => s.sessionExerciseId === ex.id && isPrescribed(s)).sort((a, b) => a.index - b.index);

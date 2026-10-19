@@ -256,7 +256,7 @@ describe('planDayDetail: a plan day’s lines', () => {
     ]);
   });
 
-  it('a top set reads on its own; mixed working sets show only what they share (review planview S6)', () => {
+  it('a top set reads on its own; mixed working sets show only what they share (review planview S6); skipped today is left out (S3)', () => {
     const squat = ex(70, 'Back squat');
     const press = ex(80, 'Overhead press');
     const mixed: Agg = {
@@ -271,6 +271,9 @@ describe('planDayDetail: a plan day’s lines', () => {
     };
     const lines = planDayDetail({ dayN: 1, of: 4, gymName: null, aboutMinutes: null, planned: mixed, history: () => [] }).rows.map((r) => plain(r.line));
     expect(lines).toEqual(['95 kg top, 3 × 6–8 · 85 kg', '2 sets']);
+    // An exercise skipped today (every working set taken out before the start) isn't listed.
+    const skipped: Agg = { ...mixed, sets: mixed.sets.map((x) => (x.sessionExerciseId === press.id ? { ...x, status: 'skipped' as const, skippedBy: 'before_start' as const } : x)) };
+    expect(planDayDetail({ dayN: 1, of: 4, gymName: null, aboutMinutes: null, planned: skipped, history: () => [] }).rows.map((r) => r.name)).toEqual(['Back squat']);
   });
 
   it('last time from his newest workout with it, with targets hit; lb shown where the plan is kg; est. with no history; cardio with pace', () => {
