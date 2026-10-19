@@ -10,6 +10,17 @@ describe('rest-end alert in the foreground (review S1)', () => {
     expect(showRestAlertInForeground({ isWorkoutAlert: true, appActive: false, workoutOnScreen: true })).toBe(true);
     expect(showRestAlertInForeground({ isWorkoutAlert: false, appActive: true, workoutOnScreen: true })).toBe(true);
   });
+
+  it('is suppressed anywhere in the app when a spoken cue will play: one alert, never two (voice review S2)', () => {
+    // Today, or the coach sheet over the workout: the voice is the alert.
+    expect(showRestAlertInForeground({ isWorkoutAlert: true, appActive: true, workoutOnScreen: false, spokenCueWillPlay: true })).toBe(false);
+    // Cues off or no module: the banner, as before.
+    expect(showRestAlertInForeground({ isWorkoutAlert: true, appActive: true, workoutOnScreen: false, spokenCueWillPlay: false })).toBe(true);
+    // In the background the notification is always the alert.
+    expect(showRestAlertInForeground({ isWorkoutAlert: true, appActive: false, workoutOnScreen: false, spokenCueWillPlay: true })).toBe(true);
+    // Other notifications are never touched.
+    expect(showRestAlertInForeground({ isWorkoutAlert: false, appActive: true, workoutOnScreen: false, spokenCueWillPlay: true })).toBe(true);
+  });
 });
 
 describe('−30 s to zero plays the rest-end cue (review S6)', () => {
