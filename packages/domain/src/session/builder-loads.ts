@@ -27,8 +27,9 @@ import { comparableSessions, equipmentHere, type SubstituteContext } from './sub
  * model and the checker read the same `loadReferences`.
  *
  * Every number in `BUILDER_LOAD_BOUNDS` is the designer's proposal (§8.5,
- * §11.3): pending training-researcher evidence and Ben's approval. They live
- * in one place so the approved values replace them in one edit.
+ * §11.3), pending training-researcher evidence and Ben's approval, except
+ * `capE` and `capLastTop` (Ben approved 20% for both, 19 Oct). They live in
+ * one place so approved values replace them in one edit.
  */
 export const BUILDER_LOAD_BOUNDS = {
   /** Own history older than this isn't a reference (a personal ratio may be). */
@@ -46,10 +47,17 @@ export const BUILDER_LOAD_BOUNDS = {
   ],
   /** Below `rejectLow × E` is likely a unit or convention slip. */
   rejectLow: 0.5,
-  capE: 1.05,
-  capLastTop: 1.1,
-  /** Above `clampHigh × E` is rejected (catches errors, not ambition). */
-  clampHigh: 1.25,
+  /**
+   * Coach ceilings (Ben approved 19 Oct: "20% for both"): at most 20% above
+   * `E` and at most 20% above the last working load for these reps. Hard
+   * ceilings, not targets: the coach chooses within them from evidence
+   * (instructions in `@fizz/coach` build and plan rules), and a load above
+   * them is clamped to the cap.
+   */
+  capE: 1.2,
+  capLastTop: 1.2,
+  /** Above `clampHigh × E` is rejected (catches errors, not ambition); always above `capE`. */
+  clampHigh: 1.3,
   ratioLow: 0.5,
   relatedLow: 0.3,
   /** First-time ceiling: the easy end of the item's range plus this share toward hard. */

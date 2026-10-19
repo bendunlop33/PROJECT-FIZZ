@@ -256,25 +256,26 @@ describe('planCoachDraft plans the checked loads (WB-L1, WB5, WB-L10, WB-L12, WB
   });
 
   it('WB-L12: a newer bench session caps the stored load at plan time, with the newer session named', () => {
+    // 90 × 5 @10 supports far less than 102.5: more than 20% above it (Ben 19 Oct), so it is capped.
     const d = draftOf();
     const newer = new Map(HISTORIES);
-    newer.set(BENCH.id, [session(990, 0.0002, bar, [{ load: kg(100), reps: 5, rpe: 10 }]), ...(HISTORIES.get(BENCH.id) ?? [])]);
+    newer.set(BENCH.id, [session(990, 0.0002, bar, [{ load: kg(90), reps: 5, rpe: 10 }]), ...(HISTORIES.get(BENCH.id) ?? [])]);
     const out = planOf(d, { histories: newer });
     const bench = setsFor(out, BENCH.id);
-    expect(bench.every((s) => s.planned.load?.value === 95)).toBe(true);
-    expect(bench[0]?.planned.provenance?.guardNotes.some((n) => /^capped at 95 · newer session/.test(n.replaceAll(' ', ' ')))).toBe(true);
+    expect(bench.every((s) => s.planned.load?.value === 97.5)).toBe(true);
+    expect(bench[0]?.planned.provenance?.guardNotes.some((n) => /^capped at 97.5 · newer session/.test(n.replaceAll(' ', ' ')))).toBe(true);
   });
 
   it('B4: a bench session started before the build (logged after it) caps the stored load on the overview and at Start', () => {
     const d = draftOf();
     const newer = new Map(HISTORIES);
-    // Built 60 s ago; the workout it was built during started 2 min ago and logged 100×5 @10 after the build.
-    newer.set(BENCH.id, [{ ...session(991, 0, bar, [{ load: kg(100), reps: 5, rpe: 10 }]), performedAtUtc: at(-120).utc }, ...(HISTORIES.get(BENCH.id) ?? [])]);
+    // Built 60 s ago; the workout it was built during started 2 min ago and logged 90×5 @10 after the build.
+    newer.set(BENCH.id, [{ ...session(991, 0, bar, [{ load: kg(90), reps: 5, rpe: 10 }]), performedAtUtc: at(-120).utc }, ...(HISTORIES.get(BENCH.id) ?? [])]);
     const out = planOf(d, { histories: newer });
     const bench = setsFor(out, BENCH.id);
-    expect(bench.every((s) => s.planned.load?.value === 95)).toBe(true);
+    expect(bench.every((s) => s.planned.load?.value === 97.5)).toBe(true);
     expect(bench[0]?.planned.provenance?.coach?.reason).toBeNull();
-    expect(draftReasonLine({ planned: bench[0]?.planned ?? null, reps: true, main: false, goal: null })).toBe('last 100×5 @10 · capped → 95');
+    expect(draftReasonLine({ planned: bench[0]?.planned ?? null, reps: true, main: false, goal: null })).toBe('last 90×5 @10 · capped → 97.5');
     // Preview == Start: the same inputs plan the same loads.
     expect(planOf(d, { histories: newer }).aggregate.sets.map((s) => s.planned.load)).toEqual(out.aggregate.sets.map((s) => s.planned.load));
   });

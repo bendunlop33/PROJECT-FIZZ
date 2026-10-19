@@ -307,12 +307,12 @@ describe('checkPlanProposal: every day checked as a workout draft', () => {
   });
 
   it('a day’s rows show the checked loads with their convention, est. and held marks', () => {
-    const r = checkPlanProposal({ ...FOUR, days: [day('Push', 'push', [pex('barbell-bench-press', { load: load(102.5, 'kg', 'total') }), pex('dumbbell-incline-press', { load: load(27.5, 'kg', 'per_hand') }), pex('cable-triceps-pushdown')]), day('Pull', 'pull', [pex('assisted-pull-up', { load: load(30, 'kg', 'assistance') })])] }, planCtx());
+    const r = checkPlanProposal({ ...FOUR, days: [day('Push', 'push', [pex('barbell-bench-press', { load: load(120, 'kg', 'total') }), pex('dumbbell-incline-press', { load: load(27.5, 'kg', 'per_hand') }), pex('cable-triceps-pushdown')]), day('Pull', 'pull', [pex('assisted-pull-up', { load: load(30, 'kg', 'assistance') })])] }, planCtx());
     const rows = r.days.map((d) => planDayRows(d, (eid) => EXERCISES.get(eid) ?? null).map((x) => [x.name, x.scheme.replace(/\s/g, ' '), x.load.replace(/\s/g, ' '), x.estimate, x.main]));
     expect(rows).toEqual([
       [
-        // 102.5 for 8–10 reps is more than 100 × 7 @8 backs: the check caps it (rule 6).
-        ['Bench press', '3 × 8–10', '100 kg', false, true],
+        // 120 for 8–10 reps is more than 20% above what 100 × 7 @8 backs (Ben 19 Oct): the check caps it (rule 6).
+        ['Bench press', '3 × 8–10', '115 kg', false, true],
         ['Incline DB press', '3 × 8–10', '27.5 kg each', false, true],
         ['Triceps pushdown', '3 × 8–10', '—', false, false],
       ],
