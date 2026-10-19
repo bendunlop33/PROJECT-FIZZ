@@ -1,13 +1,24 @@
 import { useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 
-import { toggleDraftItem, type GymDraft, type GymPresetId } from '@fizz/domain';
-import type { WeightUnit } from '@fizz/schemas';
+import {
+  DEFAULT_DUMBBELL_STEP,
+  DEFAULT_SMALL_DUMBBELL_MAX,
+  DUMBBELL_STEPS,
+  formatNumber,
+  QUICK_EXTRAS,
+  QUICK_GYM_TYPES,
+  SMALL_DUMBBELL_MAX,
+  type QuickExtra,
+  type QuickGymInput,
+} from '@fizz/domain';
+import type { GymSetup, WeightUnit } from '@fizz/schemas';
 
 import { useDataChanged, useServices } from '../../shell/context';
 import { newUuid } from '../../device/runtime';
+import { Segmented } from '../../progress/components';
 import { useTheme } from '../../theme';
-import { AppText, ChecklistRow, ChoiceCard, Eyebrow, Group, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, Chip, ChipRow, ChecklistRow, Eyebrow, Group, PrimaryButton, StatusLine, TextButton, TextField } from '../../ui';
 import { StepFrame } from './StepFrame';
 
 export interface SavedGymSummary {
@@ -17,11 +28,13 @@ export interface SavedGymSummary {
 }
 
 /**
- * Onboarding Step 2 (onboarding.md §2.3–2.4), also used for `Add gym` from
- * Today's no-gym banner until the gym editor exists. The preset becomes a
- * draft checklist; nothing is saved until `Save gym`, which writes the gym
- * and its ticked items in one transaction. The gym ID is chosen once per
- * visit, so a double tap saves one gym.
+ * Add a gym in one screen (Ben, 20 Oct; ADR 0029): a name, `Full gym` /
+ * `Hotel / small` / `Home`, and the one or two questions that matter
+ * (`Dumbbells go up in`, `Dumbbells up to`, a few extras). Full gym is
+ * preselected, so `Save gym` works at once. Everything saved is assumed until
+ * Ben confirms or edits it on the gym screen, or the app learns it as he
+ * trains. Used by onboarding Step 2 and `Add gym`. The gym ID is chosen once
+ * per visit, so a double tap saves one gym.
  */
 export function GymSetupFlow({
   unit,
@@ -40,121 +53,40 @@ export function GymSetupFlow({
   const services = useServices();
   const changed = useDataChanged();
   const [gymId] = useState(newUuid);
-  const [phase, setPhase] = useState<'start' | 'checklist'>('start');
   const [name, setName] = useState('Main gym');
-  // The most common case is preselected, so Continue works at once (first-run audit: install to first set fast).
-  const [presetId, setPresetId] = useState<GymPresetId | null>('commercial');
-  const [draft, setDraft] = useState<GymDraft | null>(null);
-  const [edited, setEdited] = useState(false);
+  const [setup, setSetup] = useState<GymSetup>('full');
+  const [dumbbellStep, setDumbbellStep] = useState(DEFAULT_DUMBBELL_STEP[unit]);
+  const [dumbbellMax, setDumbbellMax] = useState<number | null>(DEFAULT_SMALL_DUMBBELL_MAX[unit]);
+  const [extras, setExtras] = useState<Record<'small' | 'home', QuickExtra[]>>({
+    small: QUICK_EXTRAS.small.filter((x) => x.on).map((x) => x.key),
+    home: QUICK_EXTRAS.home.filter((x) => x.on).map((x) => x.key),
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const presets = services.coachingKnowledge.gymPresets();
   const nameEmpty = name.trim() === '';
 
-  async function save(d: GymDraft | null) {
-    if (saving) return;
+  function input(): QuickGymInput {
+    if (setup === 'full') return { setup, unit, dumbbellStep };
+    return { setup, unit, dumbbells: dumbbellMax === null ? null : { max: dumbbellMax, step: dumbbellStep }, extras: extras[setup] };
+  }
+
+  async function save() {
+    if (saving || nameEmpty) return;
     setSaving(true);
     setError(null);
-    const result = await services.setup.saveGym({ gymId, name, draft: d });
+    const draft = services.coachingKnowledge.buildQuickGymDraft(input());
+    const result = await services.setup.saveGym({ gymId, name, draft, setup });
     setSaving(false);
     if (!result.ok) {
       setError(result.message);
       return;
     }
     changed();
-    const ticked = d?.items.filter((i) => i.ticked) ?? [];
-    onSaved({ name: name.trim(), items: ticked.length, notChecked: ticked.filter((i) => i.equipment.detailsSource === 'preset').length });
-  }
-
-  function choose(id: GymPresetId) {
-    if (draft !== null && edited && draft.presetId !== id) {
-      const title = presets.find((p) => p.id === id)?.title ?? '';
-      Alert.alert(`Replace the checklist with the "${title}" draft?`, 'Your changes to it will be lost.', [
-        { text: 'Keep mine', style: 'cancel' },
-        {
-          text: 'Replace',
-          onPress: () => {
-            setPresetId(id);
-            setDraft(null);
-            setEdited(false);
-          },
-        },
-      ]);
-      return;
-    }
-    setPresetId(id);
-    if (draft?.presetId !== id) setDraft(null);
-  }
-
-  function next() {
-    if (presetId === null || nameEmpty) return;
-    if (presetId === 'empty') {
-      void save(null);
-      return;
-    }
-    setDraft((d) => d ?? services.coachingKnowledge.buildGymDraft(presetId, unit));
-    setPhase('checklist');
-  }
-
-  if (phase === 'checklist' && draft !== null) {
-    const ticked = draft.items.filter((i) => i.ticked).length;
-    const presetTitle = presets.find((p) => p.id === draft.presetId)?.title ?? '';
-    return (
-      <StepFrame
-        step={step}
-        title={`${name.trim()}: what’s there?`}
-        explanation={`Draft from "${presetTitle}". Untick anything this gym doesn’t have.`}
-        onBack={() => {
-          setPhase('start');
-        }}
-        footer={
-          <>
-            {ticked === 0 ? (
-              <AppText variant="callout" color="text.secondary">
-                Nothing ticked · loads not checked
-              </AppText>
-            ) : null}
-            <PrimaryButton label={ticked === 0 ? 'Save empty gym' : 'Save gym'} busy={saving} onPress={() => void save(draft)} />
-          </>
-        }
-      >
-        <Group>
-          {draft.items.map((item) => (
-            <ChecklistRow
-              key={item.key}
-              title={item.label}
-              checked={item.ticked}
-              tag={item.ticked ? 'Typical values, not checked' : null}
-              onToggle={() => {
-                setDraft((d) => (d === null ? d : toggleDraftItem(d, item.key)));
-                setEdited(true);
-              }}
-            />
-          ))}
-        </Group>
-        <AppText variant="callout" color="text.secondary">
-          You can check the numbers at the gym in Profile › your gym. Until then they’re marked “not checked”.
-        </AppText>
-        {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
-      </StepFrame>
-    );
+    onSaved({ name: name.trim(), items: draft.items.length, notChecked: draft.items.length });
   }
 
   return (
-    <StepFrame
-      step={step}
-      title="Where do you train most?"
-      explanation="Pick the closest match. You’ll check the equipment next."
-      onBack={onBack}
-      footer={
-        <PrimaryButton
-          label={presetId === null ? 'Choose a starting point' : 'Continue'}
-          disabled={presetId === null || nameEmpty}
-          busy={saving}
-          onPress={next}
-        />
-      }
-    >
+    <StepFrame step={step} title={step === null ? 'Add gym' : 'Your gym'} onBack={onBack} footer={<PrimaryButton label="Save gym" disabled={nameEmpty} busy={saving} onPress={() => void save()} />}>
       <View style={{ gap: theme.space['2'] }}>
         <View nativeID="gym-name-label">
           <Eyebrow>Gym name</Eyebrow>
@@ -170,19 +102,77 @@ export function GymSetupFlow({
         />
         {nameEmpty ? <StatusLine icon="exclamationmark.triangle" tone="warning" text="Give the gym a name" /> : null}
       </View>
-      <View style={{ gap: theme.space['2'] }} accessibilityRole="radiogroup">
-        {presets.map((p) => (
-          <ChoiceCard key={p.id} title={p.title} subtitle={p.subtitle} selected={presetId === p.id} onPress={() => { choose(p.id); }} />
-        ))}
-      </View>
-      {onSkip ? (
-        <View style={{ gap: theme.space['1'] }}>
-          <TextButton label="Skip: use a typical gym for now" tone="secondary" onPress={onSkip} />
-          <AppText variant="callout" color="text.tertiary">
-            Typical weights · not checked
-          </AppText>
+      <Segmented
+        label="Gym type"
+        options={QUICK_GYM_TYPES.map((t) => ({ key: t.setup, label: t.title }))}
+        selected={setup}
+        onSelect={(k) => {
+          setSetup(k);
+        }}
+      />
+      {setup !== 'full' ? (
+        <View style={{ gap: theme.space['2'] }}>
+          <Eyebrow>Dumbbells up to</Eyebrow>
+          <ChipRow>
+            {setup === 'home' ? (
+              <Chip
+                label="None"
+                selected={dumbbellMax === null}
+                onPress={() => {
+                  setDumbbellMax(null);
+                }}
+              />
+            ) : null}
+            {SMALL_DUMBBELL_MAX[unit].map((m) => (
+              <Chip
+                key={m}
+                label={`${formatNumber(m)} ${unit}`}
+                selected={dumbbellMax === m}
+                onPress={() => {
+                  setDumbbellMax(m);
+                }}
+              />
+            ))}
+          </ChipRow>
         </View>
       ) : null}
+      {setup === 'full' || dumbbellMax !== null ? (
+        <View style={{ gap: theme.space['2'] }}>
+          <Eyebrow>Dumbbells go up in</Eyebrow>
+          <ChipRow>
+            {DUMBBELL_STEPS[unit].map((s) => (
+              <Chip
+                key={s}
+                label={`${formatNumber(s)} ${unit}`}
+                selected={dumbbellStep === s}
+                onPress={() => {
+                  setDumbbellStep(s);
+                }}
+              />
+            ))}
+          </ChipRow>
+        </View>
+      ) : null}
+      {setup !== 'full' ? (
+        <Group>
+          {QUICK_EXTRAS[setup].map((x) => (
+            <ChecklistRow
+              key={x.key}
+              title={x.label}
+              checked={extras[setup].includes(x.key)}
+              onToggle={() => {
+                setExtras((cur) => ({ ...cur, [setup]: cur[setup].includes(x.key) ? cur[setup].filter((k) => k !== x.key) : [...cur[setup], x.key] }));
+              }}
+            />
+          ))}
+        </Group>
+      ) : null}
+      {setup === 'home' && dumbbellMax === null && extras.home.length === 0 ? (
+        <AppText variant="callout" color="text.secondary">
+          Bodyweight only
+        </AppText>
+      ) : null}
+      {onSkip ? <TextButton label="Skip" tone="secondary" onPress={onSkip} /> : null}
       {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
     </StepFrame>
   );

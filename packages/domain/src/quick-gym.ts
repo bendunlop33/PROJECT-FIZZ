@@ -422,6 +422,23 @@ export function gymLearnText(l: GymLearn): string {
   }
 }
 
+/** After Ben's tap (toast and the edit's line): `Added 22 kg dumbbells`, `Stack: every 7 kg`, `Stack: to 110 kg`. */
+export function gymLearnDoneText(l: GymLearn): string {
+  switch (l.kind) {
+    case 'add_dumbbell':
+      return `Added ${formatNumber(l.value)} ${l.unit} dumbbells`;
+    case 'stack_step':
+      return `Stack: every ${formatNumber(l.step)} ${l.unit}`;
+    case 'stack_max':
+      return `Stack: to ${formatNumber(l.max)} ${l.unit}`;
+  }
+}
+
+/** One offer per load idea: the chip isn't shown again after Ben answers it (this workout). */
+export function gymLearnKey(l: GymLearn): string {
+  return `${l.equipmentId}:${l.kind}:${formatNumber(l.kind === 'add_dumbbell' ? l.value : l.kind === 'stack_step' ? l.step : l.max)}`;
+}
+
 /** Stack steps tried for an off-step load, most common first. */
 const STACK_STEPS: Readonly<Record<WeightUnit, readonly number[]>> = { kg: [5, 2.5, 10, 7, 4.5, 7.5, 6, 4, 3, 2], lb: [10, 5, 15, 12.5, 7.5, 20, 2.5] };
 
@@ -494,7 +511,7 @@ export function planGymLearn(eq: EquipmentInstance, learn: GymLearn, atUtc: stri
   }
   const valid = validItem(after);
   if (getAchievableLoads(valid).loads.length === 0) return null;
-  return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after: valid }], lines: [gymLearnText(learn).replace(/\?$/, '')] };
+  return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after: valid }], lines: [gymLearnDoneText(learn)] };
 }
 
 // ---------------------------------------------------------------------------

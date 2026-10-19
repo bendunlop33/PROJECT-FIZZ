@@ -310,7 +310,7 @@ export interface GymSwitchCard {
   unchanged: string | null;
   /** The one-line variants (§2.3): nothing changes, or nothing left. */
   summary: string | null;
-  /** `ⓘ Hotel · Lisbon's dumbbells are typical values, not checked.` */
+  /** `ⓘ Hotel · Lisbon's dumbbells are assumed.` (ADR 0029) */
   unchecked: NoteLine | null;
   /** True when any target changes (voice can confirm only a card where this is false, GS9). */
   changesTargets: boolean;
@@ -550,7 +550,7 @@ function buildCard(input: GymSwitchInput, snap: SnapResult, excluded: ReadonlyMa
   const uncheckedItems = snap.slots.flatMap((s) => (s.equipment?.detailsSource === 'preset' ? [s.equipment] : []));
   const firstUnchecked = uncheckedItems[0];
   const unchecked = firstUnchecked
-    ? { tone: 'info' as const, text: `${gymName}’s ${itemWord(firstUnchecked)} ${firstUnchecked.kind === 'dumbbells' ? 'are' : 'is'} typical values, not checked.` }
+    ? { tone: 'info' as const, text: `${gymName}’s ${itemWord(firstUnchecked)} ${firstUnchecked.kind === 'dumbbells' ? 'are' : 'is'} assumed.` }
     : null;
   const many = lines.length >= 5;
   return {
@@ -864,7 +864,7 @@ export function gymSwitchEvidence(p: GymSwitchProposal): { used: string[]; check
     used:
       usable.length === 0
         ? [`${p.toGymName} has no equipment set up.`]
-        : usable.map((e) => `${e.name}: ${equipmentRowLine(e)}${e.detailsSource === 'preset' ? ' (typical values, not checked)' : ''}`),
+        : usable.map((e) => `${e.name}: ${equipmentRowLine(e)}${e.detailsSource === 'preset' ? ' (assumed)' : ''}`),
     checks: p.card.lines.flatMap((l) => l.notes.map((n) => `${l.exerciseName}: ${n.text}`)),
     notChanged: [...p.card.notChanged, ...(p.card.unchanged ? [p.card.unchanged] : [])],
   };

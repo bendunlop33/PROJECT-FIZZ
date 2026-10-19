@@ -44,7 +44,7 @@ export type GymEditOutcome = { ok: true; edit: GymEdit; duplicate: boolean } | {
 export interface GymRow {
   gym: Gym;
   items: number;
-  /** Items still at preset values (`Typical values, not checked`). */
+  /** Items still assumed (preset values Ben hasn't confirmed; ADR 0029). */
   unchecked: number;
 }
 

@@ -36,6 +36,14 @@ describe('exercise ⋯ menu', () => {
     expect(exerciseMenu(false, false, { canSwap: false }).options).not.toContain('Swap exercise');
   });
 
+  it('Not at this gym (Ben, 20 Oct) sits under Swap, never red, only when the row uses a gym item', () => {
+    const m = exerciseMenu(false, false, { canSwap: true, canMarkNotHere: true });
+    expect(m.options.slice(0, 3)).toEqual(['Add set', 'Swap exercise', 'Not at this gym']);
+    expect(m.actionAt(2)).toBe('not_at_gym');
+    expect(m.destructiveButtonIndex.map((i) => m.options[i])).toEqual(['Delete this set', 'Skip exercise']);
+    expect(exerciseMenu(false).options).not.toContain('Not at this gym');
+  });
+
   it('Superset with… and Remove superset (Ben, 19 Oct) sit under Swap, never red, each mapped to its own action', () => {
     const m = exerciseMenu(false, false, { canSwap: true, canSuperset: true, inSuperset: true });
     expect(m.options).toEqual(['Add set', 'Swap exercise', 'Superset with…', 'Remove superset', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Cancel']);
