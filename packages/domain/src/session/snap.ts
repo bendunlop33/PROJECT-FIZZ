@@ -13,7 +13,7 @@ import type {
 } from '@fizz/schemas';
 import { compareDifficulty, loadDirection, roundToAvailableLoad } from '../equipment';
 import { addedWeightEquipment, isWeightedBodyweight } from '../added-weight';
-import { needsNoEquipment } from '../exercise-equipment';
+import { isNotFor, needsNoEquipment } from '../exercise-equipment';
 import { convertMass, toScaled } from '../units';
 
 /**
@@ -176,7 +176,8 @@ export function mapEquipment(
   }
   const kinds: readonly ExerciseEquipmentKind[] = exercise.compatibleEquipment.length > 0 ? exercise.compatibleEquipment : [source.kind];
   const suits = (e: EquipmentInstance) => kinds.includes(e.kind);
-  const usable = usableAt(gym);
+  // (Ben, 20 Oct) An item Ben marked `Not at this gym` for this exercise is never mapped to it.
+  const usable = usableAt(gym).filter((e) => !isNotFor(e, exercise.id));
   const same = usable.find((e) => e.id === source.id);
   if (same) return { equipment: same, mapping: 'same_item' };
   const lastId = lastUsedHere?.(exercise.id) ?? null;

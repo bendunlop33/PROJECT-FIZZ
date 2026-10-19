@@ -62,6 +62,13 @@ const equipmentCommon = RecordMetaSchema.extend({
   detailsSource: z.enum(['preset', 'user']).optional(),
   /** When Ben last saved this item's details. */
   checkedAtUtc: UtcTimestampSchema.optional(),
+  /**
+   * (Ben, 20 Oct: "update as we go") Exercises Ben said aren't at this gym
+   * (`Not at this gym`, or the coach's `update_gym` on his words): this item
+   * is never mapped to them, so they leave this gym's builds and pickers.
+   * Absent = none.
+   */
+  notFor: z.array(IdSchema).max(500).optional(),
 });
 
 export const BarbellSchema = equipmentCommon.extend({
@@ -134,11 +141,29 @@ export type WeightStack = z.infer<typeof WeightStackSchema>;
 export type AssistedStack = z.infer<typeof AssistedStackSchema>;
 export type BodyweightStation = z.infer<typeof BodyweightStationSchema>;
 
+/** The kinds a gym profile can hold an instance of. */
+export const GymEquipmentKindSchema = z.enum(['barbell', 'plate_loaded_machine', 'dumbbells', 'weight_stack', 'assisted_stack', 'bodyweight_station']);
+export type GymEquipmentKind = z.infer<typeof GymEquipmentKindSchema>;
+
+/**
+ * (Ben, 20 Oct; ADR 0029) How the gym was described: `full` = assume
+ * everything a big gym has (items marked assumed until Ben confirms them);
+ * `small` = hotel or small gym; `home`. Absent = set up item by item (before 20 Oct).
+ */
+export const GymSetupSchema = z.enum(['full', 'small', 'home']);
+export type GymSetup = z.infer<typeof GymSetupSchema>;
+
 export const GymSchema = RecordMetaSchema.extend({
   name: z.string().min(1).max(120),
   locationLabel: z.string().max(200).optional(),
   isDefault: z.boolean(),
   notes: z.string().max(2000).optional(),
   archivedAtUtc: UtcTimestampSchema.optional(),
+  setup: GymSetupSchema.optional(),
+  /**
+   * Kinds Ben said this gym doesn't have (the coach's `update_gym` remove, on
+   * his words). `Make full gym` never adds them back. Absent = none.
+   */
+  missingKinds: z.array(GymEquipmentKindSchema).max(6).optional(),
 });
 export type Gym = z.infer<typeof GymSchema>;
