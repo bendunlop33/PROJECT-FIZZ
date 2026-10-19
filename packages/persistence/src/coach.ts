@@ -74,6 +74,7 @@ function sessionOf(record: ActionRecord): string | null {
   switch (record.detail.kind) {
     case 'adjust_pending_sets':
     case 'add_exercise_today':
+    case 'edit_today':
     case 'rename_workout':
     case 'log_set':
     case 'correct_set':
@@ -489,8 +490,9 @@ export class SqliteCoachStore {
         if (agg === null || agg.session.ownerId !== ownerId) throw new Rollback('missing');
         if (write.expectedSessionVersion !== undefined && agg.session.version !== write.expectedSessionVersion) throw new Rollback('stale_version');
         // Review coach-add S3: the catalogue exercise is saved only with the add itself, never on a refusal.
-        if (write.saveExercise !== undefined && (await tx.getFirst('SELECT id FROM exercises WHERE id = ?', [write.saveExercise.id])) === null) {
-          const e = write.saveExercise;
+        // Coach v3: an edit may add or swap to more than one catalogue exercise (`saveExercises`).
+        for (const e of [...(write.saveExercise === undefined ? [] : [write.saveExercise]), ...(write.saveExercises ?? [])]) {
+          if ((await tx.getFirst('SELECT id FROM exercises WHERE id = ?', [e.id])) !== null) continue;
           if (e.ownerId !== null && e.ownerId !== ownerId) throw new Error('Exercise owner differs from the store owner');
           const saved = await saveDocumentIn(tx, EXERCISE_SPEC, e, null);
           if (!saved.ok) throw new Rollback('missing');
@@ -624,6 +626,29 @@ export class SqliteCoachStore {
           }))
           .filter((e) => e.changes.length > 0);
         const alreadyLogged = changes.filter((c) => now.get(c.setId)?.status === 'completed').map((c) => c.setNumber);
+        return { restored, alreadyLogged };
+      }
+      case 'edit_today': {
+        // Coach v3: every step's own Undo, last first, all or nothing (`revert_coach_edit`), only in the workout it was
+        // made in. Target changes come back on sets still pending; a set logged since stays as it is (rule 2).
+        if (d.command === null) return 'unsupported';
+        const agg = await readAggregate(tx, d.sessionId);
+        if (agg === null || agg.session.ownerId !== ownerId || agg.session.status !== 'active') return 'changed_since';
+        const r = reduceSession(agg, { type: 'revert_coach_edit', at: { utc: atUtc, tz: target.createdAt.tz }, opId: `undo:${target.actionId}`, targetOpId: d.command.opId, actionId: d.command.actionId });
+        if (!r.ok && r.error.code === 'gym_changed') return 'gym_changed';
+        if (!r.ok || r.duplicate) return 'changed_since';
+        if (r.state !== agg) await writeAggregate(tx, r.state);
+        const now = new Map(r.state.sets.map((x) => [x.id, x]));
+        const was = new Map(agg.sets.map((x) => [x.id, x]));
+        const actionId = d.command.actionId;
+        const restored: ExerciseTargetChanges[] = d.exercises
+          .map((e) => ({
+            ...e,
+            changes: e.changes.filter((c) => c.before !== null && c.after !== null && was.get(c.setId)?.status === 'pending' && now.get(c.setId)?.planned.coach?.actionId !== actionId).map((c) => ({ ...c, before: c.after, after: c.before })),
+          }))
+          .filter((e) => e.changes.length > 0)
+          .slice(0, 12);
+        const alreadyLogged = d.exercises.flatMap((e) => e.changes).filter((c) => now.get(c.setId)?.status === 'completed').map((c) => c.setNumber).slice(0, 40);
         return { restored, alreadyLogged };
       }
       case 'log_set':
