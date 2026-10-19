@@ -33,6 +33,8 @@ export interface ConnectionStatusView {
   card: { icon: ViewIcon; tone: ViewTone; title: string; lines: string[] };
   /** `Model: GPT-6.1-Sol ›` row inside the card (connected states only). */
   modelRow: string | null;
+  /** (Coach v3, Ben 18 Oct) `Mid-workout: Same as coach ›` row under it (connected states only). */
+  workoutModelRow?: string | null;
   /** The plan pitch under the card when nothing is connected. */
   pitch: string | null;
   primary: ActionView | null;
@@ -86,6 +88,7 @@ export function connectionStatusView(state: TextCoachState, signInUnavailable: s
         ...base,
         card: { icon: 'checkmark.circle.fill', tone: 'done', title: 'Connected · ChatGPT plan', lines: [...signedIn, 'Limits are set in ChatGPT.', ...(coachChatInBuild ? [] : [NO_COACH_YET])] },
         modelRow: `Model: ${modelName ?? 'not chosen'}`,
+        workoutModelRow: `Mid-workout: ${state.workoutModel?.displayName ?? SAME_AS_COACH}`,
         primary: null,
         links: [manage],
       };
@@ -183,6 +186,17 @@ export interface ModelChoiceRow {
   title: string;
   tag: string | null;
   selected: boolean;
+}
+
+/** (Coach v3) The mid-workout model's default: the coach's own model. */
+export const SAME_AS_COACH = 'Same as coach';
+
+/**
+ * (Coach v3, Ben 18 Oct) `Mid-workout ›`: `Same as coach` first (the default), then his plan's listed
+ * models. Only listed models can be chosen; the app never picks one.
+ */
+export function workoutModelChoiceRows(models: readonly ModelOption[], selectedSlug: string | null): ModelChoiceRow[] {
+  return [{ slug: '', title: SAME_AS_COACH, tag: null, selected: selectedSlug === null }, ...modelChoiceRows(models, selectedSlug)];
 }
 
 /** §2.5 list (also `Model ›`). Names come from the API; the tag only marks the tested model when listed. */

@@ -64,6 +64,10 @@ export const MAX_MODEL_STEPS = 6;
 export const MAX_READ_CALLS = 4;
 /** Fed back for a read past `MAX_READ_CALLS`. */
 export const READ_LIMIT_LINE = 'Read limit reached for this turn. Answer with what you have.';
+/** Fed back after `think_harder`. */
+export const THINK_HARDER_LINE = 'Your next steps get more reasoning. Continue.';
+/** Fed back for a second `think_harder` in one turn. */
+export const THINK_AGAIN_LINE = 'Already thinking harder this turn. Continue.';
 /** (Coach v3) A live-workout turn's whole-turn cap: Ben is between sets. */
 export const COACH_WORKOUT_TIMEOUT_MS = 30_000;
 /**
@@ -120,6 +124,11 @@ export interface CoachTurnRequest {
   kind: CoachTurnKind;
   input: BenInput;
   model: string;
+  /**
+   * (Coach v3, Ben 18 Oct) A lighter model Ben chose for live-workout turns (Settings, from his plan's
+   * listed models). Used until the coach calls `think_harder`; then `model`. Absent: `model` throughout.
+   */
+  workoutModel?: string;
   surface: RenderSurface;
   /** Everything but the thread, which the engine reads from the store. */
   context: Omit<CoachContextInput, 'thread' | 'turnKind'>;
@@ -347,8 +356,10 @@ export const OFFER_INSTEAD_LINE = 'Not applied: Ben did not ask for this. He now
 
 /** Tools the app can actually run in this build; others are withheld, never offered. */
 function runnable(registry: TurnRegistry, executors: CoachExecutors): TurnRegistry {
-  const tools = registry.tools.filter((t) => executors[t.name] !== undefined);
-  const missing = registry.tools.filter((t) => executors[t.name] === undefined).map((t) => ({ name: t.name, reason: 'not_in_build' as const }));
+  // `think_harder` is run by the turn itself (it changes the next step's effort and model), never by an executor.
+  const runs = (name: string): boolean => name === 'think_harder' || executors[name as keyof CoachExecutors] !== undefined;
+  const tools = registry.tools.filter((t) => runs(t.name));
+  const missing = registry.tools.filter((t) => !runs(t.name)).map((t) => ({ name: t.name, reason: 'not_in_build' as const }));
   return { tools, withheld: [...registry.withheld, ...missing] };
 }
 
@@ -753,6 +764,12 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     if (already === undefined) req.onProgress?.({ kind: 'card', card: { record: result.record, rendered: renderActionResult(result.record, req.surface) } });
     return ref;
   };
+  // Coach v3 (Ben 18 Oct): a live-workout turn starts light (low effort, his mid-workout model if he chose
+  // one); `think_harder`, once, makes the next steps high effort on his main model. Builds think hard;
+  // anything else is medium.
+  let thinking = false;
+  const stepModel = (): string => (liveWorkout && !thinking && req.workoutModel !== undefined ? req.workoutModel : req.model);
+  const stepEffort = (): NonNullable<ModelRequest['effort']> => (buildInPlay || forced ? 'high' : liveWorkout ? (thinking ? 'high' : 'low') : 'medium');
   // Coach v3: reads per turn, and identical reads answered from this turn's cache (keyed by the opId).
   let readCalls = 0;
   const readCache = new Map<string, string>();
@@ -785,7 +802,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     // Review S1: after a text answer on a build turn, the next step is forced to call `propose_workout`.
     const forceBuild = forced && nudged && !buildTried;
     const toolChoice: ModelRequest['toolChoice'] = forceBuild ? { type: 'function', name: 'propose_workout' } : 'required';
-    const out = await runModelStep(ports.model, { model: req.model, instructions, input, tools, toolChoice, parallelToolCalls: false }, timing, cap.signal, {
+    const out = await runModelStep(ports.model, { model: stepModel(), instructions, input, tools, toolChoice, parallelToolCalls: false, effort: stepEffort() }, timing, cap.signal, {
       onFirstEvent,
       onReplyDelta: (delta) => {
         if (holdReply) return;
@@ -849,6 +866,13 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     if (todayScopeRefused(parsed.call.tool, words)) {
       logLine({ tool: parsed.call.tool, outcome: 'not_allowed', text: 'Not applied: a later session, not today.', actionId: null });
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: FUTURE_SCOPE_LINE }) });
+      continue;
+    }
+    if (parsed.call.tool === 'think_harder') {
+      const again = thinking;
+      thinking = true;
+      logLine({ tool: 'think_harder', outcome: again ? 'not_allowed' : 'read', text: again ? 'Already thinking harder.' : 'Thinking harder', actionId: null });
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify(again ? { status: 'not_allowed', line: THINK_AGAIN_LINE } : { status: 'ok', line: THINK_HARDER_LINE }) });
       continue;
     }
     // Coach v3: reads are capped per turn; the same read twice is answered from the cache.

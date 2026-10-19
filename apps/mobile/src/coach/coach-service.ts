@@ -242,6 +242,8 @@ export type CoachStatus = TextCoachState['status'];
 export interface CoachAvailability {
   status: CoachStatus;
   model: string | null;
+  /** (Coach v3) Ben's mid-workout model, when he chose one in Settings. */
+  workoutModel?: string | null;
 }
 
 /**
@@ -434,7 +436,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const s = await deps.connection().catch((): TextCoachState => ({ status: 'not_connected', route: null, email: null, model: null }));
     const offline = lastNetworkFailureMs !== null && toMs(deps.now().utc) - lastNetworkFailureMs < OFFLINE_HOLD_MS;
     const status: CoachStatus = s.status === 'ok' && offline ? 'offline' : s.status;
-    return { status, model: s.model?.slug ?? null };
+    return { status, model: s.model?.slug ?? null, ...(s.workoutModel == null ? {} : { workoutModel: s.workoutModel.slug }) };
   }
 
   async function sessionOf(entry: CoachEntry): Promise<SessionAggregate | null> {
@@ -1210,6 +1212,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           kind,
           input: req.input,
           model: a.model,
+          // Coach v3 (Ben 18 Oct): his lighter mid-workout model, if he chose one; `think_harder` returns to the main one.
+          ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
           context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }) },
           structuralSignals: await structuralSignalsFor(p, session).catch(() => []),

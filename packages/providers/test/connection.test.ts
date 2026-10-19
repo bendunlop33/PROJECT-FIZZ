@@ -18,9 +18,12 @@ import {
   parseTokens,
   preselectModel,
   readTextCoachState,
+  reasoningCapabilityOf,
   recordProviderFailure,
+  recordReasoningCapability,
   refreshAvailableModels,
   selectModel,
+  selectWorkoutModel,
   serializeConnectionSettings,
   serializeRegistration,
   serializeTokens,
@@ -264,6 +267,35 @@ describe('settings, failures and models', () => {
     const listed = [{ slug: 'gpt-6-luna', displayName: 'GPT-6-Luna' }];
     await Promise.all([recordProviderFailure(slow, failure('usage_limit', 'x'), 5), selectModel(slow, listed, 'gpt-6-luna'), markFirstUseSeen(slow)]);
     expect(await loadConnectionSettings(slow)).toMatchObject({ modelSlug: 'gpt-6-luna', firstUseSeen: true, lastFailure: { kind: 'usage_limit', atMs: 5 } });
+  });
+
+  it('(Coach v3) the mid-workout model: only a listed one, or null for the coach’s own; it shows in the state and survives a round trip', async () => {
+    const s = new MemorySettings();
+    const listed = [
+      { slug: 'gpt-6.1-sol', displayName: 'GPT-6.1-Sol' },
+      { slug: 'gpt-6-mini', displayName: 'GPT-6 mini' },
+    ];
+    await selectModel(s, listed, 'gpt-6.1-sol');
+    expect(await selectWorkoutModel(s, listed, 'gpt-7-secret')).toEqual({ ok: false, error: 'not_listed' });
+    expect(await selectWorkoutModel(s, listed, 'gpt-6-mini')).toEqual({ ok: true, value: { slug: 'gpt-6-mini', displayName: 'GPT-6 mini' } });
+    const settings = await loadConnectionSettings(s);
+    expect(settings).toMatchObject({ modelSlug: 'gpt-6.1-sol', workoutModelSlug: 'gpt-6-mini', workoutModelName: 'GPT-6 mini' });
+    expect(parseConnectionSettings(serializeConnectionSettings(settings))).toEqual(settings);
+    const state = textCoachState({ tokens: null, registration: null, settings, listedModels: null });
+    expect(state.workoutModel).toEqual({ slug: 'gpt-6-mini', displayName: 'GPT-6 mini' });
+    expect(await selectWorkoutModel(s, listed, null)).toEqual({ ok: true, value: null });
+    const back = await loadConnectionSettings(s);
+    expect(back.workoutModelSlug).toBeUndefined();
+    expect(back.modelSlug).toBe('gpt-6.1-sol');
+  });
+
+  it('(Coach v3) reasoning capability per model: unknown until recorded; garbage values are dropped', async () => {
+    const s = new MemorySettings();
+    expect(reasoningCapabilityOf(await loadConnectionSettings(s), 'm')).toBe('unknown');
+    await recordReasoningCapability(s, 'm', 'rejected');
+    expect(reasoningCapabilityOf(await loadConnectionSettings(s), 'm')).toBe('rejected');
+    expect(reasoningCapabilityOf(await loadConnectionSettings(s), 'other')).toBe('unknown');
+    expect(parseConnectionSettings(JSON.stringify({ v: 1, modelSlug: 'm', reasoning: { m: 'maybe', n: 'supported' } })).reasoning).toEqual({ n: 'supported' });
   });
 
   it('selectModel accepts only a listed model', async () => {

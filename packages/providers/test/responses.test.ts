@@ -44,6 +44,13 @@ describe('plan request body', () => {
     for (const f of FORBIDDEN_REQUEST_FIELDS) expect(body).not.toHaveProperty(f);
   });
 
+  it('(Coach v3) carries reasoning.effort only as low, medium or high, and nothing else under reasoning', () => {
+    expect(buildPlanRequestBody({ ...request, reasoning: { effort: 'low' } }).reasoning).toEqual({ effort: 'low' });
+    expect(planRequestProblems({ ...request, reasoning: { effort: 'max' } } as unknown as PlanResponsesRequest)).toEqual(['reasoning may only carry effort: low, medium or high']);
+    expect(planRequestProblems({ ...request, reasoning: { effort: 'low', summary: 'auto' } } as unknown as PlanResponsesRequest)).toHaveLength(1);
+    expect(buildPlanRequestBody(request)).not.toHaveProperty('reasoning');
+  });
+
   it('includes function tools and tool settings', () => {
     const body = buildPlanRequestBody({
       ...request,
@@ -81,7 +88,9 @@ describe('plan request body', () => {
     expect(planRequestProblems({ ...request, store: true } as unknown as PlanResponsesRequest)).toContain('"store" is fixed by the client');
     expect(planRequestProblems({ ...request, input: [{ type: 'message', role: 'system', content: 'x' }] } as unknown as PlanResponsesRequest).join()).toMatch(/system-role/);
     expect(planRequestProblems({ ...request, tools: [{ type: 'file_search' }] } as unknown as PlanResponsesRequest).join()).toMatch(/only function tools/);
-    expect(planRequestProblems({ ...request, reasoning: {} } as unknown as PlanResponsesRequest)).toContain('unknown field "reasoning"');
+    expect(planRequestProblems({ ...request, include: [] } as unknown as PlanResponsesRequest)).toContain('unknown field "include"');
+    // Coach v3 (ADR 0027): `reasoning` is allowed, with a valid effort only.
+    expect(planRequestProblems({ ...request, reasoning: {} } as unknown as PlanResponsesRequest)).toContain('reasoning may only carry effort: low, medium or high');
     expect(planRequestProblems({ ...request, model: '' })).toContain('model is required');
   });
 });

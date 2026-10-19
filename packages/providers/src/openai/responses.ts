@@ -39,6 +39,8 @@ export interface FunctionTool {
 
 export type ToolChoice = 'auto' | 'none' | 'required' | { type: 'function'; name: string };
 
+export type ReasoningEffort = 'low' | 'medium' | 'high';
+
 /** The only fields a caller can set. */
 export interface PlanResponsesRequest {
   model: string;
@@ -47,6 +49,12 @@ export interface PlanResponsesRequest {
   tools?: readonly FunctionTool[];
   tool_choice?: ToolChoice;
   parallel_tool_calls?: boolean;
+  /**
+   * (Coach v3, ADR 0027) How hard the model thinks. Not in the plan route's documented rejected
+   * list, but not proven on it either: callers send it only while the model's capability isn't
+   * `rejected`, and retry once without it on a 400 (`plan-model-port`).
+   */
+  reasoning?: { effort: ReasoningEffort };
 }
 
 /** Fields the plan route rejects (documented list plus previous_response_id over HTTP). */
@@ -69,7 +77,8 @@ export const FORBIDDEN_REQUEST_FIELDS: readonly string[] = [
   'previous_response_id',
 ];
 
-const ALLOWED_FIELDS = new Set(['model', 'input', 'instructions', 'tools', 'tool_choice', 'parallel_tool_calls']);
+const ALLOWED_FIELDS = new Set(['model', 'input', 'instructions', 'tools', 'tool_choice', 'parallel_tool_calls', 'reasoning']);
+const EFFORTS: ReadonlySet<string> = new Set<ReasoningEffort>(['low', 'medium', 'high']);
 
 /**
  * Builds the JSON body. Throws (a programming error, not a runtime state) if
@@ -83,6 +92,7 @@ export function buildPlanRequestBody(request: PlanResponsesRequest): Record<stri
   if (request.tools !== undefined && request.tools.length > 0) body.tools = request.tools;
   if (request.tool_choice !== undefined) body.tool_choice = request.tool_choice;
   if (request.parallel_tool_calls !== undefined) body.parallel_tool_calls = request.parallel_tool_calls;
+  if (request.reasoning !== undefined) body.reasoning = { effort: request.reasoning.effort };
   // Set last so nothing can override them.
   body.store = false;
   body.stream = true;
@@ -99,6 +109,10 @@ export function planRequestProblems(request: PlanResponsesRequest): string[] {
     else if (!ALLOWED_FIELDS.has(key)) problems.push(`unknown field "${key}"`);
   }
   if (typeof request.model !== 'string' || request.model === '') problems.push('model is required');
+  if (request.reasoning !== undefined) {
+    const r = request.reasoning as unknown as Record<string, unknown>;
+    if (typeof r !== 'object' || Object.keys(r).some((k) => k !== 'effort') || typeof r.effort !== 'string' || !EFFORTS.has(r.effort)) problems.push('reasoning may only carry effort: low, medium or high');
+  }
   if (!Array.isArray(request.input)) problems.push('input must be an array');
   else {
     for (const item of request.input as readonly unknown[]) {

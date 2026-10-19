@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { undoOpId, type ModelEvent, type ModelRequest } from '@fizz/coach';
+import type { TextCoachState } from '@fizz/providers';
 
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, contextWorkout, replyWith, StepModel, toolCall } from './coach-model';
@@ -18,9 +19,11 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 const DAY = 86_400_000;
 let h: Harness;
 let model: StepModel;
+let connection: TextCoachState = CONNECTED;
 beforeEach(() => {
   model = new StepModel([]);
-  h = createHarness('2026-10-18T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
+  connection = CONNECTED;
+  h = createHarness('2026-10-18T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(connection) } });
 });
 afterEach(async () => {
   await h.cleanup();
@@ -249,3 +252,25 @@ describe('Ben’s report "Not adjusting during workout" (build 156), reproduced'
     expect(addable?.length).toBeLessThanOrEqual(60);
   });
 });
+
+describe('Coach v3 slice 5: effort per turn and the mid-workout model (Ben 18 Oct)', () => {
+  it('a live-workout turn runs low on his mid-workout model; a general turn medium and a build high on his main model', async () => {
+    connection = { ...CONNECTED, workoutModel: { slug: 'gpt-6-mini', displayName: 'GPT-6 mini' } };
+    const { s, sessionId } = await benchThenWarmup();
+    model = new StepModel([() => replyWith('Bench looked easy.')]);
+    await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'words', text: 'How was that?', spoken: false }, turnId: h.ids() });
+    expect(model.requests.map((q) => [q.model, q.effort])).toEqual([['gpt-6-mini', 'low']]);
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('think_harder');
+    model = new StepModel([() => replyWith('Two or three times a week works.')]);
+    await say(s, 'how often should I train?', null);
+    expect(model.requests.map((q) => [q.model, q.effort])).toEqual([[CONNECTED.model?.slug, 'medium']]);
+  });
+
+  it('a build is high effort', async () => {
+    const { s } = await twoGyms();
+    model = new StepModel([shoulders({ gymName: 'Hotel gym' }), () => replyWith('Here it is.')]);
+    await say(s, BEN_HOTEL, null);
+    expect(model.requests.map((q) => q.effort)).toEqual(['high', 'high']);
+  });
+});
+
