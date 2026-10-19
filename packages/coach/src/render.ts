@@ -1,4 +1,4 @@
-import { cardioValuesText, customExerciseLine, formatDuration, formatNumber, loadText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
+import { cardioValuesText, customExerciseLine, formatDuration, formatNumber, liftTargetValueText, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
 import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
@@ -489,6 +489,17 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
         return make(status, text, speakable(text));
       }
       const text = `Not suggested: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
+    case 'set_lift_target': {
+      // (Ben, 20 Oct) The target as saved; Undo on the card.
+      if (st === 'committed') {
+        const t = d.after;
+        const text = `Lift target: ${d.exerciseName} ${liftTargetValueText(t)}${t.byDate === undefined ? '' : ` by ${localDateText(t.byDate)}`}.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Not set: your targets changed.', 'Not set. Your targets changed.');
+      const text = `Lift target not set: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
     case 'build_question': {

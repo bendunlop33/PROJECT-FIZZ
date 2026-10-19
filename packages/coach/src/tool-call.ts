@@ -75,6 +75,9 @@ export function semanticArgs(call: CoachToolCall): unknown {
       return call.args;
     case 'rename_workout':
       return { baseVersion: call.args.baseVersion, name: call.args.name.trim() };
+    case 'set_lift_target':
+      // The ask claim is explanation; the exercise (by name), kind, load, reps and date are the target.
+      return { exercise: call.args.exercise.trim().toLowerCase(), kind: call.args.kind, load: call.args.load, unit: call.args.unit, reps: call.args.reps, byDate: call.args.byDate };
     case 'edit_today':
       // Coach v3: the reason and the ask claim are explanation; the ops and the version are the change.
       return { baseVersion: call.args.baseVersion, ops: call.args.ops };
@@ -147,6 +150,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'ask_build_question':
     case 'propose_plan':
     case 'propose_exercise':
+    case 'set_lift_target':
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':

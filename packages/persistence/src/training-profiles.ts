@@ -30,6 +30,26 @@ export type TrainingProfileWrite =
   | { status: 'written' | 'replayed'; profile: TrainingProfile }
   | { status: 'stale' | 'invalid'; profile: TrainingProfile };
 
+/** The owner's profile inside a caller's transaction (null before the first write). */
+export function readTrainingProfileIn(q: SqlExecutor, ownerId: string): Promise<TrainingProfile | null> {
+  return readIn(q, ownerId);
+}
+
+/**
+ * One change inside a caller's transaction (the coach's lift target writes it with its record, rule 5):
+ * the stored row, else the defaults as version 1.
+ */
+export async function changeTrainingProfileIn(tx: SqlExecutor, ownerId: string, change: TrainingChange, w: TrainingWriteContext): Promise<TrainingProfileWrite> {
+  const current = (await readIn(tx, ownerId)) ?? newTrainingProfile({ id: trainingProfileId(ownerId), ownerId, atUtc: w.atUtc });
+  const stored = await tx.getFirst('SELECT 1 AS x FROM training_profiles WHERE owner_id = ?', [ownerId]);
+  const r = applyTrainingChange(current, change, w);
+  if (!r.ok) return { status: r.error, profile: current };
+  if (r.replayed) return { status: 'replayed', profile: r.profile };
+  const saved = await saveDocumentIn(tx, TRAINING_PROFILE_SPEC, r.profile, stored === null ? null : current.version);
+  if (!saved.ok) return { status: 'stale', profile: current };
+  return { status: 'written', profile: r.profile };
+}
+
 export class SqliteTrainingProfiles {
   constructor(private readonly db: Database) {}
 
@@ -52,15 +72,6 @@ export class SqliteTrainingProfiles {
 
   /** One change on `expectedVersion` (the version the screen showed). */
   change(ownerId: string, change: TrainingChange, w: TrainingWriteContext): Promise<TrainingProfileWrite> {
-    return this.db.write(async (tx) => {
-      const current = (await readIn(tx, ownerId)) ?? newTrainingProfile({ id: trainingProfileId(ownerId), ownerId, atUtc: w.atUtc });
-      const stored = await tx.getFirst('SELECT 1 AS x FROM training_profiles WHERE owner_id = ?', [ownerId]);
-      const r = applyTrainingChange(current, change, w);
-      if (!r.ok) return { status: r.error, profile: current };
-      if (r.replayed) return { status: 'replayed', profile: r.profile };
-      const saved = await saveDocumentIn(tx, TRAINING_PROFILE_SPEC, r.profile, stored === null ? null : current.version);
-      if (!saved.ok) return { status: 'stale', profile: current };
-      return { status: 'written', profile: r.profile };
-    });
+    return this.db.write((tx) => changeTrainingProfileIn(tx, ownerId, change, w));
   }
 }

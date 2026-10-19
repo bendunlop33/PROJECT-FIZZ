@@ -425,6 +425,8 @@ function undoWhat(target: ActionRecord): string {
       return 'the question';
     case 'propose_exercise':
       return `the new exercise ${d.fields.name}`;
+    case 'set_lift_target':
+      return `the lift target on ${d.exerciseName}`;
     case 'build_plan':
       return `version ${String(d.versionN)} of ${d.name}`;
   }

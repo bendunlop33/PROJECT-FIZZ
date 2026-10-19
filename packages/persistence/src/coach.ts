@@ -19,6 +19,7 @@ import {
   type NextSessionTargetRecord,
   type PainFlag,
   type PlaybookCandidate,
+  type TrainingChange,
 } from '@fizz/schemas';
 import { chatSetUndoCommand, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate } from '@fizz/domain';
 import type { Database } from './database';
@@ -28,6 +29,10 @@ import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId } from './sql';
 import { getWorkoutDraftIn, WORKOUT_DRAFT_SPEC } from './workout-drafts';
 import { getPlanDraftIn, PLAN_DRAFT_SPEC } from './plan-drafts';
+import { changeTrainingProfileIn, readTrainingProfileIn } from './training-profiles';
+
+/** A training-profile write from a coach record. `today` only dates weights, which these never write. */
+const profileWrite = (opId: string, expectedVersion: number, atUtc: string, today: string) => ({ opId, expectedVersion, atUtc, nowYear: Number(atUtc.slice(0, 4)), today });
 
 /**
  * Coach v1 storage (ADR 0020 §9, slice C3). Every coach write is an
@@ -94,6 +99,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'build_question':
     case 'build_plan':
     case 'propose_exercise':
+    case 'set_lift_target':
     case 'undo':
       return null;
   }
@@ -539,6 +545,12 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback(write.expectedVersion === null ? 'already_exists' : 'stale_version');
         return null;
       }
+      case 'lift_target': {
+        // (Ben, 20 Oct) The target and its record together, on the profile version the coach read (rule 5).
+        const r = await changeTrainingProfileIn(tx, ownerId, { kind: 'set_lift_target', target: write.target }, profileWrite(write.action.opId, write.expectedVersion, write.action.createdAt.utc, write.target.setOnDate));
+        if (r.status === 'stale' || r.status === 'invalid') throw new Rollback('stale_version');
+        return null;
+      }
     }
   }
 
@@ -714,6 +726,15 @@ export class SqliteCoachStore {
         // Only Ben's Apply is undoable (a proposal itself was never applied), until a workout starts from its basis.
         if (d.proposalId === undefined || d.basis === undefined) return 'unsupported';
         return (await basisStartedSince(tx, ownerId, d.basis, target.createdAt.utc)) ? 'changed_since' : 'ok';
+      }
+      case 'set_lift_target': {
+        // (Ben, 20 Oct) Only while the exercise still has the target this action set: the one before comes back, or none.
+        const p = await readTrainingProfileIn(tx, ownerId);
+        const now = p?.liftTargets?.find((t) => t.exerciseId === d.exerciseId) ?? null;
+        if (p === null || now === null || now.id !== d.after.id || now.setAtUtc !== d.after.setAtUtc) return 'changed_since';
+        const change: TrainingChange = d.before === null ? { kind: 'remove_lift_target', exerciseId: d.exerciseId } : { kind: 'set_lift_target', target: d.before };
+        const r = await changeTrainingProfileIn(tx, ownerId, change, profileWrite(`undo:${target.actionId}`, p.version, atUtc, atUtc.slice(0, 10)));
+        return r.status === 'written' || r.status === 'replayed' ? 'ok' : 'changed_since';
       }
       // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
       // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.

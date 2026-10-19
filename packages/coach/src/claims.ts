@@ -1133,6 +1133,7 @@ function factsOf(record: ActionRecord): RecordFacts {
     case 'build_question':
     case 'build_plan':
     case 'propose_exercise':
+    case 'set_lift_target':
     case 'save_memory':
     case 'suggest_memory':
     case 'forget_memory':

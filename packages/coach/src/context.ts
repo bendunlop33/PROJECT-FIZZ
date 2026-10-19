@@ -1,4 +1,4 @@
-import { ageFromBirthYear, buildExecutionOrder, deriveId, latestWeight, splitInUse, stableStringify, targetRpeOf, type MainLift } from '@fizz/domain';
+import { ageFromBirthYear, buildExecutionOrder, deriveId, latestWeight, splitInUse, stableStringify, targetRpeOf, type LiftTargetCoachView, type MainLift } from '@fizz/domain';
 import type { CheckIn, CoachMessage, CoachTarget, CoachTurnKind, Memory, PainFlag, PlaybookCandidate, SessionAggregate, SetType, SetValues, SplitBodyPart, TrainingProfile, WorkoutSet } from '@fizz/schemas';
 import playbookBundle from '../data/playbook-v1.json';
 import type { ModelInputItem } from './model-port';
@@ -118,6 +118,11 @@ export interface TrainingInput {
   nowYear: number;
   mainLifts: Readonly<Record<string, MainLift>>;
   nextDayId: string | null;
+  /**
+   * (Ben, 20 Oct) His lift targets with where he is now (the est. 1RM labelled an estimate), only
+   * while the Lift targets setting is on. Absent or empty: the coach sees none.
+   */
+  liftTargets?: readonly LiftTargetCoachView[];
 }
 
 /** What the coach sees of Ben's training details (Your data). Absent keys are not set. */
@@ -138,6 +143,8 @@ export interface TrainingDetailsView {
     days: { name: string; bodyParts: SplitBodyPart[]; mainLift: { name: string; source: 'Ben chose' | 'recommended from history' } | null }[];
     upNext: string | null;
   };
+  /** (Ben, 20 Oct) Only while Lift targets is on and he has some. */
+  liftTargets?: LiftTargetCoachView[];
 }
 
 /** The training details view and the lines for what isn't set (pure). */
@@ -167,6 +174,7 @@ export function trainingDetailsView(t: TrainingInput): { view: TrainingDetailsVi
     return { name: d.name, bodyParts: [...d.bodyParts], mainLift: m === null ? null : { name: m.name, source: m.source === 'yours' ? 'Ben chose' : 'recommended from history' } };
   });
   view.split.upNext = split.days.find((d) => d.id === t.nextDayId)?.name ?? null;
+  if (t.liftTargets !== undefined && t.liftTargets.length > 0) view.liftTargets = t.liftTargets.map((x) => JSON.parse(JSON.stringify(x)) as LiftTargetCoachView);
   return { view, notSet: notSet.map((n) => `${n}: not set`) };
 }
 
@@ -534,6 +542,7 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
     if (about.length > 0) yourData.push({ label: 'About you', detail: about.join(', ') });
     yourData.push({ label: 'Training', detail: [t.goal ?? null, t.daysPerWeek === undefined ? null : `${String(t.daysPerWeek)} days a week`, `${String(t.sessionMinutes)} min`].filter((x): x is string => x !== null).join(', ') });
     yourData.push({ label: 'Split', detail: t.split.days.map((d) => (d.mainLift === null ? d.name : `${d.name} (${d.mainLift.name})`)).join(', ') });
+    if (t.liftTargets !== undefined && t.liftTargets.length > 0) yourData.push({ label: 'Lift targets', detail: t.liftTargets.map((x) => `${x.exercise} ${x.target}`).join(', ') });
   }
   if (y.addable !== undefined) yourData.push({ label: 'Exercises you can add here', detail: plural(y.addable.length, 'exercise') });
   if (ctx.messagesSent > 0) yourData.push({ label: 'This conversation', detail: `last ${plural(ctx.messagesSent, 'message')}` });

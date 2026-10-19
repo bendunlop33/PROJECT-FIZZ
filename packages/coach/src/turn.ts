@@ -36,6 +36,7 @@ import { verifyAsked, type AskClaim, type AskVerdict } from './intent';
 import { editOfferIn } from './edit-today';
 import { addedContinuationOf } from './find-exercises';
 import { collectFacts, type FactText, type NumberFacts } from './numbers';
+import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked } from './lift-target';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -156,6 +157,8 @@ export interface CoachTurnRequest {
    * shorter", "only 3 days") make its next version (`propose_plan`), never a one-session build.
    */
   planInContext?: boolean;
+  /** (Ben, 20 Oct) The Lift targets setting is on: `set_lift_target` may be offered. Absent: never. */
+  liftTargetsOn?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -641,7 +644,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // At most 2 questions per build request, none in a draft revision, none after Skip (BD17).
   const questionOpen = chain !== null && req.draftInContext !== true && !chain.skipped && chain.asked < MAX_BUILD_QUESTIONS && (askedBuild || chain.open !== null);
   const askInput: BenInput = continued !== null && req.input.kind === 'words' ? { ...req.input, text: continued.text } : req.input;
-  const gate = gateFor({
+  const gated = gateFor({
     kind: req.kind,
     input: askInput,
     previousOffer,
@@ -654,6 +657,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(req.planInContext === true ? { planInContext: true } : {}),
     ...(planFollowUp ? { planFollowUp: true } : {}),
   });
+  const gate = req.liftTargetsOn === true ? { ...gated, liftTargetsOn: true } : gated;
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
   const turn: CoachTurn = {
@@ -731,7 +735,9 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const questionOffered = registry.tools.some((t) => t.name === 'ask_build_question');
   const questionLines = [...(questionOffered ? [QUESTION_RULES] : []), ...(chain?.skipped === true ? [SKIPPED_LINE] : chain?.open !== null && chain?.open !== undefined ? [ANSWERED_LINE] : [])];
   const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
-  const findLine = registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '';
+  // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
+  const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
+  const findLine = (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
@@ -954,6 +960,12 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       continue;
     }
     const setsOnly = setsOnlyOf(parsed.call);
+    // (Ben, 20 Oct) A lift target is set only when Ben asked; otherwise nothing is saved and the coach asks him.
+    if (parsed.call.tool === 'set_lift_target' && !liftTargetAsked(askInput.kind === 'words' ? askInput.text : words, askClaimOf(parsed.call.args))) {
+      logLine({ tool: parsed.call.tool, outcome: 'not_allowed', text: 'Not set: Ben didn’t ask.', actionId: null });
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: LIFT_TARGET_NOT_ASKED_LINE }) });
+      continue;
+    }
     const asked = !TODAY_TOOLS.has(parsed.call.tool) || (!(confirmAgain && parsed.call.tool === 'edit_today') && todayAskVerdict(parsed.call.tool, gate, askInput.kind === 'words' ? askInput.text : words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork, ...(setsOnly === undefined ? {} : { setsOnly }) }).asked);
     // Coach v3: an edit Ben didn't ask for is checked and saved as an offer (exactly what would apply), never applied.
     const proposer = !asked && parsed.call.tool === 'edit_today' && liveWorkout ? ports.executors.edit_today : undefined;

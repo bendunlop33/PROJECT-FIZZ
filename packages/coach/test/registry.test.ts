@@ -78,7 +78,9 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
 
   it('no versioned update can write a finished session; a logged set only on Ben’s request, in the workout (11 Oct)', () => {
     for (const t of COACH_TOOLS.filter((x) => x.effect === 'versioned_update')) {
-      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name']).toContain(w);
+      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'lift_target']).toContain(w);
+      // (Ben, 20 Oct) A lift target on his profile: only set_lift_target, never a workout's sets.
+      if (t.writes.includes('lift_target')) expect([t.name, t.writes]).toEqual(['set_lift_target', ['lift_target']]);
       // (14 Oct) The live workout's name: only rename_workout, gated, only in the workout.
       if (t.writes.includes('session_name')) expect([t.name, t.needs, t.turnKinds]).toEqual(['rename_workout', 'ben_request', ['workout']]);
       if (t.writes.includes('logged_set')) {
@@ -380,6 +382,22 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
   });
 });
 
+describe('set_lift_target (Ben, 20 Oct)', () => {
+  it('is withheld while Lift targets is off, on every turn kind', () => {
+    for (const kind of ['general', 'workout', 'summary'] as const) {
+      const r = buildTurnRegistry({ ...gate(), kind });
+      expect(r.tools.map((t) => t.name)).not.toContain('set_lift_target');
+    }
+    expect(buildTurnRegistry(gate()).withheld).toContainEqual({ name: 'set_lift_target', reason: 'setting_off' });
+  });
+
+  it('is offered on general and workout turns while it is on (code decides whether Ben asked), never in the summary', () => {
+    expect(names({ ...gate(), liftTargetsOn: true })).toContain('set_lift_target');
+    expect(buildTurnRegistry({ ...gate(), kind: 'workout', liftTargetsOn: true }).tools.map((t) => t.name)).toContain('set_lift_target');
+    expect(buildTurnRegistry({ ...gate(), kind: 'summary', liftTargetsOn: true }).tools.map((t) => t.name)).not.toContain('set_lift_target');
+  });
+});
+
 describe('listCoachCapabilities (check 11)', () => {
   it('matches the registry (snapshot)', () => {
     expect(listCoachCapabilities()).toMatchInlineSnapshot(`
@@ -398,6 +416,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Build a workout you ask for, as a draft you open, start or save",
               "Ask one quick question before building a workout, when it helps",
               "Build a multi-day plan you ask for, as a proposal you apply or undo",
+              "Set a lift target you ask for, with Undo",
               "Add a general training rule to your playbook to review",
             ],
             "section": "when_you_ask",
