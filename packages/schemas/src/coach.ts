@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   IdSchema,
+  LoadConventionSchema,
   LoadSchema,
   OperationIdSchema,
   RecordMetaSchema,
@@ -12,7 +13,7 @@ import {
 import { PainAreaSchema, type PainFlag } from './checkin';
 import { DraftBasisSchema } from './draft';
 import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
-import type { Exercise } from './exercise';
+import { CustomExerciseFieldsSchema, EquipmentKindSchema, LateralitySchema, MeasurementSchema, MuscleSchema, type Exercise } from './exercise';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
@@ -76,6 +77,8 @@ export const CoachEntityKindSchema = z.enum([
   'build_question',
   /** (19 Oct, plans) A coach-built multi-day plan: a proposal Ben applies; never a routine or the rotation directly. */
   'plan_draft',
+  /** (19 Oct) A new exercise for Ben's list: a proposal card; saved only when he taps Add (rule 3). */
+  'custom_exercise',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -174,6 +177,22 @@ export const FindExercisesArgsSchema = z.strictObject({
   equipment: z.string().max(40).nullable(),
 });
 export type FindExercisesArgs = z.infer<typeof FindExercisesArgsSchema>;
+
+/**
+ * (19 Oct, Ben: "Why can't the chat function make exercises not in the catalogue") A new exercise for
+ * Ben's list, only after find_exercises found nothing like it. A card he checks: nothing is saved until
+ * he taps Add. loadConvention null: the equipment's usual one; laterality null: both sides together.
+ */
+export const ProposeExerciseArgsSchema = z.strictObject({
+  name: z.string().min(1).max(80),
+  equipment: EquipmentKindSchema,
+  loadConvention: LoadConventionSchema.nullable(),
+  primaryMuscles: z.array(MuscleSchema).min(1).max(3),
+  measurement: MeasurementSchema,
+  laterality: LateralitySchema.nullable(),
+  reason,
+});
+export type ProposeExerciseArgs = z.infer<typeof ProposeExerciseArgsSchema>;
 
 /**
  * (11 Oct, coach tools) Log a pending set with the values Ben said in this
@@ -427,6 +446,8 @@ export const CoachToolNameSchema = z.enum([
   'ask_build_question',
   /** (19 Oct) A multi-day plan Ben asked for: every day at once, as a proposal he applies. */
   'propose_plan',
+  /** (19 Oct) A new exercise for Ben's list, as a card he adds or edits. */
+  'propose_exercise',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -459,6 +480,7 @@ export const COACH_TOOL_ARGS = {
   propose_workout: ProposeWorkoutArgsSchema,
   ask_build_question: AskBuildQuestionArgsSchema,
   propose_plan: ProposePlanArgsSchema,
+  propose_exercise: ProposeExerciseArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -822,6 +844,17 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     name: z.string().min(1).max(120),
     days: z.array(z.object({ name: z.string().min(1).max(30), exerciseCount: z.int().min(0).max(40), leftOut: z.int().min(0).max(40) })).max(7),
     gymName: z.string().min(1).max(120).nullable(),
+  }),
+  /**
+   * (19 Oct) The coach proposed a new exercise for Ben's list. `proposed` until he acts: Add saves it
+   * as `exerciseId` (one exercise per card, so a double tap saves once); Edit opens the form with
+   * these fields. Checked fields only (a convention that fits the equipment); the card reads the
+   * exercise row for whether it was added.
+   */
+  z.object({
+    kind: z.literal('propose_exercise'),
+    exerciseId: IdSchema,
+    fields: CustomExerciseFieldsSchema,
   }),
   z.object({
     kind: z.literal('undo'),

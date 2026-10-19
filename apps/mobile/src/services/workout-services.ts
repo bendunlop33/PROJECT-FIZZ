@@ -243,6 +243,7 @@ import {
   editRoutine,
   planRoutineStart,
   planSettingsOfRoutine,
+  isArchivedExercise,
   isDeleted,
   rotationRoutines,
   routineChangeLines,
@@ -2920,7 +2921,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const aggregate = await repos().sessions.get(sessionId);
       const p = await ctx.profile();
       // Timed exercises (planks, hangs) are loggable with a work timer (§2.7).
-      const saved = (await repos().exercises.list()).filter((e) => PICKER_MEASUREMENTS.has(e.measurement) && (e.ownerId === null || e.ownerId === p?.id));
+      // (19 Oct) A deleted custom exercise isn't offered (its history keeps it).
+      const saved = (await repos().exercises.list()).filter((e) => PICKER_MEASUREMENTS.has(e.measurement) && (e.ownerId === null || e.ownerId === p?.id) && !isArchivedExercise(e));
       const have = new Set(saved.map((e) => e.id));
       const extra = opts.withCatalogue && ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id) && PICKER_MEASUREMENTS.has(e.measurement)) : [];
       const all = [...saved, ...extra];
@@ -3018,7 +3020,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (slot === null || !row || planned === null) return null;
         const inWorkout = new Set(aggregate.exercises.filter((e) => e.removed === undefined).map((e) => e.exerciseId));
         const all = new Map<string, Exercise>();
-        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) all.set(e.id, e);
+        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) if (!isArchivedExercise(e)) all.set(e.id, e);
         for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);
         const subs = planned.catalogueKey ? (ctx.catalogueSubstitutions?.(planned.catalogueKey) ?? []) : [];
         const keys = new Set(subs.filter((k): k is string => k !== null));
@@ -3431,7 +3433,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     /** The editor's `Add exercise` list: Ben's exercises and the catalogue's, searched by name, aliases and Ben's own names (EL1). */
     async searchExercises(query: string): Promise<EditorExerciseInfo[]> {
       const p = await ctx.profile();
-      const saved = (await repos().exercises.list()).filter((e) => e.ownerId === null || e.ownerId === p?.id);
+      const saved = (await repos().exercises.list()).filter((e) => (e.ownerId === null || e.ownerId === p?.id) && !isArchivedExercise(e));
       const have = new Set(saved.map((e) => e.id));
       const all = [...saved, ...(ctx.catalogueExercises ? ctx.catalogueExercises().filter((e) => !have.has(e.id)) : [])];
       const aliasesOf = await aliasIndex(p);
@@ -4614,7 +4616,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         // Today's exercises (after swaps): one swapped away today can be added back (review N3).
         const inPlan = new Set(editedSlots(base, resolveTodayEdits(base, t.input.edits)).map((x) => x.exerciseId));
         const all = new Map<string, Exercise>();
-        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) all.set(e.id, e);
+        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) if (!isArchivedExercise(e)) all.set(e.id, e);
         for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);
         const sctx = await substituteCtx(p, gymId, gymEquipment, planCheckIn, []);
         const histories = new Map<string, HistorySession[]>();
@@ -4709,7 +4711,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const inPlan = new Set([...base.map((b) => b.exerciseId), ...editedSlots(base, resolvedEdits).map((x) => x.exerciseId)]);
         // Candidates: Ben's exercises and the catalogue's, once each.
         const all = new Map<string, Exercise>();
-        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) all.set(e.id, e);
+        for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) if (!isArchivedExercise(e)) all.set(e.id, e);
         for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);
         const subs = planned.catalogueKey ? (ctx.catalogueSubstitutions?.(planned.catalogueKey) ?? []) : [];
         const keys = new Set(subs.filter((k): k is string => k !== null));

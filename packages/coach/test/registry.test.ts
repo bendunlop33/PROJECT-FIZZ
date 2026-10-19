@@ -98,7 +98,7 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
 
 describe('buildTurnRegistry (CC10, summary closed list)', () => {
   it('a plain question gets the reads only, plus memory suggestions (which change nothing until Ben taps Save)', () => {
-    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_exercise_records', 'get_recent_sessions', 'get_progression_targets', 'get_substitutions', 'find_exercises', 'get_recent_actions', 'suggest_memory']);
+    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_exercise_records', 'get_recent_sessions', 'get_progression_targets', 'get_substitutions', 'find_exercises', 'propose_exercise', 'get_recent_actions', 'suggest_memory']);
   });
 
   it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {
@@ -175,8 +175,8 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
   it('a remark during a workout opens no write tool, so the coach can only offer (rule 3, review r2 B2)', () => {
     for (const remark of ['set 2 felt good', 'Set 3 was fine', 'Plan looks good', 'Remember when I did 100 for 8?']) {
       const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(remark) }));
-      // A memory suggestion is only a card with Save (CM2); nothing else that writes is offered.
-      expect(r.tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory').map((t) => t.name)).toEqual([]);
+      // A memory suggestion is only a card with Save (CM2), a new exercise only a card with Add (19 Oct); nothing else that writes is offered.
+      expect(r.tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory' && t.name !== 'propose_exercise').map((t) => t.name)).toEqual([]);
       expect(r.withheld).toContainEqual({ name: 'edit_today', reason: 'needs_request' });
     }
     expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('remember that I train before work') }))).not.toContain('edit_today');
@@ -412,6 +412,7 @@ describe('listCoachCapabilities (check 11)', () => {
           },
           {
             "rows": [
+              "Suggest a new exercise for your list (added only if you tap Add)",
               "Swapping, adding, removing or reordering exercises in your next workout",
               "Suggest something to remember (saved only if you tap Save)",
             ],

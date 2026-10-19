@@ -35,7 +35,7 @@ import {
   undoCoachAction,
   undoOpId,
   createTrainingReadExecutors,
-  createFindExercisesExecutor,
+  createExerciseListExecutors,
   createStructuralExecutors,
   createBuildExecutor,
   createPlanExecutor,
@@ -67,6 +67,7 @@ import {
   type BuildFollowUp,
   type AddableExercise,
   type BuildContextView,
+  type ExerciseListDeps,
   structuralTapRecord,
   memoryContentKey,
   newActionRecord,
@@ -159,6 +160,11 @@ import {
   toHistorySessions,
   workoutMuscleGroups,
   type FindableExercise,
+  customExerciseIdOf,
+  customExerciseLine,
+  customFieldsOf,
+  exerciseNameClash,
+  isArchivedExercise,
   type LoadReferences,
   type CoachTrigger,
   type OfferLogEntry,
@@ -169,6 +175,7 @@ import type { CandidateWrite, MemoryWrite, SqliteRepositories, Store } from '@fi
 import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
 
 import { summaryNoteSentences } from './next-time-view';
+import type { CustomWrite } from '../services/custom-exercises';
 import type { TextCoachState } from '@fizz/providers';
 import { muscleGroupOf } from '@fizz/schemas';
 import type {
@@ -193,6 +200,7 @@ import type {
   CoachThread,
   CoachTurn,
   CoachTurnKind,
+  CustomExerciseFields,
   NextSessionTargetRecord,
   PlannedSet,
   ProgressPeriodKey,
@@ -201,6 +209,16 @@ import type {
   UserProfile,
   ZonedTimestamp,
 } from '@fizz/schemas';
+
+/** (19 Oct) The coach's new-exercise card as the sheet shows it. */
+export interface ExerciseProposalCard {
+  actionId: string;
+  exerciseId: string;
+  fields: CustomExerciseFields;
+  /** `Meadows row · Barbell · total load · Back, Biceps · reps` */
+  line: string;
+  state: 'open' | 'added' | 'deleted';
+}
 
 /** Where the sheet was opened from (coach-sheet §1). */
 export type CoachEntry =
@@ -344,6 +362,8 @@ export interface CoachServiceDeps {
   /** The bundled exercise catalogue (Coaching knowledge), for swap options and names. */
   catalogueExercises?: () => readonly Exercise[];
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
+  /** (19 Oct) Add on the coach's new-exercise card: Ben's own write (custom exercises). Absent: `propose_exercise` isn't offered. */
+  createCustomExercise?: (req: { fields: CustomExerciseFields; opId: string; proposalActionId: string }) => Promise<CustomWrite>;
   /** (19 Oct) A catalogue entry's other names (Coaching knowledge), for `find_exercises`. */
   catalogueAliases?: (catalogueKey: string) => readonly string[];
   /** The typical gym's items when Ben has no gym yet (workout-builder §4.1 `⚠ No gym`): what Start would save. */
@@ -395,6 +415,8 @@ export interface ThreadData {
   proposals?: Map<string, ProposalCardState>;
   /** Memory suggestions in this thread, by action ID. */
   memories?: Map<string, MemoryCardState>;
+  /** (19 Oct) New-exercise cards in this thread, by action ID: open, added or deleted since. */
+  exerciseProposals?: Map<string, ExerciseProposalCard['state']>;
 }
 
 const GENERAL_REUSE_MS = 6 * 60 * 60 * 1000;
@@ -509,7 +531,14 @@ export function createCoachService(deps: CoachServiceDeps) {
         memories.set(a.actionId, { memory: m, canSave: memoryCanBeSaved(m, all, nowUtc), ...(state !== undefined ? { playbook: state } : {}) });
       }
     }
-    return { thread, messages, turns, actionsByTurn, proposals, memories };
+    // (19 Oct) New-exercise cards: whether Ben added it (the exercise row exists) or deleted it since.
+    const exerciseProposals = new Map<string, ExerciseProposalCard['state']>();
+    for (const a of [...actionsByTurn.values()].flat()) {
+      if (a.detail.kind !== 'propose_exercise' || a.status !== 'proposed') continue;
+      const e = await repos().exercises.get(a.detail.exerciseId).catch(() => null);
+      exerciseProposals.set(a.actionId, e === null || e.ownerId !== thread.ownerId ? 'open' : isArchivedExercise(e) ? 'deleted' : 'added');
+    }
+    return { thread, messages, turns, actionsByTurn, proposals, memories, exerciseProposals };
   }
 
   /**
@@ -935,7 +964,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const inWorkout = movementMatcher(pool, session.exercises.filter((e) => e.removed === undefined));
     const flagged = movementMatcher(pool, flags.filter((f) => f.status === 'active'));
     return pool
-      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && e.measurement !== 'distance' && !inWorkout(e) && !flagged(e) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
+      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) && e.measurement !== 'distance' && !inWorkout(e) && !flagged(e) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((e) => ({ exerciseId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
   }
@@ -943,6 +972,27 @@ export function createCoachService(deps: CoachServiceDeps) {
   /** `find_exercises`' pool: the IDs the coach uses (catalogue key, else Ben's ID), with catalogue aliases. */
   function findablePool(list: readonly Exercise[]): FindableExercise[] {
     return list.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, exercise: e, aliases: e.catalogueKey ? (deps.catalogueAliases?.(e.catalogueKey) ?? []) : [] }));
+  }
+
+  /**
+   * (19 Oct) `propose_exercise`'s checks: a name already in Ben's list (catalogue or his own, not
+   * deleted, at any gym) is refused with the one to use; Add saves the card's exercise under an ID
+   * from the card.
+   */
+  function proposeDeps(p: UserProfile, pool: readonly Exercise[]): ExerciseListDeps['propose'] {
+    if (deps.createCustomExercise === undefined) return undefined;
+    const mine = pool.filter((e) => e.ownerId === null || e.ownerId === p.id);
+    return {
+      store: coachStore(),
+      clash: (name) => {
+        const hit = exerciseNameClash(
+          name,
+          mine.map((e) => ({ id: e.id, name: e.name, aliases: e.catalogueKey ? (deps.catalogueAliases?.(e.catalogueKey) ?? []) : [], source: e.source, archived: isArchivedExercise(e), e })),
+        );
+        return Promise.resolve(hit === null ? null : { catalogueId: hit.e.catalogueKey ?? hit.e.id, name: hit.e.name });
+      },
+      exerciseIdFor: (ownerId, actionId) => customExerciseIdOf(ownerId, { proposalActionId: actionId }),
+    };
   }
 
   /** Ben's exercises and the catalogue's (Coaching knowledge), by ID: what a catalogue key can resolve to. */
@@ -1003,7 +1053,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const flagged = (id: string) => painFlagCovering(flags, id, nowMs, at.tz) !== null;
     const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]));
     const keyOf = (id: string): string => byId.get(id)?.catalogueKey ?? id;
-    const doable = pool.filter((e) => e.measurement !== 'distance' && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
+    const doable = pool.filter((e) => e.measurement !== 'distance' && !isArchivedExercise(e) && (e.ownerId === null || e.ownerId === p.id) && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
     // Review r5 S2: a capped list keeps what Ben named and what fits the focus ahead of the alphabetical fill.
     // (19 Oct, Ben: "Why can't I add it") Ranked by this build's words back to its request, not only the
     // newest ("Try now" names nothing): what he named two messages ago stays in the capped list.
@@ -1021,7 +1071,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
     const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
     // The cap is for prompt size only: `find_exercises` searches the whole doable list, which the checks accept.
-    const findExecutors = createFindExercisesExecutor(() => Promise.resolve(findablePool(doable)));
+    const proposeHere = proposeDeps(p, pool);
+    const findExecutors = createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(doable)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) });
     const split = splitInUse(training?.profile ?? null);
     const dayObj = day !== null ? (split.days.find((d) => d.name === day.name) ?? null) : (split.days.find((d) => d.id === focus) ?? null);
     const ownMain = dayObj === null ? null : (training?.mainLifts[dayObj.id] ?? null);
@@ -1318,7 +1369,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (allAddable !== null && session !== null) {
       const ids = new Set(allAddable.map((a) => a.exerciseId));
       const pool = (await exercisePool()).filter((e) => ids.has(e.catalogueKey ?? e.id));
-      Object.assign(executors, createFindExercisesExecutor(() => Promise.resolve(findablePool(pool))));
+      const proposeHere = proposeDeps(p, await exercisePool());
+      Object.assign(executors, createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(pool)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) }));
     }
     const stop = new AbortController();
     running.set(req.turnId, stop);
@@ -1422,6 +1474,37 @@ export function createCoachService(deps: CoachServiceDeps) {
       if (!r.ok && r.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
       else if (r.ok) lastNetworkFailureMs = null;
       return r;
+    },
+
+    /**
+     * (19 Oct) The coach's new-exercise card: its fields, and whether Ben added it (the exercise row
+     * exists; `deleted` once he deleted it since). Null: no such proposal.
+     */
+    async exerciseProposal(actionId: string): Promise<ExerciseProposalCard | null> {
+      const p = await owner();
+      const a = await coachStore().getAction(actionId).catch(() => null);
+      if (a === null || a.detail.kind !== 'propose_exercise' || a.status !== 'proposed') return null;
+      const e = await repos().exercises.get(a.detail.exerciseId).catch(() => null);
+      const mine = e !== null && e.ownerId === p.id ? e : null;
+      return {
+        actionId,
+        exerciseId: a.detail.exerciseId,
+        fields: mine === null ? a.detail.fields : customFieldsOf(mine),
+        line: customExerciseLine(mine === null ? a.detail.fields : customFieldsOf(mine)),
+        state: mine === null ? 'open' : isArchivedExercise(mine) ? 'deleted' : 'added',
+      };
+    },
+
+    /**
+     * Add on the coach's new-exercise card (rule 3: only now is it saved), or Save from its Edit with
+     * Ben's `fields`. One exercise per card: a double tap saves once. A name already in his list is
+     * refused with that exercise. The sheet then sends `Added <name>.` as Ben's message, so the coach
+     * carries on with what he asked.
+     */
+    async addProposedExercise(req: { actionId: string; opId: string; fields?: CustomExerciseFields }): Promise<CustomWrite> {
+      const a = await coachStore().getAction(req.actionId).catch(() => null);
+      if (a === null || a.detail.kind !== 'propose_exercise' || a.status !== 'proposed' || deps.createCustomExercise === undefined) return { ok: false, reason: 'missing', message: 'Not found.' };
+      return deps.createCustomExercise({ fields: req.fields ?? a.detail.fields, opId: req.opId, proposalActionId: req.actionId });
     },
 
     /** Stop (coach-sheet §3): cancels the request; anything already committed stays with its card. */

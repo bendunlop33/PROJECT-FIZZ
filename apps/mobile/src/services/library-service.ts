@@ -8,6 +8,7 @@ import {
   equipmentForExercise,
   EXERCISE_EQUIPMENT_WORD,
   gymAvailability,
+  isArchivedExercise,
   isDeleted,
   isInRotation,
   lastActualByExercise,
@@ -92,6 +93,8 @@ export interface LibraryDetail {
   mayHurt: ReturnType<typeof mayHurtConfirm> | null;
   /** The Add sheet's starting shape (§10.1). */
   defaultShape: SlotShapeInput;
+  /** (19 Oct) Ben's own exercise, not deleted: `Edit` opens its form. */
+  editable: boolean;
   /** `Target RPE` / `Target RIR`; null hides the row (effort scale off). */
   effortScale: 'rpe' | 'rir' | null;
   resume: ResumeBar | null;
@@ -150,7 +153,8 @@ export function createLibraryService(deps: LibraryServiceDeps) {
   async function allExercises(p: UserProfile): Promise<Exercise[]> {
     const saved = (await repos().exercises.list().catch(() => [] as Exercise[])).filter((e) => e.ownerId === null || e.ownerId === p.id);
     const have = new Set(saved.map((e) => e.id));
-    return [...saved, ...deps.catalogueExercises().filter((e) => !have.has(e.id))];
+    // (19 Oct) A deleted custom exercise leaves the list; its history keeps it (and its catalogue twin, if any, doesn't come back).
+    return [...saved.filter((e) => !isArchivedExercise(e)), ...deps.catalogueExercises().filter((e) => !have.has(e.id))];
   }
 
   async function aliasIndex(p: UserProfile): Promise<(e: Exercise) => string[]> {
@@ -271,6 +275,7 @@ export function createLibraryService(deps: LibraryServiceDeps) {
           progress: progress === null ? null : { exerciseId: exercise.id, seriesId: progress.seriesId },
           mayHurt: covering === null ? null : mayHurtConfirm({ ...covering.flag, exerciseName: exercise.name }),
           defaultShape: defaultSlotShape(exercise),
+          editable: exercise.source === 'custom' && exercise.ownerId === p.id && !isArchivedExercise(exercise),
           effortScale: p.effortScale === 'off' ? null : p.effortScale,
           resume: hist?.resume ?? null,
         };

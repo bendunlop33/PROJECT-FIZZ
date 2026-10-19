@@ -158,6 +158,19 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Search every exercise Ben can do at this gym (his own and the catalogue’s, not pain-flagged), not only the shortened list in YOUR DATA: query by name or other name ("seated calf raise"), optional muscle ("calves") and equipment ("plate loaded"). Returns up to 20 with the IDs to use in propose_workout, propose_plan or edit_today add. Call it whenever Ben names an exercise that is not in build.usable or addable, before saying it is unavailable.',
   },
   {
+    // (19 Oct, Ben: "Why can't the chat function make exercises not in the catalogue") A card he checks; rule 3.
+    name: 'propose_exercise',
+    effect: 'propose',
+    writes: ['custom_exercise'],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Suggest a new exercise for your list (added only if you tap Add)',
+    capabilitySection: 'suggest_only',
+    description:
+      'Suggest a new exercise for Ben\'s own list when he wants one that is not in it (find_exercises found nothing like it; never a duplicate under another name). Give its usual name, one equipment kind, loadConvention (null: the equipment\'s usual one; plate-loaded machines are added, dumbbells per_hand, cable or stack machines stack, assisted machines assistance), 1–3 main muscles, how it is measured (reps, duration, distance or cardio) and laterality (unilateral when done one side at a time; null otherwise). Ben sees a card and taps Add or Edit; nothing is added until he does. After he adds it, his next message says so: then use it for what he asked.',
+  },
+  {
     name: 'get_recent_actions',
     effect: 'read',
     writes: [],
