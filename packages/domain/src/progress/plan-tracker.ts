@@ -3,6 +3,7 @@ import { addDays, localDateOf, localWeekBounds } from '../calendar';
 import { formatDuration, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
 import { toMs } from '../time';
+import { partRootOf } from '../session/gym-switch';
 
 /**
  * The plan tracker, first version (Ben, 19 Oct: "an option to check
@@ -290,6 +291,8 @@ export const TARGETS_HIT_WINDOW = 6;
 
 export interface ExerciseTargetRow {
   sessionId: string;
+  /** The row (its first part after a gym switch): one entry per copy when the exercise was done twice (review S1). */
+  sessionExerciseId: string;
   startedAtUtc: string;
   tz: string;
   /** `3 × 8–10`; null with no target that day. */
@@ -310,7 +313,7 @@ export interface ExerciseTargetHistory {
 
 /**
  * One exercise's target against actual per finished workout (newest
- * first), from the sets as planned and logged. A workout with no plan for
+ * first; one row per copy when it was done twice that day), from the sets as planned and logged. A workout with no plan for
  * it (a FitNotes import, an exercise added with no target) shows what was
  * done with no verdict and doesn't count.
  */
@@ -318,27 +321,33 @@ export function exerciseTargetHistory(sessions: readonly Pick<SessionAggregate, 
   const newest = [...sessions].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
   const rows: ExerciseTargetRow[] = [];
   for (const a of newest) {
-    const parts = a.exercises.filter((e) => e.exerciseId === exerciseId && e.removed === undefined).sort((x, y) => x.order - y.order);
-    if (parts.length === 0) continue;
-    const planRows = parts.map((p) => exercisePlanRow(p, a.sets)).filter((r): r is PlannedVsDoneRow => r !== null);
-    const done = parts.flatMap((p) =>
-      a.sets
-        .filter((s) => s.sessionExerciseId === p.id && isWorking(s) && s.status === 'completed' && s.actual !== null)
-        .sort((x, y) => x.index - y.index)
-        .map((s) => doneText(s, p))
-        .filter((t): t is string => t !== null),
-    );
-    if (done.length === 0 && planRows.length === 0) continue;
-    const planned = planRows.reduce((n, r) => n + r.plannedSets, 0);
-    const first = planRows[0];
-    rows.push({
-      sessionId: a.session.id,
-      startedAtUtc: a.session.startedAt.utc,
-      tz: a.session.startedAt.tz,
-      target: first === undefined ? null : `${String(planned)} × ${first.target ?? '—'}`,
-      actual: done.length === 0 ? '—' : done.join(', '),
-      verdict: planRows.length === 0 ? null : combine(planRows.map((r) => r.verdict), false),
-    });
+    const live = a.exercises.filter((e) => e.exerciseId === exerciseId && e.removed === undefined).sort((x, y) => x.order - y.order);
+    // (Review S1) Each copy of the exercise (the same one twice, 19 Oct) is its own row; parts of
+    // one exercise split across gyms stay one row.
+    const roots = live.filter((e) => partRootOf(a.exercises, e.id) === e.id);
+    for (const root of roots) {
+      const parts = live.filter((e) => partRootOf(a.exercises, e.id) === root.id);
+      const planRows = parts.map((p) => exercisePlanRow(p, a.sets)).filter((r): r is PlannedVsDoneRow => r !== null);
+      const done = parts.flatMap((p) =>
+        a.sets
+          .filter((s) => s.sessionExerciseId === p.id && isWorking(s) && s.status === 'completed' && s.actual !== null)
+          .sort((x, y) => x.index - y.index)
+          .map((s) => doneText(s, p))
+          .filter((t): t is string => t !== null),
+      );
+      if (done.length === 0 && planRows.length === 0) continue;
+      const planned = planRows.reduce((n, r) => n + r.plannedSets, 0);
+      const first = planRows[0];
+      rows.push({
+        sessionId: a.session.id,
+        sessionExerciseId: root.id,
+        startedAtUtc: a.session.startedAt.utc,
+        tz: a.session.startedAt.tz,
+        target: first === undefined ? null : `${String(planned)} × ${first.target ?? '—'}`,
+        actual: done.length === 0 ? '—' : done.join(', '),
+        verdict: planRows.length === 0 ? null : combine(planRows.map((r) => r.verdict), false),
+      });
+    }
     if (rows.length >= limit) break;
   }
   const judged = rows.filter((r) => r.verdict !== null).slice(0, TARGETS_HIT_WINDOW);

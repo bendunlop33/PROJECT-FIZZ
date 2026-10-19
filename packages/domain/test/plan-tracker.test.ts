@@ -233,4 +233,26 @@ describe('exerciseTargetHistory: target vs actual per session, targets hit (prop
     expect(exerciseTargetHistory([workout(208, 2, [8], false)], id(1010)).hitText).toBeNull();
     expect(exerciseTargetHistory(sessions, id(999)).rows).toEqual([]);
   });
+
+  it('review S1: the same exercise twice (weighted 3 × 12 and a 0 kg copy 3 × 20) is one row per copy, never merged; parts after a gym switch stay one row', () => {
+    const main = ex(10, 'Seated calf raise', { id: id(301), exerciseId: id(1010), loadConvention: 'added' });
+    const copy = ex(11, 'Seated calf raise', { id: id(302), exerciseId: id(1010), loadConvention: 'added', order: 11 });
+    const part = ex(12, 'Seated calf raise', { id: id(303), exerciseId: id(1010), loadConvention: 'added', order: 12, continuesFromId: id(301) });
+    const w = (load: number) => ({ value: load, unit: 'kg' as const, convention: 'added' as const });
+    const a: Pick<SessionAggregate, 'session' | 'exercises' | 'sets'> = {
+      session: { id: id(300), startedAt: { utc: '2026-10-08T06:00:00.000Z', tz: TZ } } as SessionAggregate['session'],
+      exercises: [main, copy, part],
+      sets: [
+        ...[0, 1].map((i) => set(main, i, { load: w(40), reps: [12, 12] }, { load: w(40), reps: 12 })),
+        set(part, 0, { load: w(40), reps: [12, 12] }, { load: w(40), reps: 12 }),
+        ...[0, 1, 2].map((i) => set(copy, i, { load: w(0), reps: [20, 20] }, { load: w(0), reps: 20 })),
+      ],
+    };
+    const h = exerciseTargetHistory([a], id(1010));
+    expect(h.rows.map((r) => [r.sessionExerciseId, r.target, r.verdict])).toEqual([
+      [id(301), '3 × 12', 'hit'],
+      [id(302), '3 × 20', 'hit'],
+    ]);
+    expect(h.rows.every((r) => r.sessionId === id(300))).toBe(true);
+  });
 });
