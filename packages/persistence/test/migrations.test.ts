@@ -30,6 +30,7 @@ const TABLES = [
   'next_session_targets',
   'next_target_uses',
   'pain_flags',
+  'plan_drafts',
   'playbook_candidates',
   'pre_start_drafts',
   'processed_operations',
