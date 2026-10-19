@@ -8,6 +8,7 @@ import type { Routine } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { popToTabs } from '../../navigation/actions';
+import { PLAN_COPY } from '../../services/plan-services';
 import type { EditorFrom, LibraryToastParam } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
@@ -62,8 +63,15 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
   const busy = useRef(false);
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym().catch(() => null);
-    const [library, plan] = await Promise.all([s.routines.library({ gymId: gym?.id ?? null, sort, showAllHistory: showAll }), s.plans.overview().catch(() => null)]);
-    return { gym, library, plan };
+    // Review planview S5: a failed read is said, never shown as no plan.
+    const [library, planRead] = await Promise.all([
+      s.routines.library({ gymId: gym?.id ?? null, sort, showAllHistory: showAll }),
+      s.plans.overview().then(
+        (v) => ({ plan: v, planFailed: false }),
+        () => ({ plan: null, planFailed: true }),
+      ),
+    ]);
+    return { gym, library, ...planRead };
   });
   useEffect(() => {
     reload();
@@ -263,6 +271,7 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
     return (
       <View style={{ gap: theme.space['5'] }}>
         {plan !== null ? <YourPlanBlock plan={plan} onToast={setToast} /> : null}
+        {data.value.planFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_COPY.loadFailed} action={<TextButton label="Try again" onPress={reload} />} /> : null}
         {active ? (
           <Banner
             severity="info"
