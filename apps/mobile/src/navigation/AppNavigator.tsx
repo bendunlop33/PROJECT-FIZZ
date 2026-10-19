@@ -51,6 +51,7 @@ import { PlaybookScreen } from '../screens/profile/PlaybookScreen';
 import { PainFlagSheet } from '../screens/workout/PainFlagSheet';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ExerciseInfoScreen } from '../screens/library/ExerciseInfoScreen';
+import { PlanDayScreen } from '../screens/library/PlanDayScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { ExerciseDetailScreen } from '../screens/progress/ExerciseDetailScreen';
 import { MusclesScreen } from '../screens/progress/MusclesScreen';
@@ -146,13 +147,15 @@ function ProgressNavigator() {
   );
 }
 
-/** The Library tab (exercise-library §9, EL10): Exercises · Workouts, and Exercise detail pushed in the same stack. */
+/** The Library tab (exercise-library §9, EL10): Exercises · Workouts, and Exercise detail (and a plan day) pushed in the same stack. */
 function LibraryNavigator() {
   const options = useStackOptions();
   return (
     <LibraryStack.Navigator screenOptions={options}>
       <LibraryStack.Screen name="LibraryHome" component={LibraryScreen} options={{ headerShown: false }} />
       <LibraryStack.Screen name="LibraryExercise" component={ExerciseInfoScreen} options={({ route }) => ({ title: route.params.name ?? '', headerBackTitle: 'Library' })} />
+      {/* Your plan › a day (Ben, 19 Oct): the big title is in the page; back reads `Your plan`. */}
+      <LibraryStack.Screen name="LibraryPlanDay" component={PlanDayScreen} options={{ title: '', headerBackTitle: 'Your plan' }} />
     </LibraryStack.Navigator>
   );
 }

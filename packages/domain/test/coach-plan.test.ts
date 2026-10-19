@@ -37,6 +37,8 @@ import {
   planRoutineStart,
   planUpNext,
   rotationRoutines,
+  endPlan,
+  undoEndPlan,
   undoPlanApply,
   type FinishedRef,
   type HistorySession,
@@ -471,6 +473,102 @@ describe('Apply and Undo (rule 2, rule 3, rule 5)', () => {
     const ok = undoPlanApply(a.next, { expectedVersion: 2, opId: 'undo-2', at: at(60), routines: now });
     if (ok.kind !== 'write') throw new Error(ok.kind);
     expect(ok.update.some((x) => x.next.id === pull.id)).toBe(false);
+  });
+});
+
+describe('End plan and its Undo (Ben, 19 Oct: Library › Your plan; rule 2, rule 5)', () => {
+  const live = [PUSH_A, PULL_A, ARMS];
+  function applied() {
+    const a = applyPlan(planOf(), { expectedVersion: 1, versionN: 1, mode: 'replace', opId: 'apply-1', at: at(0), live });
+    if (a.kind !== 'write') throw new Error(a.kind);
+    const routines = new Map<string, Routine | null>([...a.create, ...a.update.map((u) => u.next), ARMS].map((r) => [r.id, r]));
+    return { a, routines };
+  }
+  const withUpdates = (m: ReadonlyMap<string, Routine | null>, update: readonly { next: Routine }[]) => {
+    const out = new Map(m);
+    for (const u of update) out.set(u.next.id, u.next);
+    return out;
+  };
+  const inRotation = (m: ReadonlyMap<string, Routine | null>) => rotationRoutines([...m.values()].filter((r): r is Routine => r !== null)).map((r) => r.name);
+
+  it('End: the plan’s days leave the rotation (kept, with their history); the plan is ended, no longer in use; Up next has no plan days', () => {
+    const { a, routines } = applied();
+    const e = endPlan(a.next, { expectedVersion: 2, opId: 'end-1', at: at(100), routines });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    expect(e.update.map((u) => [u.next.name, u.next.inRotation, u.expectedVersion])).toEqual([
+      ['Push', false, 1],
+      ['Pull', false, 1],
+      ['Legs', false, 1],
+      ['Upper', false, 1],
+    ]);
+    expect(e.update.every((u) => u.next.deletedAtUtc === undefined || u.next.deletedAtUtc === null)).toBe(true);
+    expect(e.next).toMatchObject({ status: 'ended', version: 3, ended: { opId: 'end-1', atUtc: at(100).utc } });
+    expect(e.next.ended?.rotationOff.map((o) => [o.versionBefore, o.versionAfter])).toEqual([
+      [1, 2],
+      [1, 2],
+      [1, 2],
+      [1, 2],
+    ]);
+    expect(PlanDraftSchema.safeParse(e.next).success).toBe(true);
+    const after = withUpdates(routines, e.update);
+    expect(inRotation(after)).toEqual([]);
+    expect(planRoutines(e.next, [...after.values()].filter((r): r is Routine => r !== null))).toEqual([]);
+    // The Apply's Undo from the coach card is stale now (it would delete the workouts End keeps).
+    expect(undoPlanApply(e.next, { expectedVersion: 3, opId: 'undo-apply', at: at(110), routines: after }).kind).toBe('stale');
+    // Ended isn't open: it can't be applied again from its card.
+    expect(applyPlan(e.next, { expectedVersion: 3, versionN: 1, mode: 'replace', opId: 'apply-2', at: at(110), live: [] }).kind).not.toBe('write');
+  });
+
+  it('a retried End is a duplicate; an older version or a plan not in use is stale; a day Ben already took out stays as it is', () => {
+    const { a, routines } = applied();
+    const e = endPlan(a.next, { expectedVersion: 2, opId: 'end-1', at: at(100), routines });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    expect(endPlan(e.next, { expectedVersion: 3, opId: 'end-1', at: at(101), routines }).kind).toBe('duplicate');
+    expect(endPlan(e.next, { expectedVersion: 3, opId: 'end-2', at: at(101), routines }).kind).toBe('stale');
+    expect(endPlan(a.next, { expectedVersion: 1, opId: 'end-3', at: at(101), routines }).kind).toBe('stale');
+    expect(endPlan(planOf(), { expectedVersion: 1, opId: 'end-4', at: at(101), routines }).kind).toBe('stale');
+    const [push] = a.create;
+    if (push === undefined) throw new Error('push');
+    const out = new Map(routines);
+    out.set(push.id, { ...push, version: 2, inRotation: false });
+    const e2 = endPlan(a.next, { expectedVersion: 2, opId: 'end-5', at: at(100), routines: out });
+    if (e2.kind !== 'write') throw new Error(e2.kind);
+    expect(e2.update.map((u) => u.next.name)).toEqual(['Pull', 'Legs', 'Upper']);
+  });
+
+  it('Undo of End: the days back in the rotation in their places, the plan in use again, and the card’s Undo of Apply still works', () => {
+    const { a, routines } = applied();
+    const e = endPlan(a.next, { expectedVersion: 2, opId: 'end-1', at: at(100), routines });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    const ended = withUpdates(routines, e.update);
+    const u = undoEndPlan(e.next, { expectedVersion: 3, opId: 'resume-1', at: at(120), routines: ended, otherApplied: false });
+    if (u.kind !== 'write') throw new Error(u.kind);
+    expect(u.next).toMatchObject({ status: 'applied', ended: null, version: 4 });
+    expect(PlanDraftSchema.safeParse(u.next).success).toBe(true);
+    const back = withUpdates(ended, u.update);
+    expect(inRotation(back)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    expect(a.create.map((r) => back.get(r.id)?.rotationAtUtc)).toEqual(a.create.map((r) => r.rotationAtUtc));
+    expect(planRoutines(u.next, [...back.values()].filter((r): r is Routine => r !== null)).map((r) => r.name)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    // The Apply record follows the workouts' versions: Undo of Apply finds them as left, and restores Push A and Pull A.
+    expect(u.next.applied?.made.map((m) => m.version)).toEqual([3, 3, 3, 3]);
+    const undo = undoPlanApply(u.next, { expectedVersion: 4, opId: 'undo-apply', at: at(130), routines: back });
+    expect(undo.kind).toBe('write');
+    // Retried: duplicate; from an older read: stale.
+    expect(undoEndPlan(u.next, { expectedVersion: 4, opId: 'resume-1', at: at(121), routines: back, otherApplied: false }).kind).toBe('duplicate');
+    expect(undoEndPlan(u.next, { expectedVersion: 4, opId: 'resume-2', at: at(121), routines: back, otherApplied: false }).kind).toBe('stale');
+  });
+
+  it('Undo of End refuses when a newer plan is in use, or Ben changed a plan workout since (nothing changes)', () => {
+    const { a, routines } = applied();
+    const e = endPlan(a.next, { expectedVersion: 2, opId: 'end-1', at: at(100), routines });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    const ended = withUpdates(routines, e.update);
+    expect(undoEndPlan(e.next, { expectedVersion: 3, opId: 'resume-1', at: at(120), routines: ended, otherApplied: true }).kind).toBe('stale');
+    const pull = e.update[1]?.next;
+    if (pull === undefined) throw new Error('pull');
+    const edited = new Map(ended);
+    edited.set(pull.id, { ...pull, version: pull.version + 1, name: 'Pull heavy' });
+    expect(undoEndPlan(e.next, { expectedVersion: 3, opId: 'resume-2', at: at(120), routines: edited, otherApplied: false })).toMatchObject({ kind: 'changed_since', names: ['Pull heavy'] });
   });
 });
 

@@ -17,6 +17,9 @@ export const PLAN_COPY = {
   edit: 'Edit',
   why: 'Why?',
   applied: 'Applied',
+  ended: 'Ended',
+  /** An ended plan back in use (review planview S4): the same write as `End plan`'s Undo. */
+  useAgain: 'Use again',
   est: 'est.',
   held: 'held',
 } as const;
@@ -29,7 +32,7 @@ export interface PlanCardView {
   /** The coach's reasons (claim- and number-checked), or null. */
   rationale: string | null;
   /** What the card's button row shows. */
-  action: { kind: 'apply' } | { kind: 'undo'; text: string } | { kind: 'ended'; text: string };
+  action: { kind: 'apply' } | { kind: 'undo'; text: string } | { kind: 'resume'; text: string } | { kind: 'ended'; text: string };
   /** `Replace my workouts` takes these out of the rotation (they stay in Workouts); empty: nothing to replace. */
   replaces: string | null;
 }
@@ -44,7 +47,11 @@ export function planCardView(d: PlanCardData): PlanCardView {
           ? { kind: 'ended', text: `Replaced by version ${String(d.state.byN)}` }
           : d.state.kind === 'superseded'
             ? { kind: 'ended', text: 'Replaced by a newer plan' }
-            : d.state.kind === 'expired'
+            : d.state.kind === 'ended'
+              ? d.state.canResume
+                ? { kind: 'resume', text: PLAN_COPY.ended }
+                : { kind: 'ended', text: PLAN_COPY.ended }
+              : d.state.kind === 'expired'
               ? { kind: 'ended', text: 'Expired' }
               : { kind: 'ended', text: 'Deleted' };
   return {

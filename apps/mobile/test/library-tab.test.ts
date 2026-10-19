@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { NBSP, NO_FILTERS, type AddDestination } from '@fizz/domain';
 
-import { backFromEditor, openLibrary, popToFromEditor } from '../src/navigation/actions';
+import { backFromEditor, openLibrary, openYourPlan, popToFromEditor } from '../src/navigation/actions';
 import { addEffortRow, addPrimary, addRepsRow, initialAddShape, posterSize, repsDraftOfShape, slotShapeOfAdd } from '../src/workout/exercise-info-view';
 import { filterChipLabel, filterOptions, toggled, withFilter } from '../src/workout/library-browse-view';
 import { countSteps, effortChoices, SET_BAR, setShapeStacked, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../src/workout/set-shape-view';
@@ -130,11 +130,18 @@ describe('navigation (EL10)', () => {
     let s = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'next' } }));
     s = apply(s, openLibrary('workouts'));
     expect(s.routes.map((r) => r.name)).toEqual(['Tabs']);
-    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts' } } });
+    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts' }, pop: true } });
     s = apply(s, navigate('WorkoutEditor', { routineId: null, from: 'Library' }));
     s = apply(s, popToFromEditor('Library', toast));
     expect(s.routes.map((r) => r.name)).toEqual(['Tabs']);
-    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', toast } } });
+    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', toast }, pop: true } });
+  });
+
+  it('Today’s `Day 2 of 4 ›` lands on Library › Workouts (Your plan at the top) on the one Tabs, once per tap (Ben, 19 Oct)', () => {
+    let s = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'next' } }));
+    s = apply(s, openYourPlan('tap-1'));
+    expect(s.routes.map((r) => r.name)).toEqual(['Tabs']);
+    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', plan: 'tap-1' }, pop: true } });
   });
 
   it('from Exercise detail, the editor’s Save and Cancel go back to it', () => {

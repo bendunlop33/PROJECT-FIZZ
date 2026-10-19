@@ -133,9 +133,25 @@ export const PlanAppliedSchema = z.object({
 });
 export type PlanApplied = z.infer<typeof PlanAppliedSchema>;
 
-/** `superseded`: was applied, then a newer plan's Apply ended it (its workouts stay as Ben's workouts). */
-export const PlanDraftStatusSchema = z.enum(['open', 'applied', 'superseded', 'discarded', 'expired']);
+/**
+ * `superseded`: was applied, then a newer plan's Apply ended it (its workouts stay as Ben's workouts).
+ * `ended` (Ben, 19 Oct: Library › Your plan › `End plan`): Ben ended it; its days left the rotation, its
+ * workouts and history stay. Undo of End makes it `applied` again (migration 22).
+ */
+export const PlanDraftStatusSchema = z.enum(['open', 'applied', 'superseded', 'discarded', 'expired', 'ended']);
 export type PlanDraftStatus = z.infer<typeof PlanDraftStatusSchema>;
+
+/**
+ * What `End plan` did, so its Undo puts exactly that back (rule 2, 5): the
+ * plan's workouts it took out of the rotation, their places and versions.
+ * A day Ben had already taken out of the rotation isn't listed.
+ */
+export const PlanEndedSchema = z.object({
+  opId: OperationIdSchema,
+  atUtc: UtcTimestampSchema,
+  rotationOff: z.array(z.object({ routineId: IdSchema, rotationAtUtc: UtcTimestampSchema.nullable(), versionBefore: z.int().min(1), versionAfter: z.int().min(2) })).max(PLAN_LIMITS.maxDays),
+});
+export type PlanEnded = z.infer<typeof PlanEndedSchema>;
 
 /**
  * A coach-built plan (Your data). `open` until applied, discarded or
@@ -156,6 +172,8 @@ export const PlanDraftSchema = z
     undoneAtUtc: UtcTimestampSchema.nullable(),
     /** The newer plan whose Apply ended this one (status `superseded`); absent or null otherwise. */
     supersededBy: z.object({ planId: IdSchema, opId: OperationIdSchema, atUtc: UtcTimestampSchema }).nullable().optional(),
+    /** Ben's `End plan` (status `ended`); absent or null otherwise. */
+    ended: PlanEndedSchema.nullable().optional(),
     opIds: z.array(OperationIdSchema).max(PLAN_LIMITS.maxOps),
     createdAt: ZonedTimestampSchema,
     tz: TimeZoneSchema,
@@ -165,6 +183,7 @@ export const PlanDraftSchema = z
     updatedAtUtc: UtcTimestampSchema,
   })
   .refine((d) => d.versions.some((v) => v.n === d.currentVersion && v.status === 'current'), { message: 'The current version must exist', path: ['currentVersion'] })
-  .refine((d) => (d.status === 'applied' || d.status === 'superseded') === (d.applied !== null), { message: 'Only an applied plan names what it made', path: ['applied'] })
-  .refine((d) => (d.status === 'superseded') === ((d.supersededBy ?? null) !== null), { message: 'Only a superseded plan names the plan that ended it', path: ['supersededBy'] });
+  .refine((d) => (d.status === 'applied' || d.status === 'superseded' || d.status === 'ended') === (d.applied !== null), { message: 'Only an applied plan names what it made', path: ['applied'] })
+  .refine((d) => (d.status === 'superseded') === ((d.supersededBy ?? null) !== null), { message: 'Only a superseded plan names the plan that ended it', path: ['supersededBy'] })
+  .refine((d) => (d.status === 'ended') === ((d.ended ?? null) !== null), { message: 'Only an ended plan records its End', path: ['ended'] });
 export type PlanDraft = z.infer<typeof PlanDraftSchema>;

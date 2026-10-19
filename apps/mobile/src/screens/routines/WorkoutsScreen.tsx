@@ -3,17 +3,19 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { LibraryHistoryRow, LibraryRow, LibrarySort } from '@fizz/domain';
+import { PLAN_OVERVIEW_COPY, withoutRoutines, type LibraryHistoryRow, type LibraryRow, type LibrarySort } from '@fizz/domain';
 import type { Routine } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
 import { popToTabs } from '../../navigation/actions';
+import { PLAN_COPY } from '../../services/plan-services';
 import type { EditorFrom, LibraryToastParam } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
 import { AppText, Banner, Eyebrow, Icon, SecondaryButton, StatusLine, Tag, TextButton, Toast } from '../../ui';
 import { deleteConfirm, LIBRARY_COPY_UI, LIBRARY_TOASTS, rowMenu } from '../../workout/library-view';
 import { useSaveToWorkouts } from './SaveWorkoutSheet';
+import { YourPlanBlock } from '../library/YourPlanBlock';
 
 type Toasting = { text: string; action?: string; onAction?: () => void } | null;
 
@@ -43,8 +45,12 @@ export function NewWorkoutButton({ from }: { from: EditorFrom }) {
   );
 }
 
-/** The Workouts list's body: `from` is where the editor returns; `handedToast` is the editor's `Saved Push A` [Undo]. */
-export function WorkoutsList({ from, handedToast, onHandedToast }: { from: EditorFrom; handedToast: LibraryToastParam | undefined; onHandedToast: () => void }) {
+/**
+ * The Workouts list's body: `from` is where the editor returns; `handedToast` is the editor's `Saved Push A` [Undo].
+ * (Ben, 19 Oct) With a plan in use, `Your plan` leads and the list below is `Other workouts` (the plan's days are in the
+ * block). `scrollTopKey`: a new value scrolls to the top (Today's `Day 2 of 4 ›`).
+ */
+export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }: { from: EditorFrom; handedToast: LibraryToastParam | undefined; onHandedToast: () => void; scrollTopKey?: string | undefined }) {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
@@ -57,11 +63,23 @@ export function WorkoutsList({ from, handedToast, onHandedToast }: { from: Edito
   const busy = useRef(false);
   const [data, reload] = useScreenData(async (s) => {
     const gym = await s.yourData.currentGym().catch(() => null);
-    return { gym, library: await s.routines.library({ gymId: gym?.id ?? null, sort, showAllHistory: showAll }) };
+    // Review planview S5: a failed read is said, never shown as no plan.
+    const [library, planRead] = await Promise.all([
+      s.routines.library({ gymId: gym?.id ?? null, sort, showAllHistory: showAll }),
+      s.plans.overview().then(
+        (v) => ({ plan: v, planFailed: false }),
+        () => ({ plan: null, planFailed: true }),
+      ),
+    ]);
+    return { gym, library, ...planRead };
   });
   useEffect(() => {
     reload();
   }, [sort, showAll, reload]);
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (scrollTopKey !== undefined) scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [scrollTopKey]);
 
   // Loading: nothing for 300 ms, then static rows (no shimmer).
   useEffect(() => {
@@ -247,9 +265,13 @@ export function WorkoutsList({ from, handedToast, onHandedToast }: { from: Edito
         />
       );
     }
-    const { view, active } = data.value.library;
+    const { active } = data.value.library;
+    const plan = data.value.plan;
+    const view = plan === null ? data.value.library.view : withoutRoutines(data.value.library.view, new Set(plan.days.map((d) => d.routineId)));
     return (
       <View style={{ gap: theme.space['5'] }}>
+        {plan !== null ? <YourPlanBlock plan={plan} onToast={setToast} /> : null}
+        {data.value.planFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_COPY.loadFailed} action={<TextButton label="Try again" onPress={reload} />} /> : null}
         {active ? (
           <Banner
             severity="info"
@@ -264,7 +286,7 @@ export function WorkoutsList({ from, handedToast, onHandedToast }: { from: Edito
             }
           />
         ) : null}
-        {view.state === 'empty' ? (
+        {view.state === 'empty' && plan === null ? (
           <View style={{ gap: theme.space['2'], alignItems: 'flex-start' }}>
             <AppText variant="body">{LIBRARY_COPY_UI.empty}</AppText>
             <TextButton
@@ -283,7 +305,7 @@ export function WorkoutsList({ from, handedToast, onHandedToast }: { from: Edito
           </Section>
         ) : null}
         {view.all.length > 0 ? (
-          <Section title={LIBRARY_COPY_UI.all} action={<TextButton label={sort === 'recent' ? LIBRARY_COPY_UI.recent : LIBRARY_COPY_UI.az} icon="chevron.down" tone="secondary" accessibilityLabel={`Sort, ${sort === 'recent' ? 'recent' : 'A to Z'}`} onPress={pickSort} />}>
+          <Section title={plan !== null ? PLAN_OVERVIEW_COPY.otherWorkouts : LIBRARY_COPY_UI.all} action={<TextButton label={sort === 'recent' ? LIBRARY_COPY_UI.recent : LIBRARY_COPY_UI.az} icon="chevron.down" tone="secondary" accessibilityLabel={`Sort, ${sort === 'recent' ? 'recent' : 'A to Z'}`} onPress={pickSort} />}>
             {view.all.map((r, i) => (
               <WorkoutRow key={r.routineId} row={r} first={i === 0} onPress={() => { openRow(r); }} onMenu={() => { openMenu(r); }} onAction={(a) => void act(r, a)} />
             ))}
@@ -335,7 +357,7 @@ export function WorkoutsList({ from, handedToast, onHandedToast }: { from: Edito
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }}>
+      <ScrollView ref={scrollRef} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }}>
         {body}
       </ScrollView>
       {toast ? (

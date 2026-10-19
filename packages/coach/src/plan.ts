@@ -46,8 +46,11 @@ export interface PlanContextView {
   setBudget: number;
   /** Ben's workouts in the rotation now, by name (what `Replace my workouts` would take out). */
   rotation: string[];
-  /** The plan being changed (a revision), as stored. */
-  current: { name: string; version: number; days: { name: string; splitDayId: string | null; exercises: { catalogueId: string; name: string; workingSets: number; reps: string; load: string | null }[] }[] } | null;
+  /**
+   * The plan being changed (a revision), as stored. `inUse` (review planview-19oct B1): it is the plan
+   * Ben is using; the change is a new plan he can Apply (it replaces this one) or leave.
+   */
+  current: { name: string; version: number; inUse?: true; days: { name: string; splitDayId: string | null; exercises: { catalogueId: string; name: string; workingSets: number; reps: string; load: string | null }[] }[] } | null;
 }
 
 export interface PlanRequest {
@@ -67,6 +70,12 @@ export interface PlanDeps {
   request: PlanRequest;
   /** The plan in context (a change makes its next version), else null. */
   plan: PlanDraft | null;
+  /**
+   * (Review planview-19oct B1) The plan in use (applied) Ben's words change, when no open plan is in
+   * context: the change is a new open plan whose days start from this one's (each day's `previous`).
+   * The plan in use is never written here; the new plan's Apply supersedes it and its Undo restores it.
+   */
+  basedOn?: PlanDraft | null;
   splitDays: readonly SplitDay[];
   /** One day's checks context at the gym (`previous`: the same day of the plan being changed). */
   checkContext: BuildGym['checkContext'];
@@ -133,7 +142,8 @@ export function createPlanExecutor(deps: PlanDeps): CoachExecutors {
       if (!same && other === null) return { kind: 'refused', line: unknownGymLine(args.gymName, deps.gyms ?? []) };
       if (!same && other !== null) gym = other;
     }
-    const previous = deps.plan === null ? null : currentPlanVersion(deps.plan);
+    const base = deps.plan ?? (deps.basedOn?.status === 'applied' ? deps.basedOn : null);
+    const previous = base === null ? null : currentPlanVersion(base);
     const planId = deps.plan?.id ?? planIdFor(ctx.opId);
     // Each day's context, read before the checks (its history, its split day's main lift, its own slot keys).
     const contexts: WorkoutProposalContext[] = [];
@@ -217,7 +227,8 @@ export const PLAN_INSTRUCTIONS = [
   'Follow his split (build.plan.splitDays) and his days a week (build.plan.daysPerWeek) unless he asks for something else; give each day its splitDayId. Spread the muscles across the days so the same muscles don’t lead two days in a row. Keep each day within build.plan.setBudget working sets. Put each day’s main lift first.',
   'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters in words with no numbers; null when you have no opinion. Give targetRpe for every exercise. Give `minutes` when Ben asked for a length for every day, a day’s own `minutes` when he asked for one for that day.',
   LOAD_CHOICE_LINE,
-  'To change the plan in context (build.plan.current), call `propose_plan` with the whole new version.',
+  'To change the plan in context (build.plan.current), call `propose_plan` with the whole new version: keep every day and exercise Ben didn’t ask to change.',
+  'If build.plan.current.inUse is true, it is the plan Ben is using: the new version is a new plan he can Apply in place of it. Never say it was changed.',
   'Its `message` (at most 600 characters) says, like a coach would, why these days and this order. Any number in it must come from YOUR DATA, a tool result, Ben’s words or this plan; the app drops sentences with other numbers. No praise, scores, max or record claims, recovery claims or diagnoses.',
   'Never say the plan was applied, saved, scheduled or added to his workouts: Ben taps Apply himself. After the call, reply in one short sentence. If `propose_plan` is refused, say in one short sentence that it was not built and why.',
   'Multi-week blocks, deloads and calendar dates are not available yet: if Ben asks for one, say so plainly and build the week.',

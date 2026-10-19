@@ -20,7 +20,8 @@ import { NewWorkoutButton, WorkoutsList } from '../routines/WorkoutsScreen';
  * search with aliases and typos, filters; a row opens Exercise detail) and
  * `Workouts` (the Workouts list; the header's `＋` is `New workout`). Remembers its last segment on
  * this phone. Nothing here needs a network or the coach (rule 1); it never
- * animates. The `ResumeBar` shows while a workout is unfinished.
+ * animates. The `ResumeBar` shows while a workout is unfinished. With a
+ * plan in use, Workouts leads with `Your plan` (Ben, 19 Oct; `YourPlanBlock`).
  */
 export function LibraryScreen() {
   const theme = useTheme();
@@ -35,7 +36,7 @@ export function LibraryScreen() {
       setSegment(asked);
       update({ librarySegment: asked });
     }
-  }, [asked, route.params?.toast?.key]);
+  }, [asked, route.params?.toast?.key, route.params?.plan]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: insets.top }}>
@@ -63,6 +64,7 @@ export function LibraryScreen() {
         <WorkoutsList
           from="Library"
           handedToast={route.params?.toast}
+          scrollTopKey={route.params?.plan}
           onHandedToast={() => {
             navigation.setParams({ toast: undefined } as never);
           }}

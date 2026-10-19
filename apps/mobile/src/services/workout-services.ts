@@ -3868,6 +3868,23 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         return null;
       }
     },
+
+    /** (19 Oct) Library › Your plan › a day: what Start would create at this gym (the same dry run) and about how long. Saves nothing. */
+    async planned(routineId: string, gymId: string): Promise<{ aggregate: SessionAggregate; aboutMinutes: number | null } | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        // Review planview S3: the same edited preview as Up next and the overview (TE-A14): with a live draft of today's edits, plan with them.
+        const routine = await repos().routines.get(routineId).catch(() => null);
+        const t = routine === null ? null : await todayFor(p, { kind: 'routine', routine, ref: null, basis: { kind: 'only' } }, gymId, undefined, null);
+        const edited = t === null || t.draft === null ? null : await routineStart(p, { routineId, gymId, opId: `preview-plan-day:${routineId}`, preview: true, todayEdits: t.input });
+        const { r } = edited !== null && edited.r.ok ? edited : await routineStart(p, { routineId, gymId, opId: `preview-plan-day:${routineId}`, preview: true });
+        if (!r.ok) return null;
+        return { aggregate: r.aggregate, aboutMinutes: await aboutMinutes(p, r.aggregate) };
+      } catch {
+        return null;
+      }
+    },
   };
 
   const next = {
