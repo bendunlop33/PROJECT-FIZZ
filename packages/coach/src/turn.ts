@@ -34,6 +34,7 @@ import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, ref
 import { lastLoggedSets } from './context';
 import { verifyAsked, type AskClaim, type AskVerdict } from './intent';
 import { editOfferIn } from './edit-today';
+import { addedContinuationOf } from './find-exercises';
 import { collectFacts, type FactText, type NumberFacts } from './numbers';
 
 /**
@@ -392,6 +393,17 @@ export const COACH_INSTRUCTIONS = [
 ].join('\n');
 
 /**
+ * (19 Oct, Ben: "Why can't I add it") Sent when `find_exercises` is offered: the lists in YOUR DATA
+ * are shortened, so an exercise missing from them is searched for, never called unavailable.
+ */
+export const FIND_EXERCISES_LINE =
+  'The exercise lists in YOUR DATA (build.usable, addable) are shortened. When Ben names an exercise that is not in them, call find_exercises first and use the ID it returns; only if it finds nothing say it can’t be done at this gym. Never blame the list.';
+
+/** (19 Oct) With `propose_exercise`: a new exercise only when nothing in his list fits, and never a duplicate. */
+export const PROPOSE_EXERCISE_LINE =
+  'If find_exercises finds nothing that fits and Ben wants that exercise, call propose_exercise (a card he adds himself); never propose one that is already in his list under any name, and never say it was added.';
+
+/**
  * (14 Oct) Sent when the today-tools are offered (a live workout). Coach v3: one tool, edit_today,
  * changes the workout; adding is named only with the list of what can be added (review S5).
  */
@@ -451,6 +463,7 @@ const TOOL_READ_LINE: Partial<Record<string, string>> = {
   get_gym_equipment: 'Read your gym’s equipment',
   get_progression_targets: 'Read next targets',
   get_substitutions: 'Read swap options',
+  find_exercises: 'Searched exercises',
   get_recent_actions: 'Read earlier coach changes',
   get_exercise_records: 'Read your records',
   get_recent_sessions: 'Read your recent workouts',
@@ -611,10 +624,15 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
 
   // Build 131: a follow-up to a session the coach described in text ("yes add it", "put that in the app").
   // Review r4 S4: a refused build saved nothing, so "try again" on the next turn still reaches it.
-  const saidWords = req.kind === 'general' && req.input.kind === 'words' ? req.input.text : null;
+  // (19 Oct) `Added <name>.` after Ben's Add on a new-exercise card carries his request from that turn. Review
+  // exlist B1: a general turn then reads that request against the thread as it was then (coach-service builds
+  // the context the same way), so an open build continues with its length, focus and gym.
+  const continued = req.input.kind === 'words' ? await addedContinuationOf(history, req.input.text, (id) => ports.store.listTurnActions(id)) : null;
+  const askHistory = req.kind === 'general' && continued !== null ? continued.history : history;
+  const saidWords = req.kind === 'general' && req.input.kind === 'words' ? (continued?.request ?? req.input.text) : null;
   // v2 (BD17): Ben answering the coach's clarifying question is a build follow-up carrying his request's words.
-  const chain = saidWords === null ? null : await buildQuestionChain(history, saidWords, (id) => ports.store.listTurnActions(id));
-  const followUp = saidWords === null ? null : (chain?.followUp ?? buildFollowUpIn(history, saidWords, await refusedBuildActionIds(history, (id) => ports.store.listTurnActions(id))));
+  const chain = saidWords === null ? null : await buildQuestionChain(askHistory, saidWords, (id) => ports.store.listTurnActions(id));
+  const followUp = saidWords === null ? null : (chain?.followUp ?? buildFollowUpIn(askHistory, saidWords, await refusedBuildActionIds(askHistory, (id) => ports.store.listTurnActions(id))));
   const liveWorkout = req.kind === 'workout' && req.context.session?.session.status === 'active';
   // (19 Oct) Ben answering the coach's question about his plan (or agreeing to put a plan in the app) continues the plan.
   const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
@@ -622,9 +640,10 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const askedBuild = saidWords !== null && (askedPlan || requestHas(classifyBenRequest(saidWords, 'general'), 'build') || (req.draftInContext === true && revisesDraft(saidWords)));
   // At most 2 questions per build request, none in a draft revision, none after Skip (BD17).
   const questionOpen = chain !== null && req.draftInContext !== true && !chain.skipped && chain.asked < MAX_BUILD_QUESTIONS && (askedBuild || chain.open !== null);
+  const askInput: BenInput = continued !== null && req.input.kind === 'words' ? { ...req.input, text: continued.text } : req.input;
   const gate = gateFor({
     kind: req.kind,
-    input: req.input,
+    input: askInput,
     previousOffer,
     ...(liveWorkout ? { liveWorkout: true } : {}),
     structuralSignals: req.structuralSignals,
@@ -661,7 +680,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   });
   if (started.replayed) return replayedResult(started.turn, ports, req.surface);
 
-  const words = req.input.kind === 'words' ? req.input.text : null;
+  // A general turn's decisions read the continued request (review exlist B1); the thread keeps his literal words.
+  const words = req.input.kind === 'words' ? (saidWords ?? req.input.text) : null;
   // workout-builder BD15: "start it" / "save it" gets the fixed line and no model call; Start and Save are Ben's taps.
   // Review S4: not when the coach's last message asked something of its own (an offer, a memory suggestion, a proposal).
   // Build 131: not when the coach's last message described a new session in text: "save it" then builds that one.
@@ -711,7 +731,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const questionOffered = registry.tools.some((t) => t.name === 'ask_build_question');
   const questionLines = [...(questionOffered ? [QUESTION_RULES] : []), ...(chain?.skipped === true ? [SKIPPED_LINE] : chain?.open !== null && chain?.open !== undefined ? [ANSWERED_LINE] : [])];
   const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
-  const instructions = withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions;
+  const findLine = registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '';
+  const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
   if (said !== null) input.push({ type: 'message', role: 'user', content: said });
@@ -933,7 +954,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       continue;
     }
     const setsOnly = setsOnlyOf(parsed.call);
-    const asked = !TODAY_TOOLS.has(parsed.call.tool) || (!(confirmAgain && parsed.call.tool === 'edit_today') && todayAskVerdict(parsed.call.tool, gate, words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork, ...(setsOnly === undefined ? {} : { setsOnly }) }).asked);
+    const asked = !TODAY_TOOLS.has(parsed.call.tool) || (!(confirmAgain && parsed.call.tool === 'edit_today') && todayAskVerdict(parsed.call.tool, gate, askInput.kind === 'words' ? askInput.text : words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork, ...(setsOnly === undefined ? {} : { setsOnly }) }).asked);
     // Coach v3: an edit Ben didn't ask for is checked and saved as an offer (exactly what would apply), never applied.
     const proposer = !asked && parsed.call.tool === 'edit_today' && liveWorkout ? ports.executors.edit_today : undefined;
     if (!asked && proposer === undefined) {

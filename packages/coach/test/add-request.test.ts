@@ -17,7 +17,7 @@ const words = (text: string) => ({ kind: 'words' as const, text, spoken: false }
 function writeTools(text: string, kind: 'workout' | 'general' = 'workout'): string[] {
   const g = gateFor({ kind, input: words(text), previousOffer: null, structuralSignals: [] });
   return buildTurnRegistry(g)
-    .tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory')
+    .tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory' && t.name !== 'propose_exercise')
     .map((t) => t.name)
     .sort();
 }

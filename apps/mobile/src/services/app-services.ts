@@ -1,3 +1,4 @@
+import { createCustomExercises } from './custom-exercises';
 import {
   buildPresetDraft,
   createSessionService,
@@ -487,6 +488,9 @@ export function createAppServices(deps: AppServicesDeps) {
     return aliasesByKey.get(catalogueKey) ?? [];
   };
 
+  /** Ben's own exercises (19 Oct): create, edit, delete. Your data, local only. */
+  const customExercises = createCustomExercises({ repos, now: deps.now, profile: getProfile, catalogueExercises, catalogueAliases });
+
   const loop = createWorkoutServices({
     repos,
     store: () => deps.manager.store,
@@ -523,6 +527,9 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     catalogueExercises,
     catalogueSubstitutions,
+    catalogueAliases,
+    createCustomExercise: (req) => customExercises.create(req),
+    exerciseClash: (name) => customExercises.coachClash(name),
     // A build with no gym yet plans on the typical gym's items (workout-builder §4.1 `⚠ No gym`).
     typicalEquipment: () => typicalEquipment(),
   });
@@ -839,6 +846,7 @@ export function createAppServices(deps: AppServicesDeps) {
   return {
     ...loop,
     library,
+    customExercises,
     history,
     overview,
     routines,

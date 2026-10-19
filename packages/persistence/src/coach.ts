@@ -93,6 +93,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'build_workout':
     case 'build_question':
     case 'build_plan':
+    case 'propose_exercise':
     case 'undo':
       return null;
   }
@@ -719,12 +720,14 @@ export class SqliteCoachStore {
       // The coach's fit to time has its own Undo (`drafts.undoCoachFit`), versioned on the draft.
       // A draft version's Undo is Ben's draft write (`workout_drafts`), not a coach undo (workout-builder §5.3).
       // A plan's Apply and Undo are Ben's own writes on the plan (`plan_drafts`), not a coach undo.
+      // (19 Oct) A proposed exercise is Ben's own write when he taps Add; deleting it is his Library write.
       case 'suggest_memory':
       case 'update_routine':
       case 'fit_today':
       case 'build_workout':
       case 'build_question':
       case 'build_plan':
+      case 'propose_exercise':
       case 'undo':
         return 'unsupported';
     }

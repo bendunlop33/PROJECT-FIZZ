@@ -435,6 +435,20 @@ export function buildChainWords(said: string, earlier: readonly { text: string; 
 }
 
 /**
+ * (Review exlist S2) Ben's recent words in a thread, newest first, within the build chain's limits
+ * (`BUILD_CHAIN_MAX_MESSAGES`, `BUILD_CHAIN_MAX_AGE_MS`): what ranks a capped list when his newest
+ * message names nothing ("Try now"). Pure; the words are data (rule 8).
+ */
+export function recentBenWords(earlier: readonly { text: string; atMs: number }[], nowMs: number): string[] {
+  const out: string[] = [];
+  for (const m of earlier.slice(0, BUILD_CHAIN_MAX_MESSAGES)) {
+    if (nowMs - m.atMs > BUILD_CHAIN_MAX_AGE_MS) break;
+    out.push(m.text);
+  }
+  return out;
+}
+
+/**
  * (Coach v3, Ben 18 Oct: "make it 40") The draft's length. A length Ben stated outright wins; then
  * the model's reading, unless Ben's newest message revises the length with a bare number that isn't
  * the model's ("make it 40": his literal number wins; review S2: only a revision); then the request's own (his earlier words, the draft, his
@@ -614,7 +628,7 @@ const SCOPED_BUILD_RULES = [
 
 /** Instructions added to a turn that offers `propose_workout` (§7 coach message rules, BD1, BD15). */
 export const BUILD_INSTRUCTIONS = [
-  'Ben asked for a workout in the app. Call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable. Never write the workout out as text in `reply`: a plan in text is not in the app.',
+  'Ben asked for a workout in the app. Call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable or find_exercises. Never write the workout out as text in `reply`: a plan in text is not in the app.',
   'If he is agreeing to a session you described earlier in this thread, build that session: the same exercises (or the closest in build.usable), sets and reps.',
   'To change the draft in context, call `propose_workout` with the whole new version.',
   ...CALL_RULES,
@@ -639,7 +653,7 @@ export const OFFERED_BUILD_INSTRUCTIONS = [
  * `propose_workout` is offered and nothing is forced: the model reads his words.
  */
 export const OFFER_REPLY_BUILD_INSTRUCTIONS = [
-  'You offered to build a session in the app. Read Ben\'s reply: if it agrees, call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable, for the session you described (the same exercises, or the closest in build.usable, sets and reps).',
+  'You offered to build a session in the app. Read Ben\'s reply: if it agrees, call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable or find_exercises, for the session you described (the same exercises, or the closest in build.usable, sets and reps).',
   'If his reply does not clearly agree, do not build: reply briefly, and ask "Want me to build it in the app?" if it is still unclear.',
   ...SCOPED_BUILD_RULES,
 ].join('\n');

@@ -9,8 +9,8 @@
  */
 
 import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
-import { isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
-import type { ActionRecord, BenInput, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
+import { customExerciseLine, isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
+import type { ActionRecord, BenInput, CustomExerciseFields, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
 import type { WorkoutPresence } from '../services/history-services';
@@ -143,7 +143,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
 // ---------------------------------------------------------------------------
 // Cards (coach-sheet §2.6): status word and icon, never colour alone
 
-export type CardStatusWord = 'Applied' | 'Added' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested';
+export type CardStatusWord = 'Applied' | 'Added' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested' | 'Deleted';
 
 export interface CardView {
   actionId: string;
@@ -166,6 +166,21 @@ export interface CardView {
   question?: QuestionCardView;
   /** (19 Oct) A committed coach plan: the sheet shows the plan card (every day, Apply or Undo) from it. */
   plan?: ActionRecord;
+  /** (19 Oct) The coach's new exercise for Ben's list: `Edit` · `Add` while open (rule 3). */
+  newExercise?: { actionId: string; fields: CustomExerciseFields; canAdd: boolean };
+}
+
+/**
+ * (19 Oct) The coach's new-exercise card: `New exercise: Meadows row · Barbell · total load · Back,
+ * Biceps · reps` with `Edit` · `Add` while open; `Added` once Ben added it.
+ */
+export function exerciseProposalCardView(r: ActionRecord, state: 'open' | 'added' | 'deleted'): CardView | null {
+  const d = r.detail;
+  if (d.kind !== 'propose_exercise' || r.status !== 'proposed') return null;
+  const text = `New exercise: ${customExerciseLine(d.fields)}`;
+  if (state === 'added') return { actionId: r.actionId, status: { word: 'Added', icon: 'checkmark.circle.fill' }, text, accessibilityPrefix: 'Your exercises.', canUndo: false };
+  if (state === 'deleted') return { actionId: r.actionId, status: { word: 'Deleted', icon: 'minus.circle' }, text, accessibilityPrefix: 'Your exercises.', canUndo: false };
+  return { actionId: r.actionId, status: { word: 'Suggested', icon: 'minus.circle' }, text, accessibilityPrefix: 'Coach suggestion, not added.', canUndo: false, newExercise: { actionId: r.actionId, fields: d.fields, canAdd: true } };
 }
 
 /**
@@ -441,7 +456,8 @@ export function threadRows(data: ThreadData & { nowUtc?: string }): ThreadRow[] 
     for (const a of actions) {
       const state = data.proposals?.get(a.actionId);
       const memory = data.memories?.get(a.actionId);
-      const special = state !== undefined ? proposalCardView(a, state) : memory !== undefined ? memoryCardView(a, memory) : null;
+      const added = data.exerciseProposals?.get(a.actionId);
+      const special = state !== undefined ? proposalCardView(a, state) : memory !== undefined ? memoryCardView(a, memory) : added !== undefined ? exerciseProposalCardView(a, added) : null;
       const question = a.detail.kind === 'build_question' ? questionCardView(a, nextBenText(data.messages, turnId), data.nowUtc === undefined ? 0 : toMs(data.nowUtc) - toMs(a.createdAt.utc)) : null;
       rows.push({ kind: 'card', key: a.actionId, card: question !== null ? { ...cardView(a), question } : (special ?? cardView(a)) });
     }

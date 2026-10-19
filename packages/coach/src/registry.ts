@@ -145,6 +145,32 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Exercises that could replace one at Ben’s gym (the catalogue’s substitutes and the same movement family), with exercise IDs to use in a swap. Only doable here, never pain-flagged.',
   },
   {
+    // (19 Oct, Ben: "Why can't I add it") The lists in YOUR DATA are capped; this reads the whole list.
+    name: 'find_exercises',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: null,
+    capabilitySection: 'read',
+    description:
+      'Search every exercise Ben can do at this gym (his own and the catalogue’s, not pain-flagged), not only the shortened list in YOUR DATA: query by name or other name ("seated calf raise"), optional muscle ("calves") and equipment ("plate loaded"). Returns up to 20 with the IDs to use in propose_workout, propose_plan or edit_today add. Call it whenever Ben names an exercise that is not in build.usable or addable, before saying it is unavailable.',
+  },
+  {
+    // (19 Oct, Ben: "Why can't the chat function make exercises not in the catalogue") A card he checks; rule 3.
+    name: 'propose_exercise',
+    effect: 'propose',
+    writes: ['custom_exercise'],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Suggest a new exercise for your list (added only if you tap Add)',
+    capabilitySection: 'suggest_only',
+    description:
+      'Suggest a new exercise for Ben\'s own list when he wants one that is not in it (find_exercises found nothing like it; never a duplicate under another name). Give its usual name, one equipment kind, loadConvention (null: the equipment\'s usual one; plate-loaded machines are added, dumbbells per_hand, cable or stack machines stack, assisted machines assistance), 1–3 main muscles, how it is measured (reps, duration, distance or cardio) and laterality (unilateral when done one side at a time; null otherwise). Ben sees a card and taps Add or Edit; nothing is added until he does. After he adds it, his next message says so: then use it for what he asked.',
+  },
+  {
     name: 'get_recent_actions',
     effect: 'read',
     writes: [],
@@ -169,7 +195,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: "Change today's workout (exercises, sets and targets), with Undo",
     capabilitySection: 'when_you_ask',
     description:
-      "Change today's live workout in one call, any mix of ops: `set` a pending set's target (load in the exercise's unit and convention, reps, target RPE; null keeps a value), `set_count` an exercise's working sets today (done ones included), `swap` an exercise's remaining sets to another exercise, `add` an exercise (exerciseId from YOUR DATA addable; sets, reps or workSeconds, targetRpe, optional position or superset partner; no loads: the app plans them from his history on this gym's equipment; a cardio exercise takes workSeconds and, if Ben gave one, distanceMetres), `remove` an exercise's remaining sets, `move` an exercise (with its superset) after another or first (null). Done sets never change. The app snaps and bounds every load to the equipment, holds increases on pain, and refuses the whole call if a swap, add, removal or move can't be done. baseVersion: the workout's version; after a change, use the sessionVersion it returns. Today only: never for next time, his routine or template (use propose_next_workout_change). benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer he can accept.",
+      "Change today's live workout in one call, any mix of ops: `set` a pending set's target (load in the exercise's unit and convention, reps, target RPE; null keeps a value), `set_count` an exercise's working sets today (done ones included), `swap` an exercise's remaining sets to another exercise, `add` an exercise (exerciseId from YOUR DATA addable or find_exercises; sets, reps or workSeconds, targetRpe, optional position or superset partner; no loads: the app plans them from his history on this gym's equipment; a cardio exercise takes workSeconds and, if Ben gave one, distanceMetres), `remove` an exercise's remaining sets, `move` an exercise (with its superset) after another or first (null). Done sets never change. The app snaps and bounds every load to the equipment, holds increases on pain, and refuses the whole call if a swap, add, removal or move can't be done. baseVersion: the workout's version; after a change, use the sessionVersion it returns. Today only: never for next time, his routine or template (use propose_next_workout_change). benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer he can accept.",
   },
   {
     // (14 Oct, PM decision pending Ben) Offered on every live-workout turn; applies at once with Undo only when
@@ -286,7 +312,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
     capabilitySection: 'when_you_ask',
     description:
-      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed and cardio exercises; distanceMetres only for cardio, null otherwise), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. For each exercise give the working `load` (and `topSet.load`) in the unit and convention listed for it in build.loadReferences, with a short `basis` (at most 60 characters): a reason in words with no numbers (the app shows the numbers); null when you have no opinion. The app checks, bounds and fits every load to the equipment; a load with no history of his own is shown as an estimate. Give `minutes` (15–180) when Ben asked for a length in this conversation ("make it 40" after a build is 40), `focus` for what he asked to train ("a shoulder workout" is shoulders), and `gymName` when he named one of his gyms in build.gyms ("my hotel gym"); null otherwise. The app checks each and fits the workout to the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable or find_exercises only, in order, with working sets, a rep range (or workSeconds for timed and cardio exercises; distanceMetres only for cardio, null otherwise), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. For each exercise give the working `load` (and `topSet.load`) in the unit and convention listed for it in build.loadReferences, with a short `basis` (at most 60 characters): a reason in words with no numbers (the app shows the numbers); null when you have no opinion. The app checks, bounds and fits every load to the equipment; a load with no history of his own is shown as an estimate. Give `minutes` (15–180) when Ben asked for a length in this conversation ("make it 40" after a build is 40), `focus` for what he asked to train ("a shoulder workout" is shoulders), and `gymName` when he named one of his gyms in build.gyms ("my hotel gym"); null otherwise. The app checks each and fits the workout to the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
   },
   {
     // workout-builder v2.1 BD17, §8.4: one clarifying question card; at most 2 per build request, checked by code.
@@ -314,7 +340,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Build a multi-day plan you ask for, as a proposal you apply or undo',
     capabilitySection: 'when_you_ask',
     description:
-      'Build a plan of several different days at once (1 to 7 days), only when Ben asks for a plan, a split or a week of workouts, or asks to change the plan in context. Never a multi-week block or deloads, and never for one session (use propose_workout). Follow his split in plan.splitDays unless he asks for another: give each day its `splitDayId` (null for a day that is none of them) and a short `dayName`. Spread the muscles sensibly across the days and keep each day within plan.setBudget working sets. Each day\'s exercises are exactly like propose_workout\'s: catalogueIds from YOUR DATA build.usable only, working sets, a rep range (or workSeconds), targetRpe, optional warm-ups, one optional top set, rest, supersets, and a working `load` (and `topSet.load`) from build.loadReferences in the unit and convention listed, with a short `basis` in words (no numbers); null when you have no opinion. Give `minutes` (15–180) for every day when Ben asked for a length ("60 min each"), or a day\'s own `minutes` when he asked for one for that day; null otherwise. `gymName`: one of build.gyms when he named one. The app checks every day, bounds and fits every load to the equipment, and shows the plan as a proposal: nothing changes until Ben taps Apply.',
+      'Build a plan of several different days at once (1 to 7 days), only when Ben asks for a plan, a split or a week of workouts, or asks to change the plan in context. Never a multi-week block or deloads, and never for one session (use propose_workout). Follow his split in plan.splitDays unless he asks for another: give each day its `splitDayId` (null for a day that is none of them) and a short `dayName`. Spread the muscles sensibly across the days and keep each day within plan.setBudget working sets. Each day\'s exercises are exactly like propose_workout\'s: catalogueIds from YOUR DATA build.usable or find_exercises only, working sets, a rep range (or workSeconds), targetRpe, optional warm-ups, one optional top set, rest, supersets, and a working `load` (and `topSet.load`) from build.loadReferences in the unit and convention listed, with a short `basis` in words (no numbers); null when you have no opinion. Give `minutes` (15–180) for every day when Ben asked for a length ("60 min each"), or a day\'s own `minutes` when he asked for one for that day; null otherwise. `gymName`: one of build.gyms when he named one. The app checks every day, bounds and fits every load to the equipment, and shows the plan as a proposal: nothing changes until Ben taps Apply.',
   },
   {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved

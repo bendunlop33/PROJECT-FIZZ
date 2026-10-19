@@ -58,6 +58,9 @@ export function semanticArgs(call: CoachToolCall): unknown {
         ...(call.args.focus == null ? {} : { focus: call.args.focus }),
         ...(call.args.gymName == null ? {} : { gymName: call.args.gymName.trim().toLowerCase() }),
       };
+    case 'propose_exercise':
+      // The reason is explanation; the name (by meaning) and fields are the exercise.
+      return { ...call.args, name: normaliseContentText(call.args.name), reason: undefined };
     case 'ask_build_question':
       return { topic: call.args.topic, question: call.args.question.trim().toLowerCase(), answers: call.args.answers };
     case 'propose_plan':
@@ -92,6 +95,7 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'get_training_overview':
     case 'get_progression_targets':
     case 'get_substitutions':
+    case 'find_exercises':
     case 'get_recent_actions':
     case 'get_exercise_records':
     case 'get_recent_sessions':
@@ -142,12 +146,14 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'propose_workout':
     case 'ask_build_question':
     case 'propose_plan':
+    case 'propose_exercise':
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':
     case 'get_gym_equipment':
     case 'get_progression_targets':
     case 'get_substitutions':
+    case 'find_exercises':
     case 'get_recent_actions':
     case 'get_exercise_records':
     case 'get_recent_sessions':

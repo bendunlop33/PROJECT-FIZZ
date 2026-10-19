@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DurationSecondsSchema, IdSchema, LoadConventionSchema, UtcTimestampSchema } from './common';
+import { MUSCLE_TO_GROUP } from './muscle-groups';
 
 /**
  * Equipment kinds an exercise can be done with. The first six are the kinds a
@@ -108,8 +109,35 @@ export const ExerciseSchema = z.object({
    * and movement pattern. Coaching knowledge.
    */
   split: ExerciseSplitSchema.optional(),
+  /**
+   * (19 Oct) A custom exercise Ben deleted: hidden from pickers, search and the coach's lists; its
+   * history stays and still reads its name. Absent: in use. Catalogue rows never carry it.
+   */
+  archivedAtUtc: UtcTimestampSchema.optional(),
+  /** (19 Oct) The operation that wrote this version of a custom exercise (a retried write replays). */
+  lastOpId: z.string().min(1).max(200).optional(),
   version: z.int().min(1),
   createdAtUtc: UtcTimestampSchema,
   updatedAtUtc: UtcTimestampSchema,
 });
 export type Exercise = z.infer<typeof ExerciseSchema>;
+
+/** The muscle vocabulary (`MUSCLE_TO_GROUP`'s keys), for custom exercises and the coach's proposal. */
+export const MuscleSchema = z.enum(Object.keys(MUSCLE_TO_GROUP) as [keyof typeof MUSCLE_TO_GROUP, ...(keyof typeof MUSCLE_TO_GROUP)[]]);
+export type Muscle = z.infer<typeof MuscleSchema>;
+
+/**
+ * (19 Oct, Ben: "Why can't the chat function make exercises not in the catalogue") What Ben (or the
+ * coach's proposal, which he checks) gives for a custom exercise: name, one equipment kind, how the
+ * load is counted, 1–3 main muscles, how it is measured and whether it is done one side at a time.
+ * Your data once saved.
+ */
+export const CustomExerciseFieldsSchema = z.strictObject({
+  name: z.string().trim().min(1).max(80),
+  equipment: EquipmentKindSchema,
+  loadConvention: LoadConventionSchema,
+  primaryMuscles: z.array(MuscleSchema).min(1).max(3),
+  measurement: MeasurementSchema,
+  laterality: LateralitySchema,
+});
+export type CustomExerciseFields = z.infer<typeof CustomExerciseFieldsSchema>;

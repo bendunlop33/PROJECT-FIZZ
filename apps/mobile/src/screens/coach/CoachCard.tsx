@@ -17,8 +17,11 @@ export function CoachCard({
   onUndo,
   onProposal,
   onMemory,
+  onNewExercise,
 }: {
   card: CardView;
+  /** (19 Oct) The coach's new-exercise card: Add (saved only now, rule 3) or Edit (the form, prefilled). */
+  onNewExercise?: (actionId: string, tap: 'add' | 'edit') => void;
   onUndo: (actionId: string) => void;
   onProposal?: (proposalId: string, tap: 'apply' | 'not_now') => void;
   onMemory?: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
@@ -97,6 +100,28 @@ export function CoachCard({
                   setBusy(false);
                 }, 1000);
                 onProposal(p.proposalId, 'apply');
+              }}
+            />
+          </View>
+        ) : null}
+        {card.newExercise?.canAdd === true && onNewExercise !== undefined ? (
+          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+            <TextButton
+              label="Edit"
+              tone="secondary"
+              onPress={() => {
+                onNewExercise(card.actionId, 'edit');
+              }}
+            />
+            <TextButton
+              label="Add"
+              disabled={busy}
+              onPress={() => {
+                setBusy(true);
+                setTimeout(() => {
+                  setBusy(false);
+                }, 1000);
+                onNewExercise(card.actionId, 'add');
               }}
             />
           </View>

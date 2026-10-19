@@ -1,4 +1,4 @@
-import { cardioValuesText, formatDuration, formatNumber, loadText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
+import { cardioValuesText, customExerciseLine, formatDuration, formatNumber, loadText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
 import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
@@ -480,6 +480,15 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       }
       if (st === 'stale') return make(status, 'Out of date. Nothing built.', 'Out of date. Nothing built.');
       const text = `Couldn't build a plan here: ${failureOr(record, 'it failed the checks')}. Nothing saved.`;
+      return make(status, text, speakable(text));
+    }
+    case 'propose_exercise': {
+      // (19 Oct) The card's line; whether it was added is read from Ben's exercise list.
+      if (st === 'proposed') {
+        const text = `New exercise: ${customExerciseLine(d.fields)}`;
+        return make(status, text, speakable(text));
+      }
+      const text = `Not suggested: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
     case 'build_question': {

@@ -12,6 +12,8 @@ import { SET_SHAPE_COPY } from './set-shape-view';
 
 export const EXERCISE_INFO_COPY = {
   addToWorkout: 'Add to a workout',
+  /** (19 Oct) Ben's own exercise. */
+  edit: 'Edit',
   play: 'Play',
   fullHowTo: 'Full how-to',
   progress: 'Progress and records',

@@ -30,6 +30,8 @@ export * from './checkin';
 export * from './display';
 export * from './starter-exercises';
 export * from './exercise-search';
+export * from './find-exercises';
+export * from './custom-exercise';
 export * from './exercise-browse';
 export * from './session/add-shape';
 export * from './exercise-equipment';

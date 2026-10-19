@@ -205,8 +205,9 @@ describe('source checks (EL-B16, EL-B24, rules 1 and 2)', () => {
 describe('review library-browse B1: New workout from Library › Workouts', () => {
   it('the header’s ＋ opens New workout on the Workouts segment whatever the list holds; the old root Workouts route is gone', () => {
     const lib = code(read('screens/library/LibraryScreen.tsx'));
-    // Shown on the segment, not tied to the list being empty.
-    expect(lib).toMatch(/segment === 'workouts' \? <NewWorkoutButton from="Library" \/> : null/);
+    // Shown on the segment, not tied to the list being empty. (19 Oct) Exercises' ＋ is New exercise.
+    expect(lib).toMatch(/segment === 'workouts' \? <NewWorkoutButton from="Library" \/> : <NewExerciseButton \/>/);
+    expect(lib).toMatch(/navigation\.navigate\('ExerciseForm', \{\}\)/);
     const list = code(read('screens/routines/WorkoutsScreen.tsx'));
     expect(list).toMatch(/navigation\.navigate\('WorkoutEditor', \{ routineId: null, from \}\)/);
     expect(list).toMatch(/accessibilityLabel=\{LIBRARY_COPY_UI\.newWorkout\}/);
