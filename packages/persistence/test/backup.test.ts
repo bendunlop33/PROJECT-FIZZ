@@ -90,8 +90,9 @@ async function openManager(
 async function populate(store: Store): Promise<void> {
   const { repos } = store;
   await repos.profiles.save(profile({ preferredUnit: 'lb' }), null);
-  await repos.gyms.save(gym(2, { isDefault: true, locationLabel: 'Ponsonby' }), null);
-  for (const eq of [barbell(), dumbbells({ unit: 'lb', loads: [5, 10, 12.5], maxLoad: 12.5 }), stack({ addOns: [2.5] }), assisted(), plateMachine(), bodyweightStation()]) {
+  // (20 Oct, ADR 0029) A full gym: its setup and missing kinds, assumed items and a `Not at this gym` mark round-trip too.
+  await repos.gyms.save(gym(2, { isDefault: true, locationLabel: 'Ponsonby', setup: 'full', missingKinds: ['plate_loaded_machine'] }), null);
+  for (const eq of [barbell({ detailsSource: 'preset' }), dumbbells({ unit: 'lb', loads: [5, 10, 12.5], maxLoad: 12.5 }), stack({ addOns: [2.5], notFor: [SPLIT_SQUAT.id] }), assisted(), plateMachine(), bodyweightStation()]) {
     await repos.equipment.save(eq, null);
   }
   await repos.exercises.save(SPLIT_SQUAT, null);
@@ -239,6 +240,8 @@ describe('createBackup / restore', () => {
     const richId = richFinishedSession().session.id;
     expect(await target.store.repos.sessions.get(richId)).toEqual(await source.store.repos.sessions.get(richId));
     expect(await target.store.repos.equipment.listByGym(barbell().gymId)).toEqual(await source.store.repos.equipment.listByGym(barbell().gymId));
+    expect(await target.store.repos.gyms.get(id(2))).toMatchObject({ setup: 'full', missingKinds: ['plate_loaded_machine'] });
+    expect((await target.store.repos.equipment.get(stack().id))?.notFor).toEqual([SPLIT_SQUAT.id]);
     expect(await target.store.repos.routines.get(id(300))).toMatchObject({ createdFromSessionId: richId, deletedAtUtc: null, lastOpId: 'save-routine-op' });
     expect((await checkIntegrity(target.store.db)).ok).toBe(true);
 

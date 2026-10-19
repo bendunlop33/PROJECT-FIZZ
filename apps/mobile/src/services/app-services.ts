@@ -1,6 +1,10 @@
 import { createCustomExercises } from './custom-exercises';
 import {
   buildPresetDraft,
+  buildQuickGymDraft,
+  type GymEdit,
+  type GymLearn,
+  type QuickGymInput,
   createSessionService,
   deriveId,
   discardCommand,
@@ -34,7 +38,7 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { DraftBasis, EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { DraftBasis, EquipmentInstance, Exercise, Gym, GymSetup, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachModelPort } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
@@ -46,7 +50,7 @@ import { createRestoreService } from '../backup/restore-service';
 import { createDataDomainService, type CredentialPort, type PersonalFilesPort } from '../backup/data-domain-service';
 import { createImportService } from '../import/import-service';
 import { createLayoutService } from '../import/layout-service';
-import { createGymServices } from './gym-services';
+import { createGymServices, type GymEditOutcome } from './gym-services';
 import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
@@ -210,6 +214,8 @@ export function createAppServices(deps: AppServicesDeps) {
         return added;
       }),
     buildGymDraft: (presetId: GymPresetId, unit: WeightUnit): GymDraft => buildPresetDraft(presetId, unit),
+    /** (Ben, 20 Oct; ADR 0029) Full gym / Hotel or small / Home as a draft, every item assumed. */
+    buildQuickGymDraft: (input: QuickGymInput): GymDraft => buildQuickGymDraft(input),
   };
 
   const setup = {
@@ -257,7 +263,7 @@ export function createAppServices(deps: AppServicesDeps) {
      * `gymId` is chosen once per visit to the step, so a double tap or a retry
      * creates one gym (the second call is a duplicate).
      */
-    async saveGym(req: { gymId: string; name: string; draft: GymDraft | null }): Promise<SetupWriteResult> {
+    async saveGym(req: { gymId: string; name: string; draft: GymDraft | null; setup?: GymSetup }): Promise<SetupWriteResult> {
       const profile = await getProfile();
       if (!profile) return { ok: false, message: 'Your profile wasn’t found. Start setup again.' };
       const existing = await repos().gyms.listByOwner(profile.id);
@@ -275,6 +281,7 @@ export function createAppServices(deps: AppServicesDeps) {
         isDefault: existing.length === 0 || existing.every((g) => g.id === req.gymId),
         atUtc: deps.now().utc,
         newId: deps.newId,
+        ...(req.setup === undefined ? {} : { setup: req.setup }),
       });
       if (!result.ok) return { ok: false, message: result.error === 'name_empty' ? 'Give the gym a name' : (result.issues[0]?.message ?? 'Needs fixing') };
       try {
@@ -535,7 +542,37 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   /** Gyms and equipment (Your data): the minimal gym editor. */
-  const gyms = createGymServices({ repos, store: () => deps.manager.store, now: deps.now, profile: getProfile });
+  const gymServices = createGymServices({
+    repos,
+    store: () => deps.manager.store,
+    now: deps.now,
+    profile: getProfile,
+    newId: deps.newId,
+    exercise: async (id) => (await repos().exercises.get(id).catch(() => null)) ?? catalogueExercises().find((e) => e.id === id) ?? null,
+  });
+
+  /**
+   * (ADR 0029) Learning the gym mid-workout: the gym is saved, then today's
+   * snapshot takes the change when it moves no target (`Use changes today`
+   * with nothing to review); otherwise today keeps the gym as it started and
+   * the gym screen's `Use changes today` stays the way in.
+   */
+  const gyms = {
+    ...gymServices,
+    async learnInWorkout(req: { sessionId: string; learn: GymLearn; opId: string }): Promise<(GymEditOutcome & { ok: true; refreshed: boolean }) | Extract<GymEditOutcome, { ok: false }>> {
+      const r = await gymServices.learn(req.learn);
+      if (!r.ok) return r;
+      const proposal = await loop.gymSwitch.propose(req.sessionId, r.edit.gymId).catch(() => null);
+      if (proposal === null || proposal.card.changesTargets || proposal.draftsToReplace.length > 0) return { ...r, refreshed: false };
+      const applied = await loop.gymSwitch.apply(proposal, req.opId).catch(() => null);
+      return { ...r, refreshed: applied?.ok === true };
+    },
+    /** Its Undo: today's refresh first (refused if the workout moved on), then the gym. */
+    async undoLearnInWorkout(req: { sessionId: string; edit: GymEdit; refreshed: boolean; opId: string }): Promise<{ ok: true } | { ok: false; message: string }> {
+      if (req.refreshed) await loop.gymSwitch.undo(req.sessionId, req.opId).catch(() => null);
+      return gymServices.undoEdit(req.edit);
+    },
+  };
 
   /**
    * The typical gym `Start` will save when there is no gym yet (audit B4), as
