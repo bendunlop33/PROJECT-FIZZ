@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { addPlanVersion, applyPlan, currentPlanVersion, endPlan, newPlanDraft, rotationRoutines, undoEndPlan, undoPlanApply } from '@fizz/domain';
+import { addPlanVersion, applyPlan, currentPlanVersion, endPlan, newPlanDraft, pausePlan, pinPlanDay, planRoutines, resumePlan, rotationRoutines, undoEndPlan, undoPlanApply, undoPlanControl } from '@fizz/domain';
 import { at, hotelFixture, id, OWNER, profile } from '@fizz/domain/testing';
 import { RoutineSchema, type ActionRecord, type PlanDraft, type PlanDraftVersion, type Routine } from '@fizz/schemas';
 
@@ -198,7 +198,8 @@ describe('End plan and its Undo (migration 22): the plan and its days in one tra
     expect(await end(m.store, 'end-1', 2)).toMatchObject({ status: 'written', plan: { status: 'ended', version: 3 } });
     expect(await end(m.store, 'end-1', 2)).toMatchObject({ status: 'replayed' });
     expect(await end(m.store, 'end-2', 2)).toMatchObject({ status: 'stale' });
-    expect(await rotation(m.store)).toEqual([]);
+    // (Ben, 20 Oct: option B) the workouts Replace took out are back in the rotation, in their places.
+    expect(await rotation(m.store)).toEqual(['Push A', 'Pull A']);
     expect((await m.store.repos.routines.listByOwner(OWNER)).map((r) => r.name).sort()).toEqual(['Legs', 'Pull', 'Pull A', 'Push', 'Push A']);
     expect(await m.store.repos.planDrafts.applied(OWNER)).toBeNull();
     expect((await checkIntegrity(m.store.db)).ok).toBe(true);
@@ -238,6 +239,49 @@ describe('End plan and its Undo (migration 22): the plan and its days in one tra
     expect(await end(at22, 'end-1', 2)).toMatchObject({ status: 'written' });
     expect((await checkIntegrity(at22.db)).ok).toBe(true);
     await at22.close();
+  });
+});
+
+describe('Make next, pause and resume (Ben, 20 Oct): versioned writes on the plan, kept across a relaunch and a backup', () => {
+  it('pin, pause, resume and Undo round-trip; a retry replays; a stale version writes nothing; End restores Push A and Pull A in the same transaction', async () => {
+    const d = tempDir();
+    dirs.push(d);
+    const m = await managerIn(d.dir);
+    await seeded(m.store);
+    await apply(m.store, 'apply-1');
+    const control = (make: Parameters<Store['repos']['planDrafts']['control']>[2]) => m.store.repos.planDrafts.control(OWNER, PLAN, make);
+    const days = async () => planRoutines(await m.store.repos.planDrafts.get(PLAN), await m.store.repos.routines.listByOwner(OWNER));
+    const legs = (await days())[2];
+    if (legs === undefined) throw new Error('legs');
+    const pin = (opId: string, v: number) => control((c, routines) => pinPlanDay(c, { expectedVersion: v, opId, at: at(500), routineId: legs.id, days: planRoutines(c, routines) }));
+    expect(await pin('pin-1', 2)).toMatchObject({ status: 'written', plan: { version: 3, pin: { routineId: legs.id } } });
+    expect(await pin('pin-1', 2)).toMatchObject({ status: 'replayed' });
+    expect(await pin('pin-2', 2)).toMatchObject({ status: 'stale' });
+    expect(await control((c) => pausePlan(c, { expectedVersion: 3, opId: 'pause-1', at: at(600), untilDate: '2026-11-03', tz: 'Pacific/Auckland' }))).toMatchObject({ status: 'written', plan: { version: 4 } });
+    expect(await control((c) => pausePlan(c, { expectedVersion: 4, opId: 'pause-2', at: at(600), untilDate: '2020-01-01', tz: 'Pacific/Auckland' }))).toMatchObject({ status: 'invalid' });
+    expect(await control((c) => undoPlanControl(c, { expectedVersion: 4, opId: 'u-1', at: at(700), targetOpId: 'pause-1' }))).toMatchObject({ status: 'written', plan: { version: 5, pauses: [] } });
+    expect(await control((c) => pausePlan(c, { expectedVersion: 5, opId: 'pause-3', at: at(800), untilDate: null, tz: 'Pacific/Auckland' }))).toMatchObject({ status: 'written' });
+    expect(await control((c) => resumePlan(c, { expectedVersion: 6, opId: 'resume-1', at: at(900), tz: 'Pacific/Auckland' }))).toMatchObject({ status: 'written', plan: { version: 7 } });
+    const before = await m.store.repos.planDrafts.get(PLAN);
+    expect(before?.pauses).toHaveLength(1);
+    expect(before?.pin?.routineId).toBe(legs.id);
+    expect((await checkIntegrity(m.store.db)).ok).toBe(true);
+    const made = await createBackup(m.store, { at: at(950), app: { name: 'GymSmarter', version: '0.1.0', build: null } });
+    await m.close();
+
+    const again = await managerIn(d.dir);
+    expect(await again.store.repos.planDrafts.get(PLAN)).toEqual(before);
+    // End: the days out and Push A and Pull A back, together.
+    expect(await again.store.repos.planDrafts.endOrResume(OWNER, PLAN, (c, routines) => endPlan(c, { expectedVersion: 7, opId: 'end-1', at: at(1000), routines }))).toMatchObject({ status: 'written', plan: { status: 'ended', ended: { notRestored: [] } } });
+    expect(await rotationRoutines(await again.store.repos.routines.listByOwner(OWNER)).map((r) => r.name)).toEqual(['Push A', 'Pull A']);
+    expect(await again.store.repos.planDrafts.endOrResume(OWNER, PLAN, (c, routines, other) => undoEndPlan(c, { expectedVersion: 8, opId: 'resume-end', at: at(1100), routines, otherApplied: other }))).toMatchObject({ status: 'written' });
+    expect(rotationRoutines(await again.store.repos.routines.listByOwner(OWNER)).map((r) => r.name)).toEqual(['Push', 'Pull', 'Legs']);
+    await again.close();
+
+    const dst = await managerIn();
+    expect(await dst.restore(made.text, at(1200))).toMatchObject({ ok: true });
+    expect(await dst.store.repos.planDrafts.get(PLAN)).toEqual(before);
+    await dst.close();
   });
 });
 
