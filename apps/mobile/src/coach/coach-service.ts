@@ -1291,7 +1291,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     const earlierWords = req.input.kind === 'words' ? buildChainWords(req.input.text, earlierBen, toMs(deps.now().utc)) : [];
     // (19 Oct) A plan of several days: Ben asked for one, or his words change the open plan in this thread.
     const planInThread = kind === 'general' && req.input.kind === 'words' ? await threadOpenPlan(p, req.threadId) : null;
-    const planWanted = kind === 'general' && req.input.kind === 'words' && (asksForPlan(req.input.text) || (planInThread !== null && revisesPlan(req.input.text)));
+    const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
+    const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(req.input.text) || (planInThread !== null && revisesPlan(req.input.text)));
     const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread } : null) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word

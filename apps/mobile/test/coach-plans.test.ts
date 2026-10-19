@@ -267,6 +267,20 @@ describe('build a 4-day plan → card → Apply (replace) → Up next walks it �
     expect(await rotation(s)).toEqual(['Push A', 'Pull A']);
   });
 
+  it('up to 2 clarifying questions: the coach asks one, Ben’s answer builds the plan (never a one-session draft)', async () => {
+    const { s } = await benWithSetup();
+    model = new StepModel([() => toolCall('ask_build_question', { topic: 'split', question: 'Which split this week?', answers: [{ label: 'Push/Pull/Legs', catalogueId: null }, { label: 'Upper/Lower', catalogueId: null }] }), () => replyWith('never')]);
+    const first = await ask(s, 'Build me a 4-day plan');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['propose_plan', 'ask_build_question']));
+    expect(first.cards[0]?.record).toMatchObject({ status: 'proposed', detail: { kind: 'build_question', question: 'Which split this week?' } });
+    model = new StepModel([planStub(), () => replyWith('Here it is.')]);
+    const second = await ask(s, 'Push/Pull/Legs', first.threadId);
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('propose_plan');
+    expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_workout');
+    expect(second.cards[0]?.record.detail.kind).toBe('build_plan');
+    expect(await s.coachDrafts.list()).toEqual([]);
+  });
+
   it('offline or not connected: no plan is built and nothing changes (rule 1)', async () => {
     const { s } = await benWithSetup();
     connection = { status: 'not_connected', route: null, email: null, model: null };

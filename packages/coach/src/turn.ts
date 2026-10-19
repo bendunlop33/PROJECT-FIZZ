@@ -26,7 +26,7 @@ import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, type BenRequest } from './request';
+import { asksForPlan, asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
 import { parseToolCall } from './tool-call';
 import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
@@ -230,6 +230,8 @@ export interface GateInput {
   buildQuestionOpen?: boolean;
   /** (19 Oct) An open coach plan is the thread's newest build: change words revise it (`build_plan`). */
   planInContext?: boolean;
+  /** (19 Oct) The build follow-up (an answer to the coach's question, "yes put it in") is about Ben's plan request. */
+  planFollowUp?: boolean;
 }
 
 /** The turn gate from Ben's own input only (registry.ts `TurnGate`). */
@@ -252,7 +254,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
       }
       // Build 131: "yes add it" after a session described in text is a build request, not a change to today's sets.
       if (g.kind === 'general' && g.buildFollowUp === true && !requestHas(benRequest, 'build') && !requestHas(benRequest, 'build_plan')) {
-        benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds.filter((k) => k !== 'change') : []), 'build'] };
+        benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds.filter((k) => k !== 'change') : []), g.planFollowUp === true ? 'build_plan' : 'build'] };
       }
       benPainWords = classifyPainMention(g.input.text) === 'pain';
       break;
@@ -613,7 +615,9 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const chain = saidWords === null ? null : await buildQuestionChain(history, saidWords, (id) => ports.store.listTurnActions(id));
   const followUp = saidWords === null ? null : (chain?.followUp ?? buildFollowUpIn(history, saidWords, await refusedBuildActionIds(history, (id) => ports.store.listTurnActions(id))));
   const liveWorkout = req.kind === 'workout' && req.context.session?.session.status === 'active';
-  const askedPlan = saidWords !== null && (requestHas(classifyBenRequest(saidWords, 'general'), 'build_plan') || (req.planInContext === true && revisesPlan(saidWords)));
+  // (19 Oct) Ben answering the coach's question about his plan (or agreeing to put a plan in the app) continues the plan.
+  const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
+  const askedPlan = saidWords !== null && (planFollowUp || requestHas(classifyBenRequest(saidWords, 'general'), 'build_plan') || (req.planInContext === true && revisesPlan(saidWords)));
   const askedBuild = saidWords !== null && (askedPlan || requestHas(classifyBenRequest(saidWords, 'general'), 'build') || (req.draftInContext === true && revisesDraft(saidWords)));
   // At most 2 questions per build request, none in a draft revision, none after Skip (BD17).
   const questionOpen = chain !== null && req.draftInContext !== true && !chain.skipped && chain.asked < MAX_BUILD_QUESTIONS && (askedBuild || chain.open !== null);
@@ -628,6 +632,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(req.buildAvailable === true ? { buildOpen: true } : {}),
     ...(questionOpen ? { buildQuestionOpen: true } : {}),
     ...(req.planInContext === true ? { planInContext: true } : {}),
+    ...(planFollowUp ? { planFollowUp: true } : {}),
   });
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
