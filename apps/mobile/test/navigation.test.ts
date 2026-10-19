@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { backFromEditor, openGymFromWorkout, openStartedWorkout, openWorkoutToCheckGym, popToFromEditor, popToTabs, popToToday, replaceWithSummary, returnToWorkout } from '../src/navigation/actions';
+import { backFromEditor, openGymFromWorkout, openLibrary, openStartedWorkout, openYourPlan, openWorkoutToCheckGym, popToFromEditor, popToTabs, popToToday, replaceWithSummary, returnToWorkout } from '../src/navigation/actions';
 import { initialRootState } from '../src/navigation/initial-state';
 
 describe('root stack at launch (review S5)', () => {
@@ -202,7 +202,7 @@ describe('Workouts library routes (routines.md §A3)', () => {
     let s = apply(router.getInitialState(options), navigate('WorkoutEditor', { routineId: 'c', from: 'Library', selectName: true, copyToast: copy }));
     s = apply(s, backFromEditor('Library', copy));
     expect(s.routes.map((r) => r.name)).toEqual(['Tabs']);
-    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', toast: copy } } });
+    expect(s.routes[0]?.params).toEqual({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', toast: copy }, pop: true } });
     let o = apply(router.getInitialState(options), navigate('WorkoutOverview', { target: { kind: 'routine', routineId: 'r' } }));
     o = apply(o, navigate('WorkoutEditor', { routineId: 'c', from: 'WorkoutOverview', selectName: true, copyToast: copy }));
     o = apply(o, backFromEditor('WorkoutOverview', copy));
@@ -227,5 +227,41 @@ describe('Workouts library routes (routines.md §A3)', () => {
     s = apply(s, popToFromEditor('SaveSheet', toast));
     expect(s.routes.map((r) => r.name)).toEqual(['Tabs', 'WorkoutOverview']);
     expect(s.routes[1]?.params).toEqual({ target: { kind: 'next' } });
+  });
+});
+
+/**
+ * Review planview-19oct S1: Today's `Day 2 of 4 ›` with a plan day open in the Library stack. The
+ * tab gets `{ screen: 'LibraryHome', params, pop }`; the Library stack turns it into this NAVIGATE
+ * (useNavigationBuilder's nested params), run here through React Navigation 7's StackRouter.
+ */
+describe('Library stack: Your plan from Today (review planview S1)', () => {
+  const routeNames = ['LibraryHome', 'LibraryExercise', 'LibraryPlanDay'];
+  const router = StackRouter({});
+  const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
+  type State = StackNavigationState<ParamListBase>;
+  const apply = (state: State, action: Parameters<typeof router.getStateForAction>[1]): State => {
+    const next = router.getStateForAction(state, action, options);
+    if (next === null || next.stale) throw new Error(`action not handled: ${action.type}`);
+    return next as State;
+  };
+  const nested = (a: ReturnType<typeof openYourPlan>) => {
+    const tab = a.payload.params;
+    if (tab.screen !== 'Library' || tab.params === undefined || !('screen' in tab.params) || tab.params.screen === undefined) throw new Error('not Library');
+    return { type: 'NAVIGATE', payload: { name: tab.params.screen, ...(tab.params.params === undefined ? {} : { params: tab.params.params as object }), ...(tab.params.pop === undefined ? {} : { pop: tab.params.pop }) } } as const;
+  };
+  const withPlanDay = () => apply(router.getInitialState(options) as State, { type: 'NAVIGATE', payload: { name: 'LibraryPlanDay', params: { routineId: 'r1' } } });
+
+  it('a plan day on top is popped: the stack is exactly [LibraryHome] on Workouts with the nonce', () => {
+    const s = apply(withPlanDay(), nested(openYourPlan('n1')));
+    expect(s.routes.map((r) => r.name)).toEqual(['LibraryHome']);
+    expect(s.routes[0]?.params).toEqual({ segment: 'workouts', plan: 'n1' });
+    // Already there: a second tap stays one LibraryHome.
+    expect(apply(s, nested(openYourPlan('n2'))).routes.map((r) => r.name)).toEqual(['LibraryHome']);
+  });
+
+  it('the editor’s Save back to Library (from a plan day’s Edit) pops the same way', () => {
+    const s = apply(withPlanDay(), nested(openLibrary('workouts')));
+    expect(s.routes.map((r) => r.name)).toEqual(['LibraryHome']);
   });
 });

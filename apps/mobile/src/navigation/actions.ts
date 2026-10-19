@@ -79,12 +79,17 @@ export function popToFromEditor(from: EditorFrom, toast: LibraryToastParam) {
  * back to the one Tabs. `toast`: the editor's `Saved Push A` [Undo].
  */
 export function openLibrary(segment: LibrarySegment, toast?: LibraryToastParam): PopToTabsAction {
-  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment, ...(toast ? { toast } : {}) } } });
+  // `pop` (review planview S1): a plan day or exercise detail open in the Library stack is popped, never left on top of a second LibraryHome.
+  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment, ...(toast ? { toast } : {}) }, pop: true } });
 }
 
-/** Today's `Day 2 of 4 ›` (Ben, 19 Oct): Library › Workouts, scrolled to the top where Your plan is. `nonce`: once per tap. */
+/**
+ * Today's `Day 2 of 4 ›` (Ben, 19 Oct): Library › Workouts, scrolled to the top where Your plan is. `nonce`: once per tap.
+ * `pop` (review planview S1): a plan day left open in the Library stack is popped back to LibraryHome (React Navigation 7's
+ * nested navigate otherwise pushes a second one on top of it).
+ */
 export function openYourPlan(nonce: string): PopToTabsAction {
-  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', plan: nonce } } });
+  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', plan: nonce }, pop: true } });
 }
 
 /**
