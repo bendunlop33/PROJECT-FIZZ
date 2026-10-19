@@ -40,7 +40,8 @@ import type { SubstituteContext } from './substitutes';
  * - The plan's lifecycle: versions, Apply (`Replace my workouts` or `Add
  *   alongside`), Undo (the setup before Apply back), each versioned and
  *   idempotent on its op ID (rule 5). Apply is a proposal's Apply (rule 3).
- * - Up next walks the plan's days (`planUpNext`, `planRoutineForSplitDay`).
+ * - Up next adapts to what Ben does (`planDaysByDue` in plan-adapt.ts, 20 Oct);
+ *   `planUpNext` is the old walk, kept for its tests.
  * - A day's first workout takes the plan's checked loads (`planFirstLoads`);
  *   after that, next-time targets as for any saved workout.
  *
@@ -420,9 +421,12 @@ export type PlanEndChange =
 /**
  * `End plan`: the plan in use stops being in use (`ended`). Its days leave
  * the rotation; the workouts and their history stay (rule 2), so Up next
- * falls back to the normal rules. Versioned and idempotent on its op ID
- * (rule 5). `routines`: the plan's workouts as stored now. A day Ben
- * already took out of the rotation (or deleted) is left as it is.
+ * falls back to the normal rules. The workouts `Replace my workouts` took
+ * out go back in the rotation as they were before Apply (Ben, 20 Oct),
+ * except any he deleted or changed since (`ended.notRestored`). Versioned
+ * and idempotent on its op ID (rule 5). `routines`: the plan's workouts and
+ * the ones Apply took out, as stored now. A day Ben already took out of the
+ * rotation (or deleted) is left as it is.
  */
 export function endPlan(current: PlanDraft, input: { expectedVersion: number; opId: string; at: ZonedTimestamp; routines: ReadonlyMap<string, Routine | null> }): PlanEndChange {
   if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
@@ -437,7 +441,24 @@ export function endPlan(current: PlanDraft, input: { expectedVersion: number; op
     update.push({ next: c.next, expectedVersion: c.expectedVersion });
     rotationOff.push({ routineId: r.id, rotationAtUtc: r.rotationAtUtc ?? null, versionBefore: r.version, versionAfter: c.next.version });
   }
-  const ended: PlanEnded = { opId: input.opId, atUtc: input.at.utc, rotationOff };
+  // (Ben, 20 Oct: option B) The workouts `Replace my workouts` took out go back in their places, as they were before
+  // Apply: only one still at the version Apply left it. One Ben deleted or changed since is skipped and named
+  // (`N workouts not restored`); one he already put back in the rotation himself is left as it is.
+  const restored: NonNullable<PlanEnded['restored']> = [];
+  const notRestored: NonNullable<PlanEnded['notRestored']> = [];
+  for (const off of current.applied.rotationOff) {
+    const r = input.routines.get(off.routineId) ?? null;
+    if (r !== null && !isDeleted(r) && isInRotation(r)) continue;
+    if (r === null || isDeleted(r) || r.version !== off.versionAfter) {
+      notRestored.push({ routineId: off.routineId, name: r?.name ?? off.name });
+      continue;
+    }
+    const c = setRoutineRotation(r, true, r.version, `${input.opId}:on:${r.id}`, input.at, off.rotationAtUtc);
+    if (c.kind !== 'write') continue;
+    update.push({ next: c.next, expectedVersion: c.expectedVersion });
+    restored.push({ routineId: r.id, versionBefore: r.version, versionAfter: c.next.version });
+  }
+  const ended: PlanEnded = { opId: input.opId, atUtc: input.at.utc, rotationOff, restored, notRestored };
   return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'ended', ended }), expectedVersion: current.version, update };
 }
 
@@ -465,11 +486,25 @@ export function undoEndPlan(current: PlanDraft, input: { expectedVersion: number
     const c = setRoutineRotation(r, true, r.version, `${input.opId}:on:${r.id}`, input.at, off.rotationAtUtc);
     if (c.kind === 'write') update.push({ next: c.next, expectedVersion: c.expectedVersion });
   }
+  // The workouts End put back (20 Oct) come out of the rotation again, as Apply left them.
+  for (const back of ended.restored ?? []) {
+    const r = input.routines.get(back.routineId) ?? null;
+    if (r === null || isDeleted(r)) continue;
+    if (r.version !== back.versionAfter) {
+      changed.push(r.name);
+      continue;
+    }
+    const c = setRoutineRotation(r, false, r.version, `${input.opId}:off:${r.id}`, input.at);
+    if (c.kind === 'write') update.push({ next: c.next, expectedVersion: c.expectedVersion });
+  }
   if (changed.length > 0) return { kind: 'changed_since', current, names: [...new Set(changed)] };
   const after = new Map(update.map((x) => [x.next.id, x.next.version]));
   const before = new Map(ended.rotationOff.map((o) => [o.routineId, o.versionBefore]));
   const made = current.applied.made.map((m) => (before.get(m.routineId) === m.version ? { ...m, version: after.get(m.routineId) ?? m.version } : m));
-  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', ended: null, applied: { ...current.applied, made } }), expectedVersion: current.version, update };
+  // Apply's record follows them too, so a later End (or the card's Undo of Apply) finds them as left now.
+  const putBack = new Set((ended.restored ?? []).map((x) => x.routineId));
+  const rotationOff = current.applied.rotationOff.map((o) => (putBack.has(o.routineId) && after.has(o.routineId) ? { ...o, versionAfter: after.get(o.routineId) ?? o.versionAfter } : o));
+  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', ended: null, applied: { ...current.applied, made, rotationOff } }), expectedVersion: current.version, update };
 }
 
 // ---------------------------------------------------------------------------

@@ -150,8 +150,55 @@ export const PlanEndedSchema = z.object({
   opId: OperationIdSchema,
   atUtc: UtcTimestampSchema,
   rotationOff: z.array(z.object({ routineId: IdSchema, rotationAtUtc: UtcTimestampSchema.nullable(), versionBefore: z.int().min(1), versionAfter: z.int().min(2) })).max(PLAN_LIMITS.maxDays),
+  /**
+   * (Ben, 20 Oct: option B) The workouts `Replace my workouts` took out of the rotation that End put
+   * back in their places, at the versions End left them (its Undo takes them out again). Absent on
+   * plans ended before 20 Oct.
+   */
+  restored: z.array(z.object({ routineId: IdSchema, versionBefore: z.int().min(1), versionAfter: z.int().min(2) })).max(40).optional(),
+  /** Those End couldn't put back: Ben deleted or changed them since Apply (`N workouts not restored`). */
+  notRestored: z.array(z.object({ routineId: IdSchema, name: z.string().min(1).max(120) })).max(40).optional(),
 });
 export type PlanEnded = z.infer<typeof PlanEndedSchema>;
+
+/** A local calendar date, `YYYY-MM-DD`. */
+const LocalDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/**
+ * (Ben, 20 Oct) `Make next`: a plan day pinned as Up next until it is done
+ * (a workout from it, or one that mainly trained its body parts, after
+ * `atUtc`), or another day is pinned, or Ben unpins it.
+ */
+export const PlanPinSchema = z.object({ routineId: IdSchema, opId: OperationIdSchema, atUtc: UtcTimestampSchema });
+export type PlanPin = z.infer<typeof PlanPinSchema>;
+
+/**
+ * (Ben, 20 Oct: "should also be able to pause eg if go on hols") One pause
+ * of the plan in use. Paused from `fromUtc` until Ben resumes
+ * (`endedAtUtc`) or, with `untilDate`, until that local date starts (the
+ * plan is in use again on it). While paused, Up next follows the normal
+ * rules and the paused days don't count against the aim.
+ */
+export const PlanPauseSchema = z.object({
+  opId: OperationIdSchema,
+  fromUtc: UtcTimestampSchema,
+  /** Local date the plan is back in use on (`2026-11-03`); null: until Resume. */
+  untilDate: LocalDateSchema.nullable(),
+  /** Resumed early by Ben (or the auto-resume write on the first open after `untilDate`). */
+  endedAtUtc: UtcTimestampSchema.nullable(),
+  endedBy: z.enum(['ben', 'auto']).nullable().optional(),
+});
+export type PlanPause = z.infer<typeof PlanPauseSchema>;
+
+/** The last `Make next` / pause / resume write and the pin and pauses before it: its Undo puts exactly those back (rule 2, 5). */
+export const PlanControlUndoSchema = z.object({
+  opId: OperationIdSchema,
+  kind: z.enum(['pin', 'unpin', 'pause', 'resume']),
+  /** The plan's version this write left: Undo only from it. */
+  versionAfter: z.int().min(2),
+  before: z.object({ pin: PlanPinSchema.nullable(), pauses: z.array(PlanPauseSchema).max(60) }),
+});
+export type PlanControlUndo = z.infer<typeof PlanControlUndoSchema>;
 
 /**
  * A coach-built plan (Your data). `open` until applied, discarded or
@@ -174,6 +221,12 @@ export const PlanDraftSchema = z
     supersededBy: z.object({ planId: IdSchema, opId: OperationIdSchema, atUtc: UtcTimestampSchema }).nullable().optional(),
     /** Ben's `End plan` (status `ended`); absent or null otherwise. */
     ended: PlanEndedSchema.nullable().optional(),
+    /** (20 Oct) `Make next`; absent or null: none (Up next adapts). */
+    pin: PlanPinSchema.nullable().optional(),
+    /** (20 Oct) Every pause, oldest first; the last may still be running. Absent: never paused. */
+    pauses: z.array(PlanPauseSchema).max(60).optional(),
+    /** (20 Oct) The last pin or pause write, for its Undo. */
+    lastControl: PlanControlUndoSchema.nullable().optional(),
     opIds: z.array(OperationIdSchema).max(PLAN_LIMITS.maxOps),
     createdAt: ZonedTimestampSchema,
     tz: TimeZoneSchema,

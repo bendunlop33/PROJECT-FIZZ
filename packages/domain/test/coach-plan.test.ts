@@ -38,6 +38,12 @@ import {
   planUpNext,
   rotationRoutines,
   endPlan,
+  activePause,
+  autoResumeDue,
+  pausePlan,
+  pinPlanDay,
+  resumePlan,
+  undoPlanControl,
   undoEndPlan,
   undoPlanApply,
   type FinishedRef,
@@ -500,6 +506,9 @@ describe('End plan and its Undo (Ben, 19 Oct: Library › Your plan; rule 2, rul
       ['Pull', false, 1],
       ['Legs', false, 1],
       ['Upper', false, 1],
+      // (Ben, 20 Oct: option B) the workouts `Replace my workouts` took out go back.
+      ['Push A', true, 4],
+      ['Pull A', true, 4],
     ]);
     expect(e.update.every((u) => u.next.deletedAtUtc === undefined || u.next.deletedAtUtc === null)).toBe(true);
     expect(e.next).toMatchObject({ status: 'ended', version: 3, ended: { opId: 'end-1', atUtc: at(100).utc } });
@@ -511,7 +520,7 @@ describe('End plan and its Undo (Ben, 19 Oct: Library › Your plan; rule 2, rul
     ]);
     expect(PlanDraftSchema.safeParse(e.next).success).toBe(true);
     const after = withUpdates(routines, e.update);
-    expect(inRotation(after)).toEqual([]);
+    expect(inRotation(after)).toEqual(['Push A', 'Pull A']);
     expect(planRoutines(e.next, [...after.values()].filter((r): r is Routine => r !== null))).toEqual([]);
     // The Apply's Undo from the coach card is stale now (it would delete the workouts End keeps).
     expect(undoPlanApply(e.next, { expectedVersion: 3, opId: 'undo-apply', at: at(110), routines: after }).kind).toBe('stale');
@@ -533,7 +542,69 @@ describe('End plan and its Undo (Ben, 19 Oct: Library › Your plan; rule 2, rul
     out.set(push.id, { ...push, version: 2, inRotation: false });
     const e2 = endPlan(a.next, { expectedVersion: 2, opId: 'end-5', at: at(100), routines: out });
     if (e2.kind !== 'write') throw new Error(e2.kind);
-    expect(e2.update.map((u) => u.next.name)).toEqual(['Pull', 'Legs', 'Upper']);
+    expect(e2.update.map((u) => u.next.name)).toEqual(['Pull', 'Legs', 'Upper', 'Push A', 'Pull A']);
+  });
+
+  it('(Ben, 20 Oct: option B) End restores the workouts Replace took out, in their places as before Apply; Undo of End takes them out again', () => {
+    const { a, routines } = applied();
+    const e = endPlan(a.next, { expectedVersion: 2, opId: 'end-1', at: at(100), routines });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    const after = withUpdates(routines, e.update);
+    expect([PUSH_A.id, PULL_A.id].map((x) => after.get(x)?.rotationAtUtc)).toEqual([PUSH_A.rotationAtUtc, PULL_A.rotationAtUtc]);
+    expect(e.next.ended?.restored).toEqual([
+      { routineId: PUSH_A.id, versionBefore: 4, versionAfter: 5 },
+      { routineId: PULL_A.id, versionBefore: 4, versionAfter: 5 },
+    ]);
+    expect(e.next.ended?.notRestored).toEqual([]);
+    expect(isInRotation(after.get(ARMS.id) as Routine)).toBe(false);
+    const u = undoEndPlan(e.next, { expectedVersion: 3, opId: 'resume-1', at: at(120), routines: after, otherApplied: false });
+    if (u.kind !== 'write') throw new Error(u.kind);
+    const back = withUpdates(after, u.update);
+    expect(inRotation(back)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    // Apply's record follows them: a second End restores them again, and the card's Undo of Apply still puts them back.
+    expect(u.next.applied?.rotationOff.map((o) => o.versionAfter)).toEqual([6, 6]);
+    const e2 = endPlan(u.next, { expectedVersion: 4, opId: 'end-2', at: at(130), routines: back });
+    if (e2.kind !== 'write') throw new Error(e2.kind);
+    expect(inRotation(withUpdates(back, e2.update))).toEqual(['Push A', 'Pull A']);
+    expect(undoPlanApply(u.next, { expectedVersion: 4, opId: 'undo-apply', at: at(130), routines: back }).kind).toBe('write');
+  });
+
+  it('a replaced workout Ben deleted or changed since isn’t restored and is named; one he put back himself is left as it is', () => {
+    const { a, routines } = applied();
+    const edited = new Map(routines);
+    const pushA = routines.get(PUSH_A.id) as Routine;
+    const pullA = routines.get(PULL_A.id) as Routine;
+    edited.set(PUSH_A.id, { ...pushA, version: pushA.version + 1, name: 'Push A heavy' });
+    edited.set(PULL_A.id, { ...pullA, version: pullA.version + 1, deletedAtUtc: at(50).utc });
+    const e = endPlan(a.next, { expectedVersion: 2, opId: 'end-1', at: at(100), routines: edited });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    expect(e.next.ended?.restored).toEqual([]);
+    expect(e.next.ended?.notRestored).toEqual([
+      { routineId: PUSH_A.id, name: 'Push A heavy' },
+      { routineId: PULL_A.id, name: 'Pull A' },
+    ]);
+    expect(PlanDraftSchema.safeParse(e.next).success).toBe(true);
+    const himself = new Map(routines);
+    himself.set(PUSH_A.id, { ...pushA, version: pushA.version + 1, inRotation: true });
+    const e2 = endPlan(a.next, { expectedVersion: 2, opId: 'end-2', at: at(100), routines: himself });
+    if (e2.kind !== 'write') throw new Error(e2.kind);
+    expect(e2.next.ended?.notRestored).toEqual([]);
+    expect(e2.next.ended?.restored?.map((r) => r.routineId)).toEqual([PULL_A.id]);
+    // Add alongside took nothing out: nothing to restore.
+    const add = applyPlan(planOf(), { expectedVersion: 1, versionN: 1, mode: 'add', opId: 'apply-add', at: at(0), live });
+    if (add.kind !== 'write') throw new Error(add.kind);
+    const e3 = endPlan(add.next, { expectedVersion: 2, opId: 'end-3', at: at(100), routines: new Map([...add.create, ...live].map((r) => [r.id, r])) });
+    expect(e3.kind === 'write' ? e3.next.ended?.restored : null).toEqual([]);
+  });
+
+  it('Undo of End refuses when Ben changed a restored workout since', () => {
+    const { a, routines } = applied();
+    const e = endPlan(a.next, { expectedVersion: 2, opId: 'end-1', at: at(100), routines });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    const after = withUpdates(routines, e.update);
+    const pushA = after.get(PUSH_A.id) as Routine;
+    after.set(PUSH_A.id, { ...pushA, version: pushA.version + 1, name: 'Push A v2' });
+    expect(undoEndPlan(e.next, { expectedVersion: 3, opId: 'resume-1', at: at(120), routines: after, otherApplied: false })).toMatchObject({ kind: 'changed_since', names: ['Push A v2'] });
   });
 
   it('Undo of End: the days back in the rotation in their places, the plan in use again, and the card’s Undo of Apply still works', () => {
@@ -569,6 +640,85 @@ describe('End plan and its Undo (Ben, 19 Oct: Library › Your plan; rule 2, rul
     const edited = new Map(ended);
     edited.set(pull.id, { ...pull, version: pull.version + 1, name: 'Pull heavy' });
     expect(undoEndPlan(e.next, { expectedVersion: 3, opId: 'resume-2', at: at(120), routines: edited, otherApplied: false })).toMatchObject({ kind: 'changed_since', names: ['Pull heavy'] });
+  });
+});
+
+describe('Make next, pause and resume (Ben, 20 Oct; rule 2, rule 5)', () => {
+  function applied() {
+    const a = applyPlan(planOf(), { expectedVersion: 1, versionN: 1, mode: 'replace', opId: 'apply-1', at: at(0), live: [] });
+    if (a.kind !== 'write') throw new Error(a.kind);
+    return a;
+  }
+  const DAY = 86_400;
+
+  it('Make next pins a live plan day; versioned, idempotent; Undo puts the pin before back; a stale Undo changes nothing', () => {
+    const a = applied();
+    const [push, pull] = a.create;
+    if (push === undefined || pull === undefined) throw new Error('days');
+    const p1 = pinPlanDay(a.next, { expectedVersion: 2, opId: 'pin-1', at: at(10), routineId: pull.id, days: a.create });
+    if (p1.kind !== 'write') throw new Error(p1.kind);
+    expect(p1.next).toMatchObject({ version: 3, pin: { routineId: pull.id, opId: 'pin-1' }, lastControl: { opId: 'pin-1', kind: 'pin', versionAfter: 3, before: { pin: null, pauses: [] } } });
+    expect(PlanDraftSchema.safeParse(p1.next).success).toBe(true);
+    expect(pinPlanDay(p1.next, { expectedVersion: 3, opId: 'pin-1', at: at(11), routineId: pull.id, days: a.create }).kind).toBe('duplicate');
+    expect(pinPlanDay(p1.next, { expectedVersion: 2, opId: 'pin-2', at: at(11), routineId: push.id, days: a.create }).kind).toBe('stale');
+    expect(pinPlanDay(p1.next, { expectedVersion: 3, opId: 'pin-3', at: at(11), routineId: id(999), days: a.create })).toMatchObject({ kind: 'invalid', reason: 'not_a_day' });
+    const p2 = pinPlanDay(p1.next, { expectedVersion: 3, opId: 'pin-4', at: at(12), routineId: push.id, days: a.create });
+    if (p2.kind !== 'write') throw new Error(p2.kind);
+    // The first pin's Undo is out of date now; the second's puts Pull back.
+    expect(undoPlanControl(p2.next, { expectedVersion: 4, opId: 'u-1', at: at(13), targetOpId: 'pin-1' }).kind).toBe('stale');
+    const u = undoPlanControl(p2.next, { expectedVersion: 4, opId: 'u-2', at: at(13), targetOpId: 'pin-4' });
+    if (u.kind !== 'write') throw new Error(u.kind);
+    expect(u.next.pin?.routineId).toBe(pull.id);
+    expect(undoPlanControl(u.next, { expectedVersion: 5, opId: 'u-3', at: at(14), targetOpId: 'pin-4' }).kind).toBe('stale');
+    expect(undoPlanControl(u.next, { expectedVersion: 5, opId: 'u-2', at: at(14), targetOpId: 'pin-4' }).kind).toBe('duplicate');
+    // Unpin.
+    const un = pinPlanDay(u.next, { expectedVersion: 5, opId: 'pin-5', at: at(15), routineId: null, days: a.create });
+    expect(un.kind === 'write' ? un.next.pin : 'x').toBeNull();
+    // Only the plan in use.
+    expect(pinPlanDay(planOf(), { expectedVersion: 1, opId: 'pin-6', at: at(15), routineId: push.id, days: a.create }).kind).toBe('stale');
+  });
+
+  it('Pause until a date: paused now, back in use on the date; the first open after it writes the resume; Resume any time; Undo of each', () => {
+    const a = applied();
+    const p = pausePlan(a.next, { expectedVersion: 2, opId: 'pause-1', at: at(10), untilDate: '2026-11-03', tz: TZ });
+    if (p.kind !== 'write') throw new Error(p.kind);
+    expect(PlanDraftSchema.safeParse(p.next).success).toBe(true);
+    expect(activePause(p.next, Date.parse(at(DAY).utc), TZ)?.untilDate).toBe('2026-11-03');
+    // A second pause while one runs, or a date not after today: refused.
+    expect(pausePlan(p.next, { expectedVersion: 3, opId: 'pause-2', at: at(20), untilDate: null, tz: TZ })).toMatchObject({ kind: 'invalid', reason: 'already_paused' });
+    expect(pausePlan(a.next, { expectedVersion: 2, opId: 'pause-3', at: at(10), untilDate: '2026-10-08', tz: TZ })).toMatchObject({ kind: 'invalid', reason: 'bad_date' });
+    // Undo of the pause: in use again.
+    const up = undoPlanControl(p.next, { expectedVersion: 3, opId: 'u-1', at: at(30), targetOpId: 'pause-1' });
+    if (up.kind !== 'write') throw new Error(up.kind);
+    expect(activePause(up.next, Date.parse(at(DAY).utc), TZ)).toBeNull();
+    // Resume early, then Undo of the resume: paused again.
+    const r = resumePlan(p.next, { expectedVersion: 3, opId: 'resume-1', at: at(2 * DAY), tz: TZ });
+    if (r.kind !== 'write') throw new Error(r.kind);
+    expect(r.next.pauses?.at(-1)).toMatchObject({ endedAtUtc: at(2 * DAY).utc, endedBy: 'ben' });
+    expect(activePause(r.next, Date.parse(at(3 * DAY).utc), TZ)).toBeNull();
+    expect(resumePlan(r.next, { expectedVersion: 4, opId: 'resume-2', at: at(3 * DAY), tz: TZ })).toMatchObject({ kind: 'invalid', reason: 'not_paused' });
+    const ur = undoPlanControl(r.next, { expectedVersion: 4, opId: 'u-2', at: at(3 * DAY), targetOpId: 'resume-1' });
+    expect(ur.kind === 'write' ? activePause(ur.next, Date.parse(at(3 * DAY).utc), TZ) : 'x').not.toBeNull();
+    // Auto-resume: not before the date; on it, ended at the date's start, and the pause's Undo is out of date.
+    const nov4 = Date.parse('2026-11-03T20:00:00.000Z');
+    expect(resumePlan(p.next, { expectedVersion: 3, opId: 'auto-0', at: at(5 * DAY), tz: TZ, auto: true }).kind).toBe('invalid');
+    expect(autoResumeDue(p.next, nov4, TZ)).not.toBeNull();
+    const auto = resumePlan(p.next, { expectedVersion: 3, opId: 'auto-1', at: { utc: new Date(nov4).toISOString(), tz: TZ }, tz: TZ, auto: true });
+    if (auto.kind !== 'write') throw new Error(auto.kind);
+    expect(auto.next.pauses?.at(-1)).toMatchObject({ endedAtUtc: '2026-11-02T11:00:00.000Z', endedBy: 'auto' });
+    expect(auto.next.lastControl).toBeNull();
+    expect(autoResumeDue(auto.next, nov4, TZ)).toBeNull();
+    expect(PlanDraftSchema.safeParse(auto.next).success).toBe(true);
+    // Retried auto-resume with the same op ID: duplicate.
+    expect(resumePlan(auto.next, { expectedVersion: 4, opId: 'auto-1', at: { utc: new Date(nov4).toISOString(), tz: TZ }, tz: TZ, auto: true }).kind).toBe('duplicate');
+  });
+
+  it('Pause with no date runs until Resume', () => {
+    const a = applied();
+    const p = pausePlan(a.next, { expectedVersion: 2, opId: 'pause-1', at: at(10), untilDate: null, tz: TZ });
+    if (p.kind !== 'write') throw new Error(p.kind);
+    expect(activePause(p.next, Date.parse(at(200 * DAY).utc), TZ)).not.toBeNull();
+    expect(autoResumeDue(p.next, Date.parse(at(200 * DAY).utc), TZ)).toBeNull();
   });
 });
 

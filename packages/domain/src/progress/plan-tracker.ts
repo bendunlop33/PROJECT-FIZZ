@@ -1,5 +1,6 @@
-import type { Load, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
+import type { Load, MuscleGroup, SessionAggregate, SessionExercise, SplitBodyPart, WorkoutSet } from '@fizz/schemas';
 import { addDays, localDateOf, localWeekBounds } from '../calendar';
+import { aimWithPause, planDaysDoneBy } from '../session/plan-adapt';
 import { formatDuration, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
 import { toMs } from '../time';
@@ -170,11 +171,17 @@ export interface ConsistencyWorkout {
   sessionId: string;
   routineId: string | null;
   startedAtUtc: string;
+  /** (20 Oct) Working sets per muscle group, for the plan's days done this week; absent: only plan workouts count. */
+  groups?: ReadonlyMap<MuscleGroup, number> | undefined;
 }
 
 export interface ConsistencyWeek {
   /** Local Monday, `YYYY-MM-DD`. */
   monday: string;
+  /** (20 Oct) This week's aim with its paused plan days left out (`aimWithPause`); null with no aim, or every day paused. */
+  aim: number | null;
+  /** Days of it the plan was paused (0–7). */
+  pausedDays: number;
   workouts: number;
   /**
    * Distinct local dates trained: what the days-a-week aim is measured in
@@ -206,18 +213,27 @@ export interface ConsistencyInput {
   /** Profile's `Days a week you lift`; null: not set. */
   aim: number | null;
   /** The applied plan's live days (their workout IDs and the finished workouts saved from them), and when it was applied. */
-  plan: { days: readonly { routineId: string; createdFromSessionId?: string | null | undefined }[]; appliedAtUtc: string } | null;
+  plan: { days: readonly PlanWeekDay[]; appliedAtUtc: string } | null;
+  /**
+   * (Ben, 20 Oct) Local dates the plan was paused (`pausedDates`; a running pause's coming days
+   * included): they don't count against the aim. Absent: none.
+   */
+  pausedDates?: ReadonlySet<string>;
 }
 
 export interface PlanWeekDay {
   routineId: string;
   createdFromSessionId?: string | null | undefined;
+  /** (20 Oct) The day's body parts (`planDayBodyParts`): an off-plan workout that mainly trained them counts it done. */
+  bodyParts?: readonly SplitBodyPart[] | undefined;
 }
 
 export interface PlanWeekWorkout {
   sessionId: string;
   routineId: string | null;
   startedAtUtc: string;
+  /** (20 Oct) Working sets per muscle group; absent: only a plan workout counts. */
+  groups?: ReadonlyMap<MuscleGroup, number> | undefined;
 }
 
 /** The finished workout is that plan day's: started from its workout (or the workout it was saved from). */
@@ -232,24 +248,53 @@ export function planWeekStartMs(input: { appliedAtUtc: string; nowMs: number; tz
 
 /**
  * The plan days done this week (since Apply, up to now): per day, its newest
- * such workout. The Progress consistency card's `3 of 4` counts the same.
+ * such workout. A plan workout counts for its own day; (Ben, 20 Oct) any other
+ * workout counts for the days it mainly trained by muscles done
+ * (`planDaysDoneBy`, the split rule's threshold). The Progress consistency
+ * card's `3 of 4` counts the same.
  */
 export function planDaysDoneThisWeek(input: { days: readonly PlanWeekDay[]; appliedAtUtc: string; workouts: readonly PlanWeekWorkout[]; nowMs: number; tz: string }): Map<string, string> {
   const from = planWeekStartMs(input);
+  const days = input.days.map((d) => ({ routineId: d.routineId, name: d.routineId, bodyParts: d.bodyParts ?? [], createdFromSessionId: d.createdFromSessionId ?? null }));
   const done = new Map<string, string>();
   for (const w of input.workouts) {
     const ms = toMs(w.startedAtUtc);
     if (ms < from || ms > input.nowMs) continue;
-    const d = dayOf(input.days, w);
-    if (d === undefined) continue;
-    const prev = done.get(d.routineId);
-    if (prev === undefined || toMs(prev) < ms) done.set(d.routineId, w.startedAtUtc);
+    const ids = planDaysDoneBy(days, { sessionId: w.sessionId, routineId: w.routineId, startedAtUtc: w.startedAtUtc, groups: w.groups ?? new Map() });
+    for (const id of ids) {
+      const prev = done.get(id);
+      if (prev === undefined || toMs(prev) < ms) done.set(id, w.startedAtUtc);
+    }
   }
   return done;
 }
 
-function weekOf(monday: string, workouts: number, days: number, aim: number | null): ConsistencyWeek {
-  return { monday, workouts, days, text: aim === null ? String(workouts) : `${String(days)}/${String(aim)}`, atAim: aim === null ? null : days >= aim };
+/** This week's plan days against the plan, its paused days left out: `of` is never below `done`. */
+export function planWeekOf(daysInPlan: number, done: number, pausedDays: number): number {
+  return Math.max(done, aimWithPause(daysInPlan, pausedDays));
+}
+
+/** Of the 7 local dates from `monday`, how many are in `paused`. */
+export function pausedInWeek(monday: string, paused: ReadonlySet<string> | undefined): number {
+  if (paused === undefined || paused.size === 0) return 0;
+  let n = 0;
+  for (let i = 0; i < 7; i += 1) if (paused.has(addDays(monday, i))) n += 1;
+  return n;
+}
+
+function weekOf(monday: string, workouts: number, days: number, aim: number | null, pausedDays = 0): ConsistencyWeek {
+  // (Ben, 20 Oct) Paused days don't count against the aim: a fully paused week isn't judged.
+  const weekAim = aim === null ? null : aimWithPause(aim, pausedDays);
+  const judged = weekAim !== null && weekAim > 0;
+  return {
+    monday,
+    aim: judged ? weekAim : null,
+    pausedDays,
+    workouts,
+    days,
+    text: aim === null ? String(workouts) : judged ? `${String(days)}/${String(weekAim)}` : String(days),
+    atAim: aim === null || !judged ? null : days >= weekAim,
+  };
 }
 
 /**
@@ -270,18 +315,20 @@ export function consistency(input: ConsistencyInput): ConsistencyView {
     counts.set(monday, (counts.get(monday) ?? 0) + 1);
     dates.set(monday, (dates.get(monday) ?? new Set<string>()).add(localDateOf(ms, input.tz)));
   }
-  const weekFor = (m: string) => weekOf(m, counts.get(m) ?? 0, dates.get(m)?.size ?? 0, input.aim);
+  const weekFor = (m: string) => weekOf(m, counts.get(m) ?? 0, dates.get(m)?.size ?? 0, input.aim, pausedInWeek(m, input.pausedDates));
   const weeks = mondays.map(weekFor);
   const thisWeek = weekFor(mondayLocalDate);
   const atAim = weeks.filter((w) => w.atAim === true).length;
+  const judged = weeks.filter((w) => w.atAim !== null).length;
   let planThisWeek: ConsistencyView['planThisWeek'] = null;
   const plan = input.plan;
   if (plan !== null && plan.days.length > 0) {
-    // The same count as Library › Your plan's `Days this week` (planDaysDoneThisWeek).
+    // The same count as Library › Your plan's `Days this week` (planDaysDoneThisWeek, planWeekOf).
     const done = planDaysDoneThisWeek({ days: plan.days, appliedAtUtc: plan.appliedAtUtc, workouts: input.workouts, nowMs: input.nowMs, tz: input.tz });
-    planThisWeek = { done: done.size, of: plan.days.length, text: `${String(done.size)} of ${String(plan.days.length)}` };
+    const of = planWeekOf(plan.days.length, done.size, thisWeek.pausedDays);
+    planThisWeek = { done: done.size, of, text: `${String(done.size)} of ${String(of)}` };
   }
-  return { weeks, thisWeek, aim: input.aim, atAimText: input.aim === null ? null : `Weeks at your aim: ${String(atAim)} of ${String(weeks.length)}`, planThisWeek };
+  return { weeks, thisWeek, aim: input.aim, atAimText: input.aim === null ? null : `Weeks at your aim: ${String(atAim)} of ${String(judged)}`, planThisWeek };
 }
 
 // ---------------------------------------------------------------------------
