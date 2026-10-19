@@ -190,6 +190,8 @@ export const ProposeExerciseArgsSchema = z.strictObject({
   primaryMuscles: z.array(MuscleSchema).min(1).max(3),
   measurement: MeasurementSchema,
   laterality: LateralitySchema.nullable(),
+  /** (Review exlist S3) Set only after Ben said his exercise is not the one find_exercises or a refusal named: that catalogueId. */
+  differentFrom: z.string().max(80).nullable().optional(),
   reason,
 });
 export type ProposeExerciseArgs = z.infer<typeof ProposeExerciseArgsSchema>;

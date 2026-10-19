@@ -6,6 +6,7 @@ import {
   customFieldsOf,
   editedCustomExercise,
   exerciseNameClash,
+  exerciseNearDuplicate,
   isArchivedExercise,
   newCustomExercise,
 } from '@fizz/domain';
@@ -48,7 +49,7 @@ export interface CustomForm {
   exerciseId: string;
   fields: CustomExerciseFields;
   version: number;
-  /** Logged with already: equipment, load, measure and sides stay. */
+  /** In use already (logged, or in a workout, routine, draft or plan): equipment, load, measure and sides stay. */
   locked: boolean;
 }
 
@@ -68,13 +69,14 @@ export function createCustomExercises(deps: CustomExerciseDeps) {
     return own;
   }
 
-  async function clashFor(p: UserProfile, name: string, selfId: string | null): Promise<{ exerciseId: string; name: string } | null> {
+  /** Ben's whole list (every gym) with catalogue aliases and his own import names: what a clash is checked against. */
+  async function clashPool(p: UserProfile) {
     const own = await ownAliases(p);
-    const hit = exerciseNameClash(
-      name,
-      (await list(p)).map((e) => ({ id: e.id, name: e.name, aliases: [...(e.catalogueKey ? deps.catalogueAliases(e.catalogueKey) : []), ...(own.get(e.id) ?? [])], source: e.source, archived: isArchivedExercise(e) })),
-      selfId,
-    );
+    return (await list(p)).map((e) => ({ id: e.id, name: e.name, aliases: [...(e.catalogueKey ? deps.catalogueAliases(e.catalogueKey) : []), ...(own.get(e.id) ?? [])], source: e.source, archived: isArchivedExercise(e), e }));
+  }
+
+  async function clashFor(p: UserProfile, name: string, selfId: string | null): Promise<{ exerciseId: string; name: string } | null> {
+    const hit = exerciseNameClash(name, await clashPool(p), selfId);
     return hit === null ? null : { exerciseId: hit.id, name: hit.name };
   }
 
@@ -98,6 +100,18 @@ export function createCustomExercises(deps: CustomExerciseDeps) {
       }
     },
 
+    /**
+     * (Review exlist S3) The coach's duplicate guard, on the same list as the form's: the exercise his
+     * name means (exact, or `near`: the same words another way), with the ID the coach uses. Throws
+     * when the list can't be read (the coach's call then fails, rather than proposing blind).
+     */
+    async coachClash(name: string): Promise<{ catalogueId: string; name: string; near: boolean } | null> {
+      const p = await deps.profile();
+      if (!p) return null;
+      const r = exerciseNearDuplicate(name, await clashPool(p));
+      return r === null ? null : { catalogueId: r.hit.e.catalogueKey ?? r.hit.e.id, name: r.hit.name, near: r.near };
+    },
+
     /** The form for Edit. Null: not one of Ben's own exercises (or deleted). */
     async form(exerciseId: string): Promise<CustomForm | null> {
       try {
@@ -105,7 +119,7 @@ export function createCustomExercises(deps: CustomExerciseDeps) {
         if (!p) return null;
         const e = await mineCustom(p, exerciseId);
         if (e === null || isArchivedExercise(e)) return null;
-        return { exerciseId: e.id, fields: customFieldsOf(e), version: e.version, locked: await repos().exercises.hasLoggedSets(e.id) };
+        return { exerciseId: e.id, fields: customFieldsOf(e), version: e.version, locked: await repos().exercises.isInUse(e.id) };
       } catch {
         return null;
       }
@@ -151,7 +165,7 @@ export function createCustomExercises(deps: CustomExerciseDeps) {
         if (!checked.ok) return { ok: false, reason: 'invalid', message: checked.problem };
         const clash = await clashFor(p, checked.fields.name, e.id);
         if (clash !== null) return clashFailure(clash);
-        const edited = editedCustomExercise(e, checked.fields, { atUtc: deps.now().utc, opId: req.opId, logged: await repos().exercises.hasLoggedSets(e.id) });
+        const edited = editedCustomExercise(e, checked.fields, { atUtc: deps.now().utc, opId: req.opId, inUse: await repos().exercises.isInUse(e.id) });
         if (!edited.ok) return { ok: false, reason: edited.reason === 'locked' ? 'locked' : 'missing', message: edited.message };
         const r = await repos().exercises.save(edited.exercise, e.version);
         return r.ok ? { ok: true, exercise: edited.exercise, duplicate: false } : { ok: false, reason: 'stale', message: CUSTOM_COPY.stale };

@@ -106,6 +106,41 @@ export function exerciseNameClash<T extends ClashCandidate>(name: string, pool: 
   return hits.find((e) => exerciseNameKey(e.name) === key && e.source === 'catalogue') ?? hits.find((e) => exerciseNameKey(e.name) === key) ?? hits[0] ?? null;
 }
 
+/** Words that don't change which exercise a name means ("Seated calf raise machine", "Calf raise (seated)"). */
+const FILLER_WORDS = new Set(['machine', 'the', 'a', 'an', 'with', 'on', 'using', 'exercise', 'movement', 'variation']);
+
+function nameWords(name: string): Set<string> {
+  return new Set(
+    exerciseNameKey(name)
+      .split(' ')
+      .filter((w) => w !== '' && !FILLER_WORDS.has(w)),
+  );
+}
+
+/** One name against another, by meaning: the same words in any order (filler aside), or the proposed name's 2+ words all in the other with one word to spare. */
+function nearlyNamed(proposed: Set<string>, other: Set<string>): boolean {
+  if (proposed.size === 0 || other.size === 0) return false;
+  const inOther = [...proposed].every((w) => other.has(w));
+  if (inOther && proposed.size === other.size) return true;
+  return inOther && proposed.size >= 2 && other.size - proposed.size === 1;
+}
+
+/**
+ * (Review exlist S3) The coach's duplicate guard: an exact clash first (`exerciseNameClash`), else an
+ * exercise whose name or other name means the same ("Seated calf raise machine", "Calf raise (seated)",
+ * "Machine seated calf" all mean Seated calf raise). `near` says which. A name with more words than an
+ * existing one ("Meadows barbell row" vs "Barbell row") is a different exercise. Pure.
+ */
+export function exerciseNearDuplicate<T extends ClashCandidate>(name: string, pool: readonly T[], selfId: string | null = null): { hit: T; near: boolean } | null {
+  const exact = exerciseNameClash(name, pool, selfId);
+  if (exact !== null) return { hit: exact, near: false };
+  const words = nameWords(name);
+  const live = pool.filter((e) => e.id !== selfId && !e.archived);
+  const byName = live.filter((e) => nearlyNamed(words, nameWords(e.name)));
+  const hit = byName.find((e) => e.source === 'catalogue') ?? byName[0] ?? live.find((e) => e.aliases.some((a) => nearlyNamed(words, nameWords(a)))) ?? null;
+  return hit === null ? null : { hit, near: true };
+}
+
 export const clashLine = (existingName: string): string => `${existingName} is already in your exercises.`;
 
 /** The ID a custom exercise gets: from the coach's proposal (one exercise per card), else from Ben's form operation. */
@@ -147,17 +182,18 @@ export function customFieldsOf(e: Exercise): CustomExerciseFields {
 
 export type CustomEdit = { ok: true; exercise: Exercise } | { ok: false; reason: 'not_custom' | 'locked'; message: string };
 
-export const CUSTOM_LOCKED_LINE = 'Logged with this already: equipment, load, measure and sides stay. Make a new exercise to change them.';
+export const CUSTOM_LOCKED_LINE = 'In use already: equipment, load, measure and sides stay. Make a new exercise to change them.';
 
 /**
- * A new version with Ben's edit (EL3): once a set is logged with it, the equipment, how the load is
- * counted, the measure and the sides stay (history stays comparable); the name and muscles change.
+ * A new version with Ben's edit (EL3): once it is in use (a set logged with it, or it is in a workout,
+ * routine, draft, plan or next-session target; review exlist S4: their loads are in its convention), the
+ * equipment, how the load is counted, the measure and the sides stay; the name and muscles change.
  */
-export function editedCustomExercise(existing: Exercise, fields: CustomExerciseFields, at: { atUtc: string; opId: string; logged: boolean }): CustomEdit {
+export function editedCustomExercise(existing: Exercise, fields: CustomExerciseFields, at: { atUtc: string; opId: string; inUse: boolean }): CustomEdit {
   if (existing.source !== 'custom') return { ok: false, reason: 'not_custom', message: 'Only your own exercises can be edited.' };
   const before = customFieldsOf(existing);
   const shapeChanged = before.equipment !== fields.equipment || before.loadConvention !== fields.loadConvention || before.measurement !== fields.measurement || before.laterality !== fields.laterality;
-  if (at.logged && shapeChanged) return { ok: false, reason: 'locked', message: CUSTOM_LOCKED_LINE };
+  if (at.inUse && shapeChanged) return { ok: false, reason: 'locked', message: CUSTOM_LOCKED_LINE };
   return {
     ok: true,
     exercise: {

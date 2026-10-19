@@ -223,6 +223,29 @@ export class SqliteExercises extends DocumentRepository<Exercise> {
       return row !== null;
     });
   }
+
+  /**
+   * (Review exlist S4) Whether anything holds a load in this exercise's convention: a set logged with
+   * it, a workout with it (pending sets in the active one), a routine, an open workout draft, plan or
+   * pre-start draft, or a live next-session target. A custom exercise's shape then stays (EL3).
+   * IDs are UUIDs, so a match inside a document's JSON is that exercise.
+   */
+  isInUse(exerciseId: string): Promise<boolean> {
+    return this.db.read(async (q) => {
+      const like = `%"${exerciseId}"%`;
+      const row = await q.getFirst(
+        `SELECT 1 AS used WHERE
+           EXISTS (SELECT 1 FROM session_exercises WHERE exercise_id = ?)
+           OR EXISTS (SELECT 1 FROM routines WHERE data LIKE ?)
+           OR EXISTS (SELECT 1 FROM workout_drafts WHERE status = 'open' AND data LIKE ?)
+           OR EXISTS (SELECT 1 FROM plan_drafts WHERE status = 'open' AND data LIKE ?)
+           OR EXISTS (SELECT 1 FROM pre_start_drafts WHERE status = 'open' AND data LIKE ?)
+           OR EXISTS (SELECT 1 FROM next_session_targets WHERE exercise_id = ? AND status IN ('saved', 'proposed'))`,
+        [exerciseId, like, like, like, like, exerciseId],
+      );
+      return row !== null;
+    });
+  }
 }
 
 export class SqliteRoutines extends DocumentRepository<Routine> {
