@@ -987,7 +987,7 @@ Built in the first Library slice: Browse (search with aliases and typos, filters
 
 | Part | Why deferred | Checks affected |
 |---|---|---|
-| `＋ New exercise` (header on Exercises, end-of-list link) and `Create "<query>" as a new exercise` | No custom-exercise create flow or service exists yet; it is its own slice (catalogue + persistence) | EL-B3 (the `Create …` row; `No match…` is built), EL-B2 (custom rows only once created) |
+| ~~`＋ New exercise` and `Create "<query>" as a new exercise`~~ **Built 19 Oct** (Ben): header `＋` on Exercises, `Create "…"` under `No match`, the §2.6 form (no `Movement`, `Other names` or `Default rest` yet; muscles as group chips), Edit and Delete on a custom exercise's detail, and a `Yours` tag on its rows. The end-of-list link is not built. See CHANGELOG 2026-10-19. | — | EL-B2, EL-B3 apply |
 | `⋯` on Library (`Show hidden exercises`, `HIDDEN`, `Unhide`) | Needs hide/unhide writes | EL-B2 (hidden part) |
 | `Alternatives at Main Gym ›` on detail | Needs a read-only swap list screen over `rankSubstitutions`; the view model already computes `alternativesLabel` | — |
 | Detail `⋯` (Other names, Default rest, Notes, custom Edit, Hide / Delete), the `Notes` row, and long-press on browse rows | Each needs its own write path and undo | — |
