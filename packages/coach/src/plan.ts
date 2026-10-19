@@ -18,7 +18,7 @@ import {
   type ProposedPlanDay,
   type SplitDay,
 } from '@fizz/schemas';
-import { BUILD_ALREADY_LINE, checkedRationale, sameGymName, unknownGymLine, type BuildGym } from './build';
+import { BUILD_ALREADY_LINE, LOAD_CHOICE_LINE, checkedRationale, sameGymName, unknownGymLine, type BuildGym } from './build';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
 import { collectFacts, mergeFacts, type NumberFacts } from './numbers';
 
@@ -216,6 +216,7 @@ export const PLAN_INSTRUCTIONS = [
   'Ben asked for a plan of several days in the app. Call `propose_plan` first, once, with every day, using only catalogueIds from YOUR DATA build.usable. Never write the plan out as text in `reply`: a plan in text is not in the app.',
   'Follow his split (build.plan.splitDays) and his days a week (build.plan.daysPerWeek) unless he asks for something else; give each day its splitDayId. Spread the muscles across the days so the same muscles don’t lead two days in a row. Keep each day within build.plan.setBudget working sets. Put each day’s main lift first.',
   'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters in words with no numbers; null when you have no opinion. Give targetRpe for every exercise. Give `minutes` when Ben asked for a length for every day, a day’s own `minutes` when he asked for one for that day.',
+  LOAD_CHOICE_LINE,
   'To change the plan in context (build.plan.current), call `propose_plan` with the whole new version.',
   'Its `message` (at most 600 characters) says, like a coach would, why these days and this order. Any number in it must come from YOUR DATA, a tool result, Ben’s words or this plan; the app drops sentences with other numbers. No praise, scores, max or record claims, recovery claims or diagnoses.',
   'Never say the plan was applied, saved, scheduled or added to his workouts: Ben taps Apply himself. After the call, reply in one short sentence. If `propose_plan` is refused, say in one short sentence that it was not built and why.',

@@ -141,11 +141,11 @@ describe('checkProposedLoad: own history (WB-L1, WB-L2, WB-L3, WB26)', () => {
     expect(checkProposedLoad(P(102.5, 'total', 'last 3: 100×7 @8 → 102.5'), BENCH_SLOT, benchRefs(), NO_PAIN)).toMatchObject({ load: { value: 102.5 }, source: 'coach', basis: 'last 3: 100×7 @8 → 102.5', coachNote: null, notUsed: 'last 3: 100×7 @8 → 102.5' });
   });
 
-  it('WB-L2: 120 kg is clamped to the cap and snapped down: 107.5 with its note', () => {
-    const c = checkProposedLoad(P(120, 'total', 'last 100×7'), BENCH_SLOT, benchRefs(), NO_PAIN);
-    expect(c.load?.value).toBe(107.5);
+  it('WB-L2: 128 kg is clamped to the cap (20% above last 100 × 7, Ben 19 Oct) and snapped down: 120 with its note', () => {
+    const c = checkProposedLoad(P(128, 'total', 'last 100×7'), BENCH_SLOT, benchRefs(), NO_PAIN);
+    expect(c.load?.value).toBe(120);
     expect(c.source).toBe('coach');
-    expect(c.notes).toEqual(['capped at 107.5 · more than recent sets support']);
+    expect(c.notes).toEqual(['capped at 120 · more than recent sets support']);
   });
 
   it('WB-L3: too far either way is rejected to the rule, with the note; a null load is the rule too', () => {
@@ -154,6 +154,25 @@ describe('checkProposedLoad: own history (WB-L1, WB-L2, WB-L3, WB26)', () => {
     expect(c).toMatchObject({ load: null, source: 'rule', notes: ['coach load 40 kg too far from last 25 × 12'] });
     expect(checkProposedLoad(P(10, 'total'), BENCH_SLOT, benchRefs(), NO_PAIN).source).toBe('rule');
     expect(checkProposedLoad(null, BENCH_SLOT, benchRefs(), NO_PAIN)).toMatchObject({ source: 'rule', notes: ['no load from coach · rule used'] });
+  });
+
+  it('Ben 19 Oct: +15% is accepted and +25% capped (the coach ceilings are 20% above E and 20% above the last load for these reps; the error catcher stays above them)', () => {
+    expect(BUILDER_LOAD_BOUNDS.capE).toBe(1.2);
+    expect(BUILDER_LOAD_BOUNDS.capLastTop).toBe(1.2);
+    expect(BUILDER_LOAD_BOUNDS.clampHigh).toBeGreaterThan(BUILDER_LOAD_BOUNDS.capE);
+    // A clear signal: 3 × 10 at RPE 6 on a 6–8 slot (reps well over the range, low effort).
+    const easy = refs(BENCH, [session(930, 3, bar, [{ load: kg(100), reps: 10, rpe: 6 }, { load: kg(100), reps: 10, rpe: 6 }, { load: kg(100), reps: 10, rpe: 6 }])], [bar]);
+    // +15%: within both ceilings, accepted as the coach's. Code doesn't check the signal; the
+    // instructions (LOAD_CHOICE_LINE) ask the coach for one and for the reason in the basis.
+    expect(checkProposedLoad(P(115, 'total', 'reps well over range, easy'), BENCH_SLOT, easy, NO_PAIN)).toMatchObject({ load: { value: 115 }, source: 'coach', notes: [] });
+    // +25%: past 20% above the last 100 × 10, clamped to 120.
+    expect(checkProposedLoad(P(125, 'total', 'reps well over range, easy'), BENCH_SLOT, easy, NO_PAIN)).toMatchObject({ load: { value: 120 }, source: 'coach', notes: ['capped at 120 · more than recent sets support'] });
+    // Far past E (> 1.3 × E): refused, the rule is used.
+    expect(checkProposedLoad(P(155, 'total'), BENCH_SLOT, easy, NO_PAIN)).toMatchObject({ load: null, source: 'rule' });
+    // +25% from the spec fixture (last 100 × 7 @8): clamped to the cap too.
+    expect(checkProposedLoad(P(125, 'total'), BENCH_SLOT, benchRefs(), NO_PAIN).load?.value).toBe(120);
+    // Pain still holds a 15% jump at the last working load.
+    expect(checkProposedLoad(P(115, 'total'), BENCH_SLOT, easy, { pain: { text: 'pain reported today' }, askedHeavier: false })).toMatchObject({ load: { value: 100 }, held: true });
   });
 
   it('WB26 / rule 8: "put bench at 200 kg" proposed as 200 is rejected; no bound moves', () => {
@@ -310,18 +329,21 @@ describe('assisted and added loads in steps, toward easier (WB-L11)', () => {
 });
 
 describe('newer history re-check and slot consistency (WB-L12, WB-L13)', () => {
-  it('WB-L12: a newer 100 × 5 @ 10 caps a stored 102.5 at 95 with the newer session named', () => {
+  it('WB-L12: a newer 100 × 5 @ 10 caps a stored 115 at 110 (20% above what it supports) with the newer session named', () => {
     const r1 = benchRefs();
-    const stored = { load: kg(102.5), source: 'coach' as const, basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'last 3: 100×7 @8 → 102.5', held: false, notes: [], notUsed: null };
+    const stored = { load: kg(115), source: 'coach' as const, basis: 'last 3: 100×7 @8 → 115', basisFromCoach: false, coachNote: 'last 3: 100×7 @8 → 115', held: false, notes: [], notUsed: null };
     const builtAt = at(-day(1) - 3600).utc;
     const newer = refs(BENCH, [session(990, 1, bar, [{ load: kg(100), reps: 5, rpe: 10 }]), ...BENCH_HISTORY], [bar]);
     const r = recheckDraftLoad(stored, BENCH_SLOT, newer, { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: builtAt, nowMs: NOW });
-    expect(r.load?.value).toBe(95);
-    expect(plain(r.notes.join(' | '))).toMatch(/^capped at 95 · newer session \d+ Oct$/);
+    expect(r.load?.value).toBe(110);
+    expect(plain(r.notes.join(' | '))).toMatch(/^capped at 110 · newer session \d+ Oct$/);
     expect(newer.historyVersion).not.toBe(r1.historyVersion);
+    // Within the 20% ceilings (Ben 19 Oct), a stored 102.5 stands after the miss: the ceiling catches big jumps, not small ones.
+    const small = { ...stored, load: kg(102.5), basis: 'last 3: 100×7 @8 → 102.5', coachNote: 'last 3: 100×7 @8 → 102.5' };
+    expect(recheckDraftLoad(small, BENCH_SLOT, newer, { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: builtAt, nowMs: NOW }).load?.value).toBe(102.5);
     // No newer session: the stored load stands, unchanged and offline.
     const same = recheckDraftLoad(stored, BENCH_SLOT, r1, { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: at(0).utc, nowMs: NOW });
-    expect(same).toMatchObject({ load: { value: 102.5 }, source: 'coach', notes: [] });
+    expect(same).toMatchObject({ load: { value: 115 }, source: 'coach', notes: [] });
     // A flag set after the build caps it the same way (BD10).
     const held = recheckDraftLoad(stored, BENCH_SLOT, r1, { pain: { text: 'shoulder flagged 9 Oct' }, checkedOn: checkedOnOf(r1), builtAtUtc: at(0).utc, nowMs: NOW });
     expect(held).toMatchObject({ load: { value: 100 }, held: true });
@@ -415,8 +437,8 @@ describe('review builder-v2 B1–B4', () => {
   });
 
   it('B2: when code changes the load, the basis ends with the final value (clamp, hold, snap); the coach’s goes under NOT USED', () => {
-    const clamped = checkProposedLoad(P(120, 'total', 'last 3: 100×7 @8 → 120'), BENCH_SLOT, benchRefs(), NO_PAIN);
-    expect(clamped).toMatchObject({ load: { value: 107.5 }, basis: 'last 3: 100×7 @8 · capped → 107.5', coachNote: null, notUsed: 'last 3: 100×7 @8 → 120' });
+    const clamped = checkProposedLoad(P(128, 'total', 'last 3: 100×7 @8 → 128'), BENCH_SLOT, benchRefs(), NO_PAIN);
+    expect(clamped).toMatchObject({ load: { value: 120 }, basis: 'last 3: 100×7 @8 · capped → 120', coachNote: null, notUsed: 'last 3: 100×7 @8 → 128' });
     const held = checkProposedLoad(P(102.5, 'total', 'last 3: 100×7 @8 → 102.5'), BENCH_SLOT, benchRefs(), { pain: { text: 'pain reported today' }, askedHeavier: false });
     expect(held).toMatchObject({ load: { value: 100 }, held: true, basis: 'last 100×7 @8 → 100', coachNote: null });
     const snapped = checkProposedLoad(P(101, 'total', 'last 3: 100×7 @8 → 101'), BENCH_SLOT, benchRefs(), NO_PAIN);
@@ -429,7 +451,7 @@ describe('review builder-v2 B1–B4', () => {
     // Unchanged: the coach's words (no numbers) are kept, but only as its note.
     expect(checkProposedLoad(P(102.5, 'total', 'main lift, strength focus'), BENCH_SLOT, benchRefs(), NO_PAIN).coachNote).toBe('main lift, strength focus');
     // A changed load drops even a qualitative note (it was written for another number).
-    expect(checkProposedLoad(P(120, 'total', 'main lift, strength focus'), BENCH_SLOT, benchRefs(), NO_PAIN)).toMatchObject({ coachNote: null, notUsed: 'main lift, strength focus' });
+    expect(checkProposedLoad(P(128, 'total', 'main lift, strength focus'), BENCH_SLOT, benchRefs(), NO_PAIN)).toMatchObject({ coachNote: null, notUsed: 'main lift, strength focus' });
   });
 
   it('B2 at plan time: a re-check that changes the stored load moves the coach’s note under NOT USED (r3 and older drafts)', () => {
@@ -454,19 +476,20 @@ describe('review builder-v2 B1–B4', () => {
 
   it('B4: a session started before the build but not seen by it counts as newer (checkedHistoryVersion)', () => {
     const r1 = benchRefs();
-    const stored = { load: kg(102.5), source: 'coach' as const, basis: 'last 3: 100×7 @8 → 102.5', basisFromCoach: false, coachNote: 'main lift, strength focus', held: false, notes: [], notUsed: null };
+    // 115: within 20% of last 100 × 7 (Ben 19 Oct), more than 20% above what a newer 100 × 5 @10 supports.
+    const stored = { load: kg(115), source: 'coach' as const, basis: 'last 3: 100×7 @8 → 115', basisFromCoach: false, coachNote: 'main lift, strength focus', held: false, notes: [], notUsed: null };
     // The workout started 1 h ago; the draft was built 30 min ago, before 100×5 @10 was logged in it.
     const during = session(991, 0, bar, [{ load: kg(100), reps: 5, rpe: 10 }]);
     const started = { ...during, performedAtUtc: at(-3600).utc };
     const now = refs(BENCH, [started, ...BENCH_HISTORY], [bar]);
     const r = recheckDraftLoad(stored, BENCH_SLOT, now, { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: at(-1800).utc, nowMs: NOW, checkedHistoryVersion: r1.historyVersion });
-    expect(r.load?.value).toBe(95);
-    expect(plain(r.notes.join(' | '))).toMatch(/^capped at 95 · newer session \d+ Oct$/);
-    expect(r.basis).toBe('last 100×5 @10 · capped → 95');
+    expect(r.load?.value).toBe(110);
+    expect(plain(r.notes.join(' | '))).toMatch(/^capped at 110 · newer session \d+ Oct$/);
+    expect(r.basis).toBe('last 100×5 @10 · capped → 110');
     expect(r.coachNote).toBeNull();
     // The same history as at build time: unchanged, the coach's note kept.
     const same = recheckDraftLoad(stored, BENCH_SLOT, r1, { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: at(-1800).utc, nowMs: NOW, checkedHistoryVersion: r1.historyVersion });
-    expect(same).toMatchObject({ load: { value: 102.5 }, notes: [], basis: 'last 3: 100×7 @8 → 102.5', coachNote: 'main lift, strength focus' });
+    expect(same).toMatchObject({ load: { value: 115 }, notes: [], basis: 'last 3: 100×7 @8 → 115', coachNote: 'main lift, strength focus' });
   });
 
   it('B4: a correction to older history re-checks against the whole history; sessionsSinceCheck finds only the unseen ones', () => {
@@ -558,44 +581,44 @@ describe('review builder-v2 r2: code’s reason line, coach notes, newest-alone 
     const incline = refs(INCLINE, [session(920, 10, null, [{ load: kg(30, 'per_hand'), reps: 8 }], true)], [rack]);
     expect(checkProposedLoad(P(30, 'per_hand', 'FitNotes 30×8 → repeat'), slot(8, 10, 8), incline, NO_PAIN)).toMatchObject({ basis: 'last 30×8 → 30 each', coachNote: null, notUsed: 'FitNotes 30×8 → repeat' });
     expect(checkProposedLoad(P(30, 'per_hand', 'repeat the imported weight'), slot(8, 10, 8), incline, NO_PAIN)).toMatchObject({ basis: 'last 30×8 → 30 each', coachNote: 'repeat the imported weight' });
-    expect(checkProposedLoad(P(120, 'total', null), BENCH_SLOT, benchRefs(), NO_PAIN).basis).toBe('last 3: 100×7 @8 · capped → 107.5');
+    expect(checkProposedLoad(P(128, 'total', null), BENCH_SLOT, benchRefs(), NO_PAIN).basis).toBe('last 3: 100×7 @8 · capped → 120');
     expect(checkProposedLoad(P(102.5, 'total', null), BENCH_SLOT, benchRefs(), { pain: { text: 'pain reported today' }, askedHeavier: false }).basis).toBe('last 100×7 @8 → 100');
   });
 
-  it('B4r: two unseen sessions, the newest a rep miss (102.5×8 @7, then 100×5 @10) → 95, judged on the newest alone', () => {
+  it('B4r: two unseen sessions, the newest a rep miss (102.5×8 @7, then 100×5 @10) → 110, judged on the newest alone', () => {
     const r1 = benchRefs();
-    const stored = { load: kg(102.5), source: 'coach' as const, basis: CODE_LINE, basisFromCoach: false, coachNote: NOTE, held: false, notes: [], notUsed: null };
+    const stored = { load: kg(115), source: 'coach' as const, basis: CODE_LINE, basisFromCoach: false, coachNote: NOTE, held: false, notes: [], notUsed: null };
     const easy = session(993, 1, bar, [{ load: kg(102.5), reps: 8, rpe: 7 }]);
     const miss = { ...session(994, 0, bar, [{ load: kg(100), reps: 5, rpe: 10 }]), performedAtUtc: at(-600).utc };
     const now = refs(BENCH, [miss, easy, ...BENCH_HISTORY], [bar]);
     expect(sessionsSinceCheck(now.all, r1.historyVersion, at(-day(2)).utc)?.map((s) => s.sessionId)).toEqual([id(994), id(993)]);
     const ctx = { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: at(-day(2)).utc, nowMs: NOW, checkedHistoryVersion: r1.historyVersion };
     const r = recheckDraftLoad(stored, BENCH_SLOT, now, ctx);
-    expect(r.load?.value).toBe(95);
-    expect(plain(r.notes.join(' | '))).toMatch(/^capped at 95 · newer session \d+ Oct$/);
-    expect(r).toMatchObject({ basis: 'last 100×5 @10 · capped → 95', coachNote: null, notUsed: NOTE });
+    expect(r.load?.value).toBe(110);
+    expect(plain(r.notes.join(' | '))).toMatch(/^capped at 110 · newer session \d+ Oct$/);
+    expect(r).toMatchObject({ basis: 'last 100×5 @10 · capped → 110', coachNote: null, notUsed: NOTE });
     // The newest an easy set: the stored load stands.
     const fine = refs(BENCH, [easy, ...BENCH_HISTORY], [bar]);
-    expect(recheckDraftLoad(stored, BENCH_SLOT, fine, ctx)).toMatchObject({ load: { value: 102.5 }, notes: [], coachNote: NOTE });
+    expect(recheckDraftLoad(stored, BENCH_SLOT, fine, ctx)).toMatchObject({ load: { value: 115 }, notes: [], coachNote: NOTE });
   });
 
   it('S1r: older history changed and a rep miss logged since → the lighter of the full check and the newest alone', () => {
     const r1 = benchRefs();
-    const stored = { load: kg(102.5), source: 'coach' as const, basis: CODE_LINE, basisFromCoach: false, coachNote: NOTE, held: false, notes: [], notUsed: null };
+    const stored = { load: kg(115), source: 'coach' as const, basis: CODE_LINE, basisFromCoach: false, coachNote: NOTE, held: false, notes: [], notUsed: null };
     const corrected = { ...(BENCH_HISTORY[1] as HistorySession), sets: [{ setType: 'working' as const, side: null, load: kg(80), reps: 8, rpe: 8, rir: null }] };
     const miss = session(995, 0, bar, [{ load: kg(100), reps: 5, rpe: 10 }]);
     const now = refs(BENCH, [miss, BENCH_HISTORY[0] as HistorySession, corrected, BENCH_HISTORY[2] as HistorySession], [bar]);
     const ctx = { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: at(-day(1)).utc, nowMs: NOW, checkedHistoryVersion: r1.historyVersion };
     expect(sessionsSinceCheck(now.all, r1.historyVersion, ctx.builtAtUtc)).toBeNull();
-    // The full check alone still supports 102.5 (last 3 bands); the newest alone does not.
-    expect(checkProposedLoad(P(102.5, 'total'), BENCH_SLOT, now, NO_PAIN).load?.value).toBe(102.5);
+    // The full check alone still supports 115 (last 3 bands); the newest alone does not.
+    expect(checkProposedLoad(P(115, 'total'), BENCH_SLOT, now, NO_PAIN).load?.value).toBe(115);
     const r = recheckDraftLoad(stored, BENCH_SLOT, now, ctx);
-    expect(r.load?.value).toBe(95);
-    expect(r.notes).toEqual(['capped at 95 · history changed']);
-    expect(r.basis).toBe('last 100×5 @10 · capped → 95');
-    // A correction alone, the newest session fine: both checks keep 102.5.
+    expect(r.load?.value).toBe(110);
+    expect(r.notes).toEqual(['capped at 110 · history changed']);
+    expect(r.basis).toBe('last 100×5 @10 · capped → 110');
+    // A correction alone, the newest session fine: both checks keep 115.
     const onlyCorrected = refs(BENCH, [BENCH_HISTORY[0] as HistorySession, corrected, BENCH_HISTORY[2] as HistorySession], [bar]);
-    expect(recheckDraftLoad(stored, BENCH_SLOT, onlyCorrected, ctx)).toMatchObject({ load: { value: 102.5 }, notes: [], coachNote: NOTE });
+    expect(recheckDraftLoad(stored, BENCH_SLOT, onlyCorrected, ctx)).toMatchObject({ load: { value: 115 }, notes: [], coachNote: NOTE });
   });
 
   it('N1r: a long line is shortened in the middle; the final `→ N` (and `· capped`) is never cut', () => {
@@ -727,17 +750,17 @@ describe('review builder-v2 r4: every number about a load is code’s (B1t, B2t,
 
   it('S3s: a light high-rep newest session (60×15 @7) doesn’t re-band bench; a newer miss still caps it', () => {
     const r1 = benchRefs();
-    const stored = { load: kg(102.5), source: 'coach' as const, basis: CODE_LINE, basisFromCoach: false, coachNote: null, held: false, notes: [], notUsed: null };
+    const stored = { load: kg(115), source: 'coach' as const, basis: CODE_LINE, basisFromCoach: false, coachNote: null, held: false, notes: [], notUsed: null };
     const ctx = { pain: null, checkedOn: checkedOnOf(r1), builtAtUtc: at(-day(2)).utc, nowMs: NOW, checkedHistoryVersion: r1.historyVersion };
     const light = { ...session(996, 0, bar, [{ load: kg(60), reps: 15, rpe: 7 }, { load: kg(60), reps: 15, rpe: 7 }]), performedAtUtc: at(-600).utc };
     const afterLight = recheckDraftLoad(stored, BENCH_SLOT, refs(BENCH, [light, ...BENCH_HISTORY], [bar]), ctx);
-    expect(afterLight).toMatchObject({ load: { value: 102.5 }, source: 'coach' });
+    expect(afterLight).toMatchObject({ load: { value: 115 }, source: 'coach' });
     // A fresh build sees the same: the light day's raw load doesn't cap a 6–8 target.
-    expect(checkProposedLoad(P(102.5, 'total'), BENCH_SLOT, refs(BENCH, [light, ...BENCH_HISTORY], [bar]), NO_PAIN).load?.value).toBe(102.5);
-    // An RPE 10 miss before the light day: the unseen sessions together still cap it (95), never the light day's 62.5.
+    expect(checkProposedLoad(P(115, 'total'), BENCH_SLOT, refs(BENCH, [light, ...BENCH_HISTORY], [bar]), NO_PAIN).load?.value).toBe(115);
+    // An RPE 10 miss before the light day: the unseen sessions together still cap it (110), never the light day's raw load.
     const miss = session(997, 1, bar, [{ load: kg(100), reps: 5, rpe: 10 }]);
     const r = recheckDraftLoad(stored, BENCH_SLOT, refs(BENCH, [light, miss, ...BENCH_HISTORY], [bar]), ctx);
-    expect(r.load?.value).toBe(95);
+    expect(r.load?.value).toBe(110);
     // Never raised: a stored assisted load easier than two steps from a newer session stays where it was.
     const pr1 = refs(PULLUP, [session(983, 6, assist, [{ load: kg(40, 'assistance'), reps: 8, rpe: 8 }])], [assist]);
     const storedA = { load: kg(40, 'assistance'), source: 'coach' as const, basis: 'last 40×8 @8 → 40 assist', basisFromCoach: false, coachNote: null, held: false, notes: [], notUsed: null };
