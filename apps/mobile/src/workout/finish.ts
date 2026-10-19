@@ -43,17 +43,3 @@ export function finishModel(state: SessionAggregate, nowMs: number): FinishModel
     workTimerRunning: wi !== null && (wi.status === 'running' || wi.status === 'paused'),
   };
 }
-
-/** Move a time by whole minutes, kept inside [min, max]. */
-export function stepTime(ms: number, minutes: number, minMs: number, maxMs: number): number {
-  return Math.min(maxMs, Math.max(minMs, ms + minutes * 60_000));
-}
-
-/** The start-time bounds for `Edit workout times` before Finish: not after the first set, not in the future. */
-export function startTimeBounds(state: SessionAggregate, nowMs: number): { minMs: number; maxMs: number } {
-  const done = state.sets.filter((s) => s.status === 'completed' && s.completedAt).map((s) => toMs(s.completedAt?.utc ?? ''));
-  const pauseStart = state.session.pause ? toMs(state.session.pause.pausedAtUtc) : Infinity;
-  const maxMs = Math.min(nowMs, pauseStart, ...done);
-  // Up to 12 h earlier than recorded is plenty for a forgotten Start.
-  return { minMs: toMs(state.session.startedAt.utc) - 12 * 3600_000, maxMs };
-}

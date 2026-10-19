@@ -42,15 +42,15 @@ export interface PickerSetsBar {
   touched: boolean;
 }
 
-/** What the bar shows. */
-export function pickerBarValue(bar: PickerSetsBar, cardioChip: boolean): number {
-  return bar.touched ? bar.value : cardioChip ? 1 : SET_BAR.start;
+/** What the bar shows. `start`: the untouched count (19 Oct, `Superset with…`: the sets the partner has left). */
+export function pickerBarValue(bar: PickerSetsBar, cardioChip: boolean, start: number = SET_BAR.start): number {
+  return bar.touched ? bar.value : cardioChip ? 1 : start;
 }
 
 /** The working sets an add from the picker makes: Ben's count, else one for a cardio exercise (one 10-minute set), else the usual start. */
-export function pickerAddSets(bar: PickerSetsBar, measurement: string): number {
+export function pickerAddSets(bar: PickerSetsBar, measurement: string, start: number = SET_BAR.start): number {
   if (bar.touched) return bar.value;
-  return measurement === 'cardio' ? 1 : SET_BAR.start;
+  return measurement === 'cardio' ? 1 : start;
 }
 
 /** `8–10`, `8–10 per side`, `Mixed`; `0:45` for a timed one. */

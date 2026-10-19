@@ -75,15 +75,22 @@ export interface HistorySession {
   /** The workout's time zone and routine name, for `Why?` (`after Push A, 1 Oct`). */
   tz?: string;
   routineName?: string | null;
+  /**
+   * (Review B2, 19 Oct) A second copy of the exercise in that workout (`extraCopies`), e.g. a
+   * superset with itself at 0: its own sets, kept in history, never a basis for next time or `Last`.
+   */
+  copy?: true;
 }
 
 /**
  * B7: whether a history session can be compared with an exercise done on
  * `equipmentId`. Logged history needs the same equipment instance; imported
  * (FitNotes) history has none recorded, so it matches any (unit and
- * convention are still checked by each caller).
+ * convention are still checked by each caller). A second copy from the
+ * same workout (`copy`) is never compared: the main copy plans next time.
  */
-export function matchesEquipment(h: Pick<HistorySession, 'imported' | 'equipmentId'>, equipmentId: string | null): boolean {
+export function matchesEquipment(h: Pick<HistorySession, 'imported' | 'equipmentId' | 'copy'>, equipmentId: string | null): boolean {
+  if (h.copy === true) return false;
   return h.imported || h.equipmentId === equipmentId;
 }
 

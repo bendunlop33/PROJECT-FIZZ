@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { buildExecutionOrder } from '@fizz/domain';
 import { exercise, GYM, profile } from '@fizz/domain/testing';
 import type { Store } from '@fizz/persistence';
 import type { Exercise, PainFlag, SessionAggregate } from '@fizz/schemas';
+import { workoutView } from '../src/context';
 import { acceptEditOffer, createEditTodayExecutor, type EditTodayDeps } from '../src/edit-today';
 import { createStoreExecutors, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
 import { runCoachTurn } from '../src/turn';
@@ -18,7 +20,8 @@ import { ASSIST, at, BAR, call, DB, id, memoryStore, OWNER, ports, reply, reques
 const nb = (s: string): string => s.replace(/\u00a0/g, ' ');
 const INCLINE = exercise(4001, 'Incline DB press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
 const RAISE = exercise(4002, 'Lateral raise', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
-const KNOWN = new Map<string, Exercise>([INCLINE, RAISE].map((e) => [e.id, e]));
+const DB_PRESS = exercise(1020, 'Dumbbell press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+const KNOWN = new Map<string, Exercise>([INCLINE, RAISE, DB_PRESS].map((e) => [e.id, e]));
 
 let stores: Store[] = [];
 async function store(): Promise<Store> {
@@ -278,3 +281,62 @@ describe('edit_today through the turn (Coach v3 slice 2)', () => {
   });
 });
 
+
+describe('edit_today: the same exercise again, and supersets (Ben, 19 Oct)', () => {
+  it('"Just do weighted and we put 0": a second dumbbell press at 0 supersets with the first; one Undo takes it out', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const args = { baseVersion: 7, ops: [{ op: 'add', exerciseId: DB_PRESS.id, workingSets: 2, reps: { min: 20, max: 20 }, workSeconds: null, targetRpe: null, afterSessionExerciseId: null, supersetWithSessionExerciseId: id(20), load: 0 }], reason: 'Ben asked.', benAsked: true, benQuote: 'Just do weighted and we put 0' };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Done.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('Just do weighted and we put 0'), context: ctx(workout()) }), livePorts(s, model));
+    expect(r.cards.map((c) => c.record.status)).toEqual(['committed']);
+    const after = await s.repos.sessions.get(SESSION);
+    expect(live(after)).toEqual(['Bench press', 'Dumbbell press', 'Dumbbell press', 'Assisted pull-up']);
+    const copies = (after?.exercises ?? []).filter((e) => e.exerciseName === 'Dumbbell press').sort((a, b) => a.order - b.order);
+    expect(copies.map((e) => [e.supersetGroup, e.equipmentId])).toEqual([
+      ['A', DB.id],
+      ['A', null],
+    ]);
+    expect(after?.sets.filter((x) => x.sessionExerciseId === copies[1]?.id).map((x) => x.planned.load?.value)).toEqual([0, 0]);
+    const actionId = r.cards[0]?.record.actionId ?? '';
+    expect((await undoCoachAction(s.repos.coach, { ownerId: OWNER, actionId, opId: undoOpId(actionId), now: at(900) })).result.status).toBe('written');
+    const back = await s.repos.sessions.get(SESSION);
+    expect(live(back)).toEqual(['Bench press', 'Dumbbell press', 'Assisted pull-up']);
+    expect(back?.exercises.filter((e) => e.removed === undefined).every((e) => e.supersetGroup === null)).toBe(true);
+  });
+
+  it('two exercises already here become a superset: the pull-up moves after bench, no set changes', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const args = { baseVersion: 7, ops: [{ op: 'superset', sessionExerciseId: id(30), withSessionExerciseId: id(10) }], reason: 'Ben asked.', benAsked: true, benQuote: 'superset pull-ups with bench' };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Done.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('superset pull-ups with bench'), context: ctx(workout()) }), livePorts(s, model));
+    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', expect.stringContaining('Superset: Bench press + Assisted pull-up')]]);
+    const after = await s.repos.sessions.get(SESSION);
+    expect(live(after)).toEqual(['Bench press', 'Assisted pull-up', 'Dumbbell press']);
+    expect(after?.sets).toEqual(workout().sets);
+    // The coach sees the pair on its next turn.
+    expect(workoutView(after as SessionAggregate, 'Main Gym').exercises.map((e) => [e.name, e.superset ?? null])).toEqual([
+      ['Bench press', 'A'],
+      ['Assisted pull-up', 'A'],
+      ['Dumbbell press', null],
+    ]);
+  });
+
+  it('review B1: "superset bench with pull-ups" (bench named first, two sets done) keeps bench in place and next; the pull-up alternates from round 3', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const args = { baseVersion: 7, ops: [{ op: 'superset', sessionExerciseId: id(10), withSessionExerciseId: id(30) }], reason: 'Ben asked.', benAsked: true, benQuote: 'superset bench with pull-ups' };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Done.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('superset bench with pull-ups'), context: ctx(workout()) }), livePorts(s, model));
+    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', expect.stringContaining('Superset: Bench press + Assisted pull-up')]]);
+    const after = (await s.repos.sessions.get(SESSION)) as SessionAggregate;
+    expect(live(after)).toEqual(['Bench press', 'Assisted pull-up', 'Dumbbell press']);
+    expect(after.exercises.find((e) => e.id === id(30))?.roundOffset).toBe(2);
+    expect(after.exercises.find((e) => e.id === id(10))?.roundOffset).toBeUndefined();
+    const name = (setId: string) => after.exercises.find((e) => e.id === after.sets.find((x) => x.id === setId)?.sessionExerciseId)?.exerciseName;
+    const pending = buildExecutionOrder(after.exercises, after.sets).filter((x) => after.sets.find((y) => y.id === x)?.status === 'pending');
+    expect(pending.slice(0, 4).map(name)).toEqual(['Bench press', 'Assisted pull-up', 'Bench press', 'Assisted pull-up']);
+    expect(after.sets).toEqual(workout().sets);
+  });
+});

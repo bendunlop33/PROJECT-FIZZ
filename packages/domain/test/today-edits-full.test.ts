@@ -221,10 +221,10 @@ describe('the draft takes the §11 kinds: versioned, idempotent, within limits (
     expect(write(null, { type: 'edit', edit: { kind: 'sets', slotKey: id(999), workingSets: 4 } }, 'gone')).toEqual({ kind: 'invalid', reason: 'slot_gone' });
   });
 
-  it('add: never an exercise already in today’s plan, at most six; an added row can’t be skipped or swapped; Remove takes its edits and Undo brings them all back', () => {
-    expect(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: INCLINE } }, 'a0')).toEqual({ kind: 'invalid', reason: 'in_plan' });
+  it('add: an exercise already in today’s plan is a second copy (Ben, 19 Oct), at most six; an added row can’t be skipped or swapped; Remove takes its edits and Undo brings them all back', () => {
+    expect(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: INCLINE } }, 'a0').kind).toBe('write');
     let d = written(write(null, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT, exerciseId: FACE_PULL } }, 'a1'));
-    expect(write(d, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT_2, exerciseId: FACE_PULL } }, 'a2')).toEqual({ kind: 'invalid', reason: 'in_plan' });
+    expect(write(d, { type: 'edit', edit: { kind: 'add', slotKey: NEW_SLOT_2, exerciseId: FACE_PULL } }, 'a2').kind).toBe('write');
     expect(write(d, { type: 'edit', edit: { kind: 'swap', slotKey: SLOT_BENCH, toExerciseId: FACE_PULL } }, 'a3')).toEqual({ kind: 'invalid', reason: 'in_plan' });
     expect(write(d, { type: 'edit', edit: { kind: 'skip', slotKey: NEW_SLOT } }, 'a4')).toEqual({ kind: 'invalid', reason: 'added' });
     d = written(write(d, { type: 'edit', edit: { kind: 'sets', slotKey: NEW_SLOT, workingSets: 4 } }, 'a5'));
@@ -859,5 +859,26 @@ describe('add with a Sets count (exercise-library §10.2, TE-B15, EL-B21)', () =
     expect(workingOf(later, NEW_SLOT)).toHaveLength(2);
     // The plan's own exercises are untouched by an add's count.
     expect(workingOf(five, SLOT_INCLINE)).toHaveLength(3);
+  });
+});
+
+describe('the same exercise added again before Start (Ben, 19 Oct)', () => {
+  it('each slot keeps its own targets: the plan’s incline keeps its 32.5 kg, the second copy plans from its own history', () => {
+    const inclineHistory = [history(920, 3, rack, kg(20, 'per_hand'), [12, 12, 12])];
+    const adds = new Map([[NEW_SLOT, addTargets(exOf(INCLINE), inclineHistory, ctxAt(MAIN_GYM))]]);
+    const targets = new Map([[INCLINE, [1, 2, 3].map(() => ({ setType: 'working' as const, planned: { load: kg(32.5, 'per_hand'), reps: { min: 8, max: 10 }, durationS: null, rpe: null, rir: null } }))]]);
+    // No Fixed load on the incline templates, so its targets decide.
+    const r = pushA();
+    const unpinned = { ...r, exercises: r.exercises.map((x) => (x.id === SLOT_INCLINE ? { ...x, setTemplates: x.setTemplates.map((t) => ({ ...t, targetLoad: null })) } : x)) };
+    const out = planWithTodayEdits(
+      { kind: 'routine', input: { opId: 'preview', owner: profile(), gymId: MAIN, gymName: 'Main gym', routine: unpinned, exercises: EXERCISES, gymEquipment: MAIN_EQ, knownEquipment: KNOWN, at: at(0), newId: idGen(20_000), targets } },
+      { draft: { id: id(5000), version: 3 }, edits: [edit({ kind: 'add', slotKey: NEW_SLOT, exerciseId: INCLINE })], swaps: new Map(), adds },
+    );
+    expect(out.outcomes.map((o) => o.result)).toEqual(['applied']);
+    expect(workingOf(out, SLOT_INCLINE).map((s) => s.planned.load?.value)).toEqual([32.5, 32.5, 32.5]);
+    const copy = workingOf(out, NEW_SLOT);
+    expect(copy.length).toBeGreaterThan(0);
+    expect(copy.every((s) => s.planned.load?.value !== 32.5)).toBe(true);
+    expect(rowsOf(out.aggregate).filter((e) => e.exerciseId === INCLINE)).toHaveLength(2);
   });
 });

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, PLAN_VERDICT_WORD, toIso, toMs, type PlannedVsDone, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, PLAN_VERDICT_WORD, summaryTimeBounds, toIso, toMs, type PlannedVsDone, type WorkoutSummary } from '@fizz/domain';
 import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
 
@@ -19,8 +19,7 @@ import type { RootStackParams } from '../../navigation/types';
 import type { WorkoutPresence } from '../../services/history-services';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
-import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, Chip, ChecklistRow, ChipRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
-import { stepTime } from '../../workout/finish';
+import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
@@ -28,6 +27,7 @@ import { LIBRARY_COPY_UI } from '../../workout/library-view';
 import { DELETE_COPY, deletedToastText, restoredToastText, summaryCanDelete } from '../../history/delete-view';
 import { handOffDeleteToast } from '../../history/toast-handoff';
 import { DeletedWorkoutView } from './DeletedWorkoutView';
+import { WorkoutTimesRows, type WorkoutTimes } from './WorkoutTimesRows';
 import { painClearConfirm, painClearedToast } from '../../workout/pain-clear';
 
 /**
@@ -740,33 +740,34 @@ function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTa
   );
 }
 
-/** Summary `Edit times` (workout-summary §4): start and end, audited; bounds from the domain. */
+/**
+ * Summary `Edit times` (workout-summary §4), also a past workout's: Started / Ended on the same
+ * wheels as the Finish sheet (Ben, 19 Oct), bounds from the domain; one audited
+ * `update_session_timing`, versioned. No set changes.
+ */
 function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: WorkoutSummary; visible: boolean; onClose: () => void; onSaved: () => void }) {
   const theme = useTheme();
   const services = useServices();
   const insets = useSafeAreaInsets();
   const tz = summary.tz;
-  const [start, setStart] = useState(toMs(summary.startedAtUtc));
-  const [end, setEnd] = useState(toMs(summary.endedAtUtc ?? summary.startedAtUtc));
+  const recorded = (): WorkoutTimes => ({ startMs: toMs(summary.startedAtUtc), endMs: toMs(summary.endedAtUtc ?? summary.startedAtUtc) });
+  const [times, setTimes] = useState<WorkoutTimes>(recorded);
   const [opId, setOpId] = useState(newUuid);
   const [error, setError] = useState<string | null>(null);
   const [lastShown, setLastShown] = useState(false);
   if (visible !== lastShown) {
     setLastShown(visible);
     if (visible) {
-      setStart(toMs(summary.startedAtUtc));
-      setEnd(toMs(summary.endedAtUtc ?? summary.startedAtUtc));
+      setTimes(recorded());
       setOpId(newUuid());
       setError(null);
     }
   }
-  const startMax = Math.min(toMs(summary.timingBounds.startLatestUtc), end);
-  const endMin = Math.max(toMs(summary.timingBounds.endEarliestUtc), start);
-  const endMax = Math.min(toMs(summary.timingBounds.endLatestUtc), clockNow());
+  const bounds = summaryTimeBounds(summary.timingBounds, summary.startedAtUtc, clockNow());
 
   async function save() {
-    const startChanged = start !== toMs(summary.startedAtUtc);
-    const endChanged = end !== toMs(summary.endedAtUtc ?? '');
+    const startChanged = times.startMs !== toMs(summary.startedAtUtc);
+    const endChanged = times.endMs !== toMs(summary.endedAtUtc ?? '');
     if (!startChanged && !endChanged) {
       onClose();
       return;
@@ -778,8 +779,8 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
       opId,
       expectedVersion: summary.sessionVersion,
       // The workout's own zone, not the phone's current one (review N6).
-      startedAt: startChanged ? { utc: toIso(start), tz } : null,
-      endedAt: endChanged ? { utc: toIso(end), tz } : null,
+      startedAt: startChanged ? { utc: toIso(times.startMs), tz } : null,
+      endedAt: endChanged ? { utc: toIso(times.endMs), tz } : null,
     });
     if (!r.ok) {
       setError(r.error.code === 'stale_version' ? 'The workout changed. Close and try again.' : r.error.message);
@@ -788,30 +789,13 @@ function EditTimesSheet({ summary, visible, onClose, onSaved }: { summary: Worko
     onSaved();
   }
 
-  const row = (label: string, value: number, set: (v: number) => void, min: number, max: number) => (
-    <View style={{ gap: theme.space['2'] }}>
-      <AppText variant="label" color="text.secondary">
-        {label}
-      </AppText>
-      <AppText variant="title2" numeric>
-        {formatTime(value, tz)}
-      </AppText>
-      <ChipRow>
-        {[-5, -1, 1, 5].map((m) => (
-          <Chip key={m} label={`${m < 0 ? '−' : '+'}${String(Math.abs(m))} min`} selected={false} onPress={() => { set(stepTime(value, m, min, max)); }} />
-        ))}
-      </ChipRow>
-    </View>
-  );
-
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <ScrollView style={{ backgroundColor: theme.colors['bg.surface'] }} contentContainerStyle={{ padding: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom, gap: theme.space['4'] }}>
         <AppText variant="title2" accessibilityRole="header">
           Edit workout times
         </AppText>
-        {row('Started at', start, setStart, toMs(summary.startedAtUtc) - 12 * 3600_000, startMax)}
-        {row('Ended at', end, setEnd, endMin, endMax)}
+        <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} />
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <PrimaryButton label="Save" onPress={() => void save()} />
         <TextButton label="Cancel" tone="secondary" onPress={onClose} />

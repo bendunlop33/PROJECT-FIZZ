@@ -250,6 +250,8 @@ export const AddExerciseTodayArgsSchema = z.strictObject({
   afterSessionExerciseId: IdSchema.nullable(),
   /** In a superset with this exercise of today's workout (it must have a set left); null = none. */
   supersetWithSessionExerciseId: IdSchema.nullable(),
+  /** (19 Oct) Ben's load for every working set, in his unit (0 = no weight); null or absent = planned from his history. */
+  load: z.number().min(0).max(1000).nullable().optional(),
   reason,
   ...askClaim,
 });
@@ -293,11 +295,17 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
     targetRpe: z.number().min(0).max(20).nullable(),
     afterSessionExerciseId: IdSchema.nullable(),
     supersetWithSessionExerciseId: IdSchema.nullable(),
+    /** (19 Oct) A load for every working set in Ben's unit, as Ben asked ("at 0"); 0 = no weight; null = planned from his history. Absent on calls made before it. */
+    load: z.number().min(0).max(1000).nullable().optional(),
   }),
   /** The exercise's pending sets go (a row with nothing done leaves the workout; otherwise its rest is skipped). */
   z.strictObject({ op: z.literal('remove'), sessionExerciseId: IdSchema }),
   /** The exercise (with its superset) goes straight after another one, or first (null). */
   z.strictObject({ op: z.literal('move'), sessionExerciseId: IdSchema, afterSessionExerciseId: IdSchema.nullable() }),
+  /** (19 Oct) Two exercises already in today's workout become a superset (sets alternate). Either order: the one further along stays put, the other joins after it. */
+  z.strictObject({ op: z.literal('superset'), sessionExerciseId: IdSchema, withSessionExerciseId: IdSchema }),
+  /** (19 Oct) The exercise's superset is taken apart (each member back to its own sets). */
+  z.strictObject({ op: z.literal('split_superset'), sessionExerciseId: IdSchema }),
 ]);
 export type EditTodayOp = z.infer<typeof EditTodayOpSchema>;
 

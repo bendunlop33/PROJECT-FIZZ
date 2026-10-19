@@ -1,7 +1,7 @@
 import { BUILD_LIMITS, type AddExerciseTodayArgs, type CoachTarget, type CommandOf, type Exercise, type GuardNote, type Load, type PlannedSet, type RepRange, type SessionAggregate, type UserProfile, type ZonedTimestamp } from '@fizz/schemas';
 import { builtInRepRange, ruleCategory } from '../default-rule';
 import { dayMonthText, formatDuration, repRangeText } from '../display';
-import { painFlagForMovement, rowIsMovement } from '../exercise-identity';
+import { painFlagForMovement } from '../exercise-identity';
 import { PAIN_AREA_WORD } from '../pain-flags';
 import type { HistorySession } from '../progression';
 import { deriveId } from '../stable';
@@ -22,13 +22,14 @@ import { CARDIO_DEFAULT_S } from '../cardio';
  * 2. The exercise is one of Ben's or the catalogue's, measured in reps or time.
  * 3. Not pain-flagged (rule 9): refused, never substituted. The same movement
  *    under another ID or name counts (`sameMovementIds`, review S2).
- * 4. Not already a live row today, by ID or the same movement (one more set
- *    there is `adjust_pending_sets`).
+ * 4. (Ben, 19 Oct) An exercise already in today's workout is added as a second
+ *    copy with its own sets (e.g. a superset with itself at 0).
  * 5. Doable at the workout's current gym (rule 4).
  * 6. The position or superset partner is a live row (a partner needs a set left).
  * 7. Sets, reps or work time and target RPE are clamped to the builder's
  *    limits, each with a note (`BUILD_LIMITS`, like `propose_workout`).
- * 8. Loads: the exercise's **own** comparable history through the built-in
+ * 8. Loads: Ben's own load when he gave one (`load`: 0 = no weight, on no
+ *    equipment, so the copy's sets stand alone), else the exercise's **own** comparable history through the built-in
  *    rule (`substituteTargets`, the path a swap or an overview add takes),
  *    fitted with the shared `snapPlanToGym` (mode `start`) on this gym's
  *    items: achievable, within min/max, never past a machine's max. No
@@ -117,9 +118,9 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
     return reject(`${area}flagged ${dayMonthText(flag.reportedAt.utc, flag.reportedAt.tz)}`);
   }
 
-  // 4. Already in today's workout: one more set there is a change to its sets.
+  // 4. (Ben, 19 Oct: "Even if it's the same exercise with different or no weight") An exercise already in
+  // today's workout is added as a second copy with its own sets (one more set there is `set_count`).
   const live = s.exercises.filter((e) => e.removed === undefined);
-  if (live.some((e) => rowIsMovement(e, exercise, movementIds))) return reject('it’s already in today’s workout');
 
   // 5. Rule 4: something to do it on at this gym.
   const gym = { ...input.substitute.gym, equipment: currentGymEquipment(s.session) };
@@ -190,6 +191,14 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
     delete out.snap;
     return out;
   });
+  // Ben's own load for the sets ("at 0"): 0 is no weight, on no equipment, so the copy's sets stand alone;
+  // any other load is fitted to this gym's item below like a planned one. A bodyweight exercise has none to set.
+  const asked = args.load ?? null;
+  const noWeight = asked === 0 && convention !== 'bodyweight' && !timed;
+  if (asked !== null && asked > 0 && !timed) {
+    if (convention === 'bodyweight') note('build_check', '+ Weight to add weight');
+    else for (const p of planned) p.load = { value: asked, unit: input.owner.preferredUnit, convention };
+  }
   const planReps = fromPlan[0]?.planned.reps ?? null;
   if (!timed && planReps !== null && !sameRange(planReps, reps)) note('build_check', `Reps changed from last time · load not adjusted`);
   const ids = (() => {
@@ -216,13 +225,18 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
     ...(input.substitute.lastUsedHere ? { lastUsedHere: input.substitute.lastUsedHere } : {}),
     ownerUnit: input.owner.preferredUnit,
   });
-  const slot = snapped.slots[0];
+  const slot = noWeight ? undefined : snapped.slots[0];
   const equipment = slot?.equipment ?? null;
   // The reducer stores loads in the row's own unit and convention: the item's, else Ben's unit and the exercise's.
   const unit = equipment?.unit ?? input.owner.preferredUnit;
   const rowConvention = equipment?.loadConvention ?? convention;
   let dropped = 0;
   const fitted = planned.map((p, i): PlannedSet => {
+    if (noWeight) {
+      const out: PlannedSet = { ...p, load: { value: 0, unit, convention: rowConvention } };
+      delete out.snap;
+      return out;
+    }
     const f = slot?.sets[i];
     let load: Load | null = f === undefined || f.outcome === 'dropped' ? null : f.load;
     if (p.load !== null && load === null) dropped += 1;
@@ -234,7 +248,7 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
     return { ...p, load, ...(snap === null ? {} : { snap }) };
   });
   if (dropped > 0) note('no_achievable_load', `Load left blank · can't be made on ${equipment?.name ?? 'this equipment'}`);
-  else if (!timed && fitted.every((p) => p.load === null) && exercise.defaultLoadConvention !== 'bodyweight') note('build_check', 'No history on this equipment · load left blank');
+  else if (!timed && !noWeight && fitted.every((p) => p.load === null) && exercise.defaultLoadConvention !== 'bodyweight') note('build_check', 'No history on this equipment · load left blank');
 
   const generated = [...setIds];
   const rowId = coachAddRowId(input.opId);

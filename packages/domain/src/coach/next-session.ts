@@ -236,7 +236,7 @@ export function nextSessionBases(
   // deciding part, on that part's item, the same as the built-in rule's `Next time`.
   for (const block of nextTargetBlocks(source)) {
     const ex = block.decider;
-    if (ex.measurement !== 'reps' || out.some((b) => b.exercise.exerciseId === ex.exerciseId)) continue;
+    if (block.copy || ex.measurement !== 'reps' || out.some((b) => b.exercise.exerciseId === ex.exerciseId)) continue;
     const working = source.sets.filter((s) => s.sessionExerciseId === ex.id && s.setType !== 'warmup' && s.pairedWithSetId === null && s.status === 'completed');
     const first = working[0];
     if (first === undefined) continue;

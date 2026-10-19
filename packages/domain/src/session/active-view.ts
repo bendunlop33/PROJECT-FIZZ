@@ -31,6 +31,7 @@ import { buildExecutionOrder, nextPendingSet } from './order';
 import { DEFAULT_WORKING_SETS, GENERIC_WORKOUT_NAME, isOpenEndedWorkout, storedWorkoutName } from './first-run';
 import { latestCommittedSetId } from './reducer';
 import { midSwapSlot } from './mid-swap';
+import { supersetMenu, type SupersetMenu } from './superset-with';
 import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
@@ -247,6 +248,8 @@ export interface FocusView {
   removable: boolean;
   /** `Swap exercise` is offered: the row has pending sets a swap would move (`midSwapSlot`; not only a half-logged pair's other side, review gaps r2 S1). */
   swappable: boolean;
+  /** (19 Oct) `Superset with…` / `Remove superset` in the `⋯` menu. */
+  superset: SupersetMenu;
   /** `Barbell · Working · Set 2 of 4`, `Barbell · Warm-up · Set 1 of 4` (+ ` · per side`). */
   headerLine: string;
   /** The set's type word, always shown (F3): `Warm-up`, `Working`, `Top set`, `Back-off`, `Drop set`. */
@@ -694,6 +697,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     swappedFrom: swappedFromOf(state, ex),
     removable: isRemovable(state, ex),
     swappable: midSwapSlot(state, ex.id) !== null,
+    superset: supersetMenu(state, ex.id),
     headerLine: headerParts.filter((p): p is string => p !== null).join(' · '),
     setTypeLabel: SET_TYPE_WORD[set.setType],
     setNumber,
@@ -800,6 +804,8 @@ export interface ExerciseCardFacts {
   swappedFrom: { name: string; opId: string } | null;
   swappable: boolean;
   removable: boolean;
+  /** (19 Oct) `Superset with…` / `Remove superset` in the `⋯` menu. */
+  superset: SupersetMenu;
   /** `100 kg: 20 bar + 25 + 15 / side`, one per distinct target load in session order; empty when not plate-loaded. */
   plates: string[];
 }
@@ -836,6 +842,7 @@ export function exerciseCardFacts(input: Pick<ActiveViewInput, 'aggregate' | 'ru
     swappedFrom: swappedFromOf(state, ex),
     swappable: midSwapSlot(state, ex.id) !== null,
     removable: isRemovable(state, ex),
+    superset: supersetMenu(state, ex.id),
     plates,
   };
 }

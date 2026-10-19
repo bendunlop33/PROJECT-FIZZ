@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type EditTodayArgs, type EditTodayOp, type Exercise, type PainFlag, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
 import { planCoachEdit, reduceSession, startWorkout, type CoachEditExerciseInputs, type CoachEditInput } from '../src/index';
 import { at, barbell, dumbbells, exercise, GYM, id, kg, OWNER, profile, stack, TZ, values } from './fixtures';
-import { apply, BENCH, expectError, expectOk, FACE, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
+import { apply, BENCH, exercises as FIXTURE_EXERCISES, expectError, expectOk, FACE, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
 /**
  * Coach v3 (ADR 0027, Ben 18 Oct): `edit_today` → `planCoachEdit` → one `coach_edit_today`
@@ -213,5 +213,53 @@ describe('planCoachEdit + coach_edit_today (Coach v3)', () => {
     expect(order(s3)).toEqual(order(s1));
     const s4 = apply(s3, { type: 'undo_op', at: at(13), opId: 'u3', targetOpId: 'm1' });
     expect(order(s4)).toEqual(order(s0));
+  });
+});
+
+describe('edit_today supersets and second copies (Ben, 19 Oct)', () => {
+  const benchEx = FIXTURE_EXERCISES.get(BENCH);
+  if (benchEx === undefined) throw new Error('bench');
+  const addOp = (over: Partial<Extract<EditTodayOp, { op: 'add' }>>): EditTodayOp => ({ op: 'add', exerciseId: benchEx.id, workingSets: 2, reps: { min: 20, max: 20 }, workSeconds: null, targetRpe: null, afterSessionExerciseId: null, supersetWithSessionExerciseId: null, load: null, ...over });
+
+  it('"superset it with itself at 0": a second bench at 0 kg joins bench in a superset; Undo takes it out', () => {
+    const s0 = midBench();
+    const p = ok(plan(s0, [addOp({ supersetWithSessionExerciseId: rowId(s0, BENCH), load: 0 })], {}, new Map([[0, inputs(benchEx)]])));
+    expect(p.lines.map((l) => l.text)).toEqual(['Added Bench press · 2 sets · superset with Bench press']);
+    const s1 = expectOk(reduceSession(s0, p.command)).state;
+    const benches = s1.exercises.filter((e) => e.exerciseId === BENCH && e.removed === undefined).sort((a, b) => a.order - b.order);
+    expect(benches.map((e) => [e.supersetGroup, e.equipmentId === null])).toEqual([
+      ['B', false],
+      ['B', true],
+    ]);
+    // Bench has one set left (round 3): the copy starts there, not with the done rounds.
+    expect(benches[1]?.roundOffset).toBe(2);
+    expect(s1.sets.filter((x) => x.sessionExerciseId === benches[1]?.id).map((x) => x.planned.load)).toEqual([kg(0), kg(0)]);
+    const back = expectOk(reduceSession(s1, revert())).state;
+    expect(back.exercises.filter((e) => e.exerciseId === BENCH && e.removed === undefined).map((e) => e.supersetGroup)).toEqual([null]);
+  });
+
+  it('two rows already here become a superset, and a superset is split; one version bump; Undo', () => {
+    const s0 = startFixture().state;
+    const p = ok(plan(s0, [{ op: 'split_superset', sessionExerciseId: rowId(s0, ROW) }, { op: 'superset', sessionExerciseId: rowId(s0, HANG), withSessionExerciseId: rowId(s0, BENCH) }]));
+    expect(p.command.steps.map((x) => x.type)).toEqual(['split_superset', 'link_superset']);
+    expect(p.lines.map((l) => l.text)).toEqual(['Superset split: Cable row, Face pull', 'Superset: Bench press + Dead hang']);
+    const s1 = expectOk(reduceSession(s0, p.command)).state;
+    expect(s1.session.version).toBe(s0.session.version + 1);
+    expect(order(s1)).toEqual(['Bench press', 'Dead hang', 'Cable row', 'Face pull']);
+    expect(s1.exercises.filter((e) => e.supersetGroup !== null).map((e) => e.exerciseName).sort()).toEqual(['Bench press', 'Dead hang']);
+    expect(s1.sets).toEqual(s0.sets);
+    const back = expectOk(reduceSession(SessionAggregateSchema.parse(JSON.parse(JSON.stringify(s1))), revert())).state;
+    expect(order(back)).toEqual(order(s0));
+    expect(back.exercises.map((e) => e.supersetGroup)).toEqual(s0.exercises.map((e) => e.supersetGroup));
+  });
+
+  it('refuses a done row, a row with itself, and two different supersets', () => {
+    const s0 = startFixture().state;
+    expect(plan(s0, [{ op: 'superset', sessionExerciseId: rowId(s0, BENCH), withSessionExerciseId: rowId(s0, BENCH) }])).toMatchObject({ status: 'rejected' });
+    let done = s0;
+    for (const x of setsFor(done, HANG)) done = apply(done, logCmd(x.id, values(null, null, { durationS: 45 }), 500));
+    expect(plan(done, [{ op: 'superset', sessionExerciseId: rowId(done, HANG), withSessionExerciseId: rowId(done, BENCH) }])).toMatchObject({ status: 'rejected', failure: 'Dead hang is done' });
+    const s1 = apply(s0, { type: 'link_superset', at: at(10), opId: 'l1', expectedVersion: s0.session.version, sessionExerciseId: rowId(s0, HANG), withSessionExerciseId: rowId(s0, BENCH) });
+    expect(plan(s1, [{ op: 'superset', sessionExerciseId: rowId(s1, ROW), withSessionExerciseId: rowId(s1, BENCH) }])).toMatchObject({ status: 'rejected', failure: 'Cable row is already in a superset' });
   });
 });

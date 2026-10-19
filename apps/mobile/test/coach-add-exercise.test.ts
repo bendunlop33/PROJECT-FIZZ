@@ -92,8 +92,8 @@ describe('add an exercise from chat', () => {
     expect(tools).toContain('edit_today');
     const addable = contextAddable(model.requests[0] as ModelRequest) ?? [];
     expect(addable.some((a) => a.name === 'Lateral raise')).toBe(true);
-    // Already in today's workout: not offered as an add.
-    expect(addable.some((a) => a.name === 'Bench press')).toBe(false);
+    // (19 Oct) Already in today's workout: still offered, as a second copy (a superset with itself at 0).
+    expect(addable.some((a) => a.name === 'Bench press')).toBe(true);
 
     const record = r.cards[0]?.record;
     expect(record).toMatchObject({ status: 'committed', detail: { kind: 'edit_today', added: [{ exerciseName: 'Lateral raise', sets: 3 }] } });
@@ -273,7 +273,7 @@ describe('add an exercise from chat', () => {
     expect(rows.map((x) => x.row.exerciseName)).toContain('Cable curl');
   });
 
-  it('a FitNotes custom "Lateral Raise" in today’s workout (review S2): the catalogue lateral raise is not addable, and adding it is refused', async () => {
+  it('a FitNotes custom "Lateral Raise" in today’s workout (review S2): the catalogue lateral raise is added as a second copy (19 Oct)', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     // FitNotes history with Ben's own "Lateral Raise", answered as a new exercise (a custom row, its own ID).
@@ -319,8 +319,9 @@ describe('add an exercise from chat', () => {
     ]);
     const r = await say(s, sessionId, 'add 3 sets of lateral raises');
     const addable = contextAddable(model.requests[0] as ModelRequest) ?? [];
-    expect(addable.some((a) => /lateral raise/i.test(a.name) && !/cable/i.test(a.name))).toBe(false);
-    expect(r.cards[0]?.record).toMatchObject({ status: 'rejected', failure: 'Lateral raise: it’s already in today’s workout' });
-    expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Lateral Raise']);
+    // (Ben, 19 Oct: "Even if it's the same exercise") The same movement is added as a second copy with its own sets.
+    expect(addable.some((a) => /lateral raise/i.test(a.name) && !/cable/i.test(a.name))).toBe(true);
+    expect(r.cards[0]?.record).toMatchObject({ status: 'committed' });
+    expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Lateral Raise', 'Lateral raise']);
   });
 });

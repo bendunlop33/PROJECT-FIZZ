@@ -58,6 +58,9 @@ import {
   midSwapSlot,
   swapPainCarry,
   applyCheckInPatch,
+  supersetPartners,
+  supersetPartnerSets,
+  type SupersetPartner,
   buildActiveSetView,
   buildWorkoutTableView,
   exerciseCardFacts,
@@ -1397,7 +1400,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     // block's set count, the same as the Summary's `Next time` (review r2 B1).
     for (const block of nextTargetBlocks(source)) {
       const sx = block.decider;
-      if (out.has(sx.exerciseId)) continue;
+      // (19 Oct) A second copy of an exercise (a superset with itself at 0) never plans next time.
+      if (block.copy || out.has(sx.exerciseId)) continue;
       // Cardio (review B1): never progressed; next time repeats last time's time and distance (this workout's, as history reads it).
       if (sx.measurement === 'cardio') {
         const plan = cardioRepeatTargets(await historyFor(p.id, sx.exerciseId), { at: ctx.now() });
@@ -2967,7 +2971,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * Summary showed, shown as `Target`, its source behind `Why?`; review S3, minimal-copy D1), or one
      * empty set when there's no comparable history.
      */
-    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; shape?: AddShape }): Promise<CommandOutcome> {
+    /**
+     * `Superset with…` (Ben, 19 Oct): the exercises already in the workout this one can pair with,
+     * at the workout's version (a link sent with it is refused once the workout moved on), and the
+     * set count a new exercise starts with (as many as this one has left). Reads only.
+     */
+    async supersetChoices(sessionId: string, sessionExerciseId: string): Promise<{ version: number; name: string; partners: SupersetPartner[]; sets: number } | null> {
+      const aggregate = await repos().sessions.get(sessionId).catch(() => null);
+      const row = aggregate?.exercises.find((e) => e.id === sessionExerciseId);
+      if (!aggregate || !row) return null;
+      return { version: aggregate.session.version, name: row.exerciseName, partners: supersetPartners(aggregate, sessionExerciseId), sets: supersetPartnerSets(aggregate, sessionExerciseId) };
+    },
+
+    /** `Superset with…` an exercise already in the workout: `link_superset`, versioned; Undo is `undoOp` on the opId. */
+    async linkSuperset(req: { sessionId: string; sessionExerciseId: string; withSessionExerciseId: string; expectedVersion: number; opId: string }): Promise<CommandOutcome> {
+      return ctx.afterCommand(await domain().dispatch(req.sessionId, { type: 'link_superset', at: ctx.now(), opId: req.opId, expectedVersion: req.expectedVersion, sessionExerciseId: req.withSessionExerciseId, withSessionExerciseId: req.sessionExerciseId }));
+    },
+
+    async addExercise(req: { sessionId: string; exerciseId: string; equipmentId: string | null; opId: string; shape?: AddShape; supersetWithSessionExerciseId?: string }): Promise<CommandOutcome> {
       const p = await ctx.profile();
       if (!p) return { ok: false, error: { code: 'not_found', message: 'Owner profile not found.' } };
       // A catalogue exercise is saved (Coaching knowledge, no owner) the first time it's added.
@@ -2990,6 +3011,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           at: ctx.now(),
           plan,
           exerciseRestS: p.exerciseRestS?.[req.exerciseId] ?? null,
+          ...(req.supersetWithSessionExerciseId === undefined ? {} : { supersetWithSessionExerciseId: req.supersetWithSessionExerciseId }),
         }),
       );
     },
@@ -4616,7 +4638,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
-     * The Add exercise list (§11.4, TE16): not in today's plan, doable here
+     * The Add exercise list (§11.4, TE16): any exercise (one already in today's plan is a second copy), doable here
      * unless `showAll`, matching `query`; each row with the target the pick
      * will plan (its own history, else `No history`), flagged ones marked.
      * Reads only; never an AI call.
@@ -4629,10 +4651,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const resolved = await resolveOverview(p, req.target, { gymId, gymEquipment });
         if (resolved === null) return null;
         const { planCheckIn } = await overviewCheckIn(req.checkInId ?? null);
-        const t = await todayFor(p, resolved, gymId, gymEquipment, planCheckIn);
-        const base = basisSlots(slotBasisOf(resolved));
-        // Today's exercises (after swaps): one swapped away today can be added back (review N3).
-        const inPlan = new Set(editedSlots(base, resolveTodayEdits(base, t.input.edits)).map((x) => x.exerciseId));
+        // (Ben, 19 Oct) An exercise already in today's plan can be added again as a second copy.
         const all = new Map<string, Exercise>();
         for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) if (!isArchivedExercise(e)) all.set(e.id, e);
         for (const e of ctx.catalogueExercises?.() ?? []) if (!all.has(e.id)) all.set(e.id, e);
@@ -4640,7 +4659,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const histories = new Map<string, HistorySession[]>();
         for (const id of await workout.recentExerciseIds(40).catch(() => [] as string[])) histories.set(id, await historyFor(p.id, id).catch(() => [] as HistorySession[]));
         const aliasesOf = await aliasIndex(p);
-        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: inPlan, query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz, aliasesOf });
+        const picked = rankAddCandidates({ exercises: [...all.values()], excludeExerciseIds: new Set<string>(), query: req.query, gym: sctx.gym, showAll: req.showAll, histories, painFlags: sctx.painFlags, nowMs: sctx.nowMs, tz: sctx.at.tz, aliasesOf });
         const rows: SubstituteRow[] = [];
         for (const e of picked) {
           const history = histories.get(e.id) ?? (await historyFor(p.id, e.id).catch(() => [] as HistorySession[]));

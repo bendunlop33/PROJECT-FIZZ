@@ -393,7 +393,8 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
       <View>
         {view.table.rows.map((r) => {
           const on = r.sessionId === selected;
-          const t = on ? (targets?.rows.find((x) => x.sessionId === r.sessionId && x.target !== null && x.verdict !== null) ?? null) : null;
+          // One line per copy when the exercise was done twice that day (review S1).
+          const ts = on ? (targets?.rows.filter((x) => x.sessionId === r.sessionId && x.target !== null && x.verdict !== null) ?? []) : [];
           return (
             <View key={r.sessionId}>
               <Pressable
@@ -429,11 +430,13 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
                   </>
                 )}
               </Pressable>
-              {t !== null && t.verdict !== null ? (
-                <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Target ${t.target ?? ''}, did ${t.actual}. ${PLAN_VERDICT_WORD[t.verdict]}.`}>
-                  {`Target ${t.target ?? ''} · ${t.actual} · ${PLAN_VERDICT_WORD[t.verdict]}`}
-                </AppText>
-              ) : null}
+              {ts.map((t) =>
+                t.verdict !== null ? (
+                  <AppText key={t.sessionExerciseId} variant="callout" color="text.secondary" numeric accessibilityLabel={`Target ${t.target ?? ''}, did ${t.actual}. ${PLAN_VERDICT_WORD[t.verdict]}.`}>
+                    {`Target ${t.target ?? ''} · ${t.actual} · ${PLAN_VERDICT_WORD[t.verdict]}`}
+                  </AppText>
+                ) : null,
+              )}
             </View>
           );
         })}

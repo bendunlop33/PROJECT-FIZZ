@@ -233,7 +233,6 @@ describe('checkCoachAdd: refusals (nothing is added)', () => {
 
   it.each([
     ['a pain-flagged movement (rule 9)', () => input(RAISE, session(MAIN, MAIN_EQ), { substitute: subCtx(MAIN, MAIN_EQ, { painFlags: [flag] }) }), /shoulder flagged/],
-    ['an exercise already in the workout', () => input(BENCH, session(MAIN, MAIN_EQ)), /already in today/],
     ['nothing to do it on here (rule 4)', () => input(HACK, session(MAIN, MAIN_EQ)), /nothing for it at Main gym/],
     ['an unknown exercise', () => input(null, session(MAIN, MAIN_EQ)), /isn’t one of your exercises/],
     ['a distance exercise', () => input(ROWER, session(MAIN, MAIN_EQ)), /distance/],
@@ -249,8 +248,8 @@ describe('checkCoachAdd: refusals (nothing is added)', () => {
   const withCustomRow = (): SessionAggregate =>
     apply(session(MAIN, MAIN_EQ), buildAddExerciseCommand({ opId: 'custom', owner: profile(), exercise: CUSTOM, equipmentId: rack.id, at: at(2), newId: idGen(62_000), plan: [{ setType: 'working' as const, planned: { load: null, reps: { min: 10, max: 12 }, durationS: null, rpe: null, rir: null } }] }));
 
-  it('the same movement under another ID or name (review S2): already in the workout, or flagged, is refused', () => {
-    expect(checkCoachAdd(input(RAISE, withCustomRow()))).toMatchObject({ status: 'rejected', failure: 'it’s already in today’s workout' });
+  it('the same movement under another ID or name (review S2): flagged is refused; already in the workout is a second copy (19 Oct)', () => {
+    expect(checkCoachAdd(input(RAISE, withCustomRow())).status).toBe('ok');
     const customFlag: PainFlag = { ...flag, id: id(951), exerciseId: CUSTOM.id, exerciseName: CUSTOM.name };
     const flagged = checkCoachAdd(input(RAISE, session(MAIN, MAIN_EQ), { substitute: subCtx(MAIN, MAIN_EQ, { painFlags: [customFlag] }) }));
     expect(flagged.status === 'rejected' ? flagged.failure : flagged.status).toMatch(/shoulder flagged/);
@@ -299,5 +298,39 @@ describe('checkCoachAdd: position, superset and replays', () => {
     expect({ ...b.command, at: a.command.at }).toEqual(a.command);
     const once = expectOk(reduceSession(s, a.command)).state;
     expect(expectOk(reduceSession(once, b.command)).duplicate).toBe(true);
+  });
+});
+
+describe('the same exercise again (Ben, 19 Oct: "Even if it’s the same exercise with different or no weight")', () => {
+  const benchOf = (s: SessionAggregate) => rowsNamed(s, 'Bench press')[0];
+
+  it('a second copy at 0 supersets with the first: no equipment, 0 kg, its own sets; the first is untouched', () => {
+    const s = session(MAIN, MAIN_EQ);
+    const bench = benchOf(s);
+    const r = ok(input(BENCH, s, {}, { supersetWithSessionExerciseId: bench?.id ?? null, load: 0, workingSets: 3, reps: { min: 20, max: 20 } }));
+    expect(r.summary).toMatchObject({ supersetWithName: 'Bench press', target: { load: kg(0) }, equipmentName: null });
+    const after = expectOk(reduceSession(s, r.command)).state;
+    const rows = rowsNamed(after, 'Bench press');
+    expect(rows.map((e) => [e.equipmentId, e.supersetGroup])).toEqual([
+      [bar.id, 'A'],
+      [null, 'A'],
+    ]);
+    expect(after.sets.filter((x) => x.sessionExerciseId === rows[1]?.id).map((x) => x.planned.load)).toEqual([kg(0), kg(0), kg(0)]);
+    expect(after.sets.filter((x) => x.sessionExerciseId === bench?.id)).toEqual(s.sets.filter((x) => x.sessionExerciseId === bench?.id));
+  });
+
+  it('a load Ben gives is fitted to the item and never past its max', () => {
+    const s = session(MAIN, MAIN_EQ);
+    const r = ok(input(RAISE, s, {}, { load: 11 }));
+    const loads = r.command.plan?.map((p) => p.planned.load?.value);
+    for (const v of loads ?? []) expect(getAchievableLoads(rack).loads).toContain(v);
+    const big = ok(input(RAISE, s, {}, { load: 80 }));
+    for (const p of big.command.plan ?? []) expect(p.planned.load === null || p.planned.load.value <= 30).toBe(true);
+  });
+
+  it('a timed exercise ignores a load', () => {
+    const s = session(MAIN, MAIN_EQ);
+    const r = ok(input(PLANK, s, {}, { load: 10, workSeconds: 45, reps: null }));
+    expect(r.command.plan?.every((p) => p.planned.load === null)).toBe(true);
   });
 });

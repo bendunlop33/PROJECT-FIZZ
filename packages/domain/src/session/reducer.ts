@@ -40,7 +40,7 @@ import { toIso, toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { pendingSetsOf } from './mid-swap';
-import { buildExecutionOrder, isRoundEnd, nextPendingSet } from './order';
+import { buildExecutionOrder, effectiveOffset, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -936,12 +936,25 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
   }
   const endedAt = cmd.endedAt ?? cmd.at;
   const endMs = toMs(endedAt.utc);
-  const timeError = checkEndTime(state, endMs, nowMs);
+  // (19 Oct) A start chosen on the Finish sheet: never after the first logged set or in the future.
+  const startedAt = cmd.startedAt ?? state.session.startedAt;
+  const startMs = toMs(startedAt.utc);
+  if (cmd.startedAt !== undefined) {
+    const startError = checkStartTime(state, startMs, nowMs);
+    if (startError) return { ok: false, error: startError };
+    // The same check as `update_session_timing` (review N5).
+    if (state.session.pause !== null && startMs > toMs(state.session.pause.pausedAtUtc)) {
+      return fail('invalid_time', 'The start time is after the workout was paused.');
+    }
+  }
+  const timeError = checkEndTime(state, endMs, nowMs, startMs);
   if (timeError) return { ok: false, error: timeError };
-  const timingAudit =
-    cmd.endedAt !== null && cmd.endedAt.utc !== cmd.at.utc
-      ? [...state.timingAudit, timingEntry(state, cmd.opId, 'endedAt', 'finish', cmd.at, cmd.at, cmd.endedAt)]
-      : state.timingAudit;
+  const startChanged = cmd.startedAt !== undefined && cmd.startedAt.utc !== state.session.startedAt.utc;
+  const timingAudit = [
+    ...state.timingAudit,
+    ...(startChanged && cmd.startedAt !== undefined ? [timingEntry(state, cmd.opId, 'startedAt', 'finish', cmd.at, state.session.startedAt, cmd.startedAt)] : []),
+    ...(cmd.endedAt !== null && cmd.endedAt.utc !== cmd.at.utc ? [timingEntry(state, cmd.opId, 'endedAt', 'finish', cmd.at, cmd.at, cmd.endedAt)] : []),
+  ];
   const events: SessionEvent[] = [];
   const skippedIds: string[] = [];
   const audit = [...state.audit];
@@ -982,6 +995,7 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
     session: {
       ...state.session,
       status: 'finished',
+      startedAt,
       endedAt,
       pause: null,
       pauses,
@@ -1007,6 +1021,14 @@ function checkEndTime(state: SessionAggregate, endMs: number, nowMs: number, sta
   return null;
 }
 
+/** A start time must not lie after the first logged set or in the future. */
+function checkStartTime(state: SessionAggregate, startMs: number, nowMs: number): SessionError | null {
+  if (startMs > nowMs) return { code: 'invalid_time', message: 'The start time is in the future.' };
+  const done = completedTimes(state);
+  if (done.length > 0 && startMs > Math.min(...done)) return { code: 'invalid_time', message: 'The start time is after the first logged set.' };
+  return null;
+}
+
 function timingEntry(
   state: SessionAggregate,
   opId: string,
@@ -1027,11 +1049,8 @@ function handleUpdateTiming(state: SessionAggregate, cmd: CommandOf<'update_sess
   }
   const startedAt = cmd.startedAt ?? session.startedAt;
   const startMs = toMs(startedAt.utc);
-  if (startMs > nowMs) return fail('invalid_time', 'The start time is in the future.');
-  const done = completedTimes(state);
-  if (done.length > 0 && startMs > Math.min(...done)) {
-    return fail('invalid_time', 'The start time is after the first logged set.');
-  }
+  const startError = checkStartTime(state, startMs, nowMs);
+  if (startError) return { ok: false, error: startError };
   if (session.pause !== null && startMs > toMs(session.pause.pausedAtUtc)) {
     return fail('invalid_time', 'The start time is after the workout was paused.');
   }
@@ -1316,7 +1335,20 @@ function handleAddExercise(state: SessionAggregate, cmd: CommandOf<'add_exercise
     ...added.map((s): SessionEvent => ({ type: 'SetAdded', setId: s.id, sessionExerciseId: ex.id })),
   ];
   const activeSetId = activateIfIdle(state, cmd.newSetId, events);
-  const grouped = place.partnerId === null || place.group === null ? state.exercises : state.exercises.map((e) => (e.id === place.partnerId && e.supersetGroup === null ? { ...e, supersetGroup: place.group } : e));
+  const grouped =
+    place.partnerId === null || place.group === null
+      ? state.exercises
+      : state.exercises.map((e) => {
+          if (e.id !== place.partnerId || e.supersetGroup !== null) return e;
+          const anchor: SessionExercise = { ...e, supersetGroup: place.group };
+          delete anchor.roundOffset;
+          return anchor;
+        });
+  // (19 Oct) A row paired mid-workout starts in the group's current round, not a round already done.
+  if (place.group !== null) {
+    const offset = joinRoundOffset(grouped.filter((e) => e.removed === undefined && e.supersetGroup === place.group), [...state.sets, ...added], ex);
+    if (offset > 0) ex.roundOffset = offset;
+  }
   const exercises = place.afterId === null ? [...grouped, ex] : insertRowAfter(grouped, place.afterId, ex);
   const next = { ...state, exercises, sets: [...state.sets, ...added] };
   return { ok: true, state: bumpVersion(next, activeSetId), events };
@@ -1982,7 +2014,12 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handl
       const sets = state.sets.map((s) => gone.get(s.id) ?? s);
       const alone = ex.supersetGroup === null ? [] : state.exercises.filter((e) => e.id !== ex.id && e.removed === undefined && e.supersetGroup === ex.supersetGroup);
       const exercises = state.exercises.map((e) => {
-        if (e.id === ex.id) return { ...e, removed: { opId: cmd.opId, at: cmd.at, by: 'remove' as const } };
+        if (e.id === ex.id) {
+          // Nothing brings an undone add back, so its superset letter is free again (review N3: no `B` with no `A`).
+          const gone: SessionExercise = { ...e, supersetGroup: null, removed: { opId: cmd.opId, at: cmd.at, by: 'remove' as const } };
+          delete gone.roundOffset;
+          return gone;
+        }
         if (alone.length === 1 && e.id === alone[0]?.id) return { ...e, supersetGroup: null };
         return e;
       });
@@ -2048,6 +2085,10 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handl
     }
     case 'move_exercise':
       return undoMove(state, prior);
+    case 'link_superset':
+      return undoLinkSuperset(state, prior);
+    case 'split_superset':
+      return undoSplitSuperset(state, prior);
     case 'add_set': {
       // `Set 4 added` [Undo]: the added set goes again, only while it's still pending (a logged set is real).
       const set = state.sets.find((s) => s.id === prior.createdIds?.[0]);
@@ -2233,6 +2274,138 @@ function undoMove(state: SessionAggregate, prior: ProcessedOperation): Handled {
   return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: moved, undo: true }] };
 }
 
+/** A row split across gyms (a continuation, or one with a continuation): its order follows its parts. */
+function partedRow(live: readonly SessionExercise[], e: SessionExercise): boolean {
+  return e.continuesFromId !== undefined || live.some((x) => x.continuesFromId === e.id);
+}
+
+/**
+ * `link_superset` (Ben, 19 Oct, `Superset with…`): the two rows (or a row and the superset it joins)
+ * become one superset (a new letter when neither is in one; two different supersets are refused).
+ * Which row was named first never matters (review B1): the side further along (more rounds done; on
+ * a tie the superset already there, else the earlier row) stays where it is, and the other side
+ * moves to straight after it and sits out the rounds the leading side has done (`roundOffset`), so
+ * the exercise in progress keeps going and the sets alternate from its current round.
+ * Both rows need a set not done yet. No set changes (rule 2).
+ */
+function handleLinkSuperset(state: SessionAggregate, cmd: CommandOf<'link_superset'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
+  const live = liveExercises(state.exercises).sort(byOrder);
+  const a = live.find((e) => e.id === cmd.sessionExerciseId);
+  const b = live.find((e) => e.id === cmd.withSessionExerciseId);
+  if (!a || !b) return fail('exercise_not_found', 'Exercise not found in this workout.');
+  if (a.id === b.id) return fail('invalid_values', 'Pick another exercise.');
+  if (a.supersetGroup !== null && a.supersetGroup === b.supersetGroup) return { ok: true, state, events: [] };
+  if (a.supersetGroup !== null && b.supersetGroup !== null) return fail('invalid_values', `${a.exerciseName} is already in a superset.`);
+  for (const row of [a, b]) {
+    if (!state.sets.some((x) => x.sessionExerciseId === row.id && x.status === 'pending')) return fail('set_not_pending', `${row.exerciseName} is done.`);
+    if (partedRow(live, row)) return fail('invalid_values', `${row.exerciseName} has sets at another gym.`);
+  }
+  const { lead, lag, shift } = supersetLinkSides(state.exercises, state.sets, a, b);
+  if (lag.some((m) => effectiveOffset(m) + shift > MAX_ROUND_OFFSET)) return fail('invalid_values', 'Too many rounds done to pair these.');
+  let group = a.supersetGroup ?? b.supersetGroup;
+  if (group === null) {
+    const used = new Set(state.exercises.map((e) => e.supersetGroup));
+    group = GROUP_LETTERS.find((l) => !used.has(l)) ?? null;
+    if (group === null) return fail('invalid_values', 'No superset letter left in this workout.');
+  }
+  const g = group;
+  const lagIds = new Set(lag.map((m) => m.id));
+  const leadIds = new Set(lead.map((m) => m.id));
+  const last = lead.at(-1) ?? lead[0];
+  const sorted = [...state.exercises].sort(byOrder);
+  const rest = sorted.filter((e) => !lagIds.has(e.id));
+  const at = rest.findIndex((e) => e.id === last?.id) + 1;
+  const next = [...rest.slice(0, at), ...sorted.filter((e) => lagIds.has(e.id)), ...rest.slice(at)];
+  const pos = new Map(next.map((e, i) => [e.id, i]));
+  const withOffset = (e: SessionExercise, offset: number, order: number): SessionExercise => {
+    const row: SessionExercise = { ...e, order, supersetGroup: g, roundOffset: offset };
+    if (offset === 0) delete row.roundOffset;
+    return row;
+  };
+  const exercises = state.exercises.map((e) => {
+    const order = pos.get(e.id) ?? e.order;
+    if (leadIds.has(e.id)) return withOffset(e, effectiveOffset(e), order);
+    if (lagIds.has(e.id)) return withOffset(e, effectiveOffset(e) + shift, order);
+    return e.order === order ? e : { ...e, order };
+  });
+  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...lagIds, ...leadIds], undo: false }] };
+}
+
+/** `split_superset` (Ben, 19 Oct, `Remove superset`): every member back to a single exercise, order kept. No set changes. */
+function handleSplitSuperset(state: SessionAggregate, cmd: CommandOf<'split_superset'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
+  const row = liveExercises(state.exercises).find((e) => e.id === cmd.sessionExerciseId);
+  if (!row) return fail('exercise_not_found', 'Exercise not found in this workout.');
+  if (row.supersetGroup === null) return { ok: true, state, events: [] };
+  const group = row.supersetGroup;
+  const members = state.exercises.filter((e) => e.supersetGroup === group).map((e) => e.id);
+  const exercises = state.exercises.map((e) => (e.supersetGroup === group ? { ...e, supersetGroup: null } : e));
+  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: members, undo: false }] };
+}
+
+/**
+ * Undo of `link_superset`: the old order back and the rows that joined out of the group (a member left
+ * on its own is ungrouped), only while the rows are still in the order the link left and still grouped.
+ * Record: the order before, the order after, then the rows that had no group before.
+ */
+function undoLinkSuperset(state: SessionAggregate, prior: ProcessedOperation): Handled {
+  const ids = prior.createdIds ?? [];
+  const n = state.exercises.length;
+  const before = ids.slice(0, n);
+  const after = ids.slice(n, 2 * n);
+  const joined = new Set(ids.slice(2 * n));
+  if (n === 0 || ids.length < 2 * n || stableStringify(rowOrder(state.exercises)) !== stableStringify(after)) return fail('stale_version', STALE_UNDO);
+  const rows = state.exercises.filter((e) => joined.has(e.id));
+  if (rows.length === 0 || rows.some((e) => e.removed !== undefined || e.supersetGroup === null)) return fail('stale_version', STALE_UNDO);
+  const group = rows[0]?.supersetGroup ?? null;
+  if (rows.some((e) => e.supersetGroup !== group)) return fail('stale_version', STALE_UNDO);
+  const pos = new Map(before.map((id, i) => [id, i]));
+  const left = state.exercises.filter((e) => e.supersetGroup === group && e.removed === undefined && !joined.has(e.id));
+  // A superset that sat out rounds to follow a row further along drops the shift the link gave it
+  // (an even shift of every member changes no order, so the smallest offset goes back to 0).
+  const drop = left.length > 1 ? Math.min(...left.map((e) => e.roundOffset ?? 0)) : 0;
+  const exercises = state.exercises.map((e) => {
+    const order = pos.get(e.id) ?? e.order;
+    const ungroup = joined.has(e.id) || (left.length === 1 && left[0]?.id === e.id);
+    const row: SessionExercise = { ...e, order, supersetGroup: ungroup ? null : e.supersetGroup };
+    if (ungroup) delete row.roundOffset;
+    else if (drop > 0 && left.some((x) => x.id === e.id)) {
+      const offset = (e.roundOffset ?? 0) - drop;
+      if (offset > 0) row.roundOffset = offset;
+      else delete row.roundOffset;
+    }
+    return row;
+  });
+  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...joined], undo: true }] };
+}
+
+/** Undo of `split_superset`: the members grouped again (a free letter), only while none is in a superset or moved since. */
+function undoSplitSuperset(state: SessionAggregate, prior: ProcessedOperation): Handled {
+  const ids = prior.createdIds ?? [];
+  const n = state.exercises.length;
+  const order = ids.slice(0, n);
+  const members = new Set(ids.slice(n));
+  if (n === 0 || members.size < 2 || stableStringify(rowOrder(state.exercises)) !== stableStringify(order)) return fail('stale_version', STALE_UNDO);
+  const rows = state.exercises.filter((e) => members.has(e.id));
+  if (rows.length !== members.size || rows.some((e) => e.supersetGroup !== null)) return fail('stale_version', STALE_UNDO);
+  const used = new Set(state.exercises.map((e) => e.supersetGroup));
+  const letter = GROUP_LETTERS.find((l) => !used.has(l));
+  if (letter === undefined) return fail('stale_version', STALE_UNDO);
+  const exercises = state.exercises.map((e) => (members.has(e.id) ? { ...e, supersetGroup: letter } : e));
+  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...members], undo: true }] };
+}
+
+/** The rows a link put in a superset that had none before. */
+function linkedRows(before: SessionAggregate, after: SessionAggregate): string[] {
+  return after.exercises.filter((e) => e.supersetGroup !== null && before.exercises.find((b) => b.id === e.id)?.supersetGroup === null).map((e) => e.id);
+}
+
+/** The rows a split took out of their superset. */
+function splitRows(before: SessionAggregate, after: SessionAggregate): string[] {
+  return before.exercises.filter((e) => e.supersetGroup !== null && after.exercises.find((x) => x.id === e.id)?.supersetGroup === null).map((e) => e.id);
+}
+
 /** The processed-operation record of a command applied from `before` to `after`. */
 function processedRecord(command: SessionCommand & { opId: string }, before: SessionAggregate, after: SessionAggregate): ProcessedOperation {
   const createdIds =
@@ -2242,6 +2415,10 @@ function processedRecord(command: SessionCommand & { opId: string }, before: Ses
         ? [command.newSessionExerciseId]
         : command.type === 'move_exercise'
           ? [...rowOrder(before.exercises), ...rowOrder(after.exercises)]
+          : command.type === 'link_superset'
+            ? [...rowOrder(before.exercises), ...rowOrder(after.exercises), ...linkedRows(before, after)]
+            : command.type === 'split_superset'
+              ? [...rowOrder(after.exercises), ...splitRows(before, after)]
           : command.type === 'adjust_pending_targets' && command.addSets.length > 0
             ? command.addSets.map((a) => a.newSetId)
             : null;
@@ -2261,6 +2438,8 @@ function atVersion(step: CommandOf<'coach_edit_today'>['steps'][number], version
     case 'swap_exercise':
     case 'remove_exercise':
     case 'move_exercise':
+    case 'link_superset':
+    case 'split_superset':
       return { ...step, at, expectedVersion: version };
     case 'add_exercise':
     case 'skip_exercise':
@@ -2395,6 +2574,10 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleSetLoadMode(state, command);
     case 'move_exercise':
       return handleMoveExercise(state, command);
+    case 'link_superset':
+      return handleLinkSuperset(state, command);
+    case 'split_superset':
+      return handleSplitSuperset(state, command);
     case 'coach_edit_today':
       return handleCoachEditToday(state, command, nowMs);
     case 'revert_coach_edit':
@@ -2488,6 +2671,16 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
       // Moved again (or put back) since.
       const ids = state.processedOps[command.opId]?.createdIds ?? [];
       return stableStringify(rowOrder(state.exercises)) !== stableStringify(ids.slice(ids.length / 2));
+    }
+    case 'link_superset': {
+      // Taken apart since (its Undo, a split, a removal).
+      const g = (id: string) => state.exercises.find((e) => e.id === id && e.removed === undefined)?.supersetGroup ?? null;
+      return g(command.sessionExerciseId) === null || g(command.sessionExerciseId) !== g(command.withSessionExerciseId);
+    }
+    case 'split_superset': {
+      // Grouped again since (its Undo).
+      const ids = state.processedOps[command.opId]?.createdIds ?? [];
+      return ids.slice(state.exercises.length).some((id) => state.exercises.find((e) => e.id === id)?.supersetGroup !== null);
     }
     case 'coach_edit_today':
       // Any step no longer in place (undone, or overtaken).

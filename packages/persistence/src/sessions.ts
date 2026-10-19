@@ -103,6 +103,7 @@ function exerciseRow(e: SessionExercise, ordinal: number): Record<string, SqlVal
     unit: e.unit,
     sort_order: e.order,
     superset_group: e.supersetGroup,
+    round_offset: e.roundOffset ?? null,
     transition_rest_s: e.transitionRestS,
     progression_rule_id: e.progressionRuleId,
     continues_from_id: e.continuesFromId ?? null,
@@ -268,6 +269,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       // Absent rather than null (optional fields); a wrong type still fails validation.
       ...(e.continues_from_id === null || e.continues_from_id === undefined ? {} : { continuesFromId: e.continues_from_id }),
       ...(e.equipment_version === null || e.equipment_version === undefined ? {} : { equipmentVersion: e.equipment_version }),
+      ...(e.round_offset === null || e.round_offset === undefined ? {} : { roundOffset: e.round_offset }),
       ...(e.note === null || e.note === undefined ? {} : { note: e.note }),
       ...(e.removed === null || e.removed === undefined ? {} : { removed: parseJson('session_exercises', rowId(e.id), 'removed', e.removed) }),
       ...(e.swapped_from === null || e.swapped_from === undefined ? {} : { swappedFrom: parseJson('session_exercises', rowId(e.id), 'swapped_from', e.swapped_from) }),

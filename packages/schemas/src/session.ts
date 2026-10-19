@@ -431,6 +431,13 @@ export const SessionExerciseSchema = z.object({
   unit: WeightUnitSchema,
   order: z.int().min(0),
   supersetGroup: z.string().min(1).max(8).nullable(),
+  /**
+   * (19 Oct, `Superset with…` mid-workout) Rounds this row sits out at the
+   * start of its superset, so its first set pairs with the group's next set
+   * rather than with a round already done (A3, B1, A4, B2 …). Read only while
+   * the row is in a superset. Absent = 0.
+   */
+  roundOffset: z.int().min(1).max(60).optional(),
   transitionRestS: DurationSecondsSchema.nullable(),
   progressionRuleId: IdSchema.nullable(),
   /**
