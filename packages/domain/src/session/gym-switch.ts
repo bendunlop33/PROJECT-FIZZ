@@ -156,7 +156,7 @@ function importedBlockSets(state: Pick<SessionAggregate, 'sets'>, parts: readonl
 }
 
 /** Every exercise block with at least one done working set, in workout order. */
-export function nextTargetBlocks(state: Pick<SessionAggregate, 'session' | 'exercises' | 'sets'>): NextTargetBlock[] {
+export function nextTargetBlocks(state: Pick<SessionAggregate, 'session' | 'exercises' | 'sets'> & Partial<Pick<SessionAggregate, 'processedOps'>>): NextTargetBlock[] {
   const sorted = [...state.exercises].sort((a, b) => a.order - b.order);
   const out: NextTargetBlock[] = [];
   const copies = extraCopies(state, sorted, false);
