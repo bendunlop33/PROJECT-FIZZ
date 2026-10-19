@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
+import { cardioMinutesField, cardioSecondsFromMinutes, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
 import type { SetExclusion, SetType, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -239,7 +239,22 @@ export function EditSetScreen() {
               }}
             />
           ) : null}
-          {view.duration ? (
+          {view.duration && view.distance ? (
+            // Cardio (19 Oct): time and distance both; the time in minutes.
+            <NumberStepper
+              onSurface
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
+              label="Time"
+              unit="min"
+              decimals
+              {...cardioMinutesField(view.duration)}
+              onChange={(v) => {
+                setValues({ ...current, durationS: cardioSecondsFromMinutes(v) });
+              }}
+            />
+          ) : view.duration ? (
             <NumberStepper
               onSurface
               flex={flexOf(1)}

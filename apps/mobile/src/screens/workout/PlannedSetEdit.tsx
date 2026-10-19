@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { toggleRepRange, type PlannedSetEdits } from '@fizz/domain';
+import { cardioMinutesField, cardioSecondsFromMinutes, toggleRepRange, type PlannedSetEdits } from '@fizz/domain';
 
 import { newUuid } from '../../device/runtime';
 import { returnToWorkout } from '../../navigation/actions';
@@ -174,7 +174,9 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
                   }}
                 />
               ) : null}
-              {view.duration ? (
+              {view.duration && view.distance ? (
+                <NumberStepper onSurface flex={flexOf(1)} numeralSize={numeralSize} compact={compact} label="Time" unit="min" decimals {...cardioMinutesField(view.duration)} onChange={(v) => { setEdits({ ...edits, durationS: cardioSecondsFromMinutes(v) }); }} />
+              ) : view.duration ? (
                 <NumberStepper onSurface flex={flexOf(1)} numeralSize={numeralSize} compact={compact} label="Time" unit="s" value={view.duration.value} decimals={false} down={view.duration.down} up={view.duration.up} onChange={(v) => { setEdits({ ...edits, durationS: v === null ? null : Math.max(0, Math.round(v)) }); }} />
               ) : null}
               {view.distance ? (
