@@ -174,7 +174,7 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     expect(await rotation(s)).toEqual([]);
     expect((await s.routines.list()).map((r) => r.name).sort()).toEqual(['Legs', 'Pull', 'Push', 'Upper']);
     expect((await s.next.preview(gymId))?.routine?.basis.kind).not.toBe('plan');
-    expect((await s.plans.card({ planId, versionN: 1 }))?.state).toEqual({ kind: 'ended' });
+    expect((await s.plans.card({ planId, versionN: 1 }))?.state).toEqual({ kind: 'ended', canResume: true });
     expect((await s.plans.consistency())?.planThisWeek).toBeNull();
 
     // Force-close: still ended.
@@ -233,6 +233,28 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     db.close();
     const s2 = (await h.launch()).services;
     await expect(s2.plans.overview()).rejects.toThrow();
+  });
+
+  it('an ended plan’s card offers Use again after the toast is gone; not while another plan is in use (review planview S4)', async () => {
+    const { s, planId } = await benWithPlan();
+    const v = await s.plans.overview();
+    const ended = await s.plans.end({ planId, expectedVersion: v?.planVersion ?? 0, opId: 'end-s4' });
+    if (!ended.ok) throw new Error('end');
+    await h.forceClose();
+    const s2 = (await h.launch()).services;
+    expect((await s2.plans.card({ planId, versionN: 1 }))?.state).toEqual({ kind: 'ended', canResume: true });
+
+    // A new plan applied since: the old card can't offer it (two plans are never in use); the write refuses too.
+    model = new StepModel([planStub, () => replyWith('Here is your week.')]);
+    const r = await s2.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Build me a 4-day plan', spoken: false }, turnId: h.ids() });
+    const card = r.cards[0]?.record;
+    if (card?.detail.kind !== 'build_plan') throw new Error('no plan');
+    const c = await s2.plans.card({ planId: card.detail.planId, versionN: 1 });
+    expect(await s2.plans.apply({ planId: card.detail.planId, versionN: 1, expectedVersion: c?.planVersion ?? 0, mode: 'add', opId: 'apply-s4' })).toMatchObject({ ok: true });
+    const old = await s2.plans.card({ planId, versionN: 1 });
+    expect(old?.state).toEqual({ kind: 'ended', canResume: false });
+    expect(await s2.plans.resume({ planId, expectedVersion: old?.planVersion ?? 0, opId: 'resume-s4' })).toMatchObject({ ok: false });
+    expect((await s2.plans.overview())?.planId).toBe(card.detail.planId);
   });
 
   it('no plan applied: no block; End on a plan that isn’t there changes nothing', async () => {

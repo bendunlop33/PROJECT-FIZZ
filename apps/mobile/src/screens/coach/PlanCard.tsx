@@ -72,6 +72,17 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
     onChanged();
   }
 
+  /** `Use again` on an ended plan (review planview S4): the plan in use again, its days back in their places. */
+  async function resume() {
+    if (d === null || planVersion === null) return;
+    setBusy(true);
+    const r = await services.plans.resume({ planId: d.planId, expectedVersion: planVersion, opId: `plan-resume:${d.planId}:${String(planVersion)}` });
+    setBusy(false);
+    setNotice(r.ok ? null : r.message);
+    setTick((t) => t + 1);
+    onChanged();
+  }
+
   async function undo() {
     if (d === null || planVersion === null) return;
     setBusy(true);
@@ -191,12 +202,12 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
                   setChoosing(true);
                 }}
               />
-            ) : card.action.kind === 'undo' ? (
+            ) : card.action.kind === 'undo' || card.action.kind === 'resume' ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
                 <AppText variant="callout" color="text.secondary">
                   {card.action.text}
                 </AppText>
-                <TextButton label={PLAN_COPY.undo} disabled={busy} onPress={() => void undo()} />
+                {card.action.kind === 'undo' ? <TextButton label={PLAN_COPY.undo} disabled={busy} onPress={() => void undo()} /> : <TextButton label={PLAN_COPY.useAgain} disabled={busy} onPress={() => void resume()} />}
               </View>
             ) : (
               <AppText variant="callout" color="text.secondary">

@@ -57,8 +57,11 @@ export type PlanCardState =
   | { kind: 'replaced'; byN: number }
   /** A newer plan was applied since: this one ended (no Undo here; the newer plan's Undo brings it back). */
   | { kind: 'superseded' }
-  /** Ben ended it (Library › Your plan › `End plan`; its Undo is there). */
-  | { kind: 'ended' }
+  /**
+   * Ben ended it (Library › Your plan › `End plan`). `canResume` (review planview S4): no other plan is in
+   * use, so `Use again` (the same write as the toast's Undo) is offered here after the toast is gone.
+   */
+  | { kind: 'ended'; canResume: boolean }
   | { kind: 'expired' }
   | { kind: 'gone' };
 
@@ -156,12 +159,12 @@ export function createPlanServices(deps: PlanServicesDeps) {
     return plan !== null && plan.ownerId === p.id ? plan : null;
   }
 
-  function stateOf(plan: PlanDraft | null, versionN: number, nowUtc: string): PlanCardState {
+  function stateOf(plan: PlanDraft | null, versionN: number, nowUtc: string, otherApplied = false): PlanCardState {
     if (plan === null) return { kind: 'gone' };
     if (plan.status === 'expired' || plan.status === 'discarded' || (plan.status === 'open' && !planIsOpen(plan, nowUtc))) return { kind: 'expired' };
     if (plan.currentVersion !== versionN) return { kind: 'replaced', byN: plan.currentVersion };
     if (plan.status === 'superseded') return { kind: 'superseded' };
-    if (plan.status === 'ended') return { kind: 'ended' };
+    if (plan.status === 'ended') return { kind: 'ended', canResume: !otherApplied };
     if (plan.status === 'applied' && plan.applied !== null) return { kind: 'applied', mode: plan.applied.mode, atUtc: plan.applied.atUtc };
     return { kind: 'open' };
   }
@@ -242,7 +245,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
         days: planDayLines(v).map((d) => ({ index: d.index, name: d.name, line: `${plural(d.exercises, 'exercise')} · ${plural(d.workingSets, 'set')} · ${String(d.minutes)} min`, leftOut: d.leftOut })),
         rationale: v.rationale,
         gymName: gym?.name ?? null,
-        state: stateOf(plan, req.versionN, deps.now().utc),
+        state: stateOf(plan, req.versionN, deps.now().utc, plan.status === 'ended' && (await repo().applied(p.id).catch(() => null)) !== null),
         replaces: rotationRoutines(routines).filter((r) => !madeIds.has(r.id)).map((r) => r.name),
       };
     },
