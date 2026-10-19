@@ -18,6 +18,7 @@ import {
   wordsOnlyMessage,
   checkCoachClaims,
   coachSentences,
+  BUILDER_LOAD_BOUNDS,
   type KnownPreferences,
   type LoadReferences,
   type QuestionContext,
@@ -555,9 +556,28 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
 /** Fed back when the question tool runs with no question context (never offered then). */
 export const QUESTION_NOT_OFFERED_LINE = 'No question now. Build with what you have.';
 
+/** The coach ceilings as a whole percent (Ben approved 19 Oct: 20% for both). */
+const CEILING_PERCENT = Math.round((Math.max(BUILDER_LOAD_BOUNDS.capE, BUILDER_LOAD_BOUNDS.capLastTop) - 1) * 100);
+
+/**
+ * Ben, 19 Oct: "20% for both, but gpt should consider". The ceilings are a
+ * hard limit the app enforces (`checkProposedLoad`), not a target: the model
+ * chooses within them from evidence and says why in the basis.
+ */
+export const LOAD_CHOICE_LINE = `Choose each load from his evidence. Normally repeat it or take one small step (one plate or dumbbell step, a few percent). Go further only with a clear signal: reps well over the range at low RPE, a weight that has stayed easy for weeks, or Ben saying he is ready; then the basis says which, in words. Never more than ${String(CEILING_PERCENT)}% above his estimated level or his last weight for those reps: the app caps it there, and still fits it to the equipment and holds it on pain.`;
+
+/**
+ * The same choice for today's live sets (`edit_today`). The app snaps and
+ * bounds the load to the equipment and holds increases on pain; the
+ * percentage is the coach's own limit there, not a code clamp, so a weight
+ * Ben names himself is his call.
+ */
+export const LIVE_LOAD_CHOICE_LINE = `When you choose a load for today's sets, the default is one small step (one plate or dumbbell step, a few percent) from what is planned. Go further only with a clear signal (reps well over the range at low RPE, or Ben saying it is easy) and say why in your reason. Unless Ben names the weight, never more than ${String(CEILING_PERCENT)}% above the planned weight or his last weight for those reps.`;
+
 /** About the `propose_workout` call itself (a turn that is building). */
 const CALL_RULES = [
   'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters: a short reason in words, with no numbers (e.g. "main lift, strength focus"; the app shows the numbers). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Give `minutes`, `focus` and `gymName` (one of build.gyms) from what Ben asked in this conversation, the newest first; the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
+  LOAD_CHOICE_LINE,
   'Use build.known (goal, usual length, main lift, recent split days) and his training details; never ask for them. Put the main lift first when there is one.',
   'Its `message` (at most 600 characters) says, like a coach would, why this selection and order. Any number in it must come from YOUR DATA, a tool result, Ben’s words or this workout; the app drops sentences with other numbers. No praise, scores, max or record claims, recovery claims or diagnoses.',
 ];
@@ -582,6 +602,7 @@ const MULTI_WEEK_LINE = 'It builds one session. A plan of several days is built 
  */
 const SCOPED_BUILD_RULES = [
   'Only if you call `propose_workout`: give each exercise a working load from build.loadReferences with a short basis in words, no numbers; give minutes, focus and gymName from what Ben asked (the app fits the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 600 characters) says, like a coach would, why this selection and order; any number in it must come from YOUR DATA, a tool result, Ben’s words or this workout; no praise, scores, max or record claims, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
+  `Only if you call \`propose_workout\`: ${LOAD_CHOICE_LINE.charAt(0).toLowerCase()}${LOAD_CHOICE_LINE.slice(1)}`,
   'These limits are only for the call. On any other question, including what weight or reps to use or what he lifted before, answer as usual.',
   MULTI_WEEK_LINE,
 ];

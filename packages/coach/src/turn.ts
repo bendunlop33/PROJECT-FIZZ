@@ -29,7 +29,7 @@ import { renderActionResult, type RenderSurface, type RenderedAction } from './r
 import { asksForPlan, asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
 import { parseToolCall } from './tool-call';
-import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
+import { BUILD_INSTRUCTIONS, LIVE_LOAD_CHOICE_LINE, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
 import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, refusedBuildActionIds } from './build-ask';
 import { lastLoggedSets } from './context';
 import { verifyAsked, type AskClaim, type AskVerdict } from './intent';
@@ -408,6 +408,7 @@ export function liveWorkoutInstructions(addOffered: boolean): string {
     'On each of these calls say whether Ben asked for it: benAsked true when his message this turn asks for the change or answers your question about it ("Working set"), with benQuote his asking words copied exactly; benAsked false when it is your own idea (he then sees an offer).',
     'Too easy or Too hard with no set named is about his last logged working set (workout.lastWorkingSet); a warm-up never counts. Change that exercise’s remaining sets; never ask him which set it was. After warm-ups only, offer instead.',
     'For loads from his recent history, read get_recent_training first. History imported from FitNotes is his own training and a valid basis (equipment not recorded); the app fits every load to today’s equipment.',
+    LIVE_LOAD_CHOICE_LINE,
     'When Ben did not ask, the app turns your call into an offer he accepts; nothing applies until he does.',
   ].join('\n');
 }
