@@ -96,8 +96,8 @@ describe('a cardio timer survives a force-close (schema 20)', () => {
   });
 });
 
-describe('migration 20: the four machines become cardio, history included', () => {
-  it('a schema-19 backup with a distance row on the rower and a timed air bike restores as cardio; values unchanged; a sled push stays distance', async () => {
+describe('migration 21: the four machines become cardio, history included', () => {
+  it('a schema-20 backup with a distance row on the rower and a timed air bike restores as cardio; values unchanged; a sled push stays distance', async () => {
     const src = await DatabaseManager.open({ host: nodeDatabaseHost(dir()), newName: names('a') });
     const rowerThen = machine(ROWING_ID, 'Rowing machine', 'distance');
     const bikeThen = machine(AIR_BIKE_ID, 'Air bike', 'duration');
@@ -125,7 +125,7 @@ describe('migration 20: the four machines become cardio, history included', () =
     const created = await createBackup(src.store, { at: at(1100), app: { name: 'PROJECT-FIZZ', version: '0.1.0', build: 'test' } });
     const parsed = await parseBackup(created.text);
     if (!parsed.ok) throw new Error('backup');
-    // The same data as a build before schema 20 would have written it.
+    // The same data as a build before schema 21 would have written it.
     const tables = { ...parsed.file.tables };
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
       const copy = { ...row };
@@ -133,14 +133,14 @@ describe('migration 20: the four machines become cardio, history included', () =
       return copy;
     });
     expect(tables.session_exercises.find((r) => r.exercise_id === ROWING_ID)).toMatchObject({ measurement: 'reps', measures_distance: 1 });
-    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 19, tables };
+    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables };
     delete body.checksum;
     const old = JSON.stringify({ ...body, checksum: { algorithm: 'sha-256', value: sha256Hex(stableStringify(body)) } });
 
     const dst = await DatabaseManager.open({ host: nodeDatabaseHost(dir()), newName: names('b') });
     const out = await dst.restore(old, at(1200));
     expect(out).toMatchObject({ ok: true, status: 'restored', preview: { needsMigration: true } });
-    expect(latestVersion()).toBeGreaterThanOrEqual(20);
+    expect(latestVersion()).toBeGreaterThanOrEqual(21);
     const restored = await dst.store.repos.sessions.get(sid);
     if (restored === null) throw new Error('not restored');
     const measurementOf = (exerciseId: string) => restored.exercises.find((e) => e.exerciseId === exerciseId)?.measurement;
@@ -157,8 +157,8 @@ describe('migration 20: the four machines become cardio, history included', () =
   });
 });
 
-describe('migration 20 mid-workout: an air-bike timer already running (review S7)', () => {
-  it('a schema-19 backup taken with the air bike’s 10-minute timer running restores as a cardio timer that runs past 10:00', async () => {
+describe('migration 21 mid-workout: an air-bike timer already running (review S7)', () => {
+  it('a schema-20 backup taken with the air bike’s 10-minute timer running restores as a cardio timer that runs past 10:00', async () => {
     const src = await DatabaseManager.open({ host: nodeDatabaseHost(dir()), newName: names('c') });
     const bikeThen = machine(AIR_BIKE_ID, 'Air bike', 'duration');
     await seed(src.store, bikeThen);
@@ -183,7 +183,7 @@ describe('migration 20 mid-workout: an air-bike timer already running (review S7
       delete copy.measures_cardio;
       return copy;
     });
-    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 19, tables };
+    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables };
     delete body.checksum;
     const old = JSON.stringify({ ...body, checksum: { algorithm: 'sha-256', value: sha256Hex(stableStringify(body)) } });
 
