@@ -1,17 +1,20 @@
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { PLAN_OVERVIEW_COPY, type PlanOverview, type PlanOverviewDay } from '@fizz/domain';
+import { addDays, localDateOf, localDateText, localHourUtcMs, PLAN_OVERVIEW_COPY, PLAN_PAUSE_MAX_DAYS, toMs, type PlanOverview, type PlanOverviewDay } from '@fizz/domain';
 
+import { dateAt } from '../../clock';
 import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Eyebrow, Icon, TextButton } from '../../ui';
 
-export type PlanToast = { text: string; action?: string; onAction?: () => void };
+/** `why`: a line behind the toast's `Why?` (End plan's `N workouts not restored`). */
+export type PlanToast = { text: string; action?: string; onAction?: () => void; why?: string };
 
 /**
  * Library › Workouts › Your plan (Ben, 19 Oct; mockup approved "ok"): the
@@ -29,9 +32,59 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
   const navigation = useNavigation();
   const stack = useNavigation<NativeStackNavigationProp<LibraryStackParams, 'LibraryHome'>>();
   const [confirming, setConfirming] = useState(false);
+  // (Ben, 20 Oct) Pause: the in-place picker; null closed, else the picked `until` (null: until Resume).
+  const [pausing, setPausing] = useState<{ until: string | null } | null>(null);
   const busy = useRef(false);
   // One op ID per confirm, so a retried tap is the same End (rule 5).
   const endOp = useRef<string | null>(null);
+  const pauseOp = useRef<string | null>(null);
+  const now = services.now();
+  const today = localDateOf(toMs(now.utc), now.tz);
+  // The wheel's dates are noon local, so a zone change never moves the picked day.
+  const noon = (date: string) => localHourUtcMs(date, 12, now.tz);
+
+  /** Pause or Resume, then a toast with Undo (the write's own; a retried tap replays). */
+  async function control(write: () => Promise<{ ok: true; plan: { id: string; version: number } } | { ok: false; message: string }>, opId: string, done: string) {
+    if (busy.current) return;
+    busy.current = true;
+    try {
+      const r = await write();
+      changed();
+      if (!r.ok) {
+        onToast({ text: r.message });
+        return;
+      }
+      const after = r.plan;
+      const undoOp = newUuid();
+      onToast({
+        text: done,
+        action: PLAN_OVERVIEW_COPY.undo,
+        onAction: () => {
+          onToast(null);
+          void services.plans.undoControl({ planId: after.id, targetOpId: opId, expectedVersion: after.version, opId: undoOp }).then((u) => {
+            changed();
+            if (!u.ok) onToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
+
+  function pause(until: string | null) {
+    pauseOp.current ??= newUuid();
+    const opId = pauseOp.current;
+    void control(() => services.plans.pause({ planId: plan.planId, untilDate: until, expectedVersion: plan.planVersion, opId }), opId, PLAN_OVERVIEW_COPY.pausedToast).then(() => {
+      setPausing(null);
+      pauseOp.current = null;
+    });
+  }
+
+  function resume() {
+    const opId = newUuid();
+    void control(() => services.plans.resumePause({ planId: plan.planId, expectedVersion: plan.planVersion, opId }), opId, PLAN_OVERVIEW_COPY.resumedToast);
+  }
 
   function openTraining() {
     navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'TrainingDetails', initial: false } });
@@ -55,6 +108,8 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
       const resumeOp = newUuid();
       onToast({
         text: PLAN_OVERVIEW_COPY.ended,
+        // (Ben, 20 Oct) Replaced workouts Ben deleted or changed since aren't put back: said behind `Why?`.
+        ...(r.notRestored.length > 0 ? { why: PLAN_OVERVIEW_COPY.notRestored(r.notRestored.length, r.notRestored) } : {}),
         action: PLAN_OVERVIEW_COPY.undo,
         onAction: () => {
           onToast(null);
@@ -78,6 +133,15 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
         </AppText>
       </View>
       <AppText variant="title2">{plan.name}</AppText>
+      {plan.paused !== null ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
+          <Icon name="pause.circle" color="text.secondary" size={16} />
+          <AppText variant="callout" color="text.secondary" numeric>
+            {`${plan.paused.text} ·`}
+          </AppText>
+          <TextButton label={PLAN_OVERVIEW_COPY.resume} onPress={resume} />
+        </View>
+      ) : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['1'] }}>
         {plan.goal.text !== null ? (
           <AppText variant="callout" color="text.secondary" numeric>
@@ -102,7 +166,56 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
         <Stat value={plan.daysThisWeek.text} label={PLAN_OVERVIEW_COPY.daysThisWeek} />
         {plan.setsDone !== null ? <Stat value={plan.setsDone.text} label={PLAN_OVERVIEW_COPY.setsDone} /> : null}
       </View>
-      {confirming ? (
+      {pausing !== null ? (
+        <View style={{ gap: theme.space['2'] }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
+            <Choice
+              label={PLAN_OVERVIEW_COPY.pauseNoDate}
+              selected={pausing.until === null}
+              onPress={() => {
+                setPausing({ until: null });
+              }}
+            />
+            <Choice
+              label={pausing.until === null ? PLAN_OVERVIEW_COPY.pauseUntil : `${PLAN_OVERVIEW_COPY.pauseUntil} ${localDateText(pausing.until)}`}
+              selected={pausing.until !== null}
+              onPress={() => {
+                setPausing({ until: pausing.until ?? addDays(today, 7) });
+              }}
+            />
+          </View>
+          {pausing.until !== null ? (
+            <DateTimePicker
+              value={dateAt(noon(pausing.until))}
+              mode="date"
+              display="spinner"
+              timeZoneName={now.tz}
+              minimumDate={dateAt(noon(addDays(today, 1)))}
+              maximumDate={dateAt(noon(addDays(today, PLAN_PAUSE_MAX_DAYS)))}
+              themeVariant={theme.scheme}
+              onValueChange={(_e, date) => {
+                setPausing({ until: localDateOf(date.getTime(), now.tz) });
+              }}
+            />
+          ) : null}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
+            <TextButton
+              label={PLAN_OVERVIEW_COPY.pause}
+              onPress={() => {
+                pause(pausing.until);
+              }}
+            />
+            <TextButton
+              label={PLAN_OVERVIEW_COPY.cancel}
+              tone="secondary"
+              onPress={() => {
+                setPausing(null);
+                pauseOp.current = null;
+              }}
+            />
+          </View>
+        </View>
+      ) : confirming ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
           <AppText variant="callout">{PLAN_OVERVIEW_COPY.endConfirm}</AppText>
           <TextButton label={PLAN_OVERVIEW_COPY.endPlan} onPress={() => void end()} />
@@ -123,6 +236,15 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
               navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: PLAN_OVERVIEW_COPY.coachDraft });
             }}
           />
+          {plan.paused === null ? (
+            <TextButton
+              label={PLAN_OVERVIEW_COPY.pause}
+              tone="secondary"
+              onPress={() => {
+                setPausing({ until: null });
+              }}
+            />
+          ) : null}
           <TextButton
             label={PLAN_OVERVIEW_COPY.endPlan}
             tone="secondary"
@@ -196,6 +318,19 @@ function Dot({ day }: { day: PlanOverviewDay }) {
     );
   }
   return <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 1.5, borderColor: theme.colors['text.tertiary'] }} />;
+}
+
+/** A radio-style choice (≥ 44pt): a filled or empty circle and its words, never colour alone. */
+function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={label} onPress={onPress} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+      <Icon name={selected ? 'largecircle.fill.circle' : 'circle'} color={selected ? 'accent' : 'text.tertiary'} size={18} />
+      <AppText variant="body" numeric>
+        {label}
+      </AppText>
+    </Pressable>
+  );
 }
 
 function Stat({ value, label }: { value: string; label: string }) {

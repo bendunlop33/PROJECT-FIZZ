@@ -1,18 +1,26 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
 import { PLAN_COPY } from '../../services/plan-services';
-import { useScreenData } from '../../shell/context';
-import { useTheme } from '../../theme';
-import { AppText, HeroHeader, PrimaryButton, StatusLine, TextButton } from '../../ui';
+import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { TIMING, useTheme } from '../../theme';
+import { AppText, HeroHeader, PrimaryButton, StatusLine, TextButton, Toast } from '../../ui';
 
 export const PLAN_DAY_COPY = {
   start: (name: string) => `Start ${name}`,
   edit: 'Edit',
   askCoach: 'Ask coach',
   coachDraft: (name: string) => `Change ${name} in my plan: `,
+  /** (Ben, 20 Oct) Pin this day as Up next until it's done. */
+  makeNext: 'Make next',
+  unpin: 'Unpin',
+  madeNext: (name: string) => `${name} is next`,
+  unpinned: 'Unpinned',
+  undo: 'Undo',
 } as const;
 
 /**
@@ -32,8 +40,54 @@ export function PlanDayScreen() {
   const [data, reload] = useScreenData((s) => s.plans.planDay(routineId));
   const day = data.state === 'ready' ? data.value : null;
   const name = day?.name ?? shownName ?? '';
+  const services = useServices();
+  const changed = useDataChanged();
+  const busy = useRef(false);
+  const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
+  useEffect(() => {
+    if (toast === null) return;
+    const t = setTimeout(() => {
+      setToast(null);
+    }, TIMING.undoToast);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [toast]);
+
+  /** `Make next` / `Unpin` (rule 5: the screen's read of the plan; a retried tap is the same write), then Undo. */
+  async function pin(on: boolean) {
+    if (day === null || busy.current) return;
+    busy.current = true;
+    const opId = newUuid();
+    try {
+      const r = await services.plans.makeNext({ planId: day.planId, routineId: on ? day.routineId : null, expectedVersion: day.planVersion, opId });
+      changed();
+      reload();
+      if (!r.ok) {
+        setToast({ text: r.message });
+        return;
+      }
+      const after = r.plan;
+      const undoOp = newUuid();
+      setToast({
+        text: on ? PLAN_DAY_COPY.madeNext(day.name) : PLAN_DAY_COPY.unpinned,
+        action: PLAN_DAY_COPY.undo,
+        onAction: () => {
+          setToast(null);
+          void services.plans.undoControl({ planId: after.id, targetOpId: opId, expectedVersion: after.version, opId: undoOp }).then((u) => {
+            changed();
+            reload();
+            if (!u.ok) setToast({ text: u.message });
+          });
+        },
+      });
+    } finally {
+      busy.current = false;
+    }
+  }
 
   return (
+    <View style={{ flex: 1 }}>
     <ScrollView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'] + insets.bottom, gap: theme.space['5'] }}>
       {data.state === 'error' ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_COPY.failed} action={<TextButton label="Try again" onPress={reload} />} /> : null}
       {data.state === 'ready' && day === null ? <StatusLine icon="info.circle" tone="info" text={PLAN_COPY.missing} /> : null}
@@ -81,9 +135,24 @@ export function PlanDayScreen() {
                 navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: PLAN_DAY_COPY.coachDraft(name) });
               }}
             />
+            {day.paused ? null : (
+              <TextButton
+                label={day.pinned ? PLAN_DAY_COPY.unpin : PLAN_DAY_COPY.makeNext}
+                tone={day.pinned ? 'secondary' : 'accent'}
+                onPress={() => {
+                  void pin(!day.pinned);
+                }}
+              />
+            )}
           </View>
         </>
       ) : null}
     </ScrollView>
+    {toast !== null ? (
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + theme.space['2'] }}>
+        <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
+      </View>
+    ) : null}
+    </View>
   );
 }

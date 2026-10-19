@@ -17,7 +17,7 @@ import { deleteConfirm, LIBRARY_COPY_UI, LIBRARY_TOASTS, rowMenu } from '../../w
 import { useSaveToWorkouts } from './SaveWorkoutSheet';
 import { YourPlanBlock } from '../library/YourPlanBlock';
 
-type Toasting = { text: string; action?: string; onAction?: () => void } | null;
+type Toasting = { text: string; action?: string; onAction?: () => void; why?: string } | null;
 
 /**
  * The Workouts library (routines.md §A2.1, WL1–WL4): `YOUR ROTATION` from
@@ -362,7 +362,21 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
       </ScrollView>
       {toast ? (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + theme.space['2'] }}>
-          <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
+          <Toast
+            icon="info.circle"
+            text={toast.text}
+            {...(toast.action ? { action: toast.action } : {})}
+            {...(toast.onAction ? { onAction: toast.onAction } : {})}
+            {...(toast.why !== undefined
+              ? {
+                  secondary: PLAN_OVERVIEW_COPY.why,
+                  onSecondary: () => {
+                    const { why, ...rest } = toast;
+                    setToast({ ...rest, text: why ?? rest.text });
+                  },
+                }
+              : {})}
+          />
         </View>
       ) : null}
       {save.sheet}
