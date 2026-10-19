@@ -119,6 +119,8 @@ export interface RoutineFromSessionInput {
  * out and listed, never saved as reps or as a timed set.
  */
 export function isDistanceSet(ex: { measurement: string }, values: { distanceM?: number | null | undefined }): boolean {
+  // Cardio (19 Oct) saves its distance as the template's `targetDistanceM`, next to the time.
+  if (ex.measurement === 'cardio') return false;
   return ex.measurement === 'distance' || (values.distanceM !== undefined && values.distanceM !== null);
 }
 
@@ -184,7 +186,8 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
     const restBySetType: Partial<Record<SetType, RestSetting>> = {};
     for (const s of done) {
       const a = s.actual;
-      if (a === null || (a.reps === null && a.durationS === null) || isDistanceSet(sx, a)) continue;
+      const cardioDistance = sx.measurement === 'cardio' ? (a?.distanceM ?? null) : null;
+      if (a === null || (a.reps === null && a.durationS === null && cardioDistance === null) || isDistanceSet(sx, a)) continue;
       const reps = a.reps === null ? null : (s.planned.reps && a.reps >= s.planned.reps.min && a.reps <= s.planned.reps.max ? { ...s.planned.reps } : { min: a.reps, max: a.reps });
       templates.push({
         id: input.newId(),
@@ -192,6 +195,7 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
         targetLoad: keepLoads ? a.load : null,
         targetReps: reps,
         targetDurationS: reps === null ? a.durationS : null,
+        ...(cardioDistance !== null ? { targetDistanceM: cardioDistance } : {}),
         targetRpe: null,
         targetRir: null,
         restOverrideS: null,
@@ -627,6 +631,7 @@ function legacyTemplates(templates: readonly SetTemplate[], planned: readonly Ne
         targetLoad: p.planned.load,
         targetReps: p.planned.reps,
         targetDurationS: p.planned.durationS,
+        ...(p.planned.distanceM != null ? { targetDistanceM: p.planned.distanceM } : {}),
         targetRpe: p.planned.rpe,
         targetRir: p.planned.rir,
         restOverrideS: null,

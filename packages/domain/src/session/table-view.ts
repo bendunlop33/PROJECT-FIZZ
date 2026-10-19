@@ -1,5 +1,6 @@
 import type { EquipmentInstance, Load, Measurement, SessionAggregate, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
-import { dayMonthText, EQUIPMENT_WORD, formatDistance, formatDuration, formatNumber, NBSP, repRangeText, rowLoadCell, rowValueCell, targetText } from '../display';
+import { paceText } from '../cardio';
+import { cardioValuesText, dayMonthText, EQUIPMENT_WORD, formatDistance, formatDuration, formatNumber, NBSP, repRangeText, rowLoadCell, rowValueCell, targetText } from '../display';
 import { painFlagCovering } from '../pain-flags';
 import { massWords } from '../progress/text';
 import { targetRpeOf } from '../coach/target-rpe';
@@ -25,10 +26,11 @@ import { isRoundEnd, nextPendingSet, setUnits } from './order';
 export type TableRowState = 'done' | 'pending' | 'open' | 'skipped';
 
 export interface TableColumns {
-  kind: 'load_reps' | 'reps' | 'load_time' | 'time' | 'load_distance' | 'distance';
-  /** `KG`, `LB`, `ASSIST KG`, `+KG`; null when the exercise has no load column (bodyweight). */
+  kind: 'load_reps' | 'reps' | 'load_time' | 'time' | 'load_distance' | 'distance' | 'cardio';
+  /** `KG`, `LB`, `ASSIST KG`, `+KG`; null when the exercise has no load column (bodyweight, cardio). */
   loadLabel: string | null;
-  valueLabel: 'REPS' | 'TIME' | 'DIST';
+  /** `TIME · DIST`: a cardio set's one value cell holds both (`20:00 · 4,800 m`). */
+  valueLabel: 'REPS' | 'TIME' | 'DIST' | 'TIME · DIST';
 }
 
 export interface TableRow extends SetRowView {
@@ -44,6 +46,8 @@ export interface TableRow extends SetRowView {
   cells: { load: string | null; value: string };
   /** `RPE 8` / `RIR 2` on a done row (actual, no `@`); the target `@ 8.5` on a pending or open row; null otherwise. */
   effort: string | null;
+  /** A done cardio row's pace (`2:05 /500 m`, `5:12 /km`); null otherwise. */
+  pace: string | null;
   /** A pending target changed today: the word tag `Coach` or `Rule` (never `C`). */
   todayChange: 'coach' | 'rule' | null;
   /** `A1` in a superset, null otherwise. */
@@ -160,6 +164,7 @@ function equipmentOf(state: SessionAggregate, ex: SessionExercise): EquipmentIns
 
 /** The Table's columns for an exercise (§2A.3): unit once, in the label. */
 export function tableColumns(ex: Pick<SessionExercise, 'measurement' | 'loadConvention' | 'unit'>, eq: Pick<EquipmentInstance, 'kind'> | null): TableColumns {
+  if (ex.measurement === 'cardio') return { kind: 'cardio', loadLabel: null, valueLabel: 'TIME · DIST' };
   const unit = ex.unit.toUpperCase();
   const loadLabel =
     ex.loadConvention === 'bodyweight'
@@ -177,6 +182,7 @@ export function tableColumns(ex: Pick<SessionExercise, 'measurement' | 'loadConv
 
 function valueCellTarget(set: WorkoutSet, m: Measurement): string {
   const p = set.planned;
+  if (m === 'cardio') return cardioValuesText(p);
   if (m === 'duration') return p.durationS === null ? '—' : formatDuration(p.durationS);
   if (m === 'distance') return p.distanceM === undefined || p.distanceM === null ? '—' : formatDistance(p.distanceM);
   return p.reps === null ? '—' : repRangeText(p.reps);
@@ -194,7 +200,10 @@ function spokenValues(load: Load | null, reps: string | null, durationS: number 
   const parts: string[] = [];
   if (ex.loadConvention !== 'bodyweight' && load !== null) parts.push(massWords(load, eq?.kind ?? null));
   else if (ex.loadConvention === 'bodyweight' && ex.measurement === 'reps') parts.push('body weight');
-  if (ex.measurement === 'duration' && durationS !== null) parts.push(secondsWords(durationS));
+  if (ex.measurement === 'cardio') {
+    if (durationS !== null) parts.push(secondsWords(durationS));
+    if (distanceM !== null && distanceM !== undefined) parts.push(`${formatNumber(distanceM)} metres`);
+  } else if (ex.measurement === 'duration' && durationS !== null) parts.push(secondsWords(durationS));
   else if (ex.measurement === 'distance' && distanceM !== null && distanceM !== undefined) parts.push(`${formatNumber(distanceM)} metres`);
   else if (ex.measurement === 'reps' && reps !== null) parts.push(`${reps.replace('–', ' to ')} reps`);
   return parts.join(', ');
@@ -258,7 +267,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) {
-    return { ...base, state: 'skipped', columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
+    return { ...base, state: 'skipped', columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
   }
   const eq = equipmentOf(state, ex);
   const columns = tableColumns(ex, eq);
@@ -278,6 +287,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
       columns,
       cells: { load: rowLoadCell(a.load, ex.loadConvention, eq), value: rowValueCell(a, ex.measurement) },
       effort,
+      pace: ex.measurement === 'cardio' ? paceText(a, ex.exerciseId) : null,
       todayChange: null,
       memberTag,
       blockTitle: `${label} · done`,
@@ -286,7 +296,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     };
   }
   if (set.status === 'skipped') {
-    return { ...base, state: 'skipped', columns, cells: { load: null, value: 'Skipped' }, effort: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
+    return { ...base, state: 'skipped', columns, cells: { load: null, value: 'Skipped' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
   }
   const open = set.id === activeSetId;
   const today = carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null;
@@ -297,7 +307,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   const before = today !== null && p.coach ? p.coach.before : null;
   const planWas = before === null ? null : spokenValues(before.load, before.reps === null ? null : repRangeText(before.reps), before.durationS, before.distanceM, ex, eq);
   const rpeWords = rpe === null ? null : `RPE ${formatNumber(rpe)}`;
-  const target = targetText(p, { convention: ex.loadConvention, equipment: eq, perSide: ex.laterality === 'unilateral', rpe });
+  const target = targetText(p, { convention: ex.loadConvention, equipment: eq, perSide: ex.laterality === 'unilateral', rpe, measurement: ex.measurement });
   return {
     ...base,
     state: open ? 'open' : 'pending',
@@ -305,6 +315,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     cells: { load: rowLoadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(set, ex.measurement) },
     // The target RPE is a cell too (18 Oct: set · KG · REPS · RPE · ✓).
     effort: rpe === null ? null : `@${NBSP}${formatNumber(rpe)}`,
+    pace: null,
     todayChange: today,
     memberTag,
     blockTitle: open ? `${label} · NOW` : label,
@@ -351,7 +362,7 @@ function unitWords(ex: Pick<SessionExercise, 'loadConvention' | 'unit'>): string
 }
 
 function headerLineOf(ex: SessionExercise, eq: EquipmentInstance | null): string {
-  const kind = eq ? EQUIPMENT_WORD[eq.kind] : ex.loadConvention === 'bodyweight' ? 'Bodyweight' : null;
+  const kind = eq ? EQUIPMENT_WORD[eq.kind] : ex.measurement === 'cardio' ? 'Cardio' : ex.loadConvention === 'bodyweight' ? 'Bodyweight' : null;
   return [kind, unitWords(ex), ex.laterality === 'unilateral' ? 'per side' : null].filter((p): p is string => p !== null).join(' · ');
 }
 

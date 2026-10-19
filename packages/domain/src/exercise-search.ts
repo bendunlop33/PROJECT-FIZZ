@@ -135,8 +135,8 @@ export function searchExercises<T extends { name: string; aliases?: readonly str
 // ---------------------------------------------------------------------------
 // Filters (§2.3)
 
-/** The `Equipment` filter's six kinds (§2.3). */
-export const EQUIPMENT_FILTERS = ['barbell', 'dumbbells', 'cable_stack', 'plate_loaded', 'bodyweight', 'assisted'] as const;
+/** The `Equipment` filter's kinds (§2.3), and `Cardio` (19 Oct). */
+export const EQUIPMENT_FILTERS = ['barbell', 'dumbbells', 'cable_stack', 'plate_loaded', 'bodyweight', 'assisted', 'cardio'] as const;
 export type EquipmentFilter = (typeof EQUIPMENT_FILTERS)[number];
 
 export const EQUIPMENT_FILTER_LABEL: Record<EquipmentFilter, string> = {
@@ -146,6 +146,7 @@ export const EQUIPMENT_FILTER_LABEL: Record<EquipmentFilter, string> = {
   plate_loaded: 'Plate-loaded',
   bodyweight: 'Bodyweight',
   assisted: 'Assisted',
+  cardio: 'Cardio',
 };
 
 const FILTER_KINDS: Record<EquipmentFilter, readonly ExerciseEquipmentKind[]> = {
@@ -155,6 +156,8 @@ const FILTER_KINDS: Record<EquipmentFilter, readonly ExerciseEquipmentKind[]> = 
   plate_loaded: ['plate_loaded_machine'],
   bodyweight: ['bodyweight_station'],
   assisted: ['assisted_stack'],
+  /** Rower, bike, treadmill and the like (19 Oct). */
+  cardio: ['erg'],
 };
 
 /** The `Movement` filter (§2.3), in sheet order. Values are the catalogue's movement patterns. */
@@ -199,7 +202,7 @@ export type FilterableExercise = Pick<Exercise, 'movementPattern' | 'primaryMusc
 /** The exercise's `Equipment` filter kinds. A bodyweight exercise (no station needed) is `Bodyweight`. */
 export function equipmentFiltersOf(e: Pick<Exercise, 'compatibleEquipment' | 'defaultLoadConvention'>): EquipmentFilter[] {
   const out = EQUIPMENT_FILTERS.filter((f) => FILTER_KINDS[f].some((k) => e.compatibleEquipment.includes(k)));
-  if (e.defaultLoadConvention === 'bodyweight' && !out.includes('bodyweight')) out.push('bodyweight');
+  if (e.defaultLoadConvention === 'bodyweight' && !out.includes('bodyweight') && !out.includes('cardio')) out.push('bodyweight');
   return out;
 }
 

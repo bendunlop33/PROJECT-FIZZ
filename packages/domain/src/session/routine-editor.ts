@@ -10,6 +10,7 @@ import type { StepTarget } from './active-view';
 import { boundWords, droppedWords } from './fit-words';
 import { normaliseRoutineExercises, ROUTINE_MAX_SETS, SUPERSET_MAX, type RoutineEdit } from './library';
 import { defaultMain } from './routines';
+import { CARDIO_DEFAULT_S } from '../cardio';
 
 /**
  * The workout editor's changes (routines.md §A2.3, v0.1 §2.3, §4.3). Pure:
@@ -31,8 +32,8 @@ function template(newId: () => string, setType: SetType, measurement: Measuremen
     id: newId(),
     setType,
     targetLoad: null,
-    targetReps: measurement === 'duration' ? null : setType === 'warmup' ? { ...DEFAULT_WARMUP_REPS } : { ...DEFAULT_REPS },
-    targetDurationS: measurement === 'duration' ? DEFAULT_WORK_S : null,
+    targetReps: measurement === 'duration' || measurement === 'cardio' ? null : setType === 'warmup' ? { ...DEFAULT_WARMUP_REPS } : { ...DEFAULT_REPS },
+    targetDurationS: measurement === 'cardio' ? CARDIO_DEFAULT_S : measurement === 'duration' ? DEFAULT_WORK_S : null,
     targetRpe: null,
     targetRir: null,
     restOverrideS: null,
@@ -48,11 +49,11 @@ export function addExercise(list: EditorList, exercise: { id: string; measuremen
   const id = newId();
   const count = shape === undefined ? 3 : clampCount(shape.workingSets, SLOT_SET_LIMITS.working.min, SLOT_SET_LIMITS.working.max);
   const warmups = shape === undefined ? 0 : clampCount(shape.warmups, SLOT_SET_LIMITS.warmups.min, SLOT_SET_LIMITS.warmups.max);
-  const timed = exercise.measurement === 'duration';
+  const timed = exercise.measurement === 'duration' || exercise.measurement === 'cardio';
   const working = (): SetTemplate => {
     const t = template(newId, 'working', exercise.measurement);
     if (shape === undefined) return t;
-    return { ...t, targetReps: timed || shape.reps === null ? t.targetReps : { ...shape.reps }, targetDurationS: timed ? (shape.durationS ?? DEFAULT_WORK_S) : null, targetRpe: shape.targetRpe, targetRir: shape.targetRir ?? null };
+    return { ...t, targetReps: timed || shape.reps === null ? t.targetReps : { ...shape.reps }, targetDurationS: timed ? (shape.durationS ?? t.targetDurationS) : null, targetRpe: shape.targetRpe, targetRir: shape.targetRir ?? null };
   };
   const slot: RoutineExercise = {
     id,
@@ -98,13 +99,15 @@ export function defaultSlotShape(
   exercise: Pick<Exercise, 'movementPattern' | 'measurement' | 'defaultLoadConvention' | 'compatibleEquipment'> & Partial<Pick<Exercise, 'mechanic' | 'family'>>,
   ctx: { equipmentKind?: EquipmentInstance['kind'] | null; workingSets?: number } = {},
 ): SlotShapeInput {
-  const timed = exercise.measurement === 'duration';
+  const cardio = exercise.measurement === 'cardio';
+  const timed = exercise.measurement === 'duration' || cardio;
   const reps = timed ? null : builtInRepRange(ruleCategory(exercise, ctx.equipmentKind ?? exercise.compatibleEquipment[0] ?? null, exercise.defaultLoadConvention));
   return {
-    workingSets: clampCount(ctx.workingSets ?? DEFAULT_WORKING_SETS_ON_ADD, SLOT_SET_LIMITS.working.min, SLOT_SET_LIMITS.working.max),
+    // Cardio (19 Oct): one 10-minute set unless the bar says otherwise.
+    workingSets: clampCount(ctx.workingSets ?? (cardio ? 1 : DEFAULT_WORKING_SETS_ON_ADD), SLOT_SET_LIMITS.working.min, SLOT_SET_LIMITS.working.max),
     warmups: 0,
     reps,
-    durationS: timed ? DEFAULT_WORK_S : null,
+    durationS: cardio ? CARDIO_DEFAULT_S : timed ? DEFAULT_WORK_S : null,
     targetRpe: null,
   };
 }
@@ -282,7 +285,8 @@ export function moveExercise(list: EditorList, slotId: string, how: 'up' | 'down
 export function replaceExercise(list: EditorList, slotId: string, to: { id: string; measurement: Measurement }): RoutineExercise[] {
   return list.map((e) => {
     if (e.id !== slotId) return e;
-    const sameMeasure = e.setTemplates.every((t) => (to.measurement === 'duration' ? t.targetDurationS !== null : t.targetReps !== null));
+    const toTimed = to.measurement === 'duration' || to.measurement === 'cardio';
+    const sameMeasure = e.setTemplates.every((t) => (toTimed ? t.targetDurationS !== null : t.targetReps !== null));
     return {
       ...e,
       exerciseId: to.id,
@@ -291,7 +295,7 @@ export function replaceExercise(list: EditorList, slotId: string, to: { id: stri
       setTemplates: e.setTemplates.map((t) =>
         sameMeasure
           ? { ...t, targetLoad: null }
-          : { ...t, targetLoad: null, targetReps: to.measurement === 'duration' ? null : { ...DEFAULT_REPS }, targetDurationS: to.measurement === 'duration' ? DEFAULT_WORK_S : null },
+          : { ...t, targetLoad: null, targetReps: toTimed ? null : { ...DEFAULT_REPS }, targetDurationS: to.measurement === 'cardio' ? CARDIO_DEFAULT_S : toTimed ? DEFAULT_WORK_S : null },
       ),
     };
   });

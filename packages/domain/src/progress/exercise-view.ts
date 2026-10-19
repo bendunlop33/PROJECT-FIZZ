@@ -1,5 +1,6 @@
 import type { EquipmentKind, Load } from '@fizz/schemas';
-import { distanceLoadText, formatDistance, formatDuration, formatNumber, loadText, NBSP } from '../display';
+import { cardioDistanceText, cardioTimeText, cardioValuesText, distanceLoadText, formatDistance, formatDuration, formatNumber, loadText, NBSP } from '../display';
+import { paceText } from '../cardio';
 import { exclusionWords, isSetCountable } from '../exclusions';
 import { E1RM_MAX_REPS } from './e1rm';
 import { RECORD_MIN_SESSIONS } from '../session/records';
@@ -117,6 +118,8 @@ export function metricLabel(metric: ExerciseMetric): string {
       return 'Total distance';
     case 'best_distance':
       return 'Best distance';
+    case 'total_time':
+      return 'Total time';
   }
 }
 
@@ -140,6 +143,8 @@ export function axisUnit(series: ExerciseSeries, metric: ExerciseMetric): string
     case 'total_distance':
     case 'best_distance':
       return 'm';
+    case 'total_time':
+      return 'h:mm:ss';
   }
 }
 
@@ -201,7 +206,10 @@ function valueText(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSer
     case 'total_distance':
       return formatDistance(p.value);
     case 'best_distance':
+      if (series.kind === 'cardio') return p.fromSet ? cardioSetText(p.fromSet, series) : cardioDistanceText(p.value);
       return p.fromSet ? distanceSetText({ load: p.fromSet.load, distanceM: p.value }, series) : formatDistance(p.value);
+    case 'total_time':
+      return cardioTimeText(p.value);
   }
 }
 
@@ -226,6 +234,8 @@ function valueWords(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSe
       return countNoun(p.value, 'metre', 'metres');
     case 'best_distance':
       return p.fromSet ? distanceSetWords({ load: p.fromSet.load, distanceM: p.value }, series) : countNoun(p.value, 'metre', 'metres');
+    case 'total_time':
+      return countNoun(Math.round(p.value / 60), 'minute', 'minutes');
   }
 }
 
@@ -245,13 +255,22 @@ function metricWords(metric: ExerciseMetric): string {
       return 'Total distance';
     case 'best_distance':
       return 'Best distance';
+    case 'total_time':
+      return 'Total time';
   }
 }
 
+/** A cardio set as logged, with its pace: `20:00 · 4,800 m · 2:05 /500 m` (19 Oct). */
+export function cardioSetText(s: Pick<ProgressSet, 'durationS' | 'distanceM'>, series: { key: Pick<ExerciseSeries['key'], 'exerciseId'> }): string {
+  const pace = paceText(s, series.key.exerciseId);
+  return pace === null ? cardioValuesText(s) : `${cardioValuesText(s)} · ${pace}`;
+}
+
 /** `100×8`, `L 20×10`, `+10×8`, `12`, `0:45`, `40×50 m`, with ` (spotted)` for a marked set (PG21). */
-export function compactSetText(s: ProgressSet, series: Pick<ExerciseSeries, 'kind' | 'equipmentKind'>): string {
+export function compactSetText(s: ProgressSet, series: Pick<ExerciseSeries, 'kind' | 'equipmentKind'> & { key?: Pick<ExerciseSeries['key'], 'exerciseId'> }): string {
   let core: string;
-  if (series.kind === 'distance') {
+  if (series.kind === 'cardio') core = series.key === undefined ? cardioValuesText(s) : cardioSetText(s, { key: series.key });
+  else if (series.kind === 'distance') {
     const d = s.distanceM === undefined ? '—' : formatDistance(s.distanceM);
     const noLoad = s.load === null || s.load.convention === 'bodyweight' || (s.load.convention === 'added' && s.load.value === 0 && series.equipmentKind !== 'plate_loaded_machine');
     core = noLoad ? d : `${formatNumber(s.load?.value ?? 0)}×${d}`;
@@ -652,7 +671,9 @@ function changeLine(first: TrendPoint, latest: TrendPoint, series: ExerciseSerie
       return { label: 'Change', value: `${word} ${formatDuration(amount)} since ${since}`, words: `${word} ${countNoun(amount, 'second', 'seconds')} since ${sinceWords}`, direction: dir };
     case 'total_distance':
     case 'best_distance':
-      return { label: 'Change', value: `${word} ${formatDistance(amount)} since ${since}`, words: `${word} ${countNoun(amount, 'metre', 'metres')} since ${sinceWords}`, direction: dir };
+      return { label: 'Change', value: `${word} ${series.kind === 'cardio' ? cardioDistanceText(amount) : formatDistance(amount)} since ${since}`, words: `${word} ${countNoun(amount, 'metre', 'metres')} since ${sinceWords}`, direction: dir };
+    case 'total_time':
+      return { label: 'Change', value: `${word} ${cardioTimeText(amount)} since ${since}`, words: `${word} ${countNoun(Math.round(amount / 60), 'minute', 'minutes')} since ${sinceWords}`, direction: dir };
   }
 }
 
@@ -797,6 +818,14 @@ function headlineView(series: ExerciseSeries): { stats: { value: string; label: 
         stats: [{ value: h.longestHold ? formatDuration(h.longestHold.seconds) : dash, label: 'LONGEST HOLD' }, sessions],
         words: [h.longestHold ? `Longest hold ${countNoun(h.longestHold.seconds, 'second', 'seconds')}.` : '', sessionsWords].filter((x) => x !== '').join(' '),
       };
+    case 'cardio': {
+      const b = h.bestDistance;
+      const t = h.totalDistanceM;
+      return {
+        stats: [{ value: b ? cardioSetText(b.set, series) : dash, label: 'BEST DISTANCE' }, { value: t === null ? dash : cardioDistanceText(t), label: 'TOTAL DISTANCE' }, sessions],
+        words: [b ? `Best distance ${countNoun(b.set.distanceM, 'metre', 'metres')}.` : '', t === null ? '' : `Total distance ${countNoun(t, 'metre', 'metres')}.`, sessionsWords].filter((x) => x !== '').join(' '),
+      };
+    }
     case 'distance': {
       const b = h.bestDistance;
       const t = h.totalDistanceM;
@@ -943,7 +972,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   // Records (PG10, PG30)
   const rec = exerciseRecords(input.sessions, series);
   const records =
-    series.kind === 'timed' || series.kind === 'distance'
+    series.kind === 'timed' || series.kind === 'distance' || series.kind === 'cardio'
       ? null
       : {
           items: rec.items.map((r) => recordView(r, series, today)),
@@ -954,7 +983,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   const historyMonths = Math.max(1, input.historyMonths ?? 2);
   const hist = exerciseHistory(series, historyMonths);
   const unit =
-    series.kind === 'timed' ? 'min:s' : series.kind === 'bodyweight' ? 'reps' : series.kind === 'distance' ? (series.key.convention === 'bodyweight' ? 'm' : `${seriesUnitText(series)} × m`) : `${seriesUnitText(series)} × reps`;
+    series.kind === 'cardio' ? 'time · m' : series.kind === 'timed' ? 'min:s' : series.kind === 'bodyweight' ? 'reps' : series.kind === 'distance' ? (series.key.convention === 'bodyweight' ? 'm' : `${seriesUnitText(series)} × m`) : `${seriesUnitText(series)} × reps`;
 
   const statStrip = headlineView(series);
   const selectId = input.sessionId ?? input.selectSessionId ?? null;

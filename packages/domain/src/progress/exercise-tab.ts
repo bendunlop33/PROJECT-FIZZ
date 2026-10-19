@@ -13,7 +13,7 @@ import {
   type SeriesKind,
   type SeriesSession,
 } from './exercise';
-import { longDate, seriesLabels, seriesUnitText, shortDate, thousands, weekdayLongDate } from './exercise-view';
+import { cardioSetText, longDate, seriesLabels, seriesUnitText, shortDate, thousands, weekdayLongDate } from './exercise-view';
 import { countRowSets } from './muscles';
 import type { ProgressSession, ProgressSet } from './projection';
 import { countNoun, rangeWords } from './text';
@@ -48,6 +48,7 @@ export function measuresFor(kind: SeriesKind): ExerciseMeasure[] {
     case 'timed':
       return ['hold'];
     case 'distance':
+    case 'cardio':
       return ['distance'];
   }
 }
@@ -209,7 +210,8 @@ export function measureValue(ss: SeriesSession, series: ExerciseSeries, measure:
     }
     case 'distance': {
       const d = sessionBestDistance(ss, series);
-      return d === null ? null : { value: d.value, text: formatDistance(d.value), estimate: false };
+      if (d === null) return null;
+      return { value: d.value, text: series.kind === 'cardio' && d.fromSet !== null ? cardioSetText(d.fromSet, series) : formatDistance(d.value), estimate: false };
     }
   }
 }
@@ -394,9 +396,11 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
   const rows: ExerciseTabRow[] = [...inWindow].reverse().map((ss) => {
     const top = series.kind === 'bodyweight' ? mostReps(ss, series) : (sessionTopSet(ss, series)?.fromSet ?? null);
     const loaded = top !== null && top.load !== null && series.kind !== 'bodyweight';
-    const topText = top === null ? '—' : !loaded ? String(top.reps ?? '—') : `${formatNumber(top.load?.value ?? 0)}×${String(top.reps ?? 0)}`;
+    // Cardio (19 Oct): the session's longest set as logged, time · distance · pace; never a load or reps.
+    const cardio = series.kind === 'cardio' ? (sessionBestDistance(ss, series)?.fromSet ?? ss.sets.find((x) => x.setType !== 'warmup' && x.durationS !== null) ?? null) : null;
+    const topText = cardio !== null ? cardioSetText(cardio, series) : top === null ? '—' : !loaded ? String(top.reps ?? '—') : `${formatNumber(top.load?.value ?? 0)}×${String(top.reps ?? 0)}`;
     // VoiceOver hears the load in full (`Assist 30 kg by 8`, `12 kg each by 12`); the cell's unit is in the header.
-    const topWords = top === null ? 'none' : loaded ? setText(top, series).replace(/\u00a0/g, ' ').replace(' × ', ' by ') : countNoun(top.reps ?? 0, 'rep', 'reps');
+    const topWords = cardio !== null ? topText.replace(/\u00a0/g, ' ') : top === null ? 'none' : loaded ? setText(top, series).replace(/\u00a0/g, ' ').replace(' × ', ' by ') : countNoun(top.reps ?? 0, 'rep', 'reps');
     const vol = sessionVolume(ss, series);
     const e = sessionE1rm(ss, series);
     const sets = workingSetCount(ss);

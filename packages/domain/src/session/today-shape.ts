@@ -1,5 +1,6 @@
 import type { EquipmentInstance, Exercise, Load, RepRange, SetTemplate, SetType } from '@fizz/schemas';
 import { builtInRepRange, ruleCategory } from '../default-rule';
+import { CARDIO_DEFAULT_S } from '../cardio';
 
 /**
  * Today's shape of one slot (overview-today-edits §11, TE12): Ben's working-set
@@ -97,10 +98,13 @@ export function addedSlotShape(
   equipmentKind: EquipmentInstance['kind'] | null,
 ): { workingSets: number; templates: { setType: SetType; reps: RepRange | null; durationS: number | null }[] } {
   const timed = exercise.measurement !== 'reps';
+  const cardio = exercise.measurement === 'cardio';
   const reps = timed ? null : builtInRepRange(ruleCategory(exercise, equipmentKind ?? exercise.compatibleEquipment[0] ?? null, exercise.defaultLoadConvention));
+  // Cardio (19 Oct): one 10-minute set.
+  const sets = cardio ? 1 : ADDED_WORKING_SETS;
   return {
-    workingSets: ADDED_WORKING_SETS,
-    templates: Array.from({ length: ADDED_WORKING_SETS }, () => ({ setType: 'working' as const, reps: reps === null ? null : { ...reps }, durationS: timed ? ADDED_WORK_S : null })),
+    workingSets: sets,
+    templates: Array.from({ length: sets }, () => ({ setType: 'working' as const, reps: reps === null ? null : { ...reps }, durationS: cardio ? CARDIO_DEFAULT_S : timed ? ADDED_WORK_S : null })),
   };
 }
 

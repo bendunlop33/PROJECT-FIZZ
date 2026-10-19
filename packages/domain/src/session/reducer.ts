@@ -35,6 +35,7 @@ import {
   resumeRestTimer,
 } from '../rest';
 import { deriveId, stableStringify } from '../stable';
+import { CARDIO_TIMER_CAP_S, cardioElapsedMs, cardioHasValue } from '../cardio';
 import { toIso, toMs } from '../time';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
@@ -299,6 +300,9 @@ function validateValues(values: SetValues, ex: SessionExercise, state: SessionAg
   if (ex.measurement === 'distance' && (values.distanceM === null || values.distanceM === undefined)) {
     return { code: 'invalid_values', message: 'A distance is required for this exercise.' };
   }
+  if (ex.measurement === 'cardio' && !cardioHasValue(values)) {
+    return { code: 'invalid_values', message: 'A time or a distance is required for this exercise.' };
+  }
   if (values.load === null) {
     if (ex.loadConvention === 'bodyweight') return null;
     return { code: 'invalid_values', message: 'A load is required for this exercise.' };
@@ -408,13 +412,17 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   const set = state.sets.find((s) => s.id === cmd.setId);
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'This set is already logged or skipped.');
-  const wi = state.workInterval;
-  if (wi && wi.setId === set.id && (wi.status === 'running' || wi.status === 'paused')) {
-    return fail('work_interval_running', 'Stop the work timer before logging.');
-  }
   const ex = exerciseOf(state, set);
   if (!ex) return fail('set_not_found', 'Exercise for this set not found.');
-  const invalid = validateValues(cmd.values, ex, state) ?? checkSide(cmd.side, ex);
+  const wi = state.workInterval;
+  const timing = wi !== null && wi.setId === set.id && (wi.status === 'running' || wi.status === 'paused');
+  if (timing && ex.measurement !== 'cardio') {
+    return fail('work_interval_running', 'Stop the work timer before logging.');
+  }
+  // Cardio (19 Oct): ✓ while its timer runs ends it and logs the time on it, with the distance typed in.
+  // The set's timer goes with the log, as after Stop.
+  const values: SetValues = timing && wi !== null ? { ...cmd.values, durationS: Math.round(cardioElapsedMs(wi, nowMs) / 1000) } : cmd.values;
+  const invalid = validateValues(values, ex, state) ?? checkSide(cmd.side, ex);
   if (invalid) return { ok: false, error: invalid };
   if (set.pairedWithSetId !== null && cmd.side !== undefined && cmd.side !== set.side) {
     return fail('invalid_values', `This set is the ${set.side ?? 'other'} side of an earlier set. Log it as that side, or delete it.`);
@@ -434,11 +442,11 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
       ...set,
       status: 'completed',
       side: cmd.side ?? set.side,
-      actual: withoutEmptyDistance(cmd.values),
+      actual: withoutEmptyDistance(values),
       draft: null,
       completedAt: cmd.at,
       completedByOpId: cmd.opId,
-      flags: flagsFor(cmd.values, state, ex),
+      flags: flagsFor(values, state, ex),
       version: set.version + 1,
     },
     cmd.exclusions,
@@ -783,7 +791,7 @@ function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_int
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'This set is already logged or skipped.');
   const ex = exerciseOf(state, set);
-  if (ex?.measurement !== 'duration') return fail('not_timed_exercise', 'Work timers are for timed exercises only.');
+  if (ex?.measurement !== 'duration' && ex?.measurement !== 'cardio') return fail('not_timed_exercise', 'Work timers are for timed exercises only.');
   const wi = state.workInterval;
   if (wi && (wi.status === 'running' || wi.status === 'paused')) {
     return fail('work_interval_running', 'A work timer is already running.');
@@ -794,11 +802,13 @@ function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_int
     restTimer = endRestTimer(restTimer, 'ended_early', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'ended_early', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Cardio counts up: its timer runs to the cap, whatever was asked, and ✓ or Stop ends it (19 Oct).
+  const durationS = ex.measurement === 'cardio' ? CARDIO_TIMER_CAP_S : cmd.durationS;
   const workInterval = {
     setId: set.id,
-    durationS: cmd.durationS,
+    durationS,
     startedAtUtc: toIso(nowMs),
-    deadlineUtc: toIso(nowMs + cmd.durationS * 1000),
+    deadlineUtc: toIso(nowMs + durationS * 1000),
     status: 'running' as const,
     remainingMsAtPause: null,
     pausedMs: 0,
@@ -1169,8 +1179,8 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
   if (isWorkLive(state, [set.id])) return fail('work_interval_running', 'Stop the work timer before editing this set.');
   const p = cmd.patch;
   if (p.reps != null && ex.measurement !== 'reps') return fail('invalid_values', `${ex.exerciseName} isn’t counted in reps.`);
-  if (p.durationS != null && ex.measurement !== 'duration') return fail('invalid_values', `${ex.exerciseName} isn’t timed.`);
-  if (p.distanceM != null && ex.measurement !== 'distance') return fail('invalid_values', `${ex.exerciseName} has no distance.`);
+  if (p.durationS != null && ex.measurement !== 'duration' && ex.measurement !== 'cardio') return fail('invalid_values', `${ex.exerciseName} isn’t timed.`);
+  if (p.distanceM != null && ex.measurement !== 'distance' && ex.measurement !== 'cardio') return fail('invalid_values', `${ex.exerciseName} has no distance.`);
   if (p.load != null) {
     if (p.load.convention !== ex.loadConvention) return fail('convention_mismatch', `Load convention ${p.load.convention} does not match ${ex.loadConvention}.`);
     if (p.load.unit !== ex.unit) return fail('unit_mismatch', `Load unit ${p.load.unit} does not match ${ex.unit}; convert explicitly first.`);

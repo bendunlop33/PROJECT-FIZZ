@@ -38,6 +38,7 @@ import { substituteTargets, type SubstituteContext } from './substitutes';
 import type { SwapPlan } from './swap-plan';
 import { liveEdits, planWithTodayEdits, type TodayEditsInput, type TodayPlanOutput } from './today-edits';
 import { PACE_DEFAULT_CHANGEOVER_S, PACE_DEFAULT_SET_S } from './duration';
+import { CARDIO_DEFAULT_S } from '../cardio';
 
 /**
  * Coach-built workouts (workout-builder.md v1.0). Pure.
@@ -339,7 +340,7 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
       add({ kind: 'unknown', catalogueId: p.catalogueId, exerciseId: null, text: `${keyWords(p.catalogueId)} left out · not in your exercises`, leftOut: true });
       continue;
     }
-    if (exercise.measurement !== 'reps' && exercise.measurement !== 'duration') {
+    if (exercise.measurement === 'distance') {
       add({ kind: 'shape', catalogueId: p.catalogueId, exerciseId: exercise.id, text: `${exercise.name} left out · distance isn't planned here`, leftOut: true });
       continue;
     }
@@ -426,10 +427,19 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   if (p.warmups !== null && warmups !== p.warmups) note('clamped', `${ex.name} · warm-ups ${String(p.warmups)} → ${String(warmups)} (most allowed)`);
 
   // Reps or work time, as the exercise is measured.
-  const timed = ex.measurement === 'duration';
+  const cardio = ex.measurement === 'cardio';
+  const timed = ex.measurement === 'duration' || cardio;
   let reps: RepRange | null = null;
   let durationS: number | null = null;
-  if (timed) {
+  let distanceM: number | null = null;
+  if (cardio) {
+    // Cardio (19 Oct): a time (10 min when missing) and the distance asked for, if any; no warm-ups, reps, RPE or load.
+    const asked = p.workSeconds;
+    durationS = clampInt(asked ?? CARDIO_DEFAULT_S, L.minWorkS, L.maxCardioS);
+    if (asked === null) note('shape', `${ex.name} · time missing · ${formatDuration(durationS)} used`);
+    else if (durationS !== asked) note('clamped', `${ex.name} · time ${formatDuration(asked)} → ${formatDuration(durationS)}`);
+    distanceM = p.distanceMetres == null ? null : Math.round(Math.min(100_000, Math.max(0, p.distanceMetres)));
+  } else if (timed) {
     const asked = p.workSeconds;
     durationS = clampInt(asked ?? 45, L.minWorkS, L.maxWorkS);
     if (asked === null) note('shape', `${ex.name} · work time missing · ${formatDuration(durationS)} used`);
@@ -447,7 +457,9 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   // Target RPE on every working set (BD7): the coach's, else the rule's.
   const ruleRpe = ruleRpeFor(ex);
   let rpe: number;
-  if (p.targetRpe === null) {
+  if (cardio) {
+    rpe = ruleRpe;
+  } else if (p.targetRpe === null) {
     rpe = ruleRpe;
     note('rpe_missing', `${ex.name} · RPE missing · ${String(rpe)} used`);
   } else {
@@ -485,6 +497,10 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   };
 
   const templates: DraftSetTemplate[] = [];
+  if (cardio) {
+    for (let i = 0; i < working; i += 1) templates.push({ setType: 'working', reps: null, durationS, ...(distanceM !== null ? { distanceM } : {}), targetRpe: null, restS });
+    return { exerciseId: ex.id, catalogueId: ex.catalogueKey ?? p.catalogueId, setTemplates: templates };
+  }
   for (let i = 0; i < warmups; i += 1) templates.push({ setType: 'warmup', reps: timed ? null : { min: 5, max: 5 }, durationS: timed ? (durationS ?? 45) : null, targetRpe: null, restS });
   if (p.topSet !== null && timed) note('shape', `${ex.name} · top set left out (timed)`);
   if (p.topSet !== null && !timed) {
@@ -598,6 +614,7 @@ function templateOf(slotKey: string, i: number, t: DraftSetTemplate): SetTemplat
     targetLoad: null,
     targetReps: t.reps,
     targetDurationS: t.durationS,
+    ...(t.distanceM != null ? { targetDistanceM: t.distanceM } : {}),
     targetRpe: t.targetRpe,
     targetRir: null,
     restOverrideS: t.restS,

@@ -1,6 +1,6 @@
 import type { EquipmentInstance, Exercise, ExerciseEquipmentKind } from '@fizz/schemas';
 
-import { distanceLoadText, formatDistance, formatDuration, loadText, NBSP } from './display';
+import { cardioValuesText, distanceLoadText, formatDistance, formatDuration, loadText, NBSP } from './display';
 import { activeFilterCount, MOVEMENT_FILTER_LABEL, muscleGroupsOf, searchExerciseRows, type ExerciseFilters, type ExerciseMatch, type MovementFilter, type SearchableEntry } from './exercise-search';
 import { collectExerciseSeries, type ExerciseSeries } from './progress/exercise';
 import { longDate, shortDate, type ExerciseDetailView } from './progress/exercise-view';
@@ -58,6 +58,7 @@ export interface LastActual {
 /** One logged set in words, in its own unit and convention (never converted). */
 export function actualSetText(s: Pick<ProgressSet, 'load' | 'reps' | 'durationS' | 'distanceM'>, row: Pick<ProgressExercise, 'convention' | 'measurement' | 'equipmentKind'>): string {
   const eq = row.equipmentKind === null ? null : { kind: row.equipmentKind };
+  if (row.measurement === 'cardio') return cardioValuesText(s);
   if (row.measurement === 'duration') {
     const time = formatDuration(s.durationS ?? 0);
     return s.load !== null && row.convention !== 'bodyweight' && s.load.value > 0 ? `${loadText(s.load, row.convention, eq)} · ${time}` : time;
@@ -76,6 +77,7 @@ function topSet(sets: readonly ProgressSet[], row: ProgressExercise): ProgressSe
   const pool = working.length > 0 ? working : sets;
   let best: ProgressSet | null = null;
   const score = (s: ProgressSet): [number, number] => {
+    if (row.measurement === 'cardio') return [s.distanceM ?? 0, s.durationS ?? 0];
     if (row.measurement === 'duration') return [s.durationS ?? 0, 0];
     if (row.measurement === 'distance') return [s.distanceM ?? 0, s.load?.value ?? 0];
     const load = s.load?.value ?? 0;
@@ -404,7 +406,7 @@ export interface AddDestinationsInput {
    * no distance target, so saved and new workouts are shown disabled
    * (review library-browse S1; routines.md: distance is never saved as reps).
    */
-  measurement?: 'reps' | 'duration' | 'distance';
+  measurement?: 'reps' | 'duration' | 'distance' | 'cardio';
 }
 
 /** Why a saved or new workout can't take a distance exercise (§9.6). */

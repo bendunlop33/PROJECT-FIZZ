@@ -322,7 +322,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     const after = op.afterSessionExerciseId === null ? null : (placedAfter.get(op.afterSessionExerciseId) ?? op.afterSessionExerciseId);
     const check = checkCoachAdd({
       aggregate: s,
-      args: { baseVersion: input.args.baseVersion, exerciseId: op.exerciseId, workingSets: op.workingSets, reps: op.reps, workSeconds: op.workSeconds, targetRpe: op.targetRpe, afterSessionExerciseId: op.afterSessionExerciseId, supersetWithSessionExerciseId: op.supersetWithSessionExerciseId, reason: input.args.reason },
+      args: { baseVersion: input.args.baseVersion, exerciseId: op.exerciseId, workingSets: op.workingSets, reps: op.reps, workSeconds: op.workSeconds, distanceMetres: op.distanceMetres ?? null, targetRpe: op.targetRpe, afterSessionExerciseId: op.afterSessionExerciseId, supersetWithSessionExerciseId: op.supersetWithSessionExerciseId, reason: input.args.reason },
       ...got,
       opId,
       at: input.at,

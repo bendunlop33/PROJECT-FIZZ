@@ -40,6 +40,28 @@ export function formatElapsed(ms: number): string {
   return h > 0 ? `${String(h)}:${String(m).padStart(2, '0')}:${sec}` : `${String(m)}:${sec}`;
 }
 
+/* Cardio sets (19 Oct): time and distance as the machine shows them. Pace is in `cardio.ts`. */
+
+/** `20:00`, `1:05:00`. */
+export function cardioTimeText(durationS: number): string {
+  return formatElapsed(Math.round(durationS) * 1000);
+}
+
+/** `4,800 m`, `850 m`, `10,250.5 m`: metres as the machine shows them, grouped by thousands. */
+export function cardioDistanceText(metres: number): string {
+  const [whole = '0', frac] = formatNumber(Math.max(0, metres)).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${grouped}${frac === undefined ? '' : `.${frac}`}${NBSP}m`;
+}
+
+/** `20:00 · 4,800 m`, `20:00`, `4,800 m`, or `—` with neither. */
+export function cardioValuesText(values: Pick<SetValues, 'durationS' | 'distanceM'>): string {
+  const parts: string[] = [];
+  if (values.durationS !== null && values.durationS !== undefined) parts.push(cardioTimeText(values.durationS));
+  if (values.distanceM !== null && values.distanceM !== undefined) parts.push(cardioDistanceText(values.distanceM));
+  return parts.length === 0 ? '—' : parts.join(' · ');
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
 /** `1 Oct`: the calendar day of a UTC instant in `tz` (design-system §3 dates), for domain-built sentences. */
@@ -129,11 +151,13 @@ export interface ValuesTextOptions {
   compact?: boolean;
 }
 
-/** `100 kg × 8`, `BW × 12`, `0:45`, `40 kg × 50 m`; unilateral `… per side` or `Left · …`. */
+/** `100 kg × 8`, `BW × 12`, `0:45`, `40 kg × 50 m`, `20:00 · 4,800 m`; unilateral `… per side` or `Left · …`. */
 export function valuesText(values: Pick<SetValues, 'load' | 'reps' | 'durationS' | 'distanceM'>, o: ValuesTextOptions): string {
   const times = o.compact ? '×' : TIMES;
   let body: string;
-  if (o.measurement === 'distance') {
+  if (o.measurement === 'cardio') {
+    body = cardioValuesText(values);
+  } else if (o.measurement === 'distance') {
     const d = values.distanceM === null || values.distanceM === undefined ? '—' : formatDistance(values.distanceM);
     const load = distanceLoadText(values.load, o.convention, o.equipment);
     body = load === null ? d : `${load}${times}${d}`;
@@ -159,7 +183,13 @@ export function repRangeText(r: RepRange): string {
  * `Target 100 kg · 6–8 reps @ RPE 8` (focused card) or null when the set has no target
  * at all (an exercise added to an empty workout).
  */
-export function targetText(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext; perSide?: boolean; rpe?: number | null }): string | null {
+export function targetText(planned: PlannedSet, o: { convention: LoadConvention; equipment?: LoadContext; perSide?: boolean; rpe?: number | null; measurement?: Measurement }): string | null {
+  if (o.measurement === 'cardio') {
+    // Cardio (19 Oct): time and distance as the machine shows them; never a load.
+    const text = cardioValuesText(planned);
+    if (text === '—') return null;
+    return `${planned.source === 'coach' ? 'Coach target' : 'Target'} ${text}`;
+  }
   const parts: string[] = [];
   const isDistance = planned.distanceM !== undefined && planned.distanceM !== null;
   const load = planned.load === null ? null : isDistance ? distanceLoadText(planned.load, o.convention, o.equipment) : loadText(planned.load, o.convention, o.equipment);
@@ -184,8 +214,9 @@ export function rowLoadCell(load: Load | null, convention: LoadConvention, eq: P
   return formatNumber(load.value);
 }
 
-/** A table value cell for set values: `8`, `0:45`, `20 m`, or `—`. */
+/** A table value cell for set values: `8`, `0:45`, `20 m`, `20:00 · 4,800 m`, or `—`. */
 export function rowValueCell(v: SetValues, m: Measurement): string {
+  if (m === 'cardio') return cardioValuesText(v);
   if (m === 'duration') return v.durationS === null ? '—' : formatDuration(v.durationS);
   if (m === 'distance') return v.distanceM === null || v.distanceM === undefined ? '—' : formatDistance(v.distanceM);
   return v.reps === null ? '—' : String(v.reps);
@@ -196,7 +227,11 @@ export function rowValueCell(v: SetValues, m: Measurement): string {
  * table"): reps / time / distance and the target RPE, `3–6 @ 8.5`. The load
  * is in the row's own cell, so it isn't repeated. Null when there's nothing.
  */
-export function targetBrief(planned: Pick<PlannedSet, 'reps' | 'durationS' | 'distanceM'>, rpe: number | null): string | null {
+export function targetBrief(planned: Pick<PlannedSet, 'reps' | 'durationS' | 'distanceM'>, rpe: number | null, measurement?: Measurement): string | null {
+  if (measurement === 'cardio') {
+    const text = cardioValuesText(planned);
+    return text === '—' ? null : text;
+  }
   const parts: string[] = [];
   if (planned.reps !== null) parts.push(repRangeText(planned.reps));
   if (planned.durationS !== null) parts.push(formatDuration(planned.durationS));

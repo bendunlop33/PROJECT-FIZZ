@@ -103,7 +103,7 @@ export const LEGACY_STARTER_IDS: readonly string[] = [
 export const COMMON_EXERCISE_IDS: readonly string[] = S.map((s) => starterExerciseId(s.key));
 
 export interface PickerSection<T> {
-  title: 'Recent' | 'Common lifts' | 'All exercises' | 'Matches';
+  title: 'Recent' | 'Common lifts' | 'All exercises' | 'Matches' | 'Cardio';
   items: T[];
 }
 
@@ -113,11 +113,19 @@ export interface PickerSection<T> {
  * once. With a query, every match, best first (EL1: name, aliases, one
  * typo per long word), then A–Z. Pure.
  */
-export function pickerSections<T extends { exercise: Pick<Exercise, 'id' | 'name'>; aliases?: readonly string[] }>(list: readonly T[], query: string, recentIds: readonly string[]): PickerSection<T>[] {
+export function pickerSections<T extends { exercise: Pick<Exercise, 'id' | 'name'> & Partial<Pick<Exercise, 'measurement'>>; aliases?: readonly string[] }>(
+  list: readonly T[],
+  query: string,
+  recentIds: readonly string[],
+  opts: { cardio?: boolean } = {},
+): PickerSection<T>[] {
+  // `Cardio` (19 Oct): only exercises logged by time and distance, in one A–Z list.
+  const pool = opts.cardio === true ? list.filter((p) => p.exercise.measurement === 'cardio') : list;
   const matched = searchExercises(
-    list.map((p) => ({ name: p.exercise.name, aliases: p.aliases ?? [], p })),
+    pool.map((p) => ({ name: p.exercise.name, aliases: p.aliases ?? [], p })),
     query,
   ).map((x) => x.p);
+  if (opts.cardio === true) return matched.length === 0 ? [] : [{ title: query.trim() !== '' ? 'Matches' : 'Cardio', items: matched }];
   if (query.trim() !== '') return matched.length === 0 ? [] : [{ title: 'Matches', items: matched }];
   const byId = new Map(matched.map((p) => [p.exercise.id, p]));
   const seen = new Set<string>();
