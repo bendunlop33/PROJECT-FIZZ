@@ -712,8 +712,11 @@ export const ProcessedOperationSchema = z.object({
   /**
    * Rows this operation created (`add_set`: the new set), so a duplicate can
    * tell whether its effect is still in place. Absent for other commands.
+   * (Coach v3, 18 Oct) `move_exercise`: the rows' order before the move,
+   * then after it (two halves of equal length), for its Undo.
+   * `adjust_pending_targets` in a coach edit: the sets it added.
    */
-  createdIds: z.array(IdSchema).max(4).optional(),
+  createdIds: z.array(IdSchema).max(240).optional(),
 });
 export type ProcessedOperation = z.infer<typeof ProcessedOperationSchema>;
 

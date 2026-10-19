@@ -117,3 +117,35 @@ describe('past training, equipment and built-in targets for one exercise', () =>
     expect(missing?.data).toEqual({ domain: 'Your data', not_available: 'no workouts with that exercise' });
   });
 });
+
+describe('Coach v3 history reads (ADR 0027): records, recent workouts, another gym by name', () => {
+  it('records carry the e1RM labelled an estimate; recent workouts list sets as logged; the hotel gym reads by name with a summary', async () => {
+    const { s, bench } = await twoBenchWorkouts();
+    await s.setup.saveGym({ gymId: h.ids(), name: 'Hotel gym', draft: s.coachingKnowledge.buildGymDraft('home_dumbbells', 'kg') });
+    model = new StepModel([
+      () => toolCall('get_exercise_records', { exerciseId: bench }),
+      () => toolCall('get_recent_sessions', { count: 1 }),
+      () => toolCall('get_gym_equipment', { exerciseId: null, gymName: 'hotel gym' }),
+      () => toolCall('get_gym_equipment', { exerciseId: null, gymName: 'Moon gym' }),
+      () => replyWith('Bench is moving.'),
+    ]);
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'What is my best bench?', spoken: false }, turnId: h.ids() });
+    expect(r.status).toBe('completed');
+    const [records, recent, hotel, moon] = outputs() as { data: Record<string, unknown> }[];
+    const line = (records?.data.records as { heaviest: { load: { value: number } }; bestE1rm: { label: string; text: string; value: number } | null }[])[0];
+    expect(line?.heaviest.load.value).toBe(62.5);
+    // 62.5 × (1 + 8/30) = 79.17 → 79 (0.5 kg display rounding); always an estimate.
+    expect(line?.bestE1rm?.value).toBe(79);
+    expect(line?.bestE1rm?.label).toMatch(/estimate, not a tested max/);
+    expect(line?.bestE1rm?.text).toMatch(/^≈ 79\skg \(est\.\)$/u);
+    const sessions = recent?.data.sessions as { exercises: { name: string; sets: string[] }[] }[];
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.exercises[0]?.name).toBe('Bench press');
+    expect(sessions[0]?.exercises[0]?.sets.map((x) => x.replace(/\u00a0/g, ' '))).toEqual(['62.5 kg × 8', '62.5 kg × 7 @ RPE 9']);
+    expect(hotel?.data).toMatchObject({ gym: 'Hotel gym', exercise: null });
+    expect((hotel?.data.summary as string[]).some((l) => / each$/.test(l))).toBe(true);
+    expect(hotel?.data.savedGyms).toEqual(expect.arrayContaining(['Main Gym', 'Hotel gym']));
+    expect(moon?.data).toEqual({ domain: 'Your data', not_available: 'no saved gym by that name, or no such exercise' });
+    expect(r.toolLog.map((l) => l.text)).toEqual(['Read your records', 'Read your recent workouts', 'Read your gym’s equipment', 'Read your gym’s equipment']);
+  });
+});

@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { newPainFlag } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { ActionRecord, CoachToolCall } from '@fizz/schemas';
-import { createAdjustExecutor, createStoreExecutors, undoCoachAction, type CoachExecutors, type ToolExecutor } from '../src/executors';
+import type { ActionRecord, CoachToolCall, SessionAggregate } from '@fizz/schemas';
+import { createStoreExecutors, undoCoachAction, type CoachExecutors, type ToolExecutor } from '../src/executors';
+import { acceptEditOffer, createEditTodayExecutor } from '../src/edit-today';
 import { COACH_TOOLS } from '../src/registry';
-import { recoverCoachTurns, runCoachTurn, isBareAccept, gateFor } from '../src/turn';
+import { MAX_MODEL_STEPS, recoverCoachTurns, runCoachTurn, isBareAccept, gateFor } from '../src/turn';
 import { chunked, ScriptedCoachModel } from './fake-model';
-import { at, call, FakeTodayTargets, HangingModel, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, streamedReply, words, workout } from './turn-fixtures';
+import { at, call, HangingModel, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, streamedReply, words, workout } from './turn-fixtures';
 import type { CoachTurnProgress } from '../src/turn';
 
 const nb = (s: string): string => s.replace(/\u00a0/g, ' ');
-const BENCH_EX = id(10);
 const DB_EX = id(20);
 const ASSIST_EX = id(30);
 const BENCH_ID = id(1010);
@@ -194,45 +194,63 @@ describe('the gate: tools come from Ben’s own words, never from tool output (r
 });
 
 describe("today's sets through the turn (rule 3: offer, accept, apply; rule 4, rule 5)", () => {
-  function adjustExecutors(s: Store, targets: FakeTodayTargets, flags: () => ReturnType<typeof newPainFlag>[] = () => []): CoachExecutors {
+  // Coach v3 (ADR 0027): `edit_today` replaced `adjust_pending_sets`; the workout is saved in SQLite and changed through
+  // the session command with its record in one transaction.
+  async function savedWorkout(s: Store, version = 7): Promise<SessionAggregate> {
+    const w = workout(version);
+    const r = await s.repos.sessions.save(w, null);
+    if (!r.ok) throw new Error('save failed');
+    return w;
+  }
+  const load = (s: Store) => () => s.repos.sessions.get(SESSION);
+  function adjustExecutors(s: Store, flags: () => ReturnType<typeof newPainFlag>[] = () => []): CoachExecutors {
     return {
       ...storeExecutors(s, SESSION),
-      adjust_pending_sets: createAdjustExecutor({ store: s.repos.coach, targets, loadSession: () => Promise.resolve(targets.state), painFlags: () => Promise.resolve(flags()), sessionPainUnspecified: false, gymName: 'Main Gym' }),
+      edit_today: createEditTodayExecutor({ store: s.repos.coach, loadSession: load(s), painFlags: () => Promise.resolve(flags()), sessionPainUnspecified: false, gymName: 'Main Gym' }),
     };
   }
+  const setOp = (setId: string, target: { load: ReturnType<typeof kg> | null; reps: { min: number; max: number } | null }) => ({ op: 'set', setId, target });
   const lower = (baseVersion = 7) => ({
     baseVersion,
-    exercises: [{ sessionExerciseId: BENCH_EX, sets: [{ setId: id(102), target: { load: kg(95), reps: { min: 8, max: 8 } } }, { setId: id(103), target: { load: kg(95), reps: { min: 8, max: 8 } } }], addSet: null, removeSetId: null }],
+    ops: [setOp(id(102), { load: kg(95), reps: { min: 8, max: 8 } }), setOp(id(103), { load: kg(95), reps: { min: 8, max: 8 } })],
     reason: 'Set 2 was RPE 10.',
   });
+  const version = async (s: Store) => (await s.repos.sessions.get(SESSION))?.session.version;
 
-  it('the coach offers on its own; nothing applies; Ben’s "yes" opens the tool and the card shows the saved change', async () => {
+  it('the coach offers on its own; nothing applies; Ben’s "yes" opens the tool; with no stored edit behind the offer, the exact change is offered again and his next yes applies it (review S4)', async () => {
     const s = await store();
-    const targets = new FakeTodayTargets(workout(), s);
-    const ctx = { session: targets.state, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] };
+    const w = await savedWorkout(s);
+    const ctx = { session: w, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] };
     const first = new ScriptedCoachModel([reply('Set 2 was RPE 10. Want me to take 5 kg off the last two?', 'adjust_today')]);
-    const r1 = await runCoachTurn(request({ kind: 'workout', input: words('Set 2 was rough'), context: ctx }), ports(s, first, adjustExecutors(s, targets)));
+    const r1 = await runCoachTurn(request({ kind: 'workout', input: words('Set 2 was rough'), context: ctx }), ports(s, first, adjustExecutors(s)));
     // (14 Oct) Offered on every live turn; a call Ben didn't ask for would become an offer (midworkout.test.ts).
-    expect(first.offeredTools()[0]).toContain('adjust_pending_sets');
+    expect(first.offeredTools()[0]).toContain('edit_today');
     expect(r1.offer).toBe('adjust_today');
-    expect(targets.applied).toEqual([]);
+    expect(await version(s)).toBe(7);
 
-    const second = new ScriptedCoachModel([[call('adjust_pending_sets', lower()), { type: 'completed' }], reply('That should keep you at 8.')]);
-    const r2 = await runCoachTurn(request({ kind: 'workout', threadId: r1.threadId, input: words('yes'), context: ctx }), ports(s, second, adjustExecutors(s, targets)));
-    expect(second.offeredTools()[0]).toContain('adjust_pending_sets');
-    expect(r2.cards.map((c) => nb(c.rendered.text))).toEqual(['Changed sets 3–4 to 95 kg × 8 (targets).']);
-    expect(sentences(r2)).toEqual(['That should keep you at 8.']);
-    expect(targets.state.session.version).toBe(8);
+    const second = new ScriptedCoachModel([[call('edit_today', lower()), { type: 'completed' }], reply('That should keep you at 8.')]);
+    const r2 = await runCoachTurn(request({ kind: 'workout', threadId: r1.threadId, input: words('yes'), context: ctx }), ports(s, second, adjustExecutors(s)));
+    expect(second.offeredTools()[0]).toContain('edit_today');
+    // "take 5 kg off" named no exact load: what the model picks is shown first, never applied unseen.
+    expect(r2.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['proposed', 'Suggested: sets 3–4 at 95 kg × 8 (targets). Not applied.']]);
+    expect(r2.offer).toBe('adjust_today');
+    expect(await version(s)).toBe(7);
+
+    const silent = new ScriptedCoachModel([]);
+    const r3 = await runCoachTurn(request({ kind: 'workout', threadId: r1.threadId, input: words('yes'), context: ctx }), { ...ports(s, silent, adjustExecutors(s)), acceptOffer: acceptEditOffer.bind(null, { store: s.repos.coach, loadSession: () => s.repos.sessions.get(SESSION), painFlags: () => Promise.resolve([]), sessionPainUnspecified: false }) });
+    expect(silent.requests).toHaveLength(0);
+    expect(r3.cards.map((c) => nb(c.rendered.text))).toEqual(['Changed sets 3–4 to 95 kg × 8 (targets).']);
+    expect(await version(s)).toBe(8);
   });
 
   it('contract check 3: the validator snaps 98 to 97.5 kg; the card says 97.5, a sentence with 98 is dropped', async () => {
     const s = await store();
-    const targets = new FakeTodayTargets(workout(), s);
-    const args = { ...lower(), exercises: [{ ...lower().exercises[0], sets: [{ setId: id(102), target: { load: kg(98), reps: null } }, { setId: id(103), target: { load: kg(98), reps: null } }] }] };
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', args), { type: 'completed' }], reply('Sets 3 and 4 are 98 kg now. Keep the bar path tight.')]);
+    const w = await savedWorkout(s);
+    const args = { ...lower(), ops: [setOp(id(102), { load: kg(98), reps: null }), setOp(id(103), { load: kg(98), reps: null })] };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Sets 3 and 4 are 98 kg now. Keep the bar path tight.')]);
     const r = await runCoachTurn(
-      request({ kind: 'workout', input: words('Drop the last two to 98'), context: { session: targets.state, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
-      ports(s, model, adjustExecutors(s, targets)),
+      request({ kind: 'workout', input: words('Drop the last two to 98'), context: { session: w, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
+      ports(s, model, adjustExecutors(s)),
     );
     expect(nb(r.cards[0]?.rendered.text ?? '')).toBe('Changed sets 3–4 to 97.5 kg × 6–8 (targets).');
     expect(r.cards[0]?.record.guardNotes.map((n) => n.kind)).toContain('snapped');
@@ -242,59 +260,54 @@ describe("today's sets through the turn (rule 3: offer, accept, apply; rule 4, r
 
   it('contract check 4: a stale base version is a stale card; nothing changes', async () => {
     const s = await store();
-    const targets = new FakeTodayTargets(workout(8), s);
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', lower(7)), { type: 'completed' }], reply('Changed sets 3–4.')]);
-    const r = await runCoachTurn(request({ kind: 'workout', input: words('Drop the last two to 95'), context: { session: targets.state, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, model, adjustExecutors(s, targets)));
-    expect(r.cards.map((c) => [c.record.status, c.rendered.text])).toEqual([['stale', "Couldn't change sets 3–4: your workout moved on. Nothing changed."]]);
+    const w = await savedWorkout(s, 8);
+    const model = new ScriptedCoachModel([[call('edit_today', lower(7)), { type: 'completed' }], reply('Changed sets 3–4.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('Drop the last two to 95'), context: { session: w, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, model, adjustExecutors(s)));
+    expect(r.cards.map((c) => [c.record.status, c.rendered.text])).toEqual([['stale', "Couldn't change today's workout: your workout moved on. Nothing changed."]]);
     expect(sentences(r)).toEqual([]);
-    expect(targets.applied).toEqual([]);
+    expect(await version(s)).toBe(8);
   });
 
   it('contract check 6: the same call replayed (dropped connection) saves one record and one change', async () => {
     const s = await store();
-    const targets = new FakeTodayTargets(workout(), s);
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', lower(), 'x1'), { type: 'completed' }], [call('adjust_pending_sets', lower(), 'x2'), { type: 'completed' }], reply('Okay.')]);
-    const r = await runCoachTurn(request({ kind: 'workout', input: words('Drop the last two to 95'), context: { session: targets.state, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, model, adjustExecutors(s, targets)));
+    const w = await savedWorkout(s);
+    const model = new ScriptedCoachModel([[call('edit_today', lower(), 'x1'), { type: 'completed' }], [call('edit_today', lower(), 'x2'), { type: 'completed' }], reply('Okay.')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('Drop the last two to 95'), context: { session: w, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, model, adjustExecutors(s)));
     expect(r.cards).toHaveLength(1);
     expect(r.toolLog.map((l) => l.outcome)).toEqual(['committed', 'replayed']);
-    expect(targets.applied).toHaveLength(1);
+    expect(await version(s)).toBe(8);
     expect(await s.repos.coach.listTurnActions(r.turnId)).toHaveLength(1);
   });
 
   it('per-hand dumbbells are capped at the rack’s max; assisted "harder" means less assistance; units never convert silently', async () => {
     const s = await store();
-    const targets = new FakeTodayTargets(workout(), s);
-    const args = {
-      baseVersion: 7,
-      exercises: [
-        { sessionExerciseId: DB_EX, sets: [{ setId: id(200), target: { load: kg(35, 'per_hand'), reps: null } }], addSet: null, removeSetId: null },
-        { sessionExerciseId: ASSIST_EX, sets: [{ setId: id(300), target: { load: kg(25, 'assistance'), reps: null } }], addSet: null, removeSetId: null },
-      ],
-      reason: 'Too easy.',
-    };
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', args), { type: 'completed' }], reply('Go for it.')]);
+    const w = await savedWorkout(s);
+    const args = { baseVersion: 7, ops: [setOp(id(200), { load: kg(35, 'per_hand'), reps: null }), setOp(id(300), { load: kg(25, 'assistance'), reps: null })], reason: 'Too easy.' };
+    const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Go for it.')]);
     const r = await runCoachTurn(
-      request({ kind: 'workout', input: { kind: 'chip', chip: 'too_easy' }, context: { session: targets.state, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
-      ports(s, model, adjustExecutors(s, targets)),
+      request({ kind: 'workout', input: { kind: 'chip', chip: 'too_easy' }, context: { session: w, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
+      ports(s, model, adjustExecutors(s)),
     );
     const record = r.cards[0]?.record;
     expect(record?.status).toBe('committed');
-    const after = record?.detail.kind === 'adjust_pending_sets' ? record.detail.exercises.map((e) => e.changes[0]?.after?.load) : [];
+    const after = record?.detail.kind === 'edit_today' ? record.detail.exercises.map((e) => e.changes[0]?.after?.load) : [];
     expect(after).toEqual([kg(30, 'per_hand'), kg(25, 'assistance')]);
     expect(record?.guardNotes.map((n) => n.kind)).toContain('capped');
+    // The exercises' own IDs: DB press and the assisted pull-up.
+    expect(record?.detail.kind === 'edit_today' ? record.detail.exercises.map((e) => e.sessionExerciseId) : []).toEqual([DB_EX, ASSIST_EX]);
   });
 
   it('rule 9: pain in Ben’s own words this turn blocks an increase; the sheet asks Sore or pain? from the words, not the model', async () => {
     const s = await store();
-    const targets = new FakeTodayTargets(workout(), s);
-    const up = { ...lower(), exercises: [{ ...lower().exercises[0], sets: [{ setId: id(102), target: { load: kg(105), reps: null } }] }] };
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', up), { type: 'completed' }], reply('Also sorted your knee.')]);
+    const w = await savedWorkout(s);
+    const up = { ...lower(), ops: [setOp(id(102), { load: kg(105), reps: null })] };
+    const model = new ScriptedCoachModel([[call('edit_today', up), { type: 'completed' }], reply('Also sorted your knee.')]);
     const r = await runCoachTurn(
-      request({ kind: 'workout', input: words('Add 5 to bench, my knee’s a bit off'), context: { session: targets.state, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
-      ports(s, model, adjustExecutors(s, targets)),
+      request({ kind: 'workout', input: words('Add 5 to bench, my knee’s a bit off'), context: { session: w, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }),
+      ports(s, model, adjustExecutors(s)),
     );
     expect(r.cards.map((c) => c.record.status)).toEqual(['rejected']);
-    expect(targets.applied).toEqual([]);
+    expect(await version(s)).toBe(7);
     expect(r.askPain).toEqual({ bodyPart: 'knee' });
   });
 });
@@ -333,13 +346,14 @@ describe('errors, timeouts, Stop and restart recovery (rule 1: honest states, no
     expect(await running).toMatchObject({ status: 'cancelled', error: 'cancelled' });
   });
 
-  it('at most four model steps', async () => {
+  it('at most six model steps (Coach v3; was four)', async () => {
     const s = await store();
-    const loop = Array.from({ length: 6 }, (_, i) => [call('get_recent_actions', { limit: 3 }, `l${String(i)}`), { type: 'completed' as const }]);
+    const loop = Array.from({ length: 8 }, (_, i) => [call('get_recent_actions', { limit: 3 }, `l${String(i)}`), { type: 'completed' as const }]);
     const model = new ScriptedCoachModel(loop);
     const r = await runCoachTurn(request({ input: words('What did you change?') }), ports(s, model, storeExecutors(s)));
     expect(r).toMatchObject({ status: 'failed', error: 'too_many_steps' });
-    expect(model.requests).toHaveLength(4);
+    expect(model.requests).toHaveLength(MAX_MODEL_STEPS);
+    expect(MAX_MODEL_STEPS).toBe(6);
   });
 
   it('coach-sheet 9 as a replay: the same turn ID sends nothing again and shows the saved cards', async () => {

@@ -13,11 +13,19 @@
  * - Failures map to honest statuses; sticky ones (limit, not eligible,
  *   expired, region, scope) are remembered in the connection settings so the
  *   sheet pauses. Nothing switches route or produces a reply (rules 1, 7).
+ * - (Coach v3, ADR 0027) The request's `effort` goes as `reasoning.effort`
+ *   unless the route rejected it for this model before. A 400 before any
+ *   stream event, with it sent, is retried once without it; if that works the
+ *   model is marked `rejected` and it isn't sent again. A success with it
+ *   marks it `supported`. Unproven on the plan route until the device test.
  */
 
 import type { CoachModelPort, ModelErrorKind, ModelEvent, ModelInputItem, ModelRequest } from '@fizz/coach';
 import {
+  loadConnectionSettings,
+  reasoningCapabilityOf,
   recordProviderFailure,
+  recordReasoningCapability,
   streamResponse,
   TokenRefresher,
   type ChatGptVault,
@@ -53,6 +61,13 @@ const ERROR_BY_KIND: Partial<Record<FailureKind, ModelErrorKind>> = {
 export function modelErrorOf(f: Pick<ProviderFailure, 'kind' | 'code' | 'status'>): ModelErrorKind {
   if (f.code === 'model_not_found' || (f.kind === 'bad_request' && f.status === 404)) return 'model_gone';
   return ERROR_BY_KIND[f.kind] ?? 'unavailable';
+}
+
+const aborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
+
+/** (Coach v3) A 400 that could be the `reasoning` field: retried once without it. */
+export function reasoningRefused(f: Pick<ProviderFailure, 'kind' | 'status'>): boolean {
+  return f.status === 400 && (f.kind === 'bad_request' || f.kind === 'unsupported_capability');
 }
 
 function toInput(items: readonly ModelInputItem[]): ResponsesInputItem[] {
@@ -135,25 +150,38 @@ export function createPlanModelPort(deps: PlanModelDeps): CoachModelPort {
           queue.push({ type: 'error', error: 'cancelled' });
           return;
         }
-        const result = await streamResponse(
-          {
-            model: request.model,
-            instructions: request.instructions,
-            input: toInput(request.input),
-            tools: toTools(request),
-            ...(request.toolChoice === undefined ? {} : { tool_choice: request.toolChoice }),
-            parallel_tool_calls: request.parallelToolCalls,
-          },
-          {
-            fetch: deps.fetch,
-            accessToken: fresh.value.tokens.accessToken,
-            nowMs: deps.nowMs,
-            ...(request.signal === undefined ? {} : { signal: request.signal }),
-            onEvent: (p) => {
-              queue.push(eventOf(p));
+        const capability = request.effort === undefined ? 'rejected' : reasoningCapabilityOf(await loadConnectionSettings(deps.settings), request.model);
+        let events = 0;
+        const send = (withReasoning: boolean) =>
+          streamResponse(
+            {
+              model: request.model,
+              instructions: request.instructions,
+              input: toInput(request.input),
+              tools: toTools(request),
+              ...(request.toolChoice === undefined ? {} : { tool_choice: request.toolChoice }),
+              parallel_tool_calls: request.parallelToolCalls,
+              ...(withReasoning && request.effort !== undefined ? { reasoning: { effort: request.effort } } : {}),
             },
-          },
-        );
+            {
+              fetch: deps.fetch,
+              accessToken: fresh.value.tokens.accessToken,
+              nowMs: deps.nowMs,
+              ...(request.signal === undefined ? {} : { signal: request.signal }),
+              onEvent: (p) => {
+                events += 1;
+                queue.push(eventOf(p));
+              },
+            },
+          );
+        const withReasoning = capability !== 'rejected';
+        let result = await send(withReasoning);
+        if (withReasoning && !result.ok && events === 0 && reasoningRefused(result.error) && !aborted(request.signal)) {
+          result = await send(false);
+          if (result.ok) await recordReasoningCapability(deps.settings, request.model, 'rejected').catch(() => undefined);
+        } else if (withReasoning && result.ok && capability === 'unknown') {
+          await recordReasoningCapability(deps.settings, request.model, 'supported').catch(() => undefined);
+        }
         if (result.ok) queue.push({ type: 'completed' });
         else await fail(result.error);
       })()

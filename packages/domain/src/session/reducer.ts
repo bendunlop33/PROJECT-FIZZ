@@ -1,3 +1,4 @@
+import { coachEditStepOpId } from '@fizz/schemas';
 import type {
   CommandOf,
   SetAuditEntry,
@@ -137,7 +138,9 @@ export type SessionEvent =
   | { type: 'TargetRpeSet'; setIds: string[]; rpe: number | null }
   | { type: 'LoadModeChanged'; sessionExerciseId: string; mode: 'added' | 'bodyweight'; setIds: string[] }
   /** Ben edited a set not done yet (target, type, rest), or its Undo put the old one back. Cue layers rebuild the rest-end line. */
-  | { type: 'PlannedSetEdited'; setId: string; undo: boolean };
+  | { type: 'PlannedSetEdited'; setId: string; undo: boolean }
+  /** (Coach v3) Rows moved (`move_exercise`), or put back by its Undo. Cue layers rebuild what's next. */
+  | { type: 'ExercisesMoved'; sessionExerciseIds: string[]; undo: boolean };
 
 export type ReduceResult =
   | {
@@ -193,6 +196,10 @@ export function commandFingerprint(command: SessionCommand): string {
   if (command.type === 'swap_exercise') {
     // Generated IDs are not part of the intent; the row, version, exercise and equipment are.
     return stableStringify({ type: command.type, sessionExerciseId: command.sessionExerciseId, expectedVersion: command.expectedVersion, exerciseId: command.exercise.exerciseId, equipmentId: command.equipmentId });
+  }
+  if (command.type === 'coach_edit_today') {
+    // Each step by its own intent (no times, no generated IDs); the version and the record are part of it.
+    return stableStringify({ type: command.type, expectedVersion: command.expectedVersion, actionId: command.actionId, steps: command.steps.map((x) => commandFingerprint(x)) });
   }
   if (command.type === 'add_set' && command.continuation) {
     return stableStringify({ ...command, at: undefined, newSetId: undefined, continuation: { ...command.continuation, id: undefined } });
@@ -2010,6 +2017,8 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handl
       const back: WorkoutSet = { ...set, planned, setType: edit.before.setType, rest: edit.before.rest, draft: edit.before.draft, version: set.version + 1 };
       return { ok: true, state: bumpVersion({ ...state, sets: replaceSet(state.sets, back) }), events: [{ type: 'PlannedSetEdited', setId: set.id, undo: true }] };
     }
+    case 'move_exercise':
+      return undoMove(state, prior);
     case 'add_set': {
       // `Set 4 added` [Undo]: the added set goes again, only while it's still pending (a logged set is real).
       const set = state.sets.find((s) => s.id === prior.createdIds?.[0]);
@@ -2139,6 +2148,154 @@ function handleSetLoadMode(state: SessionAggregate, cmd: CommandOf<'set_load_mod
   return { ok: true, state: bumpVersion({ ...state, exercises, sets }), events: [{ type: 'LoadModeChanged', sessionExerciseId: ex.id, mode: cmd.mode, setIds: changed }] };
 }
 
+// ---------------------------------------------------------------------------
+// Coach v3 (ADR 0027, 18 Oct): move a row, and the coach's edit of today as one operation.
+
+const byOrder = (a: SessionExercise, b: SessionExercise): number => a.order - b.order;
+
+/** Every row's ID in workout order (removed rows keep their place). */
+function rowOrder(exercises: readonly SessionExercise[]): string[] {
+  return [...exercises].sort(byOrder).map((e) => e.id);
+}
+
+/**
+ * `move_exercise`: a live row (with its whole superset) straight after another live row (after
+ * its whole superset), or first. Only a row with a set not done yet; no set changes (rule 2).
+ */
+function handleMoveExercise(state: SessionAggregate, cmd: CommandOf<'move_exercise'>): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'The workout changed. Try again.');
+  const live = liveExercises(state.exercises).sort(byOrder);
+  const row = live.find((e) => e.id === cmd.sessionExerciseId);
+  if (!row) return fail('exercise_not_found', 'Exercise not found in this workout.');
+  const parted = (e: SessionExercise): boolean => e.continuesFromId !== undefined || live.some((x) => x.continuesFromId === e.id);
+  const block = row.supersetGroup === null ? [row] : live.filter((e) => e.supersetGroup === row.supersetGroup);
+  if (block.some(parted)) return fail('invalid_values', `${row.exerciseName} has sets at another gym.`);
+  const blockIds = new Set(block.map((e) => e.id));
+  if (!state.sets.some((x) => blockIds.has(x.sessionExerciseId) && x.status === 'pending')) return fail('set_not_pending', `${row.exerciseName} is done.`);
+  let anchorId: string | null = null;
+  if (cmd.afterSessionExerciseId !== null) {
+    const after = live.find((e) => e.id === cmd.afterSessionExerciseId);
+    if (!after) return fail('exercise_not_found', 'Exercise not found in this workout.');
+    if (blockIds.has(after.id)) return fail('invalid_values', `${row.exerciseName} can’t go after itself.`);
+    anchorId = after.supersetGroup === null ? after.id : (live.filter((e) => e.supersetGroup === after.supersetGroup).at(-1)?.id ?? after.id);
+  }
+  const sorted = [...state.exercises].sort(byOrder);
+  const rest = sorted.filter((e) => !blockIds.has(e.id));
+  const moving = sorted.filter((e) => blockIds.has(e.id));
+  const firstLive = rest.findIndex((e) => e.removed === undefined);
+  const at = anchorId === null ? Math.max(0, firstLive) : rest.findIndex((e) => e.id === anchorId) + 1;
+  const next = [...rest.slice(0, at), ...moving, ...rest.slice(at)];
+  if (next.every((e, i) => e.id === sorted[i]?.id)) return { ok: true, state, events: [] };
+  const pos = new Map(next.map((e, i) => [e.id, i]));
+  const exercises = state.exercises.map((e) => (e.order === pos.get(e.id) ? e : { ...e, order: pos.get(e.id) ?? e.order }));
+  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: [...blockIds], undo: false }] };
+}
+
+/** Undo of a move: the old order back, only while the rows are still in the order the move left. */
+function undoMove(state: SessionAggregate, prior: ProcessedOperation): Handled {
+  const ids = prior.createdIds ?? [];
+  const n = ids.length / 2;
+  const before = ids.slice(0, n);
+  const after = ids.slice(n);
+  if (n === 0 || stableStringify(rowOrder(state.exercises)) !== stableStringify(after)) return fail('stale_version', STALE_UNDO);
+  const pos = new Map(before.map((id, i) => [id, i]));
+  const moved = state.exercises.filter((e) => pos.get(e.id) !== after.indexOf(e.id)).map((e) => e.id);
+  const exercises = state.exercises.map((e) => ({ ...e, order: pos.get(e.id) ?? e.order }));
+  return { ok: true, state: bumpVersion({ ...state, exercises }), events: [{ type: 'ExercisesMoved', sessionExerciseIds: moved, undo: true }] };
+}
+
+/** The processed-operation record of a command applied from `before` to `after`. */
+function processedRecord(command: SessionCommand & { opId: string }, before: SessionAggregate, after: SessionAggregate): ProcessedOperation {
+  const createdIds =
+    command.type === 'add_set'
+      ? [command.newSetId]
+      : command.type === 'add_exercise'
+        ? [command.newSessionExerciseId]
+        : command.type === 'move_exercise'
+          ? [...rowOrder(before.exercises), ...rowOrder(after.exercises)]
+          : command.type === 'adjust_pending_targets' && command.addSets.length > 0
+            ? command.addSets.map((a) => a.newSetId)
+            : null;
+  return {
+    opId: command.opId,
+    commandType: command.type,
+    fingerprint: commandFingerprint(command),
+    atUtc: command.at.utc,
+    ...(createdIds === null ? {} : { createdIds }),
+  };
+}
+
+/** A step of a coach edit at the version the edit has reached (its own guards still check everything else). */
+function atVersion(step: CommandOf<'coach_edit_today'>['steps'][number], version: number, at: ZonedTimestamp): SessionCommand & { opId: string } {
+  switch (step.type) {
+    case 'adjust_pending_targets':
+    case 'swap_exercise':
+    case 'remove_exercise':
+    case 'move_exercise':
+      return { ...step, at, expectedVersion: version };
+    case 'add_exercise':
+    case 'skip_exercise':
+      return { ...step, at };
+  }
+}
+
+/** Run `commands` in order on `state`, each recorded as its own operation; the first refusal refuses all. One version bump. */
+function runAll(state: SessionAggregate, commands: (s: SessionAggregate, i: number) => (SessionCommand & { opId: string }) | SessionError | null, nowMs: number): Handled {
+  let s = state;
+  const events: SessionEvent[] = [];
+  for (let i = 0; ; i += 1) {
+    const command = commands(s, i);
+    if (command === null) break;
+    if ('code' in command) return { ok: false, error: command };
+    if (s.processedOps[command.opId] !== undefined) return fail('operation_id_reused', 'This operation ID was already used for a different action.');
+    const h = dispatch(s, command, nowMs);
+    if (!h.ok) return h;
+    s = { ...h.state, processedOps: { ...h.state.processedOps, [command.opId]: processedRecord(command, s, h.state) } };
+    events.push(...h.events);
+  }
+  if (s === state) return { ok: true, state, events };
+  return { ok: true, state: { ...s, session: { ...s.session, version: state.session.version + 1 } }, events };
+}
+
+/** `coach_edit_today`: every step, in order, or none (rule 5: refused once the workout moved on). */
+function handleCoachEditToday(state: SessionAggregate, cmd: CommandOf<'coach_edit_today'>, nowMs: number): Handled {
+  if (state.session.version !== cmd.expectedVersion) return fail('stale_version', 'Your workout moved on.');
+  for (const [i, step] of cmd.steps.entries()) {
+    if (step.opId !== coachEditStepOpId(cmd.opId, i)) return fail('invalid_values', 'A step of the change doesn’t belong to it.');
+    if (step.type === 'adjust_pending_targets' && step.actionId !== cmd.actionId) return fail('invalid_values', 'A step of the change doesn’t belong to it.');
+  }
+  return runAll(state, (s, i) => {
+    const step = cmd.steps[i];
+    return step === undefined ? null : atVersion(step, s.session.version, cmd.at);
+  }, nowMs);
+}
+
+/** The steps a coach edit recorded, in order. */
+function editSteps(state: SessionAggregate, opId: string): ProcessedOperation[] {
+  const out: ProcessedOperation[] = [];
+  for (let i = 0; ; i += 1) {
+    const p = state.processedOps[coachEditStepOpId(opId, i)];
+    if (p === undefined) return out;
+    out.push(p);
+  }
+}
+
+/** `revert_coach_edit`: each step's own Undo, last step first, all or none. */
+function handleRevertCoachEdit(state: SessionAggregate, cmd: CommandOf<'revert_coach_edit'>, nowMs: number): Handled {
+  const prior = state.processedOps[cmd.targetOpId];
+  if (prior?.commandType !== 'coach_edit_today') return fail('operation_not_found', 'Nothing to undo.');
+  const steps = editSteps(state, cmd.targetOpId).reverse();
+  return runAll(state, (s, i) => {
+    const step = steps[i];
+    if (step === undefined) return null;
+    const opId = coachEditStepOpId(cmd.opId, i);
+    if (step.commandType !== 'adjust_pending_targets') return { type: 'undo_op', at: cmd.at, opId, targetOpId: step.opId };
+    // The sets it removed are in its audit; the ones it added, in its record.
+    const removedSetIds = s.audit.filter((e) => e.opId === step.opId && e.kind === 'deleted').map((e) => e.setId);
+    return { type: 'revert_target_adjustment', at: cmd.at, opId, actionId: cmd.actionId, removedSetIds, addedSetIds: step.createdIds ?? [] };
+  }, nowMs);
+}
+
 function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: number): Handled {
   switch (command.type) {
     case 'log_set':
@@ -2207,6 +2364,12 @@ function dispatch(state: SessionAggregate, command: SessionCommand, nowMs: numbe
       return handleEditPlannedSet(state, command);
     case 'set_load_mode':
       return handleSetLoadMode(state, command);
+    case 'move_exercise':
+      return handleMoveExercise(state, command);
+    case 'coach_edit_today':
+      return handleCoachEditToday(state, command, nowMs);
+    case 'revert_coach_edit':
+      return handleRevertCoachEdit(state, command, nowMs);
     case 'tick':
       return { ok: true, state, events: [] };
   }
@@ -2292,8 +2455,17 @@ function isSuperseded(state: SessionAggregate, command: SessionCommand): boolean
     case 'set_load_mode':
       // Switched back since.
       return state.exercises.find((e) => e.id === command.sessionExerciseId)?.loadConvention !== command.mode;
+    case 'move_exercise': {
+      // Moved again (or put back) since.
+      const ids = state.processedOps[command.opId]?.createdIds ?? [];
+      return stableStringify(rowOrder(state.exercises)) !== stableStringify(ids.slice(ids.length / 2));
+    }
+    case 'coach_edit_today':
+      // Any step no longer in place (undone, or overtaken).
+      return command.steps.some((step) => isSuperseded(state, { ...step, at: command.at }));
     case 'undo_op':
     case 'revert_target_adjustment':
+    case 'revert_coach_edit':
     case 'undo_change_gym':
     case 'finish':
     case 'discard':
@@ -2385,13 +2557,7 @@ export function reduceSession(state: SessionAggregate, command: SessionCommand):
 
   let next: SessionAggregate = { ...handled.state, revision: state.revision + 1 };
   if ('opId' in command) {
-    const record: ProcessedOperation = {
-      opId: command.opId,
-      commandType: command.type,
-      fingerprint: commandFingerprint(command),
-      atUtc: command.at.utc,
-      ...(command.type === 'add_set' ? { createdIds: [command.newSetId] } : command.type === 'add_exercise' ? { createdIds: [command.newSessionExerciseId] } : {}),
-    };
+    const record = processedRecord(command, clocked.state, handled.state);
     next = { ...next, processedOps: { ...next.processedOps, [command.opId]: record } };
   }
   if (command.type !== 'tick') {

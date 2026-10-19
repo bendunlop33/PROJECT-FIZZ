@@ -36,7 +36,7 @@ import {
   rowDetail,
   targetsChanged,
 } from '../../workout/overview';
-import { checkInAtStart, createGuard, saveScore, scoreStepOf, staleStartToast, startEmptyFromOverview, startFromOverview, undoGymSwitch, type ScoreStep } from '../../workout/overview-start';
+import { checkInAtStart, createGuard, overviewGymId, saveScore, scoreStepOf, staleStartToast, startEmptyFromOverview, startFromOverview, undoGymSwitch, type ScoreStep } from '../../workout/overview-start';
 import {
   changeCardState,
   createEditLane,
@@ -206,10 +206,12 @@ export function WorkoutOverviewScreen() {
   // The page toasts still to show, one after another (merge r3 S1).
   const pageToastQueue = useRef<{ key: string; text: string }[]>([]);
 
+  // A gym Ben picked on this page (the switcher); until then a coach draft opens at the gym it was built at (review B2).
+  const pickedGym = useRef<string | null>(null);
   const [data, reload] = useScreenData(async (s) => {
-    const gym = await s.yourData.currentGym();
+    const gymId = await overviewGymId({ draftGym: (id) => s.coachDrafts.gymOf(id), currentGym: async () => (await s.yourData.currentGym())?.id ?? null }, target, pickedGym.current);
     const seq = writeSeq.current;
-    const page = await s.overview.load({ target, gymId: gym?.id ?? null, checkInId: tappedRef.current?.id ?? null });
+    const page = await s.overview.load({ target, gymId, checkInId: tappedRef.current?.id ?? null });
     if (page !== null) readSeq.current.set(page, seq);
     return page;
   });
@@ -321,6 +323,7 @@ export function WorkoutOverviewScreen() {
             action: 'Undo',
             onAction: () => {
               setToast(null);
+              pickedGym.current = previous;
               void undoGymSwitch((id) => services.gyms.select(id), previous).then((message) => {
                 if (message !== null) setToast({ text: message });
                 changed();
@@ -441,9 +444,11 @@ export function WorkoutOverviewScreen() {
       const chosen = page.gyms[i];
       if (!chosen || chosen.id === page.view.gym?.id) return;
       gymSwitch.current = { name: chosen.name, before: page.view.rows, previousGymId: page.view.gym?.id ?? null };
+      pickedGym.current = chosen.id;
       void services.gyms.select(chosen.id).then((r) => {
         if (!r.ok) {
           gymSwitch.current = null;
+          pickedGym.current = null;
           setToast({ text: r.message });
         }
         changed();
@@ -641,12 +646,15 @@ export function WorkoutOverviewScreen() {
    */
   async function switchTo(next: OverviewTarget): Promise<boolean> {
     switching.current = true;
-    const gymId = page?.view.gym?.id ?? (await services.yourData.currentGym().catch(() => null))?.id ?? null;
+    // A coach draft shows at the gym it was built at (review B2); anything else keeps the page's gym.
+    const pageGym = page?.view.gym?.id ?? (await services.yourData.currentGym().catch(() => null))?.id ?? null;
+    const gymId = await overviewGymId({ draftGym: (id) => services.coachDrafts.gymOf(id), currentGym: () => Promise.resolve(pageGym) }, next, null);
     const done = await switchSession(
       {
         load: (t) => services.overview.load({ target: t, gymId, checkInId: tappedRef.current?.id ?? null }),
         show: (t) => {
           // Reset what belongs to the old page (start op, panel, cards, swap, reorder); keep the tapped check-in and the gym.
+          pickedGym.current = gymId;
           startOp.current = null;
           setOpen(null);
           setCard(null);

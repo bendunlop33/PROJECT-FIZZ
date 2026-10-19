@@ -27,6 +27,12 @@ export interface ModelRequest {
   toolChoice?: 'required' | { type: 'function'; name: string };
   /** Always false: the coach makes one call at a time so each write is checked in order. */
   parallelToolCalls: false;
+  /**
+   * (Coach v3, ADR 0027) How hard the model should think: a build `high`, a live-workout turn `low`
+   * (`high` after `think_harder`), anything else `medium`. The port sends it only where the route
+   * takes it. Absent: the route's default.
+   */
+  effort?: 'low' | 'medium' | 'high';
   signal?: AbortSignal;
 }
 

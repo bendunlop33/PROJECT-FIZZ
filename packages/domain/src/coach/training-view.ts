@@ -7,6 +7,7 @@ import { EXCLUSION_WORD, isSetCountable, normaliseExclusions } from '../exclusio
 import { toHistorySessions } from '../history';
 import type { HistorySession, HistorySet } from '../progression';
 import { isInHistory } from '../session/deletion';
+import { estimateOneRepMax } from '../progress/e1rm';
 import { toMs } from '../time';
 import { usualTargetRpeOf } from './target-rpe';
 
@@ -344,6 +345,166 @@ export function trainingOverviewView(input: TrainingOverviewInput): TrainingOver
 }
 
 // ---------------------------------------------------------------------------
+// Records and recent workouts (Coach v3, ADR 0027: history reads)
+
+/** How every estimated 1RM is labelled for the coach (rule 6): an estimate, never a tested max. */
+export const E1RM_LABEL = 'estimated 1RM (Epley, from a logged set of 1–10 reps): an estimate, not a tested max' as const;
+
+export interface RecordSetLine {
+  date: string;
+  load: Load;
+  loadText: string;
+  reps: number;
+}
+
+export interface RecordLine {
+  /** Loads on different kit, units or conventions are never compared: one line each. */
+  equipment: string | null;
+  unit: WeightUnit;
+  convention: LoadConvention;
+  source: 'app' | 'FitNotes import';
+  heaviest: RecordSetLine & { label: 'heaviest logged set (not an estimate)' };
+  /** The single counted set with the most reps (any load on this line). */
+  mostReps: RecordSetLine;
+  /** Null when no set qualifies (assisted, bodyweight, more than 10 reps). Always labelled an estimate. */
+  bestE1rm: { label: typeof E1RM_LABEL; value: number; text: string; from: RecordSetLine } | null;
+}
+
+export interface ExerciseRecordsView {
+  domain: typeof YOUR_DATA;
+  note: string;
+  exercise: string;
+  records: RecordLine[];
+  /** Finished workouts with this exercise. */
+  totalSessions: number;
+  imported?: typeof IMPORTED_NOTE;
+}
+
+/**
+ * `get_exercise_records`: per equipment item, unit and convention, the heaviest logged set, the set
+ * with the most reps and the best estimated 1RM (labelled as an estimate, `≈`). Only counted working
+ * sets (Ben's exclusions are left out). Pure.
+ */
+export function exerciseRecordsView(input: Omit<ExerciseHistoryInput, 'limit'>): ExerciseRecordsView {
+  const kindOf = new Map<string, string>();
+  for (const agg of input.sessions) for (const e of agg.session.equipmentSnapshot) kindOf.set(e.id, e.kind);
+  const lines = new Map<string, RecordLine>();
+  const sessionIds = new Set<string>();
+  for (const agg of input.sessions) {
+    for (const h of toHistorySessions(agg, input.exerciseId, { identity: true })) {
+      if (h.sets.length === 0) continue;
+      sessionIds.add(h.sessionId);
+      const date = localDateOf(toMs(h.performedAtUtc), h.tz ?? agg.session.startedAt.tz);
+      const source = h.imported ? 'FitNotes import' : 'app';
+      for (const s of h.sets) {
+        if (!countable(s)) continue;
+        const key = `${source}|${h.equipmentId ?? '-'}|${s.load.unit}|${s.load.convention}`;
+        const set: RecordSetLine = { date, load: s.load, loadText: loadText(s.load, s.load.convention), reps: s.reps };
+        const kind = h.equipmentId === null ? null : ((kindOf.get(h.equipmentId) ?? null) as Parameters<typeof estimateOneRepMax>[2]);
+        const est = estimateOneRepMax(s.load, s.reps, kind);
+        const e1rm = est.eligible ? { label: E1RM_LABEL, value: est.value, text: `≈ ${formatNumber(est.value)} ${est.unit}${s.load.convention === 'per_hand' ? ' each' : ''} (est.)`, from: set } : null;
+        const prev = lines.get(key);
+        if (prev === undefined) {
+          lines.set(key, {
+            equipment: h.equipmentId === null ? null : (input.equipmentNames[h.equipmentId] ?? null),
+            unit: s.load.unit,
+            convention: s.load.convention,
+            source,
+            heaviest: { ...set, label: 'heaviest logged set (not an estimate)' },
+            mostReps: set,
+            bestE1rm: e1rm,
+          });
+          continue;
+        }
+        if (better(s, prev.heaviest)) prev.heaviest = { ...set, label: 'heaviest logged set (not an estimate)' };
+        if (s.reps > prev.mostReps.reps || (s.reps === prev.mostReps.reps && better(s, prev.mostReps))) prev.mostReps = set;
+        if (e1rm !== null && (prev.bestE1rm === null || e1rm.value > prev.bestE1rm.value)) prev.bestE1rm = e1rm;
+      }
+    }
+  }
+  const records = [...lines.values()];
+  return {
+    domain: YOUR_DATA,
+    note: READ_NOTE,
+    exercise: input.exerciseName,
+    records,
+    totalSessions: sessionIds.size,
+    ...(records.some((r) => r.source === 'FitNotes import') ? { imported: IMPORTED_NOTE } : {}),
+  };
+}
+
+export interface RecentExerciseLine {
+  exerciseId: string;
+  name: string;
+  /** Sets as logged, in order: `100 kg × 8 @ RPE 8`, `warm-up 60 kg × 5`, `… (not counted: spotted)`. At most 12. */
+  sets: string[];
+}
+
+export interface RecentSessionLine {
+  sessionId: string;
+  date: string;
+  title: string | null;
+  gym: string | null;
+  source: 'app' | 'FitNotes import';
+  /** Start to finish, whole minutes; null when not recorded. */
+  minutes: number | null;
+  exercises: RecentExerciseLine[];
+}
+
+export interface RecentSessionsView {
+  domain: typeof YOUR_DATA;
+  note: string;
+  /** Newest first. */
+  sessions: RecentSessionLine[];
+  imported?: typeof IMPORTED_NOTE;
+}
+
+export const MAX_RECENT_SET_LINES = 12;
+
+function compactSet(s: HistorySet): string {
+  const xs = normaliseExclusions(s.exclusions);
+  const load = loadText(s.load, s.load?.convention ?? 'total');
+  const parts = [
+    s.setType === 'warmup' ? 'warm-up ' : s.setType === 'working' ? '' : `${s.setType} `,
+    s.reps === null ? load : `${load} × ${String(s.reps)}`,
+    s.rpe === null ? '' : ` @ RPE ${formatNumber(s.rpe)}`,
+    xs.length === 0 ? '' : ` (not counted: ${xs.map((x) => EXCLUSION_WORD[x]).join(', ')})`,
+  ];
+  return parts.join('');
+}
+
+/** `get_recent_sessions`: Ben's last finished workouts, newest first, with every exercise's sets as logged. Pure. */
+export function recentSessionsView(input: { sessions: readonly SessionAggregate[]; count: number; gymNames: Readonly<Record<string, string>> }): RecentSessionsView {
+  const ordered = input.sessions.filter((a) => isInHistory(a.session)).sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
+  const sessions: RecentSessionLine[] = [];
+  for (const agg of ordered) {
+    if (sessions.length >= input.count) break;
+    const exercises: RecentExerciseLine[] = [];
+    const seen = new Set<string>();
+    for (const ex of [...agg.exercises].sort((a, b) => a.order - b.order)) {
+      if (seen.has(ex.exerciseId)) continue;
+      seen.add(ex.exerciseId);
+      const sets = toHistorySessions(agg, ex.exerciseId).flatMap((g) => g.sets);
+      if (sets.length === 0) continue;
+      exercises.push({ exerciseId: ex.exerciseId, name: ex.exerciseName, sets: sets.slice(0, MAX_RECENT_SET_LINES).map(compactSet) });
+    }
+    if (exercises.length === 0) continue;
+    const ended = agg.session.endedAt;
+    const minutes = ended === null ? null : Math.max(0, Math.round((toMs(ended.utc) - toMs(agg.session.startedAt.utc)) / 60_000));
+    sessions.push({
+      sessionId: agg.session.id,
+      date: localDateOf(toMs(agg.session.startedAt.utc), agg.session.startedAt.tz),
+      title: agg.session.routineName,
+      gym: agg.session.gymId === null ? null : (input.gymNames[agg.session.gymId] ?? null),
+      source: agg.session.source === 'import' ? 'FitNotes import' : 'app',
+      minutes: agg.session.source === 'import' ? null : minutes,
+      exercises,
+    });
+  }
+  return { domain: YOUR_DATA, note: READ_NOTE, sessions, ...(sessions.some((x) => x.source === 'FitNotes import') ? { imported: IMPORTED_NOTE } : {}) };
+}
+
+// ---------------------------------------------------------------------------
 // Equipment
 
 export interface EquipmentItemLine {
@@ -367,6 +528,10 @@ export interface EquipmentView {
   /** True when the exercise needs no equipment (bodyweight). */
   bodyweight: boolean;
   items: EquipmentItemLine[];
+  /** (Coach v3) The whole gym at a glance, when no exercise was asked: `Dumbbells: 2–30 kg each`. */
+  summary?: string[];
+  /** (Coach v3) Ben's saved gyms, so another one can be read by name. */
+  savedGyms?: string[];
 }
 
 const LIST_ALL = 30;
@@ -397,17 +562,31 @@ export function equipmentView(input: {
   gymName: string;
   equipment: readonly EquipmentInstance[];
   exercise: (Pick<Exercise, 'name' | 'defaultLoadConvention' | 'compatibleEquipment'>) | null;
+  savedGyms?: readonly string[];
 }): EquipmentView {
   const available = input.equipment.filter((e) => e.availability === 'available');
-  const items = input.exercise === null ? available : equipmentForExercise(input.exercise, available);
+  const items = (input.exercise === null ? available : equipmentForExercise(input.exercise, available)).map(equipmentItemLine);
   return {
     domain: YOUR_DATA,
     note: READ_NOTE,
     gym: input.gymName,
     exercise: input.exercise?.name ?? null,
     bodyweight: input.exercise !== null && needsNoEquipment(input.exercise),
-    items: items.map(equipmentItemLine),
+    items,
+    ...(input.exercise === null ? { summary: gymSummaryLines(items) } : {}),
+    ...(input.savedGyms === undefined ? {} : { savedGyms: [...input.savedGyms] }),
   };
+}
+
+/** One line per item: `Dumbbells: 2–30 kg each`, `Cable stack: 5–90 kg`, `Assisted pull-up: assist 5–40 kg`. Pure. */
+export function gymSummaryLines(items: readonly EquipmentItemLine[]): string[] {
+  return items.map((i) => {
+    if (i.min === null || i.max === null) return `${i.name}: no loads`;
+    const range = i.min === i.max ? formatNumber(i.min) : `${formatNumber(i.min)}–${formatNumber(i.max)}`;
+    const each = i.convention === 'per_hand' ? ' each' : '';
+    const assist = i.convention === 'assistance' ? 'assist ' : '';
+    return `${i.name}: ${assist}${range} ${i.unit}${each}`;
+  });
 }
 
 // ---------------------------------------------------------------------------

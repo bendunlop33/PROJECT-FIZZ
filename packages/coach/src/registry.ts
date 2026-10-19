@@ -82,7 +82,45 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ALL,
     plainLabel: null,
     capabilitySection: 'read',
-    description: 'Equipment for an exercise at the current gym: unit, load convention, achievable loads, min and max.',
+    description:
+      'Equipment for an exercise at a gym: unit, load convention, achievable loads, min and max. exerciseId null: the whole gym, with a one-line summary per item. gymName: one of Ben’s saved gyms by name; null for the gym in context.',
+  },
+  {
+    // Coach v3 (ADR 0027): history reads, so the coach can answer from Ben's records instead of guessing.
+    name: 'get_exercise_records',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description:
+      'One exercise’s records per equipment item, unit and convention: the heaviest logged set, the set with the most reps, and the best estimated 1RM. An estimated 1RM is always an estimate: call it “est.” or “≈”, never a max he lifted.',
+  },
+  {
+    name: 'get_recent_sessions',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ALL,
+    plainLabel: null,
+    capabilitySection: 'read',
+    description: 'Ben’s last finished workouts (count, newest first): date, title, gym, minutes and every exercise’s sets as logged. FitNotes imports are his own history.',
+  },
+  {
+    // Coach v3 (Ben 18 Oct): a mid-workout turn starts light; this buys one deeper step when it's needed.
+    name: 'think_harder',
+    effect: 'read',
+    writes: [],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['workout'],
+    plainLabel: null,
+    capabilitySection: 'read',
+    description:
+      'Once per turn: your next step runs with more reasoning on Ben’s main model. Use it only when the answer needs real thought (a replan, conflicting history, pain with a load question); a quick change or a short answer doesn’t.',
   },
   {
     name: 'get_progression_targets',
@@ -118,30 +156,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Earlier coach actions with refs you can cite as [[ref]], and whether each still stands.',
   },
   {
-    name: 'adjust_pending_sets',
+    // Coach v3 (ADR 0027, Ben 18 Oct): one tool for today's live workout, in place of `adjust_pending_sets` and
+    // `add_exercise_today` (their records and Undo stay for earlier actions). Today only, because Ben asked (rule 3);
+    // otherwise the turn saves the call as an offer he accepts. Not CC10's structural kind: the plan he trains from
+    // next time stays a proposal (`propose_next_workout_change`).
+    name: 'edit_today',
     effect: 'versioned_update',
-    writes: ['pending_set_target'],
+    writes: ['pending_set_target', 'session_exercise'],
     needs: 'ben_request',
     structural: false,
     turnKinds: ['workout'],
-    plainLabel: "Change today's remaining sets",
+    plainLabel: "Change today's workout (exercises, sets and targets), with Undo",
     capabilitySection: 'when_you_ask',
     description:
-      "Change targets of today's pending sets (load, reps, target RPE; rpe null keeps it), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment. Ben's own target RPE always stays.",
-  },
-  {
-    // (12 Oct) Today only, because Ben asked (rule 3): applies at once with Undo. Not CC10's structural
-    // kind: that is the plan he trains from next time, which stays a proposal (`propose_next_workout_change`).
-    name: 'add_exercise_today',
-    effect: 'versioned_update',
-    writes: ['session_exercise'],
-    needs: 'ben_request',
-    structural: false,
-    turnKinds: ['workout'],
-    plainLabel: "Add an exercise to today's workout, with Undo",
-    capabilitySection: 'when_you_ask',
-    description:
-      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. Today only: if Ben names a future scope (next time, future sessions, his routine or template, every push day, permanently), use propose_next_workout_change instead and never this tool. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn.",
+      "Change today's live workout in one call, any mix of ops: `set` a pending set's target (load in the exercise's unit and convention, reps, target RPE; null keeps a value), `set_count` an exercise's working sets today (done ones included), `swap` an exercise's remaining sets to another exercise, `add` an exercise (exerciseId from YOUR DATA addable; sets, reps or workSeconds, targetRpe, optional position or superset partner; no loads: the app plans them from his history on this gym's equipment), `remove` an exercise's remaining sets, `move` an exercise (with its superset) after another or first (null). Done sets never change. The app snaps and bounds every load to the equipment, holds increases on pain, and refuses the whole call if a swap, add, removal or move can't be done. baseVersion: the workout's version; after a change, use the sessionVersion it returns. Today only: never for next time, his routine or template (use propose_next_workout_change). benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer he can accept.",
   },
   {
     // (14 Oct, PM decision pending Ben) Offered on every live-workout turn; applies at once with Undo only when
@@ -154,7 +182,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     turnKinds: ['workout'],
     plainLabel: "Rename today's workout, with Undo",
     capabilitySection: 'when_you_ask',
-    description: "Rename today's live workout to the name Ben asked for (baseVersion from the workout). Today's workout only: the routine it came from keeps its name.",
+    description: "Rename today's live workout to the name Ben asked for (baseVersion from the workout). Today's workout only: the routine it came from keeps its name. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer.",
   },
   {
     name: 'log_set',
@@ -248,7 +276,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Forget a saved memory Ben asked you to forget. It can be undone.',
   },
   {
-    // workout-builder BD1, §8.2: structure only (no load, no minutes); a draft Ben opens, starts or saves himself.
+    // workout-builder BD1, §8.2: a draft Ben opens, starts or saves himself. Coach v3: its length, focus and gym are the model's reading, checked by code.
     name: 'propose_workout',
     effect: 'propose',
     writes: ['workout_draft'],
@@ -258,7 +286,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Build a workout you ask for, as a draft you open, start or save',
     capabilitySection: 'when_you_ask',
     description:
-      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. For each exercise give the working `load` (and `topSet.load`) in the unit and convention listed for it in build.loadReferences, with a short `basis` (at most 60 characters): a reason in words with no numbers (the app shows the numbers); null when you have no opinion. The app checks, bounds and fits every load to the equipment; a load with no history of his own is shown as an estimate. No minutes: the app fits the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
+      'Build one workout session as a draft, only when Ben asks for a workout or session, or agrees to put a session you described earlier in this thread into the app, or asks to change the coach draft in context. Never for pain or soreness, advice, his history, or multi-week plans. When he does ask, build it rather than describing it in reply. Exercises by catalogueId from YOUR DATA build.usable only, in order, with working sets, a rep range (or workSeconds for timed exercises), targetRpe for the working sets, optional warm-ups, one optional top set, rest and supersets. For each exercise give the working `load` (and `topSet.load`) in the unit and convention listed for it in build.loadReferences, with a short `basis` (at most 60 characters): a reason in words with no numbers (the app shows the numbers); null when you have no opinion. The app checks, bounds and fits every load to the equipment; a load with no history of his own is shown as an estimate. Give `minutes` (15–180) when Ben asked for a length in this conversation ("make it 40" after a build is 40), `focus` for what he asked to train ("a shoulder workout" is shoulders), and `gymName` when he named one of his gyms in build.gyms ("my hotel gym"); null otherwise. The app checks each and fits the workout to the length. Stay within build.setBudget working sets. It only makes a draft; Ben starts or saves it himself.',
   },
   {
     // workout-builder v2.1 BD17, §8.4: one clarifying question card; at most 2 per build request, checked by code.
@@ -287,6 +315,13 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: "Add a general training rule (not a personal fact) to the playbook for Ben to review. It isn't used until he approves it.",
   },
 ];
+
+/**
+ * Coach v3 (ADR 0027, 18 Oct): tool names no turn offers any more. `edit_today` replaced them; their
+ * argument schemas, records and Undo stay for actions saved before it (and the built-in rule's
+ * change, which writes an `adjust_pending_sets` record).
+ */
+export const RETIRED_COACH_TOOLS: readonly CoachToolName[] = ['adjust_pending_sets', 'add_exercise_today'];
 
 /** The fixed `Never` section (§2.5): things that are not tools at all. */
 export const COACH_NEVER: readonly string[] = [
@@ -379,7 +414,7 @@ export interface TurnGate {
  * regex classifier kept missing Ben's wording ("can you repopulate the weights based on my max?"),
  * and a withheld tool made the coach say it had none. Rule 3 still holds: see `todayChangeAsked`.
  */
-export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['adjust_pending_sets', 'add_exercise_today', 'rename_workout']);
+export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['edit_today', 'rename_workout']);
 
 export interface WithheldTool {
   name: CoachToolName;
@@ -411,6 +446,8 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   // "Add a set to bench", "another set" are `change`; "put in some curls" is `add`, which also opens this
   // tool so the coach can add one more set when the exercise is already in today's workout.
   adjust_pending_sets: ['change', 'difficulty', 'add'],
+  // (Coach v3, 18 Oct) The one tool for today's workout: sets, difficulty, adds and swaps.
+  edit_today: ['change', 'difficulty', 'add'],
   // (12 Oct) "Add 3 sets of lateral raises", "put in some curls", "can we do some face pulls".
   add_exercise_today: ['add'],
   // A future add ("next time", "to every push day") is `structural` and opens only this tool. Review r3 S1:
@@ -444,7 +481,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
       if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
       if (TODAY_TOOLS.has(t.name) && g.kind === 'workout' && g.liveWorkout === true) return null;
       // An accepted offer only counts for today's sets (CA1).
-      return g.acceptedOffer && t.name === 'adjust_pending_sets' ? null : 'needs_request';
+      return g.acceptedOffer && (t.name === 'adjust_pending_sets' || t.name === 'edit_today') ? null : 'needs_request';
     case 'ben_pain_words':
       return g.benPainWords ? null : 'needs_pain_words';
     case 'ben_named_target':

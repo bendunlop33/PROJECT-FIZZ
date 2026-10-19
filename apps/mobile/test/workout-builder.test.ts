@@ -624,7 +624,7 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
     model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
     await ask(s, 'Can you make me a push session');
-    expect(model.requests[0]?.instructions).toContain('Never give minutes');
+    expect(model.requests[0]?.instructions).toContain('Give `minutes`, `focus` and `gymName`');
     expect(model.requests[0]?.instructions).toContain('build.loadReferences');
   });
   it('review r5 B2: the turn after a draft was built, "Your push session is ready in Workouts." is shown', async () => {
@@ -1312,6 +1312,19 @@ describe('review builder-v2 r5 B1u: the coach’s message on the card and in `Wh
     expect(p.coachDraft?.rationale).toBe('Then incline.');
     const coach = draftWhyView(p.coachDraft ?? { request: '', rationale: null, checks: [], fitMinutes: 0 }).find((x) => x.heading === 'COACH');
     expect(coach?.lines).toEqual(['Then incline.']);
+  });
+
+  it('Coach v3 (ADR 0027): a number checked against Ben’s history stays in the message, on the card and in Why', async () => {
+    const { s, gymId } = await benWithHistory();
+    model = new StepModel([pushStub(PUSH, 'You did 100 kg × 7 last time, so bench leads. You did 105×8 on Tuesday.'), () => replyWith('Here it is.')]);
+    const result = await ask(s, 'build me a 45-minute push session for this gym');
+    const rec = result.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_workout') throw new Error('no draft');
+    const card = await s.coachDrafts.card({ draftId: rec.detail.draftId, versionN: 1, gymId });
+    expect(card?.rationale).toBe('You did 100 kg × 7 last time, so bench leads.');
+    const p = await page(s, rec.detail.draftId, gymId);
+    const coach = draftWhyView(p.coachDraft ?? { request: '', rationale: null, checks: [], fitMinutes: 0 }).find((x) => x.heading === 'COACH');
+    expect(coach?.lines).toEqual(['You did 100 kg × 7 last time, so bench leads.']);
   });
 
   it('a message that is all numbers leaves no COACH section and no card text', async () => {

@@ -1,11 +1,30 @@
-import { checkCoachAdd, coachAddRowId, type CoachAddInput } from '@fizz/domain';
+import { checkCoachAdd, coachAddRowId, exercisesLooselyNamedIn, exercisesNamedIn, type CoachAddInput } from '@fizz/domain';
 import type { ActionDetail, SessionAggregate } from '@fizz/schemas';
+import type { AddableExercise } from './context';
 import { newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolResult } from './executors';
 
 /**
+ * Coach v3 (ADR 0027): the list of what can be added goes on every live-workout turn (no word
+ * gate), so it is kept short: about 60 entries (≈ 1.8k tokens).
+ */
+export const ADDABLE_CAP = 60;
+
+/**
+ * The first `cap` addable exercises, the ones Ben's words name (in full, then loosely) ahead of the
+ * rest, in the list's own order (by name). Pure; the words are data (rule 8).
+ */
+export function capAddable(list: readonly AddableExercise[], words: string, cap = ADDABLE_CAP): AddableExercise[] {
+  if (list.length <= cap) return [...list];
+  const named = list.map((a) => ({ exerciseId: a.exerciseId, exerciseName: a.name }));
+  const first = new Set([...exercisesNamedIn(words, named), ...exercisesLooselyNamedIn(words, named)]);
+  const keep = new Set([...list.filter((a) => first.has(a.exerciseId)), ...list.filter((a) => !first.has(a.exerciseId))].slice(0, cap).map((a) => a.exerciseId));
+  return list.filter((a) => keep.has(a.exerciseId));
+}
+
+/**
  * `add_exercise_today` (12 Oct; Ben: "Why can't the ChatGPT link create sets
- * in the app?"). Offered only in a workout turn whose words ask for it
- * (`add` / `change` request kinds, `registry.ts`). The domain check
+ * in the app?"). Offered on every live-workout turn with the list of what can
+ * be added (Coach v3); it applies only when Ben asked (`verifyAsked`). The domain check
  * (`checkCoachAdd`) validates the call against the workout's gym, pain flags
  * and Ben's exercises, plans loads from his history through the shared fit,
  * and builds the workout's own `add_exercise` command; the store runs it with

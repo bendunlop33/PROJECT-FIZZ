@@ -2,9 +2,10 @@ import { setNumbersText } from '@fizz/domain';
 import type { HiddenLine } from '@fizz/schemas';
 import { BUILD_ASK_LINE, BUILD_OFFER_LINE, claimsNoBuildTool, claimsWorkoutBuilt } from './build-ask';
 import { checkReplyClaims, isChangeClaim, type TurnLedger } from './claims';
+import { mergeFacts, collectFacts, verifiedRecordStatement, verifySentence, type NumberFacts } from './numbers';
+import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
 import { normaliseForClaims } from './text';
 import { EXERCISE_WORD } from './vocab';
-import { type RenderSurface, type RenderedAction } from './render';
 import { SentenceBuffer, splitSentences } from './sentences';
 import { resolveActionTokens } from './tokens';
 
@@ -60,13 +61,15 @@ function liveThisTurn(ledger: TurnLedger) {
   return ledger.entries.filter((e) => e.origin === 'this_turn' && e.record.status === 'committed' && e.record.undoneBy === null);
 }
 
-export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: RenderSurface): ClaimNote | null {
-  if (hiddenCount === 0) return null;
+export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: RenderSurface, numberHidden = 0): ClaimNote | null {
+  // Coach v3: a sentence hidden only for an unchecked number claimed no change, so the note says only that it was hidden.
+  if (hiddenCount === 0) return numberHidden === 0 ? null : { text: linesSaid(numberHidden), spoken: null };
+  hiddenCount += numberHidden;
   const live = liveThisTurn(ledger);
   if (live.length === 0) return { text: `Nothing changed · ${linesSaid(hiddenCount)}`, spoken: 'Nothing changed.' };
   if (surface === 'summary') return { text: `Only the changes shown were made · ${linesSaid(hiddenCount)}`, spoken: null };
   if (surface === 'slot') {
-    const numbers = live.flatMap((e) => (e.record.detail.kind === 'adjust_pending_sets' ? e.record.detail.exercises.flatMap((x) => x.changes.map((c) => c.setNumber)) : []));
+    const numbers = live.flatMap((e) => (e.record.detail.kind === 'adjust_pending_sets' || e.record.detail.kind === 'edit_today' ? e.record.detail.exercises.flatMap((x) => x.changes.map((c) => c.setNumber)) : []));
     if (numbers.length > 0) {
       const which = setNumbersText(numbers);
       return { text: `Only ${which} ${numbers.length === 1 ? 'was' : 'were'} changed.`, spoken: null };
@@ -122,7 +125,8 @@ export function needsNoChangeLine(replyText: string, ledger: TurnLedger, context
   if (statements.length === 0) return false;
   if (context.benAskedForChange === true) return true;
   const t = normaliseForClaims(statements.join(' '));
-  if (/\d/.test(t) || CHANGE_TOPIC.test(t)) return true;
+  // Coach v3 (ADR 0027): a number alone ("your best is 100 kg × 5") is no longer a change topic; numbers are checked against the facts instead.
+  if (CHANGE_TOPIC.test(t)) return true;
   if (statements.some((s) => isChangeClaim(s))) return true;
   return ledger.knownExerciseNames.some((n) => t.includes(n.toLowerCase()));
 }
@@ -220,6 +224,12 @@ export interface ReplyFilterOptions {
   toolOffered?: boolean;
   /** Review S3: the today-tools were offered (a live workout). A "no tool" sentence is then false (`claimsNoTodayTool`). */
   todayToolsOffered?: boolean;
+  /**
+   * Coach v3 (ADR 0027): the numbers the coach was given (context, tool outputs, Ben's words),
+   * read again for every sentence. A sentence with a number not among them (or in this turn's
+   * cards) is hidden (`unverified_number`). Absent: numbers aren't checked.
+   */
+  facts?: () => NumberFacts;
 }
 
 export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
@@ -228,7 +238,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
   const said: string[] = [];
   let askLineShown = false;
   let noTodayToolHidden = false;
-  const todayKinds = new Set(['adjust_pending_sets', 'add_exercise_today', 'rename_workout']);
+  const todayKinds = new Set(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout']);
 
   const process = (sentence: string): ReplyItem[] => {
     const ledger = options.ledger();
@@ -278,7 +288,16 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       // change-shaped sentence is checked against an empty ledger, i.e. dropped, whatever this
       // turn saved ("Also sorted your knee." beside a real bench change, review r6 B1).
       const claimLedger = options.claimsNeedToken === false ? ledger : { ...ledger, entries: ledger.entries.filter((e) => cited.has(e.record.actionId)) };
-      const check = checkReplyClaims(tokens.plainText, claimLedger, cited);
+      const raw = checkReplyClaims(tokens.plainText, claimLedger, cited);
+      const facts = options.facts === undefined ? null : factsWithCards(options.facts(), ledger, options.surface);
+      // Coach v3: a checked statement of a record or past result ("Your heaviest bench is 102.5 kg × 6") isn't a change claim.
+      const check: typeof raw = !raw.keep && raw.reason === 'no_action' && actions.length === 0 && facts !== null && verifiedRecordStatement(tokens.plainText, facts) ? { keep: true, claim: false, matchedActionIds: [] } : raw;
+      const numbers = check.keep && facts !== null ? verifySentence(tokens.plainText, facts) : ({ ok: true } as const);
+      if (!numbers.ok) {
+        hidden.push({ sentence: tokens.plainText, reason: 'unverified_number', detail: numbers.detail });
+        for (const a of actions) out.push({ kind: 'action_line', ref: a.ref, actionId: a.actionId, rendered: a.rendered });
+        return out;
+      }
       if (check.keep) {
         for (const seg of tokens.segments) {
           if (seg.kind === 'text') {
@@ -316,7 +335,8 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       return noTodayToolHidden;
     },
     note() {
-      const note = claimNoteFor(options.ledger(), hidden.length, options.surface);
+      const numberHidden = hidden.filter((h) => h.reason === 'unverified_number').length;
+      const note = claimNoteFor(options.ledger(), hidden.length - numberHidden, options.surface, numberHidden);
       if (note !== null) return note;
       const mode = options.noChangeLine ?? 'structural';
       const text = said.join(' ');
@@ -328,6 +348,12 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
       return line ? { text: NO_CHANGE_SAVED_LINE, spoken: null } : null;
     },
   };
+}
+
+/** The facts plus the text of every card this turn and earlier ones in the ledger (app text, from saved records). */
+function factsWithCards(facts: NumberFacts, ledger: TurnLedger, surface: RenderSurface): NumberFacts {
+  if (ledger.entries.length === 0) return facts;
+  return mergeFacts(facts, collectFacts(ledger.entries.map((e) => ({ text: renderActionResult(e.record, surface, { earlier: e.origin === 'earlier' }).text, setsDone: false }))));
 }
 
 /** Stamp drafts for storage (`HiddenLine`, Your data). */

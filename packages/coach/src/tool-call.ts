@@ -51,8 +51,13 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'propose_next_workout_change':
       return { sourceSessionId: call.args.sourceSessionId, sourceVersion: call.args.sourceVersion, changes: call.args.changes };
     case 'propose_workout':
-      // The message is explanation: a retry that only rewords it is the same workout.
-      return { exercises: call.args.exercises };
+      // The message is explanation: a retry that only rewords it is the same workout. A new length, focus or gym isn't.
+      return {
+        exercises: call.args.exercises,
+        ...(call.args.minutes == null ? {} : { minutes: call.args.minutes }),
+        ...(call.args.focus == null ? {} : { focus: call.args.focus }),
+        ...(call.args.gymName == null ? {} : { gymName: call.args.gymName.trim().toLowerCase() }),
+      };
     case 'ask_build_question':
       return { topic: call.args.topic, question: call.args.question.trim().toLowerCase(), answers: call.args.answers };
     case 'log_set':
@@ -60,9 +65,13 @@ export function semanticArgs(call: CoachToolCall): unknown {
       return call.args;
     case 'rename_workout':
       return { baseVersion: call.args.baseVersion, name: call.args.name.trim() };
+    case 'edit_today':
+      // Coach v3: the reason and the ask claim are explanation; the ops and the version are the change.
+      return { baseVersion: call.args.baseVersion, ops: call.args.ops };
     case 'add_exercise_today':
       // The reason is explanation: a retry that only rewords it adds the same exercise.
-      return { ...call.args, reason: undefined };
+      // Coach v3: so is the ask claim (`benAsked`, `benQuote`): who asked doesn't change what is added.
+      return { ...call.args, reason: undefined, benAsked: undefined, benQuote: undefined };
     case 'set_pain_flag':
       return { exerciseIds: [...new Set(call.args.exerciseIds)].sort(), area: call.args.area };
     case 'save_memory':
@@ -74,11 +83,16 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':
-    case 'get_gym_equipment':
     case 'get_progression_targets':
     case 'get_substitutions':
     case 'get_recent_actions':
+    case 'get_exercise_records':
+    case 'get_recent_sessions':
       return call.args;
+    case 'get_gym_equipment':
+      return { exerciseId: call.args.exerciseId, gymName: call.args.gymName?.trim().toLowerCase() ?? null };
+    case 'think_harder':
+      return {};
   }
 }
 
@@ -112,6 +126,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'forget_memory':
     case 'adjust_pending_sets':
     case 'add_exercise_today':
+    case 'edit_today':
     case 'rename_workout':
     case 'log_set':
     case 'correct_set':
@@ -126,6 +141,9 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'get_progression_targets':
     case 'get_substitutions':
     case 'get_recent_actions':
+    case 'get_exercise_records':
+    case 'get_recent_sessions':
+    case 'think_harder':
       return [];
   }
 }

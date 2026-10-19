@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { exerciseHistoryView, IMPORTED_NOTE } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { SessionAggregate } from '@fizz/schemas';
-import { createAdjustExecutor, createSessionReadExecutor, createStoreExecutors, storeTodayTargets, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
+import { createSessionReadExecutor, createStoreExecutors, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
+import { acceptEditOffer, createEditTodayExecutor } from '../src/edit-today';
 import { COACH_TOOLS } from '../src/registry';
 import { createRenameExecutor } from '../src/rename';
 import { asksToRename, classifyBenRequest, futureScopeOnly, mentionsAdding, mentionsTodaysSets } from '../src/request';
@@ -20,7 +21,6 @@ import { at, call, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, w
  */
 
 const nb = (s: string): string => s.replace(/\u00a0/g, ' ');
-const BENCH_EX = id(10);
 /** Ben's exact words in build 151. */
 const BEN_151 = 'can you repopulate the weights based on my maximum working weight recently?';
 
@@ -46,9 +46,14 @@ function liveExecutors(s: Store): CoachExecutors {
   return {
     ...createStoreExecutors({ store: s.repos.coach, exercises: { exerciseName: () => Promise.resolve(null) }, sessionId: SESSION }),
     get_active_session: createSessionReadExecutor({ loadSession: load, gymName: 'Main Gym' }),
-    adjust_pending_sets: createAdjustExecutor({ store: s.repos.coach, targets: storeTodayTargets(s.repos.coach), loadSession: load, painFlags: () => Promise.resolve([]), sessionPainUnspecified: false, gymName: 'Main Gym' }),
+    edit_today: createEditTodayExecutor({ store: s.repos.coach, loadSession: load, painFlags: () => Promise.resolve([]), sessionPainUnspecified: false, gymName: 'Main Gym' }),
     ...createRenameExecutor({ store: s.repos.coach, loadSession: load }),
   };
+}
+
+/** The turn's ports with Ben's accept of an offered edit wired (Coach v3: applies the stored offer, no model call). */
+function livePorts(s: Store, model: ScriptedCoachModel) {
+  return { ...ports(s, model, liveExecutors(s)), acceptOffer: acceptEditOffer.bind(null, { store: s.repos.coach, loadSession: () => s.repos.sessions.get(SESSION), painFlags: () => Promise.resolve([]), sessionPainUnspecified: false }) };
 }
 
 const ctx = (session: SessionAggregate) => ({ session, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] });
@@ -56,7 +61,10 @@ const ctx = (session: SessionAggregate) => ({ session, gymName: 'Main Gym', pain
 /** Bench sets 3–4 to 102 kg (snaps to 102.5 on the bar). */
 const raise = (baseVersion = 7) => ({
   baseVersion,
-  exercises: [{ sessionExerciseId: BENCH_EX, sets: [{ setId: id(102), target: { load: kg(102), reps: null } }, { setId: id(103), target: { load: kg(102), reps: null } }], addSet: null, removeSetId: null }],
+  ops: [
+    { op: 'set', setId: id(102), target: { load: kg(102), reps: null } },
+    { op: 'set', setId: id(103), target: { load: kg(102), reps: null } },
+  ],
   reason: 'Your recent best was 105 × 6.',
 });
 
@@ -71,7 +79,7 @@ describe('build 151: the today-tools are offered on every live-workout turn', ()
     expect(mentionsTodaysSets('Recalculate my targets')).toBe(true);
   });
 
-  it('the gate offers adjust_pending_sets, add_exercise_today and rename_workout live, whatever the words; not after the workout', () => {
+  it('the gate offers edit_today and rename_workout live, whatever the words; not after the workout', () => {
     const live = gateFor({ kind: 'workout', input: words('How long have I been going?'), previousOffer: null, structuralSignals: [], liveWorkout: true });
     expect(live.liveWorkout).toBe(true);
     expect(live.benAskedForChange).toBe(false);
@@ -82,10 +90,10 @@ describe('build 151: the today-tools are offered on every live-workout turn', ()
   it("Ben's exact wording: the tool is offered unforced, the call applies at once with Undo, snapped to the bar", async () => {
     const s = await store();
     await saved(s, workout());
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', raise()), { type: 'completed' }], reply('Based on your recent best.')]);
+    const model = new ScriptedCoachModel([[call('edit_today', raise()), { type: 'completed' }], reply('Based on your recent best.')]);
     const r = await runCoachTurn(request({ kind: 'workout', input: words(BEN_151), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
     const offered = model.offeredTools()[0] ?? [];
-    expect(offered).toEqual(expect.arrayContaining(['adjust_pending_sets', 'rename_workout']));
+    expect(offered).toEqual(expect.arrayContaining(['edit_today', 'rename_workout']));
     expect(model.requests[0]?.toolChoice).toBe('required');
     expect(model.requests[0]?.instructions).toContain(liveWorkoutInstructions(false));
     expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', 'Changed sets 3–4 to 102.5 kg × 6–8 (targets).']]);
@@ -101,31 +109,53 @@ describe('build 151: the today-tools are offered on every live-workout turn', ()
     expect((await s.repos.sessions.get(SESSION))?.sets.find((x) => x.id === id(103))?.planned.load).toEqual(kg(100));
   });
 
-  it('an unprompted call is never applied: it becomes an offer card Ben accepts with Adjust', async () => {
+  it('an unprompted call is never applied: it is saved as an offer card; Adjust applies exactly that, with no model call', async () => {
     const s = await store();
     await saved(s, workout());
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', raise()), { type: 'completed' }], reply('Your last sets looked easy. Want me to adjust?')]);
-    const r = await runCoachTurn(request({ kind: 'workout', input: words('That felt smooth'), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
-    expect(model.offeredTools()[0]).toContain('adjust_pending_sets');
-    expect(r.cards).toEqual([]);
+    const model = new ScriptedCoachModel([[call('edit_today', raise()), { type: 'completed' }], reply('Your last sets looked easy. Want me to adjust?')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('That felt smooth'), context: ctx(workout()) }), livePorts(s, model));
+    expect(model.offeredTools()[0]).toContain('edit_today');
+    expect(r.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['proposed', 'Suggested: sets 3–4 at 102.5 kg × 6–8 (targets). Not applied.']]);
     expect(r.offer).toBe('adjust_today');
-    expect(r.toolLog.map((l) => [l.tool, l.outcome])).toEqual([['adjust_pending_sets', 'proposed']]);
-    expect(await s.repos.coach.listTurnActions(r.turnId)).toEqual([]);
+    expect(r.toolLog.map((l) => [l.tool, l.outcome])).toEqual([['edit_today', 'proposed']]);
     expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(7);
     // The model was told it wasn't applied.
     expect(JSON.stringify(model.requests[1]?.input)).toContain('not_applied');
 
-    // Ben taps Adjust: now it applies, with Undo.
-    const second = new ScriptedCoachModel([[call('adjust_pending_sets', raise()), { type: 'completed' }], reply('Done.')]);
-    const r2 = await runCoachTurn(request({ kind: 'workout', threadId: r.threadId, input: { kind: 'accept_offer', offer: 'adjust_today' }, context: ctx(workout()) }), ports(s, second, liveExecutors(s)));
-    expect(r2.cards.map((c) => c.record.status)).toEqual(['committed']);
+    // Ben taps Adjust: the stored offer applies as it was shown, with Undo; the model isn't asked again.
+    const second = new ScriptedCoachModel([reply('This should never be sent.')]);
+    const r2 = await runCoachTurn(request({ kind: 'workout', threadId: r.threadId, input: { kind: 'accept_offer', offer: 'adjust_today' }, context: ctx(workout()) }), livePorts(s, second));
+    expect(second.requests).toHaveLength(0);
+    expect(r2.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['committed', 'Changed sets 3–4 to 102.5 kg × 6–8 (targets).']]);
+    expect(r2.cards[0]?.record.detail).toMatchObject({ kind: 'edit_today', proposalId: r.cards[0]?.record.actionId });
     expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(8);
+    // A double tap applies once.
+    const third = await runCoachTurn(request({ kind: 'workout', threadId: r.threadId, input: { kind: 'accept_offer', offer: 'adjust_today' }, context: ctx(workout()) }), livePorts(s, new ScriptedCoachModel([])));
+    expect(third.toolLog.map((l) => l.outcome)).toEqual([]);
+    expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(8);
+    const actionId = r2.cards[0]?.record.actionId ?? '';
+    expect((await undoCoachAction(s.repos.coach, { ownerId: OWNER, actionId, opId: undoOpId(actionId), now: at(900) })).result.status).toBe('written');
+    expect((await s.repos.sessions.get(SESSION))?.sets.find((x) => x.id === id(103))?.planned.load).toEqual(kg(100));
+  });
+
+  it('an offer accepted after the workout moved on is refused as stale, never applied to the newer workout (rule 5)', async () => {
+    const s = await store();
+    await saved(s, workout());
+    const model = new ScriptedCoachModel([[call('edit_today', raise()), { type: 'completed' }], reply('Want me to adjust?')]);
+    const r = await runCoachTurn(request({ kind: 'workout', input: words('That felt smooth'), context: ctx(workout()) }), livePorts(s, model));
+    expect(r.cards.map((c) => c.record.status)).toEqual(['proposed']);
+    // Ben logs a set before tapping Adjust.
+    const now = (await s.repos.sessions.get(SESSION)) as SessionAggregate;
+    await s.repos.sessions.save({ ...now, session: { ...now.session, version: 8 } }, now.revision);
+    const r2 = await runCoachTurn(request({ kind: 'workout', threadId: r.threadId, input: { kind: 'accept_offer', offer: 'adjust_today' }, context: ctx(workout(8)) }), livePorts(s, new ScriptedCoachModel([])));
+    expect(r2.cards.map((c) => [c.record.status, c.rendered.text])).toEqual([['stale', "Couldn't change today's workout: your workout moved on. Nothing changed."]]);
+    expect((await s.repos.sessions.get(SESSION))?.sets.find((x) => x.id === id(103))?.planned.load).toEqual(kg(100));
   });
 
   it('a stale base version is refused, never applied to the newer workout (rule 5)', async () => {
     const s = await store();
     await saved(s, workout(8));
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', raise(7)), { type: 'completed' }], reply('Okay.')]);
+    const model = new ScriptedCoachModel([[call('edit_today', raise(7)), { type: 'completed' }], reply('Okay.')]);
     const r = await runCoachTurn(request({ kind: 'workout', input: words(BEN_151), context: ctx(workout(8)) }), ports(s, model, liveExecutors(s)));
     expect(r.cards.map((c) => c.record.status)).toEqual(['stale']);
     expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(8);
@@ -235,11 +265,11 @@ describe('review fixes: scope, accepted offers, rename claims, "no tool" lines, 
   it('B1: "make bench heavier next time" in a live workout is refused, not applied and not offered', async () => {
     const s = await store();
     await saved(s, workout());
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', raise()), { type: 'completed' }], reply('Noted for next time.')]);
+    const model = new ScriptedCoachModel([[call('edit_today', raise()), { type: 'completed' }], reply('Noted for next time.')]);
     const r = await runCoachTurn(request({ kind: 'workout', input: words('make bench heavier next time'), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
     expect(r.cards).toEqual([]);
     expect(r.offer).toBeNull();
-    expect(r.toolLog.map((l) => [l.tool, l.outcome])).toEqual([['adjust_pending_sets', 'not_allowed']]);
+    expect(r.toolLog.map((l) => [l.tool, l.outcome])).toEqual([['edit_today', 'not_allowed']]);
     expect(JSON.stringify(model.requests[1]?.input)).toContain(JSON.stringify(FUTURE_SCOPE_LINE).slice(1, 30));
     expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(7);
   });
@@ -285,18 +315,18 @@ describe('review fixes: scope, accepted offers, rename claims, "no tool" lines, 
     expect(r.offer).toBe('adjust_today');
   });
 
-  it('S5: add_exercise_today is offered only with the list of what can be added', async () => {
+  it('S5: adding is named to the coach only with the list of what can be added (Coach v3: one tool, edit_today)', async () => {
     expect(mentionsAdding('Can I also do some curls?')).toBe(true);
     const s = await store();
     await saved(s, workout());
     const without = new ScriptedCoachModel([reply('Sure.')]);
     await runCoachTurn(request({ kind: 'workout', input: words('Bench felt good'), context: ctx(workout()) }), ports(s, without, liveExecutors(s)));
-    expect(without.offeredTools()[0]).not.toContain('add_exercise_today');
-    expect(without.requests[0]?.instructions).not.toContain('add_exercise_today');
+    expect(without.offeredTools()[0]).toContain('edit_today');
+    expect(without.requests[0]?.instructions).toContain(liveWorkoutInstructions(false));
     const withList = new ScriptedCoachModel([reply('Sure.')]);
     const listed = { ...ctx(workout()), addable: [{ exerciseId: 'curl', name: 'Curl', equipment: 'dumbbell', measured: 'reps' as const }] };
-    await runCoachTurn(request({ kind: 'workout', input: words('Can I also do some curls?'), context: listed }), ports(s, withList, { ...liveExecutors(s), add_exercise_today: () => Promise.reject(new Error('not run')) }));
-    expect(withList.offeredTools()[0]).toContain('add_exercise_today');
+    await runCoachTurn(request({ kind: 'workout', input: words('Can I also do some curls?'), context: listed }), ports(s, withList, liveExecutors(s)));
+    expect(withList.requests[0]?.instructions).toContain(liveWorkoutInstructions(true));
   });
 
   it('S6: questions for information are not requests, so a change the coach raises is offered', async () => {
@@ -308,9 +338,10 @@ describe('review fixes: scope, accepted offers, rename claims, "no tool" lines, 
     expect(g.benAskedForChange).toBe(false);
     const s = await store();
     await saved(s, workout());
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', raise()), { type: 'completed' }], reply('You did 100 kg.')]);
+    const model = new ScriptedCoachModel([[call('edit_today', raise()), { type: 'completed' }], reply('You did 100 kg.')]);
     const r = await runCoachTurn(request({ kind: 'workout', input: words('What weight did I do last week?'), context: ctx(workout()) }), ports(s, model, liveExecutors(s)));
-    expect(r.cards).toEqual([]);
+    // Saved as an offer (Coach v3), never applied.
+    expect(r.cards.map((c) => c.record.status)).toEqual(['proposed']);
     expect(r.offer).toBe('adjust_today');
     expect((await s.repos.sessions.get(SESSION))?.session.version).toBe(7);
   });

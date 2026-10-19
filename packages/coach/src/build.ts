@@ -16,6 +16,8 @@ import {
   leftOutCount,
   newWorkoutDraft,
   wordsOnlyMessage,
+  checkCoachClaims,
+  coachSentences,
   type KnownPreferences,
   type LoadReferences,
   type QuestionContext,
@@ -23,6 +25,8 @@ import {
 } from '@fizz/domain';
 import { BUILD_LIMITS, muscleGroupOf, type ActionDetail, type BuildCheck, type BuildDay, type BuildFocus, type DraftPlan, type GuardNote, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
 import { isChangeClaim } from './claims';
+import { classifyBenRequest, requestHas, revisesDraft } from './request';
+import { collectFacts, mergeFacts, verifySentence, withoutNumbers, type NumberFacts } from './numbers';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
 
 /**
@@ -54,6 +58,23 @@ export interface BuildRequest {
   gymId: string | null;
   gymName: string | null;
   origin: 'chip' | 'card' | 'text' | 'voice';
+  /**
+   * (Coach v3) A length Ben stated outright: the Build card's chip, or a length with a time word in
+   * his newest message ("45 min"). It always wins over the model's `minutes`. Absent: none.
+   */
+  minutesFromBen?: number | null;
+  /** (Coach v3) His newest message's revision of the length, if it is one (`lengthRevision`: "make it 40" → [40]). */
+  benNumbers?: readonly number[];
+  /** (Coach v3) The focus came from the Build card's chips: the model's `focus` doesn't change it. */
+  focusFromChips?: boolean;
+}
+
+/** (Coach v3) A gym the build can be checked at: its context for the checks and its equipment hash. */
+export interface BuildGym {
+  gymId: string | null;
+  gymName: string | null;
+  checkContext: BuildDeps['checkContext'];
+  equipmentVersion: string;
 }
 
 /** One exercise the coach may use (the selected gym's usable list, BD5). */
@@ -69,6 +90,8 @@ export interface UsableExercise {
 export interface BuildContextView {
   request: { quote: string; minutes: number; focus: BuildFocus; origin: BuildRequest['origin']; /** (F19) The split day, its body parts and main lift (Ben's or recommended). */ day?: { name: string; bodyParts: string[]; mainLift: string | null } };
   gym: { name: string; typicalEquipment: boolean } | null;
+  /** (Coach v3) Ben's saved gyms by name: `propose_workout`'s `gymName` is one of these. */
+  gyms?: string[];
   usable: UsableExercise[];
   /** Items marked busy today (none until the gym's `Busy today` exists). */
   busyToday: string[];
@@ -166,6 +189,10 @@ export interface BuildDeps {
   equipmentVersion: string;
   /** (v2, BD17) The question checks' inputs; absent: `ask_build_question` has no executor (never offered). */
   questions?: { known: KnownPreferences; context: QuestionContext; day: { id: string; name: string } | null };
+  /** (Coach v3) Ben's saved gyms by name (`build.gyms`), for the refusal line. */
+  gyms?: readonly string[];
+  /** (Coach v3) Another saved gym the model named (`gymName`); null when none matches. */
+  gymFor?: (name: string) => Promise<BuildGym | null>;
 }
 
 /**
@@ -266,14 +293,164 @@ function linesOf(previous: DraftPlan | null, plan: DraftPlan, nameOf: (id: strin
 }
 
 /**
- * The coach's message after the claim check (§7; review r5 B1u): at most 240
+ * The coach's message after the claim check (§7; review r5 B1u): at most 600 (Coach v3; was 240)
  * characters; a sentence claiming a change, or with any number, number word,
  * max/record claim or praise (`checkCoachWords`, the load-note rule), is
  * dropped. Sentences split without breaking decimals or `est.`.
  */
-export function checkedRationale(message: string): string | null {
+export function checkedRationale(message: string, facts?: NumberFacts): string | null {
   const t = message.replace(/\s+/g, ' ').trim().slice(0, BUILD_LIMITS.messageMax);
-  return wordsOnlyMessage(t, (x) => !isChangeClaim(x));
+  if (facts === undefined) return wordsOnlyMessage(t, (x) => !isChangeClaim(x));
+  // Coach v3 (ADR 0027): numbers may stay when each one is in the facts (the draft's own numbers, Ben's words, what the coach read).
+  // A sentence describing the draft's numbers ("Presses at 22.5 kg each for 8–10") isn't a change claim; its words are checked without them.
+  const kept = coachSentences(t).filter((x) => checkCoachClaims(x) && !isChangeClaim(withoutNumbers(x)) && verifySentence(x, facts).ok);
+  return kept.length === 0 ? null : kept.join(' ');
+}
+
+/** (Coach v3) The facts a draft's message is checked against: the turn's, plus the checked plan, its length and Ben's request. */
+export function draftFacts(turn: NumberFacts, plan: DraftPlan | null, minutes: number, requestText: string): NumberFacts {
+  return mergeFacts(turn, collectFacts([JSON.stringify(plan), String(minutes), requestText]));
+}
+
+/** A gym name reduced for matching: lower case, letters and digits, no "the", "my" or a trailing "gym". */
+export function gymNameCore(name: string): string {
+  const words = name
+    .toLowerCase()
+    .replace(/[’']/g, '')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 0 && w !== 'the' && w !== 'my');
+  if (words.length > 1 && words.at(-1) === 'gym') words.pop();
+  return words.join(' ');
+}
+
+/** (Coach v3) Do two gym names mean the same saved gym ("Hotel gym" and "hotel")? Pure. */
+export function sameGymName(a: string, b: string): boolean {
+  const x = gymNameCore(a);
+  return x !== '' && x === gymNameCore(b);
+}
+
+/**
+ * (Coach v3) The saved gym a name means: the one with the same name ("hotel gym" → "Hotel gym"),
+ * else the only one whose name has all its words ("Hotel gym" → "Hotel · Lisbon"). Null: none, or
+ * more than one. Pure.
+ */
+export function savedGymFor(name: string, saved: readonly string[]): string | null {
+  const same = saved.filter((n) => sameGymName(n, name));
+  if (same.length === 1) return same[0] ?? null;
+  if (same.length > 1) return null;
+  const want = gymNameCore(name).split(' ').filter((w) => w !== '' && w !== 'gym');
+  if (want.length === 0) return null;
+  const hits = saved.filter((n) => {
+    const has = new Set(gymNameCore(n).split(' '));
+    return want.every((w) => has.has(w));
+  });
+  return hits.length === 1 ? (hits[0] ?? null) : null;
+}
+
+/**
+ * (Coach v3) The saved gym Ben's words name, newest message first, or null. A name counts when its
+ * words appear in a row: the whole name ("Main Gym", "Hotel · Lisbon"), or one of its words with
+ * "gym" after it ("my hotel gym" names "Hotel" and "Hotel · Lisbon"). One-word names need "gym"
+ * ("home" alone never names "Home"). Only a name no other saved gym shares counts. Pure; the
+ * words are data (rule 8).
+ */
+export function gymNamedIn(texts: readonly string[], names: readonly string[]): string | null {
+  const said = (t: string): string => ` ${t.toLowerCase().replace(/[’']/g, '').split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 0).join(' ')} `;
+  for (const text of texts) {
+    const t = said(text);
+    const hits = names.filter((n) => {
+      const core = gymNameCore(n);
+      if (core === '') return false;
+      const full = said(n).trim();
+      return t.includes(` ${core} gym `) || (full.includes(' ') && t.includes(` ${full} `)) || core.split(' ').some((w) => w.length > 2 && t.includes(` ${w} gym `));
+    });
+    if (hits.length === 1) return hits[0] ?? null;
+  }
+  return null;
+}
+
+/** Fed back when the model names a gym Ben hasn't saved. Nothing is built. */
+export function unknownGymLine(name: string, gyms: readonly string[]): string {
+  const list = gyms.length === 0 ? 'none saved' : gyms.map((g) => `"${g}"`).join(', ');
+  return `Not built: no saved gym called "${name.slice(0, 60)}". Saved gyms: ${list}. Use one of them, or null for the selected gym.`;
+}
+
+/** Bare numbers that could be a length (15–180): no unit after them ("make it 40"), not "3 sets", "20 kg", "8 reps". */
+export function bareNumbers(text: string): number[] {
+  const out: number[] = [];
+  const t = text.toLowerCase();
+  for (const m of t.matchAll(/(?<![\d.,×x@+-])(\d{2,3})(?!\d|[.,]\d)(?!\s*(?:kg|kgs|kilos?|lbs?|pounds?|s\b|secs?|seconds?|reps?|sets?|x\b|×|%|m\b|km|mi\b|k\b|cm|rpe|min|mins|minutes?|h\b|hrs?|hours?|th\b|st\b|nd\b|rd\b|each|per))/g)) {
+    const n = Number(m[1]);
+    if (n >= 15 && n <= 180) out.push(n);
+  }
+  return out;
+}
+
+/**
+ * (Coach v3 review S2) A bare number in Ben's newest message that revises the length: the whole
+ * message is a short revision ("make it 40", "40 instead", "only 45 today", "40?") or it says
+ * "make it 40", "40 instead", "cut it to 40". A number elsewhere in a sentence ("work up to 140 on
+ * squat", "hotel room 115") is not a length. Null when there's none, or more than one number. Pure.
+ */
+export function lengthRevision(text: string): number | null {
+  const bare = bareNumbers(text);
+  if (bare.length !== 1) return null;
+  const n = String(bare[0]);
+  const t = text.toLowerCase().replace(/[’]/g, "'").replace(/[.!?,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const lead = String.raw`(?:(?:ok(?:ay)?|actually|hmm|and|but|so|can you|could you|please|just|only|let's|lets|maybe|no|yes|yeah)\s+)*`;
+  const verb = String.raw`(?:(?:make|keep) (?:it|that|this|the (?:workout|session|draft))|do|go|try|(?:cut|shorten|change|trim|drop) (?:it|that|this)(?: down)? to)?`;
+  const tail = String.raw`(?:\s+(?:instead|please|then|tops|max(?:imum)?|today|only|is fine|works))*`;
+  if (new RegExp(String.raw`^${lead}${verb}\s*(?:to\s+)?${n}${tail}$`).test(t)) return bare[0] ?? null;
+  if (new RegExp(String.raw`\b(?:(?:make|keep) (?:it|that|this|the (?:workout|session|draft))|(?:cut|shorten|change|trim|drop) (?:it|that|this)(?: down)? to) ${n}\b`).test(t)) return bare[0] ?? null;
+  if (new RegExp(String.raw`\b${n} instead\b`).test(t)) return bare[0] ?? null;
+  return null;
+}
+
+/** How far back Ben's earlier messages can still be part of the build he is asking about (review S6). */
+export const BUILD_CHAIN_MAX_MESSAGES = 6;
+export const BUILD_CHAIN_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * (Coach v3 review S6) Ben's earlier words that belong to the build he is asking about now, newest
+ * first: when his newest message changes or follows a build ("make it 40", "hotel gym instead"),
+ * his messages back to and including the request that started it, within the last
+ * `BUILD_CHAIN_MAX_MESSAGES` and `BUILD_CHAIN_MAX_AGE_MS`. A new build request of its own ("build
+ * me a leg day") starts fresh: a gym named in an older request doesn't steer it. Pure.
+ */
+export function buildChainWords(said: string, earlier: readonly { text: string; atMs: number }[], nowMs: number): string[] {
+  const asksBuild = (t: string): boolean => requestHas(classifyBenRequest(t, 'general'), 'build');
+  if (asksBuild(said) && !revisesDraft(said) && lengthRevision(said) === null) return [];
+  const out: string[] = [];
+  for (const m of earlier.slice(0, BUILD_CHAIN_MAX_MESSAGES)) {
+    if (nowMs - m.atMs > BUILD_CHAIN_MAX_AGE_MS) break;
+    out.push(m.text);
+    if (asksBuild(m.text)) return out;
+  }
+  return [];
+}
+
+/**
+ * (Coach v3, Ben 18 Oct: "make it 40") The draft's length. A length Ben stated outright wins; then
+ * the model's reading, unless Ben's newest message revises the length with a bare number that isn't
+ * the model's ("make it 40": his literal number wins; review S2: only a revision); then the request's own (his earlier words, the draft, his
+ * usual length). Stepped to 5, 15–180. Pure.
+ */
+export function buildMinutesFor(request: Pick<BuildRequest, 'minutes' | 'minutesFromBen' | 'benNumbers'>, modelMinutes: number | null | undefined): { minutes: number; by: 'ben' | 'coach' | 'request' } {
+  const step = (n: number): number => Math.min(180, Math.max(15, Math.round(n / 5) * 5));
+  if (request.minutesFromBen != null) return { minutes: step(request.minutesFromBen), by: 'ben' };
+  if (modelMinutes != null) {
+    const bare = request.benNumbers ?? [];
+    const only = bare.length === 1 ? bare[0] : undefined;
+    if (only !== undefined && only !== modelMinutes) return { minutes: step(only), by: 'ben' };
+    return { minutes: step(modelMinutes), by: 'coach' };
+  }
+  return { minutes: request.minutes, by: 'request' };
+}
+
+/** (Coach v3) The draft's focus: the Build card's chip, else the model's reading, else the request's. Pure. */
+export function buildFocusFor(request: Pick<BuildRequest, 'focus' | 'focusFromChips'>, modelFocus: BuildFocus | null | undefined): BuildFocus {
+  if (request.focusFromChips === true || modelFocus == null || modelFocus === 'split_day') return request.focus;
+  return modelFocus;
 }
 
 /** The tool output for a second build in one turn (review S2). */
@@ -288,11 +465,22 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
     const args = call.args;
     const previous = deps.draft === null ? null : currentDraftVersion(deps.draft).plan;
     const draftId = deps.draft?.id ?? coachDraftIdFor(ctx.opId);
-    const check = checkWorkoutProposal(args, await deps.checkContext(previous, ctx.opId, args.exercises.map((e) => e.catalogueId)));
-    const name = draftName(deps.request.focus, deps.request.minutes, deps.request.day?.name ?? null);
+    // Coach v3: the gym, length and focus are the model's reading of the conversation, checked here.
+    let gym: BuildGym = { gymId: deps.request.gymId, gymName: deps.request.gymName, checkContext: deps.checkContext, equipmentVersion: deps.equipmentVersion };
+    if (args.gymName != null) {
+      const other = deps.gymFor === undefined ? null : await deps.gymFor(args.gymName);
+      const same = deps.request.gymName !== null && (other === null ? sameGymName(args.gymName, deps.request.gymName) : other.gymId === deps.request.gymId);
+      if (!same && other === null) return { kind: 'refused', line: unknownGymLine(args.gymName, deps.gyms ?? []) };
+      if (!same && other !== null) gym = other;
+    }
+    const minutes = buildMinutesFor(deps.request, args.minutes).minutes;
+    const focus = buildFocusFor(deps.request, args.focus);
+    const day = focus === deps.request.focus ? (deps.request.day ?? null) : null;
+    const check = checkWorkoutProposal(args, await gym.checkContext(previous, ctx.opId, args.exercises.map((e) => e.catalogueId)));
+    const name = draftName(focus, minutes, day?.name ?? null);
     const parentN = deps.draft?.currentVersion ?? null;
-    const rationale = checkedRationale(args.message);
-    const base = { kind: 'build_workout' as const, draftId, name, gymName: deps.request.gymName?.slice(0, 120) ?? null };
+    const rationale = checkedRationale(args.message, ctx.facts === undefined ? undefined : draftFacts(ctx.facts, check.plan, minutes, deps.request.text));
+    const base = { kind: 'build_workout' as const, draftId, name, gymName: gym.gymName?.slice(0, 120) ?? null };
     const record = async (status: 'rejected' | 'stale', failure: string): Promise<ToolResult> => {
       const detail: ActionDetail = { ...base, versionN: (parentN ?? 0) + 1, parentN, exerciseCount: 0, leftOut: leftOutCount(check.checks), lines: [] };
       const r = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord(ctx, detail, { status, failure, guardNotes: guardNotesOf(check.checks), reason: rationale }) });
@@ -307,14 +495,15 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
       status: 'current',
       actionId: actionIdFor(ctx.opId),
       turnId: ctx.turnId,
-      request: { text: deps.request.text.slice(0, 4000), minutes: deps.request.minutes, focus: deps.request.focus, gymId: deps.request.gymId, origin: deps.request.origin, ...(deps.request.day ? { day: { name: deps.request.day.name, bodyParts: [...deps.request.day.bodyParts] } } : {}) },
+      request: { text: deps.request.text.slice(0, 4000), minutes, focus, gymId: gym.gymId, origin: deps.request.origin, ...(day ? { day: { name: day.name, bodyParts: [...day.bodyParts] } } : {}) },
       rawArgs: JSON.stringify(args).slice(0, 40_000),
       plan: check.plan,
-      fitMinutes: deps.request.minutes,
+      fitMinutes: minutes,
       checks: check.checks.slice(0, 60),
       rationale,
+      ...(ctx.facts === undefined ? {} : { rationaleNumbersChecked: true as const }),
       contextHash: deps.contextHash,
-      equipmentVersion: deps.equipmentVersion,
+      equipmentVersion: gym.equipmentVersion,
       createdAt: ctx.now,
     };
     let next: WorkoutDraft;
@@ -364,9 +553,9 @@ export const QUESTION_NOT_OFFERED_LINE = 'No question now. Build with what you h
 
 /** About the `propose_workout` call itself (a turn that is building). */
 const CALL_RULES = [
-  'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters: a short reason in words, with no numbers (e.g. "main lift, strength focus"; the app shows the numbers). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Never give minutes: the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
+  'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters: a short reason in words, with no numbers (e.g. "main lift, strength focus"; the app shows the numbers). With no reference, an estimate up to build.loadReferences.firstTimeMax; null when you have no opinion. Give `minutes`, `focus` and `gymName` (one of build.gyms) from what Ben asked in this conversation, the newest first; the app fits the length. Give targetRpe for every exercise. Stay within build.setBudget working sets.',
   'Use build.known (goal, usual length, main lift, recent split days) and his training details; never ask for them. Put the main lift first when there is one.',
-  'Its `message` (at most 240 characters) says why this selection and order: explain in words only; never state numbers — the app shows them. No praise, scores, recovery claims or diagnoses.',
+  'Its `message` (at most 600 characters) says, like a coach would, why this selection and order. Any number in it must come from YOUR DATA, a tool result, Ben’s words or this workout; the app drops sentences with other numbers. No praise, scores, max or record claims, recovery claims or diagnoses.',
 ];
 
 /** (v2, BD17) Added when `ask_build_question` is offered. */
@@ -388,7 +577,7 @@ const MULTI_WEEK_LINE = 'It builds one session. Multi-week programmes and weekly
  * to use or what he lifted, the coach answers in full as usual (rule 3).
  */
 const SCOPED_BUILD_RULES = [
-  'Only if you call `propose_workout`: give each exercise a working load from build.loadReferences with a short basis in words, no numbers (no minutes: the app fits the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 240 characters) says why this selection and order: explain in words only; never state numbers — the app shows them; no praise, scores, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
+  'Only if you call `propose_workout`: give each exercise a working load from build.loadReferences with a short basis in words, no numbers; give minutes, focus and gymName from what Ben asked (the app fits the length); give targetRpe for every exercise; stay within build.setBudget working sets; its `message` (at most 600 characters) says, like a coach would, why this selection and order; any number in it must come from YOUR DATA, a tool result, Ben’s words or this workout; no praise, scores, max or record claims, recovery claims or diagnoses. After it, keep the reply brief and never say the workout was saved, scheduled or started (Ben does that); if it is refused, say it was not built and why.',
   'These limits are only for the call. On any other question, including what weight or reps to use or what he lifted before, answer as usual.',
   MULTI_WEEK_LINE,
 ];

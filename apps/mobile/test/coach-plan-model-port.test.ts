@@ -111,3 +111,58 @@ describe('plan model port (ADR 0020 C5, unproven on the device until S3)', () =>
     expect(modelErrorOf({ kind: 'stream_interrupted' })).toBe('unavailable');
   });
 });
+
+describe('reasoning effort (Coach v3, ADR 0027; unproven on the plan route until the device test)', () => {
+  const ok = () =>
+    streamResponseOf([
+      sse([
+        { type: 'response.created', response: { id: 'r1' } },
+        { type: 'response.output_item.done', item: { type: 'function_call', call_id: 'c2', name: 'reply', arguments: '{"message":"Hi.","offer":null}' } },
+        { type: 'response.completed', response: { id: 'r1' } },
+      ]),
+    ]);
+  const bodyOf = (c: { init: { body?: string } } | undefined) => JSON.parse(c?.init.body ?? '{}') as Record<string, unknown>;
+
+  it('sent as reasoning.effort while unknown; a success marks the model supported', async () => {
+    const { fetch, calls } = fakeFetch({ [OPENAI_RESPONSES_URL]: ok });
+    const settings = memorySettings();
+    const events = await collect(createPlanModelPort({ fetch, vault: vaultWithTokens(), settings, nowMs: clock.now }).stream({ ...request, effort: 'low' }));
+    expect(events.at(-1)).toEqual({ type: 'completed' });
+    expect(bodyOf(calls[0]).reasoning).toEqual({ effort: 'low' });
+    expect(parseConnectionSettings(settings.text).reasoning).toEqual({ 'gpt-6.1-sol': 'supported' });
+  });
+
+  it('a 400 with it is retried once without it; the model is marked rejected and it is not sent again', async () => {
+    const { fetch, calls } = fakeFetch({ [OPENAI_RESPONSES_URL]: [() => jsonResponse(400, { error: { message: 'Unsupported parameter: reasoning', param: 'reasoning' } }), ok] });
+    const settings = memorySettings();
+    const port = createPlanModelPort({ fetch, vault: vaultWithTokens(), settings, nowMs: clock.now });
+    const events = await collect(port.stream({ ...request, effort: 'high' }));
+    expect(events.filter((e) => e.type === 'error')).toEqual([]);
+    expect(events.at(-1)).toEqual({ type: 'completed' });
+    expect(calls).toHaveLength(2);
+    expect(bodyOf(calls[0]).reasoning).toEqual({ effort: 'high' });
+    expect(bodyOf(calls[1])).not.toHaveProperty('reasoning');
+    expect(parseConnectionSettings(settings.text).reasoning).toEqual({ 'gpt-6.1-sol': 'rejected' });
+    await collect(port.stream({ ...request, effort: 'medium' }));
+    expect(bodyOf(calls[2])).not.toHaveProperty('reasoning');
+  });
+
+  it('a 400 that persists without it is shown as it is (no loop, not marked); other failures are never retried', async () => {
+    const { fetch, calls } = fakeFetch({ [OPENAI_RESPONSES_URL]: () => jsonResponse(400, { error: { message: 'Bad input' } }) });
+    const settings = memorySettings();
+    const events = await collect(createPlanModelPort({ fetch, vault: vaultWithTokens(), settings, nowMs: clock.now }).stream({ ...request, effort: 'low' }));
+    expect(events).toMatchObject([{ type: 'error', error: 'unavailable' }]);
+    expect(calls).toHaveLength(2);
+    expect(parseConnectionSettings(settings.text).reasoning).toBeUndefined();
+    const limited = fakeFetch({ [OPENAI_RESPONSES_URL]: () => jsonResponse(429, { error: { code: 'subscription_sharing_usage_limit_exceeded', message: 'Limit' } }) });
+    await collect(createPlanModelPort({ fetch: limited.fetch, vault: vaultWithTokens(), settings: memorySettings(), nowMs: clock.now }).stream({ ...request, effort: 'low' }));
+    expect(limited.calls).toHaveLength(1);
+  });
+
+  it('no effort: no reasoning field', async () => {
+    const { fetch, calls } = fakeFetch({ [OPENAI_RESPONSES_URL]: ok });
+    await collect(createPlanModelPort({ fetch, vault: vaultWithTokens(), settings: memorySettings(), nowMs: clock.now }).stream(request));
+    expect(bodyOf(calls[0])).not.toHaveProperty('reasoning');
+  });
+});
+

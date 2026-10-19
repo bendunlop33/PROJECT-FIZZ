@@ -204,7 +204,8 @@ describe('the fixed no-change line: phrase-based `topic` mode (review r4 spec is
     expect(needsNoChangeLine('Want me to drop sets 3 and 4 to 95?', empty)).toBe(false);
     expect(needsNoChangeLine('Sore or pain?', empty)).toBe(false);
     expect(needsNoChangeLine('95 for the rest, yeah?', empty)).toBe(true);
-    expect(needsNoChangeLine('Want me to adjust? It was RPE 10.', empty)).toBe(true);
+    // Coach v3 (ADR 0027): a number alone no longer makes a statement a change topic; numbers are checked against the facts instead.
+    expect(needsNoChangeLine('Want me to adjust? It was RPE 10.', empty)).toBe(false);
   });
 
   it('when Ben asked for a change, any statement gets the line if nothing was saved', () => {

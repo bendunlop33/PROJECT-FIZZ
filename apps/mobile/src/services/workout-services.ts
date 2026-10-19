@@ -255,7 +255,7 @@ import {
   isInHistory,
   leftOutCount,
   draftSavedRoutineId,
-  wordsOnlyMessage,
+  shownRationale,
 } from '@fizz/domain';
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
@@ -766,6 +766,8 @@ export interface CoachDraftInfo {
   /** `Why this workout` (§4.5): Ben's words (quoted data), the checked rationale and the code's check lines. */
   request: string;
   rationale: string | null;
+  /** (Coach v3) The rationale's numbers were checked against the facts at build time, so they may show. */
+  rationaleNumbersChecked?: boolean;
   checks: string[];
   fitMinutes: number;
   /** The live library workout it was saved as (still open, Ben may start it); null when not saved or that workout was deleted. Review r2 S2: set, the page offers no second Save. */
@@ -1725,7 +1727,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   async function coachDraftInfoOf(d: WorkoutDraft, planned?: { ownerId: string; rows: readonly OverviewRow[]; aggregate: SessionAggregate; draftWhy: Record<string, DraftSlotWhy> }): Promise<CoachDraftInfo> {
     const v = currentDraftVersion(d);
-    const base = { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: wordsOnlyMessage(v.rationale), checks: v.checks.filter((c) => c.kind !== 'load').map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
+    const base = { id: d.id, version: d.version, versionN: v.n, name: d.name, leftOut: leftOutCount(v.checks), request: v.request.text, rationale: shownRationale(v.rationale, v.rationaleNumbersChecked === true), rationaleNumbersChecked: v.rationaleNumbersChecked === true, checks: v.checks.filter((c) => c.kind !== 'load').map((c) => c.text), fitMinutes: v.fitMinutes, routineId: await liveRoutineOf(d) };
     const none = { headNote: '', reasons: {}, estimates: [], loads: [], loadLines: {}, historyUsed: null };
     if (planned === undefined) return { ...base, ...none };
     return { ...base, ...(await draftExplain(d, planned).catch(() => none)) };
@@ -4767,6 +4769,26 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
 
     /**
+     * The gym a draft was built at (Coach v3, Ben 18 Oct "in my hotel gym"; review B2): the
+     * current version's gym while it is still saved and not archived, else null (the caller's
+     * gym). Opening and Start plan the draft there, so loads fit that gym (rule 4) and the
+     * workout is filed under it. Local read only.
+     */
+    async gymOf(draftId: string): Promise<string | null> {
+      try {
+        const p = await owner();
+        const d = await coachDrafts.get(draftId);
+        const version = d?.versions.find((v) => v.n === d.currentVersion) ?? d?.versions.at(-1) ?? null;
+        const gymId = version?.request.gymId ?? null;
+        if (gymId === null) return null;
+        const g = await repos().gyms.get(gymId).catch(() => null);
+        return g !== null && g.ownerId === p.id && g.archivedAtUtc === undefined ? g.id : null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
      * The draft card (§4.2): name, counts and `≈` minutes from the stored
      * draft and the same dry run the overview shows (`estimateRemainingDuration`
      * of the fitted plan), and its end state. Null when it can't be read.
@@ -4784,12 +4806,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const version = d?.versions.find((v) => v.n === req.versionN) ?? null;
         let estimateMinutes: number | null = null;
         let exerciseCount = version?.plan.slots.length ?? 0;
-        const gym = req.gymId === null ? null : await repos().gyms.get(req.gymId).catch(() => null);
+        // Coach v3 (Ben 18 Oct, "in my hotel gym"): the gym the draft was built at, while it is still saved; else the caller's.
+        const own = version?.request.gymId == null ? null : await repos().gyms.get(version.request.gymId).catch(() => null);
+        const ownGym = own !== null && own.ownerId === p.id && own.archivedAtUtc === undefined ? own : null;
+        const cardGymId = ownGym?.id ?? req.gymId;
+        const gym = ownGym ?? (req.gymId === null ? null : await repos().gyms.get(req.gymId).catch(() => null));
         if (d !== null && (state.kind === 'open' || state.kind === 'after_workout')) {
           const resolved = await resolveCoachDraft(p, d.id);
           if (resolved !== null) {
-            const gymId = req.gymId ?? 'typical-gym-preview';
-            const typical = req.gymId === null ? req.typicalEquipment : undefined;
+            const gymId = cardGymId ?? 'typical-gym-preview';
+            const typical = cardGymId === null ? req.typicalEquipment : undefined;
             const t = await todayFor(p, resolved, gymId, typical, null);
             const run = await overviewDryRun(p, resolved, gymId, null, typical, t.input);
             if (run !== null) {
@@ -4800,7 +4826,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         }
         const leftOut = version === null ? 0 : leftOutCount(version.checks);
         const name = version === null ? (d?.name ?? 'Workout') : draftName(version.request.focus, version.fitMinutes);
-        return { draftId: req.draftId, versionN: req.versionN, name, exerciseCount, estimateMinutes, gymName: gym?.name ?? null, leftOut, state, rationale: wordsOnlyMessage(version?.rationale) };
+        return { draftId: req.draftId, versionN: req.versionN, name, exerciseCount, estimateMinutes, gymName: gym?.name ?? null, leftOut, state, rationale: shownRationale(version?.rationale, version?.rationaleNumbersChecked === true) };
       } catch {
         return null;
       }

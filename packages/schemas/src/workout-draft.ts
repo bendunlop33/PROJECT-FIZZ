@@ -29,7 +29,8 @@ export const BUILD_LIMITS = {
   maxRestS: 300,
   minSuperset: 2,
   maxSuperset: 4,
-  messageMax: 240,
+  /** (Coach v3, ADR 0027) Was 240: room for a coach's reasons, with checked numbers. */
+  messageMax: 600,
 } as const;
 
 /** How long a coach draft is kept (BD4). */
@@ -124,6 +125,15 @@ export const ProposeWorkoutArgsSchema = z.strictObject({
   exercises: z.array(ProposedExerciseSchema).min(1).max(BUILD_LIMITS.maxExercises),
   /** Shown under the card after the claim check; at most 240 characters. */
   message: z.string().max(BUILD_LIMITS.messageMax),
+  /**
+   * (Coach v3, ADR 0027) The session length the model read from the conversation ("make it 40"),
+   * 15–180. Checked by code (`buildMinutesFor`): a length Ben stated outright always wins. Null: none.
+   */
+  minutes: z.int().min(15).max(180).nullable().optional(),
+  /** (Coach v3) The session's focus ("a shoulder workout" → `shoulders`). Null: the request's (or the coach's pick). */
+  focus: BuildFocusSchema.exclude(['split_day']).nullable().optional(),
+  /** (Coach v3) One of Ben's saved gyms by name (`build.gyms`). Code matches it; an unknown name is refused. Null: the selected gym. */
+  gymName: z.string().min(1).max(120).nullable().optional(),
 });
 export type ProposeWorkoutArgs = z.infer<typeof ProposeWorkoutArgsSchema>;
 
@@ -244,6 +254,8 @@ export const WorkoutDraftVersionSchema = z.object({
   checks: z.array(BuildCheckSchema).max(60),
   /** The coach's message after the claim check (null when it was hidden). */
   rationale: z.string().max(BUILD_LIMITS.messageMax).nullable(),
+  /** (Coach v3) The rationale's numbers were checked against the facts at build time, so they may show. Absent: words only. */
+  rationaleNumbersChecked: z.literal(true).optional(),
   contextHash: z.string().min(1).max(128),
   equipmentVersion: z.string().min(1).max(128),
   createdAt: ZonedTimestampSchema,

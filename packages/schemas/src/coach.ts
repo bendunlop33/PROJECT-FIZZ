@@ -11,7 +11,7 @@ import {
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
 import { DraftBasisSchema } from './draft';
-import type { SessionCommand } from './commands';
+import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
 import type { Exercise } from './exercise';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
@@ -87,6 +87,17 @@ const reason = z.string().min(1).max(240);
 const quote = z.string().min(1).max(400);
 
 /**
+ * (Coach v3, ADR 0027, 18 Oct) The model's reading of whether Ben asked for a change to today's
+ * workout (rule 3): `benAsked` true with `benQuote`, his words copied verbatim from this turn's
+ * message. Code checks the quote against his message (`verifyAsked`); a claim it can't find is
+ * never trusted. Null or absent: no claim (code's own reading decides).
+ */
+const askClaim = {
+  benAsked: z.boolean().nullable().optional(),
+  benQuote: z.string().max(200).nullable().optional(),
+};
+
+/**
  * A set target. Unit and convention are always explicit. In tool arguments a
  * null field means "keep the current value"; in action records it means the
  * set has no target for that field.
@@ -118,6 +129,27 @@ export const GetTrainingOverviewArgsSchema = z.strictObject({
 export const GetGymEquipmentArgsSchema = z.strictObject({
   /** Null = everything used in the current or last workout. */
   exerciseId: IdSchema.nullable(),
+  /** (Coach v3) One of Ben's saved gyms by name; null = the gym in context. */
+  gymName: z.string().max(80).nullable().optional(),
+});
+
+/** (Coach v3) An exercise's records: heaviest logged set, most reps, best estimated 1RM (labelled an estimate). */
+export const GetExerciseRecordsArgsSchema = z.strictObject({
+  exerciseId: IdSchema,
+});
+
+/** (Coach v3) Ben's last finished workouts, every exercise's sets as logged. */
+export const GetRecentSessionsArgsSchema = z.strictObject({
+  count: z.int().min(1).max(10),
+});
+
+/**
+ * (Coach v3, Ben 18 Oct: "gauge itself whether it's needed") Mid-workout turns start light; the
+ * coach calls this once when the question needs more thought. The next step runs at a higher
+ * reasoning effort on Ben's main model. Changes nothing.
+ */
+export const ThinkHarderArgsSchema = z.strictObject({
+  why: z.string().max(120),
 });
 
 export const GetProgressionTargetsArgsSchema = z.strictObject({
@@ -182,6 +214,7 @@ export const AddExerciseTodayArgsSchema = z.strictObject({
   /** In a superset with this exercise of today's workout (it must have a set left); null = none. */
   supersetWithSessionExerciseId: IdSchema.nullable(),
   reason,
+  ...askClaim,
 });
 export type AddExerciseTodayArgs = z.infer<typeof AddExerciseTodayArgsSchema>;
 
@@ -194,8 +227,49 @@ export const RenameWorkoutArgsSchema = z.strictObject({
   /** The session version the coach read (rule 5). */
   baseVersion: z.int().min(1),
   name: z.string().min(1).max(120),
+  ...askClaim,
 });
 export type RenameWorkoutArgs = z.infer<typeof RenameWorkoutArgsSchema>;
+
+/**
+ * (Coach v3, ADR 0027, 18 Oct) One change to today's live workout in `edit_today`. IDs are
+ * the workout's (`sessionExerciseId`, `setId`) or, for a new exercise, one from YOUR DATA
+ * `addable` (`exerciseId`, `toExerciseId`). Only sets not done yet change (rule 2); the app
+ * checks and fits every number (rule 4) and refuses the whole edit if any op is refused.
+ */
+export const EditTodayOpSchema = z.discriminatedUnion('op', [
+  /** A pending set's target (load, reps, target RPE; null keeps a value). */
+  z.strictObject({ op: z.literal('set'), setId: IdSchema, target: CoachTargetSchema }),
+  /** The exercise's working sets today, done ones included: more adds pending sets like its last one, fewer removes pending ones from the end. */
+  z.strictObject({ op: z.literal('set_count'), sessionExerciseId: IdSchema, workingSets: z.int().min(0).max(20) }),
+  /** The exercise's pending sets move to another exercise (done sets stay). */
+  z.strictObject({ op: z.literal('swap'), sessionExerciseId: IdSchema, toExerciseId: z.string().min(1).max(80) }),
+  /** A new exercise with pending sets; the app plans its loads from Ben's history on this gym's equipment. */
+  z.strictObject({
+    op: z.literal('add'),
+    exerciseId: z.string().min(1).max(80),
+    workingSets: z.int().min(0).max(100),
+    reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
+    workSeconds: z.int().min(0).max(36_000).nullable(),
+    targetRpe: z.number().min(0).max(20).nullable(),
+    afterSessionExerciseId: IdSchema.nullable(),
+    supersetWithSessionExerciseId: IdSchema.nullable(),
+  }),
+  /** The exercise's pending sets go (a row with nothing done leaves the workout; otherwise its rest is skipped). */
+  z.strictObject({ op: z.literal('remove'), sessionExerciseId: IdSchema }),
+  /** The exercise (with its superset) goes straight after another one, or first (null). */
+  z.strictObject({ op: z.literal('move'), sessionExerciseId: IdSchema, afterSessionExerciseId: IdSchema.nullable() }),
+]);
+export type EditTodayOp = z.infer<typeof EditTodayOpSchema>;
+
+export const EditTodayArgsSchema = z.strictObject({
+  /** The session version the coach read (rule 5). */
+  baseVersion: z.int().min(1),
+  ops: z.array(EditTodayOpSchema).min(1).max(12),
+  reason,
+  ...askClaim,
+});
+export type EditTodayArgs = z.infer<typeof EditTodayArgsSchema>;
 
 export const GetRecentActionsArgsSchema = z.strictObject({
   limit: z.int().min(1).max(10),
@@ -222,6 +296,7 @@ export const AdjustPendingSetsArgsSchema = z.strictObject({
   baseVersion: z.int().min(1),
   exercises: z.array(ExerciseAdjustmentSchema).min(1).max(12),
   reason,
+  ...askClaim,
 });
 export type AdjustPendingSetsArgs = z.infer<typeof AdjustPendingSetsArgsSchema>;
 
@@ -301,11 +376,22 @@ export const CoachToolNameSchema = z.enum([
   'get_progression_targets',
   'get_substitutions',
   'get_recent_actions',
+  /** (Coach v3) Records per exercise, the e1RM labelled an estimate. */
+  'get_exercise_records',
+  /** (Coach v3) The last finished workouts with their sets. */
+  'get_recent_sessions',
+  /** (Coach v3) One step at a higher reasoning effort, once per turn. */
+  'think_harder',
   'adjust_pending_sets',
   /** (12 Oct) Add an exercise to today's workout when Ben asks; applied at once with Undo. */
   'add_exercise_today',
   /** (14 Oct) Rename the live workout when Ben asks; applied at once with Undo. */
   'rename_workout',
+  /**
+   * (Coach v3, 18 Oct) One general tool for today's live workout: swap, add, remove, move, set count
+   * and set targets. Replaces `adjust_pending_sets` and `add_exercise_today` on live-workout turns.
+   */
+  'edit_today',
   'log_set',
   'correct_set',
   'set_next_session_targets',
@@ -331,9 +417,13 @@ export const COACH_TOOL_ARGS = {
   get_progression_targets: GetProgressionTargetsArgsSchema,
   get_substitutions: GetSubstitutionsArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,
+  get_exercise_records: GetExerciseRecordsArgsSchema,
+  get_recent_sessions: GetRecentSessionsArgsSchema,
+  think_harder: ThinkHarderArgsSchema,
   adjust_pending_sets: AdjustPendingSetsArgsSchema,
   add_exercise_today: AddExerciseTodayArgsSchema,
   rename_workout: RenameWorkoutArgsSchema,
+  edit_today: EditTodayArgsSchema,
   log_set: LogSetArgsSchema,
   correct_set: CorrectSetArgsSchema,
   set_next_session_targets: SetNextSessionTargetsArgsSchema,
@@ -502,6 +592,39 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     sessionId: IdSchema,
     before: z.string().min(1).max(120).nullable(),
     after: z.string().min(1).max(120),
+  }),
+  /**
+   * (Coach v3, ADR 0027, 18 Oct) The coach's change to today's live workout (`edit_today`): swaps,
+   * adds, removals, moves, set counts and set targets, as one operation (`coach_edit_today`).
+   * `lines`: app text, one per structural change (`Bench press → Dumbbell bench press`).
+   * `exercises`: set targets and counts before and after (as `adjust_pending_sets`). `names`: every
+   * exercise the edit touched, for the claim check. `command`: exactly what applies (and, on an
+   * offer, what Ben's accept applies, with no model call), or null on a refusal. `proposalId`: on
+   * the record of Ben's accept, the offer it applied. Undo is `revert_coach_edit` on the command.
+   */
+  z.object({
+    kind: z.literal('edit_today'),
+    sessionId: IdSchema,
+    baseVersion: z.int().min(1),
+    lines: z.array(StructuralChangeLineSchema).max(24),
+    exercises: z.array(ExerciseTargetChangesSchema).max(24),
+    names: z.array(z.string().min(1).max(120)).max(48),
+    /** Each added exercise as saved (in the order of the `add` lines): its first working set's target, for the card. */
+    added: z
+      .array(
+        z.object({
+          exerciseName: z.string().min(1).max(120),
+          sets: z.int().min(0).max(20),
+          target: CoachTargetSchema.nullable(),
+          durationS: z.int().min(0).max(36_000).nullable(),
+          afterName: z.string().min(1).max(120).nullable(),
+          supersetWithName: z.string().min(1).max(120).nullable(),
+        }),
+      )
+      .max(12)
+      .optional(),
+    command: CoachEditTodayCommandSchema.nullable(),
+    proposalId: IdSchema.optional(),
   }),
   /** (11 Oct) A set logged from chat: what was saved, and the set's version after, for Undo (`undo_log`). */
   z.object({
@@ -690,8 +813,8 @@ export const ActionRecordSchema = z.object({
   detail: ActionDetailSchema,
   /** Why a `rejected` / `stale` / `failed` action didn't happen, as app text. */
   failure: z.string().min(1).max(200).nullable(),
-  /** The coach's one-sentence reason, after the claim check. */
-  reason: z.string().max(240).nullable(),
+  /** The coach's reason, after the claim check. (Coach v3) Up to 600: a build's message is its reason. */
+  reason: z.string().max(600).nullable(),
   evidenceRefs: z.array(z.string().min(1).max(120)).max(40),
   guardNotes: z.array(GuardNoteSchema).max(40),
   entityVersions: z.array(EntityVersionSchema).max(60),
@@ -704,7 +827,8 @@ export type ActionRecord = z.infer<typeof ActionRecordSchema>;
 export const HiddenLineSchema = z.object({
   turnId: z.string().min(1).max(64),
   sentence: z.string().min(1).max(2000),
-  reason: z.enum(['no_action', 'not_committed', 'mismatch', 'numbers_differ', 'unknown_token']),
+  /** (Coach v3) `unverified_number`: a number not found in anything the coach was given. */
+  reason: z.enum(['no_action', 'not_committed', 'mismatch', 'numbers_differ', 'unknown_token', 'unverified_number']),
   /** App text, e.g. `No change was saved in this reply.` */
   detail: z.string().min(1).max(300),
   atUtc: UtcTimestampSchema,
@@ -965,7 +1089,7 @@ export type CoachWrite =
    * `saveExercise` (coach add, review S3): a catalogue exercise not yet in Ben's exercises, saved in the same
    * transaction as the command, so a refused or stale add leaves no exercise row behind (audit F4).
    */
-  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise }
+  | { kind: 'session_command'; action: ActionRecord; sessionId: string; command: SessionCommand; expectedSessionVersion?: number; saveExercise?: Exercise; saveExercises?: readonly Exercise[] }
   /**
    * (12 Oct, workout builder) A coach draft and its record, in one write.
    * `expectedVersion`: null creates the draft; otherwise the draft's version

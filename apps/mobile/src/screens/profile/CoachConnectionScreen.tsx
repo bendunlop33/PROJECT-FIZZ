@@ -9,6 +9,7 @@ import {
   readTextCoachState,
   refreshAvailableModels,
   selectModel,
+  selectWorkoutModel,
   type ConnectPhase,
   type ModelOption,
   type TextCoachState,
@@ -25,6 +26,7 @@ import {
   connectionStatusView,
   modelChoiceRows,
   showFirstUseNotice,
+  workoutModelChoiceRows,
   type ConnectNotice,
   type ConnectionAction,
 } from '../../ai/coach-connection-view';
@@ -45,7 +47,9 @@ type Flow =
   | { kind: 'waiting' }
   | { kind: 'checking'; phase: Extract<ConnectPhase, { kind: 'checking' }> }
   | { kind: 'first_use' }
-  | { kind: 'models' };
+  | { kind: 'models' }
+  /** (Coach v3) `Mid-workout ›`: a lighter model for live-workout turns, or the coach's own. */
+  | { kind: 'workout_models' };
 
 export function CoachConnectionScreen() {
   const theme = useTheme();
@@ -129,6 +133,16 @@ export function CoachConnectionScreen() {
         setToast(`Coach will use ${r.value.displayName}`);
         setFlow({ kind: 'status' });
       }
+    }
+  };
+
+  const chooseWorkoutModel = async (slug: string) => {
+    if (models === null) return;
+    const r = await selectWorkoutModel(ports.settings, models, slug === '' ? null : slug);
+    if (r.ok) {
+      await reload(models);
+      setToast(`Mid-workout: ${r.value?.displayName ?? 'Same as coach'}`);
+      setFlow({ kind: 'status' });
     }
   };
 
@@ -228,6 +242,39 @@ export function CoachConnectionScreen() {
     );
   }
 
+  if (flow.kind === 'workout_models') {
+    const rows = workoutModelChoiceRows(models ?? [], state?.workoutModel?.slug ?? null);
+    return (
+      <View style={{ flex: 1 }}>
+        <Screen
+          footer={
+            <PrimaryButton
+              label="Done"
+              onPress={() => {
+                setFlow({ kind: 'status' });
+              }}
+            />
+          }
+        >
+          <SectionHeader title="Mid-workout model" />
+          {models === null ? (
+            <AppText variant="callout" color="text.secondary">
+              {busy ? 'Finding available models…' : 'The model list didn’t load.'}
+            </AppText>
+          ) : (
+            <View style={{ gap: theme.space['2'] }} accessibilityRole="radiogroup">
+              {rows.map((r) => (
+                <ChoiceCard key={r.slug === '' ? 'same' : r.slug} title={r.title} subtitle={r.tag} selected={r.selected} onPress={() => void chooseWorkoutModel(r.slug)} />
+              ))}
+            </View>
+          )}
+          {models === null && !busy ? <SecondaryButton label="Try again" onPress={() => void refreshModels()} /> : null}
+        </Screen>
+        {toastView}
+      </View>
+    );
+  }
+
   if (flow.kind === 'first_use' || flow.kind === 'models') {
     const rows = modelChoiceRows(models ?? [], state?.model?.slug ?? null);
     const firstUse = flow.kind === 'first_use';
@@ -294,6 +341,15 @@ export function CoachConnectionScreen() {
                 title={v.modelRow}
                 onPress={() => {
                   act('choose_model');
+                }}
+              />
+            ) : null}
+            {v.workoutModelRow != null ? (
+              <Row
+                title={v.workoutModelRow}
+                onPress={() => {
+                  setFlow({ kind: 'workout_models' });
+                  if (models === null) void refreshModels();
                 }}
               />
             ) : null}

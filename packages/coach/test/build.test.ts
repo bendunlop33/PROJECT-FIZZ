@@ -125,7 +125,7 @@ describe('the `build` request kind (code, never the model, rule 3)', () => {
       const r = classifyBenRequest(t, 'workout');
       expect(r, t).toEqual({ source: 'words', kinds: ['change'] });
       const g = gateFor({ kind: 'workout', input: words(t), previousOffer: null, structuralSignals: [] });
-      expect(buildTurnRegistry(g).tools.map((x) => x.name), t).toContain('adjust_pending_sets');
+      expect(buildTurnRegistry(g).tools.map((x) => x.name), t).toContain('edit_today');
       // Not a new workout in a general turn either.
       expect(requestHas(classifyBenRequest(t, 'general'), 'build'), t).toBe(false);
     }
@@ -168,21 +168,25 @@ describe('`propose_workout` in the registry (§8.2)', () => {
     expect(all.filter((n) => /start|save_workout|save_routine|routine|schedule/.test(n))).toEqual([]);
   });
 
-  it('v2 (BD6): its strict schema has a per-exercise load with a basis, and no weight, minutes, gym or equipment field', () => {
+  it('v2 (BD6): its strict schema has a per-exercise load with a basis, and no weight, gym ID or equipment field; Coach v3: a session length, focus and gym name, checked by code', () => {
     const [def] = functionToolDefinitions(buildTurnRegistry({ kind: 'general', benRequest: classifyBenRequest('build me a workout'), acceptedOffer: false, benPainWords: false, structuralSignals: [] }).tools.filter((t) => t.name === 'propose_workout'));
     const text = JSON.stringify(def?.parameters);
-    for (const f of ['weight', 'minutes', 'gymId', 'equipmentId', 'exerciseName']) expect(text).not.toContain(`"${f}"`);
-    for (const f of ['load', 'basis', 'convention', 'unit']) expect(text).toContain(`"${f}"`);
+    for (const f of ['weight', 'gymId', 'equipmentId', 'exerciseName']) expect(text).not.toContain(`"${f}"`);
+    for (const f of ['load', 'basis', 'convention', 'unit', 'minutes', 'focus', 'gymName']) expect(text).toContain(`"${f}"`);
   });
 });
 
 describe('arguments are checked before anything runs (WB3, WB13)', () => {
   const registry = buildTurnRegistry({ kind: 'general', benRequest: classifyBenRequest('build me a workout'), acceptedOffer: false, benPainWords: false, structuralSignals: [] });
 
-  it('a malformed `load` (no basis) or `minutes` fails the call; it is never dropped and run', () => {
+  it('a malformed `load` (no basis), `minutes` on an exercise or out of range fails the call; it is never dropped and run', () => {
     const withLoad = proposal({ exercises: [{ ...proposal().exercises[0], load: { value: 200, unit: 'kg', convention: 'total' } }] });
     expect(parseToolCall('t1', 'propose_workout', JSON.stringify(withLoad), registry)).toMatchObject({ ok: false, error: 'invalid_args' });
-    expect(parseToolCall('t1', 'propose_workout', JSON.stringify(proposal({ minutes: 45 })), registry)).toMatchObject({ ok: false, error: 'invalid_args' });
+    const minutesOnExercise = proposal({ exercises: [{ ...proposal().exercises[0], minutes: 45 }] });
+    expect(parseToolCall('t1', 'propose_workout', JSON.stringify(minutesOnExercise), registry)).toMatchObject({ ok: false, error: 'invalid_args' });
+    expect(parseToolCall('t1', 'propose_workout', JSON.stringify(proposal({ minutes: 5 })), registry)).toMatchObject({ ok: false, error: 'invalid_args' });
+    // Coach v3: the session's length is a top-level field the executor checks.
+    expect(parseToolCall('t1', 'propose_workout', JSON.stringify(proposal({ minutes: 45 })), registry)).toMatchObject({ ok: true });
   });
 
   it('eleven exercises fail the schema; a clean call parses with an opId that ignores the message', () => {

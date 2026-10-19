@@ -18,6 +18,7 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { isChangeClaim } from './claims';
+import type { NumberFacts } from './numbers';
 import { workoutView } from './context';
 import { renderActionResult } from './render';
 import { appendContentKeys, memoryContentKey, memoryTextKind, playbookContentKey } from './tool-call';
@@ -54,6 +55,16 @@ export interface ToolCallContext {
   messagePain: MessagePain | null;
   /** How the request was made, for the snapping direction. */
   intent: AdjustIntent;
+  /**
+   * (Coach v3) Ben didn't ask for this change (rule 3): check it and save it as an offer
+   * (`proposed`, with exactly what would apply), never apply it. Only `edit_today` takes it.
+   */
+  propose?: boolean;
+  /**
+   * (Coach v3) The numbers the coach was given this turn (context, Ben's words, tool outputs). The
+   * build executor checks its message's numbers against them. Absent: numbers are dropped as before.
+   */
+  facts?: NumberFacts;
 }
 
 export type ToolExecutor = (call: CoachToolCall, ctx: ToolCallContext) => Promise<ToolResult>;
@@ -387,6 +398,13 @@ function undoWhat(target: ActionRecord): string {
       return 'the playbook suggestion';
     case 'add_exercise_today':
       return `adding ${d.exerciseName}`;
+    case 'edit_today':
+      if (d.lines.length === 0) return renderActionResult(target, 'sheet').text.replace(/\.$/, '').slice(0, 200);
+      if (d.lines.length === 1 && d.exercises.length === 0) {
+        const added = d.added?.[0];
+        return d.lines[0]?.change === 'add' && added !== undefined ? `adding ${added.exerciseName}` : (d.lines[0]?.text ?? 'the change').slice(0, 200);
+      }
+      return 'the change to today’s workout';
     case 'rename_workout':
       return `the name “${d.after}”`;
     case 'log_set':

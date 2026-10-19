@@ -1,5 +1,5 @@
 import { BUILD_LENGTH_CHIPS, type ActionRecord, type BuildDay, type BuildFocus, type TrainingSplit } from '@fizz/schemas';
-import { buildRequestText, buildingTitle, draftCardEndText, draftName, historyUsedLine, splitDayFocus, wordsOnlyMessage, type DraftCardState } from '@fizz/domain';
+import { buildRequestText, buildingTitle, draftCardEndText, draftName, historyUsedLine, shownRationale, splitDayFocus, type DraftCardState } from '@fizz/domain';
 
 import type { CoachDraftCard, CoachDraftInfo } from '../services/workout-services';
 import type { BuildBlock } from './coach-service';
@@ -174,14 +174,15 @@ export function chosenName(focus: BuildFocus, minutes: number | null, dayName?: 
  * with a number never shows) and the code's check lines. Read-only; nothing
  * here is the model's number.
  */
-export function draftWhyView(d: Pick<CoachDraftInfo, 'request' | 'rationale' | 'checks' | 'fitMinutes'> & Partial<Pick<CoachDraftInfo, 'loads' | 'headNote' | 'historyUsed'>>): { heading: string; lines: string[] }[] {
+export function draftWhyView(d: Pick<CoachDraftInfo, 'request' | 'rationale' | 'checks' | 'fitMinutes'> & Partial<Pick<CoachDraftInfo, 'loads' | 'headNote' | 'historyUsed' | 'rationaleNumbersChecked'>>): { heading: string; lines: string[] }[] {
   // v2 §4.5 `LOADS`: the final target (code), its label, code's reason line and notes, then the coach's note quoted (data, review r2 B1r).
   const loads = (d.loads ?? []).flatMap((l) => [`${l.name} ${l.target}${l.label === null ? '' : ` · ${l.label}`}`, ...l.notes.map((n) => `  ⓘ ${n}`), ...(l.quote === null ? [] : [`  Coach’s note “${l.quote}”`])]);
   // WB-L9: a coach basis code didn't use (failed the check, or named another number than the target), quoted.
   const notUsed = (d.loads ?? []).flatMap((l) => (l.notUsed === null ? [] : [`${l.name}: “${l.notUsed}”`]));
   // Review S4: only the history a load actually came from (absent before the page is planned: not claimed).
   const history = d.historyUsed === undefined ? null : historyUsedLine(d.historyUsed);
-  const rationale = wordsOnlyMessage(d.rationale);
+  // Coach v3: numbers checked at build time stay; anything else is words only (r5 B1u).
+  const rationale = shownRationale(d.rationale, d.rationaleNumbersChecked === true);
   return [
     { heading: 'YOU ASKED', lines: [`“${d.request}”`] },
     ...(rationale === null ? [] : [{ heading: 'COACH', lines: [rationale] }]),

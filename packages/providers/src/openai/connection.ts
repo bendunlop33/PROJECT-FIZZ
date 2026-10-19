@@ -47,7 +47,21 @@ export interface CoachConnectionSettings {
   /** The first-use notice ("You're using your ChatGPT plan") was dismissed. Shown once ever (OpenAI UI guidelines). */
   firstUseSeen: boolean;
   lastFailure: { kind: StickyFailureKind; atMs: number } | null;
+  /**
+   * (Coach v3, Ben 18 Oct) An optional lighter model for live-workout turns, chosen in Settings from
+   * his plan's listed models. Null: the coach's model (the default). Absent in older settings.
+   */
+  workoutModelSlug?: string | null;
+  workoutModelName?: string | null;
+  /**
+   * (Coach v3) Whether a model took the `reasoning` field on this route: `supported` once a request
+   * with it succeeded, `rejected` once one with it got a 400 and the retry without it succeeded.
+   * Absent: unknown (it is sent, and the first answer decides).
+   */
+  reasoning?: Readonly<Record<string, ReasoningCapability>>;
 }
+
+export type ReasoningCapability = 'supported' | 'rejected';
 
 export const DEFAULT_CONNECTION_SETTINGS: CoachConnectionSettings = { modelSlug: null, modelName: null, firstUseSeen: false, lastFailure: null };
 
@@ -67,12 +81,22 @@ export function parseConnectionSettings(text: string | null): CoachConnectionSet
   const lf = typeof j.lastFailure === 'object' && j.lastFailure !== null ? (j.lastFailure as Record<string, unknown>) : null;
   const lastFailure =
     lf !== null && typeof lf.kind === 'string' && STICKY.has(lf.kind) && typeof lf.atMs === 'number' ? { kind: lf.kind as StickyFailureKind, atMs: lf.atMs } : null;
+  const workoutSlug = typeof j.workoutModelSlug === 'string' && j.workoutModelSlug !== '' ? j.workoutModelSlug : null;
+  const rj = typeof j.reasoning === 'object' && j.reasoning !== null && !Array.isArray(j.reasoning) ? (j.reasoning as Record<string, unknown>) : {};
+  const reasoning = Object.fromEntries(Object.entries(rj).filter((e): e is [string, ReasoningCapability] => e[1] === 'supported' || e[1] === 'rejected'));
   return {
     modelSlug: slug,
     modelName: slug !== null && typeof j.modelName === 'string' && j.modelName !== '' ? j.modelName : slug,
     firstUseSeen: j.firstUseSeen === true,
     lastFailure,
+    ...(workoutSlug === null ? {} : { workoutModelSlug: workoutSlug, workoutModelName: typeof j.workoutModelName === 'string' && j.workoutModelName !== '' ? j.workoutModelName : workoutSlug }),
+    ...(Object.keys(reasoning).length === 0 ? {} : { reasoning }),
   };
+}
+
+/** (Coach v3) What the route is known to do with `reasoning` for this model. */
+export function reasoningCapabilityOf(settings: CoachConnectionSettings, slug: string): ReasoningCapability | 'unknown' {
+  return settings.reasoning?.[slug] ?? 'unknown';
 }
 
 /** Which provider failures pause the coach until Ben acts. Everything else is shown on the turn and forgotten. */
@@ -106,6 +130,13 @@ export interface TextCoachState {
   route: 'chatgpt_plan' | null;
   email: string | null;
   model: ModelOption | null;
+  /** (Coach v3) The mid-workout model Ben chose; null or absent: the coach's model. */
+  workoutModel?: ModelOption | null;
+  /**
+   * (Coach v3 review S7) His mid-workout model is no longer in his plan's model list: live-workout
+   * turns can't run until he chooses again. Never replaced by another model on its own (AC6).
+   */
+  workoutModelGone?: true;
 }
 
 export interface TextCoachInput {
@@ -123,7 +154,10 @@ export function textCoachState(input: TextCoachInput): TextCoachState {
   const email = input.registration?.email ?? null;
   const model = settings.modelSlug === null ? null : { slug: settings.modelSlug, displayName: settings.modelName ?? settings.modelSlug };
   const sticky = settings.lastFailure?.kind ?? null;
-  const out = (status: TextCoachStatus): TextCoachState => ({ status, route: status === 'not_connected' ? null : 'chatgpt_plan', email, model });
+  const workoutSlug = settings.workoutModelSlug ?? null;
+  const workoutModel = workoutSlug === null ? null : { slug: workoutSlug, displayName: settings.workoutModelName ?? workoutSlug };
+  const workoutGone = workoutSlug !== null && input.listedModels !== null && !input.listedModels.some((m) => m.slug === workoutSlug);
+  const out = (status: TextCoachStatus): TextCoachState => ({ status, route: status === 'not_connected' ? null : 'chatgpt_plan', email, model, ...(workoutModel === null ? {} : { workoutModel }), ...(workoutGone ? { workoutModelGone: true as const } : {}) });
 
   if (tokens === null) {
     if (sticky === 'expired') return out('expired');
@@ -233,6 +267,26 @@ export async function selectModel(store: SettingsStore, listed: readonly ModelOp
   if (found === undefined) return err('not_listed');
   await updateSettings(store, (s) => ({ ...s, modelSlug: found.slug, modelName: found.displayName }));
   return ok(found);
+}
+
+/**
+ * (Coach v3, Ben 18 Oct) The mid-workout model: one from the latest list, or null for the coach's
+ * own model. Takes effect from the next message. Never chosen by the app.
+ */
+export async function selectWorkoutModel(store: SettingsStore, listed: readonly ModelOption[], slug: string | null): Promise<Result<ModelOption | null, 'not_listed'>> {
+  if (slug === null) {
+    await updateSettings(store, (s) => ({ modelSlug: s.modelSlug, modelName: s.modelName, firstUseSeen: s.firstUseSeen, lastFailure: s.lastFailure, ...(s.reasoning === undefined ? {} : { reasoning: s.reasoning }) }));
+    return ok(null);
+  }
+  const found = listed.find((m) => m.slug === slug);
+  if (found === undefined) return err('not_listed');
+  await updateSettings(store, (s) => ({ ...s, workoutModelSlug: found.slug, workoutModelName: found.displayName }));
+  return ok(found);
+}
+
+/** (Coach v3) Remember what the route did with `reasoning` for a model (written only when it changes). */
+export async function recordReasoningCapability(store: SettingsStore, slug: string, capability: ReasoningCapability): Promise<void> {
+  await updateSettings(store, (s) => (s.reasoning?.[slug] === capability ? s : { ...s, reasoning: { ...(s.reasoning ?? {}), [slug]: capability } }));
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   profileCoachLine,
   showFirstUseNotice,
   summaryCoachView,
+  workoutModelChoiceRows,
 } from '../src/ai/coach-connection-view';
 
 const SOL = { slug: 'gpt-6.1-sol', displayName: 'GPT-6.1-Sol' };
@@ -167,3 +168,23 @@ describe('Profile row and Summary lines', () => {
     for (const s of ALL) expect(summaryCoachView(state(s)).note ?? '').not.toMatch(/OAuth|token|API key|paid/i);
   });
 });
+
+describe('Mid-workout model (Coach v3, Ben 18 Oct)', () => {
+  it('connected: a Mid-workout row under Model, Same as coach by default, else the chosen model', () => {
+    expect(connectionStatusView(state('ok'), null).workoutModelRow).toBe('Mid-workout: Same as coach');
+    expect(connectionStatusView(state('ok', { workoutModel: LUNA }), null).workoutModelRow).toBe('Mid-workout: GPT-6-Luna');
+    expect(connectionStatusView(state('limit'), null).workoutModelRow ?? null).toBeNull();
+    // Review S7: his plan stopped listing it.
+    expect(connectionStatusView(state('ok', { workoutModel: LUNA, workoutModelGone: true }), null).workoutModelRow).toBe('Mid-workout: GPT-6-Luna · not available');
+  });
+
+  it('the list: Same as coach first, then only the plan’s listed models', () => {
+    expect(workoutModelChoiceRows([SOL, LUNA], null).map((r) => [r.slug, r.title, r.selected])).toEqual([
+      ['', 'Same as coach', true],
+      [SOL.slug, SOL.displayName, false],
+      [LUNA.slug, LUNA.displayName, false],
+    ]);
+    expect(workoutModelChoiceRows([SOL, LUNA], LUNA.slug).filter((r) => r.selected).map((r) => r.slug)).toEqual([LUNA.slug]);
+  });
+});
+

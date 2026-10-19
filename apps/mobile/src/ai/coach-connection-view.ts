@@ -33,6 +33,8 @@ export interface ConnectionStatusView {
   card: { icon: ViewIcon; tone: ViewTone; title: string; lines: string[] };
   /** `Model: GPT-6.1-Sol ›` row inside the card (connected states only). */
   modelRow: string | null;
+  /** (Coach v3, Ben 18 Oct) `Mid-workout: Same as coach ›` row under it (connected states only). */
+  workoutModelRow?: string | null;
   /** The plan pitch under the card when nothing is connected. */
   pitch: string | null;
   primary: ActionView | null;
@@ -53,6 +55,9 @@ const NO_COACH_YET = 'The coach chat isn’t in this build yet.';
 export function showFirstUseNotice(outcome: Extract<ConnectOutcome, { kind: 'connected' }>, coachChatInBuild: boolean = COACH_CHAT_IN_BUILD): boolean {
   return coachChatInBuild && outcome.firstUse && outcome.models.length > 0;
 }
+
+/** (Coach v3 review S7) After the mid-workout model's name when his plan no longer lists it. */
+export const WORKOUT_MODEL_GONE = 'not available';
 
 /**
  * The status screen (§2.1 / §2.6 and the §3.1 rows). `signInUnavailable` is
@@ -86,6 +91,7 @@ export function connectionStatusView(state: TextCoachState, signInUnavailable: s
         ...base,
         card: { icon: 'checkmark.circle.fill', tone: 'done', title: 'Connected · ChatGPT plan', lines: [...signedIn, 'Limits are set in ChatGPT.', ...(coachChatInBuild ? [] : [NO_COACH_YET])] },
         modelRow: `Model: ${modelName ?? 'not chosen'}`,
+        workoutModelRow: `Mid-workout: ${state.workoutModel?.displayName ?? SAME_AS_COACH}${state.workoutModelGone === true ? ` · ${WORKOUT_MODEL_GONE}` : ''}`,
         primary: null,
         links: [manage],
       };
@@ -183,6 +189,17 @@ export interface ModelChoiceRow {
   title: string;
   tag: string | null;
   selected: boolean;
+}
+
+/** (Coach v3) The mid-workout model's default: the coach's own model. */
+export const SAME_AS_COACH = 'Same as coach';
+
+/**
+ * (Coach v3, Ben 18 Oct) `Mid-workout ›`: `Same as coach` first (the default), then his plan's listed
+ * models. Only listed models can be chosen; the app never picks one.
+ */
+export function workoutModelChoiceRows(models: readonly ModelOption[], selectedSlug: string | null): ModelChoiceRow[] {
+  return [{ slug: '', title: SAME_AS_COACH, tag: null, selected: selectedSlug === null }, ...modelChoiceRows(models, selectedSlug)];
 }
 
 /** §2.5 list (also `Model ›`). Names come from the API; the tag only marks the tested model when listed. */

@@ -128,12 +128,12 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
         const ex = w.exercises[0];
         const pending = ex?.sets.filter((x) => x.status === 'pending') ?? [];
         const lighter = { value: (pending[0]?.target.load?.value ?? 60) - 2.5, unit: 'kg', convention: 'total' };
-        return call('adjust_pending_sets', { baseVersion: w.version, exercises: [{ sessionExerciseId: ex?.sessionExerciseId, sets: pending.map((x) => ({ setId: x.setId, target: { load: lighter, reps: null } })), addSet: null, removeSetId: null }], reason: 'Set 1 was RPE 10.' });
+        return call('edit_today', { baseVersion: w.version, ops: pending.map((x) => ({ op: 'set', setId: x.setId, target: { load: lighter, reps: null } })), reason: 'Set 1 was RPE 10.' });
       },
       () => reply('A little lighter should keep you at 8.'),
     ]);
     const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
-    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('adjust_pending_sets');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('edit_today');
     const after = slotAfterTurn(r);
     const banner = slotView({ pending: false, adjustment: after.adjustment, outcome: after.outcome, offer: null });
     expect(banner).toMatchObject({ kind: 'banner', canUndo: true });
@@ -217,7 +217,7 @@ describe('C7: in the workout (offer, Adjust, banner, Undo)', () => {
         const w = yourData(req).workout;
         const pd = w.exercises.find((e) => e.sessionExerciseId === pulldown.id);
         const pending = pd?.sets.filter((x) => x.status === 'pending') ?? [];
-        return call('adjust_pending_sets', { baseVersion: w.version, exercises: [{ sessionExerciseId: pulldown.id, sets: pending.map((x) => ({ setId: x.setId, target: { load: { value: 45, unit: 'kg', convention: 'stack' }, reps: null } })), addSet: null, removeSetId: null }], reason: 'Lighter.' });
+        return call('edit_today', { baseVersion: w.version, ops: pending.map((x) => ({ op: 'set', setId: x.setId, target: { load: { value: 45, unit: 'kg', convention: 'stack' }, reps: null } })), reason: 'Lighter.' });
       },
       () => reply('Ok.'),
     ]);

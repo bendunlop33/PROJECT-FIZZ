@@ -1067,6 +1067,40 @@ function factsOf(record: ActionRecord): RecordFacts {
       if (after.load !== null) f.primaryLoad = after.load;
       break;
     }
+    case 'edit_today':
+      // Coach v3: the targets and counts as for today's sets, and every exercise the edit touched (swapped to, added, moved).
+      for (const n of d.names) f.names.add(n.toLowerCase());
+      for (const ex of d.exercises) {
+        f.names.add(ex.exerciseName.toLowerCase());
+        for (const c of ex.changes) {
+          f.numbers.add(String(c.setNumber));
+          if (c.after === null) f.removedSets.add(c.setNumber);
+          else if (c.before === null) f.addedSets.add(c.setNumber);
+          else f.changedSets.add(c.setNumber);
+          addAfter(f, c.after);
+          addBefore(f, c.before, c.after);
+          if (f.primaryLoad === null && c.after?.load) f.primaryLoad = c.after.load;
+        }
+      }
+      // Set counts and sets added in the lines ("Cable row: 2 → 3 sets", "Added Cable fly · 2 sets").
+      for (const l of d.lines) {
+        for (const m of l.text.matchAll(/(\d+) → (\d+) sets?/g)) {
+          f.previous.add(m[1] ?? '');
+          f.numbers.add(m[2] ?? '');
+          f.deltas.add(String(Math.abs(Number(m[2]) - Number(m[1]))));
+        }
+        for (const m of l.text.matchAll(/· (\d+) sets?/g)) f.numbers.add(m[1] ?? '');
+      }
+      // Each added exercise as saved: its sets and first target.
+      for (const a of d.added ?? []) {
+        f.names.add(a.exerciseName.toLowerCase());
+        f.numbers.add(String(a.sets));
+        addAfter(f, a.target);
+        if (a.target?.rpe != null) f.numbers.add(formatNumber(a.target.rpe));
+        if (a.durationS !== null) f.numbers.add(String(a.durationS));
+        if (f.primaryLoad === null && a.target?.load) f.primaryLoad = a.target.load;
+      }
+      break;
     case 'add_exercise_today':
       // (12 Oct) The added exercise, its set count and its first set's target as saved.
       f.names.add(d.exerciseName.toLowerCase());
@@ -1100,6 +1134,8 @@ function kindMatches(claim: Claim, record: ActionRecord): boolean {
   // undo, never by the change it claims to have undone (still live when the undo went stale). With a
   // value ("Bench is back to 95", "Back at 100") the value is checked against what the card shows now.
   if (claim.kinds.has('undo') && record.detail.kind !== 'undo' && claim.loads.length === 0 && claim.bareNumbers.length === 0) return false;
+  // Coach v3: one record for every change to today's workout, so it backs a set claim or a today add, swap or removal.
+  if (record.detail.kind === 'edit_today') return claim.kinds.has('any') || claim.kinds.has('edit_today') || claim.kinds.has('adjust_pending_sets') || claim.kinds.has('add_exercise_today');
   return claim.kinds.has('any') || claim.kinds.has(record.detail.kind);
 }
 
@@ -1116,7 +1152,7 @@ function entitiesMatch(claim: Claim, record: ActionRecord, f: RecordFacts): Enti
       return { ok: false, detail: `It named ${mention.names[0] ?? 'an exercise'}; that wasn't changed.` };
     }
   }
-  if (record.detail.kind === 'adjust_pending_sets' || record.detail.kind === 'undo') {
+  if (record.detail.kind === 'adjust_pending_sets' || record.detail.kind === 'undo' || (record.detail.kind === 'edit_today' && !claim.kinds.has('add_exercise_today'))) {
     if (claim.allSets) {
       const changed = [...f.changedSets, ...f.removedSets, ...f.addedSets];
       return { ok: false, detail: `It said every set; only ${setNumbersText(changed)} changed.` };
@@ -1226,7 +1262,7 @@ function checkClaim(claim: Claim, ledger: TurnLedger, cited: ReadonlySet<string>
       entityFailure ??= ent.detail;
       continue;
     }
-    const valueKinds: readonly ActionKind[] = ['adjust_pending_sets', 'undo', 'set_next_session_targets'];
+    const valueKinds: readonly ActionKind[] = ['adjust_pending_sets', 'edit_today', 'undo', 'set_next_session_targets'];
     if (valueKinds.includes(e.record.detail.kind)) {
       const nums = numbersMatch(claim, f);
       if (!nums.ok) return { keep: false, reason: 'numbers_differ', detail: nums.detail, replaceWith: e.record.actionId };
@@ -1257,7 +1293,7 @@ export function checkReplyClaims(sentence: string, ledger: TurnLedger, citedActi
   // Review r5 B1: "Bench is still 100" after bench was lowered this turn contradicts the card.
   const contradiction = contradictsLiveChange(normalised, ledger, names);
   if (contradiction !== null) {
-    const live = ledger.entries.find((e) => e.origin === 'this_turn' && liveCommitted(e) && (e.record.detail.kind === 'adjust_pending_sets' || e.record.detail.kind === 'set_next_session_targets'));
+    const live = ledger.entries.find((e) => e.origin === 'this_turn' && liveCommitted(e) && (e.record.detail.kind === 'adjust_pending_sets' || e.record.detail.kind === 'edit_today' || e.record.detail.kind === 'set_next_session_targets'));
     return { keep: false, reason: 'numbers_differ', detail: contradiction, replaceWith: live?.record.actionId ?? null };
   }
   // "Sets 3 and 4: 95 kg." states targets in the app's own format: treated as a claim about those sets.
@@ -1299,7 +1335,7 @@ function contradictsLiveChange(normalised: string, ledger: TurnLedger, names: re
     for (const e of ledger.entries) {
       if (e.origin !== 'this_turn' || !liveCommitted(e)) continue;
       const kind = e.record.detail.kind;
-      if (kind !== 'adjust_pending_sets' && kind !== 'set_next_session_targets') continue;
+      if (kind !== 'adjust_pending_sets' && kind !== 'edit_today' && kind !== 'set_next_session_targets') continue;
       const nextScope = NEXT_WORDS.test(clause);
       if ((kind === 'set_next_session_targets') !== nextScope) continue;
       const f = factsOf(e.record);
