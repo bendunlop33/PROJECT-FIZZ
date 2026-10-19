@@ -10,7 +10,7 @@ import type { CoachTurnResult } from '@fizz/coach';
 import type { ActionRecord, SessionAggregate } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachService, WorkoutOffer } from './coach-service';
-import { coachCouldNotAnswer, offerCandidates, ruleOfferOutcome } from './slot-view';
+import { coachAskedInstead, coachCouldNotAnswer, offerCandidates, ruleOfferOutcome } from './slot-view';
 
 /** Sets logged with no rest running, held for the next rest (F7). Per workout. */
 export interface HeldSets {
@@ -112,7 +112,9 @@ type SlotOutcome = { text: string; retry: boolean } | null;
  * network, unavailable; not Ben's Cancel, not an answer of "no change"):
  * an `Adjust` on an offer gets the rule's offer for the same trigger (F3),
  * and Ben's own chip gets the rule's change applied now (r1 S1, opId = the
- * turn's id). A turn the coach answered always stands.
+ * turn's id). Also (review S5) when the coach answered Ben's chip with a
+ * question and no change: the rule's change applies now. Any other answer
+ * the coach gave stands.
  */
 export async function settleTurn(
   coach: Pick<CoachService, 'ruleOfferFor' | 'applyRuleRequest'>,
@@ -126,12 +128,15 @@ export async function settleTurn(
   },
 ): Promise<{ adjustment: ActionRecord | null; outcome: SlotOutcome; offer: WorkoutOffer | null }> {
   const couldNotAnswer = input.after.adjustment === null && coachCouldNotAnswer(input.result);
+  // Review S5: Ben's chip, and the coach asked a question instead of changing anything: the rule acts on his tap.
+  const askedInstead = input.request !== null && input.after.adjustment === null && coachAskedInstead(input.result);
   const offer = input.offered !== null && couldNotAnswer ? await coach.ruleOfferFor(input.offered).catch(() => null) : null;
   const ruled =
-    input.request !== null && couldNotAnswer
+    input.request !== null && (couldNotAnswer || askedInstead)
       ? await coach.applyRuleRequest({ sessionId: input.sessionId, ...input.request, opId: input.turnId }).catch(() => ({ status: 'failed' as const }))
       : null;
   const adjustment = ruled?.status === 'applied' ? ruled.record : input.after.adjustment;
-  const outcome = offer !== null || adjustment !== null ? null : ruled !== null && ruled.status !== 'applied' ? ruleOfferOutcome(ruled.status) : input.after.outcome;
+  // When the coach asked and the rule couldn't change anything either, the coach's turn stands as it was.
+  const outcome = offer !== null || adjustment !== null ? null : ruled !== null && ruled.status !== 'applied' && !askedInstead ? ruleOfferOutcome(ruled.status) : input.after.outcome;
   return { adjustment, outcome, offer };
 }

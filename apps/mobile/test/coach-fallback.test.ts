@@ -466,6 +466,24 @@ describe('r2 S1: the chip routing the hook uses (chipRoute, then settleTurn afte
     expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([62.5, 62.5]);
   });
 
+  it('review S5 (build 156): a model that asks "which set?" on Too hard instead of acting: the rule’s change applies now, with Undo', async () => {
+    const { s, sessionId, work } = await bensWorkout();
+    const [s1, s2, s3] = work;
+    if (!s1 || !s2 || !s3) throw new Error('fixture');
+    await log(s, sessionId, s1.id, 6, 'log-1');
+    // Disobeys "never ask which set": no tool call, a question.
+    model = new StepModel([() => [{ type: 'tool_call', callId: 'c-reply', name: 'reply', arguments: JSON.stringify({ message: 'Was that about the warm-up or a working set?', offer: null }) }, { type: 'completed' }]]);
+    const r = await tapChip(s, sessionId, { sessionExerciseId: s1.sessionExerciseId, intent: 'too_hard' });
+    expect(r.route).toBe('coach');
+    expect(model.requests).toHaveLength(1);
+    expect(r.adjustment).toMatchObject({ author: 'checks', status: 'committed' });
+    expect(r.outcome).toBeNull();
+    expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([57.5, 57.5]);
+    if (r.adjustment === null) throw new Error('no adjustment');
+    expect((await s.coach.undo(r.adjustment.actionId, `undo:${r.adjustment.actionId}`)).result.status).toBe('written');
+    expect(await plannedLoads(s, sessionId, [s2.id, s3.id])).toEqual([62.5, 62.5]);
+  });
+
   it('the coach turn failed on the network: the rule’s change applies now, with Undo', async () => {
     const { s, sessionId, work } = await bensWorkout();
     const [s1, s2, s3] = work;

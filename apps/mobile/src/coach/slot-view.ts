@@ -45,7 +45,7 @@ function slotNotes(notes: readonly { kind: string }[]): string[] {
 }
 
 /** A change to today's sets the slot shows as its banner: the coach's (`edit_today`; before Coach v3, `adjust_pending_sets`) or the built-in rule's. */
-function isTodayChange(r: ActionRecord): boolean {
+export function isTodayChange(r: ActionRecord): boolean {
   return r.detail.kind === 'adjust_pending_sets' || r.detail.kind === 'edit_today';
 }
 
@@ -94,6 +94,19 @@ export function slotAfterTurn(result: CoachTurnResult): { adjustment: ActionReco
   const failed = outcomeFor(result.status, result.error, result.cards.length > 0);
   if (failed !== null) return { adjustment: null, outcome: failed };
   return { adjustment: null, outcome: { text: 'No change made.', retry: false } };
+}
+
+/**
+ * (Coach v3 review S5; Ben's build 156 report "Not adjusting during workout") A `Too easy` /
+ * `Too hard` turn the coach finished with a question and no change to today's sets, saved or
+ * offered: it asked instead of acting ("Was that the warm-up or a working set?"). Ben's tap was the
+ * request, so the built-in rule's change applies in its place. A plain answer with no change ("Keep
+ * the load.") is the coach's answer and stands.
+ */
+export function coachAskedInstead(result: CoachTurnResult | null): boolean {
+  if (result === null || result.status !== 'completed' || result.offer !== null) return false;
+  if (result.cards.some((c) => isTodayChange(c.record))) return false;
+  return result.items.some((i) => i.kind === 'sentence' && /\?["”’)]*\s*$/.test(i.text));
 }
 
 /**
