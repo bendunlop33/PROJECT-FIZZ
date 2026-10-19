@@ -87,7 +87,7 @@ export function toHistorySessions(aggregate: SessionAggregate, exerciseId: strin
 /** The rows added to the workout after it was planned (Library, picker, coach adds): `add_exercise` records. */
 function addedRows(aggregate: Pick<SessionAggregate, 'processedOps'>): Set<string> {
   const out = new Set<string>();
-  for (const op of Object.values(aggregate.processedOps ?? {})) if (op.commandType === 'add_exercise') for (const id of op.createdIds ?? []) out.add(id);
+  for (const op of Object.values(aggregate.processedOps)) if (op.commandType === 'add_exercise') for (const id of op.createdIds ?? []) out.add(id);
   return out;
 }
 
