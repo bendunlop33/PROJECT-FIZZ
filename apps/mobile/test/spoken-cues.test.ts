@@ -6,7 +6,8 @@ import type { SessionAggregate } from '@fizz/schemas';
 import { createRestAlertController, type NotifierPort } from '../src/alerts/rest-alerts';
 import { createSpokenCueController, planCues, type CueSettings } from '../src/voice/cue-controller';
 import { createReplyVoice, readRepliesOn, replyToSpeak, toggleReadReplies } from '../src/voice/read-aloud';
-import { cueModeOf, DEFAULT_VOICE_PREFS, parseVoicePrefs, toggleCues, withCueMode } from '../src/voice/settings';
+import { cueModeOf, DEFAULT_VOICE_PREFS, parseVoicePrefs, toggleCues, voiceRowLine, withCueMode } from '../src/voice/settings';
+import { workoutMenu } from '../src/workout/table';
 import { defaultVoice, needsBetterVoiceHint, parseVoices, resolveVoice, voicesForLanguage } from '../src/voice/voices';
 import { createPrefsHolder, parsePrefs } from '../src/device/prefs';
 
@@ -351,5 +352,22 @@ describe('coach replies read aloud', () => {
     const voice = createReplyVoice({ available: () => false, speak: () => (log.push('speak'), Promise.resolve()), stop: () => Promise.resolve() });
     await voice.say('hello');
     expect(log).toEqual([]);
+  });
+});
+
+describe('quick toggle in the workout ⋯ menu', () => {
+  it('shows the opposite of the setting, before Ask the coach; absent when this build can’t speak', () => {
+    const base = { view: 'table' as const, paused: false, openEnded: false, ax: false, gymName: null };
+    expect(workoutMenu({ ...base, cuesOn: true }).map((m) => m.label)).toContain('Turn off spoken cues');
+    expect(workoutMenu({ ...base, cuesOn: false }).map((m) => m.label)).toContain('Turn on spoken cues');
+    const labels = workoutMenu({ ...base, cuesOn: true }).map((m) => m.id);
+    expect(labels.indexOf('cues')).toBe(labels.indexOf('coach') - 1);
+    expect(workoutMenu(base).some((m) => m.id === 'cues')).toBe(false);
+  });
+
+  it('the Profile row reads the setting', () => {
+    expect(voiceRowLine(DEFAULT_VOICE_PREFS, true)).toBe('Cues · Timer and set details');
+    expect(voiceRowLine(toggleCues(DEFAULT_VOICE_PREFS), true)).toBe('Cues off');
+    expect(voiceRowLine(DEFAULT_VOICE_PREFS, false)).toBe('Not in this build');
   });
 });

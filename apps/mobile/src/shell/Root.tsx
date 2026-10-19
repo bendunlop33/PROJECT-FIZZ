@@ -25,6 +25,8 @@ import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
 import { ThemeProvider, TIMING, useTheme, type AvailableDirectionId } from '../theme';
 import { MessageScreen, PrimaryButton, SecondaryButton } from '../ui';
+import { createSpokenCueController } from '../voice/cue-controller';
+import { appleSpeaker, setVoicePrefs, voicePrefs } from '../voice/speaker';
 import { AppProvider } from './context';
 
 const BACKUP_MANIFEST = 'backup-state.json';
@@ -41,8 +43,20 @@ const liveActivity = createLiveActivityController(lazyLiveActivityPort, {
   clock: { now: nowMs, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => { clearTimeout(h as ReturnType<typeof setTimeout>); } },
 });
 
-/** One rest-alert controller for the app run (it remembers what is scheduled); the Live Activity follows it. */
-const restAlerts = createRestAlertController(expoNotifier, { liveActivity });
+/**
+ * Spoken cues while the app is open (Ben, 19 Oct 2026): driven by the same
+ * committed states as the rest alert; in the background the notification
+ * stays the alert.
+ */
+const spokenCues = createSpokenCueController({
+  speaker: appleSpeaker,
+  clock: { now: nowMs, setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => { clearTimeout(h as ReturnType<typeof setTimeout>); } },
+  appActive: () => AppState.currentState === 'active',
+  settings: () => voicePrefs(),
+});
+
+/** One rest-alert controller for the app run (it remembers what is scheduled); the Live Activity and spoken cues follow it. */
+const restAlerts = createRestAlertController(expoNotifier, { liveActivity, spokenCues });
 
 /**
  * On return to the foreground: delivered workout alerts are stale (the screen
@@ -228,7 +242,15 @@ function Themed() {
 
 export function Root() {
   const [prefs, setPrefs] = useState<DevicePrefs | null>(null);
-  const holder = useMemo(() => createPrefsHolder(containerTextFile(DEVICE_PREFS_FILE), setPrefs), []);
+  const holder = useMemo(
+    () =>
+      createPrefsHolder(containerTextFile(DEVICE_PREFS_FILE), (p) => {
+        // The cue controller and speaker read Settings › Voice outside React.
+        setVoicePrefs(p.voice);
+        setPrefs(p);
+      }),
+    [],
+  );
   useEffect(() => {
     void holder.load();
   }, [holder]);

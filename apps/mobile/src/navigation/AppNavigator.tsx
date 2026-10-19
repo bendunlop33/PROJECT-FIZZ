@@ -42,6 +42,7 @@ import { AppStatusScreen } from '../screens/profile/AppStatusScreen';
 import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScreen';
 import { CoachConnectionScreen } from '../screens/profile/CoachConnectionScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
+import { VoiceSettingsScreen } from '../screens/profile/VoiceSettingsScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { SplitScreen } from '../screens/profile/SplitScreen';
 import { TrainingDetailsScreen } from '../screens/profile/TrainingDetailsScreen';
@@ -198,6 +199,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="ImportValueChecks" component={ImportValueChecksScreen} options={{ title: 'Values to check' }} />
       <ProfileStack.Screen name="SavedLayouts" component={SavedLayoutsScreen} options={{ title: 'Saved import layouts' }} />
       <ProfileStack.Screen name="SavedLayout" component={SavedLayoutScreen} options={{ title: 'Saved layout' }} />
+      <ProfileStack.Screen name="Voice" component={VoiceSettingsScreen} options={{ title: 'Voice' }} />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />
       <ProfileStack.Screen name="ChatGptSignInTest" component={ChatGptSignInTestScreen} options={{ title: 'ChatGPT sign-in test' }} />

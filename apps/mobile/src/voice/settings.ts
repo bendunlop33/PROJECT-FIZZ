@@ -68,3 +68,9 @@ export const READ_REPLIES_LABEL: Record<ReadReplies, string> = { workout: 'Durin
 export function rateLabel(rate: number): string {
   return rate === 1 ? 'Normal' : `${String(rate)}×`;
 }
+
+/** Profile's Voice row: `Cues · Timer and set details`, `Cues off`, or `Not in this build`. */
+export function voiceRowLine(p: VoicePrefs, available: boolean): string {
+  if (!available) return 'Not in this build';
+  return p.cuesOn ? `Cues · ${CUE_MODE_LABEL[p.cueDetail]}` : 'Cues off';
+}
