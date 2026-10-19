@@ -6,7 +6,7 @@ import {
   isDeleted,
   liveRoutines,
   planDayDetail,
-  planDayHeader,
+  planDayFromTemplates,
   planDayLines,
   planDayRows,
   planIsOpen,
@@ -104,6 +104,11 @@ export const PLAN_COPY = {
   closed: 'This plan has expired.',
   missing: 'Plan not found.',
   failed: 'Couldn’t save. Try again.',
+  /** A plan day with no gym set up, or one this gym can't plan (review planview S2). */
+  noGym: 'No gym',
+  notHere: 'Can’t plan at this gym',
+  /** Your plan couldn't be read (review planview S5). */
+  loadFailed: 'Couldn’t load your plan.',
   changedSince: (names: readonly string[]) => `Can’t undo: ${names.join(', ')} changed since.`,
   /** Undo of `End plan` with a newer plan in use, or the plan moved on since. */
   notEnded: 'Out of date. Nothing changed.',
@@ -119,8 +124,11 @@ export interface PlanDayScreenData {
   /** `Day 2 of 4 · Main gym · about 60 min`. */
   header: string;
   rows: PlanDayDetailRow[];
-  /** False when this gym can't start it (nothing to plan here): the rows are empty, Start opens the overview to say why. */
-  planned: boolean;
+  /**
+   * `planned`: the rows are what Start would plan at this gym. Review planview S2: `no_gym` (none set up
+   * yet) or `not_here` (this gym can't plan it): the rows are the saved sets × targets, no loads.
+   */
+  status: 'planned' | 'no_gym' | 'not_here';
 }
 
 const plural = (n: number, word: string): string => `${String(n)} ${word}${n === 1 ? '' : 's'}`;
@@ -323,13 +331,15 @@ export function createPlanServices(deps: PlanServicesDeps) {
      * goal line from Profile › Training details, each day's state this week
      * (Monday–Sunday in Ben's time zone, from Apply) and Up next, days this
      * week and planned sets done. Null without a plan in use. Local reads only.
+     * Throws when the plan or its workouts can't be read (review planview S5: never
+     * shown as no plan).
      */
     async overview(): Promise<PlanOverview | null> {
       const p = await owner();
       if (p === null) return null;
-      const plan = await repo().applied(p.id).catch(() => null);
+      const plan = await repo().applied(p.id);
       if (plan === null || plan.applied === null) return null;
-      const days = planRoutines(plan, await live(p.id));
+      const days = planRoutines(plan, liveRoutines(await deps.store().repos.routines.listByOwner(p.id)));
       if (days.length === 0) return null;
       const now = deps.now();
       const nowMs = toMs(now.utc);
@@ -365,15 +375,17 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const gym = (await deps.currentGym?.().catch(() => null)) ?? null;
       const run = gym === null ? null : ((await deps.plannedDay?.(routine.id, gym.id).catch(() => null)) ?? null);
       const histories = new Map<string, SessionAggregate[]>();
-      for (const e of run?.aggregate.exercises ?? []) {
-        if (histories.has(e.exerciseId)) continue;
-        histories.set(e.exerciseId, await deps.store().repos.sessions.listFinishedWithExercise(p.id, e.exerciseId).catch(() => []));
+      for (const exerciseId of run === null ? routine.exercises.map((e) => e.exerciseId) : run.aggregate.exercises.map((e) => e.exerciseId)) {
+        if (histories.has(exerciseId)) continue;
+        histories.set(exerciseId, await deps.store().repos.sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => []));
       }
+      const history = (id: string) => histories.get(id) ?? [];
       const detail =
         run === null
-          ? { header: planDayHeader(at + 1, days.length, gym?.name ?? null, null), rows: [] }
-          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history: (id) => histories.get(id) ?? [] });
-      return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, planned: run !== null };
+          ? planDayFromTemplates({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, routine, exerciseOf: await exerciseOf(), unit: p.preferredUnit, history })
+          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history });
+      const status = run !== null ? 'planned' : gym === null ? 'no_gym' : 'not_here';
+      return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status };
     },
 
     /**

@@ -40,6 +40,7 @@ export function PlanDayScreen() {
       {day !== null ? (
         <>
           <HeroHeader size="screen" title={day.name} lines={[day.header]} />
+          {day.status !== 'planned' ? <StatusLine icon="info.circle" tone="info" text={day.status === 'no_gym' ? PLAN_COPY.noGym : PLAN_COPY.notHere} /> : null}
           {day.rows.length > 0 ? (
             <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
               {day.rows.map((r, i) => (

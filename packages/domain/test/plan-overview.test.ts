@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { Load, SessionAggregate, SessionExercise, WorkoutSet } from '@fizz/schemas';
 
-import { catalogueExerciseId, goalLine, planDayDetail, planDaysDoneThisWeek, planOverview, plannedSetsThisWeek, toMs, type PlanOverviewInput } from '../src/index';
-import { id, kg, TZ } from './fixtures';
+import { catalogueExerciseId, goalLine, planDayDetail, planDayFromTemplates, planDaysDoneThisWeek, planOverview, plannedSetsThisWeek, toMs, type PlanOverviewInput } from '../src/index';
+import { id, kg, routine, routineExercise, template, TZ } from './fixtures';
 
 /**
  * Library › Workouts › Your plan (Ben, 19 Oct): the block's day states
@@ -274,6 +274,22 @@ describe('planDayDetail: a plan day’s lines', () => {
     // An exercise skipped today (every working set taken out before the start) isn't listed.
     const skipped: Agg = { ...mixed, sets: mixed.sets.map((x) => (x.sessionExerciseId === press.id ? { ...x, status: 'skipped' as const, skippedBy: 'before_start' as const } : x)) };
     expect(planDayDetail({ dayN: 1, of: 4, gymName: null, aboutMinutes: null, planned: skipped, history: () => [] }).rows.map((r) => r.name)).toEqual(['Back squat']);
+  });
+
+  it('nothing planned at a gym (review planview S2): the saved sets × target, no load, with last time', () => {
+    const r = routine([
+      routineExercise(1, { exerciseId: row.exerciseId, order: 0, setTemplates: [template(10, { setType: 'warmup' }), template(11, { setType: 'top' }), template(12), template(13), template(14)] }),
+      routineExercise(2, { exerciseId: rower.exerciseId, order: 1, setTemplates: [template(20, { targetReps: null, targetDurationS: 600 })] }),
+      routineExercise(3, { exerciseId: db.exerciseId, order: 2, setTemplates: [template(30, { targetReps: { min: 10, max: 12 } }), template(31, { targetReps: { min: 8, max: 10 } })] }),
+    ]);
+    const names = new Map([[row.exerciseId, { name: 'Barbell row', measurement: 'reps' as const }], [rower.exerciseId, { name: 'Rowing machine', measurement: 'cardio' as const }], [db.exerciseId, { name: 'Chest-supported row', measurement: 'reps' as const }]]);
+    const d = planDayFromTemplates({ dayN: 2, of: 4, gymName: null, routine: r, exerciseOf: (x) => names.get(x) ?? null, unit: 'kg', history: (x) => histories.get(x) ?? [] });
+    expect(d.header).toBe('Day 2 of 4');
+    expect(d.rows.map((x) => [x.name, plain(x.line), plain(x.sub)])).toEqual([
+      ['Barbell row', 'Top set, 3 × 6–8', 'Last 7 Oct: 80 × 12, 12, 75 × 10 · Targets hit 1 of last 2'],
+      ['Rowing machine', '1 × 10:00', 'Last 2 Oct: 10:00 · 2,450 m · 2:02 /500 m · Targets hit 1 of last 1'],
+      ['Chest-supported row', '2 sets', 'Last 2 Oct: 20 × 12, 12, 11'],
+    ]);
   });
 
   it('last time from his newest workout with it, with targets hit; lb shown where the plan is kg; est. with no history; cardio with pace', () => {

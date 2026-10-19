@@ -1,4 +1,4 @@
-import type { Load, PlanDraftStatus, SessionAggregate, SessionExercise, TrainingGoal, WorkoutSet } from '@fizz/schemas';
+import type { Exercise, Load, PlanDraftStatus, Routine, SessionAggregate, SessionExercise, TrainingGoal, WorkoutSet } from '@fizz/schemas';
 import { weekdayOf } from '../calendar';
 import { paceText } from '../cardio';
 import { cardioValuesText, dayMonthText, formatDistance, formatDuration, formatNumber, loadText, repRangeText } from '../display';
@@ -310,21 +310,67 @@ export function planDayDetail(input: PlanDayDetailInput): PlanDayDetail {
       }
       const line = parts.join(', ');
       const unit = sets.find((s) => s.planned.load !== null)?.planned.load?.unit ?? null;
-      const history = [...input.history(ex.exerciseId)].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
-      let sub: string | null = null;
-      for (const a of history) {
-        const parts = a.exercises.filter((e) => e.exerciseId === ex.exerciseId && e.removed === undefined).sort((x, y) => x.order - y.order);
-        const logged = parts.flatMap((p) => a.sets.filter((s) => s.sessionExerciseId === p.id && isPrescribed(s)).sort((x, y) => x.index - y.index));
-        const text = parts[0] === undefined ? null : doneText(parts[0], logged, unit);
-        if (text === null) continue;
-        sub = `Last ${dayMonthText(a.session.startedAt.utc, a.session.startedAt.tz)}: ${text}`;
-        break;
-      }
-      if (sub !== null) {
-        const hit = exerciseTargetHistory(history, ex.exerciseId).hitText;
-        if (hit !== null) sub = `${sub} · ${hit}`;
-      } else if (sets.some((s) => s.planned.provenance?.estimate === true)) sub = 'est.';
-      return { key: ex.id, exerciseId: ex.exerciseId, name: ex.exerciseName, line, sub, accessibilityLabel: [ex.exerciseName, line, ...(sub === null ? [] : [sub === 'est.' ? 'estimated load' : sub])].join(', ') };
+      const sub = lastTimeSub(ex.exerciseId, input.history(ex.exerciseId), unit) ?? (sets.some((s) => s.planned.provenance?.estimate === true) ? 'est.' : null);
+      return detailRow(ex.id, ex.exerciseId, ex.exerciseName, line, sub);
     });
   return { header, rows };
+}
+
+function detailRow(key: string, exerciseId: string, name: string, line: string, sub: string | null): PlanDayDetailRow {
+  return { key, exerciseId, name, line, sub, accessibilityLabel: [name, line, ...(sub === null ? [] : [sub === 'est.' ? 'estimated load' : sub])].join(', ') };
+}
+
+/** `Last 17 Oct: 80 × 12, 12 · Targets hit 5 of last 6` from his newest finished workout with it, else null. */
+function lastTimeSub(exerciseId: string, workouts: readonly Aggregate[], unit: string | null): string | null {
+  const history = [...workouts].sort((a, b) => toMs(b.session.startedAt.utc) - toMs(a.session.startedAt.utc));
+  for (const a of history) {
+    const parts = a.exercises.filter((e) => e.exerciseId === exerciseId && e.removed === undefined).sort((x, y) => x.order - y.order);
+    const logged = parts.flatMap((p) => a.sets.filter((s) => s.sessionExerciseId === p.id && isPrescribed(s)).sort((x, y) => x.index - y.index));
+    const text = parts[0] === undefined ? null : doneText(parts[0], logged, unit);
+    if (text === null) continue;
+    const sub = `Last ${dayMonthText(a.session.startedAt.utc, a.session.startedAt.tz)}: ${text}`;
+    const hit = exerciseTargetHistory(history, exerciseId).hitText;
+    return hit === null ? sub : `${sub} · ${hit}`;
+  }
+  return null;
+}
+
+export interface PlanDayTemplateInput {
+  dayN: number;
+  of: number;
+  gymName: string | null;
+  /** The plan day's saved workout. */
+  routine: Pick<Routine, 'exercises'>;
+  exerciseOf: (exerciseId: string) => Pick<Exercise, 'name' | 'measurement'> | null;
+  /** Ben's unit: a logged load in another unit shows its unit. */
+  unit: string;
+  history: (exerciseId: string) => readonly Aggregate[];
+}
+
+/**
+ * (Review planview S2) A plan day with nothing planned at a gym (no gym yet,
+ * or this gym can't start it): each exercise's saved sets × target, with no
+ * load (a load is only shown once it is snapped to a gym, rule 4), and last
+ * time's sets. Values only.
+ */
+export function planDayFromTemplates(input: PlanDayTemplateInput): PlanDayDetail {
+  const rows = [...input.routine.exercises]
+    .sort((a, b) => a.order - b.order)
+    .map((re): PlanDayDetailRow => {
+      const ex = input.exerciseOf(re.exerciseId);
+      const name = ex?.name ?? 'Exercise';
+      const ts = re.setTemplates.filter((t) => t.setType !== 'warmup');
+      const tops = ts.filter((t) => t.setType === 'top');
+      const rest = ts.filter((t) => t.setType !== 'top');
+      const values = rest.flatMap((t): string[] => {
+        if (ex?.measurement === 'cardio') return t.targetDurationS === null ? [] : [cardioValuesText({ durationS: t.targetDurationS, distanceM: t.targetDistanceM ?? null })];
+        if (ex?.measurement === 'distance') return t.targetDistanceM == null ? [] : [formatDistance(t.targetDistanceM)];
+        if (ex?.measurement === 'duration' || t.targetReps === null) return t.targetDurationS === null ? [] : [formatDuration(t.targetDurationS)];
+        return [repRangeText(t.targetReps)];
+      });
+      const scheme = sameOf(values, rest.length);
+      const parts = [...(tops.length === 0 ? [] : [tops.length === 1 ? 'Top set' : `${String(tops.length)} top sets`]), ...(rest.length > 0 || tops.length === 0 ? [scheme === null ? `${String(rest.length)} ${rest.length === 1 ? 'set' : 'sets'}` : `${String(rest.length)} × ${scheme}`] : [])];
+      return detailRow(re.id, re.exerciseId, name, parts.join(', '), lastTimeSub(re.exerciseId, input.history(re.exerciseId), input.unit));
+    });
+  return { header: planDayHeader(input.dayN, input.of, input.gymName, null), rows };
 }

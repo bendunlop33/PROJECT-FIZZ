@@ -1,3 +1,6 @@
+import { DatabaseSync } from 'node:sqlite';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
@@ -122,7 +125,7 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
 
     // A plan day: what Start plans here, last time's sets.
     const day1 = await s.plans.planDay(days[0] ?? '');
-    expect(day1).toMatchObject({ name: 'Push', dayN: 1, of: 4, planned: true });
+    expect(day1).toMatchObject({ name: 'Push', dayN: 1, of: 4, status: 'planned' });
     expect(plain(day1?.header)).toMatch(/^Day 1 of 4 · Main Gym · about \d+ min$/);
     expect(day1?.rows.map((r) => [r.name, plain(r.line)])).toEqual([
       ['Bench press', '3 × 6–8 · 100 kg'],
@@ -202,6 +205,34 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     expect(day1?.rows.map((r) => r.name)).toEqual(['Bench press']);
     // Another day has no edits: as planned.
     expect((await s.plans.planDay(days[1] ?? ''))?.rows.map((r) => r.name)).toEqual(['Lat pulldown', 'Barbell row']);
+  });
+
+  it('no gym: the plan day says so and shows the saved sets × targets, no loads (review planview S2)', async () => {
+    const { s, gymId, days } = await benWithPlan();
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    db.prepare("UPDATE gyms SET data = json_set(data, '$.archivedAtUtc', '2026-10-13T07:30:00.000Z') WHERE id = ?").run(gymId);
+    db.close();
+    const s2 = (await h.launch()).services;
+    const day1 = await s2.plans.planDay(days[0] ?? '');
+    expect(day1).toMatchObject({ status: 'no_gym', dayN: 1, of: 4 });
+    expect(plain(day1?.header)).toBe('Day 1 of 4');
+    expect(day1?.rows.map((r) => [r.name, plain(r.line), plain(r.sub)])).toEqual([
+      ['Bench press', '3 × 6–8', 'Last 12 Oct: 100 × 7, 7 · Targets hit 1 of last 1'],
+      ['Incline dumbbell press', '3 × 8–10', 'Last 12 Oct: 27.5 × 9 · Targets hit 1 of last 1'],
+    ]);
+  });
+
+  it('a plan that can’t be read is an error, never shown as no plan (review planview S5)', async () => {
+    const { s, planId } = await benWithPlan();
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    db.prepare("UPDATE plan_drafts SET data = json_set(data, '$.versions', json('[]')) WHERE id = ?").run(planId);
+    db.close();
+    const s2 = (await h.launch()).services;
+    await expect(s2.plans.overview()).rejects.toThrow();
   });
 
   it('no plan applied: no block; End on a plan that isn’t there changes nothing', async () => {
