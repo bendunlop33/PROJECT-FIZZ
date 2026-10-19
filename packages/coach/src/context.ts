@@ -203,6 +203,8 @@ export interface SessionExerciseView {
   unit: string;
   loadConvention: string;
   equipment: string | null;
+  /** (19 Oct) Its superset's letter (members alternate sets); absent when it isn't in one. */
+  superset?: string;
   sets: SessionSetView[];
 }
 
@@ -321,6 +323,7 @@ export function workoutView(session: SessionAggregate, gymName: string | null, r
         unit: ex.unit,
         loadConvention: ex.loadConvention,
         equipment: eq === null ? null : `${eq.name} (${eq.kind})`,
+        ...(ex.supersetGroup === null ? {} : { superset: ex.supersetGroup }),
         sets: sets.map((s, i) => ({
           setId: s.id,
           number: i + 1,

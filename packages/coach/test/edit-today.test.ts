@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { exercise, GYM, profile } from '@fizz/domain/testing';
 import type { Store } from '@fizz/persistence';
 import type { Exercise, PainFlag, SessionAggregate } from '@fizz/schemas';
+import { workoutView } from '../src/context';
 import { acceptEditOffer, createEditTodayExecutor, type EditTodayDeps } from '../src/edit-today';
 import { createStoreExecutors, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
 import { runCoachTurn } from '../src/turn';
@@ -313,5 +314,11 @@ describe('edit_today: the same exercise again, and supersets (Ben, 19 Oct)', () 
     const after = await s.repos.sessions.get(SESSION);
     expect(live(after)).toEqual(['Bench press', 'Assisted pull-up', 'Dumbbell press']);
     expect(after?.sets).toEqual(workout().sets);
+    // The coach sees the pair on its next turn.
+    expect(workoutView(after as SessionAggregate, 'Main Gym').exercises.map((e) => [e.name, e.superset ?? null])).toEqual([
+      ['Bench press', 'A'],
+      ['Assisted pull-up', 'A'],
+      ['Dumbbell press', null],
+    ]);
   });
 });
