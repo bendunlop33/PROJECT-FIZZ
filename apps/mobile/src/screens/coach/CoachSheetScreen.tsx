@@ -36,7 +36,7 @@ import {
 } from '../../coach/sheet-view';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { newUuid } from '../../device/runtime';
-import { createReplyVoice, readRepliesOn, replyToSpeak, toggleReadReplies } from '../../voice/read-aloud';
+import { createReplyVoice, replyToSpeak, sheetReadOn } from '../../voice/read-aloud';
 import { appleSpeaker, voiceCapability } from '../../voice/speaker';
 import { formatTime } from '../../format/dates';
 import type { RootStackParams } from '../../navigation/types';
@@ -115,17 +115,37 @@ export function CoachSheetScreen() {
   const sendGuard = useRef(0);
   const scroll = useRef<ScrollView>(null);
   /**
-   * Replies read aloud (Ben, 19 Oct 2026): by default only over a live workout; the header's
-   * speaker mirrors Settings › Voice. Stops on typing, closing, or the next reply.
+   * Replies read aloud (Ben, 19 Oct 2026): by default whenever a workout is in progress (review S4);
+   * the header's speaker overrides it for this sheet only, never Settings › Voice (review S5).
+   * Stops on typing, closing, or the next reply; a reply arriving after the sheet closed, or while
+   * Ben is typing, is never spoken (review B2).
    */
-  const { prefs, update: updatePrefs } = useDevicePrefs();
+  const { prefs } = useDevicePrefs();
   const replyVoice = useMemo(() => createReplyVoice(appleSpeaker), []);
   const readAloud = useRef(false);
-  useEffect(
-    () => () => {
-      void replyVoice.hush();
-    },
-    [replyVoice],
+  const [readOverride, setReadOverride] = useState<boolean | null>(null);
+  /** A workout in progress, however the sheet was opened. */
+  const [sessionActive, setSessionActive] = useState(false);
+  /** The sheet is showing (focused and mounted). */
+  const sheetOpen = useRef(false);
+  const typedText = useRef(text);
+  typedText.current = text;
+  useFocusEffect(
+    useCallback(() => {
+      sheetOpen.current = true;
+      let alive = true;
+      void services.sessions
+        .active()
+        .then((a) => {
+          if (alive) setSessionActive(a !== null && a.session.status === 'active');
+        })
+        .catch(() => undefined);
+      return () => {
+        alive = false;
+        sheetOpen.current = false;
+        void replyVoice.hush();
+      };
+    }, [services, replyVoice]),
   );
   const field = useRef<TextInput>(null);
 
@@ -265,7 +285,7 @@ export function CoachSheetScreen() {
         },
       });
       setThreadId(r.threadId);
-      const words = replyToSpeak(r, readAloud.current);
+      const words = replyToSpeak(r, readAloud.current, { open: sheetOpen.current, typing: typedText.current.trim() !== '' });
       if (words !== null) void replyVoice.say(words);
       setPicking(false);
       if (r.askPain === null) setAskPain(false);
@@ -465,9 +485,9 @@ export function CoachSheetScreen() {
   const empty = rows.length === 0 && live === null;
   const running = live !== null;
   const canSend = status?.canSend === true && text.trim() !== '' && !running;
-  const liveWorkout = entry.kind === 'workout' && workout?.active === true;
+  const liveWorkout = (entry.kind === 'workout' && workout?.active === true) || sessionActive;
   const canSpeak = voiceCapability().speech;
-  const readOn = canSpeak && readRepliesOn(prefs.voice.readReplies, liveWorkout);
+  const readOn = canSpeak && sheetReadOn(prefs.voice.readReplies, liveWorkout, readOverride);
   readAloud.current = readOn;
 
   const header = (
@@ -488,7 +508,7 @@ export function CoachSheetScreen() {
           label={readOn ? 'Read replies aloud: on' : 'Read replies aloud: off'}
           onPress={() => {
             if (readOn) void replyVoice.hush();
-            updatePrefs({ voice: { ...prefs.voice, readReplies: toggleReadReplies(prefs.voice.readReplies, liveWorkout) } });
+            setReadOverride(!readOn);
           }}
         />
       ) : null}

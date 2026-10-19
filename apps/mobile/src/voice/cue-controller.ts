@@ -1,4 +1,4 @@
-import { cueText, spokenSetOf, toMs, type CueDetail, type CueEvent } from '@fizz/domain';
+import { cueText, spokenSetOf, toMs, type ComparableSet, type CueDetail, type CueEvent } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { TIMING } from '../theme/tokens';
@@ -59,10 +59,15 @@ export function planCues(state: SessionAggregate | null): PlannedCue[] {
   return out;
 }
 
-/** The words for a cue at fire time, from the newest state (a corrected next set is read as it is now). */
-export function cueWords(kind: CueKind, state: SessionAggregate | null, detail: CueDetail): string {
+/**
+ * The words for a cue at fire time, from the newest state (a corrected next
+ * set, or a draft saved during the rest, is read as it is now). The set's
+ * values are the card's (review B1); `lastComparable` is the history the
+ * card fills open fields from.
+ */
+export function cueWords(kind: CueKind, state: SessionAggregate | null, detail: CueDetail, lastComparable: readonly ComparableSet[] = []): string {
   const event: CueEvent =
-    kind === 'warning' ? { kind: 'warning', seconds: WARNING_LEAD_S } : kind === 'work_end' ? { kind: 'work_end' } : { kind: 'rest_end', next: state === null ? null : spokenSetOf(state, state.session.activeSetId) };
+    kind === 'warning' ? { kind: 'warning', seconds: WARNING_LEAD_S } : kind === 'work_end' ? { kind: 'work_end' } : { kind: 'rest_end', next: state === null ? null : spokenSetOf(state, state.session.activeSetId, lastComparable) };
   return cueText(event, detail);
 }
 
@@ -101,6 +106,8 @@ export interface CuePorts {
   /** AppState is `active`. */
   appActive(): boolean;
   settings(): CueSettings;
+  /** The card's history for an exercise row (the last comparable session's sets); read ahead, while the rest runs. */
+  history?: (state: SessionAggregate, sessionExerciseId: string) => Promise<readonly ComparableSet[]>;
 }
 
 export function createSpokenCueController(ports: CuePorts) {
@@ -108,6 +115,26 @@ export function createSpokenCueController(ports: CuePorts) {
   const played = new Set<string>();
   let latest: SessionAggregate | null = null;
   let spoken = 0;
+  let historyPort = ports.history ?? null;
+  /** `<sessionId>:<sessionExerciseId>` → the last comparable sets, read once per workout row. */
+  const history = new Map<string, readonly ComparableSet[]>();
+  const historyKey = (state: SessionAggregate, exId: string) => `${state.session.id}:${exId}`;
+  function activeRow(state: SessionAggregate | null): string | null {
+    const id = state?.session.activeSetId ?? null;
+    return id === null ? null : (state?.sets.find((x) => x.id === id)?.sessionExerciseId ?? null);
+  }
+  function readAhead(state: SessionAggregate | null): void {
+    const exId = activeRow(state);
+    if (state === null || exId === null || historyPort === null) return;
+    const k = historyKey(state, exId);
+    if (history.has(k)) return;
+    history.set(k, []);
+    void historyPort(state, exId)
+      .then((sets) => {
+        history.set(k, sets);
+      })
+      .catch(() => undefined);
+  }
 
   function fire(cue: PlannedCue): void {
     timers.delete(cue.key);
@@ -119,7 +146,9 @@ export function createSpokenCueController(ports: CuePorts) {
     if (!s.cuesOn) return;
     spoken += 1;
     // A failing speaker never throws into the workout (rule 1).
-    void ports.speaker.speak(cueWords(cue.kind, latest, s.cueDetail), 'cue').catch(() => undefined);
+    const exId = activeRow(latest);
+    const past = latest !== null && exId !== null ? (history.get(historyKey(latest, exId)) ?? []) : [];
+    void ports.speaker.speak(cueWords(cue.kind, latest, s.cueDetail, past), 'cue').catch(() => undefined);
   }
 
   return {
@@ -129,6 +158,7 @@ export function createSpokenCueController(ports: CuePorts) {
       const nowMs = ports.clock.now();
       latest = state;
       const planned = planCues(state);
+      if (planned.some((c) => c.kind === 'rest_end')) readAhead(state);
       const keys = new Set(planned.map((c) => c.key));
       for (const [key, t] of timers) {
         if (!keys.has(key)) {
@@ -148,6 +178,11 @@ export function createSpokenCueController(ports: CuePorts) {
         }, Math.max(0, cue.fireAtMs - nowMs));
         timers.set(cue.key, { cue, handle });
       }
+    },
+    /** The history read for the spoken set detail (Root sets it once services are open). */
+    setHistoryReader(port: CuePorts['history'] | null): void {
+      historyPort = port ?? null;
+      history.clear();
     },
     /** Cues waiting to speak (for tests and diagnostics). */
     get pending(): PlannedCue[] {

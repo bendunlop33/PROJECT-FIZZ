@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { apply, at, logCmd, ms, setsFor, startFixture, values, kg, BENCH, HANG } from '@fizz/domain/testing';
+import { prefillDraft } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
 
 import { createRestAlertController, type NotifierPort } from '../src/alerts/rest-alerts';
-import { createSpokenCueController, planCues, type CueSettings } from '../src/voice/cue-controller';
-import { createReplyVoice, readRepliesOn, replyToSpeak, toggleReadReplies } from '../src/voice/read-aloud';
+import { createSpokenCueController, planCues, type CuePorts, type CueSettings } from '../src/voice/cue-controller';
+import { createSpeechArbiter } from '../src/voice/arbiter';
+import { createReplyVoice, readRepliesOn, replyToSpeak, sheetReadOn } from '../src/voice/read-aloud';
 import { cueModeOf, DEFAULT_VOICE_PREFS, parseVoicePrefs, toggleCues, voiceRowLine, withCueMode } from '../src/voice/settings';
 import { workoutMenu } from '../src/workout/table';
 import { defaultVoice, needsBetterVoiceHint, parseVoices, resolveVoice, voicesForLanguage } from '../src/voice/voices';
@@ -43,7 +45,7 @@ function fakeClock(startMs: number) {
   };
 }
 
-function rig(opts: { startMs?: number; settings?: Partial<CueSettings>; active?: boolean; available?: boolean } = {}) {
+function rig(opts: { startMs?: number; settings?: Partial<CueSettings>; active?: boolean; available?: boolean; history?: CuePorts['history'] } = {}) {
   const clock = fakeClock(opts.startMs ?? ms(0));
   const said: string[] = [];
   const settings: CueSettings = { cuesOn: true, cueDetail: 'timer_and_set', ...opts.settings };
@@ -59,6 +61,7 @@ function rig(opts: { startMs?: number; settings?: Partial<CueSettings>; active?:
     clock,
     appActive: () => env.active,
     settings: () => env.settings,
+    ...(opts.history ? { history: opts.history } : {}),
   });
   return { clock, said, env, controller };
 }
@@ -84,12 +87,12 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     clock.advanceTo(ms(55));
     expect(said).toEqual(['10 seconds.']);
     clock.advanceTo(ms(65));
-    expect(said).toEqual(['10 seconds.', 'Rest done. Set 2, Bench press, 100 kilos for 6 to 8.']);
+    expect(said).toEqual(['10 seconds.', 'Rest done. Set 2, Bench press, 100 kilos for 8.']);
     // The same state again (a foreground read), or the screen's tick saving the expiry: nothing twice.
     controller.reconcile(logged);
     controller.reconcile(apply(logged, { type: 'tick', at: at(66) }));
     clock.advanceTo(ms(200));
-    expect(said).toEqual(['10 seconds.', 'Rest done. Set 2, Bench press, 100 kilos for 6 to 8.']);
+    expect(said).toEqual(['10 seconds.', 'Rest done. Set 2, Bench press, 100 kilos for 8.']);
   });
 
   it('the screen ticking the expiry a moment before the cue timer fires does not cancel it', () => {
@@ -102,7 +105,48 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     controller.reconcile(expired);
     clock.advanceTo(ms(65.2));
     // Joined at 1:00, 5 s after the warning's moment: the warning is dropped, the rest end still speaks.
-    expect(said).toEqual(['Rest done. Set 2, Bench press, 100 kilos for 6 to 8.']);
+    expect(said).toEqual(['Rest done. Set 2, Bench press, 100 kilos for 8.']);
+  });
+
+  it('says the card’s values: a draft saved during the rest, history for an open target field (review B1)', async () => {
+    const { logged } = resting();
+    const b1 = setsFor(logged, BENCH)[1];
+    if (!b1) throw new Error('fixture');
+    // Bench set 2 with the load left open: the card fills it from the last comparable session.
+    const open = { ...logged, sets: logged.sets.map((x) => (x.id === b1.id ? { ...x, planned: { ...x.planned, load: null } } : x)) };
+    const reads: string[] = [];
+    const { clock, said, controller } = rig({
+      startMs: ms(6),
+      history: (_state, exId) => {
+        reads.push(exId);
+        return Promise.resolve([{ index: b1.index, values: values(kg(97.5), 8) }]);
+      },
+    });
+    controller.reconcile(open);
+    await Promise.resolve();
+    clock.advanceTo(ms(30));
+    // Ben changes the next set to 85 kg during the rest; the debounced draft is saved.
+    const edited = apply(open, { type: 'save_draft', at: at(30), setId: b1.id, values: values(kg(85), 7) });
+    controller.reconcile(edited);
+    clock.advanceTo(ms(70));
+    expect(said).toEqual(['10 seconds.', 'Rest done. Set 2, Bench press, 85 kilos for 7.']);
+    // Read once per exercise row, ahead of the cue.
+    expect(reads).toEqual([b1.sessionExerciseId]);
+  });
+
+  it('an open load says what the card prefills (this session’s last set before history)', async () => {
+    const { logged } = resting();
+    const b1 = setsFor(logged, BENCH)[1];
+    if (!b1) throw new Error('fixture');
+    const open = { ...logged, sets: logged.sets.map((x) => (x.id === b1.id ? { ...x, planned: { ...x.planned, load: null } } : x)) };
+    const { clock, said, controller } = rig({ startMs: ms(6), history: () => Promise.resolve([{ index: b1.index, values: values(kg(97.5), 8) }]) });
+    controller.reconcile(open);
+    await Promise.resolve();
+    await Promise.resolve();
+    clock.advanceTo(ms(70));
+    const card = prefillDraft(open, b1.id, [{ index: b1.index, values: values(kg(97.5), 8) }]).values;
+    expect(card.load).toEqual(kg(60));
+    expect(said.at(-1)).toBe('Rest done. Set 2, Bench press, 60 kilos for 8.');
   });
 
   it('timer only: no set details', () => {
@@ -148,7 +192,7 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     const { clock, said, controller } = rig({ startMs: ms(58) });
     controller.reconcile(logged);
     clock.advanceTo(ms(70));
-    expect(said).toEqual(['Rest done. Set 2, Bench press, 100 kilos for 6 to 8.']);
+    expect(said).toEqual(['Rest done. Set 2, Bench press, 100 kilos for 8.']);
   });
 
   it('a timer that fires late (JS suspended) is dropped after timing.lateCueDrop', () => {
@@ -211,7 +255,7 @@ describe('spoken cue timing (Ben, 19 Oct)', () => {
     clock.advanceTo(ms(100));
     expect(said).toEqual([]);
     clock.advanceTo(ms(200));
-    expect(said).toEqual(['10 seconds.', 'Rest done. Set 3, Bench press, 100 kilos for 6 to 8.']);
+    expect(said).toEqual(['10 seconds.', 'Rest done. Set 3, Bench press, 100 kilos for 8.']);
   });
 });
 
@@ -299,21 +343,33 @@ describe('coach replies read aloud', () => {
     expect(readRepliesOn('off', true)).toBe(false);
   });
 
-  it('the sheet toggle mirrors the setting', () => {
-    expect(toggleReadReplies('workout', true)).toBe('off');
-    expect(toggleReadReplies('off', true)).toBe('workout');
-    expect(toggleReadReplies('off', false)).toBe('always');
-    expect(toggleReadReplies('always', false)).toBe('off');
-    expect(toggleReadReplies('workout', false)).toBe('always');
+  it('the sheet’s speaker overrides for that sheet only; the setting (and the next workout’s default) is untouched (review S5)', () => {
+    // Muted mid-workout: off in this sheet...
+    expect(sheetReadOn('workout', true, false)).toBe(false);
+    // ...and the next sheet over a workout starts from the setting again: on.
+    expect(sheetReadOn('workout', true, null)).toBe(true);
+    // Turned on outside a workout: on in this sheet only; the setting stays During workouts.
+    expect(sheetReadOn('workout', false, true)).toBe(true);
+    expect(sheetReadOn('workout', false, null)).toBe(false);
+    expect(sheetReadOn('off', true, null)).toBe(false);
   });
 
   it('speaks a completed, new turn’s sentences only, shortened', () => {
     const items = [{ kind: 'sentence' as const, text: 'Nice set. Try 82.5 kg × 8 next. Then rest.' }, { kind: 'action_line', actionId: 'a' }];
-    expect(replyToSpeak({ status: 'completed', replayed: false, items }, true)).toBe('Nice set. Try 82 and a half kilos for 8 next.');
-    expect(replyToSpeak({ status: 'completed', replayed: false, items }, false)).toBeNull();
-    expect(replyToSpeak({ status: 'completed', replayed: true, items }, true)).toBeNull();
-    expect(replyToSpeak({ status: 'failed', replayed: false, items }, true)).toBeNull();
-    expect(replyToSpeak({ status: 'completed', replayed: false, items: [{ kind: 'action_line' }] }, true)).toBeNull();
+    const open = { open: true, typing: false };
+    expect(replyToSpeak({ status: 'completed', replayed: false, items }, true, open)).toBe('Nice set. Try 82 and a half kilos for 8 next.');
+    expect(replyToSpeak({ status: 'completed', replayed: false, items }, false, open)).toBeNull();
+    expect(replyToSpeak({ status: 'completed', replayed: true, items }, true, open)).toBeNull();
+    expect(replyToSpeak({ status: 'failed', replayed: false, items }, true, open)).toBeNull();
+    expect(replyToSpeak({ status: 'completed', replayed: false, items: [{ kind: 'action_line' }] }, true, open)).toBeNull();
+  });
+
+  it('a reply that arrives after the sheet closed, or while Ben is typing, is never spoken (review B2)', () => {
+    const items = [{ kind: 'sentence' as const, text: 'Nice set.' }];
+    const r = { status: 'completed', replayed: false, items };
+    expect(replyToSpeak(r, true, { open: false, typing: false })).toBeNull();
+    expect(replyToSpeak(r, true, { open: true, typing: true })).toBeNull();
+    expect(replyToSpeak(r, true, { open: true, typing: false })).toBe('Nice set.');
   });
 
   it('a new reply stops the last one; typing or closing stops only a reply still speaking', async () => {
@@ -352,6 +408,107 @@ describe('coach replies read aloud', () => {
     const voice = createReplyVoice({ available: () => false, speak: () => (log.push('speak'), Promise.resolve()), stop: () => Promise.resolve() });
     await voice.say('hello');
     expect(log).toEqual([]);
+  });
+});
+
+/** A fake module: one queue; `stop` cancels everything (as the Swift `stop()` does). */
+function fakeModule() {
+  const log: string[] = [];
+  const queue: { text: string; done: () => void }[] = [];
+  let current: { text: string; done: () => void } | null = null;
+  const next = () => {
+    current = queue.shift() ?? null;
+    if (current) log.push(`start ${current.text}`);
+  };
+  return {
+    log,
+    raw: {
+      available: () => true,
+      speak: (text: string) =>
+        new Promise<void>((resolve) => {
+          queue.push({ text, done: resolve });
+          if (current === null) next();
+        }),
+      stop: () => {
+        log.push('stop');
+        for (const u of [current, ...queue]) if (u) { log.push(`cancel ${u.text}`); u.done(); }
+        queue.length = 0;
+        current = null;
+        return Promise.resolve();
+      },
+    },
+    /** The utterance speaking now finishes. */
+    finish() {
+      const c = current;
+      if (!c) return;
+      log.push(`end ${c.text}`);
+      c.done();
+      next();
+    },
+  };
+}
+
+const flush = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+};
+
+describe('cues win over coach replies (review S1)', () => {
+  it('a rest cue stops a reply that is speaking and speaks at once, not late behind it', async () => {
+    const m = fakeModule();
+    const speaker = createSpeechArbiter(m.raw);
+    void speaker.speak('long reply', 'reply');
+    await flush();
+    void speaker.speak('Rest done.', 'cue');
+    await flush();
+    expect(m.log).toEqual(['start long reply', 'stop', 'cancel long reply', 'start Rest done.']);
+  });
+
+  it('typing (stop) while a cue speaks never cuts the cue; the waiting reply is dropped', async () => {
+    const m = fakeModule();
+    const speaker = createSpeechArbiter(m.raw);
+    void speaker.speak('Rest done.', 'cue');
+    await flush();
+    void speaker.speak('a reply', 'reply');
+    await flush();
+    await speaker.stop();
+    m.finish();
+    await flush();
+    expect(m.log).toEqual(['start Rest done.', 'end Rest done.']);
+  });
+
+  it('a reply waits for a cue to finish, then speaks; stopping it then stops only the reply', async () => {
+    const m = fakeModule();
+    const speaker = createSpeechArbiter(m.raw);
+    void speaker.speak('10 seconds.', 'cue');
+    await flush();
+    void speaker.speak('a reply', 'reply');
+    await flush();
+    expect(m.log).toEqual(['start 10 seconds.']);
+    m.finish();
+    await flush();
+    expect(m.log).toEqual(['start 10 seconds.', 'end 10 seconds.', 'start a reply']);
+    await speaker.stop();
+    expect(m.log.slice(-2)).toEqual(['stop', 'cancel a reply']);
+  });
+
+  it('stop with nothing of ours speaking never calls the module', async () => {
+    const m = fakeModule();
+    const speaker = createSpeechArbiter(m.raw);
+    await speaker.stop();
+    expect(m.log).toEqual([]);
+  });
+
+  it('the sheet’s reply voice over the arbiter: hush while a cue is queued keeps the cue', async () => {
+    const m = fakeModule();
+    const speaker = createSpeechArbiter(m.raw);
+    const voice = createReplyVoice(speaker);
+    void voice.say('Good work.');
+    await flush();
+    void speaker.speak('Rest done.', 'cue');
+    await flush();
+    await voice.hush();
+    await flush();
+    expect(m.log).toEqual(['start Good work.', 'stop', 'cancel Good work.', 'start Rest done.']);
   });
 });
 

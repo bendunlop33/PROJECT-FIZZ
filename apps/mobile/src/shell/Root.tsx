@@ -69,6 +69,8 @@ function useForegroundAlerts(services: AppServices) {
     // The read runs outside the write chain; a commit issued meanwhile wins (review ben-bugs r2 N1).
     const readActive = () => services.sessions.active();
     const now = () => toMs(services.now().utc);
+    // "Rest done. Set 2 …" reads the card's values, history included (voice review B1).
+    spokenCues.setHistoryReader((state, exId) => services.workout.lastComparableSets(state, exId));
     void restAlerts.reconcileFromRead(readActive, now);
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
@@ -77,6 +79,7 @@ function useForegroundAlerts(services: AppServices) {
     });
     return () => {
       sub.remove();
+      spokenCues.setHistoryReader(null);
     };
   }, [services]);
 }

@@ -1,6 +1,7 @@
 import { getLocales } from 'expo-localization';
 
 import AudioCoach from '../../modules/audio-coach';
+import { createSpeechArbiter, type RawSpeaker } from './arbiter';
 import type { CueSpeaker } from './cue-controller';
 import type { ReplySpeaker } from './read-aloud';
 import { DEFAULT_VOICE_PREFS, type VoicePrefs } from './settings';
@@ -58,7 +59,8 @@ export function phoneLocale(): string {
   }
 }
 
-export const appleSpeaker: CueSpeaker & ReplySpeaker = {
+/** The module itself: one synthesizer, one queue. */
+const appleRaw: RawSpeaker = {
   available: () => AudioCoach !== null,
   async speak(text: string) {
     const m = AudioCoach;
@@ -72,3 +74,6 @@ export const appleSpeaker: CueSpeaker & ReplySpeaker = {
     await AudioCoach?.stop();
   },
 };
+
+/** Cues and replies share it through the arbiter: a cue always wins, stopping a reply never cuts a cue (review S1). */
+export const appleSpeaker: CueSpeaker & ReplySpeaker = createSpeechArbiter(appleRaw);

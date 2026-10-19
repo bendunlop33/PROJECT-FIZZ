@@ -3,9 +3,10 @@ import { spokenReplyText } from '@fizz/domain';
 import type { ReadReplies } from './settings';
 
 /**
- * Coach replies read aloud (Ben, 19 Oct 2026). On by default only in the
- * coach sheet over a live workout; the sheet's speaker toggle mirrors the
- * setting. Speech stops when Ben starts typing, closes the sheet, or a new
+ * Coach replies read aloud (Ben, 19 Oct 2026). With the default "During
+ * workouts", on whenever a workout is in progress, however the sheet was
+ * opened (review S4); the sheet's speaker button overrides it for that sheet
+ * only (review S5). Speech stops when Ben starts typing, closes the sheet, or a new
  * reply arrives. Never an OpenAI or other paid voice (rule 7): the Apple
  * voice through the audio-coach module only. Pure, tested on Linux.
  */
@@ -14,18 +15,31 @@ export function readRepliesOn(mode: ReadReplies, liveWorkout: boolean): boolean 
   return mode === 'always' || (mode === 'workout' && liveWorkout);
 }
 
-/** The header toggle: off → Off; on → During workouts in a workout, else Always. */
-export function toggleReadReplies(mode: ReadReplies, liveWorkout: boolean): ReadReplies {
-  if (readRepliesOn(mode, liveWorkout)) return 'off';
-  return liveWorkout ? 'workout' : 'always';
+/**
+ * The sheet's speaker button (review S5): a choice for this sheet only, never
+ * written to Settings › Voice. `override` null = the setting decides.
+ */
+export function sheetReadOn(mode: ReadReplies, liveWorkout: boolean, override: boolean | null): boolean {
+  return override ?? readRepliesOn(mode, liveWorkout);
 }
 
-/** What of a finished turn is spoken: its sentences, shortened; null when nothing (failed, replayed, empty, or off). */
+/** Where the sheet is when a reply arrives: closed (or covered), or Ben already typing the next message. */
+export interface SheetMoment {
+  open: boolean;
+  typing: boolean;
+}
+
+/**
+ * What of a finished turn is spoken: its sentences, shortened; null when
+ * nothing (failed, replayed, empty, off, the sheet closed before the reply
+ * arrived, or Ben typing again — review B2).
+ */
 export function replyToSpeak(
   result: { status: string; replayed: boolean; items: readonly ({ kind: 'sentence'; text: string } | { kind: string })[] },
   on: boolean,
+  sheet: SheetMoment,
 ): string | null {
-  if (!on || result.status !== 'completed' || result.replayed) return null;
+  if (!on || !sheet.open || sheet.typing || result.status !== 'completed' || result.replayed) return null;
   const text = result.items
     .map((i) => (i.kind === 'sentence' && 'text' in i ? i.text : ''))
     .filter((t) => t.trim() !== '')
@@ -43,7 +57,8 @@ export interface ReplySpeaker {
 /**
  * The sheet's reply voice. `say` stops a reply still speaking first (a new
  * reply arrived); `hush` (typing, closing) stops only a reply this voice
- * started that hasn't finished, so a rest cue playing meanwhile isn't cut.
+ * started that hasn't finished. The speaker's `stop` is reply-only (the
+ * arbiter, review S1), so a rest cue is never cut.
  */
 export function createReplyVoice(speaker: ReplySpeaker) {
   /** The `seq` of the reply speaking now; 0 = none of ours. */
