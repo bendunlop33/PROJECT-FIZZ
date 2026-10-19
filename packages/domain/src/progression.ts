@@ -461,6 +461,46 @@ function requiredSets(rule: ProgressionRule): number {
   return rule.method === 'double_progression' ? rule.workingSets : 1;
 }
 
+/**
+ * Ben, 19 Oct ("imported targets - say 3 sets of imported history"): when
+ * the latest comparable session is from FitNotes, 3 judged sets of imported
+ * history are enough for the rule to judge it, even when the rule asks for
+ * more sets than that session had.
+ *
+ * What counts: the judged working sets (`readFitNotesWorkingSets`: the sets
+ * at the working load, plus harder sets judged with it; never a ramp
+ * warm-up, a lone top set kept as context or a lighter finisher) summed over
+ * the run of comparable imported sessions from the latest back to the first
+ * in-app one. The latest session's own judged sets still decide: every one
+ * must reach the top of the range within the effort limit. So `2 × 10` with
+ * an earlier imported `2 × 9` (4 sets) progresses; a lone imported `2 × 10`
+ * (2 sets) still holds. In-app history is unchanged: it needs the rule's sets.
+ */
+export const MIN_IMPORTED_SETS = 3;
+
+/** Judged sets (pairs, when sided) in the run of imported sessions from the latest (`MIN_IMPORTED_SETS`). */
+function importedHistorySets(sessions: readonly SessionEval[]): number {
+  let n = 0;
+  for (const s of sessions) {
+    if (!s.imported) break;
+    if (!s.unpairable) n += s.prescribedDone;
+  }
+  return n;
+}
+
+/**
+ * The sets the latest session must have for the rule to judge it: the rule's
+ * own (`requiredSets`), or, from FitNotes with `MIN_IMPORTED_SETS` judged
+ * sets of imported history, the sets that session had (Ben, 19 Oct).
+ */
+function setsToJudge(rule: ProgressionRule, sessions: readonly SessionEval[]): { required: number; importedHistory: number | null } {
+  const ruleSets = requiredSets(rule);
+  const latest = sessions[0];
+  if (latest === undefined || !latest.imported || latest.unpairable || latest.prescribedDone === 0 || latest.prescribedDone >= ruleSets) return { required: ruleSets, importedHistory: null };
+  const n = importedHistorySets(sessions);
+  return n >= MIN_IMPORTED_SETS ? { required: latest.prescribedDone, importedHistory: n } : { required: ruleSets, importedHistory: null };
+}
+
 function countedLabel(rule: ProgressionRule, n: number): string {
   const noun = rule.method === 'double_progression' ? 'working set' : 'top set';
   return n === 1 ? noun : `${noun}s`;
@@ -790,8 +830,12 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
 
   if (!latest) return startingPoint(ctx, criteria, `No comparable ${name} history yet.`);
 
-  const required = requiredSets(rule);
+  const { required, importedHistory } = setsToJudge(rule, sessions);
   const when = day(latest.performedAtUtc);
+  if (importedHistory !== null) {
+    const n = latest.prescribedDone;
+    pushFact(ctx, `Judged on the ${n} ${countedLabel(rule, n)} on ${when}: ${importedHistory} sets of imported history are enough.`);
+  }
   if (latest.loggedSets === 0 && latest.leftOut > 0) {
     pushFact(ctx, allLeftOutFact(when));
   } else if (latest.loggedSets === 0) {
