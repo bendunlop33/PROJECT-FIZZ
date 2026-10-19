@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { cueText, spokenDuration, spokenLoad, spokenNumber, spokenReplyText, spokenSetDetail, spokenSetOf, speakableText, type SpokenSetInput } from '../src/index';
-import { kg, lb, values } from './fixtures';
+import { at, kg, lb, values } from './fixtures';
 import { apply, BENCH, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
 /** Spoken workout cues (Ben, 19 Oct 2026): the words only; timing is the app's cue controller. */
@@ -79,7 +79,8 @@ describe('cue text', () => {
     expect(spokenSetDetail(set({ exerciseName: 'Assisted pull-up', convention: 'assistance', equipment: { kind: 'assisted_stack' }, load: kg(25, 'assistance'), reps: { min: 6, max: 8 } }))).toBe('Set 2, Assisted pull-up, 25 kilos of assistance for 6 to 8');
     expect(spokenSetDetail(set({ exerciseName: 'Dip', convention: 'added', equipment: { kind: 'bodyweight_station' }, load: kg(10, 'added') }))).toBe('Set 2, Dip, bodyweight plus 10 kilos for 8');
     expect(spokenSetDetail(set({ exerciseName: 'Push-up', convention: 'bodyweight', equipment: null, load: null, reps: { min: 12, max: 12 } }))).toBe('Set 2, Push-up, 12 reps');
-    expect(spokenSetDetail(set({ load: null }))).toBe('Set 2, Bench press, 8 reps');
+    // No load anywhere on a loaded exercise: left out, never phrased as a bodyweight set (review B1).
+    expect(spokenSetDetail(set({ load: null }))).toBe('Set 2, Bench press, for 8');
     expect(spokenSetDetail(set({ side: 'left', exerciseName: 'Single-arm row', convention: 'per_hand', load: kg(30, 'per_hand') }))).toBe('Set 2, left side, Single-arm row, 30 kilos each for 8');
   });
 
@@ -90,21 +91,52 @@ describe('cue text', () => {
     expect(spokenSetDetail(set({ exerciseName: 'Sled push', measurement: 'distance', convention: 'added', equipment: null, load: kg(0, 'added'), reps: null, distanceM: 1500 }))).toBe('Set 2, Sled push, for 1 and a half kilometres');
   });
 
-  it('reads the next set from a live workout: number in its block, target values', () => {
+  it('a chosen side is said once; "each side" only when both sides are done (review N1)', () => {
+    const uni = { exerciseName: 'Split squat', convention: 'per_hand' as const, equipment: { kind: 'dumbbells' as const }, load: kg(20, 'per_hand'), unilateral: true };
+    expect(spokenSetDetail(set({ ...uni, side: 'left' }))).toBe('Set 2, left side, Split squat, 20 kilos each for 8');
+    expect(spokenSetDetail(set({ ...uni, side: null }))).toBe('Set 2, Split squat, 20 kilos each for 8 each side');
+  });
+
+  it('reads the next set from a live workout: number in its block, the card’s values', () => {
     const { state } = startFixture();
     const [warm] = setsFor(state, BENCH);
     if (!warm) throw new Error('no warm-up');
     const s = apply(state, logCmd(warm.id, values(kg(60), 10), 30));
     const next = spokenSetOf(s, s.session.activeSetId);
     expect(next).not.toBeNull();
-    expect(cueText({ kind: 'rest_end', next }, 'timer_and_set')).toBe('Rest done. Set 2, Bench press, 100 kilos for 6 to 8.');
+    // The card's prefill: target load, top of the rep range.
+    expect(cueText({ kind: 'rest_end', next }, 'timer_and_set')).toBe('Rest done. Set 2, Bench press, 100 kilos for 8.');
     expect(spokenSetOf(s, 'missing')).toBeNull();
     expect(spokenSetOf(s, null)).toBeNull();
     // The stack exercise and the timed one read their own conventions.
     const [row1] = setsFor(s, ROW);
-    expect(spokenSetDetail(spokenSetOf(s, row1?.id ?? null) ?? set())).toBe('Set 1, Cable row, 50 kilos on the stack for 10 to 12');
+    expect(spokenSetDetail(spokenSetOf(s, row1?.id ?? null) ?? set())).toBe('Set 1, Cable row, 50 kilos on the stack for 12');
     const [hang] = setsFor(s, HANG);
     expect(spokenSetDetail(spokenSetOf(s, hang?.id ?? null) ?? set())).toMatch(/^Set 1, Dead hang, for \d+ (seconds|minutes?)/);
+  });
+
+  it('a draft saved during the rest wins over the target, as on the card (review B1)', () => {
+    const { state } = startFixture();
+    const [warm, b1] = setsFor(state, BENCH);
+    if (!warm || !b1) throw new Error('fixture');
+    let s = apply(state, logCmd(warm.id, values(kg(60), 10), 30));
+    s = apply(s, { type: 'save_draft', at: at(40), setId: b1.id, values: values(kg(85), 8) });
+    expect(s.session.activeSetId).toBe(b1.id);
+    expect(cueText({ kind: 'rest_end', next: spokenSetOf(s, b1.id) }, 'timer_and_set')).toBe('Rest done. Set 2, Bench press, 85 kilos for 8.');
+  });
+
+  it('a partial target (load open) takes the load from history, as the card does; none anywhere → left out (review B1)', () => {
+    const { state } = startFixture();
+    const [warm, b1, b2] = setsFor(state, BENCH);
+    if (!warm || !b1 || !b2) throw new Error('fixture');
+    const open = { ...state, sets: state.sets.map((x) => (x.id === b2.id ? { ...x, planned: { ...x.planned, load: null, reps: { min: 8, max: 8 } } } : x)) };
+    // Nothing logged here yet and no history: the load is left out, not "8 reps".
+    expect(spokenSetDetail(spokenSetOf(open, b2.id) ?? set())).toBe('Set 3, Bench press, for 8');
+    // The last comparable session fills it.
+    expect(spokenSetDetail(spokenSetOf(open, b2.id, [{ index: b2.index, values: values(kg(92.5), 8) }]) ?? set())).toBe('Set 3, Bench press, 92 and a half kilos for 8');
+    // This session's last set wins over history, as on the card.
+    const logged = apply(open, logCmd(b1.id, values(kg(95), 8), 30));
+    expect(spokenSetDetail(spokenSetOf(logged, b2.id, [{ index: b2.index, values: values(kg(92.5), 8) }]) ?? set())).toBe('Set 3, Bench press, 95 kilos for 8');
   });
 });
 

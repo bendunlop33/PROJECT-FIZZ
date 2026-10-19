@@ -3,6 +3,7 @@ import type { Load, LoadConvention, Measurement, RepRange, SessionAggregate, Set
 import { formatNumber, type LoadContext } from './display';
 import { equipmentOfRow } from './session/equipment-snapshot';
 import { blockSets } from './session/gym-switch';
+import { prefillDraft, type ComparableSet } from './session/view';
 
 /**
  * Spoken workout cues (Ben, 19 Oct 2026; rest-state.md §5, design-system §8
@@ -114,29 +115,36 @@ export function spokenSetDetail(s: SpokenSetInput): string {
   const name = s.exerciseName.trim();
   // Plain bodyweight is never said: such a set is just its reps or time ("12 reps"); "bodyweight plus 10 kilos" is.
   const raw = spokenLoad(s.load, s.convention, s.equipment);
-  const load = raw === 'bodyweight' ? null : raw;
+  const bodyweight = raw === 'bodyweight';
+  const load = bodyweight ? null : raw;
   let amount: string | null = null;
   if (s.measurement === 'duration' && s.durationS !== null) amount = `for ${spokenDuration(s.durationS)}`;
   else if (s.measurement === 'distance' && s.distanceM !== null) amount = `for ${spokenDistance(s.distanceM)}`;
   else if (s.measurement === 'reps' && s.reps !== null) {
-    const each = s.unilateral ? ' each side' : '';
-    amount = load === null ? `${spokenReps(s.reps)} reps${each}` : `for ${spokenReps(s.reps)}${each}`;
+    // A chosen side is already said ("left side"); "each side" only when both sides are done.
+    const each = s.unilateral && s.side === null ? ' each side' : '';
+    // No load to say on a loaded exercise (none anywhere): left out, never phrased as a bodyweight set.
+    amount = bodyweight ? `${spokenReps(s.reps)} reps${each}` : `for ${spokenReps(s.reps)}${each}`;
   }
   const what = [load, amount].filter((x): x is string => x !== null).join(' ');
   return `${head}${side}, ${name}${what === '' ? '' : `, ${what}`}`;
 }
 
-/** The active set of a workout as `SpokenSetInput`, or null (none, or not found). Target values, else the saved draft. */
-export function spokenSetOf(state: SessionAggregate, setId: string | null): SpokenSetInput | null {
+/**
+ * The active set of a workout as `SpokenSetInput`, or null (none, or not found).
+ * The values are the card's (`prefillDraft`, the same precedence as the Focus
+ * card: saved draft → target field by field, open fields from this session or
+ * `lastComparable` → empty), so the voice never says a load or reps the screen
+ * doesn't show (review B1). A field with no value anywhere is left out.
+ */
+export function spokenSetOf(state: SessionAggregate, setId: string | null, lastComparable: readonly ComparableSet[] = []): SpokenSetInput | null {
   if (setId === null) return null;
   const set = state.sets.find((s) => s.id === setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) return null;
   const own = blockSets(state, ex.id);
   const eq = equipmentOfRow(state.session.equipmentSnapshot, ex);
-  const p = set.planned;
-  const hasTarget = p.load !== null || p.reps !== null || p.durationS !== null || (p.distanceM ?? null) !== null;
-  const d = !hasTarget && set.draft ? set.draft : null;
+  const v = prefillDraft(state, setId, lastComparable).values;
   return {
     exerciseName: ex.exerciseName,
     number: Math.max(1, own.indexOf(set) + 1),
@@ -146,10 +154,10 @@ export function spokenSetOf(state: SessionAggregate, setId: string | null): Spok
     side: set.side === 'both' ? null : set.side,
     convention: ex.loadConvention,
     equipment: eq,
-    load: d ? d.load : p.load,
-    reps: d ? (d.reps === null ? null : { min: d.reps, max: d.reps }) : p.reps,
-    durationS: d ? d.durationS : p.durationS,
-    distanceM: d ? (d.distanceM ?? null) : (p.distanceM ?? null),
+    load: v.load,
+    reps: v.reps === null ? null : { min: v.reps, max: v.reps },
+    durationS: v.durationS,
+    distanceM: v.distanceM ?? null,
   };
 }
 
