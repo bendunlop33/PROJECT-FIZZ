@@ -98,7 +98,7 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
 
 describe('buildTurnRegistry (CC10, summary closed list)', () => {
   it('a plain question gets the reads only, plus memory suggestions (which change nothing until Ben taps Save)', () => {
-    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_exercise_records', 'get_recent_sessions', 'get_progression_targets', 'get_substitutions', 'get_recent_actions', 'suggest_memory']);
+    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_exercise_records', 'get_recent_sessions', 'get_progression_targets', 'get_substitutions', 'find_exercises', 'get_recent_actions', 'suggest_memory']);
   });
 
   it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {

@@ -35,6 +35,7 @@ import {
   undoCoachAction,
   undoOpId,
   createTrainingReadExecutors,
+  createFindExercisesExecutor,
   createStructuralExecutors,
   createBuildExecutor,
   createPlanExecutor,
@@ -157,6 +158,7 @@ import {
   splitInUse,
   toHistorySessions,
   workoutMuscleGroups,
+  type FindableExercise,
   type LoadReferences,
   type CoachTrigger,
   type OfferLogEntry,
@@ -342,6 +344,8 @@ export interface CoachServiceDeps {
   /** The bundled exercise catalogue (Coaching knowledge), for swap options and names. */
   catalogueExercises?: () => readonly Exercise[];
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
+  /** (19 Oct) A catalogue entry's other names (Coaching knowledge), for `find_exercises`. */
+  catalogueAliases?: (catalogueKey: string) => readonly string[];
   /** The typical gym's items when Ben has no gym yet (workout-builder §4.1 `⚠ No gym`): what Start would save. */
   typicalEquipment?: () => Promise<EquipmentInstance[] | null>;
   /**
@@ -936,6 +940,11 @@ export function createCoachService(deps: CoachServiceDeps) {
       .map((e) => ({ exerciseId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
   }
 
+  /** `find_exercises`' pool: the IDs the coach uses (catalogue key, else Ben's ID), with catalogue aliases. */
+  function findablePool(list: readonly Exercise[]): FindableExercise[] {
+    return list.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, exercise: e, aliases: e.catalogueKey ? (deps.catalogueAliases?.(e.catalogueKey) ?? []) : [] }));
+  }
+
   /** Ben's exercises and the catalogue's (Coaching knowledge), by ID: what a catalogue key can resolve to. */
   async function exercisePool(): Promise<Exercise[]> {
     const pool = new Map<string, Exercise>();
@@ -996,9 +1005,13 @@ export function createCoachService(deps: CoachServiceDeps) {
     const keyOf = (id: string): string => byId.get(id)?.catalogueKey ?? id;
     const doable = pool.filter((e) => e.measurement !== 'distance' && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
     // Review r5 S2: a capped list keeps what Ben named and what fits the focus ahead of the alphabetical fill.
+    // (19 Oct, Ben: "Why can't I add it") Ranked by this build's words back to its request, not only the
+    // newest ("Try now" names nothing): what he named two messages ago stays in the capped list.
+    const rankWords = [...newest, ...earlierWords];
+    const rankFocus: BuildFocus = focus !== 'coach_picks' ? focus : (rankWords.reduce<BuildFocus | null>((f, w) => f ?? parseRequestedFocus(w), null) ?? focus);
     const first = usableFirst({
-      words: newest,
-      focus,
+      words: rankWords,
+      focus: rankFocus,
       pool: doable.map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, split: e.split, primaryMuscle: e.primaryMuscles[0] })),
       draft: parent?.plan.slots.map((sl) => sl.catalogueId) ?? [],
       routines: live.flatMap((r) => r.exercises.map((e) => keyOf(e.exerciseId))),
@@ -1007,6 +1020,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     const allUsable = doable
       .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
     const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
+    // The cap is for prompt size only: `find_exercises` searches the whole doable list, which the checks accept.
+    const findExecutors = createFindExercisesExecutor(() => Promise.resolve(findablePool(doable)));
     const split = splitInUse(training?.profile ?? null);
     const dayObj = day !== null ? (split.days.find((d) => d.name === day.name) ?? null) : (split.days.find((d) => d.id === focus) ?? null);
     const ownMain = dayObj === null ? null : (training?.mainLifts[dayObj.id] ?? null);
@@ -1264,7 +1279,7 @@ export function createCoachService(deps: CoachServiceDeps) {
         },
       },
     });
-    return { view, executors: { ...executors, ...planExecutors }, inPlay };
+    return { view, executors: { ...findExecutors, ...executors, ...planExecutors }, inPlay };
   }
 
   async function send(req: SendRequest): Promise<CoachTurnResult> {
@@ -1297,7 +1312,14 @@ export function createCoachService(deps: CoachServiceDeps) {
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first.
-    const addable = kind === 'workout' && session !== null && session.session.status === 'active' && deps.coachAddInputs !== undefined ? capAddable(await addableFor(p, session), req.input.kind === 'words' ? req.input.text : '') : null;
+    const allAddable = kind === 'workout' && session !== null && session.session.status === 'active' && deps.coachAddInputs !== undefined ? await addableFor(p, session) : null;
+    const addable = allAddable === null ? null : capAddable(allAddable, req.input.kind === 'words' ? req.input.text : '');
+    // (19 Oct) The capped addable list in the prompt; `find_exercises` searches all of it (`edit_today` add checks against all of it).
+    if (allAddable !== null && session !== null) {
+      const ids = new Set(allAddable.map((a) => a.exerciseId));
+      const pool = (await exercisePool()).filter((e) => ids.has(e.catalogueKey ?? e.id));
+      Object.assign(executors, createFindExercisesExecutor(() => Promise.resolve(findablePool(pool))));
+    }
     const stop = new AbortController();
     running.set(req.turnId, stop);
     try {

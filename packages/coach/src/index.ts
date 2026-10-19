@@ -27,3 +27,4 @@ export * from './intent';
 export * from './edit-today';
 export * from './numbers';
 export * from './plan';
+export * from './find-exercises';

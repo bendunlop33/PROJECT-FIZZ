@@ -165,6 +165,17 @@ export const GetSubstitutionsArgsSchema = z.strictObject({
 });
 
 /**
+ * (19 Oct, Ben: "Why can't I add it") Search every exercise usable here, not only the capped list in
+ * the prompt: by name or other name, a muscle, an equipment word. At most 20 results. Read only.
+ */
+export const FindExercisesArgsSchema = z.strictObject({
+  query: z.string().max(80),
+  muscle: z.string().max(40).nullable(),
+  equipment: z.string().max(40).nullable(),
+});
+export type FindExercisesArgs = z.infer<typeof FindExercisesArgsSchema>;
+
+/**
  * (11 Oct, coach tools) Log a pending set with the values Ben said in this
  * turn ("log 100 for 8"). Unit and convention are the exercise's own; the
  * numbers must be in Ben's words. Same `log_set` command as the Log button.
@@ -382,6 +393,8 @@ export const CoachToolNameSchema = z.enum([
   'get_gym_equipment',
   'get_progression_targets',
   'get_substitutions',
+  /** (19 Oct) Search every exercise usable at the gym (the prompt's list is capped). */
+  'find_exercises',
   'get_recent_actions',
   /** (Coach v3) Records per exercise, the e1RM labelled an estimate. */
   'get_exercise_records',
@@ -425,6 +438,7 @@ export const COACH_TOOL_ARGS = {
   get_gym_equipment: GetGymEquipmentArgsSchema,
   get_progression_targets: GetProgressionTargetsArgsSchema,
   get_substitutions: GetSubstitutionsArgsSchema,
+  find_exercises: FindExercisesArgsSchema,
   get_recent_actions: GetRecentActionsArgsSchema,
   get_exercise_records: GetExerciseRecordsArgsSchema,
   get_recent_sessions: GetRecentSessionsArgsSchema,

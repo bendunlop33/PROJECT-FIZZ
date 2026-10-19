@@ -614,7 +614,7 @@ const SCOPED_BUILD_RULES = [
 
 /** Instructions added to a turn that offers `propose_workout` (§7 coach message rules, BD1, BD15). */
 export const BUILD_INSTRUCTIONS = [
-  'Ben asked for a workout in the app. Call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable. Never write the workout out as text in `reply`: a plan in text is not in the app.',
+  'Ben asked for a workout in the app. Call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable or find_exercises. Never write the workout out as text in `reply`: a plan in text is not in the app.',
   'If he is agreeing to a session you described earlier in this thread, build that session: the same exercises (or the closest in build.usable), sets and reps.',
   'To change the draft in context, call `propose_workout` with the whole new version.',
   ...CALL_RULES,
@@ -639,7 +639,7 @@ export const OFFERED_BUILD_INSTRUCTIONS = [
  * `propose_workout` is offered and nothing is forced: the model reads his words.
  */
 export const OFFER_REPLY_BUILD_INSTRUCTIONS = [
-  'You offered to build a session in the app. Read Ben\'s reply: if it agrees, call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable, for the session you described (the same exercises, or the closest in build.usable, sets and reps).',
+  'You offered to build a session in the app. Read Ben\'s reply: if it agrees, call `propose_workout` first, once, using only catalogueIds from YOUR DATA build.usable or find_exercises, for the session you described (the same exercises, or the closest in build.usable, sets and reps).',
   'If his reply does not clearly agree, do not build: reply briefly, and ask "Want me to build it in the app?" if it is still unclear.',
   ...SCOPED_BUILD_RULES,
 ].join('\n');

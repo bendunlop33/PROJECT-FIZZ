@@ -523,6 +523,7 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     catalogueExercises,
     catalogueSubstitutions,
+    catalogueAliases,
     // A build with no gym yet plans on the typical gym's items (workout-builder §4.1 `⚠ No gym`).
     typicalEquipment: () => typicalEquipment(),
   });

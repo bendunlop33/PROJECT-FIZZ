@@ -213,7 +213,7 @@ export function createPlanExecutor(deps: PlanDeps): CoachExecutors {
 
 /** Instructions added to a turn that offers `propose_plan` (Ben asked for a plan, or to change the one in context). */
 export const PLAN_INSTRUCTIONS = [
-  'Ben asked for a plan of several days in the app. Call `propose_plan` first, once, with every day, using only catalogueIds from YOUR DATA build.usable. Never write the plan out as text in `reply`: a plan in text is not in the app.',
+  'Ben asked for a plan of several days in the app. Call `propose_plan` first, once, with every day, using only catalogueIds from YOUR DATA build.usable or find_exercises. Never write the plan out as text in `reply`: a plan in text is not in the app.',
   'Follow his split (build.plan.splitDays) and his days a week (build.plan.daysPerWeek) unless he asks for something else; give each day its splitDayId. Spread the muscles across the days so the same muscles don’t lead two days in a row. Keep each day within build.plan.setBudget working sets. Put each day’s main lift first.',
   'Give each exercise a working `load` (and `topSet.load`) from build.loadReferences, in the unit and convention listed there, with a `basis` of at most 60 characters in words with no numbers; null when you have no opinion. Give targetRpe for every exercise. Give `minutes` when Ben asked for a length for every day, a day’s own `minutes` when he asked for one for that day.',
   LOAD_CHOICE_LINE,

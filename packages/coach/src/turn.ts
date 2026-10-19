@@ -392,6 +392,13 @@ export const COACH_INSTRUCTIONS = [
 ].join('\n');
 
 /**
+ * (19 Oct, Ben: "Why can't I add it") Sent when `find_exercises` is offered: the lists in YOUR DATA
+ * are shortened, so an exercise missing from them is searched for, never called unavailable.
+ */
+export const FIND_EXERCISES_LINE =
+  'The exercise lists in YOUR DATA (build.usable, addable) are shortened. When Ben names an exercise that is not in them, call find_exercises first and use the ID it returns; only if it finds nothing say it can’t be done at this gym. Never blame the list.';
+
+/**
  * (14 Oct) Sent when the today-tools are offered (a live workout). Coach v3: one tool, edit_today,
  * changes the workout; adding is named only with the list of what can be added (review S5).
  */
@@ -451,6 +458,7 @@ const TOOL_READ_LINE: Partial<Record<string, string>> = {
   get_gym_equipment: 'Read your gym’s equipment',
   get_progression_targets: 'Read next targets',
   get_substitutions: 'Read swap options',
+  find_exercises: 'Searched exercises',
   get_recent_actions: 'Read earlier coach changes',
   get_exercise_records: 'Read your records',
   get_recent_sessions: 'Read your recent workouts',
@@ -711,7 +719,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const questionOffered = registry.tools.some((t) => t.name === 'ask_build_question');
   const questionLines = [...(questionOffered ? [QUESTION_RULES] : []), ...(chain?.skipped === true ? [SKIPPED_LINE] : chain?.open !== null && chain?.open !== undefined ? [ANSWERED_LINE] : [])];
   const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
-  const instructions = withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions;
+  const findLine = registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}` : '';
+  const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
   if (said !== null) input.push({ type: 'message', role: 'user', content: said });
