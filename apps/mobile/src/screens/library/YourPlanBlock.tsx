@@ -51,14 +51,16 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
         return;
       }
       const ended = r.plan;
+      // One op ID per toast (review planview N1): a double tap on Undo is the same write, replayed.
+      const resumeOp = newUuid();
       onToast({
         text: PLAN_OVERVIEW_COPY.ended,
         action: PLAN_OVERVIEW_COPY.undo,
         onAction: () => {
           onToast(null);
-          void services.plans.resume({ planId: ended.id, expectedVersion: ended.version, opId: newUuid() }).then((u) => {
+          void services.plans.resume({ planId: ended.id, expectedVersion: ended.version, opId: resumeOp }).then((u) => {
             changed();
-            if (!u.ok) onToast({ text: u.message });
+            onToast({ text: u.ok ? PLAN_OVERVIEW_COPY.resumed : u.message });
           });
         },
       });
