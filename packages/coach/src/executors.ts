@@ -18,6 +18,7 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { isChangeClaim } from './claims';
+import type { NumberFacts } from './numbers';
 import { workoutView } from './context';
 import { renderActionResult } from './render';
 import { appendContentKeys, memoryContentKey, memoryTextKind, playbookContentKey } from './tool-call';
@@ -59,6 +60,11 @@ export interface ToolCallContext {
    * (`proposed`, with exactly what would apply), never apply it. Only `edit_today` takes it.
    */
   propose?: boolean;
+  /**
+   * (Coach v3) The numbers the coach was given this turn (context, Ben's words, tool outputs). The
+   * build executor checks its message's numbers against them. Absent: numbers are dropped as before.
+   */
+  facts?: NumberFacts;
 }
 
 export type ToolExecutor = (call: CoachToolCall, ctx: ToolCallContext) => Promise<ToolResult>;

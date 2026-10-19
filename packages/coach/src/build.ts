@@ -16,6 +16,8 @@ import {
   leftOutCount,
   newWorkoutDraft,
   wordsOnlyMessage,
+  checkCoachClaims,
+  coachSentences,
   type KnownPreferences,
   type LoadReferences,
   type QuestionContext,
@@ -23,6 +25,7 @@ import {
 } from '@fizz/domain';
 import { BUILD_LIMITS, muscleGroupOf, type ActionDetail, type BuildCheck, type BuildDay, type BuildFocus, type DraftPlan, type GuardNote, type WorkoutDraft, type WorkoutDraftVersion } from '@fizz/schemas';
 import { isChangeClaim } from './claims';
+import { collectFacts, mergeFacts, verifySentence, withoutNumbers, type NumberFacts } from './numbers';
 import { actionIdFor, newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolExecutor, type ToolResult } from './executors';
 
 /**
@@ -294,9 +297,18 @@ function linesOf(previous: DraftPlan | null, plan: DraftPlan, nameOf: (id: strin
  * max/record claim or praise (`checkCoachWords`, the load-note rule), is
  * dropped. Sentences split without breaking decimals or `est.`.
  */
-export function checkedRationale(message: string): string | null {
+export function checkedRationale(message: string, facts?: NumberFacts): string | null {
   const t = message.replace(/\s+/g, ' ').trim().slice(0, BUILD_LIMITS.messageMax);
-  return wordsOnlyMessage(t, (x) => !isChangeClaim(x));
+  if (facts === undefined) return wordsOnlyMessage(t, (x) => !isChangeClaim(x));
+  // Coach v3 (ADR 0027): numbers may stay when each one is in the facts (the draft's own numbers, Ben's words, what the coach read).
+  // A sentence describing the draft's numbers ("Presses at 22.5 kg each for 8–10") isn't a change claim; its words are checked without them.
+  const kept = coachSentences(t).filter((x) => checkCoachClaims(x) && !isChangeClaim(withoutNumbers(x)) && verifySentence(x, facts).ok);
+  return kept.length === 0 ? null : kept.join(' ');
+}
+
+/** (Coach v3) The facts a draft's message is checked against: the turn's, plus the checked plan, its length and Ben's request. */
+export function draftFacts(turn: NumberFacts, plan: DraftPlan | null, minutes: number, requestText: string): NumberFacts {
+  return mergeFacts(turn, collectFacts([JSON.stringify(plan), String(minutes), requestText]));
 }
 
 /** A gym name reduced for matching: lower case, letters and digits, no "the", "my" or a trailing "gym". */
@@ -423,7 +435,7 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
     const check = checkWorkoutProposal(args, await gym.checkContext(previous, ctx.opId, args.exercises.map((e) => e.catalogueId)));
     const name = draftName(focus, minutes, day?.name ?? null);
     const parentN = deps.draft?.currentVersion ?? null;
-    const rationale = checkedRationale(args.message);
+    const rationale = checkedRationale(args.message, ctx.facts === undefined ? undefined : draftFacts(ctx.facts, check.plan, minutes, deps.request.text));
     const base = { kind: 'build_workout' as const, draftId, name, gymName: gym.gymName?.slice(0, 120) ?? null };
     const record = async (status: 'rejected' | 'stale', failure: string): Promise<ToolResult> => {
       const detail: ActionDetail = { ...base, versionN: (parentN ?? 0) + 1, parentN, exerciseCount: 0, leftOut: leftOutCount(check.checks), lines: [] };
@@ -445,6 +457,7 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
       fitMinutes: minutes,
       checks: check.checks.slice(0, 60),
       rationale,
+      ...(ctx.facts === undefined ? {} : { rationaleNumbersChecked: true as const }),
       contextHash: deps.contextHash,
       equipmentVersion: gym.equipmentVersion,
       createdAt: ctx.now,

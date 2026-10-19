@@ -868,6 +868,29 @@ export function wordsOnlyMessage(text: string | null | undefined, keep: (sentenc
   return kept.length === 0 ? null : kept.join(' ');
 }
 
+/**
+ * (Coach v3, ADR 0027) `checkCoachWords` with numbers allowed: the caller has checked each number
+ * against what the coach was given. Still no max or record claim and no praise. Pure.
+ */
+export function checkCoachClaims(text: string): boolean {
+  const t = text.trim();
+  if (t === '') return false;
+  if (MAX_WORDS.test(t)) return false;
+  return !PRAISE.test(t);
+}
+
+/**
+ * The draft's message as Ben sees it. `numbersChecked` (Coach v3): its numbers were checked against
+ * the facts when it was built, so sentences with numbers stay (still no max claim or praise). Older
+ * drafts: words only (`wordsOnlyMessage`). Pure.
+ */
+export function shownRationale(text: string | null | undefined, numbersChecked: boolean): string | null {
+  if (!numbersChecked) return wordsOnlyMessage(text);
+  if (text === null || text === undefined) return null;
+  const kept = coachSentences(text).filter(checkCoachClaims);
+  return kept.length === 0 ? null : kept.join(' ');
+}
+
 /** The coach's note as `Why?` may show it: the text when it passes `checkBasis`, else null (`NOT USED`). */
 export function shownCoachNote(note: string | null | undefined): string | null {
   if (note === null || note === undefined) return null;

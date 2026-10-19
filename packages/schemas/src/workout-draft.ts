@@ -253,6 +253,8 @@ export const WorkoutDraftVersionSchema = z.object({
   checks: z.array(BuildCheckSchema).max(60),
   /** The coach's message after the claim check (null when it was hidden). */
   rationale: z.string().max(BUILD_LIMITS.messageMax).nullable(),
+  /** (Coach v3) The rationale's numbers were checked against the facts at build time, so they may show. Absent: words only. */
+  rationaleNumbersChecked: z.literal(true).optional(),
   contextHash: z.string().min(1).max(128),
   equipmentVersion: z.string().min(1).max(128),
   createdAt: ZonedTimestampSchema,

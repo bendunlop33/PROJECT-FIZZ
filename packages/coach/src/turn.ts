@@ -33,6 +33,7 @@ import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, ref
 import { lastLoggedSets } from './context';
 import { verifyAsked, type AskClaim, type AskVerdict } from './intent';
 import { editOfferIn } from './edit-today';
+import { collectFacts, type NumberFacts } from './numbers';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -699,9 +700,18 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // The held text answer: shown after all if the forced step can't run on this route (named tool_choice unproven, spike S3).
   let heldReply: string | null = null;
 
+  // Coach v3 (ADR 0027): the numbers the coach was given, from code's and Ben's text only (context, his
+  // messages, tool outputs); the model's own words (earlier replies, its arguments) never verify a number.
+  let factsCache: { n: number; facts: NumberFacts } | null = null;
+  const facts = (): NumberFacts => {
+    if (factsCache?.n === input.length) return factsCache.facts;
+    const texts = input.flatMap((i) => (i.type === 'message' ? (i.role === 'assistant' ? [] : [i.content]) : i.type === 'function_call_output' ? [i.output] : []));
+    factsCache = { n: input.length, facts: collectFacts(texts) };
+    return factsCache.facts;
+  };
   // The backstop, created up front so a streamed reply is checked sentence by sentence as it arrives.
   // The reply is always the last step, so every action it could cite is already in the ledger.
-  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, todayToolsOffered: todayOffered });
+  const filter = createReplyFilter({ ledger, surface: req.surface, benAskedForChange: gate.benAskedForChange, noBuildToolLine: canBuild, buildAsked: buildInPlay, toolOffered: buildOffered, todayToolsOffered: todayOffered, facts });
   const items: ReplyItem[] = [];
   const emit = (fresh: readonly ReplyItem[]): void => {
     for (const item of fresh) {
@@ -874,7 +884,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     }
     const executor = proposer ?? ports.executors[parsed.call.tool];
     if (executor === undefined) throw new Error(`No executor for ${parsed.call.tool}`);
-    const result = await executor(parsed.call, { ...callCtx, opId: parsed.opId, ...(proposer === undefined ? {} : { propose: true }) });
+    const result = await executor(parsed.call, { ...callCtx, opId: parsed.opId, facts: facts(), ...(proposer === undefined ? {} : { propose: true }) });
     const ref = noteResult(parsed.call.tool, result);
     if (result.kind === 'action' && result.record.detail.kind === 'build_question' && result.record.status === 'proposed') askedQuestion = true;
     if (proposer !== undefined && result.kind === 'action' && result.record.status === 'proposed') {
