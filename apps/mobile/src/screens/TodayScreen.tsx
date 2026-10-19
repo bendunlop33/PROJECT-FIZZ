@@ -505,7 +505,9 @@ export function TodayScreen() {
               ? 'Your only workout'
               : next.routine?.basis.kind === 'after'
                 ? `After ${next.routine.basis.routineName} on ${formatShortDate(toMs(next.routine.basis.atUtc), next.routine.basis.tz)}`
-                : next.sourceStartedAtUtc !== null
+                : next.routine?.basis.kind === 'plan'
+                  ? `Day ${String(next.routine.basis.dayN)} of ${String(next.routine.basis.of)}`
+                  : next.sourceStartedAtUtc !== null
                   ? `From ${formatShortDate(toMs(next.sourceStartedAtUtc), next.tz)}`
                   : null;
           return (

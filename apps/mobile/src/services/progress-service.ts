@@ -12,6 +12,8 @@ import {
   rangeWords,
   DEFAULT_PROGRESS_PERIOD,
   localDateOf,
+  exerciseTargetHistory,
+  type ExerciseTargetHistory,
   monthOf,
   normaliseProgressRange,
   resumeBar,
@@ -361,6 +363,27 @@ export function createProgressService(deps: ProgressServiceDeps) {
         painFlag: pain === null ? null : { flagId: pain.flag.id, date: localDateOf(toMs(pain.flag.reportedAt.utc), pain.flag.reportedAt.tz) },
       });
       return { view, unreadable: ctx.unreadable };
+    },
+
+    /**
+     * (19 Oct, plan tracker v1) One exercise's target against actual per finished workout, newest first, and
+     * `Targets hit 5 of last 6`: from the sets as planned and logged (a FitNotes import has no target).
+     */
+    async exerciseTargets(exerciseId: string, limit = 20): Promise<ExerciseTargetHistory | null> {
+      const profile = await deps.profile();
+      if (!profile) return null;
+      const { sessions } = await finishedSessions(profile);
+      const ids = sessions
+        .filter((x) => x.exercises.some((e) => e.exerciseId === exerciseId))
+        .sort((a, b) => b.startedMs - a.startedMs)
+        .slice(0, limit)
+        .map((x) => x.sessionId);
+      const aggregates = [];
+      for (const id of ids) {
+        const a = await repos().sessions.get(id).catch(() => null);
+        if (a !== null && a.session.ownerId === profile.id) aggregates.push(a);
+      }
+      return exerciseTargetHistory(aggregates, exerciseId, limit);
     },
 
     /**

@@ -279,7 +279,8 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     structuralSignals: g.structuralSignals,
     benAskedForChange,
     intent,
-    ...(g.buildOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildOpen: true } : {}),
+    // (19 Oct) A plan request offers `propose_plan`, never a one-session build beside it.
+    ...(g.buildOpen === true && g.kind === 'general' && g.input.kind === 'words' && !requestHas(benRequest, 'build_plan') ? { buildOpen: true } : {}),
     ...(live ? { liveWorkout: true } : {}),
     ...(g.buildQuestionOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildQuestionOpen: true } : {}),
   };

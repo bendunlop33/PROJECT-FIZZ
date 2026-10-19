@@ -589,7 +589,7 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(model.requests[0]?.toolChoice).toBe('required');
     expect(model.requests[0]?.instructions).toContain('Do not say the app cannot build workouts');
     expect(model.requests[0]?.instructions).toContain('Never use it for pain or soreness, advice, questions about his history, or multi-week plans');
-    expect(model.requests[0]?.instructions).toContain('Multi-week programmes and weekly plans are not available yet');
+    expect(model.requests[0]?.instructions).toContain('multi-week blocks and deloads are not available yet');
     expect(model.requests[0]?.instructions).not.toContain('Ben asked for a workout in the app');
     expect(r.items).toEqual([
       { kind: 'sentence', text: 'Want me to build it in the app?' },
@@ -620,7 +620,7 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(instructions).not.toContain('Never give loads');
     expect(instructions).not.toContain('one short sentence');
     expect(instructions).toContain('Only if you call `propose_workout`');
-    expect(instructions).toContain('Multi-week programmes and weekly plans are not available yet');
+    expect(instructions).toContain('multi-week blocks and deloads are not available yet');
     expect(r.hiddenLines.map((x) => x.detail)).not.toContain('No workout was built.');
     model = new StepModel([() => replyWith(PLAN), () => replyWith(PLAN)]);
     await ask(s, 'Can you make me a push session');
@@ -879,14 +879,21 @@ describe('build 131: a workout from chat in Ben’s own words', () => {
     expect(r.note).toBeNull();
   });
 
-  it('review r4 S2: "make me a workout plan for this week" is not forced; the prompt says weekly plans aren’t available yet', async () => {
+  it('review r4 S2, revised 19 Oct (Ben: plans across multiple days): "make me a workout plan for this week" is a plan request, never one session forced', async () => {
     const { s } = await benWithHistory();
-    model = new StepModel([() => replyWith('Weekly plans aren’t available yet.')]);
-    const r = await ask(s, 'make me a workout plan for this week');
-    expect(model.requests).toHaveLength(1);
-    expect(model.requests[0]?.instructions).toContain('Multi-week programmes and weekly plans are not available yet');
-    expect(said(r)).toEqual(['Weekly plans aren’t available yet.']);
+    model = new StepModel([() => replyWith('Here is a week.'), () => replyWith('Here is a week.')]);
+    await ask(s, 'make me a workout plan for this week');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('propose_plan');
+    expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_workout');
+    // A text answer is asked once more, then the plan call is named; never a one-session draft.
+    expect(model.requests[1]?.toolChoice).toEqual({ type: 'function', name: 'propose_plan' });
     expect(await s.coachDrafts.list()).toEqual([]);
+    // A multi-week block isn't a plan in v1: nothing is forced.
+    model = new StepModel([() => replyWith('Blocks aren’t available yet.')]);
+    await ask(s, 'build me an 8-week block');
+    expect(model.requests).toHaveLength(1);
+    expect(model.requests[0]?.tools.map((t) => t.name)).not.toContain('propose_plan');
+    expect(model.requests[0]?.instructions).toContain('multi-week blocks and deloads are not available yet');
   });
 
   it('review r4 S4: after a refused build, "try again" on the next turn gets the build instructions and builds', async () => {

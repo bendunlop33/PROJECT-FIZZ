@@ -23,7 +23,8 @@ import {
 import type { HistorySession } from '../progression';
 import { deriveId } from '../stable';
 import { toIso, toMs } from '../time';
-import { checkWorkoutProposal, draftWorkingSets, recheckDraftSlot, type WorkoutProposalContext } from './coach-draft';
+import { loadText } from '../display';
+import { checkWorkoutProposal, draftSchemeText, draftWorkingSets, recheckDraftSlot, type WorkoutProposalContext } from './coach-draft';
 import { setRoutineRotation } from './library';
 import { deleteRoutine, isDeleted, isFromRoutine, isInRotation, type FinishedRef, type RoutineChange } from './routines';
 import type { SubstituteContext } from './substitutes';
@@ -491,4 +492,44 @@ export function planDayLines(version: Pick<PlanDraftVersion, 'days'>): PlanDayLi
     minutes: d.minutes,
     leftOut: d.checks.filter((c) => c.leftOut).length,
   }));
+}
+
+export interface PlanDayRow {
+  exerciseId: string;
+  name: string;
+  /** `3 × 8–10`, `2 × 0:45`. */
+  scheme: string;
+  /** The checked working load (`100 kg`, `22.5 kg each`, `Assist 30 kg`); `—` when none (planned at Start from history). A top set leads: `Top 105 kg · 95 kg`. */
+  load: string;
+  /** `est.`: no comparable history of his own backs it (rule 6). */
+  estimate: boolean;
+  /** Held for pain (rule 9). */
+  held: boolean;
+  main: boolean;
+  superset: string | null;
+}
+
+/** A plan day's rows as the plan card's day view shows them: values from the stored, checked day only. */
+export function planDayRows(day: Pick<PlanDayDraft, 'plan'>, exerciseOf: (exerciseId: string) => Pick<Exercise, 'name' | 'defaultLoadConvention'> | null): PlanDayRow[] {
+  return [...day.plan.slots]
+    .sort((a, b) => a.order - b.order)
+    .map((s) => {
+      const ex = exerciseOf(s.exerciseId);
+      const convention = ex?.defaultLoadConvention ?? 'total';
+      const top = s.setTemplates.find((t) => t.setType === 'top')?.load ?? null;
+      const work = s.setTemplates.find((t) => t.setType !== 'warmup' && t.setType !== 'top')?.load ?? null;
+      const text = (l: typeof work): string => loadText(l?.load ?? null, convention);
+      const load = top !== null && top.load !== null ? `Top ${text(top)} · ${text(work)}` : text(work);
+      const loads = [top, work].filter((l): l is NonNullable<typeof l> => l !== null && l.load !== null);
+      return {
+        exerciseId: s.exerciseId,
+        name: ex?.name ?? 'Exercise',
+        scheme: draftSchemeText(s),
+        load,
+        estimate: loads.some((l) => l.source === 'coach_est'),
+        held: loads.some((l) => l.held),
+        main: s.main,
+        superset: s.supersetGroup,
+      };
+    });
 }
