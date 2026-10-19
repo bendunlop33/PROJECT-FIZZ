@@ -91,6 +91,7 @@ export function createAddExerciseExecutor(deps: AddExerciseDeps): CoachExecutors
         sets: s.sets,
         target: s.target,
         durationS: s.durationS,
+        ...(s.distanceM !== undefined ? { distanceM: s.distanceM } : {}),
         equipmentName: s.equipmentName,
         afterName: s.afterName,
         supersetWithName: s.supersetWithName,

@@ -160,6 +160,13 @@ describe('renderActionResult: an exercise added today (12 Oct)', () => {
     expect(nb(renderActionResult(added({ target: { load: lb(20, 'per_hand'), reps: { min: 10, max: 15 }, rpe: null } }), 'sheet').text)).toBe('Added Lateral raise: 3 × 20 lb each × 10–15.');
   });
 
+  it('cardio (review S3): the card names the time and distance added, or the distance alone', () => {
+    const row = { exerciseName: 'Rowing machine', sets: 1, target: { load: null, reps: null, rpe: null }, equipmentName: null };
+    expect(nb(renderActionResult(added({ ...row, durationS: null, distanceM: 5000 }), 'sheet').text)).toBe('Added Rowing machine: 1 × 5,000 m.');
+    expect(nb(renderActionResult(added({ ...row, durationS: 1200, distanceM: 4800 }), 'sheet').text)).toBe('Added Rowing machine: 1 × 20:00 · 4,800 m.');
+    expect(nb(renderActionResult(added({ ...row, durationS: 600 }), 'sheet').text)).toBe('Added Rowing machine: 1 × 10:00.');
+  });
+
   it('not added: stale and refused', () => {
     expect(renderActionResult(added({}, 'stale'), 'sheet').text).toBe('Not added: your workout moved on.');
     expect(renderActionResult(added({}, 'rejected', 'shoulder flagged 6 Oct'), 'sheet').text).toBe("Couldn't add Lateral raise: shoulder flagged 6 Oct. Nothing changed.");
@@ -187,5 +194,29 @@ describe('claim check: an exercise added today (12 Oct)', () => {
     // Another exercise named, or the add claimed for next time, isn't backed by it.
     expect(checkReplyClaims("I've added face pulls.", ledger([raise]), new Set([raise.actionId])).keep).toBe(false);
     expect(checkReplyClaims("I've added lateral raises to next time's workout.", ledger([raise]), new Set([raise.actionId])).keep).toBe(false);
+  });
+
+  it('cardio (review S3): "20 minutes", "20:00" and "5,000 m" are checked against the row added; other numbers are not backed', () => {
+    const row = record({
+      kind: 'add_exercise_today',
+      sessionId: id(1),
+      sessionExerciseId: id(21),
+      exerciseId: id(31),
+      exerciseName: 'Rowing machine',
+      sets: 1,
+      target: { load: null, reps: null, rpe: null },
+      durationS: 1200,
+      distanceM: 5000,
+      equipmentName: null,
+      afterName: null,
+      supersetWithName: null,
+    });
+    const cited = new Set([row.actionId]);
+    expect(checkReplyClaims("I've added 20 minutes on the rowing machine.", ledger([row]), cited).keep).toBe(true);
+    expect(checkReplyClaims("I've added the rowing machine for 20:00.", ledger([row]), cited).keep).toBe(true);
+    expect(checkReplyClaims("I've added 5,000 m on the rowing machine.", ledger([row]), cited).keep).toBe(true);
+    expect(checkReplyClaims("I've added 5 km on the rowing machine.", ledger([row]), cited).keep).toBe(true);
+    expect(checkReplyClaims("I've added 30 minutes on the rowing machine.", ledger([row]), cited)).toMatchObject({ keep: false, reason: 'numbers_differ' });
+    expect(checkReplyClaims("I've added 6,000 m on the rowing machine.", ledger([row]), cited)).toMatchObject({ keep: false, reason: 'numbers_differ' });
   });
 });

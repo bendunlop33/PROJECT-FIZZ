@@ -114,6 +114,11 @@ export function normaliseForClaims(sentence: string): string {
     .replace(/…/g, '...');
   for (const [re, to] of CONTRACTIONS) s = s.replace(re, to);
   s = digitiseNumbers(s);
+  // Review cardio S3: "5,000 m" is one number, and a clock-style time ("20:00", "1:05:00") is its seconds,
+  // so neither is split at the comma or colon into numbers that were never said.
+  s = s
+    .replace(/\b\d{1,3}(?:,\d{3})+(?!\d)/g, (m) => m.replace(/,/g, ''))
+    .replace(/\b(\d{1,2}):([0-5]\d)(?::([0-5]\d))?\b/g, (_m, a: string, b: string, c: string | undefined) => `${String(c === undefined ? Number(a) * 60 + Number(b) : Number(a) * 3600 + Number(b) * 60 + Number(c))} s`);
   s = s
     .replace(/(\d)\s*[x×]\s*(\d)/g, '$1 x $2')
     .replace(/×/g, ' x ')
