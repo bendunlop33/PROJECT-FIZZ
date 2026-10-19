@@ -131,6 +131,9 @@ describe('verifyAsked: the model says Ben asked; code checks his words', () => {
     expect(verifyAsked({ ...base, words: 'Drop the last two to 95', claim: { benAsked: true, benQuote: 'Drop the last two to 95' } })).toEqual({ asked: true, by: 'quote' });
     expect(quoteAsks('swap bench for incline dumbbell press', 'swap bench for incline dumbbell press and add lateral raises')).toBe(true);
     expect(quoteAsks('felt easy', 'Felt easy')).toBe(true);
+    // Review superset-19oct N1: "pair" asks only as a verb with an object.
+    expect(quoteAsks('the pair of 20s felt heavy', 'the pair of 20s felt heavy today')).toBe(false);
+    expect(quoteAsks('pair it with calf raises', 'pair it with calf raises')).toBe(true);
   });
 
   it('todayAskVerdict: after warm-ups only, a Too easy tap is offered, not applied', () => {

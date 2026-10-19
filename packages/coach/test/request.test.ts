@@ -511,3 +511,13 @@ describe('asksForMoreSets (D1; review S7)', () => {
     expect(asksForMoreSets(t)).toBe(false);
   });
 });
+
+describe('review superset-19oct N2: superset words ask for a change to today', () => {
+  it.each(['superset it with itself at 0', 'Superset it with itself at 0.', 'I want to superset this with calf raises', 'can you pair curls with pushdowns', 'split the superset', 'Remove the superset please'])('%s is a change', (text) => {
+    expect(requestHas(classifyBenRequest(text, 'workout'), 'change')).toBe(true);
+  });
+
+  it.each(['the pair of 20s felt heavy', 'supersets are fun', 'should I superset these?'])('%s is not', (text) => {
+    expect(requestHas(classifyBenRequest(text, 'workout'), 'change')).toBe(false);
+  });
+});

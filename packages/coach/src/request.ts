@@ -552,6 +552,20 @@ function negatedBefore(clause: string, index: number): boolean {
   return NEGATORS.test(before.slice(-NEGATION_WINDOW).join(' '));
 }
 
+/**
+ * (Review superset N2) Superset words as a request for today: "superset it with itself at 0",
+ * "pair curls with pushdowns", "I want to superset this with …", "split the superset". Not "the
+ * pair of 20s felt heavy" or "supersets are fun".
+ */
+const SUPERSET_ASK =
+  /^(?:superset|pair(?: up)?) (?!of\b)(?:\S+(?: \S+){0,3}) (?:with|and)\b|^(?:split|unpair|break up|separate|undo|remove|drop|take apart|cancel) (?:up )?(?:the |my |this |that |these |those )?(?:superset|pair)\b/;
+
+function supersetAsk(clause: string): boolean {
+  const c = clause.replace(POLITE, '');
+  const body = ASK_PREFIX.exec(c)?.[1] ?? c;
+  return SUPERSET_ASK.test(body);
+}
+
 /** A swap with an exercise object, or a variety request, not negated (review r4 B1). */
 function structuralIn(clause: string): boolean {
   const swap = SWAP_VERB.exec(clause);
@@ -953,7 +967,9 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
   // "If it's too easy, add weight" states a condition, not a request for now: the coach can offer.
   const open = all.filter((c) => c.label === null && !PLAYBOOK.test(c.text) && !c.conditional);
   // A bare imperative asked as a question ("Drop it?") is asking for a view; "can you drop it?" is a request.
-  const askingClauses = open.filter((c) => (isDirective(c.text) && !c.question) || isAsking(c.text)).map((c) => c.text);
+  const askingClauses = open
+    .filter((c) => (isDirective(c.text) && !c.question) || isAsking(c.text) || (supersetAsk(c.text) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, '')))))
+    .map((c) => c.text);
   const structural =
     !/^(?:why|should i|what|how)\b/.test(whole) &&
     open.some(
@@ -1001,7 +1017,7 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || buildIn(c.text) || planIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
+    if (c.label !== null || buildIn(c.text) || planIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || supersetAsk(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

@@ -74,7 +74,7 @@ export const MAX_ANSWER_WORDS = 4;
 
 /** Words that make a quote a request: a verb of change, a comparative, or a polite ask. */
 const REQUEST_CUE =
-  /\b(?:make|swap|switch|change|add|remove|drop|lower|raise|increase|decrease|reduce|bump|cut|skip|move|replace|put|give|go|try|adjust|set|use|take|do|let's|lets|can you|could you|would you|will you|please|i want|i'd like|i would like|want to|need to|heavier|lighter|harder|easier|more|less|fewer|instead|up|down|superset|pair)\b/;
+  /\b(?:make|swap|switch|change|add|remove|drop|lower|raise|increase|decrease|reduce|bump|cut|skip|move|replace|put|give|go|try|adjust|set|use|take|do|let's|lets|can you|could you|would you|will you|please|i want|i'd like|i would like|want to|need to|heavier|lighter|harder|easier|more|less|fewer|instead|up|down|superset|pair (?:it|this|that|them|these|those|with|up))\b/;
 /** His message asks for an opinion, not a change ("what do you think?"), unless it also asks outright. */
 const OPINION_ONLY = /\b(?:what do you think|do you think|should i|would it be|is it (?:ok|okay|fine|worth)|thoughts|any (?:ideas|advice|tips)|what would you)\b/;
 const ASKS_OUTRIGHT = /\b(?:can you|could you|would you|will you|please)\b/;
