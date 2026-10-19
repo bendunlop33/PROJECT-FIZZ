@@ -352,7 +352,7 @@ function AddToWorkoutSheet({
   exerciseId: string;
   name: string;
   perSide: boolean;
-  measurement: 'reps' | 'duration' | 'distance';
+  measurement: 'reps' | 'duration' | 'distance' | 'cardio';
   defaultShape: Parameters<typeof initialAddShape>[0];
   effortScale: 'rpe' | 'rir' | null;
   mayHurt: { title: string; message: string; confirm: string; cancel: string } | null;

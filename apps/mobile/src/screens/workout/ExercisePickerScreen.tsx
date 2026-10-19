@@ -11,7 +11,7 @@ import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Group, Icon, Row, SectionHeader, SetCountBar, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
+import { AppText, Chip, ChipRow, Group, Icon, Row, SectionHeader, SetCountBar, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
 import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
 import { SET_BAR } from '../../workout/set-shape-view';
 
@@ -44,6 +44,8 @@ export function ExercisePickerScreen() {
   const [busy, setBusy] = useState(false);
   const [opIds] = useState(() => new Map<string, string>());
   const [sets, setSets] = useState<number>(SET_BAR.start);
+  // `Cardio` (19 Oct): rower, bike, treadmill and the like only; one set unless Ben changes it.
+  const [cardio, setCardio] = useState(false);
 
   const [withCatalogue, setWithCatalogue] = useState(false);
   const [load, setLoad] = useState<PickerLoad>('loading');
@@ -118,7 +120,7 @@ export function ExercisePickerScreen() {
     setChoosing(p);
   }
 
-  const sections = pickerSections(list, query, recent);
+  const sections = pickerSections(list, query, recent, { cardio });
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
@@ -153,6 +155,19 @@ export function ExercisePickerScreen() {
             maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
             style={{ minHeight: 48, paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.divider'], backgroundColor: theme.colors['bg.surface'], color: theme.colors['text.primary'], fontSize: theme.type.body.fontSize }}
           />
+        )}
+        {choosing ? null : (
+          <ChipRow>
+            <Chip
+              label="Cardio"
+              selected={cardio}
+              onPress={() => {
+                const on = !cardio;
+                setCardio(on);
+                setSets(on ? 1 : SET_BAR.start);
+              }}
+            />
+          </ChipRow>
         )}
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">

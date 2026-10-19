@@ -17,6 +17,10 @@ import {
   editorSummaryLine,
   fixedLoadFrame,
   fixedLoadNote,
+  cardioDistanceSteps,
+  cardioDurationSteps,
+  cardioMinutesField,
+  cardioSecondsFromMinutes,
   fixedLoadSteps,
   formatDuration,
   isRefusedDistanceSlot,
@@ -703,6 +707,7 @@ function SetSheet({
   const weighted = convention === 'added' && info?.defaultLoadConvention === 'bodyweight';
   const frame = weighted ? { unit: editor.unit, convention } : fixedLoadFrame(item, editor.unit, convention);
   const bodyweight = convention === 'bodyweight';
+  const cardio = info?.measurement === 'cardio';
   const timed = info?.measurement === 'duration';
   const set = (patch: Partial<SetTemplate>) => {
     if (slot) onChange(slot.id, setIds, patch);
@@ -761,7 +766,31 @@ function SetSheet({
               )}
             </View>
           ) : null}
-          {timed ? (
+          {cardio ? (
+            <>
+              <NumberStepper
+                label="Time"
+                unit="min"
+                decimals
+                onSurface
+                {...cardioMinutesField({ value: t.targetDurationS, ...cardioDurationSteps(t.targetDurationS) })}
+                onChange={(v) => {
+                  set({ targetDurationS: cardioSecondsFromMinutes(v) });
+                }}
+              />
+              <NumberStepper
+                label="Distance"
+                unit="m"
+                decimals
+                onSurface
+                value={t.targetDistanceM ?? null}
+                {...cardioDistanceSteps(t.targetDistanceM ?? null)}
+                onChange={(v) => {
+                  set({ targetDistanceM: v === null ? null : Math.max(0, v) });
+                }}
+              />
+            </>
+          ) : timed ? (
             <NumberStepper
               label={EDITOR_COPY.workTime}
               unit="s"

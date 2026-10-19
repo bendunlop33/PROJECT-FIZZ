@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { cardioMinutesField, cardioSecondsFromMinutes, cardioTimeText, checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -1754,9 +1754,28 @@ export function WorkoutScreen() {
           ) : null}
           {focus.workTimer && (focus.workTimer.state === 'running' || focus.workTimer.state === 'paused') ? (
             <View style={{ ...(flexOf(1) === null ? { alignSelf: 'stretch' as const } : { flex: 1 }), alignItems: 'flex-start', gap: theme.space['1'] }}>
-              <Eyebrow>Work</Eyebrow>
-              <TimerNumeral text={workTimerText(focus.workTimer.remainingMs)} accessibilityLabel={`Work time left ${workTimerText(focus.workTimer.remainingMs)}`} />
+              <Eyebrow>{focus.measurement === 'cardio' ? 'Time' : 'Work'}</Eyebrow>
+              {/* Cardio (19 Oct) counts up from its stored start; a timed set counts down. */}
+              {focus.measurement === 'cardio' ? (
+                <TimerNumeral text={cardioTimeText((focus.workTimer.elapsedMs ?? 0) / 1000)} accessibilityLabel={`Time so far ${cardioTimeText((focus.workTimer.elapsedMs ?? 0) / 1000)}`} />
+              ) : (
+                <TimerNumeral text={workTimerText(focus.workTimer.remainingMs)} accessibilityLabel={`Work time left ${workTimerText(focus.workTimer.remainingMs)}`} />
+              )}
             </View>
+          ) : focus.duration && focus.measurement === 'cardio' ? (
+            <NumberStepper
+              inputRef={timeRef}
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
+              label="Time"
+              unit="min"
+              decimals
+              {...cardioMinutesField(focus.duration)}
+              onChange={(v) => {
+                setValues({ ...focus.draft, durationS: cardioSecondsFromMinutes(v) });
+              }}
+            />
           ) : focus.duration ? (
             <NumberStepper
               inputRef={timeRef}
@@ -1823,9 +1842,10 @@ export function WorkoutScreen() {
           </View>
         ) : null}
         {/* A timed set before Start: the time in the field can be logged without the timer (review gaps S2). */}
-        {view.primary.kind === 'start_work' && view.primary.logLabel !== null ? (
+        {(view.primary.kind === 'start_work' && view.primary.logLabel !== null) || (view.primary.kind === 'stop_work' && focus.measurement === 'cardio' && focus.logLabel !== null) ? (
+          // Cardio while its timer runs: ✓ logs the time so far with the distance typed in (19 Oct).
           <View style={{ alignItems: 'flex-start' }}>
-            <TextButton label={view.primary.logLabel} onPress={() => void log()} />
+            <TextButton label={view.primary.kind === 'start_work' ? (view.primary.logLabel ?? '') : (focus.logLabel ?? '')} onPress={() => void log()} />
           </View>
         ) : null}
         {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. `Why?` ends the line (§2.12). */}
