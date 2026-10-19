@@ -362,7 +362,7 @@ function AddToWorkoutSheet({
 }) {
   const theme = useTheme();
   const services = useServices();
-  const [shape, setShape] = useState<LibraryAddShape>(() => initialAddShape(defaultShape, effortScale));
+  const [shape, setShape] = useState<LibraryAddShape>(() => initialAddShape(defaultShape, effortScale, measurement));
   const [dest, setDest] = useState<LibraryDestinations | null>(null);
   const [selected, setSelected] = useState<AddDestination | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -383,7 +383,7 @@ function AddToWorkoutSheet({
   }, [services, exerciseId]);
   useEffect(() => {
     if (!visible) return;
-    setShape(initialAddShape(defaultShape, effortScale));
+    setShape(initialAddShape(defaultShape, effortScale, measurement));
     setSelected(null);
     setError(null);
     opIds.current = new Map();
@@ -501,7 +501,7 @@ function AddToWorkoutSheet({
         title={EXERCISE_INFO_COPY.repsTitle(name)}
         start={repsDraftOfShape(shape)}
         onDone={(v) => {
-          setShape((s) => ('reps' in v ? { ...s, reps: v.reps, durationS: null, repsTouched: true } : { ...s, durationS: v.durationS, reps: null, repsTouched: true }));
+          setShape((s) => ('cardio' in v ? { ...s, durationS: v.cardio.durationS, distanceM: v.cardio.distanceM, reps: null, repsTouched: true } : 'reps' in v ? { ...s, reps: v.reps, durationS: null, repsTouched: true } : { ...s, durationS: v.durationS, reps: null, repsTouched: true }));
           setSub(null);
         }}
         onClose={() => {

@@ -10,7 +10,7 @@ import { PrimaryButton } from './buttons';
 import { Icon, type SymbolName } from './Icon';
 import { FadeIn, TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
-import { nextFieldText, parseNumber } from './number-text';
+import { CARDIO_TIME_FORMAT, NUMBER_FORMAT, nextFieldText } from './number-text';
 import { effortInfoLabel, effortInfoLines, type EffortScale } from '../workout/effort-info';
 import { AX_FONT_SCALE } from '../workout/overview';
 import { stepperNumeralSize, stepperTexts, tileFit, tileRowLayout, type TileSpec } from '../workout/tile-fit';
@@ -124,7 +124,7 @@ export function NumberStepper({
   label,
   unit,
   value,
-  decimals,
+  decimals: decimalsProp,
   down,
   up,
   onChange,
@@ -139,11 +139,14 @@ export function NumberStepper({
   onFocus,
   onBlur,
   onLayout,
+  time = false,
 }: {
   label: string;
   unit: string | null;
   value: number | null;
   decimals: boolean;
+  /** A cardio time (review cardio S5): the value is seconds, typed and shown as `20:34`. */
+  time?: boolean;
   down: StepTarget;
   up: StepTarget;
   onChange: (v: number | null) => void;
@@ -173,13 +176,16 @@ export function NumberStepper({
   onLayout?: (e: LayoutChangeEvent) => void;
 }) {
   const theme = useTheme();
-  const [text, setText] = useState(value === null ? '' : String(value));
+  const format = time ? CARDIO_TIME_FORMAT : NUMBER_FORMAT;
+  // A cardio time is typed `20.34` on the number pad (it has no colon), so it takes the decimal pad.
+  const decimals = decimalsProp || time;
+  const [text, setText] = useState(value === null ? '' : format.show(value));
   const [focused, setFocused] = useState(false);
   const [tileWidth, setTileWidth] = useState<number | null>(null);
   const { fontScale } = useWindowDimensions();
   useEffect(() => {
-    setText((t) => nextFieldText(t, value));
-  }, [value]);
+    setText((t) => nextFieldText(t, value, format));
+  }, [value, time]);
   const flat = theme.components.cardBorderWidth === 0;
   // F9: without a fitted size from the caller, the numeral shrinks to its measured tile so `10` never shows as `1`.
   const fitted =
@@ -188,7 +194,7 @@ export function NumberStepper({
       ? undefined
       : stepperNumeralSize({
           tileWidth,
-          texts: [text, ...stepperTexts(value, down, up, decimals ? 3 : 2)],
+          texts: [text, ...(time ? [value === null ? '—' : format.show(value), '0:00:00'] : stepperTexts(value, down, up, decimals ? 3 : 2))],
           unit: flat ? unit : null,
           // The bordered variant's − / + are wider and sit 8 pt apart from the field.
           stepSize: flat ? (stepSize ?? theme.target.min.width) : (stepSize ?? theme.target.workout.width) + theme.space['2'] + 2,
@@ -207,7 +213,7 @@ export function NumberStepper({
       value={text}
       onChangeText={(t) => {
         setText(t);
-        onChange(parseNumber(t));
+        onChange(format.parse(t));
       }}
       onFocus={() => {
         setFocused(true);

@@ -73,6 +73,7 @@ import {
   type ChangeCard,
   type EditPillKey,
   type RowCustomAction,
+  type RepsPayload,
 } from '../../workout/overview-edits';
 import { SET_BAR } from '../../workout/set-shape-view';
 import { NameSheet } from '../routines/NameSheet';
@@ -1009,13 +1010,13 @@ export function WorkoutOverviewScreen() {
     if (w !== null && w.draft !== null && done !== null) pendingSets.current.set(r.slotKey, { count: done.workingSets, version: w.draft.version });
   }
 
-  async function doneReps(r: Row, payload: { kind: 'clear' } | { kind: 'reps'; reps: { min: number; max: number } | null; durationS: number | null }) {
+  async function doneReps(r: Row, payload: RepsPayload) {
     setRepsSlot(null);
     if (payload.kind === 'clear') {
       if (r.editRow.repsEdited) await writeEdit(`reps-clear:${r.slotKey}`, (b) => services.overview.clearEdit({ ...b, kind: 'reps', slotKey: r.slotKey }));
       return;
     }
-    await writeEdit(`reps:${r.slotKey}:${JSON.stringify(payload)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'reps', slotKey: r.slotKey, reps: payload.reps, durationS: payload.durationS } }));
+    await writeEdit(`reps:${r.slotKey}:${JSON.stringify(payload)}`, (b) => services.overview.edit({ ...b, edit: { kind: 'reps', slotKey: r.slotKey, reps: payload.reps, durationS: payload.durationS, ...(payload.distanceM !== undefined ? { distanceM: payload.distanceM } : {}) } }));
   }
 
   async function openLoad(r: Row) {

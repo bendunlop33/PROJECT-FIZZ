@@ -1,7 +1,7 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { AccessibilityInfo, Keyboard, Pressable, ScrollView, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
-import { cardioMinutesField, cardioSecondsFromMinutes, formatDuration, NBSP, targetLineLabel, targetLineText, type FocusView, type LoadField, type StepTarget, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
+import { formatDuration, NBSP, targetLineLabel, targetLineText, type FocusView, type LoadField, type StepTarget, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
 
 import { haptic } from '../../device/haptics';
@@ -879,6 +879,8 @@ export interface OpenSetRowProps {
   caption: string | null;
   /** A timed set before Start: its ✓ logs without the timer. */
   timedLogLabel: string | null;
+  /** Cardio's small timer button (review S6): `Stop` while the pill logs the time so far, `Resume` after Stop; null otherwise. */
+  workAction?: { label: string; onPress: () => void } | null;
   /** The cell being edited in place, or null (18 Oct: the table stays a table). */
   editing: TileId | null;
   /** ✓ is live: the set has every value Log needs. */
@@ -998,7 +1000,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
     editor = (
       <View style={{ flex: 1, flexDirection: p.ax ? 'column' : 'row', gap: theme.space['2'] }}>
         {working ? null : (
-          <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="MIN" unit={null} decimals {...cardioMinutesField(f.duration)} onChange={(v) => { p.onTime(cardioSecondsFromMinutes(v)); }} />
+          <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="TIME" unit={null} decimals={false} time value={f.duration.value} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />
         )}
         <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />
       </View>
@@ -1110,6 +1112,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
             {plainSpaces(f.pace)}
           </AppText>
         ) : null}
+        {p.workAction ? link(p.workAction.label, `${p.workAction.label} the timer`, p.workAction.onPress) : null}
         {f.plateLine !== null && !p.ax ? (
           <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${f.plateLine}`}>
             {plainSpaces(f.plateLine)}
@@ -1201,7 +1204,7 @@ export function CorrectionEditor(p: CorrectionEditorProps) {
     // Cardio (19 Oct): its time (minutes) and distance together, as in the open row.
     editor = (
       <View style={{ flex: 1, flexDirection: p.ax ? 'column' : 'row', gap: theme.space['2'] }}>
-        <NumberStepper key="time" flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="MIN" unit={null} decimals {...cardioMinutesField(p.duration)} onChange={(v) => { p.onTime(cardioSecondsFromMinutes(v)); }} />
+        <NumberStepper key="time" flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="TIME" unit={null} decimals={false} time value={p.duration.value} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />
         <NumberStepper key="dist" flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />
       </View>
     );

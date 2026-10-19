@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cardioMinutesField, cardioSecondsFromMinutes, EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
+import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
 import type { SetExclusion, SetType, SetValues } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
@@ -247,11 +247,14 @@ export function EditSetScreen() {
               numeralSize={numeralSize}
               compact={compact}
               label="Time"
-              unit="min"
-              decimals
-              {...cardioMinutesField(view.duration)}
+              unit={null}
+              decimals={false}
+              time
+              value={view.duration.value}
+              down={view.duration.down}
+              up={view.duration.up}
               onChange={(v) => {
-                setValues({ ...current, durationS: cardioSecondsFromMinutes(v) });
+                setValues({ ...current, durationS: v });
               }}
             />
           ) : view.duration ? (

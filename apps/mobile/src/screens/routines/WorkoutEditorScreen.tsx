@@ -19,8 +19,6 @@ import {
   fixedLoadNote,
   cardioDistanceSteps,
   cardioDurationSteps,
-  cardioMinutesField,
-  cardioSecondsFromMinutes,
   fixedLoadSteps,
   formatDuration,
   isRefusedDistanceSlot,
@@ -570,7 +568,7 @@ export function WorkoutEditorScreen() {
       <ShapeRepsSheet
         visible={shapeSheet?.kind === 'reps' && shapeSlot !== undefined}
         title={`${EDITOR_COPY.reps} · ${shapeSlot ? nameOf(shapeSlot.exerciseId) : ''}`}
-        start={slotRepsDraft(shapeSlot?.setTemplates ?? [])}
+        start={slotRepsDraft(shapeSlot?.setTemplates ?? [], shapeSlot !== undefined && info[shapeSlot.exerciseId]?.measurement === 'cardio')}
         onDone={(v) => {
           const id = shapeSheet?.slotId;
           if (id !== undefined) setList((l) => setSlotReps(l, id, v));
@@ -770,12 +768,14 @@ function SetSheet({
             <>
               <NumberStepper
                 label="Time"
-                unit="min"
-                decimals
+                unit={null}
+                decimals={false}
+                time
                 onSurface
-                {...cardioMinutesField({ value: t.targetDurationS, ...cardioDurationSteps(t.targetDurationS) })}
+                value={t.targetDurationS}
+                {...cardioDurationSteps(t.targetDurationS)}
                 onChange={(v) => {
-                  set({ targetDurationS: cardioSecondsFromMinutes(v) });
+                  set({ targetDurationS: v });
                 }}
               />
               <NumberStepper

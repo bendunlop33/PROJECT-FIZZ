@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cardioMinutesField, cardioSecondsFromMinutes, cardioTimeText, checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { cardioTimeText, checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -54,7 +54,7 @@ import { AdjustButton, AdjustRow, CoachSlotContent, useWorkoutCoach } from './Wo
 import { correctedSetToCheck } from '../../coach/offer-check';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { exerciseMenu, targetRpeMenu, targetRpeScopeMenu } from '../../workout/exercise-menu';
-import { shouldCueRestEnd, workTimerText } from '../../workout/cues';
+import { cuesWorkEnd, shouldCueRestEnd, workTimerText } from '../../workout/cues';
 import { startTimeBounds, stepTime } from '../../workout/finish';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { stepperRowTiles } from '../../workout/tile-fit';
@@ -530,7 +530,7 @@ export function WorkoutScreen() {
     const deadline = toMs(wi.deadlineUtc);
     if (now < deadline) return;
     const key = `work:${wi.setId}:${wi.deadlineUtc}`;
-    if (shouldCueRestEnd(key, deadline, now, played.current)) haptic('restEnd');
+    if (cuesWorkEnd(data.aggregate) && shouldCueRestEnd(key, deadline, now, played.current)) haptic('restEnd');
     played.current.add(key);
     if (tickedFor.current === key) return;
     tickedFor.current = key;
@@ -1408,6 +1408,18 @@ export function WorkoutScreen() {
   // Review B2: while another set is on screen, the bar goes back to the current one instead of logging it unseen.
   const currentGlance = nav.currentSetId === null ? null : services.workout.glance(loaded, nav.currentSetId);
   const back = awayPrimary(view.primary.kind, away, currentGlance?.setNumber ?? null);
+  // Cardio's small timer button (review S6): Stop while the big button logs, Resume after Stop.
+  const cardioAction = back.kind === 'back' ? null : view.workAction;
+  const workAction =
+    cardioAction === null || !focus
+      ? null
+      : {
+          label: cardioAction.label,
+          onPress: () => {
+            haptic('step');
+            void run(cardioAction.kind === 'stop_work' ? { type: 'stop_work_interval', at: services.now(), opId: newUuid(), setId: focus.setId } : { type: 'start_work_interval', at: services.now(), opId: newUuid(), setId: focus.setId, durationS: cardioAction.durationS });
+          },
+        };
   const primary = (() => {
     if (back.kind === 'back') {
       return {
@@ -1769,11 +1781,14 @@ export function WorkoutScreen() {
               numeralSize={numeralSize}
               compact={compact}
               label="Time"
-              unit="min"
-              decimals
-              {...cardioMinutesField(focus.duration)}
+              unit={null}
+              decimals={false}
+              time
+              value={focus.duration.value}
+              down={focus.duration.down}
+              up={focus.duration.up}
               onChange={(v) => {
-                setValues({ ...focus.draft, durationS: cardioSecondsFromMinutes(v) });
+                setValues({ ...focus.draft, durationS: v });
               }}
             />
           ) : focus.duration ? (
@@ -1842,10 +1857,15 @@ export function WorkoutScreen() {
           </View>
         ) : null}
         {/* A timed set before Start: the time in the field can be logged without the timer (review gaps S2). */}
-        {(view.primary.kind === 'start_work' && view.primary.logLabel !== null) || (view.primary.kind === 'stop_work' && focus.measurement === 'cardio' && focus.logLabel !== null) ? (
-          // Cardio while its timer runs: ✓ logs the time so far with the distance typed in (19 Oct).
+        {view.primary.kind === 'start_work' && view.primary.logLabel !== null ? (
           <View style={{ alignItems: 'flex-start' }}>
-            <TextButton label={view.primary.kind === 'start_work' ? (view.primary.logLabel ?? '') : (focus.logLabel ?? '')} onPress={() => void log()} />
+            <TextButton label={view.primary.logLabel} onPress={() => void log()} />
+          </View>
+        ) : null}
+        {/* Cardio (review S6): the big button logs; `Stop` / `Resume` is the small one, and Resume carries the same timer on. */}
+        {workAction ? (
+          <View style={{ alignItems: 'flex-start' }}>
+            <TextButton label={workAction.label} tone="secondary" onPress={workAction.onPress} />
           </View>
         ) : null}
         {/* `Target 100 kg · 6–8 reps · Rest after 3:00`: tap to change the rest after this set. `Why?` ends the line (§2.12). */}
@@ -2125,6 +2145,7 @@ export function WorkoutScreen() {
       keypadOpen={keypadOpen}
       caption={restored ? 'Unsaved edit restored' : copied}
       timedLogLabel={view.primary.kind === 'start_work' ? view.primary.logLabel : null}
+      workAction={workAction}
       editing={editingCell}
       canLog={focus.logLabel !== null && !busy && !guard}
       onEditCell={(field) => {

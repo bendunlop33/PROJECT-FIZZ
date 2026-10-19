@@ -5,7 +5,7 @@ import type { StepTarget } from '@fizz/domain';
 
 import { useTheme } from '../theme';
 import { AX_FONT_SCALE } from '../workout/overview';
-import { repsDraftWith, repsSteps, type RepsDraft } from '../workout/overview-edits';
+import { cardioDraftWith, repsDraftValid, repsDraftWith, repsSteps, type RepsDraft } from '../workout/overview-edits';
 import { countSteps, effortChoices, SET_SHAPE_COPY, setShapeStacked } from '../workout/set-shape-view';
 import { TextButton } from './buttons';
 import { Icon } from './Icon';
@@ -186,7 +186,7 @@ export function EffortSheet({ visible, scale, title, value, onPick, onClose }: {
  * The shape's `Reps` sheet (§9.84 layout): Range / Exact with `From` / `To`,
  * or `Work time` for a timed exercise. `Done` sends one value.
  */
-export function ShapeRepsSheet({ visible, title, start, onDone, onClose }: { visible: boolean; title: string; start: RepsDraft; onDone: (v: { reps: { min: number; max: number } } | { durationS: number }) => void; onClose: () => void }) {
+export function ShapeRepsSheet({ visible, title, start, onDone, onClose }: { visible: boolean; title: string; start: RepsDraft; onDone: (v: { reps: { min: number; max: number } } | { durationS: number } | { cardio: { durationS: number | null; distanceM: number | null } }) => void; onClose: () => void }) {
   const theme = useTheme();
   const [d, setD] = useState<RepsDraft>(start);
   useEffect(() => {
@@ -203,12 +203,19 @@ export function ShapeRepsSheet({ visible, title, start, onDone, onClose }: { vis
           </AppText>
           <TextButton
             label={SET_SHAPE_COPY.done}
+            disabled={!repsDraftValid(d)}
             onPress={() => {
-              onDone(d.kind === 'time' ? { durationS: d.seconds } : { reps: { min: d.min, max: d.max } });
+              onDone(d.kind === 'cardio' ? { cardio: { durationS: d.seconds, distanceM: d.distanceM } } : d.kind === 'time' ? { durationS: d.seconds } : { reps: { min: d.min, max: d.max } });
             }}
           />
         </View>
-        {d.kind === 'time' ? (
+        {d.kind === 'cardio' ? (
+          // Cardio (review S1): a time up to 4 h, typed as the machine shows it, and a distance.
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+            <NumberStepper label="Time" unit={null} value={d.seconds} decimals={false} time onSurface down={steps.time?.down ?? off} up={steps.time?.up ?? off} onChange={(v) => { setD(cardioDraftWith(d, 'time', v)); }} />
+            <NumberStepper label="Distance" unit="m" value={d.distanceM} decimals onSurface down={steps.distance?.down ?? off} up={steps.distance?.up ?? off} onChange={(v) => { setD(cardioDraftWith(d, 'distance', v)); }} />
+          </View>
+        ) : d.kind === 'time' ? (
           <NumberStepper label={SET_SHAPE_COPY.workTime} unit="s" value={d.seconds} decimals={false} onSurface down={steps.time?.down ?? off} up={steps.time?.up ?? off} onChange={(v) => { setD(repsDraftWith(d, 'time', v ?? 0)); }} />
         ) : (
           <>

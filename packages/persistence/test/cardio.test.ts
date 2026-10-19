@@ -156,3 +156,52 @@ describe('migration 20: the four machines become cardio, history included', () =
     expect(await dst.store.repos.exercises.get(SLED.id)).toMatchObject({ measurement: 'distance', version: 1 });
   });
 });
+
+describe('migration 20 mid-workout: an air-bike timer already running (review S7)', () => {
+  it('a schema-19 backup taken with the air bike’s 10-minute timer running restores as a cardio timer that runs past 10:00', async () => {
+    const src = await DatabaseManager.open({ host: nodeDatabaseHost(dir()), newName: names('c') });
+    const bikeThen = machine(AIR_BIKE_ID, 'Air bike', 'duration');
+    await seed(src.store, bikeThen);
+    const service = createSessionService(src.store.repos, idGen(80_000));
+    const started = await service.start({ ownerId: OWNER, gymId: GYM, routineId: id(300), opId: 'start-1', at: at(0) });
+    if (!started.ok) throw new Error(started.error.code);
+    const sid = started.aggregate.session.id;
+    const added = await service.addExercise(sid, { ownerId: OWNER, exerciseId: bikeThen.id, equipmentId: null, opId: 'add-bike', at: at(10) });
+    if (!added.ok) throw new Error(added.error.code);
+    const bikeSet = added.aggregate.sets.find((s) => added.aggregate.exercises.find((e) => e.id === s.sessionExerciseId)?.exerciseId === AIR_BIKE_ID)?.id ?? '';
+    // The old build: a timed set's countdown to its 10:00 target.
+    const timer = await service.dispatch(sid, { type: 'start_work_interval', at: at(100), opId: 'start-bike', setId: bikeSet, durationS: 600 });
+    if (!timer.ok) throw new Error(timer.error.code);
+    expect(timer.aggregate.workInterval).toMatchObject({ durationS: 600, deadlineUtc: at(700).utc });
+
+    const created = await createBackup(src.store, { at: at(200), app: { name: 'PROJECT-FIZZ', version: '0.1.0', build: 'test' } });
+    const parsed = await parseBackup(created.text);
+    if (!parsed.ok) throw new Error('backup');
+    const tables = { ...parsed.file.tables };
+    tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
+      const copy = { ...row };
+      delete copy.measures_cardio;
+      return copy;
+    });
+    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 19, tables };
+    delete body.checksum;
+    const old = JSON.stringify({ ...body, checksum: { algorithm: 'sha-256', value: sha256Hex(stableStringify(body)) } });
+
+    const dst = await DatabaseManager.open({ host: nodeDatabaseHost(dir()), newName: names('d') });
+    const out = await dst.restore(old, at(300));
+    expect(out).toMatchObject({ ok: true, status: 'restored' });
+    const after = createSessionService(dst.store.repos, idGen(90_000));
+    // Past the old 10:00 deadline: no auto-complete, the timer runs on as cardio.
+    const recovered = await after.recover(OWNER, at(800));
+    const s = recovered?.state;
+    if (s === undefined) throw new Error('not recovered');
+    expect(s.exercises.find((e) => e.exerciseId === AIR_BIKE_ID)?.measurement).toBe('cardio');
+    expect(recovered?.missedEvents.filter((e) => e.type === 'WorkIntervalEnded')).toEqual([]);
+    expect(s.workInterval).toMatchObject({ setId: bikeSet, status: 'running', startedAtUtc: at(100).utc });
+    const view = buildActiveSetView({ aggregate: s, nowMs: Date.parse(at(1300).utc), gymName: 'Main', previous: {}, painFlagged: new Set(), edits: null, withTimeLeft: false });
+    expect(view.focus?.workTimer?.elapsedMs).toBe(1_200_000);
+    const logged = await after.dispatch(sid, logCmd(bikeSet, { load: null, reps: null, durationS: null, rpe: null, rir: null }, 1300, 'log-bike'));
+    if (!logged.ok) throw new Error(`${logged.error.code}: ${logged.error.message}`);
+    expect(logged.aggregate.sets.find((x) => x.id === bikeSet)?.actual).toMatchObject({ durationS: 1200 });
+  });
+});

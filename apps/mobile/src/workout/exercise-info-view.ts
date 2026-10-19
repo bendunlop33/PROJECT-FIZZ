@@ -1,4 +1,4 @@
-import { formatDuration, formatNumber, NBSP, repRangeText, type AddDestination, type SlotShapeInput } from '@fizz/domain';
+import { cardioValuesText, formatDuration, formatNumber, NBSP, repRangeText, type AddDestination, type SlotShapeInput } from '@fizz/domain';
 
 import type { LibraryAddShape } from '../services/library-service';
 import type { RepsDraft } from './overview-edits';
@@ -31,13 +31,14 @@ export const EXERCISE_INFO_COPY = {
   addAnyway: 'Add anyway',
 } as const;
 
-/** The sheet's starting shape: the exercise's §10.1 default; effort `None`. */
-export function initialAddShape(d: SlotShapeInput, scale: 'rpe' | 'rir' | null): LibraryAddShape {
-  return { workingSets: d.workingSets, warmups: d.warmups, reps: d.reps === null ? null : { ...d.reps }, durationS: d.durationS, effort: { scale: scale ?? 'rpe', value: null }, repsTouched: false };
+/** The sheet's starting shape: the exercise's §10.1 default; effort `None`. A cardio exercise's carries its distance (none to start). */
+export function initialAddShape(d: SlotShapeInput, scale: 'rpe' | 'rir' | null, measurement?: string): LibraryAddShape {
+  return { workingSets: d.workingSets, warmups: d.warmups, reps: d.reps === null ? null : { ...d.reps }, durationS: d.durationS, ...(measurement === 'cardio' ? { distanceM: d.distanceM ?? null } : {}), effort: { scale: scale ?? 'rpe', value: null }, repsTouched: false };
 }
 
-/** The sheet's `Reps` / `Work time` row: `8–10`, `8–10 per side`, `0:45`. */
+/** The sheet's `Reps` / `Work time` row: `8–10`, `8–10 per side`, `0:45`; cardio's `Time` row: `20:00 · 4,800 m`. */
 export function addRepsRow(shape: LibraryAddShape, perSide: boolean): { label: string; text: string } {
+  if (shape.distanceM !== undefined) return { label: 'Time', text: cardioValuesText({ durationS: shape.durationS, distanceM: shape.distanceM }) };
   if (shape.reps !== null) return { label: SET_SHAPE_COPY.reps, text: `${repRangeText(shape.reps)}${perSide ? `${NBSP}per side` : ''}` };
   return { label: SET_SHAPE_COPY.workTime, text: formatDuration(shape.durationS ?? 45) };
 }
@@ -50,6 +51,8 @@ export function addEffortRow(shape: LibraryAddShape, scale: 'rpe' | 'rir' | null
 
 /** What the Reps sheet opens with. */
 export function repsDraftOfShape(shape: LibraryAddShape): RepsDraft {
+  // Cardio (review S1): time up to 4 h and a distance, never the 10-minute work-time sheet.
+  if (shape.distanceM !== undefined) return { kind: 'cardio', seconds: shape.durationS, distanceM: shape.distanceM };
   if (shape.reps === null) return { kind: 'time', seconds: shape.durationS ?? 45 };
   return { kind: 'reps', exact: shape.reps.min === shape.reps.max, min: shape.reps.min, max: shape.reps.max };
 }
@@ -61,7 +64,7 @@ export function addPrimary(selected: AddDestination | null): { label: string; di
 
 /** The shape the editor's new card starts with (`New workout`): the sheet's values as a slot shape. */
 export function slotShapeOfAdd(shape: LibraryAddShape): SlotShapeInput {
-  return { workingSets: shape.workingSets, warmups: shape.warmups, reps: shape.reps, durationS: shape.durationS, targetRpe: shape.effort.scale === 'rpe' ? shape.effort.value : null, targetRir: shape.effort.scale === 'rir' ? shape.effort.value : null };
+  return { workingSets: shape.workingSets, warmups: shape.warmups, reps: shape.reps, durationS: shape.durationS, ...(shape.distanceM !== undefined ? { distanceM: shape.distanceM } : {}), targetRpe: shape.effort.scale === 'rpe' ? shape.effort.value : null, targetRir: shape.effort.scale === 'rir' ? shape.effort.value : null };
 }
 
 /** `GuidePoster` canvas (design-system §9.90): `min(240, width − 2 × margin − 2 × padding)`, never under 160. */

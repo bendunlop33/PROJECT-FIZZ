@@ -112,6 +112,8 @@ export interface LibraryAddShape {
   warmups: number;
   reps: { min: number; max: number } | null;
   durationS: number | null;
+  /** Cardio (review cardio S1): the sheet's distance target (null: none); absent on every other exercise. */
+  distanceM?: number | null;
   effort: { scale: 'rpe' | 'rir'; value: number | null };
   repsTouched: boolean;
 }
@@ -339,6 +341,8 @@ export function createLibraryService(deps: LibraryServiceDeps) {
             warmups: sh.warmups,
             ...(sh.repsTouched && sh.reps !== null ? { reps: sh.reps } : {}),
             ...(sh.repsTouched && sh.durationS !== null ? { durationS: sh.durationS } : {}),
+            // Cardio: the time and distance as set in the sheet (either may be empty).
+            ...(sh.repsTouched && sh.distanceM !== undefined ? { durationS: sh.durationS, distanceM: sh.distanceM } : {}),
             ...(sh.effort.value !== null ? { effort: sh.effort } : {}),
           };
           const r = await deps.addToSession({ sessionId: before.session.id, exerciseId: exercise.id, equipmentId: equipment?.id ?? null, opId: req.opId, shape });
@@ -358,7 +362,7 @@ export function createLibraryService(deps: LibraryServiceDeps) {
         // Slot and set IDs come from the opId, so a retry builds the same version.
         let n = 0;
         const ids = () => deriveId(`library-add:${req.opId}:${String((n += 1))}`);
-        const slotShape: SlotShapeInput = { workingSets: sh.workingSets, warmups: sh.warmups, reps: sh.reps, durationS: sh.durationS, targetRpe: sh.effort.scale === 'rpe' ? sh.effort.value : null, targetRir: sh.effort.scale === 'rir' ? sh.effort.value : null };
+        const slotShape: SlotShapeInput = { workingSets: sh.workingSets, warmups: sh.warmups, reps: sh.reps, durationS: sh.durationS, ...(sh.distanceM !== undefined ? { distanceM: sh.distanceM } : {}), targetRpe: sh.effort.scale === 'rpe' ? sh.effort.value : null, targetRir: sh.effort.scale === 'rir' ? sh.effort.value : null };
         const exercises = routine.lastOpId === req.opId ? routine.exercises : addSlot(routine.exercises, { id: exercise.id, measurement: exercise.measurement }, ids, slotShape).map((e) => (e.exerciseId === exercise.id && e.main === undefined ? { ...e, main: false } : e));
         const r = await deps.updateRoutine({ routineId: routine.id, edit: { name: routine.name, exercises }, expectedVersion: routine.lastOpId === req.opId ? routine.version : req.to.expectedVersion, opId: req.opId });
         if (!r.ok) return { ok: false, reason: r.reason === 'stale' ? 'stale' : 'failed', message: r.reason === 'stale' ? LIBRARY_ADD_COPY.changed(routine.name) : LIBRARY_ADD_COPY.failed };

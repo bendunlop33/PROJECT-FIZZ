@@ -1,5 +1,6 @@
 import {
   addDays,
+  cardioRepeatTargets,
   buildPlannedSetEditView,
   restSetsView,
   setGlance,
@@ -1297,6 +1298,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
 
   async function planFor(p: UserProfile, req: { sessionId: string; exerciseId: string; equipmentId: string | null }): Promise<{ setType: SetType; planned: PlannedSet }[] | null> {
     const [aggregate, exercise] = await Promise.all([repos().sessions.get(req.sessionId), repos().exercises.get(req.exerciseId)]);
+    // Cardio (review B1): last time's time and distance, on any item (no load to fit); none = the add's own default.
+    if (aggregate && exercise?.measurement === 'cardio') return cardioRepeatTargets(await historyFor(p.id, exercise.id), { at: ctx.now() });
     if (!aggregate || !exercise || exercise.measurement !== 'reps') return null;
     const equipment = req.equipmentId === null ? null : (currentGymEquipment(aggregate.session).find((e) => e.id === req.equipmentId) ?? null);
     const unit = equipment?.unit ?? p.preferredUnit;
@@ -1357,6 +1360,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       .catch(() => undefined);
   }
 
+  /**
+   * `targets` with last time's time and distance for each cardio exercise it
+   * has none for (review B1; `cardioRepeatTargets`). `failed`: the targets
+   * couldn't be read, so they stay null (the start says so).
+   */
+  async function withCardioRepeats(p: UserProfile, exerciseIds: readonly string[], targets: ReadonlyMap<string, readonly NextTargetEntry[]> | null, failed: boolean): Promise<ReadonlyMap<string, readonly NextTargetEntry[]> | null> {
+    if (failed) return targets;
+    const out = new Map<string, readonly NextTargetEntry[]>(targets ?? []);
+    for (const exerciseId of new Set(exerciseIds)) {
+      if (out.has(exerciseId)) continue;
+      const exercise = await repos().exercises.get(exerciseId).catch(() => null);
+      if (exercise?.measurement !== 'cardio') continue;
+      const plan = cardioRepeatTargets(await historyFor(p.id, exerciseId).catch(() => [] as HistorySession[]), { at: ctx.now() });
+      if (plan) out.set(exerciseId, plan);
+    }
+    return out.size === 0 ? targets : out;
+  }
+
   /** The built-in rule's next targets only (playbook 7-F): the comparison and the fallback for the coach's. */
   async function builtInNextTargetsOf(p: UserProfile, source: SessionAggregate, today: CheckIn | null = null): Promise<Map<string, { setType: SetType; planned: PlannedSet }[]>> {
     const out = new Map<string, { setType: SetType; planned: PlannedSet }[]>();
@@ -1367,7 +1388,14 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     // block's set count, the same as the Summary's `Next time` (review r2 B1).
     for (const block of nextTargetBlocks(source)) {
       const sx = block.decider;
-      if (out.has(sx.exerciseId) || sx.measurement !== 'reps') continue;
+      if (out.has(sx.exerciseId)) continue;
+      // Cardio (review B1): never progressed; next time repeats last time's time and distance (this workout's, as history reads it).
+      if (sx.measurement === 'cardio') {
+        const plan = cardioRepeatTargets(await historyFor(p.id, sx.exerciseId), { at: ctx.now() });
+        if (plan) out.set(sx.exerciseId, plan);
+        continue;
+      }
+      if (sx.measurement !== 'reps') continue;
       const exercise = await repos().exercises.get(sx.exerciseId);
       // The reason line isn't shown at Start (the Summary shows it), so no gym name is needed.
       const history = await historyFor(p.id, sx.exerciseId);
@@ -1479,7 +1507,9 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const source = ref ? await repos().sessions.get(ref.sessionId).catch(() => null) : null;
     const fromSource = source ? await nextTargetsOf(p, source, req.today ?? null).catch(() => null) : null;
     // A routine from before the library: last time's today-only set counts stay last time's (TE-B13, review S1).
-    const targets = fromSource !== null && routine && source ? withoutTodayOnlySets(fromSource, routine, source.session.todayEdits) : fromSource;
+    const sourced = fromSource !== null && routine && source ? withoutTodayOnlySets(fromSource, routine, source.session.todayEdits) : fromSource;
+    // Cardio (review B1): last time's time and distance wherever it was done, also when this routine hasn't run yet.
+    const targets = routine ? await withCardioRepeats(p, routine.exercises.map((e) => e.exerciseId), sourced, source !== null && sourced === null) : sourced;
     // Swapped slots' substitutes too, so the dry run, the Swap sheet and Start map the same item (GS3 step 2, review S3).
     const lastUsedHere = routine ? await lastUsedFor(p.id, [...routine.exercises.map((e) => e.exerciseId), ...swapExerciseIds(req.todayEdits)], req.gymId) : undefined;
     if (req.noteSource === true && ref !== null && !req.preview) await noteStartFrom(p.id, ref.sessionId, req.opId);
