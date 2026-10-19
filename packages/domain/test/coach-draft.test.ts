@@ -476,6 +476,26 @@ describe('planCoachDraft: the one path for the overview, Today and Start (BD6, B
     expect(setsFor(out, FLY.id).every((s) => s.planned.rpe === 9)).toBe(true);
   });
 
+  it('cardio in a build (19 Oct): its time and distance carry to the session; no warm-ups, reps, RPE or load; a missing time is 10:00 with a line', () => {
+    const ROWER = ex(230, 'Rowing machine', 'rowing-erg', { movementPattern: 'conditioning', compatibleEquipment: ['erg'], defaultLoadConvention: 'bodyweight', measurement: 'cardio', mechanic: 'compound' });
+    const c = ctx({ exerciseFor: (key) => (key === 'rowing-erg' ? ROWER : (BY_KEY.get(key) ?? null)) });
+    const withRow = args([...PUSH.exercises, pex('rowing-erg', { warmups: 2, workingSets: 1, reps: null, workSeconds: 1200, distanceMetres: 4800, targetRpe: 7 })]);
+    const r = checked(withRow, c);
+    const slot = r.plan.slots.find((x) => x.exerciseId === ROWER.id);
+    expect(slot?.setTemplates).toEqual([{ setType: 'working', reps: null, durationS: 1200, distanceM: 4800, targetRpe: null, restS: null }]);
+    EXERCISES.set(ROWER.id, ROWER);
+    try {
+      const out = planOf(draftOf(withRow, c));
+      expect(rowFor(out, ROWER.id)?.measurement).toBe('cardio');
+      expect(setsFor(out, ROWER.id).map((x) => x.planned)).toEqual([expect.objectContaining({ durationS: 1200, distanceM: 4800, reps: null })]);
+    } finally {
+      EXERCISES.delete(ROWER.id);
+    }
+    const noTime = checked(args([pex('rowing-erg', { workingSets: 1, reps: null, workSeconds: null })]), c);
+    expect(noTime.plan.slots[0]?.setTemplates[0]).toMatchObject({ durationS: 600 });
+    expect(noTime.checks.map((x) => plain(x.text))).toContain('Rowing machine · time missing · 10:00 used');
+  });
+
   it('a coach draft names itself on the session, never a routine (rotation untouched, §6.3); supersets and timed sets carry through', () => {
     const d = draftOf();
     const out = planOf(d);
