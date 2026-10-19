@@ -2014,7 +2014,12 @@ function handleUndoOp(state: SessionAggregate, cmd: CommandOf<'undo_op'>): Handl
       const sets = state.sets.map((s) => gone.get(s.id) ?? s);
       const alone = ex.supersetGroup === null ? [] : state.exercises.filter((e) => e.id !== ex.id && e.removed === undefined && e.supersetGroup === ex.supersetGroup);
       const exercises = state.exercises.map((e) => {
-        if (e.id === ex.id) return { ...e, removed: { opId: cmd.opId, at: cmd.at, by: 'remove' as const } };
+        if (e.id === ex.id) {
+          // Nothing brings an undone add back, so its superset letter is free again (review N3: no `B` with no `A`).
+          const gone: SessionExercise = { ...e, supersetGroup: null, removed: { opId: cmd.opId, at: cmd.at, by: 'remove' as const } };
+          delete gone.roundOffset;
+          return gone;
+        }
         if (alone.length === 1 && e.id === alone[0]?.id) return { ...e, supersetGroup: null };
         return e;
       });

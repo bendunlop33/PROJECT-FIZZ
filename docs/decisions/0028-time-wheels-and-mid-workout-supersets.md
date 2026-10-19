@@ -17,5 +17,5 @@
 ## Consequences
 
 - A native rebuild is needed for the wheels. Until then the old JS bundle can't load the module; the build that ships this code must include it.
-- Removed rows keep their superset letter (an Undo of a removal could bring them back), so a new pair can get `B` after an undone `A`.
-- Before Start, the overview adds a second copy but has no `Superset with…` yet (today's edits have no superset kind).
+- A row taken out by `Remove` keeps its superset letter (its Undo brings it back); a row whose add was undone frees its letter, so a new pair after an undone one gets the same letter again.
+- Before Start, the overview adds a second copy but has no `Superset with…` (today's edits have no superset kind). Deferred to its own slice pending Ben (CHANGELOG, Open for Ben).

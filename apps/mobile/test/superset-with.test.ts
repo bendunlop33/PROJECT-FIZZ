@@ -78,8 +78,8 @@ describe('Superset with… during a workout', () => {
     const again = await s.workout.addExercise({ sessionId, exerciseId: calf.exercise.id, equipmentId: calf.equipment[0]?.id ?? null, opId: 'pair-self', shape: { workingSets: 2 }, supersetWithSessionExerciseId: calfRow?.id ?? '' });
     if (!again.ok) throw new Error(again.error.message);
     const copies = rowsNamed(again.aggregate, 'Seated calf raise');
-    // A fresh letter: the undone partner's row keeps its old one (Undo of its removal could bring it back).
-    expect(copies.map((e) => e.supersetGroup)).toEqual(['B', 'B']);
+    // The undone partner freed its letter (review N3), so the new pair is A again.
+    expect(copies.map((e) => e.supersetGroup)).toEqual(['A', 'A']);
     expect(again.aggregate.sets.filter((x) => x.sessionExerciseId === copies[1]?.id).every((x) => x.status === 'pending')).toBe(true);
 
     // A retry of the same add is the same write.
@@ -92,8 +92,8 @@ describe('Superset with… during a workout', () => {
     const back = await s.workout.load(sessionId);
     if (!back) throw new Error('no workout');
     expect(rowsNamed(back.aggregate, 'Seated calf raise').map((e) => [e.supersetGroup, e.roundOffset ?? 0])).toEqual([
-      ['B', 0],
-      ['B', 1],
+      ['A', 0],
+      ['A', 1],
     ]);
     const split = await s.workout.dispatch(sessionId, { type: 'split_superset', at: h.now(), opId: 'split-1', sessionExerciseId: calfRow?.id ?? '', expectedVersion: back.aggregate.session.version });
     if (!split.ok) throw new Error(split.error.message);

@@ -82,6 +82,29 @@ describe('link_superset', () => {
     expect(s2.sets.filter((x) => x.sessionExerciseId === bench.id)).toEqual(s1.sets.filter((x) => x.sessionExerciseId === bench.id));
   });
 
+  it('review N3: the letter of a partner add that was undone is used again', () => {
+    const s0 = started();
+    const bench = rowId(s0, BENCH);
+    const s1 = apply(s0, {
+      type: 'add_exercise',
+      at: at(300),
+      opId: 'add-pair',
+      newSessionExerciseId: '00000000-0000-4000-8000-000000078001',
+      newSetId: '00000000-0000-4000-8000-000000078002',
+      exercise: { exerciseId: BENCH, name: 'Bench press', measurement: 'reps', laterality: 'bilateral', defaultLoadConvention: 'total', compatibleEquipment: ['barbell'] },
+      equipmentId: null,
+      unit: 'kg',
+      rest: { seconds: 60, source: 'global_default', sourceLabel: 'Default' },
+      plan: [{ id: '00000000-0000-4000-8000-000000078002', setType: 'working', planned: { load: kg(0), reps: { min: 20, max: 20 }, durationS: null, rpe: null, rir: null } }],
+      supersetWithSessionExerciseId: bench,
+    });
+    expect(order(s1)).toContain('Bench press:B');
+    const s2 = apply(s1, undo('add-pair'));
+    expect(order(s2)).toEqual(['Bench press', 'Cable row:A', 'Face pull:A', 'Dead hang']);
+    const s3 = apply(s2, link(s2, rowId(s2, HANG), bench, 'link-after'));
+    expect(order(s3)).toEqual(['Bench press:B', 'Dead hang:B', 'Cable row:A', 'Face pull:A']);
+  });
+
   it('is idempotent (same opId) and refuses a stale version', () => {
     const s0 = started();
     const cmd = link(s0, rowId(s0, HANG), rowId(s0, BENCH));
