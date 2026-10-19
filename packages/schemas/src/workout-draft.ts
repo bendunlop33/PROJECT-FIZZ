@@ -23,6 +23,8 @@ export const BUILD_LIMITS = {
   maxReps: 50,
   minWorkS: 5,
   maxWorkS: 600,
+  /** Cardio (19 Oct): a row, ride or walk may run longer than a timed set. */
+  maxCardioS: 7200,
   minRpe: 5,
   maxRpe: 10,
   minRestS: 30,
@@ -85,6 +87,8 @@ export const ProposedExerciseSchema = z.strictObject({
   /** Exactly one of `reps` / `workSeconds`. */
   reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
   workSeconds: z.int().min(0).max(36_000).nullable(),
+  /** Cardio only (19 Oct): a distance to aim for, in metres, next to `workSeconds`; null = none. Absent on calls made before it. */
+  distanceMetres: z.number().min(0).max(100_000).nullable().optional(),
   /** Working sets' target RPE, 5–10 in half steps. Null: the built-in rule's (BD7). */
   targetRpe: z.number().min(0).max(20).nullable(),
   /** One top set before the working sets, with its own reps, RPE and (v2) load. */
@@ -179,14 +183,17 @@ export const DraftSetTemplateSchema = z
   .object({
     setType: SetTypeSchema,
     reps: RepRangeSchema.nullable(),
-    durationS: z.int().min(BUILD_LIMITS.minWorkS).max(BUILD_LIMITS.maxWorkS).nullable(),
+    durationS: z.int().min(BUILD_LIMITS.minWorkS).max(BUILD_LIMITS.maxCardioS).nullable(),
+    /** Cardio (19 Oct): a distance to aim for, in metres; absent on every other set. */
+    distanceM: z.number().min(0).max(100_000).nullable().optional(),
     /** Working and top sets: the coach's (or the rule's, BD7). Warm-ups: null. */
     targetRpe: RpeSchema.nullable(),
     restS: z.int().min(0).max(BUILD_LIMITS.maxRestS).nullable(),
     /** (v2) The checked load; absent on warm-ups and on drafts made before v2 (the rule plans those). */
     load: DraftLoadSchema.optional(),
   })
-  .refine((t) => (t.reps === null) !== (t.durationS === null), { message: 'A set has reps or a work time, not both' });
+  .refine((t) => (t.reps === null) !== (t.durationS === null), { message: 'A set has reps or a work time, not both' })
+  .refine((t) => t.distanceM == null || t.reps === null, { message: 'A distance goes with a work time, not reps' });
 export type DraftSetTemplate = z.infer<typeof DraftSetTemplateSchema>;
 
 export const DraftSlotSchema = z.object({

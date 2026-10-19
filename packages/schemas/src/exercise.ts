@@ -34,12 +34,15 @@ export type ExerciseEquipmentKind = z.infer<typeof EquipmentKindSchema>;
 /**
  * `reps` sets log a count; `duration` sets log a work time (timed exercises:
  * planks, hangs); `distance` sets log metres (sled push, carries; ADR 0011,
- * merged 2026-10-11 once sets could record a distance).
+ * merged 2026-10-11 once sets could record a distance); `cardio` sets log a
+ * time and a distance, both optional but at least one (rowing machine, bike,
+ * treadmill; Ben, 19 Oct). Cardio has a start/stop timer and a pace; it is
+ * never progressed by load or reps.
  */
-export const MeasurementSchema = z.enum(['reps', 'duration', 'distance']);
+export const MeasurementSchema = z.enum(['reps', 'duration', 'distance', 'cardio']);
 export type Measurement = z.infer<typeof MeasurementSchema>;
 
-/** Measurement as described by the exercise catalogue: the same three since distance sets exist (ADR 0011). */
+/** Measurement as described by the exercise catalogue: the same as a set's (ADR 0011; `cardio` 19 Oct). */
 export const CatalogueMeasurementSchema = MeasurementSchema;
 export type CatalogueMeasurement = Measurement;
 
