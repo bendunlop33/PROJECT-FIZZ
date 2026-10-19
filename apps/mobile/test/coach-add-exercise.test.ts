@@ -9,7 +9,7 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
  * (12 Oct) Ben: "Why can't the ChatGPT link create sets in the app?" The
- * coach's `add_exercise_today`: "add 3 sets of lateral raises" adds a new
+ * coach's add (Coach v3: an `add` op of `edit_today`): "add 3 sets of lateral raises" adds a new
  * exercise to today's workout through the workout's own `add_exercise`
  * command, loads from Ben's history on this gym's equipment (blank with no
  * history, B6), applied at once with a card and one-tap Undo (rule 3), never
@@ -63,17 +63,12 @@ function contextAddable(req: ModelRequest): Addable[] | undefined {
 const addFromContext = (name: string, over: Record<string, unknown> = {}) => (req: ModelRequest) => {
   const w = contextWorkout(req);
   const pick = contextAddable(req)?.find((a) => a.name === name);
-  return toolCall('add_exercise_today', {
-    baseVersion: w.version,
-    exerciseId: pick?.exerciseId ?? 'missing',
-    workingSets: 3,
-    reps: { min: 10, max: 15 },
-    workSeconds: null,
-    targetRpe: 8,
-    afterSessionExerciseId: null,
-    supersetWithSessionExerciseId: null,
+  const { baseVersion, ...op } = over;
+  // Coach v3 (ADR 0027): an add is an `add` op of the one tool for today's workout, `edit_today`.
+  return toolCall('edit_today', {
+    baseVersion: baseVersion ?? w.version,
+    ops: [{ op: 'add', exerciseId: pick?.exerciseId ?? 'missing', workingSets: 3, reps: { min: 10, max: 15 }, workSeconds: null, targetRpe: 8, afterSessionExerciseId: null, supersetWithSessionExerciseId: null, ...op }],
     reason: 'Ben asked for shoulders.',
-    ...over,
   });
 };
 
@@ -94,14 +89,14 @@ describe('add an exercise from chat', () => {
     const r = await say(s, sessionId, 'Add 3 sets of lateral raises');
     expect(r.status).toBe('completed');
     const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
-    expect(tools).toEqual(expect.arrayContaining(['add_exercise_today', 'adjust_pending_sets']));
+    expect(tools).toContain('edit_today');
     const addable = contextAddable(model.requests[0] as ModelRequest) ?? [];
     expect(addable.some((a) => a.name === 'Lateral raise')).toBe(true);
     // Already in today's workout: not offered as an add.
     expect(addable.some((a) => a.name === 'Bench press')).toBe(false);
 
     const record = r.cards[0]?.record;
-    expect(record).toMatchObject({ status: 'committed', detail: { kind: 'add_exercise_today', exerciseName: 'Lateral raise', sets: 3 } });
+    expect(record).toMatchObject({ status: 'committed', detail: { kind: 'edit_today', added: [{ exerciseName: 'Lateral raise', sets: 3 }] } });
     if (!record) throw new Error('no card');
     const card = cardView(record);
     expect(card).toMatchObject({ status: { word: 'Added' }, canUndo: true });
@@ -128,8 +123,8 @@ describe('add an exercise from chat', () => {
     const { s, sessionId } = await benchWorkout();
     model = new StepModel([addFromContext('Cable curl', { reps: { min: 12, max: 15 }, targetRpe: null }), () => replyWith('Pick a weight you can do 15 with.')]);
     const r = await say(s, sessionId, 'Put in some cable curls');
-    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('add_exercise_today');
-    expect(r.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'add_exercise_today', exerciseName: 'Cable curl', target: { load: null, reps: { min: 12, max: 15 } } } });
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('edit_today');
+    expect(r.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'edit_today', added: [{ exerciseName: 'Cable curl', target: { load: null, reps: { min: 12, max: 15 } } }] } });
     const curl = (await rowsOf(s, sessionId)).find((x) => x.row.exerciseName === 'Cable curl');
     expect(curl?.sets.every((x) => x.planned.load === null)).toBe(true);
   });
@@ -138,7 +133,7 @@ describe('add an exercise from chat', () => {
     const { s, sessionId } = await benchWorkout();
     model = new StepModel([() => replyWith('Curls are a good shout at the end.')]);
     const r = await say(s, sessionId, 'Put in some curls');
-    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('add_exercise_today');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('edit_today');
     expect(r.cards).toEqual([]);
     expect(r.note).toBe('No change made.');
     expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
@@ -146,7 +141,7 @@ describe('add an exercise from chat', () => {
     model = new StepModel([() => replyWith('They would help.')]);
     const q = await say(s, sessionId, 'Should I add curls?');
     // (14 Oct) The tool is offered on every live turn; a call to it here would be an offer, not an add (midworkout.test.ts).
-    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('add_exercise_today');
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('edit_today');
     expect(q.note).toBeNull();
   });
 
@@ -155,7 +150,7 @@ describe('add an exercise from chat', () => {
     model = new StepModel([(req) => addFromContext('Lateral raise', { baseVersion: contextWorkout(req).version - 1 })(req), () => replyWith('Ok.')]);
     const st = await say(s, sessionId, 'add lateral raises');
     expect(st.cards[0]?.record.status).toBe('stale');
-    expect(plain(cardView(st.cards[0]?.record ?? (undefined as never)).text)).toBe('Not added: your workout moved on.');
+    expect(plain(cardView(st.cards[0]?.record ?? (undefined as never)).text)).toBe("Couldn't change today's workout: your workout moved on. Nothing changed.");
     expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
 
     const turnId = h.ids();
@@ -211,7 +206,7 @@ describe('add an exercise from chat', () => {
       addFromContext('Lateral raise'),
       (req) => {
         firstOut = lastOutput(req);
-        return addFromContext('Cable curl', { baseVersion: firstOut.sessionVersion, supersetWithSessionExerciseId: firstOut.sessionExerciseId })(req);
+        return addFromContext('Cable curl', { baseVersion: firstOut.sessionVersion, supersetWithSessionExerciseId: (firstOut.newSessionExerciseIds as string[] | undefined)?.[0] ?? null })(req);
       },
       () => replyWith('Both in.'),
     ]);
@@ -219,7 +214,7 @@ describe('add an exercise from chat', () => {
     expect(r.cards.map((c) => c.record.status)).toEqual(['committed', 'committed']);
     const rows = await rowsOf(s, sessionId);
     const raise = rows.find((x) => x.row.exerciseName === 'Lateral raise');
-    expect(firstOut).toMatchObject({ status: 'committed', sessionExerciseId: raise?.row.id });
+    expect(firstOut).toMatchObject({ status: 'committed', newSessionExerciseIds: [raise?.row.id] });
     const d = await s.workout.load(sessionId);
     expect(typeof firstOut.sessionVersion).toBe('number');
     expect(firstOut.sessionVersion).toBeLessThan(d?.aggregate.session.version ?? 0);
@@ -237,7 +232,7 @@ describe('add an exercise from chat', () => {
       const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
       // (14 Oct) Offered on every live turn, but a next-time add is never applied to today.
       expect(tools).toContain('propose_next_workout_change');
-      expect(r.cards.some((c) => c.record.detail.kind === 'add_exercise_today' && c.record.status === 'committed')).toBe(false);
+      expect(r.cards.some((c) => c.record.detail.kind === 'edit_today' && c.record.status === 'committed')).toBe(false);
       expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Bench press']);
     }
   });
@@ -249,7 +244,7 @@ describe('add an exercise from chat', () => {
     ]);
     const r = await say(s, sessionId, 'put in some curls');
     const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
-    expect(tools).toContain('add_exercise_today');
+    expect(tools).toContain('edit_today');
     expect(tools).not.toContain('propose_next_workout_change');
     expect(r.cards).toEqual([]);
     expect(r.note).toBe('No change made.');
@@ -258,7 +253,7 @@ describe('add an exercise from chat', () => {
     // An unclear scope ("to the plan") offers both; the model picks.
     model = new StepModel([() => replyWith('Ok.')]);
     await say(s, sessionId, 'add curls to the plan');
-    expect(model.requests[0]?.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['add_exercise_today', 'propose_next_workout_change']));
+    expect(model.requests[0]?.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['edit_today', 'propose_next_workout_change']));
   });
 
   it('a refused or stale add saves no exercise row (review S3); the committed add saves it with the add', async () => {
@@ -318,14 +313,14 @@ describe('add an exercise from chat', () => {
     model = new StepModel([
       (req) => {
         const w = contextWorkout(req);
-        return toolCall('add_exercise_today', { baseVersion: w.version, exerciseId: 'dumbbell-lateral-raise', workingSets: 3, reps: { min: 10, max: 15 }, workSeconds: null, targetRpe: 8, afterSessionExerciseId: null, supersetWithSessionExerciseId: null, reason: 'Ben asked.' });
+        return toolCall('edit_today', { baseVersion: w.version, ops: [{ op: 'add', exerciseId: 'dumbbell-lateral-raise', workingSets: 3, reps: { min: 10, max: 15 }, workSeconds: null, targetRpe: 8, afterSessionExerciseId: null, supersetWithSessionExerciseId: null }], reason: 'Ben asked.' });
       },
       () => replyWith('Ok.'),
     ]);
     const r = await say(s, sessionId, 'add 3 sets of lateral raises');
     const addable = contextAddable(model.requests[0] as ModelRequest) ?? [];
     expect(addable.some((a) => /lateral raise/i.test(a.name) && !/cable/i.test(a.name))).toBe(false);
-    expect(r.cards[0]?.record).toMatchObject({ status: 'rejected', failure: 'it’s already in today’s workout' });
+    expect(r.cards[0]?.record).toMatchObject({ status: 'rejected', failure: 'Lateral raise: it’s already in today’s workout' });
     expect((await rowsOf(s, sessionId)).map((x) => x.row.exerciseName)).toEqual(['Lateral Raise']);
   });
 });

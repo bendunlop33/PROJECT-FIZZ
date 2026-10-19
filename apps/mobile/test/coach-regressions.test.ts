@@ -59,7 +59,7 @@ describe('CA4 with coach-sourced targets (rule 3)', () => {
     // Ben accepts an adjustment: one more offer may follow, then none.
     model = new StepModel([lowerPending(), () => replyWith('Lighter.')]);
     const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
-    expect(r.cards.some((c) => c.record.detail.kind === 'adjust_pending_sets' && c.record.status === 'committed')).toBe(true);
+    expect(r.cards.some((c) => c.record.detail.kind === 'edit_today' && c.record.status === 'committed')).toBe(true);
     expect(await logHard(2)).toBe('RPE 10 on set 3 (target 8.5)');
     expect(await logHard(3)).toBeNull();
   });
@@ -251,7 +251,7 @@ describe('A double-tapped Undo undoes once and reports success both times', () =
     const sessionId = started.aggregate.session.id;
     model = new StepModel([lowerPending(), () => replyWith('Lighter.')]);
     const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'chip', chip: 'too_hard' }, turnId: h.ids() });
-    const actionId = r.cards.find((c) => c.record.detail.kind === 'adjust_pending_sets')?.record.actionId ?? '';
+    const actionId = r.cards.find((c) => c.record.detail.kind === 'edit_today')?.record.actionId ?? '';
     const [a, b] = await Promise.all([s.coach.undo(actionId, undoOpId(actionId)), s.coach.undo(actionId, undoOpId(actionId))]);
     expect([a.result.status, b.result.status].sort()).toEqual(['replayed', 'written']);
     expect(renderActionResult(b.undo, 'slot').text).toBe(renderActionResult(a.undo, 'slot').text);

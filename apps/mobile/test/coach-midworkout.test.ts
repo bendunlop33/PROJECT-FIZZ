@@ -47,15 +47,16 @@ const pendingLoads = async (s: AppServices, sessionId: string) =>
   ((await s.workout.load(sessionId))?.aggregate.sets ?? []).filter((x) => x.status === 'pending').map((x) => x.planned.load?.value ?? null);
 
 describe('build 151 in the app: today-tools on every live turn', () => {
-  it("Ben's wording: adjust_pending_sets and rename_workout are offered; the change applies at once and Undo puts it back", async () => {
+  it("Ben's wording: edit_today and rename_workout are offered; the change applies at once and Undo puts it back", async () => {
     const { s, sessionId } = await benchWorkout();
     const before = await pendingLoads(s, sessionId);
     model = new StepModel([lowerPending('Your recent best.'), () => replyWith('Set from your recent sets.')]);
     const r = await say(s, sessionId, BEN_151);
     const tools = model.requests[0]?.tools.map((t) => t.name) ?? [];
-    expect(tools).toEqual(expect.arrayContaining(['adjust_pending_sets', 'rename_workout']));
-    // Coach v3 (ADR 0027): the list of what can be added goes on every live turn, so the add tool is always there.
-    expect(tools).toContain('add_exercise_today');
+    // Coach v3 (ADR 0027): one tool for today's workout (sets, adds, swaps), with the list of what can be added on every live turn.
+    expect(tools).toEqual(expect.arrayContaining(['edit_today', 'rename_workout']));
+    expect(tools).not.toContain('adjust_pending_sets');
+    expect(tools).not.toContain('add_exercise_today');
     expect(model.requests[0]?.toolChoice).toBe('required');
     expect(r.cards.map((c) => c.record.status)).toEqual(['committed']);
     expect(r.offer).toBeNull();
@@ -67,12 +68,14 @@ describe('build 151 in the app: today-tools on every live turn', () => {
     expect(await pendingLoads(s, sessionId)).toEqual(before);
   });
 
-  it('unprompted: nothing changes; the thread ends with an Adjust offer whose tap applies the change', async () => {
+  it('unprompted: nothing changes; the thread ends with an Adjust offer whose tap applies exactly the offer, with no model call', async () => {
     const { s, sessionId } = await benchWorkout();
     const before = await pendingLoads(s, sessionId);
     model = new StepModel([lowerPending('Looked hard.'), () => replyWith('That looked hard. Want me to adjust?')]);
     const r = await say(s, sessionId, 'That felt rough');
-    expect(r.cards).toEqual([]);
+    // Coach v3: the offer is saved as a card with exactly what Adjust applies.
+    expect(r.cards.map((c) => c.record.status)).toEqual(['proposed']);
+    const offered = r.cards[0]?.record.detail;
     expect(r.offer).toBe('adjust_today');
     expect(await pendingLoads(s, sessionId)).toEqual(before);
     const data = await s.coach.loadThread(r.threadId);
@@ -80,9 +83,12 @@ describe('build 151 in the app: today-tools on every live turn', () => {
     const last = threadRows(data).at(-1);
     expect(last).toMatchObject({ kind: 'offer', input: { kind: 'accept_offer', offer: 'adjust_today' } });
 
-    model = new StepModel([lowerPending('Looked hard.'), () => replyWith('Done.')]);
+    model = new StepModel([]);
     const accepted = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: r.threadId, input: { kind: 'accept_offer', offer: 'adjust_today' }, turnId: h.ids() });
+    expect(model.requests).toHaveLength(0);
     expect(accepted.cards.map((c) => c.record.status)).toEqual(['committed']);
+    const applied = accepted.cards[0]?.record.detail;
+    expect(applied?.kind === 'edit_today' && offered?.kind === 'edit_today' ? applied.exercises : null).toEqual(offered?.kind === 'edit_today' ? offered.exercises : undefined);
     expect(await pendingLoads(s, sessionId)).not.toEqual(before);
     const after = await s.coach.loadThread(r.threadId);
     if (after === null) throw new Error('no thread');

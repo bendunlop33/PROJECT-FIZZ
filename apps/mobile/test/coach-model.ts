@@ -38,7 +38,7 @@ export const lowerPending = (reason = 'Hard.') => (req: ModelRequest): ModelEven
   const ex = w.exercises[0];
   const pending = ex?.sets.filter((x) => x.status === 'pending') ?? [];
   const lighter = { value: (pending[0]?.target.load?.value ?? 60) - 2.5, unit: 'kg', convention: 'total' };
-  return toolCall('adjust_pending_sets', { baseVersion: w.version, exercises: [{ sessionExerciseId: ex?.sessionExerciseId, sets: pending.map((x) => ({ setId: x.setId, target: { load: lighter, reps: null } })), addSet: null, removeSetId: null }], reason });
+  return toolCall('edit_today', { baseVersion: w.version, ops: pending.map((x) => ({ op: 'set', setId: x.setId, target: { load: lighter, reps: null } })), reason });
 };
 
 /** The summary turn saves 57.5 kg for the workout's first exercise. */

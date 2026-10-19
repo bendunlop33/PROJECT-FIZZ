@@ -44,10 +44,15 @@ function slotNotes(notes: readonly { kind: string }[]): string[] {
   return [];
 }
 
+/** A change to today's sets the slot shows as its banner: the coach's (`edit_today`; before Coach v3, `adjust_pending_sets`) or the built-in rule's. */
+function isTodayChange(r: ActionRecord): boolean {
+  return r.detail.kind === 'adjust_pending_sets' || r.detail.kind === 'edit_today';
+}
+
 export function slotView(input: SlotInput): SlotView | null {
   if (input.pending) return { kind: 'pending', title: 'Coach is working…', cancel: true };
   const a = input.adjustment;
-  if (a !== null && a.detail.kind === 'adjust_pending_sets' && a.status === 'committed') {
+  if (a !== null && isTodayChange(a) && a.status === 'committed') {
     const r = renderActionResult(a, 'slot');
     const byRule = a.author !== 'coach';
     if (a.undoneBy !== null) return { kind: 'outcome', text: byRule ? 'Change undone.' : 'Coach change undone.', retry: false };
@@ -78,7 +83,7 @@ export async function syncAdjustment(cached: ActionRecord | null, read: (actionI
  * one line saying what happened (nothing changed). Never the model's words.
  */
 export function slotAfterTurn(result: CoachTurnResult): { adjustment: ActionRecord | null; outcome: { text: string; retry: boolean } | null } {
-  const adjust = result.cards.map((c) => c.record).filter((r) => r.detail.kind === 'adjust_pending_sets');
+  const adjust = result.cards.map((c) => c.record).filter(isTodayChange);
   const committed = adjust.find((r) => r.status === 'committed') ?? null;
   if (committed !== null) return { adjustment: committed, outcome: null };
   const refused = adjust[0];
@@ -99,7 +104,7 @@ export function slotAfterTurn(result: CoachTurnResult): { adjustment: ActionReco
  */
 export function coachCouldNotAnswer(result: CoachTurnResult | null): boolean {
   if (result === null) return true;
-  if (result.cards.some((c) => c.record.detail.kind === 'adjust_pending_sets' && c.record.status === 'committed')) return false;
+  if (result.cards.some((c) => isTodayChange(c.record) && c.record.status === 'committed')) return false;
   // Ben's own Cancel isn't the coach failing to answer.
   return result.status === 'failed' && result.error !== 'cancelled';
 }
@@ -110,7 +115,7 @@ export function coachCouldNotAnswer(result: CoachTurnResult | null): boolean {
  * failed to save) still shows as its banner with Undo.
  */
 export function slotAfterFailure(saved: readonly ActionRecord[]): { adjustment: ActionRecord | null; outcome: { text: string; retry: boolean } | null } {
-  const committed = saved.find((r) => r.status === 'committed' && r.detail.kind === 'adjust_pending_sets') ?? null;
+  const committed = saved.find((r) => r.status === 'committed' && isTodayChange(r)) ?? null;
   if (committed !== null) return { adjustment: committed, outcome: null };
   if (saved.some((r) => r.status === 'committed')) return { adjustment: null, outcome: { text: 'Couldn’t reach the coach.', retry: false } };
   return { adjustment: null, outcome: { text: 'Couldn’t reach the coach. Nothing changed.', retry: true } };

@@ -585,8 +585,8 @@ describe('Live Activity through the app services: late reads, Undo, coach change
         const w = (JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { workout: { version: number; exercises: { sessionExerciseId: string; sets: { setId: string; status: string }[] }[] } }).workout;
         const ex = w.exercises[0];
         const pending = ex?.sets.filter((x) => x.status === 'pending') ?? [];
-        const args = { baseVersion: w.version, exercises: [{ sessionExerciseId: ex?.sessionExerciseId, sets: pending.map((x) => ({ setId: x.setId, target: { load: { value: 52.5, unit: 'kg', convention: 'total' }, reps: null } })), addSet: null, removeSetId: null }], reason: 'Lighter.' };
-        return [{ type: 'tool_call', callId: 'c-adjust', name: 'adjust_pending_sets', arguments: JSON.stringify(args) }, { type: 'completed' }];
+        const args = { baseVersion: w.version, ops: pending.map((x) => ({ op: 'set', setId: x.setId, target: { load: { value: 52.5, unit: 'kg', convention: 'total' }, reps: null } })), reason: 'Lighter.' };
+        return [{ type: 'tool_call', callId: 'c-adjust', name: 'edit_today', arguments: JSON.stringify(args) }, { type: 'completed' }];
       },
       () => [{ type: 'tool_call', callId: 'c-reply', name: 'reply', arguments: JSON.stringify({ message: 'Lighter for the rest.', offer: null }) }, { type: 'completed' }],
     ];

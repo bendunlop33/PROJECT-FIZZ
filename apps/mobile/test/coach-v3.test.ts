@@ -189,7 +189,7 @@ const raiseLastWorking = (claim: Record<string, unknown> = {}) => (req: ModelReq
   const ex = w.exercises.find((e) => e.name === name);
   const pending = ex?.sets.filter((x) => x.status === 'pending') ?? [];
   const heavier = { value: (pending[0]?.target.load?.value ?? 60) + 2.5, unit: 'kg', convention: 'total' };
-  return toolCall('adjust_pending_sets', { baseVersion: w.version, exercises: [{ sessionExerciseId: ex?.sessionExerciseId, sets: pending.map((x) => ({ setId: x.setId, target: { load: heavier, reps: null } })), addSet: null, removeSetId: null }], reason: 'Easy at RPE 6.', ...claim });
+  return toolCall('edit_today', { baseVersion: w.version, ops: pending.map((x) => ({ op: 'set', setId: x.setId, target: { load: heavier, reps: null } })), reason: 'Easy at RPE 6.', ...claim });
 };
 
 const pendingOf = async (s: AppServices, sessionId: string, exercise: string) => {
@@ -237,11 +237,12 @@ describe('Ben’s report "Not adjusting during workout" (build 156), reproduced'
     expect(await pendingOf(s, sessionId, 'Bench press')).toEqual(before);
   });
 
-  it('on every live turn the add tool comes with the list of what can be added, whatever the words', async () => {
+  it('on every live turn the edit tool comes with the list of what can be added, whatever the words', async () => {
     const { s, sessionId } = await benchThenWarmup();
     model = new StepModel([() => replyWith('Sure.')]);
     await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'words', text: 'Anything else worth doing for shoulders?', spoken: false }, turnId: h.ids() });
-    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('add_exercise_today');
+    // Coach v3 slice 2: one tool, edit_today, adds as well as changing sets.
+    expect(model.requests[0]?.tools.map((t) => t.name)).toContain('edit_today');
     const block = model.requests[0]?.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
     const addable = block?.type === 'message' ? (JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { addable?: unknown[] }).addable : undefined;
     expect(addable?.length).toBeGreaterThan(0);
