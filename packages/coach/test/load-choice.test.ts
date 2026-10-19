@@ -7,7 +7,9 @@ import { liveWorkoutInstructions } from '../src/turn';
 describe('coach load choice: 20% is a ceiling, not a target', () => {
   it('states the ceiling from the same bounds the checker uses', () => {
     expect(BUILDER_LOAD_BOUNDS.capE).toBe(1.2);
-    expect(LOAD_CHOICE_LINE).toContain('Never more than 20% above his estimated level or his last weight for those reps');
+    expect(LOAD_CHOICE_LINE).toContain('Never more than 20% above the weight his e1rmEst supports for those reps and target RPE (not above the e1rmEst itself), or 20% above his last weight for those reps');
+    expect(LOAD_CHOICE_LINE).toContain('caps loads there or lower (assisted, added and estimated loads tighter)');
+    expect(LOAD_CHOICE_LINE).not.toMatch(/caps it there,/);
     expect(LIVE_LOAD_CHOICE_LINE).toContain('never more than 20% above the planned weight');
   });
 

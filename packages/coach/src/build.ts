@@ -556,15 +556,20 @@ export function createBuildExecutor(deps: BuildDeps): CoachExecutors {
 /** Fed back when the question tool runs with no question context (never offered then). */
 export const QUESTION_NOT_OFFERED_LINE = 'No question now. Build with what you have.';
 
-/** The coach ceilings as a whole percent (Ben approved 19 Oct: 20% for both). */
-const CEILING_PERCENT = Math.round((Math.max(BUILDER_LOAD_BOUNDS.capE, BUILDER_LOAD_BOUNDS.capLastTop) - 1) * 100);
+/** The coach ceilings as whole percents (Ben approved 19 Oct: 20% for both). */
+const CAP_E_PERCENT = Math.round((BUILDER_LOAD_BOUNDS.capE - 1) * 100);
+const CAP_LAST_PERCENT = Math.round((BUILDER_LOAD_BOUNDS.capLastTop - 1) * 100);
+/** Each limit stated on its own, so the text never states the looser one for both. */
+const CEILING_TEXT = `${String(CAP_E_PERCENT)}% above the weight his e1rmEst supports for those reps and target RPE (not above the e1rmEst itself), or ${String(CAP_LAST_PERCENT)}% above his last weight for those reps`;
+/** The live-edit limit is the coach's own (no code clamp there); the tighter of the two. */
+const CEILING_PERCENT = Math.min(CAP_E_PERCENT, CAP_LAST_PERCENT);
 
 /**
  * Ben, 19 Oct: "20% for both, but gpt should consider". The ceilings are a
  * hard limit the app enforces (`checkProposedLoad`), not a target: the model
  * chooses within them from evidence and says why in the basis.
  */
-export const LOAD_CHOICE_LINE = `Choose each load from his evidence. Normally repeat it or take one small step (one plate or dumbbell step, a few percent). Go further only with a clear signal: reps well over the range at low RPE, a weight that has stayed easy for weeks, or Ben saying he is ready; then the basis says which, in words. Never more than ${String(CEILING_PERCENT)}% above his estimated level or his last weight for those reps: the app caps it there, and still fits it to the equipment and holds it on pain.`;
+export const LOAD_CHOICE_LINE = `Choose each load from his evidence. Normally repeat it or take one small step (one plate or dumbbell step, a few percent). Go further only with a clear signal: reps well over the range at low RPE, a weight that has stayed easy for weeks, or Ben saying he is ready; then the basis says which, in words. Never more than ${CEILING_TEXT}. That is a ceiling; the app caps loads there or lower (assisted, added and estimated loads tighter), fits them to the equipment and holds them on pain.`;
 
 /**
  * The same choice for today's live sets (`edit_today`). The app snaps and
