@@ -26,7 +26,7 @@ import { createReplyFilter, toHiddenLines, type ReplyItem } from './reply';
 import { parseReply, replyToolDefinition } from './reply-tool';
 import { ReplyMessageStream } from './reply-stream';
 import { renderActionResult, type RenderSurface, type RenderedAction } from './render';
-import { asksForPlan, asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, type BenRequest } from './request';
+import { asksForPlan, asksToRename, chipRequest, classifyBenRequest, futureScopeOnly, isStructuralRequest, mentionsTodaysSets, multiWeekBlock, requestHas, revisesDraft, revisesPlan, changesPlanInUse, type BenRequest } from './request';
 import { PLAN_INSTRUCTIONS } from './plan';
 import { parseToolCall } from './tool-call';
 import { BUILD_INSTRUCTIONS, LIVE_LOAD_CHOICE_LINE, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTRUCTIONS, OFFERED_BUILD_INSTRUCTIONS, QUESTION_RULES } from './build';
@@ -228,7 +228,7 @@ export interface GateInput {
   liveWorkout?: boolean;
   /** (v2, BD17) This build request may still ask one clarifying question. */
   buildQuestionOpen?: boolean;
-  /** (19 Oct) An open coach plan is the thread's newest build: change words revise it (`build_plan`). */
+  /** (19 Oct) An open coach plan is the thread's newest build, or (review planview B1) the plan in use and Ben's words change "my plan": change words revise it (`build_plan`). */
   planInContext?: boolean;
   /** (19 Oct) The build follow-up (an answer to the coach's question, "yes put it in") is about Ben's plan request. */
   planFollowUp?: boolean;
@@ -249,7 +249,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
         benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds : []), 'build'] };
       }
       // (19 Oct) With an open plan in the thread, "make legs shorter" or "only 3 days" is a new version of the plan.
-      if (g.kind === 'general' && g.planInContext === true && revisesPlan(g.input.text) && !requestHas(benRequest, 'build_plan')) {
+      if (g.kind === 'general' && g.planInContext === true && (revisesPlan(g.input.text) || changesPlanInUse(g.input.text)) && !requestHas(benRequest, 'build_plan')) {
         benRequest = { source: 'words', kinds: [...(benRequest?.source === 'words' ? benRequest.kinds.filter((k) => k !== 'build' && k !== 'change') : []), 'build_plan'] };
       }
       // Build 131: "yes add it" after a session described in text is a build request, not a change to today's sets.
@@ -618,7 +618,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const liveWorkout = req.kind === 'workout' && req.context.session?.session.status === 'active';
   // (19 Oct) Ben answering the coach's question about his plan (or agreeing to put a plan in the app) continues the plan.
   const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
-  const askedPlan = saidWords !== null && (planFollowUp || requestHas(classifyBenRequest(saidWords, 'general'), 'build_plan') || (req.planInContext === true && revisesPlan(saidWords)));
+  const askedPlan = saidWords !== null && (planFollowUp || requestHas(classifyBenRequest(saidWords, 'general'), 'build_plan') || (req.planInContext === true && (revisesPlan(saidWords) || changesPlanInUse(saidWords))));
   const askedBuild = saidWords !== null && (askedPlan || requestHas(classifyBenRequest(saidWords, 'general'), 'build') || (req.draftInContext === true && revisesDraft(saidWords)));
   // At most 2 questions per build request, none in a draft revision, none after Skip (BD17).
   const questionOpen = chain !== null && req.draftInContext !== true && !chain.skipped && chain.asked < MAX_BUILD_QUESTIONS && (askedBuild || chain.open !== null);

@@ -14,6 +14,7 @@ import {
   planIdFor,
   requestHas,
   revisesPlan,
+  changesPlanInUse,
   runCoachTurn,
   type BuildContextView,
   type PlanDeps,
@@ -153,7 +154,16 @@ describe('`propose_plan` is offered only on Ben’s plan request (rule 3)', () =
     expect(tools('only 3 days', { planInContext: true })).toContain('propose_plan');
     expect(tools('make legs shorter')).not.toContain('propose_plan');
     expect(revisesPlan('what do you think of legs day?')).toBe(false);
+    // Review planview-19oct B1: Library's prefilled `Change my plan: …` changes the plan in use.
+    expect(tools('Change my plan: swap squats for leg press', { planInContext: true })).toContain('propose_plan');
+    expect(tools('Change my plan: more arms', { planInContext: true })).toContain('propose_plan');
+    expect(tools('Change my plan: more arms')).not.toContain('propose_plan');
     expect(requestHas(classifyBenRequest('PPL week, 60 min each', 'general'), 'build_plan')).toBe(true);
+  });
+
+  it('changesPlanInUse: words that name the plan and change it; never a question about it or a multi-week block', () => {
+    for (const t of ['Change my plan: swap squats for leg press', 'Change Pull in my plan: replace rows with cable rows', 'Change my plan: ', 'can you tweak my plan so legs is shorter', 'my plan needs fewer days', 'swap bench in the plan for dumbbells']) expect(changesPlanInUse(t), t).toBe(true);
+    for (const t of ['What do you think of my plan?', 'how is my plan going', 'build me a 4-day plan', 'change my bench to 100', 'Change my plan to a 6 week block']) expect(changesPlanInUse(t), t).toBe(false);
   });
 
   it('a day’s length: its own, else Ben’s stated length, else the model’s for every day, else his usual; stepped and bounded', () => {
@@ -230,6 +240,25 @@ describe('a plan turn end to end (fake model)', () => {
     const r4 = await runCoachTurn(request({ turnId: id(71_004), input: words('build me a 1 day plan'), context: { session: null, gymName: null, painFlags: [FLAG], checkIn: null, memories: [], catalogue: [], build: view() } }), ports(store, m4, createPlanExecutor(deps(store))));
     expect(r4.cards[0]?.record).toMatchObject({ status: 'rejected', failure: 'no day had anything usable here' });
     expect(await store.repos.planDrafts.listByOwner(OWNER)).toHaveLength(1);
+    await store.close();
+  });
+
+  it('a change to the plan in use (`basedOn`, review planview-19oct B1) is a new open plan; the plan in use is never written', async () => {
+    const store = await memoryStore();
+    const model = new ScriptedCoachModel([[call('propose_plan', PLAN_ARGS), { type: 'completed' }], reply('Done.')]);
+    await runCoachTurn(request({ input: words('build me a 3-day plan'), context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: view() } }), ports(store, model, createPlanExecutor(deps(store))));
+    const stored = (await store.repos.planDrafts.listByOwner(OWNER))[0];
+    if (stored === undefined) throw new Error('plan');
+    const inUse: PlanDraft = { ...stored, status: 'applied', applied: { mode: 'add', versionN: 1, opId: 'apply-x', atUtc: '2026-10-08T07:00:00.000Z', made: [], rotationOff: [] } };
+    const two = { ...PLAN_ARGS, days: PLAN_ARGS.days.slice(0, 2) };
+    const m2 = new ScriptedCoachModel([[call('propose_plan', two, 'c2'), { type: 'completed' }], reply('Two days.')]);
+    const r2 = await runCoachTurn(request({ turnId: id(71_005), input: words('Change my plan: only 2 days'), planInContext: true, context: { session: null, gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [], build: view() } }), ports(store, m2, createPlanExecutor(deps(store, null, { basedOn: inUse }))));
+    const detail = r2.cards[0]?.record.detail;
+    expect(detail).toMatchObject({ kind: 'build_plan', versionN: 1, parentN: null, name: '2-day plan' });
+    if (detail?.kind !== 'build_plan') throw new Error('card');
+    expect(detail.planId).not.toBe(stored.id);
+    expect((await store.repos.planDrafts.get(detail.planId))?.status).toBe('open');
+    expect(await store.repos.planDrafts.get(stored.id)).toEqual(stored);
     await store.close();
   });
 

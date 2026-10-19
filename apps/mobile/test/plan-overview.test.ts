@@ -197,3 +197,60 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     expect(await s.plans.end({ planId: 'nope', expectedVersion: 1, opId: 'end-x' })).toMatchObject({ ok: false, reason: 'missing' });
   });
 });
+
+describe('Your plan › Ask coach to change (review planview-19oct B1)', () => {
+  function planOf(req: ModelRequest): { current: { name: string; inUse?: boolean; days: { name: string; exercises: { name: string }[] }[] } | null } | null {
+    const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+    if (block?.type !== 'message') return null;
+    const data = JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { build?: { plan?: { current: { name: string; inUse?: boolean; days: { name: string; exercises: { name: string }[] }[] } | null } } };
+    return data.build?.plan ?? null;
+  }
+
+  it('the prefilled "Change my plan: …" turn sees the plan in use; the change is a new plan (Apply replaces it, Undo puts it back); the plan in use is untouched until then', async () => {
+    const { s, planId } = await benWithPlan();
+    const before = await s.plans.overview();
+    const seen: ReturnType<typeof planOf>[] = [];
+    model = new StepModel([
+      (req) => {
+        seen.push(planOf(req));
+        return planStub(req);
+      },
+      () => replyWith('Swapped it.'),
+    ]);
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Change my plan: swap squats for leg press', spoken: false }, turnId: h.ids() });
+    expect(seen[0]?.current).toMatchObject({ name: '4-day plan', inUse: true });
+    expect(seen[0]?.current?.days.map((d) => d.name)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    expect(seen[0]?.current?.days[2]?.exercises.map((e) => e.name)).toEqual(['Back squat']);
+    const card = r.cards[0]?.record;
+    if (card?.detail.kind !== 'build_plan') throw new Error('no plan card');
+    const newId = card.detail.planId;
+    expect(newId).not.toBe(planId);
+    // Nothing changed yet (rule 2): the plan in use and its block are as they were.
+    expect(await s.plans.overview()).toMatchObject({ planId, planVersion: before?.planVersion });
+    expect(await rotation(s)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+
+    // Apply: the new plan is in use; the old one is superseded. Undo: the old one is back.
+    const c = await s.plans.card({ planId: newId, versionN: 1 });
+    const applied = await s.plans.apply({ planId: newId, versionN: 1, expectedVersion: c?.planVersion ?? 0, mode: 'replace', opId: 'apply-2' });
+    expect(applied).toMatchObject({ ok: true });
+    expect((await s.plans.overview())?.planId).toBe(newId);
+    expect((await s.plans.card({ planId, versionN: 1 }))?.state.kind).toBe('superseded');
+    if (!applied.ok) throw new Error('apply');
+    expect(await s.plans.undo({ planId: newId, expectedVersion: applied.plan.version, opId: 'undo-2' })).toMatchObject({ ok: true });
+    expect((await s.plans.overview())?.planId).toBe(planId);
+    expect(await rotation(s)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+  });
+
+  it('words that don’t change the plan (a question about it) get no plan turn', async () => {
+    const { s } = await benWithPlan();
+    const seen: ReturnType<typeof planOf>[] = [];
+    model = new StepModel([
+      (req) => {
+        seen.push(planOf(req));
+        return replyWith('It looks balanced.');
+      },
+    ]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'What do you think of my plan?', spoken: false }, turnId: h.ids() });
+    expect(seen[0]).toBeNull();
+  });
+});

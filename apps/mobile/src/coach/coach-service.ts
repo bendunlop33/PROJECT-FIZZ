@@ -40,6 +40,7 @@ import {
   createPlanExecutor,
   asksForPlan,
   revisesPlan,
+  changesPlanInUse,
   type PlanContextView,
   COACH_BUILD_TIMEOUT_MS,
   COACH_WORKOUT_TIMEOUT_MS,
@@ -901,6 +902,12 @@ export function createCoachService(deps: CoachServiceDeps) {
     return null;
   }
 
+  /** (Review planview-19oct B1) Ben's plan in use (applied), or null. */
+  async function appliedPlanOf(p: UserProfile): Promise<PlanDraft | null> {
+    const plan = await repos().planDrafts.applied(p.id).catch(() => null);
+    return plan !== null && plan.ownerId === p.id && plan.status === 'applied' ? plan : null;
+  }
+
   /** The selected gym for a build (§4.1): the default gym, else the typical gym's items (`⚠ No gym`). */
   /**
    * The gym a build is planned at. Coach v3 (Ben 18 Oct, "in my hotel gym"): a saved gym Ben's words
@@ -965,7 +972,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     /** Coach v3: Ben's earlier messages in this thread, newest first (which gym he named). */
     earlierWords: readonly string[] = [],
     /** (19 Oct) Ben asked for a plan of several days, or to change the open plan in this thread (`plan`). */
-    planRequest: { plan: PlanDraft | null } | null = null,
+    planRequest: { plan: PlanDraft | null; basedOn?: PlanDraft | null } | null = null,
   ): Promise<{ view: BuildContextView; executors: CoachExecutors; inPlay: boolean } | null> {
     const inPlay = planRequest !== null || asksForBuild({ turnKind: 'general', text: said, draftInContext: draft !== null, followUp });
     // A follow-up ("yes add it") reads length and focus from Ben's earlier request too; never from the coach's text.
@@ -1113,6 +1120,8 @@ export function createCoachService(deps: CoachServiceDeps) {
       return own !== null && own.source === 'yours' ? (byId.get(own.exerciseId) ?? null) : null;
     };
     const planMinutes = resolveBuildMinutes(firstOf(parseRequestedMinutes), training?.profile?.sessionMinutes ?? null);
+    // Review planview-19oct B1: the open plan in the thread, else the plan in use Ben's words change.
+    const planBase = planRequest === null ? null : (planRequest.plan ?? planRequest.basedOn ?? null);
     const planView: PlanContextView | null =
       planRequest === null
         ? null
@@ -1123,12 +1132,13 @@ export function createCoachService(deps: CoachServiceDeps) {
             setBudget: buildSetBudget(planMinutes),
             rotation: rotationRoutines(live).map((r) => r.name),
             current:
-              planRequest.plan === null
+              planBase === null
                 ? null
                 : {
-                    name: planRequest.plan.name,
-                    version: planRequest.plan.currentVersion,
-                    days: currentPlanVersion(planRequest.plan).days.map((d) => ({
+                    name: planBase.name,
+                    version: planBase.currentVersion,
+                    ...(planRequest.plan === null ? { inUse: true as const } : {}),
+                    days: currentPlanVersion(planBase).days.map((d) => ({
                       name: d.name,
                       splitDayId: d.splitDayId,
                       exercises: d.plan.slots.map((sl) => {
@@ -1224,6 +1234,7 @@ export function createCoachService(deps: CoachServiceDeps) {
             store: coachStore(),
             request: { text, minutes: planMinutes, minutesFromBen: parseRequestedMinutes(said), gymId: place.typical ? null : gym.id, gymName: place.typical ? null : gym.name, origin },
             plan: planRequest.plan,
+            basedOn: planRequest.plan === null ? (planRequest.basedOn ?? null) : null,
             splitDays: split.days,
             checkContext: checkContextAt(gym),
             mainLiftFor: (d) => {
@@ -1292,8 +1303,10 @@ export function createCoachService(deps: CoachServiceDeps) {
     // (19 Oct) A plan of several days: Ben asked for one, or his words change the open plan in this thread.
     const planInThread = kind === 'general' && req.input.kind === 'words' ? await threadOpenPlan(p, req.threadId) : null;
     const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
-    const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(req.input.text) || (planInThread !== null && revisesPlan(req.input.text)));
-    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread } : null) : null;
+    // Review planview-19oct B1: no open plan here and Ben's words change "my plan" (Library's `Ask coach to change`): the plan in use is the basis.
+    const planInUse = kind === 'general' && req.input.kind === 'words' && planInThread === null && changesPlanInUse(req.input.text) ? await appliedPlanOf(p) : null;
+    const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(req.input.text) || (planInThread !== null && (revisesPlan(req.input.text) || changesPlanInUse(req.input.text))) || planInUse !== null);
+    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread, basedOn: planInUse } : null) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first.
@@ -1319,7 +1332,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...((await threadHasOpenDraft(p, req.threadId)) ? { draftInThread: true } : {}),
           // Review B1, S4: the coach is told the app builds a session only when it really can here.
           ...(kind === 'general' && build !== null ? { buildAvailable: true } : {}),
-          ...(planInThread !== null ? { planInContext: true } : {}),
+          ...(planInThread !== null || planInUse !== null ? { planInContext: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },

@@ -763,6 +763,25 @@ export function revisesPlan(text: string): boolean {
   });
 }
 
+/** "Change my plan: …", "swap squats in my plan", "my plan needs fewer days": Ben's words name the plan and change it. */
+const PLAN_IN_USE_NOUN = '(?:my|the|this|current|our) (?:training |workout |gym )?(?:plan|programme|program)';
+const PLAN_IN_USE_VERB = '(?:change|changes|changing|revise|update|tweak|adjust|edit|modify|rework|redo|swap|switch|replace|drop|remove|add|alter|shorten|lengthen|rearrange|reorder|fix)';
+const PLAN_IN_USE = new RegExp(`\\b${PLAN_IN_USE_VERB}\\b.*\\b${PLAN_IN_USE_NOUN}\\b|\\b${PLAN_IN_USE_NOUN}\\b.*\\b(?:${PLAN_IN_USE_VERB}|needs?|shorter|longer|fewer|less|more|without)\\b`);
+
+/**
+ * (Review planview-19oct B1) Whether Ben's words change the plan he is using
+ * (Library's `Ask coach to change` prefills "Change my plan: "). Code, never
+ * the model's reading; an opinion question ("what do you think of my plan?")
+ * or a multi-week block is not a change.
+ */
+export function changesPlanInUse(text: string): boolean {
+  if (multiWeekBlock(text)) return false;
+  return normalise(text).some((c) => {
+    const t = c.text.replace(POLITE, '');
+    return c.label === null && !isOpinionQuestion(t) && PLAN_IN_USE.test(t);
+  });
+}
+
 /** Whether Ben's words ask for a multi-day plan (`build_plan`). Code, never the model's reading. */
 export function asksForPlan(text: string): boolean {
   return requestHas(classifyBenRequest(text, 'general'), 'build_plan');
