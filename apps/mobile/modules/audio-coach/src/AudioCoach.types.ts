@@ -13,6 +13,8 @@ export interface SessionOptions {
 
 export interface SpeakOptions {
   language?: string;
+  /** A `NativeVoice.identifier`; a voice no longer on the phone falls back to `language`, then the system default. */
+  voice?: string;
   /** Multiplier of the system default rate (1 = default). */
   rate?: number;
   deactivateAfter?: boolean;
@@ -27,6 +29,18 @@ export interface AudioSessionState {
   isOtherAudioPlaying: boolean;
   secondaryAudioShouldBeSilencedHint: boolean;
   outputs: { portType: string; portName: string }[];
+}
+
+/** One installed iOS voice (AVSpeechSynthesisVoice), raw; validated by src/voice/voices.ts. */
+export interface NativeVoice {
+  identifier: string;
+  name: string;
+  /** BCP-47, e.g. `en-GB`. */
+  language: string;
+  quality: 'default' | 'enhanced' | 'premium';
+  /** iOS 17+: novelty voices (Bells, Bubbles…). */
+  novelty?: boolean;
+  personal?: boolean;
 }
 
 export type CueOutcome = 'finished' | 'cancelled' | 'timedOut';

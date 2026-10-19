@@ -41,6 +41,10 @@ struct SessionOptions: Record {
 struct SpeakOptions: Record {
   @Field
   var language: String?
+  /// An AVSpeechSynthesisVoice identifier (from getVoices). When it isn't on
+  /// this phone any more, `language` (or the system default) is used.
+  @Field
+  var voice: String?
   /// Multiplier of AVSpeechUtteranceDefaultSpeechRate (1.0 = default).
   @Field
   var rate: Double?
@@ -149,7 +153,9 @@ public final class AudioCoachModule: Module {
         return
       }
       let utterance = AVSpeechUtterance(string: text)
-      if let language = speakOptions.language {
+      if let id = speakOptions.voice, let chosen = AVSpeechSynthesisVoice(identifier: id) {
+        utterance.voice = chosen
+      } else if let language = speakOptions.language {
         utterance.voice = AVSpeechSynthesisVoice(language: language)
       }
       if let rate = speakOptions.rate {
@@ -265,6 +271,25 @@ public final class AudioCoachModule: Module {
 
     Function("getSessionState") { () -> [String: Any] in
       return self.sessionState()
+    }
+
+    // The voices installed on this phone (Settings > Accessibility > Spoken
+    // Content > Voices adds more). Personal Voice needs its own permission and
+    // isn't listed until granted; novelty voices are marked so JS can hide them.
+    Function("getVoices") { () -> [[String: Any]] in
+      return AVSpeechSynthesisVoice.speechVoices().map { voice in
+        var entry: [String: Any] = [
+          "identifier": voice.identifier,
+          "name": voice.name,
+          "language": voice.language,
+          "quality": AudioCoachModule.describe(voice.quality),
+        ]
+        if #available(iOS 17.0, *) {
+          entry["novelty"] = voice.voiceTraits.contains(.isNoveltyVoice)
+          entry["personal"] = voice.voiceTraits.contains(.isPersonalVoice)
+        }
+        return entry
+      }
     }
 
     // App Group evidence for the capability probe (free-ios-install.md §9 #3,
@@ -512,6 +537,14 @@ public final class AudioCoachModule: Module {
   private func removeObservers() {
     observers.forEach { NotificationCenter.default.removeObserver($0) }
     observers.removeAll()
+  }
+
+  private static func describe(_ quality: AVSpeechSynthesisVoiceQuality) -> String {
+    switch quality {
+    case .premium: return "premium"
+    case .enhanced: return "enhanced"
+    default: return "default"
+    }
   }
 
   private static func describe(_ reason: AVAudioSession.RouteChangeReason?) -> String {
