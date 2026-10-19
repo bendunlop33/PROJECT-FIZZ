@@ -251,6 +251,7 @@ describe('every derived reader leaves a deleted workout out, and has it back on 
       'apps/mobile/src/coach/sheet-view.ts': { why: 'the coach chip’s `Deleted workout` label (DW16; review r3 N5)', lines: /return session\.status === 'deleted' \? 'deleted' : 'unavailable';/ },
       'packages/domain/src/session/coach-draft.ts': { why: 'a coach draft’s own status (`discarded` = Discard draft, workout-builder §6.2), not a session', lines: /\b(?:current|d)\.status/ },
       'packages/persistence/src/workout-drafts.ts': { why: 'the coach-draft expiry (BD4): open and discarded drafts past 14 days', lines: /FROM workout_drafts WHERE owner_id = \? AND status IN \('open', 'discarded'\)/ },
+      'apps/mobile/src/services/plan-services.ts': { why: 'a coach plan’s own status (`discarded`), not a session (19 Oct)', lines: /\bplan\.status/ },
     };
     const offenders: string[] = [];
     const walk = (dir: string) => {
