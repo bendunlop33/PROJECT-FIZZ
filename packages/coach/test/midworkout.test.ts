@@ -53,7 +53,7 @@ function liveExecutors(s: Store): CoachExecutors {
 
 /** The turn's ports with Ben's accept of an offered edit wired (Coach v3: applies the stored offer, no model call). */
 function livePorts(s: Store, model: ScriptedCoachModel) {
-  return { ...ports(s, model, liveExecutors(s)), acceptOffer: acceptEditOffer.bind(null, { store: s.repos.coach, loadSession: () => s.repos.sessions.get(SESSION) }) };
+  return { ...ports(s, model, liveExecutors(s)), acceptOffer: acceptEditOffer.bind(null, { store: s.repos.coach, loadSession: () => s.repos.sessions.get(SESSION), painFlags: () => Promise.resolve([]), sessionPainUnspecified: false }) };
 }
 
 const ctx = (session: SessionAggregate) => ({ session, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] });

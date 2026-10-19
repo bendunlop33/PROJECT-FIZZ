@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { exercise, GYM, profile } from '@fizz/domain/testing';
 import type { Store } from '@fizz/persistence';
-import type { Exercise, SessionAggregate } from '@fizz/schemas';
+import type { Exercise, PainFlag, SessionAggregate } from '@fizz/schemas';
 import { acceptEditOffer, createEditTodayExecutor, type EditTodayDeps } from '../src/edit-today';
 import { createStoreExecutors, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
 import { runCoachTurn } from '../src/turn';
@@ -36,11 +36,11 @@ async function saved(s: Store, agg: SessionAggregate): Promise<void> {
   if (!r.ok) throw new Error('save failed');
 }
 
-function deps(s: Store): EditTodayDeps {
+function deps(s: Store, flags: () => readonly PainFlag[] = () => []): EditTodayDeps {
   return {
     store: s.repos.coach,
     loadSession: () => s.repos.sessions.get(SESSION),
-    painFlags: () => Promise.resolve([]),
+    painFlags: () => Promise.resolve(flags()),
     sessionPainUnspecified: false,
     gymName: 'Main Gym',
     inputs: (exerciseId) => {
@@ -199,4 +199,70 @@ describe('edit_today through the turn (Coach v3 slice 2)', () => {
     expect(u.result).toEqual({ status: 'not_possible', reason: 'changed_since' });
     expect(live(await s.repos.sessions.get(SESSION))).toContain('Incline DB press');
   });
+
+  describe('review B1: pain flagged after the offer, before Adjust (rule 9)', () => {
+    const benchFlag = (n: number): PainFlag => ({
+      id: id(960),
+      ownerId: OWNER,
+      version: 1,
+      createdAtUtc: at(n).utc,
+      updatedAtUtc: at(n).utc,
+      exerciseId: id(1010),
+      exerciseName: 'Bench press',
+      area: 'shoulder',
+      source: 'workout',
+      checkInId: null,
+      reportedAt: at(n),
+      status: 'active',
+      clearedAtUtc: null,
+      createdByOpId: 'flag-bench',
+    });
+    const up = { load: { value: 102.5, unit: 'kg', convention: 'total' }, reps: null, rpe: null };
+
+    it('bench +2.5 kg offered, then Pain on bench, then Adjust: refused, nothing changes', async () => {
+      const s = await store();
+      await saved(s, workout());
+      const flags: PainFlag[] = [];
+      const args = { baseVersion: 7, ops: [{ op: 'set', setId: id(102), target: up }, { op: 'set', setId: id(103), target: up }], reason: 'Last sets moved fast.', benAsked: false, benQuote: null };
+      const model = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Want me to add 2.5 kg to bench?')]);
+      const r = await runCoachTurn(request({ kind: 'workout', input: words('that felt quick'), context: ctx(workout()) }), { ...ports(s, model, executors(s)), acceptOffer: acceptEditOffer.bind(null, deps(s, () => flags)) });
+      const offer = r.cards[0]?.record;
+      expect(offer?.status).toBe('proposed');
+      if (offer === undefined) throw new Error('no offer');
+      // The workout's Pain tap: a flag document only, the workout's version stays 7.
+      flags.push(benchFlag(600));
+      const got = await acceptEditOffer(deps(s, () => flags), offer, { ownerId: OWNER, turnId: id(7003), now: at(700) });
+      expect(got).toMatchObject({ kind: 'action', record: { status: 'rejected', detail: { command: null } } });
+      expect(got.kind === 'action' ? got.record.failure : null).toMatch(/^Bench press: shoulder flagged/);
+      const after = await s.repos.sessions.get(SESSION);
+      expect(after?.session.version).toBe(7);
+      expect(after?.sets.filter((x) => x.sessionExerciseId === id(10)).map((x) => x.planned.load?.value)).toEqual([100, 100, 100, 100]);
+    });
+
+    it('a swap to a movement flagged after the offer is refused; a decrease on a flagged row still applies', async () => {
+      const s = await store();
+      await saved(s, workout());
+      const flags: PainFlag[] = [];
+      const model = new ScriptedCoachModel([[call('edit_today', swapAndAdd({ benAsked: false, benQuote: null })), { type: 'completed' }], reply('Want me to swap bench?')]);
+      const r = await runCoachTurn(request({ kind: 'workout', input: words('bench feels off today'), context: ctx(workout()) }), livePorts(s, model));
+      const offer = r.cards[0]?.record;
+      if (offer === undefined) throw new Error('no offer');
+      flags.push({ ...benchFlag(600), exerciseId: INCLINE.id, exerciseName: INCLINE.name });
+      const got = await acceptEditOffer(deps(s, () => flags), offer, { ownerId: OWNER, turnId: id(7004), now: at(700) });
+      expect(got).toMatchObject({ kind: 'action', record: { status: 'rejected' } });
+      expect(live(await s.repos.sessions.get(SESSION))).toEqual(['Bench press', 'Dumbbell press', 'Assisted pull-up']);
+
+      const s2 = await store();
+      await saved(s2, workout());
+      const down = { load: { value: 95, unit: 'kg', convention: 'total' }, reps: null, rpe: null };
+      const args = { baseVersion: 7, ops: [{ op: 'set', setId: id(102), target: down }], reason: 'RPE 10 twice.', benAsked: false, benQuote: null };
+      const m2 = new ScriptedCoachModel([[call('edit_today', args), { type: 'completed' }], reply('Want me to drop bench?')]);
+      const r2 = await runCoachTurn(request({ kind: 'workout', input: words('that was hard'), context: ctx(workout()) }), { ...ports(s2, m2, executors(s2)), acceptOffer: acceptEditOffer.bind(null, deps(s2)) });
+      const o2 = r2.cards[0]?.record;
+      if (o2 === undefined) throw new Error('no offer');
+      const got2 = await acceptEditOffer(deps(s2, () => [benchFlag(600)]), o2, { ownerId: OWNER, turnId: id(7005), now: at(700) });
+      expect(got2).toMatchObject({ kind: 'action', record: { status: 'committed' } });
+    });
+  });
 });
+

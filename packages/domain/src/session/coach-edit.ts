@@ -1,5 +1,5 @@
-import { coachEditStepOpId, type ActionDetail, type CoachEditStep, type CommandOf, type EditTodayArgs, type EditTodayOp, type Exercise, type ExerciseTargetChanges, type GuardNote, type PainFlag, type SessionAggregate, type SessionExercise, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
-import { validateTodayAdjustment, type AdjustIntent, type MessagePain } from '../coach/adjust';
+import { coachEditStepOpId, type ActionDetail, type CoachEditStep, type CoachEditTodayCommand, type CommandOf, type EditTodayArgs, type EditTodayOp, type Exercise, type ExerciseTargetChanges, type GuardNote, type PainFlag, type SessionAggregate, type SessionExercise, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
+import { isIncrease, validateTodayAdjustment, type AdjustIntent, type MessagePain } from '../coach/adjust';
 import { dayMonthText } from '../display';
 import { painFlagForMovement, rowIsMovement } from '../exercise-identity';
 import { PAIN_AREA_WORD } from '../pain-flags';
@@ -369,4 +369,69 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     guardNotes: notes.slice(0, 40),
     used,
   };
+}
+
+/**
+ * Review coach-v3 B1 (rule 9): Ben's `Adjust` on a stored offer, checked against pain as it is now.
+ * A flag can be set after the offer (the workout's `Pain` tap saves a flag, not the workout, so its
+ * version doesn't move). Null when the stored command may still apply; otherwise the line saying
+ * why not. Held: a higher target or more sets on a flagged movement (or on any movement when the
+ * check-in said pain with none chosen), an add of or swap to a flagged movement, and a swap away
+ * from a row flagged after the offer (`offeredAtUtc`: its substitute's targets weren't held for
+ * that pain; a swap offered because of a flag already there was planned with it).
+ */
+export function coachEditPainHold(input: { aggregate: SessionAggregate; command: CoachEditTodayCommand; painFlags: readonly PainFlag[]; sessionPainUnspecified: boolean; offeredAtUtc: string; at: ZonedTimestamp }): string | null {
+  const s = input.aggregate;
+  const nowMs = toMs(input.at.utc);
+  const tz = input.at.tz;
+  const flagOn = (id: string, name: string): PainFlag | null => painFlagForMovement(input.painFlags, { id, name }, [id], nowMs, tz);
+  const said = (name: string, f: PainFlag): string => `${name}: ${f.area === null ? '' : `${PAIN_AREA_WORD[f.area]} `}flagged ${dayMonthText(f.reportedAt.utc, f.reportedAt.tz)}`;
+  const rowOfSet = (setId: string): SessionExercise | undefined => {
+    const set = s.sets.find((x) => x.id === setId);
+    return set === undefined ? undefined : s.exercises.find((e) => e.id === set.sessionExerciseId);
+  };
+  const harder = (row: SessionExercise): string | null => {
+    const f = flagOn(row.exerciseId, row.exerciseName);
+    if (f !== null) return said(row.exerciseName, f);
+    return input.sessionPainUnspecified ? 'you mentioned pain today' : null;
+  };
+  for (const step of input.command.steps) {
+    switch (step.type) {
+      case 'adjust_pending_targets': {
+        for (const c of step.changes) {
+          const set = s.sets.find((x) => x.id === c.setId);
+          const row = rowOfSet(c.setId);
+          if (set === undefined || row === undefined) continue;
+          const before = { load: set.planned.load, reps: set.planned.reps, ...(set.planned.rpe !== null ? { rpe: set.planned.rpe } : {}) };
+          if (!isIncrease(before, c.target, row.loadConvention)) continue;
+          const why = harder(row);
+          if (why !== null) return why;
+        }
+        for (const a of step.addSets) {
+          const row = rowOfSet(a.copyFromSetId);
+          if (row === undefined) continue;
+          const why = harder(row);
+          if (why !== null) return why;
+        }
+        break;
+      }
+      case 'swap_exercise': {
+        const to = flagOn(step.exercise.exerciseId, step.exercise.name);
+        if (to !== null) return said(step.exercise.name, to);
+        const from = s.exercises.find((e) => e.id === step.sessionExerciseId);
+        const since = input.painFlags.filter((f) => toMs(f.reportedAt.utc) > toMs(input.offeredAtUtc));
+        const was = from === undefined ? null : painFlagForMovement(since, { id: from.exerciseId, name: from.exerciseName }, [from.exerciseId], nowMs, tz);
+        if (from !== undefined && was !== null) return said(from.exerciseName, was);
+        break;
+      }
+      case 'add_exercise': {
+        const f = flagOn(step.exercise.exerciseId, step.exercise.name);
+        if (f !== null) return said(step.exercise.name, f);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return null;
 }

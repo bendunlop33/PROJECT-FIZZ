@@ -1,4 +1,4 @@
-import { planCoachEdit, type CoachEditExerciseInputs } from '@fizz/domain';
+import { coachEditPainHold, planCoachEdit, type CoachEditExerciseInputs } from '@fizz/domain';
 import type { ActionDetail, ActionRecord, CoachEditTodayCommand, EditTodayOp, Exercise, GuardNote, PainFlag, SessionAggregate, ZonedTimestamp } from '@fizz/schemas';
 import { actionIdFor, newActionRecord, type CoachWriteStore, type ToolCallContext, type ToolExecutor, type ToolResult } from './executors';
 
@@ -138,10 +138,11 @@ export function editOfferIn(records: readonly ActionRecord[]): ActionRecord | nu
  * Ben's `Adjust` (or a bare "yes") on the coach's offer: the stored command applies exactly as
  * offered, under a record of its own (`proposalId` names the offer), with no model call. Refused as
  * stale when the workout moved on since the offer (rule 5); an exercise the edit adds or swaps to
- * that isn't in Ben's exercises yet is saved in the same write.
+ * that isn't in Ben's exercises yet is saved in the same write. Pain is read again (review B1,
+ * rule 9): a flag set since the offer refuses an increase, more sets, an add or a swap it covers.
  */
 export async function acceptEditOffer(
-  deps: Pick<EditTodayDeps, 'store' | 'loadSession' | 'inputs' | 'onSessionChanged'>,
+  deps: Pick<EditTodayDeps, 'store' | 'loadSession' | 'inputs' | 'onSessionChanged' | 'painFlags' | 'sessionPainUnspecified'>,
   proposal: ActionRecord,
   ctx: { ownerId: string; turnId: string; now: ZonedTimestamp },
 ): Promise<ToolResult> {
@@ -158,6 +159,8 @@ export async function acceptEditOffer(
   const aggregate = await deps.loadSession();
   // The version is checked in the write itself (rule 5), after the opId: a double tap replays the first accept, not a refusal.
   if (aggregate === null || aggregate.session.id !== d.sessionId) return refuse('stale', null);
+  const held = coachEditPainHold({ aggregate, command, painFlags: await deps.painFlags(), sessionPainUnspecified: deps.sessionPainUnspecified, offeredAtUtc: proposal.createdAt.utc, at: ctx.now });
+  if (held !== null) return refuse('rejected', held);
   const saveExercises: Exercise[] = [];
   for (const step of command.steps) {
     if (step.type !== 'add_exercise' && step.type !== 'swap_exercise') continue;
