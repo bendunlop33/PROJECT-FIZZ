@@ -1,5 +1,5 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,7 +34,10 @@ import {
   type ViewIcon,
   type WorkoutOutOfContext,
 } from '../../coach/sheet-view';
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { newUuid } from '../../device/runtime';
+import { createReplyVoice, readRepliesOn, replyToSpeak, toggleReadReplies } from '../../voice/read-aloud';
+import { appleSpeaker, voiceCapability } from '../../voice/speaker';
 import { formatTime } from '../../format/dates';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
@@ -111,6 +114,19 @@ export function CoachSheetScreen() {
   const [buildGym, setBuildGym] = useState<{ id: string; name: string } | null>(null);
   const sendGuard = useRef(0);
   const scroll = useRef<ScrollView>(null);
+  /**
+   * Replies read aloud (Ben, 19 Oct 2026): by default only over a live workout; the header's
+   * speaker mirrors Settings › Voice. Stops on typing, closing, or the next reply.
+   */
+  const { prefs, update: updatePrefs } = useDevicePrefs();
+  const replyVoice = useMemo(() => createReplyVoice(appleSpeaker), []);
+  const readAloud = useRef(false);
+  useEffect(
+    () => () => {
+      void replyVoice.hush();
+    },
+    [replyVoice],
+  );
   const field = useRef<TextInput>(null);
 
   const loadRows = useCallback(
@@ -220,6 +236,7 @@ export function CoachSheetScreen() {
 
   const setDraft = (t: string) => {
     setText(t);
+    if (t !== '') void replyVoice.hush();
     if (t === '') drafts.delete(key);
     else drafts.set(key, t);
   };
@@ -236,6 +253,7 @@ export function CoachSheetScreen() {
     if (typed !== null) setDraft('');
     // Build 131: the keyboard goes down on Send so the answer has the room; the transcript keeps to its end.
     Keyboard.dismiss();
+    void replyVoice.hush();
     try {
       const r = await services.coach.send({
         entry,
@@ -247,6 +265,8 @@ export function CoachSheetScreen() {
         },
       });
       setThreadId(r.threadId);
+      const words = replyToSpeak(r, readAloud.current);
+      if (words !== null) void replyVoice.say(words);
       setPicking(false);
       if (r.askPain === null) setAskPain(false);
       else {
@@ -445,6 +465,10 @@ export function CoachSheetScreen() {
   const empty = rows.length === 0 && live === null;
   const running = live !== null;
   const canSend = status?.canSend === true && text.trim() !== '' && !running;
+  const liveWorkout = entry.kind === 'workout' && workout?.active === true;
+  const canSpeak = voiceCapability().speech;
+  const readOn = canSpeak && readRepliesOn(prefs.voice.readReplies, liveWorkout);
+  readAloud.current = readOn;
 
   const header = (
     <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: theme.space['2'] }}>
@@ -458,6 +482,16 @@ export function CoachSheetScreen() {
       <AppText variant="headline" numberOfLines={1} style={{ flex: 1, textAlign: 'center' }}>
         {title}
       </AppText>
+      {canSpeak ? (
+        <HeaderButton
+          icon={readOn ? 'speaker.wave.2' : 'speaker.slash'}
+          label={readOn ? 'Read replies aloud: on' : 'Read replies aloud: off'}
+          onPress={() => {
+            if (readOn) void replyVoice.hush();
+            updatePrefs({ voice: { ...prefs.voice, readReplies: toggleReadReplies(prefs.voice.readReplies, liveWorkout) } });
+          }}
+        />
+      ) : null}
       <HeaderButton
         icon="square.and.pencil"
         label="New conversation"
@@ -660,7 +694,7 @@ export function CoachSheetScreen() {
   );
 }
 
-function HeaderButton({ icon, label, onPress }: { icon: 'list.bullet' | 'square.and.pencil' | 'xmark'; label: string; onPress: () => void }) {
+function HeaderButton({ icon, label, onPress }: { icon: 'list.bullet' | 'square.and.pencil' | 'xmark' | 'speaker.wave.2' | 'speaker.slash'; label: string; onPress: () => void }) {
   const theme = useTheme();
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={{ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center' }}>
