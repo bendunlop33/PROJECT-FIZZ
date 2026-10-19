@@ -245,3 +245,23 @@ After build 156, Ben reported two problems: "make it 40" left a hotel-gym should
 - **The coach reads Ben's history**: records (e1RM labelled an estimate), recent workouts, any saved gym's equipment. At most 4 reads a turn.
 - **Numbers in replies are allowed when checked** against Ben's data, tool results and his words. Unchecked sentences are hidden. Build messages may be up to 600 characters.
 - **Thinking effort per turn**: builds high, mid-workout low, otherwise medium. Mid-workout the coach can ask to think harder once a turn. Settings has an optional lighter `Mid-workout` model from his plan's list; the default is the coach's model.
+
+## 2026-10-19: Multi-day plans and the plan tracker v1 (Ben approved 19 Oct; details PM decision, pending Ben)
+Ben: "Can it build plans across multiple days as well not just single workouts?" and "would be good maybe to have an option to check progress vs plan". He approved the proposal ("ok", 19 Oct). Research: `docs/research/plans-and-plan-progress.md` (proposals 1–3). Built with a scripted model only, not yet on the iPhone.
+
+**Ben approved 19 Oct**
+- **The coach builds a plan of several days at once.** "Build me a 4-day plan" or "PPL week, 60 min each, dumbbells only on Friday" gives one plan (`propose_plan`, 1–7 days). It follows Ben's Profile split unless he asks otherwise, takes loads from his history with short reasons (the workout builder's checks, per day: usable at the gym, pain flags, limits, `est.`), and spreads the muscles. It may ask up to 2 clarifying questions.
+- **One plan card shows every day.** Tap a day to see its exercises, sets and loads.
+- **Apply saves the days as saved workouts in the rotation, so Up next walks through them.** Ben chooses `Replace my workouts` (his other workouts leave the rotation and stay in Workouts) or `Add alongside`. Undo restores the previous setup. It is a proposal (rule 3), versioned and idempotent, and a stale card changes nothing (rule 5).
+- **After that, weights progress per session through the normal next-time targets.** The coach never rewrites the plan unprompted.
+- **Plan tracker v1:** the Summary shows planned vs done per exercise (`3/3 sets · 8, 8, 7 of 8 · Short`); Progress gets a Consistency card (the last 8 weeks against the days-a-week aim, or counts with none, plus `Plan this week 3 of 4`); exercise history shows target vs actual and `Targets hit 5 of last 6`. Numbers only from real data. No scores, no projected e1RM, never "missed".
+- **Not in v1:** calendar dates, multi-week blocks, deloads.
+
+**PM decisions, pending Ben**
+- **A plan request is its own kind.** It offers only `propose_plan`, forced like a build (a text answer is asked once more). "Make legs shorter" or "only 3 days" with an open plan in the thread makes a new version. "Build me an 8-week block" is not a plan: the coach says blocks aren't available yet.
+- **Up next with a plan.** With no split: the day after the plan day done most recently, day 1 before any is done (also with `Add alongside`, until the rotation can tell). With a split, plan days map to split days (`splitDayId`, named as the split day): Up next stays the split day trained least recently and plans the plan's workout for it. Two days on one split day ("Push", "Push 2") alternate. Today says `Day 2 of 4`. A plan day that isn't a split day is never Up next while a split is set.
+- **A day's first workout uses the plan's loads,** re-checked at Start (newer history, pain, the gym's items, max). After that, the routine's normal next-time targets apply. A row Ben edited after Apply plans as usual.
+- **Undo refuses rather than losing Ben's changes.** If he edited a plan workout, or took one in or out of the rotation, after Apply, Undo says `Can't undo: Push changed since.` and nothing changes. Workouts he did from the plan stay in history.
+- **Plan vs done words.** `Short`: any planned set not done, reps below the range, or a lighter load (more assistance on an assisted machine). `Over`: reps above the range, a heavier load, or more sets than planned. Otherwise `Hit`. kg and lb aren't compared. A set taken out with `Skip today` isn't planned. `Targets hit` counts Hit and Over over the last 6 workouts that had a target.
+- **Consistency** counts finished workouts with a logged set, FitNotes imports included, per local Monday–Sunday week. `Weeks at your aim` counts the 8 full weeks before this one. Plan days count once a week each, from Apply.
+- **New schema migration 20 (`coach-plans`):** a `plan_drafts` table (Your data, in backups) and the `build_plan` coach action kind. Open plans expire after 14 days, like coach drafts.
