@@ -68,7 +68,7 @@ export function CoachSheetScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { entry, focus = false, build: buildParam } = useRoute<RouteProp<RootStackParams, 'Coach'>>().params;
+  const { entry, focus = false, build: buildParam, draft: draftParam } = useRoute<RouteProp<RootStackParams, 'Coach'>>().params;
   const key = entryKey(entry);
 
   const [availability, setAvailability] = useState<CoachAvailability | null>(null);
@@ -76,7 +76,11 @@ export function CoachSheetScreen() {
   const [title, setTitle] = useState<string>('Coach');
   const [rows, setRows] = useState<ThreadRow[]>([]);
   const [live, setLive] = useState<LiveTurn | null>(null);
-  const [text, setText] = useState(drafts.get(key) ?? '');
+  // `draft` (Your plan's `Ask coach to change`, 19 Oct) starts an empty field; text Ben already typed here wins. Nothing is sent.
+  const [text, setText] = useState(() => {
+    const kept = drafts.get(key) ?? '';
+    return kept.trim() === '' && draftParam !== undefined ? draftParam : kept;
+  });
   const [now, setNow] = useState(clockNow);
   const [statusWhy, setStatusWhy] = useState(false);
   const [sees, setSees] = useState<ContextDescription | null>(null);

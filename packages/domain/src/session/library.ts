@@ -673,3 +673,13 @@ export function buildLibraryView(input: LibraryViewInput): LibraryView {
   const state = live.length > 0 ? 'normal' : historyTypes.length > 0 ? 'history_only' : 'empty';
   return { rotation, all, history, historyTotal: historyTypes.length > shown.length ? historyTypes.length : 0, state };
 }
+
+/**
+ * Library › Workouts with a plan in use (Ben, 19 Oct: Your plan): the
+ * plan's days show in its block, so the list (`Other workouts`) leaves them
+ * out. Everything else, and the list's state, is as built.
+ */
+export function withoutRoutines(view: LibraryView, routineIds: ReadonlySet<string>): LibraryView {
+  if (routineIds.size === 0) return view;
+  return { ...view, rotation: view.rotation.filter((r) => !routineIds.has(r.routineId)), all: view.all.filter((r) => !routineIds.has(r.routineId)) };
+}

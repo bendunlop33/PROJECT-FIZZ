@@ -11,6 +11,7 @@ import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
 import { formatDayMonth, formatLongDate, formatShortDate, formatTime } from '../format/dates';
+import { openYourPlan } from '../navigation/actions';
 import type { TabParams } from '../navigation/types';
 import { DeleteToastView } from '../history/DeleteToastView';
 import { useDeleteToast } from '../history/useDeleteToast';
@@ -506,15 +507,28 @@ export function TodayScreen() {
               : next.routine?.basis.kind === 'after'
                 ? `After ${next.routine.basis.routineName} on ${formatShortDate(toMs(next.routine.basis.atUtc), next.routine.basis.tz)}`
                 : next.routine?.basis.kind === 'plan'
-                  ? `Day ${String(next.routine.basis.dayN)} of ${String(next.routine.basis.of)}`
+                  ? null
                   : next.sourceStartedAtUtc !== null
                   ? `From ${formatShortDate(toMs(next.sourceStartedAtUtc), next.tz)}`
                   : null;
+          // (Ben, 19 Oct) `Day 2 of 4 ›` opens Your plan: Library › Workouts, at the top.
+          const planBasis = next.routine?.basis.kind === 'plan' ? next.routine.basis : null;
+          const planLink =
+            planBasis === null
+              ? null
+              : {
+                  text: `Day ${String(planBasis.dayN)} of ${String(planBasis.of)}`,
+                  accessibilityLabel: `Day ${String(planBasis.dayN)} of ${String(planBasis.of)}. Opens your plan.`,
+                  onPress: () => {
+                    navigation.dispatch(openYourPlan(newUuid()));
+                  },
+                };
           return (
             <Hero
               label="Up next"
               {...changeAction}
               title={next.title}
+              link={planLink}
               lines={[
                 [next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'}`, next.aboutMinutes !== null ? `about ${String(next.aboutMinutes)} min` : `${String(next.sets)} sets`].filter(Boolean).join(' · '),
                 basis,
@@ -822,7 +836,7 @@ export function TodayScreen() {
 }
 
 /** D-Today's hero: tracked label (with `Change` on Up next), a 40pt title, quiet lines, then the actions. */
-function Hero({ label, labelAction, title, lines, children }: { label: string; labelAction?: ReactNode; title: string; lines: readonly (string | null)[]; children: ReactNode }) {
+function Hero({ label, labelAction, title, lines, link = null, children }: { label: string; labelAction?: ReactNode; title: string; lines: readonly (string | null)[]; link?: { text: string; accessibilityLabel: string; onPress: () => void } | null; children: ReactNode }) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space['6'] }}>
@@ -832,10 +846,10 @@ function Hero({ label, labelAction, title, lines, children }: { label: string; l
             <Eyebrow>{label}</Eyebrow>
             {labelAction}
           </View>
-          <HeroHeader title={title} lines={lines} />
+          <HeroHeader title={title} lines={lines} link={link} />
         </View>
       ) : (
-        <HeroHeader eyebrow={label} title={title} lines={lines} />
+        <HeroHeader eyebrow={label} title={title} lines={lines} link={link} />
       )}
       <View style={{ gap: theme.space['4'] }}>{children}</View>
     </View>

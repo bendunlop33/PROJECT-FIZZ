@@ -82,6 +82,11 @@ export function openLibrary(segment: LibrarySegment, toast?: LibraryToastParam):
   return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment, ...(toast ? { toast } : {}) } } });
 }
 
+/** Today's `Day 2 of 4 ›` (Ben, 19 Oct): Library › Workouts, scrolled to the top where Your plan is. `nonce`: once per tap. */
+export function openYourPlan(nonce: string): PopToTabsAction {
+  return popToTabs({ screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts', plan: nonce } } });
+}
+
 /**
  * The editor's `Cancel` (or `Discard`): back where it came from. A fresh copy
  * from `Duplicate` hands back its `Saved Push A copy` [Undo] toast, so the

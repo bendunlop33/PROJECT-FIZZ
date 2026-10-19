@@ -457,7 +457,20 @@ export function Eyebrow({ children, color = 'text.tertiary', align }: { children
  * semibold title, then quiet lines. `size` `hero` is the 40pt Today title;
  * `screen` is the 30pt screen title.
  */
-export function HeroHeader({ eyebrow, title, lines = [], size = 'hero' }: { eyebrow?: string | null; title: string; lines?: readonly (string | null | undefined)[]; size?: 'hero' | 'screen' }) {
+/** `link`: one quiet line that is a link (Today's `Day 2 of 4 ›` opens Your plan; Ben, 19 Oct), after the lines. */
+export function HeroHeader({
+  eyebrow,
+  title,
+  lines = [],
+  size = 'hero',
+  link = null,
+}: {
+  eyebrow?: string | null;
+  title: string;
+  lines?: readonly (string | null | undefined)[];
+  size?: 'hero' | 'screen';
+  link?: { text: string; accessibilityLabel: string; onPress: () => void } | null;
+}) {
   const theme = useTheme();
   const px = size === 'hero' ? theme.components.heroTitleSize : theme.type.title1.fontSize;
   const shown = lines.filter((l): l is string => typeof l === 'string' && l !== '');
@@ -477,13 +490,20 @@ export function HeroHeader({ eyebrow, title, lines = [], size = 'hero' }: { eyeb
       >
         {title}
       </AppText>
-      {shown.length > 0 ? (
+      {shown.length > 0 || link !== null ? (
         <View style={{ marginTop: theme.space['2'], gap: theme.space['1'] }}>
           {shown.map((l) => (
             <AppText key={l} variant="callout" color="text.secondary" numeric>
               {l}
             </AppText>
           ))}
+          {link !== null ? (
+            <Pressable accessibilityRole="link" accessibilityLabel={link.accessibilityLabel} onPress={link.onPress} hitSlop={{ top: 12, bottom: 12 }} style={({ pressed }) => ({ alignSelf: 'flex-start', opacity: pressed ? 0.7 : 1 })}>
+              <AppText variant="callout" color="text.secondary" numeric style={{ textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] }}>
+                {`${link.text} ›`}
+              </AppText>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
     </View>

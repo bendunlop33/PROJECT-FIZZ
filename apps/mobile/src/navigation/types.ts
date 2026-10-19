@@ -85,8 +85,11 @@ export type ProgressStackParams = {
 /** The Library tab's stack (exercise-library §9, EL10). */
 export type LibraryStackParams = {
   /** `segment`: open on it (the picker's `Edit workouts`); `toast`: back from the editor (`Saved Push A` [Undo]). */
-  LibraryHome: { segment?: LibrarySegment; toast?: LibraryToastParam } | undefined;
+  /** `plan`: Today's `Day 2 of 4 ›` (a nonce): Workouts, scrolled to the top where Your plan is (Ben, 19 Oct). */
+  LibraryHome: { segment?: LibrarySegment; toast?: LibraryToastParam; plan?: string } | undefined;
   LibraryExercise: ExerciseInfoParams;
+  /** Your plan › a day (Ben, 19 Oct): what Start plans here and last time's sets; Start, Edit, Ask coach. */
+  LibraryPlanDay: { routineId: string; name?: string };
 };
 
 export type LibrarySegment = 'exercises' | 'workouts';
@@ -205,7 +208,8 @@ export type RootStackParams = {
    * workout); never by a trigger, timer or reply. `focus`: the field gets focus.
    */
   /** `build`: open with the Build card (workout-builder §3, `Build with coach`). */
-  Coach: { entry: CoachEntry; focus?: boolean; build?: boolean };
+  /** `draft`: the field starts with this text when it's empty (Your plan's `Ask coach to change`: `Change my plan: `); nothing is sent. */
+  Coach: { entry: CoachEntry; focus?: boolean; build?: boolean; draft?: string };
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
 };

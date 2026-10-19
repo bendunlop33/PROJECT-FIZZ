@@ -4,6 +4,7 @@ import { RoutineSchema } from '@fizz/schemas';
 
 import {
   buildLibraryView,
+  withoutRoutines,
   createRoutine,
   deleteRoutine,
   deriveSessionTypes,
@@ -326,6 +327,16 @@ describe('buildLibraryView (§A2.1, WL-A1)', () => {
     expect(v.rotation[2]?.accessibilityLabel).toContain('1 not here at this gym');
     // A–Z sort applies to ALL WORKOUTS only.
     expect(buildLibraryView({ routines: inputs, types, upNextRoutineId: legsA.id, now: NOW, sort: 'az', showAllHistory: false }).all.map((r) => r.name)).toEqual(['Arms', 'Push · 45 min']);
+  });
+
+  it('with a plan in use, its days leave the list (they show in Your plan); history and the state stay (Ben, 19 Oct)', () => {
+    const v = buildLibraryView({ routines: inputs, types, upNextRoutineId: legsA.id, now: NOW, sort: 'recent', showAllHistory: false });
+    const w = withoutRoutines(v, new Set([pushA.id, legsA.id, coach.id]));
+    expect(w.rotation.map((r) => r.name)).toEqual(['Pull A']);
+    expect(w.all.map((r) => r.name)).toEqual(['Arms']);
+    expect(w.history).toEqual(v.history);
+    expect(w.state).toBe('normal');
+    expect(withoutRoutines(v, new Set())).toBe(v);
   });
 
   it('a history type named like a saved workout is that workout’s (WL5); deleted workouts are hidden', () => {
