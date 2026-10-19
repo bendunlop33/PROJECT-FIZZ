@@ -3,7 +3,7 @@ import type { newPainFlag } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { ActionRecord, CoachToolCall, SessionAggregate } from '@fizz/schemas';
 import { createStoreExecutors, undoCoachAction, type CoachExecutors, type ToolExecutor } from '../src/executors';
-import { createEditTodayExecutor } from '../src/edit-today';
+import { acceptEditOffer, createEditTodayExecutor } from '../src/edit-today';
 import { COACH_TOOLS } from '../src/registry';
 import { MAX_MODEL_STEPS, recoverCoachTurns, runCoachTurn, isBareAccept, gateFor } from '../src/turn';
 import { chunked, ScriptedCoachModel } from './fake-model';
@@ -217,7 +217,7 @@ describe("today's sets through the turn (rule 3: offer, accept, apply; rule 4, r
   });
   const version = async (s: Store) => (await s.repos.sessions.get(SESSION))?.session.version;
 
-  it('the coach offers on its own; nothing applies; Ben’s "yes" opens the tool and the card shows the saved change', async () => {
+  it('the coach offers on its own; nothing applies; Ben’s "yes" opens the tool; with no stored edit behind the offer, the exact change is offered again and his next yes applies it (review S4)', async () => {
     const s = await store();
     const w = await savedWorkout(s);
     const ctx = { session: w, gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] };
@@ -231,8 +231,15 @@ describe("today's sets through the turn (rule 3: offer, accept, apply; rule 4, r
     const second = new ScriptedCoachModel([[call('edit_today', lower()), { type: 'completed' }], reply('That should keep you at 8.')]);
     const r2 = await runCoachTurn(request({ kind: 'workout', threadId: r1.threadId, input: words('yes'), context: ctx }), ports(s, second, adjustExecutors(s)));
     expect(second.offeredTools()[0]).toContain('edit_today');
-    expect(r2.cards.map((c) => nb(c.rendered.text))).toEqual(['Changed sets 3–4 to 95 kg × 8 (targets).']);
-    expect(sentences(r2)).toEqual(['That should keep you at 8.']);
+    // "take 5 kg off" named no exact load: what the model picks is shown first, never applied unseen.
+    expect(r2.cards.map((c) => [c.record.status, nb(c.rendered.text)])).toEqual([['proposed', 'Suggested: sets 3–4 at 95 kg × 8 (targets). Not applied.']]);
+    expect(r2.offer).toBe('adjust_today');
+    expect(await version(s)).toBe(7);
+
+    const silent = new ScriptedCoachModel([]);
+    const r3 = await runCoachTurn(request({ kind: 'workout', threadId: r1.threadId, input: words('yes'), context: ctx }), { ...ports(s, silent, adjustExecutors(s)), acceptOffer: acceptEditOffer.bind(null, { store: s.repos.coach, loadSession: () => s.repos.sessions.get(SESSION), painFlags: () => Promise.resolve([]), sessionPainUnspecified: false }) });
+    expect(silent.requests).toHaveLength(0);
+    expect(r3.cards.map((c) => nb(c.rendered.text))).toEqual(['Changed sets 3–4 to 95 kg × 8 (targets).']);
     expect(await version(s)).toBe(8);
   });
 
