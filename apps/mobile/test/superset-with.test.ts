@@ -61,6 +61,12 @@ describe('Superset with… during a workout', () => {
     expect(nextNames(paired.aggregate, 4)).toEqual(['Seated calf raise', 'Calf raise (bodyweight)', 'Seated calf raise', 'Calf raise (bodyweight)']);
     // The done set is untouched (rule 2).
     expect(paired.aggregate.sets.find((x) => x.id === first?.id)).toEqual(doneSet);
+    // `+ Weight` works on it like other bodyweight exercises (then back, so Undo of the add still applies).
+    const weighted = await s.workout.dispatch(sessionId, { type: 'set_load_mode', at: h.now(), opId: 'bw-added', expectedVersion: paired.aggregate.session.version, sessionExerciseId: bwRow?.id ?? '', mode: 'added' });
+    if (!weighted.ok) throw new Error(weighted.error.message);
+    expect(weighted.aggregate.exercises.find((e) => e.id === bwRow?.id)?.loadConvention).toBe('added');
+    const unweighted = await s.workout.dispatch(sessionId, { type: 'set_load_mode', at: h.now(), opId: 'bw-back', expectedVersion: weighted.aggregate.session.version, sessionExerciseId: bwRow?.id ?? '', mode: 'bodyweight' });
+    if (!unweighted.ok) throw new Error(unweighted.error.message);
 
     // Undo takes the partner out; the calf raise is single again.
     const undone = await s.workout.undoOp({ sessionId, targetOpId: 'pair-bw' });

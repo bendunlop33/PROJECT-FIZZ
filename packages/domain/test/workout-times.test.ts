@@ -49,8 +49,8 @@ describe('workoutTimeBounds and clampWorkoutTimes', () => {
 
 describe('the live duration and the date wheel', () => {
   it('reads 1 h 12 min, 48 min', () => {
-    expect(workoutDurationText(ms(0), ms(72 * 60)).replace(/ /g, ' ')).toBe('1 h 12 min');
-    expect(workoutDurationText(ms(0), ms(48 * 60)).replace(/ /g, ' ')).toBe('48 min');
+    expect(workoutDurationText(ms(0), ms(72 * 60)).replace(/\u00a0/g, ' ')).toBe('1 h 12 min');
+    expect(workoutDurationText(ms(0), ms(48 * 60)).replace(/\u00a0/g, ' ')).toBe('48 min');
   });
 
   it('shows the date when the workout crosses midnight in its own zone', () => {
