@@ -338,7 +338,7 @@ Ben: "what is the current set-up to view workout plans etc?", "can i see it visu
 **PM decisions, pending Ben:**
 - **End plan doesn't put back** the workouts that `Replace my workouts` took out of the rotation. After End, the rotation can be empty until Ben adds workouts back. Up next then uses the split or history.
 - **Migration 22** rebuilds `plan_drafts` so its status can be `ended` (SQLite can't alter a CHECK). Every row keeps its status.
-- **`Targets hit N of last M`** shows on every exercise that has judged history, not only on the main lift as in the mockup.
+- **`Targets hit N of last M`** shows on every exercise that has judged history, not only on the main lift as in the mockup. (Resolved 20 Oct, below: main lifts only, behind a setting.)
 - **A plan change from Your plan is a new plan**, not a new version of the applied one. Its Apply supersedes the plan in use (the existing path), and Undo restores it. Only words that name the plan and change it (`Change my plan: …`) start this; a question about the plan doesn't.
 - **`Use again`** on an ended plan's coach card (review S4), so a mistaken End can be reversed after the toast is gone.
 - The `Last …` line leaves out the unit, as Progress does (`80 × 12`), unless last time's unit differs from the plan's (`60 lb × 8`).
@@ -366,3 +366,9 @@ Ben, mid-workout, after the coach refused to pair Seated calf raise with bodywei
 - **Which copy plans next time (review B2):** the planned slot, else the heaviest; a copy added in the workout never plans next time while the planned slot has a done set. Ben to confirm.
 - **Linking two exercises already in the workout** keeps both set counts; the extras run as straight sets. Only a new partner matches the sets left. Ben to say whether linking should offer to match.
 - A Summary doesn't promise a `Next time` for an exercise done twice (as for F21), though the next Start still plans it from the main copy.
+
+## 2026-10-20: Targets hit on main lifts only, behind a setting (Ben approved 20 Oct)
+Asked whether `Targets hit 5 of last 6` on every exercise of a plan day was OK or main lift only, Ben: "Let's only show targets hit on main lift if turned on in settings".
+- **Profile › Training › `Targets hit`**: an On/Off switch, **off by default**, saved on this phone (device preferences, like the workout view; not Your data, not in backups).
+- **Off:** no `Targets hit N of last M` anywhere: plan day lines (Library › Your plan › a day), Progress › Exercises and exercise detail. The per-workout target against actual in exercise history stays.
+- **On:** shown only for a main lift: a split day's main lift in Profile (Ben's choice or the recommended one), or an exercise marked `Main` in any live workout or plan day (older workouts without a stored flag use the WL9 rule). Pure `isMainLift` / `mainLiftIds` / `targetsHitShown` in `packages/domain/src/progress/targets-hit.ts`.
