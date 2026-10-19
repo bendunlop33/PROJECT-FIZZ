@@ -32,6 +32,7 @@ import { BUILD_INSTRUCTIONS, NO_BUILD_TOOL_INSTRUCTIONS, OFFER_REPLY_BUILD_INSTR
 import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, refusedBuildActionIds } from './build-ask';
 import { lastLoggedSets } from './context';
 import { verifyAsked, type AskClaim, type AskVerdict } from './intent';
+import { editOfferIn } from './edit-today';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -92,6 +93,11 @@ export interface CoachTurnPorts {
   now(): ZonedTimestamp;
   newId(): string;
   timing?: CoachTiming;
+  /**
+   * (Coach v3) Applies an edit the coach offered, exactly as stored (`acceptEditOffer`), when Ben
+   * accepts it. Absent: an accept runs a model turn as before.
+   */
+  acceptOffer?: (proposal: ActionRecord, ctx: { ownerId: string; turnId: string; now: ZonedTimestamp }) => Promise<ToolResult>;
 }
 
 export interface CoachTurnRequest {
@@ -263,7 +269,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
  */
 export function todayChangeAsked(tool: string, gate: Pick<TurnGate, 'benRequest' | 'acceptedOffer'>, words: string | null): boolean {
   if (todayScopeRefused(tool, words)) return false;
-  if (gate.acceptedOffer && tool === 'adjust_pending_sets') return true;
+  if (gate.acceptedOffer && (tool === 'adjust_pending_sets' || tool === 'edit_today')) return true;
   const r = gate.benRequest;
   switch (tool) {
     case 'adjust_pending_sets':
@@ -271,6 +277,9 @@ export function todayChangeAsked(tool: string, gate: Pick<TurnGate, 'benRequest'
     case 'add_exercise_today':
       // Review B2 stands: an add for next time or the routine ("add 3 sets of curls next time") is never today's add.
       return requestHas(r, 'add') || (words !== null && mentionsTodaysSets(words) && !isStructuralRequest(r) && !requestHas(r, 'add_plan'));
+    case 'edit_today':
+      // Coach v3: the one tool for today's workout reads like both (sets, difficulty, adds); never a plan change (B2).
+      return r?.source === 'chip' || requestHas(r, 'change') || requestHas(r, 'difficulty') || requestHas(r, 'add') || (words !== null && mentionsTodaysSets(words) && !isStructuralRequest(r) && !requestHas(r, 'add_plan'));
     case 'rename_workout':
       return words !== null && asksToRename(words);
     default:
@@ -285,9 +294,26 @@ export function todayChangeAsked(tool: string, gate: Pick<TurnGate, 'benRequest'
  * `noWorkingSet`: a Too easy / Too hard tap after warm-ups only is about no working set he did,
  * so the change is offered, not applied.
  */
-export function todayAskVerdict(tool: string, gate: Pick<TurnGate, 'benRequest' | 'acceptedOffer'>, words: string | null, claim: AskClaim, opts: { noWorkingSet?: boolean } = {}): AskVerdict {
+export function todayAskVerdict(tool: string, gate: Pick<TurnGate, 'benRequest' | 'acceptedOffer'>, words: string | null, claim: AskClaim, opts: { noWorkingSet?: boolean; setsOnly?: boolean } = {}): AskVerdict {
   const chip = gate.benRequest?.source === 'chip' && opts.noWorkingSet !== true;
-  return verifyAsked({ tool, chip, acceptedOffer: gate.acceptedOffer, words, claim, fallback: () => todayChangeAsked(tool, { benRequest: gate.benRequest?.source === 'chip' && !chip ? null : gate.benRequest, acceptedOffer: gate.acceptedOffer }, words) });
+  // A tap asks for today's sets only: anything structural after it is the coach's idea (an offer).
+  const tapOnly = (gate.benRequest?.source === 'chip' || gate.acceptedOffer) && opts.setsOnly === false;
+  return verifyAsked({
+    tool,
+    chip,
+    acceptedOffer: gate.acceptedOffer,
+    words,
+    claim,
+    ...(opts.setsOnly === undefined ? {} : { setsOnly: opts.setsOnly }),
+    fallback: () => !tapOnly && todayChangeAsked(tool, { benRequest: gate.benRequest?.source === 'chip' && !chip ? null : gate.benRequest, acceptedOffer: gate.acceptedOffer }, words),
+  });
+}
+
+/** (`edit_today`) The call changes set targets and counts only. Undefined for other tools. */
+function setsOnlyOf(call: { tool: string; args: unknown }): boolean | undefined {
+  if (call.tool !== 'edit_today') return undefined;
+  const ops = (call.args as { ops?: readonly { op: string }[] }).ops ?? [];
+  return ops.every((o) => o.op === 'set' || o.op === 'set_count');
 }
 
 /** The model's ask claim on a today-tool call (absent on calls that don't carry one). */
@@ -299,7 +325,7 @@ function askClaimOf(args: unknown): AskClaim {
 
 /** Review B1: a today-tool called on words about a later session or the plan. Refused, never offered. */
 export function todayScopeRefused(tool: string, words: string | null): boolean {
-  return (tool === 'adjust_pending_sets' || tool === 'add_exercise_today') && words !== null && futureScopeOnly(words);
+  return (tool === 'adjust_pending_sets' || tool === 'add_exercise_today' || tool === 'edit_today') && words !== null && futureScopeOnly(words);
 }
 
 /** Fed back for a today-tool called on words about a later session (review B1). */
@@ -307,12 +333,6 @@ export const FUTURE_SCOPE_LINE = 'Not applied: Ben asked about a later session o
 
 /** Fed back for a today-change Ben didn't ask for: never run, shown to him as an offer instead (rule 3). */
 export const OFFER_INSTEAD_LINE = 'Not applied: Ben did not ask for this. He now sees an offer to adjust; in reply, say briefly what you would change and why. It applies only if he accepts.';
-
-/** Review S5: add_exercise_today is withheld when the context carries no `addable` list. */
-function withoutUnlistedAdd(registry: TurnRegistry, listed: boolean): TurnRegistry {
-  if (listed || !registry.tools.some((t) => t.name === 'add_exercise_today')) return registry;
-  return { tools: registry.tools.filter((t) => t.name !== 'add_exercise_today'), withheld: [...registry.withheld, { name: 'add_exercise_today', reason: 'needs_request' }] };
-}
 
 /** Tools the app can actually run in this build; others are withheld, never offered. */
 function runnable(registry: TurnRegistry, executors: CoachExecutors): TurnRegistry {
@@ -333,14 +353,14 @@ export const COACH_INSTRUCTIONS = [
 ].join('\n');
 
 /**
- * (14 Oct) Sent when the today-tools are offered (a live workout). Review S5: add_exercise_today is
- * named only when it is offered (with the list of what can be added).
+ * (14 Oct) Sent when the today-tools are offered (a live workout). Coach v3: one tool, edit_today,
+ * changes the workout; adding is named only with the list of what can be added (review S5).
  */
 export function liveWorkoutInstructions(addOffered: boolean): string {
   return [
     addOffered
-      ? 'This workout is live. You can change today’s remaining sets (adjust_pending_sets), add an exercise (add_exercise_today) and rename the workout (rename_workout). When Ben asks for one of these, call the tool; never say you lack a tool or can’t do it here.'
-      : 'This workout is live. You can change today’s remaining sets (adjust_pending_sets) and rename the workout (rename_workout). When Ben asks for one of these, call the tool; never say you lack a tool or can’t do it here.',
+      ? 'This workout is live. edit_today changes it: set targets, set counts, swap, add, remove or move exercises, in one call. rename_workout renames it. When Ben asks for one of these, call the tool; never say you lack a tool or can’t do it here.'
+      : 'This workout is live. edit_today changes it: set targets, set counts, swap, remove or move exercises, in one call. rename_workout renames it. When Ben asks for one of these, call the tool; never say you lack a tool or can’t do it here.',
     // Review B1.
     'These tools change today only. Never use them for a change Ben wants next time, from now on, or in his routine or template.',
     // Coach v3 (ADR 0027): the model reads Ben's intent; code checks the quote.
@@ -485,12 +505,18 @@ function toolOutput(result: ToolResult, ref: string | null): string {
  * (the next versioned call's `baseVersion`) and, for an added exercise, the new row's ID. Without
  * them a second add in the same turn names the version the coach first read and is refused as stale.
  */
-function afterWrite(record: ActionRecord): { sessionVersion?: number; sessionExerciseId?: string } {
+function afterWrite(record: ActionRecord): { sessionVersion?: number; sessionExerciseId?: string; newSessionExerciseIds?: string[] } {
   if (record.status !== 'committed') return {};
   const session = record.entityVersions.find((v) => v.entity === 'session');
   const after = session?.after ?? null;
   const version = after === null || after === session?.before ? {} : { sessionVersion: after };
-  return record.detail.kind === 'add_exercise_today' ? { ...version, sessionExerciseId: record.detail.sessionExerciseId } : version;
+  if (record.detail.kind === 'add_exercise_today') return { ...version, sessionExerciseId: record.detail.sessionExerciseId };
+  if (record.detail.kind === 'edit_today') {
+    // Coach v3: the rows an edit added, so a later op in this turn can name them.
+    const added = (record.detail.command?.steps ?? []).flatMap((x) => (x.type === 'add_exercise' ? [x.newSessionExerciseId] : x.type === 'swap_exercise' ? [x.newSessionExerciseId] : []));
+    return added.length === 0 ? version : { ...version, newSessionExerciseIds: added };
+  }
+  return version;
 }
 
 const INTERRUPTED_NOTE = 'Stopped.';
@@ -590,13 +616,18 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   if (words !== null && req.kind === 'general' && followUp === null && (req.draftInThread === true || req.draftInContext === true) && asksToStartOrSave(words) && !(await lastCoachAsked(ports.store, lastCoach))) {
     return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
   }
+  // Coach v3: Adjust (or a bare "yes") on an edit the coach offered applies exactly that offer, with no model call (rule 3, rule 5).
+  if (gate.acceptedOffer && liveWorkout && ports.acceptOffer !== undefined && lastCoach !== undefined && lastCoach.body.role === 'coach') {
+    const ids = lastCoach.body.actionIds;
+    const offered = editOfferIn((await ports.store.listTurnActions(lastCoach.turnId)).filter((a) => ids.includes(a.actionId)));
+    if (offered !== null) return acceptedOfferTurn(req, ports, ports.acceptOffer, thread, offered, context.contextHash);
+  }
   const rawMention = words === null ? 'none' : classifyPainMention(words);
   // Review r5 S1: in a build request, a muscle-group focus ("a back and biceps session") is not his body: no pain question.
   const mention = words !== null && rawMention === 'unclear' && requestHas(classifyBenRequest(words, 'general'), 'build') && buildPainMention(words) === 'none' ? 'none' : rawMention;
   const messagePain: MessagePain | null = words === null ? null : { mention, exerciseIds: req.namedExerciseIds ?? [], bodyPart: painBodyPart(words) };
 
-  // Review S5: add_exercise_today only with the list of what can be added; without it the model can only guess an ID.
-  const registry = withoutUnlistedAdd(runnable(buildTurnRegistry(gate), ports.executors), context.yourData.addable !== undefined);
+  const registry = runnable(buildTurnRegistry(gate), ports.executors);
   const tools = [...functionToolDefinitions(registry.tools), replyToolDefinition()];
   const buildOffered = registry.tools.some((t) => t.name === 'propose_workout');
   // Build 131: a general turn without the build tool still knows the app builds workouts, so it never says it can't.
@@ -615,7 +646,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const buildInPlay = canBuild && (benBuildWords || followUp !== null);
   const buildInstructions = forced || clearFollowUp ? BUILD_INSTRUCTIONS : looseBuild ? OFFER_REPLY_BUILD_INSTRUCTIONS : OFFERED_BUILD_INSTRUCTIONS;
   const todayOffered = registry.tools.some((t) => TODAY_TOOLS.has(t.name));
-  const addOffered = registry.tools.some((t) => t.name === 'add_exercise_today');
+  // Review S5: adding is named only with the list of what can be added; without it the model can only guess an ID.
+  const addOffered = registry.tools.some((t) => t.name === 'edit_today') && context.yourData.addable !== undefined;
   const baseInstructions = todayOffered ? `${COACH_INSTRUCTIONS}\n${liveWorkoutInstructions(addOffered)}` : COACH_INSTRUCTIONS;
   const questionOffered = registry.tools.some((t) => t.name === 'ask_build_question');
   const questionLines = [...(questionOffered ? [QUESTION_RULES] : []), ...(chain?.skipped === true ? [SKIPPED_LINE] : chain?.open !== null && chain?.open !== undefined ? [ANSWERED_LINE] : [])];
@@ -674,6 +706,30 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const logLine = (line: ToolLogLine): void => {
     toolLog.push(line);
     req.onProgress?.({ kind: 'tool', line });
+  };
+  /** A tool's result into the ledger, the tool log and the live cards; the ref the model may cite. */
+  const noteResult = (tool: string, result: ToolResult): string | null => {
+    if (result.kind === 'read') {
+      logLine({ tool, outcome: 'read', text: TOOL_READ_LINE[tool] ?? 'Read', actionId: null });
+      for (const [i, r] of (result.earlier ?? []).entries()) {
+        if (!entries.some((e) => e.record.actionId === r.actionId)) entries.push({ ref: `e${String(i + 1)}`, record: r, origin: 'earlier' });
+      }
+      return null;
+    }
+    if (result.kind === 'refused') {
+      logLine({ tool, outcome: 'not_allowed', text: result.line, actionId: null });
+      return null;
+    }
+    const already = entries.find((e) => e.record.actionId === result.record.actionId && e.origin === 'this_turn');
+    let ref: string;
+    if (already === undefined) {
+      refCount += 1;
+      ref = `a${String(refCount)}`;
+      entries.push({ ref, record: result.record, origin: 'this_turn' });
+    } else ref = already.ref;
+    logLine({ tool, outcome: result.replayed ? 'replayed' : result.record.status, text: renderActionResult(result.record, 'sheet').text, actionId: result.record.actionId });
+    if (already === undefined) req.onProgress?.({ kind: 'card', card: { record: result.record, rendered: renderActionResult(result.record, req.surface) } });
+    return ref;
   };
   let replyStream = new ReplyMessageStream();
   // The whole-turn cap (BD13): when it fires the running step is stopped and the turn ends as a timeout.
@@ -770,38 +826,25 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: FUTURE_SCOPE_LINE }) });
       continue;
     }
-    if (TODAY_TOOLS.has(parsed.call.tool) && !todayAskVerdict(parsed.call.tool, gate, words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork }).asked) {
+    const setsOnly = setsOnlyOf(parsed.call);
+    const asked = !TODAY_TOOLS.has(parsed.call.tool) || todayAskVerdict(parsed.call.tool, gate, words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork, ...(setsOnly === undefined ? {} : { setsOnly }) }).asked;
+    // Coach v3: an edit Ben didn't ask for is checked and saved as an offer (exactly what would apply), never applied.
+    const proposer = !asked && parsed.call.tool === 'edit_today' && liveWorkout ? ports.executors.edit_today : undefined;
+    if (!asked && proposer === undefined) {
       offeredInstead = true;
       logLine({ tool: parsed.call.tool, outcome: 'proposed', text: 'Offered, not applied.', actionId: null });
       input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', line: OFFER_INSTEAD_LINE }) });
       continue;
     }
-    const executor = ports.executors[parsed.call.tool];
+    const executor = proposer ?? ports.executors[parsed.call.tool];
     if (executor === undefined) throw new Error(`No executor for ${parsed.call.tool}`);
-    const result = await executor(parsed.call, { ...callCtx, opId: parsed.opId });
-    let ref: string | null = null;
-    if (result.kind === 'read') {
-      logLine({ tool: parsed.call.tool, outcome: 'read', text: TOOL_READ_LINE[parsed.call.tool] ?? 'Read', actionId: null });
-      for (const [i, r] of (result.earlier ?? []).entries()) {
-        if (!entries.some((e) => e.record.actionId === r.actionId)) entries.push({ ref: `e${String(i + 1)}`, record: r, origin: 'earlier' });
-      }
-    } else if (result.kind === 'refused') {
-      logLine({ tool: parsed.call.tool, outcome: 'not_allowed', text: result.line, actionId: null });
-    } else {
-      const already = entries.find((e) => e.record.actionId === result.record.actionId && e.origin === 'this_turn');
-      if (already === undefined) {
-        refCount += 1;
-        ref = `a${String(refCount)}`;
-        entries.push({ ref, record: result.record, origin: 'this_turn' });
-      } else ref = already.ref;
-      logLine({
-        tool: parsed.call.tool,
-        outcome: result.replayed ? 'replayed' : result.record.status,
-        text: renderActionResult(result.record, 'sheet').text,
-        actionId: result.record.actionId,
-      });
-      if (already === undefined) req.onProgress?.({ kind: 'card', card: { record: result.record, rendered: renderActionResult(result.record, req.surface) } });
-      if (result.record.detail.kind === 'build_question' && result.record.status === 'proposed') askedQuestion = true;
+    const result = await executor(parsed.call, { ...callCtx, opId: parsed.opId, ...(proposer === undefined ? {} : { propose: true }) });
+    const ref = noteResult(parsed.call.tool, result);
+    if (result.kind === 'action' && result.record.detail.kind === 'build_question' && result.record.status === 'proposed') askedQuestion = true;
+    if (proposer !== undefined && result.kind === 'action' && result.record.status === 'proposed') {
+      offeredInstead = true;
+      input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', ref, offered: renderActionResult(result.record, 'sheet').text, line: OFFER_INSTEAD_LINE }) });
+      continue;
     }
     input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, ref) });
     // BD17: a question ends the turn (no further model call); the card is the coach's message.
@@ -866,6 +909,39 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     contextHash: context.contextHash,
     replayed: false,
   };
+}
+
+/** Ben accepted the coach's offered edit: the stored change applies (or is refused as stale); no model call, no sentence. */
+async function acceptedOfferTurn(
+  req: CoachTurnRequest,
+  ports: CoachTurnPorts,
+  accept: NonNullable<CoachTurnPorts['acceptOffer']>,
+  thread: CoachThread,
+  offered: ActionRecord,
+  contextHash: string,
+): Promise<CoachTurnResult> {
+  const result = await accept(offered, { ownerId: req.ownerId, turnId: req.turnId, now: ports.now() });
+  const toolLog: ToolLogLine[] = [];
+  const cards: CoachCard[] = [];
+  if (result.kind === 'action') {
+    const line: ToolLogLine = { tool: 'edit_today', outcome: result.replayed ? 'replayed' : result.record.status, text: renderActionResult(result.record, 'sheet').text, actionId: result.record.actionId };
+    toolLog.push(line);
+    req.onProgress?.({ kind: 'tool', line });
+    const card = { record: result.record, rendered: renderActionResult(result.record, req.surface) };
+    cards.push(card);
+    req.onProgress?.({ kind: 'card', card });
+  } else if (result.kind === 'refused') toolLog.push({ tool: 'edit_today', outcome: 'not_allowed', text: result.line, actionId: null });
+  const endedAt = ports.now();
+  await ports.store.appendMessage({
+    id: ports.newId(),
+    ownerId: req.ownerId,
+    threadId: thread.id,
+    turnId: req.turnId,
+    createdAt: endedAt,
+    body: { role: 'coach', items: [], actionIds: cards.map((c) => c.record.actionId), note: null, offer: null, hiddenLines: [], complete: true },
+  });
+  await ports.store.updateTurn(req.turnId, { status: 'completed', error: null, endedAtUtc: endedAt.utc, toolLog }, endedAt.utc);
+  return { turnId: req.turnId, threadId: thread.id, status: 'completed', error: null, items: [], cards, note: null, offer: null, askPain: null, hiddenLines: [], toolLog, contextHash, replayed: false };
 }
 
 /** A turn answered by code with a fixed line (BD15): Ben's message and the line are saved; the model isn't called. */

@@ -1,7 +1,7 @@
 /**
  * Coach v3 (ADR 0027, Ben 18 Oct): the model decides what Ben meant; code checks it.
  *
- * A today-change (`adjust_pending_sets`, `add_exercise_today`, `rename_workout`) applies at once
+ * A today-change (`edit_today`, `rename_workout`; before it, `adjust_pending_sets` and `add_exercise_today`) applies at once
  * with Undo only when Ben asked for it (rule 3). The model says whether he did (`benAsked`) and
  * copies the words that ask (`benQuote`). Code never trusts the claim alone: the quote must be in
  * Ben's own message this turn, word for word. A tap (a chip, `Adjust` on an offer) is a request
@@ -32,6 +32,11 @@ export interface AskInput {
   claim: AskClaim;
   /** Code's own reading of Ben's words (the regex fallback). */
   fallback: () => boolean;
+  /**
+   * (`edit_today`) The call only changes set targets and counts. A tap is about today's sets, so it
+   * asks for those only: a swap, add, removal or move after a chip is the coach's own idea (an offer).
+   */
+  setsOnly?: boolean;
 }
 
 /** Fewest words a quote needs, unless it is Ben's whole message ("Heavier"). */
@@ -70,7 +75,8 @@ export function quoteInWords(quote: string | null | undefined, words: string | n
  * can't verify: the word lists decide.
  */
 export function verifyAsked(input: AskInput): AskVerdict {
-  const sets = input.tool === 'adjust_pending_sets';
+  // A tap asks for a change to today's sets: the set tool, or (Coach v3) the edit tool that replaced it.
+  const sets = input.tool === 'adjust_pending_sets' || (input.tool === 'edit_today' && input.setsOnly !== false);
   if (sets && input.chip) return { asked: true, by: 'chip' };
   if (sets && input.acceptedOffer) return { asked: true, by: 'accepted_offer' };
   const { benAsked, benQuote } = input.claim;

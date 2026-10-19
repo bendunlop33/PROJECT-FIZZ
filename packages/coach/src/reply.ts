@@ -66,7 +66,7 @@ export function claimNoteFor(ledger: TurnLedger, hiddenCount: number, surface: R
   if (live.length === 0) return { text: `Nothing changed · ${linesSaid(hiddenCount)}`, spoken: 'Nothing changed.' };
   if (surface === 'summary') return { text: `Only the changes shown were made · ${linesSaid(hiddenCount)}`, spoken: null };
   if (surface === 'slot') {
-    const numbers = live.flatMap((e) => (e.record.detail.kind === 'adjust_pending_sets' ? e.record.detail.exercises.flatMap((x) => x.changes.map((c) => c.setNumber)) : []));
+    const numbers = live.flatMap((e) => (e.record.detail.kind === 'adjust_pending_sets' || e.record.detail.kind === 'edit_today' ? e.record.detail.exercises.flatMap((x) => x.changes.map((c) => c.setNumber)) : []));
     if (numbers.length > 0) {
       const which = setNumbersText(numbers);
       return { text: `Only ${which} ${numbers.length === 1 ? 'was' : 'were'} changed.`, spoken: null };
@@ -228,7 +228,7 @@ export function createReplyFilter(options: ReplyFilterOptions): ReplyFilter {
   const said: string[] = [];
   let askLineShown = false;
   let noTodayToolHidden = false;
-  const todayKinds = new Set(['adjust_pending_sets', 'add_exercise_today', 'rename_workout']);
+  const todayKinds = new Set(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout']);
 
   const process = (sentence: string): ReplyItem[] => {
     const ledger = options.ledger();

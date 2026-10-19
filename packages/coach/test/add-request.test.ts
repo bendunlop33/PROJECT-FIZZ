@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildTurnRegistry, classifyBenRequest, gateFor, requestHas } from '../src/index';
+import { buildTurnRegistry, classifyBenRequest, gateFor, requestHas, todayAskVerdict } from '../src/index';
 
 /**
  * (12 Oct) Ben: "Why can't the ChatGPT link create sets in the app?" The
  * gate decides from his own words which write tools the model sees. Adding
  * an exercise ("add 3 sets of lateral raises", "put in some curls") opens
- * `add_exercise_today` and `adjust_pending_sets` (the exercise may already be
+ * `edit_today` and `adjust_pending_sets` (the exercise may already be
  * in the workout); a set on an existing exercise ("add a set to bench",
  * "another set") opens `adjust_pending_sets` only. A question, a negation, a
  * condition or a retraction opens nothing (rule 3).
@@ -23,10 +23,11 @@ function writeTools(text: string, kind: 'workout' | 'general' = 'workout'): stri
 }
 
 // Review r3 S1: a plain today add doesn't open the proposal tool; an add with an unclear scope opens both.
-const ADD = ['add_exercise_today', 'adjust_pending_sets'];
-const BOTH = ['add_exercise_today', 'adjust_pending_sets', 'propose_next_workout_change'];
+// Coach v3 (ADR 0027, 18 Oct): one tool, `edit_today`, replaced `edit_today` and `adjust_pending_sets`.
+const ADD = ['edit_today'];
+const BOTH = ['edit_today', 'propose_next_workout_change'];
 const FUTURE = ['propose_next_workout_change'];
-const SETS = ['adjust_pending_sets'];
+const SETS = ['edit_today'];
 const NONE: string[] = [];
 
 describe('the gate for adding to today’s workout (table)', () => {
@@ -176,9 +177,9 @@ describe('the gate for adding to today’s workout (table)', () => {
 
   it('only a workout turn offers the tool; elsewhere it is withheld by turn kind', () => {
     const g = gateFor({ kind: 'general', input: words('add 3 sets of lateral raises'), previousOffer: null, structuralSignals: [] });
-    expect(buildTurnRegistry(g).withheld).toContainEqual({ name: 'add_exercise_today', reason: 'turn_kind' });
+    expect(buildTurnRegistry(g).withheld).toContainEqual({ name: 'edit_today', reason: 'turn_kind' });
     const summary = gateFor({ kind: 'summary', input: words('add 3 sets of lateral raises'), previousOffer: null, structuralSignals: [] });
-    expect(buildTurnRegistry(summary).tools.map((t) => t.name)).not.toContain('add_exercise_today');
+    expect(buildTurnRegistry(summary).tools.map((t) => t.name)).not.toContain('edit_today');
   });
 
   it('an add request counts as asking for a change, so a reply with no card gets "No change made."', () => {
@@ -188,15 +189,17 @@ describe('the gate for adding to today’s workout (table)', () => {
     expect(gateFor({ kind: 'workout', input: words('should I add curls?'), previousOffer: null, structuralSignals: [] }).benAskedForChange).toBe(false);
   });
 
-  it('accepting an offer to adjust never opens the add tool (CA1 is today’s sets only)', () => {
+  it('accepting an offer to adjust asks for today’s sets only: an add or swap after it is an offer (CA1)', () => {
     const g = gateFor({ kind: 'workout', input: { kind: 'accept_offer', offer: 'adjust_today' }, previousOffer: 'adjust_today', structuralSignals: [] });
-    expect(buildTurnRegistry(g).tools.map((t) => t.name)).not.toContain('add_exercise_today');
+    expect(buildTurnRegistry(g).tools.map((t) => t.name)).toContain('edit_today');
+    expect(todayAskVerdict('edit_today', g, null, {}, { setsOnly: true }).asked).toBe(true);
+    expect(todayAskVerdict('edit_today', g, null, {}, { setsOnly: false }).asked).toBe(false);
   });
 
   it('the add kind is its own: a memory or a log request never opens it', () => {
     for (const t of ['remember that I hate curls', 'log 100 for 8', 'set 2 was 95']) {
       expect(requestHas(classifyBenRequest(t, 'workout'), 'add')).toBe(false);
-      expect(writeTools(t)).not.toContain('add_exercise_today');
+      expect(writeTools(t)).not.toContain('edit_today');
     }
   });
 });

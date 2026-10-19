@@ -306,6 +306,13 @@ function failureOr(record: ActionRecord, fallback: string): string {
   return record.failure ?? fallback;
 }
 
+/** `Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8 · after Bench press.` */
+function addedPhrase(a: { exerciseName: string; sets: number; target: CoachTarget | null; durationS: number | null; afterName: string | null; supersetWithName: string | null }): string {
+  const each = a.durationS !== null ? formatDuration(a.durationS) : targetPhrase(a.target);
+  const where = a.supersetWithName !== null ? ` · superset with ${a.supersetWithName}` : a.afterName !== null ? ` · after ${a.afterName}` : '';
+  return `Added ${a.exerciseName}: ${String(a.sets)}${TIMES}${each}${where}.`;
+}
+
 function renderCore(record: ActionRecord, surface: RenderSurface): RenderedAction {
   const d = record.detail;
   const st = record.status;
@@ -328,6 +335,45 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const why = st === 'stale' ? 'your workout moved on' : failureOr(record, 'the change was refused');
       const text = `Couldn't change ${where}: ${why}. Nothing changed.`;
       return make(status, text, st === 'stale' ? 'Your workout moved on. Nothing changed.' : speakable(text));
+    }
+    case 'edit_today': {
+      // Coach v3 (ADR 0027): one card for every change to today's workout, from the saved record.
+      // An added exercise reads as `add_exercise_today` did: what was added, its sets and first target.
+      let addIndex = 0;
+      const structural = d.lines
+        .map((l) => {
+          if (l.change !== 'add') return `${l.text}.`;
+          const a = d.added?.[addIndex];
+          addIndex += 1;
+          return a === undefined ? `${l.text}.` : addedPhrase(a);
+        })
+        .join(' ');
+      if (st === 'committed') {
+        if (d.lines.length === 0) {
+          const spoken = adjustSpoken(d.exercises);
+          if (surface === 'slot') {
+            const slot = adjustSlot(d.exercises, record.author === 'coach');
+            return make(status, slot.title, spoken, slot.detail);
+          }
+          return make(status, adjustLine(d.exercises, 'committed'), spoken);
+        }
+        const targets = d.exercises.some((e) => partsOf(e).changed.length > 0) ? adjustLine(d.exercises.map((e) => ({ ...e, changes: partsOf(e).changed })).filter((e) => e.changes.length > 0), 'committed') : '';
+        const text = [structural, targets].filter((x) => x !== '').join(' ');
+        if (surface === 'slot') return make(status, d.lines[0]?.text ?? text, speakable(text), d.lines.length > 1 || targets !== '' ? [...d.lines.slice(1).map((l) => l.text), targets].filter((x) => x !== '').join(' · ') : null);
+        return make(status, text, speakable(text));
+      }
+      if (st === 'proposed') {
+        if (d.lines.length === 0) {
+          const text = adjustLine(d.exercises, 'proposed');
+          return make(status, text, speakable(text));
+        }
+        const targets = d.exercises.some((e) => partsOf(e).changed.length > 0) ? adjustLine(d.exercises.map((e) => ({ ...e, changes: partsOf(e).changed })).filter((e) => e.changes.length > 0), 'proposed').replace(/^Suggested: /, '').replace(/ Not applied\.$/, '') : '';
+        const text = `Suggested: ${[structural, targets].filter((x) => x !== '').join(' ')} Not applied.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, "Couldn't change today's workout: your workout moved on. Nothing changed.", 'Your workout moved on. Nothing changed.');
+      const text = `Couldn't change today's workout: ${failureOr(record, 'the change was refused')}. Nothing changed.`;
+      return make(status, text, speakable(text));
     }
     case 'add_exercise_today': {
       // (12 Oct) An exercise added to today's workout because Ben asked: values only, with Undo on the card.

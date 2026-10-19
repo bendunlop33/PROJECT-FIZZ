@@ -118,30 +118,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     description: 'Earlier coach actions with refs you can cite as [[ref]], and whether each still stands.',
   },
   {
-    name: 'adjust_pending_sets',
+    // Coach v3 (ADR 0027, Ben 18 Oct): one tool for today's live workout, in place of `adjust_pending_sets` and
+    // `add_exercise_today` (their records and Undo stay for earlier actions). Today only, because Ben asked (rule 3);
+    // otherwise the turn saves the call as an offer he accepts. Not CC10's structural kind: the plan he trains from
+    // next time stays a proposal (`propose_next_workout_change`).
+    name: 'edit_today',
     effect: 'versioned_update',
-    writes: ['pending_set_target'],
+    writes: ['pending_set_target', 'session_exercise'],
     needs: 'ben_request',
     structural: false,
     turnKinds: ['workout'],
-    plainLabel: "Change today's remaining sets",
+    plainLabel: "Change today's workout (exercises, sets and targets), with Undo",
     capabilitySection: 'when_you_ask',
     description:
-      "Change targets of today's pending sets (load, reps, target RPE; rpe null keeps it), or add or remove one pending set per exercise. Done sets are never changed. Loads are snapped to the equipment. Ben's own target RPE always stays. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer.",
-  },
-  {
-    // (12 Oct) Today only, because Ben asked (rule 3): applies at once with Undo. Not CC10's structural
-    // kind: that is the plan he trains from next time, which stays a proposal (`propose_next_workout_change`).
-    name: 'add_exercise_today',
-    effect: 'versioned_update',
-    writes: ['session_exercise'],
-    needs: 'ben_request',
-    structural: false,
-    turnKinds: ['workout'],
-    plainLabel: "Add an exercise to today's workout, with Undo",
-    capabilitySection: 'when_you_ask',
-    description:
-      "Add an exercise Ben asked for to today's workout: exerciseId from YOUR DATA addable (only those), working sets, a rep range (or workSeconds for a timed exercise), targetRpe, and optionally where it goes (after an exercise of today's workout, or in a superset with one that has a set left). No loads: the app plans them from his history on this gym's equipment, blank with no history. Today only: if Ben names a future scope (next time, future sessions, his routine or template, every push day, permanently), use propose_next_workout_change instead and never this tool. For one more set of an exercise already in the workout, use adjust_pending_sets. Done sets are never changed. An added exercise returns sessionVersion and sessionExerciseId: use that sessionVersion as baseVersion for the next change in this turn. benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer.",
+      "Change today's live workout in one call, any mix of ops: `set` a pending set's target (load in the exercise's unit and convention, reps, target RPE; null keeps a value), `set_count` an exercise's working sets today (done ones included), `swap` an exercise's remaining sets to another exercise, `add` an exercise (exerciseId from YOUR DATA addable; sets, reps or workSeconds, targetRpe, optional position or superset partner; no loads: the app plans them from his history on this gym's equipment), `remove` an exercise's remaining sets, `move` an exercise (with its superset) after another or first (null). Done sets never change. The app snaps and bounds every load to the equipment, holds increases on pain, and refuses the whole call if a swap, add, removal or move can't be done. baseVersion: the workout's version; after a change, use the sessionVersion it returns. Today only: never for next time, his routine or template (use propose_next_workout_change). benAsked: true only when Ben's message this turn asks for this change (or answers your question about it), with benQuote his asking words copied exactly; false when it is your own idea, which he sees as an offer he can accept.",
   },
   {
     // (14 Oct, PM decision pending Ben) Offered on every live-workout turn; applies at once with Undo only when
@@ -288,6 +278,13 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
   },
 ];
 
+/**
+ * Coach v3 (ADR 0027, 18 Oct): tool names no turn offers any more. `edit_today` replaced them; their
+ * argument schemas, records and Undo stay for actions saved before it (and the built-in rule's
+ * change, which writes an `adjust_pending_sets` record).
+ */
+export const RETIRED_COACH_TOOLS: readonly CoachToolName[] = ['adjust_pending_sets', 'add_exercise_today'];
+
 /** The fixed `Never` section (§2.5): things that are not tools at all. */
 export const COACH_NEVER: readonly string[] = [
   'Delete or rewrite a workout, a set, an import or a check-in',
@@ -379,7 +376,7 @@ export interface TurnGate {
  * regex classifier kept missing Ben's wording ("can you repopulate the weights based on my max?"),
  * and a withheld tool made the coach say it had none. Rule 3 still holds: see `todayChangeAsked`.
  */
-export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['adjust_pending_sets', 'add_exercise_today', 'rename_workout']);
+export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['edit_today', 'rename_workout']);
 
 export interface WithheldTool {
   name: CoachToolName;
@@ -411,6 +408,8 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   // "Add a set to bench", "another set" are `change`; "put in some curls" is `add`, which also opens this
   // tool so the coach can add one more set when the exercise is already in today's workout.
   adjust_pending_sets: ['change', 'difficulty', 'add'],
+  // (Coach v3, 18 Oct) The one tool for today's workout: sets, difficulty, adds and swaps.
+  edit_today: ['change', 'difficulty', 'add'],
   // (12 Oct) "Add 3 sets of lateral raises", "put in some curls", "can we do some face pulls".
   add_exercise_today: ['add'],
   // A future add ("next time", "to every push day") is `structural` and opens only this tool. Review r3 S1:
@@ -444,7 +443,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
       if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
       if (TODAY_TOOLS.has(t.name) && g.kind === 'workout' && g.liveWorkout === true) return null;
       // An accepted offer only counts for today's sets (CA1).
-      return g.acceptedOffer && t.name === 'adjust_pending_sets' ? null : 'needs_request';
+      return g.acceptedOffer && (t.name === 'adjust_pending_sets' || t.name === 'edit_today') ? null : 'needs_request';
     case 'ben_pain_words':
       return g.benPainWords ? null : 'needs_pain_words';
     case 'ben_named_target':

@@ -125,7 +125,7 @@ describe('the `build` request kind (code, never the model, rule 3)', () => {
       const r = classifyBenRequest(t, 'workout');
       expect(r, t).toEqual({ source: 'words', kinds: ['change'] });
       const g = gateFor({ kind: 'workout', input: words(t), previousOffer: null, structuralSignals: [] });
-      expect(buildTurnRegistry(g).tools.map((x) => x.name), t).toContain('adjust_pending_sets');
+      expect(buildTurnRegistry(g).tools.map((x) => x.name), t).toContain('edit_today');
       // Not a new workout in a general turn either.
       expect(requestHas(classifyBenRequest(t, 'general'), 'build'), t).toBe(false);
     }

@@ -16,6 +16,7 @@ import {
   chipRequest,
   classifyBenRequest,
   UnsafeRegistryError,
+  RETIRED_COACH_TOOLS,
   type BenRequest,
   type ToolDeclaration,
   type TurnGate,
@@ -48,7 +49,8 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
   });
 
   it('every v1 tool name is declared exactly once and has an argument schema', () => {
-    expect(COACH_TOOLS.map((t) => t.name).sort()).toEqual([...CoachToolNameSchema.options].sort());
+    // Coach v3: the retired today tools keep their schemas (earlier records) but are never declared or offered.
+    expect(COACH_TOOLS.map((t) => t.name).sort()).toEqual([...CoachToolNameSchema.options].filter((n) => !RETIRED_COACH_TOOLS.includes(n)).sort());
     for (const t of COACH_TOOLS) expect(COACH_TOOL_ARGS[t.name]).toBeDefined();
   });
 
@@ -84,9 +86,9 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
         expect(t.needs).toBe('ben_request');
         expect(t.turnKinds).toEqual(['workout']);
       }
-      // (12 Oct) An exercise added to today's workout: only on Ben's request, only in the workout.
+      // (12 Oct) An exercise added to today's workout: only on Ben's request, only in the workout (Coach v3: edit_today).
       if (t.writes.includes('session_exercise')) {
-        expect(t.name).toBe('add_exercise_today');
+        expect(t.name).toBe('edit_today');
         expect(t.needs).toBe('ben_request');
         expect(t.turnKinds).toEqual(['workout']);
       }
@@ -100,10 +102,10 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
   });
 
   it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {
-    expect(names(gate({ kind: 'workout' }))).not.toContain('adjust_pending_sets');
-    expect(names(gate({ kind: 'workout', benRequest: ASKED }))).toContain('adjust_pending_sets');
-    expect(names(gate({ kind: 'workout', acceptedOffer: true }))).toContain('adjust_pending_sets');
-    expect(names(gate({ kind: 'general', benRequest: ASKED }))).not.toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout' }))).not.toContain('edit_today');
+    expect(names(gate({ kind: 'workout', benRequest: ASKED }))).toContain('edit_today');
+    expect(names(gate({ kind: 'workout', acceptedOffer: true }))).toContain('edit_today');
+    expect(names(gate({ kind: 'general', benRequest: ASKED }))).not.toContain('edit_today');
     // An accepted offer is not a request for anything else.
     expect(names(gate({ kind: 'workout', acceptedOffer: true }))).not.toContain('save_memory');
   });
@@ -117,7 +119,7 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     const asked = names(gate({ kind: 'summary', benRequest: ASKED, benPainWords: true }));
     expect(asked).not.toEqual(expect.arrayContaining(['save_memory']));
     expect(asked).not.toContain('set_pain_flag');
-    expect(asked).not.toContain('adjust_pending_sets');
+    expect(asked).not.toContain('edit_today');
   });
 
   it('every structural tool is absent with no request and no signal, in every turn kind (check 17)', () => {
@@ -136,10 +138,10 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
   it('a plain question is not a request: it never unlocks today’s sets (review S3, rule 3)', () => {
     for (const q of ['why is set 3 at 100?', 'should I drop the weight?', 'what do you think of my bench?', 'how many sets are left?', 'is 95 too light?']) {
       expect(classifyBenRequest(q)).toBeNull();
-      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) }))).not.toContain('adjust_pending_sets');
+      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) }))).not.toContain('edit_today');
     }
-    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('drop the weight for the last two') }))).toContain('adjust_pending_sets');
-    expect(names(gate({ kind: 'workout', benRequest: chipRequest('too_hard') }))).toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('drop the weight for the last two') }))).toContain('edit_today');
+    expect(names(gate({ kind: 'workout', benRequest: chipRequest('too_hard') }))).toContain('edit_today');
   });
 
   it('a non-structural request never unlocks structural tools (CC10)', () => {
@@ -155,17 +157,17 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     expect(memory).not.toContain('add_playbook_candidate');
     expect(names(gate({ kind: 'workout', benRequest: PLAYBOOK }))).toContain('add_playbook_candidate');
     expect(names(gate({ kind: 'workout', benRequest: PLAYBOOK }))).not.toContain('save_memory');
-    expect(memory).not.toContain('adjust_pending_sets');
+    expect(memory).not.toContain('edit_today');
     const change = names(gate({ kind: 'workout', benRequest: ASKED }));
-    expect(change).toContain('adjust_pending_sets');
+    expect(change).toContain('edit_today');
     expect(change).not.toContain('save_memory');
     expect(change).not.toContain('forget_memory');
     const difficulty = names(gate({ kind: 'workout', benRequest: DIFFICULTY }));
-    expect(difficulty).toContain('adjust_pending_sets');
+    expect(difficulty).toContain('edit_today');
     expect(difficulty).not.toContain('save_memory');
     expect(difficulty).not.toContain('forget_memory');
     const structural = names(gate({ kind: 'workout', benRequest: STRUCTURAL }));
-    expect(structural).not.toContain('adjust_pending_sets');
+    expect(structural).not.toContain('edit_today');
     expect(structural).not.toContain('save_memory');
     expect(names(gate({ kind: 'workout', benRequest: chipRequest('pain') }))).not.toContain('save_memory');
   });
@@ -175,23 +177,23 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
       const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(remark) }));
       // A memory suggestion is only a card with Save (CM2); nothing else that writes is offered.
       expect(r.tools.filter((t) => t.effect !== 'read' && t.name !== 'suggest_memory').map((t) => t.name)).toEqual([]);
-      expect(r.withheld).toContainEqual({ name: 'adjust_pending_sets', reason: 'needs_request' });
+      expect(r.withheld).toContainEqual({ name: 'edit_today', reason: 'needs_request' });
     }
-    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('remember that I train before work') }))).not.toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('remember that I train before work') }))).not.toContain('edit_today');
   });
 
-  it('a question about an offer never opens adjust_pending_sets (review r3 B1, rule 3)', () => {
+  it('a question about an offer never opens edit_today (review r3 B1, rule 3)', () => {
     for (const q of ['Why would you lower sets 3 and 4?', 'What would you change?', 'Would you lower it if you were me?', 'why would we drop the weight', 'Lower sets 3 and 4?']) {
       const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(q) }));
-      expect(r.tools.map((t) => t.name)).not.toContain('adjust_pending_sets');
-      expect(r.withheld).toContainEqual({ name: 'adjust_pending_sets', reason: 'needs_request' });
+      expect(r.tools.map((t) => t.name)).not.toContain('edit_today');
+      expect(r.withheld).toContainEqual({ name: 'edit_today', reason: 'needs_request' });
     }
     // A bare "Go ahead" opens it only through the turn engine's acceptedOffer gate.
-    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('Go ahead') }))).not.toContain('adjust_pending_sets');
-    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('Go ahead'), acceptedOffer: true }))).toContain('adjust_pending_sets');
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('Go ahead') }))).not.toContain('edit_today');
+    expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest('Go ahead'), acceptedOffer: true }))).toContain('edit_today');
   });
 
-  it('a remark never opens adjust_pending_sets (review r4 B1, rule 3)', () => {
+  it('a remark never opens edit_today (review r4 B1, rule 3)', () => {
     for (const q of [
       "It wasn't too heavy",
       'Not too heavy',
@@ -216,8 +218,8 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
       'Same weight next time',
     ]) {
       const r = buildTurnRegistry(gate({ kind: 'workout', benRequest: classifyBenRequest(q) }));
-      expect(r.tools.map((t) => t.name), q).not.toContain('adjust_pending_sets');
-      expect(r.withheld, q).toContainEqual({ name: 'adjust_pending_sets', reason: 'needs_request' });
+      expect(r.tools.map((t) => t.name), q).not.toContain('edit_today');
+      expect(r.withheld, q).toContainEqual({ name: 'edit_today', reason: 'needs_request' });
     }
     // The spec's playbook example opens the playbook queue only (review r4 S2).
     const playbook = names(gate({ kind: 'workout', benRequest: classifyBenRequest('Add a rule: never squat after deadlifts') }));
@@ -225,7 +227,7 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     expect(playbook).not.toContain('save_memory');
     // A real report or request still opens it.
     for (const q of ['Set 3 was too heavy', 'Lighter please', 'Bring it down to 95']) {
-      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) })), q).toContain('adjust_pending_sets');
+      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) })), q).toContain('edit_today');
     }
   });
 
@@ -344,7 +346,7 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
     // The registry opens both; `validateTodayAdjustment` gets `messagePain` and drops the increase
     // (tested in packages/domain coach-guardrails). This pins the gate side of that contract.
     for (const q of ['Way too easy, but my knee hurts', "Bump it up, shoulder's niggly", 'Add 5 kg to squat, my knee is sore']) {
-      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) })), q).toContain('adjust_pending_sets');
+      expect(names(gate({ kind: 'workout', benRequest: classifyBenRequest(q) })), q).toContain('edit_today');
     }
   });
 
@@ -386,8 +388,7 @@ describe('listCoachCapabilities (check 11)', () => {
         "sections": [
           {
             "rows": [
-              "Change today's remaining sets",
-              "Add an exercise to today's workout, with Undo",
+              "Change today's workout (exercises, sets and targets), with Undo",
               "Rename today's workout, with Undo",
               "Log a set you tell it ("log 100 for 8"), with Undo",
               "Correct a logged set you name ("set 2 was 95"), with Undo",
@@ -440,25 +441,25 @@ describe('parseToolCall', () => {
   const workout = buildTurnRegistry(gate({ kind: 'workout', benRequest: ASKED }));
   const args = {
     baseVersion: 7,
-    exercises: [{ sessionExerciseId: id(10), sets: [{ setId: id(13), target: { load: { value: 95, unit: 'kg', convention: 'total' }, reps: null } }], addSet: null, removeSetId: null }],
+    ops: [{ op: 'set', setId: id(13), target: { load: { value: 95, unit: 'kg', convention: 'total' }, reps: null } }],
     reason: 'Set 2 was RPE 10.',
   };
 
   it('refuses a tool that is not in this turn (Not allowed: delete_set, check 7)', () => {
     expect(parseToolCall('t1', 'delete_set', '{}', workout)).toEqual({ ok: false, error: 'not_allowed', line: 'Not allowed: delete_set' });
     const general = buildTurnRegistry(gate());
-    expect(parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(args), general)).toMatchObject({ ok: false, error: 'not_allowed' });
+    expect(parseToolCall('t1', 'edit_today', JSON.stringify(args), general)).toMatchObject({ ok: false, error: 'not_allowed' });
   });
 
   it('parses a valid call into the typed union with a replay-stable opId (check 6)', () => {
-    const a = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(args), workout);
-    const b = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify({ reason: args.reason, exercises: args.exercises, baseVersion: 7 }), workout);
+    const a = parseToolCall('t1', 'edit_today', JSON.stringify(args), workout);
+    const b = parseToolCall('t1', 'edit_today', JSON.stringify({ reason: args.reason, ops: args.ops, baseVersion: 7, benAsked: true, benQuote: 'lower it' }), workout);
     expect(a.ok && b.ok).toBe(true);
     if (!a.ok || !b.ok) return;
-    expect(a.call.tool).toBe('adjust_pending_sets');
+    expect(a.call.tool).toBe('edit_today');
     expect(a.opId).toBe(b.opId);
     expect(a.opId.length).toBeLessThanOrEqual(128);
-    expect(toolOpId('t2', 'adjust_pending_sets', a.call.args)).not.toBe(a.opId);
+    expect(toolOpId('t2', 'edit_today', a.call.args)).not.toBe(a.opId);
   });
 
   it('a same-turn repeat with the same semantic fields is a replay; a real second change gets its own opId (review r2 S3, ADR 0020 §5)', () => {
@@ -472,9 +473,9 @@ describe('parseToolCall', () => {
     if (!first.ok || !again.ok || !other.ok) throw new Error('fixture');
     expect(again.opId).toBe(first.opId);
     expect(other.opId).not.toBe(first.opId);
-    // adjust_pending_sets: an apply bumps the session version, so the same sets asked again after it is a new operation.
-    const afterApply = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify({ ...args, baseVersion: 8 }), workout);
-    const before = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(args), workout);
+    // edit_today: an apply bumps the session version, so the same sets asked again after it is a new operation.
+    const afterApply = parseToolCall('t1', 'edit_today', JSON.stringify({ ...args, baseVersion: 8 }), workout);
+    const before = parseToolCall('t1', 'edit_today', JSON.stringify(args), workout);
     if (!afterApply.ok || !before.ok) throw new Error('fixture');
     expect(afterApply.opId).not.toBe(before.opId);
   });
@@ -504,27 +505,27 @@ describe('parseToolCall', () => {
     expect(appendContentKeys(other.call)).not.toEqual(appendContentKeys(mem1.call));
   });
 
-  it('a reworded reason on adjust_pending_sets is the same operation', () => {
-    const a = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(args), workout);
-    const b = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify({ ...args, reason: 'Set 2 was a grind at RPE 10.' }), workout);
+  it('a reworded reason on edit_today is the same operation', () => {
+    const a = parseToolCall('t1', 'edit_today', JSON.stringify(args), workout);
+    const b = parseToolCall('t1', 'edit_today', JSON.stringify({ ...args, reason: 'Set 2 was a grind at RPE 10.' }), workout);
     if (!a.ok || !b.ok) throw new Error('fixture');
     expect(a.opId).toBe(b.opId);
   });
 
   it('drops smuggled fields and lists them (CC10: a programme inside another tool)', () => {
-    const smuggled = { ...args, programme: { name: '5/3/1' }, exercises: [{ ...args.exercises[0], swapTo: id(99) }] };
-    const r = parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(smuggled), workout);
+    const smuggled = { ...args, programme: { name: '5/3/1' }, ops: [{ ...args.ops[0], swapTo: id(99) }] };
+    const r = parseToolCall('t1', 'edit_today', JSON.stringify(smuggled), workout);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.dropped.sort()).toEqual(['exercises.0.swapTo', 'programme']);
+    expect(r.dropped.sort()).toEqual(['ops.0.swapTo', 'programme']);
     expect(JSON.stringify(r.call.args)).not.toMatch(/programme|swapTo/);
   });
 
   it('rejects bad JSON and bad values', () => {
-    expect(parseToolCall('t1', 'adjust_pending_sets', '{not json', workout)).toMatchObject({ ok: false, error: 'invalid_args' });
-    expect(parseToolCall('t1', 'adjust_pending_sets', JSON.stringify({ ...args, baseVersion: 0 }), workout)).toMatchObject({ ok: false, error: 'invalid_args' });
-    const noUnit = { ...args, exercises: [{ ...args.exercises[0], sets: [{ setId: id(13), target: { load: { value: 95 }, reps: null } }] }] };
-    expect(parseToolCall('t1', 'adjust_pending_sets', JSON.stringify(noUnit), workout)).toMatchObject({ ok: false, error: 'invalid_args' });
+    expect(parseToolCall('t1', 'edit_today', '{not json', workout)).toMatchObject({ ok: false, error: 'invalid_args' });
+    expect(parseToolCall('t1', 'edit_today', JSON.stringify({ ...args, baseVersion: 0 }), workout)).toMatchObject({ ok: false, error: 'invalid_args' });
+    const noUnit = { ...args, ops: [{ op: 'set', setId: id(13), target: { load: { value: 95 }, reps: null } }] };
+    expect(parseToolCall('t1', 'edit_today', JSON.stringify(noUnit), workout)).toMatchObject({ ok: false, error: 'invalid_args' });
   });
 });
 

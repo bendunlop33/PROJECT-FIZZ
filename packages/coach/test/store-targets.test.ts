@@ -2,14 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { nextSessionBases, reduceSession } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import type { SessionAggregate } from '@fizz/schemas';
+import { createEditTodayExecutor } from '../src/edit-today';
 import {
-  createAdjustExecutor,
   createNextTargetsExecutor,
   createSessionReadExecutor,
   createStoreExecutors,
   nextTargetRowId,
   nextTargetTapRecord,
-  storeTodayTargets,
   undoCoachAction,
   type CoachExecutors,
 } from '../src/executors';
@@ -24,7 +23,6 @@ import { at, call, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, w
  */
 
 const nb = (s: string): string => s.replace(/\u00a0/g, ' ');
-const BENCH_EX = id(10);
 const BENCH_ID = id(1010);
 const DB_ID = id(1020);
 
@@ -50,21 +48,27 @@ function todayExecutors(s: Store): CoachExecutors {
   return {
     ...createStoreExecutors({ store: s.repos.coach, exercises: { exerciseName: () => Promise.resolve(null) }, sessionId: SESSION }),
     get_active_session: createSessionReadExecutor({ loadSession: load, gymName: 'Main Gym' }),
-    adjust_pending_sets: createAdjustExecutor({ store: s.repos.coach, targets: storeTodayTargets(s.repos.coach), loadSession: load, painFlags: () => Promise.resolve([]), sessionPainUnspecified: false, gymName: 'Main Gym' }),
+    // Coach v3: the one tool for today's workout, through the same session-command write.
+    edit_today: createEditTodayExecutor({ store: s.repos.coach, loadSession: load, painFlags: () => Promise.resolve([]), sessionPainUnspecified: false, gymName: 'Main Gym' }),
   };
 }
 
 const lower = (baseVersion = 7) => ({
   baseVersion,
-  exercises: [{ sessionExerciseId: BENCH_EX, sets: [{ setId: id(102), target: { load: kg(95), reps: { min: 8, max: 8 } } }, { setId: id(103), target: { load: kg(95), reps: { min: 8, max: 8 } } }], addSet: null, removeSetId: null }],
+  ops: [
+    { op: 'set', setId: id(102), target: { load: kg(95), reps: { min: 8, max: 8 } } },
+    { op: 'set', setId: id(103), target: { load: kg(95), reps: { min: 8, max: 8 } } },
+  ],
   reason: 'Set 2 was RPE 10.',
+  benAsked: true,
+  benQuote: 'Drop the last two to 95',
 });
 
 describe("today's sets: the reducer command and the record in one transaction (C7)", () => {
   it('Ben asks; sets 3–4 become coach targets in SQLite; a replay changes nothing twice; Undo puts 100 back', async () => {
     const s = await store();
     await saved(s, workout());
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', lower(), 'x1'), { type: 'completed' }], [call('adjust_pending_sets', lower(), 'x2'), { type: 'completed' }], reply('That should keep you at 8.')]);
+    const model = new ScriptedCoachModel([[call('edit_today', lower(), 'x1'), { type: 'completed' }], [call('edit_today', lower(), 'x2'), { type: 'completed' }], reply('That should keep you at 8.')]);
     const r = await runCoachTurn(request({ kind: 'workout', input: words('Drop the last two to 95'), context: { session: workout(), gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, model, todayExecutors(s)));
     expect(r.cards.map((c) => nb(c.rendered.text))).toEqual(['Changed sets 3–4 to 95 kg × 8 (targets).']);
     expect(r.toolLog.map((l) => l.outcome)).toEqual(['committed', 'replayed']);
@@ -91,7 +95,7 @@ describe("today's sets: the reducer command and the record in one transaction (C
   it('rule 4: Undo after a gym change is refused as gym_changed and leaves the sets as they are (review r2 B1)', async () => {
     const s = await store();
     await saved(s, workout());
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', lower(), 'x1'), { type: 'completed' }], reply('Okay.')]);
+    const model = new ScriptedCoachModel([[call('edit_today', lower(), 'x1'), { type: 'completed' }], reply('Okay.')]);
     const r = await runCoachTurn(request({ kind: 'workout', input: words('Drop the last two to 95'), context: { session: workout(), gymName: 'Main Gym', painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, model, todayExecutors(s)));
     const after = (await s.repos.sessions.get(SESSION)) as SessionAggregate & { revision: number };
     // A gym change recorded after the coach change (the switch itself is covered in the domain tests).
@@ -108,7 +112,7 @@ describe("today's sets: the reducer command and the record in one transaction (C
   it('rule 5: the workout moved on between the read and the write; the record says stale and nothing changes', async () => {
     const s = await store();
     await saved(s, workout(8));
-    const model = new ScriptedCoachModel([[call('adjust_pending_sets', lower(7)), { type: 'completed' }], reply('Okay.')]);
+    const model = new ScriptedCoachModel([[call('edit_today', lower(7)), { type: 'completed' }], reply('Okay.')]);
     const r = await runCoachTurn(request({ kind: 'workout', input: words('Drop the last two to 95'), context: { session: workout(8), gymName: null, painFlags: [], checkIn: null, memories: [], catalogue: [] } }), ports(s, model, todayExecutors(s)));
     expect(r.cards.map((c) => c.record.status)).toEqual(['stale']);
     expect((await s.repos.sessions.get(SESSION))?.sets.find((x) => x.id === id(103))?.planned.source).toBeUndefined();
