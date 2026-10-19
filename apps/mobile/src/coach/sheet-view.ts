@@ -143,7 +143,7 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
 // ---------------------------------------------------------------------------
 // Cards (coach-sheet §2.6): status word and icon, never colour alone
 
-export type CardStatusWord = 'Applied' | 'Added' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested';
+export type CardStatusWord = 'Applied' | 'Added' | 'Saved' | 'Logged' | 'Undone' | 'Not applied' | 'Not saved' | 'Out of date' | 'Couldn’t apply' | 'Couldn’t apply here' | 'Suggested' | 'Deleted';
 
 export interface CardView {
   actionId: string;
@@ -179,7 +179,7 @@ export function exerciseProposalCardView(r: ActionRecord, state: 'open' | 'added
   if (d.kind !== 'propose_exercise' || r.status !== 'proposed') return null;
   const text = `New exercise: ${customExerciseLine(d.fields)}`;
   if (state === 'added') return { actionId: r.actionId, status: { word: 'Added', icon: 'checkmark.circle.fill' }, text, accessibilityPrefix: 'Your exercises.', canUndo: false };
-  if (state === 'deleted') return { actionId: r.actionId, status: { word: 'Undone', icon: 'arrow.uturn.backward' }, text, accessibilityPrefix: 'Your exercises.', canUndo: false };
+  if (state === 'deleted') return { actionId: r.actionId, status: { word: 'Deleted', icon: 'minus.circle' }, text, accessibilityPrefix: 'Your exercises.', canUndo: false };
   return { actionId: r.actionId, status: { word: 'Suggested', icon: 'minus.circle' }, text, accessibilityPrefix: 'Coach suggestion, not added.', canUndo: false, newExercise: { actionId: r.actionId, fields: d.fields, canAdd: true } };
 }
 

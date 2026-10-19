@@ -56,7 +56,8 @@ export function ExerciseFormScreen() {
   }, [fields.name, editing, services]);
 
   async function save() {
-    if (busy || !canSaveForm(fields)) return;
+    // Review exlist N1: Edit never falls through to a new exercise while the form hasn't loaded (or is gone).
+    if (busy || !canSaveForm(fields) || (editing !== null && version === null)) return;
     setBusy(true);
     setNotice(null);
     const f = fields;
@@ -191,7 +192,7 @@ export function ExerciseFormScreen() {
           </ChipRow>,
         )}
         {notice !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={notice} /> : null}
-        <PrimaryButton label={EXERCISE_FORM_COPY.save} onPress={() => { void save(); }} disabled={!canSaveForm(fields) || clash !== null} busy={busy} />
+        <PrimaryButton label={EXERCISE_FORM_COPY.save} onPress={() => { void save(); }} disabled={!canSaveForm(fields) || clash !== null || (editing !== null && version === null)} busy={busy} />
         {editing !== null ? (
           <Pressable accessibilityRole="none" style={{ alignItems: 'center' }}>
             <DangerTextButton label={EXERCISE_FORM_COPY.delete} onPress={confirmDelete} />
