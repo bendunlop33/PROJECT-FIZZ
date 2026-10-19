@@ -62,7 +62,7 @@ export interface BuildRequest {
    * his newest message ("45 min"). It always wins over the model's `minutes`. Absent: none.
    */
   minutesFromBen?: number | null;
-  /** (Coach v3) Bare numbers in his newest message that could be a length ("make it 40" → 40). */
+  /** (Coach v3) His newest message's revision of the length, if it is one (`lengthRevision`: "make it 40" → [40]). */
   benNumbers?: readonly number[];
   /** (Coach v3) The focus came from the Build card's chips: the model's `focus` doesn't change it. */
   focusFromChips?: boolean;
@@ -386,9 +386,29 @@ export function bareNumbers(text: string): number[] {
 }
 
 /**
+ * (Coach v3 review S2) A bare number in Ben's newest message that revises the length: the whole
+ * message is a short revision ("make it 40", "40 instead", "only 45 today", "40?") or it says
+ * "make it 40", "40 instead", "cut it to 40". A number elsewhere in a sentence ("work up to 140 on
+ * squat", "hotel room 115") is not a length. Null when there's none, or more than one number. Pure.
+ */
+export function lengthRevision(text: string): number | null {
+  const bare = bareNumbers(text);
+  if (bare.length !== 1) return null;
+  const n = String(bare[0]);
+  const t = text.toLowerCase().replace(/[’]/g, "'").replace(/[.!?,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const lead = String.raw`(?:(?:ok(?:ay)?|actually|hmm|and|but|so|can you|could you|please|just|only|let's|lets|maybe|no|yes|yeah)\s+)*`;
+  const verb = String.raw`(?:(?:make|keep) (?:it|that|this|the (?:workout|session|draft))|do|go|try|(?:cut|shorten|change|trim|drop) (?:it|that|this)(?: down)? to)?`;
+  const tail = String.raw`(?:\s+(?:instead|please|then|tops|max(?:imum)?|today|only|is fine|works))*`;
+  if (new RegExp(String.raw`^${lead}${verb}\s*(?:to\s+)?${n}${tail}$`).test(t)) return bare[0] ?? null;
+  if (new RegExp(String.raw`\b(?:(?:make|keep) (?:it|that|this|the (?:workout|session|draft))|(?:cut|shorten|change|trim|drop) (?:it|that|this)(?: down)? to) ${n}\b`).test(t)) return bare[0] ?? null;
+  if (new RegExp(String.raw`\b${n} instead\b`).test(t)) return bare[0] ?? null;
+  return null;
+}
+
+/**
  * (Coach v3, Ben 18 Oct: "make it 40") The draft's length. A length Ben stated outright wins; then
- * the model's reading, unless Ben's newest message has exactly one bare number and it isn't the
- * model's (his literal number wins); then the request's own (his earlier words, the draft, his
+ * the model's reading, unless Ben's newest message revises the length with a bare number that isn't
+ * the model's ("make it 40": his literal number wins; review S2: only a revision); then the request's own (his earlier words, the draft, his
  * usual length). Stepped to 5, 15–180. Pure.
  */
 export function buildMinutesFor(request: Pick<BuildRequest, 'minutes' | 'minutesFromBen' | 'benNumbers'>, modelMinutes: number | null | undefined): { minutes: number; by: 'ben' | 'coach' | 'request' } {

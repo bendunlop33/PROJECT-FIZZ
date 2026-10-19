@@ -53,7 +53,7 @@ import {
   OFFERED_USABLE_CAP,
   buildRequestWords,
   buildWordsNewestFirst,
-  bareNumbers,
+  lengthRevision,
   gymNamedIn,
   sameGymName,
   savedGymFor,
@@ -1141,7 +1141,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const minutesFromBen = chips?.minutes ?? parseRequestedMinutes(said);
     const executors = createBuildExecutor({
       store: coachStore(),
-      request: { text, minutes, focus, day, gymId: place.typical ? null : gym.id, gymName: place.typical ? null : gym.name, origin, minutesFromBen, benNumbers: chips === null ? bareNumbers(said) : [], focusFromChips: chips !== null && chips.focus !== 'coach_picks' },
+      request: { text, minutes, focus, day, gymId: place.typical ? null : gym.id, gymName: place.typical ? null : gym.name, origin, minutesFromBen, benNumbers: chips === null ? [lengthRevision(said)].filter((n): n is number => n !== null) : [], focusFromChips: chips !== null && chips.focus !== 'coach_picks' },
       draft,
       checkContext: checkContextAt(gym),
       gyms: savedGyms.map((x) => x.name),

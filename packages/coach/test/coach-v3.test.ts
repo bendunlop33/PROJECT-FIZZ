@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Store } from '@fizz/persistence';
 import type { SessionAggregate } from '@fizz/schemas';
 import { capAddable, ADDABLE_CAP } from '../src/add-exercise';
-import { bareNumbers, buildFocusFor, buildMinutesFor, gymNamedIn, gymNameCore, sameGymName, savedGymFor, unknownGymLine } from '../src/build';
+import { bareNumbers, buildFocusFor, lengthRevision, buildMinutesFor, gymNamedIn, gymNameCore, sameGymName, savedGymFor, unknownGymLine } from '../src/build';
 import { buildCoachContext, contextInputItems, lastLoggedSets, workoutView, type YourData } from '../src/context';
 import { createSessionReadExecutor, createStoreExecutors, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
 import { createEditTodayExecutor } from '../src/edit-today';
@@ -266,6 +266,13 @@ describe('build length, focus and gym from the model’s arguments, checked (Ben
     expect(bareNumbers('rest 90s, 100kg bench')).toEqual([]);
     expect(bareNumbers('only 45 today')).toEqual([45]);
     expect(bareNumbers('8')).toEqual([]);
+  });
+
+  it('review S2: only a revision of the length is a length; a load or a room number in a request is not', () => {
+    for (const t of ['make it 40', 'Make it 40.', '40 instead', 'only 45 today', 'ok 40', 'can you make it 40 please', 'Actually, cut it to 40', 'Shorter, make it 40 tops', '40?']) expect([t, lengthRevision(t)]).toEqual([t, t.includes('45') ? 45 : 40]);
+    for (const t of ['Leg session, I want to work up to 140 on squat', 'build me something, hotel room 115', 'hotel room 215', 'Shoulders, then 40 on the lateral raise', 'make it 40 or 50', 'push day']) expect([t, lengthRevision(t)]).toEqual([t, null]);
+    // So the model's reading stands.
+    expect(buildMinutesFor({ minutes: 60, minutesFromBen: null, benNumbers: [lengthRevision('Leg session, I want to work up to 140 on squat')].filter((n): n is number => n !== null) }, 60)).toEqual({ minutes: 60, by: 'coach' });
   });
 
   it('focus: the Build card’s chip stands; else the model’s reading; never split_day from the model', () => {
