@@ -423,6 +423,8 @@ function undoWhat(target: ActionRecord): string {
       return `version ${String(d.versionN)} of ${d.name}`;
     case 'build_question':
       return 'the question';
+    case 'build_plan':
+      return `version ${String(d.versionN)} of ${d.name}`;
   }
 }
 

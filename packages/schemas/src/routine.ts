@@ -78,6 +78,20 @@ export const RoutineExerciseSchema = z.object({
 });
 export type RoutineExercise = z.infer<typeof RoutineExerciseSchema>;
 
+/**
+ * (19 Oct, plans) A saved workout made by a coach plan's Apply: which plan, day and version. Up next
+ * and the plan tracker read it; Undo of the Apply removes the workout. Absent on every other workout.
+ */
+export const RoutinePlanLinkSchema = z.object({
+  planId: IdSchema,
+  dayIndex: z.int().min(0).max(6),
+  versionN: z.int().min(1),
+  splitDayId: z.string().min(1).max(64).nullable(),
+  /** When Apply made it: a slot not changed since takes the plan's checked loads on its first workout. */
+  atUtc: UtcTimestampSchema,
+});
+export type RoutinePlanLink = z.infer<typeof RoutinePlanLinkSchema>;
+
 export const RoutineSchema = RecordMetaSchema.extend({
   name: z.string().min(1).max(120),
   exercises: z.array(RoutineExerciseSchema).max(40),
@@ -104,6 +118,8 @@ export const RoutineSchema = RecordMetaSchema.extend({
   createdFromRoutineId: IdSchema.nullable().optional(),
   /** (12 Oct, workout-builder BD12) The coach draft it was saved from: `Based on a coach workout ›`. */
   createdFromDraft: z.object({ draftId: IdSchema, version: z.int().min(1) }).optional(),
+  /** (19 Oct) The coach plan whose Apply made it. */
+  createdFromPlan: RoutinePlanLinkSchema.optional(),
   /**
    * In Ben's rotation (D19, RT9). Absent = in it (every routine was, before
    * the library); a workout saved or made since joins only when Ben says so.

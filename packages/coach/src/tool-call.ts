@@ -60,6 +60,13 @@ export function semanticArgs(call: CoachToolCall): unknown {
       };
     case 'ask_build_question':
       return { topic: call.args.topic, question: call.args.question.trim().toLowerCase(), answers: call.args.answers };
+    case 'propose_plan':
+      // As a workout build: the message is explanation; the days, length and gym are the plan.
+      return {
+        days: call.args.days,
+        ...(call.args.minutes == null ? {} : { minutes: call.args.minutes }),
+        ...(call.args.gymName == null ? {} : { gymName: call.args.gymName.trim().toLowerCase() }),
+      };
     case 'log_set':
     case 'correct_set':
       return call.args;
@@ -134,6 +141,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'propose_next_workout_change':
     case 'propose_workout':
     case 'ask_build_question':
+    case 'propose_plan':
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':
