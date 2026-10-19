@@ -11,6 +11,7 @@ import { currentGymEquipment } from './equipment-snapshot';
 import { plannedSnapOf, snapPlanToGym } from './snap';
 import { doableHere, substituteTargets, type SubstituteContext } from './substitutes';
 import { swapSource } from './swap-plan';
+import { CARDIO_DEFAULT_S } from '../cardio';
 
 /**
  * The coach's `add_exercise_today` (12 Oct; CLAUDE.md rule 3: when Ben asks,
@@ -65,6 +66,8 @@ export interface CoachAddSummary {
   sets: number;
   target: CoachTarget;
   durationS: number | null;
+  /** Cardio (review S3): the distance target asked for; absent otherwise. */
+  distanceM?: number;
   equipmentName: string | null;
   afterName: string | null;
   supersetWithName: string | null;
@@ -103,7 +106,7 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
 
   // 2. A known exercise, measured in reps or time.
   if (exercise === null) return reject('it isn’t one of your exercises');
-  if (exercise.measurement !== 'reps' && exercise.measurement !== 'duration') return reject(`${exercise.name} is measured by distance`);
+  if (exercise.measurement === 'distance') return reject(`${exercise.name} is measured by distance`);
 
   // 3. Rule 9: a flagged movement is never added by the coach.
   const nowMs = toMs(input.at.utc);
@@ -143,11 +146,19 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
   // 7. Shape, clamped like a built workout.
   const sets = clampInt(args.workingSets, L.minWorkingSets, L.maxWorkingSets);
   if (sets !== args.workingSets) note('too_many_sets', `Sets ${String(args.workingSets)} → ${String(sets)}`);
-  const timed = exercise.measurement === 'duration';
+  const cardio = exercise.measurement === 'cardio';
+  const timed = exercise.measurement === 'duration' || cardio;
   let reps: RepRange | null = null;
   let durationS: number | null = null;
+  let distanceM: number | null = null;
   const convention = exercise.defaultLoadConvention;
-  if (timed) {
+  if (cardio) {
+    // Cardio (19 Oct): a time and, when asked, a distance; never reps or a load. A distance alone gets no time
+    // (review S3: "add a 5k row" has no time to aim for); with neither, 10 minutes.
+    distanceM = args.distanceMetres == null || args.distanceMetres <= 0 ? null : Math.round(Math.min(100_000, args.distanceMetres));
+    durationS = args.workSeconds === null && distanceM !== null ? null : clampInt(args.workSeconds ?? CARDIO_DEFAULT_S, L.minWorkS, L.maxCardioS);
+    if (args.workSeconds !== null && durationS !== args.workSeconds) note('invalid_reps', `Work ${formatDuration(args.workSeconds)} → ${formatDuration(durationS ?? 0)}`);
+  } else if (timed) {
     durationS = clampInt(args.workSeconds ?? 45, L.minWorkS, L.maxWorkS);
     if (args.workSeconds !== null && durationS !== args.workSeconds) note('invalid_reps', `Work ${formatDuration(args.workSeconds)} → ${formatDuration(durationS)}`);
   } else if (args.reps === null) {
@@ -159,7 +170,8 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
     if (!sameRange(reps, args.reps)) note('invalid_reps', `Reps ${repRangeText(args.reps)} → ${repRangeText(reps)}`);
   }
   let rpe: number | null = null;
-  if (args.targetRpe !== null) {
+  // No effort target on cardio (review N4): its time and distance are the target.
+  if (args.targetRpe !== null && !cardio) {
     rpe = clampRpe(args.targetRpe);
     if (rpe !== args.targetRpe) note('invalid_reps', `RPE ${String(args.targetRpe)} → ${String(rpe)}`);
   }
@@ -171,7 +183,8 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
   const planned = templates.map((t, i): PlannedSet => {
     const p = fromPlan[i] ?? fromPlan.at(-1);
     const base: PlannedSet = p === undefined ? { load: null, reps: t.reps, durationS: t.durationS, rpe: null, rir: null } : { ...p.planned };
-    const out: PlannedSet = { ...base, reps: t.reps, durationS: t.durationS, rpe: rpe ?? base.rpe, rir: rpe === null ? base.rir : null, source: 'coach' };
+    const out: PlannedSet = { ...base, reps: t.reps, durationS: t.durationS, ...(distanceM !== null ? { distanceM } : {}), rpe: cardio ? null : (rpe ?? base.rpe), rir: cardio || rpe !== null ? null : base.rir, source: 'coach' };
+    if (cardio && distanceM === null) delete out.distanceM;
     delete out.rpeOverride;
     delete out.coach;
     delete out.snap;
@@ -252,6 +265,7 @@ export function checkCoachAdd(input: CoachAddInput): CoachAddCheck {
       sets,
       target: { load: first?.load ?? null, reps: first?.reps ?? null, rpe: first?.rpe ?? null },
       durationS,
+      ...(distanceM !== null ? { distanceM } : {}),
       equipmentName: equipment?.name ?? null,
       afterName,
       supersetWithName,

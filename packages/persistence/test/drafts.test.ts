@@ -486,6 +486,7 @@ describe('review fixes: the template Undo keeps a newer swap (S4), rollback disc
       delete copy.removed;
       delete copy.swapped_from;
       delete copy.measures_distance;
+      delete copy.measures_cardio;
       return copy;
     });
     tables.session_sets = (tables.session_sets ?? []).map((row) => {

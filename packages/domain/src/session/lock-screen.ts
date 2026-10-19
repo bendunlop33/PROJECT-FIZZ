@@ -120,6 +120,11 @@ export function buildLockScreenContent(state: SessionAggregate | null, nowMs: nu
       const set = state.sets.find((s) => s.id === phase.setId);
       const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
       const exName = ex?.exerciseName ?? name;
+      if (ex?.measurement === 'cardio' && wi) {
+        // Cardio (19 Oct) counts up with no end: the start time, no countdown, never stale.
+        const from = clockText(startMs, tz);
+        return { ...base, state: 'working', title: exName, line1: `Since ${from}`, line2: 'Open GymSmarter to log it', countdown: null, side: '', a11y: `${exName}, since ${from}.`, staleAtMs: null };
+      }
       const target = wi ? formatDuration(wi.durationS) : '';
       return {
         ...base,

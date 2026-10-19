@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { IdSchema, LoadSchema, OperationIdSchema, RepRangeSchema, TimeZoneSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
+import { DistanceMetresSchema, IdSchema, LoadSchema, OperationIdSchema, RepRangeSchema, TimeZoneSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
 
 /**
  * The pre-start draft (ADR 0022, overview-today-edits.md): today's edits to a
@@ -42,7 +42,8 @@ const editBase = {
 };
 
 /** Today's edit limits (TE17): working sets per exercise, added exercises, reps, work time. */
-export const TODAY_EDIT_LIMITS = { minSets: 1, maxSets: 10, maxAdded: 6, minReps: 1, maxReps: 50, minWorkS: 5, maxWorkS: 600 } as const;
+/** `maxCardioS` (review cardio S1): a cardio row's time today, up to the cardio timer's cap (4 h). */
+export const TODAY_EDIT_LIMITS = { minSets: 1, maxSets: 10, maxAdded: 6, minReps: 1, maxReps: 50, minWorkS: 5, maxWorkS: 600, maxCardioS: 14_400 } as const;
 
 /** `How long?` (fit-to-time §3.2): the session length a fit aims at, in whole minutes (the wheel steps by 5). */
 export const FIT_MINUTES = { min: 15, max: 180, step: 5 } as const;
@@ -62,13 +63,18 @@ export const TodayEditSchema = z.discriminatedUnion('kind', [
   z.object({ ...editBase, kind: z.literal('add'), slotKey: IdSchema, exerciseId: IdSchema, workingSets: z.int().min(TODAY_EDIT_LIMITS.minSets).max(TODAY_EDIT_LIMITS.maxSets).optional() }),
   /** The slot's working-set count today (warm-ups follow the exercise). */
   z.object({ ...editBase, kind: z.literal('sets'), slotKey: IdSchema, workingSets: z.int().min(TODAY_EDIT_LIMITS.minSets).max(TODAY_EDIT_LIMITS.maxSets) }),
-  /** Every working set's reps (a range or exact), or work time, today: exactly one of the two. */
+  /**
+   * Every working set's reps (a range or exact), or work time, today: exactly one of the two.
+   * A cardio row's edit (review cardio S1) always carries `distanceM` (null: no distance target)
+   * and may hold a time up to `maxCardioS`, or a distance alone; any other row's has no `distanceM`.
+   */
   z.object({
     ...editBase,
     kind: z.literal('reps'),
     slotKey: IdSchema,
     reps: RepRangeSchema.nullable(),
-    durationS: z.int().min(TODAY_EDIT_LIMITS.minWorkS).max(TODAY_EDIT_LIMITS.maxWorkS).nullable(),
+    durationS: z.int().min(TODAY_EDIT_LIMITS.minWorkS).max(TODAY_EDIT_LIMITS.maxCardioS).nullable(),
+    distanceM: DistanceMetresSchema.nullable().optional(),
   }),
   /**
    * Ben's own target load today (TE13): his *intended* load, convention
@@ -93,7 +99,9 @@ export const TodayEditSchema = z.discriminatedUnion('kind', [
 ]).superRefine((e, ctx) => {
   if (e.author === 'coach' && e.actionId === undefined) ctx.addIssue({ code: 'custom', message: 'A coach edit names its action', path: ['actionId'] });
   if (e.kind !== 'reps') return;
-  if ((e.reps === null) === (e.durationS === null)) ctx.addIssue({ code: 'custom', message: 'A reps edit has reps or a work time, not both', path: ['reps'] });
+  const cardio = e.distanceM !== undefined;
+  if (cardio ? e.reps !== null || (e.durationS === null && e.distanceM === null) : (e.reps === null) === (e.durationS === null)) ctx.addIssue({ code: 'custom', message: 'A reps edit has reps or a work time, not both', path: ['reps'] });
+  if (!cardio && e.durationS !== null && e.durationS > TODAY_EDIT_LIMITS.maxWorkS) ctx.addIssue({ code: 'custom', message: 'A work time is at most 10:00', path: ['durationS'] });
   if (e.reps !== null && (e.reps.min < TODAY_EDIT_LIMITS.minReps || e.reps.max > TODAY_EDIT_LIMITS.maxReps)) ctx.addIssue({ code: 'custom', message: 'Reps are 1–50', path: ['reps'] });
 });
 export type TodayEdit = z.infer<typeof TodayEditSchema>;

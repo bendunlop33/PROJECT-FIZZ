@@ -93,8 +93,10 @@ function exerciseRow(e: SessionExercise, ordinal: number): Record<string, SqlVal
     exercise_id: e.exerciseId,
     exercise_name: e.exerciseName,
     // Schema 10: the measurement CHECK predates distance; a distance row is `reps` + `measures_distance`.
-    measurement: e.measurement === 'distance' ? 'reps' : e.measurement,
+    // Schema 20: likewise a cardio row is `duration` + `measures_cardio`.
+    measurement: e.measurement === 'distance' ? 'reps' : e.measurement === 'cardio' ? 'duration' : e.measurement,
     measures_distance: e.measurement === 'distance' ? 1 : null,
+    measures_cardio: e.measurement === 'cardio' ? 1 : null,
     laterality: e.laterality,
     equipment_id: e.equipmentId,
     load_convention: e.loadConvention,
@@ -254,7 +256,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       sessionId: e.session_id,
       exerciseId: e.exercise_id,
       exerciseName: e.exercise_name,
-      measurement: e.measures_distance === 1 ? 'distance' : e.measurement,
+      measurement: e.measures_distance === 1 ? 'distance' : e.measures_cardio === 1 ? 'cardio' : e.measurement,
       laterality: e.laterality,
       equipmentId: e.equipment_id,
       loadConvention: e.load_convention,

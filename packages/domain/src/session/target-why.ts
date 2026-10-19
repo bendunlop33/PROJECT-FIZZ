@@ -12,7 +12,7 @@ import type {
   TargetProvenance,
   ZonedTimestamp,
 } from '@fizz/schemas';
-import { dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText } from '../display';
+import { cardioValuesText, dayMonthText, formatDuration, formatNumber, loadText, NBSP, repRangeText } from '../display';
 import { comparableSetsOf, matchesEquipment, type HistorySession } from '../progression';
 import { isPainCheckDue, PAIN_AREA_WORD } from '../pain-flags';
 import { isSetCountable, notUsedLine } from '../exclusions';
@@ -151,6 +151,8 @@ function displayOrder(sets: readonly ShownSet[]): readonly ShownSet[] {
  * same load share it.
  */
 export function basisSetsText(sets: readonly ShownSet[], ex: Pick<SessionExercise, 'loadConvention' | 'measurement'>, eq: EquipmentInstance | null): string {
+  // Cardio (19 Oct): each set as logged, `20:00 · 4,800 m`; never a load.
+  if (ex.measurement === 'cardio') return displayOrder(sets).map((s) => cardioValuesText(s.values)).join(', ');
   const groups: { head: string; amounts: string[] }[] = [];
   for (const s of displayOrder(sets)) {
     const { load, reps, durationS } = s.values;

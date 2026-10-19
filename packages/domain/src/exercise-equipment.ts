@@ -15,7 +15,16 @@ import type { EquipmentInstance, Exercise } from '@fizz/schemas';
 type ExerciseEquipmentInfo = Pick<Exercise, 'defaultLoadConvention' | 'compatibleEquipment'>;
 
 export function needsNoEquipment(exercise: ExerciseEquipmentInfo): boolean {
-  return exercise.defaultLoadConvention === 'bodyweight' && exercise.compatibleEquipment.every((k) => k === 'bodyweight_station');
+  return exercise.defaultLoadConvention === 'bodyweight' && exercise.compatibleEquipment.every((k) => k === 'bodyweight_station' || k === 'erg');
+}
+
+/**
+ * A cardio machine (rower, bike, treadmill; catalogue kind `erg`). Gym
+ * profiles don't list these (they carry no load to check), so one never
+ * needs a gym item, like a bodyweight exercise (19 Oct).
+ */
+export function isMachineCardio(exercise: Pick<Exercise, 'compatibleEquipment'>): boolean {
+  return exercise.compatibleEquipment.length > 0 && exercise.compatibleEquipment.every((k) => k === 'erg');
 }
 
 /** Available gym items the exercise can be logged on; empty for bodyweight exercises. */
@@ -27,6 +36,7 @@ export function equipmentForExercise<T extends Pick<EquipmentInstance, 'kind' | 
 /** The picker row's subtitle: the matching items, or why there are none. */
 export function pickerEquipmentLabel(exercise: ExerciseEquipmentInfo, matches: readonly Pick<EquipmentInstance, 'name'>[]): string {
   if (matches.length > 0) return matches.map((e) => e.name).join(' · ');
+  if (isMachineCardio(exercise)) return 'Cardio';
   if (needsNoEquipment(exercise)) return 'Bodyweight';
   if (exercise.compatibleEquipment.length === 0) return 'No equipment needed';
   return 'Not at this gym · loads won’t be checked';

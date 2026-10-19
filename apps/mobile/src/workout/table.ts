@@ -256,7 +256,8 @@ export type RowPart = 'row' | 'marker' | 'load' | 'value';
 
 /** The field a row's value cell edits. */
 export function valueFieldOf(columns: Pick<TableColumns, 'valueLabel'>): CellField {
-  return columns.valueLabel === 'TIME' ? 'time' : columns.valueLabel === 'DIST' ? 'distance' : 'reps';
+  // Cardio's one `TIME · DIST` cell opens its time and distance together (19 Oct).
+  return columns.valueLabel === 'TIME' || columns.valueLabel === 'TIME · DIST' ? 'time' : columns.valueLabel === 'DIST' ? 'distance' : 'reps';
 }
 
 /**
@@ -369,7 +370,7 @@ export function loadCellA11y(loadLabel: string | null, cell: string | null): str
 
 /** VoiceOver for a value cell: `Reps 6 to 8`, `Time 0:45`, `Distance 20 m`, `Reps: none`. */
 export function valueCellA11y(valueLabel: TableColumns['valueLabel'], cell: string): string {
-  const word = valueLabel === 'TIME' ? 'Time' : valueLabel === 'DIST' ? 'Distance' : 'Reps';
+  const word = valueLabel === 'TIME · DIST' ? 'Time and distance' : valueLabel === 'TIME' ? 'Time' : valueLabel === 'DIST' ? 'Distance' : 'Reps';
   const text = cell.replace(/\u00a0/g, ' ').trim();
   if (text === '' || text === '—') return `${word}: none`;
   return `${word} ${text.replace(/(\d)\s*–\s*(\d)/g, '$1 to $2')}`;

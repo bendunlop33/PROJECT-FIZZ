@@ -1,5 +1,6 @@
 import type { EquipmentInstance, Exercise, Load, RepRange, SetTemplate, SetType } from '@fizz/schemas';
 import { builtInRepRange, ruleCategory } from '../default-rule';
+import { CARDIO_DEFAULT_S } from '../cardio';
 
 /**
  * Today's shape of one slot (overview-today-edits §11, TE12): Ben's working-set
@@ -12,7 +13,8 @@ import { builtInRepRange, ruleCategory } from '../default-rule';
  */
 export interface SlotShape {
   workingSets?: number;
-  reps?: { reps: RepRange | null; durationS: number | null };
+  /** `distanceM`: a cardio row's distance today (null: none); absent on any other row's edit. */
+  reps?: { reps: RepRange | null; durationS: number | null; distanceM?: number | null };
   /** Ben's intended load: the top and plain working sets (back-off and drop sets keep theirs). */
   load?: Load;
 }
@@ -22,15 +24,18 @@ export interface ShapeBefore {
   workingSets: number;
   reps: RepRange | null;
   durationS: number | null;
+  /** Cardio: the first working set's distance target; absent when it has none. */
+  distanceM?: number;
 }
 
 const isWorkingTemplate = (t: Pick<SetTemplate, 'setType'>): boolean => t.setType !== 'warmup';
 
 /** The working-set count and the first working set's reps or time. */
-export function shapeOfTemplates(templates: readonly Pick<SetTemplate, 'setType' | 'targetReps' | 'targetDurationS'>[]): ShapeBefore {
+export function shapeOfTemplates(templates: readonly Pick<SetTemplate, 'setType' | 'targetReps' | 'targetDurationS' | 'targetDistanceM'>[]): ShapeBefore {
   const working = templates.filter(isWorkingTemplate);
   const first = working[0];
-  return { workingSets: working.length, reps: first?.targetReps ?? null, durationS: first?.targetDurationS ?? null };
+  const distanceM = first?.targetDistanceM ?? null;
+  return { workingSets: working.length, reps: first?.targetReps ?? null, durationS: first?.targetDurationS ?? null, ...(distanceM !== null ? { distanceM } : {}) };
 }
 
 /**
@@ -69,7 +74,14 @@ export function shapeTemplates(
   }
   if (shape.reps !== undefined) {
     const r = shape.reps;
-    out = out.map((t) => (isWorkingTemplate(t) ? { ...t, targetReps: r.reps === null ? null : { ...r.reps }, targetDurationS: r.reps === null ? r.durationS : null } : t));
+    out = out.map((t) => {
+      if (!isWorkingTemplate(t)) return t;
+      const next: SetTemplate = { ...t, targetReps: r.reps === null ? null : { ...r.reps }, targetDurationS: r.reps === null ? r.durationS : null };
+      // Cardio (review S1): the distance today goes with the time; null clears it.
+      if (r.distanceM === null) delete next.targetDistanceM;
+      else if (r.distanceM !== undefined) next.targetDistanceM = r.distanceM;
+      return next;
+    });
   }
   if (shape.load !== undefined) {
     const load = shape.load;
@@ -97,10 +109,13 @@ export function addedSlotShape(
   equipmentKind: EquipmentInstance['kind'] | null,
 ): { workingSets: number; templates: { setType: SetType; reps: RepRange | null; durationS: number | null }[] } {
   const timed = exercise.measurement !== 'reps';
+  const cardio = exercise.measurement === 'cardio';
   const reps = timed ? null : builtInRepRange(ruleCategory(exercise, equipmentKind ?? exercise.compatibleEquipment[0] ?? null, exercise.defaultLoadConvention));
+  // Cardio (19 Oct): one 10-minute set.
+  const sets = cardio ? 1 : ADDED_WORKING_SETS;
   return {
-    workingSets: ADDED_WORKING_SETS,
-    templates: Array.from({ length: ADDED_WORKING_SETS }, () => ({ setType: 'working' as const, reps: reps === null ? null : { ...reps }, durationS: timed ? ADDED_WORK_S : null })),
+    workingSets: sets,
+    templates: Array.from({ length: sets }, () => ({ setType: 'working' as const, reps: reps === null ? null : { ...reps }, durationS: cardio ? CARDIO_DEFAULT_S : timed ? ADDED_WORK_S : null })),
   };
 }
 

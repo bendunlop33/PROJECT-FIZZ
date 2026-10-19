@@ -208,8 +208,10 @@ export const AddExerciseTodayArgsSchema = z.strictObject({
   workingSets: z.int().min(0).max(100),
   /** Rep range for a reps exercise; null = the built-in rule's range. */
   reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
-  /** Work time for a timed exercise. */
+  /** Work time for a timed or cardio exercise. */
   workSeconds: z.int().min(0).max(36_000).nullable(),
+  /** Cardio only (19 Oct): a distance to aim for, in metres; null = none. Absent on calls made before it. */
+  distanceMetres: z.number().min(0).max(100_000).nullable().optional(),
   /** Working sets' target RPE, 5–10 in half steps; null = the usual target. */
   targetRpe: z.number().min(0).max(20).nullable(),
   /** Straight after this exercise of today's workout; null = at the end. */
@@ -254,6 +256,8 @@ export const EditTodayOpSchema = z.discriminatedUnion('op', [
     workingSets: z.int().min(0).max(100),
     reps: z.strictObject({ min: z.int().min(0).max(1000), max: z.int().min(0).max(1000) }).nullable(),
     workSeconds: z.int().min(0).max(36_000).nullable(),
+    /** Cardio only (19 Oct): a distance to aim for, in metres, next to `workSeconds`; null = none. Absent on calls made before it. */
+    distanceMetres: z.number().min(0).max(100_000).nullable().optional(),
     targetRpe: z.number().min(0).max(20).nullable(),
     afterSessionExerciseId: IdSchema.nullable(),
     supersetWithSessionExerciseId: IdSchema.nullable(),
@@ -588,6 +592,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     sets: z.int().min(0).max(20),
     target: CoachTargetSchema.nullable(),
     durationS: z.int().min(0).max(36_000).nullable(),
+    /** Cardio (review S3): the distance target in metres; absent otherwise and on records made before it. */
+    distanceM: z.number().min(0).max(100_000).optional(),
     equipmentName: z.string().min(1).max(120).nullable(),
     afterName: z.string().min(1).max(120).nullable(),
     supersetWithName: z.string().min(1).max(120).nullable(),
@@ -623,6 +629,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
           sets: z.int().min(0).max(20),
           target: CoachTargetSchema.nullable(),
           durationS: z.int().min(0).max(36_000).nullable(),
+          /** Cardio (review S3): the distance target in metres; absent otherwise. */
+          distanceM: z.number().min(0).max(100_000).optional(),
           afterName: z.string().min(1).max(120).nullable(),
           supersetWithName: z.string().min(1).max(120).nullable(),
         }),

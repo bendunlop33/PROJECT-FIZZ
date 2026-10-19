@@ -11,7 +11,7 @@
   "secondaryMuscles": ["core"],
   "compatibleEquipment": ["erg"],
   "defaultLoadConvention": "bodyweight",
-  "measurement": "distance",
+  "measurement": "cardio",
   "laterality": "bilateral",
   "defaultRestS": 120,
   "provenance": { "source": "fizz", "crossCheckedWith": [], "copiedFields": [], "retrievedOn": "2026-10-09" },

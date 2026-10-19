@@ -265,6 +265,8 @@ export function muscleFrequency(
     const halvesToday = new Map<string, number>();
     const muscleHalvesToday = new Map<string, number>();
     for (const ex of s.exercises) {
+      // Cardio (19 Oct) isn't strength work: its minutes on a rower don't count as sets for any muscle.
+      if (ex.measurement === 'cardio') continue;
       const n = countRowSets(ex);
       const credits = creditsOf(ex.exerciseId);
       if (inWindow) {

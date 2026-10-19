@@ -840,6 +840,21 @@ function conventionIn(clause: string): { convention: Claim['convention']; text: 
   return { convention: 'total', text: w };
 }
 
+/**
+ * An added exercise's time and distance as a reply may say them (review cardio S3): seconds as
+ * stored, whole minutes ("20 minutes"), metres ("5,000 m", "5000 metres") and kilometres ("5 km").
+ */
+function addTimeAndDistance(f: RecordFacts, durationS: number | null, distanceM: number | undefined): void {
+  if (durationS !== null) {
+    f.numbers.add(String(durationS));
+    if (durationS % 60 === 0) f.numbers.add(String(durationS / 60));
+  }
+  if (distanceM !== undefined) {
+    f.numbers.add(formatNumber(distanceM));
+    f.numbers.add(formatNumber(distanceM / 1000));
+  }
+}
+
 function numbersIn(clause: string): { loads: Claim['loads']; bare: Claim['bareNumbers']; unverifiable: boolean } {
   const loads: Claim['loads'] = [];
   let unverifiable = false;
@@ -1097,7 +1112,7 @@ function factsOf(record: ActionRecord): RecordFacts {
         f.numbers.add(String(a.sets));
         addAfter(f, a.target);
         if (a.target?.rpe != null) f.numbers.add(formatNumber(a.target.rpe));
-        if (a.durationS !== null) f.numbers.add(String(a.durationS));
+        addTimeAndDistance(f, a.durationS, a.distanceM);
         if (f.primaryLoad === null && a.target?.load) f.primaryLoad = a.target.load;
       }
       break;
@@ -1107,7 +1122,7 @@ function factsOf(record: ActionRecord): RecordFacts {
       f.numbers.add(String(d.sets));
       addAfter(f, d.target);
       if (d.target?.rpe != null) f.numbers.add(formatNumber(d.target.rpe));
-      if (d.durationS !== null) f.numbers.add(String(d.durationS));
+      addTimeAndDistance(f, d.durationS, d.distanceM);
       if (d.target?.load) f.primaryLoad = d.target.load;
       break;
     case 'rename_workout':
@@ -1264,7 +1279,9 @@ function checkClaim(claim: Claim, ledger: TurnLedger, cited: ReadonlySet<string>
       continue;
     }
     const valueKinds: readonly ActionKind[] = ['adjust_pending_sets', 'edit_today', 'undo', 'set_next_session_targets'];
-    if (valueKinds.includes(e.record.detail.kind)) {
+    // Review cardio S3: a time or distance said about an added cardio or timed exercise must be the one added.
+    const timedAdd = e.record.detail.kind === 'add_exercise_today' && (e.record.detail.durationS !== null || e.record.detail.distanceM !== undefined) && claim.bareNumbers.length > 0;
+    if (valueKinds.includes(e.record.detail.kind) || timedAdd) {
       const nums = numbersMatch(claim, f);
       if (!nums.ok) return { keep: false, reason: 'numbers_differ', detail: nums.detail, replaceWith: e.record.actionId };
     } else if (claim.loads.length > 0 || claim.unverifiable) {

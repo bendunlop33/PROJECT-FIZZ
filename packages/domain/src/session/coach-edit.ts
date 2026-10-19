@@ -322,7 +322,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     const after = op.afterSessionExerciseId === null ? null : (placedAfter.get(op.afterSessionExerciseId) ?? op.afterSessionExerciseId);
     const check = checkCoachAdd({
       aggregate: s,
-      args: { baseVersion: input.args.baseVersion, exerciseId: op.exerciseId, workingSets: op.workingSets, reps: op.reps, workSeconds: op.workSeconds, targetRpe: op.targetRpe, afterSessionExerciseId: op.afterSessionExerciseId, supersetWithSessionExerciseId: op.supersetWithSessionExerciseId, reason: input.args.reason },
+      args: { baseVersion: input.args.baseVersion, exerciseId: op.exerciseId, workingSets: op.workingSets, reps: op.reps, workSeconds: op.workSeconds, distanceMetres: op.distanceMetres ?? null, targetRpe: op.targetRpe, afterSessionExerciseId: op.afterSessionExerciseId, supersetWithSessionExerciseId: op.supersetWithSessionExerciseId, reason: input.args.reason },
       ...got,
       opId,
       at: input.at,
@@ -338,7 +338,7 @@ export function planCoachEdit(input: CoachEditInput): CoachEditPlan {
     used.push(got.exercise);
     const sum = check.summary;
     notes.push(...check.guardNotes.map((g) => ({ ...g, text: `${sum.exerciseName}: ${g.text}`.slice(0, 300) })));
-    added.push({ exerciseName: sum.exerciseName, sets: sum.sets, target: sum.target, durationS: sum.durationS, afterName: sum.afterName, supersetWithName: sum.supersetWithName });
+    added.push({ exerciseName: sum.exerciseName, sets: sum.sets, target: sum.target, durationS: sum.durationS, ...(sum.distanceM !== undefined ? { distanceM: sum.distanceM } : {}), afterName: sum.afterName, supersetWithName: sum.supersetWithName });
     const where = sum.supersetWithName !== null ? ` · superset with ${sum.supersetWithName}` : sum.afterName !== null ? ` · after ${sum.afterName}` : '';
     lines.push({ change: 'add', text: `Added ${sum.exerciseName} · ${String(sum.sets)} ${sum.sets === 1 ? 'set' : 'sets'}${where}`.slice(0, 200) });
     names.add(sum.exerciseName);

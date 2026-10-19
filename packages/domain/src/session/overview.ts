@@ -15,7 +15,7 @@ import type {
   ZonedTimestamp,
 } from '@fizz/schemas';
 import { clockText } from '../calendar';
-import { dayMonthText, formatDuration, formatNumber, NBSP, repRangeText } from '../display';
+import { cardioValuesText, dayMonthText, formatDuration, formatNumber, NBSP, repRangeText } from '../display';
 import { buildPlateSetup, loadDirection } from '../equipment';
 import { isSetCountable } from '../exclusions';
 import { painFlagCovering, PAIN_AREA_WORD } from '../pain-flags';
@@ -488,9 +488,13 @@ export interface EditRowView {
   reps: RepRange | null;
   durationS: number | null;
   timed: boolean;
+  /** A cardio row (review cardio S1): its sheet takes a time up to 4 h and a distance. */
+  cardio: boolean;
+  /** Cardio: the first working set's distance target; null otherwise or with none. */
+  distanceM: number | null;
   repsEdited: boolean;
-  /** The RepsSheet's `Use planned` values (what the plan gives without the reps edit). */
-  plannedReps: { reps: RepRange | null; durationS: number | null };
+  /** The RepsSheet's `Use planned` values (what the plan gives without the reps edit); `distanceM` on a cardio row only. */
+  plannedReps: { reps: RepRange | null; durationS: number | null; distanceM?: number | null };
   /** `100 kg`, `30 kg each` (a target, fitted); null: no load target (`—`). */
   loadText: string | null;
   /** `—  No history`: no load target and no comparable history. */
@@ -1146,6 +1150,7 @@ export function buildWorkoutOverview(input: OverviewInput): WorkoutOverview {
       convention: ex.loadConvention,
       unit: input.key.unit,
       timed: ex.measurement !== 'reps',
+      cardio: ex.measurement === 'cardio',
     });
     // A trimmed row's stepper writes Ben's count (FT5: `[+]` takes the slot out of the fit), never a clear back to the trim.
     const editRow: EditRowView = trimmed && shapeEdit === null ? { ...editRowBase, clearsAt: null, setsDown: keepStep(editRowBase.setsDown), setsUp: keepStep(editRowBase.setsUp) } : editRowBase;
@@ -1276,13 +1281,16 @@ export function editRowView(i: {
   convention: LoadConvention;
   unit: WeightUnit;
   timed: boolean;
+  cardio?: boolean;
 }): EditRowView {
   const n = i.working.length;
   const first = i.working[0];
   const plannedCount = i.plannedShape?.workingSets ?? n;
   const reps = first?.planned.reps ?? null;
   const durationS = first?.planned.durationS ?? null;
-  const repsText = reps !== null ? `${repRangeText(reps)}${NBSP}reps` : durationS !== null ? formatDuration(durationS) : '—';
+  const cardio = i.cardio === true;
+  const distanceM = cardio ? (first?.planned.distanceM ?? null) : null;
+  const repsText = cardio ? cardioValuesText({ durationS, distanceM }) : reps !== null ? `${repRangeText(reps)}${NBSP}reps` : durationS !== null ? formatDuration(durationS) : '—';
   const loadText = i.load.none ? null : i.load.unit === null ? i.load.value : `${i.load.value}${NBSP}${i.load.unit}`;
   const bodyweight = i.convention === 'bodyweight';
   const frameUnit = i.eq !== null && i.eq.kind !== 'bodyweight_station' ? i.eq.unit : (first?.planned.load?.unit ?? i.unit);
@@ -1294,8 +1302,8 @@ export function editRowView(i: {
     i.name,
     i.edit?.kind === 'added' ? 'added' : edited ? 'edited' : null,
     `${String(n)} ${n === 1 ? 'set' : 'sets'}`,
-    reps !== null ? spokenReps(reps) : durationS !== null ? formatDuration(durationS) : null,
-    i.noHistory ? 'no history' : i.load.spoken,
+    cardio ? cardioValuesText({ durationS, distanceM }) : reps !== null ? spokenReps(reps) : durationS !== null ? formatDuration(durationS) : null,
+    cardio ? null : i.noHistory ? 'no history' : i.load.spoken,
     i.benLoad !== null ? 'your target today' : null,
   ]
     .filter((x): x is string => x !== null)
@@ -1311,8 +1319,10 @@ export function editRowView(i: {
     reps,
     durationS,
     timed: i.timed,
+    cardio,
+    distanceM,
     repsEdited: i.shapeEdit?.reps != null,
-    plannedReps: { reps: i.plannedShape?.reps ?? reps, durationS: i.plannedShape?.durationS ?? durationS },
+    plannedReps: { reps: i.plannedShape?.reps ?? reps, durationS: i.plannedShape?.durationS ?? durationS, ...(cardio ? { distanceM: i.plannedShape === null ? distanceM : (i.plannedShape.distanceM ?? null) } : {}) },
     loadText,
     noHistory: i.noHistory,
     benLoad: i.benLoad !== null,

@@ -22,6 +22,7 @@ import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, pa
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
 import { toMs } from '../time';
+import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, cardioElapsedMs, cardioHasValue, paceText, resumeCardioInterval } from '../cardio';
 import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 import { addedWeightItems, addWeightToggle, canAddWeight, isWeightedBodyweight, loadCheckEquipment, rowMarkedBodyweight } from '../added-weight';
@@ -270,6 +271,8 @@ export interface FocusView {
    * stopped) leaves the time in the field to log. Null for other sets.
    */
   workTimer: WorkTimerView | null;
+  /** Cardio: `2:05 /500 m` or `5:12 /km` from the time and distance about to be logged; null otherwise. */
+  pace: string | null;
   target: string | null;
   /** The open table row's short target, `3–6 @ 8.5` (load is in its own cell); null when none. */
   targetBrief: string | null;
@@ -339,6 +342,16 @@ export type RestView =
   | { kind: 'ended'; timerId: string; endedAtUtc: string | null; restedMs: number; skipped: boolean }
   | { kind: 'paused'; remainingMs: number };
 
+export type CardioWorkAction = { kind: 'stop_work'; label: 'Stop' } | { kind: 'resume_work'; label: 'Resume'; durationS: number };
+
+/** Cardio's secondary timer button (review S6); null for any other set and while the primary is already Stop. */
+export function cardioWorkAction(focus: Pick<FocusView, 'measurement' | 'workTimer'> | null, primary: PrimaryAction): CardioWorkAction | null {
+  if (focus === null || focus.measurement !== 'cardio') return null;
+  if (focus.workTimer?.state === 'running' && primary.kind === 'log') return { kind: 'stop_work', label: 'Stop' };
+  if (focus.workTimer?.state === 'ended' && focus.workTimer.resumable === true && (primary.kind === 'log' || primary.kind === 'enter')) return { kind: 'resume_work', label: 'Resume', durationS: CARDIO_TIMER_CAP_S };
+  return null;
+}
+
 export type PrimaryAction =
   | { kind: 'log'; label: string }
   /** A value is missing: the button focuses that field (audit F2), it never logs. */
@@ -370,6 +383,12 @@ export interface ActiveSetView {
   /** The `Still hurts?` line for the rest card, or null. */
   painReview: PainReviewPrompt | null;
   primary: PrimaryAction;
+  /**
+   * Cardio's small timer button next to the primary (review S6): `Stop` while
+   * the big button logs the time so far, `Resume` after Stop (the same timer
+   * carries on: `start_work_interval`). Null otherwise.
+   */
+  workAction: CardioWorkAction | null;
   progress: { done: number; total: number };
   /** Ordered exercises with their live set count (exercise menu, pain picker). */
   exercises: { sessionExerciseId: string; exerciseId: string; name: string; pendingSets: number; doneSets: number }[];
@@ -509,6 +528,7 @@ function missingFor(values: SetValues, ex: SessionExercise): FocusView['missing'
   if (ex.measurement === 'reps' && values.reps === null) return 'reps';
   if (ex.measurement === 'duration' && values.durationS === null) return 'time';
   if (ex.measurement === 'distance' && (values.distanceM === null || values.distanceM === undefined)) return 'distance';
+  if (ex.measurement === 'cardio' && !cardioHasValue(values)) return 'time';
   return null;
 }
 
@@ -518,12 +538,36 @@ export interface WorkTimerView {
   plannedS: number;
   /** Counting down (running/paused); null otherwise. */
   remainingMs: number | null;
-  /** `Start 0:45` / `Stop`. */
+  /** `Start 0:45` / `Stop`; a cardio set's is `Start`. */
   label: string;
+  /**
+   * Cardio (19 Oct): the timer counts up from its stored start (time so far,
+   * running or paused; null otherwise) and ✓ logs it. Absent on timed sets.
+   */
+  elapsedMs?: number | null;
+  /** Cardio: stopped short of the cap, so `Resume` carries the same timer on (review S6). Absent otherwise. */
+  resumable?: boolean;
 }
 
 /** Default work time when a timed set has no target or draft (active-workout §2.7). */
 export const DEFAULT_WORK_S = 30;
+
+/** A cardio set's count-up timer (19 Oct): `Start`, then the time so far until ✓ or Stop. */
+function cardioTimerView(state: SessionAggregate, set: WorkoutSet, nowMs: number): WorkTimerView {
+  const wi = state.workInterval?.setId === set.id ? state.workInterval : null;
+  if (wi?.status === 'running' || wi?.status === 'paused') return { state: wi.status, plannedS: wi.durationS, remainingMs: null, label: 'Stop', elapsedMs: cardioElapsedMs(wi, nowMs) };
+  if (wi?.status === 'completed' || wi?.status === 'stopped') return { state: 'ended', plannedS: CARDIO_TIMER_CAP_S, remainingMs: null, label: 'Resume', elapsedMs: cardioElapsedMs(wi, nowMs), resumable: resumeCardioInterval(wi, nowMs) !== null };
+  return { state: 'idle', plannedS: CARDIO_TIMER_CAP_S, remainingMs: null, label: 'Start', elapsedMs: null };
+}
+
+/** The time and distance fields of a set (timed, distance or cardio); null where the exercise has none. */
+function valueFields(m: SessionExercise['measurement'], durationS: number | null, distanceM: number | null): { duration: FocusView['duration']; distance: FocusView['distance'] } {
+  if (m === 'cardio') return { duration: { value: durationS, ...cardioDurationSteps(durationS) }, distance: { value: distanceM, ...cardioDistanceSteps(distanceM) } };
+  return {
+    duration: m === 'duration' ? { value: durationS, ...durationSteps(durationS) } : null,
+    distance: m === 'distance' ? { value: distanceM, ...distanceSteps(distanceM) } : null,
+  };
+}
 
 function workTimerView(state: SessionAggregate, set: WorkoutSet, values: SetValues, nowMs: number): WorkTimerView {
   // The time in the field (Ben may change it before Start), else the target, else 30 s.
@@ -609,9 +653,13 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     offProfileEquipment = { gymId: eq.gymId, equipmentId: eq.id, kind: eq.kind };
   }
 
-  const missing = missingFor(values, ex);
+  // Cardio (19 Oct): while its timer runs, ✓ logs the time on it (the reducer reads it again at the log).
+  const cardioTimer = ex.measurement === 'cardio' ? cardioTimerView(state, set, input.nowMs) : null;
+  const timedCardioS = cardioTimer?.elapsedMs != null ? Math.round(cardioTimer.elapsedMs / 1000) : null;
+  const missing = missingFor(timedCardioS === null ? values : { ...values, durationS: timedCardioS }, ex);
   const logValues: SetValues = {
     ...values,
+    ...(timedCardioS === null ? {} : { durationS: timedCardioS }),
     load: ex.loadConvention === 'added' && values.load === null ? { value: 0, unit: ex.unit, convention: 'added' } : values.load,
   };
   const labelValues = valuesText(logValues, { convention: ex.loadConvention, measurement: ex.measurement, equipment: eq, side: chosenSide });
@@ -665,11 +713,11 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     loadField,
     addWeight: addWeightOf(state, ex, eq, input.bodyweightExercises),
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
-    duration: ex.measurement === 'duration' ? { value: values.durationS, ...durationSteps(values.durationS) } : null,
-    distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
-    workTimer: ex.measurement === 'duration' ? workTimerView(state, set, values, input.nowMs) : null,
-    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral, rpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null }),
-    targetBrief: targetBrief(set.planned, targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null),
+    ...valueFields(ex.measurement, values.durationS, values.distanceM ?? null),
+    workTimer: ex.measurement === 'duration' ? workTimerView(state, set, values, input.nowMs) : cardioTimer,
+    pace: ex.measurement === 'cardio' ? paceText(logValues, ex.exerciseId) : null,
+    target: targetText(set.planned, { convention: ex.loadConvention, equipment: eq, perSide: unilateral, rpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null, measurement: ex.measurement }),
+    targetBrief: targetBrief(set.planned, targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null)?.rpe ?? null, ex.measurement),
     cells: { load: rowLoadCell(logValues.load, ex.loadConvention, eq), value: rowValueCell(logValues, ex.measurement) },
     targetEstimate: set.planned.load !== null && set.planned.provenance?.estimate === true,
     targetRpe: targetRpeOf(set, input.ruleTargetRpe?.[ex.id] ?? null),
@@ -677,7 +725,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     coachActionId: carriesTodayAdjustment(set.planned) && set.planned.coach !== undefined && coachUndoRefusal(state, set.planned.coach.actionId) === null ? set.planned.coach.actionId : null,
     adjustedBy: carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null,
     snapNote: setSnapNote(set.planned.snap, set.planned.load, { gymName: input.gymName, equipment: eq, unit: ex.unit }),
-    hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null,
+    hasExplanation: set.planned.load !== null || set.planned.reps !== null || set.planned.durationS !== null || (ex.measurement === 'cardio' && set.planned.distanceM != null),
     painFlagged: input.painFlagged.has(ex.exerciseId) || painNote !== null,
     painFlag: painNote,
     offProfileWarning,
@@ -882,6 +930,8 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
   else if (phase.kind === 'paused') primary = { kind: 'resume', label: 'Resume' };
   else if (phase.kind === 'empty') primary = { kind: 'add_exercise', label: 'Add exercise' };
   else if (focus === null) primary = isOpenEndedWorkout(state) ? { kind: 'add_exercise', label: 'Add exercise' } : { kind: 'finish', label: 'Finish workout' };
+  // Cardio while its timer runs (review S6): the big button logs the time so far with the distance typed in; Stop is the small one.
+  else if (focus.measurement === 'cardio' && focus.workTimer?.state === 'running' && focus.logLabel !== null) primary = { kind: 'log', label: focus.logLabel };
   // A timed set (§2.7): `Start 0:45` until its work timer runs, `Stop` while it runs, then `Log 0:38`.
   else if (focus.workTimer?.state === 'running' || focus.workTimer?.state === 'paused') primary = { kind: 'stop_work', label: 'Stop' };
   else if (focus.workTimer?.state === 'idle') primary = { kind: 'start_work', label: focus.workTimer.label, durationS: focus.workTimer.plannedS, logLabel: focus.logLabel };
@@ -889,6 +939,8 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     const field = focus.missing ?? 'reps';
     primary = { kind: 'enter', field, label: field === 'load' ? 'Enter load' : field === 'time' ? 'Enter time' : field === 'distance' ? 'Enter distance' : 'Enter reps' };
   } else primary = { kind: 'log', label: focus.logLabel };
+
+  const workAction = cardioWorkAction(focus, primary);
 
   const completed = liveSets.filter((s) => s.status === 'completed' && s.completedAt);
   const justSaved = buildJustSaved(state);
@@ -906,6 +958,7 @@ export function buildActiveSetView(input: ActiveViewInput): ActiveSetView {
     justSaved,
     painReview: buildPainReview(input, justSaved),
     primary,
+    workAction,
     progress: { done: completed.length, total: liveSets.length },
     exercises: exerciseEntries(state, liveSets),
     lastCompletedAtUtc: last,
@@ -1063,8 +1116,7 @@ export function buildSetEditView(state: SessionAggregate, setId: string, edits: 
     convention: conv,
     addWeight: switchable && (conv === 'added' || addedWeightItems(currentGymEquipment(state.session), ex.unit).length > 0) ? { on: conv === 'added' } : null,
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
-    duration: ex.measurement === 'duration' ? { value: values.durationS, ...durationSteps(values.durationS) } : null,
-    distance: ex.measurement === 'distance' ? { value: values.distanceM ?? null, ...distanceSteps(values.distanceM ?? null) } : null,
+    ...valueFields(ex.measurement, values.durationS, values.distanceM ?? null),
     text: valuesText(values, { convention: conv, measurement: ex.measurement, equipment: eq }),
     exclusions,
     painLine: exclusions.includes('pain') && !stored.includes('pain') ? exclusionPainLine(ex.exerciseName) : null,
@@ -1215,8 +1267,8 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
   const patch: NonNullable<PlannedSetEditView['patch']> = {};
   if (!same(load, p.load)) patch.load = load;
   if (ex.measurement === 'reps' && !same(reps, p.reps)) patch.reps = reps;
-  if (ex.measurement === 'duration' && !same(durationS, p.durationS)) patch.durationS = durationS;
-  if (ex.measurement === 'distance' && !same(distanceM, p.distanceM ?? null)) patch.distanceM = distanceM;
+  if ((ex.measurement === 'duration' || ex.measurement === 'cardio') && !same(durationS, p.durationS)) patch.durationS = durationS;
+  if ((ex.measurement === 'distance' || ex.measurement === 'cardio') && !same(distanceM, p.distanceM ?? null)) patch.distanceM = distanceM;
   if (setType !== set.setType) patch.setType = setType;
   // A type changed to a warm-up or drop clears the override in the reducer itself.
   if (working && override !== storedOverride) patch.targetRpe = override;
@@ -1239,12 +1291,11 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
         : range
           ? { range: true, min: { value: reps.min, ...boundedRepSteps(reps.min, 1, reps.max - 1) }, max: { value: reps.max, ...boundedRepSteps(reps.max, reps.min + 1, null) } }
           : { range: false, min: { value: reps?.min ?? null, ...boundedRepSteps(reps?.min ?? null, 1, null) }, max: null },
-    duration: ex.measurement === 'duration' ? { value: durationS, ...durationSteps(durationS) } : null,
-    distance: ex.measurement === 'distance' ? { value: distanceM, ...distanceSteps(distanceM) } : null,
+    ...valueFields(ex.measurement, durationS, distanceM),
     setType: { value: setType, changed: setType !== set.setType, choices: SET_TYPE_ORDER.map((t) => ({ type: t, label: SET_TYPE_WORD[t], selected: t === setType })) },
     targetRpe,
     rest: { seconds: restS, text: formatDuration(restS), ...restSteps(restS), changed: restS !== set.rest.seconds },
-    text: targetShort({ ...planned, source: undefined }, { convention: ex.loadConvention, ...(eq ? { equipment: eq } : {}) }) ?? 'No target',
+    text: (ex.measurement === 'cardio' ? targetText({ ...planned, source: undefined }, { convention: ex.loadConvention, measurement: 'cardio' }) : targetShort({ ...planned, source: undefined }, { convention: ex.loadConvention, ...(eq ? { equipment: eq } : {}) })) ?? 'No target',
     patch: changed ? patch : null,
     changed,
   };

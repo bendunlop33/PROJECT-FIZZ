@@ -994,6 +994,10 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
   if (input.measurement === 'duration') {
     return unsupported(`Time-based progression isn't supported yet, so ${input.exerciseName} targets stay as planned.`);
   }
+  if (input.measurement === 'cardio') {
+    // Cardio (19 Oct): never progressed by load or reps; next time repeats last time's time and distance.
+    return unsupported(`${input.exerciseName} isn't progressed: next time repeats your last time and distance.`);
+  }
   if (input.measurement === 'distance') {
     return unsupported(`Distance-based progression isn't supported yet, so ${input.exerciseName} targets stay as planned.`);
   }

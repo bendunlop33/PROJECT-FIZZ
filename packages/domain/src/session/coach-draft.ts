@@ -25,7 +25,7 @@ import {
   type ZonedTimestamp,
 } from '@fizz/schemas';
 import { builtInRepRange, builtInTargetRpe, ruleCategory } from '../default-rule';
-import { dayMonthText, EQUIPMENT_WORD, formatDuration, repRangeText } from '../display';
+import { cardioDistanceText, dayMonthText, EQUIPMENT_WORD, formatDuration, repRangeText } from '../display';
 import { needsNoEquipment } from '../exercise-equipment';
 import { PAIN_AREA_WORD, painFlagCovering } from '../pain-flags';
 import type { HistorySession } from '../progression';
@@ -38,6 +38,7 @@ import { substituteTargets, type SubstituteContext } from './substitutes';
 import type { SwapPlan } from './swap-plan';
 import { liveEdits, planWithTodayEdits, type TodayEditsInput, type TodayPlanOutput } from './today-edits';
 import { PACE_DEFAULT_CHANGEOVER_S, PACE_DEFAULT_SET_S } from './duration';
+import { CARDIO_DEFAULT_S } from '../cardio';
 
 /**
  * Coach-built workouts (workout-builder.md v1.0). Pure.
@@ -339,7 +340,7 @@ export function checkWorkoutProposal(args: ProposeWorkoutArgs, ctx: WorkoutPropo
       add({ kind: 'unknown', catalogueId: p.catalogueId, exerciseId: null, text: `${keyWords(p.catalogueId)} left out · not in your exercises`, leftOut: true });
       continue;
     }
-    if (exercise.measurement !== 'reps' && exercise.measurement !== 'duration') {
+    if (exercise.measurement === 'distance') {
       add({ kind: 'shape', catalogueId: p.catalogueId, exerciseId: exercise.id, text: `${exercise.name} left out · distance isn't planned here`, leftOut: true });
       continue;
     }
@@ -426,10 +427,24 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   if (p.warmups !== null && warmups !== p.warmups) note('clamped', `${ex.name} · warm-ups ${String(p.warmups)} → ${String(warmups)} (most allowed)`);
 
   // Reps or work time, as the exercise is measured.
-  const timed = ex.measurement === 'duration';
+  const cardio = ex.measurement === 'cardio';
+  const timed = ex.measurement === 'duration' || cardio;
   let reps: RepRange | null = null;
   let durationS: number | null = null;
-  if (timed) {
+  let distanceM: number | null = null;
+  if (cardio) {
+    // Cardio (19 Oct): a time and the distance asked for, if any; no warm-ups, reps, RPE or load. A distance
+    // alone gets no time (review S3: "a 5k row" has no time to aim for); with neither, 10 minutes.
+    const asked = p.workSeconds;
+    distanceM = p.distanceMetres == null || p.distanceMetres <= 0 ? null : Math.round(Math.min(100_000, p.distanceMetres));
+    if (asked === null && distanceM !== null) durationS = null;
+    else {
+      const d = clampInt(asked ?? CARDIO_DEFAULT_S, L.minWorkS, L.maxCardioS);
+      durationS = d;
+      if (asked === null) note('shape', `${ex.name} · time missing · ${formatDuration(d)} used`);
+      else if (d !== asked) note('clamped', `${ex.name} · time ${formatDuration(asked)} → ${formatDuration(d)}`);
+    }
+  } else if (timed) {
     const asked = p.workSeconds;
     durationS = clampInt(asked ?? 45, L.minWorkS, L.maxWorkS);
     if (asked === null) note('shape', `${ex.name} · work time missing · ${formatDuration(durationS)} used`);
@@ -447,7 +462,9 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   // Target RPE on every working set (BD7): the coach's, else the rule's.
   const ruleRpe = ruleRpeFor(ex);
   let rpe: number;
-  if (p.targetRpe === null) {
+  if (cardio) {
+    rpe = ruleRpe;
+  } else if (p.targetRpe === null) {
     rpe = ruleRpe;
     note('rpe_missing', `${ex.name} · RPE missing · ${String(rpe)} used`);
   } else {
@@ -485,6 +502,10 @@ function shapeOf(p: ProposedExercise, ex: Exercise, ctx: WorkoutProposalContext,
   };
 
   const templates: DraftSetTemplate[] = [];
+  if (cardio) {
+    for (let i = 0; i < working; i += 1) templates.push({ setType: 'working', reps: null, durationS, ...(distanceM !== null ? { distanceM } : {}), targetRpe: null, restS });
+    return { exerciseId: ex.id, catalogueId: ex.catalogueKey ?? p.catalogueId, setTemplates: templates };
+  }
   for (let i = 0; i < warmups; i += 1) templates.push({ setType: 'warmup', reps: timed ? null : { min: 5, max: 5 }, durationS: timed ? (durationS ?? 45) : null, targetRpe: null, restS });
   if (p.topSet !== null && timed) note('shape', `${ex.name} · top set left out (timed)`);
   if (p.topSet !== null && !timed) {
@@ -598,6 +619,7 @@ function templateOf(slotKey: string, i: number, t: DraftSetTemplate): SetTemplat
     targetLoad: null,
     targetReps: t.reps,
     targetDurationS: t.durationS,
+    ...(t.distanceM != null ? { targetDistanceM: t.distanceM } : {}),
     targetRpe: t.targetRpe,
     targetRir: null,
     restOverrideS: t.restS,
@@ -790,6 +812,8 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
       continue;
     }
     if (re?.kind === 'rule') ruleNotes.set(s.slotKey, re.notes);
+    // Cardio: the build's own time and distance stand (no load to plan, never last time's over what was asked).
+    if (exercise.measurement === 'cardio') continue;
     const slot = { workingSets: draftWorkingSets(s), templates: s.setTemplates.map((t) => ({ setType: t.setType, reps: t.reps, durationS: t.durationS })) };
     const plan = substituteTargets(slot, exercise, history, input.substitute);
     if (!targets.has(s.exerciseId)) targets.set(s.exerciseId, plan);
@@ -918,7 +942,7 @@ export function diffDraftVersions(a: DraftPlan, b: DraftPlan): DraftDiff {
 export function draftSchemeText(s: DraftSlot): string {
   const n = draftWorkingSets(s);
   const t = s.setTemplates.find((x) => x.setType !== 'warmup');
-  const what = t === undefined ? '' : t.reps !== null ? repRangeText(t.reps) : formatDuration(t.durationS ?? 0);
+  const what = t === undefined ? '' : t.reps !== null ? repRangeText(t.reps) : t.durationS === null && t.distanceM != null ? cardioDistanceText(t.distanceM) : formatDuration(t.durationS ?? 0);
   return `${String(n)} × ${what}`;
 }
 

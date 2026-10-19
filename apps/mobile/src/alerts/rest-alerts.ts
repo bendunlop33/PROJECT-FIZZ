@@ -58,6 +58,8 @@ export function planRestAlert(state: SessionAggregate | null, nowMs: number): Pl
     if (fireAtMs <= nowMs) return null;
     const set = state.sets.find((x) => x.id === wi.setId);
     const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
+    // A cardio timer counts up with no end to announce (19 Oct): no alert.
+    if (ex?.measurement === 'cardio') return null;
     return {
       identifier: restAlertIdentifier(state.session.id),
       key: `work:${wi.setId}:${wi.deadlineUtc}`,

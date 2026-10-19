@@ -88,7 +88,8 @@ export type TodayEditBody =
   /** §11: an exercise added at the end; `slotKey` is the new row's own key. */
   | { kind: 'add'; slotKey: string; exerciseId: string; workingSets?: number }
   | { kind: 'sets'; slotKey: string; workingSets: number }
-  | { kind: 'reps'; slotKey: string; reps: RepRange | null; durationS: number | null }
+  /** `distanceM` (review cardio S1): present on a cardio row's edit only (null: no distance target). */
+  | { kind: 'reps'; slotKey: string; reps: RepRange | null; durationS: number | null; distanceM?: number | null }
   /** `exerciseId`: set by `applyDraftCommand` to the slot's exercise when the load is typed (review B1); a caller's value is ignored. */
   | { kind: 'load'; slotKey: string; load: Load; exerciseId?: string }
   /** Fit to time (fit-to-time FT4): Ben's `Trim to 45 min`. `null`: no fit today (a coach draft's `Clear fit`, workout-builder BD11). */
@@ -213,6 +214,12 @@ function inRange(e: TodayEditBody): boolean {
     case 'sets':
       return Number.isInteger(e.workingSets) && e.workingSets >= L.minSets && e.workingSets <= L.maxSets;
     case 'reps':
+      if (e.distanceM !== undefined) {
+        // Cardio: a time up to the cardio cap, a distance, or both; never reps.
+        if (e.reps !== null || (e.durationS === null && e.distanceM === null)) return false;
+        if (e.distanceM !== null && !(Number.isFinite(e.distanceM) && e.distanceM >= 0 && e.distanceM <= 100_000)) return false;
+        return e.durationS === null || (Number.isInteger(e.durationS) && e.durationS >= L.minWorkS && e.durationS <= L.maxCardioS);
+      }
       if ((e.reps === null) === (e.durationS === null)) return false;
       if (e.reps !== null) return Number.isInteger(e.reps.min) && Number.isInteger(e.reps.max) && e.reps.min >= L.minReps && e.reps.max <= L.maxReps && e.reps.min <= e.reps.max;
       return e.durationS !== null && Number.isInteger(e.durationS) && e.durationS >= L.minWorkS && e.durationS <= L.maxWorkS;
@@ -238,7 +245,7 @@ function fitCompanions(live: readonly TodayEdit[], fit: TodayEdit): TodayEdit[] 
 /** Two §11 edits on one slot ask for the same thing. */
 function sameShapeValue(a: TodayEdit, b: TodayEditBody): boolean {
   if (a.kind === 'sets' && b.kind === 'sets') return a.workingSets === b.workingSets;
-  if (a.kind === 'reps' && b.kind === 'reps') return a.durationS === b.durationS && (a.reps === null || b.reps === null ? a.reps === b.reps : a.reps.min === b.reps.min && a.reps.max === b.reps.max);
+  if (a.kind === 'reps' && b.kind === 'reps') return a.durationS === b.durationS && (a.distanceM ?? null) === (b.distanceM ?? null) && (a.reps === null || b.reps === null ? a.reps === b.reps : a.reps.min === b.reps.min && a.reps.max === b.reps.max);
   if (a.kind === 'load' && b.kind === 'load') return a.load.value === b.load.value && a.load.unit === b.load.unit && a.load.convention === b.load.convention;
   return false;
 }
@@ -595,7 +602,7 @@ function bodyOf(e: TodayEdit): TodayEditBody {
     case 'sets':
       return { kind: 'sets', slotKey: e.slotKey, workingSets: e.workingSets };
     case 'reps':
-      return { kind: 'reps', slotKey: e.slotKey, reps: e.reps === null ? null : { ...e.reps }, durationS: e.durationS };
+      return { kind: 'reps', slotKey: e.slotKey, reps: e.reps === null ? null : { ...e.reps }, durationS: e.durationS, ...(e.distanceM !== undefined ? { distanceM: e.distanceM } : {}) };
     case 'load':
       return { kind: 'load', slotKey: e.slotKey, load: { ...e.load }, ...stampOf(e.exerciseId ?? null) };
   }
@@ -627,7 +634,7 @@ function withBase(body: TodayEditBody, base: EditBase, by: Authorship = {}): Tod
     case 'sets':
       return { ...base, ...who, kind: 'sets', slotKey: body.slotKey, workingSets: body.workingSets };
     case 'reps':
-      return { ...base, ...who, kind: 'reps', slotKey: body.slotKey, reps: body.reps === null ? null : { ...body.reps }, durationS: body.durationS };
+      return { ...base, ...who, kind: 'reps', slotKey: body.slotKey, reps: body.reps === null ? null : { ...body.reps }, durationS: body.durationS, ...(body.distanceM !== undefined ? { distanceM: body.distanceM } : {}) };
     case 'load':
       return { ...base, ...who, kind: 'load', slotKey: body.slotKey, load: { ...body.load }, ...(body.exerciseId !== undefined ? { exerciseId: body.exerciseId } : {}) };
   }
@@ -693,7 +700,7 @@ export interface ResolvedEdits {
   added: Map<string, { editId: string; exerciseId: string; workingSets?: number }>;
   /** §11: each slot's working-set count, reps or work time, and Ben's load today. */
   sets: Map<string, { editId: string; workingSets: number }>;
-  reps: Map<string, { editId: string; reps: RepRange | null; durationS: number | null }>;
+  reps: Map<string, { editId: string; reps: RepRange | null; durationS: number | null; distanceM?: number | null }>;
   /** Ben's load on a slot while it holds the exercise the load was typed for (`exerciseId`, review B1). */
   loads: Map<string, { editId: string; load: Load; exerciseId: string | null }>;
   /** The live fit (fit-to-time FT4): Ben's built-in trim, or the coach's fit (`actionId`). Null: none. */
@@ -804,7 +811,7 @@ export function resolveTodayEdits(slots: readonly TodaySlot[], edits: readonly T
     if (result === 'applied' && e.kind === 'load' && loadExerciseOf(e, baseOf) !== nowOf(e.slotKey)) continue;
     if (result === 'applied') {
       if (e.kind === 'sets') out.sets.set(e.slotKey, { editId: e.editId, workingSets: e.workingSets });
-      else if (e.kind === 'reps') out.reps.set(e.slotKey, { editId: e.editId, reps: e.reps, durationS: e.durationS });
+      else if (e.kind === 'reps') out.reps.set(e.slotKey, { editId: e.editId, reps: e.reps, durationS: e.durationS, ...(e.distanceM !== undefined ? { distanceM: e.distanceM } : {}) });
       else out.loads.set(e.slotKey, { editId: e.editId, load: e.load, exerciseId: loadExerciseOf(e, baseOf) });
     }
     out.outcomes.push({ editId: e.editId, kind: e.kind, result });
@@ -821,7 +828,7 @@ export function shapesOf(r: Pick<ResolvedEdits, 'sets' | 'reps' | 'loads'>): Map
     return cur;
   };
   for (const [k, v] of r.sets) at(k).workingSets = v.workingSets;
-  for (const [k, v] of r.reps) at(k).reps = { reps: v.reps, durationS: v.durationS };
+  for (const [k, v] of r.reps) at(k).reps = { reps: v.reps, durationS: v.durationS, ...(v.distanceM !== undefined ? { distanceM: v.distanceM } : {}) };
   for (const [k, v] of r.loads) at(k).load = v.load;
   return out;
 }

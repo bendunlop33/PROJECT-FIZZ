@@ -151,7 +151,7 @@ export function editorSlotIssue(refused: boolean): { text: string; actions: stri
  * exercise shows disabled with `Can’t save distance yet`, as on the
  * Library's Add sheet (exercise-library EL-B13, review library-browse r2 S1).
  */
-export function editorAddRow(x: { measurement: 'reps' | 'duration' | 'distance' }): { disabled: boolean; subtitle: string | null } {
+export function editorAddRow(x: { measurement: 'reps' | 'duration' | 'distance' | 'cardio' }): { disabled: boolean; subtitle: string | null } {
   return x.measurement === 'distance' ? { disabled: true, subtitle: NO_DISTANCE_IN_WORKOUTS } : { disabled: false, subtitle: null };
 }
 

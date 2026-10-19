@@ -119,6 +119,8 @@ export interface RoutineFromSessionInput {
  * out and listed, never saved as reps or as a timed set.
  */
 export function isDistanceSet(ex: { measurement: string }, values: { distanceM?: number | null | undefined }): boolean {
+  // Cardio (19 Oct) saves its distance as the template's `targetDistanceM`, next to the time.
+  if (ex.measurement === 'cardio') return false;
   return ex.measurement === 'distance' || (values.distanceM !== undefined && values.distanceM !== null);
 }
 
@@ -184,7 +186,8 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
     const restBySetType: Partial<Record<SetType, RestSetting>> = {};
     for (const s of done) {
       const a = s.actual;
-      if (a === null || (a.reps === null && a.durationS === null) || isDistanceSet(sx, a)) continue;
+      const cardioDistance = sx.measurement === 'cardio' ? (a?.distanceM ?? null) : null;
+      if (a === null || (a.reps === null && a.durationS === null && cardioDistance === null) || isDistanceSet(sx, a)) continue;
       const reps = a.reps === null ? null : (s.planned.reps && a.reps >= s.planned.reps.min && a.reps <= s.planned.reps.max ? { ...s.planned.reps } : { min: a.reps, max: a.reps });
       templates.push({
         id: input.newId(),
@@ -192,6 +195,7 @@ export function routineFromSession(input: RoutineFromSessionInput): Routine | nu
         targetLoad: keepLoads ? a.load : null,
         targetReps: reps,
         targetDurationS: reps === null ? a.durationS : null,
+        ...(cardioDistance !== null ? { targetDistanceM: cardioDistance } : {}),
         targetRpe: null,
         targetRir: null,
         restOverrideS: null,
@@ -428,12 +432,16 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
     const planned = input.slotTargets?.get(rex.id) ?? ((slots.get(rex.exerciseId) ?? 0) > 1 ? undefined : input.targets?.get(rex.exerciseId));
     const useTargets = planned !== undefined && planned.length > 0;
     if (useTargets) targeted.add(rex.exerciseId);
+    // Cardio (review B1): last time's time and distance on the routine's sets; never the load path.
+    const cardio = input.exercises.get(rex.exerciseId)?.measurement === 'cardio';
     // A row swapped today (another exercise) doesn't take the plan's loads.
     const firstOf = useTargets ? undefined : input.firstLoads?.get(rex.id);
-    const first = firstOf !== undefined && firstOf.exerciseId === rex.exerciseId ? firstOf.sets : undefined;
+    const first = firstOf !== undefined && firstOf.exerciseId === rex.exerciseId && !cardio ? firstOf.sets : undefined;
     if (first !== undefined && first.some((p) => p !== null)) targeted.add(rex.exerciseId);
     const targetedTemplates: SetTemplate[] = useTargets
-      ? routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc })
+      ? cardio
+        ? cardioTemplatesWithTargets(rex.setTemplates, planned, { newId: input.newId, ruleOf })
+        : routineTemplatesWithTargets(rex.setTemplates, planned, { legacy, newId: input.newId, ruleOf, editedAtUtc: rex.structureChangedAtUtc })
       : first !== undefined
         ? withFirstLoads(rex.setTemplates, first, input.newId, ruleOf)
         : rex.setTemplates;
@@ -451,7 +459,7 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
             },
             ownLoad: (id) => ruleOf.delete(id),
           });
-    const templates = source.filter((t) => t.targetReps !== null || t.targetDurationS !== null);
+    const templates = source.filter((t) => t.targetReps !== null || t.targetDurationS !== null || (cardio && t.targetDistanceM != null));
     if (templates.length === 0) continue;
     // The routine's own item and unfitted loads: the shared fit does the mapping and fitting (S1, ADR 0019).
     resolved.push({ ...rex, order: resolved.length, setTemplates: templates });
@@ -501,8 +509,9 @@ export function planRoutineStart(input: RoutineStartInput): RoutineStartOutput {
       const templateId = out.setTemplateIds[s.id];
       if (exId === undefined || !targeted.has(exId) || s.setType === 'warmup' || templateId === undefined || !ruleOf.has(templateId)) return s;
       // A coach target for next time (D21) keeps its source and its own `Why?`.
-      const fromCoach = ruleOf.get(templateId)?.source === 'coach';
-      const plannedSet: PlannedSet = { ...s.planned, source: fromCoach ? 'coach' : 'built_in_rule' };
+      const ruleSource = ruleOf.get(templateId)?.source;
+      // Cardio's last time (review B1) says so: a repeat, never the rule's progression.
+      const plannedSet: PlannedSet = { ...s.planned, source: ruleSource === 'coach' ? 'coach' : ruleSource === 'repeat' ? 'repeat' : 'built_in_rule' };
       const provenance = ruleProvenance(s.id);
       if (provenance === null) delete plannedSet.provenance;
       else plannedSet.provenance = provenance;
@@ -640,6 +649,30 @@ export function withoutTodayOnlySets(
 }
 
 /** A routine from before the library: the targets are the working sets (a stored load can't be told from a pin, so none is kept). */
+/**
+ * A cardio slot's templates with next time's time and distance (review B1,
+ * `cardioRepeatTargets`): the routine's set count and set types; each working
+ * set takes the target in its place (the last one past the end). Warm-ups
+ * and sets with nothing to take stay as they are. Pure.
+ */
+export function cardioTemplatesWithTargets(templates: readonly SetTemplate[], planned: readonly NextTargetEntry[], o: { newId: () => string; ruleOf: Map<string, PlannedSet> }): SetTemplate[] {
+  const work = planned.filter((p) => p.setType !== 'warmup' && (p.planned.durationS !== null || p.planned.distanceM != null));
+  let k = 0;
+  return templates.map((t) => {
+    if (t.setType === 'warmup') return t;
+    const target = work[k] ?? work[work.length - 1];
+    k += 1;
+    if (target === undefined) return t;
+    const id = o.newId();
+    o.ruleOf.set(id, target.planned);
+    const distanceM = target.planned.distanceM ?? null;
+    const next: SetTemplate = { ...t, id, targetLoad: null, targetReps: null, targetDurationS: target.planned.durationS, targetRpe: null, targetRir: null };
+    if (distanceM === null) delete next.targetDistanceM;
+    else next.targetDistanceM = distanceM;
+    return next;
+  });
+}
+
 function legacyTemplates(templates: readonly SetTemplate[], planned: readonly NextTargetEntry[], o: { newId: () => string; ruleOf: Map<string, PlannedSet> }): SetTemplate[] {
   return [
     ...templates.filter((t) => t.setType === 'warmup'),
@@ -652,6 +685,7 @@ function legacyTemplates(templates: readonly SetTemplate[], planned: readonly Ne
         targetLoad: p.planned.load,
         targetReps: p.planned.reps,
         targetDurationS: p.planned.durationS,
+        ...(p.planned.distanceM != null ? { targetDistanceM: p.planned.distanceM } : {}),
         targetRpe: p.planned.rpe,
         targetRir: p.planned.rir,
         restOverrideS: null,

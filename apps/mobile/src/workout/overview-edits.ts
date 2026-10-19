@@ -1,4 +1,4 @@
-import type { OverviewGroup, OverviewRow, StepTarget, SubstituteRow, WorkoutOverview } from '@fizz/domain';
+import { CARDIO_TIMER_CAP_S, cardioDistanceSteps, cardioDurationSteps, type OverviewGroup, type OverviewRow, type StepTarget, type SubstituteRow, type WorkoutOverview } from '@fizz/domain';
 
 /**
  * Screen-side rules for today's edits on the Workout overview
@@ -439,10 +439,12 @@ export function defaultChecked(lines: readonly { key: string; checked: boolean }
 
 export const REPS_LIMITS = { min: 1, max: 50, minWorkS: 5, maxWorkS: 600, workStepS: 5 } as const;
 
-export type RepsDraft = { kind: 'reps'; exact: boolean; min: number; max: number } | { kind: 'time'; seconds: number };
+/** `cardio` (review cardio S1): a time up to 4 h, stepping a minute, and a distance in metres; either may be empty, not both. */
+export type RepsDraft = { kind: 'reps'; exact: boolean; min: number; max: number } | { kind: 'time'; seconds: number } | { kind: 'cardio'; seconds: number | null; distanceM: number | null };
 
-/** The sheet as it opens: the row's reps (or work time) today. */
-export function repsDraftOf(row: Pick<OverviewRow['editRow'], 'reps' | 'durationS' | 'timed'>): RepsDraft {
+/** The sheet as it opens: the row's reps (or work time; time and distance for cardio) today. */
+export function repsDraftOf(row: Pick<OverviewRow['editRow'], 'reps' | 'durationS' | 'timed'> & Partial<Pick<OverviewRow['editRow'], 'cardio' | 'distanceM'>>): RepsDraft {
+  if (row.cardio === true) return { kind: 'cardio', seconds: row.durationS, distanceM: row.distanceM ?? null };
   if (row.timed || (row.reps === null && row.durationS !== null)) return { kind: 'time', seconds: row.durationS ?? 45 };
   const r = row.reps ?? { min: 8, max: 12 };
   return { kind: 'reps', exact: r.min === r.max, min: r.min, max: r.max };
@@ -452,8 +454,9 @@ type Step = StepTarget;
 const step = (to: number, lo: number, hi: number, label: (n: number) => string): Step => (to < lo || to > hi ? { enabled: false, reason: to < lo ? `Min ${label(lo)}` : `Max ${label(hi)}` } : { enabled: true, value: to, label: label(to) });
 
 /** The sheet's steppers: ±1 rep within 1–50 (`To` never under `From`); ±5 s within 0:05–10:00. */
-export function repsSteps(d: RepsDraft): { from?: { down: Step; up: Step }; to?: { down: Step; up: Step }; time?: { down: Step; up: Step } } {
+export function repsSteps(d: RepsDraft): { from?: { down: Step; up: Step }; to?: { down: Step; up: Step }; time?: { down: Step; up: Step }; distance?: { down: Step; up: Step } } {
   const n = (x: number) => String(x);
+  if (d.kind === 'cardio') return { time: cardioDurationSteps(d.seconds), distance: cardioDistanceSteps(d.distanceM) };
   if (d.kind === 'time') {
     const s = (x: number) => `${String(x)} s`;
     return { time: { down: step(d.seconds - REPS_LIMITS.workStepS, REPS_LIMITS.minWorkS, REPS_LIMITS.maxWorkS, s), up: step(d.seconds + REPS_LIMITS.workStepS, REPS_LIMITS.minWorkS, REPS_LIMITS.maxWorkS, s) } };
@@ -465,6 +468,7 @@ export function repsSteps(d: RepsDraft): { from?: { down: Step; up: Step }; to?:
 /** A typed or stepped value, kept inside the limits (and `To` ≥ `From`). */
 export function repsDraftWith(d: RepsDraft, field: 'from' | 'to' | 'time' | 'exact' | 'range', value = 0): RepsDraft {
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(Number.isFinite(x) ? x : lo)));
+  if (d.kind === 'cardio') return field === 'time' ? cardioDraftWith(d, 'time', value) : d;
   if (d.kind === 'time') return field === 'time' ? { kind: 'time', seconds: clamp(value, REPS_LIMITS.minWorkS, REPS_LIMITS.maxWorkS) } : d;
   if (field === 'exact') return { ...d, exact: true, max: d.min };
   if (field === 'range') return { ...d, exact: false, max: Math.min(REPS_LIMITS.max, Math.max(d.max, d.min + 2)) };
@@ -476,8 +480,28 @@ export function repsDraftWith(d: RepsDraft, field: 'from' | 'to' | 'time' | 'exa
   return d;
 }
 
-/** `Done` (§11.4): one `reps` edit, or a clear when the sheet is back at the plan's own. */
-export function repsPayload(d: RepsDraft, planned: OverviewRow['editRow']['plannedReps']): { kind: 'clear' } | { kind: 'reps'; reps: { min: number; max: number } | null; durationS: number | null } {
+/**
+ * A cardio draft's time or distance, typed or stepped (review cardio S1):
+ * time in whole seconds between 0:05 and 4:00:00, distance in metres from 0
+ * to 100 km; empty (null) or 0 is no value. Never clamped silently past the
+ * cap: a time above it stays at the cap, which the field shows.
+ */
+export function cardioDraftWith(d: Extract<RepsDraft, { kind: 'cardio' }>, field: 'time' | 'distance', value: number | null): RepsDraft {
+  const v = value === null || !Number.isFinite(value) || value <= 0 ? null : value;
+  if (field === 'time') return { ...d, seconds: v === null ? null : Math.max(REPS_LIMITS.minWorkS, Math.min(CARDIO_TIMER_CAP_S, Math.round(v))) };
+  return { ...d, distanceM: v === null ? null : Math.min(100_000, Math.round(v * 10) / 10) };
+}
+
+/** `Done` is offered: a cardio draft needs a time or a distance; every other draft is always whole. */
+export function repsDraftValid(d: RepsDraft): boolean {
+  return d.kind !== 'cardio' || d.seconds !== null || d.distanceM !== null;
+}
+
+export type RepsPayload = { kind: 'clear' } | { kind: 'reps'; reps: { min: number; max: number } | null; durationS: number | null; distanceM?: number | null };
+
+/** `Done` (§11.4): one `reps` edit, or a clear when the sheet is back at the plan's own. A cardio edit always carries its distance (null: none). */
+export function repsPayload(d: RepsDraft, planned: OverviewRow['editRow']['plannedReps']): RepsPayload {
+  if (d.kind === 'cardio') return planned.reps === null && planned.durationS === d.seconds && (planned.distanceM ?? null) === d.distanceM ? { kind: 'clear' } : { kind: 'reps', reps: null, durationS: d.seconds, distanceM: d.distanceM };
   if (d.kind === 'time') return planned.reps === null && planned.durationS === d.seconds ? { kind: 'clear' } : { kind: 'reps', reps: null, durationS: d.seconds };
   const same = planned.reps !== null && planned.reps.min === d.min && planned.reps.max === d.max;
   return same ? { kind: 'clear' } : { kind: 'reps', reps: { min: d.min, max: d.max }, durationS: null };

@@ -22,8 +22,10 @@ export interface AddShape {
   warmups?: number;
   /** Ben's reps for every working set (the Add sheet's `Reps`); absent = keep the plan's. */
   reps?: RepRange;
-  /** Ben's work time for a timed exercise; absent = keep the plan's. */
-  durationS?: number;
+  /** Ben's work time for a timed exercise; absent = keep the plan's. Null (cardio with a distance only): no time target. */
+  durationS?: number | null;
+  /** Cardio (review cardio S1): Ben's distance target in metres; null = none; absent = keep the plan's. */
+  distanceM?: number | null;
   /** Ben's target effort for the working sets (`Target RPE` / `RIR`); absent = keep the plan's, null = none. */
   effort?: { scale: 'rpe' | 'rir'; value: number | null };
 }
@@ -60,7 +62,13 @@ export function shapeAddPlan(plan: readonly PlannedEntry[] | null, shape: AddSha
     if (p.setType !== 'working') return p;
     let planned = p.planned;
     if (shape.reps !== undefined && planned.durationS === null) planned = { ...planned, reps: { ...shape.reps } };
-    if (shape.durationS !== undefined && planned.reps === null) planned = { ...planned, durationS: Math.max(1, Math.round(shape.durationS)) };
+    if (shape.durationS !== undefined && planned.reps === null) planned = { ...planned, durationS: shape.durationS === null ? null : Math.max(1, Math.round(shape.durationS)) };
+    if (shape.distanceM !== undefined && planned.reps === null) {
+      const next: PlannedSet = { ...planned };
+      if (shape.distanceM === null) delete next.distanceM;
+      else next.distanceM = shape.distanceM;
+      planned = next;
+    }
     if (shape.effort !== undefined) planned = shape.effort.scale === 'rpe' ? { ...planned, rpe: shape.effort.value, rir: null } : { ...planned, rir: shape.effort.value, rpe: null };
     return { setType: p.setType, planned };
   });

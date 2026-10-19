@@ -23,7 +23,7 @@ import { inRange, type DateRange } from './window';
  *   series' convention and unit is left out of the series' numbers.
  */
 
-export type ExerciseMetric = 'e1rm' | 'top_set' | 'volume' | 'best_set' | 'longest_hold' | 'total_distance' | 'best_distance';
+export type ExerciseMetric = 'e1rm' | 'top_set' | 'volume' | 'best_set' | 'longest_hold' | 'total_distance' | 'best_distance' | 'total_time';
 export type TrendRange = '3m' | '6m' | '1y' | 'all';
 export const TREND_RANGES: readonly TrendRange[] = ['3m', '6m', '1y', 'all'];
 export const DEFAULT_TREND_RANGE: TrendRange = '6m';
@@ -43,9 +43,10 @@ export const DEFAULT_SERIES_DAYS = 84;
  * top set and volume; `assisted` (less is better) and `added_bodyweight`
  * (`BW + 10 kg`) have a top set; `bodyweight` has the best set in reps;
  * `timed` the longest hold; `distance` (sled push, carries) total distance and
- * the longest set, never an Est. 1RM.
+ * the longest set, never an Est. 1RM; `cardio` (rower, bike; 19 Oct) total
+ * distance, the longest set and total time, never load, reps or volume.
  */
-export type SeriesKind = 'load' | 'assisted' | 'added_bodyweight' | 'bodyweight' | 'timed' | 'distance';
+export type SeriesKind = 'load' | 'assisted' | 'added_bodyweight' | 'bodyweight' | 'timed' | 'distance' | 'cardio';
 
 export interface SeriesKey {
   exerciseId: string;
@@ -60,10 +61,11 @@ export interface SeriesKey {
 /** A stable string for a series (navigation params, remembered choice). */
 export function seriesIdOf(k: SeriesKey): string {
   const eq = k.source === 'import' ? 'import' : (k.equipmentId ?? 'none');
-  return [k.exerciseId, eq, k.convention, k.unit, k.measurement === 'duration' ? 'timed' : k.measurement === 'distance' ? 'distance' : 'reps'].join('|');
+  return [k.exerciseId, eq, k.convention, k.unit, k.measurement === 'duration' ? 'timed' : k.measurement === 'distance' ? 'distance' : k.measurement === 'cardio' ? 'cardio' : 'reps'].join('|');
 }
 
 export function seriesKind(convention: LoadConvention, equipmentKind: EquipmentKind | null, measurement: Measurement): SeriesKind {
+  if (measurement === 'cardio') return 'cardio';
   if (measurement === 'duration') return 'timed';
   if (measurement === 'distance') return 'distance';
   if (convention === 'assistance') return 'assisted';
@@ -86,6 +88,8 @@ export function metricsFor(kind: SeriesKind): ExerciseMetric[] {
       return ['longest_hold'];
     case 'distance':
       return ['total_distance', 'best_distance'];
+    case 'cardio':
+      return ['total_distance', 'best_distance', 'total_time'];
   }
 }
 
@@ -310,7 +314,7 @@ export function seriesLoadValue(s: ProgressSet, key: SeriesKey): number | null {
  * heavier load. Actual metres, never adjusted for load.
  */
 export function sessionBestDistance(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind'>): MetricValue | null {
-  if (series.kind !== 'distance') return null;
+  if (series.kind !== 'distance' && series.kind !== 'cardio') return null;
   let best: Distanced | null = null;
   for (const s of ss.sets) {
     if (!distanced(s) || !counts(s)) continue;
@@ -325,7 +329,7 @@ export function sessionBestDistance(ss: SeriesSession, series: Pick<ExerciseSeri
  * suitcase carry) counts its `both` sets plus the busier side.
  */
 export function sessionTotalDistance(ss: SeriesSession, series: Pick<ExerciseSeries, 'kind'>): MetricValue | null {
-  if (series.kind !== 'distance') return null;
+  if (series.kind !== 'distance' && series.kind !== 'cardio') return null;
   let used = 0;
   const sum = (xs: readonly ProgressSet[]): number => {
     let acc = 0;
@@ -347,6 +351,19 @@ export function sessionTotalDistance(ss: SeriesSession, series: Pick<ExerciseSer
   return used > 0 ? { value: Math.round(total * 100) / 100, kind: 'actual', fromSet: null } : null;
 }
 
+/** Cardio `Total time`: Σ seconds over completed non-warm-up sets, marked sets included (the work was done, as total distance). */
+export function sessionTotalTime(ss: SeriesSession, series: Pick<ExerciseSeries, 'kind'>): MetricValue | null {
+  if (series.kind !== 'cardio') return null;
+  let used = 0;
+  let total = 0;
+  for (const s of ss.sets) {
+    if (s.setType === 'warmup' || s.durationS === null || s.durationS <= 0 || !isSetCountable(s, 'volume')) continue;
+    used += 1;
+    total += s.durationS;
+  }
+  return used > 0 ? { value: total, kind: 'actual', fromSet: null } : null;
+}
+
 export function sessionMetric(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind' | 'equipmentKind'>, metric: ExerciseMetric): MetricValue | null {
   switch (metric) {
     case 'e1rm':
@@ -363,6 +380,8 @@ export function sessionMetric(ss: SeriesSession, series: Pick<ExerciseSeries, 'k
       return sessionTotalDistance(ss, series);
     case 'best_distance':
       return sessionBestDistance(ss, series);
+    case 'total_time':
+      return sessionTotalTime(ss, series);
   }
 }
 
@@ -692,7 +711,7 @@ export function exerciseHeadline(series: ExerciseSeries): ExerciseHeadline {
   const out: ExerciseHeadline = { sessions: series.sessions.length, bestE1rm: null, bestSet: null, mostReps: null, longestHold: null, bestDistance: null, totalDistanceM: null };
   const lowerWins = series.kind === 'assisted';
   for (const ss of series.sessions) {
-    if (series.kind === 'distance') {
+    if (series.kind === 'distance' || series.kind === 'cardio') {
       const b = sessionBestDistance(ss, series);
       const cur = out.bestDistance?.set ?? null;
       const heavier = (x: ProgressSet, y: ProgressSet) => (seriesLoadValue(x, series.key) ?? 0) > (seriesLoadValue(y, series.key) ?? 0);

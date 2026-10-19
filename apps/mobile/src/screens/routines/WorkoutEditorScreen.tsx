@@ -17,6 +17,8 @@ import {
   editorSummaryLine,
   fixedLoadFrame,
   fixedLoadNote,
+  cardioDistanceSteps,
+  cardioDurationSteps,
   fixedLoadSteps,
   formatDuration,
   isRefusedDistanceSlot,
@@ -566,7 +568,7 @@ export function WorkoutEditorScreen() {
       <ShapeRepsSheet
         visible={shapeSheet?.kind === 'reps' && shapeSlot !== undefined}
         title={`${EDITOR_COPY.reps} · ${shapeSlot ? nameOf(shapeSlot.exerciseId) : ''}`}
-        start={slotRepsDraft(shapeSlot?.setTemplates ?? [])}
+        start={slotRepsDraft(shapeSlot?.setTemplates ?? [], shapeSlot !== undefined && info[shapeSlot.exerciseId]?.measurement === 'cardio')}
         onDone={(v) => {
           const id = shapeSheet?.slotId;
           if (id !== undefined) setList((l) => setSlotReps(l, id, v));
@@ -703,6 +705,7 @@ function SetSheet({
   const weighted = convention === 'added' && info?.defaultLoadConvention === 'bodyweight';
   const frame = weighted ? { unit: editor.unit, convention } : fixedLoadFrame(item, editor.unit, convention);
   const bodyweight = convention === 'bodyweight';
+  const cardio = info?.measurement === 'cardio';
   const timed = info?.measurement === 'duration';
   const set = (patch: Partial<SetTemplate>) => {
     if (slot) onChange(slot.id, setIds, patch);
@@ -761,7 +764,33 @@ function SetSheet({
               )}
             </View>
           ) : null}
-          {timed ? (
+          {cardio ? (
+            <>
+              <NumberStepper
+                label="Time"
+                unit={null}
+                decimals={false}
+                time
+                onSurface
+                value={t.targetDurationS}
+                {...cardioDurationSteps(t.targetDurationS)}
+                onChange={(v) => {
+                  set({ targetDurationS: v });
+                }}
+              />
+              <NumberStepper
+                label="Distance"
+                unit="m"
+                decimals
+                onSurface
+                value={t.targetDistanceM ?? null}
+                {...cardioDistanceSteps(t.targetDistanceM ?? null)}
+                onChange={(v) => {
+                  set({ targetDistanceM: v === null ? null : Math.max(0, v) });
+                }}
+              />
+            </>
+          ) : timed ? (
             <NumberStepper
               label={EDITOR_COPY.workTime}
               unit="s"

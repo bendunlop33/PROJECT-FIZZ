@@ -7,7 +7,7 @@ import type { AddSheet } from '../../services/workout-services';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Chip, ChipRow, Icon, NumberStepper, PrimaryButton, SetCountBar, SubstituteRowView, TextButton, TextField } from '../../ui';
 import { SET_BAR } from '../../workout/set-shape-view';
-import { EDIT_MODE_COPY, repsDraftOf, repsDraftWith, repsPayload, repsSteps, TODAY_EDITS_COPY, type RepsDraft } from '../../workout/overview-edits';
+import { cardioDraftWith, EDIT_MODE_COPY, repsDraftOf, repsDraftValid, repsDraftWith, repsPayload, repsSteps, TODAY_EDITS_COPY, type RepsDraft } from '../../workout/overview-edits';
 import { OVERVIEW_COPY } from '../../workout/overview';
 
 /**
@@ -38,12 +38,19 @@ export function RepsSheet({ row, onDone, onUsePlanned, onClose }: { row: Overvie
             </AppText>
             <TextButton
               label={EDIT_MODE_COPY.done}
+              disabled={!repsDraftValid(d)}
               onPress={() => {
                 onDone(repsPayload(d, row.editRow.plannedReps));
               }}
             />
           </View>
-          {d.kind === 'time' ? (
+          {d.kind === 'cardio' ? (
+            // Cardio (review S1): a time up to 4 h, typed as the machine shows it, and a distance.
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+              <NumberStepper label="Time" unit={null} value={d.seconds} decimals={false} time onSurface down={steps.time?.down ?? off} up={steps.time?.up ?? off} onChange={(v) => { setDraft(cardioDraftWith(d, 'time', v)); }} />
+              <NumberStepper label="Distance" unit="m" value={d.distanceM} decimals onSurface down={steps.distance?.down ?? off} up={steps.distance?.up ?? off} onChange={(v) => { setDraft(cardioDraftWith(d, 'distance', v)); }} />
+            </View>
+          ) : d.kind === 'time' ? (
             <NumberStepper
               label={EDIT_MODE_COPY.workTime}
               unit="s"

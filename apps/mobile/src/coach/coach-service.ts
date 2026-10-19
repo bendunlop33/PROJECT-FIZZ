@@ -931,9 +931,9 @@ export function createCoachService(deps: CoachServiceDeps) {
     const inWorkout = movementMatcher(pool, session.exercises.filter((e) => e.removed === undefined));
     const flagged = movementMatcher(pool, flags.filter((f) => f.status === 'active'));
     return pool
-      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && (e.measurement === 'reps' || e.measurement === 'duration') && !inWorkout(e) && !flagged(e) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
+      .filter((e) => (e.ownerId === null || e.ownerId === p.id) && e.measurement !== 'distance' && !inWorkout(e) && !flagged(e) && painFlagCovering(flags, e.id, nowMs, at.tz) === null && doableHere(e, gym))
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((e) => ({ exerciseId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
+      .map((e) => ({ exerciseId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
   }
 
   /** Ben's exercises and the catalogue's (Coaching knowledge), by ID: what a catalogue key can resolve to. */
@@ -994,7 +994,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const flagged = (id: string) => painFlagCovering(flags, id, nowMs, at.tz) !== null;
     const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => [] as Routine[]));
     const keyOf = (id: string): string => byId.get(id)?.catalogueKey ?? id;
-    const doable = pool.filter((e) => (e.measurement === 'reps' || e.measurement === 'duration') && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
+    const doable = pool.filter((e) => e.measurement !== 'distance' && !flagged(e.id) && doableHere(e, gym)).sort((a, b) => a.name.localeCompare(b.name));
     // Review r5 S2: a capped list keeps what Ben named and what fits the focus ahead of the alphabetical fill.
     const first = usableFirst({
       words: newest,
@@ -1005,7 +1005,7 @@ export function createCoachService(deps: CoachServiceDeps) {
       dayBodyParts: day?.bodyParts ?? [],
     });
     const allUsable = doable
-      .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
+      .map((e) => ({ catalogueId: e.catalogueKey ?? e.id, name: e.name, equipment: e.compatibleEquipment[0]?.replaceAll('_', ' ') ?? 'bodyweight', measured: e.measurement === 'cardio' ? ('cardio' as const) : e.measurement === 'duration' ? ('time' as const) : ('reps' as const) }));
     const usable = capUsable(allUsable, inPlay ? BUILD_USABLE_CAP : OFFERED_USABLE_CAP, first);
     const split = splitInUse(training?.profile ?? null);
     const dayObj = day !== null ? (split.days.find((d) => d.name === day.name) ?? null) : (split.days.find((d) => d.id === focus) ?? null);

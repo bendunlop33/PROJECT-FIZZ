@@ -318,7 +318,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
       }
       if (warning) warnings.push(warning);
       const fitted = result ? plannedSnapOf(result, fit, mode, input.gymId) : null;
-      const hasTarget = tpl.targetLoad !== null || tpl.targetReps !== null || tpl.targetDurationS !== null;
+      const hasTarget = tpl.targetLoad !== null || tpl.targetReps !== null || tpl.targetDurationS !== null || (tpl.targetDistanceM !== null && tpl.targetDistanceM !== undefined);
       const provenance =
         hasTarget && input.routine
           ? planTargetProvenance({ routineName: input.routine.name, at: input.at, requested: tpl.targetLoad, warning, equipment })
@@ -338,6 +338,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
           load,
           reps: tpl.targetReps,
           durationS: tpl.targetDurationS,
+          ...(tpl.targetDistanceM !== null && tpl.targetDistanceM !== undefined ? { distanceM: tpl.targetDistanceM } : {}),
           rpe: tpl.targetRpe,
           rir: tpl.targetRir,
           ...(fitted !== null ? { snap: fitted } : {}),

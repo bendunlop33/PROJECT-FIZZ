@@ -174,7 +174,9 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
                   }}
                 />
               ) : null}
-              {view.duration ? (
+              {view.duration && view.distance ? (
+                <NumberStepper onSurface flex={flexOf(1)} numeralSize={numeralSize} compact={compact} label="Time" unit={null} decimals={false} time value={view.duration.value} down={view.duration.down} up={view.duration.up} onChange={(v) => { setEdits({ ...edits, durationS: v }); }} />
+              ) : view.duration ? (
                 <NumberStepper onSurface flex={flexOf(1)} numeralSize={numeralSize} compact={compact} label="Time" unit="s" value={view.duration.value} decimals={false} down={view.duration.down} up={view.duration.up} onChange={(v) => { setEdits({ ...edits, durationS: v === null ? null : Math.max(0, Math.round(v)) }); }} />
               ) : null}
               {view.distance ? (

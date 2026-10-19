@@ -53,6 +53,8 @@ const editRow = (over: Partial<OverviewRow['editRow']> = {}): OverviewRow['editR
   reps: { min: 8, max: 10 },
   durationS: null,
   timed: false,
+  cardio: false,
+  distanceM: null,
   repsEdited: false,
   plannedReps: { reps: { min: 8, max: 10 }, durationS: null },
   loadText: '30 kg each',

@@ -84,7 +84,8 @@ export interface UsableExercise {
   name: string;
   /** `Barbell`, `Dumbbells`, `Bodyweight` … */
   equipment: string;
-  measured: 'reps' | 'time';
+  /** `cardio` (19 Oct): a time (`workSeconds`) and optionally a distance (`distanceMetres`); never reps or a load. */
+  measured: 'reps' | 'time' | 'cardio';
 }
 
 /** What a build turn sends under `YOUR DATA` (§8.4) besides the usual blocks. */

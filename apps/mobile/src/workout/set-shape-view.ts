@@ -32,6 +32,27 @@ export function countSteps(value: number, limits: { min: number; max: number }):
 /** The `Sets` bar's limits and its starting count each time a sheet opens (§10.2). */
 export const SET_BAR = { start: DEFAULT_WORKING_SETS_ON_ADD, limits: SLOT_SET_LIMITS.working } as const;
 
+/**
+ * The Add exercise picker's `Sets` bar (review S2, N7): `touched` once Ben
+ * steps it. Untouched, it shows 1 while the Cardio chip is on and the usual
+ * start otherwise; Ben's own count is never reset by the chip.
+ */
+export interface PickerSetsBar {
+  value: number;
+  touched: boolean;
+}
+
+/** What the bar shows. */
+export function pickerBarValue(bar: PickerSetsBar, cardioChip: boolean): number {
+  return bar.touched ? bar.value : cardioChip ? 1 : SET_BAR.start;
+}
+
+/** The working sets an add from the picker makes: Ben's count, else one for a cardio exercise (one 10-minute set), else the usual start. */
+export function pickerAddSets(bar: PickerSetsBar, measurement: string): number {
+  if (bar.touched) return bar.value;
+  return measurement === 'cardio' ? 1 : SET_BAR.start;
+}
+
 /** `8–10`, `8–10 per side`, `Mixed`; `0:45` for a timed one. */
 export function shapeRepsText(shape: Pick<SlotShapeView, 'reps' | 'durationS'>, perSide: boolean): string {
   if (shape.reps === 'mixed' || shape.durationS === 'mixed') return SET_SHAPE_COPY.mixed;
@@ -67,9 +88,14 @@ export function stepperLimits(value: number, down: number | null, up: number | n
 }
 
 /** The editor card's Reps sheet start: the slot's plain working reps (or the first non-warm-up set's when they differ), or its work time. */
-export function slotRepsDraft(templates: readonly { setType: string; targetReps: { min: number; max: number } | null; targetDurationS: number | null }[]): { kind: 'reps'; exact: boolean; min: number; max: number } | { kind: 'time'; seconds: number } {
+export function slotRepsDraft(
+  templates: readonly { setType: string; targetReps: { min: number; max: number } | null; targetDurationS: number | null; targetDistanceM?: number | null | undefined }[],
+  cardio = false,
+): { kind: 'reps'; exact: boolean; min: number; max: number } | { kind: 'time'; seconds: number } | { kind: 'cardio'; seconds: number | null; distanceM: number | null } {
   const plain = templates.filter((t) => t.setType === 'working');
   const first = (plain.length > 0 ? plain : templates.filter((t) => t.setType !== 'warmup'))[0];
+  // Cardio (review S1): its time (up to 4 h) and distance, never the 10-minute work-time sheet.
+  if (cardio) return { kind: 'cardio', seconds: first?.targetDurationS ?? null, distanceM: first?.targetDistanceM ?? null };
   if (first?.targetReps == null && first?.targetDurationS != null) return { kind: 'time', seconds: first.targetDurationS };
   const r = first?.targetReps ?? { min: 8, max: 10 };
   return { kind: 'reps', exact: r.min === r.max, min: r.min, max: r.max };

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  DistanceMetresSchema,
   DurationSecondsSchema,
   IdSchema,
   LoadSchema,
@@ -29,13 +30,15 @@ export const SetTemplateSchema = z
     targetLoad: LoadSchema.nullable(),
     targetReps: RepRangeSchema.nullable(),
     targetDurationS: DurationSecondsSchema.nullable(),
+    /** Cardio (19 Oct): the distance to aim for, in metres, next to the time; absent on every other set. */
+    targetDistanceM: DistanceMetresSchema.nullable().optional(),
     targetRpe: RpeSchema.nullable(),
     targetRir: RirSchema.nullable(),
     /** Resolution step 1: explicit per-set rest override. */
     restOverrideS: DurationSecondsSchema.nullable(),
   })
-  .refine((t) => t.targetReps !== null || t.targetDurationS !== null, {
-    message: 'A set template needs a rep target or a duration target',
+  .refine((t) => t.targetReps !== null || t.targetDurationS !== null || (t.targetDistanceM !== null && t.targetDistanceM !== undefined), {
+    message: 'A set template needs a rep target, a duration target or a distance target',
   });
 export type SetTemplate = z.infer<typeof SetTemplateSchema>;
 

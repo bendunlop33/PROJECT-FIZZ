@@ -39,7 +39,7 @@ describe('filters (§2.3)', () => {
 
   it('sheet options in order; toggling; setting one filter keeps the others and drops unknown keys', () => {
     expect(filterOptions('muscle').map((o) => o.label)).toEqual(['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Core', 'Forearms']);
-    expect(filterOptions('equipment').map((o) => o.label)).toEqual(['Barbell', 'Dumbbells', 'Cable / stack', 'Plate-loaded', 'Bodyweight', 'Assisted']);
+    expect(filterOptions('equipment').map((o) => o.label)).toEqual(['Barbell', 'Dumbbells', 'Cable / stack', 'Plate-loaded', 'Bodyweight', 'Assisted', 'Cardio']);
     expect(filterOptions('movement').map((o) => o.label)).toContain('Lunge / single leg');
     expect(toggled(['a'], 'b')).toEqual(['a', 'b']);
     expect(toggled(['a', 'b'], 'a')).toEqual(['b']);

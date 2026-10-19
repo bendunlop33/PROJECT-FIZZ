@@ -680,7 +680,7 @@ export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: 
   );
   const rowActions = (done ? [{ name: 'activate' }, { name: 'edit', label: 'Edit set' }] : [{ name: 'activate' }, { name: 'edit', label: 'Edit set' }, { name: 'select', label: 'Make current' }]).concat(
     row.columns.loadLabel !== null ? [{ name: 'load', label: 'Edit load here' }] : [],
-    [{ name: 'value', label: `Edit ${row.columns.valueLabel === 'REPS' ? 'reps' : row.columns.valueLabel === 'TIME' ? 'time' : 'distance'} here` }],
+    [{ name: 'value', label: `Edit ${row.columns.valueLabel === 'REPS' ? 'reps' : row.columns.valueLabel === 'TIME' ? 'time' : row.columns.valueLabel === 'TIME · DIST' ? 'time and distance' : 'distance'} here` }],
   );
   const longPress = () => {
     onPress('row');
@@ -814,6 +814,11 @@ export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: 
                 {plainSpaces(row.effort)}
               </AppText>
             ) : null}
+            {row.pace !== null ? (
+              <AppText variant="callout" color="text.secondary" numeric style={{ marginLeft: theme.space['2'] }} accessibilityLabel={`Pace ${plainSpaces(row.pace)}`}>
+                {plainSpaces(row.pace)}
+              </AppText>
+            ) : null}
             {tag}
           </>,
         )}
@@ -874,6 +879,8 @@ export interface OpenSetRowProps {
   caption: string | null;
   /** A timed set before Start: its ✓ logs without the timer. */
   timedLogLabel: string | null;
+  /** Cardio's small timer button (review S6): `Stop` while the pill logs the time so far, `Resume` after Stop; null otherwise. */
+  workAction?: { label: string; onPress: () => void } | null;
   /** The cell being edited in place, or null (18 Oct: the table stays a table). */
   editing: TileId | null;
   /** ✓ is live: the set has every value Log needs. */
@@ -921,6 +928,8 @@ export function OpenSetRow(p: OpenSetRowProps) {
   const columns = tableRow?.columns ?? null;
   const step = p.ax ? 60 : theme.target.workout.height;
   const working = f.workTimer !== null && (f.workTimer.state === 'running' || f.workTimer.state === 'paused');
+  // Cardio (19 Oct): the timer counts up in the cell (time so far · distance), and the distance stays editable while it runs.
+  const cardio = f.measurement === 'cardio';
   // Where the editor is, relative to the open row's own top, so the keypad anchor knows where it ends.
   const report = useContext(TileLayoutContext);
   const rowY = useRef(0);
@@ -953,7 +962,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
   const sideTag = f.side?.kind === 'fixed' ? (f.side.value === 'left' ? 'L' : 'R') : null;
   const hasLoadColumn = columns !== null ? columns.loadLabel !== null : f.cells.load !== null;
   const valueField: TileId | null = f.reps ? 'reps' : f.duration ? 'time' : f.distance ? 'distance' : null;
-  const valueText = working ? workTimerText(f.workTimer?.remainingMs ?? null) : plainSpaces(f.cells.value);
+  const valueText = working && !cardio ? workTimerText(f.workTimer?.remainingMs ?? null) : plainSpaces(f.cells.value);
 
   const cell = (id: TileId | null, text: string, a11y: string, flex: number) => {
     const on = id !== null && p.editing === id;
@@ -982,11 +991,21 @@ export function OpenSetRow(p: OpenSetRowProps) {
   };
 
   const loadA11y = loadCellA11y(columns?.loadLabel ?? null, f.cells.load);
-  const valueA11y = valueField === 'time' && working ? `Time ${valueText}` : valueCellA11y(columns?.valueLabel ?? (valueField === 'time' ? 'TIME' : valueField === 'distance' ? 'DIST' : 'REPS'), f.cells.value);
+  const valueA11y = valueField === 'time' && working && !cardio ? `Time ${valueText}` : valueCellA11y(columns?.valueLabel ?? (valueField === 'time' ? 'TIME' : valueField === 'distance' ? 'DIST' : 'REPS'), f.cells.value);
   const numeral = p.ax ? 40 : 32;
 
   let editor: ReactNode = null;
-  if (p.editing === 'load' && f.loadField) {
+  if (cardio && (p.editing === 'time' || p.editing === 'distance') && f.duration && f.distance) {
+    // Time in minutes (from the timer while it runs, so not typed then) and metres from the machine.
+    editor = (
+      <View style={{ flex: 1, flexDirection: p.ax ? 'column' : 'row', gap: theme.space['2'] }}>
+        {working ? null : (
+          <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="TIME" unit={null} decimals={false} time value={f.duration.value} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />
+        )}
+        <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />
+      </View>
+    );
+  } else if (p.editing === 'load' && f.loadField) {
     editor = <NumberStepper key="load" inputRef={p.loadRef} onFocus={tileFocus('load')} onLayout={tileLayout('load')} flex={1} stepSize={step} numeralSize={numeral} label={`${f.loadField.label} ${f.loadField.unitText}`.toUpperCase()} unit={null} value={f.loadField.value} decimals down={f.loadField.down} up={f.loadField.up} warning={f.offProfileWarning !== null} hint={f.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
   } else if (p.editing === 'reps' && f.reps) {
     editor = <NumberStepper key="reps" inputRef={p.repsRef} onFocus={tileFocus('reps')} onLayout={tileLayout('reps')} flex={1} stepSize={step} numeralSize={numeral} label="REPS" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
@@ -1037,7 +1056,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
           )}
         </Pressable>
         {hasLoadColumn ? cell(f.loadField ? 'load' : null, f.cells.load ?? '—', loadA11y, 1) : null}
-        {cell(working ? null : valueField, valueText, valueA11y, 1)}
+        {cell(working && !cardio ? null : valueField, valueText, valueA11y, 1)}
         {tableRow?.effort != null ? (
           <AppText variant="callout" color="text.secondary" numeric style={{ marginRight: theme.space['1'] }} accessibilityLabel={`Target RPE ${plainSpaces(tableRow.effort).replace(/^@\s*/, '')}`}>
             {plainSpaces(tableRow.effort)}
@@ -1088,6 +1107,12 @@ export function OpenSetRow(p: OpenSetRowProps) {
             {plainSpaces(target)}
           </AppText>
         ) : null}
+        {f.pace !== null ? (
+          <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Pace ${plainSpaces(f.pace)}`}>
+            {plainSpaces(f.pace)}
+          </AppText>
+        ) : null}
+        {p.workAction ? link(p.workAction.label, `${p.workAction.label} the timer`, p.workAction.onPress) : null}
         {f.plateLine !== null && !p.ax ? (
           <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${f.plateLine}`}>
             {plainSpaces(f.plateLine)}
@@ -1175,7 +1200,15 @@ export function CorrectionEditor(p: CorrectionEditorProps) {
   const step = p.ax ? 60 : theme.target.workout.height;
   const numeral = p.ax ? 40 : 32;
   let editor: ReactNode = null;
-  if (p.field === 'load' && p.loadField) {
+  if ((p.field === 'time' || p.field === 'distance') && p.duration && p.distance) {
+    // Cardio (19 Oct): its time (minutes) and distance together, as in the open row.
+    editor = (
+      <View style={{ flex: 1, flexDirection: p.ax ? 'column' : 'row', gap: theme.space['2'] }}>
+        <NumberStepper key="time" flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="TIME" unit={null} decimals={false} time value={p.duration.value} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />
+        <NumberStepper key="dist" flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />
+      </View>
+    );
+  } else if (p.field === 'load' && p.loadField) {
     editor = <NumberStepper key="load" flex={1} stepSize={step} numeralSize={numeral} label={`${p.loadField.label} ${p.loadField.unitText}`.toUpperCase()} unit={null} value={p.loadField.value} decimals down={p.loadField.down} up={p.loadField.up} hint={p.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
   } else if (p.field === 'reps' && p.reps) {
     editor = <NumberStepper key="reps" flex={1} stepSize={step} numeralSize={numeral} label="REPS" unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;

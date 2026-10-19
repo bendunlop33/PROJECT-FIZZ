@@ -239,7 +239,25 @@ export function EditSetScreen() {
               }}
             />
           ) : null}
-          {view.duration ? (
+          {view.duration && view.distance ? (
+            // Cardio (19 Oct): time and distance both; the time in minutes.
+            <NumberStepper
+              onSurface
+              flex={flexOf(1)}
+              numeralSize={numeralSize}
+              compact={compact}
+              label="Time"
+              unit={null}
+              decimals={false}
+              time
+              value={view.duration.value}
+              down={view.duration.down}
+              up={view.duration.up}
+              onChange={(v) => {
+                setValues({ ...current, durationS: v });
+              }}
+            />
+          ) : view.duration ? (
             <NumberStepper
               onSurface
               flex={flexOf(1)}

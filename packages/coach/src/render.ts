@@ -1,4 +1,4 @@
-import { formatDuration, formatNumber, loadText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
+import { cardioValuesText, formatDuration, formatNumber, loadText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
 import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
@@ -306,9 +306,9 @@ function failureOr(record: ActionRecord, fallback: string): string {
   return record.failure ?? fallback;
 }
 
-/** `Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8 · after Bench press.` */
-function addedPhrase(a: { exerciseName: string; sets: number; target: CoachTarget | null; durationS: number | null; afterName: string | null; supersetWithName: string | null }): string {
-  const each = a.durationS !== null ? formatDuration(a.durationS) : targetPhrase(a.target);
+/** `Added Lateral raise: 3 × 10 kg each × 10–15 @ RPE 8 · after Bench press.`; cardio: `Added Rowing machine: 1 × 5,000 m.` */
+function addedPhrase(a: { exerciseName: string; sets: number; target: CoachTarget | null; durationS: number | null; distanceM?: number | undefined; afterName: string | null; supersetWithName: string | null }): string {
+  const each = a.distanceM !== undefined ? cardioValuesText({ durationS: a.durationS, distanceM: a.distanceM }) : a.durationS !== null ? formatDuration(a.durationS) : targetPhrase(a.target);
   const where = a.supersetWithName !== null ? ` · superset with ${a.supersetWithName}` : a.afterName !== null ? ` · after ${a.afterName}` : '';
   return `Added ${a.exerciseName}: ${String(a.sets)}${TIMES}${each}${where}.`;
 }
@@ -378,9 +378,7 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
     case 'add_exercise_today': {
       // (12 Oct) An exercise added to today's workout because Ben asked: values only, with Undo on the card.
       if (st === 'committed') {
-        const each = d.durationS !== null ? formatDuration(d.durationS) : targetPhrase(d.target);
-        const where = d.supersetWithName !== null ? ` · superset with ${d.supersetWithName}` : d.afterName !== null ? ` · after ${d.afterName}` : '';
-        const text = `Added ${d.exerciseName}: ${String(d.sets)}${TIMES}${each}${where}.`;
+        const text = addedPhrase(d);
         return make(status, text, speakable(text));
       }
       if (st === 'stale') return make(status, 'Not added: your workout moved on.', 'Not added. Your workout moved on.');

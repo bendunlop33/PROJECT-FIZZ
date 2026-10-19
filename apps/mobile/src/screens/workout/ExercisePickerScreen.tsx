@@ -11,9 +11,9 @@ import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Group, Icon, Row, SectionHeader, SetCountBar, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
+import { AppText, Chip, ChipRow, Group, Icon, Row, SectionHeader, SetCountBar, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
 import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
-import { SET_BAR } from '../../workout/set-shape-view';
+import { pickerAddSets, pickerBarValue, SET_BAR, type PickerSetsBar } from '../../workout/set-shape-view';
 
 /**
  * Exercise picker (active-workout §2.10): recent, then the common lifts,
@@ -43,7 +43,9 @@ export function ExercisePickerScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [opIds] = useState(() => new Map<string, string>());
-  const [sets, setSets] = useState<number>(SET_BAR.start);
+  const [bar, setBar] = useState<PickerSetsBar>({ value: SET_BAR.start, touched: false });
+  // `Cardio` (19 Oct): rower, bike, treadmill and the like only; one set unless Ben changes it.
+  const [cardio, setCardio] = useState(false);
 
   const [withCatalogue, setWithCatalogue] = useState(false);
   const [load, setLoad] = useState<PickerLoad>('loading');
@@ -81,6 +83,8 @@ export function ExercisePickerScreen() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    // A cardio machine adds one set unless Ben set the count (review S2).
+    const sets = pickerAddSets(bar, p.exercise.measurement);
     const key = `${p.exercise.id}:${equipmentId ?? ''}:${String(sets)}`;
     const opId = opIds.get(key) ?? newUuid();
     opIds.set(key, opId);
@@ -118,7 +122,7 @@ export function ExercisePickerScreen() {
     setChoosing(p);
   }
 
-  const sections = pickerSections(list, query, recent);
+  const sections = pickerSections(list, query, recent, { cardio });
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
@@ -153,6 +157,17 @@ export function ExercisePickerScreen() {
             maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
             style={{ minHeight: 48, paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.divider'], backgroundColor: theme.colors['bg.surface'], color: theme.colors['text.primary'], fontSize: theme.type.body.fontSize }}
           />
+        )}
+        {choosing ? null : (
+          <ChipRow>
+            <Chip
+              label="Cardio"
+              selected={cardio}
+              onPress={() => {
+                setCardio(!cardio);
+              }}
+            />
+          </ChipRow>
         )}
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
@@ -214,7 +229,7 @@ export function ExercisePickerScreen() {
       </ScrollView>
       {choosing ? null : (
         <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: insets.bottom, backgroundColor: theme.colors['bg.surface'] }}>
-          <SetCountBar value={sets} limits={SET_BAR.limits} onChange={setSets} />
+          <SetCountBar value={pickerBarValue(bar, cardio)} limits={SET_BAR.limits} onChange={(n) => { setBar({ value: n, touched: true }); }} />
         </View>
       )}
     </KeyboardAvoidingView>

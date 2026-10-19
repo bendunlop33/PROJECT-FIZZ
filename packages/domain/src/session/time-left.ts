@@ -302,7 +302,7 @@ export function estimatePendingWork(state: SessionAggregate, pace: Pace, current
   for (const step of plan) {
     restS += step.restAfter;
     const ex = exerciseOf(state, step.set);
-    if (ex?.measurement === 'duration') workS += step.set.planned.durationS ?? 0;
+    if (ex?.measurement === 'duration' || ex?.measurement === 'cardio') workS += step.set.planned.durationS ?? 0;
     if (step.changeover) changeovers += 1;
   }
   const total = (perSet: number, changeover: number) => restS + workS + plan.length * perSet + changeovers * changeover;
