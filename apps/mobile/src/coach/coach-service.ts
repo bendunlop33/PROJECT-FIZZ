@@ -59,6 +59,8 @@ import {
   buildRequestWords,
   buildWordsNewestFirst,
   buildChainWords,
+  recentBenWords,
+  addedContinuationOf,
   lengthRevision,
   gymNamedIn,
   sameGymName,
@@ -163,7 +165,7 @@ import {
   customExerciseIdOf,
   customExerciseLine,
   customFieldsOf,
-  exerciseNameClash,
+  exerciseNearDuplicate,
   isArchivedExercise,
   type LoadReferences,
   type CoachTrigger,
@@ -364,6 +366,11 @@ export interface CoachServiceDeps {
   catalogueSubstitutions?: (catalogueKey: string) => readonly (string | null)[];
   /** (19 Oct) Add on the coach's new-exercise card: Ben's own write (custom exercises). Absent: `propose_exercise` isn't offered. */
   createCustomExercise?: (req: { fields: CustomExerciseFields; opId: string; proposalActionId: string }) => Promise<CustomWrite>;
+  /**
+   * (Review exlist S3) `propose_exercise`'s duplicate guard: the custom-exercise service's check over Ben's
+   * whole list (his import names too). Absent: the same check on the exercises and catalogue aliases here.
+   */
+  exerciseClash?: (name: string) => Promise<{ catalogueId: string; name: string; near: boolean } | null>;
   /** (19 Oct) A catalogue entry's other names (Coaching knowledge), for `find_exercises`. */
   catalogueAliases?: (catalogueKey: string) => readonly string[];
   /** The typical gym's items when Ben has no gym yet (workout-builder §4.1 `⚠ No gym`): what Start would save. */
@@ -982,15 +989,19 @@ export function createCoachService(deps: CoachServiceDeps) {
   function proposeDeps(p: UserProfile, pool: readonly Exercise[]): ExerciseListDeps['propose'] {
     if (deps.createCustomExercise === undefined) return undefined;
     const mine = pool.filter((e) => e.ownerId === null || e.ownerId === p.id);
+    const shared = deps.exerciseClash;
     return {
       store: coachStore(),
-      clash: (name) => {
-        const hit = exerciseNameClash(
-          name,
-          mine.map((e) => ({ id: e.id, name: e.name, aliases: e.catalogueKey ? (deps.catalogueAliases?.(e.catalogueKey) ?? []) : [], source: e.source, archived: isArchivedExercise(e), e })),
-        );
-        return Promise.resolve(hit === null ? null : { catalogueId: hit.e.catalogueKey ?? hit.e.id, name: hit.e.name });
-      },
+      // Review exlist S3: the Library's own check (his import names too), with near matches.
+      clash:
+        shared ??
+        ((name) => {
+          const r = exerciseNearDuplicate(
+            name,
+            mine.map((e) => ({ id: e.id, name: e.name, aliases: e.catalogueKey ? (deps.catalogueAliases?.(e.catalogueKey) ?? []) : [], source: e.source, archived: isArchivedExercise(e), e })),
+          );
+          return Promise.resolve(r === null ? null : { catalogueId: r.hit.e.catalogueKey ?? r.hit.e.id, name: r.hit.e.name, near: r.near });
+        }),
       exerciseIdFor: (ownerId, actionId) => customExerciseIdOf(ownerId, { proposalActionId: actionId }),
     };
   }
@@ -1248,13 +1259,14 @@ export function createCoachService(deps: CoachServiceDeps) {
         }
         return {
           exerciseFor: (key) => byKey.get(key) ?? byId.get(key) ?? null,
-          usable: (e) => doableHere(e, g),
+          // Review exlist S5: a deleted exercise of Ben's is never usable, even named by ID.
+          usable: (e) => !isArchivedExercise(e) && doableHere(e, g),
           substituteFor: (e) =>
             rankSubstitutions({
               ...subCtx(),
               slotExercise: e,
               slot: { workingSets: 3, templates: [] },
-              exercises: pool,
+              exercises: pool.filter((x) => !isArchivedExercise(x)),
               catalogueSubstitutions: e.catalogueKey ? (deps.catalogueSubstitutions?.(e.catalogueKey) ?? []) : [],
               excludeExerciseIds: new Set(),
               histories: new Map(),
@@ -1347,29 +1359,40 @@ export function createCoachService(deps: CoachServiceDeps) {
     // workout-builder §8.2: a build turn (Ben asked for a workout, or to change the draft in context) gets its context and its one tool.
     const draftInContext = req.entry.kind === 'draft' ? await draftOf(p, req.entry.draftId) : null;
     // Build 131: a follow-up to a session the coach described in text ("yes add it"); the turn engine reads the same thread.
-    const history = kind === 'general' && req.input.kind === 'words' && req.threadId !== null ? await coachStore().listMessages(req.threadId).catch(() => []) : [];
+    // Review exlist S2: a workout's thread too, so its add list is ranked by Ben's recent words ("Try now" names nothing).
+    const thread = req.input.kind === 'words' && req.threadId !== null && (kind === 'general' || kind === 'workout') ? await coachStore().listMessages(req.threadId).catch(() => [] as CoachMessage[]) : [];
+    // Review exlist B1: `Added <name>.` after Add on the coach's new-exercise card continues the request that led to the
+    // card: read as it was then (that message, the thread before it), so a build keeps its length, focus, gym and loads.
+    // The turn engine reads the same continuation (`addedContinuationOf`).
+    const continued = req.input.kind === 'words' && thread.length > 0 ? await addedContinuationOf(thread, req.input.text, (id) => coachStore().listTurnActions(id)) : null;
+    const said = req.input.kind === 'words' ? (kind === 'general' ? (continued?.request ?? req.input.text) : req.input.text) : '';
+    const history = kind === 'general' ? (continued?.history ?? thread) : [];
     const refused = history.length === 0 ? new Set<string>() : await refusedBuildActionIds(history, (id) => coachStore().listTurnActions(id));
     // v2 (BD17): Ben answering the coach's question is a build follow-up with his request's words.
-    const chain = kind === 'general' && req.input.kind === 'words' && history.length > 0 ? await buildQuestionChain(history, req.input.text, (id) => coachStore().listTurnActions(id)) : null;
-    const followUp = kind === 'general' && req.input.kind === 'words' ? (chain?.followUp ?? buildFollowUpIn(history, req.input.text, refused)) : null;
+    const chain = kind === 'general' && req.input.kind === 'words' && history.length > 0 ? await buildQuestionChain(history, said, (id) => coachStore().listTurnActions(id)) : null;
+    const followUp = kind === 'general' && req.input.kind === 'words' ? (chain?.followUp ?? buildFollowUpIn(history, said, refused)) : null;
     // Coach v3: Ben's earlier words in this thread that belong to this build, newest first (the gym he named two messages ago; review S6: never an older request's).
-    const earlierBen = history.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [{ text: m.body.input.text, atMs: toMs(m.createdAt.utc) }] : [])).reverse();
-    const earlierWords = req.input.kind === 'words' ? buildChainWords(req.input.text, earlierBen, toMs(deps.now().utc)) : [];
+    const benWordsOf = (list: readonly CoachMessage[]) => list.flatMap((m) => (m.body.role === 'ben' && m.body.input.kind === 'words' ? [{ text: m.body.input.text, atMs: toMs(m.createdAt.utc) }] : [])).reverse();
+    const earlierBen = benWordsOf(history);
+    const earlierWords = req.input.kind === 'words' ? buildChainWords(said, earlierBen, toMs(deps.now().utc)) : [];
     // (19 Oct) A plan of several days: Ben asked for one, or his words change the open plan in this thread.
     const planInThread = kind === 'general' && req.input.kind === 'words' ? await threadOpenPlan(p, req.threadId) : null;
     const planFollowUp = followUp !== null && followUp.priorBenText !== null && asksForPlan(followUp.priorBenText);
-    const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(req.input.text) || (planInThread !== null && revisesPlan(req.input.text)));
-    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, req.input.text, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread } : null) : null;
+    const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(said) || (planInThread !== null && revisesPlan(said)));
+    const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, said, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread } : null) : null;
     if (build !== null) Object.assign(executors, build.executors);
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
-    // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first.
+    // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first. Review exlist
+    // S2: what he named in his recent messages in this workout's thread counts too (same limits as a build's).
     const allAddable = kind === 'workout' && session !== null && session.session.status === 'active' && deps.coachAddInputs !== undefined ? await addableFor(p, session) : null;
-    const addable = allAddable === null ? null : capAddable(allAddable, req.input.kind === 'words' ? req.input.text : '');
+    const recentBen = recentBenWords(benWordsOf(thread), toMs(deps.now().utc));
+    const addable = allAddable === null ? null : capAddable(allAddable, [req.input.kind === 'words' ? req.input.text : '', ...recentBen].join('\n'));
     // (19 Oct) The capped addable list in the prompt; `find_exercises` searches all of it (`edit_today` add checks against all of it).
     if (allAddable !== null && session !== null) {
       const ids = new Set(allAddable.map((a) => a.exerciseId));
-      const pool = (await exercisePool()).filter((e) => ids.has(e.catalogueKey ?? e.id));
-      const proposeHere = proposeDeps(p, await exercisePool());
+      const everything = await exercisePool();
+      const pool = everything.filter((e) => ids.has(e.catalogueKey ?? e.id));
+      const proposeHere = proposeDeps(p, everything);
       Object.assign(executors, createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(pool)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) }));
     }
     const stop = new AbortController();

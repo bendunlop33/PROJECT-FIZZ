@@ -435,6 +435,20 @@ export function buildChainWords(said: string, earlier: readonly { text: string; 
 }
 
 /**
+ * (Review exlist S2) Ben's recent words in a thread, newest first, within the build chain's limits
+ * (`BUILD_CHAIN_MAX_MESSAGES`, `BUILD_CHAIN_MAX_AGE_MS`): what ranks a capped list when his newest
+ * message names nothing ("Try now"). Pure; the words are data (rule 8).
+ */
+export function recentBenWords(earlier: readonly { text: string; atMs: number }[], nowMs: number): string[] {
+  const out: string[] = [];
+  for (const m of earlier.slice(0, BUILD_CHAIN_MAX_MESSAGES)) {
+    if (nowMs - m.atMs > BUILD_CHAIN_MAX_AGE_MS) break;
+    out.push(m.text);
+  }
+  return out;
+}
+
+/**
  * (Coach v3, Ben 18 Oct: "make it 40") The draft's length. A length Ben stated outright wins; then
  * the model's reading, unless Ben's newest message revises the length with a bare number that isn't
  * the model's ("make it 40": his literal number wins; review S2: only a revision); then the request's own (his earlier words, the draft, his

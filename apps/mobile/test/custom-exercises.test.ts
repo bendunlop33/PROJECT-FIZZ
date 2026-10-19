@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { clashRefusalLine, FIND_FIRST_LINE, type ModelEvent, type ModelRequest } from '@fizz/coach';
+import { clashRefusalLine, FIND_FIRST_LINE, nearClashRefusalLine, type ModelEvent, type ModelRequest } from '@fizz/coach';
 import { NO_FILTERS } from '@fizz/domain';
 import type { CustomExerciseFields } from '@fizz/schemas';
 
@@ -93,6 +93,24 @@ describe('custom exercises: create, edit, delete (Library)', () => {
     expect(await s.customExercises.create({ fields: MEADOWS, opId: 'again' })).toMatchObject({ ok: true, duplicate: false });
   });
 
+  it('review exlist S4: in a workout before any set is logged, its shape is locked (planned loads keep their convention)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const a = await s.customExercises.create({ fields: MEADOWS, opId: 'new-1' });
+    if (!a.ok) throw new Error(a.message);
+    expect(await s.customExercises.form(a.exercise.id)).toMatchObject({ locked: false });
+    const started = await s.workout.start({ gymId, opId: 'start-1', checkIn: null });
+    if (!started.ok) throw new Error(started.error.message);
+    const pick = (await s.workout.pickerExercises(started.aggregate.session.id, 'Meadows')).find((x) => x.exercise.id === a.exercise.id);
+    if (pick === undefined) throw new Error('not in picker');
+    const added = await s.workout.addExercise({ sessionId: started.aggregate.session.id, exerciseId: a.exercise.id, equipmentId: pick.equipment[0]?.id ?? null, opId: 'add-1' });
+    if (!added.ok) throw new Error(added.error.message);
+    expect(await s.customExercises.form(a.exercise.id)).toMatchObject({ locked: true });
+    expect(await s.customExercises.edit({ exerciseId: a.exercise.id, fields: { ...MEADOWS, equipment: 'dumbbells', loadConvention: 'per_hand' }, expectedVersion: 1, opId: 'edit-1' })).toMatchObject({ ok: false, reason: 'locked' });
+    // Name and muscles still change.
+    expect(await s.customExercises.edit({ exerciseId: a.exercise.id, fields: { ...MEADOWS, name: 'Landmine Meadows row' }, expectedVersion: 1, opId: 'edit-2' })).toMatchObject({ ok: true, exercise: { version: 2 } });
+  });
+
   it('is in backups: restore brings back the version that was backed up', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
@@ -121,6 +139,14 @@ const outputOf = (req: ModelRequest): unknown => {
   const last = [...req.input].reverse().find((i) => i.type === 'function_call_output');
   return last?.type === 'function_call_output' ? JSON.parse(last.output) : null;
 };
+const slot = (catalogueId: string) => ({ catalogueId, warmups: null, workingSets: 3, reps: { min: 8, max: 10 }, workSeconds: null, targetRpe: 8, topSet: null, restSeconds: null, superset: null, load: null });
+function buildViewOf(req: ModelRequest) {
+  const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+  if (block?.type !== 'message') throw new Error('no context');
+  const data = JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { build?: { request: { quote: string; minutes: number; focus: string }; usable: { catalogueId: string; name: string }[]; loadReferences?: { name: string; last: string[] }[] } };
+  if (data.build === undefined) throw new Error('not a build turn');
+  return data.build;
+}
 const meadowsArgs = { name: 'Meadows row', equipment: 'barbell', loadConvention: null, primaryMuscles: ['lats', 'biceps'], measurement: 'reps', laterality: 'unilateral', reason: 'Ben asked for it.' };
 
 async function liveWorkout(s: AppServices): Promise<{ gymId: string; sessionId: string }> {
@@ -220,6 +246,112 @@ describe('the coach proposes a new exercise; Ben taps Add; the coach uses it', (
     expect(JSON.stringify(outs[2])).toContain(clashRefusalLine({ catalogueId: 'machine-seated-calf-raise', name: 'Seated calf raise' }).replace(/'/g, "'"));
     expect(r.cards.filter((c) => c.record.detail.kind === 'propose_exercise')).toEqual([]);
     expect((await browseNames(s, 'seated calf')).filter((x) => x.tags.some((t) => t.kind === 'custom'))).toEqual([]);
+  });
+
+  it('review exlist B1: Add in a build thread continues Ben’s request (45 min, lower focus, load references) and the draft has Meadows row', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 100, reps: 5 }, { load: 100, reps: 5 }] }]);
+    h.clockMs += 2 * 86_400_000;
+    const request = 'Build me a 45 minute lower body workout with squats and meadows rows';
+    model = new StepModel([
+      () => toolCall('find_exercises', { query: 'meadows row', muscle: null, equipment: null }),
+      () => toolCall('propose_exercise', meadowsArgs),
+      () => replyWith('Tap Add and I’ll build it.'),
+      () => replyWith('Tap Add and I’ll build it.'),
+    ]);
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: request, spoken: false }, turnId: h.ids() });
+    const card = r.cards.find((c) => c.record.detail.kind === 'propose_exercise')?.record;
+    if (card?.detail.kind !== 'propose_exercise') throw new Error(JSON.stringify(r.toolLog));
+    const added = await s.coach.addProposedExercise({ actionId: card.actionId, opId: `${card.actionId}:add` });
+    if (!added.ok) throw new Error(added.message);
+
+    const got: { view: ReturnType<typeof buildViewOf> | null } = { view: null };
+    model = new StepModel([
+      (req) => {
+        const seen = buildViewOf(req);
+        got.view = seen;
+        const meadows = seen.usable.find((u) => u.name === 'Meadows row')?.catalogueId ?? 'missing';
+        return toolCall('propose_workout', { name: null, exercises: [slot('barbell-back-squat'), slot(meadows)], message: 'Squat, then rows.', minutes: null, focus: null, gymName: null });
+      },
+      () => replyWith('Built.'),
+    ]);
+    const r2 = await s.coach.send({ entry: { kind: 'today' }, threadId: r.threadId, input: { kind: 'words', text: 'Added Meadows row.', spoken: false }, turnId: h.ids() });
+    const view = got.view;
+    if (view === null) throw new Error('no build turn');
+    expect(view.request).toMatchObject({ quote: request, minutes: 45, focus: 'lower' });
+    expect(view.usable.map((u) => u.name)).toContain('Meadows row');
+    // Load references from his history: the logged squat is there.
+    expect(view.loadReferences?.find((x) => x.name === 'Back squat')?.last.length).toBeGreaterThan(0);
+    const built = r2.cards.find((c) => c.record.detail.kind === 'build_workout')?.record;
+    if (built?.detail.kind !== 'build_workout' || built.status !== 'committed') throw new Error(JSON.stringify(r2.toolLog));
+    const d = await s.coachDrafts.get(built.detail.draftId);
+    const last = d?.versions.at(-1);
+    expect(last?.fitMinutes).toBe(45);
+    expect(last?.plan.slots.map((x) => x.exerciseId)).toContain(added.exercise.id);
+    // The thread keeps his literal words.
+    const thread = await s.coach.loadThread(r.threadId);
+    expect(JSON.stringify(thread)).toContain('Added Meadows row.');
+  });
+
+  it('review exlist S5: a deleted exercise of Ben’s is refused in a build and in edit_today, even by ID', async () => {
+    const { services: s } = await h.launch();
+    const { sessionId } = await liveWorkout(s);
+    const a = await s.customExercises.create({ fields: { ...MEADOWS, laterality: 'bilateral' }, opId: 'new-1' });
+    if (!a.ok) throw new Error(a.message);
+    await s.customExercises.remove({ exerciseId: a.exercise.id, expectedVersion: 1, opId: 'del-1' });
+    model = new StepModel([
+      (req) => toolCall('edit_today', { baseVersion: contextWorkout(req).version, ops: [{ op: 'add', exerciseId: a.exercise.id, workingSets: 3, reps: { min: 8, max: 10 }, workSeconds: null, targetRpe: 8, afterSessionExerciseId: null, supersetWithSessionExerciseId: null }], reason: 'Ben asked.', benAsked: true, benQuote: 'add meadows rows' }),
+      () => replyWith('Not added.'),
+    ]);
+    const r = await sayIn(s, sessionId, 'add meadows rows');
+    expect(r.cards.filter((c) => c.record.status === 'committed')).toEqual([]);
+    const w = await s.workout.load(sessionId);
+    expect(w?.aggregate.exercises.some((e) => e.exerciseId === a.exercise.id)).toBe(false);
+
+    model = new StepModel([
+      () => toolCall('propose_workout', { name: null, exercises: [slot(a.exercise.id)], message: 'Rows.', minutes: 30, focus: 'back', gymName: null }),
+      () => replyWith('Not built.'),
+      () => replyWith('Not built.'),
+    ]);
+    const b = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Build me a 30 minute workout with meadows rows', spoken: false }, turnId: h.ids() });
+    const card = b.cards.find((c) => c.record.detail.kind === 'build_workout')?.record;
+    expect(card === undefined || card.status !== 'committed').toBe(true);
+  });
+
+  it('review exlist S3: a name that means one already in his list gets no card until Ben says it is different', async () => {
+    const { services: s } = await h.launch();
+    const { sessionId } = await liveWorkout(s);
+    const near = { ...meadowsArgs, name: 'Calf raise on the seated machine', equipment: 'plate_loaded_machine', primaryMuscles: ['calves'], laterality: null };
+    const outs: unknown[] = [];
+    model = new StepModel([
+      () => toolCall('find_exercises', { query: 'calf', muscle: null, equipment: null }),
+      () => toolCall('propose_exercise', near),
+      (req) => {
+        outs.push(outputOf(req));
+        return toolCall('propose_exercise', { ...near, name: 'Calf raise (seated)' });
+      },
+      (req) => {
+        outs.push(outputOf(req));
+        return replyWith('That’s Seated calf raise. Is yours different?');
+      },
+    ]);
+    const r = await sayIn(s, sessionId, 'make me a seated calf raise machine exercise');
+    const line = nearClashRefusalLine({ catalogueId: 'machine-seated-calf-raise', name: 'Seated calf raise' });
+    expect(JSON.stringify(outs[0])).toContain(JSON.stringify(line).slice(1, -1));
+    expect(JSON.stringify(outs[1])).toContain('machine-seated-calf-raise');
+    expect(r.cards.filter((c) => c.record.detail.kind === 'propose_exercise')).toEqual([]);
+    // The Library's check is the same one (his own import names too).
+    expect(await s.customExercises.coachClash('Machine seated calf')).toMatchObject({ catalogueId: 'machine-seated-calf-raise', near: true });
+
+    // Ben: it's a different one. The card is proposed with differentFrom.
+    model = new StepModel([
+      () => toolCall('find_exercises', { query: 'calf raise seated machine', muscle: null, equipment: null }),
+      () => toolCall('propose_exercise', { ...near, differentFrom: 'machine-seated-calf-raise' }),
+      () => replyWith('Here it is.'),
+    ]);
+    const r2 = await sayIn(s, sessionId, 'Yes, mine is a different machine', r.threadId);
+    expect(r2.cards.find((c) => c.record.detail.kind === 'propose_exercise')?.record.status).toBe('proposed');
   });
 
   it('a custom exercise in a coach build: the load is fitted to the gym’s barbell (rule 4) and shown as an estimate the first time', async () => {

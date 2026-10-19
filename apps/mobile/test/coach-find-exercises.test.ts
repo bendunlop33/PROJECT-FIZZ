@@ -102,7 +102,8 @@ describe('"Why can’t I add it": seated calf raise in a leg-workout thread', ()
   it('the checks accept an exercise doable here even when it was not in the capped list the model saw', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
-    // "What should I do today?" names nothing: an offered-only turn with the shortest list.
+    // "What should I do today?" names nothing: an offered-only turn with the shortest list (review exlist S1:
+    // Seated calf raise is not in it, so accepting it proves the checks read the whole doable list).
     let shown: string[] = [];
     model = new StepModel([
       (req) => {
@@ -110,9 +111,11 @@ describe('"Why can’t I add it": seated calf raise in a leg-workout thread', ()
         return toolCall('propose_workout', { name: null, exercises: [ex('barbell-back-squat'), ex(SEATED)], message: 'Legs.', minutes: 45, focus: 'legs', gymName: null });
       },
       () => replyWith('Built.'),
+      () => replyWith('Built.'),
     ]);
-    const r = await say(s, 'Build me a leg workout', null);
-    expect(shown).not.toContain('zzz');
+    const r = await say(s, 'What should I do today?', null);
+    expect(shown.length).toBe(OFFERED_USABLE_CAP);
+    expect(shown).not.toContain(SEATED);
     const card = r.cards.find((c) => c.record.detail.kind === 'build_workout')?.record;
     if (card?.detail.kind !== 'build_workout' || card.status !== 'committed') throw new Error(JSON.stringify(r.toolLog));
     const d = await s.coachDrafts.get(card.detail.draftId);
@@ -162,7 +165,48 @@ describe('mid-workout: find_exercises over everything addable here, then edit_to
     // "the calves one" names no exercise: the capped list falls back to A–Z.
     const r = await s.coach.send({ entry: { kind: 'workout', sessionId }, threadId: null, input: { kind: 'words', text: 'add the calves one', spoken: false }, turnId: h.ids() });
     expect(addable.length).toBeGreaterThan(0);
+    // Review exlist S1: not in the capped list the model saw; added from find_exercises' result.
+    expect(addable.map((a) => a.exerciseId)).not.toContain(SEATED);
     expect(found.map((f) => f.catalogueId)).toContain(SEATED);
     expect(r.cards[0]?.record).toMatchObject({ status: 'committed', detail: { kind: 'edit_today', added: [{ exerciseName: 'Seated calf raise', sets: 3 }] } });
+  });
+});
+
+describe('review exlist S2: mid-workout, the add list is ranked by Ben’s recent words in the thread', () => {
+  it('"add seated calf raises", a refusal, then "Try now": Seated calf raise is in the capped add list', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const started = await s.workout.start({ gymId, opId: 'start-legs', checkIn: null });
+    if (!started.ok) throw new Error(started.error.message);
+    const sessionId = started.aggregate.session.id;
+    const addableOf = (req: ModelRequest): string[] => {
+      const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+      return block?.type === 'message' ? ((JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { addable?: { exerciseId: string }[] }).addable ?? []).map((a) => a.exerciseId) : [];
+    };
+    const sayIn = (text: string, threadId: string | null) => s.coach.send({ entry: { kind: 'workout', sessionId }, threadId, input: { kind: 'words', text, spoken: false }, turnId: h.ids() });
+    // Control: "Try now" alone ranks nothing, so the A–Z fill leaves it out.
+    let alone: string[] = [];
+    model = new StepModel([
+      (req) => {
+        alone = addableOf(req);
+        return replyWith('ok');
+      },
+    ]);
+    await sayIn('Try now', null);
+    expect(alone.length).toBeGreaterThan(0);
+    expect(alone).not.toContain(SEATED);
+
+    model = new StepModel([() => replyWith('Seated calf raise isn’t in the list I can use.')]);
+    const first = await sayIn('Add seated calf raises', null);
+    let later: string[] = [];
+    model = new StepModel([
+      (req) => {
+        later = addableOf(req);
+        return replyWith('ok');
+      },
+    ]);
+    await sayIn('Try now', first.threadId);
+    expect(later.length).toBe(alone.length);
+    expect(later).toContain(SEATED);
   });
 });

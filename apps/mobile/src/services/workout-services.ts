@@ -2341,7 +2341,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     async coachAddInputs(exerciseId: string, aggregate: SessionAggregate): Promise<{ exercise: Exercise | null; history: HistorySession[]; substitute: SubstituteContext; owner: UserProfile; sameMovementIds: string[]; exerciseUnsaved: boolean } | null> {
       const p = await ctx.profile();
       if (!p) return null;
-      const mine = (e: Exercise | null | undefined): Exercise | null => (e !== null && e !== undefined && (e.ownerId === null || e.ownerId === p.id) ? e : null);
+      // Review exlist S5: a deleted exercise of Ben's can't be added by the coach, even by ID.
+      const mine = (e: Exercise | null | undefined): Exercise | null => (e !== null && e !== undefined && (e.ownerId === null || e.ownerId === p.id) && !isArchivedExercise(e) ? e : null);
       const saved = (await repos().exercises.list().catch(() => [] as Exercise[])).filter((e) => mine(e) !== null);
       const catalogue = (ctx.catalogueExercises?.() ?? []).filter((e) => mine(e) !== null);
       const fromSaved = saved.find((e) => e.id === exerciseId) ?? saved.find((e) => e.catalogueKey === exerciseId) ?? null;
