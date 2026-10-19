@@ -2,12 +2,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { DarkTheme, DefaultTheme, NavigationContainer, useNavigation, useNavigationContainerRef, type Theme as NavTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SymbolView } from 'expo-symbols';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { WeightUnit } from '@fizz/schemas';
 
+import { onMorningReminderTap } from '../alerts/notifier';
 import { recordContainedError, setCurrentScreen } from '../diagnostics/crash-capture';
 import { createGuardedLoader } from '../guide/guarded-load';
 
@@ -43,6 +44,7 @@ import { ChatGptSignInTestScreen } from '../screens/profile/ChatGptSignInTestScr
 import { CoachConnectionScreen } from '../screens/profile/CoachConnectionScreen';
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { VoiceSettingsScreen } from '../screens/profile/VoiceSettingsScreen';
+import { MorningReminderScreen } from '../screens/profile/MorningReminderScreen';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { SplitScreen } from '../screens/profile/SplitScreen';
 import { TrainingDetailsScreen } from '../screens/profile/TrainingDetailsScreen';
@@ -74,6 +76,7 @@ import { WorkoutScreen } from '../screens/workout/WorkoutScreen';
 import type { SetupStep } from '../services/setup';
 import { screenAnimation, useTheme } from '../theme';
 import { AppText, MessageScreen, PrimaryButton, type SymbolName } from '../ui';
+import { popToToday } from './actions';
 import { initialRootState } from './initial-state';
 import type { ImportQuestionKind, LibraryStackParams, ProfileStackParams, ProgressStackParams, RootStackParams, TabParams } from './types';
 
@@ -204,6 +207,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="SavedLayouts" component={SavedLayoutsScreen} options={{ title: 'Saved import layouts' }} />
       <ProfileStack.Screen name="SavedLayout" component={SavedLayoutScreen} options={{ title: 'Saved layout' }} />
       <ProfileStack.Screen name="Voice" component={VoiceSettingsScreen} options={{ title: 'Voice' }} />
+      <ProfileStack.Screen name="MorningReminder" component={MorningReminderScreen} options={{ title: 'Morning reminder' }} />
       <ProfileStack.Screen name="Developer" component={DeveloperScreen} options={{ title: 'Developer' }} />
       <ProfileStack.Screen name="CapabilityProbe" component={ProbeRoute} options={{ headerShown: false }} />
       <ProfileStack.Screen name="ChatGptSignInTest" component={ChatGptSignInTestScreen} options={{ title: 'ChatGPT sign-in test' }} />
@@ -286,6 +290,15 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
   const reportScreen = () => {
     setCurrentScreen(navRef.getCurrentRoute()?.name ?? null);
   };
+  // A tap on the morning reminder opens Today (Ben, 20 Oct); a workout on screen stays where it is.
+  useEffect(
+    () =>
+      onMorningReminderTap(() => {
+        if (!setupDone || !navRef.isReady() || navRef.getCurrentRoute()?.name === 'Workout') return;
+        navRef.dispatch(popToToday());
+      }),
+    [navRef, setupDone],
+  );
   const navTheme = useMemo<NavTheme>(() => {
     const base = theme.scheme === 'dark' ? DarkTheme : DefaultTheme;
     return {

@@ -1,6 +1,10 @@
 import * as Notifications from 'expo-notifications';
 import { AppState } from 'react-native';
 
+import { MORNING_REMINDER_PREFIX } from '@fizz/domain';
+
+import type { ReminderPort } from '../reminders/morning';
+
 import { appleSpeaker, voicePrefs } from '../voice/speaker';
 import { isWorkoutOnScreen, showRestAlertInForeground } from './presentation';
 import { REST_ALERT_PREFIX, type NotifierPort } from './rest-alerts';
@@ -67,4 +71,41 @@ export async function clearDeliveredWorkoutAlerts(keep?: string): Promise<void> 
   for (const n of shown) {
     if (n.request.identifier.startsWith(REST_ALERT_PREFIX) && n.request.identifier !== keep) await Notifications.dismissNotificationAsync(n.request.identifier);
   }
+}
+
+/**
+ * Phone binding for the morning reminder (Ben, 20 Oct): local notifications
+ * only, interruption level `active` like rest alerts (no Time Sensitive, no
+ * push). A calendar trigger with local date and time and no zone, so iOS
+ * fires it at that wall-clock time in whatever zone the phone is in (DST
+ * included). Device test still needed.
+ */
+export const expoReminderPort: ReminderPort = {
+  permission: getAlertPermission,
+  request: requestAlertPermission,
+  async pending() {
+    return (await Notifications.getAllScheduledNotificationsAsync()).map((n) => n.identifier).filter((id) => id.startsWith(MORNING_REMINDER_PREFIX));
+  },
+  async schedule(r) {
+    const [year, month, day] = r.fireAtLocal.date.split('-').map(Number);
+    if (year === undefined || month === undefined || day === undefined) throw new Error(`Bad reminder date ${r.fireAtLocal.date}`);
+    await Notifications.scheduleNotificationAsync({
+      identifier: r.identifier,
+      content: { title: r.title, body: r.body, sound: true, interruptionLevel: 'active', data: { open: 'today' } },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.CALENDAR, repeats: false, year, month, day, hour: r.fireAtLocal.hour, minute: r.fireAtLocal.minute, second: 0 },
+    });
+  },
+  async cancel(identifier) {
+    await Notifications.cancelScheduledNotificationAsync(identifier);
+  },
+};
+
+/** A tap on a morning reminder (from the lock screen or a banner): `onOpen` takes Ben to Today. */
+export function onMorningReminderTap(onOpen: () => void): () => void {
+  const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+    if (response.notification.request.identifier.startsWith(MORNING_REMINDER_PREFIX)) onOpen();
+  });
+  return () => {
+    sub.remove();
+  };
 }

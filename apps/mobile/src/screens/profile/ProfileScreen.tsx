@@ -21,6 +21,7 @@ import { useProbeResults } from './useProbeResults';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { voiceCapability } from '../../voice/speaker';
 import { voiceRowLine } from '../../voice/settings';
+import { MorningReminderRow } from './MorningReminderRow';
 
 /**
  * Profile hub skeleton (profile-and-settings.md §2.1). No primary button;
@@ -157,6 +158,11 @@ export function ProfileScreen() {
           subtitle={voiceRowLine(prefs.voice, voiceCapability().speech)}
           onPress={() => {
             navigation.navigate('Voice');
+          }}
+        />
+        <MorningReminderRow
+          onPress={() => {
+            navigation.navigate('MorningReminder');
           }}
         />
       </Group>

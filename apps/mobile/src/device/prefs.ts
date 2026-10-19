@@ -1,3 +1,5 @@
+import { DEFAULT_MORNING_REMINDER, parseMorningReminder, type MorningReminderSettings } from '@fizz/domain';
+
 import type { TextFile } from '../backup/backup-service';
 import { DEFAULT_VOICE_PREFS, parseVoicePrefs, type VoicePrefs } from '../voice/settings';
 
@@ -22,6 +24,13 @@ export interface DevicePrefs {
   librarySegment: 'exercises' | 'workouts';
   /** Settings › Voice: spoken cues, reading coach replies, the voice and its speed (this phone's voices). */
   voice: VoicePrefs;
+  /** Profile › Morning reminder (Ben, 20 Oct): per phone, as notification permission is. Absent: never changed (`morningReminderOf`). */
+  morningReminder?: MorningReminderSettings;
+}
+
+/** The morning reminder's settings, the defaults until Ben changes one. */
+export function morningReminderOf(prefs: Pick<DevicePrefs, 'morningReminder'>): MorningReminderSettings {
+  return prefs.morningReminder ?? DEFAULT_MORNING_REMINDER;
 }
 
 export type AlertsAsk = 'undetermined' | 'later' | 'answered';
@@ -34,6 +43,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
     const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment, voice } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown; voice?: unknown };
+    const { morningReminder } = json as { morningReminder?: unknown };
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
       guideAnimations: guideAnimations !== false,
@@ -41,6 +51,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
       workoutView: workoutView === 'focus' ? 'focus' : 'table',
       librarySegment: librarySegment === 'workouts' ? 'workouts' : 'exercises',
       voice: parseVoicePrefs(voice),
+      ...(morningReminder === undefined ? {} : { morningReminder: parseMorningReminder(morningReminder) }),
     };
   } catch {
     return DEFAULT_PREFS;

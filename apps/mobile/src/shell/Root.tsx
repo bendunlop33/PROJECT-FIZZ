@@ -21,6 +21,7 @@ import { DevicePrefsProvider, useDevicePrefs } from '../device/DevicePrefsContex
 import { createPrefsHolder, DEFAULT_PREFS, type DevicePrefs } from '../device/prefs';
 import { appInfo, deviceTimeZone, newUuid, nowZoned, whenIdle } from '../device/runtime';
 import { AppNavigator } from '../navigation/AppNavigator';
+import { MorningReminderHost } from '../reminders/MorningReminderHost';
 import type { AppServices } from '../services/app-services';
 import { startApp, type StartupOutcome } from '../services/startup';
 import { ThemeProvider, TIMING, useTheme, type AvailableDirectionId } from '../theme';
@@ -222,6 +223,7 @@ function Launch() {
       return (
         <AppProvider services={services} launch={{ migration, sqliteVersion, recovery, recoveryError, restAlerts, restoreInterrupted: services.restore.interruptedRestore, signOutNotConfirmed }} relaunch={relaunch}>
           <ForegroundAlerts services={services} />
+          <MorningReminderHost services={services} />
           <AppNavigator
             setupStep={setup.step}
             setupUnit={setup.profile?.preferredUnit ?? null}

@@ -79,6 +79,11 @@ export function useDataChanged(): () => void {
   return useApp().changed;
 }
 
+/** Bumped after any write a screen reports (`useDataChanged`): for work that follows every change (the morning reminder). */
+export function useDataVersion(): number {
+  return useApp().version;
+}
+
 export type Loaded<T> = { state: 'loading' } | { state: 'ready'; value: T } | { state: 'error'; message: string };
 
 /**
