@@ -93,3 +93,5 @@ export * from './progress';
 export * from './session/fit-time';
 export * from './coach/fit';
 export * from './training-profile';
+export * from './spoken-cues';
+export * from './spoken-reply';
