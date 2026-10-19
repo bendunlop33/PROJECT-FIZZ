@@ -12,3 +12,4 @@ export * from './resume';
 export * from './exercise';
 export * from './exercise-view';
 export * from './exercise-tab';
+export * from './plan-tracker';
