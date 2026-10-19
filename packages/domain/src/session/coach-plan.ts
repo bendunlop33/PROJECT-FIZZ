@@ -399,9 +399,10 @@ export function planUpNext<R extends Pick<Routine, 'id' | 'createdFromSessionId'
 }
 
 /**
- * With a split (PM decision 18 Oct): Up next is the split day due; the
- * plan's workout for that day is planned, the one done least recently when
- * two days share a split day (never done first, then day order).
+ * A split day's plan workout, the one done least recently when two days
+ * share a split day (never done first, then day order). Since review
+ * plans-19oct B1 an applied plan drives Up next even with a split; this
+ * is only the split fallback when no plan day can be started at the gym.
  */
 export function planRoutineForSplitDay<R extends Pick<Routine, 'id' | 'createdFromSessionId' | 'createdFromPlan'>>(days: readonly R[], splitDayId: string, refs: readonly FinishedRef[]): R | null {
   const mine = days.filter((r) => r.createdFromPlan?.splitDayId === splitDayId);

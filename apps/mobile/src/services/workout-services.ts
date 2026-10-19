@@ -1872,7 +1872,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const rotation = async () => (pick.kind !== 'routine' ? null : startable(pick.routine, pick.basis));
     // PM decision 18 Oct (pending Ben): the rotation wins only when the last workout was a routine's and Ben set no split;
     // otherwise the split day trained least recently, counting every workout by the muscles done.
-    if (training?.split === undefined) {
+    // (19 Oct, review plans-19oct B1) An applied plan drives Up next even with a split: its days (rotation, then the plan
+    // walk), so a day that isn't a split day, or a plan in another structure from the split, still comes up in turn.
+    const planDrives = (plan?.applied ?? null) !== null && planDays.length > 0;
+    if (training?.split === undefined || planDrives) {
       const rot = await rotation();
       if (rot !== null) return rot;
       // (19 Oct, Ben: Up next walks through the plan) The rotation can't say (the last workout wasn't one of its
@@ -1883,7 +1886,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     }
     const bySplit = await splitUpNext(p, live, training, gymId, gymEquipment, planDays, refs).catch(() => null);
     if (bySplit?.plan) return bySplit.plan;
-    if (training?.split !== undefined) {
+    if (training?.split !== undefined && !planDrives) {
       const rot = await rotation();
       if (rot !== null) return rot;
     }

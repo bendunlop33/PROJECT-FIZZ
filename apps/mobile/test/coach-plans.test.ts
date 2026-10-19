@@ -254,6 +254,51 @@ describe('build a 4-day plan → card → Apply (replace) → Up next walks it �
     expect(await s.next.preview(gymId)).toMatchObject({ title: 'Push', routine: { basis: { kind: 'plan', dayN: 1, of: 4 } } });
   });
 
+  it('with a split, a plan day that isn’t a split day still comes up in turn: a full cycle walks every day (review B1)', async () => {
+    const { s, gymId } = await benWithSetup();
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    expect(await s.training.change({ kind: 'preset_split', split: 'ppl' }, snap.profile.version, 'split-ppl')).toMatchObject({ ok: true });
+    const { planId } = await buildFour(s);
+    const card = await s.plans.card({ planId, versionN: 1 });
+    expect(await s.plans.apply({ planId, versionN: 1, expectedVersion: card?.planVersion ?? 0, mode: 'replace', opId: 'apply-split' })).toMatchObject({ ok: true });
+    const walked: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      h.clockMs += DAY;
+      const up = await s.next.preview(gymId);
+      walked.push(`${up?.title ?? '?'} ${String(up?.routine?.basis.kind === 'plan' ? up.routine.basis.dayN : 0)}`);
+      await doRoutine(s, gymId, up?.routine?.id ?? '');
+    }
+    expect(walked).toEqual(['Push 1', 'Pull 2', 'Legs 3', 'Upper 4', 'Push 1', 'Pull 2', 'Legs 3', 'Upper 4']);
+  });
+
+  it('a plan in another structure from the Profile split (Upper/Lower while PPL) drives Up next (review B1)', async () => {
+    const { s, gymId } = await benWithSetup();
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    expect(await s.training.change({ kind: 'preset_split', split: 'ppl' }, snap.profile.version, 'split-ppl')).toMatchObject({ ok: true });
+    const upperLower: [string, string | null, Ex[]][] = [
+      ['Upper', null, [['Bench press', { load: kgLoad(100) }], ['Lat pulldown', { load: kgLoad(60, 'stack') }]]],
+      ['Lower', null, [['Back squat', { load: kgLoad(100) }]]],
+    ];
+    model = new StepModel([planStub(upperLower, 'Upper and lower, as asked.'), () => replyWith('Here.')]);
+    const r = await ask(s, 'Build me an upper/lower plan, 2 days');
+    const rec = r.cards[0]?.record;
+    if (rec?.detail.kind !== 'build_plan') throw new Error('no plan');
+    const planId = rec.detail.planId;
+    const card = await s.plans.card({ planId, versionN: 1 });
+    expect(await s.plans.apply({ planId, versionN: 1, expectedVersion: card?.planVersion ?? 0, mode: 'replace', opId: 'apply-ul' })).toMatchObject({ ok: true });
+    const walked: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      h.clockMs += DAY;
+      const up = await s.next.preview(gymId);
+      expect(up?.routine?.basis.kind).toBe('plan');
+      walked.push(up?.title ?? '?');
+      await doRoutine(s, gymId, up?.routine?.id ?? '');
+    }
+    expect(walked).toEqual(['Upper', 'Lower', 'Upper', 'Lower']);
+  });
+
   it('a change to the plan in the thread is a new version; the old card can’t apply (rule 5)', async () => {
     const { s } = await benWithSetup();
     const { planId, threadId } = await buildFour(s);
