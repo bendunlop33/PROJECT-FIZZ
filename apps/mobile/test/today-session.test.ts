@@ -262,5 +262,193 @@ describe('Today (v2) session card from the plan', () => {
       await plain.cleanup();
     }
   });
-});
 
+  it('B1: on a clock that moves on every read, Today’s own drafts never read back as `edited` (ownership is by version); a check-in back-out, a reload and a force-close keep the same draft and Start', async () => {
+    const { s, gymId } = await benWithPlan();
+    // The phone's clock: every `now()` a millisecond later (the harness's is frozen otherwise).
+    let ms = h.clockMs;
+    Object.defineProperty(h, 'clockMs', {
+      get: () => (ms += 1),
+      set: (v: number) => {
+        ms = v;
+      },
+      configurable: true,
+    });
+    const data = await loaded(s);
+    const key = data.nextKey ?? '';
+    const c1 = await s.todaySession.commit(data, sel(data, key), 'tick-1');
+    if (!c1.ok) throw new Error(c1.message);
+    // Start → the check-in sheet → back out: nothing else written. The card is Today's, not `edited`.
+    let again = await loaded(s);
+    expect(s.todaySession.card(again, sel(again, key))?.edited).toBeNull();
+    // A changed control is a new version of the same draft, still Today's.
+    const longer = (data.initial[key]?.minutes ?? 45) + 15;
+    const c2 = await s.todaySession.commit(again, sel(again, key, { minutes: longer }), 'tick-2');
+    if (!c2.ok) throw new Error(c2.message);
+    expect(c2.draftId).toBe(c1.draftId);
+    expect(c2.version).toBe(c1.version + 1);
+    again = await loaded(s);
+    expect(s.todaySession.card(again, sel(again, key, { minutes: longer }))?.edited).toBeNull();
+    // Force-close between commit and Start: the draft survives; the same tap commits to it unchanged and starts.
+    await h.forceClose();
+    const { services: s2 } = await h.launch();
+    const after = await loaded(s2);
+    expect(s2.todaySession.card(after, sel(after, key, { minutes: longer }))?.edited).toBeNull();
+    const c3 = await s2.todaySession.commit(after, sel(after, key, { minutes: longer }), 'tick-3');
+    expect(c3).toEqual(c2);
+    const r = await s2.todaySession.start({ draftId: c2.draftId, expectedVersion: c2.version, gymId, opId: 'tick-start', checkIn: null });
+    if (!r.ok) throw new Error(JSON.stringify(r.error));
+    expect(r.aggregate.session.coachDraft?.draftId).toBe(c2.draftId);
+  });
+
+  it('B2: at a gym without the kit, no exercise it can’t do reaches the card (template exercises and main lifts fall through or are named in Why?)', async () => {
+    const { s, gymId } = await benWithPlan();
+    const planned = await loaded(s);
+    // A dumbbell-only gym, selected.
+    expect(gymId).not.toBe('');
+    const hotelId = h.ids();
+    expect(await s.setup.saveGym({ gymId: hotelId, name: 'Hotel', draft: s.coachingKnowledge.buildGymDraft('home_dumbbells', 'kg') })).toEqual({ ok: true });
+    expect(await s.gyms.select(hotelId)).toMatchObject({ ok: true });
+    const data = await loaded(s);
+    const { here } = data.internal;
+    // The plan's templates do name things this gym can't do (else the test proves nothing).
+    const templateIds = data.days.flatMap((d) => d.templates.flatMap((t) => [...t.exerciseIds, ...(t.mainLiftExerciseId === null ? [] : [t.mainLiftExerciseId])]));
+    expect(templateIds.some((id) => !here(id))).toBe(true);
+    expect(planned.internal.here(templateIds.find((id) => !here(id)) ?? '')).toBe(true);
+    for (const d of data.days) {
+      const card = s.todaySession.card(data, sel(data, d.key));
+      if (card === null) continue;
+      for (const r of card.rows) expect(here(r.exerciseId)).toBe(true);
+      expect(card.exerciseCount).toBe(card.rows.length);
+      for (const m of card.controls.mainLifts) if (m.exerciseId !== null) expect(here(m.exerciseId)).toBe(true);
+      // A main lift the gym can't do: left out and named once, behind Why?.
+      const main = d.templates[0]?.mainLiftExerciseId ?? null;
+      if (main !== null && !here(main) && d.templates.every((t) => t.mainLiftExerciseId !== null && !here(t.mainLiftExerciseId))) {
+        expect(card.why).toContain(`${data.internal.nameOf(main)}: not at this gym`);
+      }
+    }
+  });
+
+  it('B2 / rule 9: a pain-flagged template accessory is left out; a pain-flagged main lift stays held at its last load (with history) or with no load (without), marked and named in Why?', async () => {
+    const { s } = await benWithPlan();
+    const data = await loaded(s);
+    const pushKey = dayKeyOf(data, 'Push');
+    const push = data.days.find((d) => d.key === pushKey)?.templates[0];
+    const incline = push?.exerciseIds.find((id) => data.internal.nameOf(id) === 'Incline dumbbell press') ?? '';
+    const bench = push?.mainLiftExerciseId ?? '';
+    expect(s.todaySession.card(data, sel(data, pushKey, { minutes: 75 }))?.rows.some((r) => r.exerciseId === incline)).toBe(true);
+    const benchBefore = Number(s.todaySession.card(data, sel(data, pushKey))?.rows.find((r) => r.exerciseId === bench)?.top);
+    expect(await s.pain.flagMovement({ exerciseId: incline, exerciseName: 'Incline dumbbell press', opId: 'pain-incline' })).toMatchObject({ ok: true });
+    expect(await s.pain.flagMovement({ exerciseId: bench, exerciseName: 'Bench press', opId: 'pain-bench' })).toMatchObject({ ok: true });
+    const upperKey = dayKeyOf(data, 'Upper');
+    const ohp = data.days.find((d) => d.key === upperKey)?.templates[0]?.mainLiftExerciseId ?? '';
+    expect(await s.pain.flagMovement({ exerciseId: ohp, exerciseName: 'Overhead press', opId: 'pain-ohp' })).toMatchObject({ ok: true });
+
+    const flagged = await loaded(s);
+    for (const minutes of [45, 60, 75, 90]) {
+      const card = s.todaySession.card(flagged, sel(flagged, pushKey, { minutes }));
+      expect(card?.rows.some((r) => r.exerciseId === incline)).toBe(false);
+      for (const mix of [1, 2, 3]) expect(s.todaySession.card(flagged, sel(flagged, pushKey, { minutes, mix }))?.rows.some((r) => r.exerciseId === incline)).toBe(false);
+    }
+    // Bench (logged 100 × 7): kept, held no harder than last time, marked.
+    const card = s.todaySession.card(flagged, sel(flagged, pushKey));
+    const row = card?.rows.find((r) => r.exerciseId === bench);
+    expect(row?.held).toBe(true);
+    expect(row?.accessibilityLabel).toContain('pain flag, held');
+    expect(Number(row?.top)).toBeLessThanOrEqual(100);
+    expect(Number(row?.top)).toBeLessThanOrEqual(benchBefore);
+    expect(card?.why).toContain('Bench press: pain flag · held');
+    // Overhead press (no history of its own): kept, no load at all (never the plan's first load or an estimate).
+    const upper = s.todaySession.card(flagged, sel(flagged, upperKey));
+    const ohpRow = upper?.rows.find((r) => r.exerciseId === ohp);
+    expect(ohpRow?.held).toBe(true);
+    expect(ohpRow?.top).toBe('—');
+    expect(s.todaySession.card(data, sel(data, upperKey))?.rows.find((r) => r.exerciseId === ohp)?.top).not.toBe('—');
+  });
+
+  it('lb end to end: an lb gym and profile → the card in lb, and Start plans exactly the card’s top set in lb', async () => {
+    const { s } = await benWithPlan();
+    await s.setup.saveUnits('lb');
+    const gymId = h.ids();
+    expect(await s.setup.saveGym({ gymId, name: 'US Gym', draft: s.coachingKnowledge.buildGymDraft('commercial', 'lb') })).toEqual({ ok: true });
+    expect(await s.gyms.select(gymId)).toMatchObject({ ok: true });
+    // Bench logged here in lb (kg history from the other gym's kg bar gives no target here: `—`, honest).
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 205, reps: 8, rpe: 8 }, { load: 205, reps: 8, rpe: 8 }] }]);
+    h.clockMs += DAY;
+    const data = await loaded(s);
+    expect(data.unit).toBe('lb');
+    const key = dayKeyOf(data, 'Push');
+    const card = s.todaySession.card(data, sel(data, key));
+    expect(card?.unit).toBe('lb');
+    const top = Number(card?.rows[0]?.top);
+    // From 205 × 8 in lb, on lb plates (45 bar, 2.5 lb steps a side): an lb value, rounded to what the bar can make.
+    expect(top).toBeGreaterThanOrEqual(185);
+    expect(top).toBeLessThanOrEqual(235);
+    expect((top - 45) % 5).toBe(0);
+    const c = await s.todaySession.commit(data, sel(data, key), 'lb-commit');
+    if (!c.ok) throw new Error(c.message);
+    const r = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'lb-start', checkIn: null });
+    if (!r.ok) throw new Error(JSON.stringify(r.error));
+    const bench = r.aggregate.exercises.find((e) => e.exerciseId === card?.rows[0]?.exerciseId);
+    const loads = r.aggregate.sets.filter((x) => x.sessionExerciseId === bench?.id && x.setType !== 'warmup').map((x) => x.planned.load);
+    expect(loads.every((l) => l?.unit === 'lb')).toBe(true);
+    expect(Math.max(...loads.map((l) => l?.value ?? 0))).toBe(top);
+  });
+
+  it('S4: a draft’s pinned loads are re-planned at Start when a pain flag arrives after the commit (held, never the frozen load)', async () => {
+    const { s, gymId } = await benWithPlan();
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const bench = data.days.find((d) => d.key === key)?.templates[0]?.mainLiftExerciseId ?? '';
+    const c = await s.todaySession.commit(data, sel(data, key), 'pain-commit');
+    if (!c.ok) throw new Error(c.message);
+    // After the commit: a lighter bench session, then a pain flag. The hold is that last load, not the frozen one.
+    h.clockMs += 60_000;
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 8, rpe: 8 }, { load: 80, reps: 8, rpe: 8 }] }]);
+    expect(await s.pain.flagMovement({ exerciseId: bench, exerciseName: 'Bench press', opId: 'pain-late' })).toMatchObject({ ok: true });
+    const r = await s.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId, opId: 'pain-start', checkIn: null });
+    if (!r.ok) throw new Error(JSON.stringify(r.error));
+    const row = r.aggregate.exercises.find((e) => e.exerciseId === bench);
+    const top = Math.max(...r.aggregate.sets.filter((x) => x.sessionExerciseId === row?.id && x.setType !== 'warmup').map((x) => x.planned.load?.value ?? 0));
+    // Committed at about 100; last time 80 × 8 under a pain flag: held at 80, never the frozen load.
+    expect(top).toBeGreaterThan(0);
+    expect(top).toBeLessThanOrEqual(80);
+  });
+
+  it('states through load(): paused (no NEXT), no plan with routines (Other sessions only), offline after a failed coach call', async () => {
+    const { s, planId } = await benWithPlan();
+    const overview = await s.plans.overview();
+    if (overview === null) throw new Error('overview');
+    const paused = await s.plans.pause({ planId, untilDate: null, expectedVersion: overview.planVersion, opId: 'pause' });
+    if (!paused.ok) throw new Error(paused.message);
+    const p = await loaded(s);
+    expect(p.status).toBe('paused');
+    expect(p.nextKey).toBeNull();
+    expect(p.days.length).toBe(4);
+    const k = p.days[0]?.key ?? '';
+    expect(s.todaySession.card(p, sel(p, k))?.why[0]).toBe('Push: picked by you');
+
+    // A network failure on a coach call: Today says Offline (coach bar and Why?), never a coach line.
+    model = new StepModel([() => [{ type: 'error', error: 'network' }]]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'hi', spoken: false }, turnId: h.ids() }).catch(() => null);
+    const off = await loaded(s);
+    expect(off.review).toBe('offline');
+    expect(off.coachLabel).toBe('Offline');
+    expect(s.todaySession.card(off, sel(off, k))?.why.at(-1)).toBe('Not reviewed · Offline');
+  });
+
+  it('`movedLine`: the next day itself has none; another plan day names what moves; an Other session has none', async () => {
+    const { s } = await benWithPlan();
+    const data = await loaded(s);
+    const next = data.nextKey ?? '';
+    expect(await s.todaySession.movedLine(data, sel(data, next))).toBeNull();
+    const other = data.days.find((d) => d.key !== next);
+    if (other === undefined) throw new Error('one day');
+    const line = await s.todaySession.movedLine(data, sel(data, other.key));
+    const nextName = data.days.find((d) => d.key === next)?.name ?? '';
+    expect(line === null || nbsp(line).startsWith(`${nextName} moves`)).toBe(true);
+    expect(line).not.toBeNull();
+    const o = data.others[0]?.key ?? '';
+    expect(await s.todaySession.movedLine(data, sel(data, o))).toBeNull();
+  });
+});

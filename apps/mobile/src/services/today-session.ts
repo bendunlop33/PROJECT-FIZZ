@@ -192,6 +192,10 @@ interface TodayInternal {
   liftTargetOf: (exerciseId: string | null) => string | null;
   catalogueIdOf: (id: string) => string;
   checkedOn: (id: string) => ReturnType<typeof checkedOnOf>;
+  /** This gym can do it (§3.7). */
+  here: (id: string) => boolean;
+  /** An active pain flag covers it (rule 9). */
+  pained: (id: string) => boolean;
 }
 
 export interface TodaySelection {
@@ -269,18 +273,22 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         if (fromPlan !== undefined) ruleTarget = anchorOf(fromPlan) ?? ruleTarget;
       }
       const flag = painFlagCovering(flags, id, nowMs, deps.now().tz);
+      // Rule 9: a pain-flagged movement is held at its last working load, never progressed; with no history of its
+      // own there's nothing to hold to, so no target at all (`—`, Start light), never the plan's or an estimate.
+      const held = flag !== null;
+      const heldNoHistory = held && refs.latest === null;
       out.set(id, {
         unit: refs.unit,
         convention: refs.convention,
         equipment: refs.equipment,
         bodyweightExercise: e.defaultLoadConvention === 'bodyweight',
         gymEquipment: sub.gym.equipment,
-        coachTarget: fromPlan?.source === 'coach' ? anchorOf(fromPlan) : null,
-        planFirstLoad: fromPlan?.source === 'plan' ? anchorOf(fromPlan) : null,
-        ruleTarget,
-        e1rm: refs.own?.e1rm ?? null,
+        coachTarget: !heldNoHistory && fromPlan?.source === 'coach' ? anchorOf(fromPlan) : null,
+        planFirstLoad: !heldNoHistory && fromPlan?.source === 'plan' ? anchorOf(fromPlan) : null,
+        ruleTarget: heldNoHistory ? null : ruleTarget,
+        e1rm: heldNoHistory ? null : (refs.own?.e1rm ?? null),
         startLightCeiling: noReferenceCeiling(refs.equipment, refs.patternE1rms),
-        painCap: flag === null ? null : (refs.latest?.top.value ?? null),
+        painCap: held ? (refs.latest?.top.value ?? null) : null,
       });
     }
     return out;
@@ -515,6 +523,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         lastOf,
         liftTargetOf,
         catalogueIdOf: (id) => exercises.get(id)?.catalogueKey ?? id,
+        here,
+        pained,
         checkedOn: (id) => {
           const l = loads.get(id);
           return l === undefined ? null : checkedOnOf({ equipment: l.equipment, convention: l.convention, unit: l.unit });
@@ -527,20 +537,44 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return data.days.find((d) => d.key === key) ?? data.others.find((d) => d.key === key) ?? null;
   }
 
-  /** The pool a day's card builds from: its template's exercises first, then Ben's own and the catalogue's. */
+  /**
+   * The pool a day's card builds from: its template's exercises first, then Ben's own and the catalogue's. Only what
+   * this gym can do and nothing pain-flagged (§3.7, rule 9): a template exercise that fails either falls through to
+   * the next candidate of its group.
+   */
   function poolFor(data: TodaySessionData, t: TodayTemplate) {
-    const { info, groupPool } = data.internal;
-    return (g: BuilderGroupName) => [...new Set([...t.exerciseIds.filter((id) => info(id)?.group === g), ...groupPool(g)])];
+    const { info, groupPool, here, pained } = data.internal;
+    return (g: BuilderGroupName) => [...new Set([...t.exerciseIds.filter((id) => info(id)?.group === g && here(id) && !pained(id)), ...groupPool(g)])];
+  }
+
+  /**
+   * The template a card uses for the chosen main lift, and the chips: only main lifts this gym can do (a template with
+   * none counts). The chosen one when doable, else the first doable one. When none is, the day's template without its
+   * main lift (the group's best doable exercise leads instead) and `gap` names the lift (§3.7, rule 4).
+   */
+  function templateHere(data: TodaySessionData, day: TodayDay, mainLiftExerciseId: string | null): { t: TodayTemplate; chips: TodayTemplate[]; gap: string | null } | null {
+    const { here } = data.internal;
+    const chips = day.templates.filter((x) => x.mainLiftExerciseId === null || here(x.mainLiftExerciseId));
+    const picked = chips.find((x) => x.mainLiftExerciseId === mainLiftExerciseId) ?? chips[0];
+    if (picked !== undefined) return { t: picked, chips, gap: null };
+    const first = day.templates.find((x) => x.mainLiftExerciseId === mainLiftExerciseId) ?? day.templates[0];
+    if (first === undefined) return null;
+    return { t: { ...first, mainLiftExerciseId: null }, chips: [], gap: first.mainLiftExerciseId === null ? null : data.internal.nameOf(first.mainLiftExerciseId) };
   }
 
   /** `card`: the session card for a day and its controls. Pure over `data`. */
   function card(data: TodaySessionData, sel: TodaySelection): TodayCardView | null {
     const day = dayOf(data, sel.dayKey);
     if (day === null) return null;
-    const { ctx, info, nameOf, worksOf } = data.internal;
-    const t = day.templates.find((x) => x.mainLiftExerciseId === sel.controls.mainLiftExerciseId) ?? day.templates[0];
-    if (t === undefined) return null;
-    const mainLifts = day.templates.map((x) => ({ exerciseId: x.mainLiftExerciseId, label: x.label, selected: x === t }));
+    const { ctx, info, nameOf, worksOf, pained } = data.internal;
+    const found = templateHere(data, day, sel.controls.mainLiftExerciseId);
+    if (found === null) return null;
+    const { t, chips, gap } = found;
+    const mainLifts = chips.map((x) => ({ exerciseId: x.mainLiftExerciseId, label: x.label, selected: x === t }));
+    // The day as this gym can build it (a main lift it can't do is left out, `gap`).
+    const dayHere: TodayDay = gap === null ? day : { ...day, templates: [t] };
+    // A pain-flagged movement still on the card (only a main lift can be): held and named in Why? (rule 9).
+    const heldIn = (w: BuilderWorkout): string[] => [...new Set(w.blocks.flatMap((b) => b.slots).filter((x) => pained(x.exerciseId)).map((x) => nameOf(x.exerciseId)))];
     const edited = data.edited[`${day.key}|${t.mainLiftExerciseId ?? '-'}`] ?? null;
     const clash = (() => {
       if (data.near === null) return null;
@@ -563,15 +597,15 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         clashLine: clash,
         controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: sel.controls.abs ?? t.absPlan, planOn: t.absPlan, differs: false }, supersets: sel.controls.supersets },
         unit,
-        rows: todayBreakdown(edited.workout, info, worksOf, unit),
-        why: whyLines(data, day, t, sel.controls, null),
+        rows: todayBreakdown(edited.workout, info, worksOf, unit, pained),
+        why: whyLines(data, day, t, sel.controls, null, heldIn(edited.workout), gap),
         mix: null,
         mixAvailable: false,
         startable: count > 0,
         draft: null,
       };
     }
-    const d = assembleTodayDraft({ day, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day) });
+    const d = assembleTodayDraft({ day: dayHere, controls: { ...sel.controls, mainLiftExerciseId: t.mainLiftExerciseId }, ctx, pool: poolFor(data, t), mix: data.internal.mixFor(day) });
     if (d === null) return null;
     const unit = breakdownUnit(d.workout, data.unit);
     const advice = d.advice[0]?.reason ?? null;
@@ -588,8 +622,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       clashLine: clash ?? advice,
       controls: { mainLifts, accessories: sel.controls.accessories, minutes: sel.controls.minutes, abs: { on: d.absOn, planOn: t.absPlan, differs: d.absOn !== t.absPlan }, supersets: sel.controls.supersets },
       unit,
-      rows: todayBreakdown(d.workout, info, worksOf, unit),
-      why: whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null),
+      rows: todayBreakdown(d.workout, info, worksOf, unit, pained),
+      why: whyLines(data, day, t, sel.controls, mainSlot === null ? null : todayBreakdown({ blocks: [{ slots: [mainSlot], auto: false }], restLevel: 'normal' }, info, worksOf, unit)[0]?.top ?? null, heldIn(d.workout), gap),
       mix: d.mix === null ? null : todayMixLine(d.mix, nameOf),
       mixAvailable: d.mixOptions > 0,
       startable: d.exerciseCount > 0,
@@ -597,7 +631,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     };
   }
 
-  function whyLines(data: TodaySessionData, day: TodayDay, t: TodayTemplate, c: TodayControls, mainTarget: string | null): string[] {
+  function whyLines(data: TodaySessionData, day: TodayDay, t: TodayTemplate, c: TodayControls, mainTarget: string | null, held: readonly string[], gap: string | null): string[] {
     const next = data.nextKey === null ? null : (dayOf(data, data.nextKey)?.name ?? null);
     return todayWhy({
       dayName: day.name,
@@ -611,6 +645,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       minutes: c.minutes,
       coachReason: null,
       review: data.review,
+      held,
+      missingHere: gap,
     });
   }
 
@@ -632,19 +668,23 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     return afterDay.key === next.key ? TODAY_V2_COPY.moves(next.name, 'next session') : `${next.name} moves after ${afterDay.name}`;
   }
 
-  /** Today wrote this version and nothing has changed it since (else Ben edited it in the builder). */
+  /**
+   * Today wrote the current version and nothing has written the draft since (else Ben edited it in the builder).
+   * Ownership is by version, never by timestamps (review B1): Today's action ID names the draft version it wrote,
+   * so any later write (an in-place edit, a new version, an Undo, a restore) bumps `version` and no longer matches.
+   */
   function isEdited(d: WorkoutDraft): boolean {
     const v = d.versions.find((x) => x.n === d.currentVersion);
     if (v === undefined) return true;
-    return v.actionId !== todayActionId(d.id, v.n) || d.updatedAtUtc !== v.createdAt.utc;
+    return v.actionId !== todayActionId(d.id, v.n, d.version);
   }
 
   function keyOf(data: TodaySessionData, day: TodayDay, t: TodayTemplate): BuilderDraftKey {
     return { planId: day.planId, dayIndex: day.dayIndex, splitDayId: day.splitDayId, mainLiftExerciseId: t.mainLiftExerciseId, localDate: data.localDate };
   }
 
-  function versionOf(data: TodaySessionData, day: TodayDay, d: TodayDraft, minutes: number, plan: DraftPlan, draftId: string, n: number, parentN: number | null): WorkoutDraftVersion {
-    const at = deps.now();
+  function versionOf(data: TodaySessionData, day: TodayDay, d: TodayDraft, minutes: number, plan: DraftPlan, w: { draftId: string; n: number; parentN: number | null; draftVersion: number; at: ZonedTimestamp }): WorkoutDraftVersion {
+    const { draftId, n, parentN, at } = w;
     const counts = new Map<BuilderGroupName, number>();
     for (const b of d.workout.blocks) for (const s of b.slots) {
       const g = data.internal.info(s.exerciseId)?.group;
@@ -665,7 +705,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       n,
       parentN,
       status: 'current',
-      actionId: todayActionId(draftId, n),
+      actionId: todayActionId(draftId, n, w.draftVersion),
       turnId: 'manual',
       request: { text: '', minutes: setup.minutes, focus: 'split_day', gymId: data.gymId, origin: 'builder', day: { name: day.name.slice(0, 30), bodyParts: bodyParts.length > 0 ? bodyParts : ['Chest'] }, setup },
       rawArgs: '',
@@ -703,7 +743,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         const cur = currentDraftVersion(existing);
         if (stableStringify(cur.plan) === stableStringify(plan)) return { ok: true, draftId: existing.id, version: existing.version };
         const n = Math.max(...existing.versions.map((v) => v.n)) + 1;
-        const v = versionOf(data, day, d, sel.controls.minutes, plan, existing.id, n, cur.n);
+        const v = versionOf(data, day, d, sel.controls.minutes, plan, { draftId: existing.id, n, parentN: cur.n, draftVersion: existing.version + 1, at });
         const kept = existing.versions.map((x) => (x.n === cur.n ? { ...x, status: 'replaced' as const } : x));
         while (kept.length >= MAX_WORKOUT_DRAFT_VERSIONS) kept.shift();
         const next: WorkoutDraft = { ...existing, name, versions: [...kept, v], currentVersion: n, version: existing.version + 1, updatedAtUtc: at.utc, opIds: [...existing.opIds, opId].slice(-MAX_WORKOUT_DRAFT_OPS) };
@@ -718,7 +758,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         status: 'open',
         name,
         currentVersion: 1,
-        versions: [versionOf(data, day, d, sel.controls.minutes, plan, id, 1, null)],
+        versions: [versionOf(data, day, d, sel.controls.minutes, plan, { draftId: id, n: 1, parentN: null, draftVersion: 1, at })],
         sessionId: null,
         startedAtUtc: null,
         routineId: null,
@@ -774,9 +814,12 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
 
 const clampInt = (m: number): number => Math.max(15, Math.min(180, Math.round(m)));
 
-/** The action ID of a version Today wrote: derived, so Today can tell its own versions from the builder's edits. */
-export function todayActionId(draftId: string, n: number): string {
-  return deriveId(`today-session:${draftId}:${String(n)}`);
+/**
+ * The action ID of a version Today wrote, derived from the draft, the version number and the draft `version` the
+ * write produced: Today can tell its own versions from the builder's edits without comparing clocks (review B1).
+ */
+export function todayActionId(draftId: string, n: number, draftVersion: number): string {
+  return deriveId(`today-session:${draftId}:${String(n)}:${String(draftVersion)}`);
 }
 
 export type TodaySessionService = ReturnType<typeof createTodaySessionService>;
