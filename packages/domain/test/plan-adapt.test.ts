@@ -124,6 +124,36 @@ describe('adaptive Up next while a plan is in use (Ben, 20 Oct)', () => {
   });
 });
 
+describe('one rule for ✓ and the pin (review plan-adapt S1, S2, S3)', () => {
+  const UPPER: PlanDueDay = { routineId: id(15), name: 'Upper', bodyParts: ['Chest', 'Shoulders', 'Back'] };
+  const PPLU = [PUSH, PULL, LEGS, UPPER];
+
+  it('a plan workout Ben turned into another day (started Pull, did legs) is ✓ for Pull and Legs, as Up next reads it', () => {
+    const turned = legsDone(1, 0, PULL.routineId);
+    expect(planDaysDoneBy(PPL, turned).sort()).toEqual([PULL.routineId, LEGS.routineId].sort());
+    expect(names(planDaysByDue(PPL, [turned]))).toEqual(['Push']);
+    // Followed as planned: its own day only.
+    expect(planDaysDoneBy(PPL, pullDone(2, 0))).toEqual([PULL.routineId]);
+  });
+
+  it('a pin stays until that day is done: a Pull workout after an Upper pin leaves it; an Upper one clears it', () => {
+    const pin = { routineId: UPPER.routineId, opId: 'pin-u', atUtc: at(0).utc };
+    expect(activePin(pin, PPLU, [pullDone(1, DAY)])).toEqual(pin);
+    expect(planDaysByDue(PPLU, [pullDone(1, DAY)], pin)[0]).toMatchObject({ day: UPPER, pinned: true });
+    expect(activePin(pin, PPLU, [workout(2, DAY, UPPER.routineId, { Chest: 3, Shoulders: 3, Back: 3 })])).toBeNull();
+    // A workout from before the pin doesn't clear it.
+    expect(activePin(pin, PPLU, [workout(3, -DAY, UPPER.routineId, { Chest: 3, Shoulders: 3, Back: 3 })])).toEqual(pin);
+  });
+
+  it('a pin done before a long break stays done when its workout is read (the callers read every workout since the pin, not a window)', () => {
+    const pin = { routineId: LEGS.routineId, opId: 'pin-l', atUtc: at(0).utc };
+    const legs = legsDone(1, 3600);
+    expect(activePin(pin, PPL, [legs])).toBeNull();
+    // Six weeks on: the leg day is out of Up next's 42-day window but still since the pin.
+    expect(planDaysByDue(PPL, [], activePin(pin, PPL, [legs])).some((d) => d.pinned)).toBe(false);
+  });
+});
+
 describe('a plan day’s body parts', () => {
   const BENCH = exercise(201, 'Bench', { primaryMuscles: ['chest'] });
   const OHP = exercise(202, 'OHP', { primaryMuscles: ['front_delts'] });

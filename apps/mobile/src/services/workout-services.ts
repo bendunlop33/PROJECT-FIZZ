@@ -32,6 +32,7 @@ import {
   activePause,
   planDayBodyParts,
   planDaysByDue,
+  activePin,
   type PlanDueDay,
   type PlanDueWorkout,
   workoutGroupsOf,
@@ -1951,10 +1952,12 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
   }
 
-  /** The finished workouts in Up next's window (`SPLIT_WINDOW_DAYS`) and an exercise lookup for their rows. */
-  async function windowSessions(p: UserProfile): Promise<{ sessions: SessionAggregate[]; exerciseOf: (id: string) => Exercise | null }> {
+  /** The finished workouts in Up next's window (`SPLIT_WINDOW_DAYS`; from `sinceUtc` when that is earlier) and an exercise lookup for their rows. */
+  async function windowSessions(p: UserProfile, sinceUtc: string | null = null): Promise<{ sessions: SessionAggregate[]; exerciseOf: (id: string) => Exercise | null }> {
     const nowMs = toMs(ctx.now().utc);
-    const { sessions } = await repos().sessions.listFinishedBetweenReadable(p.id, toIso(nowMs - SPLIT_WINDOW_DAYS * 86_400_000), toIso(nowMs + 1));
+    const windowMs = nowMs - SPLIT_WINDOW_DAYS * 86_400_000;
+    const fromMs = sinceUtc === null ? windowMs : Math.min(windowMs, toMs(sinceUtc));
+    const { sessions } = await repos().sessions.listFinishedBetweenReadable(p.id, toIso(fromMs), toIso(nowMs + 1));
     const infos = new Map<string, Exercise | null>();
     for (const a of sessions) for (const e of a.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, await exerciseById(e.exerciseId));
     return { sessions, exerciseOf: (id) => infos.get(id) ?? null };
@@ -1965,13 +1968,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * exercises (else the split day it was mapped to), every finished workout in the window by the muscles done.
    */
   async function planDue(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null) {
-    const { sessions, exerciseOf } = await windowSessions(p);
+    // A pin is read against every workout since it, not only the window: one done before a long break stays done (review plan-adapt S3).
+    const { sessions: read, exerciseOf } = await windowSessions(p, pin?.atUtc ?? null);
+    const windowFrom = toMs(ctx.now().utc) - SPLIT_WINDOW_DAYS * 86_400_000;
     const infos = new Map<string, Exercise | null>();
     for (const r of planDays) for (const e of r.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, exerciseOf(e.exerciseId) ?? (await exerciseById(e.exerciseId)));
     const split = splitInUse(training);
     const days: (PlanDueDay & { routine: Routine })[] = planDays.map((r) => ({ routineId: r.id, name: r.name, bodyParts: planDayBodyParts(r, (id) => infos.get(id) ?? null, split), createdFromSessionId: r.createdFromSessionId ?? null, routine: r }));
-    const workouts: PlanDueWorkout[] = sessions.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf) }));
-    return planDaysByDue(days, workouts, pin).map((d) => ({ day: d.day.routine, pinned: d.pinned }));
+    const all: PlanDueWorkout[] = read.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf) }));
+    const live = activePin(pin, days, all);
+    const workouts = all.filter((w) => toMs(w.startedAtUtc) >= windowFrom);
+    return planDaysByDue(days, workouts, live).map((d) => ({ day: d.day.routine, pinned: d.pinned }));
   }
 
   /**
