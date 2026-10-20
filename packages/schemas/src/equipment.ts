@@ -167,3 +167,17 @@ export const GymSchema = RecordMetaSchema.extend({
   missingKinds: z.array(GymEquipmentKindSchema).max(6).optional(),
 });
 export type Gym = z.infer<typeof GymSchema>;
+
+/**
+ * (20 Oct, ADR 0029) One change to a gym's profile with the records before
+ * and after (`before: null` = a new item), so Undo can put each back while
+ * nothing changed since (rule 5). Made by `Make full gym`, `Not at this gym`,
+ * a learned load, or the coach's `update_gym`. `lines`: app text.
+ */
+export const GymEditSchema = z.object({
+  gymId: IdSchema,
+  gym: z.object({ before: GymSchema, after: GymSchema }).nullable(),
+  equipment: z.array(z.object({ before: EquipmentInstanceSchema.nullable(), after: EquipmentInstanceSchema })).max(40),
+  lines: z.array(z.string().min(1).max(200)).max(12),
+});
+export type GymEditRecord = z.infer<typeof GymEditSchema>;

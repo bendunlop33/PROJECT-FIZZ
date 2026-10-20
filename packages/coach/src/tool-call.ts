@@ -78,6 +78,9 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'edit_today':
       // Coach v3: the reason and the ask claim are explanation; the ops and the version are the change.
       return { baseVersion: call.args.baseVersion, ops: call.args.ops };
+    case 'update_gym':
+      // (20 Oct) The reason and the ask claim are explanation; the gym and the changes are the edit.
+      return { gymName: call.args.gymName?.trim().toLowerCase() ?? null, changes: call.args.changes };
     case 'add_exercise_today':
       // The reason is explanation: a retry that only rewords it adds the same exercise.
       // Coach v3: so is the ask claim (`benAsked`, `benQuote`): who asked doesn't change what is added.
@@ -137,6 +140,7 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'forget_memory':
     case 'adjust_pending_sets':
     case 'add_exercise_today':
+    case 'update_gym':
     case 'edit_today':
     case 'rename_workout':
     case 'log_set':

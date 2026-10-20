@@ -5,6 +5,7 @@ import {
   type EquipmentInstance,
   type Exercise,
   type Gym,
+  type GymEditRecord,
   type GymEquipmentKind,
   type GymSetup,
   type Load,
@@ -215,15 +216,8 @@ export function gymSetupWords(gym: Pick<Gym, 'setup'>, equipment: readonly Pick<
 // ---------------------------------------------------------------------------
 // Gym edits: versioned writes with the content before, so Undo can put each back
 
-export interface GymEdit {
-  gymId: string;
-  /** The gym record's change (setup, missing kinds), or null. */
-  gym: { before: Gym; after: Gym } | null;
-  /** `before: null`: a new item (Undo retires it). */
-  equipment: { before: EquipmentInstance | null; after: EquipmentInstance }[];
-  /** Short app lines: `Leg press: not here`, `Added: Cables`. */
-  lines: string[];
-}
+/** A gym change with the records before and after (`GymEditSchema`): Undo puts each back. */
+export type GymEdit = GymEditRecord;
 
 export interface GymWrite<T> {
   next: T;

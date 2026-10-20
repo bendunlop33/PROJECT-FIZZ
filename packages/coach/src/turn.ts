@@ -33,6 +33,7 @@ import { BUILD_INSTRUCTIONS, LIVE_LOAD_CHOICE_LINE, NO_BUILD_TOOL_INSTRUCTIONS, 
 import { buildFollowUpIn, buildPainMention, buildQuestionChain, forcesBuild, refusedBuildActionIds } from './build-ask';
 import { lastLoggedSets } from './context';
 import { verifyAsked, type AskClaim, type AskVerdict } from './intent';
+import { mentionsGymSetup } from './gym-update';
 import { editOfferIn } from './edit-today';
 import { addedContinuationOf } from './find-exercises';
 import { collectFacts, type FactText, type NumberFacts } from './numbers';
@@ -273,7 +274,8 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
   const live = g.liveWorkout === true && g.kind === 'workout';
   // Review S2: asking to rename is asking for a change, so "I've renamed it" with no card is hidden and noted.
   const setWords = live && g.input.kind === 'words' && (mentionsTodaysSets(g.input.text) || asksToRename(g.input.text));
-  const benAskedForChange = acceptedOffer || setWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'build_plan') || requestHas(benRequest, 'add')));
+  const gymWords = g.input.kind === 'words' && mentionsGymSetup(g.input.text);
+  const benAskedForChange = acceptedOffer || setWords || gymWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'build_plan') || requestHas(benRequest, 'add')));
   return {
     kind: g.kind,
     benRequest,
@@ -286,6 +288,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     ...(g.buildOpen === true && g.kind === 'general' && g.input.kind === 'words' && !requestHas(benRequest, 'build_plan') ? { buildOpen: true } : {}),
     ...(live ? { liveWorkout: true } : {}),
     ...(g.buildQuestionOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildQuestionOpen: true } : {}),
+    ...(gymWords ? { gymWords: true } : {}),
   };
 }
 

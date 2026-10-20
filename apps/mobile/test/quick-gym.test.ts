@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { formFromEquipment, type EquipmentForm } from '@fizz/domain';
+
+import { threadRows } from '../src/coach/sheet-view';
 import type { AppServices } from '../src/services/app-services';
+import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, type Harness } from './harness';
 
 /**
@@ -149,5 +153,54 @@ describe('learning the gym as he trains', () => {
     data = await s.workout.load();
     if (!data) throw new Error('no workout');
     expect(s.workout.view(data, h.clockMs, typed).focus?.gymLearn?.text).toBe('Add 22 kg dumbbells here?');
+  });
+});
+
+describe('the coach updates a gym (update_gym)', () => {
+  let model: StepModel;
+  beforeEach(() => {
+    model = new StepModel([]);
+    h = createHarness('2026-10-20T07:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
+  });
+  const say = (s: AppServices, text: string) => s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text, spoken: false }, turnId: h.ids() });
+
+  it('"this gym has no leg press": applied at once, the card has Undo; the coach sees "full gym (assumed)"', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await fullGym(s);
+    model = new StepModel([() => toolCall('update_gym', { gymName: null, changes: [{ op: 'not_here', exerciseId: 'machine-leg-press' }], reason: 'Ben said so', benAsked: true, benQuote: 'this gym has no leg press' }), () => replyWith('Got it.')]);
+    const r = await say(s, 'this gym has no leg press');
+    expect(JSON.stringify(model.requests[0]?.input ?? '')).toContain('full gym (assumed)');
+    const card = r.cards.find((c) => c.record.detail.kind === 'update_gym')?.record;
+    expect(card).toMatchObject({ status: 'committed', detail: { lines: ['Leg press: not here'] } });
+    expect((await s.gyms.detail(gymId))?.notHere.map((x) => x.name)).toEqual(['Leg press']);
+    const thread = await s.coach.loadThread(r.threadId);
+    const row = thread === null ? undefined : threadRows(thread).find((x) => x.kind === 'card' && x.card.actionId === card?.actionId);
+    expect(row?.kind === 'card' ? [row.card.status.word, row.card.canUndo] : null).toEqual(['Applied', true]);
+    await s.coach.undo(card?.actionId ?? '', 'u1');
+    expect((await s.gyms.detail(gymId))?.notHere).toEqual([]);
+  });
+
+  it('the coach’s own idea is a card: Apply saves exactly it once; a gym changed since is Out of date', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await fullGym(s);
+    const step = () => toolCall('update_gym', { gymName: null, changes: [{ op: 'dumbbells', max: 40, step: 2 }], reason: 'your logs', benAsked: false, benQuote: null });
+    model = new StepModel([step, () => replyWith('Want me to update the dumbbells?'), step, () => replyWith('Want me to update the dumbbells?')]);
+    const r = await say(s, 'the dumbbells here go up in 2s maybe? what do you think');
+    const card = r.cards.find((c) => c.record.detail.kind === 'update_gym')?.record;
+    expect(card?.status).toBe('proposed');
+    expect((await s.gyms.detail(gymId))?.equipment[0]?.line).toBe('2.5–50 kg each');
+    const applied = await s.coach.tapGymProposal(card?.actionId ?? '', 'apply');
+    expect(applied.ok).toBe(true);
+    expect((await s.gyms.detail(gymId))?.equipment[0]?.line).toBe('2–40 kg each');
+    expect(await s.coach.tapGymProposal(card?.actionId ?? '', 'apply')).toEqual({ ok: false, state: 'applied' });
+
+    // A second suggestion, then Ben edits the rack himself: Apply is refused, nothing changes.
+    const r2 = await say(s, 'the dumbbells here go up in 2s maybe? what do you think');
+    const card2 = r2.cards.find((c) => c.record.detail.kind === 'update_gym')?.record;
+    const rack = (await s.gyms.detail(gymId))?.equipment[0]?.equipment;
+    if (!rack) throw new Error('no rack');
+    await s.gyms.save({ gymId, equipmentId: rack.id, expectedVersion: rack.version, form: { ...(formFromEquipment(rack) as Extract<EquipmentForm, { kind: 'dumbbells' }>), range: { from: 2, to: 30, step: 2 }, missing: [], extra: [] } });
+    expect(await s.coach.tapGymProposal(card2?.actionId ?? '', 'apply')).toEqual({ ok: false, state: 'out_of_date' });
+    expect((await s.gyms.detail(gymId))?.equipment[0]?.line).toBe('2–30 kg each');
   });
 });

@@ -171,6 +171,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Suggest a new exercise for Ben\'s own list when he wants one that is not in it (find_exercises found nothing like it; never a duplicate under another name). Give its usual name, one equipment kind, loadConvention (null: the equipment\'s usual one; plate-loaded machines are added, dumbbells per_hand, cable or stack machines stack, assisted machines assistance), 1–3 main muscles, how it is measured (reps, duration, distance or cardio) and laterality (unilateral when done one side at a time; null otherwise). Ben sees a card and taps Add or Edit; nothing is added until he does. After he adds it, his next message says so: then use it for what he asked.',
   },
   {
+    // (20 Oct, Ben: "update as we go and train the app for each gym"; ADR 0029) Applied with Undo when Ben said it
+    // ("this gym has no leg press"); the coach's own idea is a card he applies (rule 3). The executor decides.
+    name: 'update_gym',
+    effect: 'versioned_update',
+    writes: ['gym_equipment'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Update what a gym has (when you say so, with Undo; otherwise as a suggestion you apply)',
+    capabilitySection: 'when_you_ask',
+    description:
+      "Update one of Ben's gyms when he says what it has or lacks (\"this gym has no leg press\", \"dumbbells go up in 2s here\", \"only up to 30 kg\", \"there's a hack squat\"). Gyms are full gyms by default with assumed equipment, so change only what he told you or what his logged loads show. Changes: `add` / `remove` a gym equipment kind; `dumbbells` with `max` (heaviest, per hand) and/or `step` in the gym's unit; `stack_step` for a weight stack (itemName from get_gym_equipment, e.g. Cable station or Machines; null = every stack); `not_here` for one exercise the gym can't do (its catalogueId or Ben's exercise ID; use this for a single machine such as a leg press, not `remove`). gymName: one of his saved gyms when he named one, else null (the workout's or his selected gym). benAsked: true only when his message this turn says it, with benQuote his words copied exactly; false when it is your idea, which he sees as a card he can apply. The app checks every number and refuses anything it can't do.",
+  },
+  {
     name: 'get_recent_actions',
     effect: 'read',
     writes: [],
@@ -375,7 +389,8 @@ export const COACH_NEVER: readonly string[] = [
 /** (11 Oct) `logged_set`: a set Ben told the coach to log or correct, through the workout's own versioned commands; never a delete. */
 /** (12 Oct) `session_exercise`: an exercise added to today's workout with pending sets only; Undo takes it out. */
 /** (14 Oct) `session_name`: the live workout's name, through the workout's own `rename_session`; Undo names it back. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name']);
+/** (20 Oct) `gym_equipment`: a gym's profile and items (`update_gym`); every record keeps its version, Undo puts it back. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'gym_equipment']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -401,7 +416,7 @@ export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
     if (t.effect === 'read' && t.writes.length > 0) throw new UnsafeRegistryError(`${t.name}: a read tool can't write`);
     if (t.effect !== 'read' && t.writes.length === 0) throw new UnsafeRegistryError(`${t.name}: a write tool must declare what it writes`);
     if (t.effect === 'versioned_update' && t.writes.some((w) => !VERSIONED_WRITABLE.has(w))) {
-      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories, a set Ben named, an exercise added today or today's workout name`);
+      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories, a set Ben named, an exercise added today, today's workout name or a gym's equipment`);
     }
     if (t.effect !== 'read' && (t.plainLabel === null || t.plainLabel.trim() === '')) {
       throw new UnsafeRegistryError(`${t.name}: a write tool needs a plainLabel for What the coach can do`);
@@ -448,6 +463,8 @@ export interface TurnGate {
    * fewer than 2 asked, and not a revision of a draft. Absent or false: `ask_build_question` is withheld.
    */
   buildQuestionOpen?: boolean;
+  /** (20 Oct, ADR 0029) Ben's words say what a gym has or lacks (`mentionsGymSetup`): `update_gym` is offered. */
+  gymWords?: boolean;
 }
 
 /**
@@ -521,6 +538,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
       return null;
     case 'ben_request':
       if (t.name === 'ask_build_question') return requestOpens(t, g.benRequest) && g.buildQuestionOpen === true ? null : 'needs_request';
+      if (t.name === 'update_gym') return g.gymWords === true ? null : 'needs_request';
       if (requestOpens(t, g.benRequest)) return null;
       if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
       if (TODAY_TOOLS.has(t.name) && g.kind === 'workout' && g.liveWorkout === true) return null;

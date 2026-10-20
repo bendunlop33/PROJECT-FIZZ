@@ -12,6 +12,7 @@ import {
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
 import { DraftBasisSchema } from './draft';
+import { GymEditSchema, GymEquipmentKindSchema, type GymEditRecord } from './equipment';
 import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
 import { CustomExerciseFieldsSchema, EquipmentKindSchema, LateralitySchema, MeasurementSchema, MuscleSchema, type Exercise } from './exercise';
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
@@ -79,6 +80,8 @@ export const CoachEntityKindSchema = z.enum([
   'plan_draft',
   /** (19 Oct) A new exercise for Ben's list: a proposal card; saved only when he taps Add (rule 3). */
   'custom_exercise',
+  /** (20 Oct, ADR 0029) A gym's profile and equipment (`update_gym`): versioned writes; Undo puts each record back. */
+  'gym_equipment',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -414,6 +417,31 @@ export const AddPlaybookCandidateArgsSchema = z.strictObject({
 });
 export type AddPlaybookCandidateArgs = z.infer<typeof AddPlaybookCandidateArgsSchema>;
 
+/**
+ * (20 Oct, Ben: "update as we go and train the app for each gym"; ADR 0029) One change to a gym's
+ * profile. Kinds are the gym-profile kinds. `not_here`: one exercise the gym can't do ("no leg
+ * press here"), by a catalogueId or Ben's own exercise's ID. Every number is checked by the app.
+ */
+export const UpdateGymChangeSchema = z.discriminatedUnion('op', [
+  z.strictObject({ op: z.literal('add'), equipment: GymEquipmentKindSchema }),
+  z.strictObject({ op: z.literal('remove'), equipment: GymEquipmentKindSchema }),
+  /** The dumbbells' heaviest (per hand) and step, in the gym's unit; null keeps one. */
+  z.strictObject({ op: z.literal('dumbbells'), max: z.number().min(0).max(1000).nullable(), step: z.number().min(0).max(100).nullable() }),
+  /** A weight stack's step in the gym's unit: the item named (`Cable station`, `Machines`), or every stack (null). */
+  z.strictObject({ op: z.literal('stack_step'), step: z.number().min(0).max(100), itemName: z.string().max(120).nullable() }),
+  z.strictObject({ op: z.literal('not_here'), exerciseId: z.string().min(1).max(80) }),
+]);
+export type UpdateGymChange = z.infer<typeof UpdateGymChangeSchema>;
+
+export const UpdateGymArgsSchema = z.strictObject({
+  /** One of Ben's gyms by name; null: the workout's gym, else his selected gym. */
+  gymName: z.string().max(120).nullable(),
+  changes: z.array(UpdateGymChangeSchema).min(1).max(6),
+  reason,
+  ...askClaim,
+});
+export type UpdateGymArgs = z.infer<typeof UpdateGymArgsSchema>;
+
 /** Every v1 tool name. Anything else the model calls is `Not allowed`. */
 export const CoachToolNameSchema = z.enum([
   'get_active_session',
@@ -458,6 +486,8 @@ export const CoachToolNameSchema = z.enum([
   'propose_plan',
   /** (19 Oct) A new exercise for Ben's list, as a card he adds or edits. */
   'propose_exercise',
+  /** (20 Oct, ADR 0029) Update a gym's equipment: applied with Undo when Ben said it, else a card he applies. */
+  'update_gym',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -491,6 +521,7 @@ export const COACH_TOOL_ARGS = {
   ask_build_question: AskBuildQuestionArgsSchema,
   propose_plan: ProposePlanArgsSchema,
   propose_exercise: ProposeExerciseArgsSchema,
+  update_gym: UpdateGymArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -866,6 +897,19 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     exerciseId: IdSchema,
     fields: CustomExerciseFieldsSchema,
   }),
+  /**
+   * (20 Oct, ADR 0029) The coach's change to a gym's profile (`update_gym`). `committed`: applied
+   * because Ben said it (Undo puts every record back while unchanged); `proposed`: a card he applies,
+   * holding exactly what would apply (`edit`). `proposalId`: on Ben's own Apply or Not now record.
+   */
+  z.object({
+    kind: z.literal('update_gym'),
+    gymId: IdSchema,
+    gymName: z.string().min(1).max(120),
+    lines: z.array(z.string().min(1).max(200)).min(1).max(12),
+    edit: GymEditSchema,
+    proposalId: IdSchema.optional(),
+  }),
   z.object({
     kind: z.literal('undo'),
     undoneActionId: IdSchema,
@@ -1182,7 +1226,9 @@ export type CoachWrite =
    */
   | { kind: 'workout_draft'; action: ActionRecord; draft: WorkoutDraft; expectedVersion: number | null }
   /** (19 Oct) A coach plan and its record, in one write; `expectedVersion` as for a draft. */
-  | { kind: 'plan_draft'; action: ActionRecord; plan: PlanDraft; expectedVersion: number | null };
+  | { kind: 'plan_draft'; action: ActionRecord; plan: PlanDraft; expectedVersion: number | null }
+  /** (20 Oct, ADR 0029) A gym edit and its record, in one write; every record version-checked (rule 5). */
+  | { kind: 'gym_edit'; action: ActionRecord; edit: GymEditRecord };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

@@ -1125,6 +1125,10 @@ function factsOf(record: ActionRecord): RecordFacts {
       addTimeAndDistance(f, d.durationS, d.distanceM);
       if (d.target?.load) f.primaryLoad = d.target.load;
       break;
+    case 'update_gym':
+      // (20 Oct, ADR 0029) The gym's lines as saved: the numbers in them (`Dumbbells: 2–40 kg, every 2`).
+      for (const l of d.lines) for (const m of l.matchAll(/\d+(?:\.\d+)?/g)) f.numbers.add(m[0]);
+      break;
     case 'rename_workout':
     case 'propose_next_workout_change':
     case 'update_routine':
