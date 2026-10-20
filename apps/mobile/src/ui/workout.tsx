@@ -364,19 +364,8 @@ export function NumberStepper({
       selectTextOnFocus
       accessibilityLabel={fieldLabel ?? `${label}${unit ? `, ${unit}` : ''}`}
       {...(hint ? { accessibilityHint: hint } : {})}
-      {...(cellVariant
-        ? {
-            // VoiceOver's actions step by the same achievable loads as the keypad bar's − / +.
-            accessibilityActions: [
-              ...(up.enabled ? [{ name: 'increment', label: increase }] : []),
-              ...(down.enabled ? [{ name: 'decrement', label: decrease }] : []),
-            ],
-            onAccessibilityAction: (e: { nativeEvent: { actionName: string } }) => {
-              const t = e.nativeEvent.actionName === 'increment' ? up : e.nativeEvent.actionName === 'decrement' ? down : null;
-              if (t?.enabled) step(t.value);
-            },
-          }
-        : {})}
+      // No accessibilityActions on a cell: VoiceOver focuses RN's native text field, not this view, so
+      // swipe up/down never reaches them. The keypad bar's labelled − / + are the steps (review S1).
       placeholder="—"
       placeholderTextColor={theme.colors['text.tertiary']}
       {...(cellVariant ? { maxFontSizeMultiplier: theme.type.rowValue.maxFontSizeMultiplier } : fitted !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}

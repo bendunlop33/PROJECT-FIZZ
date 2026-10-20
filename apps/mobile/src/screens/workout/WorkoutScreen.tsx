@@ -2652,8 +2652,8 @@ export function WorkoutScreen() {
             }}
           />
         ) : null}
-        {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. On the keypad: no home-indicator room (0.2). */}
-        <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen} />
+        {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. On the keypad, or with the cell bar under it: no home-indicator room (0.2; the cell bar takes it). */}
+        <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} />
         {/* Ben, 20 Oct: the cell is the field; its − / +, Next › and Done sit on the keypad, under Log. */}
         {cellBar !== null ? (
           <CellKeypadBarView

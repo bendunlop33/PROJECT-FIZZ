@@ -82,7 +82,7 @@ describe('the tapped cell is the field (Ben, 20 Oct)', () => {
     expect(screen).toContain('inCell: editsInPlace({ field: doneEdit.field, cardio: correctionCardio }),');
   });
 
-  it('VoiceOver: the cell reads `Set 3 weight, 7.5 kg each`, with increment / decrement actions', () => {
+  it('VoiceOver: the cell reads `Set 3 weight, 7.5 kg each`, with no dead swipe actions (the bar’s − / + step)', () => {
     expect(cellInputA11y({ setLabel: '3', field: 'load', value: 7.5, unitText: 'kg each' })).toBe('Set 3 weight, 7.5 kg each');
     expect(cellInputA11y({ setLabel: '3', field: 'reps', value: 12 })).toBe('Set 3 reps, 12');
     expect(cellInputA11y({ setLabel: 'A2', field: 'load', value: 20, unitText: 'kg', assisted: true })).toBe('Set A2 assistance, 20 kg');
@@ -91,8 +91,9 @@ describe('the tapped cell is the field (Ben, 20 Oct)', () => {
     expect(cellInputA11y({ setLabel: '4', field: 'load', value: null, unitText: 'kg' })).toBe('Set 4 weight, none');
     expect(cellInputA11y({ setLabel: '5', field: 'load', value: 45, unitText: 'lb each' })).toBe('Set 5 weight, 45 lb each');
     expect(ui).toContain('accessibilityLabel={fieldLabel ?? ');
-    expect(ui).toContain("{ name: 'increment', label: increase }");
-    expect(ui).toContain("{ name: 'decrement', label: decrease }");
+    // VoiceOver focuses RN's native text field, so actions on the cell never fire: none are declared.
+    expect(ui).not.toContain("name: 'increment'");
+    expect(ui).not.toContain('onAccessibilityAction');
   });
 });
 
@@ -164,6 +165,8 @@ describe('the keypad bar: − + Next › Done', () => {
   it('the screen draws the bar on the keypad under Log, and its keys run the row’s own handlers', () => {
     const chrome = flat(screen.slice(screen.indexOf('<ActionBar talk={<ChatButton'), screen.indexOf('<ToastHost')));
     expect(chrome).toContain('{cellBar !== null ? ( <CellKeypadBarView');
+    // One home-indicator gap only: the Log bar drops its own when the cell bar sits under it (review S2).
+    expect(chrome).toContain('keypadOpen={keypadOpen || cellBar !== null} />');
     expect(chrome).toContain('onDone={closeCellEditors}');
     expect(chrome).toContain('runKeypadNext(cellBar.next)');
     expect(chrome).toContain('stepCell(cellBar.field, v);');
