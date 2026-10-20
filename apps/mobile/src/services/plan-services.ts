@@ -186,7 +186,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
   }
 
   /** The main lifts on a plan day: each split day's main lift (Ben, 20 Oct), not the day's `Main` flags. */
-  async function dayMainLifts(): Promise<Set<string>> {
+  async function splitMainLifts(): Promise<Set<string>> {
     return new Set((await deps.splitMainLiftIds?.().catch(() => null)) ?? []);
   }
 
@@ -472,8 +472,8 @@ export function createPlanServices(deps: PlanServicesDeps) {
         histories.set(exerciseId, await deps.store().repos.sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => []));
       }
       const history = (id: string) => histories.get(id) ?? [];
-      // `Targets hit` (Ben, 20 Oct): with the setting on, on main lifts only: this day's own `Main` and the split's main lifts (review S1).
-      const mains = opts.targetsHit ? await dayMainLifts() : new Set<string>();
+      // `Targets hit` (Ben, 20 Oct): with the setting on, only on the split's main lifts (Profile), never a workout's `Main` flags.
+      const mains = opts.targetsHit ? await splitMainLifts() : new Set<string>();
       const targetsHit = (id: string) => showsTargetsHit({ on: opts.targetsHit, main: isMainLift(id, mains) });
       const detail =
         run === null
