@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { WeightUnit } from '@fizz/schemas';
 
-import { onMorningReminderTap } from '../alerts/notifier';
+import { onNotificationTap } from '../alerts/notifier';
 import { recordContainedError, setCurrentScreen } from '../diagnostics/crash-capture';
 import { createGuardedLoader } from '../guide/guarded-load';
 
@@ -45,6 +45,7 @@ import { CoachConnectionScreen } from '../screens/profile/CoachConnectionScreen'
 import { DeveloperScreen } from '../screens/profile/DeveloperScreen';
 import { VoiceSettingsScreen } from '../screens/profile/VoiceSettingsScreen';
 import { MorningReminderScreen } from '../screens/profile/MorningReminderScreen';
+import { morningTapOpensToday } from '../reminders/morning';
 import { PainFlagsScreen } from '../screens/profile/PainFlagsScreen';
 import { SplitScreen } from '../screens/profile/SplitScreen';
 import { TrainingDetailsScreen } from '../screens/profile/TrainingDetailsScreen';
@@ -293,9 +294,9 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
   // A tap on the morning reminder opens Today (Ben, 20 Oct); a workout on screen stays where it is.
   useEffect(
     () =>
-      onMorningReminderTap(() => {
-        if (!setupDone || !navRef.isReady() || navRef.getCurrentRoute()?.name === 'Workout') return;
-        navRef.dispatch(popToToday());
+      onNotificationTap((identifier) => {
+        const ready = navRef.isReady();
+        if (morningTapOpensToday({ identifier, setupDone, navReady: ready, currentRoute: ready ? (navRef.getCurrentRoute()?.name ?? null) : null })) navRef.dispatch(popToToday());
       }),
     [navRef, setupDone],
   );

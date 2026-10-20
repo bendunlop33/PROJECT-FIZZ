@@ -17,6 +17,15 @@ export function showRestAlertInForeground(input: { isWorkoutAlert: boolean; appA
   return !input.workoutOnScreen;
 }
 
+/**
+ * A morning reminder in the foreground (review morning-20oct S1): never over
+ * the workout screen (a backstop: starting a workout already takes today's
+ * off). Anywhere else it shows as iOS would.
+ */
+export function showMorningReminderInForeground(input: { appActive: boolean; workoutOnScreen: boolean }): boolean {
+  return !(input.appActive && input.workoutOnScreen);
+}
+
 let workoutOnScreen = false;
 
 /** Set by the workout screen while it is focused (and cleared when it isn't). */

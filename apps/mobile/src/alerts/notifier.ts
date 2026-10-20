@@ -6,7 +6,7 @@ import { MORNING_REMINDER_PREFIX } from '@fizz/domain';
 import type { ReminderPort } from '../reminders/morning';
 
 import { appleSpeaker, voicePrefs } from '../voice/speaker';
-import { isWorkoutOnScreen, showRestAlertInForeground } from './presentation';
+import { isWorkoutOnScreen, showMorningReminderInForeground, showRestAlertInForeground } from './presentation';
 import { REST_ALERT_PREFIX, type NotifierPort } from './rest-alerts';
 
 /**
@@ -21,6 +21,10 @@ import { REST_ALERT_PREFIX, type NotifierPort } from './rest-alerts';
 // voice review S2). Otherwise the banner and sound are the alert (review S1).
 Notifications.setNotificationHandler({
   handleNotification: (n) => {
+    if (n.request.identifier.startsWith(MORNING_REMINDER_PREFIX)) {
+      const morning = showMorningReminderInForeground({ appActive: AppState.currentState === 'active', workoutOnScreen: isWorkoutOnScreen() });
+      return Promise.resolve({ shouldShowBanner: morning, shouldShowList: morning, shouldPlaySound: morning, shouldSetBadge: false });
+    }
     const show = showRestAlertInForeground({
       isWorkoutAlert: n.request.identifier.startsWith(REST_ALERT_PREFIX),
       appActive: AppState.currentState === 'active',
@@ -78,7 +82,9 @@ export async function clearDeliveredWorkoutAlerts(keep?: string): Promise<void> 
  * only, interruption level `active` like rest alerts (no Time Sensitive, no
  * push). A calendar trigger with local date and time and no zone, so iOS
  * fires it at that wall-clock time in whatever zone the phone is in (DST
- * included). Device test still needed.
+ * included). A time inside a spring-forward gap (e.g. 01:30 on the last
+ * Sunday of March in London) may not fire that day; accepted, as morning
+ * times aren't in the gap (review N2). Device test still needed.
  */
 export const expoReminderPort: ReminderPort = {
   permission: getAlertPermission,
@@ -100,10 +106,10 @@ export const expoReminderPort: ReminderPort = {
   },
 };
 
-/** A tap on a morning reminder (from the lock screen or a banner): `onOpen` takes Ben to Today. */
-export function onMorningReminderTap(onOpen: () => void): () => void {
+/** A tap on any notification (lock screen or banner) with its identifier; what it opens is `morningTapOpensToday`. */
+export function onNotificationTap(onTap: (identifier: string) => void): () => void {
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-    if (response.notification.request.identifier.startsWith(MORNING_REMINDER_PREFIX)) onOpen();
+    onTap(response.notification.request.identifier);
   });
   return () => {
     sub.remove();
