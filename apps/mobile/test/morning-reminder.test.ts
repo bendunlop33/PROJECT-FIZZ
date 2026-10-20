@@ -266,8 +266,8 @@ describe('morning reminder with a coach plan', () => {
     return toolCall('propose_plan', { days: DAYS.map(([dayName, splitDayId, names]) => ({ dayName, splitDayId, focus: null, minutes: null, exercises: names.map((n) => ex(idOf(n))) })), message: 'Four days.', minutes: null, gymName: null });
   };
 
-  it('`Today: Pull` · `Day 2 of 4 · about N min · Main Gym` after day 1, then the plan’s days in order', async () => {
-    const { s, gymId } = await benWithRotation();
+  /** Ben asks the coach for the 4-day plan and applies it; returns the plan and its days by name. */
+  async function applyPlan(s: AppServices): Promise<{ planId: string; version: number; dayId: (name: string) => string }> {
     model = new StepModel([stub, () => replyWith('Here is your week.')]);
     const result = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Build me a 4-day plan', spoken: false }, turnId: h.ids() });
     const record = result.cards[0]?.record;
@@ -275,35 +275,99 @@ describe('morning reminder with a coach plan', () => {
     const card = await s.plans.card({ planId: record.detail.planId, versionN: 1 });
     if (card === null) throw new Error('card');
     const applied = await s.plans.apply({ planId: card.planId, versionN: 1, expectedVersion: card.planVersion, mode: 'replace', opId: 'apply' });
-    expect(applied.ok).toBe(true);
+    if (!applied.ok) throw new Error('apply');
+    const overview = await s.plans.overview();
+    if (overview === null) throw new Error('overview');
+    const dayId = (name: string) => overview.days.find((d) => d.name === name)?.routineId ?? 'missing';
+    return { planId: overview.planId, version: overview.planVersion, dayId };
+  }
 
+  const titles = (m: Map<string, PlannedReminder>) => sorted(m).map((x) => x.title.replace('Today: ', ''));
+  const byDate = (m: Map<string, PlannedReminder>) => new Map(sorted(m).map((x) => [x.fireAtLocal.date, x.title]));
+
+  it('day 1 is Up next by the adaptive rule (`Day 3 of 4`); days 2–7 follow the same rule, and doing day 1 makes day 2 the real Up next', async () => {
+    const { s, gymId } = await benWithRotation();
+    await applyPlan(s);
     const { port, pending } = fakePort();
     const reminders = controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } });
     await reminders.refresh();
-    expect(sorted(pending)[0]).toMatchObject({ title: 'Today: Push' });
-    expect(sorted(pending)[0]?.body).toMatch(/^Day 1 of 4 · about \d+ min · Main Gym$/u);
 
-    // Day 1 done this morning: tomorrow is day 2.
-    const up = await s.next.preview(gymId);
-    const started = await s.workout.start({ gymId, opId: 'day1', checkIn: null, routineOf: up?.routine?.id ?? '' });
-    if (!started.ok) throw new Error(started.error.message);
-    const id = started.aggregate.session.id;
-    for (const set of started.aggregate.sets.filter((x) => x.status === 'pending' && x.setType !== 'warmup')) {
-      h.clockMs += 60_000;
-      const r = await s.workout.dispatch(id, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load: set.planned.load ?? { value: 20, unit: 'kg', convention: started.aggregate.exercises.find((e) => e.id === set.sessionExerciseId)?.loadConvention ?? 'total' }, reps: 9, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
-      if (!r.ok) throw new Error(r.error.message);
-    }
-    const cur = await s.workout.load(id);
-    const fin = await s.workout.dispatch(id, { type: 'finish', at: h.now(), opId: 'fin-day1', expectedVersion: cur?.aggregate.session.version ?? 0, endedAt: null });
-    if (!fin.ok) throw new Error(fin.error.message);
-    await h.settle(s);
+    // Bench (Push) and pulldowns (Pull) on Sunday, before the plan: Legs is due first, not day 1.
+    expect((await s.next.preview(gymId))?.title).toBe('Legs');
+    const before = sorted(pending);
+    expect(before[0]).toMatchObject({ fireAtLocal: { date: '2026-10-20' }, title: 'Today: Legs' });
+    expect(before[0]?.body).toMatch(/^Day 3 of 4 · about \d+ min · Main Gym$/u);
+    // Never the day just done; Upper (never done) before Push and Pull (done Sunday); then each in turn.
+    expect(titles(pending)).toEqual(['Legs', 'Upper', 'Push', 'Pull', 'Legs', 'Upper', 'Push']);
+    expect(before.map((x) => x.body.split(' · ')[0])).toEqual(['Day 3 of 4', 'Day 4 of 4', 'Day 1 of 4', 'Day 2 of 4', 'Day 3 of 4', 'Day 4 of 4', 'Day 1 of 4']);
+
+    // Legs done this morning: tomorrow on is what was predicted.
+    await logAndFinish(s, await startUpNext(s, gymId, 'legs'), 'fin-legs');
     await reminders.refresh();
+    expect((await s.next.preview(gymId))?.title).toBe('Upper');
+    const was = new Map(before.map((x) => [x.fireAtLocal.date, x.title]));
+    const now = byDate(pending);
+    expect(now.has('2026-10-20')).toBe(false);
+    for (const [date, title] of now) if (was.has(date)) expect([date, title]).toEqual([date, was.get(date)]);
+  });
 
-    const r = sorted(pending);
-    expect(r[0]).toMatchObject({ fireAtLocal: { date: '2026-10-21' }, title: 'Today: Pull' });
-    expect(r[0]?.body).toMatch(/^Day 2 of 4 · about \d+ min · Main Gym$/u);
-    expect(r.map((x) => x.title)).toEqual(['Today: Pull', 'Today: Legs', 'Today: Upper', 'Today: Push', 'Today: Pull', 'Today: Legs']);
-    expect(r.map((x) => x.body.split(' · ')[0])).toEqual(['Day 2 of 4', 'Day 3 of 4', 'Day 4 of 4', 'Day 1 of 4', 'Day 2 of 4', 'Day 3 of 4']);
+  it('legs trained off-plan: Legs isn’t predicted first, it waits its turn', async () => {
+    const { s, gymId } = await benWithRotation();
+    await applyPlan(s);
+    // Mon evening: an off-plan squat session (not a plan day).
+    h.clockMs = toMs('2026-10-19T17:00:00.000Z');
+    await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 100, reps: 5, rpe: 8 }, { load: 100, reps: 5, rpe: 8 }, { load: 100, reps: 5, rpe: 8 }] }]);
+    h.clockMs = toMs('2026-10-20T05:00:00.000Z');
+    const { port, pending } = fakePort();
+    await controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } }).refresh();
+    const t = titles(pending);
+    expect(t[0]).toBe((await s.next.preview(gymId))?.title);
+    expect(t.slice(0, 3)).not.toContain('Legs');
+    expect(t).toEqual(['Upper', 'Push', 'Pull', 'Legs', 'Upper', 'Push', 'Pull']);
+  });
+
+  it('`Make next` pin: the pinned day first, then the rule (the pin is used up once its day is done)', async () => {
+    const { s, gymId } = await benWithRotation();
+    const plan = await applyPlan(s);
+    const pinned = await s.plans.makeNext({ planId: plan.planId, routineId: plan.dayId('Pull'), expectedVersion: plan.version, opId: 'pin-pull' });
+    expect(pinned.ok).toBe(true);
+    const { port, pending } = fakePort();
+    const reminders = controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } });
+    await reminders.refresh();
+    expect((await s.next.preview(gymId))?.title).toBe('Pull');
+    expect(titles(pending)).toEqual(['Pull', 'Legs', 'Upper', 'Push', 'Pull', 'Legs', 'Upper']);
+    const predicted = byDate(pending);
+
+    // Ben does Pull: the pin is used up and tomorrow is what was predicted.
+    await logAndFinish(s, await startUpNext(s, gymId, 'pull'), 'fin-pull');
+    await reminders.refresh();
+    expect((await s.next.preview(gymId))?.title).toBe('Legs');
+    for (const [date, title] of byDate(pending)) if (predicted.has(date)) expect([date, title]).toEqual([date, predicted.get(date)]);
+  });
+
+  it('S3 merge gate: paused through the plan service → no reminders; Resume → they return', async () => {
+    const { s } = await benWithRotation();
+    const plan = await applyPlan(s);
+    const { port, pending } = fakePort();
+    const reminders = controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } });
+    await reminders.refresh();
+    expect(pending.size).toBe(7);
+
+    const paused = await s.plans.pause({ planId: plan.planId, untilDate: null, expectedVersion: plan.version, opId: 'pause' });
+    if (!paused.ok) throw new Error(paused.message);
+    const overview = await s.plans.overview();
+    expect(overview?.paused).toMatchObject({ untilDate: null });
+    expect(planPaused(overview)).toBe(true);
+    await reminders.refresh();
+    expect(pending.size).toBe(0);
+
+    const resumed = await s.plans.resumePause({ planId: plan.planId, expectedVersion: paused.plan.version, opId: 'resume' });
+    if (!resumed.ok) throw new Error(resumed.message);
+    expect(planPaused(await s.plans.overview())).toBe(false);
+    await reminders.refresh();
+    expect(pending.size).toBe(7);
+    expect(sorted(pending)[0]).toMatchObject({ title: 'Today: Legs' });
+    expect(sorted(pending)[0]?.body).toMatch(/^Day 3 of 4 · /u);
   });
 });
 

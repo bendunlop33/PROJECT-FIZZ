@@ -196,6 +196,59 @@ export function planDaysByDue<D extends PlanDueDay>(days: readonly D[], workouts
   return pinDay === undefined ? rest : [pick(pinDay, true), ...rest];
 }
 
+/** A plan day for `planDaysAhead`: also the working sets per muscle group a workout of it would do. */
+export interface PlanAheadDay extends PlanDueDay {
+  /** Its planned working sets per muscle group (`planDayGroups`). */
+  plannedGroups: ReadonlyMap<MuscleGroup, number>;
+}
+
+/** A plan day's planned working sets per muscle group (each exercise's first primary muscle): what doing it would count as. */
+export function planDayGroups(routine: Pick<Routine, 'exercises'>, exerciseOf: (id: string) => Pick<Exercise, 'primaryMuscles'> | null): Map<MuscleGroup, number> {
+  return workoutMuscleGroups(routine.exercises.map((e) => ({ primaryMuscles: exerciseOf(e.exerciseId)?.primaryMuscles ?? [], workingSets: e.setTemplates.filter((t) => t.setType !== 'warmup').length })));
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Up next's plan days after `firstRoutineId` (Up next now), a prediction
+ * (morning reminder, Ben 20 Oct): each predicted day is assumed done as
+ * planned, one a day from `fromMs`, and the next is `planDaysByDue` on the
+ * workouts so far plus those (a pin is consumed once its day is done), the
+ * first `canStart` allows. `workouts`: the window Up next reads now; one older
+ * than `windowDays` before a predicted day drops out, as it would by then.
+ * `pin`: the live pin (`activePin` on every workout since it). Up to `count`
+ * days after the first; fewer when none can start; empty when `firstRoutineId`
+ * isn't a plan day.
+ */
+export function planDaysAhead<D extends PlanAheadDay>(input: {
+  days: readonly D[];
+  workouts: readonly PlanDueWorkout[];
+  pin: PlanPin | null;
+  firstRoutineId: string;
+  count: number;
+  fromMs: number;
+  windowDays: number;
+  canStart?: (d: D) => boolean;
+}): D[] {
+  const first = input.days.find((d) => d.routineId === input.firstRoutineId);
+  if (first === undefined) return [];
+  const canStart = input.canStart ?? (() => true);
+  const done: PlanDueWorkout[] = [];
+  const out: D[] = [];
+  let last: D = first;
+  for (let i = 0; i < input.count; i += 1) {
+    const atMs = input.fromMs + i * DAY_MS;
+    done.push({ sessionId: `ahead:${String(i)}`, routineId: last.routineId, startedAtUtc: toIso(atMs), groups: last.plannedGroups });
+    const windowFrom = atMs + DAY_MS - input.windowDays * DAY_MS;
+    const ws = [...input.workouts.filter((w) => toMs(w.startedAtUtc) >= windowFrom), ...done];
+    const pick = planDaysByDue(input.days, ws, input.pin).find((p) => canStart(p.day));
+    if (pick === undefined) break;
+    out.push(pick.day);
+    last = pick.day;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Pause
 

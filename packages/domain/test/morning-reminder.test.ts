@@ -104,6 +104,14 @@ describe('predictUpNext', () => {
     const s = predictUpNext({ next: day('Upper A'), paused: false, cycle: { sessions: [day('Push'), day('Pull')], at: -1 } }, 4);
     expect(s.map((x) => x.title)).toEqual(['Upper A', 'Push', 'Pull', 'Push']);
   });
+
+  it('a plan’s `ahead` (the adaptive rule) is used instead of the loop; a short one reminds fewer days', () => {
+    const cycle = { sessions: [day('Push'), day('Pull'), day('Legs')], at: 0 };
+    const s = predictUpNext({ next: day('Push'), paused: false, cycle, ahead: [day('Legs'), day('Pull')] }, 4);
+    expect(s.map((x) => x.title)).toEqual(['Push', 'Legs', 'Pull']);
+    expect(predictUpNext({ next: day('Push'), paused: false, cycle, ahead: [] }, 4).map((x) => x.title)).toEqual(['Push']);
+    expect(predictUpNext({ next: day('Push'), paused: true, cycle, ahead: [day('Legs')] }, 4)).toEqual([]);
+  });
 });
 
 describe('copy and settings', () => {

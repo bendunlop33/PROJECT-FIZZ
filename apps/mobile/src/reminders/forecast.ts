@@ -1,4 +1,4 @@
-import { rotationRoutines, type PlanOverview, type ReminderSession, type UpNextForecast } from '@fizz/domain';
+import { REMINDER_HORIZON_DAYS, rotationRoutines, type PlanOverview, type ReminderSession, type UpNextForecast } from '@fizz/domain';
 
 import type { AppServices } from '../services/app-services';
 import type { NextSessionPreview, RoutineRow } from '../services/workout-services';
@@ -9,7 +9,10 @@ import type { NextSessionPreview, RoutineRow } from '../services/workout-service
  * resolver as Today's card), plus what Up next walks through after it, only
  * where the resolver itself walks a fixed order:
  *
- * - a plan day (`Day 2 of 4`): the plan's days in order (`plans.overview`);
+ * - a plan day (`Day 2 of 4`): the plan's adaptive rule run forward
+ *   (`next.planAhead`: the day trained least recently, assuming each named
+ *   day is done; a `Make next` pin first until its day is done), since Up
+ *   next doesn't walk a plan in day order (plan-adapt, Ben 20 Oct);
  * - a rotation workout (`after`, `only`): the rotation in the resolver's own
  *   order (`rotationRoutines`);
  * - anything else (a split day picked by least-recently-trained muscles, or
@@ -32,22 +35,22 @@ export async function readUpNextForecast(services: AppServices): Promise<UpNextF
   const overview = await services.plans.overview().catch(() => null);
   const basis = next.routine?.basis ?? null;
   const exact: ReminderSession = { title: next.title, planDay: basis?.kind === 'plan' ? { n: basis.dayN, of: basis.of } : null, aboutMinutes: next.aboutMinutes };
-  const cycle = await readCycle(services, next, overview, gym.id).catch(() => NO_CYCLE);
-  return { next: exact, paused: planPaused(overview), cycle, gymName: gym.name, lastStartedUtc };
+  const paused = planPaused(overview);
+  if (basis?.kind === 'plan') {
+    const ahead = paused ? [] : await readPlanAhead(services, next, gym.id).catch(() => []);
+    return { next: exact, paused, cycle: NO_CYCLE, ahead, gymName: gym.name, lastStartedUtc };
+  }
+  const cycle = await readCycle(services, next, gym.id).catch(() => NO_CYCLE);
+  return { next: exact, paused, cycle, gymName: gym.name, lastStartedUtc };
 }
 
 /**
- * A paused plan sends nothing. MERGE GATE (review morning-20oct S3): the pause
- * lands with `claude/plan-adapt-20oct`, as `PlanOverview.paused`
- * (`{ text, untilDate } | null`); Up next itself carries no pause there (it
- * falls back to the normal rules). Until then the field is absent and this is
- * false. On merge, check the field is still `paused` and add a paused-plan
- * test on the real services (the field is read untyped until then).
+ * A paused plan sends nothing (review morning-20oct S3): `PlanOverview.paused`
+ * (`{ text, untilDate } | null`, the pause running now). Up next itself
+ * follows the normal rules while paused, so it can't say.
  */
 export function planPaused(overview: PlanOverview | null): boolean {
-  const read: object | null = overview;
-  const paused = read !== null && 'paused' in read ? read.paused : undefined;
-  return paused !== undefined && paused !== null && paused !== false;
+  return overview !== null && overview.paused !== null;
 }
 
 async function lastStarted(services: AppServices): Promise<string | null> {
@@ -65,15 +68,22 @@ export function rotationOrder(rows: readonly RoutineRow[]): RoutineRow[] {
   return rotationRoutines(rows.map((r) => ({ ...r, createdAtUtc: r.rotationAtUtc, deletedAtUtc: null })));
 }
 
-async function readCycle(services: AppServices, next: NextSessionPreview, overview: PlanOverview | null, gymId: string): Promise<UpNextForecast['cycle']> {
-  const basis = next.routine?.basis ?? null;
-  if (basis?.kind === 'plan') {
-    if (overview === null) return NO_CYCLE;
-    const of = overview.days.length;
-    const sessions: ReminderSession[] = [];
-    for (const d of overview.days) sessions.push({ title: d.name, planDay: { n: d.n, of }, aboutMinutes: await minutesOf(services, d.routineId, gymId) });
-    return { sessions, at: basis.dayN - 1 };
+/** Days 2–7 with a plan: the adaptive rule run forward by the service; unreadable: none (day 1 only). */
+async function readPlanAhead(services: AppServices, next: NextSessionPreview, gymId: string): Promise<ReminderSession[]> {
+  const first = next.routine?.id;
+  if (first === undefined) return [];
+  const days = (await services.next.planAhead(gymId, first, REMINDER_HORIZON_DAYS - 1)) ?? [];
+  const minutes = new Map<string, number | null>();
+  const out: ReminderSession[] = [];
+  for (const d of days) {
+    if (!minutes.has(d.routineId)) minutes.set(d.routineId, await minutesOf(services, d.routineId, gymId));
+    out.push({ title: d.name, planDay: { n: d.dayN, of: d.of }, aboutMinutes: minutes.get(d.routineId) ?? null });
   }
+  return out;
+}
+
+async function readCycle(services: AppServices, next: NextSessionPreview, gymId: string): Promise<UpNextForecast['cycle']> {
+  const basis = next.routine?.basis ?? null;
   if (basis?.kind === 'after' || basis?.kind === 'only') {
     const rows = rotationOrder(await services.routines.list());
     const at = rows.findIndex((r) => r.id === next.routine?.id);
