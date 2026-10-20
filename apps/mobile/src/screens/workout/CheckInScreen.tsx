@@ -41,7 +41,7 @@ const SCORES: readonly CheckInScore[] = [1, 2, 3, 4, 5];
 export function CheckInScreen() {
   const route = useRoute<RouteProp<RootStackParams, 'CheckIn'>>();
   const p = route.params;
-  if (p.mode === 'start') return <StartCheckIn gymId={p.gymId} repeatOf={p.repeatOf ?? null} nextOf={p.nextOf ?? null} routineOf={p.routineOf ?? null} />;
+  if (p.mode === 'start') return <StartCheckIn gymId={p.gymId} repeatOf={p.repeatOf ?? null} nextOf={p.nextOf ?? null} routineOf={p.routineOf ?? null} coachDraftOf={p.coachDraftOf ?? null} />;
   if (p.mode === 'overview') return <StartCheckIn gymId={null} repeatOf={null} nextOf={null} routineOf={null} overview={{ checkInId: p.checkInId, atScore: p.atScore === true }} />;
   return <EditCheckIn checkInId={p.checkInId} />;
 }
@@ -243,7 +243,7 @@ function ReasonsEditor({ reasons, setReasons, note, setNote, noteRef }: { reason
  * workout` still closes to Today. `checkInId`: the score already saved on
  * the page (opens at What's up?); null opens at the score (AX sizes).
  */
-function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId: string | null; repeatOf: string | null; nextOf: string | null; routineOf: string | null; overview?: { checkInId: string | null; atScore: boolean } }) {
+function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, coachDraftOf = null, overview }: { gymId: string | null; repeatOf: string | null; nextOf: string | null; routineOf: string | null; /** (Today v2) Today's session card: its committed builder draft. */ coachDraftOf?: string | null; overview?: { checkInId: string | null; atScore: boolean } }) {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
@@ -307,7 +307,7 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
     setBusy(true);
     let r: Awaited<ReturnType<typeof services.workout.start>>;
     try {
-      r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf, nextOf, routineOf });
+      r = await services.workout.start({ gymId, opId: startOp, checkIn, repeatOf, nextOf, routineOf, coachDraftOf });
     } catch (e) {
       // Never a stuck sheet (audit F9): say so; the same opId makes a retry safe.
       setBusy(false);

@@ -1,123 +1,146 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
+import { useFocusEffect, useNavigation, useRoute, type NavigationProp, type ParamListBase, type RouteProp } from '@react-navigation/native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 
-import { AskPill } from './coach/AskPill';
-
-import { ACTIVITY_COPY, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, recentRows as mergeRecent, RECENT_LIMIT, scoreText, toMs, type RecentActivityInput, type RecentWorkoutRow, type ResumeRow, type TodayMain } from '@fizz/domain';
-import type { Activity, SessionAggregate } from '@fizz/schemas';
+import { discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
+import type { Activity, SessionAggregate, SessionCheckIn } from '@fizz/schemas';
 import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
 
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
 import { newUuid } from '../device/runtime';
-import { formatDayMonth, formatLongDate, formatShortDate, formatTime } from '../format/dates';
+import { formatShortDate, formatTime } from '../format/dates';
 import { openYourPlan } from '../navigation/actions';
 import type { TabParams } from '../navigation/types';
 import { DeleteToastView } from '../history/DeleteToastView';
 import { useDeleteToast } from '../history/useDeleteToast';
-import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
+import type { TodaySelection, TodaySessionData } from '../services/today-session';
+import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
-import type { OverviewTarget, RoutineRow, SessionPickerRow } from '../services/workout-services';
-import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, RuledSection, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
-import { hasChoice, SESSION_PICKER_COPY } from '../workout/session-picker';
-import { SessionPickerSheet } from './workout/SessionPickerSheet';
-import { NameSheet } from './routines/NameSheet';
+import { routeAvailable, todayCardReducer, todaySegments, todayTitle, TODAY_SCREEN_COPY, type TodayCardState } from '../today/today-view';
+import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { BannerList } from './BannerList';
 import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
-import { LIBRARY_TOASTS } from '../workout/library-view';
-import { BUILD_COPY } from '../coach/build-view';
-import type { BuildBlock } from '../coach/coach-service';
-import { NeedsCoachSheet } from './coach/NeedsCoachSheet';
+import { GymChip } from './workout/GymSwitch';
+import { DayControl, DaySheet, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
 
 /**
- * Today (today.md, D-Today mockup): date and gym, banners, one hero (Resume,
- * the stale-workout card, Done today, the next session, or a first workout),
- * the rare unlinked check-in line, and Recent (the last 5 workouts).
+ * Today (v2) (workout-builder-v3 §2.0 with Ben's 20 Oct additions; prototypes/today-v2.html): `Tuesday`
+ * with the gym and a compact `✦ Coach` + mic, the 7-day strip (3 back, 3 ahead: only what Ben did,
+ * logged or told the coach), the rare lines (banners, check-in, pain check), then Today's session: the
+ * day control (`NEXT`, `⋯` Other sessions), the session card with the five controls, a collapsed
+ * Session breakdown (table, Why?, ↻ Mix it up), one-tap Start and Edit; `Build your own` and
+ * `＋ Activity` below. Resume and the stale card replace the session while a workout is open (today.md,
+ * unchanged).
  *
- * First-run audit: `Start workout` always works. With no gym it first saves
- * a typical one (marked not checked, B4); with routines it starts the next in
- * the rotation (premium-feel §2.6, D19); with a past workout it starts the
- * next session at the Summary's targets (B2); otherwise an empty workout
- * that opens the exercise picker. Up next's Start (and its rows) and a
- * `Your routines` row open the Workout overview (workout-overview.md), whose
- * Start starts the workout; the check-in for those starts lives there.
- * Choosing another session (session-picker §2.1): `Change` on Up next opens
- * the picker sheet. A `Recent` row opens that past workout, as Past workouts
- * does (PM decision 18 Oct, pending Ben). The
- * rare pain flag check (region 4b) opens the pain flag sheet. The weekly
- * plan comes later. No AI, no network.
+ * The card's workout comes from `todaySession` (the builder rules); this screen only lays it out and
+ * keeps the selection. Picking a day, chip or control writes nothing; Start commits the card as
+ * today's builder draft and starts it (check-in sheet when due). Supersedes today.md's Up next card,
+ * alternatives, Recent and Ask pill (§2.0.9, §7).
  */
 
-/**
- * What a Start from Today begins directly: an empty workout. Up next and
- * routines go through the Workout overview, whose Start begins them.
- */
 type StartIntent = { kind: 'empty' };
+type Nav = NavigationProp<ParamListBase>;
 
-const ROUTINE_CAP = 4;
+/** The navigator states from this screen up (the builder's routes arrive with the builder stream). */
+function navStates(navigation: Nav): { routeNames?: readonly string[] }[] {
+  const out: { routeNames?: readonly string[] }[] = [];
+  let n: Nav | undefined = navigation;
+  while (n !== undefined) {
+    out.push(n.getState());
+    n = n.getParent();
+  }
+  return out;
+}
+
 export function TodayScreen() {
   const theme = useTheme();
   const services = useServices();
   const changed = useDataChanged();
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const route = useRoute<RouteProp<TabParams, 'Today'>>();
   const install = useInstallStatus();
   const launch = useLaunchInfo();
-  // Shown once per launch (data-import-export §3.3 "Interrupted").
   const [interrupted, setInterrupted] = useState(() => launch.restoreInterrupted && firstTime('restore-interrupted'));
   // One opId per Start intent, kept until it succeeds: a double tap or retry starts one workout.
   const startOps = useRef(new Map<string, string>());
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; action?: string; onAction?: () => void } | null>(null);
-  // A workout deleted from its Summary lands here with its Undo toast (delete-workouts DW2).
   const deleted = useDeleteToast();
   const [now, setNow] = useState(clockNow);
   const [finishFor, setFinishFor] = useState<SessionAggregate | null>(null);
   const [finishVisible, setFinishVisible] = useState(false);
   const [afterDismiss] = useState(() => createAfterDismiss());
   const alertsAsk = useStartAlertsAsk();
-  // Name sheet (rename, from a routine row's long-press) and its after-close step.
-  const [renameRow, setRenameRow] = useState<RoutineRow | null>(null);
-  const [renameVisible, setRenameVisible] = useState(false);
-  const [renameAfter] = useState(() => createAfterDismiss());
-  const [allRoutines, setAllRoutines] = useState(false);
-  // The session picker (session-picker §2.2); a pick opens the overview once the sheet has gone.
-  const [pickerVisible, setPickerVisible] = useState(false);
-  /** `Needs the coach` (workout-builder §5.4) when `Build with coach` can't start. */
-  const [needsCoach, setNeedsCoach] = useState<BuildBlock | null>(null);
-  const [pickerAfter] = useState(() => createAfterDismiss());
-  // One opId per rename intent (sheet open), so a double tap saves once.
-  const renameOp = useRef<string>(newUuid());
-  const [data, reload] = useScreenData(async (s) => {
-    const [gym, view, banners, active, unlinked] = await Promise.all([
-      s.yourData.currentGym(),
-      s.today.view(),
-      loadBanners(s, install),
-      s.sessions.active(),
-      s.checkIns.unlinked(),
-    ]);
-    // Never blocks Today or Start (review S1): an unreadable past workout only hides the card.
-    const next = gym ? await s.next.preview(gym.id).catch(() => null) : null;
-    // Recent: the newest finished workouts, as Past workouts lists them; never blocks Today.
-    const recent = await s.history.pastWorkouts({ limit: RECENT_LIMIT }).then((p) => p.rows).catch(() => []);
-    // (Ben, 20 Oct) Runs, rides, swims and sport: their own rows in Recent (never workouts).
-    const activities = await s.activities.recent().catch(() => []);
-    const routines = await s.routines.list().catch(() => [] as RoutineRow[]);
-    // Session types for `Change` (local; null when unreadable: the routines list stays).
-    const sessions = await s.sessions.list(gym?.id ?? null).catch(() => null);
-    return { gym, view, banners, active, unlinked, next, recent, activities, routines, sessions };
+  const [data, reloadScreen] = useScreenData(async (s) => {
+    const [gym, view, banners, active, unlinked] = await Promise.all([s.yourData.currentGym(), s.today.view(), loadBanners(s, install), s.sessions.active(), s.checkIns.unlinked()]);
+    return { gym, view, banners, active, unlinked };
   });
-  // (Ben, 20 Oct) ＋ Activity: the sheet (null closed; `activity` null: a new one).
+  // Today's session loads on its own (review S1): Resume, stale and the banners never wait for it, and it isn't read
+  // at all while a workout is open (the card is hidden then).
+  const workoutOpen = data.state === 'ready' && data.value.active !== null;
+  const [session, reloadSession] = useTodaySessionData(data.state === 'ready' && !workoutOpen);
+  const reload = useCallback(() => {
+    reloadScreen();
+    reloadSession();
+  }, [reloadScreen, reloadSession]);
   const [activitySheet, setActivitySheet] = useState<{ activity: Activity | null } | null>(null);
-  const [whyOpen, setWhyOpen] = useState(false);
+  const [daySheet, setDaySheet] = useState<StripCell | null>(null);
+  const [listSheet, setListSheet] = useState<'other' | 'all' | null>(null);
+  const [listAfter] = useState(() => createAfterDismiss());
 
-  /** After the activity sheet saved: a toast with Undo (the write's own; a double tap is one Undo). */
+  const [selection, setSelection] = useState<TodayCardState | null>(null);
+
+  // The card's selection: the plan's next day on open (or as Ben left it while the data reloads). Once today's
+  // workout is done, no day is selected until Ben picks one for a second session (§2.0.4 Done today).
+  const wasDone = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (session === null) return;
+    const justDone = wasDone.current === false && session.doneToday;
+    wasDone.current = session.doneToday;
+    setSelection((cur) => {
+      if (justDone) return null;
+      if (cur !== null && session.initial[cur.dayKey] !== undefined) return cur;
+      const key = session.doneToday ? null : (session.nextKey ?? (session.status === 'no_plan' ? null : (session.days[0]?.key ?? null)));
+      const initial = key === null ? undefined : session.initial[key];
+      return key === null || initial === undefined ? null : { dayKey: key, controls: initial, open: false, why: false };
+    });
+  }, [session]);
+
+  const act = (a: Parameters<typeof todayCardReducer>[1]) => {
+    setSelection((cur) => (cur === null ? cur : todayCardReducer(cur, a)));
+  };
+  const pickDay = (key: string) => {
+    const initial = session?.initial[key];
+    if (initial === undefined) return;
+    setSelection((cur) => todayCardReducer(cur ?? { dayKey: key, controls: initial, open: false, why: false }, { kind: 'day', dayKey: key, initial }));
+  };
+
+  const view = useMemo(() => (session === null || selection === null ? null : services.todaySession.card(session, { dayKey: selection.dayKey, controls: selection.controls })), [services, session, selection]);
+
+  // `Chest moves to next session` when another day is picked (a prediction; nothing is written until Start).
+  const [moved, setMoved] = useState<string | null>(null);
+  const movedKey = selection === null ? null : `${selection.dayKey}|${selection.controls.mainLiftExerciseId ?? '-'}`;
+  useEffect(() => {
+    if (session === null || selection === null) {
+      setMoved(null);
+      return;
+    }
+    let alive = true;
+    void services.todaySession.movedLine(session, { dayKey: selection.dayKey, controls: selection.controls }).then((m) => {
+      if (alive) setMoved(m);
+    });
+    return () => {
+      alive = false;
+    };
+    // Only the day and main lift move the plan.
+  }, [services, session, movedKey]);
+
   function activitySaved(saved: ActivitySaved) {
     setActivitySheet(null);
     changed();
@@ -133,7 +156,6 @@ export function TodayScreen() {
     reload();
   }, [install, reload]);
 
-  // Resume card shows live rest time from the deadline.
   useEffect(() => {
     const t = setInterval(() => {
       setNow(clockNow());
@@ -148,8 +170,6 @@ export function TodayScreen() {
   const undoDraft = route.params?.undoDraft;
   useEffect(() => {
     if (!handed) return;
-    // A routine deleted from the Workout overview: the toast keeps its Undo (a restore, versioned).
-    // A coach draft discarded there (workout-builder §6.2): its Undo restores the draft.
     setToast({
       text: handed,
       ...(undoDraft
@@ -163,43 +183,30 @@ export function TodayScreen() {
             },
           }
         : undoRoutine
-        ? {
-            action: 'Undo',
-            onAction: () => {
-              void services.routines.restore({ routineId: undoRoutine.id, expectedVersion: undoRoutine.version, opId: newUuid() }).then((u) => {
-                if (!u.ok) setError(u.message);
-                changed();
-                setToast(null);
-              });
-            },
-          }
-        : {}),
+          ? {
+              action: 'Undo',
+              onAction: () => {
+                void services.routines.restore({ routineId: undoRoutine.id, expectedVersion: undoRoutine.version, opId: newUuid() }).then((u) => {
+                  if (!u.ok) setError(u.message);
+                  changed();
+                  setToast(null);
+                });
+              },
+            }
+          : {}),
     });
-    navigation.setParams({ toast: undefined, undoRoutine: undefined, undoDraft: undefined } as never);
+    navigation.setParams({ toast: undefined, undoRoutine: undefined, undoDraft: undefined });
   }, [handed, undoRoutine, undoDraft, navigation, services, changed]);
 
-  // `Empty workout` on the Workouts list: Today's own start (gym, alerts question, check-in gate), once per nonce.
   const startEmpty = route.params?.startEmpty;
   const startedEmpty = useRef<string | null>(null);
   useEffect(() => {
     if (startEmpty === undefined || data.state !== 'ready' || startedEmpty.current === startEmpty) return;
     startedEmpty.current = startEmpty;
-    navigation.setParams({ startEmpty: undefined } as never);
+    navigation.setParams({ startEmpty: undefined });
     void start({ kind: 'empty' });
   }, [startEmpty, data.state]);
 
-  /** Up next or a routine: the Workout overview, which creates nothing until its Start. */
-  function openOverview(target: OverviewTarget) {
-    navigation.navigate('WorkoutOverview', { target });
-  }
-
-  /** A picked session: close the sheet, then open its overview (creates nothing). */
-  function pickSession(row: SessionPickerRow) {
-    pickerAfter.arm(() => {
-      openOverview(row.target);
-    });
-    setPickerVisible(false);
-  }
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => {
@@ -210,87 +217,186 @@ export function TodayScreen() {
     };
   }, [toast]);
 
-  /**
-   * `Build with coach` (workout-builder §3, §5.4): the coach sheet on a new
-   * thread with the Build card; `Needs the coach` (no provider call) when
-   * the coach can't answer.
-   */
-  async function buildWithCoach() {
-    const block = await services.coach.buildBlock().catch(() => 'not_connected' as const);
-    if (block !== null) {
-      setNeedsCoach(block);
-      return;
+  /** No gym yet: a typical one (not checked), so a first Start always works (audit B4). */
+  async function ensureGym(): Promise<{ gymId: string; created: boolean } | null> {
+    const gymId = data.state === 'ready' ? (data.value.gym?.id ?? null) : null;
+    if (gymId !== null) return { gymId, created: false };
+    const made = await services.setup.useTypicalGym();
+    if (!made.ok || made.gymId === undefined) {
+      setError(made.ok ? 'Couldn’t set up a gym. Try again.' : made.message);
+      return null;
     }
-    navigation.navigate('Coach', { entry: { kind: 'today' }, build: true });
+    changed();
+    return { gymId: made.gymId, created: true };
   }
 
-  /** Start an empty workout (First workout, `Empty workout`). Never leaves a dead button (audit F9). */
-  async function start(intent: StartIntent) {
-    if (starting) return;
+  /** The check-in gate's answer as the start records it. */
+  async function gateCheckIn(): Promise<{ ask: true } | { ask: false; checkIn: SessionCheckIn | null; reuseId: string | null }> {
+    const gate = await services.checkIns.gate();
+    if (gate.kind === 'ask') return { ask: true };
+    if (gate.kind === 'reuse') return { ask: false, checkIn: { kind: 'answered', checkInId: gate.checkInId }, reuseId: gate.checkInId };
+    return { ask: false, checkIn: gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? { kind: 'not_asked', reason: gate.reason } : null, reuseId: null };
+  }
+
+  /** After a start: the workout, with the reused check-in's toast (check-in.md §2.6) or the start's notice. */
+  async function openStarted(notice: string | null, reuseId: string | null) {
+    changed();
+    if (reuseId !== null) {
+      const ci = await services.checkIns.get(reuseId);
+      if (ci) {
+        const text = `Check-in ${formatTime(toMs(ci.recordedAt.utc), ci.recordedAt.tz)} · ${scoreText(ci.score)}`;
+        navigation.navigate('Workout', { toast: { kind: 'check_in', text: notice === null ? text : `${text}. ${notice}`, checkInId: ci.id } });
+        return;
+      }
+    }
+    navigation.navigate('Workout', notice === null ? undefined : { toast: { kind: 'info', text: notice } });
+  }
+
+  function guard(): boolean {
+    if (starting) return false;
     setStarting(true);
     setError(null);
     setTimeout(() => {
       setStarting(false);
     }, TIMING.commitGuard);
+    return true;
+  }
+
+  /** An empty workout (`Empty workout`, Library's start). Never leaves a dead button (audit F9). */
+  async function start(intent: StartIntent) {
+    if (!guard()) return;
     try {
-      let gymId = data.state === 'ready' ? (data.value.gym?.id ?? null) : null;
-      if (gymId === null) {
-        // Audit B4: no gym yet → a typical one (not checked), editable later. One tap, no second setup.
-        const made = await services.setup.useTypicalGym();
-        if (!made.ok || made.gymId === undefined) {
-          setError(made.ok ? 'Couldn’t set up a gym. Try again.' : made.message);
-          return;
-        }
-        gymId = made.gymId;
-        changed();
-      }
-      // First Start ever: the one-time Rest alerts question, before the check-in; either answer continues (premium-feel §3.5).
+      const g = await ensureGym();
+      if (g === null) return;
       await alertsAsk.ensureAsked();
-      const gate = await services.checkIns.gate();
-      if (gate.kind === 'ask') {
-        navigation.navigate('CheckIn', { mode: 'start', gymId });
+      const gate = await gateCheckIn();
+      if (gate.ask) {
+        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId });
         return;
       }
       const key = intent.kind;
       const opId = startOps.current.get(key) ?? newUuid();
       startOps.current.set(key, opId);
-      const checkIn =
-        gate.kind === 'reuse'
-          ? ({ kind: 'answered', checkInId: gate.checkInId } as const)
-          : gate.reason === 'off' || gate.reason === 'not_a_check_in_day'
-            ? ({ kind: 'not_asked', reason: gate.reason } as const)
-            : null;
-      const r = await services.workout.start({ gymId, opId, checkIn });
+      const r = await services.workout.start({ gymId: g.gymId, opId, checkIn: gate.checkIn });
       if (!r.ok) {
-        setError(r.error.code === 'session_already_active' ? 'A workout is already in progress.' : r.error.message);
+        setError(r.error.code === 'session_already_active' ? TODAY_SCREEN_COPY.started : r.error.message);
         reload();
         return;
       }
       startOps.current.delete(key);
-      changed();
-      const notice = r.notice ?? null;
-      if (gate.kind === 'reuse') {
-        const ci = await services.checkIns.get(gate.checkInId);
-        if (ci) {
-          const text = `Check-in ${formatTime(toMs(ci.recordedAt.utc), ci.recordedAt.tz)} · ${scoreText(ci.score)}`;
-          navigation.navigate('Workout', { toast: { kind: 'check_in', text: notice === null ? text : `${text}. ${notice}`, checkInId: ci.id } });
-          return;
-        }
-      }
-      navigation.navigate('Workout', notice === null ? undefined : { toast: { kind: 'info', text: notice } });
+      await openStarted(r.notice ?? null, gate.reuseId);
     } catch (e) {
-      setError(`Couldn’t start the workout: ${e instanceof Error ? e.message : String(e)}. Try again.`);
+      setError(TODAY_SCREEN_COPY.notStarted(e instanceof Error ? e.message : String(e)));
       reload();
     }
   }
 
-  /** Resume on a chosen exercise: make its first unlogged set current, then open the workout. */
+  /** The card's workout, saved as today's builder draft (Start and Edit use the same one, §2.0.2). */
+  async function commitCard(sel: TodaySelection, data2: TodaySessionData, opKey: string) {
+    const opId = startOps.current.get(opKey) ?? newUuid();
+    startOps.current.set(opKey, opId);
+    return services.todaySession.commit(data2, sel, opId);
+  }
+
+  /** `Start`: one tap (the check-in sheet when due). No builder, no overview (§2.0.5). */
+  async function startCard() {
+    if (session === null || selection === null || !guard()) return;
+    try {
+      const g = await ensureGym();
+      if (g === null) return;
+      // A gym just made: plan on it (its items), not the typical preview.
+      const fresh = g.created ? await services.todaySession.load() : session;
+      if (fresh === null) return;
+      const sel: TodaySelection = { dayKey: selection.dayKey, controls: selection.controls };
+      const commitKey = `commit:${sel.dayKey}:${JSON.stringify(sel.controls)}:${fresh.gymId ?? '-'}:${fresh.equipmentVersion}`;
+      const c = await commitCard(sel, fresh, commitKey);
+      if (!c.ok) {
+        setError(c.message);
+        return;
+      }
+      await alertsAsk.ensureAsked();
+      const gate = await gateCheckIn();
+      if (gate.ask) {
+        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: c.draftId });
+        return;
+      }
+      const startKey = `start:${c.draftId}:${String(c.version)}`;
+      const opId = startOps.current.get(startKey) ?? newUuid();
+      startOps.current.set(startKey, opId);
+      const r = await services.todaySession.start({ draftId: c.draftId, expectedVersion: c.version, gymId: g.gymId, opId, checkIn: gate.checkIn });
+      if (!r.ok) {
+        setError(r.error.code === 'session_already_active' ? TODAY_SCREEN_COPY.started : r.error.message);
+        reload();
+        return;
+      }
+      startOps.current.delete(commitKey);
+      startOps.current.delete(startKey);
+      await openStarted(r.notice ?? null, gate.reuseId);
+    } catch (e) {
+      setError(TODAY_SCREEN_COPY.notStarted(e instanceof Error ? e.message : String(e)));
+      reload();
+    }
+  }
+
+  /** `Edit`: the builder on Your workout with this draft (the builder stream's screen). */
+  async function editCard() {
+    if (session === null || selection === null) return;
+    if (!routeAvailable(navStates(navigation), 'BuilderWorkout')) {
+      setToast({ text: TODAY_SCREEN_COPY.builderUnavailable });
+      return;
+    }
+    const sel: TodaySelection = { dayKey: selection.dayKey, controls: selection.controls };
+    // Keyed on what the card was built from too (gym, items), and cleared once saved (review S6): a later Edit with the
+    // same controls never gets back an older draft.
+    const editKey = `edit:${sel.dayKey}:${JSON.stringify(sel.controls)}:${session.gymId ?? '-'}:${session.equipmentVersion}`;
+    const c = await commitCard(sel, session, editKey);
+    if (!c.ok) {
+      setError(c.message);
+      return;
+    }
+    startOps.current.delete(editKey);
+    navigation.navigate('BuilderWorkout', { draftId: c.draftId });
+  }
+
+  /** `Build your own`: the builder on Set up, Day = the card's day. */
+  function buildYourOwn() {
+    if (!routeAvailable(navStates(navigation), 'BuilderSetup')) {
+      setToast({ text: TODAY_SCREEN_COPY.builderUnavailable });
+      return;
+    }
+    const day = selection === null || session === null ? null : ([...session.days, ...session.others].find((d) => d.key === selection.dayKey) ?? null);
+    navigation.navigate('BuilderSetup', day === null ? undefined : { dayId: day.splitDayId });
+  }
+
+  /** `Back to plan day` on an edited card: the edited draft is discarded (versioned), with Undo. */
+  async function backToPlan() {
+    const e = view?.edited;
+    if (!e) return;
+    const r = await services.coachDrafts.discard({ draftId: e.draftId, expectedVersion: e.version, opId: newUuid() });
+    if (!r.ok) {
+      setError('Changed since. Try again.');
+      reload();
+      return;
+    }
+    const gone = r.draft;
+    changed();
+    setToast({
+      text: 'Edits discarded',
+      action: 'Undo',
+      onAction: () => {
+        void services.coachDrafts.restore({ draftId: gone.id, expectedVersion: gone.version, opId: newUuid() }).then(() => {
+          changed();
+          setToast(null);
+        });
+      },
+    });
+  }
+
   async function resumeOn(row: ResumeRow) {
     const current = data.state === 'ready' ? data.value.active : null;
     if (row.firstPendingSetId !== null && current && row.status !== 'now') {
       const go = (version: number) => services.workout.dispatch(current.session.id, { type: 'set_active_set', at: services.now(), opId: newUuid(), setId: row.firstPendingSetId ?? '', expectedVersion: version });
       let r = await go(current.session.version);
-      // The workout moved on since Today read it (a rest ended, a tick): read it again and retry once (review N4).
       if (!r.ok && r.error.code === 'stale_version') {
         const fresh = await services.workout.load(current.session.id).catch(() => null);
         if (fresh && fresh.aggregate.sets.some((x) => x.id === row.firstPendingSetId && x.status === 'pending')) r = await go(fresh.aggregate.session.version);
@@ -300,78 +406,10 @@ export function TodayScreen() {
     navigation.navigate('Workout');
   }
 
-  function askRename(row: RoutineRow) {
-    renameOp.current = newUuid();
-    setRenameRow(row);
-    setRenameVisible(true);
-  }
-
-  async function saveRename(row: RoutineRow, name: string): Promise<string | null> {
-    const r = await services.routines.rename({ routineId: row.id, name, expectedVersion: row.version, opId: renameOp.current });
-    if (!r.ok) {
-      if (r.stale) reload();
-      return r.message;
-    }
-    const before = row.name;
-    const saved = r.routine;
-    renameAfter.arm(() => {
-      setRenameRow(null);
-      setToast({
-        text: `Renamed to ${saved.name}`,
-        action: 'Undo',
-        onAction: () => {
-          void services.routines.rename({ routineId: saved.id, name: before, expectedVersion: saved.version, opId: newUuid() }).then((u) => {
-            if (!u.ok) setError(u.message);
-            changed();
-            setToast(null);
-          });
-        },
-      });
-    });
-    setRenameVisible(false);
-    changed();
-    return null;
-  }
-
-  function confirmDelete(row: RoutineRow) {
-    Alert.alert(`Delete ${row.name}?`, undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void services.routines.remove({ routineId: row.id, expectedVersion: row.version, opId: newUuid() }).then((r) => {
-            if (!r.ok) {
-              setError(r.message);
-              reload();
-              return;
-            }
-            const gone = r.routine;
-            changed();
-            setToast({
-              text: LIBRARY_TOASTS.deleted(gone.name),
-              action: 'Undo',
-              onAction: () => {
-                void services.routines.restore({ routineId: gone.id, expectedVersion: gone.version, opId: newUuid() }).then((u) => {
-                  if (!u.ok) setError(u.message);
-                  changed();
-                  setToast(null);
-                });
-              },
-            });
-          });
-        },
-      },
-    ]);
-  }
-
   async function discardEmpty(main: Extract<TodayMain, { kind: 'stale' }>) {
-    // Offered only when nothing is logged, so 0 logged sets are confirmed; if one was logged
-    // meanwhile, the reducer refuses it (discard_unconfirmed) and Today reloads.
     const ask = { required: false, loggedSets: 0, expectedVersion: main.sessionVersion } as const;
     const r = await services.workout.dispatch(main.sessionId, discardCommand(ask, { opId: newUuid(), at: services.now() }));
     if (!r.ok) {
-      // Review N8: a stale version reloads rather than failing the same way again.
       setError(r.error.code === 'stale_version' || r.error.code === 'discard_unconfirmed' ? 'The workout changed. Check it and try again.' : `Couldn’t discard: ${r.error.message}`);
       reload();
       return;
@@ -385,16 +423,8 @@ export function TodayScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], padding: theme.components.screenMargin, paddingTop: theme.space['8'] }}>
         <View style={{ gap: theme.space['3'] }}>
-          <StatusLine
-            icon="exclamationmark.triangle"
-            tone="warning"
-            text={launch.recoveryError ? 'Your unfinished workout couldn’t be read.' : 'Couldn’t open your training data.'}
-            detail="Data unchanged"
-            info={data.message}
-            infoLabel="Error details"
-          />
+          <StatusLine icon="exclamationmark.triangle" tone="warning" text={launch.recoveryError ? 'Your unfinished workout couldn’t be read.' : 'Couldn’t open your training data.'} detail="Data unchanged" info={data.message} infoLabel="Error details" />
           <SecondaryButton label="Try again" onPress={reload} />
-          {/* The way out when a record can't be read (review S2): restore a backup; the current data is kept for Undo. */}
           <TextButton
             label="Restore from a backup"
             onPress={() => {
@@ -405,28 +435,23 @@ export function TodayScreen() {
       </View>
     );
   }
-  const { gym, view, banners, active, unlinked, next, recent, activities, routines, sessions } = data.value;
+  const { gym, view: todayView, banners, active, unlinked } = data.value;
   const zoned = services.now();
   const checkInLine = (c: NonNullable<typeof unlinked>) => `Check-in ${formatTime(toMs(c.recordedAt.utc), zoned.tz)} · ${scoreText(c.score)}${c.reasons.length ? ` · ${reasonsText(c.reasons)}` : ''}`;
-  const main = view?.main ?? { kind: 'no_plan' as const };
-  const recentRows = mergeRecent(recent, activities, zoned);
-  // `Change` on the Up next and Done today labels: the session picker (session-picker §2.1; review today-18oct B1).
-  const changeAction = hasChoice(sessions)
-    ? {
-        labelAction: (
-          <TextButton
-            label={SESSION_PICKER_COPY.change}
-            tone="secondary"
-            accessibilityLabel={SESSION_PICKER_COPY.changeSession}
-            onPress={() => {
-              setPickerVisible(true);
-            }}
-          />
-        ),
-      }
-    : {};
+  const main = todayView?.main ?? { kind: 'no_plan' as const };
+  const openWorkout = main.kind === 'resume' || main.kind === 'stale';
+  const chosenName = view === null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
+  const strip = session === null ? [] : services.todaySession.strip(session, main.kind === 'done_today' ? null : chosenName);
+  // No plan: the Other sessions are the day control (review S3), so a picked one can be changed; `⋯` keeps Empty
+  // workout and Build your own.
+  const segs =
+    session === null
+      ? null
+      : session.status === 'no_plan'
+        ? todaySegments({ days: session.others, others: [], nextKey: null, selectedKey: selection?.dayKey ?? null, paused: false })
+        : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey, selectedKey: selection?.dayKey ?? null, paused: session.status === 'paused' });
 
-  const hero = (() => {
+  const openHero = (() => {
     switch (main.kind) {
       case 'resume': {
         const status =
@@ -449,7 +474,6 @@ export function TodayScreen() {
                 navigation.navigate('Workout');
               }}
             />
-            {/* This workout's exercises: done / now / pending, in words (premium-feel §2.3). Tap one to resume on it. */}
             <DetailList
               rows={main.rows.map((r) => ({
                 key: r.sessionExerciseId,
@@ -469,10 +493,8 @@ export function TodayScreen() {
           <Hero
             label={`Unfinished · ${formatShortDate(toMs(main.startedAtUtc), zoned.tz)}`}
             title={main.title}
-            // Design pass nit: the end time is a hero line, so the button is one word.
             lines={[
               main.done === 0 ? 'Nothing logged' : `${String(main.done)} of ${String(main.total)} sets done`,
-              // Review S5: one time is enough; `Ended about` wins when there is one.
               main.lastSetAtUtc && !main.endedAboutUtc ? `Last set logged at ${formatTime(toMs(main.lastSetAtUtc), zoned.tz)}` : null,
               main.endedAboutUtc ? `Ended about ${formatTime(toMs(main.endedAboutUtc), zoned.tz)}` : null,
             ]}
@@ -499,148 +521,144 @@ export function TodayScreen() {
           </Hero>
         );
       case 'done_today':
-        return (
-          // A date-only (imported) workout has no times, so no duration (rule 6).
-          // Change sits on the label, as on Up next: the way to start another session (review today-18oct B1).
-          <Hero label="Done today" {...changeAction} title={main.title} lines={[doneTodayDurationLine(main.title, main.activeMs)]}>
-            <SecondaryButton
-              label="View summary"
-              onPress={() => {
-                navigation.navigate('Summary', { sessionId: main.sessionId });
-              }}
-            />
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
-              {/* A second workout: Up next stays one tap, Change picks another (premium-feel §2.4; review today-18oct B1). */}
-              {next ? (
-                <TextButton
-                  label="Start next session"
-                  onPress={() => {
-                    openOverview({ kind: 'next' });
-                  }}
-                />
-              ) : null}
-              <TextButton label="Empty workout" onPress={() => void start({ kind: 'empty' })} />
-            </View>
-          </Hero>
-        );
       case 'no_plan':
-        if (next) {
-          const exerciseCount = next.exercises.length;
-          const basis =
-            next.routine?.basis.kind === 'only'
-              ? 'Your only workout'
-              : next.routine?.basis.kind === 'after'
-                ? `After ${next.routine.basis.routineName} on ${formatShortDate(toMs(next.routine.basis.atUtc), next.routine.basis.tz)}`
-                : next.routine?.basis.kind === 'plan'
-                  ? null
-                  : next.sourceStartedAtUtc !== null
-                  ? `From ${formatShortDate(toMs(next.sourceStartedAtUtc), next.tz)}`
-                  : null;
-          // (Ben, 19 Oct) `Day 2 of 4 ›` opens Your plan: Library › Workouts, at the top.
-          const planBasis = next.routine?.basis.kind === 'plan' ? next.routine.basis : null;
-          const planLink =
-            planBasis === null
-              ? null
-              : {
-                  text: `Day ${String(planBasis.dayN)} of ${String(planBasis.of)}`,
-                  accessibilityLabel: `Day ${String(planBasis.dayN)} of ${String(planBasis.of)}. Opens your plan.`,
-                  onPress: () => {
-                    navigation.dispatch(openYourPlan(newUuid()));
-                  },
-                };
-          return (
-            <Hero
-              label="Up next"
-              {...changeAction}
-              title={next.title}
-              link={planLink}
-              lines={[
-                [next.muscles, `${String(exerciseCount)} ${exerciseCount === 1 ? 'exercise' : 'exercises'}`, next.aboutMinutes !== null ? `about ${String(next.aboutMinutes)} min` : `${String(next.sets)} sets`].filter(Boolean).join(' · '),
-                basis,
-              ]}
-            >
-              <PrimaryButton
-                label="Start workout"
-                busy={starting}
-                onPress={() => {
-                  openOverview({ kind: 'next' });
-                }}
-              />
-              {/* What Start creates, already fitted to this gym; each line says `Target` (premium-feel §2.3). A row opens the overview. */}
-              <DetailList
-                rows={next.targets.map((t, i) => ({
-                  key: `${String(i)}:${t.exerciseName}`,
-                  title: t.exerciseName,
-                  detail: t.line,
-                  onPress: () => {
-                    openOverview({ kind: 'next' });
-                  },
-                }))}
-              />
-              {next.why !== null ? (
-                <View style={{ gap: theme.space['1'] }}>
-                  <View style={{ alignSelf: 'flex-start' }}>
-                    <TextButton
-                      label="Why?"
-                      tone="secondary"
-                      accessibilityLabel={whyOpen ? 'Hide why' : 'Why this workout'}
-                      onPress={() => {
-                        setWhyOpen((o) => !o);
-                      }}
-                    />
-                  </View>
-                  {whyOpen ? (
-                    <AppText variant="callout" color="text.secondary">
-                      {next.why}
-                    </AppText>
-                  ) : null}
-                </View>
-              ) : null}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
-                <TextButton label="Empty workout" onPress={() => void start({ kind: 'empty' })} />
+        return null;
+    }
+  })();
+
+  const doneLine =
+    main.kind === 'done_today' ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${main.title}, done today${doneTodayDurationLine(main.title, main.activeMs) ? `, ${doneTodayDurationLine(main.title, main.activeMs) ?? ''}` : ''}. Opens its summary.`}
+        onPress={() => {
+          navigation.navigate('Summary', { sessionId: main.sessionId });
+        }}
+        style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['4'], borderRadius: theme.radius.lg, backgroundColor: theme.colors['status.done.subtle'], opacity: pressed ? 0.7 : 1 })}
+      >
+        <Icon name="checkmark.circle.fill" color="status.done" size={18} />
+        <AppText variant="headline" style={{ flex: 1 }}>
+          {[main.title, doneTodayDurationLine(main.title, main.activeMs)].filter(Boolean).join(' · ')}
+        </AppText>
+        <Icon name="chevron.right" size={14} color="text.tertiary" />
+      </Pressable>
+    ) : null;
+
+  const sessionBlock = (() => {
+    if (openWorkout || session === null) return null;
+    const noPlan = session.status === 'no_plan';
+    return (
+      <View style={{ gap: theme.space['2'] }}>
+        <Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>
+        {noPlan ? (
+          view === null ? (
+            <View style={{ gap: theme.space['3'] }}>
+              <AppText variant="title2">{TODAY_V2_COPY.noPlan}</AppText>
+              <PrimaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} />
+              <View style={{ alignSelf: 'flex-start' }}>
                 <TextButton
-                  label="Past workouts"
+                  label={`${TODAY_V2_COPY.setUpPlan} ›`}
                   onPress={() => {
-                    navigation.navigate('PastWorkouts');
+                    navigation.dispatch(openYourPlan(newUuid()));
                   }}
                 />
-                {/* workout-builder §3: a text link, never a filled pill, so Today keeps one primary. */}
-                <TextButton label={BUILD_COPY.link} onPress={() => void buildWithCoach()} />
               </View>
-            </Hero>
-          );
-        }
-        return (
-          <Hero label="Today" title="First workout" lines={[]}>
-            <PrimaryButton label="Start workout" busy={starting} onPress={() => void start({ kind: 'empty' })} />
-          </Hero>
-        );
-    }
+              {session.others.map((d) => (
+                <Pressable key={d.key} accessibilityRole="button" accessibilityLabel={d.name} onPress={() => { pickDay(d.key); }} style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.7 : 1 })}>
+                  <AppText variant="body">{d.name}</AppText>
+                  <Icon name="chevron.right" size={14} color="text.tertiary" />
+                </Pressable>
+              ))}
+              <View style={{ alignSelf: 'flex-start' }}>
+                <TextButton label={TODAY_V2_COPY.emptyWorkout} onPress={() => void start({ kind: 'empty' })} />
+              </View>
+            </View>
+          ) : (
+            <View style={{ gap: theme.space['1'] }}>
+              {segs !== null ? (
+                <DayControl
+                  segments={segs.segments}
+                  paused={false}
+                  onDay={pickDay}
+                  onMore={() => {
+                    setListSheet('other');
+                  }}
+                  onAxList={() => {
+                    setListSheet('all');
+                  }}
+                  axLabel={chosenName ?? TODAY_V2_COPY.other}
+                />
+              ) : null}
+              <View style={{ alignSelf: 'flex-start' }}>
+                <TextButton
+                  label={`${TODAY_V2_COPY.setUpPlan} ›`}
+                  tone="secondary"
+                  onPress={() => {
+                    navigation.dispatch(openYourPlan(newUuid()));
+                  }}
+                />
+              </View>
+            </View>
+          )
+        ) : segs !== null ? (
+          <DayControl
+            segments={segs.segments}
+            paused={session.status === 'paused'}
+            onDay={pickDay}
+            onMore={() => {
+              setListSheet('other');
+            }}
+            onAxList={() => {
+              setListSheet('all');
+            }}
+            axLabel={chosenName ?? TODAY_V2_COPY.other}
+          />
+        ) : null}
+        {view !== null && selection !== null ? (
+          <SessionCard
+            view={view}
+            open={selection.open}
+            why={selection.why}
+            moved={moved}
+            busy={starting}
+            dispatch={act}
+            onStart={() => void startCard()}
+            onEdit={() => void editCard()}
+            onBackToPlan={() => void backToPlan()}
+          />
+        ) : null}
+      </View>
+    );
   })();
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['6'], paddingBottom: theme.space['8'] + 56, gap: theme.space['6'] }}
+        // Re-renders keep the scroll position (Mix it up, a control): the ScrollView stays mounted (§2.0.2).
+        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['6'], gap: theme.space['3'] }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], flexWrap: 'wrap' }}>
-          <AppText variant="sectionLabel" color="text.secondary" accessibilityRole="header">
-            {formatLongDate(toMs(zoned.utc), zoned.tz)}
-          </AppText>
-          <LinkLine
-            accessibilityLabel={gym ? `Gym: ${gym.name}. Opens its equipment.` : 'Set up your gym'}
-            onPress={() => {
-              if (!gym) navigation.navigate('AddGym');
-              // The gym's equipment, to check or correct it (gym editor).
-              else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['4'], minHeight: 34, borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.divider'] }}>
-              <AppText variant="label">{`${gym?.name ?? 'Set up gym'} ▾`}</AppText>
-            </View>
-          </LinkLine>
-        </View>
+        <TodayHeader
+          title={todayTitle(zoned.utc, zoned.tz)}
+          gym={
+            <GymChip
+              gymName={gym?.name ?? null}
+              onPress={() => {
+                if (!gym) navigation.navigate('AddGym');
+                else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'GymDetail', params: { gymId: gym.id }, initial: false } });
+              }}
+            />
+          }
+          coachLabel={session?.coachLabel ?? TODAY_V2_COPY.coach}
+          onCoach={() => {
+            navigation.navigate('Coach', { entry: { kind: 'today' } });
+          }}
+          onMic={() => {
+            // MERGE NOTE: the coach stream adds direct voice (listening at once); until then the sheet opens with its field.
+            navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true });
+          }}
+        />
+        {strip.length > 0 ? <WeekStrip cells={strip} onDay={setDaySheet} /> : null}
 
         <BannerList banners={banners} />
         {interrupted ? (
@@ -660,11 +678,11 @@ export function TodayScreen() {
           />
         ) : null}
 
-        {hero}
+        {openHero}
+        {doneLine}
 
-        {unlinked && main.kind !== 'resume' && main.kind !== 'stale' ? (
+        {unlinked && !openWorkout ? (
           <LinkLine
-            // The visible time and score, read out too (review N6).
             accessibilityLabel={`${checkInLine(unlinked)}. Edits your saved check-in.`}
             onPress={() => {
               navigation.navigate('CheckIn', { mode: 'edit', checkInId: unlinked.id });
@@ -676,12 +694,11 @@ export function TodayScreen() {
           </LinkLine>
         ) : null}
 
-        {/* Region 4b (today.md, rare): a pain flag's two-weekly check. Quiet, not a banner, never a notification. */}
-        {view?.painCheck ? (
+        {todayView?.painCheck ? (
           <LinkLine
-            accessibilityLabel={view.painCheck.accessibilityLabel}
+            accessibilityLabel={todayView.painCheck.accessibilityLabel}
             onPress={() => {
-              const pc = view.painCheck;
+              const pc = todayView.painCheck;
               if (pc?.kind === 'one') navigation.navigate('PainFlag', { flagId: pc.flagId });
               else navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'PainFlags', initial: false } });
             }}
@@ -689,7 +706,7 @@ export function TodayScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: theme.target.min.height }}>
               <Icon name="exclamationmark.triangle" color="status.warning" size={16} />
               <AppText variant="callout" style={{ flex: 1 }}>
-                {view.painCheck.text}
+                {todayView.painCheck.text}
               </AppText>
               <Icon name="chevron.right" size={14} color="text.tertiary" />
             </View>
@@ -698,79 +715,20 @@ export function TodayScreen() {
 
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
 
-        {/* Your routines (premium-feel §2.1 region 6), only when the session list couldn't be read: routines stay reachable. */}
-        {sessions === null && routines.length > 0 && main.kind !== 'resume' && main.kind !== 'stale' ? (
-          <RuledSection title="Your workouts" gap="2">
-            {(allRoutines ? routines : routines.slice(0, ROUTINE_CAP)).map((r, i) => (
-              <FadeIn key={r.id} motion={i >= ROUTINE_CAP ? listEnterMotion(i - ROUTINE_CAP, theme.a11y.reduceMotion) : null}>
-                <RoutineListRow
-                  row={r}
-                  tz={zoned.tz}
-                  onPress={() => {
-                    openOverview({ kind: 'routine', routineId: r.id });
-                  }}
-                  onLongPress={() => {
-                    ActionSheetIOS.showActionSheetWithOptions({ title: r.name, options: ['Rename', 'Delete', 'Cancel'], destructiveButtonIndex: 1, cancelButtonIndex: 2 }, (k) => {
-                      if (k === 0) askRename(r);
-                      if (k === 1) confirmDelete(r);
-                    });
-                  }}
-                />
-              </FadeIn>
-            ))}
-            {routines.length > ROUTINE_CAP && !allRoutines ? (
-              <View style={{ alignSelf: 'flex-start' }}>
-                <TextButton
-                  label="All workouts"
-                  icon="chevron.right"
-                  tone="secondary"
-                  onPress={() => {
-                    setAllRoutines(true);
-                  }}
-                />
-              </View>
-            ) : null}
-          </RuledSection>
-        ) : null}
+        {sessionBlock}
 
-        {/* The Workouts list is in the Library tab now (exercise-library EL10): Today gets nothing new and its `Workouts` link retired. */}
-
-        {/* Recent (PM decision 18 Oct, pending Ben): replaces This week, the lift card and the Sessions rows. */}
-        {/* (Ben, 20 Oct) ＋ Activity: a run, ride, swim or sport, done or planned. */}
-        <View style={{ alignSelf: 'flex-start' }}>
-          <TextButton
-            label={ACTIVITY_COPY.add}
-            icon="plus"
-            tone="secondary"
-            accessibilityLabel="Add an activity"
-            onPress={() => {
-              setActivitySheet({ activity: null });
-            }}
-          />
-        </View>
-        {recentRows.length > 0 ? (
-          <RuledSection title="Recent" gap="2">
-            {recentRows.map((r) =>
-              r.kind === 'workout' ? (
-                <RecentRow
-                  key={r.row.sessionId}
-                  row={r.row}
-                  onPress={() => {
-                    if (r.row.opens === 'summary') navigation.navigate('Summary', { sessionId: r.row.sessionId, back: true });
-                    else navigation.navigate('Repeat', { sessionId: r.row.sessionId });
-                  }}
-                />
-              ) : (
-                <ActivityRecentRow
-                  key={r.row.activityId}
-                  row={r.row}
-                  onPress={() => {
-                    void openActivity(r.row.activityId);
-                  }}
-                />
-              ),
-            )}
-          </RuledSection>
+        {!openWorkout ? (
+          <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+            {session !== null && (session.status !== 'no_plan' || view !== null) ? <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} grow /> : null}
+            <SecondaryButton
+              label={TODAY_SCREEN_COPY.addActivity}
+              accessibilityLabel={TODAY_SCREEN_COPY.activity}
+              onPress={() => {
+                setActivitySheet({ activity: null });
+              }}
+              grow
+            />
+          </View>
         ) : null}
       </ScrollView>
       <ActivitySheet
@@ -781,76 +739,43 @@ export function TodayScreen() {
         }}
         onSaved={activitySaved}
       />
-      <AskPill
-        onPress={() => {
-          navigation.navigate('Coach', { entry: { kind: 'today' } });
+      <DaySheet
+        cell={daySheet}
+        onClose={() => {
+          setDaySheet(null);
+        }}
+        onWorkout={(id) => {
+          setDaySheet(null);
+          navigation.navigate('Summary', { sessionId: id, back: true });
+        }}
+        onActivity={(id) => {
+          setDaySheet(null);
+          void openActivity(id);
+        }}
+      />
+      <SessionListSheet
+        visible={listSheet !== null}
+        title={listSheet === 'all' ? 'Day' : TODAY_V2_COPY.otherLabel}
+        days={session === null ? [] : listSheet === 'all' ? [...session.days, ...session.others] : session.status === 'no_plan' ? [] : [...(segs?.overflow ?? []), ...session.others]}
+        selectedKey={selection?.dayKey ?? null}
+        nextKey={session?.nextKey ?? null}
+        onPick={(key) => {
+          setListSheet(null);
+          pickDay(key);
+        }}
+        onEmpty={() => {
+          listAfter.arm(() => void start({ kind: 'empty' }));
+          setListSheet(null);
+        }}
+        onBuild={() => {
+          listAfter.arm(buildYourOwn);
+          setListSheet(null);
+        }}
+        onClose={() => {
+          setListSheet(null);
         }}
       />
       {alertsAsk.sheet}
-      <SessionPickerSheet
-        visible={pickerVisible}
-        list={sessions}
-        now={zoned}
-        shown={null}
-        onPick={pickSession}
-        onClose={() => {
-          setPickerVisible(false);
-        }}
-        onRetry={reload}
-        onEmptyWorkout={() => {
-          pickerAfter.arm(() => void start({ kind: 'empty' }));
-          setPickerVisible(false);
-        }}
-        onBuildWithCoach={() => {
-          pickerAfter.arm(() => void buildWithCoach());
-          setPickerVisible(false);
-        }}
-        onEditWorkouts={() => {
-          pickerAfter.arm(() => {
-            navigation.navigate('Tabs', { screen: 'Library', params: { screen: 'LibraryHome', params: { segment: 'workouts' } } });
-          });
-          setPickerVisible(false);
-        }}
-        onPastWorkouts={() => {
-          pickerAfter.arm(() => {
-            navigation.navigate('PastWorkouts');
-          });
-          setPickerVisible(false);
-        }}
-        onDismissed={pickerAfter.dismissed}
-      />
-      <NeedsCoachSheet
-        block={needsCoach}
-        onClose={() => {
-          setNeedsCoach(null);
-        }}
-        onConnect={() => {
-          setNeedsCoach(null);
-          navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'CoachConnection' } });
-        }}
-        onEmptyWorkout={() => {
-          setNeedsCoach(null);
-          void start({ kind: 'empty' });
-        }}
-        onChooseSession={() => {
-          setNeedsCoach(null);
-          setPickerVisible(true);
-        }}
-      />
-      {renameRow ? (
-        <NameSheet
-          visible={renameVisible}
-          title="Rename workout"
-          buttonLabel="Save name"
-          initialName={renameRow.name}
-          check={(n) => services.routines.checkName(n, renameRow.id)}
-          onSubmit={(n) => saveRename(renameRow, n)}
-          onClose={() => {
-            setRenameVisible(false);
-          }}
-          onDismissed={renameAfter.dismissed}
-        />
-      ) : null}
       {deleted.toast ? (
         <DeleteToastView state={deleted} />
       ) : toast ? (
@@ -874,7 +799,6 @@ export function TodayScreen() {
           onDismissed={afterDismiss.dismissed}
           onDiscard={() => {
             const target = finishFor;
-            // One tested rule for every Discard (competitor-failure pack (e)): confirm whenever a set is logged.
             const ask = discardConfirmation(target);
             const go = () => {
               void services.workout.dispatch(target.session.id, discardCommand(ask, { opId: newUuid(), at: services.now() })).then((r) => {
@@ -884,7 +808,6 @@ export function TodayScreen() {
                   reload();
                   return;
                 }
-                // Close the sheet first; the toast shows once it has gone (review S8).
                 afterDismiss.arm(() => {
                   setFinishFor(null);
                   setToast({ text: 'Workout discarded' });
@@ -909,22 +832,12 @@ export function TodayScreen() {
   );
 }
 
-/** D-Today's hero: tracked label (with `Change` on Up next), a 40pt title, quiet lines, then the actions. */
-function Hero({ label, labelAction, title, lines, link = null, children }: { label: string; labelAction?: ReactNode; title: string; lines: readonly (string | null)[]; link?: { text: string; accessibilityLabel: string; onPress: () => void } | null; children: ReactNode }) {
+/** Resume / stale hero: tracked label, title, quiet lines, then the actions (today.md, unchanged). */
+function Hero({ label, title, lines, children }: { label: string; title: string; lines: readonly (string | null)[]; children: ReactNode }) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space['6'] }}>
-      {labelAction ? (
-        <View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'], marginBottom: -theme.space['2'] }}>
-            <Eyebrow>{label}</Eyebrow>
-            {labelAction}
-          </View>
-          <HeroHeader title={title} lines={lines} link={link} />
-        </View>
-      ) : (
-        <HeroHeader eyebrow={label} title={title} lines={lines} link={link} />
-      )}
+      <HeroHeader eyebrow={label} title={title} lines={lines} link={null} />
       <View style={{ gap: theme.space['4'] }}>{children}</View>
     </View>
   );
@@ -943,16 +856,11 @@ interface DetailRow {
   key: string;
   title: string;
   detail: string;
-  status?: ResumeRow['status'];
-  onPress?: () => void;
+  status: ResumeRow['status'];
+  onPress: () => void;
 }
 
-/**
- * The hero's detail list (premium-feel §2.3): Up next targets (two lines;
- * a tap opens the Workout overview) or Resume progress (one line with a status icon and words,
- * ≥ 52 pt, tappable). At most 5, then `+2 more` expands in place; only the
- * rows that appear then fade in (`motion.listEnter`).
- */
+/** Resume progress (premium-feel §2.3): one row per exercise with a status icon and words, ≥ 52 pt; `+2 more`. */
 function DetailList({ rows }: { rows: readonly DetailRow[] }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -961,46 +869,20 @@ function DetailList({ rows }: { rows: readonly DetailRow[] }) {
   const hidden = rows.length - shown.length;
   return (
     <View>
-      {shown.map((r, i) => {
-        const added = i >= DETAIL_CAP;
-        const body =
-          r.status !== undefined ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${r.title}, ${ROW_WORD[r.status]}, ${r.detail}`}
-              accessibilityHint="Resumes the workout on this exercise"
-              onPress={r.onPress}
-              style={({ pressed }) => ({
-                minHeight: theme.target.workout.height,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: theme.space['3'],
-                backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
-              })}
-            >
-              <Icon name={ROW_ICON[r.status].icon} color={ROW_ICON[r.status].color} size={16} />
-              <RowText title={r.title} detail={r.detail} titleColor={r.status === 'pending' || r.status === 'skipped' ? 'text.secondary' : 'text.primary'} titleWeight={r.status === 'now' ? '600' : '400'} />
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole={r.onPress ? 'button' : 'text'}
-              accessibilityLabel={`${r.title}. ${r.detail}`}
-              disabled={!r.onPress}
-              onPress={r.onPress}
-              style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', paddingVertical: theme.space['1'], backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent' })}
-            >
-              <AppText variant="body">{r.title}</AppText>
-              <AppText variant="callout" color="text.secondary" numeric>
-                {r.detail}
-              </AppText>
-            </Pressable>
-          );
-        return (
-          <FadeIn key={r.key} motion={added ? listEnterMotion(i - DETAIL_CAP, theme.a11y.reduceMotion) : null}>
-            {body}
-          </FadeIn>
-        );
-      })}
+      {shown.map((r, i) => (
+        <FadeIn key={r.key} motion={i >= DETAIL_CAP ? listEnterMotion(i - DETAIL_CAP, theme.a11y.reduceMotion) : null}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${r.title}, ${ROW_WORD[r.status]}, ${r.detail}`}
+            accessibilityHint="Resumes the workout on this exercise"
+            onPress={r.onPress}
+            style={({ pressed }) => ({ minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent' })}
+          >
+            <Icon name={ROW_ICON[r.status].icon} color={ROW_ICON[r.status].color} size={16} />
+            <RowText title={r.title} detail={r.detail} titleColor={r.status === 'pending' || r.status === 'skipped' ? 'text.secondary' : 'text.primary'} titleWeight={r.status === 'now' ? '600' : '400'} />
+          </Pressable>
+        </FadeIn>
+      ))}
       {hidden > 0 ? (
         <View style={{ alignSelf: 'flex-start' }}>
           <TextButton
@@ -1016,73 +898,40 @@ function DetailList({ rows }: { rows: readonly DetailRow[] }) {
   );
 }
 
-/** A `Your routines` row (≥ 52 pt): name, then `5 exercises · 6 Oct` or `5 exercises · not done yet`, and a chevron. */
-function RoutineListRow({ row, tz, onPress, onLongPress }: { row: RoutineRow; tz: string; onPress: () => void; onLongPress: () => void }) {
-  const theme = useTheme();
-  const count = `${String(row.exercises)} ${row.exercises === 1 ? 'exercise' : 'exercises'}`;
-  const when = row.lastDone ? formatDayMonth(toMs(row.lastDone.atUtc), row.lastDone.tz || tz) : 'not done yet';
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${row.name}, ${count}, ${row.lastDone ? `last done ${when}` : 'not done yet'}`}
-      accessibilityHint="Opens the workout's overview. Touch and hold to rename or delete."
-      onPress={onPress}
-      onLongPress={onLongPress}
-      style={({ pressed }) => ({
-        minHeight: theme.target.workout.height,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: theme.space['3'],
-        backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
-      })}
-    >
-      <RowText title={row.name} detail={`${count} · ${when}`} />
-      <Icon name="chevron.right" color="text.tertiary" size={14} />
-    </Pressable>
+/**
+ * Today's session data (`todaySession.load()`), apart from the rest of the screen (review S1). Read on focus when
+ * `enabled`, cached by the data version, the reload tick and the hour (so a new day re-reads), never while a workout
+ * is open. An unreadable plan only hides the card (null), it never blocks Today or Start.
+ */
+function useTodaySessionData(enabled: boolean): [TodaySessionData | null, () => void] {
+  const services = useServices();
+  const version = useDataVersion();
+  const [tick, setTick] = useState(0);
+  const [value, setValue] = useState<TodaySessionData | null>(null);
+  const cache = useRef<{ key: string; value: TodaySessionData | null } | null>(null);
+  const reload = useCallback(() => {
+    setTick((t) => t + 1);
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!enabled) return;
+      const key = `${String(version)}|${String(tick)}|${services.now().utc.slice(0, 13)}`;
+      if (cache.current?.key === key) {
+        setValue(cache.current.value);
+        return;
+      }
+      let alive = true;
+      void services.todaySession
+        .load()
+        .catch(() => null)
+        .then((v) => {
+          cache.current = { key, value: v };
+          if (alive) setValue(v);
+        });
+      return () => {
+        alive = false;
+      };
+    }, [services, version, tick, enabled]),
   );
-}
-
-/** (Ben, 20 Oct) An activity in `Recent`: `Run`, then `Yesterday · 18 km · long`; opens it in the activity sheet. */
-function ActivityRecentRow({ row, onPress }: { row: RecentActivityInput; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={row.accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: theme.target.workout.height,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: theme.space['3'],
-        backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
-      })}
-    >
-      <Icon name="figure.run" color="text.secondary" size={16} />
-      <RowText title={row.title} detail={[row.when, row.detail].filter((x) => x !== '').join(' · ')} />
-      <Icon name="chevron.right" color="text.tertiary" size={14} />
-    </Pressable>
-  );
-}
-
-/** A `Recent` row (≥ 52 pt): name, then `Yesterday · 16 sets`, and a chevron. Opens that past workout. */
-function RecentRow({ row, onPress }: { row: RecentWorkoutRow; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={row.accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        minHeight: theme.target.workout.height,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: theme.space['3'],
-        backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
-      })}
-    >
-      <RowText title={row.title} detail={`${row.when} · ${row.detail}`} />
-      <Icon name="chevron.right" color="text.tertiary" size={14} />
-    </Pressable>
-  );
+  return [value, reload];
 }

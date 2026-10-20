@@ -18,6 +18,7 @@ import {
   type RepRange,
   type Routine,
   type RoutineExercise,
+  type SessionPlanDay,
   type SetTemplate,
   type TargetProvenance,
   type TodayEdit,
@@ -817,6 +818,33 @@ export function recheckDraftSlot(slot: DraftSlot, exercise: Exercise, history: r
 }
 
 /**
+ * (Workout builder v3 §4.2, Today v2) The plan day a builder draft starts as: its key's plan and day index, split day
+ * and main lift, with the template and variation its set-up names. Up next credits it by plan day, so a `Today only`
+ * start (no routine) still moves the plan on. Empty for a draft that isn't a plan day (an Other session, Set up with
+ * no plan).
+ */
+export function planDayOfBuilderDraft(draft: Pick<WorkoutDraft, 'builderKey'>, version: Pick<WorkoutDraftVersion, 'request'>): { planDay?: SessionPlanDay } {
+  const k = draft.builderKey;
+  if (k === undefined || k.planId === null || k.dayIndex === null) return {};
+  const setup = version.request.setup;
+  const splitDayId = k.splitDayId ?? setup?.dayId ?? null;
+  if (splitDayId === null) return {};
+  const templateRoutineId = setup?.templateRoutineId ?? null;
+  const templateVersion = templateRoutineId === null ? null : (setup?.templateVersion ?? null);
+  return {
+    planDay: {
+      planId: k.planId,
+      dayIndex: k.dayIndex,
+      splitDayId,
+      mainLiftExerciseId: k.mainLiftExerciseId,
+      templateRoutineId: templateVersion === null ? null : templateRoutineId,
+      templateVersion,
+      variationId: setup?.variationId ?? null,
+    },
+  };
+}
+
+/**
  * `planCoachDraft` (§8.2): the one path for the overview's dry run, Today's
  * row and Start. v2: a slot with stored coach loads uses them, re-checked
  * now (`recheckDraftSlot`: newer history, pain, session pain, the item at
@@ -844,13 +872,16 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   // (v3 §2.3, §3.1) A builder version's loads were worked out and rounded down at this gym when Ben saw
   // them (`Top set` is a target he read): they stand as built, pinned to that item. A slot with no load
   // (`—`) is planned as any other, and so is one whose exercise was logged since the version was built
-  // (history moved: re-derived, review B4). A pain flag on the movement now holds every working load at
-  // the last comparable one, a kg Ben typed included (rule 9; §2.3 `Pain check-in after loads were set`).
+  // (history moved: re-derived, review B4), and every slot when Start is at another gym than the one the
+  // loads were rounded at (Today review S4). Pain on the movement (its flag or session pain, rule 9) holds
+  // every working load at the last comparable one, a kg Ben typed included (§2.3 `Pain check-in after loads
+  // were set`); with no comparable history to hold at, the slot is re-planned (no load, Today review B2/S4).
   const builder = version.request.origin === 'builder';
+  const sameGym = version.request.gymId === input.start.gymId;
   const builtAtMs = toMs(version.createdAt.utc);
   const builderHeld = new Map<string, Map<number, Load>>();
   const builderSlots = new Set(
-    builder
+    builder && sameGym
       ? version.plan.slots
           .filter((s) => s.setTemplates.some((t) => t.load?.load != null))
           .filter((s) => !builderHistoryMoved(s, input.start.exercises.get(s.exerciseId), input.histories.get(s.exerciseId) ?? [], input.substitute, builtAtMs, nowMs))
@@ -860,8 +891,13 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   for (const s of version.plan.slots) {
     if (!builderSlots.has(s.slotKey)) continue;
     const exercise = input.start.exercises.get(s.exerciseId);
-    if (exercise === undefined || painFlagCovering(input.substitute.painFlags, s.exerciseId, nowMs, input.substitute.at.tz) === null) continue;
-    const held = builderPainHold(s, loadReferences({ exercise, history: input.histories.get(s.exerciseId) ?? [], ctx: input.substitute, nowMs }));
+    if (exercise === undefined || painHoldFor(s.exerciseId, input.substitute.painFlags, input.substitute.sessionPain, nowMs, input.substitute.at.tz) === null) continue;
+    const refs = loadReferences({ exercise, history: input.histories.get(s.exerciseId) ?? [], ctx: input.substitute, nowMs });
+    if (refs.latest === null) {
+      builderSlots.delete(s.slotKey);
+      continue;
+    }
+    const held = builderPainHold(s, refs);
     if (held.size > 0) builderHeld.set(s.slotKey, held);
   }
   for (const s of version.plan.slots) {
@@ -965,7 +1001,13 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const aggregate = {
     ...out.aggregate,
     sets,
-    session: { ...out.aggregate.session, routineId: null, routineName: input.draft.name, coachDraft: { draftId: input.draft.id, version: version.n, name: input.draft.name } },
+    session: {
+      ...out.aggregate.session,
+      routineId: null,
+      routineName: input.draft.name,
+      coachDraft: { draftId: input.draft.id, version: version.n, name: input.draft.name },
+      ...(builder ? planDayOfBuilderDraft(input.draft, version) : {}),
+    },
   };
   return { ...out, aggregate, routine: pinned, version, targets, coachLoads: coachSlots, ruleNotes };
 }
@@ -1069,8 +1111,9 @@ export function coachDraftIsOpen(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc'
  * Listed under `FROM COACH` (§4.4): open, not expired, not started. Review S6: a saved draft stays
  * listed until it is started, while the never-done `Auto` rule (§11 item 1, WB16) is unapproved.
  */
-export function coachDraftListed(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc'>, nowUtc: string): boolean {
-  return coachDraftIsOpen(d, nowUtc);
+export function coachDraftListed(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc'> & Partial<Pick<WorkoutDraft, 'builderKey'>>, nowUtc: string): boolean {
+  // (v3 §4.4) A builder draft is Today's card / the builder's workout, not a coach build: never under `FROM COACH`.
+  return coachDraftIsOpen(d, nowUtc) && d.builderKey === undefined;
 }
 
 export type DraftLifeChange =

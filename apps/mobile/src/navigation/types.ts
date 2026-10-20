@@ -152,7 +152,7 @@ export type RootStackParams = {
    * `routineOf`: start that routine with next targets (premium-feel §2.6).
    */
   CheckIn:
-    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string }
+    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string; /** (Today v2) Today's session card: the builder draft it committed. */ coachDraftOf?: string }
     | { mode: 'edit'; checkInId: string }
     /**
      * Over the Workout overview (workout-overview §2.2): `What's up?` for a

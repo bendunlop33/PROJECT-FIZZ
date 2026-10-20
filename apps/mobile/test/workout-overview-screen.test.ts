@@ -287,9 +287,10 @@ describe('source checks', () => {
     expect(read('navigation/initial-state.ts')).not.toContain('WorkoutOverview');
     expect(read('screens/workout/WorkoutScreen.tsx')).not.toContain('WorkoutOverview');
     const today = read('screens/TodayScreen.tsx');
-    // Today opens it only through `openOverview`, from Up next, Start next session, routine rows and the session picker (Sessions rows went 18 Oct).
-    expect(today.match(/navigate\('WorkoutOverview'/g)).toHaveLength(1);
-    expect(today.match(/openOverview\(/g)?.length).toBe(6);
+    // Today (v2, workout-builder-v3 §2.1, §9 Q1): Start is one tap from the card and Edit opens the builder; Today
+    // never opens the overview any more.
+    expect(today).not.toContain("navigate('WorkoutOverview'");
+    expect(today).not.toContain('openOverview(');
   });
 
   it('OV9: the page makes no network or provider call', () => {

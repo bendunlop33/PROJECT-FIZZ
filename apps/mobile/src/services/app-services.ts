@@ -58,6 +58,7 @@ import { createLiftTargetService } from './lift-target-service';
 import { createPlanServices } from './plan-services';
 import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
+import { createTodaySessionService } from './today-session';
 import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
 import { createBuilderEnv } from '../builder/builder-env';
@@ -594,6 +595,19 @@ export function createAppServices(deps: AppServicesDeps) {
     typicalEquipment: () => typicalEquipment(),
   });
 
+  /** (Today v2, workout-builder-v3 §2.0) Today's session card from the plan, with the builder's rules. Local only. */
+  const todaySession = createTodaySessionService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    newId: deps.newId,
+    catalogueExercises,
+    currentGym: () => yourData.currentGym(),
+    typicalEquipment: () => typicalEquipment(),
+    coachStatus: async () => (await coach.availability()).status,
+    port: { ...loop.todayPort, start: (req) => loop.workout.start(req) },
+  });
+
   /** Gyms and equipment (Your data): the minimal gym editor. */
   const gymServices = createGymServices({
     repos,
@@ -967,6 +981,7 @@ export function createAppServices(deps: AppServicesDeps) {
     library,
     customExercises,
     history,
+    todaySession,
     overview,
     routines,
     coachDrafts,

@@ -128,8 +128,9 @@ describe('5.4 Today rows stack at AX; the detail shrinks right-aligned below it'
   it('RowText', () => {
     expect(rowText).toContain('fontScale >= AX_FONT_SCALE');
     expect(rowText).toContain("style={{ flexShrink: 1, textAlign: 'right' }}");
-    // Detail, routine and Recent workout rows, plus Recent's activity rows (weekflex, adapted on merge).
-    expect(today.match(/<RowText /g)?.length).toBe(4);
+    // Today (v2), workout-builder-v3 §2.0.9: Recent and the routine rows are superseded (the strip and the day
+    // control); the Resume detail rows keep RowText.
+    expect(today.match(/<RowText /g)?.length).toBe(1);
     expect(today).not.toMatch(/<AppText variant="body" numberOfLines=\{1\} style=\{\{ flex: 1 \}\}>\s*\{row\.title\}/);
   });
 
