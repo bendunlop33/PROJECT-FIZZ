@@ -31,9 +31,11 @@ import {
   planRoutineForSplitDay,
   activePause,
   planDayBodyParts,
+  planDayGroups,
+  planDaysAhead,
   planDaysByDue,
   activePin,
-  type PlanDueDay,
+  type PlanAheadDay,
   type PlanDueWorkout,
   workoutGroupsOf,
   planFirstLoads,
@@ -1968,17 +1970,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * exercises (else the split day it was mapped to), every finished workout in the window by the muscles done.
    */
   async function planDue(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null) {
+    const { days, workouts, live } = await planDueInput(p, planDays, training, pin);
+    return planDaysByDue(days, workouts, live).map((d) => ({ day: d.day.routine, pinned: d.pinned }));
+  }
+
+  /** `planDue`'s inputs: the plan days (with their planned muscle groups), the window's workouts and the live pin. */
+  async function planDueInput(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null) {
     // A pin is read against every workout since it, not only the window: one done before a long break stays done (review plan-adapt S3).
     const { sessions: read, exerciseOf } = await windowSessions(p, pin?.atUtc ?? null);
     const windowFrom = toMs(ctx.now().utc) - SPLIT_WINDOW_DAYS * 86_400_000;
     const infos = new Map<string, Exercise | null>();
     for (const r of planDays) for (const e of r.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, exerciseOf(e.exerciseId) ?? (await exerciseById(e.exerciseId)));
     const split = splitInUse(training);
-    const days: (PlanDueDay & { routine: Routine })[] = planDays.map((r) => ({ routineId: r.id, name: r.name, bodyParts: planDayBodyParts(r, (id) => infos.get(id) ?? null, split), createdFromSessionId: r.createdFromSessionId ?? null, routine: r }));
+    const info = (id: string) => infos.get(id) ?? null;
+    const days: (PlanAheadDay & { routine: Routine })[] = planDays.map((r) => ({ routineId: r.id, name: r.name, bodyParts: planDayBodyParts(r, info, split), plannedGroups: planDayGroups(r, info), createdFromSessionId: r.createdFromSessionId ?? null, routine: r }));
     const all: PlanDueWorkout[] = read.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf) }));
     const live = activePin(pin, days, all);
     const workouts = all.filter((w) => toMs(w.startedAtUtc) >= windowFrom);
-    return planDaysByDue(days, workouts, live).map((d) => ({ day: d.day.routine, pinned: d.pinned }));
+    return { days, workouts, live };
   }
 
   /**
@@ -3954,6 +3963,33 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   };
 
   const next = {
+    /**
+     * (Morning reminder, Ben 20 Oct) A prediction, not Up next: the applied plan's days Up next would name after
+     * `firstRoutineId` (Up next now), `count` days ahead, assuming each is done the day it's named (`planDaysAhead`:
+     * plan-adapt's least-recently-trained rule, a pin consumed once its day is done, a day this gym can't start
+     * skipped). Null with no plan in use (none, paused, or `firstRoutineId` not one of its days). Saves nothing.
+     */
+    async planAhead(gymId: string, firstRoutineId: string, count: number): Promise<{ routineId: string; name: string; dayN: number; of: number }[] | null> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return null;
+        const { live } = await routineRows(p.id);
+        const plan = await ctx.store().repos.planDrafts.applied(p.id);
+        const nowMs = toMs(ctx.now().utc);
+        if ((plan?.applied ?? null) === null || activePause(plan, nowMs, p.timezone) !== null) return null;
+        const planDays = planRoutines(plan, live);
+        if (!planDays.some((r) => r.id === firstRoutineId)) return null;
+        const training = await ctx.store().repos.trainingProfiles.get(p.id).catch(() => null);
+        const { days, workouts, live: pin } = await planDueInput(p, planDays, training, plan?.pin ?? null);
+        const startable = new Map<string, boolean>();
+        for (const r of planDays) startable.set(r.id, (await routineStart(p, { routineId: r.id, gymId, opId: `preview-next-routine:${r.id}`, preview: true })).r.ok);
+        const order = planDaysAhead({ days, workouts, pin, firstRoutineId, count, fromMs: nowMs, windowDays: SPLIT_WINDOW_DAYS, canStart: (d) => startable.get(d.routineId) === true });
+        return order.map((d) => ({ routineId: d.routineId, name: d.name, dayN: planDays.findIndex((r) => r.id === d.routineId) + 1, of: planDays.length }));
+      } catch {
+        return null;
+      }
+    },
+
     /**
      * Today's `Start workout` card (audit B2): the last workout with next
      * targets, previewed at this gym. Saves nothing; null when there's no
