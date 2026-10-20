@@ -46,7 +46,7 @@ None.
 - **Fix:** on `added_bodyweight` series, also run the bodyweight rep records over the bodyweight rows. Either keep `most_reps` as is, or better, express it as `most_reps_at_load` at `BW` (+0) so it uses the same judging as the weighted rows. Add a test with exactly the probe's history. The developer raised this as open question 2. Ben should confirm the label, but the default should be to keep the record, not lose it.
 
 ### S2. Imported BW + rows with a blank weight drop off the merged series, while app-logged bodyweight rows plot as +0
-`packages/domain/src/progress/exercise.ts:181` (`asAddedZero` is applied only when `rowKind(r) === 'bodyweight'`, line 238), with `packages/domain/src/import/plan.ts:1081` and `:1101`.
+`packages/domain/src/progress/exercise.ts:181` (`asAddedZero` is applied only when `rowKind(r) === 'bodyweight'`, line 237), with `packages/domain/src/import/plan.ts:1081` and `:1101`.
 The FitNotes importer stores `added`-convention sets with `load: null` when the weight cell is blank. History reads those sets as `BW` (`loadText(null, 'added')`). But `loadedSet` rejects `load === null`, so they get no Top set point, no Total weight and no rep-table row.
 
 - **Scenario (probe):** an imported dip session on 1 Aug, `added` with blank weight × 12 and × 10, then an app BW session and a BW + 10 session. Total weight gives `[null, 0, 80]` and Top set points are `['BW × 12', 'BW + 10 kg × 8']`. The 1 Aug session is missing from the chart, even though History shows it as `BW × 12`.
