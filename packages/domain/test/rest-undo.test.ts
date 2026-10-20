@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { SessionAggregateSchema, type SessionAggregate } from '@fizz/schemas';
+import { MAX_RESUMABLE_RESTS, SessionAggregateSchema, type SessionAggregate } from '@fizz/schemas';
 import { chatSetUndoCommand, reduceSession } from '../src/index';
-import { at, kg, values } from './fixtures';
-import { apply, BENCH, expectError, expectOk, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
+import { at, id, kg, values } from './fixtures';
+import { apply, BENCH, expectError, expectOk, FACE, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
 /*
  * Unticking a set never resets the rest (workout-table-v3 §3; Ben, 20 Oct:
@@ -203,5 +203,128 @@ describe('undo of a log puts back the rest it replaced', () => {
     const parsed = SessionAggregateSchema.parse(JSON.parse(JSON.stringify(s)));
     const r = expectOk(reduceSession(parsed, undo(b1.id, 60)));
     expect(r.state.restTimer).toMatchObject({ id: warm.id, status: 'running', deadlineUtc: at(120).utc });
+  });
+});
+
+/*
+ * Review S1: the accidental rest is touched (Skip, −30 to zero, runs out)
+ * before the untick. The earlier rest must still come back with its deadline.
+ */
+
+/** W logged at 30 s (warm-up rest to 90 s), then R1 ticked by accident at 40 s: a 15 s transition rest to 55 s. */
+function accidentalShortTick() {
+  const { state } = startFixture({ supersetTransitionS: 15 });
+  const [w] = bench(state);
+  const [r1] = setsFor(state, ROW);
+  if (!w || !r1) throw new Error('fixture');
+  let s = apply(state, logCmd(w.id, values(kg(60), 10), 30));
+  const warm = s.restTimer;
+  if (!warm) throw new Error('no rest');
+  s = apply(s, { type: 'set_active_set', at: at(35), opId: 'sa', setId: r1.id, expectedVersion: s.session.version });
+  s = apply(s, logCmd(r1.id, values(kg(50, 'stack'), 10), 40));
+  expect(s.restTimer).toMatchObject({ setId: r1.id, kind: 'transition', status: 'running', deadlineUtc: at(55).utc });
+  return { s, r1, warm };
+}
+
+describe('the accidental rest is changed before the untick (review S1)', () => {
+  it('Skip on the accidental rest, then untick: the earlier rest comes back with its deadline', () => {
+    const { s, b1, warm } = accidentalTick();
+    const accidental = s.restTimer;
+    if (!accidental) throw new Error('no rest');
+    const skipped = apply(s, { type: 'skip_rest', at: at(55), opId: 'skip', timerId: accidental.id });
+    expect(skipped.restTimer).toMatchObject({ id: accidental.id, status: 'skipped' });
+    expect(skipped.restTimer?.resumeOnUndo).toHaveLength(1);
+    const r = expectOk(reduceSession(skipped, undo(b1.id, 60)));
+    expect(r.state.restTimer).toMatchObject({ id: warm.id, status: 'running', deadlineUtc: at(120).utc });
+    expect(r.events.map((e) => e.type)).toEqual(['SetUndone', 'RestStarted', 'ActiveSetChanged']);
+  });
+
+  it('−30 takes the accidental rest to zero, then untick: the earlier rest comes back with its deadline', () => {
+    const { s, r1, warm } = accidentalShortTick();
+    const accidental = s.restTimer;
+    if (!accidental) throw new Error('no rest');
+    const zeroed = apply(s, { type: 'adjust_rest', at: at(45), opId: 'minus30', timerId: accidental.id, deltaS: -30 });
+    expect(zeroed.restTimer).toMatchObject({ id: accidental.id, status: 'expired' });
+    expect(zeroed.restTimer?.resumeOnUndo).toHaveLength(1);
+    const r = expectOk(reduceSession(zeroed, undo(r1.id, 50)));
+    expect(r.state.restTimer).toMatchObject({ id: warm.id, status: 'running', deadlineUtc: at(90).utc });
+  });
+
+  it('the accidental rest runs out on a clock tick, then untick: the earlier rest comes back with its deadline', () => {
+    const { s, r1, warm } = accidentalShortTick();
+    const ticked = expectOk(reduceSession(s, { type: 'tick', at: at(60) }));
+    expect(ticked.events.map((e) => e.type)).toEqual(['RestEnded']);
+    expect(ticked.state.restTimer).toMatchObject({ status: 'expired' });
+    expect(ticked.state.restTimer?.resumeOnUndo).toHaveLength(1);
+    const r = expectOk(reduceSession(ticked.state, undo(r1.id, 70)));
+    expect(r.state.restTimer).toMatchObject({ id: warm.id, status: 'running', deadlineUtc: at(90).utc });
+    expect(r.events.some((e) => e.type === 'RestStarted')).toBe(true);
+  });
+
+  it('Discard drops the kept rest with the live one', () => {
+    const { s } = accidentalTick();
+    const r = expectOk(reduceSession(s, { type: 'discard', at: at(60), opId: 'd', expectedVersion: s.session.version, confirmedLoggedSets: 2 }));
+    expect(r.state.restTimer).toMatchObject({ status: 'cancelled' });
+    expect(r.state.restTimer?.resumeOnUndo).toBeUndefined();
+    expect(r.events.some((e) => e.type === 'RestStarted')).toBe(false);
+  });
+
+  it('final set of a planned workout ticked by accident: untick restores the rest it ended', () => {
+    const { state } = startFixture();
+    const order = [...bench(state), setsFor(state, ROW)[0], setsFor(state, FACE)[0], setsFor(state, ROW)[1], setsFor(state, FACE)[1]];
+    let s = state;
+    let t = 0;
+    for (const set of order) {
+      if (!set) throw new Error('fixture');
+      const v = set.planned.load?.convention === 'stack' ? values(set.planned.load, 12) : values(set.planned.load, 8);
+      s = apply(s, logCmd(set.id, v, (t += 60)));
+    }
+    const before = s.restTimer;
+    if (before?.status !== 'running') throw new Error('expected a running rest after the last superset round');
+    const hang = setsFor(s, HANG)[0];
+    if (!hang) throw new Error('fixture');
+    s = apply(s, logCmd(hang.id, values(null, null, { durationS: 45 }), t + 5));
+    expect(s.session.activeSetId).toBeNull();
+    expect(s.restTimer).toMatchObject({ id: before.id, status: 'ended_early' });
+    expect(s.restTimer?.resumeOnUndo?.map((e) => e.afterUndoOfSetId)).toEqual([hang.id]);
+    const r = expectOk(reduceSession(s, undo(hang.id, t + 10)));
+    expect(r.state.restTimer).toMatchObject({ id: before.id, status: 'running', deadlineUtc: before.deadlineUtc, endedAtUtc: null });
+    expect(r.state.session.activeSetId).toBe(hang.id);
+  });
+});
+
+describe('kept rests are capped (review S2)', () => {
+  it(`22 quick ticks (21 rests replaced) keep the newest ${String(MAX_RESUMABLE_RESTS)}, newest on top, and the newest undo still works`, () => {
+    const { state } = startFixture();
+    const [w, b1, b2] = bench(state);
+    if (!w || !b1 || !b2) throw new Error('fixture');
+    let s = state;
+    let after = b2.id;
+    const added: string[] = [];
+    for (let i = 0; i < 19; i += 1) {
+      const newSetId = id(70_000 + i);
+      s = apply(s, { type: 'add_set', at: at(1), opId: `add-${String(i)}`, sessionExerciseId: b2.sessionExerciseId, newSetId, setType: null, afterSetId: after });
+      added.push(newSetId);
+      after = newSetId;
+    }
+    const ticks = [w.id, b1.id, b2.id, ...added];
+    // The first tick replaces no rest, so 22 ticks keep 21 rests: one over the cap.
+    expect(ticks).toHaveLength(22);
+    let t = 10;
+    let previousTimerId: string | undefined;
+    for (const setId of ticks) {
+      previousTimerId = s.restTimer?.id;
+      s = apply(s, logCmd(setId, values(kg(100), 8), (t += 1)));
+    }
+    const stack = s.restTimer?.resumeOnUndo ?? [];
+    expect(stack).toHaveLength(MAX_RESUMABLE_RESTS);
+    // Oldest dropped (W's rest, kept by B1's log), newest on top.
+    expect(stack[0]?.afterUndoOfSetId).toBe(ticks[2]);
+    expect(stack.at(-1)?.afterUndoOfSetId).toBe(ticks[21]);
+    expect(stack.at(-1)?.timer.id).toBe(previousTimerId);
+    expect(SessionAggregateSchema.safeParse(JSON.parse(JSON.stringify(s))).error?.issues).toBeUndefined();
+    const r = expectOk(reduceSession(s, undo(ticks[21] ?? '', t + 1)));
+    expect(r.state.restTimer).toMatchObject({ id: previousTimerId, status: 'running' });
+    expect(r.state.restTimer?.resumeOnUndo).toHaveLength(MAX_RESUMABLE_RESTS - 1);
   });
 });
