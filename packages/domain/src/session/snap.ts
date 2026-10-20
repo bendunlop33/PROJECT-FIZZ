@@ -201,10 +201,10 @@ export function mapEquipment(
   return { equipment: null, mapping: 'not_here' };
 }
 
-type Fit = { load: Load; bounded: 'min' | 'max' | null; converted: boolean } | { load: null; reason: SnapReason; lightest: Load | null };
+export type LoadFit = { load: Load; bounded: 'min' | 'max' | null; converted: boolean } | { load: null; reason: SnapReason; lightest: Load | null };
 
 /** Rule 2–4 for one load on one item: round toward easier; drop rather than round up. */
-function fitOn(target: Load, eq: EquipmentInstance): Fit {
+export function fitOn(target: Load, eq: EquipmentInstance): LoadFit {
   if (target.convention !== eq.loadConvention) return { load: null, reason: 'convention_mismatch', lightest: null };
   const r = roundToAvailableLoad(target, eq, 'easier');
   if (!r.ok) return { load: null, reason: r.reason === 'convention_mismatch' ? 'convention_mismatch' : 'no_achievable_loads', lightest: null };
@@ -214,7 +214,7 @@ function fitOn(target: Load, eq: EquipmentInstance): Fit {
 }
 
 /** Without equipment a load is kept only in the slot's own unit and convention (as before; review SP5). */
-function fitWithoutEquipment(target: Load, unit: WeightUnit, convention: LoadConvention): Fit {
+export function fitWithoutEquipment(target: Load, unit: WeightUnit, convention: LoadConvention): LoadFit {
   if (target.convention !== convention) return { load: null, reason: 'convention_mismatch', lightest: null };
   if (target.unit !== unit) return { load: null, reason: 'unit_not_convertible', lightest: null };
   return { load: target, bounded: null, converted: false };
@@ -249,7 +249,7 @@ function fitSet(
   });
 
   if (set.intended === null) return done(null, 'exact');
-  let fit: Fit;
+  let fit: LoadFit;
   if (mapping === 'not_here') fit = { load: null, reason: 'not_here', lightest: null };
   else if (eq === null) fit = fitWithoutEquipment(set.intended, unit, convention);
   else fit = fitOn(set.intended, eq);
