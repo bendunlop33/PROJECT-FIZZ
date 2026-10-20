@@ -653,7 +653,7 @@ export const TimerStatusSchema = z.enum([
 ]);
 export type TimerStatus = z.infer<typeof TimerStatusSchema>;
 
-export const RestTimerSchema = z.object({
+const RestTimerCoreSchema = z.object({
   id: IdSchema,
   sessionId: IdSchema,
   /** The set whose commit started this timer. */
@@ -667,6 +667,32 @@ export const RestTimerSchema = z.object({
   remainingMsAtPause: z.int().min(0).nullable(),
   endedAtUtc: UtcTimestampSchema.nullable(),
   version: z.int().min(1),
+});
+
+/**
+ * A live rest that a log replaced, kept so undoing that log puts it back
+ * with its original deadline (workout-table-v3 §3, Ben 20 Oct: unticking a
+ * set never resets the rest). `timer` is the rest as it was just before the
+ * log (running, or paused while the workout is paused), with any −30/+30
+ * already in its deadline.
+ */
+export const ResumableRestSchema = z.object({
+  /** Undoing this set's log restores `timer`. */
+  afterUndoOfSetId: IdSchema,
+  timer: RestTimerCoreSchema.extend({ status: z.enum(['running', 'paused']) }),
+});
+export type ResumableRest = z.infer<typeof ResumableRestSchema>;
+
+/** Most replaced rests kept for undo; older ones are dropped first. */
+export const MAX_RESUMABLE_RESTS = 20;
+
+export const RestTimerSchema = RestTimerCoreSchema.extend({
+  /**
+   * Rests to put back on undo, newest last (a stack: each undo of the latest
+   * log pops at most one). Absent = none. Only entries whose deadline had
+   * not passed when last carried forward are kept.
+   */
+  resumeOnUndo: z.array(ResumableRestSchema).min(1).max(MAX_RESUMABLE_RESTS).optional(),
 });
 export type RestTimer = z.infer<typeof RestTimerSchema>;
 

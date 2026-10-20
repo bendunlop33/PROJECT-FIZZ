@@ -31,8 +31,12 @@ import {
   createRestTimer,
   endRestTimer,
   expireRestTimerIfDue,
+  mapResumable,
   pauseRestTimer,
+  restoreAfterUndo,
+  resumableAfterLog,
   resumeRestTimer,
+  withResumable,
 } from '../rest';
 import { deriveId, stableStringify } from '../stable';
 import { asCardioInterval, CARDIO_TIMER_CAP_S, cardioElapsedMs, cardioHasValue, resumeCardioInterval } from '../cardio';
@@ -441,6 +445,8 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
   }
 
   const events: SessionEvent[] = [];
+  // Unticking this set puts back the rest it ends here, deadline and all (workout-table-v3 §3).
+  const resumable = resumableAfterLog(state.restTimer, set.id, nowMs);
   let restTimer = state.restTimer;
   if (restTimer?.status === 'running') {
     // P2: logging during rest ends that rest early.
@@ -518,6 +524,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
       });
     }
     events.push({ type: 'ActiveSetChanged', setId: null }, { type: 'AllSetsDone' });
+    if (restTimer !== null) restTimer = withResumable(restTimer, resumable);
     const next = bumpVersion({ ...state, sets, audit, restTimer, workInterval: wi?.setId === set.id ? null : wi }, null);
     return { ok: true, state: next, events };
   }
@@ -553,6 +560,7 @@ function handleLogSet(state: SessionAggregate, cmd: CommandOf<'log_set'>, nowMs:
     });
   }
   events.push({ type: 'ActiveSetChanged', setId: nextActive });
+  if (restTimer !== null) restTimer = withResumable(restTimer, resumable);
   const next = bumpVersion({ ...state, sets, audit, restTimer, workInterval: wi?.setId === set.id ? null : wi }, nextActive);
   return { ok: true, state: next, events };
 }
@@ -736,6 +744,25 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Unticking never resets the rest (workout-table-v3 §3, Ben 20 Oct): the rest
+  // this log replaced comes back with its original deadline, or none if it has run out.
+  const back = restTimer === null ? null : restoreAfterUndo(restTimer.resumeOnUndo ?? [], set.id, nowMs);
+  if (restTimer !== null && back !== null) {
+    if (back.restored === null) {
+      restTimer = withResumable(restTimer, back.rest);
+    } else {
+      restTimer = back.restored;
+      events.push({
+        type: 'RestStarted',
+        timerId: restTimer.id,
+        setId: restTimer.setId,
+        kind: restTimer.kind,
+        durationS: restTimer.durationS,
+        deadlineUtc: restTimer.deadlineUtc,
+        timerVersion: restTimer.version,
+      });
+    }
+  }
   const audit: SessionAggregate['audit'] = [
     ...state.audit,
     {
@@ -817,6 +844,8 @@ function handleStartWork(state: SessionAggregate, cmd: CommandOf<'start_work_int
     restTimer = endRestTimer(restTimer, 'ended_early', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'ended_early', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Starting work ends rest for good: an Undo after this restores no earlier rest.
+  if (restTimer !== null) restTimer = withResumable(restTimer, []);
   // Cardio counts up: its timer runs to the cap, whatever was asked, and ✓ or Stop ends it (19 Oct).
   const durationS = ex.measurement === 'cardio' ? CARDIO_TIMER_CAP_S : cmd.durationS;
   const workInterval = resumed ?? {
@@ -874,7 +903,8 @@ function handleStopWork(state: SessionAggregate, cmd: CommandOf<'stop_work_inter
 
 function handlePause(state: SessionAggregate, nowMs: number): Handled {
   if (state.session.pause !== null) return fail('session_paused', 'The workout is already paused.');
-  const restTimer = state.restTimer ? pauseRestTimer(state.restTimer, nowMs) : null;
+  // Rests kept for Undo pause with it, so they keep time as if never replaced.
+  const restTimer = state.restTimer ? mapResumable(pauseRestTimer(state.restTimer, nowMs), (t) => pauseRestTimer(t, nowMs), nowMs, true) : null;
   let workInterval = state.workInterval;
   if (workInterval?.status === 'running') {
     workInterval = {
@@ -902,7 +932,7 @@ function handleResume(state: SessionAggregate, nowMs: number): Handled {
   const pause = state.session.pause;
   if (pause === null) return fail('not_paused', 'The workout is not paused.');
   const pausedFor = Math.max(0, nowMs - toMs(pause.pausedAtUtc));
-  const restTimer = state.restTimer ? resumeRestTimer(state.restTimer, nowMs) : null;
+  const restTimer = state.restTimer ? mapResumable(resumeRestTimer(state.restTimer, nowMs), (t) => resumeRestTimer(t, nowMs), nowMs, false) : null;
   let workInterval = state.workInterval;
   if (workInterval?.status === 'paused') {
     workInterval = {
@@ -981,6 +1011,8 @@ function handleFinish(state: SessionAggregate, cmd: CommandOf<'finish'>, nowMs: 
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Nothing to put back once the workout is over (no undo of a log after Finish or Discard).
+  if (restTimer !== null) restTimer = withResumable(restTimer, []);
   // An open pause is closed at the tap time and stored unclipped; duration
   // counts only the part inside [startedAt, endedAt] (review R1).
   const pauses = closePause(state, nowMs);
@@ -1465,6 +1497,8 @@ function handleDiscard(state: SessionAggregate, cmd: CommandOf<'discard'>, nowMs
     restTimer = endRestTimer(restTimer, 'cancelled', nowMs);
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
+  // Nothing to put back once the workout is over (no undo of a log after Finish or Discard).
+  if (restTimer !== null) restTimer = withResumable(restTimer, []);
   let workInterval = state.workInterval;
   if (workInterval && (workInterval.status === 'running' || workInterval.status === 'paused')) {
     // Explicit, confirmed discard of the whole workout: nothing is being kept.
