@@ -43,7 +43,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .th span:nth-child(n+2) { text-align: center; }
 .tr { min-height: 44px; border-top: 1px solid var(--divider); padding: 0 2px; }
 .tr .sn { font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; }
-.tr .sn i { display: block; font-style: normal; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); }
+.tr .sn i { display: block; white-space: nowrap; font-style: normal; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); }
 .cell { min-height: 36px; border-radius: 9px; background: var(--raised); color: var(--text); border: 1.5px solid transparent; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; font-family: inherit; width: 100%; }
 .cell:focus { outline: none; border-color: var(--accent); }
 .tr.wu .cell { color: var(--text2); background: #1E1B19; }
@@ -59,9 +59,14 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .addset { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 13.5px; padding: 6px 2px 0; cursor: pointer; align-self: flex-start; font-family: inherit; }
 .fold { display: flex; justify-content: center; gap: 8px; width: 100%; min-height: 44px; align-items: center; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--done); font-size: 14px; font-variant-numeric: tabular-nums; padding: 0 2px; cursor: pointer; font-family: inherit; text-align: left; }
 .fold u { color: var(--text2); font-size: 13px; text-underline-offset: 3px; text-decoration-color: var(--text3); flex: none; }
-.restbar { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 16px; padding: 8px 10px 8px 14px; }
+.restbar { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 16px; padding: 10px 10px 10px 14px; min-height: 64px; }
+.restbar.idle .rt { color: var(--text2); }
+.scroll { touch-action: pan-y; }
+.more { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--divider); background: none; color: var(--text); font-size: 16px; cursor: pointer; }
+.mi { min-height: 50px; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font-size: 16px; text-align: left; padding: 0 8px; cursor: pointer; font-family: inherit; }
+.mi.red { color: #E5534B; }
 .restbar b { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text2); font-weight: 600; }
-.restbar .rt { flex: 1; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.restbar .rt { flex: 1; font-size: 36px; line-height: 1.1; font-weight: 600; font-variant-numeric: tabular-nums; }
 .restbar button { min-width: 48px; min-height: 40px; border-radius: 999px; border: 1.5px solid var(--text3); background: none; color: var(--text); font-size: 14px; cursor: pointer; font-family: inherit; }
 .next { font-size: 13.5px; color: var(--text2); padding: 0 4px; display: flex; justify-content: space-between; }
 .next b { color: var(--text); font-weight: 600; }
@@ -88,12 +93,12 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .ovbox { border: 1.5px solid var(--text3); border-radius: 12px; margin: 4px -2px; }
 .ovbox .ovr:first-child { border-top: 0; }
 .ghost { min-height: 46px; border-radius: 999px; border: 1.5px solid var(--text3); background: none; color: var(--text); font-size: 15px; cursor: pointer; font-family: inherit; }
-.toast { position: absolute; left: 16px; right: 16px; bottom: 90px; background: var(--raised); border-radius: 12px; padding: 12px 14px; font-size: 14px; z-index: 25; }
+.toast { position: absolute; left: 16px; right: 16px; bottom: 170px; background: var(--raised); border-radius: 12px; padding: 12px 14px; font-size: 14px; z-index: 25; }
 </style>
 
 <div class="wrap">
   <div class="phone" id="app"></div>
-  <div class="hint">Prototype with example data: Upper body, round 3 is a superset (3a rear-delt fly, 3b cable crunch). Tap a kg or reps box to type in it (− / + on the keyboard bar), tap ✓ to log, tap a round chip or "Workout" for the builder-style overview.</div>
+  <div class="hint">Prototype with example data: Upper body, round 3 is a superset (3a rear-delt fly, 3b cable crunch). Swipe left/right on the round (not on a set row) for the next/previous exercise. Tap a kg or reps box to type in it (− / + on the keyboard bar), tap ✓ to log, tap a round chip or "Workout" for the builder-style overview.</div>
 </div>
 
 <script>
@@ -108,44 +113,48 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     { n: '4', ex: [{ name: 'Lateral raise', works: 'Side delts', each: true, rest: '1:30', target: '12–15 @ 9', sets: [1, 2, 3].map(() => ({ t: '', kg: 10, r: 12, rpe: 9, done: false })) }] },
     { n: '5', ex: [{ name: 'EZ-bar curl', works: 'Biceps', rest: '1:30', target: '8–10 @ 8', sets: [1, 2, 3].map(() => ({ t: '', kg: 30, r: 10, rpe: 8, done: false })) }] },
   ];
-  let s = { r: 2, sheet: false, toast: null, open: {}, rest: 0, col: {} }; let iv;
+  let s = { r: 2, sheet: false, toast: null, open: {}, rest: 0, since: Date.now() - 24000, anchor: true, menu: false }; let iv;
   const fmt = (x) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
   const restOf = (e) => { const m = /^(\d+):(\d\d)/.exec(e.rest || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : 90; };
   s.restEnd = 0;
   const left = () => Math.ceil((s.restEnd - Date.now()) / 1000);
-  function setEnd(end) { s.restEnd = end; clearInterval(iv); s.rest = end ? Math.max(0, left()) : 0; if (!s.rest) { s.restEnd = 0; return; } iv = setInterval(() => { s.rest = left(); const el = app.querySelector('.rt'); if (s.rest <= 0) { clearInterval(iv); s.rest = 0; s.restEnd = 0; view(); } else if (el) el.textContent = fmt(s.rest); }, 1000); }
+  function setEnd(end) { s.restEnd = end; clearInterval(iv); s.rest = end ? Math.max(0, left()) : 0; if (!s.rest) { s.restEnd = 0; s.since = Date.now(); return; } iv = setInterval(() => { s.rest = left(); const el = app.querySelector('.rt'); if (s.rest <= 0) { clearInterval(iv); s.rest = 0; s.restEnd = 0; s.since = Date.now(); view(); } else if (el) el.textContent = fmt(s.rest); }, 1000); }
   const startRest = (sec) => setEnd(Date.now() + sec * 1000);
-  function logSet(k, i) { const rd = ROUNDS[s.r]; const st = rd.ex[k].sets[i]; st.prevEnd = s.restEnd; st.done = true; s.last = `${s.r}-${k}-${i}`; const c2 = cur(); if (c2 && rd.ex.length > 1 && c2.k === 1 && k === 0) s.toast = 'Straight to ' + rd.n + 'b'; else startRest(rd.ex.length > 1 ? 90 : restOf(rd.ex[k])); }
-  function unlogSet(k, i) { const st = ROUNDS[s.r].ex[k].sets[i]; st.done = false; s.last = null; setEnd(st.prevEnd || 0); }
-  const hidden = (e, i) => { const d = e.sets.map((x, j) => (x.done ? j : -1)).filter((j) => j >= 0); return e.sets[i].done && d.indexOf(i) < d.length - 2; };
-  const foldRow = (rd, e, k) => { if (!s.col[s.r]) return ''; const key = lab(rd, k); const n = e.sets.filter((x, i) => hidden(e, i)).length; if (!n) return ''; return `<button class="fold" data-a="fold" data-v="${key}" aria-expanded="${!!s.open[key]}"><u>${s.open[key] ? 'Hide previous sets' : `Previous sets (${n})`}</u></button>`; };
+  function logSet(k, i) { const rd = ROUNDS[s.r]; const st = rd.ex[k].sets[i]; st.prevEnd = s.restEnd; st.prevSince = s.since; st.done = true; s.anchor = true; s.last = `${s.r}-${k}-${i}`; const c2 = cur(); if (c2 && rd.ex.length > 1 && c2.k === 1 && k === 0) s.toast = 'Straight to ' + rd.n + 'b'; else startRest(rd.ex.length > 1 ? 90 : restOf(rd.ex[k])); }
+  function unlogSet(k, i) { const st = ROUNDS[s.r].ex[k].sets[i]; st.done = false; s.last = null; setEnd(st.prevEnd || 0); if (!s.rest) s.since = st.prevSince || Date.now(); }
+  const hidden = () => false; const foldRow = () => '';
+  setInterval(() => { const el = app.querySelector('.sclock'); if (el) el.textContent = fmt(Math.floor((Date.now() - s.since) / 1000)); }, 1000);
   const app = document.getElementById('app');
   const cur = () => { const rd = ROUNDS[s.r]; for (let i = 0; i < rd.ex[0].sets.length; i++) for (let k = 0; k < rd.ex.length; k++) { const st = rd.ex[k].sets[i]; if (st && !st.done) return { k, i }; } return null; };
+  const setLab = (e, i) => (e.sets[i].t === 'W' ? 'Warm-up' : `Set ${e.sets.slice(0, i + 1).filter((x) => x.t !== 'W').length}`);
   const lab = (rd, k) => `${rd.n}${rd.ex.length > 1 ? 'ab'[k] : ''}`;
   function exHtml(rd, e, k, c) {
     let n = 0; const doneW = e.sets.filter((x) => x.done && x.t !== 'W').length, totW = e.sets.filter((x) => x.t !== 'W').length;
     return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works}</small></span><span class="prog">${doneW}/${totW}</span></div>
       <div class="tbl">${true ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
-      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n; if (s.col[s.r] && !s.open[lab(rd, k)] && hidden(e, i)) return ''; return `<div class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
+      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n;  return `<div data-k="${k}" data-i="${i}" class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
       <div class="meta"><span>${e.target}</span><span>${e.rest ? `Rest ${e.rest} ›` : ''} <u>Why?</u></span></div>
       <button class="addset" data-a="add" data-k="${k}">＋ Set</button></div>`;
   }
-  function view() { s.col[s.r] = false; draw(); const sc = app.querySelector('.scroll'); if (sc && sc.scrollHeight > sc.clientHeight + 1) { s.col[s.r] = true; draw(); } }
+  function view() { draw(); if (s.anchor) { s.anchor = false; anchor(); } }
+  // Scroll so the current set shows with up to 3 done sets above it (or its exercise header, e.g. 3b in a superset).
+  function anchor() { const sc = app.querySelector('.scroll'); const c = cur(); let el = null; if (c) { const rows = [...app.querySelectorAll(`.tr[data-k="${c.k}"]`)]; const ci = rows.findIndex((x) => x.dataset.i === String(c.i)); el = ci <= 3 ? app.querySelectorAll('.exh')[c.k] : rows[ci - 3]; } if (!el) { sc.scrollTop = 0; return; } sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 6; }
   function draw() {
     const rd = ROUNDS[s.r]; const c = cur(); const e = c ? rd.ex[c.k] : null; const st = c ? e.sets[c.i] : null;
     const nextR = ROUNDS[s.r + 1];
     app.innerHTML = `
     <div class="status"><span>23:01</span><span>●●● 82%</span></div>
-    <div class="hdr"><span class="t">Upper body</span><button class="chip">Main gym ▾</button><span class="clock">0:43</span></div>
+    <div class="hdr"><span class="t">Upper body</span><button class="chip">Main gym ▾</button><span class="clock">0:43</span><button class="more" data-a="menu" aria-label="Workout options">⋯</button></div>
     <div class="rounds">${ROUNDS.map((x, i) => { const all = x.ex.every((q) => q.sets.every((z) => z.done)); return `<button class="rd${all ? ' done' : ''}${i === s.r ? ' now' : ''}" data-a="go" data-v="${i}">${all ? '✓ ' : ''}${x.n}${x.ex.length > 1 ? 'a·b' : ''}</button>`; }).join('')}<button class="all" data-a="sheet">Workout</button></div>
     <div class="scroll">
       <div class="card">${rd.ex.length > 1 ? `<div class="box">${rd.ex.map((x, k) => exHtml(rd, x, k, c)).join('')}</div>` : exHtml(rd, rd.ex[0], 0, c)}</div>
       ${nextR ? `<div class="next"><span>Up next: <b>${nextR.n} ${nextR.ex.map((x) => x.name).join(' + ')}</b></span></div>` : ''}
     </div>
-    ${s.rest ? `<div class="restbar"><b>Rest</b><span class="rt">${fmt(s.rest)}</span><button data-a="r-">−30</button><button data-a="r+">+30</button><button data-a="skip">Skip</button></div>` : ''}
-    <div class="foot"><button class="chat" data-a="chat">Chat</button><button class="log" data-a="log">${c ? `${lab(rd, c.k)} · Set ${c.i + 1} · Log ${st.kg}${e.each ? ' kg each' : ' kg'} × ${st.r}` : 'Round done · Next'}</button></div>
+    ${s.rest ? `<div class="restbar"><b>Rest</b><span class="rt">${fmt(s.rest)}</span><button data-a="r-">−30</button><button data-a="r+">+30</button><button data-a="skip">Skip</button></div>` : `<div class="restbar idle"><b>Set</b><span class="rt sclock">${fmt(Math.floor((Date.now() - s.since) / 1000))}</span></div>`}
+    <div class="foot"><button class="chat" data-a="chat">Chat</button><button class="log" data-a="log">${c ? `${lab(rd, c.k)} · ${setLab(e, c.i)} · Log ${st.kg}${e.each ? ' kg each' : ' kg'} × ${st.r}` : 'Round done · Next'}</button></div>
     <div id="kb"><button data-k="-">−</button><button data-k="+">+</button><button data-k="next">Next</button><span></span><button class="done" data-k="done">Done</button></div>
     ${s.sheet ? overview() : ''}
+    ${s.menu ? `<div class="scrim" data-a="close"></div><div class="sheet">${['Focus view', 'Pause workout', 'Rename workout', 'Turn off spoken cues', 'Ask the coach', 'Edit workout times', 'Finish workout', 'Discard workout'].map((x) => `<button class="mi${x === 'Discard workout' ? ' red' : ''}" data-a="mi">${x}</button>`).join('')}<button class="ghost" data-a="close">Cancel</button></div>` : ''}
     ${s.toast ? `<div class="toast">${s.toast}</div>` : ''}`;
   }
   function overview() {
@@ -156,7 +165,11 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
   app.addEventListener('focusin', (ev) => { if (ev.target.classList.contains('cell')) { kb().style.display = 'flex'; ev.target.select(); } });
   app.addEventListener('focusout', () => setTimeout(() => { if (!app.contains(document.activeElement) || !document.activeElement.classList.contains('cell')) kb().style.display = 'none'; }, 0));
   app.addEventListener('pointerdown', (ev) => { if (ev.target.closest('#kb')) ev.preventDefault(); });
-  app.addEventListener('input', (ev) => { const t = ev.target; if (!t.classList.contains('cell')) return; const st = ROUNDS[s.r].ex[t.dataset.k].sets[t.dataset.i]; const n = parseFloat(t.value); if (!Number.isNaN(n)) st[t.dataset.f] = n; const c = cur(); if (c) { const e = ROUNDS[s.r].ex[c.k], x = e.sets[c.i]; app.querySelector('.log').textContent = `${lab(ROUNDS[s.r], c.k)} · Set ${c.i + 1} · Log ${x.kg}${e.each ? ' kg each' : ' kg'} × ${x.r}`; } });
+  // Swipe left/right anywhere on the round (not on a set row, which keeps swipe-left Delete) = next / previous exercise.
+  let sw = null;
+  app.addEventListener('pointerdown', (ev) => { sw = ev.target.closest('.scroll') && !ev.target.closest('.tr, input, .sheet') ? { x: ev.clientX, y: ev.clientY } : null; });
+  app.addEventListener('pointerup', (ev) => { if (!sw) return; const dx = ev.clientX - sw.x, dy = ev.clientY - sw.y; sw = null; if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return; const to = s.r + (dx < 0 ? 1 : -1); if (to < 0 || to >= ROUNDS.length) return; s.r = to; s.anchor = true; s.toast = null; view(); });
+  app.addEventListener('input', (ev) => { const t = ev.target; if (!t.classList.contains('cell')) return; const st = ROUNDS[s.r].ex[t.dataset.k].sets[t.dataset.i]; const n = parseFloat(t.value); if (!Number.isNaN(n)) st[t.dataset.f] = n; const c = cur(); if (c) { const e = ROUNDS[s.r].ex[c.k], x = e.sets[c.i]; app.querySelector('.log').textContent = `${lab(ROUNDS[s.r], c.k)} · ${setLab(e, c.i)} · Log ${x.kg}${e.each ? ' kg each' : ' kg'} × ${x.r}`; } });
   app.addEventListener('click', (ev) => {
     const kbt = ev.target.closest('#kb [data-k]');
     if (kbt) { const el = document.activeElement; if (!el?.classList.contains('cell')) return; const k = kbt.dataset.k;
@@ -165,15 +178,17 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
       const step = el.dataset.f === 'kg' ? (ROUNDS[s.r].ex[el.dataset.k].each ? 1.25 : 2.5) : 1; el.value = String(Math.max(0, Math.round(((parseFloat(el.value) || 0) + (k === '+' ? step : -step)) * 100) / 100)); el.dispatchEvent(new Event('input', { bubbles: true })); return; }
     const t = ev.target.closest('[data-a]'); if (!t) return; const a = t.dataset.a; s.toast = null;
     if (a === 'tick') { const k = Number(t.dataset.k), i = Number(t.dataset.i); if (ROUNDS[s.r].ex[k].sets[i].done) unlogSet(k, i); else logSet(k, i); }
-    if (a === 'log') { const c = cur(); if (c) logSet(c.k, c.i); else if (s.r < ROUNDS.length - 1) s.r++; }
+    if (a === 'log') { const c = cur(); if (c) logSet(c.k, c.i); else if (s.r < ROUNDS.length - 1) { s.r++; s.anchor = true; } }
     if (a === 'fold') s.open[t.dataset.v] = !s.open[t.dataset.v];
     if (a === 'r-') setEnd(Math.max(Date.now() + 1000, s.restEnd - 30000));
     if (a === 'r+') setEnd(s.restEnd + 30000);
     if (a === 'skip') setEnd(0);
     if (a === 'add') { const e = ROUNDS[s.r].ex[t.dataset.k]; const l = e.sets[e.sets.length - 1]; e.sets.push({ ...l, done: false }); }
-    if (a === 'go') { s.r = Number(t.dataset.v); s.sheet = false; }
+    if (a === 'go') { s.r = Number(t.dataset.v); s.sheet = false; s.anchor = true; }
     if (a === 'sheet') s.sheet = true;
-    if (a === 'close') s.sheet = false;
+    if (a === 'close') { s.sheet = false; s.menu = false; }
+    if (a === 'menu') s.menu = true;
+    if (a === 'mi') { s.menu = false; s.toast = t.textContent + ' (same as today)'; }
     if (a === 'chat') s.toast = 'Opens the coach (type or speak)';
     view();
   });
