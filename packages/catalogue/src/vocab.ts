@@ -83,4 +83,7 @@ export const USUAL_CONVENTIONS = {
   band: ['bodyweight'],
   ez_bar: ['total'],
   trap_bar: ['total'],
+  smith_machine: ['total'],
+  bench: [],
+  rack: [],
 } as const;
