@@ -522,3 +522,11 @@ Ben asked: "review the full app now to ensure everything is visually well built 
 - Training details birth year as a picker: kept the stepper and the typed year (no year-only picker on iOS).
 
 **Not done in this pass (left for after the parallel week-flex work merges, or as refactors with no visible change):** Up next capped at 3 one-line rows with `+N more`, dropping the calendar's `● workout` legend, sizing Your plan's day dot from its numeral (all in areas `claude/weekflex-20oct` is changing); one shared `CheckInScale`; tab roots sharing one title pattern; the cardio top set on its own line in Progress (the sessions table has no cardio rows today).
+
+## Ben's decisions, 20 Oct (progress)
+
+Ben approved these on 20 Oct ("Yes to all"):
+- **5. Targets hit:** shows only on the split day's main lift (Profile: Ben's, else the recommended one). A workout's or plan day's `Main` flags no longer make a main lift.
+- **7. Total weight:** counts both dumbbells and both sides. Confirmed as built; no change.
+- **8. Bodyweight and weighted (BW +) are one Progress series.** Bodyweight sets count as `+0` added and read `BW`. They have no Est. 1RM and add 0 to total weight. An exercise with only bodyweight rows stays a bodyweight (reps) series. A `BW +` weight × reps lift target draws on the merged series' Top set.
+- **9. Exercise detail:** `Total weight` replaces `Volume` (shown as bars on a plain kg/lb axis, `≈` when the dumbbell count is assumed). BW + series offer it too.

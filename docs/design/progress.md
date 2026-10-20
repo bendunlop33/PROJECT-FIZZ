@@ -332,7 +332,7 @@ Regions:
 2. **Pain line** (only while a pain flag is active for this exercise): `⚠ Pain flag since 2 Oct` (`StatusBanner`, warning, icon + words). Tapping opens the existing pain flag view. Spans on the chart and the pre-flag reference are deferred (§9).
 3. **Series menu.** Button `Main Gym · barbell ▾`. Lists each series with its session count (`Main Gym · barbell · 24`, `Hotel Gym · barbell · 3`, `FitNotes · kg · 40`), then `Add FitNotes history` / `Remove FitNotes history` (PG32, only when a FitNotes series of the same convention and unit exists). Default: the series used most in the last 12 weeks.
 4. **`StatStrip`** for the selected series, all-time bests: `EST. 1RM ≈126.5 kg` (the best session value) · `BEST SET 105 × 3` (heaviest) · `SESSIONS 24`. Conventions without Est. 1RM show `BEST SET` · `MOST REPS` · `SESSIONS` (bodyweight), or `LEAST ASSIST` · `MOST REPS` · `SESSIONS` (assisted).
-5. **Metric chips** (single select): `Est. 1RM` · `Top set` · `Volume`. Unavailable ones are hidden (§6.3).
+5. **Metric chips** (single select): `Est. 1RM` · `Top set` · `Volume`. Unavailable ones are hidden (§6.3). *(Ben, 20 Oct: `Total weight` replaces `Volume`, as in Progress › Exercises; bodyweight and BW + rows of one exercise are one series, bodyweight as `+0`. See CHANGELOG.)*
 6. **Range chips:** `3 mo` · `6 mo` · `1 yr` · `All`.
 7. **Chart heading.** `Est. 1RM · 9 Apr – 8 Oct  ⓘ` / `Top set · 9 Apr – 8 Oct` / `Volume · 9 Apr – 8 Oct`. The `ⓘ` (Est. 1RM only) opens a sheet with the formula and limits.
 8. **`TrendChart`** (§9.23): one series (PG32 adds hollow FitNotes points to the same series), y-axis with unit, month ticks, marker lane (gap, edited, not counted), gap breaks. `Volume` draws bars (`chart.bar`), not a line.
