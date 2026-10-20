@@ -206,11 +206,11 @@ export function createGymServices(ctx: GymServicesContext) {
       return edit === null ? { ok: false, reason: 'nothing', message: `${name} is already back.` } : applyEdit(edit);
     },
 
-    /** `Add 22 kg dumbbells here?` (ADR 0029): the change on the item as saved now; confirmed. */
+    /** `Add 22 kg dumbbells here?` / `Leg extension goes up in 7 kg?` (ADR 0029): the change on the gym as saved now. */
     async learn(learn: GymLearn): Promise<GymEditOutcome> {
       const eq = await repos().equipment.get(learn.equipmentId);
       if (!eq || !(await ownGym(eq.gymId))) return { ok: false, reason: 'failed', message: FAILED };
-      const edit = planGymLearn(eq, learn, ctx.now().utc);
+      const edit = planGymLearn(eq, learn, ctx.now().utc, newId(), await repos().equipment.listByGym(eq.gymId));
       return edit === null ? { ok: false, reason: 'nothing', message: 'Already saved.' } : applyEdit(edit);
     },
 

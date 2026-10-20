@@ -69,6 +69,13 @@ const equipmentCommon = RecordMetaSchema.extend({
    * Absent = none.
    */
   notFor: z.array(IdSchema).max(500).optional(),
+  /**
+   * (Review quickgym B2) This item is only for these exercises: a machine's own
+   * stack learned from Ben's loads ("Leg extension goes up in 7 kg?"), so the
+   * family item (`Machines`) keeps its assumed step for every other machine.
+   * The family item lists the exercise in `notFor`. Absent = any exercise.
+   */
+  onlyFor: z.array(IdSchema).min(1).max(50).optional(),
 });
 
 export const BarbellSchema = equipmentCommon.extend({

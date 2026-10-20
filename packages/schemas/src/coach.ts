@@ -427,8 +427,11 @@ export const UpdateGymChangeSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('remove'), equipment: GymEquipmentKindSchema }),
   /** The dumbbells' heaviest (per hand) and step, in the gym's unit; null keeps one. */
   z.strictObject({ op: z.literal('dumbbells'), max: z.number().min(0).max(1000).nullable(), step: z.number().min(0).max(100).nullable() }),
-  /** A weight stack's step in the gym's unit: the item named (`Cable station`, `Machines`), or every stack (null). */
-  z.strictObject({ op: z.literal('stack_step'), step: z.number().min(0).max(100), itemName: z.string().max(120).nullable() }),
+  /**
+   * A weight stack's step in the gym's unit. `exerciseId` (review quickgym B2): that one machine's own
+   * stack; else the item named (`Cable station`, `Machines`), or every stack (null).
+   */
+  z.strictObject({ op: z.literal('stack_step'), step: z.number().min(0).max(100), itemName: z.string().max(120).nullable(), exerciseId: z.string().min(1).max(80).nullable().optional() }),
   z.strictObject({ op: z.literal('not_here'), exerciseId: z.string().min(1).max(80) }),
 ]);
 export type UpdateGymChange = z.infer<typeof UpdateGymChangeSchema>;

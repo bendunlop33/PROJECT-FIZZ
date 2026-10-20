@@ -6,6 +6,7 @@ import {
   buildQuickGymDraft,
   doableHere,
   dumbbellLoadsFor,
+  equipmentHere,
   equipmentForExercise,
   getAchievableLoads,
   gymEditLanded,
@@ -203,39 +204,113 @@ describe('Not at this gym', () => {
   });
 });
 
+describe('review S2: light racks step finer than heavy ones', () => {
+  it('kg in 1s: 1–10 in 1s, then 2.5s to the top; no 11, 23 or 47 kg assumed', () => {
+    const loads = dumbbellLoadsFor('kg', 1, 50);
+    expect(loads.slice(0, 11)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12.5]);
+    expect(loads.at(-1)).toBe(50);
+    for (const v of [11, 23, 27, 47]) expect(loads).not.toContain(v);
+    expect(dumbbellLoadsFor('kg', 1, 8)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(dumbbellLoadsFor('kg', 1, 15)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12.5, 15]);
+  });
+
+  it('lb in 2.5s: to 25, then 5s to 120; other steps run the whole rack', () => {
+    const loads = dumbbellLoadsFor('lb', 2.5, 120);
+    expect(loads.slice(8, 12)).toEqual([22.5, 25, 30, 35]);
+    expect(loads).not.toContain(27.5);
+    expect(loads.at(-1)).toBe(120);
+    expect(dumbbellLoadsFor('kg', 2, 50).slice(0, 3)).toEqual([2, 4, 6]);
+    expect(dumbbellLoadsFor('kg', 2.5, 50)).toHaveLength(20);
+  });
+});
+
 describe('learning from a load the assumed gym cannot make', () => {
   const rack = dumbbells({ gymId: GYM, detailsSource: 'preset', loads: [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25] });
-  const assumedStack = stack({ gymId: GYM, detailsSource: 'preset' });
+  const assumedStack = stack({ gymId: GYM, name: 'Machines', detailsSource: 'preset' });
+  const legExtAt = { id: legExt.id, name: legExt.name };
+  const snapGym = (eq: readonly EquipmentInstance[]) => ({ id: GYM, name: 'Main gym', equipment: eq });
 
-  it('a 22 kg dumbbell on a 2.5 kg rack: Add 22 kg dumbbells here? → added, confirmed, Undo', () => {
+  it('a 22 kg dumbbell on a 2.5 kg rack: Add 22 kg dumbbells here? → added; the rack stays assumed (review S1)', () => {
     const learn = gymLearnFor(rack, kg(22, 'per_hand'));
     expect(learn).toMatchObject({ kind: 'add_dumbbell', value: 22 });
     if (learn === null) throw new Error('none');
     expect(gymLearnText(learn)).toBe('Add 22 kg dumbbells here?');
-    const edit = planGymLearn(rack, learn, T1);
+    const edit = planGymLearn(rack, learn, T1, idGen(80_000));
     const after = edit?.equipment[0]?.after;
     expect(after?.kind === 'dumbbells' && after.loads).toContain(22);
-    expect(after).toMatchObject({ version: 2, detailsSource: 'user' });
+    expect(after).toMatchObject({ version: 2, detailsSource: 'preset' });
+    expect(after?.checkedAtUtc).toBeUndefined();
+    expect(assumedWhy(after as EquipmentInstance)).toBe('Assumed dumbbells');
     // Already added: nothing more to do.
-    expect(planGymLearn(after as EquipmentInstance, learn, T1)).toBeNull();
+    expect(planGymLearn(after as EquipmentInstance, learn, T1, idGen(80_100))).toBeNull();
     expect(gymLearnFor(after as EquipmentInstance, kg(22, 'per_hand'))).toBeNull();
   });
 
-  it('stack: off-step → Stack goes up in 7 kg?; above the top on its step → Stack goes to 60 kg?', () => {
-    const step = gymLearnFor(assumedStack, kg(7, 'stack'));
-    expect(step).toMatchObject({ kind: 'stack_step', step: 7 });
-    if (step === null) throw new Error('none');
-    expect(gymLearnText(step)).toBe('Stack goes up in 7 kg?');
-    const stepped = planGymLearn(assumedStack, step, T1)?.equipment[0]?.after;
-    expect(stepped?.kind === 'weight_stack' && stepped.stackLoads.slice(0, 3)).toEqual([7, 14, 21]);
-    expect(stepped?.kind === 'weight_stack' && stepped.stackLoads.at(-1)).toBe(49);
+  it('review N4: a dumbbell chip only on a 0.5 grid and at most two steps above the top', () => {
+    expect(gymLearnFor(rack, kg(30, 'per_hand'))).toMatchObject({ kind: 'add_dumbbell', value: 30 });
+    expect(gymLearnFor(rack, kg(31, 'per_hand'))).toBeNull();
+    expect(gymLearnFor(rack, kg(97.5, 'per_hand'))).toBeNull();
+    expect(gymLearnFor(rack, kg(23.75, 'per_hand'))).toBeNull();
+    expect(gymLearnFor(rack, kg(13.5, 'per_hand'))).toMatchObject({ value: 13.5 });
+  });
 
-    const top = gymLearnFor(assumedStack, kg(60, 'stack'));
+  it('review B2: Leg extension goes up in 7 kg? gives that machine its own stack; other machines keep the assumed 5s', () => {
+    const before = [assumedStack];
+    const step = gymLearnFor(assumedStack, kg(7, 'stack'), legExtAt);
+    expect(step).toMatchObject({ kind: 'stack_step', step: 7, exerciseId: legExt.id });
+    if (step === null) throw new Error('none');
+    expect(gymLearnText(step)).toBe('Leg extension goes up in 7 kg?');
+    const edit = planGymLearn(assumedStack, step, T1, idGen(80_200), before);
+    if (edit === null) throw new Error('no edit');
+    expect(edit.lines).toEqual(['Leg extension: every 7 kg']);
+    const after = apply({ gym: gym(), equipment: before }, edit).equipment;
+    const family = after.find((e) => e.id === assumedStack.id);
+    const own = after.find((e) => e.id !== assumedStack.id);
+    // The family stays assumed and unchanged, only not for leg extension.
+    expect(family).toMatchObject({ detailsSource: 'preset', notFor: [legExt.id], version: 2 });
+    expect(family?.kind === 'weight_stack' && family.stackLoads).toEqual(assumedStack.kind === 'weight_stack' ? assumedStack.stackLoads : []);
+    expect(own).toMatchObject({ name: 'Leg extension', detailsSource: 'user', onlyFor: [legExt.id], version: 1 });
+    expect(own?.kind === 'weight_stack' && own.stackLoads.slice(0, 3)).toEqual([7, 14, 21]);
+    expect(own?.kind === 'weight_stack' && own.stackLoads.at(-1)).toBe(49);
+    // Leg extension maps to its own stack; the pushdown still maps to the family and snaps in 5s.
+    expect(equipmentHere(legExt, { gym: snapGym(after) }).equipment?.id).toBe(own?.id);
+    const pushEq = equipmentHere(pushdown, { gym: snapGym(after) }).equipment;
+    expect(pushEq?.id).toBe(assumedStack.id);
+    if (pushEq === null) throw new Error('no item');
+    expect(roundToAvailableLoad(kg(42, 'stack'), pushEq, 'easier')).toMatchObject({ ok: true, load: { value: 40 } });
+    expect(equipmentForExercise(pushdown, after).map((e) => e.id)).toEqual([assumedStack.id]);
+    // Leg extension is here (its own machine), not listed under Not at this gym.
+    expect(notHereExerciseIds(after)).toEqual([]);
+    // The confirmed own stack offers nothing more; the stale chip on the family plans nothing.
+    expect(gymLearnFor(own as EquipmentInstance, kg(8, 'stack'), legExtAt)).toBeNull();
+    expect(planGymLearn(family as EquipmentInstance, step, T2, idGen(80_300), after)).toBeNull();
+    // Undo: the family is back as it was and the own stack retired.
+    const back = planRevertGymEdit(edit, { gym: null, equipment: (id) => after.find((e) => e.id === id) ?? null }, T2);
+    if (back === 'changed_since') throw new Error('changed');
+    expect(back.equipment.map((w) => [w.next.id === assumedStack.id, w.next.availability, w.next.notFor ?? null])).toEqual([
+      [true, 'available', null],
+      [false, 'retired', null],
+    ]);
+  });
+
+  it('review B2: above the top on its step → Leg extension goes to 60 kg?; another machine is untouched', () => {
+    const top = gymLearnFor(assumedStack, kg(60, 'stack'), legExtAt);
     expect(top).toMatchObject({ kind: 'stack_max', max: 60 });
     if (top === null) throw new Error('none');
-    expect(gymLearnText(top)).toBe('Stack goes to 60 kg?');
-    const higher = planGymLearn(assumedStack, top, T1)?.equipment[0]?.after;
-    expect(higher?.kind === 'weight_stack' && higher.stackLoads.slice(-3)).toEqual([50, 55, 60]);
+    expect(gymLearnText(top)).toBe('Leg extension goes to 60 kg?');
+    const edit = planGymLearn(assumedStack, top, T1, idGen(80_400), [assumedStack]);
+    const own = edit?.equipment.find((e) => e.before === null)?.after;
+    expect(own?.kind === 'weight_stack' && own.stackLoads.slice(-3)).toEqual([50, 55, 60]);
+    const family = edit?.equipment.find((e) => e.before !== null)?.after;
+    expect(family?.kind === 'weight_stack' && family.stackLoads.at(-1)).toBe(50);
+  });
+
+  it('review B2: weak step guesses offer nothing (12 kg, 3 kg); no exercise, no stack chip', () => {
+    expect(gymLearnFor(assumedStack, kg(12, 'stack'), legExtAt)).toBeNull();
+    expect(gymLearnFor(assumedStack, kg(3, 'stack'), legExtAt)).toBeNull();
+    expect(gymLearnFor(assumedStack, kg(7, 'stack'), null)).toBeNull();
+    expect(gymLearnFor(assumedStack, kg(14, 'stack'), legExtAt)).toMatchObject({ step: 7 });
+    expect(gymLearnFor(assumedStack, kg(9, 'stack'), legExtAt)).toMatchObject({ step: 4.5 });
   });
 
   it('nothing for: an achievable load, another unit or convention, a typo-sized load, a confirmed stack', () => {
@@ -244,10 +319,26 @@ describe('learning from a load the assumed gym cannot make', () => {
     expect(gymLearnFor(rack, kg(22, 'total'))).toBeNull();
     expect(gymLearnFor(rack, kg(220, 'per_hand'))).toBeNull();
     expect(gymLearnFor(rack, null)).toBeNull();
-    expect(gymLearnFor(stack({ gymId: GYM, detailsSource: 'user' }), kg(7, 'stack'))).toBeNull();
+    expect(gymLearnFor(stack({ gymId: GYM, detailsSource: 'user' }), kg(7, 'stack'), legExtAt)).toBeNull();
     // A lb rack learns in lb.
     const lbRack = dumbbells({ gymId: GYM, unit: 'lb', loads: [5, 10, 15, 20] });
     expect(gymLearnText(gymLearnFor(lbRack, lb(12.5, 'per_hand')) ?? { kind: 'add_dumbbell', equipmentId: '', unit: 'lb', value: 0 })).toBe('Add 12.5 lb dumbbells here?');
+  });
+
+  it('Not at this gym on a machine with its own stack, then Put back: only its own stack comes back', () => {
+    const step = gymLearnFor(assumedStack, kg(7, 'stack'), legExtAt);
+    if (step === null) throw new Error('none');
+    const edit = planGymLearn(assumedStack, step, T1, idGen(80_500), [assumedStack]);
+    if (edit === null) throw new Error('no edit');
+    const learned = apply({ gym: gym(), equipment: [assumedStack] }, edit).equipment;
+    const gone = planNotHere({ exercise: legExt, equipment: learned, atUtc: T2 });
+    if (gone.kind !== 'edit') throw new Error(gone.kind);
+    expect(gone.edit.equipment).toHaveLength(1);
+    const after = apply({ gym: gym(), equipment: learned }, gone.edit).equipment;
+    expect(notHereExerciseIds(after)).toEqual([legExt.id]);
+    expect(doableHere(legExt, snapGym(after))).toBe(false);
+    const back = planPutBack({ exerciseId: legExt.id, exerciseName: 'Leg extension', equipment: after, atUtc: T2 });
+    expect(back?.equipment.map((e) => e.after.onlyFor)).toEqual([[legExt.id]]);
   });
 });
 
@@ -283,6 +374,60 @@ describe('the coach’s update_gym changes', () => {
     if (!a.ok) throw new Error(a.reason);
     expect(a.edit.gym?.after.missingKinds).toBeUndefined();
     expect(a.edit.equipment.map((e) => [e.before, e.after.kind, e.after.detailsSource])).toEqual([[null, 'assisted_stack', 'preset']]);
+  });
+
+  it('review B2: stack step for one machine (exerciseId) gives it its own stack; the family keeps its step', () => {
+    const s = base();
+    const p = plan([{ op: 'stack_step', step: 7, itemName: null, exerciseId: legExt.id }], s);
+    if (!p.ok) throw new Error(p.reason);
+    expect(p.edit.lines).toEqual(['Leg extension: every 7 kg']);
+    const made = p.edit.equipment.find((e) => e.before === null)?.after;
+    expect(made).toMatchObject({ name: 'Leg extension', onlyFor: [legExt.id], detailsSource: 'user' });
+    const changed = p.edit.equipment.filter((e) => e.before !== null).map((e) => e.after);
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toMatchObject({ notFor: [legExt.id], detailsSource: 'preset' });
+    // Again, on the machine's own stack now: only that item changes.
+    const after = apply(s, p.edit);
+    const again = plan([{ op: 'stack_step', step: 5, itemName: null, exerciseId: legExt.id }], after);
+    if (!again.ok) throw new Error(again.reason);
+    expect(again.edit.equipment.map((e) => e.after.id)).toEqual([made?.id]);
+    // A family-wide step leaves a machine's own stack alone.
+    const all = plan([{ op: 'stack_step', step: 10, itemName: null }], after);
+    if (!all.ok) throw new Error(all.reason);
+    expect(all.edit.equipment.map((e) => e.after.name).sort()).toEqual(['Cable station', 'Machines']);
+  });
+
+  it('review B2: in a full gym (Cable station first) the machine maps to its own stack', () => {
+    const s = base();
+    const machines = s.equipment.find((e) => e.name === 'Machines');
+    if (machines === undefined) throw new Error('no machines');
+    const learn = gymLearnFor(machines, kg(7, 'stack'), { id: legExt.id, name: 'Leg extension' });
+    if (learn === null) throw new Error('none');
+    const edit = planGymLearn(machines, learn, T1, idGen(81_000), s.equipment);
+    if (edit === null) throw new Error('no edit');
+    const after = apply(s, edit).equipment;
+    const mapped = equipmentHere(legExt, { gym: { id: GYM, name: 'Main gym', equipment: after } }).equipment;
+    expect(mapped).toMatchObject({ name: 'Leg extension', onlyFor: [legExt.id] });
+    expect(equipmentHere(pushdown, { gym: { id: GYM, name: 'Main gym', equipment: after } }).equipment?.name).toBe('Cable station');
+  });
+
+  it('review N3: "dumbbells up to 60" lifts a saved ceiling with the rack', () => {
+    const s = base();
+    const capped = { ...s, equipment: s.equipment.map((e) => (e.kind === 'dumbbells' ? { ...e, maxLoad: 50 } : e)) };
+    const p = plan([{ op: 'dumbbells', max: 60, step: null }], capped);
+    if (!p.ok) throw new Error(p.reason);
+    const rack = p.edit.equipment[0]?.after;
+    expect(rack?.kind === 'dumbbells' && [rack.loads.at(-1), rack.maxLoad]).toEqual([60, 60]);
+    expect(getAchievableLoads(rack as EquipmentInstance).loads.at(-1)).toBe(60);
+  });
+
+  it('a 1 kg ladder keeps its 1s when only the top changes', () => {
+    const s = saveQuick({ setup: 'full', unit: 'kg', dumbbellStep: 1 });
+    const p = plan([{ op: 'dumbbells', max: 30, step: null }], s);
+    if (!p.ok) throw new Error(p.reason);
+    const rack = p.edit.equipment[0]?.after;
+    expect(rack?.kind === 'dumbbells' && rack.loads.slice(0, 3)).toEqual([1, 2, 3]);
+    expect(rack?.kind === 'dumbbells' && rack.loads.at(-1)).toBe(30);
   });
 
   it('stack step for a named family; bad numbers are refused, nothing written', () => {

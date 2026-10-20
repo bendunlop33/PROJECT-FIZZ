@@ -132,13 +132,17 @@ export function createGymUpdateExecutor(deps: GymUpdateDeps): ToolExecutor {
     });
     if (place === null) return refuse(empty(null), 'rejected', a.gymName === null ? 'there is no gym saved' : `there is no saved gym called ${a.gymName}`);
     const known = new Map<string, Pick<Exercise, 'id' | 'name' | 'compatibleEquipment' | 'defaultLoadConvention'>>();
+    const named = (c: (typeof a.changes)[number]): string | null => (c.op === 'not_here' ? c.exerciseId : c.op === 'stack_step' ? (c.exerciseId ?? null) : null);
     for (const c of a.changes) {
-      if (c.op !== 'not_here' || known.has(c.exerciseId)) continue;
-      const e = await deps.exercise(c.exerciseId).catch(() => null);
-      if (e !== null) known.set(c.exerciseId, e);
+      const id = named(c);
+      if (id === null || known.has(id)) continue;
+      const e = await deps.exercise(id).catch(() => null);
+      if (e !== null) known.set(id, e);
     }
     // The model names an exercise by catalogue ID; the plan marks it by its row ID.
-    const changes: GymUpdateChange[] = a.changes.map((c) => (c.op === 'not_here' ? { op: 'not_here', exerciseId: known.get(c.exerciseId)?.id ?? c.exerciseId } : c));
+    const changes: GymUpdateChange[] = a.changes.map((c) =>
+      c.op === 'not_here' ? { op: 'not_here', exerciseId: known.get(c.exerciseId)?.id ?? c.exerciseId } : c.op === 'stack_step' && c.exerciseId != null ? { ...c, exerciseId: known.get(c.exerciseId)?.id ?? c.exerciseId } : c,
+    );
     const byId = new Map([...known.values()].map((e) => [e.id, e]));
     let n = 0;
     const plan = planGymUpdate({

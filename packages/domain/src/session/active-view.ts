@@ -662,7 +662,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     const max = maxText(eq, values.load);
     offProfileWarning = `Not on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}`;
     offProfileEquipment = { gymId: eq.gymId, equipmentId: eq.id, kind: eq.kind };
-    const learn = gymLearnFor(eq, values.load);
+    const learn = gymLearnFor(eq, values.load, { id: ex.exerciseId, name: ex.exerciseName });
     gymLearn = learn === null ? null : { learn, text: gymLearnText(learn) };
   }
 

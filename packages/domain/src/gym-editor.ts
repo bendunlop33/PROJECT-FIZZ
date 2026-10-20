@@ -178,6 +178,7 @@ export function applyEquipmentForm(form: EquipmentForm, base: EquipmentInstance 
     ...(base?.notes !== undefined ? { notes: base.notes } : {}),
     ...(base?.minLoad !== undefined ? { minLoad: base.minLoad } : {}),
     ...(base?.notFor !== undefined ? { notFor: base.notFor } : {}),
+    ...(base?.onlyFor !== undefined ? { onlyFor: base.onlyFor } : {}),
   };
   const plates = (list: readonly PlateCount[]) => {
     const kept = list.filter((p) => p.count > 0 && p.mass > 0);

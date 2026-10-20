@@ -13,7 +13,7 @@ import type {
 } from '@fizz/schemas';
 import { compareDifficulty, loadDirection, roundToAvailableLoad } from '../equipment';
 import { addedWeightEquipment, isWeightedBodyweight } from '../added-weight';
-import { isNotFor, needsNoEquipment } from '../exercise-equipment';
+import { isExcludedFor, needsNoEquipment } from '../exercise-equipment';
 import { convertMass, toScaled } from '../units';
 
 /**
@@ -176,8 +176,12 @@ export function mapEquipment(
   }
   const kinds: readonly ExerciseEquipmentKind[] = exercise.compatibleEquipment.length > 0 ? exercise.compatibleEquipment : [source.kind];
   const suits = (e: EquipmentInstance) => kinds.includes(e.kind);
-  // (Ben, 20 Oct) An item Ben marked `Not at this gym` for this exercise is never mapped to it.
-  const usable = usableAt(gym).filter((e) => !isNotFor(e, exercise.id));
+  // (Ben, 20 Oct) An item Ben marked `Not at this gym` for this exercise, or another machine's own stack, is never mapped to it.
+  const usable = usableAt(gym).filter((e) => !isExcludedFor(e, exercise.id));
+  // (Review quickgym B2) A machine Ben taught its own stack ("Leg extension goes up in 7 kg") always maps to it,
+  // before the routine's item or the first stack of the kind (a full gym's Cable station).
+  const own = usable.find((e) => e.onlyFor?.includes(exercise.id) === true && suits(e));
+  if (own) return { equipment: own, mapping: own.id === source.id ? 'same_item' : 'last_used_here' };
   const same = usable.find((e) => e.id === source.id);
   if (same) return { equipment: same, mapping: 'same_item' };
   const lastId = lastUsedHere?.(exercise.id) ?? null;

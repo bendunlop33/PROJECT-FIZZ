@@ -14,7 +14,7 @@ import {
 } from '@fizz/schemas';
 import { formatNumber } from './display';
 import { getAchievableLoads, isLoadAchievable } from './equipment';
-import { isNotFor, needsNoEquipment } from './exercise-equipment';
+import { isExcludedFor, isNotFor, needsNoEquipment } from './exercise-equipment';
 import { loadRange, type EquipmentDraftBody, type GymDraft, type GymDraftItem } from './gym-presets';
 import { fromScaled, toScaled } from './units';
 
@@ -70,12 +70,29 @@ const common = (name: string, unit: WeightUnit) => ({
   detailsSource: 'preset' as const,
 });
 
-/** Every `step` from `step` up to `max` (the largest multiple not above it). */
+/**
+ * Light racks step finer than heavy ones (review quickgym S2): a rack in 1 kg
+ * steps goes 1–10 kg in 1s and then in 2.5s; a 2.5 lb rack goes 2.5–25 lb in
+ * 2.5s and then in 5s. Other steps run the whole rack.
+ */
+const LIGHT_LADDER: Readonly<Record<WeightUnit, { step: number; until: number; then: number }>> = {
+  kg: { step: 1, until: 10, then: 2.5 },
+  lb: { step: 2.5, until: 25, then: 5 },
+};
+
+/** The rack from `step` up to `max` (never above it): every `step`, or the light ladder (1s to 10 kg, then 2.5s). */
 export function dumbbellLoadsFor(unit: WeightUnit, step: number, max: number): number[] {
   if (!validDumbbellStep(unit, step)) throw new RangeError(`Dumbbell step ${String(step)} ${unit} is out of range`);
   const s = toScaled(step);
   const top = Math.floor(toScaled(max) / s) * s;
-  return top < s ? [step] : loadRange(step, fromScaled(top), step);
+  if (top < s) return [step];
+  const ladder = LIGHT_LADDER[unit];
+  if (toScaled(ladder.step) !== s) return loadRange(step, fromScaled(top), step);
+  const out: number[] = [];
+  for (let v = s; v <= Math.min(toScaled(ladder.until), toScaled(max)); v += s) out.push(fromScaled(v));
+  const t = toScaled(ladder.then);
+  for (let v = (Math.floor(toScaled(ladder.until) / t) + 1) * t; v <= toScaled(max); v += t) out.push(fromScaled(v));
+  return out;
 }
 
 export function validDumbbellStep(unit: WeightUnit, step: number): boolean {
@@ -364,7 +381,7 @@ type NotHereExercise = Pick<Exercise, 'id' | 'name' | 'compatibleEquipment' | 'd
 export function planNotHere(input: { exercise: NotHereExercise; equipment: readonly EquipmentInstance[]; atUtc: string }): { kind: 'edit'; edit: GymEdit } | { kind: 'none_needed' } | { kind: 'already' } {
   const ex = input.exercise;
   if (needsNoEquipment(ex)) return { kind: 'none_needed' };
-  const items = available(input.equipment).filter((e) => ex.compatibleEquipment.includes(e.kind) && !isNotFor(e, ex.id));
+  const items = available(input.equipment).filter((e) => ex.compatibleEquipment.includes(e.kind) && !isExcludedFor(e, ex.id));
   const first = items[0];
   if (first === undefined) return { kind: 'already' };
   return {
@@ -378,14 +395,23 @@ export function planNotHere(input: { exercise: NotHereExercise; equipment: reado
   };
 }
 
-/** The exercises Ben marked not at this gym (any available item lists them). */
+/**
+ * The exercises Ben marked not at this gym (any available item lists them),
+ * except those with their own machine here (a learned stack, review B2: the
+ * family item lists them, but they are very much here).
+ */
 export function notHereExerciseIds(equipment: readonly EquipmentInstance[]): string[] {
-  return [...new Set(available(equipment).flatMap((e) => e.notFor ?? []))];
+  const live = available(equipment);
+  const ownMachine = new Set(live.flatMap((e) => (e.onlyFor ?? []).filter((id) => !isNotFor(e, id))));
+  return [...new Set(live.flatMap((e) => e.notFor ?? []))].filter((id) => !ownMachine.has(id));
 }
 
 /** `Put back` on the gym screen: the exercise can use this gym's items again. */
 export function planPutBack(input: { exerciseId: string; exerciseName: string; equipment: readonly EquipmentInstance[]; atUtc: string }): GymEdit | null {
-  const items = available(input.equipment).filter((e) => isNotFor(e, input.exerciseId));
+  const live = available(input.equipment);
+  // A machine with its own stack goes back on that item only; the family stays not for it (review B2).
+  const hasOwn = live.some((e) => e.onlyFor?.includes(input.exerciseId) === true);
+  const items = live.filter((e) => isNotFor(e, input.exerciseId) && (!hasOwn || e.onlyFor?.includes(input.exerciseId) === true));
   const first = items[0];
   if (first === undefined) return null;
   return {
@@ -399,42 +425,59 @@ export function planPutBack(input: { exerciseId: string; exerciseName: string; e
 // ---------------------------------------------------------------------------
 // Learning from a logged or typed load
 
+/**
+ * A stack learn is about one machine (review quickgym B2): the exercise it was
+ * typed on. Accepting it gives that machine its own confirmed stack; every
+ * other machine keeps the family's assumed step.
+ */
+interface StackLearnFor {
+  exerciseId: string;
+  exerciseName: string;
+}
+
 export type GymLearn =
   | { kind: 'add_dumbbell'; equipmentId: string; unit: WeightUnit; value: number }
-  | { kind: 'stack_step'; equipmentId: string; unit: WeightUnit; step: number }
-  | { kind: 'stack_max'; equipmentId: string; unit: WeightUnit; max: number };
+  | ({ kind: 'stack_step'; equipmentId: string; unit: WeightUnit; step: number } & StackLearnFor)
+  | ({ kind: 'stack_max'; equipmentId: string; unit: WeightUnit; max: number } & StackLearnFor);
 
-/** The chip: `Add 22 kg dumbbells here?`, `Stack goes up in 7 kg?`, `Stack goes to 110 kg?`. */
+/** The chip: `Add 22 kg dumbbells here?`, `Leg extension goes up in 7 kg?`, `Leg press goes to 140 kg?`. */
 export function gymLearnText(l: GymLearn): string {
   switch (l.kind) {
     case 'add_dumbbell':
       return `Add ${formatNumber(l.value)} ${l.unit} dumbbells here?`;
     case 'stack_step':
-      return `Stack goes up in ${formatNumber(l.step)} ${l.unit}?`;
+      return `${l.exerciseName} goes up in ${formatNumber(l.step)} ${l.unit}?`;
     case 'stack_max':
-      return `Stack goes to ${formatNumber(l.max)} ${l.unit}?`;
+      return `${l.exerciseName} goes to ${formatNumber(l.max)} ${l.unit}?`;
   }
 }
 
-/** After Ben's tap (toast and the edit's line): `Added 22 kg dumbbells`, `Stack: every 7 kg`, `Stack: to 110 kg`. */
+/** After Ben's tap (toast and the edit's line): `Added 22 kg dumbbells`, `Leg extension: every 7 kg`, `Leg press: to 140 kg`. */
 export function gymLearnDoneText(l: GymLearn): string {
   switch (l.kind) {
     case 'add_dumbbell':
       return `Added ${formatNumber(l.value)} ${l.unit} dumbbells`;
     case 'stack_step':
-      return `Stack: every ${formatNumber(l.step)} ${l.unit}`;
+      return `${l.exerciseName}: every ${formatNumber(l.step)} ${l.unit}`;
     case 'stack_max':
-      return `Stack: to ${formatNumber(l.max)} ${l.unit}`;
+      return `${l.exerciseName}: to ${formatNumber(l.max)} ${l.unit}`;
   }
 }
 
 /** One offer per load idea: the chip isn't shown again after Ben answers it (this workout). */
 export function gymLearnKey(l: GymLearn): string {
-  return `${l.equipmentId}:${l.kind}:${formatNumber(l.kind === 'add_dumbbell' ? l.value : l.kind === 'stack_step' ? l.step : l.max)}`;
+  const value = formatNumber(l.kind === 'add_dumbbell' ? l.value : l.kind === 'stack_step' ? l.step : l.max);
+  return l.kind === 'add_dumbbell' ? `${l.equipmentId}:${l.kind}:${value}` : `${l.equipmentId}:${l.exerciseId}:${l.kind}:${value}`;
 }
 
-/** Stack steps tried for an off-step load, most common first. */
-const STACK_STEPS: Readonly<Record<WeightUnit, readonly number[]>> = { kg: [5, 2.5, 10, 7, 4.5, 7.5, 6, 4, 3, 2], lb: [10, 5, 15, 12.5, 7.5, 20, 2.5] };
+/**
+ * Real selectorised stack steps, most common first (review quickgym B2): 5,
+ * 2.5 and 10 kg plates, 7 kg (15 lb) and 4.5 kg (10 lb) imperial stacks. A
+ * load none of these divides (12 kg, 3 kg) offers nothing: the warning stays.
+ */
+const STACK_STEPS: Readonly<Record<WeightUnit, readonly number[]>> = { kg: [5, 2.5, 10, 7, 4.5], lb: [10, 5, 15, 12.5, 20, 2.5] };
+/** A typed dumbbell above the rack's top by more than this many steps is a typo, not a dumbbell to add (review N4). */
+const DUMBBELL_LEARN_STEPS_ABOVE = 2;
 
 /** The most common gap between neighbouring loads. */
 function usualGap(values: readonly number[]): number | null {
@@ -450,62 +493,86 @@ function usualGap(values: readonly number[]): number | null {
 
 /**
  * What a load the item can't make suggests about the gym, or null. Dumbbells:
- * that dumbbell is there (any rack). A stack Ben hasn't confirmed: it goes
- * higher (the load is on its step, above the top), or it steps in another
- * size the load is a multiple of. Units and conventions must match; a load
- * past a sane ceiling is a typo, never a suggestion.
+ * that dumbbell is there (on a 0.5 grid, no more than two steps above the
+ * rack's top). An assumed stack shared by many machines: this machine goes
+ * higher (the load is on its step, above the top), or it steps in a real stack
+ * size the load is a multiple of; either is about `exercise` only, never the
+ * whole family (review B2). Units and conventions must match; a load past a
+ * sane ceiling is a typo, never a suggestion.
  */
-export function gymLearnFor(eq: EquipmentInstance, load: Load | null): GymLearn | null {
+export function gymLearnFor(eq: EquipmentInstance, load: Load | null, exercise: { id: string; name: string } | null = null): GymLearn | null {
   if (load === null || load.unit !== eq.unit || load.convention !== eq.loadConvention || !(load.value > 0)) return null;
   if (isLoadAchievable(load, eq)) return null;
   const v = toScaled(load.value);
   if (eq.kind === 'dumbbells') {
-    if (v > toScaled(LEARN_CEILING.dumbbells[eq.unit]) || v % 250 !== 0) return null;
+    if (v > toScaled(LEARN_CEILING.dumbbells[eq.unit]) || v % 500 !== 0) return null;
+    const top = eq.loads.at(-1);
+    const gap = lastGap(eq.loads);
+    if (top !== undefined && gap !== null && v > toScaled(top) + DUMBBELL_LEARN_STEPS_ABOVE * gap) return null;
     return { kind: 'add_dumbbell', equipmentId: eq.id, unit: eq.unit, value: load.value };
   }
-  if (eq.kind !== 'weight_stack' || !isAssumed(eq) || v > toScaled(LEARN_CEILING.weight_stack[eq.unit])) return null;
+  if (exercise === null || eq.kind !== 'weight_stack' || !isAssumed(eq) || eq.onlyFor !== undefined || v > toScaled(LEARN_CEILING.weight_stack[eq.unit])) return null;
+  const about = { equipmentId: eq.id, unit: eq.unit, exerciseId: exercise.id, exerciseName: exercise.name };
   const top = eq.stackLoads.at(-1);
   const gap = usualGap(eq.stackLoads);
   if (top !== undefined && gap !== null && v > toScaled(top) && (v - toScaled(top)) % gap === 0) {
-    return { kind: 'stack_max', equipmentId: eq.id, unit: eq.unit, max: load.value };
+    return { kind: 'stack_max', ...about, max: load.value };
   }
   const step = STACK_STEPS[eq.unit].find((s) => toScaled(s) !== gap && v % toScaled(s) === 0);
-  return step === undefined ? null : { kind: 'stack_step', equipmentId: eq.id, unit: eq.unit, step };
+  return step === undefined ? null : { kind: 'stack_step', ...about, step };
 }
 
 /**
  * The learned change on the item as saved now (not the workout's snapshot).
- * Null when it no longer applies (it already makes the load, or the item
- * changed kind or unit). The item becomes confirmed: Ben told us.
+ * Null when it no longer applies (it already makes the load, the item changed
+ * kind or unit, or the machine already has its own stack).
+ *
+ * - A dumbbell: added to the rack. The rack stays as it was, assumed or
+ *   confirmed (review S1: Ben confirmed one dumbbell, not the rack).
+ * - A stack (review B2): that machine gets its own confirmed stack item
+ *   (`onlyFor` the exercise), and the family item is marked not for it. Every
+ *   other machine keeps the family's assumed stack.
  */
-export function planGymLearn(eq: EquipmentInstance, learn: GymLearn, atUtc: string): GymEdit | null {
+export function planGymLearn(eq: EquipmentInstance, learn: GymLearn, atUtc: string, newId: () => string, gymItems: readonly EquipmentInstance[] = []): GymEdit | null {
   if (eq.id !== learn.equipmentId || eq.unit !== learn.unit || eq.availability !== 'available') return null;
-  const confirmed = { detailsSource: 'user' as const, checkedAtUtc: atUtc };
-  let after: EquipmentInstance;
   if (learn.kind === 'add_dumbbell') {
     if (eq.kind !== 'dumbbells' || eq.loads.some((l) => toScaled(l) === toScaled(learn.value))) return null;
     const loads = [...eq.loads, learn.value].sort((a, b) => a - b);
-    after = bumped(eq, { ...confirmed, loads, ...(eq.maxLoad !== undefined && eq.maxLoad < learn.value ? { maxLoad: learn.value } : {}) }, atUtc);
-  } else {
-    if (eq.kind !== 'weight_stack') return null;
-    const top = eq.stackLoads.at(-1) ?? 0;
-    let stackLoads: number[];
-    if (learn.kind === 'stack_max') {
-      const gap = usualGap(eq.stackLoads);
-      if (gap === null || toScaled(learn.max) <= toScaled(top)) return null;
-      stackLoads = [...eq.stackLoads, ...loadRange(fromScaled(toScaled(top) + gap), learn.max, fromScaled(gap))];
-    } else {
-      const s = toScaled(learn.step);
-      const newTop = Math.floor(toScaled(top) / s) * s;
-      if (newTop < s) return null;
-      stackLoads = loadRange(learn.step, fromScaled(newTop), learn.step);
-    }
-    const maxLoad = eq.maxLoad !== undefined && eq.maxLoad < (stackLoads.at(-1) ?? 0) ? { maxLoad: stackLoads.at(-1) } : {};
-    after = bumped(eq, { ...confirmed, stackLoads, ...maxLoad }, atUtc);
+    const after = validItem(bumped(eq, { loads, ...(eq.maxLoad !== undefined && eq.maxLoad < learn.value ? { maxLoad: learn.value } : {}) }, atUtc));
+    return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after }], lines: [gymLearnDoneText(learn)] };
   }
-  const valid = validItem(after);
-  if (getAchievableLoads(valid).loads.length === 0) return null;
-  return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after: valid }], lines: [gymLearnDoneText(learn)] };
+  if (eq.kind !== 'weight_stack' || eq.onlyFor !== undefined || isNotFor(eq, learn.exerciseId)) return null;
+  if (available(gymItems).some((e) => e.onlyFor?.includes(learn.exerciseId) === true)) return null;
+  const top = eq.stackLoads.at(-1) ?? 0;
+  let stackLoads: number[];
+  if (learn.kind === 'stack_max') {
+    const gap = usualGap(eq.stackLoads);
+    if (gap === null || toScaled(learn.max) <= toScaled(top)) return null;
+    stackLoads = [...eq.stackLoads, ...loadRange(fromScaled(toScaled(top) + gap), learn.max, fromScaled(gap))];
+  } else {
+    const s = toScaled(learn.step);
+    const newTop = Math.floor(toScaled(top) / s) * s;
+    if (newTop < s) return null;
+    stackLoads = loadRange(learn.step, fromScaled(newTop), learn.step);
+  }
+  const own = withNotFor({ ...eq }, []) as typeof eq;
+  delete own.maxLoad;
+  delete own.minLoad;
+  const made = validItem({
+    ...own,
+    id: newId(),
+    name: learn.exerciseName.slice(0, 120) || eq.name,
+    stackLoads,
+    detailsSource: 'user',
+    checkedAtUtc: atUtc,
+    onlyFor: [learn.exerciseId],
+    version: 1,
+    createdAtUtc: atUtc,
+    updatedAtUtc: atUtc,
+  });
+  if (getAchievableLoads(made).loads.length === 0) return null;
+  const family = validItem(bumped(eq, { notFor: [...(eq.notFor ?? []), learn.exerciseId] }, atUtc));
+  return { gymId: eq.gymId, gym: null, equipment: [{ before: eq, after: family }, { before: null, after: made }], lines: [gymLearnDoneText(learn)] };
 }
 
 // ---------------------------------------------------------------------------
@@ -518,8 +585,12 @@ export type GymUpdateChange =
   | { op: 'remove'; equipment: GymEquipmentKind }
   /** The dumbbell rack's top and/or step (per hand). */
   | { op: 'dumbbells'; max: number | null; step: number | null }
-  /** A stack's step (the item named, else every stack at the gym). */
-  | { op: 'stack_step'; step: number; itemName: string | null }
+  /**
+   * A stack's step: one machine's own stack when `exerciseId` names its
+   * exercise (review B2: the family keeps its step for the rest), else the
+   * item named, else every stack at the gym (Ben said all of them).
+   */
+  | { op: 'stack_step'; step: number; itemName: string | null; exerciseId?: string | null | undefined }
   /** One exercise isn't possible here ("this gym has no leg press"). */
   | { op: 'not_here'; exerciseId: string };
 
@@ -591,18 +662,46 @@ export function planGymUpdate(input: {
       case 'dumbbells': {
         const rack = live().find((e) => e.kind === 'dumbbells');
         if (rack === undefined) return { ok: false, reason: 'no dumbbells at this gym' };
-        const step = c.step ?? usualGapValue(rack.loads) ?? DEFAULT_DUMBBELL_STEP[rack.unit];
+        // The rack's own step is its lightest gap (a 1 kg ladder steps 1s, then 2.5s).
+        const firstGap = rack.loads.length > 1 ? fromScaled(toScaled(rack.loads[1] ?? 0) - toScaled(rack.loads[0] ?? 0)) : null;
+        const step = c.step ?? firstGap ?? DEFAULT_DUMBBELL_STEP[rack.unit];
         if (!validDumbbellStep(rack.unit, step)) return { ok: false, reason: `a ${formatNumber(step)} ${rack.unit} dumbbell step isn’t possible` };
         const max = c.max ?? rack.loads.at(-1) ?? FULL_DUMBBELL_MAX[rack.unit];
         if (!(max >= step) || toScaled(max) > toScaled(LEARN_CEILING.dumbbells[rack.unit])) return { ok: false, reason: `dumbbells up to ${formatNumber(max)} ${rack.unit} isn’t possible` };
         const loads = dumbbellLoadsFor(rack.unit, step, max);
-        put(edit(rack, { loads, detailsSource: 'user', checkedAtUtc: atUtc }), rack);
+        // Review N3: a saved ceiling follows Ben's new top ("up to 60" on a rack capped at 50).
+        put(edit(rack, { loads, detailsSource: 'user', checkedAtUtc: atUtc, ...(rack.maxLoad !== undefined ? { maxLoad: loads.at(-1) ?? max } : {}) }), rack);
         lines.push(`Dumbbells: ${formatNumber(loads[0] ?? step)}–${formatNumber(loads.at(-1) ?? max)} ${rack.unit}, every ${formatNumber(step)}`);
         break;
       }
       case 'stack_step': {
+        const stepOk = c.step > 0 && toScaled(c.step) % 250 === 0 && c.step <= (input.unit === 'kg' ? 25 : 50);
+        if (c.exerciseId != null) {
+          const ex = input.exercise(c.exerciseId);
+          if (ex === null) return { ok: false, reason: 'that exercise isn’t known' };
+          if (!stepOk) return { ok: false, reason: `a ${formatNumber(c.step)} ${input.unit} stack step isn’t possible` };
+          const own = live().find((e) => e.kind === 'weight_stack' && e.onlyFor?.includes(ex.id) === true && !isNotFor(e, ex.id));
+          if (own !== undefined && own.kind === 'weight_stack') {
+            const step = toScaled(c.step);
+            const top = Math.floor(toScaled(own.stackLoads.at(-1) ?? 0) / step) * step;
+            if (top < step) return { ok: false, reason: `a ${formatNumber(c.step)} ${own.unit} step is above ${own.name}’s top` };
+            put(edit(own, { stackLoads: loadRange(c.step, fromScaled(top), c.step), detailsSource: 'user', checkedAtUtc: atUtc }), own);
+          } else {
+            const family = live().find((e) => e.kind === 'weight_stack' && ex.compatibleEquipment.includes('weight_stack') && !isExcludedFor(e, ex.id));
+            if (family === undefined) return { ok: false, reason: `no stack for ${ex.name} at this gym` };
+            const learned = planGymLearn(family, { kind: 'stack_step', equipmentId: family.id, unit: family.unit, step: c.step, exerciseId: ex.id, exerciseName: ex.name }, atUtc, input.newId, live());
+            if (learned === null) return { ok: false, reason: `a ${formatNumber(c.step)} ${family.unit} step is above ${family.name}’s top` };
+            for (const e of learned.equipment) {
+              if (e.before === null) put(e.after, null);
+              else put(edit(e.before, { notFor: e.after.notFor ?? [] }), e.before);
+            }
+          }
+          lines.push(`${ex.name}: every ${formatNumber(c.step)} ${input.unit}`);
+          break;
+        }
         const name = c.itemName?.trim().toLowerCase() ?? '';
-        const stacks = live().filter((e) => e.kind === 'weight_stack' && (name === '' || e.name.toLowerCase().includes(name)));
+        // A machine's own stack (`onlyFor`) changes only when named.
+        const stacks = live().filter((e) => e.kind === 'weight_stack' && (name === '' ? e.onlyFor === undefined : e.name.toLowerCase().includes(name)));
         if (stacks.length === 0) return { ok: false, reason: name === '' ? 'no stack at this gym' : `no stack called ${c.itemName ?? ''} at this gym` };
         for (const s of stacks) {
           if (s.kind !== 'weight_stack') continue;
@@ -657,7 +756,9 @@ function withMissingKinds(gym: Gym, kinds: readonly GymEquipmentKind[]): Gym {
   return copy;
 }
 
-function usualGapValue(values: readonly number[]): number | null {
-  const g = usualGap(values);
-  return g === null ? null : fromScaled(g);
+/** The gap between the two heaviest loads (scaled), or null. */
+function lastGap(values: readonly number[]): number | null {
+  const a = values.at(-2);
+  const b = values.at(-1);
+  return a === undefined || b === undefined ? null : toScaled(b) - toScaled(a);
 }
