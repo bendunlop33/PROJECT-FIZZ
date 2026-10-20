@@ -221,12 +221,14 @@ describe('migration 30 in place on a schema-29 database', () => {
     await appliedPlan(at29, PLAN);
     await at29.repos.sessions.save(richFinishedSession(), null);
     const before = await at29.db.read((q) => exportTables(q));
-    expect(await migrate(db)).toEqual({ from: 29, to: 30, applied: [30] });
+    expect(await migrate(db)).toEqual({ from: 29, to: 31, applied: [30, 31] });
     const at30 = await openStore(db);
     const after = await at30.db.read((q) => exportTables(q));
     // Every older table keeps its rows; sessions gain only an empty `plan_day`.
     for (const [t, rows] of Object.entries(before)) {
       if (t === 'sessions') expect(after.sessions).toEqual(rows.map((r) => ({ ...r, plan_day: null })));
+      // Migration 31 (applied too): no rest kept for undo.
+      else if (t === 'rest_timers') expect(after.rest_timers).toEqual(rows.map((r) => ({ ...r, resume_on_undo: null })));
       else expect(after[t]).toEqual(rows);
     }
     expect(after.plan_day_variations).toEqual([]);

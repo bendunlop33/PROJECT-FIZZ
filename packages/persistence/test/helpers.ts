@@ -48,12 +48,28 @@ export function failingDriver(inner: SqlDriver, failOn: (sql: string) => boolean
 }
 
 /**
+ * A backup's tables as a schema-30 build wrote them: no `rest_timers.resume_on_undo`
+ * (migration 31, unticking keeps the rest).
+ */
+export function withoutSchema31<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+  const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  if (out.rest_timers) {
+    out.rest_timers = out.rest_timers.map((row) => {
+      const copy = { ...row };
+      delete copy.resume_on_undo;
+      return copy;
+    });
+  }
+  return out as T;
+}
+
+/**
  * A backup's tables as a schema-29 build wrote them: no tables or columns
- * from migration 30 (workout builder v3). For tests that relabel a current
- * backup as an older schema; strip newer additions first.
+ * from migration 30 (workout builder v3), nor later ones (31). For tests that
+ * relabel a current backup as an older schema; strip newer additions first.
  */
 export function withoutSchema30<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
-  const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  const out: Record<string, Record<string, unknown>[]> = withoutSchema31({ ...tables });
   delete out.plan_day_variations;
   delete out.reviews;
   if (out.sessions) {

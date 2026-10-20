@@ -348,6 +348,9 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
             remainingMsAtPause: timer.remaining_ms_at_pause,
             endedAtUtc: timer.ended_at_utc,
             version: timer.version,
+            ...(timer.resume_on_undo === null || timer.resume_on_undo === undefined
+              ? {}
+              : { resumeOnUndo: parseJson('rest_timers', id, 'resume_on_undo', timer.resume_on_undo) }),
           },
     workInterval:
       work === null
@@ -578,6 +581,8 @@ export async function writeAggregate(tx: SqlExecutor, a: SessionAggregate): Prom
       remaining_ms_at_pause: t.remainingMsAtPause,
       ended_at_utc: t.endedAtUtc,
       version: t.version,
+      // Only when there is one (column from migration 31), as for other later columns.
+      ...(t.resumeOnUndo === undefined ? {} : { resume_on_undo: JSON.stringify(t.resumeOnUndo) }),
     });
   }
   await tx.run('DELETE FROM work_intervals WHERE session_id = ?', [sid]);
