@@ -906,6 +906,9 @@ export interface OpenSetRowProps {
   onRestAfter: () => void;
   onPainFlag: () => void;
   onOffProfile: () => void;
+  /** (ADR 0029; review S4) `Add 22 kg dumbbells here?`, offered once per idea, as on the Focus card; null when none. */
+  gymLearnText?: string | null;
+  onGymLearn?: (yes: boolean) => void;
   /** A cell's field took focus (the keypad is opening on it): the Table anchors that editor (WT39, review r2 B1). */
   onTileFocus: (tile: TileId) => void;
 }
@@ -1155,6 +1158,24 @@ export function OpenSetRow(p: OpenSetRowProps) {
         ) : (
           <StatusLine icon="exclamationmark.triangle" tone="warning" text={f.offProfileWarning} />
         )
+      ) : null}
+      {p.gymLearnText != null && p.onGymLearn ? (
+        <ChipRow>
+          <Chip
+            label={p.gymLearnText}
+            selected={false}
+            onPress={() => {
+              p.onGymLearn?.(true);
+            }}
+          />
+          <Chip
+            label="Not now"
+            selected={false}
+            onPress={() => {
+              p.onGymLearn?.(false);
+            }}
+          />
+        </ChipRow>
       ) : null}
     </View>
   );

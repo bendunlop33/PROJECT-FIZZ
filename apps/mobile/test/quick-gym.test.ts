@@ -138,7 +138,8 @@ describe('learning the gym as he trains', () => {
     expect(r.refreshed).toBe(true);
     const saved = (await s.gyms.item(rack?.id ?? ''))?.equipment;
     expect(saved?.kind === 'dumbbells' && saved.loads).toContain(22);
-    expect(saved?.detailsSource).toBe('user');
+    // Review S1: one dumbbell doesn't confirm the rack.
+    expect(saved?.detailsSource).toBe('preset');
     data = await s.workout.load();
     if (!data) throw new Error('no workout');
     focus = s.workout.view(data, h.clockMs, typed).focus;
@@ -146,13 +147,79 @@ describe('learning the gym as he trains', () => {
     expect(focus?.gymLearn).toBeNull();
 
     // Undo: today's refresh and the gym, both back.
-    expect(await s.gyms.undoLearnInWorkout({ sessionId, edit: r.edit, refreshed: r.refreshed, opId: 'undo-learn-1' })).toEqual({ ok: true });
+    expect(await s.gyms.undoLearnInWorkout({ sessionId, edit: r.edit, refreshed: r.refreshed, opId: 'undo-learn-1' })).toEqual({ ok: true, todayKept: false });
     const back = (await s.gyms.item(rack?.id ?? ''))?.equipment;
     expect(back?.kind === 'dumbbells' && back.loads).not.toContain(22);
     expect(back?.detailsSource).toBe('preset');
     data = await s.workout.load();
     if (!data) throw new Error('no workout');
     expect(s.workout.view(data, h.clockMs, typed).focus?.gymLearn?.text).toBe('Add 22 kg dumbbells here?');
+  });
+});
+
+describe('learning the gym: review fixes', () => {
+  async function dumbbellSet(s: AppServices, gymId: string) {
+    const { sessionId, pick } = await startWith(s, gymId, 'Dumbbell bench press', 'start-1');
+    const rack = pick.equipment[0];
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: rack?.id ?? null, opId: 'add-1' });
+    if (!added.ok) throw new Error(added.error.message);
+    return { sessionId, rackId: rack?.id ?? '' };
+  }
+
+  it('S3: Undo after a set was logged on the learned dumbbell puts the gym back and says today keeps it', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await fullGym(s, 2.5);
+    const { sessionId, rackId } = await dumbbellSet(s, gymId);
+    let data = await s.workout.load();
+    if (!data) throw new Error('no workout');
+    const setId = data.aggregate.session.activeSetId ?? '';
+    const values = { load: { value: 22, unit: 'kg' as const, convention: 'per_hand' as const }, reps: 10, durationS: null, rpe: null, rir: null };
+    const learn = s.workout.view(data, h.clockMs, { setId, values }).focus?.gymLearn?.learn;
+    if (!learn) throw new Error('no chip');
+    const r = await s.gyms.learnInWorkout({ sessionId, learn, opId: 'learn-1' });
+    if (!r.ok) throw new Error(r.message);
+    expect(r.refreshed).toBe(true);
+    const logged = await s.workout.dispatch(sessionId, { type: 'log_set', at: h.now(), opId: 'log-22', setId, values, restTimerId: h.ids() });
+    expect(logged.ok).toBe(true);
+
+    expect(await s.gyms.undoLearnInWorkout({ sessionId, edit: r.edit, refreshed: r.refreshed, opId: 'undo-learn-1' })).toEqual({ ok: true, todayKept: true });
+    const back = (await s.gyms.item(rackId))?.equipment;
+    expect(back?.kind === 'dumbbells' && back.loads).not.toContain(22);
+    data = await s.workout.load();
+    // Today's snapshot keeps the version with 22 kg (the one its logged set was made on).
+    expect(data?.aggregate.session.equipmentSnapshot.some((e) => e.id === rackId && e.kind === 'dumbbells' && e.loads.includes(22))).toBe(true);
+  });
+
+  it('B2: Leg extension goes up in 7 kg? gives leg extension its own stack; other machines keep the assumed 5s', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await fullGym(s);
+    const { sessionId, pick } = await startWith(s, gymId, 'Leg extension', 'start-1');
+    const machines = pick.equipment.find((e) => e.name === 'Machines');
+    const added = await s.workout.addExercise({ sessionId, exerciseId: pick.exercise.id, equipmentId: machines?.id ?? null, opId: 'add-1' });
+    if (!added.ok) throw new Error(added.error.message);
+    const data = await s.workout.load();
+    if (!data) throw new Error('no workout');
+    const setId = data.aggregate.session.activeSetId ?? '';
+    const typed = { setId, values: { load: { value: 7, unit: 'kg' as const, convention: 'stack' as const }, reps: 12, durationS: null, rpe: null, rir: null } };
+    const chip = s.workout.view(data, h.clockMs, typed).focus?.gymLearn;
+    expect(chip?.text).toBe('Leg extension goes up in 7 kg?');
+    if (!chip) throw new Error('no chip');
+    const r = await s.gyms.learnInWorkout({ sessionId, learn: chip.learn, opId: 'learn-1' });
+    if (!r.ok) throw new Error(r.message);
+    // A double tap: already saved, nothing more.
+    expect(await s.gyms.learnInWorkout({ sessionId, learn: chip.learn, opId: 'learn-2' })).toMatchObject({ ok: false, reason: 'nothing' });
+
+    const detail = await s.gyms.detail(gymId);
+    expect(detail?.equipment.find((e) => e.equipment.name === 'Machines')?.tag).toBe('Assumed');
+    expect(detail?.equipment.find((e) => e.equipment.name === 'Leg extension')).toMatchObject({ tag: null, line: expect.stringContaining('7') as unknown });
+    expect(detail?.notHere).toEqual([]);
+    const machinesNow = (await s.gyms.item(machines?.id ?? ''))?.equipment;
+    expect(machinesNow?.kind === 'weight_stack' && machinesNow.stackLoads.slice(0, 2)).toEqual([5, 10]);
+
+    // The picker: leg extension is on its own stack; another machine exercise still on the shared ones.
+    expect((await s.workout.pickerExercises(sessionId, 'Leg extension')).find((p) => p.exercise.name === 'Leg extension')?.equipment.map((e) => e.name)).toEqual(['Cable station', 'Leg extension']);
+    const pulldown = (await s.workout.pickerExercises(sessionId, 'Lat pulldown')).find((p) => p.exercise.name === 'Lat pulldown');
+    expect(pulldown?.equipment.map((e) => e.name)).toEqual(['Cable station', 'Machines']);
   });
 });
 
@@ -202,5 +269,25 @@ describe('the coach updates a gym (update_gym)', () => {
     await s.gyms.save({ gymId, equipmentId: rack.id, expectedVersion: rack.version, form: { ...(formFromEquipment(rack) as Extract<EquipmentForm, { kind: 'dumbbells' }>), range: { from: 2, to: 30, step: 2 }, missing: [], extra: [] } });
     expect(await s.coach.tapGymProposal(card2?.actionId ?? '', 'apply')).toEqual({ ok: false, state: 'out_of_date' });
     expect((await s.gyms.detail(gymId))?.equipment[0]?.line).toBe('2–30 kg each');
+  });
+
+  it('S5: a card tapped again after Ben undid its Apply, and two taps at once, apply at most once', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await fullGym(s);
+    const step = () => toolCall('update_gym', { gymName: null, changes: [{ op: 'dumbbells', max: 40, step: 2 }], reason: 'your logs', benAsked: false, benQuote: null });
+    model = new StepModel([step, () => replyWith('Want me to update the dumbbells?')]);
+    const r = await say(s, 'the dumbbells here go up in 2s maybe? what do you think');
+    const card = r.cards.find((c) => c.record.detail.kind === 'update_gym')?.record;
+    const [a, b] = await Promise.all([s.coach.tapGymProposal(card?.actionId ?? '', 'apply'), s.coach.tapGymProposal(card?.actionId ?? '', 'apply')]);
+    // The same tap twice is one apply (one op ID): a replay, or refused as applied.
+    const oks = [a, b].flatMap((x) => (x.ok ? [x.record.actionId] : []));
+    expect(new Set(oks).size).toBe(1);
+    const applied = a.ok ? a.record : b.ok ? b.record : null;
+    expect((await s.gyms.detail(gymId))?.equipment[0]?.line).toBe('2–40 kg each');
+    await s.coach.undo(applied?.actionId ?? '', 'undo-apply');
+    expect((await s.gyms.detail(gymId))?.equipment[0]?.line).toBe('2.5–50 kg each');
+    // The stale card can't apply again over Ben's Undo.
+    expect((await s.coach.tapGymProposal(card?.actionId ?? '', 'apply')).ok).toBe(false);
+    expect((await s.gyms.detail(gymId))?.equipment[0]?.line).toBe('2.5–50 kg each');
   });
 });

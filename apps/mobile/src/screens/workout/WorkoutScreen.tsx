@@ -1146,8 +1146,11 @@ export function WorkoutScreen() {
           void services.gyms.undoLearnInWorkout({ sessionId: session.id, edit: r.edit, refreshed: r.refreshed, opId: newUuid() }).then((u) => {
             changed();
             void reload();
-            if (u.ok) haptic('undo');
-            else showToast({ icon: 'info.circle', text: u.message });
+            if (!u.ok) showToast({ icon: 'info.circle', text: u.message });
+            else {
+              haptic('undo');
+              if (u.todayKept) showToast({ icon: 'info.circle', text: 'Gym undone · today keeps it' });
+            }
           });
         },
       });
@@ -2246,6 +2249,10 @@ export function WorkoutScreen() {
   const openRowNode = focus ? (
     <OpenSetRow
       focus={focus}
+      gymLearnText={focus.gymLearn && !learnAnswered.has(gymLearnKey(focus.gymLearn.learn)) ? focus.gymLearn.text : null}
+      onGymLearn={(yes) => {
+        if (focus.gymLearn) answerGymLearn(focus.gymLearn.learn, yes);
+      }}
       resting={view.phase === 'resting'}
       ax={ax}
       keypadOpen={keypadOpen}

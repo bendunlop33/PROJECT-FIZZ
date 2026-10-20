@@ -567,10 +567,20 @@ export function createAppServices(deps: AppServicesDeps) {
       const applied = await loop.gymSwitch.apply(proposal, req.opId).catch(() => null);
       return { ...r, refreshed: applied?.ok === true };
     },
-    /** Its Undo: today's refresh first (refused if the workout moved on), then the gym. */
-    async undoLearnInWorkout(req: { sessionId: string; edit: GymEdit; refreshed: boolean; opId: string }): Promise<{ ok: true } | { ok: false; message: string }> {
-      if (req.refreshed) await loop.gymSwitch.undo(req.sessionId, req.opId).catch(() => null);
-      return gymServices.undoEdit(req.edit);
+    /**
+     * Its Undo: today's refresh first, then the gym. Today's refresh is
+     * refused once the workout moved on (a set logged on the new item): the
+     * gym is still put back, and the result says today kept it (review S3),
+     * never a plain "undone".
+     */
+    async undoLearnInWorkout(req: { sessionId: string; edit: GymEdit; refreshed: boolean; opId: string }): Promise<{ ok: true; todayKept: boolean } | { ok: false; message: string }> {
+      let todayKept = false;
+      if (req.refreshed) {
+        const today = await loop.gymSwitch.undo(req.sessionId, req.opId).catch(() => null);
+        todayKept = today?.ok !== true;
+      }
+      const gym = await gymServices.undoEdit(req.edit);
+      return gym.ok ? { ok: true, todayKept } : gym;
     },
   };
 
