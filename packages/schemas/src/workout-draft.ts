@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IdSchema, LoadConventionSchema, LoadSchema, OperationIdSchema, RepRangeSchema, RpeSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema, ZonedTimestampSchema } from './common';
+import { GymEquipmentKindSchema } from './equipment';
 import { SetTypeSchema } from './routine';
 import { SplitBodyPartSchema } from './training-profile';
 
@@ -172,7 +173,7 @@ export type DraftLoad = z.infer<typeof DraftLoadSchema>;
 /** The item a slot's load was checked on (B7). */
 export const CheckedOnSchema = z.object({
   equipmentId: IdSchema,
-  kind: z.enum(['barbell', 'plate_loaded_machine', 'dumbbells', 'weight_stack', 'assisted_stack', 'bodyweight_station']),
+  kind: GymEquipmentKindSchema,
   convention: LoadConventionSchema,
   unit: WeightUnitSchema,
   barKg: z.number().nonnegative().nullable(),
