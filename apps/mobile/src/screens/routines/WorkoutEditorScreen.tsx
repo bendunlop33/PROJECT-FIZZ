@@ -55,7 +55,7 @@ import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, Eyeb
 import { conflictLines, conflictText, EDITOR_COPY, editorAddRow, editorPrimary, editorSlotIssue, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
 import { handOffLibraryToast } from '../../workout/library-toast';
 import { saveEditRequest, settleSaveEdit } from '../../workout/save-edit-handoff';
-import { clampRepRange, SET_BAR, SET_SHAPE_COPY, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../../workout/set-shape-view';
+import { repRangeInput, SET_BAR, SET_SHAPE_COPY, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../../workout/set-shape-view';
 
 type Stale = { current: NonNullable<RoutineEditorData['routine']>; lines: string[]; changedAtUtc: string };
 
@@ -898,6 +898,10 @@ function Reps({ value, onChange, onFocus }: { value: SetTemplate['targetReps']; 
   const exact = r.min === r.max;
   const step = (v: number, min: number) => ({ down: v > min ? { enabled: true as const, value: v - 1, label: String(v - 1) } : { enabled: false as const, reason: `Min ${String(min)}` }, up: v < 100 ? { enabled: true as const, value: v + 1, label: String(v + 1) } : { enabled: false as const, reason: 'Max 100' } });
   const focus = onFocus ? { onFocus } : {};
+  // Review B2: a typed end is saved only while it keeps From ≤ To; it is clamped on blur, and a ± step clamps at once.
+  const latest = useRef({ r, exact, onChange });
+  latest.current = { r, exact, onChange };
+  const input = useRef(repRangeInput({ get: () => latest.current.r, exact: () => latest.current.exact, set: (next) => { latest.current.onChange(next); } })).current;
   return (
     <View style={{ gap: theme.space['2'] }}>
       <AppText variant="label" color="text.secondary">
@@ -907,10 +911,10 @@ function Reps({ value, onChange, onFocus }: { value: SetTemplate['targetReps']; 
         <Chip label={EDITOR_COPY.range} selected={!exact} onPress={() => { onChange({ min: r.min, max: Math.max(r.max, r.min + 2) }); }} />
         <Chip label={EDITOR_COPY.exact} selected={exact} onPress={() => { onChange({ min: r.min, max: r.min }); }} />
       </ChipRow>
-      {/* Design pass 5.2: compact steppers side by side; From ≤ To is kept by clamping, not an error sentence. */}
+      {/* Design pass 5.2: compact steppers side by side; From ≤ To is kept by clamping (on blur or a step), not an error sentence. */}
       <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-        <NumberStepper label={exact ? 'Reps' : 'From'} unit={null} value={r.min} decimals={false} onSurface compact={!exact} {...focus} {...step(r.min, 1)} onChange={(v) => { onChange(clampRepRange({ min: v, max: exact ? v : r.max }, 'min')); }} />
-        {!exact ? <NumberStepper label="To" unit={null} value={r.max} decimals={false} onSurface compact {...focus} {...step(r.max, 1)} onChange={(v) => { onChange(clampRepRange({ min: r.min, max: v }, 'max')); }} /> : null}
+        <NumberStepper label={exact ? 'Reps' : 'From'} unit={null} value={r.min} decimals={false} onSurface compact={!exact} {...focus} {...step(r.min, 1)} onChange={(v) => { input.type('min', v); }} onStep={(v) => { input.step('min', v); }} onBlur={input.settle} resetTextOnBlur />
+        {!exact ? <NumberStepper label="To" unit={null} value={r.max} decimals={false} onSurface compact {...focus} {...step(r.max, 1)} onChange={(v) => { input.type('max', v); }} onStep={(v) => { input.step('max', v); }} onBlur={input.settle} resetTextOnBlur /> : null}
       </View>
     </View>
   );

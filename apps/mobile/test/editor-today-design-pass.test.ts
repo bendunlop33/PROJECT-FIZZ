@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { clampRepRange } from '../src/workout/set-shape-view';
+import { clampRepRange, repRangeInput, repRangeOnBlur, repRangeWhileTyping } from '../src/workout/set-shape-view';
 
 /**
  * Design pass batch 5 (Ben approved 20 Oct): Today rows, the workout editor
@@ -24,6 +24,70 @@ describe('5.2 reps From ≤ To by clamping, not an error sentence', () => {
     expect(clampRepRange({ min: 8, max: 6 }, 'max')).toEqual({ min: 6, max: 6 });
     expect(clampRepRange({ min: 0, max: 150 }, 'min')).toEqual({ min: 1, max: 100 });
     expect(clampRepRange({ min: null, max: 10 }, 'min')).toEqual({ min: 1, max: 10 });
+  });
+
+  // Review B2: NumberStepper sends every keystroke, so clamping each one rewrote From.
+  const field = (start: { min: number; max: number }, exact = false) => {
+    let saved = start;
+    const writes: { min: number; max: number }[] = [];
+    const input = repRangeInput({ get: () => saved, exact: () => exact, set: (r) => { saved = r; writes.push(r); } });
+    return { input, saved: () => saved, writes };
+  };
+
+  it('typing 1, 12 into To on 8–10 saves 8–12 and never touches From', () => {
+    const f = field({ min: 8, max: 10 });
+    f.input.type('max', 1);
+    expect(f.saved()).toEqual({ min: 8, max: 10 });
+    f.input.type('max', 12);
+    expect(f.saved()).toEqual({ min: 8, max: 12 });
+    f.input.settle();
+    expect(f.saved()).toEqual({ min: 8, max: 12 });
+    expect(f.writes.every((w) => w.min === 8)).toBe(true);
+  });
+
+  it('clearing To keeps the saved range; blur restores it', () => {
+    const f = field({ min: 8, max: 10 });
+    f.input.type('max', null);
+    f.input.settle();
+    expect(f.saved()).toEqual({ min: 8, max: 10 });
+    expect(f.writes).toEqual([]);
+  });
+
+  it('a To left below From clamps only on blur', () => {
+    const f = field({ min: 8, max: 10 });
+    f.input.type('max', 5);
+    expect(f.saved()).toEqual({ min: 8, max: 10 });
+    f.input.settle();
+    expect(f.saved()).toEqual({ min: 5, max: 5 });
+  });
+
+  it('From typed past To pushes To on blur; ± steps clamp at once', () => {
+    const f = field({ min: 8, max: 10 });
+    f.input.type('min', 1);
+    f.input.type('min', 12);
+    f.input.settle();
+    expect(f.saved()).toEqual({ min: 12, max: 12 });
+    const g = field({ min: 8, max: 8 });
+    g.input.step('max', 7);
+    expect(g.saved()).toEqual({ min: 7, max: 7 });
+    // A step after typing drops the held draft: blur doesn't re-apply it.
+    const h = field({ min: 8, max: 10 });
+    h.input.type('max', 3);
+    h.input.step('max', 11);
+    h.input.settle();
+    expect(h.saved()).toEqual({ min: 8, max: 11 });
+  });
+
+  it('exact reps follow the typed number; the pure parts', () => {
+    const f = field({ min: 8, max: 8 }, true);
+    f.input.type('min', 1);
+    f.input.type('min', 12);
+    f.input.settle();
+    expect(f.saved()).toEqual({ min: 12, max: 12 });
+    expect(repRangeWhileTyping({ min: 8, max: 10 }, 'max', 0, false)).toBeNull();
+    expect(repRangeWhileTyping({ min: 8, max: 10 }, 'max', 101, false)).toBeNull();
+    expect(repRangeWhileTyping({ min: 8, max: 10 }, 'min', 9, false)).toEqual({ min: 9, max: 10 });
+    expect(repRangeOnBlur({ min: 8, max: 10 }, 'max', 150, false)).toEqual({ min: 8, max: 100 });
   });
 
   it('the sheet no longer shows the error sentence and reps steppers are compact', () => {

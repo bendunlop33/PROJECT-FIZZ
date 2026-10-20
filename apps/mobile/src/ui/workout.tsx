@@ -152,6 +152,8 @@ export function NumberStepper({
   time = false,
   variant = 'tile',
   autoFocus = false,
+  onStep,
+  resetTextOnBlur = false,
 }: {
   label: string;
   unit: string | null;
@@ -193,6 +195,10 @@ export function NumberStepper({
   variant?: 'tile' | 'inline';
   /** Focus on mount: a field opened while the keypad is up keeps it up (Next ›, another cell). */
   autoFocus?: boolean;
+  /** − / + taps go here instead of `onChange` (review B2: the reps range clamps on a step, not on each keystroke). */
+  onStep?: (v: number) => void;
+  /** On blur the field shows the saved value again, for a parent that holds back a typed value it can't take yet. */
+  resetTextOnBlur?: boolean;
 }) {
   const theme = useTheme();
   const format = time ? CARDIO_TIME_FORMAT : NUMBER_FORMAT;
@@ -220,13 +226,16 @@ export function NumberStepper({
           stepSize: flat || inline ? (stepSize ?? theme.target.min.width) : (stepSize ?? theme.target.workout.width) + theme.space['2'] + 2,
           fontScale,
         }));
+  const step = onStep ?? onChange;
   const layout = (e: LayoutChangeEvent) => {
     setTileWidth(e.nativeEvent.layout.width);
     onLayout?.(e);
   };
-  const describe = label === 'Assist' ? 'Assistance' : label;
-  const decrease = label === 'Assist' ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`;
-  const increase = label === 'Assist' ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`;
+  // Review S6: the inline editor's label is `Assist kg`, so match the start.
+  const assist = label.startsWith('Assist');
+  const describe = assist ? 'Assistance' : label;
+  const decrease = assist ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`;
+  const increase = assist ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`;
   const input = (
     <TextInput
       ref={inputRef}
@@ -242,6 +251,8 @@ export function NumberStepper({
       onBlur={() => {
         setFocused(false);
         onBlur?.();
+        // A value the parent then commits replaces this through the effect above.
+        if (resetTextOnBlur) setText(value === null ? '' : format.show(value));
       }}
       keyboardType={decimals ? 'decimal-pad' : 'number-pad'}
       inputAccessoryViewID={NUMBER_ACCESSORY_ID}
@@ -286,12 +297,12 @@ export function NumberStepper({
             paddingVertical: 0,
           }}
         >
-          <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
+          <TileStep glyph="−" target={down} onStep={step} describe={decrease} size={stepSize} />
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
             {input}
             {unitText}
           </View>
-          <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
+          <TileStep glyph="+" target={up} onStep={step} describe={increase} size={stepSize} />
         </View>
         {!up.enabled && value !== null ? (
           <AppText variant="callout" color="text.secondary" numeric>
@@ -326,18 +337,18 @@ export function NumberStepper({
                 {unitText}
               </View>
               <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-                <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} grow />
-                <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} grow />
+                <TileStep glyph="−" target={down} onStep={step} describe={decrease} size={stepSize} grow />
+                <TileStep glyph="+" target={up} onStep={step} describe={increase} size={stepSize} grow />
               </View>
             </>
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
+              <TileStep glyph="−" target={down} onStep={step} describe={decrease} size={stepSize} />
               <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
                 {input}
                 {unitText}
               </View>
-              <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
+              <TileStep glyph="+" target={up} onStep={step} describe={increase} size={stepSize} />
             </View>
           )}
         </View>
@@ -355,7 +366,7 @@ export function NumberStepper({
         {label}
       </AppText>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <StepButton icon="minus" target={down} onStep={onChange} describe={decrease} size={stepSize} />
+        <StepButton icon="minus" target={down} onStep={step} describe={decrease} size={stepSize} />
         <View
           style={{
             flex: 1,
@@ -377,7 +388,7 @@ export function NumberStepper({
             </AppText>
           ) : null}
         </View>
-        <StepButton icon="plus" target={up} onStep={onChange} describe={increase} size={stepSize} />
+        <StepButton icon="plus" target={up} onStep={step} describe={increase} size={stepSize} />
       </View>
       {!up.enabled && value !== null ? (
         <AppText variant="callout" color="text.secondary" numeric>
