@@ -159,7 +159,7 @@ describe("Ben's own edits (§2.3–§2.5)", () => {
     const r = applyBuilderEdit(w, { kind: 'superset_next', slotKey: incline?.key ?? '' }, c);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.workout.blocks.some((b) => b.slots.length === 2 && b.auto === false)).toBe(true);
+    expect(r.workout.blocks.some((b) => b.slots.length === 2 && !b.auto)).toBe(true);
     expect(r.advice?.kind).toBe('shared_muscle');
     expect(r.advice?.reason).toMatch(/^Both work your /);
   });

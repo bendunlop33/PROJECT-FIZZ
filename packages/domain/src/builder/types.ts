@@ -156,6 +156,8 @@ export interface BuilderSlot {
   touched?: true;
   /** Ben unlinked this slot from a superset: automatic pairing never re-pairs it (review B3). */
   unlinked?: true;
+  /** The plan-day template exercise this slot came from (kept through a swap): `Cable fly → Incline press` (§2.8). */
+  origin?: string;
 }
 
 export interface BuilderBlock {

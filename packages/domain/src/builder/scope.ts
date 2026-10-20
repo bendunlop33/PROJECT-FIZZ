@@ -31,7 +31,7 @@ export function workoutFromTemplate(specs: readonly TemplateSlotSpec[], ctx: Bui
   let prev: string | null = null;
   for (const s of specs) {
     if (ctx.info(s.exerciseId) === null) continue;
-    const slot = makeSlot(s.exerciseId, { main: s.main, workingSets: s.workingSets }, ctx);
+    const slot = { ...makeSlot(s.exerciseId, { main: s.main, workingSets: s.workingSets }, ctx), origin: s.exerciseId };
     const last = blocks[blocks.length - 1];
     if (s.group !== null && s.group === prev && last !== undefined && !s.main && !last.slots.some((x) => x.main)) last.slots.push(slot);
     else blocks.push({ slots: [slot], auto: false });
@@ -55,6 +55,15 @@ function pairsOf(w: BuilderWorkout): Set<string> {
   const out = new Set<string>();
   for (const b of w.blocks) for (let i = 0; i < b.slots.length; i += 1) for (let k = i + 1; k < b.slots.length; k += 1) out.add(pairKey(b.slots[i]?.exerciseId ?? '', b.slots[k]?.exerciseId ?? ''));
   return out;
+}
+
+/**
+ * The template built afresh, with each slot keyed as the draft's slot that
+ * came from it (`origin`), so `builderChanges` reads a swap as a swap.
+ */
+export function alignToDraft(base: BuilderWorkout, current: BuilderWorkout): BuilderWorkout {
+  const keyOf = new Map(slotsOf(current.blocks).flatMap((s) => (s.origin === undefined ? [] : [[s.origin, s.key] as const])));
+  return { ...base, blocks: base.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => ({ ...s, key: keyOf.get(s.exerciseId) ?? s.key })) })) };
 }
 
 /**

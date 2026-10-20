@@ -108,6 +108,7 @@ function edit(w: BuilderWorkout, op: BuilderEditOp, ctx: BuilderContext): Builde
       }
       if (slot.restS !== undefined) next.restS = { ...slot.restS };
       if (slot.unlinked === true) next.unlinked = true;
+      if (slot.origin !== undefined) next.origin = slot.origin;
       return done(replace(w, slot.key, next), [slot.key]);
     }
     case 'move': {

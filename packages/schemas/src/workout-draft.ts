@@ -243,6 +243,8 @@ export const DraftSlotBuilderSchema = z.object({
   startLight: z.number().min(0).max(5000).nullable(),
   touched: z.literal(true).optional(),
   unlinked: z.literal(true).optional(),
+  /** The plan-day template exercise this slot came from (kept through a swap). */
+  origin: IdSchema.optional(),
   /** On a superset's first slot: the builder made this pair. */
   autoPair: z.literal(true).optional(),
   /** On a superset's first slot: Ben's `After each round` (seconds). */

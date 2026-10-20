@@ -363,7 +363,7 @@ export function createSessionService(repos: Repositories, newId: () => string) {
     const aggregate = req.planDay === undefined ? out.aggregate : { ...out.aggregate, session: { ...out.aggregate.session, planDay: req.planDay } };
     const saved = await trySave(() => repos.sessions.save(aggregate, null, req.fence, req.alongside));
     if (saved === 'threw') return { ok: false, error: WRITE_FAILED };
-    if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' }, ...('alongside' in saved && saved.alongside !== undefined ? { alongside: saved.alongside } : {}) };
+    if (!saved.ok) return { ok: false, error: saved.error === 'stale_inputs' ? STALE_INPUTS : { code: 'write_conflict', message: 'Could not create the session.' }, ...(saved.error === 'stale_inputs' && saved.alongside !== undefined ? { alongside: saved.alongside } : {}) };
     return { ok: true, aggregate, duplicate: false, fits: out.fits, today };
   }
 

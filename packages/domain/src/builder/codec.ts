@@ -1,7 +1,7 @@
 import { slotRev, type CheckedOnRecord, type DraftLoad, type DraftPlan, type DraftSetTemplate, type DraftSlot, type DraftSlotBuilder } from '@fizz/schemas';
 import { stableStringify } from '../stable';
 import { restAfterRows, roundRestOf } from './rest';
-import type { BuilderBlock, BuilderInfoLookup, BuilderSetRow, BuilderSlot, BuilderWorkout, RestKind, RestLevel } from './types';
+import type { BuilderBlock, BuilderInfoLookup, BuilderSetRow, BuilderSlot, BuilderWorkout, RestLevel } from './types';
 import { draftLoadSourceOf } from './types';
 
 /**
@@ -48,6 +48,7 @@ function metaOf(slot: BuilderSlot, block: BuilderBlock, first: boolean): DraftSl
     startLight: slot.startLight,
     ...(slot.touched === true ? { touched: true as const } : {}),
     ...(slot.unlinked === true ? { unlinked: true as const } : {}),
+    ...(slot.origin === undefined ? {} : { origin: slot.origin }),
     ...(first && block.auto && block.slots.length > 1 ? { autoPair: true as const } : {}),
     ...(first && block.roundRestS !== undefined && block.slots.length > 1 ? { roundRestS: block.roundRestS } : {}),
     ...(slot.restS !== undefined && Object.keys(slot.restS).length > 0 ? { restS: { ...slot.restS } } : {}),
@@ -124,9 +125,10 @@ function slotOf(s: DraftSlot): BuilderSlot {
     startLight: meta?.startLight ?? null,
     anchorE1rm: meta?.anchorE1rm ?? null,
   };
-  if (meta?.restS !== undefined) out.restS = { ...meta.restS } as Partial<Record<RestKind, number>>;
+  if (meta?.restS !== undefined) out.restS = { ...meta.restS };
   if (meta?.touched === true) out.touched = true;
   if (meta?.unlinked === true) out.unlinked = true;
+  if (meta?.origin !== undefined) out.origin = meta.origin;
   return out;
 }
 
