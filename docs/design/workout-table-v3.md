@@ -47,6 +47,18 @@ When the session is running over the plan, the header elapsed shows a small `+12
 
 44 pt tap areas, Dynamic Type (the table wraps the works line, numbers never truncate), VoiceOver labels "Set 3, 7.5 kilograms each, 12 reps, target RPE 9, not done", custom actions for Delete, Swap, Move, Superset.
 
-## 7. Out of scope
+## 7. Same editing as the builder (Ben, 20 Oct)
 
-The builder's own superset box stays as it is (planning view). Drag to reorder (spec §9 Q18) follows later.
+Ben: "should generally have same functionality as when building them". Everything the builder's Your workout page and exercise pop-up can do works mid-workout, on the **same shared components** (not copies), for today's session only:
+
+- **Exercise pop-up**: tapping an exercise name opens the builder's exercise pop-up: name + works line, `Swap exercise` top right, per-set table `# · Type · Reps · Kg · RPE` with the keyboard bar, Type picker per set (Warm-up / Working / Top set / Back-off / Drop), `+ Warm-up`, `+ Set`, rest per set type, Move up / Move down, Superset with next / Unlink, `Why this weight?`. Done sets show their logged values; editing one is a versioned correction with Undo (rule 2); its type can change too (it changes the label and counting, not the logged numbers).
+- **Sets in the table**: edit live in the cell (inline-edit fix); swipe left = Delete with Undo; **press and hold a set row, then drag** to reorder sets within the exercise (pending sets only; done sets stay in logged order); a set's Type can also be changed from a long-press menu fallback (VoiceOver: custom actions "Change type", "Move up", "Move down", "Delete").
+- **Exercises**: swipe right = Swap (builder's Swap pop-up, muscle-group dropdown); swipe left on the header = Remove (Undo; an exercise with logged sets asks first and keeps them in history); **press and hold the exercise header, then drag** in the round card or the Workout sheet to reorder rounds (only rounds not yet started move; done ones stay put); `＋ Add exercise` at the end of the Workout sheet and under the last round (builder's add flow, group dropdown).
+- **Supersets**: Superset with next / Unlink from ⋯ or the pop-up; also by dragging one exercise onto another in the Workout sheet. A superset with a done set can't be unlinked mid-round (only for the remaining rounds).
+- **Advice**: Ben's own changes get the builder's `not recommended because…` toast (adviseBuilder) with Undo; nothing is blocked except by the hard rules (equipment limits, pain flags).
+- Loads for added/swapped exercises come from the builder's load sources (§9 Q12), snapped to the gym's kit.
+- Drag here is the builder's press-and-hold drag (spec §9 Q18). It is built once as a shared component and turned on in the builder too, so both pages behave the same.
+
+## 8. Out of scope
+
+The builder keeps its superset box (planning view).
