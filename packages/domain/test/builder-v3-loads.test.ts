@@ -41,14 +41,18 @@ describe('builderLoad: source order (§9 Q12)', () => {
   });
 
   it('a target for other reps converts by Epley with RIR = 10 − RPE', () => {
-    const r = builderLoad(loadInput({ ruleTarget: { value: 100, reps: 6, rpe: 8 } }), { reps: 8, rpe: 8 });
+    const r = builderLoad(loadInput({ planFirstLoad: { value: 100, reps: 6, rpe: 8 } }), { reps: 8, rpe: 8 });
     expect(r.working).toBe(95);
   });
 
-  it('the built-in rule is never scaled up: fewer reps than its prescription keep its load (review B3)', () => {
-    // Hold after a miss on 8–12: the rule says 50 at 8; a set asked at 6 reps is still 50, not more.
+  it('the built-in rule’s load is the working load as is, never rescaled (review B3)', () => {
+    // Hold after a miss on 8–12: the rule says 50 from 8 reps; the working sets are 50 whatever their reps.
     expect(builderLoad(loadInput({ ruleTarget: { value: 50, reps: 8, rpe: 8 } }), { reps: 6, rpe: 8 }).working).toBe(50);
-    expect(builderLoad(loadInput({ ruleTarget: { value: 50, reps: 8, rpe: 8 } }), { reps: 8, rpe: 8 }).working).toBe(50);
+    expect(builderLoad(loadInput({ ruleTarget: { value: 50, reps: 8, rpe: 8 } }), { reps: 10, rpe: 8 }).working).toBe(50);
+    // Other sets derive at the rule's own reps: a back-off at more reps is lighter.
+    const r = builderLoad(loadInput({ ruleTarget: { value: 100, reps: 4, rpe: 8 } }), { reps: 6, rpe: 8 });
+    expect(r.working).toBe(100);
+    expect(r.anchorE1rm).not.toBeNull();
     // A coach target still converts both ways (the coach chose it for its reps).
     expect(builderLoad(loadInput({ coachTarget: { value: 50, reps: 8, rpe: 8 } }), { reps: 6, rpe: 8 }).working).toBeGreaterThan(50);
   });

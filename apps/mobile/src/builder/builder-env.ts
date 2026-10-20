@@ -209,6 +209,7 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         e1rm,
         startLightCeiling: noReferenceCeiling(eq, refs.patternE1rms),
         painCap: flagged ? latestTop : null,
+        historyVersion: refs.historyVersion,
       };
     };
     for (const id of exact) {

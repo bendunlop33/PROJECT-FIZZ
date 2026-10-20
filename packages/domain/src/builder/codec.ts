@@ -89,6 +89,7 @@ export function toDraftPlan(w: BuilderWorkout, ctx: DraftCodecContext): DraftPla
         supersetGroup: group,
         setTemplates,
         checkedOn: ctx.checkedOnOf(slot.exerciseId),
+        ...(slot.historyVersion === undefined ? {} : { checkedHistoryVersion: slot.historyVersion }),
         builder: metaOf(slot, block, si === 0),
       });
       order += 1;
@@ -129,6 +130,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
   if (meta?.touched === true) out.touched = true;
   if (meta?.unlinked === true) out.unlinked = true;
   if (meta?.origin !== undefined) out.origin = meta.origin;
+  if (s.checkedHistoryVersion != null) out.historyVersion = s.checkedHistoryVersion;
   return out;
 }
 

@@ -181,3 +181,73 @@ describe('B2: Set up over a template changes nothing until Ben changes it', () =
     expect(names(longer)).toEqual(['Bench press', 'Incline dumbbell press', 'Triceps pushdown']);
   });
 });
+
+async function benBench(): Promise<{ s: AppServices; gymId: string }> {
+  const { services: s } = await h.launch();
+  const gymId = await setUpGym(h, s);
+  await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 6, rpe: 8 }, { load: 100, reps: 6, rpe: 8 }, { load: 100, reps: 6, rpe: 8 }] }]);
+  h.clockMs += DAY;
+  return { s, gymId };
+}
+
+/** Push with Bench press as the main lift (top set + back-offs). */
+async function benchDraft(s: AppServices): Promise<BuilderSnapshot> {
+  const base = await pushSetup(s, { supersets: false, mainLiftExerciseId: null });
+  const bench = (await s.builder.setupFacts(base)).mainLifts.find((m) => m.name === 'Bench press');
+  if (bench === undefined) throw new Error('no bench');
+  return ok(await s.builder.create({ ...base, mainLiftExerciseId: bench.id }, 'c-bench')).snapshot;
+}
+
+const benchSets = async (s: AppServices, sessionId: string) => {
+  const a = (await s.workout.load(sessionId))?.aggregate;
+  const ex = a?.exercises.find((e) => e.exerciseName === 'Bench press');
+  return (a?.sets ?? []).filter((x) => x.sessionExerciseId === ex?.id && x.setType !== 'warmup');
+};
+
+describe('B4: Start re-checks pain and history', () => {
+  it('a pain flag raised after the build holds bench at the last comparable load (rule 9)', async () => {
+    const { s, gymId } = await benBench();
+    const snap = await benchDraft(s);
+    const bench = slotNamed(snap, 'Bench press');
+    expect(bench.rows.find((r) => r.type === 'top')?.load).toBe(102.5);
+    expect((await s.pain.flagMovement({ exerciseId: bench.exerciseId, exerciseName: 'Bench press', opId: 'pain-1' })).ok).toBe(true);
+    const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: snap.version, gymId });
+    if (!r.ok) throw new Error(r.message);
+    const sets = await benchSets(s, r.sessionId);
+    expect(sets.length).toBeGreaterThan(0);
+    for (const x of sets) expect(x.planned.load?.value ?? 0).toBeLessThanOrEqual(100);
+    expect(sets.some((x) => x.planned.provenance?.held === true)).toBe(true);
+  });
+
+  it('a draft built before bench was logged again is re-derived at Start', async () => {
+    const { s, gymId } = await benBench();
+    const snap = await benchDraft(s);
+    expect(slotNamed(snap, 'Bench press').rows.find((r) => r.type === 'top')?.load).toBe(102.5);
+    // A heavier bench is logged after the build (another workout that day).
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 110, reps: 6, rpe: 8 }, { load: 110, reps: 6, rpe: 8 }, { load: 110, reps: 6, rpe: 8 }] }]);
+    const fresh = await s.builder.read(snap.draftId);
+    if (fresh === null) throw new Error('draft');
+    const r = await s.builder.start(fresh.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: fresh.version, gymId });
+    if (!r.ok) throw new Error(r.message);
+    const top = Math.max(...(await benchSets(s, r.sessionId)).map((x) => x.planned.load?.value ?? 0));
+    expect(top).toBeGreaterThanOrEqual(110);
+  });
+});
+
+describe('S7: each builder load keeps its reason in the session', () => {
+  it('a rule load is the built-in rule; a typed kg says so', async () => {
+    const { s, gymId } = await benBench();
+    let snap = await benchDraft(s);
+    const bench = slotNamed(snap, 'Bench press');
+    const backoff = bench.rows.findIndex((r) => r.type === 'backoff');
+    snap = ok(await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: bench.key, index: backoff, patch: { kind: 'load', value: 90 } }, { opId: 'kg-1', basis: { version: snap.version } })).snapshot;
+    const r = await s.builder.start(snap.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: snap.version, gymId });
+    if (!r.ok) throw new Error(r.message);
+    const sets = (await benchSets(s, r.sessionId)).sort((a, b) => a.index - b.index);
+    const top = sets.find((x) => x.setType === 'top');
+    expect(top?.planned.source).toBe('built_in_rule');
+    expect(top?.planned.provenance?.source).toBe('rule');
+    const typed = sets.find((x) => x.planned.load?.value === 90);
+    expect(typed?.planned.provenance?.guardNotes).toContain('Typed by you');
+  });
+});

@@ -94,6 +94,8 @@ export interface SlotLoadInput {
   startLightCeiling: number | null;
   /** Pain-flagged movement: no harder than this (the last comparable working load, rule 9). */
   painCap: number | null;
+  /** The comparable history these loads were worked out from (`LoadReferences.historyVersion`); Start re-derives the slot once it moved (review B4). */
+  historyVersion?: string | null;
 }
 
 /** A load after rounding down to what this gym can load. */
@@ -158,6 +160,8 @@ export interface BuilderSlot {
   unlinked?: true;
   /** The plan-day template exercise this slot came from (kept through a swap): `Cable fly → Incline press` (§2.8). */
   origin?: string;
+  /** The comparable history its loads were worked out from (stored as `checkedHistoryVersion`; review B4). */
+  historyVersion?: string;
 }
 
 export interface BuilderBlock {
