@@ -36,6 +36,8 @@ import {
   undoOpId,
   createTrainingReadExecutors,
   createExerciseListExecutors,
+  createLiftTargetExecutors,
+  type LiftTargetDeps,
   createStructuralExecutors,
   createBuildExecutor,
   createPlanExecutor,
@@ -350,6 +352,11 @@ export interface BuildChips {
 }
 
 export interface CoachServiceDeps {
+  /**
+   * (Ben, 20 Oct) Lift targets: whether the setting is on, and `set_lift_target`'s checks. Absent, or
+   * off: the tool is never offered and the coach doesn't see targets (they come through `training`).
+   */
+  liftTargets?: { on: () => Promise<boolean>; prepare: LiftTargetDeps['prepare'] };
   store: () => Store;
   profile: () => Promise<UserProfile | null>;
   now: () => ZonedTimestamp;
@@ -1408,6 +1415,9 @@ export function createCoachService(deps: CoachServiceDeps) {
       const proposeHere = proposeDeps(p, everything);
       Object.assign(executors, createExerciseListExecutors({ pool: () => Promise.resolve(findablePool(pool)), ...(proposeHere === undefined ? {} : { propose: proposeHere }) }));
     }
+    // (Ben, 20 Oct) Lift targets on: the coach may set one Ben asks for (the turn checks he asked).
+    const liftTargetsOn = (kind === 'general' || kind === 'workout') && deps.liftTargets !== undefined && (await deps.liftTargets.on().catch(() => false));
+    if (liftTargetsOn && deps.liftTargets !== undefined) Object.assign(executors, createLiftTargetExecutors({ store: coachStore(), prepare: deps.liftTargets.prepare }));
     const stop = new AbortController();
     running.set(req.turnId, stop);
     try {
@@ -1430,6 +1440,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           // Review B1, S4: the coach is told the app builds a session only when it really can here.
           ...(kind === 'general' && build !== null ? { buildAvailable: true } : {}),
           ...(planInThread !== null || planInUse !== null ? { planInContext: true } : {}),
+          ...(liftTargetsOn ? { liftTargetsOn: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },
