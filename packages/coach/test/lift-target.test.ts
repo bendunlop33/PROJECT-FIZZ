@@ -6,6 +6,7 @@ import type { SetLiftTargetArgs } from '@fizz/schemas';
 
 import { acceptLiftTargetOffer, asksForLiftTarget, createLiftTargetExecutors, LIFT_TARGET_NOT_ASKED_LINE, liftTargetAsked, type LiftTargetDeps } from '../src/lift-target';
 import { undoCoachAction, undoOpId } from '../src/executors';
+import { findTool } from '../src/registry';
 import { renderActionResult } from '../src/render';
 import { runCoachTurn } from '../src/turn';
 import { ScriptedCoachModel } from './fake-model';
@@ -204,5 +205,29 @@ describe('set_lift_target in a turn', () => {
     if (ex === undefined) throw new Error('executor');
     const r = await ex({ tool: 'set_lift_target', args: args({ exercise: 'Assisted pull-up' }) }, { ownerId: OWNER, turnId: 'turn', opId: 'op-x', now: at(200), benWords: null, messagePain: null, intent: 'general' });
     expect(r.kind).toBe('refused');
+  });
+});
+
+describe('the convention (review S4)', () => {
+  it('the tool tells the coach dumbbells are per hand, and the saved line names it', async () => {
+    const def = findTool('set_lift_target');
+    expect(def?.description).toMatch(/dumbbells per hand/);
+    expect(def?.description).toMatch(/each/);
+
+    const s = await setup();
+    const perHand: LiftTargetChoice = { ...choice, name: 'Dumbbell Bench Press', convention: 'per_hand' };
+    const d = deps(s);
+    const ex = createLiftTargetExecutors({
+      ...d,
+      async prepare(a, at2) {
+        const p = await s.repos.trainingProfiles.get(OWNER);
+        const target = newLiftTarget({ id: at2.targetId, choice: perHand, kind: a.kind, value: a.load, unit: a.unit, reps: 1, byDate: null, atUtc: at2.nowUtc, today: '2026-10-14', setBy: 'coach' }, []);
+        return { ok: true, prepared: { target, before: null, expectedVersion: p?.version ?? 1 } };
+      },
+    }).set_lift_target;
+    if (ex === undefined) throw new Error('executor');
+    const r = await ex({ tool: 'set_lift_target', args: args({ exercise: 'DB bench', load: 40, byDate: null }) }, { ownerId: OWNER, turnId: 'turn', opId: 'op-db', now: at(200), benWords: null, messagePain: null, intent: 'general' });
+    if (r.kind !== 'action') throw new Error('action');
+    expect(renderActionResult(r.record, 'sheet').text.replace(/\u00a0/g, ' ')).toBe('Lift target: Dumbbell Bench Press 40 kg each.');
   });
 });

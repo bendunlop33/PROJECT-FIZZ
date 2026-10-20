@@ -44,7 +44,7 @@ export const LIFT_TARGET_NOT_ASKED_LINE = 'Not set: Ben did not ask for this tar
 
 /** Sent while the tool is offered (Lift targets on). */
 export const LIFT_TARGET_TOOL_LINE =
-  'set_lift_target sets one of Ben’s lift targets (a 1RM or a weight for reps, an optional date; at most 3, one per exercise) when he asks for one. benAsked true only when his message this turn asks for it or says yes to your question about it, with benQuote his words copied exactly. Never set one he didn’t ask for: suggest it in reply instead.';
+  'set_lift_target sets one of Ben’s lift targets (a 1RM or a weight for reps, an optional date; at most 3, one per exercise) when he asks for one. Dumbbell loads are per hand, machines the stack, barbells the total; repeat the saved convention ("each") in reply. benAsked true only when his message this turn asks for it, with benQuote his words copied exactly. Your own idea: benAsked false; he sees it as an offer and his yes applies exactly that.';
 
 /** Sent when YOUR DATA has his lift targets (Lift targets on). */
 export const LIFT_TARGET_PLANNING_LINE =

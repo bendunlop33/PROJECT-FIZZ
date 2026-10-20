@@ -354,7 +354,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Set a lift target you ask for, with Undo',
     capabilitySection: 'when_you_ask',
     description:
-      'Set one of Ben’s lift targets when he asks: the exercise (a name or ID of one he logs), kind one_rm ("bench 100 kg") or weight_reps ("bench 90 kg for 5", with reps), the load and unit he said, and byDate (YYYY-MM-DD) when he gave a date, else null. It replaces that exercise’s target; at most 3. benAsked true only when his message this turn asks for it or says yes to your question about it, with benQuote his words copied exactly; false when it is your idea (nothing is saved).',
+      'Set one of Ben’s lift targets when he asks: the exercise (a name or ID of one he logs), kind one_rm ("bench 100 kg") or weight_reps ("bench 90 kg for 5", with reps), the load and unit he said, and byDate (YYYY-MM-DD) when he gave a date, else null. The load is in the exercise’s own convention: dumbbells per hand (a pair of 40s is 40, not 80; if unclear whether he means each or the pair, ask), machines the stack, barbells the total. The saved target comes back in `line` with its convention ("40 kg each"); say it that way in reply. It replaces that exercise’s target; at most 3. benAsked true only when his message this turn asks for this target, with benQuote his words copied exactly; false when it is your idea (he sees it as an offer to apply; a "yes" to your question applies that offer, so never call again for it).',
   },
   {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
