@@ -362,6 +362,46 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     expect(await upNext(s, gymId)).toEqual({ title: 'Legs', why: null });
   });
 
+  it('a short session: the merged day is trimmed until Up next’s `about N min` fits it (review S4)', async () => {
+    const { s, gymId } = await benWithPlan();
+    h.clockMs = Date.parse('2026-10-23T07:00:00.000Z');
+    const snap = await s.training.snapshot();
+    if (!snap) throw new Error('snapshot');
+    expect(await s.training.change({ kind: 'session_minutes', minutes: 15 }, snap.profile.version, 'len-15')).toMatchObject({ ok: true });
+    await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-24', durationS: null, distanceM: null, effort: 'long' }, opId: 'sheet-run' });
+    const chest = (await s.next.preview(gymId))?.aboutMinutes ?? 0;
+    const seen: WeekView[] = [];
+    model = new StepModel([weekStub(seen), () => replyWith('Want me to merge them?')]);
+    const proposal = (await say(s, 'plan my week around my long run')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
+    expect(await s.week.apply({ actionId: proposal?.actionId ?? '', opId: 'apply-short' })).toMatchObject({ ok: true });
+    const push = await s.next.preview(gymId);
+    expect(push?.title).toBe('Push');
+    expect(push?.aboutMinutes ?? 99).toBeLessThanOrEqual(15);
+    // Chest alone is already about this long: the two days' 12 working sets come down, main lifts keeping two.
+    expect(chest).toBe(15);
+    expect(push?.sets ?? 99).toBeLessThan(12);
+    expect(sp(push?.targets.find((t) => t.exerciseName === 'Bench press')?.line)).toBe('Target 100 kg × 6–8 · 2 sets');
+  });
+
+  it('a merge where one day has nothing to bring: Apply changes nothing (review S3)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    // Push/Pull/Legs (the default split): Push trained, Pull never (no workout to bring).
+    await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 7, rpe: 8 }] }]);
+    h.clockMs = Date.parse('2026-10-24T08:00:00.000Z');
+    const merge = (req: ModelRequest): ModelEvent[] => {
+      const w = yourData(req).week as WeekView;
+      const id = (n: string) => w.remaining.find((d) => d.name === n)?.id ?? n;
+      return toolCall('propose_week', { merges: [{ dayIds: [id('Push'), id('Pull')], name: 'Upper' }], skips: [], message: '' });
+    };
+    model = new StepModel([merge, () => replyWith('Want me to merge them?')]);
+    const proposal = (await say(s, 'can you rejig my week')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
+    expect(proposal?.status).toBe('proposed');
+    expect(await s.week.apply({ actionId: proposal?.actionId ?? '', opId: 'apply-empty' })).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(await s.week.change()).toBeNull();
+    expect((await upNext(s, gymId)).title).not.toBe('Upper');
+  });
+
   it('without a plan: the same offer on split days (Push + Pull → Upper), and the run rule on split Up next', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);

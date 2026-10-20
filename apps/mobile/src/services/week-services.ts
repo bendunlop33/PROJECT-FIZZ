@@ -15,6 +15,8 @@ import {
   localWeekBounds,
   mergedExercises,
   planDayBodyParts,
+  planPace,
+  plannedDaySeconds,
   planDaysDoneThisWeek,
   planRoutines,
   routineFromSession,
@@ -292,6 +294,27 @@ export function createWeekServices(deps: WeekServicesDeps) {
     return r?.exercises ?? [];
   }
 
+  /** Review S4: Up next's `about N min` for a day's exercises (`plannedDaySeconds` at Ben's pace over his last 5 workouts). */
+  async function dayEstimator(p: UserProfile, exercises: readonly RoutineExercise[], at: ZonedTimestamp): Promise<(exs: readonly RoutineExercise[]) => number> {
+    const of = await exerciseOf();
+    const pool = new Map<string, Exercise>();
+    for (const e of exercises) {
+      const x = of(e.exerciseId);
+      if (x !== null) pool.set(x.id, x);
+    }
+    const recent: SessionAggregate[] = [];
+    for (const ref of await repos()
+      .sessions.listFinishedRefs(p.id, 5)
+      .catch(() => [])) {
+      const x = await repos()
+        .sessions.get(ref.sessionId)
+        .catch(() => null);
+      if (x !== null) recent.push(x);
+    }
+    const pace = planPace(recent);
+    return (exs) => plannedDaySeconds(exs, { owner: p, exercises: pool, pace, at });
+  }
+
   async function proposalOf(actionId: string): Promise<(ActionRecord & { detail: Extract<ActionRecord['detail'], { kind: 'propose_week' }> }) | null> {
     const r = await repos()
       .coach.getAction(actionId)
@@ -414,13 +437,19 @@ export function createWeekServices(deps: WeekServicesDeps) {
         .catch(() => null);
       const minutes = training?.sessionMinutes ?? 60;
       const byId = new Map(s.days.map((d) => [d.id, d]));
-      const merged: { routineId: string; exercises: RoutineExercise[] }[] = [];
+      const parts: [RoutineExercise[], RoutineExercise[]][] = [];
       for (const m of r.detail.merges) {
         const [a, b] = m.dayIds.map((id) => byId.get(id) ?? null);
         const ea = a === null || a === undefined ? [] : await dayExercises(p, a, training, at);
         const eb = b === null || b === undefined ? [] : await dayExercises(p, b, training, at);
-        merged.push({ routineId: deps.newId(), exercises: mergedExercises(ea, eb, { minutes, newId: deps.newId }) });
+        // Review S3: both days or nothing. A day with no exercises to bring would drop out of the week unseen. (A day no
+        // longer in the week means it moved on: Apply below answers duplicate or stale.)
+        if (a !== null && a !== undefined && b !== null && b !== undefined && (ea.length === 0 || eb.length === 0)) return { ok: false, reason: 'invalid', message: WEEK_COPY.failed };
+        parts.push([ea, eb]);
       }
+      // Review S4: trimmed at Up next's own estimate (the same dry run and Ben's pace), so `about N min` fits.
+      const secondsOf = await dayEstimator(p, parts.flat(2), at);
+      const merged = parts.map(([ea, eb]) => ({ routineId: deps.newId(), exercises: mergedExercises(ea, eb, { minutes, newId: deps.newId, secondsOf }) }));
       const proposal: WeekProposal = { actionId: r.actionId, weekMonday: r.detail.weekMonday, basis: r.detail.basis, merges: r.detail.merges, skips: r.detail.skips, before: r.detail.before, after: r.detail.after, factsKey: r.detail.factsKey };
       const id = deps.newId();
       const w = await repos()
