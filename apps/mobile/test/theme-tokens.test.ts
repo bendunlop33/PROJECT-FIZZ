@@ -106,8 +106,8 @@ describe('theme tokens', () => {
     for (const direction of directions) {
       for (const name of TYPE_TOKENS) {
         const t = direction.type[name];
-        // D's `TODAY` / `LOAD` / `REST` labels are 12pt tracked caps in Ben's approved D mockups; they still scale with Dynamic Type.
-        const min = t.uppercase === true ? 12 : 16;
+        // D's `TODAY` / `LOAD` / `REST` labels are tracked caps (12pt in Ben's approved D mockups, 13pt since 20 Oct); they still scale with Dynamic Type.
+        const min = t.uppercase === true ? 13 : 16;
         expect(t.size, `${direction.id} ${name}`).toBeGreaterThanOrEqual(min);
       }
     }
@@ -177,8 +177,10 @@ describe('Direction D (Premium)', () => {
     expect(PREMIUM_DIRECTION.components.primaryButtonRadius).toBe('pill');
     expect(PREMIUM_DIRECTION.type.title1.weight).toBe('600');
     const label = resolveTheme(PREMIUM_DIRECTION, 'light').type.sectionLabel;
-    // Approved D mockups (9 Oct): 12pt, tracked 1.4.
-    expect(label).toMatchObject({ fontSize: 12, fontWeight: '600', uppercase: true, letterSpacing: 1.4 });
+    // Approved D mockups (9 Oct): 12pt, tracked 1.4; raised a step to 13pt, tracked 1.2 (Ben, 20 Oct).
+    expect(label).toMatchObject({ fontSize: 13, lineHeight: 18, fontWeight: '600', uppercase: true, letterSpacing: 1.2 });
+    // Dynamic Type preserved: the label still scales (up to 3×) like the other text tokens.
+    expect(PREMIUM_DIRECTION.type.sectionLabel).toMatchObject({ textStyle: 'callout', maxScale: 3 });
     expect(PREMIUM_DIRECTION.type.timerDisplay).toMatchObject({ size: 88, weight: '300' });
     expect(PREMIUM_DIRECTION.radius.lg).toBe(20);
     expect(resolveTheme(NAVY_DIRECTION, 'light').type.sectionLabel.uppercase).toBe(false);

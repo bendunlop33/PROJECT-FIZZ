@@ -107,7 +107,8 @@ function ExercisesBrowse() {
     <>
       <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'], gap: theme.space['4'] }}>
         <TextField value={query} onChangeText={setQuery} placeholder={LIBRARY_BROWSE_COPY.search} accessibilityLabel={LIBRARY_BROWSE_COPY.search} autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
-        <ChipRow>
+        {/* One horizontally scrolling chip row (Ben, 20 Oct; exercise-library.md §9). */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ flexGrow: 0, marginHorizontal: -theme.components.screenMargin }} contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
           <Chip
             label={view?.gymChip.label ?? 'Any gym'}
             selected={filters.atGym && view?.gymChip.enabled === true}
@@ -118,7 +119,7 @@ function ExercisesBrowse() {
           {(['muscle', 'equipment', 'movement'] as const).map((k) => (
             <Chip key={k} label={`${filterChipLabel(filters, k)} ▾`} selected={filterValues(filters, k).length > 0} onPress={() => { setSheet(k); }} accessibilityLabel={`${filterChipLabel(filters, k)}, filter`} />
           ))}
-        </ChipRow>
+        </ScrollView>
         {data.state === 'error' || (data.state === 'ready' && view === null) ? (
           <StatusLine icon="exclamationmark.triangle" tone="warning" text={LIBRARY_BROWSE_COPY.loadFailed} action={<TextButton label={LIBRARY_BROWSE_COPY.tryAgain} onPress={reload} />} />
         ) : view === null ? (

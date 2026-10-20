@@ -320,7 +320,7 @@ function DayRow({ day, first, onPress }: { day: PlanOverviewDay; first: boolean;
         <AppText variant="body">{day.name}</AppText>
         {day.next ? (
           <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
-            <AppText variant="sectionLabel" color="text.primary" style={{ fontSize: 11 }}>
+            <AppText variant="sectionLabel" color="text.primary">
               {PLAN_OVERVIEW_COPY.next}
             </AppText>
           </View>
@@ -350,7 +350,7 @@ function Dot({ day }: { day: PlanOverviewDay }) {
   if (day.state === 'next') {
     return (
       <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center' }}>
-        <AppText variant="label" color="accent" numeric style={{ fontSize: 12, lineHeight: 14 }}>
+        <AppText variant="label" color="accent" numeric style={{ fontSize: 13, lineHeight: 16 }}>
           {String(day.n)}
         </AppText>
       </View>

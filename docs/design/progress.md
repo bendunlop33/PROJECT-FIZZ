@@ -328,12 +328,12 @@ Pushed from `Exercises ›`. Search field (system keyboard, `Search` return key,
 Pushed from the Exercises list, a home record, or the Summary's exercise rows (later).
 
 Regions:
-1. **Nav bar.** Back, exercise name. (2026-10-12) Under it, one `type.callout` row `Exercise info ›` (44pt) opens the Library's Exercise detail (how-to, muscles, cues, `Add to a workout`; [exercise-library.md](exercise-library.md) §9.4, §9.7).
+1. **Nav bar.** Back, exercise name. (2026-10-12) Under it, one `type.callout` row `Exercise info ›` (44pt) opens the Library's Exercise detail (how-to, muscles, cues, `Add to a workout`; [exercise-library.md](exercise-library.md) §9.4, §9.7). **(Ben, 20 Oct)** This top row also carries the measure and period choices as two compact dropdowns (`Est. 1RM ▾` `6 mo ▾`, 44pt, callout), with `Exercise info` at its end; the chosen dropdown opens its list under the row. They replace the metric and range chip rows (regions 5–6), so the chart starts higher.
 2. **Pain line** (only while a pain flag is active for this exercise): `⚠ Pain flag since 2 Oct` (`StatusBanner`, warning, icon + words). Tapping opens the existing pain flag view. Spans on the chart and the pre-flag reference are deferred (§9).
 3. **Series menu.** Button `Main Gym · barbell ▾`. Lists each series with its session count (`Main Gym · barbell · 24`, `Hotel Gym · barbell · 3`, `FitNotes · kg · 40`), then `Add FitNotes history` / `Remove FitNotes history` (PG32, only when a FitNotes series of the same convention and unit exists). Default: the series used most in the last 12 weeks.
 4. **`StatStrip`** for the selected series, all-time bests: `EST. 1RM ≈126.5 kg` (the best session value) · `BEST SET 105 × 3` (heaviest) · `SESSIONS 24`. Conventions without Est. 1RM show `BEST SET` · `MOST REPS` · `SESSIONS` (bodyweight), or `LEAST ASSIST` · `MOST REPS` · `SESSIONS` (assisted).
-5. **Metric chips** (single select): `Est. 1RM` · `Top set` · `Volume`. Unavailable ones are hidden (§6.3).
-6. **Range chips:** `3 mo` · `6 mo` · `1 yr` · `All`.
+5. **Metric** (single select; the `measure ▾` dropdown in region 1 since 20 Oct): `Est. 1RM` · `Top set` · `Volume`. Unavailable ones are hidden (§6.3).
+6. **Range** (the `period ▾` dropdown in region 1 since 20 Oct): `3 mo` · `6 mo` · `1 yr` · `All`.
 7. **Chart heading.** `Est. 1RM · 9 Apr – 8 Oct  ⓘ` / `Top set · 9 Apr – 8 Oct` / `Volume · 9 Apr – 8 Oct`. The `ⓘ` (Est. 1RM only) opens a sheet with the formula and limits.
 8. **`TrendChart`** (§9.23): one series (PG32 adds hollow FitNotes points to the same series), y-axis with unit, month ticks, marker lane (gap, edited, not counted), gap breaks. `Volume` draws bars (`chart.bar`), not a line.
 9. **Selection panel** (fixed height). Nothing selected: `Latest`, `Best`, `Change` for the range. Point selected: that session's date, workout name, value, the set it came from, markers, `Open workout ›`, `Clear`.
@@ -345,13 +345,11 @@ Regions:
 ```
 ┌────────────────────────────────────────┐
 │ ‹ Exercises     Bench press            │
+│ [Est. 1RM ▾] [6 mo ▾]   Exercise info  │ measure · period (20 Oct)
 │ [ Main Gym · barbell ▾ ]               │ series menu
 │                                        │
 │ ≈126.5 kg │ 105 × 3    │ 24           │ StatStrip (all-time bests)
 │ EST. 1RM  │ BEST SET   │ SESSIONS     │
-│                                        │
-│ [✓Est. 1RM] [Top set] [Volume]         │ metric chips
-│ [3 mo] [✓6 mo] [1 yr] [All]            │ range chips
 │                                        │
 │ Est. 1RM · 9 Apr – 8 Oct            ⓘ  │
 │ kg                                     │
@@ -541,7 +539,7 @@ ResumeBar ─ Resume ─► Active workout (one tap)
 | Series menu | iOS menu. Selecting redraws at once; the choice is remembered per exercise |
 | `Add FitNotes history` | Confirmation sheet: `Show 40 FitNotes sessions (2019–2026) with Main Gym · barbell?` [Add] [Cancel]. `linkImportedSeries`; toast `FitNotes history added` [Undo] |
 | `Remove FitNotes history` | Immediate; toast `FitNotes history removed` [Undo] |
-| Metric / range chips | Single select, redraw at once |
+| Measure / period dropdowns | Single select; picking closes the list and redraws at once |
 | Chart tap | Selects the nearest point by date (the whole plot is the hit area, so small points don't need 44pt). Tap the same point or `Clear` to deselect |
 | Chart drag | (Design pass, Ben approved 20 Oct) Removed: a drag that starts on the chart scrolls the page and never selects or buzzes. Tap selects (tap the selected point again to clear); the table and the history do the same |
 | `ⓘ` | Est. 1RM sheet |
@@ -752,7 +750,7 @@ Distance series have no records section yet (no record is defined), like timed. 
 
 - **Charts are never the only route.** Every chart has a visible `Show as table`, a one-paragraph VoiceOver summary and an adjustable element (swipe up/down moves point to point). Bars have their numbers printed. The rep table, records and history are plain lists.
 - **Not colour-only.** One series per chart. Markers are icon + word. Zero rows use `0` text as well as tertiary colour. Changes use arrow + `Up` / `Down` / `Same` in `text.secondary`, never status colours.
-- **Dynamic Type.** All text uses type tokens (≥ 16pt, except Direction D's 12pt tracked section labels, which scale). At AX1+: the `WindowPicker` becomes a menu button `Last 30 days ▾`; `StatStrip` stacks; `FrequencyRow` puts the numbers on a second line and drops the bar; `DayStrip` becomes a list (`Thu 8 Oct · 1 workout`); `WeekBars` becomes a list (`Week from 14 Sep · 2`); the rep table stacks each row. Nothing scrolls horizontally at AX3.
+- **Dynamic Type.** All text uses type tokens (≥ 16pt, except Direction D's 13/18 tracked section labels (tracking 1.2), which scale). At AX1+: the `WindowPicker` becomes a menu button `Last 30 days ▾`; `StatStrip` stacks; `FrequencyRow` puts the numbers on a second line and drops the bar; `DayStrip` becomes a list (`Thu 8 Oct · 1 workout`); `WeekBars` becomes a list (`Week from 14 Sep · 2`); the rep table stacks each row. Nothing scrolls horizontally at AX3.
 - **Touch targets** ≥ 44 × 44: picker segments, toggles, chips, rows, calendar cells, `ⓘ` buttons. Chart points use the whole plot as the hit area.
 - **Motion.** None beyond standard navigation, sheets and segmented controls.
 - **Appearance.** All colours are tokens. Direction D is dark-only in code today (`schemeFor`); in Direction A both modes switch together. Increase Contrast: gridlines and bar edges 2pt `border.control`.

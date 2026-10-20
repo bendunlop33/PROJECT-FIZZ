@@ -297,7 +297,7 @@ const STATUS_LIGHT = {
  *
  * Type, radius and component shapes follow Ben's approved D mockups
  * (D-Today, D-ActiveSet, D-Rest, 9 Oct 2026), which differ from
- * design-system.md's D values: 12pt tracked labels in `text.tertiary`, an
+ * design-system.md's D values: 12pt (13pt since 20 Oct) tracked labels in `text.tertiary`, an
  * 88/300 rest numeral, 38/500 load, 30pt titles, 20pt card radius,
  * borderless cards and outline-pill secondary buttons (first-run audit §3).
  * design-system.md still needs updating to match.
@@ -349,8 +349,8 @@ export const PREMIUM_DIRECTION: ThemeDirection = {
     loadDisplay: { size: 38, lineHeight: 44, weight: '500', tabular: 'always', textStyle: 'largeTitle', maxScale: 1.8, letterSpacing: -0.5 },
     // Semibold rather than Bold (research §6.5); 30pt exercise name (D-ActiveSet).
     title1: { size: 30, lineHeight: 36, weight: '600', tabular: 'never', textStyle: 'title1', maxScale: 2.5, letterSpacing: -0.4 },
-    // Tracked caps labels (`TODAY`, `LOAD`, `REST`): 12pt in the mockups, still scaled by Dynamic Type.
-    sectionLabel: { size: 12, lineHeight: 16, weight: '600', tabular: 'never', textStyle: 'callout', maxScale: 3, uppercase: true, letterSpacing: 1.4 },
+    // Tracked caps labels (`TODAY`, `LOAD`, `REST`): 12pt in the mockups, raised a step to 13pt (Ben, 20 Oct); still scaled by Dynamic Type.
+    sectionLabel: { size: 13, lineHeight: 18, weight: '600', tabular: 'never', textStyle: 'callout', maxScale: 3, uppercase: true, letterSpacing: 1.2 },
   },
   radius: { sm: 8, md: 14, lg: 20, pill: 999 },
 };

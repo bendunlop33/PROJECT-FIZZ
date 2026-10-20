@@ -717,8 +717,8 @@ Regions: large title · segmented control · search field · filter chips · hid
 │ ┌──────────────────────────────┬─────┐ │
 │ │ 🔍 Search exercises          │  🎙 │ │ SearchField, not focused on open
 │ └──────────────────────────────┴─────┘ │
-│ [ At Main Gym ] [Muscle ▾] [Equipment ▾│ FilterChips, wrap
-│ [Movement ▾]                           │
+│ [ At Main Gym ] [Muscle ▾] [Equipment ▾│ FilterChips: one row, scrolls
+│                                        │ sideways (Ben, 20 Oct), 52pt
 │                                        │
 │ RECENT                                 │ last 10 done, newest first
 │ Bench press                       ▷  › │ ▷ = has a guide (not a button)

@@ -193,10 +193,20 @@ describe('keypad-open chrome, header and sheets (1.7–1.10)', () => {
     expect(screen.match(/keypadOpen=\{keypadOpen\}/g)?.length).toBeGreaterThanOrEqual(3);
     expect(screen).toContain('{toast && !keypadOpen ? <Toast');
   });
+  it('the rest bar collapses to a slim one-line strip while the keypad is open (Ben, 20 Oct)', () => {
+    expect(flat(screen)).toContain('<RestBar rest={rest} slim={keypadOpen}');
+    expect(table).toContain('export const SLIM_REST_HEIGHT = 32;');
+    const slim = flat(table.slice(table.indexOf('if (slim) {'), table.indexOf('const pill = (')));
+    expect(slim).toContain('`Rest ${formatDuration(remainingS)}`');
+    expect(slim).toContain('minHeight: SLIM_REST_HEIGHT');
+    // No −30 / +30 / Skip pills in the strip; the drain keeps running.
+    expect(slim).not.toMatch(/onAdjust|onSkip|Pressable/);
+    expect(slim).toContain("rest.kind === 'running'");
+  });
   it('a long gym name gives way to the workout name', () => {
     const chip = read('screens', 'workout', 'GymSwitch.tsx');
     expect(chip).toContain('flexShrink: 1,\n        minWidth: 0,\n        maxWidth: 120,');
-    expect(screen).toContain('style={{ flex: 1, minWidth: 64, fontSize: 13 }}');
+    expect(screen).toContain('style={{ flex: 1, minWidth: 64 }}');
     expect(screen).not.toContain('`Paused · ${formatElapsed(view.elapsedMs)}`');
   });
   it('Adjust is always the one word; the coach state is an icon and the open row’s line', () => {

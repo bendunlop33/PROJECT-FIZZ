@@ -1344,12 +1344,15 @@ export function NowChip({ direction, onPress }: { direction: 'below' | 'above'; 
   );
 }
 
+/** Height of the keypad-open rest strip (Ben, 20 Oct): one line, no pills. */
+export const SLIM_REST_HEIGHT = 32;
+
 /**
  * `RestBar` (§9.80): `REST 2:09` from the stored deadline, `−30` `+30`
  * `Skip`, and a 3 pt drain drawn at its current length each second (never
  * animated between seconds). Ended: `Ready · rested 3:12`; paused: frozen.
  */
-export function RestBar({ rest, onAdjust, onSkip, onOpen }: { rest: RestView; onAdjust: (deltaS: number) => void; onSkip: () => void; onOpen: () => void }) {
+export function RestBar({ rest, slim = false, onAdjust, onSkip, onOpen }: { rest: RestView; slim?: boolean; onAdjust: (deltaS: number) => void; onSkip: () => void; onOpen: () => void }) {
   const theme = useTheme();
   const narrow = useWindowDimensions().width < 390;
   const paused = rest.kind === 'paused';
@@ -1357,6 +1360,24 @@ export function RestBar({ rest, onAdjust, onSkip, onOpen }: { rest: RestView; on
   const rested = rest.kind === 'ended' && !rest.skipped ? formatDuration(rest.restedMs / 1000) : null;
   const remainingS = rest.kind === 'ended' ? 0 : Math.ceil(rest.remainingMs / 1000);
   const fraction = rest.kind === 'running' && rest.durationS > 0 ? Math.max(0, Math.min(1, rest.remainingMs / (rest.durationS * 1000))) : 0;
+  if (slim) {
+    // Keypad open (workout-table.md, Keypad open; Ben, 20 Oct): a one-line ~32 pt strip, no pills; the countdown keeps running.
+    const text = ended ? (rested !== null ? `Ready · rested ${rested}` : 'Ready') : `Rest ${formatDuration(remainingS)}`;
+    return (
+      <View
+        accessible
+        accessibilityRole="timer"
+        accessibilityLabel={ended ? `Rest done${rested !== null ? `, rested ${rested}` : ''}` : `Rest${paused ? ', paused' : ''}, ${formatDuration(remainingS)} left`}
+        style={{ marginHorizontal: theme.space['3'], marginBottom: theme.space['1'], minHeight: SLIM_REST_HEIGHT, borderRadius: theme.radius.sm, backgroundColor: theme.colors['bg.surface'], overflow: 'hidden', flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], paddingHorizontal: theme.space['3'] }}
+      >
+        {ended ? <Icon name="checkmark.circle.fill" color="status.done" size={14} /> : paused ? <Icon name="pause.circle.fill" color="status.warning" size={14} /> : null}
+        <AppText variant="label" numeric numberOfLines={1} color={paused ? 'text.tertiary' : 'text.primary'} maxFontSizeMultiplier={1.4}>
+          {text}
+        </AppText>
+        {rest.kind === 'running' ? <View style={{ position: 'absolute', left: 0, bottom: 0, height: 2, width: `${Math.round(fraction * 1000) / 10}%`, backgroundColor: theme.colors.accent }} /> : null}
+      </View>
+    );
+  }
   const pill = (label: string, a11y: string, onPress: () => void) => (
     <Pressable
       accessibilityRole="button"
