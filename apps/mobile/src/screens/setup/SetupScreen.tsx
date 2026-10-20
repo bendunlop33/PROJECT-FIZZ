@@ -18,9 +18,9 @@ import { StepFrame } from './StepFrame';
 
 type Step = Exclude<SetupStep, 'done'> | 'ready';
 
-/** `Main gym · 4 items (4 not checked)` */
+/** `Main gym · 7 items (7 assumed)` */
 function describeGym(gym: SavedGymSummary): string {
-  return `${gym.name} · ${gym.items === 0 ? 'no equipment yet' : `${String(gym.items)} items${gym.notChecked > 0 ? ` (${String(gym.notChecked)} not checked)` : ''}`}`;
+  return `${gym.name} · ${gym.items === 0 ? 'no equipment yet' : `${String(gym.items)} items${gym.notChecked > 0 ? ` (${String(gym.notChecked)} assumed)` : ''}`}`;
 }
 
 const REST_LINE = DEFAULT_REST_PRESETS.map((p) => formatClock(p.seconds)).join(' / ');

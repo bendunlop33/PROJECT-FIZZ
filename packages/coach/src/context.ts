@@ -538,7 +538,7 @@ export function describeCoachContext(ctx: CoachContext): ContextDescription {
   if (y.build !== undefined) {
     const b = y.build;
     yourData.push({ label: 'Your request', detail: `“${b.request.quote.slice(0, 80)}”` });
-    if (b.gym !== null) yourData.push({ label: 'Gym', detail: `${b.gym.name}${b.gym.typicalEquipment ? ' · typical equipment' : ''} · ${plural(b.usable.length, 'exercise')} you can do here` });
+    if (b.gym !== null) yourData.push({ label: 'Gym', detail: `${b.gym.name}${b.gym.typicalEquipment ? ' · typical equipment' : ''}${b.gym.setup === undefined ? '' : ` · ${b.gym.setup}`} · ${plural(b.usable.length, 'exercise')} you can do here` });
     if (b.upNext !== null) yourData.push({ label: 'Up next', detail: b.upNext });
     if (b.draft !== null) yourData.push({ label: 'Coach draft', detail: `${b.draft.name} · version ${String(b.draft.version)}` });
   }

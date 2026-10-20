@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { newPainFlag, stableStringify } from '@fizz/domain';
-import { at, id, idGen, logCmd, OWNER, profile, unilateralSession } from '@fizz/domain/testing';
+import { newPainFlag, planGymUpdate, stableStringify } from '@fizz/domain';
+import { at, gym, id, idGen, logCmd, OWNER, plateMachine, profile, stack, unilateralSession } from '@fizz/domain/testing';
 import {
   ActionRecordSchema,
   type ActionDetail,
@@ -359,3 +359,55 @@ describe('a set written from chat (review coach-tools N3)', () => {
   });
 });
 
+
+describe('update_gym (20 Oct, ADR 0029): the gym edit and its record in one write; Undo puts every record back', () => {
+  it('applies, replays on the same opId, refuses a stale edit, and undoes only while nothing changed since', async () => {
+    const s = await store();
+    const g = gym(2, { isDefault: true, setup: 'full' });
+    await s.repos.gyms.save(g, null);
+    const legPress = plateMachine({ gymId: g.id, detailsSource: 'preset' });
+    const cable = stack({ gymId: g.id, detailsSource: 'preset' });
+    await s.repos.equipment.save(legPress, null);
+    await s.repos.equipment.save(cable, null);
+    const exercise = { id: id(60), name: 'Leg press', compatibleEquipment: ['plate_loaded_machine' as const], defaultLoadConvention: 'added' as const };
+    const plan = planGymUpdate({ gym: g, equipment: [legPress, cable], unit: 'kg', changes: [{ op: 'not_here', exerciseId: exercise.id }, { op: 'stack_step', step: 7, itemName: null }], exercise: (x) => (x === exercise.id ? exercise : null), atUtc: at(10).utc, newId: idGen(80_000) });
+    if (!plan.ok) throw new Error(plan.reason);
+    const a = action({ kind: 'update_gym', gymId: g.id, gymName: 'Gym 2', lines: plan.edit.lines, edit: plan.edit });
+    expect((await s.repos.coach.commit(OWNER, { kind: 'gym_edit', action: a, edit: plan.edit })).status).toBe('written');
+    expect((await s.repos.equipment.get(legPress.id))?.notFor).toEqual([exercise.id]);
+    expect((await s.repos.equipment.get(cable.id))).toMatchObject({ version: 2, detailsSource: 'user' });
+    expect((await s.repos.coach.commit(OWNER, { kind: 'gym_edit', action: a, edit: plan.edit })).status).toBe('replayed');
+    // The same edit under another opId, planned on the old versions: already landed, so nothing more is written.
+    const again = action({ kind: 'update_gym', gymId: g.id, gymName: 'Gym 2', lines: plan.edit.lines, edit: plan.edit }, { opId: 'other-op' });
+    expect((await s.repos.coach.commit(OWNER, { kind: 'gym_edit', action: again, edit: plan.edit })).status).toBe('written');
+    expect((await s.repos.equipment.get(cable.id))?.version).toBe(2);
+
+    const u = undoOf(a);
+    expect(await s.repos.coach.undo(OWNER, u)).toMatchObject({ status: 'written' });
+    expect((await s.repos.equipment.get(legPress.id))?.notFor).toBeUndefined();
+    expect(await s.repos.equipment.get(cable.id)).toMatchObject({ version: 3, detailsSource: 'preset', stackLoads: cable.kind === 'weight_stack' ? cable.stackLoads : [] });
+
+    // Planned on versions that moved on: refused as stale, nothing written.
+    const stalePlan = planGymUpdate({ gym: g, equipment: [legPress, cable], unit: 'kg', changes: [{ op: 'stack_step', step: 10, itemName: null }], exercise: () => null, atUtc: at(20).utc, newId: idGen(81_000) });
+    if (!stalePlan.ok) throw new Error(stalePlan.reason);
+    const st = action({ kind: 'update_gym', gymId: g.id, gymName: 'Gym 2', lines: stalePlan.edit.lines, edit: stalePlan.edit });
+    expect(await s.repos.coach.commit(OWNER, { kind: 'gym_edit', action: st, edit: stalePlan.edit })).toEqual({ status: 'conflict', reason: 'stale_version' });
+    expect((await s.repos.equipment.get(cable.id))?.version).toBe(3);
+  });
+
+  it('an Undo after Ben changed the gym is refused (rule 5)', async () => {
+    const s = await store();
+    const g = gym(3, { isDefault: true });
+    await s.repos.gyms.save(g, null);
+    const cable = stack({ id: id(400), gymId: g.id, detailsSource: 'preset' });
+    await s.repos.equipment.save(cable, null);
+    const plan = planGymUpdate({ gym: g, equipment: [cable], unit: 'kg', changes: [{ op: 'stack_step', step: 2.5, itemName: null }], exercise: () => null, atUtc: at(10).utc, newId: idGen(82_000) });
+    if (!plan.ok) throw new Error(plan.reason);
+    const a = action({ kind: 'update_gym', gymId: g.id, gymName: 'Gym 3', lines: plan.edit.lines, edit: plan.edit });
+    await s.repos.coach.commit(OWNER, { kind: 'gym_edit', action: a, edit: plan.edit });
+    const now = await s.repos.equipment.get(cable.id);
+    if (!now) throw new Error('gone');
+    await s.repos.equipment.save({ ...now, name: 'Left cable', version: now.version + 1 }, now.version);
+    expect(await s.repos.coach.undo(OWNER, undoOf(a))).toEqual({ status: 'not_possible', reason: 'changed_since' });
+  });
+});

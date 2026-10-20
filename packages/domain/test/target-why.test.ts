@@ -119,6 +119,14 @@ describe('explainTarget: built-in rule target (check 39)', () => {
     expect(e?.basisEdited).toBeNull();
   });
 
+  it('(20 Oct, ADR 0029) a target on an assumed item says so under Equipment, nowhere else', () => {
+    const assumedNow = { ...now, session: { ...now.session, equipmentSnapshot: now.session.equipmentSnapshot.map((e) => ({ ...e, detailsSource: 'preset' as const })) } };
+    const rows = rowsOf(explain(assumedNow, { basisNow: basis, history: h }));
+    expect(rows.at(-1)?.[0]).toBe('Equipment');
+    expect(rows.at(-1)?.[1]).toMatch(/ · Assumed plates$/);
+    expect(rows.slice(0, 3)).toEqual(rowsOf(explain(now, { basisNow: basis, history: h })).slice(0, 3));
+  });
+
   it('a routine-named basis reads `after Push A, 8 Oct`', () => {
     let s = startFixture().state;
     const bench = setsFor(s, BENCH);

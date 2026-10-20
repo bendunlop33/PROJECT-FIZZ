@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, AppState, Keyboard, KeyboardAvoidingView, Linking, Modal, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { cardioTimeText, checkRoutineName, discardCommand, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
+import { cardioTimeText, checkRoutineName, discardCommand, gymLearnDoneText, gymLearnKey, type GymLearn, discardConfirmation, editFitsCurrentEquipment, formatDuration, formatElapsed, gymSwitchRefusal, saveDraftCommand, tableLogLabel, targetLineLabel, targetLineText, TIME_LEFT, toIso, toMs, workoutTimeBounds, type CommandOutcome, type DraftEdits, type FocusView, type RestView } from '@fizz/domain';
 import type { SessionCommand, SetSide, SetValues } from '@fizz/schemas';
 
 import { alertsOff, alertsOffAction, alertsOffLabel } from '../../alerts/ask';
@@ -128,6 +128,8 @@ export function WorkoutScreen() {
   /** `Notes` on the focused exercise (§4.4). */
   const [noteFor, setNoteFor] = useState<{ sessionExerciseId: string; exerciseName: string; note: string | null } | null>(null);
   /** The mid-workout Swap sheet (EL4): the row it swaps and its candidates. */
+  /** Learn chips Ben answered in this workout (ADR 0029: offered once). */
+  const [learnAnswered, setLearnAnswered] = useState<ReadonlySet<string>>(new Set());
   const [swap, setSwap] = useState<{ sessionExerciseId: string; exerciseName: string; sheet: SwapSheet | null; loading: boolean } | null>(null);
   const [hiddenWarmUps, setHiddenWarmUps] = useState<string[]>([]);
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
@@ -852,7 +854,7 @@ export function WorkoutScreen() {
 
   function openExerciseMenu(f: FocusView) {
     const howTo = howToRouteFor(f, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset });
+    const menu = exerciseMenu(howTo !== null, f.coachActionId === null ? false : f.adjustedBy === 'rule' ? 'rule' : true, { canSwap: f.swappable, canUndoSwap: f.swappedFrom !== null, canRemove: f.removable, hasTargetRpe: f.targetRpe !== null, canEditSet: true, canSuperset: f.superset.canPair, inSuperset: f.superset.inSuperset, canMarkNotHere: usesGymItem(f.sessionExerciseId) });
     ActionSheetIOS.showActionSheetWithOptions({ title: f.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
@@ -861,6 +863,7 @@ export function WorkoutScreen() {
       if (action === 'target_rpe') pickTargetRpe(f);
       if (action === 'add_set') void addSet(f.sessionExerciseId);
       if (action === 'swap') void openSwap(f);
+      if (action === 'not_at_gym') markNotHere(f, f.swappable);
       if (action === 'notes') setNoteFor({ sessionExerciseId: f.sessionExerciseId, exerciseName: f.exerciseName, note: f.note });
       if (action === 'undo_swap' && f.swappedFrom !== null) undoSwap(f.swappedFrom.opId);
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
@@ -926,7 +929,7 @@ export function WorkoutScreen() {
     const ex = { sessionExerciseId, exerciseId: facts.exerciseId, exerciseName: facts.exerciseName };
     const next = facts.nextSet;
     const howTo = howToRouteFor(ex, bundledHowToSources());
-    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset });
+    const menu = exerciseMenu(howTo !== null, facts.coachActionId === null ? false : facts.adjustedBy === 'rule' ? 'rule' : true, { canSwap: facts.swappable, canUndoSwap: facts.swappedFrom !== null, canRemove: facts.removable, hasTargetRpe: next !== null && facts.targetRpe !== null, canEditSet: next !== null, canSuperset: facts.superset.canPair, inSuperset: facts.superset.inSuperset, canMarkNotHere: usesGymItem(sessionExerciseId) });
     ActionSheetIOS.showActionSheetWithOptions({ title: facts.exerciseName, options: menu.options, destructiveButtonIndex: menu.destructiveButtonIndex, cancelButtonIndex: menu.cancelButtonIndex }, (picked) => {
       const action = menu.actionAt(picked);
       if (action === 'how_to' && howTo !== null) navigation.navigate('HowTo', howTo);
@@ -936,6 +939,7 @@ export function WorkoutScreen() {
       if (action === 'target_rpe' && next !== null) pickTargetRpe({ targetRpe: facts.targetRpe, setId: next.id, sessionExerciseId });
       if (action === 'add_set') void addSet(sessionExerciseId);
       if (action === 'swap') void openSwap(ex);
+      if (action === 'not_at_gym') markNotHere(ex, facts.swappable);
       if (action === 'notes') setNoteFor({ sessionExerciseId, exerciseName: facts.exerciseName, note: facts.note });
       if (action === 'add_exercise') navigation.navigate('ExercisePicker', { sessionId: session.id });
       if (action === 'superset_with') navigation.navigate('ExercisePicker', { sessionId: session.id, supersetWith: sessionExerciseId });
@@ -1083,6 +1087,74 @@ export function WorkoutScreen() {
     Keyboard.dismiss();
     setCorrection({ setId: tap.setId, values: null, opId: newUuid() });
     editCell({ kind: 'tap', setId: tap.setId, field: tap.field, row: 'done' });
+  }
+
+  /** `Not at this gym` is offered when the row uses an item of this workout's gym (ADR 0029). */
+  function usesGymItem(sessionExerciseId: string): boolean {
+    return session.gymId !== null && loaded.aggregate.exercises.some((e) => e.id === sessionExerciseId && e.equipmentId !== null);
+  }
+
+  /**
+   * `Not at this gym` (Ben, 20 Oct; ADR 0029): the gym is told at once, with
+   * Undo; today's workout keeps the gym as it started, so the swap sheet
+   * opens next when the row has sets left to move.
+   */
+  function markNotHere(ex: Pick<FocusView, 'sessionExerciseId' | 'exerciseId' | 'exerciseName'>, swappable: boolean) {
+    const gymId = session.gymId;
+    if (gymId === null) return;
+    void services.gyms.markNotHere({ gymId, exerciseId: ex.exerciseId }).then((r) => {
+      if (!r.ok) {
+        showToast({ icon: 'info.circle', text: r.message });
+        return;
+      }
+      haptic('commit');
+      changed();
+      showToast({
+        icon: 'info.circle',
+        text: r.edit.lines[0] ?? `${ex.exerciseName}: not here`,
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void services.gyms.undoEdit(r.edit).then((u) => {
+            changed();
+            if (u.ok) haptic('undo');
+            else showToast({ icon: 'info.circle', text: u.message });
+          });
+        },
+      });
+      if (swappable) void openSwap(ex);
+    });
+  }
+
+  /** `Add 22 kg dumbbells here?` (ADR 0029): offered once per idea in this workout; Yes saves it to the gym with Undo. */
+  function answerGymLearn(learn: GymLearn, yes: boolean) {
+    setLearnAnswered((cur) => new Set(cur).add(gymLearnKey(learn)));
+    if (!yes) return;
+    void services.gyms.learnInWorkout({ sessionId: session.id, learn, opId: newUuid() }).then((r) => {
+      if (!r.ok) {
+        showToast({ icon: 'info.circle', text: r.message });
+        return;
+      }
+      haptic('commit');
+      changed();
+      void reload();
+      showToast({
+        text: gymLearnDoneText(learn),
+        action: 'Undo',
+        onAction: () => {
+          setToast(null);
+          void services.gyms.undoLearnInWorkout({ sessionId: session.id, edit: r.edit, refreshed: r.refreshed, opId: newUuid() }).then((u) => {
+            changed();
+            void reload();
+            if (!u.ok) showToast({ icon: 'info.circle', text: u.message });
+            else {
+              haptic('undo');
+              if (u.todayKept) showToast({ icon: 'info.circle', text: 'Gym undone · today keeps it' });
+            }
+          });
+        },
+      });
+    });
   }
 
   async function openSwap(f: Pick<FocusView, 'sessionExerciseId' | 'exerciseName'>) {
@@ -1960,6 +2032,24 @@ export function WorkoutScreen() {
         ) : focus.offProfileWarning ? (
           <StatusLine icon="exclamationmark.triangle" tone="warning" text={focus.offProfileWarning} />
         ) : null}
+        {focus.gymLearn && !learnAnswered.has(gymLearnKey(focus.gymLearn.learn)) ? (
+          <ChipRow>
+            <Chip
+              label={focus.gymLearn.text}
+              selected={false}
+              onPress={() => {
+                if (focus.gymLearn) answerGymLearn(focus.gymLearn.learn, true);
+              }}
+            />
+            <Chip
+              label="Not now"
+              selected={false}
+              onPress={() => {
+                if (focus.gymLearn) answerGymLearn(focus.gymLearn.learn, false);
+              }}
+            />
+          </ChipRow>
+        ) : null}
         {focus.painFlag ? (
           // `PainFlagNote` (§2.14.4): opens the pain flag sheet; it never blocks or changes Log.
           <LinkLine
@@ -2159,6 +2249,10 @@ export function WorkoutScreen() {
   const openRowNode = focus ? (
     <OpenSetRow
       focus={focus}
+      gymLearnText={focus.gymLearn && !learnAnswered.has(gymLearnKey(focus.gymLearn.learn)) ? focus.gymLearn.text : null}
+      onGymLearn={(yes) => {
+        if (focus.gymLearn) answerGymLearn(focus.gymLearn.learn, yes);
+      }}
       resting={view.phase === 'resting'}
       ax={ax}
       keypadOpen={keypadOpen}

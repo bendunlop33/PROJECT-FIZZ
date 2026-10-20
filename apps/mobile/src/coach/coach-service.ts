@@ -69,6 +69,8 @@ import {
   gymNamedIn,
   sameGymName,
   savedGymFor,
+  createGymUpdateExecutor,
+  type GymUpdatePlace,
   type BuildGym,
   type BuildFollowUp,
   type AddableExercise,
@@ -177,6 +179,7 @@ import {
   type OfferLogEntry,
   type SessionAdjustment,
   type SessionAdjustmentTrigger,
+  gymSetupWords,
 } from '@fizz/domain';
 import type { CandidateWrite, MemoryWrite, SqliteRepositories, Store } from '@fizz/persistence';
 import { playbookRuleList, type PlaybookRuleList } from './playbook-view';
@@ -187,6 +190,7 @@ import type { TextCoachState } from '@fizz/providers';
 import { muscleGroupOf } from '@fizz/schemas';
 import type {
   ActionDetail,
+  Gym,
   BuildDay,
   BuildFocus,
   EquipmentInstance,
@@ -429,6 +433,14 @@ export interface ThreadData {
   memories?: Map<string, MemoryCardState>;
   /** (19 Oct) New-exercise cards in this thread, by action ID: open, added or deleted since. */
   exerciseProposals?: Map<string, ExerciseProposalCard['state']>;
+  /** (20 Oct, ADR 0029) The coach's gym suggestions in this thread, by action ID: Ben's Apply (with its Undo) or Not now. */
+  gymProposals?: Map<string, GymProposalState>;
+}
+
+/** A gym suggestion card's state: open, applied (Ben's Apply record, for Undo), not applied, or out of date (the gym changed). */
+export interface GymProposalState {
+  state: 'open' | 'applied' | 'not_applied' | 'out_of_date';
+  apply: ActionRecord | null;
 }
 
 const GENERAL_REUSE_MS = 6 * 60 * 60 * 1000;
@@ -550,7 +562,27 @@ export function createCoachService(deps: CoachServiceDeps) {
       const e = await repos().exercises.get(a.detail.exerciseId).catch(() => null);
       exerciseProposals.set(a.actionId, e === null || e.ownerId !== thread.ownerId ? 'open' : isArchivedExercise(e) ? 'deleted' : 'added');
     }
-    return { thread, messages, turns, actionsByTurn, proposals, memories, exerciseProposals };
+    const gymProposals = new Map<string, GymProposalState>();
+    const gymSuggestions = [...actionsByTurn.values()].flat().filter((a) => a.detail.kind === 'update_gym' && a.status === 'proposed');
+    if (gymSuggestions.length > 0) {
+      const taps = await coachStore().listGymUpdates(thread.ownerId).catch(() => [] as ActionRecord[]);
+      for (const a of gymSuggestions) gymProposals.set(a.actionId, await gymProposalState(a, taps));
+    }
+    return { thread, messages, turns, actionsByTurn, proposals, memories, exerciseProposals, gymProposals };
+  }
+
+  /** (ADR 0029) A gym suggestion's card: Ben's tap on it, else whether the gym moved on since (then Apply would be refused). */
+  async function gymProposalState(proposal: ActionRecord, taps: readonly ActionRecord[]): Promise<GymProposalState> {
+    const mine = taps.filter((t) => t.detail.kind === 'update_gym' && t.detail.proposalId === proposal.actionId);
+    const apply = mine.find((t) => t.status === 'committed') ?? null;
+    if (apply !== null) return { state: 'applied', apply };
+    if (mine.some((t) => t.status === 'rejected')) return { state: 'not_applied', apply: null };
+    if (proposal.detail.kind !== 'update_gym') return { state: 'out_of_date', apply: null };
+    const edit = proposal.detail.edit;
+    const gym = await repos().gyms.get(edit.gymId).catch(() => null);
+    const items = new Map((await repos().equipment.listByGym(edit.gymId).catch(() => [] as EquipmentInstance[])).map((e) => [e.id, e]));
+    const current = (edit.gym === null || gym?.version === edit.gym.before.version) && edit.equipment.every((e) => (e.before === null ? !items.has(e.after.id) : items.get(e.before.id)?.version === e.before.version));
+    return { state: current ? 'open' : 'out_of_date', apply: null };
   }
 
   /**
@@ -692,6 +724,36 @@ export function createCoachService(deps: CoachServiceDeps) {
   }
 
   /** The gym a question is about: the workout's, else the default gym, else the last workout's (null: none yet). */
+  /** `update_gym`'s gym (ADR 0029): the saved gym Ben named, else the workout's (or selected) gym, with its items and unit. */
+  async function gymForUpdate(p: UserProfile, session: SessionAggregate | null, name: string | null): Promise<GymUpdatePlace | null> {
+    const gyms = (await repos().gyms.listByOwner(p.id).catch(() => [])).filter((g) => g.archivedAtUtc === undefined);
+    let gym: Gym | undefined;
+    if (name !== null && name.trim() !== '') {
+      const named = savedGymFor(name, gyms.map((g) => g.name));
+      gym = named === null ? undefined : gyms.find((g) => g.name === named);
+      if (gym === undefined) return null;
+    } else {
+      const here = await gymInContext(p, session);
+      gym = here === null ? undefined : gyms.find((g) => g.id === here.id);
+    }
+    if (gym === undefined) return null;
+    const equipment = await repos().equipment.listByGym(gym.id).catch(() => [] as EquipmentInstance[]);
+    return { gym, equipment, unit: equipment.find((e) => e.availability === 'available')?.unit ?? p.preferredUnit };
+  }
+
+  /** (ADR 0029) The coach's one-line view of a gym's setup (`full gym (assumed)`), when it has one. */
+  function setupOf(gym: Gym | null, equipment: readonly EquipmentInstance[]): { setup?: string } {
+    const words = gym === null ? null : gymSetupWords(gym, equipment);
+    return words === null ? {} : { setup: words };
+  }
+
+  /** An exercise by Ben's ID or a catalogue ID (`machine-leg-press`), as the coach names them. */
+  async function exerciseByIdOrKey(key: string): Promise<Exercise | null> {
+    const byId = await exerciseById(key).catch(() => null);
+    if (byId !== null) return byId;
+    return deps.catalogueExercises?.().find((e) => e.catalogueKey === key) ?? (await repos().exercises.list().catch(() => [] as Exercise[])).find((e) => e.catalogueKey === key) ?? null;
+  }
+
   async function gymInContext(p: UserProfile, session: SessionAggregate | null): Promise<{ id: string; name: string } | null> {
     const gyms = (await repos().gyms.listByOwner(p.id).catch(() => [])).filter((g) => g.archivedAtUtc === undefined);
     const byId = (id: string | null | undefined) => (id == null ? undefined : gyms.find((g) => g.id === id));
@@ -800,6 +862,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     const reads = createTrainingReadExecutors(trainingReads(p, session));
     const base: CoachExecutors = {
       ...reads,
+      // (20 Oct, ADR 0029) "This gym has no leg press": applied with Undo when Ben said it, else a card he applies.
+      update_gym: createGymUpdateExecutor({ store, gym: (name) => gymForUpdate(p, session, name), exercise: exerciseByIdOrKey }),
       ...createStructuralExecutors(structuralDeps(p, session)),
       ...createStoreExecutors({
       store,
@@ -1233,7 +1297,7 @@ export function createCoachService(deps: CoachServiceDeps) {
     const view: BuildContextView = {
       ...(planView === null ? {} : { plan: planView }),
       request: { quote: text, minutes, focus, origin, ...(day === null ? {} : { day: { name: day.name, bodyParts: [...day.bodyParts], mainLift: chips?.mainLift ?? null } }) },
-      gym: { name: gym.name, typicalEquipment: place.typical },
+      gym: { name: gym.name, typicalEquipment: place.typical, ...setupOf(savedGyms.find((x) => x.id === gym.id) ?? null, gym.equipment) },
       usable,
       busyToday: [],
       setBudget: buildSetBudget(minutes),
@@ -1706,6 +1770,27 @@ export function createCoachService(deps: CoachServiceDeps) {
       const r = await coachStore().commitStructuralTap(p.id, structuralTapRecord(proposal, tap, { now: deps.now() }));
       if (r.status !== 'conflict') return { ok: true, record: r.action };
       return { ok: false, state: (await proposalStates([proposalId])).get(proposalId)?.state ?? null };
+    },
+
+    /**
+     * (20 Oct, ADR 0029) Apply or Not now on the coach's gym suggestion. Apply saves exactly the
+     * edit the card shows, as Ben's own record, in one transaction with the gym (rule 5: refused,
+     * `Out of date`, when the gym changed since). One tap per card: a double tap replays.
+     */
+    async tapGymProposal(proposalId: string, tap: 'apply' | 'not_now'): Promise<{ ok: true; record: ActionRecord } | { ok: false; state: GymProposalState['state'] | null }> {
+      const p = await owner();
+      const proposal = await coachStore().getAction(proposalId);
+      if (proposal === null || proposal.detail.kind !== 'update_gym' || proposal.status !== 'proposed') return { ok: false, state: null };
+      const taps = await coachStore().listGymUpdates(p.id);
+      const before = await gymProposalState(proposal, taps);
+      if (before.state !== 'open') return { ok: false, state: before.state };
+      const detail = { ...proposal.detail, proposalId };
+      const opId = `gym-${tap}:${proposalId}`;
+      const base = newActionRecord({ turnId: '', opId, now: deps.now() }, detail, { author: 'ben', status: tap === 'apply' ? 'committed' : 'rejected', entityVersions: proposal.entityVersions });
+      const record: ActionRecord = { ...base, turnId: null };
+      const r = tap === 'apply' ? await coachStore().commit(p.id, { kind: 'gym_edit', action: record, edit: proposal.detail.edit }) : await coachStore().commit(p.id, { kind: 'record', action: record });
+      if (r.status === 'conflict') return { ok: false, state: 'out_of_date' };
+      return { ok: true, record: r.action };
     },
 
     /**

@@ -4,6 +4,7 @@ import {
   validate,
   type EquipmentInstance,
   type Gym,
+  type GymSetup,
   type PlateCount,
   type ValidationIssue,
   type WeightUnit,
@@ -35,7 +36,8 @@ export interface GymDraftItem {
 }
 
 export interface GymDraft {
-  presetId: GymPresetId;
+  /** The preset it came from, or the quick setup (`full`, `small`, `home`; ADR 0029). */
+  presetId: GymPresetId | GymSetup;
   unit: WeightUnit;
   items: GymDraftItem[];
 }
@@ -217,6 +219,8 @@ export interface MaterialiseRequest {
   isDefault: boolean;
   atUtc: string;
   newId: () => string;
+  /** (ADR 0029) How the gym was described; saved on the gym. */
+  setup?: GymSetup;
 }
 
 export type MaterialiseResult =
@@ -231,7 +235,7 @@ export function materialiseGymDraft(draft: GymDraft | null, req: MaterialiseRequ
   const name = req.name.trim();
   if (name === '') return { ok: false, error: 'name_empty', issues: [{ path: 'name', message: 'Give the gym a name' }] };
   const meta = { ownerId: req.ownerId, version: 1, createdAtUtc: req.atUtc, updatedAtUtc: req.atUtc };
-  const gym = validate(GymSchema, { ...meta, id: req.gymId, name, isDefault: req.isDefault });
+  const gym = validate(GymSchema, { ...meta, id: req.gymId, name, isDefault: req.isDefault, ...(req.setup === undefined ? {} : { setup: req.setup }) });
   if (!gym.ok) return { ok: false, error: 'invalid', issues: gym.issues };
   const equipment: EquipmentInstance[] = [];
   for (const item of draft?.items ?? []) {

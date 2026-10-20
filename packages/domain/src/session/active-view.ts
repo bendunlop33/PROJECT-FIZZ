@@ -18,6 +18,7 @@ import {
 } from '../display';
 import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclusions, notCountedLine, withExclusionWords } from '../exclusions';
 import { getAchievableLoads, isLoadAchievable, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
+import { gymLearnFor, gymLearnText, type GymLearn } from '../quick-gym';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
 import { comparableSetsOf, fitNotesPlannedSets, matchesEquipment, type HistorySession } from '../progression';
@@ -304,6 +305,12 @@ export interface FocusView {
   offProfileWarning: string | null;
   /** The equipment the off-profile line opens (audit A3): fix the gym, or log anyway. */
   offProfileEquipment: { gymId: string; equipmentId: string; kind: EquipmentInstance['kind'] } | null;
+  /**
+   * (Ben, 20 Oct; ADR 0029) The typed load suggests the gym has more than its
+   * profile says: `Add 22 kg dumbbells here?` / `Stack goes up in 7 kg?`. A
+   * small chip; nothing changes until Ben taps it.
+   */
+  gymLearn: { learn: GymLearn; text: string } | null;
   side: { kind: 'choice'; value: SetSide } | { kind: 'fixed'; value: 'left' | 'right' } | null;
   restAfterS: number;
   /** Where the rest came from (`Heavy preset (Bench press, working sets)`), shown only in the Rest after editor. */
@@ -642,6 +649,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
 
   let offProfileWarning: string | null = null;
   let offProfileEquipment: FocusView['offProfileEquipment'] = null;
+  let gymLearn: FocusView['gymLearn'] = null;
   const weighted = isWeightedBodyweight(ex, eq, isBodyweightExercise(state, ex, input.bodyweightExercises));
   if (weighted && values.load !== null && values.load.convention === 'added' && values.load.value > 0) {
     // Weight held or worn: the gym's dumbbells and plates (rule 4).
@@ -654,6 +662,8 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     const max = maxText(eq, values.load);
     offProfileWarning = `Not on ${eq.name}${input.gymName ? ` at ${input.gymName}` : ''}${max === '' ? '' : ` (max ${max})`}`;
     offProfileEquipment = { gymId: eq.gymId, equipmentId: eq.id, kind: eq.kind };
+    const learn = gymLearnFor(eq, values.load, { id: ex.exerciseId, name: ex.exerciseName });
+    gymLearn = learn === null ? null : { learn, text: gymLearnText(learn) };
   }
 
   // Cardio (19 Oct): while its timer runs, ✓ logs the time on it (the reducer reads it again at the log).
@@ -734,6 +744,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     painFlag: painNote,
     offProfileWarning,
     offProfileEquipment,
+    gymLearn,
     side,
     restAfterS: set.rest.seconds,
     restSourceLabel: set.rest.sourceLabel,

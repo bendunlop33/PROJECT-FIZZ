@@ -18,8 +18,11 @@ export function CoachCard({
   onProposal,
   onMemory,
   onNewExercise,
+  onGymChange,
 }: {
   card: CardView;
+  /** (20 Oct, ADR 0029) The coach's gym suggestion: Apply saves exactly what the card shows; Not now closes it. */
+  onGymChange?: (proposalId: string, tap: 'apply' | 'not_now') => void;
   /** (19 Oct) The coach's new-exercise card: Add (saved only now, rule 3) or Edit (the form, prefilled). */
   onNewExercise?: (actionId: string, tap: 'add' | 'edit') => void;
   onUndo: (actionId: string) => void;
@@ -100,6 +103,36 @@ export function CoachCard({
                   setBusy(false);
                 }, 1000);
                 onProposal(p.proposalId, 'apply');
+              }}
+            />
+          </View>
+        ) : null}
+        {card.gymChange?.undoActionId != null ? (
+          <TextButton
+            label="Undo"
+            onPress={() => {
+              if (card.gymChange?.undoActionId != null) onUndo(card.gymChange.undoActionId);
+            }}
+          />
+        ) : null}
+        {card.gymChange?.canApply === true && onGymChange !== undefined ? (
+          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+            <TextButton
+              label="Not now"
+              tone="secondary"
+              onPress={() => {
+                if (card.gymChange) onGymChange(card.gymChange.proposalId, 'not_now');
+              }}
+            />
+            <TextButton
+              label="Apply"
+              disabled={busy}
+              onPress={() => {
+                setBusy(true);
+                setTimeout(() => {
+                  setBusy(false);
+                }, 1000);
+                if (card.gymChange) onGymChange(card.gymChange.proposalId, 'apply');
               }}
             />
           </View>

@@ -8,9 +8,10 @@ import { GymSetupFlow } from './setup/GymSetupFlow';
 export function AddGymScreen() {
   const navigation = useNavigation();
   const [profile] = useScreenData((s) => s.yourData.profile());
-  if (profile.state !== 'ready') return <Screen>{null}</Screen>;
+  const [gyms] = useScreenData((s) => s.yourData.gyms());
+  if (profile.state !== 'ready' || gyms.state !== 'ready') return <Screen>{null}</Screen>;
   const close = () => {
     navigation.goBack();
   };
-  return <GymSetupFlow unit={profile.value?.preferredUnit ?? 'kg'} step={null} onBack={close} onSaved={close} />;
+  return <GymSetupFlow unit={profile.value?.preferredUnit ?? 'kg'} step={null} firstGym={gyms.value.length === 0} onBack={close} onSaved={close} />;
 }

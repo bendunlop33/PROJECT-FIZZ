@@ -20,10 +20,10 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { chatSetUndoCommand, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate, undoPlanControl } from '@fizz/domain';
+import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTargetSourceBasis, planRevertGymEdit, reduceSession, suggestionInDate, undoPlanControl, type GymEdit } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
-import { decodeDocument, erase, EXERCISE_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
+import { decodeDocument, EQUIPMENT_SPEC, erase, EXERCISE_SPEC, GYM_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId } from './sql';
 import { getWorkoutDraftIn, WORKOUT_DRAFT_SPEC } from './workout-drafts';
@@ -70,6 +70,14 @@ export type CandidateWrite = { status: 'written'; candidate: PlaybookCandidate }
 /** A Ben write on a memory (Save, Not now, edit). */
 export type MemoryWrite = { status: 'written'; memory: Memory } | { status: 'stale' | 'duplicate'; memory: Memory } | { status: 'missing' };
 
+/** A gym edit's records as stored now (the gym and its items), for its version checks. */
+async function gymEditState(q: SqlExecutor, edit: GymEdit) {
+  const gyms = await listDocuments(q, GYM_SPEC, 'id = ?', [edit.gymId]);
+  const items = await listDocuments(q, EQUIPMENT_SPEC, 'gym_id = ?', [edit.gymId]);
+  const byId = new Map(items.map((e) => [e.id, e]));
+  return { gym: gyms[0] ?? null, equipment: (id: string) => byId.get(id) ?? null };
+}
+
 /** The session an action is about, for `get_recent_actions` and the workout's Undo. */
 function sessionOf(record: ActionRecord): string | null {
   switch (record.detail.kind) {
@@ -95,6 +103,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'build_plan':
     case 'propose_exercise':
     case 'pause_plan':
+    case 'update_gym':
     case 'undo':
       return null;
   }
@@ -528,6 +537,16 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback(write.expectedVersion === null ? 'already_exists' : 'stale_version');
         return null;
       }
+      case 'gym_edit': {
+        // (20 Oct, ADR 0029) Every record at the version the edit was planned on (rule 5); a repeat that already landed writes nothing more.
+        const current = await gymEditState(tx, write.edit);
+        if (current.gym === null || current.gym.ownerId !== ownerId) throw new Rollback('missing');
+        if (gymEditLanded(write.edit, current)) return null;
+        const w = gymEditWrites(write.edit);
+        if (w.gym !== null && !(await saveDocumentIn(tx, GYM_SPEC, w.gym.next, w.gym.expectedVersion)).ok) throw new Rollback('stale_version');
+        for (const e of w.equipment) if (!(await saveDocumentIn(tx, EQUIPMENT_SPEC, e.next, e.expectedVersion)).ok) throw new Rollback('stale_version');
+        return null;
+      }
       case 'plan_draft': {
         // (19 Oct) A coach plan (new, or a new version on the version the turn read) and its record together.
         if (write.plan.ownerId !== ownerId) throw new Error('Plan owner differs from the store owner');
@@ -741,6 +760,16 @@ export class SqliteCoachStore {
       // A draft version's Undo is Ben's draft write (`workout_drafts`), not a coach undo (workout-builder §5.3).
       // A plan's Apply and Undo are Ben's own writes on the plan (`plan_drafts`), not a coach undo.
       // (19 Oct) A proposed exercise is Ben's own write when he taps Add; deleting it is his Library write.
+      case 'update_gym': {
+        // (20 Oct, ADR 0029) Each record back as a new version, only while none changed since.
+        const current = await gymEditState(tx, d.edit);
+        if (current.gym === null || current.gym.ownerId !== ownerId) return 'changed_since';
+        const plan = planRevertGymEdit(d.edit, current, atUtc);
+        if (plan === 'changed_since') return 'changed_since';
+        if (plan.gym !== null && !(await saveDocumentIn(tx, GYM_SPEC, plan.gym.next, plan.gym.expectedVersion)).ok) return 'changed_since';
+        for (const e of plan.equipment) if (!(await saveDocumentIn(tx, EQUIPMENT_SPEC, e.next, e.expectedVersion)).ok) throw new Error('equipment changed while it was being undone');
+        return 'ok';
+      }
       case 'suggest_memory':
       case 'update_routine':
       case 'fit_today':
@@ -866,6 +895,11 @@ export class SqliteCoachStore {
   // ---------- Structural proposals (ADR 0020 §3) ----------
 
   /** Every structural proposal and Ben's taps on them (Apply, Not now), oldest first. A small list. */
+  /** (20 Oct, ADR 0029) Every `update_gym` record (the coach's and Ben's Apply / Not now on its cards), oldest first. */
+  listGymUpdates(ownerId: string): Promise<ActionRecord[]> {
+    return this.db.read(async (q) => (await q.getAll("SELECT * FROM coach_actions WHERE owner_id = ? AND kind = 'update_gym' ORDER BY created_at_utc, id", [ownerId])).map(decodeAction));
+  }
+
   listStructural(ownerId: string): Promise<ActionRecord[]> {
     return this.db.read(async (q) => (await q.getAll("SELECT * FROM coach_actions WHERE owner_id = ? AND kind = 'propose_next_workout_change' ORDER BY created_at_utc, id", [ownerId])).map(decodeAction));
   }

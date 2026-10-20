@@ -7,7 +7,7 @@
 import { formatNumber, TARGET_RPE_CHOICES, type TargetRpe } from '@fizz/domain';
 import type { TargetRpeScope } from '@fizz/schemas';
 
-export type ExerciseMenuAction = 'how_to' | 'edit_set' | 'undo_coach' | 'undo_swap' | 'target_rpe' | 'add_set' | 'swap' | 'superset_with' | 'remove_superset' | 'notes' | 'add_exercise' | 'delete_set' | 'skip_exercise' | 'remove_exercise';
+export type ExerciseMenuAction = 'how_to' | 'edit_set' | 'undo_coach' | 'undo_swap' | 'target_rpe' | 'add_set' | 'swap' | 'not_at_gym' | 'superset_with' | 'remove_superset' | 'notes' | 'add_exercise' | 'delete_set' | 'skip_exercise' | 'remove_exercise';
 
 interface MenuItem {
   action: ExerciseMenuAction | 'cancel';
@@ -29,6 +29,8 @@ const TARGET_RPE: MenuItem = { action: 'target_rpe', label: 'Target RPE', destru
 const ADD_SET: MenuItem = { action: 'add_set', label: 'Add set', destructive: false };
 /** Only while the exercise has a pending set (B3: applies at once with Undo). */
 const SWAP: MenuItem = { action: 'swap', label: 'Swap exercise', destructive: false };
+/** (Ben, 20 Oct; ADR 0029) The gym doesn't have it: marked on the gym, then the swap sheet. */
+const NOT_AT_GYM: MenuItem = { action: 'not_at_gym', label: 'Not at this gym', destructive: false };
 /** (Ben, 19 Oct) Pair it with another exercise, or a second copy of itself; its sets alternate. */
 const SUPERSET_WITH: MenuItem = { action: 'superset_with', label: 'Superset with…', destructive: false };
 /** (Ben, 19 Oct) Each member back to its own sets. */
@@ -68,11 +70,13 @@ export interface ExerciseMenuOptions {
   canSuperset?: boolean;
   /** `Remove superset` (`supersetMenu().inSuperset`). */
   inSuperset?: boolean;
+  /** `Not at this gym`: the exercise uses an item of this workout's gym. */
+  canMarkNotHere?: boolean;
 }
 
 export function exerciseMenu(hasHowTo: boolean, hasCoachChange: boolean | 'rule' = false, o: ExerciseMenuOptions = {}): ExerciseMenu {
   const undo = hasCoachChange === 'rule' ? [UNDO_RULE] : hasCoachChange ? [UNDO_COACH] : [];
-  const items = [...(hasHowTo ? [HOW_TO] : []), ...undo, ...(o.canUndoSwap ? [UNDO_SWAP] : []), ...(o.canEditSet ? [EDIT_SET] : []), ...(o.hasTargetRpe ? [TARGET_RPE] : []), ADD_SET, ...(o.canSwap ? [SWAP] : []), ...(o.canSuperset ? [SUPERSET_WITH] : []), ...(o.inSuperset ? [REMOVE_SUPERSET] : []), ...ITEMS, ...(o.canRemove ? [REMOVE] : []), CANCEL];
+  const items = [...(hasHowTo ? [HOW_TO] : []), ...undo, ...(o.canUndoSwap ? [UNDO_SWAP] : []), ...(o.canEditSet ? [EDIT_SET] : []), ...(o.hasTargetRpe ? [TARGET_RPE] : []), ADD_SET, ...(o.canSwap ? [SWAP] : []), ...(o.canMarkNotHere ? [NOT_AT_GYM] : []), ...(o.canSuperset ? [SUPERSET_WITH] : []), ...(o.inSuperset ? [REMOVE_SUPERSET] : []), ...ITEMS, ...(o.canRemove ? [REMOVE] : []), CANCEL];
   return {
     options: items.map((i) => i.label),
     destructiveButtonIndex: items.flatMap((item, i) => (item.destructive ? [i] : [])),

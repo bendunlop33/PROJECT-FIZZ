@@ -492,6 +492,14 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       const text = `${d.action === 'resume' ? 'Not resumed' : 'Not paused'}: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
+    case 'update_gym': {
+      // (20 Oct, ADR 0029) The gym's change in app lines: `Main gym: Leg press: not here · Dumbbells: 2–40 kg, every 2`.
+      const what = `${d.gymName}: ${d.lines.join(' · ')}`;
+      if (st === 'committed' || st === 'proposed') return make(status, `${what}.`, speakable(`${what}.`));
+      if (st === 'stale') return make(status, `Not changed: ${d.gymName} changed since.`, `Not changed. ${d.gymName} changed since.`);
+      const text = `Not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
     case 'propose_exercise': {
       // (19 Oct) The card's line; whether it was added is read from Ben's exercise list.
       if (st === 'proposed') {

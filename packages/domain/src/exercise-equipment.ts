@@ -27,10 +27,24 @@ export function isMachineCardio(exercise: Pick<Exercise, 'compatibleEquipment'>)
   return exercise.compatibleEquipment.length > 0 && exercise.compatibleEquipment.every((k) => k === 'erg');
 }
 
-/** Available gym items the exercise can be logged on; empty for bodyweight exercises. */
-export function equipmentForExercise<T extends Pick<EquipmentInstance, 'kind' | 'availability'>>(exercise: ExerciseEquipmentInfo, gym: readonly T[]): T[] {
+/** (Ben, 20 Oct) Ben said this item's gym doesn't have what `exerciseId` needs (`Not at this gym`). */
+export function isNotFor(item: Pick<EquipmentInstance, 'notFor'>, exerciseId: string | undefined): boolean {
+  return exerciseId !== undefined && (item.notFor?.includes(exerciseId) ?? false);
+}
+
+/**
+ * (Review quickgym B2) The item is never mapped to this exercise: Ben said it's
+ * not for it (`notFor`), or it is another machine's own stack (`onlyFor`).
+ */
+export function isExcludedFor(item: Pick<EquipmentInstance, 'notFor' | 'onlyFor'>, exerciseId: string | undefined): boolean {
+  if (isNotFor(item, exerciseId)) return true;
+  return item.onlyFor !== undefined && (exerciseId === undefined || !item.onlyFor.includes(exerciseId));
+}
+
+/** Available gym items the exercise can be logged on; empty for bodyweight exercises. Items marked not for it (or only for others) are left out. */
+export function equipmentForExercise<T extends Pick<EquipmentInstance, 'kind' | 'availability' | 'notFor' | 'onlyFor'>>(exercise: ExerciseEquipmentInfo & { id?: string }, gym: readonly T[]): T[] {
   if (needsNoEquipment(exercise)) return [];
-  return gym.filter((e) => e.availability === 'available' && exercise.compatibleEquipment.includes(e.kind));
+  return gym.filter((e) => e.availability === 'available' && exercise.compatibleEquipment.includes(e.kind) && !isExcludedFor(e, exercise.id));
 }
 
 /** The picker row's subtitle: the matching items, or why there are none. */

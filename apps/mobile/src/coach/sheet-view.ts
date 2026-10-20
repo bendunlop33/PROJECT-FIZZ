@@ -12,7 +12,7 @@ import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyI
 import { customExerciseLine, isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
 import type { ActionRecord, BenInput, CustomExerciseFields, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
-import type { CoachAvailability, CoachEntry, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
+import type { CoachAvailability, CoachEntry, GymProposalState, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
 import type { WorkoutPresence } from '../services/history-services';
 
 /**
@@ -168,6 +168,30 @@ export interface CardView {
   plan?: ActionRecord;
   /** (19 Oct) The coach's new exercise for Ben's list: `Edit` · `Add` while open (rule 3). */
   newExercise?: { actionId: string; fields: CustomExerciseFields; canAdd: boolean };
+  /** (20 Oct, ADR 0029) The coach's gym suggestion: `Not now` · `Apply` while open; `Undo` of Ben's Apply after. */
+  gymChange?: { proposalId: string; canApply: boolean; undoActionId: string | null };
+}
+
+const GYM_STATUS: Record<GymProposalState['state'], CardView['status']> = {
+  open: { word: 'Suggested', icon: 'minus.circle' },
+  applied: { word: 'Applied', icon: 'checkmark.circle.fill' },
+  not_applied: { word: 'Not applied', icon: 'minus.circle' },
+  out_of_date: { word: 'Out of date', icon: 'clock.badge.xmark' },
+};
+
+/** (20 Oct, ADR 0029) The coach's gym suggestion card: the lines it would save; Apply saves exactly those (rule 3). */
+export function gymProposalCardView(r: ActionRecord, s: GymProposalState): CardView | null {
+  const d = r.detail;
+  if (d.kind !== 'update_gym' || r.status !== 'proposed') return null;
+  const undone = s.apply?.undoneBy != null;
+  return {
+    actionId: r.actionId,
+    status: undone ? { word: 'Undone', icon: 'arrow.uturn.backward' } : GYM_STATUS[s.state],
+    text: renderActionResult(r, 'sheet').text,
+    accessibilityPrefix: 'Coach suggestion.',
+    canUndo: false,
+    gymChange: { proposalId: r.actionId, canApply: s.state === 'open', undoActionId: s.apply !== null && !undone ? s.apply.actionId : null },
+  };
 }
 
 /**
@@ -294,7 +318,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
@@ -457,7 +481,8 @@ export function threadRows(data: ThreadData & { nowUtc?: string }): ThreadRow[] 
       const state = data.proposals?.get(a.actionId);
       const memory = data.memories?.get(a.actionId);
       const added = data.exerciseProposals?.get(a.actionId);
-      const special = state !== undefined ? proposalCardView(a, state) : memory !== undefined ? memoryCardView(a, memory) : added !== undefined ? exerciseProposalCardView(a, added) : null;
+      const gymState = data.gymProposals?.get(a.actionId);
+      const special = state !== undefined ? proposalCardView(a, state) : memory !== undefined ? memoryCardView(a, memory) : added !== undefined ? exerciseProposalCardView(a, added) : gymState !== undefined ? gymProposalCardView(a, gymState) : null;
       const question = a.detail.kind === 'build_question' ? questionCardView(a, nextBenText(data.messages, turnId), data.nowUtc === undefined ? 0 : toMs(data.nowUtc) - toMs(a.createdAt.utc)) : null;
       rows.push({ kind: 'card', key: a.actionId, card: question !== null ? { ...cardView(a), question } : (special ?? cardView(a)) });
     }

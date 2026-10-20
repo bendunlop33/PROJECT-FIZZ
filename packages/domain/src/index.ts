@@ -103,3 +103,4 @@ export * from './training-profile';
 export * from './spoken-cues';
 export * from './spoken-reply';
 export * from './cardio';
+export * from './quick-gym';

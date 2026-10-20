@@ -17,6 +17,7 @@ import { comparableSetsOf, matchesEquipment, type HistorySession } from '../prog
 import { isPainCheckDue, PAIN_AREA_WORD } from '../pain-flags';
 import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
+import { assumedWhy } from '../quick-gym';
 import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { shownCoachNote } from './builder-loads';
@@ -284,10 +285,12 @@ function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: Ses
   }
 }
 
-function equipmentRow(p: TargetProvenance | undefined): WhyRow | null {
-  if (p === undefined) return null;
+function equipmentRow(p: TargetProvenance | undefined, eq: EquipmentInstance | null, planned: PlannedSet): WhyRow | null {
+  // (Ben, 20 Oct; ADR 0029) A load target on an item Ben hasn't confirmed says so here, never on the set itself.
+  const assumed = eq !== null && planned.load !== null && planned.load.convention !== 'bodyweight' ? assumedWhy(eq) : null;
   // `Capped at 100 kg: the most this bar makes. …` → `Capped at 100 kg`.
-  const lines = [...(p.step ? [stepText(p.step)] : []), ...p.guardNotes].map((l) => briefLine(l).replace(/(: |, )the .*$/, '')).filter((l) => l !== '');
+  const lines = [...(p?.step ? [stepText(p.step)] : []), ...(p?.guardNotes ?? [])].map((l) => briefLine(l).replace(/(: |, )the .*$/, '')).filter((l) => l !== '');
+  if (assumed !== null) lines.push(assumed);
   return lines.length === 0 ? null : { key: 'equipment', label: 'Equipment', lines: [lines.join(' · ')], kind: 'app' };
 }
 
@@ -367,7 +370,7 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow) : historyLastTime(fromHistory, ex, eq, tz));
   const reason = reasonRow(p, planned, ex, eq);
   if (reason) rows.push(reason);
-  const equipment = equipmentRow(p);
+  const equipment = equipmentRow(p, eq, planned);
   if (equipment) rows.push(equipment);
 
   const flags = input.painFlags.filter((f) => f.exerciseId === ex.exerciseId);

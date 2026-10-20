@@ -92,7 +92,8 @@ export interface UsableExercise {
 /** What a build turn sends under `YOUR DATA` (§8.4) besides the usual blocks. */
 export interface BuildContextView {
   request: { quote: string; minutes: number; focus: BuildFocus; origin: BuildRequest['origin']; /** (F19) The split day, its body parts and main lift (Ben's or recommended). */ day?: { name: string; bodyParts: string[]; mainLift: string | null } };
-  gym: { name: string; typicalEquipment: boolean } | null;
+  /** `setup`: (20 Oct, ADR 0029) `full gym (assumed)`, compactly, instead of every item; absent for a gym set up item by item. */
+  gym: { name: string; typicalEquipment: boolean; setup?: string } | null;
   /** (Coach v3) Ben's saved gyms by name: `propose_workout`'s `gymName` is one of these. */
   gyms?: string[];
   usable: UsableExercise[];

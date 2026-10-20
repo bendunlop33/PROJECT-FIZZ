@@ -78,7 +78,9 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
 
   it('no versioned update can write a finished session; a logged set only on Ben’s request, in the workout (11 Oct)', () => {
     for (const t of COACH_TOOLS.filter((x) => x.effect === 'versioned_update')) {
-      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause']).toContain(w);
+      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment']).toContain(w);
+      // (20 Oct, ADR 0029) A gym's equipment: only update_gym, offered only on Ben's words about a gym.
+      if (t.writes.includes('gym_equipment')) expect([t.name, t.needs]).toEqual(['update_gym', 'ben_request']);
       // (14 Oct) The live workout's name: only rename_workout, gated, only in the workout.
       if (t.writes.includes('session_name')) expect([t.name, t.needs, t.turnKinds]).toEqual(['rename_workout', 'ben_request', ['workout']]);
       // (Ben, 20 Oct) The plan's pause: only pause_plan, on Ben's own pause words, in a general turn.
@@ -390,6 +392,7 @@ describe('listCoachCapabilities (check 11)', () => {
         "sections": [
           {
             "rows": [
+              "Update what a gym has (when you say so, with Undo; otherwise as a suggestion you apply)",
               "Change today's workout (exercises, sets and targets), with Undo",
               "Rename today's workout, with Undo",
               "Log a set you tell it ("log 100 for 8"), with Undo",

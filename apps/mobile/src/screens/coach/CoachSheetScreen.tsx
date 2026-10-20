@@ -448,6 +448,14 @@ export function CoachSheetScreen() {
     changed();
   }
 
+  /** (20 Oct, ADR 0029) Apply or Not now on the coach's gym suggestion; a gym that changed since comes back `Out of date`. */
+  async function tapGymProposal(proposalId: string, tap: 'apply' | 'not_now') {
+    const r = await services.coach.tapGymProposal(proposalId, tap).catch(() => null);
+    setNotice(r === null ? 'Couldn’t apply.' : r.ok ? null : r.state === 'out_of_date' ? 'Out of date. Nothing changed.' : null);
+    await loadRows(threadId ?? null);
+    changed();
+  }
+
   /**
    * (19 Oct) The coach's new-exercise card: `Add` saves it now (rule 3), then Ben's `Added <name>.`
    * goes to the coach so it carries on with what he asked (only when it can answer: the exercise is
@@ -677,6 +685,7 @@ export function CoachSheetScreen() {
             undoBlocked={undoBlocked}
             onUndo={(id) => void undo(id)}
             onProposal={(id, tap) => void tapProposal(id, tap)}
+            onGymChange={(id, tap) => void tapGymProposal(id, tap)}
             onMemory={(id, v, d) => void decideMemory(id, v, d)}
             onNewExercise={(id, tap) => void tapNewExercise(id, tap)}
             onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)}
@@ -789,6 +798,7 @@ function Row({
   undoBlocked,
   onUndo,
   onProposal,
+  onGymChange,
   onMemory,
   onNewExercise,
   onRetry,
@@ -800,6 +810,7 @@ function Row({
   undoBlocked: (actionId: string) => boolean;
   onUndo: (actionId: string) => void;
   onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
+  onGymChange: (proposalId: string, tap: 'apply' | 'not_now') => void;
   onMemory: (memoryId: string, version: number, decision: 'save' | 'not_now' | 'playbook') => void;
   onNewExercise: (actionId: string, tap: 'add' | 'edit') => void;
   onRetry: () => void;
@@ -858,7 +869,7 @@ function Row({
       }
       if (row.card.plan !== undefined && onDraft !== undefined) return <PlanCard record={row.card.plan} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       if (row.card.draft !== undefined && onDraft !== undefined) return <WorkoutDraftCard record={row.card.draft} gymId={onDraft.gymId} onOpen={onDraft.open} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
-      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} onNewExercise={onNewExercise} />;
+      return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onGymChange={onGymChange} onMemory={onMemory} onNewExercise={onNewExercise} />;
     case 'note':
       return (
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>

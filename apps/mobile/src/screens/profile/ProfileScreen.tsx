@@ -82,7 +82,7 @@ export function ProfileScreen() {
             key={g.gym.id}
             title={g.gym.name}
             icon="building.2"
-            subtitle={`${g.gym.isDefault ? 'Default · ' : ''}${String(g.items)} ${g.items === 1 ? 'item' : 'items'}${g.unchecked > 0 ? ` · ${String(g.unchecked)} not checked` : ''}`}
+            subtitle={`${g.gym.isDefault ? 'Default · ' : ''}${String(g.items)} ${g.items === 1 ? 'item' : 'items'}${g.unchecked > 0 ? ` · ${String(g.unchecked)} assumed` : ''}`}
             onPress={() => {
               navigation.navigate('GymDetail', { gymId: g.gym.id });
             }}

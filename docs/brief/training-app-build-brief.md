@@ -10,6 +10,7 @@ Prepared and extended 8 October 2026. Research and implementation specification;
 > - Platform: stay on React Native + Expo, pinned to SDK 57 (ADR 0001). A small custom Swift module owns the iOS audio session. Background spoken cues are an opt-in experiment, not a promise.
 > - FitNotes: confirm which app (Android original or FitNotes 2 for iOS) and use a real export. RPE is not expected as a column.
 > - **Progression (v0.4):** the coach chooses weights/reps/sets, either when asked or on a clear signal (e.g. RPE 10), never constantly. Today's changes apply with Undo when Ben asked, or are offered first when the coach raises them. Future changes are proposals. Deterministic code only guards (feasible loads, equipment max, pain, completed sets) and is the labelled offline fallback. This supersedes §3's "separate the rules generating numerical targets from the model" (ADR 0006).
+> - **Gyms (v0.5, Ben 20 Oct):** a gym starts as a full gym with assumed equipment (or Hotel / small, Home); only the dumbbell step is asked. The app learns the rest as he trains (`Not at this gym`, a load the gym can't make, his words to the coach), each with Undo. This supersedes the gym-editor checklist paragraph and "updates the saved inventory only through an explicit edit" (ADR 0029).
 > - **Distribution (v0.3):** free Apple ID + SideStore with a cloud-built `.ipa`, at no cost (ADR 0004). Backup/restore, the cloud build and a capability-probe screen join the first milestone. Only free-provisionable entitlements are used.
 
 ## Product goal
