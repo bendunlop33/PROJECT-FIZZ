@@ -35,6 +35,12 @@ export interface DictationEvents {
 
 export interface Dictation {
   state(): MicState;
+  /**
+   * Check on-device speech without listening or asking for permission (on mount, and when the app comes
+   * back to the foreground): `unavailable` shows `⊘` before any tap (§2.6; review S6). Never changes a
+   * listening or denied mic.
+   */
+  probe(): Promise<MicState>;
   /** The mic: idle → listening; listening → stop (words so far are kept). `unavailable`/`denied`: nothing starts. */
   tap(): Promise<MicState>;
   /** Stop without sending (sheet closed). */
@@ -62,6 +68,16 @@ export function createDictation(port: SpeechInputPort, on: DictationEvents): Dic
 
   return {
     state: () => state,
+    async probe(): Promise<MicState> {
+      if (state === 'listening' || state === 'denied') return state;
+      const available = await port.onDeviceAvailable().catch(() => false);
+      // A tap may have started listening while the check ran.
+      const current = (): MicState => state;
+      if (current() === 'listening' || current() === 'denied') return current();
+      const next: MicState = available ? 'idle' : 'unavailable';
+      if (next !== state) set(next);
+      return state;
+    },
     async tap(): Promise<MicState> {
       if (state === 'listening') {
         const t = ticket;

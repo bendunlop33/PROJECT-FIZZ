@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, View } from 'react-native';
+import { AccessibilityInfo, Alert, AppState, Linking, Pressable, View } from 'react-native';
 
 import type { BuilderCoachReach } from '@fizz/coach';
 
@@ -7,6 +7,7 @@ import { askBarView, type AskBarPage, type MicState } from '../coach/builder-coa
 import { useTheme } from '../theme';
 import { createDictation, type SpeechInputPort } from '../voice/dictation';
 import { Icon } from './Icon';
+import { TextField } from './layout';
 import { AppText } from './Text';
 
 /**
@@ -14,12 +15,18 @@ import { AppText } from './Text';
  * opens the coach sheet (never full screen); the mic starts on-device
  * listening at once, shows the live words in the bar, stops on silence or a
  * second tap, then opens the sheet with what was heard. With no on-device
- * recogniser the mic shows `⊘` and nothing listens (no audio leaves the
- * phone); a tap says why, with a Settings link when a permission is off.
+ * recogniser the mic shows `⊘` from the start (checked on mount and on
+ * return to the app) and nothing listens (no audio leaves the phone); a tap
+ * says why, with a Settings link when a permission is off.
  *
- * Accessibility: two buttons (bar, mic), each ≥ 44 pt (48 here); labels
- * carry the status word; listening is announced through a live region;
- * Dynamic Type wraps the label instead of clipping it.
+ * Set up with no coach (offline or not connected): the bar is a field, and
+ * typed or spoken words go to `onSubmit` (code's Set up fill, §9 Q4): no
+ * chat sheet, no chat bubble.
+ *
+ * Accessibility: two controls (bar, mic), each ≥ 44 pt (48 here); labels
+ * carry the status word; `Listening` and the words heard are announced
+ * (VoiceOver on iOS has no live regions); Dynamic Type wraps the label,
+ * never clips it.
  */
 export interface CoachAskBarProps {
   page: AskBarPage;
@@ -29,40 +36,57 @@ export interface CoachAskBarProps {
   compact?: boolean;
   /** Open the coach sheet; `transcript` when the mic heard words. */
   onOpen: (transcript?: string) => void;
+  /** Set up with no coach: the words go straight to code's fill (`askSetup`), never the sheet. */
+  onSubmit?: (words: string) => void;
   /** `createOnDeviceSpeech()` in the app; a fake in tests. */
   speech: SpeechInputPort;
 }
 
 const BAR_HEIGHT = 48;
 
-export function CoachAskBar({ page, reach, compact = false, onOpen, speech }: CoachAskBarProps) {
+export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, speech }: CoachAskBarProps) {
   const theme = useTheme();
   const [mic, setMic] = useState<MicState>('idle');
   const [heard, setHeard] = useState('');
-  const open = useRef(onOpen);
-  open.current = onOpen;
+  const [typed, setTyped] = useState('');
+  const view = askBarView(page, reach, mic, { compact });
+  const inline = view.inline && onSubmit !== undefined;
+  const send = useRef<(text: string) => void>(onOpen);
+  send.current = inline
+    ? (text) => {
+        onSubmit(text);
+      }
+    : (text) => {
+        onOpen(text);
+      };
   const dictation = useMemo(
     () =>
       createDictation(speech, {
         state: (s) => {
           setMic(s);
+          if (s === 'listening') AccessibilityInfo.announceForAccessibility('Listening');
           if (s !== 'listening') setHeard('');
         },
         partial: setHeard,
         done: (text) => {
-          open.current(text);
+          AccessibilityInfo.announceForAccessibility(text);
+          send.current(text);
         },
       }),
     [speech],
   );
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // `⊘` before any tap: checked on mount and each time the app comes back (a language installed since).
+    void dictation.probe();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void dictation.probe();
+    });
+    return () => {
+      sub.remove();
       dictation.cancel();
-    },
-    [dictation],
-  );
+    };
+  }, [dictation]);
 
-  const view = askBarView(page, reach, mic, { compact });
   const listening = mic === 'listening';
   const barText = listening ? (heard === '' ? 'Listening…' : heard) : view.label;
 
@@ -75,13 +99,68 @@ export function CoachAskBar({ page, reach, compact = false, onOpen, speech }: Co
     });
   };
 
+  const micButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={view.mic.accessibilityLabel}
+      accessibilityState={{ disabled: view.mic.disabled, selected: listening }}
+      {...(view.mic.why === null ? {} : { accessibilityHint: view.mic.why })}
+      disabled={view.mic.disabled}
+      onPress={tapMic}
+      style={({ pressed }) => ({
+        width: BAR_HEIGHT,
+        minHeight: BAR_HEIGHT,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: theme.radius.md,
+        backgroundColor: listening ? theme.colors['status.danger'] : theme.colors['bg.raised'],
+        borderWidth: 1,
+        borderColor: listening ? theme.colors['status.danger'] : theme.colors['border.control'],
+        opacity: view.mic.disabled ? 0.6 : pressed ? 0.7 : 1,
+      })}
+    >
+      <Icon name={view.mic.glyph === '⊘' ? 'nosign' : view.mic.glyph} color={listening ? 'on.accent' : view.mic.glyph === '⊘' ? 'text.secondary' : 'text.primary'} size={18} />
+    </Pressable>
+  );
+
+  if (inline && !listening) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: theme.space['2'] }}>
+        <View style={{ flex: 1 }}>
+          <TextField
+            value={typed}
+            onChangeText={setTyped}
+            placeholder={view.label}
+            accessibilityLabel={view.accessibilityLabel}
+            returnKeyType="done"
+            submitBehavior="blurAndSubmit"
+            onSubmitEditing={() => {
+              const words = typed.trim();
+              if (words === '') return;
+              setTyped('');
+              send.current(words);
+            }}
+            style={{ minHeight: BAR_HEIGHT }}
+          />
+        </View>
+        {view.status !== null ? (
+          <View style={{ justifyContent: 'center' }}>
+            <AppText variant="label" color="text.secondary" accessible={false}>
+              {view.status}
+            </AppText>
+          </View>
+        ) : null}
+        {micButton}
+      </View>
+    );
+  }
+
   return (
     <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: theme.space['2'] }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={listening ? `Listening. ${heard}` : view.accessibilityLabel}
         accessibilityState={{ disabled: view.disabled }}
-        accessibilityLiveRegion={listening ? 'polite' : 'none'}
         disabled={view.disabled || listening}
         onPress={() => {
           onOpen();
@@ -104,7 +183,7 @@ export function CoachAskBar({ page, reach, compact = false, onOpen, speech }: Co
         <AppText variant="callout" color="accent" accessible={false}>
           ✦
         </AppText>
-        <AppText variant="callout" color={view.disabled ? 'text.secondary' : 'text.primary'} style={{ flex: 1 }} numberOfLines={listening ? 3 : 2}>
+        <AppText variant="callout" color={view.disabled ? 'text.secondary' : 'text.primary'} style={{ flex: 1 }}>
           {barText}
         </AppText>
         {view.status !== null && !listening ? (
@@ -113,27 +192,7 @@ export function CoachAskBar({ page, reach, compact = false, onOpen, speech }: Co
           </AppText>
         ) : null}
       </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={view.mic.accessibilityLabel}
-        accessibilityState={{ disabled: view.mic.disabled, selected: listening }}
-        {...(view.mic.why === null ? {} : { accessibilityHint: view.mic.why })}
-        disabled={view.mic.disabled}
-        onPress={tapMic}
-        style={({ pressed }) => ({
-          width: BAR_HEIGHT,
-          minHeight: BAR_HEIGHT,
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: theme.radius.md,
-          backgroundColor: listening ? theme.colors['status.danger'] : theme.colors['bg.raised'],
-          borderWidth: 1,
-          borderColor: listening ? theme.colors['status.danger'] : theme.colors['border.control'],
-          opacity: view.mic.disabled ? 0.6 : pressed ? 0.7 : 1,
-        })}
-      >
-        <Icon name={view.mic.glyph === '⊘' ? 'nosign' : view.mic.glyph} color={listening ? 'on.accent' : view.mic.glyph === '⊘' ? 'text.secondary' : 'text.primary'} size={18} />
-      </Pressable>
+      {micButton}
     </View>
   );
 }

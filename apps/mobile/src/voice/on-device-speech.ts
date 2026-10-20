@@ -73,15 +73,23 @@ export function createOnDeviceSpeech(): SpeechInputPort {
           h.end();
         }),
       ];
-      ExpoSpeechRecognitionModule.start({
-        lang,
-        interimResults: true,
-        // Stops on silence (iOS 17: 3 s of no speech; 18+: the final result).
-        continuous: false,
-        requiresOnDeviceRecognition: true,
-        addsPunctuation: false,
-        contextualStrings: [...PROBE_CONTEXTUAL_STRINGS, 'superset', 'supersets', 'minutes', 'abs', 'triceps', 'biceps'],
-      });
+      try {
+        ExpoSpeechRecognitionModule.start({
+          lang,
+          interimResults: true,
+          // Stops on silence (iOS 17: 3 s of no speech; 18+: the final result).
+          continuous: false,
+          requiresOnDeviceRecognition: true,
+          addsPunctuation: false,
+          contextualStrings: [...PROBE_CONTEXTUAL_STRINGS, 'superset', 'supersets', 'minutes', 'abs', 'triceps', 'biceps'],
+        });
+      } catch (e) {
+        // Never left listening for a session that didn't start (review N4).
+        subs.forEach((x) => {
+          x.remove();
+        });
+        throw e;
+      }
       return {
         stop: () => {
           try {
