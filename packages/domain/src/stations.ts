@@ -1,4 +1,4 @@
-import type { BenchType, EquipmentInstance, RackType } from '@fizz/schemas';
+import type { BenchType, EquipmentInstance, GymStation, RackType } from '@fizz/schemas';
 import { catalogueExerciseId } from './catalogue-id';
 
 /**
@@ -18,7 +18,7 @@ import { catalogueExerciseId } from './catalogue-id';
  * a box does).
  */
 
-export type GymStation = 'bench' | 'incline_bench' | 'rack';
+export type { GymStation };
 
 export const CATALOGUE_STATIONS: Readonly<Record<string, readonly GymStation[]>> = {
   'barbell-back-squat': ['rack'],
@@ -90,3 +90,17 @@ export function missingStations(exerciseId: string | undefined, equipment: reado
 }
 
 export const STATION_WORD: Readonly<Record<GymStation, string>> = { bench: 'bench', incline_bench: 'incline bench', rack: 'rack' };
+
+/** The missing stations in a line: `rack`, `bench or rack` (`No bench or rack here`), null for none. */
+export function stationWords(stations: readonly GymStation[] | undefined, join: 'or' | 'and' = 'or'): string | null {
+  if (stations === undefined || stations.length === 0) return null;
+  const words = stations.map((s) => STATION_WORD[s]);
+  return words.length === 1 ? (words[0] ?? null) : `${words.slice(0, -1).join(', ')} ${join} ${words.at(-1) ?? ''}`;
+}
+
+/** The picker or Library line for an exercise left out for a station: `Needs a rack`, `Needs an incline bench`, `Needs a bench and rack`. */
+export function needsStationText(stations: readonly GymStation[]): string | null {
+  const words = stationWords(stations, 'and');
+  if (words === null) return null;
+  return `Needs ${/^[aeiou]/.test(words) ? 'an' : 'a'} ${words}`;
+}

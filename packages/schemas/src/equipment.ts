@@ -168,6 +168,10 @@ export const BenchSchema = equipmentCommon.extend({
   benchType: BenchTypeSchema,
 });
 
+/** (ADR 0030) What an exercise may need besides its load item: a bench (flat or adjustable), an incline (or adjustable) bench, a rack. */
+export const GymStationSchema = z.enum(['bench', 'incline_bench', 'rack']);
+export type GymStation = z.infer<typeof GymStationSchema>;
+
 export const RackTypeSchema = z.enum(['squat_rack', 'power_rack']);
 export type RackType = z.infer<typeof RackTypeSchema>;
 export const RackSchema = equipmentCommon.extend({

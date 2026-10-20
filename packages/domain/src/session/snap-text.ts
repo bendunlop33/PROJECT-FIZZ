@@ -2,6 +2,7 @@ import { GYM_EQUIPMENT_KINDS, type EquipmentInstance, type Load, type PlannedSna
 import { formatNumber, loadText, NBSP, type LoadContext } from '../display';
 import { boundWords, convertedWords, droppedWords, nameInLine, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { SnapNote, SnapSlotResult } from './snap';
+import { stationWords } from '../stations';
 
 /**
  * Fixed wording for `snapPlanToGym` results (gym-switch.md §5). The same
@@ -97,6 +98,12 @@ export function repeatNoteText(note: SnapNote, slot: SlotInfo): string | null {
   }
 }
 
+/** `No load target · no rack here` (a missing bench or rack, ADR 0030), else the planned item's name. */
+function notHereText(snap: PlannedSnap): string {
+  const missing = stationWords(snap.stations) ?? (snap.intendedOn?.name ? nameInLine(snap.intendedOn.name) : null);
+  return missing === null ? 'No load target · not here' : `No load target · no ${missing} here`;
+}
+
 /**
  * The set card's `SnapNote` (gym-switch §2.5): read from the stored
  * `planned.snap`, so it reads the same after a relaunch (check 70). Only
@@ -123,7 +130,7 @@ export function setSnapNote(
       // The full sentence is in `Why?` (the `Equipment` row); the card says only what's missing.
       switch (snap.reason) {
         case 'not_here':
-          return { tone: 'warning', text: withWas(snap.intendedOn?.name ? `No load target · no ${nameInLine(snap.intendedOn.name)} here` : 'No load target · not here', 'plan', plan) };
+          return { tone: 'warning', text: withWas(notHereText(snap), 'plan', plan) };
         case 'lightest_is_harder':
           return { tone: 'warning', text: withWas('No load target · lightest here is heavier', 'plan', plan) };
         case 'convention_mismatch':

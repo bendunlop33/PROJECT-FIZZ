@@ -16,6 +16,7 @@ import { comparableSetsOf, matchesEquipment, type HistorySession, type NextTarge
 import type { StartWarning } from './session/create';
 import { buildStepCard, pctChange } from './step-card';
 import { toScaled } from './units';
+import { stationWords } from './stations';
 
 /**
  * Writers for `TargetProvenance` (active-workout.md §2.12, AW3): each path
@@ -233,8 +234,11 @@ export function startWarningNote(w: Extract<StartWarning, { kind: 'target_rounde
       return `No load target: ${was.toLowerCase()} was ${requested}, and there’s no equipment here to check it in another unit.`;
     case 'no_achievable_loads':
       return `No load target: ${eq?.name ?? 'This equipment'} can’t make any load as set up.`;
-    case 'equipment_not_in_gym':
+    case 'equipment_not_in_gym': {
+      const station = stationWords(w.stations);
+      if (station !== null) return `No load target: ${was.toLowerCase()} was ${requested}, and this gym has no ${station}.`;
       return `No load target: ${was.toLowerCase()} was ${requested}, and this gym has nothing of that kind to check it on.`;
+    }
     case 'lightest_is_harder':
       // Rounded only toward easier (ADR 0019): the easiest load here is harder than asked, so there's no target.
       return loadDirection(w.requested.convention) === 'assistance'
@@ -319,7 +323,7 @@ export function refitNote(snap: PlannedSnap | undefined, load: Load | null, eq: 
   const requested = snap.intended;
   if (snap.outcome === 'dropped') {
     const reason = snap.reason ?? 'no_achievable_loads';
-    return startWarningNote({ kind: 'target_dropped', setTemplateId: '', requested, reason: reason === 'not_here' ? 'equipment_not_in_gym' : reason }, eq, was);
+    return startWarningNote({ kind: 'target_dropped', setTemplateId: '', requested, reason: reason === 'not_here' ? 'equipment_not_in_gym' : reason, ...(snap.stations !== undefined ? { stations: snap.stations } : {}) }, eq, was);
   }
   if (load === null) return null;
   if (snap.painHeld) return `Kept at ${loadWord(load, eq)}: a pain flag stops increases. ${was} was ${loadWord(requested, eq)}.`;

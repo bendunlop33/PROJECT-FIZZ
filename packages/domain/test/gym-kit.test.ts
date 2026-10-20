@@ -186,7 +186,7 @@ describe('benches and racks enable the exercises that need them', () => {
     expect(equipmentForExercise(benchPress, hotel)).toEqual([]);
     expect(doableHere(benchPress, snapGym(hotel))).toBe(false);
     expect(gymAvailability(benchPress, hotel)).toBe('not_at_gym');
-    expect(mapEquipment(benchPress, { id: 'x', kind: 'barbell', name: 'Bar', gymId: 'other' }, snapGym(hotel), undefined)).toEqual({ equipment: null, mapping: 'not_here' });
+    expect(mapEquipment(benchPress, { id: 'x', kind: 'barbell', name: 'Bar', gymId: 'other' }, snapGym(hotel), undefined)).toEqual({ equipment: null, mapping: 'not_here', stations: ['rack'] });
     expect(doableHere(inclineDb, snapGym(hotel))).toBe(true);
     expect(doableHere(dbRow, snapGym(hotel))).toBe(true);
     // Ticking the rack too: bench press is on.
