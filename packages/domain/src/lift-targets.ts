@@ -354,6 +354,27 @@ export function newLiftTarget(i: NewLiftTargetInput, sets: readonly LiftSet[]): 
   };
 }
 
+/**
+ * (Review S1) The same goal saved again, or only its date changed: the existing target stays, with
+ * its ID, when it was set, its "was" and so its hit; only the date is the new one. A different
+ * weight, reps, kind, unit or convention is a new target.
+ */
+export function keepSameLiftTarget(next: LiftTarget, existing: LiftTarget | null | undefined): LiftTarget {
+  if (existing === null || existing === undefined) return next;
+  const same =
+    existing.exerciseId === next.exerciseId &&
+    existing.kind === next.kind &&
+    existing.reps === next.reps &&
+    existing.load.value === next.load.value &&
+    existing.load.unit === next.load.unit &&
+    existing.load.convention === next.load.convention &&
+    (existing.load.plateLoaded === true) === (next.load.plateLoaded === true);
+  if (!same) return next;
+  const kept: LiftTarget = { ...existing };
+  delete kept.byDate;
+  return next.byDate === undefined ? kept : { ...kept, byDate: next.byDate };
+}
+
 /** The editor's number: a positive number (comma or point), else null. */
 export function readLiftTargetNumber(text: string): number | null {
   const v = Number(text.trim().replace(',', '.'));

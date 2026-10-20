@@ -9,6 +9,7 @@ import {
   liftTargetsInUse,
   liftTargetStatus,
   localDateOf,
+  keepSameLiftTarget,
   newLiftTarget,
   seriesTermsOfId,
   toMs,
@@ -101,10 +102,12 @@ export function createLiftTargetService(deps: LiftTargetServiceDeps) {
     const choice = liftTargetChoices(r.sets, r.exercises, r.loggedNames).find((c) => c.exerciseId === req.exerciseId) ?? null;
     if (choice === null) return { error: 'unknown_exercise' };
     const list = r.profile.liftTargets ?? [];
-    const target = newLiftTarget({ id: req.id, choice, kind: req.kind, value: req.value, unit: req.unit, reps: req.reps, byDate: req.byDate, atUtc: req.atUtc, today: r.today, setBy: req.setBy }, r.sets);
+    const before = list.find((t) => t.exerciseId === req.exerciseId) ?? null;
+    // Review S1: the same goal again (or only a new date) keeps when it was set, its "was" and its hit.
+    const target = keepSameLiftTarget(newLiftTarget({ id: req.id, choice, kind: req.kind, value: req.value, unit: req.unit, reps: req.reps, byDate: req.byDate, atUtc: req.atUtc, today: r.today, setBy: req.setBy }, r.sets), before);
     const problem = liftTargetProblem(target, list);
     if (problem !== null) return { error: problem === 'full' ? 'full' : 'invalid' };
-    return { target, before: list.find((t) => t.exerciseId === req.exerciseId) ?? null };
+    return { target, before };
   }
 
   return {

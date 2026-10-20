@@ -87,6 +87,13 @@ describe('lift targets in the app', () => {
     expect(plain(line?.hit)).toBe('Hit 19 Oct');
     expect(line?.progress).toBeNull();
 
+    // Review S1: saving the same goal with a new date keeps its hit and "was".
+    v = (await s.liftTargets.view())?.version ?? 0;
+    expect(await s.liftTargets.set({ exerciseId: bench.exerciseId, kind: 'one_rm', value: 100, unit: 'kg', reps: 1, byDate: '2027-01-31', expectedVersion: v, opId: h.ids() })).toMatchObject({ ok: true });
+    line = (await s.liftTargets.view())?.lines[0];
+    expect(plain(line?.hit)).toBe('Hit 19 Oct');
+    expect(plain(line?.detail)).toContain('was 93.5 kg on 13 Oct');
+
     // Off: every view is empty; the target is kept for when it's back on.
     v = (await s.liftTargets.view())?.version ?? 0;
     expect(await s.liftTargets.setOn(false, v, h.ids())).toMatchObject({ ok: true });

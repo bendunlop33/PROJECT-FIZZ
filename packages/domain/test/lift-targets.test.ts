@@ -4,6 +4,7 @@ import { TrainingProfileSchema, type LiftTarget, type TrainingChange, type Train
 import {
   applyTrainingChange,
   canAddLiftTarget,
+  keepSameLiftTarget,
   liftSetsOf,
   liftTargetChartValue,
   liftTargetChoices,
@@ -308,3 +309,28 @@ describe('the exercise detail chart line', () => {
   });
 });
 
+
+describe('saving the same goal again (review S1)', () => {
+  const before = [set(BENCH, '2026-10-10', 85, 3)];
+  const hitSet = set(BENCH, '2026-12-02', 100, 1);
+
+  it('only a new date: keeps its ID, set time, "was" and hit; the date changes', () => {
+    const first = target({}, before);
+    const later = [...before, hitSet, set(BENCH, '2026-12-05', 102.5, 1)];
+    const again = target({ id: 't2', byDate: '2027-03-01', atUtc: '2026-12-10T08:00:00.000Z', today: '2026-12-10' }, later);
+    const kept = keepSameLiftTarget(again, first);
+    expect(kept).toMatchObject({ id: 't1', setAtUtc: SET_AT, setOnDate: '2026-10-13', was: first.was, byDate: '2027-03-01' });
+    expect(plain(liftTargetLine(kept, liftTargetStatus(kept, later, '2026-12-10')).hit)).toBe('Hit 2 Dec');
+    // Clearing the date keeps it too.
+    expect(keepSameLiftTarget(target({ byDate: null }), { ...first, byDate: '2027-03-01' }).byDate).toBeUndefined();
+  });
+
+  it('a different weight, reps, kind or unit is a new target', () => {
+    const first = target({}, before);
+    for (const o of [{ value: 105 }, { kind: 'weight_reps' as const, reps: 5 }, { unit: 'lb' as const }]) {
+      const next = target({ id: 't2', atUtc: '2026-12-10T08:00:00.000Z', today: '2026-12-10', ...o });
+      expect(keepSameLiftTarget(next, first)).toBe(next);
+    }
+    expect(keepSameLiftTarget(first, null)).toBe(first);
+  });
+});
