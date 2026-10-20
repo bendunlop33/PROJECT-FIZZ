@@ -59,7 +59,10 @@ function setup(opts: { pain?: Record<string, string>; askedHeavier?: boolean } =
 describe('strict tool schemas', () => {
   it('every builder tool is closed for strict function calling (no extra fields, every field required)', () => {
     const walk = (n: unknown): void => {
-      if (Array.isArray(n)) return n.forEach(walk);
+      if (Array.isArray(n)) {
+        n.forEach(walk);
+        return;
+      }
       if (n === null || typeof n !== 'object') return;
       const o = n as Record<string, unknown>;
       if (o.type === 'object') {

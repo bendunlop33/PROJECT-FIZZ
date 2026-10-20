@@ -106,7 +106,9 @@ export function builderLoadText(value: number, unit: WeightUnit, convention: Loa
       return `${fmt(value)} ${unit} assist`;
     case 'added':
       return `+${fmt(value)} ${unit}`;
-    default:
+    case 'total':
+    case 'stack':
+    case 'bodyweight':
       return `${fmt(value)} ${unit}`;
   }
 }
