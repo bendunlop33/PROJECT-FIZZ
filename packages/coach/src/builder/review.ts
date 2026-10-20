@@ -1,7 +1,7 @@
 import { infoOrDefault, slotsOf, workingCount, type BuilderContext, type BuilderGroupName, type BuilderSlot } from '@fizz/domain';
 import type { EquipmentInstance, ReviewWorkoutArgs, WeightUnit, LoadConvention } from '@fizz/schemas';
-import type { NumberFacts } from '../numbers';
-import { checkCoachText } from './checked-text';
+import { checkClaims, claimFacts, workoutClaimCheck, type ClaimBase } from './claims';
+import { CORE_FOCI, focusSets } from './focus';
 import { builderLoadText, type BuilderCoachEnv, type BuilderCoachSnapshot } from './edit-ops';
 import { makeBuilderProposal, type BuilderProposal } from './proposal';
 
@@ -14,43 +14,6 @@ import { makeBuilderProposal, type BuilderProposal } from './proposal';
  * one of code's, its suggestions as proposals with code-made lines, and its
  * notes as code-worded lines (a target note's load checked and rounded down).
  */
-
-/** The core muscles a day's groups should cover (focus headings, §2.5). Rear delts count as Back (Q13). */
-export const CORE_FOCI: Readonly<Record<BuilderGroupName, readonly string[]>> = {
-  Chest: ['Upper chest', 'Mid chest'],
-  Back: ['Lats', 'Mid-back', 'Rear delts'],
-  Shoulders: ['Front delts', 'Side delts'],
-  Legs: ['Quads', 'Hamstrings & glutes', 'Calves'],
-  Biceps: ['Biceps'],
-  Triceps: ['Triceps'],
-  Abs: ['Abs'],
-};
-
-/** A muscle word (`BuilderExerciseInfo.muscles`) → its focus heading; words with none (grip, hip flexors) count nowhere. */
-const MUSCLE_FOCUS: Readonly<Record<string, string>> = {
-  chest: 'Mid chest',
-  'mid chest': 'Mid chest',
-  'upper chest': 'Upper chest',
-  'lower chest': 'Mid chest',
-  lats: 'Lats',
-  'mid-back': 'Mid-back',
-  'upper back': 'Mid-back',
-  traps: 'Mid-back',
-  'rear delts': 'Rear delts',
-  'front delts': 'Front delts',
-  'side delts': 'Side delts',
-  biceps: 'Biceps',
-  brachialis: 'Biceps',
-  triceps: 'Triceps',
-  quads: 'Quads',
-  hamstrings: 'Hamstrings & glutes',
-  glutes: 'Hamstrings & glutes',
-  adductors: 'Hamstrings & glutes',
-  calves: 'Calves',
-  abs: 'Abs',
-  obliques: 'Abs',
-  core: 'Abs',
-};
 
 /** The plan day the workout came from (template), as the review compares it (§2.9 Plan section). */
 export interface ReviewPlanDay {
@@ -92,7 +55,7 @@ export interface BuilderReviewFacts {
   workingSets: number;
   /** Working sets per group, direct (the exercise's own group; Legs by part), for the stored record. */
   groupSets: { group: BuilderGroupName; part: string | null; sets: number }[];
-  plan: { title: string; lines: ReviewPlanLine[]; missing: string[]; added: string[]; differs: boolean } | null;
+  plan: { title: string; lines: ReviewPlanLine[]; missing: string[]; added: string[]; /** Planned exercises whose working sets differ from the plan's. */ setsDiffer: string[]; differs: boolean } | null;
   /** Code's own suggestions: `Add back <name>` (max 2), each a proposal. */
   addBack: { exerciseId: string; name: string; workingSets: number }[];
 }
@@ -116,16 +79,8 @@ export function reviewFacts(input: ReviewFactsInput): BuilderReviewFacts {
   const info = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId);
   const groups = input.groups.length > 0 ? [...input.groups] : [...new Set(slots.map((s) => info(s).group))];
   const foci = [...new Set(groups.flatMap((g) => CORE_FOCI[g]))];
-  const raw = new Map<string, number>();
-  for (const s of slots) {
-    const i = info(s);
-    const n = workingCount(s);
-    const own = i.angle !== '' ? i.angle : (MUSCLE_FOCUS[i.muscles[0] ?? ''] ?? null);
-    if (own !== null) raw.set(own, (raw.get(own) ?? 0) + n);
-    const others = new Set(i.muscles.map((m) => MUSCLE_FOCUS[m]).filter((f): f is string => f !== undefined && f !== own));
-    for (const f of others) raw.set(f, (raw.get(f) ?? 0) + n / 2);
-  }
-  const coverage = foci.map((focus) => ({ focus, sets: Math.round(raw.get(focus) ?? 0) }));
+  const raw = focusSets(slots, ctx);
+  const coverage = foci.map((focus) => ({ focus, sets: raw.get(focus) ?? 0 }));
 
   const compound = slots.filter((s) => info(s).role === 'compound').length;
   const isolation = slots.length - compound;
@@ -195,7 +150,12 @@ export function reviewFacts(input: ReviewFactsInput): BuilderReviewFacts {
       },
       { key: 'working_sets', ok: Math.abs(workingSets - plannedSets) <= 2, text: `${String(workingSets)} working sets (plan ${String(plannedSets)})`, actual: workingSets, planned: plannedSets, exerciseIds: [] },
     ];
-    plan = { title: `${p.planName} · since ${p.since}`, lines, missing, added, differs: missing.length > 0 || added.length > 0 };
+    // `Update plan day` (§2.8): the exercises, the main lift or a planned exercise's working sets differ; loads never (§9 Q11).
+    const setsDiffer = p.exercises.filter((e) => {
+      const s = slots.find((x) => x.exerciseId === e.exerciseId);
+      return s !== undefined && workingCount(s) !== e.workingSets;
+    }).map((e) => e.exerciseId);
+    plan = { title: `${p.planName} · since ${p.since}`, lines, missing, added, setsDiffer, differs: missing.length > 0 || added.length > 0 || setsDiffer.length > 0 || mainNow !== p.mainLiftExerciseId };
     for (const id of missing.slice(0, 2)) addBack.push({ exerciseId: id, name: name(id), workingSets: p.exercises.find((e) => e.exerciseId === id)?.workingSets ?? 3 });
   }
 
@@ -239,15 +199,36 @@ export interface CheckedReview {
 
 const ACTION: Readonly<Record<string, string>> = { swap: 'Swap', add: 'Add', remove: 'Delete', superset: 'Superset', unlink: 'Unlink', move: 'Move' };
 
-/** `checkReview`: what of the coach's review may show. */
-export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; snapshot: BuilderCoachSnapshot; env: BuilderCoachEnv; facts: NumberFacts }): CheckedReview {
+/** The claim check's base for a review: code's facts and the plan's totals, never IDs or memories (B2). */
+export function reviewClaimBase(f: BuilderReviewFacts, input: { ctx: BuilderContext; minutes: readonly number[]; plan: ReviewPlanDay | null; words?: string }): ClaimBase {
+  const p = input.plan;
+  const kept = f.plan?.lines.find((l) => l.key === 'planned_exercises');
+  return {
+    ctx: input.ctx,
+    minutes: input.minutes,
+    plan:
+      p === null
+        ? null
+        : {
+            minutes: p.minutes,
+            workingSets: p.exercises.reduce((m, e) => m + e.workingSets, 0),
+            exercises: p.exercises.length,
+            pairs: [[p.nextDayNumber, p.dayCount], ...(kept?.actual != null && kept.planned != null ? [[kept.actual, kept.planned] as [number, number]] : [])],
+          },
+    ...(input.words === undefined ? {} : { words: input.words }),
+  };
+}
+
+/** `checkReview`: what of the coach's review may show. Every number is checked against the fact it names. */
+export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; snapshot: BuilderCoachSnapshot; env: BuilderCoachEnv; claims: ClaimBase }): CheckedReview {
   const hidden: string[] = [];
-  const verdict = checkCoachText(input.args.verdict, input.facts);
+  const check = workoutClaimCheck(input.snapshot.workout, input.claims);
+  const verdict = check(input.args.verdict, null);
   hidden.push(...verdict.hidden);
   const suggestions: ReviewSuggestion[] = [];
   const seen = new Set<string>();
   input.args.suggestions.forEach((s, i) => {
-    const r = makeBuilderProposal({ id: `${input.reviewId}:s${String(i)}`, snapshot: input.snapshot, ops: s.ops, words: s.reason, facts: input.facts, env: input.env });
+    const r = makeBuilderProposal({ id: `${input.reviewId}:s${String(i)}`, snapshot: input.snapshot, ops: s.ops, words: s.reason, check, env: input.env });
     hidden.push(...r.hidden);
     if (r.proposal === null) return;
     const key = r.proposal.lines.join('\n');
@@ -273,7 +254,7 @@ export function checkReview(input: { reviewId: string; args: ReviewWorkoutArgs; 
       notes.push({ id, kind: 'target', exerciseId: slot.exerciseId, text: `${name} ${top}: ${builderLoadText(g.value, slot.unit, slot.convention)} next`, value: g.value, unit: slot.unit, convention: slot.convention, reps: t.reps });
       return;
     }
-    const c = checkCoachText(n.text, input.facts);
+    const c = checkClaims(n.text, claimFacts([input.snapshot.workout], input.claims));
     hidden.push(...c.hidden);
     if (c.shown === null || c.hidden.length > 0) return;
     notes.push({ id, kind: 'text', text: c.shown });

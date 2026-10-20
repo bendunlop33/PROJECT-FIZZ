@@ -1,6 +1,5 @@
 import type { BuilderEditOp } from '@fizz/schemas';
-import type { NumberFacts } from '../numbers';
-import { checkCoachText } from './checked-text';
+import type { TextCheck } from './claims';
 import { OUT_OF_DATE_LINE, applyBuilderEdits, preconditionsHold, type BuilderCoachEnv, type BuilderCoachSnapshot, type EditOutcome, type SlotPrecondition } from './edit-ops';
 
 /**
@@ -35,9 +34,10 @@ export interface BuilderProposal {
 }
 
 /** Build the proposal from checked ops. Null when nothing would change (every op was left out). */
-export function makeBuilderProposal(input: { id: string; snapshot: BuilderCoachSnapshot; ops: readonly BuilderEditOp[]; words: string | null; facts: NumberFacts; env: BuilderCoachEnv }): { proposal: BuilderProposal | null; outcome: EditOutcome; reason: string | null; hidden: string[] } {
+export function makeBuilderProposal(input: { id: string; snapshot: BuilderCoachSnapshot; ops: readonly BuilderEditOp[]; words: string | null; check: TextCheck; env: BuilderCoachEnv }): { proposal: BuilderProposal | null; outcome: EditOutcome; reason: string | null; hidden: string[] } {
   const outcome = applyBuilderEdits(input.snapshot, input.ops, input.env);
-  const checked = checkCoachText(input.words, input.facts);
+  // Every number in the coach's words is checked against the fact it names, before and after the change (B2).
+  const checked = input.check(input.words, outcome);
   if (outcome.lines.length === 0) return { proposal: null, outcome, reason: checked.shown, hidden: checked.hidden };
   return {
     proposal: {
@@ -68,7 +68,9 @@ export function recheckBuilderProposal(p: BuilderProposal, now: BuilderCoachSnap
   const fresh = preconditionsHold(p.preconditions, now);
   if (!fresh.ok) return fresh;
   const outcome = applyBuilderEdits(now, p.ops, env);
-  if (outcome.lines.length !== p.lines.length || outcome.lines.some((l, i) => l !== p.lines[i])) return { ok: false, line: OUT_OF_DATE_LINE };
+  const differs = (a: readonly string[], b: readonly string[]): boolean => a.length !== b.length || a.some((l, i) => l !== b[i]);
+  // A new ⚠ since (Ben's other edits) is shown before Apply, never applied unseen (review N5).
+  if (differs(outcome.lines, p.lines) || outcome.warnings.some((w) => !p.warnings.includes(w))) return { ok: false, line: OUT_OF_DATE_LINE };
   return { ok: true, outcome };
 }
 

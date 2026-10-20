@@ -5,7 +5,8 @@ import { BUILDER_COACH_TOOL_ARGS, BuilderEditOpSchema, FillSetupArgsSchema, Prop
 import {
   OUT_OF_DATE_LINE,
   applyBuilderEdits,
-  builderFacts,
+  NO_NUMBERS,
+  workoutClaimCheck,
   builderToolDefinition,
   createBuilderLoadGuard,
   makeBuilderProposal,
@@ -35,12 +36,16 @@ function snapshotOf(w: BuilderWorkout, over: Partial<BuilderCoachSnapshot> = {})
   return { draftId: 'd1', draftVersion: 3, dayName: 'Chest', minutes: 60, supersets: true, workout: w, revs: {}, ...over };
 }
 
-function benchRefs(): LoadReferences {
-  const s: RefSession = { sessionId: 's1', performedAtUtc: '2026-10-13T10:00:00Z', tz: 'Europe/London', source: 'app', sets: [{ value: 100, reps: 8, rpe: 8 }], top: { value: 100, reps: 8, rpe: 8 } };
-  return { exerciseId: 'bench', unit: 'kg', convention: 'total', direction: 'resistance', equipment: F.bar, own: { sessions: [s], e1rm: referenceE1rm(s.sets), gapDays: 7, estOnly: false }, latest: s, all: [s], derived: null, patternE1rms: [], historyVersion: 'h1' };
+function refsOf(exerciseId: string, top: { value: number; reps: number; rpe: number }, over: Partial<LoadReferences> = {}): LoadReferences {
+  const s: RefSession = { sessionId: `s-${exerciseId}`, performedAtUtc: '2026-10-13T10:00:00Z', tz: 'Europe/London', source: 'app', sets: [top], top };
+  return { exerciseId, unit: 'kg', convention: 'total', direction: 'resistance', equipment: F.bar, own: { sessions: [s], e1rm: referenceE1rm(s.sets), gapDays: 7, estOnly: false }, latest: s, all: [s], derived: null, patternE1rms: [], historyVersion: 'h1', ...over };
 }
+function benchRefs(): LoadReferences {
+  return refsOf('bench', { value: 100, reps: 8, rpe: 8 });
+}
+const flyRefs = (): LoadReferences => refsOf('cable_fly', { value: 90, reps: 12, rpe: 8 }, { convention: 'stack', equipment: F.cable });
 
-function setup(opts: { pain?: Record<string, string>; askedHeavier?: boolean } = {}) {
+function setup(opts: { pain?: Record<string, string>; askedHeavier?: boolean; refs?: (id: string) => LoadReferences | null } = {}) {
   const ctx = F.context();
   const w = buildFromSetup(chest, F.pool, ctx).workout;
   const pain = (id: string) => opts.pain?.[id] ?? null;
@@ -48,7 +53,7 @@ function setup(opts: { pain?: Record<string, string>; askedHeavier?: boolean } =
     ctx,
     usable: (id) => F.info(id) !== null,
     pain,
-    loads: createBuilderLoadGuard({ ctx, refs: (id) => (id === 'bench' ? benchRefs() : null), pain }),
+    loads: createBuilderLoadGuard({ ctx, refs: opts.refs ?? ((id) => (id === 'bench' ? benchRefs() : id === 'cable_fly' ? flyRefs() : null)), pain }),
     askedHeavier: opts.askedHeavier ?? false,
     mainGroup: 'Chest',
   };
@@ -140,7 +145,7 @@ describe('typed edits, code-made lines', () => {
     const o = applyBuilderEdits(snap, ops, env);
     expect(o.lines).toEqual(['Superset Incline dumbbell press + Cable fly']);
     expect(o.warnings.some((w) => w.startsWith('⚠ Not recommended: ') && w.includes('so the second one suffers'))).toBe(true);
-    const p = makeBuilderProposal({ id: 'p1', snapshot: snap, ops, words: null, facts: builderFacts([]), env }).proposal;
+    const p = makeBuilderProposal({ id: 'p1', snapshot: snap, ops, words: null, check: NO_NUMBERS, env }).proposal;
     expect(p).not.toBeNull();
   });
 });
@@ -179,10 +184,11 @@ describe('loads: checked, rounded down, never past the cap', () => {
     const down = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('bench'), direction: null, value: 225, unit: 'lb' }], env);
     expect(down.lines).toEqual([]);
     expect(down.notes[0]).toMatch(/^Barbell bench press: stays 100 kg/);
-    const stack = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('cable_fly'), direction: null, value: 140, unit: 'kg' }], env);
+    // Fly last 90 × 12: 105 is inside the ceiling but past the stack's 100 max.
+    const stack = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('cable_fly'), direction: null, value: 105, unit: 'kg' }], env);
     const fly = slotsOf(stack.workout.blocks).find((s) => s.exerciseId === 'cable_fly');
-    expect(topLoad(fly ?? { rows: [] })).toBe(100);
-    expect(stack.notes.some((n) => n.includes('capped at machine max 100 kg'))).toBe(true);
+    expect(topLoad(fly ?? { rows: [] })).toBeLessThanOrEqual(100);
+    expect(stack.lines[0]).toMatch(/^Cable fly: \d+ → (\d+) kg$/);
   });
 
   it('a pain-flagged movement never gets heavier (rule 9)', () => {
@@ -205,11 +211,59 @@ describe('loads: checked, rounded down, never past the cap', () => {
   });
 });
 
+describe('the guard fails closed (review b3-coach B3)', () => {
+  it('no load reference: a named heavier value is refused; one step or lighter still works', () => {
+    const { snap, env, key } = setup({ refs: () => null });
+    const fly = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('cable_fly'), direction: null, value: 100, unit: 'kg' }], env);
+    expect(fly.lines).toEqual([]);
+    expect(fly.notes).toEqual(['Cable fly: Not changed: no reference for that load']);
+    const incline = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('incline_db'), direction: null, value: 40, unit: 'kg' }], env);
+    expect(incline.lines).toEqual([]);
+    const step = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('cable_fly'), direction: 'heavier', value: null, unit: null }], env);
+    expect(step.lines).toEqual(['Cable fly: 15 → 20 kg']);
+    const lighter = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('cable_fly'), direction: null, value: 10, unit: 'kg' }], env);
+    expect(lighter.lines).toEqual(['Cable fly: 15 → 10 kg']);
+  });
+
+  it('a lb history on a kg bar still gets the ceiling (units converted, never skipped)', () => {
+    const lbBench = (): LoadReferences => refsOf('bench', { value: 220, reps: 8, rpe: 8 }, { unit: 'lb' });
+    const { snap, env, key } = setup({ refs: (id) => (id === 'bench' ? lbBench() : null) });
+    // 220 lb ≈ 99.8 kg: 160 kg is far past capLastTop and refused, not just rounded to the bar.
+    const far = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('bench'), direction: null, value: 160, unit: 'kg' }], env);
+    expect(far.lines).toEqual([]);
+    expect(far.notes[0]).toMatch(/^Barbell bench press: Not changed: /);
+    const near = applyBuilderEdits(snap, [{ op: 'load', slotKey: key('bench'), direction: null, value: 102.5, unit: 'kg' }], env);
+    expect(near.lines).toEqual(['Barbell bench press: 100 → 102.5 kg']);
+  });
+
+  it('a pain-flagged lift gets no more sets or reps (rule 9; review S2)', () => {
+    const { snap, env, key } = setup({ pain: { cable_fly: 'shoulder flagged 6 Oct' } });
+    const o = applyBuilderEdits(snap, [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 5 }, { op: 'reps', slotKey: key('cable_fly'), reps: 20 }], env);
+    expect(o.lines).toEqual([]);
+    expect(o.notes).toEqual(['Cable fly: Not more: shoulder flagged 6 Oct', 'Cable fly: Not more: shoulder flagged 6 Oct']);
+    const fewer = applyBuilderEdits(snap, [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 2 }], env);
+    expect(fewer.lines).toEqual(['Cable fly: 3 → 2 sets']);
+  });
+
+  it('reps or RPE that move the load by formula pass the same ceiling (review S3)', () => {
+    const { snap, env, key } = setup();
+    // Bench last 100 × 8 @ 8: 1 rep at RPE 10 by formula would pass capLastTop (120).
+    const o = applyBuilderEdits(snap, [{ op: 'reps', slotKey: key('bench'), reps: 1 }, { op: 'rpe', slotKey: key('bench'), rpe: 10 }], env);
+    const bench = slotsOf(o.workout.blocks).find((s) => s.exerciseId === 'bench');
+    expect(topLoad(bench ?? { rows: [] }) ?? 999).toBeLessThanOrEqual(120);
+    const none = setup({ refs: () => null });
+    const held = applyBuilderEdits(none.snap, [{ op: 'reps', slotKey: none.key('bench'), reps: 1 }], none.env);
+    const b = slotsOf(held.workout.blocks).find((s) => s.exerciseId === 'bench');
+    expect(topLoad(b ?? { rows: [] })).toBe(100);
+    expect(held.notes.some((n) => n.startsWith('Barbell bench press: stays 100 kg · Not changed: no reference for that load'))).toBe(true);
+  });
+});
+
 describe('staleness by slot (rule 5)', () => {
   it('Ben edited Cable fly since: a proposal touching it is out of date; one touching only bench still applies', () => {
     const { snap, env, key } = setup();
-    const fly = makeBuilderProposal({ id: 'p-fly', snapshot: snap, ops: [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 4 }], words: null, facts: builderFacts([]), env }).proposal;
-    const bench = makeBuilderProposal({ id: 'p-bench', snapshot: snap, ops: [{ op: 'load', slotKey: key('bench'), direction: 'lighter', value: null, unit: null }], words: null, facts: builderFacts([]), env }).proposal;
+    const fly = makeBuilderProposal({ id: 'p-fly', snapshot: snap, ops: [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 4 }], words: null, check: NO_NUMBERS, env }).proposal;
+    const bench = makeBuilderProposal({ id: 'p-bench', snapshot: snap, ops: [{ op: 'load', slotKey: key('bench'), direction: 'lighter', value: null, unit: null }], words: null, check: NO_NUMBERS, env }).proposal;
     expect(fly && bench).toBeTruthy();
     if (fly === null || bench === null) return;
     // Ben's own edit on Cable fly bumps its revision and the draft version.
@@ -224,7 +278,7 @@ describe('staleness by slot (rule 5)', () => {
 
   it('a length proposal is refused once Set up’s length moved', () => {
     const { snap, env } = setup();
-    const p = makeBuilderProposal({ id: 'p-len', snapshot: snap, ops: [{ op: 'minutes', minutes: 45 }], words: null, facts: builderFacts([]), env }).proposal;
+    const p = makeBuilderProposal({ id: 'p-len', snapshot: snap, ops: [{ op: 'minutes', minutes: 45 }], words: null, check: NO_NUMBERS, env }).proposal;
     expect(p).not.toBeNull();
     if (p === null) return;
     expect(recheckBuilderProposal(p, snapshotOf(snap.workout, { minutes: 50 }), env).ok).toBe(false);
@@ -232,12 +286,21 @@ describe('staleness by slot (rule 5)', () => {
   });
 
   it('nothing to change is no proposal; a reason with an invented number is hidden', () => {
-    const { snap, env, key } = setup();
-    const none = makeBuilderProposal({ id: 'x', snapshot: snap, ops: [{ op: 'remove', slotKey: key('bench') }], words: 'Done.', facts: builderFacts([]), env });
+    const { snap, env, key, ctx } = setup();
+    const none = makeBuilderProposal({ id: 'x', snapshot: snap, ops: [{ op: 'remove', slotKey: key('bench') }], words: 'Done.', check: NO_NUMBERS, env });
     expect(none.proposal).toBeNull();
-    const facts = builderFacts(['{"sets":"3 × 8 @ 20 kg"}']);
-    const p = makeBuilderProposal({ id: 'y', snapshot: snap, ops: [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 4 }], words: 'One more set on the fly. You did 27 kg × 8 last time.', facts, env });
-    expect(p.proposal?.reason).toBe('One more set on the fly.');
+    const check = workoutClaimCheck(snap.workout, { ctx, minutes: [60] });
+    const p = makeBuilderProposal({ id: 'y', snapshot: snap, ops: [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 4 }], words: 'One more set on the fly. You did 27 kg × 8 last time. Cable fly goes to 4 sets.', check, env });
+    // `Cable fly … 4 sets` is the change's own after-value; 27 kg belongs to nothing named.
+    expect(p.proposal?.reason).toBe('One more set on the fly. Cable fly goes to 4 sets.');
     expect(p.hidden).toEqual(['You did 27 kg × 8 last time.']);
+  });
+
+  it('a new ⚠ since the proposal was made is out of date (shown before Apply, never applied unseen)', () => {
+    const { snap, env, key } = setup();
+    const p = makeBuilderProposal({ id: 'w', snapshot: snap, ops: [{ op: 'superset', slotKey: key('incline_db'), withSlotKey: key('cable_fly') }], words: null, check: NO_NUMBERS, env }).proposal;
+    expect(p?.warnings.length).toBeGreaterThan(0);
+    if (p === null) return;
+    expect(recheckBuilderProposal({ ...p, warnings: [] }, snap, env)).toEqual({ ok: false, line: OUT_OF_DATE_LINE });
   });
 });

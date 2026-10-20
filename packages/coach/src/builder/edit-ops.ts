@@ -7,11 +7,13 @@ import {
   builderUnlink,
   canPair,
   clampMinutes,
+  compareDifficulty,
   editSetRow,
   estimateBuilderMinutes,
   fitToMinutes,
   formulaApplies,
   infoOrDefault,
+  loadDirection,
   loadForSet,
   makeSlot,
   removeSlot,
@@ -53,6 +55,8 @@ export interface BuilderCoachSnapshot {
   workout: BuilderWorkout;
   /** Each slot's revision (`DraftSlot.rev`; absent = 1). */
   revs: Readonly<Record<string, number>>;
+  /** Set up's revision (bumped on every Set up change); absent: the length itself stands in (review N3). */
+  setupRev?: number;
 }
 
 export interface BuilderCoachEnv {
@@ -231,6 +235,7 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         mark(op.afterSlotKey);
         const i = blockIndexOf(st.w, op.afterSlotKey);
         if (i >= 0) at = i + 1;
+        else st.notes.push(`${name(op.exerciseId)}: added at the end`);
       }
       const blocks = [...st.w.blocks];
       blocks.splice(at, 0, { slots: [slot], auto: false });
@@ -252,6 +257,12 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
       if (s === null) return;
       const n = Math.max(BUILD_LIMITS.minWorkingSets, Math.min(BUILD_LIMITS.maxWorkingSets, op.workingSets));
       if (n !== op.workingSets) st.notes.push(`${name(s.exerciseId)}: ${String(n)} sets (limit ${String(BUILD_LIMITS.minWorkingSets)}–${String(BUILD_LIMITS.maxWorkingSets)})`);
+      // Rule 9: pain stops progression for that movement, volume included (review b3-coach S2).
+      const pain = env.pain(s.exerciseId);
+      if (pain !== null && n > workingCount(s)) {
+        st.notes.push(`${name(s.exerciseId)}: Not more: ${pain}`);
+        return;
+      }
       st.w = replaceSlot(st.w, s.key, { ...setWorkingCount(s, n), touched: true });
       return;
     }
@@ -265,10 +276,14 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         value = Math.max(lo, Math.min(hi, value));
         st.notes.push(`${name(s.exerciseId)}: ${op.op === 'reps' ? `${String(value)} reps` : `RPE ${String(value)}`} (limit ${String(lo)}–${String(hi)})`);
       }
-      // Rule 9: a pain-flagged movement is never made harder (a higher RPE target is refused).
+      // Rule 9: a pain-flagged movement is never made harder: no higher RPE target, no more reps (review S2).
       const pain = env.pain(s.exerciseId);
-      if (op.op === 'rpe' && pain !== null && value > (working(s)[0]?.rpe ?? 0)) {
+      if (pain !== null && op.op === 'rpe' && value > (working(s)[0]?.rpe ?? 0)) {
         st.notes.push(`${name(s.exerciseId)}: Not harder: ${pain}`);
+        return;
+      }
+      if (pain !== null && op.op === 'reps' && value > (working(s)[0]?.reps ?? 0)) {
+        st.notes.push(`${name(s.exerciseId)}: Not more: ${pain}`);
         return;
       }
       let next = s;
@@ -278,6 +293,22 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         if (r === undefined || r.type === 'warmup' || r.type === 'drop') continue;
         const e = editSetRow(next, i, op.op === 'reps' ? { kind: 'reps', reps: value } : { kind: 'rpe', rpe: value }, load);
         if (e.ok) next = e.slot;
+      }
+      // The formula may move the load with the reps or RPE: a heavier one passes the same guard as a
+      // coach load (ceilings, max, pain); refused, the slot keeps its load (review b3-coach S3).
+      const was = topLoad(s);
+      const moved = topLoad(next);
+      if (was !== null && moved !== null && compareDifficulty(moved, was, loadDirection(s.convention)) > EPS) {
+        // Checked at the new reps / RPE with the load as it was.
+        const held = withWorkingLoad(next, was, ctx);
+        const g = env.loads.check(held, moved, { askedHeavier: env.askedHeavier });
+        if (!g.ok) {
+          next = held;
+          st.notes.push(`${name(s.exerciseId)}: stays ${builderLoadText(was, s.unit, s.convention)} · ${g.note}`);
+        } else if (Math.abs(g.value - moved) > EPS) {
+          next = withWorkingLoad(next, g.value, ctx);
+          for (const n of g.notes) st.notes.push(`${name(s.exerciseId)}: ${n}`);
+        }
       }
       st.w = replaceSlot(st.w, s.key, { ...next, touched: true });
       return;
@@ -297,7 +328,7 @@ function applyOne(st: Working, op: BuilderEditOp, env: BuilderCoachEnv, snapshot
         st.notes.push(`Not changed: ${name(s.exerciseId)} has no load to change`);
         return;
       }
-      const g = env.loads.check(s, requested, { askedHeavier: env.askedHeavier });
+      const g = env.loads.check(s, requested, { askedHeavier: env.askedHeavier, step: op.value === null });
       if (!g.ok) {
         st.notes.push(`${name(s.exerciseId)}: ${g.note}`);
         return;
@@ -462,7 +493,7 @@ export function applyBuilderEdits(snapshot: BuilderCoachSnapshot, ops: readonly 
     .map((a) => `⚠ Not recommended: ${a.reason}`);
 
   const preconditions: SlotPrecondition[] = [...new Set([...touched, ...st.named])].filter((k) => beforeSlots.some((s) => s.key === k)).map((slotKey) => ({ slotKey, rev: snapshot.revs[slotKey] ?? 1 }));
-  if (st.minutesTouched) preconditions.push({ slotKey: MINUTES_KEY, rev: snapshot.minutes });
+  if (st.minutesTouched) preconditions.push({ slotKey: MINUTES_KEY, rev: snapshot.setupRev ?? snapshot.minutes });
 
   return { workout: after, minutes: st.minutes, estimate: estimateBuilderMinutes(after, env.ctx), lines, warnings: [...new Set(warnings)], notes: st.notes, preconditions };
 }
@@ -476,7 +507,7 @@ export const OUT_OF_DATE_LINE = 'Out of date. Ask again.';
 export function preconditionsHold(pre: readonly SlotPrecondition[], now: BuilderCoachSnapshot): FreshCheck {
   for (const p of pre) {
     if (p.slotKey === MINUTES_KEY) {
-      if (now.minutes !== p.rev) return { ok: false, line: OUT_OF_DATE_LINE };
+      if ((now.setupRev ?? now.minutes) !== p.rev) return { ok: false, line: OUT_OF_DATE_LINE };
       continue;
     }
     if (findSlot(now.workout, p.slotKey) === undefined || (now.revs[p.slotKey] ?? 1) !== p.rev) return { ok: false, line: OUT_OF_DATE_LINE };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFromSetup, slotsOf, type BuilderSetup } from '@fizz/domain';
+import { buildFromSetup, referenceE1rm, slotsOf, type BuilderSetup, type LoadReferences, type RefSession } from '@fizz/domain';
 import { builderFixture as F } from '@fizz/domain/testing';
 import type { ModelEvent } from '../src/model-port';
 import {
@@ -23,6 +23,7 @@ import {
   nudgeReviewFacts,
   preSessionSignals,
   requestBuilderTool,
+  reviewClaimBase,
   reviewFactLines,
   reviewFacts,
   workoutContextText,
@@ -42,9 +43,14 @@ function world(pain: Record<string, string> = {}) {
   const w = buildFromSetup(chest, F.pool, ctx).workout;
   const snap: BuilderCoachSnapshot = { draftId: 'd1', draftVersion: 2, dayName: 'Chest', minutes: 60, supersets: true, workout: w, revs: {} };
   const p = (id: string) => pain[id] ?? null;
-  const env: BuilderCoachEnv = { ctx, usable: (id) => F.info(id) !== null, pain: p, loads: createBuilderLoadGuard({ ctx, refs: () => null, pain: p }), askedHeavier: false, mainGroup: 'Chest' };
+  const env: BuilderCoachEnv = { ctx, usable: (id) => F.info(id) !== null, pain: p, loads: createBuilderLoadGuard({ ctx, refs: (id) => (id === 'bench' ? benchRefs() : null), pain: p }), askedHeavier: false, mainGroup: 'Chest' };
   const key = (id: string) => slotsOf(w.blocks).find((s) => s.exerciseId === id)?.key ?? '';
   return { ctx, w, snap, env, key };
+}
+
+function benchRefs(): LoadReferences {
+  const s: RefSession = { sessionId: 's1', performedAtUtc: '2026-10-13T10:00:00Z', tz: 'Europe/London', source: 'app', sets: [{ value: 100, reps: 8, rpe: 8 }], top: { value: 100, reps: 8, rpe: 8 } };
+  return { exerciseId: 'bench', unit: 'kg', convention: 'total', direction: 'resistance', equipment: F.bar, own: { sessions: [s], e1rm: referenceE1rm(s.sets), gapDays: 7, estOnly: false }, latest: s, all: [s], derived: null, patternE1rms: [], historyVersion: 'h1' };
 }
 
 const plan: ReviewPlanDay = {
@@ -101,23 +107,21 @@ describe('checkReview: a sentence with a wrong number is hidden', () => {
   it('verdict and reasons show only with numbers code gave; suggestions are proposals; notes code-worded', () => {
     const { ctx, snap, env, key } = world();
     const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Triceps', 'Abs'], plan });
-    const view = builderWorkoutView(snap, ctx, 52);
-    const extras: BuilderCoachExtras = { usable: [], painFlags: [], dayNotes: [], plan: null, goal: 'strength', history: ['Barbell bench press, 13 Oct: 100 kg × 8 @ RPE 8'], memories: [] };
-    const facts = builderFacts([workoutContextText(view, extras, { facts: reviewFactLines(f) })]);
+    const claims = reviewClaimBase(f, { ctx, minutes: [60, 52], plan });
     const args: ReviewWorkoutArgs = {
       verdict: 'Balanced, 16 working sets.',
       suggestions: [
-        { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'incline_bb' }], reason: '3 exercises lead with mid chest.' },
+        { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'incline_bb' }], reason: '2 exercises lead with mid chest.' },
         { ops: [{ op: 'swap', slotKey: key('cable_fly'), toExerciseId: 'incline_bb' }], reason: 'Same again.' },
         { ops: [{ op: 'sets', slotKey: key('pushdown'), workingSets: 3 }], reason: 'Nothing changes.' },
         { ops: [{ op: 'add', exerciseId: 'hammer', afterSlotKey: null, workingSets: 3 }], reason: 'You have done 14 sets of arms.' },
       ],
       nextNotes: [{ text: 'Include abs', target: null }, { text: null, target: { exerciseId: 'bench', value: 103, unit: 'kg', reps: 6 } }, { text: 'Go for 12 sets next time', target: null }],
     };
-    const r = checkReview({ reviewId: 'r1', args, snapshot: snap, env, facts });
+    const r = checkReview({ reviewId: 'r1', args, snapshot: snap, env, claims });
     expect(r.verdict).toBe('Balanced, 16 working sets.');
     expect(r.suggestions.map((s) => [s.action, s.proposal.lines, s.proposal.reason])).toEqual([
-      ['Swap', ['Cable fly → Incline barbell press'], '3 exercises lead with mid chest.'],
+      ['Swap', ['Cable fly → Incline barbell press'], '2 exercises lead with mid chest.'],
       ['Add', ['Add Hammer curl'], null],
     ]);
     expect(r.hidden).toEqual(['You have done 14 sets of arms.', 'Go for 12 sets next time']);
@@ -126,19 +130,39 @@ describe('checkReview: a sentence with a wrong number is hidden', () => {
       { id: 'r1:n1', kind: 'target', exerciseId: 'bench', text: 'Barbell bench press top set: 102.5 kg next', value: 102.5, unit: 'kg', convention: 'total', reps: 6 },
     ]);
 
-    const wrong = checkReview({ reviewId: 'r2', args: { ...args, verdict: 'Balanced, 17 working sets.' }, snapshot: snap, env, facts });
+    const wrong = checkReview({ reviewId: 'r2', args: { ...args, verdict: 'Balanced, 17 working sets.' }, snapshot: snap, env, claims });
     expect(wrong.verdict).toBeNull();
   });
 
+  it('each number is checked against the fact it names, not a pool (review b3-coach B2)', () => {
+    const { ctx, snap, env } = world();
+    const f = reviewFacts({ snapshot: snap, ctx, groups: ['Chest', 'Triceps', 'Abs'], plan });
+    const claims = reviewClaimBase(f, { ctx, minutes: [60, 52], plan });
+    const verdict = (v: string) => checkReview({ reviewId: 'r', args: { verdict: v, suggestions: [], nextNotes: [] }, snapshot: snap, env, claims }).verdict;
+    // Wrong: every one of these numbers appears SOMEWHERE in the context (reps, slot keys, loads), but not as this fact.
+    for (const bad of ['Balanced, 5 working sets', 'Balanced, 30 working sets', 'Mid chest has 4 sets', 'Only 2 exercises for chest', 'Mid chest 3', 'Three exercises lead with mid chest', 'Bench at 105 kg', 'Up 10%', 'Bench 1RM is 125 kg']) expect([bad, verdict(bad)]).toEqual([bad, null]);
+    // Right: each matches its own fact.
+    for (const good of ['Balanced, 16 working sets', 'Mid chest has 7 sets', 'Mid chest 7, upper chest 3', '3 exercises for chest', '2 compound and 3 isolation', '60 min', 'Barbell bench press at 100 kg', 'Day 1 of 4', '5 of 6 planned', '16 working sets against the plan’s 19', 'Swap this one for something new']) expect([good, verdict(good)]).toEqual([good, good]);
+  });
+
+  it('Update plan day counts a planned exercise’s set change and the main lift (review S10)', () => {
+    const { ctx, snap } = world();
+    const asIs = { ...plan, exercises: plan.exercises.filter((e) => e.exerciseId !== 'machine_press') };
+    expect(reviewFacts({ snapshot: snap, ctx, groups: [], plan: asIs }).plan?.differs).toBe(false);
+    const moreSets = { ...asIs, exercises: asIs.exercises.map((e) => (e.exerciseId === 'pushdown' ? { ...e, workingSets: 4 } : e)) };
+    expect(reviewFacts({ snapshot: snap, ctx, groups: [], plan: moreSets }).plan).toMatchObject({ differs: true, setsDiffer: ['pushdown'] });
+    expect(reviewFacts({ snapshot: snap, ctx, groups: [], plan: { ...asIs, mainLiftExerciseId: 'incline_bb' } }).plan?.differs).toBe(true);
+  });
+
   it('applying one suggestion leaves another usable (different slots)', async () => {
-    const { snap, env, key } = world();
-    const facts = builderFacts([]);
+    const { snap, env, key, ctx } = world();
+    const claims = { ctx, minutes: [60] };
     const r = checkReview({
       reviewId: 'r3',
       args: { verdict: 'Fine', suggestions: [{ ops: [{ op: 'sets', slotKey: key('cable_fly'), workingSets: 4 }], reason: 'More fly.' }, { ops: [{ op: 'sets', slotKey: key('pushdown'), workingSets: 4 }], reason: 'More triceps.' }], nextNotes: [] },
       snapshot: snap,
       env,
-      facts,
+      claims,
     });
     const [a, b] = r.suggestions;
     expect(a && b).toBeTruthy();
@@ -179,7 +203,11 @@ describe('pre-session nudge: silent unless a clear real signal (§6.1)', () => {
 
   it('fires on 3 sessions at RPE 9–10, a big rep miss, a hard run yesterday (legs), a low check-in', () => {
     const hot = [session('a', '2026-10-18', [{ exerciseId: 'bench', sets: [set(6, 6, 9.5)] }]), session('b', '2026-10-16', [{ exerciseId: 'row', sets: [set(6, 6, 9)] }]), session('c', '2026-10-14', [{ exerciseId: 'squat', sets: [set(6, 6, 10)] }])];
-    expect(preSessionSignals({ ...quiet, recent: hot }, ids, false)).toEqual([{ kind: 'rpe_high', sessionIds: ['a', 'b', 'c'], meanRpe: 9.5 }]);
+    expect(preSessionSignals({ ...quiet, recent: hot }, ids, false)).toEqual([{ kind: 'rpe_high', sessionIds: ['a', 'b', 'c'], meanRpe: 9.5, targetRpe: null }]);
+    // The stored fact carries the sessions' own target, or null: never an assumed 8 (rule 6; review S4).
+    expect(nudgeReviewFacts([{ kind: 'rpe_high', sessionIds: ['a', 'b', 'c'], meanRpe: 9.5, targetRpe: null }])).toEqual([{ kind: 'rpe_drift', exerciseId: null, sessions: 3, meanRpe: 9.5, targetRpe: null }]);
+    const targeted = hot.map((x) => ({ ...x, exercises: x.exercises.map((e) => ({ ...e, sets: e.sets.map((y) => ({ ...y, targetRpe: 7 })) })) }));
+    expect(preSessionSignals({ ...quiet, recent: targeted }, ids, false)[0]).toMatchObject({ kind: 'rpe_high', targetRpe: 7 });
     const miss = [session('m', '2026-10-17', [{ exerciseId: 'bench', sets: [set(6, 6, 8), set(3, 6, 10)] }])];
     expect(preSessionSignals({ ...quiet, recent: miss }, ids, false)).toEqual([{ kind: 'rep_miss', exerciseId: 'bench', sessionId: 'm', localDate: '2026-10-17', targetReps: 6, reps: 3 }]);
     const run = { ...quiet, activities: [{ id: 'r', localDate: '2026-10-19', kind: 'run' as const, effort: 'long' as const, status: 'done' as const }] };
@@ -192,11 +220,10 @@ describe('pre-session nudge: silent unless a clear real signal (§6.1)', () => {
   it('the offer is code’s (one step lighter, or a set fewer), applied only on Apply; the line is checked', () => {
     const { snap, env } = world();
     const sig = [{ kind: 'rep_miss' as const, exerciseId: 'bench', sessionId: 'm', localDate: '2026-10-17', targetReps: 6, reps: 3 }];
-    const facts0 = builderFacts([]);
-    const offer = nudgeOffer(sig, snap, env, facts0);
+    const offer = nudgeOffer(sig, snap, env);
     expect(offer?.id).toBe('nudge:rep_miss');
     expect(offer?.proposal.lines).toEqual(['Barbell bench press: 100 → 97.5 kg']);
-    const low = nudgeOffer([{ kind: 'low_check_in', checkInId: 'c', score: 2 }], snap, env, facts0);
+    const low = nudgeOffer([{ kind: 'low_check_in', checkInId: 'c', score: 2 }], snap, env);
     expect(low?.proposal.lines).toEqual(['Incline dumbbell press: 3 → 2 sets', 'Cable fly: 3 → 2 sets', 'Triceps pushdown: 3 → 2 sets', 'Cable crunch: 3 → 2 sets']);
 
     const text = nudgeContextText({ day: 'Chest', signals: ['Barbell bench press on 2026-10-17: 3 reps against a target of 6'], offer: offer === null ? null : { id: offer.id, lines: offer.proposal.lines }, extras: { goal: null, painFlags: [] } });

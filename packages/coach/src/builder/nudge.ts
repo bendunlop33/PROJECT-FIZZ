@@ -4,6 +4,7 @@ import type { NumberFacts } from '../numbers';
 import { checkCoachText } from './checked-text';
 import type { BuilderCoachEnv, BuilderCoachSnapshot } from './edit-ops';
 import { makeBuilderProposal, type BuilderProposal } from './proposal';
+import { NO_NUMBERS } from './claims';
 
 /**
  * The pre-session nudge (workout-builder-v3 §6.1; Ben, 20 Oct). Pure.
@@ -35,6 +36,8 @@ export interface NudgeSet {
   /** The target's bottom (`8` of 8–10); null: no rep target. */
   targetRepsMin: number | null;
   rpe: number | null;
+  /** The set's target RPE when it had one (stored with the signal; never assumed, rule 6). */
+  targetRpe?: number | null;
 }
 
 export interface NudgeSession {
@@ -66,7 +69,8 @@ export interface PreSessionInput {
 
 export type NudgeSignal =
   | { kind: 'rep_miss'; exerciseId: string; sessionId: string; localDate: string; targetReps: number; reps: number }
-  | { kind: 'rpe_high'; sessionIds: string[]; meanRpe: number }
+  /** `targetRpe`: the sessions' own target (the mean of the targets logged), null when none was set. */
+  | { kind: 'rpe_high'; sessionIds: string[]; meanRpe: number; targetRpe: number | null }
   | { kind: 'low_check_in'; checkInId: string; score: number }
   | { kind: 'hard_run'; activityId: string; localDate: string; effort: ActivityEffort };
 
@@ -98,7 +102,8 @@ export function preSessionSignals(input: PreSessionInput, todayExerciseIds: Read
   });
   if (last.length === N.rpeSessions && means.every((m) => m !== null && m >= N.rpeAtLeast)) {
     const all = means.filter((m): m is number => m !== null);
-    out.push({ kind: 'rpe_high', sessionIds: last.map((s) => s.sessionId), meanRpe: round1(all.reduce((m, r) => m + r, 0) / all.length) });
+    const targets = last.flatMap((s) => s.exercises.flatMap((e) => e.sets.filter((x) => x.working && x.targetRpe != null).map((x) => x.targetRpe ?? 0)));
+    out.push({ kind: 'rpe_high', sessionIds: last.map((s) => s.sessionId), meanRpe: round1(all.reduce((m, r) => m + r, 0) / all.length), targetRpe: targets.length === 0 ? null : Math.round((targets.reduce((m, r) => m + r, 0) / targets.length) * 2) / 2 });
   }
 
   const c = input.checkIn;
@@ -119,7 +124,7 @@ export function nudgeReviewFacts(signals: readonly NudgeSignal[]): ReviewFact[] 
       case 'rep_miss':
         return { kind: 'rep_miss', exerciseId: s.exerciseId, sessionId: s.sessionId, targetReps: s.targetReps, reps: s.reps };
       case 'rpe_high':
-        return { kind: 'rpe_drift', exerciseId: null, sessions: s.sessionIds.length, meanRpe: Math.min(10, Math.max(1, s.meanRpe)), targetRpe: 8 };
+        return { kind: 'rpe_drift', exerciseId: null, sessions: s.sessionIds.length, meanRpe: Math.min(10, Math.max(1, s.meanRpe)), targetRpe: s.targetRpe === null ? null : Math.min(10, Math.max(1, s.targetRpe)) };
       case 'low_check_in':
         return { kind: 'check_in', checkInId: s.checkInId };
       case 'hard_run':
@@ -155,7 +160,7 @@ export interface NudgeOffer {
  * (low check-in; legs after a hard run), never below 2. Null when it would
  * change nothing.
  */
-export function nudgeOffer(signals: readonly NudgeSignal[], snapshot: BuilderCoachSnapshot, env: BuilderCoachEnv, facts: NumberFacts): NudgeOffer | null {
+export function nudgeOffer(signals: readonly NudgeSignal[], snapshot: BuilderCoachSnapshot, env: BuilderCoachEnv): NudgeOffer | null {
   const slots = slotsOf(snapshot.workout.blocks);
   const fewer = (pick: (exerciseId: string) => boolean): BuilderEditOp[] =>
     slots.filter((s) => !s.main && pick(s.exerciseId) && workingCount(s) > N.minAccessorySets).map((s): BuilderEditOp => ({ op: 'sets', slotKey: s.key, workingSets: workingCount(s) - 1 }));
@@ -181,7 +186,7 @@ export function nudgeOffer(signals: readonly NudgeSignal[], snapshot: BuilderCoa
     }
     if (ops.length === 0) continue;
     const id = `nudge:${sig.kind}`;
-    const r = makeBuilderProposal({ id: `${snapshot.draftId}:${String(snapshot.draftVersion)}:${id}`, snapshot, ops, words: null, facts, env });
+    const r = makeBuilderProposal({ id: `${snapshot.draftId}:${String(snapshot.draftVersion)}:${id}`, snapshot, ops, words: null, check: NO_NUMBERS, env });
     if (r.proposal !== null) return { id, ops, proposal: r.proposal };
   }
   return null;
