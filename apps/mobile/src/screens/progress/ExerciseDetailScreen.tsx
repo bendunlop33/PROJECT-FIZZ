@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 
 import { PLAN_VERDICT_WORD, type ExerciseDetailView, type ExerciseMetric, type PlanVerdict, type TrendRange } from '@fizz/domain';
@@ -8,13 +8,13 @@ import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import type { ExerciseDetailParams } from '../../navigation/types';
-import { Segmented, useAx } from '../../progress/components';
+import { DropdownButton, DropdownPanel, Segmented, useAx } from '../../progress/components';
 import { ChartTable, RepTable, TrendChart } from '../../progress/trend-chart';
 import { chartSelection } from '../../progress/trend-select';
 import { useScreenData, useServices } from '../../shell/context';
 import { ExerciseLiftTarget } from '../../lift-targets/ExerciseLiftTarget';
 import { useTheme } from '../../theme';
-import { AppText, Chip, Icon, InfoLine, StatStrip, StatusLine, Tag, TextButton } from '../../ui';
+import { AppText, Icon, InfoLine, StatStrip, StatusLine, Tag, TextButton } from '../../ui';
 import { AskPill } from '../coach/AskPill';
 import { E1rmSheet } from './sheets';
 
@@ -30,27 +30,6 @@ import { E1rmSheet } from './sheets';
 type Route = RouteProp<{ ProgressExercise: ExerciseDetailParams; ExerciseProgress: ExerciseDetailParams }, 'ProgressExercise' | 'ExerciseProgress'>;
 
 /** `Target 3 × 8–10 · Hit` under a history row (plan tracker v1): the word always with the numbers. */
-/**
- * A sideways chip line (review S8): the scroll indicator shows and flashes once
- * when the chips are laid out, so chips past the edge read as more to scroll.
- */
-function ChipScroll({ gap, children }: { gap: number; children: ReactNode }) {
-  const ref = useRef<ScrollView>(null);
-  return (
-    <ScrollView
-      ref={ref}
-      horizontal
-      showsHorizontalScrollIndicator
-      onContentSizeChange={() => {
-        ref.current?.flashScrollIndicators();
-      }}
-      contentContainerStyle={{ gap, paddingBottom: 6 }}
-    >
-      {children}
-    </ScrollView>
-  );
-}
-
 function targetLine(t: { target: string | null; verdict: PlanVerdict | null } | null) {
   if (t === null || t.target === null || t.verdict === null) return null;
   const word = PLAN_VERDICT_WORD[t.verdict];
@@ -87,6 +66,7 @@ export function ExerciseDetailScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(route.params.sessionId ?? null);
   const [table, setTable] = useState(false);
   const [seriesOpen, setSeriesOpen] = useState(false);
+  const [controlOpen, setControlOpen] = useState<'metric' | 'range' | null>(null);
   const [repAll, setRepAll] = useState(false);
   const [recordsAll, setRecordsAll] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -200,6 +180,8 @@ export function ExerciseDetailScreen() {
   const sel = picked?.panel ?? null;
   const chartAction = view.chart.kind === 'too_few' || view.chart.kind === 'none_in_range' ? view.chart.action : null;
   const records = view.records;
+  const metricLabel = view.metrics.find((m) => m.key === view.metric)?.label ?? '';
+  const rangeLabel = view.ranges.find((r) => r.key === view.range)?.label ?? '';
   const recordRows = records === null ? [] : recordsAll ? records.items : records.items.slice(0, 5);
 
   const infoLink = (
@@ -217,8 +199,52 @@ export function ExerciseDetailScreen() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'] + 56, gap: theme.space['5'] }}
       >
-        {/* `Exercise info` (progress.md region 1, exercise-library §9.7): the Library's detail, in this stack. Design pass 6.6: beside the series pill when there is one. */}
-        {route.name === 'ProgressExercise' && view.series.length <= 1 ? <View style={{ alignSelf: 'flex-start' }}>{infoLink}</View> : null}
+        {/* Measure and period (Ben, 20 Oct; progress.md §2.7 region 1): two compact dropdowns on one top row, so the chart starts higher. `Exercise info` (exercise-library §9.7) ends the row. */}
+        <View style={{ gap: theme.space['2'] }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space['2'] }}>
+            {view.metrics.length > 1 ? (
+              <DropdownButton
+                small
+                label={metricLabel}
+                accessibilityLabel={`Measure, ${metricLabel}`}
+                open={controlOpen === 'metric'}
+                onPress={() => {
+                  setControlOpen((o) => (o === 'metric' ? null : 'metric'));
+                }}
+              />
+            ) : null}
+            <DropdownButton
+              small
+              label={rangeLabel}
+              accessibilityLabel={`Period, ${rangeLabel}`}
+              open={controlOpen === 'range'}
+              onPress={() => {
+                setControlOpen((o) => (o === 'range' ? null : 'range'));
+              }}
+            />
+            {route.name === 'ProgressExercise' ? <View style={{ marginLeft: 'auto' }}>{infoLink}</View> : null}
+          </View>
+          {controlOpen === 'metric' ? (
+            <DropdownPanel
+              options={view.metrics}
+              selected={view.metric}
+              onSelect={(k) => {
+                setControlOpen(null);
+                if (k !== view.metric) change(() => { setMetric(k); setSelectedId(null); });
+              }}
+            />
+          ) : null}
+          {controlOpen === 'range' ? (
+            <DropdownPanel
+              options={view.ranges}
+              selected={view.range}
+              onSelect={(k) => {
+                setControlOpen(null);
+                if (k !== view.range) change(() => { setRange(k); });
+              }}
+            />
+          ) : null}
+        </View>
         {view.pain ? (
           <Pressable
             accessibilityRole="button"
@@ -253,7 +279,6 @@ export function ExerciseDetailScreen() {
             <AppText variant="body">{view.seriesLabel}</AppText>
             <Icon name={seriesOpen ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={12} />
           </Pressable>
-          {route.name === 'ProgressExercise' ? infoLink : null}
           </View>
           {seriesOpen
             ? view.series.map((s) => (
@@ -289,37 +314,6 @@ export function ExerciseDetailScreen() {
 
         <ExerciseLiftTarget data={lift} exerciseId={exerciseId} onChanged={reloadLift} />
 
-        <View style={{ gap: theme.space['2'] }}>
-          {/* Design pass 6.6: 44pt chips on one scrolling line each, so the chart starts higher. */}
-          {view.metrics.length > 1 ? (
-            <ChipScroll gap={theme.space['2']}>
-              {view.metrics.map((m) => (
-                <Chip
-                  key={m.key}
-                  size="min"
-                  label={m.label}
-                  selected={m.key === view.metric}
-                  onPress={() => {
-                    if (m.key !== view.metric) change(() => { setMetric(m.key); setSelectedId(null); });
-                  }}
-                />
-              ))}
-            </ChipScroll>
-          ) : null}
-          <ChipScroll gap={theme.space['2']}>
-            {view.ranges.map((r) => (
-              <Chip
-                key={r.key}
-                size="min"
-                label={r.label}
-                selected={r.key === view.range}
-                onPress={() => {
-                  if (r.key !== view.range) change(() => { setRange(r.key); });
-                }}
-              />
-            ))}
-          </ChipScroll>
-        </View>
 
         <View style={{ gap: theme.space['2'] }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
