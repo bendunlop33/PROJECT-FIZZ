@@ -107,9 +107,18 @@ export const ReviewCoachSchema = z.discriminatedUnion('status', [
 ]);
 export type ReviewCoach = z.infer<typeof ReviewCoachSchema>;
 
+/**
+ * Whether the coach's part is settled: `reviewed`, or `silent` by choice. Any other status (`pending`,
+ * `offline`, `not_connected`, `failed`) is worth a retry when the coach is reachable (review b3-data S5).
+ */
+export function reviewCoachSettled(c: ReviewCoach): boolean {
+  return c.status === 'reviewed' || c.status === 'silent';
+}
+
 export const REVIEW_LIMITS = { maxFacts: 60, maxOpIds: 20, inputsHashMax: 128 } as const;
 
-export const ReviewSchema = RecordMetaSchema.extend({
+/** A training review (named apart from `@fizz/catalogue`'s entry `ReviewSchema`; review b3-data N2). */
+export const TrainingReviewSchema = RecordMetaSchema.extend({
   subject: ReviewSubjectSchema,
   /** Hash of the inputs it was made from (§6.1: re-run only when they changed). */
   inputsHash: z.string().min(1).max(REVIEW_LIMITS.inputsHashMax),
@@ -121,4 +130,4 @@ export const ReviewSchema = RecordMetaSchema.extend({
   opIds: z.array(OperationIdSchema).min(1).max(REVIEW_LIMITS.maxOpIds),
   createdAt: ZonedTimestampSchema,
 }).refine((r) => (r.status === 'superseded') === (r.supersededById !== null), { message: 'Only a superseded review names its successor', path: ['supersededById'] });
-export type Review = z.infer<typeof ReviewSchema>;
+export type TrainingReview = z.infer<typeof TrainingReviewSchema>;

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, LoadConventionSchema, LoadSchema, OperationIdSchema, RepRangeSchema, RpeSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema, ZonedTimestampSchema } from './common';
 import { GymEquipmentKindSchema } from './equipment';
-import { MainLiftIdSchema, RestSettingSchema, SetTypeSchema, SplitDayIdSchema } from './routine';
+import { MainLiftIdSchema, PlanDayIndexSchema, RestSettingSchema, SetTypeSchema, SplitDayIdSchema } from './routine';
 import { SplitBodyPartSchema } from './training-profile';
 import { LocalDateSchema } from './import';
 
@@ -240,6 +240,7 @@ export const DraftSlotSchema = z.object({
 }).superRefine((slot, ctx) => {
   const t = slot.setTemplates;
   const drops = t.filter((x) => x.setType === 'drop').length;
+  if (t.filter((x) => x.setType === 'warmup').length > BUILD_LIMITS.maxWarmups) ctx.addIssue({ code: 'custom', message: `At most ${String(BUILD_LIMITS.maxWarmups)} warm-ups`, path: ['setTemplates'] });
   if (drops > BUILD_LIMITS.maxDropSets) ctx.addIssue({ code: 'custom', message: `At most ${String(BUILD_LIMITS.maxDropSets)} drop sets`, path: ['setTemplates'] });
   // Drops count against the working sets (§4.7). Checked only where drops exist, so older drafts read unchanged.
   if (drops > 0 && t.filter((x) => x.setType !== 'warmup').length > BUILD_LIMITS.maxWorkingSets) ctx.addIssue({ code: 'custom', message: `At most ${String(BUILD_LIMITS.maxWorkingSets)} sets, drops included`, path: ['setTemplates'] });
@@ -310,20 +311,25 @@ export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
 
 /**
  * (v3 §4.4) Which builder draft this is: one open draft per (owner, plan,
- * split day, main lift, local date), resumed on reopen
- * (`workout_drafts.builder_key`, migration 30).
+ * plan day index, split day, main lift, local date), resumed on reopen
+ * (unique index `workout_drafts_open_builder`, migration 30). `planId` and
+ * `dayIndex` are null together (a split day with no plan, or no day): a plan
+ * that repeats a split day keeps its days' drafts apart (review b3-data B1).
  */
-export const BuilderDraftKeySchema = z.object({
-  planId: IdSchema.nullable(),
-  splitDayId: SplitDayIdSchema.nullable(),
-  mainLiftExerciseId: MainLiftIdSchema.nullable(),
-  localDate: LocalDateSchema,
-});
+export const BuilderDraftKeySchema = z
+  .object({
+    planId: IdSchema.nullable(),
+    dayIndex: PlanDayIndexSchema.nullable(),
+    splitDayId: SplitDayIdSchema.nullable(),
+    mainLiftExerciseId: MainLiftIdSchema.nullable(),
+    localDate: LocalDateSchema,
+  })
+  .refine((k) => (k.planId === null) === (k.dayIndex === null), { message: 'A plan day is named with its index', path: ['dayIndex'] });
 export type BuilderDraftKey = z.infer<typeof BuilderDraftKeySchema>;
 
-/** The text key of a builder draft (`workout_drafts.builder_key`). */
+/** The text key of a builder draft, as the unique index `workout_drafts_open_builder` holds it. */
 export function builderDraftKeyText(k: BuilderDraftKey): string {
-  return `${k.planId ?? '-'}|${k.splitDayId ?? '-'}|${k.mainLiftExerciseId ?? '-'}|${k.localDate}`;
+  return `${k.planId ?? '-'}|${k.dayIndex === null ? '-' : String(k.dayIndex)}|${k.splitDayId ?? '-'}|${k.mainLiftExerciseId ?? '-'}|${k.localDate}`;
 }
 
 /** The split day a Build card chip asked for (F19): its name and body parts. */
@@ -370,6 +376,13 @@ export const WorkoutDraftVersionSchema = z.object({
   if (!builder && v.plan.slots.length === 0) ctx.addIssue({ code: 'custom', message: 'A coach version needs at least one exercise', path: ['plan', 'slots'] });
   if (builder && v.request.setup === undefined) ctx.addIssue({ code: 'custom', message: 'A builder version records its set-up', path: ['request', 'setup'] });
   if (builder && (v.turnId !== 'manual' || v.rawArgs !== '')) ctx.addIssue({ code: 'custom', message: 'A builder version has no model turn', path: ['turnId'] });
+  // A builder superset holds 2–4 exercises (§4.7). Older coach versions are left as stored (an ungrouped
+  // check flags them), the same way the drop-set limits only bind where drops exist.
+  if (builder) {
+    const size = new Map<string, number>();
+    for (const sl of v.plan.slots) if (sl.supersetGroup !== null) size.set(sl.supersetGroup, (size.get(sl.supersetGroup) ?? 0) + 1);
+    for (const [g, n] of size) if (n < BUILD_LIMITS.minSuperset) ctx.addIssue({ code: 'custom', message: `Superset ${g} needs at least ${String(BUILD_LIMITS.minSuperset)} exercises`, path: ['plan', 'slots'] });
+  }
 });
 export type WorkoutDraftVersion = z.infer<typeof WorkoutDraftVersionSchema>;
 

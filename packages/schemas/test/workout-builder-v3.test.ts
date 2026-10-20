@@ -4,12 +4,14 @@ import {
   builderDraftKeyText,
   DraftPlanSchema,
   DraftSlotSchema,
+  hideDayNoteOn,
   MemorySchema,
   PlanAppliedSchema,
   PlanDayDraftSchema,
   PlanDayVariationSchema,
   planDayTemplateKey,
-  ReviewSchema,
+  TrainingReviewSchema,
+  reviewCoachSettled,
   reviewSubjectKey,
   RoutineSchema,
   SessionPlanDaySchema,
@@ -135,7 +137,7 @@ describe('workout drafts: builder versions (§4.4)', () => {
   });
 
   it('zero slots save while open; a started draft and a coach version need one', () => {
-    const empty = draft(builderVersion([]), { builderKey: { planId: id(7), splitDayId: 'chest', mainLiftExerciseId: id(200), localDate: '2026-10-20' } });
+    const empty = draft(builderVersion([]), { builderKey: { planId: id(7), dayIndex: 0, splitDayId: 'chest', mainLiftExerciseId: id(200), localDate: '2026-10-20' } });
     expect(validate(WorkoutDraftSchema, empty).ok).toBe(true);
     expect(validate(WorkoutDraftSchema, { ...empty, status: 'started', sessionId: id(9), startedAtUtc: T }).ok).toBe(false);
     expect(validate(WorkoutDraftSchema, { ...draft(builderVersion([slot(0)])), status: 'started', sessionId: id(9), startedAtUtc: T }).ok).toBe(true);
@@ -165,9 +167,26 @@ describe('workout drafts: builder versions (§4.4)', () => {
     expect(parsed.undo?.snapshot.plan.slots).toHaveLength(1);
   });
 
-  it('the builder key is one text per (plan, split day, main lift, local date)', () => {
-    expect(builderDraftKeyText({ planId: null, splitDayId: null, mainLiftExerciseId: null, localDate: '2026-10-20' })).toBe('-|-|-|2026-10-20');
-    expect(builderDraftKeyText({ planId: id(7), splitDayId: 'chest', mainLiftExerciseId: id(200), localDate: '2026-10-20' })).toBe(`${id(7)}|chest|${id(200)}|2026-10-20`);
+  it('the builder key is one text per (plan, day index, split day, main lift, local date)', () => {
+    expect(builderDraftKeyText({ planId: null, dayIndex: null, splitDayId: null, mainLiftExerciseId: null, localDate: '2026-10-20' })).toBe('-|-|-|-|2026-10-20');
+    expect(builderDraftKeyText({ planId: id(7), dayIndex: 3, splitDayId: 'push', mainLiftExerciseId: id(200), localDate: '2026-10-20' })).toBe(`${id(7)}|3|push|${id(200)}|2026-10-20`);
+    // A plan day names its index; no plan, no index (B1).
+    const empty = draft(builderVersion([]));
+    expect(validate(WorkoutDraftSchema, { ...empty, builderKey: { planId: id(7), dayIndex: null, splitDayId: 'push', mainLiftExerciseId: null, localDate: '2026-10-20' } }).ok).toBe(false);
+    expect(validate(WorkoutDraftSchema, { ...empty, builderKey: { planId: null, dayIndex: 0, splitDayId: 'push', mainLiftExerciseId: null, localDate: '2026-10-20' } }).ok).toBe(false);
+  });
+
+  it('at most 4 warm-ups per exercise (S7)', () => {
+    const w = (n: number) => Array.from({ length: n }, () => working(60, 'warmup'));
+    expect(validate(DraftSlotSchema, slot(1, { setTemplates: [...w(4), working()] })).ok).toBe(true);
+    expect(validate(DraftSlotSchema, slot(1, { setTemplates: [...w(5), working()] })).ok).toBe(false);
+  });
+
+  it('a builder superset has 2–4 exercises; an older coach version with a lone group still reads (S7)', () => {
+    const lone = [slot(0), slot(1, { supersetGroup: 'A' })];
+    expect(validate(WorkoutDraftSchema, draft(builderVersion(lone))).ok).toBe(false);
+    expect(validate(WorkoutDraftSchema, draft(builderVersion([slot(0), slot(1, { supersetGroup: 'A' }), slot(2, { supersetGroup: 'A' })]))).ok).toBe(true);
+    expect(validate(WorkoutDraftSchema, draft(coachVersion({ plan: { slots: lone } }))).ok).toBe(true);
   });
 });
 
@@ -176,9 +195,14 @@ describe('plan days: templates, variations, provenance (§4.2, §4.3)', () => {
 
   it('a routine from before v3 parses; a template carries its key and minutes', () => {
     expect(validate(RoutineSchema, routine).ok).toBe(true);
-    expect(validate(RoutineSchema, { ...routine, planDay: { planId: id(7), splitDayId: 'chest', mainLiftExerciseId: id(200), minutes: 60 } }).ok).toBe(true);
-    expect(validate(RoutineSchema, { ...routine, planDay: { planId: id(7), splitDayId: 'chest', mainLiftExerciseId: null, minutes: 181 } }).ok).toBe(false);
-    expect(planDayTemplateKey({ planId: id(7), splitDayId: 'chest', mainLiftExerciseId: null })).toBe(`${id(7)}|chest|-`);
+    expect(validate(RoutineSchema, { ...routine, planDay: { planId: id(7), dayIndex: 0, splitDayId: 'chest', mainLiftExerciseId: id(200), minutes: 60 } }).ok).toBe(true);
+    expect(validate(RoutineSchema, { ...routine, planDay: { planId: id(7), dayIndex: 0, splitDayId: 'chest', mainLiftExerciseId: null, minutes: 181 } }).ok).toBe(false);
+    // A plan day is (plan, day index): one that leaves the index out, or names day 8, fails (B1).
+    expect(validate(RoutineSchema, { ...routine, planDay: { planId: id(7), splitDayId: 'chest', mainLiftExerciseId: null, minutes: 60 } }).ok).toBe(false);
+    expect(validate(RoutineSchema, { ...routine, planDay: { planId: id(7), dayIndex: 7, splitDayId: 'chest', mainLiftExerciseId: null, minutes: 60 } }).ok).toBe(false);
+    expect(planDayTemplateKey({ planId: id(7), dayIndex: 0, mainLiftExerciseId: null })).toBe(`${id(7)}|0|-`);
+    // Push on days 1 and 4 of Push/Pull/Legs/Push: two keys.
+    expect(planDayTemplateKey({ planId: id(7), dayIndex: 0, mainLiftExerciseId: id(200) })).not.toBe(planDayTemplateKey({ planId: id(7), dayIndex: 3, mainLiftExerciseId: id(200) }));
   });
 
   it('a plan day still needs an exercise; Apply may record a template per main lift', () => {
@@ -190,18 +214,24 @@ describe('plan days: templates, variations, provenance (§4.2, §4.3)', () => {
   });
 
   it('variations: template + typed extras, a label of 1–40, tombstoned', () => {
-    const v = { ...meta, splitDayId: 'chest', mainLiftExerciseId: id(200), label: 'arms superset', extras: [{ kind: 'add_slot', after: 'end', slot: { id: id(400), exerciseId: id(401), equipmentId: null, order: 5, supersetGroup: null, setTemplates: [{ id: id(402), setType: 'working', targetLoad: null, targetReps: { min: 8, max: 12 }, targetDurationS: null, targetRpe: 8, targetRir: null, restOverrideS: null }], restBySetType: {}, transitionRestS: null, progressionRuleId: null } }, { kind: 'pair', a: id(401), b: id(203) }, { kind: 'set_count', exerciseId: id(203), n: 4 }, { kind: 'remove_slot', exerciseId: id(204) }], deletedAtUtc: null, opIds: ['save-1'] };
+    const v = { ...meta, splitDayId: 'chest', mainLiftExerciseId: id(200), label: 'arms superset', extras: [{ kind: 'add_slot', after: 'end', slot: { exerciseId: id(401), workingSets: 3 } }, { kind: 'add_slot', after: id(203), slot: { exerciseId: id(402) } }, { kind: 'pair', a: id(401), b: id(203) }, { kind: 'set_count', exerciseId: id(203), n: 4 }, { kind: 'remove_slot', exerciseId: id(204) }], deletedAtUtc: null, opIds: ['save-1'] };
     expect(validate(PlanDayVariationSchema, v).ok).toBe(true);
     expect(validate(PlanDayVariationSchema, { ...v, label: ' ' }).ok).toBe(false);
     expect(validate(PlanDayVariationSchema, { ...v, label: 'x'.repeat(41) }).ok).toBe(false);
     expect(validate(VariationOpSchema, { kind: 'pair', a: id(1), b: id(1) }).ok).toBe(false);
     expect(validate(VariationOpSchema, { kind: 'set_count', exerciseId: id(1), n: 11 }).ok).toBe(false);
     expect(validate(VariationOpSchema, { kind: 'rename', label: 'x' }).ok).toBe(false);
+    // One `add_slot` shape with S2's applyVariation: the exercise and, optionally, its working sets (S2).
+    expect(validate(VariationOpSchema, { kind: 'add_slot', after: 'end', slot: { exerciseId: id(1), workingSets: 11 } }).ok).toBe(false);
+    expect(VariationOpSchema.parse({ kind: 'add_slot', after: 'end', slot: { exerciseId: id(1), setTemplates: [] } })).toEqual({ kind: 'add_slot', after: 'end', slot: { exerciseId: id(1) } });
   });
 
   it('session provenance names a template with its version, or neither', () => {
-    const p = { planId: id(7), splitDayId: 'chest', templateRoutineId: id(300), templateVersion: 2, variationId: null };
+    const p = { planId: id(7), dayIndex: 0, splitDayId: 'chest', templateRoutineId: id(300), templateVersion: 2, variationId: null };
     expect(validate(SessionPlanDaySchema, p).ok).toBe(true);
+    const noIndex: Partial<typeof p> = { ...p };
+    delete noIndex.dayIndex;
+    expect(validate(SessionPlanDaySchema, noIndex).ok).toBe(false);
     expect(validate(SessionPlanDaySchema, { ...p, templateRoutineId: null, templateVersion: null }).ok).toBe(true);
     expect(validate(SessionPlanDaySchema, { ...p, templateVersion: null }).ok).toBe(false);
   });
@@ -225,20 +255,26 @@ describe('reviews and day notes (§6.1, §6.2, §2.9)', () => {
   };
 
   it('facts and coach text are separate; offline has no text', () => {
-    expect(validate(ReviewSchema, review).ok).toBe(true);
-    expect(validate(ReviewSchema, { ...review, coach: { status: 'offline', verdict: 'Good week' } }).ok).toBe(true); // extra keys are stripped, never shown
-    expect(ReviewSchema.parse({ ...review, coach: { status: 'offline', verdict: 'Good week' } }).coach).toEqual({ status: 'offline' });
-    expect(validate(ReviewSchema, { ...review, coach: { status: 'reviewed', verdict: 'Solid week', lines: ['Chest sets a bit low'], actionIds: [], numbersChecked: true } }).ok).toBe(true);
+    expect(validate(TrainingReviewSchema, review).ok).toBe(true);
+    expect(validate(TrainingReviewSchema, { ...review, coach: { status: 'offline', verdict: 'Good week' } }).ok).toBe(true); // extra keys are stripped, never shown
+    expect(TrainingReviewSchema.parse({ ...review, coach: { status: 'offline', verdict: 'Good week' } }).coach).toEqual({ status: 'offline' });
+    expect(validate(TrainingReviewSchema, { ...review, coach: { status: 'reviewed', verdict: 'Solid week', lines: ['Chest sets a bit low'], actionIds: [], numbersChecked: true } }).ok).toBe(true);
   });
 
   it('an estimate is always labelled; unknown fact kinds fail', () => {
-    expect(validate(ReviewSchema, { ...review, facts: [{ kind: 'est_max', exerciseId: id(200), value: { value: 127, unit: 'kg' }, estimate: false }] }).ok).toBe(false);
-    expect(validate(ReviewSchema, { ...review, facts: [{ kind: 'recovery_score', value: 80 }] }).ok).toBe(false);
+    expect(validate(TrainingReviewSchema, { ...review, facts: [{ kind: 'est_max', exerciseId: id(200), value: { value: 127, unit: 'kg' }, estimate: false }] }).ok).toBe(false);
+    expect(validate(TrainingReviewSchema, { ...review, facts: [{ kind: 'recovery_score', value: 80 }] }).ok).toBe(false);
+  });
+
+  it('only reviewed or silent settles the coach part; offline and the rest retry (S5)', () => {
+    expect(reviewCoachSettled({ status: 'reviewed', verdict: null, lines: [], actionIds: [], numbersChecked: true })).toBe(true);
+    expect(reviewCoachSettled({ status: 'silent' })).toBe(true);
+    for (const status of ['pending', 'offline', 'not_connected', 'failed'] as const) expect(reviewCoachSettled({ status })).toBe(false);
   });
 
   it('a superseded review names its successor', () => {
-    expect(validate(ReviewSchema, { ...review, status: 'superseded' }).ok).toBe(false);
-    expect(validate(ReviewSchema, { ...review, status: 'superseded', supersededById: id(9) }).ok).toBe(true);
+    expect(validate(TrainingReviewSchema, { ...review, status: 'superseded' }).ok).toBe(false);
+    expect(validate(TrainingReviewSchema, { ...review, status: 'superseded', supersededById: id(9) }).ok).toBe(true);
   });
 
   it('subject keys', () => {
@@ -254,5 +290,14 @@ describe('reviews and day notes (§6.1, §6.2, §2.9)', () => {
     expect(validate(MemorySchema, memory).ok).toBe(true);
     expect(validate(MemorySchema, { ...memory, dayNote: { splitDayId: 'chest', mainLiftExerciseId: id(200), reviewId: id(12), hiddenOn: ['2026-10-20'] } }).ok).toBe(true);
     expect(validate(MemorySchema, { ...memory, dayNote: { splitDayId: 'chest', mainLiftExerciseId: null, reviewId: null, hiddenOn: ['20 Oct'] } }).ok).toBe(false);
+  });
+
+  it('hiding a day note keeps today and later only, so the cap never refuses a hide (N1)', () => {
+    const weekly = Array.from({ length: 14 }, (_, i) => `2026-${String(7 + Math.floor(i / 4)).padStart(2, '0')}-${String(10 + (i % 4)).padStart(2, '0')}`);
+    const scope = { splitDayId: 'chest', mainLiftExerciseId: null, reviewId: null, hiddenOn: weekly };
+    const next = hideDayNoteOn(scope, '2026-10-20');
+    expect(next.hiddenOn).toEqual(['2026-10-20']);
+    expect(hideDayNoteOn(next, '2026-10-20').hiddenOn).toEqual(['2026-10-20']);
+    expect(validate(MemorySchema, { ...meta, text: 'Include abs', contentKey: 'include abs', status: 'active', quote: 'Include abs', createdByActionId: id(11), dayNote: hideDayNoteOn(scope, '2026-10-27') }).ok).toBe(true);
   });
 });

@@ -1255,14 +1255,27 @@ export const CoachMessageSchema = z.object({
 });
 export type CoachMessage = z.infer<typeof CoachMessageSchema>;
 
-/** (Workout builder v3) Which plan day a day note is for, and where it came from. */
+/** Local dates a day note keeps in `hiddenOn`: only today's matters, so the writer keeps the newest few (`hideDayNoteOn`). */
+export const DAY_NOTE_HIDDEN_MAX = 14;
+
+/**
+ * (Workout builder v3) Which plan day a day note is for, and where it came from. `hiddenOn`: local
+ * dates Ben tapped ✕; only the day it's shown on matters, so `hideDayNoteOn` trims older dates and the
+ * cap never refuses a hide (review b3-data N1).
+ */
 export const DayNoteScopeSchema = z.object({
   splitDayId: SplitDayIdSchema,
   mainLiftExerciseId: MainLiftIdSchema.nullable(),
   reviewId: IdSchema.nullable(),
-  hiddenOn: z.array(LocalDateSchema).max(14),
+  hiddenOn: z.array(LocalDateSchema).max(DAY_NOTE_HIDDEN_MAX),
 });
 export type DayNoteScope = z.infer<typeof DayNoteScopeSchema>;
+
+/** The scope with `localDate` hidden: dates before it are dropped (past days can't show the note again), then the newest kept. */
+export function hideDayNoteOn(scope: DayNoteScope, localDate: string): DayNoteScope {
+  const dates = [...new Set([...scope.hiddenOn.filter((d) => d >= localDate), localDate])].sort();
+  return { ...scope, hiddenOn: dates.slice(-DAY_NOTE_HIDDEN_MAX) };
+}
 
 /** A personal fact Ben asked the coach to remember (coach-memory, v1 subset). Your data. */
 export const MemorySchema = RecordMetaSchema.extend({

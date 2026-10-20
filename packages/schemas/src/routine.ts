@@ -113,15 +113,23 @@ export const SplitDayIdSchema = z.string().min(1).max(64);
 /** A main lift as the Profile stores it (`SplitDay.mainLiftExerciseId`): an exercise ID. */
 export const MainLiftIdSchema = z.string().min(1).max(64);
 
+/** A plan day's index in its plan (0-based, as `RoutinePlanLink.dayIndex` and `PlanApplied.made[].dayIndex`). */
+export const PlanDayIndexSchema = z.int().min(0).max(6);
+
 /**
- * (Workout builder v3 §4.2) A plan-day template: which plan, split day and
- * main lift it is, with its own length. One live template per (planId,
- * splitDayId, main lift), enforced inside the write transaction
- * (`routines.plan_day_key`, migration 30). `blockId` / `weekN` are room for
- * training blocks (§6), unused until then.
+ * (Workout builder v3 §4.2) A plan-day template: which plan day (plan and
+ * day index), its split day, and main lift it is, with its own length.
+ * One live template per (planId, dayIndex, main lift), enforced inside the
+ * write transaction (`routines_plan_day`, migration 30). A plan day is its
+ * **index**, not its split day: a plan can use a split day twice
+ * (Push/Pull/Legs/Push), and each is its own day (review b3-data B1).
+ * `splitDayId` is the variation key (§4.3: variations are shared by split
+ * day and main lift, across plans and repeated days). `blockId` / `weekN`
+ * are room for training blocks (§6), unused until then.
  */
 export const RoutinePlanDaySchema = z.object({
   planId: IdSchema,
+  dayIndex: PlanDayIndexSchema,
   splitDayId: SplitDayIdSchema,
   mainLiftExerciseId: MainLiftIdSchema.nullable(),
   minutes: z.int().min(PLAN_DAY_LIMITS.minMinutes).max(PLAN_DAY_LIMITS.maxMinutes),
@@ -130,9 +138,9 @@ export const RoutinePlanDaySchema = z.object({
 });
 export type RoutinePlanDay = z.infer<typeof RoutinePlanDaySchema>;
 
-/** The text key of a template (planId, splitDayId, main lift): `routines.plan_day_key`. */
-export function planDayTemplateKey(p: Pick<RoutinePlanDay, 'planId' | 'splitDayId' | 'mainLiftExerciseId'>): string {
-  return `${p.planId}|${p.splitDayId}|${p.mainLiftExerciseId ?? '-'}`;
+/** The text key of a template (planId, dayIndex, main lift), as the unique index `routines_plan_day` holds it. */
+export function planDayTemplateKey(p: Pick<RoutinePlanDay, 'planId' | 'dayIndex' | 'mainLiftExerciseId'>): string {
+  return `${p.planId}|${String(p.dayIndex)}|${p.mainLiftExerciseId ?? '-'}`;
 }
 
 export const RoutineSchema = RecordMetaSchema.extend({

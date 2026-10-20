@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, OperationIdSchema, RecordMetaSchema, UtcTimestampSchema } from './common';
 import { BUILD_LIMITS } from './workout-draft';
-import { MainLiftIdSchema, PLAN_DAY_LIMITS, RoutineExerciseSchema, SplitDayIdSchema } from './routine';
+import { MainLiftIdSchema, PLAN_DAY_LIMITS, PlanDayIndexSchema, SplitDayIdSchema } from './routine';
 
 /**
  * Plan-day variations and session plan-day provenance (workout-builder v3
@@ -20,8 +20,17 @@ import { MainLiftIdSchema, PLAN_DAY_LIMITS, RoutineExerciseSchema, SplitDayIdSch
  * from the template is skipped and reported, never guessed.
  */
 export const VariationOpSchema = z.discriminatedUnion('kind', [
-  /** Add a slot after an exercise (or at the end). The slot's set templates are the shape; loads come from the load sources when opened. */
-  z.object({ kind: z.literal('add_slot'), after: z.union([IdSchema, z.literal('end')]), slot: RoutineExerciseSchema }),
+  /**
+   * Add an exercise after another (or at the end). Only the exercise and, when Ben changed it, its
+   * working-set count are stored: the slot's shape, rest and loads come from the builder's rules when
+   * opened, so a variation never carries stale loads (review b3-data S2: one shape with S2's
+   * `applyVariation`).
+   */
+  z.object({
+    kind: z.literal('add_slot'),
+    after: z.union([IdSchema, z.literal('end')]),
+    slot: z.object({ exerciseId: IdSchema, workingSets: z.int().min(BUILD_LIMITS.minWorkingSets).max(BUILD_LIMITS.maxWorkingSets).optional() }),
+  }),
   /** Pair two exercises as a superset. */
   z.object({ kind: z.literal('pair'), a: IdSchema, b: IdSchema }).refine((o) => o.a !== o.b, { message: 'A pair needs two exercises' }),
   z.object({ kind: z.literal('remove_slot'), exerciseId: IdSchema }),
@@ -58,14 +67,17 @@ export function mainLiftKey(mainLiftExerciseId: string | null): string {
 
 /**
  * (§4.2) What plan day a session was started as, written at Start. Up next
- * credits (planId, splitDayId), so a `Today only` start (a draft with no
- * routine) still moves it on. `templateRoutineId` / `templateVersion` are
- * null together (a plan day built from Set up with no template yet).
- * The newest session's `variationId` is the day's last-used variation.
+ * credits the plan day (planId, dayIndex), so a `Today only` start (a draft
+ * with no routine) still moves it on; a plan that repeats a split day keeps
+ * its days apart (review b3-data B1). `templateRoutineId` /
+ * `templateVersion` are null together (a plan day built from Set up with no
+ * template yet). The newest session for a plan day names its last-used
+ * template (`templateRoutineId`, Q2) and variation (`variationId`).
  */
 export const SessionPlanDaySchema = z
   .object({
     planId: IdSchema,
+    dayIndex: PlanDayIndexSchema,
     splitDayId: SplitDayIdSchema,
     mainLiftExerciseId: MainLiftIdSchema.nullable().optional(),
     templateRoutineId: IdSchema.nullable(),
