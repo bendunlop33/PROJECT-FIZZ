@@ -46,7 +46,8 @@ describe('Why? through the services', () => {
       ['Set by', 'Rule · after your 8 Oct workout'],
       ['Last time', '100 kg × 6, 6, 6 @ 8 · 8 Oct'],
       ['Reason', 'Increase to 102.5 kg for 3–6 reps'],
-      ['Equipment', '+2.5 kg (+2.5%) · smallest step'],
+      // (20 Oct, ADR 0029) The preset gym's bar and plates are assumed: said here, nowhere on the set.
+      ['Equipment', '+2.5 kg (+2.5%) · smallest step · Assumed plates'],
     ]);
     // A read: nothing about the workout changes.
     expect((await s.workout.load(sessionId))?.aggregate.revision).toBe(aggregate.revision);
@@ -115,7 +116,7 @@ describe('Why? through the services', () => {
 
     for (const f of flagged.ok ? (flagged.flags ?? []) : []) await s.pain.clearConfirmed({ flagId: f.id, expectedVersion: f.version });
     const off = await s.workout.explainTarget(sessionId, setId);
-    expect(rowsOf(off).map((r) => r[0])).toEqual(['Set by', 'Last time', 'Reason', 'Before flag']);
+    expect(rowsOf(off).map((r) => r[0])).toEqual(['Set by', 'Last time', 'Reason', 'Equipment', 'Before flag']);
   });
 
   it('a first exercise (no history) explains its starting plan as the built-in rule, never as Not recorded', async () => {
