@@ -267,7 +267,7 @@ describe('Progress: cardio keeps out of e1RM, volume and muscle sets', () => {
     expect(tab?.measures.map((m) => m.key)).toEqual(['distance']);
     expect(sp(tab?.table.rows[0]?.cells.topSet)).toBe('20:00 · 4,800 m · 2:05 /500 m');
     expect(tab?.table.rows[0]?.cells.e1rm).toBe('—');
-    expect(tab?.table.rows[0]?.cells.volume).toBe('—');
+    expect(tab?.table.rows[0]?.cells.total).toBe('—');
   });
 });
 

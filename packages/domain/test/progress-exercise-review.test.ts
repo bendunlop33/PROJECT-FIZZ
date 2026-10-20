@@ -9,7 +9,7 @@ import {
   exerciseTrend,
   leastAssistRecords,
   mondayOf,
-  seriesLabels,
+  seriesKindLabel,
   TREND_MAX_POINTS,
   type ExerciseSeries,
   type MuscleInfo,
@@ -224,10 +224,11 @@ describe('S2: opening on an older workout widens the range to include it', () =>
     expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: '1y' })?.range).toBe('1y');
   });
 
-  it('an imported workout from years ago opens its FitNotes series on `All`', () => {
+  it('an imported workout from years ago opens the one series on `All` (20 Oct: imports merged)', () => {
     const imp = imported('2021-05-05', [row([set(kg(80), 5)])]);
     const v = buildExerciseDetailView({ sessions: [imp, ...sessions], exerciseId: 'bench', today: TODAY, sessionId: imp.sessionId });
-    expect(v?.seriesSource).toBe('import');
+    expect(v?.seriesSource).toBe('app');
+    expect(v?.series).toHaveLength(1);
     expect(v?.range).toBe('all');
     expect(v?.selectedSessionId).toBe(imp.sessionId);
   });
@@ -295,56 +296,29 @@ describe('r2 S1: opening an old workout under weekly bests selects its week', ()
   });
 });
 
-describe('S3: FitNotes series labels never collide', () => {
-  it('total, stack, bodyweight and timed imports of one unit read differently', () => {
+describe('20 Oct: one series per kind, labelled by kind only', () => {
+  it('imports of one kind join the logged series; kinds that can’t share an axis stay apart with a kind word', () => {
     const sessions = [
       imported('2025-01-01', [row([set(kg(100), 5)])]),
       imported('2025-01-02', [row([set(kg(50, 'stack'), 10)], { convention: 'stack' })]),
       imported('2025-01-03', [row([set(null, 12)], { convention: 'bodyweight' })]),
       imported('2025-01-04', [row([set(null, null, { durationS: 30 })], { convention: 'bodyweight', measurement: 'duration' })]),
+      imported('2025-01-05', [row([set(lb(225), 5)], { unit: 'lb' })]),
     ];
-    const labels = [...seriesLabels(collectExerciseSeries(sessions, 'bench'), {}).values()];
-    expect(labels.sort()).toEqual(['History · kg', 'History · kg stack', 'History · reps', 'History · timed']);
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY });
-    expect(new Set(v?.series.map((s) => s.menuLabel)).size).toBe(4);
+    const all = collectExerciseSeries(sessions, 'bench', { unit: 'kg' });
+    // Total, stack and lb are all `load`: one series. Bodyweight and timed are their own.
+    expect(all.map((x) => [x.kind, x.sessions.length])).toEqual([
+      ['load', 3],
+      ['bodyweight', 1],
+      ['timed', 1],
+    ]);
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, unit: 'kg' });
+    expect(v?.series.map((x) => x.label).sort()).toEqual(['Bodyweight', 'Timed', 'Weighted']);
+    expect(v?.series.some((x) => /History|FitNotes|\(\d\)/.test(x.menuLabel))).toBe(false);
   });
 
-  it('a single FitNotes series keeps the short label; kg and lb differ already', () => {
-    const sessions = [imported('2025-01-01', [row([set(kg(100), 5)])]), imported('2025-01-02', [row([set(lb(225), 5)], { unit: 'lb' })])];
-    expect([...seriesLabels(collectExerciseSeries(sessions, 'bench'), {}).values()].sort()).toEqual(['History · kg', 'History · lb']);
-  });
-
-  it('a weighted and an unweighted timed import of one unit (plank) read differently (r2 S3)', () => {
-    const plank = (convention: 'total' | 'bodyweight', unit: 'kg' | 'lb' = 'kg') =>
-      imported('2025-01-01', [row([set(convention === 'total' ? (unit === 'kg' ? kg(10) : lb(25)) : null, null, { durationS: 45 })], { convention, measurement: 'duration', unit })]);
-    const two = [...seriesLabels(collectExerciseSeries([plank('bodyweight'), plank('total')], 'bench'), {}).values()];
-    expect(two.sort()).toEqual(['History · timed', 'History · timed · weighted']);
-    // With kg and lb of each: the unit, never the same label twice.
-    const four = [...seriesLabels(collectExerciseSeries([plank('bodyweight'), plank('total'), plank('bodyweight', 'lb'), plank('total', 'lb')], 'bench'), {}).values()];
-    expect(four.sort()).toEqual(['History · timed · kg', 'History · timed · lb', 'History · timed · weighted · kg', 'History · timed · weighted · lb']);
-  });
-
-  it('labels that still match after every step get an ordinal (last resort)', () => {
-    const a = { ...(collectExerciseSeries([imported('2025-01-01', [row([set(kg(100), 5)])])], 'bench')[0] as ExerciseSeries) };
-    const b = { ...a, id: `${a.id}-copy` };
-    expect([...seriesLabels([a, b], {}).values()]).toEqual(['History · kg (1)', 'History · kg (2)']);
-  });
-
-  it('timed and bodyweight imports say so, not a unit they don’t use (r3 N1)', () => {
-    const hold = imported('2025-01-01', [row([set(null, null, { durationS: 30 })], { convention: 'bodyweight', measurement: 'duration' })]);
-    const reps = imported('2025-01-02', [row([set(null, 12)], { convention: 'bodyweight' })]);
-    const assisted = imported('2025-01-03', [row([set(kg(20, 'assistance'), 8)], { convention: 'assistance' })]);
-    const weighted = imported('2025-01-04', [row([set(kg(10), null, { durationS: 45 })], { convention: 'total', measurement: 'duration' })]);
-    const labels = (xs: ProgressSession[]) => [...seriesLabels(collectExerciseSeries(xs, 'bench'), {}).values()].sort();
-    expect(labels([hold, assisted])).toEqual(['History · kg assist', 'History · timed']);
-    expect(labels([reps])).toEqual(['History · reps']);
-    expect(labels([weighted])).toEqual(['History · timed · weighted']);
-  });
-
-  it('timed imports in kg and lb fall back to the unit', () => {
-    const t = (unit: 'kg' | 'lb') => imported('2025-01-01', [row([set(null, null, { durationS: 30 })], { convention: 'bodyweight', measurement: 'duration', unit })]);
-    const labels = [...seriesLabels(collectExerciseSeries([t('kg'), t('lb'), imported('2025-01-02', [row([set(null, 10)], { convention: 'bodyweight' })])], 'bench'), {}).values()];
-    expect(new Set(labels).size).toBe(3);
+  it('every kind has a word', () => {
+    expect(['load', 'assisted', 'added_bodyweight', 'bodyweight', 'timed', 'distance', 'cardio'].map((k) => seriesKindLabel(k as never))).toEqual(['Weighted', 'Assisted', 'Bodyweight + weight', 'Bodyweight', 'Timed', 'Distance', 'Cardio']);
   });
 });
 
@@ -352,24 +326,30 @@ describe('S4 and N2: which series opens', () => {
   const sessions = [
     bench('2026-09-01', [[100, 5]]),
     bench('2026-09-02', [[100, 5]]),
-    bench('2026-09-03', [[60, 10]], { equipmentId: 'db-h', equipmentKind: 'dumbbells', equipmentName: 'Dumbbells', gymId: 'gym-2', convention: 'per_hand' }),
+    session('2026-09-03', [row([set(kg(30, 'per_hand'), 10)], { equipmentId: 'db-h', equipmentKind: 'dumbbells', equipmentName: 'Dumbbells', gymId: 'gym-2', convention: 'per_hand' })]),
   ];
 
-  it('overview `History` at Hotel Gym: that equipment, else a series at that gym, else the most used', () => {
-    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS, equipmentId: 'db-h' })?.seriesLabel).toBe('Hotel Gym · Dumbbells');
-    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS, equipmentId: 'bar-hotel', gymId: 'gym-2' })?.seriesLabel).toBe('Hotel Gym · Dumbbells');
-    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS, equipmentId: null, gymId: 'gym-3' })?.seriesLabel).toBe('Main Gym · Barbell');
+  it('overview `History` at Hotel Gym: barbell and dumbbells are one series; each point reads in its own convention', () => {
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, equipmentId: 'db-h', metric: 'top_set' });
+    expect(v?.series).toHaveLength(1);
+    expect(v?.seriesLabel).toBe('');
+    // Mixed conventions: plain unit on the axis, `each` on the dumbbell point; never converted between them.
+    expect(v?.axisUnit).toBe('kg');
+    expect(v?.points.map((p) => sp(p.display))).toEqual(['100 kg × 5', '100 kg × 5', '30 kg each × 10']);
+    expect(v?.points.map((p) => p.value)).toEqual([100, 100, 30]);
+    expect(v?.repTable?.rows.map((r) => sp(r.cells[0]))).toEqual(['100 kg', '30 kg each']);
+    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, equipmentId: null, gymId: 'gym-3' })?.seriesId).toBe('bench|load');
   });
 
   it('a null equipmentId is no filter; the tapped Summary row picks its series', () => {
     const noEq = row([set(kg(20), 10)], { equipmentId: null, equipmentKind: null, equipmentName: null });
     const bar = row([set(kg(100), 5)]);
     const s = session('2026-09-05', [noEq, bar]);
-    const plain = buildExerciseDetailView({ sessions: [s], exerciseId: 'bench', today: TODAY, gymNames: GYMS, sessionId: s.sessionId, equipmentId: null });
-    // Without a row, the first series holding the workout (no stray match on `null`).
-    expect(plain?.seriesLabel).toBe('Main Gym · No equipment');
-    const tapped = buildExerciseDetailView({ sessions: [s], exerciseId: 'bench', today: TODAY, gymNames: GYMS, sessionId: s.sessionId, sessionExerciseId: bar.sessionExerciseId, equipmentId: null });
-    expect(tapped?.seriesLabel).toBe('Main Gym · Barbell');
+    const plain = buildExerciseDetailView({ sessions: [s], exerciseId: 'bench', today: TODAY, sessionId: s.sessionId, equipmentId: null });
+    // Both rows are the one series.
+    expect(plain?.seriesId).toBe('bench|load');
+    const tapped = buildExerciseDetailView({ sessions: [s], exerciseId: 'bench', today: TODAY, sessionId: s.sessionId, sessionExerciseId: bar.sessionExerciseId, equipmentId: null });
+    expect(tapped?.seriesId).toBe('bench|load');
     expect(tapped?.selectedSessionId).toBe(s.sessionId);
   });
 });

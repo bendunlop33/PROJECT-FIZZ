@@ -167,13 +167,15 @@ describe('total and best distance', () => {
     expect(b?.fromSet?.load).toEqual(added(80));
   });
 
-  it('best distance by load: one row per load, heaviest first, no load last; another unit is left out', () => {
+  it('best distance by load: one row per load, heaviest first, no load last; another unit is converted (20 Oct)', () => {
     const ss = onlySeries([
       session('2026-09-20', [sledRow([set(added(40), 20), set(added(0), 50), set(lb(90, 'added'), 100)])]),
       session('2026-10-01', [sledRow([set(added(40), 30), set(added(80), 15), set(null, 60), set(added(100), 40, { exclusions: ['technique'] })])]),
     ]);
     expect(distanceTableByLoad(ss, ALL).map((r) => [r.load, r.distanceM, r.date])).toEqual([
       [80, 15, '2026-10-01'],
+      // 90 lb, converted to the series' kg (Ben, 20 Oct: one series per exercise).
+      [40.82, 100, '2026-09-20'],
       [40, 30, '2026-10-01'],
       [null, 60, '2026-10-01'],
     ]);

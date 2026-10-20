@@ -236,7 +236,7 @@ describe('buildExerciseInfoView (§9.4, EL13): Coaching knowledge and Your data 
       aliases: ['RDL'],
       knowledge,
       sessions: SESSIONS,
-      progress: { seriesId: `${RDL.id}|none|total|kg|reps`, seriesLabel: 'Main Gym · No equipment', stats: [{ value: '≈146 kg', label: 'EST. 1RM' }, { value: '120 × 8', label: 'BEST SET' }, { value: '2', label: 'SESSIONS' }] },
+      progress: { seriesId: `${RDL.id}|load`, seriesLabel: '', stats: [{ value: '≈146 kg', label: 'EST. 1RM' }, { value: '120 × 8', label: 'BEST SET' }, { value: '2', label: 'SESSIONS' }] },
       painFlag: null,
       usedIn: [{ routineId: id(300), name: 'Legs A' }],
       gymName: 'Main Gym',
@@ -247,7 +247,7 @@ describe('buildExerciseInfoView (§9.4, EL13): Coaching knowledge and Your data 
     expect(v.knowledge.cues).toEqual(['a', 'b', 'c']);
     expect(v.knowledge.avoid).toEqual(['w', 'x', 'y']);
     expect(v.knowledge.alternativesLabel).toBe('Alternatives at Main Gym');
-    expect(v.yours.history?.caption).toBe('Main Gym · No equipment');
+    expect(v.yours.history?.caption).toBe('');
     expect(v.yours.history?.rows.map((r) => [r.label, plain(r.value), r.estimate])).toEqual([
       ['Last', '120 kg × 8 · 3 Oct', false],
       ['Est. 1RM', '≈146 kg', true],

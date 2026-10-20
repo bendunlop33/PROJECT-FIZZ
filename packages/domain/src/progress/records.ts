@@ -371,13 +371,15 @@ const ALL_TIME: DateRange = { from: '0000-01-01', to: '9999-12-31' };
  * `Heaviest set` and `Most reps at <load>` exactly as the home and the
  * Summary judge them (`recordsInWindow`, `findSetRecord`), `Best Est. 1RM`
  * (an estimate), for bodyweight `Most reps` and for assisted `Least
- * assistance for 8+ reps`. Timed series have none (not specified, SP2). Imported series never have
+ * assistance for 8+ reps`. Timed series have none (not specified, SP2). Imported workouts never have
  * records (they can only suppress one). `sessions` may be every workout or
- * only those with this exercise.
+ * only those with this exercise. Each record is still judged within its own
+ * record series (`SeriesKey`: equipment, convention, unit), exactly as the
+ * Summary did; the merged series (Ben, 20 Oct) lists every one of its rows'.
  */
 export function exerciseRecords(sessions: readonly ProgressSession[], series: ExerciseSeries): { items: ExerciseRecord[]; loggedSessions: number } {
-  const loggedSessions = series.key.source === 'app' ? series.sessions.length : 0;
-  if (series.key.source === 'import') return { items: [], loggedSessions };
+  const loggedSessions = series.sessions.filter((s) => s.source === 'app').length;
+  if (loggedSessions === 0) return { items: [], loggedSessions };
   const ids = new Set([series.key.exerciseId]);
   // Only this exercise's rows: records and import suppression never look at other exercises.
   const mine = sessions.flatMap((s) => {
@@ -385,15 +387,15 @@ export function exerciseRecords(sessions: readonly ProgressSession[], series: Ex
     return rows.length === 0 ? [] : [{ ...s, exercises: rows }];
   });
   const items: ExerciseRecord[] = [];
+  const inSeries = (r: { sessionId: string; sessionExerciseId: string }) => series.sessions.some((s) => s.sessionId === r.sessionId && s.rows.some((row) => row.sessionExerciseId === r.sessionExerciseId));
   if (series.kind === 'load' || series.kind === 'added_bodyweight') {
     const actual: ProgressRecord[] = recordsInWindow(mine, ALL_TIME, { limit: Number.POSITIVE_INFINITY }).items;
     const startedOf = new Map(mine.map((s) => [s.sessionId, s.startedMs]));
     for (const r of actual) {
-      if (r.equipmentId !== series.key.equipmentId || r.convention !== series.key.convention || r.load.unit !== series.key.unit || r.exerciseId !== series.key.exerciseId) continue;
+      if (r.exerciseId !== series.key.exerciseId || !inSeries(r)) continue;
       items.push({ kind: r.kind, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, date: r.date, startedMs: startedOf.get(r.sessionId) ?? 0, value: r.kind === 'heaviest' ? r.load.value : r.reps, load: r.load, reps: r.reps, isEstimate: false });
     }
   }
-  const inSeries = (r: ExerciseRecord) => series.sessions.some((s) => s.sessionId === r.sessionId && s.rows.some((row) => row.sessionExerciseId === r.sessionExerciseId));
   if (series.kind === 'load') items.push(...e1rmRecords(mine, ids).filter(inSeries));
   if (series.kind === 'bodyweight') items.push(...bodyweightRepRecords(mine, ids).filter(inSeries));
   if (series.kind === 'assisted') items.push(...leastAssistRecords(mine, ids).filter(inSeries));
