@@ -211,6 +211,17 @@ export function planDayGroups(routine: Pick<Routine, 'exercises'>, exerciseOf: (
 const DAY_MS = 86_400_000;
 
 /**
+ * Up next's plan day as the resolver picks it (`planDaysByDue`): a pinned day
+ * (`Make next`) first, then, with a long or hard run near (`near`), leg days
+ * after the others; the first `canStart` allows. Undefined: none can start.
+ */
+export function planDayPick<D extends PlanDueDay>(days: readonly D[], workouts: readonly PlanDueWorkout[], pin: PlanPin | null, near: LegRunNear | null, canStart: (d: D) => boolean = () => true): PlanDuePick<D> | undefined {
+  const due = planDaysByDue(days, workouts, pin);
+  const ordered = [...due.filter((p) => p.pinned), ...avoidLegDays(due.filter((p) => !p.pinned), (p) => p.day.bodyParts, near).order];
+  return ordered.find((p) => canStart(p.day));
+}
+
+/**
  * Up next's plan days after `firstRoutineId` (Up next now), a prediction
  * (morning reminder, Ben 20 Oct): each predicted day is assumed done as
  * planned, one a day from `fromMs`, and the next is `planDaysByDue` on the
@@ -247,10 +258,7 @@ export function planDaysAhead<D extends PlanAheadDay>(input: {
     done.push({ sessionId: `ahead:${String(i)}`, routineId: last.routineId, startedAtUtc: toIso(atMs), groups: last.plannedGroups });
     const windowFrom = atMs + DAY_MS - input.windowDays * DAY_MS;
     const ws = [...input.workouts.filter((w) => toMs(w.startedAtUtc) >= windowFrom), ...done];
-    const due = planDaysByDue(input.days, ws, input.pin);
-    const near = input.nearOn?.(i) ?? null;
-    const ordered = [...due.filter((p) => p.pinned), ...avoidLegDays(due.filter((p) => !p.pinned), (p) => p.day.bodyParts, near).order];
-    const pick = ordered.find((p) => canStart(p.day));
+    const pick = planDayPick(input.days, ws, input.pin, input.nearOn?.(i) ?? null, canStart);
     if (pick === undefined) break;
     out.push(pick.day);
     last = pick.day;

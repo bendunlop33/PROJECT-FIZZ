@@ -39,6 +39,7 @@ import {
   planDayBodyParts,
   planDayGroups,
   planDaysAhead,
+  planDayPick,
   planDaysByDue,
   activePin,
   type PlanAheadDay,
@@ -567,6 +568,18 @@ export interface ActiveWorkoutData {
 /** Why a routine is Up next: after the last in the rotation (D19), the only one, or its split day is due (18 Oct). */
 /** (19 Oct) `plan`: a day of the applied coach plan (`Day 2 of 4`). */
 export type UpNextRoutineBasis = { kind: 'after'; routineName: string; atUtc: string; tz: string } | { kind: 'only' } | { kind: 'split' } | { kind: 'plan'; dayN: number; of: number };
+
+/** A plan day the morning reminder predicts (`next.planAhead`). */
+export interface PlanAheadRow {
+  routineId: string;
+  name: string;
+  dayN: number;
+  of: number;
+  /** A leg day (the run rule). */
+  legs: boolean;
+  /** The pinned day (`Make next`), kept first. */
+  pinned: boolean;
+}
 
 export interface NextSessionPreview {
   /**
@@ -4082,8 +4095,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * `firstRoutineId` (Up next now), `count` days ahead, assuming each is done the day it's named (`planDaysAhead`:
      * plan-adapt's least-recently-trained rule, a pin consumed once its day is done, a day this gym can't start
      * skipped). Null with no plan in use (none, paused, or `firstRoutineId` not one of its days). Saves nothing.
+     *
+     * `dates[i]`: the date day `i` of `days` is reminded on (the run rule for that date). `firstOn` (review
+     * ben-runs-20oct S3): the first reminder falls on that later date, so `first` is Up next as the rule picks it
+     * there (a pin first, then the run rule for that date, no workout assumed today) and `days` follow it.
+     * `firstPinned`: Up next now is the pinned day (`Make next`).
      */
-    async planAhead(gymId: string, firstRoutineId: string, count: number, dates: readonly string[] = []): Promise<{ routineId: string; name: string; dayN: number; of: number; legs: boolean }[] | null> {
+    async planAhead(
+      gymId: string,
+      firstRoutineId: string,
+      count: number,
+      dates: readonly string[] = [],
+      firstOn: string | null = null,
+    ): Promise<{ firstPinned: boolean; first: PlanAheadRow | null; days: PlanAheadRow[] } | null> {
       try {
         const p = await ctx.profile();
         if (!p) return null;
@@ -4097,15 +4121,22 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const { days, workouts, live: pin } = await planDueInput(p, planDays, training, plan?.pin ?? null);
         const startable = new Map<string, boolean>();
         for (const r of planDays) startable.set(r.id, (await routineStart(p, { routineId: r.id, gymId, opId: `preview-next-routine:${r.id}`, preview: true })).r.ok);
-        // (Ben, 20 Oct) The run rule on predicted days: `dates[i]` is the day predicted day `i` is reminded on; a long or
-        // hard run (planned or done) the day before or after it keeps legs off it, as Up next does.
-        const acts = dates.length === 0 ? [] : await repos().activities.listBetween(p.id, addDays([...dates].sort()[0] ?? '', -1), addDays([...dates].sort().at(-1) ?? '', 2)).catch(() => []);
+        const canStart = (d: { routineId: string }) => startable.get(d.routineId) === true;
+        // (Ben, 20 Oct) The run rule on predicted days: a long or hard run (planned or done) the day before or after a
+        // reminder date keeps legs off it, as Up next does. The dates come in order (`reminderSlots`).
+        const all = firstOn === null ? dates : [firstOn, ...dates];
+        const from = all[0];
+        const to = all.at(-1);
+        const acts = from === undefined || to === undefined ? [] : await repos().activities.listBetween(p.id, addDays(from, -1), addDays(to, 2)).catch(() => []);
         const nearOn = (i: number) => {
           const d = dates[i];
           return d === undefined ? null : legRunNear(acts, d);
         };
-        const order = planDaysAhead({ days, workouts, pin, firstRoutineId, count, fromMs: nowMs, windowDays: SPLIT_WINDOW_DAYS, canStart: (d) => startable.get(d.routineId) === true, nearOn });
-        return order.map((d) => ({ routineId: d.routineId, name: d.name, dayN: planDays.findIndex((r) => r.id === d.routineId) + 1, of: planDays.length, legs: isLegDay(d.bodyParts) }));
+        const row = (d: (typeof days)[number], pinned: boolean): PlanAheadRow => ({ routineId: d.routineId, name: d.name, dayN: planDays.findIndex((r) => r.id === d.routineId) + 1, of: planDays.length, legs: isLegDay(d.bodyParts), pinned });
+        const pick = firstOn === null ? undefined : planDayPick(days, workouts, pin, legRunNear(acts, firstOn), canStart);
+        const startId = pick?.day.routineId ?? firstRoutineId;
+        const order = planDaysAhead({ days, workouts, pin, firstRoutineId: startId, count, fromMs: nowMs, windowDays: SPLIT_WINDOW_DAYS, canStart, nearOn });
+        return { firstPinned: pin?.routineId === firstRoutineId, first: pick === undefined ? null : row(pick.day, pick.pinned), days: order.map((d) => row(d, false)) };
       } catch {
         return null;
       }

@@ -9,7 +9,6 @@ import {
   morningReminderSchedule,
   PREDICTED_REMINDER_TITLE,
   parseMorningReminder,
-  predictUpNext,
   reminderBody,
   reminderOn,
   reminderRowLine,
@@ -114,20 +113,21 @@ describe('morningReminderSchedule', () => {
 });
 
 describe('the run rule on predicted days (Ben, 20 Oct)', () => {
-  it('no legs the day after or before a long run, planned or done; the leg day waits for the next day', () => {
-    // Up next Pull (Tue); predicted Legs on Wed. A long run planned Thu: Wed is the day before, so Upper comes first.
+  it('no legs the day after or before a long run, planned or done; a rotation walks on from the one picked', () => {
+    // Up next Pull (Tue); Legs would come Wed. A long run planned Thu: Wed is the day before, so Upper is picked, and
+    // the rotation goes on after Upper (review ben-runs-20oct S1: Up next is the one after the last done).
     const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ activities: [longRun('2026-10-22')] }));
     expect(r.map((x) => [x.fireAtLocal.date, x.body.split(' · ')[0]])).toEqual([
       ['2026-10-20', 'Day 2 of 4'],
       ['2026-10-21', 'Upper is next'],
-      // Thu is the run's own date: legs may come back.
-      ['2026-10-22', 'Legs is next'],
-      ['2026-10-23', 'Push is next'],
-      ['2026-10-24', 'Pull is next'],
-      ['2026-10-25', 'Legs is next'],
-      ['2026-10-26', 'Upper is next'],
+      ['2026-10-22', 'Push is next'],
+      // Fri is the day after the run: Pull isn't a leg day anyway.
+      ['2026-10-23', 'Pull is next'],
+      ['2026-10-24', 'Legs is next'],
+      ['2026-10-25', 'Upper is next'],
+      ['2026-10-26', 'Push is next'],
     ]);
-    // A long run planned Tue (today) and never marked done counts on its date: Wed is the day after.
+    // A long run planned Tue (today) counts on its date unless cancelled: Wed is the day after.
     const after = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ activities: [longRun('2026-10-20')] }));
     expect(after[1]?.body.split(' · ')[0]).toBe('Upper is next');
     // Planned for Mon (yesterday), done: today's Up next (day 1) is never moved here (Up next applies the rule).
@@ -152,18 +152,56 @@ describe('the run rule on predicted days (Ben, 20 Oct)', () => {
   });
 });
 
-describe('predictUpNext', () => {
-  it('next not in the loop: the walk starts at its first', () => {
-    const s = predictUpNext({ next: day('Upper A'), paused: false, cycle: { sessions: [day('Push'), day('Pull')], at: -1 } }, 4);
-    expect(s.map((x) => x.title)).toEqual(['Upper A', 'Push', 'Pull', 'Push']);
+describe('where each reminder starts (review ben-runs-20oct)', () => {
+  it('next not in the loop: Up next first, then the loop from its first', () => {
+    const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ next: day('Upper A'), cycle: { sessions: [day('Push'), day('Pull')], at: -1 } }));
+    expect(r.slice(0, 4).map((x) => x.title === T ? x.body : x.title)).toEqual(['Today: Upper A', 'Push is next · Main gym', 'Pull is next · Main gym', 'Push is next · Main gym']);
   });
 
-  it('a plan’s `ahead` (the adaptive rule) is used instead of the loop; a short one reminds fewer days', () => {
-    const cycle = { sessions: [day('Push'), day('Pull'), day('Legs')], at: 0 };
-    const s = predictUpNext({ next: day('Push'), paused: false, cycle, ahead: [day('Legs'), day('Pull')] }, 4);
-    expect(s.map((x) => x.title)).toEqual(['Push', 'Legs', 'Pull']);
-    expect(predictUpNext({ next: day('Push'), paused: false, cycle, ahead: [] }, 4).map((x) => x.title)).toEqual(['Push']);
-    expect(predictUpNext({ next: day('Push'), paused: true, cycle, ahead: [day('Legs')] }, 4)).toEqual([]);
+  it('a rotation day 1 on a later date starts where the resolver’s own order does (`from`)', () => {
+    // Today the run rule passed over Legs (Up next Upper, at 3; the order starts at Legs, 2). At 07:30 day 1 is Wed,
+    // with no run near Wed: Legs, worded as a prediction.
+    const r = morningReminderSchedule(toMs('2026-10-20T07:30:00.000Z'), TZ, ON, forecast({ next: PLAN[3] ?? null, cycle: { sessions: PLAN, at: 3, from: 2 } }));
+    expect(r[0]).toMatchObject({ fireAtLocal: { date: '2026-10-21' }, title: T });
+    expect(r.slice(0, 3).map((x) => x.body.split(' · ')[0])).toEqual(['Legs is next', 'Upper is next', 'Push is next']);
+  });
+
+  it('a pinned leg day is never moved, on day 1 or in a rotation (B2)', () => {
+    const pinned = { ...day('Legs', 3, 4, 65, true), id: 'legs', pinned: true };
+    const late = toMs('2026-10-20T07:30:00.000Z');
+    // A plan: day 1 Wed, a long run Thu. The service predicted Wed (`firstOn`) with the pin first.
+    const plan = morningReminderSchedule(late, TZ, ON, forecast({ next: pinned, cycle: { sessions: [], at: -1 }, ahead: [PLAN[0] as ReminderSession], firstOn: pinned, activities: [longRun('2026-10-22')] }));
+    expect(plan[0]).toMatchObject({ fireAtLocal: { date: '2026-10-21' }, title: 'Today: Legs' });
+    // No `firstOn` (unreadable): day 1 stays Up next, never moved.
+    const unread = morningReminderSchedule(late, TZ, ON, forecast({ next: pinned, cycle: { sessions: [], at: -1 }, ahead: [], activities: [longRun('2026-10-22')] }));
+    expect(unread.map((x) => x.title)).toEqual(['Today: Legs']);
+    // A rotation session marked pinned isn't passed over either.
+    const loop = [PLAN[0], PLAN[1], pinned, PLAN[3]] as ReminderSession[];
+    const rot = morningReminderSchedule(late, TZ, ON, forecast({ next: pinned, cycle: { sessions: loop, at: 2 }, activities: [longRun('2026-10-22')] }));
+    expect(rot[0]).toMatchObject({ title: 'Today: Legs' });
+  });
+
+  it('a plan: `ahead` in order, never reordered here; a later day 1 is `firstOn` (S3)', () => {
+    const late = toMs('2026-10-20T07:30:00.000Z');
+    const next = { ...(PLAN[2] as ReminderSession), id: 'legs' };
+    const upper = { ...(PLAN[3] as ReminderSession), id: 'upper' };
+    const push = { ...(PLAN[0] as ReminderSession), id: 'push' };
+    // Up next Legs; Wed is the day before a long run, so the service picked Upper for Wed, then Legs on Thu.
+    const r = morningReminderSchedule(late, TZ, ON, forecast({ next, ahead: [next, push], firstOn: upper, activities: [longRun('2026-10-22')] }));
+    expect(r.map((x) => [x.title, x.body.split(' · ')[0]])).toEqual([
+      [T, 'Upper is next'],
+      [T, 'Legs is next'],
+      [T, 'Push is next'],
+    ]);
+    // Day 1 on today: Up next exactly, whatever `firstOn` says; a short `ahead` reminds fewer days.
+    expect(morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ next, ahead: [push], firstOn: upper })).map((x) => x.title)).toEqual(['Today: Legs', T]);
+    expect(morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ next, ahead: [], paused: true }))).toEqual([]);
+  });
+
+  it('uses the slots the forecast was predicted for (N4)', () => {
+    const slots = [{ date: '2026-10-22', fireAtMs: toMs('2026-10-22T06:00:00.000Z') }];
+    const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ slots }));
+    expect(r.map((x) => x.identifier)).toEqual(['fizz.morning.2026-10-22']);
   });
 });
 

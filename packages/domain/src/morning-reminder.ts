@@ -11,18 +11,24 @@ import { toMs } from './time';
  * the clock, the phone's zone and an Up next forecast, the local
  * notifications to have pending for the next `REMINDER_HORIZON_DAYS` days.
  *
- * Day 1 is Up next exactly as Today shows it (`Today: Pull`). Later days are
- * a prediction: Up next walked forward (`predictUpNext`) assuming each
- * reminded session is done (with a plan, by the plan's adaptive rule:
- * `planDaysAhead`), worded as one (`Time to train` · `Pull is next`, Ben
- * 20 Oct). The run rule applies to them too (Ben, 20 Oct): on a day after or
- * before a long or hard run (planned or done), a leg day waits for the next
- * day that isn't one (`legRunNear`). The app recomputes the whole list
- * whenever anything that moves Up next changes, so a wrong guess is replaced
- * before it fires. Nothing is sent
- * with no Up next, with the plan paused, or on a day a workout was already
- * started before the reminder time (rule 6: no generic nagging, no invented
- * content).
+ * Day 1 on today is Up next exactly as Today shows it (`Today: Pull`). Later
+ * days are a prediction, worded as one (`Time to train` · `Pull is next`, Ben
+ * 20 Oct), made the way Up next itself would pick on that date:
+ *
+ * - a plan: the service runs the plan's adaptive rule for the reminder dates
+ *   (`planDaysAhead` with the run rule per date; `firstOn` for a day 1 that
+ *   falls on a later date), so nothing is reordered here;
+ * - a rotation (`cycle`): the one after the last picked, and on a day after
+ *   or before a long or hard run (planned or done, `legRunNear`) the first
+ *   after it that isn't a leg day, as `rotationOrder` + `avoidLegDays` do; the
+ *   walk then continues after the session actually picked (review
+ *   ben-runs-20oct S1).
+ *
+ * A pinned session (`Make next`) is never moved (review ben-runs-20oct B2).
+ * The app recomputes the whole list whenever anything that moves Up next
+ * changes, so a wrong guess is replaced before it fires. Nothing is sent with
+ * no Up next, with the plan paused, or on a day a workout was already started
+ * before the reminder time (rule 6: no generic nagging, no invented content).
  */
 
 export const REMINDER_HORIZON_DAYS = 7;
@@ -69,6 +75,10 @@ export interface ReminderSession {
   aboutMinutes: number | null;
   /** A leg day (the run rule); absent: unknown, never moved. */
   legs?: boolean;
+  /** The workout's ID (telling a predicted day 1 from Up next); absent: compared by title. */
+  id?: string;
+  /** Pinned with `Make next`: Up next keeps it first, so the run rule never moves it. */
+  pinned?: boolean;
 }
 
 /** Up next now and what it walks through next, read from the same resolver Today uses. */
@@ -81,40 +91,34 @@ export interface UpNextForecast {
    * What Up next moves through, in order, as a loop (the plan's days, the
    * rotation, or the split's days); `at`: where `next` is in it (-1: not in
    * it, so the walk starts at the first). Empty: unknown, so only `next` is
-   * reminded.
+   * reminded. `from`: where the resolver's own order starts (the one after
+   * the last workout done) when that differs from `at` (the run rule moved
+   * today's pick); a day 1 on a later date starts there. Absent: `at`.
    */
-  cycle: { sessions: readonly ReminderSession[]; at: number };
+  cycle: { sessions: readonly ReminderSession[]; at: number; from?: number };
   /**
    * With a plan in use (plan-adapt, Ben 20 Oct): the sessions after `next`,
    * in order, from the adaptive rule assuming each is done
-   * (`planDaysAhead`); used instead of `cycle`. Absent or null: walk `cycle`.
+   * (`planDaysAhead`, the run rule applied for each reminder date); used
+   * instead of `cycle`, in order, never reordered. Absent or null: walk
+   * `cycle`.
    */
   ahead?: readonly ReminderSession[] | null;
+  /**
+   * With a plan and the first reminder on a later date (today's time has
+   * passed): Up next as the plan's rule picks it on that date (the run rule
+   * for that date, a pin first; review ben-runs-20oct S3). `ahead` then
+   * follows it. Absent or null: `next`, never moved.
+   */
+  firstOn?: ReminderSession | null;
+  /** The reminder slots this forecast was predicted for (review N4); absent: computed by the schedule. */
+  slots?: readonly ReminderSlot[];
   /** The selected gym's name; null: none. */
   gymName: string | null;
   /** When the newest workout (finished or in progress) started; null: none. */
   lastStartedUtc: string | null;
   /** Live activities around the reminded days (the run rule, `legRunNear`); absent: none read. */
   activities?: readonly Activity[];
-}
-
-/**
- * Up next for the next `count` reminders, assuming each one is done: `next`,
- * then `ahead` (a plan) or the loop after it. Empty with no Up next or a
- * paused plan.
- */
-export function predictUpNext(forecast: Pick<UpNextForecast, 'next' | 'paused' | 'cycle' | 'ahead'>, count: number): ReminderSession[] {
-  if (forecast.next === null || forecast.paused || count <= 0) return [];
-  const out: ReminderSession[] = [forecast.next];
-  if (forecast.ahead != null) return [...out, ...forecast.ahead].slice(0, count);
-  const { sessions, at } = forecast.cycle;
-  if (sessions.length === 0) return out;
-  for (let i = 1; out.length < count; i += 1) {
-    const s = sessions[(Math.max(at, -1) + i) % sessions.length];
-    if (s === undefined) break;
-    out.push(s);
-  }
-  return out;
 }
 
 export interface PlannedReminder {
@@ -176,27 +180,47 @@ export function reminderSlots(nowMs: number, tz: string, settings: Pick<MorningR
   return slots;
 }
 
+const same = (a: ReminderSession, b: ReminderSession): boolean => (a.id !== undefined && b.id !== undefined ? a.id === b.id : a.title === b.title);
+
 /**
- * The predicted sessions placed on the slots with the run rule (Ben, 20 Oct):
- * on a slot whose date has a long or hard run the day before or after
- * (`legRunNear`), a leg session waits and the next one that isn't a leg day
- * comes first. Day 1 on today stays as Up next shows it (Up next applies the
- * rule itself). `firm`: day 1, unmoved.
+ * The session for each slot, soonest first (`firm`: Up next exactly, worded
+ * `Today: X`). See the module note for how a plan and a rotation are walked.
+ * Empty with no Up next or a paused plan.
  */
-export function placeReminderSessions(sessions: readonly ReminderSession[], slots: readonly ReminderSlot[], activities: readonly Activity[], today: string): { session: ReminderSession; firm: boolean }[] {
-  const pool = [...sessions];
+export function placeReminderSessions(forecast: Pick<UpNextForecast, 'next' | 'paused' | 'cycle' | 'ahead' | 'firstOn' | 'activities'>, slots: readonly ReminderSlot[], today: string): { session: ReminderSession; firm: boolean }[] {
+  const next = forecast.next;
+  const first = slots[0];
+  if (next === null || forecast.paused || first === undefined) return [];
+  const onToday = first.date === today;
+  if (forecast.ahead != null) {
+    const day1 = onToday ? next : (forecast.firstOn ?? next);
+    return [day1, ...forecast.ahead].slice(0, slots.length).map((session, i) => ({ session, firm: i === 0 && same(session, next) }));
+  }
+  const { sessions, at } = forecast.cycle;
+  if (sessions.length === 0) return [{ session: next, firm: true }];
+  const acts = forecast.activities ?? [];
+  const n = sessions.length;
+  // The run rule as Up next applies it to a rotation: from `start`, the first that isn't a leg day while a run is near.
+  const pickFrom = (start: number, date: string): number => {
+    const s0 = sessions[start % n] as ReminderSession;
+    if (s0.pinned === true || s0.legs !== true || legRunNear(acts, date) === null) return start % n;
+    for (let k = 1; k < n; k += 1) if ((sessions[(start + k) % n] as ReminderSession).legs !== true) return (start + k) % n;
+    return start % n;
+  };
   const out: { session: ReminderSession; firm: boolean }[] = [];
-  for (let i = 0; i < slots.length && pool.length > 0; i += 1) {
-    const slot = slots[i] as ReminderSlot;
-    let k = 0;
-    const exact = i === 0 && slot.date === today;
-    if (!exact && pool[0]?.legs === true && legRunNear(activities, slot.date) !== null) {
-      const j = pool.findIndex((x) => x.legs === false);
-      if (j > 0) k = j;
-    }
-    const [session] = pool.splice(k, 1);
-    if (session === undefined) break;
-    out.push({ session, firm: i === 0 && k === 0 });
+  let pos: number;
+  if (onToday || at < 0) {
+    // Up next as Today shows it; one not in the loop is never moved, and the walk starts at the loop's first.
+    out.push({ session: next, firm: true });
+    pos = at;
+  } else {
+    pos = pickFrom(forecast.cycle.from ?? at, first.date);
+    const s = sessions[pos] as ReminderSession;
+    out.push({ session: s, firm: same(s, next) });
+  }
+  for (let i = 1; i < slots.length; i += 1) {
+    pos = pickFrom(pos + 1, (slots[i] as ReminderSlot).date);
+    out.push({ session: sessions[pos] as ReminderSession, firm: false });
   }
   return out;
 }
@@ -209,10 +233,8 @@ export function placeReminderSessions(sessions: readonly ReminderSession[], slot
  */
 export function morningReminderSchedule(nowMs: number, tz: string, settings: MorningReminderSettings, forecast: UpNextForecast): PlannedReminder[] {
   if (settings.on !== true || settings.days.length === 0) return [];
-  const slots = reminderSlots(nowMs, tz, settings, forecast.lastStartedUtc);
-  // A few more than the slots, so a leg day that waits has one to wait for.
-  const sessions = predictUpNext(forecast, slots.length + REMINDER_HORIZON_DAYS);
-  const placed = placeReminderSessions(sessions, slots, forecast.activities ?? [], localDateOf(nowMs, tz));
+  const slots = forecast.slots ?? reminderSlots(nowMs, tz, settings, forecast.lastStartedUtc);
+  const placed = placeReminderSessions(forecast, slots, localDateOf(nowMs, tz));
   return placed.map(({ session: s, firm }, i) => {
     const slot = slots[i] as ReminderSlot;
     return {

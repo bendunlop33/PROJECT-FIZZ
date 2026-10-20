@@ -385,6 +385,38 @@ describe('morning reminder with a coach plan', () => {
     for (const [date, title] of byDate(pending)) if (predicted.has(date)) expect([date, title]).toEqual([date, predicted.get(date)]);
   });
 
+  it('review ben-runs-20oct B2: a `Make next` leg day on day 1 tomorrow stays put before a long run', async () => {
+    const { s, gymId } = await benWithRotation();
+    const plan = await applyPlan(s);
+    const pinned = await s.plans.makeNext({ planId: plan.planId, routineId: plan.dayId('Legs'), expectedVersion: plan.version, opId: 'pin-legs' });
+    expect(pinned.ok).toBe(true);
+    // A long run Thu 22 Oct; Tue 07:30, so today's 07:00 has passed and day 1 is Wed, the day before the run.
+    expect((await s.activities.add({ id: h.ids(), opId: 'thu-run', fields: { kind: 'run', status: 'planned', date: '2026-10-22', durationS: null, distanceM: null, effort: 'long' } })).ok).toBe(true);
+    h.clockMs = toMs('2026-10-20T06:30:00.000Z');
+    const { port, pending } = fakePort();
+    await controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } }).refresh();
+    expect(sorted(pending)[0]).toMatchObject({ fireAtLocal: { date: '2026-10-21' }, title: 'Today: Legs' });
+    // Wed morning: Up next keeps the pinned Legs first too.
+    h.clockMs = toMs('2026-10-21T05:00:00.000Z');
+    expect((await s.next.preview(gymId))?.title).toBe('Legs');
+  });
+
+  it('review ben-runs-20oct S3: a plan day 1 tomorrow is the day Up next will name tomorrow', async () => {
+    const { s, gymId } = await benWithRotation();
+    await applyPlan(s);
+    expect((await s.next.preview(gymId))?.title).toBe('Legs');
+    expect((await s.activities.add({ id: h.ids(), opId: 'thu-run', fields: { kind: 'run', status: 'planned', date: '2026-10-22', durationS: null, distanceM: null, effort: 'long' } })).ok).toBe(true);
+    h.clockMs = toMs('2026-10-20T06:30:00.000Z');
+    const { port, pending } = fakePort();
+    await controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } }).refresh();
+    const first = sorted(pending)[0];
+    expect(first).toMatchObject({ fireAtLocal: { date: '2026-10-21' }, title: 'Time to train' });
+    h.clockMs = toMs('2026-10-21T05:00:00.000Z');
+    const wed = (await s.next.preview(gymId))?.title;
+    expect(wed).not.toBe('Legs');
+    expect(first === undefined ? '' : named(first)).toBe(wed);
+  });
+
   it('S3 merge gate: paused through the plan service → no reminders; Resume → they return', async () => {
     const { s } = await benWithRotation();
     const plan = await applyPlan(s);
