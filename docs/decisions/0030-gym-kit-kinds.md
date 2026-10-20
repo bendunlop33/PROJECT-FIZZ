@@ -1,0 +1,26 @@
+# 0030: Gym kit: kettlebells, EZ / trap bar, Smith machine, benches and racks
+
+**Status:** Ben approved on 20 Oct 2026 ("Yes to all", items 10 and 11; CHANGELOG, same date). Built on `claude/ben-kit-20oct`, not run on his iPhone yet. TypeScript plus one migration (29 on this branch; renumber on merge if another branch took 29). No native change.
+
+Amends ADR 0010 (exercise-only equipment kinds) and ADR 0029 (its consequence "kinds with no gym-profile schema … are still not modelled").
+
+## Context
+
+Kettlebell, EZ-bar and trap-bar exercises listed kinds a gym couldn't hold, so they were never plannable and their loads were never checked. Smith machine exercises were tagged `plate_loaded_machine` (plates added), which hid the bar. Bench and rack needs were in the catalogue (`requiresStation`) but unused. Item 10 (gym defaults stay: dumbbells to 50 kg, 5 kg machine steps; the app learns) needs no change: the code already does this.
+
+## Decision
+
+1. **New gym item kinds** (`EquipmentInstance`, `GymEquipmentKind`): `kettlebell` (per bell, `per_hand`, a list of sizes like a dumbbell rack), `ez_bar`, `trap_bar` and `smith_machine` (each its own bar weight plus its own plates, `total` incl. the bar like a barbell), `bench` (`benchType`: flat, incline, adjustable) and `rack` (`rackType`: squat rack, power rack). Benches and racks are presence only (`bodyweight` convention, no loads), like a pull-up bar. The exercise kind list gains `smith_machine`, `bench` and `rack` so an item's kind always is an exercise kind; a custom exercise can't use a bench or rack as its equipment.
+2. **Typical values, assumed until Ben confirms** (`detailsSource: 'preset'`): kettlebells 4–32 kg in 4s (10–70 lb in 5s); EZ bar 10 kg (20 lb), trap bar 25 kg (55 lb), Smith machine 15 kg (35 lb) starting weight. A Smith bar is often counterweighted, so its number is the weakest guess; `Why?` says `Assumed bar and plates` and the gym row reads `· plates + bar`.
+3. **Where they appear.** Full gym: all of them (Benches = adjustable, Racks = power rack). Hotel / small: a bench ticked by default; rack, kettlebells, EZ bar, trap bar, Smith machine tickable. Home: all tickable. The typical (commercial) preset ticks a bench and a rack. `Make full gym` adds any of these a gym has none of; the coach's `update_gym` can add or remove them; the gym editor edits them (bars as a barbell, kettlebells as a dumbbell rack, benches and racks by type).
+4. **Snapping is unchanged code.** Bars use the barbell path (`computeLoads`, `buildPlateSetup`), kettlebells the dumbbell path. Rule 4 holds: loads only from the item's list, never past its max; an EZ, trap-bar or Smith exercise never maps to the Olympic bar (its kind isn't listed).
+5. **Station needs** (`CATALOGUE_STATIONS` in `@fizz/domain`, kept equal to the catalogue's `requiresStation` by a test) are looked up by exercise ID, so catalogue rows saved before this change get them too. `equipmentForExercise` and `mapEquipment` give no item (`not_here`) when the gym is **known** to lack a needed bench or rack: it has a record of that kind (available or retired) and no available one serves it. Flat work takes a flat or adjustable bench, incline work an incline or adjustable one. A quick setup saves an unticked bench or rack as a retired, assumed record, so "no bench" is known. Bodyweight exercises are never stopped (a chair or box does).
+6. **Catalogue.** The three Smith machine exercises list `smith_machine` with `total`. Kettlebell swing, goblet squat and deadlift move from `total` to `per_hand` with `implements: 1` (one bell's weight, the same number), so they snap on the gym's kettlebells. Smith exercises stay under the Library's `Plate-loaded` filter.
+7. **Migration 29** rebuilds `equipment` with the wider `kind` CHECK (every row and the index kept). Everything else lives in the validated JSON document.
+
+## Consequences
+
+- A gym set up before this has no bench or rack record, so nothing is stopped there until Ben adds one or taps `Make full gym` (which the gym screen offers while a kind is missing). The coach's `remove` of a bench on such a gym records the missing kind but has no record to retire, so it doesn't stop bench exercises either.
+- Catalogue rows are saved the first time an exercise is used, and a saved row keeps its old fields. A Smith exercise saved before this keeps `plate_loaded_machine` / `added` and behaves as before. A kettlebell swing, goblet squat or deadlift saved (or imported) with `total` gets no load target on the new kettlebells (convention mismatch: the target is dropped, never reinterpreted) until the saved row is refreshed. Open question for Ben.
+- Each bar has its own plates in the profile; a real gym shares one set. Harmless for snapping (one bar is loaded at a time) but the counts are assumed per bar.
+- Learning (`Add 22 kg dumbbells here?`) is still dumbbells and stacks only; kettlebells are edited in the gym editor.
