@@ -111,6 +111,9 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .whyd span { display: block; margin-top: 3px; }
 .card .top.tr2 { align-items: center; }
 .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; color: var(--text2); text-align: right; }
+.mixrow small { color: var(--text3); font-size: 12px; }
+.mixrow b { color: var(--text); font-weight: 600; }
+.mixacts { display: flex; gap: 12px; flex: none; }
 .fitline { font-size: 13px; color: var(--text2); }
 .varline { font-size: 13.5px; color: var(--text2); margin: 0 4px 8px; }
 .link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; cursor: pointer; padding: 6px 0; font-family: inherit; }
@@ -154,7 +157,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { dn: 'THU', dd: 22, items: [{ k: 'liftp', t: 'Legs' }], detail: ['Planned: Legs'] },
     { dn: 'FRI', dd: 23, items: [{ k: 'liftp', t: 'Back' }], detail: ['Planned: Back'] },
   ];
-  const WORKS = { 'Barbell bench press': 'Chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Cable crossover': 'Lower chest', 'Dips': 'Lower chest, triceps', 'Machine chest press': 'Chest, triceps', 'Triceps pushdown': 'Triceps', 'Overhead triceps extension': 'Triceps (long head)', 'Cable crunch': 'Upper abs', 'EZ-bar curl': 'Biceps', 'Hammer curl': 'Brachialis, forearms, biceps', 'Barbell row': 'Mid-back, lats, rear delts, biceps', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Seated cable row': 'Mid-back, lats, biceps', 'Straight-arm pulldown': 'Lats', 'Face pull': 'Rear delts, upper back', 'Back squat': 'Quads, glutes, adductors', 'Romanian deadlift': 'Hamstrings, glutes, lower back', 'Leg press': 'Quads, glutes', 'Leg curl': 'Hamstrings', 'Leg extension': 'Quads', 'Seated calf raise': 'Calves', 'Dumbbell shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Cable lateral raise': 'Side delts', 'Rear-delt fly': 'Rear delts', 'Bulgarian split squat': 'Quads, glutes' };
+  const WORKS = { 'Barbell bench press': 'Chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Cable crossover': 'Lower chest', 'Dips': 'Lower chest, triceps', 'Machine chest press': 'Chest, triceps', 'Triceps pushdown': 'Triceps', 'Overhead triceps extension': 'Triceps (long head)', 'Cable crunch': 'Upper abs', 'EZ-bar curl': 'Biceps', 'Hammer curl': 'Brachialis, forearms, biceps', 'Barbell row': 'Mid-back, lats, rear delts, biceps', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Seated cable row': 'Mid-back, lats, biceps', 'Straight-arm pulldown': 'Lats', 'Face pull': 'Rear delts, upper back', 'Back squat': 'Quads, glutes, adductors', 'Romanian deadlift': 'Hamstrings, glutes, lower back', 'Leg press': 'Quads, glutes', 'Leg curl': 'Hamstrings', 'Leg extension': 'Quads', 'Seated calf raise': 'Calves', 'Dumbbell shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Cable lateral raise': 'Side delts', 'Rear-delt fly': 'Rear delts', 'Bulgarian split squat': 'Quads, glutes', 'Pec deck': 'Chest', 'Dumbbell fly': 'Chest', 'Incline machine press': 'Upper chest, triceps', 'Low-incline barbell press': 'Upper chest, front delts, triceps', 'Single-arm dumbbell row': 'Lats, mid-back', 'Hack squat': 'Quads, glutes', 'Machine lateral raise': 'Side delts', 'Reverse pec deck': 'Rear delts' };
   // Each plan day: main-lift options, accessories for Focused (2 × 3 sets) or Varied (3 × 2 sets, different angles),
   // the other group's exercise, and what's added when there's spare time. [name, reps, kg, compound?]
   const D = {
@@ -181,7 +184,19 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   const PLANDAYS = ['Chest', 'Back', 'Legs', 'Shoulders'];
   const NEXT = 'Chest';
   const PLAN_MIN = 60;
-  const ALT = { 'Cable fly': 'Machine chest press', 'Cable crossover': 'Cable fly', 'Chest-supported row': 'Seated cable row', 'Seated cable row': 'Chest-supported row', 'Leg press': 'Bulgarian split squat', 'Rear-delt fly': 'Face pull', 'Face pull': 'Rear-delt fly', 'Lateral raise': 'Cable lateral raise' };
+  // Mix it up shortlist per exercise: same muscles, different angle, same role (compound ↔ compound, isolation ↔ isolation),
+  // available here, not pain-flagged, not done in the last couple of sessions. [name, reps, kg]. The coach picks; offline, least recently done first.
+  const ALTS = {
+    'Cable fly': [['Cable crossover', 12, 12.5], ['Pec deck', 12, 45], ['Dumbbell fly', 12, 14]],
+    'Cable crossover': [['Cable fly', 10, 15], ['Pec deck', 12, 45], ['Dumbbell fly', 12, 14]],
+    'Incline dumbbell press': [['Incline machine press', 10, 60], ['Low-incline barbell press', 8, 72.5]],
+    'Chest-supported row': [['Seated cable row', 10, 60], ['Single-arm dumbbell row', 10, 32]],
+    'Seated cable row': [['Chest-supported row', 10, 22.5], ['Single-arm dumbbell row', 10, 32]],
+    'Leg press': [['Hack squat', 8, 100], ['Bulgarian split squat', 10, 16]],
+    'Lateral raise': [['Cable lateral raise', 15, 5], ['Machine lateral raise', 12, 30]],
+    'Rear-delt fly': [['Face pull', 12, 22.5], ['Reverse pec deck', 12, 35]],
+  };
+  const MIX_WHY = { 'Cable crossover': 'Lower-chest angle you haven\u2019t done in 3 weeks', 'Pec deck': 'Same stretch, machine path', 'Dumbbell fly': 'Free-weight stretch at the bottom', 'Incline machine press': 'Same angle, steadier path', 'Seated cable row': 'Different grip and line of pull', 'Hack squat': 'Quads, less back fatigue', 'Cable lateral raise': 'Tension at the bottom of the lift', 'Face pull': 'Rear delts plus upper back' };
   const OTHER = [{ name: 'Push', sub: 'PPL day' }, { name: 'Pull', sub: 'PPL day' }, { name: 'Hotel shoulders', sub: 'Recent · 17 Oct' }, { name: 'Upper body', sub: 'Recent · 8 Oct' }];
   const VARS = { Chest: [{ label: 'Bench · arms superset', extra: [['Triceps pushdown', 8, 30], ['EZ-bar curl', 8, 30]] }] };
   let s = { day: NEXT, main: null, style: 'Focused', min: PLAN_MIN, ss: true, abs: null, mix: 0, v: null, open: false, sheet: null, toast: null };
@@ -193,7 +208,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const d = D[s.day]; const mk = s.main ?? Object.keys(d.mains)[0]; const [mn, mkg] = d.mains[mk];
     const sets = s.style === 'Varied' ? 2 : 3;
     let acc = (s.style === 'Varied' ? d.varied : d.focused).filter((x) => x[0] !== mn);
-    if (s.mix) { const i = acc.findIndex((x) => ALT[x[0]] && !acc.some((y) => y[0] === ALT[x[0]])); if (i >= 0) acc = acc.map((x, k) => (k === i ? [ALT[x[0]], x[1], x[2], x[3]] : x)); }
+    // Swap the accessory you've done most lately (prototype: the last accessory with options, as if done most lately); each tap moves to the next option.
+    let mixInfo = null;
+    if (s.mix) { const i = acc.map((x) => !!ALTS[x[0]]).lastIndexOf(true); if (i >= 0) { const opts = ALTS[acc[i][0]].filter((o) => !acc.some((y) => y[0] === o[0])); if (opts.length) { const o = opts[(s.mix - 1) % opts.length]; mixInfo = { from: acc[i][0], to: o[0], k: ((s.mix - 1) % opts.length) + 1, of: opts.length }; acc = acc.map((x, k) => (k === i ? [o[0], o[1], o[2], x[3]] : x)); } } }
     let extra = s.v != null ? VARS[s.day][s.v].extra : d.extra;
     // No abs with supersets on: the arm exercise gets an arm partner instead (same time, 2 arm exercises).
     const PARTNER = { 'Triceps pushdown': ['EZ-bar curl', 10, 30], 'EZ-bar curl': ['Triceps pushdown', 10, 30] };
@@ -202,7 +219,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       ...acc.map(([n, r, kg, c]) => ({ name: n, kind: 'acc', sets, reps: r, kg, rpe: 8, comp: !!c })),
       ...extra.map(([n, r, kg]) => ({ name: n, kind: 'extra', sets: 3, reps: r, kg, rpe: 8 })),
       ...(absOn() ? [{ name: ABS[0], kind: 'abs', sets: 3, reps: ABS[1], kg: ABS[2], rpe: 8 }] : [])];
-    return { mk, ex, add: d.add.filter((x) => !ex.some((e) => e.name === x[0])), warn: d.warn };
+    return { mk, ex, add: d.add.filter((x) => !ex.some((e) => e.name === x[0])), warn: d.warn, mixInfo };
   }
   // Supersets: the other group's exercise with abs (or the two extras together); never the main lift or a heavy compound.
   function blocks(ex) {
@@ -268,7 +285,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     // The plan's own estimate (plan abs, supersets on) keeps its buffer; only time beyond that buffer gets filled.
     const keepS = [s.abs, s.ss]; s.abs = null; s.ss = true; const planEst = minutes(blocks(draft().ex), 0); [s.abs, s.ss] = keepS;
     const f = fit(dr, s.min - Math.max(0, PLAN_MIN - planEst)); const mains = Object.keys(D[s.day].mains);
-    const swappedFrom = s.mix ? (s.style === 'Varied' ? D[s.day].varied : D[s.day].focused).find((x) => ALT[x[0]] && f.ex.some((e) => e.name === ALT[x[0]])) : null;
     let n = 0;
     const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${e.kg ?? 'BW'}</span></div>`;
     app.innerHTML = `
@@ -294,7 +310,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
           <button class="bdt" data-a="toggle" aria-expanded="${s.open}"><span>Session breakdown</span><span class="chev">›</span></button>
           <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${f.bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
           ${s.day === 'Chest' && dr.mk === 'Bench' ? `<details class="whyd"><summary>Why?</summary><span>· Plan: Chest is next</span><span>· Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again</span><span>· Last review: bench top set 102.5 kg once you hit 8 reps</span><span>· Goal: strength · bench target 110 kg</span><span>· Accessories ${s.style.toLowerCase()} · ${s.min} min</span></details>` : `<details class="whyd"><summary>Why?</summary><span>· ${s.day}${s.day === NEXT ? ' is next in your plan' : ' picked by you; the plan moves on'}</span><span>· Weights from your last ${s.day} session</span><span>· Accessories ${s.style.toLowerCase()} · ${s.min} min</span></details>`}
-          <div class="mixrow bd">${s.mix && swappedFrom ? `<span>${swappedFrom[0]} → ${ALT[swappedFrom[0]]} · today only</span><button class="link" data-a="unmix">Undo</button>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
+          <div class="mixrow bd">${dr.mixInfo ? `<span>${dr.mixInfo.from} → <b>${dr.mixInfo.to}</b> · today only<br><small>${MIX_WHY[dr.mixInfo.to] ?? 'Same muscles, different angle'}</small></span><span class="mixacts"><button class="link" data-a="mix">Another (${dr.mixInfo.k}/${dr.mixInfo.of})</button><button class="link" data-a="unmix">Undo</button></span>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
           <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
         </div>
       </div>
@@ -316,7 +332,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'min') s.min = Math.max(20, Math.min(120, s.min + Number(v)));
     if (a === 'ss') s.ss = !s.ss;
     if (a === 'abs') { const nv = !absOn(); s.abs = nv === PLAN_ABS[s.day] ? null : nv; }
-    if (a === 'mix') s.mix = 1;
+    if (a === 'mix') s.mix += 1;
     if (a === 'unmix') s.mix = 0;
     if (a === 'var') { s.v = Number(v); s.sheet = null; }
     if (a === 'unvar') s.v = null;
