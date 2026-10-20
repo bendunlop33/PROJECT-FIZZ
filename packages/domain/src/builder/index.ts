@@ -11,3 +11,6 @@ export * from './merge';
 export * from './advise';
 export * from './mix';
 export * from './variation';
+export * from './codec';
+export * from './edit';
+export * from './scope';

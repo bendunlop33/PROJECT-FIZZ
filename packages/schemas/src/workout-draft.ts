@@ -233,6 +233,9 @@ export const BuilderSlotSourceSchema = z.enum(['coach_target', 'plan', 'rule', '
  */
 export const DraftSlotBuilderSchema = z.object({
   repRange: RepRangeSchema,
+  /** Unit and convention of every row's load (the item's). */
+  unit: WeightUnitSchema,
+  convention: LoadConventionSchema,
   source: BuilderSlotSourceSchema,
   /** Est. max other sets derive from (an estimate, rule 6); null = none. In the slot's load unit. */
   anchorE1rm: z.number().positive().max(5000).nullable(),
