@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { ActivitySchema, type Activity, type ActivityFields, type SplitBodyPart } from '@fizz/schemas';
 
 import {
+  activityCounts,
   activityDetail,
+  activityRemovedText,
+  activityRemoveLabel,
   activityRow,
+  activityStatusOn,
   addActivity,
   avoidLegDays,
   consistency,
@@ -64,6 +68,32 @@ describe('long and hard (Ben, 20 Oct)', () => {
     expect({ ...row, detail: sp(row.detail) }).toMatchObject({ title: 'Run', when: 'Yesterday', detail: '18 km', planned: false });
     expect(activityRow(activity(4, run({ date: '2026-10-24', status: 'planned', effort: 'long' })), TODAY)).toMatchObject({ when: 'Tomorrow', detail: 'Planned · long', planned: true });
   });
+
+  it('a planned activity counts on its date unless cancelled (Ben, 20 Oct): no Planned word once its date has come', () => {
+    const plannedThu = activity(12, run({ date: '2026-10-22', status: 'planned', effort: 'long' }));
+    const plannedFri = activity(13, run({ date: TODAY, status: 'planned', effort: 'long' }));
+    const plannedSat = activity(14, run({ date: '2026-10-24', status: 'planned', effort: 'long' }));
+    expect([plannedThu, plannedFri, plannedSat].map((a) => activityCounts(a, TODAY))).toEqual([true, true, false]);
+    expect([plannedThu, plannedFri, plannedSat].map((a) => activityStatusOn(a, TODAY))).toEqual(['done', 'done', 'planned']);
+    expect(activityRow(plannedThu, TODAY)).toMatchObject({ when: 'Yesterday', detail: 'long', planned: false });
+    const gone = deleteActivity(plannedThu, { expectedVersion: 1, opId: 'cancel-thu', at: AT });
+    expect(gone.kind === 'write' && activityCounts(gone.next, TODAY)).toBe(false);
+  });
+
+  it('Cancel for a planned activity, Delete for a done one (the same versioned tombstone with Undo)', () => {
+    expect(activityRemoveLabel({ kind: 'run', status: 'planned' })).toBe('Cancel run');
+    expect(activityRemoveLabel({ kind: 'other', status: 'planned' })).toBe('Cancel activity');
+    expect(activityRemoveLabel({ kind: 'run', status: 'done' })).toBe('Delete');
+    expect(activityRemovedText({ kind: 'run', status: 'planned' })).toBe('Run cancelled');
+    expect(activityRemovedText({ kind: 'swim', status: 'done' })).toBe('Activity deleted');
+    const a = activity(15, run({ date: '2026-10-24', status: 'planned', effort: 'hard' }));
+    const cancel = deleteActivity(a, { expectedVersion: 1, opId: 'c1', at: AT });
+    if (cancel.kind !== 'write') throw new Error(cancel.kind);
+    expect(cancel.next.version).toBe(2);
+    // A retry of the same op changes nothing; a Cancel on an older version is stale.
+    expect(deleteActivity(cancel.next, { expectedVersion: 1, opId: 'c1', at: AT }).kind).toBe('duplicate');
+    expect(deleteActivity(cancel.next, { expectedVersion: 1, opId: 'c2', at: AT }).kind).toBe('stale');
+  });
 });
 
 describe('the run rule for Up next', () => {
@@ -77,18 +107,27 @@ describe('the run rule for Up next', () => {
     expect(legRunNear([plannedSat], TODAY)).toMatchObject({ when: 'before', why: 'Long run tomorrow' });
     // Thursday (two days before): no.
     expect(legRunNear([plannedSat], '2026-10-22')).toBeNull();
-    // Saturday itself and Sunday while it is still only planned: no (nothing assumed).
-    expect(legRunNear([plannedSat], '2026-10-25')).toBeNull();
+    // Saturday itself: no. Sunday: the planned run counts on its date without being marked done (Ben, 20 Oct).
+    expect(legRunNear([plannedSat], '2026-10-24')).toBeNull();
+    expect(legRunNear([plannedSat], '2026-10-25')).toMatchObject({ when: 'after', why: 'Long run yesterday' });
     const doneThu = activity(6, run({ date: '2026-10-22', distanceM: 18_000 }));
     expect(legRunNear([doneThu], TODAY)).toMatchObject({ when: 'after', why: 'Long run yesterday' });
     const hardThu = activity(7, run({ date: '2026-10-22', effort: 'hard', durationS: 40 * 60 }));
     expect(legRunNear([hardThu], TODAY)).toMatchObject({ why: 'Hard run yesterday' });
-    // An easy run, a long ride, a deleted run, or a planned run yesterday that wasn't marked done: no.
+    // An easy run, a long ride or a deleted run: no.
     expect(legRunNear([activity(8, run({ date: '2026-10-22', effort: 'easy', distanceM: 5_000 }))], TODAY)).toBeNull();
     expect(legRunNear([activity(9, run({ kind: 'ride', date: '2026-10-22', effort: 'hard' }))], TODAY)).toBeNull();
     const deleted = deleteActivity(doneThu, { expectedVersion: 1, opId: 'del', at: AT });
     expect(deleted.kind === 'write' && legRunNear([deleted.next], TODAY)).toBeNull();
-    expect(legRunNear([activity(10, run({ date: '2026-10-22', status: 'planned', effort: 'long' }))], TODAY)).toBeNull();
+    // A planned run yesterday, never marked done, counts (Ben, 20 Oct) until Ben cancels it.
+    const plannedThu = activity(10, run({ date: '2026-10-22', status: 'planned', effort: 'long' }));
+    expect(legRunNear([plannedThu], TODAY)).toMatchObject({ when: 'after', why: 'Long run yesterday' });
+    const cancelled = deleteActivity(plannedThu, { expectedVersion: 1, opId: 'cancel', at: AT });
+    expect(cancelled.kind === 'write' && legRunNear([cancelled.next], TODAY)).toBeNull();
+    // Undo of the Cancel brings it back, so it counts again.
+    if (cancelled.kind !== 'write') throw new Error('cancel');
+    const back = undoActivity(cancelled.next, { opId: 'undo-cancel', at: AT, targetOpId: 'cancel' });
+    expect(back.kind === 'write' && legRunNear([back.next], TODAY)).toMatchObject({ when: 'after' });
   });
 
   it('leg days go after the others; with only leg days left, legs anyway (the Why? names the run)', () => {

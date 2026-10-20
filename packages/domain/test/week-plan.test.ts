@@ -88,6 +88,19 @@ describe('the week’s facts', () => {
     expect(facts({ days: left, activities: [activity(5, { date: '2026-10-20' })] })).toMatchObject({ gymDaysLeft: 3 });
   });
 
+  it('a run takes its date planned or done (Ben, 20 Oct): a done long run today blocks today like a planned one', () => {
+    const doneToday = activity(6, { status: 'done', date: TODAY });
+    const f = facts({ activities: [doneToday] });
+    expect(f.today).toBe(TODAY);
+    expect(f.openDates).toEqual(['2026-10-23', '2026-10-24', '2026-10-25']);
+    expect(f.gymDaysLeft).toBe(2);
+    // A planned run already past (never marked done) is in the week's runs; it doesn't take a day left.
+    const pastPlanned = activity(7, { date: '2026-10-20' });
+    const g = facts({ activities: [pastPlanned] });
+    expect(g.runs.map((r) => r.id)).toEqual([pastPlanned.id]);
+    expect(g.gymDaysLeft).toBe(3);
+  });
+
   it('the facts key changes with a workout, an activity or the plan version', () => {
     const k = (over: Partial<Parameters<typeof weekFactsKey>[0]> = {}) => weekFactsKey({ monday: '2026-10-19', basisKey: 'plan:1', workoutIds: [id(9)], activities: [{ id: id(1), version: 1 }], ...over });
     expect(k()).toBe(k());
@@ -126,6 +139,17 @@ describe('code’s suggestion and the coach’s proposal', () => {
       { name: 'Back', note: null },
       { name: 'Legs', note: 'After Fri’s run' },
     ]);
+  });
+
+  it('leg notes name the run ahead, not one already past (planned runs count on their date, Ben 20 Oct)', () => {
+    const tue = activity(8, { date: '2026-10-20' });
+    const f = facts({ activities: [tue, longSat] });
+    const c = checkWeekProposal({ merges: [{ dayIds: [CHEST.id, SHOULDERS.id], name: 'Push' }], skips: [], message: '' }, f);
+    expect(c.ok && c.after.at(-1)).toEqual({ name: 'Legs', note: 'Before Sat’s run' });
+    // Only Tuesday's (past): no note.
+    const g = facts({ activities: [tue] });
+    const c2 = checkWeekProposal({ merges: [{ dayIds: [CHEST.id, SHOULDERS.id], name: 'Push' }], skips: [], message: '' }, g);
+    expect(c2.ok && c2.after.at(-1)).toEqual({ name: 'Legs', note: null });
   });
 
   it('a leg day never merges, and the merged day’s name is code’s (review S2)', () => {
