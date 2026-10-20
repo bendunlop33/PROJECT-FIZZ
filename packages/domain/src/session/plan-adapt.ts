@@ -40,7 +40,20 @@ export interface PlanDueDay {
   /** Its body parts (`planDayBodyParts`); empty: only its own workouts count for it. */
   bodyParts: readonly SplitBodyPart[];
   createdFromSessionId?: string | null | undefined;
+  /**
+   * (Workout builder v3 §4.2) Its plan day, (planId, splitDayId) (`planDayOf`): templates of the same
+   * plan day (`Chest · bench`, `Chest · incline`) are one day for Up next. Absent: by routine only.
+   */
+  planKey?: PlanDayKey | null | undefined;
 }
+
+/** A plan day's identity: (planId, splitDayId). */
+export interface PlanDayKey {
+  planId: string;
+  splitDayId: string;
+}
+
+const sameKey = (a: PlanDayKey | null | undefined, b: PlanDayKey | null | undefined): boolean => a != null && b != null && a.planId === b.planId && a.splitDayId === b.splitDayId;
 
 /** A finished workout as the adaptive Up next reads it. */
 export interface PlanDueWorkout {
@@ -49,6 +62,8 @@ export interface PlanDueWorkout {
   startedAtUtc: string;
   /** Working sets done per muscle group (`workoutGroupsOf`). */
   groups: ReadonlyMap<MuscleGroup, number>;
+  /** (v3 §4.2) The plan day it was started as (`WorkoutSession.planDay`); absent on older workouts. */
+  planDay?: PlanDayKey | null | undefined;
 }
 
 /**
@@ -80,9 +95,21 @@ function planSplit(days: readonly PlanDueDay[]): TrainingSplit | null {
   return { kind: 'custom', days: withParts.map((d) => ({ id: d.routineId, name: d.name, bodyParts: [...d.bodyParts] })) };
 }
 
-/** The plan day this workout was started from (or saved as), if any. */
-export function ownPlanDay<D extends Pick<PlanDueDay, 'routineId' | 'createdFromSessionId'>>(days: readonly D[], w: Pick<PlanDueWorkout, 'sessionId' | 'routineId'>): D | undefined {
-  return days.find((d) => d.routineId === w.routineId || (d.createdFromSessionId != null && d.createdFromSessionId === w.sessionId));
+/**
+ * The plan day this workout was started from (or saved as), if any. (v3
+ * §4.2) Or started as: a `Today only` start has no routine but names its
+ * (plan, split day).
+ */
+export function ownPlanDay<D extends Pick<PlanDueDay, 'routineId' | 'createdFromSessionId' | 'planKey'>>(days: readonly D[], w: Pick<PlanDueWorkout, 'sessionId' | 'routineId' | 'planDay'>): D | undefined {
+  return (
+    days.find((d) => d.routineId === w.routineId || (d.createdFromSessionId != null && d.createdFromSessionId === w.sessionId)) ??
+    days.find((d) => sameKey(d.planKey, w.planDay))
+  );
+}
+
+/** The day and every other template of the same plan day (§4.2): one day for Up next. */
+function sameDayIds(days: readonly PlanDueDay[], own: PlanDueDay): string[] {
+  return days.filter((d) => d.routineId === own.routineId || sameKey(d.planKey, own.planKey)).map((d) => d.routineId);
 }
 
 /**
@@ -91,10 +118,10 @@ export function ownPlanDay<D extends Pick<PlanDueDay, 'routineId' | 'createdFrom
  * with a third of them), plus its own day for a plan workout.
  */
 export function planDaysTrained(days: readonly PlanDueDay[], w: PlanDueWorkout): string[] {
-  const own = ownPlanDay(days, w)?.routineId;
+  const own = ownPlanDay(days, w);
   const split = planSplit(days);
   const byMuscle = split === null ? [] : splitDaysTrained(split, w.groups);
-  return [...new Set([...(own === undefined ? [] : [own]), ...byMuscle])];
+  return [...new Set([...(own === undefined ? [] : sameDayIds(days, own)), ...byMuscle])];
 }
 
 /**
@@ -113,7 +140,7 @@ function planDaysCredited(days: readonly PlanDueDay[], w: PlanDueWorkout): strin
   const same = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x) => b.includes(x));
   const twins = own.bodyParts.length === 0 ? [] : days.filter((d) => same(d.bodyParts, own.bodyParts)).map((d) => d.routineId);
   const mainId = main === null || twins.includes(main.id) ? [] : [main.id];
-  return [...new Set([own.routineId, ...twins, ...mainId])];
+  return [...new Set([...sameDayIds(days, own), ...twins, ...mainId])];
 }
 
 /**
@@ -129,7 +156,8 @@ export function planDaysDoneBy(days: readonly PlanDueDay[], w: PlanDueWorkout): 
   const split = planSplit(days);
   if (own === undefined) return split === null ? [] : splitDaysTrained(split, w.groups);
   const main = split === null ? null : matchSplitDay(split, w.groups);
-  return main === null || main.id === own.routineId ? [own.routineId] : [own.routineId, main.id];
+  const mine = sameDayIds(days, own);
+  return main === null || mine.includes(main.id) ? mine : [...mine, main.id];
 }
 
 const newestFirst = <W extends Pick<PlanDueWorkout, 'sessionId' | 'startedAtUtc'>>(ws: readonly W[]): W[] => [...ws].sort((a, b) => toMs(b.startedAtUtc) - toMs(a.startedAtUtc) || (a.sessionId < b.sessionId ? 1 : -1));
@@ -175,7 +203,7 @@ export function planDaysByDue<D extends PlanDueDay>(days: readonly D[], workouts
     const credited = planDaysCredited(days, w);
     const ms = toMs(w.startedAtUtc);
     const own = ownPlanDay(days, w);
-    if (own !== undefined && !lastOwn.has(own.routineId)) lastOwn.set(own.routineId, ms);
+    if (own !== undefined) for (const id of sameDayIds(days, own)) if (!lastOwn.has(id)) lastOwn.set(id, ms);
     if (trained.length === 0 && credited.length === 0) continue;
     // The newest workout's days are left out of the pool: never the day(s) just trained.
     justDone ??= credited;

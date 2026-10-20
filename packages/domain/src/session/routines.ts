@@ -316,6 +316,12 @@ export interface FinishedRef {
   routineId: string | null;
   startedAtUtc: string;
   tz: string;
+  /**
+   * (Workout builder v3 §4.2) The plan day it was started as (`WorkoutSession.planDay`): Up next
+   * credits (planId, splitDayId), so a `Today only` start with no routine still counts. Absent on
+   * older workouts (they count by `routineId`).
+   */
+  planDay?: { planId: string; splitDayId: string; variationId?: string | null } | undefined;
 }
 
 /** Whether a finished workout counts as this routine's: started from it, or the workout it was saved from. */
