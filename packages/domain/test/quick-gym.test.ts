@@ -109,7 +109,7 @@ describe('full gym (one question: dumbbells go up in)', () => {
 
   it('Why? says what is assumed; the coach sees one line', () => {
     const { gym: g, equipment } = saveQuick({ setup: 'full', unit: 'kg', dumbbellStep: 2.5 });
-    expect(equipment.map((e) => assumedWhy(e))).toEqual(['Assumed dumbbells', 'Assumed plates', 'Assumed plates', 'Assumed stack step', 'Assumed stack step', 'Assumed stack step', null, 'Assumed kettlebells', 'Assumed bar and plates', 'Assumed bar and plates', 'Assumed bar and plates', null, null]);
+    expect(equipment.map((e) => assumedWhy(e))).toEqual(['Assumed dumbbells', 'Assumed plates', 'Assumed plates', 'Assumed stack step', 'Assumed stack step', 'Assumed stack step', null, 'Assumed kettlebells', 'Assumed bar and plates', 'Assumed bar and plates', 'Assumed plates', null, null]);
     expect(gymSetupWords(g, equipment)).toBe('full gym (assumed)');
     expect(gymSetupWords(g, equipment.map((e) => ({ ...e, detailsSource: 'user' as const })))).toBe('full gym');
     expect(gymSetupWords(gym(), equipment)).toBeNull();

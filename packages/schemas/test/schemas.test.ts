@@ -223,7 +223,9 @@ describe('Exercise (ADR 0010 additive fields)', () => {
     // Each bar has its own weight: an EZ bar is its own item, never a stand-in for the Olympic bar.
     expect(validate(EquipmentInstanceSchema, { ...item, kind: 'ez_bar', name: 'EZ bar', loadConvention: 'total', barMass: 10, plates: [] }).ok).toBe(true);
     expect(validate(EquipmentInstanceSchema, { ...item, kind: 'trap_bar', name: 'Trap bar', loadConvention: 'total', barMass: 25, plates: [], maxLoad: 20 }).ok).toBe(false);
-    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'smith_machine', name: 'Smith', loadConvention: 'added', barMass: 15, plates: [] }).ok).toBe(false);
+    // A Smith machine logs plates added; its bar weight is beside the load, never a total.
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'smith_machine', name: 'Smith', loadConvention: 'added', barMass: 15, plates: [] }).ok).toBe(true);
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'smith_machine', name: 'Smith', loadConvention: 'total', barMass: 15, plates: [] }).ok).toBe(false);
     expect(validate(EquipmentInstanceSchema, { ...item, kind: 'kettlebell', name: 'KB', loadConvention: 'per_hand', loads: [8, 12, 16] }).ok).toBe(true);
     expect(validate(EquipmentInstanceSchema, { ...item, kind: 'kettlebell', name: 'KB', loadConvention: 'total', loads: [8] }).ok).toBe(false);
     expect(validate(EquipmentInstanceSchema, { ...item, kind: 'bench', name: 'Bench', loadConvention: 'bodyweight', benchType: 'adjustable' }).ok).toBe(true);
