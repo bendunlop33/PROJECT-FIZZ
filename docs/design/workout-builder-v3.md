@@ -1,6 +1,6 @@
 # Workout builder v3 (Set up → Your workout, plan-day templates, variations, coach review)
 
-Status: **Proposed, rev 3 (20 Oct 2026). Waiting for Ben's approval.** Rev 2 covers the rules/code review (B1–B6, S7–S15) and the Ben-intent review (1–15). Rev 3 adds **§2.0 Today (v2)** (updated for Ben's later 20 Oct direction: day control + session-type chips, no Or row, no run counter), records Ben's answers to old Q1 and Q4 (§9) and renumbers the open questions.
+Status: **Approved by Ben, 20 Oct 2026** ("go" with the designer's recommended answers to §9; later 20 Oct additions on Today, Mix it up, auto-reviews and Progress › Reviews included). Rev 3+.
 
 **§1–§3 are for Ben. §4, §5 and §8 are for the developer.**
 
@@ -833,26 +833,26 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 - Old Q1, one-tap Start on Today: answered by Today (v2) (§2.0): `Start` is one tap on the card, tapping the card expands it, `Edit` opens the builder.
 - Old Q4, merge on Set up changes: yes ("agreed"). Edits are kept; length, supersets and groups merge; a new day, main lift or variation builds a new workout with Undo (§2.3).
 
-**Open**
-1. Your workout replaces the Workout overview for plan days (gym chip and check-in move onto it)? (yes/no)
-2. When a day has two main-lift templates (bench, incline), should Up next alternate them automatically? (yes / no, use Profile's main lift unless I change it)
-3. Put `Variation` as a Set up row under Main lift, shown only when variations exist? (yes / pick another place)
-4. Offline, should the Set up bar still fill day, minutes, supersets and groups from what I type or say, with no coach involved? (yes/no)
-5. Main lift can never join a superset? (yes / allow it with a "not recommended" note)
-6. Typed weights stay today-only even when I update the plan day? (yes / save them as fixed loads)
-7. Rest limits: the set before a drop can rest 0–1:00, and other sets up to 6:00 (now 5:00)? (yes/no)
-8. Group label: `Abs` or `Core`? (pick)
-9. Before Start, coach changes I ask for are proposals (Apply/Skip); after Start they apply at once with Undo as today? This changes rule 3's wording. (yes/no)
-10. Limit variations per day and main lift? (no limit / 5 / pick a number)
-11. Load-only edits don't trigger the `Use these changes for` prompt? (yes/no)
-12. Where today's load comes from: coach target first, then the plan's first-week load, then the built-in rule, and only then est. 1RM × reps × RPE, with every other set worked out from that load by reps and RPE? Or est. 1RM everywhere? (first / est. 1RM everywhere)
-13. Rear delts count as Back only in the builder, or everywhere (Progress charts, library filters, split matching)? (builder only / everywhere)
-14. Show a `MAIN` tag on the main-lift row? (yes/no)
-15. Use the builder's time numbers (45 s per set, etc.) for Today's estimate and the workout's time left too, so they all agree? Some estimates would shift a minute or two. (yes/no)
-16. Add 15 s for switching between exercises in a superset to the time estimate? (yes/no)
-17. A variation is saved as "the plan day plus its extras", so changes to the plan day flow into every variation? (yes / save full copies)
-18. Drag to reorder and pair ships after the pop-up buttons, once tested on your iPhone? (yes / drag needed first)
-19. Today's day strip: 3 days back, today, 3 ahead (always shows yesterday's and tomorrow's runs, with a line where Monday starts), or the Mon–Sun week, which matches your plan week but on a Monday hides Sunday's long run? (3 back, 3 ahead / Mon–Sun)
+**Answered 20 Oct (Ben: "go", with these recommended answers)**
+1. Your workout replaces the Workout overview for plan days: **yes**.
+2. Two main-lift templates: **no auto-alternation**; Today opens the last-used one; Ben picks with the Main lift chips.
+3. `Variation` row under Main lift on Set up, shown only when variations exist: **yes**.
+4. Offline, the Set up bar still fills day, minutes, supersets and groups by code (no coach): **yes**.
+5. Main lift never joins a superset: **yes**.
+6. Typed weights stay today-only even when the plan day is updated: **yes**.
+7. Rest limits: 0–1:00 before a drop, up to 6:00 otherwise: **yes**.
+8. Group label: **Abs**.
+9. Before Start, coach changes Ben asks for are proposals (Apply/Skip); after Start they apply at once with Undo: **yes** (CLAUDE.md rule 3 wording updated; CHANGELOG).
+10. Variations per day and main lift: **5**.
+11. Load-only edits don't trigger the `Use these changes for` prompt: **yes**.
+12. Load source order: **coach target → plan's first-week load → built-in rule → est. 1RM × reps × RPE**; other sets derived by reps and RPE.
+13. Rear delts count as Back **everywhere**.
+14. `MAIN` tag on the main-lift row: **yes**.
+15. Builder time numbers used for Today and time left too: **yes**.
+16. Extra 15 s per superset switch: **no**.
+17. Variation = plan day + extras: **yes**.
+18. Drag ships after the pop-up buttons, once tested on iPhone: **yes**.
+19. Day strip: **3 back, today, 3 ahead**.
 
 ---
 
