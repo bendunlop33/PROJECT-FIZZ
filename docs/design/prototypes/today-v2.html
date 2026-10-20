@@ -15,17 +15,20 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .wrap { padding: 24px max(16px, env(safe-area-inset-left, 0px)) 40px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 380px; line-height: 1.45; }
 .phone { width: 380px; max-width: 100%; height: 800px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 18px 16px 10px; display: flex; flex-direction: column; gap: 14px; position: relative; overflow: hidden; }
-.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: 8px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 0; }
 .status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
 h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); }
+.hdr { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.askbar.sm { flex: none; min-height: 40px; padding: 0 14px; }
+.hdr .mic { width: 40px; height: 40px; }
 .askrow { display: flex; gap: 8px; }
 .askbar { flex: 1; display: flex; gap: 10px; align-items: center; min-height: 46px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font-size: 15px; font-family: inherit; cursor: pointer; text-align: left; }
 .askbar span:first-child { color: var(--text); }
 .mic { width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); cursor: pointer; display: grid; place-items: center; flex: none; }
 /* week strip */
 .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.day { background: var(--surface); border: 0; border-radius: 12px; padding: 8px 2px 8px; display: flex; flex-direction: column; align-items: center; gap: 5px; color: var(--text); cursor: pointer; font-family: inherit; min-height: 86px; }
+.day { background: var(--surface); border: 0; border-radius: 12px; padding: 6px 2px 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text); cursor: pointer; font-family: inherit; min-height: 70px; }
 .day .dn { font-size: 11px; color: var(--text2); letter-spacing: .06em; }
 .day .dd { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .day.today { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -39,7 +42,7 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .planline { display: flex; justify-content: space-between; color: var(--text2); font-size: 13px; padding: 0 2px; }
 .planline b { color: var(--text); font-weight: 600; }
 /* recommended card */
-.card { background: var(--surface); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--surface); border-radius: 20px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .card .big { font-size: 28px; font-weight: 600; letter-spacing: -.01em; }
 .card .sub { color: var(--text2); font-size: 14px; margin-top: 2px; }
@@ -269,14 +272,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     app.innerHTML = `
     <div class="status"><span>09:41</span><span>●●● 82%</span></div>
     <div class="scroll">
-      <h1>Tuesday</h1>
-      <div class="askrow"><button class="askbar" data-a="ask"><span>✦</span><span>Ask the coach</span></button><button class="mic" data-a="ask" aria-label="Speak to the coach">${MIC}</button></div>
+      <div class="hdr"><h1>Tuesday</h1><div class="askrow"><button class="askbar sm" data-a="ask"><span>✦</span><span>Coach</span></button><button class="mic" data-a="ask" aria-label="Speak to the coach">${MIC}</button></div></div>
       <div class="week">${WEEK.map((d, i) => `<button class="day${d.today ? ' today' : ''}${d.past ? ' past' : ''}" data-a="day" data-v="${i}" aria-label="${d.dn} ${d.dd}"><span class="dn">${d.today ? 'TODAY' : d.dn}</span><span class="dd">${d.dd}</span>${d.today ? `<span class="pip liftp">${s.day}</span>` : d.items.map((it) => `<span class="pip ${it.k}">${it.k === 'lift' ? '✓ ' : ''}${it.t}</span>`).join('')}</button>`).join('')}</div>
       <div>
         <div class="label" style="margin:0 2px 8px">Today's session</div>
         <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other workouts">⋯</button></div>
         <div class="card${s.open ? ' open' : ''}">
-          <div class="top"><div><div class="big">${s.day} <span class="lt">· ${dr.mk}</span></div><div class="sub">${f.ex.length} exercises · ~${f.est} min${moved ? ` · <span class="mv">${moved}</span>` : ''}${s.day === NEXT && !moved ? ' · plan day 1 of 4' : ''}</div></div></div>
+          <div class="top"><div><div class="big">${s.day}</div><div class="sub">${f.ex.length} exercises · ~${f.est} min${moved ? ` · <span class="mv">${moved}</span>` : ''}${s.day === NEXT && !moved ? ' · plan day 1 of 4' : ''}</div></div></div>
           ${f.notes.length ? `<div class="fitline">${s.min < PLAN_MIN ? 'To fit' : 'With'} ${s.min} min: ${f.notes.join(' · ')}</div>` : ''}
           ${D[s.day].warn ? `<div class="why"><i>!</i><span>${D[s.day].warn}</span></div>` : ''}
           <div class="ctl">
