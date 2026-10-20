@@ -516,3 +516,25 @@ export function openCellTap(editing: CellField | null, tapped: CellField): { kin
 export function openRowLabel(p: { memberTag: string | null; setNumber: number; sideTag: 'L' | 'R' | null }): string {
   return `${p.memberTag ?? String(p.setNumber)}${p.sideTag ?? ''}`;
 }
+
+/** One piece of the open row's sub-line; `shrink: false` never truncates. */
+export interface SubLineSegment {
+  text: string;
+  shrink: boolean;
+}
+
+/**
+ * The open row's sub-line (review B1). The target and pace may shrink, but the
+ * `est.` marker keeps its own non-shrinking text (rule 6), and what the plan
+ * was before an applied change gets its own line (rule 3). At accessibility
+ * sizes the line wraps and the links move under it.
+ */
+export function openRowSubLine(p: { target: string | null; estimate: boolean; pace: string | null; planWas: string | null; ax: boolean }): { segments: SubLineSegment[]; planWas: string | null; wrap: boolean } {
+  const segments: SubLineSegment[] = [];
+  if (p.target !== null) {
+    segments.push({ text: p.target, shrink: true });
+    if (p.estimate) segments.push({ text: '· est.', shrink: false });
+  }
+  if (p.pace !== null) segments.push({ text: segments.length > 0 ? `· ${p.pace}` : p.pace, shrink: true });
+  return { segments, planWas: p.planWas, wrap: p.ax };
+}

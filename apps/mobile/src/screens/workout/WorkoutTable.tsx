@@ -1,14 +1,14 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
 import { AccessibilityInfo, Keyboard, Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
-import { formatDuration, NBSP, targetLineLabel, targetLineText, type FocusView, type LoadField, type StepTarget, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
+import { formatDuration, NBSP, targetLineLabel, type FocusView, type LoadField, type StepTarget, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
 
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, StepperTileRow, TextButton, TEXT_PRESSED_OPACITY, type SymbolName } from '../../ui';
 import { CARDIO_TIME_FORMAT } from '../../ui/number-text';
-import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadTileY, loadCellA11y, openRowLabel, runRowTap, showsFolded, tileReportFor, valueCellA11y, type AnchorRequest, type CellField, type ChipState, type Expansions, type RowPart, type RowTap, type TileId, type TileReport } from '../../workout/table';
+import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadTileY, loadCellA11y, openRowLabel, openRowSubLine, runRowTap, showsFolded, tileReportFor, valueCellA11y, type AnchorRequest, type CellField, type ChipState, type Expansions, type RowPart, type RowTap, type TileId, type TileReport } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
@@ -1031,7 +1031,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
     editor = <NumberStepper key="dist" variant="inline" inputRef={p.distanceRef} autoFocus={p.keypadOpen} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={1} stepSize={step} label="Distance, metres" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
   }
 
-  const target = targetLineText(f.targetBrief, f.targetEstimate);
+  const target = f.targetBrief;
   // 1.5: no 44 pt minimum on the line itself; padding and hitSlop make each link a 44 pt target.
   const link = (text: string, a11y: string, onPress: () => void) => (
     <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={onPress} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }} style={({ pressed }) => ({ paddingVertical: theme.space['1'], justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
@@ -1040,9 +1040,9 @@ export function OpenSetRow(p: OpenSetRowProps) {
       </AppText>
     </Pressable>
   );
-  // The target, what the plan was, and the pace share one shrinking text; the links keep their size.
-  const lead = [target, f.planWas, f.pace].filter((x): x is string => x !== null).map(plainSpaces);
-  const leadA11y = [target !== null ? `Target ${targetLineLabel(f.targetBrief, f.targetEstimate) ?? ''}` : null, f.planWas !== null ? plainSpaces(f.planWas) : null, f.pace !== null ? `Pace ${plainSpaces(f.pace)}` : null].filter((x): x is string => x !== null).join(', ');
+  // B1: the target and pace may shrink; `est.` never does, and `Plan was …` has its own line. At AX the line wraps.
+  const sub = openRowSubLine({ target: target !== null ? plainSpaces(target) : null, estimate: f.targetEstimate, pace: f.pace !== null ? plainSpaces(f.pace) : null, planWas: f.planWas !== null ? plainSpaces(f.planWas) : null, ax: p.ax });
+  const leadA11y = [target !== null ? `Target ${targetLineLabel(f.targetBrief, f.targetEstimate) ?? ''}` : null, f.pace !== null ? `Pace ${plainSpaces(f.pace)}` : null].filter((x): x is string => x !== null).join(', ');
   const plates = f.plateLine !== null && p.editing === 'load' ? (
     <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${f.plateLine}`} style={{ paddingLeft: theme.space['2'], paddingBottom: theme.space['1'] }}>
       {plainSpaces(f.plateLine)}
@@ -1131,14 +1131,23 @@ export function OpenSetRow(p: OpenSetRowProps) {
         </View>
       ) : null}
       {/* 1.5: one line under the row: target · Rest › · Why? (the set number already opens More). */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: theme.space['3'], minHeight: theme.target.min.height, paddingLeft: 48 }}>
-        <AppText variant="callout" color="text.secondary" numeric numberOfLines={1} style={{ flexShrink: 1, flexGrow: 1 }} {...(leadA11y !== '' ? { accessibilityLabel: leadA11y } : {})}>
-          {lead.join(' · ')}
-        </AppText>
+      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: sub.wrap ? 'wrap' : 'nowrap', columnGap: theme.space['3'], minHeight: theme.target.min.height, paddingLeft: 48 }}>
+        <View accessible={leadA11y !== ''} {...(leadA11y !== '' ? { accessibilityLabel: leadA11y } : {})} style={{ flexDirection: 'row', flexWrap: sub.wrap ? 'wrap' : 'nowrap', alignItems: 'center', columnGap: theme.space['1'], flexShrink: 1, flexGrow: 1, ...(sub.wrap ? { flexBasis: '100%' } : {}) }}>
+          {sub.segments.map((seg, i) => (
+            <AppText key={i} variant="callout" color="text.secondary" numeric {...(sub.wrap ? {} : { numberOfLines: 1 })} style={{ flexShrink: seg.shrink ? 1 : 0 }}>
+              {seg.text}
+            </AppText>
+          ))}
+        </View>
         {p.workAction ? link(p.workAction.label, `${p.workAction.label} the timer`, p.workAction.onPress) : null}
         {link(`Rest ${formatDuration(f.restAfterS)} ›`, `Rest after this set: ${formatDuration(f.restAfterS)}. Changes it.`, p.onRestAfter)}
         {f.hasExplanation ? <TargetWhyLink slim open={p.whyOpen} onPress={p.onWhy} /> : null}
       </View>
+      {sub.planWas !== null ? (
+        <AppText variant="callout" color="text.secondary" numeric style={{ paddingLeft: 48 }}>
+          {sub.planWas}
+        </AppText>
+      ) : null}
       {p.whyOpen ? p.whyPanel : null}
       {f.side && f.side.kind === 'choice' ? (
         <ChipRow>

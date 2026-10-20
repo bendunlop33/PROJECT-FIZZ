@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { adjustControlView } from '../src/coach/slot-view';
-import { keypadNext, openCellTap, openRowLabel } from '../src/workout/table';
+import { keypadNext, openCellTap, openRowLabel, openRowSubLine } from '../src/workout/table';
 import { cardioPairTiles, openRowWidth, tileFit, tileRowLayout } from '../src/workout/tile-fit';
 
 /**
@@ -114,11 +114,30 @@ describe('the open row reads as a table row (1.5, 1.6)', () => {
   const open = table.slice(table.indexOf('export function OpenSetRow'), table.indexOf('function InlineEditor('));
   it('one sub-line: target · Rest › · Why?, no second ⋯', () => {
     expect(open).not.toContain("link('⋯'");
-    expect(open).toContain('numberOfLines={1} style={{ flexShrink: 1, flexGrow: 1 }}');
+    expect(open).toContain('const sub = openRowSubLine(');
     expect(open).toContain('<TargetWhyLink slim');
     // Links reach 44 pt by hitSlop, not by height.
     expect(open).toContain('hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}');
     expect(open).not.toContain('minHeight: 44, justifyContent');
+  });
+  it('Plan was … keeps its own line and est. never shrinks (review B1, rules 3 and 6)', () => {
+    const lighter = openRowSubLine({ target: '3–6 @ 8.5', estimate: true, pace: null, planWas: 'Plan was 100 kg × 6–8', ax: false });
+    expect(lighter.segments).toEqual([
+      { text: '3–6 @ 8.5', shrink: true },
+      { text: '· est.', shrink: false },
+    ]);
+    expect(lighter.segments.some((x) => x.text.includes('Plan was'))).toBe(false);
+    expect(lighter.planWas).toBe('Plan was 100 kg × 6–8');
+    expect(lighter.wrap).toBe(false);
+    // At AX sizes the line wraps (no truncation) and the links go under it.
+    expect(openRowSubLine({ target: '8', estimate: false, pace: null, planWas: null, ax: true }).wrap).toBe(true);
+    // A cardio pace follows the target; with no target it stands alone.
+    expect(openRowSubLine({ target: null, estimate: false, pace: '5:00 /km', planWas: null, ax: false }).segments).toEqual([{ text: '5:00 /km', shrink: true }]);
+    // In source: planWas renders below the sub-line, outside any numberOfLines text, and the wrap is honoured.
+    const subLine = open.slice(open.indexOf('1.5: one line under the row'), open.indexOf('{sub.planWas !== null ?'));
+    expect(subLine).not.toContain('f.planWas');
+    expect(open).toContain("{...(sub.wrap ? {} : { numberOfLines: 1 })} style={{ flexShrink: seg.shrink ? 1 : 0 }}");
+    expect(open).toContain("flexWrap: sub.wrap ? 'wrap' : 'nowrap'");
   });
   it('the plates show only while the load is edited, under its editor', () => {
     expect(open).toContain("const plates = f.plateLine !== null && p.editing === 'load' ?");
