@@ -312,6 +312,18 @@ describe('the exercise detail chart line', () => {
     expect(liftTargetChartValue(t, { exerciseId: BENCH, kind: 'added_bodyweight', convention: 'total', unit: 'kg', metric: 'e1rm' })).toBeNull();
     expect(liftTargetChartValue(t, { exerciseId: 'other', kind: 'load', convention: 'total', unit: 'kg', metric: 'e1rm' })).toBeNull();
   });
+
+  it('a BW + weight × reps target sits on the merged bodyweight + weighted series’ Top set (Ben, 20 Oct)', () => {
+    const bw = target({ kind: 'weight_reps', value: 20, reps: 5, choice: { ...benchChoice, convention: 'added', plateLoaded: false } });
+    expect(liftTargetChartValue(bw, { exerciseId: BENCH, kind: 'added_bodyweight', convention: 'added', unit: 'kg', metric: 'top_set' })).toBe(20);
+    expect(liftTargetChartValue(bw, { exerciseId: BENCH, kind: 'added_bodyweight', convention: 'added', unit: 'kg', metric: 'total_weight' })).toBeNull();
+    expect(liftTargetChartValue(bw, { exerciseId: BENCH, kind: 'load', convention: 'added', unit: 'kg', metric: 'top_set' })).toBeNull();
+    expect(liftTargetChartValue(bw, { exerciseId: BENCH, convention: 'added', unit: 'kg', metric: 'top_set' })).toBeNull();
+    // A plate-loaded target stays on the load series only.
+    const plates = target({ kind: 'weight_reps', value: 100, reps: 5, choice: { ...benchChoice, convention: 'added', plateLoaded: true } });
+    expect(liftTargetChartValue(plates, { exerciseId: BENCH, kind: 'load', convention: 'added', unit: 'kg', metric: 'top_set' })).toBe(100);
+    expect(liftTargetChartValue(plates, { exerciseId: BENCH, kind: 'added_bodyweight', convention: 'added', unit: 'kg', metric: 'top_set' })).toBeNull();
+  });
 });
 
 

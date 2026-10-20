@@ -285,7 +285,7 @@ export function ExerciseDetailScreen() {
         ) : null}
 
         <StatStrip items={view.stats} accessibilityLabel={view.statsWords} ax={ax} />
-        {view.converted !== null ? <InfoLine info={view.converted} infoLabel="Units" /> : null}
+        {view.info !== null ? <InfoLine info={view.info} infoLabel="Details" /> : null}
 
         <ExerciseLiftTarget data={lift} exerciseId={exerciseId} onChanged={reloadLift} />
 

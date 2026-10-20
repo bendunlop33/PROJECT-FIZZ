@@ -133,7 +133,7 @@ describe('distance series kind', () => {
     const ss = onlySeries([session('2026-10-01', [sledRow([set(added(100), 20, { reps: 5 })])])]);
     const one = ss.sessions[0];
     if (one === undefined) throw new Error('no session');
-    for (const m of ['e1rm', 'top_set', 'volume', 'best_set', 'longest_hold'] as const) expect(sessionMetric(one, ss, m)).toBeNull();
+    for (const m of ['e1rm', 'top_set', 'total_weight', 'best_set', 'longest_hold'] as const) expect(sessionMetric(one, ss, m)).toBeNull();
     expect(exerciseHeadline(ss)).toMatchObject({ bestE1rm: null, bestSet: null, mostReps: null });
   });
 });

@@ -1,4 +1,4 @@
-import type { EquipmentKind, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
+import type { EquipmentKind, ImplementCount, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 import { cardioDistanceText, cardioTimeText, cardioValuesText, distanceLoadText, formatDistance, formatDuration, formatNumber, loadText, NBSP } from '../display';
 import { paceText } from '../cardio';
 import { exclusionWords, isSetCountable } from '../exclusions';
@@ -111,8 +111,8 @@ export function metricLabel(metric: ExerciseMetric): string {
       return 'Est. 1RM';
     case 'top_set':
       return 'Top set';
-    case 'volume':
-      return 'Volume';
+    case 'total_weight':
+      return 'Total weight';
     case 'best_set':
       return 'Best set';
     case 'longest_hold':
@@ -177,6 +177,9 @@ export function seriesKindLabel(kind: SeriesKind): string {
   }
 }
 
+/** The info line behind a `≈` total: the catalogue doesn't say how many dumbbells (done either way). */
+export const TOTAL_ASSUMED = '≈ Total weight assumes the dumbbell count';
+
 /**
  * `Converted from lb` when a set on screen (these sessions, the period's) was
  * logged in the other unit (the info tap); null otherwise (review S3).
@@ -192,8 +195,9 @@ export function axisUnit(series: ExerciseSeries, metric: ExerciseMetric): string
     case 'e1rm':
     case 'top_set':
       return seriesUnitText(series);
-    case 'volume':
-      return `${seriesUnitText(series)} × reps`;
+    case 'total_weight':
+      // Plain `kg` / `lb`: a total is mass moved (each dumbbell and side counted), whatever the convention.
+      return series.key.unit;
     case 'best_set':
       return 'reps';
     case 'longest_hold':
@@ -250,14 +254,14 @@ function distanceSetWords(set: Pick<ProgressSet, 'load' | 'distanceM'>, series: 
 }
 
 /** A point's value as shown: `≈123 kg`, `102.5 kg × 6`, `4,520 kg × reps`, `14 reps`, `1:30`. */
-function valueText(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSeries, metric: ExerciseMetric): string {
+function valueText(p: Pick<TrendPoint, 'value' | 'fromSet' | 'kind'>, series: ExerciseSeries, metric: ExerciseMetric): string {
   switch (metric) {
     case 'e1rm':
       return estimateText(p.value, series, p.fromSet);
     case 'top_set':
       return p.fromSet ? setText(p.fromSet, series) : '—';
-    case 'volume':
-      return `${thousands(p.value)}${NBSP}${seriesUnitText(series)}${TIMES}reps`;
+    case 'total_weight':
+      return `${p.kind === 'estimate' ? '≈' : ''}${thousands(p.value)}${NBSP}${series.key.unit}`;
     case 'best_set':
       return countNoun(p.value, 'rep', 'reps');
     case 'longest_hold':
@@ -277,14 +281,14 @@ function unitWords(series: ExerciseSeries): string {
 }
 
 /** VoiceOver value: "about 126.5 kilograms", "105 kilograms by 3", "14 reps", "90 seconds". */
-function valueWords(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSeries, metric: ExerciseMetric): string {
+function valueWords(p: Pick<TrendPoint, 'value' | 'fromSet' | 'kind'>, series: ExerciseSeries, metric: ExerciseMetric): string {
   switch (metric) {
     case 'e1rm':
       return `about ${formatNumber(p.value)} ${unitWords(series)}${(p.fromSet?.load?.convention ?? series.key.convention) === 'per_hand' ? ' each' : ''}`;
     case 'top_set':
       return p.fromSet ? setWords(p.fromSet, setEquipmentKind(p.fromSet, series)) : '';
-    case 'volume':
-      return `${formatNumber(p.value)} ${unitWords(series)} times reps`;
+    case 'total_weight':
+      return `${p.kind === 'estimate' ? 'about ' : ''}${formatNumber(p.value)} ${unitWords(series)}`;
     case 'best_set':
       return countNoun(p.value, 'rep', 'reps');
     case 'longest_hold':
@@ -304,8 +308,8 @@ function metricWords(metric: ExerciseMetric): string {
       return 'Estimated one-rep max, an estimate';
     case 'top_set':
       return 'Top set';
-    case 'volume':
-      return 'Volume';
+    case 'total_weight':
+      return 'Total weight';
     case 'best_set':
       return 'Best set';
     case 'longest_hold':
@@ -455,6 +459,8 @@ export interface ExerciseDetailView {
   seriesSource: 'app' | 'import';
   /** `Converted from lb` behind the info tap when a set was logged in the other unit; null otherwise (nothing shown). */
   converted: string | null;
+  /** The info tap: `converted`, and the assumed dumbbell count behind a `≈` total weight; null with nothing to say. */
+  info: string | null;
   stats: { value: string; label: string }[];
   statsWords: string;
   metrics: { key: ExerciseMetric; label: string }[];
@@ -527,6 +533,8 @@ export interface ExerciseDetailInput {
   sessionExerciseId?: string | null;
   metric?: ExerciseMetric | null;
   range?: TrendRange | null;
+  /** Dumbbells per hand-load set from the catalogue (`implements`), for total weight; null: from the row's sides. */
+  implements?: ImplementCount | null;
   repBy?: 'weight' | 'reps';
   /** History months shown (`Load September` adds one). */
   historyMonths?: number;
@@ -585,7 +593,7 @@ function pointTitle(p: { date: string; name: string | null; source: 'app' | 'imp
 
 function markedNote(p: TrendPoint, metric: ExerciseMetric): string | null {
   if (p.excludedSets === 0) return null;
-  return metric === 'volume' || metric === 'total_distance' ? `${countNoun(p.excludedSets, 'marked set', 'marked sets')} included` : `${countNoun(p.excludedSets, 'set', 'sets')} not counted`;
+  return metric === 'total_weight' || metric === 'total_distance' ? `${countNoun(p.excludedSets, 'marked set', 'marked sets')} included` : `${countNoun(p.excludedSets, 'set', 'sets')} not counted`;
 }
 
 function pointView(p: TrendPoint, series: ExerciseSeries, metric: ExerciseMetric, today: string): ChartPointView {
@@ -677,8 +685,10 @@ function changeLine(first: TrendPoint, latest: TrendPoint, series: ExerciseSerie
         return { label: 'Change', value: `${formatNumber(amount)}${NBSP}${series.key.unit} ${more} assistance than ${since}`, words: `${formatNumber(amount)} ${unitWords(series)} ${more} assistance than ${sinceWords}`, direction: dir };
       }
       return { label: 'Change', value: `${word} ${formatNumber(amount)}${NBSP}${seriesUnitText(series)} since ${since}`, words: `${word} ${formatNumber(amount)} ${unitWords(series)} since ${sinceWords}`, direction: dir };
-    case 'volume':
-      return { label: 'Change', value: `${word} ${thousands(amount)}${NBSP}${seriesUnitText(series)}${TIMES}reps since ${since}`, words: `${word} ${formatNumber(amount)} ${unitWords(series)} times reps since ${sinceWords}`, direction: dir };
+    case 'total_weight': {
+      const est = first.kind === 'estimate' || latest.kind === 'estimate';
+      return { label: 'Change', value: `${word} ${est ? '≈' : ''}${thousands(amount)}${NBSP}${series.key.unit} since ${since}`, words: `${word} ${est ? 'about ' : ''}${formatNumber(amount)} ${unitWords(series)} since ${sinceWords}`, direction: dir };
+    }
     case 'best_set':
       return { label: 'Change', value: `${word} ${countNoun(amount, 'rep', 'reps')} since ${since}`, words: `${word} ${countNoun(amount, 'rep', 'reps')} since ${sinceWords}`, direction: dir };
     case 'longest_hold':
@@ -907,7 +917,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   const metrics = metricsFor(series.kind);
   const metric = input.metric && metrics.includes(input.metric) ? input.metric : (metrics[0] as ExerciseMetric);
   const range = openingRange(series, input, today);
-  const trend = exerciseTrend(series, metric, range, today);
+  const trend = exerciseTrend(series, metric, range, today, input.implements ?? null);
   const label = labelOf(series);
   const title = series.exerciseName || input.name || 'Exercise';
   const rangeText = `${shortDate(trend.bounds.from, today)} – ${shortDate(trend.bounds.to, today)}`;
@@ -1005,6 +1015,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     series.kind === 'cardio' ? 'time · m' : series.kind === 'timed' ? 'min:s' : series.kind === 'bodyweight' ? 'reps' : series.kind === 'distance' ? (series.key.convention === 'bodyweight' ? 'm' : `${seriesUnitText(series)} × m`) : `${seriesUnitText(series)} × reps`;
 
   const statStrip = headlineView(series);
+  const converted = convertedText(series.sessions.filter((ss) => ss.date >= trend.bounds.from && ss.date <= trend.bounds.to));
   const selectId = input.sessionId ?? input.selectSessionId ?? null;
   const selection = openedSelection(selectId, trend, points, series, metric, today);
 
@@ -1018,7 +1029,8 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     seriesTerms: { exerciseId: input.exerciseId, kind: series.kind, convention: series.key.convention, unit: series.key.unit },
     seriesLabel: label,
     seriesSource: series.key.source,
-    converted: convertedText(series.sessions.filter((ss) => ss.date >= trend.bounds.from && ss.date <= trend.bounds.to)),
+    converted,
+    info: [converted, metric === 'total_weight' && trend.sessionPoints.some((p) => p.kind === 'estimate') ? TOTAL_ASSUMED : null].filter((x): x is string => x !== null).join('\n') || null,
     stats: statStrip.stats,
     statsWords: statStrip.words,
     metrics: metrics.map((m) => ({ key: m, label: metricLabel(m) })),
@@ -1029,7 +1041,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     estimateInfo: metric === 'e1rm',
     axisUnit: axisUnit(series, metric),
     axisFormat: metric === 'longest_hold' || metric === 'total_time' ? 'duration' : 'number',
-    bars: metric === 'volume',
+    bars: metric === 'total_weight',
     bounds: trend.bounds,
     chart,
     points,

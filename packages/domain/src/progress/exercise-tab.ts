@@ -16,7 +16,7 @@ import {
   type SeriesSession,
   type SeriesSet,
 } from './exercise';
-import { cardioSetText, convertedText, longDate, seriesKindLabel, seriesUnitText, setUnitText, shortDate, thousands, weekdayLongDate } from './exercise-view';
+import { cardioSetText, convertedText, longDate, seriesKindLabel, seriesUnitText, setUnitText, shortDate, thousands, TOTAL_ASSUMED, weekdayLongDate } from './exercise-view';
 import { countRowSets } from './muscles';
 import type { ProgressSession, ProgressSet } from './projection';
 import { countNoun, rangeWords } from './text';
@@ -116,8 +116,8 @@ function workingLoaded(s: SeriesSet, series: Pick<ExerciseSeries, 'key' | 'kind'
 /**
  * Working weight: the load used for the most countable working sets; a tie
  * goes to the harder load (heavier; less assistance on assisted machines).
- * A left + right pair counts once, as in `workingSetCount` and
- * `sessionVolume` (the busier side per load). The same number in another
+ * A left + right pair counts once, as in `workingSetCount` (the busier
+ * side per load). The same number in another
  * convention (`20 kg each`, `20 kg`) is another load. Returns the load, a set
  * that used it (its own unit text) and how many sets used it; null with no
  * loaded sets.
@@ -388,9 +388,6 @@ function bestSetStat(sessions: readonly SeriesSession[], series: ExerciseSeries)
   }
   return best?.text ?? null;
 }
-
-/** The info line behind a `≈` total: the catalogue doesn't say how many dumbbells (done either way). */
-export const TOTAL_ASSUMED = '≈ Total weight assumes the dumbbell count';
 
 /** The Exercises tab for one exercise; null when it has no finished session. */
 export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView | null {

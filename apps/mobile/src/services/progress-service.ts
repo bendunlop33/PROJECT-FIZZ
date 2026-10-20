@@ -395,6 +395,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
         selectSessionId: req.selectSessionId ?? null,
         metric: next.metric ?? null,
         range: req.range ?? req.openedRange ?? next.range ?? null,
+        implements: ctx.implementsOf(req.exerciseId),
         repBy: next.repBy ?? 'weight',
         historyMonths: req.historyMonths ?? 2,
         painFlag: pain === null ? null : { flagId: pain.flag.id, date: localDateOf(toMs(pain.flag.reportedAt.utc), pain.flag.reportedAt.tz) },

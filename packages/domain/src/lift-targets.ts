@@ -401,12 +401,14 @@ export function readLiftTargetNumber(text: string): number | null {
  * on the Est. 1RM measure, a weight × reps target on the Top set measure.
  * Progress has one series per exercise and kind (Ben, 20 Oct): the line goes on
  * the `load` series when its convention (the latest row's) is the target's,
- * so a per-hand target never sits on a total-barbell chart. Null otherwise.
+ * so a per-hand target never sits on a total-barbell chart. A `BW +` weight ×
+ * reps target goes on the BW + series' Top set (bodyweight and weighted are
+ * one series, bodyweight as `+0`; Ben, 20 Oct). Null otherwise.
  */
 export function liftTargetChartValue(t: LiftTarget | null, series: { exerciseId: string; kind?: SeriesKind; convention: string; unit: WeightUnit; metric: ExerciseMetric }): number | null {
   if (t === null || t.exerciseId !== series.exerciseId || t.load.convention !== series.convention) return null;
-  if (series.kind !== undefined && series.kind !== 'load') return null;
-  if (t.load.convention === 'added' && t.load.plateLoaded !== true) return null;
+  const bwPlus = t.load.convention === 'added' && t.load.plateLoaded !== true;
+  if (bwPlus ? series.kind !== 'added_bodyweight' || t.kind === 'one_rm' : series.kind !== undefined && series.kind !== 'load') return null;
   const wanted: ExerciseMetric = t.kind === 'one_rm' ? 'e1rm' : 'top_set';
   if (series.metric !== wanted) return null;
   return t.load.unit === series.unit ? t.load.value : convertMass({ value: t.load.value, unit: t.load.unit }, series.unit).value;
