@@ -52,6 +52,33 @@ describe('when update_gym is offered and when it applies', () => {
     expect(gymChangeAsked('how was that?', { benAsked: true, benQuote: 'no leg press' })).toBe(false);
     expect(gymChangeAsked(null, {})).toBe(false);
   });
+
+  // Review quickgym B1: questions, hedges, opinion requests and unrelated sentences are offers, never applied.
+  it.each<[string, { benAsked?: boolean | null; benQuote?: string | null }]>([
+    ['the dumbbells here go up in 2s maybe? what do you think', { benAsked: true, benQuote: 'the dumbbells here go up in 2s' }],
+    ['the dumbbells here go up in 2s maybe? what do you think', {}],
+    ['No idea what this gym has, what do you think I should do today?', {}],
+    ['No idea what this gym has, what do you think I should do today?', { benAsked: true, benQuote: 'No idea what this gym has' }],
+    ['Does this gym have no leg press? not sure', { benAsked: true, benQuote: 'this gym have no leg press' }],
+    ['Does this gym have no leg press? not sure', {}],
+    ['there is a queue for the leg press here', {}],
+    ['the leg press here is broken', {}],
+    ['I think there’s no smith machine here', {}],
+    ['no time today, legs at this gym', {}],
+  ])('%s %j → offered, not applied', (text, claim) => {
+    expect(gymChangeAsked(text, claim)).toBe(false);
+  });
+
+  it.each<[string, { benAsked?: boolean | null; benQuote?: string | null }]>([
+    ['There’s no smith machine here', {}],
+    ['The dumbbells here go up in 2s.', {}],
+    ['Dumbbells only go up to 30 kg here', { benAsked: true, benQuote: 'only go up to 30 kg' }],
+    ['This gym doesn’t have a leg extension. Swap it for something else', {}],
+    ['Can you add 22 kg dumbbells to this gym?', {}],
+    ['Leg press isn’t here', {}],
+  ])('%s %j → Ben said it: applies', (text, claim) => {
+    expect(gymChangeAsked(text, claim)).toBe(true);
+  });
 });
 
 describe('update_gym in a turn', () => {
@@ -87,6 +114,23 @@ describe('update_gym in a turn', () => {
     expect(result.cards[0]?.record).toMatchObject({ status: 'proposed', detail: { kind: 'update_gym', lines: ['Dumbbells: 2–50 kg, every 2'] } });
     expect(await store.repos.equipment.listByGym(GYM)).toEqual(before);
     await store.close();
+  });
+
+  it('review B1: a question with no claim (or a claimed quote) is a card, never applied', async () => {
+    for (const claim of [{}, { benAsked: true, benQuote: 'No idea what this gym has' }]) {
+      const store = await memoryStore();
+      await fullGym(store);
+      const model = new ScriptedCoachModel([
+        [call('update_gym', { gymName: null, changes: [{ op: 'remove', equipment: 'weight_stack' }], reason: 'Unsure about cables', ...claim }), { type: 'completed' }],
+        reply('Want me to take the cables off?'),
+      ]);
+      const before = await store.repos.equipment.listByGym(GYM);
+      const result = await runCoachTurn(request({ input: words('No idea what this gym has, what do you think I should do today?') }), ports(store, model, executors(store)));
+      expect(result.cards[0]?.record.status).toBe('proposed');
+      expect(await store.repos.equipment.listByGym(GYM)).toEqual(before);
+      expect((await store.repos.gyms.get(GYM))?.missingKinds).toBeUndefined();
+      await store.close();
+    }
   });
 
   it('a change the app can’t make is refused with its reason; nothing written', async () => {

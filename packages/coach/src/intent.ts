@@ -93,6 +93,17 @@ export function quoteAsks(quote: string, words: string): boolean {
   return !OPINION_ONLY.test(w) || ASKS_OUTRIGHT.test(w);
 }
 
+/** (Review quickgym B1) Ben's message only asks the coach's opinion ("what do you think?"), with no outright ask. */
+export function asksOpinionOnly(words: string): boolean {
+  const w = wordsOf(words).join(' ');
+  return OPINION_ONLY.test(w) && !ASKS_OUTRIGHT.test(w);
+}
+
+/** Does `text` contain an outright ask ("can you", "please")? */
+export function asksOutright(text: string): boolean {
+  return ASKS_OUTRIGHT.test(wordsOf(text).join(' '));
+}
+
 /**
  * Did Ben ask for this today-change? A tap counts (for today's sets). Then the model's claim, if its quote is in his
  * message and reads as a request (`quoteAsks`); a quote of his that doesn't is an offer. A claim of "he didn't ask" is taken (the call becomes an offer). No claim, or one code
