@@ -261,6 +261,10 @@ describe('Session breakdown rows', () => {
   it('# · Exercise + works · Sets (+N W) · Top set; superset rows a/b', () => {
     const { d } = draft();
     const rows = todayBreakdown(d.workout, info, (id) => (id === 'bench' ? 'Chest, front delts, triceps' : null), breakdownUnit(d.workout, 'kg'));
+    expect(rows.every((r) => !r.held)).toBe(true);
+    const held = todayBreakdown(d.workout, info, () => null, breakdownUnit(d.workout, 'kg'), (id) => id === 'bench');
+    expect(held.find((r) => r.exerciseId === 'bench')).toMatchObject({ held: true });
+    expect(held.find((r) => r.exerciseId === 'bench')?.accessibilityLabel).toContain('pain flag, held');
     expect(rows[0]).toMatchObject({ label: '1', name: 'Barbell bench press', works: 'Chest, front delts, triceps', sets: 4 });
     expect(sp(rows[0]?.warmupText)).toMatch(/^\+\d W$/);
     expect(Number(rows[0]?.top)).toBeGreaterThan(0);
@@ -292,6 +296,9 @@ describe('Why? (facts from code; honest review status)', () => {
     const picked = todayWhy({ dayName: 'Back', nextDayName: 'Chest', other: false, last: null, mainTarget: null, goal: null, liftTarget: null, accessories: 'varied', minutes: 45, coachReason: null, review: 'not_connected' });
     expect(picked[0]).toBe('Back picked by you; the plan moves on');
     expect(picked.at(-1)).toBe('Not reviewed · Coach not connected');
+    // A main lift this gym can't do, and a pain-held one: one short line each, before the controls line.
+    const flagged = todayWhy({ dayName: 'Back', nextDayName: 'Back', other: false, last: null, mainTarget: null, goal: null, liftTarget: null, accessories: 'focused', minutes: 45, coachReason: null, review: 'not_reviewed', held: ['Barbell row'], missingHere: 'Deadlift' });
+    expect(flagged.map(sp)).toEqual(['Plan: Back is next', 'Deadlift: not at this gym', 'Barbell row: pain flag · held', 'Accessories focused · 45 min', 'Not reviewed']);
   });
 });
 

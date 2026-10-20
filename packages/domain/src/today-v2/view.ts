@@ -73,6 +73,8 @@ export interface TodayBreakdownRow {
   top: string;
   /** Superset box: which block, its letter, first/last (the connecting line). */
   superset: { block: number; member: string; first: boolean; last: boolean } | null;
+  /** Pain-flagged (rule 9): held, never progressed; the row shows a warning mark. */
+  held: boolean;
   accessibilityLabel: string;
 }
 
@@ -110,7 +112,7 @@ export function breakdownUnit(w: BuilderWorkout, fallback: WeightUnit): WeightUn
   return units.length === 0 ? fallback : kg >= lb ? 'kg' : 'lb';
 }
 
-export function todayBreakdown(w: BuilderWorkout, info: BuilderInfoLookup, worksOf: (exerciseId: string) => string | null, unit: WeightUnit): TodayBreakdownRow[] {
+export function todayBreakdown(w: BuilderWorkout, info: BuilderInfoLookup, worksOf: (exerciseId: string) => string | null, unit: WeightUnit, painFlagged: (exerciseId: string) => boolean = () => false): TodayBreakdownRow[] {
   const out: TodayBreakdownRow[] = [];
   let n = 0;
   w.blocks.forEach((b, bi) => {
@@ -123,6 +125,7 @@ export function todayBreakdown(w: BuilderWorkout, info: BuilderInfoLookup, works
       const warmups = s.rows.filter((r) => r.type === 'warmup').length;
       const top = topSetText(s, unit);
       const label = `${String(n)}${member}`;
+      const held = painFlagged(s.exerciseId);
       const spoken = top === '—' ? 'no load yet' : top === 'BW' ? 'bodyweight' : `top set ${top.replaceAll(NBSP, ' ')}${s.unit === unit ? ` ${unit}` : ''}`;
       out.push({
         key: s.key,
@@ -135,7 +138,8 @@ export function todayBreakdown(w: BuilderWorkout, info: BuilderInfoLookup, works
         warmupText: warmups > 0 ? `+${String(warmups)}${NBSP}W` : null,
         top,
         superset: member === '' ? null : { block: bi, member, first: i === 0, last: i === b.slots.length - 1 },
-        accessibilityLabel: [`${label}, ${name}`, member === '' ? null : 'superset', `${String(sets)} ${sets === 1 ? 'set' : 'sets'}`, warmups > 0 ? `plus ${String(warmups)} warm-up${warmups === 1 ? '' : 's'}` : null, spoken].filter((x): x is string => x !== null).join(', '),
+        held,
+        accessibilityLabel: [`${label}, ${name}`, held ? 'pain flag, held' : null, member === '' ? null : 'superset', `${String(sets)} ${sets === 1 ? 'set' : 'sets'}`, warmups > 0 ? `plus ${String(warmups)} warm-up${warmups === 1 ? '' : 's'}` : null, spoken].filter((x): x is string => x !== null).join(', '),
       });
     });
   });
@@ -210,6 +214,10 @@ export interface TodayWhyInput {
   /** The coach's one-line reason, when it changed something (coach stream). */
   coachReason: string | null;
   review: TodayReviewStatus;
+  /** Pain-flagged movements still on the card (a main lift), held at their last load (rule 9). */
+  held?: readonly string[];
+  /** The plan's main lift this gym can't do (left out, §3.7). */
+  missingHere?: string | null;
 }
 
 const GOAL_WORD = { strength: 'strength', muscle: 'muscle', both: 'strength and muscle' } as const;
@@ -229,6 +237,8 @@ export function todayWhy(input: TodayWhyInput): string[] {
   }
   const goal = [input.goal === null ? null : `Goal: ${GOAL_WORD[input.goal]}`, input.liftTarget].filter((x): x is string => x !== null).join(' · ');
   if (goal !== '') lines.push(goal);
+  if (input.missingHere != null) lines.push(`${input.missingHere}: not at this gym`);
+  for (const h of input.held ?? []) lines.push(`${h}: pain flag · held`);
   lines.push(`Accessories ${input.accessories} · ${String(input.minutes)}${NBSP}min`);
   if (input.coachReason !== null) lines.push(`✦ Coach: ${input.coachReason}`);
   else lines.push(input.review === 'offline' ? TODAY_V2_COPY.notReviewedOffline : input.review === 'not_connected' ? TODAY_V2_COPY.notReviewedNotConnected : TODAY_V2_COPY.notReviewed);
