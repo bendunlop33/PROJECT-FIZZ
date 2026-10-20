@@ -39,6 +39,7 @@ import type { ProgressSession, ProgressSet } from './projection';
 import { exerciseRecords, type ExerciseRecord } from './records';
 import { countNoun, loadUnitText, massWords, monthName } from './text';
 import type { DateRange } from './window';
+import { isPlatesAddedKind } from '../plates-added';
 
 /**
  * Exercises list and exercise detail view models (progress.md §2.6, §2.7,
@@ -338,7 +339,7 @@ export function compactSetText(s: ProgressSet, series: Pick<ExerciseSeries, 'kin
   if (series.kind === 'cardio') core = series.key === undefined ? cardioValuesText(s) : cardioSetText(s, { key: series.key });
   else if (series.kind === 'distance') {
     const d = s.distanceM === undefined ? '—' : formatDistance(s.distanceM);
-    const noLoad = s.load === null || s.load.convention === 'bodyweight' || (s.load.convention === 'added' && s.load.value === 0 && series.equipmentKind !== 'plate_loaded_machine');
+    const noLoad = s.load === null || s.load.convention === 'bodyweight' || (s.load.convention === 'added' && s.load.value === 0 && !isPlatesAddedKind(series.equipmentKind));
     core = noLoad ? d : `${formatNumber(s.load?.value ?? 0)}×${d}`;
   } else if (series.kind === 'timed') core = s.durationS === null ? '—' : formatDuration(s.durationS);
   else if (series.kind === 'bodyweight' || s.load === null) core = s.reps === null ? '—' : String(s.reps);

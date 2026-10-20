@@ -1,7 +1,7 @@
 import type { EquipmentInstance, Load, SessionAggregate, SessionExercise } from '@fizz/schemas';
 import { formatNumber, NBSP } from './display';
 import { isSetCountable } from './exclusions';
-import { buildPlateSetup, roundToAvailableLoad } from './equipment';
+import { buildPlateSetup, isBarLoaded, roundToAvailableLoad } from './equipment';
 import { matchesEquipment, type HistorySession } from './progression';
 import { toMs } from './time';
 import { toScaled } from './units';
@@ -13,18 +13,19 @@ import { toScaled } from './units';
  */
 
 /**
- * `20 bar + 25 + 10 + 2.5 / side` for a barbell, `20 + 10 / side` for a
- * two-sided plate-loaded machine. Null when the load isn't plate-loaded or
+ * `20 bar + 25 + 10 + 2.5 / side` for a barbell (EZ and trap bars too, with
+ * their own bar), `20 + 10 / side` for a two-sided plate-loaded machine or a
+ * Smith machine (plates added). Null when the load isn't plate-loaded or
  * can't be made from this inventory (the off-profile warning covers that).
  */
 export function plateBreakdownLine(load: Load | null, eq: EquipmentInstance | null): string | null {
-  if (load === null || eq === null || (eq.kind !== 'barbell' && eq.kind !== 'plate_loaded_machine')) return null;
+  if (load === null || eq === null || !(isBarLoaded(eq) || eq.kind === 'plate_loaded_machine' || eq.kind === 'smith_machine')) return null;
   if (load.unit !== eq.unit || load.convention !== eq.loadConvention) return null;
   const r = buildPlateSetup({ value: load.value, unit: load.unit }, eq);
   if (!r.ok) return null;
   const plates = r.perSide.flatMap((p) => Array.from({ length: p.count }, () => formatNumber(p.mass)));
   const side = r.sides === 2 ? `${NBSP}/${NBSP}side` : `${NBSP}on the horn`;
-  if (eq.kind === 'barbell') {
+  if (isBarLoaded(eq)) {
     const bar = `${formatNumber(eq.barMass)} bar`;
     return plates.length === 0 ? `Just the bar (${formatNumber(eq.barMass)}${NBSP}${eq.unit})` : `${bar} + ${plates.join(' + ')}${side}`;
   }
@@ -44,12 +45,21 @@ const RAMP: readonly { pct: number; reps: number }[] = [
 ];
 
 /**
- * Warm-up ramp for a barbell working load: every step rounded down to a load
- * this bar can make, strictly lighter than the working load, no repeats.
- * Empty when the working load is the bar or close to it.
+ * Bars that get the warm-up ramp: the barbell and the trap bar (heavy
+ * compound lifts). Not the EZ bar: its curls and skull crushers aren't
+ * ramped (review ben-kit S2).
+ */
+function rampsWarmUp(eq: EquipmentInstance | null | undefined): eq is Extract<EquipmentInstance, { kind: 'barbell' | 'trap_bar' }> {
+  return eq?.kind === 'barbell' || eq?.kind === 'trap_bar';
+}
+
+/**
+ * Warm-up ramp for a barbell (or trap-bar) working load: every step rounded
+ * down to a load this bar can make, strictly lighter than the working load,
+ * no repeats. Empty when the working load is the bar or close to it.
  */
 export function warmUpRamp(workingLoad: Load | null, eq: EquipmentInstance | null): WarmUpStep[] {
-  if (workingLoad === null || eq?.kind !== 'barbell' || workingLoad.unit !== eq.unit || workingLoad.convention !== 'total') return [];
+  if (workingLoad === null || !rampsWarmUp(eq) || workingLoad.unit !== eq.unit || workingLoad.convention !== 'total') return [];
   const work = toScaled(workingLoad.value);
   const bar = toScaled(eq.barMass);
   if (work <= bar) return [];
@@ -66,7 +76,7 @@ export function warmUpRamp(workingLoad: Load | null, eq: EquipmentInstance | nul
 
 /** `Warm-up suggestion: bar × 10 · 40 × 5 · 60 × 3 · 80 × 2 (kg)` */
 export function warmUpText(steps: readonly WarmUpStep[], eq: EquipmentInstance): string | null {
-  if (steps.length < 2 || eq.kind !== 'barbell') return null;
+  if (steps.length < 2 || !rampsWarmUp(eq)) return null;
   const parts = steps.map((s, i) => `${i === 0 ? 'bar' : formatNumber(s.load)}${NBSP}×${NBSP}${String(s.reps)}`);
   return `${parts.join(' · ')} (${eq.unit})`;
 }
@@ -81,7 +91,7 @@ export function showsWarmUp(state: SessionAggregate, setId: string): boolean {
   if (!set || set.status !== 'pending' || set.setType === 'warmup') return false;
   const barbellExercises = [...state.exercises]
     .sort((a, b) => a.order - b.order)
-    .filter((e) => e.equipmentId !== null && state.session.equipmentSnapshot.some((q) => q.id === e.equipmentId && q.kind === 'barbell'));
+    .filter((e) => e.equipmentId !== null && state.session.equipmentSnapshot.some((q) => q.id === e.equipmentId && rampsWarmUp(q)));
   const first = barbellExercises[0];
   if (!first || first.id !== set.sessionExerciseId) return false;
   const own = state.sets.filter((s) => s.sessionExerciseId === first.id && s.status !== 'deleted');

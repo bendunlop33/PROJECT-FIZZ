@@ -13,6 +13,11 @@ import { MUSCLE_TO_GROUP } from './muscle-groups';
  * each has a bar weight of its own, so an EZ-bar or trap-bar exercise must
  * never be planned on the gym's Olympic `barbell` (rule 4). Until a gym can
  * hold an EZ or trap bar, those exercises log without load checks.
+ *
+ * (Ben, 20 Oct; ADR 0030) A gym can now hold kettlebells, an EZ bar, a trap
+ * bar, a Smith machine (its own kind: its bar runs in a frame), benches and
+ * racks. `bench` and `rack` are presence-only gym items; exercises say they
+ * need one through the catalogue's `requiresStation`, not this list.
  */
 export const EquipmentKindSchema = z.enum([
   'barbell',
@@ -29,6 +34,9 @@ export const EquipmentKindSchema = z.enum([
   'band',
   'ez_bar',
   'trap_bar',
+  'smith_machine',
+  'bench',
+  'rack',
 ]);
 export type ExerciseEquipmentKind = z.infer<typeof EquipmentKindSchema>;
 

@@ -20,6 +20,7 @@ import type { ExerciseMetric, SeriesKind } from './progress/exercise';
 import type { ProgressSession } from './progress/projection';
 import { toMs } from './time';
 import { convertMass } from './units';
+import { isPlatesAddedKind } from './plates-added';
 
 /**
  * Lift targets (Ben approved 20 Oct: "Yeah let's do lift targets as something
@@ -143,7 +144,7 @@ type TargetTerms = Pick<LiftTarget, 'exerciseId'> & { load: Pick<LiftTarget['loa
 /** The set's load in the target's unit, when it is the same exercise and convention (else null: never compared). */
 export function loadInTargetTerms(s: LiftSet, t: TargetTerms): number | null {
   if (s.exerciseId !== t.exerciseId || s.load.convention !== t.load.convention) return null;
-  if (t.load.convention === 'added' && (s.equipmentKind === 'plate_loaded_machine') !== (t.load.plateLoaded === true)) return null;
+  if (t.load.convention === 'added' && (isPlatesAddedKind(s.equipmentKind)) !== (t.load.plateLoaded === true)) return null;
   return s.load.unit === t.load.unit ? s.load.value : convertMass({ value: s.load.value, unit: s.load.unit }, t.load.unit).value;
 }
 
@@ -326,7 +327,7 @@ export function liftTargetChoices(sets: readonly LiftSet[], exercises: ReadonlyM
     if (e?.archivedAtUtc !== undefined) continue;
     const name = e?.name ?? loggedNames.get(id) ?? null;
     if (name === null || !isLiftTargetConvention(s.load.convention)) continue;
-    out.push({ exerciseId: id, name, convention: s.load.convention, unit: s.load.unit, plateLoaded: s.equipmentKind === 'plate_loaded_machine', lastDate: s.date });
+    out.push({ exerciseId: id, name, convention: s.load.convention, unit: s.load.unit, plateLoaded: isPlatesAddedKind(s.equipmentKind), lastDate: s.date });
   }
   return out.sort((a, b) => (a.lastDate !== b.lastDate ? (a.lastDate < b.lastDate ? 1 : -1) : a.name.localeCompare(b.name)));
 }

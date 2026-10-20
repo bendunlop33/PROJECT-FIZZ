@@ -78,9 +78,35 @@ const equipmentCommon = RecordMetaSchema.extend({
   onlyFor: z.array(IdSchema).min(1).max(50).optional(),
 });
 
+/** A bar loaded with plates: the load is the total including the bar (`barMass`). */
+const barAndPlates = {
+  loadConvention: z.literal('total'),
+  barMass: z.number().nonnegative(),
+  plates: plateList,
+};
+
 export const BarbellSchema = equipmentCommon.extend({
   kind: z.literal('barbell'),
-  loadConvention: z.literal('total'),
+  ...barAndPlates,
+});
+
+/**
+ * (Ben, 20 Oct; ADR 0030) Specialty bars: each has its own bar weight, so
+ * their exercises are never planned on the Olympic bar (rule 4). Loads are
+ * the total including the bar, as on a barbell.
+ */
+export const EzBarSchema = equipmentCommon.extend({ kind: z.literal('ez_bar'), ...barAndPlates });
+export const TrapBarSchema = equipmentCommon.extend({ kind: z.literal('trap_bar'), ...barAndPlates });
+
+/**
+ * (ADR 0030) A Smith machine: logged as plates added, as Smith exercises
+ * always were, balanced on both sides. `barMass` is the bar's starting weight
+ * (counterweighted bars read lighter), shown beside the load and never added
+ * into it, so an assumed bar weight never changes a logged number (rule 6).
+ */
+export const SmithMachineSchema = equipmentCommon.extend({
+  kind: z.literal('smith_machine'),
+  loadConvention: z.literal('added'),
   barMass: z.number().nonnegative(),
   plates: plateList,
 });
@@ -98,6 +124,13 @@ export const DumbbellRackSchema = equipmentCommon.extend({
   kind: z.literal('dumbbells'),
   loadConvention: z.literal('per_hand'),
   /** Every dumbbell mass present in the rack, per hand, ascending. */
+  loads: loadList,
+});
+
+/** (Ben, 20 Oct) Kettlebells: every size present, per bell, ascending (like a dumbbell rack). */
+export const KettlebellsSchema = equipmentCommon.extend({
+  kind: z.literal('kettlebell'),
+  loadConvention: z.literal('per_hand'),
   loads: loadList,
 });
 
@@ -122,6 +155,31 @@ export const BodyweightStationSchema = equipmentCommon.extend({
   loadConvention: z.literal('bodyweight'),
 });
 
+/**
+ * (Ben, 20 Oct; ADR 0030) Benches and racks are presence only: no load of
+ * their own. They let exercises that need one (bench press, squats from a
+ * rack) be planned here. `adjustable` counts as flat and incline.
+ */
+export const BenchTypeSchema = z.enum(['flat', 'incline', 'adjustable']);
+export type BenchType = z.infer<typeof BenchTypeSchema>;
+export const BenchSchema = equipmentCommon.extend({
+  kind: z.literal('bench'),
+  loadConvention: z.literal('bodyweight'),
+  benchType: BenchTypeSchema,
+});
+
+/** (ADR 0030) What an exercise may need besides its load item: a bench (flat or adjustable), an incline (or adjustable) bench, a rack. */
+export const GymStationSchema = z.enum(['bench', 'incline_bench', 'rack']);
+export type GymStation = z.infer<typeof GymStationSchema>;
+
+export const RackTypeSchema = z.enum(['squat_rack', 'power_rack']);
+export type RackType = z.infer<typeof RackTypeSchema>;
+export const RackSchema = equipmentCommon.extend({
+  kind: z.literal('rack'),
+  loadConvention: z.literal('bodyweight'),
+  rackType: RackTypeSchema,
+});
+
 export const EquipmentInstanceSchema = z
   .discriminatedUnion('kind', [
     BarbellSchema,
@@ -130,12 +188,18 @@ export const EquipmentInstanceSchema = z
     WeightStackSchema,
     AssistedStackSchema,
     BodyweightStationSchema,
+    KettlebellsSchema,
+    EzBarSchema,
+    TrapBarSchema,
+    SmithMachineSchema,
+    BenchSchema,
+    RackSchema,
   ])
   .superRefine((eq, ctx) => {
     if (eq.minLoad !== undefined && eq.maxLoad !== undefined && eq.minLoad > eq.maxLoad) {
       ctx.addIssue({ code: 'custom', message: 'minLoad must be <= maxLoad', path: ['minLoad'] });
     }
-    if (eq.kind === 'barbell' && eq.maxLoad !== undefined && eq.maxLoad < eq.barMass) {
+    if (eq.loadConvention === 'total' && 'barMass' in eq && eq.maxLoad !== undefined && eq.maxLoad < eq.barMass) {
       ctx.addIssue({ code: 'custom', message: 'maxLoad is below the bar mass', path: ['maxLoad'] });
     }
   });
@@ -147,9 +211,29 @@ export type DumbbellRack = z.infer<typeof DumbbellRackSchema>;
 export type WeightStack = z.infer<typeof WeightStackSchema>;
 export type AssistedStack = z.infer<typeof AssistedStackSchema>;
 export type BodyweightStation = z.infer<typeof BodyweightStationSchema>;
+export type Kettlebells = z.infer<typeof KettlebellsSchema>;
+export type Bench = z.infer<typeof BenchSchema>;
+export type Rack = z.infer<typeof RackSchema>;
+/** Every item loaded as a bar plus plates (total incl. bar). */
+export type BarLoaded = Extract<EquipmentInstance, { kind: 'barbell' | 'ez_bar' | 'trap_bar' }>;
+export type SmithMachine = z.infer<typeof SmithMachineSchema>;
 
 /** The kinds a gym profile can hold an instance of. */
-export const GymEquipmentKindSchema = z.enum(['barbell', 'plate_loaded_machine', 'dumbbells', 'weight_stack', 'assisted_stack', 'bodyweight_station']);
+export const GYM_EQUIPMENT_KINDS = [
+  'barbell',
+  'plate_loaded_machine',
+  'dumbbells',
+  'weight_stack',
+  'assisted_stack',
+  'bodyweight_station',
+  'kettlebell',
+  'ez_bar',
+  'trap_bar',
+  'smith_machine',
+  'bench',
+  'rack',
+] as const;
+export const GymEquipmentKindSchema = z.enum(GYM_EQUIPMENT_KINDS);
 export type GymEquipmentKind = z.infer<typeof GymEquipmentKindSchema>;
 
 /**
@@ -171,7 +255,7 @@ export const GymSchema = RecordMetaSchema.extend({
    * Kinds Ben said this gym doesn't have (the coach's `update_gym` remove, on
    * his words). `Make full gym` never adds them back. Absent = none.
    */
-  missingKinds: z.array(GymEquipmentKindSchema).max(6).optional(),
+  missingKinds: z.array(GymEquipmentKindSchema).max(GYM_EQUIPMENT_KINDS.length).optional(),
 });
 export type Gym = z.infer<typeof GymSchema>;
 

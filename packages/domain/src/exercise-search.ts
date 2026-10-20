@@ -153,7 +153,8 @@ const FILTER_KINDS: Record<EquipmentFilter, readonly ExerciseEquipmentKind[]> = 
   barbell: ['barbell', 'ez_bar', 'trap_bar'],
   dumbbells: ['dumbbells'],
   cable_stack: ['weight_stack'],
-  plate_loaded: ['plate_loaded_machine'],
+  // A Smith machine takes plates (ADR 0030): its exercises stay under Plate-loaded.
+  plate_loaded: ['plate_loaded_machine', 'smith_machine'],
   bodyweight: ['bodyweight_station'],
   assisted: ['assisted_stack'],
   /** Rower, bike, treadmill and the like (19 Oct). */
@@ -230,7 +231,7 @@ export type GymAvailability = 'available' | 'not_at_gym' | 'unknown';
  * Whether the selected gym can do it: an available item it can be logged on,
  * or no equipment needed. `unknown` with no gym selected (nothing is checked).
  */
-export function gymAvailability(e: Pick<Exercise, 'compatibleEquipment' | 'defaultLoadConvention'>, gym: readonly Pick<EquipmentInstance, 'kind' | 'availability'>[] | null): GymAvailability {
+export function gymAvailability(e: Pick<Exercise, 'compatibleEquipment' | 'defaultLoadConvention'> & { id?: string }, gym: readonly Pick<EquipmentInstance, 'kind' | 'availability'>[] | null): GymAvailability {
   if (gym === null) return 'unknown';
   if (needsNoEquipment(e) || e.compatibleEquipment.length === 0) return 'available';
   return equipmentForExercise(e, gym).length > 0 ? 'available' : 'not_at_gym';

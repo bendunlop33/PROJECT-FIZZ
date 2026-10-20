@@ -22,6 +22,7 @@ import {
   fixedLoadSeed,
   fixedLoadSteps,
   formatDuration,
+  isPlatesAddedKind,
   isRefusedDistanceSlot,
   mergeRoutineEdits,
   moveExercise,
@@ -876,7 +877,7 @@ function FixedLoad({ value, frame, item, display, onChange, onFocus }: { value: 
   const steps = fixedLoadSteps(value, frame, item, display);
   const note = fixedLoadNote({ value, unit: frame.unit, convention: frame.convention }, item, display);
   const assist = frame.convention === 'assistance';
-  const added = frame.convention === 'added' && display?.kind !== 'plate_loaded_machine';
+  const added = frame.convention === 'added' && !isPlatesAddedKind(display?.kind);
   return (
     <View style={{ gap: 6 }}>
       <NumberStepper label={assist ? 'Assist' : added ? 'Added' : 'Load'} unit={`${frame.unit}${frame.convention === 'per_hand' ? ' each' : ''}`} value={value} decimals down={steps.down} up={steps.up} onChange={onChange} warning={note !== null} onSurface {...(onFocus ? { onFocus } : {})} />

@@ -78,12 +78,13 @@ describe('full gym (one question: dumbbells go up in)', () => {
     expect(db?.kind === 'dumbbells' && db.loadConvention).toBe('per_hand');
     expect(db?.kind === 'dumbbells' && db.loads.slice(0, 3)).toEqual(first);
     expect(db?.kind === 'dumbbells' && db.loads.at(-1)).toBe(top);
-    expect(equipment.map((e) => e.kind)).toEqual(['dumbbells', 'barbell', 'plate_loaded_machine', 'weight_stack', 'weight_stack', 'assisted_stack', 'bodyweight_station']);
+    expect(equipment.map((e) => e.kind)).toEqual(['dumbbells', 'barbell', 'plate_loaded_machine', 'weight_stack', 'weight_stack', 'assisted_stack', 'bodyweight_station', 'kettlebell', 'ez_bar', 'trap_bar', 'smith_machine', 'bench', 'rack']);
+    expect(equipment.every((e) => e.availability === 'available')).toBe(true);
     for (const e of equipment) {
       expect(e.unit).toBe(unit);
       expect(e.detailsSource).toBe('preset');
       expect(assumedTag(e)).toBe('Assumed');
-      if (e.kind !== 'bodyweight_station') expect(getAchievableLoads(e).loads.length).toBeGreaterThan(5);
+      if (e.kind !== 'bodyweight_station' && e.kind !== 'bench' && e.kind !== 'rack') expect(getAchievableLoads(e).loads.length).toBeGreaterThan(5);
     }
     const bar = equipment.find((e) => e.kind === 'barbell');
     expect(bar?.kind === 'barbell' && bar.barMass).toBe(unit === 'kg' ? 20 : 45);
@@ -108,7 +109,7 @@ describe('full gym (one question: dumbbells go up in)', () => {
 
   it('Why? says what is assumed; the coach sees one line', () => {
     const { gym: g, equipment } = saveQuick({ setup: 'full', unit: 'kg', dumbbellStep: 2.5 });
-    expect(equipment.map((e) => assumedWhy(e))).toEqual(['Assumed dumbbells', 'Assumed plates', 'Assumed plates', 'Assumed stack step', 'Assumed stack step', 'Assumed stack step', null]);
+    expect(equipment.map((e) => assumedWhy(e))).toEqual(['Assumed dumbbells', 'Assumed plates', 'Assumed plates', 'Assumed stack step', 'Assumed stack step', 'Assumed stack step', null, 'Assumed kettlebells', 'Assumed bar and plates', 'Assumed bar and plates', 'Assumed plates', null, null]);
     expect(gymSetupWords(g, equipment)).toBe('full gym (assumed)');
     expect(gymSetupWords(g, equipment.map((e) => ({ ...e, detailsSource: 'user' as const })))).toBe('full gym');
     expect(gymSetupWords(gym(), equipment)).toBeNull();
@@ -119,16 +120,19 @@ describe('hotel / small and home', () => {
   it('small: dumbbells up to the top at the step, cables optional, no barbell or machines unless ticked', () => {
     const { gym: g, equipment } = saveQuick({ setup: 'small', unit: 'kg', dumbbells: { max: 25, step: 2.5 }, extras: ['cable'] });
     expect(g.setup).toBe('small');
-    expect(equipment.map((e) => e.kind)).toEqual(['dumbbells', 'weight_stack']);
+    const live = (list: EquipmentInstance[]) => list.filter((e) => e.availability === 'available').map((e) => e.kind);
+    expect(live(equipment)).toEqual(['dumbbells', 'weight_stack']);
+    // (ADR 0030) An unticked bench or rack is saved retired, so the gym knows it has none.
+    expect(equipment.filter((e) => e.availability === 'retired').map((e) => e.kind)).toEqual(['bench', 'rack']);
     const db = equipment[0];
     expect(db?.kind === 'dumbbells' && [db.loads[0], db.loads.at(-1)]).toEqual([2.5, 25]);
     const ticked = saveQuick({ setup: 'small', unit: 'kg', dumbbells: { max: 10, step: 1 }, extras: ['barbell', 'machines'] }).equipment;
-    expect(ticked.map((e) => e.kind)).toEqual(['dumbbells', 'barbell', 'plate_loaded_machine', 'weight_stack']);
+    expect(live(ticked)).toEqual(['dumbbells', 'barbell', 'plate_loaded_machine', 'weight_stack']);
   });
 
   it('home in lb: what is ticked, natively in lb; no dumbbells is allowed', () => {
     const { equipment } = saveQuick({ setup: 'home', unit: 'lb', dumbbells: null, extras: ['barbell', 'pull_up_bar'] });
-    expect(equipment.map((e) => [e.kind, e.unit])).toEqual([
+    expect(equipment.filter((e) => e.availability === 'available').map((e) => [e.kind, e.unit])).toEqual([
       ['barbell', 'lb'],
       ['bodyweight_station', 'lb'],
     ]);
@@ -139,12 +143,12 @@ describe('Make full gym on an existing gym', () => {
   const mine = dumbbells({ gymId: GYM, detailsSource: 'user', loads: [5, 10, 15, 20] });
   const cable = stack({ gymId: GYM, detailsSource: 'user' });
 
-  it('keeps his confirmed items and adds the assumed rest; Undo retires them and restores the gym', () => {
+  it('keeps his confirmed items and adds the assumed rest; Undo retires them (removes the bench and rack) and restores the gym', () => {
     const before = { gym: gym(), equipment: [mine, cable] };
     expect(makeFullNeedsDumbbellStep(before.gym, before.equipment)).toBe(false);
     const p = planMakeFullGym({ ...before, unit: 'kg', dumbbellStep: 2.5, atUtc: T1, newId: idGen(50_000) });
     if (p.kind !== 'edit') throw new Error('nothing');
-    expect(p.edit.equipment.map((e) => e.after.kind)).toEqual(['barbell', 'plate_loaded_machine', 'assisted_stack', 'bodyweight_station']);
+    expect(p.edit.equipment.map((e) => e.after.kind)).toEqual(['barbell', 'plate_loaded_machine', 'assisted_stack', 'bodyweight_station', 'kettlebell', 'ez_bar', 'trap_bar', 'smith_machine', 'bench', 'rack']);
     expect(p.edit.equipment.every((e) => e.before === null && e.after.detailsSource === 'preset')).toBe(true);
     expect(p.edit.gym?.after).toMatchObject({ setup: 'full', version: 2 });
     const after = apply(before, p.edit);
@@ -160,6 +164,10 @@ describe('Make full gym on an existing gym', () => {
     expect(undo.gym?.next).toMatchObject({ version: 3 });
     expect(undo.gym?.next.setup).toBeUndefined();
     expect(undo.equipment.every((w) => w.next.availability === 'retired')).toBe(true);
+    // (Review ben-kit B3) The added bench and rack are removed, not retired: a retired one would mean "none here".
+    const kindOf = (rid: string) => after.equipment.find((e) => e.id === rid)?.kind;
+    expect(undo.remove.map((r) => kindOf(r.id))).toEqual(['bench', 'rack']);
+    expect(undo.equipment.map((w) => w.next.kind)).not.toContain('bench');
   });
 
   it('a stale Undo is refused (rule 5)', () => {
@@ -230,7 +238,7 @@ describe('the Add gym screen (review S5, N1, N2)', () => {
     f = reduceQuickGymForm(f, { kind: 'setup', setup: 'small' });
     expect(f.dumbbellMax).toBe(20);
     expect(quickGymFormRows(f)).toMatchObject({ none: false, step: true });
-    expect(quickGymFormInput(f)).toEqual({ setup: 'small', unit: 'kg', dumbbells: { max: 20, step: 2.5 }, extras: ['cable'] });
+    expect(quickGymFormInput(f)).toEqual({ setup: 'small', unit: 'kg', dumbbells: { max: 20, step: 2.5 }, extras: ['cable', 'bench'] });
     // None isn't an answer for a hotel gym.
     expect(reduceQuickGymForm(f, { kind: 'max', max: null }).dumbbellMax).toBe(20);
   });
@@ -239,7 +247,7 @@ describe('the Add gym screen (review S5, N1, N2)', () => {
     let f = reduceQuickGymForm(initQuickGymForm('kg', true), { kind: 'setup', setup: 'small' });
     f = reduceQuickGymForm(f, { kind: 'extra', key: 'cable' });
     f = reduceQuickGymForm(f, { kind: 'extra', key: 'barbell' });
-    expect(f.extras).toEqual({ small: ['barbell'], home: [] });
+    expect(f.extras).toEqual({ small: ['bench', 'barbell'], home: [] });
     f = reduceQuickGymForm(f, { kind: 'setup', setup: 'full' });
     expect(reduceQuickGymForm(f, { kind: 'extra', key: 'cable' })).toBe(f);
     expect(reduceQuickGymForm(f, { kind: 'step', step: 3 }).dumbbellStep).toBe(2.5);

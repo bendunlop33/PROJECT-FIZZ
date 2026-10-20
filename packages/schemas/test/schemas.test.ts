@@ -217,12 +217,20 @@ describe('Exercise (ADR 0010 additive fields)', () => {
     expect(validate(ExerciseSchema, { ...base, compatibleEquipment: ['trampoline'] }).ok).toBe(false);
   });
 
-  it('gym equipment instances still only accept the six instance kinds', () => {
-    const r = validate(EquipmentInstanceSchema, { ...meta, kind: 'sled', gymId: id(3), name: 'Sled', unit: 'kg', movementTags: [], availability: 'available', loadConvention: 'added' });
-    expect(r.ok).toBe(false);
-    // An EZ or trap bar can't be a gym item yet (no bar-weight instance schema): never a stand-in for the Olympic bar.
-    const ez = validate(EquipmentInstanceSchema, { ...meta, kind: 'ez_bar', gymId: id(3), name: 'EZ bar', unit: 'kg', movementTags: [], availability: 'available', loadConvention: 'total', barMass: 10, plates: [] });
-    expect(ez.ok).toBe(false);
+  it('gym equipment instances accept the gym kinds only (ADR 0030 adds kettlebells, EZ / trap bar, Smith, bench, rack)', () => {
+    const item = { ...meta, gymId: id(3), unit: 'kg', movementTags: [], availability: 'available' };
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'sled', name: 'Sled', loadConvention: 'added' }).ok).toBe(false);
+    // Each bar has its own weight: an EZ bar is its own item, never a stand-in for the Olympic bar.
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'ez_bar', name: 'EZ bar', loadConvention: 'total', barMass: 10, plates: [] }).ok).toBe(true);
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'trap_bar', name: 'Trap bar', loadConvention: 'total', barMass: 25, plates: [], maxLoad: 20 }).ok).toBe(false);
+    // A Smith machine logs plates added; its bar weight is beside the load, never a total.
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'smith_machine', name: 'Smith', loadConvention: 'added', barMass: 15, plates: [] }).ok).toBe(true);
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'smith_machine', name: 'Smith', loadConvention: 'total', barMass: 15, plates: [] }).ok).toBe(false);
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'kettlebell', name: 'KB', loadConvention: 'per_hand', loads: [8, 12, 16] }).ok).toBe(true);
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'kettlebell', name: 'KB', loadConvention: 'total', loads: [8] }).ok).toBe(false);
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'bench', name: 'Bench', loadConvention: 'bodyweight', benchType: 'adjustable' }).ok).toBe(true);
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'bench', name: 'Bench', loadConvention: 'bodyweight', benchType: 'decline' }).ok).toBe(false);
+    expect(validate(EquipmentInstanceSchema, { ...item, kind: 'rack', name: 'Rack', loadConvention: 'bodyweight', rackType: 'power_rack' }).ok).toBe(true);
   });
 
   it('distance is loggable now that sets record metres (ADR 0011, merged 11 Oct)', () => {

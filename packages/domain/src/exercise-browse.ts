@@ -32,6 +32,9 @@ export const EXERCISE_EQUIPMENT_WORD: Record<ExerciseEquipmentKind, string> = {
   medicine_ball: 'Medicine ball',
   sandbag: 'Sandbag',
   band: 'Band',
+  smith_machine: 'Smith machine',
+  bench: 'Bench',
+  rack: 'Rack',
 };
 
 type RowExercise = Pick<Exercise, 'id' | 'name' | 'movementPattern' | 'primaryMuscles' | 'compatibleEquipment' | 'defaultLoadConvention' | 'laterality' | 'measurement' | 'source'>;

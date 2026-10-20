@@ -408,9 +408,16 @@ function spoken(line: Omit<ChangeLine, 'accessibilityLabel'>): string {
     .join(' ');
 }
 
-/** Kinds that read as "dumbbells", "plates" … in the unchecked line. */
-function itemWord(eq: EquipmentInstance): string {
-  return eq.kind === 'dumbbells' ? 'dumbbells' : eq.name;
+/** Kinds that read as "dumbbells", "kettlebells" … in the unchecked line (plural: `are`). */
+const PLURAL_ITEM: Partial<Record<EquipmentInstance['kind'], string>> = { dumbbells: 'dumbbells', kettlebell: 'kettlebells' };
+
+function itemWord(eq: Pick<EquipmentInstance, 'kind' | 'name'>): string {
+  return PLURAL_ITEM[eq.kind] ?? eq.name;
+}
+
+/** `Hotel’s kettlebells are assumed.` */
+export function assumedLine(gymName: string, eq: Pick<EquipmentInstance, 'kind' | 'name'>): string {
+  return `${gymName}’s ${itemWord(eq)} ${PLURAL_ITEM[eq.kind] !== undefined ? 'are' : 'is'} assumed.`;
 }
 
 /**
@@ -550,7 +557,7 @@ function buildCard(input: GymSwitchInput, snap: SnapResult, excluded: ReadonlyMa
   const uncheckedItems = snap.slots.flatMap((s) => (s.equipment?.detailsSource === 'preset' ? [s.equipment] : []));
   const firstUnchecked = uncheckedItems[0];
   const unchecked = firstUnchecked
-    ? { tone: 'info' as const, text: `${gymName}’s ${itemWord(firstUnchecked)} ${firstUnchecked.kind === 'dumbbells' ? 'are' : 'is'} assumed.` }
+    ? { tone: 'info' as const, text: assumedLine(gymName, firstUnchecked) }
     : null;
   const many = lines.length >= 5;
   return {

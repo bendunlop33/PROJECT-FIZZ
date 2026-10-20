@@ -12,7 +12,7 @@ import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { AppText, Group, Row, Screen, SectionHeader, StatusLine, Tag, TextButton, Toast } from '../../ui';
 
-const KINDS: EditableKind[] = ['barbell', 'dumbbells', 'weight_stack', 'assisted_stack', 'plate_loaded_machine', 'bodyweight_station'];
+const KINDS: EditableKind[] = ['barbell', 'dumbbells', 'weight_stack', 'assisted_stack', 'plate_loaded_machine', 'bodyweight_station', 'bench', 'rack', 'kettlebell', 'ez_bar', 'trap_bar', 'smith_machine'];
 
 const SETUP_WORD = { full: 'Full gym', small: 'Hotel / small', home: 'Home' } as const;
 

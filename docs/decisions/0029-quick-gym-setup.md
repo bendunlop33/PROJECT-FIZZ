@@ -20,5 +20,5 @@ The gym editor asked for each item's numbers (plates, rack, stacks). Ben: "too t
 
 - A gym can have loads that don't exist (an assumed 47.5 kg dumbbell at a 2.5 kg step). Light racks follow a ladder (1 kg to 10, then 2.5; 2.5 lb to 25, then 5) to keep that rare. The learn chip only **adds** a value, and `Not at this gym` removes an exercise; nothing removes one assumed value yet (Ben edits the rack). The gym screen and `Why?` say which items are assumed. Adding one learned dumbbell leaves the rack assumed.
 - `Make full gym` adds only missing *kinds* (review N5): a gym with one confirmed cable stack doesn't get the shared `Machines` stack, so machine exercises use the cable's range there.
-- Kinds with no gym-profile schema (kettlebells, EZ / trap bar, Smith machine, benches) are still not modelled. The full gym can't assume them until an equipment slice adds them.
+- Kinds with no gym-profile schema (kettlebells, EZ / trap bar, Smith machine, benches) are still not modelled. The full gym can't assume them until an equipment slice adds them. (20 Oct: added by ADR 0030.)
 - Stack steps learned from one load are a guess. They are only offered, only for assumed shared stacks, and only ever change that one machine.

@@ -15,6 +15,7 @@ import {
 import { formatNumber } from './display';
 import { getAchievableLoads, isLoadAchievable } from './equipment';
 import { isExcludedFor, isNotFor, needsNoEquipment } from './exercise-equipment';
+import { BAR_MASS } from './gym-editor';
 import { loadRange, type EquipmentDraftBody, type GymDraft, type GymDraftItem } from './gym-presets';
 import { fromScaled, toScaled } from './units';
 
@@ -52,7 +53,8 @@ const LEARN_CEILING: Readonly<Record<'dumbbells' | 'weight_stack', Record<Weight
 };
 
 const PLATES: Readonly<Record<WeightUnit, readonly number[]>> = { kg: [25, 20, 15, 10, 5, 2.5, 1.25], lb: [45, 35, 25, 10, 5, 2.5] };
-const BAR: Readonly<Record<WeightUnit, number>> = { kg: 20, lb: 45 };
+/** (Ben, 20 Oct; ADR 0030) Kettlebells per bell: 4–32 kg in 4s; 10–70 lb in 5s. */
+export const KETTLEBELLS: Readonly<Record<WeightUnit, { from: number; to: number; step: number }>> = { kg: { from: 4, to: 32, step: 4 }, lb: { from: 10, to: 70, step: 5 } };
 const STACK: Readonly<Record<'cable' | 'machines' | 'small_cable' | 'assisted', Record<WeightUnit, { from: number; to: number; step: number }>>> = {
   cable: { kg: { from: 5, to: 100, step: 5 }, lb: { from: 10, to: 200, step: 10 } },
   machines: { kg: { from: 5, to: 120, step: 5 }, lb: { from: 10, to: 250, step: 10 } },
@@ -112,7 +114,39 @@ const ITEMS = {
   barbell: (unit: WeightUnit, count: number): Item => ({
     key: 'barbell',
     label: 'Barbell and plates',
-    equipment: { ...common('Barbell and plates', unit), kind: 'barbell', loadConvention: 'total', barMass: BAR[unit], plates: plates(unit, count) },
+    equipment: { ...common('Barbell and plates', unit), kind: 'barbell', loadConvention: 'total', barMass: BAR_MASS.barbell[unit], plates: plates(unit, count) },
+  }),
+  // (ADR 0030) Each bar has its own plates here, so one bar's load never assumes another's are free.
+  ez_bar: (unit: WeightUnit, count: number): Item => ({
+    key: 'ez_bar',
+    label: 'EZ bar',
+    equipment: { ...common('EZ bar', unit), kind: 'ez_bar', loadConvention: 'total', barMass: BAR_MASS.ez_bar[unit], plates: plates(unit, count) },
+  }),
+  trap_bar: (unit: WeightUnit, count: number): Item => ({
+    key: 'trap_bar',
+    label: 'Trap bar',
+    equipment: { ...common('Trap bar', unit), kind: 'trap_bar', loadConvention: 'total', barMass: BAR_MASS.trap_bar[unit], plates: plates(unit, count) },
+  }),
+  smith_machine: (unit: WeightUnit, count: number): Item => ({
+    key: 'smith_machine',
+    label: 'Smith machine',
+    // Plates added, as Smith exercises are logged; the bar's starting weight is shown beside the load (ADR 0030).
+    equipment: { ...common('Smith machine', unit), kind: 'smith_machine', loadConvention: 'added', barMass: BAR_MASS.smith_machine[unit], plates: plates(unit, count) },
+  }),
+  kettlebells: (unit: WeightUnit): Item => ({
+    key: 'kettlebells',
+    label: 'Kettlebells',
+    equipment: { ...common('Kettlebells', unit), kind: 'kettlebell', loadConvention: 'per_hand', loads: stackRange(KETTLEBELLS[unit]) },
+  }),
+  bench: (unit: WeightUnit, name: string): Item => ({
+    key: 'bench',
+    label: name,
+    equipment: { ...common(name, unit), kind: 'bench', loadConvention: 'bodyweight', benchType: 'adjustable' },
+  }),
+  rack: (unit: WeightUnit, name: string, rackType: 'squat_rack' | 'power_rack'): Item => ({
+    key: 'rack',
+    label: name,
+    equipment: { ...common(name, unit), kind: 'rack', loadConvention: 'bodyweight', rackType },
   }),
   plate_loaded: (unit: WeightUnit): Item => ({
     key: 'plate_loaded',
@@ -151,22 +185,41 @@ function fullGymItems(unit: WeightUnit, dumbbellStep: number): Item[] {
     ITEMS.machines(unit),
     ITEMS.assisted(unit),
     ITEMS.pull_up_bar(unit),
+    ITEMS.kettlebells(unit),
+    ITEMS.ez_bar(unit, 4),
+    ITEMS.trap_bar(unit, 8),
+    ITEMS.smith_machine(unit, 8),
+    ITEMS.bench(unit, 'Benches'),
+    ITEMS.rack(unit, 'Racks', 'power_rack'),
   ];
 }
 
 /** Extras a small or home gym can tick (no paragraphs: the label is the whole choice). */
-export type QuickExtra = 'cable' | 'barbell' | 'machines' | 'pull_up_bar';
+export type QuickExtra = 'cable' | 'barbell' | 'machines' | 'pull_up_bar' | 'bench' | 'rack' | 'kettlebells' | 'ez_bar' | 'trap_bar' | 'smith_machine';
 
+/** (Ben, 20 Oct; ADR 0030) A hotel has a bench unless unticked; the rest are ticks. */
 export const QUICK_EXTRAS: Readonly<Record<'small' | 'home', readonly { key: QuickExtra; label: string; on: boolean }[]>> = {
   small: [
     { key: 'cable', label: 'Cables', on: true },
+    { key: 'bench', label: 'Bench', on: true },
     { key: 'barbell', label: 'Barbell', on: false },
+    { key: 'rack', label: 'Rack', on: false },
     { key: 'machines', label: 'Machines', on: false },
+    { key: 'kettlebells', label: 'Kettlebells', on: false },
+    { key: 'ez_bar', label: 'EZ bar', on: false },
+    { key: 'trap_bar', label: 'Trap bar', on: false },
+    { key: 'smith_machine', label: 'Smith machine', on: false },
   ],
   home: [
     { key: 'barbell', label: 'Barbell', on: false },
+    { key: 'bench', label: 'Bench', on: false },
+    { key: 'rack', label: 'Rack', on: false },
     { key: 'pull_up_bar', label: 'Pull-up bar', on: false },
+    { key: 'kettlebells', label: 'Kettlebells', on: false },
     { key: 'cable', label: 'Cables', on: false },
+    { key: 'ez_bar', label: 'EZ bar', on: false },
+    { key: 'trap_bar', label: 'Trap bar', on: false },
+    { key: 'smith_machine', label: 'Smith machine', on: false },
   ],
 };
 
@@ -180,17 +233,28 @@ export type QuickGymInput =
   | { setup: 'full'; unit: WeightUnit; dumbbellStep: number }
   | { setup: 'small' | 'home'; unit: WeightUnit; dumbbells: { max: number; step: number } | null; extras: readonly QuickExtra[] };
 
+function stationItem(item: Item, present: boolean): Item {
+  return present ? item : { ...item, equipment: { ...item.equipment, availability: 'retired' } };
+}
+
 /** The quick setup as a draft with every item ticked (saved with `materialiseGymDraft`, `setup` on the gym). */
 export function buildQuickGymDraft(input: QuickGymInput): GymDraft {
   const { unit } = input;
   if (input.setup === 'full') return { presetId: 'full', unit, items: fullGymItems(unit, input.dumbbellStep).map((i) => ({ ...i, ticked: true })) };
   const has = new Set(input.extras);
+  const plateCount = input.setup === 'home' ? 2 : 4;
   const items: Item[] = [];
   if (input.dumbbells !== null) items.push(ITEMS.dumbbells(unit, input.dumbbells.step, input.dumbbells.max));
-  if (has.has('barbell')) items.push(ITEMS.barbell(unit, input.setup === 'home' ? 2 : 4));
+  if (has.has('barbell')) items.push(ITEMS.barbell(unit, plateCount));
   if (has.has('cable')) items.push(ITEMS.cable(unit, true));
   if (has.has('machines')) items.push(ITEMS.plate_loaded(unit), ITEMS.machines(unit));
   if (has.has('pull_up_bar')) items.push(ITEMS.pull_up_bar(unit));
+  if (has.has('kettlebells')) items.push(ITEMS.kettlebells(unit));
+  if (has.has('ez_bar')) items.push(ITEMS.ez_bar(unit, plateCount));
+  if (has.has('trap_bar')) items.push(ITEMS.trap_bar(unit, plateCount));
+  if (has.has('smith_machine')) items.push(ITEMS.smith_machine(unit, plateCount));
+  // A bench or rack left unticked is saved retired, so the gym knows it has none (`missingStations`).
+  items.push(stationItem(ITEMS.bench(unit, 'Bench'), has.has('bench')), stationItem(ITEMS.rack(unit, 'Rack', 'squat_rack'), has.has('rack')));
   return { presetId: input.setup, unit, items: items.map((i) => ({ ...i, ticked: true })) };
 }
 
@@ -277,10 +341,19 @@ export function assumedWhy(eq: Pick<EquipmentInstance, 'detailsSource' | 'kind'>
       return 'Assumed stack step';
     case 'dumbbells':
       return 'Assumed dumbbells';
+    case 'kettlebell':
+      return 'Assumed kettlebells';
     case 'barbell':
     case 'plate_loaded_machine':
       return 'Assumed plates';
+    case 'ez_bar':
+    case 'trap_bar':
+      return 'Assumed bar and plates';
+    case 'smith_machine':
+      return 'Assumed plates';
     case 'bodyweight_station':
+    case 'bench':
+    case 'rack':
       return null;
   }
 }
@@ -323,16 +396,20 @@ export function gymEditLanded(edit: GymEdit, current: { gym: Gym | null; equipme
   });
 }
 
+const isStationKind = (kind: string): kind is 'bench' | 'rack' => kind === 'bench' || kind === 'rack';
+
 /**
  * Undo of an edit: each record back to its content before, as a new version;
- * a new item is retired. Only while every record is still the version the edit
- * saved (rule 5: never applied over a newer change).
+ * a new item is retired. A new bench or rack is removed instead (`remove`): a
+ * retired one would tell the gym it has none, which it didn't know before
+ * (ADR 0030). Only while every record is still the version the edit saved
+ * (rule 5: never applied over a newer change).
  */
 export function planRevertGymEdit(
   edit: GymEdit,
   current: { gym: Gym | null; equipment: (id: string) => EquipmentInstance | null },
   atUtc: string,
-): { gym: GymWrite<Gym> | null; equipment: GymWrite<EquipmentInstance>[] } | 'changed_since' {
+): { gym: GymWrite<Gym> | null; equipment: GymWrite<EquipmentInstance>[]; remove: { id: string; expectedVersion: number }[] } | 'changed_since' {
   let gym: GymWrite<Gym> | null = null;
   if (edit.gym !== null) {
     const now = current.gym;
@@ -340,13 +417,18 @@ export function planRevertGymEdit(
     gym = { next: { ...edit.gym.before, version: now.version + 1, updatedAtUtc: atUtc }, expectedVersion: now.version };
   }
   const equipment: GymWrite<EquipmentInstance>[] = [];
+  const remove: { id: string; expectedVersion: number }[] = [];
   for (const e of edit.equipment) {
     const now = current.equipment(e.after.id);
     if (now === null || now.version !== e.after.version) return 'changed_since';
+    if (e.before === null && isStationKind(now.kind)) {
+      remove.push({ id: now.id, expectedVersion: now.version });
+      continue;
+    }
     const next: EquipmentInstance = e.before === null ? { ...now, availability: 'retired', version: now.version + 1, updatedAtUtc: atUtc } : { ...e.before, version: now.version + 1, updatedAtUtc: atUtc };
     equipment.push({ next, expectedVersion: now.version });
   }
-  return { gym, equipment };
+  return { gym, equipment, remove };
 }
 
 interface NewItemMeta {
@@ -385,6 +467,12 @@ const KIND_WORD: Readonly<Record<GymEquipmentKind, string>> = {
   weight_stack: 'Cables and machines',
   assisted_stack: 'Assisted machine',
   bodyweight_station: 'Pull-up bar',
+  kettlebell: 'Kettlebells',
+  ez_bar: 'EZ bar',
+  trap_bar: 'Trap bar',
+  smith_machine: 'Smith machine',
+  bench: 'Bench',
+  rack: 'Rack',
 };
 
 export function gymKindWord(kind: GymEquipmentKind): string {
@@ -713,6 +801,12 @@ export function planGymUpdate(input: {
       }
       case 'remove': {
         for (const e of live().filter((x) => x.kind === c.equipment)) put(edit(e, { availability: 'retired' }), e);
+        // (Review ben-kit B3) A bench or rack gates exercises only once the gym has a record of one, so a gym
+        // with none saves a retired one, as the quick setup does. Its Undo removes the record (`planRevertGymEdit`).
+        if (isStationKind(c.equipment) && ![...items.values()].some((e) => e.kind === c.equipment)) {
+          const first = fullItemsOfKind(c.equipment, input.unit, DEFAULT_DUMBBELL_STEP[input.unit])[0];
+          if (first !== undefined) put(materialiseItem({ ...first.equipment, availability: 'retired' }, meta), null);
+        }
         const kinds = new Set(gym.missingKinds ?? []);
         if (!kinds.has(c.equipment)) {
           gym = withMissingKinds(gym, [...kinds, c.equipment]);

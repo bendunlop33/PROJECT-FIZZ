@@ -36,7 +36,7 @@ describe('first run: install to first set', () => {
     const gyms = await s.yourData.gyms();
     expect(gyms.map((g) => [g.name, g.isDefault])).toEqual([['Main gym', true]]);
     const items = await s.yourData.equipment(gyms[0]?.id ?? '');
-    expect(items.map((i) => i.kind).sort()).toEqual(['assisted_stack', 'barbell', 'bodyweight_station', 'dumbbells', 'plate_loaded_machine', 'weight_stack', 'weight_stack']);
+    expect(items.map((i) => i.kind).sort()).toEqual(['assisted_stack', 'barbell', 'bench', 'bodyweight_station', 'dumbbells', 'ez_bar', 'kettlebell', 'plate_loaded_machine', 'rack', 'smith_machine', 'trap_bar', 'weight_stack', 'weight_stack']);
     expect(items.every((i) => i.detailsSource === 'preset' && i.unit === 'kg')).toBe(true);
     expect((await s.setup.getState()).step).toBe('data');
     // Again later (Today's Start with no gym): the existing gym, nothing new.

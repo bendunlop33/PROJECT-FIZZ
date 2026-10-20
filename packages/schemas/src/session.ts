@@ -16,7 +16,7 @@ import {
 } from './common';
 import { SessionCheckInSchema } from './checkin';
 import { LocalDateSchema } from './import';
-import { EquipmentInstanceSchema } from './equipment';
+import { EquipmentInstanceSchema, GymStationSchema } from './equipment';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
 import { SessionTodayEditsSchema } from './draft';
@@ -71,6 +71,8 @@ export const PlannedSnapSchema = z
       .nullable(),
     outcome: SnapOutcomeSchema,
     reason: SnapReasonSchema.optional(),
+    /** (ADR 0030) `not_here` because this gym has no bench or rack the exercise needs (its load item may be here). */
+    stations: z.array(GymStationSchema).min(1).max(3).optional(),
     /** A pain flag kept the load at or below the target it had (rule 9). */
     painHeld: z.literal(true).optional(),
     /** The equipment and gym the load was fitted to (null: no equipment). */
@@ -78,7 +80,8 @@ export const PlannedSnapSchema = z
     gymId: IdSchema.nullable(),
     by: SnapModeSchema,
   })
-  .refine((s) => (s.outcome === 'dropped') === (s.reason !== undefined), { message: 'A dropped target has a reason; other outcomes have none', path: ['reason'] });
+  .refine((s) => (s.outcome === 'dropped') === (s.reason !== undefined), { message: 'A dropped target has a reason; other outcomes have none', path: ['reason'] })
+  .refine((s) => s.stations === undefined || s.reason === 'not_here', { message: 'Missing stations only explain `not_here`', path: ['stations'] });
 export type PlannedSnap = z.infer<typeof PlannedSnapSchema>;
 
 export const RestSourceSchema = z.enum([

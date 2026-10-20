@@ -14,6 +14,7 @@ import { GENERIC_WORKOUT_NAME } from './first-run';
 import { repeatNoteText } from './snap-text';
 import { swapEquipmentId, type SwapPlan } from './swap-plan';
 import { addedSlotShape, resizeWorkingSets, shapeOfTemplates, shapeTemplates, type ShapeBefore, type SlotShape } from './today-shape';
+import { stationWords } from '../stations';
 
 /**
  * `Repeat last workout` / `Start from a past workout` (routines.md RT4, §2.4,
@@ -394,7 +395,7 @@ export function startWorkoutFromSession(input: RepeatInput): RepeatOutput {
     if (set.outcome === 'dropped' && set.intended !== null) {
       switch (set.reason) {
         case 'not_here':
-          return `No load target: no ${slot.sourceEquipment?.name ?? 'equipment for it'} here.`;
+          return `No load target: no ${stationWords(slot.stations) ?? slot.sourceEquipment?.name ?? 'equipment for it'} here.`;
         case 'unit_not_convertible':
           return `No load target: ${wasLower} was ${loadWord(set.intended)}, and there’s no equipment here to check a ${slot.unit} load on.`;
         case 'lightest_is_harder':

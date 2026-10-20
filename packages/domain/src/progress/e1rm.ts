@@ -1,4 +1,5 @@
 import type { EquipmentKind, LoadConvention, WeightUnit } from '@fizz/schemas';
+import { isPlatesAddedKind } from '../plates-added';
 
 /**
  * Estimated one-rep max (progress.md PG11). Epley: `load × (1 + reps / 30)`,
@@ -24,7 +25,7 @@ export function e1rmConventionAllowed(convention: LoadConvention, equipmentKind:
     case 'stack':
       return true;
     case 'added':
-      return equipmentKind === 'plate_loaded_machine';
+      return isPlatesAddedKind(equipmentKind);
     case 'assistance':
     case 'bodyweight':
       return false;

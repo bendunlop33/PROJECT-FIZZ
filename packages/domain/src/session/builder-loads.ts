@@ -1,6 +1,6 @@
 import type { EquipmentInstance, EquipmentKind, Exercise, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 import { dayMonthText, formatNumber } from '../display';
-import { getAchievableLoads, loadDirection, roundToAvailableLoad, type LoadDirection } from '../equipment';
+import { getAchievableLoads, isBarLoaded, loadDirection, roundToAvailableLoad, type LoadDirection } from '../equipment';
 import { isSetCountable } from '../exclusions';
 import { comparableSetsOf, type HistorySession } from '../progression';
 import { deriveId, stableStringify } from '../stable';
@@ -302,7 +302,7 @@ export function historyVersionOf(sessions: readonly RefSession[]): string {
 export function checkedOnOf(refs: Pick<LoadReferences, 'equipment' | 'convention' | 'unit'>): CheckedOn | null {
   const e = refs.equipment;
   if (e === null) return null;
-  const barKg = e.kind === 'barbell' ? round2(convertMass({ value: e.barMass, unit: e.unit }, 'kg').value) : null;
+  const barKg = isBarLoaded(e) ? round2(convertMass({ value: e.barMass, unit: e.unit }, 'kg').value) : null;
   return { equipmentId: e.id, kind: e.kind, convention: refs.convention, unit: refs.unit, barKg };
 }
 
@@ -465,6 +465,12 @@ const KIND_WORD: Readonly<Record<EquipmentInstance['kind'], string>> = {
   plate_loaded_machine: 'these plates',
   assisted_stack: 'this machine',
   bodyweight_station: 'this station',
+  kettlebell: 'these kettlebells',
+  ez_bar: 'these plates',
+  trap_bar: 'these plates',
+  smith_machine: 'these plates',
+  bench: 'this bench',
+  rack: 'this rack',
 };
 
 /** `25 assist`, `+20`, `30 each`, `102.5`: a load in a check note. */

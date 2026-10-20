@@ -17,7 +17,7 @@ import {
   valuesText,
 } from '../display';
 import { exclusionAccessibility, exclusionPainLine, exclusionTag, normaliseExclusions, notCountedLine, withExclusionWords } from '../exclusions';
-import { getAchievableLoads, isLoadAchievable, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
+import { getAchievableLoads, isLoadAchievable, isPresenceOnly, loadDirection, roundToAvailableLoad, stepLoad } from '../equipment';
 import { gymLearnFor, gymLearnText, type GymLearn } from '../quick-gym';
 import { painFlagCovering, painFlagFact, painNoteAccessibility, painNoteText, painReviewQuestion } from '../pain-flags';
 import { plateBreakdownLine, showsWarmUp, warmUpRamp, warmUpText } from '../touches';
@@ -460,14 +460,20 @@ function stepWord(eq: EquipmentInstance | null): string {
   if (eq === null) return 'Maximum';
   switch (eq.kind) {
     case 'dumbbells':
+    case 'kettlebell':
       return 'Rack maximum';
     case 'weight_stack':
     case 'assisted_stack':
       return 'Stack maximum';
     case 'barbell':
+    case 'ez_bar':
+    case 'trap_bar':
+    case 'smith_machine':
     case 'plate_loaded_machine':
       return 'Plates maximum';
     case 'bodyweight_station':
+    case 'bench':
+    case 'rack':
       return 'Maximum';
   }
 }
@@ -479,7 +485,7 @@ function loadSteps(value: number | null, ex: SessionExercise, own: EquipmentInst
   const eq = check;
   // Weight added to a bodyweight exercise: nothing entered is nothing added.
   if (value === null && check !== own) value = 0;
-  if (eq !== null && eq.kind !== 'bodyweight_station') {
+  if (eq !== null && !isPresenceOnly(eq)) {
     const loads = getAchievableLoads(eq).loads;
     if (loads.length === 0) {
       const reason = `${eq.name} can’t make any load with its current min/max settings. Fix the equipment profile.`;

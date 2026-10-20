@@ -134,6 +134,12 @@ export async function saveDocumentIn<T extends Versioned>(
   return { ok: true, version: valid.version };
 }
 
+/** Deletes a record only at the version expected (rule 5); false when it changed or is gone. */
+export async function deleteDocumentIn<T extends Versioned>(tx: SqlExecutor, spec: DocumentSpec<T>, id: string, expectedVersion: number): Promise<boolean> {
+  const r = await tx.run(`DELETE FROM ${ident(spec.table)} WHERE id = ? AND version = ?`, [id, expectedVersion]);
+  return r.changes === 1;
+}
+
 export type CreateGymOutcome = { ok: true; duplicate: boolean } | { ok: false; error: 'conflict' | 'mismatched_equipment' };
 
 export async function listDocuments<T extends Versioned>(

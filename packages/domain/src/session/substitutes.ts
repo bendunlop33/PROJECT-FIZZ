@@ -1,6 +1,6 @@
 import type { EquipmentInstance, Exercise, Load, PainFlag, RepRange, SetType, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 import { dayMonthText, formatDuration, formatNumber, NBSP, repRangeText } from '../display';
-import { loadDirection } from '../equipment';
+import { isBarLoaded, loadDirection } from '../equipment';
 import { matchExercise } from '../exercise-search';
 import { needsNoEquipment } from '../exercise-equipment';
 import { nextTargetsFor, plannedSetsFromTargets } from '../next-target';
@@ -98,10 +98,10 @@ export function comparableSessions(exercise: Exercise, history: readonly History
   return out;
 }
 
-/** Same kind; a barbell also needs the same bar mass (a different bar makes totals incomparable). */
+/** Same kind; a bar (barbell, EZ bar, trap bar) also needs the same bar mass (a different bar makes totals incomparable). */
 function sameItemKind(a: EquipmentInstance, b: EquipmentInstance): boolean {
   if (a.kind !== b.kind) return false;
-  if (a.kind !== 'barbell' || b.kind !== 'barbell') return true;
+  if (!isBarLoaded(a) || !isBarLoaded(b)) return true;
   return Math.abs(convertMass({ value: a.barMass, unit: a.unit }, 'kg').value - convertMass({ value: b.barMass, unit: b.unit }, 'kg').value) < 1e-6;
 }
 
@@ -225,6 +225,12 @@ const KIND_WORD: Record<EquipmentInstance['kind'], string> = {
   assisted_stack: 'Assisted',
   plate_loaded_machine: 'Machine',
   bodyweight_station: 'Bodyweight',
+  kettlebell: 'Kettlebell',
+  ez_bar: 'EZ bar',
+  trap_bar: 'Trap bar',
+  smith_machine: 'Smith',
+  bench: 'Bench',
+  rack: 'Rack',
 };
 
 /** A kind a gym can't hold an item of (a kettlebell, a band) reads `Equipment`. */

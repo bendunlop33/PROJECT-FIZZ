@@ -23,6 +23,7 @@ import { resolveRestPreset } from '../rest';
 import { planTargetProvenance } from '../target-provenance';
 import { buildExecutionOrder } from './order';
 import { plannedSnapOf, snapPlanToGym, type SnapResult, type SnapSlotInput, type SnapSource } from './snap';
+import { stationWords, type GymStation } from '../stations';
 
 export type StartWarning =
   | {
@@ -62,6 +63,8 @@ export type StartWarning =
        * Repeat, review slice-3 B1). The other reasons are `snapPlanToGym`'s.
        */
       reason: StartDropReason;
+      /** (ADR 0030) The bench or rack this gym has none of (the load item may be here). */
+      stations?: GymStation[];
     };
 
 /** Why a start (or Repeat) target was dropped: `snapPlanToGym`'s reasons, with `not_here` named for the routine's item. */
@@ -89,7 +92,11 @@ export type SetFit =
 export function setFitsOf(out: Pick<StartWorkoutOutput, 'warnings' | 'setTemplateIds' | 'snap'>): Record<string, SetFit> {
   // The item a template's slot was planned on, for `missing` (`not_here`).
   const sourceName = new Map<string, string>();
-  for (const slot of out.snap.slots) for (const s of slot.sets) if (slot.sourceEquipment !== null) sourceName.set(s.id, slot.sourceEquipment.name);
+  for (const slot of out.snap.slots) {
+    // (ADR 0030) A missing bench or rack is what's named, not the load item (which may be here).
+    const name = stationWords(slot.stations) ?? slot.sourceEquipment?.name ?? null;
+    for (const s of slot.sets) if (name !== null) sourceName.set(s.id, name);
+  }
   const byTemplate = new Map<string, SetFit>();
   for (const w of out.warnings) {
     if (w.kind === 'target_rounded') byTemplate.set(w.setTemplateId, { kind: 'rounded', requested: w.requested, planned: w.planned, bounded: w.bounded, converted: w.converted });
@@ -311,7 +318,7 @@ export function startWorkoutWithMode(input: StartWorkoutInput, mode: 'start' | '
         if (unresolvable.has(rex.id)) {
           warning = { kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: 'equipment_not_in_gym' };
         } else if (result.outcome === 'dropped') {
-          warning = { kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: startDropReason(result.reason) };
+          warning = { kind: 'target_dropped', setTemplateId: tpl.id, requested: tpl.targetLoad, reason: startDropReason(result.reason), ...(result.reason === 'not_here' && fit.stations.length > 0 ? { stations: [...fit.stations] } : {}) };
         } else if (load !== null && result.outcome !== 'exact') {
           warning = { kind: 'target_rounded', setTemplateId: tpl.id, requested: tpl.targetLoad, planned: load, bounded: result.bounded, converted: load.unit !== tpl.targetLoad.unit };
         }

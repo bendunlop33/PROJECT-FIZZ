@@ -52,10 +52,17 @@ describe('quick gym setup', () => {
       ['Machines', 'Assumed'],
       ['Assisted pull-up / dip machine', 'Assumed'],
       ['Pull-up bar', 'Assumed'],
+      ['Kettlebells', 'Assumed'],
+      ['EZ bar', 'Assumed'],
+      ['Trap bar', 'Assumed'],
+      ['Smith machine', 'Assumed'],
+      ['Benches', 'Assumed'],
+      ['Racks', 'Assumed'],
     ]);
     expect(detail?.equipment[0]?.line).toBe('2–50 kg each');
+    expect(detail?.equipment.slice(7).map((e) => e.line)).toEqual(['4–32 kg each', '10–325 kg · total', '25–655 kg · total', '0–630 kg plates · 15 kg bar', 'Adjustable', 'Power rack']);
     expect(detail?.makeFull).toBeNull();
-    expect((await s.gyms.list())[0]).toMatchObject({ items: 7, unchecked: 7 });
+    expect((await s.gyms.list())[0]).toMatchObject({ items: 13, unchecked: 13 });
   });
 
   it('Make full gym on a small gym keeps his items, adds the rest assumed, and Undo takes it back', async () => {
@@ -70,10 +77,11 @@ describe('quick gym setup', () => {
     detail = await s.gyms.detail(gymId);
     expect(detail?.gym.setup).toBe('full');
     expect(detail?.equipment.filter((e) => e.equipment.kind === 'dumbbells').map((e) => e.line)).toEqual(['2–20 kg each']);
-    expect(detail?.equipment).toHaveLength(7);
+    // The 13 full-gym items (the hotel's unticked bench and rack, kept retired, stay hidden).
+    expect(detail?.equipment).toHaveLength(13);
     // A retry of the same edit is a duplicate, not a second set of items.
     expect(await s.gyms.applyEdit(made.edit)).toMatchObject({ ok: true, duplicate: true });
-    expect((await s.gyms.detail(gymId))?.equipment).toHaveLength(7);
+    expect((await s.gyms.detail(gymId))?.equipment).toHaveLength(13);
     expect(await s.gyms.undoEdit(made.edit)).toEqual({ ok: true });
     detail = await s.gyms.detail(gymId);
     expect(detail?.gym.setup).toBe('small');
@@ -266,7 +274,7 @@ describe('the coach updates a gym (update_gym)', () => {
     const card2 = r2.cards.find((c) => c.record.detail.kind === 'update_gym')?.record;
     const rack = (await s.gyms.detail(gymId))?.equipment[0]?.equipment;
     if (!rack) throw new Error('no rack');
-    await s.gyms.save({ gymId, equipmentId: rack.id, expectedVersion: rack.version, form: { ...(formFromEquipment(rack) as Extract<EquipmentForm, { kind: 'dumbbells' }>), range: { from: 2, to: 30, step: 2 }, missing: [], extra: [] } });
+    await s.gyms.save({ gymId, equipmentId: rack.id, expectedVersion: rack.version, form: { ...(formFromEquipment(rack) as Extract<EquipmentForm, { kind: 'dumbbells' | 'kettlebell' }>), range: { from: 2, to: 30, step: 2 }, missing: [], extra: [] } });
     expect(await s.coach.tapGymProposal(card2?.actionId ?? '', 'apply')).toEqual({ ok: false, state: 'out_of_date' });
     expect((await s.gyms.detail(gymId))?.equipment[0]?.line).toBe('2–30 kg each');
   });

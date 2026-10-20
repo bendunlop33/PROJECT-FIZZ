@@ -1,4 +1,5 @@
 import type { EquipmentInstance, Exercise } from '@fizz/schemas';
+import { missingStations, needsStationText, type GymStation } from './stations';
 
 /**
  * Which of a gym's items an exercise can be logged on (the exercise picker).
@@ -41,15 +42,22 @@ export function isExcludedFor(item: Pick<EquipmentInstance, 'notFor' | 'onlyFor'
   return item.onlyFor !== undefined && (exerciseId === undefined || !item.onlyFor.includes(exerciseId));
 }
 
-/** Available gym items the exercise can be logged on; empty for bodyweight exercises. Items marked not for it (or only for others) are left out. */
+/**
+ * Available gym items the exercise can be logged on; empty for bodyweight
+ * exercises. Items marked not for it (or only for others) are left out, and
+ * none when the gym is known to lack a bench or rack it needs (ADR 0030).
+ */
 export function equipmentForExercise<T extends Pick<EquipmentInstance, 'kind' | 'availability' | 'notFor' | 'onlyFor'>>(exercise: ExerciseEquipmentInfo & { id?: string }, gym: readonly T[]): T[] {
   if (needsNoEquipment(exercise)) return [];
+  if (missingStations(exercise.id, gym).length > 0) return [];
   return gym.filter((e) => e.availability === 'available' && exercise.compatibleEquipment.includes(e.kind) && !isExcludedFor(e, exercise.id));
 }
 
-/** The picker row's subtitle: the matching items, or why there are none. */
-export function pickerEquipmentLabel(exercise: ExerciseEquipmentInfo, matches: readonly Pick<EquipmentInstance, 'name'>[]): string {
+/** The picker row's subtitle: the matching items, or why there are none (`Needs a rack` when a bench or rack is the gap, ADR 0030). */
+export function pickerEquipmentLabel(exercise: ExerciseEquipmentInfo, matches: readonly Pick<EquipmentInstance, 'name'>[], needs: readonly GymStation[] = []): string {
   if (matches.length > 0) return matches.map((e) => e.name).join(' · ');
+  const station = needsStationText(needs);
+  if (station !== null) return station;
   if (isMachineCardio(exercise)) return 'Cardio';
   if (needsNoEquipment(exercise)) return 'Bodyweight';
   if (exercise.compatibleEquipment.length === 0) return 'No equipment needed';

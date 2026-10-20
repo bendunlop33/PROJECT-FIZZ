@@ -25,6 +25,7 @@ export const CUSTOM_EQUIPMENT: readonly { kind: ExerciseEquipmentKind; conventio
   { kind: 'kettlebell', conventions: ['per_hand', 'total'] },
   { kind: 'ez_bar', conventions: ['total'] },
   { kind: 'trap_bar', conventions: ['total', 'added'] },
+  { kind: 'smith_machine', conventions: ['added'] },
   { kind: 'erg', conventions: ['bodyweight'] },
   { kind: 'band', conventions: ['bodyweight'] },
   { kind: 'sled', conventions: ['added'] },
@@ -74,6 +75,8 @@ export function checkCustomExerciseFields(input: unknown): CustomFieldsCheck {
   const r = CustomExerciseFieldsSchema.safeParse(input);
   if (!r.success) return { ok: false, problem: r.error.issues[0]?.path[0] === 'name' ? 'Name needed.' : r.error.issues[0]?.path[0] === 'primaryMuscles' ? 'Pick 1 to 3 muscles.' : 'Check the fields.' };
   const f = { ...r.data, name: r.data.name.replace(/\s+/g, ' ') };
+  // A bench or rack is presence only (ADR 0030): never an exercise's load equipment.
+  if (!CUSTOM_EQUIPMENT.some((c) => c.kind === f.equipment)) return { ok: false, problem: 'Check the fields.' };
   if (!conventionsFor(f.equipment).includes(f.loadConvention)) return { ok: false, problem: `${EXERCISE_EQUIPMENT_WORD[f.equipment]} can’t be ${CONVENTION_WORD[f.loadConvention].toLowerCase()}.` };
   if (new Set(f.primaryMuscles).size !== f.primaryMuscles.length) return { ok: false, problem: 'Pick each muscle once.' };
   return { ok: true, fields: f };

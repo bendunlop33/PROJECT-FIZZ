@@ -9,7 +9,7 @@
   "mechanic": "compound",
   "primaryMuscles": ["quads", "glutes"],
   "secondaryMuscles": ["adductors", "hamstrings"],
-  "compatibleEquipment": ["plate_loaded_machine"],
+  "compatibleEquipment": ["smith_machine"],
   "requiresStation": ["specific_machine", "bench"],
   "defaultLoadConvention": "added",
   "measurement": "reps",

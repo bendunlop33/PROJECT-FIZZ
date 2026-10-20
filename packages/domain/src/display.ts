@@ -2,6 +2,7 @@ import type { EquipmentInstance, Load, LoadConvention, Measurement, PlannedSet, 
 import { localDateOf } from './calendar';
 import { toMs } from './time';
 import { fromScaled, toScaled } from './units';
+import { isPlatesAddedKind } from './plates-added';
 
 /**
  * Display text for loads, values and targets (design-system §3 and §8), so
@@ -90,7 +91,7 @@ export type LoadContext = Pick<EquipmentInstance, 'kind'> | null;
 /** `100 kg`, `22.5 kg each`, `45 kg stack`, `40 kg plates`, `Assist 20 kg`, `BW + 10 kg`, `BW`. */
 export function loadText(load: Load | null, convention: LoadConvention, equipment: LoadContext = null): string {
   if (convention === 'bodyweight' || load?.convention === 'bodyweight') return 'BW';
-  if (load === null) return convention === 'added' && equipment?.kind !== 'plate_loaded_machine' ? 'BW' : '—';
+  if (load === null) return convention === 'added' && !isPlatesAddedKind(equipment?.kind) ? 'BW' : '—';
   const n = `${formatNumber(load.value)}${NBSP}${load.unit}`;
   switch (load.convention) {
     case 'total':
@@ -100,7 +101,7 @@ export function loadText(load: Load | null, convention: LoadConvention, equipmen
     case 'stack':
       return `${n}${NBSP}stack`;
     case 'added':
-      if (equipment?.kind === 'plate_loaded_machine') return `${n}${NBSP}plates`;
+      if (isPlatesAddedKind(equipment?.kind)) return `${n}${NBSP}plates`;
       return load.value === 0 ? 'BW' : `BW + ${n}`;
     case 'assistance':
       return `Assist ${n}`;
@@ -114,7 +115,7 @@ export function loadText(load: Load | null, convention: LoadConvention, equipmen
  */
 export function distanceLoadText(load: Load | null, convention: LoadConvention, equipment: LoadContext = null): string | null {
   if (convention === 'bodyweight' || load === null || load.convention === 'bodyweight') return null;
-  if (load.convention !== 'added' || equipment?.kind === 'plate_loaded_machine') return loadText(load, convention, equipment);
+  if (load.convention !== 'added' || isPlatesAddedKind(equipment?.kind)) return loadText(load, convention, equipment);
   return load.value === 0 ? null : `${formatNumber(load.value)}${NBSP}${load.unit}`;
 }
 
@@ -130,7 +131,7 @@ export function loadFieldLabel(convention: LoadConvention, equipment: LoadContex
     case 'assistance':
       return 'Assist';
     case 'added':
-      return equipment?.kind === 'plate_loaded_machine' ? 'Plates' : 'Added';
+      return isPlatesAddedKind(equipment?.kind) ? 'Plates' : 'Added';
     case 'bodyweight':
       return null;
   }
@@ -208,9 +209,9 @@ export function targetText(planned: PlannedSet, o: { convention: LoadConvention;
 /** A table load cell: the number only (`100`), `BW` for nothing added, `—` for no load; null when the exercise has no load column. */
 export function rowLoadCell(load: Load | null, convention: LoadConvention, eq: Pick<EquipmentInstance, 'kind'> | null): string | null {
   if (convention === 'bodyweight') return null;
-  if (load === null) return convention === 'added' && eq?.kind !== 'plate_loaded_machine' ? 'BW' : '—';
+  if (load === null) return convention === 'added' && !isPlatesAddedKind(eq?.kind) ? 'BW' : '—';
   if (load.convention === 'bodyweight') return 'BW';
-  if (load.convention === 'added' && load.value === 0 && eq?.kind !== 'plate_loaded_machine') return 'BW';
+  if (load.convention === 'added' && load.value === 0 && !isPlatesAddedKind(eq?.kind)) return 'BW';
   return formatNumber(load.value);
 }
 
@@ -282,4 +283,10 @@ export const EQUIPMENT_WORD: Record<EquipmentInstance['kind'], string> = {
   assisted_stack: 'Assisted machine',
   plate_loaded_machine: 'Plate-loaded machine',
   bodyweight_station: 'Bodyweight',
+  kettlebell: 'Kettlebells',
+  ez_bar: 'EZ bar',
+  trap_bar: 'Trap bar',
+  smith_machine: 'Smith machine',
+  bench: 'Bench',
+  rack: 'Rack',
 };

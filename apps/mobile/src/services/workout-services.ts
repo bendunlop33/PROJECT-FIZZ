@@ -130,6 +130,7 @@ import {
   withCoachTargets,
   type NextTargetEntry,
   equipmentForExercise,
+  missingStations,
   searchExercises,
   defaultSlotShape,
   shapeAddPlan,
@@ -289,6 +290,7 @@ import {
 import type { SqliteRepositories, Store } from '@fizz/persistence';
 import type { TodayFitAnswer, TodayFitContext } from '@fizz/coach';
 import type {
+  GymStation,
   Load,
   LoadConvention,
   WeightUnit,
@@ -440,6 +442,8 @@ export interface PickerExercise {
   aliases: readonly string[];
   /** Compatible equipment at this workout's gym. Empty = none needed (bodyweight) or none there (loads not checked). */
   equipment: Pick<EquipmentInstance, 'id' | 'name' | 'kind'>[];
+  /** (ADR 0030) The bench or rack this gym has none of, when that's why `equipment` is empty (`Needs a rack`). */
+  needs: GymStation[];
   /**
    * `⚠ May hurt` (exercise-library EL9, active-workout §2.14.1): an active
    * pain flag covers this exercise (never a similar movement, CM5). The row
@@ -3124,6 +3128,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           exercise,
           aliases,
           equipment: equipmentForExercise(exercise, snapshot).map((e) => ({ id: e.id, name: e.name, kind: e.kind })),
+          needs: missingStations(exercise.id, snapshot),
           mayHurt: covering ? { flagId: covering.flag.id, accessibilityLabel: mayHurtAccessibility(covering.flag), confirm: mayHurtConfirm({ ...covering.flag, exerciseName: exercise.name }) } : null,
         };
       });

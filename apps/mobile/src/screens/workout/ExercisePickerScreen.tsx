@@ -256,7 +256,7 @@ export function ExercisePickerScreen() {
                       <View style={{ flex: 1 }}>
                         <Row
                           title={p.exercise.name}
-                          subtitle={pickerEquipmentLabel(p.exercise, p.equipment)}
+                          subtitle={pickerEquipmentLabel(p.exercise, p.equipment, p.needs)}
                           {...(p.mayHurt ? { tag: { icon: 'exclamationmark.triangle', color: 'status.warning', text: 'May hurt', accessibilityLabel: p.mayHurt.accessibilityLabel } as const } : {})}
                           onPress={() => {
                             choose(p);

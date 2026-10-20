@@ -9,6 +9,7 @@ import {
   type ValidationIssue,
   type WeightUnit,
 } from '@fizz/schemas';
+import { BAR_MASS } from './gym-editor';
 import { fromScaled, toScaled } from './units';
 
 /**
@@ -157,6 +158,40 @@ const pullUpBar: ItemBuilder = (unit) => ({
   equipment: { ...common('Pull-up bar', unit), kind: 'bodyweight_station', loadConvention: 'bodyweight' },
 });
 
+/** (ADR 0030) A bar plus its own plates, at the typical bar weight (`BAR_MASS`, one place for the assumed bar weights). */
+const otherBar =
+  (kind: 'ez_bar' | 'trap_bar', label: string): ItemBuilder =>
+  (unit) => ({
+    key: kind,
+    label,
+    equipment: { ...common(label, unit), kind, loadConvention: 'total', barMass: BAR_MASS[kind][unit], plates: plates(PLATES[unit], 4) },
+  });
+
+/** Plates added; the bar's starting weight beside the load (ADR 0030). */
+const smith: ItemBuilder = (unit) => ({
+  key: 'smith_machine',
+  label: 'Smith machine',
+  equipment: { ...common('Smith machine', unit), kind: 'smith_machine', loadConvention: 'added', barMass: BAR_MASS.smith_machine[unit], plates: plates(PLATES[unit], 4) },
+});
+
+const kettlebells: ItemBuilder = (unit) => ({
+  key: 'kettlebells',
+  label: 'Kettlebells',
+  equipment: { ...common('Kettlebells', unit), kind: 'kettlebell', loadConvention: 'per_hand', loads: unit === 'kg' ? loadRange(4, 32, 4) : loadRange(10, 70, 5) },
+});
+
+const bench: ItemBuilder = (unit) => ({
+  key: 'bench',
+  label: 'Bench',
+  equipment: { ...common('Bench', unit), kind: 'bench', loadConvention: 'bodyweight', benchType: 'adjustable' },
+});
+
+const rack: ItemBuilder = (unit) => ({
+  key: 'rack',
+  label: 'Rack',
+  equipment: { ...common('Rack', unit), kind: 'rack', loadConvention: 'bodyweight', rackType: 'squat_rack' },
+});
+
 interface PresetDef extends GymPresetSummary {
   items: readonly { build: ItemBuilder; ticked: boolean }[];
 }
@@ -171,18 +206,34 @@ const PRESETS: readonly PresetDef[] = [
       { build: dumbbells(40, 100), ticked: true },
       { build: cable(100, 200), ticked: true },
       { build: pullUpBar, ticked: true },
+      { build: bench, ticked: true },
+      { build: rack, ticked: true },
       { build: assisted, ticked: false },
       { build: plateLoaded, ticked: false },
       { build: selectorised, ticked: false },
+      { build: kettlebells, ticked: false },
+      { build: otherBar('ez_bar', 'EZ bar'), ticked: false },
+      { build: otherBar('trap_bar', 'Trap bar'), ticked: false },
+      { build: smith, ticked: false },
     ],
   },
-  { id: 'home_dumbbells', title: 'Home: dumbbells and a bench', subtitle: null, items: [{ build: dumbbells(25, 50), ticked: true }] },
+  {
+    id: 'home_dumbbells',
+    title: 'Home: dumbbells and a bench',
+    subtitle: null,
+    items: [
+      { build: dumbbells(25, 50), ticked: true },
+      { build: bench, ticked: true },
+    ],
+  },
   {
     id: 'home_barbell',
     title: 'Home: barbell, rack and plates',
     subtitle: null,
     items: [
       { build: barbell(true), ticked: true },
+      { build: rack, ticked: true },
+      { build: bench, ticked: true },
       { build: pullUpBar, ticked: true },
     ],
   },
@@ -193,6 +244,7 @@ const PRESETS: readonly PresetDef[] = [
     items: [
       { build: dumbbells(25, 50), ticked: true },
       { build: cable(60, 120), ticked: true },
+      { build: bench, ticked: true },
     ],
   },
   { id: 'empty', title: 'Start empty', subtitle: null, items: [] },

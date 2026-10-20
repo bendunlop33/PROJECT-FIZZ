@@ -32,6 +32,7 @@ import { MIGRATION_0025 } from './schema/0025-plan-pause';
 import { MIGRATION_0026 } from './schema/0026-coach-update-gym';
 import { MIGRATION_0027 } from './schema/0027-coach-lift-targets';
 import { MIGRATION_0028 } from './schema/0028-activities-week';
+import { MIGRATION_0029 } from './schema/0029-gym-kit-kinds';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -80,6 +81,7 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(26, 'coach-update-gym', MIGRATION_0026),
   sqlMigration(27, 'coach-lift-targets', MIGRATION_0027),
   sqlMigration(28, 'activities-week', MIGRATION_0028),
+  sqlMigration(29, 'gym-kit-kinds', MIGRATION_0029),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */

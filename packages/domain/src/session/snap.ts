@@ -14,6 +14,7 @@ import type {
 import { compareDifficulty, loadDirection, roundToAvailableLoad } from '../equipment';
 import { addedWeightEquipment, isWeightedBodyweight } from '../added-weight';
 import { isExcludedFor, needsNoEquipment } from '../exercise-equipment';
+import { missingStations, stationWords, type GymStation } from '../stations';
 import { convertMass, toScaled } from '../units';
 
 /**
@@ -142,6 +143,8 @@ export interface SnapSlotResult {
   unit: WeightUnit;
   convention: LoadConvention;
   sourceEquipment: SnapSource | null;
+  /** (ADR 0030) `not_here` because of a missing bench or rack (empty otherwise). */
+  stations: GymStation[];
   sets: SnapSetResult[];
   notes: SnapNote[];
 }
@@ -170,10 +173,14 @@ export function mapEquipment(
   source: SnapSource | null,
   gym: SnapGym,
   lastUsedHere: ((exerciseId: string) => string | null) | undefined,
-): { equipment: EquipmentInstance | null; mapping: SnapMapping } {
+): { equipment: EquipmentInstance | null; mapping: SnapMapping; stations?: GymStation[] } {
   if (source === null || needsNoEquipment({ defaultLoadConvention: exercise.defaultLoadConvention, compatibleEquipment: [...exercise.compatibleEquipment] })) {
     return { equipment: null, mapping: 'none_needed' };
   }
+  // (ADR 0030) A bench or rack the exercise needs that this gym is known not to have.
+  // The load item may well be here: the reason is the bench or rack (review ben-kit B1).
+  const stations = missingStations(exercise.id, gym.equipment);
+  if (stations.length > 0) return { equipment: null, mapping: 'not_here', stations };
   const kinds: readonly ExerciseEquipmentKind[] = exercise.compatibleEquipment.length > 0 ? exercise.compatibleEquipment : [source.kind];
   const suits = (e: EquipmentInstance) => kinds.includes(e.kind);
   // (Ben, 20 Oct) An item Ben marked `Not at this gym` for this exercise, or another machine's own stack, is never mapped to it.
@@ -290,7 +297,7 @@ function topOf(sets: readonly SnapSetResult[], inputs: ReadonlyMap<string, SnapS
   };
 }
 
-function notesFor(slot: SnapSlotInput, sets: readonly SnapSetResult[], eq: EquipmentInstance | null): SnapNote[] {
+function notesFor(slot: SnapSlotInput, sets: readonly SnapSetResult[], eq: EquipmentInstance | null, stations: readonly GymStation[]): SnapNote[] {
   const inputs = new Map(slot.sets.map((s) => [s.id, s]));
   const notes: SnapNote[] = [];
   for (const kind of ['rounded', 'capped', 'converted', 'restored'] as const) {
@@ -307,7 +314,7 @@ function notesFor(slot: SnapSlotInput, sets: readonly SnapSetResult[], eq: Equip
       setIds: group.map((s) => s.id),
       top,
       lightest: group.find((s) => s.id === top.setId)?.lightest ?? group[0]?.lightest ?? null,
-      equipmentName: reason === 'not_here' ? (slot.sourceEquipment?.name ?? null) : (eq?.name ?? null),
+      equipmentName: reason === 'not_here' ? (stationWords(stations) ?? slot.sourceEquipment?.name ?? null) : (eq?.name ?? null),
     });
   }
   const painGroup = sets.filter((s) => s.painHeld || s.reason === 'pain_flag');
@@ -317,7 +324,7 @@ function notesFor(slot: SnapSlotInput, sets: readonly SnapSetResult[], eq: Equip
 
 export function snapPlanToGym(input: SnapInput): SnapResult {
   const slots = input.slots.map((slot): SnapSlotResult => {
-    const { equipment, mapping } = mapEquipment(slot.exercise, slot.sourceEquipment, input.gym, input.lastUsedHere);
+    const { equipment, mapping, stations = [] } = mapEquipment(slot.exercise, slot.sourceEquipment, input.gym, input.lastUsedHere);
     const unit = equipment?.unit ?? (mapping === 'none_needed' ? slot.unit : input.ownerUnit);
     const convention = equipment?.loadConvention ?? (mapping === 'none_needed' ? slot.convention : slot.exercise.defaultLoadConvention);
     const pain = input.painFlagged?.has(slot.exercise.id) ?? false;
@@ -334,8 +341,9 @@ export function snapPlanToGym(input: SnapInput): SnapResult {
       unit,
       convention,
       sourceEquipment: slot.sourceEquipment,
+      stations,
       sets,
-      notes: notesFor(slot, sets, equipment),
+      notes: notesFor(slot, sets, equipment, stations),
     };
   });
   return { mode: input.mode, gymId: input.gym.id, gymName: input.gym.name, slots };
@@ -354,6 +362,7 @@ export function plannedSnapOf(set: SnapSetResult, slot: SnapSlotResult, mode: Sn
     intendedOn: src === null ? null : { equipmentId: src.id, kind: src.kind, gymId: src.gymId, name: src.name },
     outcome: set.outcome,
     ...(set.reason !== undefined ? { reason: set.reason } : {}),
+    ...(set.reason === 'not_here' && slot.stations.length > 0 ? { stations: [...slot.stations] } : {}),
     ...(set.painHeld ? { painHeld: true as const } : {}),
     equipmentId: slot.equipment?.id ?? null,
     gymId: slot.equipment?.gymId ?? (slot.mapping === 'none_needed' ? null : gymId),

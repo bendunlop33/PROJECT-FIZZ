@@ -305,7 +305,7 @@ describe('gyms.createWithEquipment (createGymFromDraft)', () => {
     expect(await store.repos.gyms.createWithEquipment(gym, equipment)).toEqual({ ok: true, duplicate: true });
     expect(await store.repos.gyms.listByOwner(OWNER)).toHaveLength(1);
     const saved = await store.repos.equipment.listByGym(GYM);
-    expect(saved).toHaveLength(4);
+    expect(saved).toHaveLength(6);
     expect(saved.every((e) => e.detailsSource === 'preset')).toBe(true);
     await store.close();
   });

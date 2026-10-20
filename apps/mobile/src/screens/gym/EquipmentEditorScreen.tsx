@@ -4,6 +4,7 @@ import { Alert, Pressable, TextInput, View } from 'react-native';
 
 import {
   applyEquipmentForm,
+  BENCH_TYPE_LABEL,
   checkLoadText,
   dumbbellLoads,
   EQUIPMENT_KIND_LABEL,
@@ -12,12 +13,13 @@ import {
   gapLines,
   loadPreviewLine,
   newEquipmentForm,
+  RACK_TYPE_LABEL,
   rangeValues,
   unbalancedPlateHints,
   type EquipmentForm,
   type RangeSpec,
 } from '@fizz/domain';
-import type { EquipmentInstance, PlateCount, WeightUnit } from '@fizz/schemas';
+import type { BenchType, EquipmentInstance, PlateCount, RackType, WeightUnit } from '@fizz/schemas';
 
 import { haptic } from '../../device/haptics';
 import type { ProfileStackParams } from '../../navigation/types';
@@ -31,7 +33,8 @@ import { nextFieldText, parseNumber, rangeNextField } from '../../ui/number-text
  * true of Ben's real gym. Barbell: bar weight, every plate counted, optional
  * max. Dumbbells: range and step, missing weights, single weights. Stacks and
  * assisted machines: range and step (as printed). Plate-loaded: sides, plates,
- * max. Every number and line comes from `@fizz/domain`; Save is one versioned,
+ * max. EZ bar, trap bar and Smith machine as a barbell (ADR 0030); kettlebells
+ * as dumbbells; a bench or rack is its type only. Every number and line comes from `@fizz/domain`; Save is one versioned,
  * idempotent write. The unit can't change once a set was logged with the item.
  */
 export function EquipmentEditorScreen() {
@@ -160,11 +163,15 @@ export function EquipmentEditorScreen() {
           ) : null}
         </View>
 
-        {f.kind === 'barbell' ? (
+        {f.kind === 'barbell' || f.kind === 'ez_bar' || f.kind === 'trap_bar' || f.kind === 'smith_machine' ? (
           <>
-            <NumberField label="Bar weight" unit={u} value={f.barMass} onChange={(barMass) => { set({ barMass }); }} />
+            <NumberField label={f.kind === 'smith_machine' ? 'Bar starting weight' : 'Bar weight'} unit={u} value={f.barMass} onChange={(barMass) => { set({ barMass }); }} />
             <PlatesEditor plates={f.plates} unit={u} sides={2} onChange={(plates) => { set({ plates }); }} />
-            <NumberField label="Heaviest you’ll load (optional)" unit={u} value={f.maxLoad} onChange={(maxLoad) => { set({ maxLoad }); }} />
+            {f.kind === 'smith_machine' ? (
+              <NumberField label="Most plates it takes (optional)" unit={`${u} of plates`} value={f.maxLoad} onChange={(maxLoad) => { set({ maxLoad }); }} />
+            ) : (
+              <NumberField label="Heaviest you’ll load (optional)" unit={u} value={f.maxLoad} onChange={(maxLoad) => { set({ maxLoad }); }} />
+            )}
           </>
         ) : null}
 
@@ -187,10 +194,10 @@ export function EquipmentEditorScreen() {
           </>
         ) : null}
 
-        {f.kind === 'dumbbells' ? (
+        {f.kind === 'dumbbells' || f.kind === 'kettlebell' ? (
           <>
             <AppText variant="callout" color="text.secondary">
-              Weights are per dumbbell.
+              {f.kind === 'kettlebell' ? 'Weights are per kettlebell.' : 'Weights are per dumbbell.'}
             </AppText>
             <RangeFields range={f.range} unit={u} onChange={(range) => { set({ range }); }} />
             <SectionHeader title="In the rack (tap any that are missing)" />
@@ -234,6 +241,22 @@ export function EquipmentEditorScreen() {
           </>
         ) : null}
 
+        {f.kind === 'bench' ? (
+          <ChipRow>
+            {(Object.keys(BENCH_TYPE_LABEL) as BenchType[]).map((t) => (
+              <Chip key={t} label={BENCH_TYPE_LABEL[t]} selected={f.benchType === t} onPress={() => { set({ benchType: t }); }} />
+            ))}
+          </ChipRow>
+        ) : null}
+
+        {f.kind === 'rack' ? (
+          <ChipRow>
+            {(Object.keys(RACK_TYPE_LABEL) as RackType[]).map((t) => (
+              <Chip key={t} label={RACK_TYPE_LABEL[t]} selected={f.rackType === t} onPress={() => { set({ rackType: t }); }} />
+            ))}
+          </ChipRow>
+        ) : null}
+
         {f.kind === 'bodyweight_station' ? (
           <AppText variant="callout" color="text.secondary">
             Logged as bodyweight
@@ -252,14 +275,14 @@ export function EquipmentEditorScreen() {
             ))}
           </View>
         ) : null}
-        {f.kind === 'barbell' || f.kind === 'plate_loaded_machine'
-          ? unbalancedPlateHints(f.plates, f.kind === 'barbell' ? 2 : f.loadingSides, u).map((hint) => (
+        {'plates' in f
+          ? unbalancedPlateHints(f.plates, f.kind === 'plate_loaded_machine' ? f.loadingSides : 2, u).map((hint) => (
               <AppText key={hint} variant="callout" color="text.secondary">
                 {hint}
               </AppText>
             ))
           : null}
-        {preview && (preview.kind === 'barbell' || preview.kind === 'plate_loaded_machine') ? (
+        {preview && 'plates' in preview ? (
           <View style={{ gap: theme.space['1'] }}>
             <TextField label={`Check a load (${u})`} value={check} numeric onChange={setCheck} />
             {parseNumber(check) !== null ? (
