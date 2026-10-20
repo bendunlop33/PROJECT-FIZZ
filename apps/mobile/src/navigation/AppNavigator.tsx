@@ -13,6 +13,8 @@ import { recordContainedError, setCurrentScreen } from '../diagnostics/crash-cap
 import { createGuardedLoader } from '../guide/guarded-load';
 
 import { AddGymScreen } from '../screens/AddGymScreen';
+import { BuilderSetupScreen } from '../screens/builder/BuilderSetupScreen';
+import { BuilderWorkoutScreen } from '../screens/builder/BuilderWorkoutScreen';
 import { CapabilityProbeScreen } from '../screens/CapabilityProbeScreen';
 import { DataBackupScreen } from '../screens/data/DataBackupScreen';
 import { EquipmentEditorScreen } from '../screens/gym/EquipmentEditorScreen';
@@ -371,6 +373,9 @@ export function AppNavigator({ setupStep, setupUnit, openWorkout }: AppNavigator
               <RootStack.Screen name="ExerciseInfo" component={ExerciseInfoScreen} options={({ route }) => ({ presentation: 'modal', headerShown: true, title: route.params.name ?? '' })} />
               {/* (19 Oct) Ben's own exercise: New, Edit, or the coach card's Edit; over Library or the coach sheet. */}
               <RootStack.Screen name="ExerciseForm" component={ExerciseFormScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
+              {/* The workout builder (workout-builder-v3 §2): Set up and Your workout, full-screen; the coach and the pop-ups are sheets over them. */}
+              <RootStack.Screen name="BuilderSetup" component={BuilderSetupScreen} options={{ presentation: 'fullScreenModal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
+              <RootStack.Screen name="BuilderWorkout" component={BuilderWorkoutScreen} options={{ presentation: 'fullScreenModal', gestureEnabled: false, contentStyle: { backgroundColor: theme.colors['bg.canvas'] }, ...screenAnimation('Workout', theme.a11y.reduceMotion) }} />
               <RootStack.Screen name="Coach" component={CoachSheetScreen} options={{ presentation: 'modal', contentStyle: { backgroundColor: theme.colors['bg.canvas'] } }} />
             </>
           ) : (

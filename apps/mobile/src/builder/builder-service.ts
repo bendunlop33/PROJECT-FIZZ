@@ -11,6 +11,7 @@ import {
   builderSetupOf,
   CUSTOM_DAY_ID,
   currentDraftVersion,
+  defaultRestS,
   deriveId,
   draftAsRoutine,
   estimateBuilderMinutes,
@@ -26,6 +27,8 @@ import {
   planRoutines,
   PRESET_SPLITS,
   recommendForSetup,
+  restRoleOf,
+  roundRestOf,
   ruleSetupOf,
   slotsOf,
   stableStringify,
@@ -43,6 +46,7 @@ import {
   type BuilderEditRefusal,
   type BuilderWorkout,
   type DraftLifeChange,
+  type RestKind,
   type GroupCount,
   type SkippedOp,
   type StartAlongside,
@@ -125,6 +129,7 @@ export interface ExerciseFacts {
   name: string;
   works: string | null;
   group: BuilderGroup | null;
+  compound: boolean;
   mayHurt: boolean;
 }
 
@@ -148,11 +153,16 @@ export interface BuilderSnapshot {
   skipped: SkippedOp[];
   /** Slot revisions, for an edit's basis. */
   revs: Record<string, number>;
+  /** Each slot's rest per kind now (Ben's own, else the default), and `round` for a superset (§3.2). */
+  rests: Record<string, Partial<Record<RestKind | 'round', number>>>;
+  /** The item each slot's loads are worked out on (the keyboard's kg steps, §2.7). */
+  items: Record<string, string | null>;
   startable: boolean;
 }
 
 export type BuilderWriteResult =
-  | { status: 'written' | 'replayed'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
+  | { status: 'written'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
+  | { status: 'replayed'; snapshot: BuilderSnapshot; toast: BuilderToast | null }
   | { status: 'stale' | 'closed'; snapshot: BuilderSnapshot | null; message: string }
   | { status: 'refused'; reason: BuilderEditRefusal | 'nothing_to_undo' | 'changed_since'; message: string; snapshot: BuilderSnapshot | null };
 
@@ -397,6 +407,21 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     return parts.length === 0 ? undefined : { name: s.dayName.slice(0, 30), bodyParts: [...new Set(parts)] };
   };
 
+  function restsOf(w: BuilderWorkout, env: BuilderEnv): BuilderSnapshot['rests'] {
+    const out: BuilderSnapshot['rests'] = {};
+    const presets = env.ctx.restPresetsS;
+    for (const b of w.blocks) {
+      for (const s of b.slots) {
+        const role = restRoleOf(s, env.info);
+        const kinds: RestKind[] = ['warmup', 'top', 'backoff', 'working', 'drop', 'before_drop'];
+        const r: Partial<Record<RestKind | 'round', number>> = Object.fromEntries(kinds.map((k) => [k, s.restS?.[k] ?? defaultRestS(k, role, w.restLevel, presets)]));
+        if (b.slots.length > 1) r.round = roundRestOf(b, w.restLevel, presets);
+        out[s.key] = r;
+      }
+    }
+    return out;
+  }
+
   async function snapshotOf(p: UserProfile, d: WorkoutDraft, env: BuilderEnv, skipped: SkippedOp[] = []): Promise<BuilderSnapshot> {
     const v = currentDraftVersion(d);
     const stored = builderSetupOf(d);
@@ -405,7 +430,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const minutes = estimateBuilderMinutes(workout, env.ctx);
     const variation = setup.variationId === null ? null : ((await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId)).find((x) => x.id === setup.variationId) ?? null);
     const facts: Record<string, ExerciseFacts> = {};
-    for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, mayHurt: env.painFlagged(s.exerciseId) };
+    for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, compound: env.info(s.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(s.exerciseId) };
     const key = d.builderKey;
     const planDay =
       key !== undefined && key.planId !== null && key.dayIndex !== null && key.splitDayId !== null
@@ -426,6 +451,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       unit: p.preferredUnit,
       skipped,
       revs: Object.fromEntries(v.plan.slots.map((s) => [s.slotKey, s.rev ?? 1])),
+      rests: restsOf(workout, env),
+      items: Object.fromEntries(v.plan.slots.map((s) => [s.slotKey, s.checkedOn?.equipmentId ?? null])),
       startable: d.status === 'open' && v.plan.slots.length > 0,
     };
   }
@@ -597,8 +624,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const r = await repos().workoutDrafts.createBuilderDraft(p.id, draft);
       switch (r.status) {
         case 'written':
+          return { status: 'written', snapshot: await snapshotOf(p, r.draft, built.env, built.skipped), toast: null };
         case 'replayed':
-          return { status: r.status, snapshot: await snapshotOf(p, r.draft, built.env, built.skipped), toast: null };
+          return { status: 'replayed', snapshot: await snapshotOf(p, r.draft, built.env, built.skipped), toast: null };
         case 'exists': {
           // Reopen (§2.1): the same unstarted workout, with Set up's change merged in.
           const prev = pageSetup(r.draft);

@@ -220,7 +220,22 @@ export type RootStackParams = {
   Coach: { entry: CoachEntry; focus?: boolean; build?: boolean; draft?: string };
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
+  /**
+   * The workout builder's first page (workout-builder-v3 §2.2). `dayId`: Today's `Build your own`
+   * (Day = the card's day). `draftId`: `‹ Set up` from Your workout (its changes merge into that draft).
+   */
+  BuilderSetup: { dayId?: string; draftId?: string } | undefined;
+  /** Your workout (§2.3): one builder draft. `toast`: a write's toast handed back from Set up (`Rebuilt · Undo`). */
+  BuilderWorkout: { draftId: string; toast?: BuilderToastParam };
 };
+
+/** A builder toast handed between the builder's pages (`key`: shown once). */
+export interface BuilderToastParam {
+  key: string;
+  text: string;
+  undoOpId: string | null;
+  why: string | null;
+}
 
 /**
  * Where the workout editor returns to. `SaveSheet`: the Save sheet's `Edit ›`
