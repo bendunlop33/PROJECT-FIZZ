@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 import { addDays, localDateOf, toMs } from '@fizz/domain';
 
+import { planChangeUndoOpId } from '../src/builder/builder-service';
 import type { AppServices } from '../src/services/app-services';
 import type { TodaySessionData, TodaySelection } from '../src/services/today-session';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
@@ -214,6 +215,46 @@ describe('Today (v2) session card from the plan', () => {
     expect(one?.mix?.notReviewed).toBe(true);
     expect(one?.rows[0]?.name).toBe('Bench press');
     expect(s.todaySession.card(data, sel(data, key, { minutes: 75, mix: 0 }))?.rows.map((r) => r.name)).toEqual(base?.rows.map((r) => r.name));
+  });
+
+  it('merge: Today’s draft is the builder’s (codec, per-slot state); an edit in the builder shows `· edited`, Start offers the §2.8 prompt, Update writes the plan day with the session, Summary’s Undo restores it once', async () => {
+    const { s, gymId } = await benWithPlan();
+    const data = await loaded(s);
+    const key = dayKeyOf(data, 'Push');
+    const card = s.todaySession.card(data, sel(data, key));
+    const c = await s.todaySession.commit(data, sel(data, key), 'commit-merge');
+    if (!c.ok || card === null) throw new Error('commit');
+    // The builder reads Today's draft as its own: same exercises and minutes, slots carry builder state and revs.
+    const snap = await s.builder.read(c.draftId);
+    if (snap === null) throw new Error('builder can’t read Today’s draft');
+    expect(snap.workout.blocks.flatMap((b) => b.slots).map((x) => x.exerciseId)).toEqual(card.draft?.workout.blocks.flatMap((b) => b.slots).map((x) => x.exerciseId));
+    const stored = await s.coachDrafts.get(c.draftId);
+    const plan = stored?.versions.find((v) => v.n === stored.currentVersion)?.plan;
+    expect(plan?.slots.every((x) => x.builder !== undefined && x.rev === 1)).toBe(true);
+    // The card's own control choices may already differ from the template (they are today's changes too); Today only
+    // asks once Ben edited the draft in the builder (§2.0.4 Edited in builder).
+    const before = (await s.builder.startPrompt(c.draftId))?.lines.length ?? 0;
+    // Ben adds a set in the builder: the card reads `· edited`, and Start gets the prompt.
+    const slot = snap.workout.blocks.flatMap((b) => b.slots).find((x) => !x.main);
+    if (slot === undefined) throw new Error('no accessory');
+    const e = await s.builder.edit(c.draftId, { kind: 'add_set', slotKey: slot.key }, { opId: 'merge-add-set', basis: { version: snap.version } });
+    expect(e.status).toBe('written');
+    const again = await loaded(s);
+    const view = s.todaySession.card(again, sel(again, key));
+    expect(view?.title).toMatch(/· edited$/);
+    const prompt = await s.builder.startPrompt(c.draftId);
+    expect(prompt?.lines.length ?? 0).toBeGreaterThan(before);
+    const edited = view?.edited;
+    if (edited == null || prompt?.updateLabel == null) throw new Error('no edited card or Update');
+    const started = await s.builder.start(c.draftId, { choice: { kind: 'update' }, opId: 'merge-start', expectedVersion: edited.version, gymId, checkIn: null });
+    if (!started.ok) throw new Error(started.message);
+    const change = await s.builder.planChangeOf(started.sessionId);
+    expect(change?.kind).toBe('template');
+    if (change === null) throw new Error('no plan change');
+    expect(await s.builder.undoPlanChange(change, planChangeUndoOpId(started.sessionId))).toEqual({ ok: true });
+    // Undone once: the line goes, and a retry is still fine.
+    expect(await s.builder.planChangeOf(started.sessionId)).toBeNull();
+    expect(await s.builder.undoPlanChange(change, planChangeUndoOpId(started.sessionId))).toEqual({ ok: true });
   });
 
   it('Other sessions: Push from ⋯ starts with no plan day (Up next is credited by what was trained)', async () => {

@@ -214,6 +214,16 @@ export type BuilderStartResult =
   | { ok: true; sessionId: string; duplicate: boolean; planChange: PlanChangeUndo | null }
   | { ok: false; reason: 'stale' | 'plan_changed' | 'variation_limit' | 'variation_label' | 'empty' | 'gone' | 'failed'; message: string };
 
+/** Summary's Undo of a Start's plan change: one op ID per session, so a retry (or a relaunch) undoes once. */
+export function planChangeUndoOpId(sessionId: string): string {
+  return deriveId(`plan-change-undo:${sessionId}`);
+}
+
+/** Summary's line for a Start's plan change (§2.8): `Chest · bench updated`; a new variation `… saved`. */
+export function planChangeText(u: PlanChangeUndo): string {
+  return u.kind === 'variation_new' ? BUILDER_COPY.saved(u.label) : BUILDER_COPY.updated(u.label);
+}
+
 export const BUILDER_COPY = {
   // The page already shows the draft as stored: nothing to tap (N2).
   outOfDate: 'Out of date',
@@ -236,6 +246,7 @@ export const BUILDER_COPY = {
   deleted: (name: string) => `Deleted ${name}`,
   roundedTo: (value: number, unit: string) => `Rounded to ${String(value)} ${unit}`,
   updated: (label: string) => `${label} updated`,
+  saved: (label: string) => `${label} saved`,
 } as const;
 
 const REFUSAL_TEXT: Partial<Record<BuilderEditRefusal, string>> = {
@@ -1215,7 +1226,16 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const p = await owner();
       const a = await repos().sessions.get(sessionId).catch(() => null);
       if (a === null || a.session.ownerId !== p.id) return null;
-      return a.session.planDay?.planChange ?? null;
+      const u = a.session.planDay?.planChange ?? null;
+      if (u === null) return null;
+      // Already undone from this Summary (its Undo writes under `planChangeUndoOpId`): no second Undo line.
+      const undoOp = planChangeUndoOpId(sessionId);
+      if (u.kind === 'template') {
+        const r = await repos().routines.get(u.routineId).catch(() => null);
+        return r !== null && r.lastOpId === undoOp ? null : u;
+      }
+      const v = (await repos().planDayVariations.listByOwner(p.id).catch(() => [] as PlanDayVariation[])).find((x) => x.id === u.id);
+      return v !== undefined && v.opIds.includes(undoOp) ? null : u;
     },
 
     /** Advice now on the draft (for a coach proposal's `⚠` line; the coach stream reads it). */

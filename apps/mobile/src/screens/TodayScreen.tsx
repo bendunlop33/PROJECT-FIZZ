@@ -27,6 +27,8 @@ import { createAfterDismiss } from '../workout/after-dismiss';
 import { FinishSheet } from './workout/FinishSheet';
 import { GymChip } from './workout/GymSwitch';
 import { DayControl, DaySheet, SessionCard, SessionListSheet, TodayHeader, WeekStrip } from './today/TodaySession';
+import { PromptSheet, promptView } from './builder/BuilderSheets';
+import type { StartChoice, StartPrompt } from '../builder/builder-service';
 
 /**
  * Today (v2) (workout-builder-v3 §2.0 with Ben's 20 Oct additions; prototypes/today-v2.html): `Tuesday`
@@ -95,6 +97,10 @@ export function TodayScreen() {
   const [listAfter] = useState(() => createAfterDismiss());
 
   const [selection, setSelection] = useState<TodayCardState | null>(null);
+  // The builder's §2.8 prompt for an edited card's Start.
+  const [prompt, setPrompt] = useState<{ prompt: StartPrompt; draftId: string; version: number } | null>(null);
+  const [promptBusy, setPromptBusy] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
 
   // The card's selection: the plan's next day on open (or as Ben left it while the data reloads). Once today's
   // workout is done, no day is selected until Ben picks one for a second session (§2.0.4 Done today).
@@ -298,10 +304,59 @@ export function TodayScreen() {
     return services.todaySession.commit(data2, sel, opId);
   }
 
+  /**
+   * `Start` on an edited card (§2.0.4 Edited in builder, acceptance 10): the builder's `Use these changes for`
+   * prompt (§2.8) when the draft differs from its plan day; none (load-only edits, not a plan day) starts as usual.
+   */
+  async function startEdited(e: NonNullable<NonNullable<typeof view>['edited']>): Promise<boolean> {
+    const p = await services.builder.startPrompt(e.draftId).catch(() => null);
+    if (p === null) return false;
+    setPromptError(null);
+    setPrompt({ prompt: p, draftId: e.draftId, version: e.version });
+    return true;
+  }
+
+  /** A choice on the §2.8 prompt: the builder's Start (plan write and session in one transaction under one op ID). */
+  async function startWithChoice(choice: StartChoice) {
+    const pending = prompt;
+    if (pending === null || promptBusy) return;
+    setPromptBusy(true);
+    try {
+      const g = await ensureGym();
+      if (g === null) return;
+      await alertsAsk.ensureAsked();
+      const gate = await gateCheckIn();
+      if (gate.ask) {
+        setPrompt(null);
+        navigation.navigate('CheckIn', { mode: 'start', gymId: g.gymId, coachDraftOf: pending.draftId, builderStart: { choice, expectedVersion: pending.version } });
+        return;
+      }
+      const key = `prompt:${pending.draftId}:${String(pending.version)}:${choice.kind}`;
+      const opId = startOps.current.get(key) ?? newUuid();
+      startOps.current.set(key, opId);
+      const r = await services.builder.start(pending.draftId, { choice, opId, expectedVersion: pending.version, gymId: g.gymId, checkIn: gate.checkIn });
+      if (!r.ok) {
+        startOps.current.delete(key);
+        if (r.reason === 'stale' || r.reason === 'gone') {
+          setPrompt(null);
+          setError(r.message);
+          reload();
+        } else setPromptError(r.message);
+        return;
+      }
+      startOps.current.delete(key);
+      setPrompt(null);
+      await openStarted(null, gate.reuseId);
+    } finally {
+      setPromptBusy(false);
+    }
+  }
+
   /** `Start`: one tap (the check-in sheet when due). No builder, no overview (§2.0.5). */
   async function startCard() {
     if (session === null || selection === null || !guard()) return;
     try {
+      if (view?.edited != null && (await startEdited(view.edited))) return;
       const g = await ensureGym();
       if (g === null) return;
       // A gym just made: plan on it (its items), not the typical preview.
@@ -773,6 +828,18 @@ export function TodayScreen() {
         }}
         onClose={() => {
           setListSheet(null);
+        }}
+      />
+      <PromptSheet
+        view={prompt === null ? null : promptView(prompt.prompt)}
+        suggestedLabel={prompt?.prompt.suggestedLabel ?? ''}
+        busy={promptBusy}
+        error={promptError}
+        onToday={() => void startWithChoice({ kind: 'today' })}
+        onUpdate={() => void startWithChoice({ kind: 'update' })}
+        onVariation={(label) => void startWithChoice({ kind: 'variation', label })}
+        onClose={() => {
+          setPrompt(null);
         }}
       />
       {alertsAsk.sheet}
