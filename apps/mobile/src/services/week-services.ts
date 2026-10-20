@@ -455,7 +455,9 @@ export function createWeekServices(deps: WeekServicesDeps) {
           return { ok: true, week: w.week, duplicate: w.status === 'replayed' };
         case 'stale':
           return { ok: false, reason: 'stale', message: WEEK_COPY.stale };
-        default:
+        case 'invalid':
+          return { ok: false, reason: 'invalid', message: WEEK_COPY.failed };
+        case 'missing':
           return { ok: false, reason: 'missing', message: WEEK_COPY.failed };
       }
     },

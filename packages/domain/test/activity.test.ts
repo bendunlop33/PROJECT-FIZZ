@@ -148,3 +148,14 @@ describe('writes: versioned, idempotent, Undo', () => {
     expect(c.kind).toBe('invalid');
   });
 });
+
+describe('Today’s Recent with activities', () => {
+  it('activities are their own rows, newest first; a planned one ahead on top; the limit holds', async () => {
+    const { recentRows } = await import('../src/index');
+    const now = { utc: '2026-10-23T08:00:00.000Z', tz: TZ };
+    const w = (n: number, utc: string) => ({ sessionId: id(n), title: `W${String(n)}`, startedAtUtc: utc, tz: TZ, localDate: null, sets: 10 });
+    const a = (n: number, date: string) => ({ ...activityRow(activity(n, run({ date, distanceM: 10_000, status: date > TODAY ? 'planned' : 'done' })), TODAY), sortMs: localMidnightUtcMs(date, TZ) + 12 * 3_600_000 });
+    const rows = recentRows([w(50, '2026-10-22T17:00:00.000Z'), w(51, '2026-10-20T17:00:00.000Z')], [a(52, '2026-10-24'), a(53, '2026-10-21')], now, 3);
+    expect(rows.map((r) => (r.kind === 'workout' ? r.row.title : `${r.row.title} ${r.row.when}`))).toEqual(['Run Tomorrow', 'W50', 'Run Wed']);
+  });
+});

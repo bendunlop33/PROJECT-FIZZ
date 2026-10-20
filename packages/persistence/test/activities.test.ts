@@ -101,7 +101,6 @@ describe('activities: versioned writes, Undo, backup and restore', () => {
     const m = await managerIn();
     await m.store.repos.profiles.save(profile(), null);
     const c = added(5);
-    if (c.kind !== 'write') throw new Error('add');
     const activity = { ...c.next, source: 'coach' as const };
     const action: ActionRecord = {
       actionId: id(8000),

@@ -5,6 +5,7 @@ import type { ProgressSession } from './projection';
 import { monthName, monthTitle, countNoun, weekdayDayMonth, weekdayDayMonthLong } from './text';
 import { deriveWorkoutTitle } from '../session/first-run';
 import { toMs } from '../time';
+import type { ActivityRow } from '../activity';
 
 /**
  * The Calendar segment (progress.md §2.5, §3.3): a Monday-first month grid
@@ -30,6 +31,8 @@ export interface CalendarDayView {
   isToday: boolean;
   /** Finished workouts that day. */
   count: number;
+  /** (Ben, 20 Oct) Activities that day (runs, rides …), their own mark; never workouts. */
+  activities: number;
   words: string;
 }
 
@@ -42,6 +45,8 @@ export interface CalendarMonthView {
   weeks: (CalendarDayView | null)[][];
   /** Day lists by date (only dates with something to list). */
   days: Readonly<Record<string, CalendarSessionRow[]>>;
+  /** (Ben, 20 Oct) Activities by date (`activityRow`), shown after the day's workouts as their own type. */
+  activityDays: Readonly<Record<string, ActivityRow[]>>;
   /** Today if it is in this month, else the latest day with a workout, else null. */
   defaultSelected: string | null;
   /** `No workouts in October.`; null when the month has one. */
@@ -109,6 +114,8 @@ export function buildCalendarMonthView(input: {
   month: string;
   today: string;
   active?: CalendarActive | null;
+  /** (Ben, 20 Oct) Live activities (any month; this month's are used), with their rows. */
+  activities?: readonly { date: string; row: ActivityRow }[];
 }): CalendarMonthView {
   const { month, today } = input;
   const gymNames = input.gymNames ?? {};
@@ -131,17 +138,21 @@ export function buildCalendarMonthView(input: {
         : { sessionId: active.sessionId, kind: 'unfinished', title, detail: 'Unfinished · Finish on Today ›', imported: false, words: `${title}, unfinished. Opens Today.` },
     );
   }
+  const activityDays: Record<string, ActivityRow[]> = {};
+  for (const a of input.activities ?? []) if (monthOf(a.date) === month) (activityDays[a.date] ??= []).push(a.row);
   const weeks: (CalendarDayView | null)[][] = [];
   let row: (CalendarDayView | null)[] = Array.from({ length: weekdayIndexOfDate(first) }, () => null);
   for (let i = 0; i < length; i += 1) {
     const date = addDays(first, i);
     const n = counts.get(date) ?? 0;
+    const acts = activityDays[date]?.length ?? 0;
     row.push({
       date,
       day: i + 1,
       isToday: date === today,
       count: n,
-      words: `${weekdayDayMonthLong(date)}${date === today ? ', today' : ''}${n === 0 ? '' : `, ${countNoun(n, 'workout', 'workouts')}`}`,
+      activities: acts,
+      words: `${weekdayDayMonthLong(date)}${date === today ? ', today' : ''}${n === 0 ? '' : `, ${countNoun(n, 'workout', 'workouts')}`}${acts === 0 ? '' : `, ${countNoun(acts, 'activity', 'activities')}`}`,
     });
     if (row.length === 7) {
       weeks.push(row);
@@ -157,8 +168,9 @@ export function buildCalendarMonthView(input: {
     nextMonth: next,
     weeks,
     days,
+    activityDays,
     defaultSelected: monthOf(today) === month ? today : (workoutDates.at(-1) ?? null),
-    empty: inMonth.length === 0 ? `No workouts in ${monthName(month)}.` : null,
+    empty: inMonth.length === 0 && Object.keys(activityDays).length === 0 ? `No workouts in ${monthName(month)}.` : null,
   };
 }
 

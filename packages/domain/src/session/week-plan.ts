@@ -198,7 +198,7 @@ export function checkWeekProposal(args: ProposeWeekArgs, facts: Pick<WeekFacts, 
     if (d === null) return { ok: false, failure: 'a day to skip isn’t one left this week' };
     skips.push({ dayId: d.id, name: d.name });
   }
-  if (merges.length === 0 && skips.length === 0) return { ok: false, failure: 'nothing changes' };
+  if (merges.length === 0 && skips.length === 0) return { ok: false, failure: 'no day is merged or skipped' };
   if (skips.length === facts.remaining.length) return { ok: false, failure: 'every day left would be skipped' };
   const before: WeekRow[] = facts.remaining.map((d) => ({ name: d.name, note: null }));
   const rows: WeekRow[] = [];

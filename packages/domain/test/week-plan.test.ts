@@ -117,7 +117,7 @@ describe('code’s suggestion and the coach’s proposal', () => {
     const f = facts();
     expect(checkWeekProposal({ merges: [{ dayIds: [ARMS.id, CHEST.id], name: 'Upper' }], skips: [], message: '' }, f)).toMatchObject({ ok: false });
     expect(checkWeekProposal({ merges: [{ dayIds: [CHEST.id, SHOULDERS.id], name: 'Push' }], skips: [CHEST.id], message: '' }, f)).toMatchObject({ ok: false });
-    expect(checkWeekProposal({ merges: [], skips: [], message: '' }, f)).toMatchObject({ ok: false, failure: 'nothing changes' });
+    expect(checkWeekProposal({ merges: [], skips: [], message: '' }, f)).toMatchObject({ ok: false, failure: 'no day is merged or skipped' });
     expect(checkWeekProposal({ merges: [], skips: [CHEST.id, SHOULDERS.id, BACK.id], message: '' }, { ...f, remaining: [CHEST, SHOULDERS, BACK] })).toMatchObject({ ok: false });
     const skip = checkWeekProposal({ merges: [], skips: [SHOULDERS.id], message: '' }, f);
     expect(skip.ok && skip.after.map((r) => r.name)).toEqual(['Chest', 'Back', 'Legs']);

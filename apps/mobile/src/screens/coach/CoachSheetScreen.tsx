@@ -47,6 +47,7 @@ import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, TextButton, Te
 import { CoachCard } from './CoachCard';
 import { BuildQuestionCard, BuildRequestCard, PendingBuildCard, QUESTION_COPY, WorkoutDraftCard } from './BuildCards';
 import { PlanCard } from './PlanCard';
+import { ActivityOfferCard, WeekProposalCard } from './WeekCards';
 import { BUILD_COPY, buildCardView, needsCoachView, questionTap, type BuildDayChip } from '../../coach/build-view';
 
 /**
@@ -856,6 +857,8 @@ function Row({
           />
         );
       }
+      if (row.card.week !== undefined && onDraft !== undefined) return <WeekProposalCard record={row.card.week} onChanged={onDraft.changed} />;
+      if (row.card.activityOffer !== undefined && onDraft !== undefined) return <ActivityOfferCard record={row.card.activityOffer} onChanged={onDraft.changed} />;
       if (row.card.plan !== undefined && onDraft !== undefined) return <PlanCard record={row.card.plan} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       if (row.card.draft !== undefined && onDraft !== undefined) return <WorkoutDraftCard record={row.card.draft} gymId={onDraft.gymId} onOpen={onDraft.open} onOpenRoutine={onDraft.openRoutine} onChanged={onDraft.changed} />;
       return <CoachCard card={row.card.canUndo && undoBlocked(row.card.actionId) ? { ...row.card, canUndo: false } : row.card} onUndo={onUndo} onProposal={onProposal} onMemory={onMemory} onNewExercise={onNewExercise} />;

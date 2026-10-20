@@ -7,6 +7,7 @@ import { Pressable, View } from 'react-native';
 import { addDays, localDateOf, localDateText, localHourUtcMs, PLAN_OVERVIEW_COPY, PLAN_PAUSE_MAX_DAYS, toMs, type PlanOverview, type PlanOverviewDay } from '@fizz/domain';
 
 import { dateAt } from '../../clock';
+import { WEEK_COPY } from '../../services/week-services';
 import { newUuid } from '../../device/runtime';
 import type { LibraryStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
@@ -86,6 +87,21 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
     void control(() => services.plans.resumePause({ planId: plan.planId, expectedVersion: plan.planVersion, opId }), opId, PLAN_OVERVIEW_COPY.resumedToast);
   }
 
+  /** (Ben, 20 Oct) Undo of this week's change (merged or skipped days): the plan's own days this week again. */
+  function undoWeek(change: NonNullable<PlanOverview['weekChange']>) {
+    if (busy.current) return;
+    busy.current = true;
+    void services.week
+      .undo({ weekPlanId: change.weekPlanId, expectedVersion: change.version, opId: newUuid() })
+      .then((r) => {
+        changed();
+        onToast({ text: r.ok ? WEEK_COPY.undone : r.message });
+      })
+      .finally(() => {
+        busy.current = false;
+      });
+  }
+
   function openTraining() {
     navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'TrainingDetails', initial: false } });
   }
@@ -162,6 +178,26 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
           />
         ))}
       </View>
+      {plan.weekChange !== null ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
+          <AppText variant="callout" style={{ flexShrink: 1 }}>
+            {plan.weekChange.text}
+          </AppText>
+          <TextButton
+            label={WEEK_COPY.undo}
+            tone="secondary"
+            accessibilityLabel="Undo this week's change"
+            onPress={() => {
+              if (plan.weekChange !== null) undoWeek(plan.weekChange);
+            }}
+          />
+        </View>
+      ) : null}
+      {plan.activities.map((line) => (
+        <AppText key={line} variant="callout" color="text.secondary" numeric>
+          {line}
+        </AppText>
+      ))}
       <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
         <Stat value={plan.daysThisWeek.text} label={PLAN_OVERVIEW_COPY.daysThisWeek} />
         {plan.setsDone !== null ? <Stat value={plan.setsDone.text} label={PLAN_OVERVIEW_COPY.setsDone} /> : null}

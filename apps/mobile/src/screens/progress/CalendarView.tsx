@@ -2,9 +2,11 @@ import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { nothingLoggedText, weekdayDayMonth, type CalendarSessionRow } from '@fizz/domain';
+import { nothingLoggedText, weekdayDayMonth, type ActivityRow, type CalendarSessionRow } from '@fizz/domain';
+import type { Activity } from '@fizz/schemas';
 
-import { useScreenData } from '../../shell/context';
+import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { ActivitySheet } from '../activity/ActivitySheet';
 import { useTheme } from '../../theme';
 import { AppText, Group, Icon, Row, StatusLine, TextButton } from '../../ui';
 
@@ -18,6 +20,10 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
   const navigation = useNavigation();
   const [data, reload] = useScreenData((s) => s.progress.calendar(month ?? undefined));
   const [selected, setSelected] = useState<string | null>(null);
+  const services = useServices();
+  const changed = useDataChanged();
+  // (Ben, 20 Oct) An activity opens in the activity sheet (edit or delete).
+  const [editing, setEditing] = useState<Activity | null>(null);
 
   if (data.state === 'error') {
     return <StatusLine icon="exclamationmark.triangle" tone="warning" text="Couldn’t open your training data." action={<TextButton label="Try again" onPress={reload} />} />;
@@ -26,6 +32,7 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
   const view = data.value.view;
   const day = selected !== null && selected.startsWith(view.month) ? selected : view.defaultSelected;
   const rows: CalendarSessionRow[] = day === null ? [] : (view.days[day] ?? []);
+  const acts: ActivityRow[] = day === null ? [] : (view.activityDays[day] ?? []);
 
   const open = (r: CalendarSessionRow) => {
     if (r.kind === 'finished') navigation.navigate('Summary', { sessionId: r.sessionId, back: true });
@@ -113,6 +120,7 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
                         {String(d.count)}
                       </AppText>
                     ) : null}
+                    {d.activities > 0 ? <View style={{ width: 6, height: 6, borderRadius: 3, borderWidth: 1, borderColor: theme.colors['text.primary'] }} /> : null}
                   </View>
                 </Pressable>
               ),
@@ -120,11 +128,11 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
           </View>
         ))}
         <AppText variant="label" color="text.secondary" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          ● workout
+          ● workout  ○ activity
         </AppText>
       </View>
 
-      {view.empty !== null && rows.length === 0 ? (
+      {view.empty !== null && rows.length === 0 && acts.length === 0 ? (
         <AppText variant="callout" color="text.secondary">
           {view.empty}
         </AppText>
@@ -133,7 +141,7 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
           <AppText variant="headline" accessibilityRole="header">
             {weekdayDayMonth(day)}
           </AppText>
-          {rows.length === 0 ? (
+          {rows.length === 0 && acts.length === 0 ? (
             <AppText variant="callout" color="text.secondary">
               {nothingLoggedText(day)}
             </AppText>
@@ -149,10 +157,35 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
                   }}
                 />
               ))}
+              {acts.map((a) => (
+                <Row
+                  key={a.activityId}
+                  icon="figure.run"
+                  title={a.title}
+                  subtitle={a.detail}
+                  onPress={() => {
+                    void services.activities.get(a.activityId).then((x) => {
+                      if (x !== null) setEditing(x);
+                    });
+                  }}
+                />
+              ))}
             </Group>
           )}
         </View>
       )}
+      <ActivitySheet
+        visible={editing !== null}
+        activity={editing}
+        onClose={() => {
+          setEditing(null);
+        }}
+        onSaved={() => {
+          setEditing(null);
+          changed();
+          reload();
+        }}
+      />
       {data.value.unreadable > 0 ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={`${String(data.value.unreadable)} ${data.value.unreadable === 1 ? 'workout couldn’t be read and isn’t' : 'workouts couldn’t be read and aren’t'} counted.`} /> : null}
     </View>
   );
