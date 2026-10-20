@@ -528,5 +528,5 @@ Ben asked: "review the full app now to ensure everything is visually well built 
 Ben approved these on 20 Oct ("Yes to all"):
 - **5. Targets hit:** shows only on the split day's main lift (Profile: Ben's, else the recommended one). A workout's or plan day's `Main` flags no longer make a main lift.
 - **7. Total weight:** counts both dumbbells and both sides. Confirmed as built; no change.
-- **8. Bodyweight and weighted (BW +) are one Progress series.** Bodyweight sets count as `+0` added and read `BW`. They have no Est. 1RM and add 0 to total weight. An exercise with only bodyweight rows stays a bodyweight (reps) series. A `BW +` weight × reps lift target draws on the merged series' Top set.
+- **8. Bodyweight and weighted (BW +) are one Progress series.** Bodyweight sets count as `+0` added and read `BW`. They have no Est. 1RM and add 0 to total weight. An exercise with only bodyweight rows stays a bodyweight (reps) series. A `BW +` weight × reps lift target draws on the merged series' Top set. Imported BW + sets with a blank weight also count as `+0`. Bodyweight rep records stay, as `Most reps at BW`.
 - **9. Exercise detail:** `Total weight` replaces `Volume` (shown as bars on a plain kg/lb axis, `≈` when the dumbbell count is assumed). BW + series offer it too.

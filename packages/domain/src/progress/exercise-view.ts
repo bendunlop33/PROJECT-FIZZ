@@ -180,6 +180,9 @@ export function seriesKindLabel(kind: SeriesKind): string {
 /** The info line behind a `≈` total: the catalogue doesn't say how many dumbbells (done either way). */
 export const TOTAL_ASSUMED = '≈ Total weight assumes the dumbbell count';
 
+/** The info line behind a BW + series' Total weight: bodyweight adds nothing (a bodyweight-only session reads 0, review N1). */
+export const TOTAL_ADDED_ONLY = 'Total weight counts added weight only';
+
 /**
  * `Converted from lb` when a set on screen (these sessions, the period's) was
  * logged in the other unit (the info tap); null otherwise (review S3).
@@ -729,9 +732,9 @@ function recordView(r: ExerciseRecord, series: ExerciseSeries, today: string): R
       words = `Best estimated one-rep max, an estimate, about ${formatNumber(r.value)} ${unitW}, ${dateW}.`;
       break;
     case 'most_reps':
-      label = 'Most reps';
+      label = series.kind === 'added_bodyweight' ? 'Most reps at BW' : 'Most reps';
       value = String(r.value);
-      words = `Most reps, ${String(r.value)}, ${dateW}.`;
+      words = `${series.kind === 'added_bodyweight' ? 'Most reps at bodyweight' : 'Most reps'}, ${String(r.value)}, ${dateW}.`;
       break;
     case 'least_assist':
       label = `Least assistance for ${String(ASSIST_RECORD_MIN_REPS)}+ reps`;
@@ -1030,7 +1033,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     seriesLabel: label,
     seriesSource: series.key.source,
     converted,
-    info: [converted, metric === 'total_weight' && trend.sessionPoints.some((p) => p.kind === 'estimate') ? TOTAL_ASSUMED : null].filter((x): x is string => x !== null).join('\n') || null,
+    info: [converted, metric === 'total_weight' && trend.sessionPoints.some((p) => p.kind === 'estimate') ? TOTAL_ASSUMED : null, metric === 'total_weight' && series.kind === 'added_bodyweight' ? TOTAL_ADDED_ONLY : null].filter((x): x is string => x !== null).join('\n') || null,
     stats: statStrip.stats,
     statsWords: statStrip.words,
     metrics: metrics.map((m) => ({ key: m, label: metricLabel(m) })),

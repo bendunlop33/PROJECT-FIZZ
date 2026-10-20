@@ -16,7 +16,7 @@ import {
   type SeriesSession,
   type SeriesSet,
 } from './exercise';
-import { cardioSetText, convertedText, longDate, seriesKindLabel, seriesUnitText, setUnitText, shortDate, thousands, TOTAL_ASSUMED, weekdayLongDate } from './exercise-view';
+import { cardioSetText, convertedText, longDate, seriesKindLabel, seriesUnitText, setUnitText, shortDate, thousands, TOTAL_ADDED_ONLY, TOTAL_ASSUMED, weekdayLongDate } from './exercise-view';
 import { countRowSets } from './muscles';
 import type { ProgressSession, ProgressSet } from './projection';
 import { countNoun, rangeWords } from './text';
@@ -491,7 +491,7 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
       words: `${label}${measure === 'e1rm' ? ', an estimate' : ''}, ${countNoun(points.length, 'session', 'sessions')}, ${range}. Trailing average of the last ${String(trailing)}.`,
     },
     table: { unit, totalUnit: offered.includes('total') ? series.key.unit : null, rows },
-    info: [convertedText(inWindow), totalAssumed ? TOTAL_ASSUMED : null].filter((x): x is string => x !== null).join('\n') || null,
+    info: [convertedText(inWindow), totalAssumed ? TOTAL_ASSUMED : null, measure === 'total' && series.kind === 'added_bodyweight' ? TOTAL_ADDED_ONLY : null].filter((x): x is string => x !== null).join('\n') || null,
     empty: inWindow.length === 0 ? 'No sessions in this period.' : points.length === 0 ? `No ${label} in this period.` : null,
   };
 }

@@ -10,6 +10,7 @@ import {
   liftTargetChartValue,
   sessionE1rm,
   sessionTotalWeight,
+  TOTAL_ADDED_ONLY,
   type ExerciseSeries,
   type ProgressExercise,
   type ProgressSession,
@@ -129,6 +130,9 @@ describe('bodyweight and weighted are one series (Ben, 20 Oct)', () => {
     const t = buildExerciseDetailView({ sessions: history(), exerciseId: 'pullup', today: TODAY, metric: 'total_weight' });
     expect(t?.points.map((p) => sp(p.display))).toEqual(['0 kg', '160 kg', '0 kg', '90 kg']);
     expect(t?.axisUnit).toBe('kg');
+    // Review N1: a 0 kg bodyweight session isn't broken; the info tap says so (Total weight only).
+    expect(t?.info).toBe(TOTAL_ADDED_ONLY);
+    expect(v?.info).toBeNull();
     // The rep table: `BW` is a row (+0).
     expect(v?.repTable?.rows.some((r) => r.cells[0] === 'BW')).toBe(true);
   });
@@ -138,7 +142,9 @@ describe('bodyweight and weighted are one series (Ben, 20 Oct)', () => {
     const s = collectExerciseSeries(sessions, 'pullup', { unit: null })[0] as ExerciseSeries;
     const r = exerciseRecords(sessions, s);
     expect(r.items.some((x) => x.kind === 'best_e1rm')).toBe(false);
-    expect(r.items.every((x) => (x.load?.value ?? 0) > 0)).toBe(true);
+    expect(r.items.filter((x) => x.kind !== 'most_reps').every((x) => (x.load?.value ?? 0) > 0)).toBe(true);
+    // The bodyweight 20 is a `Most reps at BW` record (review S1), never a load record.
+    expect(r.items.filter((x) => x.kind === 'most_reps').map((x) => x.value)).toEqual([20]);
   });
 
   it('kg and lb: a bodyweight set is +0 in Ben’s unit (never converted)', () => {
@@ -155,6 +161,7 @@ describe('bodyweight and weighted are one series (Ben, 20 Oct)', () => {
     expect(v?.measures.map((m) => m.key)).toEqual(['weight', 'reps', 'top_set', 'total']);
     expect(v?.chart.points.map((p) => p.value)).toEqual([0, 160, 0, 90]);
     expect(v?.table.rows.map((r) => r.cells.e1rm)).toEqual(['—', '—', '—', '—']);
+    expect(v?.info).toBe(TOTAL_ADDED_ONLY);
   });
 
   it('a BW + lift target’s dotted line still sits on the merged series’ Top set', () => {
@@ -163,5 +170,49 @@ describe('bodyweight and weighted are one series (Ben, 20 Oct)', () => {
     expect(v.seriesTerms).toEqual({ exerciseId: 'pullup', kind: 'added_bodyweight', convention: 'added', unit: 'kg' });
     const target = { exerciseId: 'pullup', kind: 'weight_reps', reps: 5, load: { value: 20, unit: 'kg', convention: 'added' } } as unknown as Parameters<typeof liftTargetChartValue>[0];
     expect(liftTargetChartValue(target, { ...v.seriesTerms, metric: v.metric })).toBe(20);
+  });
+  it('a bodyweight Most reps record survives one weighted session (`Most reps at BW`, review S1)', () => {
+    const bwOnly = [
+      session('2026-09-01', [bwRow([12])]),
+      session('2026-09-03', [bwRow([14])]),
+      session('2026-09-05', [bwRow([15])]),
+      session('2026-09-07', [bwRow([20])]),
+    ];
+    const before = exerciseRecords(bwOnly, collectExerciseSeries(bwOnly, 'pullup', { unit: null })[0] as ExerciseSeries);
+    expect(before.items.map((x) => [x.kind, x.value])).toEqual([['most_reps', 20]]);
+    const sessions = [...bwOnly, session('2026-09-09', [addedRow([[10, 5]])])];
+    const s = collectExerciseSeries(sessions, 'pullup', { unit: null })[0] as ExerciseSeries;
+    expect(s.kind).toBe('added_bodyweight');
+    const after = exerciseRecords(sessions, s);
+    expect(after.items.map((x) => [x.kind, x.value])).toEqual([['most_reps', 20]]);
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'pullup', today: TODAY, metric: 'top_set' });
+    expect(v?.records?.items.map((r) => [r.label, r.value])).toEqual([['Most reps at BW', '20']]);
+    // More reps at +0 earlier in the merged series: no BW record.
+    const beaten = [session('2026-08-20', [addedRow([[0, 25]])]), ...sessions];
+    const s2 = collectExerciseSeries(beaten, 'pullup', { unit: null })[0] as ExerciseSeries;
+    expect(exerciseRecords(beaten, s2).items.some((x) => x.kind === 'most_reps')).toBe(false);
+    // Weighted reps never count against a BW record.
+    const heavyReps = [session('2026-08-20', [addedRow([[5, 30]])]), ...sessions];
+    const s3 = collectExerciseSeries(heavyReps, 'pullup', { unit: null })[0] as ExerciseSeries;
+    expect(exerciseRecords(heavyReps, s3).items.map((x) => [x.kind, x.value])).toEqual([['most_reps', 20]]);
+  });
+
+  it('an imported BW + set with a blank weight plots as +0, like a logged bodyweight set (review S2)', () => {
+    const imported = { ...session('2026-09-02', [row([set(null, 12)])]), source: 'import' as const };
+    const sessions = [session('2026-09-01', [addedRow([[10, 8]])]), imported, session('2026-09-04', [bwRow([10])])];
+    const s = collectExerciseSeries(sessions, 'pullup', { unit: null })[0] as ExerciseSeries;
+    expect(s.sessions[1]?.sets[0]?.load).toEqual(kg(0, 'added'));
+    expect(s.sessions.map((ss) => sessionTotalWeight(ss, s)?.value ?? null)).toEqual([80, 0, 0]);
+    const t = buildExerciseDetailView({ sessions, exerciseId: 'pullup', today: TODAY, metric: 'top_set' });
+    expect(t?.points.map((p) => sp(p.display))).toEqual(['BW + 10 kg × 8', 'BW × 12', 'BW × 10']);
+    // The stored set is untouched.
+    expect(imported.exercises[0]?.sets[0]?.load).toBeNull();
+  });
+
+  it('a plate-loaded `added` row with a blank weight is not +0', () => {
+    const plate = [session('2026-09-01', [row([set(kg(40, 'added'), 8), set(null, 8)], { exerciseId: 'pullup', equipmentKind: 'plate_loaded_machine' })])];
+    const s = collectExerciseSeries(plate, 'pullup', { unit: null })[0] as ExerciseSeries;
+    expect(s.kind).toBe('load');
+    expect(s.sessions[0]?.sets[1]?.load).toBeNull();
   });
 });

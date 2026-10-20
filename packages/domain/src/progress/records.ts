@@ -412,6 +412,15 @@ function inMergedSeries(r: ExerciseRecord, series: ExerciseSeries): ExerciseReco
       return before.every((v) => load.value < v) ? { ...r, load, value: load.value } : null;
     }
     case 'most_reps': {
+      if (series.kind === 'added_bodyweight') {
+        // At bodyweight only: earlier bodyweight sets and `+0` sets of the merged series (review S1).
+        const atBw = (x: SeriesSet) => x.load === null || x.load.value === 0;
+        const bw = series.sessions.slice(0, at).flatMap((ss) => {
+          const v = sessionBestSet({ ...ss, sets: ss.sets.filter(atBw) });
+          return v === null ? [] : [v.value];
+        });
+        return bw.every((v) => r.value > v) ? { ...r, load } : null;
+      }
       const before = values((ss) => sessionBestSet(ss));
       return before.every((v) => r.value > v) ? { ...r, load } : null;
     }
@@ -422,7 +431,8 @@ function inMergedSeries(r: ExerciseRecord, series: ExerciseSeries): ExerciseReco
  * `exerciseRecords` (§6.2): every record of the series, newest first:
  * `Heaviest set` and `Most reps at <load>` exactly as the home and the
  * Summary judge them (`recordsInWindow`, `findSetRecord`), `Best Est. 1RM`
- * (an estimate), for bodyweight `Most reps` and for assisted `Least
+ * (an estimate), for bodyweight `Most reps` (`Most reps at BW` in a BW +
+ * series) and for assisted `Least
  * assistance for 8+ reps`. Timed series have none (not specified, SP2). Imported workouts never have
  * records (they can only suppress one). `sessions` may be every workout or
  * only those with this exercise. Each record is first judged within its own
@@ -451,7 +461,8 @@ export function exerciseRecords(sessions: readonly ProgressSession[], series: Ex
     }
   }
   if (series.kind === 'load') items.push(...e1rmRecords(mine, ids).filter(inSeries));
-  if (series.kind === 'bodyweight') items.push(...bodyweightRepRecords(mine, ids).filter(inSeries));
+  // A BW + series keeps its bodyweight rows' rep records (`Most reps at BW`, review S1).
+  if (series.kind === 'bodyweight' || series.kind === 'added_bodyweight') items.push(...bodyweightRepRecords(mine, ids).filter(inSeries));
   if (series.kind === 'assisted') items.push(...leastAssistRecords(mine, ids).filter(inSeries));
   const kept = items.flatMap((r) => {
     const m = inMergedSeries(r, series);

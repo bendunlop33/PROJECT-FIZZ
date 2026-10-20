@@ -175,8 +175,9 @@ export function loadInUnit(load: Load, unit: WeightUnit): Load {
 }
 
 /**
- * A bodyweight row in a BW + series (Ben, 20 Oct): its sets as `+0` added in
- * the series' unit (they read `BW`). The stored sets are untouched.
+ * A row of a BW + series (Ben, 20 Oct): bodyweight sets and sets with no load
+ * (an imported BW + set with a blank weight) as `+0` added in the series'
+ * unit (they read `BW`). The stored sets are untouched.
  */
 function asAddedZero(row: ProgressExercise, unit: WeightUnit): ProgressExercise {
   return { ...row, convention: 'added', sets: row.sets.map((x) => (x.load === null || x.load.convention === 'bodyweight' ? { ...x, load: { value: 0, unit, convention: 'added' } } : x)) };
@@ -234,7 +235,7 @@ export function collectExerciseSeries(sessions: readonly ProgressSession[], exer
       byKind.set(kind, [...(byKind.get(kind) ?? []), ex]);
     }
     for (const [kind, raw] of byKind) {
-      const normalised = raw.map((r) => normaliseRow(r, unit, kind === 'added_bodyweight' && rowKind(r) === 'bodyweight'));
+      const normalised = raw.map((r) => normaliseRow(r, unit, kind === 'added_bodyweight'));
       const rows = normalised.map((n) => n.row);
       const converted = normalised.find((n) => n.converted !== null)?.converted ?? null;
       const id = consolidatedSeriesId(exerciseId, kind);
