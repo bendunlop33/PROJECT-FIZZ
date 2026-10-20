@@ -26,9 +26,9 @@ export interface AchievableLoads {
 }
 
 /** Kinds loaded as a bar plus plates, the load being the total incl. the bar (ADR 0030). */
-export const BAR_LOADED_KINDS: ReadonlySet<EquipmentInstance['kind']> = new Set(['barbell', 'ez_bar', 'trap_bar', 'smith_machine']);
+export const BAR_LOADED_KINDS: ReadonlySet<EquipmentInstance['kind']> = new Set(['barbell', 'ez_bar', 'trap_bar']);
 
-/** A barbell, EZ bar, trap bar or Smith machine: a bar plus plates. */
+/** A barbell, EZ bar or trap bar: a bar plus plates, loaded as the total. */
 export function isBarLoaded(eq: EquipmentInstance): eq is BarLoaded {
   return BAR_LOADED_KINDS.has(eq.kind);
 }
@@ -97,8 +97,7 @@ function computeLoads(eq: EquipmentInstance): number[] {
   switch (eq.kind) {
     case 'barbell':
     case 'ez_bar':
-    case 'trap_bar':
-    case 'smith_machine': {
+    case 'trap_bar': {
       const bar = toScaled(eq.barMass);
       const sums = boundedSubsetSums(plateUnits(eq.plates, 2));
       return bounded(eq, [...sums].map((s) => s + bar), bar);
@@ -107,6 +106,9 @@ function computeLoads(eq: EquipmentInstance): number[] {
       const sums = boundedSubsetSums(plateUnits(eq.plates, eq.loadingSides));
       return bounded(eq, sums, 0);
     }
+    case 'smith_machine':
+      // Plates added, both sides balanced; the bar's starting weight is never in the number (ADR 0030).
+      return bounded(eq, boundedSubsetSums(plateUnits(eq.plates, 2)), 0);
     case 'dumbbells':
     case 'kettlebell':
       return bounded(eq, eq.loads.map(toScaled), 0);
@@ -276,7 +278,7 @@ export function stepLoad(current: number, eq: EquipmentInstance, step: 'increase
 export interface PlateSetup {
   ok: true;
   total: Mass;
-  /** Bar mass for bars and the Smith machine; 0 for plate-loaded machines (added-plates convention). */
+  /** Bar mass for bars; 0 for plate-loaded and Smith machines (added-plates convention). */
   base: Mass;
   sides: 1 | 2;
   /** Plates for ONE side, heaviest first. */
@@ -296,7 +298,7 @@ export type PlateSetupFailure = {
  * approximation, with the nearest achievable totals for the UI.
  */
 export function buildPlateSetup(totalLoad: Mass, eq: EquipmentInstance): PlateSetup | PlateSetupFailure {
-  if (!isBarLoaded(eq) && eq.kind !== 'plate_loaded_machine') {
+  if (!isBarLoaded(eq) && eq.kind !== 'plate_loaded_machine' && eq.kind !== 'smith_machine') {
     return { ok: false, reason: 'not_plate_loaded', nearestBelow: null, nearestAbove: null };
   }
   const requested = toScaled(convertMass(totalLoad, eq.unit).value);
@@ -309,7 +311,7 @@ export function buildPlateSetup(totalLoad: Mass, eq: EquipmentInstance): PlateSe
   };
 
   const sides = eq.kind === 'plate_loaded_machine' ? eq.loadingSides : 2;
-  const base = eq.kind === 'plate_loaded_machine' ? 0 : toScaled(eq.barMass);
+  const base = isBarLoaded(eq) ? toScaled(eq.barMass) : 0;
   if (requested < base) return { ok: false, reason: 'below_base', ...near };
   const highest = loads[loads.length - 1];
   if (highest === undefined || requested > highest) return { ok: false, reason: 'above_max', ...near };

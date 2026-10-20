@@ -3,6 +3,7 @@ import { weekdayIndexOfDate } from '../calendar';
 import { formatMinutes, formatNumber, localDateText, NBSP } from '../display';
 import type { WeekCount } from './activity';
 import type { DateRange } from './window';
+import { isPlatesAddedKind } from '../plates-added';
 
 /**
  * Progress words and numbers (progress.md §5; design-system §3). Pure.
@@ -181,7 +182,7 @@ export function massWords(load: Load, equipmentKind: EquipmentKind | null): stri
   const mass = `${formatNumber(load.value)} ${unit}`;
   if (load.convention === 'added') {
     // `BW + 10 kg` reads "body weight plus 10 kilograms"; plate-loaded machines read their plates (review N9).
-    if (equipmentKind === 'plate_loaded_machine') return `${mass} of plates`;
+    if (isPlatesAddedKind(equipmentKind)) return `${mass} of plates`;
     return load.value === 0 ? 'body weight' : `body weight plus ${mass}`;
   }
   if (load.convention === 'assistance') return `${mass} of assistance`;
@@ -200,7 +201,7 @@ export function loadUnitText(unit: WeightUnit, convention: LoadConvention, equip
     case 'stack':
       return `${unit} stack`;
     case 'added':
-      return equipmentKind === 'plate_loaded_machine' ? `${unit} plates` : `${unit} added`;
+      return isPlatesAddedKind(equipmentKind) ? `${unit} plates` : `${unit} added`;
     case 'assistance':
       return `${unit} assist`;
     case 'bodyweight':

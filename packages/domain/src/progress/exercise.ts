@@ -5,6 +5,7 @@ import { convertMass, LOAD_DISPLAY_STEP, roundToStep } from '../units';
 import { e1rmConventionAllowed, estimateOneRepMax } from './e1rm';
 import type { ProgressExercise, ProgressSession, ProgressSet } from './projection';
 import { inRange, type DateRange } from './window';
+import { isPlatesAddedKind } from '../plates-added';
 
 /**
  * Exercise detail metrics (progress.md slice B, §2.7, §6.2, §6.3; PG10–PG12,
@@ -82,7 +83,7 @@ export function seriesKind(convention: LoadConvention, equipmentKind: EquipmentK
   if (measurement === 'distance') return 'distance';
   if (convention === 'assistance') return 'assisted';
   if (convention === 'bodyweight') return 'bodyweight';
-  if (convention === 'added' && equipmentKind !== 'plate_loaded_machine') return 'added_bodyweight';
+  if (convention === 'added' && !isPlatesAddedKind(equipmentKind)) return 'added_bodyweight';
   return 'load';
 }
 
@@ -817,7 +818,7 @@ export function distanceTableByLoad(series: ExerciseSeries, bounds: DateRange): 
       if (s.load !== null && s.load.convention !== 'bodyweight' && seriesLoadValue(s, series.key) === null) continue;
       const v = seriesLoadValue(s, series.key);
       // 0 kg reads `No load` only where the set text says so too (added load, not a plate-loaded sled; review misc-fixes N1).
-      const zeroIsNone = series.key.convention === 'added' && series.equipmentKind !== 'plate_loaded_machine';
+      const zeroIsNone = series.key.convention === 'added' && !isPlatesAddedKind(series.equipmentKind);
       const load = v === null || (v === 0 && zeroIsNone) ? null : v;
       const cur = byLoad.get(load);
       if (cur === undefined || s.distanceM > cur.distanceM) byLoad.set(load, { load, distanceM: s.distanceM, date: ss.date, sessionId: ss.sessionId, source: ss.source });

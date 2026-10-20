@@ -159,12 +159,19 @@ const pullUpBar: ItemBuilder = (unit) => ({
 
 /** (ADR 0030) A bar plus its own plates, at the typical bar weight. */
 const otherBar =
-  (kind: 'ez_bar' | 'trap_bar' | 'smith_machine', label: string, kgBar: number, lbBar: number): ItemBuilder =>
+  (kind: 'ez_bar' | 'trap_bar', label: string, kgBar: number, lbBar: number): ItemBuilder =>
   (unit) => ({
     key: kind,
     label,
     equipment: { ...common(label, unit), kind, loadConvention: 'total', barMass: unit === 'kg' ? kgBar : lbBar, plates: plates(PLATES[unit], 4) },
   });
+
+/** Plates added; the bar's starting weight beside the load (ADR 0030). */
+const smith: ItemBuilder = (unit) => ({
+  key: 'smith_machine',
+  label: 'Smith machine',
+  equipment: { ...common('Smith machine', unit), kind: 'smith_machine', loadConvention: 'added', barMass: unit === 'kg' ? 15 : 35, plates: plates(PLATES[unit], 4) },
+});
 
 const kettlebells: ItemBuilder = (unit) => ({
   key: 'kettlebells',
@@ -206,7 +213,7 @@ const PRESETS: readonly PresetDef[] = [
       { build: kettlebells, ticked: false },
       { build: otherBar('ez_bar', 'EZ bar', 10, 20), ticked: false },
       { build: otherBar('trap_bar', 'Trap bar', 25, 55), ticked: false },
-      { build: otherBar('smith_machine', 'Smith machine', 15, 35), ticked: false },
+      { build: smith, ticked: false },
     ],
   },
   {

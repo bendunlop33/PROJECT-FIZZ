@@ -25,7 +25,7 @@ export const CUSTOM_EQUIPMENT: readonly { kind: ExerciseEquipmentKind; conventio
   { kind: 'kettlebell', conventions: ['per_hand', 'total'] },
   { kind: 'ez_bar', conventions: ['total'] },
   { kind: 'trap_bar', conventions: ['total', 'added'] },
-  { kind: 'smith_machine', conventions: ['total'] },
+  { kind: 'smith_machine', conventions: ['added'] },
   { kind: 'erg', conventions: ['bodyweight'] },
   { kind: 'band', conventions: ['bodyweight'] },
   { kind: 'sled', conventions: ['added'] },

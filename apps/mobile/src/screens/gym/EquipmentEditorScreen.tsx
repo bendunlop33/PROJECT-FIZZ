@@ -167,7 +167,11 @@ export function EquipmentEditorScreen() {
           <>
             <NumberField label={f.kind === 'smith_machine' ? 'Bar starting weight' : 'Bar weight'} unit={u} value={f.barMass} onChange={(barMass) => { set({ barMass }); }} />
             <PlatesEditor plates={f.plates} unit={u} sides={2} onChange={(plates) => { set({ plates }); }} />
-            <NumberField label="Heaviest you’ll load (optional)" unit={u} value={f.maxLoad} onChange={(maxLoad) => { set({ maxLoad }); }} />
+            {f.kind === 'smith_machine' ? (
+              <NumberField label="Most plates it takes (optional)" unit={`${u} of plates`} value={f.maxLoad} onChange={(maxLoad) => { set({ maxLoad }); }} />
+            ) : (
+              <NumberField label="Heaviest you’ll load (optional)" unit={u} value={f.maxLoad} onChange={(maxLoad) => { set({ maxLoad }); }} />
+            )}
           </>
         ) : null}
 

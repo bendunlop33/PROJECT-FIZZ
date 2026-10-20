@@ -9,6 +9,7 @@ import { carriesTodayAdjustment } from './coach-undo';
 import { equipmentOfRow } from './equipment-snapshot';
 import { blockSets, isEmptyPart, partRootOf, partsOf } from './gym-switch';
 import { isRoundEnd, nextPendingSet, setUnits } from './order';
+import { isPlatesAddedKind } from '../plates-added';
 
 /**
  * `buildWorkoutTableView` (active-workout §2A.12): the Table view of the
@@ -171,7 +172,7 @@ export function tableColumns(ex: Pick<SessionExercise, 'measurement' | 'loadConv
       ? null
       : ex.loadConvention === 'assistance'
         ? `ASSIST ${unit}`
-        : ex.loadConvention === 'added' && eq?.kind !== 'plate_loaded_machine'
+        : ex.loadConvention === 'added' && !isPlatesAddedKind(eq?.kind)
           ? `+${unit}`
           : unit;
   const valueLabel = ex.measurement === 'duration' ? 'TIME' : ex.measurement === 'distance' ? 'DIST' : 'REPS';
@@ -240,7 +241,7 @@ function withUnit(cell: string, load: Load | null, ex: Pick<SessionExercise, 'lo
   const convention = load?.convention ?? ex.loadConvention;
   switch (convention) {
     case 'added':
-      return eq?.kind === 'plate_loaded_machine' ? `${cell}${NBSP}${unit}` : `+${cell}${NBSP}${unit}`;
+      return isPlatesAddedKind(eq?.kind) ? `${cell}${NBSP}${unit}` : `+${cell}${NBSP}${unit}`;
     case 'assistance':
       return `${cell}${NBSP}${unit} assist`;
     case 'per_hand':

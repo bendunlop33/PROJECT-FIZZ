@@ -4,6 +4,7 @@ import { formatNumber, type LoadContext } from './display';
 import { equipmentOfRow } from './session/equipment-snapshot';
 import { blockSets } from './session/gym-switch';
 import { prefillDraft, type ComparableSet } from './session/view';
+import { isPlatesAddedKind } from './plates-added';
 
 /**
  * Spoken workout cues (Ben, 19 Oct 2026; rest-state.md §5, design-system §8
@@ -41,7 +42,7 @@ function mass(value: number, unit: WeightUnit): string {
  */
 export function spokenLoad(load: Load | null, convention: LoadConvention, equipment: LoadContext = null): string | null {
   if (convention === 'bodyweight' || load?.convention === 'bodyweight') return 'bodyweight';
-  if (load === null) return convention === 'added' && equipment?.kind !== 'plate_loaded_machine' ? 'bodyweight' : null;
+  if (load === null) return convention === 'added' && !isPlatesAddedKind(equipment?.kind) ? 'bodyweight' : null;
   const n = mass(load.value, load.unit);
   switch (load.convention) {
     case 'total':
@@ -51,7 +52,7 @@ export function spokenLoad(load: Load | null, convention: LoadConvention, equipm
     case 'stack':
       return `${n} on the stack`;
     case 'added':
-      if (equipment?.kind === 'plate_loaded_machine') return `${n} of plates`;
+      if (isPlatesAddedKind(equipment?.kind)) return `${n} of plates`;
       return load.value === 0 ? 'bodyweight' : `bodyweight plus ${n}`;
     case 'assistance':
       return `${n} of assistance`;

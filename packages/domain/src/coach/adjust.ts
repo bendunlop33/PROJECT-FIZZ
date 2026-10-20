@@ -153,9 +153,9 @@ function equipmentNoun(eq: EquipmentInstance): string {
     case 'barbell':
     case 'ez_bar':
     case 'trap_bar':
-    case 'smith_machine':
       return 'bar';
     case 'plate_loaded_machine':
+    case 'smith_machine':
       return 'machine';
     case 'dumbbells':
     case 'kettlebell':

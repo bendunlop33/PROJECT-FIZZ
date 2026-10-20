@@ -37,6 +37,7 @@ import { roundToAvailableLoad } from '../equipment';
 import { loadText } from '../display';
 import { isInHistory } from './deletion';
 import { comparableSetsOf } from '../progression';
+import { isPlatesAddedKind } from '../plates-added';
 
 /**
  * The Workout overview (workout-overview.md): the one page before the first
@@ -390,7 +391,7 @@ export interface LoadCell {
 
 /** The TARGET column (§3.7): `100 kg` · `32 kg each` · `25 kg` (stack) · `−20 kg` (assisted) · `BW` / `+10 kg`. */
 export function loadCell(load: Load | null, convention: LoadConvention, equipmentKind: EquipmentInstance['kind'] | null, dropped: boolean): LoadCell {
-  if (!dropped && (convention === 'bodyweight' || load?.convention === 'bodyweight' || (load === null && convention === 'added' && equipmentKind !== 'plate_loaded_machine'))) {
+  if (!dropped && (convention === 'bodyweight' || load?.convention === 'bodyweight' || (load === null && convention === 'added' && !isPlatesAddedKind(equipmentKind)))) {
     return { value: 'BW', unit: null, spoken: 'target bodyweight', none: false };
   }
   if (load === null) return { value: '—', unit: null, spoken: 'no load target', none: true };
@@ -405,7 +406,7 @@ export function loadCell(load: Load | null, convention: LoadConvention, equipmen
     case 'assistance':
       return { value: `−${n}`, unit: load.unit, spoken: `target ${n} ${u} of assistance`, none: false };
     case 'added':
-      if (equipmentKind === 'plate_loaded_machine') return { value: n, unit: `${load.unit} plates`, spoken: `target ${n} ${u} of plates`, none: false };
+      if (isPlatesAddedKind(equipmentKind)) return { value: n, unit: `${load.unit} plates`, spoken: `target ${n} ${u} of plates`, none: false };
       return load.value === 0 ? { value: 'BW', unit: null, spoken: 'target bodyweight', none: false } : { value: `+${n}`, unit: load.unit, spoken: `target bodyweight plus ${n} ${u}`, none: false };
     case 'bodyweight':
       return { value: 'BW', unit: null, spoken: 'target bodyweight', none: false };

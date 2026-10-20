@@ -11,7 +11,7 @@
   "secondaryMuscles": ["front_delts", "triceps"],
   "compatibleEquipment": ["smith_machine"],
   "requiresStation": ["specific_machine", "bench"],
-  "defaultLoadConvention": "total",
+  "defaultLoadConvention": "added",
   "measurement": "reps",
   "laterality": "bilateral",
   "defaultRestS": 120,

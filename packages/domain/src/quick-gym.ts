@@ -130,7 +130,8 @@ const ITEMS = {
   smith_machine: (unit: WeightUnit, count: number): Item => ({
     key: 'smith_machine',
     label: 'Smith machine',
-    equipment: { ...common('Smith machine', unit), kind: 'smith_machine', loadConvention: 'total', barMass: BAR_MASS.smith_machine[unit], plates: plates(unit, count) },
+    // Plates added, as Smith exercises are logged; the bar's starting weight is shown beside the load (ADR 0030).
+    equipment: { ...common('Smith machine', unit), kind: 'smith_machine', loadConvention: 'added', barMass: BAR_MASS.smith_machine[unit], plates: plates(unit, count) },
   }),
   kettlebells: (unit: WeightUnit): Item => ({
     key: 'kettlebells',
@@ -347,8 +348,9 @@ export function assumedWhy(eq: Pick<EquipmentInstance, 'detailsSource' | 'kind'>
       return 'Assumed plates';
     case 'ez_bar':
     case 'trap_bar':
-    case 'smith_machine':
       return 'Assumed bar and plates';
+    case 'smith_machine':
+      return 'Assumed plates';
     case 'bodyweight_station':
     case 'bench':
     case 'rack':

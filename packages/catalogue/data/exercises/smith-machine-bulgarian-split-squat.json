@@ -11,7 +11,7 @@
   "secondaryMuscles": ["adductors", "hamstrings"],
   "compatibleEquipment": ["smith_machine"],
   "requiresStation": ["specific_machine", "bench"],
-  "defaultLoadConvention": "total",
+  "defaultLoadConvention": "added",
   "measurement": "reps",
   "laterality": "unilateral",
   "defaultRestS": 90,

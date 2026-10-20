@@ -21,7 +21,8 @@ describe('CATALOGUE_STATIONS matches the catalogue', () => {
   it('kettlebell, EZ bar, trap bar and Smith exercises list a kind a gym can hold', () => {
     const { catalogue } = bundledCatalogue();
     const byKey = (k: string) => catalogue.byKey(k);
-    expect(byKey('smith-machine-squat')).toMatchObject({ compatibleEquipment: ['smith_machine'], defaultLoadConvention: 'total' });
+    // Plates added, as Smith exercises were always logged (FitNotes imports and history unchanged).
+    expect(byKey('smith-machine-squat')).toMatchObject({ compatibleEquipment: ['smith_machine'], defaultLoadConvention: 'added' });
     expect(byKey('kettlebell-swing')).toMatchObject({ compatibleEquipment: ['kettlebell'], defaultLoadConvention: 'per_hand', implements: 1 });
     expect(byKey('ez-bar-curl')).toMatchObject({ compatibleEquipment: ['ez_bar'], defaultLoadConvention: 'total' });
     expect(byKey('trap-bar-deadlift')).toMatchObject({ compatibleEquipment: ['trap_bar'], defaultLoadConvention: 'total' });

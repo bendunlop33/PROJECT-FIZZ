@@ -39,6 +39,7 @@ export * from './exercise-browse';
 export * from './session/add-shape';
 export * from './exercise-equipment';
 export * from './stations';
+export * from './plates-added';
 export * from './catalogue-id';
 export * from './default-rule';
 export * from './next-target';

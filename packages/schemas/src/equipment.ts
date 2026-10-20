@@ -91,15 +91,25 @@ export const BarbellSchema = equipmentCommon.extend({
 });
 
 /**
- * (Ben, 20 Oct; ADR 0030) Specialty bars and the Smith machine: each has its
- * own bar weight, so their exercises are never planned on the Olympic bar
- * (rule 4). Loads are the total including the bar, as on a barbell. A Smith
- * machine's `barMass` is its bar's starting weight (counterweighted bars
- * read lighter); typical until Ben checks it.
+ * (Ben, 20 Oct; ADR 0030) Specialty bars: each has its own bar weight, so
+ * their exercises are never planned on the Olympic bar (rule 4). Loads are
+ * the total including the bar, as on a barbell.
  */
 export const EzBarSchema = equipmentCommon.extend({ kind: z.literal('ez_bar'), ...barAndPlates });
 export const TrapBarSchema = equipmentCommon.extend({ kind: z.literal('trap_bar'), ...barAndPlates });
-export const SmithMachineSchema = equipmentCommon.extend({ kind: z.literal('smith_machine'), ...barAndPlates });
+
+/**
+ * (ADR 0030) A Smith machine: logged as plates added, as Smith exercises
+ * always were, balanced on both sides. `barMass` is the bar's starting weight
+ * (counterweighted bars read lighter), shown beside the load and never added
+ * into it, so an assumed bar weight never changes a logged number (rule 6).
+ */
+export const SmithMachineSchema = equipmentCommon.extend({
+  kind: z.literal('smith_machine'),
+  loadConvention: z.literal('added'),
+  barMass: z.number().nonnegative(),
+  plates: plateList,
+});
 
 export const PlateLoadedMachineSchema = equipmentCommon.extend({
   kind: z.literal('plate_loaded_machine'),
@@ -185,7 +195,7 @@ export const EquipmentInstanceSchema = z
     if (eq.minLoad !== undefined && eq.maxLoad !== undefined && eq.minLoad > eq.maxLoad) {
       ctx.addIssue({ code: 'custom', message: 'minLoad must be <= maxLoad', path: ['minLoad'] });
     }
-    if ('barMass' in eq && eq.maxLoad !== undefined && eq.maxLoad < eq.barMass) {
+    if (eq.loadConvention === 'total' && 'barMass' in eq && eq.maxLoad !== undefined && eq.maxLoad < eq.barMass) {
       ctx.addIssue({ code: 'custom', message: 'maxLoad is below the bar mass', path: ['maxLoad'] });
     }
   });
@@ -201,7 +211,8 @@ export type Kettlebells = z.infer<typeof KettlebellsSchema>;
 export type Bench = z.infer<typeof BenchSchema>;
 export type Rack = z.infer<typeof RackSchema>;
 /** Every item loaded as a bar plus plates (total incl. bar). */
-export type BarLoaded = Extract<EquipmentInstance, { kind: 'barbell' | 'ez_bar' | 'trap_bar' | 'smith_machine' }>;
+export type BarLoaded = Extract<EquipmentInstance, { kind: 'barbell' | 'ez_bar' | 'trap_bar' }>;
+export type SmithMachine = z.infer<typeof SmithMachineSchema>;
 
 /** The kinds a gym profile can hold an instance of. */
 export const GYM_EQUIPMENT_KINDS = [

@@ -239,8 +239,10 @@ export function applyEquipmentForm(form: EquipmentForm, base: EquipmentInstance 
     case 'smith_machine': {
       if (form.barMass === null || form.barMass < 0) problems.push('Enter the bar weight.');
       const bar = form.barMass ?? 0;
-      if (form.maxLoad !== null && form.maxLoad < bar) problems.push(`Max is below the bar weight (${formatNumber(bar)} ${unitWord(form.unit)}).`);
-      draft = { ...common, kind: form.kind, loadConvention: 'total', barMass: bar, plates: plates(form.plates), ...(form.maxLoad === null ? {} : { maxLoad: form.maxLoad }) };
+      // A Smith machine logs plates added; its max is plates, so it is never below the bar (ADR 0030).
+      if (form.kind !== 'smith_machine' && form.maxLoad !== null && form.maxLoad < bar) problems.push(`Max is below the bar weight (${formatNumber(bar)} ${unitWord(form.unit)}).`);
+      const maxLoad = form.maxLoad === null ? {} : { maxLoad: form.maxLoad };
+      draft = form.kind === 'smith_machine' ? { ...common, kind: form.kind, loadConvention: 'added', barMass: bar, plates: plates(form.plates), ...maxLoad } : { ...common, kind: form.kind, loadConvention: 'total', barMass: bar, plates: plates(form.plates), ...maxLoad };
       break;
     }
     case 'plate_loaded_machine':
@@ -318,8 +320,9 @@ export function loadPreviewLine(eq: EquipmentInstance): string {
     case 'barbell':
     case 'ez_bar':
     case 'trap_bar':
-    case 'smith_machine':
       return `Makes ${String(s.count)} ${word}: ${span}, total${every}.`;
+    case 'smith_machine':
+      return `Makes ${String(s.count)} ${word}: ${span} plates${every} · ${formatNumber(eq.barMass)} ${u} bar.`;
     case 'plate_loaded_machine':
       return `Makes ${String(s.count)} ${word}: ${span} plates${every}.`;
     case 'dumbbells':
@@ -358,7 +361,7 @@ export function checkLoadText(eq: EquipmentInstance, value: number): string {
     case 'not_plate_loaded':
       return '';
     case 'above_max':
-      return `${formatNumber(value)} ${u} is above ${isBarLoaded(eq) && eq.kind !== 'smith_machine' ? 'this bar’s' : 'this machine’s'} limit (${formatNumber(r.nearestBelow ?? 0)} ${u}).`;
+      return `${formatNumber(value)} ${u} is above ${isBarLoaded(eq) ? 'this bar’s' : 'this machine’s'} limit (${formatNumber(r.nearestBelow ?? 0)} ${u}).`;
     case 'below_base':
       return `${formatNumber(value)} ${u} is below the bar (${formatNumber(isBarLoaded(eq) ? eq.barMass : 0)} ${u}).`;
     case 'not_achievable': {
@@ -387,7 +390,7 @@ export function equipmentRowLine(eq: EquipmentInstance): string {
     case 'trap_bar':
       return `${span} · total`;
     case 'smith_machine':
-      return `${span} · plates + bar`;
+      return `${span} plates · ${formatNumber(eq.barMass)} ${eq.unit} bar`;
     case 'plate_loaded_machine':
       return `${span} plates`;
     case 'dumbbells':
