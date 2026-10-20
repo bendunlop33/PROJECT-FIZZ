@@ -121,6 +121,8 @@ export async function startApp(deps: StartupDeps): Promise<StartupOutcome> {
     await services.coach.recover().catch(() => 0);
     // Coach drafts are kept 14 days (workout-builder BD4): expired ones close on launch (and on every read).
     await services.coachDrafts.expire().catch(() => 0);
+    // (Ben, 20 Oct) A paused plan whose `until` date has come is in use again from the first open on or after it.
+    await services.plans.autoResume().catch(() => false);
     // Background work: never awaited by the launch. The integrity check reads
     // in small turns so a Log isn't held behind it (review S4). The catch-up
     // backup exports everything in one turn, so it waits while a workout is

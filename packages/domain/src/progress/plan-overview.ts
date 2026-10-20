@@ -1,10 +1,10 @@
 import type { Exercise, Load, PlanDraftStatus, Routine, SessionAggregate, SessionExercise, TrainingGoal, WorkoutSet } from '@fizz/schemas';
 import { weekdayOf } from '../calendar';
 import { paceText } from '../cardio';
-import { cardioValuesText, dayMonthText, formatDistance, formatDuration, formatNumber, loadText, repRangeText } from '../display';
+import { cardioValuesText, dayMonthText, formatDistance, formatDuration, formatNumber, loadText, localDateText, repRangeText } from '../display';
 import { equipmentOfRow } from '../session/equipment-snapshot';
 import { toMs } from '../time';
-import { dayOf, exerciseTargetHistory, planDaysDoneThisWeek, plannedVsDone, planWeekStartMs, type PlanWeekDay, type PlanWeekWorkout } from './plan-tracker';
+import { dayOf, exerciseTargetHistory, planDaysDoneThisWeek, plannedVsDone, planWeekOf, planWeekStartMs, type PlanWeekDay, type PlanWeekWorkout } from './plan-tracker';
 
 /**
  * Library › Workouts › Your plan (Ben, 19 Oct: "can i see it visually?",
@@ -69,6 +69,18 @@ export const PLAN_OVERVIEW_COPY = {
   resumed: 'Plan back in use',
   otherWorkouts: 'Other workouts',
   coachDraft: 'Change my plan: ',
+  /** (Ben, 20 Oct) Pause, e.g. on holiday. */
+  pause: 'Pause plan',
+  pauseUntil: 'Until',
+  pauseNoDate: 'Until I resume',
+  resume: 'Resume',
+  paused: 'Paused',
+  pausedUntil: (date: string) => `Paused · until ${date}`,
+  pausedToast: 'Plan paused',
+  resumedToast: 'Plan resumed',
+  /** End plan put back the workouts `Replace my workouts` took out, except these (`Why?`). */
+  why: 'Why?',
+  notRestored: (n: number, names: readonly string[]) => `${String(n)} ${n === 1 ? 'workout' : 'workouts'} not restored: ${names.join(', ')}`,
 } as const;
 
 export type PlanDayState = 'done' | 'next' | 'todo';
@@ -105,6 +117,8 @@ export interface PlanOverview {
   daysThisWeek: { done: number; of: number; text: string };
   /** `92%`; null with no planned sets logged this week yet (the tile hides). */
   setsDone: { pct: number; text: string } | null;
+  /** (Ben, 20 Oct) `Paused · until 3 Nov` / `Paused` while paused (no `Next` then); null in use. */
+  paused: { text: string; untilDate: string | null } | null;
 }
 
 export interface PlanOverviewInput {
@@ -120,6 +134,10 @@ export interface PlanOverviewInput {
   training: { goal?: TrainingGoal | undefined; daysPerWeek?: number | undefined; sessionMinutes?: number | undefined } | null;
   /** `plannedSetsThisWeek`. */
   sets: { planned: number; done: number };
+  /** (20 Oct) The pause running now (`activePause`); absent or null: in use. */
+  paused?: { untilDate: string | null } | null;
+  /** (20 Oct) Days of this week the plan is paused (`pausedInWeek`): left out of `Days this week`. */
+  pausedDaysThisWeek?: number;
   nowMs: number;
   tz: string;
 }
@@ -146,7 +164,8 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
     const prev = newest.get(d.routineId);
     if (prev === undefined || toMs(prev.startedAtUtc) < toMs(w.startedAtUtc)) newest.set(d.routineId, w);
   }
-  const nextId = input.days.some((d) => d.routineId === input.nextRoutineId) ? input.nextRoutineId : null;
+  const paused = input.paused ?? null;
+  const nextId = paused === null && input.days.some((d) => d.routineId === input.nextRoutineId) ? input.nextRoutineId : null;
   const days = input.days.map((d, i): PlanOverviewDay => {
     const thisWeek = doneThisWeek.get(d.routineId);
     const last = newest.get(d.routineId);
@@ -164,7 +183,7 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
     return { routineId: d.routineId, n: i + 1, name: d.name, state, next, when, accessibilityLabel: said.join(', ') };
   });
   const done = doneThisWeek.size;
-  const of = input.days.length;
+  const of = planWeekOf(input.days.length, done, input.pausedDaysThisWeek ?? 0);
   const pct = input.sets.planned > 0 ? Math.round((100 * Math.min(input.sets.done, input.sets.planned)) / input.sets.planned) : null;
   return {
     planId: plan.id,
@@ -175,6 +194,7 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
     days,
     daysThisWeek: { done, of, text: `${String(done)} of ${String(of)}` },
     setsDone: pct === null ? null : { pct, text: `${String(pct)}%` },
+    paused: paused === null ? null : { text: paused.untilDate === null ? PLAN_OVERVIEW_COPY.paused : PLAN_OVERVIEW_COPY.pausedUntil(localDateText(paused.untilDate)), untilDate: paused.untilDate },
   };
 }
 

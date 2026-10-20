@@ -33,6 +33,7 @@ export const SESSION_PICKER_COPY = {
   fromCoach: 'From coach',
   coachTag: 'Coach',
   buildWithCoach: 'Build with coach',
+  yourPlan: 'Your plan',
 } as const;
 
 const exercisesText = (n: number): string => `${String(n)} ${n === 1 ? 'exercise' : 'exercises'}`;
@@ -69,9 +70,9 @@ export function isShownRow(row: Pick<SessionPickerRow, 'routineId' | 'sourceSess
   return row.routineId === null && row.sourceSessionId === startOf.nextOf;
 }
 
-/** Every row, in picker order (routines.md WL4): Up next, `YOUR WORKOUTS`, `FROM HISTORY`, `OLDER`. */
+/** Every row, in picker order (routines.md WL4): Up next, `YOUR PLAN` (20 Oct), `FROM COACH`, `YOUR WORKOUTS`, `FROM HISTORY`, `OLDER`. */
 export function allRows(list: SessionList): SessionPickerRow[] {
-  return [...(list.upNext ? [list.upNext] : []), ...(list.fromCoach ?? []), ...list.workouts, ...list.fromHistory, ...list.older];
+  return [...(list.upNext ? [list.upNext] : []), ...(list.plan ?? []), ...(list.fromCoach ?? []), ...list.workouts, ...list.fromHistory, ...list.older];
 }
 
 export interface PickerSection {
@@ -87,6 +88,8 @@ export interface PickerSection {
  */
 export function pickerSections(list: SessionList): PickerSection[] {
   const labelled = [
+    // (Ben, 20 Oct) The plan in use's days first.
+    { title: SESSION_PICKER_COPY.yourPlan, rows: list.plan ?? [] },
     // workout-builder §4.4: open coach drafts between Up next and `YOUR WORKOUTS`, newest first.
     { title: SESSION_PICKER_COPY.fromCoach, rows: list.fromCoach ?? [] },
     { title: SESSION_PICKER_COPY.yourWorkouts, rows: list.workouts },

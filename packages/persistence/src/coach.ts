@@ -20,7 +20,7 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { chatSetUndoCommand, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate } from '@fizz/domain';
+import { chatSetUndoCommand, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate, undoPlanControl } from '@fizz/domain';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, EXERCISE_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -94,6 +94,7 @@ function sessionOf(record: ActionRecord): string | null {
     case 'build_question':
     case 'build_plan':
     case 'propose_exercise':
+    case 'pause_plan':
     case 'undo':
       return null;
   }
@@ -539,6 +540,16 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback(write.expectedVersion === null ? 'already_exists' : 'stale_version');
         return null;
       }
+      case 'plan_control': {
+        // (Ben, 20 Oct) The plan in use paused or resumed, on the version the turn read, with its record.
+        if (write.plan.ownerId !== ownerId) throw new Error('Plan owner differs from the store owner');
+        const current = await getPlanDraftIn(tx, write.plan.id);
+        if (current === null || current.ownerId !== ownerId) throw new Rollback('missing');
+        if (current.status !== 'applied' || current.version !== write.expectedVersion) throw new Rollback('stale_version');
+        const r = await saveDocumentIn(tx, PLAN_DRAFT_SPEC, write.plan, write.expectedVersion);
+        if (!r.ok) throw new Rollback('stale_version');
+        return null;
+      }
     }
   }
 
@@ -714,6 +725,15 @@ export class SqliteCoachStore {
         // Only Ben's Apply is undoable (a proposal itself was never applied), until a workout starts from its basis.
         if (d.proposalId === undefined || d.basis === undefined) return 'unsupported';
         return (await basisStartedSince(tx, ownerId, d.basis, target.createdAt.utc)) ? 'changed_since' : 'ok';
+      }
+      case 'pause_plan': {
+        // (Ben, 20 Oct) The pin and pauses before it back, only while the plan is still as this write left it.
+        const plan = await getPlanDraftIn(tx, d.planId);
+        if (plan === null || plan.ownerId !== ownerId) return 'changed_since';
+        const c = undoPlanControl(plan, { expectedVersion: plan.version, opId: `undo:${target.actionId}`, at: { utc: atUtc, tz: target.createdAt.tz }, targetOpId: target.opId });
+        if (c.kind !== 'write') return 'changed_since';
+        if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion)).ok) return 'changed_since';
+        return 'ok';
       }
       // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
       // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.

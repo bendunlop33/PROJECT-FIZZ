@@ -28,8 +28,14 @@ import {
   isSplitDayName,
   splitDaySource,
   planRoutines,
-  planUpNext,
   planRoutineForSplitDay,
+  activePause,
+  planDayBodyParts,
+  planDaysByDue,
+  activePin,
+  type PlanDueDay,
+  type PlanDueWorkout,
+  workoutGroupsOf,
   planFirstLoads,
   plannedVsDone,
   type PlannedVsDone,
@@ -299,6 +305,7 @@ import type {
   SetValues,
   SplitDay,
   TrainingProfile,
+  PlanPin,
   TrainingSplit,
   UserProfile,
   WorkoutDraft,
@@ -660,6 +667,8 @@ export interface SessionList {
   recommendedKey: string | null;
   /** `FROM COACH` (workout-builder §4.4): open coach drafts, newest first. Started, saved, discarded and expired ones aren't here. */
   fromCoach?: CoachDraftRow[];
+  /** (Ben, 20 Oct) `YOUR PLAN`: the plan in use's days in plan order (not Up next's), listed first; none while paused. */
+  plan?: SessionPickerRow[];
 }
 
 /** The Workouts list (routines.md §A2.1): the rows, and the workout in progress (`StatusBanner`, Resume). */
@@ -1892,9 +1901,11 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   async function resolveUpNext(p: UserProfile, gymId: string, gymEquipment?: readonly EquipmentInstance[]) {
     const { live, refs } = await routineRows(p.id).catch(() => ({ live: [] as Routine[], refs: [] as FinishedRef[] }));
     const training = await ctx.store().repos.trainingProfiles.get(p.id).catch(() => null);
-    // (19 Oct) The applied coach plan's days, in day order (none without one).
+    // (19 Oct) The applied coach plan's days, in day order (none without one). (Ben, 20 Oct) None while it is paused:
+    // Up next follows the normal rules then, and Today shows no `Day N of M`.
     const plan = await ctx.store().repos.planDrafts.applied(p.id).catch(() => null);
-    const planDays = planRoutines(plan, live);
+    const paused = activePause(plan, toMs(ctx.now().utc), p.timezone) !== null;
+    const planDays = paused ? [] : planRoutines(plan, live);
     const planBasis = (r: Routine): UpNextRoutineBasis | null => {
       const i = planDays.findIndex((d) => d.id === r.id);
       return i < 0 ? null : { kind: 'plan', dayN: i + 1, of: planDays.length };
@@ -1908,21 +1919,25 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     const rotation = async () => (pick.kind !== 'routine' ? null : startable(pick.routine, pick.basis));
     // PM decision 18 Oct (pending Ben): the rotation wins only when the last workout was a routine's and Ben set no split;
     // otherwise the split day trained least recently, counting every workout by the muscles done.
-    // (19 Oct, review plans-19oct B1) An applied plan drives Up next even with a split: its days (rotation, then the plan
-    // walk), so a day that isn't a split day, or a plan in another structure from the split, still comes up in turn.
+    // (19 Oct, review plans-19oct B1) An applied plan drives Up next even with a split. (Ben, 20 Oct) Adaptive: the
+    // pinned day (`Make next`) until done, else the plan day whose body parts were trained least recently, counting every
+    // finished workout (plan day, coach-built, empty, imported, off-plan) by the muscles done; never the day(s) the
+    // last workout trained unless no other is left. The first one this gym can start. The plan's days never change.
     const planDrives = (plan?.applied ?? null) !== null && planDays.length > 0;
-    if (training?.split === undefined || planDrives) {
+    if (planDrives) {
+      const due = await planDue(p, planDays, training, plan?.pin ?? null).catch(() => planDays.map((day) => ({ day })));
+      for (const { day } of due) {
+        const planned = await startable(day, { kind: 'split' });
+        if (planned !== null) return planned;
+      }
+    }
+    if (training?.split === undefined) {
       const rot = await rotation();
       if (rot !== null) return rot;
-      // (19 Oct, Ben: Up next walks through the plan) The rotation can't say (the last workout wasn't one of its
-      // workouts, e.g. just after Apply): the plan's next day, day 1 before any is done.
-      const day = plan?.applied ? planUpNext(planDays, refs, plan.applied.atUtc) : null;
-      const planned = day === null ? null : await startable(day, { kind: 'split' });
-      if (planned !== null) return planned;
     }
     const bySplit = await splitUpNext(p, live, training, gymId, gymEquipment, planDays, refs).catch(() => null);
     if (bySplit?.plan) return bySplit.plan;
-    if (training?.split !== undefined && !planDrives) {
+    if (training?.split !== undefined) {
       const rot = await rotation();
       if (rot !== null) return rot;
     }
@@ -1937,6 +1952,35 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
   }
 
+  /** The finished workouts in Up next's window (`SPLIT_WINDOW_DAYS`; from `sinceUtc` when that is earlier) and an exercise lookup for their rows. */
+  async function windowSessions(p: UserProfile, sinceUtc: string | null = null): Promise<{ sessions: SessionAggregate[]; exerciseOf: (id: string) => Exercise | null }> {
+    const nowMs = toMs(ctx.now().utc);
+    const windowMs = nowMs - SPLIT_WINDOW_DAYS * 86_400_000;
+    const fromMs = sinceUtc === null ? windowMs : Math.min(windowMs, toMs(sinceUtc));
+    const { sessions } = await repos().sessions.listFinishedBetweenReadable(p.id, toIso(fromMs), toIso(nowMs + 1));
+    const infos = new Map<string, Exercise | null>();
+    for (const a of sessions) for (const e of a.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, await exerciseById(e.exerciseId));
+    return { sessions, exerciseOf: (id) => infos.get(id) ?? null };
+  }
+
+  /**
+   * (Ben, 20 Oct) The applied plan's days in the order they are due (`planDaysByDue`): each day's body parts from its
+   * exercises (else the split day it was mapped to), every finished workout in the window by the muscles done.
+   */
+  async function planDue(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null) {
+    // A pin is read against every workout since it, not only the window: one done before a long break stays done (review plan-adapt S3).
+    const { sessions: read, exerciseOf } = await windowSessions(p, pin?.atUtc ?? null);
+    const windowFrom = toMs(ctx.now().utc) - SPLIT_WINDOW_DAYS * 86_400_000;
+    const infos = new Map<string, Exercise | null>();
+    for (const r of planDays) for (const e of r.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, exerciseOf(e.exerciseId) ?? (await exerciseById(e.exerciseId)));
+    const split = splitInUse(training);
+    const days: (PlanDueDay & { routine: Routine })[] = planDays.map((r) => ({ routineId: r.id, name: r.name, bodyParts: planDayBodyParts(r, (id) => infos.get(id) ?? null, split), createdFromSessionId: r.createdFromSessionId ?? null, routine: r }));
+    const all: PlanDueWorkout[] = read.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, exerciseOf) }));
+    const live = activePin(pin, days, all);
+    const workouts = all.filter((w) => toMs(w.startedAtUtc) >= windowFrom);
+    return planDaysByDue(days, workouts, live).map((d) => ({ day: d.day.routine, pinned: d.pinned }));
+  }
+
   /**
    * Up next by split day (PM decision 18 Oct, pending Ben): Ben's split (else Push/Pull/Legs), the day trained least
    * recently in the last 42 days by every finished workout's muscles. Planned from a live routine with the day's name,
@@ -1946,11 +1990,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    */
   async function splitUpNext(p: UserProfile, live: readonly Routine[], training: TrainingProfile | null, gymId: string, gymEquipment?: readonly EquipmentInstance[], planDays: readonly Routine[] = [], refs: readonly FinishedRef[] = []) {
     const split = splitInUse(training);
-    const nowMs = toMs(ctx.now().utc);
-    const { sessions } = await repos().sessions.listFinishedBetweenReadable(p.id, toIso(nowMs - SPLIT_WINDOW_DAYS * 86_400_000), toIso(nowMs + 1));
-    const infos = new Map<string, Exercise | null>();
-    for (const a of sessions) for (const e of a.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, await exerciseById(e.exerciseId));
-    const workouts = sessions.map((a) => splitWorkoutOf(a, (id) => infos.get(id) ?? null, training?.sessionMinutes ?? null));
+    const { sessions, exerciseOf } = await windowSessions(p);
+    const workouts = sessions.map((a) => splitWorkoutOf(a, exerciseOf, training?.sessionMinutes ?? null));
     const due = splitDaysByDue(split, workouts);
     for (const { day } of due) {
       const plan = await splitDayPlan(p, live, split, day, workouts, gymId, gymEquipment, planDays, refs);
@@ -4041,7 +4082,24 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         });
         const ordered = orderSessionTypes(startable, recommendedKey);
         const fromCoach = await coachDraftRows(p).catch(() => [] as CoachDraftRow[]);
-        return { upNext: ordered.upNext === null ? null : row(ordered.upNext), workouts: ordered.workouts.map(row), fromHistory: ordered.fromHistory.map(row), older: ordered.older.map(row), recommendedKey, fromCoach };
+        // (Ben, 20 Oct) The plan in use's days first, in plan order (none while paused).
+        const applied = await ctx.store().repos.planDrafts.applied(p.id).catch(() => null);
+        const planIds = activePause(applied, toMs(now.utc), p.timezone) !== null ? [] : planRoutines(applied, live).map((r) => r.id);
+        const inPlan = new Set(planIds);
+        const notPlan = (t: SessionType) => t.routineId === null || !inPlan.has(t.routineId);
+        const planRows = planIds.flatMap((rid) => {
+          const t = [...ordered.workouts, ...ordered.older].find((x) => x.routineId === rid);
+          return t === undefined ? [] : [row(t)];
+        });
+        return {
+          upNext: ordered.upNext === null ? null : row(ordered.upNext),
+          plan: planRows,
+          workouts: ordered.workouts.filter(notPlan).map(row),
+          fromHistory: ordered.fromHistory.map(row),
+          older: ordered.older.filter(notPlan).map(row),
+          recommendedKey,
+          fromCoach,
+        };
       } catch {
         return null;
       }

@@ -297,7 +297,9 @@ describe('build a 4-day plan → card → Apply (replace) → Up next walks it �
       walked.push(`${up?.title ?? '?'} ${String(up?.routine?.basis.kind === 'plan' ? up.routine.basis.dayN : 0)}`);
       await doRoutine(s, gymId, up?.routine?.id ?? '');
     }
-    expect(walked).toEqual(['Push 1', 'Pull 2', 'Legs 3', 'Upper 4', 'Push 1', 'Pull 2', 'Legs 3', 'Upper 4']);
+    // (Ben, 20 Oct) Adaptive: least recently trained first. Upper's back work was last trained by the pull workout
+    // before Apply, legs a day later, so Upper comes before Legs; every day still comes up once a cycle.
+    expect(walked).toEqual(['Push 1', 'Pull 2', 'Upper 4', 'Legs 3', 'Push 1', 'Pull 2', 'Upper 4', 'Legs 3']);
   });
 
   it('a plan in another structure from the Profile split (Upper/Lower while PPL) drives Up next (review B1)', async () => {

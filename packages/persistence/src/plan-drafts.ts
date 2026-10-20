@@ -1,5 +1,5 @@
 import { PlanDraftSchema, type Exercise, type PlanDraft, type Routine } from '@fizz/schemas';
-import { expirePlanDraft, type PlanApplyChange, type PlanEndChange, type PlanLifeChange, type PlanUndoChange } from '@fizz/domain';
+import { expirePlanDraft, type PlanApplyChange, type PlanControlChange, type PlanEndChange, type PlanLifeChange, type PlanUndoChange } from '@fizz/domain';
 import type { Database } from './database';
 import { decodeDocument, DocumentRepository, erase, EXERCISE_SPEC, listDocuments, ROUTINE_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
@@ -172,10 +172,12 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
         const current = await getPlanDraftIn(tx, planId);
         if (current === null || current.ownerId !== ownerId) return { status: 'missing' };
         const routines = new Map<string, Routine | null>();
-        for (const m of current.applied?.made ?? []) {
-          const row = await tx.getFirst('SELECT * FROM routines WHERE id = ?', [m.routineId]);
+        // The plan's workouts, and (20 Oct) the ones its Apply took out of the rotation: End puts those back.
+        for (const id of [...(current.applied?.made.map((m) => m.routineId) ?? []), ...(current.applied?.rotationOff.map((o) => o.routineId) ?? [])]) {
+          if (routines.has(id)) continue;
+          const row = await tx.getFirst('SELECT * FROM routines WHERE id = ?', [id]);
           const r = row === null ? null : decodeDocument(ROUTINE_SPEC, row);
-          routines.set(m.routineId, r !== null && r.ownerId === ownerId ? r : null);
+          routines.set(id, r !== null && r.ownerId === ownerId ? r : null);
         }
         const other = await tx.getFirst("SELECT id FROM plan_drafts WHERE owner_id = ? AND status = 'applied' AND id != ?", [ownerId, planId]);
         const c = make(current, routines, other !== null);
@@ -198,6 +200,32 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
         const plan = await this.get(planId);
         return plan === null ? { status: 'missing' as const } : { status: 'stale' as const, plan };
       });
+  }
+
+  /**
+   * (Ben, 20 Oct) `Make next`, pause, resume and their Undo: one versioned
+   * write on the plan in use, decided by the domain against the plan and
+   * Ben's workouts as stored inside the transaction (rule 5).
+   */
+  control(ownerId: string, planId: string, make: (current: PlanDraft, routines: readonly Routine[]) => PlanControlChange): Promise<PlanWrite> {
+    return this.db.write(async (tx): Promise<PlanWrite> => {
+      const current = await getPlanDraftIn(tx, planId);
+      if (current === null || current.ownerId !== ownerId) return { status: 'missing' };
+      const routines = await listDocuments(tx, ROUTINE_SPEC, 'owner_id = ?', [ownerId]);
+      const c = make(current, routines);
+      switch (c.kind) {
+        case 'duplicate':
+          return { status: 'replayed', plan: c.current, routines: [] };
+        case 'stale':
+          return { status: 'stale', plan: c.current };
+        case 'invalid':
+          return { status: 'invalid', reason: c.reason };
+        case 'write': {
+          const r = await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion);
+          return r.ok ? { status: 'written', plan: c.next, routines: [] } : { status: 'stale', plan: current };
+        }
+      }
+    });
   }
 
   /** The 14-day expiry of open plans, run on read. Returns the plans it closed. */

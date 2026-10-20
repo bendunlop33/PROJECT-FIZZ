@@ -516,11 +516,16 @@ export function Toast({
   onAction,
   onDismiss,
   showClose = false,
+  secondary,
+  onSecondary,
 }: {
   icon?: SymbolName;
   text: string;
   action?: string;
   onAction?: () => void;
+  /** A quieter second action before the main one (`Why?`). */
+  secondary?: string;
+  onSecondary?: () => void;
   /** Dismisses the toast: the VoiceOver escape gesture, and the close button when `showClose`. */
   onDismiss?: () => void;
   /** A close button (an Undo toast that stays until dismissed while VoiceOver is on; delete-workouts review S3). */
@@ -552,6 +557,13 @@ export function Toast({
       <AppText variant="callout" numeric style={{ flex: 1 }}>
         {text}
       </AppText>
+      {secondary && onSecondary ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={secondary} onPress={onSecondary} style={{ minHeight: theme.target.min.height, minWidth: theme.target.min.width, justifyContent: 'center', paddingHorizontal: theme.space['2'] }}>
+          <AppText variant="callout" color="text.secondary">
+            {secondary}
+          </AppText>
+        </Pressable>
+      ) : null}
       {action && onAction ? (
         <Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onAction} style={{ minHeight: theme.target.min.height, minWidth: theme.target.min.width, justifyContent: 'center', paddingHorizontal: theme.space['3'] }}>
           <AppText variant="headline" color="accent">

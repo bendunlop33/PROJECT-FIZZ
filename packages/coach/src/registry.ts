@@ -328,6 +328,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Before building, ask Ben one short question (at most 80 characters) with 2 to 4 short tap answers (at most 24 characters each), only when the answer changes the workout and is not already in YOUR DATA (training, build.known). Never ask about the session length, his goal, pain, injury or anything medical. topic main_lift: each answer carries a catalogueId from build.usable. Do not ask if you can build a good workout with what you have. Ben can skip it.',
   },
   {
+    // (Ben, 20 Oct: "should also be able to pause eg if go on hols") Opens only on Ben's own pause or resume words
+    // (`plan_pause`), so it is always his request: it applies at once with Undo (rule 3).
+    name: 'pause_plan',
+    effect: 'versioned_update',
+    writes: ['plan_pause'],
+    needs: 'ben_request',
+    structural: false,
+    turnKinds: ['general'],
+    plainLabel: 'Pause your plan (e.g. on holiday) or resume it, with Undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      "Pause the plan in use (YOUR DATA plan.inUse) when Ben asks, e.g. \"I'm on holiday till 3 Nov\", or resume it (\"I'm back, resume my plan\"). action: pause or resume. until: the local date (YYYY-MM-DD) the plan is back in use on, from his words and today's date; null when he gave none (paused until he resumes). While paused, Up next follows his other workouts and paused days don't count against his weekly aim. The plan's days don't change. Applies at once with Undo.",
+  },
+  {
     // (19 Oct, Ben: "Can it build plans across multiple days as well not just single workouts?") Every day at once, as a
     // proposal (rule 3: a structural change Ben applies, with Undo). Each day is checked like a `propose_workout` draft.
     name: 'propose_plan',
@@ -375,7 +389,8 @@ export const COACH_NEVER: readonly string[] = [
 /** (11 Oct) `logged_set`: a set Ben told the coach to log or correct, through the workout's own versioned commands; never a delete. */
 /** (12 Oct) `session_exercise`: an exercise added to today's workout with pending sets only; Undo takes it out. */
 /** (14 Oct) `session_name`: the live workout's name, through the workout's own `rename_session`; Undo names it back. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name']);
+// (Ben, 20 Oct) `plan_pause`: the plan in use paused or resumed when Ben asks; its days never change.
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -401,7 +416,7 @@ export function assertRegistrySafe(tools: readonly ToolDeclaration[]): void {
     if (t.effect === 'read' && t.writes.length > 0) throw new UnsafeRegistryError(`${t.name}: a read tool can't write`);
     if (t.effect !== 'read' && t.writes.length === 0) throw new UnsafeRegistryError(`${t.name}: a write tool must declare what it writes`);
     if (t.effect === 'versioned_update' && t.writes.some((w) => !VERSIONED_WRITABLE.has(w))) {
-      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories, a set Ben named, an exercise added today or today's workout name`);
+      throw new UnsafeRegistryError(`${t.name}: versioned updates may only write targets, memories, a set Ben named, an exercise added today, today's workout name or the plan's pause`);
     }
     if (t.effect !== 'read' && (t.plainLabel === null || t.plainLabel.trim() === '')) {
       throw new UnsafeRegistryError(`${t.name}: a write tool needs a plainLabel for What the coach can do`);
@@ -508,6 +523,8 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   ask_build_question: ['build', 'build_plan'],
   // (19 Oct) A plan of several days ("build me a 4-day plan", "PPL week"), or a change to the plan in context.
   propose_plan: ['build_plan'],
+  // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan".
+  pause_plan: ['plan_pause'],
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {

@@ -1,6 +1,23 @@
 import {
+  activePause,
+  activePin,
   applyPlan,
+  autoResumeDue,
+  addDays,
   consistency,
+  localWeekBounds,
+  pausedDates,
+  planInUseUntilUtc,
+  pausedInWeek,
+  pausePlan,
+  pinPlanDay,
+  planDayBodyParts,
+  resumePlan,
+  splitInUse,
+  undoPlanControl,
+  workoutGroupsOf,
+  type PlanControlChange,
+  type PlanDueWorkout,
   currentPlanVersion,
   endPlan,
   isDeleted,
@@ -29,7 +46,7 @@ import {
   type PlanOverview,
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
-import type { Exercise, PlanApplyMode, PlanDraft, Routine, SessionAggregate, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, MuscleGroup, PlanApplyMode, PlanDraft, Routine, SessionAggregate, SplitBodyPart, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Coach-built plans (Ben, 19 Oct): the plan card and its day view, Apply
@@ -120,6 +137,10 @@ export const PLAN_COPY = {
   changedSince: (names: readonly string[]) => `Can’t undo: ${names.join(', ')} changed since.`,
   /** Undo of `End plan` with a newer plan in use, or the plan moved on since. */
   notEnded: 'Out of date. Nothing changed.',
+  /** (20 Oct) A pause `until` that isn't after today. */
+  badDate: 'Pick a date after today.',
+  alreadyPaused: 'Already paused.',
+  notPaused: 'Not paused.',
 } as const;
 
 /** Library › Your plan › a day (Ben, 19 Oct): what Start would plan here and last time's sets. */
@@ -137,7 +158,15 @@ export interface PlanDayScreenData {
    * yet) or `not_here` (this gym can't plan it): the rows are the saved sets × targets, no loads.
    */
   status: 'planned' | 'no_gym' | 'not_here';
+  /** (Ben, 20 Oct) The plan's stored version (what `Make next` must find) and whether this day is pinned now. */
+  planVersion: number;
+  pinned: boolean;
+  /** The plan is paused: `Make next` isn't offered. */
+  paused: boolean;
 }
+
+/** What `End plan` did (Ben, 20 Oct): the workouts it couldn't put back (`N workouts not restored`, behind `Why?`). */
+export type PlanEndOutcome = (Extract<PlanWriteOutcome, { ok: true }> & { notRestored: string[] }) | Extract<PlanWriteOutcome, { ok: false }>;
 
 const plural = (n: number, word: string): string => `${String(n)} ${word}${n === 1 ? '' : 's'}`;
 
@@ -234,6 +263,44 @@ export function createPlanServices(deps: PlanServicesDeps) {
       case 'invalid':
         return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
     }
+  }
+
+  /** (Ben, 20 Oct) A `Make next`, pause, resume or Undo write on the plan, decided against what is stored (rule 5). */
+  async function controlWrite(planId: string, make: (current: PlanDraft, routines: readonly Routine[]) => PlanControlChange): Promise<PlanWriteOutcome> {
+    const p = await owner();
+    if (p === null) return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+    const r = await repo()
+      .control(p.id, planId, make)
+      .catch(() => null);
+    if (r === null) return { ok: false, reason: 'failed', message: PLAN_COPY.failed };
+    switch (r.status) {
+      case 'written':
+      case 'replayed':
+        return { ok: true, plan: r.plan, duplicate: r.status === 'replayed' };
+      case 'stale':
+      case 'closed':
+      case 'changed_since':
+        return { ok: false, reason: 'stale', message: PLAN_COPY.stale };
+      case 'missing':
+        return { ok: false, reason: 'missing', message: PLAN_COPY.missing };
+      case 'invalid':
+        return { ok: false, reason: 'stale', message: r.reason === 'bad_date' ? PLAN_COPY.badDate : r.reason === 'already_paused' ? PLAN_COPY.alreadyPaused : r.reason === 'not_paused' ? PLAN_COPY.notPaused : PLAN_COPY.stale };
+    }
+  }
+
+  /** Each plan day's body parts (`planDayBodyParts`) for the ✓ and Up next's muscle counting. */
+  async function bodyPartsOf(ownerId: string, days: readonly Routine[]): Promise<Map<string, SplitBodyPart[]>> {
+    const of = await exerciseOf();
+    const training = await deps.store().repos.trainingProfiles.get(ownerId).catch(() => null);
+    const split = splitInUse(training);
+    return new Map(days.map((r) => [r.id, planDayBodyParts(r, of, split)]));
+  }
+
+  /** Finished workouts from `fromMs` with the working sets they did per muscle group (Your plan's ✓, 20 Oct). */
+  async function groupedWorkouts(ownerId: string, fromMs: number, nowMs: number): Promise<Map<string, ReadonlyMap<MuscleGroup, number>>> {
+    const r = await deps.store().repos.sessions.listFinishedBetweenReadable(ownerId, toIso(fromMs), toIso(nowMs + 1)).catch(() => ({ sessions: [] as SessionAggregate[] }));
+    const of = await exerciseOf();
+    return new Map(r.sessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
   }
 
   return {
@@ -360,14 +427,22 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const now = deps.now();
       const nowMs = toMs(now.utc);
       const tz = p.timezone;
-      const dayRefs = days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null }));
-      const workouts = await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => []);
+      const parts = await bodyPartsOf(p.id, days);
+      const dayRefs = days.map((r) => ({ routineId: r.id, name: r.name, createdFromSessionId: r.createdFromSessionId ?? null, bodyParts: parts.get(r.id) ?? [] }));
       const from = planWeekStartMs({ appliedAtUtc: plan.applied.atUtc, nowMs, tz });
       const week = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, toIso(from), toIso(nowMs + 1)).catch(() => ({ sessions: [] as SessionAggregate[] }));
+      // (Ben, 20 Oct) This week's workouts carry the muscles they trained: an off-plan leg day ticks Legs.
+      const of = await exerciseOf();
+      const groups = new Map(week.sessions.map((a) => [a.session.id, workoutGroupsOf(a, of)]));
+      const workouts = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).map((w) => ({ ...w, groups: groups.get(w.sessionId) }));
       const training = await deps.store().repos.trainingProfiles.get(p.id).catch(() => null);
       const gym = (await deps.currentGym?.().catch(() => null)) ?? null;
-      const nextRoutineId = (await deps.upNextRoutineId?.(gym?.id ?? null).catch(() => null)) ?? null;
+      const pause = activePause(plan, nowMs, tz);
+      const nextRoutineId = pause !== null ? null : ((await deps.upNextRoutineId?.(gym?.id ?? null).catch(() => null)) ?? null);
+      const monday = localWeekBounds(nowMs, tz).mondayLocalDate;
       return planOverview({
+        paused: pause === null ? null : { untilDate: pause.untilDate },
+        pausedDaysThisWeek: pausedInWeek(monday, pausedDates(plan.pauses, monday, addDays(monday, 7), tz)),
         plan: { id: plan.id, name: plan.name, status: plan.status, version: plan.version, appliedAtUtc: plan.applied.atUtc },
         days: dayRefs,
         workouts,
@@ -404,7 +479,18 @@ export function createPlanServices(deps: PlanServicesDeps) {
           ? planDayFromTemplates({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, routine, exerciseOf: await exerciseOf(), unit: p.preferredUnit, history, targetsHit })
           : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history, targetsHit });
       const status = run !== null ? 'planned' : gym === null ? 'no_gym' : 'not_here';
-      return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status };
+      const nowMs = toMs(deps.now().utc);
+      // Pinned while no workout since the pin did that day (as Up next reads it).
+      let pinned = false;
+      if (plan.pin?.routineId === routine.id) {
+        const parts = await bodyPartsOf(p.id, days);
+        // Every finished workout since the pin, read as Up next reads it (review plan-adapt S3).
+        const r = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, plan.pin.atUtc, toIso(nowMs + 1)).catch(() => ({ sessions: [] as SessionAggregate[] }));
+        const of = await exerciseOf();
+        const ws: PlanDueWorkout[] = r.sessions.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, of) }));
+        pinned = activePin(plan.pin, days.map((r) => ({ routineId: r.id, name: r.name, bodyParts: parts.get(r.id) ?? [], createdFromSessionId: r.createdFromSessionId ?? null })), ws) !== null;
+      }
+      return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status, planVersion: plan.version, pinned, paused: activePause(plan, nowMs, p.timezone) !== null };
     },
 
     /**
@@ -412,9 +498,54 @@ export function createPlanServices(deps: PlanServicesDeps) {
      * the rotation (kept, with their history); Up next falls back to the
      * normal rules. `expectedVersion`: the block's read (rule 5). Idempotent by `opId`.
      */
-    async end(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+    async end(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanEndOutcome> {
       const at = deps.now();
-      return endWrite(req.planId, (c, routines) => endPlan(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routines }));
+      const r = await endWrite(req.planId, (c, routines) => endPlan(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routines }));
+      return r.ok ? { ...r, notRestored: (r.plan.ended?.notRestored ?? []).map((x) => x.name) } : r;
+    },
+
+    /**
+     * (Ben, 20 Oct) `Make next` on a plan day (null: unpin): Up next starts it until it is done. `expectedVersion`:
+     * the screen's read (rule 5). Idempotent by `opId`; `undoControl` is its Undo.
+     */
+    async makeNext(req: { planId: string; routineId: string | null; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return controlWrite(req.planId, (c, routines) => pinPlanDay(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, routineId: req.routineId, days: planRoutines(c, liveRoutines(routines)) }));
+    },
+
+    /** (Ben, 20 Oct) `Pause plan`: until `untilDate` (local `YYYY-MM-DD`) starts, or until Resume (null). */
+    async pause(req: { planId: string; untilDate: string | null; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      const at = deps.now();
+      return controlWrite(req.planId, (c) => pausePlan(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, untilDate: req.untilDate, tz: p?.timezone ?? at.tz }));
+    },
+
+    /** (Ben, 20 Oct) `Resume`: the plan drives Up next again at once. */
+    async resumePause(req: { planId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const p = await owner();
+      const at = deps.now();
+      return controlWrite(req.planId, (c) => resumePlan(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, tz: p?.timezone ?? at.tz }));
+    },
+
+    /** Undo of the last `Make next`, pause or resume (`targetOpId`), from the version it left (`expectedVersion`). */
+    async undoControl(req: { planId: string; targetOpId: string; expectedVersion: number; opId: string }): Promise<PlanWriteOutcome> {
+      const at = deps.now();
+      return controlWrite(req.planId, (c) => undoPlanControl(c, { expectedVersion: req.expectedVersion, opId: req.opId, at, targetOpId: req.targetOpId }));
+    },
+
+    /**
+     * (Ben, 20 Oct) On app open: a pause whose `until` date has come is ended (at that date's start). Idempotent: the op
+     * ID is the pause's own, so two opens write it once. Returns whether it wrote.
+     */
+    async autoResume(): Promise<boolean> {
+      const p = await owner();
+      if (p === null) return false;
+      const plan = await repo().applied(p.id).catch(() => null);
+      const at = deps.now();
+      const due = autoResumeDue(plan, toMs(at.utc), p.timezone);
+      if (plan === null || due === null) return false;
+      const r = await controlWrite(plan.id, (c) => resumePlan(c, { expectedVersion: c.version, opId: `plan-auto-resume:${due.opId}`, at, tz: p.timezone, auto: true }));
+      return r.ok && !r.duplicate;
     },
 
     /** The `Plan ended` toast's Undo: the plan in use again, its days back in their places (refused if a newer plan is in use or a day changed since). */
@@ -438,12 +569,26 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const refs = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).filter((r) => toMs(r.startedAtUtc) >= from);
       const training = await deps.store().repos.trainingProfiles.get(p.id).catch(() => null);
       const plan = await active();
+      // (Ben, 20 Oct) Paused days don't count against the aim: every plan's pauses (one ended since still paused those
+      // days), none past the day its plan stopped being in use (review plan-adapt B1).
+      const tz = p.timezone;
+      const firstMonday = localWeekBounds(from, tz).mondayLocalDate;
+      const end = addDays(localWeekBounds(nowMs, tz).mondayLocalDate, 7);
+      const paused = new Set<string>();
+      for (const d of await repo().listByOwner(p.id).catch(() => [] as PlanDraft[])) {
+        if (d.applied === null || (d.pauses ?? []).length === 0) continue;
+        for (const x of pausedDates(d.pauses, firstMonday, end, tz, planInUseUntilUtc(d))) paused.add(x);
+      }
+      const weekStart = plan === null ? nowMs : planWeekStartMs({ appliedAtUtc: plan.appliedAtUtc, nowMs, tz });
+      const groups = plan === null ? new Map<string, ReadonlyMap<MuscleGroup, number>>() : await groupedWorkouts(p.id, weekStart, nowMs);
+      const parts = plan === null ? new Map<string, SplitBodyPart[]>() : await bodyPartsOf(p.id, (await live(p.id)).filter((r) => plan.days.some((d) => d.routineId === r.id)));
       return consistency({
-        workouts: refs.map((r) => ({ sessionId: r.sessionId, routineId: r.routineId, startedAtUtc: r.startedAtUtc })),
+        workouts: refs.map((r) => ({ sessionId: r.sessionId, routineId: r.routineId, startedAtUtc: r.startedAtUtc, groups: groups.get(r.sessionId) })),
         nowMs,
-        tz: p.timezone,
+        tz,
         aim: training?.daysPerWeek ?? null,
-        plan: plan === null ? null : { days: plan.days, appliedAtUtc: plan.appliedAtUtc },
+        plan: plan === null ? null : { days: plan.days.map((d) => ({ ...d, bodyParts: parts.get(d.routineId) ?? [] })), appliedAtUtc: plan.appliedAtUtc },
+        pausedDates: paused,
       });
     },
   };

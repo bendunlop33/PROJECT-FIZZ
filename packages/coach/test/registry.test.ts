@@ -78,9 +78,11 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
 
   it('no versioned update can write a finished session; a logged set only on Ben’s request, in the workout (11 Oct)', () => {
     for (const t of COACH_TOOLS.filter((x) => x.effect === 'versioned_update')) {
-      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name']).toContain(w);
+      for (const w of t.writes) expect(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause']).toContain(w);
       // (14 Oct) The live workout's name: only rename_workout, gated, only in the workout.
       if (t.writes.includes('session_name')) expect([t.name, t.needs, t.turnKinds]).toEqual(['rename_workout', 'ben_request', ['workout']]);
+      // (Ben, 20 Oct) The plan's pause: only pause_plan, on Ben's own pause words, in a general turn.
+      if (t.writes.includes('plan_pause')) expect([t.name, t.needs, t.turnKinds]).toEqual(['pause_plan', 'ben_request', ['general']]);
       if (t.writes.includes('logged_set')) {
         expect(['log_set', 'correct_set']).toContain(t.name);
         expect(t.needs).toBe('ben_request');
@@ -397,6 +399,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Forget a memory",
               "Build a workout you ask for, as a draft you open, start or save",
               "Ask one quick question before building a workout, when it helps",
+              "Pause your plan (e.g. on holiday) or resume it, with Undo",
               "Build a multi-day plan you ask for, as a proposal you apply or undo",
               "Add a general training rule to your playbook to review",
             ],
