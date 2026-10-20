@@ -528,3 +528,11 @@ Next in line: Goals & schedule plus rule 1 volume (after D13), the routine edito
 | F18 | Workout set structure as a per-set table: columns Weight · Reps · RPE, each changed by a scroll wheel; per-set values (not one weight per exercise); reps can be exact or a range. Library editor and edit-before-start overview | Feature | Medium. Supersedes F6 for the editor; reuse the existing per-set templates (load/reps/RPE already stored per set) |
 | F19 | Build card: drop the "Coach picks" chip; the coach builds whichever split is selected, defaulting to the next split from the Settings split (D7) | UX | Small; do with D7 **Built on claude/profile-settings (14 Oct) with D5, D7, D8; device check pending.** |
 | F20 | Session list names imported sessions from the FitNotes Category ("Trapezius"); name them from their exercises like the overview ("Pull"). Today "Legs · 45 min" then "45 min" repeated | Bug | Small; with quick wins |
+
+## On hold (Ben, 20 Oct)
+
+| ID | Item | Notes |
+|---|---|---|
+| H1 | Share the app with a friend | Own copy per phone via SideStore (same .ipa, own free Apple ID, own ChatGPT plan, data stays on their phone) or TestFlight (paid Apple Developer account). Before sharing: coach instructions use the Profile name instead of "Ben"; check first-run setup on a fresh install; record a brief change (still one user per phone, nothing shared). Ben: "lets hold it for now". |
+| H2 | Apple Health import (Garmin runs, sleep, resting HR) | Needs a separate SideStore test build for the HealthKit entitlement. Ben: "Doesn't sound like much value add at this point". |
+| H3 | Other AI providers (Claude API key, OpenAI API key, Gemini, Apple on-device) | Research in docs/research/other-llm-providers.md; waits on Ben's answers (spend cap, roles, data sharing). |
