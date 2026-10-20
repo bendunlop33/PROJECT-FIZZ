@@ -366,3 +366,17 @@ Ben, mid-workout, after the coach refused to pair Seated calf raise with bodywei
 - **Which copy plans next time (review B2):** the planned slot, else the heaviest; a copy added in the workout never plans next time while the planned slot has a done set. Ben to confirm.
 - **Linking two exercises already in the workout** keeps both set counts; the extras run as straight sets. Only a new partner matches the sets left. Ben to say whether linking should offer to match.
 - A Summary doesn't promise a `Next time` for an exercise done twice (as for F21), though the next Start still plans it from the main copy.
+
+## 2026-10-20: Lift targets, on or off (Ben approved 20 Oct)
+Ben asked "how would the lift target work?", then, after the description below: "Yeah let's do lift targets as something that can be turned on or off".
+- **Setting.** Profile › Training details › `Lift targets`, a switch, default off. Off hides every lift-target view and the coach doesn't see them or get the tool. The targets are kept, so turning it back on shows them again.
+- **Targets (Your data).** Up to 3, one per exercise, on exercises Ben has logged with a weight, his own exercises included. A target is a 1RM (`Bench press 100 kg`) or a weight × reps (`Bench press 90 kg × 5`), with an optional date. kg/lb and the convention are explicit: dumbbells are per hand (`35 kg each × 8`), machines are the stack, and plate-loaded machines are plates. Assisted and bodyweight exercises have none. Targets are stored on the training profile document (no new table), so backup, restore, export and Delete my data carry them. Every write is versioned and idempotent. Save and Remove toast Undo.
+- **Where.** A `Lift targets` section in Library › Your plan with `Add target`, and on Progress › exercise detail, where a dotted line on the Est. 1RM chart (1RM targets) or the Top set chart (weight × reps targets) marks it. The chart shows the line only for the series with the target's convention.
+- **Display.** `est. 1RM 92 kg · was 88 kg on 13 Oct` (was = when it was set) for a 1RM. `Best: 85 kg × 5 on 17 Oct` for weight × reps. Both use the last 90 days of working sets, with the same Epley estimate Progress uses, always labelled `est.`. With a date: `8 weeks left · 8 kg to go`. There is no predicted finish date and no pass/fail colours.
+- **Hit.** Only an actual logged set since the target was set counts: a single at or above the weight for a 1RM, or the weight for at least the reps for weight × reps. A lb set is converted. An estimate passing the target never counts. Spotted and other marked sets and warm-ups don't count. The row then shows `Hit 2 Dec` and stays until Ben removes or replaces it.
+- **Coach.** While the setting is on, the targets are in YOUR DATA (where he is now, est. labelled), with a line saying the coach may choose main lifts, rep schemes and order to serve them, within every existing limit. `set_lift_target` sets one when Ben asks ("I want to bench 100 kg by March"), with a card and Undo. If it's the coach's own idea, nothing is saved; it asks, and his "yes" sets it. Migration 25 adds the `set_lift_target` action kind (a `coach_actions` rebuild, like 23).
+
+**Open for Ben:**
+- **Hit targets count toward the 3** until he removes or replaces them.
+- **Target dates** are typed as `YYYY-MM-DD` in the editor for now (no date wheel), and a past date reads `Due 1 Mar`.
+- **No equipment max check on a target.** It's a goal, not a load the app prescribes, so it isn't snapped or capped. Loads the coach plans toward it still are.
