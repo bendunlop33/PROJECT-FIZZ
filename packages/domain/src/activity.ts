@@ -15,7 +15,10 @@ import { shortRelativeDay } from './session/recent';
  * - `isLongActivity` / `isHardActivity`: a `long` effort, or a run of at
  *   least 90 min or 15 km, is long; a `hard` effort is hard.
  * - `legRunNear`: the long or hard run that keeps legs off today: one
- *   planned for tomorrow, or one done yesterday (local dates in Ben's zone).
+ *   yesterday, or one tomorrow (local dates in Ben's zone). A planned
+ *   activity counts on its date unless Ben cancels it (Ben, 20 Oct): no need
+ *   to mark it done. Counting is not relabelling: rows keep `Planned` and the
+ *   coach reads `planned` (review ben-runs-20oct B1, rule 6).
  * - `avoidLegDays`: Up next's filter. Days whose body parts include legs go
  *   after every other day while a run is near; if every day is legs, the
  *   first stays and `legsAnyway` says why.
@@ -51,7 +54,7 @@ export function isLegRun(f: Pick<ActivityFields, 'kind' | 'effort' | 'durationS'
 const live = (a: Pick<Activity, 'deletedAtUtc'>): boolean => a.deletedAtUtc === null;
 
 export interface LegRunNear {
-  /** `after`: a long or hard run done yesterday; `before`: one planned for tomorrow. */
+  /** `after`: a long or hard run yesterday; `before`: one tomorrow. */
   when: 'after' | 'before';
   activity: Activity;
   /** `Long run yesterday`, `Hard run tomorrow`. */
@@ -60,17 +63,17 @@ export interface LegRunNear {
 
 /**
  * The long or hard run that keeps legs off `today` (local `YYYY-MM-DD` in
- * Ben's zone): one done yesterday, else one planned for tomorrow. Deleted
- * activities don't count; a planned run past its date counts only once Ben
- * marks it done (nothing is assumed, rule 6).
+ * Ben's zone): one yesterday, else one tomorrow. Deleted (cancelled)
+ * activities don't count; a planned run counts on its date without being
+ * marked done (Ben, 20 Oct).
  */
 export function legRunNear(activities: readonly Activity[], today: string): LegRunNear | null {
   const yesterday = addDays(today, -1);
   const tomorrow = addDays(today, 1);
   const runs = activities.filter((a) => live(a) && isLegRun(a.fields));
-  const done = runs.find((a) => a.fields.status === 'done' && a.fields.date === yesterday);
+  const done = runs.find((a) => a.fields.date === yesterday);
   if (done !== undefined) return { when: 'after', activity: done, why: `${isLongActivity(done.fields) ? 'Long' : 'Hard'} run yesterday` };
-  const planned = runs.find((a) => a.fields.status === 'planned' && a.fields.date === tomorrow);
+  const planned = runs.find((a) => a.fields.date === tomorrow);
   if (planned !== undefined) return { when: 'before', activity: planned, why: `${isLongActivity(planned.fields) ? 'Long' : 'Hard'} run tomorrow` };
   return null;
 }
@@ -177,13 +180,44 @@ export interface ActivityRow {
   accessibilityLabel: string;
 }
 
-/** One activity as Today's Recent, the calendar and Your plan list it. */
+/**
+ * One activity as Today's Recent, the calendar and Your plan list it. A
+ * planned one keeps `Planned` until Ben marks it done, on and after its date
+ * too: it counts for the run rule and the week, but it is never shown as done
+ * before he says so (review ben-runs-20oct B1, rule 6); its sheet offers
+ * `Cancel run`, so row and sheet agree (N3).
+ */
 export function activityRow(a: Activity, today: string): ActivityRow {
   const title = ACTIVITY_WORD[a.fields.kind];
   const when = activityWhen(a.fields.date, today);
   const planned = a.fields.status === 'planned';
   const detail = [planned ? ACTIVITY_COPY.planned : null, activityDetail(a.fields) || null].filter((x): x is string => x !== null).join(' · ');
   return { activityId: a.id, version: a.version, title, when, detail, planned, accessibilityLabel: [title, when, detail].filter((x) => x !== '').join(', ').replaceAll(NBSP, ' ') };
+}
+
+/**
+ * The sheet's remove button: `Cancel run` for a planned activity (one that
+ * didn't or won't happen stops counting), `Delete` for one done. Both are the
+ * same tombstone write with Undo.
+ */
+export function activityRemoveLabel(f: Pick<ActivityFields, 'kind' | 'status'>): string {
+  return f.status === 'planned' ? `Cancel ${ACTIVITY_WORD[f.kind].toLowerCase()}` : ACTIVITY_COPY.delete;
+}
+
+/** The toast after a remove: `Run cancelled` (planned) or `Activity deleted`. */
+export function activityRemovedText(f: Pick<ActivityFields, 'kind' | 'status'>): string {
+  return f.status === 'planned' ? `${ACTIVITY_WORD[f.kind]} cancelled` : ACTIVITY_COPY.deleted;
+}
+
+/**
+ * The status the coach reads (review ben-runs-20oct B1): as logged. A planned
+ * one whose date has passed reads `planned (counts)`: never confirmed, still
+ * counted for the run rule and the week (Ben, 20 Oct). Today's reads
+ * `planned`: it may not have happened yet.
+ */
+export function activityStatusOn(a: Pick<Activity, 'fields'>, today: string): 'done' | 'planned' | 'planned (counts)' {
+  if (a.fields.status === 'done') return 'done';
+  return a.fields.date < today ? 'planned (counts)' : 'planned';
 }
 
 /** `Run · Sat · long`: one line in Your plan's week. */

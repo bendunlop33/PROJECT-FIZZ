@@ -317,4 +317,18 @@ describe('planDaysAhead: the morning reminder\'s days 2–7 by the adaptive rule
   it('Up next not a plan day: empty', () => {
     expect(planDaysAhead({ days: A_PPL, workouts: [], pin: null, firstRoutineId: 'other', count: 6, fromMs: ms(0), windowDays: 42 })).toEqual([]);
   });
+
+  it('the run rule (Ben, 20 Oct): a predicted day near a long or hard run puts legs after the others; a pin stays first', () => {
+    const near = { when: 'before' as const, why: 'Long run tomorrow', activity: {} as never };
+    const go = (nearAt: readonly number[], pin: { routineId: string; opId: string; atUtc: string } | null = null) =>
+      planDaysAhead({ days: A_PPL, workouts: [], pin, firstRoutineId: PUSH.routineId, count: 4, fromMs: ms(10 * DAY), windowDays: 42, nearOn: (i) => (nearAt.includes(i) ? near : null) }).map((d) => d.name);
+    // No run: Pull, Legs, Push, Pull. Run near day 2 (index 1): Legs waits a day.
+    expect(go([])).toEqual(['Pull', 'Legs', 'Push', 'Pull']);
+    expect(go([1])).toEqual(['Pull', 'Push', 'Legs', 'Pull']);
+    // Every other day done more recently and the run still near: legs anyway only when nothing else is left.
+    expect(go([0, 1])).toEqual(['Pull', 'Push', 'Legs', 'Pull']);
+    // A pinned leg day stays first (Ben's Make next).
+    const pin = { routineId: LEGS.routineId, opId: 'pin', atUtc: at(9 * DAY).utc };
+    expect(go([0], pin)[0]).toBe('Legs');
+  });
 });

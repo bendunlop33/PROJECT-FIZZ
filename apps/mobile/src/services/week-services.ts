@@ -3,6 +3,7 @@ import {
   activeWeekPlan,
   activePause,
   activityRow,
+  activityStatusOn,
   activitySortMs,
   addActivity,
   addDays,
@@ -345,6 +346,11 @@ export function createWeekServices(deps: WeekServicesDeps) {
         .catch(() => null);
       return a !== null && p !== null && a.ownerId === p.id && a.deletedAtUtc === null ? a : null;
     },
+    /** Live activities dated in [`from`, `to`) (local dates): the morning reminder's run rule. Unreadable: none. */
+    async between(from: string, to: string): Promise<Activity[]> {
+      const p = await deps.profile();
+      return p === null ? [] : between(p.id, from, to);
+    },
     /** Today's Recent: done in the last 14 days and planned in the next 7, with each one's sort instant. */
     async recent(): Promise<(ActivityRow & { sortMs: number })[]> {
       const p = await deps.profile();
@@ -394,7 +400,7 @@ export function createWeekServices(deps: WeekServicesDeps) {
         gymDaysLeft: s.facts.gymDaysLeft,
         daysFrom: s.basis.kind,
         remaining: s.facts.remaining.map((d) => ({ id: d.id, name: d.name, bodyParts: [...d.bodyParts] })),
-        activities: s.activities.map((a) => [ACTIVITY_WORD[a.fields.kind], `${dateWeekdayShort(a.fields.date)} ${a.fields.date}`, a.fields.status, activityDetail(a.fields).replaceAll(' ', ' ')].filter((x) => x !== '').join(' · ')),
+        activities: s.activities.map((a) => [ACTIVITY_WORD[a.fields.kind], `${dateWeekdayShort(a.fields.date)} ${a.fields.date}`, activityStatusOn(a, s.today), activityDetail(a.fields).replaceAll(' ', ' ')].filter((x) => x !== '').join(' · ')),
         needsReshape: s.facts.needsReshape && s.active === null,
         suggestion: suggestion === null || suggestion.merges.length === 0 ? null : { merges: suggestion.merges.map((m) => ({ dayIds: [...m.dayIds], name: m.name })) },
         applied: s.active === null ? null : weekChangeText(s.active),

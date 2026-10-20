@@ -2,7 +2,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View, type TextInput } from 'react-native';
 
-import { ACTIVITY_COPY, addDays, localDateOf, localDateText, localHourUtcMs, toMs } from '@fizz/domain';
+import { ACTIVITY_COPY, activityRemoveLabel, activityRemovedText, addDays, localDateOf, localDateText, localHourUtcMs, toMs } from '@fizz/domain';
 import type { Activity } from '@fizz/schemas';
 
 import { ACTIVITY_EFFORTS, ACTIVITY_KINDS, fieldsOf, formOf, newActivityForm, withDate, type ActivityForm } from '../../activity/activity-form';
@@ -26,7 +26,9 @@ const ACTIVITY_ACCESSORY_ID = 'activity-sheet-numbers';
  * (Ben, 20 Oct) Today › ＋ Activity: a run, ride, swim, sport or other, done
  * or planned, with a date (wheel), a rough time and/or distance (keypad) and
  * an effort. Saved locally at once (rule 1); the toast offers Undo. With an
- * activity, the same sheet edits or deletes it. Values only.
+ * activity, the same sheet edits or removes it: `Cancel run` for a planned
+ * one (Ben, 20 Oct: a planned run counts on its date unless he cancels it),
+ * `Delete` for one done; both a versioned tombstone with Undo. Values only.
  */
 export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible: boolean; activity: Activity | null; onClose: () => void; onSaved: (s: ActivitySaved) => void }) {
   const theme = useTheme();
@@ -82,7 +84,7 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
       setMessage(out.message);
       return;
     }
-    onSaved({ kind: 'deleted', activityId: activity.id, opId });
+    onSaved({ kind: 'deleted', activityId: activity.id, opId, text: activityRemovedText(activity.fields) });
   }
 
   return (
@@ -93,7 +95,7 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
         <>
           {message !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={message} /> : null}
           <PrimaryButton label={ACTIVITY_COPY.save} busy={busy} onPress={() => void save()} />
-          {activity !== null ? <DangerTextButton label={ACTIVITY_COPY.delete} disabled={busy} onPress={() => void remove()} /> : null}
+          {activity !== null ? <DangerTextButton label={activityRemoveLabel(activity.fields)} disabled={busy} onPress={() => void remove()} /> : null}
         </>
       }
     >

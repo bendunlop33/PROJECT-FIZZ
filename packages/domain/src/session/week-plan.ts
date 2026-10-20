@@ -12,8 +12,9 @@ import { planRoutineStart } from './routines';
  * separately"). Pure.
  *
  * - `weekFacts`: the gym days left this week (Ben's aim less the days done
- *   and the days a planned long or hard run still ahead takes, never more
- *   than the days left that aren't one)
+ *   and the days a long or hard run from today on takes, never more than
+ *   the days left that aren't one; a planned run counts on its date unless
+ *   Ben cancels it, Ben 20 Oct)
  *   against the plan (or split) days not done yet. Runs never count as gym
  *   days. Only logged facts: no fatigue or readiness numbers (rule 6).
  * - `suggestWeek`: code's own idea of a merge (two upper days of the same
@@ -41,13 +42,15 @@ export interface WeekDayInput {
 
 export interface WeekFacts {
   monday: string;
+  /** Local today. */
+  today: string;
   /** Days not done yet this week, in order. */
   remaining: WeekDayInput[];
-  /** Dates from today (or tomorrow, after a workout today) to Sunday that aren't a planned long or hard run. */
+  /** Dates from today (or tomorrow, after a workout today) to Sunday without a long or hard run (planned or done). */
   openDates: string[];
   /** Gym days done this week (dates with a finished workout). */
   gymDaysDone: number;
-  /** `min(aim − done − planned long/hard run days still ahead, open dates)`; open dates with no aim set. */
+  /** `min(aim − done − long/hard run days from today on, open dates)`; open dates with no aim set. */
   gymDaysLeft: number;
   /** Long or hard runs this week, planned or done (oldest first). */
   runs: Activity[];
@@ -72,18 +75,19 @@ export function weekFacts(input: WeekFactsInput): WeekFacts {
   const { mondayLocalDate: monday } = localWeekBounds(input.nowMs, input.tz);
   const sunday = addDays(monday, 6);
   const runs = activitiesBetween(input.activities, monday, addDays(monday, 7)).filter((a) => isLegRun(a.fields));
-  const runDays = new Set(runs.filter((a) => a.fields.status === 'planned').map((a) => a.fields.date));
+  // (Ben, 20 Oct) A run takes its date whether it is planned or done: a planned one counts unless cancelled (deleted).
+  const runDays = new Set(runs.map((a) => a.fields.date));
   const openDates: string[] = [];
   const start = input.gymDates.has(input.today) ? addDays(input.today, 1) : input.today;
   for (let d = start; d <= sunday; d = addDays(d, 1)) if (!runDays.has(d)) openDates.push(d);
   const gymDaysDone = [...input.gymDates].filter((d) => d >= monday && d <= sunday).length;
-  // Review S7, the spec's formula (Ben, 20 Oct): aim − done − days blocked by a planned long or hard run still ahead;
+  // Review S7, the spec's formula (Ben, 20 Oct): aim − done − days blocked by a long or hard run from today on;
   // never more than the open dates left.
   const blocked = [...runDays].filter((d) => d >= start && d <= sunday).length;
   const byAim = input.aim === null ? openDates.length : Math.max(0, input.aim - gymDaysDone - blocked);
   const gymDaysLeft = Math.min(byAim, openDates.length);
   const remaining = input.days.filter((d) => !d.done);
-  return { monday, remaining, openDates, gymDaysDone, gymDaysLeft, runs, needsReshape: gymDaysLeft >= 1 && remaining.length > gymDaysLeft };
+  return { monday, today: input.today, remaining, openDates, gymDaysDone, gymDaysLeft, runs, needsReshape: gymDaysLeft >= 1 && remaining.length > gymDaysLeft };
 }
 
 /** What the week looked like (for a proposal's stale check, rule 5): the basis, the workouts and activities this week. */
@@ -160,12 +164,12 @@ export type WeekProposalCheck =
   | { ok: false; failure: string };
 
 /**
- * For a leg day while a long or hard run is planned this week: `After Fri's run` when an open date
- * after the day after the run is left (it goes last), else `Before Sat's run`. Null otherwise.
+ * For a leg day while a long or hard run is ahead this week (today on, planned or done): `After Fri's run` when an
+ * open date after the day after the run is left (it goes last), else `Before Sat's run`. Null otherwise.
  */
-function legNote(day: WeekDayInput, facts: Pick<WeekFacts, 'runs' | 'openDates'>): { note: string; late: boolean } | null {
+function legNote(day: WeekDayInput, facts: Pick<WeekFacts, 'runs' | 'openDates' | 'today'>): { note: string; late: boolean } | null {
   if (!isLegDay(day.bodyParts)) return null;
-  const run = facts.runs.find((r) => r.fields.status === 'planned') ?? null;
+  const run = facts.runs.find((r) => r.fields.date >= facts.today) ?? null;
   if (run === null) return null;
   const ok = facts.openDates.filter((d) => d !== addDays(run.fields.date, -1) && d !== addDays(run.fields.date, 1));
   if (ok.some((d) => d > run.fields.date)) return { note: `After ${dateWeekdayShort(run.fields.date)}’s run`, late: true };
@@ -182,7 +186,7 @@ function legNote(day: WeekDayInput, facts: Pick<WeekFacts, 'runs' | 'openDates'>
  * place (`Push`, `Chest + Shoulders`), skipped days out, a leg day around a
  * planned run noted (`After Fri's run` goes last, else `Before Sat's run`).
  */
-export function checkWeekProposal(args: ProposeWeekArgs, facts: Pick<WeekFacts, 'remaining' | 'runs' | 'openDates'>): WeekProposalCheck {
+export function checkWeekProposal(args: ProposeWeekArgs, facts: Pick<WeekFacts, 'remaining' | 'runs' | 'openDates' | 'today'>): WeekProposalCheck {
   const byId = new Map(facts.remaining.map((d) => [d.id, d]));
   const used = new Set<string>();
   const take = (id: string): WeekDayInput | null => {
