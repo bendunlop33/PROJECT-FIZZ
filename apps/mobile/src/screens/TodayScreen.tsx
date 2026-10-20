@@ -97,10 +97,15 @@ export function TodayScreen() {
   const session = data.state === 'ready' ? data.value.session : null;
   const [selection, setSelection] = useState<TodayCardState | null>(null);
 
-  // The card's selection: the plan's next day on open (or as Ben left it while the data reloads).
+  // The card's selection: the plan's next day on open (or as Ben left it while the data reloads). Once today's
+  // workout is done, no day is selected until Ben picks one for a second session (§2.0.4 Done today).
+  const wasDone = useRef<boolean | null>(null);
   useEffect(() => {
     if (session === null) return;
+    const justDone = wasDone.current === false && session.doneToday;
+    wasDone.current = session.doneToday;
     setSelection((cur) => {
+      if (justDone) return null;
       if (cur !== null && session.initial[cur.dayKey] !== undefined) return cur;
       const key = session.doneToday ? null : (session.nextKey ?? (session.status === 'no_plan' ? null : (session.days[0]?.key ?? null)));
       const initial = key === null ? undefined : session.initial[key];
@@ -533,7 +538,7 @@ export function TodayScreen() {
     if (openWorkout || session === null) return null;
     const noPlan = session.status === 'no_plan';
     return (
-      <View style={{ gap: theme.space['3'] }}>
+      <View style={{ gap: theme.space['2'] }}>
         <Eyebrow>{TODAY_V2_COPY.session}</Eyebrow>
         {noPlan ? (
           view === null ? (
@@ -595,7 +600,7 @@ export function TodayScreen() {
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         // Re-renders keep the scroll position (Mix it up, a control): the ScrollView stays mounted (§2.0.2).
-        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'], gap: theme.space['4'] }}
+        contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['6'], gap: theme.space['3'] }}
       >
         <TodayHeader
           title={todayTitle(zoned.utc, zoned.tz)}
