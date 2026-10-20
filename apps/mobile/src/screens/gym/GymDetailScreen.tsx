@@ -93,7 +93,7 @@ export function GymDetailScreen() {
 
   const header = [gym.isDefault ? 'Default gym' : null, gym.setup === undefined ? null : SETUP_WORD[gym.setup]].filter((x) => x !== null).join(' · ');
   return (
-    <Screen floating={toast ? <Toast text={toast.text} {...(toast.undo ? { action: 'Undo', onAction: toast.undo } : {})} /> : undefined}>
+    <Screen toast={toast ? <Toast text={toast.text} {...(toast.undo ? { action: 'Undo', onAction: toast.undo } : {})} /> : null}>
       {inUseByWorkout ? (
         <StatusLine
           icon="info.circle"

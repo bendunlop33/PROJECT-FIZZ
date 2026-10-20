@@ -1,18 +1,39 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Pressable, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../theme';
+import { useKeyboardVisible } from './keyboard';
 
 /**
  * A plain RN Modal bottom card (premium-feel §7.1): its content is there
  * from the first frame, so it can never show blank (the native form-sheet
  * detents did on device, D2). The scrim closes it. The card rides above the
- * keyboard, so a sheet's primary button stays visible while typing.
+ * keyboard; its content scrolls when it doesn't fit (0.5), and `footer`
+ * stays pinned under it, so a sheet's Save is always visible while typing.
+ * `scroll={false}`: the sheet scrolls its own list (it keeps its buttons fixed).
  */
-export function BottomCard({ visible, onClose, onDismissed, children, closeLabel = 'Close' }: { visible: boolean; onClose: () => void; onDismissed?: () => void; children: ReactNode; closeLabel?: string }) {
+export function BottomCard({
+  visible,
+  onClose,
+  onDismissed,
+  children,
+  footer,
+  closeLabel = 'Close',
+  scroll = true,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onDismissed?: () => void;
+  children: ReactNode;
+  /** Pinned under the scrolling content (Save, Remove, Cancel). */
+  footer?: ReactNode;
+  closeLabel?: string;
+  scroll?: boolean;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardVisible();
   return (
     <Modal visible={visible} transparent animationType={theme.a11y.reduceMotion ? 'fade' : 'slide'} onRequestClose={onClose} {...(onDismissed ? { onDismiss: onDismissed } : {})}>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
@@ -25,12 +46,20 @@ export function BottomCard({ visible, onClose, onDismissed, children, closeLabel
             borderTopRightRadius: theme.radius.lg,
             paddingHorizontal: theme.components.screenMargin,
             paddingTop: theme.space['6'],
-            paddingBottom: theme.space['4'] + insets.bottom,
+            // On the keyboard there is no home indicator to clear.
+            paddingBottom: theme.space['4'] + (keyboard ? 0 : insets.bottom),
             gap: theme.space['4'],
             maxHeight: '90%',
           }}
         >
-          {children}
+          {scroll ? (
+            <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ gap: theme.space['4'] }}>
+              {children}
+            </ScrollView>
+          ) : (
+            children
+          )}
+          {footer !== undefined && footer !== null ? <View style={{ gap: theme.space['2'] }}>{footer}</View> : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>

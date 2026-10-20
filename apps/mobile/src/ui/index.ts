@@ -11,3 +11,4 @@ export * from './edit-mode';
 export * from './fit';
 export * from './selection';
 export * from './set-shape';
+export * from './keyboard';

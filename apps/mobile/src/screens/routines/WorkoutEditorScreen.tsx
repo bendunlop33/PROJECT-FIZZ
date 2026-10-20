@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, KeyboardAvoidingView, Pressable, ScrollView, View } from 'react-native';
+import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -50,7 +50,7 @@ import type { LibraryToastParam, RootStackParams } from '../../navigation/types'
 import type { EditorExerciseInfo, RoutineEditorData } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, Eyebrow, Icon, InfoLine, NumberAccessory, NumberStepper, PrimaryButton, Row, SetCountBar, SetShapeControl, ShapeRepsSheet, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, Eyebrow, Icon, InfoLine, NumberAccessory, NumberStepper, PrimaryButton, Row, SetCountBar, SetShapeControl, ShapeRepsSheet, SheetKeyboardAvoidingView, StatusLine, TextButton, TextField } from '../../ui';
 import { conflictLines, conflictText, EDITOR_COPY, editorAddRow, editorPrimary, editorSlotIssue, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
 import { handOffLibraryToast } from '../../workout/library-toast';
 import { saveEditRequest, settleSaveEdit } from '../../workout/save-edit-handoff';
@@ -320,7 +320,7 @@ export function WorkoutEditorScreen() {
   const shapeSlotView = shapeSlot === undefined ? null : slotShapeOf(shapeSlot);
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
+    <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <NumberAccessory />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.space['2'], paddingTop: theme.space['3'], minHeight: 52 }}>
         <TextButton label={EDITOR_COPY.cancel} tone="secondary" onPress={cancel} />
@@ -613,6 +613,7 @@ export function WorkoutEditorScreen() {
       />
       <BottomCard
         visible={stale !== null}
+        scroll={false}
         onClose={() => {
           setStale(null);
         }}
@@ -621,7 +622,7 @@ export function WorkoutEditorScreen() {
           <ConflictBody stale={stale} conflicts={merge.conflicts} picks={picks} nameOf={nameOf} tz={services.now().tz} onPick={(k, v) => { setPicks((p) => ({ ...p, [k]: v })); }} onKeepBoth={keepBoth} onDiscard={discardMine} />
         ) : null}
       </BottomCard>
-    </KeyboardAvoidingView>
+    </SheetKeyboardAvoidingView>
   );
 }
 
@@ -712,7 +713,7 @@ function SetSheet({
   };
   const preset = t && slot ? (slot.restBySetType[t.setType]?.seconds ?? null) : null;
   return (
-    <BottomCard visible={visible} onClose={onClose} closeLabel={EDITOR_COPY.done}>
+    <BottomCard visible={visible} onClose={onClose} closeLabel={EDITOR_COPY.done} scroll={false}>
       {slot && t ? (
         <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: theme.space['4'] }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -960,7 +961,7 @@ function AddExerciseSheet({ visible, title, withSets, onPick, onClose }: { visib
     };
   }, [services, query, visible]);
   return (
-    <BottomCard visible={visible} onClose={onClose} closeLabel={EDITOR_COPY.cancel}>
+    <BottomCard visible={visible} onClose={onClose} closeLabel={EDITOR_COPY.cancel} scroll={false}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <AppText variant="title2" accessibilityRole="header">
           {title}

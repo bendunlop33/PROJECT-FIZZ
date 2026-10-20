@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
+import { Keyboard, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { undoOpId, type ContextDescription } from '@fizz/coach';
@@ -44,7 +44,7 @@ import { formatTime } from '../../format/dates';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, TextButton, TextField } from '../../ui';
+import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SheetKeyboardAvoidingView, TextButton, TextField } from '../../ui';
 import { CoachCard } from './CoachCard';
 import { BuildQuestionCard, BuildRequestCard, PendingBuildCard, QUESTION_COPY, WorkoutDraftCard } from './BuildCards';
 import { PlanCard } from './PlanCard';
@@ -609,7 +609,7 @@ export function CoachSheetScreen() {
   }
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: theme.space['2'] }}>
+    <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: theme.space['2'] }}>
       {header}
       {workout?.active === true ? (
         <Pressable
@@ -765,7 +765,7 @@ export function CoachSheetScreen() {
         ) : null}
       </View>
       <KeyboardDoneAccessory nativeID={COACH_DONE_ACCESSORY_ID} />
-    </KeyboardAvoidingView>
+    </SheetKeyboardAvoidingView>
   );
 }
 

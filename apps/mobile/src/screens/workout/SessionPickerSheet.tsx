@@ -98,7 +98,7 @@ export function SessionPickerSheet({
   })();
 
   return (
-    <BottomCard visible={visible} onClose={onClose} {...(onDismissed ? { onDismissed } : {})} closeLabel={SESSION_PICKER_COPY.close}>
+    <BottomCard visible={visible} onClose={onClose} {...(onDismissed ? { onDismissed } : {})} closeLabel={SESSION_PICKER_COPY.close} scroll={false}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>
         <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
           {SESSION_PICKER_COPY.title}

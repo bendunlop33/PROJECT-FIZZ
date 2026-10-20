@@ -196,7 +196,7 @@ export function AddExerciseSheet({
 }) {
   const theme = useTheme();
   return (
-    <BottomCard visible={visible} onClose={onClose}>
+    <BottomCard visible={visible} onClose={onClose} scroll={false}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['3'] }}>
         <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
           {EDIT_MODE_COPY.addExercise}

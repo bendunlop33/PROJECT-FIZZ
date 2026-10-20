@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import { ActionSheetIOS, Pressable, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { deleteToolbarLabel, pastRowDetail, pastRowOpens, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel, unreadableLine } from '../../history/delete-view';
 import { DeleteToastView } from '../../history/DeleteToastView';
@@ -9,8 +10,8 @@ import { useSelectDelete } from '../../history/useSelectDelete';
 import { newUuid } from '../../device/runtime';
 import { PAST_PAGE } from '../../services/history-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { TIMING } from '../../theme';
-import { AppText, DangerTextButton, Group, Icon, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton, Toast } from '../../ui';
+import { TIMING, useTheme } from '../../theme';
+import { AppText, DangerTextButton, Group, Icon, Row, Screen, SelectionToolbar, SelectRow, StatusLine, TextButton, Toast, ToastHost, toastBottom } from '../../ui';
 import { LIBRARY_COPY_UI } from '../../workout/library-view';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 
@@ -29,6 +30,8 @@ import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 export function PastWorkoutsScreen() {
   const navigation = useNavigation();
   const services = useServices();
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
   // Pages of 30; `Show more` widens what is loaded, and `Select all` covers only that (§2.3; review r2 B2).
   const [limit, setLimit] = useState(PAST_PAGE);
   const [data, reload] = useScreenData(async (s) => ({ list: await s.history.pastWorkouts({ limit }), deleted: await s.history.recentlyDeletedCount() }));
@@ -182,12 +185,14 @@ export function PastWorkoutsScreen() {
           </Group>
         ) : null}
       </Screen>
-      <DeleteToastView state={toast} />
-      {saveToast ? (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 24 }}>
+      {/* 0.6: one floating place for both toasts, clear of the home indicator; the list never reflows. */}
+      <ToastHost bottom={toastBottom({ footerHeight: null, insetBottom: insets.bottom, space2: theme.space['2'] })}>
+        {toast.toast ? (
+          <DeleteToastView state={toast} />
+        ) : saveToast ? (
           <Toast icon="info.circle" text={saveToast.text} {...(saveToast.action ? { action: saveToast.action } : {})} {...(saveToast.onAction ? { onAction: saveToast.onAction } : {})} />
-        </View>
-      ) : null}
+        ) : null}
+      </ToastHost>
       {save.sheet}
       {selecting ? <SelectionToolbar trailing={<DangerTextButton label={deleteToolbarLabel(selected.size)} disabled={selected.size === 0} onPress={sel.confirmSelected} />} /> : null}
     </>

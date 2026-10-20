@@ -120,6 +120,7 @@ export function EquipmentEditorScreen() {
     <View style={{ flex: 1 }}>
       <NumberAccessory />
       <Screen
+        toast={toast ? <Toast text={toast.text} {...(toast.undo ? { action: 'Undo', onAction: toast.undo } : {})} /> : null}
         footer={
           <PrimaryButton
             label={busy ? 'Saving…' : problems.length === 0 ? 'Save' : `Fix ${String(problems.length)} ${problems.length === 1 ? 'problem' : 'problems'}`}
@@ -279,7 +280,6 @@ export function EquipmentEditorScreen() {
         ))}
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
       </Screen>
-      {toast ? <Toast text={toast.text} {...(toast.undo ? { action: 'Undo', onAction: toast.undo } : {})} /> : null}
     </View>
   );
 }

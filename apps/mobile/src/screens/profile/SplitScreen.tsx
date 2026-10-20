@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 
 import type { SplitBodyPart, TrainingChange } from '@fizz/schemas';
 
@@ -91,19 +91,32 @@ export function SplitScreen() {
         {v.canAddDay ? <Row title={C.addDay} icon="plus" onPress={() => { openDay(null); }} /> : null}
       </Group>
 
-      <BottomCard visible={sheet !== null} onClose={() => { setSheet(null); }}>
+      <BottomCard
+        visible={sheet !== null}
+        onClose={() => { setSheet(null); }}
+        footer={
+          sheet?.kind === 'lift' ? (
+            <>
+              <TextButton label={C.useRecommended} tone="secondary" onPress={() => void save({ kind: 'main_lift', dayId: sheet.dayId, exerciseId: null }, opId)} />
+              <TextButton label={C.cancel} tone="secondary" onPress={() => { setSheet(null); }} />
+            </>
+          ) : sheet?.kind === 'day' ? (
+            <>
+              <PrimaryButton label={C.save} disabled={name.trim() === '' || parts.length === 0} onPress={() => { saveDay(sheet.dayId); }} />
+              {sheet.dayId !== null && current.length > 1 ? <DangerTextButton label={C.removeDay} onPress={() => void save({ kind: 'custom_split', days: current.filter((d) => d.id !== sheet.dayId) }, opId)} /> : null}
+              <TextButton label={C.cancel} tone="secondary" onPress={() => { setSheet(null); }} />
+            </>
+          ) : null
+        }
+      >
         {sheet?.kind === 'lift' ? (
           <>
             <AppText variant="headline">{`${C.mainLift} · ${v.days.find((d) => d.id === sheet.dayId)?.name ?? ''}`}</AppText>
-            <ScrollView style={{ maxHeight: 360 }}>
-              <Group>
-                {(snap.options[sheet.dayId] ?? []).map((o) => (
-                  <Row key={o.id} title={o.name} {...(snap.mainLifts[sheet.dayId]?.exerciseId === o.id ? { subtitle: snap.mainLifts[sheet.dayId]?.source === 'recommended' ? C.recommended : 'Current' } : {})} onPress={() => void save({ kind: 'main_lift', dayId: sheet.dayId, exerciseId: o.id }, opId)} />
-                ))}
-              </Group>
-            </ScrollView>
-            <TextButton label={C.useRecommended} tone="secondary" onPress={() => void save({ kind: 'main_lift', dayId: sheet.dayId, exerciseId: null }, opId)} />
-            <TextButton label={C.cancel} tone="secondary" onPress={() => { setSheet(null); }} />
+            <Group>
+              {(snap.options[sheet.dayId] ?? []).map((o) => (
+                <Row key={o.id} title={o.name} {...(snap.mainLifts[sheet.dayId]?.exerciseId === o.id ? { subtitle: snap.mainLifts[sheet.dayId]?.source === 'recommended' ? C.recommended : 'Current' } : {})} onPress={() => void save({ kind: 'main_lift', dayId: sheet.dayId, exerciseId: o.id }, opId)} />
+              ))}
+            </Group>
           </>
         ) : null}
         {sheet?.kind === 'day' ? (
@@ -112,14 +125,11 @@ export function SplitScreen() {
             <AppText variant="sectionLabel" color="text.secondary">
               {C.bodyParts}
             </AppText>
-            <ScrollView style={{ maxHeight: 320 }}>
+            <View>
               {bodyPartChoices(parts).map((b) => (
                 <ChecklistRow key={b.part} title={b.part} checked={b.checked} onToggle={() => { setParts((ps) => (ps.includes(b.part) ? ps.filter((x) => x !== b.part) : [...ps, b.part])); }} />
               ))}
-            </ScrollView>
-            <PrimaryButton label={C.save} disabled={name.trim() === '' || parts.length === 0} onPress={() => { saveDay(sheet.dayId); }} />
-            {sheet.dayId !== null && current.length > 1 ? <DangerTextButton label={C.removeDay} onPress={() => void save({ kind: 'custom_split', days: current.filter((d) => d.id !== sheet.dayId) }, opId)} /> : null}
-            <TextButton label={C.cancel} tone="secondary" onPress={() => { setSheet(null); }} />
+            </View>
           </>
         ) : null}
       </BottomCard>

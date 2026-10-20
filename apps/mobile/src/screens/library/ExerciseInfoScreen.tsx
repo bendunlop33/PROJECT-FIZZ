@@ -453,7 +453,7 @@ function AddToWorkoutSheet({
 
   const rows = dest === null ? [] : dest.destinations.workouts;
   return (
-    <BottomCard visible={visible} onClose={onClose} closeLabel={EXERCISE_INFO_COPY.cancel}>
+    <BottomCard visible={visible} onClose={onClose} closeLabel={EXERCISE_INFO_COPY.cancel} scroll={false}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
         <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }} numberOfLines={2}>
           {EXERCISE_INFO_COPY.addTitle(name)}

@@ -23,7 +23,7 @@ describe('Muscles table layout (F16)', () => {
 
   it('a screen with the floating Ask pill leaves room for all of it under the content', () => {
     const src = readFileSync(join(__dirname, '..', 'src', 'ui', 'layout.tsx'), 'utf8');
-    expect(src).toContain('(floating ? FLOATING_PILL_ROOM : 0)');
+    expect(src).toContain('(showFloating ? FLOATING_PILL_ROOM : 0)');
     const pill = readFileSync(join(__dirname, '..', 'src', 'screens', 'coach', 'AskPill.tsx'), 'utf8');
     expect(pill).toContain('minHeight: 44');
     expect(pill).toContain("bottom: bottom ?? theme.space['4']");

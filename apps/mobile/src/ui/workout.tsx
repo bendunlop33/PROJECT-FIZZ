@@ -10,6 +10,7 @@ import { PrimaryButton } from './buttons';
 import { Icon, type SymbolName } from './Icon';
 import { FadeIn, TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
+import { accessoryAction, bottomBarPadding } from './keyboard-state';
 import { CARDIO_TIME_FORMAT, NUMBER_FORMAT, nextFieldText } from './number-text';
 import { effortInfoLabel, effortInfoLines, type EffortScale } from '../workout/effort-info';
 import { AX_FONT_SCALE } from '../workout/overview';
@@ -18,30 +19,39 @@ import { stepperNumeralSize, stepperTexts, tileFit, tileRowLayout, type TileSpec
 /** Shared keyboard toolbar for number fields (the system decimal pad has no Done key). */
 export const NUMBER_ACCESSORY_ID = 'fizz-number-done';
 
-export function NumberAccessory() {
-  return <KeyboardDoneAccessory nativeID={NUMBER_ACCESSORY_ID} />;
+export function NumberAccessory({ onNext, onDone }: { onNext?: (() => void) | null; onDone?: (() => void) | null } = {}) {
+  return <KeyboardDoneAccessory nativeID={NUMBER_ACCESSORY_ID} onNext={onNext ?? null} onDone={onDone ?? null} />;
 }
 
 /**
  * A `Done` bar above the keyboard (iOS `InputAccessoryView`) for a field whose keyboard has no
  * Done key: number pads, and multiline text where Return adds a line (the coach sheet, build 131).
+ * With `onNext` it shows `Next ›` instead (weight then reps without the keypad dropping; 0.7);
+ * `Done` closes the keyboard, then runs `onDone` (closing an inline editor with it).
  */
-export function KeyboardDoneAccessory({ nativeID }: { nativeID: string }) {
+export function KeyboardDoneAccessory({ nativeID, onNext = null, onDone = null }: { nativeID: string; onNext?: (() => void) | null; onDone?: (() => void) | null }) {
   const theme = useTheme();
+  const action = accessoryAction(onNext);
   return (
     <InputAccessoryView nativeID={nativeID} backgroundColor={theme.colors['bg.surface']}>
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Done"
+          accessibilityLabel={action.accessibilityLabel}
           onPress={() => {
-            // Closes the keyboard only; nothing is logged or sent.
+            if (onNext) {
+              // Moves to the next field; the keypad stays up.
+              onNext();
+              return;
+            }
+            // Closes the keyboard (and the editor it belongs to); nothing is logged or sent.
             Keyboard.dismiss();
+            onDone?.();
           }}
           style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingHorizontal: theme.space['3'] }}
         >
           <AppText variant="headline" color="accent">
-            Done
+            {action.label}
           </AppText>
         </Pressable>
       </View>
@@ -463,7 +473,18 @@ export function TalkButton({ onPress }: { onPress: () => void }) {
  * keyboard when open. Talk is passed only once voice exists; until then the
  * bar has no dead control (critic T3).
  */
-export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean; lead?: string | null }; guard?: boolean }) {
+export function ActionBar({
+  talk = null,
+  primary,
+  guard,
+  keypadOpen = false,
+}: {
+  talk?: ReactNode;
+  primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean; lead?: string | null };
+  guard?: boolean;
+  /** On the keyboard: no room for the home indicator, a small gap only (0.2). */
+  keypadOpen?: boolean;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -477,7 +498,7 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
         borderTopColor: theme.colors['border.divider'],
         paddingHorizontal: theme.components.barOnCanvas ? theme.space['5'] : theme.space['4'],
         paddingTop: theme.space['3'],
-        paddingBottom: theme.space['3'] + Math.max(insets.bottom, theme.components.barOnCanvas ? theme.space['4'] : 0),
+        paddingBottom: bottomBarPadding({ keypadOpen, insetBottom: insets.bottom, space2: theme.space['2'], space3: theme.space['3'], minInset: theme.components.barOnCanvas ? theme.space['4'] : 0 }),
       }}
     >
       {talk}
@@ -508,7 +529,32 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
   );
 }
 
-/** `UndoToast` (§9.10): above the action bar, never over it. */
+/**
+ * The toast's place (0.6): floating over the bottom of the screen at
+ * `bottom` (the measured bottom chrome, `toastBottom`), so it never scrolls
+ * away, never sits under a bar and doesn't reflow the list. `onHeight` lets
+ * the screen pad its scroll while it shows.
+ */
+export function ToastHost({ children, bottom, onHeight }: { children: ReactNode; bottom: number; onHeight?: (h: number) => void }) {
+  const empty = children === null || children === undefined || children === false;
+  useEffect(() => {
+    if (empty) onHeight?.(0);
+  }, [empty]);
+  if (empty) return null;
+  return (
+    <View
+      pointerEvents="box-none"
+      onLayout={(e) => {
+        onHeight?.(e.nativeEvent.layout.height);
+      }}
+      style={{ position: 'absolute', left: 0, right: 0, bottom }}
+    >
+      {children}
+    </View>
+  );
+}
+
+/** `UndoToast` (§9.10): above the action bar, never over it (in a `ToastHost`). */
 export function Toast({
   icon = 'checkmark.circle.fill',
   text,

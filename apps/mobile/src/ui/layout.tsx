@@ -1,10 +1,13 @@
 import { Children, Fragment, isValidElement, useState, type ReactNode, type Ref } from 'react';
-import { Pressable, ScrollView, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, TextInput, View, type LayoutChangeEvent, type TextInputProps, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme, type ColorToken } from '../theme';
 import { Icon, type SymbolName } from './Icon';
+import { SheetKeyboardAvoidingView, useKeyboardVisible } from './keyboard';
+import { bottomBarPadding, toastBottom } from './keyboard-state';
 import { AppText } from './Text';
+import { ToastHost } from './workout';
 
 /** Room left under the content for a floating pill (F16: its 44 pt, its 16 pt lift, and a 16 pt gap). */
 export const FLOATING_PILL_ROOM = 44 + 16 + 16;
@@ -12,43 +15,76 @@ export const FLOATING_PILL_ROOM = 44 + 16 + 16;
 /**
  * A scrolling screen on `bg.canvas` with the look's side margin. `floating`:
  * something drawn over the bottom of the scroll area (the `Ask` pill); the
- * content gets room below it so nothing ends up hidden underneath.
+ * content gets room below it so nothing ends up hidden underneath. It hides
+ * while the keyboard is up. The screen avoids the keyboard (0.3), so the
+ * lowest field and the footer's Save sit above it. `toast`: floats on the
+ * footer (or clear of the home indicator; `tab`: on the tab bar) and pads the
+ * scroll while it shows (0.6).
  */
-export function Screen({ children, footer, floating, testID }: { children: ReactNode; footer?: ReactNode; floating?: ReactNode; testID?: string }) {
+export function Screen({ children, footer, floating, toast, tab = false, testID }: { children: ReactNode; footer?: ReactNode; floating?: ReactNode; toast?: ReactNode; tab?: boolean; testID?: string }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardVisible();
+  const [footerHeight, setFooterHeight] = useState<number | null>(null);
+  const [toastHeight, setToastHeight] = useState(0);
+  const showFloating = floating !== undefined && floating !== null && !keyboard;
+  // With a footer the whole screen avoids the keyboard, so Save rides on it. Without one the
+  // scroll only insets itself (no double inset), and a large-title header still finds its scroll view.
+  const Frame = footer ? SheetKeyboardAvoidingView : View;
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} testID={testID}>
+    <Frame style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} {...(testID ? { testID } : {})}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets={!footer}
         contentContainerStyle={{
           paddingHorizontal: theme.components.screenMargin,
           paddingTop: theme.space['4'],
-          paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + insets.bottom) + (floating ? FLOATING_PILL_ROOM : 0),
+          paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + (keyboard ? 0 : insets.bottom)) + (showFloating ? FLOATING_PILL_ROOM : 0) + toastHeight,
           gap: theme.space['5'],
         }}
       >
         {children}
       </ScrollView>
-      {floating}
-      {footer ? <BottomBar>{footer}</BottomBar> : null}
-    </View>
+      {showFloating ? floating : null}
+      {footer ? (
+        <BottomBar
+          onHeight={(h) => {
+            setFooterHeight(h);
+          }}
+        >
+          {footer}
+        </BottomBar>
+      ) : null}
+      <ToastHost bottom={toastBottom({ footerHeight: footer ? footerHeight : null, insetBottom: keyboard ? 0 : insets.bottom, space2: theme.space['2'], tab })} onHeight={setToastHeight}>
+        {toast}
+      </ToastHost>
+    </Frame>
   );
 }
 
-/** Fixed bottom bar for one primary action (OnboardingFrame, design-system §9.46). */
-export function BottomBar({ children }: { children: ReactNode }) {
+/** Fixed bottom bar for one primary action (OnboardingFrame, design-system §9.46). On the keyboard it drops the home-indicator room (0.2). */
+export function BottomBar({ children, onHeight }: { children: ReactNode; onHeight?: (h: number) => void }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardVisible();
   return (
     <View
+      {...(onHeight
+        ? {
+            onLayout: (e: LayoutChangeEvent) => {
+              onHeight(e.nativeEvent.layout.height);
+            },
+          }
+        : {})}
       style={{
         backgroundColor: theme.components.barOnCanvas ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
         borderTopWidth: theme.components.barOnCanvas ? 0 : theme.dividerWidth,
         borderTopColor: theme.colors['border.divider'],
         paddingHorizontal: theme.components.barOnCanvas ? theme.space['5'] : theme.space['4'],
         paddingTop: theme.space['3'],
-        paddingBottom: theme.space['3'] + insets.bottom,
+        paddingBottom: bottomBarPadding({ keypadOpen: keyboard, insetBottom: insets.bottom, space2: theme.space['2'], space3: theme.space['3'] }),
         gap: theme.space['2'],
       }}
     >

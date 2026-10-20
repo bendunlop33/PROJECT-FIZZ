@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { ActionSheetIOS, KeyboardAvoidingView, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActionSheetIOS, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EQUIPMENT_WORD, pickerEquipmentLabel, pickerSections } from '@fizz/domain';
@@ -12,7 +12,7 @@ import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, Group, Icon, Row, SectionHeader, SetCountBar, StatusLine, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
+import { AppText, Chip, ChipRow, Group, Icon, Row, SectionHeader, SetCountBar, SheetKeyboardAvoidingView, StatusLine, TEXT_PRESSED_OPACITY, TextButton } from '../../ui';
 import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
 import { pickerAddSets, pickerBarValue, SET_BAR, type PickerSetsBar } from '../../workout/set-shape-view';
 import { supersetPickerView } from '../../workout/superset-picker';
@@ -176,7 +176,7 @@ export function ExercisePickerScreen() {
   const barStart = pairing?.sets ?? SET_BAR.start;
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
+    <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['3'], gap: theme.space['3'], backgroundColor: theme.colors['bg.canvas'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <AppText variant="title1" accessibilityRole="header" style={{ flex: 1 }} numberOfLines={2}>
@@ -293,6 +293,6 @@ export function ExercisePickerScreen() {
           <SetCountBar value={pickerBarValue(bar, cardio, barStart)} limits={SET_BAR.limits} onChange={(n) => { setBar({ value: n, touched: true }); }} />
         </View>
       )}
-    </KeyboardAvoidingView>
+    </SheetKeyboardAvoidingView>
   );
 }
