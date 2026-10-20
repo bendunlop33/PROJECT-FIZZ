@@ -2,17 +2,18 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import {
-  DEFAULT_DUMBBELL_STEP,
-  DEFAULT_SMALL_DUMBBELL_MAX,
   DUMBBELL_STEPS,
   formatNumber,
+  initQuickGymForm,
   QUICK_EXTRAS,
   QUICK_GYM_TYPES,
+  quickGymFormInput,
+  quickGymFormRows,
+  reduceQuickGymForm,
   SMALL_DUMBBELL_MAX,
-  type QuickExtra,
-  type QuickGymInput,
+  type QuickGymFormAction,
 } from '@fizz/domain';
-import type { GymSetup, WeightUnit } from '@fizz/schemas';
+import type { WeightUnit } from '@fizz/schemas';
 
 import { useDataChanged, useServices } from '../../shell/context';
 import { newUuid } from '../../device/runtime';
@@ -39,12 +40,15 @@ export interface SavedGymSummary {
 export function GymSetupFlow({
   unit,
   step,
+  firstGym = true,
   onBack,
   onSkip,
   onSaved,
 }: {
   unit: WeightUnit;
   step: string | null;
+  /** His first gym: the name starts as `Main gym`; otherwise empty (review N2). */
+  firstGym?: boolean;
   onBack?: (() => void) | undefined;
   onSkip?: (() => void) | undefined;
   onSaved: (summary: SavedGymSummary) => void;
@@ -53,28 +57,23 @@ export function GymSetupFlow({
   const services = useServices();
   const changed = useDataChanged();
   const [gymId] = useState(newUuid);
-  const [name, setName] = useState('Main gym');
-  const [setup, setSetup] = useState<GymSetup>('full');
-  const [dumbbellStep, setDumbbellStep] = useState(DEFAULT_DUMBBELL_STEP[unit]);
-  const [dumbbellMax, setDumbbellMax] = useState<number | null>(DEFAULT_SMALL_DUMBBELL_MAX[unit]);
-  const [extras, setExtras] = useState<Record<'small' | 'home', QuickExtra[]>>({
-    small: QUICK_EXTRAS.small.filter((x) => x.on).map((x) => x.key),
-    home: QUICK_EXTRAS.home.filter((x) => x.on).map((x) => x.key),
-  });
+  const [form, setForm] = useState(() => initQuickGymForm(unit, firstGym));
+  const act = (a: QuickGymFormAction) => {
+    setForm((cur) => reduceQuickGymForm(cur, a));
+  };
+  const { name, setup, dumbbellStep, dumbbellMax, extras } = form;
+  const rows = quickGymFormRows(form);
+  // An empty name on a second gym is where he starts, not a mistake: the warning waits until he has typed.
+  const [nameTouched, setNameTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameEmpty = name.trim() === '';
-
-  function input(): QuickGymInput {
-    if (setup === 'full') return { setup, unit, dumbbellStep };
-    return { setup, unit, dumbbells: dumbbellMax === null ? null : { max: dumbbellMax, step: dumbbellStep }, extras: extras[setup] };
-  }
 
   async function save() {
     if (saving || nameEmpty) return;
     setSaving(true);
     setError(null);
-    const draft = services.coachingKnowledge.buildQuickGymDraft(input());
+    const draft = services.coachingKnowledge.buildQuickGymDraft(quickGymFormInput(form));
     const result = await services.setup.saveGym({ gymId, name, draft, setup });
     setSaving(false);
     if (!result.ok) {
@@ -93,33 +92,36 @@ export function GymSetupFlow({
         </View>
         <TextField
           value={name}
-          onChangeText={setName}
+          onChangeText={(t) => {
+            setNameTouched(true);
+            act({ kind: 'name', name: t });
+          }}
           accessibilityLabel="Gym name"
           accessibilityLabelledBy="gym-name-label"
           returnKeyType="done"
           maxLength={120}
-          style={nameEmpty ? { borderWidth: 2, borderColor: theme.colors['status.warning'] } : undefined}
+          style={nameEmpty && nameTouched ? { borderWidth: 2, borderColor: theme.colors['status.warning'] } : undefined}
         />
-        {nameEmpty ? <StatusLine icon="exclamationmark.triangle" tone="warning" text="Give the gym a name" /> : null}
+        {nameEmpty && nameTouched ? <StatusLine icon="exclamationmark.triangle" tone="warning" text="Give the gym a name" /> : null}
       </View>
       <Segmented
         label="Gym type"
         options={QUICK_GYM_TYPES.map((t) => ({ key: t.setup, label: t.title }))}
         selected={setup}
         onSelect={(k) => {
-          setSetup(k);
+          act({ kind: 'setup', setup: k });
         }}
       />
-      {setup !== 'full' ? (
+      {rows.max ? (
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>Dumbbells up to</Eyebrow>
           <ChipRow>
-            {setup === 'home' ? (
+            {rows.none ? (
               <Chip
                 label="None"
                 selected={dumbbellMax === null}
                 onPress={() => {
-                  setDumbbellMax(null);
+                  act({ kind: 'max', max: null });
                 }}
               />
             ) : null}
@@ -129,14 +131,14 @@ export function GymSetupFlow({
                 label={`${formatNumber(m)} ${unit}`}
                 selected={dumbbellMax === m}
                 onPress={() => {
-                  setDumbbellMax(m);
+                  act({ kind: 'max', max: m });
                 }}
               />
             ))}
           </ChipRow>
         </View>
       ) : null}
-      {setup === 'full' || dumbbellMax !== null ? (
+      {rows.step ? (
         <View style={{ gap: theme.space['2'] }}>
           <Eyebrow>Dumbbells go up in</Eyebrow>
           <ChipRow>
@@ -146,14 +148,14 @@ export function GymSetupFlow({
                 label={`${formatNumber(s)} ${unit}`}
                 selected={dumbbellStep === s}
                 onPress={() => {
-                  setDumbbellStep(s);
+                  act({ kind: 'step', step: s });
                 }}
               />
             ))}
           </ChipRow>
         </View>
       ) : null}
-      {setup !== 'full' ? (
+      {rows.extras && setup !== 'full' ? (
         <Group>
           {QUICK_EXTRAS[setup].map((x) => (
             <ChecklistRow
@@ -161,13 +163,13 @@ export function GymSetupFlow({
               title={x.label}
               checked={extras[setup].includes(x.key)}
               onToggle={() => {
-                setExtras((cur) => ({ ...cur, [setup]: cur[setup].includes(x.key) ? cur[setup].filter((k) => k !== x.key) : [...cur[setup], x.key] }));
+                act({ kind: 'extra', key: x.key });
               }}
             />
           ))}
         </Group>
       ) : null}
-      {setup === 'home' && dumbbellMax === null && extras.home.length === 0 ? (
+      {rows.bodyweightOnly ? (
         <AppText variant="callout" color="text.secondary">
           Bodyweight only
         </AppText>

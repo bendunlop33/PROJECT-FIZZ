@@ -195,6 +195,68 @@ export function buildQuickGymDraft(input: QuickGymInput): GymDraft {
 }
 
 // ---------------------------------------------------------------------------
+// The Add gym screen's state (pure, so type switching is tested; review S5, N1, N2)
+
+export interface QuickGymForm {
+  unit: WeightUnit;
+  name: string;
+  setup: GymSetup;
+  dumbbellStep: number;
+  /** `Dumbbells up to` for a small or home gym; null = none (Home only). */
+  dumbbellMax: number | null;
+  extras: Record<'small' | 'home', QuickExtra[]>;
+}
+
+export type QuickGymFormAction =
+  | { kind: 'name'; name: string }
+  | { kind: 'setup'; setup: GymSetup }
+  | { kind: 'step'; step: number }
+  | { kind: 'max'; max: number | null }
+  | { kind: 'extra'; key: QuickExtra };
+
+/** Full gym preselected. The name is `Main gym` only for his first gym (review N2); empty otherwise. */
+export function initQuickGymForm(unit: WeightUnit, firstGym: boolean): QuickGymForm {
+  return {
+    unit,
+    name: firstGym ? 'Main gym' : '',
+    setup: 'full',
+    dumbbellStep: DEFAULT_DUMBBELL_STEP[unit],
+    dumbbellMax: DEFAULT_SMALL_DUMBBELL_MAX[unit],
+    extras: { small: QUICK_EXTRAS.small.filter((x) => x.on).map((x) => x.key), home: QUICK_EXTRAS.home.filter((x) => x.on).map((x) => x.key) },
+  };
+}
+
+export function reduceQuickGymForm(f: QuickGymForm, a: QuickGymFormAction): QuickGymForm {
+  switch (a.kind) {
+    case 'name':
+      return { ...f, name: a.name };
+    case 'setup':
+      // Review N1: `None` is a Home answer; leaving Home brings the dumbbells back.
+      return { ...f, setup: a.setup, dumbbellMax: a.setup !== 'home' && f.dumbbellMax === null ? DEFAULT_SMALL_DUMBBELL_MAX[f.unit] : f.dumbbellMax };
+    case 'step':
+      return DUMBBELL_STEPS[f.unit].includes(a.step) ? { ...f, dumbbellStep: a.step } : f;
+    case 'max':
+      return { ...f, dumbbellMax: a.max === null && f.setup !== 'home' ? f.dumbbellMax : a.max };
+    case 'extra': {
+      if (f.setup === 'full') return f;
+      const cur = f.extras[f.setup];
+      return { ...f, extras: { ...f.extras, [f.setup]: cur.includes(a.key) ? cur.filter((k) => k !== a.key) : [...cur, a.key] } };
+    }
+  }
+}
+
+/** What the screen shows: the `Dumbbells up to` row (with `None` on Home), the step row, the extras. */
+export function quickGymFormRows(f: QuickGymForm): { max: boolean; none: boolean; step: boolean; extras: boolean; bodyweightOnly: boolean } {
+  const small = f.setup !== 'full';
+  return { max: small, none: f.setup === 'home', step: f.setup === 'full' || f.dumbbellMax !== null, extras: small, bodyweightOnly: f.setup === 'home' && f.dumbbellMax === null && f.extras.home.length === 0 };
+}
+
+export function quickGymFormInput(f: QuickGymForm): QuickGymInput {
+  if (f.setup === 'full') return { setup: 'full', unit: f.unit, dumbbellStep: f.dumbbellStep };
+  return { setup: f.setup, unit: f.unit, dumbbells: f.dumbbellMax === null ? null : { max: f.dumbbellMax, step: f.dumbbellStep }, extras: f.extras[f.setup] };
+}
+
+// ---------------------------------------------------------------------------
 // Assumed vs confirmed (rule 6: shown on the gym screen and in `Why?`, never as main-UI copy)
 
 export function isAssumed(eq: Pick<EquipmentInstance, 'detailsSource'>): boolean {

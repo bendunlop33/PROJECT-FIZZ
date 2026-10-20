@@ -14,6 +14,10 @@ import {
   gymLearnFor,
   gymLearnText,
   gymSetupWords,
+  initQuickGymForm,
+  quickGymFormInput,
+  quickGymFormRows,
+  reduceQuickGymForm,
   makeFullNeedsDumbbellStep,
   materialiseGymDraft,
   notHereExerciseIds,
@@ -201,6 +205,45 @@ describe('Not at this gym', () => {
     const restored = apply({ gym: gym(), equipment: after }, back).equipment;
     expect(doableHere(legExt, snapGym(restored))).toBe(true);
     expect(restored.every((e) => e.notFor === undefined)).toBe(true);
+  });
+});
+
+describe('the Add gym screen (review S5, N1, N2)', () => {
+  it('one tap: Full gym preselected with Main gym and the default step on a first gym', () => {
+    const f = initQuickGymForm('kg', true);
+    expect(f.name).toBe('Main gym');
+    expect(quickGymFormInput(f)).toEqual({ setup: 'full', unit: 'kg', dumbbellStep: 2.5 });
+    expect(quickGymFormRows(f)).toMatchObject({ max: false, step: true, extras: false });
+    expect(quickGymFormInput(initQuickGymForm('lb', true))).toEqual({ setup: 'full', unit: 'lb', dumbbellStep: 5 });
+  });
+
+  it('a second gym starts with no name', () => {
+    expect(initQuickGymForm('kg', false).name).toBe('');
+  });
+
+  it('N1: Home → None, then Hotel / small: the dumbbells come back with a selected max and the step row', () => {
+    let f = initQuickGymForm('kg', true);
+    f = reduceQuickGymForm(f, { kind: 'setup', setup: 'home' });
+    f = reduceQuickGymForm(f, { kind: 'max', max: null });
+    expect(quickGymFormRows(f)).toMatchObject({ none: true, step: false, bodyweightOnly: true });
+    expect(quickGymFormInput(f)).toMatchObject({ setup: 'home', dumbbells: null });
+    f = reduceQuickGymForm(f, { kind: 'setup', setup: 'small' });
+    expect(f.dumbbellMax).toBe(20);
+    expect(quickGymFormRows(f)).toMatchObject({ none: false, step: true });
+    expect(quickGymFormInput(f)).toEqual({ setup: 'small', unit: 'kg', dumbbells: { max: 20, step: 2.5 }, extras: ['cable'] });
+    // None isn't an answer for a hotel gym.
+    expect(reduceQuickGymForm(f, { kind: 'max', max: null }).dumbbellMax).toBe(20);
+  });
+
+  it('extras are per type; a full gym ignores them; a bad step is ignored', () => {
+    let f = reduceQuickGymForm(initQuickGymForm('kg', true), { kind: 'setup', setup: 'small' });
+    f = reduceQuickGymForm(f, { kind: 'extra', key: 'cable' });
+    f = reduceQuickGymForm(f, { kind: 'extra', key: 'barbell' });
+    expect(f.extras).toEqual({ small: ['barbell'], home: [] });
+    f = reduceQuickGymForm(f, { kind: 'setup', setup: 'full' });
+    expect(reduceQuickGymForm(f, { kind: 'extra', key: 'cable' })).toBe(f);
+    expect(reduceQuickGymForm(f, { kind: 'step', step: 3 }).dumbbellStep).toBe(2.5);
+    expect(reduceQuickGymForm(f, { kind: 'step', step: 1 }).dumbbellStep).toBe(1);
   });
 });
 
