@@ -59,6 +59,102 @@ export function KeyboardDoneAccessory({ nativeID, onNext = null, onDone = null }
   );
 }
 
+/**
+ * The keypad bar while a table cell is the field (Ben, 20 Oct): `−` `+` (one
+ * achievable step from the domain), `Next ›` when there is a next field, and
+ * `Done`. It sits in the screen's bottom chrome, directly on the keypad: an
+ * `InputAccessoryView` never attaches to a field mounted after it (RN Fabric),
+ * which every in-place cell is. At the equipment's max the reason shows here.
+ */
+export function CellKeypadBarView({
+  down,
+  up,
+  decreaseLabel,
+  increaseLabel,
+  limit,
+  onStep,
+  onNext,
+  onDone,
+  keypadOpen,
+}: {
+  /** The equipment's limit when + is off (`Max 40 kg`), else null. */
+  limit: string | null;
+  down: StepTarget;
+  up: StepTarget;
+  decreaseLabel: string;
+  increaseLabel: string;
+  onStep: (v: number) => void;
+  onNext: (() => void) | null;
+  onDone: () => void;
+  keypadOpen: boolean;
+}) {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const stepKey = (glyph: string, target: StepTarget, label: string) => (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !target.enabled }}
+      {...(!target.enabled ? { accessibilityHint: target.reason } : {})}
+      disabled={!target.enabled}
+      onPress={() => {
+        if (target.enabled) {
+          haptic('step');
+          onStep(target.value);
+        }
+      }}
+      style={({ pressed }) => ({
+        width: theme.target.workout.width,
+        minHeight: theme.target.min.height,
+        borderRadius: theme.radius.pill,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
+        opacity: target.enabled ? 1 : 0.35,
+      })}
+    >
+      <AppText variant="title2" color="text.primary" style={{ fontWeight: '400' }} maxFontSizeMultiplier={1.4}>
+        {glyph}
+      </AppText>
+    </Pressable>
+  );
+  const textKey = (label: string, a11y: string, onPress: () => void) => (
+    <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={onPress} style={({ pressed }) => ({ minHeight: theme.target.min.height, minWidth: theme.target.min.width, justifyContent: 'center', alignItems: 'center', paddingHorizontal: theme.space['3'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
+      <AppText variant="headline" color="accent" maxFontSizeMultiplier={1.6}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.space['2'],
+        backgroundColor: theme.colors['bg.surface'],
+        paddingHorizontal: theme.space['4'],
+        paddingTop: theme.space['1'],
+        paddingBottom: keypadOpen ? theme.space['1'] : theme.space['1'] + insets.bottom,
+      }}
+    >
+      {stepKey('−', down, decreaseLabel)}
+      {stepKey('+', up, increaseLabel)}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        {limit !== null ? (
+          <AppText variant="callout" color="text.secondary" numeric numberOfLines={2}>
+            {limit}
+          </AppText>
+        ) : null}
+      </View>
+      {onNext ? textKey('Next ›', 'Next field', onNext) : null}
+      {textKey('Done', 'Done', () => {
+        Keyboard.dismiss();
+        onDone();
+      })}
+    </View>
+  );
+}
+
 /** D tile − / +: a light glyph with a full 44 × 52 pt target. */
 function TileStep({ glyph, target, onStep, describe, size, grow = false }: { glyph: string; target: StepTarget; onStep: (v: number) => void; describe: string; size?: number | undefined; /** Compact tile (F11): half the tile's width, full height. */ grow?: boolean }) {
   const theme = useTheme();
@@ -154,6 +250,7 @@ export function NumberStepper({
   autoFocus = false,
   onStep,
   resetTextOnBlur = false,
+  fieldLabel,
 }: {
   label: string;
   unit: string | null;
@@ -191,8 +288,12 @@ export function NumberStepper({
   /**
    * `inline` (design pass 1.1): one `− value +` line in a table row's editor, ≤ 60 pt with
    * its padding. The label is read by VoiceOver only; the numeral fits its measured width.
+   * `cell` (Ben, 20 Oct): the table cell itself is the field, with no − / + of its own; the
+   * steps, `Next ›` and `Done` are on the keypad bar (`CellKeypadBarView`).
    */
-  variant?: 'tile' | 'inline';
+  variant?: 'tile' | 'inline' | 'cell';
+  /** VoiceOver's label for the field in place of `label, unit` (`Set 3 weight, 7.5 kg each`). */
+  fieldLabel?: string;
   /** Focus on mount: a field opened while the keypad is up keeps it up (Next ›, another cell). */
   autoFocus?: boolean;
   /** − / + taps go here instead of `onChange` (review B2: the reps range clamps on a step, not on each keystroke). */
@@ -236,6 +337,7 @@ export function NumberStepper({
   const describe = assist ? 'Assistance' : label;
   const decrease = assist ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`;
   const increase = assist ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`;
+  const cellVariant = variant === 'cell';
   const input = (
     <TextInput
       ref={inputRef}
@@ -255,24 +357,40 @@ export function NumberStepper({
         if (resetTextOnBlur) setText(value === null ? '' : format.show(value));
       }}
       keyboardType={decimals ? 'decimal-pad' : 'number-pad'}
-      inputAccessoryViewID={NUMBER_ACCESSORY_ID}
+      // A cell's steps and Done are on the screen's keypad bar: an InputAccessoryView doesn't attach to
+      // a field mounted after it (RN Fabric looks the field up once, when the accessory mounts).
+      {...(cellVariant ? {} : { inputAccessoryViewID: NUMBER_ACCESSORY_ID })}
       autoFocus={autoFocus}
       selectTextOnFocus
-      accessibilityLabel={`${label}${unit ? `, ${unit}` : ''}`}
+      accessibilityLabel={fieldLabel ?? `${label}${unit ? `, ${unit}` : ''}`}
       {...(hint ? { accessibilityHint: hint } : {})}
+      // No accessibilityActions on a cell: VoiceOver focuses RN's native text field, not this view, so
+      // swipe up/down never reaches them. The keypad bar's labelled − / + are the steps (review S1).
       placeholder="—"
       placeholderTextColor={theme.colors['text.tertiary']}
-      {...(fitted !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}
-      style={{
-        minWidth: 36,
-        textAlign: 'center',
-        fontSize: fitted ?? theme.type.loadDisplay.fontSize,
-        fontWeight: theme.type.loadDisplay.fontWeight,
-        letterSpacing: theme.type.loadDisplay.letterSpacing,
-        fontVariant: ['tabular-nums'],
-        color: theme.colors['text.primary'],
-        paddingVertical: 0,
-      }}
+      {...(cellVariant ? { maxFontSizeMultiplier: theme.type.rowValue.maxFontSizeMultiplier } : fitted !== undefined ? { allowFontScaling: false } : { maxFontSizeMultiplier: theme.type.loadDisplay.maxFontSizeMultiplier })}
+      style={
+        cellVariant
+          ? {
+              minWidth: 40,
+              textAlign: 'left',
+              fontSize: theme.type.rowValue.fontSize,
+              fontWeight: '600',
+              fontVariant: ['tabular-nums'],
+              color: theme.colors['text.primary'],
+              paddingVertical: 0,
+            }
+          : {
+              minWidth: 36,
+              textAlign: 'center',
+              fontSize: fitted ?? theme.type.loadDisplay.fontSize,
+              fontWeight: theme.type.loadDisplay.fontWeight,
+              letterSpacing: theme.type.loadDisplay.letterSpacing,
+              fontVariant: ['tabular-nums'],
+              color: theme.colors['text.primary'],
+              paddingVertical: 0,
+            }
+      }
     />
   );
   const unitText = unit ? (
@@ -280,6 +398,35 @@ export function NumberStepper({
       {` ${unit}`}
     </AppText>
   ) : null;
+  if (cellVariant) {
+    // Ben, 20 Oct: the cell is the field, in its own place in the row; the 2 pt accent border shows it's being typed in.
+    return (
+      <View
+        onLayout={onLayout}
+        style={{
+          alignSelf: 'flex-start',
+          minWidth: 56,
+          minHeight: theme.target.min.height,
+          justifyContent: 'center',
+          paddingHorizontal: theme.space['2'],
+          paddingVertical: theme.space['1'],
+          borderRadius: theme.radius.sm,
+          backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
+          borderWidth: 2,
+          borderColor: warning ? theme.colors['status.warning'] : theme.colors.accent,
+          flexDirection: 'row',
+          alignItems: 'center',
+        }}
+      >
+        {input}
+        {unit ? (
+          <AppText variant="callout" color="text.secondary" maxFontSizeMultiplier={1.4}>
+            {` ${unit}`}
+          </AppText>
+        ) : null}
+      </View>
+    );
+  }
   if (inline) {
     // 1.1: `[−] numeral [+]` on one line; the 1.5 pt focus / warning border and the max reason stay.
     return (

@@ -8,7 +8,7 @@ import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
 import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, StepperTileRow, TextButton, TEXT_PRESSED_OPACITY, type SymbolName } from '../../ui';
 import { CARDIO_TIME_FORMAT } from '../../ui/number-text';
-import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadTileY, loadCellA11y, openRowLabel, openRowSubLine, runRowTap, showsFolded, tileReportFor, valueCellA11y, type AnchorRequest, type CellField, type ChipState, type Expansions, type RowPart, type RowTap, type TileId, type TileReport } from '../../workout/table';
+import { anchorTargetY, bottomSpacerHeight, cellInputA11y, chipsFor, editsInPlace, keypadTileY, loadCellA11y, openRowLabel, openRowSubLine, runRowTap, showsFolded, tileReportFor, valueCellA11y, type AnchorRequest, type CellField, type ChipState, type Expansions, type RowPart, type RowTap, type TileId, type TileReport } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
 import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
@@ -72,8 +72,11 @@ export interface WorkoutTableProps {
   onSelectSet: (setId: string) => void;
   /** A KG / REPS cell of a pending or done row: edited in place, never on another screen (18 Oct). */
   onCellTap: (tap: Extract<RowTap, { kind: 'select_edit' | 'correct' }>) => void;
-  /** A done row's in-place correction, drawn under its row; null when none is open. */
-  rowEditor: { setId: string; field: CellField; node: ReactNode } | null;
+  /**
+   * A done row's in-place correction; null when none is open. `inCell`: the node is the
+   * cell's own field (Ben, 20 Oct), drawn in place of the cell's value; else under the row.
+   */
+  rowEditor: { setId: string; field: CellField; node: ReactNode; inCell: boolean } | null;
   /** A drag, or a tap on the list outside the rows: closes any cell editor (review S4). */
   onTapElsewhere: () => void;
   onAddSet: (sessionExerciseId: string) => void;
@@ -340,6 +343,7 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
                   row={row}
                   ax={props.ax}
                   editing={props.rowEditor?.setId === row.setId ? props.rowEditor.field : null}
+                  cellEditor={props.rowEditor?.setId === row.setId && props.rowEditor.inCell && !props.ax ? props.rowEditor.node : null}
                   onPress={(part) => {
                     runRowTap(row, {
                       dismissKeyboard: () => { Keyboard.dismiss(); },
@@ -365,7 +369,8 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
                 />
               </View>,
             );
-            if (props.rowEditor?.setId === row.setId) parts.push(<View key={`edit:${row.setId}`}>{props.rowEditor.node}</View>);
+            // At AX sizes the row is one block, so the field sits under it.
+            if (props.rowEditor?.setId === row.setId && (!props.rowEditor.inCell || props.ax)) parts.push(<View key={`edit:${row.setId}`}>{props.rowEditor.node}</View>);
           }
           // Rows are direct children of the body, so their measured y is body-relative.
           return parts;
@@ -649,7 +654,7 @@ function SupersetMembers({ superset, ax, onMenu, onName, onNote, onPainBadge }: 
  * REPS cells edit in place (`rowTap`), a pending row's ring makes it current.
  * A long-press anywhere opens Edit set. Skipped rows do nothing.
  */
-export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: boolean; editing: CellField | null; onPress: (part: RowPart) => void }) {
+export function TableSetRow({ row, ax, editing, cellEditor = null, onPress }: { row: TableRow; ax: boolean; editing: CellField | null; /** The edited cell's own field (Ben, 20 Oct), drawn in place of its value. */ cellEditor?: ReactNode; onPress: (part: RowPart) => void }) {
   const theme = useTheme();
   const done = row.state === 'done';
   const skipped = row.state === 'skipped';
@@ -753,6 +758,15 @@ export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: 
 
   const cell = (part: 'load' | 'value', text: string, a11y: string, extra: ReactNode) => {
     const on = editing !== null && (part === 'load' ? editing === 'load' : editing !== 'load');
+    if (on && cellEditor !== null) {
+      // No second line (Ben, 20 Oct): the cell itself takes the typing.
+      return (
+        <View style={{ flex: 1, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+          {cellEditor}
+          {extra}
+        </View>
+      );
+    }
     return (
       <Pressable
         accessibilityRole="button"
@@ -924,8 +938,10 @@ const OpenRowContext = createContext<Pick<TableRow, 'columns' | 'effort' | 'memb
 /**
  * `OpenSetRow` (18 Oct, Ben: "the table stays a table"): the current set is
  * one highlighted table row, set · load · value · ✓, like every other row.
- * A tap on a value cell edits it in place under the row (− value +, the
- * steps from `buildActiveSetView`); ✓ logs it on the one Log path. One short
+ * A tap on a value cell makes that cell the field (Ben, 20 Oct: no second
+ * editor line); its − / +, `Next ›` and `Done` are on the screen's keypad bar
+ * (steps from `buildActiveSetView`). Cardio's time-and-distance cell keeps
+ * its pair under the row. ✓ logs it on the one Log path. One short
  * line under it: target, plates, rest, `Why?`. Everything else (copy last,
  * the full set editor, Focus) is behind `⋯` or a long-press.
  */
@@ -950,7 +966,8 @@ export function OpenSetRow(p: OpenSetRowProps) {
     if (report === null) return;
     const boxes = new Map<TileId, Layout>();
     const b = box.current;
-    if (b !== null && b.id === p.editing) boxes.set(b.id, { y: rowY.current + editorY.current + b.layout.y, h: b.layout.h });
+    // An in-place cell sits on the row's own line (Ben, 20 Oct); cardio's pair sits in the editor under it.
+    if (b !== null && b.id === p.editing) boxes.set(b.id, { y: rowY.current + (editsInPlace({ field: b.id, cardio }) ? 0 : editorY.current) + b.layout.y, h: b.layout.h });
     report({ setId: f.setId, keypadOpen: keypadOpen.current, boxes });
   };
   const latestSend = useRef(send);
@@ -974,8 +991,27 @@ export function OpenSetRow(p: OpenSetRowProps) {
   const valueField: TileId | null = f.reps ? 'reps' : f.duration ? 'time' : f.distance ? 'distance' : null;
   const valueText = working && !cardio ? workTimerText(f.workTimer?.remainingMs ?? null) : plainSpaces(f.cells.value);
 
+  const setLabel = memberTag ?? String(f.setNumber);
+  // Ben, 20 Oct: the tapped cell is the field itself (value selected, keypad up); − + Next Done ride the keypad bar.
+  const inPlace = (id: TileId): ReactNode => {
+    const common = { variant: 'cell' as const, autoFocus: p.keypadOpen, onFocus: tileFocus(id), onLayout: tileLayout(id), flex: null, onSurface: false };
+    if (id === 'load' && f.loadField) {
+      const l = f.loadField;
+      return <NumberStepper key="load" {...common} inputRef={p.loadRef} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ setLabel, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} warning={f.offProfileWarning !== null} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+    }
+    if (id === 'reps' && f.reps) return <NumberStepper key="reps" {...common} inputRef={p.repsRef} label="Reps" fieldLabel={cellInputA11y({ setLabel, field: 'reps', value: f.reps.value })} unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
+    if (id === 'time' && f.duration && !working) return <NumberStepper key="time" {...common} inputRef={p.timeRef} label="Time" fieldLabel={cellInputA11y({ setLabel, field: 'time', value: f.duration.value })} unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
+    if (id === 'distance' && f.distance) return <NumberStepper key="dist" {...common} inputRef={p.distanceRef} label="Distance, metres" fieldLabel={cellInputA11y({ setLabel, field: 'distance', value: f.distance.value })} unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
+    return null;
+  };
+
   const cell = (id: TileId | null, text: string, a11y: string, flex: number) => {
     const on = id !== null && p.editing === id;
+    const field = on && editsInPlace({ field: id, cardio }) ? inPlace(id) : null;
+    if (field !== null) {
+      // No second line: the cell itself takes the typing (Ben, 20 Oct).
+      return <View style={{ flex, minHeight: theme.target.workout.height, justifyContent: 'center' }}>{field}</View>;
+    }
     return (
       <Pressable
         accessibilityRole="button"
@@ -1021,14 +1057,6 @@ export function OpenSetRow(p: OpenSetRowProps) {
         )}
       </StepperTileRow>
     );
-  } else if (p.editing === 'load' && f.loadField) {
-    editor = <NumberStepper key="load" variant="inline" inputRef={p.loadRef} autoFocus={p.keypadOpen} onFocus={tileFocus('load')} onLayout={tileLayout('load')} flex={1} stepSize={step} label={`${f.loadField.label} ${f.loadField.unitText}`} unit={null} value={f.loadField.value} decimals down={f.loadField.down} up={f.loadField.up} warning={f.offProfileWarning !== null} hint={f.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
-  } else if (p.editing === 'reps' && f.reps) {
-    editor = <NumberStepper key="reps" variant="inline" inputRef={p.repsRef} autoFocus={p.keypadOpen} onFocus={tileFocus('reps')} onLayout={tileLayout('reps')} flex={1} stepSize={step} label="Reps" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
-  } else if (p.editing === 'time' && f.duration && !working) {
-    editor = <NumberStepper key="time" variant="inline" inputRef={p.timeRef} autoFocus={p.keypadOpen} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={1} stepSize={step} label="Time" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
-  } else if (p.editing === 'distance' && f.distance) {
-    editor = <NumberStepper key="dist" variant="inline" inputRef={p.distanceRef} autoFocus={p.keypadOpen} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={1} stepSize={step} label="Distance, metres" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
   }
 
   const target = f.targetBrief;
@@ -1127,9 +1155,9 @@ export function OpenSetRow(p: OpenSetRowProps) {
           >
             {editor}
           </InlineEditor>
-          {plates}
         </View>
       ) : null}
+      {plates}
       {/* 1.5: one line under the row: target · Rest › · Why? (the set number already opens More). */}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: sub.wrap ? 'wrap' : 'nowrap', columnGap: theme.space['3'], minHeight: theme.target.min.height, paddingLeft: 48 }}>
         <View accessible={leadA11y !== ''} {...(leadA11y !== '' ? { accessibilityLabel: leadA11y } : {})} style={{ flexDirection: 'row', flexWrap: sub.wrap ? 'wrap' : 'nowrap', alignItems: 'center', columnGap: theme.space['1'], flexShrink: 1, flexGrow: 1, ...(sub.wrap ? { flexBasis: '100%' } : {}) }}>
@@ -1220,6 +1248,8 @@ function InlineEditor({ ax, stack = false, onDone, children }: { ax: boolean; st
 export interface CorrectionEditorProps {
   field: CellField;
   ax: boolean;
+  /** The row's set label (`3`, `A2`), for VoiceOver's `Set 3 weight, 100 kg`. */
+  setLabel: string;
   loadField: LoadField | null;
   reps: StepField | null;
   duration: StepField | null;
@@ -1239,10 +1269,12 @@ export interface CorrectionEditorProps {
 type StepField = { value: number | null; down: StepTarget; up: StepTarget };
 
 /**
- * A done row's KG or REPS edited in its row (18 Oct): the same `− value +`
- * line as the open row (1.2), with the steps from `buildSetEditView`. It
- * opens with its field focused, so a correction is typed at once. Nothing is
- * written per step; Done (or a tap elsewhere) sends one `correctSet` (rule 2).
+ * A done row's KG or REPS corrected in its row (18 Oct): the cell itself is
+ * the field (Ben, 20 Oct), with − / + (from `buildSetEditView`), `Next ›` and
+ * `Done` on the keypad bar; cardio's time-and-distance pair stays under the
+ * row. It opens with its field focused, so a correction is typed at once.
+ * Nothing is written per step or keystroke; Done (or a tap elsewhere) sends
+ * one versioned `correctSet` with Undo (rule 2).
  */
 export function CorrectionEditor(p: CorrectionEditorProps) {
   const theme = useTheme();
@@ -1251,6 +1283,8 @@ export function CorrectionEditor(p: CorrectionEditorProps) {
   const focusOf = (field: CellField) => () => {
     p.onFocusField?.(field);
   };
+  // Ben, 20 Oct: a single value is typed in its own cell; − + Next Done ride the keypad bar.
+  const cellProps = { variant: 'cell' as const, autoFocus: true, flex: null, onSurface: false };
   let editor: ReactNode = null;
   let stack = false;
   if ((p.field === 'time' || p.field === 'distance') && p.duration && p.distance) {
@@ -1269,13 +1303,14 @@ export function CorrectionEditor(p: CorrectionEditorProps) {
       </StepperTileRow>
     );
   } else if (p.field === 'load' && p.loadField) {
-    editor = <NumberStepper key="load" variant="inline" autoFocus onFocus={focusOf('load')} flex={1} stepSize={step} label={`${p.loadField.label} ${p.loadField.unitText}`} unit={null} value={p.loadField.value} decimals down={p.loadField.down} up={p.loadField.up} hint={p.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+    const l = p.loadField;
+    return <NumberStepper key="load" {...cellProps} onFocus={focusOf('load')} label={`${l.label} ${l.unitText}`} fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'load', value: l.value, unitText: l.unitText, assisted: l.assisted })} unit={null} value={l.value} decimals down={l.down} up={l.up} hint={l.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
   } else if (p.field === 'reps' && p.reps) {
-    editor = <NumberStepper key="reps" variant="inline" autoFocus onFocus={focusOf('reps')} flex={1} stepSize={step} label="Reps" unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
+    return <NumberStepper key="reps" {...cellProps} onFocus={focusOf('reps')} label="Reps" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'reps', value: p.reps.value })} unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
   } else if (p.field === 'time' && p.duration) {
-    editor = <NumberStepper key="time" variant="inline" autoFocus onFocus={focusOf('time')} flex={1} stepSize={step} label="Time" unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
+    return <NumberStepper key="time" {...cellProps} onFocus={focusOf('time')} label="Time" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'time', value: p.duration.value })} unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
   } else if (p.field === 'distance' && p.distance) {
-    editor = <NumberStepper key="dist" variant="inline" autoFocus onFocus={focusOf('distance')} flex={1} stepSize={step} label="Distance, metres" unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
+    return <NumberStepper key="dist" {...cellProps} onFocus={focusOf('distance')} label="Distance, metres" fieldLabel={cellInputA11y({ setLabel: p.setLabel, field: 'distance', value: p.distance.value })} unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
   }
   if (editor === null) return null;
   return (

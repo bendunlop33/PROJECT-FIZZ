@@ -34,6 +34,7 @@ import {
   Icon,
   LinkLine,
   EffortHeading,
+  CellKeypadBarView,
   NumberAccessory,
   ToastHost,
   NumberStepper,
@@ -74,7 +75,7 @@ import { UNDO_TOAST } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
-import { anchorReducer, cellEditReducer, correctionPatch, doneRowEditing, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type CellEdit, type CellEditEvent, type CellField, type ChipState, type RowTap } from '../../workout/table';
+import { anchorReducer, cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type CellEdit, type CellEditEvent, type CellField, type ChipState, type KeypadNextAction, type RowTap } from '../../workout/table';
 import { ChatButton, CorrectionEditor, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
 import { awayPrimary, nextViewing, pagerView } from '../../workout/set-pager';
@@ -2240,30 +2241,37 @@ export function WorkoutScreen() {
     if (correctionView === null) return;
     setCorrection((c) => mergeCorrection(c, correctionView.values, patch));
   };
+  const correctionCardio = correctionView !== null && correctionView.duration !== null && correctionView.distance !== null;
+  // One set of handlers for the done row's field and the keypad bar's − / + (Ben, 20 Oct).
+  const correctionInput = {
+    onLoad: (v: number | null) => {
+      if (correctionEx) editCorrection({ load: v === null ? null : { value: v, unit: correctionEx.unit, convention: correctionEx.loadConvention } });
+    },
+    onReps: (v: number | null) => {
+      editCorrection({ reps: v === null ? null : Math.round(v) });
+    },
+    onTime: (v: number | null) => {
+      editCorrection({ durationS: v === null ? null : Math.max(0, Math.round(v)) });
+    },
+    onDistance: (v: number | null) => {
+      editCorrection({ distanceM: v === null ? null : Math.max(0, v) });
+    },
+  };
   const rowEditorNode =
     doneEdit !== null && correctionView !== null ? {
       setId: doneEdit.setId,
       field: doneEdit.field,
+      inCell: editsInPlace({ field: doneEdit.field, cardio: correctionCardio }),
       node: (
         <CorrectionEditor
           field={doneEdit.field}
           ax={ax}
+          setLabel={String(correctionView.setNumber)}
           loadField={correctionView.loadField}
           reps={correctionView.reps}
           duration={correctionView.duration}
           distance={correctionView.distance}
-          onLoad={(v) => {
-            if (correctionEx) editCorrection({ load: v === null ? null : { value: v, unit: correctionEx.unit, convention: correctionEx.loadConvention } });
-          }}
-          onReps={(v) => {
-            editCorrection({ reps: v === null ? null : Math.round(v) });
-          }}
-          onTime={(v) => {
-            editCorrection({ durationS: v === null ? null : Math.max(0, Math.round(v)) });
-          }}
-          onDistance={(v) => {
-            editCorrection({ distanceM: v === null ? null : Math.max(0, v) });
-          }}
+          {...correctionInput}
           onFocusField={(field) => {
             setKeypadField({ row: 'done', field });
           }}
@@ -2282,15 +2290,58 @@ export function WorkoutScreen() {
     open: focus ? { reps: focus.reps !== null, distance: focus.distance !== null, cardio: focus.measurement === 'cardio' } : null,
     done: doneEdit !== null && correctionView !== null ? { setId: doneEdit.setId, reps: correctionView.reps !== null, distance: correctionView.distance !== null, cardio: correctionView.duration !== null && correctionView.distance !== null } : null,
   });
+  const runKeypadNext = (a: KeypadNextAction) => {
+    if (a.kind === 'focus_open') setFocusRequest({ field: a.field });
+    else if (a.kind === 'focus_done_distance') correctionDistanceRef.current?.focus();
+    else editCell({ kind: 'tap', setId: a.setId, field: a.field, row: 'done' });
+  };
   const onKeypadNext =
     keypadAction === null
       ? null
       : () => {
-          if (keypadAction.kind === 'focus_open') setFocusRequest({ field: keypadAction.field });
-          else if (keypadAction.kind === 'focus_done_distance') correctionDistanceRef.current?.focus();
-          else editCell({ kind: 'tap', setId: keypadAction.setId, field: keypadAction.field, row: 'done' });
+          runKeypadNext(keypadAction);
         };
-  const openRowNode = focus ? (
+  // One set of handlers for the open row's fields and the keypad bar's − / + (Ben, 20 Oct).
+  const openInput = focus
+    ? {
+        onLoad: (v: number | null) => {
+          editLoad(focus, v);
+        },
+        onReps: (v: number | null) => {
+          setValues({ ...focus.draft, reps: v === null ? null : Math.round(v) });
+        },
+        onTime: (v: number | null) => {
+          setValues({ ...focus.draft, durationS: v === null ? null : Math.max(0, Math.round(v)) });
+        },
+        onDistance: (v: number | null) => {
+          setValues({ ...focus.draft, distanceM: v === null ? null : Math.max(0, v) });
+        },
+      }
+    : null;
+  // The keypad bar for the cell being typed in (Ben, 20 Oct): the open row's, else a done row's correction.
+  const barCell: { row: 'open' | 'done'; field: CellField } | null = editingCell !== null ? { row: 'open', field: editingCell } : doneEdit !== null && correctionView !== null ? { row: 'done', field: doneEdit.field } : null;
+  const barInput = barCell?.row === 'open' ? openInput : barCell?.row === 'done' ? correctionInput : null;
+  const cellBar =
+    tableMode && barCell !== null
+      ? cellKeypadBar({
+          field: barCell.field,
+          fields: barCell.row === 'open' ? (focus ? { load: focus.loadField, reps: focus.reps, duration: focus.duration, distance: focus.distance } : null) : correctionView !== null ? { load: correctionView.loadField, reps: correctionView.reps, duration: correctionView.duration, distance: correctionView.distance } : null,
+          cardio: barCell.row === 'open' ? focus?.measurement === 'cardio' : correctionCardio,
+          next: keypadNextAction({
+            keypad: barCell,
+            open: focus ? { reps: focus.reps !== null, distance: focus.distance !== null, cardio: focus.measurement === 'cardio' } : null,
+            done: doneEdit !== null && correctionView !== null ? { setId: doneEdit.setId, reps: correctionView.reps !== null, distance: correctionView.distance !== null, cardio: correctionCardio } : null,
+          }),
+        })
+      : null;
+  const stepCell = (field: CellField, v: number) => {
+    if (barInput === null) return;
+    if (field === 'load') barInput.onLoad(v);
+    else if (field === 'reps') barInput.onReps(v);
+    else if (field === 'time') barInput.onTime(v);
+    else barInput.onDistance(v);
+  };
+  const openRowNode = focus && openInput ? (
     <OpenSetRow
       focus={focus}
       gymLearnText={focus.gymLearn && !learnAnswered.has(gymLearnKey(focus.gymLearn.learn)) ? focus.gymLearn.text : null}
@@ -2338,18 +2389,10 @@ export function WorkoutScreen() {
       timeRef={timeRef}
       distanceRef={distanceRef}
       headerRef={openHeaderRef}
-      onLoad={(v) => {
-        editLoad(focus, v);
-      }}
-      onReps={(v) => {
-        setValues({ ...focus.draft, reps: v === null ? null : Math.round(v) });
-      }}
-      onTime={(v) => {
-        setValues({ ...focus.draft, durationS: v === null ? null : Math.max(0, Math.round(v)) });
-      }}
-      onDistance={(v) => {
-        setValues({ ...focus.draft, distanceM: v === null ? null : Math.max(0, v) });
-      }}
+      onLoad={openInput.onLoad}
+      onReps={openInput.onReps}
+      onTime={openInput.onTime}
+      onDistance={openInput.onDistance}
       onSide={(side) => {
         setValues(focus.draft, side);
       }}
@@ -2609,8 +2652,30 @@ export function WorkoutScreen() {
             }}
           />
         ) : null}
-        {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. On the keypad: no home-indicator room (0.2). */}
-        <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen} />
+        {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. On the keypad, or with the cell bar under it: no home-indicator room (0.2; the cell bar takes it). */}
+        <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen || cellBar !== null} />
+        {/* Ben, 20 Oct: the cell is the field; its − / +, Next › and Done sit on the keypad, under Log. */}
+        {cellBar !== null ? (
+          <CellKeypadBarView
+            down={cellBar.down}
+            up={cellBar.up}
+            decreaseLabel={cellBar.decreaseLabel}
+            increaseLabel={cellBar.increaseLabel}
+            limit={cellBar.limit}
+            keypadOpen={keypadOpen}
+            onStep={(v) => {
+              stepCell(cellBar.field, v);
+            }}
+            onNext={
+              cellBar.next === null
+                ? null
+                : () => {
+                    if (cellBar.next !== null) runKeypadNext(cellBar.next);
+                  }
+            }
+            onDone={closeCellEditors}
+          />
+        ) : null}
       </View>
       {/* Hidden while the keypad is up (workout-table.md, Keypad open). */}
       <ToastHost bottom={chromeHeight} onHeight={setToastHeight}>

@@ -222,7 +222,9 @@ describe('anchor requests: what may move the list (WT3, WT7)', () => {
     // It also says which field the keypad is on, for `Next ›` (design pass 1.4).
     expect(src).toMatch(/onTileFocus=\{\(tile\) => \{\s*setKeypadField\(\{ row: 'open', field: tile \}\);\s*if \(modeRef\.current === 'table'\) anchorEvent\(\{ kind: 'keypad_opened', tile \}\)/);
     const row = readFileSync(join(import.meta.dirname, '..', 'src', 'screens/workout/WorkoutTable.tsx'), 'utf8');
-    for (const tile of ['load', 'time', 'distance', 'reps']) expect(row).toContain(`onFocus={tileFocus('${tile}')}`);
+    for (const tile of ['time', 'distance']) expect(row).toContain(`onFocus={tileFocus('${tile}')}`);
+    // The in-place cells (load, reps, time, distance) share `onFocus: tileFocus(id)` (Ben, 20 Oct).
+    expect(row).toContain('onFocus: tileFocus(id)');
     expect(readFileSync(join(import.meta.dirname, '..', 'src', 'ui/workout.tsx'), 'utf8')).toMatch(/setFocused\(true\);\s*onFocus\?\.\(\);/);
   });
 

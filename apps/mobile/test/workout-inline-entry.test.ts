@@ -76,7 +76,7 @@ describe('Next › from weight to reps (1.4)', () => {
   it('the screen wires it: the accessory, a focus request per cell tap, Done closes the editor', () => {
     expect(screen).toContain('<NumberAccessory onNext={onKeypadNext} onDone={closeCellEditors} />');
     expect(flat(screen)).toContain('const keypadAction = keypadNextAction({');
-    expect(flat(screen)).toContain("else editCell({ kind: 'tap', setId: keypadAction.setId, field: keypadAction.field, row: 'done' });");
+    expect(flat(screen)).toContain("else editCell({ kind: 'tap', setId: a.setId, field: a.field, row: 'done' });");
     expect(flat(screen)).toContain('setCorrection((c) => mergeCorrection(c, correctionView.values, patch));');
     expect(flat(screen)).toContain('const t = openCellTap(editingCell, field);');
     expect(flat(screen)).toContain('} else setFocusRequest({ field: t.field });');
@@ -88,11 +88,14 @@ describe('Next › from weight to reps (1.4)', () => {
 
   it('an editor opened while the keypad is up focuses on mount, so the keypad never drops between fields', () => {
     expect(ui).toContain('autoFocus={autoFocus}');
-    for (const f of ['loadRef', 'repsRef']) expect(table).toMatch(new RegExp(`inputRef=\\{p\\.${f}\\} autoFocus=\\{p\\.keypadOpen\\}`));
+    // Ben, 20 Oct: the open row's in-place cells share these props (the keypad stays up between them).
+    expect(table).toContain("const common = { variant: 'cell' as const, autoFocus: p.keypadOpen, onFocus: tileFocus(id)");
+    for (const f of ['loadRef', 'repsRef']) expect(table).toContain(`{...common} inputRef={p.${f}}`);
     // A done row's correction opens focused, and reports its field.
     const corr = table.slice(table.indexOf('export function CorrectionEditor'), table.indexOf('function NoteLink('));
-    expect(corr).toContain('variant="inline" autoFocus onFocus={focusOf(\'load\')}');
-    expect(corr).toContain('variant="inline" autoFocus onFocus={focusOf(\'reps\')}');
+    expect(corr).toContain("const cellProps = { variant: 'cell' as const, autoFocus: true");
+    expect(corr).toContain("{...cellProps} onFocus={focusOf('load')}");
+    expect(corr).toContain("{...cellProps} onFocus={focusOf('reps')}");
   });
 });
 
@@ -112,12 +115,13 @@ describe('inline − value + (1.1, 1.2)', () => {
     expect(table).not.toContain('const numeral = p.ax ? 40 : 32;');
     expect(table).not.toContain('numeralSize={numeral}');
   });
-  it('the open row and a done row’s correction use the same inline editor', () => {
+  it('the open row and a done row’s correction type in the cell itself (Ben, 20 Oct)', () => {
     const open = table.slice(table.indexOf('export function OpenSetRow'), table.indexOf('function InlineEditor('));
     const corr = table.slice(table.indexOf('export function CorrectionEditor'), table.indexOf('function NoteLink('));
     for (const part of [open, corr]) {
-      expect(part).toContain('key="load" variant="inline"');
-      expect(part).toContain('key="reps" variant="inline"');
+      expect(part).toContain("variant: 'cell' as const");
+      expect(part).not.toContain('key="load" variant="inline"');
+      expect(part).not.toContain('key="reps" variant="inline"');
     }
   });
 });
@@ -177,7 +181,7 @@ describe('the open row reads as a table row (1.5, 1.6)', () => {
   });
   it('the plates show only while the load is edited, under its editor', () => {
     expect(open).toContain("const plates = f.plateLine !== null && p.editing === 'load' ?");
-    expect(flat(open)).toContain('</InlineEditor> {plates}');
+    expect(flat(open)).toContain('</InlineEditor> </View> ) : null} {plates}');
   });
   it('a superset member reads A2 (its badges after it)', () => {
     expect(openRowLabel({ memberTag: 'A2', setNumber: 2, sideTag: null })).toBe('A2');

@@ -50,7 +50,9 @@ describe('workout keyboard (F5)', () => {
   });
 
   it('every number field has the visible Done bar, rendered on the workout screen', () => {
-    expect(ui).toMatch(/keyboardType=\{decimals \? 'decimal-pad' : 'number-pad'\}\s*inputAccessoryViewID=\{NUMBER_ACCESSORY_ID\}/);
+    expect(ui).toMatch(/keyboardType=\{decimals \? 'decimal-pad' : 'number-pad'\}[\s\S]{0,300}\{\.\.\.\(cellVariant \? \{\} : \{ inputAccessoryViewID: NUMBER_ACCESSORY_ID \}\)\}/);
+    // A table cell's Done is on the keypad bar instead (Ben, 20 Oct).
+    expect(screen).toContain('<CellKeypadBarView');
     // With Next › from the weight to the reps, and Done closing the editor too (design pass 1.4).
     expect(screen).toContain('<NumberAccessory onNext={onKeypadNext} onDone={closeCellEditors} />');
   });
