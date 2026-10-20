@@ -59,6 +59,16 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .pill { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 999px; min-height: 52px; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .ghost { background: none; color: var(--text); border: 1.5px solid var(--text3); border-radius: 999px; min-height: 52px; padding: 0 20px; font-size: 15px; cursor: pointer; font-family: inherit; }
 /* alternatives */
+.seg { display: grid; grid-template-columns: repeat(4, 1fr) 44px; gap: 4px; background: var(--surface); border-radius: 14px; padding: 4px; }
+.sg { border: 0; background: none; color: var(--text2); border-radius: 10px; min-height: 48px; font-size: 14.5px; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+.sg i { font-style: normal; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); }
+.sg.on { background: var(--raised); color: var(--text); font-weight: 600; }
+.sg.on i { color: var(--accent); }
+.sg.more { font-size: 18px; }
+.types { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.ty { border: 1.5px solid var(--divider); background: none; color: var(--text); border-radius: 999px; padding: 8px 14px; min-height: 40px; font-size: 14px; font-family: inherit; cursor: pointer; }
+.ty.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.card .lt { color: var(--text2); font-weight: 500; font-size: 22px; }
 .alts { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
 .alt { flex: none; min-width: 132px; background: var(--surface); border: 1.5px solid transparent; border-radius: 14px; padding: 10px 12px; text-align: left; color: var(--text); cursor: pointer; font-family: inherit; display: flex; flex-direction: column; gap: 3px; }
 .alt.sel { border-color: var(--accent); }
@@ -81,7 +91,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 <div class="wrap">
   <div class="phone" id="app"></div>
-  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split, long run planned Saturday). Tap a day to see what happened or is planned. Tap the recommended card to see the workout and what the coach based it on. Pick another option to swap the recommendation. Edit and Build your own open the builder.</div>
+  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split; runs show only when you've logged them or told the coach, e.g. a long run Saturday). Pick the day (Next is the plan's), then the type of session, then tap the card for details. ⋯ has other workouts. Edit and Build your own open the builder.</div>
 </div>
 
 <script>
@@ -95,31 +105,46 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { dn: 'THU', dd: 22, items: [{ k: 'liftp', t: 'Legs' }], detail: ['Planned: Legs (moved from Fri, long run Sat)'] },
     { dn: 'FRI', dd: 23, items: [{ k: 'liftp', t: 'Back' }], detail: ['Planned: Back'] },
   ];
-  const OPTIONS = [
-    { id: 'chest', tag: 'Plan · next', name: 'Chest', main: 'Bench', min: 55, why: null, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Cable fly', '3 × 8 · 15'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: ['Bench: hit 8 reps on the top set → 102.5 kg'], based: ['Plan: Chest is next (day 1 of 4)', 'This week: long run Sat, so legs on Thu and upper body today', 'Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again', 'Goal: strength · bench target 110 kg (est. 1RM 127)', 'Length: your usual 60 min; fits in about 55'] },
-    { id: 'chest-arms', tag: 'Variation', name: 'Chest', main: 'Bench · arms superset', min: 52, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Machine chest press', '3 × 8 · 80'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['EZ-bar curl', '3 × 8 · 30', 'b']], notes: [] },
-    { id: 'shoulders', tag: 'Plan', name: 'Shoulders', main: 'DB press', min: 58, ex: [['Dumbbell shoulder press', '4 × 6 · 32.5'], ['Lateral raise', '3 × 12 · 10', 'a'], ['Triceps pushdown', '3 × 8 · 30', 'b'], ['Rear-delt fly', '3 × 12 · 7.5'], ['Face pull', '3 × 12 · 22.5']], notes: [] },
-    { id: 'legs', tag: 'Plan', name: 'Legs', main: 'Squat', min: 59, warn: 'Long run Saturday: Thursday is better for legs', ex: [['Back squat', '4 × 6 · 117.5'], ['Romanian deadlift', '3 × 8 · 105'], ['Leg press', '3 × 8 · 195'], ['Leg curl', '3 × 10 · 47.5', 'a'], ['Cable crunch', '3 × 10 · 40', 'b']], notes: [] },
-    { id: 'hotel', tag: 'Recent', name: 'Hotel shoulders', main: '17 Oct', min: 35, ex: [['Dumbbell shoulder press', '3 × 10 · 22'], ['Lateral raise', '3 × 15 · 8'], ['Push-up', '3 × max']], notes: [] },
-  ];
-  let s = { sel: 'chest', open: false, sheet: null, toast: null };
+  // Session types per plan day: main-lift templates and saved variations.
+  const PLANDAYS = ['Chest', 'Back', 'Legs', 'Shoulders'];
+  const NEXT = 'Chest';
+  const TYPES = {
+    Chest: [
+      { id: 'chest', label: 'Bench', min: 55, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Cable fly', '3 × 8 · 15'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: ['Bench top set: 102.5 kg next (hit 8 last time)'], based: ['Plan: Chest is next (day 1 of 4)', 'Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again', 'Goal: strength · bench target 110 kg (est. 1RM 127)', 'Length: your usual 60 min; fits in about 55'] },
+      { id: 'chest-incline', label: 'Incline', min: 54, ex: [['Incline barbell press', '4 × 6 · 82.5'], ['Barbell bench press', '3 × 8 · 92.5'], ['Cable fly', '3 × 10 · 15'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: [] },
+      { id: 'chest-arms', label: 'Bench · arms superset', min: 52, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Machine chest press', '3 × 8 · 80'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['EZ-bar curl', '3 × 8 · 30', 'b']], notes: [] },
+    ],
+    Back: [
+      { id: 'back', label: 'Row', min: 58, ex: [['Barbell row', '4 × 6 · 92.5'], ['Lat pulldown', '3 × 8 · 60'], ['Chest-supported row', '3 × 10 · 22.5'], ['EZ-bar curl', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: [] },
+      { id: 'back-pulldown', label: 'Pulldown', min: 55, ex: [['Lat pulldown', '4 × 6 · 65'], ['Seated cable row', '3 × 8 · 60'], ['Face pull', '3 × 12 · 22.5'], ['Hammer curl', '3 × 10 · 14']], notes: [] },
+    ],
+    Legs: [
+      { id: 'legs', label: 'Squat', min: 59, ex: [['Back squat', '4 × 6 · 117.5'], ['Romanian deadlift', '3 × 8 · 105'], ['Leg press', '3 × 8 · 195'], ['Leg curl', '3 × 10 · 47.5', 'a'], ['Cable crunch', '3 × 10 · 40', 'b']], notes: [], warn: 'Long run Saturday: legs fit better Thursday' },
+    ],
+    Shoulders: [
+      { id: 'shoulders', label: 'DB press', min: 58, ex: [['Dumbbell shoulder press', '4 × 6 · 32.5'], ['Lateral raise', '3 × 12 · 10', 'a'], ['Triceps pushdown', '3 × 8 · 30', 'b'], ['Rear-delt fly', '3 × 12 · 7.5'], ['Face pull', '3 × 12 · 22.5']], notes: [] },
+    ],
+  };
+  const OTHER = [{ name: 'Push', sub: 'PPL day' }, { name: 'Pull', sub: 'PPL day' }, { name: 'Hotel shoulders', sub: 'Recent · 17 Oct' }, { name: 'Upper body', sub: 'Recent · 8 Oct' }];
+  let s = { day: NEXT, type: 0, open: false, sheet: null, toast: null };
   const app = document.getElementById('app');
   const MIC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
   function view() {
-    const o = OPTIONS.find((x) => x.id === s.sel);
+    const o = TYPES[s.day][s.type]; o.name = s.day; o.main = o.label;
     let n = 0;
     app.innerHTML = `
     <div class="status"><span>09:41</span><span>●●● 82%</span></div>
     <div class="scroll">
       <h1>Tuesday</h1>
       <div class="askrow"><button class="askbar" data-a="ask"><span>✦</span><span>Ask the coach</span></button><button class="mic" data-a="ask" aria-label="Speak to the coach">${MIC}</button></div>
-      <div class="week">${WEEK.map((d, i) => `<button class="day${d.today ? ' today' : ''}${d.past ? ' past' : ''}" data-a="day" data-v="${i}" aria-label="${d.dn} ${d.dd}"><span class="dn">${d.today ? 'TODAY' : d.dn}</span><span class="dd">${d.dd}</span>${d.today ? `<span class="pip liftp">${o.name}</span>` : d.items.map((it) => `<span class="pip ${it.k}">${it.k === 'lift' ? '✓ ' : ''}${it.t}</span>`).join('')}</button>`).join('')}</div>
-      <div class="planline"><span>4-day split · <b>Chest next</b></span><span>Runs this week <b>1 of 3</b></span></div>
+      <div class="week">${WEEK.map((d, i) => `<button class="day${d.today ? ' today' : ''}${d.past ? ' past' : ''}" data-a="day" data-v="${i}" aria-label="${d.dn} ${d.dd}"><span class="dn">${d.today ? 'TODAY' : d.dn}</span><span class="dd">${d.dd}</span>${d.today ? `<span class="pip liftp">${s.day}</span>` : d.items.map((it) => `<span class="pip ${it.k}">${it.k === 'lift' ? '✓ ' : ''}${it.t}</span>`).join('')}</button>`).join('')}</div>
       <div>
-        <div class="label" style="margin:0 2px 6px">${o.tag.startsWith('Plan') ? 'Recommended' : 'Today'}</div>
+        <div class="label" style="margin:0 2px 8px">Today's session</div>
+        <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other workouts">⋯</button></div>
+        ${TYPES[s.day].length > 1 ? `<div class="types">${TYPES[s.day].map((t, i) => `<button class="ty${i === s.type ? ' on' : ''}" data-a="type" data-v="${i}">${t.label}</button>`).join('')}</div>` : ''}
         <div class="card${s.open ? ' open' : ''}">
           <div class="top" data-a="toggle" role="button" aria-expanded="${s.open}">
-            <div><div class="big">${o.name}</div><div class="sub">${o.main} · ${o.ex.length} exercises · ~${o.min} min</div></div>
+            <div><div class="big">${o.name} <span class="lt">· ${o.main}</span></div><div class="sub">${o.ex.length} exercises · ~${o.min} min${s.day === NEXT ? ' · plan day 1 of 4' : ''}</div></div>
             <span class="chev">›</span>
           </div>
           ${o.warn ? `<div class="why"><i>!</i><span>${o.warn}</span></div>` : ''}
@@ -128,10 +153,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
           ${o.based ? `<div class="notes"><b>Based on</b>${o.based.map((x) => `<span>· ${x}</span>`).join('')}</div>` : ''}
           <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
         </div>
-      </div>
-      <div>
-        <div class="label" style="margin:0 2px 6px">Or</div>
-        <div class="alts">${OPTIONS.map((x) => `<button class="alt${x.id === s.sel ? ' sel' : ''}" data-a="pick" data-v="${x.id}"><span class="tag">${x.tag}</span><b>${x.name}</b><small>${x.main} · ~${x.min} min</small></button>`).join('')}</div>
       </div>
       <div class="rowlinks"><button data-a="build">Build your own</button><button data-a="activity">＋ Activity</button></div>
     </div>
@@ -142,14 +163,16 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   app.addEventListener('click', (ev) => {
     const t = ev.target.closest('[data-a]'); if (!t) return;
     const a = t.dataset.a, v = t.dataset.v; s.toast = null;
-    const o = OPTIONS.find((x) => x.id === s.sel);
+    const o = TYPES[s.day][s.type]; o.name = s.day;
     if (a === 'toggle') s.open = !s.open;
-    if (a === 'pick') { s.sel = v; s.open = false; }
+    if (a === 'dayp') { s.day = v; s.type = 0; s.open = false; }
+    if (a === 'type') { s.type = Number(v); s.open = false; }
+    if (a === 'other') s.sheet = `<h3>Other workouts</h3>${OTHER.map((x) => `<button class="it" data-a="close" style="border:0;color:inherit;font:inherit;text-align:left;cursor:pointer"><span>${x.name}</span><small>${x.sub}</small></button>`).join('')}<button class="ghost" data-a="build">Build your own</button><button class="ghost" data-a="close">Close</button>`;
     if (a === 'day') { const d = WEEK[Number(v)]; s.sheet = d.today ? `<h3>Today</h3><div class="it"><span>${o.name} recommended</span><small>Plan day 2 of 4</small></div><button class="ghost" data-a="close">Close</button>` : `<h3>${d.dn[0] + d.dn.slice(1).toLowerCase()} ${d.dd} Oct</h3>${d.detail.map((x) => `<div class="it"><span>${x}</span><small>${d.past ? '' : 'Planned'}</small></div>`).join('')}${d.past ? '' : '<button class="ghost" data-a="close">Move or change (coach)</button>'}<button class="ghost" data-a="close">Close</button>`; }
     if (a === 'close') s.sheet = null;
     if (a === 'start') s.toast = `Started ${o.name} (prototype)`;
-    if (a === 'edit') s.toast = 'Opens the builder on "Your workout" (page 2)';
-    if (a === 'build') s.toast = 'Opens the builder on "Set up" (page 1)';
+    if (a === 'edit') s.toast = 'Opens this workout in the builder to change it';
+    if (a === 'build') { s.sheet = null; s.toast = 'Opens the builder on its first page'; }
     if (a === 'activity') s.toast = 'Log or plan a run, ride or other activity';
     if (a === 'ask') s.toast = 'Opens the coach (type or speak): "legs, 45 min" fills in the builder';
     view();
