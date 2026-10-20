@@ -794,7 +794,7 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     upNextRoutineId: async (gymId) => (await loop.next.preview(gymId ?? 'typical-gym-preview'))?.routine?.id ?? null,
     plannedDay: (routineId, gymId) => loop.routines.planned(routineId, gymId),
-    mainLiftIds: () => training.mainLiftIds(),
+    splitMainLiftIds: () => training.splitMainLiftIds(),
   });
 
   /** Library › Exercises (exercise-library §9): browse, detail, Add to a workout. Local only. */
