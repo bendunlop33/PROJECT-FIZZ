@@ -130,6 +130,22 @@ describe('Live Activity controller (pure, over a fake ActivityKit)', () => {
     expect(fake.calls).toEqual(['start la-1 ready', 'update la-1 resting']);
   });
 
+  it('unticking an accidental tick puts the countdown back to the earlier rest’s original deadline, in place (workout-table-v3 §3)', async () => {
+    const fake = fakeActivities();
+    const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
+    const resting = loggedWarmup();
+    await la.reconcile(resting, ms(31));
+    const deadline = toMs(resting.restTimer?.deadlineUtc ?? '');
+    const b1 = setsFor(resting, BENCH)[1]?.id ?? '';
+    const ticked = apply(resting, logCmd(b1, values(kg(100), 8), 40));
+    await la.reconcile(ticked, ms(40));
+    expect(fake.only().props.endMs).toBe(toMs(ticked.restTimer?.deadlineUtc ?? ''));
+    const back = apply(ticked, { type: 'undo_log', at: at(45), opId: 'undo', setId: b1, expectedSetVersion: 2 });
+    await la.reconcile(back, ms(45));
+    expect(fake.only().props).toMatchObject({ state: 'resting', endMs: deadline });
+    expect(fake.only().staleAtMs).toBe(deadline);
+  });
+
   it('the same state again changes nothing (no redundant update); a duplicate reconcile is idempotent', async () => {
     const fake = fakeActivities();
     const la = createLiveActivityController(fake.port, { tz: () => FIXTURE_TZ });
