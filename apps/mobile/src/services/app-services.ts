@@ -60,6 +60,8 @@ import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
+import { createBuilderEnv } from '../builder/builder-env';
+import { createBuilderService } from '../builder/builder-service';
 
 /**
  * The app's in-process services (no HTTP layer). Screens call these and never
@@ -945,8 +947,23 @@ export function createAppServices(deps: AppServicesDeps) {
     ...(deps.signOutTimeoutMs === undefined ? {} : { signOutTimeoutMs: deps.signOutTimeoutMs }),
   });
 
+  /** (Workout builder v3) Set up → Your workout drafts over the builder rules; Start goes through the workout Start. */
+  const builder = createBuilderService({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    env: createBuilderEnv({ store: () => deps.manager.store, now: deps.now, catalogueExercises }),
+    training: async () => {
+      const p = await getProfile();
+      return p === null ? null : repos().trainingProfiles.get(p.id).catch(() => null);
+    },
+    currentGym: () => yourData.currentGym(),
+    start: (req) => loop.workout.start(req),
+  });
+
   return {
     ...loop,
+    builder,
     library,
     customExercises,
     history,

@@ -7,6 +7,7 @@ import {
   type BuildCheck,
   type BuildFocus,
   type DraftLoad,
+  type Load,
   type DraftPlan,
   type DraftSetTemplate,
   type DraftSlot,
@@ -28,6 +29,8 @@ import { builtInRepRange, builtInTargetRpe, ruleCategory } from '../default-rule
 import { cardioDistanceText, dayMonthText, EQUIPMENT_WORD, formatDuration, repRangeText } from '../display';
 import { needsNoEquipment } from '../exercise-equipment';
 import { PAIN_AREA_WORD, painFlagCovering } from '../pain-flags';
+import { compareDifficulty, loadDirection } from '../equipment';
+import { convertMass } from '../units';
 import type { HistorySession } from '../progression';
 import { deriveId } from '../stable';
 import { toIso, toMs } from '../time';
@@ -706,6 +709,38 @@ export type CoachDraftPlan = Extract<TodayPlanOutput, { kind: 'routine' }> & {
   ruleNotes: Map<string, string[]>;
 };
 
+/**
+ * (v3 §2.3, rule 9; review B4) A builder slot's pain hold at Start: every
+ * working load harder than the last comparable working load (`latest.top`)
+ * is held at it, in the load's own unit. By template index; empty when
+ * nothing is harder or there is no comparable history.
+ */
+export function builderPainHold(slot: DraftSlot, refs: Pick<LoadReferences, 'latest' | 'unit' | 'convention'>): Map<number, Load> {
+  const out = new Map<number, Load>();
+  const top = refs.latest?.top ?? null;
+  if (top === null) return out;
+  const dir = loadDirection(refs.convention);
+  slot.setTemplates.forEach((t, i) => {
+    const l = t.load?.load ?? null;
+    if (t.setType === 'warmup' || l === null || l.convention !== refs.convention) return;
+    const cap = l.unit === refs.unit ? top.value : Math.round(convertMass({ value: top.value, unit: refs.unit }, l.unit).value * 100) / 100;
+    if (compareDifficulty(l.value, cap, dir) > 0) out.set(i, { value: cap, unit: l.unit, convention: l.convention });
+  });
+  return out;
+}
+
+/**
+ * (v3, review B4) Whether a builder slot's comparable history moved since
+ * its loads were worked out: by the history version stored with the slot,
+ * else (older drafts) any session performed at or after the version's build.
+ */
+function builderHistoryMoved(slot: DraftSlot, exercise: Exercise | undefined, history: readonly HistorySession[], substitute: SubstituteContext, builtAtMs: number, nowMs: number): boolean {
+  if (exercise === undefined) return false;
+  const stored = slot.checkedHistoryVersion ?? null;
+  if (stored !== null) return loadReferences({ exercise, history, ctx: substitute, nowMs }).historyVersion !== stored;
+  return history.some((h) => toMs(h.performedAtUtc) >= builtAtMs);
+}
+
 /** `Why?` facts for one slot of a planned coach draft (review S4). */
 export interface DraftSlotWhy {
   /** Plan-time fallback notes (`different equipment here · rule used`, `capped at 95 · newer session 9 Oct`). */
@@ -759,10 +794,10 @@ export type RecheckedSlot = { kind: 'coach'; checks: Map<number, LoadCheck>; ref
  * slot has no stored coach load (a v1 draft, or the rule from the start).
  */
 export function recheckDraftSlot(slot: DraftSlot, exercise: Exercise, history: readonly HistorySession[], substitute: SubstituteContext, builtAtUtc: string, nowMs: number): RecheckedSlot | null {
-  // v3: the builder's own sources (`calc`, `ben`) aren't coach loads; the builder re-derives them (S2).
+  // v3: the builder's own sources (`calc`, `ben`, `plan`) aren't coach loads; a builder version's loads stand as built (`planCoachDraft`).
   const stored = slot.setTemplates.flatMap((t, i) => {
     const l = t.load;
-    return l !== undefined && t.setType !== 'warmup' && l.source !== 'calc' && l.source !== 'ben' ? [{ t, i, load: { ...l, source: l.source } }] : [];
+    return l !== undefined && t.setType !== 'warmup' && l.source !== 'calc' && l.source !== 'ben' && l.source !== 'plan' ? [{ t, i, load: { ...l, source: l.source } }] : [];
   });
   if (stored.length === 0 || !stored.some((x) => x.load.source === 'coach' || x.load.source === 'coach_est')) return null;
   const refs = loadReferences({ exercise, history, ctx: substitute, nowMs });
@@ -806,9 +841,32 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const nowMs = toMs(input.start.at.utc);
   const coachSlots = new Map<string, Extract<RecheckedSlot, { kind: 'coach' }>>();
   const ruleNotes = new Map<string, string[]>();
+  // (v3 §2.3, §3.1) A builder version's loads were worked out and rounded down at this gym when Ben saw
+  // them (`Top set` is a target he read): they stand as built, pinned to that item. A slot with no load
+  // (`—`) is planned as any other, and so is one whose exercise was logged since the version was built
+  // (history moved: re-derived, review B4). A pain flag on the movement now holds every working load at
+  // the last comparable one, a kg Ben typed included (rule 9; §2.3 `Pain check-in after loads were set`).
+  const builder = version.request.origin === 'builder';
+  const builtAtMs = toMs(version.createdAt.utc);
+  const builderHeld = new Map<string, Map<number, Load>>();
+  const builderSlots = new Set(
+    builder
+      ? version.plan.slots
+          .filter((s) => s.setTemplates.some((t) => t.load?.load != null))
+          .filter((s) => !builderHistoryMoved(s, input.start.exercises.get(s.exerciseId), input.histories.get(s.exerciseId) ?? [], input.substitute, builtAtMs, nowMs))
+          .map((s) => s.slotKey)
+      : [],
+  );
+  for (const s of version.plan.slots) {
+    if (!builderSlots.has(s.slotKey)) continue;
+    const exercise = input.start.exercises.get(s.exerciseId);
+    if (exercise === undefined || painFlagCovering(input.substitute.painFlags, s.exerciseId, nowMs, input.substitute.at.tz) === null) continue;
+    const held = builderPainHold(s, loadReferences({ exercise, history: input.histories.get(s.exerciseId) ?? [], ctx: input.substitute, nowMs }));
+    if (held.size > 0) builderHeld.set(s.slotKey, held);
+  }
   for (const s of version.plan.slots) {
     const exercise = input.start.exercises.get(s.exerciseId);
-    if (exercise === undefined) continue;
+    if (exercise === undefined || builderSlots.has(s.slotKey)) continue;
     const history = input.histories.get(exercise.id) ?? [];
     const re = recheckDraftSlot(s, exercise, history, input.substitute, version.createdAt.utc, nowMs);
     if (re?.kind === 'coach') {
@@ -830,6 +888,15 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const pinned: Routine = {
     ...routine,
     exercises: routine.exercises.map((rex) => {
+      if (builderSlots.has(rex.id)) {
+        const slot = version.plan.slots.find((x) => x.slotKey === rex.id);
+        const held = builderHeld.get(rex.id);
+        const setTemplates = rex.setTemplates.map((t, i) => {
+          const l = held?.get(i) ?? slot?.setTemplates[i]?.load?.load ?? null;
+          return l === null ? t : { ...t, targetLoad: l };
+        });
+        return { ...rex, setTemplates, equipmentId: slot?.checkedOn?.equipmentId ?? rex.equipmentId };
+      }
       const coach = coachSlots.get(rex.id);
       if (coach !== undefined) {
         const setTemplates = rex.setTemplates.map((t, i) => {
@@ -845,12 +912,34 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const known = new Map(input.start.knownEquipment);
   for (const t of targets.values()) if (t.pin !== null && !known.has(t.pin.id)) known.set(t.pin.id, t.pin);
   for (const c of coachSlots.values()) if (c.refs.equipment !== null && !known.has(c.refs.equipment.id)) known.set(c.refs.equipment.id, c.refs.equipment);
-  const edits = withDraftFit(input.today.edits, input.draft.id, version);
+  // A builder version was already fitted to its length by the builder (§3.6): no second fit at Start.
+  const edits = builder ? [...input.today.edits] : withDraftFit(input.today.edits, input.draft.id, version);
   const out = planWithTodayEdits({ kind: 'routine', input: { ...input.start, knownEquipment: known, routine: pinned, targets: entries, ...(slotEntries.size > 0 ? { slotTargets: slotEntries } : {}) } }, { ...input.today, edits });
   // A coach draft isn't a routine: the session names the draft, never a routine (rotation untouched, §6.3).
   const exerciseOfRow = new Map(out.aggregate.exercises.map((e) => [e.id, e.exerciseId]));
   const slotByKey = new Map(version.plan.slots.map((sl) => [sl.slotKey, sl]));
-  const sets = out.aggregate.sets.map((set) => {
+  // (v3, review S7) Each builder load keeps its reason in the session: the coach's target, the
+  // built-in rule (the labelled fallback), est. max (an estimate), the plan, or Ben's typed kg.
+  const templateAt = new Map<string, { slotKey: string; i: number }>();
+  for (const sl of version.plan.slots) if (builderSlots.has(sl.slotKey)) sl.setTemplates.forEach((_, i) => templateAt.set(deriveId(`coach-draft-set:${sl.slotKey}:${String(i)}`), { slotKey: sl.slotKey, i }));
+  const builderSet = (set: (typeof out.aggregate.sets)[number]): (typeof out.aggregate.sets)[number] => {
+    const at = templateAt.get(out.setTemplateIds[set.id] ?? '');
+    const slot = at === undefined ? undefined : slotByKey.get(at.slotKey);
+    const t = at === undefined ? undefined : slot?.setTemplates[at.i];
+    const prov = set.planned.provenance;
+    if (at === undefined || slot === undefined || t === undefined || set.setType === 'warmup' || prov === undefined || set.planned.load === null) return set;
+    const held = builderHeld.get(at.slotKey)?.has(at.i) === true;
+    const typed = t.load?.source === 'ben';
+    const kind = slot.builder?.source ?? null;
+    const notes = [...(typed ? ['Typed by you'] : []), ...prov.guardNotes].slice(0, 10);
+    const base = { ...prov, guardNotes: notes, ...(held ? { held: true as const } : {}) };
+    if (typed || kind === null || kind === 'plan' || kind === 'none') return { ...set, planned: { ...set.planned, provenance: base } };
+    if (kind === 'coach_target') return { ...set, planned: { ...set.planned, source: 'coach' as const, provenance: { ...base, source: 'coach' as const } } };
+    if (kind === 'rule') return { ...set, planned: { ...set.planned, source: 'built_in_rule' as const, provenance: { ...base, source: 'rule' as const } } };
+    return { ...set, planned: { ...set.planned, provenance: { ...base, estimate: true as const } } };
+  };
+  const sets = out.aggregate.sets.map((raw) => {
+    const set = builderSet(raw);
     const slotKey = out.slotOf[set.sessionExerciseId];
     const coach = slotKey === undefined ? undefined : coachSlots.get(slotKey);
     const slot = slotKey === undefined ? undefined : slotByKey.get(slotKey);

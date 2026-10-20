@@ -165,13 +165,14 @@ export type ProposeWorkoutArgs = z.infer<typeof ProposeWorkoutArgsSchema>;
  * shown only behind `Why?` as `Coach's note`; review r4: words only, no
  * numbers, and re-checked at plan time).
  */
-export const DraftLoadSourceSchema = z.enum(['coach', 'coach_est', 'rule', 'none', 'calc', 'ben']);
+export const DraftLoadSourceSchema = z.enum(['coach', 'coach_est', 'rule', 'none', 'calc', 'ben', 'plan']);
 export type DraftLoadSource = z.infer<typeof DraftLoadSourceSchema>;
 
 /**
- * (v3 §4.4) Two sources for the builder: `calc` (the reps/RPE formula from
- * the working load, labelled an estimate where it rests on est. max) and
- * `ben` (a kg Ben typed, kept today only, Q6).
+ * (v3 §4.4) Sources for the builder: `calc` (the reps/RPE formula from
+ * the working load, labelled an estimate where it rests on est. max),
+ * `ben` (a kg Ben typed, kept today only, Q6) and `plan` (the plan's
+ * first-week load, `Plan, week 1`; §3.1 step 2, §9 Q12).
  */
 export const DraftLoadSchema = z.object({
   load: LoadSchema.nullable(),
@@ -184,6 +185,8 @@ export const DraftLoadSchema = z.object({
   notes: z.array(z.string().min(1).max(200)).max(8),
   /** A coach basis that failed the check (`Why?` → `NOT USED`). */
   notUsed: z.string().max(80).nullable(),
+  /** (v3 §2.4) A kg Ben typed (`ben`) that this gym's item rounded down: what he typed, in the load's unit (`Why?`). */
+  requested: z.number().nonnegative().max(5000).optional(),
 });
 export type DraftLoad = z.infer<typeof DraftLoadSchema>;
 
@@ -215,6 +218,44 @@ export const DraftSetTemplateSchema = z
   .refine((t) => t.distanceM == null || t.reps === null, { message: 'A distance goes with a work time, not reps' });
 export type DraftSetTemplate = z.infer<typeof DraftSetTemplateSchema>;
 
+/** (v3) A builder slot's rest kinds (§3.2): `before_drop` is the rest after the set a drop follows. */
+export const BuilderRestKindSchema = z.enum(['warmup', 'top', 'backoff', 'working', 'drop', 'before_drop']);
+export type BuilderRestKind = z.infer<typeof BuilderRestKindSchema>;
+
+/** (v3) Where a builder slot's working load came from (§3.1, Q12). `typed` rows carry `ben` on their own load. */
+export const BuilderSlotSourceSchema = z.enum(['coach_target', 'plan', 'rule', 'calc', 'none']);
+
+/**
+ * (v3 §2.3–§2.4) What the builder needs to keep about a slot across a
+ * force-close that the set templates don't hold: Ben touched it (merges and
+ * fits leave it alone), he unlinked it (never re-paired), the pair it leads
+ * was made by the builder (`autoPair`, re-paired by Supersets), its rep
+ * range, Ben's own rest per kind and per round, and the load's origin.
+ * Absent on coach slots.
+ */
+export const DraftSlotBuilderSchema = z.object({
+  repRange: RepRangeSchema,
+  /** Unit and convention of every row's load (the item's). */
+  unit: WeightUnitSchema,
+  convention: LoadConventionSchema,
+  source: BuilderSlotSourceSchema,
+  /** Est. max other sets derive from (an estimate, rule 6); null = none. In the slot's load unit. */
+  anchorE1rm: z.number().positive().max(5000).nullable(),
+  /** `Start light` cap when no load is known; null = none. */
+  startLight: z.number().min(0).max(5000).nullable(),
+  touched: z.literal(true).optional(),
+  unlinked: z.literal(true).optional(),
+  /** The plan-day template exercise this slot came from (kept through a swap). */
+  origin: IdSchema.optional(),
+  /** On a superset's first slot: the builder made this pair. */
+  autoPair: z.literal(true).optional(),
+  /** On a superset's first slot: Ben's `After each round` (seconds). */
+  roundRestS: z.int().min(BUILD_LIMITS.minRestS).max(BUILD_LIMITS.maxRestS).optional(),
+  /** Ben's own rest per kind (seconds). */
+  restS: z.partialRecord(BuilderRestKindSchema, z.int().min(0).max(BUILD_LIMITS.maxRestS)).optional(),
+});
+export type DraftSlotBuilder = z.infer<typeof DraftSlotBuilderSchema>;
+
 export const DraftSlotSchema = z.object({
   /** Stable for the draft's life: today's edits point at it (ADR 0022). Kept across versions for the same exercise. */
   slotKey: IdSchema,
@@ -237,6 +278,8 @@ export const DraftSlotSchema = z.object({
   rev: z.int().min(1).optional(),
   /** (v3 §4.5) Rest per set type, as on `RoutineExercise`. Absent: the defaults. */
   restBySetType: z.partialRecord(SetTypeSchema, RestSettingSchema).optional(),
+  /** (v3) The builder's own state for this slot; absent on coach slots. */
+  builder: DraftSlotBuilderSchema.optional(),
 }).superRefine((slot, ctx) => {
   const t = slot.setTemplates;
   const drops = t.filter((x) => x.setType === 'drop').length;
@@ -306,6 +349,14 @@ export const BuilderSetupSchema = z.object({
   templateRoutineId: IdSchema.optional(),
   templateVersion: z.int().min(1).optional(),
   variationId: IdSchema.nullable().optional(),
+  /** (v3 §2.8) The variation's version when it was opened: `Update … · <variation>` is refused once it moved (rule 5). */
+  variationVersion: z.int().min(1).optional(),
+  /** (v3 §2.0.2 3a) The fit ladder's rest level; absent = normal. */
+  restLevel: z.enum(['normal', 'shorter', 'shortest']).optional(),
+  /** (v3 §2.3) Ben changed a group count, so Set up shows `Use recommended` instead of `Recommended`. */
+  groupsEdited: z.literal(true).optional(),
+  /** (v3 §2.3 `Gym changed · Undo`) Ben undid the move to this gym: the draft stays at its own gym, and isn't moved there again. */
+  gymKept: IdSchema.optional(),
 });
 export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
 
@@ -399,6 +450,10 @@ export const BuilderUndoSchema = z.object({
     currentVersion: z.int().min(1),
     setup: BuilderSetupSchema.nullable(),
     plan: DraftPlanSchema,
+    /** The draft's key before a rebuild that changed Day or Main lift; Undo puts it back. Absent: unchanged. */
+    key: BuilderDraftKeySchema.optional(),
+    /** The gym before `Gym changed`; Undo puts it back. Absent: unchanged. */
+    gymId: IdSchema.nullable().optional(),
   }),
 });
 export type BuilderUndo = z.infer<typeof BuilderUndoSchema>;

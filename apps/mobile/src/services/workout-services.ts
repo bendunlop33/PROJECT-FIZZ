@@ -224,6 +224,8 @@ import {
   type SetFit,
   type WorkoutOverview,
   type WriteFence,
+  type AlongsideRefusal,
+  type StartAlongside,
   type ResolvedPace,
   recentPaceSamples,
   timeLeftSheet,
@@ -312,6 +314,7 @@ import type {
   RestSetting,
   SessionAggregate,
   SessionCheckIn,
+  SessionPlanDay,
   SessionCommand,
   SetExclusion,
   SetType,
@@ -432,7 +435,7 @@ export type WorkoutStartOutcome =
   | (Extract<StartOutcome, { ok: true }> & { notice?: string })
   | Extract<StartOutcome, { ok: false }>
   /** The overview's `expectedPreviewKey` no longer matches: nothing was created (workout-overview §7, rule 5). */
-  | { ok: false; error: { code: 'stale_preview'; message: string } };
+  | { ok: false; error: { code: 'stale_preview'; message: string; /** (Builder v3) The template or variation write was refused; nothing was created. */ alongside?: AlongsideRefusal } };
 /** How far back to look for Ben's last 5 finished workouts (pace for `Time left`). Older ones fall back to `Default`. */
 const RECENT_PACE_WINDOW_MS = 90 * 86_400_000;
 
@@ -973,6 +976,12 @@ export interface WorkoutStartRequest {
    * when this is given and the live draft differs, nothing is created.
    */
   draft?: { id: string; expectedVersion: number } | null;
+  /**
+   * (Workout builder v3 §2.8, §4.2, §4.6) A builder draft's Start, with `coachDraftOf`: the draft's
+   * version the page showed (a moved one creates nothing), the plan day it is started as, and the
+   * template or variation write that lands in the same transaction.
+   */
+  builder?: { expectedVersion: number; planDay?: SessionPlanDay; alongside?: StartAlongside };
 }
 
 /** The overview's key check (§7): a retry of a Start that landed, out of date, or fresh with what to re-check in the write. */
@@ -1616,7 +1625,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
   async function coachDraftStart(
     p: UserProfile,
     draft: WorkoutDraft,
-    req: { gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; gymEquipment?: readonly EquipmentInstance[]; newId?: () => string; fence?: WriteFence; todayEdits?: TodayEditsInput },
+    req: { gymId: string; opId: string; preview: boolean; checkIn?: SessionCheckIn | null; today?: CheckIn | null; gymEquipment?: readonly EquipmentInstance[]; newId?: () => string; fence?: WriteFence; todayEdits?: TodayEditsInput; planDay?: SessionPlanDay; alongside?: StartAlongside },
   ) {
     const v = currentDraftVersion(draft);
     const exercises = new Map<string, Exercise>();
@@ -1644,6 +1653,8 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       ...(req.gymEquipment ? { gymEquipment: req.gymEquipment } : {}),
       ...(req.fence ? { fence: req.fence } : {}),
       ...(req.todayEdits ? { today: req.todayEdits } : {}),
+      ...(req.planDay ? { planDay: req.planDay } : {}),
+      ...(req.alongside ? { alongside: req.alongside } : {}),
     });
   }
 
@@ -2623,12 +2634,16 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         if (resolvedD === null || resolvedD.kind !== 'coach_draft') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
         const t = await todayFor(p, resolvedD, req.gymId, undefined, today);
         if (draftMismatch(req.draft, t.draft)) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };
-        const fenced = withDraftFence(fence, t.draft);
-        const r = await coachDraftStart(p, resolvedD.draft, { gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, todayEdits: t.input, ...(fenced ? { fence: fenced } : {}) });
+        const draftFence = withDraftFence(fence, t.draft);
+        // A builder draft's version is pinned in the write: an edit since the page loaded creates nothing (rule 5).
+        const b = req.builder;
+        const fenced: WriteFence | undefined = b === undefined ? draftFence : { rows: [...(draftFence?.rows ?? []), { table: 'workout_drafts', id: resolvedD.draft.id, version: b.expectedVersion }], sets: draftFence?.sets ?? [] };
+        const r = await coachDraftStart(p, resolvedD.draft, { gymId: req.gymId, opId: req.opId, preview: false, checkIn, today, todayEdits: t.input, ...(fenced ? { fence: fenced } : {}), ...(b?.planDay === undefined ? {} : { planDay: b.planDay }), ...(b?.alongside === undefined ? {} : { alongside: b.alongside }) });
         if (!r.ok) {
           // Two taps raced and the other one's start landed (OV5): this tap is its duplicate.
           const landed = await repos().sessions.findByStartOperation(p.id, req.opId).catch(() => null);
           if (landed) return { ok: true, aggregate: landed, warnings: [], duplicate: true };
+          if (r.alongside !== undefined) return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW, alongside: r.alongside } };
           const e = r.error;
           if (e.code === 'nothing_to_start') return { ok: false, error: { code: 'not_found', message: e.message } };
           if (e.code === 'stale_inputs') return { ok: false, error: { code: 'stale_preview', message: STALE_PREVIEW } };

@@ -12,7 +12,9 @@ import type { AnchorLoad, BuilderLoadSourceKind, RoundedLoad, SlotLoadInput } fr
  * 1. Today's working load: the first source that has one, in Ben's order
  *    (Q12): the coach's target → the plan's first-week load → the built-in
  *    rule → est. max (own recent sets, an estimate) × the set's reps and
- *    target RPE → none (`—`, `Start light` ceiling).
+ *    target RPE → none (`—`, `Start light` ceiling). The rule's load is
+ *    the working load as is; other sets derive from it at the rule's rep
+ *    floor (review B3).
  * 2. Every other set follows from that working load by reps and RPE: the
  *    anchor's e1RM by Epley with RIR = 10 − RPE (`referenceE1rm`), then
  *    `expectedLoad` for the set (100 × 6 @ 8 → 95 × 8 @ 8).
@@ -75,7 +77,9 @@ export function builderLoad(raw: SlotLoadInput, set: { reps: number; rpe: number
     if (!formula) return { ...u, source, working: anchor.value, anchorE1rm: null, estimate: false, startLight: null };
     const e1rm = anchorE1rmOf(anchor);
     const same = anchor.reps === set.reps && anchor.rpe === set.rpe;
-    const working = same || e1rm === null ? anchor.value : tidy(expectedLoad(e1rm, set.reps, set.rpe));
+    // The built-in rule's load is used as the rule gave it (ADR 0006, review B3): the working sets take it
+    // as is; other sets derive from it at the rule's own reps (`anchor.reps`).
+    const working = same || e1rm === null || source === 'rule' ? anchor.value : tidy(expectedLoad(e1rm, set.reps, set.rpe));
     return { ...u, source, working, anchorE1rm: e1rm, estimate: false, startLight: null };
   }
   if (formula && input.e1rm !== null && Number.isFinite(input.e1rm) && input.e1rm > 0) {

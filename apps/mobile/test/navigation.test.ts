@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { backFromEditor, openGymFromWorkout, openLibrary, openStartedWorkout, openYourPlan, openWorkoutToCheckGym, popToFromEditor, popToTabs, popToToday, replaceWithSummary, returnToWorkout } from '../src/navigation/actions';
+import { backFromEditor, builderPage, openGymFromWorkout, openLibrary, openStartedWorkout, openYourPlan, openWorkoutToCheckGym, popToFromEditor, popToTabs, popToToday, replaceWithSummary, returnToWorkout } from '../src/navigation/actions';
 import { initialRootState } from '../src/navigation/initial-state';
 
 describe('root stack at launch (review S5)', () => {
@@ -263,5 +263,57 @@ describe('Library stack: Your plan from Today (review planview S1)', () => {
   it('the editor’s Save back to Library (from a plan day’s Edit) pops the same way', () => {
     const s = apply(withPlanDay(), nested(openLibrary('workouts')));
     expect(s.routes.map((r) => r.name)).toEqual(['LibraryHome']);
+  });
+});
+
+/** Builder v3 (review b3-builder B7): `‹ Set up` / `Next` never stack pages, and `Close` leaves the builder. */
+describe('builder pages (workout-builder-v3 §2.2–§2.3)', () => {
+  const routeNames = ['Tabs', 'BuilderSetup', 'BuilderWorkout', 'Coach'];
+  const router = StackRouter({});
+  const options = { routeNames, routeParamList: {}, routeGetIdList: {} };
+  type State = StackNavigationState<ParamListBase>;
+  const apply = (state: State, action: Parameters<typeof router.getStateForAction>[1]): State => {
+    const next = router.getStateForAction(state, action, options);
+    if (next === null || next.stale) throw new Error(`action not handled: ${action.type}`);
+    return next as State;
+  };
+  const names = (s: State) => s.routes.map((r) => r.name);
+  const navigate = (name: string, params: object = {}) => ({ type: 'NAVIGATE', payload: { name, params } }) as const;
+
+  it('Set up → Next → ‹ Set up → Next → Close leaves only Tabs', () => {
+    let s = apply(router.getInitialState(options), navigate('BuilderSetup', { dayId: 'push' }));
+    s = apply(s, builderPage('BuilderWorkout', { draftId: 'd1' }));
+    expect(names(s)).toEqual(['Tabs', 'BuilderWorkout']);
+    s = apply(s, builderPage('BuilderSetup', { draftId: 'd1' }));
+    expect(names(s)).toEqual(['Tabs', 'BuilderSetup']);
+    expect(s.routes[1]?.params).toEqual({ draftId: 'd1' });
+    s = apply(s, builderPage('BuilderWorkout', { draftId: 'd1' }));
+    s = apply(s, builderPage('BuilderSetup', { draftId: 'd1' }));
+    s = apply(s, builderPage('BuilderWorkout', { draftId: 'd1' }));
+    expect(names(s)).toEqual(['Tabs', 'BuilderWorkout']);
+    s = apply(s, { type: 'GO_BACK' });
+    expect(names(s)).toEqual(['Tabs']);
+  });
+
+  it('Edit from Today opens Your workout; ‹ Set up replaces it; the coach sheet over Set up pops back to it', () => {
+    let s = apply(router.getInitialState(options), navigate('BuilderWorkout', { draftId: 'd1' }));
+    s = apply(s, builderPage('BuilderSetup', { draftId: 'd1' }));
+    expect(names(s)).toEqual(['Tabs', 'BuilderSetup']);
+    s = apply(s, navigate('Coach'));
+    s = apply(s, builderPage('BuilderSetup', { draftId: 'd1' }));
+    expect(names(s)).toEqual(['Tabs', 'BuilderSetup']);
+    // `Edits from Mon 19 Oct · Use`: the same page, another draft.
+    s = apply(s, builderPage('BuilderWorkout', { draftId: 'd1' }));
+    s = apply(s, builderPage('BuilderWorkout', { draftId: 'd0' }));
+    expect(names(s)).toEqual(['Tabs', 'BuilderWorkout']);
+    expect(s.routes[1]?.params).toEqual({ draftId: 'd0' });
+  });
+
+  it('the screens use it (no plain navigate between the two pages)', () => {
+    const src = (f: string) => readFileSync(join(__dirname, '..', 'src', 'screens', 'builder', f), 'utf8');
+    for (const f of ['BuilderSetupScreen.tsx', 'BuilderWorkoutScreen.tsx']) {
+      expect(src(f)).not.toMatch(/navigate\('Builder(Setup|Workout)'/);
+      expect(src(f)).toMatch(/builderPage\('Builder(Setup|Workout)'/);
+    }
   });
 });
