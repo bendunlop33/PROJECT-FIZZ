@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IdSchema, OperationIdSchema, TimeZoneSchema, UtcTimestampSchema, ZonedTimestampSchema } from './common';
-import { BUILD_LIMITS, BuildCheckSchema, BuildFocusSchema, BuildRequestOriginSchema, DraftPlanSchema, ProposedExerciseSchema } from './workout-draft';
+import { BUILD_LIMITS, BuildCheckSchema, BuildFocusSchema, BuildRequestOriginSchema, NonEmptyDraftPlanSchema, ProposedExerciseSchema } from './workout-draft';
 
 /**
  * Coach-built multi-day plans (Ben, 19 Oct: "Can it build plans across
@@ -24,6 +24,11 @@ export const PLAN_LIMITS = {
   openDays: 14,
   maxVersions: 10,
   maxOps: 200,
+  /**
+   * (Workout builder v3 §4.2) Templates per plan day: one per main lift (`Chest · bench`,
+   * `Chest · incline`). 4 is a storage bound, not a product rule.
+   */
+  maxTemplatesPerDay: 4,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -69,7 +74,7 @@ export const PlanDayDraftSchema = z.object({
   splitDayId: z.string().min(1).max(64).nullable(),
   focus: BuildFocusSchema,
   minutes: z.int().min(15).max(180),
-  plan: DraftPlanSchema,
+  plan: NonEmptyDraftPlanSchema,
   checks: z.array(BuildCheckSchema).max(60),
 });
 export type PlanDayDraft = z.infer<typeof PlanDayDraftSchema>;
@@ -120,7 +125,11 @@ export const PlanAppliedSchema = z.object({
   versionN: z.int().min(1),
   opId: OperationIdSchema,
   atUtc: UtcTimestampSchema,
-  made: z.array(z.object({ dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1), routineId: IdSchema, version: z.int().min(1) })).min(1).max(PLAN_LIMITS.maxDays),
+  /** (v3 §4.2) Every template Apply made: one per day and main lift (absent `mainLiftExerciseId`: one per day, before v3). */
+  made: z
+    .array(z.object({ dayIndex: z.int().min(0).max(PLAN_LIMITS.maxDays - 1), routineId: IdSchema, version: z.int().min(1), mainLiftExerciseId: z.string().min(1).max(64).nullable().optional() }))
+    .min(1)
+    .max(PLAN_LIMITS.maxDays * PLAN_LIMITS.maxTemplatesPerDay),
   rotationOff: z
     .array(z.object({ routineId: IdSchema, name: z.string().min(1).max(120), rotationAtUtc: UtcTimestampSchema.nullable(), versionBefore: z.int().min(1), versionAfter: z.int().min(2) }))
     .max(40),
@@ -149,7 +158,7 @@ export type PlanDraftStatus = z.infer<typeof PlanDraftStatusSchema>;
 export const PlanEndedSchema = z.object({
   opId: OperationIdSchema,
   atUtc: UtcTimestampSchema,
-  rotationOff: z.array(z.object({ routineId: IdSchema, rotationAtUtc: UtcTimestampSchema.nullable(), versionBefore: z.int().min(1), versionAfter: z.int().min(2) })).max(PLAN_LIMITS.maxDays),
+  rotationOff: z.array(z.object({ routineId: IdSchema, rotationAtUtc: UtcTimestampSchema.nullable(), versionBefore: z.int().min(1), versionAfter: z.int().min(2) })).max(PLAN_LIMITS.maxDays * PLAN_LIMITS.maxTemplatesPerDay),
   /**
    * (Ben, 20 Oct: option B) The workouts `Replace my workouts` took out of the rotation that End put
    * back in their places, at the versions End left them (its Undo takes them out again). Absent on

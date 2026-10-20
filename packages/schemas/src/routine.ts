@@ -95,6 +95,46 @@ export const RoutinePlanLinkSchema = z.object({
 });
 export type RoutinePlanLink = z.infer<typeof RoutinePlanLinkSchema>;
 
+/** Plan-day limits (workout-builder v3 §4.2, §4.3; Ben, 20 Oct, Q10). */
+export const PLAN_DAY_LIMITS = {
+  minMinutes: 15,
+  maxMinutes: 180,
+  /** Live saved variations per (split day, main lift) (Q10). */
+  maxVariations: 5,
+  labelMax: 40,
+  /** Extras one variation holds (added slots, pairs, removals, set counts). */
+  maxVariationOps: 20,
+  /** Operation IDs a variation remembers for idempotency. */
+  maxOpIds: 50,
+} as const;
+
+/** A split day ID as the Profile split stores it (`chest`, `push`, or a generated ID). */
+export const SplitDayIdSchema = z.string().min(1).max(64);
+/** A main lift as the Profile stores it (`SplitDay.mainLiftExerciseId`): an exercise ID. */
+export const MainLiftIdSchema = z.string().min(1).max(64);
+
+/**
+ * (Workout builder v3 §4.2) A plan-day template: which plan, split day and
+ * main lift it is, with its own length. One live template per (planId,
+ * splitDayId, main lift), enforced inside the write transaction
+ * (`routines.plan_day_key`, migration 30). `blockId` / `weekN` are room for
+ * training blocks (§6), unused until then.
+ */
+export const RoutinePlanDaySchema = z.object({
+  planId: IdSchema,
+  splitDayId: SplitDayIdSchema,
+  mainLiftExerciseId: MainLiftIdSchema.nullable(),
+  minutes: z.int().min(PLAN_DAY_LIMITS.minMinutes).max(PLAN_DAY_LIMITS.maxMinutes),
+  blockId: z.string().min(1).max(64).optional(),
+  weekN: z.int().min(1).max(52).optional(),
+});
+export type RoutinePlanDay = z.infer<typeof RoutinePlanDaySchema>;
+
+/** The text key of a template (planId, splitDayId, main lift): `routines.plan_day_key`. */
+export function planDayTemplateKey(p: Pick<RoutinePlanDay, 'planId' | 'splitDayId' | 'mainLiftExerciseId'>): string {
+  return `${p.planId}|${p.splitDayId}|${p.mainLiftExerciseId ?? '-'}`;
+}
+
 export const RoutineSchema = RecordMetaSchema.extend({
   name: z.string().min(1).max(120),
   exercises: z.array(RoutineExerciseSchema).max(40),
@@ -135,6 +175,12 @@ export const RoutineSchema = RecordMetaSchema.extend({
   inRotation: z.boolean().optional(),
   /** Its place in the rotation: when it joined (absent = `createdAtUtc`). `Add to rotation` puts it at the end. */
   rotationAtUtc: UtcTimestampSchema.optional(),
+  /**
+   * (Workout builder v3 §4.2) A plan-day template: plan, split day, main lift and minutes. Absent on
+   * every other workout, and on plan workouts made before it (their key is derived when read from
+   * `createdFromPlan`, never written on read: `planDayKeyOf`).
+   */
+  planDay: RoutinePlanDaySchema.optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 

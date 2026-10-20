@@ -759,7 +759,11 @@ export type RecheckedSlot = { kind: 'coach'; checks: Map<number, LoadCheck>; ref
  * slot has no stored coach load (a v1 draft, or the rule from the start).
  */
 export function recheckDraftSlot(slot: DraftSlot, exercise: Exercise, history: readonly HistorySession[], substitute: SubstituteContext, builtAtUtc: string, nowMs: number): RecheckedSlot | null {
-  const stored = slot.setTemplates.flatMap((t, i) => (t.load !== undefined && t.setType !== 'warmup' ? [{ t, i, load: t.load }] : []));
+  // v3: the builder's own sources (`calc`, `ben`) aren't coach loads; the builder re-derives them (S2).
+  const stored = slot.setTemplates.flatMap((t, i) => {
+    const l = t.load;
+    return l !== undefined && t.setType !== 'warmup' && l.source !== 'calc' && l.source !== 'ben' ? [{ t, i, load: { ...l, source: l.source } }] : [];
+  });
   if (stored.length === 0 || !stored.some((x) => x.load.source === 'coach' || x.load.source === 'coach_est')) return null;
   const refs = loadReferences({ exercise, history, ctx: substitute, nowMs });
   const pain = painHoldFor(exercise.id, substitute.painFlags, substitute.sessionPain, nowMs, substitute.at.tz);

@@ -16,7 +16,7 @@ import { DraftBasisSchema } from './draft';
 import { GymEditSchema, GymEquipmentKindSchema, type GymEditRecord } from './equipment';
 import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
 import { CustomExerciseFieldsSchema, EquipmentKindSchema, LateralitySchema, MeasurementSchema, MuscleSchema, type Exercise } from './exercise';
-import { RoutineExerciseSchema, RoutineSchema } from './routine';
+import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SplitDayIdSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
@@ -1255,6 +1255,15 @@ export const CoachMessageSchema = z.object({
 });
 export type CoachMessage = z.infer<typeof CoachMessageSchema>;
 
+/** (Workout builder v3) Which plan day a day note is for, and where it came from. */
+export const DayNoteScopeSchema = z.object({
+  splitDayId: SplitDayIdSchema,
+  mainLiftExerciseId: MainLiftIdSchema.nullable(),
+  reviewId: IdSchema.nullable(),
+  hiddenOn: z.array(LocalDateSchema).max(14),
+});
+export type DayNoteScope = z.infer<typeof DayNoteScopeSchema>;
+
 /** A personal fact Ben asked the coach to remember (coach-memory, v1 subset). Your data. */
 export const MemorySchema = RecordMetaSchema.extend({
   text: z.string().min(1).max(200),
@@ -1275,6 +1284,13 @@ export const MemorySchema = RecordMetaSchema.extend({
   edits: z.array(z.object({ before: z.string().min(1).max(200), atUtc: UtcTimestampSchema })).max(20).optional(),
   /** (12 Oct) A `not_saved` suggestion Ben sent to the playbook (CM9 `Add to playbook`), not `Not now`. */
   closedAs: z.literal('playbook').optional(),
+  /**
+   * (Workout builder v3 §2.9, §4.1) A `For next <day> day` text note from a review: shown as
+   * `From last review` on that day's Your workout. `hiddenOn`: local dates Ben tapped ✕ (off for that
+   * day, and not sent to the coach then). Numeric notes are next-session targets, never memories.
+   * Absent on every other memory.
+   */
+  dayNote: DayNoteScopeSchema.optional(),
 });
 export type Memory = z.infer<typeof MemorySchema>;
 

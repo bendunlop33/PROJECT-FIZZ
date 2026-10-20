@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { IdSchema, LoadConventionSchema, LoadSchema, OperationIdSchema, RepRangeSchema, RpeSchema, TimeZoneSchema, UtcTimestampSchema, WeightUnitSchema, ZonedTimestampSchema } from './common';
 import { GymEquipmentKindSchema } from './equipment';
-import { SetTypeSchema } from './routine';
+import { MainLiftIdSchema, RestSettingSchema, SetTypeSchema, SplitDayIdSchema } from './routine';
 import { SplitBodyPartSchema } from './training-profile';
+import { LocalDateSchema } from './import';
 
 /**
  * Coach-built workouts (workout-builder.md v2.1). The coach proposes the
@@ -29,9 +30,17 @@ export const BUILD_LIMITS = {
   minRpe: 5,
   maxRpe: 10,
   minRestS: 30,
-  maxRestS: 300,
+  /** (Ben, 20 Oct, Q7) Up to 6:00 (was 5:00). */
+  maxRestS: 360,
+  /** (Q7) The rest after the set a drop set follows ("Before a drop set"): 0:00–1:00. */
+  maxRestBeforeDropS: 60,
   minSuperset: 2,
   maxSuperset: 4,
+  /** (Workout builder v3 §4.7) Drop sets per exercise; they count against `maxWorkingSets`. */
+  maxDropSets: 3,
+  /** (§2.2) The builder's length, any minute. */
+  minMinutes: 15,
+  maxMinutes: 180,
   /** (Coach v3, ADR 0027) Was 240: room for a coach's reasons, with checked numbers. */
   messageMax: 600,
 } as const;
@@ -156,9 +165,17 @@ export type ProposeWorkoutArgs = z.infer<typeof ProposeWorkoutArgsSchema>;
  * shown only behind `Why?` as `Coach's note`; review r4: words only, no
  * numbers, and re-checked at plan time).
  */
+export const DraftLoadSourceSchema = z.enum(['coach', 'coach_est', 'rule', 'none', 'calc', 'ben']);
+export type DraftLoadSource = z.infer<typeof DraftLoadSourceSchema>;
+
+/**
+ * (v3 §4.4) Two sources for the builder: `calc` (the reps/RPE formula from
+ * the working load, labelled an estimate where it rests on est. max) and
+ * `ben` (a kg Ben typed, kept today only, Q6).
+ */
 export const DraftLoadSchema = z.object({
   load: LoadSchema.nullable(),
-  source: z.enum(['coach', 'coach_est', 'rule', 'none']),
+  source: DraftLoadSourceSchema,
   basis: z.string().max(80).nullable(),
   /** Drafts before r3 only (`basis` is the coach's text); written `false` now. */
   basisFromCoach: z.boolean(),
@@ -213,11 +230,47 @@ export const DraftSlotSchema = z.object({
   checkedOn: CheckedOnSchema.nullable().optional(),
   /** (v2, B5) The comparable history's version when checked. */
   checkedHistoryVersion: z.string().min(1).max(64).nullable().optional(),
+  /**
+   * (v3 §4.4) This slot's revision: every write that changes it bumps it. Proposals and review
+   * suggestions carry `{ slotId, rev }` preconditions and are refused only when one moved. Absent: 1.
+   */
+  rev: z.int().min(1).optional(),
+  /** (v3 §4.5) Rest per set type, as on `RoutineExercise`. Absent: the defaults. */
+  restBySetType: z.partialRecord(SetTypeSchema, RestSettingSchema).optional(),
+}).superRefine((slot, ctx) => {
+  const t = slot.setTemplates;
+  const drops = t.filter((x) => x.setType === 'drop').length;
+  if (drops > BUILD_LIMITS.maxDropSets) ctx.addIssue({ code: 'custom', message: `At most ${String(BUILD_LIMITS.maxDropSets)} drop sets`, path: ['setTemplates'] });
+  // Drops count against the working sets (§4.7). Checked only where drops exist, so older drafts read unchanged.
+  if (drops > 0 && t.filter((x) => x.setType !== 'warmup').length > BUILD_LIMITS.maxWorkingSets) ctx.addIssue({ code: 'custom', message: `At most ${String(BUILD_LIMITS.maxWorkingSets)} sets, drops included`, path: ['setTemplates'] });
+  // Q7: the rest after the set a drop follows is 0:00–1:00; a drop set's own rest and every other is 0:30 up to the max.
+  t.forEach((x, i) => {
+    if (x.restS === null) return;
+    const beforeDrop = t[i + 1]?.setType === 'drop';
+    const ok = beforeDrop ? x.restS <= BUILD_LIMITS.maxRestBeforeDropS : x.restS >= BUILD_LIMITS.minRestS && x.restS <= BUILD_LIMITS.maxRestS;
+    if (!ok) ctx.addIssue({ code: 'custom', message: beforeDrop ? 'Rest before a drop set is 0:00–1:00' : 'Rest is 0:30–6:00', path: ['setTemplates', i, 'restS'] });
+  });
 });
 export type DraftSlot = z.infer<typeof DraftSlotSchema>;
 
-export const DraftPlanSchema = z.object({ slots: z.array(DraftSlotSchema).min(1).max(BUILD_LIMITS.maxExercises) });
+/** A slot's revision (absent = 1). */
+export const slotRev = (slot: Pick<DraftSlot, 'rev'>): number => slot.rev ?? 1;
+
+/**
+ * The checked plan. (v3 §4.4) Zero slots are allowed while a builder draft is
+ * open (the empty workout, Start disabled); a coach version, a plan day and a
+ * started draft need at least one (refined where they're used). A superset
+ * holds at most `maxSuperset` exercises.
+ */
+export const DraftPlanSchema = z.object({ slots: z.array(DraftSlotSchema).max(BUILD_LIMITS.maxExercises) }).superRefine((p, ctx) => {
+  const size = new Map<string, number>();
+  for (const s of p.slots) if (s.supersetGroup !== null) size.set(s.supersetGroup, (size.get(s.supersetGroup) ?? 0) + 1);
+  for (const [g, n] of size) if (n > BUILD_LIMITS.maxSuperset) ctx.addIssue({ code: 'custom', message: `Superset ${g} has ${String(n)} exercises; at most ${String(BUILD_LIMITS.maxSuperset)}`, path: ['slots'] });
+});
 export type DraftPlan = z.infer<typeof DraftPlanSchema>;
+
+/** A plan with at least one slot (coach versions, plan days, a started draft). */
+export const NonEmptyDraftPlanSchema = DraftPlanSchema.refine((p) => p.slots.length >= 1, { message: 'A workout needs at least one exercise', path: ['slots'] });
 
 /** A check written by code (BD9), never by the model. `leftOut`: the exercise isn't in the draft. */
 export const BuildCheckSchema = z.object({
@@ -231,6 +284,47 @@ export const BuildCheckSchema = z.object({
 export type BuildCheck = z.infer<typeof BuildCheckSchema>;
 
 export const BuildRequestOriginSchema = z.enum(['chip', 'card', 'text', 'voice']);
+
+/** (v3 §4.4) A workout draft version's origin: a coach build (as before) or the builder (`builder`: Ben's own Set up and edits). */
+export const WorkoutDraftOriginSchema = z.enum([...BuildRequestOriginSchema.options, 'builder']);
+export type WorkoutDraftOrigin = z.infer<typeof WorkoutDraftOriginSchema>;
+
+/** (v3 §2.2, §4.4) One muscle-group row on Set up: stored as body parts (`Legs` = its parts), 1–4 exercises. */
+export const BuilderGroupCountSchema = z.object({
+  parts: z.array(SplitBodyPartSchema).min(1).max(10),
+  count: z.int().min(1).max(4),
+});
+
+/** (v3 §4.4) Set up as Ben left it. Group labels (`Legs`, `Abs`) are derived when read. */
+export const BuilderSetupSchema = z.object({
+  dayId: SplitDayIdSchema,
+  minutes: z.int().min(BUILD_LIMITS.minMinutes).max(BUILD_LIMITS.maxMinutes),
+  mainLiftExerciseId: MainLiftIdSchema.nullable(),
+  supersets: z.boolean(),
+  groups: z.array(BuilderGroupCountSchema).max(10),
+  templateRoutineId: IdSchema.optional(),
+  templateVersion: z.int().min(1).optional(),
+  variationId: IdSchema.nullable().optional(),
+});
+export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
+
+/**
+ * (v3 §4.4) Which builder draft this is: one open draft per (owner, plan,
+ * split day, main lift, local date), resumed on reopen
+ * (`workout_drafts.builder_key`, migration 30).
+ */
+export const BuilderDraftKeySchema = z.object({
+  planId: IdSchema.nullable(),
+  splitDayId: SplitDayIdSchema.nullable(),
+  mainLiftExerciseId: MainLiftIdSchema.nullable(),
+  localDate: LocalDateSchema,
+});
+export type BuilderDraftKey = z.infer<typeof BuilderDraftKeySchema>;
+
+/** The text key of a builder draft (`workout_drafts.builder_key`). */
+export function builderDraftKeyText(k: BuilderDraftKey): string {
+  return `${k.planId ?? '-'}|${k.splitDayId ?? '-'}|${k.mainLiftExerciseId ?? '-'}|${k.localDate}`;
+}
 
 /** The split day a Build card chip asked for (F19): its name and body parts. */
 export const BuildDaySchema = z.object({
@@ -251,9 +345,11 @@ export const WorkoutDraftVersionSchema = z.object({
     minutes: z.int().min(15).max(180),
     focus: BuildFocusSchema,
     gymId: IdSchema.nullable(),
-    origin: BuildRequestOriginSchema,
+    origin: WorkoutDraftOriginSchema,
     /** (F19) The split day chosen on the Build card; absent on older drafts and text requests. */
     day: BuildDaySchema.optional(),
+    /** (v3 §4.4) Set up, on a builder version (`origin: 'builder'`). */
+    setup: BuilderSetupSchema.optional(),
   }),
   /** The model's arguments as received (data). */
   rawArgs: z.string().max(40_000),
@@ -268,8 +364,31 @@ export const WorkoutDraftVersionSchema = z.object({
   contextHash: z.string().min(1).max(128),
   equipmentVersion: z.string().min(1).max(128),
   createdAt: ZonedTimestampSchema,
+}).superRefine((v, ctx) => {
+  const builder = v.request.origin === 'builder';
+  // A coach version always holds a workout; a builder version may be empty while open (§4.4).
+  if (!builder && v.plan.slots.length === 0) ctx.addIssue({ code: 'custom', message: 'A coach version needs at least one exercise', path: ['plan', 'slots'] });
+  if (builder && v.request.setup === undefined) ctx.addIssue({ code: 'custom', message: 'A builder version records its set-up', path: ['request', 'setup'] });
+  if (builder && (v.turnId !== 'manual' || v.rawArgs !== '')) ctx.addIssue({ code: 'custom', message: 'A builder version has no model turn', path: ['turnId'] });
 });
 export type WorkoutDraftVersion = z.infer<typeof WorkoutDraftVersionSchema>;
+
+/**
+ * (v3 §4.4) The state before the last undoable builder edit, kept on the
+ * draft so Undo survives a force-close. Undo only from `atVersion` (the
+ * version that edit left; rule 5). `Rebuilt · Undo` restores both pages:
+ * the set-up and the plan of version `currentVersion`.
+ */
+export const BuilderUndoSchema = z.object({
+  opId: OperationIdSchema,
+  atVersion: z.int().min(1),
+  snapshot: z.object({
+    currentVersion: z.int().min(1),
+    setup: BuilderSetupSchema.nullable(),
+    plan: DraftPlanSchema,
+  }),
+});
+export type BuilderUndo = z.infer<typeof BuilderUndoSchema>;
 
 export const WorkoutDraftStatusSchema = z.enum(['open', 'started', 'discarded', 'expired']);
 export type WorkoutDraftStatus = z.infer<typeof WorkoutDraftStatusSchema>;
@@ -306,9 +425,15 @@ export const WorkoutDraftSchema = z
     expiresAtUtc: UtcTimestampSchema,
     version: z.int().min(1),
     updatedAtUtc: UtcTimestampSchema,
+    /** (v3 §4.4) A builder draft's key; absent on coach drafts. */
+    builderKey: BuilderDraftKeySchema.optional(),
+    /** (v3 §4.4) The last undoable edit's before-state; absent or null: nothing to undo. */
+    undo: BuilderUndoSchema.nullable().optional(),
   })
   .refine((d) => d.versions.some((v) => v.n === d.currentVersion && v.status === 'current'), { message: 'The current version must exist', path: ['currentVersion'] })
-  .refine((d) => (d.status === 'started') === (d.sessionId !== null), { message: 'Only a started draft names its session', path: ['sessionId'] });
+  .refine((d) => (d.status === 'started') === (d.sessionId !== null), { message: 'Only a started draft names its session', path: ['sessionId'] })
+  // §4.4: Start refuses an empty workout, so a started draft always holds one.
+  .refine((d) => d.status !== 'started' || (d.versions.find((v) => v.n === d.currentVersion)?.plan.slots.length ?? 0) > 0, { message: 'A started draft has at least one exercise', path: ['versions'] });
 export type WorkoutDraft = z.infer<typeof WorkoutDraftSchema>;
 
 /** A session started from a coach draft (§6.3): provenance for `Why?`. */

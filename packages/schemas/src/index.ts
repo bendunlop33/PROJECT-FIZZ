@@ -17,3 +17,5 @@ export * from './import-layout';
 export * from './training-profile';
 export * from './lift-targets';
 export * from './activity';
+export * from './plan-day';
+export * from './review';
