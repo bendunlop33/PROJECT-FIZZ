@@ -1,4 +1,4 @@
-import { canAddWarmup, slotsOf, workingCount, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
+import { canAddWarmup, clampBuilderRest, slotsOf, workingCount, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
 import { BUILD_LIMITS, type BuilderGroup, type LoadConvention, type SetType, type WeightUnit } from '@fizz/schemas';
 
 import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './builder-service';
@@ -349,6 +349,8 @@ export interface PopupSetRow {
   rpe: number | null;
   canDelete: boolean;
   accessibilityLabel: string;
+  /** `Warm-up 1`, `Set 2`: what VoiceOver says before each cell (`Set 2, reps`). */
+  spokenName: string;
 }
 
 export interface PopupRestRow {
@@ -356,6 +358,9 @@ export interface PopupRestRow {
   label: string;
   seconds: number;
   text: string;
+  /** A 15 s step down or up is still in range (no write that changes nothing). */
+  canMinus: boolean;
+  canPlus: boolean;
 }
 
 export interface PopupView {
@@ -385,9 +390,11 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
   const row = workoutView(snap).rounds.flatMap((r) => r.rows).find((r) => r.slotKey === slotKey);
   const f = snap.facts[slot.exerciseId];
   let n = 0;
+  let w = 0;
   const work = workingCount(slot);
   const rows = slot.rows.map((r, i): PopupSetRow => {
     const mark = r.type === 'warmup' ? 'W' : String((n += 1));
+    const spokenName = r.type === 'warmup' ? `Warm-up ${String((w += 1))}` : `Set ${mark}`;
     const kgText = loadText(r.load, slot.unit, slot.convention, slot.unit);
     return {
       index: i,
@@ -400,12 +407,13 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
       rpeText: r.rpe === null ? '–' : trim(r.rpe),
       rpe: r.rpe,
       canDelete: r.type === 'warmup' || work > 1,
-      accessibilityLabel: `${r.type === 'warmup' ? 'Warm-up' : `Set ${mark}`}, ${SET_TYPE_LABEL[r.type]}, ${String(r.reps)} reps, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
+      accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[r.type]}, ${String(r.reps)} reps, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
+      spokenName,
     };
   });
   const types = new Set(slot.rows.map((r) => r.type));
   const superset = (block?.slots.length ?? 1) > 1;
-  const rests: PopupRestRow[] = superset
+  const rests: Omit<PopupRestRow, 'canMinus' | 'canPlus'>[] = superset
     ? [{ kind: 'round', label: 'After each round', seconds: restOf('round'), text: restText(restOf('round')) }]
     : [
         ...(types.has('warmup') ? [{ kind: 'warmup' as const, label: 'Warm-ups' }] : []),
@@ -414,6 +422,7 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
         ...(types.has('working') ? [{ kind: 'working' as const, label: 'Working sets' }] : []),
         ...(types.has('drop') ? [{ kind: 'before_drop' as const, label: 'Before drop' }] : []),
       ].map((x) => ({ ...x, seconds: restOf(x.kind), text: restText(restOf(x.kind)) }));
+  const steps = (x: Omit<PopupRestRow, 'canMinus' | 'canPlus'>): PopupRestRow => ({ ...x, canMinus: clampBuilderRest(x.kind, x.seconds - REST_STEP_S) < x.seconds, canPlus: clampBuilderRest(x.kind, x.seconds + REST_STEP_S) > x.seconds });
   const has = (name: WorkoutRowView['actions'][number]['name']) => row?.actions.some((a) => a.name === name) === true;
   return {
     name: f?.name ?? 'Exercise',
@@ -422,7 +431,7 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
     rows,
     canAddWarmup: canAddWarmup(slot),
     canAddSet: work < BUILD_LIMITS.maxWorkingSets,
-    rests,
+    rests: rests.map(steps),
     canMoveUp: has('move_up'),
     canMoveDown: has('move_down'),
     canSupersetNext: has('superset_next'),
@@ -430,6 +439,9 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
     mayHurt: f?.mayHurt === true,
   };
 }
+
+/** A rest stepper's step (§2.4). */
+export const REST_STEP_S = 15;
 
 /** Keyboard bar steps (§2.7): reps 1, RPE 0.5; kg comes from this gym's next loadable weight (service). */
 export const KEY_STEPS = { reps: 1, rpe: 0.5 } as const;

@@ -254,12 +254,17 @@ describe('Exercise pop-up and keyboard (§2.4, §2.7)', () => {
     expect(p?.canAddWarmup).toBe(false);
     expect(p?.canSupersetNext).toBe(false);
     expect(p?.rows[4]?.accessibilityLabel).toBe('Set 1, Top set, 6 reps, 100 kilograms, RPE 8');
+    // Each cell says whose it is (`Warm-up 2, reps`, `Set 1, reps`; N6).
+    expect(p?.rows.map((r) => r.spokenName)).toEqual(['Warm-up 1', 'Warm-up 2', 'Warm-up 3', 'Warm-up 4', 'Set 1', 'Set 2', 'Set 3', 'Set 4']);
+    expect(p?.rests.every((r) => r.canMinus && r.canPlus)).toBe(true);
+    // At the floor `−` is off: no write that changes nothing (N7).
+    expect(popupView(snap, 'k-bench', () => 0)?.rests.every((r) => !r.canMinus)).toBe(true);
   });
 
   it('in a superset: one rest row, `After each round`; the last working set can’t be deleted', () => {
     const snap = snapshot(W);
     const p = popupView(snap, 'k-fly', (k) => snap.rests['k-fly']?.[k] ?? 0);
-    expect(p?.rests).toEqual([{ kind: 'round', label: 'After each round', seconds: 90, text: '1:30' }]);
+    expect(p?.rests).toEqual([{ kind: 'round', label: 'After each round', seconds: 90, text: '1:30', canMinus: true, canPlus: true }]);
     expect(p?.canUnlink).toBe(true);
     const one = popupView(snap, 'k-pull', () => 90);
     expect(one?.rows[0]?.canDelete).toBe(false);
@@ -350,6 +355,24 @@ describe('source checks', () => {
     expect(screens).toContain("accessibilityRole=\"adjustable\"");
     expect(screens).toContain('InputAccessoryView');
     expect(screens).toContain("name: 'delete_set', label: 'Delete set'");
+  });
+  it('pop-up set rows aren’t one VoiceOver element: # and Type carry the actions, the fields stay reachable (review B6)', () => {
+    const sheets = read('screens/builder/BuilderSheets.tsx');
+    const parts = read('screens/builder/BuilderParts.tsx');
+    expect(parts).toMatch(/container\s*\?\s*\{ accessible: false \}/);
+    expect(sheets).toMatch(/<SwipeRow[\s\S]{0,120}container/);
+    expect(sheets).toContain('`${r.spokenName}, reps`');
+    expect(sheets).toContain('`${r.spokenName}, target RPE`');
+    expect(sheets).toMatch(/accessibilityActions=\{actions\}/);
+  });
+  it('edits run one at a time on the latest snapshot; a held stepper keeps adding (review S4, S5)', () => {
+    const ws = read('screens/builder/BuilderWorkoutScreen.tsx');
+    expect(ws).toContain('queue.current.then(run, run)');
+    expect(ws).toContain('const cur = snapRef.current;');
+    const parts = read('screens/builder/BuilderParts.tsx');
+    expect(parts).toContain('step.current = onStep;');
+    expect(parts).toContain('step.current(delta)');
+    expect(parts).toContain('sides.current.left');
   });
   it('minimal copy: no rule labels or reassurance in the builder; no est. 1RM on Swap', () => {
     for (const banned of ['built-in rule', 'snapped to', 'Nothing changes', 'Est. 1RM', 'est. 1RM']) expect(screens).not.toContain(banned);

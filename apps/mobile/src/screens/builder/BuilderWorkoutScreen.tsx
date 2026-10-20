@@ -35,7 +35,20 @@ export function BuilderWorkoutScreen() {
   const insets = useSafeAreaInsets();
   const params = useRoute<RouteProp<RootStackParams, 'BuilderWorkout'>>().params;
   const draftId = params.draftId;
-  const [snap, setSnap] = useState<BuilderSnapshot | null>(null);
+  const [snap, setSnapState] = useState<BuilderSnapshot | null>(null);
+  // The latest snapshot, for edits that run after the ones before them (review S4).
+  const snapRef = useRef<BuilderSnapshot | null>(null);
+  const setSnap = useCallback((s: BuilderSnapshot | null) => {
+    snapRef.current = s;
+    setSnapState(s);
+  }, []);
+  // Ben's edits run one at a time, each on the draft the one before left: quick taps never go stale against each other.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const inTurn = useCallback(<T,>(run: () => Promise<T>): Promise<T> => {
+    const p = queue.current.then(run, run);
+    queue.current = p.catch(() => undefined);
+    return p;
+  }, []);
   const [coach, setCoach] = useState<CoachBarStatus>('not_connected');
   const [toast, setToast] = useState<(BuilderToast & { whyOpen: boolean }) | null>(null);
   const [popup, setPopup] = useState<string | null>(null);
@@ -51,12 +64,12 @@ export function BuilderWorkoutScreen() {
   const shownKey = useRef<string | null>(null);
 
   const reload = useCallback(async () => {
-    const s = await services.builder.read(draftId);
+    const s = await inTurn(() => services.builder.read(draftId));
     setSnap(s);
     const a = await services.coach.availability().catch(() => null);
     setCoach(coachStatusOf(a?.status ?? 'not_connected'));
     setEarlier((await services.builder.earlierEdits().catch(() => [])).filter((e) => e.draftId !== draftId));
-  }, [services, draftId]);
+  }, [services, draftId, inTurn, setSnap]);
 
   useFocusEffect(
     useCallback(() => {
@@ -89,29 +102,38 @@ export function BuilderWorkoutScreen() {
     showToast({ text: t.text, undoOpId: t.undoOpId, why: t.why });
   }, [params.toast, showToast]);
 
-  async function edit(op: BuilderEditOp): Promise<BuilderWriteResult | null> {
-    if (snap === null) return null;
-    const slots = 'slotKey' in op ? [op.slotKey] : [];
-    // Edits on one exercise name only that slot (rule 5: refused only if it moved); the rest name the version.
-    const basis = slots.length === 1 && op.kind !== 'move' && op.kind !== 'superset_next' && op.kind !== 'unlink' && op.kind !== 'delete_exercise' ? { slots: slots.map((k) => ({ slotKey: k, rev: snap.revs[k] ?? 1 })) } : { version: snap.version };
-    const r = await services.builder.edit(snap.draftId, op, { opId: newUuid(), basis });
-    if (r.snapshot !== null) setSnap(r.snapshot);
-    if (r.status === 'written') {
-      changed();
-      if (r.toast !== null) showToast(r.toast);
-    } else if (r.status !== 'replayed') {
-      showToast({ text: r.message, undoOpId: null, why: null });
-    }
-    return r;
+  /** One of Ben's edits, run after any still in flight, on the snapshot the last one left (review S4). */
+  function edit(input: BuilderEditOp | ((now: BuilderSnapshot) => BuilderEditOp | null)): Promise<BuilderWriteResult | null> {
+    return inTurn(async () => {
+      const cur = snapRef.current;
+      if (cur === null) return null;
+      const op = typeof input === 'function' ? input(cur) : input;
+      if (op === null) return null;
+      const slots = 'slotKey' in op ? [op.slotKey] : [];
+      // Edits on one exercise name only that slot (rule 5: refused only if it moved); the rest name the version.
+      const basis = slots.length === 1 && op.kind !== 'move' && op.kind !== 'superset_next' && op.kind !== 'unlink' && op.kind !== 'delete_exercise' ? { slots: slots.map((k) => ({ slotKey: k, rev: cur.revs[k] ?? 1 })) } : { version: cur.version };
+      const r = await services.builder.edit(cur.draftId, op, { opId: newUuid(), basis });
+      if (r.snapshot !== null) setSnap(r.snapshot);
+      if (r.status === 'written') {
+        changed();
+        if (r.toast !== null) showToast(r.toast);
+      } else if (r.status !== 'replayed') {
+        showToast({ text: r.message, undoOpId: null, why: null });
+      }
+      return r;
+    });
   }
 
-  async function undo(opId: string) {
-    if (snap === null) return;
+  function undo(opId: string): Promise<void> {
     showToast(null);
-    const r = await services.builder.undo(snap.draftId, opId, newUuid());
-    if (r.snapshot !== null) setSnap(r.snapshot);
-    if (r.status === 'written') changed();
-    else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
+    return inTurn(async () => {
+      const cur = snapRef.current;
+      if (cur === null) return;
+      const r = await services.builder.undo(cur.draftId, opId, newUuid());
+      if (r.snapshot !== null) setSnap(r.snapshot);
+      if (r.status === 'written') changed();
+      else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
+    });
   }
 
   async function openSwap(slotKey: string | null, group?: BuilderGroup) {

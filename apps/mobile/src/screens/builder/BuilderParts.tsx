@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
 
 import { useTheme } from '../../theme';
@@ -68,15 +68,19 @@ export function CoachBar({ text, statusWord, disabled, onOpen, onMic }: { text: 
 export function Stepper({ label, valueText, onStep, canMinus, canPlus, repeat = false }: { label: string; valueText: string; onStep: (delta: number) => void; canMinus: boolean; canPlus: boolean; repeat?: boolean }) {
   const theme = useTheme();
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // The latest `onStep` (its page state), so a held button keeps adding from the value now (review S5).
+  const step = useRef(onStep);
+  step.current = onStep;
   const stop = () => {
     if (timer.current !== null) clearInterval(timer.current);
     timer.current = null;
   };
+  useEffect(() => stop, []);
   const hold = (delta: number) => {
     if (!repeat) return;
     stop();
     timer.current = setInterval(() => {
-      onStep(delta);
+      step.current(delta);
     }, 120);
   };
   const btn = (delta: number, enabled: boolean, glyph: string, name: string) => (
@@ -140,9 +144,16 @@ export function SwipeRow({
   accessibilityLabel,
   actions,
   onAction,
+  container = false,
 }: {
   children: ReactNode;
   onPress: () => void;
+  /**
+   * The row holds its own accessible controls (the pop-up's set rows: reps,
+   * kg and RPE fields): it isn't one VoiceOver element, so they stay
+   * reachable; its label and actions belong on a child (review B6).
+   */
+  container?: boolean;
   /** Revealed by a swipe left (on the right edge): `Delete`. */
   leftAction?: { label: string; onPress: () => void };
   /** Revealed by a swipe right (on the left edge): `Swap`. */
@@ -162,19 +173,22 @@ export function SwipeRow({
     setOpen(null);
     settle(0);
   };
+  // The current actions (a set row becomes deletable after `+ Set`): the responder is made once.
+  const sides = useRef({ left: leftAction, right: rightAction });
+  sides.current = { left: leftAction, right: rightAction };
   const pan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
       onPanResponderMove: (_, g) => {
-        const lo = leftAction === undefined ? 0 : -REVEAL;
-        const hi = rightAction === undefined ? 0 : REVEAL;
+        const lo = sides.current.left === undefined ? 0 : -REVEAL;
+        const hi = sides.current.right === undefined ? 0 : REVEAL;
         x.setValue(Math.max(lo, Math.min(hi, g.dx)));
       },
       onPanResponderRelease: (_, g) => {
-        if (g.dx < -REVEAL / 2 && leftAction !== undefined) {
+        if (g.dx < -REVEAL / 2 && sides.current.left !== undefined) {
           setOpen('left');
           settle(-REVEAL);
-        } else if (g.dx > REVEAL / 2 && rightAction !== undefined) {
+        } else if (g.dx > REVEAL / 2 && sides.current.right !== undefined) {
           setOpen('right');
           settle(REVEAL);
         } else {
@@ -222,12 +236,16 @@ export function SwipeRow({
       ) : null}
       <Animated.View style={{ transform: [{ translateX: x }] }} {...pan.panHandlers}>
         <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel}
-          accessibilityActions={actions.map((a) => ({ name: a.name, label: a.label }))}
-          onAccessibilityAction={(e: AccessibilityActionEvent) => {
-            onAction(e.nativeEvent.actionName);
-          }}
+          {...(container
+            ? { accessible: false }
+            : {
+                accessibilityRole: 'button' as const,
+                accessibilityLabel,
+                accessibilityActions: actions.map((a) => ({ name: a.name, label: a.label })),
+                onAccessibilityAction: (e: AccessibilityActionEvent) => {
+                  onAction(e.nativeEvent.actionName);
+                },
+              })}
           onPress={() => {
             if (open !== null) close();
             else onPress();

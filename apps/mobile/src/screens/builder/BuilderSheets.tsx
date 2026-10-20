@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TextInput} from 'react-native';
-import { ActionSheetIOS, Alert, InputAccessoryView, Pressable, View } from 'react-native';
+import { ActionSheetIOS, Alert, InputAccessoryView, Pressable, View, type AccessibilityActionEvent } from 'react-native';
 
 import type { BuilderEditOp } from '@fizz/domain';
 import type { BuilderGroup, SetType } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderWriteResult } from '../../builder/builder-service';
-import { KEY_STEPS, nextField, popupView, promptView, PROMPT_COPY, SET_TYPE_LABEL, SET_TYPES, WORKOUT_COPY, type PromptView } from '../../builder/builder-view';
+import { KEY_STEPS, nextField, popupView, promptView, PROMPT_COPY, REST_STEP_S, SET_TYPE_LABEL, SET_TYPES, WORKOUT_COPY, type PromptView } from '../../builder/builder-view';
 import { countText, reviewHeaderWord, type BuilderReview } from '../../builder/review';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, DangerTextButton, Eyebrow, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, BottomCard, DangerTextButton, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
 import { ChoiceRow, Divider, Stepper, SwipeRow, Table } from './BuilderParts';
 
 /**
@@ -36,7 +36,8 @@ export function ExerciseSheet({
 }: {
   snap: BuilderSnapshot;
   slotKey: string | null;
-  onEdit: (op: BuilderEditOp) => Promise<BuilderWriteResult | null>;
+  /** An edit, or one worked out from the snapshot when it runs (edits run one at a time, review S4). */
+  onEdit: (op: BuilderEditOp | ((now: BuilderSnapshot) => BuilderEditOp | null)) => Promise<BuilderWriteResult | null>;
   onSwap: () => void;
   onDelete: () => void;
   onClose: () => void;
@@ -168,37 +169,53 @@ export function ExerciseSheet({
                 </AppText>
               ))}
             </View>
-            {view.rows.map((r) => (
-              <SwipeRow
-                key={`${String(r.index)}:${r.type}`}
-                onPress={() => { pickType(r.index, r.type); }}
-                accessibilityLabel={r.accessibilityLabel}
-                actions={r.canDelete ? [{ name: 'delete_set', label: 'Delete set' }, { name: 'type', label: 'Change type' }] : [{ name: 'type', label: 'Change type' }]}
-                onAction={(name) => {
-                  if (name === 'delete_set') void onEdit({ kind: 'delete_set', slotKey, index: r.index });
-                  if (name === 'type') pickType(r.index, r.type);
-                }}
-                {...(r.canDelete ? { leftAction: { label: WORKOUT_COPY.delete, onPress: () => void onEdit({ kind: 'delete_set', slotKey, index: r.index }) } } : {})}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['3'], gap: theme.space['2'], minHeight: 52 }}>
-                  <AppText variant="callout" color="text.secondary" numeric style={{ width: 24 }}>
-                    {r.mark}
-                  </AppText>
-                  <AppText variant="callout" style={{ flex: 1 }}>
-                    {r.typeText}
-                  </AppText>
-                  {cell(r.index, 'reps', String(r.reps), `${r.mark} reps`)}
-                  {cell(r.index, 'kg', r.load === null ? '' : String(r.load), `${r.mark} ${view.kgHeader}`)}
-                  {r.type === 'warmup' ? (
-                    <AppText variant="callout" color="text.tertiary" style={{ width: 52, textAlign: 'right' }}>
-                      –
-                    </AppText>
-                  ) : (
-                    cell(r.index, 'rpe', r.rpe === null ? '' : String(r.rpe), `${r.mark} target RPE`)
-                  )}
-                </View>
-              </SwipeRow>
-            ))}
+            {view.rows.map((r) => {
+              const actions = r.canDelete ? [{ name: 'delete_set', label: 'Delete set' }, { name: 'type', label: 'Change type' }] : [{ name: 'type', label: 'Change type' }];
+              const onAction = (name: string) => {
+                if (name === 'delete_set') void onEdit({ kind: 'delete_set', slotKey, index: r.index });
+                if (name === 'type') pickType(r.index, r.type);
+              };
+              return (
+                <SwipeRow
+                  key={`${String(r.index)}:${r.type}`}
+                  container
+                  onPress={() => { pickType(r.index, r.type); }}
+                  accessibilityLabel={r.accessibilityLabel}
+                  actions={actions}
+                  onAction={onAction}
+                  {...(r.canDelete ? { leftAction: { label: WORKOUT_COPY.delete, onPress: () => void onEdit({ kind: 'delete_set', slotKey, index: r.index }) } } : {})}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['3'], gap: theme.space['2'], minHeight: 52 }}>
+                    {/* `#` and Type are one VoiceOver element with the row's actions; the fields after it stay reachable (review B6). */}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={r.accessibilityLabel}
+                      accessibilityHint="Changes the set type"
+                      accessibilityActions={actions}
+                      onAccessibilityAction={(e: AccessibilityActionEvent) => { onAction(e.nativeEvent.actionName); }}
+                      onPress={() => { pickType(r.index, r.type); }}
+                      style={{ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}
+                    >
+                      <AppText variant="callout" color="text.secondary" numeric style={{ width: 24 }}>
+                        {r.mark}
+                      </AppText>
+                      <AppText variant="callout" style={{ flex: 1 }}>
+                        {r.typeText}
+                      </AppText>
+                    </Pressable>
+                    {cell(r.index, 'reps', String(r.reps), `${r.spokenName}, reps`)}
+                    {cell(r.index, 'kg', r.load === null ? '' : String(r.load), `${r.spokenName}, ${view.kgHeader}`)}
+                    {r.type === 'warmup' ? (
+                      <AppText variant="callout" color="text.tertiary" style={{ width: 52, textAlign: 'right' }} accessibilityElementsHidden importantForAccessibility="no">
+                        –
+                      </AppText>
+                    ) : (
+                      cell(r.index, 'rpe', r.rpe === null ? '' : String(r.rpe), `${r.spokenName}, target RPE`)
+                    )}
+                  </View>
+                </SwipeRow>
+              );
+            })}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: theme.space['3'] }}>
               <TextButton label={WORKOUT_COPY.warmup} disabled={!view.canAddWarmup} onPress={() => void onEdit({ kind: 'add_warmup', slotKey })} />
               <TextButton label={WORKOUT_COPY.set} disabled={!view.canAddSet} onPress={() => void onEdit({ kind: 'add_set', slotKey })} />
@@ -214,7 +231,20 @@ export function ExerciseSheet({
                   <AppText variant="body" style={{ flex: 1 }}>
                     {x.label}
                   </AppText>
-                  <Stepper label={x.label} valueText={x.text} canMinus={x.seconds > 0} canPlus={x.seconds < 360} onStep={(d) => void onEdit({ kind: 'rest', slotKey, restKind: x.kind, seconds: x.seconds + d * 15 })} />
+                  <Stepper
+                    label={x.label}
+                    valueText={x.text}
+                    canMinus={x.canMinus}
+                    canPlus={x.canPlus}
+                    repeat
+                    onStep={(d) =>
+                      void onEdit((now) => {
+                        // From the rest as it is when this step runs, so quick taps add up (review S4).
+                        const cur = now.rests[slotKey]?.[x.kind] ?? x.seconds;
+                        return { kind: 'rest', slotKey, restKind: x.kind, seconds: cur + d * REST_STEP_S };
+                      })
+                    }
+                  />
                 </View>
               </View>
             ))}
@@ -507,18 +537,26 @@ export function ReviewSheet({ review, visible, onApply, onDone, onClose }: { rev
             <View style={{ gap: theme.space['1'] }}>
               <Eyebrow>{review.nextNotesTitle}</Eyebrow>
               {review.nextNotes.map((n) => (
-                <ChoiceRow
+                <Pressable
                   key={n.id}
-                  title={`${ticked.has(n.id) ? '☑' : '☐'} ${n.text}`}
-                  selected={false}
-                  onPress={() => { setTicked((s) => {
+                  accessibilityRole="checkbox"
+                  accessibilityLabel={n.text}
+                  accessibilityState={{ checked: ticked.has(n.id) }}
+                  onPress={() => {
+                    setTicked((s) => {
                       const next = new Set(s);
                       if (next.has(n.id)) next.delete(n.id);
                       else next.add(n.id);
                       return next;
-                    }); }
-                  }
-                />
+                    });
+                  }}
+                  style={({ pressed }) => ({ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['2'], opacity: pressed ? 0.7 : 1 })}
+                >
+                  <Icon name={ticked.has(n.id) ? 'checkmark.square.fill' : 'square'} color={ticked.has(n.id) ? 'accent' : 'text.tertiary'} />
+                  <AppText variant="callout" style={{ flex: 1 }}>
+                    {n.text}
+                  </AppText>
+                </Pressable>
               ))}
             </View>
           ) : null}
