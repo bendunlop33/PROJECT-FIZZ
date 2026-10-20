@@ -273,7 +273,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
   const live = g.liveWorkout === true && g.kind === 'workout';
   // Review S2: asking to rename is asking for a change, so "I've renamed it" with no card is hidden and noted.
   const setWords = live && g.input.kind === 'words' && (mentionsTodaysSets(g.input.text) || asksToRename(g.input.text));
-  const benAskedForChange = acceptedOffer || setWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'build_plan') || requestHas(benRequest, 'add')));
+  const benAskedForChange = acceptedOffer || setWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'build_plan') || requestHas(benRequest, 'add') || requestHas(benRequest, 'plan_pause')));
   return {
     kind: g.kind,
     benRequest,

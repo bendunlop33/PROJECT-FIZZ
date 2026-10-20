@@ -1,4 +1,4 @@
-import { cardioValuesText, customExerciseLine, formatDuration, formatNumber, loadText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
+import { cardioValuesText, customExerciseLine, formatDuration, formatNumber, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
 import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
@@ -480,6 +480,16 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       }
       if (st === 'stale') return make(status, 'Out of date. Nothing built.', 'Out of date. Nothing built.');
       const text = `Couldn't build a plan here: ${failureOr(record, 'it failed the checks')}. Nothing saved.`;
+      return make(status, text, speakable(text));
+    }
+    case 'pause_plan': {
+      // (Ben, 20 Oct) The plan in use paused or resumed because Ben asked, with Undo on the card.
+      if (st === 'committed') {
+        const text = d.action === 'resume' ? 'Plan resumed.' : d.untilDate === null ? 'Plan paused.' : `Plan paused until ${localDateText(d.untilDate)}.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
+      const text = `${d.action === 'resume' ? 'Not resumed' : 'Not paused'}: ${failureOr(record, 'it was refused')}.`;
       return make(status, text, speakable(text));
     }
     case 'propose_exercise': {

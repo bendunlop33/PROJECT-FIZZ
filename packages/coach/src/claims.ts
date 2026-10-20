@@ -593,6 +593,7 @@ function hasClaimTrigger(words: readonly string[], clause: string, sentence: str
   // trailing "not 100" doesn't undo "sets 3 and 4 are now 95 kg".
   if (GENERIC_ONLY.test(clause)) return true;
   if (matchesUnnegated(RENAMED_WORKOUT, clause) && !isQuestion(sentence) && !OFFER_TAIL.test(sentence)) return true;
+  if (matchesUnnegated(PAUSED_PLAN, clause) && !isQuestion(sentence) && !OFFER_TAIL.test(sentence)) return true;
   if (presentStateClaim(clause, sentence)) return true;
   if (painHoldClaim(clause, sentence)) return true;
   if (structuralStateClaim(clause, sentence)) return true;
@@ -895,8 +896,12 @@ const SAVED_WORKOUT =
 const RENAMED_WORKOUT =
   /\b(?:re-?named|(?:changed|updated|switched|set) (?:the |its |your |today's )?(?:(?:workout|session)(?:'s| is)? )?name|(?:is|it is|it's|workout is|session is) now (?:called|named)|(?:called|named) it)\b/;
 
+/** (Ben, 20 Oct) "I've paused your plan until 3 Nov", "your plan is back on": backed only by a committed `pause_plan`. */
+const PAUSED_PLAN = /\b(?:paused|resumed|unpaused|restarted|put (?:it|your plan|the plan) on hold)\b.*\bplan\b|\bplan (?:is|has been|was) (?:now )?(?:paused|resumed|on hold|back on|back in use)\b|\b(?:paused|resumed|unpaused) (?:it|your plan|the plan)\b/;
+
 function kindsOf(clause: string, sentence: string): { kinds: Set<ClaimKind>; op: SetOp } {
   if (RENAMED_WORKOUT.test(clause)) return { kinds: new Set<ClaimKind>(['rename_workout']), op: 'change' };
+  if (PAUSED_PLAN.test(clause)) return { kinds: new Set<ClaimKind>(['pause_plan']), op: 'change' };
   if (SAVED_WORKOUT.test(clause)) return { kinds: new Set<ClaimKind>(['workout_saved']), op: 'change' };
   if (BUILT_WORKOUT.test(clause)) return { kinds: new Set<ClaimKind>(['build_workout']), op: 'change' };
   const kinds = new Set<ClaimKind>();
@@ -1133,6 +1138,7 @@ function factsOf(record: ActionRecord): RecordFacts {
     case 'build_question':
     case 'build_plan':
     case 'propose_exercise':
+    case 'pause_plan':
     case 'save_memory':
     case 'suggest_memory':
     case 'forget_memory':

@@ -40,9 +40,12 @@ import {
   createBuildExecutor,
   createPlanExecutor,
   asksForPlan,
+  asksToPausePlan,
+  createPausePlanExecutor,
   revisesPlan,
   changesPlanInUse,
   type PlanContextView,
+  type PlanPauseView,
   COACH_BUILD_TIMEOUT_MS,
   COACH_WORKOUT_TIMEOUT_MS,
   DEFAULT_COACH_TIMING,
@@ -88,6 +91,7 @@ import {
 } from '@fizz/coach';
 import {
   basisSlots,
+  activePause,
   planIsOpen,
   currentPlanVersion,
   buildRequestText,
@@ -1394,6 +1398,16 @@ export function createCoachService(deps: CoachServiceDeps) {
     const planWanted = kind === 'general' && req.input.kind === 'words' && (planFollowUp || asksForPlan(said) || (planInThread !== null && (revisesPlan(said) || changesPlanInUse(said))) || planInUse !== null);
     const build = kind === 'general' && req.input.kind === 'words' ? await buildTurn(p, said, req.buildOrigin ?? (req.input.spoken ? 'voice' : 'text'), draftInContext, req.buildChips ?? null, followUp, chain, earlierWords, planWanted ? { plan: planInThread, basedOn: planInUse } : null) : null;
     if (build !== null) Object.assign(executors, build.executors);
+    // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan": the plan in use and today's date, and the tool.
+    const pauseTurn = kind === 'general' && req.input.kind === 'words' && asksToPausePlan(said);
+    let planPause: PlanPauseView | undefined;
+    if (pauseTurn) {
+      const inUse = await repos().planDrafts.applied(p.id).catch(() => null);
+      const nowMs = toMs(deps.now().utc);
+      const running = activePause(inUse, nowMs, p.timezone);
+      planPause = { today: localDateOf(nowMs, p.timezone), inUse: inUse === null ? null : { name: inUse.name, paused: running === null ? null : { until: running.untilDate } } };
+      Object.assign(executors, createPausePlanExecutor({ store: coachStore(), loadPlan: () => repos().planDrafts.applied(p.id), tz: p.timezone }));
+    }
     // (12 Oct) What can be added here, by ID. Coach v3 (ADR 0027): on every live-workout turn, no word
     // gate (the model reads what Ben meant), capped at ADDABLE_CAP with what he named first. Review exlist
     // S2: what he named in his recent messages in this workout's thread counts too (same limits as a build's).
@@ -1422,7 +1436,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           // Coach v3 (Ben 18 Oct): his lighter mid-workout model, if he chose one; `think_harder` returns to the main one.
           ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
-          context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }) },
+          context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(planPause === undefined ? {} : { plan: planPause }) },
           structuralSignals: await structuralSignalsFor(p, session).catch(() => []),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),

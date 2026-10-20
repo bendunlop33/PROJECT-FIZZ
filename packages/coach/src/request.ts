@@ -111,7 +111,7 @@ export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
  * future: a bare "the plan" ("add curls to the plan") or a routine/template/programme/split together with a
  * today word ("add curls to my routine now"). Always alongside `add`; it also opens the proposal tool.
  */
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add' | 'add_plan' | 'build_plan';
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add' | 'add_plan' | 'build_plan' | 'plan_pause';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -796,6 +796,37 @@ export function changesPlanInUse(text: string): boolean {
   });
 }
 
+/**
+ * (Ben, 20 Oct: "should also be able to pause eg if go on hols") Pausing or resuming the plan in use:
+ * "pause my plan", "put the plan on hold", "I'm on holiday till 3 Nov", "away until the 10th",
+ * "resume my plan", "I'm back from holiday". Its own kind (`plan_pause`): it opens `pause_plan` only.
+ * A question ("should I train on holiday?") isn't one.
+ */
+const PLAN_WORD = '(?:(?:my|the|this|our) )?(?:training |workout |gym )?(?:plan|programme|program)';
+const PAUSE_PLAN = new RegExp(
+  [
+    `\\b(?:pause|freeze|suspend|hold)\\b ${PLAN_WORD}\\b`,
+    `\\b(?:put|keep|leave) ${PLAN_WORD} on (?:hold|pause|ice)\\b`,
+    `\\b(?:i am|im|i'm|we are|we're|i will be|i'll be|we will be|we'll be|going|heading|off|away|be) (?:on |going on |away on |off on )?(?:holiday|holidays|hols|vacation|vacay|leave)\\b`,
+    `^on (?:holiday|holidays|hols|vacation)\\b`,
+    `\\b(?:i am|im|i'm|i will be|i'll be) (?:away|travelling|traveling|abroad) (?:till|until|til|to|from|for|on)\\b`,
+  ].join('|'),
+);
+const RESUME_PLAN = new RegExp(
+  [`\\b(?:resume|unpause|un-pause|restart|continue|reactivate)\\b ${PLAN_WORD}\\b`, `\\b(?:i am|im|i'm|we are|we're) back(?: from (?:holiday|holidays|hols|vacation|my trip|the trip|travelling|traveling))?\\b`, `\\b(?:back on|start) ${PLAN_WORD} again\\b`].join('|'),
+);
+
+function pauseIn(c: Clause): boolean {
+  const t = c.text.replace(POLITE, '');
+  if (c.question && !ASK_PREFIX.test(t)) return false;
+  return PAUSE_PLAN.test(t) || RESUME_PLAN.test(t);
+}
+
+/** Whether Ben's words ask to pause or resume the plan (`plan_pause`). Code, never the model's reading. */
+export function asksToPausePlan(text: string): boolean {
+  return requestHas(classifyBenRequest(text, 'general'), 'plan_pause');
+}
+
 /** Whether Ben's words ask for a multi-day plan (`build_plan`). Code, never the model's reading. */
 export function asksForPlan(text: string): boolean {
   return requestHas(classifyBenRequest(text, 'general'), 'build_plan');
@@ -1011,13 +1042,15 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
   // A question only counts when it asks ("can you log 100 for 8?"), never "set 2 was 95?".
   if (open.some((c) => LOG.test(bodyOf(c.text)) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('log');
   if (open.some((c) => CORRECT.test(bodyOf(c.text)) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('correct');
+  // (Ben, 20 Oct) Pausing or resuming the plan in use.
+  if (open.some(pauseIn)) kinds.push('plan_pause');
   if (kinds.length === 0) return null;
   // Review r5 B3: a retraction in any clause after the last request takes it back ("I want it lighter
   // but leave it", "Lower it. Never mind, keep it", "Lower it. Don't"). A new request after a
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || buildIn(c.text) || planIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || supersetAsk(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
+    if (c.label !== null || pauseIn(c) || buildIn(c.text) || planIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || supersetAsk(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

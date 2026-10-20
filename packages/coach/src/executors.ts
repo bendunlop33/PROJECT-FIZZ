@@ -427,6 +427,8 @@ function undoWhat(target: ActionRecord): string {
       return `the new exercise ${d.fields.name}`;
     case 'build_plan':
       return `version ${String(d.versionN)} of ${d.name}`;
+    case 'pause_plan':
+      return d.action === 'resume' ? 'resuming your plan' : 'pausing your plan';
   }
 }
 

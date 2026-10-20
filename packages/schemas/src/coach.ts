@@ -79,6 +79,8 @@ export const CoachEntityKindSchema = z.enum([
   'plan_draft',
   /** (19 Oct) A new exercise for Ben's list: a proposal card; saved only when he taps Add (rule 3). */
   'custom_exercise',
+  /** (Ben, 20 Oct) The plan in use paused or resumed (`pause_plan`), only when Ben asked; Undo puts it back. */
+  'plan_pause',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -195,6 +197,22 @@ export const ProposeExerciseArgsSchema = z.strictObject({
   reason,
 });
 export type ProposeExerciseArgs = z.infer<typeof ProposeExerciseArgsSchema>;
+
+/**
+ * (Ben, 20 Oct: "should also be able to pause eg if go on hols") Pause the plan in use ("I'm on holiday
+ * till 3 Nov") or resume it ("I'm back, resume my plan"). Only when Ben asks; it applies at once with
+ * Undo. `until`: the local date (`YYYY-MM-DD`) the plan is back in use on, or null until he resumes; a
+ * date Ben said outright wins over this one (code reads his words).
+ */
+export const PausePlanArgsSchema = z.strictObject({
+  action: z.enum(['pause', 'resume']),
+  until: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  reason,
+});
+export type PausePlanArgs = z.infer<typeof PausePlanArgsSchema>;
 
 /**
  * (11 Oct, coach tools) Log a pending set with the values Ben said in this
@@ -458,6 +476,8 @@ export const CoachToolNameSchema = z.enum([
   'propose_plan',
   /** (19 Oct) A new exercise for Ben's list, as a card he adds or edits. */
   'propose_exercise',
+  /** (Ben, 20 Oct) Pause or resume the plan in use when Ben asks ("I'm on holiday till 3 Nov"); applied at once with Undo. */
+  'pause_plan',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -491,6 +511,7 @@ export const COACH_TOOL_ARGS = {
   ask_build_question: AskBuildQuestionArgsSchema,
   propose_plan: ProposePlanArgsSchema,
   propose_exercise: ProposeExerciseArgsSchema,
+  pause_plan: PausePlanArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -866,6 +887,21 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     exerciseId: IdSchema,
     fields: CustomExerciseFieldsSchema,
   }),
+  /**
+   * (Ben, 20 Oct) The plan in use paused (until `untilDate`, or until Ben resumes: null) or resumed,
+   * because Ben asked. `versionAfter`: the plan's version the write left (Undo only from it).
+   */
+  z.object({
+    kind: z.literal('pause_plan'),
+    planId: IdSchema,
+    planName: z.string().min(1).max(120),
+    action: z.enum(['pause', 'resume']),
+    untilDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable(),
+    versionAfter: z.int().min(1).nullable(),
+  }),
   z.object({
     kind: z.literal('undo'),
     undoneActionId: IdSchema,
@@ -1182,7 +1218,9 @@ export type CoachWrite =
    */
   | { kind: 'workout_draft'; action: ActionRecord; draft: WorkoutDraft; expectedVersion: number | null }
   /** (19 Oct) A coach plan and its record, in one write; `expectedVersion` as for a draft. */
-  | { kind: 'plan_draft'; action: ActionRecord; plan: PlanDraft; expectedVersion: number | null };
+  | { kind: 'plan_draft'; action: ActionRecord; plan: PlanDraft; expectedVersion: number | null }
+  /** (Ben, 20 Oct) The plan in use paused or resumed (`pause_plan`) and its record, in one write on the version read (rule 5). */
+  | { kind: 'plan_control'; action: ActionRecord; plan: PlanDraft; expectedVersion: number };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

@@ -111,6 +111,17 @@ export interface CoachContextInput {
    * listed as not set, never guessed (rule 6).
    */
   training?: TrainingInput;
+  /**
+   * (Ben, 20 Oct) A turn where Ben asked to pause or resume his plan: the plan in use, today's local
+   * date (for `until`) and whether it is paused now. Your data. Absent otherwise.
+   */
+  plan?: PlanPauseView;
+}
+
+/** The plan in use as `pause_plan` reads it (Your data). `inUse: null`: no plan is in use. */
+export interface PlanPauseView {
+  today: string;
+  inUse: { name: string; paused: { until: string | null } | null } | null;
 }
 
 export interface TrainingInput {
@@ -257,6 +268,8 @@ export interface YourData {
   addable?: AddableExercise[];
   /** (13 Oct) Training details and split (D7, D8). */
   training?: TrainingDetailsView;
+  /** (20 Oct) Pause turns only: the plan in use and today's date. */
+  plan?: PlanPauseView;
 }
 
 export interface CoachingKnowledge {
@@ -394,6 +407,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.build === undefined ? {} : { build: JSON.parse(JSON.stringify(input.build)) as BuildContextView }),
     ...(input.addable === undefined ? {} : { addable: input.addable.map((a) => ({ ...a })) }),
     ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
+    ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until } } } }),
   };
 }
 

@@ -209,3 +209,50 @@ describe('a plan that follows what Ben does (Ben, 20 Oct)', () => {
     expect(await rotation(s)).toEqual(['Push A']);
   });
 });
+
+describe('the coach pauses the plan when Ben asks (Ben, 20 Oct: "pause eg if go on hols")', () => {
+  function planBlock(req: ModelRequest): { today: string; inUse: { name: string; paused: unknown } | null } | null {
+    const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+    if (block?.type !== 'message') return null;
+    const data = JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { plan?: { today: string; inUse: { name: string; paused: unknown } | null } };
+    return data.plan ?? null;
+  }
+
+  it('"I\'m on holiday till 3 Nov": paused until 3 Nov (his date wins over the model\'s), Up next normal; the card\'s Undo puts it back; other words don\'t offer the tool', async () => {
+    const { s, gymId } = await benWithPlan();
+    const seen: { tools: string[]; plan: ReturnType<typeof planBlock> }[] = [];
+    model = new StepModel([
+      (req) => {
+        seen.push({ tools: req.tools.map((t) => t.name), plan: planBlock(req) });
+        return toolCall('pause_plan', { action: 'pause', until: '2025-11-02', reason: 'Holiday' });
+      },
+      () => replyWith('Enjoy the break.'),
+    ]);
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: "I'm on holiday till 3 Nov", spoken: false }, turnId: h.ids() });
+    expect(seen[0]?.tools).toContain('pause_plan');
+    expect(seen[0]?.plan).toEqual({ today: '2026-10-15', inUse: { name: '4-day plan', paused: null } });
+    const card = r.cards.find((c) => c.record.detail.kind === 'pause_plan')?.record;
+    expect(card).toMatchObject({ status: 'committed', detail: { kind: 'pause_plan', action: 'pause', untilDate: '2026-11-03' } });
+    expect(nbsp((await s.plans.overview())?.paused?.text)).toBe('Paused · until 3 Nov');
+    expect((await upNext(s, gymId)).plan).toBeNull();
+
+    // Undo from the card: the plan is in use again.
+    if (card === undefined) throw new Error('card');
+    const u = await s.coach.undo(card.actionId, 'undo-pause-chat');
+    expect(u.result.status).toBe('written');
+    expect((await s.plans.overview())?.paused).toBeNull();
+    expect((await upNext(s, gymId)).plan).not.toBeNull();
+
+    // A message that isn't about pausing: no tool, nothing changes.
+    const seen2: string[][] = [];
+    model = new StepModel([
+      (req) => {
+        seen2.push(req.tools.map((t) => t.name));
+        return replyWith('Looks good.');
+      },
+    ]);
+    await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'How is my week looking?', spoken: false }, turnId: h.ids() });
+    expect(seen2[0]).not.toContain('pause_plan');
+    expect((await s.plans.overview())?.paused).toBeNull();
+  });
+});
