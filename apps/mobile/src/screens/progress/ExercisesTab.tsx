@@ -372,13 +372,11 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
   );
   return (
     <View style={{ gap: theme.space['2'] }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-          {`SESSIONS · ${view.table.unit.toUpperCase()}`}
-        </AppText>
-        {/* Only when a set was logged in the other unit (20 Oct): `Converted from lb` behind the tap. */}
-        {view.converted !== null ? <InfoLine info={view.converted} infoLabel="Units" /> : null}
-      </View>
+      <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+        {`SESSIONS · ${view.table.unit.toUpperCase()}`}
+      </AppText>
+      {/* Only when there's something to say (20 Oct): `Converted from lb`, an assumed dumbbell count behind a `≈` total. Below the header so it wraps (review N1). */}
+      {view.info !== null ? <InfoLine info={view.info} infoLabel="Details" /> : null}
       {/* Plan tracker v1 (19 Oct): targets hit, counted from what was planned and logged. */}
       {targets?.hitText != null ? (
         <AppText variant="callout" color="text.secondary" numeric>
@@ -389,7 +387,8 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
         <View style={{ flexDirection: 'row', gap: theme.space['2'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {head('DATE', { width: COLS.date })}
           {head('TOP SET', { flex: 1 })}
-          {head('TOTAL', { flex: 1, textAlign: 'right' })}
+          {/* Its own plain unit: a total counts both dumbbells, never `kg each` (review B1). */}
+          {head(view.table.totalUnit === null ? 'TOTAL' : `TOTAL ${view.table.totalUnit.toUpperCase()}`, { flex: 1, textAlign: 'right' })}
           {head('SETS', { width: COLS.sets, textAlign: 'right' })}
           {head('EST. 1RM', { flex: 1, textAlign: 'right' })}
         </View>
@@ -422,7 +421,7 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
                 {ax ? (
                   <>
                     <AppText variant="body">{r.cells.date}</AppText>
-                    <AppText variant="callout" color="text.secondary" numeric>{`${r.cells.topSet} · ${r.cells.total} · ${r.cells.sets} sets · ${r.cells.e1rm}`}</AppText>
+                    <AppText variant="callout" color="text.secondary" numeric>{`${r.cells.topSet} · ${r.cells.total}${view.table.totalUnit !== null && r.cells.total !== '—' ? ` ${view.table.totalUnit}` : ''} · ${r.cells.sets} sets · ${r.cells.e1rm}`}</AppText>
                   </>
                 ) : (
                   <>

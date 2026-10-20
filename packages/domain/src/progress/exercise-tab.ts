@@ -227,7 +227,8 @@ export function measureValue(ss: SeriesSession, series: ExerciseSeries, measure:
     case 'total': {
       // Plain `kg` / `lb`: a total is mass moved, whatever the convention.
       const t = sessionTotalWeight(ss, series, implementsCount);
-      return t === null ? null : { value: t.value, text: `${thousands(t.value)}${NBSP}${series.key.unit}`, estimate: false };
+      const est = t?.kind === 'estimate';
+      return t === null ? null : { value: t.value, text: `${est ? '≈' : ''}${thousands(t.value)}${NBSP}${series.key.unit}`, estimate: est };
     }
     case 'hold': {
       const h = sessionLongestHold(ss);
@@ -299,10 +300,20 @@ export interface ExerciseTabView {
     points: ExerciseTabPoint[];
     words: string;
   };
-  /** Newest first. `unit` carries the convention: `kg`, `kg each`, `kg stack`, `kg assist`, `reps`; plain `kg` when they're mixed, and each top set then says its own (`22.5×10 each`). */
-  table: { unit: string; rows: ExerciseTabRow[] };
-  /** `Converted from lb` for the info tap when a set was logged in the other unit; null otherwise. */
-  converted: string | null;
+  /**
+   * Newest first. `unit` carries the convention for the top set and Est. 1RM:
+   * `kg`, `kg each`, `kg stack`, `kg assist`, `reps`; plain `kg` when they're
+   * mixed, and each top set then says its own (`22.5×10 each`). `totalUnit`
+   * is the Total column's own, always plain (`kg`, `lb`: both dumbbells
+   * counted, review B1); null where the series has no total.
+   */
+  table: { unit: string; totalUnit: WeightUnit | null; rows: ExerciseTabRow[] };
+  /**
+   * The info tap, null with nothing to say: `Converted from lb` when a set in
+   * the period was logged in the other unit (review S3), and the assumed
+   * dumbbell count behind a `≈` total (review S4).
+   */
+  info: string | null;
   /** No session of this series in the period, or none with a value for the measure. */
   empty: string | null;
 }
@@ -378,6 +389,9 @@ function bestSetStat(sessions: readonly SeriesSession[], series: ExerciseSeries)
   return best?.text ?? null;
 }
 
+/** The info line behind a `≈` total: the catalogue doesn't say how many dumbbells (done either way). */
+export const TOTAL_ASSUMED = '≈ Total weight assumes the dumbbell count';
+
 /** The Exercises tab for one exercise; null when it has no finished session. */
 export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView | null {
   const all = collectExerciseSeries(input.sessions, input.exerciseId, { unit: input.unit ?? null });
@@ -438,17 +452,18 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
     // VoiceOver hears the load in full (`Assist 30 kg by 8`, `12 kg each by 12`); the cell's unit is in the header.
     const topWords = cardio !== null ? topText.replace(/\u00a0/g, ' ') : top === null ? 'none' : loaded ? setText(top, series).replace(/\u00a0/g, ' ').replace(' × ', ' by ') : countNoun(top.reps ?? 0, 'rep', 'reps');
     const total = sessionTotalWeight(ss, series, impl);
+    const totalEst = total?.kind === 'estimate';
     const e = sessionE1rm(ss, series);
     const sets = workingSetCount(ss);
     return {
       sessionId: ss.sessionId,
       date: ss.date,
-      cells: { date: shortDate(ss.date, input.today), topSet: topText, total: total === null ? '—' : thousands(total.value), sets: String(sets), e1rm: e === null ? '—' : `≈${formatNumber(e.value)}` },
+      cells: { date: shortDate(ss.date, input.today), topSet: topText, total: total === null ? '—' : `${totalEst ? '≈' : ''}${thousands(total.value)}`, sets: String(sets), e1rm: e === null ? '—' : `≈${formatNumber(e.value)}` },
       readout: readouts.get(ss.sessionId) ?? `${shortDate(ss.date, input.today)} · ${label} —`,
       words: [
         longDate(ss.date, input.today),
         `top set ${topWords}`,
-        total === null ? null : `total weight ${formatNumber(total.value)} ${series.key.unit}`,
+        total === null ? null : `total weight${totalEst ? ', an estimate, about' : ''} ${formatNumber(total.value)} ${series.key.unit}`,
         countNoun(sets, 'set', 'sets'),
         e === null ? null : `estimated one-rep max about ${formatNumber(e.value)}`,
       ]
@@ -457,6 +472,7 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
     };
   });
 
+  const totalAssumed = rows.some((r) => r.cells.total.startsWith('≈'));
   const range = rangeWords(input.window, input.today);
   return {
     exerciseId: input.exerciseId,
@@ -477,8 +493,8 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
       points,
       words: `${label}${measure === 'e1rm' ? ', an estimate' : ''}, ${countNoun(points.length, 'session', 'sessions')}, ${range}. Trailing average of the last ${String(trailing)}.`,
     },
-    table: { unit, rows },
-    converted: convertedText(series),
+    table: { unit, totalUnit: offered.includes('total') ? series.key.unit : null, rows },
+    info: [convertedText(inWindow), totalAssumed ? TOTAL_ASSUMED : null].filter((x): x is string => x !== null).join('\n') || null,
     empty: inWindow.length === 0 ? 'No sessions in this period.' : points.length === 0 ? `No ${label} in this period.` : null,
   };
 }

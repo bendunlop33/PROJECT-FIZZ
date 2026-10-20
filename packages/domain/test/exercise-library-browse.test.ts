@@ -236,6 +236,7 @@ describe('buildExerciseInfoView (§9.4, EL13): Coaching knowledge and Your data 
       aliases: ['RDL'],
       knowledge,
       sessions: SESSIONS,
+      unit: 'kg',
       progress: { seriesId: `${RDL.id}|load`, seriesLabel: '', stats: [{ value: '≈146 kg', label: 'EST. 1RM' }, { value: '120 × 8', label: 'BEST SET' }, { value: '2', label: 'SESSIONS' }] },
       painFlag: null,
       usedIn: [{ routineId: id(300), name: 'Legs A' }],
@@ -257,8 +258,15 @@ describe('buildExerciseInfoView (§9.4, EL13): Coaching knowledge and Your data 
     expect(v.yours.usedIn).toEqual([{ routineId: id(300), name: 'Legs A' }]);
   });
 
+  it('Last is in Ben’s unit, as the stats are, when the latest session was logged in the other unit (review S2)', () => {
+    const sessions = [...SESSIONS, psession(906, '2026-10-07', [prow(RDL, [pset(13, lb(225), 5)], { unit: 'lb' })])];
+    const input = { exercise: RDL, aliases: [], knowledge, sessions, progress: { seriesId: `${RDL.id}|load`, seriesLabel: '', stats: [] }, painFlag: null, usedIn: [], gymName: null, today: '2026-10-08' };
+    expect(plain(buildExerciseInfoView({ ...input, unit: 'kg' }).yours.history?.rows[0]?.value)).toBe('102.06 kg × 5 · 7 Oct');
+    expect(plain(buildExerciseInfoView({ ...input, unit: 'lb' }).yours.history?.rows[0]?.value)).toBe('225 lb × 5 · 7 Oct');
+  });
+
   it('no history: `No history yet.` and no records; no legend falls back to the exercise’s muscles; a pain flag shows its date', () => {
-    const v = buildExerciseInfoView({ exercise: FLY, aliases: [], knowledge: { poster: null, legend: [], execution: [], avoid: [], hasFullHowTo: false }, sessions: SESSIONS, progress: null, painFlag: { flagId: id(77), since: '2026-10-06' }, usedIn: [], gymName: null, today: '2026-10-08' });
+    const v = buildExerciseInfoView({ exercise: FLY, aliases: [], knowledge: { poster: null, legend: [], execution: [], avoid: [], hasFullHowTo: false }, sessions: SESSIONS, progress: null, unit: null, painFlag: { flagId: id(77), since: '2026-10-06' }, usedIn: [], gymName: null, today: '2026-10-08' });
     expect(v.yours.history).toBeNull();
     expect(v.yours.empty).toBe('No history yet.');
     expect(v.knowledge.muscles).toEqual([{ label: 'Muscles:', list: 'Chest' }]);

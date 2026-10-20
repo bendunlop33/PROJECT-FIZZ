@@ -94,7 +94,7 @@ const imported = (date: string, rows: ProgressExercise[]) =>
 const bench = (date: string, sets: [number, number][], over: Partial<ProgressExercise> = {}) => session(date, [row(sets.map(([l, r]) => set(kg(l), r)), over)]);
 
 function onlySeries(sessions: ProgressSession[], exerciseId = 'bench'): ExerciseSeries {
-  const all = collectExerciseSeries(sessions, exerciseId);
+  const all = collectExerciseSeries(sessions, exerciseId, { unit: null });
   expect(all).toHaveLength(1);
   return all[0] as ExerciseSeries;
 }
@@ -107,7 +107,7 @@ describe('series (Ben, 20 Oct: one per exercise and kind, replacing PG15 for Pro
       imported('2026-01-03', [row([set(kg(80), 5)])]),
       bench('2026-09-05', [[100, 6]]),
     ];
-    const all = collectExerciseSeries(sessions, 'bench');
+    const all = collectExerciseSeries(sessions, 'bench', { unit: null });
     expect(all).toHaveLength(1);
     expect(all[0]?.id).toBe('bench|load');
     expect(all[0]?.sessions.map((s) => [s.source, s.rows[0]?.equipmentId ?? null])).toEqual([
@@ -426,6 +426,16 @@ describe('ranges and chart states (§3.4)', () => {
 });
 
 describe('volume (PG31, check 38)', () => {
+  it('review S1: only sets in the series’ convention: barbell and per-hand dumbbells are never added together', () => {
+    const mixed = session('2026-09-01', [row([set(kg(100), 5)]), row([set(kg(30, 'per_hand'), 10)], { equipmentId: 'db', equipmentKind: 'dumbbells', convention: 'per_hand' })]);
+    const s = onlySeries([mixed]);
+    // The latest row (dumbbells) sets the convention: 30 × 10, per hand; the 500 kg of barbell is left out.
+    expect(s.key.convention).toBe('per_hand');
+    expect(sessionVolume(s.sessions[0] as never, s)?.value).toBe(300);
+    const bar = onlySeries([session('2026-09-01', [row([set(kg(30, 'per_hand'), 10)], { equipmentId: 'db', equipmentKind: 'dumbbells', convention: 'per_hand' }), row([set(kg(100), 5)])])]);
+    expect(sessionVolume(bar.sessions[0] as never, bar)?.value).toBe(500);
+  });
+
   it('Σ load × reps of non-warm-up sets, marked included; unilateral: the busier side; per-dumbbell stays per hand', () => {
     const plain = onlySeries([session('2026-09-01', [row([set(kg(60), 10, { setType: 'warmup' }), set(kg(100), 5), set(kg(100), 5, { exclusions: ['spotted'] })])])]);
     expect(sessionVolume(plain.sessions[0] as never, plain)?.value).toBe(1000);
@@ -484,15 +494,16 @@ describe('records (PG10, PG30, check 39)', () => {
 
   it('imports never make a record but a higher imported Est. 1RM suppresses one; an imported-only series has none', () => {
     const base = [bench('2026-08-01', [[100, 5]]), bench('2026-08-04', [[100, 5]]), bench('2026-08-07', [[100, 5]]), bench('2026-08-10', [[100, 7]])];
-    const s = collectExerciseSeries(base, 'bench')[0] as ExerciseSeries;
+    const s = collectExerciseSeries(base, 'bench', { unit: null })[0] as ExerciseSeries;
     expect(exerciseRecords(base, s).items.map((x) => x.kind)).toEqual(['most_reps_at_load', 'best_e1rm']);
     // An imported 95 × 10 (Est. 126.5) suppresses the 123.5 Est. 1RM claim, not the lighter-load rep record.
     const imp = imported('2026-01-01', [row([set(kg(95), 10)])]);
-    const withImp = collectExerciseSeries([imp, ...base], 'bench').find((x) => x.key.source === 'app') as ExerciseSeries;
+    const withImp = collectExerciseSeries([imp, ...base], 'bench', { unit: null }).find((x) => x.key.source === 'app') as ExerciseSeries;
     expect(exerciseRecords([imp, ...base], withImp).items.map((x) => x.kind)).toEqual(['most_reps_at_load']);
     // A heavier imported set suppresses the actual records too (as `findSetRecord`).
     const heavy = imported('2026-01-01', [row([set(kg(110), 1)])]);
-    expect(exerciseRecords([heavy, ...base], withImp).items.map((x) => x.kind)).toEqual(['best_e1rm']);
+    const withHeavy = collectExerciseSeries([heavy, ...base], 'bench', { unit: null })[0] as ExerciseSeries;
+    expect(exerciseRecords([heavy, ...base], withHeavy).items.map((x) => x.kind)).toEqual(['best_e1rm']);
     const onlyImp = [imported('2026-01-01', [row([set(kg(100), 5)])]), imported('2026-01-04', [row([set(kg(100), 5)])]), imported('2026-01-07', [row([set(kg(100), 5)])]), imported('2026-01-10', [row([set(kg(120), 5)])])];
     const v = buildExerciseDetailView({ sessions: onlyImp, exerciseId: 'bench', today: TODAY, range: 'all' });
     expect(v?.seriesLabel).toBe('');

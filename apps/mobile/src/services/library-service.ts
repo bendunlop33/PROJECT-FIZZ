@@ -263,6 +263,7 @@ export function createLibraryService(deps: LibraryServiceDeps) {
           knowledge,
           sessions: hist?.sessions ?? [],
           progress,
+          unit: p.preferredUnit,
           painFlag: covering === null ? null : { flagId: covering.flag.id, since: localDateOf(toMs(covering.flag.reportedAt.utc), covering.flag.reportedAt.tz) },
           usedIn,
           gymName: gym?.name ?? null,

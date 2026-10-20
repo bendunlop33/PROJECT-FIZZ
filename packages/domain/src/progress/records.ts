@@ -4,7 +4,7 @@ import { loadUnitText } from './text';
 import { isSetCountable } from '../exclusions';
 import { RECORD_MIN_SESSIONS } from '../session/records';
 import { convertMass } from '../units';
-import { chronological, keyOfRow, seriesIdOf, seriesKind, sessionBestSet, sessionE1rm, sessionLeastAssist, type ExerciseSeries, type SeriesSession } from './exercise';
+import { chronological, keyOfRow, loadInUnit, seriesIdOf, seriesKind, seriesLoadedSet, sessionBestSet, sessionE1rm, sessionLeastAssist, sessionTopSet, type ExerciseSeries, type SeriesSession, type SeriesSet } from './exercise';
 import type { ProgressExercise, ProgressSession, ProgressSet } from './projection';
 import { inRange, type DateRange } from './window';
 
@@ -367,15 +367,69 @@ function sequentialRecords(sessions: readonly ProgressSession[], exerciseIds: Re
 const ALL_TIME: DateRange = { from: '0000-01-01', to: '9999-12-31' };
 
 /**
+ * A record of one record series as a record of the merged series (review B2),
+ * or null when an earlier session of the merged series (any gym, equipment,
+ * unit or source) in the same convention was as good. Values are in the
+ * merged series' unit, as its sets are (`loadInUnit`); per hand, stack and
+ * total are never compared with each other.
+ */
+function inMergedSeries(r: ExerciseRecord, series: ExerciseSeries): ExerciseRecord | null {
+  const at = series.sessions.findIndex((x) => x.sessionId === r.sessionId);
+  if (at < 0) return null;
+  const conv = r.load?.convention ?? null;
+  const same = (x: SeriesSet) => conv === null || x.load?.convention === conv;
+  const only = (ss: SeriesSession, rowId: string | null): SeriesSession => {
+    const rows = rowId === null ? ss.rows : ss.rows.filter((row) => row.sessionExerciseId === rowId);
+    const sets = rows.flatMap((row) => row.sets as readonly SeriesSet[]).filter(same);
+    return { ...ss, rows, sets };
+  };
+  const earlier = series.sessions.slice(0, at).map((ss) => only(ss, null));
+  const own = only(series.sessions[at] as SeriesSession, r.sessionExerciseId);
+  const load = r.load === null ? null : loadInUnit(r.load, series.key.unit);
+  const values = (f: (ss: SeriesSession) => { value: number } | null) => earlier.flatMap((ss) => {
+    const v = f(ss);
+    return v === null ? [] : [v.value];
+  });
+  switch (r.kind) {
+    case 'heaviest':
+    case 'most_reps_at_load': {
+      if (load === null) return null;
+      const tops = values((ss) => sessionTopSet(ss, series));
+      const maxLoad = tops.length === 0 ? Number.NEGATIVE_INFINITY : Math.max(...tops);
+      if (r.kind === 'heaviest') return load.value > maxLoad ? { ...r, load, value: load.value } : null;
+      const repsAt = earlier.flatMap((ss) => ss.sets.flatMap((x) => (seriesLoadedSet(x, series) && isSetCountable(x, 'record') && x.load.value === load.value ? [x.reps] : [])));
+      return load.value >= maxLoad && (r.reps ?? 0) > Math.max(0, ...repsAt) ? { ...r, load } : null;
+    }
+    case 'best_e1rm': {
+      // The same estimate the chart plots for this row, from its sets in the series' unit.
+      const value = sessionE1rm(own, series)?.value ?? (r.load === null || load === null ? r.value : convertMass({ value: r.value, unit: r.load.unit }, load.unit).value);
+      const before = values((ss) => sessionE1rm(ss, series));
+      return before.every((v) => value > v) ? { ...r, load, value } : null;
+    }
+    case 'least_assist': {
+      if (load === null) return null;
+      const before = values((ss) => sessionLeastAssist(ss, series));
+      return before.every((v) => load.value < v) ? { ...r, load, value: load.value } : null;
+    }
+    case 'most_reps': {
+      const before = values((ss) => sessionBestSet(ss));
+      return before.every((v) => r.value > v) ? { ...r, load } : null;
+    }
+  }
+}
+
+/**
  * `exerciseRecords` (§6.2): every record of the series, newest first:
  * `Heaviest set` and `Most reps at <load>` exactly as the home and the
  * Summary judge them (`recordsInWindow`, `findSetRecord`), `Best Est. 1RM`
  * (an estimate), for bodyweight `Most reps` and for assisted `Least
  * assistance for 8+ reps`. Timed series have none (not specified, SP2). Imported workouts never have
  * records (they can only suppress one). `sessions` may be every workout or
- * only those with this exercise. Each record is still judged within its own
+ * only those with this exercise. Each record is first judged within its own
  * record series (`SeriesKey`: equipment, convention, unit), exactly as the
- * Summary did; the merged series (Ben, 20 Oct) lists every one of its rows'.
+ * Summary does; the merged series (Ben, 20 Oct: every gym, equipment item and
+ * unit) then keeps only those that also beat every earlier session of the
+ * merged series in the same convention, shown in its unit (review B2).
  */
 export function exerciseRecords(sessions: readonly ProgressSession[], series: ExerciseSeries): { items: ExerciseRecord[]; loggedSessions: number } {
   const loggedSessions = series.sessions.filter((s) => s.source === 'app').length;
@@ -399,6 +453,12 @@ export function exerciseRecords(sessions: readonly ProgressSession[], series: Ex
   if (series.kind === 'load') items.push(...e1rmRecords(mine, ids).filter(inSeries));
   if (series.kind === 'bodyweight') items.push(...bodyweightRepRecords(mine, ids).filter(inSeries));
   if (series.kind === 'assisted') items.push(...leastAssistRecords(mine, ids).filter(inSeries));
+  const kept = items.flatMap((r) => {
+    const m = inMergedSeries(r, series);
+    return m === null ? [] : [m];
+  });
+  items.length = 0;
+  items.push(...kept);
   const rank: Record<ExerciseRecordKind, number> = { heaviest: 0, most_reps_at_load: 1, least_assist: 2, most_reps: 3, best_e1rm: 4 };
   items.sort((a, b) => b.date.localeCompare(a.date) || b.startedMs - a.startedMs || rank[a.kind] - rank[b.kind]);
   return { items, loggedSessions };

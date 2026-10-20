@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Exercise, ExerciseEquipmentKind } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, ExerciseEquipmentKind, WeightUnit } from '@fizz/schemas';
 
 import { cardioValuesText, distanceLoadText, formatDistance, formatDuration, loadText, NBSP } from './display';
 import { activeFilterCount, MOVEMENT_FILTER_LABEL, muscleGroupsOf, searchExerciseRows, type ExerciseFilters, type ExerciseMatch, type MovementFilter, type SearchableEntry } from './exercise-search';
@@ -259,6 +259,8 @@ export interface ExerciseInfoInput {
   sessions: readonly ProgressSession[];
   /** Progress's own detail for the default series (the same numbers Progress shows, EL-B7); null with no history. */
   progress: Pick<ExerciseDetailView, 'seriesId' | 'seriesLabel' | 'stats'> | null;
+  /** Ben's display unit (settings), as Progress uses for `progress` (review S2: `Last` in the same unit as the stats). */
+  unit: WeightUnit | null;
   painFlag: { flagId: string; since: string } | null;
   usedIn: readonly { routineId: string; name: string }[];
   /** The selected gym's name (`Alternatives at Main Gym`); null with none. */
@@ -312,9 +314,9 @@ function movementWord(pattern: string): string | null {
   return (MOVEMENT_FILTER_LABEL as Record<string, string | undefined>)[pattern as MovementFilter] ?? null;
 }
 
-function seriesOf(sessions: readonly ProgressSession[], exerciseId: string, seriesId: string): ExerciseSeries | null {
+function seriesOf(sessions: readonly ProgressSession[], exerciseId: string, seriesId: string, unit: WeightUnit | null): ExerciseSeries | null {
   const mine = sessions.filter((s) => s.exercises.some((e) => e.exerciseId === exerciseId));
-  return collectExerciseSeries(mine, exerciseId).find((s) => s.id === seriesId) ?? null;
+  return collectExerciseSeries(mine, exerciseId, { unit }).find((s) => s.id === seriesId) ?? null;
 }
 
 export function buildExerciseInfoView(input: ExerciseInfoInput): ExerciseInfoView {
@@ -326,7 +328,7 @@ export function buildExerciseInfoView(input: ExerciseInfoInput): ExerciseInfoVie
 
   let history: ExerciseInfoView['yours']['history'] = null;
   if (input.progress !== null) {
-    const series = seriesOf(input.sessions, e.id, input.progress.seriesId);
+    const series = seriesOf(input.sessions, e.id, input.progress.seriesId, input.unit);
     const rows: { label: string; value: string; estimate: boolean }[] = [];
     const latest = series?.sessions[series.sessions.length - 1];
     const latestRow = latest?.rows[0];

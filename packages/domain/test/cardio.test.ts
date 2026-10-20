@@ -261,7 +261,7 @@ describe('Progress: cardio keeps out of e1RM, volume and muscle sets', () => {
   it('per-exercise history shows time, distance and pace; no records table', () => {
     const p = toProgressSession(finishedRow(), 'Pacific/Auckland', ms(2000));
     if (p === null) throw new Error('not in history');
-    const series = collectExerciseSeries([p], ROWER.id);
+    const series = collectExerciseSeries([p], ROWER.id, { unit: null });
     expect(series.map((x) => x.kind)).toEqual(['cardio']);
     const tab = buildExerciseTabView({ sessions: [p], exerciseId: ROWER.id, today: p.date, window: { from: '2000-01-01', to: p.date } });
     expect(tab?.measures.map((m) => m.key)).toEqual(['distance']);

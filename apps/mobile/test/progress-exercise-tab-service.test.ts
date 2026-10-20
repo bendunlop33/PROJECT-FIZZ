@@ -94,8 +94,11 @@ describe('exerciseTab', () => {
     // 20 kg each × 10 × 2 sets × 2 dumbbells.
     expect(press?.chart.points.map((p) => p.value)).toEqual([800]);
     expect(press?.table.rows[0]?.cells.total).toBe('800');
+    // Review B1: the header says `kg each` for the top set; TOTAL has its own plain `kg` (both dumbbells counted).
+    expect(press?.table.unit.replace(/\u00a0/g, ' ')).toBe('kg each');
+    expect(press?.table.totalUnit).toBe('kg');
     expect(press?.series).toEqual([]);
-    expect(press?.converted).toBeNull();
+    expect(press?.info).toBeNull();
     const goblet = (await s.progress.exerciseTab({ period: '6m', exerciseId: idOf('Goblet squat'), measure: 'total' }))?.view;
     expect(goblet?.chart.points.map((p) => p.value)).toEqual([400]);
   });

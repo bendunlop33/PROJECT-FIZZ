@@ -86,7 +86,7 @@ function session(date: string, rows: ProgressExercise[]): ProgressSession {
 }
 
 function onlySeries(sessions: ProgressSession[], exerciseId = 'sled-push'): ExerciseSeries {
-  const all = collectExerciseSeries(sessions, exerciseId);
+  const all = collectExerciseSeries(sessions, exerciseId, { unit: null });
   expect(all).toHaveLength(1);
   return all[0] as ExerciseSeries;
 }

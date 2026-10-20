@@ -15,6 +15,7 @@ import {
   parseTrailing,
   periodHolding,
   progressWindow,
+  TOTAL_ASSUMED,
   trailingAverage,
   workingSetCount,
   workingWeight,
@@ -90,7 +91,7 @@ const imported = (date: string, rows: ProgressExercise[]) =>
 const bench = (date: string, sets: [number, number][], over: Partial<ProgressExercise> = {}) => session(date, [row(sets.map(([l, r]) => set(kg(l), r)), over)]);
 
 function only(sessions: ProgressSession[], exerciseId = 'bench'): ExerciseSeries {
-  const all = collectExerciseSeries(sessions, exerciseId);
+  const all = collectExerciseSeries(sessions, exerciseId, { unit: null });
   expect(all).toHaveLength(1);
   return all[0] as ExerciseSeries;
 }
@@ -217,7 +218,7 @@ describe('buildExerciseTabView', () => {
     const v = buildExerciseTabView({ sessions: [...history, ...fn], exerciseId: 'bench', today: TODAY, window: WINDOW, measure: 'weight' });
     expect(v?.series).toEqual([]);
     expect(v?.chart.points.map((p) => p.value)).toEqual([95, 97.5, 100, 100, 100]);
-    expect(v?.converted).toBeNull();
+    expect(v?.info).toBeNull();
   });
 
   it('lb sessions are converted to the display unit and the info tap says so', () => {
@@ -226,12 +227,12 @@ describe('buildExerciseTabView', () => {
     expect(v?.series).toEqual([]);
     expect(v?.chart.points.map((p) => p.value)).toEqual([100, 100, 102.06]);
     expect(v?.table.unit).toBe('kg');
-    expect(v?.converted).toBe('Converted from lb');
+    expect(v?.info).toBe('Converted from lb');
     // Shown in lb when Ben's unit is lb: the kg sessions are the converted ones.
     const inLb = buildExerciseTabView({ sessions: [...history, lbBench], exerciseId: 'bench', today: TODAY, window: WINDOW, measure: 'weight', unit: 'lb' });
     expect(inLb?.chart.points.map((p) => p.value)).toEqual([220.46, 220.46, 225]);
     expect(inLb?.table.unit).toBe('lb');
-    expect(inLb?.converted).toBe('Converted from kg');
+    expect(inLb?.info).toBe('Converted from kg');
   });
 
   it('an assisted machine offers Weight, Reps and Top set, no Est. 1RM; Best set is the least assistance', () => {
@@ -280,8 +281,10 @@ describe('review fixes (progress-exercises B1, S1, S2, S3, S4)', () => {
   });
 
   it('S1: the sessions table names the convention: kg each for dumbbells, kg assist on an assisted machine', () => {
-    const db = buildExerciseTabView({ sessions: [raises('2026-10-01', [12, 12])], exerciseId: 'raise', today: TODAY, window: WINDOW });
+    const db = buildExerciseTabView({ sessions: [raises('2026-10-01', [12, 12])], exerciseId: 'raise', today: TODAY, window: WINDOW, implements: 2 });
     expect(sp(db?.table.unit)).toBe('kg each');
+    // Review B1: the Total column has its own plain unit, never `kg each`.
+    expect(db?.table.totalUnit).toBe('kg');
     expect(sp(db?.table.rows[0]?.words)).toContain('top set 12 kg each by 15');
     // Total weight counts both dumbbells: 12 × 15 × 2 sets × 2.
     expect(sp(db?.table.rows[0]?.words)).toContain('total weight 720 kg');
@@ -370,6 +373,7 @@ describe('Total weight (Ben, 20 Oct 2026)', () => {
     expect(a?.measures.map((m) => m.key)).not.toContain('total');
     expect(a?.measure).not.toBe('total');
     expect(a?.table.rows[0]?.cells.total).toBe('—');
+    expect(a?.table.totalUnit).toBeNull();
   });
 
   it('the measure: `Total weight`, a plain kg or lb axis, readout and table value', () => {
@@ -380,17 +384,49 @@ describe('Total weight (Ben, 20 Oct 2026)', () => {
     expect(sp(v?.chart.points[1]?.readout)).toBe('1 Oct · Total weight 1,012.5 kg');
     expect(v?.table.rows[0]?.cells.total).toBe('1,012.5');
     expect(v?.stats.map((x) => x.label)).toEqual(['Est. 1RM', 'Best set', 'Sessions']);
-    const dbs = buildExerciseTabView({ sessions: [session('2026-10-01', [row([set(kg(20, 'per_hand'), 10)], { exerciseId: 'db', convention: 'per_hand', equipmentKind: 'dumbbells' })])], exerciseId: 'db', today: TODAY, window: WINDOW, measure: 'total' });
+    const dbSessions = [session('2026-10-01', [row([set(kg(20, 'per_hand'), 10)], { exerciseId: 'db', convention: 'per_hand', equipmentKind: 'dumbbells' })])];
+    const dbs = buildExerciseTabView({ sessions: dbSessions, exerciseId: 'db', today: TODAY, window: WINDOW, measure: 'total', implements: 2 });
     // Never `kg each`: a total counts both dumbbells.
     expect(dbs?.chart.unit).toBe('kg');
+    expect(sp(dbs?.table.unit)).toBe('kg each');
+    expect(dbs?.table.totalUnit).toBe('kg');
     expect(sp(dbs?.chart.points[0]?.readout)).toBe('1 Oct · Total weight 400 kg');
+    expect(dbs?.table.rows[0]?.cells.total).toBe('400');
+    expect(dbs?.info).toBeNull();
+  });
+
+  it('review S4: with no dumbbell count in the catalogue the total is an estimate, `≈`, and the info tap says so', () => {
+    const lunge = [session('2026-10-01', [row([set(kg(20, 'per_hand'), 10, { side: 'both' })], { exerciseId: 'lunge', convention: 'per_hand', equipmentKind: 'dumbbells', laterality: 'unilateral' })])];
+    const v = buildExerciseTabView({ sessions: lunge, exerciseId: 'lunge', today: TODAY, window: WINDOW, measure: 'total' });
+    expect(sp(v?.chart.points[0]?.readout)).toBe('1 Oct · Total weight ≈400 kg');
+    expect(v?.chart.points[0]?.words).toContain('an estimate');
+    expect(v?.table.rows[0]?.cells.total).toBe('≈400');
+    expect(v?.table.rows[0]?.words).toContain('total weight, an estimate, about 400 kg');
+    expect(v?.info).toBe(TOTAL_ASSUMED);
+    // Known from the catalogue: exact, no info.
+    const known = buildExerciseTabView({ sessions: lunge, exerciseId: 'lunge', today: TODAY, window: WINDOW, measure: 'total', implements: 2 });
+    expect(known?.table.rows[0]?.cells.total).toBe('800');
+    expect(known?.info).toBeNull();
+    // A barbell total is never an estimate.
+    const bar = buildExerciseTabView({ sessions: [bench('2026-10-01', [[100, 5]])], exerciseId: 'bench', today: TODAY, window: WINDOW, measure: 'total' });
+    expect(bar?.table.rows[0]?.cells.total).toBe('500');
+    expect(bar?.info).toBeNull();
   });
 
   it('lb sets are converted into the display unit before summing', () => {
     const s = [session('2026-10-01', [row([set(kg(100), 5)]), row([set(lb(225), 5)], { unit: 'lb', equipmentId: 'bar-2', gymId: 'gym-2' })])];
     const v = buildExerciseTabView({ sessions: s, exerciseId: 'bench', today: TODAY, window: WINDOW, measure: 'total', unit: 'kg' });
     expect(v?.chart.points.map((p) => p.value)).toEqual([100 * 5 + 102.06 * 5]);
-    expect(v?.converted).toBe('Converted from lb');
+    expect(v?.info).toBe('Converted from lb');
+  });
+
+  it('review S3: no `Converted from lb` when the only lb session is outside the period', () => {
+    const s = [session('2025-03-01', [row([set(lb(225), 5)], { unit: 'lb' })]), bench('2026-09-01', [[100, 5]]), bench('2026-10-01', [[102.5, 5]])];
+    const v = buildExerciseTabView({ sessions: s, exerciseId: 'bench', today: TODAY, window: WINDOW, unit: 'kg' });
+    expect(v?.table.rows).toHaveLength(2);
+    expect(v?.info).toBeNull();
+    const all = buildExerciseTabView({ sessions: s, exerciseId: 'bench', today: TODAY, window: { from: '2025-01-01', to: TODAY }, unit: 'kg' });
+    expect(all?.info).toBe('Converted from lb');
   });
 });
 
@@ -408,7 +444,7 @@ describe('one series per exercise (Ben, 20 Oct 2026)', () => {
     expect(v?.chart.points.map((p) => p.value)).toEqual([90, 95, 97.5, 100]);
     expect(v?.table.rows).toHaveLength(4);
     expect(v?.stats.find((x) => x.label === 'Sessions')?.value).toBe('4');
-    expect(v?.converted).toBeNull();
+    expect(v?.info).toBeNull();
   });
 
   it('mixed conventions plot as recorded; the table says the plain unit and each top set its own', () => {

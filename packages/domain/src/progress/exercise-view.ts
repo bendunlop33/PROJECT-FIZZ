@@ -177,13 +177,14 @@ export function seriesKindLabel(kind: SeriesKind): string {
   }
 }
 
-/** `Converted from lb` when a set was logged in the other unit (the info tap); null otherwise. */
-export function convertedText(series: Pick<ExerciseSeries, 'convertedFrom'>): string | null {
-  return series.convertedFrom === null ? null : `Converted from ${series.convertedFrom}`;
+/**
+ * `Converted from lb` when a set on screen (these sessions, the period's) was
+ * logged in the other unit (the info tap); null otherwise (review S3).
+ */
+export function convertedText(sessions: readonly Pick<SeriesSession, 'sets'>[]): string | null {
+  for (const ss of sessions) for (const x of ss.sets) if (x.convertedFrom !== undefined) return `Converted from ${x.convertedFrom}`;
+  return null;
 }
-
-/** Ben's display unit for a series: the asked unit, else none (the latest row's). */
-export type DisplayUnit = WeightUnit | null | undefined;
 
 /** The y-axis unit (§5.5 `Axis units`). */
 export function axisUnit(series: ExerciseSeries, metric: ExerciseMetric): string {
@@ -1014,7 +1015,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     seriesId: series.id,
     seriesLabel: label,
     seriesSource: series.key.source,
-    converted: convertedText(series),
+    converted: convertedText(series.sessions.filter((ss) => ss.date >= trend.bounds.from && ss.date <= trend.bounds.to)),
     stats: statStrip.stats,
     statsWords: statStrip.words,
     metrics: metrics.map((m) => ({ key: m, label: metricLabel(m) })),

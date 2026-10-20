@@ -103,7 +103,7 @@ describe('B1: under weekly bests, Latest and Change describe sessions', () => {
 
   it('the latest is the last session (8 Oct, ≈116.5 kg), not the week’s best (5 Oct, ≈163.5 kg)', () => {
     expect(sessions.length).toBeGreaterThan(TREND_MAX_POINTS);
-    const series = collectExerciseSeries(sessions, 'bench')[0] as ExerciseSeries;
+    const series = collectExerciseSeries(sessions, 'bench', { unit: null })[0] as ExerciseSeries;
     const t = exerciseTrend(series, 'e1rm', 'all', TODAY);
     expect(t.aggregation).toBe('weekly_best');
     expect(t.points.at(-1)?.date).toBe('2026-10-05');
@@ -128,7 +128,7 @@ describe('B1: under weekly bests, Latest and Change describe sessions', () => {
     const many: ProgressSession[] = [];
     for (let i = 0; i < TREND_MAX_POINTS + 10; i += 1) many.push(bench(addDaysIso('2026-01-05', i), [[100, 5]]));
     const late = session('2026-10-04', [row([set(kg(150), 5)])], { startedMs: Date.parse('2026-10-04T22:30:00.000Z'), startedAtUtc: '2026-10-04T22:30:00.000Z' });
-    const t = exerciseTrend(collectExerciseSeries([...many, late], 'bench')[0] as ExerciseSeries, 'e1rm', 'all', TODAY);
+    const t = exerciseTrend(collectExerciseSeries([...many, late], 'bench', { unit: null })[0] as ExerciseSeries, 'e1rm', 'all', TODAY);
     expect(t.aggregation).toBe('weekly_best');
     expect(t.points.find((p) => p.sessionId === late.sessionId)?.date).toBe('2026-10-04');
   });
@@ -150,7 +150,7 @@ describe('B1: under weekly bests, Latest and Change describe sessions', () => {
       many.push({ ...london, sessionId: `light-${date}`, date, startedMs: Date.parse(`${date}T17:00:00.000Z`), exercises: [{ ...benchRow, sets: [set(kg(100), 5)] }] });
     }
     const weekOf = (p: ProgressSession) => {
-      const all = collectExerciseSeries([...many, p], BENCH);
+      const all = collectExerciseSeries([...many, p], BENCH, { unit: null });
       expect(all).toHaveLength(1);
       const t = exerciseTrend(all[0] as ExerciseSeries, 'top_set', 'all', TODAY);
       expect(t.aggregation).toBe('weekly_best');
@@ -192,17 +192,58 @@ describe('S1: assisted records; timed has no records section', () => {
     expect(leastAssistRecords([imp(kg(22.5, 'assistance')), ...base]).map((r) => r.value)).toEqual([20]);
   });
 
-  it('kg and lb assisted series keep their own records', () => {
+  it('one series for kg and lb assistance (20 Oct): an earlier lighter lb assist (≈9 kg) means 25 kg is no record (review B2)', () => {
     const lbAsst = (d: string, l: number) => session(d, [row([set(lb(l, 'assistance'), 8)], { exerciseId: 'chin', convention: 'assistance', unit: 'lb', equipmentKind: 'assisted_stack', equipmentId: 'as' })]);
-    const sessions = [asst('2026-09-01', 30), asst('2026-09-04', 30), asst('2026-09-07', 30), lbAsst('2026-09-08', 20), asst('2026-09-10', 25)];
-    const kgSeries = collectExerciseSeries(sessions, 'chin').find((s) => s.key.unit === 'kg') as ExerciseSeries;
-    expect(exerciseRecords(sessions, kgSeries).items.map((r) => [r.kind, r.value])).toEqual([['least_assist', 25]]);
+    const kgOnly = [asst('2026-09-01', 30), asst('2026-09-04', 30), asst('2026-09-07', 30), asst('2026-09-10', 25)];
+    const one = collectExerciseSeries(kgOnly, 'chin', { unit: 'kg' })[0] as ExerciseSeries;
+    expect(exerciseRecords(kgOnly, one).items.map((r) => [r.kind, r.value])).toEqual([['least_assist', 25]]);
+    const sessions = [...kgOnly.slice(0, 3), lbAsst('2026-09-08', 20), kgOnly[3] as ProgressSession];
+    const merged = collectExerciseSeries(sessions, 'chin', { unit: 'kg' });
+    expect(merged).toHaveLength(1);
+    expect(exerciseRecords(sessions, merged[0] as ExerciseSeries).items).toEqual([]);
   });
 
   it('a timed series has no records section (no record is defined for holds)', () => {
     const hold = (d: string, s: number) => session(d, [row([set(null, null, { durationS: s })], { exerciseId: 'plank', convention: 'bodyweight', measurement: 'duration', equipmentId: null, equipmentKind: null })]);
     const v = buildExerciseDetailView({ sessions: [hold('2026-09-01', 60), hold('2026-09-03', 60), hold('2026-09-05', 60), hold('2026-09-07', 90)], exerciseId: 'plank', today: TODAY });
     expect(v?.records).toBeNull();
+  });
+});
+
+describe('review B2: records of the merged series (two gyms, kg and lb)', () => {
+  const hotel = { equipmentId: 'bar-hotel', gymId: 'gym-2', equipmentName: 'Hotel barbell' };
+  const main = [bench('2026-06-01', [[100, 5]]), bench('2026-06-04', [[100, 5]]), bench('2026-06-07', [[100, 5]]), bench('2026-06-10', [[102.5, 5]])];
+  const away = [bench('2026-07-10', [[60, 5]], hotel), bench('2026-07-13', [[60, 5]], hotel), bench('2026-07-16', [[60, 5]], hotel), bench('2026-07-22', [[62.5, 5]], hotel)];
+
+  it('a hotel 62.5 kg set is no `Heaviest set` beside 102.5 kg at the main gym; only records of the whole exercise show', () => {
+    const v = buildExerciseDetailView({ sessions: [...main, ...away], exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg' });
+    const labels = v?.records?.items.map((r) => sp(`${r.label}  ${r.value}`) ?? '') ?? [];
+    expect(labels).toContain('Heaviest set  102.5 kg × 5');
+    expect(labels.some((l) => l.includes('62.5'))).toBe(false);
+    expect(labels.some((l) => l.startsWith('Best Est. 1RM') && l.includes('≈73'))).toBe(false);
+  });
+
+  it('records logged in lb show in Ben’s unit and are compared with the kg sessions', () => {
+    const lbRow = { unit: 'lb' as const, ...hotel };
+    const lbs = (date: string, l: number) => session(date, [row([set(lb(l), 5)], lbRow)]);
+    // 225 lb is ≈102.06 kg (below 102.5 kg, no record); 235 lb is ≈106.59 kg, a record of the whole exercise.
+    const sessions = [...main, lbs('2026-07-10', 225), lbs('2026-07-13', 225), lbs('2026-07-16', 225), lbs('2026-07-22', 235)];
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg' });
+    const heaviest = v?.records?.items.filter((r) => r.label === 'Heaviest set').map((r) => sp(r.value));
+    expect(heaviest).toEqual(['106.59 kg × 5', '102.5 kg × 5']);
+    expect(v?.records?.items.every((r) => !r.value.includes('lb'))).toBe(true);
+    // Lighter than everything earlier in kg: the 205 lb set is a record of its own record series only, not of the exercise.
+    const light = [...main, lbs('2026-07-10', 200), lbs('2026-07-13', 200), lbs('2026-07-16', 200), lbs('2026-07-22', 205)];
+    const w = buildExerciseDetailView({ sessions: light, exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg' });
+    expect(w?.records?.items.filter((r) => r.label === 'Heaviest set').map((r) => sp(r.value))).toEqual(['102.5 kg × 5']);
+  });
+});
+
+describe('review S3: the detail ⓘ says `Converted from lb` only for sessions in the range', () => {
+  it('an lb session before the range: nothing to say; in range: `Converted from lb`', () => {
+    const sessions = [session('2025-01-10', [row([set(lb(225), 5)], { unit: 'lb' })]), bench('2026-09-01', [[100, 5]]), bench('2026-10-01', [[102.5, 5]])];
+    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: '3m', unit: 'kg' })?.converted).toBeNull();
+    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: 'all', unit: 'kg' })?.converted).toBe('Converted from lb');
   });
 });
 

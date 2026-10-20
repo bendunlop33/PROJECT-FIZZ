@@ -161,15 +161,21 @@ export function keyOfRow(s: ProgressSession, ex: ProgressExercise): SeriesKey {
 
 export const chronological = (a: { startedMs: number; sessionId: string }, b: { startedMs: number; sessionId: string }) => a.startedMs - b.startedMs || a.sessionId.localeCompare(b.sessionId);
 
+/** A load in `unit`, as the series shows it (converted and rounded to the display step; bodyweight has no mass). */
+export function loadInUnit(load: Load, unit: WeightUnit): Load {
+  if (load.unit === unit) return load;
+  if (load.convention === 'bodyweight') return { ...load, unit };
+  return { ...load, value: roundToStep(convertMass({ value: load.value, unit: load.unit }, unit).value, LOAD_DISPLAY_STEP), unit };
+}
+
 /** A row's sets in the series' unit, each with the row's equipment kind. */
 function normaliseRow(row: ProgressExercise, unit: WeightUnit): { row: ProgressExercise; converted: WeightUnit | null } {
   let converted: WeightUnit | null = null;
   const sets = row.sets.map((x): SeriesSet => {
     if (x.load === null || x.load.unit === unit) return { ...x, equipmentKind: row.equipmentKind };
-    if (x.load.convention === 'bodyweight') return { ...x, load: { ...x.load, unit }, equipmentKind: row.equipmentKind };
+    if (x.load.convention === 'bodyweight') return { ...x, load: loadInUnit(x.load, unit), equipmentKind: row.equipmentKind };
     converted = x.load.unit;
-    const value = roundToStep(convertMass({ value: x.load.value, unit: x.load.unit }, unit).value, LOAD_DISPLAY_STEP);
-    return { ...x, load: { ...x.load, value, unit }, equipmentKind: row.equipmentKind, convertedFrom: x.load.unit };
+    return { ...x, load: loadInUnit(x.load, unit), equipmentKind: row.equipmentKind, convertedFrom: x.load.unit };
   });
   return { row: { ...row, unit, sets }, converted };
 }
@@ -189,10 +195,11 @@ function latestUnit(ordered: readonly ProgressSession[], exerciseId: string): We
 /**
  * Every series of one exercise (Ben, 20 Oct 2026): one per kind, every gym,
  * equipment item and source merged, each with its sessions oldest first and
- * loads in `unit` (Ben's display unit; default the latest row's). One pass
+ * loads in `unit` (Ben's display unit, required so no caller mixes units;
+ * null: the latest row's). One pass
  * over the workouts; rows of other exercises are skipped at once.
  */
-export function collectExerciseSeries(sessions: readonly ProgressSession[], exerciseId: string, opts: { unit?: WeightUnit | null } = {}): ExerciseSeries[] {
+export function collectExerciseSeries(sessions: readonly ProgressSession[], exerciseId: string, opts: { unit: WeightUnit | null }): ExerciseSeries[] {
   const out = new Map<string, ExerciseSeries>();
   const ordered = [...sessions].sort(chronological);
   const unit = opts.unit ?? latestUnit(ordered, exerciseId);
@@ -355,7 +362,9 @@ export function sessionLongestHold(ss: SeriesSession): MetricValue | null {
  * PG31 volume: Σ load × reps over completed non-warm-up sets, marked sets
  * included (the work was done). Per-dumbbell loads stay per hand. A
  * unilateral row counts its `both` sets plus the busier side, never the two
- * sides added. Only for `load` series.
+ * sides added. Only for `load` series, and only sets in the series'
+ * convention (its latest row's): per hand, stack and total are never added
+ * together (review S1, 20 Oct).
  */
 export function sessionVolume(ss: SeriesSession, series: SeriesShape): MetricValue | null {
   if (series.kind !== 'load') return null;
@@ -364,7 +373,7 @@ export function sessionVolume(ss: SeriesSession, series: SeriesShape): MetricVal
   const sum = (xs: readonly ProgressSet[]): number => {
     let acc = 0;
     for (const s of xs) {
-      if (!loadedSet(s, series) || !isSetCountable(s, 'volume')) continue;
+      if (!loadedSet(s, series) || s.load.convention !== series.key.convention || !isSetCountable(s, 'volume')) continue;
       used += 1;
       acc += s.load.value * s.reps;
     }
@@ -384,12 +393,13 @@ export function sessionVolume(ss: SeriesSession, series: SeriesShape): MetricVal
 /**
  * How many times a set's load was moved per rep, for total weight: a per-hand
  * load counts each dumbbell (the catalogue's `implements`, else two on a
- * bilateral row and one per side on a unilateral one), and a `both` set
- * ("10 each side") counts both sides.
+ * bilateral row and one per side on a unilateral one, an assumption:
+ * `assumed`), and a `both` set ("10 each side") counts both sides.
  */
-function timesMoved(s: Loaded, row: ProgressExercise, implementsCount: ImplementCount | null): number {
-  const implementsUsed = s.load.convention !== 'per_hand' ? 1 : (implementsCount ?? (row.laterality === 'bilateral' ? 2 : 1));
-  return implementsUsed * (row.laterality === 'unilateral' && s.side === 'both' ? 2 : 1);
+function timesMoved(s: Loaded, row: ProgressExercise, implementsCount: ImplementCount | null): { times: number; assumed: boolean } {
+  const perHand = s.load.convention === 'per_hand';
+  const implementsUsed = !perHand ? 1 : (implementsCount ?? (row.laterality === 'bilateral' ? 2 : 1));
+  return { times: implementsUsed * (row.laterality === 'unilateral' && s.side === 'both' ? 2 : 1), assumed: perHand && implementsCount === null };
 }
 
 /**
@@ -397,20 +407,25 @@ function timesMoved(s: Loaded, row: ProgressExercise, implementsCount: Implement
  * working sets (warm-ups out, marked sets in: the work was done), each
  * dumbbell and side counted (`timesMoved`), every set in the series' unit.
  * BW + series count the added mass only. None for assisted (less is better,
- * no total), bodyweight, timed, distance or cardio.
+ * no total), bodyweight, timed, distance or cardio. An `estimate` when a
+ * per-hand set's dumbbell count isn't in the catalogue (`implements` left
+ * out: done either way, review S4).
  */
 export function sessionTotalWeight(ss: SeriesSession, series: SeriesShape, implementsCount: ImplementCount | null = null): MetricValue | null {
   if (series.kind !== 'load' && series.kind !== 'added_bodyweight') return null;
   let total = 0;
   let used = 0;
+  let assumed = false;
   for (const row of ss.rows) {
     for (const s of row.sets as readonly SeriesSet[]) {
       if (!loadedSet(s, series) || !isSetCountable(s, 'volume')) continue;
       used += 1;
-      total += s.load.value * s.reps * timesMoved(s, row, implementsCount);
+      const t = timesMoved(s, row, implementsCount);
+      if (t.assumed) assumed = true;
+      total += s.load.value * s.reps * t.times;
     }
   }
-  return used > 0 ? { value: Math.round(total * 100) / 100, kind: 'actual', fromSet: null } : null;
+  return used > 0 ? { value: Math.round(total * 100) / 100, kind: assumed ? 'estimate' : 'actual', fromSet: null } : null;
 }
 
 /** A completed non-warm-up distance set with metres. */

@@ -219,7 +219,7 @@ export function ExerciseDetailScreen() {
           <View>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Series, ${view.seriesLabel}`}
+            accessibilityLabel={`Type, ${view.seriesLabel}`}
             accessibilityState={{ expanded: seriesOpen }}
             onPress={() => {
               setSeriesOpen((o) => !o);
