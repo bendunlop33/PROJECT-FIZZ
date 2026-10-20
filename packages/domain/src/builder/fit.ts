@@ -77,7 +77,7 @@ export function removeSlot(w: BuilderWorkout, key: string): BuilderWorkout {
 /** `fitToMinutes`: the ladder above. */
 export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOptions): BuilderFitResult {
   const over = (w: BuilderWorkout) => estimateBuilderSeconds(w, ctx) > opts.minutes * 60 + 29;
-  const done = (w: BuilderWorkout, steps: BuilderFitStep[], status: BuilderFitStatus): BuilderFitResult => ({ workout: w, steps, status, minutes: estimateBuilderMinutes(w, ctx) });
+  const done = (w: BuilderWorkout, steps: BuilderFitStep[], status: BuilderFitStatus): BuilderFitResult => ({ workout: w, steps: tidySteps(steps), status, minutes: estimateBuilderMinutes(w, ctx) });
   let w = cloneW(input);
   const steps: BuilderFitStep[] = [];
   if (!over(w)) return opts.grow ? grow(w, ctx, opts) : done(w, steps, 'fits');
@@ -128,10 +128,43 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, opts: B
       if (s === undefined) break;
       w = removeSlot(w, s.key);
       steps.push({ kind: 'drop', slotKey: s.key, exerciseId: s.exerciseId });
-      if (!over(w)) return done(w, steps, 'fitted');
+      if (!over(w)) return done(restoreSets(w, steps, over), steps, 'fitted');
     }
   }
   return done(w, steps, 'over');
+}
+
+/**
+ * After a drop freed time: give the remaining accessories back the sets step
+ * (c) took, first exercise first, as far as the time allows ("only as far
+ * as needed"). Steps are updated to the net change.
+ */
+function restoreSets(input: BuilderWorkout, steps: BuilderFitStep[], over: (w: BuilderWorkout) => boolean): BuilderWorkout {
+  let w = input;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const st of steps) {
+      if (st.kind !== 'sets' || st.to >= st.from) continue;
+      const s = allSlots(w).find((x) => x.key === st.slotKey);
+      if (s === undefined) continue;
+      const next = replaceSlot(w, s.key, setWorkingCount(s, st.to + 1));
+      if (over(next)) continue;
+      w = next;
+      st.to += 1;
+      changed = true;
+    }
+  }
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    const st = steps[i];
+    if (st?.kind === 'sets' && st.to === st.from) steps.splice(i, 1);
+  }
+  return w;
+}
+
+/** A slot that was cut and then dropped reports only the drop. */
+function tidySteps(steps: readonly BuilderFitStep[]): BuilderFitStep[] {
+  const dropped = new Set(steps.flatMap((s) => (s.kind === 'drop' ? [s.slotKey] : [])));
+  return steps.filter((s) => !(s.kind === 'sets' && dropped.has(s.slotKey)));
 }
 
 const rank = (l: RestLevel): number => (l === 'normal' ? 0 : l === 'shorter' ? 1 : 2);
