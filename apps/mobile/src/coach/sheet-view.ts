@@ -164,14 +164,14 @@ export function stickToEnd(s: { atBottom: boolean; added: boolean; starters: boo
 
 /**
  * The coach's reply as shown (design pass nit): sentences joined by a space, except where the model
- * broke the line (a sentence with no end mark was ended by a line break: a list item or a heading),
- * which keeps its break. Text only; nothing is added.
+ * broke the line for a heading (`Next time:`) or a list item (`- Bench 100 kg`, `2. Row`), which keeps
+ * its break. Text only; nothing is added. (A sentence split around an action token stays on the line.)
  */
 export function replyText(sentences: readonly string[]): string {
   let out = '';
   for (const s of sentences) {
     if (out === '') out = s;
-    else out += /[.!?…:"'”’)\]]$/.test(out) ? ` ${s}` : `\n${s}`;
+    else out += out.endsWith(':') || /^(?:[-•*–]\s|\d+[.)]\s)/.test(s) ? `\n${s}` : ` ${s}`;
   }
   return out;
 }

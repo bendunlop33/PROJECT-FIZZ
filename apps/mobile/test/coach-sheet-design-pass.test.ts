@@ -36,9 +36,12 @@ describe('4.1 sticky end', () => {
 });
 
 describe('replies and times', () => {
-  it('sentences join with a space; a line the model broke (no end mark) keeps its break', () => {
+  it('sentences join with a space; a heading or a list item keeps its line break', () => {
     expect(replyText(['Good set.', 'Keep 100 kg.'])).toBe('Good set. Keep 100 kg.');
-    expect(replyText(['Next time:', 'Bench 100 kg', 'Row 60 kg'])).toBe('Next time: Bench 100 kg\nRow 60 kg');
+    expect(replyText(['Next time:', '- Bench 100 kg', '- Row 60 kg'])).toBe('Next time:\n- Bench 100 kg\n- Row 60 kg');
+    expect(replyText(['Two options:', '1. Lighter', '2) Fewer sets'])).toBe('Two options:\n1. Lighter\n2) Fewer sets');
+    // Text split around an action token stays on one line.
+    expect(replyText(['I’ve set', 'for today.'])).toBe('I’ve set for today.');
     expect(replyText([])).toBe('');
   });
 
