@@ -64,6 +64,10 @@ export const YOUR_DATA_TABLES = [
   'plan_drafts',
   // Training details and split (migration 16): birth year, gender, height, weights, goal, split. About Ben.
   'training_profiles',
+  // (Ben, 20 Oct, migration 26) Runs, rides, swims and sport Ben logged, done or planned: about Ben.
+  'activities',
+  // (Ben, 20 Oct, migration 26) This week's shape Ben applied from the coach's proposal: his plan, his choice.
+  'week_plans',
   // Tombstones of purged workouts (delete-workouts §6.3, migration 8): Your data, removed by Delete my data.
   'purged_sessions',
 ] as const;

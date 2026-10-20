@@ -116,6 +116,35 @@ export interface CoachContextInput {
    * date (for `until`) and whether it is paused now. Your data. Absent otherwise.
    */
   plan?: PlanPauseView;
+  /**
+   * (Ben, 20 Oct) This week on a general turn: today's date, gym days done and left, the days left
+   * (plan or split), Ben's activities this week and the last two, code's reshape idea. Your data;
+   * only what he logged (rule 6). Absent when there is nothing to say.
+   */
+  week?: WeekContextView;
+}
+
+/** This week as `log_activity` and `propose_week` read it (Your data). */
+export interface WeekContextView {
+  /** Local `YYYY-MM-DD`, and its weekday (`Fri`). */
+  today: string;
+  weekday: string;
+  /** Ben's days a week; null: not set. */
+  aim: number | null;
+  /** Gym days this week (runs never count). */
+  gymDaysDone: number;
+  gymDaysLeft: number;
+  /** `plan` (the plan in use) or `split` (his split days). */
+  daysFrom: 'plan' | 'split' | null;
+  remaining: { id: string; name: string; bodyParts: string[] }[];
+  /** `Run · Sat 24 Oct · planned · long`. */
+  activities: string[];
+  /** More days left than gym days. */
+  needsReshape: boolean;
+  /** Code's merge idea (day IDs from `remaining`). */
+  suggestion: { merges: { dayIds: string[]; name: string }[] } | null;
+  /** A change Ben applied this week (`This week: Push (Chest + Shoulders)`), else null. */
+  applied: string | null;
 }
 
 /** The plan in use as `pause_plan` reads it (Your data). `inUse: null`: no plan is in use. */
@@ -270,6 +299,8 @@ export interface YourData {
   training?: TrainingDetailsView;
   /** (20 Oct) Pause turns only: the plan in use and today's date. */
   plan?: PlanPauseView;
+  /** (Ben, 20 Oct) General turns: this week, his activities and the days left. */
+  week?: WeekContextView;
 }
 
 export interface CoachingKnowledge {
@@ -407,6 +438,7 @@ export function buildYourData(input: CoachContextInput): YourData {
     ...(input.build === undefined ? {} : { build: JSON.parse(JSON.stringify(input.build)) as BuildContextView }),
     ...(input.addable === undefined ? {} : { addable: input.addable.map((a) => ({ ...a })) }),
     ...(input.training === undefined ? {} : { training: trainingDetailsView(input.training).view }),
+    ...(input.week === undefined ? {} : { week: JSON.parse(JSON.stringify(input.week)) as WeekContextView }),
     ...(input.plan === undefined ? {} : { plan: { today: input.plan.today, inUse: input.plan.inUse === null ? null : { name: input.plan.inUse.name, paused: input.plan.inUse.paused === null ? null : { until: input.plan.inUse.paused.until } } } }),
   };
 }

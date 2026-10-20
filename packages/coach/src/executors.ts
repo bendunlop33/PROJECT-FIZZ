@@ -1,4 +1,4 @@
-import { deriveId, nextTargetSourceBasis, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis, type SessionAdjustment } from '@fizz/domain';
+import { ACTIVITY_WORD, deriveId, localDateText, nextTargetSourceBasis, validateNextSessionTargets, validateTodayAdjustment, type AdjustIntent, type ExerciseAdjustmentPlan, type MessagePain, type NextSessionBasis, type SessionAdjustment } from '@fizz/domain';
 import type {
   ActionDetail,
   ActionRecord,
@@ -429,6 +429,10 @@ function undoWhat(target: ActionRecord): string {
       return `version ${String(d.versionN)} of ${d.name}`;
     case 'pause_plan':
       return d.action === 'resume' ? 'resuming your plan' : 'pausing your plan';
+    case 'log_activity':
+      return `the ${ACTIVITY_WORD[d.fields.kind].toLowerCase()} on ${localDateText(d.fields.date)}`;
+    case 'propose_week':
+      return 'this week’s change';
   }
 }
 

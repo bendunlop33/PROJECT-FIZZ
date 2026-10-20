@@ -20,7 +20,8 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { chatSetUndoCommand, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate, undoPlanControl } from '@fizz/domain';
+import { chatSetUndoCommand, deleteActivity, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate, undoPlanControl } from '@fizz/domain';
+import { ACTIVITY_SPEC } from './activities';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
 import { decodeDocument, erase, EXERCISE_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -95,6 +96,8 @@ function sessionOf(record: ActionRecord): string | null {
     case 'build_plan':
     case 'propose_exercise':
     case 'pause_plan':
+    case 'log_activity':
+    case 'propose_week':
     case 'undo':
       return null;
   }
@@ -550,6 +553,13 @@ export class SqliteCoachStore {
         if (!r.ok) throw new Rollback('stale_version');
         return null;
       }
+      case 'activity': {
+        // (Ben, 20 Oct) An activity the coach logged (Ben asked, or tapped its offer), with its record.
+        if (write.activity.ownerId !== ownerId) throw new Error('Activity owner differs from the store owner');
+        const r = await saveDocumentIn(tx, ACTIVITY_SPEC, write.activity, write.expectedVersion);
+        if (!r.ok) throw new Rollback(write.expectedVersion === null ? 'already_exists' : 'stale_version');
+        return null;
+      }
     }
   }
 
@@ -735,6 +745,20 @@ export class SqliteCoachStore {
         if (!(await saveDocumentIn(tx, PLAN_DRAFT_SPEC, c.next, c.expectedVersion)).ok) return 'changed_since';
         return 'ok';
       }
+      case 'log_activity': {
+        // (Ben, 20 Oct) The activity the coach logged comes out (a tombstone), only while it is as this write left it.
+        if (d.activityId === null || d.versionAfter === null) return 'unsupported';
+        const row = await tx.getFirst('SELECT * FROM activities WHERE id = ?', [d.activityId]);
+        const a = row === null ? null : decodeDocument(ACTIVITY_SPEC, row);
+        if (a === null || a.ownerId !== ownerId || a.version !== d.versionAfter || a.deletedAtUtc !== null) return 'changed_since';
+        const c = deleteActivity(a, { expectedVersion: a.version, opId: `undo:${target.actionId}`, at: { utc: atUtc, tz: target.createdAt.tz } });
+        if (c.kind !== 'write') return 'changed_since';
+        if (!(await saveDocumentIn(tx, ACTIVITY_SPEC, c.next, c.expectedVersion)).ok) return 'changed_since';
+        return 'ok';
+      }
+      // A week proposal is never applied by the coach: Apply and its Undo are Ben's own writes (`week_plans`).
+      case 'propose_week':
+        return 'unsupported';
       // A suggestion was never applied (Ben's Not now, or Forget after Save, are the ways back). Ben's routine change from
       // today's edits has its own Undo (`routines.undoTemplateSwap`), version-checked against the routine.
       // The coach's fit to time has its own Undo (`drafts.undoCoachFit`), versioned on the draft.

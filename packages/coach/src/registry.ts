@@ -342,6 +342,36 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       "Pause the plan in use (YOUR DATA plan.inUse) when Ben asks, e.g. \"I'm on holiday till 3 Nov\", or resume it (\"I'm back, resume my plan\"). action: pause or resume. until: the local date (YYYY-MM-DD) the plan is back in use on, from his words and today's date; null when he gave none (paused until he resumes). While paused, Up next follows his other workouts and paused days don't count against his weekly aim. The plan's days don't change. Applies at once with Undo.",
   },
   {
+    // (Ben, 20 Oct) A run, ride, swim or sport Ben mentions. Offered on every general turn: when his own words tell the
+    // coach about it (`activity`, code's reading) it is logged at once with Undo; otherwise the call is saved as an offer
+    // he taps to log (rule 3). Only what he said (rule 6).
+    name: 'log_activity',
+    effect: 'append',
+    writes: ['activity'],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['general'],
+    plainLabel: 'Log a run, ride, swim or sport you tell it about, with Undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Log a run, ride, swim, sport or other activity Ben tells you about, done or planned ("18 km run yesterday", "long run Saturday"). kind, status (done or planned), date (local YYYY-MM-DD from his words and YOUR DATA week.today), durationMin and distanceKm only as he said them (null when he didn’t), effort only from his own word (long for a long session; null otherwise). Never invent pace, heart rate or effort. Runs are not gym days.',
+  },
+  {
+    // (Ben, 20 Oct: "maybe we swap to a push rather than shoulder and chest separately") This week only, always a
+    // proposal Ben applies (rule 3). Opens when he asks to shape the week, or when code sees more days left this week
+    // than gym days (`weekOpen`: a planned run, a busy week).
+    name: 'propose_week',
+    effect: 'propose',
+    writes: ['week_plan'],
+    needs: 'ben_request',
+    structural: true,
+    turnKinds: ['general'],
+    plainLabel: 'Suggest merging or skipping this week’s days around a run, for you to apply',
+    capabilitySection: 'suggest_only',
+    description:
+      'Suggest this week’s shape when YOUR DATA week shows more days left (week.remaining) than gym days (week.gymDaysLeft), e.g. around a long run, or when Ben asks ("plan my week around it"). merges: two remaining day IDs into one day with a short name (Chest + Shoulders → Push; never merge a leg day with an upper day); skips: day IDs to leave out this week. week.suggestion is code’s idea. This week only: next week is his plan as it was. Ben applies it; say "Want me to …?", never that it changed.',
+  },
+  {
     // (19 Oct, Ben: "Can it build plans across multiple days as well not just single workouts?") Every day at once, as a
     // proposal (rule 3: a structural change Ben applies, with Undo). Each day is checked like a `propose_workout` draft.
     name: 'propose_plan',
@@ -463,6 +493,11 @@ export interface TurnGate {
    * fewer than 2 asked, and not a revision of a draft. Absent or false: `ask_build_question` is withheld.
    */
   buildQuestionOpen?: boolean;
+  /**
+   * (Ben, 20 Oct) Code sees more days left this week than gym days (a planned long run, a busy week):
+   * `propose_week` is offered so the coach can suggest a reshape. It is always a proposal Ben applies.
+   */
+  weekOpen?: boolean;
 }
 
 /**
@@ -525,6 +560,8 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   propose_plan: ['build_plan'],
   // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan".
   pause_plan: ['plan_pause'],
+  // (Ben, 20 Oct) "Plan my week around it", "rejig the week": a proposal for this week only.
+  propose_week: ['week_plan'],
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {
@@ -540,6 +577,7 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
       if (t.name === 'ask_build_question') return requestOpens(t, g.benRequest) && g.buildQuestionOpen === true ? null : 'needs_request';
       if (requestOpens(t, g.benRequest)) return null;
       if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
+      if (t.name === 'propose_week' && g.kind === 'general' && g.weekOpen === true) return null;
       if (TODAY_TOOLS.has(t.name) && g.kind === 'workout' && g.liveWorkout === true) return null;
       // An accepted offer only counts for today's sets (CA1).
       return g.acceptedOffer && (t.name === 'adjust_pending_sets' || t.name === 'edit_today') ? null : 'needs_request';

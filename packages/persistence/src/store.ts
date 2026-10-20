@@ -22,6 +22,7 @@ import { SqliteDrafts } from './drafts';
 import { SqliteWorkoutDrafts } from './workout-drafts';
 import { SqlitePlanDrafts } from './plan-drafts';
 import { SqliteTrainingProfiles } from './training-profiles';
+import { SqliteActivities, SqliteWeekPlans } from './activities';
 import { SqliteSessions } from './sessions';
 import { inHistorySql } from './sql';
 
@@ -41,6 +42,10 @@ export interface SqliteRepositories extends Repositories {
   planDrafts: SqlitePlanDrafts;
   /** Training details and split (migration 16). */
   trainingProfiles: SqliteTrainingProfiles;
+  /** (Ben, 20 Oct) Runs, rides, swims and sport (migration 26). */
+  activities: SqliteActivities;
+  /** (Ben, 20 Oct) This week's shape applied from the coach's proposal (migration 26). */
+  weekPlans: SqliteWeekPlans;
 }
 
 export function createSqliteRepositories(db: Database): SqliteRepositories {
@@ -61,6 +66,8 @@ export function createSqliteRepositories(db: Database): SqliteRepositories {
     workoutDrafts: new SqliteWorkoutDrafts(db),
     planDrafts: new SqlitePlanDrafts(db),
     trainingProfiles: new SqliteTrainingProfiles(db),
+    activities: new SqliteActivities(db),
+    weekPlans: new SqliteWeekPlans(db),
   };
 }
 

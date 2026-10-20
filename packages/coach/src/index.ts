@@ -29,3 +29,4 @@ export * from './edit-today';
 export * from './numbers';
 export * from './plan';
 export * from './find-exercises';
+export * from './activity-tools';
