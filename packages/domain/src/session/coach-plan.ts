@@ -27,6 +27,7 @@ import { toIso, toMs } from '../time';
 import { loadText } from '../display';
 import { checkWorkoutProposal, draftSchemeText, draftWorkingSets, recheckDraftSlot, type WorkoutProposalContext } from './coach-draft';
 import { setRoutineRotation } from './library';
+import { closePausesAt, reopenPausesClosedAt } from './plan-adapt';
 import { deleteRoutine, isDeleted, isFromRoutine, isInRotation, type FinishedRef, type RoutineChange } from './routines';
 import type { SubstituteContext } from './substitutes';
 
@@ -173,6 +174,11 @@ export function currentPlanVersion(p: Pick<PlanDraft, 'versions' | 'currentVersi
 
 function remember(opIds: readonly string[], opId: string): string[] {
   return [...opIds, opId].slice(-PLAN_LIMITS.maxOps);
+}
+
+/** The plan's pauses closed at `at` (End or superseded), as a patch; none when it has no pauses. */
+function pausesClosed(p: PlanDraft, at: ZonedTimestamp): Partial<PlanDraft> {
+  return p.pauses === undefined ? {} : { pauses: closePausesAt(p.pauses, at.utc, p.tz) };
 }
 
 function bump(p: PlanDraft, opId: string, atUtc: string, patch: Partial<PlanDraft>): PlanDraft {
@@ -332,7 +338,11 @@ export function applyPlan(
   const supersede = (input.applied ?? [])
     .filter((o) => o.id !== current.id && o.ownerId === current.ownerId && o.status === 'applied' && o.applied !== null)
     .slice(0, 8)
-    .map((o) => ({ next: bump(o, `${input.opId}:supersede:${o.id}`, input.at.utc, { status: 'superseded', supersededBy: { planId: current.id, opId: input.opId, atUtc: input.at.utc } }), expectedVersion: o.version }));
+    .map((o) => ({
+      // A pause running on it ends with it (review plan-adapt B1); this Apply's Undo reopens it.
+      next: bump(o, `${input.opId}:supersede:${o.id}`, input.at.utc, { status: 'superseded', supersededBy: { planId: current.id, opId: input.opId, atUtc: input.at.utc }, ...pausesClosed(o, input.at) }),
+      expectedVersion: o.version,
+    }));
   const applied: PlanApplied = {
     mode: input.mode,
     versionN: v.n,
@@ -400,7 +410,8 @@ export function undoPlanApply(
     // Its workouts this Undo puts back in the rotation are at new versions: its own Undo must find them as left now.
     const after = new Map(update.map((x) => [x.next.id, x.next.version]));
     const app = o.applied === null ? null : { ...o.applied, made: o.applied.made.map((m) => ({ ...m, version: after.get(m.routineId) ?? m.version })) };
-    restore.push({ next: bump(o, `${input.opId}:restore:${o.id}`, input.at.utc, { status: 'applied', supersededBy: null, applied: app }), expectedVersion: o.version });
+    const reopened = o.pauses === undefined ? {} : { pauses: reopenPausesClosedAt(o.pauses, o.supersededBy.atUtc) };
+    restore.push({ next: bump(o, `${input.opId}:restore:${o.id}`, input.at.utc, { status: 'applied', supersededBy: null, applied: app, ...reopened }), expectedVersion: o.version });
   }
   const reopen = toIso(Math.max(toMs(current.expiresAtUtc), toMs(input.at.utc) + PLAN_LIMITS.openDays * DAY_MS));
   return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'open', applied: null, undoneAtUtc: input.at.utc, expiresAtUtc: reopen }), expectedVersion: current.version, update, restore };
@@ -459,7 +470,8 @@ export function endPlan(current: PlanDraft, input: { expectedVersion: number; op
     restored.push({ routineId: r.id, versionBefore: r.version, versionAfter: c.next.version });
   }
   const ended: PlanEnded = { opId: input.opId, atUtc: input.at.utc, rotationOff, restored, notRestored };
-  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'ended', ended }), expectedVersion: current.version, update };
+  // A pause running now ends with the plan (review plan-adapt B1); End's Undo reopens it.
+  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'ended', ended, ...pausesClosed(current, input.at) }), expectedVersion: current.version, update };
 }
 
 /**
@@ -504,7 +516,8 @@ export function undoEndPlan(current: PlanDraft, input: { expectedVersion: number
   // Apply's record follows them too, so a later End (or the card's Undo of Apply) finds them as left now.
   const putBack = new Set((ended.restored ?? []).map((x) => x.routineId));
   const rotationOff = current.applied.rotationOff.map((o) => (putBack.has(o.routineId) && after.has(o.routineId) ? { ...o, versionAfter: after.get(o.routineId) ?? o.versionAfter } : o));
-  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', ended: null, applied: { ...current.applied, made, rotationOff } }), expectedVersion: current.version, update };
+  const reopened = current.pauses === undefined ? {} : { pauses: reopenPausesClosedAt(current.pauses, ended.atUtc) };
+  return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', ended: null, applied: { ...current.applied, made, rotationOff }, ...reopened }), expectedVersion: current.version, update };
 }
 
 // ---------------------------------------------------------------------------

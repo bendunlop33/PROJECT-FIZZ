@@ -7,6 +7,7 @@ import {
   consistency,
   localWeekBounds,
   pausedDates,
+  planInUseUntilUtc,
   pausedInWeek,
   pausePlan,
   pinPlanDay,
@@ -463,13 +464,14 @@ export function createPlanServices(deps: PlanServicesDeps) {
           : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history });
       const status = run !== null ? 'planned' : gym === null ? 'no_gym' : 'not_here';
       const nowMs = toMs(deps.now().utc);
-      // Pinned while no workout since the pin trained it (as Up next reads it).
+      // Pinned while no workout since the pin did that day (as Up next reads it).
       let pinned = false;
       if (plan.pin?.routineId === routine.id) {
         const parts = await bodyPartsOf(p.id, days);
-        const grouped = await groupedWorkouts(p.id, toMs(plan.pin.atUtc), nowMs);
-        const refs = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).filter((w) => toMs(w.startedAtUtc) >= toMs(plan.pin?.atUtc ?? deps.now().utc));
-        const ws: PlanDueWorkout[] = refs.map((w) => ({ sessionId: w.sessionId, routineId: w.routineId, startedAtUtc: w.startedAtUtc, groups: grouped.get(w.sessionId) ?? new Map() }));
+        // Every finished workout since the pin, read as Up next reads it (review plan-adapt S3).
+        const r = await deps.store().repos.sessions.listFinishedBetweenReadable(p.id, plan.pin.atUtc, toIso(nowMs + 1)).catch(() => ({ sessions: [] as SessionAggregate[] }));
+        const of = await exerciseOf();
+        const ws: PlanDueWorkout[] = r.sessions.map((a) => ({ sessionId: a.session.id, routineId: a.session.routineId ?? null, startedAtUtc: a.session.startedAt.utc, groups: workoutGroupsOf(a, of) }));
         pinned = activePin(plan.pin, days.map((r) => ({ routineId: r.id, name: r.name, bodyParts: parts.get(r.id) ?? [], createdFromSessionId: r.createdFromSessionId ?? null })), ws) !== null;
       }
       return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status, planVersion: plan.version, pinned, paused: activePause(plan, nowMs, p.timezone) !== null };
@@ -551,14 +553,15 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const refs = (await deps.store().repos.sessions.listFinishedRefs(p.id, 400, { includeImported: true }).catch(() => [])).filter((r) => toMs(r.startedAtUtc) >= from);
       const training = await deps.store().repos.trainingProfiles.get(p.id).catch(() => null);
       const plan = await active();
-      // (Ben, 20 Oct) Paused days don't count against the aim: every plan's pauses (one ended since still paused those days).
+      // (Ben, 20 Oct) Paused days don't count against the aim: every plan's pauses (one ended since still paused those
+      // days), none past the day its plan stopped being in use (review plan-adapt B1).
       const tz = p.timezone;
       const firstMonday = localWeekBounds(from, tz).mondayLocalDate;
       const end = addDays(localWeekBounds(nowMs, tz).mondayLocalDate, 7);
       const paused = new Set<string>();
       for (const d of await repo().listByOwner(p.id).catch(() => [] as PlanDraft[])) {
         if (d.applied === null || (d.pauses ?? []).length === 0) continue;
-        for (const x of pausedDates(d.pauses, firstMonday, end, tz)) paused.add(x);
+        for (const x of pausedDates(d.pauses, firstMonday, end, tz, planInUseUntilUtc(d))) paused.add(x);
       }
       const weekStart = plan === null ? nowMs : planWeekStartMs({ appliedAtUtc: plan.appliedAtUtc, nowMs, tz });
       const groups = plan === null ? new Map<string, ReadonlyMap<MuscleGroup, number>>() : await groupedWorkouts(p.id, weekStart, nowMs);

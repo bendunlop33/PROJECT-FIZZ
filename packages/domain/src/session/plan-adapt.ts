@@ -116,15 +116,19 @@ function planDaysCredited(days: readonly PlanDueDay[], w: PlanDueWorkout): strin
 }
 
 /**
- * The plan days a workout counts as done for (`Your plan` ✓): a plan
- * workout counts for its own day only; any other workout for the days it
- * mainly trained (the split rule's threshold).
+ * The plan days a workout counts as done for: `Your plan` ✓ and clearing a
+ * `Make next` pin use this one rule (review plan-adapt S1, S2). A plan
+ * workout counts for its own day and the day it mainly trained, when Ben
+ * turned it into another day's session (started Pull, did legs: Pull and
+ * Legs); any other workout for the days it mainly trained (the split
+ * rule's threshold).
  */
 export function planDaysDoneBy(days: readonly PlanDueDay[], w: PlanDueWorkout): string[] {
   const own = ownPlanDay(days, w);
-  if (own !== undefined) return [own.routineId];
   const split = planSplit(days);
-  return split === null ? [] : splitDaysTrained(split, w.groups);
+  if (own === undefined) return split === null ? [] : splitDaysTrained(split, w.groups);
+  const main = split === null ? null : matchSplitDay(split, w.groups);
+  return main === null || main.id === own.routineId ? [own.routineId] : [own.routineId, main.id];
 }
 
 const newestFirst = <W extends Pick<PlanDueWorkout, 'sessionId' | 'startedAtUtc'>>(ws: readonly W[]): W[] => [...ws].sort((a, b) => toMs(b.startedAtUtc) - toMs(a.startedAtUtc) || (a.sessionId < b.sessionId ? 1 : -1));
@@ -137,11 +141,16 @@ export interface PlanDuePick<D extends PlanDueDay = PlanDueDay> {
   lastTrainedUtc: string | null;
 }
 
-/** The pin, while its day is still a plan day and no workout since the pin trained it. */
+/**
+ * The pin, while its day is still a plan day and no workout since the pin
+ * did that day (`planDaysDoneBy`, the ✓ rule: review plan-adapt S2).
+ * `workouts` must hold every finished workout since `pin.atUtc` (the callers
+ * read from the pin, not a fixed window: review S3).
+ */
 export function activePin(pin: PlanPin | null | undefined, days: readonly PlanDueDay[], workouts: readonly PlanDueWorkout[]): PlanPin | null {
   if (pin == null || !days.some((d) => d.routineId === pin.routineId)) return null;
   const since = toMs(pin.atUtc);
-  const done = workouts.some((w) => toMs(w.startedAtUtc) >= since && planDaysTrained(days, w).includes(pin.routineId));
+  const done = workouts.some((w) => toMs(w.startedAtUtc) >= since && planDaysDoneBy(days, w).includes(pin.routineId));
   return done ? null : pin;
 }
 
@@ -220,18 +229,50 @@ export function autoResumeDue(plan: Pick<PlanDraft, 'status' | 'pauses'> | null,
  * The local dates in [`from`, `to`) (`YYYY-MM-DD`) a plan was (or will be,
  * for a pause still running) paused: from the pause's own date up to the date
  * it ended (Resume) or its `until` date, whichever is first. A pause and
- * Resume on the same day pause no date.
+ * Resume on the same day pause no date. `capUtc`: when the plan stopped being
+ * in use (`planInUseUntilUtc`); no pause runs past it, so a plan ended or
+ * replaced while paused never pauses the weeks after (review plan-adapt B1).
  */
-export function pausedDates(pauses: readonly PlanPause[] | undefined, from: string, to: string, tz: string): Set<string> {
+export function pausedDates(pauses: readonly PlanPause[] | undefined, from: string, to: string, tz: string, capUtc: string | null = null): Set<string> {
   const out = new Set<string>();
+  const cap = capUtc === null ? null : localDateOf(toMs(capUtc), tz);
   for (const p of pauses ?? []) {
     const start = localDateOf(toMs(p.fromUtc), tz);
-    const ends = [p.untilDate, p.endedAtUtc === null ? null : localDateOf(toMs(p.endedAtUtc), tz)].filter((x): x is string => x !== null).sort();
+    const ends = [p.untilDate, p.endedAtUtc === null ? null : localDateOf(toMs(p.endedAtUtc), tz), cap].filter((x): x is string => x !== null).sort();
     const end = ends[0] ?? null;
     let d = start < from ? from : start;
     for (let i = 0; i < 400 && d < to && (end === null || d < end); i += 1, d = addDays(d, 1)) out.add(d);
   }
   return out;
+}
+
+/** When a plan stopped being in use (End, or a newer plan's Apply); null while it is (or never was) in use. */
+export function planInUseUntilUtc(plan: Pick<PlanDraft, 'status' | 'ended' | 'supersededBy'>): string | null {
+  if (plan.status === 'ended') return plan.ended?.atUtc ?? null;
+  if (plan.status === 'superseded') return plan.supersededBy?.atUtc ?? null;
+  return null;
+}
+
+/**
+ * The pauses once the plan stops being in use at `atUtc` (End, or a newer
+ * plan's Apply): a running pause is closed then (`endedBy: 'end'`), one past
+ * its `until` date at that date (as the auto-resume would have). Unchanged
+ * when none is open (review plan-adapt B1).
+ */
+export function closePausesAt(pauses: readonly PlanPause[], atUtc: string, tz: string): PlanPause[] {
+  const last = pauses.at(-1);
+  if (last === undefined || last.endedAtUtc !== null) return [...pauses];
+  const atMs = toMs(atUtc);
+  const end = pauseEndMs(last, tz);
+  const closed: PlanPause = atMs < end ? { ...last, endedAtUtc: atUtc, endedBy: 'end' } : { ...last, endedAtUtc: toIso(end), endedBy: 'auto' };
+  return [...pauses.slice(0, -1), closed];
+}
+
+/** The pauses as before `closePausesAt(…, atUtc)`: the pause it closed at `atUtc` is running again (Undo of End / of the Apply that replaced it). */
+export function reopenPausesClosedAt(pauses: readonly PlanPause[], atUtc: string): PlanPause[] {
+  const last = pauses.at(-1);
+  if (last === undefined || last.endedBy !== 'end' || last.endedAtUtc !== atUtc) return [...pauses];
+  return [...pauses.slice(0, -1), { ...last, endedAtUtc: null, endedBy: null }];
 }
 
 /** A picked `until` date is after today (local) and within a year; null (until Resume) always is. */

@@ -46,6 +46,11 @@ import {
   undoPlanControl,
   undoEndPlan,
   undoPlanApply,
+  pausedDates,
+  planInUseUntilUtc,
+  localMidnightUtcMs,
+  toIso,
+  toMs,
   type FinishedRef,
   type HistorySession,
   type PlanProposalContext,
@@ -496,6 +501,82 @@ describe('End plan and its Undo (Ben, 19 Oct: Library › Your plan; rule 2, rul
     return out;
   };
   const inRotation = (m: ReadonlyMap<string, Routine | null>) => rotationRoutines([...m.values()].filter((r): r is Routine => r !== null)).map((r) => r.name);
+
+  // Review plan-adapt B1: a pause running when the plan stops being in use ends with it, and its Undo reopens it.
+  it('End while paused closes the pause (later weeks are judged again); Undo of End reopens it', () => {
+    const { a, routines } = applied();
+    const p = pausePlan(a.next, { expectedVersion: 2, opId: 'pause-1', at: at(10), untilDate: null, tz: TZ });
+    if (p.kind !== 'write') throw new Error(p.kind);
+    const e = endPlan(p.next, { expectedVersion: 3, opId: 'end-1', at: at(4 * 86_400), routines });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    expect(e.next.pauses?.at(-1)).toMatchObject({ opId: 'pause-1', endedAtUtc: at(4 * 86_400).utc, endedBy: 'end' });
+    expect(PlanDraftSchema.safeParse(e.next).success).toBe(true);
+    // Paused days stop at End: the weeks after aren't paused.
+    expect(pausedDates(e.next.pauses, '2026-10-05', '2026-11-30', TZ).size).toBe(4);
+    // Even an open pause stored on an ended plan stops at End (the backstop).
+    const open = (e.next.pauses ?? []).map((x) => ({ ...x, endedAtUtc: null, endedBy: null }));
+    expect(pausedDates(open, '2026-10-05', '2026-11-30', TZ, planInUseUntilUtc(e.next)).size).toBe(4);
+    const after = new Map(routines);
+    for (const u of e.update) after.set(u.next.id, u.next);
+    const u = undoEndPlan(e.next, { expectedVersion: 4, opId: 'resume-1', at: at(4 * 86_400 + 60), routines: after, otherApplied: false });
+    if (u.kind !== 'write') throw new Error(u.kind);
+    expect(u.next.pauses?.at(-1)).toMatchObject({ opId: 'pause-1', endedAtUtc: null, endedBy: null });
+    expect(activePause(u.next, toMs(at(5 * 86_400).utc), TZ)).not.toBeNull();
+    // A pause Ben resumed before End is left as it was, by End and by its Undo.
+    const r = resumePlan(p.next, { expectedVersion: 3, opId: 'resume-p', at: at(86_400), tz: TZ });
+    if (r.kind !== 'write') throw new Error(r.kind);
+    const e2 = endPlan(r.next, { expectedVersion: 4, opId: 'end-2', at: at(4 * 86_400), routines });
+    if (e2.kind !== 'write') throw new Error(e2.kind);
+    expect(e2.next.pauses).toEqual(r.next.pauses);
+  });
+
+  it('a new plan applied over a paused one closes its pause; the new plan’s Undo puts the first back paused', () => {
+    const { a, routines } = applied();
+    const p = pausePlan(a.next, { expectedVersion: 2, opId: 'pause-1', at: at(10), untilDate: null, tz: TZ });
+    if (p.kind !== 'write') throw new Error(p.kind);
+    const second = { ...planOf(), id: id(972) };
+    const live2 = [...routines.values()].filter((r): r is Routine => r !== null);
+    const b = applyPlan(second, { expectedVersion: 1, versionN: 1, mode: 'add', opId: 'apply-b', at: at(2 * 86_400), live: live2, applied: [p.next] });
+    if (b.kind !== 'write') throw new Error(b.kind);
+    const sup = b.supersede[0]?.next as PlanDraft;
+    expect(sup.pauses?.at(-1)).toMatchObject({ endedAtUtc: at(2 * 86_400).utc, endedBy: 'end' });
+    expect(pausedDates(sup.pauses, '2026-10-05', '2026-11-30', TZ, planInUseUntilUtc(sup)).size).toBe(2);
+    const back = new Map(routines);
+    for (const r of b.create) back.set(r.id, r);
+    const u = undoPlanApply(b.next, { expectedVersion: 2, opId: 'undo-b', at: at(2 * 86_400 + 60), routines: back, plans: new Map([[sup.id, sup]]) });
+    if (u.kind !== 'write') throw new Error(u.kind);
+    expect(u.restore[0]?.next.pauses?.at(-1)).toMatchObject({ opId: 'pause-1', endedAtUtc: null, endedBy: null });
+  });
+
+  it('auto-resume reads the until date where Ben is now (a time-zone change moves it with him); an Undo of the pause after the auto-resume is stale', () => {
+    const { a } = applied();
+    const p = pausePlan(a.next, { expectedVersion: 2, opId: 'pause-1', at: at(10), untilDate: '2026-11-03', tz: TZ });
+    if (p.kind !== 'write') throw new Error(p.kind);
+    // 3 Nov 08:00 in Auckland is still 2 Nov in London.
+    const nov3Auckland = localMidnightUtcMs('2026-11-03', TZ) + 8 * 3_600_000;
+    const LONDON = 'Europe/London';
+    expect(autoResumeDue(p.next, nov3Auckland, TZ)).not.toBeNull();
+    expect(autoResumeDue(p.next, nov3Auckland, LONDON)).toBeNull();
+    expect(activePause(p.next, nov3Auckland, LONDON)).not.toBeNull();
+    const early = resumePlan(p.next, { expectedVersion: 3, opId: 'auto-1', at: { utc: toIso(nov3Auckland), tz: LONDON }, tz: LONDON, auto: true });
+    expect(early.kind).toBe('invalid');
+    const nov3London = localMidnightUtcMs('2026-11-03', LONDON);
+    const r = resumePlan(p.next, { expectedVersion: 3, opId: 'auto-1', at: { utc: toIso(nov3London + 3_600_000), tz: LONDON }, tz: LONDON, auto: true });
+    if (r.kind !== 'write') throw new Error(r.kind);
+    expect(r.next.pauses?.at(-1)).toMatchObject({ endedAtUtc: toIso(nov3London), endedBy: 'auto' });
+    // The pause card's Undo (made before the auto-resume) changes nothing now.
+    expect(undoPlanControl(r.next, { expectedVersion: 3, opId: 'undo-pause', at: { utc: toIso(nov3London + 7_200_000), tz: LONDON }, targetOpId: 'pause-1' }).kind).toBe('stale');
+    expect(undoPlanControl(r.next, { expectedVersion: 4, opId: 'undo-pause-2', at: { utc: toIso(nov3London + 7_200_000), tz: LONDON }, targetOpId: 'pause-1' }).kind).toBe('stale');
+  });
+
+  it('End after a dated pause’s date (before the auto-resume write) closes it at its date', () => {
+    const { a, routines } = applied();
+    const p = pausePlan(a.next, { expectedVersion: 2, opId: 'pause-1', at: at(10), untilDate: '2026-10-12', tz: TZ });
+    if (p.kind !== 'write') throw new Error(p.kind);
+    const e = endPlan(p.next, { expectedVersion: 3, opId: 'end-1', at: at(10 * 86_400), routines });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    expect(e.next.pauses?.at(-1)).toMatchObject({ endedAtUtc: toIso(localMidnightUtcMs('2026-10-12', TZ)), endedBy: 'auto' });
+  });
 
   it('End: the plan’s days leave the rotation (kept, with their history); the plan is ended, no longer in use; Up next has no plan days', () => {
     const { a, routines } = applied();

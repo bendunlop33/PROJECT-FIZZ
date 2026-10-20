@@ -184,9 +184,10 @@ export const PlanPauseSchema = z.object({
   fromUtc: UtcTimestampSchema,
   /** Local date the plan is back in use on (`2026-11-03`); null: until Resume. */
   untilDate: LocalDateSchema.nullable(),
-  /** Resumed early by Ben (or the auto-resume write on the first open after `untilDate`). */
+  /** Resumed early by Ben (or the auto-resume write on the first open after `untilDate`, or the plan's End / a new plan's Apply). */
   endedAtUtc: UtcTimestampSchema.nullable(),
-  endedBy: z.enum(['ben', 'auto']).nullable().optional(),
+  /** `end`: closed because the plan stopped being in use (End, or superseded); that write's Undo reopens it (review plan-adapt B1). */
+  endedBy: z.enum(['ben', 'auto', 'end']).nullable().optional(),
 });
 export type PlanPause = z.infer<typeof PlanPauseSchema>;
 
