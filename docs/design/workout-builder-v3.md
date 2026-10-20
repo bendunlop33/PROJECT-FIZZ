@@ -728,6 +728,25 @@ Advice never blocks or undoes Ben's change. He sometimes pairs things on purpose
 
 Room left for blocks: `Routine.planDay` and session `planDay` gain `blockId?` / `weekN?`; reviews are stored as their own records, facts separate from coach text.
 
+### 6.1 Auto-reviews (the judgement layer) [Ben, 20 Oct: "how can we overcome the judgement point? an auto review by AI"; agreed]
+Code drafts and enforces; the AI adds judgement at fixed points; code checks every number it proposes.
+- **When they run:** on app open (any connection; iOS background runs are unreliable on a free-provisioned app). The 7 am reminder makes the morning open the natural trigger. Results are cached; a review re-runs only when its inputs changed. Wi-Fi-only is an optional setting [Proposal].
+- **Pre-session (daily, opening Today):** readiness from real signals only: check-in score, yesterday's logged run, RPE drift vs target over recent sessions, missed reps, pain flags. Silent unless a clear signal (e.g. 3 sessions at RPE 9–10, a big rep miss, a hard run yesterday, a low check-in). When it speaks: one line on the session card with **Apply** (an offer, rule 3).
+- **Post-session (Summary):** next-session small changes applied with reason and Undo (existing rule 3 default).
+- **Weekly (Sunday evening or first open after):** sessions vs plan, sets per muscle vs plan, main-lift trends, runs; a short note plus any plan tweak as a proposal (Apply/Skip).
+- **Block (end of a training block, once blocks exist):** progress to goal, plateaus, deload due; next block proposed for approval.
+- **Feedback loops in code (no AI needed):** beating target RPE repeatedly nudges est. 1RM up, missing it nudges down; repeating the same edit suggests a template update; 3 stalled sessions flag the lift for the weekly review.
+- **Cost/honesty:** ChatGPT-plan route; light model for the daily check, stronger for weekly/block; never a paid route without asking (rule 7). No invented signals (rule 6). Not run → `Not reviewed` (rule 1); the code draft still stands.
+
+### 6.2 Reviews area in Progress [Ben, 20 Oct: "we will need a review area in the app then, maybe in progress"; Proposal for layout]
+Progress gets a **Reviews** section at the top, next to the goal-progress view:
+- **Latest:** this week's review (or the block review when one is due) as a card: verdict line, 3–5 facts, any open proposals with Apply/Skip.
+- **History:** a list by week (and block), each opening the full review; session reviews open from that workout in history.
+- **Goal:** goal, plan/block position, main-lift trend vs target, weekly sets per muscle vs range (facts only, est. 1RM labelled).
+- Today only ever shows the one-line pre-session nudge, linking here.
+Reviews are Your data (rule 10): stored as their own records with facts separate from coach text; included in backup/export/delete.
+
+
 ---
 
 ## 7. What this supersedes
@@ -749,6 +768,8 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 ---
 
 ## 8. Build slices (developer, in order)
+
+> **Order revised (Ben, 20 Oct):** after Today (v2) ships, build the weekly auto-review and the Reviews area in Progress next, then training blocks, then a replay test of the drafting rules against Ben's own logged history (run locally, never committed), before the polish slices. The slices below keep their content; this note sets the order.
 
 **S1 Schemas and limits.** §4.2–§4.8 fields, `BuilderGroup`, `builderGroupOf`, limits, migration 0030.
 - Old routines, drafts, memories and backups parse; a backup round-trip keeps templates, variations and day notes.
