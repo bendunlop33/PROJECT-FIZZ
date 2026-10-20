@@ -12,8 +12,9 @@ import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, DangerTextButton, PrimaryButton, StatusLine, TextField } from '../../ui';
 
-/** What the sheet did, for the caller's toast with Undo. */
-export type ActivitySaved = { kind: 'added' | 'edited' | 'deleted'; activityId: string; opId: string };
+import type { ActivitySaved } from '../../activity/activity-toast';
+
+export type { ActivitySaved };
 
 /** How far back or ahead the date wheel goes. */
 const DATE_RANGE_DAYS = 60;

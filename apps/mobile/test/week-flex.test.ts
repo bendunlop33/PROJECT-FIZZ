@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 
+import { activitySavedToast, type ActivityToast } from '../src/activity/activity-toast';
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
@@ -247,6 +248,54 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     if (logged.kind !== 'logged') throw new Error('log');
     expect((await s.coach.undo(logged.record.actionId, 'undo-offered')).result).toMatchObject({ status: 'written' });
     expect(await s.activities.recent()).toEqual([]);
+  });
+
+  it('Progress › Calendar: delete an activity, then the toast’s Undo brings it back; an edit’s Undo puts it back (review B2)', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    h.clockMs = Date.parse('2026-10-22T09:00:00.000Z');
+    const add = await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'done', date: '2026-10-21', durationS: null, distanceM: 18_000, effort: null }, opId: 'cal-run' });
+    if (!add.ok) throw new Error('add');
+    const onDay = async () => (await s.progress.calendar('2026-10'))?.view.activityDays['2026-10-21']?.map((r) => sp(r.detail)) ?? [];
+    expect(await onDay()).toEqual(['18 km']);
+    let shown: ActivityToast | null = null;
+    let n = 0;
+    const deps = {
+      undo: s.activities.undo,
+      newOpId: () => `toast-undo-${String((n += 1))}`,
+      changed: () => undefined,
+      show: (t: ActivityToast | null) => {
+        shown = t;
+      },
+    };
+
+    // Delete from the calendar's sheet: the toast says so, with Undo.
+    const del = await s.activities.remove({ activityId: add.activity.id, expectedVersion: add.activity.version, opId: 'cal-delete' });
+    expect(del.ok).toBe(true);
+    expect(await onDay()).toEqual([]);
+    const toast = activitySavedToast({ kind: 'deleted', activityId: add.activity.id, opId: 'cal-delete' }, deps);
+    expect(toast).toMatchObject({ text: 'Activity deleted', action: 'Undo' });
+    toast.onAction?.();
+    await vi.waitFor(async () => {
+      expect(await onDay()).toEqual(['18 km']);
+    });
+    expect(shown).toBeNull();
+    // A second tap on the same toast: one Undo (its op ID replays), the run stays.
+    toast.onAction?.();
+    await vi.waitFor(async () => {
+      expect((await s.activities.get(add.activity.id))?.opIds).toContain('toast-undo-1');
+    });
+    expect(await onDay()).toEqual(['18 km']);
+
+    // Edit from the calendar, then Undo: the fields as they were.
+    const cur = await s.activities.get(add.activity.id);
+    if (cur === null) throw new Error('gone');
+    expect(await s.activities.edit({ activityId: cur.id, expectedVersion: cur.version, fields: { ...cur.fields, distanceM: 21_000 }, opId: 'cal-edit' })).toMatchObject({ ok: true });
+    expect(await onDay()).toEqual(['21 km']);
+    activitySavedToast({ kind: 'edited', activityId: cur.id, opId: 'cal-edit' }, deps).onAction?.();
+    await vi.waitFor(async () => {
+      expect(await onDay()).toEqual(['18 km']);
+    });
   });
 
   it('only leg days: Legs anyway, and Why? names the run (the day before a planned one, the day after a done one)', async () => {

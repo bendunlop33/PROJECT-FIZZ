@@ -6,6 +6,7 @@ import { AskPill } from './coach/AskPill';
 
 import { ACTIVITY_COPY, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, recentRows as mergeRecent, RECENT_LIMIT, scoreText, toMs, type RecentActivityInput, type RecentWorkoutRow, type ResumeRow, type TodayMain } from '@fizz/domain';
 import type { Activity, SessionAggregate } from '@fizz/schemas';
+import { activitySavedToast } from '../activity/activity-toast';
 import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
 
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
@@ -120,18 +121,7 @@ export function TodayScreen() {
   function activitySaved(saved: ActivitySaved) {
     setActivitySheet(null);
     changed();
-    const undoOp = newUuid();
-    setToast({
-      text: saved.kind === 'deleted' ? ACTIVITY_COPY.deleted : ACTIVITY_COPY.saved,
-      action: ACTIVITY_COPY.undo,
-      onAction: () => {
-        setToast(null);
-        void services.activities.undo({ activityId: saved.activityId, targetOpId: saved.opId, opId: undoOp }).then((u) => {
-          changed();
-          if (!u.ok) setToast({ text: u.message });
-        });
-      },
-    });
+    setToast(activitySavedToast(saved, { undo: services.activities.undo, newOpId: newUuid, changed, show: setToast }));
   }
 
   async function openActivity(activityId: string) {

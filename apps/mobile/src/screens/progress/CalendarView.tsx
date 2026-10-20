@@ -6,7 +6,7 @@ import { nothingLoggedText, weekdayDayMonth, type ActivityRow, type CalendarSess
 import type { Activity } from '@fizz/schemas';
 
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { ActivitySheet } from '../activity/ActivitySheet';
+import { ActivitySheet, type ActivitySaved } from '../activity/ActivitySheet';
 import { useTheme } from '../../theme';
 import { AppText, Group, Icon, Row, StatusLine, TextButton } from '../../ui';
 
@@ -15,7 +15,7 @@ import { AppText, Group, Icon, Row, StatusLine, TextButton } from '../../ui';
  * mark on workout days, and the selected day's workouts, each opening its
  * Summary. Nothing here is planned or estimated.
  */
-export function CalendarView({ month, onMonth }: { month: string | null; onMonth: (m: string) => void }) {
+export function CalendarView({ month, onMonth, onActivitySaved }: { month: string | null; onMonth: (m: string) => void; onActivitySaved: (saved: ActivitySaved) => void }) {
   const theme = useTheme();
   const navigation = useNavigation();
   const [data, reload] = useScreenData((s) => s.progress.calendar(month ?? undefined));
@@ -180,10 +180,12 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
         onClose={() => {
           setEditing(null);
         }}
-        onSaved={() => {
+        onSaved={(saved) => {
           setEditing(null);
           changed();
           reload();
+          // The same toast with Undo as Today's (review B2).
+          onActivitySaved(saved);
         }}
       />
       {data.value.unreadable > 0 ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={`${String(data.value.unreadable)} ${data.value.unreadable === 1 ? 'workout couldn’t be read and isn’t' : 'workouts couldn’t be read and aren’t'} counted.`} /> : null}
