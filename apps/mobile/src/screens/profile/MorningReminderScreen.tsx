@@ -1,15 +1,15 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useState } from 'react';
-import { Linking, Pressable, Switch, View } from 'react-native';
+import { AppState, Linking, Pressable, Switch, View } from 'react-native';
 
-import { ALL_WEEKDAYS, clockText, localDateOf, localTimeUtcMs, reminderOn, reminderTimeText, toggleReminderDay, toMs, weekdayShort, type MorningReminderSettings } from '@fizz/domain';
+import { ALL_WEEKDAYS, clockText, localDateOf, localTimeUtcMs, reminderOn, reminderTimeText, toggleReminderDay, toMs, weekdayLong, weekdayShort, type MorningReminderSettings } from '@fizz/domain';
 
 import { expoReminderPort, type AlertPermission } from '../../alerts/notifier';
 import { dateAt } from '../../clock';
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { morningReminderOf } from '../../device/prefs';
-import { NOTIFICATIONS_OFF_LINE, showNotificationsOff, turnReminderOn } from '../../reminders/morning';
+import { NOTIFICATIONS_OFF_LINE, onAppActive, showNotificationsOff, toggleMorningReminder, watchPermission, type ReminderPort } from '../../reminders/morning';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Group, Icon, Row, Screen, StatusLine, TEXT_PRESSED_OPACITY, TextButton } from '../../ui';
@@ -19,7 +19,7 @@ import { AppText, Chip, Group, Icon, Row, Screen, StatusLine, TEXT_PRESSED_OPACI
  * picks, on the days he picks. Saved on this phone. iOS is asked for
  * notification permission only when he turns it on.
  */
-export function MorningReminderScreen() {
+export function MorningReminderScreen({ port = expoReminderPort }: { port?: ReminderPort } = {}) {
   const theme = useTheme();
   const services = useServices();
   const { prefs, update } = useDevicePrefs();
@@ -27,21 +27,8 @@ export function MorningReminderScreen() {
   const [permission, setPermission] = useState<AlertPermission | 'unknown'>('unknown');
   const [wheelOpen, setWheelOpen] = useState(false);
 
-  // Read again on every visit: Ben may have changed it in iPhone Settings.
-  useFocusEffect(
-    useCallback(() => {
-      let alive = true;
-      void expoReminderPort
-        .permission()
-        .then((p) => {
-          if (alive) setPermission(p);
-        })
-        .catch(() => undefined);
-      return () => {
-        alive = false;
-      };
-    }, []),
-  );
+  // Read on every visit and every return to the app: Ben may have just allowed it in iPhone Settings (review S6).
+  useFocusEffect(useCallback(() => watchPermission({ read: () => port.permission(), onActive: onAppActive(AppState), set: setPermission }), [port]));
 
   const on = reminderOn(settings, permission);
   const save = (patch: Partial<MorningReminderSettings>) => {
@@ -49,12 +36,13 @@ export function MorningReminderScreen() {
   };
 
   async function toggle(next: boolean) {
-    if (!next) {
-      save({ on: false });
-      return;
-    }
-    save({ on: true });
-    setPermission(await turnReminderOn(expoReminderPort).catch((): AlertPermission => 'denied'));
+    const asked = await toggleMorningReminder(next, {
+      save: (v) => {
+        save({ on: v });
+      },
+      port,
+    });
+    if (asked !== null) setPermission(asked);
   }
 
   const now = services.now();
@@ -117,12 +105,13 @@ export function MorningReminderScreen() {
       </View>
 
       {on ? (
-        <View style={{ flexDirection: 'row', gap: theme.space['1'] }} accessibilityLabel="Days">
+        <View style={{ flexDirection: 'row', gap: theme.space['1'] }}>
           {ALL_WEEKDAYS.map((d) => (
             <Chip
               key={d}
               grow
               label={weekdayShort(d)}
+              accessibilityLabel={weekdayLong(d)}
               selected={settings.days.includes(d)}
               onPress={() => {
                 save({ days: toggleReminderDay(settings.days, d) });

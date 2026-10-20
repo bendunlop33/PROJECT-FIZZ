@@ -167,6 +167,13 @@ export function weekdayShort(d: Weekday): string {
   return DAY_SHORT[d];
 }
 
+const DAY_LONG: Record<Weekday, string> = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
+
+/** `Monday`: a day chip's VoiceOver label (review N1). */
+export function weekdayLong(d: Weekday): string {
+  return DAY_LONG[d];
+}
+
 /** Profile's row: `07:00 · Every day`, `06:30 · Mon, Wed, Fri`, `Weekdays`, or `Off`. */
 export function reminderRowLine(settings: MorningReminderSettings, on: boolean): string {
   if (!on) return 'Off';
