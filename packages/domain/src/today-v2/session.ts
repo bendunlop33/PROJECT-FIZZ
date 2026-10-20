@@ -152,7 +152,7 @@ export function stepTodayMinutes(minutes: number, delta: -1 | 1): number {
 }
 
 /** Abs on/off as Ben left it: `null` again when it matches the plan (so `plan: on/off` hides). */
-export function toggleTodayAbs(controls: TodayControls, template: TodayTemplate): TodayControls {
+export function toggleTodayAbs(controls: TodayControls, template: Pick<TodayTemplate, 'absPlan'>): TodayControls {
   const on = !(controls.abs ?? template.absPlan);
   return { ...controls, abs: on === template.absPlan ? null : on };
 }

@@ -152,7 +152,7 @@ export type RootStackParams = {
    * `routineOf`: start that routine with next targets (premium-feel §2.6).
    */
   CheckIn:
-    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string }
+    | { mode: 'start'; gymId: string; repeatOf?: string; nextOf?: string; routineOf?: string; /** (Today v2) Today's session card: the builder draft it committed. */ coachDraftOf?: string }
     | { mode: 'edit'; checkInId: string }
     /**
      * Over the Workout overview (workout-overview §2.2): `What's up?` for a
@@ -220,6 +220,13 @@ export type RootStackParams = {
   Coach: { entry: CoachEntry; focus?: boolean; build?: boolean; draft?: string };
   /** Exercise detail over a past workout's Summary or the Workout overview (`History`). */
   ExerciseProgress: ExerciseDetailParams;
+  /**
+   * (Workout builder v3 §2.3) The builder on Your workout with this draft (Today's `Edit`). MERGE NOTE: the builder
+   * stream registers the screen; Today checks the route exists before it navigates.
+   */
+  BuilderWorkout: { draftId: string };
+  /** (Workout builder v3 §2.2) The builder on Set up (`Build your own`), Day = the card's day when given. MERGE NOTE: as above. */
+  BuilderSetup: { dayId?: string } | undefined;
 };
 
 /**
