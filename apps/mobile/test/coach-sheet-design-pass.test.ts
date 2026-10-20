@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { AT_BOTTOM_SLOP, isAtBottom, replyText, stampedKeys, stickToEnd, type ThreadRow } from '../src/coach/sheet-view';
+import { AT_BOTTOM_SLOP, isAtBottom, replyText, stampedKeys, stickToEnd, transcriptFollow, type ThreadRow } from '../src/coach/sheet-view';
 
 /**
  * Design pass batch 4 (Ben approved 20 Oct): the coach sheet. The transcript
@@ -32,6 +32,28 @@ describe('4.1 sticky end', () => {
     expect(stickToEnd({ atBottom: false, added: true, starters: false })).toBe(true);
     expect(stickToEnd({ atBottom: true, added: false, starters: false })).toBe(true);
     expect(stickToEnd({ atBottom: true, added: true, starters: true })).toBe(false);
+  });
+
+  it('another conversation opens at its end, even after scrolling up in a longer one (review S2)', () => {
+    const t = transcriptFollow();
+    t.thread('a');
+    expect(t.follow(12, false)).toBe(true);
+    // Ben scrolls up in A; a Why? panel opening there doesn't jump.
+    t.scrolled(false);
+    expect(t.follow(12, false)).toBe(false);
+    // He picks B, which has fewer rows: it still opens at its end.
+    t.thread('b');
+    expect(t.follow(4, false)).toBe(true);
+    // The same thread again is not a reset.
+    t.scrolled(false);
+    t.thread('b');
+    expect(t.follow(4, false)).toBe(false);
+    // New conversation (no thread yet) also starts at the end.
+    t.thread(null);
+    expect(t.follow(0, false)).toBe(true);
+    // The empty thread's starter chips still never scroll.
+    t.thread('c');
+    expect(t.follow(0, true)).toBe(false);
   });
 });
 

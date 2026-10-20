@@ -681,3 +681,33 @@ export function answerSaveOf(actionId: string, profile: { recentOps: readonly st
   if (profile.recentOps.includes(`${actionId}:main-lift-undo`)) return { state: 'undone', canUndo: false };
   return { state: 'saved', canUndo: profile.recentOps.at(-1) === save };
 }
+
+/**
+ * The transcript's follow state (design pass 4.1, review S2): whether Ben is
+ * at the end, and how much content was shown. `thread` resets it, so another
+ * (or a new) conversation always opens at its end, even after Ben scrolled up
+ * in a longer one.
+ */
+export function transcriptFollow() {
+  let atBottom = true;
+  let shown = 0;
+  let threadKey: string | null | undefined;
+  return {
+    /** The thread shown now; a different one starts over at the end. */
+    thread: (key: string | null | undefined): void => {
+      if (key === threadKey) return;
+      threadKey = key;
+      atBottom = true;
+      shown = 0;
+    },
+    scrolled: (isBottom: boolean): void => {
+      atBottom = isBottom;
+    },
+    /** Whether this layout or size change scrolls to the end. */
+    follow: (count: number, starters: boolean): boolean => {
+      const added = count > shown;
+      shown = count;
+      return stickToEnd({ atBottom, added, starters });
+    },
+  };
+}

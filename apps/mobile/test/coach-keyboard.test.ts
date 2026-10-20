@@ -50,7 +50,8 @@ describe('coach sheet keyboard (build 131)', () => {
     // Design pass 4.1: only while Ben is at the end (or something new was added): `follow` → stickToEnd.
     expect(transcript).toContain('onContentSizeChange={follow}');
     expect(transcript).toContain('onLayout={follow}');
-    expect(screen).toContain('if (stickToEnd({ atBottom: atBottom.current, added, starters })) scroll.current?.scrollToEnd({ animated: false });');
+    expect(screen).toContain('followState.thread(threadId);');
+    expect(screen).toContain('if (followState.follow(contentCount, starters)) scroll.current?.scrollToEnd({ animated: false });');
     // Offset by where the page sheet starts in the window (design pass 0.4).
     expect(screen).toContain('<SheetKeyboardAvoidingView');
   });

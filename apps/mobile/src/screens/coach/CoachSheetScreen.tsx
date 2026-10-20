@@ -23,7 +23,7 @@ import {
   isAtBottom,
   replyText,
   stampedKeys,
-  stickToEnd,
+  transcriptFollow,
   type WorkoutChipContext,
   startLiveTurn,
   statusView,
@@ -126,8 +126,7 @@ export function CoachSheetScreen() {
   const sendGuard = useRef(0);
   const scroll = useRef<ScrollView>(null);
   /** Design pass 4.1: the transcript follows new content only while Ben is at its end. */
-  const atBottom = useRef(true);
-  const shownCount = useRef(0);
+  const followState = useRef(transcriptFollow()).current;
   const keyboardUp = useKeyboardVisible();
   const { fontScale, height: windowHeight } = useWindowDimensions();
   /**
@@ -639,9 +638,9 @@ export function CoachSheetScreen() {
   const contentCount = rows.length + (live === null ? 0 : 1 + live.cards.length) + (building === null ? 0 : 1);
   const starters = empty && chips.length > 0 && !showBuild;
   const follow = (): void => {
-    const added = contentCount > shownCount.current;
-    shownCount.current = contentCount;
-    if (stickToEnd({ atBottom: atBottom.current, added, starters })) scroll.current?.scrollToEnd({ animated: false });
+    // Review S2: another conversation (or a new one) opens at its end.
+    followState.thread(threadId);
+    if (followState.follow(contentCount, starters)) scroll.current?.scrollToEnd({ animated: false });
   };
   const stamps = stampedKeys(rows, (utc, tz) => formatTime(toMs(utc), tz));
 
@@ -690,7 +689,7 @@ export function CoachSheetScreen() {
         onLayout={follow}
         onScroll={(e) => {
           const n = e.nativeEvent;
-          atBottom.current = isAtBottom({ contentOffsetY: n.contentOffset.y, contentHeight: n.contentSize.height, viewportHeight: n.layoutMeasurement.height });
+          followState.scrolled(isAtBottom({ contentOffsetY: n.contentOffset.y, contentHeight: n.contentSize.height, viewportHeight: n.layoutMeasurement.height }));
         }}
         scrollEventThrottle={64}
         contentContainerStyle={{ padding: theme.components.screenMargin, flexGrow: 1 }}
