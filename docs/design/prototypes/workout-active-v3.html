@@ -48,6 +48,8 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .cell:focus { outline: none; border-color: var(--accent); }
 .tr.wu .cell { color: var(--text2); background: #1E1B19; }
 .tr.done .cell { background: none; color: var(--done); }
+@keyframes flash { from { background: rgba(237,229,218,.16); } to { background: transparent; } }
+.tr.new { animation: flash 1.2s ease-out; border-radius: 10px; }
 .tr.cur .sn { color: var(--text); font-weight: 700; }
 .tr.cur .tick { border-color: var(--accent); color: var(--accent); border-width: 2px; }
 .rpe { text-align: center; color: var(--text3); font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -159,7 +161,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     const c = cur();
     boxes.forEach((b, k) => { b.style.maxHeight = v[k] < n[k] ? `${v[k] * h}px` : ''; b.classList.toggle('lim', v[k] < n[k]);
       const rows = [...b.querySelectorAll('.tr')]; let idx = rows.findIndex((r) => !r.classList.contains('done')); if (c && c.k === k) idx = rows.findIndex((r) => r.dataset.i === String(c.i)); if (idx < 0) idx = rows.length - 1;
-      const showAbove = Math.min(3, v[k] - 1, idx); const first = Math.max(0, Math.min(idx - showAbove, n[k] - v[k])); b.scrollTop = first * h; mark(b); });
+      const showAbove = Math.min(3, v[k] - 1, idx); const first = Math.max(0, Math.min(idx - showAbove, n[k] - v[k])); b.scrollTop = first * h; if (s.added && s.added.k === k) { const nr = b.querySelector(`.tr[data-i="${s.added.i}"]`); if (nr) { b.scrollTop = b.scrollHeight; nr.classList.add('new'); } } mark(b); }); s.added = null;
   }
   const mark = (b) => { b.classList.toggle('up', b.scrollTop > 2); b.classList.toggle('down', b.scrollTop + b.clientHeight < b.scrollHeight - 2); };
   app.addEventListener('scroll', (ev) => { if (ev.target.classList?.contains('rows')) mark(ev.target); }, true);
@@ -208,7 +210,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     if (a === 'r-') setEnd(Math.max(Date.now() + 1000, s.restEnd - 30000));
     if (a === 'r+') setEnd(s.restEnd + 30000);
     if (a === 'skip') setEnd(0);
-    if (a === 'add') { const e = ROUNDS[s.r].ex[t.dataset.k]; const l = e.sets[e.sets.length - 1]; e.sets.push({ ...l, done: false }); }
+    if (a === 'add') { const e = ROUNDS[s.r].ex[t.dataset.k]; const l = e.sets[e.sets.length - 1]; e.sets.push({ ...l, done: false, t: l.t === 'W' ? '' : l.t }); s.added = { k: Number(t.dataset.k), i: e.sets.length - 1 }; s.toast = 'Set added'; }
     if (a === 'go') { s.r = Number(t.dataset.v); s.sheet = false; s.anchor = true; }
     if (a === 'sheet') s.sheet = true;
     if (a === 'close') { s.sheet = false; s.menu = false; s.why = null; }
