@@ -119,4 +119,13 @@ describe('createPrefsHolder (review S2)', () => {
     expect(seen.at(-1)).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
     expect(JSON.parse(f.text ?? 'null')).toEqual({ themeDirection: 'A', guideAnimations: false, alertsAsk: 'undetermined', workoutView: 'table', librarySegment: 'exercises', voice: DEFAULT_VOICE_PREFS, targetsHit: false });
   });
+
+  it('Targets hit on (Profile switch) is saved to the prefs file and read back on (review targets-hit N2)', async () => {
+    const f = file(JSON.stringify(DEFAULT_PREFS));
+    const holder = createPrefsHolder(f.port(), () => undefined);
+    await holder.load();
+    await holder.update({ targetsHit: true });
+    expect((JSON.parse(f.text ?? 'null') as DevicePrefs).targetsHit).toBe(true);
+    expect(parsePrefs(f.text ?? '').targetsHit).toBe(true);
+  });
 });
