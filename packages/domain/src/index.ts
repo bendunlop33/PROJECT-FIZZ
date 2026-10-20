@@ -110,3 +110,4 @@ export * from './spoken-reply';
 export * from './cardio';
 export * from './quick-gym';
 export * from './builder';
+export * from './today-v2';
