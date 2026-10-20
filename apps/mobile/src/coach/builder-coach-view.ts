@@ -7,6 +7,8 @@
  */
 
 import { BUILDER_STATUS_WORD, type BuilderCoachReach, type BuilderProposal, type MixPick, type NudgeOffer, type ReviewNote } from '@fizz/coach';
+import type { Memory } from '@fizz/schemas';
+
 import type { BuilderReviewResult, NudgeResult } from './builder-coach-service';
 
 // ---------------------------------------------------------------------------
@@ -189,4 +191,19 @@ export function mixRowView(input: { from: string; to: string; pick: MixPick; ind
 /** The offer's lines for an Apply on Today (proposal state from the card). */
 export function offerCardView(offer: NudgeOffer, state: ProposalState): ProposalCardView {
   return proposalCardView(offer.proposal, state);
+}
+
+// ---------------------------------------------------------------------------
+// Day notes (`From last review`, §2.9): which show, and which go to the coach
+
+/**
+ * The active day notes for a plan day (split day + main lift) on a local date, oldest first: shown as
+ * `From last review` with ✕, and sent to the coach as `BuilderCoachExtras.dayNotes`. One Ben hid
+ * today (✕, `hiddenOn`) is neither shown nor sent that day.
+ */
+export function dayNotesFor(memories: readonly Memory[], splitDayId: string, mainLiftExerciseId: string | null, localDate: string): { memoryId: string; version: number; text: string }[] {
+  return memories
+    .filter((m) => m.status === 'active' && m.dayNote !== undefined && m.dayNote.splitDayId === splitDayId && m.dayNote.mainLiftExerciseId === mainLiftExerciseId && !m.dayNote.hiddenOn.includes(localDate))
+    .sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : 0))
+    .map((m) => ({ memoryId: m.id, version: m.version, text: m.text }));
 }

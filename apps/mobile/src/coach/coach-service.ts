@@ -960,7 +960,8 @@ export function createCoachService(deps: CoachServiceDeps) {
         ...(session === null ? {} : { ruleTargetRpe: await ruleRpesOf(session).catch(() => ({})) }),
         painFlags: await repos().painFlags.listActive(p.id),
         checkIn,
-        memories: await coachStore().listMemories(p.id),
+        // (Builder v3) Day notes go only with their day (`dayNotesFor`), so ✕ keeps one from the coach that day.
+        memories: (await coachStore().listMemories(p.id)).filter((m) => m.dayNote === undefined),
         catalogue: [],
         // Coaching knowledge: only the chat rules Ben approved are sent (never memories, rule 10).
         playbookCandidates: await coachStore().listPlaybookCandidates().catch(() => []),
@@ -1249,7 +1250,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           .map((e) => loadReferenceView(e.catalogueKey ?? e.id, e.name, refsFor(e), painFor(e) !== null))
           .filter((v) => v.last.length > 0 || v.estimate !== null || v.firstTimeMax !== null)
       : [];
-    const memories = (await coachStore().listMemories(p.id).catch(() => [] as Memory[])).map((m) => ({ text: m.text, savedOn: localDateOf(toMs(m.createdAtUtc), at.tz) }));
+    const memories = (await coachStore().listMemories(p.id).catch(() => [] as Memory[])).filter((m) => m.dayNote === undefined).map((m) => ({ text: m.text, savedOn: localDateOf(toMs(m.createdAtUtc), at.tz) }));
     const recentSplits = recent
       .filter((a) => nowMs - toMs(a.session.startedAt.utc) <= 14 * 86_400_000)
       .flatMap((a) => {

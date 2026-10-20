@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { createBuilderLoadGuard, type BuilderCoachSnapshot, type CoachModelPort, type ModelEvent, type ModelRequest, type SetupCoachContext, type SetupFill } from '@fizz/coach';
@@ -8,7 +11,7 @@ import { openNodeDriver } from '@fizz/persistence/node';
 import type { ZonedTimestamp } from '@fizz/schemas';
 
 import { createBuilderCoachService, createDayNotes, type BuilderCoachWorld, type BuilderWriteResult } from '../src/coach/builder-coach-service';
-import { askBarView, builderReviewView, coachWhyLine, mixRowView, nudgeCardView, nudgeReviewStatus, proposalCardView } from '../src/coach/builder-coach-view';
+import { askBarView, builderReviewView, coachWhyLine, dayNotesFor, mixRowView, nudgeCardView, nudgeReviewStatus, proposalCardView } from '../src/coach/builder-coach-view';
 import type { CoachAvailability } from '../src/coach/coach-service';
 import { createDictation, type SpeechInputPort } from '../src/voice/dictation';
 
@@ -232,6 +235,11 @@ describe('Coach review (§2.9) and day notes', () => {
     expect(await save()).toEqual({ saved: 1, skipped: 0 });
     const memories = await h.store.repos.coach.listMemories(OWNER);
     expect(memories.map((m) => [m.text, m.dayNote?.splitDayId, m.dayNote?.mainLiftExerciseId])).toEqual([['Include abs', 'chest', 'bench']]);
+    // Shown next time on Chest · bench (and sent with that day only); ✕ today hides it today; not on Chest · incline.
+    expect(dayNotesFor(memories, 'chest', 'bench', '2026-10-27').map((n) => n.text)).toEqual(['Include abs']);
+    expect(dayNotesFor(memories, 'chest', 'incline_bb', '2026-10-27')).toEqual([]);
+    const hidden = memories.map((m) => (m.dayNote === undefined ? m : { ...m, dayNote: { ...m.dayNote, hiddenOn: ['2026-10-27'] } }));
+    expect(dayNotesFor(hidden, 'chest', 'bench', '2026-10-27')).toEqual([]);
   });
 
   it('no AI: facts and Plan section still show; no verdict, no suggestions, no notes; header Offline', async () => {
@@ -340,5 +348,23 @@ describe('Mix it up and tap-to-talk', () => {
     expect(ok.state()).toBe('idle');
     expect(started).toBe(1);
     expect(askBarView('setup', 'ok', 'listening').mic).toMatchObject({ glyph: 'mic.fill', accessibilityLabel: 'Stop listening' });
+  });
+});
+
+describe('source checks (feel and device behaviour go on Ben’s checklist)', () => {
+  const SRC = join(__dirname, '..', 'src');
+  const flat = (f: string) => readFileSync(join(SRC, f), 'utf8').replace(/\s+/g, ' ');
+  it('the ask bar: two buttons with VoiceOver labels, 48 pt targets, a live region while listening', () => {
+    const bar = flat('ui/coach-ask-bar.tsx');
+    expect(bar).toContain('const BAR_HEIGHT = 48;');
+    expect(bar.match(/accessibilityRole="button"/g)?.length).toBe(2);
+    expect(bar).toContain("accessibilityLiveRegion={listening ? 'polite' : 'none'}");
+    expect(bar).toContain('Linking.openSettings()');
+  });
+  it('speech is on-device only, checked before every start; no server fallback', () => {
+    const speech = flat('voice/on-device-speech.ts');
+    expect(speech).toContain('requiresOnDeviceRecognition: true');
+    expect(speech).toContain('!ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()');
+    expect(speech).not.toMatch(/requiresOnDeviceRecognition: false/);
   });
 });
