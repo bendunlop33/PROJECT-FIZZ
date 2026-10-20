@@ -1,13 +1,13 @@
 # Competitor landscape
 
-Written by the `competitor-researcher`, 9 Oct 2026. Pass 2 (same day) applied the completeness critique: it adds Arvo, a "ChatGPT used directly" baseline, six more apps and a UK store view, and fixes unsourced cells. Later passes should extend and correct this file rather than start over. The changes are listed under "Revision log" at the end.
+Written by the `competitor-researcher`, 9 Oct 2026. Pass 2 (same day) applied the completeness critique: it adds Arvo, a "ChatGPT used directly" baseline, six more apps and a UK store view, and fixes unsourced cells. Pass 3 (20 Oct 2026) adds "Supersets and the in-workout screen", covering eight loggers. Later passes should extend and correct this file rather than start over. The changes are listed under "Revision log" at the end.
 
 ## Summary
 
 - **Coverage.** 55 apps, a "ChatGPT used directly" baseline and 6 one-line notes, all checked on 2026-10-09 against vendor pages, US and GB App Store listings and help docs. User evidence comes only from the App Store, Trustpilot, forums and GitHub (Reddit can't be fetched, and there was no web search in pass 2), so the complaints are examples, not a survey.
 - **The market has caught up.** A rest Live Activity is standard (Hevy free; Strong, Arvo and GymStreak too). Equipment-aware loads exist in MacroFactor, Gravl, Alpha, Liftosaur and (vendor claim) Arvo. In-session AI that edits workouts exists in SensAI, Arvo, GymStreak and LiftTrack Max. Ben's realistic alternative, his ChatGPT Pro voice mode plus a free logger such as Hevy (whose free ChatGPT app saves plans), costs him nothing extra.
 - **The headline claim survives only in narrowed form [Inference].** No app checked documents all of these together: version-checked proposals that are rejected when stale, Undo on in-session coach edits, a max for every machine, and a labelled no-AI fallback. Arvo comes closest (in-session AI edits, plates per gym, Undo for plan activation only), but its "client-side AI" claim is contradicted by its own privacy policy, and GymSmarter's version is designed, not built.
-- **Top recommendations:** get the rest Live Activity working (with an actionable notification as fallback), build competitor-failure tests, show "Why this number?" on every target, get Ben's FitNotes export now, and (new) have Ben run four brief scenarios in ChatGPT voice mode before the coach is built.
+- **Top recommendations:** get the rest Live Activity working (with an actionable notification as fallback), build competitor-failure tests, show "Why this number?" on every target, get Ben's FitNotes export now, and have Ben run four brief scenarios in ChatGPT voice mode before the coach is built. **Supersets (pass 3, 20 Oct):** every logger links exercises by hand and auto-advances a→b. None of the eight checked documents rule-based pairing, fitting the time with supersets, a single rest after the round, or both partners on one page, so GymSmarter's design is ahead but untested; see #20–#24. Pass 3b (10 adaptive and AI coaches) changes one point: Fitbod and Gravl auto-pair behind a setting, and Arvo's AI applies supersets itself, so auto-pairing isn't unique (#25).
 - **The brief needs changes** (see "Proposed brief changes"): hold "Proposed advantage" (change 2) until that baseline check; add "ChatGPT used directly" as the first competitor row; refresh the table and the LiftTrack section; add exclusion flags (low evidence) and validation scenarios; and say that only Ben can test competitors.
 
 ## How to read this
@@ -1121,6 +1121,181 @@ From vendor pages checked in the critic pass (2026-10-09). None changes a recomm
 - **Third Space app** (Ben's likely gym): v6.7.2 (28 Sep 2026); 4.8 from 3.9K GB. Video programmes, attendance streaks and bookings. No workout logging, AI, Health integration or equipment information is listed ([GB](https://apps.apple.com/gb/app/third-space/id1440461613)).
 - **Not checked yet:** Apple Fitness+, TrainHeroic (Garmin-owned since 22 Jul 2026, see Garmin), Smartgym, Zing.
 
+## Supersets and the in-workout screen (pass 3, 20 Oct 2026)
+
+Ben asked whether other apps set up supersets the way GymSmarter does. GymSmarter's design: `workout-builder-v3.md` §2.2–§2.4, §3.2, §3.5–§3.6, and `workout-table-v3.md`. All URLs below were checked on **2026-10-20**. Web search was available in this pass, but help.hevyapp.com and help.fitbod.me still returned 403 and support.jefit.com returned 503. Where those pages are cited, the wording comes from the search engine's snippet of the page, and is marked "(snippet)". Reddit still couldn't be opened. "Not documented" means I didn't find it.
+
+### What GymSmarter does (designed and approved, not yet built)
+
+- **Set-up.** In the builder, a `Supersets` on/off switch. With it on, code pairs accessories by fixed rules: never the main lift, never two heavy lifts, never abs with a heavy lift, never two exercises that share a muscle. Manual `Superset with next` / `Unlink`, numbered `3a`/`3b`.
+- **Time.** The time-fit uses supersets to shorten a session, and freed time gives abs' slot to an arm partner.
+- **Rest.** One rest setting per superset, `After each round`, with no rest between a and b.
+- **Screen.** One round per page, with both exercises on screen. Each exercise's sets scroll in their own box, so the round fits one screen (at least 2 rows, aiming for 3). Swipe between rounds; a round strip with ✓ for done rounds.
+- **Sets.** Set types (Warm-up, Working, Top set, Back-off, Drop) with a target RPE on every set.
+- **Coach.** The coach can propose a superset (Apply/Undo).
+
+### Superset matrix
+
+| App | Where you create it | Generated by app/AI | Time-driven | Label | a→b auto-advance | Rest model | In-workout layout | Both visible together | Set types / per-set target RPE |
+|---|---|---|---|---|---|---|---|---|---|
+| **GymSmarter (designed)** | Builder (switch + rules), builder and workout menus | Yes: rule-based pairing; coach proposals | Yes | `3a`/`3b`, numbered rounds | Yes | One `After each round` value per superset | One round per page; per-exercise scroll boxes | Yes, by design | 5 types; target RPE per set |
+| Hevy | Routine or live workout [S1] | Not documented (Trainer has a duration setting) [S7] | ✗ (not documented) | Colour per superset [S1] | Opt-in setting [S2] | Per exercise; workaround: timer on the last exercise only [S5] | One scrolling list [S2] | Not guaranteed [Inference] | Normal, warm-up, failure, drop [S3]; RPE logged; targets not documented |
+| Strong | Live workout (iOS and Android differ) [S8] | ✗ | ✗ | Vertical line on the left [S8] | Via `Next` button [S8] | Not documented for supersets | Not documented (list) [Inference] | ? | Warm-up; RPE logged 6–10 [S9] |
+| FitNotes (Android) | Live workout (`Add To Group`) [S10] | ✗ | ✗ | Coloured bar [S10] | Yes, wraps to the first [S10] | Per-exercise default only [S10] | One exercise at a time [Inference] | ✗ [Inference] | None documented |
+| FitNotes 2 (iOS) | Workout or template (long-press, link icon) [S11, S12] | ✗ | ✗ | Coloured link icon [S11] | Yes [S11] | Per set / exercise / global; per-set override [S13] | Exercise tab bar, swipe [S13] | ✗ [Inference] | Warm-up flag; RPE and RIR logged [S13] |
+| JEFIT | Exercise screen ⋯ menu; "link as many as you like" [S14] | Not documented | ✗ | Chain icon [User, S15] | Not documented | Per exercise | One exercise per screen, swipe [S14] | ✗ [Inference] | Warm-up, drop, failure, working per set [S16]; RPE once per session |
+| Boostcamp | Programme builder; tracker [S17] | Not documented | ✗ | Not documented | Not documented | "Between sets of the same exercise only" [S18] | Not documented | ? | Drop, warm-up; RPE 6–10 logged; RPE / RPE range / %1RM targets in builder [S17] |
+| Liftosaur | Programme text (`superset: A`), editor pill, mid-workout (today only) [S19] | ✗ (its MCP could write it) | ✗ | Group letter or name; coloured line under thumbnails [S19] | Yes; warm-ups don't advance; finished exercises skipped [S19] | A "superset timer" after **every** working set in the group; per-set override [S19] | One exercise card per page; swipe; thumbnail strip with `2/5` [S20] | ✗ | Labels like `(Main)`; target RPE per set `@8` [S21] |
+| StrengthLog | Live workout (`+Special set`); can import one from a past workout [S22] | ✗ | ✗ | "Superset" vs "Circuit" blocks; round ✓ for circuits [S22] | Not documented | Not documented | Not documented | ? | Drop set type [S23]; warm-ups; RPE/RIR (Premium) [S24] |
+| Lyfta | "Supersets, Giant sets or Grouped exercises" [S25] | ✗ | ✗ | Not documented | Not documented | Not documented | Not documented | ? | Warm Up, Failure, Drop, Negative, Left/Right; RPE logged [S25, S26] |
+| Fitbod (reference) | Manual groups, and automatic [S27] | **Yes**, via a "Training Format" setting (ML pairing) [S27, S28] | Not documented | ? | ? | ? | ? | ? | (see Fitbod section) |
+
+### Per-app notes
+
+#### Hevy
+1. **Create.**
+   - [Doc] In a routine or a live workout: ⋯ → `+ Add To Superset` → choose the partner. To add more, add another exercise to the same superset ("essentially creating a circuit"). Undo with `Remove From Superset` [S1]. A third exercise is added by tapping one already in the superset [S4].
+   - [Doc] Trainer (Pro) asks "How long do you want each workout to be?" and shows an estimated duration [S7]. Whether it builds supersets, or uses them to fit the time, is **not documented**.
+2. **Label.** [Doc] "Each superset gets a unique color" [S1]. No A1/A2 letters are documented.
+3. **Run.**
+   - [Doc] Smart Superset Scrolling is a setting (live-workout Settings, or Profile → Workouts). It "automatically scrolls to the next exercise of a superset when you mark one as complete", for any number of exercises [S2].
+   - [Doc] Rest is set **per exercise** and starts "once you mark a set as completed" for that exercise [S5]. The circuits help article says to "set a rest timer after the final exercise to mark the end of one full circuit" (snippet; help 403). So rest after the round is a **workaround** (timer off on a, on for b), not a setting for the superset.
+   - [Doc] Auto rest doesn't start if the next set is a Drop Set [S3].
+   - Rest per set was requested on [r/Hevy](https://www.reddit.com/r/Hevy/comments/1v1tuiv/feature_request_setspecific_rest_timers/) (not opened).
+4. **Layout.** [Doc] One scrolling list: completing a curl "will scroll down to the sets for the tricep extension" [S2]. [Inference] Both exercises show together only if they fit on screen. How done sets collapse is not documented.
+5. **Sets.** [Doc] Normal, Warm Up, Failure and Drop (a blue `D`) [S3]. An optional RPE column for logging [S2]. Target RPE per set is not documented.
+6. **Users.**
+   - [User] "Supersets and giant sets work ok, not perfect, but better than many apps" and "Timer sometimes feels clunky if you superset a lot" (forum, 5 Mar 2026) [S6].
+   - [User] Praise for linking exercises with the "superset" feature and labelling set types (US reviews, 2022 and 2025) ([US reviews](https://apps.apple.com/us/app/hevy-workout-tracker-gym-log/id1458862350?see-all=reviews)).
+
+#### Strong
+1. **Create.** [Doc] During a workout. On iPhone: Add Exercise → select several → `Superset` button. On Android: ⋯ → Create Superset → chain icon. Strong says the flows differ and it plans to "unify" them [S8]. Supersets in templates aren't covered by the article; a 2021 review says it "lets you superset" ([US reviews](https://apps.apple.com/us/app/strong-workout-tracker-gym-log/id464254577?see-all=reviews)). Nothing is generated.
+2. **Label.** [Doc] "a vertical line on the left side" of grouped exercises [S8].
+3. **Run.** [Doc] Tapping `Next` selects "the next set from the appropriate exercise" [S8]. Rest is per exercise, with separate warm-up and working values ([rest](https://help.strongapp.io/article/231-rest-timer)). Rest inside supersets is not documented.
+4. **Layout.** Not documented. [Inference] One list, like Hevy.
+5. **Sets.** [Doc] Warm-ups from the PRO calculator ([warm-up](https://help.strongapp.io/article/171-warm-up-calculator)). RPE 6–10 is logged per set and never acted on [S9]. Drop and failure types are claimed by a competitor's comparison page only [S17b].
+6. **Users.** No superset complaints found in the US reviews page.
+
+#### FitNotes (Android)
+1. **Create.** [Doc] Mid-workout: swipe in the Navigation Panel → `Add To Group` → `New Group` → `Add Exercise` → `Save` [S10]. Groups in routines are not documented on that page.
+2. **Label.** [Doc] "a coloured bar" [S10].
+3. **Run.** [Doc] After you save a set, it moves you to the next exercise in the group, and after the last one it returns to the first [S10]. Rest is a default per exercise (Exercise Notes). Rest for the group is not documented.
+4. **Layout.** [Inference] One exercise's screen at a time, so the partners aren't visible together.
+5. **Sets.** No set types or RPE are documented (see FitNotes above).
+6. **For import [Inference].** If Ben's FitNotes data has groups, check whether the CSV or `.fitnotes` backup carries them before mapping to GymSmarter supersets (brief §11: don't guess the format).
+
+#### FitNotes 2 (iOS)
+1. **Create.**
+   - [Doc] Long-press an exercise, tap the others, then tap the link icon [S11]. It works the same in templates [S12].
+   - Changelog: "Create supersets in a workout" (1.2.1); "Fix supersets missing in templates created from a workout" (3.1.0) [S13].
+2. **Label.** [Doc] "a colored link icon" [S11].
+3. **Run.**
+   - [Doc] "when you check a set as complete, it will automatically move to the next exercise in the superset" [S11] (also 1.4.1).
+   - [Doc] Rest comes from the set, the exercise or the global setting [S29]. A custom rest on a single set (v5); rest 0 turns the timer off for an exercise (1.4.3); "skip the rest timer for the final set" (v8) [S13].
+   - Rest for the superset is not documented. [Inference] Rest after the round needs rest 0 on a.
+4. **Layout.** [Doc] "Swipe on the exercise tab bar to switch between exercises" (1.5.1); "Scroll workout sets down as they are saved" (2.1.1); a sets editor per exercise [S13, S30]. [Inference] One exercise at a time.
+5. **Sets.** [Doc] A warm-up flag (excluded from graphs, stats and goals) and RPE/RIR, both under the set note's "Advanced" option (v5; negative RIR in v7) [S13, S30]. Drop and failure types are not documented.
+6. **Users.**
+   - [Doc] Fixes for "the 'next set' message that could be wrong sometimes when using supersets" (v5) and for superset bugs in the workout view (1.3.1) [S13].
+   - [User] "The main and workout menus could probably be designed a little better" (Sep 10, year not shown) ([US reviews](https://apps.apple.com/us/app/fitnotes-2-gym-workout-log/id1538896016?see-all=reviews)).
+
+#### JEFIT
+1. **Create.**
+   - [Doc] "click the 'superset' Edit button … select the exercises you wish to link … link as many exercises as you like" (old support article, snippet; 503) [S14b].
+   - [Doc] In the revamped workout screen, superset options are in the ⋯ menu [S14].
+   - Whether Adaptive Plans generate supersets is not documented.
+2. **Label.** [User] "a chain on the picture of the exercise" (Q&A, about 2023) [S15].
+3. **Run.** [Doc] After a set is logged, the timer panel switches to rest, with "NO simultaneous displays" [S14]. Auto-advance and rest within supersets are not documented.
+4. **Layout.** [Doc] "swiping left or right" between exercises, and the video area collapses [S14]. [Inference] One exercise per screen.
+5. **Sets.** [Doc] "assign a Set Type—Warm-up, Drop, Failure, or Working Sets—to every set in your routine" (7 Apr 2025) [S16]. RPE is logged once per session (see JEFIT above).
+6. **Users.** [User] "allows you to … create supersets" (GB review, 25 Dec 2024) ([GB](https://apps.apple.com/gb/app/jefit-gym-workout-plan-tracker/id449810000)). No superset complaints found.
+
+#### Boostcamp
+1. **Create.** [Doc] The free programme builder includes "supersets and phases", and the tracker lists "Supersets, drop sets, customizable warmup templates" [S17]. Mid-workout creation, and whether Pro's Personalized Programs (from a questionnaire) include supersets, are not documented.
+2. **Label, auto-advance and layout.** Not documented.
+3. **Rest.** [Doc] "Rest is counted between sets of the same exercise only, so an exercise with 4 sets has 3 rests", with a time per exercise that overrides the default (updated Oct 2026) [S18]. [Inference] There's no rest model for a superset round.
+4. **Sets.** [Doc] RPE 6–10 on any set, with a reps-in-reserve hint. Intensity targets can be "RPE, RPE range, or % of 1RM" in the builder [S17].
+
+#### Liftosaur (the closest pattern to GymSmarter's screen)
+1. **Create.** [Doc] Three ways:
+   - In the programme text: `superset: A`.
+   - In the editor: an "Enable superset" pill.
+   - Mid-workout: "Supersets with:" or cog → "Edit Superset". "Changes made here apply to this workout only. Your program stays as it was."
+   
+   Groups match only within one day [S19]. Nothing is generated or fitted to time.
+2. **Label.** [Doc] The group name is any string (`A`). "The thumbnails at the top get a colored line under them, one color per group." Each exercise shows "Supersets with: <next>" [S19].
+3. **Run.** [Doc]
+   - Each working set moves you to the next exercise in the group, then back to the first.
+   - "Warmup sets do not move you."
+   - Exercises with no sets left are skipped.
+   - "Sets are never locked."
+   - The superset timer "runs after every working set of an exercise in a group, instead of the Workout timer". It is empty by default, and a rest on a set overrides it [S19, S21b].
+   
+   **No rest per round is documented.**
+4. **Layout.** [Doc] One exercise card; "Swipe left or right to move between exercises, or tap a thumbnail in the strip at the top"; each thumbnail shows "`2/5`, and a check when the exercise is done"; long-tap to reorder; "the next unfinished set expands" [S20]. [Inference] The partners are never on screen together; you jump between cards.
+5. **Sets.** [Doc] Set labels up to 8 characters (`(Main)`, `(AMRAP)`); automatic warm-ups based on the first working set; a target RPE per set (`@8`), with `@8+` asking for the completed RPE [S21, S21b]. Drop sets are not documented.
+
+#### StrengthLog
+1. **Create.** [Doc] Mid-workout: `+Special set` → Superset (two exercises) or Circuit ("more than two"). You can import a superset from a previous workout. Circuits add rounds with "+" (version 4.0) [S22]. Supersets inside programmes are not documented.
+2. **Label.** [Doc] Separate Superset and Circuit blocks. "When all sets in a round are checked off, that round's number gets a checkmark" [S22].
+3. **Run.** Rest and auto-advance are not documented.
+4. **Layout.** [Doc] 8.1 (8 Apr, year not shown) redesigned the menus for exercise blocks and sets in workouts, and the notes say this adds an extra tap to some features. Supersets "now also show stats for both exercises"; 8.1.1 fixed long names not visible in the superset menu ([GB listing](https://apps.apple.com/gb/app/strengthlog-workout-tracker/id1434229662)).
+5. **Sets.** [Doc] Drop set as a set type ("switch the set type from working set to drop set", updated 22 Apr 2026) [S23]; warm-ups; RPE/RIR in Premium [S24].
+
+#### Lyfta
+- [Doc] "Create Supersets, Giant sets or Grouped exercises"; "Integrated Auto rest timer"; "Tag sets as Warm Up, Failure, Drop sets, Negative reps, Left and Right" [S25]. The GB listing adds RPE logging and AMRAP [S26].
+- How it's built, labelled, run and laid out: **not documented**.
+
+### Answer to Ben: how GymSmarter compares on supersets
+
+- **Common to all [Doc].** Linking exercises by hand in a template or mid-workout, and moving a→b→a after each set (Hevy as an opt-in setting; FitNotes, FitNotes 2 and Liftosaur by default). GymSmarter matches this and adds nothing new here.
+- **Not found elsewhere [Inference; absence of evidence]:**
+  1. **Pairing generated by rules in the builder** (main lift excluded, no two heavy lifts, no shared muscle). Only Fitbod auto-groups supersets, by its own ML, behind a setting [S27, S28]. No app among the eight documents one.
+  2. **Using supersets to fit a time budget.** Hevy Trainer and Fitbod have a session length, but neither documents using supersets to meet it.
+  3. **Rest after the round as one setting.** Hevy's own advice is a workaround (a timer only on the last exercise). Liftosaur's superset timer runs after every set. Boostcamp counts rest only between sets of the same exercise. A Hevy forum user calls the timer "clunky" for supersets [S6]. GymSmarter's design is the cleanest model found.
+  4. **Both partners on one page.** Competitors use either one long scrolling list (Hevy) or one exercise per page with swipes (Liftosaur, FitNotes 2, JEFIT, FitNotes). None documents a round page with per-exercise scroll boxes. That makes GymSmarter's layout **novel and untested**. Liftosaur's card-and-strip pattern (swipe, thumbnails showing `2/5` and ✓) is the nearest precedent and supports the round strip.
+  5. **A coach that proposes a superset with Apply/Undo.** No equivalent was found.
+- **Where GymSmarter is level, not ahead.** Set types are standard: Hevy, JEFIT and Lyfta have warm-up, drop and failure. A per-set target RPE exists in Liftosaur (`@8`) and Boostcamp's builder. GymSmarter's Top set / Back-off types are less common, but Liftosaur's free labels cover them.
+- **Lessons to take [Doc → Proposal].**
+  - Liftosaur: "Warmup sets do not move you", and exercises with no sets left are skipped. `workout-table-v3.md` §3 doesn't yet say what happens with warm-ups or unequal set counts inside a round.
+  - FitNotes 2: needed a fix for "supersets missing in templates created from a workout". GymSmarter's `Save as variation` from Summary should be tested to round-trip pairings.
+  - Liftosaur and FitNotes 2: "Skip the rest timer for the final set" or the last round.
+
+**Sources for this section** (all checked 2026-10-20):
+- [S1] Hevy, [supersets feature](https://www.hevyapp.com/features/what-are-supersets/)
+- [S2] Hevy, [workout settings](https://www.hevyapp.com/features/workout-settings/)
+- [S3] Hevy, [set types](https://www.hevyapp.com/features/workout-set-types/)
+- [S4] Hevy, [more than two exercises](https://www.hevyapp.com/help/add-more-than-two-exercises-superset/)
+- [S5] Hevy, [rest timer](https://www.hevyapp.com/features/workout-rest-timer/), plus the [circuits help article](https://help.hevyapp.com/hc/en-us/articles/36954623739415) (403; snippet)
+- [S6] [iphonecleaner forum thread](https://iphonecleaner.net/t/can-anyone-share-an-honest-hevy-app-review-and-experience/2191)
+- [S7] Hevy, [Trainer](https://www.hevyapp.com/features/workout-plan-generator/)
+- [S8] Strong, [About Supersets / Circuits](https://help.strongapp.io/article/98-supersets-and-circuits)
+- [S9] Strong, [RPE](https://help.strongapp.io/article/230-about-rpe)
+- [S10] FitNotes, [workout tracking](http://www.fitnotesapp.com/workout_tracking/)
+- [S11] FitNotes 2, [workout docs](https://getfitnotes.com/docs/workout.html)
+- [S12] FitNotes 2, [templates](https://getfitnotes.com/docs/templates.html)
+- [S13] FitNotes 2, [changelog](https://getfitnotes.com/changelog/)
+- [S14] JEFIT, [revamped workout tab](https://www.jefit.com/blog/upcoming-enhancements-revamped-workout-tab-and-improved-exercise-screens)
+- [S14b] JEFIT, [How Do I Set Up A Super-Set?](https://support.jefit.com/hc/en-us/articles/203701230-How-Do-I-Set-Up-A-Super-Set-) (503; snippet; old)
+- [S15] JEFIT, [Q&A](https://www.jefit.com/q&a/99218293/jrodtwelve/with-the-new-update-the-app-is-supposed-to-have-the-super-set-feature-directly-in-the-exercises-by-clicking)
+- [S16] JEFIT, [set types](https://www.jefit.com/blog/set-types-new-in-jefit-customize-your-workouts-with-set-types)
+- [S17] Boostcamp, [features](https://www.boostcamp.app/features)
+- [S17b] Boostcamp's own [comparison](https://www.boostcamp.app/compare/workout-tracking) (vendor claims about rivals; updated 15 Oct 2026)
+- [S18] Boostcamp, [rest timer](https://www.boostcamp.app/features/rest-timer)
+- [S19] Liftosaur, [supersets](https://www.liftosaur.com/features/supersets)
+- [S20] Liftosaur, [workout screen](https://www.liftosaur.com/features/workout-screen)
+- [S21] Liftosaur, [set types](https://www.liftosaur.com/features/set-types)
+- [S21b] Liftosaur, [Liftoscript docs](https://www.liftosaur.com/blog/docs/liftoscript)
+- [S22] StrengthLog, [supersets and circuits](https://www.strengthlog.com/track-supersets-and-circuits-in-the-strengthlog-workout-app/)
+- [S23] StrengthLog, [drop sets help](https://help.strengthlog.com/?p=1182)
+- [S24] StrengthLog, [app page](https://www.strengthlog.com/app/)
+- [S25] Lyfta, [gym log page](https://lyfta.app/usage/gym-log-app)
+- [S26] Lyfta, [GB listing](https://apps.apple.com/gb/app/lyfta-gym-tracker-workout-log/id6443740936)
+- [S27] Fitbod, [Superset/Circuit help](https://help.fitbod.me/hc/en-us/articles/360006427813) (403; snippet)
+- [S28] Fitbod, [supersets blog](https://fitbod.me/blog/2018-11-21-supersets/) (2018)
+- [S29] FitNotes 2, [rest timer](https://getfitnotes.com/docs/rest-timer.html)
+- [S30] FitNotes 2, [workout sets](https://getfitnotes.com/docs/workout-sets.html)
+
 ## Cross-app complaints
 
 These are examples, not a representative survey. They come from App Store reviews, Trustpilot, forums and GitHub; Reddit was unreachable and web search was unavailable in pass 2. "Several apps" below means the reports come from more than one app, not that they are frequent. Each theme lists its evidence, then what follows for GymSmarter.
@@ -1200,6 +1375,13 @@ These are examples, not a representative survey. They come from App Store review
       - Free caps: Strong (3 routines), FitNotes 2 (12 workouts) and Liftin' (5 a month).
       - Logging needs a subscription in StrongLifts and GymStreak.
     - For GymSmarter: not applicable. It's a personal app with no subscription.
+12. **Superset timing and navigation (pass 3; thin evidence).**
+    - Evidence:
+      - Hevy: "Timer sometimes feels clunky if you superset a lot" [User, forum, Mar 2026]. Its documented fix is a workaround: a rest timer only on the last exercise [Doc].
+      - FitNotes 2: needed fixes for a wrong "next set" message with supersets and for supersets lost from templates [Doc, changelog].
+      - Strong: separate iOS and Android flows that it plans to "unify" [Doc].
+      - StrengthLog: 8.1's redesign added an extra tap [Doc].
+    - For GymSmarter: one `After each round` rest; explicit rules for warm-ups and unequal set counts in a round; test that pairings survive a save to a variation (see #20–#23).
 
 ## What GymSmarter already does differently
 
@@ -1220,6 +1402,185 @@ An honest comparison, separating what's built from what's only designed.
 | FitNotes import | **Designed** (preview, mapping, undo, results row by row); blocked until Ben provides an export | FitNotes 2 imports FitNotes; Liftosaur has the best import UX; MacroFactor has none | The design matches the best; not built |
 | No subscription, ads or tracking | True by construction | Every commercial peer has a paid tier; 20+ labels declare tracking | Real for Ben, but it isn't a feature that competes |
 | **Where GymSmarter is behind today** | Live Activity (failed probe), routines (Repeat only), Progress (placeholder), coach, voice, import, Overview table, Watch | Hevy, Strong, Alpha, MacroFactor and FitNotes 2 have all of the core ones | The core is the gap, not the AI |
+| Supersets: builder pairs accessories to fit the session length (main lift never paired), one round per page with both exercises on screen, rest after the round, coach proposes pairs with Apply/Undo (pass 3 and 3b) | **Designed** (`workout-builder-v3.md` §2.2, §3.5–3.6; `workout-table-v3.md`), not built | Manual pairing is standard (MacroFactor, Gravl, Fitbod, Hevy). Fitbod and Gravl auto-pair behind a setting, and Arvo says its AI applies supersets itself. MacroFactor documents rest after both exercises | **Creation and auto-pairing are at parity, not new.** Not found elsewhere (absence of evidence): pairing tied to session length, a main-lift exclusion, a round-per-page layout, and coach-proposed pairs with Undo. See "Supersets and the in-workout screen" (loggers) and "Supersets: adaptive and AI coaches" |
+
+## Supersets: adaptive and AI coaches (pass 3b, 20 Oct 2026)
+
+This section continues "Supersets and the in-workout screen" (pass 3, the plain loggers) for the adaptive and AI coaches: Fitbod (in full), Arvo, Gravl, Alpha Progression, MacroFactor Workouts, RP Hypertrophy, JuggernautAI, Dr. Muscle, GymStreak and SensAI. GymSmarter's design is summarised at the top of that section.
+- All sources were checked on **2026-10-20**.
+- Reachability: Reddit still can't be fetched. help.fitbod.me returned 403 and rpstrength.com returned 429.
+- Where a claim rests only on a search engine's excerpt of a page that couldn't be opened, it says "(search excerpt)".
+- "Not documented" means I didn't find it.
+- Footnotes use the prefix **T**, so they don't collide with pass 3's S1–S30.
+
+### Superset matrix (adaptive and AI coaches)
+
+The legend is the same as the capability matrix.
+
+| App | Manual create (template / mid-workout) | Auto-generated pairs | Pairing tied to session length | Label | Rest after round, not between | Both exercises visible together | Set types | Per-set RPE/RIR target |
+|---|---|---|---|---|---|---|---|---|
+| **GymSmarter (designed)** | ✓ / ✓ | ✓ (code, Supersets on) | ✓ (designed) | `3a`/`3b` | ✓ | ✓ (one round per page) | warm-up, top, back-off, drop | ✓ RPE |
+| Fitbod | ✓ / ✓ [T1] | ✓ (setting) [T1] | ? [T2] | group heading [T1] | ? | ? | ? | partial (RIR logged) [T3] |
+| Arvo | ? | ✓ (vendor: AI applies) [T4] | ? | ? | ? | ? | 8 techniques incl. top set + back-off, drop, rest-pause, myo-reps, giant set [T4] | ✓ RIR [T4] |
+| Gravl | ✓ / ? [T5] | ✓ (setting) [T5] | ? [T6] | ? | ? | ? | warm-up, drop [T7] | ✗ (Easy/Hard rating) [T8] |
+| Alpha Progression | ? (feature listed) [T9] | ? | ? | ? | ? | ? | warm-up (auto), drop [T9] | ✓ RIR (targets Pro) [T9] |
+| MacroFactor Workouts | ✓ / ✓ [T10] | ✗ (none documented; rule-based app) | ✗ | grouped, rounds beneath [T10] | ✓ [T10] | partial [T10] | W, D, M (myo), F [T11] | partial [T11] |
+| RP Hypertrophy | ? | ? | ? | ? | ? | ? | myo-reps, myo-match (search excerpt) [T12] | ? |
+| JuggernautAI | ? | partial [User] [T13] | ? | ? | ? | ? | guided warm-ups [T13] | ✓ RPE/RIR (existing section) |
+| Dr. Muscle | partial (alternate by hand) [T14] | partial (list pre-pairs antagonists) [T14] | ? | ? | ? | ? | rest-pause default [T14] | ✓ RIR [T14] |
+| GymStreak | ? (built in) [T15] | ? | ? [T15] | ? | partial (superset rest exists) [T15] | ? | warm-up, drop [T15] | ? |
+| SensAI | ✗ (not documented anywhere) [T16] | ✗ | ✗ | n/a | n/a | n/a | warm-up, drop, failure [T16] | ? |
+
+**Footnotes** (all checked 2026-10-20):
+- [T1] Fitbod: a `Circuits & Supersets` toggle under Workout → My Plan → Training Format. When it's on, "exercises may be automatically grouped". Manually: Workout tab `…` → Build superset/circuit, "also during an in-progress workout". A circuit is 3 or more exercises. The group heading's `…` offers add exercises, log all exercises at once, duplicate, normalize weights (iOS only), reorder and unbundle; long-press the heading to drag the group. Source: [help 360006427813](https://help.fitbod.me/hc/en-us/articles/360006427813) (search excerpt; direct fetch 403).
+- [T2] Fitbod: no documented link between session length and pairing. Its own blog says supersets save "roughly a third" of the time, yet its users use them *less* in short workouts (44 % → 37 %), and short sessions drop whole exercises rather than sets ([blog](https://fitbod.me/blog/what-gets-cut-when-lifters-are-short-on-time/), search excerpt; vendor data). Another post says about half of weekly workouts include supersets, and that Fitbod "automatically tags and logs these circuits" ([blog, 2 Oct 2025](https://fitbod.me/blog/5-fitbod-features-most-reviews-overlook-but-real-users-love/)).
+- [T3] Fitbod: RIR logging is mentioned in the Getting Started section ([help](https://help.fitbod.me/hc/en-us/sections/360001927994-Getting-Started), search excerpt). No set-type article was found.
+- [T4] Arvo: the features page lists supersets (agonist–antagonist or same muscle, "rest after both are completed") and giant sets (3 or more for the same muscle), among 8 techniques "Applied intelligently based on your fatigue, exercise type, and training approach". It also lists RIR targets per set and a "Simple mode" vs "Pro mode" ([features](https://arvo.guru/features)). The changelog has no superset entry ([changelog](https://arvo.guru/changelog)). Vendor claims only; how supersets are shown or run isn't documented.
+- [T5] Gravl: tap `…` on an exercise → "Add to superset", or tick 2 or more on Add exercises → "Group as …" → Superset. "Add to circuit" adds a third. Turning on Workout Settings → Optional → Supersets builds them into generated workouts. **Linking trims:** warm-ups are removed from both exercises, and the pair keeps the working-set count of whichever had fewer. "Remove from superset" unlinks ([help, updated 27 Sep 2026](https://gravl.ai/help/create-a-superset)). Mid-workout creation isn't stated.
+- [T6] Gravl: Duration is 30–90 min in 5-min steps; "Gravl rebuilds the session at the new length, so the exercise list changes too". Whether it uses supersets to fit isn't stated ([help, 7 Aug 2026](https://gravl.ai/help/quick-filter-duration)). Default rest is 90 s for isolation and 120 s for compounds; per-superset rest isn't documented ([help](https://gravl.ai/help/adjust-your-rest-times)).
+- [T7] Gravl drop sets: swipe right on a set to add a drop, and a third swipe clears them; also from `…` or automatically via a setting ([help, 7 Aug 2026](https://gravl.ai/help/create-a-dropset)).
+- [T8] Gravl: "Rate a set Easy or Hard and the next prescription adjusts". v1.53.1 (28 Sep): "Fixed sets that were marked as done together by mistake" ([US listing](https://apps.apple.com/us/app/personal-trainer-gravl/id6450921637)).
+- [T9] Alpha: the listing says "Supersets, dropsets, bodyweight, assisted and timed exercises"; warm-up sets "are added automatically"; "Weight, reps and RIR in two taps"; the 6.8 Live Activity shows "the current exercise, set, and recommendation" ([US listing](https://apps.apple.com/us/app/gym-workout-alpha-progression/id1462277793)). The site lists Supersets and Dropsets as free, RIR targets as Pro, and duration as a plan-generator input ([site](https://alphaprogression.com/en)). No help article on creating or running supersets was found ([glossary](https://alphaprogression.com/en/glossary/supersets) is generic).
+- [T10] MacroFactor: before a workout, `…` beside an exercise → Superset → pair with the previous or next exercise (reorder first if they aren't adjacent). During a workout, the action bar → Superset, and "drag the thumbnails at the top" to make them adjacent. Rest starts "after completing both sets". Exercises "appear grouped together, with the rounds shown beneath them". "Detach from superset" unlinks ([help 321](https://help.macrofactorapp.com/en/articles/321-supersetting-exercises)). The workout screen has duration and rest timers at the top, then the current exercise ("Set 1 of 4") as a table of set rows with the previous result; after the last set it "automatically advances to the next exercise", which can be changed in settings ([help 310](https://help.macrofactorapp.com/en/articles/310-how-to-log-a-workout)). Giant sets aren't documented.
+- [T11] MacroFactor set types: Standard, Warm-up (W), Drop (D, one set with several entries), Myo (M) and Failure (F, logged at RIR 0) ([help 317](https://help.macrofactorapp.com/en/articles/317-logging-different-types-of-sets)). RIR targets are covered in a separate article that wasn't opened.
+- [T12] RP: the US listing doesn't mention supersets, set types or a rest timer ([US listing](https://apps.apple.com/us/app/rp-hypertrophy/id1555614554)). The site lists "Myorep & Myomatch sets" ([rpstrength.com/rphypeapp](https://rpstrength.com/rphypeapp), search excerpt; direct fetch 429).
+- [T13] JuggernautAI: nothing is documented about supersets. [User] "the program will literally start adding supersets with random muscle groups" (Theliftingbean, undated; [justuseapp](https://justuseapp.com/en/app/1515756471/juggernautai/reviews)). 3.0.0 (11 Aug 2026) sets separate rest times for main lifts and accessories; 3.0.3 splits the auto timer into upper/lower main lifts and accessories ([US listing](https://apps.apple.com/us/app/juggernautai/id1515756471)). Guided warm-ups ask how each set felt ([help 27](https://help.jtsstrength.com/en/articles/27-optimizing-training-with-juggernautai-a-guide-to-rest-days-meet-date-adjustments-and-warm-up-features), search excerpt).
+- [T14] Dr. Muscle: "You can now superset 2 exercises or more" (2017; [page](https://dr-muscle.com/deload-3/)). The guide describes alternating by hand: open an exercise, "Save set", then select the second exercise and alternate. Workouts are listed so that "we've paired antagonist muscles together whenever possible". Because rest-pause is the default, the guide advises against supersetting rest-pause sets ([guide, updated 26 Apr 2025](https://dr-muscle.com/superset/)). A "Smoother Superset" release (7 Jul 2026, "Improved: Superset flow") appears only in a search excerpt; its page returned 404. RIR-based RPE is on the [US listing](https://apps.apple.com/us/app/dr-muscle-ai-personal-trainer/id1073943857). A 2023 changelog entry adds "Workout UI (dim inactive sets)" ([changelog](https://dr-muscle.com/chat-ai-trainer/)).
+- [T15] GymStreak: "Supersets, warm-up sets and drop sets are built in". Session length is a setup input, and plans fit sessions to it ([site](https://gymstreak.com/)). v6.2.4 (20 Jan): "Fixed issue with superset rest time changing during workout session" ([GB listing](https://apps.apple.com/gb/app/gymstreak-ai-personal-trainer/id1371187280)); [Inference] so a separate superset rest exists. The help centre returned an empty page.
+- [T16] SensAI: no superset, circuit or giant set is mentioned on the listing, FAQ, help or llms.txt ([FAQ](https://www.sensai.fit/faq), [llms.txt](https://www.sensai.fit/llms.txt), [help](https://www.sensai.fit/help)). 1.0.10 (7 Feb) adds "Mark sets as warm-up, drop set, or failure" ([US listing](https://apps.apple.com/us/app/id6738963099)).
+
+### Per-app notes (adaptive and AI coaches)
+
+Each note covers: (1) creation and time; (2) label; (3) running; (4) layout; (5) set types and targets; (6) complaints.
+
+#### Fitbod
+1. Creation and time:
+   - [Doc] In a template or mid-workout, via `Build superset/circuit`.
+   - [Doc] Auto-grouping when the plan toggle is on [T1].
+   - Time: not documented [T2].
+2. [Doc] A group heading with its own `…` menu. Letters or colours: not documented.
+3. Running:
+   - Not documented: rest inside a superset, and auto-advance.
+   - [Doc] The group menu has "log all exercises at once" [T1].
+   - [User] The Watch can "cycle through specific exercises within a set or superset". On the phone, "you have the choice only to log an entire superset" (Nbct.wright, undated; [justuseapp](https://justuseapp.com/en/app/1041517543/fitbod-gym-fitness-planner/reviews)).
+4. Not documented (help pages 403). [User] "scrolling down to the video to see what it is" (same page).
+5. [Doc] RIR is logged [T3]. Set types: not documented.
+6. [User] See 3. No other superset complaints found.
+
+#### Arvo
+1. [Doc, vendor] The AI applies supersets and giant sets by exercise type and fatigue, with a Simple and a Pro mode [T4]. Manual creation and time: not documented.
+2–4. Not documented.
+5. [Doc, vendor] RIR targets per set. Techniques include top set + back-off, drop, rest-pause, myo-reps, cluster and pyramid [T4].
+6. None found (no written reviews; see the Arvo section).
+
+#### Gravl
+1. Creation and time:
+   - [Doc] Manual via `…` or multi-select "Group as …"; automatic via a setting; a circuit by adding a third.
+   - [Doc] Linking **removes warm-ups and trims to the smaller set count** [T5].
+   - Time: the session is rebuilt at the new length; the role of supersets isn't stated [T6].
+2–3. Not documented. Rest defaults are per exercise type [T6].
+4. Not documented. [Doc] A swipe-right gesture on a set adds drops [T7].
+5. [Doc] Warm-up and drop sets. Effort is rated Easy/Hard, not RPE [T7, T8].
+6. [Doc] A bug fix for "sets that were marked as done together by mistake" (v1.53.1, 28 Sep) [T8]. No superset reviews found.
+
+#### Alpha Progression
+1. [Doc] Supersets are a free feature [T9]. Creation steps, auto-pairing and time-fit: not documented.
+2–4. Not documented.
+   - [Doc] The workout shows "how many exercises and sets there are" (6.8).
+   - [User] An earlier review says it "jumps to the next exercise after the last set" (Alpha section).
+5. [Doc] Automatic warm-ups, drop sets, per-set RIR, and RIR targets (Pro) [T9].
+6. [User] Progression is tracked per exercise whether or not it was in a superset (a Strongsplit user's description, 18 Apr 2026; [board](https://strongsplit.userjot.com/board/p/simplify-supersets)). No complaints found.
+
+#### MacroFactor Workouts
+1. [Doc] In a template or mid-workout; pairs only with the **adjacent** previous or next exercise [T10]. Nothing is auto-generated, and there is no time link.
+2. [Doc] "Grouped together, with the rounds shown beneath them". Letters or colours: not documented [T10].
+3. Running:
+   - [Doc] Rest starts after both sets [T10].
+   - [Doc] Auto-advance to the next exercise after the last set is on by default and can be switched off [T10].
+   - Per-superset rest: not documented.
+4. Layout:
+   - [Doc] Timers at the top, then a table of the current exercise's set rows with the previous result, and thumbnails at the top during a workout [T10].
+   - [Inference] This is the closest documented layout to GymSmarter's round page among these 10 apps. Whether both exercises are fully visible at once isn't stated.
+5. [Doc] W/D/M/F set types; failure is logged at RIR 0 [T11].
+6. [User] Editing a set resets rest, and the timer sound goes "periodically … silent" (MacroFactor section). No superset complaints found.
+
+#### RP Hypertrophy
+1–4. Not documented [T12].
+5. [Doc, search excerpt] Myo-rep and myo-match sets [T12].
+6. [User] Asks for "a rest timer between sets … or cancel it if we are moving right into another set or exercise" (Mr_WTF, 8 Sep, year not shown; [US listing](https://apps.apple.com/us/app/rp-hypertrophy/id1555614554)).
+
+#### JuggernautAI
+1. [User] The programme adds supersets itself ("random muscle groups") [T13]. The vendor doesn't document this.
+2–4. Not documented.
+5. [Doc] Separate rest for main lifts and accessories; guided warm-ups rated by feel [T13].
+6. [User] Supersets with "random muscle groups" when sessions felt easy [T13].
+
+#### Dr. Muscle
+1. Creation and time:
+   - [Doc] Supersets of 2 or more exercises since 2017.
+   - [Doc] In practice you alternate between exercises by hand, and the list order pre-pairs antagonists [T14].
+   - Time: the guide frames supersets as a way to "cut workout time in half" ([guide](https://dr-muscle.com/superset/)). No automatic time-fit is documented.
+2–3. Not documented.
+4. [Doc] Inactive sets are dimmed (2023) [T14].
+5. [Doc] Rest-pause by default; RIR [T14].
+6. None found.
+
+#### GymStreak
+1. [Doc] Supersets are built in, and sessions fit the chosen length [T15]. Whether supersets are used to fit: not documented.
+2. Not documented.
+3. [Doc + Inference] Superset rest exists; a bug changed it mid-session (fixed in v6.2.4) [T15].
+4. [Doc] The active screen lists each exercise with its sets, and a movement demo sits above the inputs [T15].
+5. [Doc] Warm-up and drop sets [T15].
+6. Complaints:
+   - [Doc] The rest-time bug above.
+   - [User] "sometimes skips rest timers" (16 Apr 2025; GB listing).
+
+#### SensAI
+1. Creation and time:
+   - Not documented. Supersets appear only as advice in the FAQ [T16].
+   - Time: a "Make it shorter" chip, and weekly regeneration "around whatever time you actually have" ([FAQ](https://www.sensai.fit/faq)).
+2–3. n/a.
+   - [Doc] Auto-advance "starts rest and advances to the next set" (1.1.1).
+   - [Doc] Rest adjustments "carry forward to future rests" (1.1.0) ([US listing](https://apps.apple.com/us/app/id6738963099)).
+4. Layout:
+   - [Doc] The current exercise "fills the screen" (1.0.10).
+   - [Doc] A hub of all exercises (1.0.11).
+   - [Doc] A Sets page for the current exercise (1.1.6).
+5. [Doc] Warm-up, drop and failure sets (1.0.10) [T16].
+6. None about supersets found.
+
+Hevy, Strong, the FitNotes apps, JEFIT, Boostcamp, Liftosaur, StrengthLog and Lyfta are in pass 3, under "Supersets and the in-workout screen".
+
+### Answer to Ben (adaptive and AI coaches)
+
+**Creation is standard here too [Doc].**
+- MacroFactor and Gravl pair exercises from a menu, and Fitbod groups them, before or during the workout.
+- Fitbod and Gravl also auto-pair behind a setting.
+- Arvo says its AI applies supersets and giant sets itself.
+- [User] JuggernautAI appears to add them itself.
+
+So **auto-generated pairs are not unique to GymSmarter.** This corrects pass 3's "Only Fitbod auto-groups supersets", which covered only the plain loggers.
+
+**Still not found in any of these 10 [absence of evidence, not proof]:**
+- pairing driven by the session length (Gravl, GymStreak and SensAI fit sessions to a length, but none says it uses supersets to do so);
+- a rule that keeps the main lift out of supersets (Arvo and Dr. Muscle describe pairing antagonists or isolations, but no exclusion rule);
+- a round page with both exercises fixed on screen;
+- a coach that *proposes* a superset with Apply/Undo.
+
+**Closest analogues:**
+- **MacroFactor:** documents rest after both exercises, rounds shown under the grouped pair, and auto-advance with an off switch.
+- **Gravl:** combines a superset setting, duration rebuilds and the most explicit link rule (it removes warm-ups and trims set counts).
+
+**Set types:** warm-up, drop and failure are common (MacroFactor, SensAI, GymStreak, Gravl, Alpha). [Inference] Typed top and back-off sets with a target per set appear only in Arvo (as a technique) and as RIR targets in Alpha and MacroFactor. GymSmarter is at the richer end, but not unique.
+
+**Overall [Inference]:** at parity on creation, and on paper ahead on the round layout and on fitting the time with supersets. None of it is built.
+
+### Gaps to check in our design (pass 3b; overlaps pass 3's #20 and #22)
+
+1. **Unequal set counts and warm-ups.** Gravl, when linking, trims the pair to the smaller set count and removes warm-ups [T5]. Opportunity #20 already proposes the opposite for GymSmarter: keep warm-ups, run them before the alternation, and run the extra sets alone. This pass adds Gravl as the documented counter-example. Ben should pick knowingly, but #20 fits §3.6 ("superset = its warm-ups").
+2. **Superset rest must not drift.** GymStreak shipped a fix for superset rest "changing during workout session" [T15]. Add to #22: editing, reordering or unlinking within a round never changes or restarts the round's rest. This extends #2 (d).
+3. **Keep logging one set at a time.** A Fitbod user disliked having "the choice only to log an entire superset" [T1]. GymSmarter's Log pill logs one set at a time (`workout-table-v3.md`), which avoids this. Keep it, and add no "log round" button unless Ben asks.
+4. **A coach-proposed pair needs a reason.** A JuggernautAI user saw supersets with "random muscle groups" [T13]. A coach-proposed pair should carry its one-line reason behind "Why?" and pass the §3.5 checks (no shared muscle, no two heavy lifts) before it is offered (rule 3). Opportunity #25.
 
 ## Opportunities for GymSmarter (Recommendations)
 
@@ -1228,6 +1589,8 @@ Ranked by value to Ben divided by effort, then by fit with where the build is no
 - Exclusion flags moved from #5 to #9, and marked low evidence.
 - Time remaining is now #10 and re-cited to the brief.
 - Strong-format CSV moved from #10 to #11, because it's inference only.
+
+Pass 3 adds superset items #20–#24 to "Further opportunities". They are ranked among themselves only (#20 and #21 first, because the active workout v3 is being built now). They don't change #1–#10.
 
 **1. Get the rest Live Activity working: on by default, showing the next set, target and plate line, and prove each alert layer, including in silent mode.**
 - Effort: M.
@@ -1364,7 +1727,12 @@ Ranked by value to Ben divided by effort, then by fit with where the build is no
 | 17 | An optional one-line `cues.feel` on rich catalogue entries; pain-like wording stays in `safety.stopIf` | S | catalogue | **Weak:** Planfit's "How it should feel"; Muscle & Motion's "common mistakes" praise |
 | 18 | A spike on Apple's **on-device** model only, as an offline route for coach explanations | L | later spike | MyLiftingCoach (on-device). **Private Cloud Compute is out of scope:** it needs an entitlement, and ADR 0004 allows only entitlements a free Apple ID can sign (Liftin's PCC use is not a precedent for us) unless a new ADR changes distribution. Any on-device route must be labelled as a separate, weaker coach with honest status, never shown as the ChatGPT coach (rule 1). Bridging is unverified |
 | 19 | Stack photo → proposed ranges for Ben to confirm | L | steps 6–7 | MacroFactor "Scan with AI"; Gravl "Import from photo"; Arvo's equipment scanner. **Rule 7:** the image goes only through Ben's configured AI route, with its status visible and never a paid fallback. The result stays a proposal (rule 2) |
-
+| 20 | **Superset flow rules (pass 3):** warm-ups of a superset exercise run before alternation and don't advance a→b; when one exercise has more sets than its partner, its extra sets run alone with that exercise's normal rest; the last round's rest is skippable. Add to `workout-table-v3.md` §3 and domain tests | S | step 2 (active workout v3 build, now) | [Doc] Liftosaur: "Warmup sets do not move you"; exercises with no sets left are skipped ([supersets](https://www.liftosaur.com/features/supersets)). FitNotes 2 v8 "skip the rest timer for the final set" ([changelog](https://getfitnotes.com/changelog/)). The v3 spec doesn't define these cases [Inference] |
+| 21 | **Device-test the round page early** (per-exercise scroll boxes, at least 2 rows each) with Ben, at default and large text sizes, before polishing. Keep Liftosaur's one-card-per-exercise pattern as the named fallback if nested scrolling fights the swipe between rounds | S (test) | step 2, first gym session on v3 | [Inference] No competitor documents this layout; all use one list (Hevy) or one exercise per page (Liftosaur, FitNotes 2, JEFIT). The nearest precedent supports the round strip: Liftosaur's thumbnails with `2/5` and ✓ ([workout screen](https://www.liftosaur.com/features/workout-screen)) |
+| 22 | **Add pairings to the acceptance pack (#2):** a superset made mid-workout survives `Save as variation`, the Start prompt and backup/restore; unlinking never touches done sets | S | step 2–3 | [Doc] FitNotes 2 3.1.0 "Fix supersets missing in templates created from a workout"; v5 "next set message … wrong … when using supersets" ([changelog](https://getfitnotes.com/changelog/)). Rules 2 and 5 |
+| 23 | **Keep `After each round` as the only superset rest control**, with an optional `Between exercises` value (default 0:00) behind `Change` for Ben's switch time (§9 Q16) | S | step 2 | [Doc] Hevy needs a workaround for rest after the round ([rest timer](https://www.hevyapp.com/features/workout-rest-timer/)); Liftosaur's superset timer runs after every set ([supersets](https://www.liftosaur.com/features/supersets)); Boostcamp counts rest "between sets of the same exercise only" ([rest timer](https://www.boostcamp.app/features/rest-timer)). [User] Hevy: "clunky if you superset a lot" ([forum](https://iphonecleaner.net/t/can-anyone-share-an-honest-hevy-app-review-and-experience/2191)). **Low evidence on demand** |
+| 24 | **FitNotes import: map groups to supersets only if the export carries them**; otherwise import as plain exercises, with no guessing | S | step 3 | [Doc] FitNotes Android has groups with a coloured bar ([tracking](http://www.fitnotesapp.com/workout_tracking/)); brief §11 forbids guessing the format. Needs Ben's export (#4) |
+| 25 | **Coach-proposed superset = same checks + a reason (pass 3b):** a coach "pair these" proposal goes through the same deterministic §3.5 pairing checks as the builder (no main lift, no shared muscle, no two heavy lifts); a failed check becomes the `Not recommended: …` advice line, not a silent block; the proposal carries a one-line reason behind `Why?` and Apply/Undo | S | step 4 (coach), using the step 2 pairing code | [User] JuggernautAI: supersets "with random muscle groups" ([justuseapp](https://justuseapp.com/en/app/1515756471/juggernautai/reviews)). [Doc] Arvo says its AI applies supersets automatically, with no documented explanation or undo ([features](https://arvo.guru/features)). Fitbod and Gravl auto-pair behind settings, with no reason documented. Rules 2 and 3; the `adviseBuilder` toast in `workout-table-v3.md` |
 **Avoid** (each is evidenced above):
 - social feeds;
 - tracking SDKs;
@@ -1469,3 +1837,28 @@ No changes are proposed for HYROX, wearables or Strava. Ben's decisions (CHANGEL
     - OpenAI's health features weren't verified (403).
     - Apple Fitness+, TrainHeroic, Smartgym and Zing weren't checked.
     - GB prices for Ladder, Planfit, Caliber, Trainwell, Dr. Muscle and HYBRD weren't fetched.
+- **Pass 3 (20 Oct 2026):** a superset and workout-screen comparison for Hevy, Strong, FitNotes, FitNotes 2, JEFIT, Boostcamp, Liftosaur, StrengthLog and Lyfta, with Fitbod as a reference for automatic pairing. Web search was available.
+  - **Unreachable:** help.hevyapp.com and help.fitbod.me (403) and support.jefit.com (503). Those pages are cited from search snippets and marked as such. Reddit still couldn't be fetched.
+  - **Added:** a section with a matrix, per-app notes and an answer for Ben; cross-app complaint 12; opportunities #20–#24. Row 19 is unchanged.
+  - **No brief changes proposed:** the superset design is in approved design specs, not the brief.
+  - **Not documented after search:**
+    - Boostcamp, StrengthLog and Lyfta: superset layout and rest.
+    - Strong: superset rest.
+    - JEFIT: auto-advance.
+    - Hevy Trainer: whether it generates supersets.
+- **Pass 3b (20 Oct 2026):** supersets and the workout screen for 10 adaptive and AI coaches: Fitbod, Arvo, Gravl, Alpha Progression, MacroFactor Workouts, RP Hypertrophy, JuggernautAI, Dr. Muscle, GymStreak and SensAI. Web search was available.
+  - **Added:**
+    - the section "Supersets: adaptive and AI coaches", with a matrix (footnotes T1–T16), per-app notes, an answer for Ben, and gaps that cross-refer to #20 and #22;
+    - a row in "What GymSmarter already does differently";
+    - a clause in the summary;
+    - opportunity #25.
+  - **Corrected:** auto-generated pairs aren't unique to GymSmarter or to Fitbod: Gravl has a setting, Arvo's AI applies supersets (vendor claim), and JuggernautAI appears to add them [User].
+  - **Unreachable:**
+    - help.fitbod.me (403) and rpstrength.com (429); cited from search excerpts.
+    - The GymStreak help centre (empty page).
+    - Dr. Muscle's "Smoother Superset" page (404); cited from a search excerpt.
+  - **Not documented after search:**
+    - superset creation, labels and running for Arvo, Alpha, RP, JuggernautAI, GymStreak and SensAI;
+    - rest inside a superset for Fitbod, Gravl and Alpha;
+    - whether any app uses supersets to meet a session length.
+  - **No brief changes proposed.**
