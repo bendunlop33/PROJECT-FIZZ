@@ -70,7 +70,10 @@ describe('6.4–6.6', () => {
   it('Exercise detail: 44pt chips on one line each; Exercise info beside the series pill', () => {
     const d = read('screens', 'progress', 'ExerciseDetailScreen.tsx');
     expect(d.match(/size="min"/g)?.length).toBe(2);
-    expect(d.match(/<ScrollView horizontal/g)?.length).toBe(2);
+    expect(d.match(/<ChipScroll gap=/g)?.length).toBe(2);
+    // Review S8: chips past the edge show the scroll indicator, flashed once laid out.
+    expect(d).toContain('showsHorizontalScrollIndicator');
+    expect(d).toContain('ref.current?.flashScrollIndicators();');
     expect(d).toContain("{route.name === 'ProgressExercise' ? infoLink : null}");
     expect(d).toContain('<TextButton label="Exercise info"');
   });

@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 
 import { PLAN_VERDICT_WORD, type ExerciseDetailView, type ExerciseMetric, type PlanVerdict, type TrendRange } from '@fizz/domain';
@@ -30,6 +30,27 @@ import { E1rmSheet } from './sheets';
 type Route = RouteProp<{ ProgressExercise: ExerciseDetailParams; ExerciseProgress: ExerciseDetailParams }, 'ProgressExercise' | 'ExerciseProgress'>;
 
 /** `Target 3 × 8–10 · Hit` under a history row (plan tracker v1): the word always with the numbers. */
+/**
+ * A sideways chip line (review S8): the scroll indicator shows and flashes once
+ * when the chips are laid out, so chips past the edge read as more to scroll.
+ */
+function ChipScroll({ gap, children }: { gap: number; children: ReactNode }) {
+  const ref = useRef<ScrollView>(null);
+  return (
+    <ScrollView
+      ref={ref}
+      horizontal
+      showsHorizontalScrollIndicator
+      onContentSizeChange={() => {
+        ref.current?.flashScrollIndicators();
+      }}
+      contentContainerStyle={{ gap, paddingBottom: 6 }}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+
 function targetLine(t: { target: string | null; verdict: PlanVerdict | null } | null) {
   if (t === null || t.target === null || t.verdict === null) return null;
   const word = PLAN_VERDICT_WORD[t.verdict];
@@ -271,7 +292,7 @@ export function ExerciseDetailScreen() {
         <View style={{ gap: theme.space['2'] }}>
           {/* Design pass 6.6: 44pt chips on one scrolling line each, so the chart starts higher. */}
           {view.metrics.length > 1 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space['2'] }}>
+            <ChipScroll gap={theme.space['2']}>
               {view.metrics.map((m) => (
                 <Chip
                   key={m.key}
@@ -283,9 +304,9 @@ export function ExerciseDetailScreen() {
                   }}
                 />
               ))}
-            </ScrollView>
+            </ChipScroll>
           ) : null}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space['2'] }}>
+          <ChipScroll gap={theme.space['2']}>
             {view.ranges.map((r) => (
               <Chip
                 key={r.key}
@@ -297,7 +318,7 @@ export function ExerciseDetailScreen() {
                 }}
               />
             ))}
-          </ScrollView>
+          </ChipScroll>
         </View>
 
         <View style={{ gap: theme.space['2'] }}>
