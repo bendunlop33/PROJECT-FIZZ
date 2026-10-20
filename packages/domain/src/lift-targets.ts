@@ -60,6 +60,8 @@ export const LIFT_TARGET_COPY = {
   weightReps: 'Weight × reps',
   full: 'Max 3 targets',
   none: 'No targets',
+  /** Review S3: history couldn't be read, so where he is now (and any hit) is unknown. */
+  unread: 'Couldn’t load',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -284,10 +286,20 @@ export function liftTargetLine(t: LiftTarget, s: LiftTargetStatus, name: string 
   const progressParts =
     s.hit !== null
       ? []
-      : [s.daysLeft === null || t.byDate === undefined ? null : liftTargetTimeLeft(s.daysLeft, t.byDate), s.toGo === null ? null : `${formatNumber(s.toGo)}${NBSP}${t.load.unit} to go`].filter((x): x is string => x !== null);
+      : [s.daysLeft === null || t.byDate === undefined ? null : liftTargetTimeLeft(s.daysLeft, t.byDate), s.toGo === null ? null : `${t.kind === 'one_rm' ? '≈' : ''}${formatNumber(s.toGo)}${NBSP}${t.load.unit} to go`].filter((x): x is string => x !== null);
+  // Review S5: a 1RM target's "to go" is from the estimate, so it reads as approximate (≈).
   const progress = progressParts.length === 0 ? null : progressParts.join(' · ');
-  const words = [title, hit, detail?.replaceAll('est.', 'estimated') ?? null, progress].filter((x): x is string => x !== null).join('. ');
+  const words = [title, hit, detail?.replaceAll('est.', 'estimated') ?? null, progress?.replaceAll('≈', 'about ') ?? null].filter((x): x is string => x !== null).join('. ');
   return { exerciseId: t.exerciseId, title, detail, progress, hit, accessibilityLabel: words.replaceAll(NBSP, ' ') };
+}
+
+/**
+ * (Review S3) A target whose history couldn't be read: the title and `Couldn’t load`, never an empty
+ * "nothing logged" that would hide a hit or the est. 1RM (rule 6).
+ */
+export function liftTargetLineUnread(t: LiftTarget, name: string | null = null): LiftTargetLine {
+  const title = `${name ?? t.exerciseName} ${liftTargetValueText(t)}`;
+  return { exerciseId: t.exerciseId, title, detail: LIFT_TARGET_COPY.unread, progress: null, hit: null, accessibilityLabel: `${title}. ${LIFT_TARGET_COPY.unread}`.replaceAll(NBSP, ' ') };
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +432,8 @@ export interface LiftTargetCoachView {
   estimatedOneRepMaxNow?: { value: number; date: string; isEstimate: true };
   bestSetNow?: { value: number; reps: number; date: string };
   hit: string | null;
+  /** Review S3: his history couldn't be read: where he is now and whether it is hit are unknown (not "none"). */
+  historyUnreadable?: true;
 }
 
 export function liftTargetCoachView(t: LiftTarget, s: LiftTargetStatus, name: string | null = null): LiftTargetCoachView {
@@ -436,4 +450,9 @@ export function liftTargetCoachView(t: LiftTarget, s: LiftTargetStatus, name: st
     ...(s.best === null ? {} : { bestSetNow: { ...s.best } }),
     hit: s.hit?.date ?? null,
   };
+}
+
+/** (Review S3) The coach's view of a target when his history couldn't be read: no current value, hit unknown. */
+export function liftTargetCoachViewUnread(t: LiftTarget, name: string | null = null): LiftTargetCoachView {
+  return { ...liftTargetCoachView(t, { estimate: null, best: null, hit: null, daysLeft: null, toGo: null }, name), historyUnreadable: true };
 }

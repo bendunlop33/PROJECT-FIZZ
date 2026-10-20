@@ -70,7 +70,7 @@ describe('lift targets in the app', () => {
     expect(plain(line?.title)).toBe('Bench press 100 kg');
     // 80 × (1 + 5/30) = 93.3 → est. 93.5, and the same when it was set.
     expect(plain(line?.detail)).toBe('est. 1RM 93.5 kg · was 93.5 kg on 13 Oct');
-    expect(plain(line?.progress)).toBe('8 weeks left · 6.5 kg to go');
+    expect(plain(line?.progress)).toBe('8 weeks left · ≈6.5 kg to go');
     expect(line?.hit).toBeNull();
     const detail = await s.liftTargets.forExercise(bench.exerciseId);
     expect(plain(detail?.line?.title)).toBe('Bench press 100 kg');

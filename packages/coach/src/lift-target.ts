@@ -48,7 +48,7 @@ export const LIFT_TARGET_TOOL_LINE =
 
 /** Sent when YOUR DATA has his lift targets (Lift targets on). */
 export const LIFT_TARGET_PLANNING_LINE =
-  'YOUR DATA training.liftTargets are Ben’s own goals. When you build or change his training you may choose the main lift, rep schemes and exercise order to serve them, within every existing limit (load caps, pain flags, his equipment, asking before changing). An estimated 1RM is always called an estimate; never predict when he will reach a target. A target counts as hit only when a logged set reaches it.';
+  'YOUR DATA training.liftTargets are Ben’s own goals. When you build or change his training you may choose the main lift, rep schemes and exercise order to serve them, within every existing limit (load caps, pain flags, his equipment, asking before changing). An estimated 1RM is always called an estimate; never predict when he will reach a target. A target counts as hit only when a logged set reaches it. historyUnreadable: where he is now and any hit are unknown; never say he hasn’t reached it.';
 
 /** Words that ask for a lift target: "I want to bench 100 kg by March", "set a target of 140 on squat", "my goal is a 200 kg deadlift". */
 const TARGET_WORD = /\b(?:target|goal)\b/i;

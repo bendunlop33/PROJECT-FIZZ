@@ -9,7 +9,9 @@ import {
   liftTargetChartValue,
   liftTargetChoices,
   liftTargetHit,
+  liftTargetCoachViewUnread,
   liftTargetLine,
+  liftTargetLineUnread,
   liftTargetsInUse,
   liftTargetStatus,
   liftTargetTimeLeft,
@@ -129,9 +131,11 @@ describe('display: est. 1RM, was, best, time and distance left (rule 6)', () => 
     const line = liftTargetLine(t, s);
     expect(plain(line.title)).toBe('Bench Press 100 kg');
     expect(plain(line.detail)).toBe('est. 1RM 99 kg · was 93.5 kg on 20 Sep');
-    expect(plain(line.progress)).toBe('7 weeks left · 1 kg to go');
+    // Review S5: from the estimate, so approximate (≈); weight × reps below is exact.
+    expect(plain(line.progress)).toBe('7 weeks left · ≈1 kg to go');
     expect(line.hit).toBeNull();
     expect(line.accessibilityLabel).toContain('estimated 1RM');
+    expect(line.accessibilityLabel).toContain('about 1 kg to go');
   });
 
   it('an estimate at or past the target is not a hit and shows nothing to go', () => {
@@ -332,5 +336,19 @@ describe('saving the same goal again (review S1)', () => {
       expect(keepSameLiftTarget(next, first)).toBe(next);
     }
     expect(keepSameLiftTarget(first, null)).toBe(first);
+  });
+});
+
+describe('history that couldn’t be read (review S3)', () => {
+  it('shows the title and Couldn’t load, never an empty "nothing logged"; the coach is told it is unknown', () => {
+    const t = target({ byDate: '2026-12-08' }, [set(BENCH, '2026-10-10', 80, 5)]);
+    const line = liftTargetLineUnread(t);
+    expect(plain(line.title)).toBe('Bench Press 100 kg');
+    expect(line.detail).toBe('Couldn’t load');
+    expect([line.progress, line.hit]).toEqual([null, null]);
+    const coach = liftTargetCoachViewUnread(t);
+    expect(coach).toMatchObject({ exercise: 'Bench Press', target: '100 kg', hit: null, historyUnreadable: true });
+    expect(coach.estimatedOneRepMaxNow).toBeUndefined();
+    expect(coach.bestSetNow).toBeUndefined();
   });
 });

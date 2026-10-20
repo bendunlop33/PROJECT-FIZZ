@@ -4,7 +4,9 @@ import {
   liftTargetChartValue,
   liftTargetChoices,
   liftTargetCoachView,
+  liftTargetCoachViewUnread,
   liftTargetLine,
+  liftTargetLineUnread,
   liftTargetProblem,
   liftTargetsInUse,
   liftTargetStatus,
@@ -49,6 +51,8 @@ export interface LiftTargetsView {
   targets: LiftTarget[];
   canAdd: boolean;
   choices: LiftTargetChoice[];
+  /** Review S3: history couldn't be read; rows show `Couldn’t load`, and nothing can be added. */
+  historyUnreadable: boolean;
 }
 
 export interface ExerciseLiftTarget {
@@ -75,7 +79,7 @@ export interface LiftTargetRequest {
 }
 
 export function createLiftTargetService(deps: LiftTargetServiceDeps) {
-  async function read(): Promise<{ profile: TrainingProfile; sets: LiftSet[]; today: string; exercises: ReadonlyMap<string, Exercise>; loggedNames: Map<string, string> } | null> {
+  async function read(): Promise<{ profile: TrainingProfile; sets: LiftSet[]; today: string; exercises: ReadonlyMap<string, Exercise>; loggedNames: Map<string, string>; historyUnreadable: boolean } | null> {
     const snap = await deps.training.snapshot();
     if (snap === null) return null;
     const [history, exercises] = await Promise.all([deps.history().catch(() => null), deps.exercises().catch(() => new Map<string, Exercise>())]);
@@ -83,13 +87,18 @@ export function createLiftTargetService(deps: LiftTargetServiceDeps) {
     const loggedNames = new Map<string, string>();
     for (const s of sessions) for (const e of s.exercises) loggedNames.set(e.exerciseId, e.exerciseName);
     const now = deps.now();
-    return { profile: snap.profile, sets: liftSetsOf(sessions), today: history?.today ?? localDateOf(toMs(now.utc), now.tz), exercises, loggedNames };
+    // Review S3: an unreadable history is unknown, never "nothing logged" (rule 6).
+    return { profile: snap.profile, sets: liftSetsOf(sessions), today: history?.today ?? localDateOf(toMs(now.utc), now.tz), exercises, loggedNames, historyUnreadable: history === null };
   }
 
   const nameOf = (r: NonNullable<Awaited<ReturnType<typeof read>>>, id: string): string | null => r.exercises.get(id)?.name ?? r.loggedNames.get(id) ?? null;
 
+  function lineOf(r: NonNullable<Awaited<ReturnType<typeof read>>>, t: LiftTarget): LiftTargetLine {
+    return r.historyUnreadable ? liftTargetLineUnread(t, nameOf(r, t.exerciseId)) : liftTargetLine(t, liftTargetStatus(t, r.sets, r.today), nameOf(r, t.exerciseId));
+  }
+
   function linesOf(r: NonNullable<Awaited<ReturnType<typeof read>>>): LiftTargetLine[] {
-    return liftTargetsInUse(r.profile).map((t) => liftTargetLine(t, liftTargetStatus(t, r.sets, r.today), nameOf(r, t.exerciseId)));
+    return liftTargetsInUse(r.profile).map((t) => lineOf(r, t));
   }
 
   function outcome(w: TrainingWriteOutcome, before: LiftTarget | null, after: LiftTarget | null): LiftTargetWrite {
@@ -121,8 +130,9 @@ export function createLiftTargetService(deps: LiftTargetServiceDeps) {
         version: r.profile.version,
         lines: linesOf(r),
         targets: liftTargetsInUse(r.profile),
-        canAdd: list.length < 3,
+        canAdd: list.length < 3 && !r.historyUnreadable,
         choices: liftTargetChoices(r.sets, r.exercises, r.loggedNames),
+        historyUnreadable: r.historyUnreadable,
       };
     },
 
@@ -132,7 +142,7 @@ export function createLiftTargetService(deps: LiftTargetServiceDeps) {
       if (r === null) return null;
       const on = r.profile.liftTargetsOn === true;
       const target = liftTargetsInUse(r.profile).find((t) => t.exerciseId === exerciseId) ?? null;
-      const line = target === null ? null : liftTargetLine(target, liftTargetStatus(target, r.sets, r.today), nameOf(r, exerciseId));
+      const line = target === null ? null : lineOf(r, target);
       const choice = liftTargetChoices(r.sets, r.exercises, r.loggedNames).find((c) => c.exerciseId === exerciseId) ?? null;
       return { on, version: r.profile.version, target, line, choice, canAdd: on && choice !== null && canAddLiftTarget(r.profile.liftTargets ?? [], exerciseId) };
     },
@@ -152,6 +162,7 @@ export function createLiftTargetService(deps: LiftTargetServiceDeps) {
     async set(req: LiftTargetRequest): Promise<LiftTargetWrite> {
       const r = await read();
       if (r === null) return { ok: false, reason: 'no_profile' };
+      if (r.historyUnreadable) return { ok: false, reason: 'failed' };
       const at = deps.now();
       const built = build(r, { ...req, id: req.opId, atUtc: at.utc, setBy: 'ben' });
       if ('error' in built) return { ok: false, reason: built.error };
@@ -181,7 +192,7 @@ export function createLiftTargetService(deps: LiftTargetServiceDeps) {
     async coachViews(): Promise<LiftTargetCoachView[]> {
       const r = await read();
       if (r === null) return [];
-      return liftTargetsInUse(r.profile).map((t) => liftTargetCoachView(t, liftTargetStatus(t, r.sets, r.today), nameOf(r, t.exerciseId)));
+      return liftTargetsInUse(r.profile).map((t) => (r.historyUnreadable ? liftTargetCoachViewUnread(t, nameOf(r, t.exerciseId)) : liftTargetCoachView(t, liftTargetStatus(t, r.sets, r.today), nameOf(r, t.exerciseId))));
     },
 
     /**
@@ -191,6 +202,7 @@ export function createLiftTargetService(deps: LiftTargetServiceDeps) {
     async prepare(args: SetLiftTargetArgs, at: { targetId: string; nowUtc: string }): Promise<{ ok: true; prepared: PreparedLiftTarget } | { ok: false; line: string }> {
       const r = await read();
       if (r === null || r.profile.liftTargetsOn !== true) return { ok: false, line: 'Not set: lift targets are off.' };
+      if (r.historyUnreadable) return { ok: false, line: 'Not set: Ben’s history couldn’t be read just now. Say so; he can try again.' };
       const choices = liftTargetChoices(r.sets, r.exercises, r.loggedNames);
       const want = args.exercise.trim().toLowerCase();
       const byKey = (c: LiftTargetChoice) => c.exerciseId === args.exercise || r.exercises.get(c.exerciseId)?.catalogueKey === args.exercise;
