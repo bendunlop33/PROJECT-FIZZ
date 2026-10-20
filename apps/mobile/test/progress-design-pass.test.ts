@@ -81,4 +81,13 @@ describe('6.4–6.6', () => {
     expect(d).toContain("{route.name === 'ProgressExercise' ? <View style={{ marginLeft: 'auto' }}>{infoLink}</View> : null}");
     expect(d).toContain('<TextButton label="Exercise info"');
   });
+  it('Exercise detail: the measure list never stays open without its button (review S3)', () => {
+    const d = read('screens', 'progress', 'ExerciseDetailScreen.tsx');
+    // The button and the list share the same more-than-one-measure guard.
+    expect(d).toContain('{view.metrics.length > 1 ? ( <DropdownButton');
+    expect(d).toContain("{controlOpen === 'metric' && view.metrics.length > 1 ? (");
+    // Switching to a one-measure series closes the open list, so it does not reappear later.
+    expect(d).toContain('const singleMetric = view !== null && view.metrics.length <= 1;');
+    expect(d).toContain("if (singleMetric) setControlOpen((o) => (o === 'metric' ? null : o));");
+  });
 });

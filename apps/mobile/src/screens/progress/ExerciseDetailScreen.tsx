@@ -112,6 +112,11 @@ export function ExerciseDetailScreen() {
       setOpening(null);
     }
   }, [view, opening]);
+  const singleMetric = view !== null && view.metrics.length <= 1;
+  useEffect(() => {
+    // A series with one measure hides the Measure button, so close its list too (review S3).
+    if (singleMetric) setControlOpen((o) => (o === 'metric' ? null : o));
+  }, [singleMetric]);
   useLayoutEffect(() => {
     const title = view?.title ?? route.params.name ?? '';
     navigation.setOptions(
@@ -224,7 +229,7 @@ export function ExerciseDetailScreen() {
             />
             {route.name === 'ProgressExercise' ? <View style={{ marginLeft: 'auto' }}>{infoLink}</View> : null}
           </View>
-          {controlOpen === 'metric' ? (
+          {controlOpen === 'metric' && view.metrics.length > 1 ? (
             <DropdownPanel
               options={view.metrics}
               selected={view.metric}
