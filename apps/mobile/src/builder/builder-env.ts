@@ -189,8 +189,9 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         try {
           const { result } = nextTargetsFor({ ownerId: p.id, exerciseId: id, exerciseName: e.name, measurement: e.measurement, unit: refs.unit, convention: refs.convention, equipment: eq, exercise: e, rule: null, workingSets: 3, history, painFlags: flags, sessionPain: { active: false, reportedAtUtc: null } });
           const s = result.sets.find((x) => x.setType !== 'warmup' && x.load !== null);
-          // The rule's load is for the top of its rep range (double progression: reach the top, then add load).
-          if (s?.load != null && result.loadFeasibility !== 'infeasible' && s.load.convention === refs.convention) ruleTarget = { value: s.load.value, reps: s.reps.max, rpe: 8 };
+          // The rule's load is for its own rep floor (hold, add load, reduce: the floor of the range; add reps: min = max).
+          // The builder uses it as is there and never scales it up by formula (review B3).
+          if (s?.load != null && result.loadFeasibility !== 'infeasible' && s.load.convention === refs.convention) ruleTarget = { value: s.load.value, reps: s.reps.min, rpe: 8 };
         } catch {
           ruleTarget = null;
         }
