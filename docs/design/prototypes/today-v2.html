@@ -77,6 +77,19 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .types { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
 .ty { border: 1.5px solid #26221F; background: none; color: #7C746D; border-radius: 999px; padding: 8px 14px; min-height: 40px; font-size: 14px; font-family: inherit; cursor: pointer; }
 .ty.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.ctl { background: var(--surface); border-radius: 14px; margin: 8px 0; }
+.cr { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 8px; min-height: 54px; padding: 0 10px 0 14px; }
+.cr + .cr { border-top: 1px solid var(--divider); }
+.cr .k { font-size: 15px; }
+.cr .types { margin: 0; justify-content: flex-end; }
+.cr .sw { background: none; border: 0; justify-self: end; cursor: pointer; padding: 6px 0; }
+.switch { display: inline-flex; width: 51px; height: 31px; border-radius: 16px; padding: 2px; background: var(--raised); justify-content: flex-start; }
+.switch i { width: 27px; height: 27px; border-radius: 50%; background: var(--text3); display: block; }
+.switch.on { background: var(--accent); justify-content: flex-end; }
+.switch.on i { background: var(--on-accent); }
+.varline { font-size: 13.5px; color: var(--text2); margin: 0 4px 8px; }
+.link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; cursor: pointer; padding: 6px 0; font-family: inherit; }
+.mixrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text2); }
 .card .mv { color: var(--accent); }
 .day .pip.liftp { transition: background .2s; }
 .card .lt { color: var(--text2); font-weight: 500; font-size: 22px; }
@@ -102,7 +115,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 <div class="wrap">
   <div class="phone" id="app"></div>
-  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split; runs show only when you've logged them or told the coach, e.g. a long run Saturday). Pick the day (Next is the plan's), then the type of session, then tap the card for details. ⋯ has other workouts. Edit and Build your own open the builder.</div>
+  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split; runs show only when you've logged them or told the coach, e.g. a long run Saturday). Pick the day (Next is the plan's), the main lift and supersets on or off, then tap the card for details. ↻ Mix it up asks the coach for one fresh accessory today. ⋯ has saved variations and other workouts. Edit and Build your own open the builder.</div>
 </div>
 
 <script>
@@ -124,7 +137,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     Chest: [
       { id: 'chest', label: 'Bench', min: 55, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Cable fly', '3 × 8 · 15'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: ['Bench top set: 102.5 kg next (hit 8 last time)'], based: ['Plan: Chest is next (day 1 of 4)', 'Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again', 'Goal: strength · bench target 110 kg (est. 1RM 127)', 'Length: your usual 60 min; fits in about 55'] },
       { id: 'chest-incline', label: 'Incline', min: 54, ex: [['Incline barbell press', '4 × 6 · 82.5'], ['Barbell bench press', '3 × 8 · 92.5'], ['Cable fly', '3 × 10 · 15'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: [] },
-      { id: 'chest-arms', label: 'Bench · arms superset', min: 52, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Machine chest press', '3 × 8 · 80'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['EZ-bar curl', '3 × 8 · 30', 'b']], notes: [] },
+      { id: 'chest-arms', kind: 'var', label: 'Bench · arms superset', min: 52, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Machine chest press', '3 × 8 · 80'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['EZ-bar curl', '3 × 8 · 30', 'b']], notes: [] },
     ],
     Back: [
       { id: 'back', label: 'Row', min: 58, ex: [['Barbell row', '4 × 6 · 92.5'], ['Lat pulldown', '3 × 8 · 60'], ['Chest-supported row', '3 × 10 · 22.5'], ['EZ-bar curl', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: [] },
@@ -138,7 +151,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     ],
   };
   const OTHER = [{ name: 'Push', sub: 'PPL day' }, { name: 'Pull', sub: 'PPL day' }, { name: 'Hotel shoulders', sub: 'Recent · 17 Oct' }, { name: 'Upper body', sub: 'Recent · 8 Oct' }];
-  let s = { day: NEXT, type: 0, open: false, sheet: null, toast: null };
+  let s = { day: NEXT, type: 0, ss: true, mix: 0, open: false, sheet: null, toast: null };
+  // "Mix it up": the coach swaps one accessory for a fresh one, today only (same main lift and muscles).
+  const ALT = { 'Cable fly': 'Machine chest press', 'Chest-supported row': 'Seated cable row', 'Leg press': 'Bulgarian split squat', 'Rear-delt fly': 'Face pull', 'Face pull': 'Rear-delt fly', 'Seated cable row': 'Chest-supported row', 'Machine chest press': 'Cable fly' };
+  const mains = (d) => TYPES[d].filter((t) => t.kind !== 'var');
   const app = document.getElementById('app');
   const MIC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
   // The plan follows what you do: the days you don't do today move into the next lifting slots
@@ -155,7 +171,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   function view() {
     const moved = reflow();
-    const o = TYPES[s.day][s.type]; o.name = s.day; o.main = o.label;
+    const base = TYPES[s.day][s.type]; const o = { ...base, name: s.day, main: base.label };
+    o.ex = base.ex.map((r) => [...r]);
+    let swapped = null;
+    if (s.mix) { const i = o.ex.findIndex((r, k) => k > 0 && !r[2] && ALT[r[0]] && !o.ex.some((q) => q[0] === ALT[r[0]])); if (i > 0) { swapped = [o.ex[i][0], ALT[o.ex[i][0]]]; o.ex[i][0] = swapped[1]; } }
+    if (!s.ss) { o.ex = o.ex.map((r) => [r[0], r[1]]); o.min += 4; }
     let n = 0;
     app.innerHTML = `
     <div class="status"><span>09:41</span><span>●●● 82%</span></div>
@@ -166,7 +186,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <div>
         <div class="label" style="margin:0 2px 8px">Today's session</div>
         <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other workouts">⋯</button></div>
-        ${TYPES[s.day].length > 1 ? `<div class="types">${TYPES[s.day].map((t, i) => `<button class="ty${i === s.type ? ' on' : ''}" data-a="type" data-v="${i}">${t.label}</button>`).join('')}</div>` : ''}
+        <div class="ctl">
+          <div class="cr"><span class="k">Main lift</span><div class="types">${mains(s.day).map((t) => { const i = TYPES[s.day].indexOf(t); return `<button class="ty${i === s.type ? ' on' : ''}" data-a="type" data-v="${i}">${t.label}</button>`; }).join('')}</div></div>
+          <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
+        </div>
+        ${TYPES[s.day][s.type].kind === 'var' ? `<div class="varline">Variation: ${TYPES[s.day][s.type].label} · <button class="link" data-a="type" data-v="0">Back to plan day</button></div>` : ''}
         <div class="card${s.open ? ' open' : ''}">
           <div class="top" data-a="toggle" role="button" aria-expanded="${s.open}">
             <div><div class="big">${o.name} <span class="lt">· ${o.main}</span></div><div class="sub">${o.ex.length} exercises · ~${o.min} min${moved ? ` · <span class="mv">${moved}</span>` : ''}${s.day === NEXT ? ' · plan day 1 of 4' : ''}</div></div>
@@ -176,6 +200,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
           <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${(() => { const groups = []; for (const r of o.ex) { if (r[2] && r[2] !== 'a') groups[groups.length - 1].push(r); else groups.push([r]); } return groups.map((g) => { n++; const rows = g.map(([nm, v, ss]) => { const sets = v.split(' × ')[0], kg = v.includes('·') ? v.split('· ')[1] : 'BW'; return `<div class="ex"><span class="n">${n}${ss ?? ''}</span><span>${nm}<small>${WORKS[nm] ?? ''}</small></span><span class="c">${sets}</span><span class="c">${kg}</span></div>`; }).join(''); return g.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join(''); })()}</div>
           ${o.notes.length ? `<div class="notes"><b>From last review</b>${o.notes.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}
           ${o.based ? `<div class="notes"><b>Based on</b>${o.based.map((x) => `<span>· ${x}</span>`).join('')}</div>` : ''}
+          <div class="mixrow">${swapped ? `<span>${swapped[0]} → ${swapped[1]} · today only</span><button class="link" data-a="unmix">Undo</button>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
           <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
         </div>
       </div>
@@ -191,8 +216,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const o = TYPES[s.day][s.type]; o.name = s.day;
     if (a === 'toggle') s.open = !s.open;
     if (a === 'dayp') { s.day = v; s.type = 0; s.open = false; }
-    if (a === 'type') { s.type = Number(v); s.open = false; }
-    if (a === 'other') s.sheet = `<h3>Other workouts</h3>${OTHER.map((x) => `<button class="it" data-a="close" style="border:0;color:inherit;font:inherit;text-align:left;cursor:pointer"><span>${x.name}</span><small>${x.sub}</small></button>`).join('')}<button class="ghost" data-a="build">Build your own</button><button class="ghost" data-a="close">Close</button>`;
+    if (a === 'type') { s.type = Number(v); s.mix = 0; s.sheet = null; }
+    if (a === 'ss') s.ss = !s.ss;
+    if (a === 'mix') s.mix = 1;
+    if (a === 'unmix') s.mix = 0;
+    if (a === 'dayp') s.mix = 0;
+    if (a === 'other') s.sheet = `<h3>Other workouts</h3>${TYPES[s.day].filter((t) => t.kind === 'var').length ? `<div class="label" style="padding:0 4px">Your ${s.day} variations</div>${TYPES[s.day].map((t, i) => t.kind === 'var' ? `<button class="it" data-a="type" data-v="${i}" style="border:0;color:inherit;font:inherit;text-align:left;cursor:pointer"><span>${t.label}</span><small>~${t.min} min</small></button>` : '').join('')}<div class="label" style="padding:0 4px">Other</div>` : ''}${OTHER.map((x) => `<button class="it" data-a="close" style="border:0;color:inherit;font:inherit;text-align:left;cursor:pointer"><span>${x.name}</span><small>${x.sub}</small></button>`).join('')}<button class="ghost" data-a="build">Build your own</button><button class="ghost" data-a="close">Close</button>`;
     if (a === 'day') { const d = WEEK[Number(v)]; s.sheet = d.today ? `<h3>Today</h3><div class="it"><span>${o.name} recommended</span><small>Plan day 2 of 4</small></div><button class="ghost" data-a="close">Close</button>` : `<h3>${d.dn[0] + d.dn.slice(1).toLowerCase()} ${d.dd} Oct</h3>${d.detail.map((x) => `<div class="it"><span>${x}</span><small>${d.past ? '' : 'Planned'}</small></div>`).join('')}${d.past ? '' : '<button class="ghost" data-a="close">Move or change (coach)</button>'}<button class="ghost" data-a="close">Close</button>`; }
     if (a === 'close') s.sheet = null;
     if (a === 'start') s.toast = `Started ${o.name} (prototype)`;
