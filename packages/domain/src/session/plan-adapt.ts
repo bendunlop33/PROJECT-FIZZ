@@ -41,19 +41,20 @@ export interface PlanDueDay {
   bodyParts: readonly SplitBodyPart[];
   createdFromSessionId?: string | null | undefined;
   /**
-   * (Workout builder v3 §4.2) Its plan day, (planId, splitDayId) (`planDayOf`): templates of the same
-   * plan day (`Chest · bench`, `Chest · incline`) are one day for Up next. Absent: by routine only.
+   * (Workout builder v3 §4.2) Its plan day, (planId, dayIndex) (`planDayOf`): templates of the same
+   * plan day (`Chest · bench`, `Chest · incline`) are one day for Up next; a split day the plan uses
+   * twice is two days (review b3-data B1). Absent: by routine only.
    */
   planKey?: PlanDayKey | null | undefined;
 }
 
-/** A plan day's identity: (planId, splitDayId). */
+/** A plan day's identity: (planId, dayIndex), as `PlanDayRef`. */
 export interface PlanDayKey {
   planId: string;
-  splitDayId: string;
+  dayIndex: number;
 }
 
-const sameKey = (a: PlanDayKey | null | undefined, b: PlanDayKey | null | undefined): boolean => a != null && b != null && a.planId === b.planId && a.splitDayId === b.splitDayId;
+const sameKey = (a: PlanDayKey | null | undefined, b: PlanDayKey | null | undefined): boolean => a != null && b != null && a.planId === b.planId && a.dayIndex === b.dayIndex;
 
 /** A finished workout as the adaptive Up next reads it. */
 export interface PlanDueWorkout {
@@ -62,8 +63,8 @@ export interface PlanDueWorkout {
   startedAtUtc: string;
   /** Working sets done per muscle group (`workoutGroupsOf`). */
   groups: ReadonlyMap<MuscleGroup, number>;
-  /** (v3 §4.2) The plan day it was started as (`WorkoutSession.planDay`); absent on older workouts. */
-  planDay?: PlanDayKey | null | undefined;
+  /** (v3 §4.2) The plan day it was started as (`WorkoutSession.planDay`), and the template it used; absent on older workouts. */
+  planDay?: (PlanDayKey & { templateRoutineId?: string | null | undefined }) | null | undefined;
 }
 
 /**
@@ -97,12 +98,14 @@ function planSplit(days: readonly PlanDueDay[]): TrainingSplit | null {
 
 /**
  * The plan day this workout was started from (or saved as), if any. (v3
- * §4.2) Or started as: a `Today only` start has no routine but names its
- * (plan, split day).
+ * §4.2) Or started as: its template (`templateRoutineId`), else its plan
+ * day (a `Today only` start has no routine but names its plan and day).
  */
 export function ownPlanDay<D extends Pick<PlanDueDay, 'routineId' | 'createdFromSessionId' | 'planKey'>>(days: readonly D[], w: Pick<PlanDueWorkout, 'sessionId' | 'routineId' | 'planDay'>): D | undefined {
+  const template = w.planDay?.templateRoutineId ?? null;
   return (
     days.find((d) => d.routineId === w.routineId || (d.createdFromSessionId != null && d.createdFromSessionId === w.sessionId)) ??
+    (template === null ? undefined : days.find((d) => d.routineId === template)) ??
     days.find((d) => sameKey(d.planKey, w.planDay))
   );
 }

@@ -318,10 +318,22 @@ export interface FinishedRef {
   tz: string;
   /**
    * (Workout builder v3 §4.2) The plan day it was started as (`WorkoutSession.planDay`): Up next
-   * credits (planId, splitDayId), so a `Today only` start with no routine still counts. Absent on
+   * credits the plan day (planId, dayIndex), so a `Today only` start with no routine still counts,
+   * and a plan that repeats a split day keeps its days apart. `templateRoutineId` /
+   * `mainLiftExerciseId`: the template it used, so Today opens the last-used one (Q2). Absent on
    * older workouts (they count by `routineId`).
    */
-  planDay?: { planId: string; splitDayId: string; variationId?: string | null } | undefined;
+  planDay?: FinishedPlanDay | undefined;
+}
+
+/** A finished workout's plan day as Up next reads it (`WorkoutSession.planDay`, trimmed). */
+export interface FinishedPlanDay {
+  planId: string;
+  dayIndex: number;
+  splitDayId?: string | undefined;
+  templateRoutineId?: string | null | undefined;
+  mainLiftExerciseId?: string | null | undefined;
+  variationId?: string | null | undefined;
 }
 
 /** Whether a finished workout counts as this routine's: started from it, or the workout it was saved from. */
