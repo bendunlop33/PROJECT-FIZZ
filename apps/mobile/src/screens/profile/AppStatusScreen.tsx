@@ -18,6 +18,7 @@ import { signingStatus } from '../../status/signing';
 import { useTheme } from '../../theme';
 import { DomainLabel, Group, Row, Screen, SectionHeader, StatusLine, TextButton, type SymbolName, type Tone } from '../../ui';
 import { useProbeResults } from './useProbeResults';
+import { playbookStatusLine } from '../../coach/playbook-view';
 
 const CAPABILITY_STYLE: Record<CapabilityLabel, { icon: SymbolName; tone: Tone }> = {
   Working: { icon: 'checkmark.circle.fill', tone: 'done' },
@@ -48,8 +49,8 @@ export function AppStatusScreen() {
     }, []),
   );
   const [data] = useScreenData(async (s) => {
-    const [backup, counts] = await Promise.all([s.backups.getStatus(), s.yourData.counts()]);
-    return { backup, counts, integrity: s.integrity.last() };
+    const [backup, counts, playbook] = await Promise.all([s.backups.getStatus(), s.yourData.counts(), s.coach.playbookRules().catch(() => null)]);
+    return { backup, counts, integrity: s.integrity.last(), playbook: playbookStatusLine(playbook) };
   });
   const now = services.now();
   const nowMs = toMs(now.utc);
@@ -102,7 +103,12 @@ export function AppStatusScreen() {
           text={counts.exercises === 0 ? 'Exercise list: not in this build yet' : `Exercise list: ${plural(counts.exercises, 'exercise', 'exercises')}`}
         />
         <StatusLine icon="checkmark.circle.fill" tone="done" text={`Gym presets: ${String(services.coachingKnowledge.gymPresets().length)} built in`} />
-        <StatusLine icon="minus.circle" tone="info" text="Playbook rules: not in this build yet" />
+        {/* Design pass 6.11: the same count as the Playbook screen. */}
+        {data.value.playbook !== null ? (
+          <StatusLine icon={data.value.playbook.endsWith('none yet') ? 'minus.circle' : 'checkmark.circle.fill'} tone={data.value.playbook.endsWith('none yet') ? 'info' : 'done'} text={data.value.playbook} />
+        ) : (
+          <StatusLine icon="minus.circle" tone="info" text="Playbook rules: couldn’t read" />
+        )}
       </View>
 
       <SectionHeader title="This install" />

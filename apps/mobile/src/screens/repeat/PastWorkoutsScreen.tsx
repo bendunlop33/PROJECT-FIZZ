@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import { ActionSheetIOS, Pressable, View } from 'react-native';
+import { ActionSheetIOS, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { deleteToolbarLabel, pastRowDetail, pastRowOpens, pastRowTitle, recentlyDeletedFooter, rowCustomActions, selectRowLabel, unreadableLine } from '../../history/delete-view';
@@ -128,39 +128,40 @@ export function PastWorkoutsScreen() {
         ) : (
           <Group>
             {list.rows.map((c) => (
-              <View key={c.sessionId} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <View style={{ flex: 1 }}>
-                  <Row
-                    title={pastRowTitle(c, tz)}
-                    subtitle={c.exerciseNames.join(', ')}
-                    secondLine={pastRowDetail(c)}
-                    actions={rowCustomActions('past')}
-                    onAction={() => {
-                      sel.removeOne(c);
-                    }}
+              // Design pass 6.7: the `⋯` is the row's trailing control (beside the tap target, no chevron); names on one line.
+              <Row
+                key={c.sessionId}
+                title={pastRowTitle(c, tz)}
+                subtitle={c.exerciseNames.join(', ')}
+                subtitleLines={1}
+                secondLine={pastRowDetail(c)}
+                actions={rowCustomActions('past')}
+                onAction={() => {
+                  sel.removeOne(c);
+                }}
+                onPress={() => {
+                  if (pastRowOpens(c) === 'summary') navigation.navigate('Summary', { sessionId: c.sessionId, back: true });
+                  else navigation.navigate('Repeat', { sessionId: c.sessionId });
+                }}
+                trailing={
+                  // `⋯` → `Save to Workouts` (routines.md §A2.6): what was done, loads Auto.
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`More, ${pastRowTitle(c, tz)}`}
+                    accessibilityActions={[{ name: LIBRARY_COPY_UI.saveToWorkouts, label: LIBRARY_COPY_UI.saveToWorkouts }]}
+                    onAccessibilityAction={() => void save.open({ kind: 'session', sessionId: c.sessionId }, null)}
                     onPress={() => {
-                      if (pastRowOpens(c) === 'summary') navigation.navigate('Summary', { sessionId: c.sessionId, back: true });
-                      else navigation.navigate('Repeat', { sessionId: c.sessionId });
+                      const options = [LIBRARY_COPY_UI.saveToWorkouts, LIBRARY_COPY_UI.cancel];
+                      ActionSheetIOS.showActionSheetWithOptions({ title: pastRowTitle(c, tz), options, cancelButtonIndex: 1 }, (i) => {
+                        if (i === 0) void save.open({ kind: 'session', sessionId: c.sessionId }, null);
+                      });
                     }}
-                  />
-                </View>
-                {/* `⋯` → `Save to Workouts` (routines.md §A2.6): what was done, loads Auto. */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`More, ${pastRowTitle(c, tz)}`}
-                  accessibilityActions={[{ name: LIBRARY_COPY_UI.saveToWorkouts, label: LIBRARY_COPY_UI.saveToWorkouts }]}
-                  onAccessibilityAction={() => void save.open({ kind: 'session', sessionId: c.sessionId }, null)}
-                  onPress={() => {
-                    const options = [LIBRARY_COPY_UI.saveToWorkouts, LIBRARY_COPY_UI.cancel];
-                    ActionSheetIOS.showActionSheetWithOptions({ title: pastRowTitle(c, tz), options, cancelButtonIndex: 1 }, (i) => {
-                      if (i === 0) void save.open({ kind: 'session', sessionId: c.sessionId }, null);
-                    });
-                  }}
-                  style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <Icon name="ellipsis" color="text.secondary" />
-                </Pressable>
-              </View>
+                    style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Icon name="ellipsis" color="text.secondary" />
+                  </Pressable>
+                }
+              />
             ))}
           </Group>
         )}

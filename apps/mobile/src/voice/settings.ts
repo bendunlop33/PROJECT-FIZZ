@@ -64,9 +64,9 @@ export function toggleCues(p: VoicePrefs): VoicePrefs {
 export const CUE_MODE_LABEL: Record<CueMode, string> = { off: 'Off', timer: 'Timer only', timer_and_set: 'Timer and set details' };
 export const READ_REPLIES_LABEL: Record<ReadReplies, string> = { workout: 'During workouts', always: 'Always', off: 'Off' };
 
-/** `0.8×` … `1.2×`; the default reads `Normal`. */
+/** `0.8×` … `1.2×`; the default is `1×` (design pass 6.9: one width for every chip; VoiceOver says `Normal speed`). */
 export function rateLabel(rate: number): string {
-  return rate === 1 ? 'Normal' : `${String(rate)}×`;
+  return `${String(rate)}×`;
 }
 
 /** Profile's Voice row: `Cues · Timer and set details`, `Cues off`, or `Not in this build`. */

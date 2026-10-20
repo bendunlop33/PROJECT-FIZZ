@@ -40,3 +40,10 @@ export function playbookRuleList(candidates: readonly PlaybookCandidate[]): Play
   const of = (status: PlaybookCandidate['status']) => live.filter((c) => c.status === status).sort(byNumber).map(row);
   return { toReview: of('to_review'), approved: of('approved'), rejected: of('rejected') };
 }
+
+/** (Design pass 6.11) App status's Playbook line, matching the Playbook screen: `Playbook rules: 3 approved`, or `none yet`; null when it can't be read. */
+export function playbookStatusLine(list: PlaybookRuleList | null): string | null {
+  if (list === null) return null;
+  const n = list.approved.length;
+  return n === 0 ? 'Playbook rules: none yet' : `Playbook rules: ${String(n)} approved`;
+}

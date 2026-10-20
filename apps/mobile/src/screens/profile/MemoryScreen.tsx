@@ -90,8 +90,9 @@ export function MemoryScreen() {
                 icon="questionmark.circle"
                 title={m.text}
                 subtitle={m.line}
-                trailing={
-                  <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+                // Design pass 6.7: the buttons go under the text, so the memory uses the full width.
+                below={
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['4'] }}>
                     <TextButton label="Not now" tone="secondary" onPress={() => void decide(m, 'not_now')} />
                     {m.split ? (
                       <>

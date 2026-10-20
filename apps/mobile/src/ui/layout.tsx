@@ -164,62 +164,108 @@ interface RowProps {
   /** VoiceOver custom actions (e.g. `Delete` on a past workout, delete-workouts §4). */
   actions?: readonly { name: string; label: string }[];
   onAction?: (name: string) => void;
+  /**
+   * (Design pass 6.7) Action buttons under the row's text, outside its tap target, so long text
+   * (a memory) uses the full width and VoiceOver reaches each button.
+   */
+  below?: ReactNode;
+  /** No side padding: the row lines up with content outside a Group. */
+  flush?: boolean;
+  /** Cap the subtitle at this many lines (a list of exercise names). */
+  subtitleLines?: number;
+  /** A trailing button's name and action, read as a VoiceOver action on the row too (`Clear`). */
+  trailingAction?: { label: string; onPress: () => void };
 }
 
-/** `SettingsRow` (§9.31): ≥ 52pt, whole row is the target, chevron when it opens something. */
-export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag, actions, onAction }: RowProps) {
+/**
+ * `SettingsRow` (§9.31): ≥ 52pt, whole row is the target, chevron when it opens something.
+ * Design pass 6.7: with both `onPress` and `trailing`, the trailing control sits beside the tap
+ * target (not inside it), with no chevron, so VoiceOver can reach it; `trailingAction` is also offered
+ * as a VoiceOver action on the row. `below` holds action buttons under the text.
+ */
+export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag, actions, onAction, below, flush = false, subtitleLines, trailingAction }: RowProps) {
   const theme = useTheme();
-  const content = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], minHeight: 52, paddingVertical: theme.space['3'], paddingHorizontal: theme.space['4'] }}>
-      {icon ? <Icon name={icon} color={iconColor} /> : null}
-      <View style={{ flex: 1, gap: 2 }}>
-        <AppText variant="body" color={disabled ? 'text.secondary' : 'text.primary'}>
-          {title}
+  const padX = flush ? 0 : theme.space['4'];
+  const split = onPress !== undefined && (trailing !== undefined && trailing !== null);
+  const text = (
+    <View style={{ flex: 1, gap: 2 }}>
+      <AppText variant="body" color={disabled ? 'text.secondary' : 'text.primary'}>
+        {title}
+      </AppText>
+      {subtitle ? (
+        <AppText variant="callout" color="text.secondary" numeric {...(subtitleLines !== undefined ? { numberOfLines: subtitleLines } : {})}>
+          {subtitle}
         </AppText>
-        {subtitle ? (
-          <AppText variant="callout" color="text.secondary" numeric>
-            {subtitle}
+      ) : null}
+      {secondLine ? (
+        <AppText variant="callout" color="text.secondary" numeric>
+          {secondLine}
+        </AppText>
+      ) : null}
+      {tag ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+          <Icon name={tag.icon} color={tag.color} size={14} />
+          <AppText variant="label" color={tag.color}>
+            {tag.text}
           </AppText>
-        ) : null}
-        {secondLine ? (
-          <AppText variant="callout" color="text.secondary" numeric>
-            {secondLine}
-          </AppText>
-        ) : null}
-        {tag ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-            <Icon name={tag.icon} color={tag.color} size={14} />
-            <AppText variant="label" color={tag.color}>
-              {tag.text}
-            </AppText>
-          </View>
-        ) : null}
-      </View>
-      {trailing}
-      {onPress && !disabled ? <Icon name="chevron.right" color="text.tertiary" size={14} /> : null}
+        </View>
+      ) : null}
     </View>
   );
-  if (!onPress) return content;
-  return (
+  const content = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], minHeight: 52, paddingVertical: theme.space['3'], paddingLeft: padX, paddingRight: split ? 0 : padX }}>
+      {icon ? <Icon name={icon} color={iconColor} /> : null}
+      {text}
+      {split ? null : trailing}
+      {onPress && !disabled && !split ? <Icon name="chevron.right" color="text.tertiary" size={14} /> : null}
+    </View>
+  );
+  // Under the text's left edge (past the icon), so left edges line up.
+  const belowRow = below !== undefined && below !== null ? <View style={{ paddingLeft: padX + (icon ? 20 + theme.space['3'] : 0), paddingRight: padX, paddingBottom: theme.space['3'], marginTop: -theme.space['2'] }}>{below}</View> : null;
+  if (!onPress) {
+    return belowRow === null ? content : (
+      <View>
+        {content}
+        {belowRow}
+      </View>
+    );
+  }
+  const allActions = [...(actions ?? []), ...(trailingAction ? [{ name: trailingAction.label, label: trailingAction.label }] : [])];
+  const pressable = (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={[title, tag?.accessibilityLabel, subtitle, secondLine].filter(Boolean).join(', ')}
       accessibilityState={{ disabled }}
       {...(accessibilityHint ? { accessibilityHint } : {})}
-      {...(actions && onAction
+      {...(allActions.length > 0
         ? {
-            accessibilityActions: actions.map((a) => ({ name: a.name, label: a.label })),
+            accessibilityActions: allActions,
             onAccessibilityAction: (e: { nativeEvent: { actionName: string } }) => {
-              onAction(e.nativeEvent.actionName);
+              const name = e.nativeEvent.actionName;
+              if (trailingAction && name === trailingAction.label) trailingAction.onPress();
+              else onAction?.(name);
             },
           }
         : {})}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => ({ backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+      style={({ pressed }) => ({ flex: split ? 1 : undefined, backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
     >
       {content}
     </Pressable>
+  );
+  return (
+    <View>
+      {split ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingRight: padX }}>
+          {pressable}
+          {trailing}
+        </View>
+      ) : (
+        pressable
+      )}
+      {belowRow}
+    </View>
   );
 }
 

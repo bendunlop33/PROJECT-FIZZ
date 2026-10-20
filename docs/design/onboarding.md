@@ -565,7 +565,7 @@ None. Voice isn't set up during onboarding and no microphone is opened.
 | Element | Text |
 |---|---|
 | Welcome title | `Set up your training log` |
-| Welcome body | `Takes about 2 minutes. Everything is saved on this phone. Nothing needs an account or the internet.` |
+| Welcome body | (Design pass, 20 Oct) `About 2 minutes · on this phone` |
 | Welcome list | `You'll set:` `Units and rest times` · `Your gym's equipment` · `How your data is kept` |
 | Welcome actions | `Set up` · `Restore from a backup` |
 | Step counter | `Step 1 of 3` (Essentials) · `Step 1 of 4` (About your training, revised 9 Oct) |

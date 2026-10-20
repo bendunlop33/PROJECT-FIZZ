@@ -1004,6 +1004,7 @@ function AddExerciseSheet({ visible, title, withSets, onPick, onClose }: { visib
           return (
             <Row
               key={x.id}
+              flush
               title={x.name}
               subtitle={row.subtitle}
               disabled={row.disabled}

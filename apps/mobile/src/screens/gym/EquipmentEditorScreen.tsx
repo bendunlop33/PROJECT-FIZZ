@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { Alert, Pressable, TextInput, View } from 'react-native';
 
 import {
@@ -23,8 +23,8 @@ import { haptic } from '../../device/haptics';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, Icon, NumberAccessory, NUMBER_ACCESSORY_ID, PrimaryButton, Screen, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
-import { nextFieldText, parseNumber } from '../../ui/number-text';
+import { AppText, Chip, ChipRow, Icon, InfoLine, KeyboardDoneAccessory, NumberAccessory, NUMBER_ACCESSORY_ID, PrimaryButton, Screen, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
+import { nextFieldText, parseNumber, rangeNextField } from '../../ui/number-text';
 
 /**
  * Equipment editor, minimal (gym-editor.md §2.4): enough for rule 4 to be
@@ -99,7 +99,7 @@ export function EquipmentEditorScreen() {
     const prev = r.previous;
     setLoaded({ base: r.equipment, unitLocked: loaded?.unitLocked ?? false, unit: r.equipment.unit, ownerId: r.equipment.ownerId });
     setToast({
-      text: 'Saved. Future workouts use the new setup.',
+      text: 'Saved',
       ...(prev
         ? {
             undo: () => {
@@ -220,9 +220,8 @@ export function EquipmentEditorScreen() {
 
         {f.kind === 'weight_stack' || f.kind === 'assisted_stack' ? (
           <>
-            <AppText variant="callout" color="text.secondary">
-              {f.kind === 'weight_stack' ? 'Stack, as printed on the pins.' : 'Assistance, as printed. More assistance = easier. In a workout “+” adds assistance.'}
-            </AppText>
+            {/* Design pass 6.10: one short line; the assisted explanation behind ⓘ. */}
+            <InfoLine text={f.kind === 'weight_stack' ? 'As printed on the stack' : 'Assistance, as printed'} variant="callout" {...(f.kind === 'assisted_stack' ? { info: 'More assistance is easier. In a workout, + adds assistance.', infoLabel: 'About assistance' } : {})} />
             {f.irregular ? (
               <StatusLine
                 icon="info.circle"
@@ -232,11 +231,6 @@ export function EquipmentEditorScreen() {
               />
             ) : null}
             <RangeFields range={f.range} unit={u} onChange={(range) => { set({ range, irregular: null }); }} />
-            {f.kind === 'weight_stack' ? (
-              <AppText variant="callout" color="text.secondary">
-                As printed on the stack
-              </AppText>
-            ) : null}
           </>
         ) : null}
 
@@ -284,7 +278,7 @@ export function EquipmentEditorScreen() {
   );
 }
 
-function TextField({ label, value, onChange, numeric = false }: { label: string; value: string; onChange: (v: string) => void; numeric?: boolean }) {
+function TextField({ label, value, onChange, numeric = false, inputRef, onFocus, accessoryId = NUMBER_ACCESSORY_ID }: { label: string; value: string; onChange: (v: string) => void; numeric?: boolean; inputRef?: Ref<TextInput>; onFocus?: () => void; accessoryId?: string }) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.space['1'] }}>
@@ -296,7 +290,9 @@ function TextField({ label, value, onChange, numeric = false }: { label: string;
         onChangeText={onChange}
         accessibilityLabel={label}
         maxLength={120}
-        {...(numeric ? { keyboardType: 'decimal-pad' as const, inputAccessoryViewID: NUMBER_ACCESSORY_ID } : {})}
+        {...(numeric ? { keyboardType: 'decimal-pad' as const, inputAccessoryViewID: accessoryId } : {})}
+        {...(inputRef ? { ref: inputRef } : {})}
+        {...(onFocus ? { onFocus } : {})}
         maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
         style={{
           minHeight: 52,
@@ -315,7 +311,7 @@ function TextField({ label, value, onChange, numeric = false }: { label: string;
 }
 
 /** A number field that keeps partial typing (`2.`) and shows the value otherwise. */
-function NumberField({ label, unit, value, onChange }: { label: string; unit: string; value: number | null; onChange: (v: number | null) => void }) {
+function NumberField({ label, unit, value, onChange, inputRef, onFocus, accessoryId }: { label: string; unit: string; value: number | null; onChange: (v: number | null) => void; inputRef?: Ref<TextInput>; onFocus?: () => void; accessoryId?: string }) {
   const [text, setText] = useState(value === null ? '' : String(value));
   useEffect(() => {
     setText((t) => nextFieldText(t, value));
@@ -325,6 +321,9 @@ function NumberField({ label, unit, value, onChange }: { label: string; unit: st
       label={`${label} · ${unit}`}
       value={text}
       numeric
+      {...(inputRef ? { inputRef } : {})}
+      {...(onFocus ? { onFocus } : {})}
+      {...(accessoryId ? { accessoryId } : {})}
       onChange={(t) => {
         setText(t);
         onChange(parseNumber(t));
@@ -333,19 +332,25 @@ function NumberField({ label, unit, value, onChange }: { label: string; unit: st
   );
 }
 
+/** The range's own `Next ›` bar (design pass 6.12): From → To → Every without the keypad dropping. */
+const RANGE_ACCESSORY_ID = 'fizz-range-next';
+
 function RangeFields({ range, unit, onChange }: { range: RangeSpec; unit: string; onChange: (r: RangeSpec) => void }) {
   const theme = useTheme();
+  const refs = [useRef<TextInput>(null), useRef<TextInput>(null), useRef<TextInput>(null)] as const;
+  const [focused, setFocused] = useState(0);
+  const next = rangeNextField(focused);
+  const field = (i: 0 | 1 | 2, label: string, value: number | null, set: (v: number | null) => void) => (
+    <View style={{ flex: 1, minWidth: 90 }}>
+      <NumberField label={label} unit={unit} value={value} inputRef={refs[i]} accessoryId={RANGE_ACCESSORY_ID} onFocus={() => { setFocused(i); }} onChange={set} />
+    </View>
+  );
   return (
     <View style={{ flexDirection: 'row', gap: theme.space['2'], flexWrap: 'wrap' }}>
-      <View style={{ flex: 1, minWidth: 90 }}>
-        <NumberField label="From" unit={unit} value={range.from} onChange={(from) => { onChange({ ...range, from }); }} />
-      </View>
-      <View style={{ flex: 1, minWidth: 90 }}>
-        <NumberField label="To" unit={unit} value={range.to} onChange={(to) => { onChange({ ...range, to }); }} />
-      </View>
-      <View style={{ flex: 1, minWidth: 90 }}>
-        <NumberField label="Every" unit={unit} value={range.step} onChange={(step) => { onChange({ ...range, step }); }} />
-      </View>
+      {field(0, 'From', range.from, (from) => { onChange({ ...range, from }); })}
+      {field(1, 'To', range.to, (to) => { onChange({ ...range, to }); })}
+      {field(2, 'Every', range.step, (step) => { onChange({ ...range, step }); })}
+      <KeyboardDoneAccessory nativeID={RANGE_ACCESSORY_ID} onNext={next === null ? null : () => refs[next].current?.focus()} />
     </View>
   );
 }
