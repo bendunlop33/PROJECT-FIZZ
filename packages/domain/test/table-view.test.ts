@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { EquipmentInstance, Exercise, Load, SessionAggregate } from '@fizz/schemas';
+import type { EquipmentInstance, Exercise, Load, SessionAggregate, WorkoutSet } from '@fizz/schemas';
 
 import {
   buildActiveSetView,
@@ -8,6 +8,7 @@ import {
   exerciseCardFacts,
   NBSP,
   startWorkout,
+  repTargetOf,
   tableLogLabel,
   type ActiveViewInput,
   type PreviousSession,
@@ -565,5 +566,69 @@ describe('exerciseCardFacts: a non-current card’s menu and sheet (review S2, S
     expect(bench?.coachActionId).toBeNull();
     expect(bench?.plates.map(plain)).toEqual(['60 kg: 20 bar + 20 / side', '100 kg: 20 bar + 20 + 20 / side', '95 kg: 20 bar + 25 + 10 + 2.5 / side']);
     expect(exerciseCardFacts({ aggregate: s }, 'nope')).toBeNull();
+  });
+});
+
+describe('workout-table v3 fields (20 Oct)', () => {
+  it('rows carry their stored set type and rest; the card its load header, rep target and top set', () => {
+    const { state } = startFixture();
+    const bench = card(table(state).blocks[0]);
+    expect(bench.rows.map((r) => [r.setType, r.restAfterS])).toEqual([
+      ['warmup', 60],
+      ['working', 180],
+      ['working', 180],
+    ]);
+    expect(bench.loadHeader).toBe('KG');
+    expect(plain(bench.repTarget)).toBe('6–8 reps');
+    // Targets until logged, then the logged load (the warm-up never counts).
+    expect(bench.topSet).toEqual({ value: 100, unit: 'kg' });
+    const [w, b1] = setsFor(state, BENCH);
+    let s = apply(state, logCmd(w?.id ?? '', values(kg(60), 10), 5));
+    s = apply(s, logCmd(b1?.id ?? '', values(kg(102.5), 8), 200));
+    expect(card(table(s, { nowMs: ms(201) }).blocks[0]).topSet).toEqual({ value: 102.5, unit: 'kg' });
+  });
+
+  it('superset members carry their own rows, columns, rep target, progress and last line', () => {
+    const { state } = startFixture();
+    const b = table(state).blocks[1];
+    if (b?.kind !== 'superset') throw new Error('superset');
+    const [row, face] = b.superset.members;
+    expect(row?.rows.map((r) => r.setId)).toEqual(setsFor(state, ROW).map((x) => x.id));
+    expect(face?.rows.map((r) => r.setId)).toEqual(setsFor(state, FACE).map((x) => x.id));
+    expect(row?.rows.every((r) => r.memberTag === 'A1')).toBe(true);
+    expect(row?.loadHeader).toBe('KG STACK');
+    expect(row?.progress).toEqual({ done: 0, total: 2 });
+    expect(row?.hasPending).toBe(true);
+    expect(row?.lastLine).toBe('No previous result');
+    expect(row?.repTarget).not.toBeNull();
+  });
+
+  it('the rep target groups top, working, back-off and drop targets; warm-ups and skipped sets never count', () => {
+    const { state } = startFixture();
+    const sets = setsFor(state, BENCH);
+    const [w, b1, b2] = sets;
+    const typed = sets.map((x) => (x.id === b1?.id ? { ...x, setType: 'top' as const, planned: { ...x.planned, reps: { min: 6, max: 6 } } } : x.id === b2?.id ? { ...x, setType: 'backoff' as const, planned: { ...x.planned, reps: { min: 8, max: 8 } } } : x));
+    expect(repTargetOf(typed, 'reps')).toBe('6 top · 8 back-off');
+    const two = [...typed, { ...(typed[2] as WorkoutSet), id: 'b3' }];
+    expect(repTargetOf(two, 'reps')).toBe('6 top · 8 back-offs');
+    expect(plain(repTargetOf([w as WorkoutSet, { ...(b1 as WorkoutSet), planned: { ...(b1 as WorkoutSet).planned, reps: { min: 10, max: 10 } } }, b2 as WorkoutSet], 'reps'))).toBe('10, 6–8 reps');
+    expect(repTargetOf([w as WorkoutSet], 'reps')).toBeNull();
+    expect(repTargetOf([{ ...(b1 as WorkoutSet), status: 'skipped' }], 'reps')).toBeNull();
+    expect(repTargetOf(sets, 'cardio')).toBeNull();
+  });
+
+  it('per-hand reads KG EACH; lb keeps LB; assisted and bodyweight have no top set', () => {
+    const dbEx = exercise(230, 'Dumbbell press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+    const db = card(table(emptyWith(dbEx, dumbbells())).blocks[0]);
+    expect(db.loadHeader).toBe('KG EACH');
+    const dbLb = card(table(emptyWith(exercise(231, 'Dumbbell press', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' }), dumbbells({ unit: 'lb', loads: [10, 20, 45, 50] }), 'lb')).blocks[0]);
+    expect(dbLb.loadHeader).toBe('LB EACH');
+    if (dbLb.topSet !== null) expect(dbLb.topSet.unit).toBe('lb');
+    const as = card(table(emptyWith(exercise(232, 'Assisted pull-up', { compatibleEquipment: ['assisted_stack'], defaultLoadConvention: 'assistance' }), assisted())).blocks[0]);
+    expect(as.loadHeader).toBe('ASSIST KG');
+    expect(as.topSet).toBeNull();
+    const bw = card(table(emptyWith(exercise(233, 'Dip', { compatibleEquipment: ['bodyweight_station'], defaultLoadConvention: 'bodyweight' }), bodyweightStation())).blocks[0]);
+    expect(bw.loadHeader).toBeNull();
+    expect(bw.topSet).toBeNull();
   });
 });
