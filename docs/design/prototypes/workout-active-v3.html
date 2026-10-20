@@ -1,0 +1,160 @@
+<title>In-Workout Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the active workout in the builder's format. Header; a compact round strip (1 2 3a/b 4 5); the active round card (a superset is one box with a/b and a connecting line); per-set table # · Kg · Reps · RPE · ✓ with warm-ups as W rows; edit in the cell with a keyboard bar; the log button; Up next. "Workout" opens the builder-style overview table. Direction D tokens. */
+:root {
+  --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
+  --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --on-accent: #0D0C0B;
+  --done: #5CC98A; --done-sub: #15301F; --page: #1B1917;
+  --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--text); font-family: var(--ui); margin: 0; }
+.wrap { padding: 24px max(16px, env(safe-area-inset-left, 0px)) 40px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 380px; line-height: 1.45; }
+.phone { width: 380px; max-width: 100%; height: 800px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 18px 14px 12px; display: flex; flex-direction: column; gap: 10px; position: relative; overflow: hidden; }
+.status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
+.hdr { display: flex; align-items: center; gap: 8px; }
+.hdr .t { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--text2); flex: 1; }
+.chip { border: 1.5px solid var(--divider); border-radius: 999px; padding: 6px 10px; font-size: 13px; color: var(--text); background: none; font-family: inherit; }
+.clock { font-variant-numeric: tabular-nums; color: var(--text2); font-size: 14px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+/* round strip */
+.rounds { display: flex; gap: 6px; align-items: center; overflow-x: auto; padding: 2px; }
+.rd { flex: none; min-width: 36px; height: 30px; border-radius: 9px; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--surface); color: var(--text3); border: 1.5px solid transparent; font-variant-numeric: tabular-nums; cursor: pointer; padding: 0 8px; font-family: inherit; }
+.rd.done { color: var(--done); background: var(--done-sub); }
+.rd.now { color: var(--text); border-color: var(--accent); }
+.rounds .all { margin-left: auto; background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 13.5px; cursor: pointer; font-family: inherit; }
+/* round card */
+.card { background: var(--surface); border-radius: 18px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.box { padding: 0; display: flex; flex-direction: column; gap: 12px; position: relative; }
+.ex { position: relative; }
+.ex.dim { opacity: .55; }
+.exh { display: grid; grid-template-columns: 28px 1fr auto; gap: 6px; align-items: start; }
+.exh .n { font-weight: 700; font-size: 14px; padding-top: 2px; }
+.exh .nm { font-size: 17px; font-weight: 600; line-height: 1.2; }
+.exh .nm small { display: block; font-size: 12.5px; font-weight: 400; color: var(--text2); margin-top: 2px; }
+.exh .prog { font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; padding-top: 3px; }
+.box .ex + .ex { border-top: 1px solid var(--divider); padding-top: 12px; }
+/* set table */
+.tbl { margin-top: 8px; display: flex; flex-direction: column; }
+.tr, .th { display: grid; grid-template-columns: 26px 1fr 1fr 42px 40px; gap: 6px; align-items: center; }
+.th { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); padding: 0 2px 4px; }
+.th span:nth-child(n+2) { text-align: center; }
+.tr { min-height: 44px; border-top: 1px solid var(--divider); padding: 0 2px; }
+.tr .sn { font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.tr .sn i { display: block; font-style: normal; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); }
+.cell { min-height: 36px; border-radius: 9px; background: var(--raised); color: var(--text); border: 1.5px solid transparent; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums; font-family: inherit; width: 100%; }
+.cell:focus { outline: none; border-color: var(--accent); }
+.tr.wu .cell { color: var(--text2); background: #1E1B19; }
+.tr.done .cell { background: none; color: var(--done); }
+.tr.cur .sn { color: var(--text); font-weight: 700; }
+.tr.cur .tick { border-color: var(--accent); color: var(--accent); border-width: 2px; }
+.rpe { text-align: center; color: var(--text3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.tr.done .rpe { color: var(--text2); }
+.tick { width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--text3); background: none; color: var(--text3); font-size: 15px; cursor: pointer; justify-self: center; }
+.tr.done .tick { background: var(--done); border-color: var(--done); color: var(--on-accent); }
+.meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--text2); padding: 6px 2px 0; }
+.meta u { color: var(--text); cursor: pointer; text-underline-offset: 3px; text-decoration-color: var(--text3); }
+.addset { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 13.5px; padding: 6px 2px 0; cursor: pointer; align-self: flex-start; font-family: inherit; }
+.next { font-size: 13.5px; color: var(--text2); padding: 0 4px; display: flex; justify-content: space-between; }
+.next b { color: var(--text); font-weight: 600; }
+.foot { display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: center; }
+.chat { width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid var(--text3); background: none; color: var(--text); font-size: 11px; cursor: pointer; font-family: inherit; }
+.log { min-height: 56px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; }
+#kb { position: absolute; left: 0; right: 0; bottom: 0; background: #2B2724; border-top: 1px solid var(--divider); padding: 8px 12px 16px; display: none; gap: 8px; z-index: 30; }
+#kb button { min-width: 52px; min-height: 44px; border-radius: 10px; border: 0; background: var(--raised); color: var(--text); font-size: 18px; cursor: pointer; font-family: inherit; }
+#kb span { flex: 1; }
+#kb .done { background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 15px; padding: 0 16px; }
+/* overview sheet */
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.5); z-index: 19; }
+.sheet { position: absolute; inset: auto 0 0 0; background: var(--surface); border-radius: 24px 24px 38px 38px; padding: 16px 14px 22px; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-height: 82%; overflow-y: auto; }
+.sheet h3 { margin: 0 4px; font-size: 18px; }
+.ovh, .ovr { display: grid; grid-template-columns: 26px 1fr 44px 58px; gap: 6px; align-items: center; }
+.ovh { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); padding: 0 8px; }
+.ovh span:nth-child(n+3), .ovr .c { text-align: right; }
+.ovr { min-height: 50px; padding: 6px 8px; border-top: 1px solid var(--divider); font-size: 15px; }
+.ovr .n { font-weight: 600; font-size: 13px; color: var(--text2); }
+.ovr small { display: block; color: var(--text2); font-size: 12px; }
+.ovr.done { opacity: .6; }
+.ovr.now .n, .ovr.now { color: var(--text); }
+.ovr .c { font-variant-numeric: tabular-nums; }
+.ovbox { border: 1.5px solid var(--text3); border-radius: 12px; margin: 4px -2px; }
+.ovbox .ovr:first-child { border-top: 0; }
+.ghost { min-height: 46px; border-radius: 999px; border: 1.5px solid var(--text3); background: none; color: var(--text); font-size: 15px; cursor: pointer; font-family: inherit; }
+.toast { position: absolute; left: 16px; right: 16px; bottom: 90px; background: var(--raised); border-radius: 12px; padding: 12px 14px; font-size: 14px; z-index: 25; }
+</style>
+
+<div class="wrap">
+  <div class="phone" id="app"></div>
+  <div class="hint">Prototype with example data: Upper body, round 3 is a superset (3a rear-delt fly, 3b cable crunch). Tap a kg or reps box to type in it (− / + on the keyboard bar), tap ✓ to log, tap a round chip or "Workout" for the builder-style overview.</div>
+</div>
+
+<script>
+(() => {
+  const W = 'Rear delts', ROUNDS = [
+    { n: '1', ex: [{ name: 'Barbell bench press', works: 'Chest, front delts, triceps', rest: '3:00', target: '6 @ 8 top · 8 @ 8 back-offs', sets: [['W', 20, 10], ['W', 50, 5], ['W', 70, 3], ['W', 85, 1], ['Top', 100, 6, 8], ['B', 95, 8, 8], ['B', 95, 8, 8], ['B', 95, 8, 8]].map(([t, kg, r, rpe]) => ({ t, kg, r, rpe, done: true })) }] },
+    { n: '2', ex: [{ name: 'Lat pulldown', works: 'Lats, biceps', rest: '2:00', target: '8–10 @ 8', sets: [['W', 35, 8], ['', 60, 9, 8], ['', 60, 9, 8], ['', 60, 8, 9]].map(([t, kg, r, rpe]) => ({ t, kg, r, rpe, done: true })) }] },
+    { n: '3', ss: true, ex: [
+      { name: 'Dumbbell rear-delt fly', works: W, each: true, rest: '', target: '8–12 @ 9', sets: [{ t: '', kg: 7.5, r: 12, rpe: 8, done: true }, { t: '', kg: 7.5, r: 12, rpe: 9, done: true }, { t: '', kg: 7.5, r: 12, rpe: 9, done: false }] },
+      { name: 'Cable crunch', works: 'Upper abs', rest: '1:30 after round', target: '10–12 @ 8', sets: [{ t: '', kg: 40, r: 12, rpe: 8, done: true }, { t: '', kg: 40, r: 12, rpe: 8, done: true }, { t: '', kg: 40, r: 12, rpe: 8, done: false }] },
+    ] },
+    { n: '4', ex: [{ name: 'Lateral raise', works: 'Side delts', each: true, rest: '1:30', target: '12–15 @ 9', sets: [1, 2, 3].map(() => ({ t: '', kg: 10, r: 12, rpe: 9, done: false })) }] },
+    { n: '5', ex: [{ name: 'EZ-bar curl', works: 'Biceps', rest: '1:30', target: '8–10 @ 8', sets: [1, 2, 3].map(() => ({ t: '', kg: 30, r: 10, rpe: 8, done: false })) }] },
+  ];
+  let s = { r: 2, sheet: false, toast: null };
+  const app = document.getElementById('app');
+  const cur = () => { const rd = ROUNDS[s.r]; for (let i = 0; i < rd.ex[0].sets.length; i++) for (let k = 0; k < rd.ex.length; k++) { const st = rd.ex[k].sets[i]; if (st && !st.done) return { k, i }; } return null; };
+  const lab = (rd, k) => `${rd.n}${rd.ex.length > 1 ? 'ab'[k] : ''}`;
+  function exHtml(rd, e, k, c) {
+    let n = 0; const doneW = e.sets.filter((x) => x.done && x.t !== 'W').length, totW = e.sets.filter((x) => x.t !== 'W').length;
+    return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works}</small></span><span class="prog">${doneW}/${totW}</span></div>
+      <div class="tbl"><div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>
+      ${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n; return `<div class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
+      <div class="meta"><span>${e.target}</span><span>${e.rest ? `Rest ${e.rest} ›` : ''} <u>Why?</u></span></div>
+      <button class="addset" data-a="add" data-k="${k}">＋ Set</button></div>`;
+  }
+  function view() {
+    const rd = ROUNDS[s.r]; const c = cur(); const e = c ? rd.ex[c.k] : null; const st = c ? e.sets[c.i] : null;
+    const nextR = ROUNDS[s.r + 1];
+    app.innerHTML = `
+    <div class="status"><span>23:01</span><span>●●● 82%</span></div>
+    <div class="hdr"><span class="t">Upper body</span><button class="chip">Main gym ▾</button><span class="clock">0:43</span></div>
+    <div class="rounds">${ROUNDS.map((x, i) => { const all = x.ex.every((q) => q.sets.every((z) => z.done)); return `<button class="rd${all ? ' done' : ''}${i === s.r ? ' now' : ''}" data-a="go" data-v="${i}">${all ? '✓ ' : ''}${x.n}${x.ex.length > 1 ? 'a·b' : ''}</button>`; }).join('')}<button class="all" data-a="sheet">Workout</button></div>
+    <div class="scroll">
+      <div class="card">${rd.ex.length > 1 ? `<div class="box">${rd.ex.map((x, k) => exHtml(rd, x, k, c)).join('')}</div>` : exHtml(rd, rd.ex[0], 0, c)}</div>
+      ${nextR ? `<div class="next"><span>Up next: <b>${nextR.n} ${nextR.ex.map((x) => x.name).join(' + ')}</b></span></div>` : ''}
+    </div>
+    <div class="foot"><button class="chat" data-a="chat">Chat</button><button class="log" data-a="log">${c ? `${lab(rd, c.k)} · Set ${c.i + 1} · Log ${st.kg}${e.each ? ' kg each' : ' kg'} × ${st.r}` : 'Round done · Next'}</button></div>
+    <div id="kb"><button data-k="-">−</button><button data-k="+">+</button><button data-k="next">Next</button><span></span><button class="done" data-k="done">Done</button></div>
+    ${s.sheet ? overview() : ''}
+    ${s.toast ? `<div class="toast">${s.toast}</div>` : ''}`;
+  }
+  function overview() {
+    let rows = ''; ROUNDS.forEach((rd, ri) => { const r = rd.ex.map((e, k) => { const done = e.sets.every((z) => z.done); const dn = e.sets.filter((z) => z.done && z.t !== 'W').length, tot = e.sets.filter((z) => z.t !== 'W').length; const top = Math.max(...e.sets.filter((z) => z.t !== 'W').map((z) => z.kg)); return `<div class="ovr${done ? ' done' : ''}${ri === s.r ? ' now' : ''}" data-a="go" data-v="${ri}"><span class="n">${lab(rd, k)}</span><span>${e.name}<small>${e.works}</small></span><span class="c">${dn}/${tot}</span><span class="c">${top}</span></div>`; }).join(''); rows += rd.ex.length > 1 ? `<div class="ovbox">${r}</div>` : r; });
+    return `<div class="scrim" data-a="close"></div><div class="sheet"><h3>Upper body · about 55 min</h3><div class="ovh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${rows}<button class="ghost" data-a="close">Close</button></div>`;
+  }
+  const kb = () => app.querySelector('#kb');
+  app.addEventListener('focusin', (ev) => { if (ev.target.classList.contains('cell')) { kb().style.display = 'flex'; ev.target.select(); } });
+  app.addEventListener('focusout', () => setTimeout(() => { if (!app.contains(document.activeElement) || !document.activeElement.classList.contains('cell')) kb().style.display = 'none'; }, 0));
+  app.addEventListener('pointerdown', (ev) => { if (ev.target.closest('#kb')) ev.preventDefault(); });
+  app.addEventListener('input', (ev) => { const t = ev.target; if (!t.classList.contains('cell')) return; const st = ROUNDS[s.r].ex[t.dataset.k].sets[t.dataset.i]; const n = parseFloat(t.value); if (!Number.isNaN(n)) st[t.dataset.f] = n; const c = cur(); if (c) { const e = ROUNDS[s.r].ex[c.k], x = e.sets[c.i]; app.querySelector('.log').textContent = `${lab(ROUNDS[s.r], c.k)} · Set ${c.i + 1} · Log ${x.kg}${e.each ? ' kg each' : ' kg'} × ${x.r}`; } });
+  app.addEventListener('click', (ev) => {
+    const kbt = ev.target.closest('#kb [data-k]');
+    if (kbt) { const el = document.activeElement; if (!el?.classList.contains('cell')) return; const k = kbt.dataset.k;
+      if (k === 'done') { el.blur(); kb().style.display = 'none'; return; }
+      if (k === 'next') { const cells = [...app.querySelectorAll('.cell')]; const nx = cells[cells.indexOf(el) + 1]; if (nx) nx.focus(); else el.blur(); return; }
+      const step = el.dataset.f === 'kg' ? (ROUNDS[s.r].ex[el.dataset.k].each ? 1.25 : 2.5) : 1; el.value = String(Math.max(0, Math.round(((parseFloat(el.value) || 0) + (k === '+' ? step : -step)) * 100) / 100)); el.dispatchEvent(new Event('input', { bubbles: true })); return; }
+    const t = ev.target.closest('[data-a]'); if (!t) return; const a = t.dataset.a; s.toast = null;
+    if (a === 'tick') { const st = ROUNDS[s.r].ex[t.dataset.k].sets[t.dataset.i]; st.done = !st.done; }
+    if (a === 'log') { const c = cur(); if (c) ROUNDS[s.r].ex[c.k].sets[c.i].done = true; else if (s.r < ROUNDS.length - 1) s.r++; const c2 = cur(); if (c2 && ROUNDS[s.r].ex.length > 1) s.toast = c2.k === 1 ? 'Straight to 3b' : 'Rest 1:30, then round ' + ROUNDS[s.r].n + 'a'; }
+    if (a === 'add') { const e = ROUNDS[s.r].ex[t.dataset.k]; const l = e.sets[e.sets.length - 1]; e.sets.push({ ...l, done: false }); }
+    if (a === 'go') { s.r = Number(t.dataset.v); s.sheet = false; }
+    if (a === 'sheet') s.sheet = true;
+    if (a === 'close') s.sheet = false;
+    if (a === 'chat') s.toast = 'Opens the coach (type or speak)';
+    view();
+  });
+  view();
+})();
+</script>
