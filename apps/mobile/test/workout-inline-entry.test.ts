@@ -51,7 +51,7 @@ describe('Next › from weight to reps (1.4)', () => {
     let c: { setId: string; values: typeof actual | null; opId: string } | null = { setId: 's2', values: null, opId: 'op-1' };
     let edit: CellEdit | null = cellEditReducer(null, { kind: 'tap', setId: 's2', field: 'load', row: 'done' });
     // The weight is typed (each keystroke commits, so leaving the field never loses it).
-    c = mergeCorrection(c, c?.values ?? actual, { load: { value: 1, unit: 'kg', convention: 'total' } });
+    c = mergeCorrection(c, c.values ?? actual, { load: { value: 1, unit: 'kg', convention: 'total' } });
     c = mergeCorrection(c, c?.values ?? actual, { load: { value: 102.5, unit: 'kg', convention: 'total' } });
     // Next › moves within the same correction (no save, no new opId).
     const next = keypadNextAction({ keypad: { row: 'done', field: 'load' }, open: null, done: { reps: true, distance: false, cardio: false, setId: 's2' } });
@@ -60,7 +60,7 @@ describe('Next › from weight to reps (1.4)', () => {
     expect(doneRowEditing(edit)).toEqual({ setId: 's2', field: 'reps', row: 'done' });
     c = mergeCorrection(c, c?.values ?? actual, { reps: 6 });
     expect(c?.opId).toBe('op-1');
-    expect(c?.values?.load?.value).toBe(102.5);
+    expect(c?.values?.load.value).toBe(102.5);
     // Done sends one correctSet with both changes.
     expect(c?.values ? correctionPatch(actual, c.values) : null).toEqual({ load: { value: 102.5, unit: 'kg', convention: 'total' }, reps: 6 });
     // No correction open: nothing to merge into.
