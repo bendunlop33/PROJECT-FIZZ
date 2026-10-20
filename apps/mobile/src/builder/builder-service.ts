@@ -215,7 +215,9 @@ export type BuilderStartResult =
   | { ok: false; reason: 'stale' | 'plan_changed' | 'variation_limit' | 'variation_label' | 'empty' | 'gone' | 'failed'; message: string };
 
 export const BUILDER_COPY = {
-  outOfDate: 'Out of date. Reload.',
+  // The page already shows the draft as stored: nothing to tap (N2).
+  outOfDate: 'Out of date',
+  cantUndo: 'Can’t undo',
   closed: 'This workout was started or closed.',
   planChanged: 'Your plan changed. Today only?',
   limitReached: 'Limit reached',
@@ -603,7 +605,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       if (read === null || read.ownerId !== p.id || read.builderKey === undefined) return { status: 'closed', snapshot: null, message: BUILDER_COPY.closed };
       const r = await compute(read);
       if ('refused' in r) {
-        const message = r.refused === 'changed_since' ? BUILDER_COPY.changedSince : r.refused === 'nothing_to_undo' ? BUILDER_COPY.changedSince : (REFUSAL_TEXT[r.refused] ?? 'Can’t do that');
+        const message = r.refused === 'changed_since' ? BUILDER_COPY.changedSince : r.refused === 'nothing_to_undo' ? BUILDER_COPY.cantUndo : (REFUSAL_TEXT[r.refused] ?? 'Can’t do that');
         return { status: 'refused', reason: r.refused, message, snapshot: r.env === null ? null : await snapshotOf(p, read, r.env) };
       }
       // The change was worked out from `read`: written only if the stored draft is still that one.
