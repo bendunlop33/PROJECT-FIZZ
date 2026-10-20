@@ -500,9 +500,12 @@ export function HeroHeader({
   lines = [],
   size = 'hero',
   link = null,
+  titleLines = 3,
 }: {
   eyebrow?: string | null;
   title: string;
+  /** Lines the title may take before it ends in `…` (the Summary caps it at 2, design pass 3.3). */
+  titleLines?: number;
   lines?: readonly (string | null | undefined)[];
   size?: 'hero' | 'screen';
   link?: { text: string; accessibilityLabel: string; onPress: () => void } | null;
@@ -521,7 +524,7 @@ export function HeroHeader({
       <AppText
         variant="title1"
         accessibilityRole="header"
-        numberOfLines={3}
+        numberOfLines={titleLines}
         style={{ fontSize: px, lineHeight: Math.round(px * 1.15), letterSpacing: px >= 40 ? -0.8 : theme.type.title1.letterSpacing }}
       >
         {title}

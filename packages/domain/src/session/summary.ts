@@ -103,7 +103,7 @@ export interface WorkoutSummary {
     | { kind: 'first_time'; text: string }
     | { kind: 'not_comparable'; text: string }
     | null;
-  exercises: { sessionExerciseId: string; exerciseId: string; name: string; setsText: string; results: string; skipped: number; sides: string | null }[];
+  exercises: { sessionExerciseId: string; exerciseId: string; name: string; setsText: string; results: string; skipped: number; sides: string | null; /** (20 Oct) The unit note alone, `(kg each)`, `(lb stack)`, `(per side)`, or ''; the Summary puts it on the results line. */ unitNote: string }[];
   nextTime: { sourceTag: string; rows: NextTimeRow[]; emptyText: string | null } | null;
   /** No working sets: the comparison and next-time sections are hidden; Discard is offered. */
   empty: boolean;
@@ -274,6 +274,7 @@ export function buildWorkoutSummary(input: SummaryInput): WorkoutSummary {
       name: first.exerciseName,
       setsText: `${String(n)} ${n === 1 ? 'set' : 'sets'}${unitNote}`,
       results: partResults.join(' · '),
+      unitNote: unitNote.trim(),
       skipped,
       sides: v?.bySide && (v.bySide.left.reps !== v.bySide.right.reps) ? `L ${String(v.bySide.left.reps)} reps · R ${String(v.bySide.right.reps)} reps` : null,
     };

@@ -156,6 +156,7 @@ describe('buildWorkoutSummary', () => {
     const s = finish(logAll(workout(press, db, 2), [1, 2].map(() => values(kg(30, 'per_hand'), 12)), 0), 600);
     const sum = buildWorkoutSummary(input(s, [hist]));
     expect(sum.exercises[0]?.setsText).toBe('2 sets (kg each)');
+    expect(sum.exercises[0]?.unitNote).toBe('(kg each)');
     expect(sum.nextTime?.rows.map((r) => [r.decision, plain(r.target)])).toEqual([['increase_reps', 'Target 30 kg each × 13']]);
   });
 

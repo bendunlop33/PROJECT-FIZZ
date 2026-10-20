@@ -50,13 +50,9 @@ Regions, top to bottom:
 1. **Saved banner.** `✓ Workout saved on this phone`, on the `status.done.subtle` background with the done icon. This is shown only after the local commit. Under it, one `type.callout` `text.secondary` line from `getBackupStatus` (consolidation, X2): `Backing up…` (static icon) → `Backed up on this phone · 19:05`, or `⚠ Last backup on this phone didn't save. Open Data & backup ›` (`status.warning` icon + text). The line updates in place, never delays `Done` and never mentions copies in Files.
 2. **Title block.** The workout name and date, then the gym and the time range.
 2a. **Check-in (2026-10-09, only when answered).** `CheckInLine` (design-system §9.56): `How you said you felt: 2 of 5 ›`, reasons, note. Tap → edit sheet (check-in.md §4.6). If `Pain` was picked with no movement flagged, a `NoteLine` follows: `⚠ You mentioned pain before this workout. Flag the movements that hurt so loads don't go up.` [Choose movements ›]. Absent when skipped or not asked.
-3. **Facts.** These are label–value rows:
-   - Active time
-   - Exercises
-   - Working sets (with the skipped count)
-   - Warm-up sets, shown separately
+3. **Facts.** (Design pass, Ben approved 20 Oct) The shared `StatStrip`: `Active`, `Exercises 5/5`, `Sets 16` (working sets only; warm-ups are never counted in it), and with a plan `Planned 14/15`. Skipped sets are said on each exercise's plan line. The title is capped at 2 lines.
 4. **Comparison.** One comparable lift: today vs the last comparable session, plus a line explaining why they count as comparable.
-5. **Exercises.** One compact row per exercise: the name, the set count, and the actual results for the working sets. If the coach adjusted that exercise's sets during the workout, one extra line says so: `Coach adjusted sets 3–4 (RPE 10 on set 2)`.
+5. **Exercises.** (Design pass, 20 Oct) At most 3 lines per exercise: the name (2 lines max) with a right-aligned verdict Tag and icon (`Hit` / `Short` / `Over`, with a plan); the actual results for the working sets with the unit note on that line (`30×10 · 30×10 (kg each)`); one plan line `3/3 · of 8 · 1 skipped` (no plan: `4 sets · 1 skipped`), uneven sides on the same line. When a lighter (or heavier) load, not the reps, gave the verdict, the line says the planned load: `3/3 · of 8 · 100 kg planned`, so `Short` with every rep hit isn't a contradiction. If the coach adjusted that exercise's sets during the workout, one extra line says so: `Coach adjusted sets 3–4 (RPE 10 on set 2)`.
 6. **Next time** (revised 9 Oct for D21). Heading `Next time · Push A` (the routine just done; it comes round again in the rotation). One row per exercise whose next target changes or is held for a listed reason. Each row names its source and shows its % change from the last working load. Built-in values come from playbook rule 7-F (equipment-aware):
    - **Coach answered, small change (the default):** a `CoachTargetRow` (§8): tag `Coach`, `Target 97.5 kg × 6–8 · −2.5%` (from the saved action), the coach's one-sentence reason in quotes, guard notes, `Rule: 100 kg × 6–8` (`text.secondary`), `Why? ›` and [Undo]. It is already saved: nothing to apply. When at least one row is a coach target, the line `Set by the coach from today's workout.` sits under the heading, and with two or more, a secondary text button `Undo all`.
    - **Coach agrees with the rule:** `Coach agrees: 100 kg × 6–8`, no buttons.
@@ -175,7 +171,7 @@ Built-in rule text comes from `calculateNextTargets`. Coach targets, % changes a
 | No comparison available | No compatible previous session | `First time` |
 | Not comparable | History exists but with different equipment, convention or set type | `Not compared · different equipment` |
 | Short or empty workout | 0 working sets | Facts only. The comparison and next-time sections are hidden. The footer adds `Discard workout` as a danger text link (confirmation required) |
-| Skipped sets | Pending sets at finish | `Working sets 16 (2 skipped)`. Skipped sets appear in the exercise rows as `skipped` text |
+| Skipped sets | Pending sets at finish | (20 Oct) Each exercise's plan line says `1 skipped`; `Sets` counts the done working sets |
 | Timing corrected | The end time chosen in the finish sheet differs from the tap time (`finishWorkout` `endedAt`), or a time was edited later with `updateSessionTiming` | The title line reads `18:02–19:24 (end time edited)` or `(start time edited)`. The timing audit keeps the original values. Active time is recomputed: only paused time inside the new start–end window is subtracted (a pause after the corrected end isn't) |
 | Next time: no change | The rules keep the same targets | `Same targets next time` |
 | Next time: held, incomplete | Fewer completed working sets than the rule prescribes | `Bench press` · `Same target: 100 kg × 6–8` · domain fact, e.g. `Only 2 of 4 working sets were logged on 8 Oct; holding.` |
@@ -260,8 +256,8 @@ Undo:
 | Backup line | `Backing up…` · `Backed up on this phone · 19:05` · `⚠ Backup didn't save ›` |
 | Title line | `Thu 8 Oct · Main Gym · 18:02–19:04` |
 | Check-in (2026-10-09) | `How you said you felt: 2 of 5` · reasons `Tired · Poor sleep` · note `"Baby was up at 3"` (what Ben said, as given) · pain prompt `⚠ Pain mentioned · which movements?` [Choose movements] · adjustment line `Coach adjusted sets 2–6 (lighter session; you said 2 of 5)` |
-| Facts labels | `Active time`, `Exercises`, `Working sets`, `Warm-up sets` |
-| Fact values | `54 min`, `5 of 5`, `16 (2 skipped)`, `4` |
+| Facts labels (20 Oct) | `Active`, `Exercises`, `Sets`, `Planned` |
+| Fact values | `54 min`, `5/5`, `16`, `14/15` |
 | Comparison heading | `Compared with last time` |
 | Comparison rows | `Today 102.5 kg × 6` / `1 Oct 100 kg × 8`. Both are **actual results** |
 | Comparability line | `Same barbell at Main Gym, working sets` |

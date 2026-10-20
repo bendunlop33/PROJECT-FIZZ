@@ -78,10 +78,26 @@ describe('plannedVsDone: the Summary’s plan vs done (proposal 1)', () => {
     });
     expect(r?.rows.map((x) => [x.text, x.verdict])).toEqual([
       ['1/2 sets · 8 of 8', 'short'],
-      ['1/1 sets · 8 of 8', 'over'],
-      ['1/1 sets · 8 of 8', 'short'],
+      ['1/1 sets · 8 of 8 · 60\u00a0kg\u00a0stack planned', 'over'],
+      ['1/1 sets · 8 of 8 · Assist 30\u00a0kg planned', 'short'],
     ]);
+    expect(r?.rows.map((x) => x.short)).toEqual(['1/2 · of 8 · 1 skipped', '1/1 · of 8 · 60\u00a0kg\u00a0stack planned', '1/1 · of 8 · Assist 30\u00a0kg planned']);
     expect(r?.header).toBe('3/4 planned sets');
+  });
+
+  it('every rep hit at a lighter load is Short and says the planned load, so the line never contradicts itself (design pass, 20 Oct)', () => {
+    const sets = [0, 1, 2].map((i) => set(bench, i, { load: kg(100) }, { load: kg(90), reps: 8 }));
+    const r = exercisePlanRow(bench, sets);
+    expect(r).toMatchObject({ verdict: 'short', plannedLoad: '100\u00a0kg', text: '3/3 sets · 8, 8, 8 of 8 · 100\u00a0kg planned', short: '3/3 · of 8 · 100\u00a0kg planned' });
+    // A rep miss gives the verdict: no planned load is added.
+    const miss = exercisePlanRow(bench, [set(bench, 0, { load: kg(100) }, { load: kg(100), reps: 6 })]);
+    expect(miss).toMatchObject({ verdict: 'short', plannedLoad: null, short: '1/1 · of 8' });
+    // Per-hand dumbbells say `each`; lb stays lb.
+    const db = ex(50, 'DB press', { loadConvention: 'per_hand', unit: 'lb' });
+    const lb = (v: number) => ({ value: v, unit: 'lb' as const, convention: 'per_hand' as const });
+    expect(exercisePlanRow(db, [set(db, 0, { load: lb(50) }, { load: lb(45), reps: 8 })])?.plannedLoad).toBe('50\u00a0lb\u00a0each');
+    // Hit: nothing extra.
+    expect(exercisePlanRow(bench, [set(bench, 0, { load: kg(100) }, { load: kg(100), reps: 8 })])).toMatchObject({ plannedLoad: null, short: '1/1 · of 8' });
   });
 
   it('a set taken out before the start isn’t planned; an extra set is Over; warm-ups and other-side companions don’t count; kg vs lb isn’t compared', () => {

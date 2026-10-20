@@ -68,9 +68,18 @@ export function SecondaryButton({
   accessibilityLabel,
   grow = false,
   workout = false,
-}: ButtonProps & { icon?: SymbolName; accessibilityLabel?: string; grow?: boolean; /** 52pt, the workout screen's card buttons (design-system §9.48). */ workout?: boolean }) {
+  size,
+}: ButtonProps & {
+  icon?: SymbolName;
+  accessibilityLabel?: string;
+  grow?: boolean;
+  /** 52pt, the workout screen's card buttons (design-system §9.48). */
+  workout?: boolean;
+  /** `primary`: the primary button's height, so a pair in a bottom bar lines up (design pass 3.4). */
+  size?: 'primary';
+}) {
   const theme = useTheme();
-  const minHeight = workout ? theme.target.workout.height : undefined;
+  const minHeight = size === 'primary' ? theme.target.primary.height : workout ? theme.target.workout.height : undefined;
   const press = usePressScale('pill');
   if (theme.components.secondaryButton === 'outline_pill') {
     return (
@@ -85,8 +94,8 @@ export function SecondaryButton({
         onPressIn={press.onPressIn}
         onPressOut={press.onPressOut}
         style={({ pressed }) => ({
-          // design-system target.workout: 52 pt (premium-feel §8, D7).
-          minHeight: theme.target.workout.height,
+          // design-system target.workout: 52 pt (premium-feel §8, D7); the primary height beside a PrimaryButton.
+          minHeight: minHeight ?? theme.target.workout.height,
           borderRadius: theme.radius.pill,
           borderWidth: 1,
           borderColor: theme.colors['border.control'],
