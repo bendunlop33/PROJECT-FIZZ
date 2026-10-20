@@ -274,3 +274,13 @@ describe('review lift-targets S2: lift targets have a home without a plan', () =
     expect(block).toMatch(/if \(data\.state !== 'ready' \|\| data\.value === null \|\| !data\.value\.on\) return null;/);
   });
 });
+
+describe('filter chips on one row (Ben, 20 Oct; design pass 5.5)', () => {
+  it('the Browse filters sit in one horizontally scrolling row, not a wrapping ChipRow', () => {
+    const screen = code(read('screens/library/LibraryScreen.tsx'));
+    const filters = screen.slice(screen.indexOf('<TextField value={query}'), screen.indexOf("data.state === 'error'"));
+    expect(filters).toMatch(/<ScrollView horizontal showsHorizontalScrollIndicator=\{false\}/);
+    expect(filters).not.toContain('<ChipRow>');
+    for (const k of ['gymChip', "'muscle', 'equipment', 'movement'"]) expect(filters).toContain(k);
+  });
+});
