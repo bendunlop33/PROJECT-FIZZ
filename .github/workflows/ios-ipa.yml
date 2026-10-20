@@ -120,9 +120,10 @@ jobs:
     name: Build unsigned .ipa
     needs: check
     if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[ios-build]')
-    # macos-15 only has Xcode 26.3, which can't compile Expo SDK 57 (expo-modules-jsi); keep macos-26.
-    # ios-ipa-retry.yml re-queues this job when no macos-26 runner is assigned.
-    runs-on: macos-26
+    # macos-15 only has Xcode 26.3, which can't compile Expo SDK 57 (expo-modules-jsi); keep macOS 26.
+    # GitHub's macOS arm64 runners hit capacity limits (jobs end "not acquired by Runner of type hosted"),
+    # so a head commit containing [intel] builds on the standard x64 macOS 26 runner instead (same Xcode 26).
+    runs-on: ${{ contains(github.event.head_commit.message, '[intel]') && 'macos-26-intel' || 'macos-26' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
