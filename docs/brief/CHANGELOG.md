@@ -473,7 +473,7 @@ Ben asked: "review the full app now to ensure everything is visually well built 
 
 - **Review fixes (`docs/reviews/design-fixes-20oct.md`).** B1 and B2 above. Edit set and planned-set edit take one keyboard inset (the avoiding view; audit items 0.3 and 2.1 conflicted, 0.3's "no double inset" wins). Another coach conversation opens at its end. A toast in a screen with a footer stays above the keyboard. The stale card shows one time. `Assist kg` steppers read Less / More assistance to VoiceOver again. Exercise detail's chip lines show the scroll indicator. `Next ›` and the done-row correction draft are pure, tested helpers.
 
-**Approved specs this pass changed (Ben approved 20 Oct with the pass, listed so they're visible):**
+**Approved specs this pass changed (made under the pass Ben approved on 20 Oct, not tagged [Ben] in the audit; listed so Ben can confirm or revert each):**
 - **1.5 / WT39:** the plate line shows only while the load is edited, under the editor (it used to sit in the open row's sub-line, hidden at AX).
 - **1.9 / WT22:** `Adjust` is always the one word; offline / not connected is an icon (and VoiceOver words), with the word in the open Adjust row.
 - **3.3:** Summary's warm-up sets are no longer a stat tile (the shared strip is Active, Exercises, Sets, Planned).
