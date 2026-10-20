@@ -231,6 +231,42 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     expect((await s.plans.overview())?.weekChange).toBeNull();
   });
 
+  it('code opens the week offer once for the week as it is: not again after it was offered, until the week changes (review S1)', async () => {
+    const { s, gymId } = await benWithPlan();
+    h.clockMs = Date.parse('2026-10-23T07:00:00.000Z');
+    await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-24', durationS: null, distanceM: null, effort: 'long' }, opId: 'sheet-run' });
+    const tools = (i: number) => (model.requests[i]?.tools ?? []).map((t) => t.name);
+    const seen: WeekView[] = [];
+    // Turn 1, a general question: code sees a short week, so the coach may offer (a proposal).
+    model = new StepModel([weekStub(seen), () => replyWith('Want me to merge Chest and Shoulders this week?')]);
+    const first = (await say(s, 'how is my week looking?')).cards.find((c) => c.record.detail.kind === 'propose_week')?.record;
+    expect(tools(0)).toContain('propose_week');
+    expect(first?.status).toBe('proposed');
+    // Turn 2, another topic, Ben ignored the offer: not opened again, and the week isn't flagged to the model.
+    model = new StepModel([(req) => {
+      seen.push(yourData(req).week as WeekView);
+      return replyWith('Protein and carbs.');
+    }]);
+    await say(s, 'what should I eat after training?');
+    expect(tools(0)).not.toContain('propose_week');
+    expect(seen[1]).toMatchObject({ needsReshape: false, suggestion: null });
+    // Ben's own ask still opens it.
+    model = new StepModel([weekStub(seen), () => replyWith('Here it is again.')]);
+    await say(s, 'plan my week around my long run');
+    expect(tools(0)).toContain('propose_week');
+    // The week changes (Ben trains): code may offer again for the new week.
+    h.clockMs += 3_600_000;
+    await doDay(s, gymId, (await s.next.preview(gymId))?.routine?.id ?? '');
+    model = new StepModel([(req) => {
+      seen.push(yourData(req).week as WeekView);
+      return replyWith('Nice.');
+    }]);
+    await say(s, 'how is my week looking now?');
+    const last = seen[seen.length - 1];
+    expect(last).toMatchObject({ gymDaysDone: 2, needsReshape: true });
+    expect(tools(0)).toContain('propose_week');
+  });
+
   it('the coach raised an activity (Ben didn’t ask): an offer; Log logs it once; Undo', async () => {
     const { s } = await benWithPlan();
     h.clockMs = Date.parse('2026-10-22T09:00:00.000Z');

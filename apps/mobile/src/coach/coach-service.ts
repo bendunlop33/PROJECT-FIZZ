@@ -41,6 +41,9 @@ import {
   createPlanExecutor,
   asksForPlan,
   asksToPausePlan,
+  asksToPlanWeek,
+  classifyBenRequest,
+  isStructuralRequest,
   createPausePlanExecutor,
   createActivityExecutor,
   renderActionResult,
@@ -361,6 +364,9 @@ export interface BuildChips {
   day?: BuildDay | null;
   mainLift?: string | null;
 }
+
+/** Review S1: how far back the coach's history is read for a week offer already made (a week of turns is far fewer). */
+const WEEK_OFFER_LOOKBACK = 200;
 
 export interface CoachServiceDeps {
   store: () => Store;
@@ -1377,6 +1383,14 @@ export function createCoachService(deps: CoachServiceDeps) {
     return { view, executors: { ...findExecutors, ...executors, ...planExecutors }, inPlay };
   }
 
+  /** Review S1: a `propose_week` for this week's facts as they are now is already in Ben's coach history. */
+  async function weekOfferedFor(p: UserProfile, week: NonNullable<CoachServiceDeps['week']>): Promise<boolean> {
+    const now = await week.tool();
+    if (now === null) return false;
+    const recent = await repos().coach.listRecentActions(p.id, { limit: WEEK_OFFER_LOOKBACK });
+    return recent.some((r) => r.detail.kind === 'propose_week' && r.detail.weekMonday === now.facts.monday && r.detail.factsKey === now.factsKey);
+  }
+
   /** (Ben, 20 Oct) `log_activity`'s store, zone and same-day check. */
   function activityDeps(p: UserProfile): ActivityToolDeps {
     return { store: coachStore(), tz: p.timezone, onDate: (date) => repos().activities.listBetween(p.id, date, addDays(date, 1)) };
@@ -1425,7 +1439,13 @@ export function createCoachService(deps: CoachServiceDeps) {
     let planPause: PlanPauseView | undefined;
     // (Ben, 20 Oct) This week on every general turn: today, gym days left, the days left, his activities; `log_activity`
     // (logged when his words tell it, else an offer) and `propose_week` (a proposal; offered when he asks, or `weekOpen`).
-    const weekView = kind === 'general' && deps.week !== undefined ? await deps.week.view().catch(() => null) : null;
+    const weekRead = kind === 'general' && deps.week !== undefined ? await deps.week.view().catch(() => null) : null;
+    // Review S1 (rule 3): code opens `propose_week` on its own only once for the week as it is now. An offer already made
+    // for these facts (open, declined or ignored) keeps it shut until the week changes (a workout, an activity, the plan);
+    // Ben's own ask still opens it.
+    const benAsksWeek = req.input.kind === 'words' && (asksToPlanWeek(said) || isStructuralRequest(classifyBenRequest(said, 'general')));
+    const offeredAlready = !benAsksWeek && weekRead?.needsReshape === true && deps.week !== undefined ? await weekOfferedFor(p, deps.week).catch(() => false) : false;
+    const weekView = weekRead === null ? null : offeredAlready ? { ...weekRead, needsReshape: false, suggestion: null } : weekRead;
     if (kind === 'general' && deps.week !== undefined) {
       const w = deps.week;
       Object.assign(executors, createActivityExecutor(activityDeps(p)), createWeekExecutor({ store: coachStore(), week: () => w.tool() }));
