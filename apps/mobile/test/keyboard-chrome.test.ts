@@ -120,6 +120,15 @@ describe('toasts float (0.6)', () => {
     }
     expect(read('screens', 'gym', 'EquipmentEditorScreen.tsx')).toContain('toast={toast ?');
   });
+  it('the toast sits in an unpadded view inside the avoiding frame (review S4)', () => {
+    const src = read('ui', 'layout.tsx');
+    const screen = src.slice(src.indexOf('export function Screen('), src.indexOf('export function BottomBar('));
+    const inner = screen.indexOf('<View style={{ flex: 1 }}>');
+    expect(inner).toBeGreaterThan(screen.indexOf('<Frame'));
+    expect(screen.indexOf('<ToastHost')).toBeGreaterThan(inner);
+    expect(screen.lastIndexOf('</View>')).toBeGreaterThan(screen.indexOf('</ToastHost>'));
+    expect(screen.lastIndexOf('</View>')).toBeLessThan(screen.indexOf('</Frame>'));
+  });
 });
 
 describe('the number accessory (0.7)', () => {

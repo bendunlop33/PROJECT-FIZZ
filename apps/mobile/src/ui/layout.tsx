@@ -33,33 +33,36 @@ export function Screen({ children, footer, floating, toast, tab = false, testID 
   const Frame = footer ? SheetKeyboardAvoidingView : View;
   return (
     <Frame style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} {...(testID ? { testID } : {})}>
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets={!footer}
-        contentContainerStyle={{
-          paddingHorizontal: theme.components.screenMargin,
-          paddingTop: theme.space['4'],
-          paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + (keyboard ? 0 : insets.bottom)) + (showFloating ? FLOATING_PILL_ROOM : 0) + toastHeight,
-          gap: theme.space['5'],
-        }}
-      >
-        {children}
-      </ScrollView>
-      {showFloating ? floating : null}
-      {footer ? (
-        <BottomBar
-          onHeight={(h) => {
-            setFooterHeight(h);
+      {/* Review S4: the toast is placed in this unpadded view, so the avoiding frame's keyboard padding can't put it behind the keyboard. */}
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets={!footer}
+          contentContainerStyle={{
+            paddingHorizontal: theme.components.screenMargin,
+            paddingTop: theme.space['4'],
+            paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + (keyboard ? 0 : insets.bottom)) + (showFloating ? FLOATING_PILL_ROOM : 0) + toastHeight,
+            gap: theme.space['5'],
           }}
         >
-          {footer}
-        </BottomBar>
-      ) : null}
-      <ToastHost bottom={toastBottom({ footerHeight: footer ? footerHeight : null, insetBottom: keyboard ? 0 : insets.bottom, space2: theme.space['2'], tab })} onHeight={setToastHeight}>
-        {toast}
-      </ToastHost>
+          {children}
+        </ScrollView>
+        {showFloating ? floating : null}
+        {footer ? (
+          <BottomBar
+            onHeight={(h) => {
+              setFooterHeight(h);
+            }}
+          >
+            {footer}
+          </BottomBar>
+        ) : null}
+        <ToastHost bottom={toastBottom({ footerHeight: footer ? footerHeight : null, insetBottom: keyboard ? 0 : insets.bottom, space2: theme.space['2'], tab })} onHeight={setToastHeight}>
+          {toast}
+        </ToastHost>
+      </View>
     </Frame>
   );
 }
