@@ -7,6 +7,7 @@
  * `SplitBodyPart` names. `Legs` = Quads + Hamstrings + Glutes + Calves and
  * `Abs` = Core are derived when read. Forearms has no builder group.
  */
+import type { Measurement } from './exercise';
 import { muscleGroupOf, type MUSCLE_TO_GROUP, type MuscleGroup } from './muscle-groups';
 import type { SplitBodyPart } from './training-profile';
 
@@ -56,15 +57,35 @@ export function builderGroupOfParts(parts: readonly SplitBodyPart[]): BuilderGro
   return groups.size === 1 ? ([...groups][0] ?? null) : null;
 }
 
-/** What the builder reads from an exercise (catalogue entry or `Exercise` row). */
-export interface BuilderExerciseInfo {
+/**
+ * The muscle data the builder reads from an exercise (catalogue entry or
+ * `Exercise` row). Named `BuilderMuscleInfo` so it is not confused with the
+ * rules stream's `BuilderMuscleInfo` in `@fizz/domain`.
+ */
+export interface BuilderMuscleInfo {
   primaryMuscles: readonly string[];
   secondaryMuscles?: readonly string[] | undefined;
   movementPattern?: string | undefined;
+  measurement?: Measurement | undefined;
 }
 
-/** The primary muscle that decides the exercise's builder group: the first with one. */
-function leadMuscle(e: BuilderExerciseInfo): { muscle: Muscle; group: BuilderGroup } | null {
+/** Movement patterns that are never in a builder group: conditioning, cardio machines and loaded carries. */
+const NON_STRENGTH_PATTERNS: ReadonlySet<string> = new Set(['conditioning', 'carry']);
+
+/**
+ * Whether the exercise can be in a builder group at all. Conditioning and
+ * carries (by `movementPattern`) and anything measured as `cardio` are not,
+ * so Swap, Add and the recommendation never offer a treadmill under Quads.
+ * Timed or distance strength work (plank, walking lunge) stays in.
+ */
+export function isBuilderStrength(e: BuilderMuscleInfo): boolean {
+  if (e.movementPattern !== undefined && NON_STRENGTH_PATTERNS.has(e.movementPattern)) return false;
+  return e.measurement !== 'cardio';
+}
+
+/** The primary muscle that decides the exercise's builder group: the first with one. Null for non-strength exercises. */
+function leadMuscle(e: BuilderMuscleInfo): { muscle: Muscle; group: BuilderGroup } | null {
+  if (!isBuilderStrength(e)) return null;
   for (const m of e.primaryMuscles) {
     const g = muscleGroupOf(m);
     const b = g === null ? null : builderGroupOfMuscleGroup(g);
@@ -73,8 +94,8 @@ function leadMuscle(e: BuilderExerciseInfo): { muscle: Muscle; group: BuilderGro
   return null;
 }
 
-/** The exercise's builder group from its first primary muscle that has one (rear delts → Back, §9 Q13); null when none does. */
-export function builderGroupOf(e: BuilderExerciseInfo): BuilderGroup | null {
+/** The exercise's builder group from its first primary muscle that has one (rear delts → Back, §9 Q13); null when none does or for conditioning, cardio and carries. */
+export function builderGroupOf(e: BuilderMuscleInfo): BuilderGroup | null {
   return leadMuscle(e)?.group ?? null;
 }
 
@@ -121,8 +142,10 @@ const MUSCLE_FOCUS = {
  * primary muscle, with two readings from the catalogue data: a chest press
  * listing `upper_chest` among its primaries is `Upper chest`, and a row
  * (`horizontal_pull`) led by the lats is `Mid-back`; pulldowns stay `Lats`.
+ * An `Exercise` row without `movementPattern` (custom or imported) led by the
+ * lats lands under `Lats`.
  */
-export function builderFocusOf(e: BuilderExerciseInfo): BuilderFocus | null {
+export function builderFocusOf(e: BuilderMuscleInfo): BuilderFocus | null {
   const lead = leadMuscle(e);
   if (lead === null) return null;
   if (lead.group === 'Chest' && e.primaryMuscles.includes('upper_chest')) return 'Upper chest';
@@ -136,7 +159,7 @@ export function builderFocusOf(e: BuilderExerciseInfo): BuilderFocus | null {
  * Exercises of another group (or none) are left out. Whether to show the
  * headings when there is only one is the screen's choice.
  */
-export function builderFocusSections<T>(items: readonly T[], infoOf: (item: T) => BuilderExerciseInfo, group: BuilderGroup): { focus: BuilderFocus; items: T[] }[] {
+export function builderFocusSections<T>(items: readonly T[], infoOf: (item: T) => BuilderMuscleInfo, group: BuilderGroup): { focus: BuilderFocus; items: T[] }[] {
   const byFocus = new Map<BuilderFocus, T[]>();
   for (const item of items) {
     const info = infoOf(item);
@@ -166,7 +189,7 @@ const WORKS_WORD = {
   side_delts: 'side delts',
   rear_delts: 'rear delts',
   biceps: 'biceps',
-  brachialis: 'brachialis',
+  brachialis: 'biceps',
   triceps: 'triceps',
   quads: 'quads',
   hamstrings: 'hamstrings',
@@ -182,30 +205,36 @@ const WORKS_WORD = {
 } as const satisfies Record<Muscle, string>;
 
 /** Helpers too general to name on a `works` line (every lift braces and grips). */
-const QUIET_HELPERS: ReadonlySet<string> = new Set(['core', 'grip']);
+const QUIET_HELPERS: ReadonlySet<string> = new Set(['core', 'grip', 'forearms']);
 
 export const WORKS_LINE_MAX = 3;
 
 /**
  * The `works` line under an exercise (§2.4, §2.5): `Upper chest, front delts,
- * triceps`. Primary muscles, then helpers, at most `max`; `chest` is left out
- * when `upper chest` is already there, and core and grip only show when
- * primary. Words outside the vocabulary are skipped. Null when nothing is left.
+ * triceps`. Primary muscles, then helpers, at most `max` (values below 1 are
+ * treated as 1); `chest` is left out when `upper chest` is already there,
+ * brachialis reads as `biceps` (once), and core, grip and forearms only show
+ * when primary. Words outside the vocabulary are skipped. Null when nothing
+ * is left.
  */
-export function worksLine(e: BuilderExerciseInfo, max: number = WORKS_LINE_MAX): string | null {
+export function worksLine(e: BuilderMuscleInfo, max: number = WORKS_LINE_MAX): string | null {
   const words: string[] = [];
   const listed = new Set<string>();
+  const said = new Set<string>();
   const upperPrimary = e.primaryMuscles.includes('upper_chest');
   const add = (m: string, primary: boolean) => {
     if (!Object.hasOwn(WORKS_WORD, m) || listed.has(m)) return;
     if (!primary && QUIET_HELPERS.has(m)) return;
     if (m === 'chest' && (upperPrimary || listed.has('upper_chest'))) return;
     listed.add(m);
-    words.push(WORKS_WORD[m as Muscle]);
+    const word = WORKS_WORD[m as Muscle];
+    if (said.has(word)) return;
+    said.add(word);
+    words.push(word);
   };
   for (const m of e.primaryMuscles) add(m, true);
   for (const m of e.secondaryMuscles ?? []) add(m, false);
-  const shown = words.slice(0, Math.max(1, max));
+  const shown = words.slice(0, Math.max(1, Math.floor(max)));
   if (shown.length === 0) return null;
   const text = shown.join(', ');
   return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;

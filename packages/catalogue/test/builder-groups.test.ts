@@ -1,4 +1,4 @@
-import { BUILDER_FOCI, builderFocusOf, builderGroupOf, worksLine, type BuilderFocus, type BuilderGroup } from '@fizz/schemas';
+import { BUILDER_FOCI, builderFocusOf, builderGroupOf, isBuilderStrength, worksLine, type BuilderFocus, type BuilderGroup } from '@fizz/schemas';
 import { describe, expect, it } from 'vitest';
 import { bundledCatalogue, type CatalogueEntry } from '../src/index';
 
@@ -11,13 +11,27 @@ const byKey = (key: string): CatalogueEntry => {
 };
 
 describe('builder groups on the catalogue', () => {
-  it('every entry has a builder group and a focus inside it, and a works line', () => {
-    for (const e of entries) {
+  it('every strength entry has a builder group and a focus inside it, and a works line', () => {
+    for (const e of entries.filter(isBuilderStrength)) {
       const g = builderGroupOf(e);
       expect(g, e.key).not.toBeNull();
       expect(BUILDER_FOCI[g as BuilderGroup] as readonly BuilderFocus[], e.key).toContain(builderFocusOf(e));
       expect(worksLine(e), e.key).not.toBeNull();
     }
+  });
+
+  it('conditioning, cardio and carry entries have no group or focus', () => {
+    const out = entries.filter((e) => !isBuilderStrength(e));
+    expect(out.length).toBeGreaterThan(0);
+    for (const e of out) {
+      expect(['conditioning', 'carry'].includes(e.movementPattern) || e.measurement === 'cardio', e.key).toBe(true);
+      expect(builderGroupOf(e), e.key).toBeNull();
+      expect(builderFocusOf(e), e.key).toBeNull();
+    }
+  });
+
+  it.each(['treadmill-run', 'battle-ropes', 'farmers-carry', 'ski-erg', 'bodyweight-burpee', 'sled-push'])('%s → no builder group', (key) => {
+    expect(builderGroupOf(byKey(key))).toBeNull();
   });
 
   it.each([
@@ -39,7 +53,9 @@ describe('builder groups on the catalogue', () => {
     ['barbell-romanian-deadlift', 'Legs', 'Hamstrings & glutes', 'Hamstrings, glutes, lower back'],
     ['barbell-hip-thrust', 'Legs', 'Hamstrings & glutes', 'Glutes, hamstrings, quads'],
     ['machine-seated-calf-raise', 'Legs', 'Calves', 'Calves'],
-    ['dumbbell-hammer-curl', 'Biceps', 'Biceps', 'Brachialis, biceps, forearms'],
+    ['dumbbell-hammer-curl', 'Biceps', 'Biceps', 'Biceps'],
+    ['bodyweight-plank', 'Abs', 'Abs', 'Abs, core, obliques'],
+    ['sandbag-lunge', 'Legs', 'Quads', 'Quads, glutes, hamstrings'],
     ['cable-rope-triceps-pushdown', 'Triceps', 'Triceps', 'Triceps'],
     ['cable-crunch', 'Abs', 'Abs', 'Abs, obliques'],
   ] as const)('%s → %s · %s · %s', (key, group, focus, works) => {

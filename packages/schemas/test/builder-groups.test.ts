@@ -9,16 +9,23 @@ import {
   builderGroupOfMuscleGroup,
   builderGroupOfPart,
   builderGroupOfParts,
+  isBuilderStrength,
   MUSCLE_GROUPS,
   MUSCLE_TO_GROUP,
   SPLIT_BODY_PARTS,
   SplitBodyPartSchema,
   worksLine,
-  type BuilderExerciseInfo,
+  type BuilderMuscleInfo,
   type BuilderFocus,
+  type Measurement,
 } from '../src/index';
 
-const ex = (primaryMuscles: string[], secondaryMuscles: string[] = [], movementPattern?: string): BuilderExerciseInfo => ({ primaryMuscles, secondaryMuscles, movementPattern });
+const ex = (primaryMuscles: string[], secondaryMuscles: string[] = [], movementPattern?: string, measurement?: Measurement): BuilderMuscleInfo => ({
+  primaryMuscles,
+  secondaryMuscles,
+  movementPattern,
+  measurement,
+});
 
 describe('BuilderGroup (display only, §4.7, §9 Q8)', () => {
   it('seven groups; Legs = Quads + Hamstrings + Glutes + Calves; Abs = Core', () => {
@@ -56,12 +63,28 @@ describe('builderGroupOf (catalogue exercise)', () => {
     expect(builderGroupOf(ex(['hamstrings', 'glutes']))).toBe('Legs');
     expect(builderGroupOf(ex(['obliques', 'core']))).toBe('Abs');
     expect(builderGroupOf(ex(['brachialis', 'biceps']))).toBe('Biceps');
-    // Farmer carry: grip has no builder group, traps is Back.
-    expect(builderGroupOf(ex(['grip', 'traps']))).toBe('Back');
+    // Grip has no builder group, so traps (Back) leads.
+    expect(builderGroupOf(ex(['grip', 'traps'], [], 'pull'))).toBe('Back');
   });
   it('rear delts are Back (§9 Q13)', () => {
     expect(builderGroupOf(ex(['rear_delts'], ['upper_back', 'traps']))).toBe('Back');
     expect(builderGroupOf(ex(['rear_delts', 'upper_back'], ['traps', 'side_delts']))).toBe('Back');
+  });
+  it('null for conditioning, carries and cardio; timed or distance strength work stays in', () => {
+    // Treadmill run, battle ropes, farmer carry, ski-erg.
+    expect(builderGroupOf(ex(['quads', 'hamstrings', 'glutes', 'calves'], [], 'conditioning', 'cardio'))).toBeNull();
+    expect(builderGroupOf(ex(['front_delts'], ['core'], 'conditioning', 'duration'))).toBeNull();
+    expect(builderGroupOf(ex(['grip', 'traps'], ['core'], 'carry', 'distance'))).toBeNull();
+    expect(builderGroupOf(ex(['lats', 'abs'], [], undefined, 'cardio'))).toBeNull();
+    expect(builderFocusOf(ex(['quads', 'glutes'], [], 'conditioning', 'reps'))).toBeNull();
+    expect(builderFocusSections([ex(['quads'], [], 'conditioning', 'cardio'), ex(['quads'], [], 'squat', 'reps')], (i) => i, 'Legs')).toEqual([
+      { focus: 'Quads', items: [ex(['quads'], [], 'squat', 'reps')] },
+    ]);
+    // Plank and walking lunge are strength.
+    expect(builderGroupOf(ex(['abs', 'core'], [], 'core', 'duration'))).toBe('Abs');
+    expect(builderGroupOf(ex(['quads', 'glutes'], [], 'lunge', 'distance'))).toBe('Legs');
+    expect(isBuilderStrength(ex(['quads'], [], 'squat', 'reps'))).toBe(true);
+    expect(isBuilderStrength(ex(['quads'], [], 'conditioning', 'reps'))).toBe(false);
   });
   it('null for only forearms, no muscles, or words outside the vocabulary', () => {
     expect(builderGroupOf(ex(['forearms']))).toBeNull();
@@ -134,7 +157,16 @@ describe('worksLine (§2.4, §2.5)', () => {
     expect(worksLine(ex(['abs', 'core'], ['obliques']))).toBe('Abs, core, obliques');
     expect(worksLine(ex(['triceps'], ['core', 'grip']))).toBe('Triceps');
     expect(worksLine(ex(['chest', 'upper_chest']))).toBe('Upper chest');
-    expect(worksLine(ex(['lats'], ['upper_back', 'biceps', 'brachialis']), 4)).toBe('Lats, upper back, biceps, brachialis');
+    expect(worksLine(ex(['lats'], ['upper_back', 'biceps', 'brachialis']), 4)).toBe('Lats, upper back, biceps');
+  });
+  it('brachialis reads as biceps, once; forearms only when primary', () => {
+    expect(worksLine(ex(['biceps'], ['brachialis', 'forearms']))).toBe('Biceps');
+    expect(worksLine(ex(['brachialis', 'biceps'], ['forearms']))).toBe('Biceps');
+    expect(worksLine(ex(['traps'], ['forearms', 'spinal_erectors']))).toBe('Traps, lower back');
+    expect(worksLine(ex(['forearms'], ['biceps']))).toBe('Forearms, biceps');
+  });
+  it('max below 1 still shows one word', () => {
+    expect(worksLine(ex(['chest'], ['front_delts']), 0)).toBe('Chest');
   });
   it('unknown words skipped; nothing left is null', () => {
     expect(worksLine(ex(['rhomboids', 'lats']))).toBe('Lats');
