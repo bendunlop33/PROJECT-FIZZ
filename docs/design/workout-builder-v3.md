@@ -57,10 +57,12 @@ Goal (Profile) → Plan (days, order, rotation; training blocks later)
 ### 2.0 Today (v2)
 
 > Ben (20 Oct): "we have quite a lot of content that's not quite fitting together: last few days workouts, and past or upcoming runs / other planned, and how that interplays with our plan. design a page that combines all of this, and then has the recommended workout - no need for too much summary until clicked on, and then have option to select other workouts already used quickly, or set-up more detailed with the builder we've made". And: "it's also just not clear how the coach uses all this information in building the workouts".
+>
+> Later the same day: "the runs this week only if i specify which days / told the coach" and "i don't really like the set-up for the recommended and 4-day split. can't really differentiate between sets that easily... having quick option for the different types of session (within the recommended day), but also option to change day if like".
 
 #### 2.0.1 Purpose
 
-**Question:** "Given my week, what should I train today?" **Primary action:** `Start` on the Recommended card, one tap (plus the check-in sheet when due, unchanged). While a workout is in progress the primary action is `Resume` (unchanged from today.md).
+**Question:** "Given my week, what should I train today?" **Primary action:** `Start` on the session card, one tap (plus the check-in sheet when due, unchanged). While a workout is in progress the primary action is `Resume` (unchanged from today.md).
 
 #### 2.0.2 Layout
 
@@ -68,13 +70,14 @@ Regions, top to bottom:
 
 1. **Day title** `Tuesday`, with the `GymChip` trailing [title Ben/Proto; GymChip kept from today.md, Proposal].
 2. **Coach bar + mic** `✦ Ask the coach` [Ben]. Opens the coach sheet (never full screen); the mic starts listening at once.
-3. **7-day strip** [Ben; range Proto, §9 Q19]: 3 days back, today, 3 ahead. Each cell: weekday, date, up to two items. A thin divider sits before Monday so the plan week is visible [Proposal].
-4. **Plan line** [Ben]: `4-day split · Chest next` left, `Runs this week 1 of 3` right.
-5. **Banners / rare lines** from today.md (failed backup, check-in line, pain `Still hurts?` line), unchanged, at most two [Proposal].
-6. **Recommended card**, collapsed by default [Ben].
-7. **Or** row: horizontal cards [Ben].
-8. **`Build your own`** and **`＋ Activity`** side by side [Ben].
-9. Tab bar: Today · Library · Progress · Profile.
+3. **7-day strip** [Ben; range Proto, §9 Q19]: 3 days back, today, 3 ahead. Each cell: weekday, date, up to two items. A thin divider sits before Monday so the plan week is visible [Proposal]. No plan line and no run counter [Ben].
+4. **Banners / rare lines** from today.md (failed backup, check-in line, pain `Still hurts?` line), unchanged, at most two [Proposal].
+5. **`Today's session`** [Ben]:
+   - **Day segmented control**: the plan's days in plan order, `Chest` `Back` `Legs` `Shoulders` `⋯`. `NEXT` under the plan's next day, which is selected on open. Any day is one tap. `⋯` opens **Other workouts**.
+   - **Session-type chips** for the chosen day: its main-lift templates, then its saved variations (`Bench` `Incline` `Bench · arms superset`). Shown only when the day has more than one. The first is the last-used one [Proposal].
+   - **Session card**, collapsed by default.
+6. **`Build your own`** and **`＋ Activity`** side by side [Proto].
+7. Tab bar: Today · Library · Progress · Profile.
 
 Collapsed (normal):
 
@@ -88,19 +91,17 @@ Collapsed (normal):
 │  17   18   19 ┃ 20    21   22   23       │
 │ ✓Sho Run  Rest┃Chest ┆Run ┆Legs ┆Back   │  ✓ green = done
 │      12k      ┃      ┆8k                 │  ┆ dashed = planned
-│ 4-day split · Chest next   Runs 1 of 3   │
-│ RECOMMENDED                              │
+│ TODAY'S SESSION                          │
 │ ┌──────────────────────────────────────┐ │
-│ │ Chest                              › │ │
-│ │ Bench · 5 exercises · about 55 min   │ │
+│ │[ Chest ] Back   Legs  Shoulders   ⋯  │ │  segmented, 48 pt
+│ │  NEXT                                │ │
+│ └──────────────────────────────────────┘ │
+│ (●Bench) ( Incline ) ( Bench · arms ss ) │  chips, only when > 1
+│ ┌──────────────────────────────────────┐ │
+│ │ Chest · Bench                      › │ │
+│ │ 5 exercises · ~55 min · plan day 1/4 │ │
 │ │ [         Start         ] [  Edit  ] │ │
 │ └──────────────────────────────────────┘ │
-│ OR                                       │
-│ ┌─────────┐┌─────────┐┌─────────┐┌──── → │
-│ │PLAN·NEXT││VARIATION││PLAN     ││RECEN  │  scrolls sideways
-│ │Chest    ││Chest    ││Shoulders││Hotel  │
-│ │Bench ~55││Arms  ~52││DB pr ~58││17 Oc  │
-│ └─────────┘└─────────┘└─────────┘└────   │
 │ [  Build your own  ] [   ＋ Activity   ] │
 ├──────────────────────────────────────────┤
 │  Today    Library    Progress   Profile  │
@@ -111,8 +112,8 @@ Expanded (tap anywhere on the card except the buttons):
 
 ```
 │ ┌──────────────────────────────────────┐ │
-│ │ Chest                              ⌄ │ │
-│ │ Bench · 5 exercises · about 55 min   │ │
+│ │ Chest · Bench                      ⌄ │ │
+│ │ 5 exercises · ~55 min · plan day 1/4 │ │
 │ │ Target          sets × reps · kg     │ │
 │ │ 1  Barbell bench press  4 × 6 · 102.5│ │
 │ │ 2  Incline DB press  3 × 8 · 27.5 ea │ │
@@ -755,7 +756,7 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 - Applying one suggestion leaves the others usable.
 - `Update plan day` offers update or new variation; Undo toast restores.
 - Unticked notes aren't saved. Swiping the sheet down saves ticked notes, the same as `Done`.
-- A numeric note sets next time's load for that lift; text notes show on the next Chest day's Your workout and the Up next card, and ✕ stops them going to the coach.
+- A numeric note sets next time's load for that lift; text notes show on the next Chest day's Your workout and Today's expanded card, and ✕ stops them going to the coach.
 - Notes are exported and deleted with Your data, not with Coaching knowledge.
 - No AI: facts and Plan section show; no verdict; header `Offline`.
 
@@ -765,26 +766,30 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 
 ## 9. Open questions for Ben
 
-1. Keep a one-tap `Start` on Today's Up next card that starts the plan day unchanged (the card body opens the builder, and the card shows any `From last review` notes)? (yes/no)
-2. Your workout replaces the Workout overview for plan days (gym chip and check-in move onto it)? (yes/no)
-3. When a day has two main-lift templates (bench, incline), should Up next alternate them automatically? (yes / no, use Profile's main lift unless I change it)
-4. Back on Set up, a length-only change trims sets and a group change adds/removes only that group, instead of a full rebuild? (yes/no)
-5. Put `Variation` as a Set up row under Main lift, shown only when variations exist? (yes / pick another place)
-6. Offline, should the Set up bar still fill day, minutes, supersets and groups from what I type or say, with no coach involved? (yes/no)
-7. Main lift can never join a superset? (yes / allow it with a "not recommended" note)
-8. Typed weights stay today-only even when I update the plan day? (yes / save them as fixed loads)
-9. Rest limits: the set before a drop can rest 0–1:00, and other sets up to 6:00 (now 5:00)? (yes/no)
-10. Group label: `Abs` or `Core`? (pick)
-11. Before Start, coach changes I ask for are proposals (Apply/Skip); after Start they apply at once with Undo as today? This changes rule 3's wording. (yes/no)
-12. Limit variations per day and main lift? (no limit / 5 / pick a number)
-13. Load-only edits don't trigger the `Use these changes for` prompt? (yes/no)
-14. Where today's load comes from: coach target first, then the plan's first-week load, then the built-in rule, and only then est. 1RM × reps × RPE, with every other set worked out from that load by reps and RPE? Or est. 1RM everywhere? (first / est. 1RM everywhere)
-15. Rear delts count as Back only in the builder, or everywhere (Progress charts, library filters, split matching)? (builder only / everywhere)
-16. Show a `MAIN` tag on the main-lift row? (yes/no)
-17. Use the builder's time numbers (45 s per set, etc.) for Today's estimate and the workout's time left too, so they all agree? Some estimates would shift a minute or two. (yes/no)
-18. Add 15 s for switching between exercises in a superset to the time estimate? (yes/no)
-19. A variation is saved as "the plan day plus its extras", so changes to the plan day flow into every variation? (yes / save full copies)
-20. Drag to reorder and pair ships after the pop-up buttons, once tested on your iPhone? (yes / drag needed first)
+**Answered 20 Oct**
+- Old Q1, one-tap Start on Today: answered by Today (v2) (§2.0): `Start` is one tap on the card, tapping the card expands it, `Edit` opens the builder.
+- Old Q4, merge on Set up changes: yes ("agreed"). Edits are kept; length, supersets and groups merge; a new day, main lift or variation builds a new workout with Undo (§2.3).
+
+**Open**
+1. Your workout replaces the Workout overview for plan days (gym chip and check-in move onto it)? (yes/no)
+2. When a day has two main-lift templates (bench, incline), should Up next alternate them automatically? (yes / no, use Profile's main lift unless I change it)
+3. Put `Variation` as a Set up row under Main lift, shown only when variations exist? (yes / pick another place)
+4. Offline, should the Set up bar still fill day, minutes, supersets and groups from what I type or say, with no coach involved? (yes/no)
+5. Main lift can never join a superset? (yes / allow it with a "not recommended" note)
+6. Typed weights stay today-only even when I update the plan day? (yes / save them as fixed loads)
+7. Rest limits: the set before a drop can rest 0–1:00, and other sets up to 6:00 (now 5:00)? (yes/no)
+8. Group label: `Abs` or `Core`? (pick)
+9. Before Start, coach changes I ask for are proposals (Apply/Skip); after Start they apply at once with Undo as today? This changes rule 3's wording. (yes/no)
+10. Limit variations per day and main lift? (no limit / 5 / pick a number)
+11. Load-only edits don't trigger the `Use these changes for` prompt? (yes/no)
+12. Where today's load comes from: coach target first, then the plan's first-week load, then the built-in rule, and only then est. 1RM × reps × RPE, with every other set worked out from that load by reps and RPE? Or est. 1RM everywhere? (first / est. 1RM everywhere)
+13. Rear delts count as Back only in the builder, or everywhere (Progress charts, library filters, split matching)? (builder only / everywhere)
+14. Show a `MAIN` tag on the main-lift row? (yes/no)
+15. Use the builder's time numbers (45 s per set, etc.) for Today's estimate and the workout's time left too, so they all agree? Some estimates would shift a minute or two. (yes/no)
+16. Add 15 s for switching between exercises in a superset to the time estimate? (yes/no)
+17. A variation is saved as "the plan day plus its extras", so changes to the plan day flow into every variation? (yes / save full copies)
+18. Drag to reorder and pair ships after the pop-up buttons, once tested on your iPhone? (yes / drag needed first)
+19. Today's day strip: 3 days back, today, 3 ahead (always shows yesterday's and tomorrow's runs, with a line where Monday starts), or the Mon–Sun week, which matches `Runs this week` but hides last Sunday's long run on a Monday? (3 back, 3 ahead / Mon–Sun)
 
 ---
 
@@ -800,3 +805,10 @@ Not done in this revision (spec only). For `prototypes/workout-builder-v3.html`:
 - Remove the search field in Swap; drop the 15 s superset switch from the estimate.
 - Strip the removed Save-as-default code (`s.defaults`, `useDef`, the `save` action, "Saved as your X default").
 - Round warm-ups, drops and typed kg down, not to nearest.
+
+For `prototypes/today-v2.html`:
+- Today sheet says `Plan day 2 of 4`; the plan line and Based on say day 1. Use day 1.
+- The review note sets bench to 102.5, but the list and Based on say 100 ("100 kg again"). Show 102.5 and `100 × 8 @ RPE 8 → 102.5`.
+- Drop `est. 1RM 127` from Based on (estimates stay behind `Why this weight?`).
+- `Runs this week 1 of 3` counts Sunday's run, which is last week if the week is Mon–Sun (Q19).
+- Add the GymChip, `Target` list header, `Not reviewed · Offline` state, and the Resume / Done today states.
