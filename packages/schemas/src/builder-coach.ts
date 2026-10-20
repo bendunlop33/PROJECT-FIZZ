@@ -138,13 +138,11 @@ export type MixPickArgs = z.infer<typeof MixPickArgsSchema>;
 /**
  * `pre_session_nudge` (§6.1): asked only when code found a clear signal.
  * The coach judges whether to say anything (`speak`) and writes one line;
- * the offer it may make is code's (one of the context's `offers`, by ID),
- * applied only on Ben's Apply (rule 3).
+ * the offer that goes with it is code's, applied only on Ben's Apply (rule 3).
  */
 export const PreSessionNudgeArgsSchema = z.strictObject({
   speak: z.boolean(),
   line: coachText(L.nudgeLineMax).nullable(),
-  offerId: RefSchema.nullable(),
 });
 export type PreSessionNudgeArgs = z.infer<typeof PreSessionNudgeArgsSchema>;
 

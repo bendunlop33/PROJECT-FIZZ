@@ -49,7 +49,7 @@ const DESCRIPTIONS: Readonly<Record<BuilderCoachToolName, string>> = {
   propose_workout_edit: 'Propose changes to today’s workout, by slotKey: swap, add, remove, sets, reps, rpe, load (heavier/lighter or a value), move, superset, unlink, minutes. Ben applies or skips. `reply`: one or two sentences; an answer alone when ops is empty.',
   review_workout: 'Review today’s workout: a short verdict, up to 4 suggestions (ops by slotKey, each with a one-line reason), and up to 4 notes for the next time this day comes round (words, or a target load for one lift).',
   mix_pick: 'Pick one exercise from `shortlist` to swap in today, with a one-line reason.',
-  pre_session_nudge: 'Decide whether today’s signals deserve one line on the session card. speak=false to stay silent. If you speak, one plain line; offerId is the offer’s ID if you suggest it, else null.',
+  pre_session_nudge: 'Decide whether today’s signals deserve one line on the session card. speak=false to stay silent. If you speak, one plain line; the app shows the code offer with it as Apply.',
 };
 
 export function builderToolDefinition(name: BuilderCoachToolName): FunctionToolDefinition {
@@ -74,7 +74,7 @@ const INSTRUCTIONS: Readonly<Record<BuilderRequestKind, string>> = {
   mix: [...COMMON, 'Pick one fresh exercise from the shortlist for today, using his goal, recent sessions and memories (for example something he dislikes). One short reason.'].join('\n'),
   nudge: [
     ...COMMON,
-    'Code found the signals listed. Speak only if they clearly matter for today’s session; otherwise speak=false. One short line, no numbers beyond those given. Suggest the code offer only if it fits.',
+    'Code found the signals listed. Speak only if they clearly matter for today’s session; otherwise speak=false. One short line, no numbers beyond those given. The code offer goes with your line; word the line so it fits the offer.',
   ].join('\n'),
 };
 

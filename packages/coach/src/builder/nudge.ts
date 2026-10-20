@@ -192,12 +192,13 @@ export type CheckedNudge = { speak: false } | { speak: true; line: string; offer
 /**
  * `checkNudge`: the coach's call, checked. Silent when it chose silence,
  * wrote nothing, or its line has a number not in the facts (never shown
- * unchecked, rule 1 and 6). The offer is code's, and only when the coach
- * named it.
+ * unchecked, rule 1 and 6). When it speaks, code's offer goes with the line
+ * as `Apply` (§6.1: one line with Apply), so a restart that reuses the
+ * stored line shows the same offer; it is still only an offer (rule 3).
  */
 export function checkNudge(args: PreSessionNudgeArgs, offer: NudgeOffer | null, facts: NumberFacts): CheckedNudge {
   if (!args.speak) return { speak: false };
   const c = checkCoachText(args.line, facts);
   if (c.shown === null || c.hidden.length > 0) return { speak: false };
-  return { speak: true, line: c.shown, offer: offer !== null && args.offerId === offer.id ? offer : null };
+  return { speak: true, line: c.shown, offer };
 }

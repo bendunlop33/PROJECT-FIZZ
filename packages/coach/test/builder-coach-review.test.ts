@@ -201,10 +201,10 @@ describe('pre-session nudge: silent unless a clear real signal (§6.1)', () => {
 
     const text = nudgeContextText({ day: 'Chest', signals: ['Barbell bench press on 2026-10-17: 3 reps against a target of 6'], offer: offer === null ? null : { id: offer.id, lines: offer.proposal.lines }, extras: { goal: null, painFlags: [] } });
     const facts = builderFacts([text]);
-    expect(checkNudge({ speak: true, line: 'Only 3 reps last time: start at 97.5 kg?', offerId: 'nudge:rep_miss' }, offer, facts)).toMatchObject({ speak: true, offer: { id: 'nudge:rep_miss' } });
-    expect(checkNudge({ speak: true, line: 'You only got 2 reps; drop to 95 kg?', offerId: 'nudge:rep_miss' }, offer, facts)).toEqual({ speak: false });
-    expect(checkNudge({ speak: false, line: 'x', offerId: null }, offer, facts)).toEqual({ speak: false });
-    expect(checkNudge({ speak: true, line: 'Take it easy today.', offerId: 'made-up' }, offer, facts)).toEqual({ speak: true, line: 'Take it easy today.', offer: null });
+    expect(checkNudge({ speak: true, line: 'Only 3 reps last time: start at 97.5 kg?' }, offer, facts)).toMatchObject({ speak: true, offer: { id: 'nudge:rep_miss' } });
+    expect(checkNudge({ speak: true, line: 'You only got 2 reps; drop to 95 kg?' }, offer, facts)).toEqual({ speak: false });
+    expect(checkNudge({ speak: false, line: 'x' }, offer, facts)).toEqual({ speak: false });
+    expect(checkNudge({ speak: true, line: 'Take it easy today.' }, offer, facts)).toEqual({ speak: true, line: 'Take it easy today.', offer });
 
     // Light model, low effort, one forced tool; Your data and Coaching knowledge apart.
     const model = builderModelFor('nudge', { main: 'gpt-main', light: 'gpt-light' });
