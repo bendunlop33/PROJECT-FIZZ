@@ -798,28 +798,45 @@ export function changesPlanInUse(text: string): boolean {
 
 /**
  * (Ben, 20 Oct: "should also be able to pause eg if go on hols") Pausing or resuming the plan in use:
- * "pause my plan", "put the plan on hold", "I'm on holiday till 3 Nov", "away until the 10th",
+ * "pause my plan", "put the plan on hold", "I'm on holiday till 3 Nov", "I'm away until the 10th",
  * "resume my plan", "I'm back from holiday". Its own kind (`plan_pause`): it opens `pause_plan` only.
  * A question ("should I train on holiday?") isn't one.
+ *
+ * A pause starts now (it has no start date), so only present-tense or imperative words count
+ * (review plan-adapt B2): a holiday still ahead ("going on holiday next week", "I'll be away from
+ * the 25th", "off on leave in December") isn't Ben asking; the coach may offer, and applies nothing.
+ * Resume needs "I'm back" on its own (or "back from holiday", "back home"), not "I'm back to 100 kg".
  */
 const PLAN_WORD = '(?:(?:my|the|this|our) )?(?:training |workout |gym )?(?:plan|programme|program)';
+const HOLIDAY = '(?:holiday|holidays|hols|vacation|vacay|leave)';
 const PAUSE_PLAN = new RegExp(
   [
     `\\b(?:pause|freeze|suspend|hold)\\b ${PLAN_WORD}\\b`,
     `\\b(?:put|keep|leave) ${PLAN_WORD} on (?:hold|pause|ice)\\b`,
-    `\\b(?:i am|im|i'm|we are|we're|i will be|i'll be|we will be|we'll be|going|heading|off|away|be) (?:on |going on |away on |off on )?(?:holiday|holidays|hols|vacation|vacay|leave)\\b`,
-    `^on (?:holiday|holidays|hols|vacation)\\b`,
-    `\\b(?:i am|im|i'm|i will be|i'll be) (?:away|travelling|traveling|abroad) (?:till|until|til|to|from|for|on)\\b`,
+    `\\b(?:i am|im|i'm|we are|we're) (?:on |away on |off on )${HOLIDAY}\\b`,
+    `^on ${HOLIDAY}\\b`,
+    `\\b(?:i am|im|i'm|we are|we're) (?:away|travelling|traveling|abroad) (?:till|until|til|for)\\b`,
   ].join('|'),
 );
+/** A start still ahead, in the words before any `till` / `until`: "next week", "from the 25th", "tomorrow", "in December". */
+const FUTURE_START = new RegExp(
+  `\\b(?:next|tomorrow|tmrw|tmr|soon|later|from(?! (?:today|now)\\b)|starting|will|won't|wont|gonna|going|heading|i'll|we'll|in (?:a|an|one|two|three|four|five|six|few|couple|\\d+)\\b|in (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*|on (?:mon|tue|wed|thu|fri|sat|sun)[a-z]*|this (?:weekend|mon|tue|wed|thu|fri|sat|sun)[a-z]*)\\b`,
+);
 const RESUME_PLAN = new RegExp(
-  [`\\b(?:resume|unpause|un-pause|restart|continue|reactivate)\\b ${PLAN_WORD}\\b`, `\\b(?:i am|im|i'm|we are|we're) back(?: from (?:holiday|holidays|hols|vacation|my trip|the trip|travelling|traveling))?\\b`, `\\b(?:back on|start) ${PLAN_WORD} again\\b`].join('|'),
+  [
+    `\\b(?:resume|unpause|un-pause|restart|continue|reactivate)\\b ${PLAN_WORD}\\b`,
+    `\\b(?:i am|im|i'm|we are|we're) back(?: from (?:${HOLIDAY}|my trip|the trip|travelling|traveling|my travels|abroad)| home)?(?: now| again| today)?$`,
+    `\\b(?:back on|start) ${PLAN_WORD} again\\b`,
+  ].join('|'),
 );
 
 function pauseIn(c: Clause): boolean {
   const t = c.text.replace(POLITE, '');
   if (c.question && !ASK_PREFIX.test(t)) return false;
-  return PAUSE_PLAN.test(t) || RESUME_PLAN.test(t);
+  if (RESUME_PLAN.test(t)) return true;
+  if (!PAUSE_PLAN.test(t)) return false;
+  const before = c.sentence.split(/\b(?:till|until|til|thru|through|to)\b/)[0] ?? '';
+  return !FUTURE_START.test(before);
 }
 
 /** Whether Ben's words ask to pause or resume the plan (`plan_pause`). Code, never the model's reading. */
