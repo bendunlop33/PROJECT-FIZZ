@@ -291,7 +291,7 @@ function DayRow({ day, first, onPress }: { day: PlanOverviewDay; first: boolean;
         ) : null}
       </View>
       {day.when !== null ? (
-        <AppText variant="callout" color="text.secondary" numeric>
+        <AppText variant="callout" color="text.secondary" numeric style={{ flexShrink: 1, textAlign: 'right' }}>
           {day.when}
         </AppText>
       ) : null}

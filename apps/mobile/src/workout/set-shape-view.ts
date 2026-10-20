@@ -110,3 +110,15 @@ export function slotRepsDraft(
 export function setShapeStacked(asked: boolean | undefined, fontScale: number, axAt: number): boolean {
   return asked ?? fontScale >= axAt;
 }
+
+/**
+ * (Design pass 5.2) The set sheet's reps, kept valid by clamping: each end 1–100, and the end Ben moved
+ * pushes the other so From ≤ To (no error sentence).
+ */
+export function clampRepRange(r: { min: number | null; max: number | null }, moved: 'min' | 'max'): { min: number; max: number } {
+  const c = (v: number | null) => Math.max(1, Math.min(100, Math.round(v ?? 1)));
+  const min = c(r.min);
+  const max = c(r.max);
+  if (min <= max) return { min, max };
+  return moved === 'min' ? { min, max: min } : { min: max, max };
+}

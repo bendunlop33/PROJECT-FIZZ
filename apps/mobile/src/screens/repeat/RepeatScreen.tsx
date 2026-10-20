@@ -12,7 +12,7 @@ import { openStartedWorkout } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, Card, PrimaryButton, Screen, StatusLine, TextButton } from '../../ui';
+import { AppText, PrimaryButton, Screen, StatusLine, TextButton } from '../../ui';
 import { GymChip, GymSwitcherSheet } from '../workout/GymSwitch';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
 import { LIBRARY_COPY_UI } from '../../workout/library-view';
@@ -157,14 +157,17 @@ export function RepeatScreen() {
       <AppText variant="label" color="text.secondary">
         All values are targets.
       </AppText>
-      {preview.exercises.map((e) => (
-        <Card key={e.exerciseName}>
-          <AppText variant="headline">{`${e.exerciseName}${e.equipmentName ? ` · ${e.equipmentName}` : ''}`}</AppText>
-          <AppText variant="callout" numeric>
-            {e.line}
-          </AppText>
-        </Card>
-      ))}
+      {/* Design pass nit: one grouped list between hairlines, not a card per exercise. */}
+      <View style={{ borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'] }}>
+        {preview.exercises.map((e) => (
+          <View key={e.exerciseName} accessible style={{ paddingVertical: theme.space['3'], gap: 2, borderBottomWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'] }}>
+            <AppText variant="headline">{`${e.exerciseName}${e.equipmentName ? ` · ${e.equipmentName}` : ''}`}</AppText>
+            <AppText variant="callout" numeric>
+              {e.line}
+            </AppText>
+          </View>
+        ))}
+      </View>
       {preview.notes.map((n) => (
         <StatusLine key={`${n.exerciseName}:${n.text}`} icon={n.tone === 'warning' ? 'exclamationmark.triangle' : 'info.circle'} tone={n.tone} text={`${n.exerciseName}: ${n.text}`} />
       ))}

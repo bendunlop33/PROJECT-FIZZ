@@ -11,6 +11,7 @@ import { boundWords, droppedWords } from './fit-words';
 import { normaliseRoutineExercises, ROUTINE_MAX_SETS, SUPERSET_MAX, type RoutineEdit } from './library';
 import { defaultMain } from './routines';
 import { CARDIO_DEFAULT_S } from '../cardio';
+import type { HistorySession } from '../progression';
 
 /**
  * The workout editor's changes (routines.md §A2.3, v0.1 §2.3, §4.3). Pure:
@@ -542,6 +543,49 @@ export function fixedLoadNote(load: Load, eq: EquipmentInstance | null, display:
 /** The new Fixed load's unit and convention: the item's at this gym, else Ben's unit and the exercise's own. */
 export function fixedLoadFrame(eq: EquipmentInstance | null, unit: WeightUnit, convention: LoadConvention): { unit: WeightUnit; convention: LoadConvention } {
   return eq === null || eq.kind === 'bodyweight_station' ? { unit, convention } : { unit: eq.unit, convention: eq.loadConvention };
+}
+
+/**
+ * (Design pass 5.1, 20 Oct) The working load last logged for this exercise: the newest workout's
+ * heaviest working set (least assisted, on an assisted machine). Warm-ups and sets with no load don't count.
+ */
+export function lastWorkingLoad(history: readonly Pick<HistorySession, 'performedAtUtc' | 'sets'>[]): Load | null {
+  const newest = [...history].sort((a, b) => (a.performedAtUtc < b.performedAtUtc ? 1 : a.performedAtUtc > b.performedAtUtc ? -1 : 0));
+  for (const h of newest) {
+    let best: Load | null = null;
+    for (const set of h.sets) {
+      const l = set.load;
+      if (set.setType === 'warmup' || l === null || l.convention === 'bodyweight') continue;
+      if (best === null || best.unit !== l.unit || best.convention !== l.convention) {
+        if (best === null) best = l;
+        continue;
+      }
+      const harder = loadDirection(l.convention) === 'assistance' ? l.value < best.value : l.value > best.value;
+      if (harder) best = l;
+    }
+    if (best !== null) return best;
+  }
+  return null;
+}
+
+/**
+ * (Design pass 5.1) The value a new Fixed load starts at: the last logged working load, snapped to an
+ * achievable load on this item (rule 4: never past its max; toward easier), so `Auto → Fixed` on bench
+ * shows about 100 kg, not the bar. Different convention (or unit with no item): not used. Fallback: the
+ * item's lightest load, else 0.
+ */
+export function fixedLoadSeed(last: Load | null, frame: { unit: WeightUnit; convention: LoadConvention }, eq: EquipmentInstance | null): number {
+  const item = eq === null || eq.kind === 'bodyweight_station' ? null : eq;
+  if (last !== null && last.convention === frame.convention) {
+    if (item !== null) {
+      const r = roundToAvailableLoad(last, item, 'easier');
+      if (r.ok && r.load.unit === frame.unit) return r.load.value;
+    } else if (last.unit === frame.unit) {
+      return last.value;
+    }
+  }
+  if (item !== null) return getAchievableLoads(item).loads[0] ?? 0;
+  return 0;
 }
 
 /** The set sheet's load stepper: achievable loads on this item (P5); without one, 2.5 kg / 5 lb steps. */

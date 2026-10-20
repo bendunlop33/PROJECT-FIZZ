@@ -20,7 +20,7 @@ import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
 import type { OverviewTarget, RoutineRow, SessionPickerRow } from '../services/workout-services';
-import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
+import { AppText, Eyebrow, FadeIn, HeroHeader, Icon, LinkLine, PrimaryButton, RowText, RuledSection, SecondaryButton, StatusLine, TextButton, Toast, type SymbolName } from '../ui';
 import { hasChoice, SESSION_PICKER_COPY } from '../workout/session-picker';
 import { SessionPickerSheet } from './workout/SessionPickerSheet';
 import { NameSheet } from './routines/NameSheet';
@@ -450,11 +450,16 @@ export function TodayScreen() {
           <Hero
             label={`Unfinished · ${formatShortDate(toMs(main.startedAtUtc), zoned.tz)}`}
             title={main.title}
-            lines={[main.done === 0 ? 'Nothing logged' : `${String(main.done)} of ${String(main.total)} sets done`, main.lastSetAtUtc ? `Last set logged at ${formatTime(toMs(main.lastSetAtUtc), zoned.tz)}` : null]}
+            // Design pass nit: the end time is a hero line, so the button is one word.
+            lines={[
+              main.done === 0 ? 'Nothing logged' : `${String(main.done)} of ${String(main.total)} sets done`,
+              main.lastSetAtUtc ? `Last set logged at ${formatTime(toMs(main.lastSetAtUtc), zoned.tz)}` : null,
+              main.endedAboutUtc ? `Ended about ${formatTime(toMs(main.endedAboutUtc), zoned.tz)}` : null,
+            ]}
           >
             {main.endedAboutUtc ? (
               <PrimaryButton
-                label={`Finish (ended about ${formatTime(toMs(main.endedAboutUtc), zoned.tz)})`}
+                label="Finish"
                 onPress={() => {
                   if (active) {
                     setFinishFor(active);
@@ -905,12 +910,7 @@ function DetailList({ rows }: { rows: readonly DetailRow[] }) {
               })}
             >
               <Icon name={ROW_ICON[r.status].icon} color={ROW_ICON[r.status].color} size={16} />
-              <AppText variant="body" numberOfLines={2} color={r.status === 'pending' || r.status === 'skipped' ? 'text.secondary' : 'text.primary'} style={{ flex: 1, fontWeight: r.status === 'now' ? '600' : '400' }}>
-                {r.title}
-              </AppText>
-              <AppText variant="callout" color="text.secondary" numeric>
-                {r.detail}
-              </AppText>
+              <RowText title={r.title} detail={r.detail} titleColor={r.status === 'pending' || r.status === 'skipped' ? 'text.secondary' : 'text.primary'} titleWeight={r.status === 'now' ? '600' : '400'} />
             </Pressable>
           ) : (
             <Pressable
@@ -967,12 +967,7 @@ function RoutineListRow({ row, tz, onPress, onLongPress }: { row: RoutineRow; tz
         backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
       })}
     >
-      <AppText variant="body" numberOfLines={2} style={{ flex: 1 }}>
-        {row.name}
-      </AppText>
-      <AppText variant="callout" color="text.secondary" numeric>
-        {`${count} · ${when}`}
-      </AppText>
+      <RowText title={row.name} detail={`${count} · ${when}`} />
       <Icon name="chevron.right" color="text.tertiary" size={14} />
     </Pressable>
   );
@@ -994,12 +989,7 @@ function RecentRow({ row, onPress }: { row: RecentWorkoutRow; onPress: () => voi
         backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
       })}
     >
-      <AppText variant="body" numberOfLines={2} style={{ flex: 1 }}>
-        {row.title}
-      </AppText>
-      <AppText variant="callout" color="text.secondary" numeric>
-        {`${row.when} · ${row.detail}`}
-      </AppText>
+      <RowText title={row.title} detail={`${row.when} · ${row.detail}`} />
       <Icon name="chevron.right" color="text.tertiary" size={14} />
     </Pressable>
   );

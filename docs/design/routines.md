@@ -170,7 +170,7 @@ The v1.0 wireframe below is kept for reference.
 
 - **`Main`** (WL9) is a `ParamChip` toggle (icon `checkmark` + word when on, outline when off; never colour alone). VoiceOver: "Main lift, on".
 - **Reorder:** `Move up` / `Move down` in the exercise `⋯` and as VoiceOver custom actions (TE10 pattern). No drag in v1, so v0.1's Reorder mode is not built yet.
-- **Set sheet:** as v0.1 without `% of top set`, the AMRAP checkbox and Effort target. Load is `Auto` / `Fixed`. Fixed uses `WorkoutKeypad` with the default gym's steps and the same warnings.
+- **Set sheet:** as v0.1 without `% of top set`, the AMRAP checkbox and Effort target. Load is `Auto` / `Fixed`. Fixed uses `WorkoutKeypad` with the default gym's steps and the same warnings. (Design pass, 20 Oct) `Auto → Fixed` starts at the last logged working load snapped to this gym's item (never past its max; else its lightest load). Reps From/To are compact steppers kept in order by clamping; a focused stepper scrolls above the keypad. The exercise card's header is the name (2 lines) and `⋯`, with `Main` and `Add weight` on a chip row under it.
 - **Not shown in v1:** `Routine settings`, `Advanced`, `Rest between sides`. Their stored values (if any) are kept untouched on Save.
 - `Cancel` with changes: `Discard changes?` [Discard] [Keep editing].
 

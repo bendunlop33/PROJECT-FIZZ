@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native';
+import { ActionSheetIOS, Alert, Keyboard, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -19,6 +19,7 @@ import {
   fixedLoadNote,
   cardioDistanceSteps,
   cardioDurationSteps,
+  fixedLoadSeed,
   fixedLoadSteps,
   formatDuration,
   isRefusedDistanceSlot,
@@ -50,11 +51,11 @@ import type { LibraryToastParam, RootStackParams } from '../../navigation/types'
 import type { EditorExerciseInfo, RoutineEditorData } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, Eyebrow, Icon, InfoLine, NumberAccessory, NumberStepper, PrimaryButton, Row, SetCountBar, SetShapeControl, ShapeRepsSheet, SheetKeyboardAvoidingView, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, BottomCard, Chip, ChipRow, DangerTextButton, EffortSheet, Eyebrow, Icon, NumberAccessory, NumberStepper, PrimaryButton, Row, SetCountBar, SetShapeControl, ShapeRepsSheet, SheetKeyboardAvoidingView, StatusLine, TextButton, TextField, useKeyboardVisible } from '../../ui';
 import { conflictLines, conflictText, EDITOR_COPY, editorAddRow, editorPrimary, editorSlotIssue, exerciseMenu, LIBRARY_COPY_UI, LIBRARY_TOASTS, mainChipLabel, restChoices } from '../../workout/library-view';
 import { handOffLibraryToast } from '../../workout/library-toast';
 import { saveEditRequest, settleSaveEdit } from '../../workout/save-edit-handoff';
-import { SET_BAR, SET_SHAPE_COPY, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../../workout/set-shape-view';
+import { clampRepRange, SET_BAR, SET_SHAPE_COPY, shapeEffortRow, shapeRepsText, slotRepsDraft, stepperLimits } from '../../workout/set-shape-view';
 
 type Stale = { current: NonNullable<RoutineEditorData['routine']>; lines: string[]; changedAtUtc: string };
 
@@ -87,6 +88,7 @@ export function WorkoutEditorScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const keyboardUp = useKeyboardVisible();
   const { routineId, from, selectName, copyToast, draft, saveAs } = useRoute<RouteProp<RootStackParams, 'WorkoutEditor'>>().params;
   const [data, setData] = useState<RoutineEditorData | null | 'loading'>('loading');
   const [name, setName] = useState('');
@@ -322,19 +324,24 @@ export function WorkoutEditorScreen() {
   return (
     <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <NumberAccessory />
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: theme.space['2'], paddingTop: theme.space['3'], minHeight: 52 }}>
-        <TextButton label={EDITOR_COPY.cancel} tone="secondary" onPress={cancel} />
-        <AppText variant="headline" accessibilityRole="header">
+      {/* Design pass nit: equal side slots so the title is centred; Save in the header too (the bar's Save can sit under the keyboard). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['2'], paddingTop: theme.space['3'], minHeight: 52 }}>
+        <View style={{ flex: 1, alignItems: 'flex-start' }}>
+          <TextButton label={EDITOR_COPY.cancel} tone="secondary" onPress={cancel} />
+        </View>
+        <AppText variant="headline" accessibilityRole="header" numberOfLines={1}>
           {isNew ? EDITOR_COPY.newTitle : EDITOR_COPY.editTitle}
         </AppText>
-        <View style={{ minWidth: 72 }} />
+        <View style={{ flex: 1, alignItems: 'flex-end' }}>
+          <TextButton label={EDITOR_COPY.save} disabled={primary.disabled || busy} onPress={() => void save()} />
+        </View>
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'], gap: theme.space['4'] }}>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'], gap: theme.space['4'] }}>
         <View style={{ gap: theme.space['2'] }}>
           <AppText variant="label" color="text.secondary">
             {EDITOR_COPY.name}
           </AppText>
-          <TextField accessibilityLabel={EDITOR_COPY.name} value={name} onChangeText={setName} autoFocus={isNew || selectName === true} selectTextOnFocus={selectName === true} returnKeyType="done" maxLength={160} />
+          <TextField accessibilityLabel={EDITOR_COPY.name} value={name} onChangeText={setName} autoFocus={(isNew && name.trim() === '') || selectName === true} selectTextOnFocus={selectName === true} returnKeyType="done" maxLength={160} />
           <AppText variant="callout" color="text.secondary" numeric>
             {editorSummaryLine(list.length, minutes, editor.gym?.name ?? null, workingSetTotal(list))}
           </AppText>
@@ -365,9 +372,11 @@ export function WorkoutEditorScreen() {
                   {`Superset ${slot.supersetGroup}`}
                 </AppText>
               ) : null}
+              {/* Design pass 5.3: the name (2 lines) + ⋯; Main and Add weight on a row under it. */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: 44 }}>
                 <AppText
                   variant="headline"
+                  numberOfLines={2}
                   style={{ flex: 1 }}
                   accessibilityActions={actions.map((a) => ({ name: a, label: a }))}
                   onAccessibilityAction={(e) => {
@@ -376,23 +385,6 @@ export function WorkoutEditorScreen() {
                 >
                   {`${String(i + 1)} ${nameOf(slot.exerciseId)}`}
                 </AppText>
-                {x?.defaultLoadConvention === 'bodyweight' ? (
-                  <Chip
-                    label={EDITOR_COPY.addWeight}
-                    selected={slot.addedWeight === true}
-                    onPress={() => {
-                      setList((l) => setAddedWeight(l, slot.id, slot.addedWeight !== true));
-                    }}
-                  />
-                ) : null}
-                <Chip
-                  label={EDITOR_COPY.main}
-                  selected={main}
-                  accessibilityLabel={mainChipLabel(main)}
-                  onPress={() => {
-                    setList((l) => setMain(l, slot.id, !main));
-                  }}
-                />
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`More, ${nameOf(slot.exerciseId)}`}
@@ -404,6 +396,25 @@ export function WorkoutEditorScreen() {
                   <Icon name="ellipsis" />
                 </Pressable>
               </View>
+              <ChipRow>
+                <Chip
+                  label={EDITOR_COPY.main}
+                  selected={main}
+                  accessibilityLabel={mainChipLabel(main)}
+                  onPress={() => {
+                    setList((l) => setMain(l, slot.id, !main));
+                  }}
+                />
+                {x?.defaultLoadConvention === 'bodyweight' ? (
+                  <Chip
+                    label={EDITOR_COPY.addWeight}
+                    selected={slot.addedWeight === true}
+                    onPress={() => {
+                      setList((l) => setAddedWeight(l, slot.id, slot.addedWeight !== true));
+                    }}
+                  />
+                ) : null}
+              </ChipRow>
               {slotIssue !== null ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: theme.space['2'] }}>
                   <Icon name="exclamationmark.triangle" color="status.warning" size={14} />
@@ -514,7 +525,7 @@ export function WorkoutEditorScreen() {
           />
         </View>
       </ScrollView>
-      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: theme.space['3'] + insets.bottom, gap: theme.space['2'], backgroundColor: theme.colors['bg.canvas'] }}>
+      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: theme.space['3'] + (keyboardUp ? 0 : insets.bottom), gap: theme.space['2'], backgroundColor: theme.colors['bg.canvas'] }}>
         {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
         <PrimaryButton label={primary.label} disabled={primary.disabled} busy={busy} onPress={() => void save()} />
       </View>
@@ -712,10 +723,29 @@ function SetSheet({
     if (slot) onChange(slot.id, setIds, patch);
   };
   const preset = t && slot ? (slot.restBySetType[t.setType]?.seconds ?? null) : null;
+  // Design pass 5.2: a focused stepper is scrolled into view once the keypad is up (the sheet shrinks above it).
+  const sheetScroll = useRef<ScrollView>(null);
+  const blockY = useRef<Record<string, number>>({});
+  const at = (key: string) => (e: { nativeEvent: { layout: { y: number } } }) => {
+    blockY.current[key] = e.nativeEvent.layout.y;
+  };
+  const reveal = (key: string) => () => {
+    const y = blockY.current[key];
+    if (y === undefined) return;
+    const go = () => sheetScroll.current?.scrollTo({ y: Math.max(0, y - theme.space['2']), animated: true });
+    if (Keyboard.isVisible()) {
+      go();
+      return;
+    }
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      sub.remove();
+      go();
+    });
+  };
   return (
     <BottomCard visible={visible} onClose={onClose} closeLabel={EDITOR_COPY.done} scroll={false}>
       {slot && t ? (
-        <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: theme.space['4'] }}>
+        <ScrollView ref={sheetScroll} style={{ flexGrow: 0, flexShrink: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ gap: theme.space['4'] }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }} numeric>
               {`${setIds.length > 1 ? `Sets ${String(index)}–${String(index + setIds.length - 1)}` : `Set ${String(index)}`} · ${info?.name ?? 'Exercise'}`}
@@ -733,7 +763,7 @@ function SetSheet({
             </ChipRow>
           </View>
           {!bodyweight ? (
-            <View style={{ gap: theme.space['2'] }}>
+            <View style={{ gap: theme.space['2'] }} onLayout={at('load')}>
               <AppText variant="label" color="text.secondary">
                 {EDITOR_COPY.load}
               </AppText>
@@ -744,16 +774,16 @@ function SetSheet({
                   selected={t.targetLoad !== null}
                   onPress={() => {
                     if (t.targetLoad === null) {
-                      const steps = fixedLoadSteps(null, frame, item, weighted ? own : item);
-                      set({ targetLoad: { value: steps.up.enabled ? steps.up.value : 0, unit: frame.unit, convention: frame.convention } });
+                      // Design pass 5.1: from the last logged working load, snapped here (else the lightest load).
+                      set({ targetLoad: { value: fixedLoadSeed(info?.lastLoad ?? null, frame, item), unit: frame.unit, convention: frame.convention } });
                     }
                   }}
                 />
               </ChipRow>
-              {t.targetLoad === null ? (
-                <InfoLine text={EDITOR_COPY.auto} info={EDITOR_COPY.autoInfo} variant="callout" infoLabel="About Auto" />
-              ) : (
+              {/* Design pass nit: no second `Auto` line under the selected Auto chip. */}
+              {t.targetLoad === null ? null : (
                 <FixedLoad
+                  onFocus={reveal('load')}
                   value={t.targetLoad.value}
                   frame={{ unit: t.targetLoad.unit, convention: t.targetLoad.convention }}
                   item={item}
@@ -805,7 +835,9 @@ function SetSheet({
               }}
             />
           ) : (
-            <Reps value={t.targetReps} onChange={(r) => { set({ targetReps: r }); }} />
+            <View onLayout={at('reps')}>
+              <Reps value={t.targetReps} onFocus={reveal('reps')} onChange={(r) => { set({ targetReps: r }); }} />
+            </View>
           )}
           <View style={{ gap: theme.space['2'] }}>
             <AppText variant="label" color="text.secondary">
@@ -840,14 +872,14 @@ function SetSheet({
   );
 }
 
-function FixedLoad({ value, frame, item, display, onChange }: { value: number; frame: { unit: WeightUnit; convention: LoadConvention }; item: EquipmentInstance | null; display: EquipmentInstance | null; onChange: (v: number | null) => void }) {
+function FixedLoad({ value, frame, item, display, onChange, onFocus }: { value: number; frame: { unit: WeightUnit; convention: LoadConvention }; item: EquipmentInstance | null; display: EquipmentInstance | null; onChange: (v: number | null) => void; onFocus?: () => void }) {
   const steps = fixedLoadSteps(value, frame, item, display);
   const note = fixedLoadNote({ value, unit: frame.unit, convention: frame.convention }, item, display);
   const assist = frame.convention === 'assistance';
   const added = frame.convention === 'added' && display?.kind !== 'plate_loaded_machine';
   return (
     <View style={{ gap: 6 }}>
-      <NumberStepper label={assist ? 'Assist' : added ? 'Added' : 'Load'} unit={`${frame.unit}${frame.convention === 'per_hand' ? ' each' : ''}`} value={value} decimals down={steps.down} up={steps.up} onChange={onChange} warning={note !== null} onSurface />
+      <NumberStepper label={assist ? 'Assist' : added ? 'Added' : 'Load'} unit={`${frame.unit}${frame.convention === 'per_hand' ? ' each' : ''}`} value={value} decimals down={steps.down} up={steps.up} onChange={onChange} warning={note !== null} onSurface {...(onFocus ? { onFocus } : {})} />
       {note !== null ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Icon name="exclamationmark.triangle" color="status.warning" size={14} />
@@ -860,12 +892,12 @@ function FixedLoad({ value, frame, item, display, onChange }: { value: number; f
   );
 }
 
-function Reps({ value, onChange }: { value: SetTemplate['targetReps']; onChange: (r: SetTemplate['targetReps']) => void }) {
+function Reps({ value, onChange, onFocus }: { value: SetTemplate['targetReps']; onChange: (r: SetTemplate['targetReps']) => void; onFocus?: () => void }) {
   const theme = useTheme();
   const r = value ?? { min: 8, max: 10 };
   const exact = r.min === r.max;
   const step = (v: number, min: number) => ({ down: v > min ? { enabled: true as const, value: v - 1, label: String(v - 1) } : { enabled: false as const, reason: `Min ${String(min)}` }, up: v < 100 ? { enabled: true as const, value: v + 1, label: String(v + 1) } : { enabled: false as const, reason: 'Max 100' } });
-  const clamp = (v: number | null) => Math.max(1, Math.min(100, Math.round(v ?? 1)));
+  const focus = onFocus ? { onFocus } : {};
   return (
     <View style={{ gap: theme.space['2'] }}>
       <AppText variant="label" color="text.secondary">
@@ -875,15 +907,11 @@ function Reps({ value, onChange }: { value: SetTemplate['targetReps']; onChange:
         <Chip label={EDITOR_COPY.range} selected={!exact} onPress={() => { onChange({ min: r.min, max: Math.max(r.max, r.min + 2) }); }} />
         <Chip label={EDITOR_COPY.exact} selected={exact} onPress={() => { onChange({ min: r.min, max: r.min }); }} />
       </ChipRow>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
-        <NumberStepper label={exact ? 'Reps' : 'From'} unit={null} value={r.min} decimals={false} onSurface {...step(r.min, 1)} onChange={(v) => { const min = clamp(v); onChange({ min, max: exact ? min : r.max }); }} warning={r.min > r.max} />
-        {!exact ? <NumberStepper label="To" unit={null} value={r.max} decimals={false} onSurface {...step(r.max, 1)} onChange={(v) => { onChange({ min: r.min, max: clamp(v) }); }} warning={r.min > r.max} /> : null}
+      {/* Design pass 5.2: compact steppers side by side; From ≤ To is kept by clamping, not an error sentence. */}
+      <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+        <NumberStepper label={exact ? 'Reps' : 'From'} unit={null} value={r.min} decimals={false} onSurface compact={!exact} {...focus} {...step(r.min, 1)} onChange={(v) => { onChange(clampRepRange({ min: v, max: exact ? v : r.max }, 'min')); }} />
+        {!exact ? <NumberStepper label="To" unit={null} value={r.max} decimals={false} onSurface compact {...focus} {...step(r.max, 1)} onChange={(v) => { onChange(clampRepRange({ min: r.min, max: v }, 'max')); }} /> : null}
       </View>
-      {r.min > r.max ? (
-        <AppText variant="callout" color="status.warning">
-          Reps: the first number must be the smaller one.
-        </AppText>
-      ) : null}
     </View>
   );
 }
@@ -968,8 +996,9 @@ function AddExerciseSheet({ visible, title, withSets, onPick, onClose }: { visib
         </AppText>
         <TextButton label={EDITOR_COPY.cancel} tone="secondary" onPress={onClose} />
       </View>
-      <TextField accessibilityLabel={EDITOR_COPY.search} placeholder={EDITOR_COPY.search} value={query} onChangeText={setQuery} autoCorrect={false} returnKeyType="search" />
-      <ScrollView style={{ flexGrow: 0, flexShrink: 1, maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+      {/* Design pass nit: the search is ready to type, clears in one tap, and a drag on the list hides the keyboard; the card's 90% cap bounds the list. */}
+      <TextField accessibilityLabel={EDITOR_COPY.search} placeholder={EDITOR_COPY.search} value={query} onChangeText={setQuery} autoCorrect={false} returnKeyType="search" autoFocus clearButtonMode="while-editing" />
+      <ScrollView style={{ flexGrow: 0, flexShrink: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {results.map((x) => {
           const row = editorAddRow(x);
           return (
