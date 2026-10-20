@@ -1,6 +1,6 @@
 # Workout builder v3 (Set up → Your workout, plan-day templates, variations, coach review)
 
-Status: **Proposed, rev 3 (20 Oct 2026). Waiting for Ben's approval.** Rev 2 covers the rules/code review (B1–B6, S7–S15) and the Ben-intent review (1–15). Rev 3 adds **§2.0 Today (v2)**, records Ben's answers to old Q1 and Q4 (§9) and renumbers the open questions.
+Status: **Proposed, rev 3 (20 Oct 2026). Waiting for Ben's approval.** Rev 2 covers the rules/code review (B1–B6, S7–S15) and the Ben-intent review (1–15). Rev 3 adds **§2.0 Today (v2)** (updated for Ben's later 20 Oct direction: day control + session-type chips, no Or row, no run counter), records Ben's answers to old Q1 and Q4 (§9) and renumbers the open questions.
 
 **§1–§3 are for Ben. §4, §5 and §8 are for the developer.**
 
@@ -18,6 +18,8 @@ Rules: CLAUDE.md 1–10 and minimal copy. Tokens: [design-system.md](design-syst
 
 **Question:** "What am I training today, in what order, at what weights, and does it fit my time?" **Primary action:** `Start`.
 
+**Words:** "the builder" = both pages (Set up and Your workout); "Set up" = its first page. On Today, `Edit` opens the builder on Your workout; `Build your own` opens it on Set up.
+
 ### 1.1 The chain [Ben]
 
 > Ben: "this should all still be buildable from the coach as part of the long-term plan goal etc, which gets tracked and separately reviewed and progress seen."
@@ -26,8 +28,8 @@ Rules: CLAUDE.md 1–10 and minimal copy. Tokens: [design-system.md](design-syst
 Goal (Profile) → Plan (days, order, rotation; training blocks later)
   → Plan days = fixed TEMPLATES in the builder's full format,
     one per day + main lift, each with optional saved VARIATIONS
-  → Today (§2.0): the Recommended card = the next plan day, drafted for
-    this week; Start as is, or Edit in the builder; loads from history
+  → Today (§2.0): Today's session = the next plan day (any day one tap),
+    drafted for this week; Start as is, or Edit in the builder
   → Logging → Reviews (session now; weekly / block / goal later)
   → One goal-progress view (later, §6)
 ```
@@ -43,7 +45,7 @@ Goal (Profile) → Plan (days, order, rotation; training blocks later)
 ### 1.3 Templates per main lift, with variations [Ben]
 
 - A plan day is saved **per main lift**: `Chest · bench` and `Chest · incline` are separate templates (Ben: "have them saved depending on what the main lift is").
-- Each template can have saved **variations**: `Chest · bench · arms superset`, `Chest · bench · abs superset` (Ben: "also have variations saved, such as including arm supersets or abs superset, so it doesn't lose stuff and have to redo unnecessarily"). Picked on Set up.
+- Each template can have saved **variations**: `Chest · bench · arms superset`, `Chest · bench · abs superset` (Ben: "also have variations saved, such as including arm supersets or abs superset, so it doesn't lose stuff and have to redo unnecessarily"). Picked on Today's session-type chips or on Set up.
 - [Proposal] A variation is stored as **the template plus its extras** (the added exercises and pairings), not as a full copy. So when the template changes, every variation picks up the change and nothing has to be redone (§4.3).
 - **`Save as default` is removed.** Edits are **today only** by default. On Start after edits, one prompt: `Today only` / `Update Chest · bench in your plan` / `Save as new variation` (§2.8). This is rule 2's scope choice.
 - Name format everywhere: `<Day> · <main lift>` and `<Day> · <main lift> · <variation>`.
@@ -145,11 +147,26 @@ Day sheet (tap a day), half height:
 │   Close                                  │
 ```
 
-- **Strip items** [Ben]: done workout `✓ Shoulders` (green fill), done activity `Run 12k` (run colour fill), planned plan day `Legs` and planned run `Run 8k` (dashed outline, same colour, plus `Planned` in the VoiceOver label and the sheet), rest `Rest` (text only). Colour is never the only signal (✓, dashed outline, the word). Today's cell has the accent outline and shows what's on the card.
+Other workouts sheet (`⋯`), half height [Proto]:
+
+```
+│ Other workouts                           │
+│ │ Push                         PPL day │ │
+│ │ Pull                         PPL day │ │
+│ │ Hotel shoulders       Recent · 17 Oct│ │
+│ │ Upper body             Recent · 8 Oct│ │
+│ [            Build your own            ] │
+│   Close                                  │
+```
+
+- **Strip items** [Ben]: done workout `✓ Shoulders` (green fill), done activity `Run 12k` (run colour fill), planned plan day `Legs` and planned run `Run 8k` (dashed outline, same colour, plus `Planned` in the VoiceOver label and the sheet), rest `Rest` (text only). Colour is never the only signal (✓, dashed outline, the word). Today's cell has the accent outline and shows the chosen day.
+- **Runs** (logged or planned) appear only when Ben logged them (`＋ Activity`) or told the coach (`log_activity`) [Ben]. Nothing is inferred or added by the plan. [Proposal] The same goes for future plan days: they show only when dated (a week change Ben applied, or days he told the coach); otherwise future cells stay empty, since the rotation has no dates.
 - **Cells** are ≥ 44 pt wide at 390 pt (7 × ~47 pt). At accessibility Dynamic Type sizes the strip becomes a 7-row list (`Sat 17 · ✓ Shoulders`) [Proposal].
-- **Or cards** [Ben]: tag (`Plan · next`, `Plan`, `Variation`, `Recent`), name, `main lift · ~N min`. Order [Proposal]: the recommended one first (selected outline), its saved variations, the other plan days in plan order, then recent non-plan workouts from the last 14 days, then `Empty workout` last. Max 8; `More ›` opens Library › Workouts.
-- **Clash warning** [Ben]: one line on the card when the shown workout clashes with the week: `! Long run Sat: Thursday is better for legs`. From the weekflex run rule (CHANGELOG 2026-10-20). Never blocks Start.
-- The Recommended card's workout **is the builder draft** (§4.4): Edit, Start and the builder all use the same draft, so edits made in the builder show on the card, which then reads `Chest · edited` [Proposal].
+- **Day control** [Ben]: segments ≥ 48 pt high. Unselected days and types are greyed so the chosen one stands out [Ben, 20 Oct], still ≥ 4.5:1 contrast. Up to 4 plan days show; with more, the rest go in `⋯` [Proposal]. `NEXT` is text under the label, not colour alone. Picking a day resets the chips to that day's first type and collapses the card. At accessibility sizes it becomes a row `Day  Chest ›` that opens a list [Proposal].
+- **Session-type chips** [Ben]: ≥ 44 pt high (the prototype's 40 pt is too small). The selected chip is filled and carries `●` / selected trait. Labels: `<main lift>` for templates, `<main lift> · <variation>` for variations. They wrap to a second line rather than scroll.
+- **Other workouts (`⋯`)** [Ben]: other split days (`Push`, `Pull`, tagged `PPL day`), recent non-plan workouts from the last 14 days (`Recent · 17 Oct`), then `Build your own`. Tapping a row puts it on the card; the day control then shows no selected segment [Proposal]. `Empty workout` is the last row [Proposal].
+- **Clash warning** [Ben]: one line on the card when the chosen session clashes with the week: `! Long run Saturday: legs fit better Thursday`. From the weekflex run rule (CHANGELOG 2026-10-20), so it only fires on runs Ben logged or told the coach. Never blocks Start.
+- The card's workout **is the builder draft** (§4.4): Edit, Start and the builder all use the same draft, so edits made in the builder show on the card, which then reads `Chest · Bench · edited` [Proposal].
 
 #### 2.0.3 How the recommendation is made [Ben asked; steps Proposal]
 
@@ -160,74 +177,79 @@ Plain words, for Ben:
 3. **Code checks every number**: loads this gym can make, equipment min/max, pain flags, limits (rules 4, 9).
 4. **Based on shows it**: the facts code used, plus the coach's one-line reason when it changed something. If no coach review happened, the last line says so (`Not reviewed · Offline`).
 
-The coach review runs when the draft is made or its inputs change (a workout or activity logged, the plan changed, a new day), not on every visit; the result is stored with the draft [Proposal]. This means Today now makes a background AI call, which today.md said it never did.
+Picking another day or session type drafts that one the same way (steps 1, 3, 4); the coach reviews it once, on first pick, when online. The coach review runs when a draft is made or its inputs change (a workout or activity logged, the plan changed, a new day), not on every visit; the result is stored with the draft [Proposal]. This means Today now makes a background AI call, which today.md said it never did.
 
 #### 2.0.4 States
 
 | State | Behaviour |
 |---|---|
-| Normal | As the wireframes. Label `Recommended` |
+| Normal | As the wireframes. The plan's next day selected, `NEXT` under it, its last-used type selected |
 | Loading | The code draft is local, so the card shows at once. No spinner; the coach's change, if any, arrives later as one Based on line + Undo, and the card never moves under a finger: if Ben has touched the card in the last 2 s it waits [Proposal] |
 | Offline / AI unavailable | Card = code draft. Based on ends `Not reviewed · Offline` or `Not reviewed · Coach not connected`. Coach bar shows `Offline`; in the coach sheet, Set up words still fill the builder (§2.6) |
-| Alternative picked | Its card replaces the Recommended card; label becomes `Today`. Tapping the first Or card goes back. Nothing in the plan changes; Up next is credited by what Ben does (§4.2) |
+| Other day or type picked | Card shows it, collapsed; no `plan day N of 4`. Tapping the `NEXT` segment goes back. [Ben, 20 Oct: "if you changed the session today it would change the calendar plan which it should"] The week's planned days reflow straight away in the strip: the skipped day moves into the next lifting slot in plan order (legs never the day before a long run), and the card's sub-line says so, e.g. `Chest moves to Thu`. Committed when the session starts; Up next is credited by what Ben does (§4.2) |
+| One type only | No chips; the card name still shows the main lift (`Legs · Squat`) |
+| From `⋯` | Card shows that workout (`Push`, `Hotel shoulders · 17 Oct`); no segment selected |
 | Clash | One `!` line (above); Start still works |
 | Coach offer pending | One `✦` offer line in the expanded card; Start ignores it (starts without it) |
-| Edited in builder | Card shows `Chest · edited`; Start = the edited draft, through the Start prompt (§2.8) |
-| Workout in progress | Resume card replaces Recommended (today.md, unchanged); Or row and Build your own hidden; strip and plan line stay |
+| Edited in builder | Card shows `Chest · Bench · edited`; Start = the edited draft, through the Start prompt (§2.8). Picking another day or type keeps the edited draft for when Ben comes back [Proposal] |
+| Workout in progress | Resume card replaces Today's session (today.md, unchanged); day control, chips and Build your own hidden; strip stays |
 | Stale unfinished workout | today.md's stale card, unchanged |
-| Done today | Card becomes `✓ Chest · 58 min ›` (opens Summary), no Start; Or row and Build your own stay for a second session |
-| No plan | Plan line `No plan · Set up ›`; no Recommended card; Or shows recent workouts; `Build your own` is primary |
-| Plan paused | Plan line `Plan paused`; as No plan, with the paused plan's days in Or |
-| First use | Strip shows today and anything planned; as No plan |
-| Large Dynamic Type | Strip as a list; Or cards wrap to a vertical list |
+| Done today | Card becomes `✓ Chest · 58 min ›` (opens Summary), no Start; day control and Build your own stay for a second session, no day selected |
+| No plan | No day control; card replaced by `No plan` with `Build your own` as the primary button and `Set up a plan ›`; `⋯` content (recent workouts) shows as a list |
+| Plan paused | Day control shows the paused plan's days, none marked `NEXT`; `Plan paused` under the label |
+| First use | Strip shows today only; as No plan |
+| Large Dynamic Type | Strip as a list; day control as a `Day` row; chips wrap |
 
 #### 2.0.5 Interactions
 
 | Action | Result |
 |---|---|
 | `Start` | Starts the card's workout as is (check-in sheet when due). No builder, no overview |
-| Tap card | Expand / collapse. VoiceOver: one button `Chest, details, collapsed` |
+| Tap a day segment | That plan day on the card, its first type selected, collapsed. VoiceOver: tab `Chest, next, 1 of 5` |
+| Tap a type chip | That template or variation on the card, collapsed |
+| `⋯` | Other workouts sheet; a row puts it on the card; `Build your own` → Set up |
+| Tap card | Expand / collapse. VoiceOver: one button `Chest, Bench, details, collapsed` |
 | `Edit` | Builder, Your workout (page 2) with this draft |
 | `✕` on a review note | Note off for today; toast `Note hidden · Undo` |
 | `Undo` on a coach line | Restores the code draft value (versioned, rule 5) |
-| Tap an Or card | Replaces today's card, collapsed |
 | `Build your own` | Builder Set up, Day = the card's day |
 | `＋ Activity` | The existing Activity sheet (weekflex) |
 | Tap a day | Day sheet. Past: workouts (`Shoulders · 58 min`, tap → its Summary) and activities (`Run 12 km · 1:02 · easy`, tap → edit). Planned day: `Move or change (coach)` opens the coach with the day named, which returns `propose_week` (before/after, Apply, Undo). Planned run: `Edit`, `Mark done` |
 | Coach bar / mic | Coach sheet. A set-up request ("legs, 45 min") opens the builder Set up filled (`fill_setup`, Undo toast). "Long run Saturday" → `log_activity`. "Swap Thursday and Friday" → `propose_week`. Questions answer in the sheet |
-| Swipe | None on Today; the Or row scrolls horizontally |
+| Swipe | None on Today (no swipe between days; the segments are the only way) |
 
 #### 2.0.6 Copy
 
-`Ask the coach` · `Recommended` / `Today` · `Start` · `Edit` · `Target` (list header; every list value is a target) · `From last review` · `Based on` (dated lines are actuals, `target` lines are targets) · `Not reviewed · Offline` · `Or` · `Build your own` · `＋ Activity` · `Move or change (coach)` · `Planned` · `Close` · plan line `4-day split · Chest next` · `Runs this week 1 of 3` (done of done + planned, Mon–Sun). Est. 1RM never appears on Today (only behind `Why this weight?`, labelled estimate).
+`Ask the coach` · `Today's session` · `NEXT` · `⋯` (VoiceOver `Other workouts`) · card `Chest · Bench` / `5 exercises · ~55 min · plan day 1 of 4` (the minutes are an estimate) · `Start` · `Edit` · `Target` (list header; every list value is a target) · `From last review` · `Based on` (dated lines are actuals, `target` lines are targets) · `Not reviewed · Offline` · `Other workouts` · `PPL day` · `Recent · 17 Oct` · `Build your own` · `＋ Activity` · `Move or change (coach)` · `Planned` · `Close`. No plan line, no run counter [Ben]. Est. 1RM never appears on Today (only behind `Why this weight?`, labelled estimate).
 
 #### 2.0.7 Data needed
 
-`planUpNext` + the weekflex run rule; `checkScheduleConflicts` (clash line); activities and finished sessions for the strip; week plan (`propose_week` results); `buildFromSetup` / `applyVariation` / `fitPlanToMinutes` / `estimateBuilderMinutes` / `snapPlanToGym`; load sources (§4.1); day notes; `shouldAskCheckIn`; Resume via `estimateRemainingDuration`. New [Proposal]: `buildTodayWeekView` (7 cells, items, planned flag) and `buildRecommendationView` (draft, `basedOn: BasedOnFact[]` from code only, `coachLines`, `reviewStatus: 'reviewed' | 'offline' | 'not_connected' | 'pending'`). The coach review uses `review_workout`'s fact checks; small changes go through `set_next_session_targets`, structural ones through `propose_workout_edit` as an offer.
+`planUpNext` + the weekflex run rule (`NEXT`); `planRoutines` + variations per (splitDayId, mainLift) for the segments and chips (§4.2, §4.3); `checkScheduleConflicts` (clash line); Ben's activities (only those he logged or told the coach) and finished sessions for the strip; recent non-plan workouts and the Profile's other split for `⋯`; week plan (`propose_week` results); `buildFromSetup` / `applyVariation` / `fitPlanToMinutes` / `estimateBuilderMinutes` / `snapPlanToGym`; load sources (§4.1); day notes; `shouldAskCheckIn`; Resume via `estimateRemainingDuration`. New [Proposal]: `buildTodayWeekView` (7 cells, items, planned flag), `buildTodaySessionPicker` (days, `nextDayId`, types per day, other workouts) and `buildRecommendationView` (draft, `basedOn: BasedOnFact[]` from code only, `coachLines`, `reviewStatus: 'reviewed' | 'offline' | 'not_connected' | 'pending'`). The coach review uses `review_workout`'s fact checks; small changes go through `set_next_session_targets`, structural ones through `propose_workout_edit` as an offer.
 
 #### 2.0.8 Acceptance checks
 
 1. Airplane mode: Today shows the card, `Start` logs a first set with no network; Based on ends `Not reviewed · Offline`; no coach text anywhere.
 2. From cold open to the first set: 1 tap on Start (check-in not due).
-3. Collapsed card shows only name, main lift, exercise count, `about N min`, Start, Edit.
+3. Collapsed card shows only `Day · Main lift`, exercise count, `~N min`, `plan day N of 4` (next day only), Start, Edit.
 4. Every Based on line matches stored data (dates, actuals, targets); a coach line appears only when the draft differs from the code draft, and Undo restores it.
 5. A coach structural change is never applied without `Apply`.
-6. Strip: done items carry ✓, planned ones a dashed outline and `Planned` in VoiceOver; a run logged in the Activity sheet appears at once.
-7. Picking Legs the day before a planned long run shows the `!` line; Start still works.
-8. Tapping an Or card changes no plan data; doing Shoulders today moves Up next past Shoulders.
-9. Edit, change one exercise, back to Today: the card shows `Chest · edited`, and Start shows the §2.8 prompt.
-10. With a workout in progress, the Resume card replaces the Recommended card and is one tap.
-11. Targets ≥ 44 pt; loads and times tabular; the strip becomes a list at accessibility sizes.
+6. Strip: done items carry ✓, planned ones a dashed outline and `Planned` in VoiceOver; a run logged in the Activity sheet appears at once. With no activities logged or told to the coach, no run appears anywhere on Today.
+7. With a long run Saturday logged, picking Legs on Friday shows the `!` line; Start still works. Without it, no line.
+8. Picking another day, type or `⋯` workout changes no plan data; doing Shoulders today moves Up next past Shoulders.
+9. Chest with Bench, Incline and one variation shows 3 chips; Legs with one template shows none. Each pick is one tap and changes the card name.
+10. Edit, change one exercise, back to Today: the card shows `Chest · Bench · edited`, and Start shows the §2.8 prompt.
+11. With a workout in progress, the Resume card replaces Today's session and is one tap.
+12. Segments, chips and buttons ≥ 44 pt; loads and times tabular; the strip and day control become lists at accessibility sizes.
 
 #### 2.0.9 What it replaces in today.md (superseded, not deleted)
 
 | today.md | Today (v2) |
 |---|---|
 | Header date | Day title (GymChip kept) |
-| Up next card + fact line `After Pull A on Wed 14` | Recommended card + `Based on` |
+| Up next card + fact line `After Pull A on Wed 14` | Today's session: day control (`NEXT`), type chips, card + `Based on` |
 | Rotation notes (rule 12 run window, same-day hint) | Clash `!` line |
-| Alternatives row (`Other routine`, `Empty workout`, `Build a workout`, `Shorter session`) | Or cards (incl. `Empty workout`), `Build your own`; shorter = Edit or the coach ("45 min") |
-| This week / Recent (18 Oct) and `Then:` row | 7-day strip + plan line |
+| Alternatives row (`Other routine`, `Empty workout`, `Build a workout`, `Shorter session`) | Day control, `⋯` Other workouts (incl. `Empty workout`), `Build your own`; shorter = Edit or the coach ("45 min") |
+| This week / Recent (18 Oct) and `Then:` row | 7-day strip |
 | Floating Ask pill | Coach bar + mic |
 | Tap card → Workout overview | Tap card expands; Edit → builder |
 
@@ -237,17 +259,17 @@ Unchanged: Resume card, stale card, check-in line, pain check line, banners, che
 
 | From | Opens | Tag |
 |---|---|---|
-| Today, Recommended card `Start` | Starts the workout directly (no builder) | [Ben] |
-| Today, Recommended card `Edit` (plan in use) | Your workout, for the next plan day's template, with the variation last used for that day and loads from history | [Ben]; last-used variation [Proposal] |
-| Today, an `Or` card, then `Edit` | Your workout, for that day or workout | [Ben] |
-| Today, `Build your own` / no plan | Set up, Day = the card's day | [Ben] |
+| Today, session card `Start` | Starts the workout directly (no builder) | [Ben] |
+| Today, session card `Edit` (plan in use) | Your workout, for the chosen day and type (on open: the next plan day, with the type last used for that day), loads from history | [Ben]; last-used type [Proposal] |
+| Today, `⋯` row, then `Edit` | Your workout, for that workout | [Ben] |
+| Today, `Build your own` (below the card or in `⋯`) / no plan | Set up, Day = the card's day | [Ben] |
 | Coach (Today bar, or chat) "build me a push workout" | Set up, filled from the words (§2.6) | [Ben] |
 | Reopen today after leaving (or a force-close) before Start | The same unstarted workout, with every edit kept | [Proposal] |
 | Resuming a workout in progress | **Never** the builder (unchanged) | — |
 
 [Proposal] Your workout becomes the one pre-workout page for plan days, replacing the Workout overview there. The overview's gym chip and check-in move onto it (§9 Q1).
 
-[Ben, 20 Oct] Today's card keeps a one-tap `Start`; tapping the card expands it; `Edit` opens the builder (§2.0). Active `From last review` notes are already applied in the draft (§2.0.3), so a one-tap Start never skips them.
+[Ben, 20 Oct] Today's session card keeps a one-tap `Start`; tapping the card expands it; `Edit` opens the builder (§2.0). Active `From last review` notes are already applied in the draft (§2.0.3), so a one-tap Start never skips them.
 
 ### 2.2 Set up [Ben]
 
@@ -737,7 +759,7 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 - A slow vertical scroll never starts a drag; a still 320 ms hold does (haptic). Swipes left and right still work.
 
 **S5 Templates, variations, Start prompt, Today entry.**
-- Today's Recommended Chest card, `Edit`, opens `Chest · bench` (or its last-used variation) with no rebuild.
+- Today's session on Chest · Bench, `Edit`, opens `Chest · bench` (or its last-used variation) with no rebuild.
 - One swap, then Start: the prompt `Use these changes for` lists one line; `Today only` leaves the template's version unchanged and Up next moves on.
 - `Update Chest · bench in your plan` bumps only that template; `Chest · incline` is untouched; Summary Undo restores it, and is refused if the template changed again.
 - Force-close during `Save and start`: either both the variation and session exist, or neither; retrying never duplicates.
@@ -789,7 +811,7 @@ Unchanged: active workout, Rest, Summary (except `Save as variation`), `edit_tod
 16. Add 15 s for switching between exercises in a superset to the time estimate? (yes/no)
 17. A variation is saved as "the plan day plus its extras", so changes to the plan day flow into every variation? (yes / save full copies)
 18. Drag to reorder and pair ships after the pop-up buttons, once tested on your iPhone? (yes / drag needed first)
-19. Today's day strip: 3 days back, today, 3 ahead (always shows yesterday's and tomorrow's runs, with a line where Monday starts), or the Mon–Sun week, which matches `Runs this week` but hides last Sunday's long run on a Monday? (3 back, 3 ahead / Mon–Sun)
+19. Today's day strip: 3 days back, today, 3 ahead (always shows yesterday's and tomorrow's runs, with a line where Monday starts), or the Mon–Sun week, which matches your plan week but on a Monday hides Sunday's long run? (3 back, 3 ahead / Mon–Sun)
 
 ---
 
@@ -807,8 +829,9 @@ Not done in this revision (spec only). For `prototypes/workout-builder-v3.html`:
 - Round warm-ups, drops and typed kg down, not to nearest.
 
 For `prototypes/today-v2.html`:
-- Today sheet says `Plan day 2 of 4`; the plan line and Based on say day 1. Use day 1.
+- The Today day sheet says `Plan day 2 of 4`, but the card and Based on say day 1. Use day 1.
 - The review note sets bench to 102.5, but the list and Based on say 100 ("100 kg again"). Show 102.5 and `100 × 8 @ RPE 8 → 102.5`.
 - Drop `est. 1RM 127` from Based on (estimates stay behind `Why this weight?`).
-- `Runs this week 1 of 3` counts Sunday's run, which is last week if the week is Mon–Sun (Q19).
+- Session-type chips are 40 px high; make them 44.
+- Delete the unused `.planline` and `.alt` / `.alts` styles.
 - Add the GymChip, `Target` list header, `Not reviewed · Offline` state, and the Resume / Done today states.
