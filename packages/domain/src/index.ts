@@ -109,3 +109,4 @@ export * from './spoken-cues';
 export * from './spoken-reply';
 export * from './cardio';
 export * from './quick-gym';
+export * from './builder';
