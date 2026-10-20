@@ -1,16 +1,19 @@
-import type { Activity, ProposeWeekArgs, RoutineExercise, Routine, SplitBodyPart, WeekBasis, WeekMerge, WeekPlan, WeekRow, WeekSkip, ZonedTimestamp } from '@fizz/schemas';
+import type { Activity, Exercise, ProposeWeekArgs, RoutineExercise, Routine, SplitBodyPart, UserProfile, WeekBasis, WeekMerge, WeekPlan, WeekRow, WeekSkip, ZonedTimestamp } from '@fizz/schemas';
 
 import { activitiesBetween, isLegDay, isLegRun, dateWeekdayShort } from '../activity';
 import { addDays, localWeekBounds } from '../calendar';
 import { deriveId } from '../stable';
+import { estimateRemainingDuration, roundEstimateMinutes, type ResolvedPace } from './duration';
+import { planRoutineStart } from './routines';
 
 /**
  * This week shaped around a run (Ben, 20 Oct: "if I did or have planned a
  * long run maybe we swap to a push rather than shoulder and chest
  * separately"). Pure.
  *
- * - `weekFacts`: the gym days left this week (Ben's aim less the days done,
- *   never more than the days left that aren't a planned long or hard run)
+ * - `weekFacts`: the gym days left this week (Ben's aim less the days done
+ *   and the days a planned long or hard run still ahead takes, never more
+ *   than the days left that aren't one)
  *   against the plan (or split) days not done yet. Runs never count as gym
  *   days. Only logged facts: no fatigue or readiness numbers (rule 6).
  * - `suggestWeek`: code's own idea of a merge (two upper days of the same
@@ -44,7 +47,7 @@ export interface WeekFacts {
   openDates: string[];
   /** Gym days done this week (dates with a finished workout). */
   gymDaysDone: number;
-  /** `min(aim − done, open dates)`; open dates with no aim set. */
+  /** `min(aim − done − planned long/hard run days still ahead, open dates)`; open dates with no aim set. */
   gymDaysLeft: number;
   /** Long or hard runs this week, planned or done (oldest first). */
   runs: Activity[];
@@ -71,9 +74,13 @@ export function weekFacts(input: WeekFactsInput): WeekFacts {
   const runs = activitiesBetween(input.activities, monday, addDays(monday, 7)).filter((a) => isLegRun(a.fields));
   const runDays = new Set(runs.filter((a) => a.fields.status === 'planned').map((a) => a.fields.date));
   const openDates: string[] = [];
-  for (let d = input.gymDates.has(input.today) ? addDays(input.today, 1) : input.today; d <= sunday; d = addDays(d, 1)) if (!runDays.has(d)) openDates.push(d);
+  const start = input.gymDates.has(input.today) ? addDays(input.today, 1) : input.today;
+  for (let d = start; d <= sunday; d = addDays(d, 1)) if (!runDays.has(d)) openDates.push(d);
   const gymDaysDone = [...input.gymDates].filter((d) => d >= monday && d <= sunday).length;
-  const byAim = input.aim === null ? openDates.length : Math.max(0, input.aim - gymDaysDone);
+  // Review S7, the spec's formula (Ben, 20 Oct): aim − done − days blocked by a planned long or hard run still ahead;
+  // never more than the open dates left.
+  const blocked = [...runDays].filter((d) => d >= start && d <= sunday).length;
+  const byAim = input.aim === null ? openDates.length : Math.max(0, input.aim - gymDaysDone - blocked);
   const gymDaysLeft = Math.min(byAim, openDates.length);
   const remaining = input.days.filter((d) => !d.done);
   return { monday, remaining, openDates, gymDaysDone, gymDaysLeft, runs, needsReshape: gymDaysLeft >= 1 && remaining.length > gymDaysLeft };
@@ -168,7 +175,9 @@ function legNote(day: WeekDayInput, facts: Pick<WeekFacts, 'runs' | 'openDates'>
 
 /**
  * The coach's `propose_week` against the days left this week: each day it
- * names must be one of them, used once; a merge needs two days and a name.
+ * names must be one of them, used once; a merge is two upper days (never a
+ * leg day) and takes code's name (`mergedName`: Push, Pull or Upper), never
+ * the model's.
  * The before/after list is code's: the days left, then with the merge in
  * place (`Push`, `Chest + Shoulders`), skipped days out, a leg day around a
  * planned run noted (`After Fri's run` goes last, else `Before Sat's run`).
@@ -188,8 +197,9 @@ export function checkWeekProposal(args: ProposeWeekArgs, facts: Pick<WeekFacts, 
     const a = x === undefined ? null : take(x);
     const b = y === undefined ? null : take(y);
     if (a === null || b === null) return { ok: false, failure: 'a day to merge isn’t one left this week' };
-    const name = m.name.trim().slice(0, 30);
-    if (name === '') return { ok: false, failure: 'a merged day needs a name' };
+    // Review S2: code is the guardrail. A leg day never merges, nor a day outside the upper families; the name is code's.
+    const name = mergedName(a, b);
+    if (name === null) return { ok: false, failure: isLegDay(a.bodyParts) || isLegDay(b.bodyParts) ? 'a leg day can’t be merged' : 'those two days can’t be merged' };
     merges.push({ dayIds: [a.id, b.id], name, fromNames: [a.name, b.name] });
   }
   const skips: WeekSkip[] = [];
@@ -222,7 +232,7 @@ export function checkWeekProposal(args: ProposeWeekArgs, facts: Pick<WeekFacts, 
 // ---------------------------------------------------------------------------
 // The merged day
 
-/** About this long per set: the work, then the rest after it (no rest recorded: these). */
+/** About this long per set: the work, then the rest after it (no rest recorded: these). A fallback only (`mergedExercises` without `secondsOf`). */
 const WORK_S = 40;
 const REST_WORKING_S = 120;
 const REST_WARMUP_S = 60;
@@ -232,9 +242,23 @@ function setSeconds(e: Pick<RoutineExercise, 'restBySetType'>, t: RoutineExercis
   return (t.targetDurationS ?? WORK_S) + rest;
 }
 
-/** About how long a day's exercises take (every set's work and rest). An estimate for trimming only. */
+/** About how long a day's exercises take (every set's work and rest). A rough fallback for trimming only. */
 export function routineSeconds(exercises: readonly Pick<RoutineExercise, 'restBySetType' | 'setTemplates'>[]): number {
   return exercises.reduce((n, e) => n + e.setTemplates.reduce((m, t) => m + setSeconds(e, t), 0), 0);
+}
+
+/**
+ * (review S4) How long a day's exercises take as Up next shows it: the same
+ * dry run Start makes (`planRoutineStart`), then `estimateRemainingDuration`
+ * at Ben's pace (`planPace` of his recent workouts). Loads don't change the
+ * time, so no gym equipment is needed. Pure; nothing is saved.
+ */
+export function plannedDaySeconds(exercises: readonly RoutineExercise[], input: { owner: UserProfile; exercises: ReadonlyMap<string, Exercise>; pace: ResolvedPace; at: ZonedTimestamp }): number {
+  let n = 0;
+  const newId = () => deriveId(`week-merge-estimate:${String((n += 1))}`);
+  const routine: Routine = { id: deriveId('week-merge-estimate'), ownerId: input.owner.id, version: 1, createdAtUtc: input.at.utc, updatedAtUtc: input.at.utc, name: 'Estimate', exercises: [...exercises], createdFromSessionId: null, source: 'ben' };
+  const out = planRoutineStart({ opId: 'week-merge-estimate', owner: input.owner, gymId: deriveId('week-merge-estimate-gym'), routine, exercises: input.exercises, gymEquipment: [], knownEquipment: new Map(), at: input.at, newId });
+  return estimateRemainingDuration(out.aggregate, { pace: input.pace }).seconds;
 }
 
 const working = (e: Pick<RoutineExercise, 'setTemplates'>): number => e.setTemplates.filter((t) => t.setType !== 'warmup').length;
@@ -242,12 +266,14 @@ const working = (e: Pick<RoutineExercise, 'setTemplates'>): number => e.setTempl
 /**
  * A merged day's exercises: the first day's main lifts, the second's, then
  * the first's others and the second's (an exercise in both once, from the
- * first). New IDs, superset labels kept apart. Then, over `minutes`, one
- * working set at a time comes off the exercise with the most (others before
- * main lifts; an other keeps one, a main lift two) until it fits or nothing
- * more can come off. Warm-ups stay.
+ * first). New IDs, superset labels kept apart. Then, while its `about N min`
+ * (`secondsOf`, rounded as Up next rounds it) is over `minutes`, one working
+ * set at a time comes off the exercise with the most (others before main
+ * lifts; an other keeps one, a main lift two) until it fits or nothing more
+ * can come off. Warm-ups stay. `secondsOf`: Up next's estimate
+ * (`plannedDaySeconds`); without it, the rough `routineSeconds`.
  */
-export function mergedExercises(a: readonly RoutineExercise[], b: readonly RoutineExercise[], o: { minutes: number; newId: () => string }): RoutineExercise[] {
+export function mergedExercises(a: readonly RoutineExercise[], b: readonly RoutineExercise[], o: { minutes: number; newId: () => string; secondsOf?: (exercises: readonly RoutineExercise[]) => number }): RoutineExercise[] {
   const seen = new Set<string>();
   const labelsA = new Set(a.map((e) => e.supersetGroup).filter((g): g is string => g !== null));
   const tag = (e: RoutineExercise, second: boolean): RoutineExercise => {
@@ -267,8 +293,8 @@ export function mergedExercises(a: readonly RoutineExercise[], b: readonly Routi
       .map((e) => tag(e, second));
   const ordered = [...pick(a, true, false), ...pick(b, true, true), ...pick(a, false, false), ...pick(b, false, true)].slice(0, 40);
   const out = ordered.map((e, i) => ({ ...e, id: o.newId(), order: i, setTemplates: e.setTemplates.map((t) => ({ ...t, id: o.newId() })) }));
-  const budget = o.minutes * 60;
-  for (let guard = 0; guard < 400 && routineSeconds(out) > budget; guard += 1) {
+  const secondsOf = o.secondsOf ?? routineSeconds;
+  for (let guard = 0; guard < 400 && roundEstimateMinutes(secondsOf(out)) > o.minutes; guard += 1) {
     const floor = (e: RoutineExercise) => (e.main === true ? 2 : 1);
     const cut = (main: boolean) =>
       out

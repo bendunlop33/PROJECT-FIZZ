@@ -369,7 +369,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     plainLabel: 'Suggest merging or skipping this week’s days around a run, for you to apply',
     capabilitySection: 'suggest_only',
     description:
-      'Suggest this week’s shape when YOUR DATA week shows more days left (week.remaining) than gym days (week.gymDaysLeft), e.g. around a long run, or when Ben asks ("plan my week around it"). merges: two remaining day IDs into one day with a short name (Chest + Shoulders → Push; never merge a leg day with an upper day); skips: day IDs to leave out this week. week.suggestion is code’s idea. This week only: next week is his plan as it was. Ben applies it; say "Want me to …?", never that it changed.',
+      'Suggest this week’s shape when YOUR DATA week shows more days left (week.remaining) than gym days (week.gymDaysLeft), e.g. around a long run, or when Ben asks ("plan my week around it"). merges: two remaining upper day IDs into one day (Chest + Shoulders → Push; a leg day is never merged; the app names the merged day); skips: day IDs to leave out this week. week.suggestion is code’s idea. This week only: next week is his plan as it was. Ben applies it; say "Want me to …?", never that it changed.',
   },
   {
     // (19 Oct, Ben: "Can it build plans across multiple days as well not just single workouts?") Every day at once, as a

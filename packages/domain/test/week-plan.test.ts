@@ -10,6 +10,9 @@ import {
   localMidnightUtcMs,
   mergedExercises,
   mergedName,
+  plannedDaySeconds,
+  planPace,
+  roundEstimateMinutes,
   routineSeconds,
   suggestWeek,
   undoWeekPlan,
@@ -21,7 +24,7 @@ import {
   type WeekDayInput,
   type WeekProposal,
 } from '../src/index';
-import { id, idGen } from './fixtures';
+import { exercise, id, idGen, profile } from './fixtures';
 
 /**
  * This week shaped around a run (Ben, 20 Oct). Today is Thu 22 Oct 2026 in
@@ -52,13 +55,14 @@ const facts = (over: Partial<Parameters<typeof weekFacts>[0]> = {}) =>
   weekFacts({ today: TODAY, nowMs: NOW_MS, tz: TZ, aim: 4, gymDates: new Set(['2026-10-19']), days: [ARMS, CHEST, SHOULDERS, BACK, LEGS], activities: [longSat], ...over });
 
 describe('the week’s facts', () => {
-  it('gym days left: aim − done, never more than the open dates (a planned long run takes its day)', () => {
+  it('gym days left: aim − done − days a planned long run still ahead takes, never more than the open dates (review S7)', () => {
     const f = facts();
     expect(f.monday).toBe('2026-10-19');
     // Thu, Fri, Sun open (Sat is the run).
     expect(f.openDates).toEqual(['2026-10-22', '2026-10-23', '2026-10-25']);
     expect(f.gymDaysDone).toBe(1);
-    expect(f.gymDaysLeft).toBe(3);
+    // 4 − 1 − 1 (Saturday's run).
+    expect(f.gymDaysLeft).toBe(2);
     expect(f.remaining.map((d) => d.name)).toEqual(['Chest', 'Shoulders', 'Back', 'Legs']);
     expect(f.needsReshape).toBe(true);
   });
@@ -71,6 +75,17 @@ describe('the week’s facts', () => {
     expect(facts({ aim: null }).gymDaysLeft).toBe(3);
     // Room for every day: no reshape.
     expect(facts({ activities: [], aim: 5 }).needsReshape).toBe(false);
+  });
+
+  it('the review’s example: Thu, aim 4, Back done, Chest/Shoulders/Legs left, long run Sat → 2 gym days for 3, an offer on Thursday', () => {
+    const left = [CHEST, SHOULDERS, { ...BACK, done: true }, LEGS];
+    const f = facts({ days: left });
+    expect(f.gymDaysLeft).toBe(2);
+    expect(f.needsReshape).toBe(true);
+    // No run: 3 for 3, no offer. A done long run or one already past doesn't take a day.
+    expect(facts({ days: left, activities: [] })).toMatchObject({ gymDaysLeft: 3, needsReshape: false });
+    expect(facts({ days: left, activities: [activity(4, { status: 'done', date: '2026-10-21' })] })).toMatchObject({ gymDaysLeft: 3, needsReshape: false });
+    expect(facts({ days: left, activities: [activity(5, { date: '2026-10-20' })] })).toMatchObject({ gymDaysLeft: 3 });
   });
 
   it('the facts key changes with a workout, an activity or the plan version', () => {
@@ -111,6 +126,17 @@ describe('code’s suggestion and the coach’s proposal', () => {
       { name: 'Back', note: null },
       { name: 'Legs', note: 'After Fri’s run' },
     ]);
+  });
+
+  it('a leg day never merges, and the merged day’s name is code’s (review S2)', () => {
+    const f = facts();
+    expect(checkWeekProposal({ merges: [{ dayIds: [LEGS.id, CHEST.id], name: 'Push' }], skips: [], message: '' }, f)).toEqual({ ok: false, failure: 'a leg day can’t be merged' });
+    const core: WeekDayInput = { id: id(106), name: 'Core', bodyParts: ['Core'], done: false };
+    expect(checkWeekProposal({ merges: [{ dayIds: [core.id, CHEST.id], name: 'Upper' }], skips: [], message: '' }, { ...f, remaining: [...f.remaining, core] })).toEqual({ ok: false, failure: 'those two days can’t be merged' });
+    const named = checkWeekProposal({ merges: [{ dayIds: [CHEST.id, SHOULDERS.id], name: 'Legs' }], skips: [], message: '' }, f);
+    expect(named.ok && named.merges[0]?.name).toBe('Push');
+    const upper = checkWeekProposal({ merges: [{ dayIds: [CHEST.id, BACK.id], name: 'Push' }], skips: [], message: '' }, f);
+    expect(upper.ok && upper.after[0]).toEqual({ name: 'Upper', note: 'Chest + Back' });
   });
 
   it('refuses a day that isn’t left, one used twice, nothing at all, or every day skipped', () => {
@@ -162,7 +188,7 @@ describe('the merged day', () => {
 
   it('set counts trimmed to fit the session length: others first, main lifts keep two', () => {
     const out = mergedExercises(chestDay, shoulderDay, { minutes: 45, newId: idGen(9100) });
-    expect(routineSeconds(out)).toBeLessThanOrEqual(45 * 60);
+    expect(roundEstimateMinutes(routineSeconds(out))).toBeLessThanOrEqual(45);
     // Warm-ups stay; main lifts keep at least two working sets, others one.
     expect(out[0]?.setTemplates.filter((t) => t.setType === 'warmup')).toHaveLength(2);
     expect(working(out[0] as RoutineExercise)).toBeGreaterThanOrEqual(2);
@@ -176,6 +202,23 @@ describe('the merged day', () => {
     // A very short session: everything at its floor, and no further.
     const tiny = mergedExercises(chestDay, shoulderDay, { minutes: 15, newId: idGen(9200) });
     expect(tiny.map(working)).toEqual([2, 2, 1, 1, 1]);
+  });
+});
+
+describe('the merged day at Up next’s estimate (review S4)', () => {
+  const owner = profile();
+  const pool = new Map([BENCH, INCLINE, FLY, OHP, LATERAL].map((x, i) => [x, exercise(301 + i, `Ex ${String(i)}`, { id: x })]));
+  const est = (exs: readonly RoutineExercise[]) => plannedDaySeconds(exs, { owner, exercises: pool, pace: planPace([]), at: AT });
+
+  it('trims until Up next’s `about N min` fits the session length', () => {
+    const full = mergedExercises(chestDay, shoulderDay, { minutes: 300, newId: idGen(9400) });
+    const fullMin = roundEstimateMinutes(est(full));
+    expect(fullMin).toBeGreaterThan(40);
+    const out = mergedExercises(chestDay, shoulderDay, { minutes: 40, newId: idGen(9500), secondsOf: est });
+    expect(roundEstimateMinutes(est(out))).toBeLessThanOrEqual(40);
+    expect(out.reduce((n, e) => n + working(e), 0)).toBeLessThan(full.reduce((n, e) => n + working(e), 0));
+    // Main lifts keep two working sets at the floor.
+    expect(out.slice(0, 2).every((e) => working(e) >= 2)).toBe(true);
   });
 });
 
