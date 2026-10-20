@@ -1,4 +1,5 @@
 import type { EquipmentInstance, Exercise } from '@fizz/schemas';
+import { missingStations } from './stations';
 
 /**
  * Which of a gym's items an exercise can be logged on (the exercise picker).
@@ -41,9 +42,14 @@ export function isExcludedFor(item: Pick<EquipmentInstance, 'notFor' | 'onlyFor'
   return item.onlyFor !== undefined && (exerciseId === undefined || !item.onlyFor.includes(exerciseId));
 }
 
-/** Available gym items the exercise can be logged on; empty for bodyweight exercises. Items marked not for it (or only for others) are left out. */
+/**
+ * Available gym items the exercise can be logged on; empty for bodyweight
+ * exercises. Items marked not for it (or only for others) are left out, and
+ * none when the gym is known to lack a bench or rack it needs (ADR 0030).
+ */
 export function equipmentForExercise<T extends Pick<EquipmentInstance, 'kind' | 'availability' | 'notFor' | 'onlyFor'>>(exercise: ExerciseEquipmentInfo & { id?: string }, gym: readonly T[]): T[] {
   if (needsNoEquipment(exercise)) return [];
+  if (missingStations(exercise.id, gym).length > 0) return [];
   return gym.filter((e) => e.availability === 'available' && exercise.compatibleEquipment.includes(e.kind) && !isExcludedFor(e, exercise.id));
 }
 

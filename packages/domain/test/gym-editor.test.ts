@@ -15,6 +15,7 @@ import {
   stepLoad,
   unbalancedPlateHints,
   type EquipmentForm,
+  type RackOfWeightsKind,
 } from '../src/index';
 import { OWNER } from './fixtures';
 
@@ -88,7 +89,7 @@ describe('gym editor (gym-editor.md §7)', () => {
     const draft = buildPresetDraft('commercial', 'kg').items.find((i) => i.key === 'dumbbells');
     if (!draft) throw new Error('fixture');
     const preset = { ...draft.equipment, id: meta.id, ownerId: OWNER, gymId: meta.gymId, version: 1, createdAtUtc: '2026-10-01T00:00:00.000Z', updatedAtUtc: '2026-10-01T00:00:00.000Z' };
-    const edited = save({ ...(formFromEquipment(preset) as Extract<EquipmentForm, { kind: 'dumbbells' }>), range: { from: 2.5, to: 32.5, step: 2.5 } }, preset);
+    const edited = save({ ...(formFromEquipment(preset) as Extract<EquipmentForm, { kind: RackOfWeightsKind }>), range: { from: 2.5, to: 32.5, step: 2.5 } }, preset);
     expect(edited).toMatchObject({ id: preset.id, gymId: preset.gymId, version: 2, detailsSource: 'user', createdAtUtc: preset.createdAtUtc });
     expect(loadPreviewLine(edited)).toBe('Makes 13 loads: 2.5–32.5 kg each.');
   });

@@ -225,6 +225,12 @@ const KIND_WORD: Record<EquipmentInstance['kind'], string> = {
   assisted_stack: 'Assisted',
   plate_loaded_machine: 'Machine',
   bodyweight_station: 'Bodyweight',
+  kettlebell: 'Kettlebell',
+  ez_bar: 'EZ bar',
+  trap_bar: 'Trap bar',
+  smith_machine: 'Smith',
+  bench: 'Bench',
+  rack: 'Rack',
 };
 
 /** A kind a gym can't hold an item of (a kettlebell, a band) reads `Equipment`. */

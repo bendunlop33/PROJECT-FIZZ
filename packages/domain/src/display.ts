@@ -282,4 +282,10 @@ export const EQUIPMENT_WORD: Record<EquipmentInstance['kind'], string> = {
   assisted_stack: 'Assisted machine',
   plate_loaded_machine: 'Plate-loaded machine',
   bodyweight_station: 'Bodyweight',
+  kettlebell: 'Kettlebells',
+  ez_bar: 'EZ bar',
+  trap_bar: 'Trap bar',
+  smith_machine: 'Smith machine',
+  bench: 'Bench',
+  rack: 'Rack',
 };

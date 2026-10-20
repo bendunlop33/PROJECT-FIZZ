@@ -37,7 +37,7 @@ describe('gym presets', () => {
         expect(eq.detailsSource).toBe('preset');
         expect(eq.gymId).toBe(GYM);
         expect(eq.ownerId).toBe(OWNER);
-        if (eq.kind !== 'bodyweight_station') expect(getAchievableLoads(eq).loads.length).toBeGreaterThan(1);
+        if (eq.kind !== 'bodyweight_station' && eq.kind !== 'bench' && eq.kind !== 'rack') expect(getAchievableLoads(eq).loads.length).toBeGreaterThan(1);
       }
     },
   );
@@ -54,11 +54,11 @@ describe('gym presets', () => {
 
   it('saves only ticked items; toggling is pure', () => {
     const draft = buildPresetDraft('commercial', 'kg');
-    expect(draft.items.filter((i) => i.ticked).map((i) => i.key)).toEqual(['barbell', 'dumbbells', 'cable', 'pull_up_bar']);
+    expect(draft.items.filter((i) => i.ticked).map((i) => i.key)).toEqual(['barbell', 'dumbbells', 'cable', 'pull_up_bar', 'bench', 'rack']);
     const without = toggleDraftItem(draft, 'cable');
     expect(draft.items.find((i) => i.key === 'cable')?.ticked).toBe(true);
     const result = materialiseGymDraft(without, { ...REQ, newId: idGen() });
-    expect(result.ok && result.equipment.map((e) => e.name)).toEqual(['Barbell and plates', 'Dumbbells', 'Pull-up bar']);
+    expect(result.ok && result.equipment.map((e) => e.name)).toEqual(['Barbell and plates', 'Dumbbells', 'Pull-up bar', 'Bench', 'Rack']);
   });
 
   it('allows an empty gym and requires a name', () => {

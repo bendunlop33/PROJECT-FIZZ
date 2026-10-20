@@ -16,7 +16,7 @@ import type {
 } from '@fizz/schemas';
 import { clockText } from '../calendar';
 import { cardioValuesText, dayMonthText, formatDuration, formatNumber, NBSP, repRangeText } from '../display';
-import { buildPlateSetup, loadDirection } from '../equipment';
+import { buildPlateSetup, isBarLoaded, loadDirection } from '../equipment';
 import { isSetCountable } from '../exclusions';
 import { painFlagCovering, PAIN_AREA_WORD } from '../pain-flags';
 import { deriveId, stableStringify } from '../stable';
@@ -954,6 +954,12 @@ const EQUIPMENT_NOUN: Record<EquipmentInstance['kind'], string> = {
   assisted_stack: 'Machine',
   plate_loaded_machine: 'Machine',
   bodyweight_station: 'Station',
+  kettlebell: 'Kettlebells',
+  ez_bar: 'Bar',
+  trap_bar: 'Bar',
+  smith_machine: 'Smith',
+  bench: 'Bench',
+  rack: 'Rack',
 };
 
 /** The panel's `ROUNDED` value: `Rack tops out at 30 kg each`, `Stack goes 15 → 17.5 → 20`, `Converted from 225 lb`. */
@@ -973,7 +979,7 @@ export function roundedText(fit: Extract<SetFit, { kind: 'rounded' }>, eq: Equip
 
 /** `25 · 10 · 5 a side · 20 kg bar`, or null when the plates can't make it (or it isn't a bar). */
 export function platesText(load: Load, eq: EquipmentInstance): string | null {
-  if (eq.kind !== 'barbell' || eq.plates.length === 0 || load.convention !== 'total') return null;
+  if (!isBarLoaded(eq) || eq.plates.length === 0 || load.convention !== 'total') return null;
   const setup = buildPlateSetup(load, eq);
   if (!setup.ok) return null;
   const bar = `${formatNumber(setup.base.value)}${NBSP}${setup.base.unit} bar`;

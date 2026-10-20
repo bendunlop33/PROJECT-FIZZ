@@ -151,15 +151,21 @@ export function setNumbersText(numbers: readonly number[]): string {
 function equipmentNoun(eq: EquipmentInstance): string {
   switch (eq.kind) {
     case 'barbell':
+    case 'ez_bar':
+    case 'trap_bar':
+    case 'smith_machine':
       return 'bar';
     case 'plate_loaded_machine':
       return 'machine';
     case 'dumbbells':
+    case 'kettlebell':
       return 'rack';
     case 'weight_stack':
     case 'assisted_stack':
       return 'stack';
     case 'bodyweight_station':
+    case 'bench':
+    case 'rack':
       return 'station';
   }
 }

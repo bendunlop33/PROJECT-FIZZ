@@ -1,6 +1,6 @@
-import { EquipmentInstanceSchema, validate, type EquipmentInstance, type Gym, type PlateCount, type WeightUnit } from '@fizz/schemas';
+import { EquipmentInstanceSchema, validate, type BenchType, type EquipmentInstance, type Gym, type PlateCount, type RackType, type WeightUnit } from '@fizz/schemas';
 import { formatNumber } from './display';
-import { buildPlateSetup, getAchievableLoads } from './equipment';
+import { buildPlateSetup, getAchievableLoads, isBarLoaded, isPresenceOnly } from './equipment';
 import { fromScaled, toScaled } from './units';
 
 /**
@@ -17,15 +17,23 @@ export interface RangeSpec {
   step: number | null;
 }
 
+/** A bar plus plates (ADR 0030): the Olympic bar, an EZ bar, a trap bar, a Smith machine. */
+export type BarKind = 'barbell' | 'ez_bar' | 'trap_bar' | 'smith_machine';
+/** A rack of single weights by size: dumbbells or kettlebells. */
+export type RackOfWeightsKind = 'dumbbells' | 'kettlebell';
+
 export type EquipmentForm =
-  | { kind: 'barbell'; name: string; unit: WeightUnit; barMass: number | null; plates: PlateCount[]; maxLoad: number | null }
+  | { kind: BarKind; name: string; unit: WeightUnit; barMass: number | null; plates: PlateCount[]; maxLoad: number | null }
   | { kind: 'plate_loaded_machine'; name: string; unit: WeightUnit; loadingSides: 1 | 2; plates: PlateCount[]; maxLoad: number | null }
   /** `missing`: values in the range that the rack doesn't have; `extra`: single weights outside it. */
-  | { kind: 'dumbbells'; name: string; unit: WeightUnit; range: RangeSpec; missing: number[]; extra: number[] }
+  | { kind: RackOfWeightsKind; name: string; unit: WeightUnit; range: RangeSpec; missing: number[]; extra: number[] }
   /** `irregular`: the saved stack isn't one even range; kept as-is unless the range is edited. */
   | { kind: 'weight_stack'; name: string; unit: WeightUnit; range: RangeSpec; irregular: number[] | null; addOns: number[] }
   | { kind: 'assisted_stack'; name: string; unit: WeightUnit; range: RangeSpec; irregular: number[] | null }
-  | { kind: 'bodyweight_station'; name: string; unit: WeightUnit };
+  | { kind: 'bodyweight_station'; name: string; unit: WeightUnit }
+  /** Presence only (ADR 0030): no loads. */
+  | { kind: 'bench'; name: string; unit: WeightUnit; benchType: BenchType }
+  | { kind: 'rack'; name: string; unit: WeightUnit; rackType: RackType };
 
 export type EditableKind = EquipmentForm['kind'];
 
@@ -36,7 +44,24 @@ export const EQUIPMENT_KIND_LABEL: Record<EditableKind, string> = {
   assisted_stack: 'Assisted pull-up / dip machine',
   plate_loaded_machine: 'Plate-loaded machine',
   bodyweight_station: 'Pull-up bar or dip bars',
+  kettlebell: 'Kettlebells',
+  ez_bar: 'EZ bar and plates',
+  trap_bar: 'Trap bar and plates',
+  smith_machine: 'Smith machine',
+  bench: 'Bench',
+  rack: 'Squat or power rack',
 };
+
+/** (ADR 0030) Typical bar weights, to be checked: EZ 10 kg, trap 25 kg, Smith 15 kg starting weight. */
+export const BAR_MASS: Readonly<Record<BarKind, Record<WeightUnit, number>>> = {
+  barbell: { kg: 20, lb: 45 },
+  ez_bar: { kg: 10, lb: 20 },
+  trap_bar: { kg: 25, lb: 55 },
+  smith_machine: { kg: 15, lb: 35 },
+};
+
+export const BENCH_TYPE_LABEL: Readonly<Record<BenchType, string>> = { flat: 'Flat', incline: 'Incline', adjustable: 'Adjustable' };
+export const RACK_TYPE_LABEL: Readonly<Record<RackType, string>> = { squat_rack: 'Squat rack', power_rack: 'Power rack' };
 
 const DEFAULT_PLATES: Record<WeightUnit, number[]> = { kg: [25, 20, 15, 10, 5, 2.5, 1.25], lb: [45, 35, 25, 10, 5, 2.5] };
 
@@ -45,17 +70,26 @@ export function newEquipmentForm(kind: EditableKind, unit: WeightUnit): Equipmen
   const kg = unit === 'kg';
   switch (kind) {
     case 'barbell':
-      return { kind, name: 'Barbell', unit, barMass: kg ? 20 : 45, plates: DEFAULT_PLATES[unit].map((mass) => ({ mass, count: 0 })), maxLoad: null };
+    case 'ez_bar':
+    case 'trap_bar':
+    case 'smith_machine':
+      return { kind, name: kind === 'barbell' ? 'Barbell' : EQUIPMENT_KIND_LABEL[kind].replace(' and plates', ''), unit, barMass: BAR_MASS[kind][unit], plates: DEFAULT_PLATES[unit].map((mass) => ({ mass, count: 0 })), maxLoad: null };
     case 'plate_loaded_machine':
       return { kind, name: 'Plate-loaded machine', unit, loadingSides: 2, plates: DEFAULT_PLATES[unit].map((mass) => ({ mass, count: 0 })), maxLoad: null };
     case 'dumbbells':
       return { kind, name: 'Dumbbells', unit, range: kg ? { from: 2.5, to: 30, step: 2.5 } : { from: 5, to: 60, step: 5 }, missing: [], extra: [] };
+    case 'kettlebell':
+      return { kind, name: 'Kettlebells', unit, range: kg ? { from: 4, to: 32, step: 4 } : { from: 10, to: 70, step: 5 }, missing: [], extra: [] };
     case 'weight_stack':
       return { kind, name: 'Cable station', unit, range: kg ? { from: 5, to: 100, step: 5 } : { from: 10, to: 200, step: 10 }, irregular: null, addOns: [] };
     case 'assisted_stack':
       return { kind, name: 'Assisted pull-up / dip machine', unit, range: kg ? { from: 5, to: 70, step: 5 } : { from: 10, to: 150, step: 10 }, irregular: null };
     case 'bodyweight_station':
       return { kind, name: 'Pull-up bar', unit };
+    case 'bench':
+      return { kind, name: 'Bench', unit, benchType: 'adjustable' };
+    case 'rack':
+      return { kind, name: 'Rack', unit, rackType: 'squat_rack' };
   }
 }
 
@@ -76,7 +110,7 @@ function uniqueAscending(values: readonly number[]): number[] {
 }
 
 /** The dumbbell rack's loads: the range minus missing weights, plus single weights (gym-editor §2.4.2). */
-export function dumbbellLoads(form: Extract<EquipmentForm, { kind: 'dumbbells' }>): number[] {
+export function dumbbellLoads(form: Extract<EquipmentForm, { kind: RackOfWeightsKind }>): number[] {
   const missing = new Set(form.missing.map(toScaled));
   return uniqueAscending([...rangeValues(form.range).filter((v) => !missing.has(toScaled(v))), ...form.extra.filter((v) => v > 0)]);
 }
@@ -108,10 +142,14 @@ export function formFromEquipment(eq: EquipmentInstance): EquipmentForm {
   const base = { name: eq.name, unit: eq.unit };
   switch (eq.kind) {
     case 'barbell':
-      return { ...base, kind: 'barbell', barMass: eq.barMass, plates: eq.plates.map((p) => ({ ...p })), maxLoad: eq.maxLoad ?? null };
+    case 'ez_bar':
+    case 'trap_bar':
+    case 'smith_machine':
+      return { ...base, kind: eq.kind, barMass: eq.barMass, plates: eq.plates.map((p) => ({ ...p })), maxLoad: eq.maxLoad ?? null };
     case 'plate_loaded_machine':
       return { ...base, kind: 'plate_loaded_machine', loadingSides: eq.loadingSides, plates: eq.plates.map((p) => ({ ...p })), maxLoad: eq.maxLoad ?? null };
-    case 'dumbbells': {
+    case 'dumbbells':
+    case 'kettlebell': {
       const step = usualStep(eq.loads) ?? eq.loads[0] ?? 1;
       const from = eq.loads[0] ?? null;
       const to = eq.loads.at(-1) ?? null;
@@ -120,7 +158,7 @@ export function formFromEquipment(eq: EquipmentInstance): EquipmentForm {
       const have = new Set(eq.loads.map(toScaled));
       return {
         ...base,
-        kind: 'dumbbells',
+        kind: eq.kind,
         range,
         missing: [...full].filter((v) => !have.has(v)).map(fromScaled),
         extra: eq.loads.filter((v) => !full.has(toScaled(v))),
@@ -136,6 +174,10 @@ export function formFromEquipment(eq: EquipmentInstance): EquipmentForm {
     }
     case 'bodyweight_station':
       return { ...base, kind: 'bodyweight_station' };
+    case 'bench':
+      return { ...base, kind: 'bench', benchType: eq.benchType };
+    case 'rack':
+      return { ...base, kind: 'rack', rackType: eq.rackType };
   }
 }
 
@@ -191,18 +233,22 @@ export function applyEquipmentForm(form: EquipmentForm, base: EquipmentInstance 
   };
   let draft: unknown;
   switch (form.kind) {
-    case 'barbell': {
+    case 'barbell':
+    case 'ez_bar':
+    case 'trap_bar':
+    case 'smith_machine': {
       if (form.barMass === null || form.barMass < 0) problems.push('Enter the bar weight.');
       const bar = form.barMass ?? 0;
       if (form.maxLoad !== null && form.maxLoad < bar) problems.push(`Max is below the bar weight (${formatNumber(bar)} ${unitWord(form.unit)}).`);
-      draft = { ...common, kind: 'barbell', loadConvention: 'total', barMass: bar, plates: plates(form.plates), ...(form.maxLoad === null ? {} : { maxLoad: form.maxLoad }) };
+      draft = { ...common, kind: form.kind, loadConvention: 'total', barMass: bar, plates: plates(form.plates), ...(form.maxLoad === null ? {} : { maxLoad: form.maxLoad }) };
       break;
     }
     case 'plate_loaded_machine':
       draft = { ...common, kind: 'plate_loaded_machine', loadConvention: 'added', loadingSides: form.loadingSides, plates: plates(form.plates), ...(form.maxLoad === null ? {} : { maxLoad: form.maxLoad }) };
       break;
     case 'dumbbells':
-      draft = { ...common, kind: 'dumbbells', loadConvention: 'per_hand', loads: range(dumbbellLoads(form), 'weight') };
+    case 'kettlebell':
+      draft = { ...common, kind: form.kind, loadConvention: 'per_hand', loads: range(dumbbellLoads(form), 'weight') };
       break;
     case 'weight_stack': {
       const loads = form.irregular ?? range(rangeValues(form.range), 'stack position');
@@ -217,12 +263,18 @@ export function applyEquipmentForm(form: EquipmentForm, base: EquipmentInstance 
     case 'bodyweight_station':
       draft = { ...common, kind: 'bodyweight_station', loadConvention: 'bodyweight' };
       break;
+    case 'bench':
+      draft = { ...common, kind: 'bench', loadConvention: 'bodyweight', benchType: form.benchType };
+      break;
+    case 'rack':
+      draft = { ...common, kind: 'rack', loadConvention: 'bodyweight', rackType: form.rackType };
+      break;
   }
   if (problems.length > 0) return { ok: false, problems };
   const parsed = validate(EquipmentInstanceSchema, draft);
   if (!parsed.ok) return { ok: false, problems: parsed.issues.map((i) => (i.message.includes('minLoad') ? 'Min is above max.' : i.message)) };
   const eq = parsed.value;
-  if (eq.kind !== 'bodyweight_station' && getAchievableLoads(eq).loads.length === 0) {
+  if (!isPresenceOnly(eq) && getAchievableLoads(eq).loads.length === 0) {
     return { ok: false, problems: ['This setup can’t make any load. Check the plates, the range and the max.'] };
   }
   return { ok: true, equipment: eq };
@@ -254,6 +306,8 @@ export function summariseLoads(eq: EquipmentInstance): LoadSummary {
 /** `Makes 63 loads: 20–175 kg, total, every 2.5 kg.` (gym-editor §5 Preview). */
 export function loadPreviewLine(eq: EquipmentInstance): string {
   if (eq.kind === 'bodyweight_station') return 'Logged as bodyweight (BW).';
+  if (eq.kind === 'bench') return BENCH_TYPE_LABEL[eq.benchType];
+  if (eq.kind === 'rack') return RACK_TYPE_LABEL[eq.rackType];
   const s = summariseLoads(eq);
   if (s.count === 0 || s.min === null || s.max === null) return 'This setup can’t make any load. Check the plates, the range and the max.';
   const u = eq.unit;
@@ -262,10 +316,14 @@ export function loadPreviewLine(eq: EquipmentInstance): string {
   const word = s.count === 1 ? 'load' : 'loads';
   switch (eq.kind) {
     case 'barbell':
+    case 'ez_bar':
+    case 'trap_bar':
+    case 'smith_machine':
       return `Makes ${String(s.count)} ${word}: ${span}, total${every}.`;
     case 'plate_loaded_machine':
       return `Makes ${String(s.count)} ${word}: ${span} plates${every}.`;
     case 'dumbbells':
+    case 'kettlebell':
       return `Makes ${String(s.count)} ${word}: ${span} each.`;
     case 'weight_stack':
       return `Makes ${String(s.count)} ${word}: ${span} stack.`;
@@ -276,7 +334,7 @@ export function loadPreviewLine(eq: EquipmentInstance): string {
 
 /** `Gap: 27.5 → 32.5 kg.` lines for gaps larger than the usual step. */
 export function gapLines(eq: EquipmentInstance): string[] {
-  if (eq.kind === 'bodyweight_station') return [];
+  if (isPresenceOnly(eq)) return [];
   return summariseLoads(eq).gaps.slice(0, 5).map(([a, b]) => `Gap: ${formatNumber(a)} → ${formatNumber(b)} ${eq.unit}.`);
 }
 
@@ -295,14 +353,14 @@ export function unbalancedPlateHints(plates: readonly PlateCount[], sides: 1 | 2
 export function checkLoadText(eq: EquipmentInstance, value: number): string {
   const u = eq.unit;
   const r = buildPlateSetup({ value, unit: u }, eq);
-  if (r.ok) return r.perSide.length === 0 ? (eq.kind === 'barbell' ? 'Just the bar.' : 'No plates.') : `${r.sides === 2 ? 'Each side' : 'On the horn'}: ${plateList(r.perSide)}`;
+  if (r.ok) return r.perSide.length === 0 ? (isBarLoaded(eq) ? 'Just the bar.' : 'No plates.') : `${r.sides === 2 ? 'Each side' : 'On the horn'}: ${plateList(r.perSide)}`;
   switch (r.reason) {
     case 'not_plate_loaded':
       return '';
     case 'above_max':
-      return `${formatNumber(value)} ${u} is above ${eq.kind === 'barbell' ? 'this bar’s' : 'this machine’s'} limit (${formatNumber(r.nearestBelow ?? 0)} ${u}).`;
+      return `${formatNumber(value)} ${u} is above ${isBarLoaded(eq) && eq.kind !== 'smith_machine' ? 'this bar’s' : 'this machine’s'} limit (${formatNumber(r.nearestBelow ?? 0)} ${u}).`;
     case 'below_base':
-      return `${formatNumber(value)} ${u} is below the bar (${formatNumber(eq.kind === 'barbell' ? eq.barMass : 0)} ${u}).`;
+      return `${formatNumber(value)} ${u} is below the bar (${formatNumber(isBarLoaded(eq) ? eq.barMass : 0)} ${u}).`;
     case 'not_achievable': {
       const near = [r.nearestBelow, r.nearestAbove].filter((v): v is number => v !== null).map((v) => `${formatNumber(v)} ${u}`);
       return `${formatNumber(value)} ${u} can’t be made.${near.length > 0 ? ` Nearest: ${near.join(' or ')}.` : ''}`;
@@ -318,15 +376,22 @@ export function plateList(perSide: readonly PlateCount[]): string {
 /** A short line for the gym detail row: `20–175 kg · total` / `2.5–30 kg each`. */
 export function equipmentRowLine(eq: EquipmentInstance): string {
   if (eq.kind === 'bodyweight_station') return 'Bodyweight (BW)';
+  if (eq.kind === 'bench') return BENCH_TYPE_LABEL[eq.benchType];
+  if (eq.kind === 'rack') return RACK_TYPE_LABEL[eq.rackType];
   const s = summariseLoads(eq);
   if (s.min === null || s.max === null) return 'Can’t make any load';
   const span = `${formatNumber(s.min)}–${formatNumber(s.max)} ${eq.unit}`;
   switch (eq.kind) {
     case 'barbell':
+    case 'ez_bar':
+    case 'trap_bar':
       return `${span} · total`;
+    case 'smith_machine':
+      return `${span} · plates + bar`;
     case 'plate_loaded_machine':
       return `${span} plates`;
     case 'dumbbells':
+    case 'kettlebell':
       return `${span} each${s.gaps.length > 0 ? ` · ${String(s.gaps.length)} ${s.gaps.length === 1 ? 'gap' : 'gaps'}` : ''}`;
     case 'weight_stack':
       return `${span} stack`;

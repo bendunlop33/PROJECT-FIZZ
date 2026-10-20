@@ -1,4 +1,4 @@
-import type { EquipmentInstance, Load, PlannedSnap, WeightUnit } from '@fizz/schemas';
+import { GYM_EQUIPMENT_KINDS, type EquipmentInstance, type Load, type PlannedSnap, type WeightUnit } from '@fizz/schemas';
 import { formatNumber, loadText, NBSP, type LoadContext } from '../display';
 import { boundWords, convertedWords, droppedWords, nameInLine, noLoadWords, roundedWords, withWas } from './fit-words';
 import type { SnapNote, SnapSlotResult } from './snap';
@@ -20,7 +20,7 @@ export function loadWords(l: Load, equipment: LoadContext = null): string {
   return loadText(l, l.convention, equipment).replaceAll(NBSP, ' ');
 }
 
-const INSTANCE_KINDS: ReadonlySet<string> = new Set(['barbell', 'plate_loaded_machine', 'dumbbells', 'weight_stack', 'assisted_stack', 'bodyweight_station']);
+const INSTANCE_KINDS: ReadonlySet<string> = new Set(GYM_EQUIPMENT_KINDS);
 
 /** Equipment context for load wording (`40 kg plates` on a plate-loaded machine). */
 function kindCtx(kind: string | undefined): LoadContext {

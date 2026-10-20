@@ -30,6 +30,7 @@ export function equipmentNoun(kind: ExerciseEquipmentKind | null): string {
     case 'barbell':
     case 'ez_bar':
     case 'trap_bar':
+    case 'smith_machine':
       return 'bar';
     case 'dumbbells':
       return 'rack';
@@ -39,8 +40,11 @@ export function equipmentNoun(kind: ExerciseEquipmentKind | null): string {
     case 'plate_loaded_machine':
       return 'machine';
     case 'bodyweight_station':
+    case 'bench':
+    case 'rack':
       return 'station';
     case 'kettlebell':
+      return 'rack';
     case 'sled':
     case 'erg':
     case 'medicine_ball':
@@ -55,16 +59,23 @@ export function equipmentNoun(kind: ExerciseEquipmentKind | null): string {
 function maxPhrase(kind: EquipmentInstance['kind']): string {
   switch (kind) {
     case 'barbell':
+    case 'ez_bar':
+    case 'trap_bar':
+    case 'smith_machine':
       return 'the most this bar and your plates make here';
     case 'plate_loaded_machine':
       return 'the most your plates make on this machine';
     case 'dumbbells':
       return 'the heaviest dumbbell here';
+    case 'kettlebell':
+      return 'the heaviest kettlebell here';
     case 'weight_stack':
       return 'the top of this stack';
     case 'assisted_stack':
       return 'the least assistance this machine gives';
     case 'bodyweight_station':
+    case 'bench':
+    case 'rack':
       return 'the only load here';
   }
 }

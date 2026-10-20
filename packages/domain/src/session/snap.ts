@@ -14,6 +14,7 @@ import type {
 import { compareDifficulty, loadDirection, roundToAvailableLoad } from '../equipment';
 import { addedWeightEquipment, isWeightedBodyweight } from '../added-weight';
 import { isExcludedFor, needsNoEquipment } from '../exercise-equipment';
+import { missingStations } from '../stations';
 import { convertMass, toScaled } from '../units';
 
 /**
@@ -174,6 +175,8 @@ export function mapEquipment(
   if (source === null || needsNoEquipment({ defaultLoadConvention: exercise.defaultLoadConvention, compatibleEquipment: [...exercise.compatibleEquipment] })) {
     return { equipment: null, mapping: 'none_needed' };
   }
+  // (ADR 0030) A bench or rack the exercise needs that this gym is known not to have.
+  if (missingStations(exercise.id, gym.equipment).length > 0) return { equipment: null, mapping: 'not_here' };
   const kinds: readonly ExerciseEquipmentKind[] = exercise.compatibleEquipment.length > 0 ? exercise.compatibleEquipment : [source.kind];
   const suits = (e: EquipmentInstance) => kinds.includes(e.kind);
   // (Ben, 20 Oct) An item Ben marked `Not at this gym` for this exercise, or another machine's own stack, is never mapped to it.
