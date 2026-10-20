@@ -17,7 +17,8 @@ import { shortRelativeDay } from './session/recent';
  * - `legRunNear`: the long or hard run that keeps legs off today: one
  *   yesterday, or one tomorrow (local dates in Ben's zone). A planned
  *   activity counts on its date unless Ben cancels it (Ben, 20 Oct): no need
- *   to mark it done (`activityCounts`).
+ *   to mark it done. Counting is not relabelling: rows keep `Planned` and the
+ *   coach reads `planned` (review ben-runs-20oct B1, rule 6).
  * - `avoidLegDays`: Up next's filter. Days whose body parts include legs go
  *   after every other day while a run is near; if every day is legs, the
  *   first stays and `legsAnyway` says why.
@@ -58,21 +59,6 @@ export interface LegRunNear {
   activity: Activity;
   /** `Long run yesterday`, `Hard run tomorrow`. */
   why: string;
-}
-
-/**
- * (Ben, 20 Oct: "A planned run counts on its date unless I cancel it") A
- * live activity counts as done once its date has come, planned or not;
- * Cancel (`deleteActivity`, with Undo) is how one that didn't happen stops
- * counting. Before its date a planned one is still ahead.
- */
-export function activityCounts(a: Pick<Activity, 'deletedAtUtc' | 'fields'>, today: string): boolean {
-  return live(a) && (a.fields.status === 'done' || a.fields.date <= today);
-}
-
-/** Planned and its date not come yet (`Planned` in rows; Cancel rather than Delete in its sheet). */
-export function activityAhead(a: Pick<Activity, 'fields'>, today: string): boolean {
-  return a.fields.status === 'planned' && a.fields.date > today;
 }
 
 /**
@@ -194,11 +180,17 @@ export interface ActivityRow {
   accessibilityLabel: string;
 }
 
-/** One activity as Today's Recent, the calendar and Your plan list it. A planned one whose date has come shows as done (it counts). */
+/**
+ * One activity as Today's Recent, the calendar and Your plan list it. A
+ * planned one keeps `Planned` until Ben marks it done, on and after its date
+ * too: it counts for the run rule and the week, but it is never shown as done
+ * before he says so (review ben-runs-20oct B1, rule 6); its sheet offers
+ * `Cancel run`, so row and sheet agree (N3).
+ */
 export function activityRow(a: Activity, today: string): ActivityRow {
   const title = ACTIVITY_WORD[a.fields.kind];
   const when = activityWhen(a.fields.date, today);
-  const planned = activityAhead(a, today);
+  const planned = a.fields.status === 'planned';
   const detail = [planned ? ACTIVITY_COPY.planned : null, activityDetail(a.fields) || null].filter((x): x is string => x !== null).join(' · ');
   return { activityId: a.id, version: a.version, title, when, detail, planned, accessibilityLabel: [title, when, detail].filter((x) => x !== '').join(', ').replaceAll(NBSP, ' ') };
 }
@@ -217,9 +209,15 @@ export function activityRemovedText(f: Pick<ActivityFields, 'kind' | 'status'>):
   return f.status === 'planned' ? `${ACTIVITY_WORD[f.kind]} cancelled` : ACTIVITY_COPY.deleted;
 }
 
-/** The status the coach reads: `done` once a planned activity's date has come (it counts), else as logged. */
-export function activityStatusOn(a: Pick<Activity, 'fields'>, today: string): 'done' | 'planned' {
-  return activityAhead(a, today) ? 'planned' : 'done';
+/**
+ * The status the coach reads (review ben-runs-20oct B1): as logged. A planned
+ * one whose date has passed reads `planned (counts)`: never confirmed, still
+ * counted for the run rule and the week (Ben, 20 Oct). Today's reads
+ * `planned`: it may not have happened yet.
+ */
+export function activityStatusOn(a: Pick<Activity, 'fields'>, today: string): 'done' | 'planned' | 'planned (counts)' {
+  if (a.fields.status === 'done') return 'done';
+  return a.fields.date < today ? 'planned (counts)' : 'planned';
 }
 
 /** `Run · Sat · long`: one line in Your plan's week. */

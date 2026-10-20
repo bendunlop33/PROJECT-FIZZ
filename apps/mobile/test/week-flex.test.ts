@@ -334,7 +334,7 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     });
   });
 
-  it('a planned run counts on its date unless cancelled (Ben, 20 Oct): no Planned word, the coach reads it done; Cancel run with Undo', async () => {
+  it('a planned run counts on its date unless cancelled (Ben, 20 Oct), never shown or told as done (review B1); Cancel run with Undo', async () => {
     const { services: s } = await h.launch();
     await setUpGym(h, s);
     // Fri 23 Oct; a long run was planned for Thursday and never marked done.
@@ -342,11 +342,21 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     const add = await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-22', durationS: null, distanceM: 18_000, effort: 'long' }, opId: 'thu-run' });
     if (!add.ok) throw new Error('add');
     const row = (await s.activities.recent()).find((r) => r.activityId === add.activity.id);
-    expect(row).toMatchObject({ when: 'Yesterday', planned: false });
-    expect(sp(row?.detail)).toBe('18 km · long');
+    expect(row).toMatchObject({ when: 'Yesterday', planned: true });
+    expect(sp(row?.detail)).toBe('Planned · 18 km · long');
     const lines = async () => (await s.week.contextView())?.activities ?? [];
-    expect((await lines()).map(sp)).toEqual(['Run · Thu 2026-10-22 · done · 18 km · long']);
+    expect((await lines()).map(sp)).toEqual(['Run · Thu 2026-10-22 · planned (counts) · 18 km · long']);
     expect((await s.week.state())?.facts.runs.map((r) => r.id)).toEqual([add.activity.id]);
+
+    // One planned for 18:00 today (Fri) at 09:00: it counts (the week blocks Fri) but hasn't happened.
+    const fri = await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-23', durationS: null, distanceM: null, effort: 'hard' }, opId: 'fri-run' });
+    if (!fri.ok) throw new Error('fri');
+    expect((await s.activities.recent()).find((r) => r.activityId === fri.activity.id)).toMatchObject({ when: 'Today', planned: true });
+    expect(sp((await s.activities.recent()).find((r) => r.activityId === fri.activity.id)?.detail)).toBe('Planned · hard');
+    expect((await lines()).map(sp)).toContain('Run · Fri 2026-10-23 · planned · hard');
+    expect((await s.week.state())?.facts.openDates).not.toContain('2026-10-23');
+    const friGone = await s.activities.remove({ activityId: fri.activity.id, expectedVersion: fri.activity.version, opId: 'cancel-fri' });
+    expect(friGone.ok).toBe(true);
 
     // Ben cancels it: the toast says so, with Undo; the week no longer has it.
     const cancel = await s.activities.remove({ activityId: add.activity.id, expectedVersion: add.activity.version, opId: 'cancel-thu' });

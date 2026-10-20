@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { ActivitySchema, type Activity, type ActivityFields, type SplitBodyPart } from '@fizz/schemas';
 
 import {
-  activityCounts,
   activityDetail,
   activityRemovedText,
   activityRemoveLabel,
@@ -69,15 +68,21 @@ describe('long and hard (Ben, 20 Oct)', () => {
     expect(activityRow(activity(4, run({ date: '2026-10-24', status: 'planned', effort: 'long' })), TODAY)).toMatchObject({ when: 'Tomorrow', detail: 'Planned · long', planned: true });
   });
 
-  it('a planned activity counts on its date unless cancelled (Ben, 20 Oct): no Planned word once its date has come', () => {
+  it('a planned activity counts on its date unless cancelled (Ben, 20 Oct), but is never shown or told as done (review B1)', () => {
     const plannedThu = activity(12, run({ date: '2026-10-22', status: 'planned', effort: 'long' }));
     const plannedFri = activity(13, run({ date: TODAY, status: 'planned', effort: 'long' }));
     const plannedSat = activity(14, run({ date: '2026-10-24', status: 'planned', effort: 'long' }));
-    expect([plannedThu, plannedFri, plannedSat].map((a) => activityCounts(a, TODAY))).toEqual([true, true, false]);
-    expect([plannedThu, plannedFri, plannedSat].map((a) => activityStatusOn(a, TODAY))).toEqual(['done', 'done', 'planned']);
-    expect(activityRow(plannedThu, TODAY)).toMatchObject({ when: 'Yesterday', detail: 'long', planned: false });
+    // Counts: yesterday's planned long run keeps legs off today.
+    expect(legRunNear([plannedThu], TODAY)?.why).toBe('Long run yesterday');
+    // Rows keep `Planned` before, on and after its date (row and the sheet's `Cancel run` agree).
+    expect([plannedThu, plannedFri, plannedSat].map((a) => activityRow(a, TODAY).detail.split(' · ')[0])).toEqual(['Planned', 'Planned', 'Planned']);
+    expect(activityRow(plannedFri, TODAY)).toMatchObject({ when: 'Today', planned: true });
+    // The coach: today's may not have happened; a past one is counted but never confirmed.
+    expect([plannedThu, plannedFri, plannedSat].map((a) => activityStatusOn(a, TODAY))).toEqual(['planned (counts)', 'planned', 'planned']);
+    expect(activityStatusOn(activity(16, run({ date: TODAY, status: 'done', effort: 'easy' })), TODAY)).toBe('done');
     const gone = deleteActivity(plannedThu, { expectedVersion: 1, opId: 'cancel-thu', at: AT });
-    expect(gone.kind === 'write' && activityCounts(gone.next, TODAY)).toBe(false);
+    if (gone.kind !== 'write') throw new Error(gone.kind);
+    expect(legRunNear([gone.next], TODAY)).toBeNull();
   });
 
   it('Cancel for a planned activity, Delete for a done one (the same versioned tombstone with Undo)', () => {
