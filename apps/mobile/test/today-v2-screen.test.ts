@@ -145,8 +145,14 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
   });
 
   it('44 pt targets, VoiceOver for every gesture, lists at accessibility sizes', () => {
-    // Small chips keep 44 pt with hitSlop (34 + 6 + 6); segments 48; strip cells ≥ 44 wide.
-    expect(parts).toContain('const HIT = { top: 6, bottom: 6, left: 4, right: 4 } as const;');
+    // Small chips keep 44 pt with hitSlop (34 + 5 + 5) inside 44 pt rows with no gap, so slop never reaches the next
+    // row (review S9); segments 48; strip cells ≥ 44 wide.
+    expect(parts).toContain('const ROW_H = 44;');
+    expect(parts).toContain('const HIT = { top: 5, bottom: 5, left: 4, right: 4 } as const;');
+    // Abs and Supersets: the whole row is the switch (a View's hitSlop doesn't enlarge an iOS Switch).
+    expect(parts).toContain('accessibilityRole="switch"');
+    expect(parts).toContain('accessibilityState={{ checked: value }}');
+    expect(parts).not.toMatch(/<View hitSlop=\{HIT\}>\s*<Switch/);
     expect(parts).toMatch(/minHeight: 34,[\s\S]*?hitSlop=\{HIT\}|hitSlop=\{HIT\}[\s\S]*?minHeight: 34,/);
     expect(parts).toContain('minHeight: 48,');
     expect(parts).toContain('minWidth: 44,');
@@ -155,6 +161,26 @@ describe('source checks (§2.0.8, CLAUDE.md rules 1–3, accessibility)', () => 
     expect(parts.match(/if \(ax\) \{/g)).toHaveLength(2);
     // No swipe gestures on Today (§2.0.5): every action is a tap.
     expect(parts).not.toMatch(/PanResponder|Swipeable|onSwipe/);
+  });
+
+  it('Resume never waits for the session card: todaySession loads apart, and not while a workout is open (review S1)', () => {
+    const screenData = screen.slice(screen.indexOf('useScreenData(async'), screen.indexOf('useTodaySessionData(data.state'));
+    expect(screenData).not.toContain('todaySession.load');
+    expect(screen).toContain("useTodaySessionData(data.state === 'ready' && !workoutOpen)");
+    expect(screen).toContain('if (!enabled) return;');
+  });
+
+  it('an edited card keeps the Main lift chips (review S2); Edit’s op ID is cleared once saved (review S6)', () => {
+    const card = parts.slice(parts.indexOf('export function SessionCard('));
+    expect(card.indexOf('TODAY_V2_COPY.mainLift')).toBeLessThan(card.indexOf('view.edited === null ?'));
+    const edit = screen.slice(screen.indexOf('async function editCard()'), screen.indexOf('function buildYourOwn()'));
+    expect(edit).toContain('startOps.current.delete(editKey)');
+    expect(edit).toContain('session.equipmentVersion');
+  });
+
+  it('no plan: the Other sessions stay a day control after one is picked, with Build your own (review S3)', () => {
+    expect(screen).toContain("todaySegments({ days: session.others, others: [], nextKey: null");
+    expect(screen).toContain("session.status !== 'no_plan' || view !== null");
   });
 
   it('the scroll position survives re-renders (one ScrollView, never keyed)', () => {

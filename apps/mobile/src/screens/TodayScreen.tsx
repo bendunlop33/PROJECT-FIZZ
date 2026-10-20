@@ -1,5 +1,5 @@
-import { useNavigation, useRoute, type NavigationProp, type ParamListBase, type RouteProp } from '@react-navigation/native';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useFocusEffect, useNavigation, useRoute, type NavigationProp, type ParamListBase, type RouteProp } from '@react-navigation/native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 import { discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, scoreText, TODAY_V2_COPY, toMs, type ResumeRow, type StripCell, type TodayMain } from '@fizz/domain';
@@ -16,7 +16,7 @@ import type { TabParams } from '../navigation/types';
 import { DeleteToastView } from '../history/DeleteToastView';
 import { useDeleteToast } from '../history/useDeleteToast';
 import type { TodaySelection, TodaySessionData } from '../services/today-session';
-import { firstTime, useDataChanged, useLaunchInfo, useScreenData, useServices } from '../shell/context';
+import { firstTime, useDataChanged, useDataVersion, useLaunchInfo, useScreenData, useServices } from '../shell/context';
 import { loadBanners } from '../shell/system-banners';
 import { useInstallStatus } from '../shell/useInstallStatus';
 import { listEnterMotion, TIMING, useTheme } from '../theme';
@@ -77,24 +77,23 @@ export function TodayScreen() {
   const [finishVisible, setFinishVisible] = useState(false);
   const [afterDismiss] = useState(() => createAfterDismiss());
   const alertsAsk = useStartAlertsAsk();
-  const [data, reload] = useScreenData(async (s) => {
-    const [gym, view, banners, active, unlinked, session] = await Promise.all([
-      s.yourData.currentGym(),
-      s.today.view(),
-      loadBanners(s, install),
-      s.sessions.active(),
-      s.checkIns.unlinked(),
-      // Never blocks Today or Start: an unreadable plan only hides the card.
-      s.todaySession.load().catch(() => null),
-    ]);
-    return { gym, view, banners, active, unlinked, session };
+  const [data, reloadScreen] = useScreenData(async (s) => {
+    const [gym, view, banners, active, unlinked] = await Promise.all([s.yourData.currentGym(), s.today.view(), loadBanners(s, install), s.sessions.active(), s.checkIns.unlinked()]);
+    return { gym, view, banners, active, unlinked };
   });
+  // Today's session loads on its own (review S1): Resume, stale and the banners never wait for it, and it isn't read
+  // at all while a workout is open (the card is hidden then).
+  const workoutOpen = data.state === 'ready' && data.value.active !== null;
+  const [session, reloadSession] = useTodaySessionData(data.state === 'ready' && !workoutOpen);
+  const reload = useCallback(() => {
+    reloadScreen();
+    reloadSession();
+  }, [reloadScreen, reloadSession]);
   const [activitySheet, setActivitySheet] = useState<{ activity: Activity | null } | null>(null);
   const [daySheet, setDaySheet] = useState<StripCell | null>(null);
   const [listSheet, setListSheet] = useState<'other' | 'all' | null>(null);
   const [listAfter] = useState(() => createAfterDismiss());
 
-  const session = data.state === 'ready' ? data.value.session : null;
   const [selection, setSelection] = useState<TodayCardState | null>(null);
 
   // The card's selection: the plan's next day on open (or as Ben left it while the data reloads). Once today's
@@ -309,7 +308,7 @@ export function TodayScreen() {
       const fresh = g.created ? await services.todaySession.load() : session;
       if (fresh === null) return;
       const sel: TodaySelection = { dayKey: selection.dayKey, controls: selection.controls };
-      const commitKey = `commit:${sel.dayKey}:${JSON.stringify(sel.controls)}`;
+      const commitKey = `commit:${sel.dayKey}:${JSON.stringify(sel.controls)}:${fresh.gymId ?? '-'}:${fresh.equipmentVersion}`;
       const c = await commitCard(sel, fresh, commitKey);
       if (!c.ok) {
         setError(c.message);
@@ -347,11 +346,15 @@ export function TodayScreen() {
       return;
     }
     const sel: TodaySelection = { dayKey: selection.dayKey, controls: selection.controls };
-    const c = await commitCard(sel, session, `edit:${sel.dayKey}:${JSON.stringify(sel.controls)}`);
+    // Keyed on what the card was built from too (gym, items), and cleared once saved (review S6): a later Edit with the
+    // same controls never gets back an older draft.
+    const editKey = `edit:${sel.dayKey}:${JSON.stringify(sel.controls)}:${session.gymId ?? '-'}:${session.equipmentVersion}`;
+    const c = await commitCard(sel, session, editKey);
     if (!c.ok) {
       setError(c.message);
       return;
     }
+    startOps.current.delete(editKey);
     navigation.navigate('BuilderWorkout', { draftId: c.draftId });
   }
 
@@ -371,7 +374,7 @@ export function TodayScreen() {
     if (!e) return;
     const r = await services.coachDrafts.discard({ draftId: e.draftId, expectedVersion: e.version, opId: newUuid() });
     if (!r.ok) {
-      setError(TODAY_SCREEN_COPY.notStarted('it changed since'));
+      setError('Changed since. Try again.');
       reload();
       return;
     }
@@ -439,7 +442,14 @@ export function TodayScreen() {
   const openWorkout = main.kind === 'resume' || main.kind === 'stale';
   const chosenName = view === null ? null : (session?.days.find((d) => d.key === view.dayKey)?.name ?? session?.others.find((d) => d.key === view.dayKey)?.name ?? null);
   const strip = session === null ? [] : services.todaySession.strip(session, main.kind === 'done_today' ? null : chosenName);
-  const segs = session === null ? null : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey, selectedKey: selection?.dayKey ?? null, paused: session.status === 'paused' });
+  // No plan: the Other sessions are the day control (review S3), so a picked one can be changed; `⋯` keeps Empty
+  // workout and Build your own.
+  const segs =
+    session === null
+      ? null
+      : session.status === 'no_plan'
+        ? todaySegments({ days: session.others, others: [], nextKey: null, selectedKey: selection?.dayKey ?? null, paused: false })
+        : todaySegments({ days: session.days, others: session.others, nextKey: session.nextKey, selectedKey: selection?.dayKey ?? null, paused: session.status === 'paused' });
 
   const openHero = (() => {
     switch (main.kind) {
@@ -563,7 +573,33 @@ export function TodayScreen() {
                 <TextButton label={TODAY_V2_COPY.emptyWorkout} onPress={() => void start({ kind: 'empty' })} />
               </View>
             </View>
-          ) : null
+          ) : (
+            <View style={{ gap: theme.space['1'] }}>
+              {segs !== null ? (
+                <DayControl
+                  segments={segs.segments}
+                  paused={false}
+                  onDay={pickDay}
+                  onMore={() => {
+                    setListSheet('other');
+                  }}
+                  onAxList={() => {
+                    setListSheet('all');
+                  }}
+                  axLabel={chosenName ?? TODAY_V2_COPY.other}
+                />
+              ) : null}
+              <View style={{ alignSelf: 'flex-start' }}>
+                <TextButton
+                  label={`${TODAY_V2_COPY.setUpPlan} ›`}
+                  tone="secondary"
+                  onPress={() => {
+                    navigation.dispatch(openYourPlan(newUuid()));
+                  }}
+                />
+              </View>
+            </View>
+          )
         ) : segs !== null ? (
           <DayControl
             segments={segs.segments}
@@ -683,7 +719,7 @@ export function TodayScreen() {
 
         {!openWorkout ? (
           <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-            {session !== null && session.status !== 'no_plan' ? <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} grow /> : null}
+            {session !== null && (session.status !== 'no_plan' || view !== null) ? <SecondaryButton label={TODAY_V2_COPY.buildYourOwn} onPress={buildYourOwn} grow /> : null}
             <SecondaryButton
               label={TODAY_SCREEN_COPY.addActivity}
               accessibilityLabel={TODAY_SCREEN_COPY.activity}
@@ -720,7 +756,7 @@ export function TodayScreen() {
       <SessionListSheet
         visible={listSheet !== null}
         title={listSheet === 'all' ? 'Day' : TODAY_V2_COPY.otherLabel}
-        days={session === null ? [] : listSheet === 'all' ? [...session.days, ...session.others] : [...(segs?.overflow ?? []), ...session.others]}
+        days={session === null ? [] : listSheet === 'all' ? [...session.days, ...session.others] : session.status === 'no_plan' ? [] : [...(segs?.overflow ?? []), ...session.others]}
         selectedKey={selection?.dayKey ?? null}
         nextKey={session?.nextKey ?? null}
         onPick={(key) => {
@@ -860,4 +896,42 @@ function DetailList({ rows }: { rows: readonly DetailRow[] }) {
       ) : null}
     </View>
   );
+}
+
+/**
+ * Today's session data (`todaySession.load()`), apart from the rest of the screen (review S1). Read on focus when
+ * `enabled`, cached by the data version, the reload tick and the hour (so a new day re-reads), never while a workout
+ * is open. An unreadable plan only hides the card (null), it never blocks Today or Start.
+ */
+function useTodaySessionData(enabled: boolean): [TodaySessionData | null, () => void] {
+  const services = useServices();
+  const version = useDataVersion();
+  const [tick, setTick] = useState(0);
+  const [value, setValue] = useState<TodaySessionData | null>(null);
+  const cache = useRef<{ key: string; value: TodaySessionData | null } | null>(null);
+  const reload = useCallback(() => {
+    setTick((t) => t + 1);
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!enabled) return;
+      const key = `${String(version)}|${String(tick)}|${services.now().utc.slice(0, 13)}`;
+      if (cache.current?.key === key) {
+        setValue(cache.current.value);
+        return;
+      }
+      let alive = true;
+      void services.todaySession
+        .load()
+        .catch(() => null)
+        .then((v) => {
+          cache.current = { key, value: v };
+          if (alive) setValue(v);
+        });
+      return () => {
+        alive = false;
+      };
+    }, [services, version, tick, enabled]),
+  );
+  return [value, reload];
 }

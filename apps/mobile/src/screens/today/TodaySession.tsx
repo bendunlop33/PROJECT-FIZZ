@@ -16,7 +16,9 @@ import { breakdownLabel, TIME_LABELS, TODAY_SCREEN_COPY, type TodayCardAction, t
  * accessibility sizes the strip and day control become lists.
  */
 
-const HIT = { top: 6, bottom: 6, left: 4, right: 4 } as const;
+/** Control rows are 44 pt with no gap between them, so a 34 pt chip's 5 pt slop stays inside its own row (review S9). */
+const ROW_H = 44;
+const HIT = { top: 5, bottom: 5, left: 4, right: 4 } as const;
 const useAx = () => useWindowDimensions().fontScale >= AX_FONT_SCALE;
 
 // ---------------------------------------------------------------------------
@@ -306,7 +308,7 @@ function Chip({ label, selected, onPress, accessibilityLabel }: { label: string;
 function ControlRow({ label, sub, children }: { label: string; sub?: string | null; children: ReactNode }) {
   const theme = useTheme();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 38, flexWrap: 'wrap' }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: ROW_H, flexWrap: 'wrap' }}>
       <View>
         <AppText variant="callout" color="text.secondary" style={{ fontSize: 15 }}>
           {label}
@@ -322,11 +324,34 @@ function ControlRow({ label, sub, children }: { label: string; sub?: string | nu
   );
 }
 
-function Toggle({ label, value, onChange, hint }: { label: string; value: boolean; onChange: () => void; hint?: string | null }) {
+/**
+ * `Abs` / `Supersets`: the whole 44 pt row is the switch (review S9: a `hitSlop` on a View around a Switch doesn't
+ * enlarge the Switch's own touch area on iOS). VoiceOver reads one switch with its state; the Switch inside only shows it.
+ */
+function ToggleRow({ label, sub, value, onChange }: { label: string; sub?: string | null; value: boolean; onChange: () => void }) {
+  const theme = useTheme();
   return (
-    <View hitSlop={HIT}>
-      <Switch accessibilityLabel={hint ? `${label}, ${hint}` : label} value={value} onValueChange={onChange} />
-    </View>
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={sub ? `${label}, ${sub}` : label}
+      accessibilityState={{ checked: value }}
+      onPress={onChange}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: ROW_H, opacity: pressed ? 0.7 : 1 })}
+    >
+      <View>
+        <AppText variant="callout" color="text.secondary" style={{ fontSize: 15 }}>
+          {label}
+        </AppText>
+        {sub ? (
+          <AppText variant="callout" color="text.tertiary" style={{ fontSize: 12, lineHeight: 14 }}>
+            {sub}
+          </AppText>
+        ) : null}
+      </View>
+      <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants">
+        <Switch value={value} accessible={false} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -373,7 +398,12 @@ function BreakdownTable({ rows, unit }: { rows: readonly TodayBreakdownRow[]; un
         {r.label}
       </AppText>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <AppText variant="callout">{r.name}</AppText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+          {r.held ? <Icon name="exclamationmark.triangle" size={13} color="status.warning" /> : null}
+          <AppText variant="callout" style={{ flexShrink: 1 }}>
+            {r.name}
+          </AppText>
+        </View>
         {r.works !== null ? (
           <AppText variant="callout" color="text.tertiary" style={{ fontSize: 13, lineHeight: 16 }}>
             {r.works}
@@ -483,15 +513,16 @@ export function SessionCard({
         </View>
       ) : null}
 
+      {/* The Main lift row stays on an edited card (review S2): another lift has its own draft, these edits are kept. */}
+      {view.controls.mainLifts.length > 1 ? (
+        <ControlRow label={TODAY_V2_COPY.mainLift}>
+          {view.controls.mainLifts.map((m) => (
+            <Chip key={m.exerciseId ?? '-'} label={m.label} selected={m.selected} accessibilityLabel={`Main lift, ${m.label}`} onPress={() => { dispatch({ kind: 'main_lift', exerciseId: m.exerciseId }); }} />
+          ))}
+        </ControlRow>
+      ) : null}
       {view.edited === null ? (
-        <View style={{ gap: 2 }}>
-          {view.controls.mainLifts.length > 0 ? (
-            <ControlRow label={TODAY_V2_COPY.mainLift}>
-              {view.controls.mainLifts.map((m) => (
-                <Chip key={m.exerciseId ?? '-'} label={m.label} selected={m.selected} accessibilityLabel={`Main lift, ${m.label}`} onPress={() => { dispatch({ kind: 'main_lift', exerciseId: m.exerciseId }); }} />
-              ))}
-            </ControlRow>
-          ) : null}
+        <View>
           <ControlRow label={TODAY_V2_COPY.accessories}>
             <Chip label={TODAY_V2_COPY.focused} selected={view.controls.accessories === 'focused'} accessibilityLabel={`Accessories, ${TODAY_V2_COPY.focused}`} onPress={() => { dispatch({ kind: 'accessories', value: 'focused' }); }} />
             <Chip label={TODAY_V2_COPY.varied} selected={view.controls.accessories === 'varied'} accessibilityLabel={`Accessories, ${TODAY_V2_COPY.varied}`} onPress={() => { dispatch({ kind: 'accessories', value: 'varied' }); }} />
@@ -499,12 +530,8 @@ export function SessionCard({
           <ControlRow label={TODAY_V2_COPY.time}>
             <TimeStepper minutes={view.controls.minutes} onStep={(d) => { dispatch({ kind: 'minutes', delta: d }); }} />
           </ControlRow>
-          <ControlRow label={TODAY_V2_COPY.abs} sub={view.controls.abs.differs ? TODAY_V2_COPY.planAbs(view.controls.abs.planOn) : null}>
-            <Toggle label={TODAY_V2_COPY.abs} value={view.controls.abs.on} hint={view.controls.abs.differs ? TODAY_V2_COPY.planAbs(view.controls.abs.planOn) : null} onChange={() => { dispatch({ kind: 'abs', planOn: view.controls.abs.planOn }); }} />
-          </ControlRow>
-          <ControlRow label={TODAY_V2_COPY.supersets}>
-            <Toggle label={TODAY_V2_COPY.supersets} value={view.controls.supersets} onChange={() => { dispatch({ kind: 'supersets' }); }} />
-          </ControlRow>
+          <ToggleRow label={TODAY_V2_COPY.abs} sub={view.controls.abs.differs ? TODAY_V2_COPY.planAbs(view.controls.abs.planOn) : null} value={view.controls.abs.on} onChange={() => { dispatch({ kind: 'abs', planOn: view.controls.abs.planOn }); }} />
+          <ToggleRow label={TODAY_V2_COPY.supersets} value={view.controls.supersets} onChange={() => { dispatch({ kind: 'supersets' }); }} />
         </View>
       ) : (
         <View style={{ alignSelf: 'flex-start' }}>
@@ -533,8 +560,8 @@ export function SessionCard({
           </View>
           {why ? (
             <View style={{ gap: 2 }}>
-              {view.why.map((l) => (
-                <AppText key={l} variant="callout" color="text.secondary">
+              {view.why.map((l, i) => (
+                <AppText key={`${String(i)}:${l}`} variant="callout" color="text.secondary">
                   {`· ${l}`}
                 </AppText>
               ))}
