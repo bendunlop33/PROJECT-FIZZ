@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { ActivitySchema, type Activity } from '@fizz/schemas';
+
 import {
+  addActivity,
   ALL_WEEKDAYS,
   DEFAULT_MORNING_REMINDER,
   morningReminderSchedule,
+  PREDICTED_REMINDER_TITLE,
   parseMorningReminder,
   predictUpNext,
   reminderBody,
@@ -18,9 +22,16 @@ import {
 
 const TZ = 'Europe/London';
 const ON: MorningReminderSettings = { ...DEFAULT_MORNING_REMINDER, on: true };
-const day = (title: string, n: number | null = null, of = 4, aboutMinutes: number | null = null): ReminderSession => ({ title, planDay: n === null ? null : { n, of }, aboutMinutes });
+const day = (title: string, n: number | null = null, of = 4, aboutMinutes: number | null = null, legs?: boolean): ReminderSession => ({ title, planDay: n === null ? null : { n, of }, aboutMinutes, ...(legs === undefined ? {} : { legs }) });
 
-const PLAN = [day('Push', 1, 4, 55), day('Pull', 2, 4, 60), day('Legs', 3, 4, 65), day('Upper', 4, 4, 50)];
+const PLAN = [day('Push', 1, 4, 55, false), day('Pull', 2, 4, 60, false), day('Legs', 3, 4, 65, true), day('Upper', 4, 4, 50, false)];
+const T = PREDICTED_REMINDER_TITLE;
+
+function longRun(date: string, status: 'planned' | 'done' = 'planned'): Activity {
+  const c = addActivity({ id: `00000000-0000-4000-8000-${date.replaceAll('-', '').padStart(12, '0')}`, ownerId: '00000000-0000-4000-8000-000000000001', fields: { kind: 'run', status, date, durationS: null, distanceM: null, effort: 'long' }, source: 'ben', opId: `run-${date}`, at: { utc: '2026-10-19T08:00:00.000Z', tz: TZ } });
+  if (c.kind !== 'write') throw new Error(c.kind);
+  return ActivitySchema.parse(c.next);
+}
 
 function forecast(over: Partial<UpNextForecast> = {}): UpNextForecast {
   return { next: PLAN[1] ?? null, paused: false, cycle: { sessions: PLAN, at: 1 }, gymName: 'Main gym', lastStartedUtc: null, ...over };
@@ -35,7 +46,10 @@ describe('morningReminderSchedule', () => {
     expect(r).toHaveLength(7);
     expect(r[0]).toMatchObject({ identifier: 'fizz.morning.2026-10-20', fireAtLocal: { date: '2026-10-20', hour: 7, minute: 0 }, title: 'Today: Pull', body: 'Day 2 of 4 · about 60 min · Main gym' });
     expect(r[0]?.fireAtMs).toBe(toMs('2026-10-20T06:00:00.000Z'));
-    expect(r.map((x) => x.title)).toEqual(['Today: Pull', 'Today: Legs', 'Today: Upper', 'Today: Push', 'Today: Pull', 'Today: Legs', 'Today: Upper']);
+    // (Ben, 20 Oct) Predicted days: `Time to train`, the session leads the body.
+    expect(r.map((x) => x.title)).toEqual(['Today: Pull', T, T, T, T, T, T]);
+    expect(r.slice(1).map((x) => x.body.split(' · ')[0])).toEqual(['Legs is next', 'Upper is next', 'Push is next', 'Pull is next', 'Legs is next', 'Upper is next']);
+    expect(r[1]?.body).toBe('Legs is next · Day 3 of 4 · about 65 min · Main gym');
   });
 
   it('after today’s time has passed, starts tomorrow with Up next', () => {
@@ -48,8 +62,8 @@ describe('morningReminderSchedule', () => {
     const r = morningReminderSchedule(TUE_6AM, TZ, { ...ON, days: ['mon', 'wed', 'fri'] }, forecast());
     expect(r.map((x) => [x.fireAtLocal.date, x.title])).toEqual([
       ['2026-10-21', 'Today: Pull'],
-      ['2026-10-23', 'Today: Legs'],
-      ['2026-10-26', 'Today: Upper'],
+      ['2026-10-23', T],
+      ['2026-10-26', T],
     ]);
   });
 
@@ -96,6 +110,45 @@ describe('morningReminderSchedule', () => {
   it('unknown loop: only the exact Up next', () => {
     const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ cycle: { sessions: [], at: -1 } }));
     expect(r.map((x) => x.title)).toEqual(['Today: Pull']);
+  });
+});
+
+describe('the run rule on predicted days (Ben, 20 Oct)', () => {
+  it('no legs the day after or before a long run, planned or done; the leg day waits for the next day', () => {
+    // Up next Pull (Tue); predicted Legs on Wed. A long run planned Thu: Wed is the day before, so Upper comes first.
+    const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ activities: [longRun('2026-10-22')] }));
+    expect(r.map((x) => [x.fireAtLocal.date, x.body.split(' · ')[0]])).toEqual([
+      ['2026-10-20', 'Day 2 of 4'],
+      ['2026-10-21', 'Upper is next'],
+      // Thu is the run's own date: legs may come back.
+      ['2026-10-22', 'Legs is next'],
+      ['2026-10-23', 'Push is next'],
+      ['2026-10-24', 'Pull is next'],
+      ['2026-10-25', 'Legs is next'],
+      ['2026-10-26', 'Upper is next'],
+    ]);
+    // A long run planned Tue (today) and never marked done counts on its date: Wed is the day after.
+    const after = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ activities: [longRun('2026-10-20')] }));
+    expect(after[1]?.body.split(' · ')[0]).toBe('Upper is next');
+    // Planned for Mon (yesterday), done: today's Up next (day 1) is never moved here (Up next applies the rule).
+    const done = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ next: PLAN[2] ?? null, cycle: { sessions: PLAN, at: 2 }, activities: [longRun('2026-10-19', 'done')] }));
+    expect(done[0]?.title).toBe('Today: Legs');
+  });
+
+  it('day 1 on a later date is a prediction too: moved and worded as one; unknown legs never move', () => {
+    // 07:30: today's time has passed, so day 1 is Wed; a long run Thu makes Wed the day before.
+    const r = morningReminderSchedule(toMs('2026-10-20T07:30:00.000Z'), TZ, ON, forecast({ next: PLAN[2] ?? null, cycle: { sessions: PLAN, at: 2 }, activities: [longRun('2026-10-22')] }));
+    expect(r[0]).toMatchObject({ fireAtLocal: { date: '2026-10-21' }, title: T });
+    expect(r[0]?.body.split(' · ')[0]).toBe('Upper is next');
+    const unknown = [day('Push'), day('Pull'), day('Legs')];
+    const u = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ next: unknown[1] ?? null, cycle: { sessions: unknown, at: 1 }, activities: [longRun('2026-10-22')] }));
+    expect(u[1]?.body).toBe('Legs is next · Main gym');
+  });
+
+  it('every day a leg day: legs anyway', () => {
+    const legs = [day('Legs A', null, 4, null, true), day('Legs B', null, 4, null, true)];
+    const r = morningReminderSchedule(TUE_6AM, TZ, ON, forecast({ next: legs[0] ?? null, cycle: { sessions: legs, at: 0 }, activities: [longRun('2026-10-22')] }));
+    expect(r[1]?.body).toBe('Legs B is next · Main gym');
   });
 });
 

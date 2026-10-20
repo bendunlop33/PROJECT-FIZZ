@@ -1,3 +1,4 @@
+import { avoidLegDays, type LegRunNear } from '../activity';
 import { isSplitBodyPart, matchSplitDay, workoutMuscleGroups } from '../training-profile';
 import { addDays, localDateOf, localMidnightUtcMs } from '../calendar';
 import { toIso, toMs } from '../time';
@@ -219,6 +220,10 @@ const DAY_MS = 86_400_000;
  * `pin`: the live pin (`activePin` on every workout since it). Up to `count`
  * days after the first; fewer when none can start; empty when `firstRoutineId`
  * isn't a plan day.
+ *
+ * `nearOn(i)` (Ben, 20 Oct): the long or hard run near the date predicted day
+ * `i` is reminded on (`legRunNear`, planned or done), if any; leg days then go
+ * after the others for that day, as Up next does (a pinned day stays first).
  */
 export function planDaysAhead<D extends PlanAheadDay>(input: {
   days: readonly D[];
@@ -229,6 +234,7 @@ export function planDaysAhead<D extends PlanAheadDay>(input: {
   fromMs: number;
   windowDays: number;
   canStart?: (d: D) => boolean;
+  nearOn?: (i: number) => LegRunNear | null;
 }): D[] {
   const first = input.days.find((d) => d.routineId === input.firstRoutineId);
   if (first === undefined) return [];
@@ -241,7 +247,10 @@ export function planDaysAhead<D extends PlanAheadDay>(input: {
     done.push({ sessionId: `ahead:${String(i)}`, routineId: last.routineId, startedAtUtc: toIso(atMs), groups: last.plannedGroups });
     const windowFrom = atMs + DAY_MS - input.windowDays * DAY_MS;
     const ws = [...input.workouts.filter((w) => toMs(w.startedAtUtc) >= windowFrom), ...done];
-    const pick = planDaysByDue(input.days, ws, input.pin).find((p) => canStart(p.day));
+    const due = planDaysByDue(input.days, ws, input.pin);
+    const near = input.nearOn?.(i) ?? null;
+    const ordered = [...due.filter((p) => p.pinned), ...avoidLegDays(due.filter((p) => !p.pinned), (p) => p.day.bodyParts, near).order];
+    const pick = ordered.find((p) => canStart(p.day));
     if (pick === undefined) break;
     out.push(pick.day);
     last = pick.day;

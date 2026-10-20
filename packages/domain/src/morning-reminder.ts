@@ -1,4 +1,6 @@
-import type { Weekday } from '@fizz/schemas';
+import type { Activity, Weekday } from '@fizz/schemas';
+
+import { legRunNear } from './activity';
 
 import { addDays, localDateOf, localTimeUtcMs, weekdayIndexOfDate } from './calendar';
 import { toMs } from './time';
@@ -9,10 +11,15 @@ import { toMs } from './time';
  * the clock, the phone's zone and an Up next forecast, the local
  * notifications to have pending for the next `REMINDER_HORIZON_DAYS` days.
  *
- * Day 1 is Up next exactly as Today shows it. Later days are a prediction:
- * Up next walked forward (`predictUpNext`) assuming each reminded session is
- * done (with a plan, by the plan's adaptive rule: `planDaysAhead`). The app recomputes the whole list whenever anything that moves Up
- * next changes, so a wrong guess is replaced before it fires. Nothing is sent
+ * Day 1 is Up next exactly as Today shows it (`Today: Pull`). Later days are
+ * a prediction: Up next walked forward (`predictUpNext`) assuming each
+ * reminded session is done (with a plan, by the plan's adaptive rule:
+ * `planDaysAhead`), worded as one (`Time to train` · `Pull is next`, Ben
+ * 20 Oct). The run rule applies to them too (Ben, 20 Oct): on a day after or
+ * before a long or hard run (planned or done), a leg day waits for the next
+ * day that isn't one (`legRunNear`). The app recomputes the whole list
+ * whenever anything that moves Up next changes, so a wrong guess is replaced
+ * before it fires. Nothing is sent
  * with no Up next, with the plan paused, or on a day a workout was already
  * started before the reminder time (rule 6: no generic nagging, no invented
  * content).
@@ -60,6 +67,8 @@ export interface ReminderSession {
   planDay: { n: number; of: number } | null;
   /** `about 60 min` (an estimate); null: unknown. */
   aboutMinutes: number | null;
+  /** A leg day (the run rule); absent: unknown, never moved. */
+  legs?: boolean;
 }
 
 /** Up next now and what it walks through next, read from the same resolver Today uses. */
@@ -85,6 +94,8 @@ export interface UpNextForecast {
   gymName: string | null;
   /** When the newest workout (finished or in progress) started; null: none. */
   lastStartedUtc: string | null;
+  /** Live activities around the reminded days (the run rule, `legRunNear`); absent: none read. */
+  activities?: readonly Activity[];
 }
 
 /**
@@ -120,28 +131,39 @@ export interface PlannedReminder {
 /** Every morning reminder's identifier starts with this; nothing else is scheduled under it. */
 export const MORNING_REMINDER_PREFIX = 'fizz.morning.';
 
-/** `Today: Pull`. */
+/** `Today: Pull`: day 1, Up next as Today shows it. */
 export function reminderTitle(s: ReminderSession): string {
   return `Today: ${s.title}`;
 }
 
-/** `Day 2 of 4 · about 60 min · Main gym`, leaving out what isn't known. */
-export function reminderBody(s: ReminderSession, gymName: string | null): string {
-  const parts = [s.planDay === null ? null : `Day ${String(s.planDay.n)} of ${String(s.planDay.of)}`, s.aboutMinutes === null ? null : `about ${String(s.aboutMinutes)} min`, gymName];
+/** A predicted day's title (Ben, 20 Oct): neutral, the session is in the body. */
+export const PREDICTED_REMINDER_TITLE = 'Time to train';
+
+/**
+ * `Day 2 of 4 · about 60 min · Main gym`, leaving out what isn't known; a
+ * predicted day leads with `Pull is next`.
+ */
+export function reminderBody(s: ReminderSession, gymName: string | null, predicted = false): string {
+  const parts = [predicted ? `${s.title} is next` : null, s.planDay === null ? null : `Day ${String(s.planDay.n)} of ${String(s.planDay.of)}`, s.aboutMinutes === null ? null : `about ${String(s.aboutMinutes)} min`, gymName];
   return parts.filter((p): p is string => p !== null && p.length > 0).join(' · ');
 }
 
+export interface ReminderSlot {
+  /** Local date it fires on. */
+  date: string;
+  fireAtMs: number;
+}
+
 /**
- * The reminders to have pending, soonest first: one per selected day in the
- * next `REMINDER_HORIZON_DAYS` local days whose time is still ahead, skipping
- * today when a workout already started today. Off (`on` not true: resolve
- * a never-set value with `reminderOn` first), no Up next or paused: none.
+ * The days a reminder is due, soonest first: each selected day in the next
+ * `REMINDER_HORIZON_DAYS` local days whose time is still ahead, skipping
+ * today when a workout already started today. The forecast reads the same
+ * list (the plan's days ahead are predicted for these dates).
  */
-export function morningReminderSchedule(nowMs: number, tz: string, settings: MorningReminderSettings, forecast: UpNextForecast): PlannedReminder[] {
-  if (settings.on !== true || settings.days.length === 0) return [];
+export function reminderSlots(nowMs: number, tz: string, settings: Pick<MorningReminderSettings, 'hour' | 'minute' | 'days'>, lastStartedUtc: string | null): ReminderSlot[] {
   const today = localDateOf(nowMs, tz);
-  const trainedToday = forecast.lastStartedUtc !== null && localDateOf(toMs(forecast.lastStartedUtc), tz) === today && toMs(forecast.lastStartedUtc) <= nowMs;
-  const slots: { date: string; fireAtMs: number }[] = [];
+  const trainedToday = lastStartedUtc !== null && localDateOf(toMs(lastStartedUtc), tz) === today && toMs(lastStartedUtc) <= nowMs;
+  const slots: ReminderSlot[] = [];
   for (let d = 0; d < REMINDER_HORIZON_DAYS; d += 1) {
     const date = addDays(today, d);
     const weekday = ALL_WEEKDAYS[weekdayIndexOfDate(date)];
@@ -151,15 +173,54 @@ export function morningReminderSchedule(nowMs: number, tz: string, settings: Mor
     if (fireAtMs <= nowMs) continue;
     slots.push({ date, fireAtMs });
   }
-  const sessions = predictUpNext(forecast, slots.length);
-  return slots.slice(0, sessions.length).map((slot, i) => {
-    const s = sessions[i] as ReminderSession;
+  return slots;
+}
+
+/**
+ * The predicted sessions placed on the slots with the run rule (Ben, 20 Oct):
+ * on a slot whose date has a long or hard run the day before or after
+ * (`legRunNear`), a leg session waits and the next one that isn't a leg day
+ * comes first. Day 1 on today stays as Up next shows it (Up next applies the
+ * rule itself). `firm`: day 1, unmoved.
+ */
+export function placeReminderSessions(sessions: readonly ReminderSession[], slots: readonly ReminderSlot[], activities: readonly Activity[], today: string): { session: ReminderSession; firm: boolean }[] {
+  const pool = [...sessions];
+  const out: { session: ReminderSession; firm: boolean }[] = [];
+  for (let i = 0; i < slots.length && pool.length > 0; i += 1) {
+    const slot = slots[i] as ReminderSlot;
+    let k = 0;
+    const exact = i === 0 && slot.date === today;
+    if (!exact && pool[0]?.legs === true && legRunNear(activities, slot.date) !== null) {
+      const j = pool.findIndex((x) => x.legs === false);
+      if (j > 0) k = j;
+    }
+    const [session] = pool.splice(k, 1);
+    if (session === undefined) break;
+    out.push({ session, firm: i === 0 && k === 0 });
+  }
+  return out;
+}
+
+/**
+ * The reminders to have pending, soonest first: one per slot
+ * (`reminderSlots`) while a session is predicted for it. Off (`on` not true:
+ * resolve a never-set value with `reminderOn` first), no Up next or paused:
+ * none.
+ */
+export function morningReminderSchedule(nowMs: number, tz: string, settings: MorningReminderSettings, forecast: UpNextForecast): PlannedReminder[] {
+  if (settings.on !== true || settings.days.length === 0) return [];
+  const slots = reminderSlots(nowMs, tz, settings, forecast.lastStartedUtc);
+  // A few more than the slots, so a leg day that waits has one to wait for.
+  const sessions = predictUpNext(forecast, slots.length + REMINDER_HORIZON_DAYS);
+  const placed = placeReminderSessions(sessions, slots, forecast.activities ?? [], localDateOf(nowMs, tz));
+  return placed.map(({ session: s, firm }, i) => {
+    const slot = slots[i] as ReminderSlot;
     return {
       identifier: `${MORNING_REMINDER_PREFIX}${slot.date}`,
       fireAtLocal: { date: slot.date, hour: settings.hour, minute: settings.minute },
       fireAtMs: slot.fireAtMs,
-      title: reminderTitle(s),
-      body: reminderBody(s, forecast.gymName),
+      title: firm ? reminderTitle(s) : PREDICTED_REMINDER_TITLE,
+      body: reminderBody(s, forecast.gymName, !firm),
     };
   });
 }
