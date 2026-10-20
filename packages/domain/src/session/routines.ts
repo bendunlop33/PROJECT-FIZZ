@@ -348,6 +348,19 @@ export function nextInRotation<R extends Pick<Routine, 'id' | 'name' | 'createdF
 }
 
 /**
+ * (Ben, 20 Oct; review weekflex S6) The rotation in the order it comes round:
+ * `nextInRotation`'s pick first, then the ones after it, the one just done
+ * last. Empty when the rotation has no pick. Up next's run rule reorders this
+ * (`avoidLegDays`) so a leg day isn't next the day before a long run.
+ */
+export function rotationOrder<R extends Pick<Routine, 'id' | 'name' | 'createdFromSessionId'>>(routines: readonly R[], last: FinishedRef | null): R[] {
+  const pick = nextInRotation(routines, last);
+  if (pick.kind !== 'routine') return [];
+  const at = routines.findIndex((r) => r.id === pick.routine.id);
+  return routines.map((_, i) => routines[(at + i) % routines.length]).filter((r): r is R => r !== undefined);
+}
+
+/**
  * When each routine was last done (newest finished workout from it), or
  * null. `finished`: finished workouts, any order.
  */

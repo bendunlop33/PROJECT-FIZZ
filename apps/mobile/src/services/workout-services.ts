@@ -260,6 +260,7 @@ import {
   planSettingsOfRoutine,
   isArchivedExercise,
   isDeleted,
+  rotationOrder,
   rotationRoutines,
   routineChangeLines,
   routineFromPlan,
@@ -1933,7 +1934,20 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const run = await routineStart(p, { routineId: routine.id, gymId, opId: `preview-next-routine:${routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
       return run.r.ok ? { kind: 'routine' as const, routine, basis: planBasis(routine) ?? basis, run: { ...run, r: run.r } } : null;
     };
-    const rotation = async () => (pick.kind !== 'routine' ? null : startable(pick.routine, pick.basis));
+    // (Ben, 20 Oct; review S6) The run rule on the rotation too: with a long or hard run near, a leg day comes round
+    // after the others (the first that starts here); every one a leg day: the pick anyway, with the run behind Why?.
+    const rotation = async () => {
+      if (pick.kind !== 'routine') return null;
+      if (near === null) return startable(pick.routine, pick.basis);
+      const split = splitInUse(training);
+      const of = await exerciseLookup(rotationRoutines(live));
+      const order = avoidLegDays(rotationOrder(rotationRoutines(live), refs[0] ?? null), (r) => planDayBodyParts(r, of, split), near).order;
+      for (const r of order) {
+        const run = await startable(r, pick.basis);
+        if (run !== null) return { ...run, why: isLegDay(planDayBodyParts(r, of, split)) ? near.why : null };
+      }
+      return null;
+    };
     // PM decision 18 Oct (pending Ben): the rotation wins only when the last workout was a routine's and Ben set no split;
     // otherwise the split day trained least recently, counting every workout by the muscles done.
     // (19 Oct, review plans-19oct B1) An applied plan drives Up next even with a split. (Ben, 20 Oct) Adaptive: the
@@ -1985,6 +1999,13 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       .weekPlans.listForWeek(p.id, monday)
       .catch(() => [] as WeekPlan[]);
     return { near: legRunNear(acts, today), week: activeWeekPlan(weeks, nowMs, p.timezone) };
+  }
+
+  /** An exercise lookup for routines' rows (the run rule's body parts). */
+  async function exerciseLookup(routines: readonly Routine[]): Promise<(id: string) => Exercise | null> {
+    const infos = new Map<string, Exercise | null>();
+    for (const r of routines) for (const e of r.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, await exerciseById(e.exerciseId));
+    return (id) => infos.get(id) ?? null;
   }
 
   /** Each merge's day (its workout, while live), by merge index. */
@@ -2086,7 +2107,10 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     // No due day has a workout to plan from: the window's workouts that trained the day(s) just done (left out of `due`).
     const dueIds = new Set(due.map((d) => d.day.id));
     const justDone = due.length === 0 || dueIds.size === split.days.length ? new Set<string>() : new Set(split.days.filter((d) => !dueIds.has(d.id)).map((d) => d.id));
-    return { plan: null, avoid: new Set(workouts.filter((w) => splitDaysTrained(split, w.groups).some((d) => justDone.has(d))).map((w) => w.sessionId)) };
+    // (review S6) With a long or hard run near, the fallbacks pass over leg workouts too (unless nothing else is left).
+    const legDayIds = new Set(split.days.filter((d) => isLegDay(d.bodyParts)).map((d) => d.id));
+    const passOver = (w: (typeof workouts)[number]) => splitDaysTrained(split, w.groups).some((d) => justDone.has(d) || (near !== null && legDayIds.has(d)));
+    return { plan: null, avoid: new Set(workouts.filter(passOver).map((w) => w.sessionId)) };
   }
 
   /** One split day's Up next: its routine, else the newest workout (in the window) mainly that day; null when none. */

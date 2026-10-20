@@ -402,6 +402,32 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     expect((await upNext(s, gymId)).title).not.toBe('Upper');
   });
 
+  it('no split, a rotation of workouts: the run rule applies to the rotation too (review S6)', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    const save = async (sessionId: string, name: string) => {
+      const r = await s.routines.saveFrom({ from: { kind: 'session', sessionId }, name, addToRotation: true, opId: `save-${name}` });
+      if (!r.ok) throw new Error(r.message);
+      return r.routine;
+    };
+    // Rotation: Push A, Legs A, Pull A (saved in that order).
+    const pushA = await save(await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 7, rpe: 8 }, { load: 100, reps: 7, rpe: 8 }] }]), 'Push A');
+    h.clockMs += DAY;
+    await save(await logWorkout(h, s, gymId, [{ exercise: 'Back squat', sets: [{ load: 100, reps: 5, rpe: 8 }, { load: 100, reps: 5, rpe: 8 }] }]), 'Legs A');
+    h.clockMs += DAY;
+    await save(await logWorkout(h, s, gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10, rpe: 8 }, { load: 60, reps: 10, rpe: 8 }] }]), 'Pull A');
+    // Thu 22 Oct: Push A again, so Legs A comes round next.
+    h.clockMs = Date.parse('2026-10-22T08:00:00.000Z');
+    await doDay(s, gymId, pushA.id);
+    h.clockMs = Date.parse('2026-10-23T07:00:00.000Z');
+    expect(await upNext(s, gymId)).toEqual({ title: 'Legs A', why: null });
+    // A long run planned for tomorrow: Pull A instead; Legs A after the run.
+    await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-24', durationS: null, distanceM: 16_000, effort: null }, opId: 'sat-run' });
+    expect(await upNext(s, gymId)).toEqual({ title: 'Pull A', why: null });
+    h.clockMs = Date.parse('2026-10-26T08:00:00.000Z');
+    expect((await upNext(s, gymId)).title).toBe('Legs A');
+  });
+
   it('without a plan: the same offer on split days (Push + Pull → Upper), and the run rule on split Up next', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
