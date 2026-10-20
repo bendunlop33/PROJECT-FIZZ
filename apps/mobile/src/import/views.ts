@@ -1,4 +1,5 @@
 import {
+  isPlatesAddedKind,
   EQUIPMENT_WORD,
   localDateOf,
   localHourUtcMs,
@@ -275,7 +276,7 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
         ? warn('Dumbbell weights: each or both?')
         : q.needsCount > 0
           ? warn(`${plural(q.needsCount, 'dumbbell exercise', 'dumbbell exercises')}: one dumbbell or two?`)
-          : { key: { kind: 'per_hand' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `Dumbbells: ${perHandSummary(q)}` } },
+          : { key: { kind: 'per_hand' }, answered: true, line: { icon: 'checkmark.circle.fill', tone: 'done', text: `${perHandLabel(q)}: ${perHandSummary(q)}` } },
     );
   }
   if (a.total) {
@@ -322,11 +323,26 @@ export function questionRows(a: ImportAnalysis): QuestionRow[] {
 }
 
 /** `each`, or by reading when they differ: `2 both together · 1 one dumbbell` (review r3 S1). */
+/** `Dumbbells`, `Kettlebells` (only kettlebell exercises), or both (review ben-kit S3). */
+function perHandLabel(q: PerHandQuestion): string {
+  const bells = q.exercises.filter((e) => e.implement === 'kettlebell').length;
+  if (bells === 0) return 'Dumbbells';
+  return bells === q.exercises.length ? 'Kettlebells' : 'Dumbbells and kettlebells';
+}
+
+/** `each`, `one dumbbell`, `one kettlebell`, or by reading when they differ. */
 function perHandSummary(q: PerHandQuestion): string {
-  const counts = (['each', 'both', 'one'] as const).map((r) => ({ r, n: q.exercises.filter((e) => e.reading === r).length })).filter((c) => c.n > 0);
-  const only = counts.length === 1 ? counts[0] : undefined;
-  if (only) return READING_WORD[only.r];
-  return counts.map((c) => `${formatCount(c.n)} ${READING_WORD[c.r]}`).join(' · ');
+  const wordOf = (e: PerHandQuestion['exercises'][number]): string | null => (e.reading === null ? null : e.reading === 'one' ? `one ${e.implement}` : READING_WORD[e.reading]);
+  const counts = new Map<string, number>();
+  for (const e of q.exercises) {
+    const w = wordOf(e);
+    if (w !== null) counts.set(w, (counts.get(w) ?? 0) + 1);
+  }
+  const order = [READING_WORD.each, READING_WORD.both, 'one dumbbell', 'one kettlebell'];
+  const rows = order.flatMap((w) => (counts.has(w) ? [{ w, n: counts.get(w) ?? 0 }] : []));
+  const only = rows.length === 1 ? rows[0] : undefined;
+  if (only) return only.w;
+  return rows.map((c) => `${formatCount(c.n)} ${c.w}`).join(' · ');
 }
 
 /** `total as written`, or by reading when they differ: `2 total as written · 1 plates only + bar`. */
@@ -504,9 +520,10 @@ export function originalText(variant: FitNotesVariant | null, cells: readonly st
   return parts.join(' · ');
 }
 
-/** Equipment hint so `added` reads `plates` for a plate-loaded exercise (display only). */
+/** Equipment hint so `added` reads `plates` for a plate-loaded or Smith machine exercise (display only; review ben-kit B2). */
 export function loadContextFor(c: Pick<MatchCandidate, 'compatibleEquipment'> | null): LoadContext {
-  return c?.compatibleEquipment.includes('plate_loaded_machine') ? { kind: 'plate_loaded_machine' } : null;
+  const kind = c?.compatibleEquipment.find(isPlatesAddedKind);
+  return kind === undefined ? null : { kind };
 }
 
 export function mappedSetText(set: { load: Load | null; reps: number; convention: LoadConvention; rpe: number | null }, ctx: LoadContext = null): string {

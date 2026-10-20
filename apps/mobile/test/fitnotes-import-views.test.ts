@@ -14,6 +14,7 @@ import {
   pastImportRow,
   pausedLine,
   perHandOptions,
+  previewRowLines,
   previewView,
   progressView,
   provenanceLines,
@@ -182,7 +183,7 @@ describe('import preview wording', () => {
     ]);
     const v = previewView(d, 'en-GB');
     // (ADR 0030) A kettlebell swing is one bell, per hand: answered from the catalogue, nothing to ask.
-    expect(v.questions.map((x) => x.line.text)).toEqual(['Dumbbells: one dumbbell', 'EZ-bar weight needed for “plates only”']);
+    expect(v.questions.map((x) => x.line.text)).toEqual(['Kettlebells: one kettlebell', 'EZ-bar weight needed for “plates only”']);
     expect(v.questions.filter((x) => !x.answered).map((x) => x.line.text)).toEqual(['EZ-bar weight needed for “plates only”']);
     expect(v.primary).toEqual({ label: 'Answer 1 question to import', enabled: false });
     // The kettlebell isn't a barbell question: one bell's weight, imported as written (per bell since ADR 0030).
@@ -195,6 +196,14 @@ describe('import preview wording', () => {
       ['Skull crusher', 27.5],
       ['Kettlebell swing', 24],
     ]);
+  });
+
+  it('a Smith machine set previews as plates, never as weight added to the body (review ben-kit B2)', async () => {
+    const d = await open([B2, '2026-09-01,Smith Machine Squat,Legs,60.0,kgs,8,,,,'].join('\n'));
+    const rows = s.imports.previewRows(d.draftId, '2026-09-01');
+    const lines = rows.map(({ row, fate }) => previewRowLines(d.variant, row, fate, fate.result === 'imported' ? s.imports.candidate(d.draftId, fate.set.exerciseId) : null));
+    expect(rows.map((r) => (r.fate.result === 'imported' ? [r.fate.set.load?.value, r.fate.set.convention] : r.fate.result))).toEqual([[60, 'added']]);
+    expect(lines.map((l) => plain(l.title))).toEqual(['Smith machine squat · 60 kg plates × 8']);
   });
 
   it('barbell: the group answer only reads weights as written; plates only is chosen per exercise with its bar, changeable (PM decision after review r7)', async () => {
