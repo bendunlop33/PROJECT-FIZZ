@@ -210,6 +210,42 @@ describe('a plan that follows what Ben does (Ben, 20 Oct)', () => {
   });
 });
 
+describe('pause and pin edge cases (review plan-adapt B1, S3)', () => {
+  it('End while paused (no date): later weeks aren\'t paused; Undo of End puts the pause back', async () => {
+    const { s, planId } = await benWithPlan();
+    let v = await s.plans.overview();
+    const p = await s.plans.pause({ planId, untilDate: null, expectedVersion: v?.planVersion ?? 0, opId: 'pause-e' });
+    if (!p.ok) throw new Error('pause');
+    h.clockMs += 2 * DAY;
+    const ended = await s.plans.end({ planId, expectedVersion: p.plan.version, opId: 'end-e' });
+    if (!ended.ok) throw new Error('end');
+    // The week after: nothing paused, so it is judged (paused only up to End).
+    h.clockMs += 15 * DAY;
+    const weeks = (await s.plans.consistency())?.weeks ?? [];
+    expect(weeks.find((w) => w.monday === '2026-10-12')?.pausedDays).toBe(2);
+    expect(weeks.find((w) => w.monday === '2026-10-19')?.pausedDays).toBe(0);
+    // Undo of End: the plan is in use and paused again.
+    h.clockMs -= 15 * DAY;
+    expect(await s.plans.resume({ planId, expectedVersion: ended.plan.version, opId: 'undo-end-e' })).toMatchObject({ ok: true });
+    v = await s.plans.overview();
+    expect(nbsp(v?.paused?.text)).toBe('Paused');
+  });
+
+  it('a pin done before a six-week break stays done: Up next and the plan day agree', async () => {
+    const { s, gymId, planId, day } = await benWithPlan();
+    const v = await s.plans.overview();
+    const pin = await s.plans.makeNext({ planId, routineId: day('Legs'), expectedVersion: v?.planVersion ?? 0, opId: 'pin-legs' });
+    if (!pin.ok) throw new Error('pin');
+    expect(await upNext(s, gymId)).toEqual({ title: 'Legs', plan: 3 });
+    h.clockMs += 3_600_000;
+    await doDay(s, gymId, day('Legs'));
+    expect((await upNext(s, gymId)).title).not.toBe('Legs');
+    h.clockMs += 45 * DAY;
+    expect((await upNext(s, gymId)).title).not.toBe('Legs');
+    expect(await s.plans.planDay(day('Legs'))).toMatchObject({ pinned: false });
+  });
+});
+
 describe('the coach pauses the plan when Ben asks (Ben, 20 Oct: "pause eg if go on hols")', () => {
   function planBlock(req: ModelRequest): { today: string; inUse: { name: string; paused: unknown } | null } | null {
     const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
@@ -254,5 +290,24 @@ describe('the coach pauses the plan when Ben asks (Ben, 20 Oct: "pause eg if go 
     await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'How is my week looking?', spoken: false }, turnId: h.ids() });
     expect(seen2[0]).not.toContain('pause_plan');
     expect((await s.plans.overview())?.paused).toBeNull();
+  });
+
+  it('a holiday still ahead, or "I\'m back to 100 kg", doesn\'t open the tool (review B2); of several dates Ben said, the model\'s pick stands (S4)', async () => {
+    const { s } = await benWithPlan();
+    for (const text of ['Going on holiday next week, anything I should do before?', "I'm back to 100 kg on bench"]) {
+      const tools: string[][] = [];
+      model = new StepModel([
+        (req) => {
+          tools.push(req.tools.map((t) => t.name));
+          return replyWith('Noted.');
+        },
+      ]);
+      await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text, spoken: false }, turnId: h.ids() });
+      expect(tools[0]).not.toContain('pause_plan');
+      expect((await s.plans.overview())?.paused).toBeNull();
+    }
+    model = new StepModel([() => toolCall('pause_plan', { action: 'pause', until: '2026-11-04', reason: 'Holiday' }), () => replyWith('Enjoy.')]);
+    const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: "I'm on holiday till 3 Nov, maybe 4 Nov", spoken: false }, turnId: h.ids() });
+    expect(r.cards.find((c) => c.record.detail.kind === 'pause_plan')?.record).toMatchObject({ status: 'committed', detail: { untilDate: '2026-11-04' } });
   });
 });
