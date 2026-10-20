@@ -10,7 +10,7 @@ Goal: the workout reads like the builder (`workout-builder-v3.md` §2): numbered
 2. **Round strip** (one row, scrolls sideways when long): one chip per round, `1 2 3a·b 4 5`. Done = `✓ 1` in green on `done-sub`; current = outlined in accent; others = muted. Tap jumps to that round (VoiceOver: "Round 3, superset, 2 of 3 sets done"). At the right: `Workout` text link → overview sheet (§4).
 3. **Round card** (one round at a time, `bg.surface`, `radius.lg`). A superset round shows `3a` then `3b` stacked, separated by a thin divider. **No box and no connecting line** around supersets (Ben, 20 Oct). The exercise not up next is dimmed (55 %).
 4. `Up next: 4 Lateral raise` line under the card (or `3a + 3b names` for a superset).
-5. Rest bar and undo toast slot (unchanged).
+5. **Rest bar** (only while resting, just above the action bar): `REST 1:29` large tabular · `−30` `+30` `Skip`, with the existing drain line; rest alerts, notification and Live Activity unchanged. The header number stays the elapsed session time. Undo toast slot above it.
 6. **Action bar**: `Chat` + Log pill. Log names the step: `3a · Set 3 · Log 7.5 kg each × 12`, `Set 2 · Log 100 kg × 6`. After a round ends: `Next round`. When the coach ask bar (`apps/mobile/src/ui/coach-ask-bar.tsx`, Wave 2) is on this branch, the Chat button becomes that bar's mic + ✦ entry, same as Today.
 
 ## 2. Exercise block
@@ -23,7 +23,7 @@ Goal: the workout reads like the builder (`workout-builder-v3.md` §2): numbered
   - RPE column: target `@9` until logged, then the logged RPE (or blank).
   - **Pending rows**: kg and reps are boxed cells; tap = edit in place with the keyboard bar (−/+, Next, Done) from the inline-edit fix.
   - **Current set**: same boxed cells as the other pending rows (no row highlight); marked by a bold set number and an accent-outlined ✓.
-  - **Done rows**: values in green without boxes, filled green ✓. Tapping a value still edits it as a versioned correction with Undo (rule 2).
+  - **Done sets fold** (Ben, 20 Oct: "just show the sets need to see"): an exercise's done sets collapse into one green line, e.g. `✓ 4 warm-ups · 100 × 6, 95 × 8, 95 × 8` with `Show` on the right; the table shows only the sets still to do. Column labels hide when nothing is left to do. `Show` expands the done rows (green values without boxes, filled ✓; tapping a value edits it as a versioned correction with Undo, rule 2). This keeps a superset's 3a and 3b, or a main lift with warm-ups, on one screen.
   - Swipe left on a pending row = Delete (Undo). On a done row = Delete with Undo, recorded as a correction. VoiceOver custom actions mirror every swipe.
 - Meta line under the rows: target (`8–12 @ 9`, `6 @ 8 top · 8 @ 8 back-offs`) · `Rest 1:30 ›` (rest per set type; opens the existing rest adjuster) · `Why?`. For a superset, rest shows on the last exercise of the round as `Rest 1:30 after round`; the first shows none. The old `Last 16 Oct: …` subline moves inside Why? together with the target reason.
 - `＋ Set` text link under the meta line.
