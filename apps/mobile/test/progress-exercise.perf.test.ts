@@ -73,9 +73,9 @@ describe('Exercise detail on a 2-year, 416-workout history', () => {
     // 416 sessions in `All` > 150: weekly bests, and the table still lists every session.
     expect(view?.heading.endsWith('· weekly best')).toBe(true);
     expect(view?.table.rows).toHaveLength(416);
-    // Per-hand unilateral volume: 4 working left/right pairs, the busier side each, never both sides added.
+    // Total weight (Ben, 20 Oct: replaces Volume; both sides counted) is plain kg.
     const v = uni.result?.view;
-    expect(v?.axisUnit).toBe('kg each × reps');
+    expect(v?.axisUnit).toBe('kg');
     expect(v?.points.length).toBeGreaterThan(0);
   }, 600_000);
 });
