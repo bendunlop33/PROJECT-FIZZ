@@ -8,13 +8,20 @@ import type { CoachBarStatus } from './builder-view';
  * Coach review on Your workout (workout-builder-v3 §2.9). The coach stream
  * supplies the content through an injected `BuilderReviewProvider` (verdict,
  * suggestions, `For next <day> day` notes, all fact-checked there); this
- * stream renders it. With no provider, or the coach offline or not
- * connected, the sheet shows only what code counts (sets per group, the
- * compound/isolation mix) and the honest status word: no verdict, no
- * suggestions, no notes, never a canned reply (rule 1).
+ * stream renders it. With no provider, a failed review, or the coach
+ * offline or not connected, the sheet shows only what code counts (sets
+ * per group, the compound/isolation mix) and the honest status word: no
+ * verdict, no suggestions, no notes, never a canned reply (rule 1).
+ * `Reviewing…` shows only while a review call is in flight (review B5).
  */
 
-export type BuilderReviewStatus = 'reviewed' | 'pending' | 'offline' | 'not_connected';
+export type BuilderReviewStatus = 'reviewed' | 'reviewing' | 'not_reviewed' | 'offline' | 'not_connected';
+
+/** Why there is no coach review (behind `Why?`). */
+export const REVIEW_WHY = {
+  unavailable: 'Coach review isn’t available in this build.',
+  failed: 'The coach didn’t answer. Try again later.',
+} as const;
 
 /** One suggestion or `Add back` / `Update plan day` line: a proposal with its own button (Undo after). */
 export interface BuilderReviewAction {
@@ -39,6 +46,8 @@ export interface BuilderReview {
   /** `For next Chest day`: ticked by default, saved on Done (Your data). */
   nextNotes: { id: string; text: string; ticked: boolean }[];
   nextNotesTitle: string | null;
+  /** `Not reviewed`: the reason, behind `Why?`. */
+  whyNot?: string | null;
 }
 
 export interface BuilderReviewProvider {
@@ -61,8 +70,34 @@ export function builderReviewProvider(): BuilderReviewProvider | null {
 
 const CORE: readonly BuilderGroup[] = ['Chest', 'Back', 'Shoulders', 'Legs', 'Biceps', 'Triceps', 'Abs'];
 
+/**
+ * The status a review opens with: the coach's own state when it isn't
+ * connected; `not_reviewed` with no provider (nothing will arrive); else
+ * `reviewing` while the call runs.
+ */
+export function reviewStartStatus(coach: CoachBarStatus, hasProvider: boolean): BuilderReviewStatus {
+  if (coach !== 'ok') return coach;
+  return hasProvider ? 'reviewing' : 'not_reviewed';
+}
+
+/**
+ * Coach review on Your workout: the code-only facts at once, then the
+ * provider's review. A missing provider or a failed call ends `Not
+ * reviewed`, never a status that suggests a review is coming (rule 1).
+ */
+export async function runReview(snap: BuilderSnapshot, coach: CoachBarStatus, provider: BuilderReviewProvider | null, show: (r: BuilderReview) => void): Promise<BuilderReview> {
+  const status = reviewStartStatus(coach, provider !== null);
+  const facts = { ...reviewFacts(snap, status), ...(status === 'not_reviewed' ? { whyNot: REVIEW_WHY.unavailable } : {}) };
+  show(facts);
+  if (status !== 'reviewing' || provider === null) return facts;
+  const r = await provider.review(snap.draftId).catch(() => null);
+  const out = r ?? { ...facts, status: 'not_reviewed' as const, whyNot: REVIEW_WHY.failed };
+  show(out);
+  return out;
+}
+
 /** What code counts for the review (§2.9): working sets per group in this workout, and the mix. */
-export function reviewFacts(snap: BuilderSnapshot, status: CoachBarStatus): BuilderReview {
+export function reviewFacts(snap: BuilderSnapshot, status: BuilderReviewStatus): BuilderReview {
   const sets = new Map<BuilderGroup, number>();
   let compound = 0;
   let isolation = 0;
@@ -76,7 +111,7 @@ export function reviewFacts(snap: BuilderSnapshot, status: CoachBarStatus): Buil
   // The day's groups in Set up order, then any other group the workout trains.
   const shown = [...dayGroups, ...CORE.filter((g) => sets.has(g) && !dayGroups.includes(g))];
   return {
-    status: status === 'ok' ? 'pending' : status,
+    status,
     verdict: null,
     counts: shown.map((g) => ({ group: g, sets: sets.get(g) ?? 0, trained: (sets.get(g) ?? 0) > 0 })),
     variety: compound + isolation === 0 ? null : `${String(compound)} compound · ${String(isolation)} isolation`,
@@ -87,12 +122,15 @@ export function reviewFacts(snap: BuilderSnapshot, status: CoachBarStatus): Buil
   };
 }
 
-/** The sheet's header word (§2.9): `● Coach`, `Offline`, `Coach not connected`. */
+/** The sheet's header word (§2.9): `● Coach`, `Reviewing…`, `Not reviewed`, `Offline`, `Coach not connected`. */
 export function reviewHeaderWord(s: BuilderReviewStatus): string {
   switch (s) {
     case 'reviewed':
-    case 'pending':
       return '● Coach';
+    case 'reviewing':
+      return 'Reviewing…';
+    case 'not_reviewed':
+      return 'Not reviewed';
     case 'offline':
       return 'Offline';
     case 'not_connected':

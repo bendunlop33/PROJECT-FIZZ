@@ -441,8 +441,10 @@ export { promptView };
 export function ReviewSheet({ review, visible, onApply, onDone, onClose }: { review: BuilderReview | null; visible: boolean; onApply: (actionId: string) => void; onDone: (ticked: string[]) => void; onClose: () => void }) {
   const theme = useTheme();
   const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [whyOpen, setWhyOpen] = useState(false);
   useEffect(() => {
     setTicked(new Set((review?.nextNotes ?? []).filter((n) => n.ticked).map((n) => n.id)));
+    setWhyOpen(false);
   }, [review]);
   const done = () => {
     onDone([...ticked]);
@@ -455,10 +457,18 @@ export function ReviewSheet({ review, visible, onApply, onDone, onClose }: { rev
             <AppText variant="title2" accessibilityRole="header">
               {WORKOUT_COPY.review}
             </AppText>
-            <AppText variant="label" color="text.secondary">
-              {reviewHeaderWord(review.status)}
-            </AppText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+              <AppText variant="label" color="text.secondary" accessibilityLiveRegion="polite">
+                {reviewHeaderWord(review.status)}
+              </AppText>
+              {review.whyNot != null && !whyOpen ? <TextButton label={WORKOUT_COPY.why} tone="secondary" onPress={() => { setWhyOpen(true); }} /> : null}
+            </View>
           </View>
+          {review.whyNot != null && whyOpen ? (
+            <AppText variant="label" color="text.secondary">
+              {review.whyNot}
+            </AppText>
+          ) : null}
           {review.verdict !== null ? <AppText variant="headline">{review.verdict}</AppText> : null}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {review.counts.map((c) => (

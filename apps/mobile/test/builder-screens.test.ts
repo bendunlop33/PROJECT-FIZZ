@@ -24,7 +24,7 @@ import {
   sameIdentity,
   workoutView,
 } from '../src/builder/builder-view';
-import { countText, reviewFacts, reviewHeaderWord, setBuilderReviewProvider, builderReviewProvider } from '../src/builder/review';
+import { countText, reviewFacts, reviewHeaderWord, runReview, setBuilderReviewProvider, builderReviewProvider, type BuilderReview, type BuilderReviewProvider } from '../src/builder/review';
 
 /**
  * The builder's screens (workout-builder-v3 §2.2–§2.9) through their view
@@ -309,6 +309,30 @@ describe('Start prompt, advice, coach status and review (§2.6, §2.8, §2.9, §
     expect(r.counts.map(countText)).toEqual(['✓ Chest 10', '· Triceps', '✓ Abs 3', '✓ Back 1']);
     expect(r.variety).toBe('3 compound · 2 isolation');
     expect(reviewHeaderWord(reviewFacts(snapshot(W), 'offline').status)).toBe('Offline');
+  });
+
+  it('connected with no provider, or a review that fails: `Not reviewed` with Why?, never `● Coach` (review B5)', async () => {
+    const shown: BuilderReview[] = [];
+    const none = await runReview(snapshot(W), 'ok', null, (r) => shown.push(r));
+    expect(none.status).toBe('not_reviewed');
+    expect(reviewHeaderWord(none.status)).toBe('Not reviewed');
+    expect(none.whyNot).not.toBeNull();
+    expect(shown.map((r) => r.status)).toEqual(['not_reviewed']);
+
+    const failing: BuilderReviewProvider = { review: () => Promise.reject(new Error('down')), apply: () => Promise.resolve({ ok: false, message: 'x' }), saveNotes: () => Promise.resolve({ ok: false }) };
+    shown.length = 0;
+    const failed = await runReview(snapshot(W), 'ok', failing, (r) => shown.push(r));
+    expect(shown.map((r) => reviewHeaderWord(r.status))).toEqual(['Reviewing…', 'Not reviewed']);
+    expect(failed.verdict).toBeNull();
+    expect(failed.suggestions).toEqual([]);
+
+    const good: BuilderReviewProvider = { ...failing, review: () => Promise.resolve({ ...reviewFacts(snapshot(W), 'reviewed'), verdict: 'Balanced' }) };
+    const reviewed = await runReview(snapshot(W), 'ok', good, () => undefined);
+    expect(reviewHeaderWord(reviewed.status)).toBe('● Coach');
+    // Offline: the provider isn't called.
+    let called = false;
+    await runReview(snapshot(W), 'offline', { ...good, review: () => { called = true; return good.review('x'); } }, () => undefined);
+    expect(called).toBe(false);
   });
 });
 

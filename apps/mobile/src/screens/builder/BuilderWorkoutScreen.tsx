@@ -9,7 +9,7 @@ import type { BuilderGroup } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, StartChoice, StartPrompt } from '../../builder/builder-service';
 import { coachBarWord, coachStatusOf, editsFromText, promptView, workoutView, WORKOUT_COPY, type CoachBarStatus, type WorkoutRowView } from '../../builder/builder-view';
-import { builderReviewProvider, reviewFacts, type BuilderReview } from '../../builder/review';
+import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
 import { builderPage, openStartedWorkout } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
@@ -163,12 +163,7 @@ export function BuilderWorkoutScreen() {
 
   async function openReview() {
     if (snap === null) return;
-    const provider = builderReviewProvider();
-    const facts = reviewFacts(snap, coach);
-    setReview(facts);
-    if (provider === null || coach !== 'ok') return;
-    const r = await provider.review(snap.draftId).catch(() => null);
-    if (r !== null) setReview(r);
+    await runReview(snap, coach, builderReviewProvider(), setReview);
   }
 
   const kgStep = async (slotKey: string, value: number | null, dir: 1 | -1): Promise<number | null> => {
