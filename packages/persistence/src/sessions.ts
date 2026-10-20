@@ -1,5 +1,6 @@
 import {
   SessionAggregateSchema,
+  SessionPlanDaySchema,
   type SessionAggregate,
   type SessionExercise,
   type SetAuditEntry,
@@ -42,15 +43,15 @@ export const SESSION_TABLES = [
 
 /**
  * A finished workout as the rotation reads it. `planDay` (v3 §4.2): the plan
- * day it was started as, when it was; Up next credits (planId, splitDayId),
- * and the newest one's `variationId` is the day's last-used variation.
+ * day it was started as, when it was; Up next credits (planId, dayIndex),
+ * and the newest one names the day's last-used template (Q2) and variation.
  */
 export interface FinishedRefRow {
   sessionId: string;
   routineId: string | null;
   startedAtUtc: string;
   tz: string;
-  planDay?: { planId: string; splitDayId: string; variationId: string | null };
+  planDay?: { planId: string; dayIndex: number; splitDayId: string; templateRoutineId: string | null; mainLiftExerciseId: string | null; variationId: string | null };
 }
 
 // ---------------------------------------------------------------------------
@@ -524,7 +525,7 @@ async function closeDraftsOnStart(tx: SqlExecutor, a: SessionAggregate): Promise
   const at = a.session.lastActivityAtUtc;
   // A coach draft it starts from becomes `started` with this session (workout-builder §6.3); one closed since: stale.
   const coach = a.session.coachDraft;
-  if (coach !== undefined && !(await startWorkoutDraftIn(tx, coach.draftId, owner, a.session.id, startedAt))) return false;
+  if (coach !== undefined && !(await startWorkoutDraftIn(tx, coach.draftId, owner, a.session.id, startedAt)).ok) return false;
   const from = a.session.todayEdits?.draftId ?? null;
   if (from !== null) {
     const row = await tx.getFirst<{ status: string; owner_id: string; expires_at_utc: string; version: number }>('SELECT status, owner_id, expires_at_utc, version FROM pre_start_drafts WHERE id = ?', [from]);
@@ -821,22 +822,26 @@ export class SqliteSessions implements SessionRepository {
     const source = opts.includeImported === true ? '' : ` AND s.source = 'manual'`;
     return this.db.read(async (q) =>
       (
-        await q.getAll<{ id: string; routine_id: string | null; started_at_utc: string; started_at_tz: string; plan_id: string | null; split_day_id: string | null; variation_id: string | null }>(
-          `SELECT s.id, s.routine_id, s.started_at_utc, s.started_at_tz,
-                  json_extract(s.plan_day, '$.planId') AS plan_id, json_extract(s.plan_day, '$.splitDayId') AS split_day_id, json_extract(s.plan_day, '$.variationId') AS variation_id
+        await q.getAll<{ id: string; routine_id: string | null; started_at_utc: string; started_at_tz: string; plan_day: string | null }>(
+          `SELECT s.id, s.routine_id, s.started_at_utc, s.started_at_tz, s.plan_day
            FROM sessions s
            WHERE s.owner_id = ? AND ${inHistorySql('s')}${source}
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ?`,
           [ownerId, limit],
         )
-      ).map((r) => ({
-        sessionId: r.id,
-        routineId: r.routine_id,
-        startedAtUtc: r.started_at_utc,
-        tz: r.started_at_tz,
-        ...(r.plan_id === null || r.split_day_id === null ? {} : { planDay: { planId: r.plan_id, splitDayId: r.split_day_id, variationId: r.variation_id } }),
-      })),
+      ).map((r) => {
+        const p = r.plan_day === null ? null : SessionPlanDaySchema.safeParse(JSON.parse(r.plan_day));
+        return {
+          sessionId: r.id,
+          routineId: r.routine_id,
+          startedAtUtc: r.started_at_utc,
+          tz: r.started_at_tz,
+          ...(p?.success === true
+            ? { planDay: { planId: p.data.planId, dayIndex: p.data.dayIndex, splitDayId: p.data.splitDayId, templateRoutineId: p.data.templateRoutineId, mainLiftExerciseId: p.data.mainLiftExerciseId ?? null, variationId: p.data.variationId } }
+            : {}),
+        };
+      }),
     );
   }
 

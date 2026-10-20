@@ -132,6 +132,7 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
           const r = row === null ? null : decodeDocument(ROUTINE_SPEC, row);
           routines.set(id, r !== null && r.ownerId === ownerId ? r : null);
         }
+        await addPlanTemplates(tx, ownerId, planId, routines);
         const plans = new Map<string, PlanDraft | null>();
         for (const s of current.applied?.superseded ?? []) {
           const o = await getPlanDraftIn(tx, s.planId);
@@ -179,6 +180,7 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
           const r = row === null ? null : decodeDocument(ROUTINE_SPEC, row);
           routines.set(id, r !== null && r.ownerId === ownerId ? r : null);
         }
+        await addPlanTemplates(tx, ownerId, planId, routines);
         const other = await tx.getFirst("SELECT id FROM plan_drafts WHERE owner_id = ? AND status = 'applied' AND id != ?", [ownerId, planId]);
         const c = make(current, routines, other !== null);
         switch (c.kind) {
@@ -242,4 +244,14 @@ export class SqlitePlanDrafts extends DocumentRepository<PlanDraft> {
       return closed;
     });
   }
+}
+
+/**
+ * (v3 §4.2, review b3-data S4) The plan's live templates its Apply didn't
+ * make (saved for it since, e.g. a new main lift from the builder): Undo
+ * deletes them and End takes them out of the rotation with the plan's own.
+ */
+async function addPlanTemplates(tx: SqlExecutor, ownerId: string, planId: string, routines: Map<string, Routine | null>): Promise<void> {
+  const rows = await listDocuments(tx, ROUTINE_SPEC, "owner_id = ? AND json_extract(data, '$.planDay.planId') = ? AND json_extract(data, '$.deletedAtUtc') IS NULL", [ownerId, planId]);
+  for (const r of rows) if (!routines.has(r.id)) routines.set(r.id, r);
 }

@@ -17,7 +17,7 @@ import {
   type Routine,
   type UserProfile,
 } from '@fizz/schemas';
-import type { SaveResult } from '@fizz/domain';
+import { planDayKeyOf, type PlanDayKeySplit, type SaveResult } from '@fizz/domain';
 import type { z } from 'zod';
 import type { Database } from './database';
 import type { SqlExecutor, SqlRow, SqlValue } from './driver';
@@ -46,11 +46,14 @@ export const EQUIPMENT_SPEC: DocumentSpec<EquipmentInstance> = {
 export const EXERCISE_SPEC: DocumentSpec<Exercise> = { table: 'exercises', schema: ExerciseSchema, columns: (e) => ({ owner_id: e.ownerId }) };
 export const ROUTINE_SPEC: DocumentSpec<Routine> = { table: 'routines', schema: RoutineSchema, columns: (r) => ({ owner_id: r.ownerId }) };
 
-/** A live template's key (planId, splitDayId, main lift); null for every other routine and a deleted template. */
+/** A live template's key (planId, dayIndex, main lift); null for every other routine and a deleted template. */
 export const routinePlanDayKey = (r: Routine): string | null => (r.planDay === undefined || (r.deletedAtUtc ?? null) !== null ? null : planDayTemplateKey(r.planDay));
 
 /** SQL over `routines.data` matching the unique index `routines_plan_day` (migration 30): a live template with this key. */
-const LIVE_TEMPLATE_SQL = "json_extract(data, '$.planDay') IS NOT NULL AND json_extract(data, '$.deletedAtUtc') IS NULL AND json_extract(data, '$.planDay.planId') = ? AND json_extract(data, '$.planDay.splitDayId') = ? AND coalesce(json_extract(data, '$.planDay.mainLiftExerciseId'), '-') = ?";
+const LIVE_TEMPLATE_SQL = "json_extract(data, '$.planDay') IS NOT NULL AND json_extract(data, '$.deletedAtUtc') IS NULL AND json_extract(data, '$.planDay.planId') = ? AND json_extract(data, '$.planDay.dayIndex') = ? AND coalesce(json_extract(data, '$.planDay.mainLiftExerciseId'), '-') = ?";
+
+/** SQL over `routines.data`: a live plan workout made before v3 (no `planDay`) for this plan and day index. */
+const LIVE_LEGACY_PLAN_DAY_SQL = "json_extract(data, '$.planDay') IS NULL AND json_extract(data, '$.deletedAtUtc') IS NULL AND json_extract(data, '$.createdFromPlan.planId') = ? AND json_extract(data, '$.createdFromPlan.dayIndex') = ?";
 export const PROGRESSION_RULE_SPEC: DocumentSpec<ProgressionRule> = {
   table: 'progression_rules',
   schema: ProgressionRuleSchema,
@@ -261,20 +264,37 @@ export class SqliteExercises extends DocumentRepository<Exercise> {
   }
 }
 
-/** A template write: saved, a stale version (rule 5), or another live template already holds the key (§4.2). */
+/**
+ * A template write: saved, a stale version (rule 5), or another live
+ * template already holds the key (§4.2). `existingId` names it: for a plan
+ * workout made before v3 (no `planDay` yet), the caller updates that routine,
+ * adding `planDay`, rather than creating a second one.
+ */
 export type TemplateSaveResult = SaveResult | { ok: false; error: 'duplicate_template'; existingId: string };
 
 /**
  * Save a routine inside a caller's transaction, refusing a second live
- * template for the same (plan, split day, main lift) with a result rather
+ * template for the same (plan, day index, main lift) with a result rather
  * than the unique index's error (workout-builder v3 §4.2). The atomic
  * Start (§4.6) calls this in the session's own transaction.
+ *
+ * The index sees only templates that store `planDay`; a plan workout made
+ * before v3 has its key derived when read (`planDayKeyOf`). So this also
+ * refuses a template whose key a live older plan workout derives to
+ * (review b3-data S3). `split`: the Profile's split and main lifts, which
+ * that derivation reads (the main lift of an older workout with no main
+ * exercise of its own).
  */
-export async function saveRoutineTemplateIn(tx: SqlExecutor, record: Routine, expectedVersion: number | null): Promise<TemplateSaveResult> {
+export async function saveRoutineTemplateIn(tx: SqlExecutor, record: Routine, expectedVersion: number | null, split: PlanDayKeySplit): Promise<TemplateSaveResult> {
   const p = record.planDay;
   if (p !== undefined && (record.deletedAtUtc ?? null) === null) {
-    const other = await tx.getFirst<{ id: string }>(`SELECT id FROM routines WHERE owner_id = ? AND id <> ? AND ${LIVE_TEMPLATE_SQL}`, [record.ownerId, record.id, p.planId, p.splitDayId, p.mainLiftExerciseId ?? '-']);
+    const main = p.mainLiftExerciseId ?? '-';
+    const other = await tx.getFirst<{ id: string }>(`SELECT id FROM routines WHERE owner_id = ? AND id <> ? AND ${LIVE_TEMPLATE_SQL}`, [record.ownerId, record.id, p.planId, p.dayIndex, main]);
     if (other !== null) return { ok: false, error: 'duplicate_template', existingId: other.id };
+    for (const r of await listDocuments(tx, ROUTINE_SPEC, `owner_id = ? AND id <> ? AND ${LIVE_LEGACY_PLAN_DAY_SQL}`, [record.ownerId, record.id, p.planId, p.dayIndex])) {
+      const key = planDayKeyOf(r, split.split, split.mainLifts);
+      if (key !== null && (key.mainLiftExerciseId ?? '-') === main) return { ok: false, error: 'duplicate_template', existingId: r.id };
+    }
   }
   return saveDocumentIn(tx, ROUTINE_SPEC, record, expectedVersion);
 }
@@ -292,15 +312,15 @@ export class SqliteRoutines extends DocumentRepository<Routine> {
     return this.listWhere("owner_id = ? AND json_extract(data, '$.planDay.planId') = ? AND json_extract(data, '$.deletedAtUtc') IS NULL", [ownerId, planId]);
   }
 
-  /** The live template for (plan, split day, main lift), if any. */
-  async templateFor(ownerId: string, key: { planId: string; splitDayId: string; mainLiftExerciseId: string | null }): Promise<Routine | null> {
-    const rows = await this.listWhere(`owner_id = ? AND ${LIVE_TEMPLATE_SQL}`, [ownerId, key.planId, key.splitDayId, key.mainLiftExerciseId ?? '-']);
+  /** The live template (storing `planDay`) for (plan, day index, main lift), if any. */
+  async templateFor(ownerId: string, key: { planId: string; dayIndex: number; mainLiftExerciseId: string | null }): Promise<Routine | null> {
+    const rows = await this.listWhere(`owner_id = ? AND ${LIVE_TEMPLATE_SQL}`, [ownerId, key.planId, key.dayIndex, key.mainLiftExerciseId ?? '-']);
     return rows[0] ?? null;
   }
 
-  /** `save`, with the one-template-per-key check in the same transaction. */
-  saveTemplate(record: Routine, expectedVersion: number | null): Promise<TemplateSaveResult> {
-    return this.db.write((tx) => saveRoutineTemplateIn(tx, record, expectedVersion));
+  /** `save`, with the one-template-per-key check (older plan workouts included) in the same transaction. */
+  saveTemplate(record: Routine, expectedVersion: number | null, split: PlanDayKeySplit): Promise<TemplateSaveResult> {
+    return this.db.write((tx) => saveRoutineTemplateIn(tx, record, expectedVersion, split));
   }
 }
 

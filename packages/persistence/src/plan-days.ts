@@ -1,4 +1,4 @@
-import { mainLiftKey, PLAN_DAY_LIMITS, PlanDayVariationSchema, REVIEW_LIMITS, ReviewSchema, reviewSubjectKey, type PlanDayVariation, type Review, type ReviewKind, type ReviewSubject } from '@fizz/schemas';
+import { mainLiftKey, PLAN_DAY_LIMITS, PlanDayVariationSchema, REVIEW_LIMITS, reviewCoachSettled, TrainingReviewSchema, reviewSubjectKey, type PlanDayVariation, type TrainingReview, type ReviewKind, type ReviewSubject } from '@fizz/schemas';
 import type { Database } from './database';
 import { decodeDocument, DocumentRepository, erase, listDocuments, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor } from './driver';
@@ -20,9 +20,9 @@ export const PLAN_DAY_VARIATION_SPEC: DocumentSpec<PlanDayVariation> = {
   columns: (v) => ({ owner_id: v.ownerId, split_day_id: v.splitDayId, main_lift_key: mainLiftKey(v.mainLiftExerciseId), deleted: v.deletedAtUtc === null ? 0 : 1 }),
 };
 
-export const REVIEW_SPEC: DocumentSpec<Review> = {
+export const REVIEW_SPEC: DocumentSpec<TrainingReview> = {
   table: 'reviews',
-  schema: ReviewSchema,
+  schema: TrainingReviewSchema,
   columns: (r) => ({ owner_id: r.ownerId, kind: r.subject.kind, subject_key: reviewSubjectKey(r.subject), status: r.status }),
 };
 
@@ -96,51 +96,56 @@ export class SqlitePlanDayVariations extends DocumentRepository<PlanDayVariation
 
 /**
  * A review write. `unchanged`: the current review for the subject was made
- * from the same inputs, so nothing ran again (§6.1: re-run only when the
- * inputs change); it is returned as stored.
+ * from the same inputs and its coach part is settled (`reviewed` or
+ * `silent`), so nothing runs again (§6.1: re-run only when the inputs
+ * change); it is returned as stored. `retry_coach`: the same inputs, but the
+ * coach part never arrived (`pending`, `offline`, `not_connected`,
+ * `failed`): nothing is written, and the caller runs the coach and stores its
+ * part with `update` at the returned review's version (review b3-data S5).
  */
 export type ReviewWrite =
-  | { status: 'written' | 'replayed' | 'unchanged'; review: Review }
-  | { status: 'stale'; review: Review | null }
+  | { status: 'written' | 'replayed' | 'unchanged' | 'retry_coach'; review: TrainingReview }
+  | { status: 'stale'; review: TrainingReview | null }
   | { status: 'invalid'; reason: string };
 
-async function getReviewIn(q: SqlExecutor, id: string): Promise<Review | null> {
+async function getReviewIn(q: SqlExecutor, id: string): Promise<TrainingReview | null> {
   const row = await q.getFirst('SELECT * FROM reviews WHERE id = ?', [id]);
   return row ? decodeDocument(REVIEW_SPEC, row) : null;
 }
 
-async function currentReviewIn(q: SqlExecutor, ownerId: string, subject: ReviewSubject): Promise<Review | null> {
+async function currentReviewIn(q: SqlExecutor, ownerId: string, subject: ReviewSubject): Promise<TrainingReview | null> {
   const row = await q.getFirst("SELECT * FROM reviews WHERE owner_id = ? AND kind = ? AND subject_key = ? AND status = 'current'", [ownerId, subject.kind, reviewSubjectKey(subject)]);
   return row ? decodeDocument(REVIEW_SPEC, row) : null;
 }
 
-export class SqliteReviews extends DocumentRepository<Review> {
+export class SqliteReviews extends DocumentRepository<TrainingReview> {
   constructor(db: Database) {
     super(db, REVIEW_SPEC);
   }
 
   /** The current review of a subject, if any. */
-  current(ownerId: string, subject: ReviewSubject): Promise<Review | null> {
+  current(ownerId: string, subject: ReviewSubject): Promise<TrainingReview | null> {
     return this.db.read((q) => currentReviewIn(q, ownerId, subject));
   }
 
   /** Current reviews of one kind, newest first (Progress › Reviews history). */
-  async listCurrent(ownerId: string, kind: ReviewKind, limit: number): Promise<Review[]> {
+  async listCurrent(ownerId: string, kind: ReviewKind, limit: number): Promise<TrainingReview[]> {
     const rows = await this.listWhere("owner_id = ? AND kind = ? AND status = 'current'", [ownerId, kind]);
     return rows.sort((a, b) => (a.createdAt.utc < b.createdAt.utc ? 1 : a.createdAt.utc > b.createdAt.utc ? -1 : 0)).slice(0, limit);
   }
 
-  listByOwner(ownerId: string): Promise<Review[]> {
+  listByOwner(ownerId: string): Promise<TrainingReview[]> {
     return this.listWhere('owner_id = ?', [ownerId]);
   }
 
   /**
    * A new review of its subject, version 1, `current`. In one transaction:
-   * a retry replays; the same inputs as the current one is `unchanged`;
-   * otherwise the current one becomes `superseded` (naming this one) and
-   * this one is written.
+   * a retry replays; the same inputs as the current one is `unchanged` when
+   * its coach part is settled, else `retry_coach` (fill it in with
+   * `update`); otherwise the current one becomes `superseded` (naming this
+   * one) and this one is written.
    */
-  record(ownerId: string, review: Review): Promise<ReviewWrite> {
+  record(ownerId: string, review: TrainingReview): Promise<ReviewWrite> {
     if (review.ownerId !== ownerId) return Promise.resolve({ status: 'invalid', reason: 'owner' });
     if (review.status !== 'current' || review.version !== 1) return Promise.resolve({ status: 'invalid', reason: 'a new review is current, version 1' });
     return this.db.write(async (tx): Promise<ReviewWrite> => {
@@ -148,8 +153,8 @@ export class SqliteReviews extends DocumentRepository<Review> {
       if (same !== null) return same.ownerId === ownerId && same.opIds.some((o) => review.opIds.includes(o)) ? { status: 'replayed', review: same } : { status: 'invalid', reason: 'id taken' };
       const current = await currentReviewIn(tx, ownerId, review.subject);
       if (current !== null) {
-        if (current.inputsHash === review.inputsHash) return { status: 'unchanged', review: current };
-        const old: Review = { ...current, status: 'superseded', supersededById: review.id, version: current.version + 1, updatedAtUtc: review.updatedAtUtc, opIds: [...current.opIds, ...review.opIds].slice(-REVIEW_LIMITS.maxOpIds) };
+        if (current.inputsHash === review.inputsHash) return { status: reviewCoachSettled(current.coach) ? 'unchanged' : 'retry_coach', review: current };
+        const old: TrainingReview = { ...current, status: 'superseded', supersededById: review.id, version: current.version + 1, updatedAtUtc: review.updatedAtUtc, opIds: [...current.opIds, ...review.opIds].slice(-REVIEW_LIMITS.maxOpIds) };
         if (!(await saveDocumentIn(tx, REVIEW_SPEC, old, current.version)).ok) return { status: 'stale', review: current };
       }
       const r = await saveDocumentIn(tx, REVIEW_SPEC, review, null);
@@ -163,7 +168,7 @@ export class SqliteReviews extends DocumentRepository<Review> {
    * `pending` → `reviewed`), at the version expected (rule 5). `opId` must
    * be in `next.opIds`; a retry replays.
    */
-  update(ownerId: string, next: Review, expectedVersion: number, opId: string): Promise<ReviewWrite> {
+  update(ownerId: string, next: TrainingReview, expectedVersion: number, opId: string): Promise<ReviewWrite> {
     if (next.ownerId !== ownerId) return Promise.resolve({ status: 'invalid', reason: 'owner' });
     if (!next.opIds.includes(opId)) return Promise.resolve({ status: 'invalid', reason: 'op ID not recorded' });
     return this.db.write(async (tx): Promise<ReviewWrite> => {

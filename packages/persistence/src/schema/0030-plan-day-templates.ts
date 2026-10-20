@@ -5,16 +5,19 @@
  * released.
  *
  * - `routines_plan_day`: a unique expression index over a live template's
- *   `planDay` (planId, splitDayId, main lift), so "one template per key"
+ *   `planDay` (planId, dayIndex, main lift), so "one template per key"
  *   holds inside every write transaction, whichever path writes it. No
  *   column: existing rows have no `planDay` (their key is derived when
  *   read, never written on read), so nothing to backfill and every routine
- *   path writes exactly as before.
+ *   path writes exactly as before. A plan day is (plan, day index), not its
+ *   split day: a plan may use a split day twice (Push/Pull/Legs/Push), and
+ *   each of those days has its own templates (review b3-data B1).
  * - `workout_drafts_open_builder`: likewise, one **open** builder draft per
- *   (owner, plan, split day, main lift, local date), resumed on reopen.
+ *   (owner, plan, day index, split day, main lift, local date), resumed on
+ *   reopen.
  *   Coach drafts have no `builderKey` and stay outside it.
  * - `sessions.plan_day`: the plan day a workout was started as (Up next
- *   credits plan + split day). NULL on every existing workout (they fall
+ *   credits plan + day index). NULL on every existing workout (they fall
  *   back to `routine_id`).
  * - `plan_day_variations`: saved variations, keyed by split day and main
  *   lift, not by plan (Your data). Tombstoned, so Undo of a delete works.
@@ -30,13 +33,14 @@ export const MIGRATION_0030 = `
 CREATE UNIQUE INDEX routines_plan_day ON routines (
   owner_id,
   json_extract(data, '$.planDay.planId'),
-  json_extract(data, '$.planDay.splitDayId'),
+  json_extract(data, '$.planDay.dayIndex'),
   coalesce(json_extract(data, '$.planDay.mainLiftExerciseId'), '-')
 ) WHERE json_extract(data, '$.planDay') IS NOT NULL AND json_extract(data, '$.deletedAtUtc') IS NULL;
 
 CREATE UNIQUE INDEX workout_drafts_open_builder ON workout_drafts (
   owner_id,
   coalesce(json_extract(data, '$.builderKey.planId'), '-'),
+  coalesce(json_extract(data, '$.builderKey.dayIndex'), -1),
   coalesce(json_extract(data, '$.builderKey.splitDayId'), '-'),
   coalesce(json_extract(data, '$.builderKey.mainLiftExerciseId'), '-'),
   json_extract(data, '$.builderKey.localDate')

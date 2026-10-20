@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applyPlan, currentPlanVersion, endPlan, newPlanDraft, undoPlanApply } from '@fizz/domain';
+import { applyPlan, currentPlanVersion, endPlan, newPlanDraft, undoEndPlan, undoPlanApply, type PlanDayKeySplit } from '@fizz/domain';
 import { at, hotelFixture, id, OWNER, profile, richFinishedSession } from '@fizz/domain/testing';
 import {
+  ActionRecordSchema,
+  hideDayNoteOn,
   RoutineSchema,
   type ActionRecord,
+  type Memory,
   type BuilderDraftKey,
   type PlanDayVariation,
   type PlanDraft,
   type PlanDraftVersion,
-  type Review,
+  type TrainingReview,
   type Routine,
   type WorkoutDraft,
   type WorkoutDraftVersion,
@@ -37,7 +40,8 @@ import { memoryDriver, tempDir, withoutSchema30 } from './helpers';
 
 /**
  * Workout builder v3, slice S1 in SQLite (migration 30; Ben approved 20 Oct):
- * one template per (plan, split day, main lift) inside the write; variations
+ * one template per (plan, day index, main lift) inside the write, older plan
+ * workouts included; variations
  * keyed by split day + main lift (max 5, Undo, survive a plan's Undo and End,
  * carried to a new plan); one open builder draft per key and date, empty
  * while open, never started empty; session plan-day provenance; reviews with
@@ -77,10 +81,13 @@ function template(n: number, over: Partial<Routine> = {}): Routine {
     name: 'Chest · bench',
     exercises: [{ id: id(n + 1), exerciseId: BENCH, equipmentId: null, order: 0, supersetGroup: null, setTemplates: [{ id: id(n + 2), setType: 'working', targetLoad: null, targetReps: { min: 6, max: 8 }, targetDurationS: null, targetRpe: 8, targetRir: null, restOverrideS: null }], restBySetType: {}, transitionRestS: null, progressionRuleId: null, main: true }],
     source: 'coach',
-    planDay: { planId: PLAN, splitDayId: 'chest', mainLiftExerciseId: BENCH, minutes: 60 },
+    planDay: { planId: PLAN, dayIndex: 0, splitDayId: 'chest', mainLiftExerciseId: BENCH, minutes: 60 },
     ...over,
   });
 }
+
+/** No Profile split: an older plan workout's main lift is its own main exercise. */
+const NO_SPLIT: PlanDayKeySplit = { split: null };
 
 function variation(n: number, over: Partial<PlanDayVariation> = {}): PlanDayVariation {
   return {
@@ -99,7 +106,7 @@ function variation(n: number, over: Partial<PlanDayVariation> = {}): PlanDayVari
   };
 }
 
-const KEY: BuilderDraftKey = { planId: PLAN, splitDayId: 'chest', mainLiftExerciseId: BENCH, localDate: '2026-10-08' };
+const KEY: BuilderDraftKey = { planId: PLAN, dayIndex: 0, splitDayId: 'chest', mainLiftExerciseId: BENCH, localDate: '2026-10-08' };
 
 function builderVersion(slots: WorkoutDraftVersion['plan']['slots']): WorkoutDraftVersion {
   return {
@@ -144,7 +151,7 @@ function builderDraft(n: number, slots: WorkoutDraftVersion['plan']['slots'] = [
   };
 }
 
-function review(n: number, inputsHash: string, over: Partial<Review> = {}): Review {
+function review(n: number, inputsHash: string, over: Partial<TrainingReview> = {}): TrainingReview {
   return {
     id: id(n),
     ownerId: OWNER,
@@ -238,30 +245,71 @@ describe('migration 30 in place on a schema-29 database', () => {
   });
 });
 
-describe('templates: one per (plan, split day, main lift) inside the write (§4.2)', () => {
+describe('templates: one per (plan, day index, main lift) inside the write (§4.2)', () => {
+  const chest = (mainLiftExerciseId: string, minutes = 60, dayIndex = 0) => ({ planId: PLAN, dayIndex, splitDayId: 'chest', mainLiftExerciseId, minutes });
+
   it('two main lifts per day; a second Chest · bench is refused; deleting frees the key; another plan has its own', async () => {
     const store = await openStore(memoryDriver());
     await store.repos.profiles.save(profile(), null);
     const r = store.repos.routines;
-    expect(await r.saveTemplate(template(9000), null)).toMatchObject({ ok: true });
-    expect(await r.saveTemplate(template(9010, { name: 'Chest · incline', planDay: { planId: PLAN, splitDayId: 'chest', mainLiftExerciseId: INCLINE, minutes: 55 } }), null)).toMatchObject({ ok: true });
-    expect(await r.saveTemplate(template(9020), null)).toEqual({ ok: false, error: 'duplicate_template', existingId: id(9000) });
+    expect(await r.saveTemplate(template(9000), null, NO_SPLIT)).toMatchObject({ ok: true });
+    expect(await r.saveTemplate(template(9010, { name: 'Chest · incline', planDay: chest(INCLINE, 55) }), null, NO_SPLIT)).toMatchObject({ ok: true });
+    expect(await r.saveTemplate(template(9020), null, NO_SPLIT)).toEqual({ ok: false, error: 'duplicate_template', existingId: id(9000) });
     // Any other path is held by the unique index: the write fails, nothing is stored.
     await expect(r.save(template(9020), null)).rejects.toThrow(/UNIQUE/);
     expect(await r.get(id(9020))).toBeNull();
     // Re-saving the same template (a new version) is fine.
-    expect(await r.saveTemplate({ ...template(9000), version: 2, planDay: { planId: PLAN, splitDayId: 'chest', mainLiftExerciseId: BENCH, minutes: 50 } }, 1)).toMatchObject({ ok: true });
+    expect(await r.saveTemplate({ ...template(9000), version: 2, planDay: chest(BENCH, 50) }, 1, NO_SPLIT)).toMatchObject({ ok: true });
     expect((await r.listTemplates(OWNER, PLAN)).map((x) => x.name).sort()).toEqual(['Chest · bench', 'Chest · incline']);
-    expect((await r.templateFor(OWNER, { planId: PLAN, splitDayId: 'chest', mainLiftExerciseId: INCLINE }))?.id).toBe(id(9010));
-    expect(await r.templateFor(OWNER, { planId: PLAN, splitDayId: 'legs', mainLiftExerciseId: null })).toBeNull();
+    expect((await r.templateFor(OWNER, { planId: PLAN, dayIndex: 0, mainLiftExerciseId: INCLINE }))?.id).toBe(id(9010));
+    expect(await r.templateFor(OWNER, { planId: PLAN, dayIndex: 1, mainLiftExerciseId: null })).toBeNull();
     // A deleted template frees the key.
-    expect(await r.saveTemplate({ ...template(9000), version: 3, deletedAtUtc: at(10).utc }, 2)).toMatchObject({ ok: true });
-    expect(await r.saveTemplate(template(9020), null)).toMatchObject({ ok: true });
+    expect(await r.saveTemplate({ ...template(9000), version: 3, deletedAtUtc: at(10).utc }, 2, NO_SPLIT)).toMatchObject({ ok: true });
+    expect(await r.saveTemplate(template(9020), null, NO_SPLIT)).toMatchObject({ ok: true });
     // The same day under another plan is another key.
-    expect(await r.saveTemplate(template(9030, { planDay: { planId: PLAN_2, splitDayId: 'chest', mainLiftExerciseId: BENCH, minutes: 60 } }), null)).toMatchObject({ ok: true });
+    expect(await r.saveTemplate(template(9030, { planDay: { ...chest(BENCH), planId: PLAN_2 } }), null, NO_SPLIT)).toMatchObject({ ok: true });
     // A stale version is refused as before (rule 5).
-    expect(await r.saveTemplate({ ...template(9010, { planDay: { planId: PLAN, splitDayId: 'chest', mainLiftExerciseId: INCLINE, minutes: 55 } }), version: 2 }, 5)).toMatchObject({ ok: false, error: 'conflict' });
+    expect(await r.saveTemplate({ ...template(9010, { planDay: chest(INCLINE, 55) }), version: 2 }, 5, NO_SPLIT)).toMatchObject({ ok: false, error: 'conflict' });
     expect((await checkIntegrity(store.db)).ok).toBe(true);
+    await store.close();
+  });
+
+  it('(B1) a split day the plan uses twice: Push · bench on days 1 and 4 are two templates', async () => {
+    const store = await openStore(memoryDriver());
+    await store.repos.profiles.save(profile(), null);
+    const r = store.repos.routines;
+    const push = (n: number, dayIndex: number) => template(n, { name: 'Push · bench', planDay: { planId: PLAN, dayIndex, splitDayId: 'push', mainLiftExerciseId: BENCH, minutes: 60 } });
+    expect(await r.saveTemplate(push(9040, 0), null, NO_SPLIT)).toMatchObject({ ok: true });
+    expect(await r.saveTemplate(push(9050, 3), null, NO_SPLIT)).toMatchObject({ ok: true });
+    expect(await r.saveTemplate(push(9060, 3), null, NO_SPLIT)).toEqual({ ok: false, error: 'duplicate_template', existingId: id(9050) });
+    await expect(r.save(push(9060, 0), null)).rejects.toThrow(/UNIQUE/);
+    expect((await r.templateFor(OWNER, { planId: PLAN, dayIndex: 3, mainLiftExerciseId: BENCH }))?.id).toBe(id(9050));
+    await store.close();
+  });
+
+  it('(S3) an older plan workout holds its derived key: a new template for it is refused, naming it to update', async () => {
+    const store = await openStore(memoryDriver());
+    await store.repos.profiles.save(profile(), null);
+    await appliedPlan(store, PLAN);
+    const routines = await store.repos.routines.listByOwner(OWNER);
+    const day0 = routines.find((x) => x.createdFromPlan?.dayIndex === 0);
+    if (day0 === undefined) throw new Error('no day 0');
+    const r = store.repos.routines;
+    // Day 0 (Chest, main exercise bench) derives (PLAN, 0, bench): a second Chest · bench is refused.
+    expect(await r.saveTemplate(template(9070), null, NO_SPLIT)).toEqual({ ok: false, error: 'duplicate_template', existingId: day0.id });
+    // Another main lift on that day, and bench on the other day, are free.
+    expect(await r.saveTemplate(template(9071, { planDay: chest(INCLINE) }), null, NO_SPLIT)).toMatchObject({ ok: true });
+    // The older workout itself takes its `planDay` (the caller's update), and then holds the key in the index.
+    expect(await r.saveTemplate({ ...day0, version: day0.version + 1, planDay: chest(BENCH) }, day0.version, NO_SPLIT)).toMatchObject({ ok: true });
+    await expect(r.save(template(9072), null)).rejects.toThrow(/UNIQUE/);
+    // With no main exercise of its own, the Profile's main lift for the day decides.
+    const day1 = routines.find((x) => x.createdFromPlan?.dayIndex === 1);
+    if (day1 === undefined) throw new Error('no day 1');
+    const plainDay1 = { ...day1, version: day1.version + 1, exercises: day1.exercises.map((e) => ({ ...e, main: false })) };
+    expect(await r.save(plainDay1, day1.version)).toMatchObject({ ok: true });
+    const legsSquat = template(9073, { planDay: { planId: PLAN, dayIndex: 1, splitDayId: 'legs', mainLiftExerciseId: INCLINE, minutes: 60 } });
+    expect(await r.saveTemplate(legsSquat, null, { split: null, mainLifts: { legs: INCLINE } })).toEqual({ ok: false, error: 'duplicate_template', existingId: day1.id });
+    expect(await r.saveTemplate(legsSquat, null, { split: null, mainLifts: { legs: BENCH } })).toMatchObject({ ok: true });
     await store.close();
   });
 });
@@ -314,6 +362,37 @@ describe('variations (§4.3, Q10)', () => {
   });
 });
 
+describe('templates saved for a plan after Apply (review b3-data S4)', () => {
+  const incline = () => template(9080, { name: 'Chest · incline', planDay: { planId: PLAN, dayIndex: 0, splitDayId: 'chest', mainLiftExerciseId: INCLINE, minutes: 55 } });
+
+  it('plan Undo deletes them with the plan’s own; variations stay', async () => {
+    const store = await openStore(memoryDriver());
+    await store.repos.profiles.save(profile(), null);
+    await appliedPlan(store, PLAN);
+    expect(await store.repos.routines.saveTemplate(incline(), null, NO_SPLIT)).toMatchObject({ ok: true });
+    expect(await store.repos.planDayVariations.saveVariation(OWNER, variation(9601), null, 'save-9601')).toMatchObject({ status: 'written' });
+    expect(await store.repos.planDrafts.undo(OWNER, PLAN, (c, routines) => undoPlanApply(c, { expectedVersion: 2, opId: 'undo-plan', at: at(200), routines }))).toMatchObject({ status: 'written' });
+    expect((await store.repos.routines.get(id(9080)))?.deletedAtUtc).not.toBeNull();
+    expect(await store.repos.routines.listTemplates(OWNER, PLAN)).toEqual([]);
+    expect(await store.repos.planDayVariations.listFor(OWNER, 'chest', BENCH)).toHaveLength(1);
+    await store.close();
+  });
+
+  it('End takes them out of the rotation with the plan’s own; its Undo puts them back', async () => {
+    const store = await openStore(memoryDriver());
+    await store.repos.profiles.save(profile(), null);
+    await appliedPlan(store, PLAN);
+    expect(await store.repos.routines.saveTemplate(incline(), null, NO_SPLIT)).toMatchObject({ ok: true });
+    expect(await store.repos.planDrafts.endOrResume(OWNER, PLAN, (c, routines) => endPlan(c, { expectedVersion: 2, opId: 'end-plan', at: at(300), routines }))).toMatchObject({ status: 'written' });
+    const ended = await store.repos.routines.get(id(9080));
+    expect(ended).toMatchObject({ inRotation: false, version: 2 });
+    expect((await store.repos.planDrafts.get(PLAN))?.ended?.rotationOff.map((o) => o.routineId)).toContain(id(9080));
+    expect(await store.repos.planDrafts.endOrResume(OWNER, PLAN, (c, routines, otherApplied) => undoEndPlan(c, { expectedVersion: 3, opId: 'undo-end', at: at(400), routines, otherApplied }))).toMatchObject({ status: 'written' });
+    expect((await store.repos.routines.get(id(9080)))?.inRotation).toBe(true);
+    await store.close();
+  });
+});
+
 describe('builder drafts (§4.4)', () => {
   it('one open draft per key and date, resumed; empty while open; Start refuses it empty; started frees the key', async () => {
     const store = await openStore(memoryDriver());
@@ -327,18 +406,23 @@ describe('builder drafts (§4.4)', () => {
     // Another main lift, another date, no plan: other keys.
     expect(await d.createBuilderDraft(OWNER, builderDraft(9702, [], { ...KEY, mainLiftExerciseId: INCLINE }))).toMatchObject({ status: 'written' });
     expect(await d.createBuilderDraft(OWNER, builderDraft(9703, [], { ...KEY, localDate: '2026-10-09' }))).toMatchObject({ status: 'written' });
-    expect(await d.createBuilderDraft(OWNER, builderDraft(9704, [], { planId: null, splitDayId: null, mainLiftExerciseId: null, localDate: '2026-10-09' }))).toMatchObject({ status: 'written' });
-    expect(await d.createBuilderDraft(OWNER, builderDraft(9705, [], { planId: null, splitDayId: null, mainLiftExerciseId: null, localDate: '2026-10-09' }))).toMatchObject({ status: 'exists', draft: { id: id(9704) } });
-    expect((await d.earlierOpenBuilderDrafts(OWNER, '2026-10-09')).map((x) => x.id).sort()).toEqual([id(9700), id(9702)]);
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9704, [], { planId: null, dayIndex: null, splitDayId: null, mainLiftExerciseId: null, localDate: '2026-10-09' }))).toMatchObject({ status: 'written' });
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9705, [], { planId: null, dayIndex: null, splitDayId: null, mainLiftExerciseId: null, localDate: '2026-10-09' }))).toMatchObject({ status: 'exists', draft: { id: id(9704) } });
+    // (B1) The same split day on another plan day (Push on days 1 and 4) is another draft.
+    expect(await d.createBuilderDraft(OWNER, builderDraft(9709, [], { ...KEY, dayIndex: 3 }))).toMatchObject({ status: 'written' });
+    expect((await d.earlierOpenBuilderDrafts(OWNER, '2026-10-09')).map((x) => x.id).sort()).toEqual([id(9700), id(9702), id(9709)]);
     // The unique index holds on any path.
     await expect(d.save(builderDraft(9706), null)).rejects.toThrow(/UNIQUE/);
-    // Start refuses an empty workout; the draft stays open.
-    expect(await store.db.write((tx) => startWorkoutDraftIn(tx, id(9700), OWNER, id(9799), at(10).utc))).toBe(false);
+    // Start refuses an empty workout, saying so (N5); the draft stays open.
+    expect(await store.db.write((tx) => startWorkoutDraftIn(tx, id(9700), OWNER, id(9799), at(10).utc))).toEqual({ ok: false, reason: 'empty' });
     expect(await d.get(id(9700))).toMatchObject({ status: 'open', version: 1 });
     // With an exercise it starts, and the key is free for a second workout that day.
     const filled: WorkoutDraft = { ...builderDraft(9700, [benchSlot]), version: 2, opIds: ['open-9700', 'add-bench'], undo: { opId: 'add-bench', atVersion: 2, snapshot: { currentVersion: 1, setup: builderVersion([]).request.setup ?? null, plan: { slots: [] } } } };
     expect(await d.save(filled, 1)).toMatchObject({ ok: true });
-    expect(await store.db.write((tx) => startWorkoutDraftIn(tx, id(9700), OWNER, id(9799), at(10).utc))).toBe(true);
+    // (N3) Start at the version the screen showed: an older one is stale, nothing written.
+    expect(await store.db.write((tx) => startWorkoutDraftIn(tx, id(9700), OWNER, id(9799), at(10).utc, 1))).toEqual({ ok: false, reason: 'stale' });
+    expect(await store.db.write((tx) => startWorkoutDraftIn(tx, id(9700), OWNER, id(9799), at(10).utc, 2))).toEqual({ ok: true });
+    expect(await store.db.write((tx) => startWorkoutDraftIn(tx, id(9700), OWNER, id(9799), at(11).utc, 3))).toEqual({ ok: false, reason: 'gone' });
     expect(await d.get(id(9700))).toMatchObject({ status: 'started', sessionId: id(9799) });
     expect(await d.createBuilderDraft(OWNER, builderDraft(9707))).toMatchObject({ status: 'written' });
     // The undo snapshot survived the write and reads back (force-close).
@@ -354,11 +438,18 @@ describe('session plan-day provenance (§4.2)', () => {
     const store = await openStore(memoryDriver());
     await store.repos.profiles.save(profile(), null);
     const plain = richFinishedSession();
-    const a = { ...plain, session: { ...plain.session, planDay: { planId: PLAN, splitDayId: 'chest', templateRoutineId: null, templateVersion: null, variationId: id(9601) } } };
+    const a = { ...plain, session: { ...plain.session, planDay: { planId: PLAN, dayIndex: 3, splitDayId: 'chest', mainLiftExerciseId: INCLINE, templateRoutineId: id(9010), templateVersion: 2, variationId: id(9601) } } };
     expect(await store.repos.sessions.save(a, null)).toMatchObject({ ok: true });
     expect((await store.repos.sessions.get(a.session.id))?.session.planDay).toEqual(a.session.planDay);
     const refs = await store.repos.sessions.listFinishedRefs(OWNER, 5, { includeImported: true });
-    expect(refs[0]).toMatchObject({ sessionId: a.session.id, planDay: { planId: PLAN, splitDayId: 'chest', variationId: id(9601) } });
+    // The plan day (with its index), the template used and its main lift (Q2), and the variation.
+    expect(refs[0]).toEqual({
+      sessionId: a.session.id,
+      routineId: a.session.routineId,
+      startedAtUtc: a.session.startedAt.utc,
+      tz: a.session.startedAt.tz,
+      planDay: { planId: PLAN, dayIndex: 3, splitDayId: 'chest', templateRoutineId: id(9010), mainLiftExerciseId: INCLINE, variationId: id(9601) },
+    });
     expect((await checkIntegrity(store.db)).ok).toBe(true);
     await store.close();
   });
@@ -371,12 +462,13 @@ describe('reviews (§6.1, §6.2)', () => {
     const r = store.repos.reviews;
     expect(await r.record(OWNER, review(9801, 'h1'))).toMatchObject({ status: 'written' });
     expect(await r.record(OWNER, review(9801, 'h1'))).toMatchObject({ status: 'replayed' });
-    expect(await r.record(OWNER, review(9802, 'h1'))).toMatchObject({ status: 'unchanged', review: { id: id(9801) } });
+    // Same inputs while the coach part is still pending: retry the coach, nothing written.
+    expect(await r.record(OWNER, review(9802, 'h1'))).toMatchObject({ status: 'retry_coach', review: { id: id(9801) } });
     expect(await r.record(OWNER, review(9803, 'h2'))).toMatchObject({ status: 'written' });
     expect(await r.get(id(9801))).toMatchObject({ status: 'superseded', supersededById: id(9803), version: 2 });
     expect((await r.current(OWNER, { kind: 'weekly', weekMonday: '2026-10-05' }))?.id).toBe(id(9803));
     // Coach text arrives after the facts: a versioned update; a stale one changes nothing.
-    const reviewed: Review = { ...review(9803, 'h2'), version: 2, coach: { status: 'reviewed', verdict: 'Three of four days', lines: [], actionIds: [], numbersChecked: true }, opIds: ['review-9803', 'coach-1'] };
+    const reviewed: TrainingReview = { ...review(9803, 'h2'), version: 2, coach: { status: 'reviewed', verdict: 'Three of four days', lines: [], actionIds: [], numbersChecked: true }, opIds: ['review-9803', 'coach-1'] };
     expect(await r.update(OWNER, reviewed, 5, 'coach-1')).toMatchObject({ status: 'stale' });
     expect(await r.update(OWNER, reviewed, 1, 'coach-1')).toMatchObject({ status: 'written' });
     expect(await r.update(OWNER, reviewed, 1, 'coach-1')).toMatchObject({ status: 'replayed' });
@@ -384,6 +476,16 @@ describe('reviews (§6.1, §6.2)', () => {
     expect(await r.get(id(9803))).toMatchObject({ facts: [{ kind: 'sessions_vs_plan', done: 3, planned: 4 }], coach: { status: 'reviewed', verdict: 'Three of four days' } });
     expect(await r.record(OWNER, review(9804, 'h1', { subject: { kind: 'weekly', weekMonday: '2026-10-12' }, createdAt: at(9900) }))).toMatchObject({ status: 'written' });
     expect((await r.listCurrent(OWNER, 'weekly', 10)).map((x) => x.id)).toEqual([id(9804), id(9803)]);
+    // (S5) Recorded offline: the same inputs later, online, ask for the coach part (not `unchanged`); `update` fills it in.
+    const week3 = { kind: 'weekly' as const, weekMonday: '2026-10-19' };
+    expect(await r.record(OWNER, review(9806, 'h3', { subject: week3, coach: { status: 'offline' } }))).toMatchObject({ status: 'written' });
+    expect(await r.record(OWNER, review(9807, 'h3', { subject: week3 }))).toMatchObject({ status: 'retry_coach', review: { id: id(9806), version: 1 } });
+    const filled: TrainingReview = { ...review(9806, 'h3', { subject: week3 }), version: 2, coach: { status: 'reviewed', verdict: 'On track', lines: [], actionIds: [], numbersChecked: true }, opIds: ['review-9806', 'coach-2'] };
+    expect(await r.update(OWNER, filled, 1, 'coach-2')).toMatchObject({ status: 'written' });
+    expect(await r.record(OWNER, review(9808, 'h3', { subject: week3 }))).toMatchObject({ status: 'unchanged', review: { id: id(9806) } });
+    // Pending, failed and not connected retry too; silent is settled.
+    expect(await r.record(OWNER, review(9809, 'h4', { subject: { kind: 'weekly', weekMonday: '2026-10-26' }, coach: { status: 'silent' } }))).toMatchObject({ status: 'written' });
+    expect(await r.record(OWNER, review(9810, 'h4', { subject: { kind: 'weekly', weekMonday: '2026-10-26' } }))).toMatchObject({ status: 'unchanged' });
     expect(await r.record(OWNER, review(9805, 'h1', { status: 'superseded', supersededById: id(1) }))).toMatchObject({ status: 'invalid' });
     expect((await checkIntegrity(store.db)).ok).toBe(true);
     await store.close();
@@ -391,17 +493,53 @@ describe('reviews (§6.1, §6.2)', () => {
 });
 
 describe('backup, restore, export, delete (rule 10)', () => {
+  /** (§2.9, review b3-data B2) A `For next Chest day` note from a review, hidden once. */
+  const DAY_NOTE_ID = id(9850);
+  function dayNote(actionId: string): Memory {
+    return {
+      id: DAY_NOTE_ID,
+      ownerId: OWNER,
+      version: 1,
+      createdAtUtc: at(20).utc,
+      updatedAtUtc: at(20).utc,
+      text: 'Include abs',
+      contentKey: 'day-note:chest:include abs',
+      status: 'active',
+      quote: 'Include abs next chest day',
+      createdByActionId: actionId,
+      dayNote: hideDayNoteOn({ splitDayId: 'chest', mainLiftExerciseId: BENCH, reviewId: id(9801), hiddenOn: [] }, '2026-10-20'),
+    };
+  }
+
   async function populate(store: Store): Promise<void> {
     await store.repos.profiles.save(profile(), null);
-    expect(await store.repos.routines.saveTemplate(template(9000), null)).toMatchObject({ ok: true });
+    expect(await store.repos.routines.saveTemplate(template(9000), null, NO_SPLIT)).toMatchObject({ ok: true });
     expect(await store.repos.planDayVariations.saveVariation(OWNER, variation(9601), null, 'save-9601')).toMatchObject({ status: 'written' });
     expect(await store.repos.workoutDrafts.createBuilderDraft(OWNER, builderDraft(9700))).toMatchObject({ status: 'written' });
     expect(await store.repos.reviews.record(OWNER, review(9801, 'h1'))).toMatchObject({ status: 'written' });
+    const action = ActionRecordSchema.parse({
+      actionId: id(9851),
+      turnId: null,
+      opId: 'day-note-1',
+      status: 'committed',
+      author: 'ben',
+      detail: { kind: 'save_memory', memoryId: DAY_NOTE_ID, text: 'Include abs' },
+      failure: null,
+      reason: null,
+      evidenceRefs: [],
+      guardNotes: [],
+      entityVersions: [],
+      undoneBy: null,
+      createdAt: at(20),
+    });
+    expect(await store.repos.coach.commit(OWNER, { kind: 'save_memory', action, memory: dayNote(action.actionId) })).toMatchObject({ status: 'written' });
     const plain = richFinishedSession();
-    await store.repos.sessions.save({ ...plain, session: { ...plain.session, planDay: { planId: PLAN, splitDayId: 'chest', templateRoutineId: id(9000), templateVersion: 1, variationId: null } } }, null);
+    await store.repos.sessions.save({ ...plain, session: { ...plain.session, planDay: { planId: PLAN, dayIndex: 0, splitDayId: 'chest', templateRoutineId: id(9000), templateVersion: 1, variationId: null } } }, null);
   }
 
-  it('a backup round trip keeps templates, variations, builder drafts, reviews and provenance; the key still holds after restore', async () => {
+  const dayNoteOf = (rows: readonly { data?: unknown }[] | undefined): unknown => rows?.map((r) => (typeof r.data === 'string' ? (JSON.parse(r.data) as Memory) : (r.data as Memory))).find((m) => m.id === DAY_NOTE_ID)?.dayNote;
+
+  it('a backup round trip keeps templates, variations, day notes, builder drafts, reviews and provenance; the key still holds after restore', async () => {
     const src = await managerIn();
     await populate(src.store);
     const before = await src.store.db.read((q) => exportTables(q));
@@ -412,7 +550,9 @@ describe('backup, restore, export, delete (rule 10)', () => {
     expect(await dst.restore(made.text, at(600))).toMatchObject({ ok: true, status: 'restored' });
     expect(await dst.store.db.read((q) => exportTables(q))).toEqual(before);
     expect((await checkIntegrity(dst.store.db)).ok).toBe(true);
-    expect(await dst.store.repos.routines.saveTemplate(template(9020), null)).toMatchObject({ ok: false, error: 'duplicate_template' });
+    // The day note reads back whole: its plan day, the review it came from and the date hidden (B2).
+    expect(dayNoteOf((await dst.store.db.read((q) => exportTables(q))).memories)).toEqual({ splitDayId: 'chest', mainLiftExerciseId: BENCH, reviewId: id(9801), hiddenOn: ['2026-10-20'] });
+    expect(await dst.store.repos.routines.saveTemplate(template(9020), null, NO_SPLIT)).toMatchObject({ ok: false, error: 'duplicate_template' });
     expect(await dst.store.repos.workoutDrafts.createBuilderDraft(OWNER, builderDraft(9701))).toMatchObject({ status: 'exists' });
     await dst.close();
   });
@@ -424,12 +564,14 @@ describe('backup, restore, export, delete (rule 10)', () => {
     expect(mine.tables.plan_day_variations).toHaveLength(1);
     expect(mine.tables.reviews).toHaveLength(1);
     expect(mine.tables.routines?.some((r) => (r.data as Routine).planDay !== undefined)).toBe(true);
+    expect(dayNoteOf(mine.tables.memories)).toMatchObject({ splitDayId: 'chest', reviewId: id(9801), hiddenOn: ['2026-10-20'] });
     const known = await m.exportDomain('coaching_knowledge');
     expect(known.tables.plan_day_variations).toBeUndefined();
     expect(known.tables.reviews).toBeUndefined();
+    expect(known.tables.memories).toBeUndefined();
     expect(await m.deleteYourData()).toMatchObject({ ok: true, status: 'switched' });
     const left = await m.store.db.read((q) => exportTables(q));
-    for (const t of ['plan_day_variations', 'reviews', 'routines', 'workout_drafts', 'sessions']) expect(left[t]).toEqual([]);
+    for (const t of ['plan_day_variations', 'reviews', 'memories', 'routines', 'workout_drafts', 'sessions']) expect(left[t]).toEqual([]);
     await m.close();
   });
 
