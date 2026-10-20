@@ -522,3 +522,11 @@ Ben asked: "review the full app now to ensure everything is visually well built 
 - Training details birth year as a picker: kept the stepper and the typed year (no year-only picker on iOS).
 
 **Not done in this pass (left for after the parallel week-flex work merges, or as refactors with no visible change):** Up next capped at 3 one-line rows with `+N more`, dropping the calendar's `● workout` legend, sizing Your plan's day dot from its numeral (all in areas `claude/weekflex-20oct` is changing); one shared `CheckInScale`; tab roots sharing one title pattern; the cardio top set on its own line in Progress (the sessions table has no cardio rows today).
+
+## Ben's decisions, 20 Oct (design)
+
+Ben approved items 1–4 of the 20 Oct decision list ("Yes to all"); these close the matching "Pending Ben" items in the design pass entry above.
+- **1:** while the keypad is open the rest bar collapses to a slim one-line `Rest 1:47` strip (32 pt, no `−30` `+30` `Skip`); the full bar returns on close (workout-table.md, Keypad open).
+- **2:** Library filter chips sit on one horizontally scrolling row (exercise-library.md §9).
+- **3:** Exercise detail: measure and period are two compact dropdowns on the top row with `Exercise info`, replacing the two chip rows, so the chart starts higher (progress.md §2.7).
+- **4:** Direction D's tracked caps `sectionLabel` goes from 12 / 16 to 13 / 18 (tracking 1.2), one theme token, Dynamic Type kept (design-system §3). `type.listLoad` / `type.statValue` and removing per-screen 13 / 11 pt overrides are not part of this.
