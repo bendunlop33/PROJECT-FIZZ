@@ -1,3 +1,4 @@
+import { BUILD_LIMITS } from '@fizz/schemas';
 import type { BuilderBlock, BuilderInfoLookup, BuilderSlot, RestKind, RestLevel } from './types';
 
 /**
@@ -34,13 +35,13 @@ export const BUILDER_REST_LEVELS: Readonly<Record<Exclude<RestLevel, 'normal'>, 
   shortest: { top: 150, backoff: 120, workingMain: 120, workingCompound: 75, workingIsolation: 60, round: 60 },
 };
 
-/** §9 Q7 limits: before a drop 0–1:00; everything else 0:30–6:00; 15 s steps. MERGE NOTE: S1 owns `BUILD_LIMITS.maxRestS` (300 → 360). */
+/** §9 Q7 limits (`BUILD_LIMITS`): before a drop 0–1:00; everything else 0:30–6:00; 15 s steps. */
 export const BUILDER_REST_LIMITS = {
   stepS: 15,
   beforeDropMinS: 0,
-  beforeDropMaxS: 60,
-  minS: 30,
-  maxS: 360,
+  beforeDropMaxS: BUILD_LIMITS.maxRestBeforeDropS,
+  minS: BUILD_LIMITS.minRestS,
+  maxS: BUILD_LIMITS.maxRestS,
 } as const;
 
 /** A rest Ben sets, clamped to its kind's limits and snapped to 15 s. */

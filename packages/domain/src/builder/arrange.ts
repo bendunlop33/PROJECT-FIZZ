@@ -1,3 +1,4 @@
+import { BUILD_LIMITS } from '@fizz/schemas';
 import type { BuilderBlock, BuilderExerciseInfo, BuilderInfoLookup, BuilderSlot } from './types';
 
 /**
@@ -142,7 +143,7 @@ export function pairSlots(blocks: readonly BuilderBlock[], info: BuilderInfoLook
 }
 
 /** Most exercises in one superset (§4.7 `maxSuperset`). */
-export const BUILDER_MAX_SUPERSET = 4;
+export const BUILDER_MAX_SUPERSET = BUILD_LIMITS.maxSuperset;
 
 const clearUnlinked = (s: BuilderSlot): BuilderSlot => {
   if (s.unlinked !== true) return s;

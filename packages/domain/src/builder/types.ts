@@ -1,4 +1,4 @@
-import type { EquipmentInstance, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
+import type { BuilderGroup, DraftLoadSource, EquipmentInstance, LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
 
 /**
  * Workout builder v3 (docs/design/workout-builder-v3.md, slice S2): the
@@ -11,11 +11,10 @@ import type { EquipmentInstance, LoadConvention, SetType, WeightUnit } from '@fi
  */
 
 /**
- * The builder's muscle groups (§4.7). Display only: Legs = Quads +
- * Hamstrings + Glutes + Calves; Abs = Core. MERGE NOTE: S1 (schemas) owns
- * the canonical `BuilderGroup`; this local copy must be replaced by it.
+ * The builder's muscle groups (§4.7): the schemas' `BuilderGroup`. Display
+ * only: Legs = Quads + Hamstrings + Glutes + Calves; Abs = Core.
  */
-export type BuilderGroupName = 'Chest' | 'Back' | 'Shoulders' | 'Legs' | 'Biceps' | 'Triceps' | 'Abs';
+export type BuilderGroupName = BuilderGroup;
 
 export const ARM_GROUPS: readonly BuilderGroupName[] = ['Biceps', 'Triceps'];
 
@@ -57,13 +56,17 @@ export interface AnchorLoad {
 }
 
 /**
- * Where today's working load came from (§3.1, §9 Q12). MERGE NOTE: maps to
- * `DraftLoadSchema.source` as coach_target → `coach`, plan → `plan`,
- * rule → `rule`, calc → `calc`, none → `none`, typed → `ben`. S1 must add
- * `'plan'` to `DraftLoadSchema.source` (an extra enum value, so old rows
- * still parse): `Why this weight?` shows `Plan, week 1`, not `Coach target`.
+ * Where today's working load came from (§3.1, §9 Q12). Stored as
+ * `DraftLoadSchema.source` through `draftLoadSourceOf` (a typed kg is `ben`).
  */
 export type BuilderLoadSourceKind = 'coach_target' | 'plan' | 'rule' | 'calc' | 'none';
+
+const DRAFT_SOURCE: Readonly<Record<BuilderLoadSourceKind, DraftLoadSource>> = { coach_target: 'coach', plan: 'plan', rule: 'rule', calc: 'calc', none: 'none' };
+
+/** A row's stored load source: Ben's typed kg is `ben`; every other row is its slot's source. */
+export function draftLoadSourceOf(source: BuilderLoadSourceKind, typed: boolean): DraftLoadSource {
+  return typed ? 'ben' : DRAFT_SOURCE[source];
+}
 
 /**
  * Resolved inputs for one exercise at the selected gym. The service fills

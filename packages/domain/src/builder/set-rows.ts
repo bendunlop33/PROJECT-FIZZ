@@ -1,4 +1,4 @@
-import type { LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
+import { BUILD_LIMITS, type LoadConvention, type SetType, type WeightUnit } from '@fizz/schemas';
 import { compareDifficulty, isBarLoaded, loadDirection } from '../equipment';
 import { builderLoad, convertValue, fitHere, formulaApplies, loadForSet, loadFrameOf, roundContextOf, roundDownHere, type RoundContext } from './loads';
 import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, RepRangeT, RoundedLoad, SlotLoadInput } from './types';
@@ -33,10 +33,10 @@ export const BUILDER_SET_RULES = {
   dropPct: 0.78,
   dropRepsOver: 2,
   dropRpe: 9,
-  maxWarmups: 4,
+  maxWarmups: BUILD_LIMITS.maxWarmups,
   /** Working sets including drops (§4.7). */
-  maxWorkingSets: 10,
-  maxDrops: 3,
+  maxWorkingSets: BUILD_LIMITS.maxWorkingSets,
+  maxDrops: BUILD_LIMITS.maxDropSets,
   /** Edit ranges, as `@fizz/schemas` (RPE 1–10 in 0.5 steps; reps 1–100). */
   minRpe: 1,
   maxRpe: 10,

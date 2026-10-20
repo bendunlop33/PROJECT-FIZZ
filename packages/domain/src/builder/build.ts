@@ -1,3 +1,4 @@
+import { BUILD_LIMITS } from '@fizz/schemas';
 import { orderSlots, pairSlots, singlesOf } from './arrange';
 import { estimateBuilderMinutes } from './estimate';
 import { FIT_RULES, fitToMinutes, type BuilderFitResult } from './fit';
@@ -15,8 +16,7 @@ export const BUILDER_VOLUME = {
   maxRecommended: 7,
   /** At most 4 exercises per group; extras go to the other groups. */
   maxPerGroup: 4,
-  /** MERGE NOTE: S1 owns `BUILD_LIMITS.maxExercises` (10). */
-  maxExercises: 10,
+  maxExercises: BUILD_LIMITS.maxExercises,
   minMinutes: FIT_RULES.minMinutes,
   maxMinutes: FIT_RULES.maxMinutes,
 } as const;
