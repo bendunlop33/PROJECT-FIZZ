@@ -111,8 +111,14 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
   let s = { r: 2, sheet: false, toast: null, open: {}, rest: 0 }; let iv;
   const fmt = (x) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
   const restOf = (e) => { const m = /^(\d+):(\d\d)/.exec(e.rest || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : 90; };
-  function startRest(sec) { s.rest = sec; clearInterval(iv); iv = setInterval(() => { s.rest--; const el = app.querySelector('.rt'); if (s.rest <= 0) { clearInterval(iv); s.rest = 0; view(); } else if (el) el.textContent = fmt(s.rest); }, 1000); }
-  const foldRow = (rd, e, k) => { const d = e.sets.filter((x) => x.done); if (!d.length) return ''; const key = lab(rd, k); const w = d.filter((x) => x.t === 'W').length; const ws = d.filter((x) => x.t !== 'W'); const txt = [w ? `${w} warm-up${w > 1 ? 's' : ''}` : '', ws.map((x) => `${x.kg} × ${x.r}`).join(', ')].filter(Boolean).join(' · '); return `<button class="fold" data-a="fold" data-v="${key}" aria-expanded="${!!s.open[key]}"><span>✓ ${txt}</span><u>${s.open[key] ? 'Hide' : 'Show'}</u></button>`; };
+  s.restEnd = 0;
+  const left = () => Math.ceil((s.restEnd - Date.now()) / 1000);
+  function setEnd(end) { s.restEnd = end; clearInterval(iv); s.rest = end ? Math.max(0, left()) : 0; if (!s.rest) { s.restEnd = 0; return; } iv = setInterval(() => { s.rest = left(); const el = app.querySelector('.rt'); if (s.rest <= 0) { clearInterval(iv); s.rest = 0; s.restEnd = 0; view(); } else if (el) el.textContent = fmt(s.rest); }, 1000); }
+  const startRest = (sec) => setEnd(Date.now() + sec * 1000);
+  function logSet(k, i) { const rd = ROUNDS[s.r]; const st = rd.ex[k].sets[i]; st.prevEnd = s.restEnd; st.done = true; s.last = `${s.r}-${k}-${i}`; const c2 = cur(); if (c2 && rd.ex.length > 1 && c2.k === 1 && k === 0) s.toast = 'Straight to ' + rd.n + 'b'; else startRest(rd.ex.length > 1 ? 90 : restOf(rd.ex[k])); }
+  function unlogSet(k, i) { const st = ROUNDS[s.r].ex[k].sets[i]; st.done = false; s.last = null; setEnd(st.prevEnd || 0); }
+  const isLast = (k, i) => s.last === `${s.r}-${k}-${i}`;
+  const foldRow = (rd, e, k) => { const d = e.sets.filter((x, i) => x.done && !isLast(k, i)); if (!d.length) return ''; const key = lab(rd, k); const w = d.filter((x) => x.t === 'W').length; const ws = d.filter((x) => x.t !== 'W'); const txt = [w ? `${w} warm-up${w > 1 ? 's' : ''}` : '', ws.map((x) => `${x.kg} × ${x.r}`).join(', ')].filter(Boolean).join(' · '); return `<button class="fold" data-a="fold" data-v="${key}" aria-expanded="${!!s.open[key]}"><span>✓ ${txt}</span><u>${s.open[key] ? 'Hide' : 'Show'}</u></button>`; };
   const app = document.getElementById('app');
   const cur = () => { const rd = ROUNDS[s.r]; for (let i = 0; i < rd.ex[0].sets.length; i++) for (let k = 0; k < rd.ex.length; k++) { const st = rd.ex[k].sets[i]; if (st && !st.done) return { k, i }; } return null; };
   const lab = (rd, k) => `${rd.n}${rd.ex.length > 1 ? 'ab'[k] : ''}`;
@@ -120,7 +126,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     let n = 0; const doneW = e.sets.filter((x) => x.done && x.t !== 'W').length, totW = e.sets.filter((x) => x.t !== 'W').length;
     return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works}</small></span><span class="prog">${doneW}/${totW}</span></div>
       <div class="tbl">${e.sets.some((x) => !x.done) || s.open[lab(rd, k)] ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
-      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n; if (st.done && !s.open[lab(rd, k)]) return ''; return `<div class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
+      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n; if (st.done && !s.open[lab(rd, k)] && !isLast(k, i)) return ''; return `<div class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
       <div class="meta"><span>${e.target}</span><span>${e.rest ? `Rest ${e.rest} ›` : ''} <u>Why?</u></span></div>
       <button class="addset" data-a="add" data-k="${k}">＋ Set</button></div>`;
   }
@@ -157,12 +163,12 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
       if (k === 'next') { const cells = [...app.querySelectorAll('.cell')]; const nx = cells[cells.indexOf(el) + 1]; if (nx) nx.focus(); else el.blur(); return; }
       const step = el.dataset.f === 'kg' ? (ROUNDS[s.r].ex[el.dataset.k].each ? 1.25 : 2.5) : 1; el.value = String(Math.max(0, Math.round(((parseFloat(el.value) || 0) + (k === '+' ? step : -step)) * 100) / 100)); el.dispatchEvent(new Event('input', { bubbles: true })); return; }
     const t = ev.target.closest('[data-a]'); if (!t) return; const a = t.dataset.a; s.toast = null;
-    if (a === 'tick') { const st = ROUNDS[s.r].ex[t.dataset.k].sets[t.dataset.i]; st.done = !st.done; }
-    if (a === 'log') { const c = cur(); if (c) { const rd = ROUNDS[s.r]; rd.ex[c.k].sets[c.i].done = true; const c2 = cur(); if (c2 && rd.ex.length > 1 && c2.k === 1) s.toast = 'Straight to ' + rd.n + 'b'; else startRest(rd.ex.length > 1 ? 90 : restOf(rd.ex[c.k])); } else if (s.r < ROUNDS.length - 1) s.r++; }
+    if (a === 'tick') { const k = Number(t.dataset.k), i = Number(t.dataset.i); if (ROUNDS[s.r].ex[k].sets[i].done) unlogSet(k, i); else logSet(k, i); }
+    if (a === 'log') { const c = cur(); if (c) logSet(c.k, c.i); else if (s.r < ROUNDS.length - 1) s.r++; }
     if (a === 'fold') s.open[t.dataset.v] = !s.open[t.dataset.v];
-    if (a === 'r-') s.rest = Math.max(1, s.rest - 30);
-    if (a === 'r+') s.rest += 30;
-    if (a === 'skip') { clearInterval(iv); s.rest = 0; }
+    if (a === 'r-') setEnd(Math.max(Date.now() + 1000, s.restEnd - 30000));
+    if (a === 'r+') setEnd(s.restEnd + 30000);
+    if (a === 'skip') setEnd(0);
     if (a === 'add') { const e = ROUNDS[s.r].ex[t.dataset.k]; const l = e.sets[e.sets.length - 1]; e.sets.push({ ...l, done: false }); }
     if (a === 'go') { s.r = Number(t.dataset.v); s.sheet = false; }
     if (a === 'sheet') s.sheet = true;

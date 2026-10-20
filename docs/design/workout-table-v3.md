@@ -32,6 +32,8 @@ Goal: the workout reads like the builder (`workout-builder-v3.md` §2): numbered
 ## 3. Flow
 
 - The current set is the first not-done set of the current round, going a → b → a → b for supersets. Logging 3a goes straight to 3b (no rest); after 3b the round's rest starts.
+- **Unticking a set never resets the rest** (Ben, 20 Oct: "if u accidentally click completed set and then deselect the rest time should continue as it was not reset"). Undoing a log puts back the rest that was running before that log, with its **original deadline** (it carries on counting as if nothing happened; the notification and Live Activity are rescheduled to that deadline). If that rest had already finished by then, no rest shows. The rest the accidental log started is cancelled with it.
+- The set just logged stays visible as a done row (not folded) until the next set is logged, so an accidental tick is undone with one tap on its ✓, besides the Undo toast.
 - When every set of the round is done, the card advances to the next round automatically after Log (the strip still allows going back).
 - Jumping to another round with the strip doesn't change the order; Log logs the shown round's current set.
 
