@@ -58,8 +58,10 @@ export interface AnchorLoad {
 
 /**
  * Where today's working load came from (§3.1, §9 Q12). MERGE NOTE: maps to
- * `DraftLoadSchema.source` as coach_target → `coach`, plan → `coach`,
- * rule → `rule`, calc → `calc`, none → `none`, typed → `ben`.
+ * `DraftLoadSchema.source` as coach_target → `coach`, plan → `plan`,
+ * rule → `rule`, calc → `calc`, none → `none`, typed → `ben`. S1 must add
+ * `'plan'` to `DraftLoadSchema.source` (an extra enum value, so old rows
+ * still parse): `Why this weight?` shows `Plan, week 1`, not `Coach target`.
  */
 export type BuilderLoadSourceKind = 'coach_target' | 'plan' | 'rule' | 'calc' | 'none';
 
@@ -68,13 +70,18 @@ export type BuilderLoadSourceKind = 'coach_target' | 'plan' | 'rule' | 'calc' | 
  * them from the existing code (§4.1): coach next-session targets / lift
  * targets, `planFirstLoads`, `nextTargetsFor`, `loadReferences` →
  * `referenceE1rm` (own recent sets), `noReferenceCeiling`, `painFlagCovering`.
- * Values are already in `unit` and `convention`.
+ * Values are in `unit` and `convention`; the rules convert them to the
+ * item's unit when it differs (`loadFrameOf`).
  */
 export interface SlotLoadInput {
   unit: WeightUnit;
   convention: LoadConvention;
   /** The item this gym maps the exercise to; null = none (bodyweight, or not here). */
   equipment: EquipmentInstance | null;
+  /** The catalogue's default convention is `bodyweight` (dips, pull-ups): `added` loads are weighted bodyweight. */
+  bodyweightExercise?: boolean;
+  /** The gym's usable items, for added weight on a bodyweight lift (its dumbbells and plates). */
+  gymEquipment?: readonly EquipmentInstance[];
   coachTarget: AnchorLoad | null;
   planFirstLoad: AnchorLoad | null;
   ruleTarget: AnchorLoad | null;
@@ -88,13 +95,18 @@ export interface SlotLoadInput {
 
 /** A load after rounding down to what this gym can load. */
 export interface RoundedLoad {
+  /** In `unit` (the item's unit; the slot's own unit when no item is needed). */
   value: number;
-  /** The requested value (before rounding), for `Why this weight?`. */
+  unit: WeightUnit;
+  /** The requested value (before the pain hold and rounding), in `requestedUnit`, for `Why this weight?`. */
   requested: number;
-  /** The value moved to be loadable here. */
+  requestedUnit: WeightUnit;
+  /** The value moved to be loadable on the item (plates, rack, stack). */
   rounded: boolean;
   /** Clamped to the item's max or min (rule 4). */
   bounded: 'max' | 'min' | null;
+  /** Held to the pain-flag cap before rounding (rule 9): `Why?` names the pain hold, not the plates. */
+  capped: 'pain' | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,14 +138,21 @@ export interface BuilderSlot {
   main: boolean;
   repRange: RepRangeT;
   rows: BuilderSetRow[];
-  /** Where the working load came from; `typed` once Ben typed every working kg is not tracked here. */
+  /** Unit and convention of every row's load (the item's unit; review B1). */
+  unit: WeightUnit;
+  convention: LoadConvention;
+  /** Where the working load came from; `none` when no load resulted. */
   source: BuilderLoadSourceKind;
+  /** `Start light` cap (in `unit`) when the load is unknown; null otherwise. */
+  startLight: number | null;
   /** The anchor e1RM other sets are derived from (Epley, RIR = 10 − RPE); null = no formula. */
   anchorE1rm: number | null;
   /** Ben's own rest per kind (seconds); defaults otherwise. */
   restS?: Partial<Record<RestKind, number>>;
   /** Ben edited this slot (swap, sets, reps…): merges and fits leave it alone. */
   touched?: true;
+  /** Ben unlinked this slot from a superset: automatic pairing never re-pairs it (review B3). */
+  unlinked?: true;
 }
 
 export interface BuilderBlock {

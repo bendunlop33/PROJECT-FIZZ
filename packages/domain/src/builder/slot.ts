@@ -8,6 +8,6 @@ export function makeSlot(exerciseId: string, opts: { main: boolean; workingSets?
   const repRange = opts.main ? { ...BUILDER_SET_RULES.mainRange } : { ...BUILDER_SET_RULES.accessoryRange };
   const sets = opts.workingSets ?? (opts.main ? BUILDER_SET_RULES.mainSets : BUILDER_SET_RULES.accessorySets);
   const r = setRowsFor({ main: opts.main, role: info.role, barbell: info.barbell, workingSets: sets, repRange, load: ctx.loads(exerciseId) });
-  return { key: ctx.newKey(exerciseId), exerciseId, main: opts.main, repRange, rows: r.rows, source: r.source, anchorE1rm: r.anchorE1rm };
+  return { key: ctx.newKey(exerciseId), exerciseId, main: opts.main, repRange, rows: r.rows, unit: r.unit, convention: r.convention, source: r.source, startLight: r.startLight, anchorE1rm: r.anchorE1rm };
 }
 

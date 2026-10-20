@@ -14,7 +14,7 @@ const benchIn = (load: Partial<SlotLoadInput>, over: Partial<SetRowsInput> = {})
 
 const slotOf = (input: SetRowsInput): BuilderSlot => {
   const r = setRowsFor(input);
-  return { key: 'k', exerciseId: 'x', main: input.main, repRange: input.repRange, rows: r.rows, source: r.source, anchorE1rm: r.anchorE1rm };
+  return { key: 'k', exerciseId: 'x', main: input.main, repRange: input.repRange, rows: r.rows, unit: r.unit, convention: r.convention, source: r.source, startLight: r.startLight, anchorE1rm: r.anchorE1rm };
 };
 
 describe('builderLoad: source order (§9 Q12)', () => {
@@ -37,7 +37,7 @@ describe('builderLoad: source order (§9 Q12)', () => {
   });
 
   it('none: no load and the Start light ceiling', () => {
-    expect(builderLoad(loadInput({ startLightCeiling: 40 }), { reps: 8, rpe: 8 })).toEqual({ source: 'none', working: null, anchorE1rm: null, estimate: false, startLight: 40 });
+    expect(builderLoad(loadInput({ startLightCeiling: 40 }), { reps: 8, rpe: 8 })).toEqual({ unit: 'kg', convention: 'total', source: 'none', working: null, anchorE1rm: null, estimate: false, startLight: 40 });
   });
 
   it('a target for other reps converts by Epley with RIR = 10 − RPE', () => {

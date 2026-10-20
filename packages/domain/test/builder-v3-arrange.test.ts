@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { adviseAfter, adviseBuilder, canPair, orderSlots, pairSlots, singlesOf, unpairAuto, type BuilderBlock, type BuilderSlot } from '../src/index';
 import { info } from './builder-v3-fixture';
 
-const slot = (exerciseId: string, main = false): BuilderSlot => ({ key: exerciseId, exerciseId, main, repRange: { min: 8, max: 12 }, rows: [], source: 'none', anchorE1rm: null });
+const slot = (exerciseId: string, main = false): BuilderSlot => ({ key: exerciseId, exerciseId, main, repRange: { min: 8, max: 12 }, rows: [], unit: 'kg', convention: 'stack', source: 'none', startLight: null, anchorE1rm: null });
 const names = (blocks: readonly BuilderBlock[]) => blocks.map((b) => b.slots.map((s) => s.exerciseId).join('+'));
 
 describe('orderSlots (§3.4)', () => {

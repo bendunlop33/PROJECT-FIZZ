@@ -1,6 +1,6 @@
-import type { SetType } from '@fizz/schemas';
-import { isBarLoaded, loadDirection } from '../equipment';
-import { builderLoad, formulaApplies, loadForSet, roundDownHere, type RoundContext } from './loads';
+import type { LoadConvention, SetType, WeightUnit } from '@fizz/schemas';
+import { compareDifficulty, isBarLoaded, loadDirection } from '../equipment';
+import { builderLoad, convertValue, fitHere, formulaApplies, loadForSet, loadFrameOf, roundContextOf, roundDownHere, type RoundContext } from './loads';
 import type { BuilderLoadSourceKind, BuilderRole, BuilderSetRow, BuilderSlot, RepRangeT, RoundedLoad, SlotLoadInput } from './types';
 
 /**
@@ -37,6 +37,11 @@ export const BUILDER_SET_RULES = {
   /** Working sets including drops (§4.7). */
   maxWorkingSets: 10,
   maxDrops: 3,
+  /** Edit ranges, as `@fizz/schemas` (RPE 1–10 in 0.5 steps; reps 1–100). */
+  minRpe: 1,
+  maxRpe: 10,
+  minReps: 1,
+  maxReps: 100,
 } as const;
 
 const R = BUILDER_SET_RULES;
@@ -54,14 +59,17 @@ export interface SetRowsInput {
 
 export interface SetRowsResult {
   rows: BuilderSetRow[];
+  /** Unit and convention of every row's load (the item's; review B1). */
+  unit: WeightUnit;
+  convention: LoadConvention;
   source: BuilderLoadSourceKind;
   anchorE1rm: number | null;
   estimate: boolean;
   startLight: number | null;
 }
 
-const roundCtx = (load: SlotLoadInput): RoundContext => ({ unit: load.unit, convention: load.convention, equipment: load.equipment, painCap: load.painCap });
-const warmCtx = (load: SlotLoadInput): RoundContext => ({ unit: load.unit, convention: load.convention, equipment: load.equipment });
+const roundCtx = (load: SlotLoadInput): RoundContext => roundContextOf(load);
+const warmCtx = (load: SlotLoadInput): RoundContext => ({ ...roundContextOf(load), painCap: null });
 const rounded = (v: number | null, ctx: RoundContext): number | null => (v === null ? null : (roundDownHere(v, ctx)?.value ?? null));
 
 /** `setRowsFor`: the rows the builder makes for one exercise. */
@@ -78,18 +86,31 @@ export function setRowsFor(input: SetRowsInput): SetRowsResult {
       ]
     : Array.from({ length: n }, (_, i): BuilderSetRow => ({ type: 'working', reps: min, load: topLoad, rpe: i === n - 1 ? R.lastWorkRpe : R.workRpe }));
   const warmups = warmupsFor(input, topLoad);
-  return { rows: [...warmups, ...working], source: work.source, anchorE1rm: work.anchorE1rm, estimate: work.estimate, startLight: work.startLight };
+  // No load came out (no item here, below its lightest): say so, not the source's name (review B2).
+  const loaded = working.some((r) => r.load !== null);
+  const startLight = loaded ? null : (work.startLight ?? (input.load.startLightCeiling === null ? null : convertValue(input.load.startLightCeiling, input.load.unit, work.unit)));
+  return {
+    rows: [...warmups, ...working],
+    unit: work.unit,
+    convention: work.convention,
+    source: loaded ? work.source : 'none',
+    anchorE1rm: loaded ? work.anchorE1rm : null,
+    estimate: loaded && work.estimate,
+    startLight,
+  };
 }
 
 /** Warm-ups from the rounded working (top) load. None without a load, or for assisted lifts. */
 export function warmupsFor(input: Pick<SetRowsInput, 'main' | 'role' | 'barbell' | 'load'>, top: number | null): BuilderSetRow[] {
-  if (top === null || loadDirection(input.load.convention) !== 'resistance') return [];
+  const frame = loadFrameOf(input.load);
+  // Warm-ups ramp on a real item with the reps/RPE formula: not assisted, added weight or bodyweight.
+  if (top === null || frame.kind !== 'item' || frame.added || !formulaApplies(frame.convention) || loadDirection(frame.convention) !== 'resistance') return [];
   const ctx = warmCtx(input.load);
   const out: BuilderSetRow[] = [];
   if (input.main) {
-    const eq = input.load.equipment;
+    const eq = frame.equipment;
     let prev = 0;
-    if (input.barbell && eq !== null && isBarLoaded(eq) && eq.barMass < top) {
+    if (input.barbell && isBarLoaded(eq) && eq.barMass < top) {
       out.push({ type: 'warmup', reps: R.barWarmupReps, load: eq.barMass, rpe: null });
       prev = eq.barMass;
     }
@@ -110,9 +131,36 @@ export function warmupsFor(input: Pick<SetRowsInput, 'main' | 'role' | 'barbell'
 // ---------------------------------------------------------------------------
 // Edits (§2.4): type change, reps/RPE/kg edit, set count, drop
 
-export type SetRowEditRefusal = 'keep_one_set' | 'one_top_set_only' | 'drop_needs_set_before' | 'max_drops' | 'max_sets' | 'no_such_set';
+export type SetRowEditRefusal =
+  | 'keep_one_set'
+  | 'one_top_set_only'
+  | 'drop_needs_set_before'
+  | 'max_drops'
+  | 'max_sets'
+  | 'no_such_set'
+  /** RPE outside 1–10 or not in 0.5 steps (review S4). */
+  | 'rpe_out_of_range'
+  /** Reps outside 1–100 (review S4). */
+  | 'reps_out_of_range'
+  /** A typed kg that is negative or not a number. */
+  | 'load_out_of_range'
+  /** A typed kg the item can't make without going harder (below a stack's lightest, more assistance than it has): `lightest` is the easiest load here (review S3). */
+  | 'lightest_is_harder'
+  /** No item here to load (an equipped lift whose item isn't at this gym). */
+  | 'not_loadable';
 
-export type SetRowEdit = { ok: true; slot: BuilderSlot; rounded: RoundedLoad | null } | { ok: false; reason: SetRowEditRefusal };
+export type SetRowEdit =
+  | {
+      ok: true;
+      slot: BuilderSlot;
+      rounded: RoundedLoad | null;
+      /** A typed kg heavier than the pain hold: kept, shown with `May hurt` (§2.3, review S2). */
+      mayHurt?: true;
+    }
+  | { ok: false; reason: SetRowEditRefusal; lightest?: number };
+
+const validRpe = (rpe: number): boolean => Number.isFinite(rpe) && rpe >= R.minRpe && rpe <= R.maxRpe && Math.abs(rpe * 2 - Math.round(rpe * 2)) < 1e-9;
+const validReps = (reps: number): boolean => Number.isFinite(reps) && Math.round(reps) >= R.minReps && Math.round(reps) <= R.maxReps;
 
 const workRows = (rows: readonly BuilderSetRow[]): BuilderSetRow[] => rows.filter((r) => r.type !== 'warmup');
 const topLoadOf = (slot: BuilderSlot): number | null => {
@@ -188,13 +236,16 @@ export function changeSetType(slot: BuilderSlot, index: number, type: SetType, l
   return { ok: true, slot: next, rounded: null };
 }
 
-export type RowPatch = { kind: 'reps'; reps: number } | { kind: 'rpe'; rpe: number } | { kind: 'load'; value: number };
+/** A typed `load` is in the slot's unit unless `unit` says otherwise. */
+export type RowPatch = { kind: 'reps'; reps: number } | { kind: 'rpe'; rpe: number } | { kind: 'load'; value: number; unit?: WeightUnit };
 
 /**
  * `editSetRow`: reps or RPE recalculates kg unless Ben typed kg in that set
  * (or the lift has no formula: assisted and added weight keep their kg). A
  * typed kg is rounded down to what this gym can load; `rounded` says if it
- * moved (for `Why?`).
+ * moved (for `Why?`). A typed kg is never capped by the pain hold: it
+ * stays, with `mayHurt` (§2.3). Below the item's lightest load, or out of
+ * range, the edit is refused and nothing changes.
  */
 export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, load: SlotLoadInput): SetRowEdit {
   const row = slot.rows[index];
@@ -203,14 +254,22 @@ export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, lo
   const cur = rows[index] ?? row;
   switch (patch.kind) {
     case 'load': {
-      const r = roundDownHere(patch.value, roundCtx(load));
-      rows[index] = { ...cur, load: r?.value ?? null, typed: true };
-      return { ok: true, slot: { ...slot, rows, touched: true }, rounded: r };
+      if (!Number.isFinite(patch.value) || patch.value < 0) return { ok: false, reason: 'load_out_of_range' };
+      const ctx = roundCtx(load);
+      const value = convertValue(patch.value, patch.unit ?? slot.unit, ctx.unit);
+      const r = fitHere(value, { ...ctx, painCap: null });
+      if (!r.ok) return r.reason === 'lightest_is_harder' ? { ok: false, reason: 'lightest_is_harder', ...(r.lightest === null ? {} : { lightest: r.lightest }) } : { ok: false, reason: 'not_loadable' };
+      rows[index] = { ...cur, load: r.load.value, typed: true };
+      const cap = ctx.painCap ?? null;
+      const mayHurt = cap !== null && compareDifficulty(r.load.value, cap, loadDirection(ctx.convention)) > 0;
+      return { ok: true, slot: { ...slot, rows, touched: true }, rounded: r.load, ...(mayHurt ? { mayHurt: true as const } : {}) };
     }
     case 'reps':
-      rows[index] = { ...cur, reps: Math.max(1, Math.round(patch.reps)) };
+      if (!validReps(patch.reps)) return { ok: false, reason: 'reps_out_of_range' };
+      rows[index] = { ...cur, reps: Math.round(patch.reps) };
       break;
     case 'rpe':
+      if (row.type === 'warmup' || !validRpe(patch.rpe)) return { ok: false, reason: 'rpe_out_of_range' };
       rows[index] = { ...cur, rpe: patch.rpe };
       break;
   }
@@ -221,18 +280,23 @@ export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, lo
 }
 
 /**
- * `setWorkingCount`: add copies of the last working set (a Top set copies as
- * a Back-off) or remove from the end (never the Top set). 1–10 sets, drops
- * included. Straight working sets keep the last one @ RPE 9.
+ * `setWorkingCount`: add copies of the last working set (not a drop; a Top
+ * set copies as a Back-off), placed before any drops at the end so a drop
+ * still follows the last set; or remove from the end (trailing drops first,
+ * never the Top set, so a drop never loses the set it follows). 1–10 sets,
+ * drops included. Straight working sets keep the last one @ RPE 9.
  */
 export function setWorkingCount(slot: BuilderSlot, n: number): BuilderSlot {
   const target = Math.max(1, Math.min(R.maxWorkingSets, Math.round(n)));
   const rows = slot.rows.map((r) => ({ ...r }));
   let work = workRows(rows);
   while (work.length < target) {
-    const last = work[work.length - 1];
-    const copy: BuilderSetRow = last === undefined ? { type: 'working', reps: slot.repRange.min, load: null, rpe: R.workRpe } : { ...last, type: last.type === 'top' ? 'backoff' : last.type === 'drop' ? 'working' : last.type };
-    rows.push(copy);
+    const last = [...work].reverse().find((r) => r.type !== 'drop');
+    const copy: BuilderSetRow =
+      last === undefined ? { type: 'working', reps: slot.repRange.min, load: null, rpe: R.workRpe } : { ...last, type: last.type === 'top' ? 'backoff' : last.type };
+    let at = rows.length;
+    while (at > 0 && rows[at - 1]?.type === 'drop') at -= 1;
+    rows.splice(at, 0, copy);
     work = workRows(rows);
   }
   while (work.length > target) {
