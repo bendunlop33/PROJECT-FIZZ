@@ -181,10 +181,12 @@ describe('import preview wording', () => {
       { bar: 'ez_bar', unit: 'kg', value: null, label: 'EZ-bar weight (kg), added to “plates only” values', missing: 'EZ-bar weight needed (kg)' },
     ]);
     const v = previewView(d, 'en-GB');
-    expect(v.questions.map((x) => x.line.text)).toEqual(['EZ-bar weight needed for “plates only”']);
+    // (ADR 0030) A kettlebell swing is one bell, per hand: answered from the catalogue, nothing to ask.
+    expect(v.questions.map((x) => x.line.text)).toEqual(['Dumbbells: one dumbbell', 'EZ-bar weight needed for “plates only”']);
+    expect(v.questions.filter((x) => !x.answered).map((x) => x.line.text)).toEqual(['EZ-bar weight needed for “plates only”']);
     expect(v.primary).toEqual({ label: 'Answer 1 question to import', enabled: false });
-    // The kettlebell isn't a barbell question: imported as written.
-    expect(v.kept.map((l) => l.text)).toContain('Kettlebell and other no-bar weights imported as written (Kettlebell swing)');
+    // The kettlebell isn't a barbell question: one bell's weight, imported as written (per bell since ADR 0030).
+    expect(v.kept.map((l) => l.text).some((t) => t.includes('Kettlebell swing'))).toBe(false);
 
     d = await step(d, { kind: 'bar_weight', bar: 'ez_bar', unit: 'kg', value: 7.5 });
     expect(previewView(d, 'en-GB').primary).toEqual({ label: 'Import 1 workout', enabled: true });

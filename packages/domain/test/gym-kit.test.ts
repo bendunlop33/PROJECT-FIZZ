@@ -16,7 +16,9 @@ import {
   gymAvailability,
   isBarLoaded,
   isLoadAchievable,
+  loadFieldLabel,
   loadPreviewLine,
+  loadText,
   mapEquipment,
   materialiseGymDraft,
   missingStations,
@@ -60,7 +62,7 @@ const inclineDb = catalogue('dumbbell-incline-bench-press', 'Incline dumbbell pr
 const dbRow = catalogue('dumbbell-bent-over-row', 'Dumbbell row', { compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
 const bwSplitSquat = catalogue('bodyweight-bulgarian-split-squat', 'Bulgarian split squat', { compatibleEquipment: ['bodyweight_station'], defaultLoadConvention: 'bodyweight' });
 const swing = catalogue('kettlebell-swing', 'Kettlebell swing', { compatibleEquipment: ['kettlebell'], defaultLoadConvention: 'per_hand' });
-const smithSquat = catalogue('smith-machine-squat', 'Smith machine squat', { compatibleEquipment: ['smith_machine'], defaultLoadConvention: 'total' });
+const smithSquat = catalogue('smith-machine-squat', 'Smith machine squat', { compatibleEquipment: ['smith_machine'], defaultLoadConvention: 'added' });
 const trapDeadlift = catalogue('trap-bar-deadlift', 'Trap bar deadlift', { compatibleEquipment: ['trap_bar'], defaultLoadConvention: 'total' });
 const ezCurl = catalogue('ez-bar-curl', 'EZ bar curl', { compatibleEquipment: ['ez_bar'], defaultLoadConvention: 'total' });
 
@@ -75,7 +77,8 @@ describe('full gym: every new kind, assumed, at typical values (kg and lb native
     expect(item(eq, 'kettlebell')).toMatchObject({ loadConvention: 'per_hand', loads: bells, unit, detailsSource: 'preset' });
     expect(item(eq, 'ez_bar')).toMatchObject({ loadConvention: 'total', barMass: ez, unit, detailsSource: 'preset' });
     expect(item(eq, 'trap_bar')).toMatchObject({ loadConvention: 'total', barMass: trap });
-    expect(item(eq, 'smith_machine')).toMatchObject({ loadConvention: 'total', barMass: smith, name: 'Smith machine' });
+    // Plates added, its bar's starting weight beside the load, never in it (rule 6: the bar weight is assumed).
+    expect(item(eq, 'smith_machine')).toMatchObject({ loadConvention: 'added', barMass: smith, name: 'Smith machine' });
     expect(item(eq, 'bench')).toMatchObject({ benchType: 'adjustable', loadConvention: 'bodyweight' });
     expect(item(eq, 'rack')).toMatchObject({ rackType: 'power_rack' });
     // Gym defaults stay (item 10): dumbbells to 50 kg / 120 lb.
@@ -108,19 +111,27 @@ describe('snapping on the new kinds (rule 4)', () => {
     expect(roundToAvailableLoad(kg(16, 'total'), kb, 'nearest')).toMatchObject({ ok: false, reason: 'convention_mismatch' });
   });
 
-  it('EZ, trap and Smith: totals incl. the bar, from the bar up; plates per side', () => {
+  it('EZ and trap: totals incl. the bar, from the bar up; Smith: plates added, balanced', () => {
     const ez = item(eq, 'ez_bar');
     const trap = item(eq, 'trap_bar');
     const smith = item(eq, 'smith_machine');
-    expect(isBarLoaded(ez) && isBarLoaded(trap) && isBarLoaded(smith)).toBe(true);
+    expect(isBarLoaded(ez) && isBarLoaded(trap)).toBe(true);
+    expect(isBarLoaded(smith)).toBe(false);
     expect(getAchievableLoads(ez).loads[0]).toBe(10);
     expect(getAchievableLoads(trap).loads[0]).toBe(25);
-    expect(getAchievableLoads(smith).loads[0]).toBe(15);
+    expect(getAchievableLoads(smith).loads.slice(0, 3)).toEqual([0, 2.5, 5]);
+    expect(roundToAvailableLoad(kg(41, 'added'), smith, 'easier')).toMatchObject({ ok: true, load: { value: 40, convention: 'added' } });
+    // Shown as plates, never as weight added to the body.
+    expect(loadText(kg(40, 'added'), 'added', smith)).toBe('40\u00a0kg\u00a0plates');
+    expect(loadFieldLabel('added', smith)).toBe('Plates');
+    // A total is never read as plates.
+    expect(roundToAvailableLoad(kg(60, 'total'), smith, 'easier')).toMatchObject({ ok: false, reason: 'convention_mismatch' });
     expect(roundToAvailableLoad(kg(31, 'total'), ez, 'easier')).toMatchObject({ ok: true, load: { value: 30 } });
     // Below the bar is never rounded up to it by a fit (dropped instead).
     expect(roundToAvailableLoad(kg(5, 'total'), trap, 'easier')).toMatchObject({ ok: true, load: { value: 25 }, bounded: 'min' });
-    expect(buildPlateSetup({ value: 55, unit: 'kg' }, smith)).toMatchObject({ ok: true, base: { value: 15 }, sides: 2, perSide: [{ mass: 20, count: 1 }] });
-    expect(buildPlateSetup({ value: 10, unit: 'kg' }, smith)).toMatchObject({ ok: false, reason: 'below_base' });
+    expect(buildPlateSetup({ value: 40, unit: 'kg' }, smith)).toMatchObject({ ok: true, base: { value: 0 }, sides: 2, perSide: [{ mass: 20, count: 1 }] });
+    expect(buildPlateSetup({ value: 70, unit: 'kg' }, ez)).toMatchObject({ ok: true, base: { value: 10 }, perSide: [{ mass: 25, count: 1 }, { mass: 5, count: 1 }] });
+    expect(buildPlateSetup({ value: 5, unit: 'kg' }, trap)).toMatchObject({ ok: false, reason: 'below_base' });
     // A max is never passed.
     const capped = { ...trap, maxLoad: 105 };
     expect(roundToAvailableLoad(kg(140, 'total'), capped, 'nearest')).toMatchObject({ ok: true, load: { value: 105 }, bounded: 'max' });
@@ -134,7 +145,7 @@ describe('snapping on the new kinds (rule 4)', () => {
   });
 
   it('a plan made for kettlebells, Smith and trap bar maps to those items; a gym without them has them not here', () => {
-    const slot = (ex: Exercise, kind: EquipmentInstance['kind'], value: number, convention: 'total' | 'per_hand') => ({
+    const slot = (ex: Exercise, kind: EquipmentInstance['kind'], value: number, convention: 'total' | 'per_hand' | 'added') => ({
       slotId: ex.id,
       exercise: ex,
       sourceEquipment: { id: 'elsewhere', kind, name: 'x', gymId: 'other' },
@@ -142,7 +153,7 @@ describe('snapping on the new kinds (rule 4)', () => {
       convention,
       sets: [{ id: `${ex.id}-1`, setType: 'working' as const, intended: kg(value, convention), current: null, reps: { min: 8, max: 8 }, durationS: null }],
     });
-    const slots = [slot(swing, 'kettlebell', 18, 'per_hand'), slot(smithSquat, 'smith_machine', 61, 'total'), slot(trapDeadlift, 'trap_bar', 101, 'total')];
+    const slots = [slot(swing, 'kettlebell', 18, 'per_hand'), slot(smithSquat, 'smith_machine', 61, 'added'), slot(trapDeadlift, 'trap_bar', 101, 'total')];
     const r = snapPlanToGym({ mode: 'start', slots, gym: snapGym(eq), ownerUnit: 'kg' });
     expect(r.slots.map((s) => [s.equipment?.kind, s.sets[0]?.load?.value])).toEqual([
       ['kettlebell', 16],
@@ -160,7 +171,8 @@ describe('snapping on the new kinds (rule 4)', () => {
 
   it('Why? names what is assumed; confirmed items say nothing', () => {
     expect(assumedWhy(item(eq, 'kettlebell'))).toBe('Assumed kettlebells');
-    expect(assumedWhy(item(eq, 'smith_machine'))).toBe('Assumed bar and plates');
+    expect(assumedWhy(item(eq, 'ez_bar'))).toBe('Assumed bar and plates');
+    expect(assumedWhy(item(eq, 'smith_machine'))).toBe('Assumed plates');
     expect(assumedWhy({ ...item(eq, 'trap_bar'), detailsSource: 'user' })).toBeNull();
     expect(assumedWhy(item(eq, 'bench'))).toBeNull();
   });
@@ -244,9 +256,11 @@ describe('gym editor for the new kinds', () => {
   it('saves each kind checked by Ben, with its own preview line', () => {
     const smith = applyEquipmentForm({ ...newEquipmentForm('smith_machine', 'kg'), plates: [{ mass: 20, count: 4 }] } as never, null, meta);
     if (!smith.ok) throw new Error(smith.problems.join());
-    expect(smith.equipment).toMatchObject({ kind: 'smith_machine', loadConvention: 'total', barMass: 15, detailsSource: 'user' });
-    expect(equipmentRowLine(smith.equipment)).toBe('15–95 kg · plates + bar');
-    expect(loadPreviewLine(smith.equipment)).toBe('Makes 3 loads: 15–95 kg, total, every 40 kg.');
+    expect(smith.equipment).toMatchObject({ kind: 'smith_machine', loadConvention: 'added', barMass: 15, detailsSource: 'user' });
+    expect(equipmentRowLine(smith.equipment)).toBe('0–80 kg plates · 15 kg bar');
+    expect(loadPreviewLine(smith.equipment)).toBe('Makes 3 loads: 0–80 kg plates, every 40 kg · 15 kg bar.');
+    const ezSaved = applyEquipmentForm({ ...newEquipmentForm('ez_bar', 'kg'), plates: [{ mass: 10, count: 2 }] } as never, null, meta);
+    expect(ezSaved.ok && equipmentRowLine(ezSaved.equipment)).toBe('10–30 kg · total');
 
     const kb = applyEquipmentForm(newEquipmentForm('kettlebell', 'kg'), null, meta);
     if (!kb.ok) throw new Error(kb.problems.join());
@@ -263,18 +277,21 @@ describe('gym editor for the new kinds', () => {
     expect(rack.ok && equipmentRowLine(rack.equipment)).toBe('Squat rack');
   });
 
-  it('a max below the bar is refused for every bar', () => {
-    for (const kind of ['ez_bar', 'trap_bar', 'smith_machine'] as const) {
+  it('a max below the bar is refused for the EZ and trap bar; a Smith max is plates', () => {
+    for (const kind of ['ez_bar', 'trap_bar'] as const) {
       const r = applyEquipmentForm({ ...newEquipmentForm(kind, 'kg'), maxLoad: 5 } as never, null, meta);
       expect(r.ok).toBe(false);
     }
+    const smith = applyEquipmentForm({ ...newEquipmentForm('smith_machine', 'kg'), plates: [{ mass: 20, count: 4 }], maxLoad: 5 } as never, null, meta);
+    expect(smith.ok && getAchievableLoads(smith.equipment).loads).toEqual([0]);
   });
 });
 
 describe('custom exercises', () => {
   it('can be on a Smith machine; never on a bench or rack (presence only)', () => {
-    const base = { name: 'Smith shrug', loadConvention: 'total', primaryMuscles: ['upper_back'], measurement: 'reps', laterality: 'bilateral' };
+    const base = { name: 'Smith shrug', loadConvention: 'added', primaryMuscles: ['upper_back'], measurement: 'reps', laterality: 'bilateral' };
     expect(checkCustomExerciseFields({ ...base, equipment: 'smith_machine' }).ok).toBe(true);
+    expect(checkCustomExerciseFields({ ...base, equipment: 'smith_machine', loadConvention: 'total' }).ok).toBe(false);
     expect(checkCustomExerciseFields({ ...base, equipment: 'bench' }).ok).toBe(false);
     expect(checkCustomExerciseFields({ ...base, equipment: 'rack', loadConvention: 'total' }).ok).toBe(false);
   });

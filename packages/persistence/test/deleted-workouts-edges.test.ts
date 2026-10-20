@@ -208,7 +208,7 @@ describe('migration 10 (workout gaps) on main’s schema 9', () => {
     expect(await readUserVersion(old)).toBe(9);
     expect(await old.getAll("SELECT duration_confirmed_at_utc AS u FROM sessions WHERE duration_confirmed_at_utc IS NOT NULL")).toEqual([{ u: NOW.utc }]);
     expect(await migrate(old)).toMatchObject({ from: 9, to: latestVersion(), applied: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29] });
-    expect(latestVersion()).toBe(28);
+    expect(latestVersion()).toBe(29);
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());
@@ -293,7 +293,7 @@ describe('migration 11 (coach set actions) on main’s schema 10', () => {
     // Schema 10 refuses what 11 adds.
     await expect(old.run("UPDATE playbook_candidates SET status = 'approved'")).rejects.toThrow();
     expect(await migrate(old)).toMatchObject({ from: 10, to: latestVersion(), applied: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29] });
-    expect(latestVersion()).toBe(28);
+    expect(latestVersion()).toBe(29);
 
     const fresh = memoryDriver();
     cleanups.push(() => fresh.close());

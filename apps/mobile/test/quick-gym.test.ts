@@ -60,7 +60,7 @@ describe('quick gym setup', () => {
       ['Racks', 'Assumed'],
     ]);
     expect(detail?.equipment[0]?.line).toBe('2–50 kg each');
-    expect(detail?.equipment.slice(7).map((e) => e.line)).toEqual(['4–32 kg each', '10–325 kg · total', '25–655 kg · total', '15–645 kg · plates + bar', 'Adjustable', 'Power rack']);
+    expect(detail?.equipment.slice(7).map((e) => e.line)).toEqual(['4–32 kg each', '10–325 kg · total', '25–655 kg · total', '0–630 kg plates · 15 kg bar', 'Adjustable', 'Power rack']);
     expect(detail?.makeFull).toBeNull();
     expect((await s.gyms.list())[0]).toMatchObject({ items: 13, unchecked: 13 });
   });
