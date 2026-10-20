@@ -98,4 +98,18 @@ describe('activity line geometry (Ben, 13 Oct 2026)', () => {
     expect(l.yTicks.length).toBeGreaterThanOrEqual(3);
     expect(trendLayout({ ...base, points }).overlayYs).toEqual([]);
   });
+
+  it('a lift target (Ben, 20 Oct) above every point widens the scale so its dotted line is inside the plot; none on bars', () => {
+    const base = { from: '2026-04-15', to: '2026-10-14', width: 330, height: 260, bars: false, format: 'number' as const, axisWidth: 44, inset: 10 };
+    const points = [
+      { date: '2026-05-01', value: 90, breakBefore: false },
+      { date: '2026-09-01', value: 95, breakBefore: false },
+    ];
+    const l = trendLayout({ ...base, points, target: 120 });
+    expect(l.targetY).toBeDefined();
+    expect(l.targetY ?? -1).toBeGreaterThanOrEqual(l.plot.y);
+    expect(l.targetY ?? 0).toBeLessThan(Math.min(...l.ys));
+    expect(trendLayout({ ...base, points }).targetY).toBeUndefined();
+    expect(trendLayout({ ...base, points, bars: true, target: 120 }).targetY).toBeUndefined();
+  });
 });

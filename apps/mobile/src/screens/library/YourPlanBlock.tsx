@@ -10,6 +10,7 @@ import type { LibraryStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Eyebrow, Icon, TextButton } from '../../ui';
+import { LiftTargetsBlock } from './LiftTargetsBlock';
 
 export type PlanToast = { text: string; action?: string; onAction?: () => void };
 
@@ -102,6 +103,8 @@ export function YourPlanBlock({ plan, onToast }: { plan: PlanOverview; onToast: 
         <Stat value={plan.daysThisWeek.text} label={PLAN_OVERVIEW_COPY.daysThisWeek} />
         {plan.setsDone !== null ? <Stat value={plan.setsDone.text} label={PLAN_OVERVIEW_COPY.setsDone} /> : null}
       </View>
+      {/* (Ben approved 20 Oct) Lift targets: nothing while the setting is off. */}
+      <LiftTargetsBlock onToast={onToast} />
       {confirming ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['4'] }}>
           <AppText variant="callout">{PLAN_OVERVIEW_COPY.endConfirm}</AppText>

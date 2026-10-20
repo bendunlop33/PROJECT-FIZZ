@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Switch, View } from 'react-native';
 
-import { cmFromFeetInches, feetInches } from '@fizz/domain';
+import { cmFromFeetInches, feetInches, LIFT_TARGET_COPY } from '@fizz/domain';
 import type { TrainingChange, TrainingProfile, WeightEntry, WeightUnit } from '@fizz/schemas';
 
 import { nowMs as clockNow } from '../../clock';
@@ -99,6 +99,8 @@ export function TrainingDetailsScreen() {
         {v.training.map((r) => (
           <Row key={r.key} title={r.title} subtitle={r.value} onPress={() => { open(r.key); }} />
         ))}
+        {/* (Ben approved 20 Oct) Lift targets on or off; off hides them everywhere and from the coach. */}
+        <Row title={LIFT_TARGET_COPY.setting} trailing={<Switch accessibilityLabel={LIFT_TARGET_COPY.setting} value={p.liftTargetsOn === true} onValueChange={(on) => void save({ kind: 'lift_targets_on', on }, services.newId())} />} />
       </Group>
 
       <EditSheet editing={editing} profile={p} nowYear={snap.nowYear} unit={unit} today={localDateKey(clockNow(), services.now().tz)} onClose={() => { setEditing(null); }} onSave={(c) => void save(c)} />
