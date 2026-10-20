@@ -2601,6 +2601,7 @@ export function WorkoutScreen() {
         {tableMode && rest !== null ? (
           <RestBar
             rest={rest}
+            slim={keypadOpen}
             onAdjust={adjustRest}
             onSkip={skipRest}
             onOpen={() => {
