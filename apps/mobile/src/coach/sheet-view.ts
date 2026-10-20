@@ -168,6 +168,10 @@ export interface CardView {
   plan?: ActionRecord;
   /** (19 Oct) The coach's new exercise for Ben's list: `Edit` · `Add` while open (rule 3). */
   newExercise?: { actionId: string; fields: CustomExerciseFields; canAdd: boolean };
+  /** (Ben, 20 Oct) The coach's week proposal: before/after, `This week`, Apply or Undo (rule 3). */
+  week?: ActionRecord;
+  /** (Ben, 20 Oct) An activity the coach offered to log (he didn't ask): `Log`, then Undo. */
+  activityOffer?: ActionRecord;
 }
 
 /**
@@ -294,7 +298,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'log_activity']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
@@ -324,6 +328,8 @@ export function cardView(r: ActionRecord): CardView {
     canUndo: r.status === 'committed' && r.undoneBy === null && r.detail.kind !== 'undo' && UNDOABLE.has(r.detail.kind),
     ...(r.detail.kind === 'build_workout' && r.status === 'committed' ? { draft: r } : {}),
     ...(r.detail.kind === 'build_plan' && r.status === 'committed' ? { plan: r } : {}),
+    ...(r.detail.kind === 'propose_week' && r.status === 'proposed' ? { week: r } : {}),
+    ...(r.detail.kind === 'log_activity' && r.status === 'proposed' ? { activityOffer: r } : {}),
   };
 }
 
