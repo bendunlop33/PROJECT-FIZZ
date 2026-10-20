@@ -962,6 +962,8 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     versionAfter: z.int().min(1).nullable(),
     /** Ben's tap on an offer: the offer it logged. */
     proposalId: IdSchema.optional(),
+    /** A done activity that marked Ben's planned one of the same kind and day done (an edit; Undo puts the plan back). */
+    markedDone: z.literal(true).optional(),
   }),
   /**
    * (Ben, 20 Oct) This week reshaped around a run: a proposal (always), with the before/after list and

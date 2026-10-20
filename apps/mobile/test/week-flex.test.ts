@@ -236,7 +236,7 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     model = new StepModel([() => toolCall('log_activity', { kind: 'run', status: 'done', date: '2026-10-21', durationMin: 95, distanceKm: null, effort: null, reason: 'Ben mentioned a run.' }), () => replyWith('Want me to log that run?')]);
     const r = await say(s, 'Legs feel heavy today');
     const offer = r.cards.find((c) => c.record.detail.kind === 'log_activity')?.record;
-    expect(offer).toMatchObject({ status: 'proposed', detail: { activityId: null, fields: { durationS: 5700, effort: null } } });
+    expect(offer).toMatchObject({ status: 'proposed', detail: { activityId: null, fields: { date: '2026-10-21', status: 'done', durationS: 5700, effort: null } } });
     expect(await s.activities.recent()).toEqual([]);
     expect(await s.coach.activityOffer(offer?.actionId ?? '')).toEqual({ kind: 'open' });
     const logged = await s.coach.logOfferedActivity(offer?.actionId ?? '');

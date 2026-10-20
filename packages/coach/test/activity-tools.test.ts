@@ -5,7 +5,7 @@ import type { ActionRecord, Activity, CoachWrite, CoachWriteResult, ZonedTimesta
 
 import {
   acceptActivityOffer,
-  activityFieldsFrom,
+  activityMentions,
   activityWords,
   asksToLogActivity,
   asksToPlanWeek,
@@ -13,6 +13,7 @@ import {
   classifyBenRequest,
   createActivityExecutor,
   createWeekExecutor,
+  readActivityCall,
   renderActionResult,
   requestHas,
   type CoachWriteStore,
@@ -60,11 +61,59 @@ describe('Ben tells the coach about an activity', () => {
     expect(activityWords('run on friday', TODAY).date).toBe(TODAY);
   });
 
-  it('his words win; a day ahead is planned, one before done; no effort he didn’t say', () => {
-    const args = { kind: 'run' as const, status: 'done' as const, date: '2026-10-20', durationMin: 95, distanceKm: 20, effort: 'long' as const };
-    expect(activityFieldsFrom(args, activityWords('long run Saturday', TODAY), TODAY)).toEqual({ kind: 'run', status: 'planned', date: '2026-10-24', durationS: 5700, distanceM: 20_000, effort: 'long' });
-    expect(activityFieldsFrom(args, {}, TODAY)).toEqual({ kind: 'run', status: 'done', date: '2026-10-20', durationS: 5700, distanceM: 20_000, effort: null });
-    expect(activityFieldsFrom({ ...args, date: '2027-03-01' }, {}, TODAY)).toBeNull();
+  it('his words for that activity back the call; a day ahead is planned, one before done; no effort he didn’t say', () => {
+    const args = { kind: 'run' as const, status: 'done' as const, date: '2026-10-24', durationMin: 95, distanceKm: 20, effort: 'long' as const };
+    expect(readActivityCall(args, 'long run Saturday', TODAY)).toEqual({ agrees: true, fields: { kind: 'run', status: 'planned', date: '2026-10-24', durationS: 5700, distanceM: 20_000, effort: 'long' } });
+    // No words of Ben's: the model's values, never its effort; an offer.
+    expect(readActivityCall({ ...args, date: '2026-10-20' }, null, TODAY)).toEqual({ agrees: false, fields: { kind: 'run', status: 'done', date: '2026-10-20', durationS: 5700, distanceM: 20_000, effort: null } });
+    expect(readActivityCall({ ...args, date: '2027-03-01' }, null, TODAY)).toBeNull();
+    // His day for it differs from the model's: his day is what the offer shows.
+    expect(readActivityCall({ ...args, date: '2026-10-20' }, 'long run Saturday', TODAY)).toMatchObject({ agrees: false, fields: { date: '2026-10-24' } });
+    // "long" for a run his numbers make long is not an invented effort.
+    expect(readActivityCall({ ...args, date: '2026-10-22', durationMin: null, distanceKm: 18 }, '18 km run yesterday', TODAY)).toMatchObject({ agrees: true, fields: { effort: null, distanceM: 18_000 } });
+  });
+});
+
+describe('several things in one message (review B1)', () => {
+  // Today: Thu 22 Oct.
+  const THU = '2026-10-22';
+  const base = { status: 'done' as const, durationMin: null, distanceKm: null, effort: null };
+
+  it('each activity is read from its own clause', () => {
+    expect(activityMentions('Had an easy 5k yesterday, long run Saturday', THU)).toEqual([
+      { kind: 'run', effort: 'easy', distanceM: 5000, date: '2026-10-21' },
+      { kind: 'run', effort: 'long', date: '2026-10-24' },
+    ]);
+    expect(activityMentions('Last session was hard, also did a 10k run', THU)).toEqual([{ kind: 'run', distanceM: 10_000 }]);
+    expect(activityMentions('I swam yesterday and have a long run Saturday', THU)).toEqual([
+      { kind: 'swim', date: '2026-10-21' },
+      { kind: 'run', effort: 'long', date: '2026-10-24' },
+    ]);
+    expect(activityMentions('Legs feel heavy today', THU)).toEqual([]);
+    // A trailing clause adds a number or a day, never an effort.
+    expect(activityMentions('did a run yesterday, 18 km, felt hard', THU)).toEqual([{ kind: 'run', date: '2026-10-21', distanceM: 18_000 }]);
+  });
+
+  it('"Had an easy 5k yesterday, long run Saturday": the 5k stays easy and both are offers', () => {
+    const easy = readActivityCall({ ...base, kind: 'run', date: '2026-10-21', distanceKm: 5, effort: 'easy' }, 'Had an easy 5k yesterday, long run Saturday', THU);
+    expect(easy).toEqual({ agrees: false, fields: { kind: 'run', status: 'done', date: '2026-10-21', durationS: null, distanceM: 5000, effort: 'easy' } });
+    const long = readActivityCall({ ...base, kind: 'run', status: 'planned', date: '2026-10-24', effort: 'long' }, 'Had an easy 5k yesterday, long run Saturday', THU);
+    expect(long).toEqual({ agrees: false, fields: { kind: 'run', status: 'planned', date: '2026-10-24', durationS: null, distanceM: null, effort: 'long' } });
+  });
+
+  it('"Last session was hard, also did a 10k run": no effort on the run', () => {
+    const r = readActivityCall({ ...base, kind: 'run', date: THU, distanceKm: 10, effort: 'hard' }, 'Last session was hard, also did a 10k run', THU);
+    expect(r).toMatchObject({ agrees: false, fields: { effort: null, distanceM: 10_000 } });
+  });
+
+  it('"Swam yesterday and long run Saturday": the swim stays a swim', () => {
+    const r = readActivityCall({ ...base, kind: 'swim', date: '2026-10-21', durationMin: 40 }, 'I swam yesterday and have a long run Saturday', THU);
+    expect(r).toMatchObject({ agrees: false, fields: { kind: 'swim', date: '2026-10-21', effort: null } });
+  });
+
+  it('an unrelated "today" never moves the model’s date', () => {
+    const r = readActivityCall({ ...base, kind: 'run', date: '2026-10-21', distanceKm: 12 }, 'Legs feel heavy today', THU);
+    expect(r).toMatchObject({ agrees: false, fields: { date: '2026-10-21', status: 'done' } });
   });
 });
 
@@ -79,7 +128,8 @@ function memoryStore() {
       const prior = [...records.values()].find((r) => r.opId === write.action.opId);
       if (prior !== undefined) return Promise.resolve({ status: 'replayed', action: prior });
       if (write.kind === 'activity') {
-        if (activities.has(write.activity.id)) return Promise.resolve({ status: 'conflict', reason: 'already_exists' });
+        const cur = activities.get(write.activity.id);
+        if (write.expectedVersion === null ? cur !== undefined : cur?.version !== write.expectedVersion) return Promise.resolve({ status: 'conflict', reason: write.expectedVersion === null ? 'already_exists' : 'stale_version' });
         activities.set(write.activity.id, write.activity);
       }
       records.set(write.action.actionId, write.action);
@@ -125,6 +175,36 @@ describe('log_activity: asked vs offered (rule 3)', () => {
     const yes = await acceptActivityOffer(deps, r.record, { ownerId: OWNER, turnId: 'turn-2', now: NOW });
     expect(yes.kind === 'action' && yes.record).toMatchObject({ status: 'committed', detail: { proposalId: r.record.actionId } });
     expect(await acceptActivityOffer(deps, r.record, { ownerId: OWNER, turnId: 'turn-3', now: NOW })).toMatchObject({ kind: 'action', replayed: true });
+    expect(m.activities.size).toBe(1);
+  });
+
+  it('Ben names two activities: neither is logged without his tap (review B1)', async () => {
+    const m = memoryStore();
+    const exec = createActivityExecutor({ store: m.store, tz: TZ, onDate: () => Promise.resolve([]) }).log_activity;
+    if (exec === undefined) throw new Error('no executor');
+    const words = 'Had an easy 5k yesterday, long run Saturday';
+    const a = await exec(call({ distanceKm: 5, effort: 'easy' }) as never, ctx(words, 'c-1'));
+    const b = await exec(call({ date: '2026-10-24', status: 'planned', distanceKm: null, effort: 'long' }) as never, ctx(words, 'c-2'));
+    expect(a.kind === 'action' && a.record).toMatchObject({ status: 'proposed', detail: { fields: { date: '2026-10-22', distanceM: 5000, effort: 'easy' } } });
+    expect(b.kind === 'action' && b.record).toMatchObject({ status: 'proposed', detail: { fields: { date: '2026-10-24', status: 'planned', effort: 'long' } } });
+    expect(m.activities.size).toBe(0);
+  });
+
+  it('a planned run Ben then says he did is marked done, not added twice (review S5)', async () => {
+    const m = memoryStore();
+    const deps = { store: m.store, tz: TZ, onDate: (date: string) => Promise.resolve([...m.activities.values()].filter((a) => a.fields.date === date && a.deletedAtUtc === null)) };
+    const planned = addActivity({ id: '00000000-0000-4000-8000-0000000000a1', ownerId: OWNER, fields: { kind: 'run', status: 'planned', date: '2026-10-22', durationS: null, distanceM: null, effort: 'long' }, source: 'ben', opId: 'sheet-1', at: { utc: '2026-10-20T08:00:00.000Z', tz: TZ } });
+    if (planned.kind !== 'write') throw new Error('planned');
+    m.activities.set(planned.next.id, planned.next);
+    const exec = createActivityExecutor(deps).log_activity;
+    if (exec === undefined) throw new Error('no executor');
+    const r = await exec(call({ distanceKm: 21, effort: 'long' }) as never, ctx('did my 21 km long run yesterday'));
+    expect(r.kind === 'action' && r.record).toMatchObject({ status: 'committed', detail: { activityId: planned.next.id, versionAfter: 2, markedDone: true, fields: { status: 'done', distanceM: 21_000, effort: 'long' } }, entityVersions: [{ before: 1, after: 2 }] });
+    expect(m.activities.size).toBe(1);
+    expect(m.activities.get(planned.next.id)).toMatchObject({ version: 2, fields: { status: 'done', distanceM: 21_000 }, lastChange: { kind: 'edit', opId: 'call-1' } });
+    if (r.kind === 'action') expect(renderActionResult(r.record, 'sheet').text.replaceAll('\u00a0', ' ')).toBe('Marked done: Run · 22 Oct · 21 km · long.');
+    // A retry replays; it never marks or adds again.
+    expect(await exec(call({ distanceKm: 21, effort: 'long' }) as never, ctx('did my 21 km long run yesterday'))).toMatchObject({ kind: 'action', replayed: true });
     expect(m.activities.size).toBe(1);
   });
 

@@ -20,7 +20,7 @@ import {
   type PainFlag,
   type PlaybookCandidate,
 } from '@fizz/schemas';
-import { chatSetUndoCommand, deleteActivity, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate, undoPlanControl } from '@fizz/domain';
+import { chatSetUndoCommand, isInHistory, nextTargetSourceBasis, reduceSession, suggestionInDate, undoActivity, undoPlanControl } from '@fizz/domain';
 import { ACTIVITY_SPEC } from './activities';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
@@ -746,12 +746,13 @@ export class SqliteCoachStore {
         return 'ok';
       }
       case 'log_activity': {
-        // (Ben, 20 Oct) The activity the coach logged comes out (a tombstone), only while it is as this write left it.
+        // (Ben, 20 Oct) The activity the coach logged comes out (a tombstone), or one it marked done is planned again
+        // (review S5), only while it is as this write left it.
         if (d.activityId === null || d.versionAfter === null) return 'unsupported';
         const row = await tx.getFirst('SELECT * FROM activities WHERE id = ?', [d.activityId]);
         const a = row === null ? null : decodeDocument(ACTIVITY_SPEC, row);
         if (a === null || a.ownerId !== ownerId || a.version !== d.versionAfter || a.deletedAtUtc !== null) return 'changed_since';
-        const c = deleteActivity(a, { expectedVersion: a.version, opId: `undo:${target.actionId}`, at: { utc: atUtc, tz: target.createdAt.tz } });
+        const c = undoActivity(a, { opId: `undo:${target.actionId}`, at: { utc: atUtc, tz: target.createdAt.tz }, targetOpId: target.opId });
         if (c.kind !== 'write') return 'changed_since';
         if (!(await saveDocumentIn(tx, ACTIVITY_SPEC, c.next, c.expectedVersion)).ok) return 'changed_since';
         return 'ok';

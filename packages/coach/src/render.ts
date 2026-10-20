@@ -504,7 +504,7 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       // (Ben, 20 Oct) An activity logged because Ben asked (Undo on the card), or offered (Log on the card).
       const what = activityLine(d.fields);
       if (st === 'committed') {
-        const text = `Logged: ${what}.`;
+        const text = d.markedDone === true ? `Marked done: ${what}.` : `Logged: ${what}.`;
         return make(status, text, speakable(text));
       }
       if (st === 'proposed') {

@@ -126,6 +126,34 @@ describe('activities: versioned writes, Undo, backup and restore', () => {
     expect((await m.store.repos.activities.get(activity.id))?.deletedAtUtc).not.toBeNull();
     await m.close();
   });
+  it('a planned run the coach marked done: Undo puts the plan back (review S5)', async () => {
+    const m = await managerIn();
+    await m.store.repos.profiles.save(profile(), null);
+    const c = added(6);
+    expect(await m.store.repos.activities.add(OWNER, c)).toMatchObject({ status: 'written' });
+    const e = editActivity(c.next, { opId: 'mark-6', at: at(5), expectedVersion: 1, fields: { ...RUN, status: 'done', distanceM: 21_000 } });
+    if (e.kind !== 'write') throw new Error(e.kind);
+    const action: ActionRecord = {
+      actionId: id(8100),
+      turnId: 'turn-2',
+      opId: 'mark-6',
+      status: 'committed',
+      author: 'coach',
+      detail: { kind: 'log_activity', activityId: e.next.id, fields: e.next.fields, versionAfter: 2, markedDone: true },
+      failure: null,
+      reason: null,
+      evidenceRefs: [],
+      guardNotes: [],
+      entityVersions: [{ entity: 'activity', id: e.next.id, before: 1, after: 2 }],
+      undoneBy: null,
+      createdAt: at(5),
+    };
+    expect(await m.store.repos.coach.commit(OWNER, { kind: 'activity', action, activity: e.next, expectedVersion: 1 })).toMatchObject({ status: 'written' });
+    const undo: ActionRecord = { ...action, actionId: id(8101), opId: 'undo-6', author: 'ben', detail: { kind: 'undo', undoneActionId: action.actionId, what: 'the run', restored: [], alreadyLogged: [] }, entityVersions: [], createdAt: at(10) };
+    expect(await m.store.repos.coach.undo(OWNER, undo)).toMatchObject({ status: 'written' });
+    expect(await m.store.repos.activities.get(e.next.id)).toMatchObject({ version: 3, deletedAtUtc: null, fields: { status: 'planned', distanceM: 18_000 } });
+    await m.close();
+  });
 });
 
 describe('week changes: Apply and Undo with the merged day, all or nothing', () => {
