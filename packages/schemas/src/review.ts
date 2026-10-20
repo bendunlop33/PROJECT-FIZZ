@@ -75,7 +75,8 @@ export const ReviewFactSchema = z.discriminatedUnion('kind', [
   }),
   /** An estimated max: always labelled an estimate (rule 6). */
   z.object({ kind: z.literal('est_max'), exerciseId: IdSchema, value: MassSchema, estimate: z.literal(true) }),
-  z.object({ kind: z.literal('rpe_drift'), exerciseId: IdSchema.nullable(), sessions: z.int().min(1).max(20), meanRpe: z.number().min(1).max(10), targetRpe: RpeSchema }),
+  /** `targetRpe`: the sessions' own target; null when none was logged (never assumed, rule 6; review b3-coach S4). */
+  z.object({ kind: z.literal('rpe_drift'), exerciseId: IdSchema.nullable(), sessions: z.int().min(1).max(20), meanRpe: z.number().min(1).max(10), targetRpe: RpeSchema.nullable() }),
   z.object({ kind: z.literal('rep_miss'), exerciseId: IdSchema, sessionId: IdSchema, targetReps: z.int().min(0).max(1000), reps: z.int().min(0).max(1000) }),
   z.object({ kind: z.literal('stalled_lift'), exerciseId: IdSchema, sessions: z.int().min(1).max(20) }),
   z.object({ kind: z.literal('check_in'), checkInId: IdSchema }),
