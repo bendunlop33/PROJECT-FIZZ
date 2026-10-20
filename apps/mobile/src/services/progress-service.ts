@@ -37,7 +37,7 @@ import {
   type ResumeBar,
 } from '@fizz/domain';
 import { timeSlicer, type Slicer, type Store } from '@fizz/persistence';
-import type { Exercise, ProgressGrouping, ProgressPeriodKey, SessionAggregate, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
+import type { Exercise, ImplementCount, ProgressGrouping, ProgressPeriodKey, SessionAggregate, SessionCommand, UserProfile, ZonedTimestamp } from '@fizz/schemas';
 
 /**
  * Progress (progress.md v1.0, slice A). Local reads only: nothing here waits
@@ -63,6 +63,8 @@ export interface ProgressServiceDeps {
   saveSettings: (merge: (current: UserProfile['progress']) => NonNullable<UserProfile['progress']> | null) => Promise<{ ok: boolean }>;
   /** Bundled catalogue rows, by catalogue key: muscles for stored rows saved without helpers. */
   catalogueExercises: () => readonly Exercise[];
+  /** Dumbbells per hand-load set for a catalogue entry (`implements`: 1 or 2), for Progress's total weight; null when not recorded. */
+  catalogueImplements?: (catalogueKey: string) => ImplementCount | null;
   dispatch: (sessionId: string, command: SessionCommand) => Promise<CommandOutcome>;
   /** Yields between workouts on a cold read so taps and frames keep running (default: 8 ms slices). */
   slicer?: () => Slicer;
@@ -260,6 +262,12 @@ export function createProgressService(deps: ProgressServiceDeps) {
       unreadable,
       exercises: muscleInfoFor(rows, deps.catalogueExercises()),
       gymNames: Object.fromEntries(gyms.map((g) => [g.id, g.name])),
+      /** One dumbbell or two per hand-load set (the catalogue's `implements`); null for custom exercises and anything else. */
+      implementsOf: (exerciseId: string): ImplementCount | null => {
+        const row = rows.find((r) => r.id === exerciseId) ?? deps.catalogueExercises().find((c) => c.id === exerciseId);
+        if (row === undefined || row.defaultLoadConvention !== 'per_hand' || !row.catalogueKey) return null;
+        return deps.catalogueImplements?.(row.catalogueKey) ?? null;
+      },
     };
   }
 
@@ -322,7 +330,8 @@ export function createProgressService(deps: ProgressServiceDeps) {
               exerciseId,
               today,
               window,
-              gymNames: ctx.gymNames,
+              unit: profile.preferredUnit,
+              implements: ctx.implementsOf(exerciseId),
               name: ctx.exercises.get(exerciseId)?.name ?? '',
               seriesId: req.seriesId ?? null,
               sessionId: req.open?.sessionId ?? null,
@@ -366,7 +375,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
         sessions: ctx.sessions,
         exerciseId: req.exerciseId,
         today,
-        gymNames: ctx.gymNames,
+        unit: profile.preferredUnit,
         name: ctx.exercises.get(req.exerciseId)?.name ?? '',
         seriesId: req.seriesId ?? (opening ? null : (req.openedSeriesId ?? next.seriesId ?? null)),
         equipmentId: req.equipmentId ?? null,

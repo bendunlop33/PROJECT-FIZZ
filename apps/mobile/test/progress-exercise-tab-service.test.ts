@@ -75,4 +75,28 @@ describe('exerciseTab', () => {
     expect(opened?.range).toBeNull();
     expect(opened?.view?.chart.points.map((p) => p.sessionId)).toContain(old);
   });
+
+  it('Total weight (20 Oct): per-hand loads count each dumbbell from the catalogue; a goblet squat is one dumbbell', async () => {
+    const { services: s } = await h.launch();
+    await s.setup.saveUnits('kg');
+    const gym = await s.setup.useTypicalGym();
+    await s.setup.complete();
+    const gymId = gym.ok ? (gym.gymId ?? '') : '';
+    await logWorkout(h, s, gymId, [
+      { exercise: 'Dumbbell bench press', sets: [{ load: 20, reps: 10 }, { load: 20, reps: 10 }] },
+      { exercise: 'Goblet squat', sets: [{ load: 20, reps: 10 }, { load: 20, reps: 10 }] },
+    ]);
+    const list = await s.progress.exercises();
+    const idOf = (name: string) => list?.view.rows.find((r) => r.name === name)?.exerciseId ?? null;
+    const press = (await s.progress.exerciseTab({ period: '6m', exerciseId: idOf('Dumbbell bench press'), measure: 'total' }))?.view;
+    expect(press?.measure).toBe('total');
+    expect(press?.chart.unit).toBe('kg');
+    // 20 kg each × 10 × 2 sets × 2 dumbbells.
+    expect(press?.chart.points.map((p) => p.value)).toEqual([800]);
+    expect(press?.table.rows[0]?.cells.total).toBe('800');
+    expect(press?.series).toEqual([]);
+    expect(press?.converted).toBeNull();
+    const goblet = (await s.progress.exerciseTab({ period: '6m', exerciseId: idOf('Goblet squat'), measure: 'total' }))?.view;
+    expect(goblet?.chart.points.map((p) => p.value)).toEqual([400]);
+  });
 });

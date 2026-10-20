@@ -34,7 +34,7 @@ import {
   type RecordCounts,
   type SqliteRepositories,
 } from '@fizz/persistence';
-import type { DraftBasis, EquipmentInstance, Exercise, Gym, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
+import type { DraftBasis, EquipmentInstance, Exercise, Gym, ImplementCount, SessionAggregate, SessionCheckIn, SessionCommand, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachModelPort } from '@fizz/coach';
 import type { TextCoachState } from '@fizz/providers';
@@ -478,6 +478,16 @@ export function createAppServices(deps: AppServicesDeps) {
     return substitutionsByKey.get(catalogueKey) ?? [];
   };
 
+  /** A catalogue entry's dumbbell count (`implements`, Coaching knowledge), for Progress's total weight (20 Oct). */
+  let implementsByKey: Map<string, ImplementCount> | null = null;
+  const catalogueImplements = (catalogueKey: string): ImplementCount | null => {
+    if (implementsByKey === null) {
+      implementsByKey = new Map();
+      for (const entry of deps.catalogue ? deps.catalogue() : bundledCatalogue().catalogue.entries) if ('implements' in entry && entry.implements !== undefined) implementsByKey.set(entry.key, entry.implements);
+    }
+    return implementsByKey.get(catalogueKey) ?? null;
+  };
+
   /** A catalogue entry's other names (Coaching knowledge), for search (exercise-library EL1). */
   let aliasesByKey: Map<string, readonly string[]> | null = null;
   const catalogueAliases = (catalogueKey: string): readonly string[] => {
@@ -777,6 +787,7 @@ export function createAppServices(deps: AppServicesDeps) {
         return progress === null ? null : { progress };
       }),
     catalogueExercises,
+    catalogueImplements,
     dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
     ...(deps.idle === undefined ? {} : { idle: deps.idle }),
   });

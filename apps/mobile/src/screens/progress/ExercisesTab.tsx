@@ -9,7 +9,7 @@ import { ExerciseLineChart } from '../../progress/exercise-line-chart';
 import { unreadableText } from '../../progress/copy';
 import { useScreenData } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Icon, StatStrip, StatusLine, TextButton, TextField } from '../../ui';
+import { AppText, Icon, InfoLine, StatStrip, StatusLine, TextButton, TextField } from '../../ui';
 
 /**
  * Progress › Exercises (Ben, 13–14 Oct 2026; ideas-2026-10-12 D3): an
@@ -114,7 +114,7 @@ export function ExercisesTab({ focus = null }: { focus?: ExercisesFocus | null }
           <DropdownButton
             small
             label={view.series.find((s) => s.id === view.seriesId)?.label ?? ''}
-            accessibilityLabel={`Equipment, ${view.series.find((s) => s.id === view.seriesId)?.label ?? ''}`}
+            accessibilityLabel={`Type, ${view.series.find((s) => s.id === view.seriesId)?.label ?? ''}`}
             open={open === 'series'}
             onPress={() => {
               toggle('series');
@@ -372,9 +372,13 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
   );
   return (
     <View style={{ gap: theme.space['2'] }}>
-      <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
-        {`SESSIONS · ${view.table.unit.toUpperCase()}`}
-      </AppText>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+        <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
+          {`SESSIONS · ${view.table.unit.toUpperCase()}`}
+        </AppText>
+        {/* Only when a set was logged in the other unit (20 Oct): `Converted from lb` behind the tap. */}
+        {view.converted !== null ? <InfoLine info={view.converted} infoLabel="Units" /> : null}
+      </View>
       {/* Plan tracker v1 (19 Oct): targets hit, counted from what was planned and logged. */}
       {targets?.hitText != null ? (
         <AppText variant="callout" color="text.secondary" numeric>
@@ -385,7 +389,7 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
         <View style={{ flexDirection: 'row', gap: theme.space['2'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {head('DATE', { width: COLS.date })}
           {head('TOP SET', { flex: 1 })}
-          {head('VOLUME', { flex: 1, textAlign: 'right' })}
+          {head('TOTAL', { flex: 1, textAlign: 'right' })}
           {head('SETS', { width: COLS.sets, textAlign: 'right' })}
           {head('EST. 1RM', { flex: 1, textAlign: 'right' })}
         </View>
@@ -418,13 +422,13 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
                 {ax ? (
                   <>
                     <AppText variant="body">{r.cells.date}</AppText>
-                    <AppText variant="callout" color="text.secondary" numeric>{`${r.cells.topSet} · ${r.cells.volume} · ${r.cells.sets} sets · ${r.cells.e1rm}`}</AppText>
+                    <AppText variant="callout" color="text.secondary" numeric>{`${r.cells.topSet} · ${r.cells.total} · ${r.cells.sets} sets · ${r.cells.e1rm}`}</AppText>
                   </>
                 ) : (
                   <>
                     {cell(r.cells.date, { width: COLS.date })}
                     {cell(r.cells.topSet, { flex: 1 })}
-                    {cell(r.cells.volume, { flex: 1, textAlign: 'right' })}
+                    {cell(r.cells.total, { flex: 1, textAlign: 'right' })}
                     {cell(r.cells.sets, { width: COLS.sets, textAlign: 'right' })}
                     {cell(r.cells.e1rm, { flex: 1, textAlign: 'right' })}
                   </>

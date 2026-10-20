@@ -12,7 +12,7 @@ import { ChartTable, RepTable, TrendChart } from '../../progress/trend-chart';
 import { chartSelection } from '../../progress/trend-select';
 import { useScreenData } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Chip, Icon, StatStrip, StatusLine, Tag, TextButton } from '../../ui';
+import { AppText, Chip, Icon, InfoLine, StatStrip, StatusLine, Tag, TextButton } from '../../ui';
 import { AskPill } from '../coach/AskPill';
 import { E1rmSheet } from './sheets';
 
@@ -214,8 +214,9 @@ export function ExerciseDetailScreen() {
           </Pressable>
         ) : null}
 
-        {/* Series menu (§2.7 region 3): one series per chart, never merged. */}
-        <View>
+        {/* Kind menu (Ben, 20 Oct: gyms, equipment and imports are one series): only when the exercise has more than one kind (assisted and weighted). */}
+        {view.series.length > 1 ? (
+          <View>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Series, ${view.seriesLabel}`}
@@ -254,9 +255,11 @@ export function ExerciseDetailScreen() {
                 </Pressable>
               ))
             : null}
-        </View>
+          </View>
+        ) : null}
 
         <StatStrip items={view.stats} accessibilityLabel={view.statsWords} ax={ax} />
+        {view.converted !== null ? <InfoLine info={view.converted} infoLabel="Units" /> : null}
 
         <View style={{ gap: theme.space['2'] }}>
           {view.metrics.length > 1 ? (

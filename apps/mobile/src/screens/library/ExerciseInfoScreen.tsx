@@ -170,9 +170,11 @@ export function ExerciseInfoScreen() {
         ) : null}
         {view.yours.history !== null ? (
           <View style={{ gap: theme.space['2'] }}>
-            <AppText variant="callout" color="text.secondary">
-              {view.yours.history.caption}
-            </AppText>
+            {view.yours.history.caption !== '' ? (
+              <AppText variant="callout" color="text.secondary">
+                {view.yours.history.caption}
+              </AppText>
+            ) : null}
             {view.yours.history.rows.map((r) => (
               <View key={r.label} accessible accessibilityLabel={`${r.label}${r.estimate ? ', an estimate,' : ''} ${r.value.replace('≈', 'about ')}`} style={{ flexDirection: 'row', gap: theme.space['3'], minHeight: 28 }}>
                 <AppText variant="body" color="text.secondary" style={{ minWidth: 88 }}>
