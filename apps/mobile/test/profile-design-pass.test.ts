@@ -71,8 +71,10 @@ describe('6.10–6.12', () => {
 
   it('App status says the Playbook count the Playbook screen shows', () => {
     const row = { id: 'a', version: 1, text: 'x', label: 'R1', line: '' } as never;
-    expect(playbookStatusLine({ toReview: [], approved: [row, row, row], rejected: [] })).toBe('Playbook rules: 3 approved');
-    expect(playbookStatusLine({ toReview: [row], approved: [], rejected: [] })).toBe('Playbook rules: none yet');
+    expect(playbookStatusLine({ toReview: [], approved: [row, row, row], rejected: [] })).toEqual({ text: 'Playbook rules: 3 approved', count: 3 });
+    expect(playbookStatusLine({ toReview: [row], approved: [], rejected: [] })).toEqual({ text: 'Playbook rules: none yet', count: 0 });
+    // Review S7: the icon follows the count, not the wording.
+    expect(read('screens', 'profile', 'AppStatusScreen.tsx')).not.toContain("endsWith('none yet')");
     expect(playbookStatusLine(null)).toBeNull();
     expect(read('screens', 'profile', 'AppStatusScreen.tsx')).not.toContain('not in this build yet" />');
   });

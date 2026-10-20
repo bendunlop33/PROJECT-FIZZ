@@ -41,9 +41,12 @@ export function playbookRuleList(candidates: readonly PlaybookCandidate[]): Play
   return { toReview: of('to_review'), approved: of('approved'), rejected: of('rejected') };
 }
 
-/** (Design pass 6.11) App status's Playbook line, matching the Playbook screen: `Playbook rules: 3 approved`, or `none yet`; null when it can't be read. */
-export function playbookStatusLine(list: PlaybookRuleList | null): string | null {
+/**
+ * (Design pass 6.11) App status's Playbook line, matching the Playbook screen: `Playbook rules: 3 approved`, or `none yet`,
+ * with the approved count for its icon (review S7); null when it can't be read.
+ */
+export function playbookStatusLine(list: PlaybookRuleList | null): { text: string; count: number } | null {
   if (list === null) return null;
   const n = list.approved.length;
-  return n === 0 ? 'Playbook rules: none yet' : `Playbook rules: ${String(n)} approved`;
+  return { text: n === 0 ? 'Playbook rules: none yet' : `Playbook rules: ${String(n)} approved`, count: n };
 }

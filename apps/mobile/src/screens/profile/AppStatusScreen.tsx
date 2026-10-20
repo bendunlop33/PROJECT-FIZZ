@@ -105,7 +105,7 @@ export function AppStatusScreen() {
         <StatusLine icon="checkmark.circle.fill" tone="done" text={`Gym presets: ${String(services.coachingKnowledge.gymPresets().length)} built in`} />
         {/* Design pass 6.11: the same count as the Playbook screen. */}
         {data.value.playbook !== null ? (
-          <StatusLine icon={data.value.playbook.endsWith('none yet') ? 'minus.circle' : 'checkmark.circle.fill'} tone={data.value.playbook.endsWith('none yet') ? 'info' : 'done'} text={data.value.playbook} />
+          <StatusLine icon={data.value.playbook.count === 0 ? 'minus.circle' : 'checkmark.circle.fill'} tone={data.value.playbook.count === 0 ? 'info' : 'done'} text={data.value.playbook.text} />
         ) : (
           <StatusLine icon="minus.circle" tone="info" text="Playbook rules: couldn’t read" />
         )}
