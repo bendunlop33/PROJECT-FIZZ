@@ -17,6 +17,7 @@ import {
   type RepRange,
   type Routine,
   type RoutineExercise,
+  type SessionPlanDay,
   type SetTemplate,
   type TargetProvenance,
   type TodayEdit,
@@ -782,6 +783,33 @@ export function recheckDraftSlot(slot: DraftSlot, exercise: Exercise, history: r
 }
 
 /**
+ * (Workout builder v3 §4.2, Today v2) The plan day a builder draft starts as: its key's plan and day index, split day
+ * and main lift, with the template and variation its set-up names. Up next credits it by plan day, so a `Today only`
+ * start (no routine) still moves the plan on. Empty for a draft that isn't a plan day (an Other session, Set up with
+ * no plan).
+ */
+export function planDayOfBuilderDraft(draft: Pick<WorkoutDraft, 'builderKey'>, version: Pick<WorkoutDraftVersion, 'request'>): { planDay?: SessionPlanDay } {
+  const k = draft.builderKey;
+  if (k === undefined || k.planId === null || k.dayIndex === null) return {};
+  const setup = version.request.setup;
+  const splitDayId = k.splitDayId ?? setup?.dayId ?? null;
+  if (splitDayId === null) return {};
+  const templateRoutineId = setup?.templateRoutineId ?? null;
+  const templateVersion = templateRoutineId === null ? null : (setup?.templateVersion ?? null);
+  return {
+    planDay: {
+      planId: k.planId,
+      dayIndex: k.dayIndex,
+      splitDayId,
+      mainLiftExerciseId: k.mainLiftExerciseId,
+      templateRoutineId: templateVersion === null ? null : templateRoutineId,
+      templateVersion,
+      variationId: setup?.variationId ?? null,
+    },
+  };
+}
+
+/**
  * `planCoachDraft` (§8.2): the one path for the overview's dry run, Today's
  * row and Start. v2: a slot with stored coach loads uses them, re-checked
  * now (`recheckDraftSlot`: newer history, pain, session pain, the item at
@@ -806,9 +834,17 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const nowMs = toMs(input.start.at.utc);
   const coachSlots = new Map<string, Extract<RecheckedSlot, { kind: 'coach' }>>();
   const ruleNotes = new Map<string, string[]>();
+  // (Workout builder v3 §4.4, Today v2) A builder version holds loads the builder already worked out and rounded
+  // down at this gym (rule 4), on the item it names: Start pins them, so the card, the builder and the workout agree.
+  const builder = version.request.origin === 'builder';
+  const builderPinned = new Map<string, DraftSlot>();
   for (const s of version.plan.slots) {
     const exercise = input.start.exercises.get(s.exerciseId);
     if (exercise === undefined) continue;
+    if (builder && s.setTemplates.some((t) => t.load?.load != null)) {
+      builderPinned.set(s.slotKey, s);
+      continue;
+    }
     const history = input.histories.get(exercise.id) ?? [];
     const re = recheckDraftSlot(s, exercise, history, input.substitute, version.createdAt.utc, nowMs);
     if (re?.kind === 'coach') {
@@ -830,6 +866,14 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const pinned: Routine = {
     ...routine,
     exercises: routine.exercises.map((rex) => {
+      const pinnedSlot = builderPinned.get(rex.id);
+      if (pinnedSlot !== undefined) {
+        const setTemplates = rex.setTemplates.map((t, i) => {
+          const l = pinnedSlot.setTemplates[i]?.load?.load ?? null;
+          return l === null ? t : { ...t, targetLoad: l };
+        });
+        return { ...rex, setTemplates, equipmentId: pinnedSlot.checkedOn?.equipmentId ?? rex.equipmentId };
+      }
       const coach = coachSlots.get(rex.id);
       if (coach !== undefined) {
         const setTemplates = rex.setTemplates.map((t, i) => {
@@ -845,7 +889,8 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const known = new Map(input.start.knownEquipment);
   for (const t of targets.values()) if (t.pin !== null && !known.has(t.pin.id)) known.set(t.pin.id, t.pin);
   for (const c of coachSlots.values()) if (c.refs.equipment !== null && !known.has(c.refs.equipment.id)) known.set(c.refs.equipment.id, c.refs.equipment);
-  const edits = withDraftFit(input.today.edits, input.draft.id, version);
+  // A builder version was fitted to its length by the builder (§2.0.2, §3.6): no second fit at Start.
+  const edits = builder ? [...input.today.edits] : withDraftFit(input.today.edits, input.draft.id, version);
   const out = planWithTodayEdits({ kind: 'routine', input: { ...input.start, knownEquipment: known, routine: pinned, targets: entries, ...(slotEntries.size > 0 ? { slotTargets: slotEntries } : {}) } }, { ...input.today, edits });
   // A coach draft isn't a routine: the session names the draft, never a routine (rotation untouched, §6.3).
   const exerciseOfRow = new Map(out.aggregate.exercises.map((e) => [e.id, e.exerciseId]));
@@ -876,7 +921,13 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const aggregate = {
     ...out.aggregate,
     sets,
-    session: { ...out.aggregate.session, routineId: null, routineName: input.draft.name, coachDraft: { draftId: input.draft.id, version: version.n, name: input.draft.name } },
+    session: {
+      ...out.aggregate.session,
+      routineId: null,
+      routineName: input.draft.name,
+      coachDraft: { draftId: input.draft.id, version: version.n, name: input.draft.name },
+      ...(builder ? planDayOfBuilderDraft(input.draft, version) : {}),
+    },
   };
   return { ...out, aggregate, routine: pinned, version, targets, coachLoads: coachSlots, ruleNotes };
 }
@@ -980,8 +1031,9 @@ export function coachDraftIsOpen(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc'
  * Listed under `FROM COACH` (§4.4): open, not expired, not started. Review S6: a saved draft stays
  * listed until it is started, while the never-done `Auto` rule (§11 item 1, WB16) is unapproved.
  */
-export function coachDraftListed(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc'>, nowUtc: string): boolean {
-  return coachDraftIsOpen(d, nowUtc);
+export function coachDraftListed(d: Pick<WorkoutDraft, 'status' | 'expiresAtUtc'> & Partial<Pick<WorkoutDraft, 'builderKey'>>, nowUtc: string): boolean {
+  // (v3 §4.4) A builder draft is Today's card / the builder's workout, not a coach build: never under `FROM COACH`.
+  return coachDraftIsOpen(d, nowUtc) && d.builderKey === undefined;
 }
 
 export type DraftLifeChange =
