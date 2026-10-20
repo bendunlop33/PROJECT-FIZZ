@@ -200,7 +200,7 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
     });
   }
   // Clauses: a fact belongs to what its own clause names.
-  const cuts = [0, ...[...masked.matchAll(/[,;:()]|\s(?:and|but|while|whereas|plus|vs)\s|\s[–—-]\s/g)].map((m) => m.index ?? 0), masked.length];
+  const cuts = [0, ...[...masked.matchAll(/[,;:()]|\s(?:and|but|while|whereas|plus|vs)\s|\s[–—-]\s/g)].map((m) => m.index), masked.length];
   const clauseOf = (at: number): [number, number] => {
     let lo = 0;
     let hi = masked.length;
@@ -218,7 +218,7 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
   for (const m of masked.matchAll(/(?<![\d.])(\d+(?:\.\d+)?)(?![\d])/g)) {
     const raw = m[1] ?? '';
     const n = Number(raw);
-    const at = m.index ?? 0;
+    const at = m.index;
     const end = at + raw.length;
     // The `4` of `1 of 4` was checked with its pair.
     if (pairEnds.has(at)) continue;
