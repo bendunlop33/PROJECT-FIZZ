@@ -34,12 +34,12 @@ export interface ReplaceCounts {
   /** Finished or unfinished workouts. */
   workouts: number;
   newestWorkoutUtc: string | null;
-  /** Profiles, gyms, equipment, custom exercises, routines, rules, check-ins, pain flags, import jobs, remembered names, coach conversations and memories (Your data only). */
+  /** Profiles, gyms, equipment, custom exercises, routines, rules, check-ins, pain flags, import jobs, remembered names, coach conversations, memories, saved variations and reviews (Your data only). */
   otherRecords: number;
 }
 
 /** Owner data tables whose rows a restore can replace (workouts are counted separately). */
-export const OTHER_RECORD_TABLES = ['profiles', 'gyms', 'equipment', 'exercises', 'routines', 'progression_rules', 'check_ins', 'pain_flags', 'import_jobs', 'exercise_aliases', 'coach_threads', 'memories'] as const;
+export const OTHER_RECORD_TABLES = ['profiles', 'gyms', 'equipment', 'exercises', 'routines', 'progression_rules', 'check_ins', 'pain_flags', 'import_jobs', 'exercise_aliases', 'coach_threads', 'memories', 'plan_day_variations', 'reviews'] as const;
 
 export type CompareMode = 'content' | 'stamp';
 

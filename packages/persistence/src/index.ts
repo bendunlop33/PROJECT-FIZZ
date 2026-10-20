@@ -13,6 +13,7 @@ export * from './workout-drafts';
 export * from './plan-drafts';
 export * from './training-profiles';
 export * from './activities';
+export * from './plan-days';
 export * from './store';
 export * from './integrity';
 export * from './backup/sha256';

@@ -1,5 +1,6 @@
 import {
   SessionAggregateSchema,
+  SessionPlanDaySchema,
   type SessionAggregate,
   type SessionExercise,
   type SetAuditEntry,
@@ -40,6 +41,19 @@ export const SESSION_TABLES = [
   'processed_operations',
 ] as const;
 
+/**
+ * A finished workout as the rotation reads it. `planDay` (v3 §4.2): the plan
+ * day it was started as, when it was; Up next credits (planId, dayIndex),
+ * and the newest one names the day's last-used template (Q2) and variation.
+ */
+export interface FinishedRefRow {
+  sessionId: string;
+  routineId: string | null;
+  startedAtUtc: string;
+  tz: string;
+  planDay?: { planId: string; dayIndex: number; splitDayId: string; templateRoutineId: string | null; mainLiftExerciseId: string | null; variationId: string | null };
+}
+
 // ---------------------------------------------------------------------------
 // Encoding (aggregate → rows)
 
@@ -76,6 +90,8 @@ function sessionRow(a: SessionAggregate): Record<string, SqlValue> {
     gym_changes: s.gymChanges === undefined ? null : JSON.stringify(s.gymChanges),
     today_edits: s.todayEdits === undefined ? null : JSON.stringify(s.todayEdits),
     coach_draft: s.coachDraft === undefined ? null : JSON.stringify(s.coachDraft),
+    // Only when set: the column is new in schema 30, and a plan day is written once, at Start.
+    ...(s.planDay === undefined ? {} : { plan_day: JSON.stringify(s.planDay) }),
     duration_confirmed_at_utc: s.durationConfirmedAt?.utc ?? null,
     duration_confirmed_at_tz: s.durationConfirmedAt?.tz ?? null,
     deleted_at_utc: s.deletion?.at.utc ?? null,
@@ -245,6 +261,7 @@ export async function readAggregate(q: SqlExecutor, sessionId: string): Promise<
       ...(s.finish_by_utc === null || s.finish_by_utc === undefined ? {} : { finishBy: { utc: s.finish_by_utc, tz: s.finish_by_tz } }),
       ...(s.today_edits === null || s.today_edits === undefined ? {} : { todayEdits: parseJson(T, id, 'today_edits', s.today_edits) }),
       ...(s.coach_draft === null || s.coach_draft === undefined ? {} : { coachDraft: parseJson(T, id, 'coach_draft', s.coach_draft) }),
+      ...(s.plan_day === null || s.plan_day === undefined ? {} : { planDay: parseJson(T, id, 'plan_day', s.plan_day) }),
       ...(s.duration_confirmed_at_utc === null || s.duration_confirmed_at_utc === undefined
         ? {}
         : { durationConfirmedAt: { utc: s.duration_confirmed_at_utc, tz: s.duration_confirmed_at_tz } }),
@@ -508,7 +525,7 @@ async function closeDraftsOnStart(tx: SqlExecutor, a: SessionAggregate): Promise
   const at = a.session.lastActivityAtUtc;
   // A coach draft it starts from becomes `started` with this session (workout-builder §6.3); one closed since: stale.
   const coach = a.session.coachDraft;
-  if (coach !== undefined && !(await startWorkoutDraftIn(tx, coach.draftId, owner, a.session.id, startedAt))) return false;
+  if (coach !== undefined && !(await startWorkoutDraftIn(tx, coach.draftId, owner, a.session.id, startedAt)).ok) return false;
   const from = a.session.todayEdits?.draftId ?? null;
   if (from !== null) {
     const row = await tx.getFirst<{ status: string; owner_id: string; expires_at_utc: string; version: number }>('SELECT status, owner_id, expires_at_utc, version FROM pre_start_drafts WHERE id = ?', [from]);
@@ -801,18 +818,30 @@ export class SqliteSessions implements SessionRepository {
    * source, for readers that want "the last workout Ben did" (the pain chips
    * from Today, Up next's longest gap; review import-progress S1, S2).
    */
-  listFinishedRefs(ownerId: string, limit: number, opts: { includeImported?: boolean } = {}): Promise<{ sessionId: string; routineId: string | null; startedAtUtc: string; tz: string }[]> {
+  listFinishedRefs(ownerId: string, limit: number, opts: { includeImported?: boolean } = {}): Promise<FinishedRefRow[]> {
     const source = opts.includeImported === true ? '' : ` AND s.source = 'manual'`;
     return this.db.read(async (q) =>
       (
-        await q.getAll<{ id: string; routine_id: string | null; started_at_utc: string; started_at_tz: string }>(
-          `SELECT s.id, s.routine_id, s.started_at_utc, s.started_at_tz FROM sessions s
+        await q.getAll<{ id: string; routine_id: string | null; started_at_utc: string; started_at_tz: string; plan_day: string | null }>(
+          `SELECT s.id, s.routine_id, s.started_at_utc, s.started_at_tz, s.plan_day
+           FROM sessions s
            WHERE s.owner_id = ? AND ${inHistorySql('s')}${source}
              AND EXISTS (SELECT 1 FROM session_sets x WHERE x.session_id = s.id AND x.status = 'completed')
            ORDER BY s.started_at_utc DESC, s.id DESC LIMIT ?`,
           [ownerId, limit],
         )
-      ).map((r) => ({ sessionId: r.id, routineId: r.routine_id, startedAtUtc: r.started_at_utc, tz: r.started_at_tz })),
+      ).map((r) => {
+        const p = r.plan_day === null ? null : SessionPlanDaySchema.safeParse(JSON.parse(r.plan_day));
+        return {
+          sessionId: r.id,
+          routineId: r.routine_id,
+          startedAtUtc: r.started_at_utc,
+          tz: r.started_at_tz,
+          ...(p?.success === true
+            ? { planDay: { planId: p.data.planId, dayIndex: p.data.dayIndex, splitDayId: p.data.splitDayId, templateRoutineId: p.data.templateRoutineId, mainLiftExerciseId: p.data.mainLiftExerciseId ?? null, variationId: p.data.variationId } }
+            : {}),
+        };
+      }),
     );
   }
 

@@ -6,6 +6,7 @@ import { WORKOUT_DRAFT_DOCUMENT_TABLES } from './workout-drafts';
 import { PLAN_DRAFT_DOCUMENT_TABLES } from './plan-drafts';
 import { TRAINING_PROFILE_DOCUMENT_TABLES } from './training-profiles';
 import { ACTIVITY_DOCUMENT_TABLES } from './activities';
+import { PLAN_DAY_DOCUMENT_TABLES } from './plan-days';
 import type { SqlExecutor } from './driver';
 import { CorruptDataError } from './errors';
 import { latestVersion, readUserVersion } from './migrations';
@@ -15,7 +16,7 @@ import { ident, rowId } from './sql';
 import { monotonicMs, noYield, type Slicer } from './backup/slice';
 
 /** Every document table, the import ones included. */
-const ALL_DOCUMENTS: readonly DocumentTable[] = [...DOCUMENT_TABLES, erase(IMPORT_JOB_SPEC), erase(EXERCISE_ALIAS_SPEC), ...COACH_DOCUMENT_TABLES, ...DRAFT_DOCUMENT_TABLES, ...WORKOUT_DRAFT_DOCUMENT_TABLES, ...PLAN_DRAFT_DOCUMENT_TABLES, ...TRAINING_PROFILE_DOCUMENT_TABLES, ...ACTIVITY_DOCUMENT_TABLES];
+const ALL_DOCUMENTS: readonly DocumentTable[] = [...DOCUMENT_TABLES, erase(IMPORT_JOB_SPEC), erase(EXERCISE_ALIAS_SPEC), ...COACH_DOCUMENT_TABLES, ...DRAFT_DOCUMENT_TABLES, ...WORKOUT_DRAFT_DOCUMENT_TABLES, ...PLAN_DRAFT_DOCUMENT_TABLES, ...TRAINING_PROFILE_DOCUMENT_TABLES, ...ACTIVITY_DOCUMENT_TABLES, ...PLAN_DAY_DOCUMENT_TABLES];
 
 /** Import rows checked per queue turn by `checkIntegrity`. */
 const ROW_CHUNK = 2000;

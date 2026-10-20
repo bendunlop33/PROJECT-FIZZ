@@ -23,7 +23,7 @@ import {
   type Store,
 } from '../src/index';
 import { nodeDatabaseHost } from '../src/node/index';
-import { failingDriver, memoryDriver, tempDir } from './helpers';
+import { failingDriver, memoryDriver, tempDir, withoutSchema30 } from './helpers';
 
 const THREAD = id(900);
 const TURN = id(901);
@@ -322,7 +322,7 @@ describe('integrity, backup and restore with coach data', () => {
     const made = await createBackup(src.store, { at: at(100), app: { name: 'PROJECT-FIZZ', version: '0.1.0', build: null } });
     await src.close();
     const file = JSON.parse(made.text) as BackupFile;
-    const tables = { ...file.tables };
+    const tables = withoutSchema30({ ...file.tables });
     for (const t of ['coach_threads', 'coach_turns', 'coach_messages', 'coach_actions', 'memories', 'playbook_candidates', 'next_session_targets', 'next_target_uses', 'coach_offers', 'pre_start_drafts', 'purged_sessions', 'workout_drafts', 'plan_drafts', 'import_profiles', 'import_layout_requests', 'training_profiles', 'activities', 'week_plans']) Reflect.deleteProperty(tables, t);
     for (const row of tables.sessions ?? []) for (const c of ['deleted_at_utc', 'deleted_at_tz', 'deleted_by_op_id', 'purge_after_utc', 'coach_draft']) Reflect.deleteProperty(row, c);
     const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));

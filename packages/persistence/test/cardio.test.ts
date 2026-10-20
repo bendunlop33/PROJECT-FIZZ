@@ -5,7 +5,7 @@ import { at, exercise, GYM, id, idGen, kg, logCmd, OWNER, profile, routine, rout
 import type { Exercise, SessionAggregate } from '@fizz/schemas';
 import { createBackup, DatabaseManager, latestVersion, openStore, parseBackup, sha256Hex, type BackupFile, type Store } from '../src/index';
 import { nodeDatabaseHost, openNodeDriver } from '../src/node/index';
-import { tempDir } from './helpers';
+import { tempDir, withoutSchema30 } from './helpers';
 
 /**
  * Schema 20 (cardio, 19 Oct): a cardio row is stored as `duration` +
@@ -126,7 +126,7 @@ describe('migration 21: the four machines become cardio, history included', () =
     const parsed = await parseBackup(created.text);
     if (!parsed.ok) throw new Error('backup');
     // The same data as a build before schema 21 would have written it.
-    const tables = { ...parsed.file.tables };
+    const tables = withoutSchema30({ ...parsed.file.tables });
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
       const copy = { ...row };
       delete copy.measures_cardio;
@@ -182,7 +182,7 @@ describe('migration 21 mid-workout: an air-bike timer already running (review S7
     const created = await createBackup(src.store, { at: at(200), app: { name: 'PROJECT-FIZZ', version: '0.1.0', build: 'test' } });
     const parsed = await parseBackup(created.text);
     if (!parsed.ok) throw new Error('backup');
-    const tables = { ...parsed.file.tables };
+    const tables = withoutSchema30({ ...parsed.file.tables });
     tables.session_exercises = (tables.session_exercises ?? []).map((row) => {
       const copy = { ...row };
       delete copy.measures_cardio;

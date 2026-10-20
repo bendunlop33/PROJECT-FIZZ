@@ -16,7 +16,7 @@ import { DraftBasisSchema } from './draft';
 import { GymEditSchema, GymEquipmentKindSchema, type GymEditRecord } from './equipment';
 import { CoachEditTodayCommandSchema, type SessionCommand } from './commands';
 import { CustomExerciseFieldsSchema, EquipmentKindSchema, LateralitySchema, MeasurementSchema, MuscleSchema, type Exercise } from './exercise';
-import { RoutineExerciseSchema, RoutineSchema } from './routine';
+import { MainLiftIdSchema, RoutineExerciseSchema, RoutineSchema, SplitDayIdSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
 import { LiftTargetSchema, type LiftTarget } from './lift-targets';
@@ -1255,6 +1255,28 @@ export const CoachMessageSchema = z.object({
 });
 export type CoachMessage = z.infer<typeof CoachMessageSchema>;
 
+/** Local dates a day note keeps in `hiddenOn`: only today's matters, so the writer keeps the newest few (`hideDayNoteOn`). */
+export const DAY_NOTE_HIDDEN_MAX = 14;
+
+/**
+ * (Workout builder v3) Which plan day a day note is for, and where it came from. `hiddenOn`: local
+ * dates Ben tapped ✕; only the day it's shown on matters, so `hideDayNoteOn` trims older dates and the
+ * cap never refuses a hide (review b3-data N1).
+ */
+export const DayNoteScopeSchema = z.object({
+  splitDayId: SplitDayIdSchema,
+  mainLiftExerciseId: MainLiftIdSchema.nullable(),
+  reviewId: IdSchema.nullable(),
+  hiddenOn: z.array(LocalDateSchema).max(DAY_NOTE_HIDDEN_MAX),
+});
+export type DayNoteScope = z.infer<typeof DayNoteScopeSchema>;
+
+/** The scope with `localDate` hidden: dates before it are dropped (past days can't show the note again), then the newest kept. */
+export function hideDayNoteOn(scope: DayNoteScope, localDate: string): DayNoteScope {
+  const dates = [...new Set([...scope.hiddenOn.filter((d) => d >= localDate), localDate])].sort();
+  return { ...scope, hiddenOn: dates.slice(-DAY_NOTE_HIDDEN_MAX) };
+}
+
 /** A personal fact Ben asked the coach to remember (coach-memory, v1 subset). Your data. */
 export const MemorySchema = RecordMetaSchema.extend({
   text: z.string().min(1).max(200),
@@ -1275,6 +1297,13 @@ export const MemorySchema = RecordMetaSchema.extend({
   edits: z.array(z.object({ before: z.string().min(1).max(200), atUtc: UtcTimestampSchema })).max(20).optional(),
   /** (12 Oct) A `not_saved` suggestion Ben sent to the playbook (CM9 `Add to playbook`), not `Not now`. */
   closedAs: z.literal('playbook').optional(),
+  /**
+   * (Workout builder v3 §2.9, §4.1) A `For next <day> day` text note from a review: shown as
+   * `From last review` on that day's Your workout. `hiddenOn`: local dates Ben tapped ✕ (off for that
+   * day, and not sent to the coach then). Numeric notes are next-session targets, never memories.
+   * Absent on every other memory.
+   */
+  dayNote: DayNoteScopeSchema.optional(),
 });
 export type Memory = z.infer<typeof MemorySchema>;
 

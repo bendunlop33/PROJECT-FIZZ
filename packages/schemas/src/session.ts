@@ -21,6 +21,7 @@ import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exer
 import { SetTypeSchema } from './routine';
 import { SessionTodayEditsSchema } from './draft';
 import { SessionCoachDraftSchema } from './workout-draft';
+import { SessionPlanDaySchema } from './plan-day';
 
 /** Values a set can hold: used for actual results and drafts alike. */
 export const SetValuesSchema = z.object({
@@ -628,6 +629,11 @@ export const WorkoutSessionSchema = z.object({
   todayEdits: SessionTodayEditsSchema.optional(),
   /** (12 Oct, workout builder §6.3) The coach draft this workout was started from: provenance for `Why?`. Absent = none. */
   coachDraft: SessionCoachDraftSchema.optional(),
+  /**
+   * (Workout builder v3 §4.2) The plan day this workout was started as: plan, split day, template and
+   * variation. Up next credits (planId, splitDayId); absent on older sessions (they fall back to `routineId`).
+   */
+  planDay: SessionPlanDaySchema.optional(),
   /**
    * Ben confirmed a long workout's time with `Count it` (progress.md PG25a),
    * Your data. A workout over Progress's 4 h cap counts in `Time in gym` only

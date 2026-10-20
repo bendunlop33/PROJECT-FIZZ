@@ -408,15 +408,15 @@ describe('checkWorkoutProposal (BD9, §8.3): code decides what stays; never a lo
     expect(r.plan.slots[0]?.setTemplates.map((t) => [t.setType, t.targetRpe, t.reps?.min])).toEqual([['top', 9, 3], ['backoff', 8, 6], ['backoff', 8, 6], ['backoff', 8, 6]]);
   });
 
-  it('review S1 / r2 S1: rest snaps to the nearest preset, then clamps to 0:30–5:00', () => {
-    const r = checked(args([pex('barbell-bench-press', { restSeconds: 300 }), pex('cable-fly', { restSeconds: 600 }), pex('cable-triceps-pushdown', { restSeconds: 100 })]), ctx({ restPresetsS: [90, 360] }));
-    // 5:00 is nearer 6:00 than 1:30, and 6:00 clamps back to 5:00: unchanged, no line.
-    expect(r.plan.slots.map((s) => s.setTemplates[0]?.restS)).toEqual([300, 300, 90]);
-    expect(r.checks.filter((c) => c.kind === 'rest_snapped').map((c) => c.text)).toEqual(['Rest 10:00 → 5:00', 'Rest 1:40 → 1:30 (your presets)']);
-    // Only presets over 5:00: clamped, with no preset line.
-    const only = checked(args([pex('barbell-bench-press', { restSeconds: 400 })]), ctx({ restPresetsS: [360, 600] }));
-    expect(only.plan.slots[0]?.setTemplates[0]?.restS).toBe(300);
-    expect(only.checks.map((c) => c.text)).toEqual(['Rest 6:40 → 5:00']);
+  it('review S1 / r2 S1: rest snaps to the nearest preset, then clamps to 0:30–6:00 (Q7, 20 Oct: was 5:00)', () => {
+    const r = checked(args([pex('barbell-bench-press', { restSeconds: 360 }), pex('cable-fly', { restSeconds: 600 }), pex('cable-triceps-pushdown', { restSeconds: 100 })]), ctx({ restPresetsS: [90, 420] }));
+    // 6:00 is nearer 7:00 than 1:30, and 7:00 clamps back to 6:00: unchanged, no line.
+    expect(r.plan.slots.map((s) => s.setTemplates[0]?.restS)).toEqual([360, 360, 90]);
+    expect(r.checks.filter((c) => c.kind === 'rest_snapped').map((c) => c.text)).toEqual(['Rest 10:00 → 6:00', 'Rest 1:40 → 1:30 (your presets)']);
+    // Only presets over 6:00: clamped, with no preset line.
+    const only = checked(args([pex('barbell-bench-press', { restSeconds: 400 })]), ctx({ restPresetsS: [420, 600] }));
+    expect(only.plan.slots[0]?.setTemplates[0]?.restS).toBe(360);
+    expect(only.checks.map((c) => c.text)).toEqual(['Rest 6:40 → 6:00']);
     // Under 0:30 with no presets: clamped up.
     const low = checked(args([pex('barbell-bench-press', { restSeconds: 10 })]), ctx({ restPresetsS: [] }));
     expect(low.plan.slots[0]?.setTemplates[0]?.restS).toBe(30);

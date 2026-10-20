@@ -1,4 +1,4 @@
-import { WorkoutDraftSchema, type WorkoutDraft } from '@fizz/schemas';
+import { WorkoutDraftSchema, type BuilderDraftKey, type WorkoutDraft } from '@fizz/schemas';
 import { expireWorkoutDraft, type DraftLifeChange, type SaveResult } from '@fizz/domain';
 import type { Database } from './database';
 import { decodeDocument, DocumentRepository, erase, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
@@ -13,6 +13,11 @@ import type { SqlExecutor } from './driver';
  * (`DraftLifeChange`). A Start closes the draft in the session's own
  * transaction (`sessions.ts`).
  */
+
+/** SQL over `workout_drafts` matching the unique index `workout_drafts_open_builder` (migration 30): the open builder draft with this key. */
+const OPEN_BUILDER_SQL =
+  "status = 'open' AND json_extract(data, '$.builderKey') IS NOT NULL AND coalesce(json_extract(data, '$.builderKey.planId'), '-') = ? AND coalesce(json_extract(data, '$.builderKey.dayIndex'), -1) = ? AND coalesce(json_extract(data, '$.builderKey.splitDayId'), '-') = ? AND coalesce(json_extract(data, '$.builderKey.mainLiftExerciseId'), '-') = ? AND json_extract(data, '$.builderKey.localDate') = ?";
+const builderKeyParams = (k: BuilderDraftKey): (string | number)[] => [k.planId ?? '-', k.dayIndex ?? -1, k.splitDayId ?? '-', k.mainLiftExerciseId ?? '-', k.localDate];
 
 export const WORKOUT_DRAFT_SPEC: DocumentSpec<WorkoutDraft> = {
   table: 'workout_drafts',
@@ -34,9 +39,50 @@ export type WorkoutDraftWrite =
   | { status: 'missing' }
   | { status: 'invalid'; reason: string };
 
+/** Creating a builder draft: the new one, a retry of it, or the open one that already holds the key (resume it). */
+export type BuilderDraftCreate =
+  | { status: 'written' | 'replayed'; draft: WorkoutDraft }
+  | { status: 'exists'; draft: WorkoutDraft }
+  | { status: 'invalid'; reason: string };
+
 export class SqliteWorkoutDrafts extends DocumentRepository<WorkoutDraft> {
   constructor(db: Database) {
     super(db, WORKOUT_DRAFT_SPEC);
+  }
+
+  /** (v3 §4.4) The open builder draft for this key, resumed on reopen. */
+  async openBuilderDraft(ownerId: string, key: BuilderDraftKey): Promise<WorkoutDraft | null> {
+    const rows = await this.listWhere(`owner_id = ? AND ${OPEN_BUILDER_SQL}`, [ownerId, ...builderKeyParams(key)]);
+    return rows[0] ?? null;
+  }
+
+  /** (v3 §2.3 `Edits from Mon 19 Oct`) Open builder drafts from local dates before `localDate`. */
+  async earlierOpenBuilderDrafts(ownerId: string, localDate: string): Promise<WorkoutDraft[]> {
+    const rows = await this.listWhere("owner_id = ? AND status = 'open' AND json_extract(data, '$.builderKey') IS NOT NULL", [ownerId]);
+    return rows.filter((d) => d.builderKey !== undefined && d.builderKey.localDate < localDate);
+  }
+
+  /**
+   * (v3 §4.4) A new builder draft, decided inside one transaction: a retry
+   * (same ID, an op ID it already holds) replays; when an open draft already
+   * holds the key, nothing is written and that one is returned to resume.
+   */
+  createBuilderDraft(ownerId: string, draft: WorkoutDraft): Promise<BuilderDraftCreate> {
+    if (draft.ownerId !== ownerId) return Promise.resolve({ status: 'invalid', reason: 'owner' });
+    const key = draft.builderKey;
+    if (key === undefined || draft.status !== 'open') return Promise.resolve({ status: 'invalid', reason: 'not an open builder draft' });
+    return this.db.write(async (tx): Promise<BuilderDraftCreate> => {
+      const same = await getWorkoutDraftIn(tx, draft.id);
+      if (same !== null) {
+        if (same.ownerId === ownerId && same.opIds.some((o) => draft.opIds.includes(o))) return { status: 'replayed', draft: same };
+        return { status: 'invalid', reason: 'id taken' };
+      }
+      const holder = await tx.getFirst(`SELECT * FROM workout_drafts WHERE owner_id = ? AND ${OPEN_BUILDER_SQL}`, [ownerId, ...builderKeyParams(key)]);
+      if (holder !== null) return { status: 'exists', draft: decodeDocument(WORKOUT_DRAFT_SPEC, holder) };
+      const r = await saveDocumentIn(tx, WORKOUT_DRAFT_SPEC, draft, null);
+      if (!r.ok) return { status: 'invalid', reason: 'conflict' };
+      return { status: 'written', draft };
+    });
   }
 
   listByOwner(ownerId: string): Promise<WorkoutDraft[]> {
@@ -93,15 +139,29 @@ export class SqliteWorkoutDrafts extends DocumentRepository<WorkoutDraft> {
 }
 
 /**
- * Inside a session's create transaction (§6.3): the coach draft a workout
- * starts from becomes `started` with the session's ID. False (nothing
- * written): it isn't open any more, or its 14 days are over by the start.
- * The overview's fence already pinned its version (OV4).
+ * Why a draft didn't start (nothing written): `gone` (not open any more, not
+ * Ben's, or its 14 days are over by the start), `stale` (its version moved
+ * since the screen read it; rule 5), or `empty` (v3 §4.4: Start refuses a
+ * workout with no exercises, so the UI says so rather than `Out of date`;
+ * review b3-data N5).
  */
-export async function startWorkoutDraftIn(tx: SqlExecutor, draftId: string, ownerId: string, sessionId: string, atUtc: string): Promise<boolean> {
+export type DraftStartResult = { ok: true } | { ok: false; reason: 'gone' | 'stale' | 'empty' };
+
+/**
+ * Inside a session's create transaction (§6.3): the coach or builder draft a
+ * workout starts from becomes `started` with the session's ID.
+ * `expectedVersion` (v3 §4.4, review b3-data N3): the draft's version the
+ * screen showed; builder edits bump it in place, so the atomic Start passes
+ * it. Absent (coach drafts as before): the overview's fence already pinned it
+ * (OV4).
+ */
+export async function startWorkoutDraftIn(tx: SqlExecutor, draftId: string, ownerId: string, sessionId: string, atUtc: string, expectedVersion?: number): Promise<DraftStartResult> {
   const d = await getWorkoutDraftIn(tx, draftId);
-  if (d === null || d.ownerId !== ownerId || d.status !== 'open' || d.expiresAtUtc <= atUtc) return false;
+  if (d === null || d.ownerId !== ownerId || d.status !== 'open' || d.expiresAtUtc <= atUtc) return { ok: false, reason: 'gone' };
+  if (expectedVersion !== undefined && d.version !== expectedVersion) return { ok: false, reason: 'stale' };
+  const current = d.versions.find((v) => v.n === d.currentVersion);
+  if (current === undefined || current.plan.slots.length === 0) return { ok: false, reason: 'empty' };
   const next: WorkoutDraft = { ...d, status: 'started', sessionId, startedAtUtc: atUtc, version: d.version + 1, updatedAtUtc: atUtc };
   const r = await saveDocumentIn(tx, WORKOUT_DRAFT_SPEC, next, d.version);
-  return r.ok;
+  return r.ok ? { ok: true } : { ok: false, reason: 'stale' };
 }

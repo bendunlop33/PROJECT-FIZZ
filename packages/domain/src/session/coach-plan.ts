@@ -355,6 +355,21 @@ export function applyPlan(
   return { kind: 'write', next: bump(current, input.opId, input.at.utc, { status: 'applied', applied }), expectedVersion: current.version, create, update, supersede };
 }
 
+/** `PlanEnded.rotationOff`'s bound. */
+const END_ROTATION_MAX = PLAN_LIMITS.maxDays * PLAN_LIMITS.maxTemplatesPerDay;
+
+/**
+ * (v3 §4.2, review b3-data S4) Live templates saved for this plan that its
+ * Apply didn't make (`planDay.planId` names it; not in `applied.made`), in
+ * ID order. The store passes them in `routines` with the plan's own.
+ */
+function addedTemplates(plan: PlanDraft, routines: ReadonlyMap<string, Routine | null>): Routine[] {
+  const made = new Set(plan.applied?.made.map((m) => m.routineId) ?? []);
+  return [...routines.values()]
+    .filter((r): r is Routine => r !== null && !made.has(r.id) && !isDeleted(r) && r.planDay?.planId === plan.id)
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
 export type PlanUndoChange =
   /** `restore`: the plans this Apply ended, the plan in use again (review S3). */
   | { kind: 'write'; next: PlanDraft; expectedVersion: number; update: { next: Routine; expectedVersion: number }[]; restore: { next: PlanDraft; expectedVersion: number }[] }
@@ -372,6 +387,8 @@ export type PlanUndoChange =
  * deleted himself stays deleted. The plan is open again (Apply re-offers).
  * A plan this Apply ended (`superseded`) is the plan in use again, if it
  * is still as this Apply left it. `plans`: those plans as stored now.
+ * `routines` also holds the plan's templates saved since Apply (v3 §4.2):
+ * deleted with it.
  */
 export function undoPlanApply(
   current: PlanDraft,
@@ -389,6 +406,12 @@ export function undoPlanApply(
       changed.push(r.name);
       continue;
     }
+    const c = deleteRoutine(r, r.version, `${input.opId}:delete:${r.id}`, input.at);
+    if (c.kind === 'write') update.push({ next: c.next, expectedVersion: c.expectedVersion });
+  }
+  // (v3 §4.2, review b3-data S4) Templates saved for this plan after Apply (a new main lift from the
+  // builder) are the plan's too: Undo deletes them with it. Variations are never touched.
+  for (const r of addedTemplates(current, input.routines)) {
     const c = deleteRoutine(r, r.version, `${input.opId}:delete:${r.id}`, input.at);
     if (c.kind === 'write') update.push({ next: c.next, expectedVersion: c.expectedVersion });
   }
@@ -436,17 +459,23 @@ export type PlanEndChange =
  * out go back in the rotation as they were before Apply (Ben, 20 Oct),
  * except any he deleted or changed since (`ended.notRestored`). Versioned
  * and idempotent on its op ID (rule 5). `routines`: the plan's workouts and
- * the ones Apply took out, as stored now. A day Ben already took out of the
- * rotation (or deleted) is left as it is.
+ * the ones Apply took out, as stored now, plus (v3 §4.2) its templates
+ * saved since Apply, which leave the rotation with them. A day Ben already
+ * took out of the rotation (or deleted) is left as it is.
  */
 export function endPlan(current: PlanDraft, input: { expectedVersion: number; opId: string; at: ZonedTimestamp; routines: ReadonlyMap<string, Routine | null> }): PlanEndChange {
   if (current.opIds.includes(input.opId)) return { kind: 'duplicate', current };
   if (current.version !== input.expectedVersion || current.status !== 'applied' || current.applied === null) return { kind: 'stale', current };
   const update: { next: Routine; expectedVersion: number }[] = [];
   const rotationOff: PlanEnded['rotationOff'] = [];
-  for (const m of current.applied.made) {
+  // The plan's workouts, and (v3 §4.2, review b3-data S4) templates saved for it after Apply.
+  const made = current.applied.made.flatMap((m) => {
     const r = input.routines.get(m.routineId) ?? null;
-    if (r === null || isDeleted(r) || !isInRotation(r)) continue;
+    return r === null ? [] : [r];
+  });
+  for (const r of [...made, ...addedTemplates(current, input.routines)]) {
+    if (isDeleted(r) || !isInRotation(r)) continue;
+    if (rotationOff.length >= END_ROTATION_MAX) break;
     const c = setRoutineRotation(r, false, r.version, `${input.opId}:off:${r.id}`, input.at);
     if (c.kind !== 'write') continue;
     update.push({ next: c.next, expectedVersion: c.expectedVersion });
@@ -523,30 +552,156 @@ export function undoEndPlan(current: PlanDraft, input: { expectedVersion: number
 // ---------------------------------------------------------------------------
 // Up next with a plan (rotation, not dates)
 
-/** The applied plan's live workouts, in day order. */
-export function planRoutines<R extends Pick<Routine, 'id' | 'deletedAtUtc' | 'createdFromPlan'>>(plan: Pick<PlanDraft, 'id' | 'status' | 'applied'> | null, routines: readonly R[]): R[] {
+/**
+ * A plan day's identity for Up next: (planId, dayIndex). Not its split day:
+ * a plan may use a split day twice (Push/Pull/Legs/Push), and each is its
+ * own day (review b3-data B1). The split day is only the variation key.
+ */
+export interface PlanDayRef {
+  planId: string;
+  dayIndex: number;
+}
+
+/**
+ * (Workout builder v3 §4.2) A routine's plan day, (planId, dayIndex): its
+ * `planDay`, else the plan link of a plan workout made before v3. Read only:
+ * nothing is written back. Null for every other routine.
+ */
+export function planDayOf(r: Partial<Pick<Routine, 'planDay' | 'createdFromPlan'>>): PlanDayRef | null {
+  if (r.planDay !== undefined) return { planId: r.planDay.planId, dayIndex: r.planDay.dayIndex };
+  const link = r.createdFromPlan;
+  return link === undefined ? null : { planId: link.planId, dayIndex: link.dayIndex };
+}
+
+export const samePlanDay = (a: PlanDayRef | null | undefined, b: PlanDayRef | null | undefined): boolean =>
+  a != null && b != null && a.planId === b.planId && a.dayIndex === b.dayIndex;
+
+/** What deriving an older plan workout's key reads: the Profile's split and its main lift per split day. */
+export interface PlanDayKeySplit {
+  split: { days: readonly Pick<SplitDay, 'id' | 'mainLiftExerciseId'>[] } | null;
+  mainLifts?: Readonly<Record<string, string>> | undefined;
+}
+
+/** A template's full key: its plan day (planId, dayIndex), the split day (the variation key) and main lift. */
+export interface PlanDayTemplateKey extends PlanDayRef {
+  splitDayId: string;
+  mainLiftExerciseId: string | null;
+}
+
+/**
+ * (§4.2) A template's full key, derived when read and never written on
+ * read: `planDay` when set; for an older plan workout, its
+ * `createdFromPlan.dayIndex`, `splitDayId = createdFromPlan.splitDayId ??
+ * the split day at its dayIndex` and the main lift = its own main exercise
+ * ?? the Profile's main lift for that day ?? the split day's. Null when no
+ * split day can be derived (it stays an ordinary routine).
+ */
+export function planDayKeyOf(
+  r: Pick<Routine, 'exercises'> & Partial<Pick<Routine, 'planDay' | 'createdFromPlan'>>,
+  split: PlanDayKeySplit['split'],
+  mainLifts?: PlanDayKeySplit['mainLifts'],
+): PlanDayTemplateKey | null {
+  if (r.planDay !== undefined) return { planId: r.planDay.planId, dayIndex: r.planDay.dayIndex, splitDayId: r.planDay.splitDayId, mainLiftExerciseId: r.planDay.mainLiftExerciseId };
+  const link = r.createdFromPlan;
+  if (link === undefined) return null;
+  const splitDayId = link.splitDayId ?? split?.days[link.dayIndex]?.id ?? null;
+  if (splitDayId === null) return null;
+  const own = r.exercises.find((e) => e.main === true)?.exerciseId;
+  const main = own ?? mainLifts?.[splitDayId] ?? split?.days.find((d) => d.id === splitDayId)?.mainLiftExerciseId ?? null;
+  return { planId: link.planId, dayIndex: link.dayIndex, splitDayId, mainLiftExerciseId: main };
+}
+
+/** Whether a finished workout was started from this very routine: by its routine, as its template (§4.2), or saved as it. */
+function isFromTemplate(ref: Pick<FinishedRef, 'sessionId' | 'routineId' | 'planDay'>, r: Pick<Routine, 'id' | 'createdFromSessionId'>): boolean {
+  return isFromRoutine(ref, r) || (ref.planDay?.templateRoutineId != null && ref.planDay.templateRoutineId === r.id);
+}
+
+/** Whether a finished workout counts for this plan day: started from the routine (or saved as it, or as its template), or started as its plan day (§4.2). */
+export function isFromPlanDay(ref: Pick<FinishedRef, 'sessionId' | 'routineId' | 'planDay'>, r: Pick<Routine, 'id' | 'createdFromSessionId'> & Partial<Pick<Routine, 'planDay' | 'createdFromPlan'>>): boolean {
+  return isFromTemplate(ref, r) || samePlanDay(ref.planDay, planDayOf(r));
+}
+
+/**
+ * The applied plan's live workouts, in day order. (v3 §4.2) Every template:
+ * those Apply made (one per day, or per day and main lift), then templates
+ * added for this plan since (a new main lift saved from the builder), each
+ * after its split day's others.
+ */
+export function planRoutines<R extends Pick<Routine, 'id' | 'deletedAtUtc' | 'createdFromPlan'> & Partial<Pick<Routine, 'planDay'>>>(plan: Pick<PlanDraft, 'id' | 'status' | 'applied'> | null, routines: readonly R[]): R[] {
   if (plan === null || plan.status !== 'applied' || plan.applied === null) return [];
   const byId = new Map(routines.map((r) => [r.id, r]));
-  return plan.applied.made.flatMap((m) => {
+  const ofPlan = (r: R): boolean => r.createdFromPlan?.planId === plan.id || r.planDay?.planId === plan.id;
+  const out = plan.applied.made.flatMap((m) => {
     const r = byId.get(m.routineId);
-    return r === undefined || isDeleted(r) || r.createdFromPlan?.planId !== plan.id ? [] : [r];
+    return r === undefined || isDeleted(r) || !ofPlan(r) ? [] : [r];
   });
+  const made = new Set(out.map((r) => r.id));
+  const added = routines.filter((r) => !made.has(r.id) && !isDeleted(r) && r.planDay?.planId === plan.id).sort((a, b) => (a.id < b.id ? -1 : 1));
+  for (const r of added) {
+    const day = planDayOf(r);
+    let at = -1;
+    out.forEach((x, i) => {
+      if (samePlanDay(planDayOf(x), day)) at = i;
+    });
+    if (at < 0) out.push(r);
+    else out.splice(at + 1, 0, r);
+  }
+  return out;
 }
 
 /**
  * Up next with a plan and no split (Ben, 19 Oct: "Up next walks through
  * them"): the day after the plan day done most recently since Apply, in
  * day order, wrapping round; day 1 before any. Null with no plan days.
+ * (v3 §4.2) A workout counts for its plan day (planId, dayIndex), so a
+ * `Today only` start moves it on; the next day is the next **plan day**,
+ * skipping that day's other templates (`Chest · incline` after `Chest ·
+ * bench`). A workout is matched to its own template first (its routine or
+ * `templateRoutineId`), so a plan that repeats a split day credits the right
+ * one (review b3-data B1). (Q2) A plan day with several templates opens the
+ * one its newest workout used; none yet: the first.
  */
-export function planUpNext<R extends Pick<Routine, 'id' | 'createdFromSessionId'>>(days: readonly R[], refs: readonly FinishedRef[], appliedAtUtc: string): R | null {
+export function planUpNext<R extends Pick<Routine, 'id' | 'createdFromSessionId'> & Partial<Pick<Routine, 'planDay' | 'createdFromPlan'>>>(days: readonly R[], refs: readonly FinishedRef[], appliedAtUtc: string): R | null {
   if (days.length === 0) return null;
   const since = toMs(appliedAtUtc);
   const newest = [...refs].filter((f) => toMs(f.startedAtUtc) >= since).sort((a, b) => toMs(b.startedAtUtc) - toMs(a.startedAtUtc));
+  const lastUsed = (next: R): R => lastUsedTemplate(days, next, newest);
   for (const f of newest) {
-    const at = days.findIndex((r) => isFromRoutine(f, r));
-    if (at >= 0) return days[(at + 1) % days.length] ?? null;
+    let at = days.findIndex((r) => isFromTemplate(f, r));
+    if (at < 0) at = days.findIndex((r) => samePlanDay(f.planDay, planDayOf(r)));
+    if (at < 0) continue;
+    const done = planDayOf(days[at] ?? {});
+    for (let k = 1; k <= days.length; k += 1) {
+      const next = days[(at + k) % days.length];
+      if (next !== undefined && (done === null || !samePlanDay(planDayOf(next), done))) return lastUsed(next);
+    }
+    // Every template is the same plan day (a one-day plan): that day again.
+    const again = days[(at + 1) % days.length];
+    return again === undefined ? null : lastUsed(again);
   }
-  return days[0] ?? null;
+  const first = days[0];
+  return first === undefined ? null : lastUsed(first);
+}
+
+/**
+ * (Q2) The template of `next`'s plan day that its newest workout used (by
+ * routine or `templateRoutineId`, else by main lift); `next` when the day
+ * has one template, or none of its workouts names one.
+ */
+function lastUsedTemplate<R extends Pick<Routine, 'id' | 'createdFromSessionId'> & Partial<Pick<Routine, 'planDay' | 'createdFromPlan'>>>(days: readonly R[], next: R, newestFirst: readonly FinishedRef[]): R {
+  const day = planDayOf(next);
+  if (day === null) return next;
+  const same = days.filter((d) => samePlanDay(planDayOf(d), day));
+  if (same.length <= 1) return next;
+  for (const f of newestFirst) {
+    if (!same.some((d) => isFromPlanDay(f, d))) continue;
+    const used = same.find((d) => isFromTemplate(f, d));
+    if (used !== undefined) return used;
+    const main = f.planDay?.mainLiftExerciseId;
+    const byMain = main === undefined ? undefined : same.find((d) => d.planDay !== undefined && d.planDay.mainLiftExerciseId === main);
+    return byMain ?? next;
+  }
+  return next;
 }
 
 /**
@@ -555,10 +710,11 @@ export function planUpNext<R extends Pick<Routine, 'id' | 'createdFromSessionId'
  * plans-19oct B1 an applied plan drives Up next even with a split; this
  * is only the split fallback when no plan day can be started at the gym.
  */
-export function planRoutineForSplitDay<R extends Pick<Routine, 'id' | 'createdFromSessionId' | 'createdFromPlan'>>(days: readonly R[], splitDayId: string, refs: readonly FinishedRef[]): R | null {
-  const mine = days.filter((r) => r.createdFromPlan?.splitDayId === splitDayId);
+export function planRoutineForSplitDay<R extends Pick<Routine, 'id' | 'createdFromSessionId' | 'createdFromPlan'> & Partial<Pick<Routine, 'planDay'>>>(days: readonly R[], splitDayId: string, refs: readonly FinishedRef[]): R | null {
+  const mine = days.filter((r) => (r.planDay?.splitDayId ?? r.createdFromPlan?.splitDayId) === splitDayId);
   if (mine.length === 0) return null;
-  const last = (r: R): number => Math.max(Number.NEGATIVE_INFINITY, ...refs.filter((f) => isFromRoutine(f, r)).map((f) => toMs(f.startedAtUtc)));
+  // (v3 §4.2, review b3-data N4) Credited by plan day too, so a `Today only` start counts.
+  const last = (r: R): number => Math.max(Number.NEGATIVE_INFINITY, ...refs.filter((f) => isFromPlanDay(f, r)).map((f) => toMs(f.startedAtUtc)));
   return [...mine].sort((a, b) => last(a) - last(b))[0] ?? null;
 }
 
