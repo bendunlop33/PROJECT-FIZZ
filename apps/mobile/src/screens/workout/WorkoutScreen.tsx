@@ -35,6 +35,7 @@ import {
   LinkLine,
   EffortHeading,
   NumberAccessory,
+  ToastHost,
   NumberStepper,
   StepperTileRow,
   PulseOnce,
@@ -73,7 +74,7 @@ import { UNDO_TOAST } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
-import { anchorReducer, cellEditReducer, correctionPatch, doneRowEditing, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type CellEdit, type CellEditEvent, type ChipState, type RowTap } from '../../workout/table';
+import { anchorReducer, cellEditReducer, correctionPatch, doneRowEditing, keypadNext, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type CellEdit, type CellEditEvent, type CellField, type ChipState, type RowTap } from '../../workout/table';
 import { ChatButton, CorrectionEditor, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
 import { awayPrimary, nextViewing, pagerView } from '../../workout/set-pager';
@@ -164,6 +165,13 @@ export function WorkoutScreen() {
   // `Why?` on the target line (active-workout §2.12): one panel at most, hidden while the keypad is open.
   const [why, setWhy] = useState<WhyPanel>(null);
   const [keypadOpen, setKeypadOpen] = useState(false);
+  /** The number field the keypad is on (1.4): its accessory offers `Next ›` from it. */
+  const [keypadField, setKeypadField] = useState<{ row: 'open' | 'done'; field: CellField } | null>(null);
+  /** The done row's distance field (cardio pair), so `Next ›` from its time can focus it. */
+  const correctionDistanceRef = useRef<TextInput>(null);
+  /** The bottom chrome's height (Now chip, rest bar, action bar): the toast floats on it (0.6). */
+  const [chromeHeight, setChromeHeight] = useState(0);
+  const [toastHeight, setToastHeight] = useState(0);
   /** The keypad's height with its Done bar (`endCoordinates.height`); 0 while it's closed. */
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   // `Time left` (§2.15.1): its own clock moves on events (any new data) and once a minute, never every second.
@@ -275,6 +283,7 @@ export function WorkoutScreen() {
     const hidden = Keyboard.addListener('keyboardWillHide', () => {
       setKeypadOpen(false);
       setKeyboardHeight(0);
+      setKeypadField(null);
     });
     return () => {
       shown.remove();
@@ -1074,7 +1083,8 @@ export function WorkoutScreen() {
   function cellTap(tap: Extract<RowTap, { kind: 'select_edit' | 'correct' }>) {
     if (tap.kind === 'select_edit') {
       void selectRow(tap.setId).then((ok) => {
-        if (ok) editCell({ kind: 'tap', setId: tap.setId, field: tap.field, row: 'open' });
+        // 1.4: the cell opens with its field focused, so typing starts at once.
+        if (ok) setFocusRequest({ field: tap.field });
       });
       return;
     }
@@ -1839,6 +1849,9 @@ export function WorkoutScreen() {
           {focus.loadField ? (
             <NumberStepper
               inputRef={loadRef}
+              onFocus={() => {
+                setKeypadField({ row: 'open', field: 'load' });
+              }}
               flex={flexOf(1.4)}
               numeralSize={numeralSize}
               compact={compact}
@@ -1868,6 +1881,9 @@ export function WorkoutScreen() {
           ) : focus.duration && focus.measurement === 'cardio' ? (
             <NumberStepper
               inputRef={timeRef}
+              onFocus={() => {
+                setKeypadField({ row: 'open', field: 'time' });
+              }}
               flex={flexOf(1)}
               numeralSize={numeralSize}
               compact={compact}
@@ -1885,6 +1901,9 @@ export function WorkoutScreen() {
           ) : focus.duration ? (
             <NumberStepper
               inputRef={timeRef}
+              onFocus={() => {
+                setKeypadField({ row: 'open', field: 'time' });
+              }}
               flex={flexOf(1)}
               numeralSize={numeralSize}
               compact={compact}
@@ -1902,6 +1921,9 @@ export function WorkoutScreen() {
           {focus.distance ? (
             <NumberStepper
               inputRef={distanceRef}
+              onFocus={() => {
+                setKeypadField({ row: 'open', field: 'distance' });
+              }}
               flex={flexOf(1)}
               numeralSize={numeralSize}
               compact={compact}
@@ -1919,6 +1941,9 @@ export function WorkoutScreen() {
           {focus.reps ? (
             <NumberStepper
               inputRef={repsRef}
+              onFocus={() => {
+                setKeypadField({ row: 'open', field: 'reps' });
+              }}
               flex={flexOf(1)}
               numeralSize={numeralSize}
               compact={compact}
@@ -2239,6 +2264,10 @@ export function WorkoutScreen() {
           onDistance={(v) => {
             editCorrection({ distanceM: v === null ? null : Math.max(0, v) });
           }}
+          onFocusField={(field) => {
+            setKeypadField({ row: 'done', field });
+          }}
+          distanceRef={correctionDistanceRef}
           onDone={() => {
             Keyboard.dismiss();
             closeCellEditors();
@@ -2246,6 +2275,26 @@ export function WorkoutScreen() {
         />
       ),
     } : null;
+  // 1.4: `Next ›` from the weight to the reps (a cardio time to its distance), on the open row, Focus or a
+  // done row's correction; on the last field `Done` closes the keypad and the editor together.
+  const keypadNextField =
+    keypadField === null
+      ? null
+      : keypadField.row === 'open'
+        ? focus
+          ? keypadNext({ field: keypadField.field, has: { reps: focus.reps !== null, distance: focus.distance !== null }, cardio: focus.measurement === 'cardio' })
+          : null
+        : correctionView !== null
+          ? keypadNext({ field: keypadField.field, has: { reps: correctionView.reps !== null, distance: correctionView.distance !== null }, cardio: correctionView.duration !== null && correctionView.distance !== null })
+          : null;
+  const onKeypadNext =
+    keypadField === null || keypadNextField === null
+      ? null
+      : () => {
+          if (keypadField.row === 'open') setFocusRequest({ field: keypadNextField });
+          else if (keypadNextField === 'distance') correctionDistanceRef.current?.focus();
+          else if (doneEdit !== null) editCell({ kind: 'tap', setId: doneEdit.setId, field: keypadNextField, row: 'done' });
+        };
   const openRowNode = focus ? (
     <OpenSetRow
       focus={focus}
@@ -2263,7 +2312,16 @@ export function WorkoutScreen() {
       canLog={focus.logLabel !== null && !busy && !guard}
       onEditCell={(field) => {
         if (correction !== null) void saveCorrection();
-        editCell(field === null ? { kind: 'close' } : { kind: 'enter', setId: focus.setId, field });
+        if (field === null) {
+          editCell({ kind: 'close' });
+          return;
+        }
+        // 1.4: a cell tap opens its editor with the field focused (tap KG, type); the tapped open cell closes.
+        const t = openCellTap(editingCell, field);
+        if (t.kind === 'close') {
+          Keyboard.dismiss();
+          editCell({ kind: 'close' });
+        } else setFocusRequest({ field: t.field });
       }}
       onLog={() => void log()}
       onMore={() => {
@@ -2313,6 +2371,7 @@ export function WorkoutScreen() {
         openOffProfileEquipment(focus.offProfileEquipment);
       }}
       onTileFocus={(tile) => {
+        setKeypadField({ row: 'open', field: tile });
         if (modeRef.current === 'table') anchorEvent({ kind: 'keypad_opened', tile });
       }}
     />
@@ -2353,7 +2412,7 @@ export function WorkoutScreen() {
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <NumberAccessory />
+      <NumberAccessory onNext={onKeypadNext} onDone={closeCellEditors} />
       {/* Top bar (D-ActiveSet): on the canvas, the workout's name in tracked caps, active time, pause. */}
       <View style={{ paddingTop: insets.top, backgroundColor: theme.colors['bg.canvas'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: theme.space['2'], gap: theme.space['1'] }}>
@@ -2368,7 +2427,7 @@ export function WorkoutScreen() {
               />
             </View>
           ) : (
-            <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, fontSize: 13 }} accessibilityRole="header">
+            <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, minWidth: 64, fontSize: 13 }} accessibilityRole="header">
               {view.title}
             </AppText>
           )}
@@ -2377,7 +2436,8 @@ export function WorkoutScreen() {
           <View accessible accessibilityLabel={`${view.paused ? 'Paused, ' : ''}active time ${formatElapsed(view.elapsedMs)}`} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
             {view.paused ? <Icon name="pause.circle.fill" color="status.warning" size={16} /> : null}
             <AppText variant="callout" numeric color={view.paused ? 'status.warning' : 'text.secondary'}>
-              {view.paused ? `Paused · ${formatElapsed(view.elapsedMs)}` : formatElapsed(view.elapsedMs)}
+              {/* 1.8: paused shows the icon and the time; the word is in the label. */}
+              {formatElapsed(view.elapsedMs)}
             </AppText>
           </View>
           {alertsOff(permission, prefs.alertsAsk) ? <IconButton icon="bell.slash" tint="text.secondary" label={alertsOffLabel(permission)} onPress={openAlertSettings} /> : null}
@@ -2411,6 +2471,7 @@ export function WorkoutScreen() {
             footer={tableFooter}
             anchorRequest={anchorRequest}
             keyboardHeight={keyboardHeight}
+            bottomInset={toastHeight}
             onAnchorApplied={() => {
               anchorEvent({ kind: 'applied' });
             }}
@@ -2435,7 +2496,7 @@ export function WorkoutScreen() {
           />
         </View>
       ) : (
-      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], paddingBottom: theme.space['4'] }} {...WORKOUT_KEYBOARD}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.space['5'], paddingTop: theme.space['3'], paddingBottom: theme.space['4'] + toastHeight }} {...WORKOUT_KEYBOARD}>
         {/* F5: a tap outside a field or button closes the number pad (as the coach sheet). */}
         <Pressable accessible={false} onPress={() => { Keyboard.dismiss(); }} style={{ flexGrow: 1, gap: theme.space['5'] }}>
         {/* Paused: the header pill and `REST · PAUSED` say it, no banner (§3.2). During rest only a failed write shows (§3.1). */}
@@ -2528,27 +2589,37 @@ export function WorkoutScreen() {
       </ScrollView>
       )}
 
-      {tableMode && chips.now !== null ? (
-        <NowChip
-          direction={chips.now}
-          onPress={() => {
-            anchorEvent({ kind: 'now_chip' });
-          }}
-        />
-      ) : null}
-      {toast ? <Toast key={toast.id} {...(toast.icon ? { icon: toast.icon } : {})} text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
-      {tableMode && rest !== null ? (
-        <RestBar
-          rest={rest}
-          onAdjust={adjustRest}
-          onSkip={skipRest}
-          onOpen={() => {
-            setRestFull(true);
-          }}
-        />
-      ) : null}
-      {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. */}
-      <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} />
+      {/* The bottom chrome, measured so the toast floats on it (0.6). */}
+      <View
+        onLayout={(e) => {
+          setChromeHeight(e.nativeEvent.layout.height);
+        }}
+      >
+        {tableMode && chips.now !== null ? (
+          <NowChip
+            direction={chips.now}
+            onPress={() => {
+              anchorEvent({ kind: 'now_chip' });
+            }}
+          />
+        ) : null}
+        {tableMode && rest !== null ? (
+          <RestBar
+            rest={rest}
+            onAdjust={adjustRest}
+            onSkip={skipRest}
+            onOpen={() => {
+              setRestFull(true);
+            }}
+          />
+        ) : null}
+        {/* `Chat` + Log (§2): the coach sheet shows its own honest status; Talk replaces Chat once voice ships. On the keypad: no home-indicator room (0.2). */}
+        <ActionBar talk={<ChatButton ax={ax} onPress={openCoach} />} primary={barPrimary} guard={guard || logBlockedBySwitch(switchCard)} keypadOpen={keypadOpen} />
+      </View>
+      {/* Hidden while the keypad is up (workout-table.md, Keypad open). */}
+      <ToastHost bottom={chromeHeight} onHeight={setToastHeight}>
+        {toast && !keypadOpen ? <Toast key={toast.id} {...(toast.icon ? { icon: toast.icon } : {})} text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}
+      </ToastHost>
 
       <Modal
         visible={tableMode && restFull}
@@ -2583,6 +2654,7 @@ export function WorkoutScreen() {
               },
             }}
             guard={guard || logBlockedBySwitch(switchCard)}
+            keypadOpen={keypadOpen}
           />
         </View>
       </Modal>
@@ -3006,12 +3078,13 @@ function RestAfterSheet({
           <Eyebrow>{exerciseName}</Eyebrow>
           <AppText variant="title2" accessibilityRole="header">{`Rest after set ${String(setNumber)}`}</AppText>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.space['4'] }}>
-          <SecondaryButton label="−15 s" onPress={() => { step(-15); }} />
-          <AppText variant="timerDisplay" accessibilityLabel={`Rest ${formatDuration(value)}`}>
-            {formatDuration(value)}
-          </AppText>
-          <SecondaryButton label="+15 s" onPress={() => { step(15); }} />
+        {/* 1.10: the numeral on its own line (shrinks rather than clip at AX), the steps under it. */}
+        <AppText variant="timerDisplay" align="center" numberOfLines={1} adjustsFontSizeToFit accessibilityLabel={`Rest ${formatDuration(value)}`}>
+          {formatDuration(value)}
+        </AppText>
+        <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+          <SecondaryButton grow label="−15 s" onPress={() => { step(-15); }} />
+          <SecondaryButton grow label="+15 s" onPress={() => { step(15); }} />
         </View>
         <ChipRow>
           {REST_CHOICES.map((c) => (

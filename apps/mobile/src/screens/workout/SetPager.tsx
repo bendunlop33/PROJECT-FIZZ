@@ -54,7 +54,7 @@ function ArrowButton({ direction, enabled, onPress }: { direction: 'prev' | 'nex
       accessibilityState={{ disabled: !enabled }}
       disabled={!enabled}
       onPress={onPress}
-      style={({ pressed }) => ({ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: !enabled ? 0.3 : pressed ? TEXT_PRESSED_OPACITY : 1 })}
+      style={({ pressed }) => ({ width: 52, height: 52, alignItems: 'center', justifyContent: 'center', opacity: !enabled ? 0.3 : pressed ? TEXT_PRESSED_OPACITY : 1 })}
     >
       <Icon name={direction === 'prev' ? 'chevron.left' : 'chevron.right'} size={20} color="text.primary" />
     </Pressable>
@@ -138,7 +138,7 @@ export function RestSetBlocks({
   onMakeCurrent: () => void;
 }) {
   const theme = useTheme();
-  const block = { backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['2'], minHeight: 148 } as const;
+  const block = { backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.lg, padding: theme.space['4'], gap: theme.space['2'] } as const;
   return (
     <View style={{ gap: theme.space['3'] }}>
       {last !== null ? (

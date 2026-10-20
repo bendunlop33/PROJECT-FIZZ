@@ -26,6 +26,10 @@ export function GymChip({ gymName, onPress }: { gymName: string | null; onPress:
       onPress={onPress}
       style={({ pressed }) => ({
         alignSelf: 'flex-start',
+        // 1.8: a long gym name gives way (ellipsis) so the workout name stays visible.
+        flexShrink: 1,
+        minWidth: 0,
+        maxWidth: 120,
         minHeight: theme.target.min.height,
         flexDirection: 'row',
         alignItems: 'center',
@@ -38,7 +42,7 @@ export function GymChip({ gymName, onPress }: { gymName: string | null; onPress:
       })}
     >
       <Icon name="building.2" size={16} />
-      <AppText variant="callout" numberOfLines={1}>
+      <AppText variant="callout" numberOfLines={1} style={{ flexShrink: 1 }}>
         {gymName ?? 'Choose gym'}
       </AppText>
       <Icon name="chevron.down" size={12} />

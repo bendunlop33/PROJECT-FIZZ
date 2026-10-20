@@ -150,6 +150,8 @@ export function NumberStepper({
   onBlur,
   onLayout,
   time = false,
+  variant = 'tile',
+  autoFocus = false,
 }: {
   label: string;
   unit: string | null;
@@ -184,6 +186,13 @@ export function NumberStepper({
   onBlur?: () => void;
   /** The tile's frame in its parent, so the Table knows where the focused tile ends. */
   onLayout?: (e: LayoutChangeEvent) => void;
+  /**
+   * `inline` (design pass 1.1): one `− value +` line in a table row's editor, ≤ 60 pt with
+   * its padding. The label is read by VoiceOver only; the numeral fits its measured width.
+   */
+  variant?: 'tile' | 'inline';
+  /** Focus on mount: a field opened while the keypad is up keeps it up (Next ›, another cell). */
+  autoFocus?: boolean;
 }) {
   const theme = useTheme();
   const format = time ? CARDIO_TIME_FORMAT : NUMBER_FORMAT;
@@ -197,6 +206,7 @@ export function NumberStepper({
     setText((t) => nextFieldText(t, value, format));
   }, [value, time]);
   const flat = theme.components.cardBorderWidth === 0;
+  const inline = variant === 'inline';
   // F9: without a fitted size from the caller, the numeral shrinks to its measured tile so `10` never shows as `1`.
   const fitted =
     numeralSize ??
@@ -205,9 +215,9 @@ export function NumberStepper({
       : stepperNumeralSize({
           tileWidth,
           texts: [text, ...(time ? [value === null ? '—' : format.show(value), '0:00:00'] : stepperTexts(value, down, up, decimals ? 3 : 2))],
-          unit: flat ? unit : null,
+          unit: flat || inline ? unit : null,
           // The bordered variant's − / + are wider and sit 8 pt apart from the field.
-          stepSize: flat ? (stepSize ?? theme.target.min.width) : (stepSize ?? theme.target.workout.width) + theme.space['2'] + 2,
+          stepSize: flat || inline ? (stepSize ?? theme.target.min.width) : (stepSize ?? theme.target.workout.width) + theme.space['2'] + 2,
           fontScale,
         }));
   const layout = (e: LayoutChangeEvent) => {
@@ -235,6 +245,7 @@ export function NumberStepper({
       }}
       keyboardType={decimals ? 'decimal-pad' : 'number-pad'}
       inputAccessoryViewID={NUMBER_ACCESSORY_ID}
+      autoFocus={autoFocus}
       selectTextOnFocus
       accessibilityLabel={`${label}${unit ? `, ${unit}` : ''}`}
       {...(hint ? { accessibilityHint: hint } : {})}
@@ -258,6 +269,38 @@ export function NumberStepper({
       {` ${unit}`}
     </AppText>
   ) : null;
+  if (inline) {
+    // 1.1: `[−] numeral [+]` on one line; the 1.5 pt focus / warning border and the max reason stay.
+    return (
+      <View onLayout={layout} style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            minHeight: stepSize ?? theme.target.workout.height,
+            backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
+            borderRadius: theme.radius.md,
+            borderWidth: focused || warning ? 1.5 : 0,
+            borderColor: warning ? theme.colors['status.warning'] : theme.colors['border.control'],
+            paddingVertical: 0,
+          }}
+        >
+          <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
+            {input}
+            {unitText}
+          </View>
+          <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
+        </View>
+        {!up.enabled && value !== null ? (
+          <AppText variant="callout" color="text.secondary" numeric>
+            {up.reason}
+          </AppText>
+        ) : null}
+      </View>
+    );
+  }
   if (flat) {
     // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
     return (
@@ -354,19 +397,24 @@ export function StepperTileRow({
   tiles,
   estimate,
   children,
+  step,
+  gap: gapProp,
 }: {
   tiles: readonly TileSpec[];
   /** The row's width before it's measured. */
   estimate: number;
   children: (row: { numeralSize: number; compact: boolean; flexOf: (share: number) => number | null }) => ReactNode;
+  /** The tiles' − / + size when not the default 44 pt (the Table: 52 pt, 60 pt at AX). */
+  step?: number;
+  gap?: number;
 }) {
   const theme = useTheme();
   const { fontScale } = useWindowDimensions();
   const [measured, setMeasured] = useState<number | null>(null);
   const flat = theme.components.cardBorderWidth === 0;
-  const gap = theme.space['3'];
+  const gap = gapProp ?? theme.space['3'];
   // The bordered variant's − / + are wider and sit 8 pt apart from the field (as `stepperNumeralSize`).
-  const stepSize = flat ? theme.target.min.width : theme.target.workout.width + theme.space['2'] + 2;
+  const stepSize = flat ? (step ?? theme.target.min.width) : (step ?? theme.target.workout.width) + theme.space['2'] + 2;
   const fit = tileFit({ rowWidth: measured ?? estimate, tiles, stepSize, fontScale, ax: fontScale >= AX_FONT_SCALE, gap });
   const { compact, stacked } = tileRowLayout(fit, flat);
   return (

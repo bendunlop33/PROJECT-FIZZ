@@ -201,7 +201,7 @@ Wherever a pending set's target came from a coach adjustment:
 | Stale, dropped | `Out of date` [Ask again] | `Log …` | `Ask again` re-sends the same request on the current state |
 | Timed out | `The coach didn't answer in time. Nothing changed.` [Try again] | `Log …` | Never a canned answer |
 | Failed (limit/error) | `Couldn't reach the coach (limit reached). Nothing changed.` | `Log …` | Never switches to a paid route (rule 7) |
-| Coach offline / not connected | `Adjust` shows the caption `Offline` / `Not connected` / `Unavailable`; tapping it shows `Too hard` · `Too easy` · `Pain` (+ `Type…` when `Offline`), no line; the two chips apply the built-in rule's change (CA6) | `Log …` | Offers are the built-in rule's, tagged `Rule` (CA6 revised) |
+| Coach offline / not connected | `Adjust` keeps its one word with a small status icon (`wifi.slash` offline, `bolt.slash` not connected or unavailable; design pass 1.9, 20 Oct); tapping it shows `Too hard` · `Too easy` · `Pain` (+ `Type…` when `Offline`) and the state in a word (`Offline` / `Not connected` / `Unavailable`); the two chips apply the built-in rule's change (CA6) | `Log …` | Offers are the built-in rule's, tagged `Rule` (CA6 revised) |
 | Paused | Slot content is kept; a pending request continues; Undo and Adjust still work | `Resume` | An applied result changes targets only, not timers |
 | Restored after force-close | Applied adjustments are in SQLite and show their markers. A pending request is **dropped** (`Coach request was interrupted. Nothing changed.` [Ask again]). An unanswered offer is not shown again | per state | Nothing applies after a relaunch without Ben seeing it |
 
@@ -339,7 +339,7 @@ Values are labelled as **target** or **actual** every time. `→` reads "to" in 
 
 | Element | Text | Target / actual |
 |---|---|---|
-| Adjust control | `Adjust` · caption `Offline` / `Not connected` / `Unavailable` | — |
+| Adjust control | `Adjust` (+ status icon; VoiceOver `Adjust, coach offline` / `not connected` / `unavailable`) | — |
 | Chip row | `What should change?` · `Too hard` · `Too easy` · `Pain` · `Type…` | — |
 | Offer (hard) | `That looked hard. Adjust remaining sets?` + fact `RPE 10 on set 2` or `6 reps on set 2 (target 8–10)` | Fact = actual; range = target |
 | Offer (easy) | `That looked easy. Adjust remaining sets?` + fact `RPE 6 on set 2` | Actual |
@@ -362,7 +362,7 @@ Values are labelled as **target** or **actual** every time. `→` reads "to" in 
 | Failed | `Couldn't reach the coach (limit reached). Nothing changed.` | — |
 | Interrupted | `Coach request was interrupted. Nothing changed.` [Ask again] | — |
 | Offline (Adjust tapped) | No line. Chips `Too hard` · `Too easy` · `Pain` · `Type…` (CA6 revised) | — |
-| Not connected / unavailable (Adjust tapped) | No line. Chips `Too hard` · `Too easy` · `Pain` (CA6 revised) | — |
+| Not connected / unavailable (Adjust tapped) | Line `Not connected` / `Unavailable`. Chips `Too hard` · `Too easy` · `Pain` (CA6 revised) | — |
 | Target line | `Coach target 95 kg × 8` + `Plan was 100 kg × 6–8` | Targets |
 | Edited draft kept | `Your edit kept · Coach target 95 kg × 8` | Target |
 | Source tags | `Coach` · `Rule` · `Suggested` | — |
@@ -439,7 +439,7 @@ Existing (brief §7–8, ADR 0006):
 16. With a draft Ben edited by hand, an adjustment keeps his edit and shows `Your edit kept · Coach target …`.
 17. Force-quit during pending and reopen: `Coach request was interrupted. Nothing changed.`; nothing was applied.
 18. A timeout or quota error shows the honest message, never a made-up reply, and never uses a paid route.
-19. (Revised 11 Oct, CA6) With the coach offline, tapping `Adjust` shows the `Offline` caption and `Too hard` · `Too easy` · `Pain` · `Type…` with no extra line (not connected / unavailable: the same without `Type…`). `Too hard` applies the built-in rule's change to the remaining sets at once with the `Rule` banner and Undo, no AI call; `Pain` still records the flag.
+19. (Revised 11 Oct, CA6) With the coach offline, `Adjust` carries a small status icon, and tapping it shows `Too hard` · `Too easy` · `Pain` · `Type…` with the one-word line `Offline` (not connected / unavailable: the same without `Type…`, line `Not connected` / `Unavailable`; design pass 1.9, 20 Oct). `Too hard` applies the built-in rule's change to the remaining sets at once with the `Rule` banner and Undo, no AI call; `Pain` still records the flag.
 20. Every applied adjustment has a stored reason, evidence refs and guard notes, visible in `Why?` (`getDecisionEvidence`).
 21. Coach UI is never colour-only: the `Coach` tag has text, the banner has an icon and text, the offer is text.
 22. (2026-10-09) A check-in of 2 shows the check-in offer before the first set; no AI call is made until `Adjust`; nothing is spoken.

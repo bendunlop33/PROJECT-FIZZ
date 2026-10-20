@@ -115,7 +115,7 @@ describe('toasts float (0.6)', () => {
   it('ToastHost is absolutely placed and the screens use it', () => {
     expect(read('ui', 'workout.tsx')).toContain("style={{ position: 'absolute', left: 0, right: 0, bottom }}");
     expect(read('ui', 'layout.tsx')).toContain('<ToastHost bottom={toastBottom({ footerHeight: footer ? footerHeight : null');
-    for (const f of [['screens', 'workout', 'WorkoutOverviewScreen.tsx'], ['screens', 'repeat', 'PastWorkoutsScreen.tsx'], ['screens', 'routines', 'WorkoutsScreen.tsx']]) {
+    for (const f of [['screens', 'workout', 'WorkoutScreen.tsx'], ['screens', 'workout', 'WorkoutOverviewScreen.tsx'], ['screens', 'repeat', 'PastWorkoutsScreen.tsx'], ['screens', 'routines', 'WorkoutsScreen.tsx']]) {
       expect(read(...f), f.join('/')).toContain('<ToastHost bottom=');
     }
     expect(read('screens', 'gym', 'EquipmentEditorScreen.tsx')).toContain('toast={toast ?');

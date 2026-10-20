@@ -16,7 +16,8 @@ import { WHY_FAILED_TEXT, whyLinkLabel, whyRowAccessibilityLabel, type WhyPanel 
 
 const LABEL_WIDTH = 96;
 
-export function TargetWhyLink({ open, onPress }: { open: boolean; onPress: () => void }) {
+/** `slim`: on the Table's one-line sub-line (1.5), a 44 pt target by padding and hitSlop, not by height. */
+export function TargetWhyLink({ open, onPress, slim = false }: { open: boolean; onPress: () => void; slim?: boolean }) {
   const theme = useTheme();
   const chevron = theme.components.linkAffordance === 'chevron';
   return (
@@ -25,7 +26,8 @@ export function TargetWhyLink({ open, onPress }: { open: boolean; onPress: () =>
       accessibilityLabel={whyLinkLabel(open)}
       accessibilityState={{ expanded: open }}
       onPress={onPress}
-      style={({ pressed }) => ({ minHeight: theme.target.workout.height, minWidth: theme.target.workout.width, alignItems: 'flex-end', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+      {...(slim ? { hitSlop: { top: 10, bottom: 10, left: 8, right: 8 } } : {})}
+      style={({ pressed }) => (slim ? { paddingVertical: theme.space['1'], justifyContent: 'center', opacity: pressed ? 0.6 : 1 } : { minHeight: theme.target.workout.height, minWidth: theme.target.workout.width, alignItems: 'flex-end', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
         <AppText variant="callout" color="accent" style={chevron ? { textDecorationLine: 'underline' } : undefined}>

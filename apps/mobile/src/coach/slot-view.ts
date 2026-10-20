@@ -158,19 +158,27 @@ export function ruleOfferOutcome(status: 'stale' | 'unchanged' | 'failed'): { te
   }
 }
 
-/** The `Adjust` control (§2.2): its caption and which chips it offers now. */
+/**
+ * The `Adjust` control (§2.2): which chips it offers now, and the coach's
+ * state when it can't answer. The button's word is always `Adjust`; the state
+ * is a small icon (`icon`), read in `accessibilityLabel`, and its word
+ * (`caption`) is the open row's `line` (design pass 1.9, Ben approved 20 Oct).
+ */
 export interface AdjustControlView {
   caption: string | null;
+  icon: 'wifi.slash' | 'bolt.slash' | null;
+  accessibilityLabel: string;
   chips: ('too_hard' | 'too_easy' | 'pain' | 'type')[];
-  /** Shown when the row opens and the coach can't answer. */
+  /** Shown when the row opens and the coach can't answer: its state, in a word. */
   line: string | null;
 }
 
 export function adjustControlView(a: CoachAvailability): AdjustControlView {
-  if (a.status === 'ok') return { caption: null, chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
-  if (a.status === 'offline') return { caption: 'Offline', chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
+  if (a.status === 'ok') return { caption: null, icon: null, accessibilityLabel: 'Adjust', chips: ['too_hard', 'too_easy', 'pain', 'type'], line: null };
+  if (a.status === 'offline') return { caption: 'Offline', icon: 'wifi.slash', accessibilityLabel: 'Adjust, coach offline', chips: ['too_hard', 'too_easy', 'pain', 'type'], line: 'Offline' };
   // No coach: Too hard / Too easy are the built-in rule's (review coach-fallback S1); typing needs the coach.
-  return { caption: a.status === 'not_connected' ? 'Not connected' : 'Unavailable', chips: ['too_hard', 'too_easy', 'pain'], line: null };
+  const caption = a.status === 'not_connected' ? 'Not connected' : 'Unavailable';
+  return { caption, icon: 'bolt.slash', accessibilityLabel: `Adjust, coach ${caption.toLowerCase()}`, chips: ['too_hard', 'too_easy', 'pain'], line: caption };
 }
 
 export const ADJUST_CHIP_LABEL: Record<AdjustControlView['chips'][number], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', type: 'Type…' };

@@ -73,7 +73,7 @@ A range (`6–8`) only ever appears on a target. A done row always shows a singl
 - **Last set logged:** Log becomes `Finish workout` (confirmation sheet). There is no other Finish near the bar.
 - **Empty workout:** the §2.10 empty state is unchanged.
 - **Offline / AI unavailable:** logging is unaffected. Chat opens the coach sheet, which shows its honest status there. The list shows no fake coach content.
-- **Keypad open:** the open row stays visible above the keypad (auto-scroll). Log rides the keypad. The plate line, Last link and toast hide.
+- **Keypad open:** the open row stays visible above the keypad (auto-scroll). Log rides the keypad with no home-indicator gap (both action bars, design pass 1.7, 20 Oct). The Last link and toast hide. The plate line shows under the load editor while the load is edited (1.5). `Next ›` on the keypad moves from the weight to the reps; `Done` closes the keypad and the editor (1.4). Pending Ben: a slim one-line `Rest 1:47` strip in place of the full rest bar while the keypad is open.
 - **Force-close:** relaunch restores the same open row, the scroll position (anchored to the open row), the drafts (`saveSetDraft`) and the rest deadline.
 - **Off-screen current row:** when the open row scrolls out of view, the Log label adds the exercise (`Bench · Set 2 · Log 100 kg × 8`) and a `Now ↓` / `Now ↑` chip (44 pt) appears above the bar. Each Log auto-scrolls the new open row into view (Reduce Motion: jump).
 - **AX1+ Dynamic Type:** rows become blocks (`Set 3` / `Target 100 kg × 6–8`). The open row's tiles stack at full width with 60 pt buttons. The GymChip moves into ⋯, the Chat label is dropped (the accessibility label is kept), and Log wraps to two lines and never truncates the load.

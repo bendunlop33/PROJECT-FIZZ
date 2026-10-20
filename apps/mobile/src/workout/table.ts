@@ -488,3 +488,31 @@ export function workoutMenu(o: {
 export function workoutViewOf(pref: unknown): WorkoutView {
   return pref === 'focus' ? 'focus' : 'table';
 }
+
+// ---------------------------------------------------------------------------
+// The keypad's next field (design pass 1.4, Ben approved 20 Oct)
+
+/**
+ * The field `Next ›` moves to from the focused one: weight, then reps (a
+ * cardio set's time, then its distance). Null: the accessory shows `Done`,
+ * which closes the keypad and the editor together.
+ */
+export function keypadNext(p: { field: CellField | null; has: { reps: boolean; distance: boolean }; cardio: boolean }): CellField | null {
+  if (p.field === 'load' && p.has.reps) return 'reps';
+  if (p.field === 'time' && p.cardio && p.has.distance) return 'distance';
+  return null;
+}
+
+/**
+ * A value cell tapped in the open row (1.4): close it when it's the open
+ * one, else open it with its field focused (`focus`), so typing starts at
+ * once and, with the keypad already up, it stays up.
+ */
+export function openCellTap(editing: CellField | null, tapped: CellField): { kind: 'close' } | { kind: 'focus'; field: CellField } {
+  return editing === tapped ? { kind: 'close' } : { kind: 'focus', field: tapped };
+}
+
+/** The open row's set label (1.6): a superset member's tag (`A2`), else its number, then its fixed side. */
+export function openRowLabel(p: { memberTag: string | null; setNumber: number; sideTag: 'L' | 'R' | null }): string {
+  return `${p.memberTag ?? String(p.setNumber)}${p.sideTag ?? ''}`;
+}

@@ -103,8 +103,8 @@ describe('screens wire it (source checks; swipe feel and layout need a real iPho
     expect(pager).toContain('<Eyebrow>Last set</Eyebrow>');
     expect(screen).toContain("'Last set · Effort'");
   });
-  it('the pager has 44 pt ‹ › buttons and a Table button; Log still logs the current set', () => {
-    expect(pager).toMatch(/width: 44, height: 44/);
+  it('the pager has 52 pt ‹ › buttons (design pass) and a Table button; Log still logs the current set', () => {
+    expect(pager).toMatch(/width: 52, height: 52/);
     expect(pager).toContain('label="Table"');
     const log = screen.slice(screen.indexOf('async function log()'), screen.indexOf("type: 'log_set'") + 200);
     expect(log).toContain('setId: focus.setId');
