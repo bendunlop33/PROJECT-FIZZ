@@ -34,7 +34,7 @@ export function MorningReminderHost({ services, port = expoReminderPort }: { ser
   const triggers = useMemo(() => {
     const reminders = createMorningReminders({
       port,
-      forecast: () => readUpNextForecast(services),
+      forecast: (at) => readUpNextForecast(services, at),
       settings: () => settingsRef.current,
       nowMs: () => toMs(services.now().utc),
       tz: () => services.now().tz,

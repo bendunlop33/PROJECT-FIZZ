@@ -334,6 +334,34 @@ describe('flex the week around a run (Ben, 20 Oct)', () => {
     });
   });
 
+  it('a planned run counts on its date unless cancelled (Ben, 20 Oct): no Planned word, the coach reads it done; Cancel run with Undo', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    // Fri 23 Oct; a long run was planned for Thursday and never marked done.
+    h.clockMs = Date.parse('2026-10-23T08:00:00.000Z');
+    const add = await s.activities.add({ id: h.ids(), fields: { kind: 'run', status: 'planned', date: '2026-10-22', durationS: null, distanceM: 18_000, effort: 'long' }, opId: 'thu-run' });
+    if (!add.ok) throw new Error('add');
+    const row = (await s.activities.recent()).find((r) => r.activityId === add.activity.id);
+    expect(row).toMatchObject({ when: 'Yesterday', planned: false });
+    expect(sp(row?.detail)).toBe('18 km · long');
+    const lines = async () => (await s.week.contextView())?.activities ?? [];
+    expect((await lines()).map(sp)).toEqual(['Run · Thu 2026-10-22 · done · 18 km · long']);
+    expect((await s.week.state())?.facts.runs.map((r) => r.id)).toEqual([add.activity.id]);
+
+    // Ben cancels it: the toast says so, with Undo; the week no longer has it.
+    const cancel = await s.activities.remove({ activityId: add.activity.id, expectedVersion: add.activity.version, opId: 'cancel-thu' });
+    expect(cancel.ok).toBe(true);
+    expect(await lines()).toEqual([]);
+    const toast = activitySavedToast({ kind: 'deleted', activityId: add.activity.id, opId: 'cancel-thu', text: 'Run cancelled' }, { undo: s.activities.undo, newOpId: () => 'undo-cancel', changed: () => undefined, show: () => undefined });
+    expect(toast).toMatchObject({ text: 'Run cancelled', action: 'Undo' });
+    toast.onAction?.();
+    await vi.waitFor(async () => {
+      expect(await lines()).toHaveLength(1);
+    });
+    // A stale Cancel (the version the sheet read before the Undo) changes nothing.
+    expect(await s.activities.remove({ activityId: add.activity.id, expectedVersion: add.activity.version, opId: 'cancel-again' })).toMatchObject({ ok: false, reason: 'stale' });
+  });
+
   it('only leg days: Legs anyway, and Why? names the run (the day before a planned one, the day after a done one)', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);

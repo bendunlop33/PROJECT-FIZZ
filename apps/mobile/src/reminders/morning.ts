@@ -27,7 +27,8 @@ export interface ReminderPort {
 
 export interface MorningReminderDeps {
   port: ReminderPort;
-  forecast: () => Promise<UpNextForecast>;
+  /** Up next and what follows, predicted for the schedule's own clock, zone and settings (the run rule's dates). */
+  forecast: (at: { nowMs: number; tz: string; settings: MorningReminderSettings }) => Promise<UpNextForecast>;
   settings: () => MorningReminderSettings;
   nowMs: () => number;
   tz: () => string;
@@ -64,8 +65,10 @@ export function createMorningReminders(deps: MorningReminderDeps) {
       const settings = deps.settings();
       const permission = settings.on === null ? await deps.port.permission().catch((): AlertPermission => 'undetermined') : 'granted';
       const on = reminderOn(settings, permission);
-      const forecast = on ? await deps.forecast() : null;
-      const planned = forecast === null ? [] : morningReminderSchedule(deps.nowMs(), deps.tz(), { ...settings, on }, forecast);
+      const nowMs = deps.nowMs();
+      const tz = deps.tz();
+      const forecast = on ? await deps.forecast({ nowMs, tz, settings }) : null;
+      const planned = forecast === null ? [] : morningReminderSchedule(nowMs, tz, { ...settings, on }, forecast);
       const key = JSON.stringify(planned.map((p) => [p.identifier, p.fireAtLocal, p.title, p.body]));
       // What iOS really has pending, not only what this run last wrote (review S5): a purge or a reset reschedules.
       const pending = (await deps.port.pending()).filter(isMorning);

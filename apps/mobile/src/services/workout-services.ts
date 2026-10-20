@@ -4083,7 +4083,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
      * plan-adapt's least-recently-trained rule, a pin consumed once its day is done, a day this gym can't start
      * skipped). Null with no plan in use (none, paused, or `firstRoutineId` not one of its days). Saves nothing.
      */
-    async planAhead(gymId: string, firstRoutineId: string, count: number): Promise<{ routineId: string; name: string; dayN: number; of: number }[] | null> {
+    async planAhead(gymId: string, firstRoutineId: string, count: number, dates: readonly string[] = []): Promise<{ routineId: string; name: string; dayN: number; of: number; legs: boolean }[] | null> {
       try {
         const p = await ctx.profile();
         if (!p) return null;
@@ -4097,10 +4097,36 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
         const { days, workouts, live: pin } = await planDueInput(p, planDays, training, plan?.pin ?? null);
         const startable = new Map<string, boolean>();
         for (const r of planDays) startable.set(r.id, (await routineStart(p, { routineId: r.id, gymId, opId: `preview-next-routine:${r.id}`, preview: true })).r.ok);
-        const order = planDaysAhead({ days, workouts, pin, firstRoutineId, count, fromMs: nowMs, windowDays: SPLIT_WINDOW_DAYS, canStart: (d) => startable.get(d.routineId) === true });
-        return order.map((d) => ({ routineId: d.routineId, name: d.name, dayN: planDays.findIndex((r) => r.id === d.routineId) + 1, of: planDays.length }));
+        // (Ben, 20 Oct) The run rule on predicted days: `dates[i]` is the day predicted day `i` is reminded on; a long or
+        // hard run (planned or done) the day before or after it keeps legs off it, as Up next does.
+        const acts = dates.length === 0 ? [] : await repos().activities.listBetween(p.id, addDays([...dates].sort()[0] ?? '', -1), addDays([...dates].sort().at(-1) ?? '', 2)).catch(() => []);
+        const nearOn = (i: number) => {
+          const d = dates[i];
+          return d === undefined ? null : legRunNear(acts, d);
+        };
+        const order = planDaysAhead({ days, workouts, pin, firstRoutineId, count, fromMs: nowMs, windowDays: SPLIT_WINDOW_DAYS, canStart: (d) => startable.get(d.routineId) === true, nearOn });
+        return order.map((d) => ({ routineId: d.routineId, name: d.name, dayN: planDays.findIndex((r) => r.id === d.routineId) + 1, of: planDays.length, legs: isLegDay(d.bodyParts) }));
       } catch {
         return null;
+      }
+    },
+
+    /**
+     * (Morning reminder, Ben 20 Oct) Which of these workouts are leg days for the run rule (`planDayBodyParts` with
+     * the split in use, `isLegDay`). Unreadable: none.
+     */
+    async legDayIds(routineIds: readonly string[]): Promise<Set<string>> {
+      try {
+        const p = await ctx.profile();
+        if (!p) return new Set();
+        const { live } = await routineRows(p.id);
+        const routines = live.filter((r) => routineIds.includes(r.id));
+        const training = await ctx.store().repos.trainingProfiles.get(p.id).catch(() => null);
+        const of = await exerciseLookup(routines);
+        const split = splitInUse(training);
+        return new Set(routines.filter((r) => isLegDay(planDayBodyParts(r, of, split))).map((r) => r.id));
+      } catch {
+        return new Set();
       }
     },
 

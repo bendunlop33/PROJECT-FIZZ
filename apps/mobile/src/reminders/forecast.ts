@@ -1,4 +1,5 @@
-import { REMINDER_HORIZON_DAYS, rotationRoutines, type PlanOverview, type ReminderSession, type UpNextForecast } from '@fizz/domain';
+import { addDays, REMINDER_HORIZON_DAYS, reminderSlots, rotationRoutines, type MorningReminderSettings, type PlanOverview, type ReminderSession, type UpNextForecast } from '@fizz/domain';
+import type { Activity } from '@fizz/schemas';
 
 import type { AppServices } from '../services/app-services';
 import type { NextSessionPreview, RoutineRow } from '../services/workout-services';
@@ -22,26 +23,50 @@ import type { NextSessionPreview, RoutineRow } from '../services/workout-service
  * The walk is a prediction for days 2–7 only; it is recomputed whenever
  * anything that moves Up next changes. Local reads only. Never throws: an
  * unreadable part is left out (an unreadable Up next sends nothing).
+ *
+ * The run rule (Ben, 20 Oct): with `at` (the clock, zone and settings the
+ * schedule uses), the plan's days ahead are predicted for the reminder dates
+ * themselves (`reminderSlots`), so a long or hard run (planned or done) next
+ * to one keeps legs off it; each session says whether it is a leg day and the
+ * activities around the dates come along for the domain's own check.
  */
+
+/** What the schedule will be computed with: the forecast predicts for the same reminder dates. */
+export interface ForecastAt {
+  nowMs: number;
+  tz: string;
+  settings: Pick<MorningReminderSettings, 'hour' | 'minute' | 'days'>;
+}
 
 const NO_CYCLE: UpNextForecast['cycle'] = { sessions: [], at: -1 };
 
 /** Today's card shows nothing without a gym; neither does the reminder. */
-export async function readUpNextForecast(services: AppServices): Promise<UpNextForecast> {
+export async function readUpNextForecast(services: AppServices, at: ForecastAt | null = null): Promise<UpNextForecast> {
   const gym = await services.yourData.currentGym().catch(() => null);
   const next = gym === null ? null : await services.next.preview(gym.id).catch(() => null);
   const lastStartedUtc = await lastStarted(services);
   if (gym === null || next === null) return { next: null, paused: false, cycle: NO_CYCLE, gymName: gym?.name ?? null, lastStartedUtc };
+  const dates = at === null ? [] : reminderSlots(at.nowMs, at.tz, at.settings, lastStartedUtc).map((x) => x.date);
+  const activities = await activitiesAround(services, dates);
   const overview = await services.plans.overview().catch(() => null);
   const basis = next.routine?.basis ?? null;
-  const exact: ReminderSession = { title: next.title, planDay: basis?.kind === 'plan' ? { n: basis.dayN, of: basis.of } : null, aboutMinutes: next.aboutMinutes };
+  const legIds = next.routine === null ? new Set<string>() : await services.next.legDayIds([next.routine.id]).catch(() => new Set<string>());
+  const exact: ReminderSession = { title: next.title, planDay: basis?.kind === 'plan' ? { n: basis.dayN, of: basis.of } : null, aboutMinutes: next.aboutMinutes, ...(next.routine === null ? {} : { legs: legIds.has(next.routine.id) }) };
   const paused = planPaused(overview);
   if (basis?.kind === 'plan') {
-    const ahead = paused ? [] : await readPlanAhead(services, next, gym.id).catch(() => []);
-    return { next: exact, paused, cycle: NO_CYCLE, ahead, gymName: gym.name, lastStartedUtc };
+    const ahead = paused ? [] : await readPlanAhead(services, next, gym.id, dates.slice(1)).catch(() => []);
+    return { next: exact, paused, cycle: NO_CYCLE, ahead, gymName: gym.name, lastStartedUtc, activities };
   }
   const cycle = await readCycle(services, next, gym.id).catch(() => NO_CYCLE);
-  return { next: exact, paused, cycle, gymName: gym.name, lastStartedUtc };
+  return { next: exact, paused, cycle, gymName: gym.name, lastStartedUtc, activities };
+}
+
+/** Live activities from the day before the first reminder date to the day after the last (the run rule). */
+async function activitiesAround(services: AppServices, dates: readonly string[]): Promise<Activity[]> {
+  const first = dates[0];
+  const last = dates.at(-1);
+  if (first === undefined || last === undefined) return [];
+  return services.activities.between(addDays(first, -1), addDays(last, 2)).catch(() => []);
 }
 
 /**
@@ -69,15 +94,15 @@ export function rotationOrder(rows: readonly RoutineRow[]): RoutineRow[] {
 }
 
 /** Days 2–7 with a plan: the adaptive rule run forward by the service; unreadable: none (day 1 only). */
-async function readPlanAhead(services: AppServices, next: NextSessionPreview, gymId: string): Promise<ReminderSession[]> {
+async function readPlanAhead(services: AppServices, next: NextSessionPreview, gymId: string, dates: readonly string[]): Promise<ReminderSession[]> {
   const first = next.routine?.id;
   if (first === undefined) return [];
-  const days = (await services.next.planAhead(gymId, first, REMINDER_HORIZON_DAYS - 1)) ?? [];
+  const days = (await services.next.planAhead(gymId, first, REMINDER_HORIZON_DAYS - 1, dates)) ?? [];
   const minutes = new Map<string, number | null>();
   const out: ReminderSession[] = [];
   for (const d of days) {
     if (!minutes.has(d.routineId)) minutes.set(d.routineId, await minutesOf(services, d.routineId, gymId));
-    out.push({ title: d.name, planDay: { n: d.dayN, of: d.of }, aboutMinutes: minutes.get(d.routineId) ?? null });
+    out.push({ title: d.name, planDay: { n: d.dayN, of: d.of }, aboutMinutes: minutes.get(d.routineId) ?? null, legs: d.legs });
   }
   return out;
 }
@@ -88,8 +113,9 @@ async function readCycle(services: AppServices, next: NextSessionPreview, gymId:
     const rows = rotationOrder(await services.routines.list());
     const at = rows.findIndex((r) => r.id === next.routine?.id);
     if (at < 0) return NO_CYCLE;
+    const legIds = await services.next.legDayIds(rows.map((r) => r.id)).catch(() => new Set<string>());
     const sessions: ReminderSession[] = [];
-    for (const r of rows) sessions.push({ title: r.name, planDay: null, aboutMinutes: await minutesOf(services, r.id, gymId) });
+    for (const r of rows) sessions.push({ title: r.name, planDay: null, aboutMinutes: await minutesOf(services, r.id, gymId), legs: legIds.has(r.id) });
     return { sessions, at };
   }
   // A split day (least recently trained, by muscles) or the last workout repeated: the resolver walks no fixed order.

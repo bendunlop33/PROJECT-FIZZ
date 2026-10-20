@@ -522,3 +522,11 @@ Ben asked: "review the full app now to ensure everything is visually well built 
 - Training details birth year as a picker: kept the stepper and the typed year (no year-only picker on iOS).
 
 **Not done in this pass (left for after the parallel week-flex work merges, or as refactors with no visible change):** Up next capped at 3 one-line rows with `+N more`, dropping the calendar's `● workout` legend, sizing Your plan's day dot from its numeral (all in areas `claude/weekflex-20oct` is changing); one shared `CheckInScale`; tab roots sharing one title pattern; the cardio top set on its own line in Progress (the sessions table has no cardio rows today).
+
+## Ben's decisions, 20 Oct (runs)
+
+Ben approved on 20 Oct ("Yes to all"), items 6 and 12–15:
+- **Morning reminder, predicted days (6):** day 1 keeps `Today: Pull`; later days read `Time to train` with `Pull is next · Day 2 of 4 · about 60 min · Main gym` in the body. A day 1 the run rule moved (below) is worded as predicted too.
+- **A planned run counts on its date unless Ben cancels it (12):** no need to mark it done. The leg rule (`legRunNear`) counts yesterday's long or hard run planned or done; the week's facts block every run date from today on (planned or done); Recent and the calendar drop `Planned` once the date has come; the coach's week reads it as `done`. A planned activity's sheet shows `Cancel run` (the existing versioned delete, a tombstone; toast `Run cancelled` with Undo) instead of `Delete`.
+- **Only long or hard runs move leg days (13) and km only (14):** confirmed, as built; no change.
+- **The leg rule on the morning reminder's predicted days (15):** each predicted day is checked against a long or hard run (planned or done) the day before or after its own reminder date. With a plan, `planDaysAhead` runs the rule for those dates (a `Make next` pin stays first); a rotation walk defers a leg day to the next day that isn't one. Every day a leg day: legs anyway.
