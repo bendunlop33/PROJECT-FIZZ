@@ -10,8 +10,7 @@ import { WEEK_COPY } from '../../services/week-services';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Icon, TextButton } from '../../ui';
-
-const cardStyle = (theme: ReturnType<typeof useTheme>) => ({ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, borderWidth: theme.components.cardBorderWidth, borderColor: theme.colors['border.control'], padding: theme.space['3'], gap: theme.space['2'] });
+import { CardActions, CoachCardFrame } from './CoachCardFrame';
 
 /**
  * (Ben, 20 Oct) The coach's week proposal: the days left before and after,
@@ -57,7 +56,7 @@ export function WeekProposalCard({ record, onChanged }: { record: ActionRecord; 
   }
 
   return (
-    <View style={cardStyle(theme)}>
+    <CoachCardFrame>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
         <Icon name="calendar" color="text.secondary" size={18} />
         <AppText variant="label" color="text.secondary">
@@ -76,7 +75,7 @@ export function WeekProposalCard({ record, onChanged }: { record: ActionRecord; 
           {notice}
         </AppText>
       ) : null}
-      <View style={{ flexDirection: 'row', columnGap: theme.space['5'] }}>
+      <CardActions>
         {state.kind === 'open' ? <TextButton label={WEEK_COPY.apply} onPress={() => void run(() => services.week.apply({ actionId: record.actionId, opId: applyOp.current }))} /> : null}
         {state.kind === 'applied' ? <TextButton label={WEEK_COPY.undo} onPress={() => void run(() => services.week.undo({ weekPlanId: state.weekPlanId, expectedVersion: state.version, opId: newUuid() }))} /> : null}
         {state.kind === 'undone' ? (
@@ -84,8 +83,8 @@ export function WeekProposalCard({ record, onChanged }: { record: ActionRecord; 
             {WEEK_COPY.undone}
           </AppText>
         ) : null}
-      </View>
-    </View>
+      </CardActions>
+    </CoachCardFrame>
   );
 }
 
@@ -95,7 +94,6 @@ export function WeekProposalCard({ record, onChanged }: { record: ActionRecord; 
  * exactly the offer's.
  */
 export function ActivityOfferCard({ record, onChanged }: { record: ActionRecord; onChanged: () => void }) {
-  const theme = useTheme();
   const services = useServices();
   const [logged, setLogged] = useState<ActionRecord | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -126,7 +124,7 @@ export function ActivityOfferCard({ record, onChanged }: { record: ActionRecord;
 
   const undone = logged?.undoneBy != null;
   return (
-    <View style={cardStyle(theme)}>
+    <CoachCardFrame>
       <AppText variant="callout" numeric>
         {renderActionResult(logged ?? record, 'sheet').text}
       </AppText>
@@ -135,7 +133,7 @@ export function ActivityOfferCard({ record, onChanged }: { record: ActionRecord;
           {notice}
         </AppText>
       ) : null}
-      <View style={{ flexDirection: 'row', columnGap: theme.space['5'] }}>
+      <CardActions>
         {logged === null ? (
           <TextButton
             label="Log"
@@ -160,7 +158,7 @@ export function ActivityOfferCard({ record, onChanged }: { record: ActionRecord;
             Undone
           </AppText>
         )}
-      </View>
-    </View>
+      </CardActions>
+    </CoachCardFrame>
   );
 }

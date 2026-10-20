@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ActionSheetIOS } from 'react-native';
+import { ActionSheetIOS, View } from 'react-native';
 
 import { DUMBBELL_STEPS, EQUIPMENT_KIND_LABEL, formatNumber, type EditableKind, type GymEdit } from '@fizz/domain';
 
@@ -10,7 +10,7 @@ import { newUuid } from '../../device/runtime';
 import { openWorkoutToCheckGym } from '../../navigation/actions';
 import type { ProfileStackParams } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
-import { AppText, Group, Row, Screen, SectionHeader, StatusLine, TextButton, Toast } from '../../ui';
+import { AppText, Group, Row, Screen, SectionHeader, StatusLine, Tag, TextButton, Toast } from '../../ui';
 
 const KINDS: EditableKind[] = ['barbell', 'dumbbells', 'weight_stack', 'assisted_stack', 'plate_loaded_machine', 'bodyweight_station'];
 
@@ -91,14 +91,16 @@ export function GymDetailScreen() {
     });
   }
 
-  const header = [gym.isDefault ? 'Default gym' : null, gym.setup === undefined ? null : SETUP_WORD[gym.setup]].filter((x) => x !== null).join(' · ');
+  // Design pass 6.10: tags, not a line of text.
+  const tags = [gym.isDefault ? 'Default' : null, gym.setup === undefined ? null : SETUP_WORD[gym.setup]].filter((x): x is NonNullable<typeof x> => x !== null);
   return (
-    <Screen floating={toast ? <Toast text={toast.text} {...(toast.undo ? { action: 'Undo', onAction: toast.undo } : {})} /> : undefined}>
+    <Screen toast={toast ? <Toast text={toast.text} {...(toast.undo ? { action: 'Undo', onAction: toast.undo } : {})} /> : null}>
       {inUseByWorkout ? (
         <StatusLine
           icon="info.circle"
           tone="info"
-          text="Your workout in progress uses this gym as it was when you started."
+          // Design pass 6.10 (minimal-copy O18): the state in a word; the action says the rest.
+          text="In use today"
           action={
             <TextButton
               label="Use changes today"
@@ -110,10 +112,12 @@ export function GymDetailScreen() {
           }
         />
       ) : null}
-      {header !== '' ? (
-        <AppText variant="callout" color="text.secondary">
-          {header}
-        </AppText>
+      {tags.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {tags.map((t) => (
+            <Tag key={t} text={t} />
+          ))}
+        </View>
       ) : null}
       <SectionHeader title={`Equipment (${String(equipment.length)})`} />
       {equipment.length === 0 ? (

@@ -12,7 +12,9 @@ import {
   editorSummaryLine,
   fixedLoadFrame,
   fixedLoadNote,
+  fixedLoadSeed,
   fixedLoadSteps,
+  lastWorkingLoad,
   mergeRoutineEdits,
   moveExercise,
   planRoutineStart,
@@ -26,7 +28,7 @@ import {
   updateSet,
   NBSP,
 } from '../src/index';
-import { assisted, at, dumbbells, exercise, GYM, id, idGen, kg, lb, OWNER, profile, routineExercise, stack, template } from './fixtures';
+import { assisted, at, barbell, dumbbells, exercise, GYM, id, idGen, kg, lb, OWNER, profile, routineExercise, stack, template } from './fixtures';
 import { BENCH, FACE, HANG, ROW } from './session-fixture';
 
 const plain = (s: string | null) => (s ?? '').replaceAll(NBSP, ' ');
@@ -158,6 +160,38 @@ describe('what the editor shows', () => {
     expect(plain(templateTargetText(template(9, { targetReps: null, targetDurationS: 45 }), { convention: 'bodyweight', equipment: null, perSide: false }))).toBe('BW · 0:45');
     expect(plain(editorSummaryLine(5, 55, 'Main gym'))).toBe('5 exercises · ≈ 55 min at Main gym');
     expect(editorSummaryLine(1, null, null)).toBe('1 exercise');
+  });
+});
+
+describe('Fixed load seed (design pass 5.1): Auto → Fixed starts from the last logged load, snapped', () => {
+  const ws = (load: ReturnType<typeof kg> | null, setType: 'working' | 'warmup' = 'working') => ({ setType, side: null, load, reps: 8, rpe: null, rir: null });
+  const h = (utc: string, sets: ReturnType<typeof ws>[]) => ({ performedAtUtc: utc, sets });
+
+  it('the newest workout’s heaviest working set; warm-ups and no-load sets don’t count; assisted: least assistance', () => {
+    expect(lastWorkingLoad([h('2026-10-01T06:00:00.000Z', [ws(kg(90))]), h('2026-10-08T06:00:00.000Z', [ws(kg(60), 'warmup'), ws(kg(100)), ws(kg(97.5))])])).toEqual(kg(100));
+    expect(lastWorkingLoad([h('2026-10-08T06:00:00.000Z', [ws(null)]), h('2026-10-01T06:00:00.000Z', [ws(kg(80))])])).toEqual(kg(80));
+    expect(lastWorkingLoad([h('2026-10-08T06:00:00.000Z', [ws(kg(30, 'assistance')), ws(kg(20, 'assistance'))])])).toEqual(kg(20, 'assistance'));
+    expect(lastWorkingLoad([])).toBeNull();
+  });
+
+  it('bench: about 100 kg, not the bar; snapped toward easier on the plates', () => {
+    const bar = barbell();
+    expect(fixedLoadSeed(kg(100), { unit: 'kg', convention: 'total' }, bar)).toBe(100);
+    expect(fixedLoadSeed(kg(101.3), { unit: 'kg', convention: 'total' }, bar)).toBe(100);
+    expect(fixedLoadSeed(null, { unit: 'kg', convention: 'total' }, bar)).toBe(20);
+  });
+
+  it('per-hand dumbbells never past the rack max; lb last load on a kg rack is converted; other convention falls back', () => {
+    const rack = dumbbells();
+    expect(fixedLoadSeed(kg(40, 'per_hand'), { unit: 'kg', convention: 'per_hand' }, rack)).toBe(30);
+    expect(fixedLoadSeed(lb(50, 'per_hand'), { unit: 'kg', convention: 'per_hand' }, rack)).toBe(22.5);
+    expect(fixedLoadSeed(kg(100), { unit: 'kg', convention: 'per_hand' }, rack)).toBe(5);
+  });
+
+  it('assisted: more assistance is easier; with no item, the last load as is in the same unit, else 0', () => {
+    expect(fixedLoadSeed(kg(22, 'assistance'), { unit: 'kg', convention: 'assistance' }, assisted())).toBe(25);
+    expect(fixedLoadSeed(kg(100), { unit: 'kg', convention: 'total' }, null)).toBe(100);
+    expect(fixedLoadSeed(lb(225), { unit: 'kg', convention: 'total' }, null)).toBe(0);
   });
 });
 

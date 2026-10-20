@@ -1,12 +1,15 @@
 import { useRef, useState } from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 
 import { LIFT_TARGET_COPY as C, readLiftTargetNumber, type LiftTargetChoice } from '@fizz/domain';
 import type { LiftTarget, LiftTargetKind, WeightUnit } from '@fizz/schemas';
 
 import { useServices } from '../shell/context';
-import { AppText, BottomCard, Chip, ChipRow, CountStepper, PrimaryButton, TextButton, TextField } from '../ui';
+import { AppText, BottomCard, Chip, ChipRow, CountStepper, KeyboardDoneAccessory, PrimaryButton, TextButton, TextField } from '../ui';
 import type { LiftTargetWrite } from '../services/lift-target-service';
+
+/** The Done bar on the weight keypad. */
+const LIFT_TARGET_ACCESSORY_ID = 'lift-target-weight';
 
 /** A toast after a lift-target write: the words, and Undo when there is one. */
 export type LiftTargetToast = { text: string; undo?: () => void };
@@ -46,7 +49,7 @@ export function LiftTargetSheet({
   onDone: (toast: LiftTargetToast | null) => void;
 }) {
   return (
-    <BottomCard visible={visible} onClose={onClose}>
+    <BottomCard visible={visible} onClose={onClose} scroll={false}>
       {visible ? <Body key={existing?.id ?? exerciseId ?? 'new'} choices={choices} existing={existing} exerciseId={exerciseId} version={version} onClose={onClose} onDone={onDone} /> : null}
     </BottomCard>
   );
@@ -109,38 +112,42 @@ function Body({ choices, existing, exerciseId, version, onClose, onDone }: { cho
   const fixed = existing !== null || exerciseId !== null;
   return (
     <>
-      <AppText variant="headline">{existing === null ? C.add : (choice?.name ?? existing.exerciseName)}</AppText>
-      {fixed ? (
-        existing === null && choice !== null ? <AppText variant="body">{choice.name}</AppText> : null
-      ) : (
+      <KeyboardDoneAccessory nativeID={LIFT_TARGET_ACCESSORY_ID} />
+      {/* The fields scroll when they don't fit; Save stays pinned under them. */}
+      <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ gap: 16 }}>
+        <AppText variant="headline">{existing === null ? C.add : (choice?.name ?? existing.exerciseName)}</AppText>
+        {fixed ? (
+          existing === null && choice !== null ? <AppText variant="body">{choice.name}</AppText> : null
+        ) : (
+          <ChipRow>
+            {choices.map((c) => (
+              <Chip
+                key={c.exerciseId}
+                label={c.name}
+                selected={c.exerciseId === picked}
+                onPress={() => {
+                  setPicked(c.exerciseId);
+                  setUnit(c.unit);
+                }}
+              />
+            ))}
+          </ChipRow>
+        )}
         <ChipRow>
-          {choices.map((c) => (
-            <Chip
-              key={c.exerciseId}
-              label={c.name}
-              selected={c.exerciseId === picked}
-              onPress={() => {
-                setPicked(c.exerciseId);
-                setUnit(c.unit);
-              }}
-            />
-          ))}
+          <Chip label={C.oneRm} selected={kind === 'one_rm'} onPress={() => { setKind('one_rm'); }} />
+          <Chip label={C.weightReps} selected={kind === 'weight_reps'} onPress={() => { setKind('weight_reps'); }} />
         </ChipRow>
-      )}
-      <ChipRow>
-        <Chip label={C.oneRm} selected={kind === 'one_rm'} onPress={() => { setKind('one_rm'); }} />
-        <Chip label={C.weightReps} selected={kind === 'weight_reps'} onPress={() => { setKind('weight_reps'); }} />
-      </ChipRow>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ flex: 1 }}>
-          <TextField accessibilityLabel={`Weight in ${unit}${choice?.convention === 'per_hand' ? ', each' : ''}`} keyboardType="decimal-pad" placeholder={choice?.convention === 'per_hand' ? `${unit} each` : unit} value={weight} onChangeText={setWeight} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flex: 1 }}>
+            <TextField accessibilityLabel={`Weight in ${unit}${choice?.convention === 'per_hand' ? ', each' : ''}`} keyboardType="decimal-pad" inputAccessoryViewID={LIFT_TARGET_ACCESSORY_ID} placeholder={choice?.convention === 'per_hand' ? `${unit} each` : unit} value={weight} onChangeText={setWeight} />
+          </View>
+          {(['kg', 'lb'] as const).map((u) => (
+            <Chip key={u} label={u} selected={unit === u} onPress={() => { setUnit(u); }} />
+          ))}
         </View>
-        {(['kg', 'lb'] as const).map((u) => (
-          <Chip key={u} label={u} selected={unit === u} onPress={() => { setUnit(u); }} />
-        ))}
-      </View>
-      {kind === 'weight_reps' ? <CountStepper label="Reps" value={reps} limits={{ min: 1, max: 30 }} fewerLabel="Fewer reps" moreLabel="More reps" onChange={setReps} /> : null}
-      <TextField accessibilityLabel="Date, optional" placeholder="Date (YYYY-MM-DD)" value={date} onChangeText={setDate} />
+        {kind === 'weight_reps' ? <CountStepper label="Reps" value={reps} limits={{ min: 1, max: 30 }} fewerLabel="Fewer reps" moreLabel="More reps" onChange={setReps} /> : null}
+        <TextField accessibilityLabel="Date, optional" placeholder="Date (YYYY-MM-DD)" value={date} onChangeText={setDate} />
+      </ScrollView>
       <View style={{ gap: 8 }}>
         <PrimaryButton label="Save" disabled={!canSave} onPress={() => void save()} />
         {existing !== null ? <TextButton label={C.remove} tone="secondary" onPress={() => void remove()} /> : null}

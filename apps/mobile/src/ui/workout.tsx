@@ -10,6 +10,7 @@ import { PrimaryButton } from './buttons';
 import { Icon, type SymbolName } from './Icon';
 import { FadeIn, TEXT_PRESSED_OPACITY, usePressScale } from './motion';
 import { AppText } from './Text';
+import { accessoryAction, bottomBarPadding } from './keyboard-state';
 import { CARDIO_TIME_FORMAT, NUMBER_FORMAT, nextFieldText } from './number-text';
 import { effortInfoLabel, effortInfoLines, type EffortScale } from '../workout/effort-info';
 import { AX_FONT_SCALE } from '../workout/overview';
@@ -18,30 +19,39 @@ import { stepperNumeralSize, stepperTexts, tileFit, tileRowLayout, type TileSpec
 /** Shared keyboard toolbar for number fields (the system decimal pad has no Done key). */
 export const NUMBER_ACCESSORY_ID = 'fizz-number-done';
 
-export function NumberAccessory() {
-  return <KeyboardDoneAccessory nativeID={NUMBER_ACCESSORY_ID} />;
+export function NumberAccessory({ onNext, onDone }: { onNext?: (() => void) | null; onDone?: (() => void) | null } = {}) {
+  return <KeyboardDoneAccessory nativeID={NUMBER_ACCESSORY_ID} onNext={onNext ?? null} onDone={onDone ?? null} />;
 }
 
 /**
  * A `Done` bar above the keyboard (iOS `InputAccessoryView`) for a field whose keyboard has no
  * Done key: number pads, and multiline text where Return adds a line (the coach sheet, build 131).
+ * With `onNext` it shows `Next ›` instead (weight then reps without the keypad dropping; 0.7);
+ * `Done` closes the keyboard, then runs `onDone` (closing an inline editor with it).
  */
-export function KeyboardDoneAccessory({ nativeID }: { nativeID: string }) {
+export function KeyboardDoneAccessory({ nativeID, onNext = null, onDone = null }: { nativeID: string; onNext?: (() => void) | null; onDone?: (() => void) | null }) {
   const theme = useTheme();
+  const action = accessoryAction(onNext);
   return (
     <InputAccessoryView nativeID={nativeID} backgroundColor={theme.colors['bg.surface']}>
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: theme.space['4'], paddingVertical: theme.space['1'] }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Done"
+          accessibilityLabel={action.accessibilityLabel}
           onPress={() => {
-            // Closes the keyboard only; nothing is logged or sent.
+            if (onNext) {
+              // Moves to the next field; the keypad stays up.
+              onNext();
+              return;
+            }
+            // Closes the keyboard (and the editor it belongs to); nothing is logged or sent.
             Keyboard.dismiss();
+            onDone?.();
           }}
           style={{ minHeight: theme.target.min.height, justifyContent: 'center', paddingHorizontal: theme.space['3'] }}
         >
           <AppText variant="headline" color="accent">
-            Done
+            {action.label}
           </AppText>
         </Pressable>
       </View>
@@ -140,6 +150,10 @@ export function NumberStepper({
   onBlur,
   onLayout,
   time = false,
+  variant = 'tile',
+  autoFocus = false,
+  onStep,
+  resetTextOnBlur = false,
 }: {
   label: string;
   unit: string | null;
@@ -174,6 +188,17 @@ export function NumberStepper({
   onBlur?: () => void;
   /** The tile's frame in its parent, so the Table knows where the focused tile ends. */
   onLayout?: (e: LayoutChangeEvent) => void;
+  /**
+   * `inline` (design pass 1.1): one `− value +` line in a table row's editor, ≤ 60 pt with
+   * its padding. The label is read by VoiceOver only; the numeral fits its measured width.
+   */
+  variant?: 'tile' | 'inline';
+  /** Focus on mount: a field opened while the keypad is up keeps it up (Next ›, another cell). */
+  autoFocus?: boolean;
+  /** − / + taps go here instead of `onChange` (review B2: the reps range clamps on a step, not on each keystroke). */
+  onStep?: (v: number) => void;
+  /** On blur the field shows the saved value again, for a parent that holds back a typed value it can't take yet. */
+  resetTextOnBlur?: boolean;
 }) {
   const theme = useTheme();
   const format = time ? CARDIO_TIME_FORMAT : NUMBER_FORMAT;
@@ -187,6 +212,7 @@ export function NumberStepper({
     setText((t) => nextFieldText(t, value, format));
   }, [value, time]);
   const flat = theme.components.cardBorderWidth === 0;
+  const inline = variant === 'inline';
   // F9: without a fitted size from the caller, the numeral shrinks to its measured tile so `10` never shows as `1`.
   const fitted =
     numeralSize ??
@@ -195,18 +221,21 @@ export function NumberStepper({
       : stepperNumeralSize({
           tileWidth,
           texts: [text, ...(time ? [value === null ? '—' : format.show(value), '0:00:00'] : stepperTexts(value, down, up, decimals ? 3 : 2))],
-          unit: flat ? unit : null,
+          unit: flat || inline ? unit : null,
           // The bordered variant's − / + are wider and sit 8 pt apart from the field.
-          stepSize: flat ? (stepSize ?? theme.target.min.width) : (stepSize ?? theme.target.workout.width) + theme.space['2'] + 2,
+          stepSize: flat || inline ? (stepSize ?? theme.target.min.width) : (stepSize ?? theme.target.workout.width) + theme.space['2'] + 2,
           fontScale,
         }));
+  const step = onStep ?? onChange;
   const layout = (e: LayoutChangeEvent) => {
     setTileWidth(e.nativeEvent.layout.width);
     onLayout?.(e);
   };
-  const describe = label === 'Assist' ? 'Assistance' : label;
-  const decrease = label === 'Assist' ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`;
-  const increase = label === 'Assist' ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`;
+  // Review S6: the inline editor's label is `Assist kg`, so match the start.
+  const assist = label.startsWith('Assist');
+  const describe = assist ? 'Assistance' : label;
+  const decrease = assist ? 'Less assistance (harder)' : `Decrease ${describe.toLowerCase()}`;
+  const increase = assist ? 'More assistance (easier)' : `Increase ${describe.toLowerCase()}`;
   const input = (
     <TextInput
       ref={inputRef}
@@ -222,9 +251,12 @@ export function NumberStepper({
       onBlur={() => {
         setFocused(false);
         onBlur?.();
+        // A value the parent then commits replaces this through the effect above.
+        if (resetTextOnBlur) setText(value === null ? '' : format.show(value));
       }}
       keyboardType={decimals ? 'decimal-pad' : 'number-pad'}
       inputAccessoryViewID={NUMBER_ACCESSORY_ID}
+      autoFocus={autoFocus}
       selectTextOnFocus
       accessibilityLabel={`${label}${unit ? `, ${unit}` : ''}`}
       {...(hint ? { accessibilityHint: hint } : {})}
@@ -248,6 +280,38 @@ export function NumberStepper({
       {` ${unit}`}
     </AppText>
   ) : null;
+  if (inline) {
+    // 1.1: `[−] numeral [+]` on one line; the 1.5 pt focus / warning border and the max reason stay.
+    return (
+      <View onLayout={layout} style={flex === null ? { alignSelf: 'stretch', gap: theme.space['1'] } : { flex, minWidth: 0, gap: theme.space['1'] }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            minHeight: stepSize ?? theme.target.workout.height,
+            backgroundColor: onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
+            borderRadius: theme.radius.md,
+            borderWidth: focused || warning ? 1.5 : 0,
+            borderColor: warning ? theme.colors['status.warning'] : theme.colors['border.control'],
+            paddingVertical: 0,
+          }}
+        >
+          <TileStep glyph="−" target={down} onStep={step} describe={decrease} size={stepSize} />
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
+            {input}
+            {unitText}
+          </View>
+          <TileStep glyph="+" target={up} onStep={step} describe={increase} size={stepSize} />
+        </View>
+        {!up.enabled && value !== null ? (
+          <AppText variant="callout" color="text.secondary" numeric>
+            {up.reason}
+          </AppText>
+        ) : null}
+      </View>
+    );
+  }
   if (flat) {
     // D-ActiveSet: a borderless tile with a tracked label, − value unit +.
     return (
@@ -273,18 +337,18 @@ export function NumberStepper({
                 {unitText}
               </View>
               <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-                <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} grow />
-                <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} grow />
+                <TileStep glyph="−" target={down} onStep={step} describe={decrease} size={stepSize} grow />
+                <TileStep glyph="+" target={up} onStep={step} describe={increase} size={stepSize} grow />
               </View>
             </>
           ) : (
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <TileStep glyph="−" target={down} onStep={onChange} describe={decrease} size={stepSize} />
+              <TileStep glyph="−" target={down} onStep={step} describe={decrease} size={stepSize} />
               <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', flexShrink: 1 }}>
                 {input}
                 {unitText}
               </View>
-              <TileStep glyph="+" target={up} onStep={onChange} describe={increase} size={stepSize} />
+              <TileStep glyph="+" target={up} onStep={step} describe={increase} size={stepSize} />
             </View>
           )}
         </View>
@@ -302,7 +366,7 @@ export function NumberStepper({
         {label}
       </AppText>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
-        <StepButton icon="minus" target={down} onStep={onChange} describe={decrease} size={stepSize} />
+        <StepButton icon="minus" target={down} onStep={step} describe={decrease} size={stepSize} />
         <View
           style={{
             flex: 1,
@@ -324,7 +388,7 @@ export function NumberStepper({
             </AppText>
           ) : null}
         </View>
-        <StepButton icon="plus" target={up} onStep={onChange} describe={increase} size={stepSize} />
+        <StepButton icon="plus" target={up} onStep={step} describe={increase} size={stepSize} />
       </View>
       {!up.enabled && value !== null ? (
         <AppText variant="callout" color="text.secondary" numeric>
@@ -344,19 +408,24 @@ export function StepperTileRow({
   tiles,
   estimate,
   children,
+  step,
+  gap: gapProp,
 }: {
   tiles: readonly TileSpec[];
   /** The row's width before it's measured. */
   estimate: number;
   children: (row: { numeralSize: number; compact: boolean; flexOf: (share: number) => number | null }) => ReactNode;
+  /** The tiles' − / + size when not the default 44 pt (the Table: 52 pt, 60 pt at AX). */
+  step?: number;
+  gap?: number;
 }) {
   const theme = useTheme();
   const { fontScale } = useWindowDimensions();
   const [measured, setMeasured] = useState<number | null>(null);
   const flat = theme.components.cardBorderWidth === 0;
-  const gap = theme.space['3'];
+  const gap = gapProp ?? theme.space['3'];
   // The bordered variant's − / + are wider and sit 8 pt apart from the field (as `stepperNumeralSize`).
-  const stepSize = flat ? theme.target.min.width : theme.target.workout.width + theme.space['2'] + 2;
+  const stepSize = flat ? (step ?? theme.target.min.width) : (step ?? theme.target.workout.width) + theme.space['2'] + 2;
   const fit = tileFit({ rowWidth: measured ?? estimate, tiles, stepSize, fontScale, ax: fontScale >= AX_FONT_SCALE, gap });
   const { compact, stacked } = tileRowLayout(fit, flat);
   return (
@@ -371,53 +440,81 @@ export function StepperTileRow({
   );
 }
 
-/** `ParamChip` (§9.17): selected shows a check icon as well as the fill. */
-export function Chip({ label, selected, onPress, accessibilityLabel, grow = false }: { label: string; selected: boolean; onPress: () => void; accessibilityLabel?: string; grow?: boolean }) {
+/**
+ * `ParamChip` (§9.17): selected shows a check icon as well as the fill. A 52pt choice pill. `disabled` (design pass 4.5): dimmed to 0.45, a tertiary label, no press scale,
+ * and read as dimmed by VoiceOver; a tap runs `onDisabledPress` (say, to show `Needs the coach`) if given.
+ * `onSurface`: on a card, so an unselected chip is `bg.raised` with a `border.control` edge and reads as tappable.
+ */
+export function Chip({
+  label,
+  selected,
+  onPress,
+  accessibilityLabel,
+  grow = false,
+  disabled = false,
+  onDisabledPress,
+  onSurface = false,
+  size = 'workout',
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  accessibilityLabel?: string;
+  grow?: boolean;
+  disabled?: boolean;
+  onDisabledPress?: () => void;
+  onSurface?: boolean;
+  /** `min`: 44pt, for filter rows away from the workout (design pass 6.6); default 52pt. */
+  size?: 'workout' | 'min';
+}) {
   const theme = useTheme();
   const press = usePressScale('pill');
   const filled = theme.components.cardBorderWidth === 0;
+  const idle = onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'];
+  const edge = onSurface ? theme.colors['border.control'] : theme.colors['border.divider'];
+  const height = size === 'min' ? theme.target.min.height : theme.target.workout.height;
   return (
-    <Animated.View style={[grow ? { flex: 1 } : null, press.style]}>
+    <Animated.View style={[grow ? { flex: 1 } : null, disabled ? null : press.style]}>
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       accessibilityLabel={accessibilityLabel ?? label}
-      onPress={onPress}
-      onPressIn={press.onPressIn}
-      onPressOut={press.onPressOut}
-      style={({ pressed }) =>
-        filled
+      onPress={disabled ? onDisabledPress : onPress}
+      {...(disabled ? {} : { onPressIn: press.onPressIn, onPressOut: press.onPressOut })}
+      style={({ pressed }) => ({
+        opacity: disabled ? 0.45 : 1,
+        ...(filled
           ? {
               // D-Rest: selected is a full accent pill with a check; others sit on the surface. 52 pt (target.workout, D7).
-              minHeight: theme.target.workout.height,
+              minHeight: height,
               minWidth: theme.target.min.width,
               paddingHorizontal: theme.space['3'],
               borderRadius: theme.radius.pill,
               borderWidth: selected ? 0 : 1,
-              borderColor: theme.colors['border.divider'],
-              backgroundColor: selected ? (pressed ? theme.colors['accent.pressed'] : theme.colors.accent) : pressed ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
+              borderColor: edge,
+              backgroundColor: selected ? (pressed && !disabled ? theme.colors['accent.pressed'] : theme.colors.accent) : pressed && !disabled ? theme.colors['bg.raised'] : idle,
+              flexDirection: 'row' as const,
+              alignItems: 'center' as const,
+              justifyContent: 'center' as const,
               gap: theme.space['1'],
             }
           : {
-              minHeight: theme.target.workout.height,
+              minHeight: height,
               minWidth: theme.target.workout.width,
               paddingHorizontal: theme.space['3'],
               borderRadius: theme.radius.pill,
               borderWidth: selected ? theme.components.selectedBorderWidth : 1,
               borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
-              backgroundColor: selected || pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
+              backgroundColor: selected || (pressed && !disabled) ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
+              flexDirection: 'row' as const,
+              alignItems: 'center' as const,
+              justifyContent: 'center' as const,
               gap: theme.space['1'],
-            }
-      }
+            }),
+      })}
     >
       {selected ? <Icon name="checkmark" color={filled ? 'on.accent' : 'accent'} size={14} /> : null}
-      <AppText variant="label" numeric color={filled && selected ? 'on.accent' : 'text.primary'} style={filled && selected ? { fontWeight: '600' } : undefined}>
+      <AppText variant="label" numeric color={filled && selected ? 'on.accent' : disabled ? 'text.tertiary' : 'text.primary'} style={filled && selected ? { fontWeight: '600' } : undefined}>
         {label}
       </AppText>
     </Pressable>
@@ -463,7 +560,21 @@ export function TalkButton({ onPress }: { onPress: () => void }) {
  * keyboard when open. Talk is passed only once voice exists; until then the
  * bar has no dead control (critic T3).
  */
-export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean; lead?: string | null }; guard?: boolean }) {
+export function ActionBar({
+  talk = null,
+  primary,
+  guard,
+  keypadOpen = false,
+  surface = false,
+}: {
+  talk?: ReactNode;
+  primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean; lead?: string | null };
+  guard?: boolean;
+  /** On the keyboard: no room for the home indicator, a small gap only (0.2). */
+  keypadOpen?: boolean;
+  /** In a sheet on `bg.surface` (Edit set): the bar matches it. */
+  surface?: boolean;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -472,12 +583,12 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
         flexDirection: 'row',
         alignItems: 'center',
         gap: theme.space['3'],
-        backgroundColor: theme.components.barOnCanvas ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
+        backgroundColor: theme.components.barOnCanvas && !surface ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
         borderTopWidth: theme.components.barOnCanvas ? 0 : theme.dividerWidth,
         borderTopColor: theme.colors['border.divider'],
         paddingHorizontal: theme.components.barOnCanvas ? theme.space['5'] : theme.space['4'],
         paddingTop: theme.space['3'],
-        paddingBottom: theme.space['3'] + Math.max(insets.bottom, theme.components.barOnCanvas ? theme.space['4'] : 0),
+        paddingBottom: bottomBarPadding({ keypadOpen, insetBottom: insets.bottom, space2: theme.space['2'], space3: theme.space['3'], minInset: theme.components.barOnCanvas ? theme.space['4'] : 0 }),
       }}
     >
       {talk}
@@ -508,7 +619,32 @@ export function ActionBar({ talk = null, primary, guard }: { talk?: ReactNode; p
   );
 }
 
-/** `UndoToast` (§9.10): above the action bar, never over it. */
+/**
+ * The toast's place (0.6): floating over the bottom of the screen at
+ * `bottom` (the measured bottom chrome, `toastBottom`), so it never scrolls
+ * away, never sits under a bar and doesn't reflow the list. `onHeight` lets
+ * the screen pad its scroll while it shows.
+ */
+export function ToastHost({ children, bottom, onHeight }: { children: ReactNode; bottom: number; onHeight?: (h: number) => void }) {
+  const empty = children === null || children === undefined || children === false;
+  useEffect(() => {
+    if (empty) onHeight?.(0);
+  }, [empty]);
+  if (empty) return null;
+  return (
+    <View
+      pointerEvents="box-none"
+      onLayout={(e) => {
+        onHeight?.(e.nativeEvent.layout.height);
+      }}
+      style={{ position: 'absolute', left: 0, right: 0, bottom }}
+    >
+      {children}
+    </View>
+  );
+}
+
+/** `UndoToast` (§9.10): above the action bar, never over it (in a `ToastHost`). */
 export function Toast({
   icon = 'checkmark.circle.fill',
   text,

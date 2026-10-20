@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, View, type AccessibilityActionEvent, type GestureResponderEvent } from 'react-native';
 
 import type { ChartPointView, MarkerView, RepTableView, TableRowView } from '@fizz/domain';
@@ -6,6 +6,8 @@ import type { ChartPointView, MarkerView, RepTableView, TableRowView } from '@fi
 import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
 import { AppText, Icon, Tag, type SymbolName } from '../ui';
+import { useAxisWidth } from './axis-measure';
+import { TICK_MAX_SCALE } from './axis-width';
 import { useAx } from './components';
 import { loadTrendCanvas } from './load-charts';
 import { markerX, nearestPointIndex, trendLayout } from './trend-layout';
@@ -18,7 +20,6 @@ import { chartAccessibilityAction, isPointSelected, type ChartFocus } from './tr
  * `trendLayout`. No animation anywhere (Reduce Motion or not: nothing moves).
  */
 
-const AXIS_WIDTH = 44;
 const INSET = 10;
 const MARKER_ICON: Record<MarkerView['kind'], SymbolName> = { gap: 'ellipsis', edited: 'pencil', not_counted: 'slash.circle' };
 
@@ -45,10 +46,11 @@ export function TrendChart({ points, markers, from, to, bars, axisUnit, axisForm
   const ax = useAx();
   const [width, setWidth] = useState(0);
   const height = ax ? theme.chart.detailHeightAX : theme.chart.detailHeight;
-  const layout = trendLayout({ points, from, to, width, height, bars, format: axisFormat, axisWidth: AXIS_WIDTH, inset: INSET, target });
+  const base = { points, from, to, width, height, bars, format: axisFormat, inset: INSET, target };
+  // Design pass 6.3: the axis is as wide as its widest label (the ticks don't depend on the width).
+  const axis = useAxisWidth(trendLayout({ ...base, axisWidth: 44 }).yTicks.map((t) => t.label));
+  const layout = trendLayout({ ...base, axisWidth: axis.width });
   const canvas = loadTrendCanvas();
-  const grant = useRef<{ index: number; moved: boolean; wasSelected: boolean } | null>(null);
-
   const pick = (e: GestureResponderEvent): number => nearestPointIndex(layout.xs, e.nativeEvent.locationX);
   const onAction = (e: AccessibilityActionEvent) => {
     const out = chartAccessibilityAction(e.nativeEvent.actionName, points.length, focus);
@@ -79,27 +81,6 @@ export function TrendChart({ points, markers, from, to, bars, axisUnit, axisForm
         style={{ height }}
         onLayout={(e) => {
           setWidth(Math.floor(e.nativeEvent.layout.width));
-        }}
-        onStartShouldSetResponder={() => points.length > 0}
-        onMoveShouldSetResponder={() => points.length > 0}
-        onResponderGrant={(e) => {
-          const i = pick(e);
-          grant.current = { index: i, moved: false, wasSelected: isPointSelected(i, points, focus) };
-          touch(i);
-        }}
-        onResponderMove={(e) => {
-          const i = pick(e);
-          if (grant.current && i !== grant.current.index) grant.current = { ...grant.current, index: i, moved: true };
-          touch(i);
-        }}
-        onResponderRelease={() => {
-          // Tapping the selected point again clears it (§4.2).
-          if (grant.current?.wasSelected === true && !grant.current.moved) onSelect(null);
-          grant.current = null;
-        }}
-        onResponderTerminate={() => {
-          // A scroll took the touch over: drop the gesture so the next tap starts clean (review progress-B N5).
-          grant.current = null;
         }}
       >
         {width > 0 ? (
@@ -136,12 +117,25 @@ export function TrendChart({ points, markers, from, to, bars, axisUnit, axisForm
           )
         ) : null}
         {layout.yTicks.map((t) => (
-          <View key={t.label} pointerEvents="none" style={{ position: 'absolute', left: 0, width: AXIS_WIDTH - 6, top: t.y - 10 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <AppText variant="label" numeric color="chart.axisText" align="right" numberOfLines={1} maxFontSizeMultiplier={1.6}>
+          <View key={t.label} pointerEvents="none" style={{ position: 'absolute', left: 0, width: axis.width - 6, top: t.y - 10 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <AppText variant="label" numeric color="chart.axisText" align="right" maxFontSizeMultiplier={TICK_MAX_SCALE}>
               {t.label}
             </AppText>
           </View>
         ))}
+        {axis.measure}
+        {/* Design pass 6.3: tap only (no drag-to-scrub), so a scroll across the chart never selects or buzzes. Tapping the selected point again clears it (§4.2). */}
+        {points.length > 0 ? (
+          <Pressable
+            accessible={false}
+            style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}
+            onPress={(e) => {
+              const i = pick(e);
+              if (isPointSelected(i, points, focus)) onSelect(null);
+              else touch(i);
+            }}
+          />
+        ) : null}
       </View>
       <View style={{ height: 22 }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         {layout.months.map((m) => (

@@ -1,7 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EXCLUSION_HEADING, EXCLUSION_LABEL, EXCLUSION_ORDER, toMs } from '@fizz/domain';
 import type { SetExclusion, SetType, SetValues } from '@fizz/schemas';
@@ -15,7 +14,8 @@ import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { correctionToastText, UNDO_TOAST } from '../../workout/undo-op';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NumberAccessory, NumberStepper, PrimaryButton, SecondaryButton, StatusLine, StepperTileRow, TextButton, TextField } from '../../ui';
+import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
+import { ActionBar, AppText, Chip, ChipRow, DangerTextButton, EffortHeading, NUMBER_ACCESSORY_ID, NumberAccessory, NumberStepper, SecondaryButton, SheetKeyboardAvoidingView, StatusLine, StepperTileRow, TextButton, TextField, useKeyboardVisible } from '../../ui';
 import { PlannedSetEdit } from './PlannedSetEdit';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
 import { stepperRowTiles } from '../../workout/tile-fit';
@@ -37,7 +37,7 @@ export function EditSetScreen() {
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardVisible();
   const { width: windowWidth } = useWindowDimensions();
   const { sessionId, setId } = useRoute<RouteProp<RootStackParams, 'EditSet'>>().params;
   const [data, setData] = useState<ActiveWorkoutData | null>(null);
@@ -208,9 +208,11 @@ export function EditSetScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
+    // 2.1: the sheet avoids the keyboard; Save sits in a fixed bar on it, so a change saves without scrolling.
+    // Review S1: the avoiding view alone lifts it (no automaticallyAdjustKeyboardInsets, or the inset counts twice).
+    <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
       <NumberAccessory />
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <AppText variant="title2" accessibilityRole="header">{`Edit set ${String(view.setNumber)} · ${view.exerciseName}`}</AppText>
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
@@ -403,11 +405,11 @@ export function EditSetScreen() {
             onChangeText={setNoteText}
             multiline
             maxLength={NOTE_MAX}
+            inputAccessoryViewID={NUMBER_ACCESSORY_ID}
           />
         </View>
         <AppText variant="callout" color="text.secondary" numeric>{`Saved as: ${view.text}`}</AppText>
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
-        <PrimaryButton label="Save changes" disabled={!view.changed && !noteEdited} onPress={() => void save()} />
         {aggregate.session.status === 'active' ? (
           <View style={{ flexDirection: 'row' }}>
             <SecondaryButton label="Insert set after" onPress={() => void insertAfter()} />
@@ -416,6 +418,7 @@ export function EditSetScreen() {
         <View style={{ height: theme.space['8'] }} />
         <DangerTextButton label="Delete set" onPress={() => void remove()} />
       </ScrollView>
-    </View>
+      <ActionBar surface keypadOpen={keyboard} primary={{ label: 'Save changes', disabled: !view.changed && !noteEdited, onPress: () => void save() }} />
+    </SheetKeyboardAvoidingView>
   );
 }

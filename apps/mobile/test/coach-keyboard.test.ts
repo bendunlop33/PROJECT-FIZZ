@@ -38,7 +38,7 @@ describe('coach sheet keyboard (build 131)', () => {
     expect(screen).toContain('<KeyboardDoneAccessory nativeID={COACH_DONE_ACCESSORY_ID} />');
     expect(COACH_DONE_ACCESSORY_ID).not.toBe('fizz-number-done');
     const done = ui.slice(ui.indexOf('export function KeyboardDoneAccessory'));
-    expect(done).toContain('accessibilityLabel="Done"');
+    expect(done).toContain('accessibilityLabel={action.accessibilityLabel}');
     expect(done).toContain('Keyboard.dismiss()');
   });
 
@@ -47,8 +47,12 @@ describe('coach sheet keyboard (build 131)', () => {
     expect(send).toContain('Keyboard.dismiss();');
     const build = screen.slice(screen.indexOf('async function build('), screen.indexOf('function openDraft('));
     expect(build).toContain('Keyboard.dismiss();');
-    expect(transcript).toContain('onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}');
-    expect(transcript).toContain('onLayout={() => scroll.current?.scrollToEnd({ animated: false })}');
-    expect(screen).toContain('<KeyboardAvoidingView behavior="padding"');
+    // Design pass 4.1: only while Ben is at the end (or something new was added): `follow` → stickToEnd.
+    expect(transcript).toContain('onContentSizeChange={follow}');
+    expect(transcript).toContain('onLayout={follow}');
+    expect(screen).toContain('followState.thread(threadId);');
+    expect(screen).toContain('if (followState.follow(contentCount, starters)) scroll.current?.scrollToEnd({ animated: false });');
+    // Offset by where the page sheet starts in the window (design pass 0.4).
+    expect(screen).toContain('<SheetKeyboardAvoidingView');
   });
 });

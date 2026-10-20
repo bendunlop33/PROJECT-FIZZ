@@ -87,7 +87,7 @@ export function SetupScreen({ initialStep, initialUnit, onDone }: { initialStep:
         <StepFrame
           step={null}
           title="Set up your training log"
-          explanation="Takes about 2 minutes. Everything is saved on this phone. Nothing needs an account or the internet."
+          explanation="About 2 minutes · on this phone"
           footer={
             <>
               <PrimaryButton

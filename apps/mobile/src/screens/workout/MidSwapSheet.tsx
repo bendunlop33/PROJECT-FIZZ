@@ -24,7 +24,7 @@ export function MidSwapSheet(props: {
   const { stacked } = overviewLayout(fontScale);
   const { sheet } = props;
   return (
-    <BottomCard visible={props.visible} onClose={props.onClose}>
+    <BottomCard visible={props.visible} onClose={props.onClose} scroll={false}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: theme.space['3'] }}>
         <View style={{ flex: 1, gap: 2 }}>
           <AppText variant="title2" accessibilityRole="header">

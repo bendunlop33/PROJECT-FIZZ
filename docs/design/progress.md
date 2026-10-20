@@ -543,7 +543,7 @@ ResumeBar ─ Resume ─► Active workout (one tap)
 | `Remove FitNotes history` | Immediate; toast `FitNotes history removed` [Undo] |
 | Metric / range chips | Single select, redraw at once |
 | Chart tap | Selects the nearest point by date (the whole plot is the hit area, so small points don't need 44pt). Tap the same point or `Clear` to deselect |
-| Chart drag | Scrubs point to point with `haptic.step`. Optional: tap, the table and the history do the same |
+| Chart drag | (Design pass, Ben approved 20 Oct) Removed: a drag that starts on the chart scrolls the page and never selects or buzzes. Tap selects (tap the selected point again to clear); the table and the history do the same |
 | `ⓘ` | Est. 1RM sheet |
 | `Show as table` / `Show chart` | Toggles. With VoiceOver running, the first open defaults to the table |
 | Rep table toggle | `By weight` / `By reps`; remembered per exercise |
@@ -744,7 +744,7 @@ Distance series have no records section yet (no record is defined), like timed. 
 - **No animation.** No Reanimated values drive the charts. Changing a chip, window or series redraws once.
 - **Text is not drawn in Skia.** Axis labels, bar counts, week labels and units are React Native `Text` absolutely positioned over the canvas, so Dynamic Type, Bold Text and tabular numerals work like everywhere else. The canvas is hidden from VoiceOver (`accessibilityElementsHidden`); a wrapping `View` carries the summary.
 - **Geometry is pure.** Scales, ticks, gap breaks, nearest-point lookup and bar heights come from a pure helper (`chartLayout(points, size)`) unit-tested in `apps/mobile` or `packages/domain`. The component only draws.
-- **Hit testing:** a `Pressable` over the plot; `locationX` → nearest point by date. Drag scrubbing uses the responder events of that same view; no gesture library is required.
+- **Hit testing:** a `Pressable` over the plot; `locationX` → nearest point by date. Tap only (design pass, 20 Oct). The y axis is as wide as its widest tick label (measured; ticks capped at 1.3×), never under 44pt. The Consistency card's weeks are labelled by day number (`28`, the full date spoken) in 8 equal columns, and stack as rows at AX sizes.
 - **Colours** are the chart aliases in design-system §2.1, read from the current theme. **Direction D note:** D's `accent` (porcelain) is very close to `text.primary`, so a selected point must stand out by **size, ring and guide line**, not hue (design-system §2.1 revision). The trend line is never `accent`.
 - **Points:** filled circle `chart.point` for logged sessions; hollow circle (2pt stroke, `bg.surface` fill) for FitNotes sessions (PG32). Shape carries the difference, not colour.
 

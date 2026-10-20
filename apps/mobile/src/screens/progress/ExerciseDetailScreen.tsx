@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 
 import { PLAN_VERDICT_WORD, type ExerciseDetailView, type ExerciseMetric, type PlanVerdict, type TrendRange } from '@fizz/domain';
@@ -30,6 +30,27 @@ import { E1rmSheet } from './sheets';
 type Route = RouteProp<{ ProgressExercise: ExerciseDetailParams; ExerciseProgress: ExerciseDetailParams }, 'ProgressExercise' | 'ExerciseProgress'>;
 
 /** `Target 3 × 8–10 · Hit` under a history row (plan tracker v1): the word always with the numbers. */
+/**
+ * A sideways chip line (review S8): the scroll indicator shows and flashes once
+ * when the chips are laid out, so chips past the edge read as more to scroll.
+ */
+function ChipScroll({ gap, children }: { gap: number; children: ReactNode }) {
+  const ref = useRef<ScrollView>(null);
+  return (
+    <ScrollView
+      ref={ref}
+      horizontal
+      showsHorizontalScrollIndicator
+      onContentSizeChange={() => {
+        ref.current?.flashScrollIndicators();
+      }}
+      contentContainerStyle={{ gap, paddingBottom: 6 }}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+
 function targetLine(t: { target: string | null; verdict: PlanVerdict | null } | null) {
   if (t === null || t.target === null || t.verdict === null) return null;
   const word = PLAN_VERDICT_WORD[t.verdict];
@@ -181,28 +202,23 @@ export function ExerciseDetailScreen() {
   const records = view.records;
   const recordRows = records === null ? [] : recordsAll ? records.items : records.items.slice(0, 5);
 
+  const infoLink = (
+    <TextButton
+      label="Exercise info"
+      onPress={() => {
+        navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressExerciseInfo', params: { exerciseId, name: view.title } } });
+      }}
+    />
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['8'] + 56, gap: theme.space['5'] }}
       >
-        {/* `Exercise info ›` (progress.md region 1, exercise-library §9.7): the Library's detail, in this stack. */}
-        {route.name === 'ProgressExercise' ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Exercise info"
-            onPress={() => {
-              navigation.navigate('Tabs', { screen: 'Progress', params: { screen: 'ProgressExerciseInfo', params: { exerciseId, name: view.title } } });
-            }}
-            style={({ pressed }) => ({ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.space['1'], opacity: pressed ? 0.7 : 1 })}
-          >
-            <AppText variant="callout" color="accent">
-              Exercise info
-            </AppText>
-            <Icon name="chevron.right" color="accent" size={12} />
-          </Pressable>
-        ) : null}
+        {/* `Exercise info` (progress.md region 1, exercise-library §9.7): the Library's detail, in this stack. Design pass 6.6: beside the series pill when there is one. */}
+        {route.name === 'ProgressExercise' && view.series.length <= 1 ? <View style={{ alignSelf: 'flex-start' }}>{infoLink}</View> : null}
         {view.pain ? (
           <Pressable
             accessibilityRole="button"
@@ -224,6 +240,7 @@ export function ExerciseDetailScreen() {
         {/* Kind menu (Ben, 20 Oct: gyms, equipment and imports are one series): only when the exercise has more than one kind (assisted and weighted). */}
         {view.series.length > 1 ? (
           <View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: theme.space['3'] }}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Type, ${view.seriesLabel}`}
@@ -236,6 +253,8 @@ export function ExerciseDetailScreen() {
             <AppText variant="body">{view.seriesLabel}</AppText>
             <Icon name={seriesOpen ? 'chevron.up' : 'chevron.down'} color="text.secondary" size={12} />
           </Pressable>
+          {route.name === 'ProgressExercise' ? infoLink : null}
+          </View>
           {seriesOpen
             ? view.series.map((s) => (
                 <Pressable
@@ -271,11 +290,13 @@ export function ExerciseDetailScreen() {
         <ExerciseLiftTarget data={lift} exerciseId={exerciseId} onChanged={reloadLift} />
 
         <View style={{ gap: theme.space['2'] }}>
+          {/* Design pass 6.6: 44pt chips on one scrolling line each, so the chart starts higher. */}
           {view.metrics.length > 1 ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+            <ChipScroll gap={theme.space['2']}>
               {view.metrics.map((m) => (
                 <Chip
                   key={m.key}
+                  size="min"
                   label={m.label}
                   selected={m.key === view.metric}
                   onPress={() => {
@@ -283,12 +304,13 @@ export function ExerciseDetailScreen() {
                   }}
                 />
               ))}
-            </View>
+            </ChipScroll>
           ) : null}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+          <ChipScroll gap={theme.space['2']}>
             {view.ranges.map((r) => (
               <Chip
                 key={r.key}
+                size="min"
                 label={r.label}
                 selected={r.key === view.range}
                 onPress={() => {
@@ -296,7 +318,7 @@ export function ExerciseDetailScreen() {
                 }}
               />
             ))}
-          </View>
+          </ChipScroll>
         </View>
 
         <View style={{ gap: theme.space['2'] }}>

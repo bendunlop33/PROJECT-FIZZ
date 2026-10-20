@@ -10,7 +10,11 @@ export interface ConsistencyCardView {
   title: string;
   /** `This week 2/3`, or `This week 2` with no aim. */
   thisWeek: string;
-  weeks: { key: string; label: string; value: string; atAim: boolean | null; accessibilityLabel: string }[];
+  /**
+   * `label`: (design pass 6.1) the Monday's day of the month (`28`), so 8 columns fit at 375pt; the full
+   * date is in `accessibilityLabel`. `rowLabel`: the short date (`28 Sep`) for the stacked rows at AX sizes.
+   */
+  weeks: { key: string; label: string; rowLabel: string; value: string; atAim: boolean | null; accessibilityLabel: string }[];
   /** `Weeks at your aim: 5 of 8`; null with no aim. */
   atAim: string | null;
   /** `Plan this week 3 of 4`; null without an applied plan. */
@@ -23,7 +27,8 @@ export function consistencyCardView(c: ConsistencyView, today: string): Consiste
     thisWeek: `This week ${c.thisWeek.text}`,
     weeks: c.weeks.map((w) => ({
       key: w.monday,
-      label: shortDate(w.monday, today),
+      label: String(Number(w.monday.slice(8, 10))),
+      rowLabel: shortDate(w.monday, today),
       value: w.text,
       atAim: w.atAim,
       // With an aim the count is days trained (review S2), else workouts; the label says which.

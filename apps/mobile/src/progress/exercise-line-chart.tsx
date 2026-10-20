@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import type { ExerciseTabView } from '@fizz/domain';
 
 import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
 import { AppText } from '../ui';
+import { useAxisWidth } from './axis-measure';
+import { TICK_MAX_SCALE } from './axis-width';
 import { XLabels } from './components';
 import { loadTrendCanvas } from './load-charts';
 import { nearestPointIndex, trendLayout } from './trend-layout';
@@ -17,7 +19,6 @@ import { nearestPointIndex, trendLayout } from './trend-layout';
  * Geometry from the pure `trendLayout`; the canvas only draws it.
  */
 
-const AXIS_WIDTH = 44;
 const INSET = 10;
 const HEIGHT = 260;
 
@@ -27,7 +28,10 @@ export function ExerciseLineChart({ chart, selected, readout = null, onSelect }:
   const [width, setWidth] = useState(0);
   // One run, no gap breaks: Ben asked for a line every time.
   const points = chart.points.map((p) => ({ date: p.date, value: p.value, breakBefore: false }));
-  const layout = trendLayout({ points, from: chart.from, to: chart.to, width, height: HEIGHT, bars: false, format: chart.format, axisWidth: AXIS_WIDTH, inset: INSET, overlay: chart.points.map((p) => p.average) });
+  const base = { points, from: chart.from, to: chart.to, width, height: HEIGHT, bars: false, format: chart.format, inset: INSET, overlay: chart.points.map((p) => p.average) };
+  // Design pass 6.3: the axis is as wide as its widest label (the ticks don't depend on the width).
+  const axis = useAxisWidth(trendLayout({ ...base, axisWidth: 44 }).yTicks.map((t) => t.label));
+  const layout = trendLayout({ ...base, axisWidth: axis.width });
   const canvas = loadTrendCanvas();
   const index = selected === null ? -1 : chart.points.findIndex((p) => p.sessionId === selected);
   const point = index >= 0 ? chart.points[index] : undefined;
@@ -52,15 +56,7 @@ export function ExerciseLineChart({ chart, selected, readout = null, onSelect }:
         onLayout={(e) => {
           setWidth(Math.floor(e.nativeEvent.layout.width));
         }}
-        onStartShouldSetResponder={() => chart.points.length > 0}
-        onResponderGrant={(e) => {
-          const i = nearestPointIndex(layout.xs, e.nativeEvent.locationX);
-          const p = chart.points[i];
-          if (!p) return;
-          haptic('step');
-          onSelect(p.sessionId === selected ? null : p.sessionId);
-        }}
-      >
+>
         {width > 0 ? (
           canvas.ok ? (
             <canvas.value
@@ -86,12 +82,27 @@ export function ExerciseLineChart({ chart, selected, readout = null, onSelect }:
           )
         ) : null}
         {layout.yTicks.map((t, i) => (
-          <View key={`${String(i)}-${t.label}`} pointerEvents="none" style={{ position: 'absolute', left: 0, width: AXIS_WIDTH - 6, top: t.y - 10 }}>
-            <AppText variant="label" numeric color="chart.axisText" align="right" numberOfLines={1} maxFontSizeMultiplier={1.6}>
+          <View key={`${String(i)}-${t.label}`} pointerEvents="none" style={{ position: 'absolute', left: 0, width: axis.width - 6, top: t.y - 10 }}>
+            <AppText variant="label" numeric color="chart.axisText" align="right" maxFontSizeMultiplier={TICK_MAX_SCALE}>
               {t.label}
             </AppText>
           </View>
         ))}
+        {axis.measure}
+        {/* Design pass 6.3: tap only. A scroll that starts on the chart scrolls; it never selects or buzzes. */}
+        {chart.points.length > 0 ? (
+          <Pressable
+            accessible={false}
+            style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}
+            onPress={(e) => {
+              const i = nearestPointIndex(layout.xs, e.nativeEvent.locationX);
+              const p = chart.points[i];
+              if (!p) return;
+              haptic('step');
+              onSelect(p.sessionId === selected ? null : p.sessionId);
+            }}
+          />
+        ) : null}
       </View>
       <XLabels labels={layout.months.map((m) => ({ key: `${m.label}${String(Math.round(m.x))}`, x: m.x, text: m.label }))} width={width} />
     </View>

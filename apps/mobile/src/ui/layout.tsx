@@ -1,10 +1,13 @@
 import { Children, Fragment, isValidElement, useState, type ReactNode, type Ref } from 'react';
-import { Pressable, ScrollView, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, TextInput, View, type LayoutChangeEvent, type TextInputProps, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme, type ColorToken } from '../theme';
 import { Icon, type SymbolName } from './Icon';
+import { SheetKeyboardAvoidingView, useKeyboardVisible } from './keyboard';
+import { bottomBarPadding, toastBottom } from './keyboard-state';
 import { AppText } from './Text';
+import { ToastHost } from './workout';
 
 /** Room left under the content for a floating pill (F16: its 44 pt, its 16 pt lift, and a 16 pt gap). */
 export const FLOATING_PILL_ROOM = 44 + 16 + 16;
@@ -12,43 +15,79 @@ export const FLOATING_PILL_ROOM = 44 + 16 + 16;
 /**
  * A scrolling screen on `bg.canvas` with the look's side margin. `floating`:
  * something drawn over the bottom of the scroll area (the `Ask` pill); the
- * content gets room below it so nothing ends up hidden underneath.
+ * content gets room below it so nothing ends up hidden underneath. It hides
+ * while the keyboard is up. The screen avoids the keyboard (0.3), so the
+ * lowest field and the footer's Save sit above it. `toast`: floats on the
+ * footer (or clear of the home indicator; `tab`: on the tab bar) and pads the
+ * scroll while it shows (0.6).
  */
-export function Screen({ children, footer, floating, testID }: { children: ReactNode; footer?: ReactNode; floating?: ReactNode; testID?: string }) {
+export function Screen({ children, footer, floating, toast, tab = false, testID }: { children: ReactNode; footer?: ReactNode; floating?: ReactNode; toast?: ReactNode; tab?: boolean; testID?: string }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardVisible();
+  const [footerHeight, setFooterHeight] = useState<number | null>(null);
+  const [toastHeight, setToastHeight] = useState(0);
+  const showFloating = floating !== undefined && floating !== null && !keyboard;
+  // With a footer the whole screen avoids the keyboard, so Save rides on it. Without one the
+  // scroll only insets itself (no double inset), and a large-title header still finds its scroll view.
+  const Frame = footer ? SheetKeyboardAvoidingView : View;
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} testID={testID}>
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{
-          paddingHorizontal: theme.components.screenMargin,
-          paddingTop: theme.space['4'],
-          paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + insets.bottom) + (floating ? FLOATING_PILL_ROOM : 0),
-          gap: theme.space['5'],
-        }}
-      >
-        {children}
-      </ScrollView>
-      {floating}
-      {footer ? <BottomBar>{footer}</BottomBar> : null}
-    </View>
+    <Frame style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }} {...(testID ? { testID } : {})}>
+      {/* Review S4: the toast is placed in this unpadded view, so the avoiding frame's keyboard padding can't put it behind the keyboard. */}
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets={!footer}
+          contentContainerStyle={{
+            paddingHorizontal: theme.components.screenMargin,
+            paddingTop: theme.space['4'],
+            paddingBottom: (footer ? theme.space['6'] : theme.space['8'] + (keyboard ? 0 : insets.bottom)) + (showFloating ? FLOATING_PILL_ROOM : 0) + toastHeight,
+            gap: theme.space['5'],
+          }}
+        >
+          {children}
+        </ScrollView>
+        {showFloating ? floating : null}
+        {footer ? (
+          <BottomBar
+            onHeight={(h) => {
+              setFooterHeight(h);
+            }}
+          >
+            {footer}
+          </BottomBar>
+        ) : null}
+        <ToastHost bottom={toastBottom({ footerHeight: footer ? footerHeight : null, insetBottom: keyboard ? 0 : insets.bottom, space2: theme.space['2'], tab })} onHeight={setToastHeight}>
+          {toast}
+        </ToastHost>
+      </View>
+    </Frame>
   );
 }
 
-/** Fixed bottom bar for one primary action (OnboardingFrame, design-system §9.46). */
-export function BottomBar({ children }: { children: ReactNode }) {
+/** Fixed bottom bar for one primary action (OnboardingFrame, design-system §9.46). On the keyboard it drops the home-indicator room (0.2). */
+export function BottomBar({ children, onHeight }: { children: ReactNode; onHeight?: (h: number) => void }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardVisible();
   return (
     <View
+      {...(onHeight
+        ? {
+            onLayout: (e: LayoutChangeEvent) => {
+              onHeight(e.nativeEvent.layout.height);
+            },
+          }
+        : {})}
       style={{
         backgroundColor: theme.components.barOnCanvas ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
         borderTopWidth: theme.components.barOnCanvas ? 0 : theme.dividerWidth,
         borderTopColor: theme.colors['border.divider'],
         paddingHorizontal: theme.components.barOnCanvas ? theme.space['5'] : theme.space['4'],
         paddingTop: theme.space['3'],
-        paddingBottom: theme.space['3'] + insets.bottom,
+        paddingBottom: bottomBarPadding({ keypadOpen: keyboard, insetBottom: insets.bottom, space2: theme.space['2'], space3: theme.space['3'] }),
         gap: theme.space['2'],
       }}
     >
@@ -128,62 +167,108 @@ interface RowProps {
   /** VoiceOver custom actions (e.g. `Delete` on a past workout, delete-workouts §4). */
   actions?: readonly { name: string; label: string }[];
   onAction?: (name: string) => void;
+  /**
+   * (Design pass 6.7) Action buttons under the row's text, outside its tap target, so long text
+   * (a memory) uses the full width and VoiceOver reaches each button.
+   */
+  below?: ReactNode;
+  /** No side padding: the row lines up with content outside a Group. */
+  flush?: boolean;
+  /** Cap the subtitle at this many lines (a list of exercise names). */
+  subtitleLines?: number;
+  /** A trailing button's name and action, read as a VoiceOver action on the row too (`Clear`). */
+  trailingAction?: { label: string; onPress: () => void };
 }
 
-/** `SettingsRow` (§9.31): ≥ 52pt, whole row is the target, chevron when it opens something. */
-export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag, actions, onAction }: RowProps) {
+/**
+ * `SettingsRow` (§9.31): ≥ 52pt, whole row is the target, chevron when it opens something.
+ * Design pass 6.7: with both `onPress` and `trailing`, the trailing control sits beside the tap
+ * target (not inside it), with no chevron, so VoiceOver can reach it; `trailingAction` is also offered
+ * as a VoiceOver action on the row. `below` holds action buttons under the text.
+ */
+export function Row({ title, subtitle, secondLine, icon, iconColor = 'text.secondary', onPress, disabled = false, trailing, accessibilityHint, tag, actions, onAction, below, flush = false, subtitleLines, trailingAction }: RowProps) {
   const theme = useTheme();
-  const content = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], minHeight: 52, paddingVertical: theme.space['3'], paddingHorizontal: theme.space['4'] }}>
-      {icon ? <Icon name={icon} color={iconColor} /> : null}
-      <View style={{ flex: 1, gap: 2 }}>
-        <AppText variant="body" color={disabled ? 'text.secondary' : 'text.primary'}>
-          {title}
+  const padX = flush ? 0 : theme.space['4'];
+  const split = onPress !== undefined && (trailing !== undefined && trailing !== null);
+  const text = (
+    <View style={{ flex: 1, gap: 2 }}>
+      <AppText variant="body" color={disabled ? 'text.secondary' : 'text.primary'}>
+        {title}
+      </AppText>
+      {subtitle ? (
+        <AppText variant="callout" color="text.secondary" numeric {...(subtitleLines !== undefined ? { numberOfLines: subtitleLines } : {})}>
+          {subtitle}
         </AppText>
-        {subtitle ? (
-          <AppText variant="callout" color="text.secondary" numeric>
-            {subtitle}
+      ) : null}
+      {secondLine ? (
+        <AppText variant="callout" color="text.secondary" numeric>
+          {secondLine}
+        </AppText>
+      ) : null}
+      {tag ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
+          <Icon name={tag.icon} color={tag.color} size={14} />
+          <AppText variant="label" color={tag.color}>
+            {tag.text}
           </AppText>
-        ) : null}
-        {secondLine ? (
-          <AppText variant="callout" color="text.secondary" numeric>
-            {secondLine}
-          </AppText>
-        ) : null}
-        {tag ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-            <Icon name={tag.icon} color={tag.color} size={14} />
-            <AppText variant="label" color={tag.color}>
-              {tag.text}
-            </AppText>
-          </View>
-        ) : null}
-      </View>
-      {trailing}
-      {onPress && !disabled ? <Icon name="chevron.right" color="text.tertiary" size={14} /> : null}
+        </View>
+      ) : null}
     </View>
   );
-  if (!onPress) return content;
-  return (
+  const content = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['3'], minHeight: 52, paddingVertical: theme.space['3'], paddingLeft: padX, paddingRight: split ? 0 : padX }}>
+      {icon ? <Icon name={icon} color={iconColor} /> : null}
+      {text}
+      {split ? null : trailing}
+      {onPress && !disabled && !split ? <Icon name="chevron.right" color="text.tertiary" size={14} /> : null}
+    </View>
+  );
+  // Under the text's left edge (past the icon), so left edges line up.
+  const belowRow = below !== undefined && below !== null ? <View style={{ paddingLeft: padX + (icon ? 20 + theme.space['3'] : 0), paddingRight: padX, paddingBottom: theme.space['3'], marginTop: -theme.space['2'] }}>{below}</View> : null;
+  if (!onPress) {
+    return belowRow === null ? content : (
+      <View>
+        {content}
+        {belowRow}
+      </View>
+    );
+  }
+  const allActions = [...(actions ?? []), ...(trailingAction ? [{ name: trailingAction.label, label: trailingAction.label }] : [])];
+  const pressable = (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={[title, tag?.accessibilityLabel, subtitle, secondLine].filter(Boolean).join(', ')}
       accessibilityState={{ disabled }}
       {...(accessibilityHint ? { accessibilityHint } : {})}
-      {...(actions && onAction
+      {...(allActions.length > 0
         ? {
-            accessibilityActions: actions.map((a) => ({ name: a.name, label: a.label })),
+            accessibilityActions: allActions,
             onAccessibilityAction: (e: { nativeEvent: { actionName: string } }) => {
-              onAction(e.nativeEvent.actionName);
+              const name = e.nativeEvent.actionName;
+              if (trailingAction && name === trailingAction.label) trailingAction.onPress();
+              else onAction?.(name);
             },
           }
         : {})}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => ({ backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
+      style={({ pressed }) => ({ flex: split ? 1 : undefined, backgroundColor: pressed ? theme.colors['bg.raised'] : 'transparent' })}
     >
       {content}
     </Pressable>
+  );
+  return (
+    <View>
+      {split ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingRight: padX }}>
+          {pressable}
+          {trailing}
+        </View>
+      ) : (
+        pressable
+      )}
+      {belowRow}
+    </View>
   );
 }
 
@@ -464,9 +549,12 @@ export function HeroHeader({
   lines = [],
   size = 'hero',
   link = null,
+  titleLines = 3,
 }: {
   eyebrow?: string | null;
   title: string;
+  /** Lines the title may take before it ends in `…` (the Summary caps it at 2, design pass 3.3). */
+  titleLines?: number;
   lines?: readonly (string | null | undefined)[];
   size?: 'hero' | 'screen';
   link?: { text: string; accessibilityLabel: string; onPress: () => void } | null;
@@ -485,7 +573,7 @@ export function HeroHeader({
       <AppText
         variant="title1"
         accessibilityRole="header"
-        numberOfLines={3}
+        numberOfLines={titleLines}
         style={{ fontSize: px, lineHeight: Math.round(px * 1.15), letterSpacing: px >= 40 ? -0.8 : theme.type.title1.letterSpacing }}
       >
         {title}

@@ -155,11 +155,12 @@ export function ExerciseInfoScreen() {
         ))}
         <Bullets title={EXERCISE_INFO_COPY.howToDo} items={view.knowledge.cues} icon={null} />
         <Bullets title={EXERCISE_INFO_COPY.whatNot} items={view.knowledge.avoid} icon="xmark" />
-        {d.howTo !== null ? <Row title={EXERCISE_INFO_COPY.fullHowTo} onPress={() => { navigation.navigate('HowTo', d.howTo as { catalogueKey: string; name: string }); }} /> : null}
+        {d.howTo !== null ? <Row flush title={EXERCISE_INFO_COPY.fullHowTo} onPress={() => { navigation.navigate('HowTo', d.howTo as { catalogueKey: string; name: string }); }} /> : null}
 
         <DomainLabel domain="yourData" />
         {view.yours.pain !== null ? (
           <Row
+            flush
             title={view.yours.pain.text}
             icon="exclamationmark.triangle"
             iconColor="status.warning"
@@ -192,6 +193,7 @@ export function ExerciseInfoScreen() {
             ) : null}
             {d.progress !== null ? (
               <Row
+                flush
                 title={EXERCISE_INFO_COPY.progress}
                 onPress={() => {
                   if (inProgressStack) navigation.goBack();
@@ -213,6 +215,7 @@ export function ExerciseInfoScreen() {
             {view.yours.usedIn.map((u) => (
               <Row
                 key={u.routineId}
+                flush
                 title={u.name}
                 onPress={() => {
                   navigation.navigate('WorkoutOverview', { target: { kind: 'routine', routineId: u.routineId } });
@@ -453,7 +456,7 @@ function AddToWorkoutSheet({
 
   const rows = dest === null ? [] : dest.destinations.workouts;
   return (
-    <BottomCard visible={visible} onClose={onClose} closeLabel={EXERCISE_INFO_COPY.cancel}>
+    <BottomCard visible={visible} onClose={onClose} closeLabel={EXERCISE_INFO_COPY.cancel} scroll={false}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
         <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }} numberOfLines={2}>
           {EXERCISE_INFO_COPY.addTitle(name)}

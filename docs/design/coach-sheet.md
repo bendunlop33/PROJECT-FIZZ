@@ -52,7 +52,7 @@ Entry points (all open the same sheet, at medium detent, with the current page's
 Regions, top to bottom:
 
 1. **Grabber.** System sheet grabber. Detents: medium (default) and large. Focusing the text field moves to large.
-2. **Header (44pt).** `list.bullet` (Conversations), thread title, `square.and.pencil` (New), `xmark` (Close). Each 44 × 44.
+2. **Header (44pt).** `list.bullet` (Conversations), thread title (a header, capped at 1.5×), the speaker switch (accent when on), `square.and.pencil` (New), `xmark` (Close). Each 44 × 44. (Design pass, 20 Oct) The Conversations list has its own header (`‹` Back, `Conversations`, Close), dated rows and `No conversations` when empty. The transcript follows new replies only while Ben is at its end; with the keyboard up the Sees chip hides and the route line is a short label. Live-workout chips are `Lighter`, `Heavier`, `+ Set`, `− Set`, `Swap` (the exercise in the words sent), first after `Adjust the rest?`. Card actions: Apply, Add, Save and Adjust are pill buttons; `Why?` left, Undo right.
 3. **Workout bar (52pt, only while a workout is in progress, CS3).**
 4. **Status banner (0–1).** Not connected, offline, limit, paused, expired (§3). Uses `StatusBanner`.
 5. **Messages (scrolls).** Ben's messages, coach replies, action cards, outcome lines. Newest at the bottom. Opens scrolled to the bottom.
@@ -197,7 +197,7 @@ Tapping the chip opens a read-only sheet from `describeCoachContext`:
 | Ben, spoken | Same, with a `mic` icon before the time. The text is the transcript exactly as recognised (voice.md §5.2) |
 | Ben, chip | Same as typed |
 | Coach reply | Left-aligned, no bubble, label `Coach · 18:21` (`type.label`). `type.body` text. Plain text only: bold, lists and line breaks are rendered; links, images and tables are not |
-| Tool summary | `Used: today's workout, bench history ›` (`type.callout`, `text.secondary`). Tap expands one line per tool call: `Read today's workout (18:21)`, `Read Bench press history, 6 weeks`, `Logged set 3`. From the tool log, not the model's words |
+| Tool summary | (Design pass, 20 Oct) A quiet `ⓘ Tools` link, as the tools are written (not lower-cased); earlier: `Used: today's workout, bench history ›` (`type.callout`, `text.secondary`). Tap expands one line per tool call: `Read today's workout (18:21)`, `Read Bench press history, 6 weeks`, `Logged set 3`. From the tool log, not the model's words |
 | Citations | `Based on:` + `CitationChip`s (coaching-playbook §2.9). Only approved, enabled sources survive validation |
 | Outcome line | Icon + one line, `type.callout`. For failures and notes: `ⓘ Stopped. Nothing changed.` |
 

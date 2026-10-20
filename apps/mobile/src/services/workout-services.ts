@@ -105,6 +105,7 @@ import {
   DEFAULT_CHECK_IN_SETTINGS,
   explainTarget,
   lastComparableSession,
+  lastWorkingLoad,
   workingSetsFromPrevious,
   localDateOf,
   localWeekBounds,
@@ -703,6 +704,8 @@ export interface EditorExerciseInfo {
   compound: boolean;
   /** The §10.1 default shape (3 working sets, the built-in rule's reps, `0:45` timed); the add sheet's `Sets` bar sets the count. */
   defaultShape: SlotShapeInput;
+  /** (Design pass 5.1) The working load last logged (`lastWorkingLoad`): a new Fixed load starts from it, snapped. Absent from search results. */
+  lastLoad?: Load | null;
 }
 
 /** The workout editor's data (routines.md §A2.3). Local reads only. */
@@ -3608,6 +3611,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           defaultRestS: p?.exerciseRestS?.[id] ?? x.defaultRestS ?? null,
           compound: x.mechanic === 'compound',
           defaultShape: defaultSlotShape(x),
+          lastLoad: p ? lastWorkingLoad(await historyFor(p.id, id).catch(() => [] as HistorySession[])) : null,
         };
       }
       return out;

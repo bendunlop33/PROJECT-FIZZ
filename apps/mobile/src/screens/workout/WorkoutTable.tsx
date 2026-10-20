@@ -1,14 +1,16 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react';
-import { AccessibilityInfo, Keyboard, Pressable, ScrollView, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
+import { AccessibilityInfo, Keyboard, Pressable, ScrollView, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type TextInput } from 'react-native';
 
-import { formatDuration, NBSP, targetLineLabel, targetLineText, type FocusView, type LoadField, type StepTarget, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
+import { formatDuration, NBSP, targetLineLabel, type FocusView, type LoadField, type StepTarget, type RestView, type SupersetCard, type TableBlock, type TableCard, type TableColumns, type TableRow, type WorkoutTableView } from '@fizz/domain';
 import type { SetSide } from '@fizz/schemas';
 
 import { haptic } from '../../device/haptics';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, TextButton, TEXT_PRESSED_OPACITY, type SymbolName } from '../../ui';
-import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadTileY, loadCellA11y, runRowTap, showsFolded, tileReportFor, valueCellA11y, type AnchorRequest, type CellField, type ChipState, type Expansions, type RowPart, type RowTap, type TileId, type TileReport } from '../../workout/table';
+import { AppText, Chip, ChipRow, Icon, LinkLine, NumberStepper, StatusLine, StepperTileRow, TextButton, TEXT_PRESSED_OPACITY, type SymbolName } from '../../ui';
+import { CARDIO_TIME_FORMAT } from '../../ui/number-text';
+import { anchorTargetY, bottomSpacerHeight, chipsFor, keypadTileY, loadCellA11y, openRowLabel, openRowSubLine, runRowTap, showsFolded, tileReportFor, valueCellA11y, type AnchorRequest, type CellField, type ChipState, type Expansions, type RowPart, type RowTap, type TileId, type TileReport } from '../../workout/table';
 import { workTimerText } from '../../workout/cues';
+import { cardioPairTiles, openRowWidth } from '../../workout/tile-fit';
 import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
 import { GymPartDivider, SnapNote } from './GymSwitch';
 import { TargetWhyLink } from './TargetWhyPanel';
@@ -60,6 +62,8 @@ export interface WorkoutTableProps {
   anchorRequest: AnchorRequest | null;
   /** The keypad's height (`keyboardWillShow` `endCoordinates.height`, its Done bar included); 0 while it's closed. */
   keyboardHeight: number;
+  /** Room under the list for a floating toast while it shows (0.6). */
+  bottomInset?: number;
   onAnchorApplied: () => void;
   onUserScroll: () => void;
   onChips: (c: ChipState) => void;
@@ -417,7 +421,7 @@ export const WorkoutTable = forwardRef(function WorkoutTable(props: WorkoutTable
           props.onTapElsewhere();
         }}
         {...WORKOUT_KEYBOARD}
-        contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['3'] }}
+        contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['3'] + (props.bottomInset ?? 0) }}
       >
         {children}
       </ScrollView>
@@ -652,7 +656,8 @@ export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: 
   const valueColor = done ? 'text.primary' : 'text.tertiary';
   const valueStyle = done ? { fontWeight: '500' as const } : undefined;
   const setLabel = row.memberTag ?? String(row.number);
-  const second = done ? [row.notCounted, row.note, row.gymCaption, row.edited ? 'Edited' : null].filter((x): x is string => x !== null) : [];
+  // A done row's value stays on one line: its effort and pace go to the second line (design pass nit).
+  const second = done ? [row.effort !== null ? plainSpaces(row.effort) : null, row.pace !== null ? plainSpaces(row.pace) : null, row.notCounted, row.note, row.gymCaption, row.edited ? 'Edited' : null].filter((x): x is string => x !== null) : [];
   const marker = done ? (
     <Icon name="checkmark.circle.fill" color="status.done" size={26} />
   ) : skipped ? (
@@ -761,7 +766,7 @@ export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: 
         style={({ pressed }) => ({ flex: 1, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
       >
         <View style={on ? { paddingHorizontal: theme.space['1'], marginLeft: -theme.space['1'], borderRadius: theme.radius.sm, borderWidth: 2, borderColor: theme.colors['border.control'] } : undefined}>
-          <AppText variant="rowValue" color={valueColor} numeric style={valueStyle}>
+          <AppText variant="rowValue" color={valueColor} numeric style={valueStyle} numberOfLines={1}>
             {text}
           </AppText>
         </View>
@@ -788,19 +793,19 @@ export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: 
           onLongPress={longPress}
           style={({ pressed }) => ({ width: 52, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: theme.space['1'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
-          {row.badges.length > 0 && row.memberTag === null ? (
-            row.badges.map((b) => (
-              <View key={b} style={{ minWidth: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors['border.control'], alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
-                <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1.4}>
-                  {b}
-                </AppText>
-              </View>
-            ))
-          ) : (
+          {/* A superset member's tag, then its badges as bordered badges (design pass nit), never `A1W` text. */}
+          {row.badges.length === 0 || row.memberTag !== null ? (
             <AppText variant="headline" color="text.secondary" numeric>
-              {`${setLabel}${row.memberTag !== null && row.badges.length > 0 ? row.badges.join('') : ''}`}
+              {setLabel}
             </AppText>
-          )}
+          ) : null}
+          {row.badges.map((b) => (
+            <View key={b} style={{ minWidth: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors['border.control'], alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
+              <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1.4}>
+                {b}
+              </AppText>
+            </View>
+          ))}
         </Pressable>
         {/* Each row's own columns (review B2): a mixed superset's loaded member keeps its load cell. */}
         {row.columns.loadLabel !== null ? cell('load', row.cells.load ?? '—', loadCellA11y(row.columns.loadLabel, row.cells.load), null) : null}
@@ -809,12 +814,12 @@ export function TableSetRow({ row, ax, editing, onPress }: { row: TableRow; ax: 
           plainSpaces(row.cells.value),
           valueCellA11y(row.columns.valueLabel, row.cells.value),
           <>
-            {row.effort !== null ? (
+            {row.effort !== null && !done ? (
               <AppText variant="callout" color="text.secondary" numeric style={{ marginLeft: theme.space['2'] }}>
                 {plainSpaces(row.effort)}
               </AppText>
             ) : null}
-            {row.pace !== null ? (
+            {row.pace !== null && !done ? (
               <AppText variant="callout" color="text.secondary" numeric style={{ marginLeft: theme.space['2'] }} accessibilityLabel={`Pace ${plainSpaces(row.pace)}`}>
                 {plainSpaces(row.pace)}
               </AppText>
@@ -914,7 +919,7 @@ export interface OpenSetRowProps {
 }
 
 /** The open row's table row (its columns and target RPE cell), from the Table, so its cells line up with the header. */
-const OpenRowContext = createContext<Pick<TableRow, 'columns' | 'effort'> | null>(null);
+const OpenRowContext = createContext<Pick<TableRow, 'columns' | 'effort' | 'memberTag'> | null>(null);
 
 /**
  * `OpenSetRow` (18 Oct, Ben: "the table stays a table"): the current set is
@@ -929,6 +934,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
   const f = p.focus;
   const tableRow = useContext(OpenRowContext);
   const columns = tableRow?.columns ?? null;
+  const { width: windowWidth } = useWindowDimensions();
   const step = p.ax ? 60 : theme.target.workout.height;
   const working = f.workTimer !== null && (f.workTimer.state === 'running' || f.workTimer.state === 'paused');
   // Cardio (19 Oct): the timer counts up in the cell (time so far · distance), and the distance stays editable while it runs.
@@ -963,6 +969,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
 
   const badges = f.rows.find((r) => r.setId === f.setId)?.badges ?? [];
   const sideTag = f.side?.kind === 'fixed' ? (f.side.value === 'left' ? 'L' : 'R') : null;
+  const memberTag = tableRow?.memberTag ?? null;
   const hasLoadColumn = columns !== null ? columns.loadLabel !== null : f.cells.load !== null;
   const valueField: TileId | null = f.reps ? 'reps' : f.duration ? 'time' : f.distance ? 'distance' : null;
   const valueText = working && !cardio ? workTimerText(f.workTimer?.remainingMs ?? null) : plainSpaces(f.cells.value);
@@ -995,37 +1002,52 @@ export function OpenSetRow(p: OpenSetRowProps) {
 
   const loadA11y = loadCellA11y(columns?.loadLabel ?? null, f.cells.load);
   const valueA11y = valueField === 'time' && working && !cardio ? `Time ${valueText}` : valueCellA11y(columns?.valueLabel ?? (valueField === 'time' ? 'TIME' : valueField === 'distance' ? 'DIST' : 'REPS'), f.cells.value);
-  const numeral = p.ax ? 40 : 32;
-
   let editor: ReactNode = null;
+  // 1.3: a cardio set's time and distance stay together in one tile row (compact or stacked, never clipped).
+  let stackDone = false;
   if (cardio && (p.editing === 'time' || p.editing === 'distance') && f.duration && f.distance) {
-    // Time in minutes (from the timer while it runs, so not typed then) and metres from the machine.
-    editor = (
-      <View style={{ flex: 1, flexDirection: p.ax ? 'column' : 'row', gap: theme.space['2'] }}>
-        {working ? null : (
-          <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="TIME" unit={null} decimals={false} time value={f.duration.value} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />
+    stackDone = true;
+    const distance = f.distance;
+    const duration = f.duration;
+    editor = working ? (
+      <NumberStepper key="dist" variant="inline" inputRef={p.distanceRef} autoFocus={p.keypadOpen} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={null} stepSize={step} label="DIST M" unit={null} value={distance.value} decimals down={distance.down} up={distance.up} onChange={p.onDistance} />
+    ) : (
+      <StepperTileRow tiles={cardioPairTiles({ timeText: duration.value === null ? '—' : CARDIO_TIME_FORMAT.show(duration.value), distance })} estimate={openRowWidth(windowWidth)} step={step} gap={theme.space['2']}>
+        {({ numeralSize, compact, flexOf }) => (
+          <>
+            <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={flexOf(1)} stepSize={step} numeralSize={numeralSize} compact={compact} label="TIME" unit={null} decimals={false} time value={duration.value} down={duration.down} up={duration.up} onChange={p.onTime} />
+            <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={flexOf(1)} stepSize={step} numeralSize={numeralSize} compact={compact} label="DIST M" unit={null} value={distance.value} decimals down={distance.down} up={distance.up} onChange={p.onDistance} />
+          </>
         )}
-        <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />
-      </View>
+      </StepperTileRow>
     );
   } else if (p.editing === 'load' && f.loadField) {
-    editor = <NumberStepper key="load" inputRef={p.loadRef} onFocus={tileFocus('load')} onLayout={tileLayout('load')} flex={1} stepSize={step} numeralSize={numeral} label={`${f.loadField.label} ${f.loadField.unitText}`.toUpperCase()} unit={null} value={f.loadField.value} decimals down={f.loadField.down} up={f.loadField.up} warning={f.offProfileWarning !== null} hint={f.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+    editor = <NumberStepper key="load" variant="inline" inputRef={p.loadRef} autoFocus={p.keypadOpen} onFocus={tileFocus('load')} onLayout={tileLayout('load')} flex={1} stepSize={step} label={`${f.loadField.label} ${f.loadField.unitText}`} unit={null} value={f.loadField.value} decimals down={f.loadField.down} up={f.loadField.up} warning={f.offProfileWarning !== null} hint={f.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
   } else if (p.editing === 'reps' && f.reps) {
-    editor = <NumberStepper key="reps" inputRef={p.repsRef} onFocus={tileFocus('reps')} onLayout={tileLayout('reps')} flex={1} stepSize={step} numeralSize={numeral} label="REPS" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
+    editor = <NumberStepper key="reps" variant="inline" inputRef={p.repsRef} autoFocus={p.keypadOpen} onFocus={tileFocus('reps')} onLayout={tileLayout('reps')} flex={1} stepSize={step} label="Reps" unit={null} value={f.reps.value} decimals={false} down={f.reps.down} up={f.reps.up} onChange={p.onReps} />;
   } else if (p.editing === 'time' && f.duration && !working) {
-    editor = <NumberStepper key="time" inputRef={p.timeRef} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={1} stepSize={step} numeralSize={numeral} label="TIME" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
+    editor = <NumberStepper key="time" variant="inline" inputRef={p.timeRef} autoFocus={p.keypadOpen} onFocus={tileFocus('time')} onLayout={tileLayout('time')} flex={1} stepSize={step} label="Time" unit="s" value={f.duration.value} decimals={false} down={f.duration.down} up={f.duration.up} onChange={p.onTime} />;
   } else if (p.editing === 'distance' && f.distance) {
-    editor = <NumberStepper key="dist" inputRef={p.distanceRef} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
+    editor = <NumberStepper key="dist" variant="inline" inputRef={p.distanceRef} autoFocus={p.keypadOpen} onFocus={tileFocus('distance')} onLayout={tileLayout('distance')} flex={1} stepSize={step} label="Distance, metres" unit={null} value={f.distance.value} decimals down={f.distance.down} up={f.distance.up} onChange={p.onDistance} />;
   }
 
-  const target = targetLineText(f.targetBrief, f.targetEstimate);
+  const target = f.targetBrief;
+  // 1.5: no 44 pt minimum on the line itself; padding and hitSlop make each link a 44 pt target.
   const link = (text: string, a11y: string, onPress: () => void) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={onPress} hitSlop={6} style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
-      <AppText variant="callout" color="text.secondary" numeric>
+    <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={onPress} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }} style={({ pressed }) => ({ paddingVertical: theme.space['1'], justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}>
+      <AppText variant="callout" color="text.secondary" numeric numberOfLines={1}>
         {text}
       </AppText>
     </Pressable>
   );
+  // B1: the target and pace may shrink; `est.` never does, and `Plan was …` has its own line. At AX the line wraps.
+  const sub = openRowSubLine({ target: target !== null ? plainSpaces(target) : null, estimate: f.targetEstimate, pace: f.pace !== null ? plainSpaces(f.pace) : null, planWas: f.planWas !== null ? plainSpaces(f.planWas) : null, ax: p.ax });
+  const leadA11y = [target !== null ? `Target ${targetLineLabel(f.targetBrief, f.targetEstimate) ?? ''}` : null, f.pace !== null ? `Pace ${plainSpaces(f.pace)}` : null].filter((x): x is string => x !== null).join(', ');
+  const plates = f.plateLine !== null && p.editing === 'load' ? (
+    <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${f.plateLine}`} style={{ paddingLeft: theme.space['2'], paddingBottom: theme.space['1'] }}>
+      {plainSpaces(f.plateLine)}
+    </AppText>
+  ) : null;
 
   return (
     <View
@@ -1040,23 +1062,25 @@ export function OpenSetRow(p: OpenSetRowProps) {
         <Pressable
           ref={p.headerRef}
           accessibilityRole="button"
-          accessibilityLabel={`${f.exerciseName}, set ${String(f.setNumber)}, ${f.setTypeLabel}${sideTag === 'L' ? ', left side' : sideTag === 'R' ? ', right side' : ''}, ${p.resting ? 'next' : 'current'}`}
+          accessibilityLabel={`${f.exerciseName}, ${memberTag !== null ? `${memberTag}, ` : ''}set ${String(f.setNumber)}, ${f.setTypeLabel}${sideTag === 'L' ? ', left side' : sideTag === 'R' ? ', right side' : ''}, ${p.resting ? 'next' : 'current'}`}
           accessibilityHint="More for this set"
           onPress={p.onMore}
           onLongPress={p.onMore}
           style={{ width: 49, minHeight: theme.target.workout.height, flexDirection: 'row', alignItems: 'center', gap: 2 }}
         >
-          {badges.length > 0 ? (
-            badges.map((b) => (
-              <View key={b} style={{ minWidth: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
-                <AppText variant="label" color="accent" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1.4}>
-                  {b}
-                </AppText>
-              </View>
-            ))
-          ) : (
-            <AppText variant="headline" color="accent" numeric>{`${String(f.setNumber)}${sideTag ?? ''}`}</AppText>
-          )}
+          {/* 1.6: a superset member reads `A2` (its badges after it); a plain set's badge stands for its number. */}
+          {badges.length === 0 || memberTag !== null ? (
+            <AppText variant="headline" color="accent" numeric>
+              {openRowLabel({ memberTag, setNumber: f.setNumber, sideTag })}
+            </AppText>
+          ) : null}
+          {badges.map((b) => (
+            <View key={b} style={{ minWidth: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: theme.colors.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
+              <AppText variant="label" color="accent" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1.4}>
+                {b}
+              </AppText>
+            </View>
+          ))}
         </Pressable>
         {hasLoadColumn ? cell(f.loadField ? 'load' : null, f.cells.load ?? '—', loadA11y, 1) : null}
         {cell(working && !cardio ? null : valueField, valueText, valueA11y, 1)}
@@ -1095,6 +1119,7 @@ export function OpenSetRow(p: OpenSetRowProps) {
         >
           <InlineEditor
             ax={p.ax}
+            stack={stackDone}
             onDone={() => {
               Keyboard.dismiss();
               p.onEditCell(null);
@@ -1102,32 +1127,25 @@ export function OpenSetRow(p: OpenSetRowProps) {
           >
             {editor}
           </InlineEditor>
+          {plates}
         </View>
       ) : null}
-      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: theme.space['3'], paddingLeft: 48 }}>
-        {target !== null ? (
-          <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Target ${targetLineLabel(f.targetBrief, f.targetEstimate) ?? ''}`}>
-            {plainSpaces(target)}
-          </AppText>
-        ) : null}
-        {f.pace !== null ? (
-          <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Pace ${plainSpaces(f.pace)}`}>
-            {plainSpaces(f.pace)}
-          </AppText>
-        ) : null}
+      {/* 1.5: one line under the row: target · Rest › · Why? (the set number already opens More). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: sub.wrap ? 'wrap' : 'nowrap', columnGap: theme.space['3'], minHeight: theme.target.min.height, paddingLeft: 48 }}>
+        <View accessible={leadA11y !== ''} {...(leadA11y !== '' ? { accessibilityLabel: leadA11y } : {})} style={{ flexDirection: 'row', flexWrap: sub.wrap ? 'wrap' : 'nowrap', alignItems: 'center', columnGap: theme.space['1'], flexShrink: 1, flexGrow: 1, ...(sub.wrap ? { flexBasis: '100%' } : {}) }}>
+          {sub.segments.map((seg, i) => (
+            <AppText key={i} variant="callout" color="text.secondary" numeric {...(sub.wrap ? {} : { numberOfLines: 1 })} style={{ flexShrink: seg.shrink ? 1 : 0 }}>
+              {seg.text}
+            </AppText>
+          ))}
+        </View>
         {p.workAction ? link(p.workAction.label, `${p.workAction.label} the timer`, p.workAction.onPress) : null}
-        {f.plateLine !== null && !p.ax ? (
-          <AppText variant="callout" color="text.tertiary" numeric accessibilityLabel={`Plates: ${f.plateLine}`}>
-            {plainSpaces(f.plateLine)}
-          </AppText>
-        ) : null}
         {link(`Rest ${formatDuration(f.restAfterS)} ›`, `Rest after this set: ${formatDuration(f.restAfterS)}. Changes it.`, p.onRestAfter)}
-        {f.hasExplanation ? <TargetWhyLink open={p.whyOpen} onPress={p.onWhy} /> : null}
-        {link('⋯', `More for set ${String(f.setNumber)}`, p.onMore)}
+        {f.hasExplanation ? <TargetWhyLink slim open={p.whyOpen} onPress={p.onWhy} /> : null}
       </View>
-      {f.planWas !== null ? (
+      {sub.planWas !== null ? (
         <AppText variant="callout" color="text.secondary" numeric style={{ paddingLeft: 48 }}>
-          {plainSpaces(f.planWas)}
+          {sub.planWas}
         </AppText>
       ) : null}
       {p.whyOpen ? p.whyPanel : null}
@@ -1181,13 +1199,18 @@ export function OpenSetRow(p: OpenSetRowProps) {
   );
 }
 
-/** An in-place cell editor and its Done: side by side, stacked at AX sizes so nothing clips (review S8). */
-function InlineEditor({ ax, onDone, children }: { ax: boolean; onDone: () => void; children: ReactNode }) {
+/**
+ * An in-place cell editor and its Done: side by side, stacked at AX sizes so
+ * nothing clips (review S8). `stack`: Done on its own right-aligned row (the
+ * cardio pair takes the full width; 1.3).
+ */
+function InlineEditor({ ax, stack = false, onDone, children }: { ax: boolean; stack?: boolean; onDone: () => void; children: ReactNode }) {
   const theme = useTheme();
+  const column = ax || stack;
   return (
-    <View style={{ flexDirection: ax ? 'column' : 'row', alignItems: ax ? 'stretch' : 'center', gap: theme.space['2'], paddingBottom: theme.space['1'] }}>
+    <View style={{ flexDirection: column ? 'column' : 'row', alignItems: column ? 'stretch' : 'center', gap: theme.space['2'], paddingTop: theme.space['1'], paddingBottom: theme.space['1'] }}>
       {children}
-      <View style={ax ? { alignItems: 'flex-end' } : undefined}>
+      <View style={column ? { alignItems: 'flex-end' } : undefined}>
         <TextButton label="Done" onPress={onDone} />
       </View>
     </View>
@@ -1205,6 +1228,10 @@ export interface CorrectionEditorProps {
   onReps: (v: number | null) => void;
   onTime: (v: number | null) => void;
   onDistance: (v: number | null) => void;
+  /** A field took focus (the screen's keypad accessory offers `Next ›` from it; 1.4). */
+  onFocusField?: (field: CellField) => void;
+  /** The cardio pair's distance field, so `Next ›` from its time can focus it. */
+  distanceRef?: Ref<TextInput>;
   /** Saves the correction (one versioned write, with Undo) and closes. */
   onDone: () => void;
 }
@@ -1212,36 +1239,48 @@ export interface CorrectionEditorProps {
 type StepField = { value: number | null; down: StepTarget; up: StepTarget };
 
 /**
- * A done row's KG or REPS edited in its row (18 Oct): the same − value +
- * as the open row, with the steps from `buildSetEditView`. Nothing is
+ * A done row's KG or REPS edited in its row (18 Oct): the same `− value +`
+ * line as the open row (1.2), with the steps from `buildSetEditView`. It
+ * opens with its field focused, so a correction is typed at once. Nothing is
  * written per step; Done (or a tap elsewhere) sends one `correctSet` (rule 2).
  */
 export function CorrectionEditor(p: CorrectionEditorProps) {
   const theme = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
   const step = p.ax ? 60 : theme.target.workout.height;
-  const numeral = p.ax ? 40 : 32;
+  const focusOf = (field: CellField) => () => {
+    p.onFocusField?.(field);
+  };
   let editor: ReactNode = null;
+  let stack = false;
   if ((p.field === 'time' || p.field === 'distance') && p.duration && p.distance) {
-    // Cardio (19 Oct): its time (minutes) and distance together, as in the open row.
+    // Cardio (19 Oct): its time (minutes) and distance together, as in the open row (1.3).
+    stack = true;
+    const duration = p.duration;
+    const distance = p.distance;
     editor = (
-      <View style={{ flex: 1, flexDirection: p.ax ? 'column' : 'row', gap: theme.space['2'] }}>
-        <NumberStepper key="time" flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="TIME" unit={null} decimals={false} time value={p.duration.value} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />
-        <NumberStepper key="dist" flex={p.ax ? null : 1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />
-      </View>
+      <StepperTileRow tiles={cardioPairTiles({ timeText: duration.value === null ? '—' : CARDIO_TIME_FORMAT.show(duration.value), distance })} estimate={openRowWidth(windowWidth)} step={step} gap={theme.space['2']}>
+        {({ numeralSize, compact, flexOf }) => (
+          <>
+            <NumberStepper key="time" autoFocus={p.field === 'time'} onFocus={focusOf('time')} flex={flexOf(1)} stepSize={step} numeralSize={numeralSize} compact={compact} label="TIME" unit={null} decimals={false} time value={duration.value} down={duration.down} up={duration.up} onChange={p.onTime} />
+            <NumberStepper key="dist" {...(p.distanceRef ? { inputRef: p.distanceRef } : {})} autoFocus={p.field === 'distance'} onFocus={focusOf('distance')} flex={flexOf(1)} stepSize={step} numeralSize={numeralSize} compact={compact} label="DIST M" unit={null} value={distance.value} decimals down={distance.down} up={distance.up} onChange={p.onDistance} />
+          </>
+        )}
+      </StepperTileRow>
     );
   } else if (p.field === 'load' && p.loadField) {
-    editor = <NumberStepper key="load" flex={1} stepSize={step} numeralSize={numeral} label={`${p.loadField.label} ${p.loadField.unitText}`.toUpperCase()} unit={null} value={p.loadField.value} decimals down={p.loadField.down} up={p.loadField.up} hint={p.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
+    editor = <NumberStepper key="load" variant="inline" autoFocus onFocus={focusOf('load')} flex={1} stepSize={step} label={`${p.loadField.label} ${p.loadField.unitText}`} unit={null} value={p.loadField.value} decimals down={p.loadField.down} up={p.loadField.up} hint={p.loadField.assisted ? 'More assistance is easier' : null} onChange={p.onLoad} />;
   } else if (p.field === 'reps' && p.reps) {
-    editor = <NumberStepper key="reps" flex={1} stepSize={step} numeralSize={numeral} label="REPS" unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
+    editor = <NumberStepper key="reps" variant="inline" autoFocus onFocus={focusOf('reps')} flex={1} stepSize={step} label="Reps" unit={null} value={p.reps.value} decimals={false} down={p.reps.down} up={p.reps.up} onChange={p.onReps} />;
   } else if (p.field === 'time' && p.duration) {
-    editor = <NumberStepper key="time" flex={1} stepSize={step} numeralSize={numeral} label="TIME" unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
+    editor = <NumberStepper key="time" variant="inline" autoFocus onFocus={focusOf('time')} flex={1} stepSize={step} label="Time" unit="s" value={p.duration.value} decimals={false} down={p.duration.down} up={p.duration.up} onChange={p.onTime} />;
   } else if (p.field === 'distance' && p.distance) {
-    editor = <NumberStepper key="dist" flex={1} stepSize={step} numeralSize={numeral} label="DIST M" unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
+    editor = <NumberStepper key="dist" variant="inline" autoFocus onFocus={focusOf('distance')} flex={1} stepSize={step} label="Distance, metres" unit={null} value={p.distance.value} decimals down={p.distance.down} up={p.distance.up} onChange={p.onDistance} />;
   }
   if (editor === null) return null;
   return (
-    <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['2'], paddingTop: theme.space['1'] }}>
-      <InlineEditor ax={p.ax} onDone={p.onDone}>
+    <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, paddingHorizontal: theme.space['1'] }}>
+      <InlineEditor ax={p.ax} stack={stack} onDone={p.onDone}>
         {editor}
       </InlineEditor>
     </View>
@@ -1312,6 +1351,7 @@ export function NowChip({ direction, onPress }: { direction: 'below' | 'above'; 
  */
 export function RestBar({ rest, onAdjust, onSkip, onOpen }: { rest: RestView; onAdjust: (deltaS: number) => void; onSkip: () => void; onOpen: () => void }) {
   const theme = useTheme();
+  const narrow = useWindowDimensions().width < 390;
   const paused = rest.kind === 'paused';
   const ended = rest.kind === 'ended';
   const rested = rest.kind === 'ended' && !rest.skipped ? formatDuration(rest.restedMs / 1000) : null;
@@ -1338,7 +1378,7 @@ export function RestBar({ rest, onAdjust, onSkip, onOpen }: { rest: RestView; on
   );
   return (
     <View style={{ marginHorizontal: theme.space['3'], marginBottom: theme.space['2'], minHeight: 64, borderRadius: theme.radius.md, backgroundColor: theme.colors['bg.surface'], overflow: 'hidden', justifyContent: 'center' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['3'], gap: theme.space['1'] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: theme.space['3'], gap: theme.space['2'] }}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={ended ? `Rest done${rested !== null ? `, rested ${rested}` : ''}` : `Rest${paused ? ', paused' : ''}, ${formatDuration(remainingS)} left. Opens the rest screen.`}
@@ -1355,9 +1395,12 @@ export function RestBar({ rest, onAdjust, onSkip, onOpen }: { rest: RestView; on
           ) : (
             <>
               {paused ? <Icon name="pause.circle.fill" color="status.warning" size={16} /> : null}
-              <AppText variant="label" color={paused ? 'status.warning' : 'text.tertiary'}>
-                {paused ? 'REST · PAUSED' : 'REST'}
-              </AppText>
+              {/* Below 390 pt wide the eyebrow drops (the countdown and pills need the room); paused keeps its word. */}
+              {!narrow || paused ? (
+                <AppText variant="label" color={paused ? 'status.warning' : 'text.tertiary'} numberOfLines={1}>
+                  {paused ? (narrow ? 'PAUSED' : 'REST · PAUSED') : 'REST'}
+                </AppText>
+              ) : null}
               <AppText variant="headline" numeric color={paused ? 'text.tertiary' : 'text.primary'} style={{ fontSize: 26, lineHeight: 32 }} maxFontSizeMultiplier={1.6}>
                 {formatDuration(remainingS)}
               </AppText>
@@ -1385,7 +1428,7 @@ export function ChatButton({ ax, onPress }: { ax: boolean; onPress: () => void }
     >
       <Icon name="text.bubble" color="text.primary" size={22} />
       {!ax ? (
-        <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }} maxFontSizeMultiplier={1}>
+        <AppText variant="label" color="text.secondary" style={{ fontSize: 13, lineHeight: 16 }}>
           Chat
         </AppText>
       ) : null}

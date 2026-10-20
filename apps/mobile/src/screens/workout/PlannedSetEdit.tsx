@@ -1,7 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toggleRepRange, type PlannedSetEdits } from '@fizz/domain';
 
@@ -10,7 +9,8 @@ import { returnToWorkout } from '../../navigation/actions';
 import type { ActiveWorkoutData } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, DangerTextButton, NumberAccessory, NumberStepper, PrimaryButton, SecondaryButton, StatusLine, StepperTileRow, TextButton, TextField } from '../../ui';
+import { WORKOUT_KEYBOARD } from '../../workout/keyboard';
+import { ActionBar, AppText, Chip, ChipRow, DangerTextButton, NUMBER_ACCESSORY_ID, NumberAccessory, NumberStepper, SecondaryButton, SheetKeyboardAvoidingView, StatusLine, StepperTileRow, TextButton, TextField, useKeyboardVisible } from '../../ui';
 import { targetRpeChips } from '../../workout/exercise-menu';
 import { NOTE_MAX, noteChanged, noteValue } from '../../workout/notes';
 import { committedLoad, loadNeedsFit, plannedEditSave } from '../../workout/set-edit';
@@ -31,7 +31,7 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
   const services = useServices();
   const changed = useDataChanged();
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardVisible();
   const { width: windowWidth } = useWindowDimensions();
   const [edits, setEdits] = useState<PlannedSetEdits>({});
   /** The load as typed (fitted to the equipment for the view and the save); undefined = untouched. */
@@ -133,9 +133,11 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
   const offEquipment = typedLoad !== undefined && typedLoad !== null && snapped !== typedLoad;
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
+    // 2.1: the sheet avoids the keyboard; Save sits in a fixed bar on it, so a change saves without scrolling.
+    // Review S1: the avoiding view alone lifts it (no automaticallyAdjustKeyboardInsets, or the inset counts twice).
+    <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
       <NumberAccessory />
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>{`Edit set ${String(view.setNumber)} · ${view.exerciseName}`}</AppText>
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
@@ -294,10 +296,9 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
           <AppText variant="label" color="text.secondary">
             Note
           </AppText>
-          <TextField accessibilityLabel="Note" value={noteText ?? storedNote ?? ''} onChangeText={setNoteText} multiline maxLength={NOTE_MAX} />
+          <TextField accessibilityLabel="Note" value={noteText ?? storedNote ?? ''} onChangeText={setNoteText} multiline maxLength={NOTE_MAX} inputAccessoryViewID={NUMBER_ACCESSORY_ID} />
         </View>
         {error ? <StatusLine icon="info.circle" tone="info" text={error} /> : null}
-        <PrimaryButton label="Save changes" disabled={!view.changed && !noteEdited} onPress={() => void save()} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['3'] }}>
           {!view.isCurrent ? <SecondaryButton label="Do next" onPress={() => void doNext()} /> : null}
           <SecondaryButton label="Insert set after" onPress={() => void insertAfter()} />
@@ -305,6 +306,7 @@ export function PlannedSetEdit({ data, setId, error, onRefused, onReload }: { da
         <View style={{ height: theme.space['8'] }} />
         <DangerTextButton label="Delete set" onPress={() => void remove()} />
       </ScrollView>
-    </View>
+      <ActionBar surface keypadOpen={keyboard} primary={{ label: 'Save changes', disabled: !view.changed && !noteEdited, onPress: () => void save() }} />
+    </SheetKeyboardAvoidingView>
   );
 }

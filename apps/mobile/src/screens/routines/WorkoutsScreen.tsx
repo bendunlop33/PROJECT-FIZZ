@@ -12,7 +12,7 @@ import { PLAN_COPY } from '../../services/plan-services';
 import type { EditorFrom, LibraryToastParam } from '../../navigation/types';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, Banner, Eyebrow, Icon, SecondaryButton, StatusLine, Tag, TextButton, Toast } from '../../ui';
+import { AppText, Banner, Eyebrow, Icon, SecondaryButton, StatusLine, Tag, TextButton, Toast, ToastHost, toastBottom } from '../../ui';
 import { deleteConfirm, LIBRARY_COPY_UI, LIBRARY_TOASTS, rowMenu } from '../../workout/library-view';
 import { useSaveToWorkouts } from './SaveWorkoutSheet';
 import { LiftTargetsBlock } from '../library/LiftTargetsBlock';
@@ -363,8 +363,9 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
       <ScrollView ref={scrollRef} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + insets.bottom }}>
         {body}
       </ScrollView>
-      {toast ? (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + theme.space['2'] }}>
+      {/* 0.6: on the tab bar (this list is the Library tab's), floating; it never reflows the list. */}
+      <ToastHost bottom={toastBottom({ footerHeight: null, insetBottom: insets.bottom, space2: theme.space['2'], tab: true })}>
+        {toast ? (
           <Toast
             icon="info.circle"
             text={toast.text}
@@ -380,8 +381,8 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
                 }
               : {})}
           />
-        </View>
-      ) : null}
+        ) : null}
+      </ToastHost>
       {save.sheet}
     </View>
   );

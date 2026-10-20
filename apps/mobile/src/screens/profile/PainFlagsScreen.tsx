@@ -66,6 +66,12 @@ export function PainFlagsScreen() {
                   }}
                 />
               }
+              trailingAction={{
+                label: 'Clear',
+                onPress: () => {
+                  confirmClearFlag(services, f, report);
+                },
+              }}
             />
           ))}
         </Group>

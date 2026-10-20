@@ -21,6 +21,8 @@ import { haptic } from '../device/haptics';
 import { useTheme } from '../theme';
 import { AppText, Icon, PrimaryButton } from '../ui';
 import { AX_FONT_SCALE } from '../workout/overview';
+import { useAxisWidth } from './axis-measure';
+import { TICK_MAX_SCALE } from './axis-width';
 import { ACTIVITY_LINE_DIMS, activityLineLayout, countBarWidth, guessLabelWidth, measuredLabelBox, thinLabelsByWidth } from './chart-layout';
 import { FREQUENCY_COLUMNS, FREQUENCY_HEADERS } from './frequency-columns';
 import { loadTrendCanvas } from './load-charts';
@@ -37,9 +39,44 @@ export function useAx(): boolean {
   return useWindowDimensions().fontScale >= AX_FONT_SCALE;
 }
 
-/** A full-width segmented control, 44pt (selected: `accent.subtle` with `text.primary`; never colour alone, the label is Semibold). `selected: null`: none (a custom period). */
+/**
+ * A full-width segmented control, 44pt (selected: `accent.subtle` with `text.primary`; never colour alone, the label is Semibold). `selected: null`: none (a custom period).
+ * Design pass 6.5: below AX the labels shrink to fit (to 0.85); at AX sizes it becomes stacked radio rows, so every option is readable.
+ */
 export function Segmented<K extends string | number>({ options, selected, onSelect, label }: { options: readonly { key: K; label: string }[]; selected: K | null; onSelect: (k: K) => void; label: string }) {
   const theme = useTheme();
+  const ax = useAx();
+  const pick = (o: { key: K }, on: boolean) => {
+    if (on) return;
+    haptic('step');
+    onSelect(o.key);
+  };
+  if (ax) {
+    return (
+      <View accessibilityRole="radiogroup" accessibilityLabel={label} style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.sm, paddingHorizontal: theme.space['3'] }}>
+        {options.map((o, i) => {
+          const on = o.key === selected;
+          return (
+            <Pressable
+              key={String(o.key)}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={`${label}, ${o.label}, ${String(i + 1)} of ${String(options.length)}`}
+              onPress={() => {
+                pick(o, on);
+              }}
+              style={{ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], borderTopWidth: i === 0 ? 0 : theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
+            >
+              <AppText variant="label" color={on ? 'text.primary' : 'text.secondary'} style={{ flex: 1, fontWeight: on ? '600' : '400' }}>
+                {o.label}
+              </AppText>
+              {on ? <Icon name="checkmark" size={16} color="text.primary" /> : null}
+            </Pressable>
+          );
+        })}
+      </View>
+    );
+  }
   return (
     <View accessibilityRole="tablist" accessibilityLabel={label} style={{ flexDirection: 'row', backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.sm, padding: 2, gap: 2 }}>
       {options.map((o, i) => {
@@ -51,20 +88,19 @@ export function Segmented<K extends string | number>({ options, selected, onSele
             accessibilityState={{ selected: on }}
             accessibilityLabel={`${label}, ${o.label}, ${String(i + 1)} of ${String(options.length)}`}
             onPress={() => {
-              if (on) return;
-              haptic('step');
-              onSelect(o.key);
+              pick(o, on);
             }}
             style={{
               flex: 1,
               minHeight: theme.target.min.height,
               alignItems: 'center',
               justifyContent: 'center',
+              paddingHorizontal: 2,
               borderRadius: theme.radius.sm - 2,
               backgroundColor: on ? theme.colors['accent.subtle'] : 'transparent',
             }}
           >
-            <AppText variant="label" numeric color={on ? 'text.primary' : 'text.secondary'} style={{ fontWeight: on ? '600' : '400' }} numberOfLines={1}>
+            <AppText variant="label" numeric color={on ? 'text.primary' : 'text.secondary'} style={{ fontWeight: on ? '600' : '400' }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
               {o.label}
             </AppText>
           </Pressable>
@@ -283,7 +319,9 @@ function ActivityLine({ chart }: { chart: ActivityChartView }) {
   const [width, setWidth] = useState(0);
   // The tapped point, by its first date: a new period clears it.
   const [selectedFrom, setSelectedFrom] = useState<string | null>(null);
-  const dims = ACTIVITY_LINE_DIMS;
+  // Design pass 6.3: the axis is as wide as its widest count label (never narrower than its 24pt).
+  const axis = useAxisWidth(chart.yTicks.map((v) => String(v)), ACTIVITY_LINE_DIMS.axisWidth);
+  const dims = { ...ACTIVITY_LINE_DIMS, axisWidth: axis.width };
   const layout = activityLineLayout(
     chart.points.map((p) => p.count),
     chart.yTicks,
@@ -335,11 +373,12 @@ function ActivityLine({ chart }: { chart: ActivityChartView }) {
         ) : null}
         {layout.yTicks.map((t) => (
           <View key={t.label} style={{ position: 'absolute', left: 0, width: dims.axisWidth - 6, top: t.y - 9, height: 18, alignItems: 'flex-end', justifyContent: 'center' }}>
-            <AppText variant="label" color="chart.axisText" numeric maxFontSizeMultiplier={1.4}>
+            <AppText variant="label" color="chart.axisText" numeric maxFontSizeMultiplier={TICK_MAX_SCALE}>
               {t.label}
             </AppText>
           </View>
         ))}
+        {axis.measure}
         <Pressable
           accessible={false}
           onPress={(e) => {

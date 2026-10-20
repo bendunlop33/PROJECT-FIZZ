@@ -5,7 +5,8 @@ import type { CardView, WhyView } from '../../coach/sheet-view';
 import { whyView } from '../../coach/sheet-view';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Icon, TextButton } from '../../ui';
+import { AppText, Icon, SecondaryButton, TextButton } from '../../ui';
+import { CardActions, CoachCardFrame } from './CoachCardFrame';
 
 /**
  * An action card (coach-sheet §2.6): status icon and word, the line from the
@@ -37,21 +38,22 @@ export function CoachCard({
   const p = card.proposal;
   const toneColor = card.status.word === 'Applied' || card.status.word === 'Saved' || card.status.word === 'Logged' ? 'status.done' : card.status.word === 'Out of date' || card.status.word === 'Couldn’t apply' || card.status.word === 'Couldn’t apply here' ? 'status.warning' : 'text.secondary';
   return (
-    <View
-      style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, borderWidth: theme.components.cardBorderWidth, borderColor: theme.colors['border.control'], padding: theme.space['3'], gap: theme.space['2'] }}
-      accessible={false}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }} accessible accessibilityLabel={`${card.accessibilityPrefix} ${card.status.word}. ${card.text}`}>
-        <Icon name={card.status.icon} color={toneColor} size={18} />
-        <AppText variant="label" color="text.secondary">
-          {card.status.word}
-        </AppText>
+    <CoachCardFrame>
+      {/* The status word and the card's line are one VoiceOver element, read once (design pass nit). */}
+      <View accessible accessibilityLabel={`${card.accessibilityPrefix} ${card.status.word}. ${p === undefined ? card.text : p.title}`} style={{ gap: theme.space['2'] }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: theme.space['2'] }}>
+          <Icon name={card.status.icon} color={toneColor} size={18} />
+          <AppText variant="label" color="text.secondary" style={{ flexGrow: 1, flexShrink: 1 }}>
+            {card.status.word}
+          </AppText>
+        </View>
+        {p === undefined ? (
+          <AppText variant="callout" numeric>
+            {card.text}
+          </AppText>
+        ) : null}
       </View>
-      {p === undefined ? (
-        <AppText variant="callout" numeric>
-          {card.text}
-        </AppText>
-      ) : (
+      {p === undefined ? null : (
         <View style={{ gap: theme.space['1'] }}>
           <AppText variant="headline">{p.title}</AppText>
           {p.lines.map((l) => (
@@ -63,7 +65,7 @@ export function CoachCard({
           <AppText variant="callout" color="text.secondary">{`After: ${p.after}`}</AppText>
         </View>
       )}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+      <CardActions>
         <TextButton
           label={why === null ? 'Why?' : 'Hide'}
           tone="secondary"
@@ -86,7 +88,7 @@ export function CoachCard({
           />
         ) : null}
         {p?.canApply === true && onProposal !== undefined ? (
-          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['3'], rowGap: theme.space['1'] }}>
             <TextButton
               label="Not now"
               tone="secondary"
@@ -94,7 +96,7 @@ export function CoachCard({
                 onProposal(p.proposalId, 'not_now');
               }}
             />
-            <TextButton
+            <SecondaryButton
               label="Apply"
               disabled={busy}
               onPress={() => {
@@ -116,7 +118,7 @@ export function CoachCard({
           />
         ) : null}
         {card.gymChange?.canApply === true && onGymChange !== undefined ? (
-          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['3'], rowGap: theme.space['1'] }}>
             <TextButton
               label="Not now"
               tone="secondary"
@@ -124,7 +126,7 @@ export function CoachCard({
                 if (card.gymChange) onGymChange(card.gymChange.proposalId, 'not_now');
               }}
             />
-            <TextButton
+            <SecondaryButton
               label="Apply"
               disabled={busy}
               onPress={() => {
@@ -138,7 +140,7 @@ export function CoachCard({
           </View>
         ) : null}
         {card.newExercise?.canAdd === true && onNewExercise !== undefined ? (
-          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['3'], rowGap: theme.space['1'] }}>
             <TextButton
               label="Edit"
               tone="secondary"
@@ -146,7 +148,7 @@ export function CoachCard({
                 onNewExercise(card.actionId, 'edit');
               }}
             />
-            <TextButton
+            <SecondaryButton
               label="Add"
               disabled={busy}
               onPress={() => {
@@ -160,7 +162,7 @@ export function CoachCard({
           </View>
         ) : null}
         {card.memoryChoice !== undefined && !card.memoryChoice.split && onMemory !== undefined ? (
-          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['3'], rowGap: theme.space['1'] }}>
             <TextButton
               label="Not now"
               tone="secondary"
@@ -168,7 +170,7 @@ export function CoachCard({
                 if (card.memoryChoice) onMemory(card.memoryChoice.memoryId, card.memoryChoice.version, 'not_now');
               }}
             />
-            <TextButton
+            <SecondaryButton
               label="Save"
               disabled={busy}
               onPress={() => {
@@ -189,7 +191,7 @@ export function CoachCard({
             }}
           />
         ) : null}
-      </View>
+      </CardActions>
       {card.memoryChoice?.split === true && onMemory !== undefined ? (
         <View style={{ gap: theme.space['1'], alignItems: 'flex-start' }}>
           {(
@@ -218,7 +220,7 @@ export function CoachCard({
         </View>
       ) : null}
       {why !== null ? <WhyPanel why={why} /> : null}
-    </View>
+    </CoachCardFrame>
   );
 }
 

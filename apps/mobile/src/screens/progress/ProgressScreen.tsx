@@ -190,7 +190,7 @@ export function ProgressScreen() {
           </View>
         ) : null}
         <View style={segment === 'activity' ? { gap: theme.space['5'] } : { display: 'none' }}>
-      {consistencyData.state === 'ready' && consistencyData.value !== null ? <ConsistencyCard view={consistencyCardView(consistencyData.value, home.today)} /> : null}
+      {consistencyData.state === 'ready' && consistencyData.value !== null ? <ConsistencyCard ax={ax} view={consistencyCardView(consistencyData.value, home.today)} /> : null}
       <Overview
         home={home}
         view={home.view}
@@ -238,6 +238,9 @@ export function ProgressScreen() {
       <View style={{ flex: 1 }}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
+          // Design pass 6.2: one tap on a search result opens it; a drag hides the keyboard.
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['4'], paddingBottom: theme.space['8'] + 56 + (toastShown ? toastHeight : 0), gap: theme.space['5'] }}
         >
           {header}
@@ -299,11 +302,16 @@ export function ProgressScreen() {
   );
 }
 
-/** `Consistency` (plan tracker v1): counts and a mark per week, never colour alone; never "missed". */
-function ConsistencyCard({ view }: { view: ConsistencyCardView }) {
+/**
+ * `Consistency` (plan tracker v1): counts and a mark per week, never colour alone; never "missed".
+ * Design pass 6.1: 8 equal columns (`flex: 1, minWidth: 0`) with day-number labels on one line,
+ * capped in scale, so the newest week is always visible; at AX sizes, one row per week.
+ */
+function ConsistencyCard({ view, ax }: { view: ConsistencyCardView; ax: boolean }) {
+  const theme = useTheme();
   return (
     <Card>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', columnGap: theme.space['2'] }}>
         <AppText variant="sectionLabel" color="text.tertiary" accessibilityRole="header">
           {view.title.toUpperCase()}
         </AppText>
@@ -311,19 +319,35 @@ function ConsistencyCard({ view }: { view: ConsistencyCardView }) {
           {view.thisWeek}
         </AppText>
       </View>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        {view.weeks.map((w) => (
-          <View key={w.key} accessible accessibilityLabel={w.accessibilityLabel} style={{ alignItems: 'center', gap: 2 }}>
-            <AppText variant="callout" numeric>
-              {w.value}
-            </AppText>
-            {w.atAim === true ? <Icon name="checkmark" size={12} color="text.secondary" /> : <View style={{ height: 12 }} />}
-            <AppText variant="label" color="text.tertiary" numeric>
-              {w.label}
-            </AppText>
-          </View>
-        ))}
-      </View>
+      {ax ? (
+        <View>
+          {view.weeks.map((w) => (
+            <View key={w.key} accessible accessibilityLabel={w.accessibilityLabel} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], minHeight: 44, borderTopWidth: theme.dividerWidth, borderColor: theme.colors['border.divider'] }}>
+              <AppText variant="callout" color="text.secondary" numeric style={{ flex: 1 }}>
+                {w.rowLabel}
+              </AppText>
+              <AppText variant="callout" numeric>
+                {w.value}
+              </AppText>
+              {w.atAim === true ? <Icon name="checkmark" size={14} color="text.secondary" /> : <View style={{ width: 14 }} />}
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row' }}>
+          {view.weeks.map((w) => (
+            <View key={w.key} accessible accessibilityLabel={w.accessibilityLabel} style={{ flex: 1, minWidth: 0, alignItems: 'center', gap: 2 }}>
+              <AppText variant="callout" numeric numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                {w.value}
+              </AppText>
+              {w.atAim === true ? <Icon name="checkmark" size={12} color="text.secondary" /> : <View style={{ height: 12 }} />}
+              <AppText variant="label" color="text.tertiary" numeric numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                {w.label}
+              </AppText>
+            </View>
+          ))}
+        </View>
+      )}
       {view.atAim !== null ? (
         <AppText variant="callout" color="text.secondary" numeric>
           {view.atAim}

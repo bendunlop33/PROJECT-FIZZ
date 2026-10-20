@@ -1,6 +1,6 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, View, type TextInput } from 'react-native';
 
 import { ACTIVITY_COPY, addDays, localDateOf, localDateText, localHourUtcMs, toMs } from '@fizz/domain';
 import type { Activity } from '@fizz/schemas';
@@ -10,7 +10,7 @@ import { dateAt } from '../../clock';
 import { newUuid } from '../../device/runtime';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, DangerTextButton, PrimaryButton, StatusLine, TextField } from '../../ui';
+import { AppText, BottomCard, DangerTextButton, KeyboardDoneAccessory, PrimaryButton, StatusLine, TextField } from '../../ui';
 
 import type { ActivitySaved } from '../../activity/activity-toast';
 
@@ -18,6 +18,9 @@ export type { ActivitySaved };
 
 /** How far back or ahead the date wheel goes. */
 const DATE_RANGE_DAYS = 60;
+
+/** The Done / Next bar on the time and distance keypads. */
+const ACTIVITY_ACCESSORY_ID = 'activity-sheet-numbers';
 
 /**
  * (Ben, 20 Oct) Today › ＋ Activity: a run, ride, swim, sport or other, done
@@ -37,6 +40,8 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
   // One op ID and activity ID per open sheet: a double tap on Save saves once (rule 5).
   const op = useRef(newUuid());
   const newId = useRef(newUuid());
+  const distanceField = useRef<TextInput>(null);
+  const [focused, setFocused] = useState<'minutes' | 'distance' | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -81,7 +86,18 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
   }
 
   return (
-    <BottomCard visible={visible} onClose={onClose}>
+    <BottomCard
+      visible={visible}
+      onClose={onClose}
+      footer={
+        <>
+          {message !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={message} /> : null}
+          <PrimaryButton label={ACTIVITY_COPY.save} busy={busy} onPress={() => void save()} />
+          {activity !== null ? <DangerTextButton label={ACTIVITY_COPY.delete} disabled={busy} onPress={() => void remove()} /> : null}
+        </>
+      }
+    >
+      <KeyboardDoneAccessory nativeID={ACTIVITY_ACCESSORY_ID} onNext={focused === 'minutes' ? () => distanceField.current?.focus() : null} />
       <AppText variant="title2">{ACTIVITY_COPY.title}</AppText>
       <Chips items={ACTIVITY_KINDS.map((k) => ({ key: k.kind, label: k.label, selected: form.kind === k.kind }))} onPick={(k) => { setForm((f) => ({ ...f, kind: k as ActivityForm['kind'] })); }} />
       <Chips
@@ -112,6 +128,10 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
           <TextField
             accessibilityLabel="Time in minutes"
             keyboardType="number-pad"
+            inputAccessoryViewID={ACTIVITY_ACCESSORY_ID}
+            onFocus={() => {
+              setFocused('minutes');
+            }}
             value={minutesText}
             maxLength={4}
             onChangeText={(t) => {
@@ -124,8 +144,13 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
         <View style={{ flex: 1, gap: theme.space['1'] }}>
           <AppText variant="callout" color="text.secondary">{`${ACTIVITY_COPY.distance} (km)`}</AppText>
           <TextField
+            ref={distanceField}
             accessibilityLabel="Distance in kilometres"
             keyboardType="decimal-pad"
+            inputAccessoryViewID={ACTIVITY_ACCESSORY_ID}
+            onFocus={() => {
+              setFocused('distance');
+            }}
             value={form.distanceKm}
             maxLength={7}
             onChangeText={(t) => {
@@ -141,9 +166,6 @@ export function ActivitySheet({ visible, activity, onClose, onSaved }: { visible
           setForm((f) => ({ ...f, effort: f.effort === k ? null : (k as ActivityForm['effort']) }));
         }}
       />
-      {message !== null ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={message} /> : null}
-      <PrimaryButton label={ACTIVITY_COPY.save} busy={busy} onPress={() => void save()} />
-      {activity !== null ? <DangerTextButton label={ACTIVITY_COPY.delete} disabled={busy} onPress={() => void remove()} /> : null}
     </BottomCard>
   );
 }

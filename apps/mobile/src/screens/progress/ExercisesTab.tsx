@@ -388,7 +388,8 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
       {ax ? null : (
         <View style={{ flexDirection: 'row', gap: theme.space['2'] }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           {head('DATE', { width: COLS.date })}
-          {head('TOP SET', { flex: 1 })}
+          {/* Design pass 6.4: TOP SET gets the most room (`L 22.5×12` uncut at 375pt). */}
+          {head('TOP SET', { flex: 1.6 })}
           {/* Its own plain unit: a total counts both dumbbells, never `kg each` (review B1). */}
           {head(view.table.totalUnit === null ? 'TOTAL' : `TOTAL ${view.table.totalUnit.toUpperCase()}`, { flex: 1, textAlign: 'right' })}
           {head('SETS', { width: COLS.sets, textAlign: 'right' })}
@@ -428,7 +429,9 @@ function SessionsTable({ view, targets, selected, onSelect }: { view: ExerciseTa
                 ) : (
                   <>
                     {cell(r.cells.date, { width: COLS.date })}
-                    {cell(r.cells.topSet, { flex: 1 })}
+                    <AppText variant="callout" numeric numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ flex: 1.6 }}>
+                      {r.cells.topSet}
+                    </AppText>
                     {cell(r.cells.total, { flex: 1, textAlign: 'right' })}
                     {cell(r.cells.sets, { width: COLS.sets, textAlign: 'right' })}
                     {cell(r.cells.e1rm, { flex: 1, textAlign: 'right' })}

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { checkRoutineName, PLAN_VERDICT_WORD, summaryTimeBounds, toIso, toMs, type PlannedVsDone, type WorkoutSummary } from '@fizz/domain';
+import { checkRoutineName, PLAN_VERDICT_WORD, summaryTimeBounds, toIso, toMs, type WorkoutSummary } from '@fizz/domain';
 import { nextTargetTapOpId } from '@fizz/coach';
 import { readTextCoachState } from '@fizz/providers';
 
@@ -19,7 +19,9 @@ import type { RootStackParams } from '../../navigation/types';
 import type { WorkoutPresence } from '../../services/history-services';
 import { firstTime, useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { finishMotion, listEnterMotion, shouldPlayFinish, TIMING, useTheme } from '../../theme';
-import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatGrid, StatusLine, Tag, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
+import { AppText, BottomBar, Card, DelayedFade, FadeIn, RevealOnce, ChecklistRow, HeroHeader, Icon, LinkLine, PrimaryButton, RuledSection, SecondaryButton, SectionHeader, StatStrip, StatusLine, Tag, type StatItem, TextButton, TEXT_PRESSED_OPACITY, Toast } from '../../ui';
+import { useAx } from '../../progress/components';
+import { summaryPlanLine, summaryResultsLine, VERDICT_ICON } from '../../workout/summary-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import { NameSheet } from '../routines/NameSheet';
 import { useSaveToWorkouts } from '../routines/SaveWorkoutSheet';
@@ -43,6 +45,7 @@ export function SummaryScreen() {
   const services = useServices();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const ax = useAx();
   const { sessionId, back = false, justFinished: finishedNow = false, editTimes = false } = useRoute<RouteProp<RootStackParams, 'Summary'>>().params;
   // Opened from Progress `Edit times`: the time correction shows at once, and closing it returns there (progress.md §2.3).
   const [times, setTimes] = useState(editTimes);
@@ -241,6 +244,14 @@ export function SummaryScreen() {
     return null;
   }
 
+  const pvd = data.value.planVsDone;
+  // Design pass 3.3: the shared strip. Active, Exercises x/y, Sets, Planned x/y (with a plan).
+  const statItems: StatItem[] = [
+    ...(sum.facts.activeText !== null ? [{ label: 'Active', value: sum.facts.activeText }] : []),
+    { label: 'Exercises', value: `${String(sum.facts.exercisesDone)}/${String(sum.facts.exercisesTotal)}` },
+    { label: 'Sets', value: String(sum.facts.workingSets) },
+    ...(pvd !== null ? [{ label: 'Planned', value: `${String(pvd.doneSets)}/${String(pvd.plannedSets)}` }] : []),
+  ];
   const flaggedHere = painFlags.filter((f) => sum.exercises.some((e) => e.exerciseId === f.exerciseId));
   const tz = sum.tz;
   const range = `${formatTime(toMs(sum.startedAtUtc), tz)}–${sum.endedAtUtc ? formatTime(toMs(sum.endedAtUtc), tz) : ''}`;
@@ -287,6 +298,7 @@ export function SummaryScreen() {
                 <HeroHeader
                   eyebrow="Workout done"
                   title={sum.title}
+                  titleLines={2}
                   lines={[(sum.dateOnly !== null ? [formatCalendarDate(sum.dateOnly), sum.gymName, 'date only'] : [formatShortDate(toMs(sum.startedAtUtc), tz), sum.gymName, `${range}${edited}`]).filter(Boolean).join(' · ')]}
                 />
               </View>
@@ -429,16 +441,9 @@ export function SummaryScreen() {
           />
         ))}
 
-        {/* D: large light numerals on calm tiles. */}
+        {/* D: the shared stat strip (design pass 3.3): one row of light numerals between hairlines, so the exercises start higher. */}
         <FadeIn motion={follow(0)}>
-        <StatGrid
-          items={[
-            ...(sum.facts.activeText !== null ? [{ label: 'Active time', value: sum.facts.activeText }] : []),
-            { label: 'Exercises', value: `${String(sum.facts.exercisesDone)}/${String(sum.facts.exercisesTotal)}` },
-            { label: 'Working sets', value: String(sum.facts.workingSets), unit: sum.facts.skippedSets > 0 ? `(${String(sum.facts.skippedSets)} skipped)` : null },
-            ...(sum.facts.warmupSets > 0 ? [{ label: 'Warm-up sets', value: String(sum.facts.warmupSets) }] : []),
-          ]}
-        />
+          <StatStrip ax={ax} accessibilityLabel={statItems.map((it) => `${it.label} ${it.value}`).join(', ')} items={statItems} />
         </FadeIn>
 
         {sum.comparison ? (
@@ -466,55 +471,53 @@ export function SummaryScreen() {
           <View>
             <SectionHeader title="Exercises" />
             {/* Plan tracker v1 (19 Oct): planned vs done, numbers and one word each, never colour alone. */}
-            {data.value.planVsDone !== null ? (
-              <AppText variant="callout" color="text.secondary" numeric>
-                {data.value.planVsDone.header}
-              </AppText>
-            ) : null}
-            {sum.exercises.map((e, i) => (
-              <View
-                key={e.sessionExerciseId}
-                style={{
-                  gap: 2,
-                  paddingVertical: theme.space['3'],
-                  borderTopWidth: theme.dividerWidth,
-                  borderBottomWidth: i === sum.exercises.length - 1 ? theme.dividerWidth : 0,
-                  borderColor: theme.colors['border.divider'],
-                  marginTop: i === 0 ? theme.space['2'] : 0,
-                }}
-              >
-                {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${e.name}, ${e.setsText}`}
-                  accessibilityHint="Opens this exercise’s history"
-                  onPress={() => {
-                    navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
+            {sum.exercises.map((e, i) => {
+              // Design pass 3.1: at most 3 lines. Name + verdict; the sets logged (unit note on the line); one plan line.
+              const plan = data.value.planVsDone?.rows.find((r) => r.sessionExerciseId === e.sessionExerciseId) ?? null;
+              const word = plan === null ? null : PLAN_VERDICT_WORD[plan.verdict];
+              const results = summaryResultsLine(e);
+              const third = summaryPlanLine(e, plan);
+              return (
+                <View
+                  key={e.sessionExerciseId}
+                  style={{
+                    gap: 2,
+                    paddingVertical: theme.space['3'],
+                    borderTopWidth: theme.dividerWidth,
+                    borderBottomWidth: i === sum.exercises.length - 1 ? theme.dividerWidth : 0,
+                    borderColor: theme.colors['border.divider'],
+                    marginTop: i === 0 ? theme.space['2'] : 0,
                   }}
-                  style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
                 >
-                  <AppText variant="headline" style={{ flex: 1 }}>
-                    {e.name}
-                  </AppText>
-                  <AppText variant="callout" color="text.secondary" numeric>
-                    {e.setsText}
-                  </AppText>
-                  <Icon name="chevron.right" color="text.tertiary" size={14} />
-                </Pressable>
-                {e.results !== '' ? (
-                  <AppText variant="callout" numeric>
-                    {e.results}
-                  </AppText>
-                ) : null}
-                {planLine(data.value.planVsDone, e.sessionExerciseId)}
-                {e.skipped > 0 ? <AppText variant="callout" color="text.secondary" numeric>{`${String(e.skipped)} skipped`}</AppText> : null}
-                {e.sides ? (
-                  <AppText variant="callout" color="text.secondary" numeric>
-                    {e.sides}
-                  </AppText>
-                ) : null}
-              </View>
-            ))}
+                  {/* The exercise's history (progress.md §2.7, slice B): its series, with this workout's point selected. */}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={[e.name, e.setsText, word].filter((x): x is string => x !== null).join(', ')}
+                    accessibilityHint="Opens this exercise’s history"
+                    onPress={() => {
+                      navigation.navigate('ExerciseProgress', { exerciseId: e.exerciseId, sessionId, sessionExerciseId: e.sessionExerciseId, name: e.name });
+                    }}
+                    style={({ pressed }) => ({ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], opacity: pressed ? 0.6 : 1 })}
+                  >
+                    <AppText variant="headline" numberOfLines={2} style={{ flex: 1 }}>
+                      {e.name}
+                    </AppText>
+                    {plan !== null && word !== null ? <Tag text={word} icon={VERDICT_ICON[plan.verdict]} /> : null}
+                    <Icon name="chevron.right" color="text.tertiary" size={14} />
+                  </Pressable>
+                  {results !== '' ? (
+                    <AppText variant="callout" numeric>
+                      {results}
+                    </AppText>
+                  ) : null}
+                  {third.text !== '' ? (
+                    <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={third.spoken}>
+                      {third.text}
+                    </AppText>
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         ) : null}
 
@@ -556,7 +559,8 @@ export function SummaryScreen() {
         ) : null}
 
         <View style={{ gap: theme.space['1'] }}>
-          <SectionHeader title="Coach note" />
+          {/* No orphan label (design pass 3.5): the heading only over a note. */}
+          {coachNote !== null ? <SectionHeader title="Coach note" /> : null}
           {coachNote !== null ? (
             <AppText variant="callout" color="text.secondary">
               {coachNote}
@@ -582,13 +586,14 @@ export function SummaryScreen() {
             <View style={{ flex: 1 }}>
               <SecondaryButton
                 label="Edit times"
+                size="primary"
                 onPress={() => {
                   setTimes(true);
                 }}
               />
             </View>
           ) : null}
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 2 }}>
             <PrimaryButton label="Done" onPress={done} />
           </View>
         </View>
@@ -635,18 +640,6 @@ export function SummaryScreen() {
         }}
       />
     </View>
-  );
-}
-
-/** `3/3 sets · 8, 8, 7 of 8 · Short`: the exercise against today's plan (plan tracker v1), or nothing with no plan. */
-function planLine(p: PlannedVsDone | null, sessionExerciseId: string) {
-  const row = p?.rows.find((r) => r.sessionExerciseId === sessionExerciseId);
-  if (row === undefined) return null;
-  const word = PLAN_VERDICT_WORD[row.verdict];
-  return (
-    <AppText variant="callout" color="text.secondary" numeric accessibilityLabel={`Plan: ${row.text.replace(' · ', ', ')}. ${word}.`}>
-      {`${row.text} · ${word}`}
-    </AppText>
   );
 }
 
@@ -707,7 +700,8 @@ function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTa
           {row.note}
         </AppText>
       ) : null}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['8'] }}>
+      {/* Design pass 3.5: the actions wrap, so Apply is never clipped at large text. */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
         <TextButton
           label={why ? 'Hide' : 'Why?'}
           tone="secondary"
@@ -715,7 +709,7 @@ function NextRow({ row, onTap }: { row: NextTimeRowView; onTap: (tap: NextTimeTa
             setWhy((w) => !w);
           }}
         />
-        <View style={{ flexDirection: 'row', gap: theme.space['4'] }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['4'], rowGap: theme.space['2'] }}>
           {row.actions.map((a) => (
             <TextButton
               key={a.tap}

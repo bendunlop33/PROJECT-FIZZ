@@ -277,10 +277,10 @@ export function useWorkoutCoach(sessionId: string | null, onApplied: () => void,
   };
 }
 
-/** `Adjust` (§2.2): left of `⋯` in the exercise header. */
+/** `Adjust` (§2.2): left of `⋯` in the exercise header. Always the one word; the coach's state is an icon (1.9). */
 export function AdjustButton({ coach }: { coach: WorkoutCoach }) {
   const view = coach.availability === null ? null : adjustControlView(coach.availability);
-  return <TextButton label={view?.caption ? `Adjust · ${view.caption}` : 'Adjust'} tone="secondary" onPress={coach.toggleAdjust} />;
+  return <TextButton label="Adjust" tone="secondary" {...(view?.icon ? { icon: view.icon } : {})} accessibilityLabel={view?.accessibilityLabel ?? 'Adjust'} onPress={coach.toggleAdjust} />;
 }
 
 /** The inline chip row under the header (no sheet). */

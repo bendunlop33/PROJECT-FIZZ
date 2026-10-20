@@ -29,8 +29,8 @@ describe('S3: Ask on the Muscles screen carries the Progress window', () => {
 
   it('Screen draws `floating` over the scroll area and leaves room under the content for it', () => {
     const src = read('ui/layout.tsx');
-    expect(src).toContain('(floating ? FLOATING_PILL_ROOM : 0)');
-    expect(src.indexOf('{floating}')).toBeGreaterThan(src.indexOf('</ScrollView>'));
+    expect(src).toContain('(showFloating ? FLOATING_PILL_ROOM : 0)');
+    expect(src.indexOf('{showFloating ? floating : null}')).toBeGreaterThan(src.indexOf('</ScrollView>'));
   });
 });
 

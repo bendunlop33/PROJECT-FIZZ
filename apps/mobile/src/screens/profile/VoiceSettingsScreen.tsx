@@ -4,7 +4,7 @@ import { View } from 'react-native';
 
 import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChoiceCard, Group, Row, Screen, SecondaryButton, SectionHeader } from '../../ui';
+import { AppText, Chip, ChipRow, ChoiceCard, Group, Row, Screen, SecondaryButton, SectionHeader } from '../../ui';
 import { appleSpeaker, installedVoices, phoneLocale, voiceCapability } from '../../voice/speaker';
 import { CUE_MODE_LABEL, cueModeOf, RATE_STEPS, rateLabel, READ_REPLIES_LABEL, withCueMode, type CueMode, type ReadReplies, type VoicePrefs } from '../../voice/settings';
 import { BETTER_VOICES_HINT, defaultVoice, needsBetterVoiceHint, resolveVoice, voiceLabel, voicesForLanguage, type VoiceOption } from '../../voice/voices';
@@ -70,7 +70,18 @@ export function VoiceSettingsScreen() {
   }
 
   return (
-    <Screen>
+    <Screen
+      footer={
+        <View style={{ gap: theme.space['2'] }}>
+          <SecondaryButton label={testing ? 'Playing…' : 'Test'} disabled={testing} onPress={() => void test()} />
+          {testFailed ? (
+            <AppText variant="callout" color="text.secondary">
+              Couldn’t play
+            </AppText>
+          ) : null}
+        </View>
+      }
+    >
       <SectionHeader title="Spoken cues" />
       <View style={{ gap: theme.space['2'] }} accessibilityRole="radiogroup">
         {CUE_MODES.map((m) => (
@@ -98,6 +109,24 @@ export function VoiceSettingsScreen() {
             }}
           />
         ))}
+      </View>
+
+      {/* Design pass 6.9: Speed above the voice list, wrapping chips. */}
+      <SectionHeader title="Speed" />
+      <View accessibilityRole="radiogroup">
+        <ChipRow>
+          {RATE_STEPS.map((r) => (
+            <Chip
+              key={r}
+              label={rateLabel(r)}
+              accessibilityLabel={r === 1 ? 'Normal speed' : `${String(r)} times speed`}
+              selected={voice.rate === r}
+              onPress={() => {
+                save({ rate: r });
+              }}
+            />
+          ))}
+        </ChipRow>
       </View>
 
       <SectionHeader title="Voice" />
@@ -139,30 +168,6 @@ export function VoiceSettingsScreen() {
         </View>
       )}
 
-      <SectionHeader title="Speed" />
-      <View style={{ flexDirection: 'row', gap: theme.space['2'] }} accessibilityRole="radiogroup">
-        {RATE_STEPS.map((r) => (
-          <Chip
-            key={r}
-            grow
-            label={rateLabel(r)}
-            accessibilityLabel={r === 1 ? 'Normal speed' : `${String(r)} times speed`}
-            selected={voice.rate === r}
-            onPress={() => {
-              save({ rate: r });
-            }}
-          />
-        ))}
-      </View>
-
-      <View style={{ gap: theme.space['2'] }}>
-        <SecondaryButton label={testing ? 'Playing…' : 'Test'} disabled={testing} onPress={() => void test()} />
-        {testFailed ? (
-          <AppText variant="callout" color="text.secondary">
-            Couldn’t play
-          </AppText>
-        ) : null}
-      </View>
     </Screen>
   );
 }

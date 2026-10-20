@@ -110,3 +110,70 @@ export function slotRepsDraft(
 export function setShapeStacked(asked: boolean | undefined, fontScale: number, axAt: number): boolean {
   return asked ?? fontScale >= axAt;
 }
+
+/**
+ * (Design pass 5.2) The set sheet's reps, kept valid by clamping: each end 1–100, and the end Ben moved
+ * pushes the other so From ≤ To (no error sentence).
+ */
+export function clampRepRange(r: { min: number | null; max: number | null }, moved: 'min' | 'max'): { min: number; max: number } {
+  const c = (v: number | null) => Math.max(1, Math.min(100, Math.round(v ?? 1)));
+  const min = c(r.min);
+  const max = c(r.max);
+  if (min <= max) return { min, max };
+  return moved === 'min' ? { min, max: min } : { min: max, max };
+}
+
+type RepRange = { min: number; max: number };
+
+/**
+ * (Review B2) A typed rep end, while typing: the range to save now, or null to
+ * hold it until blur. Each keystroke is a partial number (`1` on the way to
+ * `12`), so a typed end never pushes the other end; only a value that already
+ * keeps From ≤ To is saved.
+ */
+export function repRangeWhileTyping(saved: RepRange, end: 'min' | 'max', typed: number | null, exact: boolean): RepRange | null {
+  if (typed === null || !Number.isInteger(typed) || typed < 1 || typed > 100) return null;
+  if (exact) return { min: typed, max: typed };
+  if (end === 'min') return typed <= saved.max ? { min: typed, max: saved.max } : null;
+  return typed >= saved.min ? { min: saved.min, max: typed } : null;
+}
+
+/**
+ * (Review B2) The typed end when the field loses focus: an empty field keeps
+ * the saved range; otherwise it is clamped, and only now pushes the other end.
+ */
+export function repRangeOnBlur(saved: RepRange, end: 'min' | 'max', typed: number | null, exact: boolean): RepRange {
+  if (typed === null) return saved;
+  if (exact) return clampRepRange({ min: typed, max: typed }, 'min');
+  return clampRepRange(end === 'min' ? { min: typed, max: saved.max } : { min: saved.min, max: typed }, end);
+}
+
+/**
+ * (Review B2) The set sheet's From / To fields: typing goes through
+ * `repRangeWhileTyping`, blur through `repRangeOnBlur`, and a ± step clamps at
+ * once. `get` reads the saved range, `set` saves one.
+ */
+export function repRangeInput(p: { get: () => RepRange; exact: () => boolean; set: (r: RepRange) => void }) {
+  let typed: { end: 'min' | 'max'; value: number | null } | null = null;
+  const save = (next: RepRange) => {
+    const r = p.get();
+    if (next.min !== r.min || next.max !== r.max) p.set(next);
+  };
+  return {
+    type: (end: 'min' | 'max', v: number | null) => {
+      typed = { end, value: v };
+      const now = repRangeWhileTyping(p.get(), end, v, p.exact());
+      if (now !== null) save(now);
+    },
+    settle: () => {
+      const t = typed;
+      typed = null;
+      if (t !== null) save(repRangeOnBlur(p.get(), t.end, t.value, p.exact()));
+    },
+    step: (end: 'min' | 'max', v: number) => {
+      typed = null;
+      const r = p.get();
+      save(clampRepRange(end === 'min' ? { min: v, max: p.exact() ? v : r.max } : { min: r.min, max: v }, end));
+    },
+  };
+}

@@ -193,3 +193,15 @@ export function stepperRowTiles(p: { loadFlex: number; load: (RowField & { unit:
   if (p.reps) tiles.push({ flex: 1, texts: stepperTexts(p.reps.value, p.reps.down, p.reps.up, 2), unit: null });
   return tiles;
 }
+
+/**
+ * A cardio set's TIME and DIST tiles in the Table (design pass 1.3): kept
+ * together in one tile row, so `tileFit` makes them compact or stacks them
+ * instead of clipping `20:34` or overlapping a neighbour's − / +.
+ */
+export function cardioPairTiles(p: { timeText: string; distance: RowField }): TileSpec[] {
+  return [
+    { flex: 1, texts: [p.timeText, '00:00'], unit: null },
+    { flex: 1, texts: stepperTexts(p.distance.value, p.distance.down, p.distance.up, 3), unit: null },
+  ];
+}

@@ -402,7 +402,7 @@ The full state table and transitions are in [gym-switch.md](gym-switch.md) §3. 
 - Tap a row → editor (pushed in Profile, or a sheet when opened from a workout).
 - Number fields use the `WorkoutKeypad` layout with the step keys hidden (design-system §9.5); range fields step by the range's own increment. Return / `Next ›` moves to the next field; `Hide` closes the keypad. `Save` stays visible above the keypad.
 - The preview line and `Check a load` update after each change, locally (`getAchievableLoads`, `buildPlateSetup`), with no animation.
-- `Save` calls `addEquipment` or `updateEquipment(id, patch)` with an operation ID and expected version. On success: `haptic.commit`, back to the gym detail, toast `Saved. Future workouts use the new setup.` [Undo]. Undo saves the previous content as a new version (history of versions is kept; nothing is erased).
+- `Save` calls `addEquipment` or `updateEquipment(id, patch)` with an operation ID and expected version. On success: `haptic.commit`, back to the gym detail, toast `Saved` [Undo] (design pass, 20 Oct). Undo saves the previous content as a new version (history of versions is kept; nothing is erased).
 - `Cancel` with changes: `Discard changes to Dumbbells?` [Discard] [Keep editing].
 
 ### 4.2 Plate sets (GE3)
@@ -458,8 +458,8 @@ The full state table and transitions are in [gym-switch.md](gym-switch.md) §3. 
 | Common fields | `Name` · `Station label (optional)` · `Make / model (optional)` · `Used for` · `Notes (setup)` · `Availability` |
 | Barbell | `Bar weight` · `Plates` · `Count every plate` · `2 a side` · `One 1.25 kg plate can't be balanced, so it isn't used.` · `Heaviest you'll load (optional)` · `More options` · `Lightest you want targets to go (optional)` |
 | Dumbbells | `Weights are per dumbbell.` · `Range` · `From … to … every …` · `Add another range` · `In the rack (tap any that are missing)` · `Add a single weight` |
-| Stack | `Stack, as printed on the pins` · `Uneven stack? Enter each value` · `Add-on weights (optional)` · `Attachments` · `Rope` `Straight bar` `V-bar` `Single handle` `Lat bar` `Ankle strap` `Other` · `Numbers are as printed on the stack. They're never converted to free-weight equivalents.` |
-| Assisted | `Assistance, as printed` · `More assistance = easier. In a workout "+" adds assistance.` |
+| Stack | (Design pass, 20 Oct) `As printed on the stack` (once) · `Uneven stack? Enter each value` · `Add-on weights (optional)` · `Attachments` · `Rope` `Straight bar` `V-bar` `Single handle` `Lat bar` `Ankle strap` `Other` · `Numbers are as printed on the stack. They're never converted to free-weight equivalents.` |
+| Assisted | `Assistance, as printed` ⓘ (design pass, 20 Oct: `More assistance is easier. In a workout, + adds assistance.` behind the info tap) |
 | Plate-loaded | `Plates go on` · `Both sides, balanced` · `One horn` · `Most plates it takes (optional)` · `Logged as plates added` |
 | Bodyweight | `Logged as bodyweight` |
 | Plate sets | `Use plate set` · `Just this bar` · `Shared with Leg press and Hip thrust machine.` |
@@ -469,10 +469,10 @@ The full state table and transitions are in [gym-switch.md](gym-switch.md) §3. 
 | Validation | `Max is below the bar weight (20 kg).` · `Min is above max.` · `Add at least one weight.` · `This setup can't make any load. Check the min and max.` · `Each weight can appear once.` · Save label when invalid: `Fix 1 problem` / `Fix 2 problems` |
 | Unit lock | `Has kg sets. Add new equipment for lb.` [Add as new] |
 | Availability | `Available` · `Out of order` / `Until you mark it fixed. Workouts won't use it.` · `Removed from this gym` / `It's gone for good. History keeps it.` · rows `Out of order since 3 Oct` · `Busy today (this workout only)` [Clear] · `Removed 1 Sep` [Put back] · button `Fixed` |
-| Saves | `Saved. Future workouts use the new setup.` [Undo] · `Future targets will avoid it.` · `Couldn't save Main gym. Your changes are still here.` [Try again] · `This item changed since you opened it.` [Show latest] |
+| Saves | (Design pass, 20 Oct) `Saved` [Undo] · `Future targets will avoid it.` · `Couldn't save Main gym. Your changes are still here.` [Try again] · `This item changed since you opened it.` [Show latest] |
 | Gym detail | `Name` · `Location` · `Default gym` · `Gym notes` · `Equipment (6)` · `Add equipment` · `Removed from this gym (1)` · `Duplicate gym` · `New travel gym from this one` · `Archive gym` · `Delete gym` |
 | Empty states | `No gym yet. Loads won't be checked against equipment.` · `No equipment yet` |
-| In-workout banner | `Your workout in progress uses this gym as it was when you started.` [Use changes today] |
+| In-workout banner | (Design pass, 20 Oct) `In use today` [Use changes today] |
 | Travel | `New travel gym` · `Travel gym · 12 Oct` · `Use until` · `What's there?` · `Save and switch` / `Save travel gym` · row `Travel, until Sun 18 Oct` |
 | Confirms | `Archive Main gym? It's hidden from the gym list. Past workouts keep it.` · `Choose another default gym first.` · `Delete Home? It hasn't been used in a workout. This can't be undone.` · `Discard changes to Dumbbells?` · `Bench press history uses this bar, so it's kept as removed rather than deleted.` |
 | Duplicate | `Main gym copy` · `Copied Main gym. History isn't shared between the two.` [Undo] |
@@ -515,7 +515,7 @@ Proposed new:
 2. A barbell with a 20 kg bar and 4 each of 20, 10, 5, 2.5 and 1.25 kg plates previews `Makes 63 loads: 20–175 kg, total, every 2.5 kg.` `Check a load` 102.5 shows `Each side: 20 + 20 + 1.25` (the fewest-plates result from `buildPlateSetup`; the editor never computes its own breakdown). 176 shows `176 kg is above this bar's limit (175 kg).`
 3. Entering 3 × 1.25 kg plates on a barbell shows the "can't be balanced" hint and the preview counts only one pair.
 4. Marking 30 kg missing in a 2.5–40 kg rack removes it from the saved `loads`, shows `Gap: 27.5 → 32.5 kg.`, and the workout stepper jumps 27.5 → 32.5.
-5. An assisted machine's editor says `More assistance = easier`, and in the workout `+` reads "More assistance (easier)" (active-workout.md §4.3).
+5. An assisted machine's editor says `More assistance is easier` behind its ⓘ, and in the workout `+` reads "More assistance (easier)" (active-workout.md §4.3).
 6. A plate-loaded machine never shows a total resistance or a converted free-weight number anywhere in the editor or preview.
 7. `Max` below the bar weight, or min above max, disables `Save` with the validator's text; nothing is written.
 8. An item with logged kg sets can't be switched to lb; [Add as new] creates a separate instance with no shared history.

@@ -7,6 +7,7 @@ import { PLAN_COPY, planCardView, planDayView, type PlanCardView, type PlanDayVi
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Icon, SecondaryButton, TextButton } from '../../ui';
+import { CardActions, CoachCardFrame } from './CoachCardFrame';
 
 /**
  * The coach plan card (Ben, 19 Oct): one card with every day; tap a day to
@@ -95,7 +96,7 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
 
   return (
     <View style={{ gap: theme.space['2'] }}>
-      <View style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors['border.control'], padding: theme.space['3'], gap: theme.space['2'] }}>
+      <CoachCardFrame>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
           <AppText variant="label" color="text.secondary">
             Coach
@@ -116,7 +117,7 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
               onPress={() => {
                 setOpen((o) => (o === x.index ? null : x.index));
               }}
-              style={{ minHeight: theme.target.min.height, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
+              style={{ minHeight: theme.target.min.height, paddingVertical: theme.space['2'], flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
             >
               <View style={{ flex: 1 }}>
                 <AppText variant="body">{x.name}</AppText>
@@ -135,15 +136,11 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
             {open === x.index && day !== null ? (
               <View style={{ gap: theme.space['1'], paddingLeft: theme.space['2'] }}>
                 {day.rows.map((r) => (
-                  <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel} style={{ flexDirection: 'row', gap: theme.space['2'] }}>
-                    <AppText variant="callout" style={{ flex: 1 }}>
-                      {r.name}
-                    </AppText>
+                  // Design pass 4.9: two lines (name / `3 × 8–10 · 100 kg`), so the values line up on the left edge.
+                  <View key={r.key} accessible accessibilityLabel={r.accessibilityLabel}>
+                    <AppText variant="callout">{r.name}</AppText>
                     <AppText variant="callout" numeric color="text.secondary">
-                      {r.scheme}
-                    </AppText>
-                    <AppText variant="callout" numeric>
-                      {[r.load, ...r.marks].join(' · ')}
+                      {[r.scheme, r.load, ...r.marks].filter((x) => x !== '').join(' · ')}
                     </AppText>
                   </View>
                 ))}
@@ -186,7 +183,7 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
             </View>
           </View>
         ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <CardActions>
             <TextButton
               label={PLAN_COPY.why}
               tone="secondary"
@@ -203,7 +200,7 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
                 }}
               />
             ) : card.action.kind === 'undo' || card.action.kind === 'resume' ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
                 <AppText variant="callout" color="text.secondary">
                   {card.action.text}
                 </AppText>
@@ -214,10 +211,10 @@ export function PlanCard({ record, onOpenRoutine, onChanged }: { record: ActionR
                 {card.action.text}
               </AppText>
             )}
-          </View>
+          </CardActions>
         )}
         {why ? record.guardNotes.map((n) => <AppText key={n.text} variant="callout" color="text.secondary">{n.text}</AppText>) : null}
-      </View>
+      </CoachCardFrame>
       {card.rationale !== null ? <AppText variant="body">{card.rationale}</AppText> : null}
     </View>
   );

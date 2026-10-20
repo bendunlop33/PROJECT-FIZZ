@@ -107,7 +107,9 @@ describe('wiring', () => {
     const chart = read('progress/trend-chart.tsx');
     expect(chart).toMatch(/chartAccessibilityAction\(e\.nativeEvent\.actionName, points\.length, focus\)/);
     expect(chart).toMatch(/accessibilityValue: \{ text: `\$\{focus\.words\} Double-tap to open the workout\.` \}/);
-    expect(chart).toMatch(/wasSelected: isPointSelected\(i, points, focus\)/);
+    // Design pass 6.3: tap only; tapping the selected point again clears it.
+    expect(chart).toMatch(/if \(isPointSelected\(i, points, focus\)\) onSelect\(null\);/);
+    expect(chart).not.toMatch(/onResponderMove|onMoveShouldSetResponder/);
     expect(chart).not.toMatch(/points\[selected\]/);
     const screen = read('screens/progress/ExerciseDetailScreen.tsx');
     expect(screen).toMatch(/chartSelection\(view\.points, view\.selection, selectedId\)/);

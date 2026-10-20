@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 
 import type { DateRange } from '@fizz/domain';
 import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
@@ -180,18 +180,15 @@ export function MusclesScreen() {
         </View>
       ) : null}
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="How this is counted"
-        onPress={() => {
-          setHowOpen(true);
-        }}
-        style={{ minHeight: theme.target.min.height, justifyContent: 'center' }}
-      >
-        <AppText variant="callout" color="accent">
-          How this is counted ›
-        </AppText>
-      </Pressable>
+      {/* Design pass nit: the shared link (underlined in D). */}
+      <View style={{ alignSelf: 'flex-start' }}>
+        <TextButton
+          label="How this is counted"
+          onPress={() => {
+            setHowOpen(true);
+          }}
+        />
+      </View>
       <HowCountedSheet
         visible={howOpen}
         onClose={() => {

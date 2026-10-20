@@ -10,6 +10,7 @@ import { toMs } from '@fizz/domain';
 import { useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Icon, SecondaryButton, TextButton } from '../../ui';
+import { CardActions, CoachCardFrame } from './CoachCardFrame';
 
 /**
  * The workout builder's cards in the coach sheet (workout-builder.md §4.1,
@@ -21,18 +22,7 @@ import { AppText, Chip, Icon, SecondaryButton, TextButton } from '../../ui';
 
 const clock = (utc: string, tz: string): string => formatTime(toMs(utc), tz);
 
-function Frame({ children, label }: { children: React.ReactNode; label?: string }) {
-  const theme = useTheme();
-  return (
-    <View
-      accessible={label !== undefined}
-      {...(label !== undefined ? { accessibilityLabel: label } : {})}
-      style={{ backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors['border.control'], padding: theme.space['3'], gap: theme.space['2'] }}
-    >
-      {children}
-    </View>
-  );
-}
+const Frame = CoachCardFrame;
 
 /** `BuildRequestCard` (§4.1): one tap with defaults; `Build` is the card's own secondary button (the sheet's primary is `Send`). */
 export function BuildRequestCard({ gymName, defaultMinutes, days, defaultDayId, disabled, onBuild }: { gymName: string | null; defaultMinutes: number | null; days: readonly BuildDayChip[]; defaultDayId: string | null; disabled: boolean; onBuild: (minutes: number | null, chip: BuildDayChip | null) => void }) {
@@ -55,7 +45,7 @@ export function BuildRequestCard({ gymName, defaultMinutes, days, defaultDayId, 
       </AppText>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
         {v.lengths.map((l) => (
-          <Chip key={l.minutes} label={l.label} selected={l.selected} accessibilityLabel={l.accessibilityLabel} onPress={() => { setMinutes(l.selected ? null : l.minutes); }} />
+          <Chip key={l.minutes} onSurface label={l.label} selected={l.selected} accessibilityLabel={l.accessibilityLabel} onPress={() => { setMinutes(l.minutes); }} />
         ))}
       </View>
       <AppText variant="sectionLabel" color="text.secondary">
@@ -63,7 +53,7 @@ export function BuildRequestCard({ gymName, defaultMinutes, days, defaultDayId, 
       </AppText>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
         {v.focuses.map((f) => (
-          <Chip key={f.id} label={f.label} selected={f.selected} accessibilityLabel={f.accessibilityLabel} onPress={() => { setDayId(f.id); }} />
+          <Chip key={f.id} onSurface label={f.label} selected={f.selected} accessibilityLabel={f.accessibilityLabel} onPress={() => { setDayId(f.id); }} />
         ))}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
@@ -91,8 +81,6 @@ export function PendingBuildCard({ focus, dayName, minutes, startedAtMs, nowMs, 
         <AppText variant="callout" numeric color="text.secondary">
           {v.elapsed}
         </AppText>
-      </View>
-      <View style={{ alignItems: 'flex-end' }}>
         <TextButton label={BUILD_COPY.cancel} tone="secondary" onPress={onCancel} />
       </View>
     </Frame>
@@ -148,7 +136,9 @@ export function WorkoutDraftCard({ record, gymId, onOpen, onOpenRoutine, onChang
             <AppText variant="label" color="text.secondary">
               Coach
             </AppText>
-            <AppText variant="headline">{change.title}</AppText>
+            <AppText variant="headline" style={{ flex: 1 }}>
+              {change.title}
+            </AppText>
           </View>
           {change.minutes !== null ? (
             <AppText variant="callout" numeric color="text.secondary">
@@ -161,10 +151,11 @@ export function WorkoutDraftCard({ record, gymId, onOpen, onOpenRoutine, onChang
               <AppText variant="callout">{l.text}</AppText>
             </View>
           ))}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            {change.canUndo ? <TextButton label={BUILD_COPY.undo} onPress={() => void undo()} /> : <View />}
+          {/* One order on every card (design pass 4.7): Why? left, Undo right. */}
+          <CardActions>
             <TextButton label={BUILD_COPY.why} tone="secondary" onPress={() => { setWhy((w) => !w); }} />
-          </View>
+            {change.canUndo ? <TextButton label={BUILD_COPY.undo} onPress={() => void undo()} /> : null}
+          </CardActions>
           {why ? record.guardNotes.map((n) => <AppText key={n.text} variant="callout" color="text.secondary">{n.text}</AppText>) : null}
         </Frame>
       ) : null}
@@ -221,9 +212,12 @@ export function BuildQuestionCard({
   onAnswer,
   onSkip,
   onUndoSave,
+  disabledReason = null,
 }: {
   view: QuestionCardView;
   disabled: boolean;
+  /** Why the answers are dimmed when it's the coach that can't answer (`Needs the coach`, WB-Q9); null while only busy. */
+  disabledReason?: string | null;
   /** `Saved to Profile` with Undo, `Not undone · changed in Profile`, or nothing. */
   saved: { text: string; canUndo: boolean } | null;
   onAnswer: (answer: { label: string; catalogueId: string | null }) => void;
@@ -231,6 +225,10 @@ export function BuildQuestionCard({
   onUndoSave: () => void;
 }) {
   const theme = useTheme();
+  const [tappedDisabled, setTappedDisabled] = useState(false);
+  const showReason = (): void => {
+    setTappedDisabled(true);
+  };
   if (view.state !== 'open') {
     return (
       <Frame label={`Coach question. ${view.collapsed ?? view.question}`}>
@@ -255,12 +253,17 @@ export function BuildQuestionCard({
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
         {view.answers.map((a) => (
-          <Chip key={a.catalogueId ?? a.label} label={a.label} selected={false} accessibilityLabel={`${a.label}, button`} onPress={() => { if (!disabled) onAnswer(a); }} />
+          <Chip key={a.catalogueId ?? a.label} onSurface disabled={disabled} onDisabledPress={showReason} label={a.label} selected={false} onPress={() => { onAnswer(a); }} />
         ))}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
-        <TextButton label={QUESTION_COPY.skip} onPress={() => { if (!disabled) onSkip(); }} />
+        <TextButton label={QUESTION_COPY.skip} disabled={disabled} onPress={onSkip} />
       </View>
+      {disabled && tappedDisabled && disabledReason !== null ? (
+        <AppText variant="callout" color="text.secondary">
+          {disabledReason}
+        </AppText>
+      ) : null}
     </Frame>
   );
 }

@@ -1,7 +1,7 @@
 import type { Load, MuscleGroup, SessionAggregate, SessionExercise, SplitBodyPart, WorkoutSet } from '@fizz/schemas';
 import { addDays, localDateOf, localWeekBounds } from '../calendar';
 import { aimWithPause, planDaysDoneBy } from '../session/plan-adapt';
-import { formatDuration, repRangeText } from '../display';
+import { formatDuration, loadText, repRangeText } from '../display';
 import { loadDirection } from '../equipment';
 import { toMs } from '../time';
 import { partRootOf } from '../session/gym-switch';
@@ -39,8 +39,19 @@ export interface PlannedVsDoneRow {
   /** The target: `8`, `8–10`, `0:45`; null when the plan set none (load only). */
   target: string | null;
   verdict: PlanVerdict;
-  /** `3/3 sets · 8, 8, 7 of 8`. */
+  /** `3/3 sets · 8, 8, 7 of 8`; `· 100 kg planned` after it when the load set the verdict. */
   text: string;
+  /**
+   * (Design pass, 20 Oct) The Summary's one plan line, the reps already shown above it:
+   * `3/3 · of 8`, `3/3 · of 8 · 100 kg planned`, `2/3 · of 8–10 · 1 skipped`.
+   */
+  short: string;
+  /**
+   * The planned load when a set's load (not its reps) set the verdict: lighter is `Short`,
+   * heavier `Over`. `100 kg`, `22.5 kg each`; null otherwise. Shown so a `Short` with every rep
+   * hit isn't a contradiction (review: summary consistency).
+   */
+  plannedLoad: string | null;
 }
 
 export interface PlannedVsDone {
@@ -126,10 +137,15 @@ export function exercisePlanRow(ex: SessionExercise, sets: readonly WorkoutSet[]
   const planned = work.filter(isPlanned);
   if (planned.length === 0) return null;
   const done = work.filter((s) => s.status === 'completed' && s.actual !== null);
+  const skipped = work.filter((s) => s.status === 'skipped').length;
   const doneTexts = done.map((s) => doneText(s, ex)).filter((t): t is string => t !== null);
   const verdict = combine(planned.map(setVerdict), done.length > planned.length);
   const target = targetText(planned);
   const results = doneTexts.length === 0 ? '—' : doneTexts.join(', ');
+  const plannedLoad = loadSetVerdict(planned, verdict);
+  const loadPart = plannedLoad === null ? '' : ` · ${plannedLoad} planned`;
+  const count = `${String(done.length)}/${String(planned.length)}`;
+  const short = [count, target === null ? null : `of ${target}`, plannedLoad === null ? null : `${plannedLoad} planned`, skipped > 0 ? `${String(skipped)} skipped` : null].filter((x): x is string => x !== null).join(' · ');
   return {
     sessionExerciseId: ex.id,
     exerciseId: ex.exerciseId,
@@ -139,8 +155,41 @@ export function exercisePlanRow(ex: SessionExercise, sets: readonly WorkoutSet[]
     done: doneTexts,
     target,
     verdict,
-    text: `${String(done.length)}/${String(planned.length)} sets · ${results}${target === null ? '' : ` of ${target}`}`,
+    text: `${count} sets · ${results}${target === null ? '' : ` of ${target}`}${loadPart}`,
+    short,
+    plannedLoad,
   };
+}
+
+/**
+ * The planned load to show when the load, not the reps, gave the verdict: the first done set whose
+ * reps met the plan but whose load was lighter (`Short`) or heavier (`Over`) than planned. Null otherwise.
+ */
+function loadSetVerdict(planned: readonly WorkoutSet[], verdict: PlanVerdict): string | null {
+  if (verdict === 'hit') return null;
+  for (const s of planned) {
+    if (s.status !== 'completed' || s.actual === null || s.planned.load === null) continue;
+    if (repsVerdict(s) === 'short') continue;
+    const l = loadVerdict(s.planned.load, s.actual.load);
+    if (l === verdict) return loadText(s.planned.load, s.planned.load.convention);
+  }
+  return null;
+}
+
+/** The reps (or time) alone against the plan. */
+function repsVerdict(s: WorkoutSet): PlanVerdict {
+  const p = s.planned;
+  const a = s.actual;
+  if (a === null) return 'short';
+  if (p.reps !== null) {
+    const reps = a.reps ?? 0;
+    return reps < p.reps.min ? 'short' : reps > p.reps.max ? 'over' : 'hit';
+  }
+  if (p.durationS !== null) {
+    const d = a.durationS ?? 0;
+    return d < p.durationS ? 'short' : d > p.durationS ? 'over' : 'hit';
+  }
+  return 'hit';
 }
 
 /**

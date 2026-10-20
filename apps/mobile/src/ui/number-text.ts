@@ -29,3 +29,8 @@ export const NUMBER_FORMAT: FieldFormat = { parse: parseNumber, show: String };
 
 /** A cardio time in seconds, typed and shown as the machine shows it: `20:34` (or `20.34` on the number pad), `1:05:00`, `20` for whole minutes. */
 export const CARDIO_TIME_FORMAT: FieldFormat = { parse: parseCardioTime, show: cardioTimeFieldText };
+
+/** (Design pass 6.12) The equipment range's next field after the focused one: From → To → Every, then none (`Done`). */
+export function rangeNextField(focused: number): 1 | 2 | null {
+  return focused === 0 ? 1 : focused === 1 ? 2 : null;
+}

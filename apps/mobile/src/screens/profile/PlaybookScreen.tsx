@@ -59,7 +59,8 @@ export function PlaybookScreen() {
                 icon="questionmark.circle"
                 title={r.text}
                 subtitle={`${r.label} · ${r.line}`}
-                trailing={
+                // Design pass 6.7: the buttons go under the rule, so its text uses the full width.
+                below={
                   <View style={{ flexDirection: 'row', gap: theme.space['8'] }}>
                     <TextButton label="Reject" tone="secondary" onPress={() => void decide(r, 'reject', 'Rejected.')} />
                     <TextButton label="Approve" onPress={() => void decide(r, 'approve', 'Approved.')} />

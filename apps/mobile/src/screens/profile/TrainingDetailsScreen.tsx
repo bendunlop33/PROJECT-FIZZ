@@ -1,12 +1,14 @@
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Switch, View } from 'react-native';
 
-import { cmFromFeetInches, feetInches, LIFT_TARGET_COPY } from '@fizz/domain';
+import { cmFromFeetInches, feetInches, LIFT_TARGET_COPY, localDateOf, localHourUtcMs } from '@fizz/domain';
 import type { TrainingChange, TrainingProfile, WeightEntry, WeightUnit } from '@fizz/schemas';
 
-import { nowMs as clockNow } from '../../clock';
+import { nowMs as clockNow, dateAt } from '../../clock';
 import { localDateKey } from '../../format/dates';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
+import { useTheme } from '../../theme';
 import { birthYearPicker, EXPERIENCE_CHOICES, GENDER_CHOICES, GOAL_CHOICES, heightPicker, readWeightEntry, TRAINING_COPY as C, trainingDetailsView, type TrainingRowKey } from '../../training/training-view';
 import { AppText, BottomCard, Chip, ChipRow, CountStepper, Group, PrimaryButton, Row, Screen, SectionHeader, StatusLine, TextButton, TextField, Toast } from '../../ui';
 
@@ -103,20 +105,22 @@ export function TrainingDetailsScreen() {
         <Row title={LIFT_TARGET_COPY.setting} trailing={<Switch accessibilityLabel={LIFT_TARGET_COPY.setting} value={p.liftTargetsOn === true} onValueChange={(on) => void save({ kind: 'lift_targets_on', on }, services.newId())} />} />
       </Group>
 
-      <EditSheet editing={editing} profile={p} nowYear={snap.nowYear} unit={unit} today={localDateKey(clockNow(), services.now().tz)} onClose={() => { setEditing(null); }} onSave={(c) => void save(c)} />
+      <EditSheet editing={editing} profile={p} nowYear={snap.nowYear} unit={unit} today={localDateKey(clockNow(), services.now().tz)} tz={services.now().tz} onClose={() => { setEditing(null); }} onSave={(c) => void save(c)} />
     </Screen>
   );
 }
 
-function EditSheet({ editing, profile: p, nowYear, unit, today, onClose, onSave }: { editing: Editing; profile: TrainingProfile; nowYear: number; unit: WeightUnit; today: string; onClose: () => void; onSave: (c: TrainingChange) => void }) {
+function EditSheet({ editing, profile: p, nowYear, unit, today, tz, onClose, onSave }: { editing: Editing; profile: TrainingProfile; nowYear: number; unit: WeightUnit; today: string; tz: string; onClose: () => void; onSave: (c: TrainingChange) => void }) {
   return (
     <BottomCard visible={editing !== null} onClose={onClose}>
-      {editing === null ? null : <SheetBody key={editing} editing={editing} profile={p} nowYear={nowYear} unit={unit} today={today} onClose={onClose} onSave={onSave} />}
+      {editing === null ? null : <SheetBody key={editing} editing={editing} profile={p} nowYear={nowYear} unit={unit} today={today} tz={tz} onClose={onClose} onSave={onSave} />}
     </BottomCard>
   );
 }
 
-function SheetBody({ editing, profile: p, nowYear, unit, today, onClose, onSave }: { editing: Exclude<Editing, null>; profile: TrainingProfile; nowYear: number; unit: WeightUnit; today: string; onClose: () => void; onSave: (c: TrainingChange) => void }) {
+function SheetBody({ editing, profile: p, nowYear, unit, today, tz, onClose, onSave }: { editing: Exclude<Editing, null>; profile: TrainingProfile; nowYear: number; unit: WeightUnit; today: string; tz: string; onClose: () => void; onSave: (c: TrainingChange) => void }) {
+  const theme = useTheme();
+  const noon = (d: string) => dateAt(localHourUtcMs(d, 12, tz));
   const year = birthYearPicker(p.about.birthYear, nowYear);
   const [yearText, setYearText] = useState(String(year.start));
   const [cm, setCm] = useState(p.about.heightCm ?? 175);
@@ -128,7 +132,8 @@ function SheetBody({ editing, profile: p, nowYear, unit, today, onClose, onSave 
   const [date, setDate] = useState(today);
   const footer = (save: (() => void) | null, clear?: () => void) => (
     <View style={{ gap: 8 }}>
-      {save ? <PrimaryButton label={C.save} onPress={save} /> : null}
+      {/* Design pass 6.8: Save is always there (disabled until valid), so it doesn't appear and disappear while typing. */}
+      <PrimaryButton label={C.save} disabled={save === null} onPress={() => { save?.(); }} />
       {clear ? <TextButton label={C.notSet} tone="secondary" onPress={clear} /> : null}
       <TextButton label={C.cancel} tone="secondary" onPress={onClose} />
     </View>
@@ -232,7 +237,22 @@ function SheetBody({ editing, profile: p, nowYear, unit, today, onClose, onSave 
               <Chip key={u} label={u} selected={weightUnit === u} onPress={() => { setWeightUnit(u); }} />
             ))}
           </ChipRow>
-          <TextField accessibilityLabel="Date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+          {/* Design pass 6.8: a compact date picker up to today, no ISO date typing. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
+            <AppText variant="body">Date</AppText>
+            <DateTimePicker
+              value={noon(date)}
+              mode="date"
+              display="compact"
+              timeZoneName={tz}
+              maximumDate={noon(today)}
+              themeVariant={theme.scheme}
+              accessibilityLabel="Date"
+              onValueChange={(_e, d) => {
+                setDate(localDateOf(d.getTime(), tz));
+              }}
+            />
+          </View>
           {footer(entry === null ? null : () => { onSave({ kind: 'add_weight', entry: { id: '', date: entry.date, value: entry.value, unit: weightUnit } }); })}
         </>
       );

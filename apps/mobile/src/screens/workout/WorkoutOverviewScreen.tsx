@@ -18,7 +18,7 @@ import type { LibraryToastParam, RootStackParams } from '../../navigation/types'
 import { STALE_PREVIEW, type AddSheet, type DraftWrite, type OverviewData, type OverviewTarget, type SessionList, type SessionPickerRow, type SwapSheet } from '../../services/workout-services';
 import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, CoachFitStatusCard, EditLink, EditRow, FitCard, FitSuggestionCard, FitWhySheet, HowLongSheet, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, StatusLine, SubstituteRowView, SupersetBracket, TextButton, Toast, UpdateCard } from '../../ui';
+import { AppText, BottomCard, ChangeReviewCard, ChangeRoutineLink, CheckInScale, CoachFitStatusCard, EditLink, EditRow, FitCard, FitSuggestionCard, FitWhySheet, HowLongSheet, Icon, NumberAccessory, OverviewRow, PrimaryButton, StatStrip, StatusLine, SubstituteRowView, SupersetBracket, TextButton, Toast, ToastHost, UpdateCard } from '../../ui';
 import { bringBackOf, coachFitCardOf, coachFitCardView, FIT_COPY, fitCardCollapsed, howLongOpen, timeTile, type CoachFitCard } from '../../workout/fit-view';
 import { createAfterDismiss } from '../../workout/after-dismiss';
 import {
@@ -133,6 +133,8 @@ export function WorkoutOverviewScreen() {
   const [pickerList, setPickerList] = useState<SessionList | null | 'loading'>('loading');
   const [pickerAfter] = useState(() => createAfterDismiss());
   const scrollRef = useRef<ScrollView>(null);
+  /** The bottom bar's height: the toast floats on it (0.6). */
+  const [barHeight, setBarHeight] = useState(0);
   const alertsAsk = useStartAlertsAsk();
 
   // A score tapped on this page (saved at once, CI4); null until then.
@@ -1258,7 +1260,7 @@ export function WorkoutOverviewScreen() {
       style={{ minHeight: 44, justifyContent: 'center', flexShrink: 1 }}
     >
       <View style={{ minHeight: 34, paddingHorizontal: 14, paddingVertical: 4, borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
-        <AppText variant="label" style={{ flexShrink: 1 }}>
+        <AppText variant="label" numberOfLines={1} style={{ flexShrink: 1 }}>
           {page.view.gym?.name ?? OVERVIEW_COPY.addGym}
         </AppText>
         {page.view.gym ? <Icon name="chevron.down" color="text.secondary" size={10} /> : null}
@@ -1762,11 +1764,6 @@ export function WorkoutOverviewScreen() {
           <View key={String(i)} style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], opacity: (i + 1) / (FADE_STEPS + 1) }} />
         ))}
       </View>
-      {toast ? (
-        <View style={{ marginHorizontal: -theme.space['4'] }}>
-          <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
-        </View>
-      ) : null}
       {row?.shown ? (
         <View
           style={{ paddingTop: theme.space['2'] }}
@@ -1814,9 +1811,23 @@ export function WorkoutOverviewScreen() {
 
   return (
     <>
-      {shell(<View style={{ flex: 1 }}>{body}</View>, bar)}
+      {shell(
+        <View style={{ flex: 1 }}>{body}</View>,
+        <>
+          <View
+            onLayout={(e) => {
+              setBarHeight(e.nativeEvent.layout.height);
+            }}
+          >
+            {bar}
+          </View>
+          {/* 0.6: the toast floats on the bar, so it never reflows the list or the bar. */}
+          <ToastHost bottom={barHeight}>{toast ? <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} /> : null}</ToastHost>
+        </>,
+      )}
       <BottomCard
         visible={swap !== null}
+        scroll={false}
         onClose={() => {
           setSwap(null);
         }}
@@ -1864,14 +1875,25 @@ export function WorkoutOverviewScreen() {
       </BottomCard>
       <BottomCard
         visible={whyVisible}
+        scroll={false}
         onClose={() => {
           setWhyVisible(false);
         }}
       >
-        <AppText variant="title2" accessibilityRole="header">
-          {why?.name ?? ''}
-        </AppText>
-        {why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}
+        {/* 2.4: the name and Close stay; the panel scrolls, so every row is reachable at AX. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
+            {why?.name ?? ''}
+          </AppText>
+          <TextButton
+            label={TODAY_EDITS_COPY.close}
+            tone="secondary"
+            onPress={() => {
+              setWhyVisible(false);
+            }}
+          />
+        </View>
+        <ScrollView style={{ flexShrink: 1 }}>{why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}</ScrollView>
       </BottomCard>
       <RepsSheet
         row={repsRow}
@@ -1947,6 +1969,7 @@ export function WorkoutOverviewScreen() {
       />
       <BottomCard
         visible={draftWhy}
+        scroll={false}
         onClose={() => {
           setDraftWhy(false);
         }}
