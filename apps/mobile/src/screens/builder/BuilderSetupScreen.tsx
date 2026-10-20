@@ -1,4 +1,4 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,8 +7,9 @@ import { CUSTOM_DAY_ID } from '@fizz/domain';
 import type { BuilderGroup } from '@fizz/schemas';
 
 import type { SetupFacts, SetupInput } from '../../builder/builder-service';
-import { addGroup, coachBarWord, coachStatusOf, setupView, SETUP_COPY, stepGroup, stepMinutes, applyRecommended, withRecommendation, type CoachBarStatus } from '../../builder/builder-view';
+import { addGroup, coachBarWord, coachStatusOf, sameIdentity, setupView, SETUP_COPY, stepGroup, stepMinutes, applyRecommended, withRecommendation, type CoachBarStatus } from '../../builder/builder-view';
 import { newUuid } from '../../device/runtime';
+import { builderPage } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -39,36 +40,63 @@ export function BuilderSetupScreen() {
   const [error, setError] = useState<string | null>(null);
   const nextOp = useRef(newUuid());
   const seq = useRef(0);
+  /** The open draft's set-up as stored: its rows stay while Day, Main lift and Variation are unchanged (review B2). */
+  const origin = useRef<SetupInput | null>(null);
+  const versionRef = useRef<number | null>(null);
 
+  // A fresh Set up (no draft yet): the day's starting rows.
   useEffect(() => {
+    if (draftId !== null) return;
     const alive = { current: true };
-    void (async () => {
-      const a = await services.coach.availability().catch(() => null);
-      if (alive.current) setCoach(coachStatusOf(a?.status ?? 'not_connected'));
-      if (draftId !== null) {
-        const snap = await services.builder.read(draftId);
-        if (!alive.current || snap === null) return;
-        setDraftVersion(snap.version);
-        setSetup(snap.setup);
-      } else {
-        const s = await services.builder.initialSetup(params?.dayId === undefined ? {} : { dayId: params.dayId });
-        if (alive.current) setSetup(s);
-      }
-    })();
+    void services.builder.initialSetup(params?.dayId === undefined ? {} : { dayId: params.dayId }).then((s) => {
+      if (alive.current) setSetup(s);
+    });
     return () => {
       alive.current = false;
     };
   }, [services, draftId, params?.dayId]);
 
-  /** Every change re-reads the facts; rows follow the recommendation until Ben edits them. */
+  // On every focus: the coach status, and the open draft re-read, so a page under another (the coach
+  // sheet, a later Your workout) never sends an old version (review B7).
+  useFocusEffect(
+    useCallback(() => {
+      const alive = { current: true };
+      void (async () => {
+        const a = await services.coach.availability().catch(() => null);
+        if (alive.current) setCoach(coachStatusOf(a?.status ?? 'not_connected'));
+        if (draftId === null) return;
+        const snap = await services.builder.read(draftId);
+        if (!alive.current || snap === null || snap.version === versionRef.current) return;
+        versionRef.current = snap.version;
+        origin.current = snap.setup;
+        setDraftVersion(snap.version);
+        setFacts(null);
+        setSetup(snap.setup);
+      })();
+      return () => {
+        alive.current = false;
+      };
+    }, [services, draftId]),
+  );
+
+  /**
+   * Every change re-reads the facts. Rows follow the loaded template's groups, else the
+   * recommendation, until Ben edits them; an open draft's rows stay while its Day, Main lift and
+   * Variation are unchanged (`keepGroups`: Ben just chose `Use recommended`).
+   */
   const change = useCallback(
-    (next: SetupInput) => {
+    (next: SetupInput, opts: { keepGroups?: boolean } = {}) => {
       setSetup(next);
       const n = (seq.current += 1);
       void services.builder.setupFacts(next).then((f) => {
         if (n !== seq.current) return;
         setFacts(f);
-        setSetup((cur) => (cur === null ? cur : withRecommendation(cur, f.recommended)));
+        setSetup((cur) => {
+          if (cur === null || opts.keepGroups === true) return cur;
+          const o = origin.current;
+          if (o !== null && !cur.groupsEdited && sameIdentity(cur, o)) return { ...cur, groups: o.groups.map((g) => ({ ...g })), groupsEdited: o.groupsEdited };
+          return withRecommendation(cur, f);
+        });
       });
     },
     [services],
@@ -93,10 +121,19 @@ export function BuilderSetupScreen() {
       nextOp.current = newUuid();
       changed();
       const toast = r.toast === null ? undefined : { key: opId, text: r.toast.text, undoOpId: r.toast.undoOpId, why: r.toast.why };
-      navigation.navigate('BuilderWorkout', { draftId: r.snapshot.draftId, ...(toast === undefined ? {} : { toast }) });
+      // Back to the one Your workout (or this page becomes it): the builder never stacks pages (review B7).
+      navigation.dispatch(builderPage('BuilderWorkout', { draftId: r.snapshot.draftId, ...(toast === undefined ? {} : { toast }) }));
       return;
     }
     setError(r.message);
+    // Out of date: the page now shows the draft as stored, and the next tap sends that version.
+    if (r.status === 'stale' && r.snapshot !== null) {
+      versionRef.current = r.snapshot.version;
+      origin.current = r.snapshot.setup;
+      setDraftVersion(r.snapshot.version);
+      setSetup(r.snapshot.setup);
+      setFacts(null);
+    }
   }
 
   const pickDay = (d: { id: string; name: string; parts: SetupInput['dayParts'] }) => {
@@ -165,7 +202,7 @@ export function BuilderSetupScreen() {
               </AppText>
             ) : (
               <TextButton label={v.groupsTag.text} tone="secondary" onPress={() => {
-                  if (facts !== null) change(applyRecommended(setup, facts.recommended));
+                  if (facts !== null) change(applyRecommended(setup, facts.recommended), { keepGroups: true });
                 }}
               />
             )}

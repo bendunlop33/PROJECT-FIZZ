@@ -119,6 +119,8 @@ export interface SetupFacts {
   total: number;
   /** The plan-day template this set-up opens (no rebuild), if any. */
   template: { routineId: string; version: number } | null;
+  /** The groups of the template (and variation) this set-up opens: Set up's rows while Ben hasn't edited them (§2.2 `template loaded`; review B2). Null: no template. */
+  loaded: GroupCount[] | null;
   addable: BuilderGroup[];
   /** Custom with no groups: Next is disabled with `Add a muscle group`. */
   canBuild: boolean;
@@ -304,6 +306,25 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     return null;
   }
 
+  /**
+   * The plan day a set-up is (review B1): the exact template's, else the plan's day with this split
+   * day (a main lift with no template yet still counts as that plan day, §4.2). Null: not a plan day.
+   */
+  async function planDayFor(ownerId: string, dayId: string, main: string | null): Promise<{ planId: string; dayIndex: number; routine: Routine | null } | null> {
+    if (dayId === CUSTOM_DAY_ID) return null;
+    const exact = await templateFor(ownerId, dayId, main);
+    if (exact !== null) return { planId: exact.planId, dayIndex: exact.dayIndex, routine: exact.routine };
+    const inUse = await planInUse(ownerId);
+    if (inUse === null) return null;
+    const t = await deps.training().catch(() => null);
+    const live = await repos().routines.listByOwner(ownerId).catch(() => [] as Routine[]);
+    for (const r of planRoutines(inUse.plan, live)) {
+      const key = planDayKeyOf(r, t?.split ?? null, t?.mainLifts);
+      if (key !== null && key.splitDayId === dayId) return { planId: key.planId, dayIndex: key.dayIndex, routine: null };
+    }
+    return null;
+  }
+
   async function variationsFor(ownerId: string, dayId: string, main: string | null): Promise<PlanDayVariation[]> {
     if (dayId === CUSTOM_DAY_ID) return [];
     return repos().planDayVariations.listFor(ownerId, dayId, main).catch(() => [] as PlanDayVariation[]);
@@ -344,6 +365,16 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const mix = s.dayId === CUSTOM_DAY_ID ? mixForDay(CUSTOM_DAY_ID, s.groups.flatMap((g) => groupPartsOf(g.group))) : mixForDay(s.dayId, s.dayParts);
     if (mix.length === 0) return { count: 0, groups: [] };
     return recommendForSetup(mix, { minutes: s.minutes, mainLiftExerciseId: s.mainLiftExerciseId, supersets: s.supersets }, env.pool, env.ctx);
+  }
+
+  /** A workout's groups as Set up rows (1–4 each, in order of first appearance). */
+  function groupsOfWorkout(w: BuilderWorkout, env: BuilderEnv): GroupCount[] {
+    const counts = new Map<BuilderGroup, number>();
+    for (const sl of slotsOf(w.blocks)) {
+      const g = env.info(sl.exerciseId)?.group;
+      if (g !== undefined) counts.set(g, Math.min(SETUP_LIMITS.maxCount, (counts.get(g) ?? 0) + 1));
+    }
+    return [...counts].map(([group, count]) => ({ group, count }));
   }
 
   function groupPartsOf(g: BuilderGroup): SplitBodyPart[] {
@@ -487,6 +518,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     };
   }
 
+  /** Two set-ups that store the same (Next with nothing changed). */
+  const sameSetup = (a: SetupInput, b: SetupInput) => stableStringify(storedSetup(a, {})) === stableStringify(storedSetup(b, {}));
+
   const contextHash = (setup: BuilderSetup, gymId: string | null, equipmentVersion: string) => deriveId(`builder-context:${stableStringify({ setup, gymId, equipmentVersion })}`);
 
   // -------------------------------------------------------------------------
@@ -502,7 +536,11 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         return { status: 'refused', reason: r.refused, message, snapshot: r.env === null ? null : await snapshotOf(p, read, r.env) };
       }
       // The change was worked out from `read`: written only if the stored draft is still that one.
-      const w = await repos().workoutDrafts.write(p.id, draftId, (current) => (current.version !== read.version && r.change.kind === 'write' ? { kind: 'stale', current } : r.change));
+      const w = await repos()
+        .workoutDrafts.write(p.id, draftId, (current) => (current.version !== read.version && r.change.kind === 'write' ? { kind: 'stale', current } : r.change))
+        .catch(() => null);
+      // A write that threw (another open draft took the key in a race): nothing was written.
+      if (w === null) return { status: 'refused', reason: 'no_such_exercise', message: BUILDER_COPY.failed, snapshot: await snapshotOf(p, read, r.env) };
       switch (w.status) {
         case 'written':
           return { status: 'written', snapshot: await snapshotOf(p, w.draft, r.env, r.skipped), toast: r.toast };
@@ -581,6 +619,13 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const mainLifts = [...(profileMain === null ? [] : [{ id: profileMain, name: env.nameOf(profileMain), fromProfile: true }]), ...compounds.filter((id) => id !== profileMain).map((id) => ({ id, name: env.nameOf(id), fromProfile: false }))];
       const variations = (await variationsFor(p.id, s.dayId, s.mainLiftExerciseId)).map((v) => ({ id: v.id, label: v.label }));
       const t = s.dayId === CUSTOM_DAY_ID ? null : await templateFor(p.id, s.dayId, s.mainLiftExerciseId);
+      let loaded: GroupCount[] | null = null;
+      if (t !== null) {
+        const variation = s.variationId === null ? null : ((await variationsFor(p.id, s.dayId, s.mainLiftExerciseId)).find((x) => x.id === s.variationId) ?? null);
+        const ids = [...t.routine.exercises.map((e) => e.exerciseId), ...(variation?.extras ?? []).flatMap((o) => (o.kind === 'add_slot' ? [o.slot.exerciseId] : []))];
+        const tenv = await envFor(p, { exerciseIds: ids, keySeed: 'loaded' });
+        loaded = groupsOfWorkout(openTemplate(t.routine, variation, tenv).workout, tenv);
+      }
       return {
         days,
         mainLifts,
@@ -588,6 +633,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         recommended: recommendation(s, env),
         total: s.groups.reduce((m, g) => m + g.count, 0),
         template: t === null ? null : { routineId: t.routine.id, version: t.routine.version },
+        loaded,
         addable: groupsToAdd(s.groups.map((g) => g.group)),
         canBuild: s.groups.length > 0 || t !== null,
       };
@@ -611,7 +657,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         opId,
         actionId: deriveId(`builder-action:${opId}`),
         name: nameOf(s, built.env, built.variation?.label ?? null),
-        key: draftKey(s, plan),
+        key: draftKey(s, await planDayFor(p.id, s.dayId, s.mainLiftExerciseId)),
         setup: stored,
         plan: draftPlan,
         focus: focusOf(s.dayId),
@@ -630,7 +676,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         case 'exists': {
           // Reopen (§2.1): the same unstarted workout, with Set up's change merged in.
           const prev = pageSetup(r.draft);
-          if (stableStringify(storedSetup(prev, {})) === stableStringify(storedSetup(s, {}))) return { status: 'replayed', snapshot: await snapshotOf(p, r.draft, built.env), toast: null };
+          if (sameSetup(prev, s)) return { status: 'replayed', snapshot: await snapshotOf(p, r.draft, built.env), toast: null };
           return service.changeSetup(r.draft.id, s, { opId, expectedVersion: r.draft.version });
         }
         case 'invalid':
@@ -657,13 +703,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         variationId: req.variationId ?? null,
         groupsEdited: false,
       };
-      const env = await envFor(p, { exerciseIds: r.exercises.map((e) => e.exerciseId), keySeed: 'groups' });
-      const counts = new Map<BuilderGroup, number>();
-      for (const e of r.exercises) {
-        const g = env.info(e.exerciseId)?.group;
-        if (g !== undefined) counts.set(g, Math.min(4, (counts.get(g) ?? 0) + 1));
-      }
-      return service.create({ ...s, groups: [...counts].map(([group, count]) => ({ group, count })) }, opId);
+      const variation = s.variationId === null ? null : ((await variationsFor(p.id, s.dayId, s.mainLiftExerciseId)).find((x) => x.id === s.variationId) ?? null);
+      const ids = [...r.exercises.map((e) => e.exerciseId), ...(variation?.extras ?? []).flatMap((o) => (o.kind === 'add_slot' ? [o.slot.exerciseId] : []))];
+      const env = await envFor(p, { exerciseIds: ids, keySeed: 'groups' });
+      return service.create({ ...s, groups: groupsOfWorkout(openTemplate(r, variation, env).workout, env) }, opId);
     },
 
     /** Your workout for a draft (reopen after leaving or a force-close: every edit kept). */
@@ -708,6 +751,19 @@ export function createBuilderService(deps: BuilderServiceDeps) {
      */
     async changeSetup(draftId: string, next: SetupInput, w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
       const p = await owner();
+      const read = await repos().workoutDrafts.get(draftId).catch(() => null);
+      if (read !== null && read.ownerId === p.id && read.builderKey !== undefined && read.status === 'open' && !read.opIds.includes(w.opId) && read.version === w.expectedVersion) {
+        const prev = pageSetup(read);
+        // `Next` with nothing changed writes nothing (review B2).
+        if (sameSetup(prev, next)) return { status: 'replayed', snapshot: await snapshotOf(p, read, await envFor(p, { gymId: currentDraftVersion(read).request.gymId, exerciseIds: exerciseIdsOf(fromDraftPlan(currentDraftVersion(read).plan)), keySeed: `${read.id}:read` })), toast: null };
+        // A new Day or Main lift whose (plan day, date) already has an open draft: that one is resumed with
+        // this set-up merged in, as `Next` from a fresh Set up does (one open draft per key, §4.4; review B1).
+        if (prev.dayId !== next.dayId || prev.mainLiftExerciseId !== next.mainLiftExerciseId) {
+          const key = { ...draftKey(next, await planDayFor(p.id, next.dayId, next.mainLiftExerciseId)), localDate: read.builderKey.localDate };
+          const other = await repos().workoutDrafts.openBuilderDraft(p.id, key).catch(() => null);
+          if (other !== null && other.id !== read.id) return service.changeSetup(other.id, next, { opId: w.opId, expectedVersion: other.version });
+        }
+      }
       return writeDraft(p, draftId, async (current) => {
         const v = currentDraftVersion(current);
         const stored = builderSetupOf(current);
@@ -730,7 +786,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
             plan,
             setup,
             name: nameOf(next, built.env, built.variation?.label ?? null),
-            rebuild: { actionId: deriveId(`builder-action:${w.opId}`), focus: focusOf(next.dayId), ...(day === undefined ? {} : { day }), gymId: built.env.gymId, equipmentVersion: built.env.equipmentVersion, contextHash: contextHash(setup, built.env.gymId, built.env.equipmentVersion) },
+            // The key follows the new Day / Main lift (review B1); the draft keeps its local date.
+            rebuild: { actionId: deriveId(`builder-action:${w.opId}`), focus: focusOf(next.dayId), ...(day === undefined ? {} : { day }), gymId: built.env.gymId, equipmentVersion: built.env.equipmentVersion, contextHash: contextHash(setup, built.env.gymId, built.env.equipmentVersion), key: { ...draftKey(next, await planDayFor(p.id, next.dayId, next.mainLiftExerciseId)), localDate: current.builderKey?.localDate ?? localToday() } },
             undoable: true,
           });
           return { change, env: built.env, toast: { text: BUILDER_COPY.rebuilt, undoOpId: w.opId, why: null }, skipped: built.skipped };
@@ -902,10 +959,13 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           }
         }
       }
+      // The plan day is the one the current set-up names (Day, Main lift), never a stale key (review B1).
+      const day = await planDayFor(p.id, setup.dayId, setup.mainLiftExerciseId);
+      const sameTemplate = template !== null && day?.routine != null && day.routine.id === template.id && templateVersion !== null;
       const planDay: SessionPlanDay | undefined =
-        key?.planId != null && key.dayIndex !== null && key.splitDayId !== null
-          ? { planId: key.planId, dayIndex: key.dayIndex, splitDayId: key.splitDayId, mainLiftExerciseId: key.mainLiftExerciseId, templateRoutineId: template === null || templateVersion === null ? null : template.id, templateVersion: template === null ? null : templateVersion, variationId }
-          : undefined;
+        day === null
+          ? undefined
+          : { planId: day.planId, dayIndex: day.dayIndex, splitDayId: setup.dayId, mainLiftExerciseId: setup.mainLiftExerciseId, templateRoutineId: sameTemplate ? template.id : null, templateVersion: sameTemplate ? templateVersion : null, variationId };
       const r = await deps.start({ gymId, opId: req.opId, checkIn: req.checkIn ?? null, coachDraftOf: d.id, builder: { expectedVersion: req.expectedVersion, ...(planDay === undefined ? {} : { planDay }), ...(alongside === undefined ? {} : { alongside }) } });
       if (r.ok) return { ok: true, sessionId: r.aggregate.session.id, duplicate: r.duplicate, planChange: r.duplicate ? null : planChange };
       const e = r.error;

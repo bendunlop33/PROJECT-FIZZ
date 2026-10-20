@@ -1,6 +1,7 @@
 import {
   MAX_WORKOUT_DRAFT_OPS,
   MAX_WORKOUT_DRAFT_VERSIONS,
+  builderDraftKeyText,
   slotRev,
   type BuildDay,
   type BuildFocus,
@@ -118,7 +119,7 @@ export interface BuilderDraftEdit {
   /** The draft's code-made name after the edit (`Chest · Bench`). */
   name?: string;
   /** A rebuild: a new version (§4.4); else the current one changes in place. */
-  rebuild?: { actionId: string; focus: BuildFocus; day?: BuildDay; gymId: string | null; equipmentVersion: string; contextHash: string };
+  rebuild?: { actionId: string; focus: BuildFocus; day?: BuildDay; gymId: string | null; equipmentVersion: string; contextHash: string; /** The key for the new Day / Main lift (review B1); Undo puts the old one back. */ key?: BuilderDraftKey };
   /** Keep the state before this edit for Undo (false: the edit clears any older Undo). */
   undoable: boolean;
 }
@@ -134,7 +135,8 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
   if (closedOrDue(current, e.at.utc)) return { kind: 'closed', current };
   if (staleAgainst(current, e.basis)) return { kind: 'stale', current };
   const cur = currentDraftVersion(current);
-  const before = { currentVersion: current.currentVersion, setup: cur.request.setup ?? null, plan: cur.plan };
+  const keyMoved = e.rebuild?.key !== undefined && builderDraftKeyText(e.rebuild.key) !== builderDraftKeyText(current.builderKey);
+  const before = { currentVersion: current.currentVersion, setup: cur.request.setup ?? null, plan: cur.plan, ...(keyMoved ? { key: current.builderKey } : {}) };
   let versions: WorkoutDraftVersion[];
   let currentVersion = current.currentVersion;
   if (e.rebuild !== undefined) {
@@ -155,6 +157,7 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
   const next: WorkoutDraft = {
     ...current,
     ...(e.name === undefined ? {} : { name: e.name }),
+    ...(keyMoved && e.rebuild?.key !== undefined ? { builderKey: e.rebuild.key } : {}),
     versions,
     currentVersion,
     opIds: [...current.opIds, e.opId].slice(-MAX_WORKOUT_DRAFT_OPS),
@@ -189,6 +192,7 @@ export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoO
   const next: WorkoutDraft = {
     ...current,
     ...(u.name === undefined ? {} : { name: u.name }),
+    ...(back.key === undefined ? {} : { builderKey: back.key }),
     versions,
     currentVersion: rebuilt ? back.currentVersion : current.currentVersion,
     opIds: [...current.opIds, u.opId].slice(-MAX_WORKOUT_DRAFT_OPS),

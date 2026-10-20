@@ -199,9 +199,21 @@ export function applyRecommended(s: SetupInput, rec: SetupFacts['recommended']):
   return { ...s, groups: rec.groups.map((g) => ({ ...g })), groupsEdited: false };
 }
 
-/** Rows that follow the recommendation until Ben edits them (§2.2). */
-export function withRecommendation(s: SetupInput, rec: SetupFacts['recommended']): SetupInput {
-  return s.groupsEdited ? s : { ...s, groups: rec.groups.map((g) => ({ ...g })) };
+/**
+ * Rows Set up shows until Ben edits them (§2.2): a loaded template's (or
+ * variation's) own groups, else the recommendation. `keep`: a draft is open
+ * and its Day, Main lift and Variation are unchanged, so its rows stay as
+ * stored (Length and Supersets merge, they never re-pick groups; review B2).
+ */
+export function withRecommendation(s: SetupInput, facts: Pick<SetupFacts, 'recommended' | 'loaded'>, keep = false): SetupInput {
+  if (s.groupsEdited || keep) return s;
+  const groups = facts.loaded ?? facts.recommended.groups;
+  return { ...s, groups: groups.map((g) => ({ ...g })) };
+}
+
+/** Day, Main lift and Variation are the same (Set up's identity; a change rebuilds, §2.3). */
+export function sameIdentity(a: Pick<SetupInput, 'dayId' | 'mainLiftExerciseId' | 'variationId'>, b: Pick<SetupInput, 'dayId' | 'mainLiftExerciseId' | 'variationId'>): boolean {
+  return a.dayId === b.dayId && a.mainLiftExerciseId === b.mainLiftExerciseId && a.variationId === b.variationId;
 }
 
 // ---------------------------------------------------------------------------

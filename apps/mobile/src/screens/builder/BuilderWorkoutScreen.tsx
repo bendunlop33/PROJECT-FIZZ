@@ -11,7 +11,7 @@ import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, StartChoice, St
 import { coachBarWord, coachStatusOf, editsFromText, promptView, workoutView, WORKOUT_COPY, type CoachBarStatus, type WorkoutRowView } from '../../builder/builder-view';
 import { builderReviewProvider, reviewFacts, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
-import { openStartedWorkout } from '../../navigation/actions';
+import { builderPage, openStartedWorkout } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
@@ -276,7 +276,7 @@ export function BuilderWorkoutScreen() {
       <View style={{ flex: 1 }}>
         <View style={{ paddingHorizontal: theme.components.screenMargin, gap: theme.space['2'] }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <TextButton label={WORKOUT_COPY.back} tone="secondary" onPress={() => { navigation.navigate('BuilderSetup', { draftId: snap.draftId }); }} />
+            <TextButton label={WORKOUT_COPY.back} tone="secondary" onPress={() => { navigation.dispatch(builderPage('BuilderSetup', { draftId: snap.draftId })); }} />
             <TextButton label="Close" tone="secondary" onPress={() => { navigation.goBack(); }} />
           </View>
           <AppText variant="title1" accessibilityRole="header" numeric>
@@ -290,7 +290,7 @@ export function BuilderWorkoutScreen() {
         </View>
         <ScrollArea>
           {earlier.map((e) => (
-            <StatusLine key={e.draftId} icon="clock" tone="info" text={editsFromText(e.localDate)} action={<TextButton label={WORKOUT_COPY.useEdits} onPress={() => { navigation.navigate('BuilderWorkout', { draftId: e.draftId }); }} />} />
+            <StatusLine key={e.draftId} icon="clock" tone="info" text={editsFromText(e.localDate)} action={<TextButton label={WORKOUT_COPY.useEdits} onPress={() => { navigation.dispatch(builderPage('BuilderWorkout', { draftId: e.draftId })); }} />} />
           ))}
           {v.notApplied.map((l) => (
             <AppText key={l} variant="label" color="text.secondary">

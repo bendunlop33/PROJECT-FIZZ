@@ -347,6 +347,8 @@ export const BuilderSetupSchema = z.object({
   templateRoutineId: IdSchema.optional(),
   templateVersion: z.int().min(1).optional(),
   variationId: IdSchema.nullable().optional(),
+  /** (v3 §2.8) The variation's version when it was opened: `Update … · <variation>` is refused once it moved (rule 5). */
+  variationVersion: z.int().min(1).optional(),
   /** (v3 §2.0.2 3a) The fit ladder's rest level; absent = normal. */
   restLevel: z.enum(['normal', 'shorter', 'shortest']).optional(),
   /** (v3 §2.3) Ben changed a group count, so Set up shows `Use recommended` instead of `Recommended`. */
@@ -444,6 +446,8 @@ export const BuilderUndoSchema = z.object({
     currentVersion: z.int().min(1),
     setup: BuilderSetupSchema.nullable(),
     plan: DraftPlanSchema,
+    /** The draft's key before a rebuild that changed Day or Main lift; Undo puts it back. Absent: unchanged. */
+    key: BuilderDraftKeySchema.optional(),
   }),
 });
 export type BuilderUndo = z.infer<typeof BuilderUndoSchema>;

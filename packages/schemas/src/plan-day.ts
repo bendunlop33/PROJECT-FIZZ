@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IdSchema, OperationIdSchema, RecordMetaSchema, UtcTimestampSchema } from './common';
 import { BUILD_LIMITS } from './workout-draft';
-import { MainLiftIdSchema, PLAN_DAY_LIMITS, PlanDayIndexSchema, SplitDayIdSchema } from './routine';
+import { MainLiftIdSchema, PLAN_DAY_LIMITS, PlanDayIndexSchema, RoutineExerciseSchema, SplitDayIdSchema } from './routine';
 
 /**
  * Plan-day variations and session plan-day provenance (workout-builder v3
@@ -74,6 +74,20 @@ export function mainLiftKey(mainLiftExerciseId: string | null): string {
  * template yet). The newest session for a plan day names its last-used
  * template (`templateRoutineId`, Q2) and variation (`variationId`).
  */
+/**
+ * (§2.8, §4.6) The plan change a Start made (`Update … in your plan`, `Save
+ * as new variation`) and its versioned inverse, stored with the session in
+ * the Start's own write so Summary's `Chest · bench updated · Undo` survives
+ * a force-close (review b3-builder S9). Undo is refused once the template or
+ * variation moved past `version`.
+ */
+export const PlanChangeUndoSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('template'), routineId: IdSchema, version: z.int().min(1), restore: z.array(RoutineExerciseSchema).max(40), label: z.string().min(1).max(160) }),
+  z.object({ kind: z.literal('variation_new'), id: IdSchema, version: z.int().min(1), label: z.string().min(1).max(160) }),
+  z.object({ kind: z.literal('variation_update'), id: IdSchema, version: z.int().min(1), restore: z.array(VariationOpSchema).max(PLAN_DAY_LIMITS.maxVariationOps), label: z.string().min(1).max(160) }),
+]);
+export type PlanChangeUndo = z.infer<typeof PlanChangeUndoSchema>;
+
 export const SessionPlanDaySchema = z
   .object({
     planId: IdSchema,
@@ -83,6 +97,8 @@ export const SessionPlanDaySchema = z
     templateRoutineId: IdSchema.nullable(),
     templateVersion: z.int().min(1).nullable(),
     variationId: IdSchema.nullable(),
+    /** (§2.8) The plan change this Start made, for Summary's Undo; absent: none. */
+    planChange: PlanChangeUndoSchema.optional(),
     blockId: z.string().min(1).max(64).optional(),
     weekN: z.int().min(1).max(52).optional(),
   })

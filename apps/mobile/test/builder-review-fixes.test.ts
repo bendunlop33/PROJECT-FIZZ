@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { slotsOf } from '@fizz/domain';
 
+import type { ModelEvent, ModelRequest } from '@fizz/coach';
+
 import type { BuilderSnapshot, SetupInput } from '../src/builder/builder-service';
 import type { AppServices } from '../src/services/app-services';
-import { CONNECTED, StepModel } from './coach-model';
+import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 /**
@@ -14,8 +16,9 @@ import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
 
 const DAY = 86_400_000;
 let h: Harness;
+let model: StepModel;
 beforeEach(() => {
-  const model = new StepModel([]);
+  model = new StepModel([]);
   h = createHarness('2026-10-20T16:00:00.000Z', { coach: { model: () => model, connection: () => Promise.resolve(CONNECTED) } });
 });
 afterEach(async () => {
@@ -70,5 +73,111 @@ describe('B3: the built-in rule’s load stands as the rule gave it', () => {
     expect(top - 50).toBeLessThanOrEqual(5);
     const why = await s.builder.whyWeight(snap.draftId, pd.key);
     expect(why[0]).toBe(`Last time + ${String(top - 50)}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan days (as builder-service.test.ts)
+
+function usableOf(req: ModelRequest): { catalogueId: string; name: string }[] {
+  const block = req.input.find((i) => i.type === 'message' && i.role === 'developer' && i.content.startsWith('YOUR DATA'));
+  if (block?.type !== 'message') throw new Error('no context');
+  const data = JSON.parse(block.content.slice(block.content.indexOf('\n') + 1)) as { build?: { usable: { catalogueId: string; name: string }[] } };
+  if (data.build === undefined) throw new Error('not a build turn');
+  return data.build.usable;
+}
+const ex = (catalogueId: string) => ({ catalogueId, warmups: null, workingSets: 3, reps: { min: 8, max: 10 }, workSeconds: null, targetRpe: 8, topSet: null, restSeconds: null, superset: null, load: null });
+const DAYS: [string, string, string[]][] = [
+  ['Push', 'push', ['Bench press', 'Incline dumbbell press', 'Triceps pushdown']],
+  ['Pull', 'pull', ['Lat pulldown', 'Barbell row']],
+  ['Legs', 'legs', ['Back squat', 'Leg curl']],
+];
+const planStub = (req: ModelRequest): ModelEvent[] => {
+  const usable = usableOf(req);
+  const idOf = (name: string) => usable.find((u) => u.name === name)?.catalogueId ?? `missing-${name}`;
+  return toolCall('propose_plan', { days: DAYS.map(([dayName, splitDayId, exs]) => ({ dayName, splitDayId, focus: null, minutes: null, exercises: exs.map((n) => ex(idOf(n))) })), message: 'Push, pull, legs.', minutes: null, gymName: null });
+};
+
+async function benWithPlan(): Promise<{ s: AppServices; gymId: string; push: string }> {
+  const { services: s } = await h.launch();
+  const gymId = await setUpGym(h, s);
+  await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 100, reps: 6, rpe: 8 }, { load: 100, reps: 6, rpe: 8 }] }]);
+  h.clockMs += DAY;
+  model = new StepModel([planStub, () => replyWith('Here is your week.')]);
+  const result = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Build me a 3-day plan', spoken: false }, turnId: h.ids() });
+  const card = result.cards[0]?.record;
+  if (card?.detail.kind !== 'build_plan') throw new Error('no plan');
+  const c = await s.plans.card({ planId: card.detail.planId, versionN: 1 });
+  expect(await s.plans.apply({ planId: card.detail.planId, versionN: 1, expectedVersion: c?.planVersion ?? 0, mode: 'replace', opId: 'apply-1' })).toMatchObject({ ok: true });
+  const push = (await s.plans.active())?.days[0]?.routineId;
+  if (push === undefined) throw new Error('no push day');
+  return { s, gymId, push };
+}
+
+export const template = async (s: AppServices, id: string) => (await s.routines.editor({ routineId: id, gymId: null }))?.routine ?? null;
+
+describe('B1: a new Day or Main lift moves the draft’s plan day', () => {
+  it('Push template → Set up → Legs → Start records Legs, and a later Push opens a fresh draft', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
+    expect(snap.planDay?.splitDayId).toBe('push');
+    const legs = await s.builder.initialSetup({ dayId: 'legs' });
+    const rebuilt = ok(await s.builder.changeSetup(snap.draftId, { ...legs, minutes: snap.setup.minutes }, { opId: 'day-legs', expectedVersion: snap.version }));
+    expect(rebuilt.toast?.text).toBe('Rebuilt');
+    expect(rebuilt.snapshot.planDay).toMatchObject({ splitDayId: 'legs', dayIndex: 2 });
+    expect(names(rebuilt.snapshot)).toContain('Back squat');
+
+    // Undo puts the Push key back with both pages.
+    const back = ok(await s.builder.undo(snap.draftId, 'day-legs', 'u-1')).snapshot;
+    expect(back.planDay?.splitDayId).toBe('push');
+    const again = ok(await s.builder.changeSetup(snap.draftId, { ...legs, minutes: snap.setup.minutes }, { opId: 'day-legs-2', expectedVersion: back.version })).snapshot;
+
+    const r = await s.builder.start(again.draftId, { choice: { kind: 'today' }, opId: 'start-1', expectedVersion: again.version, gymId });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const a = (await s.workout.load(r.sessionId))?.aggregate;
+    expect(a?.session.planDay).toMatchObject({ splitDayId: 'legs', dayIndex: 2 });
+    // Push is free again: a new Push open makes a new draft, not the started Legs one.
+    const pushAgain = ok(await s.builder.openTemplate({ routineId: push }, 'open-2')).snapshot;
+    expect(pushAgain.draftId).not.toBe(snap.draftId);
+  });
+
+  it('a change to Custom records no plan day', async () => {
+    const { s, gymId, push } = await benWithPlan();
+    const snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
+    const custom: SetupInput = { ...snap.setup, dayId: 'custom', dayName: 'Custom', dayParts: [], mainLiftExerciseId: null, variationId: null, groups: [{ group: 'Chest', count: 2 }], groupsEdited: true };
+    const c = ok(await s.builder.changeSetup(snap.draftId, custom, { opId: 'custom-1', expectedVersion: snap.version })).snapshot;
+    expect(c.planDay).toBeNull();
+    const r = await s.builder.start(c.draftId, { choice: { kind: 'today' }, opId: 'start-c', expectedVersion: c.version, gymId });
+    if (!r.ok) throw new Error(r.message);
+    expect((await s.workout.load(r.sessionId))?.aggregate.session.planDay).toBeUndefined();
+  });
+
+  it('a Day change onto a day that already has an open draft today resumes that one', async () => {
+    const { s, push } = await benWithPlan();
+    const legsSetup = await s.builder.initialSetup({ dayId: 'legs' });
+    const legs = ok(await s.builder.create(legsSetup, 'legs-1')).snapshot;
+    const snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
+    const moved = ok(await s.builder.changeSetup(snap.draftId, { ...legsSetup }, { opId: 'to-legs', expectedVersion: snap.version }));
+    expect(moved.snapshot.draftId).toBe(legs.draftId);
+    // The Push draft is untouched.
+    expect((await s.builder.read(snap.draftId))?.planDay?.splitDayId).toBe('push');
+  });
+});
+
+describe('B2: Set up over a template changes nothing until Ben changes it', () => {
+  it('Set up shows the template’s groups; Next with nothing changed writes nothing', async () => {
+    const { s, push } = await benWithPlan();
+    const snap = ok(await s.builder.openTemplate({ routineId: push }, 'open-1')).snapshot;
+    const facts = await s.builder.setupFacts(snap.setup);
+    expect(facts.loaded).toEqual(snap.setup.groups);
+    const next = await s.builder.changeSetup(snap.draftId, snap.setup, { opId: 'next-1', expectedVersion: snap.version });
+    expect(next.status).toBe('replayed');
+    expect(next.snapshot && names(next.snapshot)).toEqual(['Bench press', 'Incline dumbbell press', 'Triceps pushdown']);
+    expect((await s.builder.read(snap.draftId))?.version).toBe(snap.version);
+    expect(await s.builder.startPrompt(snap.draftId)).toBeNull();
+    // Only Length changed: sets merge, no new exercises.
+    const longer = ok(await s.builder.changeSetup(snap.draftId, { ...snap.setup, minutes: snap.setup.minutes + 5 }, { opId: 'len-1', expectedVersion: snap.version })).snapshot;
+    expect(names(longer)).toEqual(['Bench press', 'Incline dumbbell press', 'Triceps pushdown']);
   });
 });

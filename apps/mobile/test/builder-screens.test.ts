@@ -21,6 +21,7 @@ import {
   stepGroup,
   stepMinutes,
   withRecommendation,
+  sameIdentity,
   workoutView,
 } from '../src/builder/builder-view';
 import { countText, reviewFacts, reviewHeaderWord, setBuilderReviewProvider, builderReviewProvider } from '../src/builder/review';
@@ -35,7 +36,7 @@ const SRC = join(__dirname, '..', 'src');
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8');
 
 const setup = (over: Partial<SetupInput> = {}): SetupInput => ({ dayId: 'chest', dayName: 'Chest', dayParts: ['Chest', 'Triceps'], minutes: 60, mainLiftExerciseId: 'bench', supersets: true, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 1 }, { group: 'Abs', count: 1 }], variationId: null, groupsEdited: false, ...over });
-const facts = (over: Partial<SetupFacts> = {}): SetupFacts => ({ days: { split: [], ppl: [] }, mainLifts: [{ id: 'bench', name: 'Bench press', fromProfile: true }], variations: [], recommended: { count: 7, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 2 }, { group: 'Abs', count: 1 }] }, total: 6, template: null, addable: ['Back', 'Shoulders', 'Legs', 'Biceps'], canBuild: true, ...over });
+const facts = (over: Partial<SetupFacts> = {}): SetupFacts => ({ days: { split: [], ppl: [] }, mainLifts: [{ id: 'bench', name: 'Bench press', fromProfile: true }], variations: [], recommended: { count: 7, groups: [{ group: 'Chest', count: 4 }, { group: 'Triceps', count: 2 }, { group: 'Abs', count: 1 }] }, total: 6, template: null, loaded: null, addable: ['Back', 'Shoulders', 'Legs', 'Biceps'], canBuild: true, ...over });
 
 describe('Set up (§2.2)', () => {
   it('Total vs `Recommended for 60 min · 7`, the tag, and Next', () => {
@@ -72,8 +73,14 @@ describe('Set up (§2.2)', () => {
     expect(stepGroup(setup(), 'Abs', -1).groups.map((g) => g.group)).toEqual(['Chest', 'Triceps']);
     expect(stepGroup(setup(), 'Chest', 1).groups[0]?.count).toBe(4);
     // Rows follow the recommendation until edited.
-    expect(withRecommendation(setup(), facts().recommended).groups[1]?.count).toBe(2);
-    expect(withRecommendation(more, facts().recommended)).toBe(more);
+    expect(withRecommendation(setup(), facts()).groups[1]?.count).toBe(2);
+    expect(withRecommendation(more, facts())).toBe(more);
+    // A loaded template's own groups, not the recommendation (review B2); an open draft's rows stay.
+    const loaded = facts({ loaded: [{ group: 'Chest', count: 2 }, { group: 'Triceps', count: 1 }] });
+    expect(withRecommendation(setup(), loaded).groups).toEqual([{ group: 'Chest', count: 2 }, { group: 'Triceps', count: 1 }]);
+    expect(withRecommendation(setup(), facts(), true)).toEqual(setup());
+    expect(sameIdentity(setup(), setup({ minutes: 45 }))).toBe(true);
+    expect(sameIdentity(setup(), setup({ mainLiftExerciseId: 'incline' }))).toBe(false);
     expect(addGroup(setup(), 'Biceps').groups.at(-1)).toEqual({ group: 'Biceps', count: 1 });
   });
 
