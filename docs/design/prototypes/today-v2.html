@@ -94,6 +94,12 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .mn { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); font-size: 17px; cursor: pointer; }
 .tv { min-width: 58px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
 .cr .k small.pl { display: block; font-size: 11px; color: var(--text3); }
+.whyd { display: none; font-size: 13.5px; color: var(--text2); }
+.card.open .whyd { display: block; }
+.whyd summary { cursor: pointer; color: var(--text); list-style: none; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; padding: 4px 0; }
+.whyd summary::-webkit-details-marker { display: none; }
+.whyd[open] { background: var(--raised); border-radius: 12px; padding: 8px 12px; }
+.whyd span { display: block; margin-top: 3px; }
 .fitline { font-size: 13px; color: var(--text2); }
 .varline { font-size: 13.5px; color: var(--text2); margin: 0 4px 8px; }
 .link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; cursor: pointer; padding: 6px 0; font-family: inherit; }
@@ -271,7 +277,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
           ${f.notes.length ? `<div class="fitline">${s.min < PLAN_MIN ? 'To fit' : 'With'} ${s.min} min: ${f.notes.join(' · ')}</div>` : ''}
           ${D[s.day].warn ? `<div class="why"><i>!</i><span>${D[s.day].warn}</span></div>` : ''}
           <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${f.bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
-          ${s.day === 'Chest' && dr.mk === 'Bench' ? `<div class="notes"><b>From last review</b><span>Bench top set: 102.5 kg next (hit 8 last time)</span></div><div class="notes"><b>Based on</b><span>· Plan: Chest is next (day 1 of 4)</span><span>· Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again</span><span>· Goal: strength · bench target 110 kg</span><span>· Accessories: ${s.style.toLowerCase()} · time ${s.min} min</span></div>` : ''}
+          ${s.day === 'Chest' && dr.mk === 'Bench' ? `<details class="whyd"><summary>Why?</summary><span>· Plan: Chest is next (day 1 of 4)</span><span>· Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again</span><span>· Last review: bench top set 102.5 kg once you hit 8 reps</span><span>· Goal: strength · bench target 110 kg</span><span>· Accessories ${s.style.toLowerCase()} · ${s.min} min</span></details>` : `<details class="whyd"><summary>Why?</summary><span>· ${s.day}${s.day === NEXT ? ' is next in your plan' : ' picked by you; the plan moves on'}</span><span>· Weights from your last ${s.day} session</span><span>· Accessories ${s.style.toLowerCase()} · ${s.min} min</span></details>`}
           <div class="mixrow">${s.mix && swappedFrom ? `<span>${swappedFrom[0]} → ${ALT[swappedFrom[0]]} · today only</span><button class="link" data-a="unmix">Undo</button>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
           <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
         </div>
