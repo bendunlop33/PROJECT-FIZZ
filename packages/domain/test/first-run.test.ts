@@ -242,6 +242,8 @@ describe('workout titles and muscle summary (audit F5)', () => {
   it('lists up to three muscle words in order', () => {
     expect(muscleSummary(named('Bench press', 'Dumbbell shoulder press', 'Triceps pushdown', 'Lateral raise'))).toBe('Chest · Shoulders · Triceps');
     expect(muscleSummary([])).toBeNull();
+    // Rear delts count as Back everywhere (§9 Q13).
+    expect(muscleSummary(named('Face pull', 'Lateral raise'))).toBe('Back · Shoulders');
   });
 });
 

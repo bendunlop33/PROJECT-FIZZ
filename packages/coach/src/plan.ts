@@ -103,8 +103,8 @@ export function planDayMinutes(day: Pick<ProposedPlanDay, 'minutes'>, everyDay: 
   return step(request.minutes);
 }
 
-/** The group most of a day's working sets train, or null. */
-function topGroup(plan: DraftPlan, deps: PlanDeps): MuscleGroup | null {
+/** The group most of a day's working sets train (by each exercise's first primary muscle), or null. Exported for tests. */
+export function planTopGroup(plan: { slots: readonly Pick<DraftPlan['slots'][number], 'exerciseId' | 'setTemplates'>[] }, deps: Pick<PlanDeps, 'exerciseOf' | 'groupOf'>): MuscleGroup | null {
   if (deps.exerciseOf === undefined || deps.groupOf === undefined) return null;
   const sets = new Map<MuscleGroup, number>();
   for (const s of plan.slots) {
@@ -161,7 +161,7 @@ export function createPlanExecutor(deps: PlanDeps): CoachExecutors {
         return c;
       },
       minutesFor: (d) => planDayMinutes(d, args.minutes, deps.request),
-      ...(deps.exerciseOf !== undefined && deps.groupOf !== undefined ? { topGroupOf: (p: DraftPlan) => topGroup(p, deps) } : {}),
+      ...(deps.exerciseOf !== undefined && deps.groupOf !== undefined ? { topGroupOf: (p: DraftPlan) => planTopGroup(p, deps) } : {}),
     });
     const rationale = checkedRationale(args.message, ctx.facts === undefined ? undefined : planFacts(ctx.facts, check.days, deps.request.text));
     const parentN = deps.plan?.currentVersion ?? null;

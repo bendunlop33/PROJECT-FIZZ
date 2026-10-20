@@ -230,6 +230,14 @@ describe('split rotation (F19)', () => {
     expect(nextSplitDay(clsb, groups({ Shoulders: 6, Triceps: 2 })).id).toBe('back');
     expect(matchSplitDay(clsb, groups({ Triceps: 3 }))?.id).toBe('chest');
   });
+
+  it('rear delts count as Back (§9 Q13): a rear-delt workout matches the Back/Pull day, not Shoulders', () => {
+    const rear = workoutMuscleGroups([{ primaryMuscles: ['rear_delts', 'upper_back'], workingSets: 4 }, { primaryMuscles: ['rear_delts'], workingSets: 3 }, { primaryMuscles: ['side_delts'], workingSets: 2 }]);
+    expect(rear).toEqual(groups({ Back: 7, Shoulders: 2 }));
+    const clsb = { kind: 'clsb' as const, days: [...PRESET_SPLITS.clsb] };
+    expect(matchSplitDay(clsb, rear)?.id).toBe('back');
+    expect(matchSplitDay(DEFAULT_SPLIT, rear)?.id).toBe('pull');
+  });
 });
 
 describe('main lift (D7)', () => {
@@ -258,6 +266,15 @@ describe('main lift (D7)', () => {
 
   it('options are compound lifts for the day’s body parts, by name', () => {
     expect(mainLiftOptions({ bodyParts: ['Chest'] }, history.map((h) => h.exercise)).map((e) => e.id)).toEqual(['bench', 'incline']);
+  });
+
+  it('a rear-delt-led compound is a Back main lift, not a Shoulders one (§9 Q13)', () => {
+    const highRow = ex('high-row', 'High row', 'rear_delts');
+    const rows: LiftHistory[] = [...history, { exercise: highRow, sessions: 40, bestKg: 50 }];
+    expect(mainLiftOptions({ bodyParts: ['Back', 'Biceps'] }, rows.map((h) => h.exercise)).map((e) => e.id)).toEqual(['high-row']);
+    expect(mainLiftOptions({ bodyParts: ['Shoulders'] }, rows.map((h) => h.exercise)).map((e) => e.id)).toEqual(['ohp']);
+    expect(recommendMainLift({ bodyParts: ['Back', 'Biceps'] }, rows)?.id).toBe('high-row');
+    expect(recommendMainLift({ bodyParts: ['Shoulders', 'Triceps'] }, rows)?.id).toBe('ohp');
   });
 });
 

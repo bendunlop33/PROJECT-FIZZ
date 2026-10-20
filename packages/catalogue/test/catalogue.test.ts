@@ -76,6 +76,10 @@ describe('vocabularies', () => {
     expect(MUSCLE_GROUPS).toHaveLength(11);
     for (const g of MUSCLE_GROUPS) expect(used.has(g)).toBe(true);
   });
+  it('rear delts count as Back everywhere (Ben, 20 Oct, workout-builder-v3 §9 Q13)', () => {
+    expect(MUSCLE_TO_GROUP.rear_delts).toBe('Back');
+    expect(Object.entries(MUSCLE_TO_GROUP).filter(([, g]) => g === 'Shoulders').map(([m]) => m)).toEqual(['front_delts', 'side_delts']);
+  });
 });
 
 describe('catalogue entry schema', () => {

@@ -13,6 +13,7 @@ export * from './draft';
 export * from './workout-draft';
 export * from './plan-draft';
 export * from './muscle-groups';
+export * from './builder-groups';
 export * from './import-layout';
 export * from './training-profile';
 export * from './lift-targets';
