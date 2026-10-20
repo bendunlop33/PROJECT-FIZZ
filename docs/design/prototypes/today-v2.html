@@ -40,7 +40,7 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .planline b { color: var(--text); font-weight: 600; }
 /* recommended card */
 .card { background: var(--surface); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; cursor: pointer; }
+.card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .card .big { font-size: 28px; font-weight: 600; letter-spacing: -.01em; }
 .card .sub { color: var(--text2); font-size: 14px; margin-top: 2px; }
 .card .why { font-size: 13px; color: var(--text2); display: flex; gap: 6px; align-items: baseline; }
@@ -77,7 +77,13 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .types { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
 .ty { border: 1.5px solid #26221F; background: none; color: #7C746D; border-radius: 999px; padding: 8px 14px; min-height: 40px; font-size: 14px; font-family: inherit; cursor: pointer; }
 .ty.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
-.ctl { background: var(--surface); border-radius: 14px; margin: 8px 0; }
+.ctl { background: var(--raised); border-radius: 14px; margin: 2px 0; }
+.ctl .cr + .cr { border-top-color: #34302C; }
+.ctl .ty { border-color: #3A3532; }
+.ctl .mn { background: var(--surface); }
+.bdt { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; border-top: 1px solid var(--divider); color: var(--text); font-size: 15px; font-family: inherit; padding: 12px 2px 4px; cursor: pointer; }
+.mixrow.bd { display: none; }
+.card.open .mixrow.bd { display: flex; }
 .cr { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px 0 14px; }
 .cr + .cr { border-top: 1px solid var(--divider); }
 .cr .k { font-size: 14px; color: var(--text2); }
@@ -129,7 +135,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 <div class="wrap">
   <div class="phone" id="app"></div>
-  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split; runs show only when you've logged them or told the coach, e.g. a long run Saturday). Pick the day (Next is the plan's), then main lift, Focused or Varied accessories, time, abs and supersets; the workout below adjusts. Tap the card for details. ↻ Mix it up asks the coach for one fresh accessory today. ⋯ has saved variations and other workouts. Edit and Build your own open the builder.</div>
+  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split; runs show only when you've logged them or told the coach, e.g. a long run Saturday). Pick the day (Next is the plan's), then main lift, Focused or Varied accessories, time, abs and supersets; the workout below adjusts. Tap Session breakdown for the exercises. ↻ Mix it up asks the coach for one fresh accessory today. ⋯ has saved variations and other workouts. Edit and Build your own open the builder.</div>
 </div>
 
 <script>
@@ -269,24 +275,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <div>
         <div class="label" style="margin:0 2px 8px">Today's session</div>
         <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other workouts">⋯</button></div>
-        <div class="ctl">
-          <div class="cr"><span class="k">Main lift</span><div class="types">${mains.map((m) => `<button class="ty${m === dr.mk ? ' on' : ''}" data-a="main" data-v="${m}">${m}</button>`).join('')}</div></div>
-          <div class="cr"><span class="k">Accessories</span><div class="types">${['Focused', 'Varied'].map((m) => `<button class="ty${m === s.style ? ' on' : ''}" data-a="style" data-v="${m}">${m}</button>`).join('')}</div></div>
-          <div class="cr"><span class="k">Time</span><div class="val"><button class="mn" data-a="min" data-v="-5" aria-label="5 minutes less">−</button><span class="tv">${s.min} min</span><button class="mn" data-a="min" data-v="5" aria-label="5 minutes more">+</button></div></div>
-          <div class="cr"><span class="k">Abs${s.abs != null && s.abs !== PLAN_ABS[s.day] ? `<small class="pl">plan: ${PLAN_ABS[s.day] ? 'on' : 'off'}</small>` : ''}</span><button class="sw" data-a="abs" role="switch" aria-checked="${absOn()}" aria-label="Abs"><span class="switch${absOn() ? ' on' : ''}"><i></i></span></button></div>
-          <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
-        </div>
-        ${s.v != null ? `<div class="varline">Variation: ${VARS[s.day][s.v].label} · <button class="link" data-a="unvar">Back to plan day</button></div>` : ''}
         <div class="card${s.open ? ' open' : ''}">
-          <div class="top" data-a="toggle" role="button" aria-expanded="${s.open}">
-            <div><div class="big">${s.day} <span class="lt">· ${dr.mk}</span></div><div class="sub">${f.ex.length} exercises · ~${f.est} min${moved ? ` · <span class="mv">${moved}</span>` : ''}${s.day === NEXT && !moved ? ' · plan day 1 of 4' : ''}</div></div>
-            <span class="chev">›</span>
-          </div>
+          <div class="top"><div><div class="big">${s.day} <span class="lt">· ${dr.mk}</span></div><div class="sub">${f.ex.length} exercises · ~${f.est} min${moved ? ` · <span class="mv">${moved}</span>` : ''}${s.day === NEXT && !moved ? ' · plan day 1 of 4' : ''}</div></div></div>
           ${f.notes.length ? `<div class="fitline">${s.min < PLAN_MIN ? 'To fit' : 'With'} ${s.min} min: ${f.notes.join(' · ')}</div>` : ''}
           ${D[s.day].warn ? `<div class="why"><i>!</i><span>${D[s.day].warn}</span></div>` : ''}
+          <div class="ctl">
+            <div class="cr"><span class="k">Main lift</span><div class="types">${mains.map((m) => `<button class="ty${m === dr.mk ? ' on' : ''}" data-a="main" data-v="${m}">${m}</button>`).join('')}</div></div>
+            <div class="cr"><span class="k">Accessories</span><div class="types">${['Focused', 'Varied'].map((m) => `<button class="ty${m === s.style ? ' on' : ''}" data-a="style" data-v="${m}">${m}</button>`).join('')}</div></div>
+            <div class="cr"><span class="k">Time</span><div class="val"><button class="mn" data-a="min" data-v="-5" aria-label="5 minutes less">−</button><span class="tv">${s.min} min</span><button class="mn" data-a="min" data-v="5" aria-label="5 minutes more">+</button></div></div>
+            <div class="cr"><span class="k">Abs${s.abs != null && s.abs !== PLAN_ABS[s.day] ? `<small class="pl">plan: ${PLAN_ABS[s.day] ? 'on' : 'off'}</small>` : ''}</span><button class="sw" data-a="abs" role="switch" aria-checked="${absOn()}" aria-label="Abs"><span class="switch${absOn() ? ' on' : ''}"><i></i></span></button></div>
+            <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
+          </div>
+          ${s.v != null ? `<div class="varline">Variation: ${VARS[s.day][s.v].label} · <button class="link" data-a="unvar">Back to plan day</button></div>` : ''}
+          <button class="bdt" data-a="toggle" aria-expanded="${s.open}"><span>Session breakdown</span><span class="chev">›</span></button>
           <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${f.bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
           ${s.day === 'Chest' && dr.mk === 'Bench' ? `<details class="whyd"><summary>Why?</summary><span>· Plan: Chest is next (day 1 of 4)</span><span>· Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again</span><span>· Last review: bench top set 102.5 kg once you hit 8 reps</span><span>· Goal: strength · bench target 110 kg</span><span>· Accessories ${s.style.toLowerCase()} · ${s.min} min</span></details>` : `<details class="whyd"><summary>Why?</summary><span>· ${s.day}${s.day === NEXT ? ' is next in your plan' : ' picked by you; the plan moves on'}</span><span>· Weights from your last ${s.day} session</span><span>· Accessories ${s.style.toLowerCase()} · ${s.min} min</span></details>`}
-          <div class="mixrow">${s.mix && swappedFrom ? `<span>${swappedFrom[0]} → ${ALT[swappedFrom[0]]} · today only</span><button class="link" data-a="unmix">Undo</button>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
+          <div class="mixrow bd">${s.mix && swappedFrom ? `<span>${swappedFrom[0]} → ${ALT[swappedFrom[0]]} · today only</span><button class="link" data-a="unmix">Undo</button>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
           <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
         </div>
       </div>
