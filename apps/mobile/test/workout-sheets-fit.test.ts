@@ -21,7 +21,9 @@ describe('Edit set and planned-set edit (2.1)', () => {
       expect(src).not.toContain('<PrimaryButton label="Save changes"');
       // The bar comes after the scroll, inside the keyboard-avoiding frame.
       expect(src.indexOf('<ActionBar surface')).toBeGreaterThan(src.lastIndexOf('</ScrollView>'));
-      expect(src).toContain('{...WORKOUT_KEYBOARD} automaticallyAdjustKeyboardInsets>');
+      // Review S1: the keyboard-avoiding frame alone lifts the bar; a second inset doubled it.
+      expect(src).toContain('<SheetKeyboardAvoidingView');
+      expect(src).not.toContain('automaticallyAdjustKeyboardInsets>');
     });
     it(`${f}: the note has the Done bar; Insert and Delete stay at the end`, () => {
       expect(flat(src)).toMatch(/maxLength=\{NOTE_MAX\} inputAccessoryViewID=\{NUMBER_ACCESSORY_ID\}/);

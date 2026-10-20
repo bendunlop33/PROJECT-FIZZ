@@ -209,9 +209,10 @@ export function EditSetScreen() {
 
   return (
     // 2.1: the sheet avoids the keyboard; Save sits in a fixed bar on it, so a change saves without scrolling.
+    // Review S1: the avoiding view alone lifts it (no automaticallyAdjustKeyboardInsets, or the inset counts twice).
     <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
       <NumberAccessory />
-      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD} automaticallyAdjustKeyboardInsets>
+      <ScrollView contentContainerStyle={{ padding: theme.space['4'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} {...WORKOUT_KEYBOARD}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <AppText variant="title2" accessibilityRole="header">{`Edit set ${String(view.setNumber)} · ${view.exerciseName}`}</AppText>
           <TextButton label="Cancel" tone="secondary" icon="xmark" onPress={() => { navigation.goBack(); }} />
