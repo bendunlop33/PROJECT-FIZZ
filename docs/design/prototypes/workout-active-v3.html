@@ -58,7 +58,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .wl b { color: var(--text); font-weight: 600; }
 .wl u { color: var(--text); margin-left: 6px; cursor: pointer; text-underline-offset: 3px; }
 .foot2 { display: flex; justify-content: space-between; align-items: center; padding-top: 6px; }
-.q { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--text3); background: none; color: var(--text2); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; position: relative; }
+.q { min-height: 30px; padding: 0 2px; border: 0; background: none; color: var(--text2); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); cursor: pointer; font-family: inherit; position: relative; }
 .q::after, .addset::after { content: ''; position: absolute; inset: -8px; }
 .addset { position: relative; min-height: 30px; padding: 0 12px; border-radius: 999px; border: 1.5px solid var(--divider); background: none; color: var(--text2); font-size: 13px; cursor: pointer; font-family: inherit; }
 .rows { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
@@ -142,7 +142,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works} · ${tgt(e)}</small></span><span class="prog">${doneW}/${totW}</span></div>
       <div class="tbl">${true ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
       <div class="rows" data-k="${k}">${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n;  return `<div data-k="${k}" data-i="${i}" class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div></div>
-      <div class="foot2"><button class="addset" data-a="add" data-k="${k}">＋ Set</button><button class="q" data-a="why" data-k="${k}" aria-label="Why this target">?</button></div></div>`;
+      <div class="foot2"><button class="addset" data-a="add" data-k="${k}">＋ Set</button><button class="q" data-a="why" data-k="${k}" aria-label="Why this target">Why?</button></div></div>`;
   }
   function view() { draw(); fit(); }
   // Everything fits on one page: each exercise's set rows scroll inside their own box. Boxes shrink (largest first)
