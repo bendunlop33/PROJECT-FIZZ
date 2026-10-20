@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Modal, View } from 'react-native';
+import { Modal, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { toIso, toMs, workoutTimeBounds } from '@fizz/domain';
@@ -97,46 +97,50 @@ export function FinishSheet({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} {...(onDismissed ? { onDismiss: onDismissed } : {})}>
-      <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'], paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}>
-        <View style={{ gap: theme.space['2'] }}>
-          <Eyebrow>Finish</Eyebrow>
-          <AppText variant="title2" accessibilityRole="header">
-            Finish workout?
-          </AppText>
-        </View>
-        {model.nothingLogged ? (
-          <AppText variant="body">Nothing logged yet.</AppText>
-        ) : (
-          <AppText variant="body" numeric>
-            {`${String(model.done)} of ${String(model.total)} sets done.${model.willSkip > 0 ? ` ${String(model.willSkip)} not done will be marked skipped.` : ''}`}
-          </AppText>
-        )}
-        {!model.nothingLogged ? (
+      {/* 2.2: the body scrolls (the end-time wheel can be tall at AX); Finish and Keep going stay pinned. */}
+      <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'], gap: theme.space['4'] }}>
           <View style={{ gap: theme.space['2'] }}>
-            <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} endNow={now} endEstimate={model.forgotten ? model.defaultEndMs : null} />
-            {Math.abs(endMs - now) >= 60_000 ? (
-              <TextButton
-                label={`Use now (${formatTime(now, tz)})`}
-                onPress={() => {
-                  setTimes((t) => ({ ...t, endMs: now }));
-                }}
-              />
-            ) : null}
+            <Eyebrow>Finish</Eyebrow>
+            <AppText variant="title2" accessibilityRole="header">
+              Finish workout?
+            </AppText>
           </View>
-        ) : null}
-        {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
-        <View style={{ flex: 1 }} />
-        {model.nothingLogged ? (
-          <>
-            <PrimaryButton label="Discard workout" onPress={onDiscard} disabled={busy} />
-            <TextButton label="Finish anyway" onPress={() => void finish()} disabled={busy} />
-          </>
-        ) : (
-          <PrimaryButton label="Finish" busy={busy} onPress={() => void finish()} />
-        )}
-        <TextButton label="Keep going" tone="secondary" onPress={onClose} />
-        {!model.nothingLogged ? <View style={{ height: theme.space['2'] }} /> : null}
-        {!model.nothingLogged ? <DangerTextButton label="Discard workout" onPress={onDiscard} disabled={busy} /> : null}
+          {model.nothingLogged ? (
+            <AppText variant="body">Nothing logged yet.</AppText>
+          ) : (
+            <AppText variant="body" numeric>
+              {`${String(model.done)} of ${String(model.total)} sets done.${model.willSkip > 0 ? ` ${String(model.willSkip)} not done will be marked skipped.` : ''}`}
+            </AppText>
+          )}
+          {!model.nothingLogged ? (
+            <View style={{ gap: theme.space['2'] }}>
+              <WorkoutTimesRows times={times} bounds={bounds} tz={tz} onChange={setTimes} endNow={now} endEstimate={model.forgotten ? model.defaultEndMs : null} />
+              {Math.abs(endMs - now) >= 60_000 ? (
+                <TextButton
+                  label={`Use now (${formatTime(now, tz)})`}
+                  onPress={() => {
+                    setTimes((t) => ({ ...t, endMs: now }));
+                  }}
+                />
+              ) : null}
+            </View>
+          ) : null}
+          {error ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={error} /> : null}
+          <View style={{ flex: 1 }} />
+          {!model.nothingLogged ? <DangerTextButton label="Discard workout" onPress={onDiscard} disabled={busy} /> : null}
+        </ScrollView>
+        <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['2'] }}>
+          {model.nothingLogged ? (
+            <>
+              <PrimaryButton label="Discard workout" onPress={onDiscard} disabled={busy} />
+              <TextButton label="Finish anyway" onPress={() => void finish()} disabled={busy} />
+            </>
+          ) : (
+            <PrimaryButton label="Finish" busy={busy} onPress={() => void finish()} />
+          )}
+          <TextButton label="Keep going" tone="secondary" onPress={onClose} />
+        </View>
       </View>
     </Modal>
   );

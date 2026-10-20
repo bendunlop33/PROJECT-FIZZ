@@ -1,6 +1,6 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, useWindowDimensions, View } from 'react-native';
 
 import { clampWorkoutTimes, TIME_NOTE, timesNeedDate, wheelNeedsDate, workoutDurationText, type TimeNote, type WorkoutTimeBounds } from '@fizz/domain';
 
@@ -8,6 +8,7 @@ import { dateAt } from '../../clock';
 import { formatShortDate, formatTime } from '../../format/dates';
 import { useTheme } from '../../theme';
 import { AppText, Group, Icon, StatusLine, TEXT_PRESSED_OPACITY } from '../../ui';
+import { AX_FONT_SCALE } from '../../workout/overview';
 
 /**
  * Started / Ended (Ben, 19 Oct: "Option to change start and end by scrolling when finish
@@ -45,6 +46,7 @@ export function WorkoutTimesRows({
   startOnly?: boolean;
 }) {
   const theme = useTheme();
+  const ax = useWindowDimensions().fontScale >= AX_FONT_SCALE;
   const [open, setOpen] = useState<'start' | 'end' | null>(null);
   const [note, setNote] = useState<TimeNote | null>(null);
   const withDate = timesNeedDate(times, tz);
@@ -72,12 +74,13 @@ export function WorkoutTimesRows({
           onPress={() => {
             setOpen(expanded ? null : which);
           }}
-          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 52, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['3'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+          // At AX sizes the label sits above its value; otherwise the value gives way, never the label (design pass nit).
+          style={({ pressed }) => ({ flexDirection: ax ? 'column' : 'row', alignItems: ax ? 'flex-start' : 'center', columnGap: theme.space['2'], minHeight: 52, paddingHorizontal: theme.space['4'], paddingVertical: theme.space['3'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
         >
-          <AppText variant="body" style={{ flex: 1 }}>
+          <AppText variant="body" style={ax ? undefined : { flex: 1, minWidth: 72 }}>
             {label}
           </AppText>
-          <AppText variant="body" numeric color={expanded ? 'accent' : 'text.primary'}>
+          <AppText variant="body" numeric color={expanded ? 'accent' : 'text.primary'} style={ax ? undefined : { flexShrink: 1, textAlign: 'right' }}>
             {`${text(ms)}${which === 'end' && isNow(ms) ? ' (now)' : which === 'end' && endEstimate === ms ? ' (estimated)' : ''}`}
           </AppText>
           <Icon name={expanded ? 'chevron.up' : 'chevron.down'} color="text.tertiary" size={14} />

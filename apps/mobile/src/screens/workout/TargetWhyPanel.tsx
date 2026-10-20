@@ -20,6 +20,7 @@ const LABEL_WIDTH = 96;
 export function TargetWhyLink({ open, onPress, slim = false }: { open: boolean; onPress: () => void; slim?: boolean }) {
   const theme = useTheme();
   const chevron = theme.components.linkAffordance === 'chevron';
+  const underline = theme.components.linkAffordance === 'underline';
   return (
     <Pressable
       accessibilityRole="button"
@@ -30,7 +31,8 @@ export function TargetWhyLink({ open, onPress, slim = false }: { open: boolean; 
       style={({ pressed }) => (slim ? { paddingVertical: theme.space['1'], justifyContent: 'center', opacity: pressed ? 0.6 : 1 } : { minHeight: theme.target.workout.height, minWidth: theme.target.workout.width, alignItems: 'flex-end', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
-        <AppText variant="callout" color="accent" style={chevron ? { textDecorationLine: 'underline' } : undefined}>
+        {/* 2.9: the look's own link affordance: underlined in D, a chevron where the look uses chevrons. */}
+        <AppText variant="callout" color="accent" style={underline ? { textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] } : undefined}>
           {open ? 'Hide' : 'Why?'}
         </AppText>
         {chevron ? <Icon name={open ? 'chevron.up' : 'chevron.down'} color="accent" size={14} /> : null}
@@ -98,7 +100,7 @@ function Row({ row, stacked, innerRef, onPainFlag }: { row: WhyRow; stacked: boo
         }}
         style={({ pressed }) => ({ minHeight: theme.target.min.height, justifyContent: 'center', alignSelf: 'flex-start', marginLeft: stacked ? 0 : LABEL_WIDTH + theme.space['2'], opacity: pressed ? 0.6 : 1 })}
       >
-        <AppText variant="callout" color="accent">
+        <AppText variant="callout" color="accent" style={theme.components.linkAffordance === 'underline' ? { textDecorationLine: 'underline', textDecorationColor: theme.colors['border.control'] } : undefined}>
           {link.label}
         </AppText>
       </Pressable>
@@ -111,7 +113,7 @@ function RowBody({ row, stacked, innerRef }: { row: WhyRow; stacked: boolean; in
   return (
     <View ref={innerRef} accessible accessibilityLabel={whyRowAccessibilityLabel(row)} style={{ flexDirection: stacked ? 'column' : 'row', gap: stacked ? 2 : theme.space['2'] }}>
       {row.label === null ? null : (
-        <AppText variant="label" color="text.secondary" style={stacked ? undefined : { width: LABEL_WIDTH }}>
+        <AppText variant="label" color="text.secondary" style={stacked ? undefined : { minWidth: LABEL_WIDTH, maxWidth: LABEL_WIDTH * 1.5, flexShrink: 0 }}>
           {row.label}
         </AppText>
       )}

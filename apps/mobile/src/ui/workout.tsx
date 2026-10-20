@@ -526,12 +526,15 @@ export function ActionBar({
   primary,
   guard,
   keypadOpen = false,
+  surface = false,
 }: {
   talk?: ReactNode;
   primary: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean; lead?: string | null };
   guard?: boolean;
   /** On the keyboard: no room for the home indicator, a small gap only (0.2). */
   keypadOpen?: boolean;
+  /** In a sheet on `bg.surface` (Edit set): the bar matches it. */
+  surface?: boolean;
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -541,7 +544,7 @@ export function ActionBar({
         flexDirection: 'row',
         alignItems: 'center',
         gap: theme.space['3'],
-        backgroundColor: theme.components.barOnCanvas ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
+        backgroundColor: theme.components.barOnCanvas && !surface ? theme.colors['bg.canvas'] : theme.colors['bg.surface'],
         borderTopWidth: theme.components.barOnCanvas ? 0 : theme.dividerWidth,
         borderTopColor: theme.colors['border.divider'],
         paddingHorizontal: theme.components.barOnCanvas ? theme.space['5'] : theme.space['4'],

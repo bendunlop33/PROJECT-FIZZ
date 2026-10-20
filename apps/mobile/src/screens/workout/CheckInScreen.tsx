@@ -84,6 +84,7 @@ function Sheet({
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['4'] }}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
       >
         {onBack ? <TextButton label={backLabel ?? 'Back'} icon="chevron.left" onPress={onBack} /> : null}
         <View style={{ gap: theme.space['2'] }}>
@@ -523,15 +524,19 @@ function StartCheckIn({ gymId, repeatOf, nextOf, routineOf, overview }: { gymId:
             setStep('reasons');
           }}
           backLabel="What’s up?"
+          // 2.6: the bar under the title, so `Flag 2` stays visible while searching with the keyboard up.
+          barFirst
           bar={
             <>
               <TextButton label="Not now" tone="secondary" onPress={() => void afterPain(null)} />
-              <PrimaryButton
-                label={painPicked.length === 0 ? 'Choose a movement' : `Flag ${String(painPicked.length)} ${painPicked.length === 1 ? 'movement' : 'movements'}`}
-                disabled={painPicked.length === 0}
-                busy={busy}
-                onPress={() => void flagPain()}
-              />
+              <View style={{ flex: 1 }}>
+                <PrimaryButton
+                  label={painPicked.length === 0 ? 'Choose a movement' : `Flag ${String(painPicked.length)} ${painPicked.length === 1 ? 'movement' : 'movements'}`}
+                  disabled={painPicked.length === 0}
+                  busy={busy}
+                  onPress={() => void flagPain()}
+                />
+              </View>
             </>
           }
         >

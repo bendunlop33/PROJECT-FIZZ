@@ -1260,7 +1260,7 @@ export function WorkoutOverviewScreen() {
       style={{ minHeight: 44, justifyContent: 'center', flexShrink: 1 }}
     >
       <View style={{ minHeight: 34, paddingHorizontal: 14, paddingVertical: 4, borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.control'], flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
-        <AppText variant="label" style={{ flexShrink: 1 }}>
+        <AppText variant="label" numberOfLines={1} style={{ flexShrink: 1 }}>
           {page.view.gym?.name ?? OVERVIEW_COPY.addGym}
         </AppText>
         {page.view.gym ? <Icon name="chevron.down" color="text.secondary" size={10} /> : null}
@@ -1875,14 +1875,25 @@ export function WorkoutOverviewScreen() {
       </BottomCard>
       <BottomCard
         visible={whyVisible}
+        scroll={false}
         onClose={() => {
           setWhyVisible(false);
         }}
       >
-        <AppText variant="title2" accessibilityRole="header">
-          {why?.name ?? ''}
-        </AppText>
-        {why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}
+        {/* 2.4: the name and Close stay; the panel scrolls, so every row is reachable at AX. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }}>
+            {why?.name ?? ''}
+          </AppText>
+          <TextButton
+            label={TODAY_EDITS_COPY.close}
+            tone="secondary"
+            onPress={() => {
+              setWhyVisible(false);
+            }}
+          />
+        </View>
+        <ScrollView style={{ flexShrink: 1 }}>{why ? <TargetWhyPanel panel={why.explanation ? { setId: why.explanation.setId, status: 'ready', explanation: why.explanation } : { setId: '', status: 'failed' }} /> : null}</ScrollView>
       </BottomCard>
       <RepsSheet
         row={repsRow}

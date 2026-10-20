@@ -12,7 +12,7 @@ import type { RootStackParams } from '../../navigation/types';
 import type { PickerExercise } from '../../services/workout-services';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, Chip, ChipRow, Group, Icon, Row, SectionHeader, SetCountBar, SheetKeyboardAvoidingView, StatusLine, TEXT_PRESSED_OPACITY, TextButton } from '../../ui';
+import { AppText, Chip, Group, Icon, Row, SectionHeader, SetCountBar, SheetKeyboardAvoidingView, StatusLine, TEXT_PRESSED_OPACITY, TextButton, useKeyboardVisible } from '../../ui';
 import { pickerEmptyText, type PickerLoad } from '../../workout/picker-empty';
 import { pickerAddSets, pickerBarValue, SET_BAR, type PickerSetsBar } from '../../workout/set-shape-view';
 import { supersetPickerView } from '../../workout/superset-picker';
@@ -44,6 +44,7 @@ export function ExercisePickerScreen() {
   const changed = useDataChanged();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardVisible();
   const { sessionId, supersetWith } = useRoute<RouteProp<RootStackParams, 'ExercisePicker'>>().params;
   const [pairing, setPairing] = useState<Awaited<ReturnType<typeof services.workout.supersetChoices>>>(null);
   const [query, setQuery] = useState('');
@@ -177,9 +178,10 @@ export function ExercisePickerScreen() {
 
   return (
     <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'] }}>
-      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['5'], paddingBottom: theme.space['3'], gap: theme.space['3'], backgroundColor: theme.colors['bg.canvas'] }}>
+      {/* 2.8: a shorter header (title2, one line; Cardio beside the search), so more results show with the keyboard up. */}
+      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['3'], paddingBottom: theme.space['3'], gap: theme.space['3'], backgroundColor: theme.colors['bg.canvas'] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <AppText variant="title1" accessibilityRole="header" style={{ flex: 1 }} numberOfLines={2}>
+          <AppText variant="title2" accessibilityRole="header" style={{ flex: 1 }} numberOfLines={1}>
             {choosing ? choosing.exercise.name : (pairView?.title ?? 'Add exercise')}
           </AppText>
           <TextButton
@@ -197,20 +199,18 @@ export function ExercisePickerScreen() {
             Which one at this gym?
           </AppText>
         ) : (
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search exercises"
-            placeholderTextColor={theme.colors['text.tertiary']}
-            accessibilityLabel="Search exercises"
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-            maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
-            style={{ minHeight: 48, paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.divider'], backgroundColor: theme.colors['bg.surface'], color: theme.colors['text.primary'], fontSize: theme.type.body.fontSize }}
-          />
-        )}
-        {choosing ? null : (
-          <ChipRow>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search exercises"
+              placeholderTextColor={theme.colors['text.tertiary']}
+              accessibilityLabel="Search exercises"
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              maxFontSizeMultiplier={theme.type.body.maxFontSizeMultiplier}
+              style={{ flex: 1, minHeight: 48, paddingHorizontal: theme.space['4'], borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.divider'], backgroundColor: theme.colors['bg.surface'], color: theme.colors['text.primary'], fontSize: theme.type.body.fontSize }}
+            />
             <Chip
               label="Cardio"
               selected={cardio}
@@ -218,7 +218,7 @@ export function ExercisePickerScreen() {
                 setCardio(!cardio);
               }}
             />
-          </ChipRow>
+          </View>
         )}
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], gap: theme.space['4'], paddingBottom: theme.space['8'] }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
@@ -289,7 +289,7 @@ export function ExercisePickerScreen() {
         )}
       </ScrollView>
       {choosing ? null : (
-        <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: insets.bottom, backgroundColor: theme.colors['bg.surface'] }}>
+        <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: keyboard ? 0 : insets.bottom, backgroundColor: theme.colors['bg.surface'] }}>
           <SetCountBar value={pickerBarValue(bar, cardio, barStart)} limits={SET_BAR.limits} onChange={(n) => { setBar({ value: n, touched: true }); }} />
         </View>
       )}

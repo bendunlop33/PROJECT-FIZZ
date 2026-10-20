@@ -90,7 +90,7 @@ describe('Screen and sheets avoid the keyboard (0.3–0.5)', () => {
     expect(windowKeyboardOffset(undefined)).toBe(0);
     expect(windowKeyboardOffset(Number.NaN)).toBe(0);
     expect(read('ui', 'keyboard.tsx')).toContain('keyboardVerticalOffset={offset}');
-    for (const f of [['screens', 'coach', 'CoachSheetScreen.tsx'], ['screens', 'library', 'ExerciseFormScreen.tsx'], ['screens', 'routines', 'WorkoutEditorScreen.tsx'], ['screens', 'workout', 'ExercisePickerScreen.tsx']]) {
+    for (const f of [['screens', 'coach', 'CoachSheetScreen.tsx'], ['screens', 'library', 'ExerciseFormScreen.tsx'], ['screens', 'routines', 'WorkoutEditorScreen.tsx'], ['screens', 'workout', 'ExercisePickerScreen.tsx'], ['screens', 'workout', 'EditSetScreen.tsx'], ['screens', 'workout', 'PlannedSetEdit.tsx']]) {
       const s = read(...f);
       expect(s, f.join('/')).toContain('<SheetKeyboardAvoidingView');
       expect(s, f.join('/')).not.toContain('<KeyboardAvoidingView behavior="padding"');

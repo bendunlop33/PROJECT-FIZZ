@@ -1,4 +1,5 @@
 import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ChangeLine, NoteLine } from '@fizz/domain';
 import type { SessionAggregate } from '@fizz/schemas';
@@ -53,6 +54,7 @@ export function GymChip({ gymName, onPress }: { gymName: string | null; onPress:
 /** `Gym for this workout` (gym-editor §2.7): one row per gym; the workout's own is checked. */
 export function GymSwitcherSheet({ visible, gyms, onChoose, onClose }: { visible: boolean; gyms: GymChoice[] | null; onChoose: (g: GymChoice) => void; onClose: () => void }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.surface'] }}>
@@ -62,7 +64,7 @@ export function GymSwitcherSheet({ visible, gyms, onChoose, onClose }: { visible
           </AppText>
           <TextButton label="Close" tone="secondary" onPress={onClose} />
         </View>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: theme.space['4'], gap: theme.space['2'] }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['2'] }}>
           {gyms === null ? (
             <AppText variant="callout" color="text.secondary">
               Loading gyms…
@@ -210,12 +212,14 @@ export function GymSwitchCard({ view, onButton }: { view: SwitchCardView; onButt
           </AppText>
         ) : null}
         {view.unchecked ? <SnapNote note={view.unchecked} /> : null}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space['8'] }}>
+        {/* 2.7: the pills share the row and wrap rather than clip (`Review all 6 changes ›` at 375 pt). */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['3'], rowGap: theme.space['2'] }}>
           {view.buttons.map((b) => (
             <SecondaryButton
               key={b.id}
               label={b.label}
               workout
+              grow
               {...(b.disabled !== undefined ? { disabled: b.disabled } : {})}
               onPress={() => {
                 onButton(b.id);
@@ -235,6 +239,7 @@ export function GymSwitchCard({ view, onButton }: { view: SwitchCardView; onButt
  */
 export function GymReviewSheet({ card, aggregate, onButton, onClose }: { card: OpenSwitchCard | null; aggregate: SessionAggregate; onButton: (id: CardButton) => void; onClose: () => void }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const v = card ? reviewSheetView(card, aggregate) : null;
   return (
     <Modal visible={v !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -280,7 +285,7 @@ export function GymReviewSheet({ card, aggregate, onButton, onClose }: { card: O
           </ScrollView>
         ) : null}
         {v ? (
-          <View style={{ padding: theme.space['4'], gap: theme.space['2'] }}>
+          <View style={{ padding: theme.space['4'], paddingBottom: theme.space['4'] + insets.bottom, gap: theme.space['2'] }}>
             <TextButton
               label={v.secondary.label}
               tone="secondary"

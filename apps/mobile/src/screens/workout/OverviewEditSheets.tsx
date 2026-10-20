@@ -29,7 +29,8 @@ export function RepsSheet({ row, onDone, onUsePlanned, onClose }: { row: Overvie
   const steps = d === null ? null : repsSteps(d);
   const off: StepTarget = { enabled: false, reason: '' };
   return (
-    <BottomCard visible={row !== null} onClose={onClose} closeLabel={EDIT_MODE_COPY.done}>
+    // 2.3: the scrim closes without saving, so VoiceOver reads it as `Close`, not `Done`.
+    <BottomCard visible={row !== null} onClose={onClose}>
       {row !== null && d !== null && steps !== null ? (
         <View style={{ gap: theme.space['4'] }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'] }}>
