@@ -37,7 +37,11 @@ const MEASURED: Record<Exercise['measurement'], FoundExercise['measured']> = { r
 
 /** A muscle or group word ("calves", "calf", "hams", "Back") → the muscle groups it names. */
 function groupsNamedBy(text: string): Set<string> {
-  const words = normaliseSearchText(text).split(' ').filter((w) => w !== '');
+  // "rear delts" is one muscle word (Back, §9 Q13), so its "delts" never names Shoulders.
+  const words = normaliseSearchText(text)
+    .replace(/\brear delt(s)?\b/g, 'reardelts')
+    .split(' ')
+    .filter((w) => w !== '');
   const out = new Set<string>();
   const stem = (w: string) => w.replace(/(ves|s)$/, '').replace(/f$/, '');
   for (const w of words) {
@@ -58,6 +62,7 @@ const MUSCLE_TO_GROUP_WORDS: Record<string, string> = {
   lats: 'Back',
   traps: 'Back',
   delts: 'Shoulders',
+  reardelts: 'Back',
   quad: 'Quads',
   hams: 'Hamstrings',
   hamstring: 'Hamstrings',

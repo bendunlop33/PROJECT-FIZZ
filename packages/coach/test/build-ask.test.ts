@@ -1093,6 +1093,10 @@ describe('review r5 S2: a capped usable list keeps what Ben named and what fits 
     expect(kept).toContain('a-80');
     expect(kept).toContain('triceps-pushdown');
     expect(usableFirst({ words: ['build me something'], focus: 'split_day', pool: withMuscles, draft: [], routines: [] })).toEqual([]);
+    // Rear delts count as Back (§9 Q13): a Back day ranks rear-delt work, a Shoulders day doesn't.
+    const rear = [...withMuscles, { catalogueId: 'face-pull', name: 'Face pull', split: 'pull', primaryMuscle: 'rear_delts' }];
+    expect(usableFirst({ words: ['build me something'], focus: 'split_day', pool: rear, draft: [], routines: [], dayBodyParts: ['Back'] })).toEqual(['seated-row', 'face-pull']);
+    expect(usableFirst({ words: ['build me something'], focus: 'split_day', pool: rear, draft: [], routines: [], dayBodyParts: ['Shoulders'] })).toEqual([]);
   });
 });
 

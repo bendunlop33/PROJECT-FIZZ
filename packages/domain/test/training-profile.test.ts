@@ -230,6 +230,14 @@ describe('split rotation (F19)', () => {
     expect(nextSplitDay(clsb, groups({ Shoulders: 6, Triceps: 2 })).id).toBe('back');
     expect(matchSplitDay(clsb, groups({ Triceps: 3 }))?.id).toBe('chest');
   });
+
+  it('rear delts count as Back (§9 Q13): a rear-delt workout matches the Back/Pull day, not Shoulders', () => {
+    const rear = workoutMuscleGroups([{ primaryMuscles: ['rear_delts', 'upper_back'], workingSets: 4 }, { primaryMuscles: ['rear_delts'], workingSets: 3 }, { primaryMuscles: ['side_delts'], workingSets: 2 }]);
+    expect(rear).toEqual(groups({ Back: 7, Shoulders: 2 }));
+    const clsb = { kind: 'clsb' as const, days: [...PRESET_SPLITS.clsb] };
+    expect(matchSplitDay(clsb, rear)?.id).toBe('back');
+    expect(matchSplitDay(DEFAULT_SPLIT, rear)?.id).toBe('pull');
+  });
 });
 
 describe('main lift (D7)', () => {

@@ -140,7 +140,6 @@ const MUSCLE_WORD: Readonly<Record<string, string>> = {
   lower_chest: 'Chest',
   front_delts: 'Shoulders',
   side_delts: 'Shoulders',
-  rear_delts: 'Shoulders',
   shoulders: 'Shoulders',
   delts: 'Shoulders',
   triceps: 'Triceps',
@@ -150,6 +149,7 @@ const MUSCLE_WORD: Readonly<Record<string, string>> = {
   mid_back: 'Back',
   traps: 'Back',
   rhomboids: 'Back',
+  rear_delts: 'Back', // Ben, 20 Oct (§9 Q13): rear delts count as Back everywhere.
   quads: 'Quads',
   glutes: 'Glutes',
   hamstrings: 'Hamstrings',

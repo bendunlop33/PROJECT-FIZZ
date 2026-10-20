@@ -228,6 +228,16 @@ describe('muscles (checks 9–15, PG26, PG27)', () => {
     expect(setsText(8.5)).toBe('8½');
   });
 
+  it('rear delts count as Back (Ben, 20 Oct, §9 Q13): face pull sets go to Back with a Rear delts sub-row, never Shoulders', () => {
+    const info = new Map<string, MuscleInfo>([...INFO, ['face', { name: 'Face pull', movementPattern: 'horizontal_pull', primaryMuscles: ['rear_delts', 'upper_back'], secondaryMuscles: ['traps', 'side_delts'] }]]);
+    expect(muscleGroupCredits(info.get('face') ?? { primaryMuscles: [] })).toEqual(new Map([['Back', 1], ['Shoulders', 0.5]]));
+    const fr = muscleFrequency([session('2026-10-08', { exercises: [row('face', [set(), set(), set()])] })], info, w7, 'body_part');
+    expect(rowOf(fr, 'Back')).toMatchObject({ sessions: 1, sets: 3 });
+    expect(rowOf(fr, 'Back')?.subRows.find((r) => r.key === 'rear_delts')).toMatchObject({ label: 'Rear delts', sets: 3 });
+    expect(rowOf(fr, 'Shoulders')?.sets).toBe(1.5);
+    expect(rowOf(fr, 'Shoulders')?.subRows.map((r) => r.key)).toEqual(['side_delts']);
+  });
+
   it('check 10: chest + upper_chest primary gives Chest 1 a set, not 2', () => {
     expect(muscleGroupCredits(INFO.get('incline') ?? { primaryMuscles: [] })).toEqual(new Map([['Chest', 1], ['Shoulders', 0.5]]));
     const fr = muscleFrequency([session('2026-10-08', { exercises: [row('incline', [set(), set()])] })], INFO, w7, 'body_part');

@@ -28,9 +28,11 @@ export const MUSCLE_TO_GROUP = {
   upper_back: 'Back',
   traps: 'Back',
   spinal_erectors: 'Back',
+  // Rear delts count as Back everywhere (Ben, 20 Oct: workout-builder-v3 §9 Q13):
+  // Progress counts, library filters, split matching and the coach all follow this.
+  rear_delts: 'Back',
   front_delts: 'Shoulders',
   side_delts: 'Shoulders',
-  rear_delts: 'Shoulders',
   biceps: 'Biceps',
   brachialis: 'Biceps',
   triceps: 'Triceps',

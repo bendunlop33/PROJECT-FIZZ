@@ -15,6 +15,8 @@ const POOL: FindableExercise[] = [
   e('barbell-back-squat', 'Back squat'),
   e('romanian-deadlift', 'Romanian deadlift', { primaryMuscles: ['hamstrings'] }, ['RDL']),
   e('own-1', 'Meadows row', { primaryMuscles: ['lats'], source: 'custom' }),
+  e('dumbbell-rear-delt-fly', 'Rear-delt fly', { primaryMuscles: ['rear_delts'], compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' }),
+  e('dumbbell-lateral-raise', 'Lateral raise', { primaryMuscles: ['side_delts'], compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' }),
   e('plank', 'Plank', { primaryMuscles: ['abs'], compatibleEquipment: [], defaultLoadConvention: 'bodyweight', measurement: 'duration' }),
 ];
 
@@ -36,5 +38,11 @@ describe('findExercises (pure)', () => {
     expect(findExercises(POOL, { query: 'meadows', muscle: null, equipment: null })[0]?.yours).toBe(true);
     expect(findExercises(POOL, { query: 'zercher hover', muscle: null, equipment: null })).toEqual([]);
     expect(findExercises(POOL, { query: '', muscle: null, equipment: null }, 2)).toHaveLength(2);
+  });
+  it('rear delts are Back (§9 Q13): the Back filter includes them, "rear delts" never means Shoulders', () => {
+    expect(findExercises(POOL, { query: '', muscle: 'Back', equipment: null }).map((x) => x.name)).toEqual(['Meadows row', 'Rear-delt fly']);
+    expect(findExercises(POOL, { query: '', muscle: 'Shoulders', equipment: null }).map((x) => x.name)).toEqual(['Lateral raise']);
+    expect(findExercises(POOL, { query: '', muscle: 'rear delts', equipment: null }).map((x) => x.name)).toEqual(['Meadows row', 'Rear-delt fly']);
+    expect(findExercises(POOL, { query: '', muscle: 'delts', equipment: null }).map((x) => x.name)).toEqual(['Lateral raise']);
   });
 });
