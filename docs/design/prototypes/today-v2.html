@@ -49,9 +49,18 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .card.open .chev { transform: rotate(90deg); }
 .exl { display: none; flex-direction: column; }
 .card.open .exl { display: flex; }
-.ex { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; padding: 9px 0; border-top: 1px solid var(--divider); font-size: 15px; align-items: center; }
-.ex .n { color: var(--text2); font-size: 13px; }
-.ex .v { color: var(--text2); font-variant-numeric: tabular-nums; font-size: 14px; }
+.ex, .exh { display: grid; grid-template-columns: 22px 1fr 34px 56px; gap: 6px; align-items: center; }
+.exh { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); padding: 4px 0 6px; align-items: end; line-height: 1.3; }
+.exh span:nth-child(3), .exh span:nth-child(4), .ex .c { text-align: right; }
+.ex { padding: 8px 0; border-top: 1px solid var(--divider); font-size: 15px; }
+.ex .n { color: var(--text2); font-size: 13px; font-weight: 600; }
+.ex small { display: block; font-size: 12.5px; color: var(--text2); margin-top: 1px; }
+.ex .c { font-variant-numeric: tabular-nums; }
+.ssb { border: 1.5px solid var(--text3); border-radius: 12px; padding: 0 8px; margin: 6px -9px 2px; }
+.ssb .ex { position: relative; }
+.ssb .ex:first-child { border-top: 0; }
+.ssb .ex:not(:last-child)::after { content: ""; position: absolute; left: 7px; top: 30px; bottom: -14px; width: 2px; background: var(--text3); border-radius: 1px; }
+.ssb .ex .n { color: var(--text); position: relative; z-index: 1; }
 .notes { display: none; background: var(--raised); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; color: var(--text2); flex-direction: column; gap: 4px; }
 .card.open .notes { display: flex; }
 .notes b { color: var(--text); font-weight: 600; }
@@ -108,6 +117,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { dn: 'FRI', dd: 23, items: [{ k: 'liftp', t: 'Back' }], detail: ['Planned: Back'] },
   ];
   // Session types per plan day: main-lift templates and saved variations.
+  const WORKS = { 'Barbell bench press': 'Chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Machine chest press': 'Chest, triceps', 'Triceps pushdown': 'Triceps', 'Cable crunch': 'Upper abs', 'EZ-bar curl': 'Biceps', 'Hammer curl': 'Brachialis, forearms, biceps', 'Barbell row': 'Mid-back, lats, rear delts, biceps', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Seated cable row': 'Mid-back, lats, biceps', 'Face pull': 'Rear delts, upper back', 'Back squat': 'Quads, glutes, adductors', 'Romanian deadlift': 'Hamstrings, glutes, lower back', 'Leg press': 'Quads, glutes', 'Leg curl': 'Hamstrings', 'Dumbbell shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Rear-delt fly': 'Rear delts' };
   const PLANDAYS = ['Chest', 'Back', 'Legs', 'Shoulders'];
   const NEXT = 'Chest';
   const TYPES = {
@@ -163,7 +173,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
             <span class="chev">›</span>
           </div>
           ${o.warn ? `<div class="why"><i>!</i><span>${o.warn}</span></div>` : ''}
-          <div class="exl">${o.ex.map(([nm, v, ss]) => { if (!ss || ss === 'a') n++; return `<div class="ex"><span class="n">${n}${ss ?? ''}</span><span>${nm}</span><span class="v">${v}</span></div>`; }).join('')}</div>
+          <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${(() => { const groups = []; for (const r of o.ex) { if (r[2] && r[2] !== 'a') groups[groups.length - 1].push(r); else groups.push([r]); } return groups.map((g) => { n++; const rows = g.map(([nm, v, ss]) => { const sets = v.split(' × ')[0], kg = v.includes('·') ? v.split('· ')[1] : 'BW'; return `<div class="ex"><span class="n">${n}${ss ?? ''}</span><span>${nm}<small>${WORKS[nm] ?? ''}</small></span><span class="c">${sets}</span><span class="c">${kg}</span></div>`; }).join(''); return g.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join(''); })()}</div>
           ${o.notes.length ? `<div class="notes"><b>From last review</b>${o.notes.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}
           ${o.based ? `<div class="notes"><b>Based on</b>${o.based.map((x) => `<span>· ${x}</span>`).join('')}</div>` : ''}
           <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
