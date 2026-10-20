@@ -100,7 +100,7 @@ describe('registry safety (coach-contract check 1, CC6)', () => {
 
 describe('buildTurnRegistry (CC10, summary closed list)', () => {
   it('a plain question gets the reads only, plus memory suggestions (which change nothing until Ben taps Save)', () => {
-    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_exercise_records', 'get_recent_sessions', 'get_progression_targets', 'get_substitutions', 'find_exercises', 'propose_exercise', 'get_recent_actions', 'suggest_memory']);
+    expect(names(gate())).toEqual(['get_active_session', 'get_recent_training', 'get_training_overview', 'get_gym_equipment', 'get_exercise_records', 'get_recent_sessions', 'get_progression_targets', 'get_substitutions', 'find_exercises', 'propose_exercise', 'get_recent_actions', 'suggest_memory', 'log_activity']);
   });
 
   it("today's sets need Ben's request or an accepted offer, and only in a workout", () => {
@@ -125,9 +125,10 @@ describe('buildTurnRegistry (CC10, summary closed list)', () => {
   });
 
   it('every structural tool is absent with no request and no signal, in every turn kind (check 17)', () => {
-    const structural = COACH_TOOLS.filter((t) => t.structural).map((t) => t.name);
-    expect(structural.length).toBeGreaterThan(0);
+    expect(COACH_TOOLS.filter((t) => t.structural).length).toBeGreaterThan(0);
     for (const kind of ['general', 'workout', 'summary'] as const) {
+      // (Ben, 20 Oct) `propose_week` is a general-turn tool; elsewhere it is withheld for the turn kind.
+      const structural = COACH_TOOLS.filter((t) => t.structural && t.turnKinds.includes(kind)).map((t) => t.name);
       const r = buildTurnRegistry(gate({ kind, benRequest: ASKED }));
       for (const name of structural) {
         expect(r.tools.map((t) => t.name)).not.toContain(name);
@@ -400,6 +401,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Build a workout you ask for, as a draft you open, start or save",
               "Ask one quick question before building a workout, when it helps",
               "Pause your plan (e.g. on holiday) or resume it, with Undo",
+              "Log a run, ride, swim or sport you tell it about, with Undo",
               "Build a multi-day plan you ask for, as a proposal you apply or undo",
               "Add a general training rule to your playbook to review",
             ],
@@ -418,6 +420,7 @@ describe('listCoachCapabilities (check 11)', () => {
               "Suggest a new exercise for your list (added only if you tap Add)",
               "Swapping, adding, removing or reordering exercises in your next workout",
               "Suggest something to remember (saved only if you tap Save)",
+              "Suggest merging or skipping this week’s days around a run, for you to apply",
             ],
             "section": "suggest_only",
             "title": "Only as a suggestion you apply",

@@ -363,7 +363,7 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
     name: 'propose_week',
     effect: 'propose',
     writes: ['week_plan'],
-    needs: 'ben_request',
+    needs: 'structural_signal',
     structural: true,
     turnKinds: ['general'],
     plainLabel: 'Suggest merging or skipping this week’s days around a run, for you to apply',
@@ -577,7 +577,6 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
       if (t.name === 'ask_build_question') return requestOpens(t, g.benRequest) && g.buildQuestionOpen === true ? null : 'needs_request';
       if (requestOpens(t, g.benRequest)) return null;
       if (t.name === 'propose_workout' && g.kind === 'general' && g.buildOpen === true) return null;
-      if (t.name === 'propose_week' && g.kind === 'general' && g.weekOpen === true) return null;
       if (TODAY_TOOLS.has(t.name) && g.kind === 'workout' && g.liveWorkout === true) return null;
       // An accepted offer only counts for today's sets (CA1).
       return g.acceptedOffer && (t.name === 'adjust_pending_sets' || t.name === 'edit_today') ? null : 'needs_request';
@@ -588,6 +587,9 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'summary_turn':
       return g.kind === 'summary' ? null : 'needs_summary_turn';
     case 'structural_signal':
+      // (Ben, 20 Oct) This week's shape: Ben asks ("plan my week around it", a structural ask), or code sees more
+      // days left than gym days (`weekOpen`). Other signals (a pain flag) are about the next workout, not the week.
+      if (t.name === 'propose_week') return requestOpens(t, g.benRequest) || isStructuralRequest(g.benRequest) || g.weekOpen === true ? null : 'needs_request_or_signal';
       return isStructuralRequest(g.benRequest) || requestOpens(t, g.benRequest) || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
   }
 }

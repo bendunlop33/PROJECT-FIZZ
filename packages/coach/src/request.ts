@@ -877,7 +877,8 @@ export function asksToLogActivity(text: string): boolean {
  */
 const WEEK_ASK = new RegExp(
   [
-    '\\b(?:plan|shape|sort|arrange|rearrange|re-arrange|rejig|reshuffle|shuffle|reorgani[sz]e|adjust|change|fit|work|flex|move)\\b(?: out)? (?:my|the|this) (?:training )?week\\b',
+    // "Plan my week" alone is a new plan (`build_plan`); around something, or a reshape verb, is this week.
+    '\\b(?:rearrange|re-arrange|rejig|reshuffle|shuffle|reorgani[sz]e|adjust|flex|tweak)\\b(?: out)? (?:my|the|this) (?:training )?week\\b',
     '\\bweek around\\b',
     '\\b(?:plan|train|fit|work|lift)(?: things| it| stuff| my training| my lifting| my sessions)? around (?:my|the|this|that|a|it)\\b',
   ].join('|'),
