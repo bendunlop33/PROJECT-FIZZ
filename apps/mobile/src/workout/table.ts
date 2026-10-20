@@ -6,7 +6,7 @@
  * target, a load or a label: those come from `buildWorkoutTableView` and
  * `buildActiveSetView` (domain).
  */
-import type { TableBlock, TableColumns, TableRow } from '@fizz/domain';
+import type { StepTarget, TableBlock, TableColumns, TableRow } from '@fizz/domain';
 import type { SessionCommand, SetValues, ZonedTimestamp } from '@fizz/schemas';
 
 // ---------------------------------------------------------------------------
@@ -573,4 +573,79 @@ export function keypadNextAction(p: { keypad: { row: 'open' | 'done'; field: Cel
  */
 export function mergeCorrection<V extends object>(c: { setId: string; values: V | null; opId: string } | null, shown: V, patch: Partial<V>): { setId: string; values: V; opId: string } | null {
   return c === null ? null : { ...c, values: { ...shown, ...patch } };
+}
+
+// ---------------------------------------------------------------------------
+// In-place cell entry (Ben, 20 Oct)
+
+/**
+ * Whether a cell edits in place (Ben, 20 Oct: "it should just use the original
+ * input and change there"): the tapped KG, REPS, TIME or DIST cell becomes the
+ * field itself, with no second editor line. Cardio's one `TIME · DIST` cell
+ * holds two values, so it keeps its time-and-distance pair under the row.
+ */
+export function editsInPlace(p: { field: CellField; cardio: boolean }): boolean {
+  return !(p.cardio && (p.field === 'time' || p.field === 'distance'));
+}
+
+/** A field's value and its achievable steps (from `buildActiveSetView` / `buildSetEditView`). */
+export interface CellStepField {
+  value: number | null;
+  down: StepTarget;
+  up: StepTarget;
+}
+
+/** The fields a row's in-place entry can edit. */
+export interface CellFields {
+  load: (CellStepField & { assisted: boolean }) | null;
+  reps: CellStepField | null;
+  duration: CellStepField | null;
+  distance: CellStepField | null;
+}
+
+/** The bar on the keypad while a cell is edited in place: − + (one achievable step), `Next ›` when there is a next field, `Done`. */
+export interface CellKeypadBar {
+  field: CellField;
+  down: StepTarget;
+  up: StepTarget;
+  /** VoiceOver for − and +: `Decrease weight to 5 kg`, `More assistance (easier) to 25 kg`; the disabled reason as a hint. */
+  decreaseLabel: string;
+  increaseLabel: string;
+  /** Why + is off at the equipment's max (`Max 40 kg`), shown on the bar as the stepper showed it; null otherwise. */
+  limit: string | null;
+  next: KeypadNextAction | null;
+}
+
+function stepFieldOf(fields: CellFields, field: CellField): CellStepField | null {
+  return field === 'load' ? fields.load : field === 'reps' ? fields.reps : field === 'time' ? fields.duration : fields.distance;
+}
+
+/**
+ * The keypad bar for the cell being edited, or null (no cell, or cardio's
+ * pair, which keeps its own − / + tiles). The steps are the domain's own
+ * (achievable loads on this gym's equipment, ±1 rep), never worked out here.
+ */
+export function cellKeypadBar(p: { field: CellField | null; fields: CellFields | null; cardio: boolean; next: KeypadNextAction | null }): CellKeypadBar | null {
+  if (p.field === null || p.fields === null || !editsInPlace({ field: p.field, cardio: p.cardio })) return null;
+  const f = stepFieldOf(p.fields, p.field);
+  if (f === null) return null;
+  const assisted = p.field === 'load' && p.fields.load?.assisted === true;
+  const noun = p.field === 'load' ? 'weight' : p.field;
+  const decrease = assisted ? 'Less assistance (harder)' : `Decrease ${noun}`;
+  const increase = assisted ? 'More assistance (easier)' : `Increase ${noun}`;
+  const label = (describe: string, t: StepTarget) => (t.enabled ? `${describe} to ${t.label}` : describe);
+  const limit = !f.up.enabled && f.value !== null ? f.up.reason : null;
+  return { field: p.field, down: f.down, up: f.up, decreaseLabel: label(decrease, f.down), increaseLabel: label(increase, f.up), limit, next: p.next };
+}
+
+/**
+ * VoiceOver for a cell while it is the field (Ben, 20 Oct): `Set 3 weight,
+ * 7.5 kg each`, `Set 3 reps, 12`, `Set 2 assistance, 20 kg`, `Set 1 time,
+ * 45 seconds`, `Set 4 weight, none`.
+ */
+export function cellInputA11y(p: { setLabel: string; field: CellField; value: number | null; unitText?: string | null; assisted?: boolean }): string {
+  const noun = p.field === 'load' ? (p.assisted === true ? 'assistance' : 'weight') : p.field;
+  if (p.value === null) return `Set ${p.setLabel} ${noun}, none`;
+  const unit = p.field === 'load' ? (p.unitText ?? '') : p.field === 'time' ? 'seconds' : p.field === 'distance' ? 'metres' : '';
+  return `Set ${p.setLabel} ${noun}, ${String(p.value)}${unit === '' ? '' : ` ${unit}`}`;
 }
