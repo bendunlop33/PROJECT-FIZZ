@@ -134,7 +134,11 @@ describe('migration 21: the four machines become cardio, history included', () =
       return copy;
     });
     expect(tables.session_exercises.find((r) => r.exercise_id === ROWING_ID)).toMatchObject({ measurement: 'reps', measures_distance: 1 });
-    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables };
+    // Schema 26's tables weren't there yet either.
+    Reflect.deleteProperty(tables, 'activities');
+    Reflect.deleteProperty(tables, 'week_plans');
+    const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
+    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables, counts };
     delete body.checksum;
     const old = JSON.stringify({ ...body, checksum: { algorithm: 'sha-256', value: sha256Hex(stableStringify(body)) } });
 
@@ -185,7 +189,11 @@ describe('migration 21 mid-workout: an air-bike timer already running (review S7
       delete copy.round_offset;
       return copy;
     });
-    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables };
+    // Schema 26's tables weren't there yet either.
+    Reflect.deleteProperty(tables, 'activities');
+    Reflect.deleteProperty(tables, 'week_plans');
+    const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
+    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 20, tables, counts };
     delete body.checksum;
     const old = JSON.stringify({ ...body, checksum: { algorithm: 'sha-256', value: sha256Hex(stableStringify(body)) } });
 

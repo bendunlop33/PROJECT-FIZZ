@@ -44,7 +44,18 @@ import {
   createPlanExecutor,
   asksForPlan,
   asksToPausePlan,
+  asksToPlanWeek,
+  classifyBenRequest,
+  isStructuralRequest,
   createPausePlanExecutor,
+  createActivityExecutor,
+  renderActionResult,
+  createWeekExecutor,
+  acceptActivityOffer,
+  acceptActivityOpId,
+  type WeekContextView,
+  type WeekToolContext,
+  type ActivityToolDeps,
   revisesPlan,
   changesPlanInUse,
   type PlanContextView,
@@ -96,6 +107,7 @@ import {
 } from '@fizz/coach';
 import {
   basisSlots,
+  addDays,
   activePause,
   planIsOpen,
   currentPlanVersion,
@@ -360,6 +372,9 @@ export interface BuildChips {
   mainLift?: string | null;
 }
 
+/** Review S1: how far back the coach's history is read for a week offer already made (a week of turns is far fewer). */
+const WEEK_OFFER_LOOKBACK = 200;
+
 export interface CoachServiceDeps {
   /**
    * (Ben, 20 Oct) Lift targets: whether the setting is on, and `set_lift_target`'s checks. Absent, or
@@ -401,7 +416,15 @@ export interface CoachServiceDeps {
   training?: () => Promise<TrainingInput | null>;
   /** Up next as Today's card names it (workout services; local reads only). Absent: the rotation's routine. */
   upNextTitle?: (gymId: string | null) => Promise<string | null>;
+  /**
+   * (Ben, 20 Oct) This week (week services; local reads only): YOUR DATA's `week` view and the facts
+   * `propose_week` checks against. Absent: neither tool is wired (withheld, never offered).
+   */
+  week?: { view(): Promise<WeekContextView | null>; tool(): Promise<WeekToolContext | null> };
 }
+
+/** (Ben, 20 Oct) An activity the coach offered: `Log` while open; once logged, its record (Undo on it). */
+export type ActivityOfferState = { kind: 'open' } | { kind: 'logged'; record: ActionRecord } | { kind: 'refused'; line: string };
 
 /** A structural proposal card's state (ADR 0020 §3), from the proposal and Ben's taps on it. */
 export interface ProposalCardState {
@@ -1432,6 +1455,19 @@ export function createCoachService(deps: CoachServiceDeps) {
     return { view, executors: { ...findExecutors, ...executors, ...planExecutors }, inPlay };
   }
 
+  /** Review S1: a `propose_week` for this week's facts as they are now is already in Ben's coach history. */
+  async function weekOfferedFor(p: UserProfile, week: NonNullable<CoachServiceDeps['week']>): Promise<boolean> {
+    const now = await week.tool();
+    if (now === null) return false;
+    const recent = await repos().coach.listRecentActions(p.id, { limit: WEEK_OFFER_LOOKBACK });
+    return recent.some((r) => r.detail.kind === 'propose_week' && r.detail.weekMonday === now.facts.monday && r.detail.factsKey === now.factsKey);
+  }
+
+  /** (Ben, 20 Oct) `log_activity`'s store, zone and same-day check. */
+  function activityDeps(p: UserProfile): ActivityToolDeps {
+    return { store: coachStore(), tz: p.timezone, onDate: (date) => repos().activities.listBetween(p.id, date, addDays(date, 1)) };
+  }
+
   async function send(req: SendRequest): Promise<CoachTurnResult> {
     const p = await owner();
     const a = await availability();
@@ -1473,6 +1509,19 @@ export function createCoachService(deps: CoachServiceDeps) {
     // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan": the plan in use and today's date, and the tool.
     const pauseTurn = kind === 'general' && req.input.kind === 'words' && asksToPausePlan(said);
     let planPause: PlanPauseView | undefined;
+    // (Ben, 20 Oct) This week on every general turn: today, gym days left, the days left, his activities; `log_activity`
+    // (logged when his words tell it, else an offer) and `propose_week` (a proposal; offered when he asks, or `weekOpen`).
+    const weekRead = kind === 'general' && deps.week !== undefined ? await deps.week.view().catch(() => null) : null;
+    // Review S1 (rule 3): code opens `propose_week` on its own only once for the week as it is now. An offer already made
+    // for these facts (open, declined or ignored) keeps it shut until the week changes (a workout, an activity, the plan);
+    // Ben's own ask still opens it.
+    const benAsksWeek = req.input.kind === 'words' && (asksToPlanWeek(said) || isStructuralRequest(classifyBenRequest(said, 'general')));
+    const offeredAlready = !benAsksWeek && weekRead?.needsReshape === true && deps.week !== undefined ? await weekOfferedFor(p, deps.week).catch(() => false) : false;
+    const weekView = weekRead === null ? null : offeredAlready ? { ...weekRead, needsReshape: false, suggestion: null } : weekRead;
+    if (kind === 'general' && deps.week !== undefined) {
+      const w = deps.week;
+      Object.assign(executors, createActivityExecutor(activityDeps(p)), createWeekExecutor({ store: coachStore(), week: () => w.tool() }));
+    }
     if (pauseTurn) {
       const inUse = await repos().planDrafts.applied(p.id).catch(() => null);
       const nowMs = toMs(deps.now().utc);
@@ -1511,7 +1560,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           // Coach v3 (Ben 18 Oct): his lighter mid-workout model, if he chose one; `think_harder` returns to the main one.
           ...(kind === 'workout' && a.workoutModel != null ? { workoutModel: a.workoutModel } : {}),
           surface: 'sheet',
-          context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(planPause === undefined ? {} : { plan: planPause }) },
+          context: { ...ctx.input, ...(build === null ? {} : { build: build.view }), ...(addable === null ? {} : { addable }), ...(planPause === undefined ? {} : { plan: planPause }), ...(weekView === null ? {} : { week: weekView }) },
           structuralSignals: await structuralSignalsFor(p, session).catch(() => []),
           namedExerciseIds: req.input.kind === 'words' ? namedExercises(req.input.text, session) : [],
           ...(draftInContext !== null ? { draftInContext: true } : {}),
@@ -1520,6 +1569,7 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(kind === 'general' && build !== null ? { buildAvailable: true } : {}),
           ...(planInThread !== null || planInUse !== null ? { planInContext: true } : {}),
           ...(liftTargetsOn ? { liftTargetsOn: true } : {}),
+          ...(weekView?.needsReshape === true ? { weekOpen: true } : {}),
           signal: stop.signal,
           ...(req.onProgress === undefined ? {} : { onProgress: req.onProgress }),
         },
@@ -1641,6 +1691,23 @@ export function createCoachService(deps: CoachServiceDeps) {
     },
 
     isRunning: (turnId: string): boolean => running.has(turnId),
+
+    /** (Ben, 20 Oct) An activity the coach offered: open, or the record of Ben's `Log` (with Undo). */
+    async activityOffer(actionId: string): Promise<ActivityOfferState> {
+      const p = await owner();
+      const logged = await coachStore().findActionByOpId(p.id, acceptActivityOpId(actionId));
+      return logged !== null && logged.status === 'committed' ? { kind: 'logged', record: logged } : { kind: 'open' };
+    },
+
+    /** (Ben, 20 Oct) Ben's `Log` on the coach's activity offer: exactly what it offered, once (rule 3, 5). No model call. */
+    async logOfferedActivity(actionId: string): Promise<ActivityOfferState> {
+      const p = await owner();
+      const proposal = await coachStore().getAction(actionId);
+      if (proposal === null) return { kind: 'refused', line: 'There is no offer to log.' };
+      const r = await acceptActivityOffer(activityDeps(p), proposal, { ownerId: p.id, turnId: proposal.turnId ?? 'tap', now: deps.now() });
+      if (r.kind !== 'action') return { kind: 'refused', line: r.kind === 'refused' ? r.line : 'Not logged.' };
+      return r.record.status === 'committed' ? { kind: 'logged', record: r.record } : { kind: 'refused', line: renderActionResult(r.record, 'sheet').text };
+    },
 
     /** Undo from a card or the workout's banner. A double tap (same opId) undoes once. */
     async undo(actionId: string, opId: string) {

@@ -9,6 +9,7 @@ import {
   deleteRoutine,
   liveRoutines,
   nextInRotation,
+  rotationOrder,
   planRoutineStart,
   reduceSession,
   renameRoutine,
@@ -243,6 +244,11 @@ describe('rotation (D19, simplified: by what was done last)', () => {
     expect(nextInRotation(list, ref(953, id(899)))).toEqual({ kind: 'last_workout' });
     expect(nextInRotation([], ref(954, null))).toEqual({ kind: 'last_workout' });
     expect(nextInRotation(list, null)).toEqual({ kind: 'last_workout' });
+  });
+  it('the rotation in the order it comes round: the pick, the ones after it, the one just done last (review weekflex S6)', () => {
+    expect(rotationOrder(list, ref(950, pullA.id)).map((r) => r.name)).toEqual(['Legs A', 'Push A', 'Pull A']);
+    expect(rotationOrder(list, ref(951, legsA.id)).map((r) => r.name)).toEqual(['Push A', 'Pull A', 'Legs A']);
+    expect(rotationOrder(list, ref(952, null))).toEqual([]);
   });
   it('one routine: `Your only routine`', () => {
     expect(nextInRotation([pushA], ref(901, null))).toEqual({ kind: 'routine', routine: pushA, basis: { kind: 'only' } });

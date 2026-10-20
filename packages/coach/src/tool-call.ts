@@ -81,6 +81,12 @@ export function semanticArgs(call: CoachToolCall): unknown {
     case 'set_lift_target':
       // The ask claim is explanation; the exercise (by name), kind, load, reps and date are the target.
       return { exercise: call.args.exercise.trim().toLowerCase(), kind: call.args.kind, load: call.args.load, unit: call.args.unit, reps: call.args.reps, byDate: call.args.byDate };
+    case 'log_activity':
+      // (Ben, 20 Oct) The reason is explanation; what, when, how long, how far and how hard are the activity.
+      return { ...call.args, reason: undefined };
+    case 'propose_week':
+      // The message is explanation; the merges and skips are the change.
+      return { merges: call.args.merges.map((m) => ({ dayIds: m.dayIds, name: m.name.trim().toLowerCase() })), skips: [...call.args.skips].sort() };
     case 'edit_today':
       // Coach v3: the reason and the ask claim are explanation; the ops and the version are the change.
       return { baseVersion: call.args.baseVersion, ops: call.args.ops };
@@ -159,6 +165,8 @@ export function appendContentKeys(call: CoachToolCall): string[] {
     case 'propose_exercise':
     case 'pause_plan':
     case 'set_lift_target':
+    case 'log_activity':
+    case 'propose_week':
     case 'get_active_session':
     case 'get_recent_training':
     case 'get_training_overview':

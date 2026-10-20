@@ -4,8 +4,10 @@ import { ActionSheetIOS, Alert, Pressable, ScrollView, View } from 'react-native
 
 import { AskPill } from './coach/AskPill';
 
-import { discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, recentWorkoutRows, RECENT_LIMIT, scoreText, toMs, type RecentWorkoutRow, type ResumeRow, type TodayMain } from '@fizz/domain';
-import type { SessionAggregate } from '@fizz/schemas';
+import { ACTIVITY_COPY, discardCommand, discardConfirmation, doneTodayDurationLine, formatDuration, reasonsText, recentRows as mergeRecent, RECENT_LIMIT, scoreText, toMs, type RecentActivityInput, type RecentWorkoutRow, type ResumeRow, type TodayMain } from '@fizz/domain';
+import type { Activity, SessionAggregate } from '@fizz/schemas';
+import { activitySavedToast } from '../activity/activity-toast';
+import { ActivitySheet, type ActivitySaved } from './activity/ActivitySheet';
 
 import { useStartAlertsAsk } from '../alerts/AlertsAskSheet';
 import { nowMs as clockNow } from '../clock';
@@ -104,11 +106,28 @@ export function TodayScreen() {
     const next = gym ? await s.next.preview(gym.id).catch(() => null) : null;
     // Recent: the newest finished workouts, as Past workouts lists them; never blocks Today.
     const recent = await s.history.pastWorkouts({ limit: RECENT_LIMIT }).then((p) => p.rows).catch(() => []);
+    // (Ben, 20 Oct) Runs, rides, swims and sport: their own rows in Recent (never workouts).
+    const activities = await s.activities.recent().catch(() => []);
     const routines = await s.routines.list().catch(() => [] as RoutineRow[]);
     // Session types for `Change` (local; null when unreadable: the routines list stays).
     const sessions = await s.sessions.list(gym?.id ?? null).catch(() => null);
-    return { gym, view, banners, active, unlinked, next, recent, routines, sessions };
+    return { gym, view, banners, active, unlinked, next, recent, activities, routines, sessions };
   });
+  // (Ben, 20 Oct) ＋ Activity: the sheet (null closed; `activity` null: a new one).
+  const [activitySheet, setActivitySheet] = useState<{ activity: Activity | null } | null>(null);
+  const [whyOpen, setWhyOpen] = useState(false);
+
+  /** After the activity sheet saved: a toast with Undo (the write's own; a double tap is one Undo). */
+  function activitySaved(saved: ActivitySaved) {
+    setActivitySheet(null);
+    changed();
+    setToast(activitySavedToast(saved, { undo: services.activities.undo, newOpId: newUuid, changed, show: setToast }));
+  }
+
+  async function openActivity(activityId: string) {
+    const a = await services.activities.get(activityId);
+    if (a !== null) setActivitySheet({ activity: a });
+  }
 
   useEffect(() => {
     reload();
@@ -386,11 +405,11 @@ export function TodayScreen() {
       </View>
     );
   }
-  const { gym, view, banners, active, unlinked, next, recent, routines, sessions } = data.value;
+  const { gym, view, banners, active, unlinked, next, recent, activities, routines, sessions } = data.value;
   const zoned = services.now();
   const checkInLine = (c: NonNullable<typeof unlinked>) => `Check-in ${formatTime(toMs(c.recordedAt.utc), zoned.tz)} · ${scoreText(c.score)}${c.reasons.length ? ` · ${reasonsText(c.reasons)}` : ''}`;
   const main = view?.main ?? { kind: 'no_plan' as const };
-  const recentRows = recentWorkoutRows(recent, zoned);
+  const recentRows = mergeRecent(recent, activities, zoned);
   // `Change` on the Up next and Done today labels: the session picker (session-picker §2.1; review today-18oct B1).
   const changeAction = hasChoice(sessions)
     ? {
@@ -552,6 +571,25 @@ export function TodayScreen() {
                   },
                 }))}
               />
+              {next.why !== null ? (
+                <View style={{ gap: theme.space['1'] }}>
+                  <View style={{ alignSelf: 'flex-start' }}>
+                    <TextButton
+                      label="Why?"
+                      tone="secondary"
+                      accessibilityLabel={whyOpen ? 'Hide why' : 'Why this workout'}
+                      onPress={() => {
+                        setWhyOpen((o) => !o);
+                      }}
+                    />
+                  </View>
+                  {whyOpen ? (
+                    <AppText variant="callout" color="text.secondary">
+                      {next.why}
+                    </AppText>
+                  ) : null}
+                </View>
+              ) : null}
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['5'] }}>
                 <TextButton label="Empty workout" onPress={() => void start({ kind: 'empty' })} />
                 <TextButton
@@ -692,21 +730,51 @@ export function TodayScreen() {
         {/* The Workouts list is in the Library tab now (exercise-library EL10): Today gets nothing new and its `Workouts` link retired. */}
 
         {/* Recent (PM decision 18 Oct, pending Ben): replaces This week, the lift card and the Sessions rows. */}
+        {/* (Ben, 20 Oct) ＋ Activity: a run, ride, swim or sport, done or planned. */}
+        <View style={{ alignSelf: 'flex-start' }}>
+          <TextButton
+            label={ACTIVITY_COPY.add}
+            icon="plus"
+            tone="secondary"
+            accessibilityLabel="Add an activity"
+            onPress={() => {
+              setActivitySheet({ activity: null });
+            }}
+          />
+        </View>
         {recentRows.length > 0 ? (
           <RuledSection title="Recent" gap="2">
-            {recentRows.map((r) => (
-              <RecentRow
-                key={r.sessionId}
-                row={r}
-                onPress={() => {
-                  if (r.opens === 'summary') navigation.navigate('Summary', { sessionId: r.sessionId, back: true });
-                  else navigation.navigate('Repeat', { sessionId: r.sessionId });
-                }}
-              />
-            ))}
+            {recentRows.map((r) =>
+              r.kind === 'workout' ? (
+                <RecentRow
+                  key={r.row.sessionId}
+                  row={r.row}
+                  onPress={() => {
+                    if (r.row.opens === 'summary') navigation.navigate('Summary', { sessionId: r.row.sessionId, back: true });
+                    else navigation.navigate('Repeat', { sessionId: r.row.sessionId });
+                  }}
+                />
+              ) : (
+                <ActivityRecentRow
+                  key={r.row.activityId}
+                  row={r.row}
+                  onPress={() => {
+                    void openActivity(r.row.activityId);
+                  }}
+                />
+              ),
+            )}
           </RuledSection>
         ) : null}
       </ScrollView>
+      <ActivitySheet
+        visible={activitySheet !== null}
+        activity={activitySheet?.activity ?? null}
+        onClose={() => {
+          setActivitySheet(null);
+        }}
+        onSaved={activitySaved}
+      />
       <AskPill
         onPress={() => {
           navigation.navigate('Coach', { entry: { kind: 'today' } });
@@ -972,6 +1040,34 @@ function RoutineListRow({ row, tz, onPress, onLongPress }: { row: RoutineRow; tz
       </AppText>
       <AppText variant="callout" color="text.secondary" numeric>
         {`${count} · ${when}`}
+      </AppText>
+      <Icon name="chevron.right" color="text.tertiary" size={14} />
+    </Pressable>
+  );
+}
+
+/** (Ben, 20 Oct) An activity in `Recent`: `Run`, then `Yesterday · 18 km · long`; opens it in the activity sheet. */
+function ActivityRecentRow({ row, onPress }: { row: RecentActivityInput; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={row.accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        minHeight: theme.target.workout.height,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.space['3'],
+        backgroundColor: pressed ? theme.colors['bg.surface'] : 'transparent',
+      })}
+    >
+      <Icon name="figure.run" color="text.secondary" size={16} />
+      <AppText variant="body" numberOfLines={1} style={{ flex: 1 }}>
+        {row.title}
+      </AppText>
+      <AppText variant="callout" color="text.secondary" numeric>
+        {[row.when, row.detail].filter((x) => x !== '').join(' · ')}
       </AppText>
       <Icon name="chevron.right" color="text.tertiary" size={14} />
     </Pressable>

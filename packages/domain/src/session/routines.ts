@@ -57,10 +57,13 @@ export function isDeleted(r: Pick<Routine, 'deletedAtUtc'>): boolean {
   return r.deletedAtUtc !== undefined && r.deletedAtUtc !== null;
 }
 
-/** Live routines in list order: creation order in this pass (premium-feel §2.6), then ID for ties. */
-export function liveRoutines<R extends Pick<Routine, 'id' | 'createdAtUtc' | 'deletedAtUtc'>>(all: readonly R[]): R[] {
+/**
+ * Live routines in list order: creation order in this pass (premium-feel §2.6), then ID for ties.
+ * (Ben, 20 Oct) A week's merged day (`createdForWeek`) isn't one: Up next starts it by ID that week only.
+ */
+export function liveRoutines<R extends Pick<Routine, 'id' | 'createdAtUtc' | 'deletedAtUtc'> & { createdForWeek?: unknown }>(all: readonly R[]): R[] {
   return all
-    .filter((r) => !isDeleted(r))
+    .filter((r) => !isDeleted(r) && r.createdForWeek === undefined)
     .sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
@@ -342,6 +345,19 @@ export function nextInRotation<R extends Pick<Routine, 'id' | 'name' | 'createdF
   const next = routines[(at + 1) % routines.length];
   if (next === undefined) return { kind: 'last_workout' };
   return { kind: 'routine', routine: next, basis: { kind: 'after', routineName: done.name, atUtc: last.startedAtUtc, tz: last.tz } };
+}
+
+/**
+ * (Ben, 20 Oct; review weekflex S6) The rotation in the order it comes round:
+ * `nextInRotation`'s pick first, then the ones after it, the one just done
+ * last. Empty when the rotation has no pick. Up next's run rule reorders this
+ * (`avoidLegDays`) so a leg day isn't next the day before a long run.
+ */
+export function rotationOrder<R extends Pick<Routine, 'id' | 'name' | 'createdFromSessionId'>>(routines: readonly R[], last: FinishedRef | null): R[] {
+  const pick = nextInRotation(routines, last);
+  if (pick.kind !== 'routine') return [];
+  const at = routines.findIndex((r) => r.id === pick.routine.id);
+  return routines.map((_, i) => routines[(at + i) % routines.length]).filter((r): r is R => r !== undefined);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { cardioValuesText, customExerciseLine, formatDuration, formatNumber, liftTargetValueText, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
+import { activityDetail, ACTIVITY_WORD, cardioValuesText, customExerciseLine, formatDuration, formatNumber, liftTargetValueText, loadText, localDateText, NBSP, repRangeText, setNumbersText, toMs } from '@fizz/domain';
 import type { ActionRecord, CoachTarget, ExerciseTargetChanges, Load, NextTargetRow, SetTargetChange } from '@fizz/schemas';
 
 /**
@@ -313,6 +313,14 @@ function addedPhrase(a: { exerciseName: string; sets: number; target: CoachTarge
   return `Added ${a.exerciseName}: ${String(a.sets)}${TIMES}${each}${where}.`;
 }
 
+/** `Run · Sat 24 Oct · 18 km · long` (planned: `Planned run`). */
+function activityLine(f: { kind: keyof typeof ACTIVITY_WORD; status: 'done' | 'planned'; date: string; durationS: number | null; distanceM: number | null; effort: 'easy' | 'moderate' | 'hard' | 'long' | null }): string {
+  const word = ACTIVITY_WORD[f.kind];
+  const head = f.status === 'planned' ? `Planned ${word.toLowerCase()}` : word;
+  const detail = activityDetail(f);
+  return [head, localDateText(f.date), ...(detail === '' ? [] : [detail])].join(' · ');
+}
+
 function renderCore(record: ActionRecord, surface: RenderSurface): RenderedAction {
   const d = record.detail;
   const st = record.status;
@@ -498,6 +506,32 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
       if (st === 'committed' || st === 'proposed') return make(status, `${what}.`, speakable(`${what}.`));
       if (st === 'stale') return make(status, `Not changed: ${d.gymName} changed since.`, `Not changed. ${d.gymName} changed since.`);
       const text = `Not changed: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
+    case 'log_activity': {
+      // (Ben, 20 Oct) An activity logged because Ben asked (Undo on the card), or offered (Log on the card).
+      const what = activityLine(d.fields);
+      if (st === 'committed') {
+        const text = d.markedDone === true ? `Marked done: ${what}.` : `Logged: ${what}.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'proposed') {
+        const text = `Log ${what}?`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
+      const text = `Not logged: ${failureOr(record, 'it was refused')}.`;
+      return make(status, text, speakable(text));
+    }
+    case 'propose_week': {
+      // (Ben, 20 Oct) This week reshaped around a run: always a proposal Ben applies (the card has the before/after list).
+      const what = d.after.map((r) => (r.note === null ? r.name : `${r.name} (${r.note})`)).join(', ');
+      if (st === 'proposed') {
+        const text = `This week: ${what}. Not applied.`;
+        return make(status, text, speakable(text));
+      }
+      if (st === 'stale') return make(status, 'Out of date. Nothing changed.', 'Out of date. Nothing changed.');
+      const text = `Couldn't change this week: ${failureOr(record, 'it was refused')}. Nothing changed.`;
       return make(status, text, speakable(text));
     }
     case 'propose_exercise': {

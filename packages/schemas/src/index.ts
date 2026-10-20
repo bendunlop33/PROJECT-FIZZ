@@ -16,3 +16,4 @@ export * from './muscle-groups';
 export * from './import-layout';
 export * from './training-profile';
 export * from './lift-targets';
+export * from './activity';

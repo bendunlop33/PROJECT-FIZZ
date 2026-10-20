@@ -1,4 +1,10 @@
 import {
+  activeWeekPlan,
+  avoidLegDays,
+  isLegDay,
+  legRunNear,
+  weekDays,
+  type LegRunNear,
   addDays,
   cardioRepeatTargets,
   buildPlannedSetEditView,
@@ -256,6 +262,7 @@ import {
   planSettingsOfRoutine,
   isArchivedExercise,
   isDeleted,
+  rotationOrder,
   rotationRoutines,
   routineChangeLines,
   routineFromPlan,
@@ -312,6 +319,8 @@ import type {
   UserProfile,
   WorkoutDraft,
   ZonedTimestamp,
+  WeekPlan,
+  SplitBodyPart,
 } from '@fizz/schemas';
 
 import { undoOpId, undoRefusalText } from '../workout/undo-op';
@@ -577,6 +586,8 @@ export interface NextSessionPreview {
   aboutMinutes: number | null;
   sourceStartedAtUtc: string | null;
   tz: string;
+  /** (Ben, 20 Oct) Behind `Why?` when Up next is a leg day with a long or hard run near (`Long run yesterday`); else null. */
+  why: string | null;
 }
 
 /** A row of the switcher sheet (`Gym for this workout`, gym-editor §2.7). */
@@ -1906,8 +1917,15 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     // (19 Oct) The applied coach plan's days, in day order (none without one). (Ben, 20 Oct) None while it is paused:
     // Up next follows the normal rules then, and Today shows no `Day N of M`.
     const plan = await ctx.store().repos.planDrafts.applied(p.id).catch(() => null);
-    const paused = activePause(plan, toMs(ctx.now().utc), p.timezone) !== null;
-    const planDays = paused ? [] : planRoutines(plan, live);
+    const nowMs = toMs(ctx.now().utc);
+    const paused = activePause(plan, nowMs, p.timezone) !== null;
+    const basePlanDays = paused ? [] : planRoutines(plan, live);
+    // (Ben, 20 Oct) A long or hard run near today keeps legs off Up next (the day before a planned one, the day after a
+    // done one); this week's change Ben applied (a merged day, a skipped day) is in place until Sunday.
+    const { near, week } = await weekShape(p, nowMs);
+    const planWeek = week !== null && week.basis.kind === 'plan' && plan !== null && week.basis.planId === plan.id && basePlanDays.length > 0 ? week : null;
+    const merged = await mergedDays(planWeek);
+    const planDays = weekDays(basePlanDays, (r) => r.id, planWeek, (i) => merged[i] ?? null);
     const planBasis = (r: Routine): UpNextRoutineBasis | null => {
       const i = planDays.findIndex((d) => d.id === r.id);
       return i < 0 ? null : { kind: 'plan', dayN: i + 1, of: planDays.length };
@@ -1918,7 +1936,20 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
       const run = await routineStart(p, { routineId: routine.id, gymId, opId: `preview-next-routine:${routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
       return run.r.ok ? { kind: 'routine' as const, routine, basis: planBasis(routine) ?? basis, run: { ...run, r: run.r } } : null;
     };
-    const rotation = async () => (pick.kind !== 'routine' ? null : startable(pick.routine, pick.basis));
+    // (Ben, 20 Oct; review S6) The run rule on the rotation too: with a long or hard run near, a leg day comes round
+    // after the others (the first that starts here); every one a leg day: the pick anyway, with the run behind Why?.
+    const rotation = async () => {
+      if (pick.kind !== 'routine') return null;
+      if (near === null) return startable(pick.routine, pick.basis);
+      const split = splitInUse(training);
+      const of = await exerciseLookup(rotationRoutines(live));
+      const order = avoidLegDays(rotationOrder(rotationRoutines(live), refs[0] ?? null), (r) => planDayBodyParts(r, of, split), near).order;
+      for (const r of order) {
+        const run = await startable(r, pick.basis);
+        if (run !== null) return { ...run, why: isLegDay(planDayBodyParts(r, of, split)) ? near.why : null };
+      }
+      return null;
+    };
     // PM decision 18 Oct (pending Ben): the rotation wins only when the last workout was a routine's and Ben set no split;
     // otherwise the split day trained least recently, counting every workout by the muscles done.
     // (19 Oct, review plans-19oct B1) An applied plan drives Up next even with a split. (Ben, 20 Oct) Adaptive: the
@@ -1927,17 +1958,19 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     // last workout trained unless no other is left. The first one this gym can start. The plan's days never change.
     const planDrives = (plan?.applied ?? null) !== null && planDays.length > 0;
     if (planDrives) {
-      const due = await planDue(p, planDays, training, plan?.pin ?? null).catch(() => planDays.map((day) => ({ day })));
-      for (const { day } of due) {
+      const due = await planDue(p, planDays, training, plan?.pin ?? null, near).catch(() => planDays.map((day) => ({ day, legs: false })));
+      for (const { day, legs } of due) {
         const planned = await startable(day, { kind: 'split' });
-        if (planned !== null) return planned;
+        // The run's `Why?` on a leg day picked anyway (every day left is legs, or none other starts here).
+        if (planned !== null) return { ...planned, why: legs && near !== null ? near.why : null };
       }
     }
     if (training?.split === undefined) {
       const rot = await rotation();
       if (rot !== null) return rot;
     }
-    const bySplit = await splitUpNext(p, live, training, gymId, gymEquipment, planDays, refs).catch(() => null);
+    const splitWeek = week !== null && week.basis.kind === 'split' && !planDrives ? week : null;
+    const bySplit = await splitUpNext(p, live, training, gymId, gymEquipment, planDays, refs, near, splitWeek === null ? null : { week: splitWeek, merged: await mergedDays(splitWeek) }).catch(() => null);
     if (bySplit?.plan) return bySplit.plan;
     if (training?.split !== undefined) {
       const rot = await rotation();
@@ -1952,6 +1985,42 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     }
     const last = (await repeat.candidates(1)).rows[0];
     return last ? { kind: 'next' as const, sessionId: last.sessionId } : null;
+  }
+
+  /**
+   * (Ben, 20 Oct) What shapes Up next this week: the long or hard run near today (`legRunNear`), and the week change
+   * Ben applied for this week (`activeWeekPlan`; one from an earlier week has expired). Local reads; never throws.
+   */
+  async function weekShape(p: UserProfile, nowMs: number): Promise<{ near: LegRunNear | null; week: WeekPlan | null }> {
+    const today = localDateOf(nowMs, p.timezone);
+    const acts = await repos()
+      .activities.listBetween(p.id, addDays(today, -1), addDays(today, 2))
+      .catch(() => []);
+    const monday = localWeekBounds(nowMs, p.timezone).mondayLocalDate;
+    const weeks = await repos()
+      .weekPlans.listForWeek(p.id, monday)
+      .catch(() => [] as WeekPlan[]);
+    return { near: legRunNear(acts, today), week: activeWeekPlan(weeks, nowMs, p.timezone) };
+  }
+
+  /** An exercise lookup for routines' rows (the run rule's body parts). */
+  async function exerciseLookup(routines: readonly Routine[]): Promise<(id: string) => Exercise | null> {
+    const infos = new Map<string, Exercise | null>();
+    for (const r of routines) for (const e of r.exercises) if (!infos.has(e.exerciseId)) infos.set(e.exerciseId, await exerciseById(e.exerciseId));
+    return (id) => infos.get(id) ?? null;
+  }
+
+  /** Each merge's day (its workout, while live), by merge index. */
+  async function mergedDays(week: WeekPlan | null): Promise<(Routine | null)[]> {
+    if (week === null) return [];
+    const out: (Routine | null)[] = [];
+    for (const m of week.made) {
+      const r = await repos()
+        .routines.get(m.routineId)
+        .catch(() => null);
+      out.push(r !== null && (r.deletedAtUtc ?? null) === null ? r : null);
+    }
+    return out;
   }
 
   /** The finished workouts in Up next's window (`SPLIT_WINDOW_DAYS`; from `sinceUtc` when that is earlier) and an exercise lookup for their rows. */
@@ -1969,9 +2038,17 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * (Ben, 20 Oct) The applied plan's days in the order they are due (`planDaysByDue`): each day's body parts from its
    * exercises (else the split day it was mapped to), every finished workout in the window by the muscles done.
    */
-  async function planDue(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null) {
+  async function planDue(p: UserProfile, planDays: readonly Routine[], training: TrainingProfile | null, pin: PlanPin | null, near: LegRunNear | null = null) {
     const { days, workouts, live } = await planDueInput(p, planDays, training, pin);
-    return planDaysByDue(days, workouts, live).map((d) => ({ day: d.day.routine, pinned: d.pinned }));
+    const due = planDaysByDue(days, workouts, live);
+    // (Ben, 20 Oct) With a long or hard run near, leg days go after the others; a pinned day (`Make next`) stays first.
+    const pinned = due.filter((d) => d.pinned);
+    const rest = avoidLegDays(
+      due.filter((d) => !d.pinned),
+      (d) => d.day.bodyParts,
+      near,
+    ).order;
+    return [...pinned, ...rest].map((d) => ({ day: d.day.routine, pinned: d.pinned, legs: isLegDay(d.day.bodyParts) }));
   }
 
   /** `planDue`'s inputs: the plan days (with their planned muscle groups), the window's workouts and the live pin. */
@@ -1997,19 +2074,52 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
    * name, so targets come from the latest evidence (review today-18oct B2); a workout older than the window is never
    * Up next (SP-D3). `avoid`: the days the last workout trained, for the fallbacks (S4). Null plan: the other rules apply.
    */
-  async function splitUpNext(p: UserProfile, live: readonly Routine[], training: TrainingProfile | null, gymId: string, gymEquipment?: readonly EquipmentInstance[], planDays: readonly Routine[] = [], refs: readonly FinishedRef[] = []) {
+  async function splitUpNext(
+    p: UserProfile,
+    live: readonly Routine[],
+    training: TrainingProfile | null,
+    gymId: string,
+    gymEquipment?: readonly EquipmentInstance[],
+    planDays: readonly Routine[] = [],
+    refs: readonly FinishedRef[] = [],
+    near: LegRunNear | null = null,
+    shape: { week: WeekPlan; merged: readonly (Routine | null)[] } | null = null,
+  ) {
     const split = splitInUse(training);
     const { sessions, exerciseOf } = await windowSessions(p);
     const workouts = sessions.map((a) => splitWorkoutOf(a, exerciseOf, training?.sessionMinutes ?? null));
     const due = splitDaysByDue(split, workouts);
-    for (const { day } of due) {
-      const plan = await splitDayPlan(p, live, split, day, workouts, gymId, gymEquipment, planDays, refs);
-      if (plan !== null) return { plan, avoid: new Set<string>() };
+    // (Ben, 20 Oct) This week's change on split days: a merged day where the first of its days is due, skipped days out;
+    // then, with a long or hard run near, leg days after the others.
+    type Entry = { kind: 'day'; day: SplitDay; parts: readonly SplitBodyPart[] } | { kind: 'merged'; routine: Routine; parts: readonly SplitBodyPart[] };
+    const entries = weekDays<Entry>(
+      due.map(({ day }) => ({ kind: 'day', day, parts: day.bodyParts })),
+      (e) => (e.kind === 'day' ? e.day.id : e.routine.id),
+      shape?.week ?? null,
+      (i) => {
+        const r = shape?.merged[i] ?? null;
+        const m = shape?.week.merges[i];
+        if (r === null || m === undefined) return null;
+        return { kind: 'merged', routine: r, parts: [...new Set(split.days.filter((d) => m.dayIds.includes(d.id)).flatMap((d) => d.bodyParts))] };
+      },
+    );
+    for (const e of avoidLegDays(entries, (x) => x.parts, near).order) {
+      const why = isLegDay(e.parts) && near !== null ? near.why : null;
+      if (e.kind === 'merged') {
+        const run = await routineStart(p, { routineId: e.routine.id, gymId, opId: `preview-next-routine:${e.routine.id}`, preview: true, ...(gymEquipment ? { gymEquipment } : {}) });
+        if (run.r.ok) return { plan: { kind: 'routine' as const, routine: e.routine, basis: { kind: 'split' } as UpNextRoutineBasis, run: { ...run, r: run.r }, why }, avoid: new Set<string>() };
+        continue;
+      }
+      const plan = await splitDayPlan(p, live, split, e.day, workouts, gymId, gymEquipment, planDays, refs);
+      if (plan !== null) return { plan: { ...plan, why }, avoid: new Set<string>() };
     }
     // No due day has a workout to plan from: the window's workouts that trained the day(s) just done (left out of `due`).
     const dueIds = new Set(due.map((d) => d.day.id));
     const justDone = due.length === 0 || dueIds.size === split.days.length ? new Set<string>() : new Set(split.days.filter((d) => !dueIds.has(d.id)).map((d) => d.id));
-    return { plan: null, avoid: new Set(workouts.filter((w) => splitDaysTrained(split, w.groups).some((d) => justDone.has(d))).map((w) => w.sessionId)) };
+    // (review S6) With a long or hard run near, the fallbacks pass over leg workouts too (unless nothing else is left).
+    const legDayIds = new Set(split.days.filter((d) => isLegDay(d.bodyParts)).map((d) => d.id));
+    const passOver = (w: (typeof workouts)[number]) => splitDaysTrained(split, w.groups).some((d) => justDone.has(d) || (near !== null && legDayIds.has(d)));
+    return { plan: null, avoid: new Set(workouts.filter(passOver).map((w) => w.sessionId)) };
   }
 
   /** One split day's Up next: its routine, else the newest workout (in the window) mainly that day; null when none. */
@@ -4020,6 +4130,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
             aboutMinutes: await aboutMinutes(p, r.aggregate),
             sourceStartedAtUtc: ref?.startedAtUtc ?? null,
             tz: ref?.tz ?? ctx.now().tz,
+            why: ('why' in up ? up.why : null) ?? null,
           };
         }
         const last = { sessionId: up.sessionId };
@@ -4042,6 +4153,7 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
           aboutMinutes: await aboutMinutes(p, r.aggregate),
           sourceStartedAtUtc: source.session.startedAt.utc,
           tz: source.session.startedAt.tz,
+          why: ('why' in up ? up.why : null) ?? null,
         };
       } catch {
         return null;

@@ -458,3 +458,34 @@ Ben asked "how would the lift target work?", then, after the description below: 
 - **Hit targets count toward the 3** until he removes or replaces them.
 - **Target dates** are typed as `YYYY-MM-DD` in the editor for now (no date wheel), and a past date reads `Due 1 Mar`.
 - **No equipment max check on a target.** It's a goal, not a load the app prescribes, so it isn't snapped or capped. Loads the coach plans toward it still are. A target above a machine's max can never be hit: refuse, warn or allow?
+
+## 2026-10-20: Flex the week around runs: activities, the run rule in Up next, this week's change (Ben approved 20 Oct)
+Ben: "Can we add ability to flex ordering and sessions etc subject to week have eg if I did or have planned a long run maybe we swap to a push rather than shoulder and chest separately". On data sources he parked Apple Health ("Doesn't sound like much value add at this point"); to the manual version he replied: "Yes i want that". Built and tested with real SQLite in the app's tests; not yet run on the iPhone. Garmin, Strava and Apple Health imports stay out of scope (no HealthKit).
+
+**Ben approved 20 Oct**
+- **Activities (Your data).** A run, ride, swim, sport or other, done or planned, with a date, a rough time and/or distance, and an effort (easy / moderate / hard / long). At least one of time, distance or effort. A date after today is planned. Entry points: Today › ＋ Activity (a small sheet: kind, done/planned, date wheel, minutes and km on the keypad, effort chips) and the coach ("18 km run yesterday", "long run Saturday" → `log_activity`). Shown in Today's Recent and Progress › Calendar as their own type; edit and delete are versioned with Undo. In backup, restore and delete like the rest of Your data.
+- **Long and hard.** A `long` effort, or a run of at least 90 min or 15 km, is long; a `hard` effort is hard. Nothing else is inferred (rule 6).
+- **Up next's run rule.** The day before a planned long or hard run, and the day after a done one (local dates in Ben's zone), days whose main body parts include Quads, Hamstrings, Glutes or Calves go after every other day, in the plan and the split alike. If every option is a leg day, it is suggested anyway and Why? says `Long run yesterday` / `Long run tomorrow`.
+- **Runs never count as gym days** for the weekly aim. They show in Your plan's week as a line (`Run · Sat · long`).
+- **This week's change is a proposal (rule 3).** When the gym days left this week (aim − done − days a planned long or hard run still ahead takes, never more than the open days left) are fewer than the plan (or split) days left, or when Ben asks ("I've got a long run Saturday, plan my week around it"), the coach can propose `propose_week`: merge two days (`Push` = Chest + Shoulders) and/or skip one, with a before/after list of days, scope `This week`, Apply and Undo. The merged day is built from both days' exercises (main lifts first, an exercise in both once), set counts trimmed to fit his session length. It lasts this week only: next Monday the plan is as it was, with no write.
+- **The coach and `log_activity`.** When Ben's own words tell it ("18 km run yesterday"), it is logged at once with Undo on the card. When the coach raises one on its own, it is an offer he taps `Log` on.
+- Every write is versioned and idempotent on its op ID (rule 5). A week proposal whose week moved on (a workout or activity logged, the plan changed) is stale and changes nothing.
+
+**PM decisions, pending Ben:**
+- **Planned runs past their date** don't count as done until Ben marks them done, so a planned long run on Saturday never keeps legs off Sunday on its own.
+- **Only long or hard runs** move leg days; a long ride, swim or sport doesn't (Ben's words were about runs).
+- **"Keep it next week"** isn't a week change: keeping a merged day for good is a plan change Ben asks for, through the existing plan proposal.
+- **Distance is in km** in the sheet (no miles setting yet).
+- **Migration 28** (`activities-week`, written as 26 and renumbered on merge after `update_gym` took 26 and `set_lift_target` took 27) adds `activities` and `week_plans` and rebuilds `coach_actions` for `log_activity` and `propose_week`, keeping every earlier kind (incl. `pause_plan`, `update_gym`, `set_lift_target`).
+- **Legs on the run day itself** aren't held back (Ben's words covered the day before and the day after).
+- **A merged day at its floors can still run over** his session length (main lifts keep 2 working sets, others 1); Up next then shows its real `about N min`.
+- **A pinned day (`Make next`) stays first** the day before a long run; its Why? names the run.
+
+**Review fixes (weekflex-20oct), PM decisions:**
+- **The coach reads each activity from its own words (B1).** In "Had an easy 5k yesterday, long run Saturday", each run is read from its own clause, so the 5k stays easy and the Saturday run isn't lost. An effort is only ever Ben's word in that activity's own clause ("Last session was hard, also did a 10k run" logs no effort). The model's values are checked against his words. When they disagree, or he names more than one activity, the coach offers each one for a tap and saves nothing until he taps.
+- **A planned run Ben tells the coach he did is marked done (S5)**, not added a second time. His new numbers win and the planned ones fill the gaps. Undo makes it planned again.
+- **Calendar edits and deletes have Today's toast with Undo (B2).** Delete doesn't ask to confirm, because Undo brings it back, as with workouts.
+- **The coach offers to change the week once (S1)** for the week as it is. Once an offer has been made, declined or ignored, the coach doesn't raise it again until the week changes (a workout, an activity, the plan). Ben can still ask at any time.
+- **Code checks merges (S2, S3).** A leg day is never merged, and the merged day's name comes from code (`Push`, `Pull` or `Upper`), not the model. Apply refuses a merge when one of the two days has no exercises to bring, and nothing changes.
+- **Trimming uses Up next's own estimate (S4)**: the same dry run and Ben's recent pace, so the merged day's `about N min` fits his session length.
+- **The run rule also applies to a rotation of workouts (S6)** when Ben has no split, and to the fallbacks after it.

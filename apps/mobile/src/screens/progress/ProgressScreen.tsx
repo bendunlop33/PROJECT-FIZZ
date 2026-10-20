@@ -2,17 +2,18 @@ import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { toMs, type DateRange, type ProgressHomeView, type RecordView } from '@fizz/domain';
+import { ACTIVITY_COPY, toMs, type DateRange, type ProgressHomeView, type RecordView } from '@fizz/domain';
 import type { ProgressGrouping, ProgressPeriodKey } from '@fizz/schemas';
 
 import { newUuid } from '../../device/runtime';
+import { activitySavedToast } from '../../activity/activity-toast';
 import { DeleteToastView } from '../../history/DeleteToastView';
-import { useDeleteToast } from '../../history/useDeleteToast';
+import { useDeleteToast, type ToastState } from '../../history/useDeleteToast';
 import { runCountIt, type CountItToast } from '../../progress/count-it';
 import { consistencyCardView, type ConsistencyCardView } from '../../progress/consistency-view';
 import { ActivityChart, FrequencyHeader, FrequencyRow, FrequencySubRows, PeriodPicker, ResumeBar, Segmented, useAx } from '../../progress/components';
 import type { ProgressHome } from '../../services/progress-service';
-import { useScreenData, useServices } from '../../shell/context';
+import { useDataChanged, useScreenData, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
 import { AppText, Card, Icon, PrimaryButton, SecondaryButton, StatStrip, StatusLine, TextButton, Toast } from '../../ui';
 import { AskPill } from '../coach/AskPill';
@@ -36,6 +37,7 @@ export function ProgressScreen() {
   const theme = useTheme();
   const navigation = useNavigation();
   const services = useServices();
+  const changed = useDataChanged();
   const ax = useAx();
   const [segment, setSegment] = useState<'activity' | 'exercises' | 'calendar'>('activity');
   const [month, setMonth] = useState<string | null>(null);
@@ -176,6 +178,14 @@ export function ProgressScreen() {
               onMonth={(m) => {
                 setMonth(m);
               }}
+              onActivitySaved={(saved) => {
+                // (review B2) Calendar edits and deletes get Today's toast with Undo (the delete toast's timing and VoiceOver close).
+                const show = (t: ToastState | null) => {
+                  if (t === null) deleted.dismiss();
+                  else deleted.show(t);
+                };
+                deleted.show(activitySavedToast(saved, { undo: services.activities.undo, newOpId: newUuid, changed, show }));
+              }}
             />
           </View>
         ) : null}
@@ -247,7 +257,7 @@ export function ProgressScreen() {
             }}
           >
             {deleted.toast ? (
-              <DeleteToastView state={deleted} />
+              <DeleteToastView state={deleted} {...(deleted.toast.text === ACTIVITY_COPY.saved ? { icon: 'checkmark.circle.fill' as const } : {})} />
             ) : toast ? (
               <Toast icon="info.circle" text={toast.text} {...(toast.action ? { action: toast.action } : {})} {...(toast.onAction ? { onAction: toast.onAction } : {})} />
             ) : null}

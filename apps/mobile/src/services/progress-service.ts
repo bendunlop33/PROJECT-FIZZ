@@ -1,5 +1,6 @@
 import {
   buildCalendarMonthView,
+  activityRow,
   buildExerciseDetailView,
   buildExerciseListView,
   buildExerciseTabView,
@@ -488,8 +489,13 @@ export function createProgressService(deps: ProgressServiceDeps) {
               name: active.session.routineName,
               fresh: nowMs - toMs(active.session.lastActivityAtUtc) < STALE_SESSION_MS,
             };
+      // (Ben, 20 Oct) Activities on the calendar as their own type.
+      const shown = month ?? monthOf(today);
+      const acts = await repos()
+        .activities.listBetween(profile.id, `${shown}-01`, `${shown}-32`)
+        .catch(() => []);
       return {
-        view: buildCalendarMonthView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, month: month ?? monthOf(today), today, active: activeRow }),
+        view: buildCalendarMonthView({ sessions: ctx.sessions, exercises: ctx.exercises, gymNames: ctx.gymNames, month: shown, today, active: activeRow, activities: acts.map((a) => ({ date: a.fields.date, row: activityRow(a, today) })) }),
         unreadable: ctx.unreadable,
       };
     },

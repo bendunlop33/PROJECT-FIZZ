@@ -170,6 +170,10 @@ export interface CardView {
   newExercise?: { actionId: string; fields: CustomExerciseFields; canAdd: boolean };
   /** (20 Oct, ADR 0029) The coach's gym suggestion: `Not now` · `Apply` while open; `Undo` of Ben's Apply after. */
   gymChange?: { proposalId: string; canApply: boolean; undoActionId: string | null };
+  /** (Ben, 20 Oct) The coach's week proposal: before/after, `This week`, Apply or Undo (rule 3). */
+  week?: ActionRecord;
+  /** (Ben, 20 Oct) An activity the coach offered to log (he didn't ask): `Log`, then Undo. */
+  activityOffer?: ActionRecord;
 }
 
 const GYM_STATUS: Record<GymProposalState['state'], CardView['status']> = {
@@ -318,7 +322,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym', 'set_lift_target']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym', 'set_lift_target', 'log_activity']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
@@ -348,6 +352,8 @@ export function cardView(r: ActionRecord): CardView {
     canUndo: r.status === 'committed' && r.undoneBy === null && r.detail.kind !== 'undo' && UNDOABLE.has(r.detail.kind),
     ...(r.detail.kind === 'build_workout' && r.status === 'committed' ? { draft: r } : {}),
     ...(r.detail.kind === 'build_plan' && r.status === 'committed' ? { plan: r } : {}),
+    ...(r.detail.kind === 'propose_week' && r.status === 'proposed' ? { week: r } : {}),
+    ...(r.detail.kind === 'log_activity' && r.status === 'proposed' ? { activityOffer: r } : {}),
   };
 }
 

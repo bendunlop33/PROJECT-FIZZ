@@ -119,6 +119,10 @@ export interface PlanOverview {
   setsDone: { pct: number; text: string } | null;
   /** (Ben, 20 Oct) `Paused · until 3 Nov` / `Paused` while paused (no `Next` then); null in use. */
   paused: { text: string; untilDate: string | null } | null;
+  /** (Ben, 20 Oct) This week's activities, one small line each: `Run · Sat · long`. Never gym days. */
+  activities: string[];
+  /** (Ben, 20 Oct) This week's change Ben applied (`This week: Push (Chest + Shoulders)`), with its Undo; null: none. */
+  weekChange: { text: string; weekPlanId: string; version: number } | null;
 }
 
 export interface PlanOverviewInput {
@@ -138,6 +142,10 @@ export interface PlanOverviewInput {
   paused?: { untilDate: string | null } | null;
   /** (20 Oct) Days of this week the plan is paused (`pausedInWeek`): left out of `Days this week`. */
   pausedDaysThisWeek?: number;
+  /** (Ben, 20 Oct) `weekActivityLine` for each activity this week. */
+  activities?: readonly string[];
+  /** (Ben, 20 Oct) This week's change in use: its days merged or skipped come off `Days this week` (`weekDaysRemoved`). */
+  weekChange?: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged?: readonly (readonly string[])[] } | null;
   nowMs: number;
   tz: string;
 }
@@ -182,8 +190,11 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
     ];
     return { routineId: d.routineId, n: i + 1, name: d.name, state, next, when, accessibilityLabel: said.join(', ') };
   });
-  const done = doneThisWeek.size;
-  const of = planWeekOf(input.days.length, done, input.pausedDaysThisWeek ?? 0);
+  const change = input.weekChange ?? null;
+  // This week's merged day counts once (Chest + Shoulders done by one Push workout is one day of this week's).
+  const doubled = (change?.merged ?? []).filter((ids) => ids.length > 1 && ids.every((id) => doneThisWeek.has(id))).reduce((n, ids) => n + ids.length - 1, 0);
+  const done = doneThisWeek.size - doubled;
+  const of = planWeekOf(Math.max(1, input.days.length - (change?.daysRemoved ?? 0)), done, input.pausedDaysThisWeek ?? 0);
   const pct = input.sets.planned > 0 ? Math.round((100 * Math.min(input.sets.done, input.sets.planned)) / input.sets.planned) : null;
   return {
     planId: plan.id,
@@ -195,6 +206,8 @@ export function planOverview(input: PlanOverviewInput): PlanOverview | null {
     daysThisWeek: { done, of, text: `${String(done)} of ${String(of)}` },
     setsDone: pct === null ? null : { pct, text: `${String(pct)}%` },
     paused: paused === null ? null : { text: paused.untilDate === null ? PLAN_OVERVIEW_COPY.paused : PLAN_OVERVIEW_COPY.pausedUntil(localDateText(paused.untilDate)), untilDate: paused.untilDate },
+    activities: [...(input.activities ?? [])],
+    weekChange: change === null ? null : { text: change.text, weekPlanId: change.weekPlanId, version: change.version },
   };
 }
 

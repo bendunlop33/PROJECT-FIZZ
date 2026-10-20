@@ -1144,6 +1144,8 @@ function factsOf(record: ActionRecord): RecordFacts {
     case 'propose_exercise':
     case 'pause_plan':
     case 'set_lift_target':
+    case 'log_activity':
+    case 'propose_week':
     case 'save_memory':
     case 'suggest_memory':
     case 'forget_memory':

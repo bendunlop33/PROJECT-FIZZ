@@ -12,6 +12,7 @@ import {
 import { memoryDriver, schemaDump } from './helpers';
 
 const TABLES = [
+  'activities',
   'check_ins',
   'coach_actions',
   'coach_messages',
@@ -46,6 +47,7 @@ const TABLES = [
   'set_audit',
   'timing_audit',
   'training_profiles',
+  'week_plans',
   'work_intervals',
   'workout_drafts',
 ];

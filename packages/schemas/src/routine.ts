@@ -124,6 +124,11 @@ export const RoutineSchema = RecordMetaSchema.extend({
   /** (19 Oct) The coach plan whose Apply made it. */
   createdFromPlan: RoutinePlanLinkSchema.optional(),
   /**
+   * (Ben, 20 Oct) A merged day made for one week only by a week override's Apply (`WeekPlan`): out of
+   * the rotation and the library; Up next starts it that week only. Absent on every other workout.
+   */
+  createdForWeek: z.object({ weekPlanId: IdSchema, weekMonday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional(),
+  /**
    * In Ben's rotation (D19, RT9). Absent = in it (every routine was, before
    * the library); a workout saved or made since joins only when Ben says so.
    */

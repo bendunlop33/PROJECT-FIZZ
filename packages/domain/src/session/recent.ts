@@ -75,3 +75,31 @@ export function recentWorkoutRows(rows: readonly RecentWorkoutInput[], now: Zone
       return { sessionId: r.sessionId, title: r.title, when, detail, accessibilityLabel: `${r.title}, ${when}, ${detail.replace(NBSP, ' ')}`, opens: r.sets === 0 ? 'summary' : 'repeat' };
     });
 }
+
+/** (Ben, 20 Oct) An activity in Recent (`activityRow` plus where it sorts: noon on its date). */
+export interface RecentActivityInput {
+  activityId: string;
+  version: number;
+  title: string;
+  when: string;
+  detail: string;
+  planned: boolean;
+  accessibilityLabel: string;
+  sortMs: number;
+}
+
+export type RecentRow = { kind: 'workout'; row: RecentWorkoutRow } | { kind: 'activity'; row: RecentActivityInput };
+
+/**
+ * (Ben, 20 Oct) Today's Recent with activities as their own rows: workouts
+ * and activities newest first (an activity at noon on its date, so a planned
+ * one ahead sits on top), up to `limit`. Activities are never workouts.
+ */
+export function recentRows(workouts: readonly RecentWorkoutInput[], activities: readonly RecentActivityInput[], now: ZonedTimestamp, limit = RECENT_LIMIT): RecentRow[] {
+  const w = recentWorkoutRows(workouts, now, Math.max(0, limit)).map((row, i) => ({ ms: toMs(workouts.find((x) => x.sessionId === row.sessionId)?.startedAtUtc ?? now.utc), i, item: { kind: 'workout' as const, row } }));
+  const a = activities.map((row, i) => ({ ms: row.sortMs, i: i + 1000, item: { kind: 'activity' as const, row } }));
+  return [...w, ...a]
+    .sort((x, y) => y.ms - x.ms || x.i - y.i)
+    .slice(0, Math.max(0, limit))
+    .map((x) => x.item);
+}

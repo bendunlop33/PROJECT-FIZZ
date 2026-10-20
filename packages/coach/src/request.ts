@@ -111,7 +111,7 @@ export type BenChip = 'too_hard' | 'too_easy' | 'pain' | 'lighter_session';
  * future: a bare "the plan" ("add curls to the plan") or a routine/template/programme/split together with a
  * today word ("add curls to my routine now"). Always alongside `add`; it also opens the proposal tool.
  */
-export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add' | 'add_plan' | 'build_plan' | 'plan_pause';
+export type BenRequestKind = 'change' | 'difficulty' | 'structural' | 'memory' | 'playbook' | 'hold' | 'log' | 'correct' | 'build' | 'add' | 'add_plan' | 'build_plan' | 'plan_pause' | 'activity' | 'week_plan';
 
 export type BenRequest = { source: 'chip'; chip: BenChip } | { source: 'words'; kinds: readonly BenRequestKind[] };
 
@@ -839,6 +839,62 @@ function pauseIn(c: Clause): boolean {
   return !FUTURE_START.test(before);
 }
 
+/**
+ * (Ben, 20 Oct) Telling the coach about a run, ride, swim or sport, done or planned ("18 km run
+ * yesterday", "long run Saturday", "log a 45 min ride", "did a 10k this morning"): its own kind
+ * (`activity`). It needs the activity and something about it (a distance or time, an effort word, a
+ * day, or "log"), so "I ran out of time" or "should I run?" isn't one. Code, never the model.
+ */
+const ACTIVITY_NOUN = /\b(?:run|ran|jog|jogged|jogging|ride|rode|cycle|cycled|cycling|bike ride|swim|swam|swimming|hike|hiked|parkrun|marathon|half marathon|10k|5k|football|five-a-side|5-a-side|tennis|squash|padel|rugby|netball|basketball|hockey|cricket|golf)\b/;
+const NOT_ACTIVITY = /\b(?:run|ran|running) (?:out|through|over|late|me|it|the numbers|low)\b|\brun(?:s|ning)? (?:a|the) (?:set|workout|session|plan)\b/;
+const ACTIVITY_SAYS = new RegExp(
+  [
+    '\\b\\d+(?:\\.\\d+)? ?(?:km|kms|k|mi|mile|miles|min|mins|minutes?|h|hr|hrs|hours?)\\b',
+    '\\b(?:long|hard|easy|steady|tempo|interval|intervals|moderate)\\b',
+    '\\b(?:yesterday|today|tonight|tomorrow|this (?:morning|afternoon|evening)|last night|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\\b',
+    '\\b(?:log|add|record|note)\\b',
+    '\\b(?:parkrun|marathon|half marathon|10k|5k)\\b',
+  ].join('|'),
+);
+
+function activityIn(c: Clause): boolean {
+  const t = c.text.replace(POLITE, '');
+  if (c.question && !ASK_PREFIX.test(t)) return false;
+  if (!ACTIVITY_NOUN.test(t) || NOT_ACTIVITY.test(t)) return false;
+  if (/^(?:should|shall|would|is|was|do|does|how|what|why|when)\b/.test(t)) return false;
+  return ACTIVITY_SAYS.test(t);
+}
+
+/** Whether Ben's words tell the coach about an activity to log (`activity`). Code, never the model's reading. */
+export function asksToLogActivity(text: string): boolean {
+  return requestHas(classifyBenRequest(text, 'general'), 'activity');
+}
+
+/**
+ * (Ben, 20 Oct: "I've got a long run Saturday, plan my week around it") Shaping this week around
+ * something: "plan my week around it", "rejig the week", "fit my week around my run". Its own kind
+ * (`week_plan`): it opens `propose_week` (a proposal, rule 3), never a new plan.
+ */
+const WEEK_ASK = new RegExp(
+  [
+    // "Plan my week" alone is a new plan (`build_plan`); around something, or a reshape verb, is this week.
+    '\\b(?:rearrange|re-arrange|rejig|reshuffle|shuffle|reorgani[sz]e|adjust|flex|tweak)\\b(?: out)? (?:my|the|this) (?:training )?week\\b',
+    '\\bweek around\\b',
+    '\\b(?:plan|train|fit|work|lift)(?: things| it| stuff| my training| my lifting| my sessions)? around (?:my|the|this|that|a|it)\\b',
+  ].join('|'),
+);
+
+function weekIn(c: Clause): boolean {
+  const t = c.text.replace(POLITE, '');
+  if (c.question && !ASK_PREFIX.test(t)) return false;
+  return WEEK_ASK.test(t);
+}
+
+/** Whether Ben's words ask to shape this week (`week_plan`). Code, never the model's reading. */
+export function asksToPlanWeek(text: string): boolean {
+  return requestHas(classifyBenRequest(text, 'general'), 'week_plan');
+}
+
 /** Whether Ben's words ask to pause or resume the plan (`plan_pause`). Code, never the model's reading. */
 export function asksToPausePlan(text: string): boolean {
   return requestHas(classifyBenRequest(text, 'general'), 'plan_pause');
@@ -1038,7 +1094,8 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
     return joined !== c.sentence && normalise(joined).some((x) => x.first && buildIn(x.text));
   };
   // (19 Oct) A plan of several days is its own kind, never also a one-session build ("a 4-day plan" names a "day").
-  const planning = buildable.filter((c) => planIn(c.text)).map((c) => c.text);
+  // (Ben, 20 Oct) "Plan my week around it" shapes this week; it never builds a new plan.
+  const planning = buildable.filter((c) => planIn(c.text) && !weekIn(c)).map((c) => c.text);
   if (planning.length > 0) kinds.push('build_plan');
   const building = planning.length > 0 ? [] : buildable.filter((c) => buildIn(c.text) || joinedBuilds(c)).map((c) => c.text);
   if (planning.length === 0 && (building.length > 0 || BUILD_SORT_IT.test(whole.replace(/[.!]+$/, '')))) kinds.push('build');
@@ -1061,13 +1118,16 @@ export function classifyBenRequest(text: string, turnKind?: CoachTurnKind): BenR
   if (open.some((c) => CORRECT.test(bodyOf(c.text)) && (!c.question || ASK_PREFIX.test(c.text.replace(POLITE, ''))))) kinds.push('correct');
   // (Ben, 20 Oct) Pausing or resuming the plan in use.
   if (open.some(pauseIn)) kinds.push('plan_pause');
+  // (Ben, 20 Oct) An activity to log, and shaping this week around it.
+  if (open.some(activityIn)) kinds.push('activity');
+  if (open.some(weekIn)) kinds.push('week_plan');
   if (kinds.length === 0) return null;
   // Review r5 B3: a retraction in any clause after the last request takes it back ("I want it lighter
   // but leave it", "Lower it. Never mind, keep it", "Lower it. Don't"). A new request after a
   // retraction still counts ("Lower it. Actually no, raise it").
   let lastRequest = -1;
   all.forEach((c, i) => {
-    if (c.label !== null || pauseIn(c) || buildIn(c.text) || planIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || supersetAsk(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
+    if (c.label !== null || pauseIn(c) || activityIn(c) || weekIn(c) || buildIn(c.text) || planIn(c.text) || addIn(c.text) || isDirective(c.text) || isAsking(c.text) || supersetAsk(c.text) || difficultyIn(c) || structuralIn(c.text) || MEMORY.test(c.text) || REMEMBER_RULE.test(c.text) || PLAYBOOK.test(c.text) || HOLD.some((re) => re.test(c.text.replace(POLITE, ''))) || LOG.test(c.text.replace(POLITE, '')) || CORRECT.test(c.text.replace(POLITE, ''))) lastRequest = i;
   });
   if (all.slice(lastRequest + 1).some((c) => RETRACTION.test(c.text.replace(/,/g, '').trim()))) return null;
   return { source: 'words', kinds };

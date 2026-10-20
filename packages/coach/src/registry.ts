@@ -356,6 +356,36 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       "Pause the plan in use (YOUR DATA plan.inUse) when Ben asks, e.g. \"I'm on holiday till 3 Nov\", or resume it (\"I'm back, resume my plan\"). action: pause or resume. until: the local date (YYYY-MM-DD) the plan is back in use on, from his words and today's date; null when he gave none (paused until he resumes). While paused, Up next follows his other workouts and paused days don't count against his weekly aim. The plan's days don't change. Applies at once with Undo.",
   },
   {
+    // (Ben, 20 Oct) A run, ride, swim or sport Ben mentions. Offered on every general turn: when his own words tell the
+    // coach about it (`activity`, code's reading) it is logged at once with Undo; otherwise the call is saved as an offer
+    // he taps to log (rule 3). Only what he said (rule 6).
+    name: 'log_activity',
+    effect: 'append',
+    writes: ['activity'],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['general'],
+    plainLabel: 'Log a run, ride, swim or sport you tell it about, with Undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Log a run, ride, swim, sport or other activity Ben tells you about, done or planned ("18 km run yesterday", "long run Saturday"). kind, status (done or planned), date (local YYYY-MM-DD from his words and YOUR DATA week.today), durationMin and distanceKm only as he said them (null when he didn’t), effort only from his own word (long for a long session; null otherwise). Never invent pace, heart rate or effort. Runs are not gym days.',
+  },
+  {
+    // (Ben, 20 Oct: "maybe we swap to a push rather than shoulder and chest separately") This week only, always a
+    // proposal Ben applies (rule 3). Opens when he asks to shape the week, or when code sees more days left this week
+    // than gym days (`weekOpen`: a planned run, a busy week).
+    name: 'propose_week',
+    effect: 'propose',
+    writes: ['week_plan'],
+    needs: 'structural_signal',
+    structural: true,
+    turnKinds: ['general'],
+    plainLabel: 'Suggest merging or skipping this week’s days around a run, for you to apply',
+    capabilitySection: 'suggest_only',
+    description:
+      'Suggest this week’s shape when YOUR DATA week shows more days left (week.remaining) than gym days (week.gymDaysLeft), e.g. around a long run, or when Ben asks ("plan my week around it"). merges: two remaining upper day IDs into one day (Chest + Shoulders → Push; a leg day is never merged; the app names the merged day); skips: day IDs to leave out this week. week.suggestion is code’s idea. This week only: next week is his plan as it was. Ben applies it; say "Want me to …?", never that it changed.',
+  },
+  {
     // (19 Oct, Ben: "Can it build plans across multiple days as well not just single workouts?") Every day at once, as a
     // proposal (rule 3: a structural change Ben applies, with Undo). Each day is checked like a `propose_workout` draft.
     name: 'propose_plan',
@@ -497,6 +527,11 @@ export interface TurnGate {
   gymWords?: boolean;
   /** (Ben, 20 Oct) The Lift targets setting is on. Absent or false: `set_lift_target` is withheld. */
   liftTargetsOn?: boolean;
+  /**
+   * (Ben, 20 Oct) Code sees more days left this week than gym days (a planned long run, a busy week):
+   * `propose_week` is offered so the coach can suggest a reshape. It is always a proposal Ben applies.
+   */
+  weekOpen?: boolean;
 }
 
 /**
@@ -559,6 +594,8 @@ export const REQUEST_KINDS_BY_TOOL: Partial<Record<CoachToolName, readonly BenRe
   propose_plan: ['build_plan'],
   // (Ben, 20 Oct) "Pause my plan", "I'm on holiday till 3 Nov", "resume my plan".
   pause_plan: ['plan_pause'],
+  // (Ben, 20 Oct) "Plan my week around it", "rejig the week": a proposal for this week only.
+  propose_week: ['week_plan'],
 };
 
 function requestOpens(t: ToolDeclaration, r: BenRequest | null): boolean {
@@ -585,6 +622,9 @@ function needMet(t: ToolDeclaration, g: TurnGate): WithheldTool['reason'] | null
     case 'summary_turn':
       return g.kind === 'summary' ? null : 'needs_summary_turn';
     case 'structural_signal':
+      // (Ben, 20 Oct) This week's shape: Ben asks ("plan my week around it", a structural ask), or code sees more
+      // days left than gym days (`weekOpen`). Other signals (a pain flag) are about the next workout, not the week.
+      if (t.name === 'propose_week') return requestOpens(t, g.benRequest) || isStructuralRequest(g.benRequest) || g.weekOpen === true ? null : 'needs_request_or_signal';
       return isStructuralRequest(g.benRequest) || requestOpens(t, g.benRequest) || g.structuralSignals.length > 0 ? null : 'needs_request_or_signal';
   }
 }

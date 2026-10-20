@@ -165,6 +165,8 @@ export interface CoachTurnRequest {
   planInContext?: boolean;
   /** (Ben, 20 Oct) The Lift targets setting is on: `set_lift_target` may be offered. Absent: never. */
   liftTargetsOn?: boolean;
+  /** (Ben, 20 Oct) More days left this week than gym days: `propose_week` is offered (a proposal Ben applies). */
+  weekOpen?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -242,6 +244,8 @@ export interface GateInput {
   planInContext?: boolean;
   /** (19 Oct) The build follow-up (an answer to the coach's question, "yes put it in") is about Ben's plan request. */
   planFollowUp?: boolean;
+  /** (Ben, 20 Oct) More days left this week than gym days: `propose_week` is offered. */
+  weekOpen?: boolean;
 }
 
 /** The turn gate from Ben's own input only (registry.ts `TurnGate`). */
@@ -284,7 +288,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
   // Review S2: asking to rename is asking for a change, so "I've renamed it" with no card is hidden and noted.
   const setWords = live && g.input.kind === 'words' && (mentionsTodaysSets(g.input.text) || asksToRename(g.input.text));
   const gymWords = g.input.kind === 'words' && mentionsGymSetup(g.input.text);
-  const benAskedForChange = acceptedOffer || setWords || gymWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'build_plan') || requestHas(benRequest, 'add') || requestHas(benRequest, 'plan_pause')));
+  const benAskedForChange = acceptedOffer || setWords || gymWords || (benRequest !== null && (benRequest.source === 'chip' || requestHas(benRequest, 'change') || requestHas(benRequest, 'difficulty') || requestHas(benRequest, 'structural') || requestHas(benRequest, 'memory') || requestHas(benRequest, 'playbook') || requestHas(benRequest, 'build') || requestHas(benRequest, 'build_plan') || requestHas(benRequest, 'add') || requestHas(benRequest, 'plan_pause') || requestHas(benRequest, 'activity') || requestHas(benRequest, 'week_plan')));
   return {
     kind: g.kind,
     benRequest,
@@ -298,6 +302,7 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
     ...(live ? { liveWorkout: true } : {}),
     ...(g.buildQuestionOpen === true && g.kind === 'general' && g.input.kind === 'words' ? { buildQuestionOpen: true } : {}),
     ...(gymWords ? { gymWords: true } : {}),
+    ...(g.weekOpen === true && g.kind === 'general' ? { weekOpen: true } : {}),
   };
 }
 
@@ -667,6 +672,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(questionOpen ? { buildQuestionOpen: true } : {}),
     ...(req.planInContext === true ? { planInContext: true } : {}),
     ...(planFollowUp ? { planFollowUp: true } : {}),
+    ...(req.weekOpen === true ? { weekOpen: true } : {}),
   });
   const gate = req.liftTargetsOn === true ? { ...gated, liftTargetsOn: true } : gated;
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });

@@ -56,6 +56,7 @@ import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
 import { createLiftTargetService } from './lift-target-service';
 import { createPlanServices } from './plan-services';
+import { createWeekServices } from './week-services';
 import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
 import { bumpProfile, newProfile, setupStep, unitLockedText, type SetupStep } from './setup';
@@ -544,6 +545,17 @@ export function createAppServices(deps: AppServicesDeps) {
   });
 
   /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
+  /** (Ben, 20 Oct) Activities (runs, rides, swims, sport) and this week's shape. Local only. */
+  const weekly = createWeekServices({
+    store: () => deps.manager.store,
+    profile: getProfile,
+    now: deps.now,
+    newId: deps.newId,
+    catalogueExercises,
+    currentGymId: async () => (await yourData.currentGym())?.id ?? null,
+    plannedDay: (routineId, gymId) => loop.routines.planned(routineId, gymId),
+  });
+
   const coach = createCoachService({
     // (Ben, 20 Oct) Lift targets join the training details only while the setting is on.
     training: async () => {
@@ -553,6 +565,13 @@ export function createAppServices(deps: AppServicesDeps) {
       return views.length === 0 ? t : { ...t, liftTargets: views };
     },
     liftTargets: { on: () => liftTargets.on(), prepare: (args, at) => liftTargets.prepare(args, at) },
+    week: {
+      view: () => weekly.week.contextView(),
+      tool: async () => {
+        const s = await weekly.week.state();
+        return s === null ? null : { facts: s.facts, basis: s.basis, factsKey: s.factsKey };
+      },
+    },
     store: () => deps.manager.store,
     profile: getProfile,
     now: deps.now,
@@ -864,6 +883,7 @@ export function createAppServices(deps: AppServicesDeps) {
 
   /** Coach-built plans (19 Oct): the card, Apply and Undo, the consistency card. Local only. */
   const plans = createPlanServices({
+    weekInfo: async () => ({ lines: await weekly.activities.weekLines(), change: await weekly.week.change() }),
     store: () => deps.manager.store,
     profile: getProfile,
     now: deps.now,
@@ -934,6 +954,10 @@ export function createAppServices(deps: AppServicesDeps) {
     routines,
     coachDrafts,
     plans,
+    /** (Ben, 20 Oct) Runs, rides, swims and sport: add, edit, delete, Undo; Recent and calendar rows. */
+    activities: weekly.activities,
+    /** (Ben, 20 Oct) This week's shape: the coach's proposal card, Apply, Undo. */
+    week: weekly.week,
     progress,
     data,
     coach,

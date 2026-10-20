@@ -69,6 +69,8 @@ export interface PlanServicesDeps {
   plannedDay?: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate; aboutMinutes: number | null } | null>;
   /** Each split day's main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
   splitMainLiftIds?: () => Promise<ReadonlySet<string>>;
+  /** (Ben, 20 Oct) This week's activity lines and the week change in use (week-services); absent: none. */
+  weekInfo?: () => Promise<{ lines: string[]; change: { text: string; weekPlanId: string; version: number; daysRemoved: number; merged: string[][] } | null }>;
 }
 
 export type PlanCardState =
@@ -440,7 +442,10 @@ export function createPlanServices(deps: PlanServicesDeps) {
       const pause = activePause(plan, nowMs, tz);
       const nextRoutineId = pause !== null ? null : ((await deps.upNextRoutineId?.(gym?.id ?? null).catch(() => null)) ?? null);
       const monday = localWeekBounds(nowMs, tz).mondayLocalDate;
+      const info = (await deps.weekInfo?.().catch(() => null)) ?? null;
       return planOverview({
+        activities: info?.lines ?? [],
+        weekChange: info?.change ?? null,
         paused: pause === null ? null : { untilDate: pause.untilDate },
         pausedDaysThisWeek: pausedInWeek(monday, pausedDates(plan.pauses, monday, addDays(monday, 7), tz)),
         plan: { id: plan.id, name: plan.name, status: plan.status, version: plan.version, appliedAtUtc: plan.applied.atUtc },
