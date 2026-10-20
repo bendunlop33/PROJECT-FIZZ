@@ -143,6 +143,10 @@ const KIND_NOUN: Partial<Record<Exercise['compatibleEquipment'][number], string>
   assisted_stack: 'assisted machine',
   plate_loaded_machine: 'plate-loaded machine',
   bodyweight_station: 'bar or station',
+  kettlebell: 'kettlebells',
+  ez_bar: 'EZ bar',
+  trap_bar: 'trap bar',
+  smith_machine: 'Smith machine',
 };
 
 export function createLibraryService(deps: LibraryServiceDeps) {

@@ -18,14 +18,14 @@ describe('gym editor services', () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     const [row] = await s.gyms.list();
-    expect(row).toMatchObject({ items: 4, unchecked: 4 });
+    expect(row).toMatchObject({ items: 6, unchecked: 6 });
     const detail = await s.gyms.detail(gymId);
     const db = detail?.equipment.find((e) => e.equipment.kind === 'dumbbells');
     if (!db) throw new Error('no dumbbells');
     expect(db).toMatchObject({ unchecked: true, line: '2.5–40 kg each' });
 
     // Home rack to 30 kg, 30 missing.
-    const form = { ...(formFromEquipment(db.equipment) as Extract<EquipmentForm, { kind: 'dumbbells' }>), range: { from: 2.5, to: 32.5, step: 2.5 }, missing: [30] };
+    const form = { ...(formFromEquipment(db.equipment) as Extract<EquipmentForm, { kind: 'dumbbells' | 'kettlebell' }>), range: { from: 2.5, to: 32.5, step: 2.5 }, missing: [30] };
     const req = { gymId, equipmentId: db.equipment.id, expectedVersion: db.equipment.version, form };
     const [a, b] = await Promise.all([s.gyms.save(req), s.gyms.save(req)]);
     expect([a.ok, b.ok]).toEqual([true, true]);
@@ -33,7 +33,7 @@ describe('gym editor services', () => {
     const after = await s.gyms.item(db.equipment.id);
     expect(after?.equipment).toMatchObject({ version: 2, detailsSource: 'user' });
     expect(getAchievableLoads(after?.equipment ?? db.equipment).loads.at(-1)).toBe(32.5);
-    expect((await s.gyms.list())[0]?.unchecked).toBe(3);
+    expect((await s.gyms.list())[0]?.unchecked).toBe(5);
 
     // A save from an editor opened before that change is refused, never applied to newer data.
     const stale = await s.gyms.save({ ...req, form: { ...form, range: { from: 5, to: 20, step: 5 } } });

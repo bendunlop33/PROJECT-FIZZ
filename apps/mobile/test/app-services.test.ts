@@ -130,7 +130,8 @@ describe('first run (onboarding.md §3.1)', () => {
     expect(state.step).toBe('data');
     expect(state.gyms).toHaveLength(1);
     expect(state.gyms[0]?.isDefault).toBe(true);
-    expect(await s.yourData.equipment(gymId)).toHaveLength(4);
+    // The commercial preset's ticked items: barbell, dumbbells, cable, pull-up bar, bench, rack (ADR 0030).
+    expect(await s.yourData.equipment(gymId)).toHaveLength(6);
 
     expect(await s.setup.complete()).toEqual({ ok: true });
     expect((await s.setup.getState()).step).toBe('done');
