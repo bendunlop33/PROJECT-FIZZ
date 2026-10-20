@@ -78,11 +78,14 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .ty { border: 1.5px solid #26221F; background: none; color: #7C746D; border-radius: 999px; padding: 8px 14px; min-height: 40px; font-size: 14px; font-family: inherit; cursor: pointer; }
 .ty.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
 .ctl { background: var(--surface); border-radius: 14px; margin: 8px 0; }
-.cr { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 8px; min-height: 54px; padding: 0 10px 0 14px; }
+.cr { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px 0 14px; }
 .cr + .cr { border-top: 1px solid var(--divider); }
-.cr .k { font-size: 15px; }
+.cr .k { font-size: 14px; color: var(--text2); }
+.cr .ty { min-height: 32px; padding: 4px 12px; font-size: 13.5px; }
 .cr .types { margin: 0; justify-content: flex-end; }
-.cr .sw { background: none; border: 0; justify-self: end; cursor: pointer; padding: 6px 0; }
+.cr .sw { background: none; border: 0; justify-self: end; cursor: pointer; padding: 8px 0; }
+.cr .switch { width: 42px; height: 26px; border-radius: 13px; }
+.cr .switch i { width: 22px; height: 22px; }
 .switch { display: inline-flex; width: 51px; height: 31px; border-radius: 16px; padding: 2px; background: var(--raised); justify-content: flex-start; }
 .switch i { width: 27px; height: 27px; border-radius: 50%; background: var(--text3); display: block; }
 .switch.on { background: var(--accent); justify-content: flex-end; }
@@ -151,7 +154,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     ],
   };
   const OTHER = [{ name: 'Push', sub: 'PPL day' }, { name: 'Pull', sub: 'PPL day' }, { name: 'Hotel shoulders', sub: 'Recent · 17 Oct' }, { name: 'Upper body', sub: 'Recent · 8 Oct' }];
-  let s = { day: NEXT, type: 0, ss: true, mix: 0, open: false, sheet: null, toast: null };
+  let s = { day: NEXT, type: 0, ss: true, abs: true, mix: 0, open: false, sheet: null, toast: null };
   // "Mix it up": the coach swaps one accessory for a fresh one, today only (same main lift and muscles).
   const ALT = { 'Cable fly': 'Machine chest press', 'Chest-supported row': 'Seated cable row', 'Leg press': 'Bulgarian split squat', 'Rear-delt fly': 'Face pull', 'Face pull': 'Rear-delt fly', 'Seated cable row': 'Chest-supported row', 'Machine chest press': 'Cable fly' };
   const mains = (d) => TYPES[d].filter((t) => t.kind !== 'var');
@@ -175,6 +178,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     o.ex = base.ex.map((r) => [...r]);
     let swapped = null;
     if (s.mix) { const i = o.ex.findIndex((r, k) => k > 0 && !r[2] && ALT[r[0]] && !o.ex.some((q) => q[0] === ALT[r[0]])); if (i > 0) { swapped = [o.ex[i][0], ALT[o.ex[i][0]]]; o.ex[i][0] = swapped[1]; } }
+    if (!s.abs) { const had = o.ex.length; o.ex = o.ex.filter((r) => !/crunch|knee raise|plank/i.test(r[0])); if (o.ex.length < had) { o.min -= 3; o.ex = o.ex.map((r, i, arr) => (r[2] === 'a' && !(arr[i + 1] && arr[i + 1][2] === 'b')) ? [r[0], r[1]] : r); } }
+    else if (!o.ex.some((r) => /crunch|knee raise|plank/i.test(r[0]))) { o.ex.push(['Cable crunch', '3 × 10 · 40']); o.min += 3; }
     if (!s.ss) { o.ex = o.ex.map((r) => [r[0], r[1]]); o.min += 4; }
     let n = 0;
     app.innerHTML = `
@@ -188,6 +193,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other workouts">⋯</button></div>
         <div class="ctl">
           <div class="cr"><span class="k">Main lift</span><div class="types">${mains(s.day).map((t) => { const i = TYPES[s.day].indexOf(t); return `<button class="ty${i === s.type ? ' on' : ''}" data-a="type" data-v="${i}">${t.label}</button>`; }).join('')}</div></div>
+          <div class="cr"><span class="k">Abs</span><button class="sw" data-a="abs" role="switch" aria-checked="${s.abs}" aria-label="Abs"><span class="switch${s.abs ? ' on' : ''}"><i></i></span></button></div>
           <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
         </div>
         ${TYPES[s.day][s.type].kind === 'var' ? `<div class="varline">Variation: ${TYPES[s.day][s.type].label} · <button class="link" data-a="type" data-v="0">Back to plan day</button></div>` : ''}
@@ -218,6 +224,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'dayp') { s.day = v; s.type = 0; s.open = false; }
     if (a === 'type') { s.type = Number(v); s.mix = 0; s.sheet = null; }
     if (a === 'ss') s.ss = !s.ss;
+    if (a === 'abs') s.abs = !s.abs;
     if (a === 'mix') s.mix = 1;
     if (a === 'unmix') s.mix = 0;
     if (a === 'dayp') s.mix = 0;
