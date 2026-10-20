@@ -90,6 +90,11 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .switch i { width: 27px; height: 27px; border-radius: 50%; background: var(--text3); display: block; }
 .switch.on { background: var(--accent); justify-content: flex-end; }
 .switch.on i { background: var(--on-accent); }
+.cr .val { display: flex; align-items: center; gap: 6px; justify-self: end; }
+.mn { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); font-size: 17px; cursor: pointer; }
+.tv { min-width: 58px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.cr .k small.pl { display: block; font-size: 11px; color: var(--text3); }
+.fitline { font-size: 13px; color: var(--text2); }
 .varline { font-size: 13.5px; color: var(--text2); margin: 0 4px 8px; }
 .link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; cursor: pointer; padding: 6px 0; font-family: inherit; }
 .mixrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text2); }
@@ -118,7 +123,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 <div class="wrap">
   <div class="phone" id="app"></div>
-  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split; runs show only when you've logged them or told the coach, e.g. a long run Saturday). Pick the day (Next is the plan's), the main lift and supersets on or off, then tap the card for details. ↻ Mix it up asks the coach for one fresh accessory today. ⋯ has saved variations and other workouts. Edit and Build your own open the builder.</div>
+  <div class="hint">Prototype with example data (Tue 20 Oct, 4-day split; runs show only when you've logged them or told the coach, e.g. a long run Saturday). Pick the day (Next is the plan's), then main lift, Focused or Varied accessories, time, abs and supersets; the workout below adjusts. Tap the card for details. ↻ Mix it up asks the coach for one fresh accessory today. ⋯ has saved variations and other workouts. Edit and Build your own open the builder.</div>
 </div>
 
 <script>
@@ -129,59 +134,118 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     { dn: 'MON', dd: 19, past: true, items: [{ k: 'rest', t: 'Rest' }], detail: ['Rest day'] },
     { dn: 'TUE', dd: 20, today: true, items: [], detail: [] },
     { dn: 'WED', dd: 21, items: [{ k: 'runp', t: 'Run 8k' }], detail: ['Planned: run 8 km'] },
-    { dn: 'THU', dd: 22, items: [{ k: 'liftp', t: 'Legs' }], detail: ['Planned: Legs (moved from Fri, long run Sat)'] },
+    { dn: 'THU', dd: 22, items: [{ k: 'liftp', t: 'Legs' }], detail: ['Planned: Legs'] },
     { dn: 'FRI', dd: 23, items: [{ k: 'liftp', t: 'Back' }], detail: ['Planned: Back'] },
   ];
-  // Session types per plan day: main-lift templates and saved variations.
-  const WORKS = { 'Barbell bench press': 'Chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Machine chest press': 'Chest, triceps', 'Triceps pushdown': 'Triceps', 'Cable crunch': 'Upper abs', 'EZ-bar curl': 'Biceps', 'Hammer curl': 'Brachialis, forearms, biceps', 'Barbell row': 'Mid-back, lats, rear delts, biceps', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Seated cable row': 'Mid-back, lats, biceps', 'Face pull': 'Rear delts, upper back', 'Back squat': 'Quads, glutes, adductors', 'Romanian deadlift': 'Hamstrings, glutes, lower back', 'Leg press': 'Quads, glutes', 'Leg curl': 'Hamstrings', 'Dumbbell shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Rear-delt fly': 'Rear delts' };
+  const WORKS = { 'Barbell bench press': 'Chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Cable crossover': 'Lower chest', 'Dips': 'Lower chest, triceps', 'Machine chest press': 'Chest, triceps', 'Triceps pushdown': 'Triceps', 'Overhead triceps extension': 'Triceps (long head)', 'Cable crunch': 'Upper abs', 'EZ-bar curl': 'Biceps', 'Hammer curl': 'Brachialis, forearms, biceps', 'Barbell row': 'Mid-back, lats, rear delts, biceps', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Seated cable row': 'Mid-back, lats, biceps', 'Straight-arm pulldown': 'Lats', 'Face pull': 'Rear delts, upper back', 'Back squat': 'Quads, glutes, adductors', 'Romanian deadlift': 'Hamstrings, glutes, lower back', 'Leg press': 'Quads, glutes', 'Leg curl': 'Hamstrings', 'Leg extension': 'Quads', 'Seated calf raise': 'Calves', 'Dumbbell shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Cable lateral raise': 'Side delts', 'Rear-delt fly': 'Rear delts', 'Bulgarian split squat': 'Quads, glutes' };
+  // Each plan day: main-lift options, accessories for Focused (2 × 3 sets) or Varied (3 × 2 sets, different angles),
+  // the other group's exercise, and what's added when there's spare time. [name, reps, kg, compound?]
+  const D = {
+    Chest: { mains: { Bench: ['Barbell bench press', 100], Incline: ['Incline barbell press', 82.5] },
+      focused: [['Incline dumbbell press', 8, 27.5, 1], ['Cable fly', 10, 15]],
+      varied: [['Incline dumbbell press', 8, 27.5, 1], ['Cable crossover', 12, 12.5], ['Dips', 10, null, 1]],
+      extra: [['Triceps pushdown', 8, 30]], add: [['Machine chest press', 8, 80, 1], ['Overhead triceps extension', 10, 22.5]] },
+    Back: { mains: { Row: ['Barbell row', 92.5], Pulldown: ['Lat pulldown', 65] },
+      focused: [['Lat pulldown', 8, 60, 1], ['Chest-supported row', 10, 22.5, 1]],
+      varied: [['Lat pulldown', 8, 60, 1], ['Seated cable row', 10, 60, 1], ['Face pull', 12, 22.5]],
+      extra: [['EZ-bar curl', 8, 30]], add: [['Straight-arm pulldown', 12, 25], ['Hammer curl', 10, 14]] },
+    Legs: { mains: { Squat: ['Back squat', 117.5] }, warn: 'Long run Saturday: legs fit better Thursday',
+      focused: [['Romanian deadlift', 8, 105, 1], ['Leg press', 8, 195, 1]],
+      varied: [['Romanian deadlift', 8, 105, 1], ['Leg press', 10, 180, 1], ['Leg curl', 10, 47.5]],
+      extra: [['Seated calf raise', 12, 40]], add: [['Leg extension', 12, 50], ['Bulgarian split squat', 10, 16, 1]] },
+    Shoulders: { mains: { 'DB press': ['Dumbbell shoulder press', 32.5] },
+      focused: [['Lateral raise', 12, 10], ['Rear-delt fly', 12, 7.5]],
+      varied: [['Lateral raise', 12, 10], ['Face pull', 12, 22.5], ['Cable lateral raise', 15, 5]],
+      extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5], ['Rear-delt fly', 12, 7.5]] },
+  };
+  const ABS = ['Cable crunch', 10, 40];
+  const PLAN_ABS = { Chest: true, Back: true, Legs: false, Shoulders: false }; // the plan puts abs on two days a week
+  const absOn = () => s.abs ?? PLAN_ABS[s.day];
   const PLANDAYS = ['Chest', 'Back', 'Legs', 'Shoulders'];
   const NEXT = 'Chest';
-  const TYPES = {
-    Chest: [
-      { id: 'chest', label: 'Bench', min: 55, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Cable fly', '3 × 8 · 15'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: ['Bench top set: 102.5 kg next (hit 8 last time)'], based: ['Plan: Chest is next (day 1 of 4)', 'Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again', 'Goal: strength · bench target 110 kg (est. 1RM 127)', 'Length: your usual 60 min; fits in about 55'] },
-      { id: 'chest-incline', label: 'Incline', min: 54, ex: [['Incline barbell press', '4 × 6 · 82.5'], ['Barbell bench press', '3 × 8 · 92.5'], ['Cable fly', '3 × 10 · 15'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: [] },
-      { id: 'chest-arms', kind: 'var', label: 'Bench · arms superset', min: 52, ex: [['Barbell bench press', '4 × 6 · 100'], ['Incline dumbbell press', '3 × 8 · 27.5'], ['Machine chest press', '3 × 8 · 80'], ['Triceps pushdown', '3 × 8 · 30', 'a'], ['EZ-bar curl', '3 × 8 · 30', 'b']], notes: [] },
-    ],
-    Back: [
-      { id: 'back', label: 'Row', min: 58, ex: [['Barbell row', '4 × 6 · 92.5'], ['Lat pulldown', '3 × 8 · 60'], ['Chest-supported row', '3 × 10 · 22.5'], ['EZ-bar curl', '3 × 8 · 30', 'a'], ['Cable crunch', '3 × 8 · 40', 'b']], notes: [] },
-      { id: 'back-pulldown', label: 'Pulldown', min: 55, ex: [['Lat pulldown', '4 × 6 · 65'], ['Seated cable row', '3 × 8 · 60'], ['Face pull', '3 × 12 · 22.5'], ['Hammer curl', '3 × 10 · 14']], notes: [] },
-    ],
-    Legs: [
-      { id: 'legs', label: 'Squat', min: 59, ex: [['Back squat', '4 × 6 · 117.5'], ['Romanian deadlift', '3 × 8 · 105'], ['Leg press', '3 × 8 · 195'], ['Leg curl', '3 × 10 · 47.5', 'a'], ['Cable crunch', '3 × 10 · 40', 'b']], notes: [], warn: 'Long run Saturday: legs fit better Thursday' },
-    ],
-    Shoulders: [
-      { id: 'shoulders', label: 'DB press', min: 58, ex: [['Dumbbell shoulder press', '4 × 6 · 32.5'], ['Lateral raise', '3 × 12 · 10', 'a'], ['Triceps pushdown', '3 × 8 · 30', 'b'], ['Rear-delt fly', '3 × 12 · 7.5'], ['Face pull', '3 × 12 · 22.5']], notes: [] },
-    ],
-  };
+  const PLAN_MIN = 60;
+  const ALT = { 'Cable fly': 'Machine chest press', 'Cable crossover': 'Cable fly', 'Chest-supported row': 'Seated cable row', 'Seated cable row': 'Chest-supported row', 'Leg press': 'Bulgarian split squat', 'Rear-delt fly': 'Face pull', 'Face pull': 'Rear-delt fly', 'Lateral raise': 'Cable lateral raise' };
   const OTHER = [{ name: 'Push', sub: 'PPL day' }, { name: 'Pull', sub: 'PPL day' }, { name: 'Hotel shoulders', sub: 'Recent · 17 Oct' }, { name: 'Upper body', sub: 'Recent · 8 Oct' }];
-  let s = { day: NEXT, type: 0, ss: true, abs: true, mix: 0, open: false, sheet: null, toast: null };
-  // "Mix it up": the coach swaps one accessory for a fresh one, today only (same main lift and muscles).
-  const ALT = { 'Cable fly': 'Machine chest press', 'Chest-supported row': 'Seated cable row', 'Leg press': 'Bulgarian split squat', 'Rear-delt fly': 'Face pull', 'Face pull': 'Rear-delt fly', 'Seated cable row': 'Chest-supported row', 'Machine chest press': 'Cable fly' };
-  const mains = (d) => TYPES[d].filter((t) => t.kind !== 'var');
+  const VARS = { Chest: [{ label: 'Bench · arms superset', extra: [['Triceps pushdown', 8, 30], ['EZ-bar curl', 8, 30]] }] };
+  let s = { day: NEXT, main: null, style: 'Focused', min: PLAN_MIN, ss: true, abs: null, mix: 0, v: null, open: false, sheet: null, toast: null };
   const app = document.getElementById('app');
   const MIC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
-  // The plan follows what you do: the days you don't do today move into the next lifting slots
-  // (in plan order), and legs never land the day before your long run.
+
+  // ── The session, built from the choices ──
+  function draft() {
+    const d = D[s.day]; const mk = s.main ?? Object.keys(d.mains)[0]; const [mn, mkg] = d.mains[mk];
+    const sets = s.style === 'Varied' ? 2 : 3;
+    let acc = (s.style === 'Varied' ? d.varied : d.focused).filter((x) => x[0] !== mn);
+    if (s.mix) { const i = acc.findIndex((x) => ALT[x[0]] && !acc.some((y) => y[0] === ALT[x[0]])); if (i >= 0) acc = acc.map((x, k) => (k === i ? [ALT[x[0]], x[1], x[2], x[3]] : x)); }
+    const extra = s.v != null ? VARS[s.day][s.v].extra : d.extra;
+    const ex = [{ name: mn, kind: 'main', sets: 4, reps: 6, kg: mkg, rpe: 8, comp: 1 },
+      ...acc.map(([n, r, kg, c]) => ({ name: n, kind: 'acc', sets, reps: r, kg, rpe: 8, comp: !!c })),
+      ...extra.map(([n, r, kg]) => ({ name: n, kind: 'extra', sets: 3, reps: r, kg, rpe: 8 })),
+      ...(absOn() ? [{ name: ABS[0], kind: 'abs', sets: 3, reps: ABS[1], kg: ABS[2], rpe: 8 }] : [])];
+    return { mk, ex, add: d.add.filter((x) => !ex.some((e) => e.name === x[0])), warn: d.warn };
+  }
+  // Supersets: the other group's exercise with abs (or the two extras together); never the main lift or a heavy compound.
+  function blocks(ex) {
+    if (!s.ss) return ex.map((e) => [e]);
+    const out = []; const extras = ex.filter((e) => e.kind === 'extra'), abs = ex.find((e) => e.kind === 'abs');
+    const paired = new Set();
+    if (extras.length >= 2) { out.push([extras[0], extras[1]]); paired.add(extras[0]); paired.add(extras[1]); }
+    else if (extras.length === 1 && abs) { out.push([extras[0], abs]); paired.add(extras[0]); paired.add(abs); }
+    const singles = ex.filter((e) => !paired.has(e)).map((e) => [e]);
+    // keep order: main, accessories, then pairs, then leftovers
+    return [...singles.filter((b) => b[0].kind !== 'abs' && b[0].kind !== 'extra'), ...out, ...singles.filter((b) => b[0].kind === 'abs' || b[0].kind === 'extra')];
+  }
+  // Rest by level: 0 normal, 1 shorter, 2 shortest. Minutes.
+  const REST = [{ main: 3, comp: 2, iso: 1.5, round: 1.5 }, { main: 2.5, comp: 1.5, iso: 1.25, round: 1.25 }, { main: 2, comp: 1.25, iso: 1, round: 1 }];
+  function minutes(bl, lvl) {
+    const R = REST[lvl]; let m = 2;
+    for (const b of bl) {
+      const rs = Math.max(...b.map((e) => e.sets));
+      if (b.length > 1) m += rs * (b.length * 0.75 + R.round);
+      else { const e = b[0]; m += e.sets * (0.75 + (e.kind === 'main' ? R.main : e.comp ? R.comp : R.iso)); if (e.kind === 'main') m += 5; else if (e.comp) m += 1.5; }
+      m += 1;
+    }
+    return Math.round(m);
+  }
+  // Fit to the chosen time. Shorter: trim rests → push the last sets (RPE 9) → fewer accessory sets → drop exercises (last isolation first; never the main lift).
+  // Longer: back to normal rests, then add sets, then add an exercise.
+  function fit(dr) {
+    let ex = dr.ex.map((e) => ({ ...e })); const notes = []; let lvl = 0; let bl = blocks(ex);
+    const t = s.min;
+    if (minutes(bl, 0) > t) {
+      while (lvl < 2 && minutes(bl, lvl) > t) lvl++;
+      if (lvl) notes.push(lvl === 1 ? 'shorter rests' : 'shortest rests');
+      if (minutes(bl, lvl) > t && lvl === 2) { ex.filter((e) => e.kind !== 'main').forEach((e) => { e.rpe = 9; }); notes.push('last sets pushed to RPE 9'); }
+      let cut = 0;
+      while (minutes(bl, lvl) > t) { const e = [...ex].reverse().find((x) => x.kind !== 'main' && x.sets > 2); if (!e) break; e.sets--; cut++; bl = blocks(ex); }
+      if (cut) notes.push(`${cut} set${cut > 1 ? 's' : ''} fewer`);
+      const dropped = [];
+      while (minutes(bl, lvl) > t) { const order = ['abs', 'extra', 'acc']; let e = null; for (const k of order) { e = [...ex].reverse().find((x) => x.kind === k && !x.comp); if (e) break; } e ??= [...ex].reverse().find((x) => x.kind !== 'main'); if (!e) break; ex = ex.filter((x) => x !== e); dropped.push(e.name); bl = blocks(ex); }
+      if (dropped.length) notes.push(`drops ${dropped.join(', ')}`);
+    } else if (t > PLAN_MIN && t - minutes(bl, 0) >= 6) {
+      let added = 0;
+      while (t - minutes(bl, 0) >= 3) { const e = ex.find((x) => (x.kind === 'acc' || x.kind === 'extra') && x.sets < 4); if (!e) break; e.sets++; bl = blocks(ex); if (minutes(bl, 0) > t) { e.sets--; bl = blocks(ex); break; } added++; }
+      if (added) notes.push(`+${added} set${added > 1 ? 's' : ''}`);
+      for (const [n, r, kg, c] of dr.add) { const cand = { name: n, kind: 'acc', sets: 3, reps: r, kg, rpe: 8, comp: !!c }; const bl2 = blocks([...ex.filter((x) => x.kind !== 'abs' && x.kind !== 'extra'), cand, ...ex.filter((x) => x.kind === 'abs' || x.kind === 'extra')]); if (minutes(bl2, 0) <= t) { ex = [...ex.filter((x) => x.kind !== 'abs' && x.kind !== 'extra'), cand, ...ex.filter((x) => x.kind === 'abs' || x.kind === 'extra')]; bl = bl2; notes.push(`adds ${n}`); } }
+    }
+    return { ex, bl, est: minutes(bl, lvl), notes, lvl };
+  }
   function reflow() {
     const order = ['Chest', 'Back', 'Legs', 'Shoulders']; const from = order.indexOf(NEXT);
     const queue = [...order.slice(from), ...order.slice(0, from)].filter((d) => d !== s.day);
     const thu = WEEK[5], fri = WEEK[6]; let a = queue[0], b = queue[1];
     if (b === 'Legs') [a, b] = [b, a];
-    const was = { thu: thu.items[0].t, fri: fri.items[0].t };
     thu.items = [{ k: 'liftp', t: a }]; fri.items = [{ k: 'liftp', t: b }];
     thu.detail = [`Planned: ${a}${a === 'Legs' ? ' (not Fri: long run Sat)' : ''}`]; fri.detail = [`Planned: ${b}`];
     return s.day === NEXT ? null : `${NEXT} moves to ${a === NEXT ? 'Thu' : b === NEXT ? 'Fri' : 'next week'}`;
   }
   function view() {
+    const keep = app.querySelector('.scroll')?.scrollTop ?? 0;
     const moved = reflow();
-    const base = TYPES[s.day][s.type]; const o = { ...base, name: s.day, main: base.label };
-    o.ex = base.ex.map((r) => [...r]);
-    let swapped = null;
-    if (s.mix) { const i = o.ex.findIndex((r, k) => k > 0 && !r[2] && ALT[r[0]] && !o.ex.some((q) => q[0] === ALT[r[0]])); if (i > 0) { swapped = [o.ex[i][0], ALT[o.ex[i][0]]]; o.ex[i][0] = swapped[1]; } }
-    if (!s.abs) { const had = o.ex.length; o.ex = o.ex.filter((r) => !/crunch|knee raise|plank/i.test(r[0])); if (o.ex.length < had) { o.min -= 3; o.ex = o.ex.map((r, i, arr) => (r[2] === 'a' && !(arr[i + 1] && arr[i + 1][2] === 'b')) ? [r[0], r[1]] : r); } }
-    else if (!o.ex.some((r) => /crunch|knee raise|plank/i.test(r[0]))) { o.ex.push(['Cable crunch', '3 × 10 · 40']); o.min += 3; }
-    if (!s.ss) { o.ex = o.ex.map((r) => [r[0], r[1]]); o.min += 4; }
+    const dr = draft(); const f = fit(dr); const mains = Object.keys(D[s.day].mains);
+    const swappedFrom = s.mix ? (s.style === 'Varied' ? D[s.day].varied : D[s.day].focused).find((x) => ALT[x[0]] && f.ex.some((e) => e.name === ALT[x[0]])) : null;
     let n = 0;
+    const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${e.kg ?? 'BW'}</span></div>`;
     app.innerHTML = `
     <div class="status"><span>09:41</span><span>●●● 82%</span></div>
     <div class="scroll">
@@ -192,21 +256,23 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <div class="label" style="margin:0 2px 8px">Today's session</div>
         <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other workouts">⋯</button></div>
         <div class="ctl">
-          <div class="cr"><span class="k">Main lift</span><div class="types">${mains(s.day).map((t) => { const i = TYPES[s.day].indexOf(t); return `<button class="ty${i === s.type ? ' on' : ''}" data-a="type" data-v="${i}">${t.label}</button>`; }).join('')}</div></div>
-          <div class="cr"><span class="k">Abs</span><button class="sw" data-a="abs" role="switch" aria-checked="${s.abs}" aria-label="Abs"><span class="switch${s.abs ? ' on' : ''}"><i></i></span></button></div>
+          <div class="cr"><span class="k">Main lift</span><div class="types">${mains.map((m) => `<button class="ty${m === dr.mk ? ' on' : ''}" data-a="main" data-v="${m}">${m}</button>`).join('')}</div></div>
+          <div class="cr"><span class="k">Accessories</span><div class="types">${['Focused', 'Varied'].map((m) => `<button class="ty${m === s.style ? ' on' : ''}" data-a="style" data-v="${m}">${m}</button>`).join('')}</div></div>
+          <div class="cr"><span class="k">Time</span><div class="val"><button class="mn" data-a="min" data-v="-5" aria-label="5 minutes less">−</button><span class="tv">${s.min} min</span><button class="mn" data-a="min" data-v="5" aria-label="5 minutes more">+</button></div></div>
+          <div class="cr"><span class="k">Abs${s.abs != null && s.abs !== PLAN_ABS[s.day] ? `<small class="pl">plan: ${PLAN_ABS[s.day] ? 'on' : 'off'}</small>` : ''}</span><button class="sw" data-a="abs" role="switch" aria-checked="${absOn()}" aria-label="Abs"><span class="switch${absOn() ? ' on' : ''}"><i></i></span></button></div>
           <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
         </div>
-        ${TYPES[s.day][s.type].kind === 'var' ? `<div class="varline">Variation: ${TYPES[s.day][s.type].label} · <button class="link" data-a="type" data-v="0">Back to plan day</button></div>` : ''}
+        ${s.v != null ? `<div class="varline">Variation: ${VARS[s.day][s.v].label} · <button class="link" data-a="unvar">Back to plan day</button></div>` : ''}
         <div class="card${s.open ? ' open' : ''}">
           <div class="top" data-a="toggle" role="button" aria-expanded="${s.open}">
-            <div><div class="big">${o.name} <span class="lt">· ${o.main}</span></div><div class="sub">${o.ex.length} exercises · ~${o.min} min${moved ? ` · <span class="mv">${moved}</span>` : ''}${s.day === NEXT ? ' · plan day 1 of 4' : ''}</div></div>
+            <div><div class="big">${s.day} <span class="lt">· ${dr.mk}</span></div><div class="sub">${f.ex.length} exercises · ~${f.est} min${moved ? ` · <span class="mv">${moved}</span>` : ''}${s.day === NEXT && !moved ? ' · plan day 1 of 4' : ''}</div></div>
             <span class="chev">›</span>
           </div>
-          ${o.warn ? `<div class="why"><i>!</i><span>${o.warn}</span></div>` : ''}
-          <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${(() => { const groups = []; for (const r of o.ex) { if (r[2] && r[2] !== 'a') groups[groups.length - 1].push(r); else groups.push([r]); } return groups.map((g) => { n++; const rows = g.map(([nm, v, ss]) => { const sets = v.split(' × ')[0], kg = v.includes('·') ? v.split('· ')[1] : 'BW'; return `<div class="ex"><span class="n">${n}${ss ?? ''}</span><span>${nm}<small>${WORKS[nm] ?? ''}</small></span><span class="c">${sets}</span><span class="c">${kg}</span></div>`; }).join(''); return g.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join(''); })()}</div>
-          ${o.notes.length ? `<div class="notes"><b>From last review</b>${o.notes.map((x) => `<span>${x}</span>`).join('')}</div>` : ''}
-          ${o.based ? `<div class="notes"><b>Based on</b>${o.based.map((x) => `<span>· ${x}</span>`).join('')}</div>` : ''}
-          <div class="mixrow">${swapped ? `<span>${swapped[0]} → ${swapped[1]} · today only</span><button class="link" data-a="unmix">Undo</button>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
+          ${f.notes.length ? `<div class="fitline">${s.min < PLAN_MIN ? 'To fit' : 'With'} ${s.min} min: ${f.notes.join(' · ')}</div>` : ''}
+          ${D[s.day].warn ? `<div class="why"><i>!</i><span>${D[s.day].warn}</span></div>` : ''}
+          <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${f.bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
+          ${s.day === 'Chest' && dr.mk === 'Bench' ? `<div class="notes"><b>From last review</b><span>Bench top set: 102.5 kg next (hit 8 last time)</span></div><div class="notes"><b>Based on</b><span>· Plan: Chest is next (day 1 of 4)</span><span>· Last Chest, 13 Oct: bench 100 × 6 at RPE 8, so 100 kg again</span><span>· Goal: strength · bench target 110 kg</span><span>· Accessories: ${s.style.toLowerCase()} · time ${s.min} min</span></div>` : ''}
+          <div class="mixrow">${s.mix && swappedFrom ? `<span>${swappedFrom[0]} → ${ALT[swappedFrom[0]]} · today only</span><button class="link" data-a="unmix">Undo</button>` : `<button class="link" data-a="mix">↻ Mix it up</button>`}</div>
           <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
         </div>
       </div>
@@ -215,27 +281,31 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="tabs"><span class="on">TODAY</span><span>LIBRARY</span><span>PROGRESS</span><span>PROFILE</span></div>
     ${s.sheet ? `<div class="scrim" data-a="close"></div><div class="sheet">${s.sheet}</div>` : ''}
     ${s.toast ? `<div class="toast">${s.toast}</div>` : ''}`;
+    app.querySelector('.scroll').scrollTop = keep;
   }
+  const IT = 'style="border:0;color:inherit;font:inherit;text-align:left;cursor:pointer"';
   app.addEventListener('click', (ev) => {
     const t = ev.target.closest('[data-a]'); if (!t) return;
     const a = t.dataset.a, v = t.dataset.v; s.toast = null;
-    const o = TYPES[s.day][s.type]; o.name = s.day;
     if (a === 'toggle') s.open = !s.open;
-    if (a === 'dayp') { s.day = v; s.type = 0; s.open = false; }
-    if (a === 'type') { s.type = Number(v); s.mix = 0; s.sheet = null; }
+    if (a === 'dayp') { s.day = v; s.main = null; s.mix = 0; s.v = null; s.abs = null; }
+    if (a === 'main') { s.main = v; s.mix = 0; }
+    if (a === 'style') { s.style = v; s.mix = 0; }
+    if (a === 'min') s.min = Math.max(20, Math.min(120, s.min + Number(v)));
     if (a === 'ss') s.ss = !s.ss;
-    if (a === 'abs') s.abs = !s.abs;
+    if (a === 'abs') { const nv = !absOn(); s.abs = nv === PLAN_ABS[s.day] ? null : nv; }
     if (a === 'mix') s.mix = 1;
     if (a === 'unmix') s.mix = 0;
-    if (a === 'dayp') s.mix = 0;
-    if (a === 'other') s.sheet = `<h3>Other workouts</h3>${TYPES[s.day].filter((t) => t.kind === 'var').length ? `<div class="label" style="padding:0 4px">Your ${s.day} variations</div>${TYPES[s.day].map((t, i) => t.kind === 'var' ? `<button class="it" data-a="type" data-v="${i}" style="border:0;color:inherit;font:inherit;text-align:left;cursor:pointer"><span>${t.label}</span><small>~${t.min} min</small></button>` : '').join('')}<div class="label" style="padding:0 4px">Other</div>` : ''}${OTHER.map((x) => `<button class="it" data-a="close" style="border:0;color:inherit;font:inherit;text-align:left;cursor:pointer"><span>${x.name}</span><small>${x.sub}</small></button>`).join('')}<button class="ghost" data-a="build">Build your own</button><button class="ghost" data-a="close">Close</button>`;
-    if (a === 'day') { const d = WEEK[Number(v)]; s.sheet = d.today ? `<h3>Today</h3><div class="it"><span>${o.name} recommended</span><small>Plan day 2 of 4</small></div><button class="ghost" data-a="close">Close</button>` : `<h3>${d.dn[0] + d.dn.slice(1).toLowerCase()} ${d.dd} Oct</h3>${d.detail.map((x) => `<div class="it"><span>${x}</span><small>${d.past ? '' : 'Planned'}</small></div>`).join('')}${d.past ? '' : '<button class="ghost" data-a="close">Move or change (coach)</button>'}<button class="ghost" data-a="close">Close</button>`; }
+    if (a === 'var') { s.v = Number(v); s.sheet = null; }
+    if (a === 'unvar') s.v = null;
+    if (a === 'other') s.sheet = `<h3>Other workouts</h3>${(VARS[s.day] ?? []).length ? `<div class="label" style="padding:0 4px">Your ${s.day} variations</div>${VARS[s.day].map((x, i) => `<button class="it" data-a="var" data-v="${i}" ${IT}><span>${x.label}</span><small>Saved</small></button>`).join('')}<div class="label" style="padding:0 4px">Other</div>` : ''}${OTHER.map((x) => `<button class="it" data-a="close" ${IT}><span>${x.name}</span><small>${x.sub}</small></button>`).join('')}<button class="ghost" data-a="build">Build your own</button><button class="ghost" data-a="close">Close</button>`;
+    if (a === 'day') { const d = WEEK[Number(v)]; s.sheet = d.today ? `<h3>Today</h3><div class="it"><span>${s.day}</span><small>Plan day 1 of 4</small></div><button class="ghost" data-a="close">Close</button>` : `<h3>${d.dn[0] + d.dn.slice(1).toLowerCase()} ${d.dd} Oct</h3>${d.detail.map((x) => `<div class="it"><span>${x}</span><small>${d.past ? '' : 'Planned'}</small></div>`).join('')}${d.past ? '' : '<button class="ghost" data-a="close">Move or change (coach)</button>'}<button class="ghost" data-a="close">Close</button>`; }
     if (a === 'close') s.sheet = null;
-    if (a === 'start') s.toast = `Started ${o.name} (prototype)`;
+    if (a === 'start') s.toast = `Started ${s.day} (prototype)`;
     if (a === 'edit') s.toast = 'Opens this workout in the builder to change it';
     if (a === 'build') { s.sheet = null; s.toast = 'Opens the builder on its first page'; }
     if (a === 'activity') s.toast = 'Log or plan a run, ride or other activity';
-    if (a === 'ask') s.toast = 'Opens the coach (type or speak): "legs, 45 min" fills in the builder';
+    if (a === 'ask') s.toast = 'Opens the coach (type or speak): "legs, 45 min" fills this in';
     view();
   });
   view();
