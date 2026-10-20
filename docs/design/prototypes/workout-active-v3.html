@@ -57,6 +57,10 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--text2); padding: 6px 2px 0; }
 .meta u { color: var(--text); cursor: pointer; text-underline-offset: 3px; text-decoration-color: var(--text3); }
 .addset { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 13.5px; padding: 6px 2px 0; cursor: pointer; align-self: flex-start; font-family: inherit; }
+.rows { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.rows.up.down { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); }
+.rows.up:not(.down) { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px); mask-image: linear-gradient(to bottom, transparent 0, #000 16px); }
+.rows.down:not(.up) { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%); mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent 100%); }
 .fold { display: flex; justify-content: center; gap: 8px; width: 100%; min-height: 44px; align-items: center; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--done); font-size: 14px; font-variant-numeric: tabular-nums; padding: 0 2px; cursor: pointer; font-family: inherit; text-align: left; }
 .fold u { color: var(--text2); font-size: 13px; text-underline-offset: 3px; text-decoration-color: var(--text3); flex: none; }
 .restbar { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 16px; padding: 10px 10px 10px 14px; min-height: 64px; }
@@ -132,13 +136,26 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     let n = 0; const doneW = e.sets.filter((x) => x.done && x.t !== 'W').length, totW = e.sets.filter((x) => x.t !== 'W').length;
     return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works}</small></span><span class="prog">${doneW}/${totW}</span></div>
       <div class="tbl">${true ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
-      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n;  return `<div data-k="${k}" data-i="${i}" class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
+      <div class="rows" data-k="${k}">${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n;  return `<div data-k="${k}" data-i="${i}" class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div></div>
       <div class="meta"><span>${e.target}</span><span>${e.rest ? `Rest ${e.rest} ›` : ''} <u>Why?</u></span></div>
       <button class="addset" data-a="add" data-k="${k}">＋ Set</button></div>`;
   }
-  function view() { draw(); if (s.anchor) { s.anchor = false; anchor(); } }
-  // Scroll so the current set shows with up to 3 done sets above it (or its exercise header, e.g. 3b in a superset).
-  function anchor() { const sc = app.querySelector('.scroll'); const c = cur(); let el = null; if (c) { const rows = [...app.querySelectorAll(`.tr[data-k="${c.k}"]`)]; const ci = rows.findIndex((x) => x.dataset.i === String(c.i)); el = ci <= 3 ? app.querySelectorAll('.exh')[c.k] : rows[ci - 3]; } if (!el) { sc.scrollTop = 0; return; } sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 6; }
+  function view() { draw(); fit(); }
+  // Everything fits on one page: each exercise's set rows scroll inside their own box. Boxes shrink (largest first)
+  // until the round fits, never below 2 rows each; then each box scrolls so its current set shows with done sets above.
+  function fit() {
+    const sc = app.querySelector('.scroll'); const boxes = [...app.querySelectorAll('.rows')]; if (!boxes.length) return;
+    const h = boxes[0].querySelector('.tr')?.getBoundingClientRect().height || 45;
+    const n = boxes.map((b) => b.querySelectorAll('.tr').length); const v = [...n];
+    let over = sc.scrollHeight - sc.clientHeight;
+    while (over > 1) { let j = -1; v.forEach((x, k) => { if (x > 2 && (j < 0 || x > v[j])) j = k; }); if (j < 0) break; v[j]--; over -= h; }
+    const c = cur();
+    boxes.forEach((b, k) => { b.style.maxHeight = v[k] < n[k] ? `${v[k] * h}px` : ''; b.classList.toggle('lim', v[k] < n[k]);
+      const rows = [...b.querySelectorAll('.tr')]; let idx = rows.findIndex((r) => !r.classList.contains('done')); if (c && c.k === k) idx = rows.findIndex((r) => r.dataset.i === String(c.i)); if (idx < 0) idx = rows.length - 1;
+      const showAbove = Math.min(3, v[k] - 1, idx); const first = Math.max(0, Math.min(idx - showAbove, n[k] - v[k])); b.scrollTop = first * h; mark(b); });
+  }
+  const mark = (b) => { b.classList.toggle('up', b.scrollTop > 2); b.classList.toggle('down', b.scrollTop + b.clientHeight < b.scrollHeight - 2); };
+  app.addEventListener('scroll', (ev) => { if (ev.target.classList?.contains('rows')) mark(ev.target); }, true);
   function draw() {
     const rd = ROUNDS[s.r]; const c = cur(); const e = c ? rd.ex[c.k] : null; const st = c ? e.sets[c.i] : null;
     const nextR = ROUNDS[s.r + 1];
