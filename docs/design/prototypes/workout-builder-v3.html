@@ -289,6 +289,19 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     while (comp.length) { const k = comp.findIndex((e) => !prev || part(e) !== part(prev)); const e = comp.splice(k < 0 ? 0 : k, 1)[0]; outC.push(e); prev = e; }
     return [...main, ...outC, ...iso, ...abs];
   }
+  // Apply a set-up change to the workout Ben has already edited: groups, supersets, then length.
+  function mergeSetup(m0, ss0, g0) {
+    for (const g of new Set([...Object.keys(g0), ...Object.keys(s.groups)])) {
+      let diff = (s.groups[g] ?? 0) - (g0[g] ?? 0);
+      while (diff > 0) { const n = (POOL[g] ?? []).find((x) => !all().some((y) => y.name === x)); if (!n) break; const at = s.blocks.findIndex((b) => b.every((e) => e.g === 'Abs')); const blk = [{ name: n, g, main: false, sets: 3, ...target(n, false) }]; if (at < 0 || g === 'Abs') s.blocks.push(blk); else s.blocks.splice(at, 0, blk); diff--; }
+      while (diff < 0) { const cand = [...all()].reverse().filter((x) => x.g === g && !x.main); const e = cand.find((x) => !x.touched) ?? cand[0]; if (!e) break; const b = blockOf(e); b.splice(b.indexOf(e), 1); s.blocks = s.blocks.filter((x) => x.length); diff++; }
+    }
+    if (ss0 && !s.ss) s.blocks = s.blocks.flatMap((b) => b.map((e) => [e]));
+    if (!ss0 && s.ss) autoPair();
+    let guard = 60;
+    while (est() > s.minutes && guard--) { const e = [...all()].reverse().find((x) => !x.main && x.sets > 2); if (e) { e.sets--; continue; } const e2 = [...all()].reverse().find((x) => !x.main && !x.touched) ?? [...all()].reverse().find((x) => !x.main); if (!e2) break; const b = blockOf(e2); b.splice(b.indexOf(e2), 1); s.blocks = s.blocks.filter((x) => x.length); }
+    while (est() < s.minutes - 4 && guard--) { const e = all().find((x) => !x.main && x.sets < 3); if (!e) break; e.sets++; if (est() > s.minutes) { e.sets--; break; } }
+  }
   function build(trim = true) {
     const out = []; const used = new Set();
     const mg = mainGroup();
@@ -725,7 +738,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   app.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.id === 'chatq') { send(ev.target.value); view(); setTimeout(() => app.querySelector('#chatq')?.focus(), 0); } });
   app.addEventListener('input', (ev) => {
     const f = ev.target.dataset?.f;
-    if (f && s.sheet?.e) { const e = s.sheet.e; const i = Number(ev.target.dataset.i); const p = perOf(e)[i]; const n = parseFloat(ev.target.value); p[f] = ev.target.value.trim() === '' ? (f === 'kg' ? null : p[f]) : (Number.isNaN(n) ? p[f] : n); s.edited = true;
+    if (f && s.sheet?.e) { const e = s.sheet.e; const i = Number(ev.target.dataset.i); const p = perOf(e)[i]; const n = parseFloat(ev.target.value); p[f] = ev.target.value.trim() === '' ? (f === 'kg' ? null : p[f]) : (Number.isNaN(n) ? p[f] : n); s.edited = true; e.touched = true;
       if (f === 'kg') p.kgMan = true;
       else if (!p.kgMan && p.type !== 'W' && E1RM[e.name] != null) { p.kg = loadFor(e.name, p.reps, p.rpe ?? 8); const c = app.querySelector(`.cell[data-f="kg"][data-i="${i}"]`); if (c) c.value = p.kg; }
       return; }
@@ -743,7 +756,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       case 'sheet-main': s.sheet = { k: 'main' }; break;
       case 'sheet-add': s.sheet = { k: 'add' }; break;
       case 'sheet-pick': s.sheet = { k: 'pick', mode: 'add' }; break;
-      case 'pick': s.edited = true; s.undo = snapBlocks(); s.blocks.push([{ name: v, g: t.dataset.g, main: false, sets: 3, ...target(v, false) }]); s.toast = 'Added'; s.sheet = null; break;
+      case 'pick': s.edited = true; s.undo = snapBlocks(); s.blocks.push([{ touched: true, name: v, g: t.dataset.g, main: false, sets: 3, ...target(v, false) }]); s.toast = 'Added'; s.sheet = null; break;
       case 'rest': { const ty = t.dataset.t; if (ty === 'R') { const b = blockOf(cur); const r = Math.max(0.25, Math.min(5, roundRest(b) + Number(v))); b.forEach((x) => { x.roundRest = r; }); } else { cur.restBy = { ...(cur.restBy ?? {}), [ty]: Math.max(0, Math.min(6, restOf(cur, ty) + Number(v))) }; } break; }
       case 'day': s.variant = null; if (v === 'Custom') { s.day = 'Custom'; s.groups = {}; s.custom = true; s.main = 'None'; } else { s.day = v; s.main = DAYS[v].main[0]; s.custom = false; follow(); if (s.defaults[v] && s.useDef) Object.assign(s, { ...s.defaults[v].setup, groups: { ...s.defaults[v].setup.groups }, custom: true }); } s.sheet = null; break;
       case 'main': s.main = v; s.variant = null; s.sheet = null; break;
@@ -756,6 +769,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       case 'build': { if (total() === 0) { s.toast = 'Add a muscle group'; break; }
         const df = s.defaults[s.day]; if (df && s.useDef && setupSig() === JSON.stringify([s.day, df.setup.minutes, df.setup.main, df.setup.ss, df.setup.groups])) { if (s.builtSig !== setupSig() || !s.blocks.length) { s.blocks = df.blocks.map((b) => b.map((e) => ({ ...e, per: e.per?.map((q) => ({ ...q })) }))); s.builtSig = setupSig(); s.edited = false; } s.page = 2; break; }
         const sg = setupSig(); if (s.blocks.length && s.builtSig === sg) { s.page = 2; break; }
+        // Same day, main lift and version: only redo what the set-up change affects, keep Ben's edits.
+        if (s.blocks.length && s.edited && s.builtSig) { const [d0, m0, mn0, ss0, g0, v0] = JSON.parse(s.builtSig);
+          if (d0 === s.day && mn0 === s.main && (v0 ?? null) === (s.variant ?? null)) { const before = snapBlocks(); mergeSetup(m0, ss0, g0); s.builtSig = sg; s.undo = before; s.toast = 'Updated for the new set-up'; s.page = 2; break; } }
         const vr = s.variant != null ? PLAN.vars[pk(s.day)]?.[s.variant] : null;
         if (vr) { s.blocks = fromShape(vr.bl); s.builtSig = sg; s.edited = false; s.page = 2; break; }
         if (PLAN.days[pk(s.day)]?.custom && s.minutes === PLAN.days[pk(s.day)].minutes) { const pd = PLAN.days[pk(s.day)]; if (pd.bl) s.blocks = fromShape(pd.bl); else { s.blocks = planBlocks(s.day); if (s.ss) autoPair(); } s.builtSig = sg; s.edited = false; s.page = 2; break; }
@@ -779,7 +795,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         const kg = Math.max(2.5, snap((steps[gi] + steps[gi + 1]) / 2)); per.splice(gi, 0, { type: 'W', reps: Math.max(1, 8 - 2 * gi), kg, rpe: null }); break; }
       case 'delrow': { const per = perOf(cur); const last = per[per.length - 1]; if (last.type === 'W') per.pop(); else if (cur.sets > 1) cur.sets--; break; }
       case 'load': cur.load = Math.max(0, cur.load + Number(v)); break;
-      case 'swap': { s.edited = true; s.undo = snapBlocks(); Object.assign(cur, { name: v, g: t.dataset.g ?? cur.g, per: undefined, ...target(v, cur.main) }); s.sheet = null; s.toast = 'Swapped'; break; }
+      case 'swap': { s.edited = true; s.undo = snapBlocks(); Object.assign(cur, { touched: true, name: v, g: t.dataset.g ?? cur.g, per: undefined, ...target(v, cur.main) }); s.sheet = null; s.toast = 'Swapped'; break; }
       case 'remove': { s.edited = true; s.undo = snapBlocks(); const b = blockOf(cur); b.splice(b.indexOf(cur), 1); s.blocks = s.blocks.filter((x) => x.length); s.sheet = null; s.toast = 'Removed'; break; }
       case 'close': s.sheet = null; break;
       case 'to-swap': s.sheet = { k: 'swap', e: cur }; break;
