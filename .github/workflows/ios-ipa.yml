@@ -124,7 +124,8 @@ jobs:
     # GitHub's macOS arm64 runners hit capacity limits (jobs end "not acquired by Runner of type hosted"),
     # so a head commit containing [intel] builds on the standard x64 macOS 26 runner instead (same Xcode 26).
     runs-on: ${{ contains(github.event.head_commit.message, '[intel]') && 'macos-26-intel' || 'macos-26' }}
-    timeout-minutes: 60
+    # Intel compiles take about 40 min (build 213: 33 min compiling); allow headroom.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
