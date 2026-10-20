@@ -23,7 +23,7 @@ Goal: the workout reads like the builder (`workout-builder-v3.md` §2): numbered
   - RPE column: target `@9` until logged, then the logged RPE (or blank).
   - **Pending rows**: kg and reps are boxed cells; tap = edit in place with the keyboard bar (−/+, Next, Done) from the inline-edit fix.
   - **Current set**: same boxed cells as the other pending rows (no row highlight); marked by a bold set number and an accent-outlined ✓.
-  - **Done sets fold** (Ben, 20 Oct: "just show the sets need to see"): an exercise's done sets collapse into one green line, e.g. `✓ 4 warm-ups · 100 × 6, 95 × 8, 95 × 8` with `Show` on the right; the table shows only the sets still to do. Column labels hide when nothing is left to do. `Show` expands the done rows (green values without boxes, filled ✓; tapping a value edits it as a versioned correction with Undo, rule 2). This keeps a superset's 3a and 3b, or a main lift with warm-ups, on one screen.
+  - **Earlier done sets hide, the last 2 stay** (Ben, 20 Oct: "keep eg at least the last 2 and be able to scroll or click show all"; replaces the one-line fold): each exercise shows its **last 2 done sets** as full rows (green values without boxes, filled ✓) above the sets still to do. Older done sets (warm-ups included) sit behind a centred `Show all · 6 earlier` link at the top of the table; tapping it shows every row (`Hide earlier sets` to collapse); the card scrolls when long. Tapping a done value edits it as a versioned correction with Undo (rule 2). This keeps a superset's 3a and 3b, or a main lift with warm-ups, on about one screen.
   - Swipe left on a pending row = Delete (Undo). On a done row = Delete with Undo, recorded as a correction. VoiceOver custom actions mirror every swipe.
 - Meta line under the rows: target (`8–12 @ 9`, `6 @ 8 top · 8 @ 8 back-offs`) · `Rest 1:30 ›` (rest per set type; opens the existing rest adjuster) · `Why?`. For a superset, rest shows on the last exercise of the round as `Rest 1:30 after round`; the first shows none. The old `Last 16 Oct: …` subline moves inside Why? together with the target reason.
 - `＋ Set` text link under the meta line.
@@ -33,7 +33,7 @@ Goal: the workout reads like the builder (`workout-builder-v3.md` §2): numbered
 
 - The current set is the first not-done set of the current round, going a → b → a → b for supersets. Logging 3a goes straight to 3b (no rest); after 3b the round's rest starts.
 - **Unticking a set never resets the rest** (Ben, 20 Oct: "if u accidentally click completed set and then deselect the rest time should continue as it was not reset"). Undoing a log puts back the rest that was running before that log, with its **original deadline** (it carries on counting as if nothing happened; the notification and Live Activity are rescheduled to that deadline). If that rest had already finished by then, no rest shows. The rest the accidental log started is cancelled with it.
-- The set just logged stays visible as a done row (not folded) until the next set is logged, so an accidental tick is undone with one tap on its ✓, besides the Undo toast.
+- The set just logged is always among the visible last 2, so an accidental tick is undone with one tap on its ✓, besides the Undo toast.
 - When every set of the round is done, the card advances to the next round automatically after Log (the strip still allows going back).
 - Jumping to another round with the strip doesn't change the order; Log logs the shown round's current set.
 

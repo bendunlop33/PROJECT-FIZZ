@@ -38,7 +38,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .box .ex + .ex { border-top: 1px solid var(--divider); padding-top: 12px; }
 /* set table */
 .tbl { margin-top: 8px; display: flex; flex-direction: column; }
-.tr, .th { display: grid; grid-template-columns: 26px 1fr 1fr 42px 40px; gap: 6px; align-items: center; }
+.tr, .th { display: grid; grid-template-columns: 52px 1fr 1fr 40px 40px; gap: 6px; align-items: center; }
 .th { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); padding: 0 2px 4px; }
 .th span:nth-child(n+2) { text-align: center; }
 .tr { min-height: 44px; border-top: 1px solid var(--divider); padding: 0 2px; }
@@ -57,7 +57,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--text2); padding: 6px 2px 0; }
 .meta u { color: var(--text); cursor: pointer; text-underline-offset: 3px; text-decoration-color: var(--text3); }
 .addset { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 13.5px; padding: 6px 2px 0; cursor: pointer; align-self: flex-start; font-family: inherit; }
-.fold { display: flex; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; align-items: center; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--done); font-size: 14px; font-variant-numeric: tabular-nums; padding: 0 2px; cursor: pointer; font-family: inherit; text-align: left; }
+.fold { display: flex; justify-content: center; gap: 8px; width: 100%; min-height: 44px; align-items: center; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--done); font-size: 14px; font-variant-numeric: tabular-nums; padding: 0 2px; cursor: pointer; font-family: inherit; text-align: left; }
 .fold u { color: var(--text2); font-size: 13px; text-underline-offset: 3px; text-decoration-color: var(--text3); flex: none; }
 .restbar { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 16px; padding: 8px 10px 8px 14px; }
 .restbar b { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text2); font-weight: 600; }
@@ -117,16 +117,16 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
   const startRest = (sec) => setEnd(Date.now() + sec * 1000);
   function logSet(k, i) { const rd = ROUNDS[s.r]; const st = rd.ex[k].sets[i]; st.prevEnd = s.restEnd; st.done = true; s.last = `${s.r}-${k}-${i}`; const c2 = cur(); if (c2 && rd.ex.length > 1 && c2.k === 1 && k === 0) s.toast = 'Straight to ' + rd.n + 'b'; else startRest(rd.ex.length > 1 ? 90 : restOf(rd.ex[k])); }
   function unlogSet(k, i) { const st = ROUNDS[s.r].ex[k].sets[i]; st.done = false; s.last = null; setEnd(st.prevEnd || 0); }
-  const isLast = (k, i) => s.last === `${s.r}-${k}-${i}`;
-  const foldRow = (rd, e, k) => { const d = e.sets.filter((x, i) => x.done && !isLast(k, i)); if (!d.length) return ''; const key = lab(rd, k); const w = d.filter((x) => x.t === 'W').length; const ws = d.filter((x) => x.t !== 'W'); const txt = [w ? `${w} warm-up${w > 1 ? 's' : ''}` : '', ws.map((x) => `${x.kg} × ${x.r}`).join(', ')].filter(Boolean).join(' · '); return `<button class="fold" data-a="fold" data-v="${key}" aria-expanded="${!!s.open[key]}"><span>✓ ${txt}</span><u>${s.open[key] ? 'Hide' : 'Show'}</u></button>`; };
+  const hidden = (e, i) => { const d = e.sets.map((x, j) => (x.done ? j : -1)).filter((j) => j >= 0); return e.sets[i].done && d.indexOf(i) < d.length - 2; };
+  const foldRow = (rd, e, k) => { const key = lab(rd, k); const n = e.sets.filter((x, i) => hidden(e, i)).length; if (!n) return ''; return `<button class="fold" data-a="fold" data-v="${key}" aria-expanded="${!!s.open[key]}"><u>${s.open[key] ? 'Hide earlier sets' : `Show all · ${n} earlier`}</u></button>`; };
   const app = document.getElementById('app');
   const cur = () => { const rd = ROUNDS[s.r]; for (let i = 0; i < rd.ex[0].sets.length; i++) for (let k = 0; k < rd.ex.length; k++) { const st = rd.ex[k].sets[i]; if (st && !st.done) return { k, i }; } return null; };
   const lab = (rd, k) => `${rd.n}${rd.ex.length > 1 ? 'ab'[k] : ''}`;
   function exHtml(rd, e, k, c) {
     let n = 0; const doneW = e.sets.filter((x) => x.done && x.t !== 'W').length, totW = e.sets.filter((x) => x.t !== 'W').length;
     return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works}</small></span><span class="prog">${doneW}/${totW}</span></div>
-      <div class="tbl">${e.sets.some((x) => !x.done) || s.open[lab(rd, k)] ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
-      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n; if (st.done && !s.open[lab(rd, k)] && !isLast(k, i)) return ''; return `<div class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
+      <div class="tbl">${true ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
+      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n; if (!s.open[lab(rd, k)] && hidden(e, i)) return ''; return `<div class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
       <div class="meta"><span>${e.target}</span><span>${e.rest ? `Rest ${e.rest} ›` : ''} <u>Why?</u></span></div>
       <button class="addset" data-a="add" data-k="${k}">＋ Set</button></div>`;
   }
