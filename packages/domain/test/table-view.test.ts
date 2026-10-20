@@ -579,6 +579,7 @@ describe('workout-table v3 fields (20 Oct)', () => {
       ['working', 180],
     ]);
     expect(bench.loadHeader).toBe('KG');
+    expect(bench.rows[1]?.spoken).toBe('100 kilograms, 6 to 8 reps');
     expect(plain(bench.repTarget)).toBe('6–8 reps');
     // Targets until logged, then the logged load (the warm-up never counts).
     expect(bench.topSet).toEqual({ value: 100, unit: 'kg' });

@@ -40,6 +40,8 @@ export interface TableRow extends SetRowView {
   setType: SetType;
   /** The rest stored after this set (seconds), for `Why?` (workout-table-v3 §2). */
   restAfterS: number;
+  /** VoiceOver words for the values alone (logged when done, else the target): `7.5 kilograms each, 12 reps`; empty when none. */
+  spoken: string;
   /** This row's own columns (its exercise, part and equipment): whether it has a load cell, and which value. */
   columns: TableColumns;
   /**
@@ -292,7 +294,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
   const set = state.sets.find((s) => s.id === base.setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
   if (!set || !ex) {
-    return { ...base, state: 'skipped', setType: 'working', restAfterS: 0, columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
+    return { ...base, state: 'skipped', setType: 'working', restAfterS: 0, spoken: '', columns: { kind: 'reps', loadLabel: null, valueLabel: 'REPS' }, cells: { load: null, value: '—' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: `Set ${String(base.number)}`, blockValue: '—', accessibilityLabel: `Set ${String(base.number)}` };
   }
   const eq = equipmentOf(state, ex);
   const columns = tableColumns(ex, eq);
@@ -311,6 +313,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
       state: 'done',
       setType: set.setType,
       restAfterS: set.rest.seconds,
+      spoken,
       columns,
       cells: { load: rowLoadCell(a.load, ex.loadConvention, eq), value: rowValueCell(a, ex.measurement) },
       effort,
@@ -323,7 +326,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     };
   }
   if (set.status === 'skipped') {
-    return { ...base, state: 'skipped', setType: set.setType, restAfterS: set.rest.seconds, columns, cells: { load: null, value: 'Skipped' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
+    return { ...base, state: 'skipped', setType: set.setType, restAfterS: set.rest.seconds, spoken: '', columns, cells: { load: null, value: 'Skipped' }, effort: null, pace: null, todayChange: null, memberTag, blockTitle: label, blockValue: 'Skipped', accessibilityLabel: `${who}, skipped` };
   }
   const open = set.id === activeSetId;
   const today = carriesTodayAdjustment(set.planned) ? (set.planned.source === 'built_in_rule' ? 'rule' : 'coach') : null;
@@ -340,6 +343,7 @@ function rowCore(state: SessionAggregate, base: SetRowView, activeSetId: string 
     state: open ? 'open' : 'pending',
     setType: set.setType,
     restAfterS: set.rest.seconds,
+    spoken: spokenTarget,
     columns,
     cells: { load: rowLoadCell(p.load, ex.loadConvention, eq), value: valueCellTarget(set, ex.measurement) },
     // The target RPE is a cell too (18 Oct: set · KG · REPS · RPE · ✓).
