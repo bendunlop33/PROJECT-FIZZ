@@ -13,6 +13,7 @@ import {
   gymAvailability,
   lastActualByExercise,
   matchExercise,
+  muscleGroupsOf,
   NO_FILTERS,
   passesFilters,
   pickerSections,
@@ -122,6 +123,19 @@ describe('filters (§2.3, EL2)', () => {
     expect(equipmentFiltersOf(PUSHUP)).toEqual(['bodyweight']);
     expect(passesFilters(PULLUP, f({ equipment: ['assisted'] }))).toBe(true);
     expect(passesFilters(PULLUP, f({ equipment: ['cable_stack'] }))).toBe(false);
+  });
+
+  it('rear delts are Back (§9 Q13): Face pull is under the Back chip, not Shoulders', () => {
+    const FACE_PULL = exercise(11, 'Face pull', { movementPattern: 'horizontal_pull', primaryMuscles: ['rear_delts', 'upper_back'], secondaryMuscles: ['traps', 'side_delts'], compatibleEquipment: ['weight_stack'], defaultLoadConvention: 'stack' });
+    const REAR_FLY = exercise(12, 'Rear delt fly', { movementPattern: 'horizontal_pull', primaryMuscles: ['rear_delts'], compatibleEquipment: ['dumbbells'], defaultLoadConvention: 'per_hand' });
+    expect(muscleGroupsOf(FACE_PULL)).toEqual(['Back']);
+    expect(muscleGroupsOf(REAR_FLY)).toEqual(['Back']);
+    expect(passesFilters(FACE_PULL, f({ muscles: ['Back'] }))).toBe(true);
+    expect(passesFilters(FACE_PULL, f({ muscles: ['Shoulders'] }))).toBe(false);
+    expect(passesFilters(REAR_FLY, f({ muscles: ['Shoulders'] }))).toBe(false);
+    const rows = (m: 'Back' | 'Shoulders') => searchExerciseRows([...ENTRIES, entry(FACE_PULL), entry(REAR_FLY)], '', f({ muscles: [m] }), null).rows.map((r) => r.entry.exercise.name);
+    expect(rows('Back')).toEqual(['Assisted pull-up', 'Face pull', 'Rear delt fly']);
+    expect(rows('Shoulders')).toEqual(['Arnold press']);
   });
 
   it('At Main Gym hides what the gym can’t do and counts it; bodyweight never needs an item; no gym = unknown', () => {

@@ -12,6 +12,7 @@ import {
   PLAN_NUDGE_LINE,
   planDayMinutes,
   planIdFor,
+  planTopGroup,
   requestHas,
   revisesPlan,
   changesPlanInUse,
@@ -173,6 +174,25 @@ describe('`propose_plan` is offered only on Ben’s plan request (rule 3)', () =
     expect(planDayMinutes({ minutes: null }, 60, { minutes: 45, minutesFromBen: 50 })).toBe(50);
     expect(planDayMinutes({ minutes: null }, null, r)).toBe(45);
     expect(planDayMinutes({ minutes: 500 }, null, r)).toBe(180);
+  });
+});
+
+describe('planTopGroup: the group most of a day’s working sets train', () => {
+  const FACE_PULL = ex(230, 'Face pull', 'cable-face-pull', { movementPattern: 'horizontal_pull', primaryMuscles: ['rear_delts', 'upper_back'] });
+  const LATERAL = ex(231, 'Lateral raise', 'dumbbell-lateral-raise', { movementPattern: 'vertical_push', primaryMuscles: ['side_delts'] });
+  const known = [FACE_PULL, LATERAL, PULLUP];
+  const set = (setType: 'warmup' | 'working') => ({ setType, reps: { min: 10, max: 15 }, durationS: null, targetRpe: setType === 'warmup' ? null : 8, restS: null });
+  const slot = (e: Exercise, working: number, warmups = 0) => ({ exerciseId: e.id, setTemplates: [...Array.from({ length: warmups }, () => set('warmup')), ...Array.from({ length: working }, () => set('working'))] });
+  const top = (slots: ReturnType<typeof slot>[]) => planTopGroup({ slots }, { exerciseOf: (eid) => known.find((e) => e.id === eid) ?? null, groupOf: muscleGroupOf });
+
+  it('a day of mostly face pulls is mostly Back (rear delts are Back, §9 Q13)', () => {
+    expect(top([slot(FACE_PULL, 4), slot(LATERAL, 3)])).toBe('Back');
+    expect(top([slot(FACE_PULL, 2), slot(PULLUP, 2), slot(LATERAL, 3)])).toBe('Back');
+  });
+  it('warm-ups don’t count; unknown exercises are skipped; nothing known is null', () => {
+    expect(top([slot(FACE_PULL, 2), slot(LATERAL, 3, 4)])).toBe('Shoulders');
+    expect(top([{ exerciseId: 'gone', setTemplates: [set('working')] }])).toBeNull();
+    expect(planTopGroup({ slots: [slot(FACE_PULL, 3)] }, {})).toBeNull();
   });
 });
 
