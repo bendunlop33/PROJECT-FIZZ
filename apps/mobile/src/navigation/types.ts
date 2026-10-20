@@ -10,6 +10,8 @@ export type ProfileStackParams = {
   Developer: undefined;
   /** Profile › Voice: spoken cues, coach replies read aloud, voice, speed (Ben, 19 Oct 2026). */
   Voice: undefined;
+  /** Profile › Morning reminder: what to train today, at a set time (Ben, 20 Oct 2026). */
+  MorningReminder: undefined;
   CapabilityProbe: undefined;
   PainFlags: undefined;
   /** Profile › Training details (Ben 13 Oct: D5, D8). */

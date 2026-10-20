@@ -1,3 +1,5 @@
+import { DEFAULT_MORNING_REMINDER, parseMorningReminder, type MorningReminderSettings } from '@fizz/domain';
+
 import type { TextFile } from '../backup/backup-service';
 import { DEFAULT_VOICE_PREFS, parseVoicePrefs, type VoicePrefs } from '../voice/settings';
 
@@ -25,6 +27,13 @@ export interface DevicePrefs {
   voice: VoicePrefs;
   /** Profile › `Targets hit` (Ben, 20 Oct): `Targets hit 5 of last 6` on main lifts; off by default. */
   targetsHit: boolean;
+  /** Profile › Morning reminder (Ben, 20 Oct): per phone, as notification permission is. Absent: never changed (`morningReminderOf`). */
+  morningReminder?: MorningReminderSettings;
+}
+
+/** The morning reminder's settings, the defaults until Ben changes one. */
+export function morningReminderOf(prefs: Pick<DevicePrefs, 'morningReminder'>): MorningReminderSettings {
+  return prefs.morningReminder ?? DEFAULT_MORNING_REMINDER;
 }
 
 export type AlertsAsk = 'undetermined' | 'later' | 'answered';
@@ -37,6 +46,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
     const json = JSON.parse(text) as unknown;
     if (typeof json !== 'object' || json === null) return DEFAULT_PREFS;
     const { themeDirection: dir, guideAnimations, alertsAsk, workoutView, librarySegment, voice, targetsHit } = json as { themeDirection?: unknown; guideAnimations?: unknown; alertsAsk?: unknown; workoutView?: unknown; librarySegment?: unknown; voice?: unknown; targetsHit?: unknown };
+    const { morningReminder } = json as { morningReminder?: unknown };
     return {
       themeDirection: dir === 'A' || dir === 'D' ? dir : null,
       guideAnimations: guideAnimations !== false,
@@ -45,6 +55,7 @@ export function parsePrefs(text: string | null): DevicePrefs {
       librarySegment: librarySegment === 'workouts' ? 'workouts' : 'exercises',
       voice: parseVoicePrefs(voice),
       targetsHit: targetsHit === true,
+      ...(morningReminder === undefined ? {} : { morningReminder: parseMorningReminder(morningReminder) }),
     };
   } catch {
     return DEFAULT_PREFS;
