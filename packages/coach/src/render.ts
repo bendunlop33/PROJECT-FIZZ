@@ -493,9 +493,10 @@ function renderCore(record: ActionRecord, surface: RenderSurface): RenderedActio
     }
     case 'set_lift_target': {
       // (Ben, 20 Oct) The target as saved; Undo on the card.
-      if (st === 'committed') {
+      if (st === 'committed' || st === 'proposed') {
+        // Review B1: the coach's own idea is an offer of exactly this target ("Lift target?"), set only on Apply.
         const t = d.after;
-        const text = `Lift target: ${d.exerciseName} ${liftTargetValueText(t)}${t.byDate === undefined ? '' : ` by ${localDateText(t.byDate)}`}.`;
+        const text = `Lift target${st === 'proposed' ? '?' : ':'} ${d.exerciseName} ${liftTargetValueText(t)}${t.byDate === undefined ? '' : ` by ${localDateText(t.byDate)}`}${st === 'proposed' ? '' : '.'}`;
         return make(status, text, speakable(text));
       }
       if (st === 'stale') return make(status, 'Not set: your targets changed.', 'Not set. Your targets changed.');

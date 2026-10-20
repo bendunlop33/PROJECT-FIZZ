@@ -19,6 +19,7 @@ import {
   routeLine,
   seesLabel,
   starterChips,
+  offerLabel,
   type WorkoutChipContext,
   startLiveTurn,
   statusView,
@@ -871,7 +872,7 @@ function Row({
     case 'offer':
       return (
         <View style={{ flexDirection: 'row' }}>
-          <TextButton label="Adjust" onPress={onAccept} />
+          <TextButton label={offerLabel(row.input.offer)} onPress={onAccept} />
         </View>
       );
     case 'outcome':

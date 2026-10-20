@@ -972,12 +972,17 @@ export type HiddenLine = z.infer<typeof HiddenLineSchema>;
  */
 export const COACH_REPLY_TOOL_NAME = 'reply';
 
-export const CoachOfferKindSchema = z.enum(['adjust_today']);
+/**
+ * The offer on a coach message that Ben's tap (or bare "yes") accepts. `lift_target` (review
+ * lift-targets B1): the coach's own target idea, stored as a `proposed` record; accepting applies
+ * exactly that record. Only code sets it; the model's reply can offer `adjust_today` only.
+ */
+export const CoachOfferKindSchema = z.enum(['adjust_today', 'lift_target']);
 export type CoachOfferKind = z.infer<typeof CoachOfferKindSchema>;
 
 export const CoachReplySchema = z.strictObject({
   message: z.string().max(4000),
-  offer: CoachOfferKindSchema.nullable(),
+  offer: z.enum(['adjust_today']).nullable(),
 });
 export type CoachReply = z.infer<typeof CoachReplySchema>;
 

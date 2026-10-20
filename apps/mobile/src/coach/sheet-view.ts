@@ -374,6 +374,11 @@ export type ThreadRow =
 
 const CHIP_TEXT: Record<Extract<BenInput, { kind: 'chip' }>['chip'], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', lighter_session: 'Lighter session' };
 
+/** The offer row's button, and Ben's message once tapped: `Adjust` today's sets, `Apply` a lift target. */
+export function offerLabel(offer: Extract<BenInput, { kind: 'accept_offer' }>['offer']): string {
+  return offer === 'lift_target' ? 'Apply' : 'Adjust';
+}
+
 export function benText(input: BenInput): string | null {
   switch (input.kind) {
     case 'words':
@@ -381,7 +386,7 @@ export function benText(input: BenInput): string | null {
     case 'chip':
       return CHIP_TEXT[input.chip];
     case 'accept_offer':
-      return 'Adjust';
+      return offerLabel(input.offer);
     case 'summary':
       return null;
   }

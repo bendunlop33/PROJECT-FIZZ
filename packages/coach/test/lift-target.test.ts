@@ -4,14 +4,14 @@ import { profile } from '@fizz/domain/testing';
 import type { Store } from '@fizz/persistence';
 import type { SetLiftTargetArgs } from '@fizz/schemas';
 
-import { asksForLiftTarget, createLiftTargetExecutors, LIFT_TARGET_NOT_ASKED_LINE, liftTargetAsked, type LiftTargetDeps } from '../src/lift-target';
+import { acceptLiftTargetOffer, asksForLiftTarget, createLiftTargetExecutors, LIFT_TARGET_NOT_ASKED_LINE, liftTargetAsked, type LiftTargetDeps } from '../src/lift-target';
 import { undoCoachAction, undoOpId } from '../src/executors';
 import { renderActionResult } from '../src/render';
 import { runCoachTurn } from '../src/turn';
 import { ScriptedCoachModel } from './fake-model';
 import { at, call, id, memoryStore, OWNER, ports, reply, request, words } from './turn-fixtures';
 
-/** `set_lift_target` (Ben approved 20 Oct): asked applies with Undo; offered saves nothing; off is never offered. */
+/** `set_lift_target` (Ben approved 20 Oct): asked applies with Undo; offered is saved as an offer that Apply or "yes" sets exactly (review B1); off is never offered. */
 
 const BENCH = id(5001);
 const choice: LiftTargetChoice = { exerciseId: BENCH, name: 'Bench Press', convention: 'total', unit: 'kg', plateLoaded: false, lastDate: '2026-10-10' };
@@ -58,11 +58,13 @@ describe('asksForLiftTarget (the word fallback)', () => {
     expect(asksForLiftTarget(text)).toBe(want);
   });
 
-  it('a verified quote asks; "he didn’t ask" never does; a yes to the coach’s question does', () => {
+  it('a verified quote asks; "he didn’t ask" never does; a short answer never asks for a new one (review B1)', () => {
     expect(liftTargetAsked('I want to bench 100 kg by March', { benAsked: true, benQuote: 'I want to bench 100 kg by March' })).toBe(true);
     expect(liftTargetAsked('Bench felt easy', { benAsked: false })).toBe(false);
     expect(liftTargetAsked('Bench felt easy', { benAsked: true, benQuote: 'bench 100 kg' })).toBe(false);
-    expect(liftTargetAsked('Yes', { benAsked: true, benQuote: 'Yes' })).toBe(true);
+    expect(liftTargetAsked('Yes', { benAsked: true, benQuote: 'Yes' })).toBe(false);
+    expect(liftTargetAsked('Sure, make it 110', { benAsked: true, benQuote: 'Sure, make it 110' })).toBe(false);
+    expect(liftTargetAsked('Bench 100 kg target', { benAsked: true, benQuote: 'Bench 100 kg target' })).toBe(true);
   });
 });
 
@@ -87,19 +89,66 @@ describe('set_lift_target in a turn', () => {
     expect(again.result.status).toBe('replayed');
   });
 
-  it('the coach’s own idea: nothing saved, no card; it is told to ask; Ben’s "Yes" then sets it', async () => {
-    const s = await setup();
+  const withAccept = (s: Store, model: ScriptedCoachModel) => ({ ...ports(s, model, createLiftTargetExecutors(deps(s))), acceptLiftTarget: (p: Parameters<typeof acceptLiftTargetOffer>[1], c: Parameters<typeof acceptLiftTargetOffer>[2]) => acceptLiftTargetOffer(s.repos.coach, p, c) });
+
+  async function offered(s: Store) {
     const model = new ScriptedCoachModel([[call('set_lift_target', args({ benAsked: false, benQuote: null })), { type: 'completed' }], reply('Want a 100 kg bench target for March?')]);
-    const r = await runCoachTurn(request({ input: words('Bench is going well'), liftTargetsOn: true }), ports(s, model, createLiftTargetExecutors(deps(s))));
-    expect(r.cards).toEqual([]);
-    expect(r.toolLog.map((l) => l.outcome)).toContain('not_allowed');
+    const r = await runCoachTurn(request({ input: words('Bench is going well'), liftTargetsOn: true }), withAccept(s, model));
+    return { r, model };
+  }
+
+  it('the coach’s own idea: saved as an offer of exactly that target, not set', async () => {
+    const s = await setup();
+    const { r, model } = await offered(s);
+    expect(r.offer).toBe('lift_target');
+    expect(r.cards.map((c) => [c.record.status, c.rendered.text.replace(/\u00a0/g, ' ')])).toEqual([['proposed', 'Lift target? Bench Press 100 kg by 1 Mar']]);
     expect(JSON.stringify(model.requests[1]?.input)).toContain(LIFT_TARGET_NOT_ASKED_LINE);
     expect((await s.repos.trainingProfiles.get(OWNER))?.liftTargets).toBeUndefined();
+  });
 
-    const yes = new ScriptedCoachModel([[call('set_lift_target', args({ benQuote: 'Yes' })), { type: 'completed' }], reply('Done deal.')]);
-    const r2 = await runCoachTurn(request({ threadId: r.threadId, input: words('Yes'), liftTargetsOn: true }), ports(s, yes, createLiftTargetExecutors(deps(s))));
+  it('Ben’s "Yes" sets exactly the offered target with no model call; a model sending other values is never asked', async () => {
+    const s = await setup();
+    const { r } = await offered(s);
+    // A confused model would send 110 kg and no date: it is never called.
+    const yes = new ScriptedCoachModel([[call('set_lift_target', args({ load: 110, byDate: null, benQuote: 'Yes' })), { type: 'completed' }], reply('Done.')]);
+    const r2 = await runCoachTurn(request({ threadId: r.threadId, input: words('Yes'), liftTargetsOn: true }), withAccept(s, yes));
+    expect(yes.requests).toHaveLength(0);
     expect(r2.cards.map((c) => c.record.status)).toEqual(['committed']);
+    const p = await s.repos.trainingProfiles.get(OWNER);
+    expect(liftTargetsInUse(p).map((t) => [t.load.value, t.byDate])).toEqual([[100, '2027-03-01']]);
+  });
+
+  it('Apply on the offer row sets it once; a second Apply replays', async () => {
+    const s = await setup();
+    const { r } = await offered(s);
+    const model = new ScriptedCoachModel([]);
+    const a = await runCoachTurn(request({ threadId: r.threadId, input: { kind: 'accept_offer', offer: 'lift_target' }, liftTargetsOn: true }), withAccept(s, model));
+    expect(a.cards.map((c) => c.record.status)).toEqual(['committed']);
+    const proposal = r.cards[0]?.record;
+    if (proposal === undefined) throw new Error('offer');
+    const again = await acceptLiftTargetOffer(s.repos.coach, proposal, { ownerId: OWNER, turnId: 'turn-x', now: at(600) });
+    expect(again).toMatchObject({ kind: 'action', replayed: true });
     expect((await s.repos.trainingProfiles.get(OWNER))?.liftTargets).toHaveLength(1);
+  });
+
+  it('a "Yes" with no lift-target offer before it sets nothing, whatever the model sends', async () => {
+    const s = await setup();
+    const first = new ScriptedCoachModel([reply('Want me to drop the last set?')]);
+    const r = await runCoachTurn(request({ input: words('Bench is going well'), liftTargetsOn: true }), withAccept(s, first));
+    const yes = new ScriptedCoachModel([[call('set_lift_target', args({ benQuote: 'Yes' })), { type: 'completed' }], reply('OK.')]);
+    const r2 = await runCoachTurn(request({ threadId: r.threadId, input: words('Yes'), liftTargetsOn: true }), withAccept(s, yes));
+    expect(r2.cards.every((c) => c.record.status !== 'committed')).toBe(true);
+    expect((await s.repos.trainingProfiles.get(OWNER))?.liftTargets).toBeUndefined();
+  });
+
+  it('an offer accepted after Ben changed his targets is stale, never applied to newer state', async () => {
+    const s = await setup();
+    const { r } = await offered(s);
+    const p = await s.repos.trainingProfiles.get(OWNER);
+    await s.repos.trainingProfiles.change(OWNER, { kind: 'lift_targets_on', on: true }, { opId: 'touch', expectedVersion: p?.version ?? 0, atUtc: at(400).utc, nowYear: 2026, today: '2026-10-14' });
+    const r2 = await runCoachTurn(request({ threadId: r.threadId, input: words('yes'), liftTargetsOn: true }), withAccept(s, new ScriptedCoachModel([])));
+    expect(r2.cards.map((c) => c.record.status)).toEqual(['stale']);
+    expect((await s.repos.trainingProfiles.get(OWNER))?.liftTargets).toBeUndefined();
   });
 
   it('off: never offered, even when Ben asks', async () => {

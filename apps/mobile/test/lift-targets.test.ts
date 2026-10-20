@@ -153,7 +153,7 @@ describe('lift targets in the app', () => {
     expect((await s.liftTargets.view())?.lines).toEqual([]);
   });
 
-  it('the coach’s own idea is never saved', async () => {
+  it('the coach’s own idea is only an offer; Apply sets exactly that target (review B1)', async () => {
     const { services: s } = await h.launch();
     const gymId = await setUpGym(h, s);
     await logWorkout(h, s, gymId, [{ exercise: 'Bench press', sets: [{ load: 80, reps: 5 }] }]);
@@ -161,7 +161,13 @@ describe('lift targets in the app', () => {
     await s.liftTargets.setOn(true, v, h.ids());
     model = new StepModel([() => toolCall('set_lift_target', { exercise: 'bench press', kind: 'one_rm', load: 100, unit: 'kg', reps: null, byDate: null, benAsked: false, benQuote: null }), () => replyWith('Want a 100 kg target?')]);
     const r = await s.coach.send({ entry: { kind: 'today' }, threadId: null, input: { kind: 'words', text: 'Bench is moving well', spoken: false }, turnId: h.ids() });
-    expect(r.cards).toEqual([]);
+    expect(r.cards.map((c) => c.record.status)).toEqual(['proposed']);
+    expect(r.offer).toBe('lift_target');
     expect((await s.liftTargets.view())?.lines).toEqual([]);
+    // Apply: no model call, exactly the offered 100 kg.
+    model = new StepModel([() => toolCall('set_lift_target', { exercise: 'bench press', kind: 'one_rm', load: 110, unit: 'kg', reps: null, byDate: null, benAsked: true, benQuote: 'Apply' })]);
+    const a = await s.coach.send({ entry: { kind: 'today' }, threadId: r.threadId, input: { kind: 'accept_offer', offer: 'lift_target' }, turnId: h.ids() });
+    expect(a.cards.map((c) => c.record.status)).toEqual(['committed']);
+    expect((await s.liftTargets.view())?.targets.map((t) => t.load.value)).toEqual([100]);
   });
 });

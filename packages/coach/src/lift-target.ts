@@ -1,7 +1,7 @@
 import { deriveId } from '@fizz/domain';
-import type { ActionDetail, LiftTarget, SetLiftTargetArgs } from '@fizz/schemas';
+import type { ActionDetail, ActionRecord, LiftTarget, SetLiftTargetArgs, ZonedTimestamp } from '@fizz/schemas';
 import { newActionRecord, type CoachExecutors, type CoachWriteStore, type ToolResult } from './executors';
-import { verifyAsked, type AskClaim } from './intent';
+import { MAX_ANSWER_WORDS, verifyAsked, type AskClaim } from './intent';
 
 /**
  * `set_lift_target` (Ben approved 20 Oct: "Yeah let's do lift targets as something that can be
@@ -10,8 +10,11 @@ import { verifyAsked, type AskClaim } from './intent';
  *
  * Rule 3: it applies at once with Undo only when Ben asked ("I want to bench 100 kg by March").
  * Code decides, from his own words: the model's claim (`benAsked` with his words in `benQuote`)
- * checked by `verifyAsked`, else `asksForLiftTarget`. When he didn't ask, nothing is saved and the
- * coach is told to ask him; a "yes" to that question is his request on the next turn.
+ * checked by `verifyAsked`, else `asksForLiftTarget`. A short answer ("Yes") never asks for a target
+ * itself (review B1). When he didn't ask, the checked target is saved as a `proposed` record (an
+ * offer, exactly what would apply) and nothing else; his `Apply` or bare "yes" on the next turn
+ * applies that record (`acceptLiftTargetOffer`), with no model call, refused as stale when his targets
+ * changed since.
  *
  * The app checks the call (`prepare`): the exercise among those he logs (his own included), its
  * convention from his sets (per hand for dumbbells, the stack for a machine; none for assisted or
@@ -36,8 +39,8 @@ export interface LiftTargetDeps {
 /** The new target's ID: from the opId, so a replayed call builds the same one. */
 export const liftTargetIdFor = (opId: string): string => deriveId(`lift-target:${opId}`);
 
-/** Fed back when Ben didn't ask: nothing saved (rule 3). */
-export const LIFT_TARGET_NOT_ASKED_LINE = 'Not set: Ben did not ask for this target. In reply, ask him if he wants it; it is set only if he says so.';
+/** Fed back when Ben didn't ask: offered, not set (rule 3). */
+export const LIFT_TARGET_NOT_ASKED_LINE = 'Not set: Ben did not ask for this target. He now sees it as an offer to apply; in reply, ask briefly if he wants it. Only that exact target is set, and only if he accepts.';
 
 /** Sent while the tool is offered (Lift targets on). */
 export const LIFT_TARGET_TOOL_LINE =
@@ -53,6 +56,8 @@ const NUMBER = /\b\d{2,3}(?:[.,]\d+)?\s*(?:kg|kgs|kilos?|lb|lbs|pounds?)?\b/i;
 const WANT_TO_LIFT = /\b(?:i want to|i'd like to|i would like to|i wanna|help me|get me to)\s+(?:\w+\s+){0,2}?(?:bench|squat|deadlift|press|pull|row|lift|hit|get)\b/i;
 const NOT_A_REQUEST = /\b(?:what|how|why|should i|do you think|is it)\b[^.?!]*\?\s*$/i;
 
+const wordCount = (text: string): number => text.trim().split(/\s+/).filter((w) => w !== '').length;
+
 export function asksForLiftTarget(words: string): boolean {
   const w = words.trim();
   if (w === '' || NOT_A_REQUEST.test(w)) return false;
@@ -62,6 +67,8 @@ export function asksForLiftTarget(words: string): boolean {
 
 /** Did Ben ask for this target? His quote checked against his message, else his words. A tap never asks for one. */
 export function liftTargetAsked(words: string | null, claim: AskClaim): boolean {
+  // Review B1: a short answer ("Yes", "Sure, 110") accepts only a stored offer, never a new model call.
+  if (words !== null && wordCount(words) <= MAX_ANSWER_WORDS && !asksForLiftTarget(words)) return false;
   return verifyAsked({ tool: 'set_lift_target', chip: false, acceptedOffer: false, words, claim, fallback: () => words !== null && asksForLiftTarget(words) }).asked;
 }
 
@@ -73,12 +80,45 @@ export function createLiftTargetExecutors(deps: LiftTargetDeps): CoachExecutors 
       if (!r.ok) return { kind: 'refused', line: r.line };
       const { target, before, expectedVersion } = r.prepared;
       const detail: ActionDetail = { kind: 'set_lift_target', exerciseId: target.exerciseId, exerciseName: target.exerciseName, before, after: target };
-      const action = newActionRecord(ctx, detail, { entityVersions: [{ entity: 'lift_target', id: target.id, before: expectedVersion, after: expectedVersion + 1 }] });
-      const w = await deps.store.commit(ctx.ownerId, { kind: 'lift_target', action, target, expectedVersion });
-      if (w.status !== 'conflict') return { kind: 'action', record: w.action, replayed: w.status === 'replayed' };
-      const stale = await deps.store.commit(ctx.ownerId, { kind: 'record', action: newActionRecord({ ...ctx, opId: `${ctx.opId}:stale` }, detail, { status: 'stale', failure: 'your targets changed' }) });
-      if (stale.status === 'conflict') throw new Error('Could not record the stale lift target');
-      return { kind: 'action', record: stale.action, replayed: stale.status === 'replayed' };
+      const versions = [{ entity: 'lift_target' as const, id: target.id, before: expectedVersion, after: expectedVersion + 1 }];
+      // Rule 3 (review B1): an offer saves exactly what would apply, on the version read, and nothing else.
+      if (ctx.propose === true) return recordOnly(deps.store, ctx.ownerId, newActionRecord(ctx, detail, { status: 'proposed', entityVersions: versions }), 'lift target offer');
+      return commitTarget(deps.store, ctx.ownerId, newActionRecord(ctx, detail, { entityVersions: versions }), target, expectedVersion, ctx);
     },
   };
+}
+
+async function recordOnly(store: CoachWriteStore, ownerId: string, action: ActionRecord, what: string): Promise<ToolResult> {
+  const r = await store.commit(ownerId, { kind: 'record', action });
+  if (r.status === 'conflict') throw new Error(`Could not record the ${what}`);
+  return { kind: 'action', record: r.action, replayed: r.status === 'replayed' };
+}
+
+/** The target and its record in one write on the version read; a newer profile records it as stale (rule 5). */
+async function commitTarget(store: CoachWriteStore, ownerId: string, action: ActionRecord, target: LiftTarget, expectedVersion: number, ctx: { turnId: string; opId: string; now: ZonedTimestamp }): Promise<ToolResult> {
+  const w = await store.commit(ownerId, { kind: 'lift_target', action, target, expectedVersion });
+  if (w.status !== 'conflict') return { kind: 'action', record: w.action, replayed: w.status === 'replayed' };
+  return recordOnly(store, ownerId, newActionRecord({ ...ctx, opId: `${ctx.opId}:stale` }, action.detail, { status: 'stale', failure: 'your targets changed' }), 'stale lift target');
+}
+
+/** The latest lift-target offer (`proposed`) among a turn's records, if any. */
+export function liftTargetOfferIn(records: readonly ActionRecord[]): ActionRecord | null {
+  return [...records].reverse().find((r) => r.status === 'proposed' && r.detail.kind === 'set_lift_target') ?? null;
+}
+
+/** The opId of Ben's accept of one target offer: a double tap applies once. */
+export const acceptLiftTargetOpId = (proposalActionId: string): string => `accept:${proposalActionId}`;
+
+/**
+ * Ben's `Apply` (or a bare "yes") on the coach's target offer (review B1): the stored target applies
+ * exactly as offered, on the profile version the offer read, with no model call. Refused as stale
+ * when his targets changed since (rule 5); a repeated accept replays.
+ */
+export async function acceptLiftTargetOffer(store: CoachWriteStore, proposal: ActionRecord, ctx: { ownerId: string; turnId: string; now: ZonedTimestamp }): Promise<ToolResult> {
+  const d = proposal.detail;
+  const version = proposal.entityVersions.find((v) => v.entity === 'lift_target');
+  if (d.kind !== 'set_lift_target' || proposal.status !== 'proposed' || version === undefined || version.before === null) return { kind: 'refused', line: 'There is no target to apply.' };
+  const base = { turnId: ctx.turnId, opId: acceptLiftTargetOpId(proposal.actionId), now: ctx.now };
+  const action = newActionRecord(base, d, { reason: proposal.reason, entityVersions: [version] });
+  return commitTarget(store, ctx.ownerId, action, d.after, version.before, base);
 }

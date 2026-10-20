@@ -20,6 +20,7 @@ import {
   type TodayFitAnswer,
   type TodayFitContext,
   acceptEditOffer,
+  acceptLiftTargetOffer,
   createEditTodayExecutor,
   type EditTodayDeps,
   createRenameExecutor,
@@ -1454,6 +1455,8 @@ export function createCoachService(deps: CoachServiceDeps) {
           ...(build?.inPlay === true ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_BUILD_TIMEOUT_MS } } : kind === 'workout' ? { timing: { ...DEFAULT_COACH_TIMING, totalMs: COACH_WORKOUT_TIMEOUT_MS } } : {}),
           // Coach v3: Adjust on an offered edit applies exactly that offer (no model call); stale when the workout moved on.
           ...(kind === 'workout' && session !== null ? { acceptOffer: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptEditOffer(editDepsFor(p, session, ctx.gymName, ctx.checkIn), proposal, c) } : {}),
+          // Review lift-targets B1: Apply (or "yes") on the coach's target offer sets exactly that target; stale when his targets changed.
+          ...(liftTargetsOn ? { acceptLiftTarget: (proposal: ActionRecord, c: { ownerId: string; turnId: string; now: ZonedTimestamp }) => acceptLiftTargetOffer(coachStore(), proposal, c) } : {}),
         },
       );
       if (result.error === 'network') lastNetworkFailureMs = toMs(deps.now().utc);
