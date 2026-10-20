@@ -114,6 +114,10 @@ h1 { font-size: 26px; font-weight: 600; margin: 0; }
 .mixrow small { color: var(--text3); font-size: 12px; }
 .mixrow b { color: var(--text); font-weight: 600; }
 .mixacts { display: flex; gap: 12px; flex: none; }
+.sg .oname { font-size: 12.5px; line-height: 1.1; }
+.seg { grid-template-columns: repeat(4, 1fr) minmax(44px, auto); }
+.two2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.two2 .ghost { min-height: 46px; padding: 0 10px; }
 .fitline { font-size: 13px; color: var(--text2); }
 .varline { font-size: 13.5px; color: var(--text2); margin: 0 4px 8px; }
 .link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; cursor: pointer; padding: 6px 0; font-family: inherit; }
@@ -179,7 +183,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5, 0, 'extra'], ['Rear-delt fly', 12, 7.5]] },
   };
   const ABS = ['Cable crunch', 10, 40];
-  const PLAN_ABS = { Chest: true, Back: true, Legs: false, Shoulders: false }; // the plan puts abs on two days a week
+  const PLAN_ABS = { Chest: true, Back: true, Legs: false, Shoulders: false, 'Full body': true, Upper: true, Lower: false, Push: true, Pull: true }; // the plan puts abs on two days a week
   const absOn = () => s.abs ?? PLAN_ABS[s.day];
   const PLANDAYS = ['Chest', 'Back', 'Legs', 'Shoulders'];
   const NEXT = 'Chest';
@@ -197,7 +201,20 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     'Rear-delt fly': [['Face pull', 12, 22.5], ['Reverse pec deck', 12, 35]],
   };
   const MIX_WHY = { 'Cable crossover': 'Lower-chest angle you haven\u2019t done in 3 weeks', 'Pec deck': 'Same stretch, machine path', 'Dumbbell fly': 'Free-weight stretch at the bottom', 'Incline machine press': 'Same angle, steadier path', 'Seated cable row': 'Different grip and line of pull', 'Hack squat': 'Quads, less back fatigue', 'Cable lateral raise': 'Tension at the bottom of the lift', 'Face pull': 'Rear delts plus upper back' };
-  const OTHER = [{ name: 'Push', sub: 'PPL day' }, { name: 'Pull', sub: 'PPL day' }, { name: 'Hotel shoulders', sub: 'Recent · 17 Oct' }, { name: 'Upper body', sub: 'Recent · 8 Oct' }];
+  // Session types outside the split (from ⋯). Pull and Lower aren't here: they're the same as your Back and Legs days.
+  // they use the same controls and the same fit-to-time rules.
+  const OTHER = [
+    { name: 'Full body', sub: 'Squat or bench, plus a pull and a hinge' },
+    { name: 'Upper', sub: 'Chest, back, shoulders, arms' },
+    { name: 'Push', sub: 'Chest, shoulders, triceps' },
+  ];
+  Object.assign(D, {
+    'Full body': { mains: { Squat: ['Back squat', 117.5], Bench: ['Barbell bench press', 100] }, focused: [['Barbell row', 8, 85, 1], ['Romanian deadlift', 8, 100, 1]], varied: [['Barbell row', 8, 85, 1], ['Romanian deadlift', 8, 100, 1], ['Dumbbell shoulder press', 10, 28, 1]], extra: [['EZ-bar curl', 10, 30]], add: [['Lateral raise', 12, 10], ['Leg curl', 10, 47.5]] },
+    Upper: { mains: { Bench: ['Barbell bench press', 100], Row: ['Barbell row', 92.5] }, focused: [['Lat pulldown', 8, 60, 1], ['Incline dumbbell press', 8, 27.5, 1]], varied: [['Lat pulldown', 8, 60, 1], ['Incline dumbbell press', 8, 27.5, 1], ['Lateral raise', 12, 10]], extra: [['Triceps pushdown', 8, 30]], add: [['EZ-bar curl', 10, 30, 0, 'extra'], ['Face pull', 12, 22.5]] },
+    Lower: { mains: { Squat: ['Back squat', 117.5], Deadlift: ['Romanian deadlift', 110] }, warn: 'Long run Saturday: legs fit better Thursday', focused: [['Leg press', 8, 195, 1], ['Leg curl', 10, 47.5]], varied: [['Leg press', 10, 180, 1], ['Leg curl', 10, 47.5], ['Leg extension', 12, 50]], extra: [['Seated calf raise', 12, 40]], add: [['Bulgarian split squat', 10, 16, 1]] },
+    Push: { mains: { Bench: ['Barbell bench press', 100], 'DB press': ['Dumbbell shoulder press', 32.5] }, focused: [['Incline dumbbell press', 8, 27.5, 1], ['Lateral raise', 12, 10]], varied: [['Incline dumbbell press', 8, 27.5, 1], ['Cable fly', 10, 15], ['Lateral raise', 12, 10]], extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5, 0, 'extra'], ['Dips', 10, null, 1]] },
+    Pull: { mains: { Row: ['Barbell row', 92.5], Pulldown: ['Lat pulldown', 65] }, focused: [['Lat pulldown', 8, 60, 1], ['Face pull', 12, 22.5]], varied: [['Lat pulldown', 8, 60, 1], ['Chest-supported row', 10, 22.5, 1], ['Face pull', 12, 22.5]], extra: [['EZ-bar curl', 8, 30]], add: [['Hammer curl', 10, 14, 0, 'extra'], ['Straight-arm pulldown', 12, 25]] },
+  });
   const VARS = { Chest: [{ label: 'Bench · arms superset', extra: [['Triceps pushdown', 8, 30], ['EZ-bar curl', 8, 30]] }] };
   let s = { day: NEXT, main: null, style: 'Focused', min: PLAN_MIN, ss: true, abs: null, mix: 0, v: null, open: false, sheet: null, toast: null };
   const app = document.getElementById('app');
@@ -294,7 +311,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <div class="week">${WEEK.map((d, i) => `<button class="day${d.today ? ' today' : ''}${d.past ? ' past' : ''}" data-a="day" data-v="${i}" aria-label="${d.dn} ${d.dd}"><span class="dn">${d.today ? 'TODAY' : d.dn}</span><span class="dd">${d.dd}</span>${d.today ? `<span class="pip liftp">${s.day}</span>` : d.items.map((it) => `<span class="pip ${it.k}">${it.k === 'lift' ? '✓ ' : ''}${it.t}</span>`).join('')}</button>`).join('')}</div>
       <div>
         <div class="label" style="margin:0 2px 8px">Today's session</div>
-        <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other workouts">⋯</button></div>
+        <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === NEXT ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more${PLANDAYS.includes(s.day) ? '' : ' on'}" data-a="other" aria-label="Other sessions">${PLANDAYS.includes(s.day) ? '⋯' : `<span class="oname">${s.day}</span>`}</button></div>
         <div class="card${s.open ? ' open' : ''}">
           <div class="top tr2"><div class="big">${s.day}</div><div class="meta"><span>${f.ex.length} exercises · ~${f.est} min</span>${moved ? `<span class="mv">${moved}</span>` : ''}</div></div>
           ${f.notes.length ? `<div class="fitline">${s.min < PLAN_MIN ? 'To fit' : 'With'} ${s.min} min: ${f.notes.join(' · ')}</div>` : ''}
@@ -326,7 +343,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const t = ev.target.closest('[data-a]'); if (!t) return;
     const a = t.dataset.a, v = t.dataset.v; s.toast = null;
     if (a === 'toggle') s.open = !s.open;
-    if (a === 'dayp') { s.day = v; s.main = null; s.mix = 0; s.v = null; s.abs = null; }
+    if (a === 'dayp') { s.day = v; s.main = null; s.mix = 0; s.v = null; s.abs = null; s.sheet = null; }
     if (a === 'main') { s.main = v; s.mix = 0; }
     if (a === 'style') { s.style = v; s.mix = 0; }
     if (a === 'min') s.min = Math.max(20, Math.min(120, s.min + Number(v)));
@@ -336,7 +353,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'unmix') s.mix = 0;
     if (a === 'var') { s.v = Number(v); s.sheet = null; }
     if (a === 'unvar') s.v = null;
-    if (a === 'other') s.sheet = `<h3>Other workouts</h3>${(VARS[s.day] ?? []).length ? `<div class="label" style="padding:0 4px">Your ${s.day} variations</div>${VARS[s.day].map((x, i) => `<button class="it" data-a="var" data-v="${i}" ${IT}><span>${x.label}</span><small>Saved</small></button>`).join('')}<div class="label" style="padding:0 4px">Other</div>` : ''}${OTHER.map((x) => `<button class="it" data-a="close" ${IT}><span>${x.name}</span><small>${x.sub}</small></button>`).join('')}<button class="ghost" data-a="build">Build your own</button><button class="ghost" data-a="close">Close</button>`;
+    if (a === 'other') s.sheet = `<h3>Other sessions</h3>${OTHER.map((x) => `<button class="it" data-a="dayp" data-v="${x.name}" ${IT}><span>${x.name}<br><small>${x.sub}</small></span><span>${s.day === x.name ? '✓' : ''}</span></button>`).join('')}<div class="two2"><button class="ghost" data-a="empty">Empty workout</button><button class="ghost" data-a="build">Build your own</button></div><button class="ghost" data-a="close">Close</button>`;
+    if (a === 'empty') { s.sheet = null; s.toast = 'Starts an empty workout'; }
     if (a === 'day') { const d = WEEK[Number(v)]; s.sheet = d.today ? `<h3>Today</h3><div class="it"><span>${s.day}</span><small>Plan day 1 of 4</small></div><button class="ghost" data-a="close">Close</button>` : `<h3>${d.dn[0] + d.dn.slice(1).toLowerCase()} ${d.dd} Oct</h3>${d.detail.map((x) => `<div class="it"><span>${x}</span><small>${d.past ? '' : 'Planned'}</small></div>`).join('')}${d.past ? '' : '<button class="ghost" data-a="close">Move or change (coach)</button>'}<button class="ghost" data-a="close">Close</button>`; }
     if (a === 'close') s.sheet = null;
     if (a === 'start') s.toast = `Started ${s.day} (prototype)`;
