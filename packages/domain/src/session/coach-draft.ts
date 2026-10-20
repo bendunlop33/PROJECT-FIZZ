@@ -841,7 +841,10 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   for (const s of version.plan.slots) {
     const exercise = input.start.exercises.get(s.exerciseId);
     if (exercise === undefined) continue;
-    if (builder && s.setTemplates.some((t) => t.load?.load != null)) {
+    // Pinned only when nothing has changed what those loads may be (review S4): the same gym they were rounded at, and
+    // no pain hold on the movement now (rule 9). Otherwise the slot is re-planned below like any other (recheck, rule).
+    const pinnable = builder && version.request.gymId === input.start.gymId && painHoldFor(exercise.id, input.substitute.painFlags, input.substitute.sessionPain, nowMs, input.substitute.at.tz) === null;
+    if (pinnable && s.setTemplates.some((t) => t.load?.load != null)) {
       builderPinned.set(s.slotKey, s);
       continue;
     }
