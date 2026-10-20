@@ -133,6 +133,8 @@ describe('5.4 Today rows stack at AX; the detail shrinks right-aligned below it'
 
   it('the stale card’s end time is a hero line; Finish is one word', () => {
     expect(today).toContain('`Ended about ${formatTime(toMs(main.endedAboutUtc), zoned.tz)}`');
+    // Review S5: no second, near-identical time beside it.
+    expect(today).toContain('main.lastSetAtUtc && !main.endedAboutUtc ? `Last set logged at');
     expect(today).not.toContain('Finish (ended about');
   });
 });

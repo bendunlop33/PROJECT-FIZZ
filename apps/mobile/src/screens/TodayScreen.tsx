@@ -453,7 +453,8 @@ export function TodayScreen() {
             // Design pass nit: the end time is a hero line, so the button is one word.
             lines={[
               main.done === 0 ? 'Nothing logged' : `${String(main.done)} of ${String(main.total)} sets done`,
-              main.lastSetAtUtc ? `Last set logged at ${formatTime(toMs(main.lastSetAtUtc), zoned.tz)}` : null,
+              // Review S5: one time is enough; `Ended about` wins when there is one.
+              main.lastSetAtUtc && !main.endedAboutUtc ? `Last set logged at ${formatTime(toMs(main.lastSetAtUtc), zoned.tz)}` : null,
               main.endedAboutUtc ? `Ended about ${formatTime(toMs(main.endedAboutUtc), zoned.tz)}` : null,
             ]}
           >
