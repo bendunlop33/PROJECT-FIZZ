@@ -429,22 +429,46 @@ export function StepperTileRow({
   );
 }
 
-/** `ParamChip` (§9.17): selected shows a check icon as well as the fill. */
-export function Chip({ label, selected, onPress, accessibilityLabel, grow = false }: { label: string; selected: boolean; onPress: () => void; accessibilityLabel?: string; grow?: boolean }) {
+/**
+ * `ParamChip` (§9.17): selected shows a check icon as well as the fill. A 52pt choice pill. `disabled` (design pass 4.5): dimmed to 0.45, a tertiary label, no press scale,
+ * and read as dimmed by VoiceOver; a tap runs `onDisabledPress` (say, to show `Needs the coach`) if given.
+ * `onSurface`: on a card, so an unselected chip is `bg.raised` with a `border.control` edge and reads as tappable.
+ */
+export function Chip({
+  label,
+  selected,
+  onPress,
+  accessibilityLabel,
+  grow = false,
+  disabled = false,
+  onDisabledPress,
+  onSurface = false,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  accessibilityLabel?: string;
+  grow?: boolean;
+  disabled?: boolean;
+  onDisabledPress?: () => void;
+  onSurface?: boolean;
+}) {
   const theme = useTheme();
   const press = usePressScale('pill');
   const filled = theme.components.cardBorderWidth === 0;
+  const idle = onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'];
+  const edge = onSurface ? theme.colors['border.control'] : theme.colors['border.divider'];
   return (
-    <Animated.View style={[grow ? { flex: 1 } : null, press.style]}>
+    <Animated.View style={[grow ? { flex: 1 } : null, disabled ? null : press.style]}>
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       accessibilityLabel={accessibilityLabel ?? label}
-      onPress={onPress}
-      onPressIn={press.onPressIn}
-      onPressOut={press.onPressOut}
-      style={({ pressed }) =>
-        filled
+      onPress={disabled ? onDisabledPress : onPress}
+      {...(disabled ? {} : { onPressIn: press.onPressIn, onPressOut: press.onPressOut })}
+      style={({ pressed }) => ({
+        opacity: disabled ? 0.45 : 1,
+        ...(filled
           ? {
               // D-Rest: selected is a full accent pill with a check; others sit on the surface. 52 pt (target.workout, D7).
               minHeight: theme.target.workout.height,
@@ -452,11 +476,11 @@ export function Chip({ label, selected, onPress, accessibilityLabel, grow = fals
               paddingHorizontal: theme.space['3'],
               borderRadius: theme.radius.pill,
               borderWidth: selected ? 0 : 1,
-              borderColor: theme.colors['border.divider'],
-              backgroundColor: selected ? (pressed ? theme.colors['accent.pressed'] : theme.colors.accent) : pressed ? theme.colors['bg.raised'] : theme.colors['bg.surface'],
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
+              borderColor: edge,
+              backgroundColor: selected ? (pressed && !disabled ? theme.colors['accent.pressed'] : theme.colors.accent) : pressed && !disabled ? theme.colors['bg.raised'] : idle,
+              flexDirection: 'row' as const,
+              alignItems: 'center' as const,
+              justifyContent: 'center' as const,
               gap: theme.space['1'],
             }
           : {
@@ -466,16 +490,16 @@ export function Chip({ label, selected, onPress, accessibilityLabel, grow = fals
               borderRadius: theme.radius.pill,
               borderWidth: selected ? theme.components.selectedBorderWidth : 1,
               borderColor: selected ? theme.colors.accent : theme.colors['border.control'],
-              backgroundColor: selected || pressed ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
+              backgroundColor: selected || (pressed && !disabled) ? theme.colors['accent.subtle'] : theme.colors['bg.raised'],
+              flexDirection: 'row' as const,
+              alignItems: 'center' as const,
+              justifyContent: 'center' as const,
               gap: theme.space['1'],
-            }
-      }
+            }),
+      })}
     >
       {selected ? <Icon name="checkmark" color={filled ? 'on.accent' : 'accent'} size={14} /> : null}
-      <AppText variant="label" numeric color={filled && selected ? 'on.accent' : 'text.primary'} style={filled && selected ? { fontWeight: '600' } : undefined}>
+      <AppText variant="label" numeric color={filled && selected ? 'on.accent' : disabled ? 'text.tertiary' : 'text.primary'} style={filled && selected ? { fontWeight: '600' } : undefined}>
         {label}
       </AppText>
     </Pressable>

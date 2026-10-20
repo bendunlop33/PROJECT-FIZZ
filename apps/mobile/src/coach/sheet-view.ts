@@ -102,12 +102,13 @@ export interface WorkoutChipContext {
 function liveWorkoutChips(ctx: WorkoutChipContext | null, pain: StarterChip): StarterChip[] {
   const chip = (label: string, text = label): StarterChip => ({ label, input: { kind: 'words', text, spoken: false } });
   const name = ctx?.exerciseName ?? null;
+  // Design pass 4.4 (20 Oct): short labels about the current exercise, the full words sent; Lighter and Heavier first.
   return [
     ...(ctx?.offTarget === true && name !== null ? [chip('Adjust the rest?', `Adjust the rest of my ${name} sets`)] : []),
-    chip('Set weights from my history'),
     ...(name === null
       ? []
-      : [chip(`Lighter ${name}`), chip(`Heavier ${name}`), chip(`+ Set ${name}`, `Add a set of ${name}`), chip(`− Set ${name}`, `Remove a set of ${name}`), chip(`Swap ${name}`)]),
+      : [chip('Lighter', `Lighter ${name}`), chip('Heavier', `Heavier ${name}`), chip('+ Set', `Add a set of ${name}`), chip('− Set', `Remove a set of ${name}`), chip('Swap', `Swap ${name}`)]),
+    chip('Set weights from my history'),
     chip('Add an exercise'),
     chip('Short on time'),
     pain,
@@ -138,6 +139,57 @@ export function starterChips(entry: CoachEntry, a: CoachAvailability, workoutAct
       // offers `How am I doing?` now that the coach reads past workouts is Ben's call.
       return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// The transcript's scroll (design pass 4.1)
+
+/** Within this many points of the end counts as at the bottom. */
+export const AT_BOTTOM_SLOP = 48;
+
+/** The transcript is scrolled to (or near) its end. */
+export function isAtBottom(e: { contentOffsetY: number; contentHeight: number; viewportHeight: number }): boolean {
+  return e.contentOffsetY + e.viewportHeight >= e.contentHeight - AT_BOTTOM_SLOP;
+}
+
+/**
+ * Whether a change of the transcript's size (or the keyboard resizing it) scrolls it to the end:
+ * only when Ben is already there, or something new was added (a row, a live turn, a build). A `Why?`
+ * opened on an older message never jumps the view. Never while the empty thread's starter chips show.
+ */
+export function stickToEnd(s: { atBottom: boolean; added: boolean; starters: boolean }): boolean {
+  if (s.starters) return false;
+  return s.atBottom || s.added;
+}
+
+/**
+ * The coach's reply as shown (design pass nit): sentences joined by a space, except where the model
+ * broke the line (a sentence with no end mark was ended by a line break: a list item or a heading),
+ * which keeps its break. Text only; nothing is added.
+ */
+export function replyText(sentences: readonly string[]): string {
+  let out = '';
+  for (const s of sentences) {
+    if (out === '') out = s;
+    else out += /[.!?…:"'”’)\]]$/.test(out) ? ` ${s}` : `\n${s}`;
+  }
+  return out;
+}
+
+/**
+ * The rows that show their time (design pass nit): Ben's and the coach's messages, once per run of the
+ * same minute (`18:02` isn't repeated on every message of one exchange). `clock` formats a row's time.
+ */
+export function stampedKeys(rows: readonly ThreadRow[], clock: (atUtc: string, tz: string) => string): Set<string> {
+  const out = new Set<string>();
+  let last: string | null = null;
+  for (const r of rows) {
+    if (r.kind !== 'ben' && r.kind !== 'coach') continue;
+    const t = clock(r.atUtc, r.tz);
+    if (t !== last) out.add(r.key);
+    last = t;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

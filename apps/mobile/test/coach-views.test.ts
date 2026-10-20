@@ -62,14 +62,14 @@ describe('workout chips (14 Oct): about the current exercise, words the coach ac
   const entry = { kind: 'workout' as const, sessionId: ID(9) };
   const words = (label: string, text = label) => ({ label, input: { kind: 'words', text, spoken: false } });
 
-  it('name the current exercise, in order, and end with Pain', () => {
+  it('short labels, the current exercise in the words sent; Lighter and Heavier first; end with Pain (design pass 4.4)', () => {
     expect(starterChips(entry, avail('ok'), true, { exerciseName: 'Bench press', offTarget: false })).toEqual([
+      words('Lighter', 'Lighter Bench press'),
+      words('Heavier', 'Heavier Bench press'),
+      words('+ Set', 'Add a set of Bench press'),
+      words('− Set', 'Remove a set of Bench press'),
+      words('Swap', 'Swap Bench press'),
       words('Set weights from my history'),
-      words('Lighter Bench press'),
-      words('Heavier Bench press'),
-      words('+ Set Bench press', 'Add a set of Bench press'),
-      words('− Set Bench press', 'Remove a set of Bench press'),
-      words('Swap Bench press'),
       words('Add an exercise'),
       words('Short on time'),
       { label: 'Pain', input: null },

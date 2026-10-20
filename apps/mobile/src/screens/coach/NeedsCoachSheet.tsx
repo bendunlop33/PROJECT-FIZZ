@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import type { BuildBlock } from '../../coach/coach-service';
 import { BUILD_COPY, needsCoachView } from '../../coach/build-view';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Icon, TextButton } from '../../ui';
+import { AppText, BottomCard, Icon, SecondaryButton, TextButton } from '../../ui';
 
 /**
  * `Needs the coach` (workout-builder §5.4): a small sheet wherever a build
@@ -31,9 +31,10 @@ export function NeedsCoachSheet({ block, onClose, onConnect, onEmptyWorkout, onC
           {v.connect ? <TextButton label={BUILD_COPY.connect} onPress={onConnect} /> : null}
         </View>
       ) : null}
-      <View style={{ alignItems: 'flex-start' }}>
-        <TextButton label={BUILD_COPY.emptyWorkout} tone="secondary" onPress={onEmptyWorkout} />
-        <TextButton label={BUILD_COPY.chooseSession} tone="secondary" onPress={onChooseSession} />
+      {/* Design pass nit: the two ways on are buttons, not links. */}
+      <View style={{ gap: theme.space['2'] }}>
+        <SecondaryButton label={BUILD_COPY.emptyWorkout} onPress={onEmptyWorkout} />
+        <SecondaryButton label={BUILD_COPY.chooseSession} onPress={onChooseSession} />
       </View>
     </BottomCard>
   );

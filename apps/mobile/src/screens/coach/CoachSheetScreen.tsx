@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Linking, Pressable, ScrollView, View, type TextInput } from 'react-native';
+import { Keyboard, Linking, Pressable, ScrollView, useWindowDimensions, View, type TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { undoOpId, type ContextDescription } from '@fizz/coach';
@@ -20,6 +20,10 @@ import {
   seesLabel,
   starterChips,
   offerLabel,
+  isAtBottom,
+  replyText,
+  stampedKeys,
+  stickToEnd,
   type WorkoutChipContext,
   startLiveTurn,
   statusView,
@@ -40,11 +44,11 @@ import { newUuid } from '../../device/runtime';
 import { addedMessage, takeAdded } from '../../library/exercise-form-handoff';
 import { createReplyVoice, replyToSpeak, sheetReadOn } from '../../voice/read-aloud';
 import { appleSpeaker, voiceCapability } from '../../voice/speaker';
-import { formatTime } from '../../format/dates';
+import { formatTime, formatWhen } from '../../format/dates';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { TIMING, useTheme } from '../../theme';
-import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SheetKeyboardAvoidingView, TextButton, TextField } from '../../ui';
+import { AppText, Chip, DomainLabel, Icon, KeyboardDoneAccessory, SecondaryButton, SheetKeyboardAvoidingView, TEXT_PRESSED_OPACITY, TextButton, TextField, useKeyboardVisible } from '../../ui';
 import { CoachCard } from './CoachCard';
 import { BuildQuestionCard, BuildRequestCard, PendingBuildCard, QUESTION_COPY, WorkoutDraftCard } from './BuildCards';
 import { PlanCard } from './PlanCard';
@@ -121,6 +125,11 @@ export function CoachSheetScreen() {
   const [buildGym, setBuildGym] = useState<{ id: string; name: string } | null>(null);
   const sendGuard = useRef(0);
   const scroll = useRef<ScrollView>(null);
+  /** Design pass 4.1: the transcript follows new content only while Ben is at its end. */
+  const atBottom = useRef(true);
+  const shownCount = useRef(0);
+  const keyboardUp = useKeyboardVisible();
+  const { fontScale, height: windowHeight } = useWindowDimensions();
   /**
    * Replies read aloud (Ben, 19 Oct 2026): by default whenever a workout is in progress (review S4);
    * the header's speaker overrides it for this sheet only, never Settings › Voice (review S5).
@@ -532,6 +541,11 @@ export function CoachSheetScreen() {
     return d !== null && coachUndoRefusal(d.aggregate, actionId) !== null;
   };
 
+  // Design pass 4.2: with the keyboard up, the Sees panel closes (its chip hides) so the conversation keeps its room.
+  useEffect(() => {
+    if (keyboardUp) setSees(null);
+  }, [keyboardUp]);
+
   const status = availability === null ? null : statusView(availability, entry.kind === 'workout' && workout?.active === true);
   const route = availability === null ? null : routeLine(availability);
   const chips: StarterChip[] = availability === null ? [] : starterChips(entry, availability, workout?.active === true, workout?.chips ?? null);
@@ -552,13 +566,14 @@ export function CoachSheetScreen() {
           void services.coach.listThreads().then(setThreads);
         }}
       />
-      <AppText variant="headline" numberOfLines={1} style={{ flex: 1, textAlign: 'center' }}>
+      <AppText variant="headline" accessibilityRole="header" maxFontSizeMultiplier={1.5} numberOfLines={1} style={{ flex: 1, textAlign: 'center' }}>
         {title}
       </AppText>
       {canSpeak ? (
         <HeaderButton
           icon={readOn ? 'speaker.wave.2' : 'speaker.slash'}
-          label={readOn ? 'Read replies aloud: on' : 'Read replies aloud: off'}
+          label="Read replies aloud"
+          toggle={{ on: readOn }}
           onPress={() => {
             if (readOn) void replyVoice.hush();
             setReadOverride(!readOn);
@@ -580,11 +595,23 @@ export function CoachSheetScreen() {
   );
 
   if (threads !== null) {
+    const n = services.now();
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: theme.space['2'] }}>
-        {header}
+        {/* Design pass 4.8: the list has its own header (Back, the name, Close) and dated rows. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: theme.space['2'] }}>
+          <HeaderButton icon="chevron.left" label="Back" onPress={() => { setThreads(null); }} />
+          <AppText variant="headline" accessibilityRole="header" maxFontSizeMultiplier={1.5} numberOfLines={1} style={{ flex: 1, textAlign: 'center' }}>
+            Conversations
+          </AppText>
+          <HeaderButton icon="xmark" label="Close" onPress={() => { navigation.goBack(); }} />
+        </View>
         <ScrollView contentContainerStyle={{ padding: theme.components.screenMargin, gap: theme.space['2'] }}>
-          <TextButton label="Back" tone="secondary" onPress={() => { setThreads(null); }} />
+          {threads.length === 0 ? (
+            <AppText variant="callout" color="text.secondary">
+              No conversations
+            </AppText>
+          ) : null}
           {threads.map((t) => (
             <Pressable
               key={t.id}
@@ -593,13 +620,13 @@ export function CoachSheetScreen() {
                 setThreads(null);
                 setThreadId(t.id);
               }}
-              style={{ minHeight: 64, justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: theme.colors['border.divider'] }}
+              style={({ pressed }) => ({ minHeight: 64, justifyContent: 'center', borderBottomWidth: theme.dividerWidth, borderBottomColor: theme.colors['border.divider'], opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
             >
               <AppText variant="body" numberOfLines={1}>
                 {t.title}
               </AppText>
-              <AppText variant="label" color="text.secondary">
-                {formatTime(toMs(t.updatedAtUtc), services.now().tz)}
+              <AppText variant="label" color="text.secondary" numeric>
+                {formatWhen(toMs(t.updatedAtUtc), toMs(n.utc), n.tz)}
               </AppText>
             </Pressable>
           ))}
@@ -607,6 +634,16 @@ export function CoachSheetScreen() {
       </View>
     );
   }
+
+  /** New rows, a live turn or a build count as added content (4.1). */
+  const contentCount = rows.length + (live === null ? 0 : 1 + live.cards.length) + (building === null ? 0 : 1);
+  const starters = empty && chips.length > 0 && !showBuild;
+  const follow = (): void => {
+    const added = contentCount > shownCount.current;
+    shownCount.current = contentCount;
+    if (stickToEnd({ atBottom: atBottom.current, added, starters })) scroll.current?.scrollToEnd({ animated: false });
+  };
+  const stamps = stampedKeys(rows, (utc, tz) => formatTime(toMs(utc), tz));
 
   return (
     <SheetKeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.colors['bg.canvas'], paddingTop: theme.space['2'] }}>
@@ -629,9 +666,9 @@ export function CoachSheetScreen() {
       ) : null}
       {status?.word ? (
         <View style={{ marginHorizontal: theme.components.screenMargin, marginTop: theme.space['2'], gap: theme.space['1'] }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: theme.space['2'] }}>
             <Icon name={status.icon} size={18} color="status.warning" />
-            <AppText variant="callout" style={{ flex: 1 }}>
+            <AppText variant="callout" style={{ flexGrow: 1, flexShrink: 1 }}>
               {status.word}
             </AppText>
             {status.why !== null ? <TextButton label="Why?" tone="secondary" onPress={() => { setStatusWhy((w) => !w); }} /> : null}
@@ -647,21 +684,28 @@ export function CoachSheetScreen() {
 
       <ScrollView
         ref={scroll}
-        onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
-        // The keyboard showing or hiding resizes the transcript (KeyboardAvoidingView): keep the newest reply in view.
-        onLayout={() => scroll.current?.scrollToEnd({ animated: false })}
+        // Design pass 4.1: follow new content, or keep the end in view when the keyboard resizes the transcript,
+        // only while Ben is at the end; a Why? opened higher up never jumps the view.
+        onContentSizeChange={follow}
+        onLayout={follow}
+        onScroll={(e) => {
+          const n = e.nativeEvent;
+          atBottom.current = isAtBottom({ contentOffsetY: n.contentOffset.y, contentHeight: n.contentSize.height, viewportHeight: n.layoutMeasurement.height });
+        }}
+        scrollEventThrottle={64}
         contentContainerStyle={{ padding: theme.components.screenMargin, flexGrow: 1 }}
         {...COACH_TRANSCRIPT_KEYBOARD}
       >
         {/* A tap on the conversation (not on a button in it) hides the keyboard. */}
         <Pressable accessible={false} onPress={() => { Keyboard.dismiss(); }} style={{ flexGrow: 1, gap: theme.space['4'] }}>
-        {empty && chips.length > 0 && !showBuild ? (
+        {starters ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
             {chips.map((c) => (
               <Chip
                 key={c.label}
                 label={'build' in c && !c.build.enabled ? `${c.label} · ${BUILD_COPY.needsCoach}` : c.label}
                 selected={false}
+                disabled={'build' in c && !c.build.enabled}
                 onPress={() => {
                   // `Build a workout` (workout-builder §3): the Build card; disabled with `Needs the coach` (§5.4).
                   if ('build' in c) {
@@ -692,8 +736,10 @@ export function CoachSheetScreen() {
             onRetry={() => r.kind === 'outcome' && r.input !== null && void retry(r.input)}
             onAccept={() => r.kind === 'offer' && live === null && void send(r.input)}
             onDraft={{ gymId: buildGym?.id ?? null, open: openDraft, openRoutine: openRoutine, changed: () => { changed(); void loadRows(threadId ?? null); } }}
+            stamped={stamps.has(r.key)}
             onQuestion={{
               disabled: live !== null || status?.canSend !== true,
+              disabledReason: status?.canSend !== true ? BUILD_COPY.needsCoach : null,
               saved: (actionId) => savedAnswer(actionId),
               answer: (q, a) => void answerQuestion(q, a),
               undoSave: (q) => void undoAnswerSave(q),
@@ -725,7 +771,10 @@ export function CoachSheetScreen() {
         </Pressable>
       </ScrollView>
 
-      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: insets.bottom + theme.space['2'], gap: theme.space['2'] }}>
+      {/* Design pass 4.2: with the keyboard up, the footer sits on it (no home-indicator room), the Sees chip hides
+          and the route line is a short label (still visible, rule 7). */}
+      <View style={{ paddingHorizontal: theme.components.screenMargin, paddingBottom: keyboardUp ? theme.space['2'] : insets.bottom + theme.space['2'], gap: theme.space['2'] }}>
+        {keyboardUp ? null : (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="What the coach can see"
@@ -741,10 +790,11 @@ export function CoachSheetScreen() {
           <Icon name="eye" size={16} />
           <AppText variant="label">{seesLabel(entry, workout?.title ?? null, workout?.active === true, workout?.out ?? null, profileToday ?? localDateOf(toMs(services.now().utc), services.now().tz))}</AppText>
         </Pressable>
-        {sees !== null ? <SeesPanel sees={sees} /> : null}
+        )}
+        {sees !== null && !keyboardUp ? <SeesPanel sees={sees} maxHeight={Math.round(windowHeight * 0.35)} /> : null}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space['2'] }}>
           <View style={{ flex: 1 }}>
-            <TextField ref={field} value={text} onChangeText={setDraft} placeholder={status?.placeholder ?? 'Ask the coach…'} multiline inputAccessoryViewID={COACH_DONE_ACCESSORY_ID} style={{ maxHeight: 140 }} accessibilityLabel="Message to the coach" />
+            <TextField ref={field} value={text} onChangeText={setDraft} placeholder={status?.placeholder ?? 'Ask the coach…'} multiline inputAccessoryViewID={COACH_DONE_ACCESSORY_ID} style={{ maxHeight: Math.round(140 * Math.min(Math.max(fontScale, 1), 2)) }} accessibilityLabel="Message to the coach" />
           </View>
           {running ? (
             <SendButton icon="stop.fill" label="Stop the coach" enabled onPress={() => {
@@ -755,7 +805,11 @@ export function CoachSheetScreen() {
             <SendButton icon="arrow.up" label="Send message" enabled={canSend} onPress={() => void send({ kind: 'words', text: text.trim(), spoken: false })} />
           )}
         </View>
-        {route !== null ? (
+        {route !== null && keyboardUp ? (
+          <AppText variant="label" color="text.secondary" numberOfLines={1}>
+            {route.text}
+          </AppText>
+        ) : route !== null ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['1'] }}>
             <AppText variant="label" color="text.secondary">
               {`${route.text} ·`}
@@ -769,11 +823,17 @@ export function CoachSheetScreen() {
   );
 }
 
-function HeaderButton({ icon, label, onPress }: { icon: 'list.bullet' | 'square.and.pencil' | 'xmark' | 'speaker.wave.2' | 'speaker.slash'; label: string; onPress: () => void }) {
+function HeaderButton({ icon, label, onPress, toggle }: { icon: 'list.bullet' | 'square.and.pencil' | 'xmark' | 'speaker.wave.2' | 'speaker.slash' | 'chevron.left'; label: string; onPress: () => void; /** A switch (the speaker): on is accent-tinted and read as on. */ toggle?: { on: boolean } }) {
   const theme = useTheme();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={{ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center' }}>
-      <Icon name={icon} color="text.primary" size={20} />
+    <Pressable
+      accessibilityRole={toggle === undefined ? 'button' : 'switch'}
+      accessibilityLabel={label}
+      {...(toggle === undefined ? {} : { accessibilityState: { checked: toggle.on } })}
+      onPress={onPress}
+      style={({ pressed }) => ({ width: theme.target.min.width, height: theme.target.min.height, alignItems: 'center', justifyContent: 'center', opacity: pressed ? TEXT_PRESSED_OPACITY : 1 })}
+    >
+      <Icon name={icon} color={toggle?.on === true ? 'accent' : 'text.primary'} size={20} />
     </Pressable>
   );
 }
@@ -806,8 +866,11 @@ function Row({
   onAccept,
   onDraft,
   onQuestion,
+  stamped = true,
 }: {
   row: ThreadRow;
+  /** This row shows its time (once per run of the same minute). */
+  stamped?: boolean;
   undoBlocked: (actionId: string) => boolean;
   onUndo: (actionId: string) => void;
   onProposal: (proposalId: string, tap: 'apply' | 'not_now') => void;
@@ -820,7 +883,7 @@ function Row({
   /** A coach draft's card (workout-builder §4.2): `Open ›` closes the sheet and opens its overview; the sheet never opens it by itself. */
   onDraft?: { gymId: string | null; open: (draftId: string) => void; openRoutine: (routineId: string) => void; changed: () => void };
   /** (v2, §4.2) The coach's question card: tap answers, `Skip`, and Undo on a saved main lift. */
-  onQuestion?: { disabled: boolean; saved: (actionId: string) => { text: string; canUndo: boolean } | null; answer: (q: QuestionCardView, a: { label: string; catalogueId: string | null } | 'skip') => void; undoSave: (q: QuestionCardView) => void };
+  onQuestion?: { disabled: boolean; disabledReason: string | null; saved: (actionId: string) => { text: string; canUndo: boolean } | null; answer: (q: QuestionCardView, a: { label: string; catalogueId: string | null } | 'skip') => void; undoSave: (q: QuestionCardView) => void };
 }) {
   const theme = useTheme();
   switch (row.kind) {
@@ -830,24 +893,31 @@ function Row({
           <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, padding: theme.space['3'] }}>
             <AppText variant="body">{row.text}</AppText>
           </View>
-          <AppText variant="label" color="text.secondary" align="center">
-            {formatTime(toMs(row.atUtc), row.tz)}
-          </AppText>
+          {stamped ? (
+            <AppText variant="label" color="text.secondary" numeric align="right">
+              {formatTime(toMs(row.atUtc), row.tz)}
+            </AppText>
+          ) : null}
         </View>
       );
     case 'coach':
       return (
         <View style={{ gap: theme.space['1'] }}>
-          <AppText variant="label" color="text.secondary">{`Coach · ${formatTime(toMs(row.atUtc), row.tz)}`}</AppText>
-          <AppText variant="body">{row.sentences.join(' ')}</AppText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
+            <AppText variant="label" color="text.secondary" style={{ flex: 1 }}>
+              Coach
+            </AppText>
+            {stamped ? (
+              <AppText variant="label" color="text.secondary" numeric>
+                {formatTime(toMs(row.atUtc), row.tz)}
+              </AppText>
+            ) : null}
+          </View>
+          <AppText variant="body">{replyText(row.sentences)}</AppText>
         </View>
       );
     case 'tools':
-      return (
-        <AppText variant="callout" color="text.secondary">
-          {`Used: ${row.lines.join(', ').toLowerCase()}`}
-        </AppText>
-      );
+      return <ToolsLine lines={row.lines} />;
     case 'card':
       if (row.card.question !== undefined && onQuestion !== undefined) {
         const q = row.card.question;
@@ -855,6 +925,7 @@ function Row({
           <BuildQuestionCard
             view={q}
             disabled={onQuestion.disabled}
+            disabledReason={onQuestion.disabledReason}
             saved={onQuestion.saved(q.actionId)}
             onAnswer={(a) => {
               onQuestion.answer(q, a);
@@ -883,7 +954,7 @@ function Row({
     case 'offer':
       return (
         <View style={{ flexDirection: 'row' }}>
-          <TextButton label={offerLabel(row.input.offer)} onPress={onAccept} />
+          <SecondaryButton label={offerLabel(row.input.offer)} onPress={onAccept} />
         </View>
       );
     case 'outcome':
@@ -933,11 +1004,7 @@ function LiveRows({ live, now }: { live: LiveTurn; now: number }) {
           <AppText variant="body">{live.benText}</AppText>
         </View>
       ) : null}
-      {live.tools.length > 0 ? (
-        <AppText variant="callout" color="text.secondary">
-          {`Used: ${live.tools.join(', ').toLowerCase()}`}
-        </AppText>
-      ) : null}
+      {live.tools.length > 0 ? <ToolsLine lines={live.tools} /> : null}
       {live.cards.map((c) => (
         <CoachCard key={c.actionId} card={{ ...c, canUndo: false }} onUndo={() => undefined} />
       ))}
@@ -949,16 +1016,43 @@ function LiveRows({ live, now }: { live: LiveTurn; now: number }) {
           </AppText>
         </View>
       ) : (
-        <AppText variant="body">{live.sentences.join(' ')}</AppText>
+        <AppText variant="body">{replyText(live.sentences)}</AppText>
       )}
     </View>
   );
 }
 
-function SeesPanel({ sees }: { sees: ContextDescription }) {
+/** The tools a turn used (design pass nit): a quiet `ⓘ Tools` link; tap shows them, as written. */
+function ToolsLine({ lines }: { lines: readonly string[] }) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ gap: theme.space['1'] }}>
+      <View style={{ alignSelf: 'flex-start' }}>
+        <TextButton
+          label="Tools"
+          icon="info.circle"
+          tone="secondary"
+          accessibilityLabel={open ? 'Hide the tools the coach used' : 'Tools the coach used'}
+          onPress={() => {
+            setOpen((o) => !o);
+          }}
+        />
+      </View>
+      {open ? (
+        <AppText variant="callout" color="text.secondary">
+          {lines.join(', ')}
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
+
+/** Design pass 4.3: scrolls inside a cap (35% of the window), so the composer stays on screen at AX. */
+function SeesPanel({ sees, maxHeight }: { sees: ContextDescription; maxHeight: number }) {
   const theme = useTheme();
   return (
-    <View style={{ gap: theme.space['2'], padding: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md }}>
+    <ScrollView style={{ maxHeight, backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md }} contentContainerStyle={{ gap: theme.space['2'], padding: theme.space['3'] }}>
       <AppText variant="headline">What the coach can see</AppText>
       <DomainLabel domain="yourData" />
       {sees.yourData.map((d) => (
@@ -974,6 +1068,6 @@ function SeesPanel({ sees }: { sees: ContextDescription }) {
       {sees.notAvailable.map((n) => (
         <AppText key={n} variant="callout" color="text.secondary">{`– ${n}`}</AppText>
       ))}
-    </View>
+    </ScrollView>
   );
 }
