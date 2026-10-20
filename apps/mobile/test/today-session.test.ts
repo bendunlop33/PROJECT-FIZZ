@@ -108,8 +108,9 @@ describe('Today (v2) session card from the plan', () => {
     // The plan's bench target, through the template's dry run (rounded down here, rule 4).
     expect(Number(push.rows[0]?.top)).toBeGreaterThan(0);
 
-    // Time −15 trims with one line; the main lift stays.
-    const short = s.todaySession.card(data, sel(data, pushKey, { minutes: (data.initial[pushKey]?.minutes ?? 60) - 15 }));
+    // A length under the card's own estimate trims with one line; the main lift stays. (Rests follow Ben's presets,
+    // as the builder's do, so the estimate agrees with Your workout.)
+    const short = s.todaySession.card(data, sel(data, pushKey, { minutes: Math.floor((push.minutes - 10) / 5) * 5 }));
     expect(nbsp(short?.fitLine)).toMatch(/^To fit \d+ min: /);
     expect(short?.rows[0]?.name).toBe('Bench press');
     // Supersets off: no pairs.

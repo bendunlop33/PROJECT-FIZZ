@@ -42,3 +42,11 @@ export function builderInfoOf(e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles'
 export function builderWorksOf(e: Pick<Exercise, 'primaryMuscles' | 'secondaryMuscles'>): string | null {
   return worksLine(e);
 }
+
+/**
+ * (Today v2, builder v3) Only rep-based strength work goes into a built workout: timed and cardio rows have no
+ * reps to target, and an archived row is never picked.
+ */
+export function builderUsable(e: Pick<Exercise, 'id' | 'name' | 'primaryMuscles' | 'secondaryMuscles' | 'movementPattern' | 'measurement' | 'mechanic' | 'compatibleEquipment' | 'archivedAtUtc'>): boolean {
+  return e.measurement === 'reps' && e.archivedAtUtc === undefined && builderInfoOf(e) !== null;
+}

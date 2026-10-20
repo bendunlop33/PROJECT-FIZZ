@@ -5,13 +5,14 @@ import {
   assembleTodayDraft,
   breakdownUnit,
   buildTodayStrip,
-  builderWorkoutToDraftPlan,
   coachDraftListed,
   defaultTodayControls,
   planDayOfBuilderDraft,
   deriveId,
-  draftPlanAsBuilderWorkout,
+  fromDraftPlan,
   estimateBuilderMinutes,
+  toDraftPlan,
+  withSlotRevs,
   lastUsedMainLift,
   otherMainOptions,
   otherSessionDay,
@@ -241,18 +242,18 @@ describe('↻ Mix it up (today only)', () => {
 });
 
 describe('the stored draft (§4.4) and back', () => {
-  it('maps to a valid DraftPlan with supersets A/B, loads on the item and Q7 rests; reads back to the same estimate', () => {
+  it('goes through the builder codec: a valid DraftPlan with supersets A/B, per-slot state and revs, Q7 rests; reads back to the same estimate', () => {
     const { d } = draft();
-    const plan = builderWorkoutToDraftPlan({ workout: d.workout, info, catalogueIdOf: (id) => `cat-${id}`, checkedOnOf: () => null });
-    // The fixture's exercise IDs aren't UUIDs (Ben's rows are); everything else must validate as stored.
-    expect(DraftPlanSchema.safeParse({ slots: plan.slots.map((s) => ({ ...s, exerciseId: deriveId(s.exerciseId) })) }).error?.issues ?? []).toEqual([]);
+    const plan = withSlotRevs(null, toDraftPlan(d.workout, { info, catalogueIdOf: (id) => `cat-${id}`, checkedOnOf: () => null })).plan;
+    // The fixture's exercise IDs and slot keys aren't UUIDs (Ben's rows are); everything else must validate as stored.
+    expect(DraftPlanSchema.safeParse({ slots: plan.slots.map((s) => ({ ...s, exerciseId: deriveId(s.exerciseId), slotKey: deriveId(s.slotKey) })) }).error?.issues ?? []).toEqual([]);
     expect(plan.slots[0]?.main).toBe(true);
+    expect(plan.slots.every((s) => s.rev === 1 && s.builder !== undefined)).toBe(true);
     expect(plan.slots[0]?.setTemplates.find((t) => t.setType === 'top')?.load?.load).toMatchObject({ unit: 'kg', convention: 'total' });
     const groups = new Set(plan.slots.map((s) => s.supersetGroup).filter((g) => g !== null));
     if (d.workout.blocks.some((b) => b.slots.length > 1)) expect(groups.has('A')).toBe(true);
-    for (const s of plan.slots) for (const t of s.setTemplates) if (t.restS !== null) expect(t.restS).toBeGreaterThanOrEqual(30);
-    const back = draftPlanAsBuilderWorkout(plan);
-    expect(Math.abs(estimateBuilderMinutes(back, { info }) - d.minutes)).toBeLessThanOrEqual(1);
+    const back = fromDraftPlan(plan, d.workout.restLevel);
+    expect(estimateBuilderMinutes(back, { info })).toBe(d.minutes);
     expect(back.blocks.map((b) => b.slots.length)).toEqual(d.workout.blocks.map((b) => b.slots.length));
   });
 });

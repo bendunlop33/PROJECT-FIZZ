@@ -3,9 +3,9 @@ import {
   addDays,
   assembleTodayDraft,
   breakdownUnit,
-  builderInfoOfExercise,
+  builderInfoOf,
+  builderSetupOf,
   builderUsable,
-  builderWorkoutToDraftPlan,
   buildTodayStrip,
   checkedOnOf,
   convertValue,
@@ -13,9 +13,9 @@ import {
   defaultTodayControls,
   deriveId,
   doableHere,
-  draftPlanAsBuilderWorkout,
   estimateBuilderMinutes,
   formatNumber,
+  fromDraftPlan,
   isInHistory,
   lastUsedMainLift,
   legRunNear,
@@ -30,6 +30,7 @@ import {
   planRoutines,
   splitInUse,
   stableStringify,
+  storedGroupsOf,
   substituteTargets,
   TODAY_OTHER_SESSIONS,
   TODAY_V2_COPY,
@@ -39,7 +40,9 @@ import {
   todayPlanDays,
   todayWhy,
   toIso,
+  toDraftPlan,
   toMs,
+  withSlotRevs,
   type AnchorLoad,
   type BuilderContext,
   type BuilderExerciseInfo,
@@ -62,7 +65,6 @@ import {
 } from '@fizz/domain';
 import type { Store } from '@fizz/persistence';
 import {
-  BUILDER_GROUP_PARTS,
   COACH_DRAFT_DAYS,
   MAX_WORKOUT_DRAFT_OPS,
   MAX_WORKOUT_DRAFT_VERSIONS,
@@ -76,7 +78,6 @@ import {
   type PainFlag,
   type SessionAggregate,
   type SessionCheckIn,
-  type SplitBodyPart,
   type TrainingProfile,
   type UserProfile,
   type WorkoutDraft,
@@ -289,6 +290,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         e1rm: heldNoHistory ? null : (refs.own?.e1rm ?? null),
         startLightCeiling: noReferenceCeiling(refs.equipment, refs.patternE1rms),
         painCap: held ? (refs.latest?.top.value ?? null) : null,
+        // Which history these loads came from: Start re-derives them once it moved (builder review B4).
+        historyVersion: refs.historyVersion,
       });
     }
     return out;
@@ -343,7 +346,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const info = (id: string): BuilderExerciseInfo | null => {
       if (!infoCache.has(id)) {
         const e = exercises.get(id);
-        infoCache.set(id, e !== undefined && builderUsable(e) ? builderInfoOfExercise(e) : null);
+        infoCache.set(id, e !== undefined && builderUsable(e) ? builderInfoOf(e) : null);
       }
       return infoCache.get(id) ?? null;
     };
@@ -423,6 +426,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       info,
       loads: (id) => loads.get(id) ?? fallbackLoad(id),
       newKey: (id) => deriveId(`today-slot:${today}:${id}`),
+      // Ben's rest presets, as the builder's (rests and the ~N min agree with Your workout).
+      ...(p.restPresets.length > 0 ? { restPresetsS: p.restPresets.map((r) => r.seconds) } : {}),
     };
 
     // Each day's own sessions (credited by plan day or by its templates), newest first.
@@ -480,7 +485,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const k = d.builderKey;
       if (k === undefined) continue;
       const dayKey = k.planId !== null && k.dayIndex !== null ? `plan:${k.planId}:${String(k.dayIndex)}` : `other:${k.splitDayId ?? '-'}`;
-      edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { draftId: d.id, version: d.version, name: d.name, workout: draftPlanAsBuilderWorkout(currentDraftVersion(d).plan) };
+      edited[`${dayKey}|${k.mainLiftExerciseId ?? '-'}`] = { draftId: d.id, version: d.version, name: d.name, workout: fromDraftPlan(currentDraftVersion(d).plan, builderSetupOf(d)?.restLevel ?? 'normal') };
     }
 
     // The strip: 3 back, today, 3 ahead.
@@ -690,7 +695,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       const g = data.internal.info(s.exerciseId)?.group;
       if (g !== undefined) counts.set(g, (counts.get(g) ?? 0) + 1);
     }
-    const groups = [...counts].map(([g, count]) => ({ parts: [...BUILDER_GROUP_PARTS[g]] as SplitBodyPart[], count: Math.max(1, Math.min(4, count)) }));
+    const groups = storedGroupsOf([...counts].map(([group, count]) => ({ group, count })));
     const setup = {
       dayId: day.splitDayId,
       minutes: clampInt(minutes),
@@ -699,6 +704,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       groups,
       ...(d.template.routineId !== null && d.template.version !== null ? { templateRoutineId: d.template.routineId, templateVersion: d.template.version } : {}),
       variationId: null,
+      // The rest level lives only on the stored set-up (builder §4.5); the plan's rests are worked out from it.
+      ...(d.workout.restLevel === 'normal' ? {} : { restLevel: d.workout.restLevel }),
     };
     const bodyParts = [...new Set(groups.flatMap((g) => g.parts))];
     return {
@@ -732,7 +739,9 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const d = view.draft;
     if (d === null) return { ok: false, message: TODAY_SESSION_COPY.stale };
     if (d.exerciseCount === 0) return { ok: false, message: TODAY_SESSION_COPY.empty };
-    const plan = builderWorkoutToDraftPlan({ workout: d.workout, info: data.internal.info, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn });
+    // The builder's codec (per-slot state, rests from the rest level, the history each load came from), so the
+    // builder reads Today's draft exactly as its own (§4.4).
+    const built = toDraftPlan(d.workout, { info: data.internal.info, catalogueIdOf: data.internal.catalogueIdOf, checkedOnOf: data.internal.checkedOn, ...(data.internal.ctx.restPresetsS === undefined ? {} : { restPresetsS: data.internal.ctx.restPresetsS }) });
     const key = keyOf(data, day, d.template);
     const name = `${day.name} · ${d.template.label}`.slice(0, 120);
     const at = deps.now();
@@ -741,6 +750,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
       if (existing !== null) {
         if (existing.opIds.includes(opId) || isEdited(existing)) return { ok: true, draftId: existing.id, version: existing.version };
         const cur = currentDraftVersion(existing);
+        const plan = withSlotRevs(cur.plan, built).plan;
         if (stableStringify(cur.plan) === stableStringify(plan)) return { ok: true, draftId: existing.id, version: existing.version };
         const n = Math.max(...existing.versions.map((v) => v.n)) + 1;
         const v = versionOf(data, day, d, sel.controls.minutes, plan, { draftId: existing.id, n, parentN: cur.n, draftVersion: existing.version + 1, at });
@@ -752,6 +762,7 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
         return { ok: false, message: TODAY_SESSION_COPY.stale };
       }
       const id = deriveId(`today-draft:${data.ownerId}:${opId}`);
+      const plan = withSlotRevs(null, built).plan;
       const draft: WorkoutDraft = {
         id,
         ownerId: data.ownerId,
