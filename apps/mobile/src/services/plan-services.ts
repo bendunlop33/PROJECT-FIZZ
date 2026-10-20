@@ -5,6 +5,7 @@ import {
   endPlan,
   isDeleted,
   liveRoutines,
+  isMainLift,
   planDayDetail,
   planDayFromTemplates,
   planDayLines,
@@ -15,6 +16,8 @@ import {
   planRoutines,
   planWeekStartMs,
   rotationRoutines,
+  routineMainLiftIds,
+  showsTargetsHit,
   toIso,
   toMs,
   undoEndPlan,
@@ -47,6 +50,8 @@ export interface PlanServicesDeps {
   upNextRoutineId?: (gymId: string | null) => Promise<string | null>;
   /** What Start would create for a workout at this gym (a dry run, saves nothing) and about how long. */
   plannedDay?: (routineId: string, gymId: string) => Promise<{ aggregate: SessionAggregate; aboutMinutes: number | null } | null>;
+  /** Each split day's main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
+  splitMainLiftIds?: () => Promise<ReadonlySet<string>>;
 }
 
 export type PlanCardState =
@@ -148,6 +153,14 @@ export function createPlanServices(deps: PlanServicesDeps) {
     for (const e of await deps.store().repos.exercises.list().catch(() => [] as Exercise[])) pool.set(e.id, e);
     for (const e of deps.catalogueExercises?.() ?? []) if (!pool.has(e.id)) pool.set(e.id, e);
     return (id) => pool.get(id) ?? null;
+  }
+
+  /** A plan day's main lifts: its own `Main` flags (in order) and each split day's main lift. */
+  async function dayMainLifts(routine: Routine): Promise<Set<string>> {
+    const of = await exerciseOf();
+    const out = routineMainLiftIds(routine.exercises, (id) => of(id)?.mechanic === 'compound');
+    for (const id of (await deps.splitMainLiftIds?.().catch(() => null)) ?? []) out.add(id);
+    return out;
   }
 
   /** Ben's plan by ID (expired on read past its 14 days while open). */
@@ -367,7 +380,7 @@ export function createPlanServices(deps: PlanServicesDeps) {
     },
 
     /** One day of the plan in use (Library › Your plan › a day): its planned sets at this gym and last time's. Null: not a day of it. */
-    async planDay(routineId: string): Promise<PlanDayScreenData | null> {
+    async planDay(routineId: string, opts: { targetsHit: boolean } = { targetsHit: false }): Promise<PlanDayScreenData | null> {
       const p = await owner();
       if (p === null) return null;
       const plan = await repo().applied(p.id).catch(() => null);
@@ -383,10 +396,13 @@ export function createPlanServices(deps: PlanServicesDeps) {
         histories.set(exerciseId, await deps.store().repos.sessions.listFinishedWithExercise(p.id, exerciseId).catch(() => []));
       }
       const history = (id: string) => histories.get(id) ?? [];
+      // `Targets hit` (Ben, 20 Oct): with the setting on, on main lifts only: this day's own `Main` and the split's main lifts (review S1).
+      const mains = opts.targetsHit ? await dayMainLifts(routine) : new Set<string>();
+      const targetsHit = (id: string) => showsTargetsHit({ on: opts.targetsHit, main: isMainLift(id, mains) });
       const detail =
         run === null
-          ? planDayFromTemplates({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, routine, exerciseOf: await exerciseOf(), unit: p.preferredUnit, history })
-          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history });
+          ? planDayFromTemplates({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, routine, exerciseOf: await exerciseOf(), unit: p.preferredUnit, history, targetsHit })
+          : planDayDetail({ dayN: at + 1, of: days.length, gymName: gym?.name ?? null, aboutMinutes: run.aboutMinutes, planned: run.aggregate, history, targetsHit });
       const status = run !== null ? 'planned' : gym === null ? 'no_gym' : 'not_here';
       return { planId: plan.id, routineId: routine.id, name: routine.name, dayN: at + 1, of: days.length, header: detail.header, rows: detail.rows, status };
     },

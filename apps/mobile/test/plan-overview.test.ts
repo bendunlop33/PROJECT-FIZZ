@@ -131,7 +131,11 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
       ['Bench press', '3 × 6–8 · 100 kg'],
       ['Incline dumbbell press', '3 × 8–10 · 27.5 kg each'],
     ]);
-    expect(plain(day1?.rows[0]?.sub)).toBe('Last 12 Oct: 100 × 7, 7 · Targets hit 1 of last 1');
+    // `Targets hit` (Ben, 20 Oct): off by default; with the setting on, on main lifts only.
+    expect(plain(day1?.rows[0]?.sub)).toBe('Last 12 Oct: 100 × 7, 7');
+    const on1 = await s.plans.planDay(days[0] ?? '', { targetsHit: true });
+    // Both are the day's `Main` exercises (compounds in the first two places).
+    expect(on1?.rows.map((r) => plain(r.sub))).toEqual(['Last 12 Oct: 100 × 7, 7 · Targets hit 1 of last 1', 'Last 12 Oct: 27.5 × 9 · Targets hit 1 of last 1']);
     // A workout that isn't one of the plan's days has no plan-day screen.
     expect(await s.plans.planDay('not-a-plan-day')).toBeNull();
 
@@ -149,7 +153,7 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
     expect(v?.setsDone).toEqual({ pct: 100, text: '100%' });
     // The same count as Progress's consistency card.
     expect((await s.plans.consistency())?.planThisWeek?.text).toBe('1 of 4');
-    expect(plain((await s.plans.planDay(days[0] ?? ''))?.rows[0]?.sub)).toBe('Last 13 Oct: 100 × 8, 8, 8 · Targets hit 2 of last 2');
+    expect(plain((await s.plans.planDay(days[0] ?? '', { targetsHit: true }))?.rows[0]?.sub)).toBe('Last 13 Oct: 100 × 8, 8, 8 · Targets hit 2 of last 2');
 
     // A new week (Monday 19 Oct): no ✓; day 1 reads when it was last done.
     h.clockMs = Date.parse('2026-10-19T07:00:00.000Z');
@@ -209,19 +213,74 @@ describe('Library › Your plan: apply → the block → log a day → End plan 
 
   it('no gym: the plan day says so and shows the saved sets × targets, no loads (review planview S2)', async () => {
     const { s, gymId, days } = await benWithPlan();
+    const inclineId = (await s.plans.planDay(days[0] ?? ''))?.rows[1]?.exerciseId ?? '';
+    expect(inclineId).not.toBe('');
     const file = s.developer.databaseNames().current;
     await h.forceClose();
     const db = new DatabaseSync(join(h.dir, file));
     db.prepare("UPDATE gyms SET data = json_set(data, '$.archivedAtUtc', '2026-10-13T07:30:00.000Z') WHERE id = ?").run(gymId);
+    // Ben turned `Main` off for Incline dumbbell press in every workout: not a main lift (Ben, 20 Oct: targets hit on main lifts only).
+    for (const r of db.prepare('SELECT id, data FROM routines').all() as { id: string; data: string }[]) {
+      const doc = JSON.parse(r.data) as { exercises: { exerciseId: string; main?: boolean }[] };
+      db.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify({ ...doc, exercises: doc.exercises.map((e) => (e.exerciseId === inclineId ? { ...e, main: false } : e)) }), r.id);
+    }
     db.close();
     const s2 = (await h.launch()).services;
-    const day1 = await s2.plans.planDay(days[0] ?? '');
+    const day1 = await s2.plans.planDay(days[0] ?? '', { targetsHit: true });
     expect(day1).toMatchObject({ status: 'no_gym', dayN: 1, of: 4 });
     expect(plain(day1?.header)).toBe('Day 1 of 4');
     expect(day1?.rows.map((r) => [r.name, plain(r.line), plain(r.sub)])).toEqual([
       ['Bench press', '3 × 6–8', 'Last 12 Oct: 100 × 7, 7 · Targets hit 1 of last 1'],
-      ['Incline dumbbell press', '3 × 8–10', 'Last 12 Oct: 27.5 × 9 · Targets hit 1 of last 1'],
+      ['Incline dumbbell press', '3 × 8–10', 'Last 12 Oct: 27.5 × 9'],
     ]);
+    // Setting off: no `Targets hit` at all.
+    expect((await s2.plans.planDay(days[0] ?? ''))?.rows.map((r) => plain(r.sub))).toEqual(['Last 12 Oct: 100 × 7, 7', 'Last 12 Oct: 27.5 × 9']);
+    // Progress › the exercise: the same (setting on, not a main lift); the per-workout target vs actual stays.
+    const incline = await s2.progress.exerciseTargets(inclineId, { targetsHit: true });
+    expect(incline?.rows.length).toBe(1);
+    expect(incline?.hitText).toBeNull();
+  });
+
+  it('Targets hit on a plan day reads that day’s own `Main`, and a split day’s main lift counts by itself (review targets-hit S1, N3)', async () => {
+    const { s, days } = await benWithPlan();
+    const day1 = await s.plans.planDay(days[0] ?? '');
+    const benchId = day1?.rows[0]?.exerciseId ?? '';
+    const inclineId = day1?.rows[1]?.exerciseId ?? '';
+    expect(inclineId).not.toBe('');
+    // Upper gets Incline dumbbell press as an accessory (`Main` off); it stays `Main` on Push.
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    type Doc = { exercises: { id: string; exerciseId: string; order: number; main?: boolean }[] };
+    const row = (id: string) => JSON.parse((db.prepare('SELECT data FROM routines WHERE id = ?').get(id) as { data: string }).data) as Doc;
+    const push = row(days[0] ?? '');
+    const upper = row(days[3] ?? '');
+    const incline = push.exercises.find((e) => e.exerciseId === inclineId);
+    if (incline === undefined) throw new Error('no incline');
+    const upperNext = { ...upper, exercises: [...upper.exercises.map((e) => ({ ...e, main: true })), { ...incline, id: '0b9d3a4e-6c1f-4e2a-9f3b-5d7c8e1a2b40', order: upper.exercises.length, main: false }] };
+    db.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify(upperNext), days[3] ?? '');
+    db.close();
+    const s2 = (await h.launch()).services;
+    const upperDay = await s2.plans.planDay(days[3] ?? '', { targetsHit: true });
+    const upperIncline = upperDay?.rows.find((r) => r.exerciseId === inclineId);
+    expect(plain(upperIncline?.sub)).toBe('Last 12 Oct: 27.5 × 9');
+    expect(plain((await s2.plans.planDay(days[0] ?? '', { targetsHit: true }))?.rows[1]?.sub)).toBe('Last 12 Oct: 27.5 × 9 · Targets hit 1 of last 1');
+
+    // `Main` off for both on every workout; Ben picks Incline as Push's main lift: that alone shows it; Bench (not chosen) doesn't.
+    const file2 = s2.developer.databaseNames().current;
+    await h.forceClose();
+    const db2 = new DatabaseSync(join(h.dir, file2));
+    for (const r of db2.prepare('SELECT id, data FROM routines').all() as { id: string; data: string }[]) {
+      const doc = JSON.parse(r.data) as Doc;
+      db2.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify({ ...doc, exercises: doc.exercises.map((e) => (e.exerciseId === inclineId || e.exerciseId === benchId ? { ...e, main: false } : e)) }), r.id);
+    }
+    db2.close();
+    const s3 = (await h.launch()).services;
+    const snap = await s3.training.snapshot();
+    expect(await s3.training.change({ kind: 'main_lift', dayId: 'push', exerciseId: inclineId }, snap?.profile.version ?? 0, 'main-push')).toMatchObject({ ok: true });
+    expect((await s3.plans.planDay(days[0] ?? '', { targetsHit: true }))?.rows.map((r) => plain(r.sub))).toEqual(['Last 12 Oct: 100 × 7, 7', 'Last 12 Oct: 27.5 × 9 · Targets hit 1 of last 1']);
+    expect((await s3.progress.exerciseTargets(inclineId, { targetsHit: true }))?.hitText).toBe('Targets hit 1 of last 1');
+    expect((await s3.progress.exerciseTargets(benchId, { targetsHit: true }))?.hitText).toBeNull();
   });
 
   it('a plan that can’t be read is an error, never shown as no plan (review planview S5)', async () => {

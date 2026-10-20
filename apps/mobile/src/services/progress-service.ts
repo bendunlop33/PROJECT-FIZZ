@@ -13,6 +13,8 @@ import {
   DEFAULT_PROGRESS_PERIOD,
   localDateOf,
   exerciseTargetHistory,
+  isMainLift,
+  targetsHitShown,
   type ExerciseTargetHistory,
   monthOf,
   normaliseProgressRange,
@@ -68,6 +70,8 @@ export interface ProgressServiceDeps {
   slicer?: () => Slicer;
   /** Resolves when the UI is idle; `prewarm` waits for it so it never competes with a launch or Finish. */
   idle?: () => Promise<void>;
+  /** Every main lift (`Targets hit` shows on main lifts only, Ben 20 Oct); absent: none. */
+  mainLiftIds?: () => Promise<ReadonlySet<string>>;
 }
 
 export interface ProgressHome {
@@ -125,6 +129,8 @@ export interface ExerciseTabRequest {
   seriesId?: string | null;
   /** Opened from a home record: that workout's series, and a period wide enough to show it. */
   open?: { sessionId: string; sessionExerciseId: string | null } | null;
+  /** Settings › `Targets hit` (this phone; default off): with it on, a main lift's targets carry `Targets hit 5 of last 6`. */
+  targetsHit?: boolean;
 }
 
 export interface ExerciseTab {
@@ -138,7 +144,7 @@ export interface ExerciseTab {
   today: string;
   earliest: string;
   unreadable: number;
-  /** (19 Oct, plan tracker v1) The exercise's target against actual per workout and `Targets hit 5 of last 6`; null with no exercise. */
+  /** (19 Oct, plan tracker v1) The exercise's target against actual per workout and (main lifts, setting on; Ben 20 Oct) `Targets hit 5 of last 6`; null with no exercise. */
   targets?: ExerciseTargetHistory | null;
 }
 
@@ -264,7 +270,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
   }
 
   /** Target against actual for one exercise: its newest finished workouts, read as planned and logged (plan tracker v1). */
-  async function targetsFor(profile: UserProfile, sessions: readonly ProgressSession[], exerciseId: string, limit = 20): Promise<ExerciseTargetHistory> {
+  async function targetsFor(profile: UserProfile, sessions: readonly ProgressSession[], exerciseId: string, targetsHit: boolean, limit = 20): Promise<ExerciseTargetHistory> {
     const ids = sessions
       .filter((x) => x.exercises.some((e) => e.exerciseId === exerciseId))
       .sort((a, b) => b.startedMs - a.startedMs)
@@ -275,7 +281,10 @@ export function createProgressService(deps: ProgressServiceDeps) {
       const a = await repos().sessions.get(id).catch(() => null);
       if (a !== null && a.session.ownerId === profile.id) aggregates.push(a);
     }
-    return exerciseTargetHistory(aggregates, exerciseId, limit);
+    const history = exerciseTargetHistory(aggregates, exerciseId, limit);
+    // `Targets hit` (Ben, 20 Oct): with the setting on, on main lifts only; the per-workout rows always stay.
+    const mains = targetsHit ? ((await deps.mainLiftIds?.().catch(() => null)) ?? new Set<string>()) : new Set<string>();
+    return { ...history, hitText: targetsHitShown(history.hitText, { on: targetsHit, main: isMainLift(exerciseId, mains) }) };
   }
 
   /**
@@ -330,7 +339,7 @@ export function createProgressService(deps: ProgressServiceDeps) {
               measure: req.measure ?? null,
               trailing: req.trailing ?? null,
             });
-      const targets = exerciseId === null ? null : await targetsFor(profile, ctx.sessions, exerciseId).catch(() => null);
+      const targets = exerciseId === null ? null : await targetsFor(profile, ctx.sessions, exerciseId, req.targetsHit === true).catch(() => null);
       return { view, period, range, window: { from: window.from, to: window.to }, datesLine: rangeText(window, today), datesWords: rangeWords(window, today), today, earliest, unreadable: ctx.unreadable, targets };
     },
 
@@ -385,13 +394,13 @@ export function createProgressService(deps: ProgressServiceDeps) {
 
     /**
      * (19 Oct, plan tracker v1) One exercise's target against actual per finished workout, newest first, and
-     * `Targets hit 5 of last 6`: from the sets as planned and logged (a FitNotes import has no target).
+     * `Targets hit 5 of last 6` (main lifts with the setting on): from the sets as planned and logged (a FitNotes import has no target).
      */
-    async exerciseTargets(exerciseId: string, limit = 20): Promise<ExerciseTargetHistory | null> {
+    async exerciseTargets(exerciseId: string, opts: { targetsHit?: boolean; limit?: number } = {}): Promise<ExerciseTargetHistory | null> {
       const profile = await deps.profile();
       if (!profile) return null;
       const { sessions } = await finishedSessions(profile);
-      return targetsFor(profile, sessions, exerciseId, limit);
+      return targetsFor(profile, sessions, exerciseId, opts.targetsHit === true, opts.limit ?? 20);
     },
 
     /**

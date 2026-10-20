@@ -4,6 +4,7 @@ import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
 
 import { PLAN_VERDICT_WORD, type ExerciseDetailView, type ExerciseMetric, type PlanVerdict, type TrendRange } from '@fizz/domain';
 
+import { useDevicePrefs } from '../../device/DevicePrefsContext';
 import { DeleteToastView } from '../../history/DeleteToastView';
 import { useDeleteToast } from '../../history/useDeleteToast';
 import type { ExerciseDetailParams } from '../../navigation/types';
@@ -82,8 +83,9 @@ export function ExerciseDetailScreen() {
     }),
   );
   const view: ExerciseDetailView | null = data.state === 'ready' ? (data.value?.view ?? null) : null;
-  // Plan tracker v1 (19 Oct): target against actual per workout, and `Targets hit 5 of last 6`.
-  const [targetsData] = useScreenData((s) => s.progress.exerciseTargets(exerciseId));
+  // Plan tracker v1 (19 Oct): target against actual per workout, and `Targets hit 5 of last 6` (main lifts, setting on; Ben 20 Oct).
+  const { prefs } = useDevicePrefs();
+  const [targetsData] = useScreenData((s) => s.progress.exerciseTargets(exerciseId, { targetsHit: prefs.targetsHit }));
   const targets = targetsData.state === 'ready' ? targetsData.value : null;
   const targetOf = (sessionId: string) => targets?.rows.find((t) => t.sessionId === sessionId && t.target !== null) ?? null;
 

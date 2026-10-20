@@ -779,6 +779,7 @@ export function createAppServices(deps: AppServicesDeps) {
     catalogueExercises,
     dispatch: (sessionId, command) => sessions.dispatch(sessionId, command),
     ...(deps.idle === undefined ? {} : { idle: deps.idle }),
+    mainLiftIds: () => training.mainLiftIds(),
   });
 
   /** Coach-built plans (19 Oct): the card, Apply and Undo, the consistency card. Local only. */
@@ -793,6 +794,7 @@ export function createAppServices(deps: AppServicesDeps) {
     },
     upNextRoutineId: async (gymId) => (await loop.next.preview(gymId ?? 'typical-gym-preview'))?.routine?.id ?? null,
     plannedDay: (routineId, gymId) => loop.routines.planned(routineId, gymId),
+    splitMainLiftIds: () => training.splitMainLiftIds(),
   });
 
   /** Library › Exercises (exercise-library §9): browse, detail, Add to a workout. Local only. */

@@ -1,7 +1,10 @@
 import {
   buildDayFor,
   liftHistoryFrom,
+  liveRoutines,
+  mainLiftIds,
   mainLiftFor,
+  mainLiftRoutines,
   mainLiftOptions,
   newTrainingProfile,
   splitInUse,
@@ -89,8 +92,50 @@ export function createTrainingService(deps: TrainingServiceDeps) {
     return { owner, profile, mainLifts, options, nextDayId: buildDayFor(split, sessions, exerciseOf, deps.now().utc).id, nowYear: yearOf(deps.now()) };
   }
 
+  /** Each split day's main lift, without the rest of the snapshot (review S3). */
+  async function splitMains(): Promise<Set<string>> {
+    const owner = await deps.profile();
+    if (owner === null) return new Set();
+    const split = splitInUse(await stored(owner));
+    const exercises = await pool();
+    const nameOf = (id: string) => exercises.get(id)?.name ?? null;
+    let history: LiftHistory[] | null = null;
+    const out = new Set<string>();
+    for (const d of split.days) {
+      const yours = d.mainLiftExerciseId !== undefined && nameOf(d.mainLiftExerciseId) !== null;
+      if (!yours && history === null) history = liftHistoryFrom(await recent(owner), (id) => exercises.get(id) ?? null);
+      const m = mainLiftFor(d, history ?? [], nameOf);
+      if (m !== null) out.add(m.exerciseId);
+    }
+    return out;
+  }
+
   return {
     snapshot,
+
+    /**
+     * Each split day's main lift (Ben's, or the recommended one). The light
+     * path (review S3): no options or build day, and the 180-day history is
+     * read only when a day has no lift of Ben's. Empty when nothing can be read.
+     */
+    async splitMainLiftIds(): Promise<Set<string>> {
+      return splitMains().catch(() => new Set<string>());
+    },
+
+    /**
+     * Every main lift (Ben, 20 Oct: `Targets hit` on main lifts only): each
+     * split day's main lift and every exercise marked `Main` in a workout in
+     * the rotation or the applied plan (review S1). Empty when nothing can be read.
+     */
+    async mainLiftIds(): Promise<Set<string>> {
+      const owner = await deps.profile().catch(() => null);
+      if (owner === null) return new Set();
+      const days = await splitMains().catch(() => new Set<string>());
+      const live = liveRoutines(await deps.store().repos.routines.listByOwner(owner.id).catch(() => []));
+      const applied = await deps.store().repos.planDrafts.applied(owner.id).catch(() => null);
+      const exercises = await pool();
+      return mainLiftIds({ dayMainLifts: [...days], routines: mainLiftRoutines(live, applied), isCompound: (id) => exercises.get(id)?.mechanic === 'compound' });
+    },
 
     /**
      * One change on the version the screen showed (rule 5). `opId` is the
