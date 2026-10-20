@@ -57,7 +57,7 @@ describe('Set up (§2.2)', () => {
   });
 
   it('the Variation row shows only when saved variations exist', () => {
-    const f = facts({ variations: [{ id: 'v1', label: 'arms superset' }] });
+    const f = facts({ variations: [{ id: 'v1', label: 'arms superset', version: 1 }] });
     expect(setupView(setup(), f, null).variationValue).toBe('Standard');
     expect(setupView(setup({ variationId: 'v1' }), f, null).variationValue).toBe('arms superset');
   });
@@ -135,7 +135,7 @@ const crunch = slot('k-crunch', 'crunch', { rows: [{ type: 'working', reps: 10, 
 const pullup = slot('k-pull', 'pullup', { convention: 'assistance', rows: [{ type: 'working', reps: 8, load: 25, rpe: 8 }] });
 
 function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): BuilderSnapshot {
-  const f = (name: string, works: string | null, group: BuilderSnapshot['facts'][string]['group'], compound = false) => ({ name, works, group, compound, mayHurt: false });
+  const f = (name: string, works: string | null, group: BuilderSnapshot['facts'][string]['group'], compound = false) => ({ name, works, group, compound, mayHurt: false, notHere: false });
   return {
     draftId: 'd1',
     version: 3,
@@ -143,6 +143,8 @@ function snapshot(w: BuilderWorkout, over: Partial<BuilderSnapshot> = {}): Build
     workout: w,
     minutes: 58,
     over: false,
+    planDayChanged: null,
+    gymChanged: false,
     name: 'Chest · Bench press',
     planDay: null,
     variationLabel: null,
@@ -373,6 +375,24 @@ describe('source checks', () => {
     expect(parts).toContain('step.current = onStep;');
     expect(parts).toContain('step.current(delta)');
     expect(parts).toContain('sides.current.left');
+  });
+  it('Start asks the check-in when it’s due, reuses a recent one, and passes it on (review S10)', () => {
+    const ws = read('screens/builder/BuilderWorkoutScreen.tsx');
+    expect(ws).toContain('services.checkIns.gate()');
+    expect(ws).toContain('<CheckInScale');
+    expect(ws).toMatch(/services\.builder\.start\([^)]*checkIn \}/);
+    expect(ws).toContain('alertsAsk.ensureAsked()');
+  });
+  it('Your workout reloads a changed plan day, moves to a new gym, and offers Add anyway (review S10)', () => {
+    const ws = read('screens/builder/BuilderWorkoutScreen.tsx');
+    expect(ws).toContain('services.builder.reloadPlanDay(');
+    expect(ws).toContain('services.builder.changeGym(');
+    expect(ws).toContain('WORKOUT_COPY.addAnyway');
+    expect(ws).toContain('WORKOUT_COPY.notHere');
+    const su = read('screens/builder/BuilderSetupScreen.tsx');
+    expect(su).toContain('services.builder.renameVariation(');
+    expect(su).toContain('services.builder.deleteVariation(');
+    expect(su).toContain('services.builder.undoDeleteVariation(');
   });
   it('minimal copy: no rule labels or reassurance in the builder; no est. 1RM on Swap', () => {
     for (const banned of ['built-in rule', 'snapped to', 'Nothing changes', 'Est. 1RM', 'est. 1RM']) expect(screens).not.toContain(banned);

@@ -31,6 +31,9 @@ export const SETUP_COPY = {
   none: 'None',
   fromProfile: 'From Profile',
   offline: 'Offline',
+  rename: 'Rename',
+  delete: 'Delete',
+  deleted: (label: string) => `Deleted ${label}`,
 } as const;
 
 export const WORKOUT_COPY = {
@@ -61,6 +64,12 @@ export const WORKOUT_COPY = {
   rest: 'Rest',
   startLight: 'Start light',
   useEdits: 'Use',
+  notHere: 'Not at this gym',
+  checkIn: 'Check-in',
+  skip: 'Skip',
+  outOfDate: 'Out of date',
+  addAnyway: 'Add anyway',
+  reload: 'Reload',
 } as const;
 
 export const PROMPT_COPY = {
@@ -70,6 +79,7 @@ export const PROMPT_COPY = {
   saveAndStart: 'Save and start',
   cancel: 'Cancel',
   limit: 'Limit reached',
+  notForThese: 'Not for these changes',
 } as const;
 
 const trim = (n: number): string => String(Math.round(n * 100) / 100);
@@ -232,6 +242,8 @@ export interface WorkoutRowView {
   topText: string;
   main: boolean;
   mayHurt: boolean;
+  /** `Not at this gym` (§2.3 `Gym changed`, nothing here could replace it). */
+  notHere: boolean;
   /** Whether the next row is in the same superset (draw the a→b line). */
   linkedToNext: boolean;
   accessibilityLabel: string;
@@ -253,8 +265,8 @@ export interface WorkoutPageView {
   empty: boolean;
   startEnabled: boolean;
   canAdd: boolean;
-  /** `Not applied: Hammer curl with Cable fly`. */
-  notApplied: string[];
+  /** `Not applied: Hammer curl with Cable fly`, and what `Add anyway` adds (the exercises not in the workout). */
+  notApplied: { text: string; add: string[] }[];
 }
 
 const topRowOf = (s: BuilderSlot) => s.rows.find((r) => r.type === 'top') ?? s.rows.find((r) => r.type !== 'warmup') ?? null;
@@ -286,7 +298,7 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
           ...(superset ? [{ name: 'unlink' as const, label: WORKOUT_COPY.unlink }] : []),
         ];
         const n = workingCount(s);
-        const spoken = [label, name, superset ? 'superset' : null, s.main ? 'main lift' : null, `${String(n)} ${n === 1 ? 'set' : 'sets'}`, warm > 0 ? `plus ${String(warm)} warm-up` : null, `top set ${loadSpoken(top?.load ?? null, s.unit, s.convention)}`, f?.mayHurt === true ? WORKOUT_COPY.mayHurt : null].filter((x): x is string => x !== null);
+        const spoken = [label, name, superset ? 'superset' : null, s.main ? 'main lift' : null, `${String(n)} ${n === 1 ? 'set' : 'sets'}`, warm > 0 ? `plus ${String(warm)} warm-up` : null, `top set ${loadSpoken(top?.load ?? null, s.unit, s.convention)}`, f?.mayHurt === true ? WORKOUT_COPY.mayHurt : null, f?.notHere === true ? WORKOUT_COPY.notHere : null].filter((x): x is string => x !== null);
         return {
           slotKey: s.key,
           exerciseId: s.exerciseId,
@@ -298,6 +310,7 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
           topText,
           main: s.main,
           mayHurt: f?.mayHurt === true,
+          notHere: f?.notHere === true,
           linkedToNext: superset && si < b.slots.length - 1,
           accessibilityLabel: spoken.join(', '),
           actions,
@@ -316,15 +329,17 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
     notApplied: snap.skipped.map((x) => {
       const op = x.op;
       const n = (id: string) => snap.facts[id]?.name ?? 'Exercise';
+      const have = new Set(flat.map((s) => s.exerciseId));
+      const add = (ids: string[]) => ids.filter((id) => !have.has(id));
       switch (op.kind) {
         case 'add_slot':
-          return `Not applied: ${n(op.slot.exerciseId)}`;
+          return { text: `Not applied: ${n(op.slot.exerciseId)}`, add: add([op.slot.exerciseId]) };
         case 'pair':
-          return `Not applied: ${n(op.b)} with ${n(op.a)}`;
+          return { text: `Not applied: ${n(op.b)} with ${n(op.a)}`, add: add([op.a, op.b]) };
         case 'remove_slot':
-          return `Not applied: remove ${n(op.exerciseId)}`;
+          return { text: `Not applied: remove ${n(op.exerciseId)}`, add: [] };
         case 'set_count':
-          return `Not applied: ${n(op.exerciseId)} sets`;
+          return { text: `Not applied: ${n(op.exerciseId)} sets`, add: [] };
       }
     }),
   };
@@ -471,7 +486,7 @@ export function promptView(p: StartPrompt): PromptView {
     lines: p.lines,
     today: PROMPT_COPY.today,
     update: p.updateLabel,
-    variation: { label: PROMPT_COPY.variation, enabled: p.canSaveVariation && !p.variationLimitReached, note: p.variationLimitReached ? PROMPT_COPY.limit : null },
+    variation: { label: PROMPT_COPY.variation, enabled: p.canSaveVariation && !p.variationLimitReached, note: p.variationLimitReached ? PROMPT_COPY.limit : p.canSaveVariation ? null : PROMPT_COPY.notForThese },
     cancel: PROMPT_COPY.cancel,
   };
 }

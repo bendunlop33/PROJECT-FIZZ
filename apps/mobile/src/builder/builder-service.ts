@@ -3,6 +3,9 @@ import {
   alignToDraft,
   applyBuilderEdit,
   applyVariation,
+  builderLoad,
+  infoOrDefault,
+  reloadSlotLoads,
   buildFromSetup,
   builderChangeLine,
   builderChanges,
@@ -52,7 +55,7 @@ import {
   type StartAlongside,
   type TemplateSlotSpec,
 } from '@fizz/domain';
-import { builderFocusSections, BUILD_LIMITS, PLAN_DAY_LIMITS, type BuildDay, type BuildFocus, type BuilderDraftKey, type BuilderGroup, type BuilderSetup, type Gym, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
+import { builderFocusSections, BUILD_LIMITS, PLAN_DAY_LIMITS, type PlanChangeUndo, type BuildDay, type BuildFocus, type BuilderDraftKey, type BuilderGroup, type BuilderSetup, type Gym, type PlanDayVariation, type PlanDraft, type Routine, type RoutineExercise, type SessionCheckIn, type SessionPlanDay, type SplitBodyPart, type TrainingProfile, type UserProfile, type WorkoutDraft, type ZonedTimestamp } from '@fizz/schemas';
 import type { Store } from '@fizz/persistence';
 
 import type { WorkoutStartOutcome, WorkoutStartRequest } from '../services/workout-services';
@@ -113,8 +116,8 @@ export interface SetupFacts {
   days: { split: BuilderDayOption[]; ppl: BuilderDayOption[] };
   /** The day's main lifts; the first is `From Profile` when there is one. */
   mainLifts: { id: string; name: string; fromProfile: boolean }[];
-  /** `Standard` + these (shown only when there are any). */
-  variations: { id: string; label: string }[];
+  /** `Standard` + these (shown only when there are any). `version`: for Rename / Delete. */
+  variations: { id: string; label: string; version: number }[];
   recommended: { count: number; groups: GroupCount[] };
   total: number;
   /** The plan-day template this set-up opens (no rebuild), if any. */
@@ -133,6 +136,8 @@ export interface ExerciseFacts {
   group: BuilderGroup | null;
   compound: boolean;
   mayHurt: boolean;
+  /** This gym doesn't have what it needs, and nothing here could replace it (`Not at this gym`, §2.3). */
+  notHere: boolean;
 }
 
 /** Everything Your workout and the pop-ups show for one draft. */
@@ -155,6 +160,14 @@ export interface BuilderSnapshot {
   skipped: SkippedOp[];
   /** Slot revisions, for an edit's basis. */
   revs: Record<string, number>;
+  /**
+   * The plan day (template or open variation) changed elsewhere since this
+   * draft opened it (§2.3): `silent` when Ben hasn't edited the draft (it
+   * reloads without a word), else the line `Chest · bench changed · Reload`.
+   */
+  planDayChanged: { text: string; silent: boolean } | null;
+  /** Ben's current gym isn't the draft's (and he didn't undo a move to it): Your workout moves it there (`Gym changed · Undo`, §2.3). */
+  gymChanged: boolean;
   /** Each slot's rest per kind now (Ben's own, else the default), and `round` for a superset (§3.2). */
   rests: Record<string, Partial<Record<RestKind | 'round', number>>>;
   /** The item each slot's loads are worked out on (the keyboard's kg steps, §2.7). */
@@ -189,11 +202,13 @@ export interface StartPrompt {
   canSaveVariation: boolean;
 }
 
-/** A plan change made at Start, for Summary's `Chest · bench updated · Undo` (versioned inverse write, §4.6). */
-export type PlanChangeUndo =
-  | { kind: 'template'; routineId: string; version: number; restore: RoutineExercise[]; label: string }
-  | { kind: 'variation_new'; id: string; version: number; label: string }
-  | { kind: 'variation_update'; id: string; version: number; restore: PlanDayVariation['extras']; label: string };
+/**
+ * A plan change made at Start, for Summary's `Chest · bench updated · Undo`
+ * (versioned inverse write, §4.6). Stored with the session in the Start's
+ * own write (`SessionPlanDay.planChange`), so it survives a force-close
+ * (review S9); `planChangeOf(sessionId)` reads it back.
+ */
+export type { PlanChangeUndo };
 
 export type BuilderStartResult =
   | { ok: true; sessionId: string; duplicate: boolean; planChange: PlanChangeUndo | null }
@@ -208,11 +223,16 @@ export const BUILDER_COPY = {
   empty: 'Add an exercise first',
   changedSince: 'Changed since · can’t undo',
   failed: 'Couldn’t save. Try again.',
+  notAVariation: 'Can’t save these changes as a variation',
   rebuilt: 'Rebuilt',
+  reloaded: 'Reloaded',
+  gymChanged: 'Gym changed',
+  reload: 'Reload',
   swapped: 'Swapped',
   setDeleted: 'Set deleted',
   keepOneSet: 'Keep at least one set',
   deleted: (name: string) => `Deleted ${name}`,
+  roundedTo: (value: number, unit: string) => `Rounded to ${String(value)} ${unit}`,
   updated: (label: string) => `${label} updated`,
 } as const;
 
@@ -251,6 +271,12 @@ export function ruleLine(last: { value: number } | null, today: number | null): 
   if (last === null || today === null) return 'Last time';
   const d = Math.round((today - last.value) * 100) / 100;
   return d === 0 ? 'Last time' : d > 0 ? `Last time + ${String(d)}` : `Last time − ${String(-d)}`;
+}
+
+/** The worked-out working load before this gym's item rounded it differs from the row's (`Rounded down: …`). */
+function builderWorkingRounded(load: Parameters<typeof builderLoad>[0], slot: BuilderWorkout['blocks'][number]['slots'][number], shown: number): boolean {
+  const r = builderLoad(load, { reps: slot.repRange.min, rpe: 8 });
+  return r.working !== null && r.unit === slot.unit && r.working - shown > 1e-6;
 }
 
 const capitalise = (s: string) => (s.length === 0 ? s : `${s.charAt(0).toUpperCase()}${s.slice(1)}`);
@@ -384,7 +410,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
   // -------------------------------------------------------------------------
   // Stored set-up ↔ page
 
-  function storedSetup(s: SetupInput, extra: { templateRoutineId?: string; templateVersion?: number; restLevel?: BuilderSetup['restLevel'] }): BuilderSetup {
+  function storedSetup(s: SetupInput, extra: { templateRoutineId?: string; templateVersion?: number; restLevel?: BuilderSetup['restLevel']; variationVersion?: number }): BuilderSetup {
     return {
       dayId: s.dayId,
       minutes: Math.max(BUILD_LIMITS.minMinutes, Math.min(BUILD_LIMITS.maxMinutes, Math.round(s.minutes))),
@@ -394,6 +420,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       variationId: s.variationId,
       ...(extra.templateRoutineId === undefined ? {} : { templateRoutineId: extra.templateRoutineId }),
       ...(extra.templateVersion === undefined ? {} : { templateVersion: extra.templateVersion }),
+      ...(extra.variationVersion === undefined || s.variationId === null ? {} : { variationVersion: extra.variationVersion }),
       ...(extra.restLevel === undefined || extra.restLevel === 'normal' ? {} : { restLevel: extra.restLevel }),
       ...(s.groupsEdited ? { groupsEdited: true as const } : {}),
     };
@@ -461,18 +488,36 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     const minutes = estimateBuilderMinutes(workout, env.ctx);
     const variation = setup.variationId === null ? null : ((await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId)).find((x) => x.id === setup.variationId) ?? null);
     const facts: Record<string, ExerciseFacts> = {};
-    for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, compound: env.info(s.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(s.exerciseId) };
+    for (const s of slotsOf(workout.blocks)) facts[s.exerciseId] = { name: env.nameOf(s.exerciseId), works: env.worksOf(s.exerciseId), group: env.info(s.exerciseId)?.group ?? null, compound: env.info(s.exerciseId)?.role === 'compound', mayHurt: env.painFlagged(s.exerciseId), notHere: env.gymId !== null && !env.doable(s.exerciseId) };
     const key = d.builderKey;
     const planDay =
       key !== undefined && key.planId !== null && key.dayIndex !== null && key.splitDayId !== null
         ? { planId: key.planId, dayIndex: key.dayIndex, splitDayId: key.splitDayId, templateRoutineId: stored?.templateRoutineId ?? null, templateVersion: stored?.templateVersion ?? null, label: planLabel(setup, env, variation?.label ?? null) }
         : null;
+    let planDayChanged: BuilderSnapshot['planDayChanged'] = null;
+    let notApplied = skipped;
+    if (stored?.templateRoutineId !== undefined && stored.templateVersion !== undefined && d.status === 'open') {
+      const t = await repos().routines.get(stored.templateRoutineId).catch(() => null);
+      // A variation's extras whose anchor left the template (§4.3): still missing from this workout, they stay listed (`Not applied … · Add anyway`).
+      if (t !== null && variation !== null) {
+        const have = new Set(slotsOf(workout.blocks).map((x) => x.exerciseId));
+        notApplied = applyVariation(workoutFromTemplate(specsOf(t), env.ctx), variation.extras, env.ctx).skipped.filter((x) => x.reason === 'anchor_missing' && missingOf(x, have).length > 0);
+      }
+      const moved = (t !== null && t.version !== stored.templateVersion) || (variation !== null && stored.variationVersion !== undefined && variation.version !== stored.variationVersion);
+      if (moved) planDayChanged = { text: `${planLabel(setup, env, variation?.label ?? null)} changed`, silent: d.version === 1 && d.versions.length === 1 };
+    }
+    // Names for the `Not applied` lines' exercises too.
+    for (const x of notApplied) for (const id of x.op.kind === 'add_slot' ? [x.op.slot.exerciseId] : x.op.kind === 'pair' ? [x.op.a, x.op.b] : [x.op.exerciseId]) facts[id] ??= { name: env.nameOf(id), works: env.worksOf(id), group: env.info(id)?.group ?? null, compound: env.info(id)?.role === 'compound', mayHurt: env.painFlagged(id), notHere: false };
+    const here = d.status === 'open' ? await deps.currentGym().catch(() => null) : null;
+    const gymChanged = here !== null && here.id !== v.request.gymId && here.id !== stored?.gymKept;
     return {
       draftId: d.id,
       version: d.version,
       setup,
       workout,
       minutes,
+      planDayChanged,
+      gymChanged,
       over: minutes > setup.minutes,
       name: d.name,
       planDay,
@@ -480,7 +525,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       undo: d.undo === null || d.undo === undefined || d.undo.atVersion !== d.version ? null : { opId: d.undo.opId },
       facts,
       unit: p.preferredUnit,
-      skipped,
+      skipped: notApplied,
       revs: Object.fromEntries(v.plan.slots.map((s) => [s.slotKey, s.rev ?? 1])),
       rests: restsOf(workout, env),
       items: Object.fromEntries(v.plan.slots.map((s) => [s.slotKey, s.checkedOn?.equipmentId ?? null])),
@@ -508,6 +553,26 @@ export function createBuilderService(deps: BuilderServiceDeps) {
     return { env, workout, skipped, plan, variation };
   }
 
+  /** The template and variation versions a build opened (Start checks them, rule 5; review S2). */
+  const openedVersions = (built: { plan: { routine: Routine } | null; variation: PlanDayVariation | null }) => ({
+    ...(built.plan === null ? {} : { templateRoutineId: built.plan.routine.id, templateVersion: built.plan.routine.version }),
+    ...(built.variation === null ? {} : { variationVersion: built.variation.version }),
+  });
+
+  /**
+   * The variation the current workout would be saved as: its extras, and
+   * whether opening them gives this workout back. Order alone, a template
+   * pair Ben split and a deleted main lift have no op (§4.3), so a
+   * variation would drop them: it isn't offered (review S3).
+   */
+  function variationOf(template: Routine, current: BuilderWorkout, env: BuilderEnv): { extras: PlanDayVariation['extras'] } | null {
+    const base = openTemplate(template, null, env).workout;
+    const x = variationExtrasOf(base, current);
+    if (!x.ok) return null;
+    const reopened = alignToDraft(applyVariation(base, x.extras, env.ctx).workout, current);
+    return builderChanges(reopened, current).length === 0 ? { extras: x.extras } : null;
+  }
+
   function draftKey(s: SetupInput, plan: { planId: string; dayIndex: number } | null): BuilderDraftKey {
     return {
       planId: plan?.planId ?? null,
@@ -516,6 +581,12 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       mainLiftExerciseId: s.mainLiftExerciseId,
       localDate: localToday(),
     };
+  }
+
+  /** What `Add anyway` adds for a skipped variation op: its exercises not in the workout. */
+  function missingOf(x: SkippedOp, have: ReadonlySet<string>): string[] {
+    const ids = x.op.kind === 'add_slot' ? [x.op.slot.exerciseId] : x.op.kind === 'pair' ? [x.op.a, x.op.b] : [];
+    return ids.filter((id) => !have.has(id));
   }
 
   /** Two set-ups that store the same (Next with nothing changed). */
@@ -617,7 +688,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const env = await envFor(p, { groups, exerciseIds: [s.mainLiftExerciseId, profileMain].filter((x): x is string => x !== null), keySeed: 'setup' });
       const compounds = env.compoundsOf(groups.filter((g) => g !== 'Abs'));
       const mainLifts = [...(profileMain === null ? [] : [{ id: profileMain, name: env.nameOf(profileMain), fromProfile: true }]), ...compounds.filter((id) => id !== profileMain).map((id) => ({ id, name: env.nameOf(id), fromProfile: false }))];
-      const variations = (await variationsFor(p.id, s.dayId, s.mainLiftExerciseId)).map((v) => ({ id: v.id, label: v.label }));
+      const variations = (await variationsFor(p.id, s.dayId, s.mainLiftExerciseId)).map((v) => ({ id: v.id, label: v.label, version: v.version }));
       const t = s.dayId === CUSTOM_DAY_ID ? null : await templateFor(p.id, s.dayId, s.mainLiftExerciseId);
       let loaded: GroupCount[] | null = null;
       if (t !== null) {
@@ -648,8 +719,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const at = deps.now();
       const id = deriveId(`builder-draft:${opId}`);
       const built = await buildFor(p, s, `${id}:${opId}`);
-      const plan = built.plan;
-      const stored = storedSetup(s, plan === null ? {} : { templateRoutineId: plan.routine.id, templateVersion: plan.routine.version });
+      const stored = storedSetup(s, openedVersions(built));
       const draftPlan = withSlotRevs(null, toDraftPlan(built.workout, built.env.codec)).plan;
       const draft = newBuilderDraft({
         id,
@@ -714,8 +784,50 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const p = await owner();
       const d = await repos().workoutDrafts.get(draftId).catch(() => null);
       if (d === null || d.ownerId !== p.id || d.builderKey === undefined) return null;
-      const env = await envFor(p, { exerciseIds: exerciseIdsOf(fromDraftPlan(currentDraftVersion(d).plan)), keySeed: `${d.id}:read` });
+      const env = await envFor(p, { gymId: currentDraftVersion(d).request.gymId, exerciseIds: exerciseIdsOf(fromDraftPlan(currentDraftVersion(d).plan)), keySeed: `${d.id}:read` });
       return snapshotOf(p, d, env);
+    },
+
+    /**
+     * `Gym changed` (§2.3): the draft moves to Ben's current gym. Each
+     * exercise this gym can't do is swapped for its group's best one here
+     * (none: it stays, `Not at this gym`); every calculated load is worked
+     * out again and rounded down here; a typed kg stays if that weight
+     * exists here. One toast `Gym changed · Undo` puts the gym and the
+     * workout back, and the draft then stays at its own gym.
+     */
+    async changeGym(draftId: string, w: { opId: string; expectedVersion: number }): Promise<BuilderWriteResult> {
+      const p = await owner();
+      const gym = await deps.currentGym().catch(() => null);
+      return writeDraft(p, draftId, async (current) => {
+        const v = currentDraftVersion(current);
+        const stored = builderSetupOf(current) ?? storedSetup(pageSetup(current), {});
+        let workout = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
+        const missing = await envFor(p, { gymId: gym?.id ?? null, exerciseIds: exerciseIdsOf(workout), keySeed: `${current.id}:${w.opId}:gym` });
+        const lacking = slotsOf(workout.blocks).filter((s) => !missing.doable(s.exerciseId));
+        const groups = [...new Set(lacking.flatMap((s) => (missing.info(s.exerciseId)?.group === undefined ? [] : [missing.info(s.exerciseId)?.group as BuilderGroup])))];
+        const env = await envFor(p, { gymId: gym?.id ?? null, exerciseIds: exerciseIdsOf(workout), groups, keySeed: `${current.id}:${w.opId}` });
+        if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env, toast: null };
+        if (gym === null || gym.id === v.request.gymId) return { refused: 'changed_since', env };
+        const swapped = new Set<string>();
+        for (const s of lacking) {
+          const g = env.info(s.exerciseId)?.group;
+          const inWorkout = new Set(slotsOf(workout.blocks).map((x) => x.exerciseId));
+          const to = g === undefined ? undefined : env.pool(g).find((id) => !inWorkout.has(id) && env.doable(id));
+          if (to === undefined) continue;
+          const r = applyBuilderEdit(workout, { kind: 'swap', slotKey: s.key, exerciseId: to }, env.ctx);
+          if (r.ok) {
+            workout = r.workout;
+            swapped.add(s.key);
+          }
+        }
+        workout = { ...workout, blocks: workout.blocks.map((b) => ({ ...b, slots: b.slots.map((s) => (swapped.has(s.key) ? s : reloadSlotLoads(s, infoOrDefault(env.info, s.exerciseId), env.ctx.loads(s.exerciseId)))) })) };
+        const plan = withSlotRevs(v.plan, toDraftPlan(workout, env.codec)).plan;
+        const setup: BuilderSetup = { ...stored };
+        delete setup.gymKept;
+        const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: { version: w.expectedVersion }, plan, setup, gymId: gym.id, undoSetup: { ...setup, gymKept: gym.id }, undoable: true });
+        return { change, env, toast: { text: BUILDER_COPY.gymChanged, undoOpId: w.opId, why: null } };
+      });
     },
 
     /** Open builder drafts from earlier days (`Edits from Mon 19 Oct · Use`); they expire after 14 days. */
@@ -740,7 +852,10 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         if (!r.ok) return { refused: r.reason, env };
         const plan = withSlotRevs(v.plan, toDraftPlan(r.workout, env.codec)).plan;
         const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis: w.basis, plan, setup: stored ?? storedSetup(pageSetup(current), {}), undoable: true });
-        return { change, env, toast: toastFor(op, before, r.advice, env, w.opId) };
+        // A typed kg this gym can't make exactly: the cell shows the new value, the toast says so, `Why?` names the item (rule 4; review S6).
+        const item = op.kind === 'edit_row' ? env.itemNameOf(before.blocks.flatMap((b) => b.slots).find((x) => x.key === op.slotKey)?.exerciseId ?? '') : null;
+        const rounded = r.rounded?.rounded === true ? { text: BUILDER_COPY.roundedTo(r.rounded.value, r.rounded.unit), undoOpId: null, why: item === null ? null : `Rounded down: ${item}` } : null;
+        return { change, env, toast: rounded ?? toastFor(op, before, r.advice, env, w.opId) };
       });
     },
 
@@ -769,14 +884,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const stored = builderSetupOf(current);
         const prev = pageSetup(current);
         const workout = fromDraftPlan(v.plan, stored?.restLevel ?? 'normal');
-        const nextStored = storedSetup(next, { ...(stored?.templateRoutineId === undefined ? {} : { templateRoutineId: stored.templateRoutineId }), ...(stored?.templateVersion === undefined ? {} : { templateVersion: stored.templateVersion }), ...(stored?.restLevel === undefined ? {} : { restLevel: stored.restLevel }) });
+        const nextStored = storedSetup(next, { ...(stored?.templateRoutineId === undefined ? {} : { templateRoutineId: stored.templateRoutineId }), ...(stored?.templateVersion === undefined ? {} : { templateVersion: stored.templateVersion }), ...(stored?.variationVersion === undefined ? {} : { variationVersion: stored.variationVersion }), ...(stored?.restLevel === undefined ? {} : { restLevel: stored.restLevel }) });
         const env = await envFor(p, { gymId: v.request.gymId, exerciseIds: exerciseIdsOf(workout), groups: next.groups.map((g) => g.group), keySeed: `${current.id}:${w.opId}` });
         if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env, toast: null };
         const m = mergeSetupChange(ruleSetupOf(storedSetup(prev, {})), ruleSetupOf(storedSetup(next, {})), workout, env.pool, env.ctx);
         const basis = { version: w.expectedVersion };
         if (m.kind === 'rebuild') {
           const built = await buildFor(p, next, `${current.id}:${w.opId}`, v.request.gymId);
-          const setup = storedSetup(next, built.plan === null ? {} : { templateRoutineId: built.plan.routine.id, templateVersion: built.plan.routine.version });
+          const setup = storedSetup(next, openedVersions(built));
           const plan = withSlotRevs(v.plan, toDraftPlan(built.workout, built.env.codec)).plan;
           const day = buildDayOf(next);
           const change = builderDraftEdit(current, {
@@ -797,6 +912,36 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const plan = withSlotRevs(v.plan, toDraftPlan(after, env.codec)).plan;
         const change = builderDraftEdit(current, { opId: w.opId, at: deps.now(), basis, plan, setup: { ...nextStored, ...(restLevel === 'normal' ? {} : { restLevel }) }, undoable: true });
         return { change, env, toast: null };
+      });
+    },
+
+    /**
+     * `Reload` (§2.3 `Plan day updated elsewhere while open`): the current
+     * template (and variation) opened again, as a new version, so `Undo`
+     * puts Ben's edits back. `silent`: no toast (no edits to lose).
+     */
+    async reloadPlanDay(draftId: string, w: { opId: string; expectedVersion: number; silent?: boolean }): Promise<BuilderWriteResult> {
+      const p = await owner();
+      return writeDraft(p, draftId, async (current) => {
+        const v = currentDraftVersion(current);
+        const setup = pageSetup(current);
+        const built = await buildFor(p, { ...setup, groupsEdited: false }, `${current.id}:${w.opId}`, v.request.gymId);
+        if (current.opIds.includes(w.opId)) return { change: { kind: 'duplicate', current }, env: built.env, toast: null };
+        if (built.plan === null) return { refused: 'changed_since', env: built.env };
+        const stored = storedSetup({ ...setup, groups: groupsOfWorkout(built.workout, built.env), groupsEdited: false }, { ...openedVersions(built), ...(builderSetupOf(current)?.restLevel === undefined ? {} : { restLevel: builderSetupOf(current)?.restLevel }) });
+        const plan = withSlotRevs(v.plan, toDraftPlan(built.workout, built.env.codec)).plan;
+        const day = buildDayOf(setup);
+        const change = builderDraftEdit(current, {
+          opId: w.opId,
+          at: deps.now(),
+          basis: { version: w.expectedVersion },
+          plan,
+          setup: stored,
+          name: nameOf(setup, built.env, built.variation?.label ?? null),
+          rebuild: { actionId: deriveId(`builder-action:${w.opId}`), focus: focusOf(setup.dayId), ...(day === undefined ? {} : { day }), gymId: built.env.gymId, equipmentVersion: built.env.equipmentVersion, contextHash: contextHash(stored, built.env.gymId, built.env.equipmentVersion) },
+          undoable: w.silent !== true,
+        });
+        return { change, env: built.env, toast: w.silent === true ? null : { text: BUILDER_COPY.reloaded, undoOpId: w.opId, why: null }, skipped: built.skipped };
       });
     },
 
@@ -847,7 +992,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const slot = snap === null ? null : slotsOf(snap.workout.blocks).find((s) => s.key === slotKey);
       if (snap === null || slot === undefined || slot === null) return [];
       const p = await owner();
-      const env = await envFor(p, { exerciseIds: [slot.exerciseId], keySeed: 'why' });
+      const d = await repos().workoutDrafts.get(draftId).catch(() => null);
+      const env = await envFor(p, { gymId: d === null ? undefined : currentDraftVersion(d).request.gymId, exerciseIds: [slot.exerciseId], keySeed: 'why' });
       const u = slot.unit;
       const lines: string[] = [];
       const work = slot.rows.find((r) => r.type !== 'warmup');
@@ -869,6 +1015,11 @@ export function createBuilderService(deps: BuilderServiceDeps) {
           break;
       }
       if (slot.rows.some((r) => r.typed === true)) lines.push('Typed by you');
+      // The gym's item moved a load: a typed kg (`roundedFrom`), or the worked-out load rounded down (rule 4; review S6).
+      const item = env.itemNameOf(slot.exerciseId);
+      const typedRounded = slot.rows.some((r) => r.typed === true && r.roundedFrom !== undefined);
+      const calcRounded = work !== undefined && work.typed !== true && work.load !== null && slot.source !== 'none' && !env.painFlagged(slot.exerciseId) && builderWorkingRounded(env.ctx.loads(slot.exerciseId), slot, work.load);
+      if (item !== null && (typedRounded || calcRounded)) lines.push(`Rounded down: ${item}`);
       if (env.painFlagged(slot.exerciseId)) lines.push('May hurt · held at last time');
       return lines;
     },
@@ -893,12 +1044,14 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const inUse = await planInUse(p.id);
       const planOk = inUse !== null && !inUse.paused && planRoutines(inUse.plan, [template]).length > 0;
       const label = planLabel(setup, env, variation?.label ?? null);
+      const asVariation = variationOf(template, current, env) !== null;
       return {
         lines: changes.map((c) => builderChangeLine(c, env.nameOf)),
-        updateLabel: planOk ? `Update ${label}${variation === null ? ' in your plan' : ''}` : null,
+        // Updating an open variation needs a change a variation can hold (S3).
+        updateLabel: planOk && (variation === null || asVariation) ? `Update ${label}${variation === null ? ' in your plan' : ''}` : null,
         variationLimitReached: variations.length >= PLAN_DAY_LIMITS.maxVariations,
         suggestedLabel: suggestVariationLabel(changes, env.info),
-        canSaveVariation: variationExtrasOf(openTemplate(template, null, env).workout, current).ok,
+        canSaveVariation: asVariation && setup.dayId !== CUSTOM_DAY_ID,
       };
     },
 
@@ -925,7 +1078,8 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       let variationId = setup.variationId;
       const template = stored?.templateRoutineId === undefined ? null : await repos().routines.get(stored.templateRoutineId).catch(() => null);
       if (req.choice.kind !== 'today') {
-        if (template === null || stored?.templateVersion === undefined) return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
+        // The template Ben's edits were made on must be the one stored now (rule 5; review S2).
+        if (template === null || stored?.templateVersion === undefined || template.version !== stored.templateVersion) return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
         const current = fromDraftPlan(v.plan, stored.restLevel ?? 'normal');
         const env = await envFor(p, { exerciseIds: [...template.exercises.map((e) => e.exerciseId), ...exerciseIdsOf(current)], keySeed: 'start' });
         const variations = await variationsFor(p.id, setup.dayId, setup.mainLiftExerciseId);
@@ -934,25 +1088,29 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         const label = planLabel(setup, env, null);
         if (req.choice.kind === 'update' && open === null) {
           const exercises = templateExercisesOf(template, d, req.opId, at.utc);
-          // An older plan workout gains its `planDay` key on this write (§4.2: derived on read, written only by a change).
-          const planDayField = template.planDay ?? (key?.planId != null && key.dayIndex !== null && key.splitDayId !== null ? { planId: key.planId, dayIndex: key.dayIndex, splitDayId: key.splitDayId, mainLiftExerciseId: key.mainLiftExerciseId, minutes: setup.minutes } : undefined);
+          // An older plan workout gains its `planDay` key on this write (§4.2: derived on read, written only by a change);
+          // the plan day's length becomes the set-up's (review S8).
+          const planDayField = template.planDay !== undefined ? { ...template.planDay, minutes: setup.minutes } : key?.planId != null && key.dayIndex !== null && key.splitDayId !== null ? { planId: key.planId, dayIndex: key.dayIndex, splitDayId: key.splitDayId, mainLiftExerciseId: key.mainLiftExerciseId, minutes: setup.minutes } : undefined;
           const next: Routine = { ...template, exercises, version: template.version + 1, updatedAtUtc: at.utc, lastOpId: req.opId, source: 'ben', ...(planDayField === undefined ? {} : { planDay: planDayField }) };
           alongside = { opId: req.opId, template: { next, expectedVersion: stored.templateVersion, split: t?.split ?? null, mainLifts: t?.mainLifts } };
           planChange = { kind: 'template', routineId: template.id, version: next.version, restore: template.exercises, label };
           templateVersion = next.version;
         } else {
-          const extras = variationExtrasOf(openTemplate(template, null, env).workout, current);
-          if (!extras.ok) return { ok: false, reason: 'failed', message: 'Too many changes for a variation' };
+          const extras = variationOf(template, current, env);
+          if (extras === null) return { ok: false, reason: 'failed', message: BUILDER_COPY.notAVariation };
           if (req.choice.kind === 'update' && open !== null) {
-            const next: PlanDayVariation = { ...open, extras: extras.extras, version: open.version + 1, updatedAtUtc: at.utc, basedOn: { routineId: template.id, version: template.version }, opIds: [...open.opIds, req.opId].slice(-PLAN_DAY_LIMITS.maxOpIds) };
-            alongside = { opId: req.opId, variation: { next, expectedVersion: open.version } };
+            // At the version Ben opened (rule 5; review S2): a variation changed elsewhere since is refused.
+            const opened = stored.variationVersion ?? open.version;
+            if (open.version !== opened) return { ok: false, reason: 'plan_changed', message: BUILDER_COPY.planChanged };
+            const next: PlanDayVariation = { ...open, extras: extras.extras, version: open.version + 1, updatedAtUtc: at.utc, basedOn: { routineId: template.id, version: stored.templateVersion }, opIds: [...open.opIds, req.opId].slice(-PLAN_DAY_LIMITS.maxOpIds) };
+            alongside = { opId: req.opId, variation: { next, expectedVersion: opened } };
             planChange = { kind: 'variation_update', id: open.id, version: next.version, restore: open.extras, label: planLabel(setup, env, open.label) };
           } else if (req.choice.kind === 'variation') {
             if (setup.dayId === CUSTOM_DAY_ID) return { ok: false, reason: 'failed', message: BUILDER_COPY.failed };
             const id = deriveId(`builder-variation:${req.opId}`);
             const labelText = req.choice.label.trim().slice(0, PLAN_DAY_LIMITS.labelMax);
             if (labelText.length === 0) return { ok: false, reason: 'variation_label', message: 'Give it a name' };
-            const next: PlanDayVariation = { id, ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, splitDayId: setup.dayId, mainLiftExerciseId: setup.mainLiftExerciseId, label: labelText, extras: extras.extras, basedOn: { routineId: template.id, version: template.version }, deletedAtUtc: null, opIds: [req.opId] };
+            const next: PlanDayVariation = { id, ownerId: p.id, version: 1, createdAtUtc: at.utc, updatedAtUtc: at.utc, splitDayId: setup.dayId, mainLiftExerciseId: setup.mainLiftExerciseId, label: labelText, extras: extras.extras, basedOn: { routineId: template.id, version: stored.templateVersion }, deletedAtUtc: null, opIds: [req.opId] };
             alongside = { opId: req.opId, variation: { next, expectedVersion: null } };
             planChange = { kind: 'variation_new', id, version: 1, label: planLabel(setup, env, labelText) };
             variationId = id;
@@ -965,7 +1123,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const planDay: SessionPlanDay | undefined =
         day === null
           ? undefined
-          : { planId: day.planId, dayIndex: day.dayIndex, splitDayId: setup.dayId, mainLiftExerciseId: setup.mainLiftExerciseId, templateRoutineId: sameTemplate ? template.id : null, templateVersion: sameTemplate ? templateVersion : null, variationId };
+          : { planId: day.planId, dayIndex: day.dayIndex, splitDayId: setup.dayId, mainLiftExerciseId: setup.mainLiftExerciseId, templateRoutineId: sameTemplate ? template.id : null, templateVersion: sameTemplate ? templateVersion : null, variationId, ...(planChange === null ? {} : { planChange }) };
       const r = await deps.start({ gymId, opId: req.opId, checkIn: req.checkIn ?? null, coachDraftOf: d.id, builder: { expectedVersion: req.expectedVersion, ...(planDay === undefined ? {} : { planDay }), ...(alongside === undefined ? {} : { alongside }) } });
       if (r.ok) return { ok: true, sessionId: r.aggregate.session.id, duplicate: r.duplicate, planChange: r.duplicate ? null : planChange };
       const e = r.error;
@@ -991,8 +1149,9 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const at = deps.now();
       if (u.kind === 'template') {
         const r = await repos().routines.get(u.routineId).catch(() => null);
+        // A retry of this very Undo is done, whatever the version (rule 5; review S1).
+        if (r !== null && r.lastOpId === opId) return { ok: true };
         if (r === null || r.version !== u.version) return { ok: false, message: BUILDER_COPY.changedSince };
-        if (r.lastOpId === opId) return { ok: true };
         const t = await deps.training().catch(() => null);
         const saved = await repos().routines.saveTemplate({ ...r, exercises: u.restore, version: r.version + 1, updatedAtUtc: at.utc, lastOpId: opId }, r.version, { split: t?.split ?? null, mainLifts: t?.mainLifts });
         return saved.ok ? { ok: true } : { ok: false, message: BUILDER_COPY.changedSince };
@@ -1004,6 +1163,57 @@ export function createBuilderService(deps: BuilderServiceDeps) {
       const next: PlanDayVariation = u.kind === 'variation_new' ? { ...v, deletedAtUtc: at.utc, version: v.version + 1, updatedAtUtc: at.utc, opIds: [...v.opIds, opId].slice(-PLAN_DAY_LIMITS.maxOpIds) } : { ...v, extras: u.restore, version: v.version + 1, updatedAtUtc: at.utc, opIds: [...v.opIds, opId].slice(-PLAN_DAY_LIMITS.maxOpIds) };
       const w = await repos().planDayVariations.saveVariation(p.id, next, v.version, opId);
       return w.status === 'written' || w.status === 'replayed' ? { ok: true } : { ok: false, message: BUILDER_COPY.changedSince };
+    },
+
+    /**
+     * Set up's Variation sheet `⋯` (§2.2, Q3): `Rename` and `Delete`
+     * (`Deleted arms superset · Undo`), each a versioned write under its op
+     * ID (rule 5). Your data (rule 10).
+     */
+    async renameVariation(id: string, label: string, w: { opId: string; expectedVersion: number }): Promise<{ ok: true } | { ok: false; message: string }> {
+      const p = await owner();
+      const v = (await repos().planDayVariations.listByOwner(p.id).catch(() => [] as PlanDayVariation[])).find((x) => x.id === id);
+      const text = label.trim().slice(0, PLAN_DAY_LIMITS.labelMax);
+      if (v === undefined || v.deletedAtUtc !== null) return { ok: false, message: BUILDER_COPY.changedSince };
+      if (v.opIds.includes(w.opId)) return { ok: true };
+      if (text.length === 0) return { ok: false, message: 'Give it a name' };
+      const at = deps.now().utc;
+      const r = await repos().planDayVariations.saveVariation(p.id, { ...v, label: text, version: v.version + 1, updatedAtUtc: at, opIds: [...v.opIds, w.opId].slice(-PLAN_DAY_LIMITS.maxOpIds) }, w.expectedVersion, w.opId);
+      if (r.status === 'written' || r.status === 'replayed') return { ok: true };
+      return { ok: false, message: r.status === 'duplicate_label' ? BUILDER_COPY.labelTaken : BUILDER_COPY.outOfDate };
+    },
+
+    /** `Delete` (a tombstone, so Undo puts the same variation back); `undo` is the version Undo restores from. */
+    async deleteVariation(id: string, w: { opId: string; expectedVersion: number }): Promise<{ ok: true; undo: { id: string; version: number; label: string } } | { ok: false; message: string }> {
+      const p = await owner();
+      const v = (await repos().planDayVariations.listByOwner(p.id).catch(() => [] as PlanDayVariation[])).find((x) => x.id === id);
+      if (v === undefined) return { ok: false, message: BUILDER_COPY.changedSince };
+      if (v.opIds.includes(w.opId)) return { ok: true, undo: { id, version: v.version, label: v.label } };
+      const at = deps.now().utc;
+      const r = await repos().planDayVariations.saveVariation(p.id, { ...v, deletedAtUtc: at, version: v.version + 1, updatedAtUtc: at, opIds: [...v.opIds, w.opId].slice(-PLAN_DAY_LIMITS.maxOpIds) }, w.expectedVersion, w.opId);
+      if (r.status === 'written' || r.status === 'replayed') return { ok: true, undo: { id, version: r.variation.version, label: v.label } };
+      return { ok: false, message: BUILDER_COPY.outOfDate };
+    },
+
+    /** `Undo` after Delete: refused if the variation changed since, or the key is at its limit again. */
+    async undoDeleteVariation(u: { id: string; version: number }, opId: string): Promise<{ ok: true } | { ok: false; message: string }> {
+      const p = await owner();
+      const v = (await repos().planDayVariations.listByOwner(p.id).catch(() => [] as PlanDayVariation[])).find((x) => x.id === u.id);
+      if (v === undefined) return { ok: false, message: BUILDER_COPY.changedSince };
+      if (v.opIds.includes(opId)) return { ok: true };
+      if (v.version !== u.version || v.deletedAtUtc === null) return { ok: false, message: BUILDER_COPY.changedSince };
+      const at = deps.now().utc;
+      const r = await repos().planDayVariations.saveVariation(p.id, { ...v, deletedAtUtc: null, version: v.version + 1, updatedAtUtc: at, opIds: [...v.opIds, opId].slice(-PLAN_DAY_LIMITS.maxOpIds) }, v.version, opId);
+      if (r.status === 'written' || r.status === 'replayed') return { ok: true };
+      return { ok: false, message: r.status === 'limit' ? BUILDER_COPY.limitReached : r.status === 'duplicate_label' ? BUILDER_COPY.labelTaken : BUILDER_COPY.changedSince };
+    },
+
+    /** Summary's `… updated · Undo` after a relaunch: the plan change stored with the session (review S9). */
+    async planChangeOf(sessionId: string): Promise<PlanChangeUndo | null> {
+      const p = await owner();
+      const a = await repos().sessions.get(sessionId).catch(() => null);
+      if (a === null || a.session.ownerId !== p.id) return null;
+      return a.session.planDay?.planChange ?? null;
     },
 
     /** Advice now on the draft (for a coach proposal's `⚠` line; the coach stream reads it). */
@@ -1018,10 +1228,19 @@ export function createBuilderService(deps: BuilderServiceDeps) {
 
   /** The template's exercises after `Update … in your plan`: the draft's structure, loads left to the rules each week (Q6: typed kg stays today only). */
   function templateExercisesOf(template: Routine, d: WorkoutDraft, opId: string, atUtc: string): RoutineExercise[] {
-    const asRoutine = draftAsRoutine(d, currentDraftVersion(d));
+    const v = currentDraftVersion(d);
+    const asRoutine = draftAsRoutine(d, v);
     const old = new Map(template.exercises.map((e) => [e.exerciseId, e]));
+    const slots = new Map(v.plan.slots.map((s) => [s.slotKey, s]));
     return asRoutine.exercises.map((e, i): RoutineExercise => {
       const was = old.get(e.exerciseId);
+      // Ben's own rests per set type go with the structure (review S8); the rest keep the template's.
+      const own = slots.get(e.id)?.builder?.restS ?? {};
+      const restBySetType: RoutineExercise['restBySetType'] = { ...(was?.restBySetType ?? {}) };
+      for (const t of ['warmup', 'top', 'backoff', 'working', 'drop'] as const) {
+        const sec = own[t];
+        if (sec !== undefined) restBySetType[t] = { seconds: sec };
+      }
       const setTemplates = e.setTemplates.map((t, k) => ({ ...t, id: deriveId(`builder-template-set:${template.id}:${opId}:${String(i)}:${String(k)}`), targetLoad: null }));
       const sameShape = was !== undefined && was.setTemplates.length === setTemplates.length && was.setTemplates.every((t, k) => t.setType === setTemplates[k]?.setType);
       return {
@@ -1029,7 +1248,7 @@ export function createBuilderService(deps: BuilderServiceDeps) {
         id: was?.id ?? deriveId(`builder-template-ex:${template.id}:${opId}:${String(i)}`),
         order: i,
         equipmentId: was?.equipmentId ?? null,
-        restBySetType: was?.restBySetType ?? {},
+        restBySetType,
         transitionRestS: was?.transitionRestS ?? null,
         progressionRuleId: was?.progressionRuleId ?? null,
         structureChangedAtUtc: sameShape && was.order === i ? (was.structureChangedAtUtc ?? atUtc) : atUtc,

@@ -126,6 +126,8 @@ export interface BuilderSetRow {
   rpe: number | null;
   /** Ben typed this kg: kept on reps/RPE edits (§2.4). */
   typed?: true;
+  /** A typed kg this gym's item rounded down: what Ben typed, in the slot's unit (`Why?` names the item; review S6). */
+  roundedFrom?: number;
 }
 
 export interface RepRangeT {

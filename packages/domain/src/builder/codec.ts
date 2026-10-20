@@ -35,6 +35,7 @@ function draftLoadOf(slot: BuilderSlot, row: BuilderSetRow): DraftLoad {
     held: false,
     notes: [],
     notUsed: null,
+    ...(row.typed === true && row.roundedFrom !== undefined ? { requested: row.roundedFrom } : {}),
   };
 }
 
@@ -113,6 +114,7 @@ function slotOf(s: DraftSlot): BuilderSlot {
     load: t.load?.load?.value ?? null,
     rpe: t.setType === 'warmup' ? null : t.targetRpe,
     ...(t.load?.source === 'ben' ? { typed: true as const } : {}),
+    ...(t.load?.source === 'ben' && t.load.requested !== undefined ? { roundedFrom: t.load.requested } : {}),
   }));
   const out: BuilderSlot = {
     key: s.slotKey,

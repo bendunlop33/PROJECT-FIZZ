@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { slotsOf, type BuilderEditOp } from '@fizz/domain';
-import type { BuilderGroup } from '@fizz/schemas';
+import type { BuilderGroup, CheckInScore, SessionCheckIn } from '@fizz/schemas';
 
 import type { BuilderSnapshot, BuilderToast, BuilderWriteResult, StartChoice, StartPrompt } from '../../builder/builder-service';
 import { coachBarWord, coachStatusOf, editsFromText, promptView, workoutView, WORKOUT_COPY, type CoachBarStatus, type WorkoutRowView } from '../../builder/builder-view';
@@ -15,7 +15,9 @@ import { builderPage, openStartedWorkout } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
+import { AppText, BottomCard, CheckInScale, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
+import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
+import { saveScore, scoreStepOf } from '../../workout/overview-start';
 import { CoachBar, SwipeRow } from './BuilderParts';
 import { ExerciseSheet, PromptSheet, ReviewSheet, SwapSheet, type ChoiceSection } from './BuilderSheets';
 
@@ -60,12 +62,36 @@ export function BuilderWorkoutScreen() {
   const [earlier, setEarlier] = useState<{ draftId: string; localDate: string; name: string }[]>([]);
   const [screenReader, setScreenReader] = useState(false);
   const startOp = useRef(newUuid());
+  const toastLater = useRef<BuilderToast | null>(null);
+  const showToastRef = useRef<(t: BuilderToast | null) => void>(() => undefined);
+  const alertsAsk = useStartAlertsAsk();
+  const [checkInSheet, setCheckInSheet] = useState<{ choice: StartChoice } | null>(null);
+  const [scoring, setScoring] = useState(false);
+  const [checkInId] = useState(newUuid);
+  const [checkInOp] = useState(newUuid);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shownKey = useRef<string | null>(null);
 
   const reload = useCallback(async () => {
-    const s = await inTurn(() => services.builder.read(draftId));
+    let s = await inTurn(() => services.builder.read(draftId));
+    // The plan day changed elsewhere and Ben hasn't edited this draft: it reloads without a word (§2.3).
+    if (s?.planDayChanged?.silent === true) {
+      const cur = s;
+      const r = await inTurn(() => services.builder.reloadPlanDay(cur.draftId, { opId: newUuid(), expectedVersion: cur.version, silent: true }));
+      if (r.snapshot !== null) s = r.snapshot;
+    }
+    // Ben is at another gym now: the workout moves there, with `Gym changed · Undo` (§2.3).
+    if (s?.gymChanged === true) {
+      const cur = s;
+      const r = await inTurn(() => services.builder.changeGym(cur.draftId, { opId: newUuid(), expectedVersion: cur.version }));
+      if (r.snapshot !== null) s = r.snapshot;
+      if (r.status === 'written' && r.toast !== null) toastLater.current = r.toast;
+    }
     setSnap(s);
+    if (toastLater.current !== null) {
+      showToastRef.current(toastLater.current);
+      toastLater.current = null;
+    }
     const a = await services.coach.availability().catch(() => null);
     setCoach(coachStatusOf(a?.status ?? 'not_connected'));
     setEarlier((await services.builder.earlierEdits().catch(() => [])).filter((e) => e.draftId !== draftId));
@@ -93,6 +119,8 @@ export function BuilderWorkoutScreen() {
     },
     [screenReader, theme.timing.undoToast],
   );
+
+  showToastRef.current = showToast;
 
   // A toast handed back from Set up (`Rebuilt · Undo`), once.
   useEffect(() => {
@@ -149,14 +177,41 @@ export function BuilderWorkoutScreen() {
     await edit(op);
   }
 
-  async function start(choice: StartChoice) {
+  /**
+   * The check-in before the first set (§2.1, Q1: it moved onto this page;
+   * review S10): reused when there is one, asked when it's due, else not
+   * asked. Null: ask Ben first (the sheet opens).
+   */
+  async function checkInFor(): Promise<SessionCheckIn | null | 'ask'> {
+    const gate = await services.checkIns.gate().catch(() => null);
+    if (gate === null) return null;
+    switch (gate.kind) {
+      case 'reuse':
+        return { kind: 'answered', checkInId: gate.checkInId };
+      case 'ask':
+        return 'ask';
+      case 'skip':
+        return gate.reason === 'off' || gate.reason === 'not_a_check_in_day' ? { kind: 'not_asked', reason: gate.reason } : null;
+    }
+  }
+
+  async function start(choice: StartChoice, given?: SessionCheckIn | null) {
     if (snap === null || startBusy) return;
+    const checkIn = given === undefined ? await checkInFor() : given;
+    if (checkIn === 'ask') {
+      setPrompt(null);
+      setCheckInSheet({ choice });
+      return;
+    }
+    // First Start ever: the one-time Rest alerts question; either answer continues this Start.
+    await alertsAsk.ensureAsked();
     setStartBusy(true);
     setStartError(null);
-    const r = await services.builder.start(snap.draftId, { choice, opId: startOp.current, expectedVersion: snap.version });
+    const r = await services.builder.start(snap.draftId, { choice, opId: startOp.current, expectedVersion: snap.version, checkIn });
     setStartBusy(false);
     if (r.ok) {
       setPrompt(null);
+      setCheckInSheet(null);
       changed();
       navigation.dispatch(openStartedWorkout());
       return;
@@ -186,6 +241,26 @@ export function BuilderWorkoutScreen() {
   async function openReview() {
     if (snap === null) return;
     await runReview(snap, coach, builderReviewProvider(), setReview);
+  }
+
+  async function pickScore(n: CheckInScore) {
+    const pending = checkInSheet;
+    if (pending === null || scoring) return;
+    setScoring(true);
+    const r = await saveScore({ record: (q) => services.checkIns.record(q), update: (id, patch, version, opId) => services.checkIns.update(id, patch, version, opId), newOpId: newUuid }, { current: null, score: n, checkInId, opId: checkInOp });
+    setScoring(false);
+    if (r.kind !== 'saved') {
+      showToast({ text: r.kind === 'failed' ? r.message : WORKOUT_COPY.outOfDate, undoOpId: null, why: null });
+      return;
+    }
+    changed();
+    setCheckInSheet(null);
+    // At or below the What's up? setting: the reasons step first; its exits come back here, and Start reuses this check-in.
+    if (scoreStepOf(r, n) === 'reasons') {
+      navigation.navigate('CheckIn', { mode: 'overview', checkInId: r.checkIn.id });
+      return;
+    }
+    await start(pending.choice, { kind: 'answered', checkInId: r.checkIn.id });
   }
 
   const kgStep = async (slotKey: string, value: number | null, dir: 1 | -1): Promise<number | null> => {
@@ -269,6 +344,11 @@ export function BuilderWorkoutScreen() {
               {WORKOUT_COPY.mayHurt}
             </AppText>
           ) : null}
+          {r.notHere ? (
+            <AppText variant="label" color="status.warning">
+              {WORKOUT_COPY.notHere}
+            </AppText>
+          ) : null}
         </View>
         <View style={{ width: 40, alignItems: 'flex-end' }}>
           <AppText variant="callout" numeric>
@@ -309,10 +389,49 @@ export function BuilderWorkoutScreen() {
           {earlier.map((e) => (
             <StatusLine key={e.draftId} icon="clock" tone="info" text={editsFromText(e.localDate)} action={<TextButton label={WORKOUT_COPY.useEdits} onPress={() => { navigation.dispatch(builderPage('BuilderWorkout', { draftId: e.draftId })); }} />} />
           ))}
+          {snap.planDayChanged !== null && !snap.planDayChanged.silent ? (
+            <StatusLine
+              icon="arrow.clockwise"
+              tone="info"
+              text={snap.planDayChanged.text}
+              action={
+                <TextButton
+                  label={WORKOUT_COPY.reload}
+                  onPress={() => {
+                    void inTurn(async () => {
+                      const cur = snapRef.current;
+                      if (cur === null) return;
+                      const r = await services.builder.reloadPlanDay(cur.draftId, { opId: newUuid(), expectedVersion: cur.version });
+                      if (r.snapshot !== null) setSnap(r.snapshot);
+                      if (r.status === 'written') {
+                        changed();
+                        showToast(r.toast);
+                      } else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
+                    });
+                  }}
+                />
+              }
+            />
+          ) : null}
           {v.notApplied.map((l) => (
-            <AppText key={l} variant="label" color="text.secondary">
-              {l}
-            </AppText>
+            <StatusLine
+              key={l.text}
+              icon="info.circle"
+              tone="info"
+              text={l.text}
+              {...(l.add.length > 0
+                ? {
+                    action: (
+                      <TextButton
+                        label={WORKOUT_COPY.addAnyway}
+                        onPress={() => {
+                          for (const id of l.add) void edit({ kind: 'add_exercise', exerciseId: id });
+                        }}
+                      />
+                    ),
+                  }
+                : {})}
+            />
           ))}
           <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ flexDirection: 'row', gap: theme.space['2'], paddingHorizontal: theme.space['3'] }}>
             <View style={{ width: 28 }} />
@@ -403,6 +522,23 @@ export function BuilderWorkoutScreen() {
         onVariation={(label) => void start({ kind: 'variation', label })}
         onClose={() => { setPrompt(null); }}
       />
+      {alertsAsk.sheet}
+      <BottomCard visible={checkInSheet !== null} onClose={() => { setCheckInSheet(null); }}>
+        <AppText variant="title2" accessibilityRole="header">
+          {WORKOUT_COPY.checkIn}
+        </AppText>
+        <CheckInScale selected={null} disabled={scoring || startBusy} onPick={(n) => void pickScore(n)} />
+        <TextButton
+          label={WORKOUT_COPY.skip}
+          tone="secondary"
+          disabled={scoring || startBusy}
+          onPress={() => {
+            const pending = checkInSheet;
+            setCheckInSheet(null);
+            if (pending !== null) void start(pending.choice, { kind: 'skipped', atUtc: services.now().utc });
+          }}
+        />
+      </BottomCard>
       <ReviewSheet
         visible={review !== null}
         review={review}

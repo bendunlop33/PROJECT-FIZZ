@@ -318,10 +318,16 @@ describe('plan-day templates and the Start prompt (§2.8, Q11)', () => {
     snap = ok(await s.builder.edit(snap.draftId, { kind: 'edit_row', slotKey: pd.key, index: pd.rows.findIndex((r) => r.type !== 'warmup'), patch: { kind: 'load', value: 30 } }, { opId: 'kg-1', basis: { version: snap.version } })).snapshot;
     expect(await s.builder.startPrompt(snap.draftId)).toBeNull();
 
-    const swapped = await swapOne(s, snap, 'Incline dumbbell press', 'swap-1');
+    // Swapping a template main (the plan marks Bench and Incline DB as main) can't be a variation:
+    // the ops never remove a main (review S3), so only Today only / Update are offered.
+    const mainSwap = await swapOne(s, snap, 'Incline dumbbell press', 'swap-main');
+    expect((await s.builder.startPrompt(mainSwap.snap.draftId))?.canSaveVariation).toBe(false);
+    snap = ok(await s.builder.undo(snap.draftId, 'swap-main', 'undo-main')).snapshot;
+
+    const swapped = await swapOne(s, snap, 'Triceps pushdown', 'swap-1');
     snap = swapped.snap;
     const prompt = await s.builder.startPrompt(snap.draftId);
-    expect(prompt?.lines).toEqual([`Incline dumbbell press → ${swapped.to}`]);
+    expect(prompt?.lines).toEqual([`Triceps pushdown → ${swapped.to}`]);
     expect(prompt?.updateLabel).toMatch(/^Update Push · .+ in your plan$/);
     expect(prompt?.canSaveVariation).toBe(true);
     expect(prompt?.variationLimitReached).toBe(false);
@@ -407,7 +413,17 @@ describe('plan-day templates and the Start prompt (§2.8, Q11)', () => {
     const r = await s.builder.start(snap.draftId, { choice: { kind: 'update' }, opId: 'start-up', expectedVersion: snap.version, gymId });
     expect(r).toEqual({ ok: false, reason: 'plan_changed', message: 'Your plan changed. Today only?' });
     expect(await s.sessions.active()).toBeNull();
-    expect((await s.builder.read(snap.draftId))?.startable).toBe(true);
+    const stale = await s.builder.read(snap.draftId);
+    expect(stale?.startable).toBe(true);
+    // A variation is refused too (made on the old template, review S2); Reload opens the new one, with Undo.
+    expect(await s.builder.start(snap.draftId, { choice: { kind: 'variation', label: 'v0' }, opId: 'start-v0', expectedVersion: snap.version, gymId })).toMatchObject({ ok: false, reason: 'plan_changed' });
+    expect(stale?.planDayChanged?.text).toMatch(/ changed$/);
+    expect(stale?.planDayChanged?.silent).toBe(false);
+    const reloaded = ok(await s.builder.reloadPlanDay(snap.draftId, { opId: 'reload-1', expectedVersion: stale?.version ?? 0 }));
+    expect(reloaded.toast).toEqual({ text: 'Reloaded', undoOpId: 'reload-1', why: null });
+    expect(reloaded.snapshot.planDayChanged).toBeNull();
+    const p1 = slotNamed(reloaded.snapshot, 'Triceps pushdown');
+    snap = ok(await s.builder.edit(snap.draftId, { kind: 'add_set', slotKey: p1.key }, { opId: 'set-1-again', basis: { version: reloaded.snapshot.version } })).snapshot;
 
     // Five saved variations: the sixth is refused in the write, and nothing starts.
     for (let i = 1; i <= 5; i += 1) {

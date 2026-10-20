@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Switch, View } from 'react-native';
+import { AccessibilityInfo, ActionSheetIOS, Alert, Pressable, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CUSTOM_DAY_ID } from '@fizz/domain';
@@ -13,7 +13,7 @@ import { builderPage } from '../../navigation/actions';
 import type { RootStackParams } from '../../navigation/types';
 import { useDataChanged, useServices } from '../../shell/context';
 import { useTheme } from '../../theme';
-import { AppText, BottomCard, Eyebrow, PrimaryButton, Screen, StatusLine, TextButton } from '../../ui';
+import { AppText, BottomCard, Eyebrow, Icon, PrimaryButton, Screen, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
 import { ChoiceRow, CoachBar, Divider, Stepper, Table, ValueRow } from './BuilderParts';
 
 /**
@@ -38,6 +38,17 @@ export function BuilderSetupScreen() {
   const [coach, setCoach] = useState<CoachBarStatus>('not_connected');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; undo: { id: string; version: number } | null } | null>(null);
+  const [screenReader, setScreenReader] = useState(false);
+  useEffect(() => {
+    void AccessibilityInfo.isScreenReaderEnabled().then(setScreenReader);
+  }, []);
+  // With VoiceOver on, an Undo toast stays until dismissed.
+  useEffect(() => {
+    if (toast === null || screenReader) return;
+    const t = setTimeout(() => { setToast(null); }, theme.timing.undoToast);
+    return () => { clearTimeout(t); };
+  }, [toast, screenReader, theme.timing.undoToast]);
   const nextOp = useRef(newUuid());
   const seq = useRef(0);
   /** The open draft's set-up as stored: its rows stay while Day, Main lift and Variation are unchanged (review B2). */
@@ -135,6 +146,41 @@ export function BuilderSetupScreen() {
       setFacts(null);
     }
   }
+
+  /** A variation row's `⋯` (§2.2, Q3): Rename / Delete (`Deleted arms superset · Undo`). */
+  const variationMenu = (x: { id: string; label: string; version: number }) => {
+    const options = [SETUP_COPY.rename, SETUP_COPY.delete, 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: 2, destructiveButtonIndex: 1, title: x.label }, (i) => {
+      if (i === 0) {
+        Alert.prompt(SETUP_COPY.rename, undefined, (text) => {
+          void services.builder.renameVariation(x.id, text, { opId: newUuid(), expectedVersion: x.version }).then((r) => {
+            if (!r.ok) setToast({ text: r.message, undo: null });
+            change(setup);
+          });
+        }, 'plain-text', x.label);
+      }
+      if (i === 1) {
+        void services.builder.deleteVariation(x.id, { opId: newUuid(), expectedVersion: x.version }).then((r) => {
+          if (!r.ok) {
+            setToast({ text: r.message, undo: null });
+            return;
+          }
+          changed();
+          setToast({ text: SETUP_COPY.deleted(r.undo.label), undo: { id: r.undo.id, version: r.undo.version } });
+          change(setup.variationId === x.id ? { ...setup, variationId: null } : setup);
+        });
+      }
+    });
+  };
+
+  const undoDelete = (u: { id: string; version: number }) => {
+    setToast(null);
+    void services.builder.undoDeleteVariation(u, newUuid()).then((r) => {
+      if (!r.ok) setToast({ text: r.message, undo: null });
+      else changed();
+      change(setup);
+    });
+  };
 
   const pickDay = (d: { id: string; name: string; parts: SetupInput['dayParts'] }) => {
     setSheet(null);
@@ -237,6 +283,17 @@ export function BuilderSetupScreen() {
           </Table>
         </View>
       </Screen>
+      <ToastHost bottom={insets.bottom + 96}>
+        {toast === null ? null : (
+          <Toast
+            icon="info.circle"
+            text={toast.text}
+            {...(toast.undo !== null ? { action: 'Undo', onAction: () => { if (toast.undo !== null) undoDelete(toast.undo); } } : {})}
+            onDismiss={() => { setToast(null); }}
+            showClose={screenReader}
+          />
+        )}
+      </ToastHost>
 
       <BottomCard visible={sheet === 'day'} onClose={() => { setSheet(null); }}>
         <AppText variant="title2" accessibilityRole="header">
@@ -312,15 +369,30 @@ export function BuilderSetupScreen() {
             }}
           />
           {(facts?.variations ?? []).map((x) => (
-            <ChoiceRow
-              key={x.id}
-              title={x.label}
-              selected={x.id === setup.variationId}
-              onPress={() => {
-                setSheet(null);
-                change({ ...setup, variationId: x.id });
-              }}
-            />
+            <View key={x.id} style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <ChoiceRow
+                  title={x.label}
+                  selected={x.id === setup.variationId}
+                  onPress={() => {
+                    setSheet(null);
+                    change({ ...setup, variationId: x.id });
+                  }}
+                />
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${x.label}, more`}
+                accessibilityActions={[{ name: 'rename', label: SETUP_COPY.rename }, { name: 'delete', label: SETUP_COPY.delete }]}
+                onAccessibilityAction={(e) => {
+                  if (e.nativeEvent.actionName === 'rename' || e.nativeEvent.actionName === 'delete') variationMenu(x);
+                }}
+                onPress={() => { variationMenu(x); }}
+                style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Icon name="ellipsis" color="text.secondary" />
+              </Pressable>
+            </View>
           ))}
         </Table>
       </BottomCard>

@@ -47,6 +47,10 @@ export interface BuilderEnv {
   worksOf: (exerciseId: string) => string | null;
   focusOf: (exerciseId: string) => BuilderFocus | null;
   painFlagged: (exerciseId: string) => boolean;
+  /** This gym has what the exercise needs (`Not at this gym` otherwise, §2.3). */
+  doable: (exerciseId: string) => boolean;
+  /** The item a slot's loads are worked out on here, by name (`Why this weight?` → `Rounded down: …`). */
+  itemNameOf: (exerciseId: string) => string | null;
   /** The last comparable session's top working set, in the slot's unit (for `Why this weight?`). */
   lastTopOf: (exerciseId: string) => { value: number; reps: number } | null;
   /** Exercises of a group this gym has, best first (Ben's history, then the catalogue), pain-flagged ones included (Swap shows `May hurt`). */
@@ -250,6 +254,14 @@ export function createBuilderEnv(deps: BuilderEnvDeps): BuilderEnvPort {
         return e === undefined ? null : builderFocusOf(e);
       },
       painFlagged,
+      doable: (id) => {
+        const e = byId.get(id);
+        return e !== undefined && here(e);
+      },
+      itemNameOf: (id) => {
+        const eq = loads(id).equipment;
+        return eq === null ? null : eq.name;
+      },
       lastTopOf: (id) => lastTop.get(id) ?? null,
       candidates,
       compoundsOf: (groups) =>

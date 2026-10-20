@@ -122,6 +122,10 @@ export interface BuilderDraftEdit {
   rebuild?: { actionId: string; focus: BuildFocus; day?: BuildDay; gymId: string | null; equipmentVersion: string; contextHash: string; /** The key for the new Day / Main lift (review B1); Undo puts the old one back. */ key?: BuilderDraftKey };
   /** Keep the state before this edit for Undo (false: the edit clears any older Undo). */
   undoable: boolean;
+  /** (§2.3 `Gym changed`) The version's gym moves in place; Undo puts the old one back. */
+  gymId?: string | null;
+  /** The set-up Undo restores, when it isn't the current one as is (`Gym changed`: it marks the gym kept). */
+  undoSetup?: BuilderSetup;
 }
 
 /**
@@ -136,7 +140,8 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
   if (staleAgainst(current, e.basis)) return { kind: 'stale', current };
   const cur = currentDraftVersion(current);
   const keyMoved = e.rebuild?.key !== undefined && builderDraftKeyText(e.rebuild.key) !== builderDraftKeyText(current.builderKey);
-  const before = { currentVersion: current.currentVersion, setup: cur.request.setup ?? null, plan: cur.plan, ...(keyMoved ? { key: current.builderKey } : {}) };
+  const gymMoved = e.rebuild === undefined && e.gymId !== undefined && e.gymId !== cur.request.gymId;
+  const before = { currentVersion: current.currentVersion, setup: e.undoSetup ?? cur.request.setup ?? null, plan: cur.plan, ...(keyMoved ? { key: current.builderKey } : {}), ...(gymMoved ? { gymId: cur.request.gymId } : {}) };
   let versions: WorkoutDraftVersion[];
   let currentVersion = current.currentVersion;
   if (e.rebuild !== undefined) {
@@ -151,7 +156,7 @@ export function builderDraftEdit(current: WorkoutDraft, e: BuilderDraftEdit): Dr
     }
     currentVersion = n;
   } else {
-    versions = current.versions.map((v): WorkoutDraftVersion => (v.n === current.currentVersion ? { ...v, plan: e.plan, fitMinutes: e.setup.minutes, request: { ...v.request, minutes: e.setup.minutes, setup: e.setup } } : v));
+    versions = current.versions.map((v): WorkoutDraftVersion => (v.n === current.currentVersion ? { ...v, plan: e.plan, fitMinutes: e.setup.minutes, request: { ...v.request, minutes: e.setup.minutes, setup: e.setup, ...(gymMoved ? { gymId: e.gymId ?? null } : {}) } } : v));
   }
   const nextVersion = current.version + 1;
   const next: WorkoutDraft = {
@@ -187,7 +192,9 @@ export function builderDraftUndo(current: WorkoutDraft, u: { opId: string; undoO
   const versions = rebuilt
     ? current.versions.filter((v) => v.n !== current.currentVersion).map((v): WorkoutDraftVersion => (v.n === back.currentVersion ? { ...v, status: 'current' } : v))
     : current.versions.map((v): WorkoutDraftVersion =>
-        v.n === current.currentVersion ? { ...v, plan: back.plan, ...(back.setup === null ? {} : { fitMinutes: back.setup.minutes, request: { ...v.request, minutes: back.setup.minutes, setup: back.setup } }) } : v,
+        v.n === current.currentVersion
+          ? { ...v, plan: back.plan, ...(back.setup === null ? {} : { fitMinutes: back.setup.minutes, request: { ...v.request, minutes: back.setup.minutes, setup: back.setup, ...(back.gymId === undefined ? {} : { gymId: back.gymId }) } }) }
+          : v,
       );
   const next: WorkoutDraft = {
     ...current,

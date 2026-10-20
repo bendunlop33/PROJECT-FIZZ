@@ -259,7 +259,9 @@ export function editSetRow(slot: BuilderSlot, index: number, patch: RowPatch, lo
       const value = convertValue(patch.value, patch.unit ?? slot.unit, ctx.unit);
       const r = fitHere(value, { ...ctx, painCap: null });
       if (!r.ok) return r.reason === 'lightest_is_harder' ? { ok: false, reason: 'lightest_is_harder', ...(r.lightest === null ? {} : { lightest: r.lightest }) } : { ok: false, reason: 'not_loadable' };
-      rows[index] = { ...cur, load: r.load.value, typed: true };
+      const plain: BuilderSetRow = { ...cur, load: r.load.value, typed: true };
+      delete plain.roundedFrom;
+      rows[index] = { ...plain, ...(r.load.rounded ? { roundedFrom: convertValue(value, ctx.unit, slot.unit) } : {}) };
       const cap = ctx.painCap ?? null;
       const mayHurt = cap !== null && compareDifficulty(r.load.value, cap, loadDirection(ctx.convention)) > 0;
       return { ok: true, slot: { ...slot, rows, touched: true }, rounded: r.load, ...(mayHurt ? { mayHurt: true as const } : {}) };
@@ -330,4 +332,43 @@ export function addDropSet(slot: BuilderSlot, load: SlotLoadInput): SetRowEdit {
   const kg = before.load === null ? null : rounded(before.load * R.dropPct, roundCtx(load));
   const row: BuilderSetRow = { type: 'drop', reps: slot.repRange.max + R.dropRepsOver, load: kg, rpe: R.dropRpe };
   return { ok: true, slot: { ...slot, rows: [...slot.rows, row], touched: true }, rounded: null };
+}
+
+/**
+ * `reloadSlotLoads` (§2.3 `Gym changed`): one slot's loads worked out again
+ * on another gym's item, keeping Ben's rows (types, reps, RPE, set count).
+ * Every calculated load is re-derived and rounded down there; a kg Ben
+ * typed stays when that exact weight exists there, else it's recalculated;
+ * warm-ups are made again from the new top set. Pure.
+ */
+export function reloadSlotLoads(slot: BuilderSlot, info: Pick<SetRowsInput, 'role' | 'barbell'>, load: SlotLoadInput): BuilderSlot {
+  const fresh = setRowsFor({ main: slot.main, role: info.role, barbell: info.barbell, workingSets: workingCount(slot), repRange: slot.repRange, load });
+  const ctx = roundCtx(load);
+  const typedHere = (v: number): boolean => {
+    const r = fitHere(convertValue(v, slot.unit, ctx.unit), { ...ctx, painCap: null });
+    return r.ok && Math.abs(r.load.value - convertValue(v, slot.unit, r.load.unit)) < 1e-6;
+  };
+  const next: BuilderSlot = { ...slot, unit: fresh.unit, convention: fresh.convention, source: fresh.source, anchorE1rm: fresh.anchorE1rm, startLight: fresh.startLight };
+  delete next.historyVersion;
+  if (load.historyVersion != null) next.historyVersion = load.historyVersion;
+  const work = builderLoad(load, { reps: slot.repRange.min, rpe: R.workRpe });
+  const rows: BuilderSetRow[] = [];
+  for (const r of slot.rows) {
+    if (r.type === 'warmup') continue;
+    if (r.typed === true && r.load !== null && slot.unit === fresh.unit && slot.convention === fresh.convention && typedHere(r.load)) {
+      rows.push({ ...r });
+      continue;
+    }
+    const before = rows[rows.length - 1];
+    const kg = r.type === 'drop' ? (before?.load == null ? null : rounded(before.load * R.dropPct, ctx)) : rounded(loadForSet(work.anchorE1rm, work.working, r.reps, r.rpe ?? R.workRpe), ctx);
+    const plain: BuilderSetRow = { ...r, load: fresh.source === 'none' ? null : kg };
+    delete plain.typed;
+    delete plain.roundedFrom;
+    rows.push(plain);
+  }
+  const top = (rows.find((x) => x.type === 'top') ?? rows[0])?.load ?? null;
+  // Warm-ups follow the new top set (none if Ben had removed them).
+  const warm = slot.rows.some((x) => x.type === 'warmup') ? warmupsFor({ main: slot.main, role: info.role, barbell: info.barbell, load }, top) : [];
+  next.rows = [...warm, ...rows];
+  return next;
 }

@@ -185,6 +185,8 @@ export const DraftLoadSchema = z.object({
   notes: z.array(z.string().min(1).max(200)).max(8),
   /** A coach basis that failed the check (`Why?` → `NOT USED`). */
   notUsed: z.string().max(80).nullable(),
+  /** (v3 §2.4) A kg Ben typed (`ben`) that this gym's item rounded down: what he typed, in the load's unit (`Why?`). */
+  requested: z.number().nonnegative().max(5000).optional(),
 });
 export type DraftLoad = z.infer<typeof DraftLoadSchema>;
 
@@ -353,6 +355,8 @@ export const BuilderSetupSchema = z.object({
   restLevel: z.enum(['normal', 'shorter', 'shortest']).optional(),
   /** (v3 §2.3) Ben changed a group count, so Set up shows `Use recommended` instead of `Recommended`. */
   groupsEdited: z.literal(true).optional(),
+  /** (v3 §2.3 `Gym changed · Undo`) Ben undid the move to this gym: the draft stays at its own gym, and isn't moved there again. */
+  gymKept: IdSchema.optional(),
 });
 export type BuilderSetup = z.infer<typeof BuilderSetupSchema>;
 
@@ -448,6 +452,8 @@ export const BuilderUndoSchema = z.object({
     plan: DraftPlanSchema,
     /** The draft's key before a rebuild that changed Day or Main lift; Undo puts it back. Absent: unchanged. */
     key: BuilderDraftKeySchema.optional(),
+    /** The gym before `Gym changed`; Undo puts it back. Absent: unchanged. */
+    gymId: IdSchema.nullable().optional(),
   }),
 });
 export type BuilderUndo = z.infer<typeof BuilderUndoSchema>;
