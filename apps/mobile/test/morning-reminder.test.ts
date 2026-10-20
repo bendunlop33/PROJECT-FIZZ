@@ -1,13 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
 
-import { DEFAULT_MORNING_REMINDER, toMs, type MorningReminderSettings, type PlannedReminder } from '@fizz/domain';
+import { DEFAULT_MORNING_REMINDER, toMs, type MorningReminderSettings, type PlanOverview, type PlannedReminder } from '@fizz/domain';
 
 import type { AlertPermission } from '../src/alerts/notifier';
 import { morningReminderOf, parsePrefs, updatePrefs } from '../src/device/prefs';
-import { readUpNextForecast } from '../src/reminders/forecast';
-import { createMorningReminders, NOTIFICATIONS_OFF_LINE, showNotificationsOff, turnReminderOn, type ReminderPort } from '../src/reminders/morning';
+import { showMorningReminderInForeground } from '../src/alerts/presentation';
+import { planPaused, readUpNextForecast } from '../src/reminders/forecast';
+import { createMorningReminders, createReminderTriggers, morningTapOpensToday, NOTIFICATIONS_OFF_LINE, showNotificationsOff, toggleMorningReminder, turnReminderOn, watchPermission, type ReminderPort } from '../src/reminders/morning';
 import type { AppServices } from '../src/services/app-services';
 import { CONNECTED, replyWith, StepModel, toolCall } from './coach-model';
 import { createHarness, logWorkout, setUpGym, type Harness } from './harness';
@@ -33,7 +37,7 @@ afterEach(async () => {
 
 function fakePort(answer: AlertPermission = 'granted') {
   const pending = new Map<string, PlannedReminder>();
-  const state = { permission: 'undetermined' as AlertPermission, asked: 0 };
+  const state = { permission: 'undetermined' as AlertPermission, asked: 0, scheduled: 0, cancelled: 0 };
   const port: ReminderPort = {
     permission: () => Promise.resolve(state.permission),
     request: () => {
@@ -43,10 +47,12 @@ function fakePort(answer: AlertPermission = 'granted') {
     },
     pending: () => Promise.resolve([...pending.keys(), 'fizz.rest.someone-else']),
     schedule: (r) => {
+      state.scheduled += 1;
       pending.set(r.identifier, r);
       return Promise.resolve();
     },
     cancel: (id) => {
+      state.cancelled += 1;
       pending.delete(id);
       return Promise.resolve();
     },
@@ -71,8 +77,42 @@ async function benWithRotation(): Promise<{ s: AppServices; gymId: string }> {
   return { s, gymId };
 }
 
-function controller(s: AppServices, port: ReminderPort, settings: { current: MorningReminderSettings }) {
-  return createMorningReminders({ port, forecast: () => readUpNextForecast(s), settings: () => settings.current, nowMs: () => h.clockMs, tz: () => h.now().tz });
+function controller(s: AppServices, port: ReminderPort, settings: { current: MorningReminderSettings }, counts = { forecasts: 0 }) {
+  return createMorningReminders({
+    port,
+    forecast: () => {
+      counts.forecasts += 1;
+      return readUpNextForecast(s);
+    },
+    settings: () => settings.current,
+    nowMs: () => h.clockMs,
+    tz: () => h.now().tz,
+    workoutActive: async () => (await s.sessions.active()) !== null,
+  });
+}
+
+/** Starts Up next's routine (or a Repeat of Up next) now; returns the session ID. */
+async function startUpNext(s: AppServices, gymId: string, opId: string): Promise<string> {
+  const up = await s.next.preview(gymId);
+  const started = await s.workout.start(up?.routine ? { gymId, opId, checkIn: null, routineOf: up.routine.id } : { gymId, opId, checkIn: null, repeatOf: up?.sourceSessionId ?? '' });
+  if (!started.ok) throw new Error(started.error.message);
+  return started.aggregate.session.id;
+}
+
+/** Logs every pending working set and finishes. */
+async function logAndFinish(s: AppServices, id: string, opId: string): Promise<void> {
+  const agg = await s.workout.load(id);
+  if (!agg) throw new Error('no session');
+  for (const set of agg.aggregate.sets.filter((x) => x.status === 'pending' && x.setType !== 'warmup')) {
+    h.clockMs += 60_000;
+    const load = set.planned.load ?? { value: 20, unit: 'kg' as const, convention: agg.aggregate.exercises.find((e) => e.id === set.sessionExerciseId)?.loadConvention ?? 'total' };
+    const r = await s.workout.dispatch(id, { type: 'log_set', at: h.now(), opId: `log:${set.id}`, setId: set.id, values: { load, reps: 8, durationS: null, rpe: 8, rir: null }, restTimerId: h.ids() });
+    if (!r.ok) throw new Error(r.error.message);
+  }
+  const cur = await s.workout.load(id);
+  const fin = await s.workout.dispatch(id, { type: 'finish', at: h.now(), opId, expectedVersion: cur?.aggregate.session.version ?? 0, endedAt: null });
+  if (!fin.ok) throw new Error(fin.error.message);
+  await h.settle(s);
 }
 
 describe('morning reminder', () => {
@@ -264,5 +304,228 @@ describe('morning reminder with a coach plan', () => {
     expect(r[0]?.body).toMatch(/^Day 2 of 4 · about \d+ min · Main Gym$/u);
     expect(r.map((x) => x.title)).toEqual(['Today: Pull', 'Today: Legs', 'Today: Upper', 'Today: Push', 'Today: Pull', 'Today: Legs']);
     expect(r.map((x) => x.body.split(' · ')[0])).toEqual(['Day 2 of 4', 'Day 3 of 4', 'Day 4 of 4', 'Day 1 of 4', 'Day 2 of 4', 'Day 3 of 4']);
+  });
+});
+
+describe('morning reminder: review fixes (morning-20oct)', () => {
+  it('B1: a freeform workout and no split: only today is reminded, never a split Ben never set up', async () => {
+    const { services: s } = await h.launch();
+    const gymId = await setUpGym(h, s);
+    await logWorkout(h, s, gymId, [
+      { exercise: 'Bench press', sets: [{ load: 100, reps: 7, rpe: 8 }] },
+      { exercise: 'Lat pulldown', sets: [{ load: 60, reps: 10, rpe: 8 }] },
+    ]);
+    h.clockMs = toMs('2026-10-20T05:00:00.000Z');
+    const up = await s.next.preview(gymId);
+    expect(up?.routine).toBeNull();
+    const { port, pending } = fakePort();
+    await controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } }).refresh();
+    const r = sorted(pending);
+    expect(r.map((x) => [x.fireAtLocal.date, x.title])).toEqual([['2026-10-20', `Today: ${up?.title ?? ''}`]]);
+    expect(r.some((x) => /Push|Pull|Legs/u.test(x.title))).toBe(false);
+  });
+
+  it('S1/S2: a workout started before the reminder takes today’s off, with no forecast; Finish recomputes in full', async () => {
+    const { s, gymId } = await benWithRotation();
+    const { port, pending, state } = fakePort();
+    const counts = { forecasts: 0 };
+    const reminders = controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } }, counts);
+    await reminders.refresh();
+    expect(pending.has('fizz.morning.2026-10-20')).toBe(true);
+    expect(counts.forecasts).toBe(1);
+
+    // 06:00: Ben starts; the start's write and every return to the app mid-workout only quieten today.
+    const id = await startUpNext(s, gymId, 'early');
+    await reminders.refresh();
+    await reminders.refresh();
+    expect(pending.has('fizz.morning.2026-10-20')).toBe(false);
+    expect(pending.size).toBe(6);
+    expect(counts.forecasts).toBe(1);
+    const cancelsMidWorkout = state.cancelled;
+    await reminders.refresh();
+    expect(state.cancelled).toBe(cancelsMidWorkout);
+
+    // A settings change mid-workout recomputes in full; today stays off (a workout started today).
+    await reminders.refresh({ force: true });
+    expect(counts.forecasts).toBe(2);
+    expect(pending.has('fizz.morning.2026-10-20')).toBe(false);
+
+    await logAndFinish(s, id, 'fin');
+    await reminders.refresh();
+    expect(counts.forecasts).toBe(3);
+    expect(sorted(pending)[0]).toMatchObject({ identifier: 'fizz.morning.2026-10-21', title: 'Today: Pull A' });
+  });
+
+  it('S1 backstop: a morning reminder never shows over the workout screen', () => {
+    expect(showMorningReminderInForeground({ appActive: true, workoutOnScreen: true })).toBe(false);
+    expect(showMorningReminderInForeground({ appActive: true, workoutOnScreen: false })).toBe(true);
+    expect(showMorningReminderInForeground({ appActive: false, workoutOnScreen: true })).toBe(true);
+  });
+
+  it('S5: unchanged plan writes nothing while iOS still has them; reschedules when iOS dropped them', async () => {
+    const { s } = await benWithRotation();
+    const { port, pending, state } = fakePort();
+    const reminders = controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } });
+    await reminders.refresh();
+    expect(state.scheduled).toBe(7);
+    await reminders.refresh();
+    expect(state.scheduled).toBe(7);
+    // iOS purged them (notifications reset in iPhone Settings).
+    pending.clear();
+    await reminders.refresh();
+    expect(state.scheduled).toBe(14);
+    expect(pending.size).toBe(7);
+  });
+
+  it('S3: a paused plan (PlanOverview.paused, as claude/plan-adapt-20oct reports it) sends nothing', async () => {
+    const { s } = await benWithRotation();
+    expect(planPaused(null)).toBe(false);
+    const paused = { paused: { text: 'Paused', untilDate: '2026-11-03' } } as unknown as PlanOverview;
+    expect(planPaused(paused)).toBe(true);
+    expect(planPaused({ paused: null } as unknown as PlanOverview)).toBe(false);
+    const sPaused: AppServices = { ...s, plans: { ...s.plans, overview: () => Promise.resolve(paused) } };
+    const { port, pending } = fakePort();
+    await controller(sPaused, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } }).refresh();
+    expect(pending.size).toBe(0);
+  });
+
+  it('S4: the Host’s events: a burst of writes is one refresh after it settles; settings force; foreground is at once', () => {
+    const calls: { force?: boolean }[] = [];
+    const timers = new Map<number, () => void>();
+    let n = 0;
+    const t = createReminderTriggers({
+      refresh: (o) => {
+        calls.push(o ?? {});
+        return Promise.resolve();
+      },
+      settleMs: 1500,
+      setTimer: (fn) => {
+        timers.set((n += 1), fn);
+        return n;
+      },
+      clearTimer: (id) => timers.delete(id as number),
+    });
+    const flush = () => {
+      const fns = [...timers.values()];
+      timers.clear();
+      for (const fn of fns) fn();
+    };
+    t.launched();
+    flush();
+    expect(calls).toEqual([{ force: false }]);
+    t.dataChanged();
+    t.dataChanged();
+    t.dataChanged();
+    expect(timers.size).toBe(1);
+    flush();
+    expect(calls).toHaveLength(2);
+    t.settingsChanged();
+    t.dataChanged();
+    flush();
+    expect(calls.at(-1)).toEqual({ force: true });
+    t.foreground();
+    expect(calls).toHaveLength(4);
+    t.dataChanged();
+    t.dispose();
+    expect(timers.size).toBe(0);
+  });
+
+  it('S4: Finish → the write the screen reports → the Host’s settle → rescheduled (real services)', async () => {
+    const { s, gymId } = await benWithRotation();
+    const { port, pending } = fakePort();
+    const reminders = controller(s, port, { current: { ...DEFAULT_MORNING_REMINDER, on: true } });
+    const timers: (() => void)[] = [];
+    let last: Promise<void> = Promise.resolve();
+    const t = createReminderTriggers({
+      refresh: (o) => (last = reminders.refresh(o)),
+      settleMs: 1500,
+      setTimer: (fn) => timers.push(fn),
+      clearTimer: () => undefined,
+    });
+    const flush = async () => {
+      timers.splice(0).at(-1)?.();
+      await last;
+    };
+    t.launched();
+    await flush();
+    expect(sorted(pending)[0]?.title).toBe('Today: Push A');
+    const id = await startUpNext(s, gymId, 'early');
+    t.dataChanged();
+    await flush();
+    expect(pending.has('fizz.morning.2026-10-20')).toBe(false);
+    await logAndFinish(s, id, 'fin');
+    t.dataChanged();
+    await flush();
+    expect(sorted(pending)[0]).toMatchObject({ identifier: 'fizz.morning.2026-10-21', title: 'Today: Pull A' });
+  });
+
+  it('S4: the switch saves first, then asks iOS; denied shows the one line', async () => {
+    const order: string[] = [];
+    const { port } = fakePort('denied');
+    const traced: ReminderPort = {
+      ...port,
+      request: () => {
+        order.push('ask');
+        return port.request();
+      },
+    };
+    const asked = await toggleMorningReminder(true, {
+      save: (on) => order.push(`save ${String(on)}`),
+      port: traced,
+    });
+    expect(order).toEqual(['save true', 'ask']);
+    expect(asked).toBe('denied');
+    expect(showNotificationsOff(true, asked ?? 'unknown')).toBe(true);
+    expect(await toggleMorningReminder(false, { save: (on) => order.push(`save ${String(on)}`), port: traced })).toBeNull();
+    expect(order).toEqual(['save true', 'ask', 'save false']);
+  });
+
+  it('S6: the permission line follows a round trip to iPhone Settings', async () => {
+    let ios: AlertPermission = 'denied';
+    let onActive: (() => void) | null = null;
+    const seen: AlertPermission[] = [];
+    const stop = watchPermission({
+      read: () => Promise.resolve(ios),
+      onActive: (fn) => {
+        onActive = fn;
+        return () => {
+          onActive = null;
+        };
+      },
+      set: (p) => seen.push(p),
+    });
+    await Promise.resolve();
+    expect(seen).toEqual(['denied']);
+    ios = 'granted';
+    (onActive as (() => void) | null)?.();
+    await Promise.resolve();
+    expect(seen).toEqual(['denied', 'granted']);
+    stop();
+    expect(onActive).toBeNull();
+  });
+
+  it('S4: a tap on a morning reminder opens Today, not over a workout or before set-up', () => {
+    const tap = { identifier: 'fizz.morning.2026-10-20', setupDone: true, navReady: true, currentRoute: 'Profile' };
+    expect(morningTapOpensToday(tap)).toBe(true);
+    expect(morningTapOpensToday({ ...tap, currentRoute: 'Workout' })).toBe(false);
+    expect(morningTapOpensToday({ ...tap, setupDone: false })).toBe(false);
+    expect(morningTapOpensToday({ ...tap, navReady: false })).toBe(false);
+    expect(morningTapOpensToday({ ...tap, identifier: 'fizz.rest.abc' })).toBe(false);
+  });
+
+  it('S4: the screens and Host are glue over these rules (source checks)', () => {
+    const src = (p: string) => readFileSync(join(__dirname, '..', 'src', p), 'utf8');
+    const host = src('reminders/MorningReminderHost.tsx');
+    expect(host).toMatch(/createReminderTriggers\(/u);
+    expect(host).toMatch(/workoutActive:/u);
+    const screen = src('screens/profile/MorningReminderScreen.tsx');
+    expect(screen).toMatch(/toggleMorningReminder\(/u);
+    expect(screen).toMatch(/watchPermission\(/u);
+    expect(screen).toMatch(/text=\{NOTIFICATIONS_OFF_LINE\}/u);
+    expect(screen).toMatch(/label="Open Settings" onPress=\{\(\) => void Linking\.openSettings\(\)\}/u);
+    expect(screen).toMatch(/accessibilityLabel=\{weekdayLong\(d\)\}/u);
+    expect(src('navigation/AppNavigator.tsx')).toMatch(/morningTapOpensToday\(/u);
+    expect(src('alerts/notifier.ts')).toMatch(/showMorningReminderInForeground\(/u);
+    expect(src('reminders/forecast.ts')).not.toMatch(/buildCard/u);
   });
 });
