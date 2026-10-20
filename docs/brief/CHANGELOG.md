@@ -458,3 +458,17 @@ Ben asked "how would the lift target work?", then, after the description below: 
 - **Hit targets count toward the 3** until he removes or replaces them.
 - **Target dates** are typed as `YYYY-MM-DD` in the editor for now (no date wheel), and a past date reads `Due 1 Mar`.
 - **No equipment max check on a target.** It's a goal, not a load the app prescribes, so it isn't snapped or capped. Loads the coach plans toward it still are. A target above a machine's max can never be hit: refuse, warn or allow?
+
+## 2026-10-20: Design pass, whole app (Ben approved 20 Oct)
+Ben asked: "review the full app now to ensure everything is visually well built eg the sizing and focus of different sections work and inputting weights and reps is seamless and takes upright amount of space", then "Yes i want that plus the design check for whole app i said". Copy stays minimal and editing stays inline in the table. Built in stages from the verified visual audit.
+- **Keyboard and bottom bars (batch 0).** Bottom bars sit on the keyboard with no home-indicator gap. Screens with a footer and the page sheets (Coach, Edit set, exercise form, workout editor, exercise picker) avoid the keyboard, so Save and the composer stay above it. Bottom sheets scroll their content with Save / Remove / Cancel pinned. Toasts float on the bottom bar instead of reflowing the list. The note sheet has a `Done` bar and asks `Discard note?` before dropping a change.
+- **Inline set entry (batch 1).** Tap KG and type: the cell opens with the field focused. `Next ›` on the keypad goes from the weight to the reps (a cardio time to its distance), and one `Done` closes the keypad and the editor. The editor under a set is one `− 100 +` line (about 60 pt), the same for a done row's correction. Cardio time and distance stay together and fit (compact or stacked), never clipped. The open row's second line is one line: target · `Rest 2:00 ›` · `Why?` (the set number already opens More, so the extra `⋯` went). Plates show under the load editor while the load is edited. A superset's open row reads `A2`. The header keeps the workout name when the gym name is long. `Adjust` is always the one word, with a small icon when the coach is offline or not connected, and the word in the open row.
+- **Set editors and sheets (batch 2).** Edit set and planned-set edit: `Save changes` sits in a fixed bar on the keyboard; notes get the `Done` bar. The Finish sheet scrolls, with Finish and Keep going pinned. The overview's reps sheet scrim reads `Close`; its Why sheet scrolls under a fixed name and Close; a long gym name stays on one line. The check-in pain step puts `Flag n` under the title. The gym switch card's buttons wrap. The exercise picker's header is shorter, with Cardio beside the search. `Why?` is underlined in D.
+- Ben's device checklist (keypad flow, keyboard in modals, cardio editor, header, toasts) is in the stage summary; each of these needs a real iPhone.
+
+**Pending Ben (not built):**
+- A slim one-line `Rest 1:47` strip in place of the full rest bar while the keypad is open.
+- Tapping outside the overview reps sheet commits a valid changed draft (it closes without saving, as now).
+- Library filters as one horizontal scrolling row.
+- Further exercise-detail moves (headerRight, dropdowns).
+- Type tokens: a 12–13 pt D caps exception or a larger `sectionLabel`, `type.listLoad` / `type.statValue`, and removing per-screen 13 / 11 pt overrides.
