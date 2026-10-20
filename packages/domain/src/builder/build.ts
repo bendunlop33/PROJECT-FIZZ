@@ -1,6 +1,6 @@
 import { orderSlots, pairSlots, singlesOf } from './arrange';
 import { estimateBuilderMinutes } from './estimate';
-import { fitToMinutes, type BuilderFitResult } from './fit';
+import { FIT_RULES, fitToMinutes, type BuilderFitResult } from './fit';
 import { makeSlot } from './slot';
 import type { BuilderContext, BuilderExerciseInfo, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
 
@@ -17,8 +17,8 @@ export const BUILDER_VOLUME = {
   maxPerGroup: 4,
   /** MERGE NOTE: S1 owns `BUILD_LIMITS.maxExercises` (10). */
   maxExercises: 10,
-  minMinutes: 15,
-  maxMinutes: 180,
+  minMinutes: FIT_RULES.minMinutes,
+  maxMinutes: FIT_RULES.maxMinutes,
 } as const;
 
 export interface GroupCount {

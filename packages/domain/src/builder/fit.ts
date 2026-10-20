@@ -12,18 +12,39 @@ import { ARM_GROUPS, type BuilderBlock, type BuilderContext, type BuilderGroupNa
  *   (c) fewer accessory sets, last exercise first, not below 2;
  *   (d) drop exercises: abs → the other group's isolations → accessory
  *       isolations → compounds; never the main lift.
- * Main-lift sets and loads never change for time. Still over → `over`.
+ * Main-lift sets and loads never change for time; with no main lift, at
+ * least one exercise stays. Still over → `over`. Length clamped to 15–180.
  * Longer (grow): normal rests back first; then exercises (a second arm
  * exercise, then a main-group accessory), then +1 set on accessories (max
  * 4). The plan's own spare minutes stay as a buffer: only time beyond it is
  * filled. Slots Ben edited (`touched`) are never cut or grown.
  */
 
+/*
+ * Why a second fit ladder (review S8): `session/fit-time.ts`
+ * (`fitPlanToMinutes`) trims a *started session* by marking planned sets
+ * `skipped` only (FT3: never changes rests, adds, or drops by band), using
+ * the pace-based `estimateRemainingDuration`. The builder fits a *draft*
+ * before it starts, with Ben's §2.0.2 ladder (rest levels, sets, drops by
+ * band, growing) and the §3.6 formula. Until S1 lands the Q15 shared time
+ * constants, the two estimates can differ for the same workout; S1/S8 own
+ * the "Today, builder and time left agree" check and the decision whether
+ * `fitPlanToMinutes` is kept for mid-session trims or retired.
+ */
 export const FIT_RULES = {
   minAccessorySets: 2,
   maxAccessorySets: 4,
   maxExercises: 7,
+  /** Length bounds (§2.0.2, §4.7): a length outside is clamped. */
+  minMinutes: 15,
+  maxMinutes: 180,
 } as const;
+
+/** A length clamped to 15–180 whole minutes (NaN → 15). */
+export function clampMinutes(minutes: number): number {
+  if (!Number.isFinite(minutes)) return FIT_RULES.minMinutes;
+  return Math.max(FIT_RULES.minMinutes, Math.min(FIT_RULES.maxMinutes, Math.round(minutes)));
+}
 
 export type BuilderFitStep =
   | { kind: 'rest'; from: RestLevel; to: RestLevel }
@@ -75,7 +96,8 @@ export function removeSlot(w: BuilderWorkout, key: string): BuilderWorkout {
 }
 
 /** `fitToMinutes`: the ladder above. */
-export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOptions): BuilderFitResult {
+export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, rawOpts: BuilderFitOptions): BuilderFitResult {
+  const opts: BuilderFitOptions = { ...rawOpts, minutes: clampMinutes(rawOpts.minutes) };
   const over = (w: BuilderWorkout) => estimateBuilderSeconds(w, ctx) > opts.minutes * 60 + 29;
   const done = (w: BuilderWorkout, steps: BuilderFitStep[], status: BuilderFitStatus): BuilderFitResult => ({ workout: w, steps: tidySteps(steps), status, minutes: estimateBuilderMinutes(w, ctx) });
   let w = cloneW(input);
@@ -122,8 +144,10 @@ export function fitToMinutes(input: BuilderWorkout, ctx: BuilderContext, opts: B
     if (i.role === 'isolation') return i.group !== opts.mainGroup ? 1 : 2;
     return 3;
   };
+  // Never below the main lift, or one exercise when there's none (§3.6; review S5).
   for (let b = 0; b <= 3; b += 1) {
     for (;;) {
+      if (allSlots(w).length <= 1) return done(w, steps, 'over');
       const s = [...accessories()].reverse().find((x) => band(x) === b);
       if (s === undefined) break;
       w = removeSlot(w, s.key);
@@ -232,7 +256,7 @@ function grow(input: BuilderWorkout, ctx: BuilderContext, opts: BuilderFitOption
   return { workout: w, steps, status: steps.length === 0 ? 'fits' : 'fitted', minutes: estimateBuilderMinutes(w, ctx) };
 }
 
-/** Insert a new single after the last block with one of `groups` (else before abs); re-pair singles when Supersets is on. */
+/** Insert a new single after the last block with one of `groups` (else before abs); with Supersets on, pair only the new one (review B3). */
 function insertAfterGroup(w: BuilderWorkout, slot: BuilderSlot, groups: readonly BuilderGroupName[], ctx: BuilderContext, supersets: boolean): { w: BuilderWorkout; key: string } {
   const g = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId).group;
   let at = -1;
@@ -245,7 +269,7 @@ function insertAfterGroup(w: BuilderWorkout, slot: BuilderSlot, groups: readonly
   }
   const blocks = [...w.blocks];
   blocks.splice(at + 1, 0, { slots: [slot], auto: false });
-  return { w: { ...w, blocks: supersets ? pairSlots(blocks, ctx.info) : blocks }, key: slot.key };
+  return { w: { ...w, blocks: supersets ? pairSlots(blocks, ctx.info, { only: new Set([slot.key]) }) : blocks }, key: slot.key };
 }
 
 // ---------------------------------------------------------------------------

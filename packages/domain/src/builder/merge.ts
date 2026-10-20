@@ -33,7 +33,8 @@ const countOf = (groups: readonly GroupCount[], g: BuilderGroupName): number => 
 /**
  * `mergeSetupChange`: from `prev` to `next` set-up over Ben's edited workout.
  * Group counts add or remove only that group's exercises (removing untouched
- * ones first, from the end); Supersets re-pairs only pairs the builder made;
+ * ones first, from the end; a new one is paired only with a single Ben
+ * didn't unlink); Supersets re-pairs only pairs the builder made;
  * a length change trims or adds sets (`fitToMinutes`, no new exercises).
  */
 export function mergeSetupChange(
@@ -52,6 +53,7 @@ export function mergeSetupChange(
   const groupOf = (s: BuilderSlot) => infoOrDefault(ctx.info, s.exerciseId).group;
   const all = () => w.blocks.flatMap((b) => b.slots);
 
+  const added = new Set<string>();
   const groups = new Set<BuilderGroupName>([...prev.groups.map((g) => g.group), ...next.groups.map((g) => g.group)]);
   for (const g of groups) {
     let diff = countOf(next.groups, g) - countOf(prev.groups, g);
@@ -68,6 +70,7 @@ export function mergeSetupChange(
       if (absAt < 0 || g === 'Abs') blocks.push(block);
       else blocks.splice(absAt, 0, block);
       w = { ...w, blocks };
+      added.add(slot.key);
       changes.push({ kind: 'group_added', group: g, slotKey: slot.key, exerciseId: id });
       diff -= 1;
     }
@@ -87,8 +90,9 @@ export function mergeSetupChange(
   } else if (!prev.supersets && next.supersets) {
     w = { ...w, blocks: pairSlots(w.blocks, ctx.info) };
     changes.push({ kind: 'supersets', on: true });
-  } else if (next.supersets && changes.some((c) => c.kind === 'group_added')) {
-    w = { ...w, blocks: pairSlots(w.blocks, ctx.info) };
+  } else if (next.supersets && added.size > 0) {
+    // Only the new exercises get a partner; Ben's unlinked singles and pairs stay (review B3).
+    w = { ...w, blocks: pairSlots(w.blocks, ctx.info, { only: added }) };
   }
 
   let fit: BuilderFitResult | null = null;

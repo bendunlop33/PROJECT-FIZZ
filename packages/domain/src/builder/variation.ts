@@ -1,3 +1,4 @@
+import { BUILDER_MAX_SUPERSET } from './arrange';
 import { removeSlot } from './fit';
 import { setWorkingCount } from './set-rows';
 import { makeSlot } from './slot';
@@ -38,7 +39,6 @@ export interface VariationResult {
   skipped: SkippedOp[];
 }
 
-const MAX_SUPERSET = 4;
 const MAX_EXERCISES = 10;
 
 /** `applyVariation`: the template with the variation's extras applied in order. */
@@ -73,7 +73,7 @@ export function applyVariation(template: BuilderWorkout, ops: readonly Variation
         if (a.s.main || b.s.main) return skip('main_lift');
         if (a.bi === b.bi) return skip('already_paired');
         const target = w.blocks[a.bi];
-        if (target === undefined || target.slots.length + 1 > MAX_SUPERSET) return skip('superset_full');
+        if (target === undefined || target.slots.length + 1 > BUILDER_MAX_SUPERSET) return skip('superset_full');
         const moved = b.s;
         const blocks: BuilderBlock[] = [];
         for (const [bi, blk] of w.blocks.entries()) {
