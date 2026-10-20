@@ -1,0 +1,176 @@
+<title>Progress Reviews Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one phone screen, Progress tab › Reviews. Goal card (trend line vs target), This week (sessions, sets per muscle vs range, main lifts), one suggestion, history list with sparklines. Direction D tokens, single dark. One hue for data (accent), status only with icon + label. */
+:root {
+  --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
+  --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --on-accent: #0D0C0B;
+  --data: #E8C9A0; --data-soft: rgba(232,201,160,.18); --good: #5CC98A; --warn: #F2B84B;
+  --page: #1B1917; --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--text); font-family: var(--ui); margin: 0; }
+.wrap { padding: 24px max(16px, env(safe-area-inset-left, 0px)) 40px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 380px; line-height: 1.45; }
+.phone { width: 380px; max-width: 100%; height: 800px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 18px 16px 10px; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; }
+.status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border-radius: 12px; padding: 3px; }
+.seg button { border: 0; background: none; color: #6E6761; border-radius: 9px; min-height: 36px; font-size: 14px; font-family: inherit; cursor: pointer; }
+.seg button.on { background: var(--raised); color: var(--text); font-weight: 600; }
+.label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); }
+.card { background: var(--surface); border-radius: 18px; padding: 14px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.big { font-size: 20px; font-weight: 600; }
+.muted { color: var(--text2); font-size: 13px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; padding: 3px 8px; border-radius: 999px; background: var(--raised); color: var(--text); }
+.pill i { font-style: normal; }
+.pill.good i { color: var(--good); }
+.pill.warn i { color: var(--warn); }
+svg text { font-family: var(--ui); }
+.chart { position: relative; }
+.tip { position: absolute; pointer-events: none; background: var(--raised); border: 1px solid var(--divider); border-radius: 8px; padding: 6px 8px; font-size: 12px; white-space: nowrap; display: none; z-index: 5; }
+.tip b { font-weight: 600; }
+/* sessions */
+.dots { display: flex; gap: 8px; align-items: center; }
+.dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.dot.done { background: var(--data); color: var(--on-accent); }
+.dot.todo { border: 1.5px dashed var(--text3); color: var(--text3); }
+.dot.run { background: none; border: 1.5px solid var(--text2); color: var(--text2); font-size: 11px; }
+/* sets per muscle */
+.mus { display: grid; grid-template-columns: 78px 1fr 44px; align-items: center; gap: 8px; font-size: 13px; min-height: 22px; }
+.mus .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.bar { position: relative; height: 10px; border-radius: 5px; background: #1F1C1A; }
+.bar .rng { position: absolute; top: 0; bottom: 0; background: rgba(243,238,232,.12); border-radius: 3px; }
+.bar .fill { position: absolute; top: 2px; bottom: 2px; left: 0; border-radius: 0 4px 4px 0; background: var(--data); }
+.mus .st { font-size: 11px; }
+.legend { display: flex; gap: 12px; font-size: 11.5px; color: var(--text3); }
+.legend span::before { content: ""; display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
+.legend .l1::before { background: var(--data); }
+.legend .l2::before { background: rgba(243,238,232,.18); }
+.sug { background: var(--raised); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.sug .w { color: var(--text2); font-size: 12.5px; }
+.acts { display: flex; gap: 8px; }
+.acts button { flex: 1; min-height: 38px; border-radius: 999px; border: 1.5px solid var(--text3); background: none; color: var(--text); font-family: inherit; cursor: pointer; }
+.acts .yes { background: var(--accent); color: var(--on-accent); border: 0; font-weight: 600; }
+.hist { display: flex; flex-direction: column; }
+.hrow { display: grid; grid-template-columns: 1fr 64px 14px; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--divider); background: none; border-left: 0; border-right: 0; border-bottom: 0; color: var(--text); font-family: inherit; text-align: left; cursor: pointer; width: 100%; }
+.hrow:first-child { border-top: 0; }
+.hrow .t { font-size: 14.5px; }
+.hrow small { display: block; color: var(--text2); font-size: 12.5px; margin-top: 2px; }
+.chev { color: var(--text3); }
+.tabs { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .12em; color: var(--text3); padding: 10px 6px 0; border-top: 1px solid var(--divider); }
+.tabs .on { color: var(--text); font-weight: 600; }
+.toast { position: absolute; left: 16px; right: 16px; bottom: 70px; background: var(--raised); border-radius: 12px; padding: 12px 14px; font-size: 14px; z-index: 25; }
+.lifts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lift { background: var(--raised); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.lift b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.lift span { font-size: 12px; color: var(--text2); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <div class="phone" id="app"></div>
+  <div class="hint">Prototype with example data. Progress › Reviews: your goal as a trend against the target, this week at a glance, one suggestion, and past weeks. Hover or tap the chart and bars for values. Facts are drawn by code; the verdict lines would be the coach's.</div>
+</div>
+
+<script>
+(() => {
+  // Bench top set (6 reps @ RPE 8) per week; target 110 kg.
+  const BENCH = [['25 Aug', 90], ['1 Sep', 92.5], ['8 Sep', 92.5], ['15 Sep', 95], ['22 Sep', 95], ['29 Sep', 97.5], ['6 Oct', 97.5], ['13 Oct', 100]];
+  const TARGET = 110;
+  const SETS = [['Chest', 14, [10, 16]], ['Back', 13, [10, 16]], ['Legs', 9, [10, 16]], ['Shoulders', 11, [8, 14]], ['Arms', 10, [6, 12]], ['Abs', 6, [4, 10]]];
+  const HIST = [
+    { wk: '6 Oct', v: 'Good week', s: '4 of 4 · bench 97.5', spark: [9, 10, 11, 10, 12, 12, 13] },
+    { wk: '29 Sep', v: 'Short week', s: '3 of 4 · Legs missed', spark: [9, 10, 11, 10, 12, 12, 9] },
+    { wk: '22 Sep', v: 'Good week', s: '4 of 4 · bench 95', spark: [8, 9, 10, 11, 10, 12, 12] },
+    { wk: '15 Sep', v: 'Deload due', s: '4 of 4 · RPE high on 3', spark: [8, 9, 9, 10, 11, 10, 11] },
+  ];
+  let s = { tab: 'Reviews', applied: false, toast: null };
+  const app = document.getElementById('app');
+
+  function trend() {
+    const W = 324, H = 150, L = 30, R = 10, T = 12, B = 22;
+    const ys = [85, 115]; const x = (i) => L + (i * (W - L - R)) / (BENCH.length + 4 - 1); const y = (v) => T + (H - T - B) * (1 - (v - ys[0]) / (ys[1] - ys[0]));
+    const pts = BENCH.map((d, i) => [x(i), y(d[1])]);
+    // simple projection at the recent rate (+1.25 kg/week), dotted, labelled as a projection
+    const last = BENCH.length - 1; const proj = [0, 1, 2, 3, 4].map((k) => [x(last + k), y(Math.min(TARGET, BENCH[last][1] + 1.25 * k * 2))]);
+    const grid = [90, 100, 110].map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#2A2623" stroke-width="1"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10.5" fill="#948C84">${v}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Bench top set by week, ${BENCH[0][1]} to ${BENCH[last][1]} kg, target ${TARGET} kg">
+      ${grid}
+      <line x1="${L}" x2="${W - R}" y1="${y(TARGET)}" y2="${y(TARGET)}" stroke="#EDE5DA" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <text x="${W - R}" y="${y(TARGET) - 6}" text-anchor="end" font-size="11" fill="#B5ADA5">Target 110</text>
+      <polyline points="${pts.map((p) => p.join(',')).join(' ')}" fill="none" stroke="var(--data)" stroke-width="2" stroke-linejoin="round"/>
+      <polyline points="${proj.map((p) => p.join(',')).join(' ')}" fill="none" stroke="var(--data)" stroke-width="2" stroke-dasharray="1 5" stroke-linecap="round" opacity=".8"/>
+      ${pts.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="${i === last ? 5 : 3}" fill="${i === last ? 'var(--data)' : '#181615'}" stroke="var(--data)" stroke-width="2"/>`).join('')}
+      <text x="${pts[last][0]}" y="${pts[last][1] + 18}" text-anchor="middle" font-size="11" fill="#F3EEE8">100</text>
+      <text x="${L}" y="${H - 6}" font-size="10.5" fill="#948C84">${BENCH[0][0]}</text>
+      <text x="${pts[last][0]}" y="${H - 6}" text-anchor="middle" font-size="10.5" fill="#948C84">${BENCH[last][0]}</text>
+      <text x="${W - R}" y="${H - 6}" text-anchor="end" font-size="10.5" fill="#948C84">mid-Nov</text>
+      ${pts.map((p, i) => `<rect class="hit" data-i="${i}" x="${p[0] - 14}" y="${T}" width="28" height="${H - T - B}" fill="transparent"/>`).join('')}
+    </svg><div class="tip" id="tip"></div>`;
+  }
+  function spark(v) {
+    const W = 64, H = 22; const mn = Math.min(...v), mx = Math.max(...v); const x = (i) => 2 + (i * (W - 4)) / (v.length - 1), y = (n) => 2 + (H - 4) * (1 - (n - mn) / (mx - mn || 1));
+    return `<svg viewBox="0 0 ${W} ${H}" width="64" height="22" aria-hidden="true"><polyline points="${v.map((n, i) => `${x(i)},${y(n)}`).join(' ')}" fill="none" stroke="var(--data)" stroke-width="1.6" stroke-linejoin="round"/><circle cx="${x(v.length - 1)}" cy="${y(v[v.length - 1])}" r="2.5" fill="var(--data)"/></svg>`;
+  }
+  function view() {
+    const max = 20;
+    app.innerHTML = `
+    <div class="status"><span>09:41</span><span>●●● 82%</span></div>
+    <div class="scroll">
+      <h1>Progress</h1>
+      <div class="seg">${['Reviews', 'Lifts', 'Training'].map((t) => `<button class="${t === s.tab ? 'on' : ''}" data-a="tab" data-v="${t}">${t}</button>`).join('')}</div>
+
+      <div class="label">Goal</div>
+      <div class="card">
+        <div class="row"><span class="big">Bench 110 kg</span><span class="pill good"><i>●</i>On track</span></div>
+        <div class="muted">Top set, 6 reps · 100 now · about mid-Nov at this rate</div>
+        <div class="chart" id="trend">${trend()}</div>
+        <div class="lifts">
+          <div class="lift"><span>Squat top set</span><b>117.5 <small style="color:var(--text2);font-weight:400">+5 in 4 wk</small></b></div>
+          <div class="lift"><span>Row top set</span><b>92.5 <small style="color:var(--text2);font-weight:400">level 3 wk</small></b></div>
+        </div>
+      </div>
+
+      <div class="row"><span class="label">This week</span><span class="muted">13–19 Oct</span></div>
+      <div class="card">
+        <div class="row"><span class="big" style="font-size:17px">Good week, legs light</span><span class="pill warn"><i>▲</i>1 to look at</span></div>
+        <div class="row"><div class="dots" aria-label="Sessions: 3 of 4 done, 1 to go; 2 runs">
+          <span class="dot done" title="Chest ✓">C</span><span class="dot done" title="Back ✓">B</span><span class="dot todo" title="Legs, not done">L</span><span class="dot done" title="Shoulders ✓">S</span>
+          <span class="dot run" title="Run 12 km">R</span><span class="dot run" title="Run 8 km">R</span></div><span class="muted">3 of 4 · 2 runs</span></div>
+        <div class="label" style="font-size:11px">Sets per muscle</div>
+        ${SETS.map(([m, n, [a, b]]) => { const st = n < a ? ['▼', 'below', 'var(--warn)'] : n > b ? ['▲', 'above', 'var(--warn)'] : ['✓', 'in range', 'var(--good)']; return `<div class="mus" data-tip="${m}: ${n} sets · range ${a}–${b} · ${st[1]}"><span>${m}</span><div class="bar"><div class="rng" style="left:${(a / max) * 100}%;width:${((b - a) / max) * 100}%"></div><div class="fill" style="width:${(n / max) * 100}%"></div></div><span class="v">${n} <span class="st" style="color:${st[2]}" aria-label="${st[1]}">${st[0]}</span></span></div>`; }).join('')}
+        <div class="legend"><span class="l1">Sets done</span><span class="l2">Target range</span></div>
+        ${s.applied ? `<div class="sug"><div>Legs moved to Thursday, before Saturday's long run is no longer an issue.</div><div class="w">Applied · <u data-a="undo" style="cursor:pointer">Undo</u></div></div>` : `<div class="sug"><div>Add 2 leg sets on Thursday (leg curl)</div><div class="w">Legs are 1 set under the range this week.</div><div class="acts"><button class="yes" data-a="apply">Apply</button><button data-a="skip">Skip</button></div></div>`}
+      </div>
+
+      <div class="label">Past weeks</div>
+      <div class="card" style="padding-top:4px;padding-bottom:4px">
+        <div class="hist">${HIST.map((h) => `<button class="hrow" data-a="open"><span><span class="t">${h.v}</span><small>w/c ${h.wk} · ${h.s}</small></span>${spark(h.spark)}<span class="chev">›</span></button>`).join('')}</div>
+      </div>
+    </div>
+    <div class="tabs"><span>TODAY</span><span>LIBRARY</span><span class="on">PROGRESS</span><span>PROFILE</span></div>
+    ${s.toast ? `<div class="toast">${s.toast}</div>` : ''}`;
+    // hover / tap tooltips on the trend
+    const box = app.querySelector('#trend'); const tip = box.querySelector('#tip');
+    box.querySelectorAll('.hit').forEach((r) => {
+      const show = () => { const i = Number(r.dataset.i); const d = BENCH[i]; const prev = BENCH[i - 1]; tip.innerHTML = `<b>w/c ${d[0]}</b> · ${d[1]} kg${prev ? ` (${d[1] - prev[1] >= 0 ? '+' : ''}${d[1] - prev[1]})` : ''}`; tip.style.display = 'block'; const bb = box.getBoundingClientRect(), rb = r.getBoundingClientRect(); tip.style.left = `${Math.min(bb.width - 130, Math.max(0, rb.left - bb.left - 30))}px`; tip.style.top = '-6px'; };
+      r.addEventListener('pointerenter', show); r.addEventListener('pointerdown', show); r.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
+    });
+    app.querySelectorAll('.mus').forEach((m) => { m.title = m.dataset.tip; });
+  }
+  app.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-a]'); if (!t) return; const a = t.dataset.a; s.toast = null;
+    if (a === 'tab') s.tab = t.dataset.v === 'Reviews' ? 'Reviews' : s.tab, s.toast = t.dataset.v === 'Reviews' ? null : `${t.dataset.v}: the existing Progress charts`;
+    if (a === 'apply') { s.applied = true; s.toast = 'Thursday Legs: +2 sets leg curl'; }
+    if (a === 'undo') s.applied = false;
+    if (a === 'skip') s.toast = 'Skipped';
+    if (a === 'open') s.toast = 'Opens that week’s full review';
+    view();
+  });
+  view();
+})();
+</script>
