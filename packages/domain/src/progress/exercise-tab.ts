@@ -16,7 +16,7 @@ import {
   type SeriesSession,
   type SeriesSet,
 } from './exercise';
-import { cardioSetText, convertedText, longDate, seriesKindLabel, seriesUnitText, setUnitText, shortDate, thousands, weekdayLongDate } from './exercise-view';
+import { cardioSetText, convertedText, longDate, seriesKindLabel, seriesUnitText, setUnitText, shortDate, thousands, TOTAL_ADDED_ONLY, TOTAL_ASSUMED, weekdayLongDate } from './exercise-view';
 import { countRowSets } from './muscles';
 import type { ProgressSession, ProgressSet } from './projection';
 import { countNoun, rangeWords } from './text';
@@ -116,8 +116,8 @@ function workingLoaded(s: SeriesSet, series: Pick<ExerciseSeries, 'key' | 'kind'
 /**
  * Working weight: the load used for the most countable working sets; a tie
  * goes to the harder load (heavier; less assistance on assisted machines).
- * A left + right pair counts once, as in `workingSetCount` and
- * `sessionVolume` (the busier side per load). The same number in another
+ * A left + right pair counts once, as in `workingSetCount` (the busier
+ * side per load). The same number in another
  * convention (`20 kg each`, `20 kg`) is another load. Returns the load, a set
  * that used it (its own unit text) and how many sets used it; null with no
  * loaded sets.
@@ -389,9 +389,6 @@ function bestSetStat(sessions: readonly SeriesSession[], series: ExerciseSeries)
   return best?.text ?? null;
 }
 
-/** The info line behind a `≈` total: the catalogue doesn't say how many dumbbells (done either way). */
-export const TOTAL_ASSUMED = '≈ Total weight assumes the dumbbell count';
-
 /** The Exercises tab for one exercise; null when it has no finished session. */
 export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView | null {
   const all = collectExerciseSeries(input.sessions, input.exerciseId, { unit: input.unit ?? null });
@@ -494,7 +491,7 @@ export function buildExerciseTabView(input: ExerciseTabInput): ExerciseTabView |
       words: `${label}${measure === 'e1rm' ? ', an estimate' : ''}, ${countNoun(points.length, 'session', 'sessions')}, ${range}. Trailing average of the last ${String(trailing)}.`,
     },
     table: { unit, totalUnit: offered.includes('total') ? series.key.unit : null, rows },
-    info: [convertedText(inWindow), totalAssumed ? TOTAL_ASSUMED : null].filter((x): x is string => x !== null).join('\n') || null,
+    info: [convertedText(inWindow), totalAssumed ? TOTAL_ASSUMED : null, measure === 'total' && series.kind === 'added_bodyweight' ? TOTAL_ADDED_ONLY : null].filter((x): x is string => x !== null).join('\n') || null,
     empty: inWindow.length === 0 ? 'No sessions in this period.' : points.length === 0 ? `No ${label} in this period.` : null,
   };
 }

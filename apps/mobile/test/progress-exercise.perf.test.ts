@@ -51,15 +51,15 @@ describe('Exercise detail on a 2-year, 416-workout history', () => {
     const row = UNILATERAL_HISTORY_EXERCISE.id;
 
     const runs: { name: string; m: { totalMs: number; maxBlockMs: number } }[] = [];
-    for (const metric of ['e1rm', 'top_set', 'volume'] as const) {
+    for (const metric of ['e1rm', 'top_set', 'total_weight'] as const) {
       for (const range of ['6m', 'all'] as const) {
         runs.push({ name: `bench ${metric} ${range}`, m: await measureBlocking(() => svc.exerciseDetail({ exerciseId: bench, metric, range })) });
       }
     }
     runs.push({ name: 'bench by reps', m: await measureBlocking(() => svc.exerciseDetail({ exerciseId: bench, repBy: 'reps', range: 'all' })) });
     runs.push({ name: 'bench history 24 months', m: await measureBlocking(() => svc.exerciseDetail({ exerciseId: bench, historyMonths: 24 })) });
-    const uni = await measureBlocking(() => svc.exerciseDetail({ exerciseId: row, metric: 'volume', range: 'all' }));
-    runs.push({ name: 'db row volume all', m: uni });
+    const uni = await measureBlocking(() => svc.exerciseDetail({ exerciseId: row, metric: 'total_weight', range: 'all' }));
+    runs.push({ name: 'db row total weight all', m: uni });
 
     const fmt = (m: { totalMs: number; maxBlockMs: number }) => `${String(Math.round(m.totalMs))}ms/${String(Math.round(m.maxBlockMs))}ms`;
     console.log(

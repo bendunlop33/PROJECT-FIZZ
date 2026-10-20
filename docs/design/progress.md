@@ -37,7 +37,7 @@ Progress is **not** part of the logging loop. Nothing here is needed to train, n
 | PG2 (rev.) | "Default to weekly consistency and three user-pinned exercise trends" | Fixed home order: Window → Activity (sessions, time) → Muscles → Records → Exercises. **The order never changes with the data.** Pinned trends move to a later slice | Ben's four asks come first. Pins need a new store and editor; the exercise list gives one-tap access to every lift meanwhile |
 | PG3 (rev.) | (none) | One window picker at the top of Overview drives **every** home card. No card has its own date range | One date context per screen. A picker that changed some cards but not others would cause misreading (v0.1's reason, still true) |
 | PG5 | (none) | Kept: `ResumeBar` above the tab bar while a workout is unfinished and < 6 h old | Keeps "one tap to resume" true from every tab |
-| P-PG1 | "Do not turn this into an exhaustive daily analytics dashboard" | Window-based counts on the home screen, no daily metrics, no scores, no rings, no animation, five regions at most | Ben asked for these numbers. They answer "how often, how long, what did I train". Proposed wording for the brief: *"Progress shows sessions, time in gym, muscle frequency and records over a chosen window (7/14/30/60 days), and per-exercise history with estimated 1RM, rep records and volume. No scores, rings or animated dashboards."* |
+| P-PG1 | "Do not turn this into an exhaustive daily analytics dashboard" | Window-based counts on the home screen, no daily metrics, no scores, no rings, no animation, five regions at most | Ben asked for these numbers. They answer "how often, how long, what did I train". Proposed wording for the brief: *"Progress shows sessions, time in gym, muscle frequency and records over a chosen window (7/14/30/60 days), and per-exercise history with estimated 1RM, rep records and total weight. No scores, rings or animated dashboards."* |
 
 **Why not a separate pushed Stats screen** (the research's suggestion): Ben's asks *are* what he opens Progress for. A Stats screen behind a card would put them two taps away and leave a home screen with nothing to show for the planned-vs-done and pinned cards that can't be built yet. Making the windowed stats the home is fewer screens and fewer taps.
 
@@ -52,7 +52,7 @@ Progress is **not** part of the logging loop. Nothing here is needed to train, n
 | PG12 | **Gaps.** ≥ 21 days between sessions of a series (`TREND_GAP_DAYS`) breaks the chart line and shows `Gap 24 days` in the marker lane and table |
 | PG15 | **Superseded for Progress charts (Ben, 20 Oct 2026, see brief CHANGELOG): one series per exercise and kind, gyms, equipment and imports merged, units converted.** Was: **One series = one equipment instance + load convention + unit** (or one import source). Different machines are never merged. The only exception is PG32, which Ben turns on explicitly |
 | PG16 | **Days and weeks** use the owner's stored timezone. Weeks run Monday–Sunday. A session belongs to the local date it started (corrected start time if edited; `localDate` for imported workouts) |
-| PG21 | **Sets Ben marked as not counting** (`Spotted`, `Pain`, `Form broke`, `Other equipment`; active-workout §2.13) are left out of top set, Est. 1RM, the rep table, records and every "best" or "change" value, and say so in lists (`100×8 (spotted)`). They **do** count in sessions, sets per muscle and volume, because the work was done. A session whose sets are all marked has no chart point; its marker reads `Not counted` |
+| PG21 | **Sets Ben marked as not counting** (`Spotted`, `Pain`, `Form broke`, `Other equipment`; active-workout §2.13) are left out of top set, Est. 1RM, the rep table, records and every "best" or "change" value, and say so in lists (`100×8 (spotted)`). They **do** count in sessions, sets per muscle and total weight, because the work was done. A session whose sets are all marked has no chart point; its marker reads `Not counted` |
 
 ### 0.3 New decisions in v1.0
 
@@ -68,7 +68,7 @@ Progress is **not** part of the logging loop. Nothing here is needed to train, n
 | PG28 | **Rep table** (exercise detail) | Two views of the same countable sets in the selected series and range. **By weight:** one row per load used, with the most reps done in one set at that load and the date. **By reps** (rep records): for each rep count 1–12, the heaviest load lifted for **at least** that many reps, with the date. A heavier or equal load at more reps supersedes (100 kg × 6 is also the 5RM), shown as `from 6 reps`. **Actual values only.** No estimated column in v1.0 | The research's optional `Est.` column is left out: the Est. 1RM chart already covers estimates, and a table that mixes the two invites misreading |
 | PG29 | **Exercise detail default metric** | `Est. 1RM` when the convention allows it (PG11), else `Top set` (`Best set` for bodyweight, `Longest hold` for timed). Range default `6 mo` | v0.1 defaulted to `Top set`. Ben asked for e1RM first |
 | PG30 | **Records on the home screen** | v1.0 record kinds: `Heaviest set` and `Most reps at <load>` (the logic in `findSetRecord`, judged as each set was logged), plus, in slice B, `Best Est. 1RM` (labelled). Only from workouts logged in the app; imported history can suppress a claim but never makes one (ADR 0016) | — |
-| PG31 | **Volume** | Per session, Σ load × reps over completed non-warm-up sets (marked sets included, PG21). Unilateral: the busier side. Per-dumbbell loads use the per-hand value with the unit `kg each × reps`. Not offered for assisted, bodyweight or timed sets | Not a headline on the home screen: it rewards high-rep, light sets (research, Alpha) |
+| PG31 | **Total weight** (replaces Volume, Ben 20 Oct) | Per session, Σ load × reps over completed non-warm-up sets (marked sets included, PG21), every set in the series' unit. Each dumbbell and both sides count (two dumbbells on a bilateral per-hand row unless the catalogue says otherwise, shown `≈` with the assumption behind the info tap; a `both` set on a unilateral row counts twice). BW + series count the added load only (bodyweight sets as `+0`). Not offered for assisted, bodyweight-only, timed, distance or cardio sets | Not a headline on the home screen: it rewards high-rep, light sets (research, Alpha) |
 | PG32 | **Showing FitNotes history on an equipment's chart** | Imported sets have no equipment (ADR 0016), so they form their own series, `FitNotes`. Ben can choose **`Add FitNotes history`** in the series menu of one equipment series of the same exercise, convention and unit. The chart then shows both, with FitNotes points **hollow** (○) and app points **filled** (●). Table, rep table and records rows from FitNotes carry a `FitNotes` tag. Stored per exercise as a `SeriesLink` (Your data), versioned, with Undo and `Remove FitNotes history` in the same menu. It changes no stored set, nothing in the workout loop (`Last`, targets, the in-workout record line), and never links two app equipment series | Brief §6: "keep separate history per equipment instance **unless the user explicitly groups equivalent stations**". Without this, years of Ben's history sit in a separate chart from everything he logs from now on. **Ben to confirm (O-PG1).** |
 | PG33 | **The window and in-progress workouts** | An unfinished workout is never counted. It appears in every number after `Finish` | Same as v0.1 |
 
@@ -84,7 +84,7 @@ Progress answers **"How often am I training, for how long, what am I hitting, an
 | Muscles | Which groups did I train, how many sessions and sets each, and from which exercises? | Expand a group to see what counted | A |
 | Calendar | What did I do on a given day? | Open a workout | A |
 | Exercises | Which lift do I want to look at? | Open an exercise | B |
-| Exercise detail | How is this lift moving on this equipment: Est. 1RM, top set, best reps at each weight, volume, records? | Tap a point or row → open that workout | B |
+| Exercise detail | How is this lift moving on this equipment: Est. 1RM, top set, best reps at each weight, total weight, records? | Tap a point or row → open that workout | B |
 
 Never shown anywhere in Progress: recovery, readiness, fatigue, fitness, "strength level" or any other score; percentage grades; rings; streak-loss messages; animated drawing or count-up numbers. Every value is an **actual result** or, where marked `≈` and `Est.`, an **estimate**. Progress shows no targets in v1.0.
 
@@ -332,10 +332,10 @@ Regions:
 2. **Pain line** (only while a pain flag is active for this exercise): `⚠ Pain flag since 2 Oct` (`StatusBanner`, warning, icon + words). Tapping opens the existing pain flag view. Spans on the chart and the pre-flag reference are deferred (§9).
 3. **Series menu.** Button `Main Gym · barbell ▾`. Lists each series with its session count (`Main Gym · barbell · 24`, `Hotel Gym · barbell · 3`, `FitNotes · kg · 40`), then `Add FitNotes history` / `Remove FitNotes history` (PG32, only when a FitNotes series of the same convention and unit exists). Default: the series used most in the last 12 weeks.
 4. **`StatStrip`** for the selected series, all-time bests: `EST. 1RM ≈126.5 kg` (the best session value) · `BEST SET 105 × 3` (heaviest) · `SESSIONS 24`. Conventions without Est. 1RM show `BEST SET` · `MOST REPS` · `SESSIONS` (bodyweight), or `LEAST ASSIST` · `MOST REPS` · `SESSIONS` (assisted).
-5. **Metric** (single select; the `measure ▾` dropdown in region 1 since 20 Oct): `Est. 1RM` · `Top set` · `Volume`. Unavailable ones are hidden (§6.3).
+5. **Metric** (single select; the `measure ▾` dropdown in region 1 since 20 Oct): `Est. 1RM` · `Top set` · `Total weight`. Unavailable ones are hidden (§6.3). *(Ben, 20 Oct: `Total weight` replaces `Volume`, as in Progress › Exercises; bodyweight and BW + rows of one exercise are one series, bodyweight as `+0`. See CHANGELOG.)*
 6. **Range** (the `period ▾` dropdown in region 1 since 20 Oct): `3 mo` · `6 mo` · `1 yr` · `All`.
-7. **Chart heading.** `Est. 1RM · 9 Apr – 8 Oct  ⓘ` / `Top set · 9 Apr – 8 Oct` / `Volume · 9 Apr – 8 Oct`. The `ⓘ` (Est. 1RM only) opens a sheet with the formula and limits.
-8. **`TrendChart`** (§9.23): one series (PG32 adds hollow FitNotes points to the same series), y-axis with unit, month ticks, marker lane (gap, edited, not counted), gap breaks. `Volume` draws bars (`chart.bar`), not a line.
+7. **Chart heading.** `Est. 1RM · 9 Apr – 8 Oct  ⓘ` / `Top set · 9 Apr – 8 Oct` / `Total weight · 9 Apr – 8 Oct`. The `ⓘ` (Est. 1RM only) opens a sheet with the formula and limits.
+8. **`TrendChart`** (§9.23): one series (PG32 adds hollow FitNotes points to the same series), y-axis with unit, month ticks, marker lane (gap, edited, not counted), gap breaks. `Total weight` draws bars (`chart.bar`), not a line.
 9. **Selection panel** (fixed height). Nothing selected: `Latest`, `Best`, `Change` for the range. Point selected: that session's date, workout name, value, the set it came from, markers, `Open workout ›`, `Clear`.
 10. **`Show as table`** button (always visible).
 11. **Rep table** (`RepTable`, §9.73). Section label `BEST REPS`, toggle `By weight | By reps`. Uses the **selected range**. By weight lists up to 10 loads, heaviest first, then `Show all (17)`.
@@ -635,9 +635,9 @@ Every number uses tabular numerals and design-system §3 formats. Estimates alwa
 | Series | `Main Gym · barbell` · `Hotel Gym · barbell` · `FitNotes · kg` · `Main Gym · barbell + FitNotes` · menu items `Add FitNotes history` · `Remove FitNotes history` | — |
 | Add confirm | `Show 40 FitNotes sessions (2019–2026) with Main Gym · barbell?` · `Add` · `Cancel` · toasts `FitNotes history added` / `FitNotes history removed` [Undo] | — |
 | StatStrip | `EST. 1RM ≈126.5 kg` · `BEST SET 105 × 3` · `SESSIONS 24` · `MOST REPS 14` · `LEAST ASSIST 15 kg` · distance `BEST DISTANCE 60 kg × 25 m` · `TOTAL DISTANCE 1.2 km` | Estimate / actual |
-| Metric chips | `Est. 1RM` · `Top set` · `Volume` · bodyweight `Best set` · timed `Longest hold` · distance `Total distance` · `Best distance` | — |
+| Metric chips | `Est. 1RM` · `Top set` · `Total weight` · bodyweight `Best set` · timed `Longest hold` · distance `Total distance` · `Best distance` | — |
 | Range chips | `3 mo` · `6 mo` · `1 yr` · `All` | — |
-| Headings | `Est. 1RM · 9 Apr – 8 Oct` · `Top set · …` · `Volume · …` · suffix `· weekly best` | As named |
+| Headings | `Est. 1RM · 9 Apr – 8 Oct` · `Top set · …` · `Total weight · …` · suffix `· weekly best` | As named |
 | Axis units | `kg` · `kg each` · `kg stack` · `reps` · `kg × reps` · `m` | — |
 | Range summary | `Latest  ≈123 kg · 8 Oct` · `Best  ≈126.5 kg · 24 Sep (100 × 8)` · `Change  Up ≈6 kg since 9 Apr` · top set: `Latest  102.5 kg × 6 · 8 Oct` · `Change  Up 7.5 kg since 9 Apr` · `Same load, 2 more reps than 9 Apr` | Estimate / actual |
 | Selection | `Thu 1 Oct · Push A` · `Est. 1RM  ≈115.5 kg  from 105 kg × 3` · `Top set  105 kg × 3` · `Open workout ›` · `Clear` | — |
@@ -646,7 +646,7 @@ Every number uses tabular numerals and design-system §3 formats. Estimates alwa
 | Too few / none | `2 sessions in this range.` · `Try 1 yr` · `None between 9 Apr and 8 Oct. Last: 2 Feb.` · `Show all` · `No sets of 10 reps or fewer in this range.` | — |
 | Table toggle | `Show as table` / `Show chart` | — |
 | Rep table | `BEST REPS` · `By weight` · `By reps` · headers `Weight` `Reps` `Date` / `Reps` `Heaviest` `Date` · `from 6 reps` · `—` · `Show all (9)` | Actual |
-| Records | `RECORDS` · `Heaviest set  105 kg × 3 · 1 Oct` · `Most reps at 100 kg  8 · 24 Sep` · `Best Est. 1RM  ≈126.5 kg · 24 Sep` · assisted `Least assistance for 8+ reps  15 kg · 2 Oct` · bodyweight `Most reps  14 · 3 Oct` · `Records start after 3 logged sessions.` (Build: timed series have no records section until a record is defined, review progress-B SP2) | Actual; estimate labelled |
+| Records | `RECORDS` · `Heaviest set  105 kg × 3 · 1 Oct` · `Most reps at 100 kg  8 · 24 Sep` · `Best Est. 1RM  ≈126.5 kg · 24 Sep` · assisted `Least assistance for 8+ reps  15 kg · 2 Oct` · bodyweight `Most reps  14 · 3 Oct` · BW + series `Most reps at BW  20 · 7 Sep` (bodyweight sets only) · `Records start after 3 logged sessions.` (Build: timed series have no records section until a record is defined, review progress-B SP2) | Actual; estimate labelled |
 | History | `HISTORY` · month `October` · `Thu 8 Oct · Push A` · `102.5×6 · 100×8` · tags `Edited` · `FitNotes` · `(spotted)` · `Load September` | Actual |
 | Pain line | `Pain flag since 2 Oct` | — |
 | ⓘ sheet | Text in §2.7 | — |
@@ -703,7 +703,7 @@ All Progress reads are local and pure: they're computed from finished sessions w
 | `listExerciseSeries(ownerId, exerciseId)` | `[{seriesKey, label, convention, unit, source: 'app' \| 'import', sessionCount, lastDate, linkedImport?: seriesKey}]`, where `seriesKey = {exerciseId, equipmentId \| 'import', convention, unit}` |
 | `listProgressExercises(ownerId, {query?, group?})` | Exercises with ≥ 1 finished session: `{exerciseId, name, sessionCount, lastDate, groups}` sorted by last done |
 | `estimateOneRepMax(load, reps, convention)` | Pure: `{value, eligible, reason?}` (PG11). Not snapped |
-| `exerciseTrend(sessions, seriesKey, metric: 'e1rm' \| 'top_set' \| 'volume' \| 'best_set' \| 'longest_hold', range)` | `{points: [{sessionId, date, value, display, kind: 'actual' \| 'estimate', fromSet, source: 'app' \| 'import', excludedSets}], gaps, markers: [{kind: 'gap' \| 'edited' \| 'not_counted', date, label}], summary: {latest, best, change}, aggregation: 'session' \| 'weekly_best', a11ySummary}` |
+| `exerciseTrend(sessions, seriesKey, metric: 'e1rm' \| 'top_set' \| 'total_weight' \| 'best_set' \| 'longest_hold', range)` | `{points: [{sessionId, date, value, display, kind: 'actual' \| 'estimate', fromSet, source: 'app' \| 'import', excludedSets}], gaps, markers: [{kind: 'gap' \| 'edited' \| 'not_counted', date, label}], summary: {latest, best, change}, aggregation: 'session' \| 'weekly_best', a11ySummary}` |
 | `repTable(sessions, seriesKey, range, by: 'weight' \| 'reps')` | By weight: `[{load, reps, date, sessionId, source}]` heaviest first. By reps: `[{reps 1..maxDone, load \| null, fromReps, date, sessionId, source}]` with the superseding rule (PG28). Countable sets only (PG21) |
 | `exerciseRecords(sessions, seriesKey)` | `[{kind, value, display, date, sessionId, isEstimate, source}]`, with PG10 |
 | `exerciseHeadline(sessions, seriesKey)` | The `StatStrip` values, all time, per convention |
@@ -712,11 +712,11 @@ All Progress reads are local and pure: they're computed from finished sessions w
 
 ### 6.3 Metric availability by convention
 
-| Convention | Est. 1RM | Top set | Volume | Rep table | StatStrip |
+| Convention | Est. 1RM | Top set | Total weight | Rep table | StatStrip |
 |---|---|---|---|---|---|
 | `total`, `per_hand`, `stack`, plate-loaded `added` | Yes (1–10 reps) | Yes | Yes | Yes | Est. 1RM · Best set · Sessions |
 | Assisted | No | Yes (least assistance) | No | Yes (assistance, lightest first) | Least assist · Most reps · Sessions |
-| Bodyweight + added | No | Yes (added load) | No | Yes (added load) | Best set · Most reps · Sessions |
+| Bodyweight + added (bodyweight rows of the exercise join it as `+0`, Ben 20 Oct) | No | Yes (added load) | Yes (added load only) | Yes (added load) | Best set · Most reps · Sessions |
 | Bodyweight | No | `Best set` (reps) | No (total reps in table only) | No | Most reps · Sessions |
 | Timed | No | `Longest hold` | No | No | Longest hold · Sessions |
 | Distance (sled push, carries; any convention) | No | `Total distance` (default; Σ metres, marked sets included, unilateral = busier side) · `Best distance` (longest counted set, shown with its load: `60 kg × 25 m`) | No | `BEST DISTANCE` by load instead (longest counted set at each load, heaviest first, `No load` last) | Best distance · Total distance · Sessions |
@@ -794,7 +794,7 @@ Checks:
 
 ### Slice B: Exercises list and exercise detail
 
-Builds: Exercises list, exercise detail (series menu, `StatStrip`, Est. 1RM / Top set / Volume charts with table view, selection panel, rep table both ways, records, history), the Est. 1RM `ⓘ` sheet, `Add FitNotes history` (PG32, deferred until Ben confirms O-PG1; see check 37), `Best Est. 1RM` in home records, record rows opening exercise detail.
+Builds: Exercises list, exercise detail (series menu, `StatStrip`, Est. 1RM / Top set / Total weight charts with table view, selection panel, rep table both ways, records, history), the Est. 1RM `ⓘ` sheet, `Add FitNotes history` (PG32, deferred until Ben confirms O-PG1; see check 37), `Best Est. 1RM` in home records, record rows opening exercise detail.
 
 Checks:
 
@@ -810,8 +810,8 @@ Checks:
 35. **Table and VoiceOver.** `Show as table` lists the same values as the chart; with VoiceOver, the chart reads its summary and swipe up/down moves point by point.
 36. **Long history.** `All` with years of FitNotes history draws weekly bests with `· weekly best` in the heading; the table lists every session.
 37. **FitNotes history (PG32).** `Add FitNotes history` on Main Gym barbell shows FitNotes sessions as hollow points with the legend, tags FitNotes rows, and changes nothing in the workout (the `Last` line, targets and the in-workout record line are the same before and after). Undo removes it. It's refused for a different convention or unit. **Deferred (O-PG1, review progress-B S6/SP1):** slice B ships without `Add FitNotes history`, `SeriesLink` or hollow points; FitNotes history stays its own `FitNotes · kg` series in the series menu. This check is unmet until Ben answers O-PG1 and the slice that builds it is chosen.
-38. **Volume** shows bars of Σ load × reps per session, with marked sets included, and isn't offered for assisted, bodyweight, timed or distance exercises.
-38a. **Distance** (sled push, carries, added 12 Oct 2026): sets of 40 kg × 20 m twice show `Total distance 40 m` for that session; `Best distance` reads `40 kg × 20 m`; the `BEST DISTANCE` table lists the longest counted set at each load; no Est. 1RM, top set, volume, rep table or records. 40 kg × 25 m on 1 Sep and 80 kg × 25 m on 1 Oct: the StatStrip and the panel `Best` both read `80 kg × 25 m` (1 Oct) and `Change` reads `Same distance, 40 kg more than 1 Sep`; with the sessions reversed both read `80 kg × 25 m · 1 Sep`.
+38. **Total weight** shows bars of Σ load × reps per session (each dumbbell and side counted), with marked sets included, and isn't offered for assisted, bodyweight-only, timed, distance or cardio exercises.
+38a. **Distance** (sled push, carries, added 12 Oct 2026): sets of 40 kg × 20 m twice show `Total distance 40 m` for that session; `Best distance` reads `40 kg × 20 m`; the `BEST DISTANCE` table lists the longest counted set at each load; no Est. 1RM, top set, total weight, rep table or records. 40 kg × 25 m on 1 Sep and 80 kg × 25 m on 1 Oct: the StatStrip and the panel `Best` both read `80 kg × 25 m` (1 Oct) and `Change` reads `Same distance, 40 kg more than 1 Sep`; with the sessions reversed both read `80 kg × 25 m · 1 Sep`.
 39. **Records** list every record of the series, newest first, with `Best Est. 1RM` labelled as an estimate; a series with fewer than 3 logged sessions shows `Records start after 3 logged sessions.`
 40. **No new chart library** is added to `apps/mobile/package.json`; charts draw with Skia, and no chart animates.
 41. **Offline and no AI**: every slice B screen is identical online and offline.

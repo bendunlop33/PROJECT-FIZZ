@@ -1,10 +1,7 @@
 import {
   buildDayFor,
   liftHistoryFrom,
-  liveRoutines,
-  mainLiftIds,
   mainLiftFor,
-  mainLiftRoutines,
   mainLiftOptions,
   newTrainingProfile,
   splitInUse,
@@ -123,18 +120,11 @@ export function createTrainingService(deps: TrainingServiceDeps) {
     },
 
     /**
-     * Every main lift (Ben, 20 Oct: `Targets hit` on main lifts only): each
-     * split day's main lift and every exercise marked `Main` in a workout in
-     * the rotation or the applied plan (review S1). Empty when nothing can be read.
+     * Every main lift (Ben, 20 Oct: `Targets hit` on the split day's main lift
+     * only): each split day's main lift. Empty when nothing can be read.
      */
     async mainLiftIds(): Promise<Set<string>> {
-      const owner = await deps.profile().catch(() => null);
-      if (owner === null) return new Set();
-      const days = await splitMains().catch(() => new Set<string>());
-      const live = liveRoutines(await deps.store().repos.routines.listByOwner(owner.id).catch(() => []));
-      const applied = await deps.store().repos.planDrafts.applied(owner.id).catch(() => null);
-      const exercises = await pool();
-      return mainLiftIds({ dayMainLifts: [...days], routines: mainLiftRoutines(live, applied), isCompound: (id) => exercises.get(id)?.mechanic === 'compound' });
+      return splitMains().catch(() => new Set<string>());
     },
 
     /**

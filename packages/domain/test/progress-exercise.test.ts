@@ -15,9 +15,9 @@ import {
   metricsFor,
   repTableByReps,
   repTableByWeight,
-  sessionVolume,
   seriesKind,
   thousands,
+  TOTAL_ASSUMED,
   toProgressSession,
   trendRangeBounds,
   TREND_MAX_POINTS,
@@ -32,7 +32,7 @@ import { apply, BENCH, logCmd, setsFor, startFixture } from './session-fixture';
 
 /**
  * Progress slice B (progress.md §8 checks 26–39): series, Est. 1RM, top set,
- * volume, rep table, records, history and the exercise detail view model,
+ * total weight, rep table, records, history and the exercise detail view model,
  * on small `ProgressSession` values. kg/lb, per-hand dumbbells, assisted
  * machines, bodyweight + added, timed holds, imports and marked sets.
  */
@@ -158,9 +158,9 @@ describe('series (Ben, 20 Oct: one per exercise and kind, replacing PG15 for Pro
     expect(seriesKind('assistance', 'assisted_stack', 'reps')).toBe('assisted');
     expect(seriesKind('bodyweight', null, 'reps')).toBe('bodyweight');
     expect(seriesKind('total', 'barbell', 'duration')).toBe('timed');
-    expect(metricsFor('load')).toEqual(['e1rm', 'top_set', 'volume']);
+    expect(metricsFor('load')).toEqual(['e1rm', 'top_set', 'total_weight']);
     expect(metricsFor('assisted')).toEqual(['top_set']);
-    expect(metricsFor('added_bodyweight')).toEqual(['top_set']);
+    expect(metricsFor('added_bodyweight')).toEqual(['top_set', 'total_weight']);
     expect(metricsFor('bodyweight')).toEqual(['best_set']);
     expect(metricsFor('timed')).toEqual(['longest_hold']);
   });
@@ -222,7 +222,7 @@ describe('Est. 1RM (PG11, checks 27–29)', () => {
     expect(a?.stats.map((s) => s.label)).toEqual(['LEAST ASSIST', 'MOST REPS', 'SESSIONS']);
     expect(a?.estimateInfo).toBe(false);
     const w = buildExerciseDetailView({ sessions: [pull('added', kg(10, 'added'), 'bodyweight_station')], exerciseId: 'pull-added', today: TODAY });
-    expect(w?.metrics.map((m) => m.label)).toEqual(['Top set']);
+    expect(w?.metrics.map((m) => m.label)).toEqual(['Top set', 'Total weight']);
     expect(sp(w?.stats[0]?.value)).toBe('BW + 10 kg × 8');
     const b = buildExerciseDetailView({ sessions: [pull('bodyweight', null, null)], exerciseId: 'pull-bodyweight', today: TODAY });
     expect(b?.metrics.map((m) => m.label)).toEqual(['Best set']);
@@ -238,7 +238,7 @@ describe('Est. 1RM (PG11, checks 27–29)', () => {
 
   it('a plate-loaded machine’s `added` load has Est. 1RM; a dip belt’s doesn’t', () => {
     const sled = session('2026-09-01', [row([set(kg(100, 'added'), 5)], { exerciseId: 'leg-press', convention: 'added', equipmentKind: 'plate_loaded_machine', equipmentId: 'lp' })]);
-    expect(buildExerciseDetailView({ sessions: [sled], exerciseId: 'leg-press', today: TODAY })?.metrics.map((m) => m.key)).toEqual(['e1rm', 'top_set', 'volume']);
+    expect(buildExerciseDetailView({ sessions: [sled], exerciseId: 'leg-press', today: TODAY })?.metrics.map((m) => m.key)).toEqual(['e1rm', 'top_set', 'total_weight']);
   });
 });
 
@@ -322,12 +322,12 @@ describe('marked sets (PG21, check 32)', () => {
     expect(v.points[3]?.notes).toContain('1 set not counted');
   });
 
-  it('every set that day marked: no point, marker `Not counted`; volume still counts them (PG31)', () => {
+  it('every set that day marked: no point, marker `Not counted`; total weight still counts them (PG31)', () => {
     const all = [...sessions, session('2026-09-09', [row([set(kg(110), 2, { exclusions: ['technique'] })])])];
     const t = exerciseTrend(onlySeries(all), 'e1rm', '6m', TODAY);
     expect(t.points).toHaveLength(4);
     expect(t.markers.filter((m) => m.kind === 'not_counted').map((m) => m.date)).toEqual(['2026-09-09']);
-    const vol = exerciseTrend(onlySeries(all), 'volume', '6m', TODAY);
+    const vol = exerciseTrend(onlySeries(all), 'total_weight', '6m', TODAY);
     expect(vol.points).toHaveLength(5);
     expect(vol.points[4]?.value).toBe(220);
     expect(vol.markers.some((m) => m.kind === 'not_counted')).toBe(false);
@@ -425,20 +425,16 @@ describe('ranges and chart states (§3.4)', () => {
   });
 });
 
-describe('volume (PG31, check 38)', () => {
-  it('review S1: only sets in the series’ convention: barbell and per-hand dumbbells are never added together', () => {
-    const mixed = session('2026-09-01', [row([set(kg(100), 5)]), row([set(kg(30, 'per_hand'), 10)], { equipmentId: 'db', equipmentKind: 'dumbbells', convention: 'per_hand' })]);
-    const s = onlySeries([mixed]);
-    // The latest row (dumbbells) sets the convention: 30 × 10, per hand; the 500 kg of barbell is left out.
-    expect(s.key.convention).toBe('per_hand');
-    expect(sessionVolume(s.sessions[0] as never, s)?.value).toBe(300);
-    const bar = onlySeries([session('2026-09-01', [row([set(kg(30, 'per_hand'), 10)], { equipmentId: 'db', equipmentKind: 'dumbbells', convention: 'per_hand' }), row([set(kg(100), 5)])])]);
-    expect(sessionVolume(bar.sessions[0] as never, bar)?.value).toBe(500);
-  });
-
-  it('Σ load × reps of non-warm-up sets, marked included; unilateral: the busier side; per-dumbbell stays per hand', () => {
-    const plain = onlySeries([session('2026-09-01', [row([set(kg(60), 10, { setType: 'warmup' }), set(kg(100), 5), set(kg(100), 5, { exclusions: ['spotted'] })])])]);
-    expect(sessionVolume(plain.sessions[0] as never, plain)?.value).toBe(1000);
+describe('Total weight on exercise detail (Ben, 20 Oct: replaces Volume)', () => {
+  it('each dumbbell and side counted, marked sets in, warm-ups out; bars on a plain kg axis', () => {
+    const plain = [session('2026-09-01', [row([set(kg(60), 10, { setType: 'warmup' }), set(kg(100), 5), set(kg(100), 5, { exclusions: ['spotted'] })])])];
+    const p = buildExerciseDetailView({ sessions: plain, exerciseId: 'bench', today: TODAY, metric: 'total_weight' });
+    expect(p?.metric).toBe('total_weight');
+    expect(sp(p?.points[0]?.display)).toBe('1,000 kg');
+    expect(p?.heading.startsWith('Total weight · ')).toBe(true);
+    expect(p?.axisUnit).toBe('kg');
+    expect(p?.bars).toBe(true);
+    // One-arm row, left and right: one dumbbell per side, both sides counted (item 7: as built).
     const uni = row([set(kg(30, 'per_hand'), 10, { side: 'left' }), set(kg(30, 'per_hand'), 8, { side: 'right' }), set(kg(30, 'per_hand'), 10, { side: 'left' }), set(kg(30, 'per_hand'), 10, { side: 'right' })], {
       exerciseId: 'db-row',
       convention: 'per_hand',
@@ -446,17 +442,27 @@ describe('volume (PG31, check 38)', () => {
       equipmentKind: 'dumbbells',
       equipmentId: 'db',
     });
-    const s = onlySeries([session('2026-09-01', [uni])], 'db-row');
-    expect(sessionVolume(s.sessions[0] as never, s)?.value).toBe(600);
-    const v = buildExerciseDetailView({ sessions: [session('2026-09-01', [uni])], exerciseId: 'db-row', today: TODAY, metric: 'volume' });
-    expect(sp(v?.points[0]?.display)).toBe('600 kg each × reps');
-    expect(v?.axisUnit).toBe('kg each × reps');
-    expect(v?.bars).toBe(true);
+    const v = buildExerciseDetailView({ sessions: [session('2026-09-01', [uni])], exerciseId: 'db-row', today: TODAY, metric: 'total_weight', implements: 1 });
+    expect(sp(v?.points[0]?.display)).toBe('1,140 kg');
+    expect(v?.axisUnit).toBe('kg');
+    expect(v?.info).toBeNull();
     expect(v?.history.months[0]?.rows[0]?.sets).toBe('L 30×10 · R 30×8 · L 30×10 · R 30×10');
+    // Two-handed dumbbell press with no catalogue count: both dumbbells, an estimate, the info tap says so.
+    const press = [session('2026-09-01', [row([set(kg(20, 'per_hand'), 10)], { exerciseId: 'db-press', convention: 'per_hand', equipmentKind: 'dumbbells', equipmentId: 'db' })])];
+    const est = buildExerciseDetailView({ sessions: press, exerciseId: 'db-press', today: TODAY, metric: 'total_weight' });
+    expect(sp(est?.points[0]?.display)).toBe('≈400 kg');
+    expect(est?.points[0]?.words).toContain('about 400 kilograms');
+    expect(est?.info).toBe(TOTAL_ASSUMED);
+    expect(sp(buildExerciseDetailView({ sessions: press, exerciseId: 'db-press', today: TODAY, metric: 'total_weight', implements: 2 })?.points[0]?.display)).toBe('400 kg');
+    // Change reads in plain kg.
+    const two = [bench('2026-09-01', [[100, 5]]), bench('2026-09-03', [[100, 5], [100, 5]])];
+    expect(sp(buildExerciseDetailView({ sessions: two, exerciseId: 'bench', today: TODAY, metric: 'total_weight' })?.panel.find((l) => l.label === 'Change')?.value)).toBe('Up 500 kg since 1 Sep');
   });
 
-  it('is not offered for assisted, bodyweight or timed series', () => {
-    for (const kind of ['assisted', 'bodyweight', 'timed', 'added_bodyweight'] as const) expect(metricsFor(kind)).not.toContain('volume');
+  it('no Volume metric anywhere; total weight only where there is load (and BW +)', () => {
+    for (const kind of ['load', 'assisted', 'bodyweight', 'timed', 'added_bodyweight', 'distance', 'cardio'] as const) expect(metricsFor(kind) as string[]).not.toContain('volume');
+    expect(metricsFor('added_bodyweight')).toEqual(['top_set', 'total_weight']);
+    for (const kind of ['assisted', 'bodyweight', 'timed', 'distance', 'cardio'] as const) expect(metricsFor(kind)).not.toContain('total_weight');
   });
 
   it('thousands are grouped', () => {

@@ -413,6 +413,15 @@ describe('Total weight (Ben, 20 Oct 2026)', () => {
     expect(bar?.info).toBeNull();
   });
 
+  it('review N3: `Converted from lb` and the assumed dumbbell count both show in the info tap', () => {
+    const lunge = [
+      session('2026-09-01', [row([set(lb(45, 'per_hand'), 10, { side: 'both' })], { exerciseId: 'lunge', convention: 'per_hand', equipmentKind: 'dumbbells', laterality: 'unilateral', unit: 'lb' })]),
+      session('2026-10-01', [row([set(kg(20, 'per_hand'), 10, { side: 'both' })], { exerciseId: 'lunge', convention: 'per_hand', equipmentKind: 'dumbbells', laterality: 'unilateral' })]),
+    ];
+    const v = buildExerciseTabView({ sessions: lunge, exerciseId: 'lunge', today: TODAY, window: WINDOW, measure: 'total', unit: 'kg' });
+    expect(v?.info).toBe(`Converted from lb\n${TOTAL_ASSUMED}`);
+  });
+
   it('lb sets are converted into the display unit before summing', () => {
     const s = [session('2026-10-01', [row([set(kg(100), 5)]), row([set(lb(225), 5)], { unit: 'lb', equipmentId: 'bar-2', gymId: 'gym-2' })])];
     const v = buildExerciseTabView({ sessions: s, exerciseId: 'bench', today: TODAY, window: WINDOW, measure: 'total', unit: 'kg' });
