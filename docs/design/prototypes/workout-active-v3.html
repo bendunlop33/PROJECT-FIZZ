@@ -54,9 +54,13 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .tr.done .rpe { color: var(--text2); }
 .tick { width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--text3); background: none; color: var(--text3); font-size: 15px; cursor: pointer; justify-self: center; }
 .tr.done .tick { background: var(--done); border-color: var(--done); color: var(--on-accent); }
-.meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--text2); padding: 6px 2px 0; }
-.meta u { color: var(--text); cursor: pointer; text-underline-offset: 3px; text-decoration-color: var(--text3); }
-.addset { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 13.5px; padding: 6px 2px 0; cursor: pointer; align-self: flex-start; font-family: inherit; }
+.wl { font-size: 14px; color: var(--text2); padding: 10px 4px; border-top: 1px solid var(--divider); line-height: 1.4; }
+.wl b { color: var(--text); font-weight: 600; }
+.wl u { color: var(--text); margin-left: 6px; cursor: pointer; text-underline-offset: 3px; }
+.foot2 { display: flex; justify-content: space-between; align-items: center; padding-top: 6px; }
+.q { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--text3); background: none; color: var(--text2); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; position: relative; }
+.q::after, .addset::after { content: ''; position: absolute; inset: -8px; }
+.addset { position: relative; min-height: 30px; padding: 0 12px; border-radius: 999px; border: 1.5px solid var(--divider); background: none; color: var(--text2); font-size: 13px; cursor: pointer; font-family: inherit; }
 .rows { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
 .rows.up.down { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%); }
 .rows.up:not(.down) { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px); mask-image: linear-gradient(to bottom, transparent 0, #000 16px); }
@@ -131,24 +135,27 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
   const app = document.getElementById('app');
   const cur = () => { const rd = ROUNDS[s.r]; for (let i = 0; i < rd.ex[0].sets.length; i++) for (let k = 0; k < rd.ex.length; k++) { const st = rd.ex[k].sets[i]; if (st && !st.done) return { k, i }; } return null; };
   const setLab = (e, i) => (e.sets[i].t === 'W' ? 'Warm-up' : `Set ${e.sets.slice(0, i + 1).filter((x) => x.t !== 'W').length}`);
+  const tgt = (e) => { const t = e.target.replace(/ @ \d+/g, ''); return /^\d+(–\d+)?$/.test(t) ? `${t} reps` : t; };
   const lab = (rd, k) => `${rd.n}${rd.ex.length > 1 ? 'ab'[k] : ''}`;
   function exHtml(rd, e, k, c) {
     let n = 0; const doneW = e.sets.filter((x) => x.done && x.t !== 'W').length, totW = e.sets.filter((x) => x.t !== 'W').length;
-    return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works}</small></span><span class="prog">${doneW}/${totW}</span></div>
+    return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works} · ${tgt(e)}</small></span><span class="prog">${doneW}/${totW}</span></div>
       <div class="tbl">${true ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
       <div class="rows" data-k="${k}">${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n;  return `<div data-k="${k}" data-i="${i}" class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div></div>
-      <div class="meta"><span>${e.target}</span><span>${e.rest ? `Rest ${e.rest} ›` : ''} <u>Why?</u></span></div>
-      <button class="addset" data-a="add" data-k="${k}">＋ Set</button></div>`;
+      <div class="foot2"><button class="addset" data-a="add" data-k="${k}">＋ Set</button><button class="q" data-a="why" data-k="${k}" aria-label="Why this target">?</button></div></div>`;
   }
   function view() { draw(); fit(); }
   // Everything fits on one page: each exercise's set rows scroll inside their own box. Boxes shrink (largest first)
   // until the round fits, never below 2 rows each; then each box scrolls so its current set shows with done sets above.
-  function fit() {
+  function fit(noNext) {
+    const nx = app.querySelector('.next'); if (nx) nx.style.display = noNext ? 'none' : '';
+    app.querySelectorAll('.rows').forEach((b) => { b.style.maxHeight = ''; });
     const sc = app.querySelector('.scroll'); const boxes = [...app.querySelectorAll('.rows')]; if (!boxes.length) return;
     const h = boxes[0].querySelector('.tr')?.getBoundingClientRect().height || 45;
     const n = boxes.map((b) => b.querySelectorAll('.tr').length); const v = [...n];
     let over = sc.scrollHeight - sc.clientHeight;
     while (over > 1) { let j = -1; v.forEach((x, k) => { if (x > 2 && (j < 0 || x > v[j])) j = k; }); if (j < 0) break; v[j]--; over -= h; }
+    if (!noNext && nx && v.some((x, k) => x < Math.min(3, n[k]))) return fit(true); // Up next gives way so each exercise keeps 3 rows
     const c = cur();
     boxes.forEach((b, k) => { b.style.maxHeight = v[k] < n[k] ? `${v[k] * h}px` : ''; b.classList.toggle('lim', v[k] < n[k]);
       const rows = [...b.querySelectorAll('.tr')]; let idx = rows.findIndex((r) => !r.classList.contains('done')); if (c && c.k === k) idx = rows.findIndex((r) => r.dataset.i === String(c.i)); if (idx < 0) idx = rows.length - 1;
@@ -171,6 +178,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     <div class="foot"><button class="chat" data-a="chat">Chat</button><button class="log" data-a="log">${c ? `${lab(rd, c.k)} · ${setLab(e, c.i)} · Log ${st.kg}${e.each ? ' kg each' : ' kg'} × ${st.r}` : 'Round done · Next'}</button></div>
     <div id="kb"><button data-k="-">−</button><button data-k="+">+</button><button data-k="next">Next</button><span></span><button class="done" data-k="done">Done</button></div>
     ${s.sheet ? overview() : ''}
+    ${s.why !== undefined && s.why !== null ? (() => { const e = rd.ex[s.why]; return `<div class="scrim" data-a="close"></div><div class="sheet"><h3>${e.name}</h3><div class="wl">Target <b>${e.target}</b></div><div class="wl">Rest <b>${rd.ex.length > 1 ? '1:30 after the round' : e.rest}</b> <u>Change</u></div><div class="wl">Last time <b>16 Oct · ${e.sets.filter((x) => x.t !== 'W').map((x) => `${x.kg} × ${x.r}`).join(', ')}</b></div><div class="wl">From the coach: kept the same load, last session hit the top of the range at RPE 9.</div><button class="ghost" data-a="close">Close</button></div>`; })() : ''}
     ${s.menu ? `<div class="scrim" data-a="close"></div><div class="sheet">${['Focus view', 'Pause workout', 'Rename workout', 'Turn off spoken cues', 'Ask the coach', 'Edit workout times', 'Finish workout', 'Discard workout'].map((x) => `<button class="mi${x === 'Discard workout' ? ' red' : ''}" data-a="mi">${x}</button>`).join('')}<button class="ghost" data-a="close">Cancel</button></div>` : ''}
     ${s.toast ? `<div class="toast">${s.toast}</div>` : ''}`;
   }
@@ -203,7 +211,8 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     if (a === 'add') { const e = ROUNDS[s.r].ex[t.dataset.k]; const l = e.sets[e.sets.length - 1]; e.sets.push({ ...l, done: false }); }
     if (a === 'go') { s.r = Number(t.dataset.v); s.sheet = false; s.anchor = true; }
     if (a === 'sheet') s.sheet = true;
-    if (a === 'close') { s.sheet = false; s.menu = false; }
+    if (a === 'close') { s.sheet = false; s.menu = false; s.why = null; }
+    if (a === 'why') s.why = Number(t.dataset.k);
     if (a === 'menu') s.menu = true;
     if (a === 'mi') { s.menu = false; s.toast = t.textContent + ' (same as today)'; }
     if (a === 'chat') s.toast = 'Opens the coach (type or speak)';
