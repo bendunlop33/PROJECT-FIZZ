@@ -94,40 +94,58 @@ const imported = (date: string, rows: ProgressExercise[]) =>
 const bench = (date: string, sets: [number, number][], over: Partial<ProgressExercise> = {}) => session(date, [row(sets.map(([l, r]) => set(kg(l), r)), over)]);
 
 function onlySeries(sessions: ProgressSession[], exerciseId = 'bench'): ExerciseSeries {
-  const all = collectExerciseSeries(sessions, exerciseId);
+  const all = collectExerciseSeries(sessions, exerciseId, { unit: null });
   expect(all).toHaveLength(1);
   return all[0] as ExerciseSeries;
 }
 
-describe('series (PG15, check 26)', () => {
-  it('bench on Main Gym barbell and Hotel Gym barbell are separate series; imports form their own; never merged', () => {
+describe('series (Ben, 20 Oct: one per exercise and kind, replacing PG15 for Progress)', () => {
+  it('bench on Main Gym barbell, Hotel Gym barbell and imported history are one series; each session keeps its source', () => {
     const sessions = [
       bench('2026-09-01', [[100, 5]]),
       bench('2026-09-03', [[90, 5]], { equipmentId: 'bar-2', gymId: 'gym-2' }),
       imported('2026-01-03', [row([set(kg(80), 5)])]),
       bench('2026-09-05', [[100, 6]]),
     ];
-    const all = collectExerciseSeries(sessions, 'bench');
-    expect(all.map((s) => [s.key.source, s.key.equipmentId, s.sessions.length])).toEqual([
-      ['import', null, 1],
-      ['app', 'bar-1', 2],
-      ['app', 'bar-2', 1],
+    const all = collectExerciseSeries(sessions, 'bench', { unit: null });
+    expect(all).toHaveLength(1);
+    expect(all[0]?.id).toBe('bench|load');
+    expect(all[0]?.sessions.map((s) => [s.source, s.rows[0]?.equipmentId ?? null])).toEqual([
+      ['import', null],
+      ['app', 'bar-1'],
+      ['app', 'bar-2'],
+      ['app', 'bar-1'],
     ]);
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS });
-    expect(v?.series.map((s) => s.menuLabel)).toEqual(['Main Gym · Barbell · 2', 'Hotel Gym · Barbell · 1', 'History · kg · 1']);
-    // Default: the series used most in the last 12 weeks.
-    expect(v?.seriesLabel).toBe('Main Gym · Barbell');
-    expect(v?.points.map((p) => p.sessionId)).toEqual([sessions[0]?.sessionId, sessions[3]?.sessionId]);
+    // Stored provenance is untouched: the imported row is still an import with no equipment.
+    expect(sessions[2]?.source).toBe('import');
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, range: 'all' });
+    // One kind: no menu, no gym, equipment or `History` label.
+    expect(v?.series.map((s) => s.label)).toEqual(['']);
+    expect(v?.seriesLabel).toBe('');
+    expect(v?.points.map((p) => p.sessionId)).toEqual([sessions[2]?.sessionId, sessions[0]?.sessionId, sessions[1]?.sessionId, sessions[3]?.sessionId]);
+    expect(v?.converted).toBeNull();
   });
 
-  it('kg and lb on the same equipment are separate series and their labels say so', () => {
-    const sessions = [bench('2026-09-01', [[100, 5]]), session('2026-09-02', [row([set(lb(225), 5)], { unit: 'lb' })])];
-    const all = collectExerciseSeries(sessions, 'bench');
-    expect(all).toHaveLength(2);
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS, seriesId: all[1]?.id ?? null });
-    expect(v?.series.map((s) => s.label).sort()).toEqual(['Main Gym · Barbell · kg', 'Main Gym · Barbell · lb']);
-    // lb Est. 1RM rounds to 1 lb: 225 × (1 + 5/30) = 262.5 → 263 (Math.round half up).
-    expect(sp(v?.stats[0]?.value)).toBe('≈263 lb');
+  it('kg and lb sessions are one series in Ben’s unit; a converted value says so behind the info tap', () => {
+    const lbSession = session('2026-09-02', [row([set(lb(225), 5)], { unit: 'lb' })]);
+    const sessions = [bench('2026-09-01', [[100, 5]]), lbSession];
+    const all = collectExerciseSeries(sessions, 'bench', { unit: 'kg' });
+    expect(all).toHaveLength(1);
+    // 225 lb = 102.06 kg; the stored set keeps its lb.
+    expect(all[0]?.sessions[1]?.sets[0]?.load).toEqual(kg(102.06));
+    expect(all[0]?.sessions[1]?.sets[0]?.convertedFrom).toBe('lb');
+    expect(lbSession.exercises[0]?.sets[0]?.load).toEqual(lb(225));
+    expect(all[0]?.convertedFrom).toBe('lb');
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, unit: 'kg', metric: 'top_set' });
+    expect(v?.converted).toBe('Converted from lb');
+    expect(v?.axisUnit).toBe('kg');
+    expect(v?.points.map((p) => sp(p.display))).toEqual(['100 kg × 5', '102.06 kg × 5']);
+    expect(v?.points[1]?.notes).toContain('Converted from lb');
+    expect(v?.points[0]?.notes).not.toContain('Converted from lb');
+    // In lb, the kg session is the converted one: 225 × (1 + 5/30) = 262.5 → 263 (whole lb).
+    const inLb = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, unit: 'lb' });
+    expect(inLb?.converted).toBe('Converted from kg');
+    expect(sp(inLb?.stats[0]?.value)).toBe('≈263 lb');
   });
 
   it('the series kind follows convention, equipment and measurement (§6.3, check 29)', () => {
@@ -167,7 +185,7 @@ describe('Est. 1RM (PG11, checks 27–29)', () => {
 
   it('every Est. 1RM value carries ≈ and Est. (or "estimate" for VoiceOver) on every surface', () => {
     const sessions = ['2026-09-01', '2026-09-03', '2026-09-05', '2026-09-07'].map((d, i) => bench(d, [[100 + i * 2.5, 5]]));
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS });
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY });
     if (!v) throw new Error('view');
     expect(v.stats[0]?.label).toBe('EST. 1RM');
     // 107.5 × (1 + 5/30) = 125.42 → 125.5.
@@ -178,7 +196,7 @@ describe('Est. 1RM (PG11, checks 27–29)', () => {
     expect(v.points.every((p) => p.words.includes('estimated one-rep max about'))).toBe(true);
     expect(v.panel.every((l) => l.value.includes('≈'))).toBe(true);
     expect(sp(v.panel.find((l) => l.label === 'Change')?.value)).toBe('Up ≈9 kg since 1 Sep');
-    expect(v.chartWords).toMatch(/^Estimated one-rep max, an estimate, Bench press on Main Gym · Barbell/);
+    expect(v.chartWords).toMatch(/^Estimated one-rep max, an estimate, Bench press, 9 April/);
     expect(v.table.headers[1]).toBe('Est. 1RM (estimate)');
     expect(v.table.rows.every((r) => r.value.startsWith('≈'))).toBe(true);
     const rec = v.records?.items.find((r) => r.label === 'Best Est. 1RM');
@@ -190,7 +208,7 @@ describe('Est. 1RM (PG11, checks 27–29)', () => {
 
   it('per-hand dumbbells: the per-dumbbell value, labelled `each`', () => {
     const sessions = [session('2026-09-01', [row([set(kg(30, 'per_hand'), 10)], { exerciseId: 'db', equipmentId: 'db-1', equipmentKind: 'dumbbells', equipmentName: 'Dumbbells', convention: 'per_hand' })])];
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'db', today: TODAY, gymNames: GYMS });
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'db', today: TODAY });
     expect(sp(v?.stats[0]?.value)).toBe('≈40 kg each');
     expect(v?.axisUnit).toBe('kg each');
     expect(sp(v?.stats[1]?.value)).toBe('30 kg each × 10');
@@ -408,6 +426,16 @@ describe('ranges and chart states (§3.4)', () => {
 });
 
 describe('volume (PG31, check 38)', () => {
+  it('review S1: only sets in the series’ convention: barbell and per-hand dumbbells are never added together', () => {
+    const mixed = session('2026-09-01', [row([set(kg(100), 5)]), row([set(kg(30, 'per_hand'), 10)], { equipmentId: 'db', equipmentKind: 'dumbbells', convention: 'per_hand' })]);
+    const s = onlySeries([mixed]);
+    // The latest row (dumbbells) sets the convention: 30 × 10, per hand; the 500 kg of barbell is left out.
+    expect(s.key.convention).toBe('per_hand');
+    expect(sessionVolume(s.sessions[0] as never, s)?.value).toBe(300);
+    const bar = onlySeries([session('2026-09-01', [row([set(kg(30, 'per_hand'), 10)], { equipmentId: 'db', equipmentKind: 'dumbbells', convention: 'per_hand' }), row([set(kg(100), 5)])])]);
+    expect(sessionVolume(bar.sessions[0] as never, bar)?.value).toBe(500);
+  });
+
   it('Σ load × reps of non-warm-up sets, marked included; unilateral: the busier side; per-dumbbell stays per hand', () => {
     const plain = onlySeries([session('2026-09-01', [row([set(kg(60), 10, { setType: 'warmup' }), set(kg(100), 5), set(kg(100), 5, { exclusions: ['spotted'] })])])]);
     expect(sessionVolume(plain.sessions[0] as never, plain)?.value).toBe(1000);
@@ -466,18 +494,19 @@ describe('records (PG10, PG30, check 39)', () => {
 
   it('imports never make a record but a higher imported Est. 1RM suppresses one; an imported-only series has none', () => {
     const base = [bench('2026-08-01', [[100, 5]]), bench('2026-08-04', [[100, 5]]), bench('2026-08-07', [[100, 5]]), bench('2026-08-10', [[100, 7]])];
-    const s = collectExerciseSeries(base, 'bench')[0] as ExerciseSeries;
+    const s = collectExerciseSeries(base, 'bench', { unit: null })[0] as ExerciseSeries;
     expect(exerciseRecords(base, s).items.map((x) => x.kind)).toEqual(['most_reps_at_load', 'best_e1rm']);
     // An imported 95 × 10 (Est. 126.5) suppresses the 123.5 Est. 1RM claim, not the lighter-load rep record.
     const imp = imported('2026-01-01', [row([set(kg(95), 10)])]);
-    const withImp = collectExerciseSeries([imp, ...base], 'bench').find((x) => x.key.source === 'app') as ExerciseSeries;
+    const withImp = collectExerciseSeries([imp, ...base], 'bench', { unit: null }).find((x) => x.key.source === 'app') as ExerciseSeries;
     expect(exerciseRecords([imp, ...base], withImp).items.map((x) => x.kind)).toEqual(['most_reps_at_load']);
     // A heavier imported set suppresses the actual records too (as `findSetRecord`).
     const heavy = imported('2026-01-01', [row([set(kg(110), 1)])]);
-    expect(exerciseRecords([heavy, ...base], withImp).items.map((x) => x.kind)).toEqual(['best_e1rm']);
+    const withHeavy = collectExerciseSeries([heavy, ...base], 'bench', { unit: null })[0] as ExerciseSeries;
+    expect(exerciseRecords([heavy, ...base], withHeavy).items.map((x) => x.kind)).toEqual(['best_e1rm']);
     const onlyImp = [imported('2026-01-01', [row([set(kg(100), 5)])]), imported('2026-01-04', [row([set(kg(100), 5)])]), imported('2026-01-07', [row([set(kg(100), 5)])]), imported('2026-01-10', [row([set(kg(120), 5)])])];
     const v = buildExerciseDetailView({ sessions: onlyImp, exerciseId: 'bench', today: TODAY, range: 'all' });
-    expect(v?.seriesLabel).toBe('History · kg');
+    expect(v?.seriesLabel).toBe('');
     expect(v?.records).toEqual({ items: [], empty: 'Records start after 3 logged sessions.' });
     // 18 Oct (Ben): imported points and rows carry no `FitNotes` tag; the source stays in the data.
     expect(v?.points.some((p) => p.notes.includes('FitNotes'))).toBe(false);
@@ -520,12 +549,15 @@ describe('headline and history', () => {
 });
 
 describe('opening on a workout (home record, past workout, overview)', () => {
-  it('a sessionId opens the series that has it with its point selected; an equipmentId prefers that equipment', () => {
+  it('a sessionId opens the series that has it with its point selected; an equipmentId prefers the kind used on it', () => {
     const sessions = [bench('2026-09-01', [[100, 5]]), bench('2026-09-02', [[100, 5]]), bench('2026-09-03', [[90, 5]], { equipmentId: 'bar-2', gymId: 'gym-2' })];
-    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS, sessionId: sessions[2]?.sessionId ?? null });
-    expect(v?.seriesLabel).toBe('Hotel Gym · Barbell');
+    const v = buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, sessionId: sessions[2]?.sessionId ?? null });
+    expect(v?.seriesId).toBe('bench|load');
     expect(v?.selectedSessionId).toBe(sessions[2]?.sessionId);
-    expect(buildExerciseDetailView({ sessions, exerciseId: 'bench', today: TODAY, gymNames: GYMS, equipmentId: 'bar-2' })?.seriesLabel).toBe('Hotel Gym · Barbell');
+    const assist = session('2026-09-04', [row([set(kg(30, 'assistance'), 8)], { convention: 'assistance', equipmentKind: 'assisted_stack', equipmentId: 'assist-1' })]);
+    const both = [...sessions, assist];
+    expect(buildExerciseDetailView({ sessions: both, exerciseId: 'bench', today: TODAY, equipmentId: 'assist-1' })?.seriesLabel).toBe('Assisted');
+    expect(buildExerciseDetailView({ sessions: both, exerciseId: 'bench', today: TODAY, equipmentId: 'bar-2' })?.seriesLabel).toBe('Weighted');
     expect(buildExerciseDetailView({ sessions, exerciseId: 'nothing', today: TODAY })).toBeNull();
   });
 

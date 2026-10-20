@@ -1,6 +1,7 @@
-import type { EquipmentKind, Load, LoadConvention, Measurement, WeightUnit } from '@fizz/schemas';
+import type { EquipmentKind, ImplementCount, Load, LoadConvention, Measurement, WeightUnit } from '@fizz/schemas';
 import { addDays, addMonths, daysBetween, weekdayIndexOfDate } from '../calendar';
 import { isSetCountable } from '../exclusions';
+import { convertMass, LOAD_DISPLAY_STEP, roundToStep } from '../units';
 import { e1rmConventionAllowed, estimateOneRepMax } from './e1rm';
 import type { ProgressExercise, ProgressSession, ProgressSet } from './projection';
 import { inRange, type DateRange } from './window';
@@ -12,15 +13,20 @@ import { inRange, type DateRange } from './window';
  * active, discarded and reverted workouts and deleted or skipped sets are
  * never here) and local dates in the owner's zone.
  *
- * - **One series = one exercise + equipment instance + load convention + unit**
- *   (PG15). Imported history has no equipment (ADR 0016), so it forms its own
- *   series per convention and unit (`FitNotes · kg`), with its provenance
- *   (`source: 'import'`) carried to every point and row. Series are never merged.
+ * - **One series per exercise and kind** (Ben, 20 Oct 2026, replacing PG15
+ *   for Progress): every gym, equipment item and source (logged or imported)
+ *   of one exercise is one series. Only the kind (`load`, `assisted`, BW +,
+ *   bodyweight, timed, distance, cardio) splits it, since those don't share
+ *   an axis. Each session keeps its provenance (`source`), and the stored
+ *   sets are untouched.
+ * - **Units** are converted to Ben's display unit for the series (each
+ *   converted set keeps `convertedFrom`). **Conventions** (total, each hand,
+ *   stack, plates) are plotted as recorded and never converted into each
+ *   other; each set carries its row's equipment kind so its own text reads
+ *   right (`22.5 kg each`).
  * - **Sets Ben marked** (`Spotted`, `Pain`, …) are left out of top set, Est.
  *   1RM, the rep table, records and every best or change, and counted in
- *   volume (PG21), all through `isSetCountable`.
- * - **Units and conventions** are never mixed: a set whose load isn't in the
- *   series' convention and unit is left out of the series' numbers.
+ *   volume and total weight (PG21), all through `isSetCountable`.
  */
 
 export type ExerciseMetric = 'e1rm' | 'top_set' | 'volume' | 'best_set' | 'longest_hold' | 'total_distance' | 'best_distance' | 'total_time';
@@ -48,6 +54,12 @@ export const DEFAULT_SERIES_DAYS = 84;
  */
 export type SeriesKind = 'load' | 'assisted' | 'added_bodyweight' | 'bodyweight' | 'timed' | 'distance' | 'cardio';
 
+/**
+ * One row's record series (PG10 records, the Summary's record line): one
+ * exercise + equipment instance + load convention + unit, imports apart.
+ * Progress charts use the consolidated `ExerciseSeries`, whose `key` is the
+ * latest row's with the display unit.
+ */
 export interface SeriesKey {
   exerciseId: string;
   source: 'app' | 'import';
@@ -58,7 +70,7 @@ export interface SeriesKey {
   measurement: Measurement;
 }
 
-/** A stable string for a series (navigation params, remembered choice). */
+/** A stable string for a record series. */
 export function seriesIdOf(k: SeriesKey): string {
   const eq = k.source === 'import' ? 'import' : (k.equipmentId ?? 'none');
   return [k.exerciseId, eq, k.convention, k.unit, k.measurement === 'duration' ? 'timed' : k.measurement === 'distance' ? 'distance' : k.measurement === 'cardio' ? 'cardio' : 'reps'].join('|');
@@ -98,7 +110,14 @@ export function higherIsBetter(kind: SeriesKind, metric: ExerciseMetric): boolea
   return !(kind === 'assisted' && metric === 'top_set');
 }
 
-/** One workout's sets of one series (all its rows on that equipment that day). */
+/**
+ * A set as a series reads it: its row's equipment kind (so a per-hand or
+ * stack set reads as itself in a merged series) and, when its load was
+ * converted to the series' unit, the unit it was logged in.
+ */
+export type SeriesSet = ProgressSet & { equipmentKind?: EquipmentKind | null; convertedFrom?: WeightUnit };
+
+/** One workout's sets of one series (all its rows of the exercise and kind that day). */
 export interface SeriesSession {
   sessionId: string;
   date: string;
@@ -108,13 +127,15 @@ export interface SeriesSession {
   name: string | null;
   rows: readonly ProgressExercise[];
   /** Every completed set of those rows, rows in workout order. */
-  sets: readonly ProgressSet[];
+  sets: readonly SeriesSet[];
   /** A set was corrected after logging. */
   edited: boolean;
 }
 
 export interface ExerciseSeries {
+  /** `<exerciseId>|<kind>`: stable across gyms, equipment, units and imports. */
   id: string;
+  /** The latest row's convention and measurement, the display unit, `app` when any session was logged in the app. */
   key: SeriesKey;
   kind: SeriesKind;
   equipmentKind: EquipmentKind | null;
@@ -124,6 +145,13 @@ export interface ExerciseSeries {
   exerciseName: string;
   /** Oldest first. */
   sessions: SeriesSession[];
+  /** A set's load was logged in this other unit and converted for the chart (`Converted from lb`); null when none was. */
+  convertedFrom: WeightUnit | null;
+}
+
+/** The consolidated series id (Ben, 20 Oct). */
+export function consolidatedSeriesId(exerciseId: string, kind: SeriesKind): string {
+  return `${exerciseId}|${kind}`;
 }
 
 export function keyOfRow(s: ProgressSession, ex: ProgressExercise): SeriesKey {
@@ -133,48 +161,89 @@ export function keyOfRow(s: ProgressSession, ex: ProgressExercise): SeriesKey {
 
 export const chronological = (a: { startedMs: number; sessionId: string }, b: { startedMs: number; sessionId: string }) => a.startedMs - b.startedMs || a.sessionId.localeCompare(b.sessionId);
 
+/** A load in `unit`, as the series shows it (converted and rounded to the display step; bodyweight has no mass). */
+export function loadInUnit(load: Load, unit: WeightUnit): Load {
+  if (load.unit === unit) return load;
+  if (load.convention === 'bodyweight') return { ...load, unit };
+  return { ...load, value: roundToStep(convertMass({ value: load.value, unit: load.unit }, unit).value, LOAD_DISPLAY_STEP), unit };
+}
+
+/** A row's sets in the series' unit, each with the row's equipment kind. */
+function normaliseRow(row: ProgressExercise, unit: WeightUnit): { row: ProgressExercise; converted: WeightUnit | null } {
+  let converted: WeightUnit | null = null;
+  const sets = row.sets.map((x): SeriesSet => {
+    if (x.load === null || x.load.unit === unit) return { ...x, equipmentKind: row.equipmentKind };
+    if (x.load.convention === 'bodyweight') return { ...x, load: loadInUnit(x.load, unit), equipmentKind: row.equipmentKind };
+    converted = x.load.unit;
+    return { ...x, load: loadInUnit(x.load, unit), equipmentKind: row.equipmentKind, convertedFrom: x.load.unit };
+  });
+  return { row: { ...row, unit, sets }, converted };
+}
+
+/** The unit of the latest loaded row of the exercise (the default display unit); kg with none. */
+function latestUnit(ordered: readonly ProgressSession[], exerciseId: string): WeightUnit {
+  for (let i = ordered.length - 1; i >= 0; i -= 1) {
+    const s = ordered[i] as ProgressSession;
+    for (let j = s.exercises.length - 1; j >= 0; j -= 1) {
+      const ex = s.exercises[j] as ProgressExercise;
+      if (ex.exerciseId === exerciseId && ex.convention !== 'bodyweight' && ex.sets.length > 0) return ex.unit;
+    }
+  }
+  return 'kg';
+}
+
 /**
- * Every series of one exercise (PG15), each with its sessions oldest first.
- * One pass over the workouts; rows of other exercises are skipped at once.
+ * Every series of one exercise (Ben, 20 Oct 2026): one per kind, every gym,
+ * equipment item and source merged, each with its sessions oldest first and
+ * loads in `unit` (Ben's display unit, required so no caller mixes units;
+ * null: the latest row's). One pass
+ * over the workouts; rows of other exercises are skipped at once.
  */
-export function collectExerciseSeries(sessions: readonly ProgressSession[], exerciseId: string): ExerciseSeries[] {
+export function collectExerciseSeries(sessions: readonly ProgressSession[], exerciseId: string, opts: { unit: WeightUnit | null }): ExerciseSeries[] {
   const out = new Map<string, ExerciseSeries>();
   const ordered = [...sessions].sort(chronological);
+  const unit = opts.unit ?? latestUnit(ordered, exerciseId);
   for (const s of ordered) {
-    const bySeries = new Map<string, ProgressExercise[]>();
+    const byKind = new Map<SeriesKind, ProgressExercise[]>();
     for (const ex of s.exercises) {
-      if (ex.exerciseId !== exerciseId) continue;
-      const id = seriesIdOf(keyOfRow(s, ex));
-      bySeries.set(id, [...(bySeries.get(id) ?? []), ex]);
+      if (ex.exerciseId !== exerciseId || ex.sets.length === 0) continue;
+      const kind = seriesKind(ex.convention, ex.equipmentKind, ex.measurement);
+      byKind.set(kind, [...(byKind.get(kind) ?? []), ex]);
     }
-    for (const [id, rows] of bySeries) {
-      const first = rows[0] as ProgressExercise;
-      const key = keyOfRow(s, first);
-      const sets = rows.flatMap((r) => r.sets);
-      if (sets.length === 0) continue;
-      const entry: SeriesSession = { sessionId: s.sessionId, date: s.date, startedMs: s.startedMs, source: key.source, name: s.name, rows, sets, edited: sets.some((x) => x.edited === true) };
-      const existing = out.get(id);
+    for (const [kind, raw] of byKind) {
+      const normalised = raw.map((r) => normaliseRow(r, unit));
+      const rows = normalised.map((n) => n.row);
+      const converted = normalised.find((n) => n.converted !== null)?.converted ?? null;
+      const id = consolidatedSeriesId(exerciseId, kind);
+      const source = s.source === 'import' ? 'import' : 'app';
+      const sets = rows.flatMap((r) => r.sets as readonly SeriesSet[]);
+      const entry: SeriesSession = { sessionId: s.sessionId, date: s.date, startedMs: s.startedMs, source, name: s.name, rows, sets, edited: sets.some((x) => x.edited === true) };
       const last = rows[rows.length - 1] as ProgressExercise;
+      const key: SeriesKey = { exerciseId, source, equipmentId: source === 'import' ? null : last.equipmentId, convention: last.convention, unit, measurement: last.measurement };
+      const existing = out.get(id);
       if (existing === undefined) {
         out.set(id, {
           id,
           key,
-          kind: seriesKind(key.convention, first.equipmentKind, key.measurement),
-          equipmentKind: first.equipmentKind,
-          equipmentName: first.equipmentName ?? null,
-          gymId: key.source === 'import' ? null : first.gymId,
+          kind,
+          equipmentKind: last.equipmentKind,
+          equipmentName: last.equipmentName ?? null,
+          gymId: source === 'import' ? null : last.gymId,
           exerciseName: last.exerciseName,
           sessions: [entry],
+          convertedFrom: converted,
         });
-      } else {
-        existing.sessions.push(entry);
-        existing.exerciseName = last.exerciseName;
-        if (first.equipmentName) existing.equipmentName = first.equipmentName;
-        if (first.equipmentKind !== null) {
-          existing.equipmentKind = first.equipmentKind;
-          existing.kind = seriesKind(key.convention, first.equipmentKind, key.measurement);
-        }
-        if (key.source === 'app' && first.gymId !== null) existing.gymId = first.gymId;
+        continue;
+      }
+      existing.sessions.push(entry);
+      existing.exerciseName = last.exerciseName;
+      if (converted !== null) existing.convertedFrom = converted;
+      // The latest row describes the series; an imported row (no equipment) never replaces a logged one's equipment.
+      if (source === 'app' || existing.key.source === 'import') {
+        existing.key = key;
+        if (last.equipmentKind !== null) existing.equipmentKind = last.equipmentKind;
+        if (last.equipmentName) existing.equipmentName = last.equipmentName;
+        if (source === 'app' && last.gymId !== null) existing.gymId = last.gymId;
       }
     }
   }
@@ -196,11 +265,28 @@ export function defaultSeries(series: readonly ExerciseSeries[], today: string):
 // ---------------------------------------------------------------------------
 // Per-session values
 
-type Loaded = ProgressSet & { load: Load; reps: number };
+type Loaded = SeriesSet & { load: Load; reps: number };
 
-/** A non-warm-up set of the series' convention and unit, with load and at least 1 rep. */
-function loadedSet(s: ProgressSet, key: SeriesKey): s is Loaded {
-  return s.setType !== 'warmup' && s.load !== null && s.reps !== null && s.reps >= 1 && s.load.convention === key.convention && s.load.unit === key.unit;
+/** What the per-session values read of a series (records pass a single row's record series). */
+export type SeriesShape = Pick<ExerciseSeries, 'key' | 'kind'> & { equipmentKind?: EquipmentKind | null };
+
+/** The set's own equipment kind (its row's), else the series'. */
+export function setEquipmentKind(s: SeriesSet, series: { equipmentKind?: EquipmentKind | null }): EquipmentKind | null {
+  return s.equipmentKind !== undefined ? s.equipmentKind : (series.equipmentKind ?? null);
+}
+
+/**
+ * A non-warm-up set in the series' unit whose load is of the series' kind
+ * (any convention of that kind: total, each hand, stack and plates are all
+ * `load`), with at least 1 rep.
+ */
+export function seriesLoadedSet(s: SeriesSet, series: SeriesShape): s is SeriesSet & { load: Load; reps: number } {
+  return loadedSet(s, series);
+}
+
+function loadedSet(s: SeriesSet, series: SeriesShape): s is Loaded {
+  if (s.setType === 'warmup' || s.load === null || s.reps === null || s.reps < 1 || s.load.unit !== series.key.unit) return false;
+  return s.load.convention === series.key.convention || seriesKind(s.load.convention, setEquipmentKind(s, series), series.key.measurement) === series.kind;
 }
 
 /** PG21: counts for top set, Est. 1RM, rep table, records and every best or change. */
@@ -210,7 +296,7 @@ export interface MetricValue {
   value: number;
   kind: 'actual' | 'estimate';
   /** The set the value came from; null for volume (a sum). */
-  fromSet: ProgressSet | null;
+  fromSet: SeriesSet | null;
 }
 
 /** Heavier is better, then more reps; for assistance, lighter is better, then more reps. */
@@ -221,12 +307,14 @@ function betterTop(a: Loaded, b: Loaded | null, lowerWins: boolean): boolean {
 }
 
 /** PG11: the session's single best eligible set's Est. 1RM (never averaged). */
-export function sessionE1rm(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind' | 'equipmentKind'>): MetricValue | null {
-  if (series.kind !== 'load' || !e1rmConventionAllowed(series.key.convention, series.equipmentKind)) return null;
+export function sessionE1rm(ss: SeriesSession, series: SeriesShape): MetricValue | null {
+  if (series.kind !== 'load') return null;
   let best: { value: number; set: Loaded } | null = null;
   for (const s of ss.sets) {
-    if (!loadedSet(s, series.key) || !counts(s)) continue;
-    const e = estimateOneRepMax(s.load, s.reps, series.equipmentKind);
+    if (!loadedSet(s, series) || !counts(s)) continue;
+    const kind = setEquipmentKind(s, series);
+    if (!e1rmConventionAllowed(s.load.convention, kind)) continue;
+    const e = estimateOneRepMax(s.load, s.reps, kind);
     if (!e.eligible) continue;
     if (best === null || e.value > best.value || (e.value === best.value && s.load.value > best.set.load.value)) best = { value: e.value, set: s };
   }
@@ -234,11 +322,11 @@ export function sessionE1rm(ss: SeriesSession, series: Pick<ExerciseSeries, 'key
 }
 
 /** Top set: heaviest (least assistance for assisted), then most reps. Countable sets only. */
-export function sessionTopSet(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind'>): MetricValue | null {
+export function sessionTopSet(ss: SeriesSession, series: SeriesShape): MetricValue | null {
   if (series.kind !== 'load' && series.kind !== 'assisted' && series.kind !== 'added_bodyweight') return null;
   const lowerWins = series.kind === 'assisted';
   let best: Loaded | null = null;
-  for (const s of ss.sets) if (loadedSet(s, series.key) && counts(s) && betterTop(s, best, lowerWins)) best = s;
+  for (const s of ss.sets) if (loadedSet(s, series) && counts(s) && betterTop(s, best, lowerWins)) best = s;
   return best === null ? null : { value: best.load.value, kind: 'actual', fromSet: best };
 }
 
@@ -249,10 +337,10 @@ export const ASSIST_RECORD_MIN_REPS = 8;
  * Assisted `Least assistance for 8+ reps`: the lightest assistance in one
  * countable set of at least `ASSIST_RECORD_MIN_REPS` reps (then most reps).
  */
-export function sessionLeastAssist(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind'>): MetricValue | null {
+export function sessionLeastAssist(ss: SeriesSession, series: SeriesShape): MetricValue | null {
   if (series.kind !== 'assisted') return null;
   let best: Loaded | null = null;
-  for (const s of ss.sets) if (loadedSet(s, series.key) && counts(s) && s.reps >= ASSIST_RECORD_MIN_REPS && betterTop(s, best, true)) best = s;
+  for (const s of ss.sets) if (loadedSet(s, series) && counts(s) && s.reps >= ASSIST_RECORD_MIN_REPS && betterTop(s, best, true)) best = s;
   return best === null ? null : { value: best.load.value, kind: 'actual', fromSet: best };
 }
 
@@ -274,16 +362,18 @@ export function sessionLongestHold(ss: SeriesSession): MetricValue | null {
  * PG31 volume: Σ load × reps over completed non-warm-up sets, marked sets
  * included (the work was done). Per-dumbbell loads stay per hand. A
  * unilateral row counts its `both` sets plus the busier side, never the two
- * sides added. Only for `load` series.
+ * sides added. Only for `load` series, and only sets in the series'
+ * convention (its latest row's): per hand, stack and total are never added
+ * together (review S1, 20 Oct).
  */
-export function sessionVolume(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind'>): MetricValue | null {
+export function sessionVolume(ss: SeriesSession, series: SeriesShape): MetricValue | null {
   if (series.kind !== 'load') return null;
   let total = 0;
   let used = 0;
   const sum = (xs: readonly ProgressSet[]): number => {
     let acc = 0;
     for (const s of xs) {
-      if (!loadedSet(s, series.key) || !isSetCountable(s, 'volume')) continue;
+      if (!loadedSet(s, series) || s.load.convention !== series.key.convention || !isSetCountable(s, 'volume')) continue;
       used += 1;
       acc += s.load.value * s.reps;
     }
@@ -300,6 +390,44 @@ export function sessionVolume(ss: SeriesSession, series: Pick<ExerciseSeries, 'k
   return used > 0 ? { value: Math.round(total * 100) / 100, kind: 'actual', fromSet: null } : null;
 }
 
+/**
+ * How many times a set's load was moved per rep, for total weight: a per-hand
+ * load counts each dumbbell (the catalogue's `implements`, else two on a
+ * bilateral row and one per side on a unilateral one, an assumption:
+ * `assumed`), and a `both` set ("10 each side") counts both sides.
+ */
+function timesMoved(s: Loaded, row: ProgressExercise, implementsCount: ImplementCount | null): { times: number; assumed: boolean } {
+  const perHand = s.load.convention === 'per_hand';
+  const implementsUsed = !perHand ? 1 : (implementsCount ?? (row.laterality === 'bilateral' ? 2 : 1));
+  return { times: implementsUsed * (row.laterality === 'unilateral' && s.side === 'both' ? 2 : 1), assumed: perHand && implementsCount === null };
+}
+
+/**
+ * Total weight (Ben, 20 Oct 2026): Σ load × reps over the session's completed
+ * working sets (warm-ups out, marked sets in: the work was done), each
+ * dumbbell and side counted (`timesMoved`), every set in the series' unit.
+ * BW + series count the added mass only. None for assisted (less is better,
+ * no total), bodyweight, timed, distance or cardio. An `estimate` when a
+ * per-hand set's dumbbell count isn't in the catalogue (`implements` left
+ * out: done either way, review S4).
+ */
+export function sessionTotalWeight(ss: SeriesSession, series: SeriesShape, implementsCount: ImplementCount | null = null): MetricValue | null {
+  if (series.kind !== 'load' && series.kind !== 'added_bodyweight') return null;
+  let total = 0;
+  let used = 0;
+  let assumed = false;
+  for (const row of ss.rows) {
+    for (const s of row.sets as readonly SeriesSet[]) {
+      if (!loadedSet(s, series) || !isSetCountable(s, 'volume')) continue;
+      used += 1;
+      const t = timesMoved(s, row, implementsCount);
+      if (t.assumed) assumed = true;
+      total += s.load.value * s.reps * t.times;
+    }
+  }
+  return used > 0 ? { value: Math.round(total * 100) / 100, kind: assumed ? 'estimate' : 'actual', fromSet: null } : null;
+}
+
 /** A completed non-warm-up distance set with metres. */
 type Distanced = ProgressSet & { distanceM: number };
 const distanced = (s: ProgressSet): s is Distanced => s.setType !== 'warmup' && s.distanceM !== undefined && s.distanceM > 0;
@@ -313,7 +441,7 @@ export function seriesLoadValue(s: ProgressSet, key: SeriesKey): number | null {
  * Distance `Best distance`: the longest countable set (PG21), then the
  * heavier load. Actual metres, never adjusted for load.
  */
-export function sessionBestDistance(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind'>): MetricValue | null {
+export function sessionBestDistance(ss: SeriesSession, series: SeriesShape): MetricValue | null {
   if (series.kind !== 'distance' && series.kind !== 'cardio') return null;
   let best: Distanced | null = null;
   for (const s of ss.sets) {
@@ -364,7 +492,7 @@ export function sessionTotalTime(ss: SeriesSession, series: Pick<ExerciseSeries,
   return used > 0 ? { value: total, kind: 'actual', fromSet: null } : null;
 }
 
-export function sessionMetric(ss: SeriesSession, series: Pick<ExerciseSeries, 'key' | 'kind' | 'equipmentKind'>, metric: ExerciseMetric): MetricValue | null {
+export function sessionMetric(ss: SeriesSession, series: SeriesShape, metric: ExerciseMetric): MetricValue | null {
   switch (metric) {
     case 'e1rm':
       return sessionE1rm(ss, series);
@@ -427,7 +555,7 @@ export interface TrendPoint {
   name: string | null;
   value: number;
   kind: 'actual' | 'estimate';
-  fromSet: ProgressSet | null;
+  fromSet: SeriesSet | null;
   source: 'app' | 'import';
   /** Non-warm-up sets Ben marked in this session (left out of the value unless the metric is volume). */
   excludedSets: number;
@@ -578,8 +706,15 @@ export function exerciseTrend(series: ExerciseSeries, metric: ExerciseMetric, ra
 // ---------------------------------------------------------------------------
 // Rep table (PG28)
 
+/** How a table load reads (`22.5 kg each`, `40 kg stack`): its own convention and equipment, never converted between them. */
+export interface LoadAs {
+  convention: LoadConvention;
+  equipmentKind: EquipmentKind | null;
+}
+
 export interface RepByWeightRow {
   load: number;
+  as: LoadAs;
   reps: number;
   date: string;
   sessionId: string;
@@ -590,6 +725,7 @@ export interface RepByRepsRow {
   reps: number;
   /** Null: no set of at least this many reps (never past the last done count). */
   load: number | null;
+  as: LoadAs | null;
   /** The set's own reps when it has more than `reps` (`from 6 reps`); null when exact. */
   fromReps: number | null;
   date: string | null;
@@ -605,17 +741,20 @@ export function hasRepTable(kind: SeriesKind): boolean {
 /**
  * By weight: one row per load used, the most reps in one set at that load and
  * the first date it was done; heaviest first (assisted: least assistance
- * first). Actual, countable sets only (PG21).
+ * first). Actual, countable sets only (PG21). The same number in two
+ * conventions (`20 kg each`, `20 kg`) is two rows.
  */
 export function repTableByWeight(series: ExerciseSeries, bounds: DateRange): RepByWeightRow[] {
   if (!hasRepTable(series.kind)) return [];
-  const byLoad = new Map<number, RepByWeightRow>();
+  const byLoad = new Map<string, RepByWeightRow>();
   for (const ss of series.sessions) {
     if (!inRange(ss.date, bounds)) continue;
     for (const s of ss.sets) {
-      if (!loadedSet(s, series.key) || !counts(s)) continue;
-      const cur = byLoad.get(s.load.value);
-      if (cur === undefined || s.reps > cur.reps) byLoad.set(s.load.value, { load: s.load.value, reps: s.reps, date: ss.date, sessionId: ss.sessionId, source: ss.source });
+      if (!loadedSet(s, series) || !counts(s)) continue;
+      const as: LoadAs = { convention: s.load.convention, equipmentKind: setEquipmentKind(s, series) };
+      const k = `${String(s.load.value)}|${as.convention}`;
+      const cur = byLoad.get(k);
+      if (cur === undefined || s.reps > cur.reps) byLoad.set(k, { load: s.load.value, as, reps: s.reps, date: ss.date, sessionId: ss.sessionId, source: ss.source });
     }
   }
   const lowerFirst = series.kind === 'assisted';
@@ -643,8 +782,8 @@ export function repTableByReps(series: ExerciseSeries, bounds: DateRange): RepBy
     }
     rows.push(
       best === null
-        ? { reps, load: null, fromReps: null, date: null, sessionId: null, source: null }
-        : { reps, load: best.load, fromReps: best.reps > reps ? best.reps : null, date: best.date, sessionId: best.sessionId, source: best.source },
+        ? { reps, load: null, as: null, fromReps: null, date: null, sessionId: null, source: null }
+        : { reps, load: best.load, as: best.as, fromReps: best.reps > reps ? best.reps : null, date: best.date, sessionId: best.sessionId, source: best.source },
     );
   }
   return rows;
@@ -724,7 +863,7 @@ export function exerciseHeadline(series: ExerciseSeries): ExerciseHeadline {
     if (e !== null && e.fromSet !== null && (out.bestE1rm === null || e.value > out.bestE1rm.value)) out.bestE1rm = { value: e.value, date: ss.date, sessionId: ss.sessionId, fromSet: e.fromSet };
     for (const s of ss.sets) {
       if (s.setType === 'warmup' || !counts(s)) continue;
-      if (loadedSet(s, series.key) && (series.kind === 'load' || series.kind === 'assisted' || series.kind === 'added_bodyweight')) {
+      if (loadedSet(s, series) && (series.kind === 'load' || series.kind === 'assisted' || series.kind === 'added_bodyweight')) {
         if (betterTop(s, out.bestSet?.set ?? null, lowerWins)) out.bestSet = { set: s, date: ss.date, sessionId: ss.sessionId };
       }
       if (s.reps !== null && s.reps >= 1 && series.kind !== 'load' && series.kind !== 'timed' && (out.mostReps === null || s.reps > out.mostReps.reps)) {

@@ -28,6 +28,12 @@ describe('Exercises tab (review S3–S5)', () => {
     expect(unreadableText(2)).toBe('2 workouts couldn’t be read and aren’t counted.');
   });
 
+  it('prog-measure B1: the TOTAL column carries its own plain unit, not the section’s `kg each`; N1: the ⓘ sits below the header', () => {
+    expect(tab).toContain("`TOTAL ${view.table.totalUnit.toUpperCase()}`");
+    expect(tab).not.toContain("head('TOTAL', ");
+    expect(tab).toMatch(/SESSIONS · \$\{view\.table\.unit\.toUpperCase\(\)\}`\}\s*<\/AppText>\s*\{\/\*[^*]*\*\/\}\s*\{view\.info !== null \? <InfoLine/);
+  });
+
   it('S4: a selected row with no point still shows its readout', () => {
     expect(tab).toContain('readout={selectedRow?.readout ?? null}');
     expect(chart).toContain('point?.readout ?? (selected === null ? null : readout)');

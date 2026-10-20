@@ -1,4 +1,4 @@
-import type { EquipmentKind, Load } from '@fizz/schemas';
+import type { EquipmentKind, Load, WeightUnit } from '@fizz/schemas';
 import { cardioDistanceText, cardioTimeText, cardioValuesText, distanceLoadText, formatDistance, formatDuration, formatNumber, loadText, NBSP } from '../display';
 import { paceText } from '../cardio';
 import { exclusionWords, isSetCountable } from '../exclusions';
@@ -20,12 +20,15 @@ import {
   repTableByReps,
   repTableByWeight,
   seriesLoadValue,
+  setEquipmentKind,
   TREND_RANGES,
   trendRangeBounds,
   type ExerciseMetric,
   type ExerciseSeries,
   type ProgressExerciseEntry,
+  type SeriesKind,
   type SeriesSession,
+  type SeriesSet,
   type TrendMarker,
   type TrendPoint,
   type TrendRange,
@@ -123,9 +126,64 @@ export function metricLabel(metric: ExerciseMetric): string {
   }
 }
 
-/** The series' load unit as shown on axes and values: `kg`, `kg each`, `kg stack`, `kg plates`, `kg added`, `kg assist`. */
-export function seriesUnitText(series: Pick<ExerciseSeries, 'key' | 'equipmentKind'>): string {
-  return loadUnitText(series.key.unit, series.key.convention, series.equipmentKind);
+const unitTexts = new WeakMap<object, string>();
+
+/**
+ * The series' load unit as shown on axes and values: `kg`, `kg each`, `kg
+ * stack`, `kg plates`, `kg added`, `kg assist`. A series whose sets read in
+ * more than one way (dumbbells each and a barbell total, stack and plates;
+ * Ben, 20 Oct) shows the plain unit, and each value keeps its own.
+ */
+export function seriesUnitText(series: Pick<ExerciseSeries, 'key' | 'equipmentKind'> & { kind?: SeriesKind; sessions?: readonly SeriesSession[] }): string {
+  const own = loadUnitText(series.key.unit, series.key.convention, series.equipmentKind);
+  if (series.sessions === undefined) return own;
+  const hit = unitTexts.get(series);
+  if (hit !== undefined) return hit;
+  const seen = new Set<string>();
+  for (const ss of series.sessions) {
+    for (const x of ss.sets) {
+      if (x.setType === 'warmup' || x.load === null || x.load.convention === 'bodyweight' || x.load.unit !== series.key.unit) continue;
+      seen.add(loadUnitText(x.load.unit, x.load.convention, setEquipmentKind(x, series)));
+    }
+  }
+  const text = seen.size > 1 ? series.key.unit : seen.size === 1 ? ([...seen][0] as string) : own;
+  unitTexts.set(series, text);
+  return text;
+}
+
+/** A set's own unit text (`kg each`); the series' when the set has no load. */
+export function setUnitText(set: SeriesSet | null, series: Pick<ExerciseSeries, 'key' | 'equipmentKind'> & { sessions?: readonly SeriesSession[] }): string {
+  if (set === null || set.load === null || set.load.convention === 'bodyweight') return seriesUnitText(series);
+  return loadUnitText(set.load.unit, set.load.convention, setEquipmentKind(set, series));
+}
+
+/** The menu word for a series' kind, shown only when one exercise has more than one kind (Ben, 20 Oct: no gym or equipment series). */
+export function seriesKindLabel(kind: SeriesKind): string {
+  switch (kind) {
+    case 'load':
+      return 'Weighted';
+    case 'assisted':
+      return 'Assisted';
+    case 'added_bodyweight':
+      return 'Bodyweight + weight';
+    case 'bodyweight':
+      return 'Bodyweight';
+    case 'timed':
+      return 'Timed';
+    case 'distance':
+      return 'Distance';
+    case 'cardio':
+      return 'Cardio';
+  }
+}
+
+/**
+ * `Converted from lb` when a set on screen (these sessions, the period's) was
+ * logged in the other unit (the info tap); null otherwise (review S3).
+ */
+export function convertedText(sessions: readonly Pick<SeriesSession, 'sets'>[]): string | null {
+  for (const ss of sessions) for (const x of ss.sets) if (x.convertedFrom !== undefined) return `Converted from ${x.convertedFrom}`;
+  return null;
 }
 
 /** The y-axis unit (§5.5 `Axis units`). */
@@ -148,16 +206,17 @@ export function axisUnit(series: ExerciseSeries, metric: ExerciseMetric): string
   }
 }
 
-const estimateText = (value: number, series: ExerciseSeries) => `≈${formatNumber(value)}${NBSP}${seriesUnitText(series)}`;
+/** `≈123 kg`; with the set it came from, that set's own unit (`≈30 kg each`). */
+const estimateText = (value: number, series: ExerciseSeries, fromSet: SeriesSet | null = null) => `≈${formatNumber(value)}${NBSP}${fromSet === null ? seriesUnitText(series) : setUnitText(fromSet, series)}`;
 
-function setLoadText(load: Load, series: Pick<ExerciseSeries, 'equipmentKind'>): string {
-  return loadText(load, load.convention, series.equipmentKind === null ? null : { kind: series.equipmentKind });
+function setLoadText(load: Load, kind: EquipmentKind | null): string {
+  return loadText(load, load.convention, kind === null ? null : { kind });
 }
 
-/** `105 kg × 3`, `Assist 15 kg × 8`, `BW + 10 kg × 8`, `22.5 kg each × 10`. */
-function setText(set: Pick<ProgressSet, 'load' | 'reps'>, series: ExerciseSeries): string {
+/** `105 kg × 3`, `Assist 15 kg × 8`, `BW + 10 kg × 8`, `22.5 kg each × 10`: each set reads as logged. */
+function setText(set: Pick<SeriesSet, 'load' | 'reps' | 'equipmentKind'>, series: ExerciseSeries): string {
   if (set.load === null || set.reps === null) return '—';
-  return `${setLoadText(set.load, series)}${TIMES}${String(set.reps)}`;
+  return `${setLoadText(set.load, setEquipmentKind(set as SeriesSet, series))}${TIMES}${String(set.reps)}`;
 }
 
 function setWords(set: Pick<ProgressSet, 'load' | 'reps'>, kind: EquipmentKind | null): string {
@@ -194,7 +253,7 @@ function distanceSetWords(set: Pick<ProgressSet, 'load' | 'distanceM'>, series: 
 function valueText(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSeries, metric: ExerciseMetric): string {
   switch (metric) {
     case 'e1rm':
-      return estimateText(p.value, series);
+      return estimateText(p.value, series, p.fromSet);
     case 'top_set':
       return p.fromSet ? setText(p.fromSet, series) : '—';
     case 'volume':
@@ -221,9 +280,9 @@ function unitWords(series: ExerciseSeries): string {
 function valueWords(p: Pick<TrendPoint, 'value' | 'fromSet'>, series: ExerciseSeries, metric: ExerciseMetric): string {
   switch (metric) {
     case 'e1rm':
-      return `about ${formatNumber(p.value)} ${unitWords(series)}${series.key.convention === 'per_hand' ? ' each' : ''}`;
+      return `about ${formatNumber(p.value)} ${unitWords(series)}${(p.fromSet?.load?.convention ?? series.key.convention) === 'per_hand' ? ' each' : ''}`;
     case 'top_set':
-      return p.fromSet ? setWords(p.fromSet, series.equipmentKind) : '';
+      return p.fromSet ? setWords(p.fromSet, setEquipmentKind(p.fromSet, series)) : '';
     case 'volume':
       return `${formatNumber(p.value)} ${unitWords(series)} times reps`;
     case 'best_set':
@@ -288,66 +347,12 @@ export function compactSetText(s: ProgressSet, series: Pick<ExerciseSeries, 'kin
 
 export interface SeriesOption {
   id: string;
-  /** `Main Gym · Barbell`, `History · kg` (imported; 18 Oct: no `FitNotes` in labels). */
+  /** `Weighted`, `Assisted`, … (only with more than one kind). */
   label: string;
   sessionCount: number;
-  /** `Main Gym · Barbell · 24`. */
+  /** `Weighted · 24`. */
   menuLabel: string;
   source: 'app' | 'import';
-}
-
-/** Series labels (§5.5): gym and equipment for logged series, `History · kg` for imported ones (no equipment recorded); made unique when two would read the same. */
-export function seriesLabels(series: readonly ExerciseSeries[], gymNames: Readonly<Record<string, string>>): Map<string, string> {
-  // Two series that would read the same: say what differs (unit and convention, or timed and weighted), then the unit, then an ordinal as a last resort.
-  const loadedTimed = (s: ExerciseSeries) => s.key.measurement === 'duration' && s.key.convention !== 'bodyweight';
-  const detail = (s: ExerciseSeries) => (s.key.measurement !== 'duration' ? seriesUnitText(s) : loadedTimed(s) ? 'timed · weighted' : 'timed');
-  const base = new Map<string, string>();
-  for (const s of series) {
-    if (s.key.source === 'import') {
-      // Timed and bodyweight imports say so (not a unit they don't use, review progress-B r3 N1).
-      const what = s.key.measurement === 'duration' ? detail(s) : s.key.convention === 'bodyweight' ? 'reps' : `${s.key.unit}${s.key.convention === 'per_hand' ? ' each' : s.key.convention === 'assistance' ? ' assist' : ''}`;
-      base.set(s.id, `History · ${what}`);
-      continue;
-    }
-    const gym = s.gymId === null ? null : (gymNames[s.gymId] ?? null);
-    const eq = s.key.equipmentId === null ? 'No equipment' : (s.equipmentName ?? 'Equipment');
-    base.set(s.id, gym === null ? eq : `${gym} · ${eq}`);
-  }
-  const step1 = new Map<string, string>();
-  const baseCounts = countLabels(base);
-  for (const s of series) {
-    const l = base.get(s.id) ?? '';
-    if ((baseCounts.get(l) ?? 0) <= 1) step1.set(s.id, l);
-    else step1.set(s.id, s.key.source === 'import' ? `History · ${detail(s)}` : `${l} · ${detail(s)}`);
-  }
-  const step1Counts = countLabels(step1);
-  const step2 = new Map<string, string>();
-  for (const s of series) {
-    const l = step1.get(s.id) ?? '';
-    step2.set(s.id, (step1Counts.get(l) ?? 0) > 1 ? `${l} · ${loadedTimed(s) ? seriesUnitText(s) : s.key.unit}` : l);
-  }
-  const step2Counts = countLabels(step2);
-  // The ordinal goes on the shorter step-1 label (`History · kg (1)`, not `History · kg · kg (1)`), counted per step-1 label so it stays unique (review progress-B r3 N1).
-  const seen = new Map<string, number>();
-  const out = new Map<string, string>();
-  for (const s of series) {
-    const l = step2.get(s.id) ?? '';
-    if ((step2Counts.get(l) ?? 0) <= 1) {
-      out.set(s.id, l);
-      continue;
-    }
-    const short = step1.get(s.id) ?? l;
-    const k = (seen.get(short) ?? 0) + 1;
-    seen.set(short, k);
-    out.set(s.id, `${short} (${String(k)})`);
-  }
-  return out;
-}
-
-function countLabels(labels: ReadonlyMap<string, string>): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const l of labels.values()) counts.set(l, (counts.get(l) ?? 0) + 1);
-  return counts;
 }
 
 // ---------------------------------------------------------------------------
@@ -440,10 +445,14 @@ export interface HistoryRowView {
 export interface ExerciseDetailView {
   exerciseId: string;
   title: string;
+  /** One per kind (Ben, 20 Oct: gyms, equipment and imports merged); the menu shows only with more than one. */
   series: SeriesOption[];
   seriesId: string;
+  /** The kind word when there is more than one series, else empty. */
   seriesLabel: string;
   seriesSource: 'app' | 'import';
+  /** `Converted from lb` behind the info tap when a set was logged in the other unit; null otherwise (nothing shown). */
+  converted: string | null;
   stats: { value: string; label: string }[];
   statsWords: string;
   metrics: { key: ExerciseMetric; label: string }[];
@@ -499,7 +508,8 @@ export interface ExerciseDetailInput {
   sessions: readonly ProgressSession[];
   exerciseId: string;
   today: string;
-  gymNames?: Readonly<Record<string, string>>;
+  /** Ben's display unit (settings): loads logged in the other unit are converted. Default: the latest row's. */
+  unit?: WeightUnit | null;
   /** The catalogue or custom name, used when the logged names are missing. */
   name?: string;
   seriesId?: string | null;
@@ -545,20 +555,21 @@ function pickSeries(all: readonly ExerciseSeries[], input: ExerciseDetailInput):
     const hit = all.filter((s) => s.sessions.some((x) => x.sessionId === input.sessionId));
     const onRow = input.sessionExerciseId == null ? undefined : hit.find((s) => s.sessions.some((x) => x.sessionId === input.sessionId && x.rows.some((r) => r.sessionExerciseId === input.sessionExerciseId)));
     if (onRow) return onRow;
-    const onEq = input.equipmentId == null ? undefined : hit.find((s) => s.key.equipmentId === input.equipmentId);
+    const onEq = input.equipmentId == null ? undefined : hit.find((s) => s.sessions.some((x) => x.sessionId === input.sessionId && x.rows.some((r) => r.equipmentId === input.equipmentId)));
     if (onEq ?? hit[0]) return onEq ?? hit[0] ?? null;
   }
   if (input.seriesId) {
     const s = all.find((x) => x.id === input.seriesId);
     if (s) return s;
   }
+  // One series per kind: the equipment or gym only chooses between kinds (assisted or weighted pull-ups).
   if (input.equipmentId) {
-    const onEq = all.filter((s) => s.key.source === 'app' && s.key.equipmentId === input.equipmentId);
+    const onEq = all.filter((s) => s.sessions.some((x) => x.source === 'app' && x.rows.some((r) => r.equipmentId === input.equipmentId)));
     const d = defaultSeries(onEq, input.today);
     if (d) return d;
   }
   if (input.gymId) {
-    const atGym = all.filter((s) => s.key.source === 'app' && s.gymId === input.gymId);
+    const atGym = all.filter((s) => s.sessions.some((x) => x.source === 'app' && x.rows.some((r) => r.gymId === input.gymId)));
     const d = defaultSeries(atGym, input.today);
     if (d) return d;
   }
@@ -578,8 +589,9 @@ function markedNote(p: TrendPoint, metric: ExerciseMetric): string | null {
 function pointView(p: TrendPoint, series: ExerciseSeries, metric: ExerciseMetric, today: string): ChartPointView {
   const display = valueText(p, series, metric);
   const from = metric === 'e1rm' && p.fromSet ? `  from ${setText(p.fromSet, series)}` : '';
-  const notes = [p.edited ? 'Edited' : null, markedNote(p, metric)].filter((x): x is string => x !== null);
-  const fromWords = metric === 'e1rm' && p.fromSet ? `, from ${setWords(p.fromSet, series.equipmentKind)}` : '';
+  const converted = p.fromSet?.convertedFrom ?? null;
+  const notes = [p.edited ? 'Edited' : null, markedNote(p, metric), converted === null ? null : `Converted from ${converted}`].filter((x): x is string => x !== null);
+  const fromWords = metric === 'e1rm' && p.fromSet ? `, from ${setWords(p.fromSet, setEquipmentKind(p.fromSet, series))}` : '';
   const metricName = metric === 'e1rm' ? 'estimated one-rep max' : metricLabel(metric).toLowerCase();
   return {
     sessionId: p.sessionId,
@@ -601,7 +613,7 @@ function hasMarkedE1rmSet(series: ExerciseSeries, bounds: DateRange): boolean {
     (ss) =>
       ss.date >= bounds.from &&
       ss.date <= bounds.to &&
-      ss.sets.some((x) => x.setType !== 'warmup' && x.load !== null && x.load.unit === series.key.unit && x.load.convention === series.key.convention && x.reps !== null && x.reps >= 1 && x.reps <= E1RM_MAX_REPS && !isSetCountable(x, 'e1rm')),
+      ss.sets.some((x) => x.setType !== 'warmup' && x.load !== null && x.load.unit === series.key.unit && x.load.convention !== 'bodyweight' && x.load.convention !== 'assistance' && x.reps !== null && x.reps >= 1 && x.reps <= E1RM_MAX_REPS && !isSetCountable(x, 'e1rm')),
   );
 }
 
@@ -678,26 +690,31 @@ function changeLine(first: TrendPoint, latest: TrendPoint, series: ExerciseSerie
 }
 
 function recordView(r: ExerciseRecord, series: ExerciseSeries, today: string): RecordRowView {
+  // The record's own row: its equipment reads its load (`40 kg stack`, `BW + 10 kg`).
+  const kind = series.sessions.find((x) => x.sessionId === r.sessionId)?.rows.find((row) => row.sessionExerciseId === r.sessionExerciseId)?.equipmentKind ?? series.equipmentKind;
   const date = shortDate(r.date, today);
   const dateW = longDate(r.date, today);
+  // Records are judged and shown as logged, in the row's own unit (never converted).
+  const unit = r.load?.unit ?? series.key.unit;
+  const unitW = unit === 'kg' ? 'kilograms' : 'pounds';
   let label: string;
   let value: string;
   let words: string;
   switch (r.kind) {
     case 'heaviest':
       label = 'Heaviest set';
-      value = r.load ? setText({ load: r.load, reps: r.reps }, series) : '—';
-      words = `Heaviest set, ${r.load ? setWords({ load: r.load, reps: r.reps }, series.equipmentKind) : ''}, ${dateW}.`;
+      value = r.load ? setText({ load: r.load, reps: r.reps, equipmentKind: kind }, series) : '—';
+      words = `Heaviest set, ${r.load ? setWords({ load: r.load, reps: r.reps }, kind) : ''}, ${dateW}.`;
       break;
     case 'most_reps_at_load':
-      label = r.load ? `Most reps at ${setLoadText(r.load, series)}` : 'Most reps';
+      label = r.load ? `Most reps at ${setLoadText(r.load, kind)}` : 'Most reps';
       value = String(r.reps ?? 0);
-      words = `Most reps at ${r.load ? massWords(r.load, series.equipmentKind) : ''}, ${String(r.reps ?? 0)}, ${dateW}.`;
+      words = `Most reps at ${r.load ? massWords(r.load, kind) : ''}, ${String(r.reps ?? 0)}, ${dateW}.`;
       break;
     case 'best_e1rm':
       label = 'Best Est. 1RM';
-      value = estimateText(r.value, series);
-      words = `Best estimated one-rep max, an estimate, about ${formatNumber(r.value)} ${unitWords(series)}, ${dateW}.`;
+      value = `≈${formatNumber(r.value)}${NBSP}${r.load === null ? seriesUnitText(series) : loadUnitText(r.load.unit, r.load.convention, kind)}`;
+      words = `Best estimated one-rep max, an estimate, about ${formatNumber(r.value)} ${unitW}, ${dateW}.`;
       break;
     case 'most_reps':
       label = 'Most reps';
@@ -706,8 +723,8 @@ function recordView(r: ExerciseRecord, series: ExerciseSeries, today: string): R
       break;
     case 'least_assist':
       label = `Least assistance for ${String(ASSIST_RECORD_MIN_REPS)}+ reps`;
-      value = `${formatNumber(r.value)}${NBSP}${series.key.unit}`;
-      words = `Least assistance for ${String(ASSIST_RECORD_MIN_REPS)} or more reps, ${r.load ? massWords(r.load, series.equipmentKind) : `${formatNumber(r.value)} ${unitWords(series)}`}${r.reps === null ? '' : `, ${countNoun(r.reps, 'rep', 'reps')}`}, ${dateW}.`;
+      value = `${formatNumber(r.value)}${NBSP}${unit}`;
+      words = `Least assistance for ${String(ASSIST_RECORD_MIN_REPS)} or more reps, ${r.load ? massWords(r.load, kind) : `${formatNumber(r.value)} ${unitW}`}${r.reps === null ? '' : `, ${countNoun(r.reps, 'rep', 'reps')}`}, ${dateW}.`;
       break;
   }
   return { key: `${r.sessionExerciseId}:${r.kind}`, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, label, value, date, isEstimate: r.isEstimate, words };
@@ -733,15 +750,16 @@ function repTableView(series: ExerciseSeries, bounds: DateRange, by: 'weight' | 
   if (!hasRepTable(series.kind)) return null;
   const lower = series.kind === 'assisted';
   // 18 Oct (Ben): imported rows read like any other (no `FitNotes` tag); the source stays in the data.
-  const loadOf = (v: number): Load => ({ value: v, unit: series.key.unit, convention: series.key.convention });
+  // 20 Oct: each load keeps its own convention (`22.5 kg each`, `40 kg stack`).
+  const loadOf = (v: number, as: { convention: Load['convention'] }): Load => ({ value: v, unit: series.key.unit, convention: as.convention });
   if (by === 'weight') {
     const rows = repTableByWeight(series, bounds).map((r) => ({
-      key: `w:${String(r.load)}`,
+      key: `w:${String(r.load)}:${r.as.convention}`,
       sessionId: r.sessionId,
-      cells: [setLoadText(loadOf(r.load), series), String(r.reps), shortDate(r.date, today)] as [string, string, string],
+      cells: [setLoadText(loadOf(r.load, r.as), r.as.equipmentKind), String(r.reps), shortDate(r.date, today)] as [string, string, string],
       note: null,
       tag: null,
-      words: `${massWords(loadOf(r.load), series.equipmentKind)}, ${countNoun(r.reps, 'rep', 'reps')}, ${longDate(r.date, today)}.`,
+      words: `${massWords(loadOf(r.load, r.as), r.as.equipmentKind)}, ${countNoun(r.reps, 'rep', 'reps')}, ${longDate(r.date, today)}.`,
     }));
     return { by, headers: [lower ? 'Assist' : 'Weight', 'Reps', 'Date'], rows, initial: 10 };
   }
@@ -749,13 +767,13 @@ function repTableView(series: ExerciseSeries, bounds: DateRange, by: 'weight' | 
   const rows = repTableByReps(series, bounds).map((r) => ({
     key: `r:${String(r.reps)}`,
     sessionId: r.sessionId,
-    cells: [String(r.reps), r.load === null ? '—' : setLoadText(loadOf(r.load), series), r.date === null ? '' : shortDate(r.date, today)] as [string, string, string],
+    cells: [String(r.reps), r.load === null || r.as === null ? '—' : setLoadText(loadOf(r.load, r.as), r.as.equipmentKind), r.date === null ? '' : shortDate(r.date, today)] as [string, string, string],
     note: r.fromReps === null ? null : `from ${String(r.fromReps)} reps`,
     tag: null,
     words:
-      r.load === null || r.date === null
+      r.load === null || r.as === null || r.date === null
         ? `${countNoun(r.reps, 'rep', 'reps')}, none.`
-        : `${countNoun(r.reps, 'rep', 'reps')}, ${best} ${massWords(loadOf(r.load), series.equipmentKind)}${r.fromReps === null ? '' : `, from a set of ${String(r.fromReps)}`}, ${longDate(r.date, today)}.`,
+        : `${countNoun(r.reps, 'rep', 'reps')}, ${best} ${massWords(loadOf(r.load, r.as), r.as.equipmentKind)}${r.fromReps === null ? '' : `, from a set of ${String(r.fromReps)}`}, ${longDate(r.date, today)}.`,
   }));
   return { by, headers: ['Reps', lower ? 'Least assist' : 'Heaviest', 'Date'], rows, initial: REP_ROWS_ALL };
 }
@@ -790,7 +808,7 @@ function headlineView(series: ExerciseSeries): { stats: { value: string; label: 
       const e = h.bestE1rm;
       const b = h.bestSet;
       return {
-        stats: [{ value: e ? estimateText(e.value, series) : dash, label: 'EST. 1RM' }, { value: b ? setText(b.set, series) : dash, label: 'BEST SET' }, sessions],
+        stats: [{ value: e ? estimateText(e.value, series, e.fromSet) : dash, label: 'EST. 1RM' }, { value: b ? setText(b.set, series) : dash, label: 'BEST SET' }, sessions],
         words: [e ? `Best estimated one-rep max, an estimate, about ${formatNumber(e.value)} ${unitWords(series)}.` : '', b ? `Best set ${setWords(b.set, series.equipmentKind)}.` : '', sessionsWords].filter((x) => x !== '').join(' '),
       };
     }
@@ -879,17 +897,16 @@ function openedSelection(
  */
 export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDetailView | null {
   const mine = input.sessions.filter((s) => s.exercises.some((e) => e.exerciseId === input.exerciseId));
-  const all = collectExerciseSeries(mine, input.exerciseId);
+  const all = collectExerciseSeries(mine, input.exerciseId, { unit: input.unit ?? null });
   const series = pickSeries(all, input);
   if (series === null) return null;
   const today = input.today;
-  const gymNames = input.gymNames ?? {};
-  const labels = seriesLabels(all, gymNames);
+  const labelOf = (s: ExerciseSeries) => (all.length > 1 ? seriesKindLabel(s.kind) : '');
   const metrics = metricsFor(series.kind);
   const metric = input.metric && metrics.includes(input.metric) ? input.metric : (metrics[0] as ExerciseMetric);
   const range = openingRange(series, input, today);
   const trend = exerciseTrend(series, metric, range, today);
-  const label = labels.get(series.id) ?? '';
+  const label = labelOf(series);
   const title = series.exerciseName || input.name || 'Exercise';
   const rangeText = `${shortDate(trend.bounds.from, today)} – ${shortDate(trend.bounds.to, today)}`;
   const rangeWordsText = `${longDate(trend.bounds.from, today)} to ${longDate(trend.bounds.to, today)}`;
@@ -926,7 +943,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
   // Chart summary for VoiceOver (§5.6)
   let chartWords: string;
   if (trend.points.length === 0) {
-    chartWords = `${metricWords(metric)}, ${title} on ${label}, ${rangeWordsText}. ${chart.kind === 'chart' ? '' : chart.message}`.trim();
+    chartWords = `${metricWords(metric)}, ${title}${label === '' ? '' : `, ${label}`}, ${rangeWordsText}. ${chart.kind === 'chart' ? '' : chart.message}`.trim();
   } else {
     let lo = trend.points[0] as TrendPoint;
     let hi = lo;
@@ -936,7 +953,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     }
     const gaps = trend.gaps.map((g) => `a gap of ${String(g.days)} days in ${monthName(g.to.slice(0, 7))}`);
     chartWords = [
-      `${metricWords(metric)}, ${title} on ${label}, ${rangeWordsText}${trend.aggregation === 'weekly_best' ? ', weekly best' : ''}.`,
+      `${metricWords(metric)}, ${title}${label === '' ? '' : `, ${label}`}, ${rangeWordsText}${trend.aggregation === 'weekly_best' ? ', weekly best' : ''}.`,
       `${countNoun(trend.points.length, trend.aggregation === 'weekly_best' ? 'week' : 'session', trend.aggregation === 'weekly_best' ? 'weeks' : 'sessions')}.`,
       `Lowest ${valueWords(lo, series, metric)} on ${longDate(lo.date, today)}, highest ${valueWords(hi, series, metric)} on ${longDate(hi.date, today)}, latest ${valueWords(latest ?? hi, series, metric)} on ${longDate((latest ?? hi).date, today)}.`,
       gaps.length === 0 ? '' : `${gaps.length === 1 ? 'One' : String(gaps.length)} ${gaps.length === 1 ? 'gap' : 'gaps'}: ${gaps.join(', ')}.`,
@@ -976,7 +993,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
       ? null
       : {
           items: rec.items.map((r) => recordView(r, series, today)),
-          empty: rec.items.length > 0 ? null : series.key.source === 'import' || rec.loggedSessions <= RECORD_MIN_SESSIONS ? `Records start after ${String(RECORD_MIN_SESSIONS)} logged sessions.` : 'No records yet.',
+          empty: rec.items.length > 0 ? null : rec.loggedSessions <= RECORD_MIN_SESSIONS ? `Records start after ${String(RECORD_MIN_SESSIONS)} logged sessions.` : 'No records yet.',
         };
 
   // History
@@ -993,11 +1010,12 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
     exerciseId: input.exerciseId,
     title,
     series: [...all]
-      .sort((a, b) => (a.key.source === b.key.source ? b.sessions.length - a.sessions.length || lastMs(b) - lastMs(a) : a.key.source === 'app' ? -1 : 1))
-      .map((s) => ({ id: s.id, label: labels.get(s.id) ?? '', sessionCount: s.sessions.length, menuLabel: `${labels.get(s.id) ?? ''} · ${String(s.sessions.length)}`, source: s.key.source })),
+      .sort((a, b) => b.sessions.length - a.sessions.length || lastMs(b) - lastMs(a))
+      .map((s) => ({ id: s.id, label: labelOf(s), sessionCount: s.sessions.length, menuLabel: `${labelOf(s)} · ${String(s.sessions.length)}`, source: s.key.source })),
     seriesId: series.id,
     seriesLabel: label,
     seriesSource: series.key.source,
+    converted: convertedText(series.sessions.filter((ss) => ss.date >= trend.bounds.from && ss.date <= trend.bounds.to)),
     stats: statStrip.stats,
     statsWords: statStrip.words,
     metrics: metrics.map((m) => ({ key: m, label: metricLabel(m) })),
