@@ -1,7 +1,7 @@
 import type { Routine, SplitDay } from '@fizz/schemas';
 import { BUILDER_DAY_MIXES, type GroupCount } from '../builder/build';
 import type { BuilderGroupName, BuilderInfoLookup } from '../builder/types';
-import { planDayKeyOf, type PlanDayKeySplit } from '../session/coach-plan';
+import { planDayKeyOf, planDayOf, type PlanDayKeySplit } from '../session/coach-plan';
 import type { FinishedRef } from '../session/routines';
 import type { TodayDay, TodayTemplate } from './session';
 
@@ -51,7 +51,10 @@ export function templateLabel(r: Pick<Routine, 'name'>, mainName: string | null)
 export function todayPlanDays(input: TodayPlanDaysInput): TodayDay[] {
   const days = new Map<string, { day: Omit<TodayDay, 'templates'>; templates: TodayTemplate[] }>();
   for (const r of input.templates) {
-    const key = planDayKeyOf(r, input.split, input.mainLifts);
+    // A plan day with no split day to derive (a day the plan named itself, e.g. `Upper` on a PPL split) is still a
+    // plan day: its index names it, and `day-<n>` stands in for the split day (no variations hang off it).
+    const ref = planDayOf(r);
+    const key = planDayKeyOf(r, input.split, input.mainLifts) ?? (ref === null ? null : { ...ref, splitDayId: `day-${String(ref.dayIndex)}`, mainLiftExerciseId: r.exercises.find((e) => e.main === true)?.exerciseId ?? null });
     if (key === null || key.planId !== input.planId) continue;
     const dayKey = `plan:${key.planId}:${String(key.dayIndex)}`;
     const splitDay = input.split?.days.find((d) => d.id === key.splitDayId) ?? null;

@@ -5270,7 +5270,29 @@ export function createWorkoutServices(ctx: WorkoutServicesContext) {
     },
   };
 
-  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes, coachDrafts };
+  /**
+   * (Today v2, workout-builder-v3 §2.0) What `todaySession` reads through this service, so Today's card plans from
+   * the same history, gym mapping, pain and Up next as Start (local reads only; never an AI call).
+   */
+  const todayPort = {
+    historyFor,
+    substituteCtx: (p: UserProfile, gymId: string, gymEquipment: readonly EquipmentInstance[] | undefined, exerciseIds: Iterable<string>) => substituteCtx(p, gymId, gymEquipment, null, exerciseIds),
+    /** Up next's template (the applied plan's due day, with the run rule and a pin), or null. */
+    async upNextRoutineId(gymId: string, gymEquipment?: readonly EquipmentInstance[]): Promise<string | null> {
+      const p = await ctx.profile();
+      if (!p) return null;
+      const up = await resolveUpNext(p, gymId, gymEquipment).catch(() => null);
+      return up?.kind === 'routine' ? up.routine.id : null;
+    },
+    plannedDay: (routineId: string, gymId: string) => routines.planned(routineId, gymId),
+    /** The plan day Up next would name after `routineId` is done today (a prediction; saves nothing). */
+    async nextAfter(gymId: string, routineId: string): Promise<string | null> {
+      const r = await next.planAhead(gymId, routineId, 1).catch(() => null);
+      return r?.days[0]?.routineId ?? null;
+    },
+  };
+
+  return { checkIns, pain, workout, today, repeat, next, routines, gymSwitch, overview, sessionTypes, coachDrafts, todayPort };
 }
 
 export type WorkoutServices = ReturnType<typeof createWorkoutServices>;
