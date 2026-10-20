@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { adjustControlView } from '../src/coach/slot-view';
-import { keypadNext, openCellTap, openRowLabel, openRowSubLine } from '../src/workout/table';
+import { cellEditReducer, correctionPatch, doneRowEditing, keypadNext, keypadNextAction, mergeCorrection, openCellTap, openRowLabel, openRowSubLine, type CellEdit } from '../src/workout/table';
 import { cardioPairTiles, openRowWidth, tileFit, tileRowLayout } from '../src/workout/tile-fit';
 
 /**
@@ -32,6 +32,41 @@ describe('Next › from weight to reps (1.4)', () => {
     expect(keypadNext({ field: null, has: { reps: true, distance: true }, cardio: true })).toBeNull();
   });
 
+  it('Next › picks the right target on the open row, Focus and a done row (review S3)', () => {
+    const lifting = { reps: true, distance: false, cardio: false };
+    const cardio = { reps: false, distance: true, cardio: true };
+    expect(keypadNextAction({ keypad: null, open: lifting, done: null })).toBeNull();
+    expect(keypadNextAction({ keypad: { row: 'open', field: 'load' }, open: lifting, done: null })).toEqual({ kind: 'focus_open', field: 'reps' });
+    expect(keypadNextAction({ keypad: { row: 'open', field: 'reps' }, open: lifting, done: null })).toBeNull();
+    // The open row with no Focus (nothing to move to).
+    expect(keypadNextAction({ keypad: { row: 'open', field: 'load' }, open: null, done: null })).toBeNull();
+    expect(keypadNextAction({ keypad: { row: 'done', field: 'load' }, open: lifting, done: { ...lifting, setId: 's2' } })).toEqual({ kind: 'done_cell', setId: 's2', field: 'reps' });
+    expect(keypadNextAction({ keypad: { row: 'done', field: 'time' }, open: null, done: { ...cardio, setId: 's3' } })).toEqual({ kind: 'focus_done_distance' });
+    // A done row's keypad with its editor gone: Done, not a move.
+    expect(keypadNextAction({ keypad: { row: 'done', field: 'load' }, open: lifting, done: null })).toBeNull();
+  });
+
+  it('a done row: weight typed, Next ›, reps typed → one draft, one opId, one patch (review S3)', () => {
+    const actual = { load: { value: 100, unit: 'kg' as const, convention: 'total' as const }, reps: 8, durationS: null, distanceM: null };
+    let c: { setId: string; values: typeof actual | null; opId: string } | null = { setId: 's2', values: null, opId: 'op-1' };
+    let edit: CellEdit | null = cellEditReducer(null, { kind: 'tap', setId: 's2', field: 'load', row: 'done' });
+    // The weight is typed (each keystroke commits, so leaving the field never loses it).
+    c = mergeCorrection(c, c?.values ?? actual, { load: { value: 1, unit: 'kg', convention: 'total' } });
+    c = mergeCorrection(c, c?.values ?? actual, { load: { value: 102.5, unit: 'kg', convention: 'total' } });
+    // Next › moves within the same correction (no save, no new opId).
+    const next = keypadNextAction({ keypad: { row: 'done', field: 'load' }, open: null, done: { reps: true, distance: false, cardio: false, setId: 's2' } });
+    expect(next).toEqual({ kind: 'done_cell', setId: 's2', field: 'reps' });
+    if (next?.kind === 'done_cell') edit = cellEditReducer(edit, { kind: 'tap', setId: next.setId, field: next.field, row: 'done' });
+    expect(doneRowEditing(edit)).toEqual({ setId: 's2', field: 'reps', row: 'done' });
+    c = mergeCorrection(c, c?.values ?? actual, { reps: 6 });
+    expect(c?.opId).toBe('op-1');
+    expect(c?.values?.load?.value).toBe(102.5);
+    // Done sends one correctSet with both changes.
+    expect(c?.values ? correctionPatch(actual, c.values) : null).toEqual({ load: { value: 102.5, unit: 'kg', convention: 'total' }, reps: 6 });
+    // No correction open: nothing to merge into.
+    expect(mergeCorrection(null, actual, { reps: 5 })).toBeNull();
+  });
+
   it('a value cell opens focused; the open one closes', () => {
     expect(openCellTap(null, 'load')).toEqual({ kind: 'focus', field: 'load' });
     expect(openCellTap('load', 'reps')).toEqual({ kind: 'focus', field: 'reps' });
@@ -40,8 +75,9 @@ describe('Next › from weight to reps (1.4)', () => {
 
   it('the screen wires it: the accessory, a focus request per cell tap, Done closes the editor', () => {
     expect(screen).toContain('<NumberAccessory onNext={onKeypadNext} onDone={closeCellEditors} />');
-    expect(flat(screen)).toContain("if (keypadField.row === 'open') setFocusRequest({ field: keypadNextField });");
-    expect(flat(screen)).toContain("else if (doneEdit !== null) editCell({ kind: 'tap', setId: doneEdit.setId, field: keypadNextField, row: 'done' });");
+    expect(flat(screen)).toContain('const keypadAction = keypadNextAction({');
+    expect(flat(screen)).toContain("else editCell({ kind: 'tap', setId: keypadAction.setId, field: keypadAction.field, row: 'done' });");
+    expect(flat(screen)).toContain('setCorrection((c) => mergeCorrection(c, correctionView.values, patch));');
     expect(flat(screen)).toContain('const t = openCellTap(editingCell, field);');
     expect(flat(screen)).toContain('} else setFocusRequest({ field: t.field });');
     // Focus's tiles report their field too, so Next › works there as well.

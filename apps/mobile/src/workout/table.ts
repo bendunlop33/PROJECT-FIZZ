@@ -538,3 +538,39 @@ export function openRowSubLine(p: { target: string | null; estimate: boolean; pa
   if (p.pace !== null) segments.push({ text: segments.length > 0 ? `· ${p.pace}` : p.pace, shrink: true });
   return { segments, planWas: p.planWas, wrap: p.ax };
 }
+
+/** What `Next ›` does (review S3): focus the open row's next field, a done row's distance, or its next cell. */
+export type KeypadNextAction = { kind: 'focus_open'; field: CellField } | { kind: 'focus_done_distance' } | { kind: 'done_cell'; setId: string; field: CellField };
+
+/** The fields a row's editor has, for `keypadNext`. */
+export interface KeypadFields {
+  reps: boolean;
+  distance: boolean;
+  cardio: boolean;
+}
+
+/**
+ * `Next ›` on the number keypad (design pass 1.4, review S3): from the focused
+ * field to the next one, on the open row or a done row's correction. Null: the
+ * accessory shows `Done`. A done row moves within the same correction, so its
+ * draft and opId carry over and one `correctSet` is sent on close.
+ */
+export function keypadNextAction(p: { keypad: { row: 'open' | 'done'; field: CellField } | null; open: KeypadFields | null; done: (KeypadFields & { setId: string }) | null }): KeypadNextAction | null {
+  if (p.keypad === null) return null;
+  const fields = p.keypad.row === 'open' ? p.open : p.done;
+  if (fields === null) return null;
+  const next = keypadNext({ field: p.keypad.field, has: { reps: fields.reps, distance: fields.distance }, cardio: fields.cardio });
+  if (next === null) return null;
+  if (p.keypad.row === 'open') return { kind: 'focus_open', field: next };
+  if (next === 'distance') return { kind: 'focus_done_distance' };
+  return p.done === null ? null : { kind: 'done_cell', setId: p.done.setId, field: next };
+}
+
+/**
+ * A done row's correction draft after one field changes (review S3): the
+ * values shown plus the change, same set and opId, so `Next ›` from the
+ * weight to the reps keeps the typed weight.
+ */
+export function mergeCorrection<V extends object>(c: { setId: string; values: V | null; opId: string } | null, shown: V, patch: Partial<V>): { setId: string; values: V; opId: string } | null {
+  return c === null ? null : { ...c, values: { ...shown, ...patch } };
+}

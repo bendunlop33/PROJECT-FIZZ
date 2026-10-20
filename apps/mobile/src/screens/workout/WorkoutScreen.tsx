@@ -74,7 +74,7 @@ import { UNDO_TOAST } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
-import { anchorReducer, cellEditReducer, correctionPatch, doneRowEditing, keypadNext, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type CellEdit, type CellEditEvent, type CellField, type ChipState, type RowTap } from '../../workout/table';
+import { anchorReducer, cellEditReducer, correctionPatch, doneRowEditing, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type AnchorEvent, type AnchorRequest, type CellEdit, type CellEditEvent, type CellField, type ChipState, type RowTap } from '../../workout/table';
 import { ChatButton, CorrectionEditor, DoneChip, NowChip, OpenSetRow, RestBar, WorkoutTable, type WorkoutTableHandle } from './WorkoutTable';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
 import { awayPrimary, nextViewing, pagerView } from '../../workout/set-pager';
@@ -2238,7 +2238,7 @@ export function WorkoutScreen() {
   const correctionEx = correctionView === null ? undefined : loaded.aggregate.exercises.find((e) => e.id === loaded.aggregate.sets.find((x) => x.id === correctionView.setId)?.sessionExerciseId);
   const editCorrection = (patch: Partial<SetValues>) => {
     if (correctionView === null) return;
-    setCorrection((c) => (c === null ? c : { ...c, values: { ...correctionView.values, ...patch } }));
+    setCorrection((c) => mergeCorrection(c, correctionView.values, patch));
   };
   const rowEditorNode =
     doneEdit !== null && correctionView !== null ? {
@@ -2277,23 +2277,18 @@ export function WorkoutScreen() {
     } : null;
   // 1.4: `Next ›` from the weight to the reps (a cardio time to its distance), on the open row, Focus or a
   // done row's correction; on the last field `Done` closes the keypad and the editor together.
-  const keypadNextField =
-    keypadField === null
-      ? null
-      : keypadField.row === 'open'
-        ? focus
-          ? keypadNext({ field: keypadField.field, has: { reps: focus.reps !== null, distance: focus.distance !== null }, cardio: focus.measurement === 'cardio' })
-          : null
-        : correctionView !== null
-          ? keypadNext({ field: keypadField.field, has: { reps: correctionView.reps !== null, distance: correctionView.distance !== null }, cardio: correctionView.duration !== null && correctionView.distance !== null })
-          : null;
+  const keypadAction = keypadNextAction({
+    keypad: keypadField,
+    open: focus ? { reps: focus.reps !== null, distance: focus.distance !== null, cardio: focus.measurement === 'cardio' } : null,
+    done: doneEdit !== null && correctionView !== null ? { setId: doneEdit.setId, reps: correctionView.reps !== null, distance: correctionView.distance !== null, cardio: correctionView.duration !== null && correctionView.distance !== null } : null,
+  });
   const onKeypadNext =
-    keypadField === null || keypadNextField === null
+    keypadAction === null
       ? null
       : () => {
-          if (keypadField.row === 'open') setFocusRequest({ field: keypadNextField });
-          else if (keypadNextField === 'distance') correctionDistanceRef.current?.focus();
-          else if (doneEdit !== null) editCell({ kind: 'tap', setId: doneEdit.setId, field: keypadNextField, row: 'done' });
+          if (keypadAction.kind === 'focus_open') setFocusRequest({ field: keypadAction.field });
+          else if (keypadAction.kind === 'focus_done_distance') correctionDistanceRef.current?.focus();
+          else editCell({ kind: 'tap', setId: keypadAction.setId, field: keypadAction.field, row: 'done' });
         };
   const openRowNode = focus ? (
     <OpenSetRow
