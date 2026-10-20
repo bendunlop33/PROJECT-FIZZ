@@ -366,3 +366,30 @@ Ben, mid-workout, after the coach refused to pair Seated calf raise with bodywei
 - **Which copy plans next time (review B2):** the planned slot, else the heaviest; a copy added in the workout never plans next time while the planned slot has a done set. Ben to confirm.
 - **Linking two exercises already in the workout** keeps both set counts; the extras run as straight sets. Only a new partner matches the sets left. Ben to say whether linking should offer to match.
 - A Summary doesn't promise a `Next time` for an exercise done twice (as for F21), though the next Start still plans it from the main copy.
+
+## 2026-10-20: Quick gym setup: assume a full gym, learn the rest while training (Ben approved 20 Oct)
+Ben: "Can we fix the way to say what a gym has too. It's too time consuming at the moment to have to input each weight etc. I think we just assume a gym has lots of dumbbells and plates. Just ask for the interval for dumbbells as they can differ. Only if I specify otherwise do we need to consider separately e.g. for hotel gyms. It should be quick to say what a gym has. Maybe even better to say as default main gym e.g. has everything and if it doesn't then we update as we go and train the app for each gym".
+- **Changes how rule 4 learns the equipment, not the rule.** A gym is now a *full gym* by default. Its items are **assumed** (`detailsSource: 'preset'`) until Ben edits or confirms them. Loads still come only from each item's list, never above its max. Snapping uses assumed items the same way as confirmed ones (ADR 0029).
+- **Add gym (and onboarding Step 2), one screen:** name, `Full gym` / `Hotel / small` / `Home`, then `Save gym`. Full gym is preselected.
+  - Full gym asks only `Dumbbells go up in`: 1 / 2 / 2.5 / 5 kg, or 2.5 / 5 lb. It makes:
+    - dumbbells from the step up to 50 kg (120 lb), per hand
+    - a 20 kg (45 lb) bar with 25–1.25 kg plates, 8 of each
+    - plate-loaded machines
+    - a cable station (5–100 kg) and machines (5–120 kg), each in 5 kg steps (10 lb in lb)
+    - an assisted pull-up / dip machine (5–70 kg)
+    - a pull-up bar
+  - Hotel / small asks `Dumbbells up to` (10–40 kg) and the step. Cables (on), Barbell and Machines are ticks. Home: the same, with `None` for dumbbells and Barbell, Pull-up bar and Cables as ticks.
+- **Gym screen:** each item is tagged `Assumed` until Ben confirms it. `Make full gym` keeps his items and adds the missing kinds, assumed. It asks the dumbbell step only when it adds dumbbells, and it never adds back a kind Ben said is missing. A `Not at this gym` list has `Put back`. Every change has Undo.
+- **Learning while he trains:**
+  - Workout `⋯` → `Not at this gym` marks that gym's items as not for that exercise. It then leaves builds, swaps and pickers at that gym; other exercises on the same items stay. The swap sheet opens next. Undo is available.
+  - A typed load the gym can't make shows one chip: `Add 22 kg dumbbells here?` (any rack), or `Stack goes up in 7 kg?` / `Stack goes to 110 kg?` (an assumed stack). The chip offers `Not now`. On accept the item is saved as confirmed and today's workout takes the change when it moves no target, with Undo.
+  - Coach `update_gym`: add or remove a kind, the dumbbells' top and step, a stack's step, or one exercise not at the gym. It is offered when Ben's words are about a gym. Said by Ben ("this gym has no leg press"), it applies at once with Undo. The coach's own idea is a card with Apply / Not now. Apply is refused (`Out of date`) once the gym changed. The coach's context reads `full gym (assumed)` instead of every item.
+- **Honesty (rule 6):** no "assumed" labels on targets in the main UI. The gym screen shows assumed vs confirmed. `Why?` → Equipment says `Assumed stack step` / `Assumed dumbbells` / `Assumed plates`. "Typical values, not checked" now reads "assumed".
+- Migration 25 adds the `update_gym` coach action kind (a table rebuild, like 23). The gym fields (`setup`, `missingKinds`, an item's `notFor`) live inside the stored documents, so they need no migration and are in backups.
+
+**Open for Ben:**
+- **`Not at this gym` marks the exercise, not the whole equipment kind.** The request said "marks the needed equipment kind missing". Kinds are broad: one `weight_stack` item covers every cable and selectorised exercise, so marking the kind for a missing leg extension would also remove pushdowns and pulldowns. Removing a whole kind is available through the coach ("there are no machines here") and on the gym screen.
+- **Not built (no gym-profile kind exists yet, ADR 0010):** kettlebells, EZ / trap bar, Smith machine, benches and racks. Kettlebell and EZ-bar exercises still can't be planned at a gym; benches aren't modelled, so the hotel `bench` tick was left out rather than shown with no effect. Each needs a new equipment kind (schema, load maths, editor). Ben to say if he wants that slice.
+- **Defaults are a PM guess pending Ben:** 2.5 kg default dumbbell step, 50 kg / 120 lb dumbbell top, 5 kg stack steps, 8 of each plate, Hotel cables on by default.
+- **The no-gym "typical gym"** (Start with no gym, onboarding Skip) is still the old commercial preset. Switching it to the full gym would change loads in existing flows, so it waits for Ben.
+- **The learn chip** shows on the Focus card only, not in Table mode (where the off-profile line still opens the gym). It is offered once per idea per workout, and the "once" isn't kept across a force-close.
