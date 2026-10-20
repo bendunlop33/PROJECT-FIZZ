@@ -6,7 +6,7 @@ import type { EquipmentInstance } from '@fizz/schemas';
 
 import { checkIntegrity, createBackup, DatabaseManager, deleteDocumentIn, EQUIPMENT_SPEC, migrate, MIGRATIONS, parseBackup, sha256Hex, type BackupFile } from '../src/index';
 import { nodeDatabaseHost } from '../src/node/index';
-import { memoryDriver, tempDir } from './helpers';
+import { memoryDriver, tempDir, withoutSchema30 } from './helpers';
 
 /**
  * (Ben, 20 Oct; ADR 0030) Kettlebells, EZ / trap bars, the Smith machine,
@@ -101,8 +101,10 @@ describe('review ben-kit S5: a schema-28 backup restores into the v29 store', ()
     const made = await createBackup(m.store, { at: at(60), app: APP });
     const parsed = await parseBackup(made.text);
     if (!parsed.ok) throw new Error('backup');
-    // The same file as a schema-28 build wrote it (its tables are the same; only the kinds widened).
-    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 28 };
+    // The same file as a schema-28 build wrote it (only the kinds widened; migration 30's tables and columns weren't there).
+    const tables = withoutSchema30({ ...parsed.file.tables });
+    const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
+    const body: Partial<BackupFile> = { ...parsed.file, schemaVersion: 28, tables, counts };
     delete body.checksum;
     const text = JSON.stringify({ ...body, checksum: { algorithm: 'sha-256', value: sha256Hex(stableStringify(body)) } });
 

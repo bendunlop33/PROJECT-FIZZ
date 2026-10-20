@@ -50,7 +50,7 @@ import {
   type Store,
 } from '../src/index';
 import { nodeDatabaseHost } from '../src/node/index';
-import { failingDriver, tempDir } from './helpers';
+import { failingDriver, tempDir, withoutSchema30 } from './helpers';
 
 const APP = { name: 'PROJECT-FIZZ', version: '0.1.0', build: 'ci-42' };
 
@@ -479,7 +479,7 @@ describe('restoring a backup from schema 1 (before check-ins)', () => {
     const made = await createBackup(src.store, { at: at(100), app: APP });
     await src.close();
     const file = JSON.parse(made.text) as BackupFile;
-    const tables = { ...file.tables };
+    const tables = withoutSchema30({ ...file.tables });
     delete tables.check_ins;
     delete tables.pain_flags;
     // …and nothing from schema 3 (imports).
@@ -615,7 +615,7 @@ describe('merged schema: active-set (4) and gym switch (5)', () => {
     await src.close();
     // Build 91 had no gym-switch columns.
     const file = JSON.parse(made.text) as BackupFile;
-    const tables = { ...file.tables };
+    const tables = withoutSchema30({ ...file.tables });
     tables.sessions = (tables.sessions ?? []).map((row) => {
       const copy = { ...row };
       delete copy.gym_changes;

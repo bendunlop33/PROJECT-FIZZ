@@ -46,3 +46,22 @@ export function failingDriver(inner: SqlDriver, failOn: (sql: string) => boolean
     close: () => inner.close(),
   });
 }
+
+/**
+ * A backup's tables as a schema-29 build wrote them: no tables or columns
+ * from migration 30 (workout builder v3). For tests that relabel a current
+ * backup as an older schema; strip newer additions first.
+ */
+export function withoutSchema30<T extends Record<string, Record<string, unknown>[]>>(tables: T): T {
+  const out: Record<string, Record<string, unknown>[]> = { ...tables };
+  delete out.plan_day_variations;
+  delete out.reviews;
+  if (out.sessions) {
+    out.sessions = out.sessions.map((row) => {
+      const copy = { ...row };
+      delete copy.plan_day;
+      return copy;
+    });
+  }
+  return out as T;
+}

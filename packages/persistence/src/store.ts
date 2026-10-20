@@ -23,12 +23,15 @@ import { SqliteWorkoutDrafts } from './workout-drafts';
 import { SqlitePlanDrafts } from './plan-drafts';
 import { SqliteTrainingProfiles } from './training-profiles';
 import { SqliteActivities, SqliteWeekPlans } from './activities';
+import { SqlitePlanDayVariations, SqliteReviews } from './plan-days';
 import { SqliteSessions } from './sessions';
 import { inHistorySql } from './sql';
 
 export interface SqliteRepositories extends Repositories {
   gyms: SqliteGyms;
   equipment: SqliteEquipment;
+  /** Routines, with the plan-day template writes (workout builder v3 §4.2). */
+  routines: SqliteRoutines;
   sessions: SqliteSessions;
   checkIns: SqliteCheckIns;
   painFlags: SqlitePainFlags;
@@ -46,6 +49,10 @@ export interface SqliteRepositories extends Repositories {
   activities: SqliteActivities;
   /** (Ben, 20 Oct) This week's shape applied from the coach's proposal (migration 26). */
   weekPlans: SqliteWeekPlans;
+  /** (Workout builder v3, migration 30) Saved plan-day variations, keyed by split day and main lift. */
+  planDayVariations: SqlitePlanDayVariations;
+  /** (Workout builder v3, migration 30) Pre-session, session, post-session, weekly and block reviews. */
+  reviews: SqliteReviews;
 }
 
 export function createSqliteRepositories(db: Database): SqliteRepositories {
@@ -68,6 +75,8 @@ export function createSqliteRepositories(db: Database): SqliteRepositories {
     trainingProfiles: new SqliteTrainingProfiles(db),
     activities: new SqliteActivities(db),
     weekPlans: new SqliteWeekPlans(db),
+    planDayVariations: new SqlitePlanDayVariations(db),
+    reviews: new SqliteReviews(db),
   };
 }
 

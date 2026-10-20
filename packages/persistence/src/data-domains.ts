@@ -68,6 +68,10 @@ export const YOUR_DATA_TABLES = [
   'activities',
   // (Ben, 20 Oct, migration 26) This week's shape Ben applied from the coach's proposal: his plan, his choice.
   'week_plans',
+  // (Workout builder v3, migration 30) Ben's saved plan-day variations (`Chest · bench · arms superset`): his choices.
+  'plan_day_variations',
+  // (Workout builder v3, migration 30) Reviews of his sessions, weeks and blocks: facts from his data, the coach's notes for him.
+  'reviews',
   // Tombstones of purged workouts (delete-workouts §6.3, migration 8): Your data, removed by Delete my data.
   'purged_sessions',
 ] as const;
