@@ -1743,7 +1743,8 @@ export function createCoachService(deps: CoachServiceDeps) {
     /** Waiting suggestions and saved memories. */
     async memories(): Promise<MemoryList> {
       const p = await owner();
-      return memoryList(await coachStore().listMemories(p.id, 'all'), deps.now().utc);
+      // Day notes (`For next <day> day`) live with their day (`From last review`, ✕), not in Memories (review b3-coach S5).
+      return memoryList((await coachStore().listMemories(p.id, 'all')).filter((m) => m.dayNote === undefined), deps.now().utc);
     },
 
     /** Save or Not now on a suggestion (versioned; a double tap is one write). */

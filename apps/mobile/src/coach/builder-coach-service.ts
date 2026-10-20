@@ -32,6 +32,10 @@ import {
   checkReview,
   codeMixPick,
   makeBuilderProposal,
+  NO_NUMBERS,
+  reviewClaimBase,
+  workoutClaimCheck,
+  type ClaimBase,
   memoryContentKey,
   mixContextText,
   newActionRecord,
@@ -46,7 +50,6 @@ import {
   reviewFacts,
   setupContextText,
   signalLine,
-  workoutContextText,
   type BuilderCoachEnv,
   type BuilderCoachExtras,
   type BuilderCoachReach,
@@ -92,23 +95,41 @@ export interface BuilderCoachWorld {
   extras: BuilderCoachExtras;
 }
 
+/** Where Set up words were asked: on Set up itself, or Today's coach bar (§2.0.5, §2.1: opens the builder on Set up, filled). */
+export type SetupFrom = 'setup' | 'today';
+
 export interface BuilderCoachSource {
   /** The open builder draft (or Today's card draft) by ID; null when it's gone. */
   world(draftId: string): Promise<BuilderCoachWorld | null>;
-  /** Set up as it stands, with its day and main-lift options. Null: Set up isn't open. */
-  setup(): Promise<SetupCoachContext | null>;
+  /**
+   * Set up's context, with its day and main-lift options. `setup`: Set up as it stands (null: it isn't
+   * open). `today`: a fresh Set up for Today's card (its day, length and groups), before the builder opens.
+   */
+  setup(from: SetupFrom): Promise<SetupCoachContext | null>;
 }
 
 export type BuilderWriteResult = { ok: true } | { ok: false; reason: 'stale' | 'failed' };
 
+/**
+ * The builder stream's writes (wired at the merge). Contract notes from the reviews (b3-coach S11):
+ * - `applyWorkout` keeps the draft's `origin: 'builder'` and writes builder loads through the same
+ *   codec the builder uses, or Start re-fits them.
+ * - Every slot a coach apply changes gets its `DraftSlot.rev` bumped (rule 5: other proposals and
+ *   review suggestions touching it then read `Out of date`), and a length change bumps Set up's revision.
+ */
 export interface BuilderCoachWriter {
-  /** Apply a checked set-up at once, with the builder's Undo toast; a retry with the same op ID writes once. */
-  applySetup(fill: SetupFill, opId: string): Promise<BuilderWriteResult>;
+  /**
+   * Apply a checked set-up at once, with the builder's Undo toast; a retry with the same op ID writes once.
+   * `openBuilder`: asked from Today, so the builder opens on Set up, filled, with the toast there.
+   */
+  applySetup(fill: SetupFill, opId: string, opts: { openBuilder: boolean }): Promise<BuilderWriteResult>;
   /**
    * Write a checked workout as a new draft version (§4.4: applied coach proposals make a version) with
    * its Undo snapshot; refused (`stale`) when the draft moved past `expectedVersion`; idempotent on `opId`.
    */
   applyWorkout(req: { draftId: string; expectedVersion: number; workout: BuilderWorkout; minutes: number; lines: readonly string[]; opId: string }): Promise<BuilderWriteResult>;
+  /** Whether a write under this op ID already happened (a double tap, or a retry after a force-close). */
+  applied(opId: string): Promise<boolean>;
 }
 
 /** The reviews table for the owner (`SqliteReviews`, migration 30). */
@@ -141,26 +162,38 @@ export interface BuilderCoachServiceDeps {
 // ---------------------------------------------------------------------------
 // Results
 
+/**
+ * How a coach call went: `ok` and the reach words, or `failed` (connected, but the call didn't give a usable
+ * answer: invalid arguments, a limit, a timeout). Never reported as `Coach not connected` (review S12).
+ */
+export type CoachCallStatus = BuilderCoachReach | 'failed';
+
 export type SetupAsk =
   /** Filled at once; `toast` is the Undo toast's words. `by: 'code'`: read by code (offline), no coach bubble. */
-  | { kind: 'filled'; by: 'coach' | 'code'; toast: string; notes: string[]; reply: string | null; status: BuilderCoachReach }
+  | { kind: 'filled'; by: 'coach' | 'code'; toast: string; notes: string[]; reply: string | null; status: CoachCallStatus }
   /** The coach answered a question; nothing to fill. */
-  | { kind: 'reply'; text: string; status: BuilderCoachReach }
-  | { kind: 'not_understood'; line: 'Not understood'; status: BuilderCoachReach }
-  | { kind: 'failed'; status: BuilderCoachReach };
+  | { kind: 'reply'; text: string; status: CoachCallStatus }
+  | { kind: 'not_understood'; line: 'Not understood'; status: CoachCallStatus }
+  /** Set up isn't open (and Today's card has no day to set up), or the write failed. */
+  | { kind: 'failed'; status: CoachCallStatus };
 
 export type EditAsk =
   | { kind: 'proposal'; proposal: BuilderProposal; status: 'ok' }
   /** The coach answered (or nothing it asked for could be done: `notes` says why). */
   | { kind: 'reply'; text: string | null; notes: string[]; status: 'ok' }
   /** Offline / not connected / the call failed: the bar shows the word; manual edits all still work. */
-  | { kind: 'unavailable'; status: BuilderCoachReach };
+  | { kind: 'unavailable'; status: CoachCallStatus }
+  /** The draft is gone (deleted, or started): nothing to change. */
+  | { kind: 'gone' };
 
 export type ApplyResult = { kind: 'applied'; lines: string[] } | { kind: 'out_of_date'; line: 'Out of date. Ask again.' } | { kind: 'failed' };
 
 export interface BuilderReviewResult {
-  reviewId: string | null;
+  /** The review's ID (day notes saved from it carry it, so `From last review` shows one review's notes). */
+  reviewId: string;
   status: 'reviewed' | 'offline' | 'not_connected' | 'failed';
+  /** Whether Done can save its notes (the day-notes port is wired); false: the notes aren't shown. */
+  notesSaveable: boolean;
   facts: BuilderReviewFacts;
   /** Code's `Add back <name>` suggestions (proposals), shown with or without the coach. */
   addBack: { id: string; name: string; proposal: BuilderProposal }[];
@@ -168,9 +201,26 @@ export interface BuilderReviewResult {
 }
 
 export type NudgeResult =
-  | { kind: 'silent' }
+  /**
+   * Nothing to say. `by: 'code'`: no clear signal, so the coach wasn't asked (and this is only returned when
+   * it could have been, connected); `by: 'coach'`: it was asked and chose silence.
+   */
+  | { kind: 'silent'; by: 'code' | 'coach' }
+  /** The coach's line, with code's offer as `Apply` (rule 3: an offer, applied only on Ben's tap). */
   | { kind: 'line'; line: string; offer: NudgeOffer | null }
+  /** Ben applied or skipped today's offer: nothing on the card again today (review B1); the line stays for `Why?`. */
+  | { kind: 'settled'; line: string | null; outcome: 'applied' | 'skipped' }
+  /** The coach didn't look (offline, not connected, or the call failed): `Not reviewed · …` (rule 1). */
   | { kind: 'not_reviewed'; status: Exclude<BuilderCoachReach, 'ok'> | 'failed' };
+
+/** Markers in the pre-session review's op IDs: the offer was applied or skipped (review B1). */
+const NUDGE_SETTLED = { applied: 'nudge-applied:', skipped: 'nudge-skipped:' } as const;
+
+function nudgeSettledOf(r: TrainingReview): 'applied' | 'skipped' | null {
+  if (r.opIds.some((o) => o.startsWith(NUDGE_SETTLED.applied))) return 'applied';
+  if (r.opIds.some((o) => o.startsWith(NUDGE_SETTLED.skipped))) return 'skipped';
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -221,17 +271,33 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
     return r;
   }
 
-  const failedReach = (r: BuilderToolAnswer<BuilderCoachToolName>): BuilderCoachReach => (!r.ok && r.error === 'network' ? 'offline' : 'not_connected');
+  /** A failed call's status: the network is `offline`; a route that can't answer (signed out, not eligible, gone) is not connected; anything else `failed`. */
+  const failedReach = (r: BuilderToolAnswer<BuilderCoachToolName>): CoachCallStatus => {
+    if (r.ok) return 'ok';
+    switch (r.error) {
+      case 'network':
+      case 'timeout':
+        return 'offline';
+      case 'auth_expired':
+      case 'not_eligible':
+      case 'model_gone':
+      case 'unavailable':
+        return 'not_connected';
+      case 'usage_limit':
+      case 'cancelled':
+      case 'invalid_args':
+      case 'no_answer':
+        return 'failed';
+    }
+  };
 
   function envFor(world: BuilderCoachWorld, words: string): BuilderCoachEnv {
     return { ...world.env, askedHeavier: parseBuildRequest(words).askedHeavier };
   }
 
-  /** The workout's YOUR DATA text and the number facts the coach's words are checked against. */
-  function workoutTexts(world: BuilderCoachWorld, more: Record<string, unknown> = {}, words = ''): { text: string; facts: ReturnType<typeof builderFacts> } {
-    const view = builderWorkoutView(world.snapshot, world.env.ctx, estimateBuilderMinutes(world.snapshot.workout, world.env.ctx));
-    const text = workoutContextText(view, world.extras, more);
-    return { text, facts: builderFacts(words === '' ? [text] : [text, words]) };
+  /** The claim check's base for a workout: code's counts, lengths and Ben's words only (never IDs, slot keys or memories; B2). */
+  function claimBase(world: BuilderCoachWorld, words = ''): ClaimBase {
+    return { ctx: world.env.ctx, minutes: [world.snapshot.minutes, estimateBuilderMinutes(world.snapshot.workout, world.env.ctx)], words };
   }
 
   /** The session review record (Your data); its ID when written or already current. */
@@ -267,7 +333,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
     return w.review.id;
   }
 
-  return {
+  const service = {
     /** The bar's status word now (`● Coach`, `Offline`, `Coach not connected`). No provider call. */
     async status(): Promise<BuilderCoachReach> {
       return (await reach()).reach;
@@ -278,11 +344,13 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
      * `fill_setup`, checked. Offline, not connected, or the call failed: code reads the words
      * (§9 Q4) — no coach message, and `Not understood` when it reads nothing.
      */
-    async askSetup(req: { words: string; opId: string; signal?: AbortSignal }): Promise<SetupAsk> {
-      const ctx = await deps.source.setup();
+    async askSetup(req: { words: string; opId: string; from?: SetupFrom; signal?: AbortSignal }): Promise<SetupAsk> {
+      const from = req.from ?? 'setup';
+      const ctx = await deps.source.setup(from);
       const r = await reach();
       if (ctx === null) return { kind: 'failed', status: r.reach };
-      let status = r.reach;
+      const write = { openBuilder: from === 'today' };
+      let status: CoachCallStatus = r.reach;
       if (r.reach === 'ok' && r.models !== null) {
         const answer = await call(buildSetupRequest(ctx, req.words, builderModelFor('setup', r.models)), BUILDER_COACH_TOOL.fillSetup, req.signal);
         if (answer.ok) {
@@ -290,7 +358,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
           const reply = checkCoachText(answer.args.reply, facts).shown;
           const fill = checkFillSetup(answer.args, ctx, req.words);
           if (fill === null) return reply === null ? { kind: 'not_understood', line: 'Not understood', status: 'ok' } : { kind: 'reply', text: reply, status: 'ok' };
-          const w = await deps.writer.applySetup(fill, req.opId);
+          const w = await deps.writer.applySetup(fill, req.opId, write);
           return w.ok ? { kind: 'filled', by: 'coach', toast: fill.toast, notes: fill.notes, reply, status: 'ok' } : { kind: 'failed', status: 'ok' };
         }
         status = failedReach(answer);
@@ -298,7 +366,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const args = parseSetupWords(req.words, ctx);
       const fill = args === null ? null : checkFillSetup(args, ctx, req.words);
       if (fill === null) return { kind: 'not_understood', line: 'Not understood', status };
-      const w = await deps.writer.applySetup(fill, req.opId);
+      const w = await deps.writer.applySetup(fill, req.opId, write);
       return w.ok ? { kind: 'filled', by: 'code', toast: fill.toast, notes: fill.notes, reply: null, status } : { kind: 'failed', status };
     },
 
@@ -308,14 +376,14 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
      */
     async askEdit(req: { draftId: string; words: string; opId: string; signal?: AbortSignal }): Promise<EditAsk> {
       const r = await reach();
+      if (r.reach !== 'ok' || r.models === null) return { kind: 'unavailable', status: r.reach === 'ok' ? 'not_connected' : r.reach };
       const world = await deps.source.world(req.draftId);
-      if (r.reach !== 'ok' || r.models === null || world === null) return { kind: 'unavailable', status: r.reach === 'ok' ? 'not_connected' : r.reach };
+      if (world === null) return { kind: 'gone' };
       const env = envFor(world, req.words);
-      const { facts } = workoutTexts(world, {}, req.words);
       const view = builderWorkoutView(world.snapshot, env.ctx, estimateBuilderMinutes(world.snapshot.workout, env.ctx));
       const answer = await call(buildEditRequest(view, world.extras, req.words, builderModelFor('edit', r.models)), BUILDER_COACH_TOOL.proposeWorkoutEdit, req.signal);
       if (!answer.ok) return { kind: 'unavailable', status: failedReach(answer) };
-      const made = makeBuilderProposal({ id: req.opId, snapshot: world.snapshot, ops: answer.args.ops, words: answer.args.reply, facts, env });
+      const made = makeBuilderProposal({ id: req.opId, snapshot: world.snapshot, ops: answer.args.ops, words: answer.args.reply, check: workoutClaimCheck(world.snapshot.workout, claimBase(world, req.words)), env });
       if (made.proposal === null) return { kind: 'reply', text: made.reason, notes: made.outcome.notes, status: 'ok' };
       return { kind: 'proposal', proposal: made.proposal, status: 'ok' };
     },
@@ -326,6 +394,8 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
      * the same ops no longer give the lines Ben saw; then one versioned write under one op ID.
      */
     async apply(proposal: BuilderProposal): Promise<ApplyResult> {
+      // A double tap, or a retry after a force-close: already written under this op ID (review S1).
+      if (await deps.writer.applied(builderApplyOpId(proposal.id)).catch(() => false)) return { kind: 'applied', lines: proposal.lines };
       const world = await deps.source.world(proposal.draftId);
       if (world === null) return { kind: 'out_of_date', line: 'Out of date. Ask again.' };
       const env: BuilderCoachEnv = { ...world.env, askedHeavier: false };
@@ -347,9 +417,9 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const env: BuilderCoachEnv = { ...world.env, askedHeavier: false };
       const facts = reviewFacts({ snapshot: world.snapshot, ctx: env.ctx, groups: req.groups, plan: req.plan });
       const lines = reviewFactLines(facts);
-      const { facts: numbers } = workoutTexts(world, { facts: lines });
+      const claims = reviewClaimBase(facts, { ctx: env.ctx, minutes: claimBase(world).minutes, plan: req.plan });
       const addBack = facts.addBack.flatMap((a) => {
-        const p = makeBuilderProposal({ id: `${req.opId}:add:${a.exerciseId}`, snapshot: world.snapshot, ops: [{ op: 'add', exerciseId: a.exerciseId, afterSlotKey: null, workingSets: a.workingSets }], words: null, facts: numbers, env }).proposal;
+        const p = makeBuilderProposal({ id: `${req.opId}:add:${a.exerciseId}`, snapshot: world.snapshot, ops: [{ op: 'add', exerciseId: a.exerciseId, afterSlotKey: null, workingSets: a.workingSets }], words: null, check: NO_NUMBERS, env }).proposal;
         return p === null ? [] : [{ id: p.id, name: a.name, proposal: p }];
       });
       const r = await reach();
@@ -360,32 +430,37 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
         const view = builderWorkoutView(world.snapshot, env.ctx, estimateBuilderMinutes(world.snapshot.workout, env.ctx));
         const answer = await call(buildReviewRequest(view, world.extras, lines, builderModelFor('review', r.models)), BUILDER_COACH_TOOL.reviewWorkout, req.signal);
         if (answer.ok) {
-          coach = checkReview({ reviewId, args: answer.args, snapshot: world.snapshot, env, facts: numbers });
+          coach = checkReview({ reviewId, args: answer.args, snapshot: world.snapshot, env, claims });
           status = 'reviewed';
-        } else status = answer.error === 'network' ? 'offline' : 'failed';
+        } else {
+          const st = failedReach(answer);
+          status = st === 'ok' ? 'failed' : st;
+        }
       }
       const stored = await storeSessionReview({ reviewId, world, facts, coach, status, opId: req.opId });
-      return { reviewId: stored, status, facts, addBack, coach };
+      return { reviewId: stored ?? reviewId, status, notesSaveable: deps.dayNotes !== undefined, facts, addBack, coach };
     },
 
     /**
      * Done (or swipe down) on the review: the ticked `For next <day> day` notes are saved (Your data).
-     * Text notes become day notes; a numeric note becomes the coach's target for that lift (when wired).
+     * Text notes become day notes. A numeric note becomes the coach's target for that lift when that is
+     * wired (SP2, Ben to decide); until then it is saved as a text day note in code's words
+     * (`Bench top set: 102.5 kg next`), so it shows under `From last review` and reaches the coach (B4).
+     * `notSaved`: the IDs that failed, for a one-word `Not saved` on the sheet.
      */
-    async saveReviewNotes(req: { notes: readonly ReviewNote[]; ticked: ReadonlySet<string>; splitDayId: string; mainLiftExerciseId: string | null; reviewId: string | null; opId: string }): Promise<{ saved: number; skipped: number }> {
+    async saveReviewNotes(req: { notes: readonly ReviewNote[]; ticked: ReadonlySet<string>; splitDayId: string; mainLiftExerciseId: string | null; reviewId: string | null; opId: string }): Promise<{ saved: number; skipped: number; notSaved: string[] }> {
       let saved = 0;
-      let skipped = 0;
+      const notSaved: string[] = [];
+      const asText = (n: ReviewNote, opId: string) => deps.dayNotes?.saveText({ text: n.text, splitDayId: req.splitDayId, mainLiftExerciseId: req.mainLiftExerciseId, reviewId: req.reviewId, opId }) ?? Promise.resolve('failed' as const);
       for (const n of req.notes) {
         if (!req.ticked.has(n.id)) continue;
         const opId = `${req.opId}:${n.id}`;
-        const r =
-          n.kind === 'text'
-            ? await (deps.dayNotes?.saveText({ text: n.text, splitDayId: req.splitDayId, mainLiftExerciseId: req.mainLiftExerciseId, reviewId: req.reviewId, opId }) ?? Promise.resolve('failed' as const))
-            : await (deps.dayNotes?.saveTarget?.({ ...n, splitDayId: req.splitDayId, reviewId: req.reviewId, opId }) ?? Promise.resolve('failed' as const));
-        if (r === 'failed') skipped += 1;
+        const target = n.kind === 'target' ? deps.dayNotes?.saveTarget : undefined;
+        const r = n.kind === 'target' && target !== undefined ? await target({ ...n, splitDayId: req.splitDayId, reviewId: req.reviewId, opId }) : await asText(n, opId);
+        if (r === 'failed') notSaved.push(n.id);
         else saved += 1;
       }
-      return { saved, skipped };
+      return { saved, skipped: notSaved.length, notSaved };
     },
 
     /**
@@ -399,18 +474,26 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const name = (id: string) => infoOrDefault(req.world.env.ctx.info, id).name;
       const text = mixContextText({ from: name(req.fromExerciseId), shortlist: req.shortlist.map((id) => ({ exerciseId: id, name: name(id), lastDone: req.lastDone(id) })), extras: { goal: req.world.extras.goal, memories: req.world.extras.memories, history: req.world.extras.history } });
       const answer = await call(buildMixRequest(text, builderModelFor('mix', r.models)), BUILDER_COACH_TOOL.mixPick, req.signal);
-      if (!answer.ok) return codeMixPick(req.shortlist, answer.error === 'network' ? 'offline' : 'failed');
+      if (!answer.ok) {
+        const st = failedReach(answer);
+        return codeMixPick(req.shortlist, st === 'offline' || st === 'not_connected' ? st : 'failed');
+      }
       return checkMixPick(answer.args, req.shortlist, builderFacts([text]));
     },
 
     /**
      * The pre-session nudge (§6.1), opening Today. Silent unless code finds a clear real signal; only
-     * then is the coach asked (light model), and only when the inputs changed since the stored one.
-     * Its line comes with code's offer as `Apply` (rule 3). Offline: `not_reviewed`, no line.
+     * then is the coach asked (light model), and only when the inputs (the signals and the plan day)
+     * changed since today's stored one: never again because the draft moved, so an applied offer
+     * isn't offered again a step lighter (review B1). Its line comes with code's offer as `Apply`
+     * (rule 3). Once Ben applies or skips it (`applyNudge`, `skipNudge`), it is `settled` for the day.
+     * The connection is always read, so offline or not connected is `not_reviewed` even with no
+     * signal (review B5, rule 1).
      */
     async preSessionNudge(req: { draftId: string; splitDayId: string | null; input: PreSessionInput; opId: string; signal?: AbortSignal }): Promise<NudgeResult> {
+      const r = await reach();
       const world = await deps.source.world(req.draftId);
-      if (world === null) return { kind: 'silent' };
+      if (world === null) return r.reach === 'ok' ? { kind: 'silent', by: 'code' } : { kind: 'not_reviewed', status: r.reach };
       const env: BuilderCoachEnv = { ...world.env, askedHeavier: false };
       const slots = slotsOf(world.snapshot.workout.blocks);
       const ids = new Set(slots.map((s) => s.exerciseId));
@@ -418,36 +501,35 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       const signals = preSessionSignals(req.input, ids, hasLegs);
       const name = (id: string) => infoOrDefault(env.ctx.info, id).name;
       const signalLines = signals.map((s) => signalLine(s, name));
-      const offer0 = signals.length === 0 ? null : nudgeOffer(signals, world.snapshot, env, builderFacts(signalLines));
-      const text = nudgeContextText({ day: world.snapshot.dayName, signals: signalLines, offer: offer0 === null ? null : { id: offer0.id, lines: offer0.proposal.lines }, extras: { goal: world.extras.goal, painFlags: world.extras.painFlags } });
+      const offer = signals.length === 0 ? null : nudgeOffer(signals, world.snapshot, env);
+      const text = nudgeContextText({ day: world.snapshot.dayName, signals: signalLines, offer: offer === null ? null : { id: offer.id, lines: offer.proposal.lines }, extras: { goal: world.extras.goal, painFlags: world.extras.painFlags } });
       const facts = builderFacts([text]);
-      const offer = offer0;
       const subject: ReviewSubject = { kind: 'pre_session', localDate: req.input.today, splitDayId: req.splitDayId, draftId: req.draftId };
-      const inputsHash = deriveId(`nudge:${stableStringify({ signals, ids: [...ids].sort(), offer: offer?.proposal.lines ?? null })}`);
-      const r = signals.length === 0 ? null : await reach();
-      const first: ReviewCoach = signals.length === 0 ? { status: 'silent' } : r?.reach === 'ok' ? { status: 'pending' } : { status: r?.reach === 'offline' ? 'offline' : 'not_connected' };
+      // The inputs: the signals and the plan day only (not the draft or the offer, which move with Apply).
+      const inputsHash = deriveId(`nudge:${stableStringify({ signals, splitDayId: req.splitDayId })}`);
+      const first: ReviewCoach = signals.length === 0 ? { status: 'silent' } : r.reach === 'ok' ? { status: 'pending' } : { status: r.reach };
+      const quiet = (): NudgeResult => (r.reach === 'ok' ? { kind: 'silent', by: 'code' } : { kind: 'not_reviewed', status: r.reach });
 
       const now = deps.now();
       const reviewId = deriveId(`nudge-review:${req.opId}`);
       let stored: TrainingReview | null = null;
-      let mustAsk = first.status === 'pending';
       if (deps.reviews !== undefined) {
         const review: TrainingReview = { id: reviewId, ownerId: await deps.ownerId(), version: 1, createdAtUtc: now.utc, updatedAtUtc: now.utc, subject, inputsHash, facts: nudgeReviewFacts(signals), coach: first, status: 'current', supersededById: null, opIds: [req.opId], createdAt: now };
         const w = await deps.reviews.record(review).catch(() => null);
-        if (w !== null && (w.status === 'unchanged' || w.status === 'replayed')) {
+        if (w !== null && w.status !== 'invalid' && w.status !== 'stale') {
+          stored = w.review;
+          const settled = nudgeSettledOf(w.review);
           const c = w.review.coach;
-          if (c.status === 'silent') return { kind: 'silent' };
-          if (c.status === 'reviewed' && c.lines[0] !== undefined) return { kind: 'line', line: c.lines[0], offer };
-          // A stored pending (a crash mid-call) is asked again below when the coach is reachable.
-          stored = w.review;
-          mustAsk = r?.reach === 'ok';
-        } else if (w !== null && (w.status === 'written' || w.status === 'retry_coach')) {
-          stored = w.review;
-          mustAsk = r?.reach === 'ok';
+          if (settled !== null) return { kind: 'settled', line: c.status === 'reviewed' ? (c.lines[0] ?? null) : null, outcome: settled };
+          if (signals.length > 0 && (w.status === 'unchanged' || w.status === 'replayed')) {
+            if (c.status === 'silent') return { kind: 'silent', by: 'coach' };
+            if (c.status === 'reviewed' && c.lines[0] !== undefined) return { kind: 'line', line: c.lines[0], offer };
+            // A stored pending (a crash mid-call), offline or failed: asked again below when the coach is reachable.
+          }
         }
       }
-      if (signals.length === 0) return { kind: 'silent' };
-      if (!mustAsk || r === null || r.models === null) return { kind: 'not_reviewed', status: r?.reach === 'offline' ? 'offline' : 'not_connected' };
+      if (signals.length === 0) return quiet();
+      if (r.reach !== 'ok' || r.models === null) return { kind: 'not_reviewed', status: r.reach === 'ok' ? 'not_connected' : r.reach };
 
       const answer = await call(buildNudgeRequest(text, builderModelFor('nudge', r.models)), BUILDER_COACH_TOOL.preSessionNudge, req.signal);
       const settle = async (coach: ReviewCoach): Promise<void> => {
@@ -457,18 +539,46 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
         await deps.reviews.update(next, stored.version, opId).catch(() => null);
       };
       if (!answer.ok) {
-        await settle({ status: answer.error === 'network' ? 'offline' : 'failed' });
-        return { kind: 'not_reviewed', status: answer.error === 'network' ? 'offline' : 'failed' };
+        const st = failedReach(answer);
+        const status = st === 'ok' ? 'failed' : st;
+        await settle({ status });
+        return { kind: 'not_reviewed', status };
       }
       const checked = checkNudge(answer.args, offer, facts);
       if (!checked.speak) {
         await settle({ status: 'silent' });
-        return { kind: 'silent' };
+        return { kind: 'silent', by: 'coach' };
       }
       await settle({ status: 'reviewed', verdict: null, lines: [checked.line], actionIds: [], numbersChecked: true });
       return { kind: 'line', line: checked.line, offer: checked.offer };
     },
+
+    /**
+     * Apply on the nudge's offer (Ben's tap, rule 3): the same checked Apply as any proposal, then the day's
+     * pre-session review is marked applied so the card stays quiet today (review B1).
+     */
+    async applyNudge(req: { offer: NudgeOffer; localDate: string; opId: string }): Promise<ApplyResult> {
+      const out = await service.apply(req.offer.proposal);
+      if (out.kind === 'applied') await markNudge(req.localDate, 'applied', req.opId);
+      return out;
+    },
+
+    /** Skip on the nudge's offer: nothing changes, and the card stays quiet today. */
+    async skipNudge(req: { localDate: string; opId: string }): Promise<void> {
+      await markNudge(req.localDate, 'skipped', req.opId);
+    },
   };
+  return service;
+
+  async function markNudge(localDate: string, outcome: 'applied' | 'skipped', opId: string): Promise<void> {
+    if (deps.reviews === undefined) return;
+    const current = await deps.reviews.current({ kind: 'pre_session', localDate, splitDayId: null, draftId: null }).catch(() => null);
+    if (current === null || nudgeSettledOf(current) !== null) return;
+    const marker = `${NUDGE_SETTLED[outcome]}${opId}`.slice(0, 128);
+    // The marker goes last and survives the op-ID cap (older op IDs drop first).
+    const next: TrainingReview = { ...current, version: current.version + 1, updatedAtUtc: deps.now().utc, opIds: [...current.opIds.slice(-19), marker] };
+    await deps.reviews.update(next, current.version, marker).catch(() => null);
+  }
 }
 
 export type BuilderCoachService = ReturnType<typeof createBuilderCoachService>;

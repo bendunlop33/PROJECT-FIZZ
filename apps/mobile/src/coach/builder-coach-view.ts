@@ -26,6 +26,11 @@ export interface AskBarView {
   status: string | null;
   /** Your workout's bar is disabled offline (every manual edit still works); Set up's still fills by code. */
   disabled: boolean;
+  /**
+   * Set up with no coach (offline or not connected, §2.6, §9 Q4): the bar is a field; typed or spoken words
+   * go straight to code's Set up fill. No chat sheet, no chat bubble (review S9).
+   */
+  inline: boolean;
   accessibilityLabel: string;
   mic: { glyph: 'mic' | 'mic.fill' | '⊘'; accessibilityLabel: string; disabled: boolean; why: string | null; settingsLink: boolean };
 }
@@ -41,6 +46,7 @@ export function askBarView(page: AskBarPage, reach: BuilderCoachReach, mic: MicS
     label,
     status,
     disabled,
+    inline: page === 'setup' && reach !== 'ok',
     accessibilityLabel: status === null ? LABEL[page] : `${LABEL[page]}, ${status}`,
     mic: {
       glyph: mic === 'listening' ? 'mic.fill' : mic === 'unavailable' || mic === 'denied' ? '⊘' : 'mic',
@@ -100,7 +106,7 @@ export interface BuilderReviewView {
   suggestions: { id: string; action: string; card: ProposalCardView; proposal: BuilderProposal }[];
   /** `For next Chest day`. */
   notesTitle: string;
-  /** Ticked by default; saved on Done or swipe down. */
+  /** Ticked by default; saved on Done or swipe down. Empty when they can't be saved (never a ticked note that won't be kept, B4). */
   notes: { id: string; text: string; ticked: boolean; note: ReviewNote }[];
   /** Hidden for a number not in the facts (`Why?` → `Not shown`). */
   notShown: string[];
@@ -126,7 +132,7 @@ export function builderReviewView(r: BuilderReviewResult, dayName: string, state
           },
     suggestions: (r.coach?.suggestions ?? []).map((s) => ({ id: s.id, action: s.action, card: proposalCardView(s.proposal, states.get(s.id) ?? 'open', { applyLabel: s.action }), proposal: s.proposal })),
     notesTitle: `For next ${dayName} day`,
-    notes: (r.coach?.notes ?? []).map((n) => ({ id: n.id, text: n.text, ticked: true, note: n })),
+    notes: r.notesSaveable ? (r.coach?.notes ?? []).map((n) => ({ id: n.id, text: n.text, ticked: true, note: n })) : [],
     notShown: r.coach?.hidden ?? [],
   };
 }
@@ -147,45 +153,35 @@ export function nudgeCardView(r: NudgeResult): NudgeCardView | null {
   return { line: `✦ ${r.line}`, offer: r.offer === null ? null : { lines: r.offer.proposal.lines, proposal: r.offer.proposal } };
 }
 
-export type CoachReviewStatus = 'reviewed' | 'offline' | 'not_connected' | 'pending' | 'failed';
+/**
+ * What Today's `Why?` gets from the coach (the Today stream owns the copy: `todayWhy` in
+ * `packages/domain/src/today-v2/view.ts` takes `coachReason` and `review`). `review`:
+ * - `reviewed`: the coach looked (a line, an applied or skipped offer, or its own silence); no
+ *   `Not reviewed` line. Today's `TodayReviewStatus` needs this value at the merge.
+ * - `not_reviewed`: connected, but no clear signal so the coach wasn't asked (§6.1; SP1 asks Ben
+ *   whether this shows `Not reviewed` or nothing), or the call failed.
+ * - `offline` / `not_connected`: `Not reviewed · Offline` / `· Coach not connected` (rule 1, B5).
+ * - `pending`: still on its way.
+ */
+export type TodayCoachReview = 'reviewed' | 'not_reviewed' | 'offline' | 'not_connected' | 'pending';
 
-/** The nudge's status for the card's `Why?` (`reviewStatus`, §2.0.7). */
-export function nudgeReviewStatus(r: NudgeResult | null): CoachReviewStatus {
-  if (r === null) return 'pending';
+export function todayCoachWhy(r: NudgeResult | null): { coachReason: string | null; review: TodayCoachReview } {
+  if (r === null) return { coachReason: null, review: 'pending' };
   switch (r.kind) {
     case 'silent':
+      return { coachReason: null, review: r.by === 'coach' ? 'reviewed' : 'not_reviewed' };
     case 'line':
-      return 'reviewed';
+      return { coachReason: r.line, review: 'reviewed' };
+    case 'settled':
+      return { coachReason: r.line, review: 'reviewed' };
     case 'not_reviewed':
-      return r.status;
+      return { coachReason: null, review: r.status === 'failed' ? 'not_reviewed' : r.status };
   }
 }
 
-/**
- * The coach's line in `Why?` (§2.0.2): its reason when it changed or offered something, or the
- * honest `Not reviewed · Offline` / `Not reviewed · Coach not connected` (rule 1). Null: nothing to add
- * (reviewed with nothing to say, or the review is still on its way).
- */
-export function coachWhyLine(input: { status: CoachReviewStatus; nudge: NudgeResult | null; mix: { from: string; to: string; pick: MixPick } | null }): string | null {
-  const lines: string[] = [];
-  if (input.nudge?.kind === 'line') lines.push(`Coach: ${input.nudge.line}`);
-  if (input.mix !== null) lines.push(input.mix.pick.by === 'coach' && input.mix.pick.reason !== null ? `${input.mix.from} → ${input.mix.to}: ${input.mix.pick.reason}` : `${input.mix.from} → ${input.mix.to}: Not reviewed`);
-  if (input.status === 'offline') lines.push('Not reviewed · Offline');
-  else if (input.status === 'not_connected') lines.push('Not reviewed · Coach not connected');
-  else if (input.status === 'failed') lines.push('Not reviewed');
-  return lines.length === 0 ? null : lines.join('\n');
-}
-
-/** `↻ Mix it up` row after a pick: `Cable fly → Cable crossover · today only`, the reason (or `Not reviewed`), `Another (1/3)`. */
-export function mixRowView(input: { from: string; to: string; pick: MixPick; index: number }): { line: string; reason: string; another: string | null; accessibilityLabel: string } {
-  const reason = input.pick.by === 'coach' && input.pick.reason !== null ? input.pick.reason : 'Not reviewed';
-  const of = input.pick.order.length;
-  return {
-    line: `${input.from} → ${input.to} · today only`,
-    reason,
-    another: of > 1 ? `Another (${String(input.index)}/${String(of)})` : null,
-    accessibilityLabel: `${input.from} swapped for ${input.to}, today only. ${reason}`,
-  };
+/** `↻ Mix it up`: the coach's one-line reason for Today's `todayMixLine(…, coachReason)`; null = code's pick, not reviewed. */
+export function mixCoachReason(pick: MixPick | null): string | null {
+  return pick?.by === 'coach' ? pick.reason : null;
 }
 
 /** The offer's lines for an Apply on Today (proposal state from the card). */
@@ -197,13 +193,18 @@ export function offerCardView(offer: NudgeOffer, state: ProposalState): Proposal
 // Day notes (`From last review`, §2.9): which show, and which go to the coach
 
 /**
- * The active day notes for a plan day (split day + main lift) on a local date, oldest first: shown as
- * `From last review` with ✕, and sent to the coach as `BuilderCoachExtras.dayNotes`. One Ben hid
- * today (✕, `hiddenOn`) is neither shown nor sent that day.
+ * The day notes for a plan day (split day + main lift) on a local date: shown as `From last review`
+ * with ✕, and sent to the coach as `BuilderCoachExtras.dayNotes`. Only the LATEST review's notes
+ * (review S5, SP4): a newer Done replaces the older notes rather than piling up beside them. One Ben
+ * hid today (✕, `hiddenOn`) is neither shown nor sent that day (and never brings an older one back).
  */
 export function dayNotesFor(memories: readonly Memory[], splitDayId: string, mainLiftExerciseId: string | null, localDate: string): { memoryId: string; version: number; text: string }[] {
-  return memories
-    .filter((m) => m.status === 'active' && m.dayNote !== undefined && m.dayNote.splitDayId === splitDayId && m.dayNote.mainLiftExerciseId === mainLiftExerciseId && !m.dayNote.hiddenOn.includes(localDate))
-    .sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : 0))
-    .map((m) => ({ memoryId: m.id, version: m.version, text: m.text }));
+  const mine = memories
+    .filter((m) => m.status === 'active' && m.dayNote !== undefined && m.dayNote.splitDayId === splitDayId && m.dayNote.mainLiftExerciseId === mainLiftExerciseId)
+    .sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : 0));
+  const latest = mine[mine.length - 1];
+  if (latest === undefined) return [];
+  // One review's notes: the same review ID, or (none recorded) the same save.
+  const sameReview = (m: Memory): boolean => (latest.dayNote?.reviewId != null ? m.dayNote?.reviewId === latest.dayNote.reviewId : m.dayNote?.reviewId == null && m.createdAtUtc === latest.createdAtUtc);
+  return mine.filter((m) => sameReview(m) && !(m.dayNote?.hiddenOn.includes(localDate) ?? false)).map((m) => ({ memoryId: m.id, version: m.version, text: m.text }));
 }
