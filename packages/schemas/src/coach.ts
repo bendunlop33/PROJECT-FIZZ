@@ -17,6 +17,8 @@ import { CustomExerciseFieldsSchema, EquipmentKindSchema, LateralitySchema, Meas
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
+import { ActivityEffortSchema, ActivityFieldsShapeSchema, ActivityKindSchema, ActivityStatusSchema, WeekBasisSchema, WeekMergeSchema, WeekRowSchema, WeekSkipSchema, type Activity } from './activity';
+import { LocalDateSchema } from './import';
 
 /**
  * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
@@ -81,6 +83,10 @@ export const CoachEntityKindSchema = z.enum([
   'custom_exercise',
   /** (Ben, 20 Oct) The plan in use paused or resumed (`pause_plan`), only when Ben asked; Undo puts it back. */
   'plan_pause',
+  /** (Ben, 20 Oct) A run, ride, swim or sport Ben told the coach about (`log_activity`): added when he asked, else offered; Undo removes it. */
+  'activity',
+  /** (Ben, 20 Oct) This week's days reshaped around a run (`propose_week`): a proposal Ben applies; this week only. */
+  'week_plan',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -213,6 +219,42 @@ export const PausePlanArgsSchema = z.strictObject({
   reason,
 });
 export type PausePlanArgs = z.infer<typeof PausePlanArgsSchema>;
+
+/**
+ * (Ben, 20 Oct) Log a run, ride, swim, sport or other activity Ben told the coach about, done or
+ * planned ("18 km run yesterday", "long run Saturday"). Only what he said: no invented pace, heart
+ * rate or effort (rule 6). `date`: local `YYYY-MM-DD` from his words and today's date (a day he
+ * said outright wins, code reads his words). Applied at once with Undo when he asked to log it;
+ * otherwise saved as an offer he taps to log (rule 3).
+ */
+export const LogActivityArgsSchema = z.strictObject({
+  kind: ActivityKindSchema,
+  status: ActivityStatusSchema,
+  date: LocalDateSchema,
+  /** Rough minutes, as he said them; null when he gave none. */
+  durationMin: z.int().min(1).max(24 * 60).nullable(),
+  /** Kilometres, as he said them; null when he gave none. */
+  distanceKm: z.number().min(0.01).max(1000).nullable(),
+  /** His own effort word; `long` for a long session; null when he gave none. */
+  effort: ActivityEffortSchema.nullable(),
+  reason,
+});
+export type LogActivityArgs = z.infer<typeof LogActivityArgsSchema>;
+
+/**
+ * (Ben, 20 Oct: "maybe we swap to a push rather than shoulder and chest separately") This week only:
+ * merge two of the week's remaining days into one ("Chest" + "Shoulders" → "Push") and/or skip one,
+ * so the week fits around a run. Day IDs are YOUR DATA week.remaining[].id. Always a proposal: Ben
+ * taps Apply (rule 3); next week is the plan as it was.
+ */
+export const ProposeWeekArgsSchema = z.strictObject({
+  merges: z
+    .array(z.strictObject({ dayIds: z.array(z.string().min(1).max(64)).length(2), name: z.string().min(1).max(30) }))
+    .max(3),
+  skips: z.array(z.string().min(1).max(64)).max(3),
+  message: z.string().max(400),
+});
+export type ProposeWeekArgs = z.infer<typeof ProposeWeekArgsSchema>;
 
 /**
  * (11 Oct, coach tools) Log a pending set with the values Ben said in this
@@ -478,6 +520,10 @@ export const CoachToolNameSchema = z.enum([
   'propose_exercise',
   /** (Ben, 20 Oct) Pause or resume the plan in use when Ben asks ("I'm on holiday till 3 Nov"); applied at once with Undo. */
   'pause_plan',
+  /** (Ben, 20 Oct) A run, ride, swim or sport: logged when Ben asks ("18 km run yesterday"), else offered. */
+  'log_activity',
+  /** (Ben, 20 Oct) This week's remaining days merged or skipped around a run: a proposal Ben applies. */
+  'propose_week',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -512,6 +558,8 @@ export const COACH_TOOL_ARGS = {
   propose_plan: ProposePlanArgsSchema,
   propose_exercise: ProposeExerciseArgsSchema,
   pause_plan: PausePlanArgsSchema,
+  log_activity: LogActivityArgsSchema,
+  propose_week: ProposeWeekArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -902,6 +950,34 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
       .nullable(),
     versionAfter: z.int().min(1).nullable(),
   }),
+  /**
+   * (Ben, 20 Oct) An activity the coach logged (committed: `activityId` names it) or offered (proposed:
+   * the fields Ben's tap logs). `versionAfter`: the activity's version the write left (Undo only from it).
+   */
+  z.object({
+    kind: z.literal('log_activity'),
+    activityId: IdSchema.nullable(),
+    /** What was (or would be) logged; a refused call keeps what it could read (possibly no duration, distance or effort). */
+    fields: ActivityFieldsShapeSchema,
+    versionAfter: z.int().min(1).nullable(),
+    /** Ben's tap on an offer: the offer it logged. */
+    proposalId: IdSchema.optional(),
+  }),
+  /**
+   * (Ben, 20 Oct) This week reshaped around a run: a proposal (always), with the before/after list and
+   * scope `This week`. `factsKey`: what the week looked like when proposed (plan version, workouts and
+   * activities this week); Apply is refused as stale when it changed (rule 5).
+   */
+  z.object({
+    kind: z.literal('propose_week'),
+    weekMonday: LocalDateSchema,
+    basis: WeekBasisSchema,
+    merges: z.array(WeekMergeSchema).max(3),
+    skips: z.array(WeekSkipSchema).max(3),
+    before: z.array(WeekRowSchema).max(7),
+    after: z.array(WeekRowSchema).max(7),
+    factsKey: z.string().min(1).max(256),
+  }),
   z.object({
     kind: z.literal('undo'),
     undoneActionId: IdSchema,
@@ -1220,7 +1296,9 @@ export type CoachWrite =
   /** (19 Oct) A coach plan and its record, in one write; `expectedVersion` as for a draft. */
   | { kind: 'plan_draft'; action: ActionRecord; plan: PlanDraft; expectedVersion: number | null }
   /** (Ben, 20 Oct) The plan in use paused or resumed (`pause_plan`) and its record, in one write on the version read (rule 5). */
-  | { kind: 'plan_control'; action: ActionRecord; plan: PlanDraft; expectedVersion: number };
+  | { kind: 'plan_control'; action: ActionRecord; plan: PlanDraft; expectedVersion: number }
+  /** (Ben, 20 Oct) An activity the coach logged and its record, in one write (`expectedVersion` null: new). */
+  | { kind: 'activity'; action: ActionRecord; activity: Activity; expectedVersion: number | null };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

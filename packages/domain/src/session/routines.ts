@@ -57,10 +57,13 @@ export function isDeleted(r: Pick<Routine, 'deletedAtUtc'>): boolean {
   return r.deletedAtUtc !== undefined && r.deletedAtUtc !== null;
 }
 
-/** Live routines in list order: creation order in this pass (premium-feel §2.6), then ID for ties. */
-export function liveRoutines<R extends Pick<Routine, 'id' | 'createdAtUtc' | 'deletedAtUtc'>>(all: readonly R[]): R[] {
+/**
+ * Live routines in list order: creation order in this pass (premium-feel §2.6), then ID for ties.
+ * (Ben, 20 Oct) A week's merged day (`createdForWeek`) isn't one: Up next starts it by ID that week only.
+ */
+export function liveRoutines<R extends Pick<Routine, 'id' | 'createdAtUtc' | 'deletedAtUtc'> & { createdForWeek?: unknown }>(all: readonly R[]): R[] {
   return all
-    .filter((r) => !isDeleted(r))
+    .filter((r) => !isDeleted(r) && r.createdForWeek === undefined)
     .sort((a, b) => (a.createdAtUtc < b.createdAtUtc ? -1 : a.createdAtUtc > b.createdAtUtc ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 

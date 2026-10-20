@@ -15,3 +15,4 @@ export * from './plan-draft';
 export * from './muscle-groups';
 export * from './import-layout';
 export * from './training-profile';
+export * from './activity';
