@@ -806,9 +806,14 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const nowMs = toMs(input.start.at.utc);
   const coachSlots = new Map<string, Extract<RecheckedSlot, { kind: 'coach' }>>();
   const ruleNotes = new Map<string, string[]>();
+  // (v3 §2.3, §3.1) A builder version's loads were worked out and rounded down at this gym when Ben saw
+  // them (`Top set` is a target he read): they stand as built, pinned to that item, and Start never
+  // re-plans them from history. A slot with no load (`—`) is planned as any other.
+  const builder = version.request.origin === 'builder';
+  const builderSlots = new Set(builder ? version.plan.slots.filter((s) => s.setTemplates.some((t) => t.load?.load != null)).map((s) => s.slotKey) : []);
   for (const s of version.plan.slots) {
     const exercise = input.start.exercises.get(s.exerciseId);
-    if (exercise === undefined) continue;
+    if (exercise === undefined || builderSlots.has(s.slotKey)) continue;
     const history = input.histories.get(exercise.id) ?? [];
     const re = recheckDraftSlot(s, exercise, history, input.substitute, version.createdAt.utc, nowMs);
     if (re?.kind === 'coach') {
@@ -830,6 +835,14 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const pinned: Routine = {
     ...routine,
     exercises: routine.exercises.map((rex) => {
+      if (builderSlots.has(rex.id)) {
+        const slot = version.plan.slots.find((x) => x.slotKey === rex.id);
+        const setTemplates = rex.setTemplates.map((t, i) => {
+          const l = slot?.setTemplates[i]?.load?.load ?? null;
+          return l === null ? t : { ...t, targetLoad: l };
+        });
+        return { ...rex, setTemplates, equipmentId: slot?.checkedOn?.equipmentId ?? rex.equipmentId };
+      }
       const coach = coachSlots.get(rex.id);
       if (coach !== undefined) {
         const setTemplates = rex.setTemplates.map((t, i) => {
@@ -845,7 +858,8 @@ export function planCoachDraft(input: CoachDraftPlanInput): CoachDraftPlan {
   const known = new Map(input.start.knownEquipment);
   for (const t of targets.values()) if (t.pin !== null && !known.has(t.pin.id)) known.set(t.pin.id, t.pin);
   for (const c of coachSlots.values()) if (c.refs.equipment !== null && !known.has(c.refs.equipment.id)) known.set(c.refs.equipment.id, c.refs.equipment);
-  const edits = withDraftFit(input.today.edits, input.draft.id, version);
+  // A builder version was already fitted to its length by the builder (§3.6): no second fit at Start.
+  const edits = builder ? [...input.today.edits] : withDraftFit(input.today.edits, input.draft.id, version);
   const out = planWithTodayEdits({ kind: 'routine', input: { ...input.start, knownEquipment: known, routine: pinned, targets: entries, ...(slotEntries.size > 0 ? { slotTargets: slotEntries } : {}) } }, { ...input.today, edits });
   // A coach draft isn't a routine: the session names the draft, never a routine (rotation untouched, §6.3).
   const exerciseOfRow = new Map(out.aggregate.exercises.map((e) => [e.id, e.exerciseId]));
