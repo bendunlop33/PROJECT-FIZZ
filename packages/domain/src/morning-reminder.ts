@@ -11,7 +11,7 @@ import { toMs } from './time';
  *
  * Day 1 is Up next exactly as Today shows it. Later days are a prediction:
  * Up next walked forward (`predictUpNext`) assuming each reminded session is
- * done. The app recomputes the whole list whenever anything that moves Up
+ * done (with a plan, by the plan's adaptive rule: `planDaysAhead`). The app recomputes the whole list whenever anything that moves Up
  * next changes, so a wrong guess is replaced before it fires. Nothing is sent
  * with no Up next, with the plan paused, or on a day a workout was already
  * started before the reminder time (rule 6: no generic nagging, no invented
@@ -75,6 +75,12 @@ export interface UpNextForecast {
    * reminded.
    */
   cycle: { sessions: readonly ReminderSession[]; at: number };
+  /**
+   * With a plan in use (plan-adapt, Ben 20 Oct): the sessions after `next`,
+   * in order, from the adaptive rule assuming each is done
+   * (`planDaysAhead`); used instead of `cycle`. Absent or null: walk `cycle`.
+   */
+  ahead?: readonly ReminderSession[] | null;
   /** The selected gym's name; null: none. */
   gymName: string | null;
   /** When the newest workout (finished or in progress) started; null: none. */
@@ -83,11 +89,13 @@ export interface UpNextForecast {
 
 /**
  * Up next for the next `count` reminders, assuming each one is done: `next`,
- * then the loop after it. Empty with no Up next or a paused plan.
+ * then `ahead` (a plan) or the loop after it. Empty with no Up next or a
+ * paused plan.
  */
-export function predictUpNext(forecast: Pick<UpNextForecast, 'next' | 'paused' | 'cycle'>, count: number): ReminderSession[] {
+export function predictUpNext(forecast: Pick<UpNextForecast, 'next' | 'paused' | 'cycle' | 'ahead'>, count: number): ReminderSession[] {
   if (forecast.next === null || forecast.paused || count <= 0) return [];
   const out: ReminderSession[] = [forecast.next];
+  if (forecast.ahead != null) return [...out, ...forecast.ahead].slice(0, count);
   const { sessions, at } = forecast.cycle;
   if (sessions.length === 0) return out;
   for (let i = 1; out.length < count; i += 1) {

@@ -11,12 +11,14 @@ import {
   localMidnightUtcMs,
   pausedDates,
   planDayBodyParts,
+  planDaysAhead,
   planDaysByDue,
   planDaysDoneBy,
   planDaysDoneThisWeek,
   planOverview,
   validPauseUntil,
   toIso,
+  type PlanAheadDay,
   type PlanDueDay,
   type PlanDueWorkout,
 } from '../src/index';
@@ -272,5 +274,47 @@ describe('week counting with a plan that adapts and pauses', () => {
     // The plan's days this week: 4 of 7 days paused → 3 × 3/7 ≈ 1.
     const now = consistency({ workouts: [], nowMs: ms(0), tz: TZ, aim: null, plan: { days, appliedAtUtc }, pausedDates: new Set(['2026-10-08', '2026-10-09', '2026-10-10', '2026-10-11']) });
     expect(now.planThisWeek?.text).toBe('0 of 1');
+  });
+});
+
+describe('planDaysAhead: the morning reminder\'s days 2–7 by the adaptive rule (Ben, 20 Oct)', () => {
+  const ahead = (d: PlanDueDay, g: Partial<Record<MuscleGroup, number>>): PlanAheadDay => ({ ...d, plannedGroups: groups(g) });
+  const A_PUSH = ahead(PUSH, { Chest: 6, Shoulders: 3, Triceps: 3 });
+  const A_PULL = ahead(PULL, { Back: 6, Biceps: 3 });
+  const A_LEGS = ahead(LEGS, { Quads: 6, Hamstrings: 3, Glutes: 2 });
+  const A_PPL = [A_PUSH, A_PULL, A_LEGS];
+  const run = (workouts: PlanDueWorkout[], first: PlanAheadDay, opts: { pin?: { routineId: string; opId: string; atUtc: string } | null; count?: number; fromS?: number; canStart?: (d: PlanAheadDay) => boolean } = {}) =>
+    planDaysAhead({ days: A_PPL, workouts, pin: opts.pin ?? null, firstRoutineId: first.routineId, count: opts.count ?? 6, fromMs: ms(opts.fromS ?? 10 * DAY), windowDays: 42, ...(opts.canStart ? { canStart: opts.canStart } : {}) }).map((d) => d.name);
+
+  it('nothing done yet: day 1 then the days in turn', () => {
+    expect(run([], A_PUSH)).toEqual(['Pull', 'Legs', 'Push', 'Pull', 'Legs', 'Push']);
+  });
+
+  it('legs trained off-plan: Legs isn\'t predicted first; it waits its turn', () => {
+    // Push, then an off-plan leg session: Up next is Pull; then Push (Legs was just trained), then Legs.
+    const ws = [pushDone(1, 0), legsDone(2, DAY, null)];
+    expect(names(planDaysByDue(PPL, ws))[0]).toBe('Pull');
+    const got = run(ws, A_PULL);
+    expect(got[0]).toBe('Push');
+    expect(got).toEqual(['Push', 'Legs', 'Pull', 'Push', 'Legs', 'Pull']);
+  });
+
+  it('a Make next pin is Up next and consumed once its day is done', () => {
+    const pin = { routineId: LEGS.routineId, opId: 'pin', atUtc: at(2 * DAY).utc };
+    const ws = [pushDone(1, 0), pullDone(2, DAY)];
+    // Legs pinned and Up next; done on day 1, then the order carries on.
+    expect(run(ws, A_LEGS, { pin })).toEqual(['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs']);
+    // Pinned Pull while Push is Up next: Push done on day 1, Pull (still pinned) on day 2, then the rule.
+    const pinPull = { routineId: PULL.routineId, opId: 'pin2', atUtc: at(2 * DAY).utc };
+    expect(run([pushDone(1, 0), legsDone(2, DAY)], A_PUSH, { pin: pinPull, count: 3 })).toEqual(['Pull', 'Legs', 'Push']);
+  });
+
+  it('a day this gym can\'t start is skipped; none startable: no more days', () => {
+    expect(run([], A_PUSH, { canStart: (d) => d.name !== 'Legs' })).toEqual(['Pull', 'Push', 'Pull', 'Push', 'Pull', 'Push']);
+    expect(run([], A_PUSH, { canStart: () => false })).toEqual([]);
+  });
+
+  it('Up next not a plan day: empty', () => {
+    expect(planDaysAhead({ days: A_PPL, workouts: [], pin: null, firstRoutineId: 'other', count: 6, fromMs: ms(0), windowDays: 42 })).toEqual([]);
   });
 });
