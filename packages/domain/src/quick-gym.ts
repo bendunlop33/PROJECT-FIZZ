@@ -396,16 +396,20 @@ export function gymEditLanded(edit: GymEdit, current: { gym: Gym | null; equipme
   });
 }
 
+const isStationKind = (kind: string): kind is 'bench' | 'rack' => kind === 'bench' || kind === 'rack';
+
 /**
  * Undo of an edit: each record back to its content before, as a new version;
- * a new item is retired. Only while every record is still the version the edit
- * saved (rule 5: never applied over a newer change).
+ * a new item is retired. A new bench or rack is removed instead (`remove`): a
+ * retired one would tell the gym it has none, which it didn't know before
+ * (ADR 0030). Only while every record is still the version the edit saved
+ * (rule 5: never applied over a newer change).
  */
 export function planRevertGymEdit(
   edit: GymEdit,
   current: { gym: Gym | null; equipment: (id: string) => EquipmentInstance | null },
   atUtc: string,
-): { gym: GymWrite<Gym> | null; equipment: GymWrite<EquipmentInstance>[] } | 'changed_since' {
+): { gym: GymWrite<Gym> | null; equipment: GymWrite<EquipmentInstance>[]; remove: { id: string; expectedVersion: number }[] } | 'changed_since' {
   let gym: GymWrite<Gym> | null = null;
   if (edit.gym !== null) {
     const now = current.gym;
@@ -413,13 +417,18 @@ export function planRevertGymEdit(
     gym = { next: { ...edit.gym.before, version: now.version + 1, updatedAtUtc: atUtc }, expectedVersion: now.version };
   }
   const equipment: GymWrite<EquipmentInstance>[] = [];
+  const remove: { id: string; expectedVersion: number }[] = [];
   for (const e of edit.equipment) {
     const now = current.equipment(e.after.id);
     if (now === null || now.version !== e.after.version) return 'changed_since';
+    if (e.before === null && isStationKind(now.kind)) {
+      remove.push({ id: now.id, expectedVersion: now.version });
+      continue;
+    }
     const next: EquipmentInstance = e.before === null ? { ...now, availability: 'retired', version: now.version + 1, updatedAtUtc: atUtc } : { ...e.before, version: now.version + 1, updatedAtUtc: atUtc };
     equipment.push({ next, expectedVersion: now.version });
   }
-  return { gym, equipment };
+  return { gym, equipment, remove };
 }
 
 interface NewItemMeta {
@@ -792,6 +801,12 @@ export function planGymUpdate(input: {
       }
       case 'remove': {
         for (const e of live().filter((x) => x.kind === c.equipment)) put(edit(e, { availability: 'retired' }), e);
+        // (Review ben-kit B3) A bench or rack gates exercises only once the gym has a record of one, so a gym
+        // with none saves a retired one, as the quick setup does. Its Undo removes the record (`planRevertGymEdit`).
+        if (isStationKind(c.equipment) && ![...items.values()].some((e) => e.kind === c.equipment)) {
+          const first = fullItemsOfKind(c.equipment, input.unit, DEFAULT_DUMBBELL_STEP[input.unit])[0];
+          if (first !== undefined) put(materialiseItem({ ...first.equipment, availability: 'retired' }, meta), null);
+        }
         const kinds = new Set(gym.missingKinds ?? []);
         if (!kinds.has(c.equipment)) {
           gym = withMissingKinds(gym, [...kinds, c.equipment]);

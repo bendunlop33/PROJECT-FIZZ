@@ -25,7 +25,7 @@ import { chatSetUndoCommand, gymEditLanded, gymEditWrites, isInHistory, nextTarg
 import { ACTIVITY_SPEC } from './activities';
 import type { Database } from './database';
 import { readAggregate, writeAggregate } from './sessions';
-import { decodeDocument, EQUIPMENT_SPEC, erase, EXERCISE_SPEC, GYM_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
+import { decodeDocument, deleteDocumentIn, EQUIPMENT_SPEC, erase, EXERCISE_SPEC, GYM_SPEC, listDocuments, PAIN_FLAG_SPEC, saveDocumentIn, type DocumentSpec, type DocumentTable } from './documents';
 import type { SqlExecutor, SqlRow } from './driver';
 import { checkRead, checkWrite, inHistorySql, insert, mismatch, parseJson, rowId } from './sql';
 import { getWorkoutDraftIn, WORKOUT_DRAFT_SPEC } from './workout-drafts';
@@ -814,6 +814,7 @@ export class SqliteCoachStore {
         if (plan === 'changed_since') return 'changed_since';
         if (plan.gym !== null && !(await saveDocumentIn(tx, GYM_SPEC, plan.gym.next, plan.gym.expectedVersion)).ok) return 'changed_since';
         for (const e of plan.equipment) if (!(await saveDocumentIn(tx, EQUIPMENT_SPEC, e.next, e.expectedVersion)).ok) throw new Error('equipment changed while it was being undone');
+        for (const r of plan.remove) if (!(await deleteDocumentIn(tx, EQUIPMENT_SPEC, r.id, r.expectedVersion))) throw new Error('equipment changed while it was being undone');
         return 'ok';
       }
       case 'suggest_memory':

@@ -143,7 +143,7 @@ describe('Make full gym on an existing gym', () => {
   const mine = dumbbells({ gymId: GYM, detailsSource: 'user', loads: [5, 10, 15, 20] });
   const cable = stack({ gymId: GYM, detailsSource: 'user' });
 
-  it('keeps his confirmed items and adds the assumed rest; Undo retires them and restores the gym', () => {
+  it('keeps his confirmed items and adds the assumed rest; Undo retires them (removes the bench and rack) and restores the gym', () => {
     const before = { gym: gym(), equipment: [mine, cable] };
     expect(makeFullNeedsDumbbellStep(before.gym, before.equipment)).toBe(false);
     const p = planMakeFullGym({ ...before, unit: 'kg', dumbbellStep: 2.5, atUtc: T1, newId: idGen(50_000) });
@@ -164,6 +164,10 @@ describe('Make full gym on an existing gym', () => {
     expect(undo.gym?.next).toMatchObject({ version: 3 });
     expect(undo.gym?.next.setup).toBeUndefined();
     expect(undo.equipment.every((w) => w.next.availability === 'retired')).toBe(true);
+    // (Review ben-kit B3) The added bench and rack are removed, not retired: a retired one would mean "none here".
+    const kindOf = (rid: string) => after.equipment.find((e) => e.id === rid)?.kind;
+    expect(undo.remove.map((r) => kindOf(r.id))).toEqual(['bench', 'rack']);
+    expect(undo.equipment.map((w) => w.next.kind)).not.toContain('bench');
   });
 
   it('a stale Undo is refused (rule 5)', () => {

@@ -17,7 +17,7 @@ import {
   type GymEdit,
   type GymLearn,
 } from '@fizz/domain';
-import { EQUIPMENT_SPEC, GYM_SPEC, listDocuments, saveDocumentIn, type SqlExecutor, type SqliteRepositories, type Store } from '@fizz/persistence';
+import { deleteDocumentIn, EQUIPMENT_SPEC, GYM_SPEC, listDocuments, saveDocumentIn, type SqlExecutor, type SqliteRepositories, type Store } from '@fizz/persistence';
 import type { EquipmentInstance, Exercise, Gym, UserProfile, WeightUnit, ZonedTimestamp } from '@fizz/schemas';
 
 /**
@@ -226,6 +226,7 @@ export function createGymServices(ctx: GymServicesContext) {
           const plan = planRevertGymEdit(edit, current, ctx.now().utc);
           if (plan === 'changed_since') return { ok: false as const, message: 'Can’t undo: the gym changed since.' };
           await writeAll(tx, plan);
+          for (const r of plan.remove) if (!(await deleteDocumentIn(tx, EQUIPMENT_SPEC, r.id, r.expectedVersion))) throw new Stale();
           return { ok: true as const };
         });
       } catch {
