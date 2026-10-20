@@ -443,6 +443,7 @@ export function Chip({
   disabled = false,
   onDisabledPress,
   onSurface = false,
+  size = 'workout',
 }: {
   label: string;
   selected: boolean;
@@ -452,12 +453,15 @@ export function Chip({
   disabled?: boolean;
   onDisabledPress?: () => void;
   onSurface?: boolean;
+  /** `min`: 44pt, for filter rows away from the workout (design pass 6.6); default 52pt. */
+  size?: 'workout' | 'min';
 }) {
   const theme = useTheme();
   const press = usePressScale('pill');
   const filled = theme.components.cardBorderWidth === 0;
   const idle = onSurface ? theme.colors['bg.raised'] : theme.colors['bg.surface'];
   const edge = onSurface ? theme.colors['border.control'] : theme.colors['border.divider'];
+  const height = size === 'min' ? theme.target.min.height : theme.target.workout.height;
   return (
     <Animated.View style={[grow ? { flex: 1 } : null, disabled ? null : press.style]}>
     <Pressable
@@ -471,7 +475,7 @@ export function Chip({
         ...(filled
           ? {
               // D-Rest: selected is a full accent pill with a check; others sit on the surface. 52 pt (target.workout, D7).
-              minHeight: theme.target.workout.height,
+              minHeight: height,
               minWidth: theme.target.min.width,
               paddingHorizontal: theme.space['3'],
               borderRadius: theme.radius.pill,
@@ -484,7 +488,7 @@ export function Chip({
               gap: theme.space['1'],
             }
           : {
-              minHeight: theme.target.workout.height,
+              minHeight: height,
               minWidth: theme.target.workout.width,
               paddingHorizontal: theme.space['3'],
               borderRadius: theme.radius.pill,

@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, useWindowDimensions, View } from 'react-native';
 
 import { nothingLoggedText, weekdayDayMonth, type CalendarSessionRow } from '@fizz/domain';
 
@@ -15,6 +15,7 @@ import { AppText, Group, Icon, Row, StatusLine, TextButton } from '../../ui';
  */
 export function CalendarView({ month, onMonth }: { month: string | null; onMonth: (m: string) => void }) {
   const theme = useTheme();
+  const dayCircle = Math.round(30 * Math.min(Math.max(useWindowDimensions().fontScale, 1), 1.4));
   const navigation = useNavigation();
   const [data, reload] = useScreenData((s) => s.progress.calendar(month ?? undefined));
   const [selected, setSelected] = useState<string | null>(null);
@@ -90,11 +91,12 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
                   }}
                   style={{ flex: 1, minHeight: theme.target.min.height + 8, alignItems: 'center', justifyContent: 'center', gap: 2 }}
                 >
+                  {/* Design pass nit: the day number is capped at 1.4× and its circle grows with it. */}
                   <View
                     style={{
-                      minWidth: 30,
-                      height: 30,
-                      borderRadius: 15,
+                      minWidth: dayCircle,
+                      height: dayCircle,
+                      borderRadius: dayCircle / 2,
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderWidth: d.isToday ? 1 : 0,
@@ -102,7 +104,7 @@ export function CalendarView({ month, onMonth }: { month: string | null; onMonth
                       backgroundColor: d.date === day ? theme.colors['accent.subtle'] : 'transparent',
                     }}
                   >
-                    <AppText variant="callout" numeric style={{ fontWeight: d.date === day ? '600' : '400' }}>
+                    <AppText variant="callout" numeric maxFontSizeMultiplier={1.4} style={{ fontWeight: d.date === day ? '600' : '400' }}>
                       {String(d.day)}
                     </AppText>
                   </View>

@@ -88,6 +88,10 @@ describe('consistencyCardView', () => {
     expect(v.thisWeek).toBe('This week 1/1');
     expect(v.weeks).toHaveLength(8);
     expect(v.weeks.at(-1)).toMatchObject({ value: '1/1', atAim: true, accessibilityLabel: 'Week of 28 September: 1 of 1 days, at your aim' });
+    // Design pass 6.1: the column label is the day number; the full date is spoken, the short one shown at AX.
+    expect(v.weeks.at(-1)?.label).toBe('28');
+    expect(v.weeks[0]?.label).toBe('10');
+    expect(v.weeks.at(-1)?.rowLabel).toMatch(/28/);
     expect(v.atAim).toBe('Weeks at your aim: 1 of 8');
     expect(v.plan).toBe('Plan this week 1 of 2');
     expect(JSON.stringify(v)).not.toMatch(/miss/i);
