@@ -318,7 +318,7 @@ export function proposalCardView(r: ActionRecord, s: ProposalCardState): CardVie
   };
 }
 
-const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym']);
+const UNDOABLE = new Set<ActionRecord['detail']['kind']>(['adjust_pending_sets', 'add_exercise_today', 'edit_today', 'rename_workout', 'log_set', 'correct_set', 'set_next_session_targets', 'set_pain_flag', 'save_memory', 'forget_memory', 'add_playbook_candidate', 'pause_plan', 'update_gym', 'set_lift_target']);
 
 function statusOf(r: ActionRecord): CardView['status'] {
   if (r.status === 'committed' && r.undoneBy !== null) return { word: 'Undone', icon: 'arrow.uturn.backward' };
@@ -327,7 +327,7 @@ function statusOf(r: ActionRecord): CardView['status'] {
       if (r.detail.kind === 'log_set') return { word: 'Logged', icon: 'checkmark.circle.fill' };
       if (r.detail.kind === 'add_exercise_today') return { word: 'Added', icon: 'checkmark.circle.fill' };
       if (r.detail.kind === 'edit_today' && r.detail.exercises.length === 0 && r.detail.lines.length > 0 && r.detail.lines.every((l) => l.change === 'add')) return { word: 'Added', icon: 'checkmark.circle.fill' };
-      return r.detail.kind === 'save_memory' || r.detail.kind === 'add_playbook_candidate' ? { word: 'Saved', icon: 'checkmark.circle.fill' } : { word: 'Applied', icon: 'checkmark.circle.fill' };
+      return r.detail.kind === 'save_memory' || r.detail.kind === 'add_playbook_candidate' || r.detail.kind === 'set_lift_target' ? { word: 'Saved', icon: 'checkmark.circle.fill' } : { word: 'Applied', icon: 'checkmark.circle.fill' };
     case 'proposed':
       return { word: 'Suggested', icon: 'minus.circle' };
     case 'stale':
@@ -398,6 +398,11 @@ export type ThreadRow =
 
 const CHIP_TEXT: Record<Extract<BenInput, { kind: 'chip' }>['chip'], string> = { too_hard: 'Too hard', too_easy: 'Too easy', pain: 'Pain', lighter_session: 'Lighter session' };
 
+/** The offer row's button, and Ben's message once tapped: `Adjust` today's sets, `Apply` a lift target. */
+export function offerLabel(offer: Extract<BenInput, { kind: 'accept_offer' }>['offer']): string {
+  return offer === 'lift_target' ? 'Apply' : 'Adjust';
+}
+
 export function benText(input: BenInput): string | null {
   switch (input.kind) {
     case 'words':
@@ -405,7 +410,7 @@ export function benText(input: BenInput): string | null {
     case 'chip':
       return CHIP_TEXT[input.chip];
     case 'accept_offer':
-      return 'Adjust';
+      return offerLabel(input.offer);
     case 'summary':
       return null;
   }

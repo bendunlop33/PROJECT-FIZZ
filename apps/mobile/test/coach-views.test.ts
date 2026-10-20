@@ -5,7 +5,7 @@ import type { ActionRecord, NextSessionTargetRecord } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../src/coach/coach-service';
 import { nextTimeView, summaryNoteSentences } from '../src/coach/next-time-view';
-import { applyProgress, cardView, outcomeFor, routeLine, seesLabel, starterChips, startLiveTurn, statusView, thinkingLabel, whyView, workoutBarText } from '../src/coach/sheet-view';
+import { applyProgress, benText, cardView, offerLabel, outcomeFor, routeLine, seesLabel, starterChips, startLiveTurn, statusView, thinkingLabel, whyView, workoutBarText } from '../src/coach/sheet-view';
 import { adjustControlView, chipForTrigger, slotAfterFailure, slotView } from '../src/coach/slot-view';
 
 /** View models for the coach sheet, the workout's coach slot and the Summary's Next time (C6–C8). */
@@ -298,5 +298,13 @@ describe('slotAfterFailure (review N2)', () => {
     const a = rec('committed', 'adjust_pending_sets');
     expect(slotAfterFailure([a])).toEqual({ adjustment: a, outcome: null });
     expect(slotAfterFailure([rec('committed', 'save_memory')]).outcome).toEqual({ text: 'Couldn’t reach the coach.', retry: false });
+  });
+});
+
+describe('offer row label (review lift-targets B1)', () => {
+  it('Adjust for today’s sets, Apply for a lift target', () => {
+    expect(offerLabel('adjust_today')).toBe('Adjust');
+    expect(offerLabel('lift_target')).toBe('Apply');
+    expect(benText({ kind: 'accept_offer', offer: 'lift_target' })).toBe('Apply');
   });
 });

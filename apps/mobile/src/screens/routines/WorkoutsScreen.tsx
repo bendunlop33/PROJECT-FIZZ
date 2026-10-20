@@ -15,6 +15,7 @@ import { TIMING, useTheme } from '../../theme';
 import { AppText, Banner, Eyebrow, Icon, SecondaryButton, StatusLine, Tag, TextButton, Toast } from '../../ui';
 import { deleteConfirm, LIBRARY_COPY_UI, LIBRARY_TOASTS, rowMenu } from '../../workout/library-view';
 import { useSaveToWorkouts } from './SaveWorkoutSheet';
+import { LiftTargetsBlock } from '../library/LiftTargetsBlock';
 import { YourPlanBlock } from '../library/YourPlanBlock';
 
 type Toasting = { text: string; action?: string; onAction?: () => void; why?: string } | null;
@@ -271,6 +272,8 @@ export function WorkoutsList({ from, handedToast, onHandedToast, scrollTopKey }:
     return (
       <View style={{ gap: theme.space['5'] }}>
         {plan !== null ? <YourPlanBlock plan={plan} onToast={setToast} /> : null}
+        {/* Review lift-targets S2: with no plan in use, the targets still have a home here (nothing while the setting is off). */}
+        {plan === null && !data.value.planFailed ? <LiftTargetsBlock onToast={setToast} /> : null}
         {data.value.planFailed ? <StatusLine icon="exclamationmark.triangle" tone="warning" text={PLAN_COPY.loadFailed} action={<TextButton label="Try again" onPress={reload} />} /> : null}
         {active ? (
           <Banner

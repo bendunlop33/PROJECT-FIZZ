@@ -1,4 +1,4 @@
-import type { EquipmentKind, Load, WeightUnit } from '@fizz/schemas';
+import type { EquipmentKind, Load, LoadConvention, WeightUnit } from '@fizz/schemas';
 import { cardioDistanceText, cardioTimeText, cardioValuesText, distanceLoadText, formatDistance, formatDuration, formatNumber, loadText, NBSP } from '../display';
 import { paceText } from '../cardio';
 import { exclusionWords, isSetCountable } from '../exclusions';
@@ -448,6 +448,8 @@ export interface ExerciseDetailView {
   /** One per kind (Ben, 20 Oct: gyms, equipment and imports merged); the menu shows only with more than one. */
   series: SeriesOption[];
   seriesId: string;
+  /** (Ben, 20 Oct) What a lift target's dotted line is matched against: the series' kind, its latest row's convention and the display unit. */
+  seriesTerms: { exerciseId: string; kind: SeriesKind; convention: LoadConvention; unit: WeightUnit };
   /** The kind word when there is more than one series, else empty. */
   seriesLabel: string;
   seriesSource: 'app' | 'import';
@@ -1013,6 +1015,7 @@ export function buildExerciseDetailView(input: ExerciseDetailInput): ExerciseDet
       .sort((a, b) => b.sessions.length - a.sessions.length || lastMs(b) - lastMs(a))
       .map((s) => ({ id: s.id, label: labelOf(s), sessionCount: s.sessions.length, menuLabel: `${labelOf(s)} · ${String(s.sessions.length)}`, source: s.key.source })),
     seriesId: series.id,
+    seriesTerms: { exerciseId: input.exerciseId, kind: series.kind, convention: series.key.convention, unit: series.key.unit },
     seriesLabel: label,
     seriesSource: series.key.source,
     converted: convertedText(series.sessions.filter((ss) => ss.date >= trend.bounds.from && ss.date <= trend.bounds.to)),

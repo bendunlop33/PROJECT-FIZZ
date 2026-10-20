@@ -27,9 +27,11 @@ export interface TrendCanvasProps {
   gridWidth: number;
   /** A dashed second line through `layout.overlayYs` (the trailing average), thinner than the main line. */
   overlay?: { color: string; width: number } | null;
+  /** (Ben, 20 Oct) The lift target's level (`layout.targetY`): a thin dotted line, no colour meaning. */
+  targetColor?: string | null;
 }
 
-export function TrendCanvas({ layout, width, height, bars, hollow, selected, colors, lineWidth, pointSize, pointSelectedSize, gridWidth, overlay = null }: TrendCanvasProps) {
+export function TrendCanvas({ layout, width, height, bars, hollow, selected, colors, lineWidth, pointSize, pointSelectedSize, gridWidth, overlay = null, targetColor = null }: TrendCanvasProps) {
   const { plot } = layout;
   const overlayYs = layout.overlayYs ?? [];
   const overlayPath = (() => {
@@ -65,6 +67,11 @@ export function TrendCanvas({ layout, width, height, bars, hollow, selected, col
         <Line key={`g${t.label}`} p1={vec(plot.x, t.y)} p2={vec(plot.x + plot.width, t.y)} color={colors.grid} strokeWidth={gridWidth} />
       ))}
       <Line p1={vec(plot.x, plot.y + plot.height)} p2={vec(plot.x + plot.width, plot.y + plot.height)} color={colors.grid} strokeWidth={gridWidth} />
+      {layout.targetY !== undefined && targetColor !== null ? (
+        <Line p1={vec(plot.x, layout.targetY)} p2={vec(plot.x + plot.width, layout.targetY)} color={targetColor} strokeWidth={1.5} strokeCap="round">
+          <DashPathEffect intervals={[2, 4]} />
+        </Line>
+      ) : null}
       {sel ? <Rect x={sel.x - 0.5} y={plot.y} width={1} height={plot.height} color={colors.selected} /> : null}
       {bars
         ? layout.bars.map((b, i) => <RoundedRect key={`b${String(i)}`} x={b.x} y={b.y} width={b.width} height={b.height} r={Math.min(2, b.width / 2)} color={i === selected ? colors.line : colors.bar} />)

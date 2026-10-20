@@ -8,6 +8,7 @@ import {
   RepRangeSchema,
   RpeSchema,
   UtcTimestampSchema,
+  WeightUnitSchema,
   ZonedTimestampSchema,
 } from './common';
 import { PainAreaSchema, type PainFlag } from './checkin';
@@ -18,6 +19,7 @@ import { CustomExerciseFieldsSchema, EquipmentKindSchema, LateralitySchema, Meas
 import { RoutineExerciseSchema, RoutineSchema } from './routine';
 import { AskBuildQuestionArgsSchema, BuildQuestionTopicSchema, ProposeWorkoutArgsSchema, type WorkoutDraft } from './workout-draft';
 import { ProposePlanArgsSchema, type PlanDraft } from './plan-draft';
+import { LiftTargetSchema, type LiftTarget } from './lift-targets';
 
 /**
  * Coach v1 contracts (ADR 0020 §2, coach-contract.md §6). Tool arguments are
@@ -84,6 +86,8 @@ export const CoachEntityKindSchema = z.enum([
   'plan_pause',
   /** (20 Oct, ADR 0029) A gym's profile and equipment (`update_gym`): versioned writes; Undo puts each record back. */
   'gym_equipment',
+  /** (Ben, 20 Oct) A lift target on his training profile, set because he asked; Undo puts back what was there. */
+  'lift_target',
 ]);
 export type CoachEntityKind = z.infer<typeof CoachEntityKindSchema>;
 
@@ -283,6 +287,26 @@ export type AddExerciseTodayArgs = z.infer<typeof AddExerciseTodayArgsSchema>;
  * workout to Chest day"). The workout's own `rename_session` command,
  * versioned on the session (rule 5); the routine keeps its name.
  */
+/**
+ * (Ben, 20 Oct) `set_lift_target`: "I want to bench 100 kg by March". Only while Lift targets is
+ * on; applies only when Ben asked (`benAsked` with his words), else nothing is saved and the coach
+ * asks him. The app resolves the exercise among those he logs, takes its convention from his sets
+ * (per hand for dumbbells) and checks the values (max 3 targets, one per exercise).
+ */
+export const SetLiftTargetArgsSchema = z.strictObject({
+  /** The exercise's name or ID, one Ben logs. */
+  exercise: z.string().min(1).max(120),
+  kind: z.enum(['one_rm', 'weight_reps']),
+  load: z.number().positive().max(2000),
+  unit: WeightUnitSchema,
+  /** `weight_reps` only; null for a 1RM. */
+  reps: z.int().min(1).max(30).nullable(),
+  /** `YYYY-MM-DD`, or null for no date. */
+  byDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  ...askClaim,
+});
+export type SetLiftTargetArgs = z.infer<typeof SetLiftTargetArgsSchema>;
+
 export const RenameWorkoutArgsSchema = z.strictObject({
   /** The session version the coach read (rule 5). */
   baseVersion: z.int().min(1),
@@ -511,6 +535,8 @@ export const CoachToolNameSchema = z.enum([
   'pause_plan',
   /** (20 Oct, ADR 0029) Update a gym's equipment: applied with Undo when Ben said it, else a card he applies. */
   'update_gym',
+  /** (Ben, 20 Oct) A lift target Ben asked for, applied with Undo (only while Lift targets is on). */
+  'set_lift_target',
 ]);
 export type CoachToolName = z.infer<typeof CoachToolNameSchema>;
 
@@ -546,6 +572,7 @@ export const COACH_TOOL_ARGS = {
   propose_exercise: ProposeExerciseArgsSchema,
   pause_plan: PausePlanArgsSchema,
   update_gym: UpdateGymArgsSchema,
+  set_lift_target: SetLiftTargetArgsSchema,
 } as const satisfies Record<CoachToolName, z.ZodType>;
 
 // ---------------------------------------------------------------------------
@@ -949,6 +976,17 @@ export const ActionDetailSchema = z.discriminatedUnion('kind', [
     edit: GymEditSchema,
     proposalId: IdSchema.optional(),
   }),
+  /**
+   * (Ben, 20 Oct) A lift target set because Ben asked. `before`: that exercise's target it replaced
+   * (null: none); Undo puts it back while the profile still has `after` for the exercise.
+   */
+  z.object({
+    kind: z.literal('set_lift_target'),
+    exerciseId: z.string().min(1).max(64),
+    exerciseName: z.string().min(1).max(120),
+    before: LiftTargetSchema.nullable(),
+    after: LiftTargetSchema,
+  }),
   z.object({
     kind: z.literal('undo'),
     undoneActionId: IdSchema,
@@ -1017,12 +1055,17 @@ export type HiddenLine = z.infer<typeof HiddenLineSchema>;
  */
 export const COACH_REPLY_TOOL_NAME = 'reply';
 
-export const CoachOfferKindSchema = z.enum(['adjust_today']);
+/**
+ * The offer on a coach message that Ben's tap (or bare "yes") accepts. `lift_target` (review
+ * lift-targets B1): the coach's own target idea, stored as a `proposed` record; accepting applies
+ * exactly that record. Only code sets it; the model's reply can offer `adjust_today` only.
+ */
+export const CoachOfferKindSchema = z.enum(['adjust_today', 'lift_target']);
 export type CoachOfferKind = z.infer<typeof CoachOfferKindSchema>;
 
 export const CoachReplySchema = z.strictObject({
   message: z.string().max(4000),
-  offer: CoachOfferKindSchema.nullable(),
+  offer: z.enum(['adjust_today']).nullable(),
 });
 export type CoachReply = z.infer<typeof CoachReplySchema>;
 
@@ -1269,7 +1312,9 @@ export type CoachWrite =
   /** (Ben, 20 Oct) The plan in use paused or resumed (`pause_plan`) and its record, in one write on the version read (rule 5). */
   | { kind: 'plan_control'; action: ActionRecord; plan: PlanDraft; expectedVersion: number }
   /** (20 Oct, ADR 0029) A gym edit and its record, in one write; every record version-checked (rule 5). */
-  | { kind: 'gym_edit'; action: ActionRecord; edit: GymEditRecord };
+  | { kind: 'gym_edit'; action: ActionRecord; edit: GymEditRecord }
+  /** (Ben, 20 Oct) A lift target on the owner's training profile, on `expectedVersion` (rule 5). */
+  | { kind: 'lift_target'; action: ActionRecord; target: LiftTarget; expectedVersion: number };
 
 export type CoachWriteResult =
   | { status: 'written'; action: ActionRecord }

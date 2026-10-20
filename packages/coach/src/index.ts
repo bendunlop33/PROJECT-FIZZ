@@ -30,3 +30,4 @@ export * from './numbers';
 export * from './plan';
 export * from './find-exercises';
 export * from './gym-update';
+export * from './lift-target';

@@ -30,6 +30,8 @@ export interface TrendLayoutInput {
   inset: number;
   /** A second line on the same scale, one value per point (the Exercises tab's trailing average). */
   overlay?: readonly number[];
+  /** (Ben, 20 Oct) A lift target: a dotted level line, kept inside the y range. */
+  target?: number | null;
 }
 
 export interface Rect {
@@ -50,6 +52,8 @@ export interface TrendLayout {
   bars: Rect[];
   /** `overlay`'s y per point; empty without one. */
   overlayYs?: number[];
+  /** The lift target's y; absent without one. */
+  targetY?: number;
 }
 
 /** A y value as an axis label: `120`, `102.5`, `12,000`, or `1:30` for holds. */
@@ -121,7 +125,8 @@ export function monthTicks(from: string, to: string, plot: Pick<Rect, 'x' | 'wid
 
 export function trendLayout(input: TrendLayoutInput): TrendLayout {
   const plot: Rect = { x: input.axisWidth, y: 8, width: Math.max(1, input.width - input.axisWidth - input.inset), height: Math.max(1, input.height - 16) };
-  const values = [...input.points.map((p) => p.value), ...(input.overlay ?? [])];
+  const target = input.target ?? null;
+  const values = [...input.points.map((p) => p.value), ...(input.overlay ?? []), ...(target === null || input.bars ? [] : [target])];
   let lo = values.length > 0 ? Math.min(...values) : 0;
   let hi = values.length > 0 ? Math.max(...values) : 1;
   if (input.bars) lo = 0;
@@ -167,6 +172,7 @@ export function trendLayout(input: TrendLayoutInput): TrendLayout {
     months: monthTicks(input.from, input.to, plot),
     bars,
     overlayYs: (input.overlay ?? []).map(yOf),
+    ...(target === null || input.bars ? {} : { targetY: yOf(target) }),
   };
 }
 

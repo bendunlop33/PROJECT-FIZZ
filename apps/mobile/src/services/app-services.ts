@@ -54,6 +54,7 @@ import { createGymServices, type GymEditOutcome } from './gym-services';
 import { createLibraryService } from './library-service';
 import { createProgressService } from './progress-service';
 import { createTrainingService } from './training-service';
+import { createLiftTargetService } from './lift-target-service';
 import { createPlanServices } from './plan-services';
 import { createHistoryServices } from './history-services';
 import { createWorkoutServices, STALE_PREVIEW, startBasisOf, type OverviewStartOf, type OverviewTarget, type SessionList, type WorkoutStartOutcome } from './workout-services';
@@ -528,9 +529,30 @@ export function createAppServices(deps: AppServicesDeps) {
   /** Training details and split (Ben 13 Oct: D5, D7, D8; F19). Your data, local only. */
   const training = createTrainingService({ store: () => deps.manager.store, profile: getProfile, now: deps.now, catalogueExercises });
 
+  /** Lift targets (Ben approved 20 Oct): Your data on the training profile; the coach sees them only while on. */
+  const liftTargets = createLiftTargetService({
+    training,
+    // `progress` is defined below; read only when a screen or the coach asks.
+    history: () => progress.libraryHistory(),
+    exercises: async () => {
+      const out = new Map<string, Exercise>();
+      for (const e of await repos().exercises.list().catch(() => [] as Exercise[])) out.set(e.id, e);
+      for (const e of catalogueExercises()) if (!out.has(e.id)) out.set(e.id, e);
+      return out;
+    },
+    now: deps.now,
+  });
+
   /** The coach (ADR 0020 C6–C8): threads, turns, Undo, the summary turn, next-session targets. */
   const coach = createCoachService({
-    training: () => training.coachInput(),
+    // (Ben, 20 Oct) Lift targets join the training details only while the setting is on.
+    training: async () => {
+      const t = await training.coachInput();
+      if (t === null || t.profile?.liftTargetsOn !== true) return t;
+      const views = await liftTargets.coachViews().catch(() => []);
+      return views.length === 0 ? t : { ...t, liftTargets: views };
+    },
+    liftTargets: { on: () => liftTargets.on(), prepare: (args, at) => liftTargets.prepare(args, at) },
     store: () => deps.manager.store,
     profile: getProfile,
     now: deps.now,
@@ -916,6 +938,7 @@ export function createAppServices(deps: AppServicesDeps) {
     data,
     coach,
     training,
+    liftTargets,
     gyms,
     imports,
     importLayouts,

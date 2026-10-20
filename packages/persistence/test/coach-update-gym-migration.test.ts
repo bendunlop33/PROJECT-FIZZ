@@ -16,7 +16,7 @@ describe('migration 26 in place on a schema-25 database', () => {
     for (const [rid, kind] of [['a1', 'build_plan'], ['a2', 'edit_today'], ['a3', 'propose_exercise'], ['a4', 'undo'], ['a7', 'pause_plan']] as const) await db.run(row(rid, kind));
     await expect(db.run(row('a5', 'update_gym'))).rejects.toThrow();
     const before = await db.getAll('SELECT * FROM coach_actions ORDER BY id');
-    expect(await migrate(db)).toEqual({ from: 25, to: 26, applied: [26] });
+    expect(await migrate(db, MIGRATIONS, 26)).toEqual({ from: 25, to: 26, applied: [26] });
     expect(await db.getAll('SELECT * FROM coach_actions ORDER BY id')).toEqual(before);
     await db.run(row('a5', 'update_gym'));
     await expect(db.run(row('a6', 'not_a_kind'))).rejects.toThrow();

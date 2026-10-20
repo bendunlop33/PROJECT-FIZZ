@@ -11,7 +11,8 @@ import type { ExerciseDetailParams } from '../../navigation/types';
 import { Segmented, useAx } from '../../progress/components';
 import { ChartTable, RepTable, TrendChart } from '../../progress/trend-chart';
 import { chartSelection } from '../../progress/trend-select';
-import { useScreenData } from '../../shell/context';
+import { useScreenData, useServices } from '../../shell/context';
+import { ExerciseLiftTarget } from '../../lift-targets/ExerciseLiftTarget';
 import { useTheme } from '../../theme';
 import { AppText, Chip, Icon, InfoLine, StatStrip, StatusLine, Tag, TextButton } from '../../ui';
 import { AskPill } from '../coach/AskPill';
@@ -88,6 +89,10 @@ export function ExerciseDetailScreen() {
   const [targetsData] = useScreenData((s) => s.progress.exerciseTargets(exerciseId, { targetsHit: prefs.targetsHit }));
   const targets = targetsData.state === 'ready' ? targetsData.value : null;
   const targetOf = (sessionId: string) => targets?.rows.find((t) => t.sessionId === sessionId && t.target !== null) ?? null;
+  // (Ben approved 20 Oct) This exercise's lift target (null while the setting is off) and its dotted chart line.
+  const services = useServices();
+  const [liftData, reloadLift] = useScreenData((s) => s.liftTargets.forExercise(exerciseId));
+  const lift = liftData.state === 'ready' ? liftData.value : null;
 
   useEffect(() => {
     // With VoiceOver running, the first open shows the table (§4.2).
@@ -263,6 +268,8 @@ export function ExerciseDetailScreen() {
         <StatStrip items={view.stats} accessibilityLabel={view.statsWords} ax={ax} />
         {view.converted !== null ? <InfoLine info={view.converted} infoLabel="Units" /> : null}
 
+        <ExerciseLiftTarget data={lift} exerciseId={exerciseId} onChanged={reloadLift} />
+
         <View style={{ gap: theme.space['2'] }}>
           {view.metrics.length > 1 ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
@@ -344,6 +351,7 @@ export function ExerciseDetailScreen() {
                 setSelectedId(i === null ? null : (view.points[i]?.sessionId ?? null));
               }}
               onOpen={openWorkout}
+              target={lift?.on === true && lift.target !== null ? services.liftTargets.chartValue(lift.target, view.seriesTerms, view.metric) : null}
             />
           )}
 

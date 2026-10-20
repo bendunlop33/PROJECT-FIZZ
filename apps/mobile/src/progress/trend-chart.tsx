@@ -35,15 +35,17 @@ export interface TrendChartProps {
   selected: ChartFocus | null;
   onSelect: (index: number | null) => void;
   onOpen: (sessionId: string) => void;
+  /** (Ben, 20 Oct) A lift target on this measure, in the axis unit: a dotted line. Its value is in the target line above the chart. */
+  target?: number | null;
 }
 
 /** `TrendChart` (§9.23): one series, y labels and unit, month ticks, marker lane; the whole plot is the hit area; VoiceOver adjustable. */
-export function TrendChart({ points, markers, from, to, bars, axisUnit, axisFormat, words, selected: focus, onSelect, onOpen }: TrendChartProps) {
+export function TrendChart({ points, markers, from, to, bars, axisUnit, axisFormat, words, selected: focus, onSelect, onOpen, target = null }: TrendChartProps) {
   const theme = useTheme();
   const ax = useAx();
   const [width, setWidth] = useState(0);
   const height = ax ? theme.chart.detailHeightAX : theme.chart.detailHeight;
-  const layout = trendLayout({ points, from, to, width, height, bars, format: axisFormat, axisWidth: AXIS_WIDTH, inset: INSET });
+  const layout = trendLayout({ points, from, to, width, height, bars, format: axisFormat, axisWidth: AXIS_WIDTH, inset: INSET, target });
   const canvas = loadTrendCanvas();
   const grant = useRef<{ index: number; moved: boolean; wasSelected: boolean } | null>(null);
 
@@ -113,6 +115,7 @@ export function TrendChart({ points, markers, from, to, bars, axisUnit, axisForm
               pointSize={theme.chart.point}
               pointSelectedSize={theme.chart.pointSelected}
               gridWidth={theme.a11y.increaseContrast ? 2 : 1}
+              targetColor={theme.colors['text.secondary']}
               colors={{
                 line: theme.colors['chart.line'],
                 point: theme.colors['chart.point'],

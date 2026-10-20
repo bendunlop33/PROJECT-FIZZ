@@ -37,6 +37,7 @@ import { mentionsGymSetup } from './gym-update';
 import { editOfferIn } from './edit-today';
 import { addedContinuationOf } from './find-exercises';
 import { collectFacts, type FactText, type NumberFacts } from './numbers';
+import { LIFT_TARGET_NOT_ASKED_LINE, LIFT_TARGET_PLANNING_LINE, LIFT_TARGET_TOOL_LINE, liftTargetAsked, liftTargetOfferIn } from './lift-target';
 
 /**
  * `runCoachTurn` (ADR 0020 §7, slice C4): one request to the coach, end to
@@ -116,6 +117,11 @@ export interface CoachTurnPorts {
    * accepts it. Absent: an accept runs a model turn as before.
    */
   acceptOffer?: (proposal: ActionRecord, ctx: { ownerId: string; turnId: string; now: ZonedTimestamp }) => Promise<ToolResult>;
+  /**
+   * (Review lift-targets B1) Applies a lift target the coach offered, exactly as stored
+   * (`acceptLiftTargetOffer`), when Ben taps Apply or says a bare "yes". Absent: never applied.
+   */
+  acceptLiftTarget?: (proposal: ActionRecord, ctx: { ownerId: string; turnId: string; now: ZonedTimestamp }) => Promise<ToolResult>;
 }
 
 export interface CoachTurnRequest {
@@ -157,6 +163,8 @@ export interface CoachTurnRequest {
    * shorter", "only 3 days") make its next version (`propose_plan`), never a one-session build.
    */
   planInContext?: boolean;
+  /** (Ben, 20 Oct) The Lift targets setting is on: `set_lift_target` may be offered. Absent: never. */
+  liftTargetsOn?: boolean;
   signal?: AbortSignal;
   /**
    * Live progress for the sheet (C6): each tool line and card as it is
@@ -266,7 +274,8 @@ export function gateFor(g: GateInput): TurnGate & { benAskedForChange: boolean; 
       intent = g.input.chip === 'too_hard' ? 'too_hard' : g.input.chip === 'too_easy' ? 'too_easy' : g.input.chip === 'lighter_session' ? 'lighter_session' : 'general';
       break;
     case 'accept_offer':
-      acceptedOffer = g.previousOffer === g.input.offer;
+      // A lift-target offer is accepted by its own path (review lift-targets B1), never as a today-change.
+      acceptedOffer = g.input.offer === 'adjust_today' && g.previousOffer === g.input.offer;
       break;
     case 'summary':
       break;
@@ -438,7 +447,9 @@ function benInputText(input: BenInput): string | null {
         ? `[Ben tapped: ${input.chip.replaceAll('_', ' ')}]`
         : `[Ben tapped: ${input.chip.replaceAll('_', ' ')}, about sessionExerciseId ${input.sessionExerciseId} only]`;
     case 'accept_offer':
-      return '[Ben accepted your offer to adjust today’s sets. Call edit_today with the change you offered; he confirms the exact values before it applies.]';
+      return input.offer === 'lift_target'
+        ? '[Ben accepted your lift target offer.]'
+        : '[Ben accepted your offer to adjust today’s sets. Call edit_today with the change you offered; he confirms the exact values before it applies.]';
     case 'summary':
       return '[The workout is finished. Review it.]';
   }
@@ -453,7 +464,7 @@ function threadTitle(input: BenInput): string {
     case 'chip':
       return input.chip === 'pain' ? 'Pain' : input.chip === 'too_hard' ? 'Too hard' : input.chip === 'too_easy' ? 'Too easy' : 'Lighter session';
     case 'accept_offer':
-      return 'Adjust today';
+      return input.offer === 'lift_target' ? 'Lift target' : 'Adjust today';
     case 'summary':
       return 'Workout review';
   }
@@ -644,7 +655,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // At most 2 questions per build request, none in a draft revision, none after Skip (BD17).
   const questionOpen = chain !== null && req.draftInContext !== true && !chain.skipped && chain.asked < MAX_BUILD_QUESTIONS && (askedBuild || chain.open !== null);
   const askInput: BenInput = continued !== null && req.input.kind === 'words' ? { ...req.input, text: continued.text } : req.input;
-  const gate = gateFor({
+  const gated = gateFor({
     kind: req.kind,
     input: askInput,
     previousOffer,
@@ -657,6 +668,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
     ...(req.planInContext === true ? { planInContext: true } : {}),
     ...(planFollowUp ? { planFollowUp: true } : {}),
   });
+  const gate = req.liftTargetsOn === true ? { ...gated, liftTargetsOn: true } : gated;
   const context = buildCoachContext({ ...req.context, turnKind: req.kind, thread: history });
 
   const turn: CoachTurn = {
@@ -690,6 +702,13 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   // Build 131: not when the coach's last message described a new session in text: "save it" then builds that one.
   if (words !== null && req.kind === 'general' && followUp === null && (req.draftInThread === true || req.draftInContext === true) && asksToStartOrSave(words) && !(await lastCoachAsked(ports.store, lastCoach))) {
     return fixedReply(req, ports, thread, START_BY_TAP_LINE, context.contextHash);
+  }
+  // Review lift-targets B1: Apply (or a bare "yes") on the coach's lift-target offer applies exactly that stored target, with no model call.
+  const liftAccept = previousOffer === 'lift_target' && req.liftTargetsOn === true && ((req.input.kind === 'accept_offer' && req.input.offer === 'lift_target') || (req.input.kind === 'words' && isBareAccept(req.input.text)));
+  if (liftAccept && ports.acceptLiftTarget !== undefined && lastCoach !== undefined && lastCoach.body.role === 'coach') {
+    const ids = lastCoach.body.actionIds;
+    const offered = liftTargetOfferIn((await ports.store.listTurnActions(lastCoach.turnId)).filter((a) => ids.includes(a.actionId)));
+    if (offered !== null) return acceptedOfferTurn(req, ports, ports.acceptLiftTarget, thread, offered, context.contextHash, 'set_lift_target');
   }
   // Coach v3: Adjust (or a bare "yes") on an edit the coach offered applies exactly that offer, with no model call (rule 3, rule 5).
   if (gate.acceptedOffer && liveWorkout && ports.acceptOffer !== undefined && lastCoach !== undefined && lastCoach.body.role === 'coach') {
@@ -734,7 +753,9 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   const questionOffered = registry.tools.some((t) => t.name === 'ask_build_question');
   const questionLines = [...(questionOffered ? [QUESTION_RULES] : []), ...(chain?.skipped === true ? [SKIPPED_LINE] : chain?.open !== null && chain?.open !== undefined ? [ANSWERED_LINE] : [])];
   const withBuild = buildOffered || planOffered ? [...(buildOffered ? [buildInstructions] : []), ...(planOffered ? [PLAN_INSTRUCTIONS] : []), ...questionLines].join('\n') : null;
-  const findLine = registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '';
+  // (Ben, 20 Oct) Lift targets: the tool while the setting is on; the planning line when he has some.
+  const liftLines = [...(registry.tools.some((t) => t.name === 'set_lift_target') ? [LIFT_TARGET_TOOL_LINE] : []), ...((context.yourData.training?.liftTargets?.length ?? 0) > 0 ? [LIFT_TARGET_PLANNING_LINE] : [])];
+  const findLine = (liftLines.length > 0 ? `\n${liftLines.join('\n')}` : '') + (registry.tools.some((t) => t.name === 'find_exercises') ? `\n${FIND_EXERCISES_LINE}${registry.tools.some((t) => t.name === 'propose_exercise') ? `\n${PROPOSE_EXERCISE_LINE}` : ''}` : '');
   const instructions = (withBuild !== null ? `${baseInstructions}\n${withBuild}` : canBuild ? `${baseInstructions}\n${NO_BUILD_TOOL_INSTRUCTIONS}` : baseInstructions) + findLine;
   const input: ModelInputItem[] = [...contextInputItems(context)];
   const said = benInputText(req.input);
@@ -761,6 +782,8 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   let askedQuestion = false;
   // (14 Oct) A today-change the coach raised on its own: never run, offered instead (rule 3).
   let offeredInstead = false;
+  // Review lift-targets B1: a lift target the coach raised on its own, saved as an offer (`proposed`).
+  let liftOffered = false;
   let error: CoachTurnError | null = null;
   let refCount = 0;
   // Build 131: on a build turn the model answered in text instead of calling `propose_workout`. It gets
@@ -957,6 +980,19 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
       continue;
     }
     const setsOnly = setsOnlyOf(parsed.call);
+    // (Ben, 20 Oct) A lift target is set only when Ben asked; otherwise nothing is saved and the coach asks him.
+    // Review B1: the checked target is saved as an offer (exactly what Apply sets), never set.
+    if (parsed.call.tool === 'set_lift_target' && !liftTargetAsked(askInput.kind === 'words' ? askInput.text : words, askClaimOf(parsed.call.args))) {
+      const proposer = ports.executors.set_lift_target;
+      if (proposer === undefined) throw new Error('No executor for set_lift_target');
+      const result = await proposer(parsed.call, { ...callCtx, opId: parsed.opId, propose: true });
+      const ref = noteResult(parsed.call.tool, result);
+      if (result.kind === 'action' && result.record.status === 'proposed') {
+        liftOffered = true;
+        input.push({ type: 'function_call_output', callId: out.callId, output: JSON.stringify({ status: 'not_applied', ref, offered: renderActionResult(result.record, 'sheet').text, line: LIFT_TARGET_NOT_ASKED_LINE }) });
+      } else input.push({ type: 'function_call_output', callId: out.callId, output: toolOutput(result, ref) });
+      continue;
+    }
     const asked = !TODAY_TOOLS.has(parsed.call.tool) || (!(confirmAgain && parsed.call.tool === 'edit_today') && todayAskVerdict(parsed.call.tool, gate, askInput.kind === 'words' ? askInput.text : words, askClaimOf(parsed.call.args), { noWorkingSet: difficultyTapWithoutWork, ...(setsOnly === undefined ? {} : { setsOnly }) }).asked);
     // Coach v3: an edit Ben didn't ask for is checked and saved as an offer (exactly what would apply), never applied.
     const proposer = !asked && parsed.call.tool === 'edit_today' && liveWorkout ? ports.executors.edit_today : undefined;
@@ -984,6 +1020,7 @@ export async function runCoachTurn(req: CoachTurnRequest, ports: CoachTurnPorts)
   clearTimeout(capTimer);
   req.signal?.removeEventListener('abort', onStop);
   if (offeredInstead && error === null && liveWorkout) offer = 'adjust_today';
+  if (liftOffered && error === null && offer === null) offer = 'lift_target';
   // The rest of the reply, through the same backstop. What already streamed is never sent twice.
   if (message !== null) {
     const streamed = replyStream.streamed;
@@ -1049,18 +1086,19 @@ async function acceptedOfferTurn(
   thread: CoachThread,
   offered: ActionRecord,
   contextHash: string,
+  tool: 'edit_today' | 'set_lift_target' = 'edit_today',
 ): Promise<CoachTurnResult> {
   const result = await accept(offered, { ownerId: req.ownerId, turnId: req.turnId, now: ports.now() });
   const toolLog: ToolLogLine[] = [];
   const cards: CoachCard[] = [];
   if (result.kind === 'action') {
-    const line: ToolLogLine = { tool: 'edit_today', outcome: result.replayed ? 'replayed' : result.record.status, text: renderActionResult(result.record, 'sheet').text, actionId: result.record.actionId };
+    const line: ToolLogLine = { tool, outcome: result.replayed ? 'replayed' : result.record.status, text: renderActionResult(result.record, 'sheet').text, actionId: result.record.actionId };
     toolLog.push(line);
     req.onProgress?.({ kind: 'tool', line });
     const card = { record: result.record, rendered: renderActionResult(result.record, req.surface) };
     cards.push(card);
     req.onProgress?.({ kind: 'card', card });
-  } else if (result.kind === 'refused') toolLog.push({ tool: 'edit_today', outcome: 'not_allowed', text: result.line, actionId: null });
+  } else if (result.kind === 'refused') toolLog.push({ tool, outcome: 'not_allowed', text: result.line, actionId: null });
   const endedAt = ports.now();
   await ports.store.appendMessage({
     id: ports.newId(),

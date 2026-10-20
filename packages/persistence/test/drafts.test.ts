@@ -611,7 +611,7 @@ describe('migration 12: coach actions take `fit_today` (fit-to-time §8)', () =>
     await expect(phone.run("INSERT INTO coach_actions (id, owner_id, op_id, kind, status, version, created_at_utc, updated_at_utc, data) VALUES ('x', 'o', 'p', 'fit_today', 'committed', 1, 't', 't', '{}')")).rejects.toThrow();
     const before = await phone.getAll('SELECT * FROM coach_actions ORDER BY id');
     const v12 = await openStore(phone);
-    expect(v12.migration).toMatchObject({ from: 11, to: 26, applied: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26] });
+    expect(v12.migration).toMatchObject({ from: 11, to: 27, applied: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] });
     // Every coach action row is kept as it was (the rebuild copies them all).
     expect(await v12.db.read((q) => q.getAll('SELECT * FROM coach_actions ORDER BY id'))).toEqual(before);
 
@@ -656,7 +656,7 @@ describe('migration 12 in place on a schema-11 database: 11\'s coach action kind
     for (const [rid, kind] of [['a1', 'log_set'], ['a2', 'correct_set'], ['a3', 'suggest_memory'], ['a4', 'update_routine'], ['a5', 'propose_next_workout_change']] as const) await db.run(row(rid, kind));
     await expect(db.run(row('a6', 'fit_today'))).rejects.toThrow();
     const before = await db.getAll('SELECT * FROM coach_actions ORDER BY id');
-    expect(await migrate(db)).toEqual({ from: 11, to: 26, applied: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26] });
+    expect(await migrate(db)).toEqual({ from: 11, to: 27, applied: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] });
     expect(await db.getAll('SELECT * FROM coach_actions ORDER BY id')).toEqual(before);
     await db.run(row('a6', 'fit_today'));
     await db.run(row('a7', 'log_set'));

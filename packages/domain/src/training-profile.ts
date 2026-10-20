@@ -14,6 +14,7 @@ import {
   type TrainingSplit,
   type WeightEntry,
 } from '@fizz/schemas';
+import { withLiftTarget, withoutLiftTarget } from './lift-targets';
 import { toMs } from './time';
 import { convertMass, KG_PER_LB } from './units';
 
@@ -179,6 +180,14 @@ function changed(p: TrainingProfile, c: TrainingChange, atUtc: string, nowYear: 
     }
     case 'self_next_targets':
       return { ...p, selfNextTargets: c.on };
+    case 'lift_targets_on':
+      return { ...p, liftTargetsOn: c.on };
+    case 'set_lift_target': {
+      const list = withLiftTarget(p.liftTargets ?? [], c.target);
+      return list === null ? null : { ...p, liftTargets: list };
+    }
+    case 'remove_lift_target':
+      return { ...p, liftTargets: withoutLiftTarget(p.liftTargets ?? [], c.exerciseId) };
   }
 }
 

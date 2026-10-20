@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { OperationIdSchema, RecordMetaSchema, UtcTimestampSchema, WeightUnitSchema } from './common';
 import type { MuscleGroup } from './muscle-groups';
+import { LIFT_TARGET_LIMITS, LiftTargetSchema, type LiftTarget } from './lift-targets';
 
 /**
  * Ben's training details and split (Ben 13 Oct: D5, D7, D8; backlog F19).
@@ -101,6 +102,10 @@ export const TrainingProfileSchema = RecordMetaSchema.extend({
   mainLifts: z.record(z.string().min(1).max(64), z.string().min(1).max(64)).optional(),
   /** D5: next-time targets for Self-driven sessions. Default off. */
   selfNextTargets: z.boolean(),
+  /** (Ben, 20 Oct) The Lift targets setting. Absent: off (every lift-target view hidden, the coach doesn't see them). */
+  liftTargetsOn: z.boolean().optional(),
+  /** (Ben, 20 Oct) At most 3, one per exercise. Absent: none. Kept while the setting is off. */
+  liftTargets: z.array(LiftTargetSchema).max(LIFT_TARGET_LIMITS.max).optional(),
   /** Operation IDs already applied, newest last (a repeat is a no-op; rule 5). */
   recentOps: z.array(OperationIdSchema).max(TRAINING_LIMITS.recentOpsMax),
 });
@@ -121,4 +126,9 @@ export type TrainingChange =
   | { kind: 'preset_split'; split: 'ppl' | 'clsb' }
   | { kind: 'custom_split'; days: readonly { id: string; name: string; bodyParts: readonly SplitBodyPart[] }[] }
   | { kind: 'main_lift'; dayId: string; exerciseId: string | null }
-  | { kind: 'self_next_targets'; on: boolean };
+  | { kind: 'self_next_targets'; on: boolean }
+  /** (Ben, 20 Oct) The Lift targets setting. */
+  | { kind: 'lift_targets_on'; on: boolean }
+  /** A target for its exercise, replacing that exercise's one (max 3 exercises). */
+  | { kind: 'set_lift_target'; target: LiftTarget }
+  | { kind: 'remove_lift_target'; exerciseId: string };

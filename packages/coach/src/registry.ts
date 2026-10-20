@@ -371,6 +371,20 @@ export const COACH_TOOLS: readonly ToolDeclaration[] = [
       'Build a plan of several different days at once (1 to 7 days), only when Ben asks for a plan, a split or a week of workouts, or asks to change the plan in context. Never a multi-week block or deloads, and never for one session (use propose_workout). Follow his split in plan.splitDays unless he asks for another: give each day its `splitDayId` (null for a day that is none of them) and a short `dayName`. Spread the muscles sensibly across the days and keep each day within plan.setBudget working sets. Each day\'s exercises are exactly like propose_workout\'s: catalogueIds from YOUR DATA build.usable or find_exercises only, working sets, a rep range (or workSeconds), targetRpe, optional warm-ups, one optional top set, rest, supersets, and a working `load` (and `topSet.load`) from build.loadReferences in the unit and convention listed, with a short `basis` in words (no numbers); null when you have no opinion. Give `minutes` (15–180) for every day when Ben asked for a length ("60 min each"), or a day\'s own `minutes` when he asked for one for that day; null otherwise. `gymName`: one of build.gyms when he named one. The app checks every day, bounds and fits every load to the equipment, and shows the plan as a proposal: nothing changes until Ben taps Apply.',
   },
   {
+    // (Ben, 20 Oct) Offered only while Lift targets is on (the app wires the executor then). Applies with Undo
+    // only when Ben asked; code decides from his words (`liftTargetAsked` in the turn), else nothing is saved.
+    name: 'set_lift_target',
+    effect: 'versioned_update',
+    writes: ['lift_target'],
+    needs: 'none',
+    structural: false,
+    turnKinds: ['general', 'workout'],
+    plainLabel: 'Set a lift target you ask for, with Undo',
+    capabilitySection: 'when_you_ask',
+    description:
+      'Set one of Ben’s lift targets when he asks: the exercise (a name or ID of one he logs), kind one_rm ("bench 100 kg") or weight_reps ("bench 90 kg for 5", with reps), the load and unit he said, and byDate (YYYY-MM-DD) when he gave a date, else null. The load is in the exercise’s own convention: dumbbells per hand (a pair of 40s is 40, not 80; if unclear whether he means each or the pair, ask), machines the stack, barbells the total. The saved target comes back in `line` with its convention ("40 kg each"); say it that way in reply. It replaces that exercise’s target; at most 3. benAsked true only when his message this turn asks for this target, with benQuote his words copied exactly; false when it is your idea (he sees it as an offer to apply; a "yes" to your question applies that offer, so never call again for it).',
+  },
+  {
     // Contract §6.1 says `ben_request`; ADR 0020 §2 proposes `none`. The approved
     // spec (the stricter one) wins until Ben decides.
     name: 'add_playbook_candidate',
@@ -405,7 +419,8 @@ export const COACH_NEVER: readonly string[] = [
 /** (14 Oct) `session_name`: the live workout's name, through the workout's own `rename_session`; Undo names it back. */
 // (Ben, 20 Oct) `plan_pause`: the plan in use paused or resumed when Ben asks; its days never change.
 /** (20 Oct) `gym_equipment`: a gym's profile and items (`update_gym`); every record keeps its version, Undo puts it back. */
-const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment']);
+/** (Ben, 20 Oct) `lift_target`: a target on Ben's training profile he asked for; Undo puts back what was there. */
+const VERSIONED_WRITABLE: ReadonlySet<CoachEntityKind> = new Set<CoachEntityKind>(['pending_set_target', 'next_session_target', 'memory', 'logged_set', 'session_exercise', 'session_name', 'plan_pause', 'gym_equipment', 'lift_target']);
 
 export class UnsafeRegistryError extends Error {}
 
@@ -480,6 +495,8 @@ export interface TurnGate {
   buildQuestionOpen?: boolean;
   /** (20 Oct, ADR 0029) Ben's words say what a gym has or lacks (`mentionsGymSetup`): `update_gym` is offered. */
   gymWords?: boolean;
+  /** (Ben, 20 Oct) The Lift targets setting is on. Absent or false: `set_lift_target` is withheld. */
+  liftTargetsOn?: boolean;
 }
 
 /**
@@ -492,7 +509,7 @@ export const TODAY_TOOLS: ReadonlySet<CoachToolName> = new Set<CoachToolName>(['
 export interface WithheldTool {
   name: CoachToolName;
   /** For `Why?` → `Not used`. */
-  reason: 'turn_kind' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build';
+  reason: 'turn_kind' | 'needs_request' | 'needs_pain_words' | 'needs_summary_turn' | 'needs_request_or_signal' | 'not_in_build' | 'setting_off';
 }
 
 export interface TurnRegistry {
@@ -579,6 +596,10 @@ export function buildTurnRegistry(gate: TurnGate, tools: readonly ToolDeclaratio
   for (const t of tools) {
     if (!t.turnKinds.includes(gate.kind)) {
       withheld.push({ name: t.name, reason: 'turn_kind' });
+      continue;
+    }
+    if (t.name === 'set_lift_target' && gate.liftTargetsOn !== true) {
+      withheld.push({ name: t.name, reason: 'setting_off' });
       continue;
     }
     const missing = needMet(t, gate);

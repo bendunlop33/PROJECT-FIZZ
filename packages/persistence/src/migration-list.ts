@@ -30,6 +30,7 @@ import { MIGRATION_0023 } from './schema/0023-custom-exercises';
 import { MIGRATION_0024 } from './schema/0024-superset-rounds';
 import { MIGRATION_0025 } from './schema/0025-plan-pause';
 import { MIGRATION_0026 } from './schema/0026-coach-update-gym';
+import { MIGRATION_0027 } from './schema/0027-coach-lift-targets';
 
 /**
  * A forward-only schema step. `up` runs inside the same exclusive transaction
@@ -76,6 +77,7 @@ export const MIGRATIONS: readonly Migration[] = [
   sqlMigration(24, 'superset-rounds', MIGRATION_0024),
   sqlMigration(25, 'plan-pause', MIGRATION_0025),
   sqlMigration(26, 'coach-update-gym', MIGRATION_0026),
+  sqlMigration(27, 'coach-lift-targets', MIGRATION_0027),
 ];
 
 /** A placeholder migration: reserved for another branch, so it must never reach a device or a backup. */

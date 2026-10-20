@@ -265,3 +265,12 @@ describe('review library-browse S3: the sets control stacks at AX sizes (EL-B24)
     expect(ui).toMatch(/moreLabel=\{SET_SHAPE_COPY\.moreSets\} stacked=\{stacked\} \/>/);
   });
 });
+
+describe('review lift-targets S2: lift targets have a home without a plan', () => {
+  it('Workouts shows the Lift targets block when no plan is in use (the block itself is empty while off)', () => {
+    const list = code(read('screens/routines/WorkoutsScreen.tsx'));
+    expect(list).toMatch(/plan === null && !data\.value\.planFailed \? <LiftTargetsBlock onToast=\{setToast\} \/> : null/);
+    const block = code(read('screens/library/LiftTargetsBlock.tsx'));
+    expect(block).toMatch(/if \(data\.state !== 'ready' \|\| data\.value === null \|\| !data\.value\.on\) return null;/);
+  });
+});
