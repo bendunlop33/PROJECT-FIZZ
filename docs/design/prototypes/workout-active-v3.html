@@ -108,7 +108,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     { n: '4', ex: [{ name: 'Lateral raise', works: 'Side delts', each: true, rest: '1:30', target: '12–15 @ 9', sets: [1, 2, 3].map(() => ({ t: '', kg: 10, r: 12, rpe: 9, done: false })) }] },
     { n: '5', ex: [{ name: 'EZ-bar curl', works: 'Biceps', rest: '1:30', target: '8–10 @ 8', sets: [1, 2, 3].map(() => ({ t: '', kg: 30, r: 10, rpe: 8, done: false })) }] },
   ];
-  let s = { r: 2, sheet: false, toast: null, open: {}, rest: 0 }; let iv;
+  let s = { r: 2, sheet: false, toast: null, open: {}, rest: 0, col: {} }; let iv;
   const fmt = (x) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
   const restOf = (e) => { const m = /^(\d+):(\d\d)/.exec(e.rest || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : 90; };
   s.restEnd = 0;
@@ -118,7 +118,7 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
   function logSet(k, i) { const rd = ROUNDS[s.r]; const st = rd.ex[k].sets[i]; st.prevEnd = s.restEnd; st.done = true; s.last = `${s.r}-${k}-${i}`; const c2 = cur(); if (c2 && rd.ex.length > 1 && c2.k === 1 && k === 0) s.toast = 'Straight to ' + rd.n + 'b'; else startRest(rd.ex.length > 1 ? 90 : restOf(rd.ex[k])); }
   function unlogSet(k, i) { const st = ROUNDS[s.r].ex[k].sets[i]; st.done = false; s.last = null; setEnd(st.prevEnd || 0); }
   const hidden = (e, i) => { const d = e.sets.map((x, j) => (x.done ? j : -1)).filter((j) => j >= 0); return e.sets[i].done && d.indexOf(i) < d.length - 2; };
-  const foldRow = (rd, e, k) => { const key = lab(rd, k); const n = e.sets.filter((x, i) => hidden(e, i)).length; if (!n) return ''; return `<button class="fold" data-a="fold" data-v="${key}" aria-expanded="${!!s.open[key]}"><u>${s.open[key] ? 'Hide earlier sets' : `Show all · ${n} earlier`}</u></button>`; };
+  const foldRow = (rd, e, k) => { if (!s.col[s.r]) return ''; const key = lab(rd, k); const n = e.sets.filter((x, i) => hidden(e, i)).length; if (!n) return ''; return `<button class="fold" data-a="fold" data-v="${key}" aria-expanded="${!!s.open[key]}"><u>${s.open[key] ? 'Hide previous sets' : `Previous sets (${n})`}</u></button>`; };
   const app = document.getElementById('app');
   const cur = () => { const rd = ROUNDS[s.r]; for (let i = 0; i < rd.ex[0].sets.length; i++) for (let k = 0; k < rd.ex.length; k++) { const st = rd.ex[k].sets[i]; if (st && !st.done) return { k, i }; } return null; };
   const lab = (rd, k) => `${rd.n}${rd.ex.length > 1 ? 'ab'[k] : ''}`;
@@ -126,11 +126,12 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
     let n = 0; const doneW = e.sets.filter((x) => x.done && x.t !== 'W').length, totW = e.sets.filter((x) => x.t !== 'W').length;
     return `<div class="ex${c && c.k !== k && rd.ex.length > 1 ? ' dim' : ''}"><div class="exh"><span class="n">${lab(rd, k)}</span><span class="nm">${e.name}<small>${e.works}</small></span><span class="prog">${doneW}/${totW}</span></div>
       <div class="tbl">${true ? `<div class="th"><span>#</span><span>Kg${e.each ? ' each' : ''}</span><span>Reps</span><span>RPE</span><span>✓</span></div>` : ''}
-      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n; if (!s.open[lab(rd, k)] && hidden(e, i)) return ''; return `<div class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
+      ${foldRow(rd, e, k)}${e.sets.map((st, i) => { const isCur = c && c.k === k && c.i === i; const sn = st.t === 'W' ? 'W' : ++n; if (s.col[s.r] && !s.open[lab(rd, k)] && hidden(e, i)) return ''; return `<div class="tr${st.t === 'W' ? ' wu' : ''}${st.done ? ' done' : ''}${isCur ? ' cur' : ''}"><span class="sn">${sn}${st.t && st.t !== 'W' ? `<i>${st.t === 'Top' ? 'Top' : st.t === 'B' ? 'Back-off' : st.t}</i>` : ''}</span><input class="cell" inputmode="decimal" data-k="${k}" data-i="${i}" data-f="kg" value="${st.kg}" aria-label="Set ${sn} kg"><input class="cell" inputmode="numeric" data-k="${k}" data-i="${i}" data-f="r" value="${st.r}" aria-label="Set ${sn} reps"><span class="rpe">${st.t === 'W' ? '' : st.done ? st.rpe : '@' + st.rpe}</span><button class="tick" data-a="tick" data-k="${k}" data-i="${i}" aria-label="Log set ${sn}">✓</button></div>`; }).join('')}</div>
       <div class="meta"><span>${e.target}</span><span>${e.rest ? `Rest ${e.rest} ›` : ''} <u>Why?</u></span></div>
       <button class="addset" data-a="add" data-k="${k}">＋ Set</button></div>`;
   }
-  function view() {
+  function view() { s.col[s.r] = false; draw(); const sc = app.querySelector('.scroll'); if (sc && sc.scrollHeight > sc.clientHeight + 1) { s.col[s.r] = true; draw(); } }
+  function draw() {
     const rd = ROUNDS[s.r]; const c = cur(); const e = c ? rd.ex[c.k] : null; const st = c ? e.sets[c.i] : null;
     const nextR = ROUNDS[s.r + 1];
     app.innerHTML = `
