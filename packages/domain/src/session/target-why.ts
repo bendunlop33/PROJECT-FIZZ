@@ -17,11 +17,12 @@ import { comparableSetsOf, matchesEquipment, type HistorySession } from '../prog
 import { isPainCheckDue, PAIN_AREA_WORD } from '../pain-flags';
 import { isSetCountable, notUsedLine } from '../exclusions';
 import { stepText } from '../target-provenance';
-import { assumedWhy } from '../quick-gym';
+import { assumedWhy, isAssumed } from '../quick-gym';
+import { servesStation, stationsNeeded } from '../stations';
 import { toMs } from '../time';
 import { lastComparableSession } from './active-view';
 import { shownCoachNote } from './builder-loads';
-import { equipmentOfRow } from './equipment-snapshot';
+import { currentGymEquipment, equipmentOfRow } from './equipment-snapshot';
 
 /**
  * `explainTarget` (active-workout.md §2.12, §6): the `Why?` panel under a set
@@ -285,12 +286,24 @@ function reasonRow(p: TargetProvenance | undefined, planned: PlannedSet, ex: Ses
   }
 }
 
-function equipmentRow(p: TargetProvenance | undefined, eq: EquipmentInstance | null, planned: PlannedSet): WhyRow | null {
+/**
+ * (Review ben-kit N1) `Assumed incline bench`: the exercise needs an incline
+ * and only an assumed bench (an adjustable one, as the quick setup saves it)
+ * gives one here. Flat-bench and rack needs aren't listed (no type to assume).
+ */
+function assumedInclineWhy(exerciseId: string, gym: readonly EquipmentInstance[]): string | null {
+  if (!stationsNeeded(exerciseId).includes('incline_bench')) return null;
+  const serving = gym.filter((e) => servesStation(e, 'incline_bench'));
+  return serving.length > 0 && serving.every(isAssumed) ? 'Assumed incline bench' : null;
+}
+
+function equipmentRow(p: TargetProvenance | undefined, eq: EquipmentInstance | null, planned: PlannedSet, incline: string | null): WhyRow | null {
   // (Ben, 20 Oct; ADR 0029) A load target on an item Ben hasn't confirmed says so here, never on the set itself.
   const assumed = eq !== null && planned.load !== null && planned.load.convention !== 'bodyweight' ? assumedWhy(eq) : null;
   // `Capped at 100 kg: the most this bar makes. …` → `Capped at 100 kg`.
   const lines = [...(p?.step ? [stepText(p.step)] : []), ...(p?.guardNotes ?? [])].map((l) => briefLine(l).replace(/(: |, )the .*$/, '')).filter((l) => l !== '');
   if (assumed !== null) lines.push(assumed);
+  if (incline !== null && planned.load !== null) lines.push(incline);
   return lines.length === 0 ? null : { key: 'equipment', label: 'Equipment', lines: [lines.join(' · ')], kind: 'app' };
 }
 
@@ -370,7 +383,7 @@ export function explainTarget(input: ExplainTargetInput): TargetExplanation | nu
   rows.push(p?.basis ? storedLastTime(p.basis, ex, eq, input.basisNow) : historyLastTime(fromHistory, ex, eq, tz));
   const reason = reasonRow(p, planned, ex, eq);
   if (reason) rows.push(reason);
-  const equipment = equipmentRow(p, eq, planned);
+  const equipment = equipmentRow(p, eq, planned, assumedInclineWhy(ex.exerciseId, currentGymEquipment(state.session)));
   if (equipment) rows.push(equipment);
 
   const flags = input.painFlags.filter((f) => f.exerciseId === ex.exerciseId);

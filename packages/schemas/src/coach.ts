@@ -200,7 +200,8 @@ export type FindExercisesArgs = z.infer<typeof FindExercisesArgsSchema>;
  */
 export const ProposeExerciseArgsSchema = z.strictObject({
   name: z.string().min(1).max(80),
-  equipment: EquipmentKindSchema,
+  /** (Review ben-kit N2) A load item: a bench or rack is never an exercise's equipment, so the model isn't offered them. */
+  equipment: EquipmentKindSchema.exclude(['bench', 'rack']),
   loadConvention: LoadConventionSchema.nullable(),
   primaryMuscles: z.array(MuscleSchema).min(1).max(3),
   measurement: MeasurementSchema,

@@ -9,6 +9,7 @@ import {
   type ValidationIssue,
   type WeightUnit,
 } from '@fizz/schemas';
+import { BAR_MASS } from './gym-editor';
 import { fromScaled, toScaled } from './units';
 
 /**
@@ -157,20 +158,20 @@ const pullUpBar: ItemBuilder = (unit) => ({
   equipment: { ...common('Pull-up bar', unit), kind: 'bodyweight_station', loadConvention: 'bodyweight' },
 });
 
-/** (ADR 0030) A bar plus its own plates, at the typical bar weight. */
+/** (ADR 0030) A bar plus its own plates, at the typical bar weight (`BAR_MASS`, one place for the assumed bar weights). */
 const otherBar =
-  (kind: 'ez_bar' | 'trap_bar', label: string, kgBar: number, lbBar: number): ItemBuilder =>
+  (kind: 'ez_bar' | 'trap_bar', label: string): ItemBuilder =>
   (unit) => ({
     key: kind,
     label,
-    equipment: { ...common(label, unit), kind, loadConvention: 'total', barMass: unit === 'kg' ? kgBar : lbBar, plates: plates(PLATES[unit], 4) },
+    equipment: { ...common(label, unit), kind, loadConvention: 'total', barMass: BAR_MASS[kind][unit], plates: plates(PLATES[unit], 4) },
   });
 
 /** Plates added; the bar's starting weight beside the load (ADR 0030). */
 const smith: ItemBuilder = (unit) => ({
   key: 'smith_machine',
   label: 'Smith machine',
-  equipment: { ...common('Smith machine', unit), kind: 'smith_machine', loadConvention: 'added', barMass: unit === 'kg' ? 15 : 35, plates: plates(PLATES[unit], 4) },
+  equipment: { ...common('Smith machine', unit), kind: 'smith_machine', loadConvention: 'added', barMass: BAR_MASS.smith_machine[unit], plates: plates(PLATES[unit], 4) },
 });
 
 const kettlebells: ItemBuilder = (unit) => ({
@@ -211,8 +212,8 @@ const PRESETS: readonly PresetDef[] = [
       { build: plateLoaded, ticked: false },
       { build: selectorised, ticked: false },
       { build: kettlebells, ticked: false },
-      { build: otherBar('ez_bar', 'EZ bar', 10, 20), ticked: false },
-      { build: otherBar('trap_bar', 'Trap bar', 25, 55), ticked: false },
+      { build: otherBar('ez_bar', 'EZ bar'), ticked: false },
+      { build: otherBar('trap_bar', 'Trap bar'), ticked: false },
       { build: smith, ticked: false },
     ],
   },

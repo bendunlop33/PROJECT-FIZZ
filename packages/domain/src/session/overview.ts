@@ -66,13 +66,13 @@ const live = (s: WorkoutSet): boolean => s.status !== 'deleted';
 /** What a comparison needs to know about a piece of equipment: its kind, and for a bar, its mass. */
 export interface EquipmentKey {
   kind: EquipmentInstance['kind'];
-  /** Barbells only: a different bar makes totals incomparable. */
+  /** Bars (barbell, EZ bar, trap bar) only: a different bar makes totals incomparable. */
   barMass: { value: number; unit: WeightUnit } | null;
 }
 
 export function equipmentKey(eq: EquipmentInstance | null | undefined): EquipmentKey | null {
   if (!eq) return null;
-  return { kind: eq.kind, barMass: eq.kind === 'barbell' ? { value: eq.barMass, unit: eq.unit } : null };
+  return { kind: eq.kind, barMass: isBarLoaded(eq) ? { value: eq.barMass, unit: eq.unit } : null };
 }
 
 /** Same kind (and, for barbells, the same bar mass); no equipment matches only no equipment. */
