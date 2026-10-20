@@ -150,11 +150,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     Chest: { mains: { Bench: ['Barbell bench press', 100], Incline: ['Incline barbell press', 82.5] },
       focused: [['Incline dumbbell press', 8, 27.5, 1], ['Cable fly', 10, 15]],
       varied: [['Incline dumbbell press', 8, 27.5, 1], ['Cable crossover', 12, 12.5], ['Dips', 10, null, 1]],
-      extra: [['Triceps pushdown', 8, 30]], add: [['Machine chest press', 8, 80, 1], ['Overhead triceps extension', 10, 22.5]] },
+      extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5, 0, 'extra'], ['Machine chest press', 8, 80, 1]] },
     Back: { mains: { Row: ['Barbell row', 92.5], Pulldown: ['Lat pulldown', 65] },
       focused: [['Lat pulldown', 8, 60, 1], ['Chest-supported row', 10, 22.5, 1]],
       varied: [['Lat pulldown', 8, 60, 1], ['Seated cable row', 10, 60, 1], ['Face pull', 12, 22.5]],
-      extra: [['EZ-bar curl', 8, 30]], add: [['Straight-arm pulldown', 12, 25], ['Hammer curl', 10, 14]] },
+      extra: [['EZ-bar curl', 8, 30]], add: [['Hammer curl', 10, 14, 0, 'extra'], ['Straight-arm pulldown', 12, 25]] },
     Legs: { mains: { Squat: ['Back squat', 117.5] }, warn: 'Long run Saturday: legs fit better Thursday',
       focused: [['Romanian deadlift', 8, 105, 1], ['Leg press', 8, 195, 1]],
       varied: [['Romanian deadlift', 8, 105, 1], ['Leg press', 10, 180, 1], ['Leg curl', 10, 47.5]],
@@ -162,7 +162,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     Shoulders: { mains: { 'DB press': ['Dumbbell shoulder press', 32.5] },
       focused: [['Lateral raise', 12, 10], ['Rear-delt fly', 12, 7.5]],
       varied: [['Lateral raise', 12, 10], ['Face pull', 12, 22.5], ['Cable lateral raise', 15, 5]],
-      extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5], ['Rear-delt fly', 12, 7.5]] },
+      extra: [['Triceps pushdown', 8, 30]], add: [['Overhead triceps extension', 10, 22.5, 0, 'extra'], ['Rear-delt fly', 12, 7.5]] },
   };
   const ABS = ['Cable crunch', 10, 40];
   const PLAN_ABS = { Chest: true, Back: true, Legs: false, Shoulders: false }; // the plan puts abs on two days a week
@@ -183,7 +183,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     const sets = s.style === 'Varied' ? 2 : 3;
     let acc = (s.style === 'Varied' ? d.varied : d.focused).filter((x) => x[0] !== mn);
     if (s.mix) { const i = acc.findIndex((x) => ALT[x[0]] && !acc.some((y) => y[0] === ALT[x[0]])); if (i >= 0) acc = acc.map((x, k) => (k === i ? [ALT[x[0]], x[1], x[2], x[3]] : x)); }
-    const extra = s.v != null ? VARS[s.day][s.v].extra : d.extra;
+    let extra = s.v != null ? VARS[s.day][s.v].extra : d.extra;
+    // No abs with supersets on: the arm exercise gets an arm partner instead (same time, 2 arm exercises).
+    const PARTNER = { 'Triceps pushdown': ['EZ-bar curl', 10, 30], 'EZ-bar curl': ['Triceps pushdown', 10, 30] };
+    if (!absOn() && s.ss && extra.length === 1 && PARTNER[extra[0][0]]) extra = [...extra, PARTNER[extra[0][0]]];
     const ex = [{ name: mn, kind: 'main', sets: 4, reps: 6, kg: mkg, rpe: 8, comp: 1 },
       ...acc.map(([n, r, kg, c]) => ({ name: n, kind: 'acc', sets, reps: r, kg, rpe: 8, comp: !!c })),
       ...extra.map(([n, r, kg]) => ({ name: n, kind: 'extra', sets: 3, reps: r, kg, rpe: 8 })),
@@ -215,7 +218,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   }
   // Fit to the chosen time. Shorter: trim rests → push the last sets (RPE 9) → fewer accessory sets → drop exercises (last isolation first; never the main lift).
   // Longer: back to normal rests, then add sets, then add an exercise.
-  function fit(dr) {
+  function fit(dr, fillTo) {
     let ex = dr.ex.map((e) => ({ ...e })); const notes = []; let lvl = 0; let bl = blocks(ex);
     const t = s.min;
     if (minutes(bl, 0) > t) {
@@ -228,11 +231,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       const dropped = [];
       while (minutes(bl, lvl) > t) { const order = ['abs', 'extra', 'acc']; let e = null; for (const k of order) { e = [...ex].reverse().find((x) => x.kind === k && !x.comp); if (e) break; } e ??= [...ex].reverse().find((x) => x.kind !== 'main'); if (!e) break; ex = ex.filter((x) => x !== e); dropped.push(e.name); bl = blocks(ex); }
       if (dropped.length) notes.push(`drops ${dropped.join(', ')}`);
-    } else if (t > PLAN_MIN && t - minutes(bl, 0) >= 6) {
+    } else if (fillTo - minutes(bl, 0) >= 4) {
+      // Time to spare beyond the plan's own buffer (longer time, or abs/supersets taken out): add exercises first, then sets.
+      const why = t > PLAN_MIN ? '' : ' in the time freed';
+      for (const [n, r, kg, c, kind] of dr.add) { if (fillTo - minutes(bl, 0) < 4) break; const cand = { name: n, kind: kind ?? 'acc', sets: kind === 'extra' ? 3 : (s.style === 'Varied' ? 2 : 3), reps: r, kg, rpe: 8, comp: !!c }; const nx = [...ex.filter((x) => x.kind === 'main' || x.kind === 'acc'), ...(kind === 'extra' ? [] : [cand]), ...ex.filter((x) => x.kind === 'extra'), ...(kind === 'extra' ? [cand] : []), ...ex.filter((x) => x.kind === 'abs')]; const bl2 = blocks(nx); if (minutes(bl2, 0) <= fillTo) { ex = nx; bl = bl2; notes.push(`adds ${n}${why}`); } }
       let added = 0;
-      while (t - minutes(bl, 0) >= 3) { const e = ex.find((x) => (x.kind === 'acc' || x.kind === 'extra') && x.sets < 4); if (!e) break; e.sets++; bl = blocks(ex); if (minutes(bl, 0) > t) { e.sets--; bl = blocks(ex); break; } added++; }
+      while (fillTo - minutes(bl, 0) >= 3) { const e = ex.find((x) => (x.kind === 'acc' || x.kind === 'extra') && x.sets < 4); if (!e) break; e.sets++; bl = blocks(ex); if (minutes(bl, 0) > fillTo) { e.sets--; bl = blocks(ex); break; } added++; }
       if (added) notes.push(`+${added} set${added > 1 ? 's' : ''}`);
-      for (const [n, r, kg, c] of dr.add) { const cand = { name: n, kind: 'acc', sets: 3, reps: r, kg, rpe: 8, comp: !!c }; const bl2 = blocks([...ex.filter((x) => x.kind !== 'abs' && x.kind !== 'extra'), cand, ...ex.filter((x) => x.kind === 'abs' || x.kind === 'extra')]); if (minutes(bl2, 0) <= t) { ex = [...ex.filter((x) => x.kind !== 'abs' && x.kind !== 'extra'), cand, ...ex.filter((x) => x.kind === 'abs' || x.kind === 'extra')]; bl = bl2; notes.push(`adds ${n}`); } }
     }
     return { ex, bl, est: minutes(bl, lvl), notes, lvl };
   }
@@ -248,7 +253,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   function view() {
     const keep = app.querySelector('.scroll')?.scrollTop ?? 0;
     const moved = reflow();
-    const dr = draft(); const f = fit(dr); const mains = Object.keys(D[s.day].mains);
+    const dr = draft();
+    // The plan's own estimate (plan abs, supersets on) keeps its buffer; only time beyond that buffer gets filled.
+    const keepS = [s.abs, s.ss]; s.abs = null; s.ss = true; const planEst = minutes(blocks(draft().ex), 0); [s.abs, s.ss] = keepS;
+    const f = fit(dr, s.min - Math.max(0, PLAN_MIN - planEst)); const mains = Object.keys(D[s.day].mains);
     const swappedFrom = s.mix ? (s.style === 'Varied' ? D[s.day].varied : D[s.day].focused).find((x) => ALT[x[0]] && f.ex.some((e) => e.name === ALT[x[0]])) : null;
     let n = 0;
     const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${e.kg ?? 'BW'}</span></div>`;
