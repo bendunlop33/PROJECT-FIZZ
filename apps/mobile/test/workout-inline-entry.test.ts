@@ -206,7 +206,7 @@ describe('keypad-open chrome, header and sheets (1.7–1.10)', () => {
   it('a long gym name gives way to the workout name', () => {
     const chip = read('screens', 'workout', 'GymSwitch.tsx');
     expect(chip).toContain('flexShrink: 1,\n        minWidth: 0,\n        maxWidth: 120,');
-    expect(screen).toContain('style={{ flex: 1, minWidth: 64, fontSize: 13 }}');
+    expect(screen).toContain('style={{ flex: 1, minWidth: 64 }}');
     expect(screen).not.toContain('`Paused · ${formatElapsed(view.elapsedMs)}`');
   });
   it('Adjust is always the one word; the coach state is an icon and the open row’s line', () => {

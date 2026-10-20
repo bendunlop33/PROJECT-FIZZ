@@ -64,7 +64,7 @@ Canvas `bg.canvas`, side margin 20 (`components.screenMargin`). The list scrolls
 1. **Top bar (44 pt).**
    - Left: chevron-down `Close` (44 pt).
    - Right: `GymChip` `Main gym ▾` (34 pt visual, 44 pt hit, `border.control` outline), then `⋯` (44 pt). The menu holds `Other routine` · `Empty workout` · `Edit routine` (routines only; it becomes `Rename` · `Delete` until the routine editor exists).
-2. **Eyebrow** (`type.sectionLabel`, 12/600, tracked 1.4, caps, `text.tertiary`). It is the D19 basis, an actual: `AFTER PULL A · THU 8 OCT`. Variants: `START OF YOUR ROTATION` · `ONLY ROUTINE` · `LAST DONE MON 5 OCT` (a routine opened from the list) · `NEXT SESSION · FROM THU 8 OCT` (not a routine) · `NEW ROUTINE` (never done).
+2. **Eyebrow** (`type.sectionLabel`, 13/18, 600, tracked 1.2, caps, `text.tertiary`). It is the D19 basis, an actual: `AFTER PULL A · THU 8 OCT`. Variants: `START OF YOUR ROTATION` · `ONLY ROUTINE` · `LAST DONE MON 5 OCT` (a routine opened from the list) · `NEXT SESSION · FROM THU 8 OCT` (not a routine) · `NEW ROUTINE` (never done).
 3. **Title** (40/46, 600): the routine or workout name. It wraps to 2 lines and never truncates.
 4. **Stat strip.** Three equal columns between `border.divider` hairlines (`StatStrip`, new):
    - `≈ 55 min` / `TIME`
@@ -223,7 +223,7 @@ Follow-ups for the product manager (not edited here):
 - routines.md routine row
 - research idea 2's "2 taps" check
 - design-system components
-- the 12 pt `sectionLabel` vs the 16 pt floor (an existing token conflict)
+- the 13 pt `sectionLabel` (raised from 12 pt, Ben, 20 Oct) vs the 16 pt floor (an existing token conflict)
 - `CheckInScale` inline tiles at 50 × 52 vs the sheet's ≥ 52 × 60 (check-in check 28); confirm on device
 - **Device check still open (review r1 B2, r2 S2/S3):** on Ben's iPhone at xLarge, xxxLarge and AX3, check the top bar and gym chip, the row's right column with the `Coach` tag beside the marker over the 22 pt load (wrap or clip; review merge S2), the row panel lines, the check-in row in all three layouts, the stat strip (no number breaking mid-way, e.g. `≈ 19:05`; `onTextLayout` wrap detection stacks it without a visible column-then-stack flash) and Start staying visible. Not yet done (review r3 S2, merge S2): do it before the first real workout and record the result here.
 

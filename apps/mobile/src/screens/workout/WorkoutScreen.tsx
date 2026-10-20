@@ -2422,7 +2422,7 @@ export function WorkoutScreen() {
               />
             </View>
           ) : (
-            <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, minWidth: 64, fontSize: 13 }} accessibilityRole="header">
+            <AppText variant="sectionLabel" color="text.secondary" numberOfLines={1} style={{ flex: 1, minWidth: 64 }} accessibilityRole="header">
               {view.title}
             </AppText>
           )}

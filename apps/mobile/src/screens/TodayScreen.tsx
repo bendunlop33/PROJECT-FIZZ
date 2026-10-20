@@ -625,7 +625,7 @@ export function TodayScreen() {
         contentContainerStyle={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['6'], paddingBottom: theme.space['8'] + 56, gap: theme.space['6'] }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], flexWrap: 'wrap' }}>
-          <AppText variant="sectionLabel" color="text.secondary" accessibilityRole="header" style={{ fontSize: 13 }}>
+          <AppText variant="sectionLabel" color="text.secondary" accessibilityRole="header">
             {formatLongDate(toMs(zoned.utc), zoned.tz)}
           </AppText>
           <LinkLine
