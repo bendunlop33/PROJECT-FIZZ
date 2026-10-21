@@ -102,6 +102,9 @@ describe('the weekly review on open', () => {
     const data = await h.service.reviews();
     expect(data?.latest?.verdict).toBe('Not reviewed · Offline');
     expect(data?.latest?.facts[0]).toBe('2 workouts');
+    // Still offline on the next open: nothing is rewritten.
+    expect(await h.service.runOnOpen()).toMatchObject({ kind: 'not_reviewed', status: 'offline' });
+    expect((await h.store.repos.reviews.get(first.review.id))?.version).toBe(first.review.version);
 
     h.setAvailability(() => ONLINE);
     const second = await h.service.runOnOpen();

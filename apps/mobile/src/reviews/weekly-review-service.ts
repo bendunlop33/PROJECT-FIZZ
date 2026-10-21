@@ -365,6 +365,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     const asked = await askCoach(g, f, stored.id, stored.proposals ?? [], opts.signal);
     const coachOp = `${opId}:coach`;
     const latest = (await repos().reviews.get(stored.id).catch(() => null)) ?? stored;
+    // Still offline (or not connected) on a later open: nothing new to write.
+    if (asked.status !== 'ok' && latest.coach.status === asked.coach.status && asked.proposals.length === 0) return { kind: 'not_reviewed', review: latest, status: asked.status };
     const mergedProposals = [...(latest.proposals ?? []), ...asked.proposals.filter((p) => !(latest.proposals ?? []).some((q) => keyOf(q) === keyOf(p)))].slice(0, 4);
     const next: TrainingReview = { ...latest, coach: asked.coach, proposals: mergedProposals, version: latest.version + 1, updatedAtUtc: deps.now().utc, opIds: [...latest.opIds, coachOp].slice(-20) };
     const u = await repos()
