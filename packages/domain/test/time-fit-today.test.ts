@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type BuilderGroup, type Exercise, type SessionAggregate, type WorkoutSet } from '@fizz/schemas';
 import { fitTodayCommand, reduceSession, startWorkout, timeFitLineText, timeFitOffer, undoableTimeFit, type BuilderExerciseInfo, type TimeFitOffer } from '../src/index';
 import { at, barbell, dumbbells, exercise, GYM, idGen, kg, lb, profile, routine, routineExercise, stack, template, values } from './fixtures';
-import { apply, expectError, expectOk, HANG, logCmd, setsFor, startFixture } from './session-fixture';
+import { apply, BENCH as SS_BENCH, expectError, expectOk, FACE, HANG, logCmd, ROW, setsFor, startFixture } from './session-fixture';
 
 /*
  * workout-table-v3 §5 (b3 merge): `+N min` offers the builder's fit ladder
@@ -187,6 +187,73 @@ describe('left exactly as they are: Ben’s own edits, pain flags, timed exercis
         const after = expectOk(applyOffer(s, o).r).state;
         expect(after.sets.find((x) => x.id === b1?.id)?.rest.seconds).toBe(300);
       }
+    }
+  });
+
+  // Review build-a R1: "Rest after" (`set_rest_after`) is the main way Ben sets a rest mid-workout.
+  const restAfter = (s: SessionAggregate, setId: string, seconds: number, scope: 'set' | 'exercise', opId: string): SessionAggregate =>
+    apply(s, { type: 'set_rest_after', at: at(200), opId, setId, seconds, scope, expectedVersion: s.session.version });
+
+  it('a rest Ben set for one set with "Rest after" is never shortened, nor anything else on that exercise (review R1)', () => {
+    let s = underWay();
+    const fly2 = setsOf(s, FLY)[1];
+    s = restAfter(s, fly2?.id ?? '', 240, 'set', 'ben-rest-after-set');
+    // Kept across a relaunch (the stored workout, parsed back).
+    s = SessionAggregateSchema.parse(JSON.parse(JSON.stringify(s)));
+    expect(s.sets.find((x) => x.id === fly2?.id)?.rest.byOpId).toBe('ben-rest-after-set');
+    const flyIds = new Set(setsOf(s, FLY).map((x) => x.id));
+    for (const over of [1, 8, 30]) {
+      const o = offer(s, over);
+      for (const id of touchedSets(o)) expect(flyIds.has(id)).toBe(false);
+      expect(o.steps.some((st) => st.type === 'skip_exercise' && st.sessionExerciseId === exId(s, FLY))).toBe(false);
+      expect(o.lines.some((l) => l.name === 'Cable fly')).toBe(false);
+      if (o.steps.length > 0) {
+        const after = expectOk(applyOffer(s, o).r).state;
+        expect(after.sets.find((x) => x.id === fly2?.id)?.rest.seconds).toBe(240);
+      }
+    }
+  });
+
+  it('a rest Ben set for the whole exercise with "Rest after" is never shortened, the main lift included (review R1)', () => {
+    let s = underWay();
+    const b1 = setsOf(s, BENCH)[2];
+    s = restAfter(s, b1?.id ?? '', 300, 'exercise', 'ben-rest-after-ex');
+    const pendingBench = setsOf(s, BENCH).filter((x) => x.status === 'pending');
+    expect(pendingBench.map((x) => x.rest.seconds)).toEqual([300, 300]);
+    for (const over of [1, 8, 30]) {
+      const o = offer(s, over);
+      const hit = touchedSets(o);
+      for (const set of setsOf(s, BENCH)) expect(hit.has(set.id)).toBe(false);
+      expect(o.lines.some((l) => l.name === 'Bench press')).toBe(false);
+      if (o.steps.length > 0) {
+        const after = expectOk(applyOffer(s, o).r).state;
+        for (const set of pendingBench) expect(after.sets.find((x) => x.id === set.id)?.rest.seconds).toBe(300);
+      }
+    }
+  });
+
+  it('a superset member whose rest Ben set with "Rest after": the round keeps its rests, nothing in it is cut (review R1)', () => {
+    const { state } = startFixture();
+    const ssInfo = new Map<string, BuilderExerciseInfo>([
+      [SS_BENCH, { exerciseId: SS_BENCH, name: 'Bench press', group: 'Chest', role: 'compound', heavy: true, part: 'Chest', muscles: ['chest'], angle: 'Chest', barbell: true }],
+      [ROW, { exerciseId: ROW, name: 'Cable row', group: 'Back', role: 'isolation', heavy: false, part: 'Back', muscles: ['back'], angle: 'Back', barbell: false }],
+      [FACE, { exerciseId: FACE, name: 'Face pull', group: 'Shoulders', role: 'isolation', heavy: false, part: 'Shoulders', muscles: ['shoulders'], angle: 'Shoulders', barbell: false }],
+    ]);
+    const face1 = setsFor(state, FACE)[0];
+    const s = apply(state, { type: 'set_rest_after', at: at(10), opId: 'ben-ss-rest', setId: face1?.id ?? '', seconds: 150, scope: 'set', expectedVersion: state.session.version });
+    const faceIds = new Set(setsFor(s, FACE).map((x) => x.id));
+    const exIdOf = (a: SessionAggregate, e: string) => a.exercises.find((x) => x.exerciseId === e)?.id ?? '';
+    for (const over of [1, 8, 30]) {
+      const o = timeFitOffer({ aggregate: s, overByMinutes: over, info: (id) => ssInfo.get(id) ?? null });
+      for (const id of touchedSets(o)) expect(faceIds.has(id)).toBe(false);
+      // The round's rests stay as they are; the face pull (Ben's rest) is left exactly as it is. The other member may still lose sets or be skipped (later steps of the ladder).
+      const rowIds = new Set(setsFor(s, ROW).map((x) => x.id));
+      for (const st of o.steps) if (st.type === 'edit_planned_set' && rowIds.has(st.setId)) expect(st.patch.restS).toBeUndefined();
+      expect(o.lines.some((l) => l.kind === 'rest' && (l.name === 'Cable row' || l.name === 'Face pull'))).toBe(false);
+      expect(o.lines.some((l) => l.name === 'Face pull')).toBe(false);
+      expect(o.steps.some((st) => st.type === 'skip_exercise' && st.sessionExerciseId === exIdOf(s, FACE))).toBe(false);
+      const cmd = fitTodayCommand(o, { opId: `fit-ss-${String(over)}`, at: at(20) });
+      if (cmd !== null) expect(expectOk(reduceSession(s, cmd)).state.sets.find((x) => x.id === face1?.id)?.rest.seconds).toBe(150);
     }
   });
 

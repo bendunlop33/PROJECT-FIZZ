@@ -106,6 +106,11 @@ export const ResolvedRestSchema = z.object({
   seconds: DurationSecondsSchema,
   source: SetRestSourceSchema,
   sourceLabel: z.string().max(200),
+  /**
+   * The `set_rest_after` that set it ("Rest after" sheet, mid-workout): Ben's
+   * own rest, which the `+N min` fit never shortens (review build-a R1).
+   */
+  byOpId: OperationIdSchema.optional(),
 });
 export type ResolvedRest = z.infer<typeof ResolvedRestSchema>;
 

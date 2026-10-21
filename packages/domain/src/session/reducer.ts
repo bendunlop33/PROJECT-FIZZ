@@ -1534,8 +1534,8 @@ function handleSetRestAfter(state: SessionAggregate, cmd: CommandOf<'set_rest_af
   if (!ex) return fail('exercise_not_found', 'Exercise not found in this workout.');
   const rest =
     cmd.scope === 'set'
-      ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: 'This set' }
-      : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)` };
+      ? { seconds: cmd.seconds, source: 'set_override' as const, sourceLabel: 'This set', byOpId: cmd.opId }
+      : { seconds: cmd.seconds, source: 'exercise_default' as const, sourceLabel: `${ex.exerciseName} default (yours)`, byOpId: cmd.opId };
   // Only sets not done yet; completed sets and the running timer are never touched.
   const targets = cmd.scope === 'set' ? [set] : state.sets.filter((s) => s.sessionExerciseId === ex.id && s.status === 'pending');
   const ids = new Set(targets.map((s) => s.id));

@@ -16,8 +16,8 @@ import type { BuilderBlock, BuilderContext, BuilderGroupName, BuilderInfoLookup,
  * Minutes are the builder's estimate of the sets left (§3.6 formula), not
  * the pace-based Time left: `savedMinutes` is what the fit takes off that.
  *
- * Left exactly as they are (review build-a B1; CHANGELOG 21 Oct): sets Ben
- * edited himself (their rests included), pain-flagged movements (rule 9) and
+ * Left exactly as they are (review build-a B1, R1; CHANGELOG 21 Oct): sets Ben
+ * edited himself (their rests included, and rests set with "Rest after"), pain-flagged movements (rule 9) and
  * exercises not counted in reps. Their rests are pinned at what they are, so
  * the estimate doesn't count time the fit won't take; a superset with one of
  * them keeps its round rest.
@@ -89,8 +89,14 @@ function fitOwnEdit(a: SessionAggregate, opId: string): boolean {
   return cut > 0 && a.processedOps[opId.slice(0, cut)]?.commandType === 'fit_today_to_time';
 }
 
-/** A pending set Ben (or the coach he asked) changed himself: the fit leaves it, rest included. */
-const bensEdit = (a: SessionAggregate, s: WorkoutSet): boolean => s.planned.edit !== undefined && !fitOwnEdit(a, s.planned.edit.opId);
+/**
+ * A pending set Ben (or the coach he asked) changed himself: the fit leaves
+ * it, rest included. That covers a rest he set with the "Rest after" sheet
+ * for the set or the whole exercise (`rest.byOpId`, review R1); the fit's own
+ * rest writes go through `edit_planned_set` and never carry it.
+ */
+const bensEdit = (a: SessionAggregate, s: WorkoutSet): boolean =>
+  (s.planned.edit !== undefined && !fitOwnEdit(a, s.planned.edit.opId)) || (s.rest.byOpId !== undefined && !fitOwnEdit(a, s.rest.byOpId));
 
 /** The rest kind after each row, as `restAfterRows` reads it. */
 const restKindAt = (rows: readonly BuilderSetRow[], i: number): RestKind | undefined => {
