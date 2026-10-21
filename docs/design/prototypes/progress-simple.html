@@ -58,7 +58,9 @@ h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .pd small { font-size: 11px; letter-spacing: -.02em; font-weight: 500; font-variant-numeric: tabular-nums; }
 .pd .tk { position: absolute; top: 3px; right: 5px; font-size: 10px; font-weight: 700; }
 button.pd { border: 0; font-family: inherit; cursor: pointer; color: inherit; background: none; }
-button.pd.done { background: var(--data); color: var(--on-accent); }
+button.pd.done { background: rgba(92,201,138,.20); color: #D8F5E3; box-shadow: inset 0 0 0 1.5px rgba(92,201,138,.55); }
+button.pd.miss { background: rgba(243,238,232,.05); color: var(--text3); }
+button.pd.miss small { color: var(--text3); }
 button.pd.next { border: 1.5px solid var(--text2); color: var(--text); }
 .pd.done { background: var(--data); color: var(--on-accent); }
 .pd.next { border: 1.5px solid var(--text2); }
@@ -120,7 +122,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   function controls() {
     document.getElementById('goals').innerHTML = GOALS.map(([k, l]) => `<button class="chip" data-a="goal" data-v="${k}" aria-pressed="${s.goal === k}">${l}</button>`).join('');
-    document.getElementById('demo').innerHTML = `<button class="chip" data-a="coach" aria-pressed="${!s.coach}">${s.coach ? 'Coach connected' : 'Coach offline'}</button>`;
+    document.getElementById('demo').innerHTML = `<button class="chip" data-a="coach" aria-pressed="${!s.coach}">${s.coach ? 'Coach connected' : 'Coach offline'}</button><button class="chip" data-a="missed" aria-pressed="${s.missed}">Example: Legs missed</button>`;
   }
 
   const change = (l) => { const d = l.series[l.series.length - 1] - l.series[0]; return d === 0 ? 'level' : `${d > 0 ? '+' : ''}${d} kg`; };
@@ -202,9 +204,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     return `<div class="sec"><span>This week</span><span>13–19 Oct</span></div>
     <div class="card">
       <div class="row"><span class="k">Sessions</span><span class="v">3 of 4 <span style="font-size:14px;font-weight:500;color:var(--text2)">· 2 runs</span></span></div>
-      <div class="strip" role="group" aria-label="Chest done Monday, 100% of planned reps; Back done Wednesday, 92%; Shoulders done Friday, 104%; Legs moved to Saturday">
-        <button class="pd done" data-a="sess" data-v="Chest">Chest<b class="tk" aria-hidden="true">✓</b><small>Mon – 100%</small></button><button class="pd done" data-a="sess" data-v="Back">Back<b class="tk" aria-hidden="true">✓</b><small>Wed – 92%</small></button>
-        <button class="pd done" data-a="sess" data-v="Shoulders">Shoulders<b class="tk" aria-hidden="true">✓</b><small>Fri – 104%</small></button><button class="pd next" data-a="sess" data-v="Legs">Legs<small>Sat – moved</small></button>
+      <div class="strip" role="group" aria-label="Chest done Monday, 100% of planned reps; Back done Wednesday, 92%; Shoulders done Friday, 104%; Legs moved to Saturday or missed">
+        <button class="pd done" data-a="sess" data-v="Chest">Chest<small>Mon – 100%</small></button><button class="pd done" data-a="sess" data-v="Back">Back<small>Wed – 92%</small></button>
+        <button class="pd done" data-a="sess" data-v="Shoulders">Shoulders<small>Fri – 104%</small></button>${s.missed ? `<button class="pd miss" data-a="sess" data-v="LegsMissed">Legs<small>Thu – missed</small></button>` : `<button class="pd next" data-a="sess" data-v="Legs">Legs<small>Sat – moved</small></button>`}
       </div>
       ${mus.map(([m, n, p]) => `<div class="mus" aria-label="${m} ${n} of ${p} planned sets"><span>${m}</span><div class="bar"><i style="width:${Math.min(n / 18, 1) * 100}%"></i><b style="left:${(p / 18) * 100}%"></b></div><span class="n">${n} of ${p}</span></div>`).join('')}
     </div>`;
@@ -245,12 +247,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'estpt') { const [li, wi] = v.split(':').map(Number); const l = LIFTS[li]; s.toast = `${l.n}, week of ${WEEKS[wi]}: est. ${l.series[wi]} × ${l.reps} from ${l.estW[wi]}`; }
     if (a === 'edit') s.toast = 'Pick the lifts to track (default: your plan\u2019s main lifts)';
     if (a === 'coach') s.coach = !s.coach;
+    if (a === 'missed') s.missed = !s.missed;
     if (a === 'undo') { s.undone[v] = true; s.toast = 'Undone: next session keeps the old target'; }
     if (a === 'redo') s.undone[v] = false;
     if (a === 'yes') { s.ask = 'yes'; s.toast = 'Legs is now on Saturday'; }
     if (a === 'no') { s.ask = 'no'; s.toast = 'Kept as is'; }
     if (a === 'askundo') s.ask = 'open';
-    if (a === 'sess') s.toast = v === 'Legs' ? 'Legs: planned Thu, moved to Sat' : v === 'Back' ? 'Back: 156 of 170 planned reps (92%) \u00b7 Cable row short \u00b7 opens its Summary' : `${v}: opens that workout\u2019s Summary`;
+    if (a === 'sess') s.toast = v === 'LegsMissed' ? 'Legs: planned Thu, not done' : v === 'Legs' ? 'Legs: planned Thu, moved to Sat' : v === 'Back' ? 'Back: 156 of 170 planned reps (92%) \u00b7 Cable row short \u00b7 opens its Summary' : `${v}: opens that workout\u2019s Summary`;
     if (a === 'past') s.toast = 'Opens past weeks: each week’s facts and changes';
     clearTimeout(tt); if (s.toast) tt = setTimeout(() => { s.toast = null; view(); }, 2500);
     view();
