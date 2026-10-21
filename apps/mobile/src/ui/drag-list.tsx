@@ -28,6 +28,8 @@ interface DragContext {
   /** Each row's view, measured in the window when a hold fires (rows may sit in nested boxes). */
   items: { current: Map<string, View | null> };
   arm: (key: string, draggable: boolean) => void;
+  /** A hold has fired (read at the touch, not at the last render). */
+  holding: () => boolean;
   touch: (kind: 'down' | 'move' | 'up' | 'cancel', key: string, e: GestureResponderEvent | null) => void;
   offset: Animated.Value;
 }
@@ -63,10 +65,14 @@ export function DragList(p: DragListProps) {
   latest.current = p;
 
   const setPhase = (next: DragPhase) => {
-    const wasActive = phaseRef.current.kind === 'armed' || phaseRef.current.kind === 'dragging';
+    const prev = phaseRef.current;
+    const wasActive = prev.kind === 'armed' || prev.kind === 'dragging';
     const active = next.kind === 'armed' || next.kind === 'dragging';
     phaseRef.current = next;
-    setPhaseState(next);
+    // Only what the rows draw re-renders them (a held or dragged row), never every tap's press and release.
+    if (wasActive || active) {
+      if (!(prev.kind === next.kind && 'key' in prev && 'key' in next && prev.key === next.key)) setPhaseState(next);
+    }
     if (wasActive !== active) latest.current.onDragChange?.(active);
   };
 
@@ -114,6 +120,7 @@ export function DragList(p: DragListProps) {
     return {
       items,
       offset,
+      holding: () => phaseRef.current.kind === 'armed' || phaseRef.current.kind === 'dragging',
       arm: (key, draggable) => {
         if (phaseRef.current.kind === 'pressing' && phaseRef.current.key === key) step({ kind: 'hold', atMs: nowMs(), draggable });
       },
@@ -151,15 +158,15 @@ export function DragItem({ dragKey, draggable, children }: { dragKey: string; dr
   const c = useContext(Ctx);
   const ph = c?.phase ?? { kind: 'idle' as const };
   const active = c !== null && ph.kind === 'dragging' && ph.key === dragKey;
-  const holding = useRef(false);
-  holding.current = c !== null && (ph.kind === 'armed' || ph.kind === 'dragging');
+  const holding = useRef<() => boolean>(() => false);
+  holding.current = c === null ? () => false : c.holding;
   const responder = useMemo(
     () =>
       PanResponder.create({
         // Once a hold has fired, the list takes the touch (the row's tap, its swipe, the page's swipe).
-        onMoveShouldSetPanResponderCapture: () => holding.current,
+        onMoveShouldSetPanResponderCapture: () => holding.current(),
         onStartShouldSetPanResponderCapture: () => false,
-        onPanResponderTerminationRequest: () => !holding.current,
+        onPanResponderTerminationRequest: () => !holding.current(),
       }),
     [],
   );
