@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelEvent, ModelRequest } from '@fizz/coach';
@@ -594,6 +597,75 @@ describe('Today (v2) session card from the plan', () => {
     expect(off.review).toBe('offline');
     expect(off.coachLabel).toBe('Offline');
     expect(s.todaySession.card(off, sel(off, k))?.why.at(-1)).toBe('Not reviewed · Offline');
+  });
+
+  it('Ben’s plan from the old plan builder (before v3 templates and migration 30) is his plan on Today: its days, NEXT and a card; never `No plan` (21 Oct)', async () => {
+    const { s, planId } = await benWithPlan();
+    const before = await loaded(s);
+    expect(before.status).toBe('plan');
+    // Rewrite the stored plan and its workouts to what the 19 Oct plan builder wrote: `applied.made` one per day with
+    // no main lift, workouts with only `createdFromPlan` (no `planDay`), no variations.
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    const row = db.prepare('SELECT data FROM plan_drafts WHERE id = ?').get(planId) as { data: string };
+    const plan = JSON.parse(row.data) as { applied: { made: Record<string, unknown>[] } };
+    for (const m of plan.applied.made) delete m.mainLiftExerciseId;
+    db.prepare('UPDATE plan_drafts SET data = ? WHERE id = ?').run(JSON.stringify(plan), planId);
+    const routines = db.prepare('SELECT id, data FROM routines').all() as { id: string; data: string }[];
+    let old = 0;
+    for (const r of routines) {
+      const doc = JSON.parse(r.data) as { createdFromPlan?: { planId: string }; planDay?: unknown };
+      if (doc.createdFromPlan?.planId !== planId) continue;
+      delete doc.planDay;
+      old += 1;
+      db.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify(doc), r.id);
+    }
+    expect(old).toBe(4);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM plan_day_variations').get() as { n: number }).n).toBe(0);
+    db.close();
+
+    const s2 = (await h.launch()).services;
+    const data = await loaded(s2);
+    expect(data.status).toBe('plan');
+    expect(data.days.map((d) => d.name)).toEqual(['Push', 'Pull', 'Legs', 'Upper']);
+    expect(data.nextKey).not.toBeNull();
+    expect(data.days.map((d) => d.key)).toEqual(before.days.map((d) => d.key));
+    const card = s2.todaySession.card(data, sel(data, data.nextKey ?? ''));
+    expect(card?.startable).toBe(true);
+    // Library › Your plan reads the same plan.
+    expect((await s2.plans.overview())?.days.length).toBe(4);
+  });
+
+  it('No plan when no plan is in use: an applied plan whose workouts are all deleted reads as none (as Library › Your plan)', async () => {
+    const { s, planId } = await benWithPlan();
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    for (const r of db.prepare('SELECT id, data FROM routines').all() as { id: string; data: string }[]) {
+      const doc = JSON.parse(r.data) as { createdFromPlan?: { planId: string }; deletedAtUtc?: string | null };
+      if (doc.createdFromPlan?.planId !== planId) continue;
+      doc.deletedAtUtc = '2026-10-15T08:00:00.000Z';
+      db.prepare('UPDATE routines SET data = ? WHERE id = ?').run(JSON.stringify(doc), r.id);
+    }
+    db.close();
+    const s2 = (await h.launch()).services;
+    expect(await s2.plans.overview()).toBeNull();
+    const data = await loaded(s2);
+    expect(data.status).toBe('no_plan');
+    expect(data.days).toEqual([]);
+    expect(data.others.map((d) => d.name)).toEqual(['Full body', 'Upper', 'Push']);
+  });
+
+  it('a plan that can’t be read fails the load (the screen says Couldn’t load), never `No plan`', async () => {
+    const { s, planId } = await benWithPlan();
+    const file = s.developer.databaseNames().current;
+    await h.forceClose();
+    const db = new DatabaseSync(join(h.dir, file));
+    db.prepare("UPDATE plan_drafts SET data = json_set(data, '$.applied', NULL) WHERE id = ?").run(planId);
+    db.close();
+    const s2 = (await h.launch()).services;
+    await expect(s2.todaySession.load()).rejects.toThrow();
   });
 
   it('`movedLine`: the next day itself has none; another plan day names what moves; an Other session has none', async () => {
