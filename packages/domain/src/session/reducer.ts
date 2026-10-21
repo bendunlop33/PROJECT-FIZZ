@@ -18,6 +18,7 @@ import type {
   SetSide,
   SetSnapshot,
   SetValues,
+  DraftValues,
   TargetProvenance,
   WorkoutSet,
 } from '@fizz/schemas';
@@ -45,8 +46,8 @@ import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { pendingSetsOf } from './mid-swap';
 import { buildExecutionOrder, effectiveOffset, firstPendingRound, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
-import { draftWithNewTarget, pendingOwnValues, type TargetValueField } from './pending-values';
-import { carriedLoad } from './carry';
+import { draftWithNewTarget, type TargetValueField } from './pending-values';
+import { benSetLoad, carriedLoad, hasOwnValuesAnyFlags } from './carry';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -350,7 +351,7 @@ function flagsFor(values: SetValues, state: SessionAggregate, ex: SessionExercis
   return isLoadAchievable(values.load, eq) ? [] : ['off_profile_load'];
 }
 
-function baseDraft(set: WorkoutSet): SetValues {
+function baseDraft(set: WorkoutSet): DraftValues {
   return set.draft ?? { load: set.planned.load, reps: null, durationS: null, rpe: null, rir: null };
 }
 
@@ -1243,12 +1244,12 @@ function withoutEditRecords(planned: WorkoutSet['planned']): WorkoutSet['planned
  * Nothing of his own left (every value equals what the new target prefills):
  * no draft, so the row shows the target.
  */
-function draftAfterTargetEdit(state: SessionAggregate, edited: WorkoutSet, ex: SessionExercise, before: SetValues | null, fields: readonly TargetValueField[]): SetValues | null {
+function draftAfterTargetEdit(state: SessionAggregate, edited: WorkoutSet, before: DraftValues | null, fields: readonly TargetValueField[]): DraftValues | null {
   if (before === null) return null;
   const draft = draftWithNewTarget(before, edited.planned, fields);
   // Against what the row shows without a draft: the load his last logged set carries, else the target (21 Oct).
-  const carry = carriedLoad(state, { ...edited, draft });
-  return Object.keys(pendingOwnValues({ status: edited.status, draft, planned: edited.planned }, ex, carry)).length === 0 ? null : draft;
+  // His pain flags aren't known here: his own against either carry (with or without a flag) stays (CS4).
+  return hasOwnValuesAnyFlags(state, { ...edited, draft }) ? draft : null;
 }
 
 const NO_TARGET_TYPES: ReadonlySet<WorkoutSet['setType']> = new Set(['warmup', 'drop']);
@@ -1313,10 +1314,13 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
     version,
   };
   // Only the fields Ben set a new target for leave his draft; any other value he typed stays (B1, 21 Oct).
-  const edited: WorkoutSet = { ...withEdit, draft: valuesTouched ? draftAfterTargetEdit(state, withEdit, ex, set.draft, fields) : set.draft };
+  const edited: WorkoutSet = { ...withEdit, draft: valuesTouched ? draftAfterTargetEdit(state, withEdit, set.draft, fields) : set.draft };
   // Setting a target back to the preset over Ben's draft clears the draft: a change, so the row shows it (21 Oct).
-  // So is setting the plan's load over a load his last set carries (the carry stops for this set).
-  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds, edited.draft, carriedLoad(state, edited)]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds, set.draft, carriedLoad(state, set)])) {
+  // So is setting the plan's load over a load his last set carries: the carry stops for this set. Without his
+  // pain flags here, any carry counts (CS4); the sheet and the pop-up, which know them, only send a load equal to
+  // the target when the row showed another one.
+  const carryStops = fields.includes('load') && !benSetLoad(set.planned) && carriedLoad(state, set) !== null;
+  if (stableStringify([edited.planned.load, edited.planned.reps, edited.planned.durationS, edited.planned.distanceM, edited.planned.rpeOverride, edited.setType, edited.rest.seconds, edited.draft, carryStops]) === stableStringify([set.planned.load, set.planned.reps, set.planned.durationS, set.planned.distanceM, set.planned.rpeOverride, set.setType, set.rest.seconds, set.draft, false])) {
     return { ok: true, state, events: [] };
   }
   const events: SessionEvent[] = [{ type: 'PlannedSetEdited', setId: set.id, undo: false }];

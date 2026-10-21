@@ -37,8 +37,8 @@ import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
-import { changedTargetFields, draftWithNewTarget, pendingOwnValues } from './pending-values';
-import { carriedLoad, painFlaggedOf, shownPlannedIn, shownTargetShortIn, type CarryOptions } from './carry';
+import { changedTargetFields, draftWithNewTarget, markCarriedLoad, pendingOwnValues } from './pending-values';
+import { carriedLoad, hasOwnValuesAnyFlags, painFlaggedOf, shownPlannedIn, shownTargetShortIn, type CarryOptions } from './carry';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -116,6 +116,13 @@ export interface DraftEdits {
   /** Set by "copy last time" (`Copied from 1 Oct`). */
   copied?: boolean;
   /**
+   * The load Ben's last logged set carried onto this row when the edits were
+   * made (`FocusView.carriedLoad`). A saved load equal to it is marked
+   * `loadCarried`, so it follows the carry rather than becoming his own edit
+   * (review CS1, 21 Oct). Absent: no carry.
+   */
+  carried?: Load;
+  /**
    * The set's version when these edits were made (rule 5). The debounced
    * `save_draft` carries it, so a save that lands after a newer write to the
    * set (Ben's own `Edit set`, a pop-up target) is refused instead of putting
@@ -130,7 +137,7 @@ export function saveDraftCommand(edits: DraftEdits, at: ZonedTimestamp): Command
     type: 'save_draft',
     at,
     setId: edits.setId,
-    values: edits.values,
+    values: markCarriedLoad(edits.values, edits.carried ?? null),
     ...(edits.side !== undefined ? { side: edits.side } : {}),
     ...(edits.setVersion !== undefined ? { expectedSetVersion: edits.setVersion } : {}),
   };
@@ -148,6 +155,8 @@ export function saveDraftCommand(edits: DraftEdits, at: ZonedTimestamp): Command
  *   null, so his new target shows and nothing stale is saved over it;
  * - any other change (a coach change, Undo): the edits stay (Ben's edit is
  *   kept, coach-adjustments §4.3).
+ * Pain flags aren't known here: a value of his against either carry (with or
+ * without a flag) stays (review CS4).
  * Kept edits are re-based on the set's new version so the next save lands.
  */
 export function reconcileDraftEdits(edits: DraftEdits | null, state: Pick<SessionAggregate, 'sets' | 'exercises' | 'session'>): DraftEdits | null {
@@ -161,7 +170,7 @@ export function reconcileDraftEdits(edits: DraftEdits | null, state: Pick<Sessio
   if (fields.length === 0) return { ...edits, setVersion: set.version };
   const values = draftWithNewTarget(edits.values, set.planned, fields);
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
-  if (!ex || Object.keys(pendingOwnValues({ status: set.status, draft: values, planned: set.planned }, ex, carriedLoad(state, { ...set, draft: values }))).length === 0) return null;
+  if (!ex || !hasOwnValuesAnyFlags(state, { ...set, draft: values })) return null;
   const next: DraftEdits = { ...edits, values, setVersion: set.version };
   delete next.copied;
   return next;
@@ -312,6 +321,8 @@ export interface FocusView {
   previous: { performedAtUtc: string; text: string; values: SetValues; imported: boolean } | null;
   draft: SetValues;
   draftSource: DraftSource | 'edited' | 'copied';
+  /** The load Ben's last logged set carries onto this set (`carriedLoad`, with his pain flags); null: none. The screen keeps it on its edits (`DraftEdits.carried`). */
+  carriedLoad: Load | null;
   loadField: LoadField | null;
   /** `+ Weight` on a bodyweight exercise (`on`: logged with added weight today); null: not offered. */
   addWeight: { on: boolean } | null;
@@ -797,6 +808,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
         : null,
     draft: values,
     draftSource,
+    carriedLoad: carriedLoad(state, set, carry),
     loadField,
     addWeight: addWeightOf(state, ex, eq, input.bodyweightExercises),
     reps: ex.measurement === 'reps' ? { value: values.reps, ...repSteps(values.reps) } : null,
@@ -1367,7 +1379,10 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
   const eq = equipmentOf(state, ex);
   const p = set.planned;
   // The sheet opens on what the row shows: Ben's own draft values over the target (21 Oct); Save makes them the target.
+  const carried = carriedLoad(state, set, { painFlagged: options.painFlagged });
   const shown = shownPlannedIn(state, set, ex, { painFlagged: options.painFlagged });
+  // The row shows a carried load, not a draft load of Ben's (CB1): only a different load is his change.
+  const showsCarry = carried !== null && pendingOwnValues(set, ex, carried).load === undefined;
   const storedLoad = shown.load === null || shown.load.convention === 'bodyweight' ? null : shown.load.value;
   const loadValue = edits.load === undefined ? storedLoad : edits.load;
   const reps = edits.reps === undefined ? shown.reps : edits.reps;
@@ -1392,7 +1407,9 @@ export function buildPlannedSetEditView(state: SessionAggregate, setId: string, 
   const differs = (v: unknown, stored: unknown, shownV: unknown) => !same(v, stored) || !same(v, shownV);
   const shownLoad = shown.load === null || shown.load.convention === 'bodyweight' ? (p.load?.convention === 'bodyweight' ? p.load : null) : shown.load;
   const norm = (l: Load | null) => (l === null ? null : { value: l.value, unit: l.unit, convention: l.convention });
-  if (differs(norm(load), norm(p.load), norm(shownLoad))) patch.load = load;
+  // Over a carried load, only a load other than the carry is a change (CB1, 21 Oct): Save with the carry untouched
+  // writes no load, so the target keeps the plan's and the carry still follows his logged set (Undo of that log too).
+  if (showsCarry ? !same(norm(load), norm(carried)) : differs(norm(load), norm(p.load), norm(shownLoad))) patch.load = load;
   if (ex.measurement === 'reps' && differs(reps, p.reps, shown.reps)) patch.reps = reps;
   if ((ex.measurement === 'duration' || ex.measurement === 'cardio') && differs(durationS, p.durationS, shown.durationS)) patch.durationS = durationS;
   if ((ex.measurement === 'distance' || ex.measurement === 'cardio') && differs(distanceM, p.distanceM ?? null, shown.distanceM ?? null)) patch.distanceM = distanceM;

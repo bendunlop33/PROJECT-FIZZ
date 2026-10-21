@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Exercise, Load, SessionAggregate, SessionCommand, SetTemplate, SetValues, WorkoutSet } from '@fizz/schemas';
+import { WorkoutSetSchema, type Exercise, type Load, type SessionAggregate, type SessionCommand, type SetTemplate, type SetValues, type WorkoutSet } from '@fizz/schemas';
 
 import {
   buildActiveSetView,
@@ -373,5 +373,196 @@ describe('guardrails', () => {
     const again = reduceSession(s, logCmd(b2.id, values(kg(105), 8), 600, `log-${b2.id}-600`));
     const after = again.ok ? again.state : s;
     expect(loadOf(after, b3.id)).toBe(105);
+  });
+});
+
+/** Review weight-revert-21oct "Carry forward" (CB1, CS1–CS4, CN2). */
+describe('review: carry forward fixes', () => {
+  const undoLog = (s: SessionAggregate, setId: string, t: number) => expectOk(reduceSession(s, { type: 'undo_log', at: at(t), opId: `undo-${setId}-${String(t)}`, setId, expectedSetVersion: now(s, setId).version })).state;
+  const editPlanned = (s: SessionAggregate, setId: string, patch: Extract<SessionCommand, { type: 'edit_planned_set' }>['patch'], t: number) =>
+    apply(s, { type: 'edit_planned_set', at: at(t), opId: `edit-${setId}-${String(t)}`, setId, expectedSetVersion: now(s, setId).version, patch });
+
+  describe('CB1: Edit set on a carried row never writes the carry into the target', () => {
+    it('an untouched sheet is no change (Save stays off)', () => {
+      const { s, b3, b4 } = loggedB2At105();
+      for (const set of [b3, b4]) {
+        const sheet = buildPlannedSetEditView(s, set.id, {});
+        expect(sheet?.loadField?.value).toBe(105);
+        expect(sheet?.changed).toBe(false);
+        expect(sheet?.patch).toBeNull();
+      }
+    });
+
+    it('reps-only and rest-only edits send no load; the target keeps 100 and Undo of the b2 log still moves b3 back', () => {
+      const fx = loggedB2At105();
+      let s = fx.s;
+      const { b2, b3, b4 } = fx;
+      const reps = buildPlannedSetEditView(s, b3.id, { reps: { min: 6, max: 6 } });
+      expect(reps?.patch).toEqual({ reps: { min: 6, max: 6 } });
+      const rest = buildPlannedSetEditView(s, b4.id, { restS: now(s, b4.id).rest.seconds + 15 });
+      expect(rest?.patch).toEqual({ restS: now(s, b4.id).rest.seconds + 15 });
+      if (!reps?.patch || !rest?.patch) throw new Error('patch');
+      s = editPlanned(s, b3.id, reps.patch, 700);
+      s = editPlanned(s, b4.id, rest.patch, 710);
+      expect(now(s, b3.id).planned.load).toEqual(kg(100));
+      expect(now(s, b4.id).planned.load).toEqual(kg(100));
+      expect(now(s, b3.id).planned.edit?.fields).toEqual(['reps']);
+      expect(rowOf(s, b3.id).cells.load).toBe('105');
+      expect(rowOf(s, b4.id).cells.load).toBe('105');
+      s = undoLog(s, b2.id, 720);
+      expect(rowOf(s, b3.id).cells.load).toBe('100');
+      expect(rowOf(s, b4.id).cells.load).toBe('100');
+    });
+
+    it('a load other than the carry is still a change (100 back, or 107.5)', () => {
+      const { s, b3 } = loggedB2At105();
+      expect(buildPlannedSetEditView(s, b3.id, { load: 100 })?.patch).toEqual({ load: kg(100) });
+      expect(buildPlannedSetEditView(s, b3.id, { load: 107.5 })?.patch).toEqual({ load: kg(107.5) });
+      expect(buildPlannedSetEditView(s, b3.id, { load: 105 })?.changed).toBe(false);
+    });
+
+    it('a draft load of Ben’s is still his change (Save makes it the target)', () => {
+      const fx = loggedB2At105();
+      let s = fx.s;
+      const { b4 } = fx;
+      s = apply(s, saveDraftCommand({ setId: b4.id, values: values(kg(110), 8), carried: kg(105) }, at(700)));
+      expect(buildPlannedSetEditView(s, b4.id, {})?.patch).toMatchObject({ load: kg(110) });
+    });
+  });
+
+  describe('CS1: a carried load saved in a draft follows the carry', () => {
+    it('a reps-only draft on b3, then Undo of the b2 log: b3 shows 100 with his reps', () => {
+      const fx = loggedB2At105();
+      let s = fx.s;
+      const { b2, b3 } = fx;
+      const focus = buildActiveSetView(input(s)).focus;
+      expect(focus?.carriedLoad).toEqual(kg(105));
+      s = apply(s, saveDraftCommand({ setId: b3.id, values: values(kg(105), 6), carried: kg(105) }, at(700)));
+      expect(now(s, b3.id).draft?.loadCarried).toBe(true);
+      expect(rowOf(s, b3.id).cells.load).toBe('105');
+      expect(prefillDraft(s, b3.id).values).toMatchObject({ load: kg(105), reps: 6 });
+      s = undoLog(s, b2.id, 720);
+      expect(rowOf(s, b3.id).cells.load).toBe('100');
+      expect(plain(rowOf(s, b3.id).cells.value)).toBe('6');
+      const pre = prefillDraft(s, b3.id);
+      expect(pre.values.load).toEqual(kg(100));
+      expect('loadCarried' in pre.values).toBe(false);
+    });
+
+    it('a typed load other than the carry is saved as his own', () => {
+      const { s, b3 } = loggedB2At105();
+      const after = apply(s, saveDraftCommand({ setId: b3.id, values: values(kg(100), 8), carried: kg(105) }, at(700)));
+      expect(now(after, b3.id).draft?.loadCarried).toBeUndefined();
+      expect(rowOf(after, b3.id).cells.load).toBe('100');
+    });
+
+    it('the marker survives a restart (schema round trip) and a reps edit over it clears the draft', () => {
+      const fx = loggedB2At105();
+      let s = fx.s;
+      const { b4 } = fx;
+      s = apply(s, saveDraftCommand({ setId: b4.id, values: values(kg(105), 6), carried: kg(105) }, at(700)));
+      expect(WorkoutSetSchema.parse(JSON.parse(JSON.stringify(now(s, b4.id)))).draft?.loadCarried).toBe(true);
+      s = editPlanned(s, b4.id, { reps: { min: 6, max: 6 } }, 710);
+      expect(now(s, b4.id).draft).toBeNull();
+      expect(rowOf(s, b4.id).cells.load).toBe('105');
+    });
+  });
+
+  describe('CS2: Ben’s own target on the logged set doesn’t stop the carry', () => {
+    it('b2 raised to 105 in Edit set and logged at 105: b3 and b4 start at 105', () => {
+      let s = start();
+      const [w, b1, b2, b3, b4] = setsOf(s, BENCH);
+      if (!w || !b1 || !b2 || !b3 || !b4) throw new Error('fixture');
+      s = log(s, w, values(kg(60), 5), 60);
+      s = log(s, b1, values(kg(100), 8), 300);
+      s = editPlanned(s, b2.id, { load: kg(105) }, 400);
+      s = log(s, now(s, b2.id), values(kg(105), 8), 600);
+      expect(loadOf(s, b3.id)).toBe(105);
+      expect(rowOf(s, b4.id).cells.load).toBe('105');
+      expect(now(s, b3.id).planned.load).toEqual(kg(100));
+    });
+
+    it('b2 raised to 105 but logged at the plan’s 100: nothing carries', () => {
+      let s = start();
+      const [, b1, b2, b3] = setsOf(s, BENCH);
+      if (!b1 || !b2 || !b3) throw new Error('fixture');
+      s = log(s, b1, values(kg(100), 8), 300);
+      s = editPlanned(s, b2.id, { load: kg(105) }, 400);
+      s = log(s, now(s, b2.id), values(kg(100), 8), 600);
+      expect(loadOf(s, b3.id)).toBe(100);
+    });
+
+    it('a legacy edit record without `fields` reads the same (CN2)', () => {
+      let s = start();
+      const [, b1, b2, b3] = setsOf(s, BENCH);
+      if (!b1 || !b2 || !b3) throw new Error('fixture');
+      s = log(s, b1, values(kg(100), 8), 300);
+      s = editPlanned(s, b2.id, { load: kg(105) }, 400);
+      const legacy = (x: WorkoutSet): WorkoutSet => {
+        if (x.id !== b2.id || !x.planned.edit) return x;
+        const edit = { ...x.planned.edit };
+        delete edit.fields;
+        return { ...x, planned: { ...x.planned, edit } };
+      };
+      s = { ...s, sets: s.sets.map(legacy) };
+      expect(now(s, b2.id).planned.edit?.fields).toBeUndefined();
+      s = log(s, now(s, b2.id), values(kg(105), 8), 600);
+      expect(loadOf(s, b3.id)).toBe(105);
+    });
+  });
+
+  describe('CS3: a planned ramp logged off target (pending Ben, SPC1)', () => {
+    it('ramp 100 / 102.5 / 105 with set 1 at 102.5: the later sets take 102.5 (absolute carry as approved)', () => {
+      let s = start([WK(6002, kg(100)), WK(6003, kg(102.5)), WK(6004, kg(105))]);
+      const [r1, r2, r3] = setsOf(s, BENCH);
+      if (!r1 || !r2 || !r3) throw new Error('fixture');
+      s = log(s, r1, values(kg(102.5), 8), 300);
+      // Rule 2a carries the logged load as is, so the top set reads lighter than planned. Ben decides (SPC1).
+      expect(loadOf(s, r2.id)).toBe(102.5);
+      expect(loadOf(s, r3.id)).toBe(102.5);
+      expect(now(s, r3.id).planned.load).toEqual(kg(105));
+    });
+
+    it('ramp logged on target stays a ramp', () => {
+      let s = start([WK(6002, kg(100)), WK(6003, kg(102.5)), WK(6004, kg(105))]);
+      const [r1, r2, r3] = setsOf(s, BENCH);
+      if (!r1 || !r2 || !r3) throw new Error('fixture');
+      s = log(s, r1, values(kg(100), 8), 300);
+      expect(loadOf(s, r2.id)).toBe(102.5);
+      expect(loadOf(s, r3.id)).toBe(105);
+    });
+  });
+
+  describe('CS4: pain flags unknown in the reducer and reconcile never drop a typed weight', () => {
+    it('flagged bench: Ben types 105 on b4 (no carry shown); a reps-only Edit set keeps it', () => {
+      const fx = loggedB2At105();
+      let s = fx.s;
+      const { b4 } = fx;
+      const pain = new Set([BENCH]);
+      expect(rowOf(s, b4.id, { painFlagged: pain }).cells.load).toBe('100');
+      // The screen knows the flag: no carry, so no marker.
+      s = apply(s, saveDraftCommand({ setId: b4.id, values: values(kg(105), 8) }, at(700)));
+      expect(rowOf(s, b4.id, { painFlagged: pain }).cells.load).toBe('105');
+      const sheet = buildPlannedSetEditView(s, b4.id, { reps: { min: 6, max: 6 } }, { painFlagged: pain });
+      expect(sheet?.patch).toMatchObject({ reps: { min: 6, max: 6 } });
+      s = editPlanned(s, b4.id, { reps: { min: 6, max: 6 } }, 710);
+      expect(now(s, b4.id).draft?.load).toEqual(kg(105));
+      expect(rowOf(s, b4.id, { painFlagged: pain }).cells.load).toBe('105');
+    });
+
+    it('flagged bench: the screen’s unsaved 105 survives a reps change', () => {
+      const fx = loggedB2At105();
+      let s = fx.s;
+      const { b4 } = fx;
+      const version = now(s, b4.id).version;
+      s = editPlanned(s, b4.id, { reps: { min: 6, max: 6 } }, 710);
+      const edits = reconcileDraftEdits({ setId: b4.id, values: values(kg(105), 8), setVersion: version }, s);
+      expect(edits?.values.load).toEqual(kg(105));
+    });
+
+    it('flagged bench: Edit set with nothing changed sends nothing', () => {
+      const { s, b4 } = loggedB2At105();
+      expect(buildPlannedSetEditView(s, b4.id, {}, { painFlagged: new Set([BENCH]) })?.changed).toBe(false);
+    });
   });
 });

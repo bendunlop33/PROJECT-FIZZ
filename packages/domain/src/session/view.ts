@@ -2,6 +2,7 @@ import type { Load, SessionAggregate, SessionExercise, SetExclusion, SetValues, 
 import { restOverrunMs, restRemainingMs } from '../rest';
 import { toMs } from '../time';
 import { carriedLoad, type CarryOptions } from './carry';
+import { draftAsValues } from './pending-values';
 
 /**
  * Derived phase (flow §3.1). "Result saved" is not a stored phase: the commit
@@ -142,7 +143,8 @@ export function prefillDraft(
 ): { values: SetValues; source: DraftSource } {
   const set = state.sets.find((s) => s.id === setId);
   if (!set) return { values: EMPTY, source: 'none' };
-  if (set.draft) return { values: set.draft, source: 'draft' };
+  // A load saved as the carry follows the carry: after it ends (Undo of that log) the target (CS1).
+  if (set.draft) return { values: draftAsValues(set.draft, set.planned, set.draft.loadCarried === true ? carriedLoad(state, set, opts) : null), source: 'draft' };
   const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
 
   const done = state.sets

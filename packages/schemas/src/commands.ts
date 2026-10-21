@@ -14,7 +14,7 @@ import {
 import { EquipmentInstanceSchema } from './equipment';
 import { EquipmentKindSchema, LateralitySchema, MeasurementSchema } from './exercise';
 import { SetTypeSchema } from './routine';
-import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, RuleDecisionSchema, SessionFeelValueSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema } from './session';
+import { PlannedSetSchema, PlannedSnapSchema, ResolvedRestSchema, RuleDecisionSchema, SessionFeelValueSchema, SetExclusionsSchema, SetSideSchema, SetValuesSchema, DraftValuesSchema } from './session';
 
 /**
  * Typed commands for the active-session state machine. Every mutating command
@@ -51,7 +51,7 @@ export const SaveDraftCommandSchema = z.object({
   type: z.literal('save_draft'),
   ...base,
   setId: IdSchema,
-  values: SetValuesSchema,
+  values: DraftValuesSchema,
   /** The side chosen for a unilateral set before it is logged; absent = unchanged. */
   side: SetSideSchema.optional(),
   /**

@@ -1,4 +1,4 @@
-import type { Load, PlannedSet, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
+import type { DraftValues, Load, PlannedSet, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
 import { targetShort } from '../display';
 
 /**
@@ -31,12 +31,13 @@ const sameLoad = (a: Load | null, b: Load | null): boolean => (a === null ? b ==
  * 100 over a carried 105 sticks), else when it differs from the target.
  */
 export function pendingOwnValues(set: Pick<WorkoutSet, 'status' | 'draft' | 'planned'>, ex: Pick<SessionExercise, 'unit' | 'loadConvention' | 'measurement'>, carry: Load | null = null): PendingOwnValues {
-  const d: SetValues | null = set.draft;
+  const d: DraftValues | null = set.draft;
   if (set.status !== 'pending' || d === null) return {};
   const p = set.planned;
   const own: PendingOwnValues = {};
   const load = d.load;
-  if (ex.loadConvention !== 'bodyweight' && load !== null && load.unit === ex.unit && load.convention === ex.loadConvention && !sameLoad(load, carry ?? p.load)) {
+  // A load saved as the carry (`loadCarried`) was never his: after the carry ends the row shows its target (CS1).
+  if (d.loadCarried !== true && ex.loadConvention !== 'bodyweight' && load !== null && load.unit === ex.unit && load.convention === ex.loadConvention && !sameLoad(load, carry ?? p.load)) {
     // `added` with nothing entered is the bodyweight row's own `BW`, not an edit.
     if (!(load.convention === 'added' && load.value === 0 && p.load === null)) own.load = load;
   }
@@ -110,13 +111,41 @@ export function changedTargetFields(before: Pick<PlannedSet, 'load' | 'reps' | '
  * So a reps change in the pop-up never drops his typed weight, and a typed
  * weight never drops his reps. Pure; `values` is never mutated.
  */
-export function draftWithNewTarget(values: SetValues, planned: Pick<PlannedSet, 'load' | 'reps' | 'durationS' | 'distanceM'>, fields: readonly TargetValueField[]): SetValues {
-  const next: SetValues = { ...values };
+export function draftWithNewTarget<V extends DraftValues>(values: V, planned: Pick<PlannedSet, 'load' | 'reps' | 'durationS' | 'distanceM'>, fields: readonly TargetValueField[]): V {
+  const next: V = { ...values };
   for (const f of fields) {
-    if (f === 'load') next.load = planned.load;
+    if (f === 'load') {
+      next.load = planned.load;
+      delete next.loadCarried;
+    }
     else if (f === 'reps') next.reps = planned.reps?.max ?? null;
     else if (f === 'durationS') next.durationS = planned.durationS;
     else next.distanceM = planned.distanceM ?? null;
   }
   return next;
+}
+
+/**
+ * A saved draft's values as a result to log or prefill (CS1): the
+ * `loadCarried` marker dropped, and a carried load replaced by what the row
+ * shows now (`carry`: the load his last logged set carries; none: the target).
+ */
+export function draftAsValues(d: DraftValues, p: Pick<PlannedSet, 'load'>, carry: Load | null): SetValues {
+  if (d.loadCarried !== true) {
+    if (!('loadCarried' in d)) return d;
+    const out = { ...d };
+    delete out.loadCarried;
+    return out;
+  }
+  const out: DraftValues = { ...d, load: carry ?? p.load };
+  delete out.loadCarried;
+  return out;
+}
+
+/** The draft to save for the screen's values (CS1): marked `loadCarried` when its load is the carry the row showed. */
+export function markCarriedLoad(values: SetValues, carry: Load | null): DraftValues {
+  const out: DraftValues = { ...values };
+  delete out.loadCarried;
+  if (carry !== null && sameLoad(values.load, carry)) out.loadCarried = true;
+  return out;
 }

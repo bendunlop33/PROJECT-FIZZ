@@ -21,6 +21,8 @@ import type { targetShort } from '../display';
  * - its load target is the one it started with: Ben never set its load
  *   (`edit_planned_set`), and no coach or rule change came after the log
  *   (a newer target wins);
+ * - the logged set's load differs from its target before any load Ben set
+ *   on it himself (`loadBeforeBensEdits`, review CS2);
  * - same unit and convention throughout;
  * - not heavier while the movement has a pain flag (rule 9);
  * - the row's equipment can make it, rounded toward easier, never past its max (rule 4).
@@ -31,14 +33,33 @@ const sameLoad = (a: Load | null, b: Load | null): boolean => (a === null ? b ==
 
 const NEVER_CARRIES: ReadonlySet<WorkoutSet['setType']> = new Set(['warmup', 'drop']);
 
+/** An `edit_planned_set` record set the load (its `fields`; an older record without them: the load moved). */
+const editSetLoad = (e: PlannedSetEdit, after: PlannedSet): boolean => (e.fields !== undefined ? e.fields.includes('load') : !sameLoad(e.before.planned.load, after.load));
+
 /** Ben set this pending set's load himself (`edit_planned_set`), at any point in its edit chain. */
-function benSetLoad(p: PlannedSet): boolean {
+export function benSetLoad(p: PlannedSet): boolean {
   let cur: PlannedSet = p;
   for (let e: PlannedSetEdit | undefined = cur.edit; e !== undefined; e = cur.edit) {
-    if (e.fields !== undefined ? e.fields.includes('load') : !sameLoad(e.before.planned.load, cur.load)) return true;
+    if (editSetLoad(e, cur)) return true;
     cur = e.before.planned;
   }
   return false;
+}
+
+/**
+ * The load target a set had before Ben set its load himself (review CS2,
+ * 21 Oct): his own target on the logged set is his choice, not the plan, so
+ * set 2 raised to 105 in Edit set or the pop-up and logged at 105 carries
+ * like set 2 logged at 105 against 100. No edit of his: the target as is.
+ */
+function loadBeforeBensEdits(p: PlannedSet): Load | null {
+  let base: Load | null = p.load;
+  let cur: PlannedSet = p;
+  for (let e: PlannedSetEdit | undefined = cur.edit; e !== undefined; e = cur.edit) {
+    if (editSetLoad(e, cur)) base = e.before.planned.load;
+    cur = e.before.planned;
+  }
+  return base;
 }
 
 /** Something in the session already says this movement hurts: a set logged with `pain`, or a target held or halted for pain. */
@@ -78,7 +99,7 @@ export function carriedLoad(state: Pick<SessionAggregate, 'sets' | 'exercises' |
     .filter((s) => s.sessionExerciseId === set.sessionExerciseId && s.setType === set.setType && s.index < set.index && s.status === 'completed' && s.actual !== null && s.completedAt !== null)
     .sort((a, b) => toMs(b.completedAt?.utc ?? '') - toMs(a.completedAt?.utc ?? ''))[0];
   const from = logged?.actual?.load ?? null;
-  const fromTarget = logged?.planned.load ?? null;
+  const fromTarget = logged === undefined ? null : loadBeforeBensEdits(logged.planned);
   if (!logged || from === null || fromTarget === null) return null;
   if (from.unit !== ex.unit || from.convention !== ex.loadConvention || fromTarget.unit !== ex.unit || fromTarget.convention !== ex.loadConvention) return null;
   // Logged as planned: nothing of his to carry.
@@ -103,6 +124,23 @@ export function carriedLoad(state: Pick<SessionAggregate, 'sets' | 'exercises' |
 }
 
 type CarryState = Pick<SessionAggregate, 'sets' | 'exercises' | 'session'>;
+
+/**
+ * Ben has values of his own on this pending set's draft, judged where his
+ * pain flags aren't known (the reducer, and the screen's reconcile; review
+ * CS4). The carry differs with and without a flag (a heavier one is blocked
+ * on a flagged movement), so a draft counts as his when it is his against
+ * either: a typed 105 on a flagged bench (no carry shown) and a typed 100 over
+ * a carried 105 both stay. A draft equal to an unshown carry is kept too; that
+ * does no harm.
+ */
+export function hasOwnValuesAnyFlags(state: CarryState, set: WorkoutSet): boolean {
+  const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
+  if (ex === undefined) return false;
+  const unflagged = carriedLoad(state, set);
+  const flagged = carriedLoad(state, set, { painFlagged: new Set([ex.exerciseId]) });
+  return Object.keys(pendingOwnValues(set, ex, unflagged)).length > 0 || Object.keys(pendingOwnValues(set, ex, flagged)).length > 0;
+}
 type Row = Pick<SessionExercise, 'unit' | 'loadConvention' | 'measurement'>;
 
 /**
