@@ -277,6 +277,61 @@ export function selectOnShow(round: Pick<Round, 'current' | 'firstPendingSetId'>
   return round.firstPendingSetId;
 }
 
+/**
+ * Round-change selects, one at a time (wo-v3 reviews spec S2, logic S1):
+ * while one is in flight a later pick waits (replacing any earlier wait), and
+ * is sent when the first lands, with the version it left. A pick with nothing
+ * to select (a done round) cancels the wait. So swipes 2 → 3 → 4 end on 4.
+ */
+export interface SelectQueue {
+  inFlight: string | null;
+  queued: string | null;
+}
+
+export const SELECT_IDLE: SelectQueue = { inFlight: null, queued: null };
+
+export function queueSelect(q: SelectQueue, setId: string | null): { q: SelectQueue; send: string | null } {
+  if (q.inFlight === null) return setId === null ? { q, send: null } : { q: { inFlight: setId, queued: null }, send: setId };
+  return { q: { inFlight: q.inFlight, queued: setId === q.inFlight ? null : setId }, send: null };
+}
+
+/** The select in flight landed (or was refused: `ok` false drops the wait; the pill then offers `Go to …`). */
+export function selectLanded(q: SelectQueue, ok: boolean): { q: SelectQueue; send: string | null } {
+  if (!ok || q.queued === null) return { q: SELECT_IDLE, send: null };
+  return { q: { inFlight: q.queued, queued: null }, send: q.queued };
+}
+
+/**
+ * Whether a change of the open row brings the page back to its round
+ * (auto-advance, §3): yes on a log, untick, delete or relaunch; no when a
+ * round change's own select made it (it would bounce Ben back mid-swipe).
+ */
+export function resetsPick(activeSetId: string | null, roundSelects: ReadonlySet<string>): boolean {
+  return activeSetId === null || !roundSelects.has(activeSetId);
+}
+
+/**
+ * The Log pill on a round that has sets to do but isn't current yet (a
+ * select in flight or refused, or a work timer running on another round):
+ * it never says Log, since tapping it doesn't log (logic S2). `Go to Set 1`
+ * / `Go to 3a · Set 1` selects; with a work timer running, `Back to round 2`.
+ */
+export function offRoundPill(round: Round, o: { timerRound: number | null }): { kind: 'select'; label: string } | { kind: 'back'; label: string; index: number } {
+  if (o.timerRound !== null) return { kind: 'back', label: `Back to round ${String(o.timerRound + 1)}`, index: o.timerRound };
+  for (const ex of round.exercises) {
+    const row = ex.rows.find((r) => r.setId === round.firstPendingSetId);
+    if (row !== undefined) return { kind: 'select', label: `Go to ${round.superset ? `${ex.label} · ` : ''}${row.stepName}` };
+  }
+  return { kind: 'select', label: `Go to round ${String(round.n)}` };
+}
+
+/** The round whose set has a work timer running or paused (it stays current until stopped), else null. */
+export function timerRoundIndex(rounds: readonly Pick<Round, 'exercises'>[], wi: { setId: string; status: string } | null): number | null {
+  if (wi === null || (wi.status !== 'running' && wi.status !== 'paused')) return null;
+  const i = rounds.findIndex((r) => r.exercises.some((e) => e.rows.some((x) => x.setId === wi.setId)));
+  return i >= 0 ? i : null;
+}
+
 /** A swipe (left: next, right: previous) or a VoiceOver action, kept within the rounds. */
 export function stepRound(index: number, direction: 'next' | 'prev', count: number): number | null {
   const to = index + (direction === 'next' ? 1 : -1);

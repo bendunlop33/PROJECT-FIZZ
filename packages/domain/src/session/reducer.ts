@@ -762,6 +762,9 @@ function handleSetActiveSet(state: SessionAggregate, cmd: CommandOf<'set_active_
   if (!set) return fail('set_not_found', 'Set not found.');
   if (set.status !== 'pending') return fail('set_not_pending', 'Only a pending set can become active.');
   if (state.session.activeSetId === set.id) return { ok: true, state, events: [] };
+  // A running (or paused) work timer stays on its set: Log would otherwise log another set while it runs (wo-v3 logic S3).
+  const wi = state.workInterval;
+  if (wi !== null && wi.setId !== set.id && (wi.status === 'running' || wi.status === 'paused')) return fail('work_interval_running', 'Stop the work timer first.');
   return { ok: true, state: bumpVersion(state, set.id), events: [{ type: 'ActiveSetChanged', setId: set.id }] };
 }
 

@@ -76,7 +76,7 @@ import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
 import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
-import { buildRounds, clockText, lastLogMs, overTimeText, overviewRows, overviewTitle, positionKey, roundPrimary, roundStrip, selectOnShow, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, upNextText, whyView } from '../../workout/rounds';
+import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
 import { ChatButton, CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
 import { WorkoutRoundsSheet, WhySheet } from './RoundSheets';
 import { RestSetBlocks, SetPager, Swipeable, ViewedSetCard } from './SetPager';
@@ -149,6 +149,10 @@ export function WorkoutScreen() {
   const [pickedRound, setPickedRound] = useState<string | null>(null);
   /** A select sent by a round change is in flight: Log waits for it (it logs the shown round's set). */
   const [selecting, setSelecting] = useState(false);
+  /** Round-change selects go one at a time; the latest pick waits (reviews spec S2, logic S1). */
+  const selectQ = useRef<SelectQueue>(SELECT_IDLE);
+  /** Sets a round change made current: that change keeps Ben's pick (no bounce back mid-swipe). */
+  const roundSelects = useRef(new Set<string>());
   const [overviewOpen, setOverviewOpen] = useState(false);
   /** `Why?` under an exercise (§2): the round and the exercise in it. */
   const [whyFor, setWhyFor] = useState<{ roundKey: string; index: number } | null>(null);
@@ -468,9 +472,14 @@ export function WorkoutScreen() {
   // v3: one round per block, 3a / 3b in a superset, with the builder's works line (workout-table-v3 §1–§2).
   const worksLines = data === 'loading' || data === null ? undefined : data.worksLines;
   const rounds = useMemo(() => (table === null ? [] : buildRounds(table, (id) => worksLines?.[id] ?? null)), [table, worksLines]);
-  // Any change of the open row (a log, an untick, a select, a delete) brings the page back to its round (auto-advance, §3).
+  const timerRound = timerRoundIndex(rounds, data === 'loading' || data === null ? null : data.aggregate.workInterval);
+  // A change of the open row (a log, an untick, a delete, a row select) brings the page back to its round (auto-advance, §3);
+  // one a round change's own select made keeps the round Ben is on, even when an earlier select lands late.
   useEffect(() => {
-    setPickedRound(null);
+    if (resetsPick(activeSetId, roundSelects.current)) {
+      roundSelects.current.clear();
+      setPickedRound(null);
+    }
   }, [activeSetId]);
 
   // Edits belong to one set; when the active set changes, they are dropped (they were saved as a draft).
@@ -1047,19 +1056,24 @@ export function WorkoutScreen() {
   }
 
   /** A non-current row (or its ring) only becomes the open row: `set_active_set`, never a log (Ben, decision 4). */
-  async function selectRow(setId: string, o: { keepAfterSet?: boolean } = {}): Promise<boolean> {
+  async function selectRow(setId: string, o: { keepAfterSet?: boolean; version?: number; onLanded?: (version: number) => void } = {}): Promise<boolean> {
     if (o.keepAfterSet !== true) setAfterSetFor(null);
     if (correction !== null) void saveCorrection();
     editCell({ kind: 'selected' });
     // The open row keeps its unsaved edit: saved now, not left to the 300 ms debounce the select would cancel.
+    // A queued round select (`o.version`) goes after one that already saved it.
     const r = await selectRowFlow({
       setId,
-      version: session.version,
-      draft: edits !== null ? saveDraftCommand(edits, services.now()) : null,
+      version: o.version ?? session.version,
+      draft: edits !== null && o.version === undefined ? saveDraftCommand(edits, services.now()) : null,
       at: services.now(),
       opId: newUuid(),
       save: (cmd) => services.workout.dispatch(session.id, cmd),
-      select: run,
+      select: async (cmd) => {
+        const out = await run(cmd);
+        if (out.ok) o.onLanded?.(out.aggregate.session.version);
+        return out;
+      },
     });
     if (!r.ok && !r.quiet) showToast({ icon: 'info.circle', text: refusalText(r.code, r.message) });
     return r.ok;
@@ -1081,12 +1095,30 @@ export function WorkoutScreen() {
     if (target === undefined) return;
     closeCellEditors();
     setPickedRound(target.key);
-    const sel = selectOnShow(target);
-    if (sel === null) return;
+    // A running work timer keeps its set current: the round only shows (logic S3; the domain refuses the select too).
+    if (timerRound !== null) return;
+    const { q, send } = queueSelect(selectQ.current, selectOnShow(target));
+    selectQ.current = q;
+    if (send !== null) sendRoundSelect(send, undefined);
+  }
+
+  /** One round-change select; when it lands, the pick that waited meanwhile goes next with the version it left. */
+  function sendRoundSelect(setId: string, version: number | undefined) {
+    roundSelects.current.add(setId);
     setSelecting(true);
-    void selectRow(sel, { keepAfterSet: true }).finally(() => {
-      setSelecting(false);
-    });
+    let landed: number | undefined;
+    void selectRow(setId, { keepAfterSet: true, ...(version !== undefined ? { version } : {}), onLanded: (v) => (landed = v) }).then(
+      (ok) => {
+        const next = selectLanded(selectQ.current, ok && landed !== undefined);
+        selectQ.current = next.q;
+        if (next.send !== null) sendRoundSelect(next.send, landed);
+        else setSelecting(false);
+      },
+      () => {
+        selectQ.current = SELECT_IDLE;
+        setSelecting(false);
+      },
+    );
   }
 
   /**
@@ -2250,11 +2282,15 @@ export function WorkoutScreen() {
   // refused) never logs another round's set unseen: Log selects its first set instead.
   const roundStep = tableMode ? roundPrimary({ rounds, shown, primary: view.primary }) : { kind: 'view' as const };
   const offRound = tableMode && shownRound !== undefined && shownRound.hasPending && !shownRound.current;
+  // Never `Log …` for a set that tapping won't log (logic S2): `Go to Set 1`, or `Back to round 2` while a work timer runs there.
+  const offPill = offRound ? offRoundPill(shownRound, { timerRound }) : null;
   const barPrimary =
     back.kind === 'back' || !tableMode
       ? primary
-      : offRound
-        ? { label: primary.label, busy: selecting, onPress: () => { goToRound(shown); } }
+      : offPill !== null
+        ? offPill.kind === 'back'
+          ? { label: offPill.label, onPress: () => { goToRound(offPill.index); } }
+          : { label: offPill.label, busy: selecting, onPress: () => { goToRound(shown); } }
         : roundStep.kind === 'step'
           ? { ...primary, label: roundStep.label }
           : roundStep.kind === 'next_round'

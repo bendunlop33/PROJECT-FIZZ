@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SessionAggregate } from '@fizz/schemas';
 import { buildActiveSetView, buildPlannedSetEditView, buildSetEditView, buildWorkoutTableView, exerciseCardFacts, plusSetType, reduceSession, setStepName, setSteps, startWorkout, type ActiveViewInput } from '../src/index';
 import { at, barbell, dumbbells, exercise, GYM, idGen, kg, ms, profile, routine, routineExercise, template, values } from './fixtures';
-import { apply, logCmd, setsFor, startFixture, BENCH } from './session-fixture';
+import { apply, expectError, logCmd, setsFor, startFixture, BENCH, HANG } from './session-fixture';
 
 /**
  * wo-v3 reviews B1/B2: one numbering for the whole active workout. The v3
@@ -118,5 +118,20 @@ describe('＋ Set copies the last working set, not a drop (wo-v3 logic S5)', () 
   it('only warm-ups (or drops): copy the last set as before', () => {
     const state = start(['warmup', 'warmup']);
     expect(plusSetType(state.sets, state.exercises[0]?.id ?? '')).toBeNull();
+  });
+});
+
+describe('a round change never moves the current set off a running work timer (wo-v3 logic S3)', () => {
+  it('set_active_set is refused while another set\'s work timer runs; fine on the timed set itself and after Stop', () => {
+    let s = startFixture().state;
+    const [h1] = setsFor(s, HANG);
+    const [, b1] = setsFor(s, BENCH);
+    s = apply(s, { type: 'set_active_set', at: at(1), opId: 'act', setId: h1?.id ?? '', expectedVersion: s.session.version });
+    s = apply(s, { type: 'start_work_interval', at: at(2), opId: 'w', setId: h1?.id ?? '', durationS: 45 });
+    expectError(reduceSession(s, { type: 'set_active_set', at: at(3), opId: 'act-2', setId: b1?.id ?? '', expectedVersion: s.session.version }), 'work_interval_running');
+    // Selecting the timed set itself is a no-op, not a refusal.
+    expect(reduceSession(s, { type: 'set_active_set', at: at(3), opId: 'act-3', setId: h1?.id ?? '', expectedVersion: s.session.version }).ok).toBe(true);
+    s = apply(s, { type: 'stop_work_interval', at: at(20), opId: 'ws', setId: h1?.id ?? '' });
+    expect(reduceSession(s, { type: 'set_active_set', at: at(21), opId: 'act-4', setId: b1?.id ?? '', expectedVersion: s.session.version }).ok).toBe(true);
   });
 });

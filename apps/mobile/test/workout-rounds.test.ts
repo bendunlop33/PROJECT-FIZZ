@@ -13,9 +13,14 @@ import {
   lastTimeText,
   overTimeText,
   overviewRows,
+  offRoundPill,
   overviewTitle,
   pageOffsetFor,
   positionKey,
+  queueSelect,
+  resetsPick,
+  SELECT_IDLE,
+  selectLanded,
   roundPrimary,
   roundRows,
   roundStrip,
@@ -26,6 +31,7 @@ import {
   stepLabel,
   stepRound,
   timerBarMode,
+  timerRoundIndex,
   upNextText,
   whyView,
 } from '../src/workout/rounds';
@@ -521,5 +527,63 @@ describe('Why? sheet (§2)', () => {
   it('last line without history reads nothing', () => {
     expect(lastTimeText('No previous result')).toBeNull();
     expect(lastTimeText(`Last 1 Oct: 100${NBSP}×${NBSP}8, 8`)).toBe('1 Oct · 100 × 8, 8');
+  });
+});
+
+describe('round changes: one select at a time, no bounce, never a Log that only selects (spec S2, logic S1–S3)', () => {
+  it('fast swipes 2 → 3 → 4: the select for 4 waits for 3, then goes with its version; the page stays on 4', () => {
+    let q = SELECT_IDLE;
+    let out = queueSelect(q, 'r3');
+    expect(out.send).toBe('r3');
+    q = out.q;
+    out = queueSelect(q, 'r4');
+    expect(out.send).toBeNull();
+    q = out.q;
+    expect(q).toEqual({ inFlight: 'r3', queued: 'r4' });
+    // The select for 3 lands late: it doesn't reset Ben's pick (it was a round change's own select)…
+    const sent = new Set(['r3']);
+    expect(resetsPick('r3', sent)).toBe(false);
+    // …and 4's goes next.
+    const landed = selectLanded(q, true);
+    expect(landed.send).toBe('r4');
+    expect(selectLanded(landed.q, true)).toEqual({ q: SELECT_IDLE, send: null });
+  });
+  it('a pick with nothing to select (a done round) cancels the wait; a refused select drops it', () => {
+    let out = queueSelect(SELECT_IDLE, 'r3');
+    out = queueSelect(out.q, 'r4');
+    out = queueSelect(out.q, null);
+    expect(out.q).toEqual({ inFlight: 'r3', queued: null });
+    expect(selectLanded(out.q, true).send).toBeNull();
+    const again = queueSelect(queueSelect(SELECT_IDLE, 'r3').q, 'r4');
+    expect(selectLanded(again.q, false)).toEqual({ q: SELECT_IDLE, send: null });
+    expect(queueSelect(SELECT_IDLE, null)).toEqual({ q: SELECT_IDLE, send: null });
+  });
+  it('a log, untick, delete or relaunch brings the page back to the open row', () => {
+    expect(resetsPick('logged-next', new Set(['r3']))).toBe(true);
+    expect(resetsPick(null, new Set())).toBe(true);
+  });
+  it('the pill on a round not current yet never says Log: Go to Set 1 / Go to 3a · Set 1 / Back to round 2 while a work timer runs', () => {
+    const rs = buildRounds(
+      view([
+        card('Plank', [row({ state: 'open', setId: 'plank-1' })]),
+        card('Bench', [row({ setType: 'warmup', state: 'pending', setId: 'w' }), row({ setId: 'b1' })]),
+        superset([
+          { name: 'Fly', rows: [row({ setId: 'f1' })] },
+          { name: 'Crunch', rows: [row({ setId: 'c1' })] },
+        ]),
+      ]),
+      works,
+    );
+    const r = (i: number) => {
+      const x = rs[i];
+      if (x === undefined) throw new Error('no round');
+      return x;
+    };
+    expect(offRoundPill(r(1), { timerRound: null })).toEqual({ kind: 'select', label: 'Go to Warm-up' });
+    expect(offRoundPill(r(2), { timerRound: null })).toEqual({ kind: 'select', label: 'Go to 3a · Set 1' });
+    expect(timerRoundIndex(rs, { setId: 'plank-1', status: 'running' })).toBe(0);
+    expect(timerRoundIndex(rs, { setId: 'plank-1', status: 'stopped' })).toBeNull();
+    expect(timerRoundIndex(rs, null)).toBeNull();
+    expect(offRoundPill(r(1), { timerRound: 0 })).toEqual({ kind: 'back', label: 'Back to round 1', index: 0 });
   });
 });
