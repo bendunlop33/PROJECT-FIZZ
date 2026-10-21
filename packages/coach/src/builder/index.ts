@@ -21,3 +21,4 @@ export const BUILDER_STATUS_WORD: Readonly<Record<BuilderCoachReach, string>> = 
   offline: 'Offline',
   not_connected: 'Coach not connected',
 };
+export * from './weekly';

@@ -46,6 +46,10 @@ export interface ClaimFacts {
   plan: Set<number>;
   /** Numbers in Ben's own words: he may be quoted back. */
   ben: Set<number>;
+  /** (Weekly review) Session and day counts code gave (`3 sessions`, `2 workouts`); absent: none, so any is hidden. */
+  sessions?: Set<number>;
+  /** (Weekly review) Run counts code gave (`2 runs`); absent: none. */
+  runs?: Set<number>;
 }
 
 /** What the plan check adds (§2.9 Plan section): its totals, length and pairs. */
@@ -70,8 +74,10 @@ const LB_PER_KG = 2.20462;
 const EQUIPMENT_WORDS = /^(barbell|dumbbell|cable|machine|smith|ez-bar|ez bar|kettlebell|seated|standing|incline|decline|flat|weighted|assisted)\s+/;
 
 const lower = (t: string): string => t.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+/** Lower-case, apostrophes and spaces normalised: how the claim check matches names. */
+export const claimLower = lower;
 
-function exerciseNames(name: string): string[] {
+export function exerciseNames(name: string): string[] {
   const n = lower(name);
   const out = new Set([n]);
   let m = n;
@@ -143,7 +149,7 @@ export function claimFacts(workouts: readonly BuilderWorkout[], base: ClaimBase)
   return f;
 }
 
-type Kind = 'plan' | 'load' | 'sets' | 'exercises' | 'compound' | 'isolation' | 'minutes' | 'reps' | 'rpe' | 'of' | 'bare' | 'never';
+type Kind = 'plan' | 'load' | 'sets' | 'exercises' | 'compound' | 'isolation' | 'minutes' | 'reps' | 'rpe' | 'of' | 'sessions' | 'runs' | 'bare' | 'never';
 
 const AFTER: readonly [RegExp, Kind][] = [
   [/^\s?(?:kgs?|kilos?|lbs?|pounds?)\b/, 'load'],
@@ -155,6 +161,8 @@ const AFTER: readonly [RegExp, Kind][] = [
   [/^\s?isolations?\b/, 'isolation'],
   [/^\s?(?:min|mins|minutes?)\b/, 'minutes'],
   [/^\s?(?:reps?|repetitions?)\b/, 'reps'],
+  [/^\s?(?:(?:planned|plan|lifting|gym|training|hard|easy|good)\s+)?(?:sessions?|workouts?|days?)\b/, 'sessions'],
+  [/^\s?runs?\b/, 'runs'],
   [/^\s?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/, 'never'],
   [/^\s?(?:weeks?|days?|months?|years?|sessions?|times?)\b/, 'never'],
 ];
@@ -278,6 +286,12 @@ export function claimSentenceOk(sentence: string, f: ClaimFacts): boolean {
       case 'minutes':
         ok = has(f.minutes, n);
         break;
+      case 'sessions':
+        ok = has(f.sessions ?? [], n);
+        break;
+      case 'runs':
+        ok = has(f.runs ?? [], n);
+        break;
       case 'bare':
         // `Mid chest 7`, `Triceps at 7`: a named focus or group's set count.
         ok = named.some((e) => has(e.sets, n));
@@ -294,7 +308,8 @@ export function checkClaims(text: string | null | undefined, f: ClaimFacts): Che
   if (t === '') return { shown: null, hidden: [] };
   const kept: string[] = [];
   const hidden: string[] = [];
-  for (const s of t.split(/(?<=[.!?])\s+/)) {
+  // `est. 1RM` is one sentence: an abbreviation's full stop doesn't end it.
+  for (const s of t.split(/(?<=[.!?])(?<!\b(?:est|approx|e\.g|i\.e)\.)\s+/)) {
     const x = s.trim();
     if (x === '') continue;
     (claimSentenceOk(x, f) ? kept : hidden).push(x);
