@@ -21,6 +21,7 @@ import {
   starterChips,
   offerLabel,
   isAtBottom,
+  followOffset,
   replyText,
   stampedKeys,
   transcriptFollow,
@@ -128,6 +129,11 @@ export function CoachSheetScreen() {
   const scroll = useRef<ScrollView>(null);
   /** Design pass 4.1: the transcript follows new content only while Ben is at its end. */
   const followState = useRef(transcriptFollow()).current;
+  /**
+   * 21 Oct (Ben's Build B report): the transcript's size and the newest turn's top, so following new content shows the
+   * newest turn from its start (an outcome line or card never half under the top edge, `followOffset`).
+   */
+  const transcript = useRef<{ contentHeight: number; viewportHeight: number; turnTop: number | null }>({ contentHeight: 0, viewportHeight: 0, turnTop: null });
   const keyboardUp = useKeyboardVisible();
   const { fontScale, height: windowHeight } = useWindowDimensions();
   /**
@@ -641,7 +647,12 @@ export function CoachSheetScreen() {
   const follow = (): void => {
     // Review S2: another conversation (or a new one) opens at its end.
     followState.thread(threadId);
-    if (followState.follow(contentCount, starters)) scroll.current?.scrollToEnd({ animated: false });
+    if (followState.follow(contentCount, starters)) scroll.current?.scrollTo({ y: followOffset(transcript.current), animated: false });
+  };
+  /** The newest turn starts at the live turn, else at Ben's last message. */
+  const lastBenKey = live !== null ? null : ([...rows].reverse().find((r) => r.kind === 'ben')?.key ?? null);
+  const turnTopAt = (y: number): void => {
+    transcript.current.turnTop = theme.components.screenMargin + y;
   };
   const stamps = stampedKeys(rows, (utc, tz) => formatTime(toMs(utc), tz));
 
@@ -653,7 +664,8 @@ export function CoachSheetScreen() {
           accessibilityRole="button"
           accessibilityLabel={`Back to workout. ${workout.bar}`}
           onPress={() => { navigation.goBack(); }}
-          style={{ marginHorizontal: theme.components.screenMargin, minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md }}
+          // 21 Oct: shorter while the keyboard is up, and a gap below it so the transcript never starts flush under it.
+          style={{ marginHorizontal: theme.components.screenMargin, marginBottom: theme.space['1'], minHeight: keyboardUp ? 44 : 52, flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], paddingHorizontal: theme.space['3'], backgroundColor: theme.colors['bg.surface'], borderRadius: theme.radius.md }}
         >
           <Icon name="timer" size={18} />
           <AppText variant="callout" numeric style={{ flex: 1 }}>
@@ -684,10 +696,19 @@ export function CoachSheetScreen() {
 
       <ScrollView
         ref={scroll}
+        // 21 Oct (Ben's Build B report): the transcript takes the space left below the status pill and clips at its own
+        // top edge, with a hairline there, so nothing in it is ever drawn under the pill.
+        style={{ flex: 1, borderTopWidth: theme.dividerWidth, borderTopColor: theme.colors['border.divider'] }}
         // Design pass 4.1: follow new content, or keep the end in view when the keyboard resizes the transcript,
         // only while Ben is at the end; a Why? opened higher up never jumps the view.
-        onContentSizeChange={follow}
-        onLayout={follow}
+        onContentSizeChange={(_w, h) => {
+          transcript.current.contentHeight = h;
+          follow();
+        }}
+        onLayout={(e) => {
+          transcript.current.viewportHeight = e.nativeEvent.layout.height;
+          follow();
+        }}
         onScroll={(e) => {
           const n = e.nativeEvent;
           followState.scrolled(isAtBottom({ contentOffsetY: n.contentOffset.y, contentHeight: n.contentSize.height, viewportHeight: n.layoutMeasurement.height }));
@@ -724,8 +745,8 @@ export function CoachSheetScreen() {
         ) : null}
         {building !== null ? <PendingBuildCard focus={building.focus} dayName={building.dayName} minutes={building.minutes} startedAtMs={building.startedAtMs} nowMs={now} onCancel={() => { if (live !== null) services.coach.stop(live.turnId); }} /> : null}
         {rows.map((r) => (
+          <View key={r.key} onLayout={r.key === lastBenKey ? (e) => { turnTopAt(e.nativeEvent.layout.y); } : undefined}>
           <Row
-            key={r.key}
             row={r}
             undoBlocked={undoBlocked}
             onUndo={(id) => void undo(id)}
@@ -745,8 +766,13 @@ export function CoachSheetScreen() {
               undoSave: (q) => void undoAnswerSave(q),
             }}
           />
+          </View>
         ))}
-        {live !== null ? <LiveRows live={live} now={now} /> : null}
+        {live !== null ? (
+          <View onLayout={(e) => { turnTopAt(e.nativeEvent.layout.y); }}>
+            <LiveRows live={live} now={now} />
+          </View>
+        ) : null}
         {askPain ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'] }}>
             <AppText variant="callout" style={{ flex: 1 }}>
@@ -970,9 +996,10 @@ function OutcomeRow({ text, icon, retry, why, onRetry }: { text: string; icon: V
   const [open, setOpen] = useState(false);
   return (
     <View style={{ gap: theme.space['1'] }}>
-      <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
+      {/* 21 Oct: the line wraps, and Why? / Try again move to the next line when there's no room (large text). */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.space['2'], alignItems: 'center' }}>
         <Icon name={icon} size={16} />
-        <AppText variant="callout" color="text.secondary" style={{ flex: 1 }}>
+        <AppText variant="callout" color="text.secondary" style={{ flexGrow: 1, flexShrink: 1, flexBasis: 160 }}>
           {text}
         </AppText>
         {why !== null ? (

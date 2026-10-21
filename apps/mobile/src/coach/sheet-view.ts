@@ -8,9 +8,9 @@
  * (`renderActionResult`), never from the model's words (PM decision 10 Oct).
  */
 
-import { memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
+import { failureWhy, memoryTextKind, renderActionResult, type CoachTurnProgress, type ReplyItem } from '@fizz/coach';
 import { customExerciseLine, isInHistory, progressPeriodPhrase, rangeText, toMs } from '@fizz/domain';
-import type { ActionRecord, BenInput, CustomExerciseFields, CoachMessage, CoachTurn, CoachTurnError, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
+import type { ActionRecord, BenInput, CustomExerciseFields, CoachMessage, CoachTurn, CoachTurnError, CoachTurnFailure, GuardNote, ToolLogLine, WorkoutSession } from '@fizz/schemas';
 
 import type { CoachAvailability, CoachEntry, GymProposalState, MemoryCardState, ProposalCardState, ThreadData } from './coach-service';
 import type { WorkoutPresence } from '../services/history-services';
@@ -477,12 +477,14 @@ export function benText(input: BenInput): string | null {
 /**
  * The line for a turn that didn't finish (coach-sheet §5, shortened). `retry`: offers Try again.
  * F12 (13 Oct): each cause has its own line; `why` (behind `Why?`) names the recorded reason,
- * which the turn already stores as its `error`.
+ * which the turn already stores as its `error`. (21 Oct, Ben's Build B report) With the provider's own
+ * reason recorded on the turn (`failure`), `Why?` shows that (`HTTP 400 · invalid_request_error · …`).
  */
-export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean, opts: { workoutModelGone?: boolean } = {}): { text: string; icon: ViewIcon; retry: boolean; why: string | null } | null {
+export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | null, anyCard: boolean, opts: { workoutModelGone?: boolean; failure?: CoachTurnFailure | null } = {}): { text: string; icon: ViewIcon; retry: boolean; why: string | null } | null {
   // The cards show anything applied; without one, say nothing changed (minimal copy, audit W2).
   const tail = anyCard ? '' : ' Nothing changed.';
-  const line = (text: string, icon: ViewIcon, retry: boolean, why: string | null = null) => ({ text: `${text}${tail}`, icon, retry, why });
+  const said = opts.failure === undefined || opts.failure === null ? null : failureWhy(opts.failure);
+  const line = (text: string, icon: ViewIcon, retry: boolean, why: string | null = null) => ({ text: `${text}${tail}`, icon, retry, why: said ?? why });
   if (status === 'interrupted') return line('Interrupted.', 'info.circle', true);
   if (status === 'cancelled') return line('Stopped.', 'info.circle', false);
   if (status !== 'failed') return null;
@@ -498,13 +500,15 @@ export function outcomeFor(status: CoachTurn['status'], error: CoachTurnError | 
     case 'not_eligible':
       return line('Unavailable.', 'xmark.octagon', false);
     case 'model_gone':
-      return opts.workoutModelGone === true ? line('Mid-workout model unavailable.', 'exclamationmark.triangle', false, MID_WORKOUT_MODEL_GONE) : line('Model unavailable.', 'exclamationmark.triangle', false);
+      return opts.workoutModelGone === true ? { ...line('Mid-workout model unavailable.', 'exclamationmark.triangle', false), why: MID_WORKOUT_MODEL_GONE } : line('Model unavailable.', 'exclamationmark.triangle', false);
     case 'too_many_steps':
       return line('Coach got stuck.', 'exclamationmark.triangle', true, 'Too many steps without an answer (too_many_steps).');
     case 'no_reply':
       return line('No reply.', 'exclamationmark.triangle', true, 'The answer was empty or unreadable (no_reply).');
     case 'unavailable':
-      return line('Coach unavailable.', 'xmark.octagon', true, 'The AI service refused the request (unavailable).');
+      return line('Coach unavailable.', 'xmark.octagon', true, 'The AI service didn’t answer (unavailable).');
+    case 'request_error':
+      return line('Coach error.', 'exclamationmark.triangle', true, 'The AI service rejected the request (request_error).');
     case 'cancelled':
       return line('Stopped.', 'info.circle', true, 'The request was cancelled (cancelled).');
     case null:
@@ -556,7 +560,7 @@ export function threadRows(data: ThreadData & { nowUtc?: string }): ThreadRow[] 
       if (coach.body.note !== null && turn?.status === 'completed') rows.push({ kind: 'note', key: `${coach.id}:note`, text: coach.body.note });
     }
     if (turn !== null) {
-      const o = outcomeFor(turn.status, turn.error, actions.length > 0);
+      const o = outcomeFor(turn.status, turn.error, actions.length > 0, { failure: turn.failure ?? null });
       const ben = msgs.find((m) => m.body.role === 'ben');
       const input = ben?.body.role === 'ben' ? ben.body.input : null;
       if (o !== null) rows.push({ kind: 'outcome', key: `${turnId}:outcome`, ...o, retry: o.retry && input !== null, input });
@@ -716,4 +720,20 @@ export function transcriptFollow() {
       return stickToEnd({ atBottom, added, starters });
     },
   };
+}
+
+/** (21 Oct) Space kept above the newest turn when following it, so its first line never sits on the transcript's top edge. */
+export const FOLLOW_TOP_GAP = 12;
+
+/**
+ * (21 Oct, Ben's Build B report: an outcome line and a change card cut off under `Ready · Back to workout ›`)
+ * Where following new content scrolls to: the end, unless the newest turn (from Ben's message) is taller than the
+ * view, say with the keyboard up; then its start, `FOLLOW_TOP_GAP` below the top edge, so its first lines (the
+ * card, the outcome line) are in view rather than half under the top. `turnTop`: the newest turn's top in content
+ * coordinates; null when unknown. Pure.
+ */
+export function followOffset(s: { contentHeight: number; viewportHeight: number; turnTop: number | null }): number {
+  const end = Math.max(0, s.contentHeight - s.viewportHeight);
+  if (s.turnTop === null) return end;
+  return Math.min(end, Math.max(0, s.turnTop - FOLLOW_TOP_GAP));
 }
