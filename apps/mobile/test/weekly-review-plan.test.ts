@@ -232,6 +232,61 @@ describe('weekly review over an applied plan (review build-b-21oct B1)', () => {
     expect(await workingOf(s, x.pullId, x.gymId)).toEqual([3, 4]);
   });
 
+  it('a fresh coach tweak replaces the unanswered carried ask for the same exercise; a carried ask on a plan that moved is refused `Out of date` (review progress-v3b-data B1, S4)', async () => {
+    const x = await setup();
+    const s = x.s;
+    model.weekly = [
+      // Reasons with a wrong number are hidden: both stay asks (never applied without a why).
+      () => toolCall('weekly_review', { verdict: 'One.', lines: [], tweaks: [{ routineId: x.pullId, exerciseId: x.rowId, workingSets: 4, reason: 'Row 17 sets last week.' }] }),
+      () => toolCall('weekly_review', { verdict: 'Two.', lines: [], tweaks: [{ routineId: x.pullId, exerciseId: x.rowId, workingSets: 2, reason: 'Row 19 sets now.' }] }),
+    ];
+    h.clockMs = Date.parse('2026-10-18T17:30:00.000Z');
+    expect((await s.reviews.runOnOpen()).kind).toBe('reviewed');
+    expect((await s.reviews.progress())?.changes?.asks.map((r) => [r.exercise, r.after])).toEqual([['Barbell row', '4 sets']]);
+    h.clockMs = Date.parse('2026-10-18T18:00:00.000Z');
+    await doDay(s, x.gymId, x.pullId);
+    h.clockMs = Date.parse('2026-10-18T19:00:00.000Z');
+    expect((await s.reviews.runOnOpen()).kind).toBe('reviewed');
+    let now = (await s.reviews.progress())?.changes;
+    // The newer data wins: one ask for Row, the fresh one (not refused as a duplicate of the old).
+    expect(now?.note).toBe('Two.');
+    expect(now?.asks.map((r) => [r.exercise, r.after, r.status])).toEqual([['Barbell row', '2 sets', 'open']]);
+    expect(model.weeklyCalls).toBe(2);
+    // Ben changes Row himself; the carried ask's Apply is refused and shown `Out of date` (rule 5).
+    const ed = await s.routines.editor({ routineId: x.pullId, gymId: x.gymId });
+    if (!ed?.routine) throw new Error('pull');
+    const exercises = ed.exercises.map((e) => {
+      const last = e.setTemplates.at(-1);
+      return e.exerciseId === x.rowId && last !== undefined ? { ...e, setTemplates: [...e.setTemplates, { ...last, id: h.ids() }] } : e;
+    });
+    expect((await s.routines.update({ routineId: x.pullId, edit: { name: ed.routine.name, exercises }, expectedVersion: ed.routine.version, opId: 'ben-edit' })).ok).toBe(true);
+    expect(await s.reviews.applyProposal({ reviewId: now?.reviewId ?? '', proposalId: now?.asks[0]?.id ?? '', opId: 'apply-ask' })).toMatchObject({ ok: false, reason: 'out_of_date' });
+    now = (await s.reviews.progress())?.changes;
+    expect([...(now?.asks ?? []), ...(now?.rows ?? [])].map((r) => [r.exercise, r.statusText, r.canApply])).toEqual([['Barbell row', 'Out of date', false]]);
+    expect(await workingOf(s, x.pullId, x.gymId)).toEqual([3, 4]);
+  });
+
+  it('Summary and chart agree on a stack lift: `New best · Lat pulldown 65 stack × 10`, and its ring (same machine)', async () => {
+    const x = await setup();
+    const s = x.s;
+    const snap = await s.training.snapshot();
+    if (snap === null) throw new Error('no training profile');
+    expect(await s.training.change({ kind: 'progress_lifts', exerciseIds: [x.pulldownId] }, snap.profile.version, 'lifts-1')).toMatchObject({ ok: true });
+    h.clockMs = Date.parse('2026-10-17T07:00:00.000Z');
+    const tie = await doDay(s, x.gymId, x.pullId);
+    expect(await s.reviews.sessionBests(tie)).toEqual([]);
+    const pulldown = (await s.reviews.progress())?.lifts.lifts.find((l) => l.exerciseId === x.pulldownId);
+    expect(pulldown).toMatchObject({ latestPb: false, loadSuffix: 'stack' });
+    h.clockMs += DAY;
+    // The same machine as the plan day's (the gym has one pulldown stack).
+    const pb = await logWorkout(h, s, x.gymId, [{ exercise: 'Lat pulldown', sets: [{ load: 65, reps: 10, rpe: 9 }] }]);
+    const bests = await s.reviews.sessionBests(pb);
+    expect(bests.map((b) => b.text.replaceAll('\u00a0', ' '))).toEqual(['New best · Lat pulldown 65 stack × 10']);
+    const after = (await s.reviews.progress())?.lifts.lifts.find((l) => l.exerciseId === x.pulldownId);
+    expect(after?.latestPb).toBe(true);
+    expect(after?.points.at(-1)?.pbDetail?.replaceAll('\u00a0', ' ')).toMatch(/^PB · Lat pulldown 65 stack × 10 · week of /);
+  });
+
   it('Summary: `New best · Bench press 105 × 6` for a tracked lift beating every earlier real top set; none on a tie', async () => {
     const x = await setup();
     const s = x.s;

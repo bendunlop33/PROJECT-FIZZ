@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { newPainFlag, reduceSession, startWorkout, toIso } from '@fizz/domain';
+import { clearPainFlag, newPainFlag, reduceSession, startWorkout, toIso } from '@fizz/domain';
 import { at, barbell, exercise, GYM, id, idGen, kg, OWNER, profile, routine, routineExercise, stack, template, T0_MS, TZ, values } from '@fizz/domain/testing';
 import { openStore, type Store } from '@fizz/persistence';
 import { openNodeDriver } from '@fizz/persistence/node';
+import type { CoachModelPort } from '@fizz/coach';
 import type { Exercise, ReviewProposal, Routine, SessionAggregate, SessionCommand, TrainingReview, ZonedTimestamp } from '@fizz/schemas';
 
 import type { CoachAvailability } from '../src/coach/coach-service';
@@ -173,42 +174,53 @@ describe('the weekly review on open', () => {
     expect(await h.service.runOnOpen()).toMatchObject({ kind: 'cached' });
     expect(seen).toHaveLength(3);
     off();
-    // Offline: the pending write is told, the call out and its answer; a later open with nothing new isn't rewritten.
+    // Offline: the pending write is told and the run's end; never `Reviewing…` (no call goes out; review
+    // progress-v3b-data N1). A later open with nothing new isn't rewritten, and is told once.
     const o = await setUp({ model: new StepModel([], { weekly: true }), availability: () => OFFLINE });
     let n = 0;
+    let reviewing = 0;
     o.service.subscribe(() => {
       n += 1;
+      void o.service.progress().then((d) => {
+        if (d?.changes?.tag === 'Reviewing…') reviewing += 1;
+      });
     });
     const first = await o.service.runOnOpen();
-    expect(n).toBe(3);
+    expect(n).toBe(2);
     const before = n;
     await o.service.runOnOpen();
     if (first.kind !== 'not_reviewed') throw new Error(first.kind);
     expect((await o.store.repos.reviews.get(first.review.id))?.version).toBe(first.review.version);
-    // Asking again on that open is told too (`Reviewing…`, then back to `Offline`), never left showing `Reviewing…`.
-    expect(n - before).toBe(2);
+    expect(n - before).toBe(1);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reviewing).toBe(0);
+    expect((await o.service.progress())?.changes?.tag).toBe('Not reviewed · Offline');
   });
 
   it('`Reviewing…` while the coach call is out, then the stored result once it returns (review build-b-21oct S2)', async () => {
     const h = await setUp({ model: new StepModel([verdict({ verdict: 'Good week' })], { weekly: true }), availability: () => OFFLINE });
     await h.service.runOnOpen();
     expect((await h.service.progress())?.changes?.tag).toBe('Not reviewed · Offline');
-    // Back online, but the call is slow: hold it at the availability check.
+    // Back online, but the call is slow: hold it in the model port.
     let release: (() => void) | null = null;
     const gate = new Promise<void>((r) => {
       release = r;
     });
+    const inner = h.model ?? new StepModel([], { weekly: true });
+    const gated: CoachModelPort = {
+      async *stream(req) {
+        await gate;
+        yield* inner.stream(req);
+      },
+    };
     let n = 0;
     const slow = createWeeklyReviewService({
       store: () => h.store,
       profile: async () => h.store.repos.profiles.get(OWNER),
       now: (): ZonedTimestamp => ({ utc: toIso(OPEN_MS), tz: TZ }),
       newId: () => id(8_000_000 + (n += 1)),
-      availability: async () => {
-        await gate;
-        return ONLINE;
-      },
-      model: () => h.model ?? new StepModel([], { weekly: true }),
+      availability: () => Promise.resolve(ONLINE),
+      model: () => gated,
       mainLiftIds: () => Promise.resolve(new Set([BENCH.id])),
     });
     let told = 0;
@@ -222,6 +234,33 @@ describe('the weekly review on open', () => {
     expect(await run).toMatchObject({ kind: 'reviewed' });
     expect(told).toBeGreaterThanOrEqual(2);
     expect((await slow.progress())?.changes).toMatchObject({ tag: 'Coach', note: 'Good week' });
+  });
+
+  it('a coach call that throws: the page is told and `Reviewing…` goes (review progress-v3b-design S4)', async () => {
+    const h = await setUp({ model: null, availability: () => OFFLINE });
+    await h.service.runOnOpen();
+    let n = 0;
+    const broken = createWeeklyReviewService({
+      store: () => h.store,
+      profile: async () => h.store.repos.profiles.get(OWNER),
+      now: (): ZonedTimestamp => ({ utc: toIso(OPEN_MS), tz: TZ }),
+      newId: () => id(8_100_000 + (n += 1)),
+      availability: () => Promise.resolve(ONLINE),
+      model: () => {
+        throw new Error('port gone');
+      },
+      mainLiftIds: () => Promise.resolve(new Set([BENCH.id])),
+    });
+    let told = 0;
+    broken.subscribe(() => {
+      told += 1;
+    });
+    expect(await broken.runOnOpen()).toEqual({ kind: 'failed' });
+    // `Reviewing…` when the call went out, then told again once it threw.
+    expect(told).toBe(2);
+    const tag = (await broken.progress())?.changes?.tag;
+    expect(tag).toMatch(/^Not reviewed · /);
+    expect(tag).not.toBe('Reviewing…');
   });
 
   it('a new pain flag re-runs the review (its inputs changed; rule 9, review b3-wave3-truth B5)', async () => {
@@ -260,6 +299,46 @@ describe('the weekly review on open', () => {
     expect(data.liftsChosen).toBe(false);
     const choices = await h.service.liftChoices();
     expect(choices.map((c) => [c.name, c.shown, c.needsReps, c.reps])).toEqual([['Leg curl', false, true, 10], ['Bench press', true, true, 6]]);
+  });
+});
+
+describe('PBs need the lift’s whole history (review progress-v3b-design S2, data S3)', () => {
+  it('a lift whose history can’t be read shows no PB (no ring, tag or `New best`), never one judged on the loaded weeks only (rule 6)', async () => {
+    const h = await setUp({ model: null });
+    expect((await h.service.progress())?.lifts.lifts.find((l) => l.exerciseId === BENCH.id)?.latestPb).toBe(true);
+    const broken: Store = { ...h.store, listExerciseHistory: () => Promise.reject(new Error('read failed')) };
+    const service = createWeeklyReviewService({ store: () => broken, profile: async () => h.store.repos.profiles.get(OWNER), now: (): ZonedTimestamp => ({ utc: toIso(OPEN_MS), tz: TZ }), newId: () => id(8_200_000), availability: () => Promise.resolve(OFFLINE), mainLiftIds: () => Promise.resolve(new Set([BENCH.id])) });
+    const bench = (await service.progress())?.lifts.lifts.find((l) => l.exerciseId === BENCH.id);
+    expect(bench?.latestPb).toBe(false);
+    expect(bench?.points.some((p) => p.pb)).toBe(false);
+    const sessions = await h.store.repos.sessions.listFinishedBetweenReadable(OWNER, toIso(OPEN_MS - 30 * DAY_S * 1000), toIso(OPEN_MS));
+    const newest = [...sessions.sessions].filter((a) => a.exercises.some((e) => e.exerciseId === BENCH.id)).sort((a, b) => (a.session.startedAt.utc < b.session.startedAt.utc ? 1 : -1))[0];
+    expect(await h.service.sessionBests(newest?.session.id ?? '')).toHaveLength(1);
+    expect(await service.sessionBests(newest?.session.id ?? '')).toEqual([]);
+  });
+
+  it('history is read once per lift while the finished workouts are the same; a new or changed workout reads it again', async () => {
+    const h = await setUp({ model: null });
+    let reads = 0;
+    const counted: Store = {
+      ...h.store,
+      listExerciseHistory: (owner, ex) => {
+        reads += 1;
+        return h.store.listExerciseHistory(owner, ex);
+      },
+    };
+    const service = createWeeklyReviewService({ store: () => counted, profile: async () => h.store.repos.profiles.get(OWNER), now: (): ZonedTimestamp => ({ utc: toIso(OPEN_MS), tz: TZ }), newId: () => id(8_300_000), availability: () => Promise.resolve(OFFLINE), mainLiftIds: () => Promise.resolve(new Set([BENCH.id])) });
+    const first = (await service.progress())?.lifts;
+    expect(reads).toBe(1);
+    await service.progress();
+    await service.sessionBests('none');
+    expect(reads).toBe(1);
+    // A heavier older bench imported: read again, and the PB goes (it no longer beats every earlier set).
+    await h.store.repos.sessions.save(workout(-200 * DAY_S, BENCH, [{ load: 120, reps: 6 }]), null);
+    const after = (await service.progress())?.lifts;
+    expect(reads).toBe(2);
+    expect(first?.lifts.find((l) => l.exerciseId === BENCH.id)?.latestPb).toBe(true);
+    expect(after?.lifts.find((l) => l.exerciseId === BENCH.id)?.latestPb).toBe(false);
   });
 });
 
@@ -337,6 +416,18 @@ describe('weekly proposals: Apply / Skip / Undo, refused when stale (rule 5)', (
     expect(await workingOf(h.store, h.legs.id)).toBe(3);
     expect((await h.store.repos.routines.get(h.legs.id))?.version).toBe(h.legs.version);
     expect((await h.store.repos.reviews.get(id(9400)))?.proposals?.find((p) => p.id === 'p1')).toMatchObject({ status: 'stale', held: 'pain' });
+  });
+
+  it('`Held · pain` only while the flag is active: cleared, the change reads `Out of date` (review progress-v3b S1/S3)', async () => {
+    const h = await withProposal();
+    const flag = newPainFlag({ id: id(9504), ownerId: OWNER, opId: 'pain-5', exerciseId: CURL.id, exerciseName: CURL.name, area: null, source: 'check_in', checkInId: null, at: at(0) });
+    await h.store.repos.painFlags.save(flag, null);
+    expect(await h.service.applyProposal({ reviewId: id(9400), proposalId: 'p1', opId: 'tap-1' })).toMatchObject({ ok: false, reason: 'pain' });
+    const row = async () => (await h.service.progress())?.changes?.asks.concat((await h.service.progress())?.changes?.rows ?? []).find((r) => r.id === 'p1');
+    expect(await row()).toMatchObject({ statusText: 'Held · pain', canApply: false });
+    await h.store.repos.painFlags.save(clearPainFlag(flag, at(60)), flag.version);
+    expect(await row()).toMatchObject({ statusText: 'Out of date', canApply: false });
+    expect(await workingOf(h.store, h.legs.id)).toBe(3);
   });
 
   it('a force-close between Apply’s write and its mark: the next tap marks it applied (one write, Undo kept); the same for Undo (review b3-wave3-truth S3)', async () => {

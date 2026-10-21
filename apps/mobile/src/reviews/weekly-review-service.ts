@@ -35,9 +35,12 @@ import {
   BUILDER_STATUS_WORD,
   buildWeeklyRequest,
   builderModelFor,
+  carriedProposals,
   checkWeeklyReview,
   codeProposals,
+  mergeCoachAsks,
   requestBuilderTool,
+  unansweredAsk,
   weeklyContextText,
   weeklyFactTexts,
   type BuilderCoachReach,
@@ -211,19 +214,33 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
 
   /**
    * The tracked lifts' whole history (one indexed read each, at most 6), so a PB beats every earlier real top
-   * set, not only the weeks loaded. A lift whose history can't be read adds nothing (its PBs then judge the
-   * loaded weeks only).
+   * set, not only the weeks loaded. A lift whose history can't be read is `unknown`: no PB is claimed for it
+   * (rule 6; review progress-v3b-design S2). Kept per lift while the finished workouts are the same (their IDs
+   * and revisions, `finishedWorkoutsDigest`), so a refresh doesn't read years of history again (review
+   * progress-v3b S3); with no digest it reads every time.
    */
-  async function liftHistory(g: Gathered): Promise<ReviewSession[]> {
-    const out: ReviewSession[] = [];
+  let historyCache: { store: Store; key: string; lifts: Map<string, ReviewSession[]> } | null = null;
+  async function liftHistory(g: Gathered): Promise<{ earlier: ReviewSession[]; unknown: Set<string> }> {
+    const store = deps.store();
+    const digest = await store.finishedWorkoutsDigest().catch(() => null);
+    const key = digest === null ? null : `${g.owner.id}|${g.owner.timezone}|${digest}`;
+    if (key === null || historyCache === null || historyCache.store !== store || historyCache.key !== key) historyCache = key === null ? null : { store, key, lifts: new Map() };
+    const earlier: ReviewSession[] = [];
+    const unknown = new Set<string>();
     for (const id of new Set(g.input.lifts)) {
-      const h = await deps
-        .store()
-        .listExerciseHistory(g.owner.id, id)
-        .catch(() => []);
-      out.push(...liftHistorySessions(id, h, g.owner.timezone));
+      let sessions = historyCache?.lifts.get(id);
+      if (sessions === undefined) {
+        const h = await store.listExerciseHistory(g.owner.id, id).catch(() => null);
+        if (h === null) {
+          unknown.add(id);
+          continue;
+        }
+        sessions = liftHistorySessions(id, h, g.owner.timezone);
+        historyCache?.lifts.set(id, sessions);
+      }
+      earlier.push(...sessions);
     }
-    return out;
+    return { earlier, unknown };
   }
 
   /** Every plan Ben applied (in use now or before), with its days and paused dates. */
@@ -395,11 +412,13 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
 
   const keyOf = (p: Pick<ReviewProposal, 'change'>): string => `${p.change.routineId}|${p.change.exerciseId}`;
 
-  async function askCoach(g: Gathered, f: WeeklyFacts, reviewId: string, taken: readonly ReviewProposal[], signal?: AbortSignal): Promise<{ coach: ReviewCoach; proposals: ReviewProposal[]; status: BuilderCoachReach | 'failed' }> {
+  async function askCoach(g: Gathered, f: WeeklyFacts, reviewId: string, taken: readonly ReviewProposal[], onAsk: () => void, signal?: AbortSignal): Promise<{ coach: ReviewCoach; proposals: ReviewProposal[]; status: BuilderCoachReach | 'failed' }> {
     if (deps.model === undefined) return { coach: { status: 'not_connected' }, proposals: [], status: 'not_connected' };
     const a = await deps.availability().catch((): CoachAvailability => ({ status: 'not_connected', model: null }));
     const reach = reachOf(a);
     if (reach !== 'ok' || a.model === null) return { coach: { status: reach === 'ok' ? 'not_connected' : reach }, proposals: [], status: reach === 'ok' ? 'not_connected' : reach };
+    // `Reviewing…` only once the coach is reachable and the call goes out (review progress-v3b-data N1).
+    onAsk();
     const text = weeklyContextText({
       week: `${f.monday} to ${addDays(f.monday, 6)}`,
       facts: weeklyFactTexts(f),
@@ -433,12 +452,9 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     const previous = await repos()
       .reviews.current(owner.id, subject)
       .catch(() => null);
-    // Ben's answers carry over (applied, skipped, undone, out of date); code's open suggestions are made
-    // again, and so is code's out-of-date one (its template moved; review b3-wave3-truth N1). The coach's
-    // open asks carry over unanswered, whatever this run's coach says or if it can't be asked (review
-    // build-b-21oct S1); Apply's own check refuses one the plan moved past (rule 5). One on a movement with
-    // a pain flag now is dropped (rule 9).
-    const carried = (previous?.proposals ?? []).filter((p) => (p.status === 'open' ? p.source === 'coach' && !g.input.painFlagged.has(p.change.exerciseId) : !(p.status === 'stale' && p.source === 'code')));
+    // Ben's answers carry over; the coach's unanswered asks too, their reasons checked again against these
+    // facts, never on a movement flagged since (review build-b-21oct S1, progress-v3b-data B1; rule 9).
+    const carried = carriedProposals(previous?.proposals ?? [], { facts: f, painFlagged: g.input.painFlagged });
     const taken = new Set(carried.map(keyOf));
     const fresh = codeProposals(f.edits, reviewId).filter((p) => !taken.has(keyOf(p)));
     const proposals = [...carried, ...fresh].slice(0, 4);
@@ -471,12 +487,24 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
     // Small changes land in the plan before the page is told (review progress-v3-design B1).
     const stored = await autoApply(w.review);
     if (w.status === 'written' || stored.version !== w.review.version) emit();
-    // `Reviewing…` while the call is out, then the page is told again when it returns (whatever it returned).
-    asking = stored.id;
-    emit();
-    const asked = await askCoach(g, f, stored.id, stored.proposals ?? [], opts.signal).finally(() => {
-      asking = null;
-    });
+    // `Reviewing…` while the call is out (only once the coach is reachable), then the page is told again when
+    // it returns (below) or throws (here; review progress-v3b-design S4). The coach's unanswered asks from an
+    // earlier run don't block a fresh tweak for the same exercise: it replaces them (review progress-v3b-data B1).
+    const markAsking = () => {
+      asking = stored.id;
+      emit();
+    };
+    let asked: Awaited<ReturnType<typeof askCoach>>;
+    try {
+      asked = await askCoach(g, f, stored.id, (stored.proposals ?? []).filter((p) => !unansweredAsk(p)), markAsking, opts.signal);
+    } catch (e) {
+      if (asking === stored.id) {
+        asking = null;
+        emit();
+      }
+      throw e;
+    }
+    asking = null;
     const coachOp = `${opId}:coach`;
     const latest = (await repos().reviews.get(stored.id).catch(() => null)) ?? stored;
     // Still offline (or not connected) on a later open: nothing new to write.
@@ -484,7 +512,7 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       emit();
       return { kind: 'not_reviewed', review: latest, status: asked.status };
     }
-    const mergedProposals = [...(latest.proposals ?? []), ...asked.proposals.filter((p) => !(latest.proposals ?? []).some((q) => keyOf(q) === keyOf(p)))].slice(0, 4);
+    const mergedProposals = mergeCoachAsks(latest.proposals ?? [], asked.proposals);
     // The coach's sentence (or new changes) is news: `NEW` again until `Got it`.
     const { seenAtUtc, ...unseen } = latest;
     const keepSeen = seenAtUtc !== undefined && asked.status !== 'ok' && mergedProposals.length === (latest.proposals ?? []).length;
@@ -691,10 +719,10 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const newest = stored[0];
       // Only the latest reviewable week's review is `for next week` (review progress-v3-data S5).
       const current = newest !== undefined && mondayOf(newest) === weeklyReviewWeek(nowMs, owner.timezone);
-      const earlier = await liftHistory(g);
+      const history = await liftHistory(g);
       return {
         week: thisWeekView(g.input, { today, reviewIds: new Map(stored.map((r) => [mondayOf(r), r.id])), historyWeeks: SESSION_WEEKS - 1 }),
-        lifts: liftsView(g.input, { today, mains: g.mains, planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, previousPlanReps: g.previousPlanReps, planAppliedDate: g.planAppliedDate, nameOf: g.nameOf, earlier }),
+        lifts: liftsView(g.input, { today, mains: g.mains, planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, previousPlanReps: g.previousPlanReps, planAppliedDate: g.planAppliedDate, nameOf: g.nameOf, earlier: history.earlier, historyUnknown: history.unknown }),
         // Reviewed weeks keep the plan they were reviewed against (review progress-v3-design S4).
         muscles: musclesView(g.input, { today, storedPlans: new Map(stored.map((r) => [mondayOf(r), musclePlanOfReview(r)])) }),
         changes: newest === undefined ? null : coachChangesView(newest, today, { current, actedOn: await actedOn(newest), painFlagged: g.input.painFlagged, reviewing: asking === newest.id }),
@@ -715,7 +743,8 @@ export function createWeeklyReviewService(deps: WeeklyReviewServiceDeps) {
       const nowMs = toMs(deps.now().utc);
       const g = await gather(localWeekBounds(nowMs, owner.timezone).mondayLocalDate);
       if (g === null) return [];
-      return sessionNewBests(g.input, { planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, nameOf: g.nameOf, earlier: await liftHistory(g) }, sessionId);
+      const history = await liftHistory(g);
+      return sessionNewBests(g.input, { planReps: g.planReps, pickedReps: g.training?.progressLiftReps ?? {}, nameOf: g.nameOf, earlier: history.earlier, historyUnknown: history.unknown }, sessionId);
     },
 
     /** Past weeks: every stored weekly review but the newest, newest first. */
