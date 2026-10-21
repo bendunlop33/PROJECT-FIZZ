@@ -6,7 +6,7 @@
 
 **Goals:** Get stronger / Build muscle / Both (Profile training goal). "Follow the plan" is not a goal: plan adherence is always shown in This week. Not set behaves like Both.
 
-**Page order (Ben, 21 Oct, for every goal): This week → Coach's changes → Goal trackers.** This week answers the frequent question (am I on track this week, what can I still do); Coach's changes shows in full with a `NEW` badge after each weekly review and collapses to one line (`3 changes for next week ›`) once Ben taps `Got it` (or Undo/Apply on all of them); the Goal trackers (is it working) follow. The numbered sections below describe each block; their order on screen is this one.
+**Page order (Ben, 21 Oct, for every goal): This week → Goal trackers → Coach's changes (at the bottom).** This week answers the frequent question (am I on track this week, what can I still do); the Goal trackers (is it working) follow; Coach's changes sit last, in full with a `NEW` badge after each weekly review and collapsed to one line (`3 changes for next week ›`) once Ben taps `Got it` (or Undo/Apply on all of them). The numbered sections below describe each block; their order on screen is this one.
 
 **Blocks (Progress › Reviews):**
 1. **Goal (last 8 weeks).**

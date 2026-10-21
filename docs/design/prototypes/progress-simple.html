@@ -114,7 +114,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="chips" id="demo"></div>
   </div>
   <div class="phone" id="app"></div>
-  <div class="hint">Example data. <b>This week</b> first, then <b>Coach's changes</b> (full when new, one line after “Got it”), then <b>Goal</b>: how you're tracking over time (tap a lift's line or row to see it alone on its own scale). <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: what the coach already adjusted for your next sessions and why, each with Undo. Bigger changes (your plan's days, swapping exercises) are the only things it asks about.</div>
+  <div class="hint">Example data. <b>This week</b> first, then <b>Goal</b>: how you're tracking over time, then <b>Coach's changes</b> at the bottom (full when new, one line after “Got it”) (tap a lift's line or row to see it alone on its own scale). <b>This week</b>: sessions and sets vs plan. <b>Coach's changes</b>: what the coach already adjusted for your next sessions and why, each with Undo. Bigger changes (your plan's days, swapping exercises) are the only things it asks about.</div>
 </div>
 <script>
 (() => {
@@ -282,7 +282,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     controls();
     const top = app.querySelector('.scroll')?.scrollTop ?? 0;
     app.innerHTML = `<div class="status"><span>09:41</span><span>●●● 82%</span></div>
-      <div class="scroll"><h1>Progress</h1>${weekCard()}${changesCard()}${goalCard()}</div>
+      <div class="scroll"><h1>Progress</h1>${weekCard()}${goalCard()}${changesCard()}</div>
       <div class="tabs"><span>TODAY</span><span>LIBRARY</span><span class="on">PROGRESS</span><span>PROFILE</span></div>
       ${s.toast ? `<div class="toast" role="status">${s.toast}</div>` : ''}`;
     app.querySelector('.scroll').scrollTop = top;
