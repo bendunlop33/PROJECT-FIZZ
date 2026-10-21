@@ -4,9 +4,10 @@
  * set never resets the rest (workout-table-v3 §3, Ben 20 Oct). Frozen once
  * released.
  *
- * - `rest_timers.resume_on_undo`: JSON array of the live rests a log replaced
+ * - `rest_timers.resume_on_undo`: JSON array of the rests a log replaced
  *   (`ResumableRest[]`, newest last), so undoing that log puts the rest back
- *   with its original deadline, also after a force-close. NULL = none (every
+ *   (running to its original deadline, or finished at its original end),
+ *   also after a force-close. NULL = none (every
  *   row before this migration).
  */
 export const MIGRATION_0031 = `

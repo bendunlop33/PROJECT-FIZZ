@@ -670,16 +670,18 @@ const RestTimerCoreSchema = z.object({
 });
 
 /**
- * A live rest that a log replaced, kept so undoing that log puts it back
- * with its original deadline (workout-table-v3 §3, Ben 20 Oct: unticking a
- * set never resets the rest). `timer` is the rest as it was just before the
- * log (running, or paused while the workout is paused), with any −30/+30
- * already in its deadline.
+ * A rest that a log replaced, kept so undoing that log puts it back as it
+ * would be now (workout-table-v3 §3, Ben 20 Oct: unticking a set never resets
+ * the rest). `timer` is the rest as it was just before the log (running, or
+ * paused while the workout is paused), with any −30/+30 already in its
+ * deadline; or finished: `skipped`, or `expired` with `endedAtUtc` = its
+ * deadline (it had run out, before the log or since), so undo brings back the
+ * "Rested" count-up from its original end.
  */
 export const ResumableRestSchema = z.object({
   /** Undoing this set's log restores `timer`. */
   afterUndoOfSetId: IdSchema,
-  timer: RestTimerCoreSchema.extend({ status: z.enum(['running', 'paused']) }),
+  timer: RestTimerCoreSchema.extend({ status: z.enum(['running', 'paused', 'expired', 'skipped']) }),
 });
 export type ResumableRest = z.infer<typeof ResumableRestSchema>;
 
@@ -689,8 +691,8 @@ export const MAX_RESUMABLE_RESTS = 20;
 export const RestTimerSchema = RestTimerCoreSchema.extend({
   /**
    * Rests to put back on undo, newest last (a stack: each undo of the latest
-   * log pops at most one). Absent = none. Only entries whose deadline had
-   * not passed when last carried forward are kept.
+   * log pops at most one). Absent = none. A running entry whose deadline
+   * has passed is marked expired when next carried forward, not dropped.
    */
   resumeOnUndo: z.array(ResumableRestSchema).min(1).max(MAX_RESUMABLE_RESTS).optional(),
 });

@@ -745,13 +745,12 @@ function handleUndoLog(state: SessionAggregate, cmd: CommandOf<'undo_log'>, nowM
     events.push({ type: 'RestEnded', timerId: restTimer.id, reason: 'cancelled', timerVersion: restTimer.version, lateByMs: 0 });
   }
   // Unticking never resets the rest (workout-table-v3 §3, Ben 20 Oct): the rest
-  // this log replaced comes back with its original deadline, or none if it has run out.
+  // this log replaced comes back with its original deadline, or finished at its
+  // original end if it has run out (the "Rested" count-up carries on; no alert).
   const back = restTimer === null ? null : restoreAfterUndo(restTimer.resumeOnUndo ?? [], set.id, nowMs);
   if (restTimer !== null && back !== null) {
-    if (back.restored === null) {
-      restTimer = withResumable(restTimer, back.rest);
-    } else {
-      restTimer = back.restored;
+    restTimer = back.restored;
+    if (restTimer.status === 'running' || restTimer.status === 'paused') {
       events.push({
         type: 'RestStarted',
         timerId: restTimer.id,
