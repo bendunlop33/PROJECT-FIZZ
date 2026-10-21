@@ -398,7 +398,7 @@ export function createBuilderCoachService(deps: BuilderCoachServiceDeps) {
       if (await deps.writer.applied(builderApplyOpId(proposal.id)).catch(() => false)) return { kind: 'applied', lines: proposal.lines };
       const world = await deps.source.world(proposal.draftId);
       if (world === null) return { kind: 'out_of_date', line: 'Out of date. Ask again.' };
-      const env: BuilderCoachEnv = { ...world.env, askedHeavier: false };
+      const env: BuilderCoachEnv = { ...world.env, askedHeavier: proposal.askedHeavier };
       const check = recheckBuilderProposal(proposal, world.snapshot, env);
       if (!check.ok) return { kind: 'out_of_date', line: check.line };
       const w = await deps.writer.applyWorkout({ draftId: proposal.draftId, expectedVersion: world.snapshot.draftVersion, workout: check.outcome.workout, minutes: check.outcome.minutes, lines: proposal.lines, opId: builderApplyOpId(proposal.id) });

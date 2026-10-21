@@ -31,6 +31,8 @@ export interface BuilderProposal {
   reason: string | null;
   /** Sentences hidden for an unchecked number (`Why?` → `Not shown`). */
   hidden: string[];
+  /** Ben asked for heavier when it was made: Apply's re-check uses the same load guard step (spec §5, `stepsHarderAsked`). */
+  askedHeavier: boolean;
 }
 
 /** Build the proposal from checked ops. Null when nothing would change (every op was left out). */
@@ -53,6 +55,7 @@ export function makeBuilderProposal(input: { id: string; snapshot: BuilderCoachS
       minutes: outcome.minutes,
       reason: checked.shown,
       hidden: checked.hidden,
+      askedHeavier: input.env.askedHeavier,
     },
     outcome,
     reason: checked.shown,
@@ -67,7 +70,8 @@ export function recheckBuilderProposal(p: BuilderProposal, now: BuilderCoachSnap
   if (now.draftId !== p.draftId) return { ok: false, line: OUT_OF_DATE_LINE };
   const fresh = preconditionsHold(p.preconditions, now);
   if (!fresh.ok) return fresh;
-  const outcome = applyBuilderEdits(now, p.ops, env);
+  // The guard runs as it did when Ben saw the lines: his "heavier" request stands (integrity B1).
+  const outcome = applyBuilderEdits(now, p.ops, { ...env, askedHeavier: p.askedHeavier });
   const differs = (a: readonly string[], b: readonly string[]): boolean => a.length !== b.length || a.some((l, i) => l !== b[i]);
   // A new ⚠ since (Ben's other edits) is shown before Apply, never applied unseen (review N5).
   if (differs(outcome.lines, p.lines) || outcome.warnings.some((w) => !p.warnings.includes(w))) return { ok: false, line: OUT_OF_DATE_LINE };

@@ -276,6 +276,23 @@ describe('staleness by slot (rule 5)', () => {
     expect(recheckBuilderProposal(bench, { ...now, draftId: 'd2' }, env).ok).toBe(false);
   });
 
+  it('a proposal Ben asked heavier applies with the same guard step; without his request it is refused (integrity B1)', () => {
+    const fly15 = (): LoadReferences => refsOf('cable_fly', { value: 90, reps: 15, rpe: 8 }, { convention: 'stack', equipment: F.cable });
+    const { snap, env, key } = setup({ askedHeavier: true, refs: (id) => (id === 'cable_fly' ? fly15() : id === 'bench' ? benchRefs() : null) });
+    const op: BuilderEditOp = { op: 'load', slotKey: key('cable_fly'), direction: 'heavier', value: 100, unit: 'kg' };
+    const asked = makeBuilderProposal({ id: 'p-heavy', snapshot: snap, ops: [op], words: null, check: NO_NUMBERS, env }).proposal;
+    expect(asked).not.toBeNull();
+    if (asked === null) return;
+    expect(asked.askedHeavier).toBe(true);
+    // The same op without "heavier" in Ben's words gives a smaller step.
+    const plain = makeBuilderProposal({ id: 'p-plain', snapshot: snap, ops: [op], words: null, check: NO_NUMBERS, env: { ...env, askedHeavier: false } }).proposal;
+    expect(plain?.lines).not.toEqual(asked.lines);
+    // Apply's world env never knows the words; the proposal carries them.
+    const applyEnv = { ...env, askedHeavier: false };
+    expect(recheckBuilderProposal(asked, snap, applyEnv).ok).toBe(true);
+    expect(recheckBuilderProposal({ ...asked, askedHeavier: false }, snap, applyEnv)).toEqual({ ok: false, line: OUT_OF_DATE_LINE });
+  });
+
   it('a length proposal is refused once Set up’s length moved', () => {
     const { snap, env } = setup();
     const p = makeBuilderProposal({ id: 'p-len', snapshot: snap, ops: [{ op: 'minutes', minutes: 45 }], words: null, check: NO_NUMBERS, env }).proposal;
