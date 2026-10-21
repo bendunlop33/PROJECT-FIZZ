@@ -28,32 +28,59 @@ const isAbs = (i: BuilderExerciseInfo): boolean => i.group === 'Abs';
 /** Leg parts that alternate on leg days (§3.4: quads and hinge). */
 const ALTERNATING_PARTS: ReadonlySet<string> = new Set(['quads', 'hamstrings_glutes']);
 
+/** Options for `orderSlots`. */
+export interface OrderOptions {
+  /**
+   * A comparable working-load size per exercise (e.g. est. max in kg, total
+   * convention), for "heaviest first" among heavy lifts when there is no
+   * main lift. Null = unknown (keeps the build order).
+   */
+  load?: (exerciseId: string) => number | null;
+}
+
 /**
  * `orderSlots` (§3.4): main lift first → compounds → isolations → abs last.
- * Stable within each band (the build order: the main group first). Only
- * leg compounds alternate: after a quad lift the next hinge lift moves up,
- * and the other way round (review S6). Other days keep their order.
+ * Within compounds, heavy lifts (§3.5: marked, or a compound on a barbell,
+ * trap bar, Smith or plate-loaded machine) come before the rest. With no
+ * main lift, the heavy lifts are ordered heaviest first (on a bar first,
+ * then the bigger known load), so the lift that would be the main lift
+ * leads the workout. Otherwise stable within each band (the build order:
+ * the main group first). Only leg compounds alternate, inside each band:
+ * after a quad lift the next hinge lift moves up, and the other way round
+ * (review S6).
  */
-export function orderSlots<S extends Pick<BuilderSlot, 'exerciseId' | 'main'>>(slots: readonly S[], info: BuilderInfoLookup): S[] {
+export function orderSlots<S extends Pick<BuilderSlot, 'exerciseId' | 'main'>>(slots: readonly S[], info: BuilderInfoLookup, opts: OrderOptions = {}): S[] {
   const of = (s: S) => infoOrDefault(info, s.exerciseId);
   const main = slots.filter((s) => s.main);
   const rest = slots.filter((s) => !s.main);
   const comp = rest.filter((s) => of(s).role === 'compound' && !isAbs(of(s)));
   const iso = rest.filter((s) => of(s).role !== 'compound' && !isAbs(of(s)));
   const abs = rest.filter((s) => isAbs(of(s)));
+  let heavy = comp.filter((s) => of(s).heavy);
+  const light = comp.filter((s) => !of(s).heavy);
+  if (main.length === 0) {
+    const size = (s: S) => opts.load?.(s.exerciseId) ?? -1;
+    heavy = heavy
+      .map((s, i) => ({ s, i }))
+      .sort((a, b) => Number(of(b.s).barbell) - Number(of(a.s).barbell) || size(b.s) - size(a.s) || a.i - b.i)
+      .map((x) => x.s);
+  }
   const outC: S[] = [];
   let prev: S | undefined = main[0];
-  while (comp.length > 0) {
-    const prevPart = prev === undefined ? null : of(prev).part;
-    let k = 0;
-    if (prevPart !== null && ALTERNATING_PARTS.has(prevPart) && comp[0] !== undefined && of(comp[0]).part === prevPart) {
-      const other = comp.findIndex((s) => ALTERNATING_PARTS.has(of(s).part) && of(s).part !== prevPart);
-      if (other >= 0) k = other;
+  for (const band of [heavy, light]) {
+    const left = [...band];
+    while (left.length > 0) {
+      const prevPart = prev === undefined ? null : of(prev).part;
+      let k = 0;
+      if (prevPart !== null && ALTERNATING_PARTS.has(prevPart) && left[0] !== undefined && of(left[0]).part === prevPart) {
+        const other = left.findIndex((s) => ALTERNATING_PARTS.has(of(s).part) && of(s).part !== prevPart);
+        if (other >= 0) k = other;
+      }
+      const [next] = left.splice(k, 1);
+      if (next === undefined) break;
+      outC.push(next);
+      prev = next;
     }
-    const [next] = comp.splice(k, 1);
-    if (next === undefined) break;
-    outC.push(next);
-    prev = next;
   }
   return [...main, ...outC, ...iso, ...abs];
 }
@@ -83,6 +110,30 @@ export function canPair(a: Pick<BuilderSlot, 'exerciseId' | 'main'>, b: Pick<Bui
   return { ok: true, reason: null, muscle: null };
 }
 
+/**
+ * `canAutoPair`: what the builder itself may pair (Supersets on, a merge,
+ * filling time, Mix it up, abs off). `canPair` plus: a heavy lift is never
+ * paired with anything (Ben, 21 Oct: the heavy compounds stand alone, like
+ * the main lift). Ben's own pairs are checked with `canPair` (advice only).
+ */
+export function canAutoPair(a: Pick<BuilderSlot, 'exerciseId' | 'main'>, b: Pick<BuilderSlot, 'exerciseId' | 'main'>, info: BuilderInfoLookup): boolean {
+  if (infoOrDefault(info, a.exerciseId).heavy || infoOrDefault(info, b.exerciseId).heavy) return false;
+  return canPair(a, b, info).ok;
+}
+
+/**
+ * Builder-made pairs (`auto`) that no longer pass `canAutoPair` (a swap put
+ * a heavy lift or a shared muscle into one) split back into singles, in
+ * place. Ben's own pairs stay.
+ */
+export function splitInvalidAutoPairs(blocks: readonly BuilderBlock[], info: BuilderInfoLookup): BuilderBlock[] {
+  return blocks.flatMap((b) => {
+    if (!b.auto || b.slots.length < 2) return [b];
+    const ok = b.slots.every((x, i) => b.slots.every((y, k) => k <= i || canAutoPair(x, y, info)));
+    return ok ? [b] : b.slots.map((s): BuilderBlock => ({ slots: [s], auto: false }));
+  });
+}
+
 /** The first muscle both work; same part (both quads…) counts as shared. */
 export function sharedMuscle(x: BuilderExerciseInfo, y: BuilderExerciseInfo): string | null {
   const m = x.muscles.find((v) => y.muscles.includes(v));
@@ -92,7 +143,8 @@ export function sharedMuscle(x: BuilderExerciseInfo, y: BuilderExerciseInfo): st
 }
 
 /**
- * `pairSlots` (§3.5): pairs only. Abs pair with the last accessory that
+ * `pairSlots` (§3.5): pairs only (`canAutoPair`: never the main lift or a
+ * heavy lift). Abs pair with the last accessory that
  * fits; then the remaining single accessories pair in order (each with the
  * first later one that fits). Existing multi-exercise blocks (Ben's pairs)
  * are left as they are, and so is a slot Ben unlinked (`unlinked`): it is
@@ -103,7 +155,7 @@ export function sharedMuscle(x: BuilderExerciseInfo, y: BuilderExerciseInfo): st
 export function pairSlots(blocks: readonly BuilderBlock[], info: BuilderInfoLookup, opts: { only?: ReadonlySet<string> } = {}): BuilderBlock[] {
   const singles = blocks.flatMap((b) => {
     const s = b.slots.length === 1 ? b.slots[0] : undefined;
-    return s !== undefined && !s.main && s.unlinked !== true ? [s] : [];
+    return s !== undefined && !s.main && s.unlinked !== true && !infoOrDefault(info, s.exerciseId).heavy ? [s] : [];
   });
   const only = opts.only;
   const allowed = (x: BuilderSlot, y: BuilderSlot): boolean => only === undefined || only.has(x.key) || only.has(y.key);
@@ -112,7 +164,7 @@ export function pairSlots(blocks: readonly BuilderBlock[], info: BuilderInfoLook
   const partner = new Map<BuilderSlot, BuilderSlot>();
   const taken = new Set<BuilderSlot>();
   for (const ab of abs) {
-    const p = [...rest].reverse().find((x) => !taken.has(x) && allowed(x, ab) && canPair(x, ab, info).ok);
+    const p = [...rest].reverse().find((x) => !taken.has(x) && allowed(x, ab) && canAutoPair(x, ab, info));
     if (p !== undefined) {
       partner.set(p, ab);
       taken.add(p).add(ab);
@@ -122,7 +174,7 @@ export function pairSlots(blocks: readonly BuilderBlock[], info: BuilderInfoLook
   for (let i = 0; i < left.length; i += 1) {
     const a = left[i];
     if (a === undefined || taken.has(a)) continue;
-    const b = left.find((y, k) => k > i && !taken.has(y) && allowed(a, y) && canPair(a, y, info).ok);
+    const b = left.find((y, k) => k > i && !taken.has(y) && allowed(a, y) && canAutoPair(a, y, info));
     if (b !== undefined) {
       partner.set(a, b);
       taken.add(a).add(b);

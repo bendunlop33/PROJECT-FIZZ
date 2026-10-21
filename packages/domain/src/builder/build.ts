@@ -3,6 +3,7 @@ import { orderSlots, pairSlots, singlesOf } from './arrange';
 import { estimateBuilderMinutes } from './estimate';
 import { FIT_RULES, fitToMinutes, type BuilderFitResult } from './fit';
 import { makeSlot } from './slot';
+import { KG_PER_LB } from '../units';
 import type { BuilderContext, BuilderExerciseInfo, BuilderGroupName, BuilderSlot, BuilderWorkout } from './types';
 
 
@@ -213,8 +214,9 @@ export interface BuildResult {
 }
 
 /**
- * `buildFromSetup`: main lift + each group's picks → `orderSlots` → pairs
- * when Supersets is on → fitted down to the length (`fitToMinutes`, shrink
+ * `buildFromSetup`: main lift + each group's picks → `orderSlots` (main
+ * lift first; with none, the heaviest heavy compound first) → pairs when
+ * Supersets is on (never the main lift or a heavy lift) → fitted down to the length (`fitToMinutes`, shrink
  * only: Ben's group counts are never grown here). `trim: false` skips the
  * fit (used by the recommendation).
  */
@@ -243,7 +245,7 @@ export function buildFromSetup(setup: BuilderSetup, pool: BuilderPool, ctx: Buil
     }
     total += ids.length;
   }
-  let blocks = singlesOf(orderSlots(slots, ctx.info));
+  let blocks = singlesOf(orderSlots(slots, ctx.info, { load: (id) => totalLoadKg(id, ctx) }));
   if (setup.supersets) blocks = pairSlots(blocks, ctx.info);
   const workout: BuilderWorkout = { blocks, restLevel: 'normal' };
   if (opts.trim === false) {
@@ -252,6 +254,13 @@ export function buildFromSetup(setup: BuilderSetup, pool: BuilderPool, ctx: Buil
   }
   const fit = fitToMinutes(workout, ctx, { minutes: setup.minutes, mainGroup, grow: false, supersets: setup.supersets });
   return { workout: fit.workout, fit, short };
+}
+
+/** An exercise's est. max in kg when it is a whole-bar load (total convention); null otherwise (for "heaviest first"). */
+function totalLoadKg(exerciseId: string, ctx: BuilderContext): number | null {
+  const l = ctx.loads(exerciseId);
+  if (l.convention !== 'total' || l.e1rm === null) return null;
+  return l.unit === 'kg' ? l.e1rm : l.e1rm * KG_PER_LB;
 }
 
 /** `Recommended for 60 min · 7`: the recommendation for this set-up's day mix, length and Supersets. */
