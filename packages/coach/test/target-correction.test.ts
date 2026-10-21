@@ -6,6 +6,7 @@ import { BUILDER_TARGET_CORRECTION_LINES, LIVE_TARGET_CORRECTION_LINES } from '.
 import { createEditTodayExecutor } from '../src/edit-today';
 import { createSessionReadExecutor, createStoreExecutors, undoCoachAction, undoOpId, type CoachExecutors } from '../src/executors';
 import { quoteAsks, verifyAsked } from '../src/intent';
+import { liftTargetAsked } from '../src/lift-target';
 import { runCoachTurn } from '../src/turn';
 import { ScriptedCoachModel } from './fake-model';
 import { at, call, id, kg, memoryStore, OWNER, ports, reply, request, SESSION, words, workout } from './turn-fixtures';
@@ -62,12 +63,37 @@ const BEN = 'Why is dumbbell press only 8 reps? I did 15 last time';
 
 describe('a target the coach agrees was wrong is put right, never "Nothing changed"', () => {
   it('Ben pointing out a target contradicts what he did is a request (his words, quoted); an opinion question still is not', () => {
-    expect(quoteAsks('I did 15 last time', BEN)).toBe(true);
-    expect(quoteAsks('only 8 reps', BEN)).toBe(false);
+    expect(quoteAsks('I did 15 last time', BEN, { correction: true })).toBe(true);
+    expect(quoteAsks('I did 15 last time', 'shrugs at 8 reps, I did 15 last time', { correction: true })).toBe(true);
+    expect(quoteAsks('should be 12', 'Curls should be 12 not 10', { correction: true })).toBe(true);
+    expect(quoteAsks('only 8 reps', BEN, { correction: true })).toBe(false);
     expect(verifyAsked({ tool: 'edit_today', chip: false, acceptedOffer: false, setsOnly: true, words: BEN, claim: { benAsked: true, benQuote: 'I did 15 last time' }, fallback: () => false })).toEqual({ asked: true, by: 'quote' });
     // Still an opinion question: offered, not applied.
-    expect(quoteAsks('I did 15 last time', 'I did 15 last time, what do you think?')).toBe(false);
+    expect(quoteAsks('I did 15 last time', 'I did 15 last time, what do you think?', { correction: true })).toBe(false);
     expect(quoteAsks('can we add weights to these', 'Can we add weights to these')).toBe(true);
+  });
+
+  it('review B1: plain statements are not corrections, and a correction never asks for a structural edit or a lift target', () => {
+    const base = { chip: false, acceptedOffer: false, fallback: () => false };
+    const statements: [string, string][] = [
+      ['Squats felt heavy last time', 'Squats felt heavy last time'],
+      ['Done, I did all the reps', 'I did all the reps'],
+      ['My knee felt wrong on squats', 'felt wrong on squats'],
+      ['I did 100 kg on bench last time, felt strong', 'I did 100 kg on bench last time'],
+    ];
+    for (const [said, quote] of statements) {
+      for (const tool of ['edit_today', 'set_lift_target', 'rename_workout']) {
+        expect(quoteAsks(quote, said, { correction: true })).toBe(false);
+        expect(verifyAsked({ ...base, tool, setsOnly: true, words: said, claim: { benAsked: true, benQuote: quote } })).toEqual({ asked: false, by: 'not_a_request' });
+        expect(verifyAsked({ ...base, tool, setsOnly: false, words: said, claim: { benAsked: true, benQuote: quote } })).toEqual({ asked: false, by: 'not_a_request' });
+      }
+    }
+    // A real correction, but on a structural edit or a lift target: the coach's idea, offered.
+    expect(verifyAsked({ ...base, tool: 'edit_today', setsOnly: false, words: BEN, claim: { benAsked: true, benQuote: 'I did 15 last time' } })).toEqual({ asked: false, by: 'not_a_request' });
+    expect(verifyAsked({ ...base, tool: 'set_lift_target', words: BEN, claim: { benAsked: true, benQuote: 'I did 15 last time' } })).toEqual({ asked: false, by: 'not_a_request' });
+    expect(verifyAsked({ ...base, tool: 'set_lift_target', words: 'Why only 90? I did 100 kg on bench last time', claim: { benAsked: true, benQuote: 'I did 100 kg on bench last time' } })).toEqual({ asked: false, by: 'not_a_request' });
+    expect(quoteAsks('I did 15 last time', BEN)).toBe(false);
+    expect(liftTargetAsked('I did 100 kg on bench last time, felt strong', { benAsked: true, benQuote: 'I did 100 kg on bench last time' })).toBe(false);
   });
 
   it('live: the coach admits the target was wrong and applies the corrected reps at once, with Undo (fake model)', async () => {
