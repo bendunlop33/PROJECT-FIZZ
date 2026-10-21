@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { EquipmentInstance, Exercise, SessionAggregate } from '@fizz/schemas';
-import { buildActiveSetView, buildAddExerciseCommand, buildWorkoutTableView, catalogueExerciseId, NBSP, startWorkout, type ActiveViewInput } from '@fizz/domain';
+import { buildActiveSetView, buildAddExerciseCommand, buildWorkoutTableView, catalogueExerciseId, latestCommittedSetId, NBSP, reduceSession, startWorkout, type ActiveViewInput } from '@fizz/domain';
 
 import { assisted, at, barbell, bodyweightStation, dumbbells, exercise, GYM, idGen, kg, lb, ms, profile, routine, routineExercise, stack, template, values } from '../../../packages/domain/test/fixtures';
 import { apply, logCmd, setsFor, startFixture, BENCH, FACE, ROW } from '../../../packages/domain/test/session-fixture';
-import { boxFirstRow, buildRounds, fitRoundBoxes, roundPrimary, shownRoundIndex, whyView } from '../src/workout/rounds';
+import { boxFirstRow, buildRounds, clockText, fitRoundBoxes, lastLogMs, roundPrimary, setClockMs, setClockStartMs, shownRoundIndex, timerBarMode, whyView } from '../src/workout/rounds';
 
 /**
  * The v3 round page over real domain state (wo-v3 logic S4): a superset's
@@ -168,5 +168,65 @@ describe('every load convention reads right on the round page (logic S4)', () =>
     expect(ex?.valueHeader).toBe('TIME · DIST');
     expect(ex?.loadHeader).toBeNull();
     expect(ex?.rows.every((r) => r.rpe === null)).toBe(true);
+  });
+});
+
+/**
+ * b3 merge wiring: the v3 ✓ untick and the Undo toast are both `undo_log`
+ * (WorkoutScreen `untick` / `undo`), so the rest that log replaced comes back
+ * in the v3 timer bar (rest-undo): REST counting down to its original
+ * deadline, or, when it had finished, the SET clock counting on from its
+ * original end (not from the untick).
+ */
+describe('untick brings the replaced rest back into the v3 timer bar (rest-undo × wo-v3)', () => {
+  const undoLog = (setId: string, t: number, version: number) => ({ type: 'undo_log' as const, at: at(t), opId: `undo:${setId}:0`, setId, expectedSetVersion: version });
+  const bar = (s: SessionAggregate, seconds: number) => {
+    const rest = buildActiveSetView(input(s, seconds)).rest;
+    const start = setClockStartMs({ rest, lastLogMs: lastLogMs(s.sets), startedAtMs: ms(0) });
+    return { mode: timerBarMode(rest), rest, setClock: clockText(setClockMs({ startMs: start, nowMs: ms(seconds), pausedMs: 0 })) };
+  };
+  /** Warm-up logged at 30 s (rest 60 s, deadline 90 s), then set 1 ticked by accident at 50 s. */
+  const tick = () => {
+    let s = startFixture().state;
+    const [w, b1] = setsFor(s, BENCH);
+    if (!w || !b1) throw new Error('fixture');
+    s = apply(s, logCmd(w.id, values(kg(60), 10), 30));
+    s = apply(s, logCmd(b1.id, values(kg(100), 8), 50));
+    const logged = s.sets.find((x) => x.id === b1.id);
+    if (!logged) throw new Error('fixture');
+    return { s, b1: logged };
+  };
+
+  it('a done row offers untick only on the latest log; the round row reads the step name', () => {
+    const { s, b1 } = tick();
+    const rows = buildRounds(buildWorkoutTableView(input(s, 55)), () => null, latestCommittedSetId(s)).flatMap((r) => r.exercises.flatMap((e) => e.rows));
+    expect(rows.find((x) => x.setId === b1.id)).toMatchObject({ canUntick: true, stepName: 'Set 1' });
+    expect(rows.filter((x) => x.canUntick)).toHaveLength(1);
+  });
+
+  it('rest still running at the untick: REST counts down to the original deadline, not a fresh rest', () => {
+    const { s, b1 } = tick();
+    expect(bar(s, 55)).toMatchObject({ mode: 'rest', rest: { kind: 'running', remainingMs: 175_000 } });
+    const back = apply(s, undoLog(b1.id, 60, b1.version));
+    expect(bar(back, 60)).toMatchObject({ mode: 'rest', rest: { kind: 'running', deadlineUtc: at(90).utc, remainingMs: 30_000 } });
+    // The page opens set 1 again.
+    expect(openRow(back, 60)?.row.setId).toBe(b1.id);
+  });
+
+  it('rest finished before the untick: the SET clock continues from the original end, no countdown', () => {
+    const { s, b1 } = tick();
+    const back = apply(s, undoLog(b1.id, 130, b1.version));
+    expect(back.restTimer?.restoredFinished).toBe(true);
+    const b = bar(back, 130);
+    expect(b.mode).toBe('set');
+    expect(b.rest).toMatchObject({ kind: 'ended', endedAtUtc: at(90).utc, skipped: false });
+    // 130 s − 90 s: counting on from when the rest ended, not 0:00 from the untick.
+    expect(b.setClock).toBe('0:40');
+  });
+
+  it('a stale untick (set changed since) is refused and the rest stays as it is', () => {
+    const { s, b1 } = tick();
+    const r = reduceSession(s, undoLog(b1.id, 60, b1.version - 1));
+    expect(r.ok).toBe(false);
   });
 });
