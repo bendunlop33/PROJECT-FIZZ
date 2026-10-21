@@ -540,8 +540,9 @@ describe('source checks (feel and device behaviour go on Ben’s checklist)', ()
   it('the ask bar: two controls with VoiceOver labels, 48 pt targets, Listening announced on iOS, ⊘ probed on mount, Set up words straight to code offline', () => {
     const bar = flat('ui/coach-ask-bar.tsx');
     expect(bar).toContain('const BAR_HEIGHT = 48;');
-    // Two controls (bar, mic) in each layout; the active workout's `icons` layout has its own ✦ button (v3 §1.6).
-    expect(bar.match(/accessibilityRole="button"/g)?.length).toBe(3);
+    // Two controls (bar, mic) in each layout; the active workout's `icons` layout and Today's `compact` header
+    // (`✦ Coach` pill, §2.0.2) each have their own ✦ button and share the mic.
+    expect(bar.match(/accessibilityRole="button"/g)?.length).toBe(4);
     expect(bar).toContain('const ICON_SIZE = 44;');
     expect(bar).toContain("AccessibilityInfo.announceForAccessibility('Listening')");
     expect(bar).toContain('AccessibilityInfo.announceForAccessibility(text)');

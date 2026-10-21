@@ -124,4 +124,6 @@ export const TODAY_SCREEN_COPY = {
   activity: 'Add an activity',
   addActivity: '＋ Activity',
   daySheetEmpty: 'Nothing logged',
+  /** Today's session couldn't be read: said, never shown as `No plan`. */
+  sessionFailed: 'Couldn’t load',
 } as const;

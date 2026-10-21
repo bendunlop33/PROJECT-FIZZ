@@ -7,6 +7,7 @@ import type { TodayCardView } from '../../services/today-session';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Icon, PrimaryButton, SecondaryButton, TextButton } from '../../ui';
 import { AX_FONT_SCALE } from '../../workout/overview';
+import { STRIP_LABEL_FIT, stripPillStyle } from '../../today/strip-style';
 import { breakdownLabel, TIME_LABELS, TODAY_SCREEN_COPY, type TodayCardAction, type TodaySegment } from '../../today/today-view';
 
 /**
@@ -22,18 +23,20 @@ const HIT = { top: 5, bottom: 5, left: 4, right: 4 } as const;
 const useAx = () => useWindowDimensions().fontScale >= AX_FONT_SCALE;
 
 // ---------------------------------------------------------------------------
-// Header: `Tuesday` · gym · `✦ Coach` + mic
+// Header: `Tuesday` · `✦ Coach` + mic, one line
 
-export function TodayHeader({ title, gym, coach }: { title: string; gym: ReactNode; /** The shared coach bar, compact (`✦ Coach` + mic, §2.0.2). */ coach: ReactNode }) {
+/**
+ * (§2.0.2, Ben 20 Oct; prototypes/today-v2.html `.hdr`) The day name on the left, the compact coach
+ * (`✦ Coach` pill + mic, 44 pt each) on the right, on one line at 375 pt: the name shrinks to fit
+ * before it would wrap. The screen pads it below the status bar (safe-area inset).
+ */
+export function TodayHeader({ title, coach }: { title: string; /** The shared coach bar, compact (`CoachAskBar compact`). */ coach: ReactNode }) {
   const theme = useTheme();
   return (
-    <View style={{ gap: theme.space['2'] }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], flexWrap: 'wrap' }}>
-        <AppText variant="title1" accessibilityRole="header" style={{ flexShrink: 1 }}>
-          {title}
-        </AppText>
-        <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', justifyContent: 'flex-start' }}>{gym}</View>
-      </View>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space['2'], minHeight: 44 }}>
+      <AppText variant="title1" accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ flexShrink: 1 }}>
+        {title}
+      </AppText>
       {coach}
     </View>
   );
@@ -42,24 +45,23 @@ export function TodayHeader({ title, gym, coach }: { title: string; gym: ReactNo
 // ---------------------------------------------------------------------------
 // The 7-day strip
 
-function StripPill({ item, compact }: { item: StripItem; compact: boolean }) {
+function StripPill({ item }: { item: StripItem }) {
   const theme = useTheme();
-  const done = item.kind === 'workout';
-  const activity = item.kind === 'activity' && !item.planned;
-  const planned = item.planned;
+  const st = stripPillStyle(item, theme);
   return (
     <View
       style={{
+        alignSelf: 'stretch',
         borderRadius: theme.radius.sm,
-        paddingHorizontal: 3,
-        paddingVertical: 1,
-        backgroundColor: done ? theme.colors['status.done.subtle'] : activity ? theme.colors['bg.raised'] : 'transparent',
-        borderWidth: planned ? 1 : 0,
-        borderStyle: planned ? 'dashed' : 'solid',
-        borderColor: theme.colors['border.control'],
+        paddingHorizontal: 2,
+        paddingVertical: 2,
+        backgroundColor: st.backgroundColor,
+        borderWidth: st.borderWidth,
+        borderStyle: st.borderStyle,
+        borderColor: st.borderColor,
       }}
     >
-      <AppText variant="callout" color={done ? 'status.done' : item.kind === 'rest' ? 'text.tertiary' : 'text.primary'} numberOfLines={compact ? 1 : undefined} style={compact ? { fontSize: 12, lineHeight: 15 } : undefined}>
+      <AppText variant="callout" align="center" {...STRIP_LABEL_FIT} style={{ fontSize: 12, lineHeight: 15, color: st.color }}>
         {item.text}
       </AppText>
     </View>
@@ -94,8 +96,10 @@ export function WeekStrip({ cells, onDay }: { cells: readonly StripCell[]; onDay
               onDay(c);
             }}
             style={({ pressed }) => ({
+              // Seven equal columns (§2.0.2 region 3): every cell the same share, never sized by its label.
               flex: 1,
-              minWidth: 44,
+              flexBasis: 0,
+              minWidth: 0,
               minHeight: 64,
               paddingVertical: theme.space['1'],
               paddingHorizontal: 2,
@@ -114,7 +118,7 @@ export function WeekStrip({ cells, onDay }: { cells: readonly StripCell[]; onDay
               {String(c.dayOfMonth)}
             </AppText>
             {c.items.map((it, i) => (
-              <StripPill key={`${it.kind}:${String(i)}`} item={it} compact />
+              <StripPill key={`${it.kind}:${String(i)}`} item={it} />
             ))}
           </Pressable>
         </Fragment>
@@ -256,6 +260,37 @@ export function SessionListSheet({ visible, title, days, selectedKey, nextKey, o
         </Pressable>
       ))}
     </BottomCard>
+  );
+}
+
+/**
+ * No plan (§2.0.4): the Other sessions (`Full body`, `Upper`, `Push`) and `Empty workout` as one wrapping
+ * row of 44 pt chips instead of a tall list. A tap puts that session on the card.
+ */
+export function OtherSessionChips({ days, emptyLabel, onPick, onEmpty }: { days: readonly TodayDay[]; emptyLabel: string; onPick: (key: string) => void; onEmpty: () => void }) {
+  const theme = useTheme();
+  const chip = (key: string, label: string, onPress: () => void) => (
+    <Pressable
+      key={key}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => ({ minHeight: theme.target.min.height, paddingHorizontal: theme.space['4'], justifyContent: 'center', borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors['border.divider'], opacity: pressed ? 0.7 : 1 })}
+    >
+      <AppText variant="label" numberOfLines={1}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space['2'] }}>
+      {days.map((d) =>
+        chip(d.key, d.name, () => {
+          onPick(d.key);
+        }),
+      )}
+      {chip('empty', emptyLabel, onEmpty)}
+    </View>
   );
 }
 

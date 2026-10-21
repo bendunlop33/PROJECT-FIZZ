@@ -374,9 +374,11 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const typical = gymId === null ? ((await deps.typicalEquipment().catch(() => null)) ?? []) : undefined;
     const training: TrainingProfile | null = await repos().trainingProfiles.get(p.id).catch(() => null);
     const goal = training?.goal ?? null;
-    const plan = await repos().planDrafts.applied(p.id).catch(() => null);
+    // The plan in use and its workouts are read as Library › Your plan reads them, and a failed read throws (the screen
+    // says Couldn't load): never swallowed into `No plan` (as review planview S5 for Library).
+    const plan = await repos().planDrafts.applied(p.id);
     const paused = activePause(plan, nowMs, tz) !== null;
-    const live = liveRoutines(await repos().routines.listByOwner(p.id).catch(() => []));
+    const live = liveRoutines(await repos().routines.listByOwner(p.id));
     const templates = planRoutines(plan, live);
     const exercises = await exerciseIndex();
     const infoCache = new Map<string, BuilderExerciseInfo | null>();
@@ -569,7 +571,8 @@ export function createTodaySessionService(deps: TodaySessionDeps) {
     const review = reviewOf(coach);
     const equipmentVersion = deriveId(stableStringify(sub.gym.equipment.map((e) => [e.id, e.version])));
     return {
-      status: plan === null ? 'no_plan' : paused ? 'paused' : 'plan',
+      // An applied plan with no live workouts left is no plan in use (Library › Your plan shows none either).
+      status: plan === null || days.length === 0 ? 'no_plan' : paused ? 'paused' : 'plan',
       ownerId: p.id,
       localDate: today,
       tz,

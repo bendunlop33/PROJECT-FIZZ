@@ -38,7 +38,11 @@ export interface CoachAskBarProps {
   page: AskBarPage;
   /** From the builder coach service (`status()`). */
   reach: BuilderCoachReach;
-  /** Today's header bar: `✦ Coach`. */
+  /**
+   * Today's header (§2.0.2, Ben 20 Oct; prototypes/today-v2.html `.askbar.sm`): a compact `✦ Coach`
+   * pill (the status word instead when there's no coach: `Offline`, `No coach`) and a round mic, both
+   * 44 pt, sized to their content so they share one line with the day name at 375 pt.
+   */
   compact?: boolean;
   /** Open the coach sheet; `transcript` when the mic heard words. */
   onOpen: (transcript?: string) => void;
@@ -53,7 +57,7 @@ export interface CoachAskBarProps {
 }
 
 const BAR_HEIGHT = 48;
-/** `icons`: the minimum target (44 pt). */
+/** `icons` and `compact`: the minimum target (44 pt). */
 const ICON_SIZE = 44;
 
 export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, speech, asking = false, icons = false }: CoachAskBarProps) {
@@ -120,11 +124,11 @@ export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, sp
       disabled={view.mic.disabled}
       onPress={tapMic}
       style={({ pressed }) => ({
-        width: icons ? ICON_SIZE : BAR_HEIGHT,
-        minHeight: icons ? ICON_SIZE : BAR_HEIGHT,
+        width: icons || compact ? ICON_SIZE : BAR_HEIGHT,
+        minHeight: icons || compact ? ICON_SIZE : BAR_HEIGHT,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: theme.radius.md,
+        borderRadius: compact ? ICON_SIZE / 2 : theme.radius.md,
         backgroundColor: listening ? theme.colors['status.danger'] : theme.colors['bg.raised'],
         borderWidth: 1,
         borderColor: listening ? theme.colors['status.danger'] : theme.colors['border.control'],
@@ -164,6 +168,43 @@ export function CoachAskBar({ page, reach, compact = false, onOpen, onSubmit, sp
           </AppText>
           <AppText variant="label" color="text.secondary" accessible={false} style={{ fontSize: 11, lineHeight: 14 }}>
             {view.short}
+          </AppText>
+        </Pressable>
+        {micButton}
+      </View>
+    );
+  }
+
+  if (compact && !inline) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space['2'], flexShrink: 0 }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={listening ? `Listening. ${heard}` : view.accessibilityLabel}
+          accessibilityState={{ disabled: view.disabled || listening }}
+          disabled={view.disabled || listening}
+          onPress={() => {
+            onOpen();
+          }}
+          style={({ pressed }) => ({
+            minHeight: ICON_SIZE,
+            minWidth: ICON_SIZE,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: theme.space['1'],
+            paddingHorizontal: theme.space['3'],
+            borderRadius: theme.radius.pill,
+            backgroundColor: theme.colors['bg.surface'],
+            borderWidth: 1,
+            borderColor: theme.colors['border.control'],
+            opacity: view.disabled ? 0.6 : pressed ? 0.7 : 1,
+          })}
+        >
+          <AppText variant="callout" color={view.status === null ? 'accent' : 'text.secondary'} accessible={false}>
+            ✦
+          </AppText>
+          <AppText variant="callout" color={view.status === null ? 'text.primary' : 'text.secondary'} accessible={false}>
+            {listening ? 'Listening…' : view.short}
           </AppText>
         </Pressable>
         {micButton}
