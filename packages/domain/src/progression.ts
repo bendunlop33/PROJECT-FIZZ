@@ -1102,14 +1102,16 @@ function builderFormatOtherLoad(ctx: Ctx, sessions: readonly SessionEval[], firs
  * (Reps from history, 21 Oct) The newest comparable session the rule would
  * plan from (the same reading as `calculateNextTargets`: like-for-like
  * equipment, FitNotes working sets, builder-format top + back-offs): its
- * judged reps and the load it plans from. Null when there's none.
+ * judged reps, the load it plans from, and whether every judged set was
+ * within the rule's effort limit (sets without a recorded effort pass).
+ * Null when there's none.
  */
-export function latestJudgedSession(input: NextTargetsInput): { reps: number[]; load: number | null; direction: LoadDirection } | null {
+export function latestJudgedSession(input: NextTargetsInput): { reps: number[]; load: number | null; direction: LoadDirection; effortOk: boolean } | null {
   const unit = input.equipment?.unit ?? input.unit;
   const convention = input.equipment?.loadConvention ?? input.convention;
   const ctx: Ctx = { input, unit, convention, direction: loadDirection(convention), facts: [], infeasible: false };
   const ref = comparableSessions(ctx).find((s) => s.loggedSets > 0);
-  return ref === undefined ? null : { reps: ref.judgedReps, load: ref.load, direction: ctx.direction };
+  return ref === undefined ? null : { reps: ref.judgedReps, load: ref.load, direction: ctx.direction, effortOk: ref.effortOk };
 }
 
 /**

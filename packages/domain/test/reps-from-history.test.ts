@@ -151,7 +151,12 @@ describe('rep range from history (pure)', () => {
     expect(sameEffortReps(15, 60, 62.5, 'assistance')).toBeNull();
     expect(aimReps('increase_load', { min: 12, max: 15 }, 15, { from: 60, to: 62.5, direction: 'resistance' })).toBe(13);
     expect(aimReps('increase_load', { min: 12, max: 15 }, 15, null)).toBe(12);
-    expect(aimReps('hold', ISO, 10, null)).toBe(10);
+    // Review B2: a hold within the effort limit (or none recorded) adds a rep, up to the top; over the limit it repeats.
+    expect(aimReps('hold', ISO, 10, null)).toBe(11);
+    expect(aimReps('hold', ISO, 12, null)).toBe(12);
+    expect(aimReps('hold', ISO, 10, null, false)).toBe(10);
+    // Rule 9: a pain hold never adds reps.
+    expect(aimReps('halted_pain', ISO, 10, null)).toBe(10);
     expect(aimReps('increase_reps', { min: 11, max: 11 }, 10, null)).toBe(11);
     expect(aimReps('hold_after_miss', ISO, 6, null)).toBe(8);
     expect(aimReps('insufficient_data', ISO, null, null)).toBe(8);
@@ -194,10 +199,10 @@ describe('Ben’s shrugs, reproduced: did 15 last time → planned around 15, no
     expect(working(slot.rows).map((r) => [r.reps, r.load])).toEqual([0, 1, 2].map(() => [13, 52.5]));
   });
 
-  it('history inside the goal range without reaching its top: the same load at his reps (a hold), not the range floor', () => {
+  it('history inside the goal range without reaching its top: the same load at one rep more (a hold), not the range floor', () => {
     const load = slotLoads(SHRUG, [session(902, 5, rack, 'per_hand', three(30, 10, 8))], [rack]);
     const slot = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, load, 'isolation'));
-    expect(working(slot.rows).map((r) => [r.reps, r.load])).toEqual([0, 1, 2].map(() => [10, 30]));
+    expect(working(slot.rows).map((r) => [r.reps, r.load])).toEqual([0, 1, 2].map(() => [11, 30]));
     expect(load.ruleReps?.kind).toBe('goal');
     expect(slotRepsWhy(false, load.ruleReps)).toBeNull();
   });
@@ -211,11 +216,46 @@ describe('Ben’s shrugs, reproduced: did 15 last time → planned around 15, no
   });
 
   it('history far above the goal (25 reps) moves toward it gradually, said behind Why?', () => {
-    const load = slotLoads(SHRUG, [session(903, 5, rack, 'per_hand', three(20, 25))], [rack]);
+    const load = slotLoads(SHRUG, [session(903, 5, rack, 'per_hand', three(30, 25))], [rack]);
     expect(load.ruleReps).toMatchObject({ last: 25, range: { min: 20, max: 23 }, kind: 'toward_goal' });
     const slot = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, load, 'isolation'));
     expect(working(slot.rows).every((r) => r.reps >= 20 && r.reps <= 23)).toBe(true);
     expect(slotRepsWhy(false, load.ruleReps)).toBe('Reps: last time 25 · toward 8–12');
+  });
+
+  it('the same hold with effort over the limit (RPE 10) repeats his reps', () => {
+    const load = slotLoads(SHRUG, [session(908, 5, rack, 'per_hand', three(30, 10, 10))], [rack]);
+    const slot = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, load, 'isolation'));
+    expect(working(slot.rows).map((r) => [r.reps, r.load])).toEqual([0, 1, 2].map(() => [10, 30]));
+  });
+
+  it('review B2: eight weeks of Ben doing exactly what the builder plans (RPE 8): reps climb to the top, then the load rises', () => {
+    let history: HistorySession[] = [...SHRUGS_15];
+    const plans: [number, number | null][] = [];
+    for (let week = 1; week <= 8; week += 1) {
+      const load = slotLoads(SHRUG, history, [rack]);
+      const slot = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, load, 'isolation'));
+      const work = working(slot.rows);
+      const first = work[0];
+      if (first === undefined) throw new Error('no working rows');
+      expect(work.every((r) => r.reps === first.reps && r.load === first.load)).toBe(true);
+      plans.push([first.load ?? 0, first.reps]);
+      history = [...history, session(9100 + week, 7 - week * 0.5, rack, 'per_hand', three(first.load ?? 0, first.reps, 8))];
+    }
+    expect(plans[0]).toEqual([32.5, 12]);
+    // Never two weeks at the same load and reps.
+    for (let i = 1; i < plans.length; i += 1) expect(plans[i]).not.toEqual(plans[i - 1]);
+    // Every week either adds a rep at the same load, or raises the load.
+    for (let i = 1; i < plans.length; i += 1) {
+      const [l0, r0] = plans[i - 1] as [number, number];
+      const [l1, r1] = plans[i] as [number, number];
+      expect(l1 > l0 || (l1 === l0 && r1 === r0 + 1)).toBe(true);
+    }
+    // Reps reach the top of the range (12) at 35 kg before the load goes up again.
+    const at35 = plans.filter(([l]) => l === 35).map(([, r]) => r);
+    expect(at35.length).toBeGreaterThan(1);
+    expect(Math.max(...at35)).toBe(12);
+    expect(plans.some(([l]) => l > 35)).toBe(true);
   });
 
   it('lb dumbbells: the same reps from history, loads in lb on the lb rack', () => {
@@ -233,6 +273,32 @@ describe('Ben’s shrugs, reproduced: did 15 last time → planned around 15, no
     const work = working(slot.rows);
     expect(work.every((r) => r.load !== null && r.load <= 30)).toBe(true);
     expect(work.every((r) => r.reps === 15)).toBe(true);
+  });
+});
+
+describe('review S1: at the equipment max, never fewer reps at the same load', () => {
+  it('30 × 20 on a rack topping out at 30 kg: holds 30 × 20 (not 18, 16, 15)', () => {
+    let history = [session(910, 9, shortRack, 'per_hand', three(30, 20, 8))];
+    for (let week = 1; week <= 3; week += 1) {
+      const load = slotLoads(SHRUG, history, [shortRack]);
+      expect(load.ruleReps?.kind).not.toBe('toward_goal');
+      const slot = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, load, 'isolation'));
+      const work = working(slot.rows);
+      expect(work.map((r) => [r.reps, r.load])).toEqual([0, 1, 2].map(() => [20, 30]));
+      history = [...history, session(910 + week, 8 - week, shortRack, 'per_hand', three(30, 20, 8))];
+    }
+  });
+
+  it('a jump too big for the rule (20 → 22.5 kg is over 10%): 20 × 25 holds at 25 reps, not 23', () => {
+    const load = slotLoads(SHRUG, [session(916, 5, rack, 'per_hand', three(20, 25, 8))], [rack]);
+    expect(load.ruleReps).toMatchObject({ kind: 'history', range: { min: 22, max: 25 }, aim: 25 });
+    const slot = makeSlot(SHRUG.id, { main: false }, ctxFor(SHRUG, load, 'isolation'));
+    expect(working(slot.rows).map((r) => [r.reps, r.load])).toEqual([0, 1, 2].map(() => [25, 20]));
+  });
+
+  it('with room above, 20 reps still move toward the goal', () => {
+    const load = slotLoads(SHRUG, [session(915, 5, rack, 'per_hand', three(30, 20, 8))], [rack]);
+    expect(load.ruleReps).toMatchObject({ kind: 'toward_goal', range: { min: 15, max: 18 } });
   });
 });
 

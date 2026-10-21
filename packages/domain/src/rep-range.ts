@@ -23,8 +23,11 @@ import type { ProgressionDecision } from './progression';
  *
  * `aim` is the one rep count a builder slot plans inside that range, by the
  * rule's decision: after a load increase, the reps the new load allows at the
- * same effort (Epley), else what he did last time (a hold), the rule's next
- * rep (add reps), or the range floor (a miss or a reduction).
+ * same effort (Epley); on a hold, one rep more than last time up to the top
+ * of the range when his effort was within the rule's limit or not recorded
+ * (review B2: double progression keeps adding reps after a load step), else
+ * what he did (effort over the limit, or a pain hold); the rule's next rep
+ * (add reps); or the range floor (a miss or a reduction).
  *
  * Main barbell lifts keep their range (top set / back-offs, ADR 0006), and so
  * does a rule of Ben's own: `kind: 'fixed'`.
@@ -101,9 +104,10 @@ export function sameEffortReps(reps: number, from: number | null, to: number | n
 /**
  * `aimReps`: the one rep count a slot plans inside `range` by the rule's
  * decision. `loads` (the load last time and the rule's load) turn a load
- * increase into the reps the new load allows at the same effort.
+ * increase into the reps the new load allows at the same effort. `effortOk`:
+ * every set last time was within the rule's effort limit, or had none recorded.
  */
-export function aimReps(decision: ProgressionDecision, range: RepRangeValue, last: number | null, loads: { from: number | null; to: number | null; direction: LoadDirection } | null): number {
+export function aimReps(decision: ProgressionDecision, range: RepRangeValue, last: number | null, loads: { from: number | null; to: number | null; direction: LoadDirection } | null, effortOk = true): number {
   switch (decision) {
     case 'increase_reps':
     case 'ceiling_reached':
@@ -114,7 +118,10 @@ export function aimReps(decision: ProgressionDecision, range: RepRangeValue, las
       return clamp(r ?? range.max - PERSONAL_REPS.width, range);
     }
     case 'hold':
+      // Review B2: reps keep rising toward the top of the range; repeated only when effort was over the limit.
+      return last === null ? range.min : clamp(effortOk ? last + 1 : last, range);
     case 'halted_pain':
+      // Rule 9: pain stops progression for the movement, reps included.
       return last === null ? range.min : clamp(last, range);
     case 'hold_after_miss':
     case 'reduce_load':

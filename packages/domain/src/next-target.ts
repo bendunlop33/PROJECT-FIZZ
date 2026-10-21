@@ -2,7 +2,7 @@ import type { CheckIn, EquipmentInstance, LoadConvention, Measurement, PainFlag,
 import { painMentionedNotFlagged, painStatusFor } from './checkin';
 import { builtInDefaultRule, ruleCategory, type RuleExerciseInfo } from './default-rule';
 import { calculateNextTargets, latestJudgedSession, type HistorySession, type NextTargets, type PainStatus } from './progression';
-import { aimReps, PERSONAL_REPS, personalRepRange, personalRuleName, ruleRepsFact, typicalReps, type RuleReps } from './rep-range';
+import { aimReps, PERSONAL_REPS, personalRepRange, personalRuleName, ruleRepsFact, typicalReps, type PersonalRepsKind, type RuleReps } from './rep-range';
 import { ruleTargetProvenance, type RuleProvenanceInput } from './target-provenance';
 
 /**
@@ -75,14 +75,22 @@ export function nextTargetsFor(req: NextTargetRequest): { result: NextTargets; r
   const last = latest === null ? null : typicalReps(latest.reps);
   const personal = req.rule === null && category !== 'main_barbell';
   const loadable = (req.equipment?.loadConvention ?? req.convention) !== 'bodyweight';
-  const p = personal ? personalRepRange(base.repRange, last, base.ceilingRepCap, loadable) : { range: { ...base.repRange }, kind: 'fixed' as const };
-  const moved = p.kind === 'history' || p.kind === 'toward_goal';
-  // A loaded lift's cap is never below the range (more reps there means more load); bodyweight keeps room to add reps.
-  const cap = loadable ? Math.max(base.ceilingRepCap, p.range.max) : Math.max(base.ceilingRepCap, p.range.max + PERSONAL_REPS.width);
-  const rule: ProgressionRule = moved ? { ...base, repRange: p.range, ceilingRepCap: cap, name: personalRuleName(p.range, base.maxRpeToProgress) } : base;
-  const result = calculateNextTargets({ ...input, rule });
+  const plan = (p: { range: { min: number; max: number }; kind: PersonalRepsKind }) => {
+    const moved = p.kind === 'history' || p.kind === 'toward_goal';
+    // A loaded lift's cap is never below the range (more reps there means more load); bodyweight keeps room to add reps.
+    const cap = loadable ? Math.max(base.ceilingRepCap, p.range.max) : Math.max(base.ceilingRepCap, p.range.max + PERSONAL_REPS.width);
+    const rule: ProgressionRule = moved ? { ...base, repRange: p.range, ceilingRepCap: cap, name: personalRuleName(p.range, base.maxRpeToProgress) } : base;
+    return { p, rule, result: calculateNextTargets({ ...input, rule }) };
+  };
+  let planned = plan(personal ? personalRepRange(base.repRange, last, base.ceilingRepCap, loadable) : { range: { ...base.repRange }, kind: 'fixed' as const });
+  // Review S1: moving toward the goal cuts reps so the load can rise. When it can't (equipment max, a jump too
+  // big, no assistance left), the range stays at his reps as on bodyweight, so he holds there instead of regressing.
+  if (planned.p.kind === 'toward_goal' && (planned.result.decision === 'increase_reps' || planned.result.decision === 'ceiling_reached')) {
+    planned = plan(personalRepRange(base.repRange, last, base.ceilingRepCap, false));
+  }
+  const { p, rule, result } = planned;
   const first = result.sets.find((s) => s.setType !== 'warmup');
-  const aim = aimReps(result.decision, first?.reps ?? p.range, last, latest === null ? null : { from: latest.load, to: first?.load?.value ?? null, direction: latest.direction });
+  const aim = aimReps(result.decision, first?.reps ?? p.range, last, latest === null ? null : { from: latest.load, to: first?.load?.value ?? null, direction: latest.direction }, latest?.effortOk ?? true);
   const reps: RuleReps = { last, goal: { ...base.repRange }, range: p.range, kind: p.kind, aim };
   const fact = ruleRepsFact(reps);
   const explanation = fact === null ? result.explanation : { ...result.explanation, facts: [fact, ...result.explanation.facts] };
