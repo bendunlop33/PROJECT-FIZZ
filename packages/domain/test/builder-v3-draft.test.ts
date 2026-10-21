@@ -185,6 +185,39 @@ describe("Ben's own edits (§2.3–§2.5)", () => {
     expect(down.ok && down.workout.blocks[1]?.slots[0]?.key).toBe(main?.key);
   });
 
+  it('drag (Q18): a drop on an edge moves the row as its own round; on the middle it supersets; main lift and self-drops spring back', () => {
+    const c = ctx();
+    const w = chest(c, false);
+    const keys = slotsOf(w.blocks).map((s) => s.key);
+    const main = slotsOf(w.blocks).find((s) => s.main);
+    const last = keys.at(-1) ?? '';
+    const second = keys[1] ?? '';
+    // The last exercise dropped on the bottom edge of the main lift: it is round 2 now.
+    const moved = applyBuilderEdit(w, { kind: 'drop', slotKey: last, targetKey: main?.key ?? '', edge: 'after' }, c);
+    expect(moved.ok).toBe(true);
+    if (!moved.ok) return;
+    expect(moved.workout.blocks[1]?.slots.map((s) => s.key)).toEqual([last]);
+    expect(moved.workout.blocks).toHaveLength(w.blocks.length);
+    // Dropped on the middle of row 2: Ben's own superset.
+    const paired = applyBuilderEdit(w, { kind: 'drop', slotKey: last, targetKey: second, edge: 'onto' }, c);
+    expect(paired.ok).toBe(true);
+    if (!paired.ok) return;
+    const pair = paired.workout.blocks.find((b) => b.slots.length === 2);
+    expect(pair?.slots.map((s) => s.key)).toEqual([second, last]);
+    expect(pair?.auto).toBe(false);
+    // Dragged back out of the pair: both stand alone and are marked unlinked (never re-paired by the builder).
+    const out = applyBuilderEdit(paired.workout, { kind: 'drop', slotKey: last, targetKey: main?.key ?? '', edge: 'before' }, c);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.workout.blocks[0]?.slots[0]?.key).toBe(last);
+    expect(slotsOf(out.workout.blocks).filter((s) => s.unlinked === true).map((s) => s.key).sort()).toEqual([second, last].sort());
+    expect(applyBuilderEdit(w, { kind: 'drop', slotKey: last, targetKey: main?.key ?? '', edge: 'onto' }, c)).toEqual({ ok: false, reason: 'cannot_superset' });
+    expect(applyBuilderEdit(w, { kind: 'drop', slotKey: last, targetKey: last, edge: 'before' }, c)).toEqual({ ok: false, reason: 'cannot_move' });
+    // A drop that leaves everything where it was is no change either.
+    const prev = keys.at(-2) ?? '';
+    expect(applyBuilderEdit(w, { kind: 'drop', slotKey: last, targetKey: prev, edge: 'after' }, c)).toEqual({ ok: false, reason: 'cannot_move' });
+  });
+
   it('delete set keeps at least one working set; + Set copies the last one, max 10', () => {
     const c = ctx();
     const w = chest(c, false);

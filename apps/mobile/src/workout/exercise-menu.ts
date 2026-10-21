@@ -7,7 +7,27 @@
 import { formatNumber, TARGET_RPE_CHOICES, type TargetRpe } from '@fizz/domain';
 import type { TargetRpeScope } from '@fizz/schemas';
 
-export type ExerciseMenuAction = 'how_to' | 'edit_set' | 'undo_coach' | 'undo_swap' | 'target_rpe' | 'add_set' | 'swap' | 'not_at_gym' | 'superset_with' | 'remove_superset' | 'notes' | 'add_exercise' | 'delete_set' | 'skip_exercise' | 'remove_exercise';
+export type ExerciseMenuAction =
+  | 'how_to'
+  | 'history'
+  | 'plates'
+  | 'edit_set'
+  | 'undo_coach'
+  | 'undo_swap'
+  | 'target_rpe'
+  | 'add_set'
+  | 'swap'
+  | 'move_up'
+  | 'move_down'
+  | 'not_at_gym'
+  | 'superset_next'
+  | 'superset_with'
+  | 'remove_superset'
+  | 'notes'
+  | 'add_exercise'
+  | 'delete_set'
+  | 'skip_exercise'
+  | 'remove_exercise';
 
 interface MenuItem {
   action: ExerciseMenuAction | 'cancel';
@@ -35,6 +55,15 @@ const NOT_AT_GYM: MenuItem = { action: 'not_at_gym', label: 'Not at this gym', d
 const SUPERSET_WITH: MenuItem = { action: 'superset_with', label: 'Superset with…', destructive: false };
 /** (Ben, 19 Oct) Each member back to its own sets. */
 const REMOVE_SUPERSET: MenuItem = { action: 'remove_superset', label: 'Remove superset', destructive: false };
+/** (workout-table-v3 §7) The v3 round page's words, the builder's: the round moves, pairs with the next, unlinks. */
+const MOVE_UP: MenuItem = { action: 'move_up', label: 'Move up', destructive: false };
+const MOVE_DOWN: MenuItem = { action: 'move_down', label: 'Move down', destructive: false };
+const SUPERSET_NEXT: MenuItem = { action: 'superset_next', label: 'Superset with next', destructive: false };
+const UNLINK: MenuItem = { action: 'remove_superset', label: 'Unlink', destructive: false };
+/** The exercise's history (it was on the name's sheet before the name opened the pop-up, v3 §7). */
+const HISTORY: MenuItem = { action: 'history', label: 'History', destructive: false };
+/** Plates for every load in today's targets (also from the name's sheet before v3 §7). */
+const PLATES: MenuItem = { action: 'plates', label: 'Plates', destructive: false };
 const ITEMS: readonly MenuItem[] = [
   { action: 'notes', label: 'Notes', destructive: false },
   { action: 'add_exercise', label: 'Add exercise', destructive: false },
@@ -72,11 +101,36 @@ export interface ExerciseMenuOptions {
   inSuperset?: boolean;
   /** `Not at this gym`: the exercise uses an item of this workout's gym. */
   canMarkNotHere?: boolean;
+  /**
+   * (workout-table-v3 §7) The v3 round page: Move up / Move down (rounds not started only) and
+   * Superset with next, as the builder's pop-up; `Remove superset` reads `Unlink`; History.
+   */
+  round?: { moveUp: boolean; moveDown: boolean; supersetNext: boolean; history: boolean; plates?: boolean };
 }
 
 export function exerciseMenu(hasHowTo: boolean, hasCoachChange: boolean | 'rule' = false, o: ExerciseMenuOptions = {}): ExerciseMenu {
   const undo = hasCoachChange === 'rule' ? [UNDO_RULE] : hasCoachChange ? [UNDO_COACH] : [];
-  const items = [...(hasHowTo ? [HOW_TO] : []), ...undo, ...(o.canUndoSwap ? [UNDO_SWAP] : []), ...(o.canEditSet ? [EDIT_SET] : []), ...(o.hasTargetRpe ? [TARGET_RPE] : []), ADD_SET, ...(o.canSwap ? [SWAP] : []), ...(o.canMarkNotHere ? [NOT_AT_GYM] : []), ...(o.canSuperset ? [SUPERSET_WITH] : []), ...(o.inSuperset ? [REMOVE_SUPERSET] : []), ...ITEMS, ...(o.canRemove ? [REMOVE] : []), CANCEL];
+  const r = o.round;
+  const items = [
+    ...(hasHowTo ? [HOW_TO] : []),
+    ...(r?.history === true ? [HISTORY] : []),
+    ...(r?.plates === true ? [PLATES] : []),
+    ...undo,
+    ...(o.canUndoSwap ? [UNDO_SWAP] : []),
+    ...(o.canEditSet ? [EDIT_SET] : []),
+    ...(o.hasTargetRpe ? [TARGET_RPE] : []),
+    ADD_SET,
+    ...(o.canSwap ? [SWAP] : []),
+    ...(r?.moveUp === true ? [MOVE_UP] : []),
+    ...(r?.moveDown === true ? [MOVE_DOWN] : []),
+    ...(o.canMarkNotHere ? [NOT_AT_GYM] : []),
+    ...(r?.supersetNext === true ? [SUPERSET_NEXT] : []),
+    ...(o.canSuperset ? [SUPERSET_WITH] : []),
+    ...(o.inSuperset ? [r === undefined ? REMOVE_SUPERSET : UNLINK] : []),
+    ...ITEMS,
+    ...(o.canRemove ? [REMOVE] : []),
+    CANCEL,
+  ];
   return {
     options: items.map((i) => i.label),
     destructiveButtonIndex: items.flatMap((item, i) => (item.destructive ? [i] : [])),

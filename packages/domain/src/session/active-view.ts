@@ -1261,6 +1261,20 @@ export function toggleRepRange(reps: { min: number; max: number } | null): { min
  * change, so a failed fit never clears the stored target (review S2).
  */
 export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: number | null, bodyweightExercises?: ReadonlySet<string>): number | null | undefined {
+  return snapLoadWith(state, setId, typed, 'nearest', bodyweightExercises);
+}
+
+/**
+ * A kg typed in the exercise pop-up for a set (workout-table-v3 §7, as the builder's §2.4): made
+ * achievable by rounding toward easier (down; more assistance on an assisted machine), never past
+ * the item's max. Undefined when the lightest load the item makes is still harder than what was
+ * typed, or the row can't be loaded (rule 4: the cell keeps its old value).
+ */
+export function snapTypedLoadEasier(state: SessionAggregate, setId: string, typed: number | null, bodyweightExercises?: ReadonlySet<string>): number | null | undefined {
+  return snapLoadWith(state, setId, typed, 'easier', bodyweightExercises);
+}
+
+function snapLoadWith(state: SessionAggregate, setId: string, typed: number | null, policy: 'nearest' | 'easier', bodyweightExercises?: ReadonlySet<string>): number | null | undefined {
   if (typed === null) return null;
   const set = state.sets.find((s) => s.id === setId);
   const ex = set ? state.exercises.find((e) => e.id === set.sessionExerciseId) : undefined;
@@ -1270,16 +1284,21 @@ export function snapPlannedLoad(state: SessionAggregate, setId: string, typed: n
   if (isWeightedBodyweight(ex, own, isBodyweightExercise(state, ex, bodyweightExercises))) {
     const options = checkEquipmentOf(state, ex, own, bodyweightExercises);
     if (options === null) return 0;
-    const r = roundToAvailableLoad({ value: Math.max(0, typed), unit: ex.unit, convention: 'added' }, options, 'nearest');
-    return r.ok ? r.load.value : undefined;
+    const r = roundToAvailableLoad({ value: Math.max(0, typed), unit: ex.unit, convention: 'added' }, options, policy);
+    if (!r.ok || (policy === 'easier' && r.load.value > Math.max(0, typed) + 1e-9)) return undefined;
+    return r.load.value;
   }
   const eq = own;
   if (eq === null) return Math.max(0, typed);
   if (eq.loadConvention !== ex.loadConvention || eq.unit !== ex.unit) return undefined;
   // A bodyweight station makes one load: none added (the reducer's `isLoadAchievable`).
   if (eq.kind === 'bodyweight_station') return 0;
-  const r = roundToAvailableLoad({ value: Math.max(0, typed), unit: ex.unit, convention: ex.loadConvention }, eq, 'nearest');
-  return r.ok ? r.load.value : undefined;
+  const r = roundToAvailableLoad({ value: Math.max(0, typed), unit: ex.unit, convention: ex.loadConvention }, eq, policy);
+  if (!r.ok) return undefined;
+  // Easier only: never a harder load than typed (below the lightest plate, past the most assistance).
+  const harder = loadDirection(ex.loadConvention) === 'resistance' ? r.load.value > Math.max(0, typed) + 1e-9 : r.load.value < Math.max(0, typed) - 1e-9;
+  if (policy === 'easier' && harder) return undefined;
+  return r.load.value;
 }
 
 /**

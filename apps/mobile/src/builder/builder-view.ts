@@ -1,7 +1,8 @@
 import { canAddWarmup, clampBuilderRest, slotsOf, workingCount, type BuilderSlot, type GroupCount, type RestKind } from '@fizz/domain';
-import { BUILD_LIMITS, type BuilderGroup, type LoadConvention, type SetType, type WeightUnit } from '@fizz/schemas';
+import { BUILD_LIMITS, type BuilderGroup } from '@fizz/schemas';
 
 import type { BuilderSnapshot, SetupFacts, SetupInput, StartPrompt } from './builder-service';
+import { loadSpoken, loadText, REST_STEP_S, restText, SET_TYPE_LABEL, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
 
 /**
  * What the builder's screens show (workout-builder-v3 §2.2–§2.8,
@@ -92,47 +93,8 @@ export const PROMPT_COPY = {
 
 const trim = (n: number): string => String(Math.round(n * 100) / 100);
 
-/** `1:00`, `3:30` (rest, 15 s steps). */
-export function restText(seconds: number): string {
-  const s = Math.max(0, Math.round(seconds));
-  return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`;
-}
-
-/** A target load as the table shows it (§2.3): `100`, `30 each`, `25 assist`, `BW`, `BW+10`, `—`; another unit inline (`45 lb`). */
-export function loadText(value: number | null, unit: WeightUnit, convention: LoadConvention, headerUnit: WeightUnit): string {
-  if (convention === 'bodyweight') return 'BW';
-  if (value === null) return '—';
-  const u = unit === headerUnit ? '' : ` ${unit}`;
-  switch (convention) {
-    case 'per_hand':
-      return `${trim(value)}${u} each`;
-    case 'assistance':
-      return `${trim(value)}${u} assist`;
-    case 'added':
-      return value === 0 ? 'BW' : `BW+${trim(value)}${u}`;
-    case 'total':
-    case 'stack':
-      return `${trim(value)}${u}`;
-  }
-}
-
-/** Spoken form for VoiceOver: `30 kilograms each`, `25 kilograms assistance`. */
-export function loadSpoken(value: number | null, unit: WeightUnit, convention: LoadConvention): string {
-  if (convention === 'bodyweight') return 'bodyweight';
-  if (value === null) return 'no load yet';
-  const u = unit === 'kg' ? 'kilograms' : 'pounds';
-  switch (convention) {
-    case 'per_hand':
-      return `${trim(value)} ${u} each`;
-    case 'assistance':
-      return `${trim(value)} ${u} assistance`;
-    case 'added':
-      return `bodyweight plus ${trim(value)} ${u}`;
-    case 'total':
-    case 'stack':
-      return `${trim(value)} ${u}`;
-  }
-}
+// The pop-up's model, values and words are shared with the active workout (workout-table-v3 §7).
+export { KEY_STEPS, loadSpoken, loadText, nextField, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
 
 // ---------------------------------------------------------------------------
 // Set up (§2.2)
@@ -356,51 +318,6 @@ export function workoutView(snap: BuilderSnapshot): WorkoutPageView {
 // ---------------------------------------------------------------------------
 // Exercise pop-up (§2.4)
 
-export const SET_TYPE_LABEL: Readonly<Record<SetType, string>> = { warmup: 'Warm-up', working: 'Working', top: 'Top set', backoff: 'Back-off', drop: 'Drop' };
-export const SET_TYPES: readonly SetType[] = ['warmup', 'working', 'top', 'backoff', 'drop'];
-
-export interface PopupSetRow {
-  index: number;
-  /** `W` for a warm-up, else the working set's number. */
-  mark: string;
-  type: SetType;
-  typeText: string;
-  reps: number;
-  kgText: string;
-  load: number | null;
-  rpeText: string;
-  rpe: number | null;
-  canDelete: boolean;
-  accessibilityLabel: string;
-  /** `Warm-up 1`, `Set 2`: what VoiceOver says before each cell (`Set 2, reps`). */
-  spokenName: string;
-}
-
-export interface PopupRestRow {
-  kind: RestKind | 'round';
-  label: string;
-  seconds: number;
-  text: string;
-  /** A 15 s step down or up is still in range (no write that changes nothing). */
-  canMinus: boolean;
-  canPlus: boolean;
-}
-
-export interface PopupView {
-  name: string;
-  works: string | null;
-  kgHeader: string;
-  rows: PopupSetRow[];
-  canAddWarmup: boolean;
-  canAddSet: boolean;
-  rests: PopupRestRow[];
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  canSupersetNext: boolean;
-  canUnlink: boolean;
-  mayHurt: boolean;
-}
-
 /**
  * The pop-up for one slot. `restOf` gives each rest kind's current seconds
  * (Ben's own, else the default the service worked out).
@@ -420,23 +337,32 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
     const spokenName = r.type === 'warmup' ? `Warm-up ${String((w += 1))}` : `Set ${mark}`;
     const kgText = loadText(r.load, slot.unit, slot.convention, slot.unit);
     return {
+      key: String(i),
       index: i,
       mark,
       type: r.type,
       typeText: SET_TYPE_LABEL[r.type],
       reps: r.reps,
+      repsText: String(r.reps),
       kgText,
       load: r.load,
       rpeText: r.rpe === null ? '–' : trim(r.rpe),
       rpe: r.rpe,
+      done: false,
+      editable: true,
+      noRpe: r.type === 'warmup',
       canDelete: r.type === 'warmup' || work > 1,
+      // The builder keeps sets in type order (warm-ups first): no set drag here.
+      canMoveUp: false,
+      canMoveDown: false,
+      draggable: false,
       accessibilityLabel: `${spokenName}, ${SET_TYPE_LABEL[r.type]}, ${String(r.reps)} reps, ${loadSpoken(r.load, slot.unit, slot.convention)}${r.rpe === null ? '' : `, RPE ${trim(r.rpe)}`}`,
       spokenName,
     };
   });
   const types = new Set(slot.rows.map((r) => r.type));
   const superset = (block?.slots.length ?? 1) > 1;
-  const rests: Omit<PopupRestRow, 'canMinus' | 'canPlus'>[] = superset
+  const rests: (Omit<PopupRestRow, 'canMinus' | 'canPlus'> & { kind: RestKind | 'round' })[] = superset
     ? [{ kind: 'round', label: 'After each round', seconds: restOf('round'), text: restText(restOf('round')) }]
     : [
         ...(types.has('warmup') ? [{ kind: 'warmup' as const, label: 'Warm-ups' }] : []),
@@ -445,7 +371,7 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
         ...(types.has('working') ? [{ kind: 'working' as const, label: 'Working sets' }] : []),
         ...(types.has('drop') ? [{ kind: 'before_drop' as const, label: 'Before drop' }] : []),
       ].map((x) => ({ ...x, seconds: restOf(x.kind), text: restText(restOf(x.kind)) }));
-  const steps = (x: Omit<PopupRestRow, 'canMinus' | 'canPlus'>): PopupRestRow => ({ ...x, canMinus: clampBuilderRest(x.kind, x.seconds - REST_STEP_S) < x.seconds, canPlus: clampBuilderRest(x.kind, x.seconds + REST_STEP_S) > x.seconds });
+  const steps = (x: Omit<PopupRestRow, 'canMinus' | 'canPlus'> & { kind: RestKind | 'round' }): PopupRestRow => ({ ...x, canMinus: clampBuilderRest(x.kind, x.seconds - REST_STEP_S) < x.seconds, canPlus: clampBuilderRest(x.kind, x.seconds + REST_STEP_S) > x.seconds });
   const has = (name: WorkoutRowView['actions'][number]['name']) => row?.actions.some((a) => a.name === name) === true;
   return {
     name: f?.name ?? 'Exercise',
@@ -460,20 +386,10 @@ export function popupView(snap: BuilderSnapshot, slotKey: string, restOf: (kind:
     canSupersetNext: has('superset_next'),
     canUnlink: has('unlink'),
     mayHurt: f?.mayHurt === true,
+    canSwap: true,
+    deleteLabel: WORKOUT_COPY.delete,
+    canDeleteExercise: true,
   };
-}
-
-/** A rest stepper's step (§2.4). */
-export const REST_STEP_S = 15;
-
-/** Keyboard bar steps (§2.7): reps 1, RPE 0.5; kg comes from this gym's next loadable weight (service). */
-export const KEY_STEPS = { reps: 1, rpe: 0.5 } as const;
-
-/** `Next` order: Reps → Kg → RPE → next set's Reps (§2.7). Null at the end. */
-export function nextField(rowIndex: number, field: 'reps' | 'kg' | 'rpe', rowCount: number, hasRpe: (i: number) => boolean): { row: number; field: 'reps' | 'kg' | 'rpe' } | null {
-  if (field === 'reps') return { row: rowIndex, field: 'kg' };
-  if (field === 'kg' && hasRpe(rowIndex)) return { row: rowIndex, field: 'rpe' };
-  return rowIndex + 1 < rowCount ? { row: rowIndex + 1, field: 'reps' } : null;
 }
 
 // ---------------------------------------------------------------------------
