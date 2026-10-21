@@ -28,6 +28,9 @@ body { background: var(--page); color: var(--text); font-family: var(--ui); marg
 .scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
 h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
 .sec { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); font-weight: 600; margin: 6px 2px -4px; }
+.tabseg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border-radius: 12px; padding: 3px; margin-top: -4px; }
+.tabseg button { border: 0; background: none; color: var(--text3); border-radius: 9px; min-height: 34px; font: 600 14px var(--ui); cursor: pointer; }
+.tabseg button[aria-selected="true"] { background: var(--raised); color: var(--text); }
 .segm { display: inline-flex; background: var(--surface); border-radius: 8px; padding: 2px; }
 .segm button { border: 0; background: none; color: var(--text3); font: 600 11px var(--ui); letter-spacing: .02em; text-transform: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-height: 26px; }
 .segm button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
@@ -243,6 +246,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       ${pill ? `<div style="display:flex">${pill}</div>` : ''}
       ${liftChart()}
       <div class="lifts">${liftRows()}</div>
+      <button class="link" data-a="tab" data-v="${one ? 'Lift:' + one.n : 'Lifts'}" style="align-self:flex-end;min-height:30px;font-size:13px">${one ? `Open ${one.n} \u203a` : 'All lifts \u203a'}</button>
     </div>`;
   }
   function barChart(g) {
@@ -282,10 +286,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <div class="head" style="align-items:center"><span class="title">Muscles</span><span class="hk" style="display:flex;gap:10px;align-items:center" aria-hidden="true"><span><i style="display:inline-block;width:8px;height:10px;border-radius:2px;background:#E8C9A0;margin-right:4px"></i>At plan</span><span><i style="display:inline-block;width:8px;height:10px;border-radius:2px;background:rgba(232,201,160,.45);margin-right:4px"></i>Under</span><span>┄ Plan</span></span></div>
       <div class="mrow mh" aria-hidden="true"><span>Muscle</span><span>Sets vs plan</span><span style="text-align:right">Last week</span></div>
       <div role="table" aria-label="Sets per muscle per week">${rows}</div>
+      <button class="link" data-a="tab" data-v="Training" style="align-self:flex-end;min-height:30px;font-size:13px">Details \u203a</button>
     </div>`;
   }
   function goalCard() {
-    return `<div class="sec"><span>Progress</span><span>last 8 weeks</span></div>${strengthCard()}${muscleCard()}`;
+    return `<div class="sec"><span>Trends</span><span>last 8 weeks</span></div>${strengthCard()}${muscleCard()}`;
   }
   function weekCard() {
     // Sets per muscle live in Muscles below (no duplicate here).
@@ -356,7 +361,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     controls();
     const top = app.querySelector('.scroll')?.scrollTop ?? 0;
     app.innerHTML = `<div class="status"><span>09:41</span><span>●●● 82%</span></div>
-      <div class="scroll"><h1>Progress</h1>${weekCard()}${goalCard()}${changesCard()}</div>
+      <div class="scroll"><h1>Progress</h1><div class="tabseg" role="tablist">${['Overview', 'Lifts', 'Training'].map((t) => `<button role="tab" aria-selected="${t === 'Overview'}" data-a="tab" data-v="${t}">${t}</button>`).join('')}</div>${weekCard()}${goalCard()}${changesCard()}</div>
       <div class="tabs"><span>TODAY</span><span>LIBRARY</span><span class="on">PROGRESS</span><span>PROFILE</span></div>
       ${s.toast ? `<div class="toast" role="status">${s.toast}</div>` : ''}`;
     app.querySelector('.scroll').scrollTop = top;
@@ -367,6 +372,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     if (a === 'goal') { s.goal = v; s.focus = null; }
     if (a === 'focus') s.focus = s.focus === Number(v) ? null : Number(v);
     if (a === 'all') s.focus = null;
+    if (a === 'tab') s.toast = v === 'Overview' ? null : v.startsWith('Lift:') ? `Opens ${v.slice(5)} in the Lifts tab: PRs, rep maxes, history` : v === 'Lifts' ? 'Opens the Lifts tab: every exercise, PRs and rep maxes' : 'Opens the Training tab: totals, frequency, sets by exercise';
     if (a === 'pbpt') { const [li, wi] = v.split(':').map(Number); const l = LIFTS[li]; s.toast = `PB \u00b7 ${l.n} ${l.series[wi]} \u00d7 ${l.reps} \u00b7 week of ${WEEKS[wi]}`; }
     if (a === 'estpt') { const [li, wi] = v.split(':').map(Number); const l = LIFTS[li]; s.toast = `${l.n}, week of ${WEEKS[wi]}: est. ${l.series[wi]} × ${l.reps} from ${l.estW[wi]}`; }
     if (a === 'edit') s.toast = 'Pick the lifts to track (default: your plan\u2019s main lifts)';

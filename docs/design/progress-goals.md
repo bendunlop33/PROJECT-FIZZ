@@ -8,6 +8,8 @@
 
 **Page order (Ben, 21 Oct, for every goal): This week → Goal trackers → Coach's changes (at the bottom).** This week answers the frequent question (am I on track this week, what can I still do); the Goal trackers (is it working) follow; Coach's changes sit last, in full with a `NEW` badge after each weekly review and collapsed to one line (`3 changes for next week ›`) once Ben taps `Got it` (or Undo/Apply on all of them). The numbered sections below describe each block; their order on screen is this one.
 
+**Structure (Ben, 21 Oct): Progress tabs `Overview | Lifts | Training`.** Overview (default) is this page, a glance: This week (Week/Month), Trends (Lifts summary chart with PB tags and targets; Muscles sets vs plan), Coach's changes. **Lifts** tab owns the detail per exercise: full PR / rep-max list, history chart, est. 1RM (labelled), past sessions. **Training** tab owns totals and habits (sessions/month, time, total weight, muscle frequency, sets by exercise). Links: Lifts card `All lifts ›` → Lifts tab; a focused lift shows `Open Bench ›` → that lift's page in Lifts; Muscles card `Details ›` → Training. PB tags stay on Overview as highlights only; the record list lives in Lifts. The Overview trends section header reads `TRENDS · last 8 weeks`.
+
 **Space (Ben, 21 Oct):** card titles 18 pt with their key on the same line (Lifts: `Top set · ○ est. · Edit`; Muscles: `At plan · Under · ┄ Plan`), no separate subtitle lines; the focused-lift line appears only when a lift is tapped; card padding 14 pt. Column header in Muscles reads `Sets vs plan`.
 
 **Blocks (Progress › Reviews):**
