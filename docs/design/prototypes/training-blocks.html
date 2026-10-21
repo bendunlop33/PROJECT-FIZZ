@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Training Blocks Prototype</title>
+<style>
+/* Training blocks (approved spec docs/design/training-blocks.md, Ben 21 Oct 2026). Example data only. Direction D tokens, single dark.
+   Three screens: Today (today-v2 layout + block week in the header), Progress Overview (progress-simple layout + block week in
+   the This week header, W labels on the Month calendar, dotted plan path + status glyph on Lifts) and Block review (facts,
+   coach sentence, next-block proposal with per-item Apply/Skip). Deload = ◐ glyph + word, never the cardio blue. */
+:root {
+  --canvas: #0D0C0B; --surface: #181615; --raised: #23201E; --divider: #302C29;
+  --text: #F3EEE8; --text2: #B5ADA5; --text3: #948C84; --accent: #EDE5DA; --on-accent: #0D0C0B;
+  --done: #5CC98A; --done-sub: #15301F; --run: #7FB2E5; --run-sub: #172636; --warn: #F2B84B;
+  --data: #E8C9A0; --good: #5CC98A; --page: #1B1917;
+  --ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--text); font-family: var(--ui); margin: 0; }
+.wrap { padding: 16px 12px 40px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.ctrl { width: 390px; max-width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.lab { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text3); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font: 600 14px var(--ui); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.hint { color: var(--text2); font-size: 13px; text-align: center; max-width: 390px; line-height: 1.45; }
+.phone { width: 390px; max-width: 100%; height: 820px; background: var(--canvas); border: 1px solid var(--divider); border-radius: 40px; padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; }
+.status { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; padding: 0 6px; }
+.scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0; }
+.label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); }
+.tabs { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .12em; color: var(--text3); padding: 10px 6px 0; border-top: 1px solid var(--divider); }
+.tabs button { background: none; border: 0; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; padding: 4px 2px; min-height: 32px; }
+.tabs .on { color: var(--text); font-weight: 600; }
+.toast { position: absolute; left: 14px; right: 14px; bottom: 60px; background: var(--raised); border: 1px solid var(--divider); border-radius: 14px; padding: 10px 14px; font-size: 15px; z-index: 30; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.toast .link { min-height: 32px; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.link { background: none; border: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; cursor: pointer; padding: 6px 0; font-family: inherit; }
+.tag { color: var(--text3); font-size: 12px; margin-left: 6px; }
+/* At real iPhone widths the frame is the screen: no outer margin, so 375 px = 343 pt of content */
+@media (max-width: 420px) {
+  .wrap { padding: 12px 0 40px; }
+  .ctrl, .hint { padding: 0 12px; }
+  .phone { border-radius: 0; border-left: 0; border-right: 0; }
+}
+
+/* ── Today (from today-v2) ── */
+.hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ttl { display: flex; align-items: center; flex-wrap: nowrap; gap: 0 6px; min-width: 0; }
+.ttl h1 { white-space: nowrap; }
+.ttl .bw { font: 15px var(--ui); color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; background: none; border: 0; padding: 0; min-height: 44px; cursor: pointer; }
+.askbar.ico { width: 44px; padding: 0; justify-content: center; }
+.askrow { display: flex; gap: 8px; flex: none; }
+.askbar { display: flex; gap: 8px; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--divider); background: var(--surface); color: var(--text2); font-size: 15px; font-family: inherit; cursor: pointer; }
+.askbar span:first-child { color: var(--text); }
+.askbar.off span:last-child { color: var(--text3); }
+.mic { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--raised); color: var(--text); cursor: pointer; display: grid; place-items: center; flex: none; }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.day { background: var(--surface); border: 0; border-radius: 12px; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text); cursor: pointer; font-family: inherit; min-height: 70px; }
+.day .dn { font-size: 11px; color: var(--text2); letter-spacing: .06em; }
+.day .dd { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.day.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pip { font-size: 10.5px; line-height: 1.15; padding: 2px 4px; border-radius: 6px; max-width: 100%; text-align: center; }
+.pip.lift { background: var(--done-sub); color: var(--done); }
+.pip.liftp { border: 1px dashed var(--text3); color: var(--text2); }
+.pip.run { background: var(--run-sub); color: var(--run); }
+.pip.runp { border: 1px dashed var(--run); color: var(--run); }
+.card { background: var(--surface); border-radius: 20px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.card .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.card .big { font-size: 28px; font-weight: 600; letter-spacing: -.01em; }
+.meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; color: var(--text2); text-align: right; font-variant-numeric: tabular-nums; }
+.offer { display: flex; align-items: center; gap: 4px; background: var(--raised); border-radius: 12px; padding: 0 0 0 12px; font-size: 15px; }
+.offer > span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.offer .gl { font-size: 17px; margin-right: 4px; }
+.offer .link { min-height: 44px; min-width: 44px; padding: 0 10px; font-size: 15px; }
+.offer .link.b { font-weight: 600; }
+.offer .x { text-decoration: none; color: var(--text2); font-size: 17px; }
+.chev { color: var(--text3); font-size: 20px; padding: 4px; transition: transform .15s; }
+.card.open .chev { transform: rotate(90deg); }
+.exl { display: none; flex-direction: column; }
+.card.open .exl { display: flex; }
+.ex, .exh { display: grid; grid-template-columns: 22px 1fr 34px 56px; gap: 6px; align-items: center; }
+.exh { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); padding: 4px 0 6px; align-items: end; line-height: 1.3; }
+.exh span:nth-child(3), .exh span:nth-child(4), .ex .c { text-align: right; }
+.ex { padding: 8px 0; border-top: 1px solid var(--divider); font-size: 15px; }
+.ex .n { color: var(--text2); font-size: 13px; font-weight: 600; }
+.ex small { display: block; font-size: 12.5px; color: var(--text2); margin-top: 1px; }
+.ex .c { font-variant-numeric: tabular-nums; }
+.ssb { border: 1.5px solid var(--text3); border-radius: 12px; padding: 0 8px; margin: 6px -9px 2px; }
+.ssb .ex:first-child { border-top: 0; }
+.acts { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.pill { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 999px; min-height: 52px; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.ghost { background: none; color: var(--text); border: 1.5px solid var(--text3); border-radius: 999px; min-height: 52px; padding: 0 20px; font-size: 15px; cursor: pointer; font-family: inherit; }
+.seg { display: grid; grid-template-columns: repeat(4, 1fr) minmax(44px, auto); gap: 4px; background: var(--surface); border-radius: 14px; padding: 4px; }
+.sg { border: 0; background: none; color: #6E6761; border-radius: 10px; min-height: 48px; font-size: 14.5px; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+.sg i { font-style: normal; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); }
+.sg.on { background: var(--raised); color: var(--text); font-weight: 600; }
+.sg.on i { color: var(--accent); }
+.sg.more { font-size: 18px; }
+.types { display: flex; gap: 6px; flex-wrap: wrap; }
+.ty { border: 1.5px solid #3A3532; background: none; color: #7C746D; border-radius: 999px; min-height: 27px; padding: 2px 10px; font-size: 12.5px; font-family: inherit; cursor: pointer; }
+.ty.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.ctl { background: var(--raised); border-radius: 14px; }
+.cr { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 8px; min-height: 38px; padding: 0 8px 0 12px; }
+.cr + .cr { border-top: 1px solid #34302C; }
+.cr .k { font-size: 13px; color: var(--text2); }
+.cr .types { justify-content: flex-end; }
+.sw { background: none; border: 0; justify-self: end; cursor: pointer; padding: 6px 0; }
+.switch { display: inline-flex; width: 36px; height: 22px; border-radius: 11px; padding: 2px; background: var(--surface); justify-content: flex-start; }
+.switch i { width: 18px; height: 18px; border-radius: 50%; background: var(--text3); display: block; }
+.switch.on { background: var(--accent); justify-content: flex-end; }
+.switch.on i { background: var(--on-accent); }
+.cr .val { display: flex; align-items: center; gap: 6px; justify-self: end; }
+.mnb { width: 27px; height: 27px; border-radius: 50%; border: 0; background: var(--surface); color: var(--text); font-size: 15px; cursor: pointer; }
+.tv { min-width: 52px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.fitline { font-size: 13px; color: var(--text2); }
+.bdt { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: 0; border-top: 1px solid var(--divider); color: var(--text); font-size: 15px; font-family: inherit; padding: 12px 2px 4px; cursor: pointer; }
+.whyd { display: none; font-size: 13.5px; color: var(--text2); }
+.card.open .whyd { display: block; }
+.whyd summary { cursor: pointer; color: var(--text); list-style: none; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text3); font-size: 14px; padding: 0; min-height: 44px; display: flex; align-items: center; }
+.whyd summary::-webkit-details-marker { display: none; }
+.whyd[open] { background: var(--raised); border-radius: 12px; padding: 8px 12px; }
+.whyd span { display: block; margin-top: 3px; }
+.mixrow { display: none; justify-content: space-between; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text2); }
+.card.open .mixrow { display: flex; }
+.mixrow b { color: var(--text); font-weight: 600; }
+.rowlinks { display: flex; gap: 8px; }
+.rowlinks button { flex: 1; min-height: 48px; border-radius: 14px; border: 1.5px dashed var(--divider); background: none; color: var(--text); font-size: 15px; cursor: pointer; font-family: inherit; }
+
+/* ── Progress (from progress-simple) ── */
+.P h1 { font-size: 28px; font-weight: 700; margin: 2px 0 0; }
+.P .link { font: 600 15px var(--ui); min-height: 40px; padding: 0; }
+.P .card { border-radius: 18px; padding: 14px; }
+.sec { display: flex; justify-content: space-between; align-items: center; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--text2); font-weight: 600; margin: 6px 2px -4px; }
+.sec > span:last-child:not(.segm) { letter-spacing: 0; text-transform: none; font-weight: 500; color: var(--text3); }
+.tabseg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border-radius: 12px; padding: 3px; margin-top: -4px; }
+.tabseg button { border: 0; background: none; color: var(--text3); border-radius: 9px; min-height: 34px; font: 600 14px var(--ui); cursor: pointer; }
+.tabseg button[aria-selected="true"] { background: var(--raised); color: var(--text); }
+.segm { display: inline-flex; background: var(--surface); border-radius: 8px; padding: 2px; }
+.segm button { border: 0; background: none; color: var(--text3); font: 600 11px var(--ui); padding: 4px 10px; border-radius: 6px; cursor: pointer; min-height: 26px; }
+.segm button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
+.bdone { display: flex; justify-content: space-between; align-items: center; width: 100%; background: var(--raised); border: 0; border-radius: 12px; min-height: 44px; padding: 0 12px; color: var(--text); font: 600 15px var(--ui); cursor: pointer; }
+.bdone span:last-child { color: var(--text3); font-size: 18px; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.k { color: var(--text2); font-size: 15px; }
+.v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.v small { font-size: 14px; font-weight: 500; color: var(--text2); }
+.strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.pd { min-height: 48px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; gap: 1px; white-space: nowrap; padding: 0 2px; overflow: hidden; letter-spacing: -.02em; border: 0; font-family: inherit; cursor: pointer; color: inherit; background: none; }
+.pd small { font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.pd.done { background: rgba(92,201,138,.20); color: #D8F5E3; box-shadow: inset 0 0 0 1.5px rgba(92,201,138,.55); }
+.pd.plan { background: rgba(243,238,232,.05); color: var(--text3); }
+.pd.next { box-shadow: inset 0 0 0 1.5px var(--text2); color: var(--text); }
+.pd.next small { color: var(--text2); }
+.hist { display: flex; flex-direction: column; border-top: 1px solid var(--divider); padding-top: 4px; }
+.cal { display: grid; grid-template-columns: 72px repeat(7, 1fr) 42px; gap: 4px; align-items: center; min-height: 34px; font-size: 12px; border-radius: 8px; }
+.cal.head2 { min-height: 16px; color: var(--text3); font-size: 10.5px; text-align: center; }
+.cal .hw { color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cal .hw b { font-size: 10px; font-weight: 600; color: var(--text3); margin-left: 4px; letter-spacing: .02em; }
+.cal .hn { text-align: right; color: var(--text2); font-variant-numeric: tabular-nums; }
+.cal i { height: 28px; border-radius: 8px; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: 12px; }
+.cal .cd, .ckey .cd { background: rgba(92,201,138,.22); color: #D8F5E3; box-shadow: inset 0 0 0 1.5px rgba(92,201,138,.55); }
+.cal .cm, .ckey .cm { color: var(--text3); background: rgba(243,238,232,.05); box-shadow: inset 0 0 0 1px var(--divider); }
+.cal .cn, .ckey .cn { color: var(--text); box-shadow: inset 0 0 0 1.5px var(--text2); }
+.cal .c0, .ckey .c0 { background: rgba(243,238,232,.025); }
+.cal.now .hw { color: var(--text); font-weight: 600; }
+.cal.paused i { background: none; box-shadow: inset 0 0 0 1px var(--divider); opacity: .5; }
+.run { width: 6px; height: 6px; border-radius: 50%; background: var(--text2); display: block; }
+.ckey { display: flex; gap: 12px; font-size: 11.5px; color: var(--text2); padding-top: 6px; flex-wrap: wrap; }
+.ckey span { display: flex; align-items: center; gap: 5px; }
+.ckey i { font-style: normal; font-size: 9px; font-weight: 700; width: 16px; height: 14px; border-radius: 4px; display: inline-grid; place-items: center; }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.title { font-size: 18px; font-weight: 700; }
+.hk { font-size: 12px; color: var(--text2); white-space: nowrap; }
+.spill { font-size: 13px; padding: 5px 10px; border-radius: 999px; background: var(--raised); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.sub { color: var(--text2); font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.sub b { color: var(--text); }
+.lift { display: grid; grid-template-columns: 10px 1.3fr 1fr 1fr 1fr; gap: 6px; align-items: center; min-height: 34px; font-size: 13px; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font-family: var(--ui); text-align: left; cursor: pointer; padding: 0 2px; border-radius: 8px; width: 100%; }
+.lift:first-child { border-top: 0; }
+.lift i { width: 8px; height: 8px; border-radius: 50%; }
+.lift .ln { font-weight: 600; }
+.lift .lv, .lift .lt { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.lift .lr { font-variant-numeric: tabular-nums; color: var(--text2); text-align: right; }
+.lift .stg { font-size: 10px; margin-right: 4px; vertical-align: 1px; }
+.lift.lh { min-height: 22px; cursor: default; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); border-top: 0; }
+.lift.lh span:nth-child(n+3) { text-align: right; }
+.lift.on { background: var(--raised); }
+.lift.dim { opacity: .5; }
+.mrow { display: grid; grid-template-columns: 1fr 120px 1fr; gap: 10px; align-items: center; min-height: 36px; border-top: 1px solid var(--divider); font-size: 14px; }
+.mrow.mh { min-height: 20px; border-top: 0; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); }
+.mrow .mnum { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mrow .mnum small { font-weight: 500; color: var(--text2); font-size: 12px; }
+.chg { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--divider); }
+.chg:first-of-type { border-top: 0; padding-top: 2px; }
+.chg .t { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chg .t s { color: var(--text3); font-weight: 500; }
+.chg .why { grid-column: 1; color: var(--text2); font-size: 14px; }
+.chg .u { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.note { font-size: 16px; line-height: 1.45; }
+
+/* ── Block review ── */
+.back { align-self: flex-start; }
+.rsub { color: var(--text2); font-size: 14px; margin-top: -8px; font-variant-numeric: tabular-nums; }
+.offl { font-size: 14px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
+.rv { display: grid; grid-template-columns: 70px 1fr 48px 84px; gap: 6px; align-items: center; min-height: 34px; font-size: 14px; border-top: 1px solid var(--divider); font-variant-numeric: tabular-nums; }
+.rv.rh { min-height: 18px; border-top: 0; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); }
+.rv span:nth-child(3), .rv span:nth-child(4) { text-align: right; }
+.rv .ln { font-weight: 600; }
+.rv .ln small { font-weight: 500; color: var(--text2); font-size: 12px; margin-left: 3px; }
+.rv .pl { color: var(--text2); }
+.st { white-space: nowrap; font-size: 13px; }
+.st.good { color: var(--good); }
+.st.warn { color: var(--warn); }
+.sh { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); margin-top: 4px; display: flex; justify-content: space-between; }
+.mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.mgrid div { display: flex; justify-content: space-between; min-height: 26px; align-items: center; }
+.mgrid b { font-weight: 600; }
+.mgrid b small { font-weight: 500; color: var(--text2); font-size: 12px; }
+.fr { display: flex; justify-content: space-between; align-items: center; min-height: 36px; border-top: 1px solid var(--divider); font-size: 15px; font-variant-numeric: tabular-nums; gap: 10px; }
+.fr .k { font-size: 14px; }
+.fr b { font-weight: 600; text-align: right; }
+.fr b small { color: var(--text2); font-weight: 500; font-size: 13px; }
+/* Proposal item: the whole 44 pt row is the Apply/Skip switch */
+.swr { display: grid; grid-template-columns: 70px 1fr auto; gap: 6px; align-items: center; min-height: 44px; width: 100%; border: 0; border-top: 1px solid var(--divider); background: none; color: var(--text); font: 14px var(--ui); text-align: left; padding: 4px 0; cursor: pointer; font-variant-numeric: tabular-nums; }
+.swr .sd { color: var(--text2); font-size: 13px; }
+.swr s { color: var(--text3); }
+.swr.off .stx { color: var(--text2); }
+.swr .switch { background: var(--raised); }
+.swr .switch.on { background: var(--accent); }
+.swr[aria-disabled="true"] { cursor: default; }
+.swr[aria-disabled="true"] .switch { opacity: .45; }
+.swr.stale { cursor: default; }
+.swr.stale .stx { color: var(--warn); }
+.ract { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 2px; }
+.started { display: flex; justify-content: space-between; align-items: center; background: var(--raised); border-radius: 14px; padding: 4px 14px; font-size: 15px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="ctrl">
+    <span class="lab">Screen</span>
+    <div class="chips" id="scr"></div>
+    <span class="lab">State</span>
+    <div class="chips" id="sta"></div>
+  </div>
+  <div class="phone" id="app"></div>
+  <div class="hint">Example data. Block 1 runs from 5 Oct: 6 weeks, deload in week 6. The week of 2 Nov had no lifting, so it doesn't count and the block ends a week later (22 Nov); nothing is marked missed for it. Today's weights still come from the last sessions; the weekly plan is only compared against (dotted line on the chart). <b>Out of date</b> = Block done, with the Chest template edited after the proposal was made.</div>
+</div>
+<script>
+(() => {
+  const app = document.getElementById('app');
+  const MIC = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+
+  // ── Calendar: Monday of each week (index), block weeks, which week "today" is in per state ──
+  const WEEKS = ['24 Aug', '31 Aug', '7 Sep', '14 Sep', '21 Sep', '28 Sep', '5 Oct', '12 Oct', '19 Oct', '26 Oct', '2 Nov', '9 Nov', '16 Nov', '23 Nov'];
+  const BW = { 6: 1, 7: 2, 8: 3, 9: 4, 11: 5, 12: 6 }; // 10 (2 Nov) = no lifting → doesn't count
+  const CUR = { build: 8, early: 8, pain: 8, noblock: 8, deload: 12, done: 13, stale: 13 };
+  const TODAY = { 8: [2026, 9, 20], 12: [2026, 10, 17], 13: [2026, 10, 24] };
+  const RANGE = { 8: '19–25 Oct', 12: '16–22 Nov', 13: '23–29 Nov' };
+  // Mon–Sun per week: letter = session done, r = cardio, mX = planned X missed, nX = planned (this week), '' = nothing.
+  const PAT = {
+    4: ['C', '', 'B', 'r', 'S', 'L', ''], 5: 'paused', 6: ['C', 'r', 'B', '', 'S', '', 'L'], 7: ['C', 'r', 'B', '', 'S', 'mL', 'r'],
+    8: ['B', 'C', 'r', 'L', 'S', '', 'r'], 9: ['C', '', 'B', 'r', 'S', 'L', ''], 10: 'empty', 11: ['C', 'r', 'B', '', 'S', 'L', ''],
+    12: ['B', 'C', 'r', 'L', 'S', '', 'r'],
+  };
+  const CURWK = ['B', 'nC', '', 'nL', 'nS', '', ''];
+  const NAMES = { C: 'Chest', B: 'Back', S: 'Shoulders', L: 'Legs' };
+
+  // ── Main lifts: weekly best top set (null = paused / no lifting / deload week), block 1 plan per week ──
+  const LIFTS = [
+    { n: 'Bench', reps: 6, c: '#3987e5', full: [87.5, 90, 92.5, 92.5, 95, null, 97.5, 100, 102.5, 105, null, 105, null, null], plan: { 6: 97.5, 7: 100, 8: 102.5, 9: 105, 11: 107.5 }, target: 110, est: { 8: 'late Nov', 12: 'mid-Dec', 13: 'mid-Dec' } },
+    // Squat rises ≥ 4 weeks toward 125, so it gets a projection too (§3.2 limits)
+    { n: 'Squat', reps: 5, c: '#d95926', full: [105, 107.5, 110, 110, 112.5, null, 112.5, 115, 117.5, 120, null, 122.5, null, null], plan: { 6: 112.5, 7: 115, 8: 117.5, 9: 120, 11: 122.5 }, target: 125, est: { 8: 'early Dec', 12: 'late Nov', 13: 'early Dec' } },
+    { n: 'Row', reps: 8, c: '#199e70', full: [85, 87.5, 87.5, 90, 92.5, null, 92.5, 92.5, 92.5, 92.5, null, 95, null, null], plan: { 6: 92.5, 7: 95, 8: 97.5, 9: 100, 11: 102.5 }, target: null, est: {} },
+  ];
+  const MUSCLES = [['Chest', [10, 11, 12, 12, 12, null, 11, 14], 12], ['Back', [12, 13, 12, 14, 14, null, 12, 13], 14], ['Shoulders', [8, 8, 9, 9, 10, null, 9, 10], 10], ['Legs', [12, 14, 13, 14, 14, null, 10, 9], 14], ['Arms', [8, 9, 8, 10, 10, null, 9, 10], 10]];
+  const CHANGES = [
+    { id: 'row', t: 'Row', b: '3 × 8', a: '4 × 6', when: 'next Back', why: 'Stuck at 92.5 × 8 for 3 weeks' },
+    { id: 'squat', t: 'Squat', b: '117.5 kg', a: '120 kg', when: 'next Legs', why: 'All sets done at RPE 8' },
+  ];
+
+  // ── Today's plan days [name, kg, compound?] ──
+  const D = {
+    Chest: { mains: { Bench: ['Barbell bench press', 'Bench'], Incline: ['Incline barbell press', 82.5] }, focused: [['Incline dumbbell press', 27.5, 1], ['Cable fly', 15]], varied: [['Incline dumbbell press', 27.5, 1], ['Cable crossover', 12.5], ['Dips', null, 1]], extra: ['Triceps pushdown', 30] },
+    Back: { mains: { Row: ['Barbell row', 'Row'], Pulldown: ['Lat pulldown', 65] }, focused: [['Lat pulldown', 60, 1], ['Chest-supported row', 22.5, 1]], varied: [['Lat pulldown', 60, 1], ['Seated cable row', 60, 1], ['Face pull', 22.5]], extra: ['EZ-bar curl', 30] },
+    Legs: { mains: { Squat: ['Back squat', 'Squat'] }, focused: [['Romanian deadlift', 105, 1], ['Leg press', 195, 1]], varied: [['Romanian deadlift', 105, 1], ['Leg press', 180, 1], ['Leg curl', 47.5]], extra: ['Seated calf raise', 40] },
+    Shoulders: { mains: { 'DB press': ['Dumbbell shoulder press', 32.5] }, focused: [['Lateral raise', 10], ['Rear-delt fly', 7.5]], varied: [['Lateral raise', 10], ['Face pull', 22.5], ['Cable lateral raise', 5]], extra: ['Triceps pushdown', 30] },
+  };
+  const WORKS = { 'Barbell bench press': 'Chest, front delts, triceps', 'Incline barbell press': 'Upper chest, front delts, triceps', 'Incline dumbbell press': 'Upper chest, front delts, triceps', 'Cable fly': 'Chest', 'Cable crossover': 'Lower chest', 'Pec deck': 'Chest', Dips: 'Lower chest, triceps', 'Triceps pushdown': 'Triceps', 'Cable crunch': 'Upper abs', 'Barbell row': 'Mid-back, lats, rear delts', 'Lat pulldown': 'Lats, biceps', 'Chest-supported row': 'Mid-back, rear delts', 'Seated cable row': 'Mid-back, lats, biceps', 'Face pull': 'Rear delts, upper back', 'EZ-bar curl': 'Biceps', 'Back squat': 'Quads, glutes, adductors', 'Romanian deadlift': 'Hamstrings, glutes', 'Leg press': 'Quads, glutes', 'Hack squat': 'Quads, glutes', 'Leg curl': 'Hamstrings', 'Seated calf raise': 'Calves', 'Dumbbell shoulder press': 'Front delts, triceps', 'Lateral raise': 'Side delts', 'Cable lateral raise': 'Side delts', 'Rear-delt fly': 'Rear delts', 'Reverse pec deck': 'Rear delts' };
+  const ALTS = { 'Cable fly': ['Cable crossover', 12.5], 'Cable crossover': ['Pec deck', 45], 'Chest-supported row': ['Seated cable row', 60], 'Seated cable row': ['Chest-supported row', 22.5], 'Leg press': ['Hack squat', 100], 'Leg curl': ['Leg press', 180], 'Rear-delt fly': ['Reverse pec deck', 35], 'Cable lateral raise': ['Lateral raise', 10] };
+  const PLANDAYS = ['Chest', 'Back', 'Legs', 'Shoulders'];
+
+  // ── Block review (block 1) ──
+  const RLIFTS = [['Bench', 6, 97.5, 105, 107.5], ['Squat', 5, 112.5, 122.5, 122.5], ['Row', 8, 92.5, 95, 102.5]];
+  const RMUS = [['Chest', 12, 12], ['Back', 12, 14], ['Shoulders', 10, 10], ['Legs', 13, 14], ['Arms', 9, 10]];
+  // Built-in path = one step a week. Coach's Row item = one step every 2 weeks (95, 95, 97.5, 97.5, 100): loadable with 1.25 kg plates.
+  const NEXT_T = [['Bench', 105, 115], ['Squat', 122.5, 132.5]];
+  const SWAPS = [
+    { id: 'c1', day: 'Chest', from: 'Cable fly', to: 'Cable crossover' },
+    { id: 'c2', day: 'Chest', from: 'Triceps pushdown', to: 'Overhead extension' },
+    { id: 'b1', day: 'Back', from: 'Chest-supported row', to: 'Seated cable row' },
+    { id: 'l1', day: 'Legs', from: 'Leg press', to: 'Hack squat' },
+  ];
+  // Start-a-block draft (no block running): start = today's working top set, one step a week to week 5
+  const DRAFT = [['Bench', 102.5, 112.5], ['Squat', 117.5, 127.5], ['Row', 92.5, 102.5]];
+
+  const fresh = () => ({ early: 'offer', started: false, notNow: false, sw: { row: true, c1: true, c2: true, b1: true, l1: true }, bdraft: false, bstart: false, focus: null, mix: false, open: false, day: 'Chest', main: null, style: 'Focused', min: 60, abs: true, ss: true, undone: {}, toast: null });
+  let s = { scr: 'today', st: 'build', off: false, hist: false, ...fresh() };
+
+  const cur = () => CUR[s.st];
+  const isDone = () => s.st === 'done' || s.st === 'stale';
+  const accepted = () => s.st === 'early' && s.early === 'accepted';
+  const deloadOn = () => s.st === 'deload' || accepted();
+  const offerOn = () => s.st === 'early' && s.early === 'offer';
+  const floor25 = (v) => Math.floor((v * 0.9) / 2.5 + 1e-9) * 2.5;
+  const fmt = (v) => (v == null ? 'BW' : String(v));
+
+  // ═════════ Controls above the phone ═════════
+  function controls() {
+    const sc = [['today', 'Today'], ['progress', 'Progress'], ['review', 'Block review']];
+    document.getElementById('scr').innerHTML = sc.map(([k, l]) => `<button class="chip" data-a="scr" data-v="${k}" aria-pressed="${s.scr === k}">${l}</button>`).join('');
+    const st = [['build', 'Build week 3'], ['deload', 'Deload week 6'], ['early', 'Early-deload offer'], ['pain', 'Bench pain flag'], ['noblock', 'No block running'], ['done', 'Block done'], ['stale', 'Out of date']];
+    document.getElementById('sta').innerHTML = st.map(([k, l]) => `<button class="chip" data-a="st" data-v="${k}" aria-pressed="${s.st === k}">${l}</button>`).join('') + `<button class="chip" data-a="off" aria-pressed="${s.off}">Coach offline</button>`;
+  }
+
+  // ═════════ TODAY ═════════
+  function weekText() {
+    if (s.st === 'noblock') return s.bstart ? 'Week 1 of 6' : '';
+    if (deloadOn()) return '◐ Deload week';
+    if (isDone()) return s.started ? 'Week 1 of 6' : s.notNow ? '' : 'Block done ›';
+    return 'Week 3 of 6';
+  }
+  function mainNow(key) {
+    const late = s.st === 'deload' || isDone();
+    // early: last Chest was RPE 9.5, so bench holds at 100. pain: bench held at 100 (rule 9).
+    const bench = late ? 105 : s.st === 'early' || s.st === 'pain' ? 100 : 102.5;
+    return { Bench: bench, Squat: late ? 122.5 : 117.5, Row: late ? 95 : 92.5 }[key];
+  }
+  function draft() {
+    const d = D[s.day];
+    const mk = s.main && d.mains[s.main] ? s.main : Object.keys(d.mains)[0];
+    const [mn, base] = d.mains[mk];
+    const mkg = typeof base === 'string' ? mainNow(base) : base;
+    const accSets = s.style === 'Varied' ? 2 : 3;
+    let acc = (s.style === 'Varied' ? d.varied : d.focused).map(([n, kg, c]) => ({ name: n, kind: 'acc', sets: accSets, kg, comp: !!c }));
+    let mix = null;
+    if (s.mix) { const i = acc.map((x) => !!ALTS[x.name]).lastIndexOf(true); if (i >= 0) { const [to, kg] = ALTS[acc[i].name]; mix = { from: acc[i].name, to }; acc[i] = { ...acc[i], name: to, kg }; } }
+    let ex = [{ name: mn, kind: 'main', sets: 4, kg: mkg, comp: true }, ...acc, { name: d.extra[0], kind: 'extra', sets: 3, kg: d.extra[1] }, ...(s.abs ? [{ name: 'Cable crunch', kind: 'abs', sets: 3, kg: 40 }] : [])];
+    // Deload transform (deloadDraft): loads × 0.9 rounded down, 1 set fewer (min 2). Today's draft only.
+    if (deloadOn()) ex = ex.map((e) => ({ ...e, sets: Math.max(2, e.sets - 1), kg: e.kg == null ? null : floor25(e.kg) }));
+    let m = 4; ex.forEach((e) => { m += e.sets * (e.kind === 'main' ? 4 : e.comp ? 3 : 2.2) + 1.5; }); if (s.ss && s.abs) m -= 5;
+    return { mk, ex, mix, est: Math.round(m) };
+  }
+  function weekStrip() {
+    const [y, mo, dd] = TODAY[cur()];
+    const items = [[{ k: 'lift', t: 'Shoulders' }], [{ k: 'run', t: 'Run 12k' }], [{ k: 'lift', t: 'Back' }], null, [{ k: 'runp', t: 'Run 8k' }], [{ k: 'liftp', t: 'Legs' }], [{ k: 'liftp', t: 'Shoulders' }]];
+    const DN = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    return `<div class="week">${items.map((it, i) => {
+      const dt = new Date(y, mo, dd + i - 3); const today = i === 3;
+      return `<button class="day${today ? ' today' : ''}" data-a="dayinfo" data-v="${i}" aria-label="${DN[dt.getDay()]} ${dt.getDate()}"><span class="dn">${today ? 'TODAY' : DN[dt.getDay()]}</span><span class="dd">${dt.getDate()}</span>${today ? `<span class="pip liftp">${s.day}</span>` : it.map((x) => `<span class="pip ${x.k}">${x.k === 'lift' ? '✓ ' : ''}${x.t}</span>`).join('')}</button>`;
+    }).join('')}</div>`;
+  }
+  function today() {
+    const dr = draft(); const wt = weekText(); const mains = Object.keys(D[s.day].mains);
+    const shown = Math.min(dr.est, s.min);
+    let bl = dr.ex.map((e) => [e]);
+    if (s.ss && s.abs) { const ei = dr.ex.findIndex((e) => e.kind === 'extra'); bl = [...dr.ex.slice(0, ei).map((e) => [e]), [dr.ex[ei], dr.ex[ei + 1]]]; }
+    let n = 0;
+    const row = (e, lab) => `<div class="ex"><span class="n">${lab}</span><span>${e.name}<small>${WORKS[e.name] ?? ''}</small></span><span class="c">${e.sets}</span><span class="c">${fmt(e.kg)}</span></div>`;
+    // Early-deload offer: one line, Apply (proposal verb) + ✕ (dismiss for the week). The reason sits in the card's Why?.
+    const offer = offerOn()
+      ? `<div class="offer" role="group" aria-label="Offer: deload this week"><span><span class="gl" aria-hidden="true">◐</span>Deload this week?</span><button class="link b" data-a="eApply">Apply</button><button class="link x" data-a="eNo" aria-label="Not this week">✕</button></div>` : '';
+    const mainKg = typeof D[s.day].mains[dr.mk][1] === 'string' ? mainNow(D[s.day].mains[dr.mk][1]) : D[s.day].mains[dr.mk][1];
+    const why = deloadOn()
+      ? `<span>· Deload week: −10 % load, 1 set fewer, ~RPE 7</span><span>· From your last ${s.day}: ${D[s.day].mains[dr.mk][0].toLowerCase()} ${mainKg} kg</span>${accepted() ? '<span>· Block 1 ends after this week</span>' : ''}`
+      : s.day === 'Chest' && dr.mk === 'Bench'
+        ? s.st === 'early'
+          ? `<span>· Plan: Chest is next</span><span>· Last Chest: bench 100 × 6 at RPE 9.5, so 100 kg</span>${offerOn() ? '<span>· Deload offer: top sets at RPE 9–10 in 3 sessions, last 2 weeks</span>' : ''}`
+          : s.st === 'pain'
+            ? '<span>· Plan: Chest is next</span><span>· Bench held · pain: 100 kg</span>'
+            : '<span>· Plan: Chest is next</span><span>· Last Chest: bench 100 × 6 at RPE 8, so 102.5 kg</span>'
+        : `<span>· ${s.day}${s.day === 'Chest' ? ' is next in your plan' : ' picked by you; the plan moves on'}</span><span>· Weights from your last ${s.day} session</span>`;
+    // With the block week in the header, the Coach pill goes icon-only so "Tuesday · Week 3 of 6" stays on one line. Offline keeps an icon (⊘) + label.
+    const ico = !!wt;
+    const coachBtn = s.off
+      ? `<button class="askbar off${ico ? ' ico' : ''}" data-a="ask" aria-label="Coach offline">${ico ? '<span style="color:var(--text3)">⊘</span>' : '<span>✦</span><span>Offline</span>'}</button>`
+      : `<button class="askbar${ico ? ' ico' : ''}" data-a="ask" aria-label="Coach"><span>✦</span>${ico ? '' : '<span>Coach</span>'}</button>`;
+    const bwLabel = deloadOn() ? 'Training block, deload week. Opens Progress' : wt.startsWith('Block') ? 'Block done. Opens the block review' : `Training block, ${wt.toLowerCase()}. Opens Progress`;
+    return `<div class="scroll">
+      <div class="hdr"><div class="ttl"><h1>Tuesday</h1>${wt ? `<button class="bw" data-a="hdr" aria-label="${bwLabel}">· ${wt}</button>` : ''}</div><div class="askrow">${coachBtn}<button class="mic" data-a="ask" aria-label="Speak to the coach">${MIC}</button></div></div>
+      ${weekStrip()}
+      <div>
+        <div class="label" style="margin:0 2px 8px">Today's session</div>
+        <div class="seg" role="tablist" aria-label="Day">${PLANDAYS.map((d) => `<button class="sg${d === s.day ? ' on' : ''}" data-a="dayp" data-v="${d}" role="tab" aria-selected="${d === s.day}">${d}${d === 'Chest' ? '<i>Next</i>' : ''}</button>`).join('')}<button class="sg more" data-a="other" aria-label="Other sessions">⋯</button></div>
+      </div>
+      <div class="card${s.open ? ' open' : ''}">
+        <div class="top"><div class="big">${s.day}</div><div class="meta"><span>${dr.ex.length} exercises · ~${shown} min</span></div></div>
+        ${offer}
+        ${dr.est > s.min ? `<div class="fitline">To fit ${s.min} min: shorter rests</div>` : ''}
+        <div class="ctl">
+          <div class="cr"><span class="k">Main lift</span><div class="types">${mains.map((m) => `<button class="ty${m === dr.mk ? ' on' : ''}" data-a="main" data-v="${m}">${m}</button>`).join('')}</div></div>
+          <div class="cr"><span class="k">Accessories</span><div class="types">${['Focused', 'Varied'].map((m) => `<button class="ty${m === s.style ? ' on' : ''}" data-a="style" data-v="${m}">${m}</button>`).join('')}</div></div>
+          <div class="cr"><span class="k">Time</span><div class="val"><button class="mnb" data-a="min" data-v="-5" aria-label="5 minutes less">−</button><span class="tv">${s.min} min</span><button class="mnb" data-a="min" data-v="5" aria-label="5 minutes more">+</button></div></div>
+          <div class="cr"><span class="k">Abs</span><button class="sw" data-a="abs" role="switch" aria-checked="${s.abs}" aria-label="Abs"><span class="switch${s.abs ? ' on' : ''}"><i></i></span></button></div>
+          <div class="cr"><span class="k">Supersets</span><button class="sw" data-a="ss" role="switch" aria-checked="${s.ss}" aria-label="Supersets"><span class="switch${s.ss ? ' on' : ''}"><i></i></span></button></div>
+        </div>
+        <button class="bdt" data-a="toggle" aria-expanded="${s.open}"><span>Session breakdown</span><span class="chev">›</span></button>
+        <div class="exl"><div class="exh"><span></span><span>Exercise</span><span>Sets</span><span>Top set<br>(kg)</span></div>${bl.map((b) => { n++; const rows = b.map((e, i) => row(e, `${n}${b.length > 1 ? 'ab'[i] : ''}`)).join(''); return b.length > 1 ? `<div class="ssb">${rows}</div>` : rows; }).join('')}</div>
+        <details class="whyd"><summary>Why?</summary>${why}</details>
+        <div class="mixrow">${dr.mix ? `<span>${dr.mix.from} → <b>${dr.mix.to}</b> · today only</span><button class="link" data-a="unmix">Undo</button>` : '<button class="link" data-a="mix">↻ Mix it up</button>'}</div>
+        <div class="acts"><button class="pill" data-a="start">Start</button><button class="ghost" data-a="edit">Edit</button></div>
+      </div>
+      <div class="rowlinks"><button data-a="build">Build your own</button><button data-a="activity">＋ Activity</button></div>
+    </div>`;
+  }
+
+  // ═════════ PROGRESS ═════════
+  function bwOf(i) {
+    if (s.st === 'noblock') return s.bstart && i === 8 ? 1 : null;
+    if (accepted()) return i >= 6 && i <= 8 ? i - 5 : null;
+    if (isDone() && i === 13) return s.started ? 1 : null;
+    return BW[i] ?? null;
+  }
+  const isDl = (i) => (accepted() ? i === 8 : s.st !== 'noblock' && i === 12);
+  // Block week replaces "This week · dates" in the Week header. Month keeps "Last 5 weeks" (the W1–W6 row labels carry the block).
+  function blockHdr() {
+    if (s.st === 'noblock') return s.bstart ? 'Block 1 · Week 1 of 6' : null;
+    if (isDone()) return s.started ? 'Block 2 · Week 1 of 6' : null;
+    if (deloadOn()) return 'Block 1 · ◐ Deload week';
+    return 'Block 1 · Week 3 of 6';
+  }
+  function draftCard() {
+    if (s.st !== 'noblock' || s.bstart) return '';
+    if (!s.bdraft) return '<button class="link" data-a="startblock" style="align-self:flex-end;min-height:44px;font-size:14px">Start a block ›</button>';
+    return `<div style="border-top:1px solid var(--divider);padding-top:8px;display:flex;flex-direction:column;gap:2px">
+      <div class="sh" style="margin-top:0"><span>New block · 6 weeks${s.off ? ' · Built-in' : ''}</span><span>→ wk 5</span></div>
+      ${DRAFT.map(([n, a, b], k) => `<div class="fr"${k === 0 ? ' style="border-top:0"' : ''}><span class="k">${n}</span><b>${a} → ${b} <small>kg</small></b></div>`).join('')}
+      <div class="ract" style="margin-top:6px"><button class="pill" data-a="bStart">Start block</button><button class="ghost" data-a="bSkip">Skip</button></div></div>`;
+  }
+  function weekCard() {
+    const hdr = blockHdr(); const c = cur();
+    const left = s.hist ? 'Last 5 weeks' : hdr ?? `This week · ${RANGE[c]}`;
+    const top = isDone() && !s.started ? `<button class="bdone" data-a="review"><span>✓ Block 1 done</span><span>›</span></button>` : '';
+    const chips = `<div class="strip" role="group" aria-label="Back done Monday, 100% of planned reps; Chest planned today; Legs Thursday; Shoulders Friday">
+      <button class="pd done" data-a="sess" data-v="Back">Back<small>Mon – 100%</small></button><button class="pd next" data-a="sess" data-v="Chest">Chest<small>Tue – today</small></button>
+      <button class="pd plan" data-a="sess" data-v="Legs">Legs<small>Thu</small></button><button class="pd plan" data-a="sess" data-v="Shoulders">Shoulders<small>Fri</small></button></div>`;
+    return `<div class="sec"><span>${left}</span><span class="segm" role="group" aria-label="Period"><button data-a="wk" aria-pressed="${!s.hist}">Week</button><button data-a="mo" aria-pressed="${s.hist}">Month</button></span></div>
+    <div class="card">
+      ${top}
+      <div class="row"><span class="k">Sessions</span><span class="v">1 of 4</span></div>
+      ${s.hist ? histGrid() : chips}
+      ${draftCard()}
+    </div>`;
+  }
+  function histGrid() {
+    const c = cur(); const rows = [c, c - 1, c - 2, c - 3, c - 4];
+    const head = `<div class="cal head2" aria-hidden="true"><span></span>${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span>${d}</span>`).join('')}<span></span></div>`;
+    const body = rows.map((i) => {
+      const now = i === c; const p = now ? CURWK : PAT[i]; const w = bwOf(i); const dl = isDl(i) && (now || p !== 'empty');
+      const wl = w ? `<b>W${w}${dl ? ' ◐' : ''}</b>` : '';
+      if (p === 'paused') return `<div class="cal paused" role="row" aria-label="Week of ${WEEKS[i]}: paused"><span class="hw">${WEEKS[i]}</span>${'<i></i>'.repeat(7)}<span class="hn">Paused</span></div>`;
+      if (p === 'empty') return `<div class="cal" role="row" aria-label="Week of ${WEEKS[i]}: no lifting${s.st !== 'noblock' ? ', not counted in the block' : ''}"><span class="hw">${WEEKS[i]}</span>${'<i class="c0"></i>'.repeat(7)}<span class="hn">–</span></div>`;
+      const done = p.filter((d) => NAMES[d]).length;
+      const lab = `${now ? 'This week. ' : ''}${w ? `Block week ${w}${dl ? ', deload' : ''}. ` : ''}Week of ${WEEKS[i]}: ${done} of 4 sessions`;
+      return `<div class="cal${now ? ' now' : ''}" role="row" aria-label="${lab}"><span class="hw">${now ? 'This wk' : WEEKS[i]}${wl}</span>${p.map((d) => {
+        if (d === 'r') return '<i class="c0"><b class="run"></b></i>';
+        if (d.startsWith('m')) return `<i class="cm">${d[1]}</i>`;
+        if (d.startsWith('n')) return `<i class="cn">${d[1]}</i>`;
+        if (d) return `<i class="cd">${d}</i>`;
+        return '<i class="c0"></i>';
+      }).join('')}<span class="hn">${done} of 4</span></div>`;
+    }).join('');
+    return `<div class="hist">${head}${body}<div class="ckey" aria-hidden="true"><span><i class="cd">C</i>Done</span><span><i class="cm">L</i>Missed</span><span><i class="cn">L</i>Planned</span><span><i class="c0"><b class="run"></b></i>Cardio</span></div></div>`;
+  }
+  // Last counted value (current week's session not done yet; deload weeks don't count as top sets)
+  function series(l) { const c = cur(); return l.full.slice(c - 7, c + 1).map((v, k) => (k === 7 ? null : v)); }
+  function lastIdx(l) { const c = cur(); for (let i = c - 1; i >= 0; i--) if (l.full[i] != null) return i; return -1; }
+  // Planned top set for absolute week i (null = no block, empty week, or deload week). Pain freezes the path at its last value (rule 9).
+  function planOf(l, i) {
+    if (s.st === 'noblock') return s.bstart && i === 8 ? DRAFT.find((d) => d[0] === l.n)[1] : null;
+    if (bwOf(i) == null || isDl(i)) return null;
+    if (s.st === 'pain' && l.n === 'Bench' && i >= 8) return 100;
+    return l.plan[i] ?? null;
+  }
+  // Like-for-like: the last counted week's best top set vs that same week's plan
+  function status(l) {
+    if (s.st === 'noblock' || isDone()) return null;
+    if (s.st === 'pain' && l.n === 'Bench') return ['⏸︎', 'Held · pain', 'var(--text2)'];
+    const i = lastIdx(l); const pl = planOf(l, i); if (pl == null) return null;
+    const d = (l.full[i] - pl) / 2.5;
+    return d >= 1 ? ['▲', 'Ahead', 'var(--good)'] : d <= -2 ? ['▼', 'Behind', 'var(--warn)'] : ['●', 'On plan', 'var(--good)'];
+  }
+  function liftChart() {
+    const W = 320, H = 160, L = 30, T = 14, B = 22, R = 34, c = cur(), off = c - 7;
+    const shown = s.focus === null ? LIFTS : [LIFTS[s.focus]]; const one = s.focus !== null ? LIFTS[s.focus] : null;
+    const plans = (l) => Array.from({ length: 8 }, (_, k) => planOf(l, k + off));
+    const vals = shown.flatMap((l) => [...series(l), ...plans(l)]).filter((v) => v != null).concat(shown.filter((l) => l.target).map((l) => l.target));
+    const step = one ? 5 : 10;
+    const lo = Math.floor((Math.min(...vals) - 1) / step) * step, hi = Math.ceil((Math.max(...vals) + 1) / step) * step;
+    const x = (i) => L + (i * (W - L - R)) / 7, y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+    let g = '';
+    // block start marker (tiny). Deload weeks: no band; the done line simply has no point that week.
+    if (s.st !== 'noblock' && 6 - off >= 0) g += `<line x1="${x(6 - off)}" x2="${x(6 - off)}" y1="${T}" y2="${H - B}" stroke="#948C84" stroke-dasharray="2 3"/><text x="${x(6 - off) + 4}" y="${T + 8}" fill="#948C84" font-size="10">Block 1</text>`;
+    for (let v = lo; v <= hi; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#302C29"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" fill="#948C84" font-size="11">${v}</text>`;
+    shown.forEach((l) => {
+      const sr = series(l); const pts = sr.map((v, i) => (v == null ? null : `${x(i)},${y(v)}`)).filter(Boolean).join(' ');
+      // Plan path: dotted, same colour. Bridges an empty (uncounted) week; stops at the deload week.
+      let seg = [];
+      const flush = () => { if (seg.length > 1) g += `<polyline points="${seg.join(' ')}" fill="none" stroke="${l.c}" stroke-width="1.6" stroke-dasharray="2 4" stroke-linecap="round" stroke-opacity=".85"/>`; seg = []; };
+      plans(l).forEach((v, k) => { if (isDl(k + off)) flush(); else if (v != null) seg.push(`${x(k)},${y(v)}`); }); flush();
+      g += `<polyline points="${pts}" fill="none" stroke="${l.c}" stroke-width="2.4" stroke-linejoin="round"/>`;
+      g += sr.map((v, i) => (v == null ? '' : `<circle cx="${x(i)}" cy="${y(v)}" r="2.8" fill="${l.c}"><title>${v} × ${l.reps}</title></circle>`)).join('');
+      if (l.target) g += `<line x1="${W - R + 6}" x2="${W - R + 14}" y1="${y(l.target)}" y2="${y(l.target)}" stroke="${l.c}" stroke-width="3" stroke-linecap="round"/><text x="${W - 2}" y="${y(l.target) + 4}" text-anchor="end" fill="${l.c}" font-size="10" font-weight="700">${l.target}</text>`;
+      g += `<polyline points="${pts}" fill="none" stroke="transparent" stroke-width="18" data-a="focus" data-v="${LIFTS.indexOf(l)}" style="cursor:pointer"/>`;
+    });
+    g += `<text x="${x(0)}" y="${H - 6}" fill="#948C84" font-size="11">${WEEKS[off]}</text><text x="${x(7)}" y="${H - 6}" text-anchor="end" fill="#948C84" font-size="11">${WEEKS[c]}</text>`;
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Top sets over 8 weeks${s.st !== 'noblock' ? ', block 1 start marked, plan dotted' : ''}">${g}</svg>`;
+  }
+  function liftsCard() {
+    const one = s.focus !== null ? LIFTS[s.focus] : null;
+    let sub = '';
+    if (one) {
+      // One line: done · plan for the same week · status · projection (est.)
+      const i = lastIdx(one); const now = one.full[i]; const st = status(one); const pl = planOf(one, i);
+      const est = one.target && one.est[cur()] && !(s.st === 'pain' && one.n === 'Bench') ? ` · ${one.target} ~${one.est[cur()]} <span class="tag" style="margin:0">est.</span>` : '';
+      sub = `<div class="sub"><b>${one.n}</b> · ${now}${pl != null && !(st && st[1].startsWith('Held')) ? ` · plan ${pl}` : ''}${st ? ` · <span style="color:${st[2]}">${st[0]}</span> ${st[1]}` : ''}${est}</div>`;
+    }
+    const rows = `<div class="lift lh" aria-hidden="true"><span></span><span>Lift</span><span>Reps</span><span>Current</span><span>Target</span></div>` + LIFTS.map((l, i) => {
+      const on = s.focus === i; const now = l.full[lastIdx(l)]; const st = status(l);
+      return `<button class="lift${on ? ' on' : ''}${s.focus !== null && !on ? ' dim' : ''}" data-a="focus" data-v="${i}" aria-pressed="${on}" aria-label="${l.n}, ${l.reps} reps, current ${now} kg${st ? ', ' + st[1].replace(' · ', ', ').toLowerCase() : ''}, ${l.target ? 'target ' + l.target + ' kg' : 'no target'}"><i style="background:${l.c}"></i><span class="ln">${l.n}</span><span class="lr">× ${l.reps}</span><span class="lv">${st ? `<span class="stg" style="color:${st[2]}" aria-hidden="true">${st[0]}</span>` : ''}${now}</span><span class="lt">${l.target ?? '–'}</span></button>`;
+    }).join('');
+    const key = s.st === 'noblock' && !s.bstart ? 'Top set' : 'Top set · ┈ plan';
+    return `<div class="card">
+      <div class="head"><span class="title">Lifts</span>${one ? '<button class="link" data-a="all" style="min-height:44px;font-size:13px">All lifts</button>' : `<span class="hk">${key}</span>`}</div>
+      ${sub}${liftChart()}<div>${rows}</div></div>`;
+  }
+  function spark(vals, plan) {
+    const W = 120, H = 26, bw = W / vals.length, max = Math.max(plan, ...vals.filter((v) => v !== null)) * 1.1; const y = (v) => H - (H * v) / max;
+    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${vals.map((v, i) => (v === null ? `<rect x="${i * bw + 1.5}" y="${H - 3}" width="${bw - 3}" height="2" rx="1" fill="#302C29"/>` : `<rect x="${i * bw + 1.5}" y="${y(v)}" width="${bw - 3}" height="${H - y(v)}" rx="2" fill="${v >= plan ? '#E8C9A0' : 'rgba(232,201,160,.45)'}"/>`)).join('')}<line x1="0" x2="${W}" y1="${y(plan)}" y2="${y(plan)}" stroke="#F3EEE8" stroke-dasharray="2 2"/></svg>`;
+  }
+  function musclesCard() {
+    return `<div class="card"><div class="head"><span class="title">Muscles</span><span class="hk">┄ Plan</span></div>
+      <div class="mrow mh" aria-hidden="true"><span>Muscle</span><span>Sets vs plan</span><span style="text-align:right">Last week</span></div>
+      ${MUSCLES.map(([m, v, p]) => `<div class="mrow" aria-label="${m}: ${v[v.length - 1]} sets last week, plan ${p}"><span>${m}</span>${spark(v, p)}<span class="mnum">${v[v.length - 1]}<small> of ${p}</small></span></div>`).join('')}</div>`;
+  }
+  function changesCard() {
+    // Nothing queued → one header line, no empty card. Early offer: the hard sessions mean no load increase is queued.
+    if (s.st === 'deload' || isDone() || (s.off && s.st === 'early')) return `<div class="sec"><span>Coach's changes</span><span>None${s.off ? ' · Offline' : ''}</span></div>`;
+    const sec = `<div class="sec"><span>Coach's changes</span><span>for next week</span></div>`;
+    if (s.off) return `${sec}<div class="card"><div class="note">Squat 117.5 → 120 kg next Legs<span class="tag">Built-in · Not reviewed · Offline</span></div></div>`;
+    const list = s.st === 'early' ? CHANGES.filter((c) => c.id !== 'squat') : CHANGES;
+    // Accepted early deload: queued changes are kept and wait until after the deload week
+    const when = (c) => (accepted() ? `${c.when} after deload` : c.when);
+    return `${sec}<div class="card">${list.map((c) => (s.undone[c.id]
+      ? `<div class="chg"><span class="t"><s>${c.t} ${c.a}</s> kept ${c.b}</span><span class="why">Undone</span><button class="link u" data-a="redo" data-v="${c.id}">Redo</button></div>`
+      : `<div class="chg"><span class="t">${c.t} <s>${c.b}</s> → ${c.a}</span><span class="why">${when(c)} · ${c.why}</span><button class="link u" data-a="undo" data-v="${c.id}">Undo</button></div>`)).join('')}</div>`;
+  }
+  function progress() {
+    return `<div class="scroll P"><h1>Progress</h1><div class="tabseg" role="tablist">${['Overview', 'Lifts', 'Training'].map((t) => `<button role="tab" aria-selected="${t === 'Overview'}" data-a="ptab" data-v="${t}">${t}</button>`).join('')}</div>
+      ${weekCard()}<div class="sec"><span>Trends</span><span>last 8 weeks</span></div>${liftsCard()}${musclesCard()}${changesCard()}</div>`;
+  }
+
+  // ═════════ BLOCK REVIEW ═════════
+  function review() {
+    const st = (d, p) => { const k = (d - p) / 2.5; return k >= 1 ? '<span class="st good">▲ Ahead</span>' : k <= -2 ? '<span class="st warn">▼ Behind</span>' : '<span class="st good">● On plan</span>'; };
+    const lifts = RLIFTS.map(([n, r, a, b, p]) => `<div class="rv" aria-label="${n} top set ${a} to ${b} kg, plan ${p}"><span class="ln">${n}<small>× ${r}</small></span><span>${a} → <b>${b}</b></span><span class="pl">${p}</span>${st(b, p)}</div>`).join('');
+    const mus = RMUS.map(([m, a, p]) => `<div><span>${m}</span><b>${a}<small> of ${p}</small></b></div>`).join('');
+    const tg = NEXT_T.map(([n, a, b]) => `<div class="fr"><span class="k">${n}</span><b>${a} → ${b} <small>kg</small></b></div>`).join('');
+    const lock = s.started || s.notNow;
+    // Proposal items: the whole 44 pt row toggles Apply (on) / Skip (off). Skipped Row path falls back to the built-in one step a week.
+    const item = (id, day, onTxt, offTxt, lab) => { const on = s.sw[id]; return `<button class="swr${on ? '' : ' off'}" data-a="swap" data-v="${id}" role="switch" aria-checked="${on}" aria-disabled="${lock}" aria-label="${lab}"><span class="sd">${day}</span><span class="stx">${on ? onTxt : offTxt}</span><span class="switch${on ? ' on' : ''}"><i></i></span></button>`; };
+    const stale = s.st === 'stale';
+    const live = SWAPS.filter((w) => !(stale && w.day === 'Chest'));
+    const rowItem = item('row', 'Row', `95 → <b>100</b> <small style="color:var(--text2)">kg</small>`, `95 → 105 <span class="tag" style="margin:0">built-in</span>`, 'Row path 95 to 100 kg, one step every 2 weeks');
+    const swaps = (stale ? '<div class="swr stale" aria-disabled="true"><span class="sd">Chest</span><span class="stx">Out of date. Ask again.</span><span></span></div>' : '')
+      + live.map((w) => item(w.id, w.day, `<s>${w.from}</s> → ${w.to}`, `${w.from} <span class="tag" style="margin:0">kept</span>`, `${w.day}: swap ${w.from} for ${w.to}`)).join('');
+    const ids = ['row', ...live.map((w) => w.id)]; const nOn = ids.filter((k) => s.sw[k]).length;
+    const applyLabel = s.off ? 'Start next block' : nOn === ids.length ? 'Apply all' : 'Apply selected';
+    return `<div class="scroll P">
+      <button class="link back" data-a="scr" data-v="progress" style="font-size:15px;font-weight:500;min-height:44px">‹ Progress</button>
+      <h1>Block 1 done</h1>
+      <div class="rsub">6 weeks · 5 Oct – 22 Nov</div>
+      ${s.off ? '<div class="offl"><span aria-hidden="true">⊘</span>Not reviewed · Offline</div>' : '<div class="card"><div class="note">Bench and squat on plan. Row stuck at 92.5 for 4 weeks, so smaller steps next block.<span class="tag">Coach</span></div></div>'}
+      <div class="sec"><span>Since week 1</span><span></span></div>
+      <div class="card" style="gap:6px">
+        <div class="rv rh" aria-hidden="true"><span>Top set</span><span>Was → now</span><span>Plan</span><span></span></div>
+        ${lifts}
+        <div class="sh" style="margin-top:8px"><span>Sets / week</span><span>avg of plan</span></div>
+        <div class="mgrid">${mus}</div>
+        <div class="fr" style="margin-top:4px"><span class="k">Sessions</span><b>23 <small>of 24</small></b></div>
+        <div class="fr"><span class="k">How it felt</span><b>Easy 4 · Good 15 · Hard 3</b></div>
+      </div>
+      <div class="sec"><span>Next block</span><span>${s.off ? 'Built-in' : ''}</span></div>
+      <div class="card" style="gap:4px">
+        <div class="sh" style="margin-top:0"><span>6 weeks · deload wk 6</span><span>Top set → wk 5</span></div>
+        ${tg}
+        ${s.off ? '<div class="fr"><span class="k">Row</span><b>95 → 105 <small>kg</small></b></div><div class="fr"><span class="k">Accessories</span><b>Same as block 1</b></div>' : `${rowItem}<div class="sh" style="margin-top:8px"><span>Accessory swaps</span><span></span></div>${swaps}`}
+        <details class="whyd" style="display:block;margin-top:2px"><summary>Why?</summary>${s.off ? '<span>· One step a week from where you finished</span><span>· Same days and accessories</span>' : '<span>· Row 3 steps behind plan: one step every 2 weeks</span><span>· Swaps: same muscles and role, max 2 per day</span>'}</details>
+      </div>
+      ${s.started ? '<div class="started" role="status"><span>Block 2 started</span><button class="link" data-a="undoStart" style="min-height:44px">Undo</button></div>'
+        : s.notNow ? '<div class="started" role="status"><span>Skipped · no block</span><button class="link" data-a="uNotNow" style="min-height:44px">Undo</button></div>'
+        : `<div class="ract"><button class="pill" data-a="startB2">${applyLabel}</button><button class="ghost" data-a="notNow">Skip</button></div>`}
+    </div>`;
+  }
+
+  // ═════════ Render ═════════
+  function view() {
+    controls();
+    const prev = app.querySelector('.scroll'); const keep = prev && prev.dataset.scr === s.scr ? prev.scrollTop : 0;
+    const body = s.scr === 'today' ? today() : s.scr === 'progress' ? progress() : review();
+    const tab = s.scr === 'today' ? 'today' : 'progress';
+    app.innerHTML = `<div class="status"><span>09:41</span><span>●●● 82%</span></div>${body}
+      <div class="tabs">${[['today', 'TODAY'], ['lib', 'LIBRARY'], ['progress', 'PROGRESS'], ['prof', 'PROFILE']].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-a="tab" data-v="${k}">${l}</button>`).join('')}</div>
+      ${s.toast ? `<div class="toast" role="status"><span>${s.toast.t}</span>${s.toast.u ? `<button class="link" data-a="${s.toast.u}">Undo</button>` : ''}</div>` : ''}`;
+    const sc = app.querySelector('.scroll'); sc.dataset.scr = s.scr; sc.scrollTop = keep;
+  }
+  let tt;
+  const say = (t, u) => { s.toast = { t, u }; };
+  document.body.addEventListener('click', (ev) => {
+    const el = ev.target.closest('[data-a]'); if (!el || !el.dataset.a) return;
+    if (el.tagName === 'SUMMARY') return;
+    const a = el.dataset.a, v = el.dataset.v; s.toast = null;
+    // controls
+    if (a === 'scr') { s.scr = v; if (v === 'review' && !isDone()) { s = { ...s, ...fresh(), st: 'done', scr: 'review' }; } s.focus = null; }
+    if (a === 'st') { s = { ...s, ...fresh(), st: v }; if (s.scr === 'review' && !isDone()) s.scr = 'progress'; }
+    if (a === 'off') s.off = !s.off;
+    if (a === 'tab') { if (v === 'today' || v === 'progress') s.scr = v; else say(v === 'lib' ? 'Library (not in this prototype)' : 'Profile (not in this prototype)'); }
+    // today
+    if (a === 'hdr') s.scr = isDone() && !s.started ? 'review' : 'progress';
+    if (a === 'eApply') { s.early = 'accepted'; say('Deload this week · block ends Sun', 'uEarly'); }
+    if (a === 'eNo') { s.early = 'dismissed'; say('Not this week', 'uEarly'); }
+    if (a === 'uEarly') s.early = 'offer';
+    if (a === 'toggle') s.open = !s.open;
+    if (a === 'dayp') { s.day = v; s.main = null; s.mix = false; }
+    if (a === 'main') { s.main = v; s.mix = false; }
+    if (a === 'style') { s.style = v; s.mix = false; }
+    if (a === 'min') s.min = Math.max(20, Math.min(120, s.min + Number(v)));
+    if (a === 'abs') s.abs = !s.abs;
+    if (a === 'ss') s.ss = !s.ss;
+    if (a === 'mix') s.mix = true;
+    if (a === 'unmix') s.mix = false;
+    if (a === 'start') say(`Started ${s.day} (prototype)`);
+    if (a === 'edit') say('Opens the builder (prototype)');
+    if (a === 'build') say('Opens the builder (prototype)');
+    if (a === 'activity') say('Log or plan a run (prototype)');
+    if (a === 'other') say('Other sessions (see today-v2)');
+    if (a === 'ask') say(s.off ? 'Coach offline' : 'Opens the coach (prototype)');
+    if (a === 'dayinfo') say('Day details (see today-v2)');
+    // progress
+    if (a === 'wk') s.hist = false;
+    if (a === 'mo') s.hist = true;
+    if (a === 'focus') s.focus = s.focus === Number(v) ? null : Number(v);
+    if (a === 'all') s.focus = null;
+    if (a === 'ptab') { if (v !== 'Overview') say(`${v} tab (not in this prototype)`); }
+    if (a === 'sess') say(v === 'Back' ? 'Back: opens its Summary' : `${v}: planned`);
+    if (a === 'undo') { s.undone[v] = true; say('Undone'); }
+    if (a === 'redo') s.undone[v] = false;
+    if (a === 'review') s.scr = 'review';
+    if (a === 'startblock') s.bdraft = true;
+    if (a === 'bStart') { s.bstart = true; s.bdraft = false; say('Block 1 started', 'uBStart'); }
+    if (a === 'uBStart') { s.bstart = false; s.bdraft = true; }
+    if (a === 'bSkip') s.bdraft = false;
+    // review: one Undo only (inline status row, no toast)
+    if (a === 'swap' && !s.started && !s.notNow) s.sw[v] = !s.sw[v];
+    if (a === 'startB2') { s.started = true; s.notNow = false; }
+    if (a === 'undoStart') s.started = false;
+    if (a === 'notNow') s.notNow = true;
+    if (a === 'uNotNow') s.notNow = false;
+    clearTimeout(tt); if (s.toast) tt = setTimeout(() => { s.toast = null; view(); }, s.toast.u ? 5000 : 2500);
+    view();
+  });
+  view();
+})();
+</script>
+</body>
+</html>
