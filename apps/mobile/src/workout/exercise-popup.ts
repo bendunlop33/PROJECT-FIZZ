@@ -1,7 +1,7 @@
-import { canAddWarmupNow, clampBuilderRest, midSwapSlot, roundSteps, sessionRounds, setMoveSteps, supersetNextCommand, type RestKind, type TargetExplanation } from '@fizz/domain';
-import { BUILD_LIMITS, type SessionAggregate, type SetType, type WorkoutSet } from '@fizz/schemas';
+import { canAddWarmupNow, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, type RestKind, type TargetExplanation } from '@fizz/domain';
+import { BUILD_LIMITS, type CommandOf, type Load, type SessionAggregate, type SetType, type SetValues, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 
-import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
+import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
 import type { RoundExercise } from './rounds';
 
 /**
@@ -149,3 +149,70 @@ export const POPUP_REFUSAL = {
   noTarget: 'Warm-ups have no target effort',
   changed: 'The workout changed. Try again.',
 } as const;
+
+/** A pop-up cell edit as the workout's own write: a logged set's correction (rule 2), a pending set's new target, or why not. */
+export type PopupCellWrite =
+  | { kind: 'correct'; setId: string; expectedSetVersion: number; patch: Partial<SetValues> }
+  | { kind: 'planned'; setId: string; expectedSetVersion: number; patch: { reps?: { min: number; max: number }; load?: Load; targetRpe?: number }; note: string | null }
+  | { kind: 'refused'; text: string };
+
+/**
+ * What a typed value in the pop-up sends (§7). Logged: the value Ben did, corrected as typed (no
+ * rounding: it's what happened). Not done yet: the target; a kg rounds toward easier on the row's
+ * item (rule 4; `Rounded to 97.5 kg` when it moved), never past its max; reps are exact; a warm-up
+ * has no target effort.
+ */
+export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps' | 'kg' | 'rpe', value: number, bodyweightExercises?: ReadonlySet<string>): PopupCellWrite {
+  const set = a.sets.find((s) => s.id === setId);
+  const ex = set === undefined ? undefined : a.exercises.find((e) => e.id === set.sessionExerciseId);
+  if (set === undefined || ex === undefined || set.status === 'deleted' || set.status === 'skipped') return { kind: 'refused', text: POPUP_REFUSAL.changed };
+  if (field === 'reps' && (!Number.isInteger(value) || value < 1 || value > 100)) return { kind: 'refused', text: 'Reps 1–100' };
+  if (field === 'rpe' && (value < 1 || value > 10 || Math.round(value * 2) !== value * 2)) return { kind: 'refused', text: 'RPE 1–10' };
+  if (field === 'kg' && (value < 0 || ex.loadConvention === 'bodyweight')) return { kind: 'refused', text: POPUP_REFUSAL.notLoadable };
+  if (set.status === 'completed') {
+    const load = set.actual?.load ?? null;
+    if (field === 'kg') return { kind: 'correct', setId, expectedSetVersion: set.version, patch: { load: { value, unit: load?.unit ?? ex.unit, convention: load?.convention ?? ex.loadConvention } } };
+    return { kind: 'correct', setId, expectedSetVersion: set.version, patch: field === 'reps' ? { reps: value } : { rpe: value, rir: null } };
+  }
+  if (field === 'reps') return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { reps: { min: value, max: value } }, note: null };
+  if (field === 'rpe') {
+    if (set.setType === 'warmup' || set.setType === 'drop') return { kind: 'refused', text: POPUP_REFUSAL.noTarget };
+    return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { targetRpe: value }, note: null };
+  }
+  const snapped = snapTypedLoadEasier(a, setId, value, bodyweightExercises);
+  if (snapped === undefined || snapped === null) return { kind: 'refused', text: POPUP_REFUSAL.lighter };
+  const note = Math.abs(snapped - value) < 1e-9 ? null : `Rounded to ${trim(snapped)} ${ex.unit}`;
+  return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { load: { value: snapped, unit: ex.unit, convention: ex.loadConvention } }, note };
+}
+
+/** A rest row's step (15 s, within the builder's limits) as `set_rest_after`; null when it wouldn't change. */
+export function popupRestCommand(a: SessionAggregate, sessionExerciseId: string, rest: Pick<PopupRestRow, 'kind' | 'seconds'>, dir: 1 | -1, op: { opId: string; at: ZonedTimestamp }): CommandOf<'set_rest_after'> | null {
+  const type = rest.kind === 'round' ? 'round' : SET_TYPES.find((t) => t === rest.kind);
+  if (type === undefined) return null;
+  const limit = type === 'round' ? 'round' : (REST_ROWS.find((x) => x.type === type)?.kind ?? 'working');
+  const seconds = clampBuilderRest(limit, rest.seconds + dir * REST_STEP_S);
+  if (seconds === rest.seconds) return null;
+  return typeRestCommand(a, sessionExerciseId, type, seconds, op);
+}
+
+export type ExerciseAction = 'swap' | 'move_up' | 'move_down' | 'superset_next' | 'unlink' | 'remove';
+
+/**
+ * An exercise header's VoiceOver actions on the round page (v3 §6–§7), the same as its `⋯` and the
+ * pop-up: Swap (while it has sets to do), Move up / Move down (rounds not started), Superset with
+ * next, Unlink, Remove.
+ */
+export function exerciseActions(a: SessionAggregate, sessionExerciseId: string): { name: ExerciseAction; label: string }[] {
+  const ex = a.exercises.find((e) => e.id === sessionExerciseId && e.removed === undefined);
+  if (ex === undefined) return [];
+  const moves = roundSteps(a, ex.id);
+  const probe = { opId: 'probe', at: a.session.startedAt };
+  return [
+    ...(midSwapSlot(a, ex.id) !== null ? [{ name: 'swap' as const, label: POPUP_COPY.swapExercise }] : []),
+    ...(moves.up ? [{ name: 'move_up' as const, label: POPUP_COPY.moveUp }] : []),
+    ...(moves.down ? [{ name: 'move_down' as const, label: POPUP_COPY.moveDown }] : []),
+    ...(supersetNextCommand(a, ex.id, probe) !== null ? [{ name: 'superset_next' as const, label: POPUP_COPY.supersetNext }] : []),
+    ...(ex.supersetGroup !== null ? [{ name: 'unlink' as const, label: POPUP_COPY.unlink }] : []),
+    { name: 'remove' as const, label: removeExerciseCommand(a, ex.id, probe).loggedSets > 0 ? 'Remove (keeps logged sets)' : POPUP_COPY.remove },
+  ];
+}

@@ -179,7 +179,8 @@ describe('the open row reads as a table row (1.5, 1.6)', () => {
 describe('keypad-open chrome, header and sheets (1.7–1.10)', () => {
   it('both action bars drop the home-indicator room on the keypad; the toast hides then', () => {
     expect(screen.match(/keypadOpen=\{keypadOpen\}/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(screen).toContain('{toast && !keypadOpen ? <Toast');
+    expect(screen).toContain('{toast && !keypadOpen ? toastNode : null}');
+    expect(screen).toContain('const toastNode = toast ? (');
   });
   it('the rest bar collapses to a slim one-line strip while the keypad is open (Ben, 20 Oct)', () => {
     expect(flat(screen)).toContain('<RestBar rest={rest} slim={keypadOpen}');

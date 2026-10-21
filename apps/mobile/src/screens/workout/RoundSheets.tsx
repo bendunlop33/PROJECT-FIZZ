@@ -1,10 +1,19 @@
-import { Pressable, ScrollView, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, View, type PressableProps } from 'react-native';
 
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, Icon, TextButton, TEXT_PRESSED_OPACITY } from '../../ui';
 import type { OverviewRowView, WhyView } from '../../workout/rounds';
 import type { WhyPanel } from '../../workout/target-why';
 import { TargetWhyPanel } from './TargetWhyPanel';
+import { DragItem, DragList, useDragHandle } from '../../ui/drag-list';
+import type { DropTarget } from '../../ui/drag-logic';
+
+/** A row's press with the drag's hold (`useDragHandle`, inside its `DragItem`). */
+function HeldPressable(props: PressableProps) {
+  const hold = useDragHandle();
+  return <Pressable {...props} {...hold} />;
+}
 
 /**
  * The v3 round page's two sheets (workout-table-v3.md §2, §4). Every line
@@ -20,8 +29,24 @@ import { TargetWhyPanel } from './TargetWhyPanel';
  * has closed. `＋ Add exercise` at the end (today only). Reorder comes with
  * the drag slice.
  */
-export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: readonly OverviewRowView[]; onPick: (roundIndex: number) => void; onMenu: (sessionExerciseId: string) => void; onAddExercise: () => void; onClose: () => void; onDismissed: () => void }) {
+export function WorkoutRoundsSheet(p: {
+  visible: boolean;
+  title: string;
+  rows: readonly OverviewRowView[];
+  onPick: (roundIndex: number) => void;
+  onMenu: (sessionExerciseId: string) => void;
+  onAddExercise: () => void;
+  onClose: () => void;
+  onDismissed: () => void;
+  /**
+   * v3 §7: press and hold an exercise, then drag: an edge moves its round (only rounds not started,
+   * never past one), its middle makes a superset with that exercise. A hold without a drag opens
+   * the exercise's menu. Absent: off.
+   */
+  drag?: { draggable: (sessionExerciseId: string) => boolean; canDrop: (from: string, t: DropTarget) => boolean; onDrop: (from: string, t: DropTarget) => void };
+}) {
   const theme = useTheme();
+  const [dragging, setDragging] = useState(false);
   const head = (t: string, style: object) => (
     <AppText variant="label" color="text.tertiary" style={{ fontSize: 11, lineHeight: 14, letterSpacing: 0.8, textTransform: 'uppercase', ...style }} maxFontSizeMultiplier={1.6}>
       {t}
@@ -35,7 +60,7 @@ export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: r
         </AppText>
         <TextButton label="Close" tone="secondary" onPress={p.onClose} />
       </View>
-      <ScrollView style={{ flexShrink: 1 }}>
+      <ScrollView style={{ flexShrink: 1 }} scrollEnabled={!dragging}>
         <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, paddingHorizontal: theme.space['2'], paddingBottom: theme.space['1'] }}>
           {head('', { width: 30 })}
           {head('Exercise', { flex: 1 })}
@@ -43,9 +68,10 @@ export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: r
           {head('Top set (kg)', { width: 64, textAlign: 'right' })}
           {head('', { width: theme.target.min.width })}
         </View>
+        <DragList enabled={p.drag !== undefined} allowOnto canDrop={(from, t) => p.drag?.canDrop(from, t) ?? false} onDrop={(from, t) => p.drag?.onDrop(from, t)} onMenu={p.onMenu} onDragChange={setDragging}>
         {p.rows.map((r) => (
-          <Pressable
-            key={r.key}
+          <DragItem key={r.key} dragKey={r.key} draggable={p.drag?.draggable(r.key) ?? false}>
+          <HeldPressable
             accessibilityRole="button"
             accessibilityLabel={r.accessibilityLabel}
             accessibilityHint="Shows this round"
@@ -100,8 +126,10 @@ export function WorkoutRoundsSheet(p: { visible: boolean; title: string; rows: r
             >
               <Icon name="ellipsis" color="text.secondary" size={18} />
             </Pressable>
-          </Pressable>
+          </HeldPressable>
+          </DragItem>
         ))}
+        </DragList>
         <View style={{ alignItems: 'flex-start', paddingTop: theme.space['2'] }}>
           <TextButton label="＋ Add exercise" onPress={p.onAddExercise} />
         </View>

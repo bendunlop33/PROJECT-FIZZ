@@ -6,7 +6,7 @@ import { assisted, at, dumbbells, exercise, GYM, id, idGen, kg, lb, ms, profile,
 import { apply, BENCH, FACE, HANG, logCmd, ROW, setsFor, startFixture } from '../../../packages/domain/test/session-fixture';
 import { DRAG, dragStep, dropIndex, dropTargetAt, type DragPhase } from '../src/ui/drag-logic';
 import { holdMenu, nextField, popupRowActions, typeMenu } from '../src/ui/exercise-popup-model';
-import { rpeNumber, sessionPopupView, whyWeightLines } from '../src/workout/exercise-popup';
+import { popupCellWrite, popupRestCommand, rpeNumber, sessionPopupView, whyWeightLines } from '../src/workout/exercise-popup';
 import { buildRounds } from '../src/workout/rounds';
 
 /**
@@ -217,3 +217,38 @@ describe('the workout’s exercise pop-up (sessionPopupView)', () => {
     expect(whyWeightLines(null)).toEqual([]);
   });
 });
+
+describe('pop-up edits as the workout’s own writes', () => {
+  it('a set not done yet: exact reps, a kg rounded toward easier on the bar (said so), a target RPE; never on a warm-up', () => {
+    const s = startFixture().state;
+    const [w, b1] = setsFor(s, BENCH);
+    expect(popupCellWrite(s, b1?.id ?? '', 'reps', 7)).toMatchObject({ kind: 'planned', patch: { reps: { min: 7, max: 7 } } });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 101)).toMatchObject({ kind: 'planned', patch: { load: kg(100) }, note: 'Rounded to 100 kg' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 102.5)).toMatchObject({ kind: 'planned', note: null });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 5)).toEqual({ kind: 'refused', text: 'Lighter than this gym can load' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9)).toMatchObject({ kind: 'planned', patch: { targetRpe: 9 } });
+    expect(popupCellWrite(s, w?.id ?? '', 'rpe', 9)).toEqual({ kind: 'refused', text: 'Warm-ups have no target effort' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'rpe', 9.3)).toEqual({ kind: 'refused', text: 'RPE 1–10' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'reps', 0)).toEqual({ kind: 'refused', text: 'Reps 1–100' });
+  });
+
+  it('a logged set: a correction of what was done, versioned on the set, never rounded (rule 2)', () => {
+    let s = startFixture().state;
+    const [w] = setsFor(s, BENCH);
+    s = apply(s, logCmd(w?.id ?? '', values(kg(60), 10), 60));
+    const set = s.sets.find((x) => x.id === w?.id);
+    expect(popupCellWrite(s, w?.id ?? '', 'kg', 61)).toEqual({ kind: 'correct', setId: w?.id, expectedSetVersion: set?.version, patch: { load: kg(61) } });
+    expect(popupCellWrite(s, w?.id ?? '', 'reps', 9)).toMatchObject({ kind: 'correct', patch: { reps: 9 } });
+  });
+
+  it('rest steppers send 15 s steps by set type, within the builder’s limits; a superset’s After each round', () => {
+    const s = startFixture().state;
+    const bench = s.exercises.find((e) => e.exerciseId === BENCH)?.id ?? '';
+    const cmd = popupRestCommand(s, bench, { kind: 'working', seconds: 180 }, -1, { opId: 'r1', at: at(10) });
+    expect(cmd).toMatchObject({ type: 'set_rest_after', seconds: 165, scope: 'type' });
+    expect(popupRestCommand(s, bench, { kind: 'working', seconds: 360 }, 1, { opId: 'r2', at: at(10) })).toBeNull();
+    const row = s.exercises.find((e) => e.exerciseId === ROW)?.id ?? '';
+    expect(popupRestCommand(s, row, { kind: 'round', seconds: 90 }, 1, { opId: 'r3', at: at(10) })).toMatchObject({ seconds: 105, scope: 'exercise' });
+  });
+});
+

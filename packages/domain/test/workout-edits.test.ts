@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { SessionAggregateSchema, type Exercise, type PlannedSet, type SessionAggregate, type SessionCommand } from '@fizz/schemas';
 import {
+  canDropRound,
+  dropRoundCommand,
+  roundDraggable,
   fitPlanToItem,
   snapTypedLoadEasier,
   addWarmupCommand,
@@ -300,6 +303,33 @@ describe('rounds: move, superset with next, unlink mid-round', () => {
     expect(s1.sets).toEqual(s0.sets);
     const back = apply(reload(s1), undo('m1'));
     expect(sessionRounds(back).map((r) => r.key)).toEqual(rounds.map((r) => r.key));
+  });
+
+  it('Workout sheet drag: an edge moves the round (never a started one, never past one), the middle makes a superset', () => {
+    const s0 = startFixture().state;
+    const hang = rowId(s0, HANG);
+    const bench = rowId(s0, BENCH);
+    const row = rowId(s0, ROW);
+    expect(roundDraggable(s0, hang)).toBe(true);
+    const first = dropRoundCommand(s0, hang, bench, 'before', op('d1'));
+    expect(first?.type).toBe('move_exercise');
+    const s1 = apply(s0, first as SessionCommand);
+    expect(sessionRounds(s1).map((r) => r.members[0]?.exerciseName)).toEqual(['Dead hang', 'Bench press', 'Cable row']);
+    // Back down: after the superset.
+    const down = dropRoundCommand(s1, hang, row, 'after', op('d2'));
+    const s2 = apply(s1, down as SessionCommand);
+    expect(sessionRounds(s2).map((r) => r.members[0]?.exerciseName)).toEqual(['Bench press', 'Cable row', 'Dead hang']);
+    // A drop where it already is: nothing to send.
+    expect(dropRoundCommand(s0, hang, row, 'after', op('d3'))).toBeNull();
+    // Onto: a superset with that round.
+    const onto = dropRoundCommand(s0, hang, bench, 'onto', op('d4'));
+    expect(onto?.type).toBe('link_superset');
+    // Bench started: it can't be dragged, and nothing goes above it.
+    const started = benchStarted();
+    expect(roundDraggable(started, rowId(started, BENCH))).toBe(false);
+    expect(canDropRound(started, rowId(started, HANG), rowId(started, BENCH), 'before')).toBe(false);
+    expect(canDropRound(started, rowId(started, HANG), rowId(started, ROW), 'before')).toBe(true);
+    expect(canDropRound(started, rowId(started, BENCH), rowId(started, HANG), 'after')).toBe(false);
   });
 
   it('Superset with next pairs with the next round’s first exercise; advice says why it isn’t recommended, the change stays', () => {

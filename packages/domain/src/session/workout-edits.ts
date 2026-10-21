@@ -150,6 +150,41 @@ export function pairWithCommand(state: SessionAggregate, sessionExerciseId: stri
   return { type: 'link_superset', at: op.at, opId: op.opId, expectedVersion: state.session.version, sessionExerciseId, withSessionExerciseId };
 }
 
+/**
+ * The Workout sheet's drag (§7): the row `fromRowId` dropped on `targetRowId`. An edge moves its
+ * round there (only rounds not started, never past a started one); the middle makes a superset
+ * (`link_superset`, which keeps each side's done rounds). Null: springs back.
+ */
+export function dropRoundCommand(
+  state: SessionAggregate,
+  fromRowId: string,
+  targetRowId: string,
+  edge: 'before' | 'after' | 'onto',
+  op: Op,
+): CommandOf<'move_exercise'> | CommandOf<'link_superset'> | null {
+  if (edge === 'onto') return pairWithCommand(state, fromRowId, targetRowId, op);
+  const rounds = sessionRounds(state);
+  const from = roundIndexOf(rounds, fromRowId);
+  const target = roundIndexOf(rounds, targetRowId);
+  if (from < 0 || target < 0 || from === target) return null;
+  // The index after taking the round out of its place.
+  const to = from < target ? (edge === 'before' ? target - 1 : target) : edge === 'before' ? target : target + 1;
+  const r = moveRoundCommand(state, fromRowId, to, op);
+  return r.ok ? r.command : null;
+}
+
+/** Whether `dropRoundCommand` would send anything (the drag's allowed drops). */
+export function canDropRound(state: SessionAggregate, fromRowId: string, targetRowId: string, edge: 'before' | 'after' | 'onto'): boolean {
+  return dropRoundCommand(state, fromRowId, targetRowId, edge, { opId: 'probe', at: state.session.startedAt }) !== null;
+}
+
+/** Whether this exercise's round can be dragged (not started, not split across gyms). */
+export function roundDraggable(state: Pick<SessionAggregate, 'exercises' | 'sets'>, sessionExerciseId: string): boolean {
+  const rounds = sessionRounds(state);
+  const r = rounds[roundIndexOf(rounds, sessionExerciseId)];
+  return r !== undefined && !r.started && !r.parted && rounds.length > 1;
+}
+
 /** A superset whose current round is half done (a member done in it, another not): `Unlink` finishes that round first (§7). */
 export function supersetMidRound(state: Pick<SessionAggregate, 'exercises' | 'sets'>, sessionExerciseId: string): boolean {
   const rounds = sessionRounds(state);

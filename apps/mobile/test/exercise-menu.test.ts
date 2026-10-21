@@ -130,4 +130,19 @@ describe('Target RPE', () => {
     expect(m.options).toEqual(['This set', 'This exercise', 'Today', 'Cancel']);
     expect([0, 1, 2, 3].map((i) => m.scopeAt(i))).toEqual([{ kind: 'set', setId: 'set-1' }, { kind: 'exercise', sessionExerciseId: 'ex-1' }, { kind: 'today' }, null]);
   });
+
+  it('v3 round page (workout-table-v3 §7): History, Move up / Move down under Swap, Superset with next, Unlink, Remove; each mapped', () => {
+    const m = exerciseMenu(true, false, { canSwap: true, canSuperset: true, inSuperset: true, canRemove: true, round: { moveUp: true, moveDown: true, supersetNext: true, history: true } });
+    expect(m.options).toEqual(['How to', 'History', 'Add set', 'Swap exercise', 'Move up', 'Move down', 'Superset with next', 'Superset with…', 'Unlink', 'Notes', 'Add exercise', 'Delete this set', 'Skip exercise', 'Remove exercise', 'Cancel']);
+    expect(m.actionAt(1)).toBe('history');
+    expect(m.actionAt(4)).toBe('move_up');
+    expect(m.actionAt(5)).toBe('move_down');
+    expect(m.actionAt(6)).toBe('superset_next');
+    expect(m.actionAt(8)).toBe('remove_superset');
+    expect(m.destructiveButtonIndex).toEqual([11, 12, 13]);
+    // A started round doesn't move: no Move rows.
+    const started = exerciseMenu(false, false, { round: { moveUp: false, moveDown: false, supersetNext: false, history: true } });
+    expect(started.options).not.toContain('Move up');
+    expect(started.options).not.toContain('Superset with next');
+  });
 });
