@@ -72,7 +72,7 @@ Regions, top to bottom:
 
 1. **Day title** `Tuesday`, with the `GymChip` trailing [title Ben/Proto; GymChip kept from today.md, Proposal].
 2. **Coach bar + mic** `✦ Ask the coach` [Ben]. Opens the coach sheet (never full screen); the mic starts listening at once.
-3. **7-day strip** [Ben; range Proto, §9 Q19]: 3 days back, today, 3 ahead. Each cell: weekday, date, up to two items. A thin divider sits before Monday so the plan week is visible [Proposal]. No plan line and no run counter [Ben]. **Cell items (Ben, 21 Oct):** no ✓; a done session is a soft-green pill (same green as Progress chips), a planned one a dashed outline, cardio its own tint; every label is centred and on one line, shrinking to fit (`adjustsFontSizeToFit`, `numberOfLines={1}`, `minimumFontScale` 0.75) instead of wrapping or being cut off; all seven columns equal width.
+3. **7-day strip** [Ben; range Proto, §9 Q19]: 3 days back, today, 3 ahead. Each cell: weekday, date, up to two items. A thin divider sits before Monday so the plan week is visible [Proposal]. No plan line and no run counter [Ben]. **Cell items (Ben, 21 Oct):** no ✓; a done session is a soft-green pill (same green as Progress chips), a planned one a dashed outline, cardio its own tint; every label is centred and on one line, shrinking to fit (`adjustsFontSizeToFit`, `numberOfLines={1}`, `minimumFontScale` 0.75) instead of wrapping or being cut off; all seven columns equal width. Label text about 10 pt with slight negative tracking (the prototype's `.pip`, 9.5 px, −0.02 em), growing with Dynamic Type only to 1.1× (the column is fixed; accessibility sizes get the list), so `Shoulders` fits a 375 pt column at the 0.75 floor (review today-fix-21oct SP5).
 4. **Banners / rare lines** from today.md (failed backup, check-in line, pain `Still hurts?` line), unchanged, at most two [Proposal].
 5. **`Today's session`** [Ben]:
    - **Day segmented control**: the plan's days in plan order, `Chest` `Back` `Legs` `Shoulders` `⋯`. `NEXT` under the plan's next day, which is selected on open. Any day is one tap. `⋯` opens **Other workouts**.
@@ -159,7 +159,7 @@ Other workouts sheet (`⋯`), half height [Proto]:
 │   Close                                  │
 ```
 
-- **Strip items** [Ben]: done workout `✓ Shoulders` (green fill), done activity `Run 12k` (run colour fill), planned plan day `Legs` and planned run `Run 8k` (dashed outline, same colour, plus `Planned` in the VoiceOver label and the sheet), rest `Rest` (text only). Colour is never the only signal (✓, dashed outline, the word). Today's cell has the accent outline and shows the chosen day.
+- **Strip items** [Ben]: done workout `✓ Shoulders` (green fill), done activity `Run 12k` (run colour fill), planned plan day `Legs` and planned run `Run 8k` (dashed outline, same colour, plus `Planned` in the VoiceOver label and the sheet), rest `Rest` (text only). Colour is never the only signal (fill vs dashed outline, plus the VoiceOver word `done` / `Planned`); no ✓ in cells (Ben, 21 Oct; the accessibility list keeps it). Today's cell has the accent outline and shows the chosen day.
 - **Runs** (logged or planned) appear only when Ben logged them (`＋ Activity`) or told the coach (`log_activity`) [Ben]. Nothing is inferred or added by the plan. [Proposal] The same goes for future plan days: they show only when dated (a week change Ben applied, or days he told the coach); otherwise future cells stay empty, since the rotation has no dates.
 - **Cells** are ≥ 44 pt wide at 390 pt (7 × ~47 pt). At accessibility Dynamic Type sizes the strip becomes a 7-row list (`Sat 17 · ✓ Shoulders`) [Proposal].
 - **Session controls** [Ben, 20 Oct: "when click chest, it should say Main lift: bench, incline. and have option for superset on/off. these are the core crux of the session"]: under the day control, five compact rows (about 38 pt visible, small labels and chips; each control keeps a 44 pt tap area) [Ben, 20 Oct: "make the main lift through to supersets a bit smaller"], and the card rebuilds from them:
@@ -215,7 +215,7 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 | Workout in progress | Resume card replaces Today's session (today.md, unchanged); day control, chips and Build your own hidden; strip stays |
 | Stale unfinished workout | today.md's stale card, unchanged |
 | Done today | Card becomes `✓ Chest · 58 min ›` (opens Summary), no Start; day control and Build your own stay for a second session, no day selected |
-| No plan | No day control; card replaced by `No plan` with `Build your own` as the primary button and `Set up a plan ›`; `⋯` content (recent workouts) shows as a list |
+| No plan | No day control; `No plan` and `Set up a plan ›` on one row; when the app's Up next resolver names a workout (Profile split, routines in rotation, else the longest gap; as the old Today), an `Up next · <name>` row with `Start` (opens the Workout overview) is the main action and `Build your own` is secondary, otherwise `Build your own` is primary; the Other sessions and `Empty workout` as one row of chips; `＋ Activity` beside Build your own (built 21 Oct; **pending Ben**: whether a split or rotation without an applied plan should instead show as plan days, review today-fix-21oct SP4) |
 | Plan paused | Day control shows the paused plan's days, none marked `NEXT`; `Plan paused` under the label |
 | First use | Strip shows today only; as No plan |
 | Large Dynamic Type | Strip as a list; day control as a `Day` row; chips wrap |
@@ -253,7 +253,7 @@ Picking another day or session type drafts that one the same way (steps 1, 3, 4)
 3. Collapsed card shows only `Day · Main lift`, exercise count, `~N min`, `plan day N of 4` (next day only), Start, Edit.
 4. Every Based on line matches stored data (dates, actuals, targets); a coach line appears only when the draft differs from the code draft, and Undo restores it.
 5. A coach structural change is never applied without `Apply`.
-6. Strip: done items carry ✓, planned ones a dashed outline and `Planned` in VoiceOver; a run logged in the Activity sheet appears at once. With no activities logged or told to the coach, no run appears anywhere on Today.
+6. Strip: done items are a filled soft-green pill (no ✓), planned ones a dashed outline and `Planned` in VoiceOver; a run logged in the Activity sheet appears at once. With no activities logged or told to the coach, no run appears anywhere on Today.
 7. With a long run Saturday logged, picking Legs on Friday shows the `!` line; Start still works. Without it, no line.
 8. Picking another day, type or `⋯` workout changes no plan data; doing Shoulders today moves Up next past Shoulders.
 9. Chest with Bench, Incline and one variation shows 3 chips; Legs with one template shows none. Each pick is one tap and changes the card name.
