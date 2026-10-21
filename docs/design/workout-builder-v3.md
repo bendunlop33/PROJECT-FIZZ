@@ -562,6 +562,15 @@ Ben's direction: every set's load comes from est. 1RM + reps + target RPE, round
 
 Whether step 4 should replace steps 1–3 ("est. 1RM everywhere") is still open in the backlog: §9 Q12.
 
+**Builder loads fix (21 Oct, PROPOSED, needs Ben's approval; not in CHANGELOG or ADR 0006 yet).** Ben's Build B report ("It knew my history but wasn't using it"). Branch `claude/builder-loads-21oct` changes steps 1–2 as below. It applies to every new-workout path: the builder, Describe the workout, and Today.
+
+- **History can replace a stale anchor.** The built-in rule's load gives way to Ben's own sets when it implies an e1RM below 90 % of the est. max from his **last session** (`HISTORY_WINS_SHARE`; cut after a 14+ day gap, R1–R2). A miss, a reduction or a pain hold never gives way. A plan's week-1 load gives way the same way once history newer than the plan exists. The coach's target never gives way. The replaced load reads as `Est. max … (estimate)`.
+- **What a rule load means.** For the test above, the rule's load is read at its own rep floor and target RPE (main barbell: 3 reps @ 8.5). Used as the top set, other sets derive from it at the reps and RPE it's used at (6 @ 8). If the rule gives way and the last session's est. max (gap-cut) is higher, other sets use that instead. A set of more reps is never heavier than the top set. Example: after top 100 × 6 @ 8 + back-offs 95 × 8, the next build is top 102.5 × 6 with back-offs at 95 × 8 (not 87.5).
+- **Builder-format history.** A main lift logged as a top set + back-offs is judged on both and planned from the top set. Where the rule's plan is plain working sets (a routine's start, swaps, the coach-chat fallback), the first set takes the progressed top load. The rest take the back-off load moved by the same step.
+- **Same-mass bars.** The rule reads history on any bar of the same kind and bar mass, as `loadReferences` does, in the builder, Today and swaps.
+
+Open for Ben: the 90 % share; "last session" versus the best of the last 3 sessions; the reading of the rule load at its floor for the test.
+
 ### 3.2 Rest defaults [Ben]
 
 | Set type | Default |
