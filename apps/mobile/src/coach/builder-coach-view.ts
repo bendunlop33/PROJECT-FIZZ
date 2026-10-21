@@ -9,7 +9,7 @@
 import { BUILDER_STATUS_WORD, type BuilderCoachReach, type BuilderProposal, type MixPick, type NudgeOffer, type ReviewNote } from '@fizz/coach';
 import type { Memory } from '@fizz/schemas';
 
-import type { BuilderReviewResult, NudgeResult } from './builder-coach-service';
+import type { BuilderReviewResult, EditAsk, NudgeResult } from './builder-coach-service';
 
 // ---------------------------------------------------------------------------
 // The ask bar (`✦ <label>` + mic), on Today, Set up and Your workout
@@ -182,6 +182,36 @@ export function todayCoachWhy(r: NudgeResult | null): { coachReason: string | nu
 /** `↻ Mix it up`: the coach's one-line reason for Today's `todayMixLine(…, coachReason)`; null = code's pick, not reviewed. */
 export function mixCoachReason(pick: MixPick | null): string | null {
   return pick?.by === 'coach' ? pick.reason : null;
+}
+
+/** `notApplied`: the write failed (not out of date). */
+export const EDIT_ASK_COPY = { noAnswer: 'No answer. Try again.', notApplied: 'Not applied' } as const;
+
+/** What Your workout does with a reply to its bar (§2.6). */
+export type EditAskView =
+  /** The proposal sheet: before/after lines, `Apply` / `Skip` (rule 3: nothing changes until Apply). */
+  | { kind: 'proposal'; proposal: BuilderProposal }
+  /** The coach's own words (checked), or code's note on what it couldn't do; never a canned reply (rule 1). */
+  | { kind: 'toast'; text: string }
+  /** Offline or not connected: the bar shows the word and is disabled; manual edits all still work. */
+  | { kind: 'reach'; reach: Exclude<BuilderCoachReach, 'ok'> }
+  /** The draft is gone (started or deleted): the page reloads. */
+  | { kind: 'gone' }
+  | { kind: 'none' };
+
+export function editAskView(r: EditAsk): EditAskView {
+  switch (r.kind) {
+    case 'proposal':
+      return { kind: 'proposal', proposal: r.proposal };
+    case 'reply': {
+      const text = r.text ?? r.notes[0] ?? null;
+      return text === null || text.trim() === '' ? { kind: 'none' } : { kind: 'toast', text };
+    }
+    case 'unavailable':
+      return r.status === 'offline' || r.status === 'not_connected' ? { kind: 'reach', reach: r.status } : { kind: 'toast', text: EDIT_ASK_COPY.noAnswer };
+    case 'gone':
+      return { kind: 'gone' };
+  }
 }
 
 /** The offer's lines for an Apply on Today (proposal state from the card). */

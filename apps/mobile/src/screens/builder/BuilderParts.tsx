@@ -10,57 +10,6 @@ import { AppText, Icon } from '../../ui';
  * every target is at least 44 pt.
  */
 
-/** `✦ Describe the workout` + mic (§2.6). Both open the coach sheet; the status word is honest (rule 1). */
-export function CoachBar({ text, statusWord, disabled, onOpen, onMic }: { text: string; statusWord: string | null; disabled: boolean; onOpen: () => void; onMic: () => void }) {
-  const theme = useTheme();
-  return (
-    <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={statusWord === null ? text : `${text}, ${statusWord}`}
-        accessibilityState={{ disabled }}
-        disabled={disabled}
-        onPress={onOpen}
-        style={({ pressed }) => ({
-          flex: 1,
-          minHeight: 48,
-          borderRadius: theme.radius.pill,
-          borderWidth: 1.5,
-          borderColor: theme.colors['border.divider'],
-          backgroundColor: theme.colors['bg.surface'],
-          paddingHorizontal: theme.space['4'],
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: theme.space['2'],
-          opacity: pressed || disabled ? 0.6 : 1,
-        })}
-      >
-        <AppText variant="callout" color="text.primary">
-          ✦
-        </AppText>
-        <AppText variant="callout" color="text.secondary" numberOfLines={1} style={{ flex: 1 }}>
-          {text}
-        </AppText>
-        {statusWord !== null ? (
-          <AppText variant="label" color="text.secondary">
-            {statusWord}
-          </AppText>
-        ) : null}
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Speak to the coach"
-        accessibilityState={{ disabled }}
-        disabled={disabled}
-        onPress={onMic}
-        style={({ pressed }) => ({ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors['bg.raised'], opacity: pressed || disabled ? 0.6 : 1 })}
-      >
-        <Icon name="mic" color="text.primary" />
-      </Pressable>
-    </View>
-  );
-}
-
 /**
  * `[−] value [+]`, 44 pt buttons; holding repeats (§2.2 Length). VoiceOver
  * reads one adjustable element (swipe up / down).

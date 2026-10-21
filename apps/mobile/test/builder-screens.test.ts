@@ -10,7 +10,6 @@ import { adviceToast, ruleLine } from '../src/builder/builder-service';
 import {
   addGroup,
   applyRecommended,
-  coachBarWord,
   coachStatusOf,
   editsFromText,
   loadText,
@@ -299,10 +298,10 @@ describe('Start prompt, advice, coach status and review (§2.6, §2.8, §2.9, §
     expect(ruleLine({ value: 100 }, 100)).toBe('Last time');
   });
 
-  it('coach status is honest: Offline / Coach not connected, nothing when connected', () => {
-    expect(coachBarWord(coachStatusOf('ok'))).toBeNull();
-    expect(coachBarWord(coachStatusOf('offline'))).toBe('Offline');
-    expect(coachBarWord(coachStatusOf('expired'))).toBe('Coach not connected');
+  it('coach status is honest: ok, offline, anything else not connected', () => {
+    expect(coachStatusOf('ok')).toBe('ok');
+    expect(coachStatusOf('offline')).toBe('offline');
+    expect(coachStatusOf('expired')).toBe('not_connected');
   });
 
   it('with no review provider: code counts and the mix, no verdict, no suggestions, no notes (rule 1)', () => {

@@ -1,16 +1,18 @@
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, ScrollView, View } from 'react-native';
+import { AccessibilityInfo, Alert, Pressable, ScrollView, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { builderApplyOpId, type BuilderCoachReach, type BuilderProposal } from '@fizz/coach';
 import { slotsOf, type BuilderEditOp } from '@fizz/domain';
 import type { BuilderGroup, CheckInScore, PlanChangeUndo, SessionCheckIn } from '@fizz/schemas';
 
 import { planChangeText, type BuilderSnapshot, type BuilderToast, type BuilderWriteResult, type StartChoice, type StartPrompt } from '../../builder/builder-service';
 import { reviewAfterApply } from '../../builder/review';
 import { UPDATE_PLAN_DAY_ACTION } from '../../coach/builder-review-provider';
-import { coachBarWord, coachStatusOf, editsFromText, promptView, workoutView, WORKOUT_COPY, type CoachBarStatus, type WorkoutRowView } from '../../builder/builder-view';
+import { editAskView, EDIT_ASK_COPY, proposalCardView, type ProposalState } from '../../coach/builder-coach-view';
+import { coachStatusOf, editsFromText, promptView, workoutView, WORKOUT_COPY, type CoachBarStatus, type WorkoutRowView } from '../../builder/builder-view';
 import { builderReviewProvider, runReview, type BuilderReview } from '../../builder/review';
 import { newUuid } from '../../device/runtime';
 import { builderPage, openStartedWorkout } from '../../navigation/actions';
@@ -20,8 +22,10 @@ import { useTheme } from '../../theme';
 import { AppText, BottomCard, CheckInScale, PrimaryButton, SecondaryButton, StatusLine, TextButton, Toast, ToastHost } from '../../ui';
 import { useStartAlertsAsk } from '../../alerts/AlertsAskSheet';
 import { saveScore, scoreStepOf } from '../../workout/overview-start';
-import { CoachBar, SwipeRow } from './BuilderParts';
-import { ExerciseSheet, PromptSheet, ReviewSheet, SwapSheet, type ChoiceSection } from './BuilderSheets';
+import { CoachAskBar } from '../../ui/coach-ask-bar';
+import { createOnDeviceSpeech } from '../../voice/on-device-speech';
+import { SwipeRow } from './BuilderParts';
+import { ExerciseSheet, PromptSheet, ProposalSheet, ReviewSheet, SwapSheet, type ChoiceSection } from './BuilderSheets';
 
 /**
  * Your workout (workout-builder-v3 §2.3): numbered rounds, supersets as
@@ -57,6 +61,11 @@ export function BuilderWorkoutScreen() {
     return p;
   }, []);
   const [coach, setCoach] = useState<CoachBarStatus>('not_connected');
+  // The bar's reach (builder coach) and on-device speech (§2.6); a message returns a proposal, applied only on Apply.
+  const [reach, setReach] = useState<BuilderCoachReach>('not_connected');
+  const [speech] = useState(createOnDeviceSpeech);
+  const [proposal, setProposal] = useState<{ proposal: BuilderProposal; state: ProposalState } | null>(null);
+  const [applying, setApplying] = useState(false);
   const [toast, setToast] = useState<(BuilderToast & { whyOpen: boolean }) | null>(null);
   const [popup, setPopup] = useState<string | null>(null);
   const [swap, setSwap] = useState<{ slotKey: string | null; group: BuilderGroup; groups: BuilderGroup[]; sections: ChoiceSection[] } | null>(null);
@@ -102,6 +111,7 @@ export function BuilderWorkoutScreen() {
     }
     const a = await services.coach.availability().catch(() => null);
     setCoach(coachStatusOf(a?.status ?? 'not_connected'));
+    setReach(await services.builderCoach.status().catch((): BuilderCoachReach => 'not_connected'));
     setEarlier((await services.builder.earlierEdits().catch(() => [])).filter((e) => e.draftId !== draftId));
   }, [services, draftId, inTurn, setSnap]);
 
@@ -180,6 +190,54 @@ export function BuilderWorkoutScreen() {
       if (r.status === 'written') changed();
       else if (r.status !== 'replayed') showToast({ text: r.message, undoOpId: null, why: null });
     });
+  }
+
+  /** Your workout's bar (§2.6): the words go to the coach (`propose_workout_edit`); its proposal opens the sheet. */
+  async function askWorkout(words: string) {
+    const cur = snapRef.current;
+    if (cur === null || words.trim() === '') return;
+    const r = await services.builderCoach.askEdit({ draftId: cur.draftId, words: words.trim(), opId: newUuid() }).catch(() => null);
+    const v = r === null ? ({ kind: 'toast', text: EDIT_ASK_COPY.noAnswer } as const) : editAskView(r);
+    switch (v.kind) {
+      case 'proposal':
+        setProposal({ proposal: v.proposal, state: 'open' });
+        return;
+      case 'toast':
+        showToast({ text: v.text, undoOpId: null, why: null });
+        return;
+      case 'reach':
+        setReach(v.reach);
+        return;
+      case 'gone':
+        await reload();
+        return;
+      case 'none':
+        return;
+    }
+  }
+
+  /** `Apply` (Ben's tap, rule 3): checked again against the draft now, one versioned write; `Applied · Undo`. */
+  async function applyProposal() {
+    const p = proposal;
+    if (p === null || p.state !== 'open' || applying) return;
+    setApplying(true);
+    try {
+      const r = await services.builderCoach.apply(p.proposal).catch(() => ({ kind: 'failed' }) as const);
+      if (r.kind === 'out_of_date') {
+        setProposal({ proposal: p.proposal, state: 'out_of_date' });
+        return;
+      }
+      setProposal(null);
+      if (r.kind === 'failed') {
+        showToast({ text: EDIT_ASK_COPY.notApplied, undoOpId: null, why: null });
+        return;
+      }
+      changed();
+      await reload();
+      showToast({ text: WORKOUT_COPY.applied, undoOpId: builderApplyOpId(p.proposal.id), why: null });
+    } finally {
+      setApplying(false);
+    }
   }
 
   async function openSwap(slotKey: string | null, group?: BuilderGroup) {
@@ -520,12 +578,19 @@ export function BuilderWorkoutScreen() {
         <ToastHost bottom={8}>{popupSlot === null ? toastNode : null}</ToastHost>
       </View>
       <View style={{ paddingHorizontal: theme.components.screenMargin, paddingTop: theme.space['2'], paddingBottom: insets.bottom + theme.space['2'], gap: theme.space['2'], backgroundColor: theme.colors['bg.canvas'] }}>
-        <CoachBar
-          text={WORKOUT_COPY.bar}
-          statusWord={coachBarWord(coach)}
-          disabled={coach !== 'ok'}
-          onOpen={() => { navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true }); }}
-          onMic={() => { navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true }); }}
+        <CoachAskBar
+          page="workout"
+          reach={reach}
+          speech={speech}
+          onOpen={(heard) => {
+            if (heard !== undefined && heard.trim() !== '') {
+              void askWorkout(heard);
+              return;
+            }
+            Alert.prompt(WORKOUT_COPY.bar, undefined, (text) => {
+              if (text.trim() !== '') void askWorkout(text);
+            });
+          }}
         />
         <View style={{ flexDirection: 'row', gap: theme.space['2'], alignItems: 'center' }}>
           <View style={{ flex: 1 }}>
@@ -596,6 +661,12 @@ export function BuilderWorkoutScreen() {
           }}
         />
       </BottomCard>
+      <ProposalSheet
+        card={proposal === null ? null : proposalCardView(proposal.proposal, proposal.state)}
+        busy={applying}
+        onApply={() => void applyProposal()}
+        onSkip={() => { setProposal(null); }}
+      />
       <ReviewSheet
         visible={review !== null}
         review={review}

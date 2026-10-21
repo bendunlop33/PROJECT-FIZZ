@@ -1,11 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { builderApplyOpId, makeBuilderProposal, NO_NUMBERS } from '@fizz/coach';
+import { builderApplyOpId, makeBuilderProposal, NO_NUMBERS, type BuilderProposal } from '@fizz/coach';
 import { currentDraftVersion, slotsOf, workingCount } from '@fizz/domain';
 
 import type { BuilderSnapshot, SetupInput } from '../src/builder/builder-service';
 import { registerSetupPage, setTodaySetupDay, takePendingSetupFill } from '../src/builder/coach-ports';
 import { builderReviewProvider, runReview, type BuilderReview } from '../src/builder/review';
+import { EDIT_ASK_COPY, editAskView, proposalCardView } from '../src/coach/builder-coach-view';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, setUpGym, type Harness } from './harness';
 
@@ -154,5 +158,45 @@ describe('Set up words (offline: code reads them, no coach bubble)', () => {
     setTodaySetupDay('push');
     expect(await s.builderCoach.askSetup({ words: 'hello there', opId: 'ask-x', from: 'today' })).toMatchObject({ kind: 'not_understood' });
     expect(takePendingSetupFill()).toBeNull();
+  });
+});
+
+describe('Your workout’s bar (§2.6): words to the coach, a proposal with Apply / Skip', () => {
+  it('with no coach: unavailable, the bar shows the word, nothing is written', async () => {
+    const { services: s } = await h.launch();
+    const snap = await pushDraft(s);
+    const before = await s.coachDrafts.get(snap.draftId);
+    const r = await s.builderCoach.askEdit({ draftId: snap.draftId, words: 'swap the fly for incline press', opId: 'ask-1' });
+    expect(r.kind).toBe('unavailable');
+    const v = editAskView(r);
+    expect(v.kind).toBe('reach');
+    expect((await s.coachDrafts.get(snap.draftId))?.version).toBe(before?.version);
+  });
+
+  it('editAskView: proposal → sheet; the coach’s words or code’s note → toast; failed → No answer; gone → reload', () => {
+    const proposal = { id: 'p', draftId: 'd', baseVersion: 1, ops: [], lines: ['Cable fly → Incline barbell press'], warnings: [], notes: [], preconditions: [], estimate: 50, reason: null } as unknown as BuilderProposal;
+    expect(editAskView({ kind: 'proposal', proposal, status: 'ok' })).toEqual({ kind: 'proposal', proposal });
+    expect(editAskView({ kind: 'reply', text: 'Bench is already first.', notes: [], status: 'ok' })).toEqual({ kind: 'toast', text: 'Bench is already first.' });
+    expect(editAskView({ kind: 'reply', text: null, notes: ['Not more: shoulder'], status: 'ok' })).toEqual({ kind: 'toast', text: 'Not more: shoulder' });
+    expect(editAskView({ kind: 'reply', text: null, notes: [], status: 'ok' })).toEqual({ kind: 'none' });
+    expect(editAskView({ kind: 'unavailable', status: 'offline' })).toEqual({ kind: 'reach', reach: 'offline' });
+    expect(editAskView({ kind: 'unavailable', status: 'not_connected' })).toEqual({ kind: 'reach', reach: 'not_connected' });
+    expect(editAskView({ kind: 'unavailable', status: 'failed' })).toEqual({ kind: 'toast', text: EDIT_ASK_COPY.noAnswer });
+    expect(editAskView({ kind: 'gone' })).toEqual({ kind: 'gone' });
+    // The sheet: Apply / Skip while open; Out of date has no Apply (rule 5).
+    expect(proposalCardView(proposal, 'open').actions).toEqual({ apply: 'Apply', skip: 'Skip' });
+    expect(proposalCardView(proposal, 'out_of_date')).toMatchObject({ actions: null, state: 'Out of date. Ask again.' });
+  });
+
+  it('the screen: shared CoachAskBar on Your workout; askEdit, Apply through the builder coach, Undo under the apply op ID', () => {
+    const ws = readFileSync(join(__dirname, '..', 'src', 'screens', 'builder', 'BuilderWorkoutScreen.tsx'), 'utf8');
+    expect(ws).toContain('<CoachAskBar');
+    expect(ws).toContain('page="workout"');
+    expect(ws).toContain('services.builderCoach.askEdit(');
+    expect(ws).toContain('services.builderCoach.apply(p.proposal)');
+    expect(ws).toContain('undoOpId: builderApplyOpId(p.proposal.id)');
+    expect(ws).toContain('<ProposalSheet');
+    // The bar no longer opens the general coach chat.
+    expect(ws).not.toContain("navigate('Coach'");
   });
 });

@@ -500,7 +500,7 @@ export function promptView(p: StartPrompt): PromptView {
 }
 
 // ---------------------------------------------------------------------------
-// Coach bar (§2.6): honest status, never a canned reply (rule 1)
+// Coach status for Coach review (§2.9): honest, never a canned reply (rule 1). The bar is the shared `CoachAskBar`.
 
 export type CoachBarStatus = 'ok' | 'offline' | 'not_connected';
 
@@ -508,11 +508,6 @@ export function coachStatusOf(status: string): CoachBarStatus {
   if (status === 'ok') return 'ok';
   if (status === 'offline') return 'offline';
   return 'not_connected';
-}
-
-/** The bar's trailing word: nothing when connected; `Offline`; `Coach not connected`. */
-export function coachBarWord(s: CoachBarStatus): string | null {
-  return s === 'ok' ? null : s === 'offline' ? 'Offline' : 'Coach not connected';
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;

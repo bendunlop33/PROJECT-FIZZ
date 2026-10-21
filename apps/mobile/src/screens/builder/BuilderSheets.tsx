@@ -8,6 +8,7 @@ import type { BuilderGroup, SetType } from '@fizz/schemas';
 import type { BuilderSnapshot, BuilderWriteResult } from '../../builder/builder-service';
 import { KEY_STEPS, nextField, popupView, promptView, PROMPT_COPY, REST_STEP_S, SET_TYPE_LABEL, SET_TYPES, WORKOUT_COPY, type PromptView } from '../../builder/builder-view';
 import { countText, reviewHeaderWord, type BuilderReview } from '../../builder/review';
+import type { ProposalCardView } from '../../coach/builder-coach-view';
 import { useTheme } from '../../theme';
 import { AppText, BottomCard, DangerTextButton, Eyebrow, Icon, PrimaryButton, SecondaryButton, StatusLine, TextButton, TextField } from '../../ui';
 import { ChoiceRow, Divider, Stepper, SwipeRow, Table } from './BuilderParts';
@@ -584,5 +585,75 @@ function ReviewActionRow({ text, reason, apply, outOfDate, onApply }: { text: st
       ) : null}
       {outOfDate ? <AppText variant="label" color="status.warning">Out of date</AppText> : <SecondaryButton label={apply} onPress={onApply} />}
     </View>
+  );
+}
+
+/**
+ * Your workout's coach proposal (§2.6): before/after lines, `⚠` advice, the coach's checked reason,
+ * `about N min`, then `Apply` / `Skip`. The draft is written only on Apply (rule 3); `Out of date. Ask again.`
+ * when a slot it touches moved since (rule 5).
+ */
+export function ProposalSheet({ card, busy, onApply, onSkip }: { card: ProposalCardView | null; busy: boolean; onApply: () => void; onSkip: () => void }) {
+  const theme = useTheme();
+  const [whyOpen, setWhyOpen] = useState(false);
+  useEffect(() => {
+    setWhyOpen(false);
+  }, [card]);
+  return (
+    <BottomCard
+      visible={card !== null}
+      onClose={onSkip}
+      footer={
+        card?.actions != null ? (
+          <View style={{ flexDirection: 'row', gap: theme.space['2'] }}>
+            <View style={{ flex: 1 }}>
+              <PrimaryButton label={card.actions.apply} onPress={onApply} busy={busy} disabled={busy} />
+            </View>
+            <SecondaryButton label={card.actions.skip} size="primary" onPress={onSkip} disabled={busy} />
+          </View>
+        ) : undefined
+      }
+    >
+      {card === null ? null : (
+        <>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <AppText variant="title2" accessibilityRole="header">
+              {WORKOUT_COPY.bar}
+            </AppText>
+            {card.notes.length > 0 && !whyOpen ? <TextButton label={WORKOUT_COPY.why} tone="secondary" onPress={() => { setWhyOpen(true); }} /> : null}
+          </View>
+          <View style={{ backgroundColor: theme.colors['bg.raised'], borderRadius: theme.radius.md, padding: theme.space['3'], gap: theme.space['1'] }}>
+            {card.lines.map((l) => (
+              <AppText key={l} variant="callout" numeric>
+                {l}
+              </AppText>
+            ))}
+            <AppText variant="label" color="text.secondary" numeric>
+              {card.minutes}
+            </AppText>
+          </View>
+          {card.warnings.map((w) => (
+            <StatusLine key={w} icon="exclamationmark.triangle" tone="warning" text={w} />
+          ))}
+          {card.reason !== null ? (
+            <AppText variant="callout" color="text.secondary">
+              {card.reason}
+            </AppText>
+          ) : null}
+          {whyOpen
+            ? card.notes.map((n) => (
+                <AppText key={n} variant="label" color="text.secondary">
+                  {n}
+                </AppText>
+              ))
+            : null}
+          {card.state !== null ? (
+            <AppText variant="label" color="status.warning" accessibilityLiveRegion="polite">
+              {card.state}
+            </AppText>
+          ) : null}
+        </>
+      )}
+    </BottomCard>
   );
 }
