@@ -348,7 +348,7 @@ describe('Today (v2) session card from the plan', () => {
     const data = await loaded(s);
     expect(data.others.map((o) => o.name)).toEqual(['Full body', 'Upper', 'Push']);
     for (const o of data.others) {
-      const setup = await s.builder.initialSetup({ dayId: o.splitDayId ?? undefined });
+      const setup = await s.builder.initialSetup({ dayId: o.splitDayId });
       expect(setup.dayName).toBe(o.name);
       expect(setup.groups.length).toBeGreaterThan(0);
     }
