@@ -97,6 +97,12 @@ export interface SlotLoadInput {
   ruleTarget: AnchorLoad | null;
   /** Est. max from Ben's own recent sets (an estimate, rule 6). */
   e1rm: number | null;
+  /**
+   * (Review S1) Est. max from the most recent comparable session only (`lastSessionE1rm`): what a stale
+   * anchor gives way to, so a drop Ben chose last time isn't undone by a heavier set before it.
+   * Absent: `e1rm` is used.
+   */
+  lastE1rm?: number | null;
   /** Days since the newest of those sets (`OwnReference.gapDays`): a gap of 14+ days cuts the e1RM when it overrides an anchor. */
   e1rmGapDays?: number | null;
   /** `noReferenceCeiling` for `Start light`; null = none. */

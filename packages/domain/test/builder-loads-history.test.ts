@@ -5,11 +5,13 @@ import type { EquipmentInstance, PainFlag, SetType } from '@fizz/schemas';
 import {
   builderLoad,
   HISTORY_WINS_SHARE,
+  lastSessionE1rm,
   loadReferences,
   nextTargetsFor,
   ruleAnchorOf,
   ruleYieldsToHistory,
   setRowsFor,
+  substituteTargets,
   type AnchorLoad,
   type HistorySession,
   type SetRowsInput,
@@ -108,6 +110,7 @@ function slotLoads(history: HistorySession[], opts: { painFlags?: PainFlag[]; gy
       planFirstLoad: opts.plan ?? null,
       ruleTarget: ruleAnchorOf(result, rule, refs.convention),
       e1rm: refs.own?.e1rm ?? null,
+      lastE1rm: lastSessionE1rm(refs.own),
       e1rmGapDays: refs.own?.gapDays ?? null,
       startLightCeiling: null,
       painCap: flagged ? (refs.latest?.top.value ?? null) : null,
@@ -214,6 +217,102 @@ describe("Ben's rows (Build B, 21 Oct): a new workout's loads come from his rece
     // 126 cut 10% = 113.4: the rule's hold at 90 (90 × 3 @ 8.5 ≈ 103.5) is within 0.9 of it, so it stands; no raise to 97.5.
     expect(r.source).toBe('rule');
     expect(topOf(r)?.load).toBe(90);
+    // Review N1/B1: back-offs from 90 × 6 @ 8 (e1RM 114), not the rule's 3-rep floor (77.5); ≥ the gap-cut est. (85).
+    for (const b of backoffsOf(r)) expect(b.load).toBe(85);
+  });
+});
+
+describe('review B1: back-offs derive from the reps the rule load is used at, never its 3-rep floor', () => {
+  it('C. 3 × 100 × 6 @ 8: top 102.5 × 6, back-offs 95 × 8 (not 87.5)', () => {
+    const s1 = session(1001, 3, bar, [w(100, 6, 8), w(100, 6, 8), w(100, 6, 8)]);
+    const r = rowsOf(slotLoads([s1]).load);
+    expect(r.source).toBe('rule');
+    expect(topOf(r)?.load).toBe(102.5);
+    for (const b of backoffsOf(r)) expect(b.load).toBe(95);
+  });
+
+  it('F. the builder’s own format, top 100 × 6 @ 8 + 3 × 95 × 8 @ 8: back-offs stay at 95 (what he did), top 102.5', () => {
+    const s1 = session(1002, 3, bar, [top(100, 6, 8), back(95, 8, 8), back(95, 8, 8), back(95, 8, 8)]);
+    const r = rowsOf(slotLoads([s1]).load);
+    expect(topOf(r)?.load).toBe(102.5);
+    for (const b of backoffsOf(r)) expect(b.load ?? 0).toBeGreaterThanOrEqual(95);
+  });
+
+  it('D. 3 × 100 × 5 @ 8 (hold): top 100, back-offs 95 (≥ the est. from history, 92.5)', () => {
+    const s1 = session(1003, 3, bar, [w(100, 5, 8), w(100, 5, 8), w(100, 5, 8)]);
+    const r = rowsOf(slotLoads([s1]).load);
+    expect(topOf(r)?.load).toBe(100);
+    for (const b of backoffsOf(r)) expect(b.load).toBe(95);
+  });
+
+  it('H. top 90 × 12 + 80 × 12 back-offs, 20 days ago: top 92.5, back-offs 87.5 (≥ the gap-cut est., 85)', () => {
+    const s1 = session(1004, 20, bar, [top(90, 12), back(80, 12), back(80, 12)]);
+    const r = rowsOf(slotLoads([s1]).load);
+    expect(topOf(r)?.load).toBe(92.5);
+    for (const b of backoffsOf(r)) expect(b.load).toBe(87.5);
+  });
+
+  it('no back-off is ever heavier than the top set, even when the last session’s est. is far above the rule load', () => {
+    // A rule load that stands (≥ 0.9 of the est.) but sits low within it: the est. lifts the back-offs only up to the cap.
+    // Top set used at 3 reps @ 8 (e1RM 116.7); the last session's est. (127) is capped where 4 reps @ 8 is the top load (120).
+    const r = builderLoad({ unit: 'kg', convention: 'total', equipment: bar, coachTarget: null, planFirstLoad: null, ruleTarget: { value: 100, reps: 3, rpe: 8.5, yieldsToHistory: true }, e1rm: 127, lastE1rm: 127, startLightCeiling: null, painCap: null }, { reps: 3, rpe: 8 });
+    expect(r.source).toBe('rule');
+    expect(r.working).toBe(100);
+    expect(r.anchorE1rm).toBeCloseTo(100 * (1 + 6 / 30), 6);
+    const rows = rowsOf({ unit: 'kg', convention: 'total', equipment: bar, coachTarget: null, planFirstLoad: null, ruleTarget: { value: 100, reps: 3, rpe: 8.5, yieldsToHistory: true }, e1rm: 127, lastE1rm: 127, startLightCeiling: null, painCap: null });
+    for (const b of backoffsOf(rows)) expect(b.load ?? 0).toBeLessThanOrEqual(topOf(rows)?.load ?? 0);
+  });
+
+  it('a rule reduction does not borrow the higher est. for its back-offs (it never yields)', () => {
+    const r = builderLoad({ unit: 'kg', convention: 'total', equipment: bar, coachTarget: null, planFirstLoad: null, ruleTarget: { value: 90, reps: 3, rpe: 8.5 }, e1rm: 126, lastE1rm: 126, startLightCeiling: null, painCap: null }, { reps: 6, rpe: 8 });
+    expect(r.anchorE1rm).toBeCloseTo(90 * (1 + 8 / 30), 6);
+  });
+});
+
+describe('review S1: a stale anchor gives way to the last session, not the best of the last 3', () => {
+  it('E. 3 × 100 × 8, then two sessions of 3 × 70 × 10 (his own drop, no pain flag): no jump back to 100', () => {
+    const old = session(1011, 10, bar, [w(100, 8), w(100, 8), w(100, 8)]);
+    const d1 = session(1012, 5, bar, [w(70, 10), w(70, 10), w(70, 10)]);
+    const d2 = session(1013, 2, bar, [w(70, 10), w(70, 10), w(70, 10)]);
+    const r = rowsOf(slotLoads([old, d1, d2]).load);
+    expect(topOf(r)?.load ?? 0).toBeLessThanOrEqual(75);
+    for (const b of backoffsOf(r)) expect(b.load ?? 0).toBeLessThanOrEqual(72.5);
+  });
+
+  it('lastSessionE1rm reads only the newest session', () => {
+    const refs = loadReferences({ exercise: ROW, history: [session(1021, 10, bar, [w(100, 8)]), session(1022, 2, bar, [w(70, 10)])], ctx: ctxAt([bar]), nowMs: NOW });
+    expect(lastSessionE1rm(refs.own)).toBeCloseTo(70 * (1 + 10 / 30), 6);
+    expect(refs.own?.e1rm).toBeCloseTo(100 * (1 + 8 / 30), 6);
+  });
+});
+
+describe('review S4: a builder-format session plans plain working sets from its back-offs too', () => {
+  it('top 90 × 12 + 80 × 12 back-offs → the rule plans 92.5 then 82.5 × 2 (not 3 × 92.5)', () => {
+    const { rule } = slotLoads([SAT_BUILDER]);
+    expect(rule.sets.map((x) => x.load?.value)).toEqual([92.5, 82.5, 82.5]);
+  });
+
+  it('a hold keeps the back-off load; plain working-set history is unchanged (all sets one load)', () => {
+    const held = session(1031, 3, bar, [top(100, 5, 8), back(90, 8, 8), back(90, 8, 8)]);
+    expect(slotLoads([held]).rule.sets.map((x) => x.load?.value)).toEqual([100, 90, 90]);
+    const plain = session(1032, 3, bar, [w(100, 6, 8), w(100, 6, 8), w(100, 6, 8)]);
+    expect(slotLoads([plain]).rule.sets.map((x) => x.load?.value)).toEqual([102.5, 102.5, 102.5]);
+  });
+});
+
+describe('review S2: Today and swaps (substituteTargets) read other bars of the same mass', () => {
+  it('two misses in a row, one on each 20 kg bar, read as a repeated trend there as in the builder', () => {
+    const s1 = session(1040, 6, bar, [w(100, 2), w(100, 2), w(100, 2)]);
+    const s2 = session(1041, 3, otherBar, [w(100, 2), w(100, 2), w(100, 2)]);
+    const sp = substituteTargets(
+      { workingSets: 3, templates: [{ setType: 'working', reps: { min: 8, max: 12 }, durationS: null }] },
+      ROW,
+      [s1, s2],
+      { ...ctxAt([bar]), ownerId: OWNER, lastUsedHere: () => null, painFlags: [], sessionPain: { active: false, reportedAtUtc: null }, at: at(0) },
+    );
+    const first = sp.plan?.find((x) => x.setType !== 'warmup' && x.planned.load !== null);
+    expect(first?.planned.provenance?.rule?.decision).toBe(slotLoads([s1, s2]).rule.decision);
+    expect(first?.planned.load?.value).toBe(slotLoads([s1, s2]).rule.sets[0]?.load?.value);
   });
 });
 

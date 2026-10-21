@@ -392,6 +392,12 @@ interface SessionEval {
    * (`readFitNotesWorkingSets`). Null for bodyweight or no sets.
    */
   load: number | null;
+  /**
+   * (Builder-loads review S4) A builder-format session (top set + back-offs): the
+   * easiest back-off load, planned from with the same step as the top set so
+   * the other working sets never all jump to the top set's load. Null otherwise.
+   */
+  backoffLoad: number | null;
   /** Sets judged for the range and effort (FitNotes: `readFitNotesWorkingSets`; in the app: every counted set). */
   judgedSets: number;
   /** FitNotes: harder sets kept as context, judged with the working load, and easier sets left out. Zero in the app. */
@@ -616,6 +622,8 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
     // Builder format: planned from the top set (the hardest top load), judged on top and back-offs.
     const topLoads = builderFormat ? counted.filter((x) => x.setType === 'top' && x.load !== null && x.load.convention !== 'bodyweight').map((x) => x.load?.value ?? 0) : [];
     const topLoad = topLoads.length === 0 ? null : ctx.direction === 'resistance' ? Math.max(...topLoads) : Math.min(...topLoads);
+    const backLoads = builderFormat ? counted.filter((x) => x.setType === 'backoff' && x.load !== null && x.load.convention !== 'bodyweight').map((x) => x.load?.value ?? 0) : [];
+    const backoffLoad = backLoads.length === 0 ? null : ctx.direction === 'resistance' ? Math.min(...backLoads) : Math.max(...backLoads);
     // Import-progress r3 B1: a FitNotes session is planned from its working load
     // (the load with the most sets, ties to the easiest) and judged on the sets
     // there, plus harder sets unless they are a lone top set. Lighter finishers
@@ -661,6 +669,7 @@ function comparableSessions(ctx: Ctx): SessionEval[] {
       sides: sided ? { left: evalSide([...both, ...left], criteria), right: evalSide([...both, ...right], criteria) } : null,
       unpairable,
       load: planLoad,
+      backoffLoad: builderFormat && topLoad !== null && backoffLoad !== null && harder(topLoad, backoffLoad, ctx.direction) ? backoffLoad : null,
       judgedSets: judged.length,
       contextSets: reading?.context.length ?? 0,
       harderJudged: reading?.harderJudged.length ?? 0,
@@ -1062,6 +1071,28 @@ function decidePrimary(ctx: Ctx, sessions: SessionEval[], criteria: Criteria): P
 }
 
 /**
+ * (Builder-loads review S4) When the session the rule planned from was a
+ * top set + back-offs: the other working sets' load, the last back-off load
+ * moved by the same step as the top set (rounded toward easier, never harder
+ * than the first set). Null otherwise: every set takes the first set's load.
+ */
+function builderFormatOtherLoad(ctx: Ctx, sessions: readonly SessionEval[], first: number | null): Load | null {
+  const from = sessions.find((s) => s.loggedSets > 0);
+  if (first === null || from === undefined || from.backoffLoad === null || from.load === null) return null;
+  let raw = from.backoffLoad + (first - from.load);
+  if (harder(raw, first, ctx.direction)) raw = first;
+  if (!(raw > 0)) return null;
+  const eq = ctx.input.equipment;
+  if (eq) {
+    const r = roundToAvailableLoad({ value: raw, unit: ctx.unit, convention: ctx.convention }, eq, 'easier');
+    if (!r.ok) return null;
+    pushFact(ctx, `The other sets follow your back-offs (${fmt(ctx, from.backoffLoad)}), moved by the same step: ${formatLoad(r.load)}.`);
+    return r.load;
+  }
+  return asLoad(ctx, raw);
+}
+
+/**
  * Deterministic next-session targets with an inspectable explanation
  * (brief §3, §7). Loads are always achievable on the given equipment and never
  * above its maximum; at the ceiling, reps progress instead. Progress needs every
@@ -1110,7 +1141,8 @@ export function calculateNextTargets(input: NextTargetsInput): NextTargets {
 
   const sets: TargetSet[] = [];
   if (rule.method === 'double_progression') {
-    for (let i = 0; i < rule.workingSets; i += 1) sets.push({ setType: 'working', load: primaryLoad, reps: primary.reps });
+    const otherLoad = builderFormatOtherLoad(ctx, sessions, primary.load) ?? primaryLoad;
+    for (let i = 0; i < rule.workingSets; i += 1) sets.push({ setType: 'working', load: i === 0 ? primaryLoad : otherLoad, reps: primary.reps });
   } else {
     sets.push({ setType: 'top', load: primaryLoad, reps: primary.reps });
     let backoff: Load | null = null;

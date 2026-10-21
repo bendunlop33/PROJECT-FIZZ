@@ -224,6 +224,18 @@ export function ownReferenceOf(sessions: readonly RefSession[], convention: Load
   return { sessions: inWindow, e1rm, gapDays: Math.max(0, Math.floor((nowMs - toMs(newest.performedAtUtc)) / DAY_MS)), estOnly };
 }
 
+/**
+ * (Builder loads review S1) The e1RM of the newest of `own`'s sessions only
+ * (`referenceE1rm` on its working sets): a stale anchor gives way to what Ben
+ * did last time, never to a heavier set from before a drop he chose himself.
+ * Null when `own` has no e1RM (assisted, added) or that session has none.
+ */
+export function lastSessionE1rm(own: OwnReference | null): number | null {
+  const newest = own?.sessions[0];
+  if (own === null || own.e1rm === null || newest === undefined) return null;
+  return referenceE1rm(newest.sets);
+}
+
 export interface LoadReferencesInput {
   exercise: Exercise;
   history: readonly HistorySession[];

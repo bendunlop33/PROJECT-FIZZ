@@ -15,8 +15,11 @@ import type { AnchorLoad, BuilderLoadSourceKind, RoundedLoad, SlotLoadInput } fr
  *    (Q12): the coach's target → the plan's first-week load → the built-in
  *    rule → est. max (own recent sets, an estimate) × the set's reps and
  *    target RPE → none (`—`, `Start light` ceiling). The rule's load is
- *    the working load as is; other sets derive from it at the rule's rep
- *    floor (review B3).
+ *    the working load as is (review B3); other sets derive from it at the
+ *    reps and RPE it's used at here (builder-loads review B1: reading it at
+ *    the rule's 3-rep floor put back-offs ~10 % light), or from Ben's last
+ *    session's est. max (gap-cut) when that's higher and the rule yields,
+ *    never so high that a set of more reps is heavier than the top set.
  * 2. Every other set follows from that working load by reps and RPE: the
  *    anchor's e1RM by Epley with RIR = 10 − RPE (`referenceE1rm`), then
  *    `expectedLoad` for the set (100 × 6 @ 8 → 95 × 8 @ 8).
@@ -36,8 +39,10 @@ import type { AnchorLoad, BuilderLoadSourceKind, RoundedLoad, SlotLoadInput } fr
  * History wins over a stale anchor (builder loads, 21 Oct; Ben: "it knew my
  * history but wasn't using it"): an anchor marked `yieldsToHistory` (the
  * rule's load, a plan load older than the history) is replaced by the est.
- * max from Ben's own recent sets when it implies an e1RM below
- * `HISTORY_WINS_SHARE` of it. The est. max is cut after a gap (R1–R2) first.
+ * max from Ben's last session (`lastE1rm`, review S1) when it implies an
+ * e1RM below `HISTORY_WINS_SHARE` of it. The est. max is cut after a gap
+ * (R1–R2) first. The rule's load is read at its own rep floor and target
+ * RPE for this test (what the rule prescribes it for).
  * PROPOSED: the share and the order change await Ben's approval.
  */
 
@@ -91,9 +96,10 @@ export function builderLoad(raw: SlotLoadInput, set: { reps: number; rpe: number
     const history = historyOverride(anchor, e1rm, input);
     if (history !== null) return { ...u, source: 'calc', working: tidy(expectedLoad(history, set.reps, set.rpe)), anchorE1rm: history, estimate: true, startLight: null };
     const same = anchor.reps === set.reps && anchor.rpe === set.rpe;
-    // The built-in rule's load is used as the rule gave it (ADR 0006, review B3): the working sets take it
-    // as is; other sets derive from it at the rule's own reps (`anchor.reps`).
-    const working = same || e1rm === null || source === 'rule' ? anchor.value : tidy(expectedLoad(e1rm, set.reps, set.rpe));
+    // The built-in rule's load is used as the rule gave it (ADR 0006, review B3); other sets derive from it
+    // at the reps it's used at (review B1), not the rule's floor.
+    if (source === 'rule' && e1rm !== null) return { ...u, source, working: anchor.value, anchorE1rm: ruleDerivedE1rm(anchor, set, input), estimate: false, startLight: null };
+    const working = same || e1rm === null ? anchor.value : tidy(expectedLoad(e1rm, set.reps, set.rpe));
     return { ...u, source, working, anchorE1rm: e1rm, estimate: false, startLight: null };
   }
   if (formula && input.e1rm !== null && Number.isFinite(input.e1rm) && input.e1rm > 0) {
@@ -106,10 +112,32 @@ export function builderLoad(raw: SlotLoadInput, set: { reps: number; rpe: number
  * The est. max that replaces `anchor` (`HISTORY_WINS_SHARE`), cut after a
  * gap; null when the anchor stands. Resistance conventions only (`formulaApplies`).
  */
-export function historyOverride(anchor: AnchorLoad, anchorE1rm: number | null, input: Pick<SlotLoadInput, 'e1rm' | 'e1rmGapDays'>): number | null {
-  if (anchor.yieldsToHistory !== true || anchorE1rm === null || input.e1rm === null || !Number.isFinite(input.e1rm) || input.e1rm <= 0) return null;
-  const own = input.e1rm * (1 - returnCut(input.e1rmGapDays ?? 0));
-  return anchorE1rm < HISTORY_WINS_SHARE * own ? own : null;
+export function historyOverride(anchor: AnchorLoad, anchorE1rm: number | null, input: Pick<SlotLoadInput, 'e1rm' | 'lastE1rm' | 'e1rmGapDays'>): number | null {
+  if (anchor.yieldsToHistory !== true || anchorE1rm === null) return null;
+  const own = recentE1rm(input);
+  return own !== null && anchorE1rm < HISTORY_WINS_SHARE * own ? own : null;
+}
+
+/** Ben's last session's est. max (`lastE1rm`, else `e1rm`), cut after a gap (R1–R2); null when unknown. */
+export function recentE1rm(input: Pick<SlotLoadInput, 'e1rm' | 'lastE1rm' | 'e1rmGapDays'>): number | null {
+  const raw = input.lastE1rm !== undefined ? input.lastE1rm : input.e1rm;
+  if (raw === null || !Number.isFinite(raw) || raw <= 0) return null;
+  return raw * (1 - returnCut(input.e1rmGapDays ?? 0));
+}
+
+/**
+ * (Review B1) The e1RM other sets derive from when the rule's load is the
+ * working (top) set at `set`: the load at the reps and RPE it's used at; when
+ * the rule yields, Ben's last session's est. max (gap-cut) if higher. Capped
+ * so a set of one more rep at the same RPE is never heavier than the top set.
+ */
+export function ruleDerivedE1rm(anchor: AnchorLoad, set: { reps: number; rpe: number }, input: Pick<SlotLoadInput, 'e1rm' | 'lastE1rm' | 'e1rmGapDays'>): number | null {
+  const used = referenceE1rm([{ value: anchor.value, reps: set.reps, rpe: set.rpe }]);
+  if (used === null) return anchorE1rmOf(anchor);
+  const own = anchor.yieldsToHistory === true ? recentE1rm(input) : null;
+  if (own === null || own <= used) return used;
+  const cap = anchor.value * (1 + (set.reps + 1 + Math.max(0, 10 - set.rpe)) / 30);
+  return Math.min(own, cap);
 }
 
 /** Rule decisions whose load gives way to clearly stronger recent sets; never a miss, a reduction or a pain hold. */
@@ -195,6 +223,7 @@ export function inFrame(input: SlotLoadInput, frame: LoadFrame): SlotLoadInput {
     planFirstLoad: a(input.planFirstLoad),
     ruleTarget: a(input.ruleTarget),
     e1rm: c(input.e1rm),
+    ...(input.lastE1rm !== undefined ? { lastE1rm: c(input.lastE1rm) } : {}),
     startLightCeiling: c(input.startLightCeiling),
     painCap: c(input.painCap),
   };
