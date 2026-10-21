@@ -203,6 +203,12 @@ describe('This week: sessions, one chip per planned session with day and % of pl
     expect(v.month.weeksOnPlan).toBeNull();
   });
 
+  it('a plan day done twice in a week keeps its plan letter the second time (review progress-v3b-design N4)', () => {
+    const s = [sess('2026-10-12', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: CHEST, name: 'Heavy' }), sess('2026-10-14', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }], { routineId: CHEST, name: 'Heavy' })];
+    const row = thisWeekView(input({ sessions: s, plans: [plan()] }), { today: TODAY }).month.rows[0];
+    expect(row?.cells.map((c) => c.done.map((d) => d.letter).join('')).join('|')).toBe('C||C||||');
+  });
+
   it('plan-day letters: first letter, plus the one that tells two days apart, numbered when even that clashes', () => {
     expect(planDayLetters(['Chest', 'Back', 'Shoulders', 'Legs'])).toEqual(['C', 'B', 'S', 'L']);
     expect(planDayLetters(['Push', 'Pull', 'Legs'])).toEqual(['Ps', 'Pl', 'L']);
@@ -405,6 +411,28 @@ describe('PBs: a real top set beyond every earlier real one at the tracked reps 
     expect(liftsView(input({ sessions, lifts: [BENCH] }), opts({ earlier: flagged })).lifts[0]?.points.map((p) => p.pb)).toEqual([false, true]);
   });
 
+  it('a lift whose older history couldn’t be read claims no PB (no ring, tag or `New best`; rule 6, review progress-v3b-design S2)', () => {
+    const sessions = series(BENCH, [null, null, null, null, null, null, work(kg(95), 6), work(kg(100), 6)]);
+    const l = liftsView(input({ sessions, lifts: [BENCH] }), opts({ historyUnknown: new Set([BENCH]) })).lifts[0];
+    expect(l?.points.map((p) => [p.value, p.pb, p.pbDetail])).toEqual([[95, false, null], [100, false, null]]);
+    expect(l?.latestPb).toBe(false);
+    const last = sessions.at(-1);
+    expect(sessionNewBests(input({ sessions, lifts: [BENCH] }), opts({ historyUnknown: new Set([BENCH]) }), last?.sessionId ?? '')).toEqual([]);
+    // Another lift's history is unaffected.
+    expect(sessionNewBests(input({ sessions, lifts: [BENCH] }), opts({ historyUnknown: new Set([SQUAT]) }), last?.sessionId ?? '').map((b) => b.exerciseId)).toEqual([BENCH]);
+  });
+
+  it('history counts sets with the same rule as the window (`isSetCountable`; review progress-v3b-data S2)', () => {
+    const h = liftHistorySessions(BENCH, [{ sessionId: 'old', performedAtUtc: '2025-03-01T17:00:00.000Z', equipmentId: null, sets: [{ setType: 'working', load: kg(105), reps: 6, exclusions: [] }, { setType: 'working', load: kg(110), reps: 6, exclusions: ['pain'] }] }], TZ);
+    expect(h[0]?.exercises[0]?.sets.map((x) => x.counts)).toEqual([true, false]);
+  });
+
+  it('a Summary for a workout older than the window lists every lift’s new best (history entries of one workout merged; review progress-v3b-design N2)', () => {
+    const old = (sessionId: string, at: string, exerciseId: string, load: number, reps: number) => liftHistorySessions(exerciseId, [{ sessionId, performedAtUtc: at, equipmentId: null, sets: [{ setType: 'working', load: kg(load), reps }] }], TZ);
+    const earlier = [...old('a', '2025-03-01T17:00:00.000Z', BENCH, 90, 6), ...old('a', '2025-03-01T17:00:00.000Z', SQUAT, 120, 5), ...old('b', '2025-03-08T17:00:00.000Z', BENCH, 95, 6), ...old('b', '2025-03-08T17:00:00.000Z', SQUAT, 125, 5)];
+    expect(sessionNewBests(input({ lifts: [BENCH, SQUAT] }), opts({ earlier }), 'b').map((x) => x.exerciseId)).toEqual([BENCH, SQUAT]);
+  });
+
   it('a PB within a week: the week’s top set beats an earlier workout that week (the chart agrees with the Summary)', () => {
     const mon = sess('2026-10-12', [{ exerciseId: BENCH, sets: [work(kg(100), 6)] }]);
     const sat = sess('2026-10-17', [{ exerciseId: BENCH, sets: [work(kg(105), 6)] }]);
@@ -527,8 +555,14 @@ describe('Coach’s changes: small changes already made (Undo), structural ones 
     expect(row).toMatchObject({ exercise: 'Row', before: '3 sets', after: '4 sets', when: 'next Pull', why: 'Stuck at 92.5 × 8 for 3 weeks', canUndo: true, canRedo: false, statusText: null });
     expect(row.accessibilityLabel).toBe('Row: 3 sets to 4 sets, next Pull. Stuck at 92.5 × 8 for 3 weeks');
     expect(changeRowView(proposal({ status: 'undone' }))).toMatchObject({ canUndo: false, canRedo: true, statusText: 'Undone' });
-    expect(changeRowView(proposal({ status: 'stale' }))).toMatchObject({ canUndo: false, canRedo: false, statusText: 'Out of date' });    // Held by a pain flag: named, never `Out of date`, no Apply (rule 9; review build-b-21oct S3).
-    expect(changeRowView(proposal({ status: 'stale', held: 'pain' }))).toMatchObject({ statusText: 'Held · pain', canApply: false });
+    expect(changeRowView(proposal({ status: 'stale' }))).toMatchObject({ canUndo: false, canRedo: false, statusText: 'Out of date' });
+    // Held by a pain flag: named while the flag is active, never `Out of date`, no Apply (rule 9; review build-b-21oct S3).
+    expect(changeRowView(proposal({ status: 'stale', held: 'pain' }), { painFlagged: new Set([ROW]) })).toMatchObject({ statusText: 'Held · pain', canApply: false });
+    // The flag cleared: no longer said to be held for pain (review progress-v3b S1/S3).
+    expect(changeRowView(proposal({ status: 'stale', held: 'pain' }), { painFlagged: new Set() })).toMatchObject({ statusText: 'Out of date', canApply: false });
+    expect(changeRowView(proposal({ status: 'stale', held: 'pain' }))).toMatchObject({ statusText: 'Out of date' });
+    // Refused because the plan moved, on a movement flagged now: still `Out of date`, not pain.
+    expect(changeRowView(proposal({ status: 'stale' }), { painFlagged: new Set([ROW]) })).toMatchObject({ statusText: 'Out of date' });
     const flagged = changeRowView(proposal({ status: 'open', actionId: null }), { painFlagged: new Set([ROW]) });
     expect(flagged).toMatchObject({ statusText: 'Held · pain', canApply: false });
     expect(flagged.accessibilityLabel).toContain('Held for a pain flag');

@@ -1,7 +1,8 @@
-import { builderGroupOfMuscleGroup, type LiftTarget, type LoadConvention, type ReviewProposal, type SetType, type TrainingReview, type WeightUnit } from '@fizz/schemas';
+import { builderGroupOfMuscleGroup, type LiftTarget, type LoadConvention, type ReviewProposal, type SetExclusion, type SetType, type TrainingReview, type WeightUnit } from '@fizz/schemas';
 import { addDays, daysBetween, localDateOf, localMidnightUtcMs, weekdayIndexOfDate } from '../calendar';
 import { formatNumber, NBSP } from '../display';
 import { deriveId, stableStringify } from '../stable';
+import { isSetCountable } from '../exclusions';
 import { e1rmConventionAllowed, roundEstimate } from '../progress/e1rm';
 import { longDate, shortDate } from '../progress/exercise-view';
 import { pausedInWeek } from '../progress/plan-tracker';
@@ -229,9 +230,14 @@ function calendarRow(input: WeeklyReviewInput, monday: string, now: boolean, tod
     const at = c.done.get(d.routineId);
     if (at !== undefined && !byStart.has(at)) byStart.set(at, { letter: letters[i] ?? 'W', name: d.name });
   });
+  // A plan day done twice in the week keeps its plan letter the second time (review progress-v3b-design N4).
+  const byRoutine = new Map<string, CalendarSessionMark>();
+  c.plan?.days.forEach((d, i) => {
+    if (!byRoutine.has(d.routineId)) byRoutine.set(d.routineId, { letter: letters[i] ?? 'W', name: d.name });
+  });
   const cells: CalendarCellView[] = dates.map((date) => ({
     date,
-    done: sessions.filter((s) => s.date === date).map((s) => byStart.get(s.startedAtUtc) ?? { letter: planDayLetters([s.name ?? 'Workout'])[0] ?? 'W', name: s.name ?? 'Workout' }),
+    done: sessions.filter((s) => s.date === date).map((s) => byStart.get(s.startedAtUtc) ?? (s.routineId === null ? undefined : byRoutine.get(s.routineId)) ?? { letter: planDayLetters([s.name ?? 'Workout'])[0] ?? 'W', name: s.name ?? 'Workout' }),
     cardio: cardio.has(date),
   }));
   // Planned sessions not done: no weekday to put them on, so listed after the row (never on an invented day).
@@ -425,6 +431,11 @@ export interface LiftsOptions {
    * heavier than every earlier real top set, not only the loaded window. Overlaps are ignored.
    */
   earlier?: readonly ReviewSession[];
+  /**
+   * Lifts whose older history couldn't be read: no PB is claimed for them (no ring, tag or `New best`), since
+   * an older, heavier set may be missing (rule 6; review progress-v3b-design S2).
+   */
+  historyUnknown?: ReadonlySet<string>;
 }
 
 interface Candidate {
@@ -540,7 +551,7 @@ export function liftsView(input: WeeklyReviewInput, opts: LiftsOptions): LiftsVi
     // PBs: a real point whose top set beats every real set at these reps done before it (that week's earlier
     // workouts and history before the window included), so the chart and the Summary's `New best` agree.
     const loadSuffix = suffixOf(convention);
-    if (chartable) {
+    if (chartable && opts.historyUnknown?.has(id) !== true) {
       const rows = liftRows(pool, id, newest);
       for (const p of points) {
         const at = topAt.get(p.week);
@@ -659,11 +670,21 @@ function withSuffix(detail: string, suffix: string | null): string {
   return at < 0 ? detail : `${detail.slice(0, at)}${NBSP}${suffix}${detail.slice(at)}`;
 }
 
-/** The loaded window plus older history, each workout once. */
+/**
+ * The loaded window plus older history, each workout once: history entries of one workout (one per tracked
+ * lift) are merged into one, so a workout older than the window shows every lift's `New best` (review
+ * progress-v3b-design N2).
+ */
 function withEarlier(all: readonly ReviewSession[], earlier: readonly ReviewSession[] | undefined): ReviewSession[] {
   if (earlier === undefined || earlier.length === 0) return [...all];
   const seen = new Set(all.map((s) => s.sessionId));
-  return [...earlier.filter((s) => !seen.has(s.sessionId)), ...all].sort((a, b) => a.startedMs - b.startedMs);
+  const older = new Map<string, ReviewSession>();
+  for (const s of earlier) {
+    if (seen.has(s.sessionId)) continue;
+    const had = older.get(s.sessionId);
+    older.set(s.sessionId, had === undefined ? s : { ...had, exercises: [...had.exercises, ...s.exercises.filter((e) => !had.exercises.some((x) => x.exerciseId === e.exerciseId))] });
+  }
+  return [...older.values(), ...all].sort((a, b) => a.startedMs - b.startedMs);
 }
 
 interface TrackedReps {
@@ -747,7 +768,7 @@ export interface NewBestView {
  * less assistance; same machine for stacks and plate-loaded). A lift's first ever top set isn't a PB (nothing
  * to beat). Bodyweight lifts and estimates never are.
  */
-export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOptions, 'planReps' | 'pickedReps' | 'nameOf' | 'earlier'>, sessionId: string): NewBestView[] {
+export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOptions, 'planReps' | 'pickedReps' | 'nameOf' | 'earlier' | 'historyUnknown'>, sessionId: string): NewBestView[] {
   const unit = input.unit;
   const pool = withEarlier([...input.sessions].sort((a, b) => a.startedMs - b.startedMs), opts.earlier);
   const at = pool.findIndex((s) => s.sessionId === sessionId);
@@ -758,7 +779,7 @@ export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOption
   const targets = new Map(input.liftTargets.map((t) => [t.exerciseId, t]));
   const out: NewBestView[] = [];
   for (const id of [...new Set(input.lifts)]) {
-    if (!session.exercises.some((e) => e.exerciseId === id)) continue;
+    if (!session.exercises.some((e) => e.exerciseId === id) || opts.historyUnknown?.has(id) === true) continue;
     const t = liftTermsOf(upTo, id, targets.get(id) ?? null, opts);
     if (!t.chartable || t.tracked.reps === null) continue;
     const reps = t.tracked.reps;
@@ -777,7 +798,7 @@ export function sessionNewBests(input: WeeklyReviewInput, opts: Pick<LiftsOption
  * Older history of one lift (`listExerciseHistory`) as review workouts, for PBs beyond the loaded window. Only
  * what a PB needs: the sets, their load, reps and whether they count, and the machine.
  */
-export function liftHistorySessions(exerciseId: string, history: readonly { sessionId: string; performedAtUtc: string; equipmentId: string | null; tz?: string; sets: readonly { setType: SetType; load: ReviewSession['exercises'][number]['sets'][number]['load']; reps: number | null; exclusions?: readonly unknown[] }[] }[], tz: string): ReviewSession[] {
+export function liftHistorySessions(exerciseId: string, history: readonly { sessionId: string; performedAtUtc: string; equipmentId: string | null; tz?: string; sets: readonly { setType: SetType; load: ReviewSession['exercises'][number]['sets'][number]['load']; reps: number | null; exclusions?: readonly SetExclusion[] }[] }[], tz: string): ReviewSession[] {
   return history.map((h) => {
     const ms = toMs(h.performedAtUtc);
     return {
@@ -791,7 +812,7 @@ export function liftHistorySessions(exerciseId: string, history: readonly { sess
       feel: null,
       plannedReps: null,
       doneReps: 0,
-      exercises: [{ exerciseId, name: '', equipmentKind: null, equipmentId: h.equipmentId, plannedWorking: 0, sets: h.sets.map((x) => ({ setType: x.setType, load: x.load, reps: x.reps, rpe: null, targetRpe: null, counts: (x.exclusions?.length ?? 0) === 0 })) }],
+      exercises: [{ exerciseId, name: '', equipmentKind: null, equipmentId: h.equipmentId, plannedWorking: 0, sets: h.sets.map((x) => ({ setType: x.setType, load: x.load, reps: x.reps, rpe: null, targetRpe: null, counts: isSetCountable(x, 'record') })) }],
     };
   });
 }
@@ -1002,7 +1023,10 @@ export function changeRowView(p: ReviewProposal, opts: { painFlagged?: ReadonlyS
   const when = `next ${c.routineName}`;
   // A change held by a pain flag names it (rule 9; review build-b-21oct S3), never `Out of date`: refused for
   // pain, or still open on a movement flagged since.
-  const pain = (p.status === 'stale' && p.held === 'pain') || ((p.status === 'open' || p.status === 'stale') && opts.painFlagged?.has(c.exerciseId) === true);
+  // Only while the flag is active (review progress-v3b S1/S3): once Ben clears it, a change held for it reads
+  // `Out of date` (a re-run may offer it again); a change refused because the plan moved never reads as pain.
+  const flagged = opts.painFlagged?.has(c.exerciseId) === true;
+  const pain = flagged && (p.status === 'open' || (p.status === 'stale' && p.held === 'pain'));
   // An open small change isn't in the plan yet (the review is still applying it, its apply failed, or it is an
   // older week's): never drawn as made (review progress-v3-design B1).
   const statusText = pain
