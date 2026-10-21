@@ -37,7 +37,7 @@ import { setSnapNote, type NoteLine } from './snap-text';
 import { buildTimeLeftView, type PaceSamples, type TimeLeftEstimate, type TimeLeftLineView } from './time-left';
 import { draftOperationId, getActiveDurationMs, getSessionPhase, prefillDraft, type ComparableSet, type DraftSource, type SessionPhase } from './view';
 import { targetRpeOf, type TargetRpe } from '../coach/target-rpe';
-import { shownPlanned } from './pending-values';
+import { changedTargetFields, draftWithNewTarget, pendingOwnValues, shownPlanned, shownTargetShort } from './pending-values';
 
 /**
  * `buildActiveSetView` (active-workout.md §6): everything the Active workout
@@ -141,22 +141,29 @@ export function saveDraftCommand(edits: DraftEdits, at: ZonedTimestamp): Command
  * new workout state:
  * - the set is gone, done or skipped: no edits (null);
  * - the set is unchanged since the edits began: the same edits;
- * - Ben's own newer target for the set (`edit_planned_set` with values, which
- *   clears the draft): null, so his new target shows and no stale value is
- *   saved back over it;
- * - any other change (a coach change, a rest or target-RPE edit, Undo): the
- *   edits stay (Ben's edit is kept, coach-adjustments §4.3), re-based on the
- *   new version so the next save isn't refused.
+ * - Ben's own newer target for some values (`edit_planned_set`): only those
+ *   fields take the new target, the rest of what he typed stays (B1, S1); a
+ *   type, target-RPE or rest change touches none. Nothing of his own left:
+ *   null, so his new target shows and nothing stale is saved over it;
+ * - any other change (a coach change, Undo): the edits stay (Ben's edit is
+ *   kept, coach-adjustments §4.3).
+ * Kept edits are re-based on the set's new version so the next save lands.
  */
-export function reconcileDraftEdits(edits: DraftEdits | null, state: Pick<SessionAggregate, 'sets'>): DraftEdits | null {
+export function reconcileDraftEdits(edits: DraftEdits | null, state: Pick<SessionAggregate, 'sets' | 'exercises'>): DraftEdits | null {
   if (edits === null) return null;
   const set = state.sets.find((s) => s.id === edits.setId);
   if (!set || set.status !== 'pending') return null;
   // Same version, or an older copy of the workout still on screen: nothing newer to reconcile with.
   if (edits.setVersion === undefined || set.version <= edits.setVersion) return edits;
-  const ownNewerTarget = set.draft === null && set.planned.edit !== undefined && set.planned.edit.version === set.version;
-  if (ownNewerTarget) return null;
-  return { ...edits, setVersion: set.version };
+  const edit = set.planned.edit;
+  const fields = edit !== undefined && edit.version === set.version ? (edit.fields ?? changedTargetFields(edit.before.planned, set.planned)) : [];
+  if (fields.length === 0) return { ...edits, setVersion: set.version };
+  const values = draftWithNewTarget(edits.values, set.planned, fields);
+  const ex = state.exercises.find((e) => e.id === set.sessionExerciseId);
+  if (!ex || Object.keys(pendingOwnValues({ status: set.status, draft: values, planned: set.planned }, ex)).length === 0) return null;
+  const next: DraftEdits = { ...edits, values, setVersion: set.version };
+  delete next.copied;
+  return next;
 }
 
 export interface ActiveViewInput {
@@ -750,7 +757,7 @@ function buildFocus(input: ActiveViewInput, setId: string): FocusView | null {
     const nextEx = nextSet ? state.exercises.find((e) => e.id === nextSet.sessionExerciseId) : undefined;
     // Another part of the same exercise (after a gym switch) isn't a "next exercise".
     if (nextSet && nextEx && partRootOf(state.exercises, nextEx.id) !== partRootOf(state.exercises, ex.id) && order.indexOf(nextId) > order.indexOf(set.id)) {
-      next = { kind: 'exercise', name: nextEx.exerciseName, target: targetShort(nextSet.planned, { convention: nextEx.loadConvention, equipment: equipmentOf(state, nextEx) }), setId: nextId };
+      next = { kind: 'exercise', name: nextEx.exerciseName, target: shownTargetShort(nextSet, nextEx, { convention: nextEx.loadConvention, equipment: equipmentOf(state, nextEx) }), setId: nextId };
     }
   }
 
@@ -1064,10 +1071,11 @@ function upNextLine(state: SessionAggregate, focus: FocusView): string {
   const set = state.sets.find((s) => s.id === focus.setId);
   // No planned load (an exercise added with no history) but a carried load to log: the line names
   // that load with the planned reps, so the next line says what will be lifted (premium-feel §3.6, D6).
-  const planned = set && set.planned.load === null && focus.draft.load !== null && (set.planned.reps !== null || set.planned.durationS !== null) ? { ...set.planned, load: focus.draft.load } : set?.planned;
-  const target = planned && ex ? targetShort(planned, { convention: ex.loadConvention, equipment: eq }) : null;
+  const carried = set && set.planned.load === null && focus.draft.load !== null && (set.planned.reps !== null || set.planned.durationS !== null) ? { ...set, planned: { ...set.planned, load: focus.draft.load } } : set;
+  // Ben's own draft values over the target, as the table shows them (B2, 21 Oct).
+  const target = carried && ex ? shownTargetShort(carried, ex, { convention: ex.loadConvention, equipment: eq }) : null;
   // `Target 3–6 reps` → `3–6 reps`: the label stays on the set view.
-  const what = target !== null ? target.replace(/^Target /, '') : focus.logLabel === null ? null : focus.logLabel.replace(/^Log /, '');
+  const what = target !== null ? target.replace(/^(Target|Your edit) /, '') : focus.logLabel === null ? null : focus.logLabel.replace(/^Log /, '');
   return [sameExercise ? null : focus.exerciseName, `Set ${String(focus.setNumber)}`, what].filter((p): p is string => p !== null).join(' · ');
 }
 

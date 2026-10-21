@@ -248,10 +248,40 @@ describe('pop-up edits as the workout’s own writes', () => {
     expect(w).toMatchObject({ kind: 'planned', patch: { load: kg(100) }, note: 'Rounded to 100 kg' });
     expect(popupCellWrite(s, b1?.id ?? '', 'reps', 8)).toMatchObject({ kind: 'planned' });
     const after = apply(s, { type: 'edit_planned_set', at: at(30), opId: 'pop-1', setId: b1?.id ?? '', expectedSetVersion: w.kind === 'planned' ? w.expectedSetVersion : 0, patch: { load: kg(100) } });
-    expect(popup(after, BENCH).rows.find((r) => r.key === b1?.id)).toMatchObject({ load: 100 });
+    // Only the load was written: his 7 reps stay (B1).
+    expect(popup(after, BENCH).rows.find((r) => r.key === b1?.id)).toMatchObject({ load: 100, repsText: '7' });
     // Reps already exactly the target: nothing to write.
     const exact = apply(after, { type: 'edit_planned_set', at: at(31), opId: 'pop-2', setId: b1?.id ?? '', expectedSetVersion: after.sets.find((x) => x.id === b1?.id)?.version ?? 0, patch: { reps: { min: 8, max: 8 } } });
     expect(popupCellWrite(exact, b1?.id ?? '', 'reps', 8)).toEqual({ kind: 'unchanged', note: null });
+  });
+
+  it('weight-revert B1: a pop-up reps change keeps Ben’s typed weight, and a typed weight keeps his reps', () => {
+    let s = startFixture().state;
+    const [, b1, b2] = setsFor(s, BENCH);
+    const writeAndApply = (st: SessionAggregate, setId: string, field: 'reps' | 'kg', v: number, opId: string): SessionAggregate => {
+      const w = popupCellWrite(st, setId, field, v);
+      if (w.kind !== 'planned') throw new Error(`expected a write, got ${w.kind}`);
+      return apply(st, { type: 'edit_planned_set', at: at(40), opId, setId: w.setId, expectedSetVersion: w.expectedSetVersion, patch: w.patch });
+    };
+    // Reps over a weight draft.
+    s = apply(s, { type: 'save_draft', at: at(20), setId: b1?.id ?? '', values: values(kg(105), 8) });
+    s = writeAndApply(s, b1?.id ?? '', 'reps', 6, 'pop-reps');
+    expect(exOf(s, BENCH).rows.find((r) => r.setId === b1?.id)?.row.cells.load).toBe('105');
+    expect(popup(s, BENCH).rows.find((r) => r.key === b1?.id)).toMatchObject({ load: 105, repsText: '6' });
+    // Weight over a reps draft.
+    s = apply(s, { type: 'save_draft', at: at(21), setId: b2?.id ?? '', values: values(kg(100), 7) });
+    s = writeAndApply(s, b2?.id ?? '', 'kg', 102.5, 'pop-kg');
+    expect(popup(s, BENCH).rows.find((r) => r.key === b2?.id)).toMatchObject({ load: 102.5, repsText: '7' });
+  });
+
+  it('weight-revert N2: retyping the value the row shows (Ben’s own draft) writes nothing', () => {
+    let s = startFixture().state;
+    const [, b1] = setsFor(s, BENCH);
+    s = apply(s, { type: 'save_draft', at: at(20), setId: b1?.id ?? '', values: values(kg(105), 7) });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 105)).toEqual({ kind: 'unchanged', note: null });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 106)).toEqual({ kind: 'unchanged', note: 'Nearest here: 105 kg' });
+    expect(popupCellWrite(s, b1?.id ?? '', 'reps', 7)).toEqual({ kind: 'unchanged', note: null });
+    expect(popupCellWrite(s, b1?.id ?? '', 'kg', 100)).toMatchObject({ kind: 'planned', patch: { load: kg(100) } });
   });
 
   it('a logged set: a correction of what was done, versioned on the set, never rounded (rule 2)', () => {

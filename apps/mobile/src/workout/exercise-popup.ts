@@ -1,4 +1,4 @@
-import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, pendingOwnValues, setMoveSteps, shownPlanned, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, type RestKind, type TargetExplanation } from '@fizz/domain';
+import { canAddWarmupNow, canRemoveExercise, clampBuilderRest, midSwapSlot, removeExerciseCommand, roundSteps, sessionRounds, setMoveSteps, shownPlanned, snapTypedLoadEasier, supersetNextCommand, typeRestCommand, type RestKind, type TargetExplanation } from '@fizz/domain';
 import { BUILD_LIMITS, type CommandOf, type Load, type SessionAggregate, type SetType, type SetValues, type WorkoutSet, type ZonedTimestamp } from '@fizz/schemas';
 
 import { loadSpoken, loadText, POPUP_COPY, REST_STEP_S, restText, SET_TYPE_LABEL, SET_TYPES, type PopupRestRow, type PopupSetRow, type PopupView } from '../ui/exercise-popup-model';
@@ -183,10 +183,12 @@ export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps'
     if (field === 'kg') return { kind: 'correct', setId, expectedSetVersion: set.version, patch: { load: { value, unit: load?.unit ?? ex.unit, convention: load?.convention ?? ex.loadConvention } } };
     return { kind: 'correct', setId, expectedSetVersion: set.version, patch: field === 'reps' ? { reps: value } : { rpe: value, rir: null } };
   }
-  const own = pendingOwnValues(set, ex);
+  // What the row shows: Ben's own draft values over the target. Typing that again writes nothing (N2, 21 Oct).
+  // A write for one field keeps his other draft values (the reducer clears only the fields it sets, B1).
+  const shown = shownPlanned(set, ex);
   if (field === 'reps') {
-    const r = set.planned.reps;
-    if (own.reps === undefined && r !== null && r.min === value && r.max === value) return { kind: 'unchanged', note: null };
+    const r = shown.reps;
+    if (r !== null && r.min === value && r.max === value) return { kind: 'unchanged', note: null };
     return { kind: 'planned', setId, expectedSetVersion: set.version, patch: { reps: { min: value, max: value } }, note: null };
   }
   if (field === 'rpe') {
@@ -196,9 +198,9 @@ export function popupCellWrite(a: SessionAggregate, setId: string, field: 'reps'
   const snapped = snapTypedLoadEasier(a, setId, value, bodyweightExercises);
   if (snapped === undefined || snapped === null) return { kind: 'refused', text: ex.loadConvention === 'assistance' ? POPUP_REFUSAL.moreAssist : POPUP_REFUSAL.lighter };
   const rounded = Math.abs(snapped - value) >= 1e-9;
-  const stored = set.planned.load;
-  if (own.load === undefined && stored !== null && stored.convention !== 'bodyweight' && Math.abs(stored.value - snapped) < 1e-9) {
-    // Rounded back onto the row's own load: say so where Ben typed, no write and no `updated · Undo` (21 Oct).
+  const stored = shown.load;
+  if (stored !== null && stored.convention !== 'bodyweight' && Math.abs(stored.value - snapped) < 1e-9) {
+    // Rounded back onto the load the row shows: say so where Ben typed, no write and no `updated · Undo` (21 Oct).
     return { kind: 'unchanged', note: rounded ? `Nearest here: ${trim(snapped)} ${ex.unit}` : null };
   }
   const note = rounded ? `Rounded to ${trim(snapped)} ${ex.unit}` : null;

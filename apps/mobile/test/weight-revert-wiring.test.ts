@@ -18,9 +18,14 @@ describe('the workout screen never puts an old weight back (R2)', () => {
   it('its unsaved edits are reconciled with every new workout state, through the domain helper', () => {
     expect(workout).toContain('reconcileDraftEdits(rawEdits, data.aggregate)');
   });
-  it('the debounced draft save runs on a change to the edits only, never on a refresh, tick or coach change', () => {
+  it('the debounced draft save runs on a change to the edits only, through the tested saver (draft-edits-lifecycle.test.ts)', () => {
     expect(workout).not.toContain('}, [edits, data, services]);');
-    expect(workout).toContain('}, [edits, editsSessionId, services]);');
+    expect(workout).toContain('draftSaver.schedule(edits);');
+    expect(workout).toContain('}, [edits, draftSaver]);');
+  });
+  it('a stale draft save on a row switch re-reads and re-bases before selecting (S2)', () => {
+    expect(workout).toMatch(/rebase: async \(\) => \{\s*const d = await reload\(\);/);
+    expect(workout).toContain('reconcileDraftEdits(edits, d.aggregate)');
   });
   it('every edit records the set version it was made on, so a late save is refused as stale (rule 5)', () => {
     expect(workout).toContain('const next: DraftEdits = { setId: focus.setId, values, setVersion: focus.setVersion };');

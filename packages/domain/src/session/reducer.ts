@@ -45,6 +45,7 @@ import { carriesTodayAdjustment, coachUndoRefusal } from './coach-undo';
 import { isOpenEndedWorkout } from './first-run';
 import { pendingSetsOf } from './mid-swap';
 import { buildExecutionOrder, effectiveOffset, firstPendingRound, isRoundEnd, joinRoundOffset, MAX_ROUND_OFFSET, nextPendingSet, supersetLinkSides } from './order';
+import { draftWithNewTarget, pendingOwnValues, type TargetValueField } from './pending-values';
 
 export type SessionErrorCode =
   | 'operation_id_reused'
@@ -1235,6 +1236,18 @@ function withoutEditRecords(planned: WorkoutSet['planned']): WorkoutSet['planned
   return copy;
 }
 
+/**
+ * The draft after `edit_planned_set` changed some target values (B1, 21 Oct):
+ * the changed fields take the new target, the rest of Ben's draft stays.
+ * Nothing of his own left (every value equals what the new target prefills):
+ * no draft, so the row shows the target.
+ */
+function draftAfterTargetEdit(set: WorkoutSet, ex: SessionExercise, planned: WorkoutSet['planned'], fields: readonly TargetValueField[]): SetValues | null {
+  if (set.draft === null) return null;
+  const draft = draftWithNewTarget(set.draft, planned, fields);
+  return Object.keys(pendingOwnValues({ status: set.status, draft, planned }, ex)).length === 0 ? null : draft;
+}
+
 const NO_TARGET_TYPES: ReadonlySet<WorkoutSet['setType']> = new Set(['warmup', 'drop']);
 
 /**
@@ -1266,7 +1279,9 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
   const noTarget = NO_TARGET_TYPES.has(setType);
   if (p.targetRpe != null && noTarget) return fail('invalid_values', 'Warm-up and drop sets have no target effort.');
 
-  const valuesTouched = p.load !== undefined || p.reps !== undefined || p.durationS !== undefined || p.distanceM !== undefined;
+  // The values Ben set (even to what the target already was: over his draft that is a change, 21 Oct).
+  const fields: TargetValueField[] = (['load', 'reps', 'durationS', 'distanceM'] as const).filter((f) => p[f] !== undefined);
+  const valuesTouched = fields.length > 0;
   let planned: WorkoutSet['planned'] = { ...set.planned };
   delete planned.edit;
   if (valuesTouched) {
@@ -1291,9 +1306,9 @@ function handleEditPlannedSet(state: SessionAggregate, cmd: CommandOf<'edit_plan
     ...set,
     setType,
     rest,
-    // The unsaved draft held the old target; the new one prefills Log.
-    draft: valuesTouched ? null : set.draft,
-    planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft } } },
+    // Only the fields Ben set a new target for leave his draft; any other value he typed stays (B1, 21 Oct).
+    draft: valuesTouched ? draftAfterTargetEdit(set, ex, planned, fields) : set.draft,
+    planned: { ...planned, edit: { opId: cmd.opId, version, before: { planned: beforePlanned, setType: set.setType, rest: set.rest, draft: set.draft }, ...(valuesTouched ? { fields } : {}) } },
     version,
   };
   // Setting a target back to the preset over Ben's draft clears the draft: a change, so the row shows it (21 Oct).

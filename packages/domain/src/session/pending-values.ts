@@ -1,4 +1,5 @@
 import type { Load, PlannedSet, SessionExercise, SetValues, WorkoutSet } from '@fizz/schemas';
+import { targetShort } from '../display';
 
 /**
  * A pending set as Ben left it (21 Oct, "If I change the weights from pre
@@ -55,4 +56,52 @@ export function shownPlanned(set: Pick<WorkoutSet, 'status' | 'draft' | 'planned
     ...(own.durationS !== undefined ? { durationS: own.durationS } : {}),
     ...(own.distanceM !== undefined ? { distanceM: own.distanceM } : {}),
   };
+}
+
+/**
+ * `targetShort` for what a pending row shows (B2, 21 Oct): Ben's own draft
+ * values over the target, worded `Your edit 105 kg × 6–8` (never `Target` or
+ * `Coach target` for a value he typed). No draft of his own: the target as is.
+ */
+export function shownTargetShort(
+  set: Pick<WorkoutSet, 'status' | 'draft' | 'planned'>,
+  ex: Pick<SessionExercise, 'unit' | 'loadConvention' | 'measurement'>,
+  o: Parameters<typeof targetShort>[1],
+): string | null {
+  const own = Object.keys(pendingOwnValues(set, ex)).length > 0;
+  if (!own) return targetShort(set.planned, o);
+  const p = { ...shownPlanned(set, ex) };
+  delete p.source;
+  const t = targetShort(p, o);
+  return t === null ? null : t.replace(/^Target /, 'Your edit ');
+}
+
+/** The value fields of a target that `edit_planned_set` changed (`before` → `after`). */
+export type TargetValueField = 'load' | 'reps' | 'durationS' | 'distanceM';
+
+export function changedTargetFields(before: Pick<PlannedSet, 'load' | 'reps' | 'durationS' | 'distanceM'>, after: Pick<PlannedSet, 'load' | 'reps' | 'durationS' | 'distanceM'>): TargetValueField[] {
+  const out: TargetValueField[] = [];
+  if (!sameLoad(before.load, after.load)) out.push('load');
+  if ((before.reps?.min ?? null) !== (after.reps?.min ?? null) || (before.reps?.max ?? null) !== (after.reps?.max ?? null)) out.push('reps');
+  if (before.durationS !== after.durationS) out.push('durationS');
+  if ((before.distanceM ?? null) !== (after.distanceM ?? null)) out.push('distanceM');
+  return out;
+}
+
+/**
+ * Ben's draft values after a new target for some fields (B1, 21 Oct): only
+ * the fields the new target changed take its values (the load, the top of
+ * the rep range, the time, the distance); every other field he typed stays.
+ * So a reps change in the pop-up never drops his typed weight, and a typed
+ * weight never drops his reps. Pure; `values` is never mutated.
+ */
+export function draftWithNewTarget(values: SetValues, planned: Pick<PlannedSet, 'load' | 'reps' | 'durationS' | 'distanceM'>, fields: readonly TargetValueField[]): SetValues {
+  const next: SetValues = { ...values };
+  for (const f of fields) {
+    if (f === 'load') next.load = planned.load;
+    else if (f === 'reps') next.reps = planned.reps?.max ?? null;
+    else if (f === 'durationS') next.durationS = planned.durationS;
+    else next.distanceM = planned.distanceM ?? null;
+  }
+  return next;
 }

@@ -192,14 +192,23 @@ export interface SelectRowInput {
   save: (cmd: SessionCommand) => Promise<SelectOutcome>;
   /** Sends the select (the screen's `run`, which updates the screen and reloads after a refusal). */
   select: (cmd: Extract<SessionCommand, { type: 'set_active_set' }>) => Promise<SelectOutcome>;
+  /**
+   * After the draft save is refused as stale (S2): re-reads the workout and
+   * returns the session version and the edits re-based on it (`reconcileDraftEdits`)
+   * as a `save_draft`, or null as the draft when nothing of Ben's is left to
+   * save; null when the read failed.
+   */
+  rebase?: () => Promise<{ version: number; draft: Extract<SessionCommand, { type: 'save_draft' }> | null } | null>;
 }
 
 /**
  * Selecting a pending row (§2A.7, Ben decision 4): the open row's unsaved
  * edit is saved first (the 300 ms debounce would otherwise be cancelled by
  * the select), then `set_active_set` goes with the version that save
- * returned, so it isn't refused as stale. A failed save still selects on
- * the screen's version. Never logs. Returns what to tell Ben: nothing, or
+ * returned, so it isn't refused as stale. A save refused as stale re-reads
+ * and saves the re-based edits first (`rebase`); if that fails the row stays
+ * (Ben's value is never dropped quietly). Any other failed save still
+ * selects on the screen's version. Never logs. Returns what to tell Ben: nothing, or
  * the refusal (a stale version is quiet: the screen reloads and a double
  * tap needs no message).
  */
@@ -208,6 +217,17 @@ export async function selectRowFlow(i: SelectRowInput): Promise<{ ok: true } | {
   if (i.draft !== null) {
     const saved = await i.save(i.draft);
     if (saved.ok) version = saved.aggregate.session.version;
+    else if (saved.error.code === 'stale_version' && i.rebase !== undefined) {
+      // The screen was behind the stored set: never select over Ben's typed value; re-read, re-base, save again (S2).
+      const fresh = await i.rebase();
+      if (fresh === null) return { ok: false, quiet: false, code: saved.error.code, message: saved.error.message };
+      version = fresh.version;
+      if (fresh.draft !== null) {
+        const again = await i.save(fresh.draft);
+        if (!again.ok) return { ok: false, quiet: false, code: again.error.code, message: again.error.message };
+        version = again.aggregate.session.version;
+      }
+    }
   }
   const r = await i.select(selectCommand(i.setId, version, i.at, i.opId));
   if (r.ok) return { ok: true };

@@ -101,12 +101,16 @@ describe('edit_planned_set: a set not done yet', () => {
     expect(ok.sets[0]?.planned.load).toEqual(kg(22.5, 'per_hand'));
   });
 
-  it('a target change replaces the unsaved draft, and Log then logs the new target', () => {
+  it('a target change replaces only the draft values it sets; with nothing of Ben’s left, Log logs the new target', () => {
     let s = startFixture().state;
     const w = bench(s, 0);
     s = apply(s, { type: 'save_draft', at: at(5), setId: w.id, values: values(kg(60), 9) });
     expect(bench(s, 0).draft).not.toBeNull();
     s = apply(s, edit(w.id, bench(s, 0).version, { load: kg(70) }));
+    // Weight-revert B1 (21 Oct): a new load never drops the reps Ben typed.
+    expect(bench(s, 0).draft).toMatchObject({ load: kg(70), reps: 9 });
+    expect(bench(s, 0).planned.edit?.fields).toEqual(['load']);
+    s = apply(s, edit(w.id, bench(s, 0).version, { reps: { min: 9, max: 9 } }, 'edit-reps'));
     expect(bench(s, 0).draft).toBeNull();
     // A rest-only edit keeps the draft.
     s = apply(s, { type: 'save_draft', at: at(6), setId: w.id, values: values(kg(70), 9) });

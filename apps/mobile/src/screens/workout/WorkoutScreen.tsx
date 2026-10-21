@@ -80,6 +80,7 @@ import { UNDO_TOAST, undoRefusalText } from '../../workout/undo-op';
 import { setRowCaption } from '../../workout/notes';
 import { whyPanelReducer, type WhyEvent, type WhyPanel } from '../../workout/target-why';
 import { AX_FONT_SCALE } from '../../workout/overview';
+import { createDraftSaver } from '../../workout/draft-saver';
 import { cellEditReducer, cellKeypadBar, correctionPatch, doneRowEditing, editsInPlace, keypadNextAction, mergeCorrection, openCellTap, openRowEditing, selectRowFlow, workoutMenu, workoutViewOf, type CellEdit, type CellEditEvent, type CellField, type KeypadNextAction, type RowTap } from '../../workout/table';
 import { buildRounds, clockText, lastLogMs, offRoundPill, overTimeText, overviewRows, overviewTitle, positionKey, queueSelect, resetsPick, roundPrimary, roundStrip, SELECT_IDLE, selectLanded, selectOnShow, setClockMs, setClockStartMs, shownRoundIndex, stepRound, timerBarMode, timerRoundIndex, upNextText, whyView, type SelectQueue } from '../../workout/rounds';
 import { CorrectionEditor, OpenSetRow, RestBar, RoundPage, RoundStrip, SetClockBar } from './WorkoutTable';
@@ -576,16 +577,30 @@ export function WorkoutScreen() {
 
   // Debounced draft save (300 ms): unsaved edits survive a force-close without counting as results.
   // Only a change to the edits saves: a refresh, tick or coach change never sends old values again (21 Oct).
+  // A save refused as stale reloads, so the edits re-base and save again (draft-saver.ts, review S2).
   const editsSessionId = data === 'loading' || data === null ? null : data.aggregate.session.id;
+  const draftSaver = useMemo(
+    () =>
+      editsSessionId === null
+        ? null
+        : createDraftSaver({
+            save: (cmd) => services.workout.dispatch(editsSessionId, cmd),
+            reload,
+            now: () => services.now(),
+            setTimer: (fn, ms) => setTimeout(fn, ms),
+            clearTimer: (h) => {
+              clearTimeout(h as ReturnType<typeof setTimeout>);
+            },
+          }),
+    [editsSessionId, services, reload],
+  );
   useEffect(() => {
-    if (!edits || editsSessionId === null) return;
-    const t = setTimeout(() => {
-      void services.workout.dispatch(editsSessionId, saveDraftCommand(edits, services.now()));
-    }, 300);
+    if (!edits || draftSaver === null) return;
+    draftSaver.schedule(edits);
     return () => {
-      clearTimeout(t);
+      draftSaver.cancel();
     };
-  }, [edits, editsSessionId, services]);
+  }, [edits, draftSaver]);
 
   // Work timer end in the foreground (§2.7): one haptic at 0, then a tick saves the planned time as the draft.
   useEffect(() => {
@@ -1204,6 +1219,13 @@ export function WorkoutScreen() {
       at: services.now(),
       opId: newUuid(),
       save: (cmd) => services.workout.dispatch(session.id, cmd),
+      // Refused as stale: re-read and save Ben's edits re-based on the stored set before selecting (review S2).
+      rebase: async () => {
+        const d = await reload();
+        if (d === null) return null;
+        const live = reconcileDraftEdits(edits, d.aggregate);
+        return { version: d.aggregate.session.version, draft: live === null ? null : saveDraftCommand(live, services.now()) };
+      },
       select: async (cmd) => {
         const out = await run(cmd);
         if (out.ok) o.onLanded?.(out.aggregate.session.version);

@@ -343,6 +343,12 @@ export interface PlannedSetEdit {
     rest: ResolvedRest;
     draft: SetValues | null;
   };
+  /**
+   * The target values this edit set (21 Oct, weight flicking back): only
+   * these leave Ben's draft, and only these replace the screen's unsaved
+   * edits. Absent on older records and when no value was set.
+   */
+  fields?: ('load' | 'reps' | 'durationS' | 'distanceM')[] | undefined;
 }
 
 export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
@@ -371,6 +377,7 @@ export const PlannedSetSchema: z.ZodType<PlannedSet> = z.object({
         opId: OperationIdSchema,
         version: z.int().min(1),
         before: z.object({ planned: PlannedSetSchema, setType: SetTypeSchema, rest: ResolvedRestSchema, draft: SetValuesSchema.nullable() }),
+        fields: z.array(z.enum(['load', 'reps', 'durationS', 'distanceM'])).max(4).optional(),
       })
       .optional();
   },

@@ -3,6 +3,10 @@ import type { SessionAggregate, SessionCommand, SetValues } from '@fizz/schemas'
 
 import {
   buildActiveSetView,
+  buildLockScreenContent,
+  lockScreenTargetWords,
+  restSetsView,
+  shownTargetShort,
   buildPlannedSetEditView,
   buildWorkoutTableView,
   NBSP,
@@ -113,7 +117,7 @@ describe('R1: a pending row shows Ben’s own value, not the preset, after anoth
 });
 
 describe('R2: a stale screen edit never overwrites Ben’s newer target', () => {
-  it('Edit set to 110 after an unsaved 100: the screen edit is dropped, the late save is refused, 110 stays (reload too)', () => {
+  it('Edit set to 110 after an unsaved 100 × 7: the load takes 110, his 7 reps stay, the late save is refused, 110 stays (reload too)', () => {
     let s = startFixture().state;
     const { b1 } = benchSets(s);
     s = apply(s, select(s, b1.id));
@@ -122,11 +126,12 @@ describe('R2: a stale screen edit never overwrites Ben’s newer target', () => 
     s = apply(s, editPlanned(b1.id, b1.version, 110));
     const after = s.sets.find((x) => x.id === b1.id);
     expect(after?.planned.load).toEqual(kg(110));
-    expect(after?.draft).toBeNull();
-    // The screen's edits: gone, so the open row shows 110.
+    // B1: only the load was set; the reps he typed stay in the draft.
+    expect(after?.draft).toMatchObject({ load: kg(110), reps: 7 });
+    // The screen's edits: the load takes 110, the 7 reps stay, re-based on the new version.
     const live = reconcileDraftEdits(edits, s);
-    expect(live).toBeNull();
-    expect(buildActiveSetView(input(s, { edits: live })).focus?.cells.load).toBe('110');
+    expect(live).toMatchObject({ values: { load: kg(110), reps: 7 }, setVersion: after?.version });
+    expect(buildActiveSetView(input(s, { edits: live })).focus?.cells).toEqual({ load: '110', value: '7' });
     // The debounced save that was already queued with the old values is refused (rule 5).
     expectError(reduceSession(s, saveDraftCommand(edits, at(31))), 'stale_version');
     // A later reload (no screen state) still shows 110, in the open row and in the table.
@@ -195,5 +200,124 @@ describe('Setting a row back to its preset clears Ben’s draft (no silent no-op
     const r = expectOk(reduceSession(s, editPlanned(b1.id, b1.version, 100)));
     expect(r.events).toEqual([]);
     expect(r.state).toBe(s);
+  });
+});
+
+describe('B1: a new target for one field keeps Ben’s other draft values', () => {
+  it('pop-up reps → 6 over a 105 × 8 draft: the row reads 105 × 6, stored and on screen', () => {
+    let s = startFixture().state;
+    const { b1, b2 } = benchSets(s);
+    s = apply(s, select(s, b2.id));
+    const edits: DraftEdits = { setId: b1.id, values: values(kg(105), 8), setVersion: b1.version };
+    s = apply(s, saveDraftCommand(edits, at(20)));
+    s = apply(s, { type: 'edit_planned_set', at: at(30), opId: 'pop-reps', setId: b1.id, expectedSetVersion: b1.version, patch: { reps: { min: 6, max: 6 } } });
+    expect(row(s, b1.id).cells.load).toBe('105');
+    expect(plain(row(s, b1.id).cells.value)).toBe('6');
+    expect(s.sets.find((x) => x.id === b1.id)?.draft).toMatchObject({ load: kg(105), reps: 6 });
+    // The screen's unsaved edits for that set take the same shape.
+    expect(reconcileDraftEdits(edits, s)?.values).toMatchObject({ load: kg(105), reps: 6 });
+  });
+
+  it('typing a weight over a reps-only draft keeps the reps', () => {
+    let s = startFixture().state;
+    const { b1 } = benchSets(s);
+    const edits: DraftEdits = { setId: b1.id, values: values(kg(100), 7), setVersion: b1.version };
+    s = apply(s, saveDraftCommand(edits, at(20)));
+    s = apply(s, editPlanned(b1.id, b1.version, 102.5));
+    expect([row(s, b1.id).cells.load, plain(row(s, b1.id).cells.value)]).toEqual(['102.5', '7']);
+    expect(reconcileDraftEdits(edits, s)?.values).toMatchObject({ load: kg(102.5), reps: 7 });
+  });
+
+  it('S1: a type, target-RPE or rest change mid-debounce never drops the typed weight', () => {
+    let s = startFixture().state;
+    const { b1 } = benchSets(s);
+    s = apply(s, select(s, b1.id));
+    // Typed 105, not saved yet (the 300 ms debounce): the stored draft is still empty.
+    const edits: DraftEdits = { setId: b1.id, values: values(kg(105), 8), setVersion: b1.version };
+    s = apply(s, { type: 'edit_planned_set', at: at(30), opId: 'type-top', setId: b1.id, expectedSetVersion: b1.version, patch: { setType: 'top' } });
+    let live = reconcileDraftEdits(edits, s);
+    expect(live?.values.load).toEqual(kg(105));
+    expect(buildActiveSetView(input(s, { edits: live })).focus?.cells.load).toBe('105');
+    const v = s.sets.find((x) => x.id === b1.id)?.version ?? 0;
+    s = apply(s, { type: 'edit_planned_set', at: at(31), opId: 'rpe-9', setId: b1.id, expectedSetVersion: v, patch: { targetRpe: 9, restS: 150 } });
+    live = reconcileDraftEdits(live, s);
+    expect(live?.values.load).toEqual(kg(105));
+    expect(live?.setVersion).toBe(s.sets.find((x) => x.id === b1.id)?.version);
+    expect(reduceSession(s, saveDraftCommand(live ?? edits, at(32))).ok).toBe(true);
+  });
+
+  it('setting the target to exactly Ben’s edit leaves nothing of his: no draft, no screen edits', () => {
+    let s = startFixture().state;
+    const { b1 } = benchSets(s);
+    const edits: DraftEdits = { setId: b1.id, values: values(kg(105), 8), setVersion: b1.version };
+    s = apply(s, saveDraftCommand(edits, at(20)));
+    s = apply(s, editPlanned(b1.id, b1.version, 105));
+    expect(s.sets.find((x) => x.id === b1.id)?.draft).toBeNull();
+    expect(reconcileDraftEdits(edits, s)).toBeNull();
+    expect(row(s, b1.id).cells.load).toBe('105');
+  });
+});
+
+describe('B2: the rest Next card, lock screen and next lines show Ben’s draft, not the preset', () => {
+  /** Draft 105 on set 2 (B2), then the warm-up and set 1 logged: resting before set 2. */
+  function restingBeforeDraftedSet() {
+    let s = startFixture().state;
+    const { w, b1, b2 } = benchSets(s);
+    s = apply(s, draft(b2.id, values(kg(105), 8)));
+    s = apply(s, logCmd(w.id, values(kg(60), 10), 10));
+    s = apply(s, logCmd(b1.id, values(kg(100), 8), 100));
+    expect(s.session.activeSetId).toBe(b2.id);
+    return { s, b2 };
+  }
+
+  it('the table and the rest Next card agree: 105', () => {
+    const { s, b2 } = restingBeforeDraftedSet();
+    expect(row(s, b2.id).cells.load).toBe('105');
+    const next = restSetsView(s).next;
+    expect(plain(next?.value)).toBe('105 kg × 6–8');
+    expect(next?.accessibilityLabel).toContain('current, your edit 105 kg');
+  });
+
+  it('the lock screen / Live Activity reads `Your edit 105 kg × 6–8`, spoken as your edit', () => {
+    const { s } = restingBeforeDraftedSet();
+    const c = buildLockScreenContent(s, ms(110), 'UTC');
+    expect(c?.state).toBe('resting');
+    expect(plain(c?.line2)).toBe('Your edit 105 kg × 6–8');
+    expect(c?.a11y).toContain('your edit 105 kilograms, 6 to 8 reps');
+    expect(lockScreenTargetWords('Your edit 105 kg × 8')).toBe('your edit 105 kilograms, 8 reps');
+  });
+
+  it('the rest up-next line reads `Set 3 · 105 kg × 6–8`', () => {
+    const { s } = restingBeforeDraftedSet();
+    const v = buildActiveSetView(input(s, { nowMs: ms(110) }));
+    expect(plain(v.upNext)).toContain('105 kg × 6–8');
+    expect(plain(v.upNext)).not.toContain('100');
+  });
+
+  it('the next-exercise line shows Ben’s draft on the next exercise’s first set (stack)', () => {
+    let s = startFixture().state;
+    const { b2 } = benchSets(s);
+    const [r1] = setsFor(s, ROW);
+    if (!r1) throw new Error('fixture');
+    s = apply(s, draft(r1.id, values(kg(55, 'stack'), 12)));
+    s = apply(s, select(s, b2.id));
+    const next = buildActiveSetView(input(s)).focus?.next;
+    expect(next?.kind).toBe('exercise');
+    expect(plain(next?.kind === 'exercise' ? next.target : '')).toContain('Your edit 55');
+    // A per-hand draft on the stack row is not its value: the target stays.
+    const per = apply(startFixture().state, draft(r1.id, values(kg(25, 'per_hand'), 12)));
+    const ex = per.exercises.find((e) => e.id === r1.sessionExerciseId);
+    if (!ex) throw new Error('fixture');
+    expect(plain(shownTargetShort(per.sets.find((x) => x.id === r1.id) ?? r1, ex, { convention: ex.loadConvention }))).toMatch(/^Target 50/);
+  });
+
+  it('without a draft every surface still says Target', () => {
+    let s = startFixture().state;
+    const { w, b1, b2 } = benchSets(s);
+    s = apply(s, logCmd(w.id, values(kg(60), 10), 10));
+    s = apply(s, logCmd(b1.id, values(kg(100), 8), 100));
+    expect(plain(restSetsView(s).next?.value)).toBe('100 kg × 6–8');
+    expect(plain(buildLockScreenContent(s, ms(110), 'UTC')?.line2)).toBe('Target 100 kg × 6–8');
+    expect(row(s, b2.id).cells.load).toBe('100');
   });
 });
