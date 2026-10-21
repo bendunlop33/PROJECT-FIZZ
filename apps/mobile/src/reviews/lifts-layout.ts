@@ -15,6 +15,10 @@ export interface ChartPoint {
   last: boolean;
   /** `100 × 6`, `est. 92.5 × 6 from 100 × 4`. */
   detail: string;
+  /** A PB ring: all lifts, the newest point when it is a PB; one lift, every PB. */
+  ring: boolean;
+  /** `PB · Bench 100 × 6 · week of 13 Oct` (the ring's tap); null with no ring. */
+  ringDetail: string | null;
 }
 
 export interface ChartLine {
@@ -74,7 +78,11 @@ export function liftsChartLayout(input: { lifts: readonly LiftView[]; focus: str
   const ticks: LiftsChartLayout['ticks'] = [];
   for (let v = lo; v <= hi + 1e-9; v += step) ticks.push({ y: y(v), label: fmt(v) });
   const lines: ChartLine[] = shown.map((l) => {
-    const pts = l.points.map((p, i) => ({ x: x(p.week), y: y(p.value), estimate: p.estimate, last: i === l.points.length - 1, detail: p.detail }));
+    const pts = l.points.map((p, i) => {
+      const last = i === l.points.length - 1;
+      const ring = p.pb && (one !== null || last);
+      return { x: x(p.week), y: y(p.value), estimate: p.estimate, last, detail: p.detail, ring, ringDetail: ring ? p.pbDetail : null };
+    });
     const lastPt = pts.at(-1);
     const gutter = one === null && l.target !== null && lastPt !== undefined ? { y: y(l.target), label: fmt(l.target), guideFromX: lastPt.x } : null;
     return { key: l.exerciseId, colour: l.colour ?? 0, points: pts, gutter };
@@ -113,6 +121,18 @@ export function lineAt(layout: LiftsChartLayout, px: number, py: number, radius 
     }
   }
   return best !== null && best.d <= radius * radius ? best.key : null;
+}
+
+/** The PB ring nearest a tap within `radius` (`PB · Bench 100 × 6 · week of 13 Oct`); null otherwise. */
+export function ringAt(layout: LiftsChartLayout, px: number, py: number, radius = 16): ChartPoint | null {
+  let best: { p: ChartPoint; d: number } | null = null;
+  for (const l of layout.lines)
+    for (const p of l.points) {
+      if (!p.ring) continue;
+      const d = (p.x - px) ** 2 + (p.y - py) ** 2;
+      if (best === null || d < best.d) best = { p, d };
+    }
+  return best !== null && best.d <= radius * radius ? best.p : null;
 }
 
 /** The point nearest a tap within `radius` (its detail, for `est. 97.5 × 6 from 100 × 4`); null otherwise. */

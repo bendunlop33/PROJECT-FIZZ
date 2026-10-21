@@ -4,7 +4,7 @@ import type { LiftsChartLayout } from './lifts-layout';
 
 /**
  * The Lifts chart drawn with Skia (ADR 0013; the prototype's SVG): gridlines, one line per lift in its
- * colour, filled points (hollow for an estimate, larger for the newest), the gutter targets or the focused
+ * colour, filled points (hollow for an estimate, larger for the newest), PB rings, the gutter targets or the focused
  * lift's dashed target, the dotted `at this rate` line and the tracked-reps marker. No text (labels are
  * native views over it) and no animation. Required lazily (`loadLiftsCanvas`), so a Skia failure costs the
  * drawing, never the screen. Hidden from VoiceOver; the wrapping view carries the summary.
@@ -56,6 +56,8 @@ export function LiftsCanvas({ layout, colours, grid, surface, target, marker, li
           ) : null,
           l.gutter !== null ? <Line key={`${l.key}-bar`} p1={vec(plot.right + 6, l.gutter.y)} p2={vec(plot.right + 14, l.gutter.y)} color={c} strokeWidth={3} strokeCap="round" /> : null,
           l.points.length > 1 ? <Path key={`${l.key}-line`} path={path} style="stroke" strokeWidth={lineWidth + 0.4} strokeJoin="round" color={c} /> : null,
+          // PB rings (the prototype: r 8 on the newest point, 6.5 elsewhere; 1.4 pt at 80%).
+          ...l.points.map((p, i) => (p.ring ? <Circle key={`${l.key}-pb${String(i)}`} cx={p.x} cy={p.y} r={p.last ? 8 : 6.5} style="stroke" strokeWidth={1.4} opacity={0.8} color={c} /> : null)),
           ...l.points.map((p, i) => {
             const r = p.last ? 4.5 : p.estimate ? 3.4 : 2.8;
             return p.estimate

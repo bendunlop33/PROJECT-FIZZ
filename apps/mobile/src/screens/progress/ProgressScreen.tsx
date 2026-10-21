@@ -25,12 +25,11 @@ import { ReviewsSection } from '../../reviews/ReviewsSection';
 import { HowCountedSheet, TimeSheet } from './sheets';
 
 /**
- * Progress home (progress.md v1.0 slice A, §2.2): one period drives every
- * card; Activity (sessions, time, bars), Muscles (Body parts | Push/Pull/
- * Legs; D2: parents that open to sub-rows), Records; `Activity | Exercises |
- * Calendar` (Ben, 13–14 Oct 2026). Local data only: identical offline
- * and with no coach (check 20). The screen lays out the service's view model
- * and computes nothing.
+ * Progress: `Overview | Lifts | Training` (Progress v3, Ben 21 Oct; progress-goals.md "Structure").
+ * Overview (default) is the glance: This week, Trends, Coach's changes. Lifts owns each exercise's detail
+ * (PRs, rep maxes, history). Training owns totals and habits (progress.md v1.0 slice A, §2.2: one period
+ * drives every card; Activity, Muscles, Records; and the Calendar). Local data only: identical offline and
+ * with no coach (check 20). The screen lays out the services' view models and computes nothing.
  */
 
 type Toasted = CountItToast | null;
@@ -41,7 +40,9 @@ export function ProgressScreen() {
   const services = useServices();
   const changed = useDataChanged();
   const ax = useAx();
-  const [segment, setSegment] = useState<'activity' | 'exercises' | 'calendar'>('activity');
+  const [tab, setTab] = useState<'overview' | 'lifts' | 'training'>('overview');
+  // Training: its totals, or the calendar of every workout and activity.
+  const [segment, setSegment] = useState<'activity' | 'calendar'>('activity');
   const [month, setMonth] = useState<string | null>(null);
   const [calendarSeen, setCalendarSeen] = useState(false);
   const [exercisesSeen, setExercisesSeen] = useState(false);
@@ -66,8 +67,22 @@ export function ProgressScreen() {
   const scroll = useRef<ScrollView>(null);
   const focusN = route.params?.focus === 'reviews' ? (route.params.n ?? 0) : null;
   useEffect(() => {
-    if (focusN !== null) scroll.current?.scrollTo({ y: 0, animated: false });
+    if (focusN === null) return;
+    setTab('overview');
+    scroll.current?.scrollTo({ y: 0, animated: false });
   }, [focusN]);
+  // Overview's links: `All lifts ›` / `Open Bench ›` → Lifts (on that lift's page), `Details ›` → Training.
+  const openLifts = (exerciseId: string | null) => {
+    if (exerciseId !== null) setExercisesFocus((f) => ({ exerciseId, sessionId: null, sessionExerciseId: null, n: (f?.n ?? 0) + 1 }));
+    setExercisesSeen(true);
+    setTab('lifts');
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  };
+  const openTraining = () => {
+    setSegment('activity');
+    setTab('training');
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  };
 
   useEffect(() => {
     // Loading: nothing for `timing.placeholderDelay`, then still grey blocks (no shimmer).
@@ -125,65 +140,95 @@ export function ProgressScreen() {
       <AppText variant="title1" accessibilityRole="header">
         Progress
       </AppText>
-      {/* (Workout builder v3 §6.2) Reviews at the top: the latest weekly review, the Goal view, past weeks. */}
-      <ReviewsSection />
       {home?.view.dataState === 'normal' ? (
         <Segmented
           options={[
-            { key: 'activity', label: 'Activity' },
-            { key: 'exercises', label: 'Exercises' },
-            { key: 'calendar', label: 'Calendar' },
+            { key: 'overview', label: 'Overview' },
+            { key: 'lifts', label: 'Lifts' },
+            { key: 'training', label: 'Training' },
           ]}
-          selected={segment}
+          selected={tab}
           onSelect={(k) => {
-            if (k === 'calendar') setCalendarSeen(true);
-            if (k === 'exercises') setExercisesSeen(true);
-            setSegment(k);
+            if (k === 'lifts') setExercisesSeen(true);
+            setTab(k);
           }}
           label="Progress"
         />
       ) : null}
     </View>
   );
+  // Overview: This week, Trends, Coach's changes (Progress v3). With no data (or an error) it still shows above the empty state.
+  const overview = <ReviewsSection onOpenLifts={openLifts} onOpenTraining={openTraining} />;
 
   let body: React.ReactNode;
   if (data.state === 'error') {
     body = (
-      <StatusLine
-        icon="exclamationmark.triangle"
-        tone="warning"
-        text="Couldn’t open your training data."
-        info={data.message}
-        infoLabel="Error details"
-        action={
-          <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
-            <TextButton label="Try again" onPress={reload} />
-            <TextButton
-              label="Restore from backup"
-              onPress={() => {
-                navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'Restore', params: { mode: 'restore' }, initial: false } });
-              }}
-            />
-          </View>
-        }
-      />
+      <>
+        {overview}
+        <StatusLine
+          icon="exclamationmark.triangle"
+          tone="warning"
+          text="Couldn’t open your training data."
+          info={data.message}
+          infoLabel="Error details"
+          action={
+            <View style={{ flexDirection: 'row', gap: theme.space['3'] }}>
+              <TextButton label="Try again" onPress={reload} />
+              <TextButton
+                label="Restore from backup"
+                onPress={() => {
+                  navigation.navigate('Tabs', { screen: 'Profile', params: { screen: 'Restore', params: { mode: 'restore' }, initial: false } });
+                }}
+              />
+            </View>
+          }
+        />
+      </>
     );
   } else if (home === null) {
     // Loading: grey blocks after the delay. Ready with no profile: the empty state, never a blank page (review N3).
-    body = data.state === 'loading' ? (placeholder ? <Placeholder /> : null) : <EmptyState hasResume={false} />;
+    body =
+      data.state === 'loading' ? (
+        placeholder ? <Placeholder /> : null
+      ) : (
+        <>
+          {overview}
+          <EmptyState hasResume={false} />
+        </>
+      );
   } else if (home.view.dataState === 'empty') {
-    body = <EmptyState hasResume={resume !== null} />;
-  } else {
-    // Every segment stays mounted once seen, so each keeps its place (selected day, exercise, scroll) (§3.5).
     body = (
       <>
-        {exercisesSeen || segment === 'exercises' ? (
-          <View style={segment === 'exercises' ? null : { display: 'none' }}>
+        {overview}
+        <EmptyState hasResume={resume !== null} />
+      </>
+    );
+  } else {
+    // Every tab (and Training's segment) stays mounted once seen, so each keeps its place (selected day, exercise, scroll) (§3.5).
+    body = (
+      <>
+        <View style={tab === 'overview' ? null : { display: 'none' }}>{overview}</View>
+        {exercisesSeen || tab === 'lifts' ? (
+          <View style={tab === 'lifts' ? null : { display: 'none' }}>
             <ExercisesTab focus={exercisesFocus} />
           </View>
         ) : null}
-        {calendarSeen || segment === 'calendar' ? (
-          <View style={segment === 'calendar' ? null : { display: 'none' }}>
+        {tab === 'training' ? (
+          <Segmented
+            options={[
+              { key: 'activity' as const, label: 'Totals' },
+              { key: 'calendar' as const, label: 'Calendar' },
+            ]}
+            selected={segment}
+            onSelect={(k) => {
+              if (k === 'calendar') setCalendarSeen(true);
+              setSegment(k);
+            }}
+            label="Training"
+          />
+        ) : null}
+        {calendarSeen || (tab === 'training' && segment === 'calendar') ? (
+          <View style={tab === 'training' && segment === 'calendar' ? null : { display: 'none' }}>
             <CalendarView
               month={month}
               onMonth={(m) => {
@@ -200,7 +245,7 @@ export function ProgressScreen() {
             />
           </View>
         ) : null}
-        <View style={segment === 'activity' ? { gap: theme.space['5'] } : { display: 'none' }}>
+        <View style={tab === 'training' && segment === 'activity' ? { gap: theme.space['5'] } : { display: 'none' }}>
       {consistencyData.state === 'ready' && consistencyData.value !== null ? <ConsistencyCard ax={ax} view={consistencyCardView(consistencyData.value, home.today)} /> : null}
       <Overview
         home={home}
@@ -233,7 +278,7 @@ export function ProgressScreen() {
         onRecord={(r) => {
           setExercisesFocus((f) => ({ exerciseId: r.exerciseId, sessionId: r.sessionId, sessionExerciseId: r.sessionExerciseId, n: (f?.n ?? 0) + 1 }));
           setExercisesSeen(true);
-          setSegment('exercises');
+          setTab('lifts');
         }}
       />
         </View>

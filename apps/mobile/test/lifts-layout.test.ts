@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { LiftView } from '@fizz/domain';
 
-import { LIFTS_CHART, liftsChartLayout, lineAt, pointAt } from '../src/reviews/lifts-layout';
+import { LIFTS_CHART, liftsChartLayout, lineAt, pointAt, ringAt } from '../src/reviews/lifts-layout';
 import { progressPalette, withAlpha } from '../src/reviews/palette';
 
 /** The Lifts chart's geometry (Progress v3, the prototype's `liftChart`), pure. */
 
 const WEEKS = ['24 Aug', '31 Aug', '7 Sep', '14 Sep', '21 Sep', '28 Sep', '5 Oct', '12 Oct'];
-function lift(id: string, values: readonly (number | null)[], more: Partial<LiftView> = {}): LiftView {
-  const points = values.flatMap((v, week) => (v === null ? [] : [{ week, value: v, estimate: false, detail: `${String(v)} × 6` }]));
+function lift(id: string, values: readonly (number | null)[], more: Partial<LiftView> = {}, pbs: readonly number[] = []): LiftView {
+  const points = values.flatMap((v, week) => (v === null ? [] : [{ week, value: v, estimate: false, detail: `${String(v)} × 6`, pb: pbs.includes(week), pbDetail: pbs.includes(week) ? `PB · ${id} ${String(v)} × 6` : null }]));
   return {
     exerciseId: id,
     name: id,
@@ -18,6 +18,8 @@ function lift(id: string, values: readonly (number | null)[], more: Partial<Lift
     repsText: '× 6',
     current: '100',
     currentEstimate: false,
+    latestPb: false,
+    loadSuffix: null,
     target: null,
     targetText: '–',
     colour: 0,
@@ -71,6 +73,20 @@ describe('Lifts chart layout', () => {
     expect(lineAt(l, p.x, p.y + 5)).toBe('squat');
     expect(lineAt(l, p.x, 0 - 40)).toBeNull();
     expect(pointAt(l, p.x + 3, p.y)?.detail).toBe('110 × 6');
+  });
+
+  it('PB rings: all lifts, only the newest point when it is a PB; one lift, every PB; a ring tap gives its detail', () => {
+    const pb = lift('bench', [90, 92.5, 92.5, 95, 95, 97.5, 97.5, 100], {}, [1, 3, 5, 7]);
+    const notNewest = lift('squat', [105, 110, 108], { colour: 1 }, [1]);
+    const all = liftsChartLayout({ lifts: [pb, notNewest], focus: null, weeks: WEEKS, width: 320 });
+    expect(all.lines[0]?.points.map((p) => p.ring)).toEqual([false, false, false, false, false, false, false, true]);
+    expect(all.lines[1]?.points.some((p) => p.ring)).toBe(false);
+    const one = liftsChartLayout({ lifts: [pb], focus: 'bench', weeks: WEEKS, width: 320 });
+    expect(one.lines[0]?.points.filter((p) => p.ring).length).toBe(4);
+    const newest = all.lines[0]?.points[7];
+    if (newest === undefined) throw new Error('no point');
+    expect(ringAt(all, newest.x + 4, newest.y - 4)?.ringDetail).toBe('PB · bench 100 × 6');
+    expect(ringAt(all, newest.x - 60, newest.y)).toBeNull();
   });
 
   it('a gap week is skipped (the line joins the weeks that have points); no points: no line', () => {
