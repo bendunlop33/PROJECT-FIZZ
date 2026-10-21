@@ -31,7 +31,7 @@ import { PromptSheet, promptView } from './builder/BuilderSheets';
 import { builderApplyOpId, type BuilderCoachReach, type MixPick } from '@fizz/coach';
 import { setTodaySetupDay } from '../builder/coach-ports';
 import type { NudgeResult } from '../coach/builder-coach-service';
-import { nudgeCardView } from '../coach/builder-coach-view';
+import { nudgeCardView, todayAskFirst, todayAskRoute } from '../coach/builder-coach-view';
 import { CoachAskBar } from '../ui/coach-ask-bar';
 import { createOnDeviceSpeech } from '../voice/on-device-speech';
 import type { StartChoice, StartPrompt } from '../builder/builder-service';
@@ -177,18 +177,17 @@ export function TodayScreen() {
     };
   }, [services, session, baseView, mixKey, selection, mixPicks]);
 
-  /** Words from Today's bar: a set-up request opens Set up filled (`fill_setup`, Undo there); anything else, the coach sheet. */
+  /**
+   * Words from Today's bar: pain words go straight to the coach (rule 9); a set-up request opens Set up filled
+   * (`fill_setup`, Undo there); anything else opens the coach with the words, never a toast.
+   */
   async function askToday(words: string) {
-    const r = await services.builderCoach.askSetup({ words, opId: newUuid(), from: 'today' });
-    if (r.kind === 'filled') {
+    const route = todayAskFirst(words) ?? todayAskRoute(words, await services.builderCoach.askSetup({ words, opId: newUuid(), from: 'today' }));
+    if (route.kind === 'setup') {
       navigation.navigate('BuilderSetup', cardDayId === null ? undefined : { dayId: cardDayId });
       return;
     }
-    if (r.kind === 'reply') {
-      setToast({ text: r.text });
-      return;
-    }
-    navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true });
+    navigation.navigate('Coach', { entry: { kind: 'today' }, focus: true, draft: route.draft });
   }
 
   /** The nudge's offer: Apply writes it to the card's draft (Undo puts it back); Skip leaves it. Both quiet the card today. */

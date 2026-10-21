@@ -9,7 +9,8 @@
 import { BUILDER_STATUS_WORD, type BuilderCoachReach, type BuilderProposal, type MixPick, type NudgeOffer, type ReviewNote } from '@fizz/coach';
 import type { Memory } from '@fizz/schemas';
 
-import type { BuilderReviewResult, EditAsk, NudgeResult } from './builder-coach-service';
+import { classifyPainMention } from '@fizz/domain';
+import type { BuilderReviewResult, EditAsk, NudgeResult, SetupAsk } from './builder-coach-service';
 
 // ---------------------------------------------------------------------------
 // The ask bar (`✦ <label>` + mic), on Today, Set up and Your workout
@@ -212,6 +213,28 @@ export function editAskView(r: EditAsk): EditAskView {
     case 'gone':
       return { kind: 'gone' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Today's bar (§2.0.5): where the words go
+
+/** Where words from Today's bar go: Set up (opened filled), or the coach sheet with the words in its field. */
+export type TodayAskRoute = { kind: 'setup' } | { kind: 'coach'; draft: string };
+
+/**
+ * Before the Set up parser (rule 9, wiring B2): a pain or unclear body mention goes to the coach
+ * with the words, which owns pain flags and stops progression for that movement. Words like "knee
+ * is sore, legs feel wrecked" never open a Legs workout. A body part named as a session ("legs,
+ * 45 min") and plain effort ("tired, short one") still go to Set up. Null: ask Set up.
+ */
+export function todayAskFirst(words: string): TodayAskRoute | null {
+  const m = classifyPainMention(words, { bareBodyPart: false });
+  return m === 'pain' || m === 'unclear' ? { kind: 'coach', draft: words } : null;
+}
+
+/** After `askSetup`: only a fill opens Set up. A reply, `Not understood` or a failure opens the coach with the words, never a toast (rule 1). */
+export function todayAskRoute(words: string, r: SetupAsk): TodayAskRoute {
+  return r.kind === 'filled' ? { kind: 'setup' } : { kind: 'coach', draft: words };
 }
 
 /** The offer's lines for an Apply on Today (proposal state from the card). */

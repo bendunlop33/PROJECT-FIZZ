@@ -9,7 +9,7 @@ import { currentDraftVersion, slotsOf, workingCount } from '@fizz/domain';
 import type { BuilderSnapshot, SetupInput } from '../src/builder/builder-service';
 import { registerSetupPage, setTodaySetupDay, takePendingSetupFill } from '../src/builder/coach-ports';
 import { builderReviewProvider, runReview, type BuilderReview } from '../src/builder/review';
-import { EDIT_ASK_COPY, editAskView, proposalCardView } from '../src/coach/builder-coach-view';
+import { EDIT_ASK_COPY, editAskView, proposalCardView, todayAskFirst, todayAskRoute } from '../src/coach/builder-coach-view';
 import type { AppServices } from '../src/services/app-services';
 import { createHarness, setUpGym, type Harness } from './harness';
 
@@ -169,6 +169,41 @@ describe('Set up words (offline: code reads them, no coach bubble)', () => {
     setTodaySetupDay('push');
     expect(await s.builderCoach.askSetup({ words: 'hello there', opId: 'ask-x', from: 'today' })).toMatchObject({ kind: 'not_understood' });
     expect(takePendingSetupFill()).toBeNull();
+  });
+});
+
+describe('Today’s bar: where the words go (rule 9; wiring B2)', () => {
+  it('pain words go to the coach with the words before Set up’s parser, which would otherwise open Legs', async () => {
+    const { services: s } = await h.launch();
+    await setUpGym(h, s);
+    setTodaySetupDay('push');
+    const words = 'left knee is sore, legs feel wrecked';
+    expect(todayAskFirst(words)).toEqual({ kind: 'coach', draft: words });
+    expect(todayAskFirst('my shoulder hurts, short session')).toEqual({ kind: 'coach', draft: 'my shoulder hurts, short session' });
+    // Why the check comes first: code's parser alone reads the day word and fills Legs.
+    const r = await s.builderCoach.askSetup({ words, opId: 'ask-pain', from: 'today' });
+    expect(r.kind).toBe('filled');
+    expect(takePendingSetupFill()?.setup.dayId).toBe('legs');
+    expect(todayAskFirst('elbow feels dodgy, chest day')).toEqual({ kind: 'coach', draft: 'elbow feels dodgy, chest day' });
+    // A body part named as a session, or plain effort, still goes to Set up.
+    for (const w of ['legs, 45 min', 'push day, no abs', 'make it 45 min', 'chest and triceps, 60 min', 'tired, short one']) expect(todayAskFirst(w)).toBeNull();
+  });
+
+  it('after askSetup: only a fill opens Set up; a reply, Not understood or a failure opens the coach with the words', () => {
+    const w = 'what should I do today?';
+    expect(todayAskRoute(w, { kind: 'filled', by: 'code', toast: 'Legs', notes: [], reply: null, status: 'offline' })).toEqual({ kind: 'setup' });
+    expect(todayAskRoute(w, { kind: 'reply', text: 'Push is next.', status: 'ok' })).toEqual({ kind: 'coach', draft: w });
+    expect(todayAskRoute(w, { kind: 'not_understood', line: 'Not understood', status: 'offline' })).toEqual({ kind: 'coach', draft: w });
+    expect(todayAskRoute(w, { kind: 'failed', status: 'failed' })).toEqual({ kind: 'coach', draft: w });
+  });
+
+  it('the screen: the pain check runs before askSetup; the coach opens with the words (draft), no reply toast', () => {
+    const src = readFileSync(join(__dirname, '..', 'src', 'screens', 'TodayScreen.tsx'), 'utf8');
+    const ask = src.slice(src.indexOf('async function askToday'), src.indexOf('async function onOffer'));
+    expect(ask.indexOf('todayAskFirst(words)')).toBeGreaterThan(-1);
+    expect(ask.indexOf('todayAskFirst(words)')).toBeLessThan(ask.indexOf('askSetup('));
+    expect(ask).toContain('draft: route.draft');
+    expect(ask).not.toContain('setToast');
   });
 });
 
